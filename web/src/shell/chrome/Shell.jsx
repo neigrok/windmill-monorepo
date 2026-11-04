@@ -1,8 +1,9 @@
 // The /app shell: a room switcher, the account seat, and the active room. data-brand and
 // data-theme are stamped together — palettes.css keys a room's ground on the pair.
 
-import React, { Suspense, useEffect, useLayoutEffect } from 'react';
-import { BrandMark } from '../../design-system';
+import React, { Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { CloudOff } from 'lucide-react';
+import { BrandMark, Tooltip } from '../../design-system';
 import { PRODUCTS } from '../products.js';
 import { useAuth } from '../auth/AuthProvider.jsx';
 import { AccountSeat } from '../auth/AccountSeat.jsx';
@@ -12,6 +13,58 @@ import { paintBrowserChrome, restoreBrowserChrome } from '../appearance.js';
 import { ShellHome } from './ShellHome.jsx';
 import './chrome.css';
 import { navigate } from '../navigation.js';
+import { useRoomStatus } from '../roomStatus.js';
+
+const STATUS_TOOLTIP_HOLD = 4000;
+
+function RoomStatus({ status }) {
+  const line = status?.line ?? '';
+  const [announcement, setAnnouncement] = useState('');
+  const [tooltipLine, setTooltipLine] = useState(null);
+  const tooltip = Boolean(line) && tooltipLine === line;
+  // The live region commits empty before its first announcement.
+  useEffect(() => setAnnouncement(line), [line]);
+  const root = useRef(null);
+  useEffect(() => {
+    if (!tooltip) {
+      if (tooltipLine !== null) setTooltipLine(null);
+      return;
+    }
+    const timer = setTimeout(() => setTooltipLine(null), STATUS_TOOLTIP_HOLD);
+    const dismiss = (event) => {
+      if (!root.current?.contains(event.target)) setTooltipLine(null);
+    };
+    const escape = (event) => {
+      if (event.key === 'Escape') setTooltipLine(null);
+    };
+    document.addEventListener('pointerdown', dismiss);
+    document.addEventListener('keydown', escape);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('pointerdown', dismiss);
+      document.removeEventListener('keydown', escape);
+    };
+  }, [tooltip, tooltipLine]);
+
+  const icon = status?.icon === 'offline' ? <CloudOff size={16} aria-hidden="true" /> : null;
+  return (
+    <div ref={root} className={`wm-room-status${status?.narrow ? ` wm-room-status--${status.narrow}` : ''}`}>
+      <span className="wm-room-status-announcement" role="status" aria-live="polite" aria-atomic="true">{announcement}</span>
+      <span className="wm-room-status-full" aria-hidden="true">{line}</span>
+      <span className="wm-room-status-compact" aria-hidden="true">{icon}{status?.short ?? line}</span>
+      {status?.narrow === 'icon' && <span className="wm-room-status-narrow">
+        <Tooltip label={line} side="bottom" align="end" open={tooltip}>
+          <button
+            type="button"
+            className="wm-room-status-tap"
+            aria-label={line}
+            onClick={() => setTooltipLine(tooltip ? null : line)}
+          >{icon}</button>
+        </Tooltip>
+      </span>}
+    </div>
+  );
+}
 
 function RoomLink({ href, label, active }) {
   const onClick = (e) => {
@@ -28,8 +81,9 @@ function RoomLink({ href, label, active }) {
 
 const HOME_SCOPE = { theme: null, brand: 'clay' };
 
-function resolveRoom(pathname, neutral) {
+function resolveRoom(pathname, neutral, roomProduct) {
   if (neutral) return { kind: 'neutral', scope: HOME_SCOPE, neutral };
+  if (roomProduct) return { kind: 'product', scope: roomProduct.shell.scope, product: roomProduct };
   const path = pathname.replace(/\/+$/, '') || '/';
   if (path === '/app') return { kind: 'home', scope: HOME_SCOPE };
   const product = PRODUCTS.find((p) => p.shell && (path === p.shell.room || path.startsWith(`${p.shell.room}/`)));
@@ -63,12 +117,13 @@ function RoomContent({ room, location }) {
   return <Suspense fallback={<RoomFallback Ghost={product.shell.Ghost} />}><Component {...props} /></Suspense>;
 }
 
-export function Shell({ location, neutral = null }) {
+export function Shell({ location, neutral = null, roomProduct = null }) {
   const { user, status, signOut } = useAuth();
   const openSignInDoor = useSignInDoor();
   const lendDoorSkin = useSignInDoorHost();
   const { resolved: appearance } = useAppearance();
-  const room = resolveRoom(location.pathname, neutral);
+  const roomStatus = useRoomStatus();
+  const room = resolveRoom(location.pathname, neutral, roomProduct);
   const redirect = room.redirect ?? null;
   const theme = room.scope.theme ?? appearance;
 
@@ -100,7 +155,7 @@ export function Shell({ location, neutral = null }) {
 
   return (
     <div className="wm-shell" ref={lendDoorSkin} data-brand={room.scope.brand} data-theme={theme}>
-      <header className="wm-head">
+      <header className={roomStatus ? 'wm-head wm-head--status' : 'wm-head'}>
         <a className="wm-head-mark" href="/" title="Windmill" aria-label="Windmill — home"><BrandMark size={30} /></a>
         <nav className="wm-switch" aria-label="Rooms">
           <RoomLink href="/app" label="Home" active={room.kind === 'home' && !redirect} />
@@ -108,18 +163,23 @@ export function Shell({ location, neutral = null }) {
             <RoomLink key={p.id} href={p.shell.room} label={p.label} active={room.product?.id === p.id} />
           ))}
         </nav>
+        {roomStatus && <RoomStatus status={roomStatus.status} />}
         {/* The seat is always clay; both scope attributes ride together, keyed on the pair. */}
         <div className="wm-head-seat" data-brand="clay" data-theme={theme}>
-          <AccountSeat
-            user={user}
-            status={status}
-            size={30}
-            display="avatar"
-            onSignIn={openSignInDoor}
-            onSettings={() => navigate('/app/settings')}
-            onConnect={() => navigate('/app/connect')}
-            onSignOut={signOut}
-          />
+          {(roomStatus || roomProduct) && status === 'ghost' ? (
+            <button type="button" className="wm-head-sign-in" onClick={openSignInDoor}>Sign in</button>
+          ) : (
+            <AccountSeat
+              user={user}
+              status={status}
+              size={30}
+              display="avatar"
+              onSignIn={openSignInDoor}
+              onSettings={() => navigate('/app/settings')}
+              onConnect={() => navigate('/app/connect')}
+              onSignOut={signOut}
+            />
+          )}
         </div>
       </header>
       <main className="wm-room">

@@ -19,8 +19,10 @@ const entry = `
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { SyncSession } from '/src/products/roadmap/sync/SyncSession.js';
+import { SyncStore } from '/src/products/roadmap/sync/SyncStore.js';
 import { SkillTreeView } from '/src/products/roadmap/SkillTreeView.jsx';
 import { Shell } from '/src/shell/chrome/Shell.jsx';
+import { getRoomStatus } from '/src/shell/roomStatus.js';
 import '/src/styles/fonts.js';
 import '/src/styles/global.css';
 const params = new URLSearchParams(location.search);
@@ -33,11 +35,25 @@ if (params.has('legend')) {
   window.fixture.kinds = [{ id: 'build', hue: 'terracotta', label: 'Build' }, { id: 'learn', hue: 'olive', label: 'Learn' }];
   window.fixture.nodes[1].color = 'olive';
 }
-SyncSession.prototype.start = function () {
-  this.store = { save: () => Promise.resolve() };
+SyncSession.prototype.start = async function () {
+  this.store = new SyncStore();
+  this.scheduleReconnect = () => {};
+  this.forceReconnect = () => { window.reconnects = (window.reconnects ?? 0) + 1; };
   this.registry = null;
   this.seed(window.fixture);
   for (const node of window.fixture.nodes) if (node.status === 'complete') this.markProgress(node.id, 'complete');
+  this.phase = 'live';
+  this.ackedServerVector = this.lattice.frontier();
+  this.ackedProgressVector = this.progress.join(this.progress.toFrame());
+  window.serverTree = this.lattice.toFrame();
+  window.serverProgress = this.progress.toFrame();
+  this.receiveState({ ...window.serverTree, seq: 1 });
+  this.receiveProgressGraft(window.serverProgress);
+  this.ready = false;
+  await this.persistNow();
+  this.ready = true;
+  this.emitTree();
+  this.emitStatus();
   window.session = this;
 };
 window.events = [];
@@ -61,6 +77,7 @@ if (params.has('crash')) {
     }
   };
 }
+window.roomStatus = getRoomStatus;
 const props = { treeId: 't_sail', demo: params.has('demo') };
 const content = params.has('shell')
   ? React.createElement(Shell, { location: { pathname: '/app', hash: location.hash, search: location.search }, neutral: { Component: SkillTreeView, props } })
@@ -88,20 +105,31 @@ export class SkillTreeScene {
     };
     this.announceCeremony = (message, options) => { window.ceremonies.push({ message, action: options?.action?.label ?? null }); };
     this.select = (id) => options.onNodePick(id);
+    this.setLongPress = (handler) => { window.longPress = handler; };
+    this.setEditTap = (handler) => { window.editTap = handler; };
     window.scene = new Proxy(this, { get(target, property) { return property in target ? target[property] : () => {}; } });
     return window.scene;
   }
 }
 `;
 const auth = `
+import { useSyncExternalStore } from 'react';
 const owner = new URLSearchParams(location.search).get('role') === 'owner';
-const account = owner ? { id: 'u_fixture' } : null;
-const refresh = async () => {};
-export const useAuth = () => ({ status: owner ? 'signed-in' : 'ghost', account, refresh });
+const account = { id: 'u_fixture' };
+const user = { name: 'Ada' };
+const refresh = async () => null;
+let status = owner ? 'signed-in' : 'ghost';
+const listeners = new Set();
+const subscribe = (handler) => { listeners.add(handler); return () => listeners.delete(handler); };
+window.setFixtureAuth = (next) => { status = next; for (const listener of listeners) listener(); };
+export const useAuth = () => {
+  const current = useSyncExternalStore(subscribe, () => status);
+  return { status: current, user: current === 'signed-in' ? user : null, account: current === 'signed-in' ? account : null, refresh };
+};
 `;
-
 export let origin;
 let server, browser, ready;
+let firstPage = true;
 
 export function startRoadmapHost(concern) {
   ready = (async () => {
@@ -120,9 +148,9 @@ export function startRoadmapHost(concern) {
           if (id === '\0host-entry') return entry;
           if (id === '\0host-scene') return scene;
           if (id === '\0host-auth') return auth;
-          if (id === '\0host-signin') return 'export const useSignInDoor = () => () => { window.signInOpened = (window.signInOpened ?? 0) + 1; }; export const useSignInDoorHost = () => () => {};';
+          if (id === '\0host-signin') return 'const open = () => { window.signInOpened = (window.signInOpened ?? 0) + 1; }; export const useSignInDoor = () => open; export const useSignInDoorHost = () => () => {};';
           if (id === '\0host-events') return beacon;
-          if (id === '\0host-issues') return 'export function captureError(product, operation, stack) { window.issues.push({ operation, stack: !!stack }); }';
+          if (id === '\0host-issues') return 'export function captureError(product, operation, stack, route, tags) { window.issues.push({ operation, stack: !!stack, ...(tags ? { tags } : {}) }); }';
         },
         configureServer(server) {
           server.middlewares.use('/roadmap-host-test', (request, response) => {
@@ -150,10 +178,12 @@ export function hostTest(name, run) {
   });
 }
 
-export async function openHost({ width = 1440, height = 1000, role = 'owner', gate = 'open', surface = 'tree', milestone = false, single = false, crash = false, demo = false, clipboardRefused = false, large = false, empty = false, shell = false, legend = false } = {}) {
+export async function openHost({ width = 1440, height = 1000, role = 'owner', gate = 'open', surface = 'tree', milestone = false, single = false, crash = false, demo = false, clipboardRefused = false, large = false, empty = false, shell = false, legend = false, fixedClock = false, touch = false } = {}) {
   await ready;
-  const page = await browser.newPage({ viewport: { width, height }, reducedMotion: 'reduce' });
-  page.setDefaultTimeout(5000);
+  const page = await browser.newPage({ viewport: { width, height }, reducedMotion: 'reduce', hasTouch: touch });
+  page.setDefaultTimeout(firstPage ? 15000 : 5000);
+  firstPage = false;
+
   const errors = [];
   const { fail } = runningTest.getStore();
   const report = (message) => {
@@ -193,5 +223,10 @@ export async function openHost({ width = 1440, height = 1000, role = 'owner', ga
   await page.goto(`${origin}/roadmap-host-test?${params}#/app/t_sail`);
   await page.waitForFunction(() => !!window.session?.ready);
   if (gate === 'open' && !crash && !demo) await page.locator('.st-roadmap-progress').waitFor();
+  if (role === 'reader' && gate === 'open' && surface === 'board') await page.getByRole('button', { name: 'Board', exact: true }).click();
+  if (fixedClock) {
+    await page.clock.install({ time: new Date('2026-11-03T11:59:00Z') });
+    await page.clock.pauseAt(new Date('2026-11-03T12:00:00Z'));
+  }
   return { page, errors };
 }

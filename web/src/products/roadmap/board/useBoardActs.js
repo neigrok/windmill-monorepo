@@ -8,7 +8,7 @@ import { BoardQuery } from './Board.js';
 export class BoardComposer {
   constructor({ gate, active, owner, view = 'board', detailId, composer, acts, onOpen }) {
     this.available = gate && owner && (active || view === 'tree');
-    this.editable = gate && active && owner && view === 'board';
+    this.editable = this.available && detailId != null;
     this.view = view;
     this.detailId = detailId;
     this.composer = composer;
@@ -56,7 +56,7 @@ export class BoardActs {
     }
     let receipt;
     try {
-      receipt = c.session.dispatch({ kind: 'BulkRecolor', nodeIds: selection.ids, color: hue }, { captureFailures: true });
+      receipt = c.session.dispatch({ kind: 'BulkRecolor', nodeIds: selection.ids, color: hue });
     } catch (error) {
       c.report('roadmap-board-recolor', error);
       return { ok: false };
@@ -65,7 +65,7 @@ export class BoardActs {
     const outcome = recolorOutcome(selection.ids);
     c.showToast(outcome.message, {
       surface: 'board', act: 'recolor', reveal: null, holdMs: 6000,
-      action: { label: LABELS.undo, run: () => {
+      action: { label: LABELS.undo, receipt: true, run: () => {
         const current = this.collaborators;
         try {
           current.onQuiet();
@@ -82,7 +82,7 @@ export class BoardActs {
 
   edit(request) {
     const c = this.collaborators;
-    if (!c.active || !c.owner || !c.tree) return { ok: false };
+    if ((!c.active && !c.graphActive) || !c.owner || !c.tree) return { ok: false };
     const tree = this.held ? this.held.projected(c.tree) : c.tree;
     if (!tree.nodesById.has(request.id)) return { ok: false };
     const gesture = editGesture(tree, request);
@@ -95,7 +95,7 @@ export class BoardActs {
     let receipt;
     try {
       c.onQuiet();
-      receipt = c.session.dispatch(gesture, { captureFailures: true });
+      receipt = c.session.dispatch(gesture);
     } catch (error) {
       c.report('roadmap-board-edit', error);
       return { ok: false };
@@ -156,7 +156,7 @@ export class BoardActs {
       const nextTree = new SkillTree({ id: tree.id, title: tree.title, author: tree.author,
         nodes: [...tree.nodes, { ...request, prerequisites: [...request.prerequisites] }] });
       outcome = creationOutcome(nextTree, c.progress, graph ? new BoardQuery() : c.query, request.id);
-      receipt = c.session.dispatch({ kind: 'CreateNode', ...request }, { captureFailures: true });
+      receipt = c.session.dispatch({ kind: 'CreateNode', ...request });
     } catch (error) {
       c.report('roadmap-board-create', error);
       return { ok: false };
@@ -168,7 +168,7 @@ export class BoardActs {
     c.showToast(outcome.message, {
       surface: graph ? 'graph' : 'board', act: 'create', reveal: outcome.reveal, holdMs: 6000,
       ...(graph ? { focusTarget: c.graphFocusTarget } : {}),
-      action: { label: LABELS.undo, run: () => {
+      action: { label: LABELS.undo, receipt: true, run: () => {
         const current = this.collaborators;
         try {
           if (!c.session.revert(receipt)) return;
@@ -189,22 +189,28 @@ export class BoardActs {
   }
 
   deletePrompt(step) {
-    if (step === 'confirm' || step === 'cancel') this.collaborators.track('roadmap_board_delete', { step });
+    if (step !== 'confirm' && step !== 'cancel') return;
+    const c = this.collaborators;
+    const view = c.active ? 'board' : 'graph';
+    c.track('roadmap_board_delete', { step, view });
   }
 
   delete(ids, door = 'menu') {
     const c = this.collaborators;
     const selected = [...new Set(ids)];
-    if (!c.active || !c.owner || !c.tree || !['menu', 'key', 'bulk'].includes(door)) return false;
+    if ((!c.active && !c.graphActive) || !c.owner || !c.tree || !['menu', 'key', 'bulk'].includes(door)) return false;
+    const graph = !c.active && c.graphActive;
+    if (graph && door !== 'menu') return false;
+    const surface = graph ? 'graph' : 'board';
     const tree = this.held ? this.held.projected(c.tree) : c.tree;
     if (!deletable(tree, selected)) return false;
     this.release('replaced');
     const held = new HeldDelete(selected, tree.nodesById.get(selected[0]).label);
     this.held = held;
-    this.pending = { held, session: c.session };
+    this.pending = { held, session: c.session, surface };
     c.onHeld(held);
     c.showToast(held.message, {
-      surface: 'board', act: 'delete', reveal: null, holdMs: 9000,
+      surface, act: 'delete', reveal: null, holdMs: 9000,
       onLeave: (via) => { if (this.held === held) this.release(via); },
       action: { label: LABELS.undo, run: () => {
         if (this.held !== held) return;
@@ -213,11 +219,17 @@ export class BoardActs {
         const current = this.collaborators;
         current.onQuiet();
         current.onHeld(null);
+        if (graph) {
+          current.onGraphReveal(selected[0]);
+          current.track('roadmap_graph_toast', { act: 'delete', step: 'undo' });
+          return;
+        }
         current.onReveal(selected[0]);
         current.track('roadmap_board_undo', { act: 'delete' });
       } },
     });
-    c.track('roadmap_board_delete', { step: 'held', door });
+    if (graph) c.track('roadmap_graph_toast', { act: 'delete', step: 'shown' });
+    c.track('roadmap_board_delete', { step: 'held', door, view: surface });
     if (door === 'bulk') c.track('roadmap_board_bulk', { step: 'delete', count: countBucket(selected.length) });
     return true;
   }
@@ -225,13 +237,17 @@ export class BoardActs {
   release(via = 'left') {
     const pending = this.pending;
     if (!pending) return;
+    if (pending.session?.rebaselining) {
+      pending.releaseVia = via;
+      return;
+    }
     this.pending = null;
     this.held = null;
     const c = this.collaborators;
     try {
       if (!pending.session) throw new Error('Missing Board session');
-      const receipt = pending.session.dispatch({ kind: 'BulkDelete', nodeIds: pending.held.ids, retireIncidentEdges: true }, { captureFailures: true });
-      if (receipt) c.track('roadmap_board_delete', { step: 'sent', via });
+      const receipt = pending.session.dispatch({ kind: 'BulkDelete', nodeIds: pending.held.ids });
+      if (receipt) c.track('roadmap_board_delete', { step: 'sent', via, view: pending.surface });
       if (!receipt) c.onQuiet();
     } catch (error) {
       c.onQuiet();
@@ -260,11 +276,25 @@ export function useBoardActs(collaborators) {
   if (!controller.current) controller.current = new BoardActs(args);
   controller.current.update(args);
   const acts = controller.current;
+  const receiptRef = useRef({ session: collaborators.session, version: collaborators.receiptVersion });
   useEffect(() => {
-    if (collaborators.active && collaborators.owner) return;
+    const previous = receiptRef.current;
+    receiptRef.current = { session: collaborators.session, version: collaborators.receiptVersion };
+    if (previous.session !== collaborators.session || previous.version == null || collaborators.receiptVersion <= previous.version) return;
+    acts.collaborators.dismissInvalidatedToast?.();
+  }, [acts, collaborators.session, collaborators.receiptVersion]);
+  useEffect(() => {
+    if (collaborators.session?.ready && acts.pending?.releaseVia) acts.release(acts.pending.releaseVia);
+  }, [acts, collaborators.session, collaborators.syncReady]);
+  useEffect(() => {
+    const surface = collaborators.active ? 'board' : collaborators.graphActive ? 'graph' : null;
+    if (collaborators.owner && surface && (!acts.pending || acts.pending.surface === surface)) {
+      if (!collaborators.active) collaborators.clearBoardToast?.();
+      return;
+    }
     acts.release('left');
     collaborators.clearBoardToast?.();
-  }, [acts, collaborators.active, collaborators.owner]);
+  }, [acts, collaborators.active, collaborators.graphActive, collaborators.owner]);
   useEffect(() => () => acts.release('left'), [acts, collaborators.treeId]);
   useEffect(() => {
     const leave = () => {

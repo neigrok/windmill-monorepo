@@ -1,10 +1,12 @@
 import React from 'react';
 
-export function Tooltip({ children, label, side = 'top', disabled = false }) {
+export function Tooltip({ children, label, side = 'top', disabled = false, open, align = 'center' }) {
   const [show, setShow] = React.useState(false);
+  const visible = open ?? show;
+  const position = align === 'end' ? { right: 0 } : { left: '50%', transform: 'translateX(-50%)' };
   const pos = {
-    top: { bottom: '100%', left: '50%', transform: 'translateX(-50%)', marginBottom: 8 },
-    bottom: { top: '100%', left: '50%', transform: 'translateX(-50%)', marginTop: 8 },
+    top: { bottom: '100%', ...position, marginBottom: 8 },
+    bottom: { top: '100%', ...position, marginTop: 8 },
   }[side] || {};
   return (
     <span
@@ -13,8 +15,9 @@ export function Tooltip({ children, label, side = 'top', disabled = false }) {
       onMouseLeave={() => setShow(false)}
     >
       {children}
-      {show && !disabled && (
+      {visible && !disabled && (
         <span
+          role={open === undefined ? undefined : 'tooltip'}
           style={{
             position: 'absolute',
             ...pos,

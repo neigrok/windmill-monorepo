@@ -135,14 +135,14 @@ hostTest('Chromium: clipboard refusal emits no successful share beacon or link t
 hostTest('Chromium: the demo Board slash shortcut focuses the displayed demo Find field', async () => {
   const { page, errors } = await openHost({ surface: 'board', demo: true });
   try {
-    const find = page.locator('.st-demo-board-identity .st-board-find-input');
+    const find = page.locator('.st-roadmap-identity[data-role="demo"] .st-board-find-input');
     await find.waitFor();
     await page.locator('.st-board-card').first().focus();
     await page.keyboard.press('/');
     assert.equal(await find.evaluate((element) => document.activeElement === element), true);
     await find.fill('wind');
     assert.equal(await find.inputValue(), 'wind');
-    assert.equal(await page.locator('.st-roadmap-identity').count(), 0);
+    assert.equal(await page.locator('.st-roadmap-identity[data-role="demo"]').count(), 1);
     assert.deepEqual(errors, []);
   } finally { await page.close(); }
 });
@@ -229,3 +229,24 @@ hostTest('Chromium: Ask AI dims and covers navigation outside the real shell roo
     assert.deepEqual(errors, []);
   } finally { await page.close(); }
 });
+
+for (const width of [390, 744, 1024, 1440]) {
+  for (const gate of ['open', 'closed']) {
+    hostTest(`Chromium: Fork uses approved presentation and returns to its opener at ${width}px with gate ${gate}`, async () => {
+      const { page, errors } = await openHost({ width, role: 'reader', gate });
+      try {
+        const label = gate === 'closed' || width === 390 ? 'Fork this tree' : 'Fork';
+        const opener = page.getByRole('button', { name: label, exact: true });
+        await opener.click();
+        if (width >= 744 || gate === 'open') await page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Make it yours' }) }).waitFor();
+        else await page.getByRole('heading', { name: 'Make it yours' }).waitFor();
+        await page.keyboard.press('Escape');
+        if (width >= 744 || gate === 'open') {
+          await page.waitForFunction((label) => document.activeElement?.getAttribute('aria-label') === label || document.activeElement?.textContent?.trim() === label, label);
+          assert.equal(await opener.evaluate((element) => document.activeElement === element), true);
+        }
+        assert.deepEqual(errors, []);
+      } finally { await page.close(); }
+    });
+  }
+}

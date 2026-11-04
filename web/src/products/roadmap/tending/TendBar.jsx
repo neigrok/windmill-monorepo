@@ -2,18 +2,41 @@ import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Icon } from '../../../design-system';
 import { useDialogFocus } from '../../../design-system/feedback/Dialog.jsx';
+import { coverBeneath, useComposerViewport } from '../board/composerFocus.js';
+import { ASK_AI_PLACEHOLDER, ROADMAP_VERBS } from '../board/copy.js';
 
-export function TendBar({ variant = 'phone', placeholder = 'Tell the tree what to change…', examples = [], working, onSubmit, onDismiss, preserveOutsideFocus = false, portalTarget = null }) {
+export function TendBar({
+  variant = 'phone',
+  presentation = null,
+  topInset = 0,
+  placeholder = ASK_AI_PLACEHOLDER.wide,
+  examples = [],
+  working,
+  onSubmit,
+  onDismiss,
+  preserveOutsideFocus = false,
+  portalTarget = null,
+}) {
   const [value, setValue] = useState('');
   const inputRef = useRef(null);
   const desktop = variant === 'desktop';
+  const docked = presentation === 'docked';
+  const modal = presentation !== null;
+  const managesFocus = modal || (desktop && preserveOutsideFocus);
+  const formStyle = formStyles[presentation ?? variant];
   const formRef = useRef(null);
-  useDialogFocus({ open: desktop && preserveOutsideFocus, cardRef: formRef, onClose: onDismiss, preserveOutsideFocus });
+  const layerRef = useRef(null);
 
-  // Desktop takes focus on open; the phone bar must not raise the keyboard until tapped.
   useEffect(() => {
-    if (desktop && !working) inputRef.current?.focus();
-  }, [desktop, working]);
+    if (!modal || !layerRef.current) return undefined;
+    return coverBeneath(layerRef.current);
+  }, [modal]);
+  const dialogFocus = useDialogFocus({ open: managesFocus, cardRef: formRef, onClose: onDismiss, preserveOutsideFocus });
+
+  // The inline phone lane waits for a tap; overlays and the docked bar take focus when opened.
+  useEffect(() => {
+    if ((desktop || modal) && !working) inputRef.current?.focus();
+  }, [desktop, modal, working]);
 
   const submit = (event) => {
     event.preventDefault();
@@ -21,13 +44,17 @@ export function TendBar({ variant = 'phone', placeholder = 'Tell the tree what t
     if (!prompt || working) return;
     onSubmit(prompt);
     setValue('');
+    if (docked) onDismiss?.();
   };
 
   const starters = !working && !value && examples.length > 0 && (
     <div style={exampleRow}>
       {examples.map((example) => (
         <button key={example} type="button" style={exampleChip}
-          onClick={() => { setValue(example); inputRef.current?.focus(); }}>
+          onClick={() => {
+            setValue(example);
+            inputRef.current?.focus();
+          }}>
           {example}
         </button>
       ))}
@@ -37,10 +64,16 @@ export function TendBar({ variant = 'phone', placeholder = 'Tell the tree what t
   const bar = (
     <form
       ref={formRef}
-      tabIndex={preserveOutsideFocus ? -1 : undefined}
+      role={modal ? 'dialog' : undefined}
+      aria-modal={modal ? true : undefined}
+      aria-label={modal ? ROADMAP_VERBS.askAI : undefined}
+      tabIndex={modal || preserveOutsideFocus ? -1 : undefined}
       onSubmit={submit}
-      onKeyDown={(event) => { if (event.key === 'Escape') onDismiss?.(); }}
-      style={desktop ? deskForm : phoneForm}
+      onKeyDown={(event) => {
+        dialogFocus(event);
+        if (event.key === 'Escape' && !managesFocus) onDismiss?.();
+      }}
+      style={formStyle}
     >
       {starters}
       <div style={shell}>
@@ -68,16 +101,41 @@ export function TendBar({ variant = 'phone', placeholder = 'Tell the tree what t
     </form>
   );
 
-  if (!desktop) return bar;
-  const overlay = (
-    <div className="st-tend-overlay" style={portalTarget ? { ...scrim, position: 'fixed' } : scrim} onMouseDown={(event) => { if (event.target === event.currentTarget) onDismiss?.(); }}>
-      {bar}
-    </div>
-  );
+  if (!desktop && !modal) return bar;
+  const overlayStyle = {
+    ...scrim,
+    position: portalTarget || docked ? 'fixed' : 'absolute',
+  };
+  if (modal) {
+    Object.assign(overlayStyle, {
+      background: 'var(--surface-overlay)',
+      paddingTop: docked ? 0 : topInset,
+      alignItems: docked ? 'flex-end' : 'flex-start',
+      paddingBottom: docked ? 12 : 0,
+      boxSizing: 'border-box',
+    });
+  }
+  const dismissScrim = (event) => {
+    if (event.target === event.currentTarget) onDismiss?.();
+  };
+  const overlayProps = {
+    className: 'st-tend-overlay',
+    'data-presentation': presentation ?? undefined,
+    style: overlayStyle,
+    onClick: modal ? dismissScrim : undefined,
+    onMouseDown: modal ? undefined : dismissScrim,
+    children: bar,
+  };
+  const overlay = docked
+    ? <DockedLayer layerRef={layerRef} {...overlayProps} />
+    : <div ref={layerRef} {...overlayProps} />;
   return portalTarget ? createPortal(overlay, portalTarget) : overlay;
 }
 
-export default TendBar;
+function DockedLayer({ layerRef, style, ...props }) {
+  const viewport = useComposerViewport(true);
+  return <div ref={layerRef} {...props} style={{ ...style, ...viewport.style }} />;
+}
 
 const shell = {
   display: 'flex', alignItems: 'center', gap: 8, width: '100%',
@@ -103,12 +161,17 @@ const send = {
   border: 'none', borderRadius: 'var(--radius-full)', background: 'var(--color-brand)', color: 'var(--text-on-accent)',
   cursor: 'pointer', transition: 'opacity var(--duration-fast) var(--ease-standard)',
 };
-const phoneForm = { width: '100%' }; // the lane places it
 const scrim = {
   position: 'absolute', inset: 0, zIndex: 30, display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
   paddingTop: '18vh', background: 'rgba(33,27,19,.14)', pointerEvents: 'auto',
 };
 const deskForm = { width: 'min(560px, calc(100vw - 48px))' };
+const formStyles = {
+  phone: { width: '100%' },
+  desktop: deskForm,
+  overlay: deskForm,
+  docked: { width: 'calc(100% - 24px)' },
+};
 const exampleRow = { display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 };
 const exampleChip = {
   display: 'inline-flex', alignItems: 'center', height: 30, padding: '0 12px',

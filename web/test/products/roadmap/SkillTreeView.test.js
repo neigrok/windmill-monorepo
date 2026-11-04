@@ -8,6 +8,9 @@ import { BoardComposer } from '../../../src/products/roadmap/board/useBoardActs.
 import { SkillTree } from '../../../src/products/roadmap/model/SkillTree.js';
 import { BoardQuery } from '../../../src/products/roadmap/board/Board.js';
 import { advanceProgress, progressChanges } from '../../../src/products/roadmap/model/progress.js';
+import { useEffect, useState } from 'react';
+import { renderHook } from '../gym/harness.mjs';
+import { deriveSyncStatus, OFFLINE_GRACE_MS, SAVING_DELAY_MS, SAVED_HOLD_MS } from '../../../src/products/roadmap/sync/status.js';
 import { completedToast, LABELS, LINK_COPIED } from '../../../src/products/roadmap/board/copy.js';
 import { boardKey, graphOnlyKey } from '../../../src/products/roadmap/shortcuts/shortcutMap.js';
 
@@ -27,12 +30,22 @@ function collectHandlers(code) {
       const callback = node.init.arguments[0];
       handlers.set(node.id.name, code.slice(callback.start, callback.end));
     }
-    if (node.type === 'FunctionDeclaration' && node.id.name === 'completeStep') {
+    if (node.type === 'FunctionDeclaration' && ['completeStep', 'bulkMarkDone', 'useRoadmapSyncStatus'].includes(node.id.name)) {
       identityHandlers.set(node.id.name, code.slice(node.start, node.end));
     }
-    if (node.type === 'VariableDeclarator' && ['onIdentityQuery', 'shareFromRow', 'exportFromRow', 'undoGraphToast', 'handleSheetJump'].includes(node.id.name)) {
+    if (node.type === 'VariableDeclarator' && ['onIdentityQuery', 'shareFromRow', 'exportFromRow', 'undoGraphToast', 'handleSheetJump', 'discardSync', 'openRowActivity', 'openActivityStep'].includes(node.id.name)) {
       const callback = node.init.arguments[0];
       identityHandlers.set(node.id.name, code.slice(callback.start, callback.end));
+    }
+    if (node.type === 'Property' && node.key.name === 'dismissInvalidatedToast') {
+      identityHandlers.set('dismissInvalidatedToast', code.slice(node.value.start, node.value.end));
+    }
+    if (node.type === 'CallExpression' && node.callee.property?.name === 'subscribeRefusals') {
+      const callback = node.arguments[0];
+      identityHandlers.set('reportRefusal', code.slice(callback.start, callback.end));
+    }
+    if (node.type === 'CallExpression' && node.callee.name === 'useRoadmapSyncStatus') {
+      identityHandlers.set('syncStatusEnabled', code.slice(node.arguments[1].start, node.arguments[1].end));
     }
     if (node.type === 'CallExpression' && node.callee.name === 'useEffect') {
       const callback = node.arguments[0];
@@ -54,10 +67,11 @@ const identitySource = await readFile(new URL('../../../src/products/roadmap/use
 collectHandlers(identitySource);
 assert.deepEqual([...handlers.keys()].sort(), ['newStepFromBoard', 'onEditorKey', 'onPaste']);
 
-function host({ gate = true, coveringPage = false, modal = false, pasteComposer = false, typing = false } = {}) {
+function host({ gate = true, coveringPage = false, modal = false, pasteComposer = false, typing = false, activityEnabled = true } = {}) {
   const calls = [];
   const scope = {
     BOARD_OPEN: gate,
+    activityActsRef: { current: { enabled: activityEnabled, open: (door) => calls.push(['activity', door]) } },
     keyboardCovered: () => coveringPage || modal || pasteComposer,
     boardKey,
     graphOnlyKey,
@@ -203,7 +217,6 @@ test('create composers remain visible without a detail but cannot write through 
   composer.openEdit(null);
   assert.deepEqual(composer.saveEdit({ id: 'wind' }), { ok: false });
 });
-
 
 test('the Graph create verb stamps its view and is unavailable outside the owner identity', () => {
   for (const owner of [false, true]) {
@@ -368,7 +381,6 @@ test('Export uses displayed nodes through a held deletion and reports unexpected
   }
 });
 
-
 test('Graph completion Undo reports a restore failure under its own operation', () => {
   const error = new Error('restore failed');
   const host = completionHost({ restoreError: error });
@@ -397,7 +409,6 @@ test('Export without a projection or displayed tree reports a failed outcome wit
   }
 });
 
-
 test('Graph-toast Undo uses its captured visible origin, otherwise the pressed view switch', () => {
   for (const kind of ['connected', 'removed', 'covered', 'body', 'nonfocusable']) {
     const calls = [];
@@ -425,6 +436,92 @@ test('Graph-toast Undo uses its captured visible origin, otherwise the pressed v
     const focus = { connected: ['origin'], nonfocusable: ['origin', 'pressed'] }[kind] ?? ['pressed'];
     assert.deepEqual(calls, ['undo', 'dismiss', ...focus]);
   }
+});
+
+function syncClock() {
+  let now = 1000;
+  let key = 0;
+  const timers = new Map();
+  return {
+    now: () => now,
+    setTimeout: (run, delay) => { timers.set(++key, { run, at: now + delay }); return key; },
+    clearTimeout: (id) => timers.delete(id),
+    advance: (ms) => {
+      const end = now + ms;
+      while (true) {
+        const next = [...timers].sort((a, b) => a[1].at - b[1].at)[0];
+        if (!next || next[1].at > end) break;
+        timers.delete(next[0]);
+        now = next[1].at;
+        next[1].run();
+      }
+      now = end;
+    },
+    count: () => timers.size,
+  };
+}
+
+function statusSession(overrides = {}) {
+  let snapshot = Object.freeze({ phase: 'live', online: true, structurePending: 0, progressPending: 0,
+    structureInFlight: 0, progressInFlight: 0, refused: null, receiptVersion: 0, ...overrides });
+  const listeners = new Set();
+  return {
+    statusSnapshot: () => snapshot,
+    subscribeStatus: (handler) => { listeners.add(handler); handler(snapshot); return () => listeners.delete(handler); },
+    change: (next) => { snapshot = Object.freeze({ ...snapshot, ...next }); for (const listener of listeners) listener(snapshot); },
+    count: () => listeners.size,
+  };
+}
+
+const syncHook = runInNewContext(`(${identityHandlers.get('useRoadmapSyncStatus')})`, {
+  useEffect, useState, deriveSyncStatus, OFFLINE_GRACE_MS, SAVING_DELAY_MS, SAVED_HOLD_MS,
+});
+
+test('host sync timing delays Saving, holds Saved, and cleans up every clock and subscription', (t) => {
+  const clock = syncClock();
+  const session = statusSession();
+  const hook = renderHook(t, () => syncHook(session, true, clock));
+  assert.equal(hook.tree.state, null);
+  session.change({ structurePending: 1 });
+  clock.advance(SAVING_DELAY_MS - 1);
+  assert.equal(hook.tree.state, null);
+  clock.advance(1);
+  assert.equal(hook.tree.state, 'saving');
+  session.change({ structurePending: 0 });
+  assert.equal(hook.tree.state, 'saved');
+  clock.advance(SAVED_HOLD_MS - 1);
+  assert.equal(hook.tree.state, 'saved');
+  clock.advance(1);
+  assert.equal(hook.tree.state, null);
+  session.change({ phase: 'offline' });
+  clock.advance(OFFLINE_GRACE_MS - 1);
+  assert.equal(hook.tree.state, null);
+  clock.advance(1);
+  assert.equal(hook.tree.state, 'offline');
+  hook.unmount();
+  assert.deepEqual([session.count(), clock.count()], [0, 0]);
+});
+
+test('host sync refuses stale session readings, fast acks never flash Saving, and a disabled host subscribes to nothing', (t) => {
+  const clock = syncClock();
+  const first = statusSession();
+  const second = statusSession({ online: false });
+  let session = first;
+  let enabled = true;
+  const hook = renderHook(t, () => syncHook(session, enabled, clock));
+  first.change({ progressPending: 1 });
+  clock.advance(SAVING_DELAY_MS - 1);
+  first.change({ progressPending: 0 });
+  assert.equal(hook.tree.state, 'saved');
+  session = second;
+  hook.redraw();
+  assert.equal(hook.tree.snapshot, second.statusSnapshot());
+  assert.equal(hook.tree.state, 'offline');
+  assert.deepEqual([first.count(), second.count()], [0, 1]);
+  enabled = false;
+  hook.redraw();
+  assert.deepEqual({ ...hook.tree }, { snapshot: null, state: null });
+  assert.deepEqual([first.count(), second.count(), clock.count()], [0, 0, 0]);
 });
 
 test('Graph reveal waits for the selected step model and panel insets, while a repeated selection reveals immediately', () => {
@@ -462,7 +559,6 @@ test('Graph reveal waits for the selected step model and panel insets, while a r
   assert.equal(firstFrameRef.current, null);
 });
 
-
 test('closed identity gate keeps selection and model changes out of initial camera framing dependencies', () => {
   const scene = {};
   const insets = {};
@@ -473,4 +569,154 @@ test('closed identity gate keeps selection and model changes out of initial came
   assert.deepEqual(dependencies(false, 'dock', {}), [scene, insets, null, null]);
   const model = {};
   assert.deepEqual(dependencies(true, 'wind', model), [scene, insets, 'wind', model]);
+});
+
+test('host reports discard only after the session confirms success', async () => {
+  for (const result of [false, true]) {
+    const events = [];
+    const quiet = [];
+    let finish;
+    const discard = runInNewContext(`(${identityHandlers.get('discardSync')})`, {
+      refused: { lane: 'structure' }, refusalCode: 'server-error',
+      syncSession: { discardPending: true, discard: () => new Promise((resolve) => { finish = resolve; }) },
+      setBoardQuiet: (update) => quiet.push(update(0)),
+      track: (name, props) => events.push([name, { ...props }]),
+    });
+    const pending = discard();
+    assert.deepEqual(quiet, [1]);
+    assert.deepEqual(events, []);
+    finish(result);
+    await pending;
+    assert.deepEqual(events, result ? [['roadmap_sync_refused', { step: 'discard', lane: 'structure', code: 'server-error' }]] : []);
+  }
+});
+
+test('host invalidates only receipt-backed Undo, preserving progress and held-delete toasts', () => {
+  for (const [act, receipt] of [['create', true], ['recolor', true], ['complete', false], ['delete', false]]) {
+    const calls = [];
+    const dismiss = runInNewContext(`(${identityHandlers.get('dismissInvalidatedToast')})`, {
+      boardToastRef: { current: { act, action: { receipt } } }, dismissToast: () => calls.push('dismiss'),
+    });
+    dismiss();
+    assert.deepEqual(calls, receipt ? ['dismiss'] : []);
+  }
+});
+
+test('Activity uses the Board key map on either view and yields to a covering layer, typing and readers', () => {
+  const boundary = host();
+  boundary.key({ key: 'a' });
+  boundary.key({ key: 'A' });
+  assert.deepEqual(boundary.calls, ['preventDefault', ['activity', 'key'], 'preventDefault', ['activity', 'key']]);
+  for (const options of [{ coveringPage: true }, { typing: true }, { activityEnabled: false }]) {
+    const inactive = host(options);
+    inactive.key({ key: 'a' });
+    assert.deepEqual(inactive.calls, []);
+  }
+});
+
+test('Activity hands desktop Board to Graph, preserves the tablet Board, and never opens the desktop feed on phones', () => {
+  for (const breakpoint of ['desktop', 'tablet', 'phone']) {
+    const calls = [];
+    const current = {
+      enabled: breakpoint !== 'phone', feedVisible: false, breakpoint, boardActive: true,
+      switchView: (view) => calls.push(['view', view]),
+      setSelectedId: (id) => calls.push(['select', id]), openActivity: () => calls.push('open'),
+    };
+    const scope = {
+      activityActsRef: { current }, switchFocusRef: { current: true },
+      closeRowActivity: () => calls.push('close'),
+      track: (name, props) => calls.push([name, { ...props }]),
+    };
+    const open = runInNewContext(`(${identityHandlers.get('openRowActivity')})`, scope);
+    open('key');
+    assert.deepEqual(calls, breakpoint === 'phone' ? [] : [
+      ['roadmap_verb', { verb: 'activity', door: 'key' }],
+      ...(breakpoint === 'desktop' ? [['view', 'tree']] : []), ['select', null], 'open',
+    ]);
+    calls.length = 0;
+    current.feedVisible = true;
+    open();
+    assert.deepEqual(calls, breakpoint === 'phone' ? [] : ['close']);
+    calls.length = 0;
+    current.enabled = false;
+    open();
+    assert.deepEqual(calls, []);
+  }
+});
+
+test('P4 reports through the refusal-only callback once per code per session without surface events or full status subscription', () => {
+  const issues = [];
+  const events = [];
+  const scope = {
+    reportedCodes: new Set(), refusalEventCode: (refusal) => refusal.code,
+    isExpectedRefusal: (refusal) => refusal.code === 'capacity',
+    captureError: (product, operation, stack, route, tags) => issues.push({ product, operation, stack: Boolean(stack), route, tags: { ...tags } }),
+    track: (name, props) => events.push([name, { ...props }]),
+  };
+  const report = runInNewContext(`(${identityHandlers.get('reportRefusal')})`, scope);
+  report({ code: 'protocol_error', episode: 1, lane: 'structure' });
+  report({ code: 'protocol_error', episode: 1, lane: 'structure' });
+  report({ code: 'protocol_error', episode: 2, lane: 'structure' });
+  assert.deepEqual(issues, [{ product: 'roadmap', operation: 'roadmap-sync-refused', stack: true, route: '#/app', tags: { code: 'protocol_error' } }]);
+  assert.deepEqual(events, []);
+  report({ code: 'capacity', episode: 3, lane: 'structure' });
+  assert.equal(issues.length, 1);
+  scope.reportedCodes = new Set();
+  report({ code: 'protocol_error', episode: 1, lane: 'structure' });
+  assert.equal(issues.length, 2);
+  assert.equal(runInNewContext(identityHandlers.get('syncStatusEnabled'), { identityActive: false }), false);
+  assert.equal(runInNewContext(identityHandlers.get('syncStatusEnabled'), { identityActive: true }), true);
+});
+
+test('discard rebaselines never announce Saving or Saved, including a slow online resubscribe', (t) => {
+  const clock = syncClock();
+  const session = statusSession({ structurePending: 2, refused: { lane: 'structure', code: 'bad-frame' } });
+  const hook = renderHook(t, () => syncHook(session, true, clock));
+  clock.advance(SAVING_DELAY_MS);
+  session.change({ rebaselining: true, structurePending: 0, refused: null, phase: 'syncing' });
+  assert.equal(hook.tree.state, null);
+  clock.advance(OFFLINE_GRACE_MS * 2);
+  assert.equal(hook.tree.state, null);
+  session.change({ rebaselining: false, phase: 'live' });
+  assert.equal(hook.tree.state, null);
+  clock.advance(SAVED_HOLD_MS);
+  assert.equal(hook.tree.state, null);
+  session.change({ structurePending: 1 });
+  clock.advance(SAVING_DELAY_MS);
+  assert.equal(hook.tree.state, 'saving');
+  session.change({ structurePending: 0 });
+  assert.equal(hook.tree.state, 'saved');
+});
+
+test('Graph bulk completion is one progress gesture with the gate open and preserves legacy writes when closed', () => {
+  for (const gate of [true, false]) {
+    const calls = [];
+    const targets = ['wind', 'dock'];
+    const bulk = runInNewContext(`(${identityHandlers.get('bulkMarkDone')})`, {
+      BOARD_OPEN: gate, selectedIdsRef: { current: new Set(targets) },
+      completed: new Set(), completedAt: {}, tree: {}, nodesById: new Map(),
+      markDoneTargets: () => targets,
+      advanceProgress,
+      setCompleted() {}, setCompletedAt() {}, witnessProgress() {},
+      pushProgress: (ids, status) => calls.push([ids, status]),
+      emit() {}, progressChanges: () => ({ unlocked: [] }), milestoneOffer: () => null,
+    });
+    bulk();
+    assert.deepEqual(calls, gate ? [[targets, 'complete']] : [['wind', 'complete'], ['dock', 'complete']]);
+  }
+});
+
+test('a real pending progress gesture still shows Saving during a structure rebaseline', (t) => {
+  const clock = syncClock();
+  const session = statusSession({ structurePending: 2, progressPending: 1, refused: { lane: 'structure', code: 'bad-frame' } });
+  const hook = renderHook(t, () => syncHook(session, true, clock));
+  session.change({ rebaselining: true, structurePending: 0, refused: null, phase: 'syncing' });
+  clock.advance(SAVING_DELAY_MS);
+  assert.equal(hook.tree.state, 'saving');
+  clock.advance(OFFLINE_GRACE_MS * 2);
+  assert.equal(hook.tree.state, 'saving');
+  session.change({ progressPending: 0 });
+  assert.equal(hook.tree.state, null);
+  session.change({ rebaselining: false, phase: 'live' });
+  assert.equal(hook.tree.state, null);
 });

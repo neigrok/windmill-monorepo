@@ -2595,75 +2595,32 @@
   }
 
   .st-toast.st-toast--graph {
+    top: auto;
     left: 50%;
     width: auto;
     max-width: calc(100% - 56px);
   }
 
-  .st-toast.st-toast--graph,
-  .st-graph-toast--phone.st-graph-toast--sheet .st-board-toast {
-    top: var(--graph-toast-top);
-    bottom: auto;
-  }
-}
-
-.st-demo-board-identity {
-  position: absolute;
-  inset: 0 0 auto;
-  z-index: 24;
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-height: 64px;
-  padding: calc(var(--content-safe-area-top, max(env(safe-area-inset-top, 0px), 44px)) + 8px) var(--space-6) 8px;
-}
-
-.st-demo-board-identity-title {
-  min-width: 0;
-  max-width: 480px;
-  margin: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 24px;
-  line-height: 32px;
-  color: var(--text-primary);
-}
-
-.st-demo-board-identity-progress {
-  flex-shrink: 0;
-  font-family: var(--font-body);
-  font-weight: 700;
-  font-size: 14px;
-  line-height: 20px;
-  color: var(--text-secondary);
-}
-
-.st-demo-board-identity.st-demo-board-identity--phone {
-  min-height: 60px;
-  padding-right: var(--space-4);
-  padding-left: var(--space-4);
-}
-
-.st-demo-board-identity--phone .st-demo-board-identity-title {
-  flex: 1;
-  max-width: none;
-  font-size: 20px;
-}
-
-.st-demo-board-identity--phone .st-demo-board-identity-progress {
-  font-weight: 600;
-  font-size: 12px;
-  line-height: 18px;
 }
 
 .st-roadmap-device-nudge {
   position: absolute;
-  left: calc(env(safe-area-inset-left, 0px) + 16px);
-  right: calc(env(safe-area-inset-right, 0px) + 16px);
+  left: env(safe-area-inset-left, 0px);
+  right: env(safe-area-inset-right, 0px);
   pointer-events: auto;
+}
+
+.st-graph-refusal {
+  position: absolute;
+  left: var(--space-6);
+  right: var(--space-6);
+  z-index: 24;
+}
+
+.st-graph-refusal.st-graph-refusal--phone {
+  left: var(--space-4);
+  right: var(--space-4);
+  z-index: 41;
 }
 
 @media (min-width: 744px) {
@@ -2675,4 +2632,205 @@
 .st-root--board-enabled .st-detail-panel--tablet button:focus-visible {
   outline: 2px solid var(--color-brand);
   outline-offset: 2px;
+}
+
+.st-graph-step-bar {
+  position: absolute;
+  inset: auto 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 16px calc(24px + env(safe-area-inset-bottom, 0px));
+  background: var(--surface-canvas);
+  pointer-events: auto;
+  animation: wm-fade-in-up var(--duration-fast) var(--ease-soft);
+}
+
+.st-graph-step-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-family: var(--font-body);
+  font-weight: 700;
+}
+
+.st-graph-step-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border: 0;
+  padding: 0;
+  background: none;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 16px;
+  line-height: 24px;
+  text-align: left;
+}
+
+button.st-graph-step-title {
+  margin: -10px 0;
+  padding: 10px 0;
+  cursor: pointer;
+}
+
+.st-graph-step-state {
+  flex: 0 0 30%;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.st-graph-step-primary {
+  width: 100%;
+  height: 56px;
+  border: 0;
+  border-radius: var(--radius-lg);
+  background: var(--color-brand);
+  color: var(--text-on-accent);
+  box-shadow: var(--shadow-sm);
+  font-family: var(--font-body);
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 27px;
+  cursor: pointer;
+}
+
+.st-graph-step-bar button:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+}
+
+.st-roadmap-activity-panel {
+  position: absolute;
+  right: 16px;
+  z-index: 23;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 320px;
+  max-height: 70%;
+  padding: 8px 8px 16px 16px;
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: 20px;
+  background: var(--surface-card);
+  box-shadow: var(--shadow-lg);
+}
+
+.st-view-layer--board .st-roadmap-activity-panel {
+  z-index: 2;
+}
+
+.st-roadmap-activity-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+
+.st-roadmap-activity-header h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.st-roadmap-activity-rows {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.st-roadmap-activity-rows .st-event {
+  height: 48px;
+  min-height: 48px;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.st-roadmap-activity-rows .st-event-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  white-space: normal;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.st-roadmap-activity-rows .st-daysep {
+  padding: 16px 0 4px;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 18px;
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--text-secondary);
+}
+
+.st-roadmap-activity-rows .st-daysep:first-child {
+  padding-top: 4px;
+}
+
+.st-roadmap-activity-rows .st-event-text b,
+.st-roadmap-activity-rows .st-event-obj {
+  color: var(--text-secondary);
+}
+
+.st-roadmap-activity-rows .st-event-obj i {
+  width: 11px;
+  height: 11px;
+}
+
+.st-roadmap-activity-rows .st-event-avatar > div {
+  border: 0 !important;
+  background: var(--surface-sunken) !important;
+  box-shadow: none !important;
+  color: var(--text-secondary) !important;
+  font-family: var(--font-body) !important;
+  font-size: 10px !important;
+  font-weight: 700 !important;
+}
+
+.st-roadmap-activity-rows .st-event-badge {
+  box-sizing: border-box;
+  right: -3px;
+  bottom: -3px;
+  border: 2px solid var(--surface-card);
+  box-shadow: none;
+}
+
+.st-roadmap-activity-rows .st-event-time {
+  margin-top: 0;
+}
+
+.st-roadmap-activity-rows .st-event--static:hover {
+  background: none;
+}
+
+.st-roadmap-activity-rows .st-daysep::before,
+.st-roadmap-activity-rows .st-daysep::after {
+  display: none;
+}
+
+.st-roadmap-activity-rows .st-activity-empty {
+  margin: 0;
+  padding: 12px 8px 0 0;
+  text-align: left;
+}
+
+.st-root--board-enabled .st-activity-live {
+  display: none;
+}
+
+@media (max-width: 743px) {
+  .st-root--board-enabled .st-graph-toast--phone .st-board-toast {
+    bottom: var(--graph-toast-bottom, 24px);
+  }
 }

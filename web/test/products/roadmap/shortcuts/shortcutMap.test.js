@@ -163,3 +163,13 @@ test('gated Graph groups move slash to Find without changing the legacy or Board
   assert.equal(visibleGroups(false, 'board', true), BOARD_SHORTCUT_GROUPS);
   assert.deepEqual(visibleGroups(true, 'board', true), visibleGroups(true, 'board', false));
 });
+
+test('boardKey gives Activity one unmodified owner-neutral key result for host capability checks', () => {
+  assert.deepEqual(['a', 'A'].map((key) => boardKey({ key })), ['activity', 'activity']);
+  for (const guard of [{ typing: true }, { covered: true }]) {
+    assert.equal(boardKey({ key: 'a' }, guard), null);
+  }
+  for (const modifier of ['metaKey', 'ctrlKey', 'altKey']) {
+    assert.equal(boardKey({ key: 'a', [modifier]: true }), null);
+  }
+});

@@ -5,6 +5,7 @@ import { readFile } from 'node:fs/promises';
 import { parse } from 'acorn';
 import { chromium } from 'playwright';
 import { createServer, transformWithEsbuild } from 'vite';
+import { withBrowserErrors } from './composerFixture.js';
 
 const CLOCK_START = new Date('2026-11-02T12:00:00Z');
 
@@ -35,6 +36,7 @@ import { useBoardActs } from '/src/products/roadmap/board/useBoardActs.js';
 import { BoardQuery } from '/src/products/roadmap/board/Board.js';
 import { SkillTree } from '/src/products/roadmap/model/SkillTree.js';
 import { SyncSession } from '/src/products/roadmap/sync/SyncSession.js';
+import { hlcText } from '/src/products/roadmap/sync/lattice.js';
 import '/src/styles/global.css';
 const root = createRoot(document.getElementById('root'));
 const initialTree = new SkillTree({ id: 'sail', title: 'Sail', nodes: [
@@ -73,11 +75,15 @@ function Room() {
   window.projectedSteps = () => session.lattice.toTreeData().nodes.map(({ id, prerequisites }) => ({ id, prerequisites }));
   window.recheckTree = () => session.emitTree();
   window.deleteLegacy = () => session.dispatch({ kind: 'DeleteNode', id: 'wind' });
+  window.loadHistoricalDelete = () => {
+    session.lattice.join({ nodes: [{ id: 'wind', deletedAt: hlcText(session.clock.tick(Date.now())) }] });
+    session.emitTree();
+  };
   const { held, acts } = useBoardActs({
     tree, treeId, active, owner, query, progress, now: Date.now,
-    session: { dispatch: (gesture, options) => {
-      window.calls.push(['dispatch', treeId, gesture, options]);
-      return session.dispatch(gesture, options);
+    session: { dispatch: (gesture) => {
+      window.calls.push(['dispatch', treeId, gesture]);
+      return session.dispatch(gesture);
     } },
     showToast,
     clearBoardToast: () => { if (boardToastRef.current) dismissToast(); },
@@ -129,25 +135,28 @@ for (const trigger of ['view', 'owner', 'roadmap', 'unmount', 'pagehide']) {
   test(`Chromium: held delete releases exactly once on ${trigger}`, async () => {
     await ready;
     const page = await browser.newPage();
+
     try {
-      await page.clock.install({ time: new Date(CLOCK_START.getTime() - 60000) });
-      await page.clock.pauseAt(CLOCK_START);
-      await page.goto(`${origin}/board-acts-test`);
-      await page.waitForFunction(() => !!window.deleteStep);
-      await page.evaluate(() => window.deleteStep());
-      await page.waitForFunction(() => document.querySelector('output').textContent === 'held');
-      assert.deepEqual(await page.evaluate(() => window.calls), [['event', 'roadmap_board_delete', { step: 'held', door: 'menu' }]]);
-      await page.evaluate((via) => window.leave(via), trigger);
-      await page.waitForFunction(() => window.calls.some(([kind]) => kind === 'dispatch'));
-      await page.clock.fastForward(10000);
-      assert.deepEqual(await page.evaluate(() => window.calls), [
-        ['event', 'roadmap_board_delete', { step: 'held', door: 'menu' }],
-        ['dispatch', 'sail', { kind: 'BulkDelete', nodeIds: ['wind'], retireIncidentEdges: true }, { captureFailures: true }],
-        ['event', 'roadmap_board_delete', { step: 'sent', via: 'left' }],
-      ]);
-      await page.evaluate(() => window.recheckTree());
-      assert.deepEqual(await page.evaluate(() => ({ masked: window.maskedWork(), offers: window.restoreOffers, steps: window.projectedSteps() })), {
-        masked: [], offers: [], steps: [{ id: 'course', prerequisites: [] }, { id: 'dock', prerequisites: ['course'] }],
+      await withBrowserErrors(page, async () => {
+        await page.clock.install({ time: new Date(CLOCK_START.getTime() - 60000) });
+        await page.clock.pauseAt(CLOCK_START);
+        await page.goto(`${origin}/board-acts-test`);
+        await page.waitForFunction(() => !!window.deleteStep);
+        await page.evaluate(() => window.deleteStep());
+        await page.waitForFunction(() => document.querySelector('output').textContent === 'held');
+        assert.deepEqual(await page.evaluate(() => window.calls), [['event', 'roadmap_board_delete', { step: 'held', door: 'menu', view: 'board' }]]);
+        await page.evaluate((via) => window.leave(via), trigger);
+        await page.waitForFunction(() => window.calls.some(([kind]) => kind === 'dispatch'));
+        await page.clock.fastForward(10000);
+        assert.deepEqual(await page.evaluate(() => window.calls), [
+          ['event', 'roadmap_board_delete', { step: 'held', door: 'menu', view: 'board' }],
+          ['dispatch', 'sail', { kind: 'BulkDelete', nodeIds: ['wind'] }],
+          ['event', 'roadmap_board_delete', { step: 'sent', via: 'left', view: 'board' }],
+        ]);
+        await page.evaluate(() => window.recheckTree());
+        assert.deepEqual(await page.evaluate(() => ({ masked: window.maskedWork(), offers: window.restoreOffers, steps: window.projectedSteps() })), {
+          masked: [], offers: [], steps: [{ id: 'course', prerequisites: [] }, { id: 'dock', prerequisites: ['course'] }],
+        });
       });
     } finally { await page.close(); }
   });
@@ -157,54 +166,76 @@ for (const undo of [false, true]) {
   test(`Chromium: real host toast holds nine seconds from BoardView entry${undo ? ' and Undo cancels send' : ''}`, async () => {
     await ready;
     const page = await browser.newPage({ reducedMotion: 'reduce' });
+
     try {
-      await page.clock.install({ time: new Date(CLOCK_START.getTime() - 60000) });
-      await page.clock.pauseAt(CLOCK_START);
-      await page.goto(`${origin}/board-acts-test`);
-      await page.waitForFunction(() => !!window.deleteStep);
-      await page.evaluate(() => window.deleteStep());
-      await page.waitForFunction(() => document.querySelector('output').textContent === 'held');
-      assert.equal(await page.locator('.st-board-toast').count(), 0);
-      await page.clock.runFor(150);
-      await page.evaluate(() => window.flush());
-      await page.waitForFunction(() => document.querySelector('[data-column="upNext"] .st-board-card-title')?.textContent === 'Leave the dock');
-      await page.clock.runFor(120);
-      await page.evaluate(() => window.flush());
-      await page.locator('.st-board-toast').waitFor({ state: 'visible' });
-      const shownAt = await page.evaluate(() => window.shownAt);
-      assert.equal(shownAt, CLOCK_START.getTime() + 270);
-      await page.clock.runFor(8999);
-      assert.deepEqual(await page.evaluate(() => window.calls), [['event', 'roadmap_board_delete', { step: 'held', door: 'menu' }]]);
-      if (undo) {
-        await page.locator('.st-board-toast-undo').evaluate((button) => button.click());
-        await page.waitForFunction(() => document.querySelector('output').textContent === 'clear');
-      }
-      await page.clock.runFor(1);
-      const outcome = undo
-        ? [['event', 'roadmap_board_undo', { act: 'delete' }]]
-        : [['dispatch', 'sail', { kind: 'BulkDelete', nodeIds: ['wind'], retireIncidentEdges: true }, { captureFailures: true }], ['event', 'roadmap_board_delete', { step: 'sent', via: 'timer' }]];
-      assert.deepEqual(await page.evaluate(() => window.calls), [['event', 'roadmap_board_delete', { step: 'held', door: 'menu' }], ...outcome]);
-      assert.deepEqual(await page.evaluate(() => [window.maskedWork(), window.restoreOffers]), [[], []]);
-      if (!undo) {
-        await page.evaluate(() => { window.leave('view'); window.recheckTree(); });
-        assert.deepEqual(await page.evaluate(() => ({ masked: window.maskedWork(), offers: window.restoreOffers, steps: window.projectedSteps() })), {
-          masked: [], offers: [], steps: [{ id: 'course', prerequisites: [] }, { id: 'dock', prerequisites: ['course'] }],
-        });
-      }
+      await withBrowserErrors(page, async () => {
+        await page.clock.install({ time: new Date(CLOCK_START.getTime() - 60000) });
+        await page.clock.pauseAt(CLOCK_START);
+        await page.goto(`${origin}/board-acts-test`);
+        await page.waitForFunction(() => !!window.deleteStep);
+        await page.evaluate(() => window.deleteStep());
+        await page.waitForFunction(() => document.querySelector('output').textContent === 'held');
+        assert.equal(await page.locator('.st-board-toast').count(), 0);
+        await page.clock.runFor(150);
+        await page.evaluate(() => window.flush());
+        await page.waitForFunction(() => document.querySelector('[data-column="upNext"] .st-board-card-title')?.textContent === 'Leave the dock');
+        await page.clock.runFor(120);
+        await page.evaluate(() => window.flush());
+        await page.locator('.st-board-toast').waitFor({ state: 'visible' });
+        const shownAt = await page.evaluate(() => window.shownAt);
+        assert.equal(shownAt, CLOCK_START.getTime() + 270);
+        await page.clock.runFor(8999);
+        assert.deepEqual(await page.evaluate(() => window.calls), [['event', 'roadmap_board_delete', { step: 'held', door: 'menu', view: 'board' }]]);
+        if (undo) {
+          await page.locator('.st-board-toast-undo').evaluate((button) => button.click());
+          await page.waitForFunction(() => document.querySelector('output').textContent === 'clear');
+        }
+        await page.clock.runFor(1);
+        const outcome = undo
+          ? [['event', 'roadmap_board_undo', { act: 'delete' }]]
+          : [['dispatch', 'sail', { kind: 'BulkDelete', nodeIds: ['wind'] }], ['event', 'roadmap_board_delete', { step: 'sent', via: 'timer', view: 'board' }]];
+        assert.deepEqual(await page.evaluate(() => window.calls), [['event', 'roadmap_board_delete', { step: 'held', door: 'menu', view: 'board' }], ...outcome]);
+        assert.deepEqual(await page.evaluate(() => [window.maskedWork(), window.restoreOffers]), [[], []]);
+        if (!undo) {
+          await page.evaluate(() => { window.leave('view'); window.recheckTree(); });
+          assert.deepEqual(await page.evaluate(() => ({ masked: window.maskedWork(), offers: window.restoreOffers, steps: window.projectedSteps() })), {
+            masked: [], offers: [], steps: [{ id: 'course', prerequisites: [] }, { id: 'dock', prerequisites: ['course'] }],
+          });
+        }
+      });
     } finally { await page.close(); }
   });
 }
 
-test('Chromium: the real host offer boundary still reports masked work from a legacy deletion', async () => {
+test('Chromium: the real host offer boundary still reports masked work from a pre-fix deletion', async () => {
   await ready;
   const page = await browser.newPage();
+
   try {
-    await page.goto(`${origin}/board-acts-test`);
-    await page.waitForFunction(() => !!window.deleteLegacy);
-    await page.evaluate(() => window.deleteLegacy());
-    assert.deepEqual(await page.evaluate(() => ({ masked: window.maskedWork(), offers: window.restoreOffers })), {
-      masked: [{ id: 'wind', label: 'Read the wind', children: ['dock'] }],
-      offers: ['1 step kept under a deleted node'],
+    await withBrowserErrors(page, async () => {
+      await page.goto(`${origin}/board-acts-test`);
+      await page.waitForFunction(() => !!window.loadHistoricalDelete);
+      await page.evaluate(() => window.loadHistoricalDelete());
+      assert.deepEqual(await page.evaluate(() => ({ masked: window.maskedWork(), offers: window.restoreOffers })), {
+        masked: [{ id: 'wind', label: 'Read the wind', children: ['dock'] }],
+        offers: ['1 step kept under a deleted node'],
+      });
+    });
+  } finally { await page.close(); }
+});
+
+test('Chromium: the real host offer boundary stays clear after a Graph or List delete', async () => {
+  await ready;
+  const page = await browser.newPage();
+
+  try {
+    await withBrowserErrors(page, async () => {
+      await page.goto(`${origin}/board-acts-test`);
+      await page.waitForFunction(() => !!window.deleteLegacy);
+      await page.evaluate(() => window.deleteLegacy());
+      assert.deepEqual(await page.evaluate(() => ({ masked: window.maskedWork(), offers: window.restoreOffers })), {
+        masked: [], offers: [],
+      });
     });
   } finally { await page.close(); }
 });

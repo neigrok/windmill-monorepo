@@ -56,10 +56,11 @@ of 2026-09-26 on its lifecycle; the entries below are where an app still differs
     discard them from this phone.* Android signs out at once and always keeps (`plat/you/YouSheet.kt`,
     `store/GymEngineSession.kt:122`); iOS asks in these words (`AppModel.signOutMessage`).
   - The web asks for journal and gym with the count, Keep and Discard (`SyncDecisions.jsx`), but on
-    sign-out or any change of account it wipes the account's roadmap trees from the browser,
+    explicit sign-out or a different account it wipes the account's roadmap trees from the browser,
     unsynced edits included, with no warning: `accountChange.js` calls each product's
     `forgetDevice`, and the roadmap's (`routes.js`) runs `forgetDeviceTrees` (`localTrees.js`),
-    which deletes every account-stamped registry row, sync blob and per-tree store.
+    which deletes every account-stamped registry row, sync blob and per-tree store. Session expiry
+    keeps the device copy and resumes syncing when the same account signs in.
   - Figma: Shell iOS 16c `2:2031` and 16e `45:3936`, Shell Android 16c `52:1053` and 16e `52:1127`;
     16d's signed-out line is *Signed out.* The first-run READ ME (`2:984`) still lists sign-out with
     unsent changes as open question 6. The web's confirmation is not drawn.
@@ -677,24 +678,46 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   the switch while loading, but not after a failed load: the Graph's load error veils the topbar, so the switch would
   lead where a pointer cannot come back from. Draw what the topbar names before the name is known, and say whether
   the switch belongs on 02.10 once the Graph's load error leaves the topbar reachable.
-- **Board · Activity, demo identity and sheet search.** With the development gate open, Activity
-  has only the A shortcut, the demo retains its existing chrome and honest byline, and the phone
-  roadmap sheet has no switcher search. G1, G11 and G17 need approved wave-8 frames before the
-  gate lifts; the orchestrator owns their design follow-ups.
-- **Board · Graph and compact-row interims.** G2 hands a Graph search to the Board while keeping
-  the query and field focus. G-F expands the drawn wide Find field into the compact row. G3 uses
-  the existing TendBar overlay from More or the phone sheet, and G4 retains the phone Graph
-  camera group under the row. These approved interims still need their dedicated drawings.
-- **Board · desktop dock beneath the row.** With the gate open, the desktop step dock starts 8px
-  below the measured identity row, so an open step never covers Share, Next, New step or More.
-  ✅ 08.11 (1440) and 08.12 (1024), light and dark, draw the gated desktop Graph with a step in the dock beneath the row. On the Board a step opens in the step modal (03.01, 05.06), not the dock.
+- **Board · Graph interims.** G2 hands a Graph search to the Board while keeping the query and
+  field focus. G4 retains the phone Graph camera group under the row and needs its dedicated drawing.
+- **Board · reader Graph title affordance.** G8-H1 makes the selected-step title open the reader's
+  read-only step page, with Fork remaining primary. The approved
+  [04.06 bar](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=377-14343)
+  has no visual tap affordance on that title. Draw the interactive title treatment.
+- **Board · filter strip at 744.** The built strip ends at y=172; 08.13 draws it ending at y=160.
+  The tablet Activity panel keeps the drawn 12px gap beneath the strip, so on the Board it stands at
+  y=184 where [08.13](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=527-48638) draws
+  y=172; on the Graph, with no strip, it stands at y=172. Reconcile the strip's padding with the frame.
+- **Board · Activity shortcut in help.** From 744px A opens Activity on both Board and Graph.
+  The Board shortcuts dialog does not list A because its approved specimen has no Activity row.
+  Draw that row before adding it to `BOARD_SHORTCUT_GROUPS`; A does nothing on phones.
+- **Board · Activity live signal.** Approved G8-A1 touch feeds have no live dot. The gate-open
+  desktop host also hides `.st-activity-live`, while the gate-closed feed retains the live dot.
+  Reconcile the shared feed treatment when the legacy chrome retires.
+- **Board · dock beneath the row.** With the gate open, the step dock from 744px starts 8px
+  below the measured identity row and clears any Graph refusal banner, so an open step never
+  covers Share, Next, New step, More or refusal actions.
+  Owner-approved ✅ 08.11 (1440) and 08.12 (1024), light and dark, draw the gated desktop Graph with a step
+  in the dock beneath the row. On the Board a step opens in the step modal (03.01, 05.06), not the dock.
 - **Board · Export and reader Share feedback.** G5 downloads this roadmap as one Markdown file
   in the paste format, with the browser download as feedback; Settings retains the all-roadmaps
   zip. G24 copies the reader's roadmap link and uses the existing *Link copied* toast. Draw these
   outcomes before replacing the approved interims.
-- **Board · device-only Graph nudge.** The phone and tablet Graph keep *Saved on this device —
-  sign in to keep it →* beneath the gated identity row. The phone camera clears this measured
-  nudge; wave 7's status slot must retain its honesty line.
+- **Board · device-only status.** The gated host carries the anonymous or lapsed line in the Shell
+  from 744px and in the tappable Device note below the identity on both phone views. The phone
+  Graph camera clears the measured note.
+- **Board · single offline notice.** Approved 03.17 shows the room's Offline signal without the global
+  notice. The global notice yields only to an explicitly offline room publication; a device-only
+  line does not hide connectivity. Rooms without an Offline publication retain the global notice.
+- **Board · mobile Shell mark.** The approved mobile Shell omits the mark. A gated room registered
+  for status keeps that layout while idle, Saving, Saved or Offline, with space reserved for the
+  longest compact status. Rooms without a publisher retain the production mark and navigation;
+  reconciling that mobile mark with the canon remains a gate-lift task.
+- **Design System · Dialog close target.** The shared `Dialog` close control is 28×28 with a 14px
+  glyph; the approved [04.03 Fork dialog](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=398-29874)
+  and the other dialog frames draw ✅ Close at 44×44 with a 20px glyph. Align the shared control and
+  title clearance in a Design System change, with screenshots of Fork, Shortcuts, Share, SignIn,
+  Feedback and SyncDecisions. Keep this correction in `Dialog`, without a Fork-specific override.
 - **Email me a link is over the CTA budget.** `web/src/shell/auth/SignInDialog.jsx` and
   `web/src/products/roadmap/ui/mobile/ForkDoor.jsx` label the submit *Email me a link*, four words
   against the 1–3-word button budget in `guidelines/text-budget.md`.

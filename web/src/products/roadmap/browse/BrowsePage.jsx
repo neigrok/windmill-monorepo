@@ -159,7 +159,8 @@ export function BrowsePage() {
 
       <ForkDoor
         open={Boolean(doorFor)}
-        tablet={breakpoint !== 'phone'}
+        presentation={breakpoint !== 'phone' ? 'dialog' : 'sheet'}
+        drawn={false}
         treeId={doorFor}
         signedIn={false}
         onClose={() => setDoorFor('')}

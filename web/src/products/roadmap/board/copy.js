@@ -37,12 +37,14 @@ export const ROADMAP_VERBS = {
   settings: 'Settings',
   keyboardShortcuts: 'Keyboard shortcuts',
   fork: 'Fork',
+  activity: 'Activity',
 };
 export const ROADMAP_SHEET = {
   title: 'Roadmap',
   yourRoadmaps: 'Your roadmaps',
   newRoadmap: 'New roadmap',
   plantedInPublic: 'Planted in public',
+  findRoadmap: 'Find a roadmap',
 };
 export const NOTHING_UP_NEXT = 'Nothing up next yet';
 
@@ -58,9 +60,11 @@ export const DISCARD_DRAFT = { title: 'Discard draft?', body: 'Your changes will
 export const FILTERED_EMPTY = { title: 'No steps match', action: 'Clear filters' };
 const CLEAR_BOTH = 'Clear both';
 export const SYNC_STATUS = { saving: 'Saving…', saved: 'Saved', offline: 'Offline · changes will sync' };
+export const SYNC_OFFLINE_SHORT = 'Offline';
 export const REFUSED_SYNC = { body: 'Couldn’t sync this change.', retry: 'Retry', discard: 'Discard change' };
 export const ANONYMOUS_OWNER = 'Saved on this device — sign in to keep it';
 export const LAPSED_SESSION = 'Signed out — saved on this device';
+export const FORK_OFFER = 'Fork this tree';
 export const DELETE_CONFIRM = { cancel: 'Cancel', delete: 'Delete' };
 export const COMPOSER = {
   title: 'New step',
@@ -377,3 +381,35 @@ export function draftLine({ step }) {
 export const WORKSPACE_EMPTY = { body: 'Add something for this step.', addNote: 'Add note' };
 export const NEW_LINK = { title: 'New link' };
 export const HISTORY_EMPTY = 'No changes yet';
+
+export const REFUSED_CAPACITY = { title: 'This roadmap is at its limit.', body: 'This change can’t sync.' };
+
+export function refusedSyncBody({ count }) {
+  if (count > 1) return `Couldn’t sync ${formatCount(count)} changes.`;
+  return REFUSED_SYNC.body;
+}
+
+export function discardChanges({ count }) {
+  if (count > 1) return `Discard ${formatCount(count)} changes`;
+  return REFUSED_SYNC.discard;
+}
+
+export function roadmapsHeading({ count }) {
+  return `${ROADMAP_SHEET.yourRoadmaps} · ${formatCount(count)}`;
+}
+
+export function roadmapMatches({ shown, total }) {
+  return `${formatCount(shown)} of ${formatCount(total)} roadmaps`;
+}
+
+export const DEMO_BYLINE = { wide: 'Windmill sample', phone: 'Sample' };
+export const ASK_AI_PLACEHOLDER = {
+  phone: 'What should change?',
+  wide: 'Tell the tree what to change…',
+  empty: 'What do you want to learn or build?',
+};
+export const OPEN_STEP = 'Open step';
+export const ACTIVITY = {
+  heading: 'Activity',
+  empty: 'No activity yet — changes you make will appear here.',
+};

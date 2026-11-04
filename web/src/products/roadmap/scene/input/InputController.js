@@ -1,9 +1,10 @@
 // Routes canvas pointer events to the active tool; the first pointer down owns the gesture until it lifts, others are ignored mid-gesture. Two touch fingers pinch; wheel and double-tap zoom never go through a tool.
 
+import { HoldGesture, HOLD_MS } from '../../input/HoldGesture.js';
+
 const DOUBLE_TAP_MS = 300;
 const DOUBLE_TAP_TOL = 32; // screen px
 const TAP_MOVE_TOL = 10; // screen px
-const LONG_PRESS_MS = 500;
 // The double-tap ladder in multiples of the camera's working zoom: the out-level is the working zoom itself.
 const DOUBLE_TAP_ZOOM_IN = 1.6;
 const DOUBLE_TAP_PIVOT = 1.3; // below -> step in, at/above -> step out
@@ -20,13 +21,13 @@ export class InputController {
     this.downPos = null;
     this.downTime = 0;
     this.lastTap = null; // { x, y, time }
+    this.hold = null;
     this.longPressTimer = null;
     this.longPressFired = false;
   }
 
   setTool(tool) {
-    clearTimeout(this.longPressTimer);
-    this.longPressFired = false;
+    this.cancelHold();
     this.tool = tool;
     this.activePointerId = null;
     this.touches.clear();
@@ -44,6 +45,7 @@ export class InputController {
   }
 
   unbind() {
+    this.cancelHold();
     this.canvas.removeEventListener('pointerdown', this.onDown);
     this.canvas.removeEventListener('pointermove', this.onMove);
     this.canvas.removeEventListener('pointerup', this.onUp);
@@ -79,9 +81,15 @@ export class InputController {
     this.downTime = performance.now();
     this.tool.onPointerDown(pos, event, pressed);
     // onLongPress returns true iff it armed multi-select; onUp then swallows the lift so the gesture never also taps.
-    this.longPressFired = false;
+    this.cancelHold();
     if (event.pointerType === 'touch' && this.context.onLongPress && pressed != null) {
-      this.longPressTimer = setTimeout(() => { this.longPressFired = this.context.onLongPress(pressed) === true; }, LONG_PRESS_MS);
+      const hold = new HoldGesture({ x: pos.x, y: pos.y, at: this.downTime, cancelAtLimit: false });
+      this.hold = hold;
+      this.longPressTimer = setTimeout(() => {
+        this.longPressTimer = null;
+        if (!hold.advance(hold.at + HOLD_MS)) return;
+        this.longPressFired = this.context.onLongPress(pressed) === true;
+      }, HOLD_MS);
     }
   };
 
@@ -90,7 +98,8 @@ export class InputController {
     if (this.touches.has(event.pointerId)) this.touches.set(event.pointerId, pos);
     if (this.pinch) { this.updatePinch(); return; }
     if (this.activePointerId === event.pointerId) {
-      if (this.downPos && Math.hypot(pos.x - this.downPos.x, pos.y - this.downPos.y) > TAP_MOVE_TOL) clearTimeout(this.longPressTimer);
+      this.hold?.move(pos.x, pos.y);
+      if (this.hold?.cancelled && !this.hold.fired) this.cancelHold();
       this.tool.onPointerDrag(pos, event);
     } else if (this.activePointerId === null) this.tool.onPointerMove(pos, event);
   };
@@ -106,17 +115,17 @@ export class InputController {
     }
 
     if (event.pointerId !== this.activePointerId) return;
-    clearTimeout(this.longPressTimer);
+    const held = this.hold?.release() === true && this.longPressFired;
+    this.cancelHold();
     if (this.canvas.hasPointerCapture(event.pointerId)) this.canvas.releasePointerCapture(event.pointerId);
     this.activePointerId = null;
     this.context.press?.(null);
     if (event.type === 'pointercancel') {
       this.tool.onPointerCancel();
-      this.longPressFired = false;
       this.lastTap = null;
       return;
     }
-    if (this.longPressFired) { this.longPressFired = false; return; } // the long-press consumed this gesture
+    if (held) return; // the long-press consumed this gesture
     const pos = this.localPos(event);
     const zoomed = this.tool.onPointerUp(pos, event) === true;
     if (zoomed) { this.lastTap = null; return; } // the tap already zoomed; no ladder step on top of it
@@ -141,8 +150,7 @@ export class InputController {
 
   // A second finger abandons the first finger’s gesture and tracks the spread + midpoint.
   beginPinch(pointerId) {
-    clearTimeout(this.longPressTimer); // a second finger is a pinch, not a hold
-    this.longPressFired = false;
+    this.cancelHold(); // a second finger is a pinch, not a hold
     if (this.activePointerId !== null) {
       this.tool.onPointerCancel();
       this.context.press?.(null);
@@ -151,6 +159,14 @@ export class InputController {
     this.canvas.setPointerCapture(pointerId);
     const [a, b] = [...this.touches.values()];
     this.pinch = { lastDist: distance(a, b), lastMid: midpoint(a, b) };
+  }
+
+  cancelHold() {
+    if (this.longPressTimer !== null) clearTimeout(this.longPressTimer);
+    this.longPressTimer = null;
+    this.hold?.cancel();
+    this.hold = null;
+    this.longPressFired = false;
   }
 
   updatePinch() {

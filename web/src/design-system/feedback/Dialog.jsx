@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { wrapTab } from './dialogFocus.js';
 
 // The gate's one rule: the end of the body has been reached when what is left below the fold is
 // within a couple of pixels — a fractional scrollTop never lands exactly on the last pixel.
@@ -6,7 +7,7 @@ export function scrolledToEnd({ scrollTop, scrollHeight, clientHeight }, slack =
   return scrollHeight - scrollTop - clientHeight <= slack;
 }
 
-export function useDialogFocus({ open, cardRef, onClose, preserveOutsideFocus = false }) {
+export function useDialogFocus({ open, cardRef, onClose, preserveOutsideFocus = false, recoverFocus = false }) {
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   const openerRef = useRef(null);
@@ -36,13 +37,22 @@ export function useDialogFocus({ open, cardRef, onClose, preserveOutsideFocus = 
       opener?.focus?.();
     };
   }, [open, cardRef, preserveOutsideFocus]);
+
+  useEffect(() => {
+    if (recoverFocus && open && document.activeElement === document.body) cardRef.current?.focus();
+  });
+
+  return useCallback((event) => {
+    if (!open) return;
+    wrapTab(event, cardRef.current);
+  }, [open, cardRef]);
 }
 
 // `footer` is a node, or a function of `{ seen }` for a footer that must know whether the body has
 // been read to its end. With `gate="scrolled"` `seen` starts false, turns true once the body is
 // scrolled to its end or fits without scrolling, and drops back to false only if the body grows past
 // the height that was seen — scrolling back up never re-locks it. Without the gate `seen` is true.
-export function Dialog({ open, onClose, title, children, footer, width = 420, gate = null, padding = 'var(--space-8)', preserveOutsideFocus = false }) {
+export function Dialog({ open, onClose, title, labelledBy, children, footer, width = 420, gate = null, padding = 'var(--space-8)', preserveOutsideFocus = false }) {
   const cardRef = useRef(null);
   const bodyRef = useRef(null);
   const contentRef = useRef(null);
@@ -50,7 +60,8 @@ export function Dialog({ open, onClose, title, children, footer, width = 420, ga
   const gated = gate === 'scrolled';
   const [seen, setSeen] = useState(!gated);
   const seenHeight = useRef(null);
-  useDialogFocus({ open, cardRef, onClose, preserveOutsideFocus });
+  const titleId = useId();
+  const onKeyDown = useDialogFocus({ open, cardRef, onClose, preserveOutsideFocus, recoverFocus: true });
 
   const measure = useCallback(() => {
     const body = bodyRef.current;
@@ -99,7 +110,9 @@ export function Dialog({ open, onClose, title, children, footer, width = 420, ga
         ref={cardRef}
         role="dialog"
         aria-modal="true"
+        aria-labelledby={labelledBy ?? (title ? titleId : undefined)}
         tabIndex={-1}
+        onKeyDown={onKeyDown}
         onClick={(e) => e.stopPropagation()}
         style={{
           position: 'relative',
@@ -144,7 +157,7 @@ export function Dialog({ open, onClose, title, children, footer, width = 420, ga
           </button>
         )}
         {title && (
-          <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 'var(--text-xl)', marginBottom: 12, paddingRight: 28 }}>
+          <div id={titleId} style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 'var(--text-xl)', marginBottom: 12, paddingRight: 28 }}>
             {title}
           </div>
         )}
@@ -153,6 +166,7 @@ export function Dialog({ open, onClose, title, children, footer, width = 420, ga
             card's padding is borrowed back here so the clip edge lands on the card wall. */}
         <div
           ref={bodyRef}
+          tabIndex={-1}
           onScroll={gated ? measure : undefined}
           style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-base)', color: 'var(--text-secondary)', flex: '1 1 auto', minHeight: 0, overflowY: 'auto', margin: `calc(-1 * var(--space-1)) calc(-1 * ${padding})`, padding: `var(--space-1) ${padding}` }}
         >

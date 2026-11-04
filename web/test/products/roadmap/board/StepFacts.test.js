@@ -3,7 +3,13 @@ import assert from 'node:assert/strict';
 
 import { SkillTree } from '../../../../src/products/roadmap/model/SkillTree.js';
 import { advanceProgress } from '../../../../src/products/roadmap/model/progress.js';
-import { StepFacts, completionOpens, resetRelocks, offersCompletion } from '../../../../src/products/roadmap/board/StepFacts.js';
+import { StepFacts, completionOpens, resetRelocks, offersCompletion, titleOf } from '../../../../src/products/roadmap/board/StepFacts.js';
+import { STEP_DETAIL } from '../../../../src/products/roadmap/board/copy.js';
+
+test('step surfaces share the trimmed title and the unnamed fallback', () => {
+  assert.deepEqual([{}, { label: '' }, { label: '  ' }, { label: ' Read the wind ' }].map(titleOf),
+    [STEP_DETAIL.unnamed, STEP_DETAIL.unnamed, STEP_DETAIL.unnamed, 'Read the wind']);
+});
 
 function learnToSail() {
   return new SkillTree({ id: 'sail', title: 'Learn to sail', nodes: [

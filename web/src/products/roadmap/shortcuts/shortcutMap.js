@@ -124,7 +124,7 @@ export function keyHint(rowLabel) {
   return '';
 }
 
-// The keys that act on the canvas or its selection: select all, delete, the activity feed, Focus and All steps. The Board ignores them.
+// Legacy Graph keys are ignored by the Board after the shared gated Activity key is resolved.
 export function graphOnlyKey({ key, metaKey = false, ctrlKey = false, altKey = false }) {
   if (key === 'Backspace' || key === 'Delete') return true;
   if (metaKey || ctrlKey) return key.toLowerCase() === 'a';
@@ -132,10 +132,11 @@ export function graphOnlyKey({ key, metaKey = false, ctrlKey = false, altKey = f
 }
 
 // The Board's own keys, unmodified, never while typing in a field and never while a modal layer covers the Board (a step
-// open over it, a dialog, the composer): / for Find a step, G for Board ⇄ Graph, C for Complete, ⌫ for held delete.
+// open over it, a dialog, the composer): / for Find a step, G for Board ⇄ Graph, A for Activity, C for Complete, ⌫ for held delete.
 export function boardKey({ key, metaKey = false, ctrlKey = false, altKey = false }, { typing = false, covered = false } = {}) {
   if (metaKey || ctrlKey || altKey || typing || covered) return null;
   if (key === '/') return 'find';
+  if (key.toLowerCase() === 'a') return 'activity';
   if (key.toLowerCase() === 'g') return 'switch';
   if (key.toLowerCase() === 'c') return 'complete';
   if (key === 'Backspace' || key === 'Delete') return 'delete';

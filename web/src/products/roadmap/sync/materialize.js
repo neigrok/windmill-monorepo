@@ -121,27 +121,19 @@ export function materialize(gesture, lattice, clock) {
       edges.push(removeEdge(g.oldFrom, g.oldTo, at));
       edges.push(addEdge(g.newFrom, g.newTo, at));
       break;
-    case 'DeleteNode': {
-      const target = data.nodes.find((n) => n.id === g.id);
-      if (!target) break;
-      nodes.push(node(g.id, at, { deleted: true }));
-      for (const edge of respliceEdges(data.nodes, [g.id])) edges.push(addEdge(edge.from, edge.to, at));
-      break;
-    }
-    // A surviving child that loses all its parents is spliced up to its nearest live ancestors.
+    case 'DeleteNode':
     case 'BulkDelete': {
-      const doomed = new Set(g.nodeIds);
-      const byId = new Map(data.nodes.map((n) => [n.id, n]));
-      for (const id of g.nodeIds) if (byId.has(id)) nodes.push(node(id, at, { deleted: true }));
+      const present = new Set(data.nodes.map((entry) => entry.id));
+      const ids = g.kind === 'DeleteNode' ? [g.id] : g.nodeIds;
+      const doomed = new Set(ids.filter((id) => present.has(id)));
+      for (const id of doomed) nodes.push(node(id, at, { deleted: true }));
       for (const edge of respliceEdges(data.nodes, doomed)) edges.push(addEdge(edge.from, edge.to, at));
-      if (g.retireIncidentEdges) {
-        for (const edge of lattice.presentEdges()) {
-          if (doomed.has(edge.from) || doomed.has(edge.to)) edges.push(removeEdge(edge.from, edge.to, at));
-        }
+      for (const edge of lattice.presentEdges()) {
+        if (doomed.has(edge.from) || doomed.has(edge.to)) edges.push(removeEdge(edge.from, edge.to, at));
       }
-      for (const e of g.edges ?? []) {
-        if (doomed.has(e.from) || doomed.has(e.to)) continue; // dies with the tombstone anyway
-        edges.push(removeEdge(e.from, e.to, at));
+      for (const edge of g.edges ?? []) {
+        if (doomed.has(edge.from) || doomed.has(edge.to)) continue;
+        edges.push(removeEdge(edge.from, edge.to, at));
       }
       break;
     }

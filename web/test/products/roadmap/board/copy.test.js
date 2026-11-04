@@ -25,9 +25,11 @@ import {
   DISCARD_DRAFT,
   FILTERED_EMPTY,
   SYNC_STATUS,
+  SYNC_OFFLINE_SHORT,
   REFUSED_SYNC,
   ANONYMOUS_OWNER,
   LAPSED_SESSION,
+  FORK_OFFER,
   formatCount,
   stepCount,
   needsLine,
@@ -76,6 +78,14 @@ import {
   showMore,
   draftLine,
 } from '../../../../src/products/roadmap/board/copy.js';
+
+test('copy — compact offline status', () => {
+  assert.equal(SYNC_OFFLINE_SHORT, 'Offline');
+});
+
+test('copy — reader Fork offer', () => {
+  assert.equal(FORK_OFFER, 'Fork this tree');
+});
 
 test('copy — one word per state, one title per column, one label per sort', () => {
   assert.deepEqual(STATE_WORDS, { locked: 'locked', upNext: 'up next', done: 'done' });
@@ -393,12 +403,14 @@ test('copy — roadmap verbs and sheet labels match the wave 6 contract', () => 
     settings: 'Settings',
     keyboardShortcuts: 'Keyboard shortcuts',
     fork: 'Fork',
+    activity: 'Activity',
   });
   assert.deepEqual(ROADMAP_SHEET, {
     title: 'Roadmap',
     yourRoadmaps: 'Your roadmaps',
     newRoadmap: 'New roadmap',
     plantedInPublic: 'Planted in public',
+    findRoadmap: 'Find a roadmap',
   });
 });
 
@@ -441,4 +453,53 @@ test('completion copy accepts a count without treating step ids as display names
   ]);
   assert.equal(completedToast({ step: 'Rig the boat yourself', unlocked: ['Practice tacking'] }),
     'Rig the boat yourself done · Practice tacking up next');
+});
+
+test('copy — approved capacity and plural refusal wording preserves singular copy and full counts', async () => {
+  const { REFUSED_CAPACITY, refusedSyncBody, discardChanges } = await import('../../../../src/products/roadmap/board/copy.js');
+  assert.deepEqual(REFUSED_CAPACITY, { title: 'This roadmap is at its limit.', body: 'This change can’t sync.' });
+  assert.deepEqual([1, 3, 1200].map((count) => ({ body: refusedSyncBody({ count }), discard: discardChanges({ count }) })), [
+    { body: 'Couldn’t sync this change.', discard: 'Discard change' },
+    { body: 'Couldn’t sync 3 changes.', discard: 'Discard 3 changes' },
+    { body: 'Couldn’t sync 1,200 changes.', discard: 'Discard 1,200 changes' },
+  ]);
+});
+
+test('copy — roadmap headings and matches use full counts', async () => {
+  const { roadmapsHeading, roadmapMatches } = await import('../../../../src/products/roadmap/board/copy.js');
+  assert.deepEqual([0, 1, 1200].map((count) => roadmapsHeading({ count })), [
+    'Your roadmaps · 0', 'Your roadmaps · 1', 'Your roadmaps · 1,200',
+  ]);
+  assert.deepEqual([
+    roadmapMatches({ shown: 0, total: 8 }),
+    roadmapMatches({ shown: 1, total: 1 }),
+    roadmapMatches({ shown: 1200, total: 3400 }),
+  ], ['0 of 8 roadmaps', '1 of 1 roadmaps', '1,200 of 3,400 roadmaps']);
+});
+
+test('copy — demo bylines match the wave 8 contract', async () => {
+  const { DEMO_BYLINE } = await import('../../../../src/products/roadmap/board/copy.js');
+  assert.deepEqual(DEMO_BYLINE, { wide: 'Windmill sample', phone: 'Sample' });
+});
+
+test('copy — Ask AI placeholders match each wave 8 presentation', async () => {
+  const { ASK_AI_PLACEHOLDER } = await import('../../../../src/products/roadmap/board/copy.js');
+  assert.deepEqual(ASK_AI_PLACEHOLDER, {
+    phone: 'What should change?',
+    wide: 'Tell the tree what to change…',
+    empty: 'What do you want to learn or build?',
+  });
+});
+
+test('copy — the Graph handoff opens the step', async () => {
+  const { OPEN_STEP } = await import('../../../../src/products/roadmap/board/copy.js');
+  assert.equal(OPEN_STEP, 'Open step');
+});
+
+test('copy — Activity has its approved heading and shipped empty sentence', async () => {
+  const { ACTIVITY } = await import('../../../../src/products/roadmap/board/copy.js');
+  assert.deepEqual(ACTIVITY, {
+    heading: 'Activity',
+    empty: 'No activity yet — changes you make will appear here.',
+  });
 });

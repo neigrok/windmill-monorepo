@@ -1,9 +1,11 @@
-// The layer is inert to pointer input so pans reach the canvas; only Fork and the Focus · All steps group opt back in.
+// Pointer input reaches the canvas outside the selected-step bar, Fork and the camera controls.
 
 import React, { useLayoutEffect, useRef, useState } from 'react';
 import { Icon } from '../../../../design-system';
 import { KIND_CSS, DEFAULT_NODE_COLOR } from '../../theme.js';
 import { TABLET_PANEL_WIDTH } from '../viewport.js';
+import { DeviceLine } from '../../board/SyncNotices.jsx';
+import { COLUMN_TITLES, FORK_OFFER, OPEN_STEP } from '../../board/copy.js';
 
 const SAFE_TOP = 'var(--content-safe-area-top, max(env(safe-area-inset-top, 0px), 44px))';
 const SAFE_BOTTOM = 'env(safe-area-inset-bottom, 0px)';
@@ -19,6 +21,7 @@ export function MobileChrome({
   dominantKind,
   onFork,
   onSignInToKeep,
+  deviceLine = null,
   ctaEcho = false,
   onFocus,
   onShowAll,
@@ -34,12 +37,16 @@ export function MobileChrome({
   cameraBottom = 24,
   cameraVisible = true,
   onTopBottom,
+  step = null,
+  onOpenStep = null,
+  onBarBottom,
 }) {
   const [pressed, setPressed] = useState(false);
   const [nudgeHeight, setNudgeHeight] = useState(0);
   const plaqueRef = useRef(null);
   const cameraRef = useRef(null);
   const nudgeRef = useRef(null);
+  const barRef = useRef(null);
 
   const hue = KIND_CSS[dominantKind] ? dominantKind : DEFAULT_NODE_COLOR;
   const c = KIND_CSS[hue];
@@ -51,8 +58,26 @@ export function MobileChrome({
   const appear = 'wm-fade-in-up var(--duration-fast) var(--ease-soft)';
   const canvasView = view === 'tree';
   const wideCamera = identity && band !== 'phone';
-  const identityNudge = identity && canvasView && band !== 'desktop' && Boolean(onSignInToKeep);
-  const phoneCameraTop = rowBottom + (identityNudge ? nudgeHeight + 16 : 8);
+  const identityNudge = identity && canvasView && band === 'phone' && Boolean(deviceLine);
+  const phoneCameraTop = rowBottom + 8 + (identityNudge ? nudgeHeight : 0);
+  const showStep = identity && canvasView && band === 'phone' && Boolean(step);
+
+  useLayoutEffect(() => {
+    if (!onBarBottom) return undefined;
+    const bar = barRef.current;
+    if (!showStep || !bar) {
+      onBarBottom(0);
+      return undefined;
+    }
+    const measure = () => onBarBottom(bar.getBoundingClientRect().height);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(bar, { box: 'border-box' });
+    return () => {
+      observer.disconnect();
+      onBarBottom(0);
+    };
+  }, [showStep, onBarBottom]);
 
   useLayoutEffect(() => {
     if (!onTopBottom && !identityNudge) return undefined;
@@ -244,7 +269,7 @@ export function MobileChrome({
       )}
 
       {/* Fork CTA — the share page's one verb; absent on your own trees */}
-      {onFork && (!identity || band === 'phone') && (
+      {onFork && !showStep && (!identity || band === 'phone') && (
       <button
         type="button"
         className={ctaEcho ? 'wm-cta-echo' : undefined}
@@ -283,9 +308,26 @@ export function MobileChrome({
       </button>
       )}
 
+      {showStep && (
+        <div ref={barRef} className="st-graph-step-bar" data-graph-step-bar="">
+          <div className="st-graph-step-heading">
+            {onFork && onOpenStep ? (
+              <button type="button" className="st-graph-step-title" onClick={() => onOpenStep(step.id)}>
+                {step.title}
+              </button>
+            ) : <span className="st-graph-step-title">{step.title}</span>}
+            <span className="st-graph-step-state">{COLUMN_TITLES[step.state]}</span>
+          </div>
+          <button type="button" className="st-graph-step-primary" data-graph-step-primary=""
+            onClick={onFork ?? (() => onOpenStep?.(step.id))}>
+            {onFork ? FORK_OFFER : OPEN_STEP}
+          </button>
+        </div>
+      )}
+
       {identityNudge && (
-        <div ref={nudgeRef} className="st-roadmap-device-nudge" style={{ top: rowBottom + 8 }}>
-          {signInNudge}
+        <div ref={nudgeRef} className="st-roadmap-device-nudge" style={{ top: rowBottom }}>
+          <DeviceLine {...deviceLine} />
         </div>
       )}
 
@@ -335,4 +377,3 @@ export function MobileChrome({
   );
 }
 
-export default MobileChrome;

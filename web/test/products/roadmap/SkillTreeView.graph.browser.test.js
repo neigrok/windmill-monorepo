@@ -92,35 +92,6 @@ for (const width of [744, 1440]) {
   });
 }
 
-for (const width of [320, 390, 744]) {
-  hostTest(`Chromium: the device-only Graph keeps its honesty nudge reachable at ${width}px`, async () => {
-    const { page, errors } = await openHost({ width, role: 'ghost' });
-    try {
-      const nudge = page.getByRole('button', { name: 'Saved on this device — sign in to keep it →', exact: true });
-      await nudge.waitFor();
-      assert.equal(await nudge.count(), 1);
-      assert.equal(await nudge.evaluate((element) => {
-        const box = element.getBoundingClientRect();
-        return box.width > 0 && box.height > 0 && box.top >= 0 && box.bottom <= window.innerHeight;
-      }), true);
-      await page.waitForFunction(() => {
-        const notice = document.querySelector('.st-roadmap-device-nudge')?.getBoundingClientRect();
-        const camera = document.querySelector('.st-mobile-chrome [aria-label="Camera"]')?.getBoundingClientRect();
-        return notice && camera && (camera.top >= notice.bottom || camera.bottom <= notice.top || camera.left >= notice.right || camera.right <= notice.left);
-      });
-      assert.equal(await page.locator('.st-roadmap-device-nudge').evaluate((element) => {
-        const notice = element.getBoundingClientRect();
-        const camera = document.querySelector('.st-mobile-chrome [aria-label="Camera"]').getBoundingClientRect();
-        return camera.top >= notice.bottom || camera.bottom <= notice.top || camera.left >= notice.right || camera.right <= notice.left;
-      }), true);
-      assert.equal(await page.locator('.st-roadmap-device-nudge').evaluate((element) => element.getBoundingClientRect().left), width === 744 ? 24 : 16);
-      await nudge.click();
-      assert.equal(await page.evaluate(() => window.signInOpened), 1);
-      assert.deepEqual(errors, []);
-    } finally { await page.close(); }
-  });
-}
-
 for (const width of [744, 1024, 1280, 1440]) {
   for (const legacy of [false, true]) {
     hostTest(`Chromium: Graph ${legacy ? 'legacy' : 'completion'} toast keeps its drawn width and clears panel, minimap and camera at ${width}px`, async () => {
@@ -181,25 +152,92 @@ hostTest('Chromium: tablet read-only Graph legend names its non-interactive swat
   } finally { await page.close(); }
 });
 
-hostTest('Chromium: phone legacy reader toast clears Focus, and editor completion clears the action row', async () => {
+hostTest('Chromium: phone Graph toast clears the camera and selected-step bar for both roles', async () => {
   for (const role of ['reader', 'owner']) {
     const { page, errors } = await openHost({ width: 390, role });
     try {
-      if (role === 'reader') {
-        await page.evaluate(() => window.scene.options.onCeremonyToast('A roadmap update'));
-        await page.locator('.st-toast').waitFor();
-      } else {
-        await page.evaluate(() => window.scene.select('wind'));
-        await page.getByRole('button', { name: 'Mark done', exact: true }).click();
-        await page.locator('.st-graph-toast .st-board-toast').waitFor();
-      }
-      await page.waitForFunction((role) => {
-        const toast = document.querySelector('.st-graph-toast .st-board-toast, .st-toast').getBoundingClientRect();
+      await page.evaluate(() => window.scene.select('wind'));
+      await page.locator('[data-graph-step-bar]').waitFor();
+      await page.evaluate(() => window.scene.options.onCeremonyToast('A roadmap update'));
+      await page.locator('.st-toast').waitFor();
+      await page.waitForFunction(() => {
+        const toast = document.querySelector('.st-toast').getBoundingClientRect();
         const camera = document.querySelector('.st-view-actions').getBoundingClientRect();
-        const action = [...document.querySelectorAll('button')].find((element) => element.textContent.trim() === 'Mark not done');
-        return toast.top >= camera.bottom && (role === 'reader' || toast.bottom <= action.getBoundingClientRect().top);
-      }, role);
+        const bar = document.querySelector('[data-graph-step-bar]').getBoundingClientRect();
+        return toast.top >= camera.bottom && toast.bottom <= bar.top;
+      });
       assert.deepEqual(errors, []);
     } finally { await page.close(); }
   }
+});
+
+hostTest('Chromium: a tap that deselects keeps focus on the pressed switch through its compatibility mousedown', async () => {
+  const { page, errors } = await openHost({ width: 390, touch: true });
+  try {
+    await page.evaluate(() => {
+      document.querySelector('canvas.st-canvas').addEventListener('pointerup', () => window.scene.select(null));
+      window.scene.select('wind');
+    });
+    const primary = page.locator('[data-graph-step-primary]');
+    await primary.focus();
+    await page.evaluate(() => {
+      window.tapEvents = [];
+      window.addEventListener('mousedown', (event) => window.tapEvents.push(`mousedown:${event.target.tagName}`), true);
+    });
+    await page.touchscreen.tap(30, 480);
+    await primary.waitFor({ state: 'detached' });
+    await page.waitForFunction(() => window.tapEvents.length === 1);
+    assert.deepEqual(await page.evaluate(() => [window.tapEvents, document.activeElement?.matches('.st-board-switch-option[aria-pressed="true"]')]),
+      [['mousedown:CANVAS'], true]);
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
+});
+
+hostTest('Chromium: the reader bar title opens from a 44px hit area and leaves the bar 124px tall', async () => {
+  const { page, errors } = await openHost({ width: 320, role: 'reader' });
+  try {
+    await page.evaluate(() => window.scene.select('wind'));
+    const bar = page.locator('[data-graph-step-bar]');
+    await bar.waitFor();
+    assert.deepEqual(await bar.evaluate((element) => {
+      const title = element.querySelector('button.st-graph-step-title').getBoundingClientRect();
+      const state = element.querySelector('.st-graph-step-state').getBoundingClientRect();
+      return { bar: element.getBoundingClientRect().height, title: title.height, centred: title.top + title.height / 2 === state.top + state.height / 2 };
+    }), { bar: 124, title: 44, centred: true });
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
+});
+
+hostTest('Chromium: a shown coach chip leaves Escape to the step page over it, and lets it through once retired', async () => {
+  const { page, errors } = await openHost({ width: 390, role: 'reader', demo: true });
+  try {
+    await page.waitForFunction(() => localStorage.getItem('wm-coach-done') === '1');
+    await page.evaluate(() => window.scene.select('wind'));
+    await page.getByRole('button', { name: 'Read the wind', exact: true }).click();
+    const step = page.getByRole('dialog', { name: 'Read the wind', exact: true });
+    await step.waitFor();
+    await page.keyboard.press('Escape');
+    await step.waitFor({ state: 'detached' });
+    await page.locator('[data-graph-step-bar]').waitFor();
+    await page.keyboard.press('Escape');
+    await page.locator('[data-graph-step-bar]').waitFor();
+    await page.keyboard.press('Escape');
+    await page.locator('[data-graph-step-bar]').waitFor({ state: 'detached' });
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
+});
+
+hostTest('Chromium: with the gate closed a shown coach chip still keeps every Escape to itself', async () => {
+  const { page, errors } = await openHost({ width: 1440, role: 'reader', demo: true, gate: 'closed' });
+  try {
+    await page.waitForFunction(() => localStorage.getItem('wm-coach-done') === '1');
+    await page.evaluate(() => {
+      window.escapes = 0;
+      window.addEventListener('keydown', (event) => { if (event.key === 'Escape') window.escapes += 1; });
+    });
+    await page.keyboard.press('Escape');
+    await page.keyboard.press('Escape');
+    assert.equal(await page.evaluate(() => window.escapes), 0);
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
 });

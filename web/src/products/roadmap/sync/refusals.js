@@ -7,6 +7,8 @@
 const OWNERSHIP_CODES = new Set(['not-yours', 'nobodys-tree']);
 const SESSION_CODES = new Set(['sign-in-required']);
 const CAPACITY_CODES = new Set(['tree-too-large']);
+const EVENT_CODES = new Set(['tree-too-large', 'bad-frame', 'no-such-tree', 'server-error']);
+const EXPECTED_CODES = new Set(['tree-too-large', 'no-such-tree']);
 
 export function isOwnershipRefusal(frame) {
   return OWNERSHIP_CODES.has(frame?.code);
@@ -24,4 +26,13 @@ export function isCapacityRefusal(frame) {
 // strands nothing.
 export function strandsTheBank(frame) {
   return !!frame?.frameId;
+}
+
+export function refusalEventCode(frame) {
+  if (EVENT_CODES.has(frame?.code)) return frame.code;
+  return 'other';
+}
+
+export function isExpectedRefusal(frame) {
+  return EXPECTED_CODES.has(frame?.code);
 }

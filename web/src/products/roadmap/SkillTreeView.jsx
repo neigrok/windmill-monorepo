@@ -24,16 +24,19 @@ import { SwitcherSheet } from './list/SwitcherSheet.jsx';
 import BoardView from './board/BoardView.jsx';
 import { coverBeneath } from './board/composerFocus.js';
 import { ViewSwitch } from './board/ViewSwitch.jsx';
-import { BoardQuery } from './board/Board.js';
+import { BoardQuery, COLUMN_OF_STATE } from './board/Board.js';
 import { RoadmapIdentity } from './board/RoadmapIdentity.jsx';
 import { BoardToast } from './board/BoardToast.jsx';
-import { completedToast, completedStepsToast, upNextCount, progressFigure, progressLabel, LABELS } from './board/copy.js';
+import { completedToast, completedStepsToast, upNextCount, ASK_AI_PLACEHOLDER, ROADMAP_VERBS, LABELS, SYNC_STATUS, SYNC_OFFLINE_SHORT, ANONYMOUS_OWNER, LAPSED_SESSION } from './board/copy.js';
 import { useRoadmapIdentityActs } from './useRoadmapIdentityActs.js';
-import { FindStep } from './board/BoardControls.jsx';
 import { StepDetail } from './board/StepDetail.jsx';
+import { titleOf } from './board/StepFacts.js';
 import { StepComposer } from './board/StepComposer.jsx';
 import { BoardComposer, useBoardActs } from './board/useBoardActs.js';
-import { deletable } from './board/acts.js';
+import { countBucket, deletable } from './board/acts.js';
+import { RefusedSync } from './board/SyncNotices.jsx';
+import { registerRoomStatus } from '../../shell/roomStatus.js';
+import { deriveSyncStatus, OFFLINE_GRACE_MS, SAVING_DELAY_MS, SAVED_HOLD_MS } from './sync/status.js';
 import { useStepAddress, hashWithStep, stepIsStale } from './board/stepAddress.js';
 import { boardOpen } from './board/gate.js';
 import { activeSurface } from './ui/mobile/editorSheet.js';
@@ -46,6 +49,7 @@ import { useSignInDoor } from '../../shell/auth/SignInDoor.jsx';
 import { ShareDialog, treeShareUrl } from './share/ShareDialog.jsx';
 import { ShareStats } from './share/ShareStats.js';
 import { ActivityFeed } from './activity/ActivityFeed.jsx';
+import { ActivityRows } from './activity/ActivityRows.jsx';
 import { NextUp, considerAutoOpen } from './ui/NextUp.jsx';
 import { planNextUp } from './ui/nextUpPlan.js';
 import { useActivity } from './activity/useActivity.js';
@@ -59,7 +63,7 @@ import { frontierTarget, viewportInsets, graphToastPlacement, DOCK_WIDTH, TABLET
 import { HttpTreeRepository } from './persistence/HttpTreeRepository.js';
 import { listAllTrees, renameTree, deleteTree } from './persistence/TreeRegistry.js';
 import { SyncSession } from './sync/SyncSession.js';
-import { isOwnershipRefusal, isSessionRefusal, isCapacityRefusal, strandsTheBank } from './sync/refusals.js';
+import { isOwnershipRefusal, isSessionRefusal, isCapacityRefusal, strandsTheBank, refusalEventCode, isExpectedRefusal } from './sync/refusals.js';
 import { claimLocalTrees } from './sync/claimLocalTrees.js';
 import { renameLocalTree, deleteLocalTree, loadDeviceTree } from './sync/localTrees.js';
 import { PresenceLayer } from './presence/PresenceLayer.jsx';
@@ -75,7 +79,7 @@ import { withCounts, inUseCount } from './model/Legend.js';
 import { KindLegend } from './ui/tree/KindLegend.jsx';
 import { useLegend } from './ui/tree/useLegend.js';
 import { useWorkspace } from './ui/tree/useWorkspace.js';
-import { Button, ErrorBoundary } from '../../design-system';
+import { Button, ErrorBoundary, Icon, IconButton } from '../../design-system';
 import { PasteComposer } from './paste/PasteComposer.jsx';
 import { parsePlan } from './paste/planGrammar.js';
 import { graftPlan } from './paste/graftPlan.js';
@@ -94,6 +98,10 @@ const placeStore = new PlaceStore();
 const viewPrefs = new ViewPrefs();
 const BOARD_OPEN = boardOpen();
 const FORK_PILL_FOOTPRINT = FORK_PILL.bottom + FORK_PILL.height;
+const ACTIVITY_PANEL_TOP = 172;
+const ACTIVITY_PANEL_GAP = 12;
+// The compatibility mousedown of a touch tap lands within this window of its pointer up.
+const TAP_MOUSEDOWN_MS = 350;
 const returnLedger = new ReturnLedger();
 const milestoneLedger = new MilestoneLedger();
 const NEXT_UP_SELECT_MS = 540;
@@ -180,12 +188,62 @@ export function useRoadmapToast() {
   return { toast, toastWhyOpen, setToastWhyOpen, toastTimersRef, boardToastRef, showToast, boardToastShown, dismissToast };
 }
 
+const SYNC_CLOCK = {
+  now: () => Date.now(),
+  setTimeout: (...args) => setTimeout(...args),
+  clearTimeout: (id) => clearTimeout(id),
+};
+
+function useRoadmapSyncStatus(session, enabled, clock = SYNC_CLOCK) {
+  const [reading, setReading] = useState(null);
+  useEffect(() => {
+    if (!enabled || !session) return undefined;
+    let timer;
+    let previous = null;
+    const facts = { lastLiveAt: clock.now(), pendingSince: null, drainedAt: null };
+    const update = (snapshot) => {
+      clock.clearTimeout(timer);
+      const now = clock.now();
+      const pending = snapshot.structurePending + snapshot.progressPending
+        + snapshot.structureInFlight + snapshot.progressInFlight;
+      if (snapshot.phase === 'live' || previous?.phase === 'live') facts.lastLiveAt = now;
+      if (Boolean(snapshot.rebaselining) !== Boolean(previous?.rebaselining)) {
+        facts.pendingSince = null;
+        facts.drainedAt = null;
+      }
+      if (pending > 0 && facts.pendingSince === null) facts.pendingSince = now;
+      if (pending === 0) {
+        if (previous && facts.pendingSince !== null && snapshot.phase === 'live') facts.drainedAt = now;
+        facts.pendingSince = null;
+      }
+      previous = snapshot;
+      setReading({ session, snapshot, state: deriveSyncStatus(snapshot, now, facts) });
+      const deadlines = [
+        snapshot.phase !== 'live' ? facts.lastLiveAt + OFFLINE_GRACE_MS : null,
+        facts.pendingSince === null ? null : facts.pendingSince + SAVING_DELAY_MS,
+        facts.drainedAt === null ? null : facts.drainedAt + SAVED_HOLD_MS,
+      ].filter((deadline) => deadline !== null && deadline > now);
+      if (deadlines.length) {
+        const nextDeadline = Math.min(...deadlines);
+        timer = clock.setTimeout(() => update(session.statusSnapshot()), nextDeadline - now);
+      }
+    };
+    const unsubscribe = session.subscribeStatus(update);
+    return () => {
+      unsubscribe();
+      clock.clearTimeout(timer);
+    };
+  }, [session, enabled, clock]);
+  if (!enabled || reading?.session !== session) return { snapshot: null, state: null };
+  return reading;
+}
+
 export function SkillTreeView({ treeId, demo = false }) {
   const openSignInDoor = useSignInDoor();
   const { breakpoint, readOnly: viewReadOnly, shared } = useViewMode();
-  const { status, refresh, account } = useAuth();
+  const { status, refresh, account, lapsed: sessionLapsed } = useAuth();
 
-  // `account` must be the shell's server-confirmed account; the “nobody” answer comes from resolveDeviceOwner.
+  // Account authority comes from the shell; a lapse retains this document's device owner.
   useEffect(() => { if (account) confirmDeviceOwner(account.id); }, [account]);
 
   const [lapsed, setLapsed] = useState(false);
@@ -193,11 +251,16 @@ export function SkillTreeView({ treeId, demo = false }) {
   const [stranded, setStranded] = useState(null);
   const readOnly = viewReadOnly || !!demotion;
   const [identityCrashed, setIdentityCrashed] = useState(false);
-  const identityActive = BOARD_OPEN && !demo && !identityCrashed;
+  const identityActive = BOARD_OPEN && !identityCrashed;
   const identityActiveRef = useRef(identityActive);
   identityActiveRef.current = identityActive;
   const identityRef = useRef(null);
-  const demoIdentityRef = useRef(null);
+  const activityActsRef = useRef(null);
+  const graphStepReturnRef = useRef(false);
+  const graphBarFocusedRef = useRef(false);
+  const rememberGraphFocus = useCallback((event) => {
+    graphBarFocusedRef.current = Boolean(event.target.closest('[data-graph-step-bar]'));
+  }, []);
   const graphViewRef = useRef(false);
   const currentTreeIdRef = useRef(treeId);
   currentTreeIdRef.current = treeId;
@@ -206,6 +269,11 @@ export function SkillTreeView({ treeId, demo = false }) {
 
   const canvasRef = useRef(null);
   const rootRef = useRef(null);
+  const focusGraph = useCallback(() => {
+    const primary = rootRef.current?.querySelector('[data-graph-step-primary]');
+    const pressed = identityRef.current?.querySelector('.st-board-switch-option[aria-pressed="true"]');
+    (primary ?? pressed)?.focus({ preventScroll: true });
+  }, []);
   const sceneRef = useRef(null);
   const readOnlyRef = useRef(readOnly);
   const editorRef = useRef(null);
@@ -221,6 +289,7 @@ export function SkillTreeView({ treeId, demo = false }) {
   const seedRef = useRef(null);
   const repoRef = useRef(null);
   const collabRef = useRef(null);
+  const [syncSession, setSyncSession] = useState(null);
   const peersRef = useRef(new Map()); // actor -> { name, color, cursor, selection }
   const onTreeChangedRef = useRef(null);
   const maskedShownRef = useRef('');
@@ -424,6 +493,9 @@ export function SkillTreeView({ treeId, demo = false }) {
   const [laneInset, setLaneInset] = useState(0); // px
   const [topbarBottom, setTopbarBottom] = useState(0); // px
   const [graphChromeBottom, setGraphChromeBottom] = useState(0);
+  const graphRefusalRef = useRef(null);
+  const [graphRefusalHeight, setGraphRefusalHeight] = useState(0);
+  const [graphBarBottom, setGraphBarBottom] = useState(0);
   const [fallbackChromeBottom, setFallbackChromeBottom] = useState(0);
   const [fallbackBottom, setFallbackBottom] = useState(0);
   const fallbackSwitchRef = useRef(null);
@@ -637,7 +709,7 @@ export function SkillTreeView({ treeId, demo = false }) {
   // A local row renames the blob + device index and never PATCHes the server; a server row goes through the registry.
   const handleRenameTree = useCallback((id, title, { local = false } = {}) => {
     if (id === treeId && collabRef.current?.renameTree(title)) return undefined;
-    if (local) return renameLocalTree(id, title);
+    if (local) return renameLocalTree(id, title, { trackGestures: BOARD_OPEN });
     return renameTree(id, title);
   }, [treeId]);
 
@@ -927,11 +999,18 @@ export function SkillTreeView({ treeId, demo = false }) {
 
   useEffect(() => {
     const onEditorKey = (event) => {
+      if (BOARD_OPEN && event.defaultPrevented) return;
       const covered = keyboardCovered();
+      const activeElement = document.activeElement;
+      const typing = activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA' || activeElement.isContentEditable);
+      if (BOARD_OPEN && boardKey(event, { typing, covered }) === 'activity') {
+        if (!activityActsRef.current?.enabled) return;
+        event.preventDefault();
+        activityActsRef.current.open('key');
+        return;
+      }
       if (boardActiveRef.current && graphOnlyKey(event)) {
-        const el = document.activeElement;
-        const typingHere = el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable);
-        if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'a' && !typingHere) event.preventDefault();
+        if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'a' && !typing) event.preventDefault();
         return;
       }
       if (!readOnlyRef.current && (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z') {
@@ -954,17 +1033,20 @@ export function SkillTreeView({ treeId, demo = false }) {
         return;
       }
       if (event.key === 'Escape') {
+        if (BOARD_OPEN && covered) return;
         if (highlightedKindIdRef.current) { clearHighlightedKind(); return; }
         if (selectedIdsRef.current.size > 0 || selectedEdgesRef.current.size > 0) { setSelectedId(null); return; }
         if (sceneRef.current?.selectedEdge) { sceneRef.current.selectEdge(null); return; }
-        if (feedSummonedRef.current) closeActivity();
+        if (feedSummonedRef.current) {
+          if (BOARD_OPEN) activityActsRef.current?.close();
+          else closeActivity();
+        }
         return;
       }
-      const typing = document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA' || document.activeElement.isContentEditable);
       const plainKey = !event.metaKey && !event.ctrlKey && !event.altKey && !typing;
       const boardAction = boardKey(event, { typing, covered });
       if (boardAction === 'find' && (boardActiveRef.current || identityActiveRef.current)) {
-        const chrome = identityActiveRef.current ? identityRef.current : demoIdentityRef.current;
+        const chrome = identityRef.current;
         const find = chrome?.querySelector('.st-board-find-input');
         const folded = chrome?.querySelector('.st-board-find-toggle');
         if (!find && !folded) return;
@@ -979,6 +1061,7 @@ export function SkillTreeView({ treeId, demo = false }) {
         return;
       }
       if (event.key === 'a' && plainKey) {
+        if (BOARD_OPEN) return;
         event.preventDefault();
         toggleActivity();
         return;
@@ -1182,7 +1265,7 @@ export function SkillTreeView({ treeId, demo = false }) {
       // Only owned trees enter the device index, so a visited share cannot be claimed.
       collabRef.current?.close();
       peersRef.current.clear();
-      const session = new SyncSession({ treeId: seed.id, title: seed.title, registry: seed.mine && !shared && !demo && !demotion ? deviceTrees : null })
+      const session = new SyncSession({ treeId: seed.id, title: seed.title, trackGestures: BOARD_OPEN, registry: seed.mine && !shared && !demo && !demotion ? deviceTrees : null })
         .onTreeChanged((data) => onTreeChangedRef.current?.(data))
         .onPresence((frame) => peersRef.current.set(frame.actor, {
           name: frame.profile?.name, color: frame.profile?.color,
@@ -1196,6 +1279,15 @@ export function SkillTreeView({ treeId, demo = false }) {
         })
         .onProgress((overlay) => applyRemoteProgressRef.current?.(overlay));
       collabRef.current = session;
+      const reportedCodes = new Set();
+      session.subscribeRefusals((refused) => {
+        if (isExpectedRefusal(refused)) return;
+        const code = refusalEventCode(refused);
+        if (reportedCodes.has(code)) return;
+        reportedCodes.add(code);
+        captureError('roadmap', 'roadmap-sync-refused', new Error('Roadmap sync refused').stack, '#/app', { code });
+      });
+      if (BOARD_OPEN) setSyncSession(session);
       session.start();
     }
 
@@ -1219,6 +1311,7 @@ export function SkillTreeView({ treeId, demo = false }) {
       }
       collabRef.current?.close();
       collabRef.current = null;
+      if (BOARD_OPEN) setSyncSession(null);
     };
   }, [reloadKey, treeId, demo, dismissToast]);
 
@@ -1348,18 +1441,30 @@ export function SkillTreeView({ treeId, demo = false }) {
   // The initial view is decided ONCE, the moment the tree is ready: on phones, and on every band while the Board is open.
   const phone = breakpoint === 'phone';
   const owner = treeMine && !shared && !demo && !demotion;
+  const reader = Boolean(tree) && !demo && (!treeMine || Boolean(demotion));
+  const role = demo ? 'demo' : owner ? 'owner' : 'reader';
   const stepAddress = useStepAddress();
+  const initialDecisionRef = useRef(null);
+  const viewOpenedRef = useRef(null);
   if (view === null && (phone || BOARD_OPEN) && tree) {
-    setView(initialView({ saved: viewPrefs.lastView(treeId), owner, empty: tree.nodes.length === 0, born: peekBorn(treeId), boardOpen: BOARD_OPEN, linkedStep: stepAddress.id, canAddFirstStep: owner }));
+    const decision = initialView({ saved: viewPrefs.lastView(treeId), owner, reader, empty: tree.nodes.length === 0, born: peekBorn(treeId), boardOpen: BOARD_OPEN, linkedStep: stepAddress.id, canAddFirstStep: owner });
+    setView(decision.view);
+    initialDecisionRef.current = decision;
   }
   useEffect(() => {
     if (view !== null) clearBorn(treeId);
   }, [view, treeId]);
+  useEffect(() => {
+    const decision = initialDecisionRef.current;
+    if (!BOARD_OPEN || !decision || viewOpenedRef.current === treeId) return;
+    viewOpenedRef.current = treeId;
+    track('roadmap_view_open', { view: decision.view === 'board' ? 'board' : 'graph', band: breakpoint, role, door: decision.door });
+  }, [treeId, view, breakpoint, role]);
   const listReady = phone && !loading && !!tree && tree.nodes.length > 0;
   // Until the tree arrives, the Board's skeleton or load error stands where the Board would open: the saved choice, or
   // the owner's default anywhere but a share or the demo.
   const openingView = view ?? (BOARD_OPEN && !tree
-    ? initialView({ saved: viewPrefs.lastView(treeId), owner: !shared && !demo, empty: false, born: peekBorn(treeId), boardOpen: true, linkedStep: stepAddress.id })
+    ? initialView({ saved: viewPrefs.lastView(treeId), owner: !shared && !demo, reader, empty: false, born: peekBorn(treeId), boardOpen: true, linkedStep: stepAddress.id }).view
     : null);
   const boardFacts = {
     crashed: boardCrashed,
@@ -1432,7 +1537,6 @@ export function SkillTreeView({ treeId, demo = false }) {
     }
     const legacyContainer = readOnly ? '.st-action-lane' : '.st-topbar';
     let shownSwitch = rootRef.current?.querySelector(legacyContainer);
-    if (demo && boardActive) shownSwitch = demoIdentityRef.current;
     if (identityActive) shownSwitch = identityRef.current;
     if (identityCrashed) shownSwitch = fallbackSwitchRef.current;
     shownSwitch?.querySelector('.st-board-switch-option[aria-pressed="true"]')?.focus();
@@ -1456,7 +1560,7 @@ export function SkillTreeView({ treeId, demo = false }) {
 
   // A card opens its step: the modal from 744px, the pushed page below. The step rides the URL, so a link lands on it and
   // Back leaves it; selection follows the open step and, on close, returns to the card the visit began on.
-  const detailId = boardActive && tree && stepAddress.id !== null && tree.nodesById.has(stepAddress.id) ? stepAddress.id : null;
+  const detailId = BOARD_OPEN && tree?.treeId === treeId && tree && stepAddress.id !== null && tree.nodesById.has(stepAddress.id) ? stepAddress.id : null;
   stepDetailOpenRef.current = detailId !== null || boardComposer !== null;
   // A step the loaded roadmap no longer holds (deleted here or elsewhere, or a stale link) leaves the URL, so restoring
   // it later never reopens it.
@@ -1471,6 +1575,17 @@ export function SkillTreeView({ treeId, demo = false }) {
     setSelectedId(id);
     stepAddress.open(id, 'card');
   }, [setSelectedId, stepAddress.open]);
+  const openStepFromGraph = useCallback((id) => {
+    firstFrameRef.current = null;
+    graphStepReturnRef.current = true;
+    stepAddress.open(id, 'graph');
+  }, [stepAddress.open]);
+  useEffect(() => {
+    if (detailId !== null || !graphStepReturnRef.current) return;
+    graphStepReturnRef.current = false;
+    const frame = requestAnimationFrame(focusGraph);
+    return () => cancelAnimationFrame(frame);
+  }, [detailId, focusGraph]);
   const closeStep = () => {
     const origin = stepAddress.trail[0];
     stepAddress.close();
@@ -1487,12 +1602,17 @@ export function SkillTreeView({ treeId, demo = false }) {
     viewBranch(id);
   };
   const focusBoard = () => requestAnimationFrame(() => {
+    if (canvasView) {
+      focusGraph();
+      return;
+    }
     const stops = boardLayerRef.current?.querySelectorAll('[data-column] [tabindex="0"], [data-column][tabindex="0"], .st-board-state button') ?? [];
     [...stops].find((element) => element.getClientRects().length > 0)?.focus();
   });
   const deleteStepFromDetail = (id) => {
     stepAddress.close();
-    boardActs.delete([id], 'menu');
+    const held = boardActs.delete([id], 'menu');
+    if (held && canvasView) setSelectedId(null);
   };
   const handleStepCrash = (error) => {
     captureError('roadmap', 'roadmap-board-step', error?.stack ?? '', '#/app');
@@ -1548,16 +1668,87 @@ export function SkillTreeView({ treeId, demo = false }) {
     return undefined;
   }, [scene, layerActive]);
 
-  const sheetOpenNow = readOnly && phone && !!selectedNode && !aim && !removing && !multiMode && !sheetHeld && canvasView;
-  const forkPresent = readOnly && (shared || !!demotion) && !demotion?.cardOpen;
-  const forkPillPresent = forkPresent && (!identityActive || phone);
+  const sheetOpenNow = !identityActive && readOnly && phone && !!selectedNode && !aim && !removing && !multiMode && !sheetHeld && canvasView;
+  const forkRole = BOARD_OPEN ? reader || demo : readOnly && (shared || Boolean(demotion));
+  const forkPresent = forkRole && !demotion?.cardOpen;
+  const phoneGraph = identityActive && phone && canvasView;
+  const singleGraphStep = phoneGraph && selectedNode && !multiMode && selectedIds.size === 1 && selectedEdges.size === 0;
+  const graphStepVisible = singleGraphStep && detailId === null && boardComposer === null;
+  const graphStep = graphStepVisible
+    ? { id: selectedNode.id, title: titleOf(selectedNode), state: COLUMN_OF_STATE[selectedState] ?? 'locked' }
+    : null;
+  const forkPillPresent = forkPresent && (!identityActive || (phoneGraph && !graphStep));
+  let phoneGraphBottom = 0;
+  if (phoneGraph && forkPillPresent) phoneGraphBottom = FORK_PILL_FOOTPRINT;
+  if (phoneGraph && graphStep) phoneGraphBottom = graphBarBottom;
   const laneLift = Math.max(
     0,
     sheetOpenNow ? (mobileEditable ? 300 : 216) + 12 - 16 : 0,
     forkPillPresent ? FORK_PILL_FOOTPRINT + 12 - 16 : 0,
   );
 
-  const deviceNotice = status === 'ghost' && treeMine && !demo ? (
+  const closeRowActivity = useCallback(() => {
+    activityActsRef.current.closeActivity();
+    requestAnimationFrame(() => {
+      const more = identityRef.current?.querySelector('[data-roadmap-more]');
+      more?.focus({ preventScroll: true });
+    });
+  }, []);
+  const openRowActivity = useCallback((door) => {
+    const current = activityActsRef.current;
+    if (!current.enabled) return;
+    if (door === 'key') track('roadmap_verb', { verb: 'activity', door: 'key' });
+    if (current.feedVisible) {
+      closeRowActivity();
+      return;
+    }
+    if (current.breakpoint === 'desktop' && current.boardActive) {
+      current.switchView('tree');
+      switchFocusRef.current = false;
+    }
+    current.setSelectedId(null);
+    current.openActivity();
+  }, [closeRowActivity]);
+  const openActivityStep = useCallback((id) => {
+    const current = activityActsRef.current;
+    current.closeActivity();
+    if (current.canvasView) graphStepReturnRef.current = true;
+    current.addressOpen(id, 'activity');
+  }, []);
+  activityActsRef.current = {
+    enabled: identityActive && owner && !phone,
+    feedVisible, breakpoint, boardActive, canvasView, switchView, setSelectedId,
+    openActivity, closeActivity, addressOpen: stepAddress.open,
+    open: openRowActivity, close: closeRowActivity,
+  };
+  const sheetActivity = useMemo(() => identityActive && owner && phone
+    ? { groups: activityGroups, nodesById, onOpenStep: openActivityStep }
+    : null, [identityActive, owner, phone, activityGroups, nodesById, openActivityStep]);
+  const openGraphFork = useCallback(() => {
+    if (graphStep) track('roadmap_verb', { verb: 'fork', door: 'bar', view: 'graph', band: 'phone' });
+    setForkOpen(true);
+  }, [graphStep?.id]);
+  const graphBarRef = useRef(null);
+  useLayoutEffect(() => {
+    if (graphStep) {
+      graphBarRef.current = rootRef.current?.querySelector('[data-graph-step-bar]');
+      return;
+    }
+    const previous = graphBarRef.current;
+    graphBarRef.current = null;
+    if (detailId !== null || boardComposer !== null || forkOpen || !previous) return;
+    if (!graphBarFocusedRef.current) return;
+    graphBarFocusedRef.current = false;
+    focusGraph();
+    // A tap deselects on pointer up; the mousedown the browser sends after it would blur the option focus just reached.
+    const canvas = canvasRef.current;
+    const keepFocus = (event) => event.preventDefault();
+    canvas?.addEventListener('mousedown', keepFocus, { once: true });
+    setTimeout(() => canvas?.removeEventListener('mousedown', keepFocus), TAP_MOUSEDOWN_MS);
+  }, [graphStep?.id, detailId, boardComposer, forkOpen, focusGraph]);
+
+  const deviceOnly = status === 'ghost' && treeMine && !demo;
+  const deviceNotice = deviceOnly ? (
     <button type="button" className="st-list-notice" onClick={openSignInDoor}>
       <span className="st-list-notice-text">Saved on this device — sign in to keep it</span>
       <span className="st-list-notice-chevron" aria-hidden>
@@ -1566,9 +1757,102 @@ export function SkillTreeView({ treeId, demo = false }) {
     </button>
   ) : null;
 
+  const { snapshot: syncSnapshot, state: syncState } = useRoadmapSyncStatus(syncSession?.treeId === treeId ? syncSession : null, identityActive);
+  const deviceEligible = identityActive && deviceOnly && owner && syncSession?.treeId === treeId;
+  const deviceKind = deviceEligible ? (sessionLapsed || lapsed ? 'lapsed' : 'anonymous') : null;
+  const deviceText = deviceKind === 'lapsed' ? LAPSED_SESSION : ANONYMOUS_OWNER;
+  const signInFromDevice = useCallback(() => {
+    if (!deviceKind) return;
+    track('roadmap_device_line', { step: 'sign_in', line: deviceKind, place: 'row' });
+    openSignInDoor();
+  }, [deviceKind, openSignInDoor]);
+  const deviceLine = useMemo(() => deviceKind ? { text: deviceText, onSignIn: signInFromDevice } : null,
+    [deviceKind, deviceText, signInFromDevice]);
+  const syncEligible = identityActive && owner && status === 'signed-in' && !deviceLine;
+  const refused = identityActive && owner ? syncSnapshot?.refused : null;
+  const refusalCode = refusalEventCode(refused);
+  const refusedCount = refused?.lane === 'structure' ? syncSnapshot?.structureGestures : syncSnapshot?.progressGestures;
+  const retrySync = useCallback(() => {
+    if (!refused) return;
+    track('roadmap_sync_refused', { step: 'retry', lane: refused.lane, code: refusalCode });
+    syncSession.retry();
+  }, [syncSession, refused, refusalCode]);
+  const discardSync = useCallback(async () => {
+    if (!refused) return;
+    const discarded = syncSession.discard();
+    if (syncSession.discardPending) setBoardQuiet((current) => current + 1);
+    if (!await discarded) return;
+    track('roadmap_sync_refused', { step: 'discard', lane: refused.lane, code: refusalCode });
+  }, [syncSession, refused, refusalCode]);
+  const refusal = useMemo(() => refused ? {
+    code: refused.code,
+    count: refusedCount,
+    onRetry: retrySync,
+    onDiscard: discardSync,
+  } : null, [refused, refusedCount, retrySync, discardSync]);
+  const syncReportsRef = useRef(null);
+  useEffect(() => {
+    if (!syncSession) return;
+    if (syncReportsRef.current?.session !== syncSession) {
+      syncReportsRef.current = { session: syncSession, shown: new Set() };
+    }
+    if (!refused) return;
+    const reports = syncReportsRef.current;
+    if (!reports.shown.has(refused.episode)) {
+      reports.shown.add(refused.episode);
+      track('roadmap_sync_refused', { step: 'shown', lane: refused.lane, code: refusalCode });
+    }
+  }, [syncSession, refused, refusalCode]);
+  const deviceShownRef = useRef({ treeId, lines: new Set() });
+  useEffect(() => {
+    if (deviceShownRef.current.treeId !== treeId) deviceShownRef.current = { treeId, lines: new Set() };
+    if (!deviceKind || deviceShownRef.current.lines.has(deviceKind)) return;
+    deviceShownRef.current.lines.add(deviceKind);
+    track('roadmap_device_line', { step: 'shown', line: deviceKind, place: phone ? 'row' : 'shell' });
+  }, [treeId, deviceKind, phone]);
+  const offlineRef = useRef({ shown: false, pending: '0' });
+  useEffect(() => () => {
+    if (offlineRef.current.shown) track('roadmap_sync_offline', { step: 'cleared', pending: offlineRef.current.pending });
+    offlineRef.current = { shown: false, pending: '0' };
+  }, [treeId, syncSession]);
+  useEffect(() => {
+    const offline = syncEligible && syncState === 'offline';
+    const pending = countBucket((syncSnapshot?.structurePending ?? 0) + (syncSnapshot?.progressPending ?? 0));
+    const changed = offlineRef.current.shown !== offline;
+    offlineRef.current = { shown: offline, pending };
+    if (changed) track('roadmap_sync_offline', { step: offline ? 'shown' : 'cleared', pending });
+  }, [treeId, syncSession, syncEligible, syncState, syncSnapshot]);
+  const roomStatusLease = useRef(null);
+  const roomStatusEnabled = identityActive && (syncEligible || Boolean(deviceLine));
+  useLayoutEffect(() => {
+    if (!roomStatusEnabled) return undefined;
+    const lease = registerRoomStatus();
+    roomStatusLease.current = lease;
+    return () => {
+      roomStatusLease.current = null;
+      lease.release();
+    };
+  }, [treeId, roomStatusEnabled]);
+  useLayoutEffect(() => {
+    const lease = roomStatusLease.current;
+    if (!lease) return;
+    if (deviceLine) {
+      lease.publish(phone ? { narrow: 'device' } : { line: deviceLine.text });
+      return;
+    }
+    if (!syncEligible || !syncState) {
+      lease.publish(null);
+      return;
+    }
+    const roomStatus = syncState === 'offline'
+      ? { line: SYNC_STATUS.offline, short: SYNC_OFFLINE_SHORT, icon: 'offline', narrow: 'icon', connectivity: 'offline' }
+      : { line: SYNC_STATUS[syncState], narrow: 'announce' };
+    lease.publish(roomStatus);
+  }, [treeId, roomStatusEnabled, deviceLine, phone, syncEligible, syncState]);
+
   useEffect(() => {
     if (!scene) return undefined;
-    if (!mobileEditable || breakpoint === 'desktop') { scene.setEditTap(null); return undefined; }
+    if (!mobileEditable || breakpoint === 'desktop' || (identityActive && phone)) { scene.setEditTap(null); return undefined; }
     scene.setEditTap((x, y, nodeId) => {
       setSheetHeld(false);
       if (multiMode) {
@@ -1596,11 +1880,11 @@ export function SkillTreeView({ treeId, demo = false }) {
       setSelectedId(null);
     });
     return () => scene.setEditTap(null);
-  }, [scene, mobileEditable, breakpoint, multiMode, aim, tree, nodesById, handleConnect, showToast, setSelectedId, reconcileProjections]);
+  }, [scene, mobileEditable, breakpoint, identityActive, phone, multiMode, aim, tree, nodesById, handleConnect, showToast, setSelectedId, reconcileProjections]);
 
   useEffect(() => {
     if (!scene) return undefined;
-    if (!mobileEditable || breakpoint === 'desktop') { scene.setLongPress(null); return undefined; }
+    if (!mobileEditable || breakpoint === 'desktop' || (identityActive && phone)) { scene.setLongPress(null); return undefined; }
     scene.setLongPress((id) => {
       if (!id) return;
       setAim(null);
@@ -1612,7 +1896,7 @@ export function SkillTreeView({ treeId, demo = false }) {
       reconcileProjections(next, new Set());
     });
     return () => scene.setLongPress(null);
-  }, [scene, mobileEditable, breakpoint, reconcileProjections]);
+  }, [scene, mobileEditable, breakpoint, identityActive, phone, reconcileProjections]);
 
   useEffect(() => {
     if (aim && tree && !nodesById.has(aim.sourceId)) setAim(null);
@@ -1704,8 +1988,9 @@ export function SkillTreeView({ treeId, demo = false }) {
     setCompleted(next.completed);
     setCompletedAt(next.completedAt);
     witnessProgress(next);
+    if (BOARD_OPEN) pushProgress(targets, 'complete');
     for (const id of targets) {
-      pushProgress(id, 'complete');
+      if (!BOARD_OPEN) pushProgress(id, 'complete');
       const node = nodesById.get(id);
       emit({ verb: 'completed', nodeId: id, label: node?.label, kind: node?.color }, { silent: true });
     }
@@ -1745,13 +2030,34 @@ export function SkillTreeView({ treeId, demo = false }) {
     active: BOARD_OPEN && boardActive, graphActive: identityActive && canvasView, owner, treeId, tree,
     progress: { completed, completedAt }, query: boardQuery, session: collabRef.current,
     completeStep, restoreStep, showToast, setQuery: setBoardQuery, now: Date.now,
-    clearBoardToast: () => { if (boardToastRef.current?.surface === 'board') dismissToast(); },
+    receiptVersion: syncSnapshot?.receiptVersion,
+    syncReady: syncSession?.ready,
+    dismissInvalidatedToast: () => {
+      const current = boardToastRef.current;
+      if (current?.action?.receipt) dismissToast();
+    },
+    clearBoardToast: () => {
+      const toast = boardToastRef.current;
+      if (toast?.surface === 'board' || (toast?.surface === 'graph' && toast.act === 'delete')) dismissToast();
+    },
     onGraphReveal: handleSheetJump, graphFocusTarget: boardComposer?.opener,
     onReveal: (id) => setBoardReveal((current) => ({ id, key: (current?.key ?? 0) + 1 })),
     onQuiet: () => setBoardQuiet((current) => current + 1),
     track, emit, report: reportBoardFailure,
   });
   const boardTree = useMemo(() => boardHeld && tree ? boardHeld.projected(tree) : tree, [boardHeld, tree]);
+  const heldGraphModel = useMemo(() => {
+    if (!canvasView || !boardHeld || !boardTree || !renderModel) return renderModel;
+    const positions = new Map(renderModel.nodes.map((node) => [node.id, { x: node.x, y: node.y }]));
+    return boardTree.toRenderModel(positions, UnlockRules.derive(boardTree, { completed }));
+  }, [canvasView, boardHeld, boardTree, renderModel, completed]);
+  const graphHeldRef = useRef(false);
+  useEffect(() => {
+    const held = canvasView && boardHeld !== null;
+    if (!held && !graphHeldRef.current) return;
+    graphHeldRef.current = held;
+    if (heldGraphModel) sceneRef.current?.applyModel(heldGraphModel);
+  }, [canvasView, boardHeld, heldGraphModel]);
   const boardStats = useMemo(() => BOARD_OPEN && boardTree ? ShareStats.from(boardTree, UnlockRules.derive(boardTree, { completed })) : null, [boardTree, completed]);
   const shownStats = boardActive ? { ...boardStats, ...(boardOverall ?? {}) } : shareStats;
   const shownDetailId = detailId !== null && boardTree?.nodesById.has(detailId) ? detailId : null;
@@ -1856,11 +2162,11 @@ export function SkillTreeView({ treeId, demo = false }) {
     : null;
   // The legacy phone lane keeps its List switch; the demo keeps its Graph switch.
   let lanePill = null;
-  if (BOARD_OPEN && readOnly && breakpoint !== 'desktop' && !boardActive) lanePill = viewSwitch;
+  if (BOARD_OPEN && readOnly && breakpoint !== 'desktop' && !boardActive && !identityCrashed) lanePill = viewSwitch;
   if (!BOARD_OPEN && listReady) lanePill = <ViewPill view={view} onSwitch={switchView} />;
   const tendPlaceholder = tree && tree.nodes.length === 0
-    ? 'What do you want to learn or build?'
-    : 'Tell the tree what to change…';
+    ? ASK_AI_PLACEHOLDER.empty
+    : ASK_AI_PLACEHOLDER.wide;
   const tendExamples = tree && tree.nodes.length > 0 ? ['Is this realistic?', 'What am I missing?'] : [];
   const laneTend = canTend && breakpoint !== 'desktop' && mobileSurface === 'empty' ? (
     <TendBar
@@ -1880,22 +2186,47 @@ export function SkillTreeView({ treeId, demo = false }) {
   const readOnlyDock = readOnly && breakpoint !== 'phone' && !(mobileEditable && breakpoint === 'tablet');
   let dockOpen = composerOpen || (!boardActive && (!!selectedNode || feedVisible));
   if (readOnly) dockOpen = readOnlyDock && !!selectedNode && !boardActive;
-  if (identityActive && breakpoint === 'tablet') dockOpen = canvasView && !!selectedNode;
-  // The desktop dock hangs below the identity row, so the row's verbs stay reachable while a step is open.
-  const dockTop = identityActive && breakpoint === 'desktop' ? topbarBottom + CHROME_GAP : undefined;
-
-  const graphTop = canvasView ? Math.max(topbarBottom, graphChromeBottom) : topbarBottom;
+  if (identityActive && breakpoint === 'tablet') dockOpen = canvasView && (!!selectedNode || feedVisible);
+  const graphRefusalShown = Boolean(identityActive && canvasView && refusal);
+  const refusalClearance = graphRefusalShown ? graphRefusalHeight + CHROME_GAP : 0;
+  const dockTop = identityActive && !phone ? topbarBottom + CHROME_GAP + refusalClearance : undefined;
+  const graphRefusalStyle = phone
+    ? { bottom: phoneGraphBottom + 16 }
+    : { top: topbarBottom + CHROME_GAP };
+  const attachGraphRefusal = useCallback((element) => {
+    if (!element && graphRefusalRef.current?.contains(document.activeElement)) {
+      identityRef.current?.querySelector('.st-board-switch-option[aria-pressed="true"]')?.focus({ preventScroll: true });
+    }
+    graphRefusalRef.current = element;
+  }, []);
+  useLayoutEffect(() => {
+    if (!graphRefusalShown) return undefined;
+    const element = graphRefusalRef.current;
+    const measure = () => setGraphRefusalHeight(element?.offsetHeight ?? 0);
+    measure();
+    const observer = new ResizeObserver(measure);
+    if (element) observer.observe(element, { box: 'border-box' });
+    return () => observer.disconnect();
+  }, [graphRefusalShown]);
+  const refusalTopInset = graphRefusalShown && !phone ? graphRefusalHeight + CHROME_GAP : 0;
+  const refusalBottomInset = graphRefusalShown && phone ? graphRefusalHeight + phoneGraphBottom + 24 : 0;
+  const graphTop = canvasView ? Math.max(topbarBottom + refusalTopInset, graphChromeBottom) : topbarBottom;
   let viewportChromeBottom = null;
   if (identityActive) viewportChromeBottom = graphTop;
   if (identityCrashed) viewportChromeBottom = fallbackBottom;
   const insets = useMemo(
-    () => viewportInsets({
-      breakpoint, dockOpen, sheetOpen: sheetOpenNow, sheetHeight: mobileEditable ? 300 : 216,
-      laneInset: identityActive ? 0 : laneInset, legendBox,
-      rowBottom: viewportChromeBottom,
-      cameraBlock: identityActive && canvasView && !phone ? GRAPH_CAMERA_SIZE : null,
-    }),
-    [breakpoint, dockOpen, sheetOpenNow, mobileEditable, laneInset, legendBox, identityActive, viewportChromeBottom, canvasView, phone],
+    () => {
+      const base = viewportInsets({
+        breakpoint, dockOpen, sheetOpen: sheetOpenNow, sheetHeight: mobileEditable ? 300 : 216,
+        laneInset: identityActive ? 0 : laneInset, legendBox,
+        rowBottom: viewportChromeBottom,
+        barBottom: phoneGraphBottom,
+        cameraBlock: identityActive && canvasView && !phone ? GRAPH_CAMERA_SIZE : null,
+      });
+      if (!refusalBottomInset) return base;
+      return { ...base, bottom: Math.max(base.bottom, refusalBottomInset) };
+    },
+    [breakpoint, dockOpen, sheetOpenNow, mobileEditable, laneInset, legendBox, identityActive, viewportChromeBottom, canvasView, phone, phoneGraphBottom, refusalBottomInset],
   );
   // The lane and the legend publish their measured boxes after the first paint, so the first view — framed a moment
   // earlier against insets that were still guesses — is framed once more as soon as the real ones arrive.
@@ -1940,15 +2271,6 @@ export function SkillTreeView({ treeId, demo = false }) {
   }, [legendVisible]);
 
   useEffect(() => {
-    if (!demo || !boardActive || !demoIdentityRef.current) return;
-    const row = demoIdentityRef.current;
-    const measure = () => setTopbarBottom(row.offsetHeight);
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(row, { box: 'border-box' });
-    return () => observer.disconnect();
-  }, [demo, boardActive]);
-  useEffect(() => {
     if (toast?.surface === 'graph' && (!canvasView || !identityActive)) dismissToast();
   }, [toast?.surface, canvasView, identityActive, dismissToast]);
 
@@ -1992,10 +2314,11 @@ export function SkillTreeView({ treeId, demo = false }) {
       mounted.disconnect();
     };
   }, [identityActive, canvasView, toast?.key, phone, insets]);
+  const phoneToastClearance = phoneGraphBottom + 12 + (graphRefusalShown ? graphRefusalHeight + 8 : 0);
+  const graphToastBottom = phone ? Math.max(24, phoneToastClearance) : graphToastPosition.bottom;
   const graphToastStyle = identityActive && canvasView ? {
     '--graph-toast-center': graphToastPosition.center === null ? '50%' : `${graphToastPosition.center}px`,
-    '--graph-toast-bottom': `${graphToastPosition.bottom}px`,
-    '--graph-toast-top': `${graphTop + CHROME_GAP}px`,
+    '--graph-toast-bottom': `${graphToastBottom}px`,
   } : undefined;
 
   const revealGraphToast = useCallback(() => {
@@ -2020,8 +2343,30 @@ export function SkillTreeView({ treeId, demo = false }) {
     owner, phone, treeId, tree, boardTree, shownStats, identityActive, boardActive, completed, completedAt,
     boardQuery, boardQueryRef, setBoardQuery, switchView, switchFocusRef, setTendOpen, setForkOpen,
     setShortcutsOpen, setShareOpen, newStepFromBoard, handleSheetJump, editorRef, showToast, reportBoardFailure,
-    shareRequestRef, currentTreeIdRef, graphViewRef, identityActiveRef,
+    shareRequestRef, currentTreeIdRef, graphViewRef, identityActiveRef, activity: sheetActivity,
   });
+  let tendPresentation = null;
+  if (identityActive) tendPresentation = phone ? 'docked' : 'overlay';
+  const [rowChrome, setRowChrome] = useState({ bottom: 0, roomTop: 0 });
+  useLayoutEffect(() => {
+    if (!identityActive || phone || !(tendOpen || feedVisible)) return undefined;
+    const row = identityRef.current?.querySelector('.st-roadmap-identity');
+    const filters = boardActive ? boardLayerRef.current?.querySelector('.st-board-strip') : null;
+    const measure = () => {
+      const rowBottom = row?.getBoundingClientRect().bottom ?? 0;
+      const filterBottom = filters?.getBoundingClientRect().bottom ?? 0;
+      setRowChrome({ bottom: Math.max(rowBottom, filterBottom), roomTop: rootRef.current?.getBoundingClientRect().top ?? 0 });
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    if (row) observer.observe(row);
+    if (filters) observer.observe(filters);
+    window.addEventListener('resize', measure);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', measure);
+    };
+  }, [identityActive, phone, tendOpen, feedVisible, boardActive, topbarBottom, Boolean(refusal)]);
   const roadmapSwitcher = <TreeSwitcher current={currentRoadmap} listTrees={listAllTrees} onNew={newRoadmap}
     onRename={handleRenameTree} onPreviewTitle={previewTreeTitle} onDelete={handleDeleteTree} />;
   useEffect(() => {
@@ -2053,7 +2398,7 @@ export function SkillTreeView({ treeId, demo = false }) {
   }, [identityCrashed, fallbackChromeBottom, fallbackHasSwitch]);
   let boardTopInset = 0;
   if (identityCrashed) boardTopInset = fallbackBottom;
-  if (identityActive || (demo && boardActive)) boardTopInset = topbarBottom;
+  if (identityActive) boardTopInset = topbarBottom;
   let legacyMobileView = shownView === 'board' ? 'board' : 'tree';
   if (phone && shownView === 'list') legacyMobileView = 'list';
   if (identityCrashed) legacyMobileView = 'tree';
@@ -2094,8 +2439,19 @@ export function SkillTreeView({ treeId, demo = false }) {
       onToggleActivity={toggleActivity}
     />
   );
+  const activityPanelTop = Math.max(ACTIVITY_PANEL_TOP,
+    rowChrome.bottom + ACTIVITY_PANEL_GAP + (graphRefusalShown ? CHROME_GAP + graphRefusalHeight : 0)) - rowChrome.roomTop;
+  const activityPanel = identityActive && owner && breakpoint === 'tablet' && feedVisible ? (
+    <aside className="st-roadmap-activity-panel" aria-label={ROADMAP_VERBS.activity} style={{ top: activityPanelTop }}>
+      <div className="st-roadmap-activity-header">
+        <h2>{ROADMAP_VERBS.activity}</h2>
+        <IconButton icon={<Icon name="x" size={20} />} label={LABELS.close} onClick={closeRowActivity} />
+      </div>
+      <ActivityRows groups={activityGroups} nodesById={nodesById} onOpenStep={openActivityStep} />
+    </aside>
+  ) : null;
   return (
-    <div className={`st-root ${panning ? 'panning' : ''} ${dockOpen ? 'st-root--panel-open' : ''}${BOARD_OPEN ? ' st-root--board-enabled' : ''}`} ref={rootRef}>
+    <div className={`st-root ${panning ? 'panning' : ''} ${dockOpen ? 'st-root--panel-open' : ''}${BOARD_OPEN ? ' st-root--board-enabled' : ''}`} ref={rootRef} onFocusCapture={identityActive ? rememberGraphFocus : undefined}>
       <canvas
         ref={canvasRef}
         className={`st-canvas ${hoveredId ? 'st-canvas--hover' : ''} ${(phone || BOARD_OPEN) && view !== null ? 'st-canvas--layer' : ''}`}
@@ -2162,7 +2518,7 @@ export function SkillTreeView({ treeId, demo = false }) {
             <RoadmapIdentity
               band={breakpoint}
               view={boardActive ? 'board' : 'tree'}
-              role={owner ? 'owner' : 'reader'}
+              role={role}
               title={boardAwaitsRoadmap ? undefined : tree?.title}
               switcher={owner && !phone && !boardAwaitsRoadmap ? roadmapSwitcher : null}
               progress={boardAwaitsRoadmap || !shownStats ? null : { done: shownStats.done, total: shownStats.total }}
@@ -2175,6 +2531,8 @@ export function SkillTreeView({ treeId, demo = false }) {
               onExport={owner && boardFacts.loaded ? exportFromRow : null}
               onSettings={owner ? openRowSettings : null}
               onShortcuts={owner ? openRowShortcuts : null}
+              onActivity={owner && !phone ? openRowActivity : null}
+              activityOpen={owner && feedVisible}
               onFork={!owner && forkPresent ? openRowFork : null}
               sheet={phone && owner && boardFacts.loaded ? identitySheet : null}
               onBottom={setTopbarBottom}
@@ -2204,7 +2562,9 @@ export function SkillTreeView({ treeId, demo = false }) {
               selectedId={selectedId}
               onSelect={openStepFromBoard}
               onAnchor={setSelectedId}
-              notice={identityActive && breakpoint === 'desktop' ? null : deviceNotice}
+              refusal={refusal}
+              deviceLine={phone ? deviceLine : null}
+              onFork={phone && forkPresent ? openRowFork : null}
               breakpoint={breakpoint}
               topInset={boardTopInset}
               active={boardActive}
@@ -2228,6 +2588,7 @@ export function SkillTreeView({ treeId, demo = false }) {
               legend={legend}
             />
           </ErrorBoundary>
+          {boardActive && activityPanel}
         </div>
       )}
 
@@ -2268,35 +2629,32 @@ export function SkillTreeView({ treeId, demo = false }) {
       {shownComposer !== null && (
         <ErrorBoundary fallback={null} onCrash={handleComposerCrash}>
           <StepComposer key={shownComposer.editing ?? 'create'} tree={boardTree} completed={completed} legend={legend} band={breakpoint}
-            editing={shownComposer.editing ?? null} preserveOutsideFocus={identityActive} onEdit={(request) => composerDoor.saveEdit(request)}
+            editing={shownComposer.editing ?? null} savingBlocked={Boolean(syncSnapshot?.rebaselining)} preserveOutsideFocus={identityActive} onEdit={(request) => composerDoor.saveEdit(request)}
             onCreate={(request) => boardActs.create(request)} onClose={closeBoardComposer} />
         </ErrorBoundary>
       )}
 
       {!identityActive && !identityCrashed && legacyChrome}
 
-      {demo && boardActive && (
-        <header ref={demoIdentityRef} className={`st-demo-board-identity${phone ? ' st-demo-board-identity--phone' : ''}`}>
-          <h1 className="st-demo-board-identity-title" title={tree?.title}>{tree?.title}</h1>
-          {boardFacts.loaded && !boardFacts.empty && shownStats && (
-            <span className="st-demo-board-identity-progress">
-              <span aria-hidden>{progressFigure({ ...shownStats, compact: phone })}</span>
-              <span className="st-board-spoken">{progressLabel(shownStats)}</span>
-            </span>
-          )}
-          <ViewSwitch view="board" onSwitch={switchView} phone={phone} />
-          {boardFacts.loaded && !boardFacts.empty && !phone && <FindStep query={boardQuery} onQuery={setBoardQuery} />}
-        </header>
+      {graphRefusalShown && (
+        <div ref={attachGraphRefusal} className={`st-graph-refusal${phone ? ' st-graph-refusal--phone' : ''}`}
+          style={graphRefusalStyle}>
+          <RefusedSync band={breakpoint} {...refusal} />
+        </div>
       )}
 
       {identityActive && (
         <MobileChrome identity band={breakpoint} view={canvasView ? 'tree' : 'board'} rowBottom={topbarBottom}
           onTopBottom={setGraphChromeBottom}
-          onSignInToKeep={breakpoint !== 'desktop' && status !== 'signed-in' && treeMine ? openSignInDoor : undefined}
+          step={graphStep}
+          ctaEcho={demo && ctaEcho}
+          onOpenStep={openStepFromGraph}
+          onBarBottom={setGraphBarBottom}
+          deviceLine={phone ? deviceLine : null}
           cameraRight={phone || !canvasView ? undefined : insets.blocks.at(-1)?.right}
           cameraBottom={phone || !canvasView ? undefined : insets.blocks.at(-1)?.bottom}
           onZoomIn={handleZoomIn} onZoomOut={handleZoomOut} onFocus={handleFocus} onShowAll={handleShowAll}
-          onFork={forkPillPresent ? openRowFork : undefined} />
+          onFork={forkPresent && phone && canvasView ? openGraphFork : undefined} />
       )}
 
       {laneShown && (
@@ -2318,8 +2676,10 @@ export function SkillTreeView({ treeId, demo = false }) {
       {canTend && (identityActive || breakpoint === 'desktop') && tendOpen && (
         <TendBar
           variant="desktop"
+          presentation={tendPresentation}
+          topInset={rowChrome.bottom + 16}
           working={tendWorking}
-          placeholder={tendPlaceholder}
+          placeholder={identityActive && phone && tree?.nodes.length > 0 ? ASK_AI_PLACEHOLDER.phone : tendPlaceholder}
           examples={tendExamples}
           onSubmit={submitTend}
           onDismiss={() => setTendOpen(false)}
@@ -2328,20 +2688,20 @@ export function SkillTreeView({ treeId, demo = false }) {
         />
       )}
 
-      {stranded && !demo && (
+      {stranded && !demo && !identityActive && (
         <div style={{ position: 'absolute', top: 'calc(max(env(safe-area-inset-top, 0px), 44px) + 8px)', left: '50%', transform: 'translateX(-50%)', zIndex: 24 }}>
           <StatusChip>{stranded}</StatusChip>
         </div>
       )}
 
-      {!readOnly && breakpoint === 'desktop' && status !== 'signed-in' && treeMine && !demo && (identityActive || !(boardActive && deviceNotice)) && (
-        <div style={{ position: 'absolute', top: identityActive ? topbarBottom + CHROME_GAP : 'calc(var(--space-6) + 52px)', right: 'var(--space-6)', zIndex: 24, display: 'flex', alignItems: 'center', gap: 8 }}>
-          <StatusChip>{lapsed ? 'Signed out — saved on this device' : 'Saved on this device — sign in to keep it'}</StatusChip>
+      {!identityActive && !readOnly && breakpoint === 'desktop' && status !== 'signed-in' && treeMine && !demo && !(boardActive && deviceNotice) && (
+        <div style={{ position: 'absolute', top: 'calc(var(--space-6) + 52px)', right: 'var(--space-6)', zIndex: 24, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <StatusChip>{sessionLapsed || lapsed ? 'Signed out — saved on this device' : 'Saved on this device — sign in to keep it'}</StatusChip>
         </div>
       )}
 
       <Minimap
-        nodes={renderModel?.nodes ?? []}
+        nodes={heldGraphModel?.nodes ?? []}
         states={states}
         bounds={bounds}
         subscribeViewport={scene?.subscribeViewport ?? null}
@@ -2409,7 +2769,7 @@ export function SkillTreeView({ treeId, demo = false }) {
                 now={Date.now()}
                 hoveredId={hoveredId}
                 newIds={newEventIds}
-                onClose={closeActivity}
+                onClose={identityActive ? closeRowActivity : closeActivity}
                 onHoverNode={handleRowHover}
                 onLeaveNode={handleRowLeave}
                 onRevealNode={handleRevealNode}
@@ -2431,7 +2791,9 @@ export function SkillTreeView({ treeId, demo = false }) {
         </aside>
       )}
 
-      {readOnly && breakpoint === 'phone' && (
+      {canvasView && activityPanel}
+
+      {!identityActive && readOnly && breakpoint === 'phone' && (
         <BottomSheet
           open={!!selectedNode && !aim && !removing && !multiMode && canvasView && !sheetHeld}
           onDismiss={() => setSelectedId(null)}
@@ -2464,7 +2826,7 @@ export function SkillTreeView({ treeId, demo = false }) {
         </BottomSheet>
       )}
 
-      {mobileEditable && breakpoint === 'phone' && aim && !multiMode && canvasView && (
+      {!identityActive && mobileEditable && breakpoint === 'phone' && aim && !multiMode && canvasView && (
         <AimBar
           sourceLabel={nodesById.get(aim.sourceId)?.label}
           direction={aim.direction}
@@ -2473,7 +2835,7 @@ export function SkillTreeView({ treeId, demo = false }) {
         />
       )}
 
-      {mobileEditable && breakpoint === 'phone' && removing && !multiMode && canvasView && (
+      {!identityActive && mobileEditable && breakpoint === 'phone' && removing && !multiMode && canvasView && (
         <RemoveLinkBar
           onRemove={() => {
             const { from, to } = removing;
@@ -2485,7 +2847,7 @@ export function SkillTreeView({ treeId, demo = false }) {
         />
       )}
 
-      {mobileEditable && breakpoint === 'phone' && multiMode && (
+      {!identityActive && mobileEditable && breakpoint === 'phone' && multiMode && (
         <BulkBar
           count={selectedIds.size}
           kinds={recolorKinds}
@@ -2497,7 +2859,7 @@ export function SkillTreeView({ treeId, demo = false }) {
       )}
 
       {mobileEditable && breakpoint === 'tablet' && (
-        <aside className={`st-detail-panel st-detail-panel--tablet ${mobileSurface !== 'empty' && !boardActive ? 'st-detail-panel--open' : ''}`} style={{ width: TABLET_PANEL_WIDTH }}>
+        <aside className={`st-detail-panel st-detail-panel--tablet ${mobileSurface !== 'empty' && !boardActive ? 'st-detail-panel--open' : ''}`} style={{ width: TABLET_PANEL_WIDTH, top: dockTop }}>
           <div className="st-dock-tenant" key={mobileSurface === 'editor' ? selectedNode.id : mobileSurface}>
             {mobileSurface === 'bulk' ? (
               <BulkBar
@@ -2583,7 +2945,7 @@ export function SkillTreeView({ treeId, demo = false }) {
       )}
 
       {(shared || !!demotion) && (
-        <ForkDoor preserveOutsideFocus={identityActive} open={forkOpen} tablet={breakpoint === 'tablet'} treeId={treeId} signedIn={status === 'signed-in'} demo={demo} stepCount={shareStats?.total} onClose={() => setForkOpen(false)} />
+        <ForkDoor preserveOutsideFocus={identityActive} open={forkOpen} presentation={phone ? 'sheet' : 'dialog'} drawn={BOARD_OPEN} treeId={treeId} signedIn={status === 'signed-in'} demo={demo} stepCount={shareStats?.total} onClose={() => setForkOpen(false)} />
       )}
 
       {demo && coachAllowed && scene && canvasView && (
@@ -2592,6 +2954,7 @@ export function SkillTreeView({ treeId, demo = false }) {
           nodeId={COACHED_NODE_ID}
           onMarkDone={() => completeStep(COACHED_NODE_ID)}
           completionCount={demoCompletions}
+          covered={identityActive ? keyboardCovered : undefined}
         />
       )}
 
@@ -2632,8 +2995,8 @@ export function SkillTreeView({ treeId, demo = false }) {
       )}
 
       {identityActive && canvasView && toast?.surface === 'graph' && (
-        <div className={`st-graph-toast${phone ? ' st-graph-toast--phone' : ''}${phone && sheetOpenNow ? ' st-graph-toast--sheet' : ''}`} style={graphToastStyle}>
-          <BoardToast toast={toast} phone={phone} onToastShown={boardToastShown} onToastReveal={revealGraphToast}
+        <div className={`st-graph-toast${phone ? ' st-graph-toast--phone' : ''}`} style={graphToastStyle}>
+          <BoardToast toast={toast} phone={phone} blocked={phone && Boolean(refusal)} onToastShown={boardToastShown} onToastReveal={revealGraphToast}
             onToastUndo={undoGraphToast} />
         </div>
       )}
@@ -2701,3 +3064,4 @@ export function SkillTreeView({ treeId, demo = false }) {
     </div>
   );
 }
+

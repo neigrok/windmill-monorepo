@@ -229,7 +229,7 @@ window.openSelectionBoard = (nodes, options = {}) => {
     window.setSelectionOwner = setOwner;
     window.setSelectionActive = setActive;
     window.rerenderSelection = () => setRevision((value) => value + 1);
-    window.removeSelectionStep = (id) => session.dispatch({ kind: 'BulkDelete', nodeIds: [id], retireIncidentEdges: true });
+    window.removeSelectionStep = (id) => session.dispatch({ kind: 'BulkDelete', nodeIds: [id] });
     window.filterSelection = (hue) => setQuery((current) => current.toggledKind(hue));
     window.selectionQuery = query.kinds;
     window.selectionSteps = tree.nodes.map(({ id, color }) => ({ id, color }));

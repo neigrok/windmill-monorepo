@@ -14,7 +14,7 @@ const prefersReducedMotion = () =>
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
-export function CoachChip({ scene, nodeId, onMarkDone, completionCount = 0 }) {
+export function CoachChip({ scene, nodeId, onMarkDone, completionCount = 0, covered }) {
   const [shown, setShown] = useState(false);
   const [retired, setRetired] = useState(false);
   const containerRef = useRef(null);
@@ -130,16 +130,18 @@ export function CoachChip({ scene, nodeId, onMarkDone, completionCount = 0 }) {
   }, [scene, nodeId, shown]);
 
   // Esc retires the chip and nothing else — capture + stop, so the press cannot also deselect.
+  // With a `covered` rule, Esc belongs to the chip only while the chip is the top thing on screen.
   useEffect(() => {
     if (!shown) return undefined;
     const onKey = (event) => {
       if (event.key !== 'Escape') return;
+      if (covered && (retiredRef.current || covered())) return;
       event.stopPropagation();
       retire();
     };
     window.addEventListener('keydown', onKey, { capture: true });
     return () => window.removeEventListener('keydown', onKey, { capture: true });
-  }, [shown, retire]);
+  }, [shown, retire, covered]);
 
   if (retired || !shown || !node) return null;
 

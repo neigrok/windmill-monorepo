@@ -5,6 +5,7 @@ import { API_BASE } from '../apiBase.js';
 const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function SignInDialog({ open, onClose, onSend, resume = null }) {
+  const titleId = React.useId();
   const [email, setEmail] = React.useState('');
   const [phase, setPhase] = React.useState('idle'); // idle | sending | wait | error
   const [errorCode, setErrorCode] = React.useState(null); // rate_limited | unreachable
@@ -86,12 +87,12 @@ export function SignInDialog({ open, onClose, onSend, resume = null }) {
   }
 
   return (
-    <Dialog open={open} onClose={onClose} width={400}>
+    <Dialog open={open} onClose={onClose} width={400} labelledBy={titleId}>
       <BrandWordmark size={24} style={wordmark} />
 
       {(phase === 'idle' || phase === 'sending') && (
         <form onSubmit={submit} style={column}>
-          <h2 style={title}>Sign in</h2>
+          <h2 id={titleId} style={title}>Sign in</h2>
           <p style={oneDoor}>New here? Same door — your account is created the first time.</p>
 
           <div style={{ ...field, boxShadow: typo ? GOLD_RING : 'none' }}>
@@ -125,7 +126,7 @@ export function SignInDialog({ open, onClose, onSend, resume = null }) {
 
       {phase === 'wait' && (
         <div style={column}>
-          <h2 style={panelTitle}>Check your email</h2>
+          <h2 id={titleId} style={panelTitle}>Check your email</h2>
           <p style={panelBody}>We sent a link to {email}. It works once and lasts 15 minutes.</p>
           <div style={panelActions}>
             <Button variant="ghost" size="sm" onClick={backToForm}>Use a different email</Button>
@@ -136,7 +137,7 @@ export function SignInDialog({ open, onClose, onSend, resume = null }) {
 
       {phase === 'error' && errorCode === 'rate_limited' && (
         <div style={column}>
-          <h2 style={panelTitle}>That's a few links in a row</h2>
+          <h2 id={titleId} style={panelTitle}>That's a few links in a row</h2>
           <p style={panelBody}>Check your spam folder first — or try again in 10 minutes.</p>
           <div style={panelActions}>
             <Button variant="ghost" size="sm" onClick={backToForm}>Use a different email</Button>
@@ -148,7 +149,7 @@ export function SignInDialog({ open, onClose, onSend, resume = null }) {
         <div style={column}>
           <div style={brickHead}>
             <Icon name="wifi" size={18} color="var(--color-danger)" />
-            <h2 style={brickTitle}>Can't reach windmill.works</h2>
+            <h2 id={titleId} style={brickTitle}>Can't reach windmill.works</h2>
           </div>
           <p style={panelBody}>Nothing on this device was touched — try again in a moment.</p>
           <div style={panelActions}>

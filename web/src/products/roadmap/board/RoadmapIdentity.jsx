@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
-import { Compass, Download, GitFork, Keyboard, MoreHorizontal, Settings, Share, Sparkles } from 'lucide-react';
+import { Activity, Compass, Download, GitFork, Keyboard, MoreHorizontal, Settings, Share, Sparkles } from 'lucide-react';
 import { Tooltip } from '../../../design-system';
 import { track } from '../../../telemetry/beacon.js';
 import { hueOf } from '../theme.js';
@@ -9,14 +9,14 @@ import { FindStep, NewStep, handleMenuKey, dismissOverlayOutside } from './Board
 import { RoadmapSheet } from './RoadmapSheet.jsx';
 import { ViewSwitch } from './ViewSwitch.jsx';
 import { countBucket } from './acts.js';
-import { LABELS, ROADMAP_VERBS, formatCount, nextChip, progressFigure, progressLabel, reasonLine, upNextCount } from './copy.js';
+import { DEMO_BYLINE, LABELS, ROADMAP_VERBS, formatCount, nextChip, progressFigure, progressLabel, reasonLine, upNextCount } from './copy.js';
 import './identity.css';
 
 const FULL_DESKTOP_QUERY = '(min-width: 1280px)';
 
 export function RoadmapIdentity({
   band, view, role, title, switcher, progress, onSwitchView, find, next,
-  onAskAI, onShare, onNewStep, onExport, onSettings, onShortcuts, onFork, sheet, onBottom,
+  onAskAI, onShare, onNewStep, onExport, onSettings, onShortcuts, onFork, sheet, onBottom, onActivity, activityOpen = false,
 }) {
   const bar = useRef(null);
   const titleButton = useRef(null);
@@ -38,6 +38,7 @@ export function RoadmapIdentity({
       { verb: 'askAI', label: ROADMAP_VERBS.askAI, icon: Sparkles, key: '⌘K', act: onAskAI },
       { verb: 'share', label: ROADMAP_VERBS.shareRoadmap, icon: Share, act: onShare },
     ] : []),
+    { verb: 'activity', label: ROADMAP_VERBS.activity, icon: Activity, key: 'A', act: onActivity },
     { verb: 'export', label: ROADMAP_VERBS.export, icon: Download, act: onExport },
     { verb: 'settings', label: ROADMAP_VERBS.settings, icon: Settings, act: onSettings },
     { verb: 'shortcuts', label: ROADMAP_VERBS.keyboardShortcuts, icon: Keyboard, key: '?', act: onShortcuts },
@@ -151,6 +152,7 @@ export function RoadmapIdentity({
       data-role={role}
       data-view={view}
     >
+      {role === 'demo' && phone && <span className="st-roadmap-sample">{DEMO_BYLINE.phone}</span>}
       <div className="st-roadmap-context">
         {sheetAvailable && (
           <button ref={titleButton} className="st-roadmap-title st-roadmap-title-button" type="button"
@@ -161,6 +163,7 @@ export function RoadmapIdentity({
         {showSwitcher && <div className="st-roadmap-switcher">{identitySwitcher}</div>}
         {showHeading && <h1 ref={titleButton} tabIndex={-1} className="st-roadmap-title" title={title}>{title}</h1>}
       </div>
+      {role === 'demo' && !phone && <span className="st-roadmap-sample">{DEMO_BYLINE.wide}</span>}
       {title !== undefined && progress && (
         <span className="st-roadmap-progress" aria-label={progressLabel(progress)}>
           {progressFigure({ ...progress, compact: phone })}
@@ -251,11 +254,13 @@ export function RoadmapIdentity({
           <Tooltip label={ROADMAP_VERBS.more} side="bottom" disabled={!desktop || open === 'more'}>
             <button
               ref={moreButton}
+              data-roadmap-more
               type="button"
               className="st-roadmap-icon"
               aria-label={ROADMAP_VERBS.more}
               aria-haspopup="menu"
               aria-expanded={open === 'more'}
+              aria-pressed={activityOpen}
               onClick={() => toggle('more')}
             >
               <MoreHorizontal size={20} aria-hidden />
