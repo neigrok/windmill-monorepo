@@ -601,7 +601,9 @@ class CoachChats internal constructor(
     // A retained answer's drafts, in one gesture: replayed by the answer's result identity, so a second tap makes no new routines. Runs in the store's scope, so leaving Coach does not cancel it.
     suspend fun saveRetainedDrafts(chat: String, requestId: String): DraftOutcome {
         val seat = archiveOwner
-        val record = retained(seat, chat).firstOrNull { it.requestId == requestId } ?: return DraftOutcome.Closed(Ask.draftGone)
+        // Its drafts are the answer's own, so a question this build cannot read does not cost them.
+        val record = try { localCoach?.retained(seat, chat)?.firstOrNull { it.requestId == requestId } }
+            catch (failure: Exception) { archiveFailed(failure); null } ?: return DraftOutcome.Closed(Ask.draftGone)
         val saving = imports ?: return DraftOutcome.Closed(Ask.draftInvalid)
         return scope.async {
             when (saving.apply(record)) {

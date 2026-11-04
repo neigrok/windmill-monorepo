@@ -824,7 +824,6 @@ class CoachChatsTests {
             room.store.conversations.read()
             assertEquals(listOf(ConversationRow("answered-chat", "Plan me", coach.chat("answered-chat")!!.updatedAtMs, answerPreview = "Here is a plan")), coach.history)
             assertEquals(listOf("Plan me"), coach.exchanges("answered-chat").map { it.question })
-            assertEquals(DraftOutcome.Closed(Ask.draftGone), coach.saveRetainedDrafts("answered-chat", "bad-1"))
             assertEquals(listOf(mapOf("operation" to "gym.restoreConversation")), telling.failures)
         }
     }
