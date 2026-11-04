@@ -33,6 +33,7 @@ import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -164,10 +165,6 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
     var pushedDraftOpen by remember { mutableStateOf(false) }
     val reviewFlow = rememberReviewFlow()
     val coachSheet = rememberCoachSheetFlow()
-    val conversationId = store.coach.selectedChatId.orEmpty()
-    val conversation = store.coach.exchanges(conversationId)
-    val asking = store.coach.isAsking(conversationId)
-    val refusal = store.coach.refusal(conversationId)
     val anonymousCoachAccess = store.coach.anonymousAccess
     LaunchedEffect(account.identityRevision, store.coach.accountKey, navigator.tab, navigator.away.lastOrNull()) {
         if (account.isSignedIn || !initialTabChosen || navigator.tab == Tab.Coach || navigator.away.lastOrNull() is Away.Coach || navigator.away.lastOrNull() is Away.Thread)
@@ -704,31 +701,42 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
             val recovery = remember(store) { RecoveryBinding(store) }
             if (fixRead?.belongsTo(account) == true) WorkoutFixScreen(recovery, recovery, currentOwner = { fixRead.belongsTo(currentAccount) })
 
+            // Coach's reads run while one of its screens stands in a started app, and not otherwise.
             @Composable
-            fun CoachStance(otherwise: @Composable () -> Unit) = when {
-                !account.isSignedIn && anonymousCoachAccess != AnonymousCoachAccess.Available ->
-                    CoachAccessStance(seat = youInitial, onSignIn = shell.openSignIn,
-                        bound = anonymousCoachAccess == AnonymousCoachAccess.Bound && store.coach.hasConversations,
-                        onThreads = if (store.coach.hasConversations) ({ look(Away.Threads) }) else null)
-                askAbsent -> AskAbsentStance(seat = youInitial, onThreads = { look(Away.Threads) })
-                else -> otherwise()
+            fun ReadingCoach() = LifecycleStartEffect(store) {
+                store.conversations.showing(true)
+                onStopOrDispose { store.conversations.showing(false) }
+            }
+
+            @Composable
+            fun CoachStance(otherwise: @Composable () -> Unit) {
+                ReadingCoach()
+                when {
+                    !account.isSignedIn && anonymousCoachAccess != AnonymousCoachAccess.Available ->
+                        CoachAccessStance(seat = youInitial, onSignIn = shell.openSignIn,
+                            bound = anonymousCoachAccess == AnonymousCoachAccess.Bound && store.coach.hasConversations,
+                            onThreads = if (store.coach.hasConversations) ({ look(Away.Threads) }) else null)
+                    askAbsent -> AskAbsentStance(seat = youInitial, onThreads = { look(Away.Threads) })
+                    else -> otherwise()
+                }
             }
 
             // Over the workout every door to the rest of the room closes the sheet first; a review opens over it.
             @Composable
             fun Conversation(overWorkout: Boolean = false) = remember(store) { AskBinding(store) }.let { ask ->
                 fun door(through: () -> Unit) = if (overWorkout) coachSheet.close(through) else through()
+                val conversationId = store.coach.selectedChatId.orEmpty()
                 AskScreen(
                     state = ask, events = ask,
                     seat = youInitial.takeUnless { overWorkout },
-                    thread = conversation,
+                    thread = store.coach.exchanges(conversationId),
                     conversationId = conversationId,
                     onOpenRoutine = { id -> door { selectedRoutineId = id } },
                     onOpenChat = { id -> door { openCoachChat(id, "reply_open") } },
                     receipts = reviewFlow.receiptsAt(Reviewing.coach),
                     lookedAt = lookedAtIds,
-                    asking = asking,
-                    refusal = refusal,
+                    asking = store.coach.isAsking(conversationId),
+                    refusal = store.coach.refusal(conversationId),
                     onAsk = ::ask,
                     onStop = { store.coach.stop() },
                     composerEnabled = !overWorkout || coachOffered,
@@ -743,7 +751,10 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                 )
             }
 
-            if (loggerShown) coachSheet.Sheet { Conversation(overWorkout = true) }
+            if (loggerShown) coachSheet.Sheet {
+                ReadingCoach()
+                Conversation(overWorkout = true)
+            }
 
             @Composable
             fun TabScreen(tab: Tab, transient: SnackbarHostState? = null) = when (tab) {
@@ -864,25 +875,28 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                         onOpen = { openCoachChat(it, "history_open") },
                         onAskNew = { askSomethingNew() },
                     ) }
-                    is Away.Thread -> remember(store) { AskBinding(store) }.let { ask -> ThreadScreen(
-                        state = ask, events = ask,
-                        threadId = standing.threadId,
-                        seat = youInitial,
-                        composerEnabled = account.isSignedIn || anonymousCoachAccess == AnonymousCoachAccess.Available,
-                        onSignIn = shell.openSignIn,
-                        onBuildRoutine = { building = RoutineDraft(position = store.routines.all.size) },
-                        origin = origin,
-                        onThreads = { look(Away.Threads) },
-                        onConnections = { look(Away.Connections) },
-                        onOpenRoutine = { selectedRoutineId = it },
-                        onOpenChat = { openCoachChat(it, "reply_open") },
-                        receipts = reviewFlow.receiptsAt(Reviewing.thread(standing.threadId)),
-                        lookedAt = lookedAtIds,
-                        backTo = backTo,
-                        onBack = { back() },
-                        onReview = { reviewFlow.open(it, Reviewing.thread(standing.threadId)) },
-                        say = { note = it },
-                    ) }
+                    is Away.Thread -> remember(store) { AskBinding(store) }.let { ask ->
+                        ReadingCoach()
+                        ThreadScreen(
+                            state = ask, events = ask,
+                            threadId = standing.threadId,
+                            seat = youInitial,
+                            composerEnabled = account.isSignedIn || anonymousCoachAccess == AnonymousCoachAccess.Available,
+                            onSignIn = shell.openSignIn,
+                            onBuildRoutine = { building = RoutineDraft(position = store.routines.all.size) },
+                            origin = origin,
+                            onThreads = { look(Away.Threads) },
+                            onConnections = { look(Away.Connections) },
+                            onOpenRoutine = { selectedRoutineId = it },
+                            onOpenChat = { openCoachChat(it, "reply_open") },
+                            receipts = reviewFlow.receiptsAt(Reviewing.thread(standing.threadId)),
+                            lookedAt = lookedAtIds,
+                            backTo = backTo,
+                            onBack = { back() },
+                            onReview = { reviewFlow.open(it, Reviewing.thread(standing.threadId)) },
+                            say = { note = it },
+                        )
+                    }
                 }
             }
 

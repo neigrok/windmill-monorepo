@@ -46,6 +46,12 @@ import works.windmill.platform.ShellActions
 import works.windmill.platform.telemetry.LocalTelemetry
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.sync.core.Json
+import works.windmill.sync.api.Change
+import works.windmill.sync.api.Gesture
+import works.windmill.sync.api.NewID
+import works.windmill.sync.core.RecordID
+import works.windmill.sync.core.ScopeRef
+import works.windmill.sync.schema.Gym
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
@@ -61,9 +67,9 @@ class CoachOverWorkoutTests {
 
     private val pushA = listOf("bench-press", "overhead-press", "incline-dumbbell-press", "cable-fly", "triceps-pushdown")
 
-    private fun workoutRoom(server: ScriptedTurns = ScriptedTurns(emptyList()), signedIn: Boolean = true, routineId: String = "rt_00000001", test: (EngineRoomFixture, Routine) -> Unit) {
+    private fun workoutRoom(server: ScriptedTurns = ScriptedTurns(emptyList()), signedIn: Boolean = true, routineId: String = "rt_00000001", coachShown: Boolean = true, test: (EngineRoomFixture, Routine) -> Unit) {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val phone = EngineRoomFixture(tmp.newFolder(), scope, telemetry = telemetry, coachServer = server, mintRoutine = { routineId })
+        val phone = EngineRoomFixture(tmp.newFolder(), scope, telemetry = telemetry, coachServer = server, mintRoutine = { routineId }, coachShown = coachShown)
         var showing by mutableStateOf(true)
         try {
             val routine = runBlocking {
@@ -146,6 +152,28 @@ class CoachOverWorkoutTests {
             assertEquals("overhead-press", phone.store.workout.exerciseId)
             assertEquals(listOf("coach", "workout"), screens().takeLast(2))
         }
+    }
+
+    @Test fun coachOverTheWorkoutReadsWhileItsSheetStandsAndNotAfter() = workoutRoom(coachShown = false) { phone, _ ->
+        val conversations = phone.store.conversations
+        fun plant(id: String) = phone.engine.commit(ScopeRef(Gym.scope), Gesture(listOf(Change.create(Gym.Types.thread, NewID.Given(RecordID(id)), mapOf("title" to Json.of(id))))))
+        plant("thread-one")
+        compose.onNodeWithText("Finish").assertIsDisplayed()
+        compose.runOnIdle { assertEquals(emptyList<String>(), conversations.threads.map { it.title }) }
+
+        compose.onNodeWithContentDescription("Coach").performClick()
+        compose.waitUntil(10_000) {
+            org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+            conversations.threads.isNotEmpty()
+        }
+        compose.runOnIdle { assertEquals(listOf("thread-one"), conversations.threads.map { it.title }) }
+
+        compose.onNode(hasContentDescription("Close sheet")).performSemanticsAction(SemanticsActions.OnClick)
+        compose.waitUntil(5_000) { compose.onAllNodesWithText(Ask.placeholder).fetchSemanticsNodes().isEmpty() }
+        plant("thread-two")
+        compose.waitForIdle()
+        org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+        compose.runOnIdle { assertEquals(listOf("thread-one"), conversations.threads.map { it.title }) }
     }
 
     @Test fun signedOutWithNoCoachForThisPhoneTheBarHasNoDoor() = workoutRoom(signedIn = false) { _, _ ->

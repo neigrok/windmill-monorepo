@@ -149,19 +149,21 @@ data class ConversationRow(val id: String, val title: String, val askedAtMs: Lon
     }
 }
 
-// The room's reads over the engine's `thread` and `message` records (Coach §9): the chat on screen, every thread, and History's rows while History is up. Each read runs off the main thread through the seat's guarded read, again on every revision of the engine.
+// The room's reads over the engine's `thread` and `message` records (Coach §9): the chat on screen, every thread, and History's rows while History is up. Each read runs off the main thread through the seat's guarded read, again on every revision of the engine, and only while a screen of Coach stands.
 class CoachConversations(
     private val seat: TrainingSeat,
     private val training: EngineTraining,
     private val telemetry: Telemetry,
     private val turns: CoachTurns?,
 ) {
-    private data class Watched(val chat: String? = null, val thread: String? = null, val retained: List<CoachOnboardingRecord> = emptyList(), val history: Boolean = false)
+    private data class Watched(val chat: String? = null, val thread: String? = null, val retained: List<CoachOnboardingRecord> = emptyList(), val screens: Int = 0, val history: Boolean = false) {
+        val shown: Boolean get() = screens > 0 || history
+    }
     private data class Transcript(val chat: String, val exchanges: List<CoachExchange>)
     private class Reading(val threads: List<CoachThread>, val transcript: Transcript?, val rows: List<ConversationRow>?)
 
-    // Nothing until the room first asks, so a seat that never opens Coach reads nothing of it.
-    private val watched = MutableStateFlow<Watched?>(null)
+    // What the reads follow. With no screen of Coach standing nothing is read, and a turn running meanwhile asks for no read: its words follow `live`, and the screen that returns reads what it wrote.
+    private val watched = MutableStateFlow(Watched())
     private var open by mutableStateOf<Transcript?>(null)
     private var undecodedReported = false
     private var live by mutableStateOf<LiveAnswer?>(null)
@@ -179,11 +181,16 @@ class CoachConversations(
     fun exchanges(chat: String): List<CoachExchange> = open?.takeIf { it.chat == chat }?.exchanges.orEmpty()
 
     fun watch(chat: String?, thread: String?, retained: List<CoachOnboardingRecord>) {
-        watched.update { (it ?: Watched()).copy(chat = chat, thread = thread, retained = retained) }
+        watched.update { it.copy(chat = chat, thread = thread, retained = retained) }
+    }
+
+    // Counted, since a frame sliding away and the one taking its place both stand for a moment.
+    fun showing(on: Boolean) {
+        watched.update { it.copy(screens = it.screens + if (on) 1 else -1) }
     }
 
     fun watchHistory(on: Boolean) {
-        watched.update { (it ?: Watched()).copy(history = on) }
+        watched.update { it.copy(history = on) }
     }
 
     // An answer as it stands this moment. A running message this phone writes carries the words so far, which its record takes only every few seconds. An ended message is its record's alone.
@@ -200,7 +207,7 @@ class CoachConversations(
         rows = null
     }
 
-    // Runs for the application's life: a read on every revision and on every change of what is watched; a newer one replaces a read still under way.
+    // Runs for the application's life: a read on every revision and on every change of what is watched, while a screen stands; a newer one replaces a read still under way.
     suspend fun observe() = coroutineScope {
         turns?.let { running ->
             launch { running.liveAnswer.collect { answer -> follow(answer) } }
@@ -216,9 +223,9 @@ class CoachConversations(
     }
 
     suspend fun read() {
-        val wanted = watched.value ?: return
+        val wanted = watched.value.takeIf { it.shown } ?: return
         val held = seat.tried("gym.readConversation") { seat.readTraining { training.reading { reader -> reading(reader, wanted) } } } ?: return
-        if (wanted.chat != watched.value?.chat) return
+        if (wanted.chat != watched.value.chat) return
         threads = held.threads
         open = held.transcript
         if (held.rows != null) rows = held.rows
@@ -237,7 +244,7 @@ class CoachConversations(
             val retained = wanted.retained.map { record -> CoachExchange(record, record.response?.let { response -> receipt(reader, response.resultId) }) }
             Transcript(chat, (retained + exchanges(said, reader, replica)).sortedBy { it.atMs })
         }
-        val rows = if (!wanted.history) null else decoded(CoachMessage, reader.source.drawn(CoachMessage.type)).groupBy { it.threadId }.let { said ->
+        val rows = if (!wanted.history) null else decoded(reader.source.drawn(CoachMessage.type), ::MessageLine).groupBy { it.thread }.let { said ->
             threads.map { thread -> ConversationRow(thread, said[thread.id].orEmpty()) }
         }
         return Reading(threads, transcript, rows)
@@ -329,10 +336,12 @@ class CoachConversations(
         return SentPicture(CoachAttachment(picture.id, row?.mediaType ?: picture.mediaType, row?.width ?: 0, row?.height ?: 0, row?.bytes?.toLong() ?: 0), row != null)
     }
 
+    private fun <E : Entity<E>> decoded(type: EntityType<E>, records: Collection<Record>): List<E> = decoded(records, type::decode)
+
     // A record this build cannot read costs that record and never the conversation around it; the first one in a run is reported.
-    private fun <E : Entity<E>> decoded(type: EntityType<E>, records: Collection<Record>): List<E> = records.filter { it.isVisible }.mapNotNull { record ->
+    private fun <T> decoded(records: Collection<Record>, decode: (Fields) -> T): List<T> = records.filter { it.isVisible }.mapNotNull { record ->
         try {
-            type.decode(Fields(record))
+            decode(Fields(record))
         } catch (_: DecodeError) {
             undecoded()
         } catch (_: JsonError) {
@@ -356,12 +365,28 @@ private val dayFormat = DateTimeFormatter.ofPattern("MMM d")
 
 private fun dayLabel(ms: Long): String = dayFormat.format(Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()))
 
-private fun ConversationRow(thread: CoachThread, messages: List<CoachMessage>): ConversationRow {
-    val said = messages.inOrder
-    val newest = said.lastOrNull()
-    val answer = said.lastOrNull { it.role == CoachMessage.Role.coach && it.state == MessageState.completed && it.text.isNotBlank() }?.text.orEmpty()
+// What a History row says of a message, off its record: a message's calls, receipt and pictures stay undecoded, since History reads every message on every revision.
+private class MessageLine(f: Fields) {
+    val id = Id(f.id, CoachMessage)
+    val thread = f.ref("threadId", CoachThread)
+    val coach = when (f.string("role")) {
+        CoachMessage.Role.coach.name -> true
+        CoachMessage.Role.lifter.name -> false
+        else -> throw f.failure("role", "not a role")
+    }
+    val state = MessageState.entries.firstOrNull { it.name == f.string("state", MessageState.running.name) } ?: MessageState.running
+    val at = f.instant("at")
+    val text = f.string("text", "")
+}
+
+// The order `inOrder` gives the messages they stand for.
+private val lineOrder = compareBy<MessageLine>({ it.at }, { it.coach }, { it.id })
+
+private fun ConversationRow(thread: CoachThread, messages: List<MessageLine>): ConversationRow {
+    val newest = messages.maxWithOrNull(lineOrder)
+    val answer = messages.filter { it.coach && it.state == MessageState.completed && it.text.isNotBlank() }.maxWithOrNull(lineOrder)?.text.orEmpty()
     return ConversationRow(checkNotNull(thread.id.record.string) { "a thread's id is a string" }, thread.title, newest?.at?.ms ?: 0,
-        answering = newest?.role == CoachMessage.Role.coach && newest.state == MessageState.running,
+        answering = newest?.coach == true && newest.state == MessageState.running,
         answerPreview = answer.substring(0, answer.offsetByCodePoints(0, minOf(previewCodePoints, answer.codePointCount(0, answer.length)))))
 }
 

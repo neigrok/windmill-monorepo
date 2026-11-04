@@ -97,7 +97,7 @@ class Engine internal constructor(val registry: Registry, internal val store: En
         ensureOpen()
         device.replicas.flatMap { replica -> replica.device[product]?.obj()?.keys.orEmpty().filter { it.startsWith(prefix) } }.toSet()
     }
-    fun readRevision(): Long = lock.withLock { ensureOpen(); version }
+    fun readRevision(): Long { ensureOpen(); return version }
     fun revisions(): Flow<Long> = flow {
         var delivered = readRevision()
         emit(delivered)
@@ -117,7 +117,8 @@ class Engine internal constructor(val registry: Registry, internal val store: En
     // Every sign-in that rebinds the active replica: its id stands, so `activeReplicaChanges` says nothing, and its seat has changed (§7.12). The same delivery, the same end.
     fun activeReplicaRebinds(): Flow<String> = replicaRebinds.takeWhile { it != null }.filterNotNull()
     private val telemetry = TelemetryQueue(telemetry)
-    internal var version = 0L
+    // The answer `readRevision()` gives. The Main thread asks it, and no read or transaction may hold that thread up; it moves under the lock, once the transaction it names is durable.
+    @Volatile internal var version = 0L
     override fun physNow(): Long = lock.withLock { ensureOpen(); now(device.current()) }
     internal fun now(replica: ReplicaState) = clock.now() + replica.meta.member("serverOffsetMs").long()
     internal fun opaqueID() = identities.opaqueID()

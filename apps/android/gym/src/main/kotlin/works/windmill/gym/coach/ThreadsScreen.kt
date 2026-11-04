@@ -26,7 +26,6 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -41,6 +40,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.layout.size
+import androidx.lifecycle.compose.LifecycleStartEffect
 import works.windmill.gym.R
 import works.windmill.gym.ui.DeleteSwipeRow
 import works.windmill.gym.ui.DarkAndDaylight
@@ -106,9 +106,9 @@ fun ThreadsScreen(
     var confirming by remember(state.accountKey) { mutableStateOf<String?>(null) }
     var deleting by remember(state.accountKey) { mutableStateOf(emptySet<String>()) }
 
-    DisposableEffect(events) {
+    LifecycleStartEffect(events) {
         events.watching(true)
-        onDispose { events.watching(false) }
+        onStopOrDispose { events.watching(false) }
     }
 
     fun requestDelete(id: String) {

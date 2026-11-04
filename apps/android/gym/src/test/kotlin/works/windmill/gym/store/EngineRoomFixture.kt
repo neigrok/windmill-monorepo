@@ -63,6 +63,8 @@ internal class EngineRoomFixture(
     private val readDispatcher: CoroutineDispatcher? = null,
     private val pullAgain: suspend () -> Boolean = { false },
     private val pulls: StateFlow<Pulls> = MutableStateFlow(Pulls()),
+    // Whether a screen of Coach stands from the start, for what asks of Coach with no room composed.
+    private val coachShown: Boolean = true,
 ) : AutoCloseable {
     val scope = CoroutineScope(scope.coroutineContext + Job(scope.coroutineContext[Job]))
     companion object {
@@ -120,6 +122,7 @@ internal class EngineRoomFixture(
             undoWindowMs = undoWindowMs, workoutClock = workoutClock ?: WorkoutClock { val at = ++now; WorkoutMoment(at, at, "local") },
             workoutAuthority = workoutAuthority, telemetry = telemetry, localCoach = localCoach,
             readDispatcher = reads, coachImports = coachImports?.invoke(engine), coachAccess = coachAccess, coachTurns = coachTurns, coachStorage = dispatcher ?: Dispatchers.IO, pullAgain = pullAgain, pulls = pulls)
+            .also { if (coachShown) it.conversations.showing(true) }
     }
     suspend fun seedFeedback(document: GymPreferences) {
         val fields = mapOf("confirmHaptic" to Json.of(document.confirmHaptic), "confirmSound" to Json.of(document.confirmSound))

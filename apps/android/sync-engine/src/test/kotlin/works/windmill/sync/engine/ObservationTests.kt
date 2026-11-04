@@ -2,9 +2,12 @@ package works.windmill.sync.engine
 
 import java.io.File
 import java.lang.ref.WeakReference
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.concurrent.thread
 import kotlin.concurrent.withLock
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
@@ -178,6 +181,35 @@ class ObservationTests {
             }
             engine.close()
             assertThrows(CommitFailure::class.java) { engine.activeReplica() }
+        }
+    }
+
+    // Main asks the revision while a transaction runs: it answers at once with the revision whose state a read can still see, moves only once the commit is durable, and the observers hear the new one after.
+    @Test fun theRevisionAnswersThroughATransactionAndMovesWithItsCommit() = runBlocking<Unit> {
+        Engine.memory(SyncSchema.registry).use { engine ->
+            val gym = ScopeRef.product("gym")
+            val before = engine.readRevision()
+            val inside = CountDownLatch(1)
+            val release = CountDownLatch(1)
+            val writer = thread {
+                engine.commit(gym) { _ ->
+                    inside.countDown()
+                    release.await()
+                    Gesture(listOf(Change.create("routine", NewID.Given(RecordID("rt_00000001")), mapOf("name" to Json.of("Push"), "position" to Json.of(0), "entries" to Json.array())))) to Unit
+                }
+            }
+            assertTrue(inside.await(5, TimeUnit.SECONDS))
+            assertEquals("a transaction holds the lock, and the question does not wait on it", before,
+                CompletableFuture.supplyAsync { engine.readRevision() }.get(5, TimeUnit.SECONDS))
+            release.countDown()
+            writer.join()
+            val after = engine.readRevision()
+            assertTrue(after > before)
+            assertEquals(after, withTimeout(5_000) { engine.revisions().first { it >= after } })
+            engine.read(gym) { read ->
+                assertEquals("the revision after a commit names a state that holds it", after, engine.readRevision())
+                assertEquals(listOf("rt_00000001"), read.drawn("routine").map { it.id.string })
+            }
         }
     }
 

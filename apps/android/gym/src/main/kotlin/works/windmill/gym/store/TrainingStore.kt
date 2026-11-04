@@ -162,7 +162,8 @@ class TrainingStore(
             history.forgetSeat()
             deletions.forgetSeat(sameWeightSeat)
             notes.forgetSeat()
-            coach.forgetSeat()
+            // The same seat connected again keeps Coach's conversation and the running words on screen.
+            if (!sameWeightSeat) coach.forgetSeat()
             sharing.forgetSeat()
         }
         if (connecting) return
@@ -183,7 +184,7 @@ class TrainingStore(
             workout.reconcileWorkoutTime()
             workout.drawFromControls()
             seat.isLoading = false
-            // The seat forgot what Coach had read, and nothing but a new revision would read it again.
+            // A new seat forgot what Coach had read, and a read that met this connect was dropped; nothing but a new revision would read either again.
             conversations.read()
 
             val owner = seat.owner

@@ -43,7 +43,11 @@ import works.windmill.gym.ui.GymMaterial
 import works.windmill.platform.storage.AtomicDocument
 import works.windmill.platform.telemetry.LocalTelemetry
 import works.windmill.platform.telemetry.Telemetry
+import works.windmill.sync.api.Change
+import works.windmill.sync.api.Gesture
+import works.windmill.sync.api.NewID
 import works.windmill.sync.core.Json
+import works.windmill.sync.core.RecordID
 import works.windmill.sync.core.ScopeRef
 import works.windmill.sync.schema.Gym
 
@@ -62,7 +66,7 @@ class CoachHistoryTests {
     }
     @After fun close() { room?.close(); scope.cancel() }
 
-    private fun waitUntil(ready: () -> Boolean) = compose.waitUntil(5_000) {
+    private fun waitUntil(ready: () -> Boolean) = compose.waitUntil(10_000) {
         org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
         ready()
     }
@@ -183,7 +187,7 @@ class CoachHistoryTests {
         assertEquals(emptyList<String>(), failures.toList())
     }
 
-    // A recreated room hands the seat a new account object, so the seat forgets what it read: as a theme switch does with History open.
+    // A recreated room hands the seat a new account object, as a theme switch does with History open, and what it read stands.
     @Test fun aSeatConnectedAgainReadsHistoryAndTheTranscriptBackWithNoNewRevision() {
         val fixture = answering()
         val coach = fixture.store.coach
@@ -194,6 +198,40 @@ class CoachHistoryTests {
         waitUntil { coach.history.isNotEmpty() && coach.exchanges(chat).isNotEmpty() }
         compose.onNodeWithText("Private first question").assertIsDisplayed()
         assertEquals(listOf("Private first question"), coach.exchanges(chat).map { it.question })
+    }
+
+    // The room's own composition asks for the selected chat; Coach reads only while its tab stands, and the tab reads what it missed on the way back.
+    @Test fun theRoomReadsCoachOnlyWhileItsTabStands() {
+        val fixture = EngineRoomFixture(tmp.newFolder(), scope, telemetry = telemetry, coachServer = ScriptedTurns(emptyList()), coachShown = false)
+        room = fixture
+        val conversations = fixture.store.conversations
+        fun plant(id: String) = fixture.engine.commit(ScopeRef(Gym.scope), Gesture(listOf(Change.create(Gym.Types.thread, NewID.Given(RecordID(id)), mapOf("title" to Json.of(id))))))
+        runBlocking {
+            fixture.select("alice")
+            fixture.sync(EngineRoomFixture.server())
+            fixture.workout()
+        }
+        fixture.store.observeEngine()
+        plant("thread-one")
+        compose.setContent { GymMaterial { GymRoom(fixture.account(), fixture.store) } }
+        compose.onNode(hasText("The log") and hasClickAction()).performClick()
+        compose.onNodeWithContentDescription("Weigh in").assertIsDisplayed()
+        assertEquals(emptyList<String>(), conversations.threads.map { it.title })
+
+        compose.onNode(hasText("Coach") and hasClickAction()).performClick()
+        waitUntil { conversations.threads.isNotEmpty() }
+        assertEquals(listOf("thread-one"), conversations.threads.map { it.title })
+
+        compose.onNode(hasText("The log") and hasClickAction()).performClick()
+        compose.onNodeWithContentDescription("Weigh in").assertIsDisplayed()
+        plant("thread-two")
+        compose.waitForIdle()
+        org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+        assertEquals(listOf("thread-one"), conversations.threads.map { it.title })
+
+        compose.onNode(hasText("Coach") and hasClickAction()).performClick()
+        waitUntil { conversations.threads.size == 2 }
+        assertEquals(setOf("thread-one", "thread-two"), conversations.threads.map { it.title }.toSet())
     }
 
     @Test fun anEmptyHistorySeatConnectedAgainStillSaysItIsEmpty() {

@@ -1,20 +1,24 @@
 package works.windmill.gym.coach
 
+import java.io.File
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlin.coroutines.ContinuationInterceptor
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -30,16 +34,22 @@ import works.windmill.domain.kit.Outcome
 import works.windmill.domain.kit.Repository
 import works.windmill.domain.kit.Seat
 import works.windmill.gym.coach.turn.ScriptedTurns
+import works.windmill.gym.coach.turn.TellingRecorder
 import works.windmill.gym.coach.turn.TurnPhone
 import works.windmill.gym.domain.coach.AbilityExecutor
 import works.windmill.gym.domain.coach.AbilityOutcome
 import works.windmill.gym.domain.coach.AbilityRequest
 import works.windmill.gym.domain.coach.CoachMessage
+import works.windmill.gym.domain.coach.CoachThread
 import works.windmill.gym.domain.coach.EndTurn
 import works.windmill.gym.domain.coach.MessageState
 import works.windmill.gym.domain.coach.OpenTurn
 import works.windmill.gym.store.EngineRoomFixture
+import works.windmill.sync.api.Change
+import works.windmill.sync.api.Gesture
+import works.windmill.sync.api.NewID
 import works.windmill.sync.core.Json
+import works.windmill.sync.core.RecordID
 import works.windmill.sync.core.ScopeRef
 import works.windmill.sync.schema.Gym
 
@@ -81,6 +91,125 @@ class CoachConversationsTests {
             assertEquals(MessageState.completed, ended.state)
             assertSame("an ended message is its record's alone", ended, conversations.standing(ended))
             assertFalse(coach.isAsking(chat))
+        }
+    }
+
+    // The room's first composition asks for the selected chat, and a connect reads again: neither reads anything while no screen of Coach stands.
+    @Test fun aSeatThatNeverOpensCoachReadsNothingOfIt() = runTest {
+        val file = File(folder.newFolder(), LocalCoach.fileName)
+        val answers = ScriptedTurns(Json.parse("""[{"event":"text","data":{"delta":"Hi"}},{"event":"done","data":{"state":"completed"}}]""").arr())
+        val seed = EngineRoomFixture(folder.newFolder(), work(), localCoach = LocalCoach(file), coachServer = answers).use { room ->
+            room.select("alice")
+            room.sync(EngineRoomFixture.server())
+            assertTrue(room.store.coach.send(room.store.coach.freshChat(), "Question"))
+            advanceUntilIdle()
+            room.engine.snapshot()
+        }
+        EngineRoomFixture(folder.newFolder(), work(), snapshot = seed, localCoach = LocalCoach(file), coachServer = answers, coachShown = false).use { room ->
+            room.selected = "alice"
+            room.store.observeEngine()
+            room.store.connect(room.account("alice"))
+            val chat = checkNotNull(room.store.coach.selectedChatId)
+            advanceUntilIdle()
+            room.store.conversations.read()
+            assertEquals(emptyList<CoachThread>(), room.store.conversations.threads)
+            assertEquals(emptyList<CoachExchange>(), room.store.coach.exchanges(chat))
+            assertNull(room.store.conversations.rows)
+
+            room.store.conversations.showing(true)
+            advanceUntilIdle()
+            assertEquals(listOf("Question"), room.store.coach.exchanges(chat).map { it.question })
+            assertEquals(listOf("Question"), room.store.conversations.threads.map { it.title })
+        }
+    }
+
+    // A frame sliding away and the one taking its place both stand for a moment; the reads stop with the last, and a turn running then keeps its words and asks for no read.
+    @Test fun theReadsFollowTheScreensAndARunningTurnAsksForNone() = runTest {
+        val server = ScriptedTurns(Json.parse("""[{"event":"text","data":{"delta":"Reading"}},{"await":"stop"},{"event":"text","data":{"delta":" it all."}},{"event":"done","data":{"state":"completed"}}]""").arr())
+        EngineRoomFixture(folder.newFolder(), work(), coachServer = server, localCoach = LocalCoach(File(folder.newFolder(), LocalCoach.fileName)), coachShown = false).use { room ->
+            val coach = room.store.coach
+            val conversations = room.store.conversations
+            backgroundScope.launch { conversations.observe() }
+            conversations.showing(true)
+            conversations.showing(true)
+            val chat = coach.freshChat()
+            assertTrue(coach.send(chat, "Question"))
+            advanceTimeBy(1_000)
+            conversations.showing(false)
+            val running = checkNotNull(coach.exchanges(chat).single().answer)
+            coach.stop()
+            advanceTimeBy(1_000)
+            conversations.showing(false)
+            assertEquals("Reading it all.", room.coachRecord().text)
+            assertEquals("the last screen read the end", MessageState.completed, coach.exchanges(chat).single().answer?.state)
+
+            val second = coach.freshChat()
+            server.rewind()
+            assertTrue(coach.send(second, "Another"))
+            advanceTimeBy(1_000)
+            assertEquals("no screen reads the second turn", listOf("Question"), conversations.threads.map { it.title })
+            assertEquals("its words follow all the same", "Reading", conversations.standing(running.copy(id = checkNotNull(room.store.coachTurns?.turn?.value?.coach?.record?.string))).text)
+
+            conversations.showing(true)
+            advanceTimeBy(1_000)
+            assertEquals(setOf("Question", "Another"), conversations.threads.map { it.title }.toSet())
+            assertEquals(listOf("Another"), coach.exchanges(second).map { it.question })
+            coach.stop()
+            advanceUntilIdle()
+        }
+    }
+
+    // A verified flip or a recreated room connects the seat in hand again: nothing it read leaves the screen on the way, the words of a running answer among it.
+    @Test fun aSameOwnerConnectKeepsTheConversationAndTheRunningWordsThroughItsReads() = runTest {
+        val server = ScriptedTurns(Json.parse("""[{"event":"text","data":{"delta":"Reading"}},{"await":"stop"},{"event":"done","data":{"state":"stopped"}}]""").arr())
+        EngineRoomFixture(folder.newFolder(), work(), coachServer = server, localCoach = LocalCoach(File(folder.newFolder(), LocalCoach.fileName)), readDispatcher = StandardTestDispatcher(testScheduler)).use { room ->
+            val coach = room.store.coach
+            val conversations = room.store.conversations
+            backgroundScope.launch { conversations.observe() }
+            room.select("alice")
+            room.sync(EngineRoomFixture.server())
+            val chat = coach.freshChat()
+            assertTrue(coach.send(chat, "Question"))
+            advanceTimeBy(1_000)
+            conversations.watchHistory(true)
+            advanceTimeBy(1_000)
+            val running = checkNotNull(coach.exchanges(chat).single().answer)
+            val rows = conversations.rows
+
+            val connecting = launch(start = CoroutineStart.UNDISPATCHED) { room.store.connect(room.account("alice")) }
+            assertFalse("the connect is under way, on its first read", connecting.isCompleted)
+            assertEquals(listOf("Question"), coach.exchanges(chat).map { it.question })
+            assertEquals(listOf("Question"), conversations.threads.map { it.title })
+            assertEquals(rows, conversations.rows)
+            assertEquals("Reading", conversations.standing(running).text)
+            connecting.join()
+            advanceTimeBy(1_000)
+            assertEquals(listOf("Question"), coach.exchanges(chat).map { it.question })
+            assertEquals("Reading", conversations.standing(checkNotNull(coach.exchanges(chat).single().answer)).text)
+            coach.stop()
+            advanceUntilIdle()
+        }
+    }
+
+    // History reads every message on every revision, so a row asks only what it says: a message whose calls this build cannot read still dates and previews its row, and nothing is reported.
+    @Test fun aHistoryRowReadsOnlyWhatItSaysOfEachMessage() = runTest {
+        val telling = TellingRecorder()
+        EngineRoomFixture(folder.newFolder(), work(), telemetry = telling, coachServer = ScriptedTurns(emptyList())).use { room ->
+            room.store.connect(room.account(null))
+            val gym = ScopeRef(Gym.scope)
+            fun message(id: String, role: String, at: Long, text: String, extra: Map<String, Json> = emptyMap()) = Change.create(Gym.Types.message, NewID.Given(RecordID(id)),
+                mapOf("threadId" to Json.of("thread-one"), "role" to Json.of(role), "at" to Json.of(at), "text" to Json.of(text)) + extra)
+            room.engine.commit(gym, Gesture(listOf(
+                Change.create(Gym.Types.thread, NewID.Given(RecordID("thread-one")), mapOf("title" to Json.of("First question"))),
+                message("message-1", "lifter", 1_000, "First question"),
+                message("message-2", "coach", 2_000, "The first answer", mapOf("state" to Json.of("completed"), "calls" to Json.objectOf("not" to Json.of("an array")))),
+                message("message-3", "lifter", 3_000, "Second question"),
+                message("message-4", "coach", 4_000, "", mapOf("state" to Json.of("running"))),
+            )))
+            room.store.conversations.watchHistory(true)
+            room.store.conversations.read()
+            assertEquals(listOf(ConversationRow("thread-one", "First question", 4_000, answering = true, answerPreview = "The first answer")), room.store.conversations.rows)
+            assertEquals(emptyList<Map<String, String>>(), telling.failures)
         }
     }
 
