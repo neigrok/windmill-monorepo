@@ -106,7 +106,7 @@
             "$stamp"
           ],
           "replica": [
-            "rp_anotherdevice",
+            "rp_0123456789abcdef0123456789abcdef",
             "$stamp"
           ],
           "state": [
