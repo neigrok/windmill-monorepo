@@ -35,4 +35,7 @@ data class CoachOnboardingRecord(val owner: String, val chat: String, val replic
     val response: CoachOnboardingResponse? = null, val refusalCode: String? = null,
     val attachment: CoachAttachment? = null, val refusalMessage: String? = null) {
     fun request(): CoachOnboardingRequest = WindmillJson.decodeFromString(CoachOnboardingRequest.serializer(), body)
+
+    // Whether `request` can be read: an answer with a body this build cannot is lost to the room, and stays on disk.
+    val readable: Boolean get() = try { request(); true } catch (_: IllegalArgumentException) { false }
 }

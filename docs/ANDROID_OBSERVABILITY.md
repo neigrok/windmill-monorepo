@@ -123,7 +123,7 @@ type also occurs during network loss. Failures of the telemetry pipeline itself 
 | `gym.reorderMovements` | gym | Reordering the live workout's movements fails |
 | `gym.reorderNotes` | gym | Reordering notes fails |
 | `gym.rereadRow` | gym | Re-reading a workout row after a set deletion fails |
-| `gym.restoreConversation` | gym, app | Restoring the Coach archive or its chats, or rewriting an earlier version's archive at launch, fails |
+| `gym.restoreConversation` | gym, app | The Coach archive cannot be read, once per process when Coach first reads it: the engine's conversations stand and the file is left as it is; a retained answer's body cannot be read, once per process under a static failure, and that answer alone is lost to the room; or rewriting an earlier version's archive at launch fails |
 | `gym.restoreFinishedSession` | gym | Restoring the finish receipt after recreation fails |
 | `gym.restoreNavigation` | gym | Restoring the navigation stack after recreation fails |
 | `gym.restoreRoutineDraft` | gym | Restoring the routine editor's draft after recreation fails |

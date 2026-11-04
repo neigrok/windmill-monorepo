@@ -172,11 +172,12 @@ fun ThreadsScreen(
                 confirming = null
                 deleting = deleting + id
                 scope.launch {
-                    when (val result = events.deleteThread(id)) {
-                        is GymResult.Ok -> failure = null
-                        is GymResult.Failed -> failure = result.why.line("that conversation is still here")
-                    }
-                    deleting = deleting - id
+                    try {
+                        when (val result = events.deleteThread(id)) {
+                            is GymResult.Ok -> failure = null
+                            is GymResult.Failed -> failure = result.why.line("that conversation is still here")
+                        }
+                    } finally { deleting = deleting - id }
                 }
             }) { Text("Delete", style = GymType.coachAction) } },
         )

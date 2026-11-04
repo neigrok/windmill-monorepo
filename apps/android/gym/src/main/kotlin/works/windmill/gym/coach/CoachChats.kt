@@ -19,6 +19,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import works.windmill.domain.kit.Id
 import works.windmill.gym.coach.onboarding.CoachImportOutcome
+import works.windmill.gym.coach.onboarding.CoachOnboardingRecord
 import works.windmill.gym.coach.onboarding.CoachRoutineImports
 import works.windmill.gym.coach.turn.ChosenPicture
 import works.windmill.gym.coach.turn.CoachTurnFault
@@ -57,7 +58,7 @@ class CoachChats internal constructor(
     private val owner: String? get() = accountOwner()
     private val anonymousOwner by lazy {
         try { localCoach?.anonymousOwner() ?: "anonymous:" + Ids.thread() }
-        catch (failure: Exception) { telemetry.failure("gym.restoreConversation", failure); "anonymous:" + Ids.thread() }
+        catch (failure: Exception) { archiveFailed(failure); "anonymous:" + Ids.thread() }
     }
     private val archiveOwner: String get() = owner ?: anonymousOwner
     val accountKey: String get() = Seat.of(archiveOwner)
@@ -79,6 +80,8 @@ class CoachChats internal constructor(
     private var askedSeat: String? = null
     private var turnFault by mutableStateOf<CoachTurnFault?>(null)
     private var accessJob: Job? = null
+    private var archiveReported = false
+    private var retainedReported = false
 
     // A failure of this phone's own store, said in the room's line.
     var failure by mutableStateOf<String?>(null)
@@ -140,6 +143,24 @@ class CoachChats internal constructor(
 
     private fun admit(seat: String): LocalCoach.Authority? = localCoach?.admit(seat)
 
+    // An archive this build cannot read costs what it holds, reported once: the engine's conversations still stand.
+    private fun archiveFailed(failure: Exception) {
+        if (!archiveReported) telemetry.unexpected("gym.restoreConversation", failure)
+        archiveReported = true
+    }
+
+    // The answers a chat retains from earlier versions. One this build cannot read costs that answer, reported once by a failure that says nothing of it.
+    private fun retained(seat: String, chat: String): List<CoachOnboardingRecord> = try {
+        localCoach?.retained(seat, chat).orEmpty().filter { record ->
+            if (!record.readable && !retainedReported) telemetry.failure("gym.restoreConversation", CoachRecordUnreadable())
+            if (!record.readable) retainedReported = true
+            record.readable
+        }
+    } catch (failure: Exception) {
+        archiveFailed(failure)
+        emptyList()
+    }
+
     fun eraseOwner(seat: String) {
         localCoach?.eraseOwner(seat)
         (chats.keys + chatVersions.keys).filter { it.first == seat }.forEach { key ->
@@ -165,24 +186,21 @@ class CoachChats internal constructor(
 
     private fun restoreArchive(seat: String) {
         if (seat in restoredOwners) return
+        restoredOwners += seat
         try {
             localCoach?.chats(seat).orEmpty().forEach { chats[seat to it.id] = it }
             localCoach?.selected(seat)?.let { selected[seat] = it }
-            restoredOwners += seat
-            watchSelected()
         } catch (failure: Exception) {
-            restoredOwners += seat
-            telemetry.unexpected("gym.restoreConversation", failure)
+            archiveFailed(failure)
         }
+        watchSelected()
     }
 
     // What the conversation's read follows: the chat on screen, its thread, and the answers it retains from earlier versions.
     private fun watchSelected() {
         val seat = archiveOwner
         val chat = selected[seat]
-        val retained = try { chat?.let { localCoach?.retained(seat, it) }.orEmpty() }
-            catch (failure: Exception) { telemetry.unexpected("gym.restoreConversation", failure); emptyList() }
-        conversations?.watch(chat, chat?.let { chats[seat to it]?.conversation }, retained)
+        conversations?.watch(chat, chat?.let { chats[seat to it]?.conversation }, chat?.let { retained(seat, it) }.orEmpty())
     }
 
     fun chat(id: String): LocalChat? {
@@ -202,9 +220,10 @@ class CoachChats internal constructor(
         return said + CoachExchange("sending", going.question, going.atMs, listOfNotNull(going.photo?.let { SentPicture(it, true) }), sending = true)
     }
 
+    // An archive this build cannot read still opens a chat, kept in memory: what asks to write to it says so.
     fun freshChat(seed: String = "", id: String = Ids.thread(), setup: Boolean = false): String {
         val seat = archiveOwner
-        admit(seat)
+        if (localCoach?.readable != false) admit(seat)
         restoreArchive(seat)
         chats[seat to id]?.let {
             if (selected[seat] != id) select(seat, id)
@@ -219,10 +238,9 @@ class CoachChats internal constructor(
         return chat.id
     }
 
-    // A row of History names a chat, or a thread this phone keeps nothing beside.
+    // A row of History names a chat, or a thread this phone keeps nothing beside. What this phone may not write stays in memory, and the conversation opens all the same.
     fun selectChat(id: String, action: String = "history_open") {
         val seat = archiveOwner
-        if (localCoach?.writable(seat) == false) return
         restoreArchive(seat)
         val chat = chats[seat to id] ?: LocalChat(id, now(), conversation = id).also { keepChat(seat, it) }
         select(seat, chat.id)
@@ -232,9 +250,10 @@ class CoachChats internal constructor(
     }
 
     private fun select(seat: String, id: String) {
-        admit(seat)
-        try { localCoach?.select(seat, id) }
-        catch (failure: Exception) {
+        if (localCoach?.writable(seat) != false) try {
+            admit(seat)
+            localCoach?.select(seat, id)
+        } catch (failure: Exception) {
             telemetry.unexpected("gym.saveConversation", failure)
             this.failure = "Your conversation couldn’t be saved. Try again."
         }
@@ -243,9 +262,10 @@ class CoachChats internal constructor(
     }
 
     private fun keepChat(seat: String, chat: LocalChat, select: Boolean = false) {
-        admit(seat)
         chats[seat to chat.id] = chat
+        if (localCoach?.writable(seat) == false) return
         try {
+            admit(seat)
             localCoach?.saveChat(seat, chat, select)
             failure = null
         } catch (failure: Exception) {
@@ -381,7 +401,7 @@ class CoachChats internal constructor(
         turns?.requestStop()
     }
 
-    // History: every thread the engine holds, under the chat this phone keeps beside it, and every chat of this phone's alone that holds something. A draft dates its row when it is newer than what was said.
+    // History: every thread the engine holds, under the chat this phone keeps beside it, and every chat of this phone's alone that holds something, a kept draft or a retained answer among it. A draft dates its row when it is newer than what was said.
     val history: List<ConversationRow> get() {
         val seat = archiveOwner
         restoreArchive(seat)
@@ -396,10 +416,11 @@ class CoachChats internal constructor(
         val listed = rows.map { it.id }.toSet()
         val local = mine.filter { it.id !in listed }.mapNotNull { chat ->
             val held = draft(chat.id)
-            val retained = try { localCoach?.retained(seat, chat.id).orEmpty() } catch (_: Exception) { emptyList() }
-            if (held.text.isEmpty() && held.photo == null && retained.isEmpty()) return@mapNotNull null
-            ConversationRow(chat.id, retained.firstOrNull()?.request()?.text.orEmpty().ifEmpty { held.text.ifEmpty { "Photo" } }, chat.updatedAtMs,
-                answerPreview = retained.lastOrNull { it.response?.status == "completed" }?.response?.message.orEmpty())
+            val answers = retained(seat, chat.id)
+            val kept = localCoach?.keptDrafts(seat, chat.id).orEmpty()
+            if (held.text.isEmpty() && held.photo == null && answers.isEmpty() && kept.isEmpty()) return@mapNotNull null
+            val title = listOfNotNull(answers.firstOrNull()?.request()?.text, held.text, kept.firstOrNull()?.draft?.text).firstOrNull { it.isNotEmpty() } ?: "Photo"
+            ConversationRow(chat.id, title, chat.updatedAtMs, answerPreview = answers.lastOrNull { it.response?.status == "completed" }?.response?.message.orEmpty())
         }
         return (rows + local).sortedByDescending { it.askedAtMs }
     }
@@ -575,8 +596,7 @@ class CoachChats internal constructor(
     // A retained answer's drafts, in one gesture: replayed by the answer's result identity, so a second tap makes no new routines. Runs in the store's scope, so leaving Coach does not cancel it.
     suspend fun saveRetainedDrafts(chat: String, requestId: String): DraftOutcome {
         val seat = archiveOwner
-        val record = try { localCoach?.retained(seat, chat)?.firstOrNull { it.requestId == requestId } } catch (_: Exception) { null }
-            ?: return DraftOutcome.Closed(Ask.draftGone)
+        val record = retained(seat, chat).firstOrNull { it.requestId == requestId } ?: return DraftOutcome.Closed(Ask.draftGone)
         val saving = imports ?: return DraftOutcome.Closed(Ask.draftInvalid)
         return scope.async {
             when (saving.apply(record)) {
@@ -591,21 +611,26 @@ class CoachChats internal constructor(
         }.await()
     }
 
-    // A conversation deleted from History: its thread, its messages and their pictures, then what this phone kept beside them. A conversation with a turn running stays.
+    // A conversation deleted from History: its thread, its messages and their pictures, then what this phone kept beside them. A conversation with a turn running stays. An archive this build cannot read holds nothing of it, and the thread is the engine's to delete all the same.
     suspend fun deleteThread(id: String): GymResult<Unit> {
         val seat = archiveOwner
-        val authority = admit(seat)
+        val archive = localCoach?.takeIf { it.readable }
+        val admission = runCatching { archive?.admit(seat) }
         val thread = chats[seat to id]?.conversation ?: id.takeIf { conversations?.holds(it) == true }
         return scope.async {
             val result = conversationWrite.withLock {
-                if ((authority != null && localCoach?.current(authority) != true) || seat != archiveOwner)
+                val authority = admission.getOrElse { refusal ->
+                    if (refusal !is CancellationException) telemetry.unexpected("gym.deleteThread", refusal as Exception)
+                    return@withLock GymResult.Failed(WriteFailure.Refused(TrainingSeat.accountChanged))
+                }
+                if ((authority != null && archive?.current(authority) != true) || seat != archiveOwner)
                     return@withLock GymResult.Failed(WriteFailure.Refused(TrainingSeat.accountChanged))
                 if (thread != null && thread == runningThread) return@withLock GymResult.Failed(WriteFailure.Refused(CoachTurnFault.busy.sentence))
                 try {
                     if (thread != null && turns?.deleteConversation(Id(thread, CoachThread)) == false)
                         return@withLock GymResult.Failed(WriteFailure.NoAnswer)
                     // Once the thread has gone the conversation has: what this phone kept beside it is reported, and its row does not come back as "still here".
-                    try { localCoach?.clear(seat, id) }
+                    try { archive?.clear(seat, id) }
                     catch (cancelled: CancellationException) { throw cancelled }
                     catch (failure: Exception) {
                         if (thread == null) throw failure

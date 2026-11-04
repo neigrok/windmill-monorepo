@@ -58,16 +58,15 @@ class LocalCoach internal constructor(private val file: File, private val write:
         val onboarding: Map<String, Map<String, CoachOnboardingRecord>> = emptyMap(),
     )
 
-    // A document as it reads today: one written by an earlier version keeps its drafts, kept drafts and retained answers, each under a chat stamped with the file's own time, and nothing else of what it held. The stamp holds across rereads because only a write moves it.
+    // A document as it reads today: whatever an earlier version left keeps its drafts, kept drafts and retained answers, each under a chat stamped with the file's own time, and nothing else of what it held. The stamp holds across rereads because only a write moves it.
     private fun parsed(text: String): Document {
         val tree = diskJson.parseToJsonElement(text) as JsonObject
         val read = diskJson.decodeFromJsonElement(Document.serializer(), tree)
-        if (legacyKeys.none(tree::containsKey)) return read
         val stamp = file.lastModified()
-        val owners = read.drafts.keys + read.keptDrafts.keys + read.onboarding.keys
+        val owners = read.localChats.keys + read.drafts.keys + read.keptDrafts.keys + read.onboarding.keys
         val chats = owners.associateWith { owner ->
-            val ids = read.drafts[owner].orEmpty().keys + read.keptDrafts[owner].orEmpty().keys + read.onboarding[owner].orEmpty().values.map { it.chat }
-            ids.associateWith { LocalChat(it, stamp) }
+            val ids = read.drafts[owner].orEmpty().keys + read.keptDrafts[owner].orEmpty().filterValues { it.isNotEmpty() }.keys + read.onboarding[owner].orEmpty().values.map { it.chat }
+            ids.associateWith { LocalChat(it, stamp) } + read.localChats[owner].orEmpty()
         }
         return read.copy(localChats = chats, selected = read.selected.filter { (owner, id) -> chats[owner]?.containsKey(id) == true })
     }
@@ -75,16 +74,21 @@ class LocalCoach internal constructor(private val file: File, private val write:
     private fun encoded(next: Document): String = diskJson.encodeToString(Document.serializer(), next)
 
     private val restored = runCatching { if (file.exists()) parsed(file.readText()) else Document() }
+    // Whether this build could read the file at all. One it could not is never written, and holds nothing for anyone.
+    val readable: Boolean get() = restored.isSuccess
     private var document = restored.getOrDefault(Document())
     // Whether the file on disk is still an earlier version's: every write of this document replaces it.
     private var legacyOnDisk = restored.isSuccess && file.exists() && legacyKeys.any((diskJson.parseToJsonElement(file.readText()) as JsonObject)::containsKey)
 
-    // Rewrites a file an earlier version left, so the conversations it held leave the disk, and removes the photos only they named. Off the main thread, once at launch; any later write drops them as well.
+    // Off the main thread, once at launch: rewrites a file an earlier version left, so the conversations it held leave the disk, then removes the photos nothing here names. Any write before this drops those conversations as well; the photos wait for this, at this launch or the next. A file this build cannot read stays as it is, for whoever reads it to report.
     @Synchronized fun settle() {
+        if (!readable) return
         ready()
-        if (!legacyOnDisk || !writesAllowed() || ownerStateUnreadable) return
-        write(file, encoded(document))
-        legacyOnDisk = false
+        if (!writesAllowed() || ownerStateUnreadable) return
+        if (legacyOnDisk) {
+            write(file, encoded(document))
+            legacyOnDisk = false
+        }
         val owners = document.drafts.keys + document.keptDrafts.keys + document.onboarding.keys
         val folders = owners.associateBy { photoFolder(it).name }
         File(file.parentFile, "coach-photos").listFiles().orEmpty().forEach { folder ->

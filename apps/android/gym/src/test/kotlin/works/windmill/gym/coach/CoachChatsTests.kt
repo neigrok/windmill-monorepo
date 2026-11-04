@@ -45,6 +45,8 @@ import works.windmill.gym.domain.coach.MessageState
 import works.windmill.gym.domain.coach.ReadTally
 import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.store.GymResult
+import works.windmill.gym.store.TrainingSeat
+import works.windmill.gym.store.WriteFailure
 import works.windmill.sync.api.RecordRef
 import works.windmill.sync.core.Json
 import works.windmill.sync.core.RecordID
@@ -610,6 +612,130 @@ class CoachChatsTests {
         assertEquals(coach.chats("alice"), reopened.chats("alice"))
         assertEquals(coach.draft("alice", "drafted-chat"), reopened.draft("alice", "drafted-chat"))
         assertEquals("anonymous:phone", reopened.anonymousOwner())
+    }
+
+    private val retainedResponse = """{"requestId":"answered-1","resultId":"result-1","status":"completed","expiresAtMs":9,"routines":[],"allowance":{"code":"ok","currency":"USD","period":"lifetime","tier":"anonymous","configured":true,"used":"0","reserved":"0","remaining":"1"},"message":"Here is a plan"}"""
+
+    // One retained answer with a body this build cannot read costs that answer: History, the transcript and the good answer beside it stand, and one failure says nothing of what it held.
+    @Test fun anUnreadableRetainedAnswerCostsThatAnswerAndTheRoomStands() = runTest {
+        val file = File(folder.newFolder(), LocalCoach.fileName)
+        file.writeText("""{"anonymousId":"anonymous:phone","selected":{"anonymous:phone":"answered-chat"},"chats":{},"onboarding":{"anonymous:phone":{
+            "bad-1":{"owner":"anonymous:phone","chat":"answered-chat","replica":"r","requestId":"bad-1","body":"partial{ private words","createdAtMs":5,"response":${retainedResponse.replace("answered-1", "bad-1")}},
+            "bad-2":{"owner":"anonymous:phone","chat":"lost-chat","replica":"r","requestId":"bad-2","body":"partial{","createdAtMs":6},
+            "answered-1":{"owner":"anonymous:phone","chat":"answered-chat","replica":"r","requestId":"answered-1","body":"{\"requestId\":\"answered-1\",\"mode\":\"conversation\",\"text\":\"Plan me\"}","createdAtMs":7,"response":$retainedResponse}}}}""")
+        val telling = TellingRecorder()
+        room(answers("Hi"), file, telling).use { room ->
+            val coach = room.store.coach
+            room.store.connect(room.account(null))
+            room.store.conversations.watchHistory(true)
+            assertEquals("answered-chat", coach.selectedChatId)
+            advanceUntilIdle()
+            room.store.conversations.read()
+            assertEquals(listOf(ConversationRow("answered-chat", "Plan me", coach.chat("answered-chat")!!.updatedAtMs, answerPreview = "Here is a plan")), coach.history)
+            assertEquals(listOf("Plan me"), coach.exchanges("answered-chat").map { it.question })
+            assertEquals(DraftOutcome.Closed(Ask.draftGone), coach.saveRetainedDrafts("answered-chat", "bad-1"))
+            assertEquals(listOf(mapOf("operation" to "gym.restoreConversation")), telling.failures)
+        }
+    }
+
+    // A file this build cannot read holds nothing of the engine's conversations: each opens, reads and deletes, the file stays as it was, and it is reported once.
+    @Test fun aBrokenArchiveLeavesTheEnginesConversationsOpenAndDeletable() = runTest {
+        val directory = folder.newFolder()
+        val seeded = File(folder.newFolder(), LocalCoach.fileName)
+        val seed = room(answers("Hi"), seeded).use { room ->
+            room.select("alice")
+            room.sync(EngineRoomFixture.server())
+            assertTrue(room.store.coach.send(room.store.coach.freshChat(), "Question"))
+            advanceUntilIdle()
+            room.engine.snapshot()
+        }
+        val file = File(folder.newFolder(), LocalCoach.fileName).apply { writeText("""{"chats":""") }
+        val telling = TellingRecorder()
+        EngineRoomFixture(directory, work(), snapshot = seed, telemetry = telling, localCoach = LocalCoach(file), coachServer = answers("Hi")).use { room ->
+            room.selected = "alice"
+            room.store.connect(room.account("alice"))
+            val coach = room.store.coach
+            room.store.conversations.watchHistory(true)
+            assertNull(coach.selectedChatId)
+            advanceUntilIdle()
+            room.store.conversations.read()
+            val thread = coach.history.single().id
+            assertEquals(listOf("Question"), coach.history.map { it.title })
+
+            coach.selectChat(thread)
+            room.store.conversations.read()
+            assertEquals(LocalChat(thread, checkNotNull(coach.chat(thread)).createdAtMs, conversation = thread), coach.chat(thread))
+            assertEquals(thread, coach.selectedChatId)
+            assertEquals(listOf("Question"), coach.exchanges(thread).map { it.question })
+            assertNull(coach.failure)
+
+            assertEquals(GymResult.Ok(Unit), coach.deleteThread(thread))
+            advanceUntilIdle()
+            assertEquals(emptyList<CoachThread>(), room.threads())
+            assertEquals(emptyList<ConversationRow>(), coach.history)
+            assertEquals(listOf(mapOf("operation" to "gym.restoreConversation")), telling.failures)
+            assertEquals("""{"chats":""", file.readText())
+        }
+    }
+
+    // A seat this phone may not write answers a delete instead of throwing past the screen that asked.
+    @Test fun aDeleteOnASeatThatMayNotWriteAnswersAndTellsOnce() = runTest {
+        val telling = TellingRecorder()
+        var writes = true
+        val disk = LocalCoach(File(folder.newFolder(), LocalCoach.fileName), writesAllowed = { writes })
+        EngineRoomFixture(folder.newFolder(), work(), telemetry = telling, localCoach = disk, coachServer = answers("Hi")).use { room ->
+            val coach = room.store.coach
+            assertTrue(coach.send(coach.freshChat(), "Question"))
+            advanceUntilIdle()
+            val chat = checkNotNull(coach.selectedChatId)
+            writes = false
+            assertEquals(GymResult.Failed(WriteFailure.Refused(TrainingSeat.accountChanged)), coach.deleteThread(chat))
+            advanceUntilIdle()
+            assertEquals(listOf(mapOf("screen" to "threads", "action" to "delete", "outcome" to "refused")), telling.named("gym_action").filter { it["action"] == "delete" })
+            assertEquals(emptyList<Map<String, String>>(), telling.failures)
+            assertEquals(listOf("Question"), room.threads().map { it.title })
+        }
+    }
+
+    // Each kind an earlier version kept reaches History: a chat holding only a kept draft opens on it.
+    @Test fun aChatHoldingOnlyAKeptDraftHasItsRowAndOpens() = runTest {
+        val file = File(folder.newFolder(), LocalCoach.fileName)
+        file.writeText("""{"chats":{"alice":{"kept-chat":{"id":"kept-chat","createdAtMs":1,"exchanges":[{"question":"old"}]}}},
+            "keptDrafts":{"alice":{"kept-chat":[{"id":"kept-1","draft":{"text":"Kept too"}}]}}}""")
+        room(answers("Hi"), file).use { room ->
+            room.select("alice")
+            room.sync(EngineRoomFixture.server())
+            advanceUntilIdle()
+            val coach = room.store.coach
+            room.store.conversations.watchHistory(true)
+            room.store.conversations.read()
+            val chat = checkNotNull(coach.chat("kept-chat"))
+            assertEquals(listOf(ConversationRow("kept-chat", "Kept too", chat.updatedAtMs)), coach.history)
+            coach.selectChat("kept-chat")
+            assertEquals(listOf(KeptCoachDraft("kept-1", CoachDraft("Kept too"))), coach.keptDrafts("kept-chat"))
+            assertEquals("kept-chat", coach.selectedChatId)
+        }
+    }
+
+    // A file with drafts and none of the keys that mark an earlier version: the chat is there to list and to send from.
+    @Test fun aDraftInAFileWithNoEarlierKeysListsAndSends() = runTest {
+        val file = File(folder.newFolder(), LocalCoach.fileName)
+        file.writeText("""{"anonymousId":"anonymous:phone","selected":{"alice":"drafted"},"drafts":{"alice":{"drafted":{"text":"Keep me"}}}}""")
+        val server = answers("Hi")
+        room(server, file).use { room ->
+            room.select("alice")
+            room.sync(EngineRoomFixture.server())
+            advanceUntilIdle()
+            val coach = room.store.coach
+            room.store.conversations.watchHistory(true)
+            room.store.conversations.read()
+            assertEquals(listOf("drafted"), coach.history.map { it.id })
+            assertEquals("drafted", coach.selectedChatId)
+            assertTrue(coach.send("drafted", "Keep me"))
+            advanceUntilIdle()
+            assertEquals(listOf("Keep me"), server.opened.map { it.question })
+            assertEquals(listOf("Keep me"), coach.exchanges("drafted").map { it.question })
+        }
     }
 
     @Test fun aRetainedAnswerReadsAsAnExchangeAndItsDraftsSaveOnceOnTheReplicaItWasHadOn() = runTest {

@@ -102,13 +102,49 @@ class LocalCoachTests {
             val photos = File(directory, "coach-photos/feedface").apply { mkdirs() }
             File(photos, "kept-photo").writeBytes(byteArrayOf(9))
             val broken = LocalCoach(file)
-            assertThrows(Exception::class.java) { broken.settle() }
+            broken.settle()
+            assertFalse(broken.readable)
             assertThrows(Exception::class.java) { broken.chats("a") }
             assertThrows(Exception::class.java) { broken.saveChat("a", LocalChat("thread", 1)) }
             assertFalse(broken.writable("a"))
             assertEquals(text, file.readText())
             assertArrayEquals(byteArrayOf(9), File(photos, "kept-photo").readBytes())
         }
+    }
+
+    // Any write drops an earlier file's conversations; the photos only they named still go at the settle that follows it, in this launch or the next.
+    @Test
+    fun aWriteBeforeTheSettleLeavesNoOldPhotoBehind() {
+        val directory = tmp.newFolder()
+        val file = File(directory, "coach")
+        file.writeText("""{"chats":{"a":{"gone":{"id":"gone","createdAtMs":1,"exchanges":[{"question":"Private old question"}]}}},"drafts":{"a":{"drafted":{"text":"Keep me"}}}}""")
+        val disk = LocalCoach(file)
+        val hers = disk.photoFile("a", "draftphoto01").parentFile!!.apply { mkdirs() }
+        File(hers, "oldexchangephoto").writeBytes(byteArrayOf(9))
+        val gone = File(directory, "coach-photos/feedfacefeedface").apply { mkdirs() }
+        File(gone, "owner-gone").writeBytes(byteArrayOf(9))
+
+        disk.anonymousOwner()
+        assertFalse(file.readText().contains("Private old question"))
+        assertEquals(listOf("oldexchangephoto"), hers.list()?.toList())
+        assertEquals(listOf("owner-gone"), gone.list()?.toList())
+
+        LocalCoach(file).settle()
+        assertEquals(emptyList<String>(), hers.list()?.toList())
+        assertFalse(gone.exists())
+        assertEquals(CoachDraft("Keep me"), LocalCoach(file).draft("a", "drafted"))
+    }
+
+    // Every draft, kept draft and retained answer has its chat, in a file with none of the keys that mark an earlier version as well; a kept draft emptied since brings none back.
+    @Test
+    fun aDraftWithNoChatOfItsOwnGetsOneWhateverKeysTheFileHolds() {
+        val file = File(tmp.root, "coach")
+        file.writeText("""{"anonymousId":"anonymous:phone","selected":{"a":"drafted"},"drafts":{"a":{"drafted":{"text":"Keep me"}}},"keptDrafts":{"a":{"kept":[{"id":"kept-1","draft":{"text":"Kept"}}],"emptied":[]}},"localChats":{"a":{"standing":{"id":"standing","createdAtMs":1,"updatedAtMs":2,"conversation":"thr_00000001"}}}}""")
+        val stamp = file.lastModified()
+        val disk = LocalCoach(file)
+        assertEquals(setOf(LocalChat("drafted", stamp), LocalChat("kept", stamp), LocalChat("standing", 1, 2, conversation = "thr_00000001")), disk.chats("a").toSet())
+        assertEquals("drafted", disk.selected("a"))
+        assertEquals("anonymous:phone", disk.anonymousOwner())
     }
 
     @Test

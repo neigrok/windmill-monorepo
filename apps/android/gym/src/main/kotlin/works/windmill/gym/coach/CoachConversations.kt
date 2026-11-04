@@ -254,6 +254,8 @@ class CoachConversations(
         reader.device(CoachRoutineImports.receiptKey(resultId))?.let(CoachImportReceipt::decode)
     } catch (_: JsonError) {
         null
+    } catch (_: DecodeError) {
+        null
     }
 
     // The conversation's messages in the order they were said, each answer under its question. An answer whose question has not arrived, as a pull page can leave it, stands alone.
@@ -357,7 +359,7 @@ class CoachConversations(
 }
 
 // The one static failure of a read; it carries no message of anything said.
-private class CoachRecordUnreadable : Exception("coach-record-unreadable")
+internal class CoachRecordUnreadable : Exception("coach-record-unreadable")
 
 private const val previewCodePoints = 240
 
