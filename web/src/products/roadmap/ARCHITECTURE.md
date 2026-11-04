@@ -316,8 +316,8 @@ an unexpected release error restores the projection silently and reports `roadma
 
 ### States
 
-`BoardStates.jsx` draws them. While the roadmap loads, skeleton cards hold the columns under the identity row
-and band, with no counts and no spinner. A failed load says *Couldn't load this roadmap* with Try again, which
+`BoardStates.jsx` draws them. While the roadmap loads, still skeleton cards hold the columns under the identity row
+and band, with no counts, no spinner and no motion. A failed load says *Couldn't load this roadmap* with Try again, which
 reruns the load. An owner's empty roadmap shows *Your first step* and New step on every band. Once every step
 is done, Up next rests on Roadmap complete: the owner gets its body line, Share it and New step; a reader gets
 the title alone.

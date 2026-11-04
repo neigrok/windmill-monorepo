@@ -507,23 +507,38 @@ test('Chromium: on the phone Roadmap complete takes the Up next pane without its
   }
 });
 
-test('Chromium: from 744px the skeleton breathes, and holds still under reduced motion', async () => {
+test('Chromium: skeleton cards hold still on every band (02.09): from 744 radius 20, height 72, lines 180×14 and up to 240×10; the phone keeps its card', async () => {
   await ready;
   const errors = [];
-  const moving = await openStatePage({ width: 1440, height: 900 }, { nodes: null, loading: true, breakpoint: 'desktop' }, errors);
-  const still = await openStatePage({ width: 1440, height: 900 }, { nodes: null, loading: true, breakpoint: 'desktop' }, errors, { reducedMotion: 'reduce' });
-  try {
-    const animation = (page) => page.evaluate(() => {
-      const style = getComputedStyle(document.querySelector('.st-board-skeleton-card'));
-      return `${style.animationName} ${style.animationDuration}`;
-    });
-    assert.deepEqual([await animation(moving), await animation(still), await moving.locator('.st-board-skeleton-card').count()],
-      ['st-board-skeleton-breathe 1.2s', 'none 0s', 8]);
-    assert.deepEqual(errors, []);
-  } finally {
-    await moving.close();
-    await still.close();
-  }
+  const measure = async (viewport, breakpoint, { reducedMotion } = {}) => {
+    const page = await openStatePage(viewport, { nodes: null, loading: true, breakpoint }, errors, { reducedMotion });
+    try {
+      return await page.evaluate(() => {
+        const cards = [...document.querySelectorAll('.st-board-skeleton-card')];
+        const plain = document.querySelector('.st-board-skeleton-card--plain');
+        const style = getComputedStyle(plain);
+        const [title, detail] = plain.querySelectorAll('.st-board-skeleton-line');
+        const size = (line) => [Math.round(line.getBoundingClientRect().width), Math.round(line.getBoundingClientRect().height)];
+        return {
+          cards: cards.length,
+          moving: cards.filter((card) => getComputedStyle(card).animationName !== 'none' || card.getAnimations().length > 0).length,
+          radius: style.borderRadius,
+          height: Math.round(plain.getBoundingClientRect().height),
+          border: style.borderTopWidth,
+          title: size(title),
+          detail: size(detail),
+        };
+      });
+    } finally {
+      await page.close();
+    }
+  };
+  const desktop = { cards: 8, moving: 0, radius: '20px', height: 72, border: '1px', title: [180, 14], detail: [240, 10] };
+  assert.deepEqual(await measure({ width: 1440, height: 900 }, 'desktop'), desktop);
+  assert.deepEqual(await measure({ width: 1440, height: 900 }, 'desktop', { reducedMotion: 'reduce' }), desktop);
+  assert.deepEqual(await measure({ width: 744, height: 900 }, 'tablet'), { cards: 8, moving: 0, radius: '20px', height: 72, border: '1px', title: [159, 14], detail: [159, 10] });
+  assert.deepEqual(await measure({ width: 390, height: 844 }, 'phone'), { cards: 3, moving: 0, radius: '16px', height: 72, border: '1px', title: [180, 14], detail: [240, 10] });
+  assert.deepEqual(errors, []);
 });
 
 test('Chromium: while the Board is shown, what it covers leaves the tab order — later arrivals too — and comes back after', async () => {

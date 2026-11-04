@@ -204,7 +204,7 @@ One string per event.
 | Not-done precondition | *Read the wind isn't done* |
 | Empty roadmap | **Your first step** / *Give your roadmap a place to start.* / **New step** |
 | Roadmap complete | **All 8 steps done** / *Add a step whenever you're ready.* / owner secondary **Share it** |
-| Loading | Skeletons, no copy |
+| Loading | Still skeletons, no motion, no copy |
 | Load error | **Couldn't load this roadmap** / *It may have moved, or the server is unreachable.* / **Try again** |
 | Save failure | *Couldn't save. Your draft is kept.* / **Retry** · **Keep editing** |
 | Discard confirm | **Discard draft?** / *Your changes will be lost.* / **Keep editing** · **Discard** |

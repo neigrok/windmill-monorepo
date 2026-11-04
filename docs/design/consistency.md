@@ -580,10 +580,6 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   fixed 30px height with `white-space: nowrap` and 32px grid gutters, and the 18.05 specimen (380:18803) leaves the Shell out.
   Proposed, awaiting the owner: the pills fold into one current-room menu by em width (phone 25.23–25.24). The Shell owner draws it
   in the Shell file and builds it.
-- **Board · two skeleton cards.** The desktop Skeleton card (369:4027) breathes opacity 1 → .6 over
-  1200ms ease-glow for as long as the roadmap loads; the phone Skeleton card (369:10026) holds still,
-  and the motion canon reserves endless breathing for the crowned root (`tokens/motion.css`).
-  `board/states.css` follows each drawing. Choose one.
 - **Board · Roadmap complete for a reader.** The Board shows a reader the title alone, plus the crown and a secondary Fork offer on
   phones. Proposed, awaiting the owner: *All 8 steps done* / *Fork it to walk these steps yourself.*, with Fork primary on phones
   (25.03, 15.03).
