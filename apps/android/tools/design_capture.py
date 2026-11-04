@@ -211,6 +211,16 @@ class Fixture:
             raise RuntimeError(f"Local fixture MCP refused {name}.")
         return result
 
+    # The workout the app has open, once its start has reached the log.
+    def open_session(self):
+        for _ in range(60):
+            _, body = self.request("/v1/gym/sessions?limit=5", token=self.token)
+            session = next((row["id"] for row in body["sessions"] if not row.get("finishedAt")), None)
+            if session:
+                return session
+            time.sleep(.5)
+        raise RuntimeError("The app's open workout did not reach the log.")
+
     def link(self):
         token = secrets.token_hex(24)
         digest = hashlib.sha256(token.encode()).hexdigest()
@@ -946,6 +956,8 @@ def main():
                         if not fixture.routines:
                             raise ValueError("The empty-training fixture has no routine placeholder.")
                         responses = responses.replace("$routine0", fixture.routines[0])
+                    if "$session" in responses:
+                        responses = responses.replace("$session", fixture.open_session())
                     model.responses = json.loads(responses)
                     model.timing = model_timing(scenario)
                     manifest["step"] = f"{scenario['board']}-{scenario['name']}-{mode}"
@@ -956,6 +968,9 @@ def main():
                     try:
                         if "viewport" in scenario:
                             device.viewport(scenario["viewport"])
+                        if "logged_elsewhere" in scenario:
+                            fixture.mcp("gym_log_set", {**scenario["logged_elsewhere"], "sessionId": fixture.open_session(),
+                                "id": "set_capture" + secrets.token_hex(6), "completedAt": int(time.time() * 1000)})
                         device.steps(scenario["steps"])
                         tree = device.settle(resend_countdown=scenario.get("resend_countdown", False),
                                              notification_clock=device.notification_clock,

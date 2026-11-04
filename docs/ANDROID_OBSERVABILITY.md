@@ -76,6 +76,7 @@ type also occurs during network loss. Failures of the telemetry pipeline itself 
 | `gym.acceptSet` | gym | Logging a set fails |
 | `gym.adoptCoachDraft` | gym | Moving the signed-out Coach draft into the account fails |
 | `gym.applyProposal` | gym | Applying a Coach routine proposal fails |
+| `gym.applyWorkoutProposal` | gym | Applying a Coach change to the open workout fails on this phone |
 | `gym.choose` | gym | Reading the last time or saving the movement choice fails |
 | `gym.coachAccess` | gym | Reading this phone's installation for the signed-out Coach fails on this phone's own storage |
 | `gym.coachOnboarding` | gym | Saving the routines a retained onboarding answer drafted fails |
@@ -89,6 +90,7 @@ type also occurs during network loss. Failures of the telemetry pipeline itself 
 | `gym.deleteWeighIn` | gym | Holding or undoing a deleted weigh-in fails; the engine releases it |
 | `gym.discard` | gym | Discarding a workout fails |
 | `gym.dismissProposal` | gym | Dismissing a Coach routine proposal fails |
+| `gym.dismissWorkoutProposal` | gym | Turning down a Coach change to the open workout fails on this phone |
 | `gym.dropMovement` | gym | Removing a movement from the live workout fails |
 | `gym.dropRoutine` | gym | Deleting a routine fails |
 | `gym.editExercise` | gym | Editing a movement fails |
@@ -216,7 +218,7 @@ the rest in `gym/telemetry/GymEvents.kt`, owns the `onboarding_` prefix, and the
 | `gym_import_recovery` | gym | `action`: `inspect`, `keep`, `retry`, `fix`, `discard`; `state`: `opened`, `started`, `shown`, `date_opened`, `time_opened`, `date_confirmed`, `time_confirmed`, `date_cancelled`, `time_cancelled`, `marked_finished`, `link_changed`, `set_opened`, `set_staged`, `set_removed`; `outcome`: `ok`, `completed`, `refused`, `failed`, `cancelled` |
 | `gym_note_moved` | gym | none |
 | `gym_proposal_missing` | gym | none. Counts only answers this visit of the Coach room waited for; a proposal deleted before the visit, as on a reopened thread, draws the line and sends nothing. A proposal named by such an answer has no row on the phone, live or dead, 10 s after its own first miss and once the phone, caught up at or after that miss, has read further into the account or a pull sent after the wait ended has landed caught up (the wait's end asks for one); once per proposal while the room stays composed |
-| `gym_proposal_outcome` | gym | `action`: `apply`, `dismiss`; `outcome`: `decided`, `moved` (the routine changed under the proposal), `gone`, `settled` (the other decision was taken first), `refused` (the rules refuse the decision, as a target under its movement's load floor), `failed` |
+| `gym_proposal_outcome` | gym | `target`: `workout` on a change to the open workout, absent on a routine's; `action`: `apply`, `dismiss`; `outcome`: `decided`, `moved` (the routine or workout changed under the proposal), `gone`, `settled` (the other decision was taken first), `refused` (the rules refuse the decision, as a target under its movement's load floor), `failed`. A workout's decision the phone queued is told when the log's answer reaches it: `decided` if it took, `failed` if not |
 | `gym_proposal_receipt_shown` | gym | `outcome`: `applied` |
 | `gym_routine_saved` | gym | `action`: `create`, `update` |
 | `gym_screen_viewed` | gym | `screen`: `routines`, `log`, `coach`, `workout`, `workout_fix`, `proposal`, `finish`, `routine_editor`, `routine`, `session`, `movement`, `threads`, `thread`, `connections`, `notes`, `note_editor`, `bodyweight`, `on_this_phone`, `workout_inspect` |
@@ -295,6 +297,7 @@ foot turns to Retry.
 | `workout` | `fix` | `ok`, `refused`, `failed` | |
 | `workout` | `hide` | `ok`, `refused` | |
 | `workout` | `movement_switch` | `ok` | |
+| `workout` | `open_coach` | `ok` | Coach raised over the workout; `gym_screen_viewed` then says `coach` until it closes |
 | `workout` | `open_workout` | `ok` | |
 | `workout` | `picker_add` | `ok`, `refused` | |
 | `workout` | `picker_cancel` | `ok` | |

@@ -45,7 +45,7 @@ class WorkoutProposalsStore(
 
     private suspend fun decide(id: String, applying: Boolean): ProposalOutcome {
         val outcome = deciding(id, applying)
-        if (outcome is ProposalOutcome.Decided && id in training.workoutDecisionsWaiting()) awaited[id] = applying
+        if (outcome is ProposalOutcome.Decided && seat.tried("gym.refreshWorkout") { id in training.workoutDecisionsWaiting() } == true) awaited[id] = applying
         else report(applying, outcome.label)
         return outcome
     }
@@ -53,18 +53,19 @@ class WorkoutProposalsStore(
     private suspend fun deciding(id: String, applying: Boolean): ProposalOutcome {
         if (!seat.workoutAuthorized) return ProposalOutcome.Failed(WriteFailure.Refused(accountChanged))
         val owner = seat.owner
-        return try {
+        try {
             training.decideWorkoutProposal(id, applying)
-            if (owner != seat.owner) return ProposalOutcome.Failed(WriteFailure.Refused(accountChanged))
-            refresh()
-            held[id]?.let { ProposalOutcome.Decided(it) } ?: ProposalOutcome.Gone("that proposal is no longer on the log")
         } catch (interrupted: CancellationException) {
             throw interrupted
         } catch (refusing: Exception) {
             seat.reportFailure(if (applying) "gym.applyWorkoutProposal" else "gym.dismissWorkoutProposal", refusing)
             if (owner != seat.owner) return ProposalOutcome.Failed(WriteFailure.Refused(accountChanged))
-            refused(id, refusing)
+            return refused(id, refusing)
         }
+        if (owner != seat.owner) return ProposalOutcome.Failed(WriteFailure.Refused(accountChanged))
+        // The decision stands whatever this read meets: a failed read costs the room its picture until the next one, and never says the decision failed.
+        seat.tried("gym.refreshWorkout") { refresh() }
+        return held[id]?.let { ProposalOutcome.Decided(it) } ?: ProposalOutcome.Gone("that proposal is no longer on the log")
     }
 
     // A refusal means this room's picture is stale, so the proposals are read again before the sentence is said, and a proposal out of date says why in its own words.

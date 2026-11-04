@@ -18,9 +18,10 @@ Catalog version 2 adds `propose_workout_change`, the Coach's door to the open wo
 declares it and its corpus holds the calls (§3.5), and engine A.2 binds its `workoutProposal`
 records. The server serves catalog/1 and catalog/2 side by side. The ability is the phone Coach's
 alone: no surface draws a card for a connected agent's workout proposal, so MCP does not offer it, and
-the server executor runs it only to write its corpus expectations. iOS speaks catalog/2: Coach
-answers during a workout, reads the open workout (§4.1), and its replica executor runs
-`propose_workout_change`, whose card the lifter applies to the running plan or rejects.
+the server executor runs it only to write its corpus expectations. iOS and Android speak catalog/2:
+Coach answers during a workout, reads the open workout (§4.1), and the replica executor runs
+`propose_workout_change`. The lifter applies it to the running plan or rejects it, on its card on iOS and
+from its card's review sheet on Android.
 
 **Adoption:**
 

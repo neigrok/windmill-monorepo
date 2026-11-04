@@ -964,21 +964,22 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
         // The log stamps the name it read; a proposal this phone's own turn just minted is still addressed by its routine.
         baseName ?: reader.repository(EngineRoutine).find(routineId, ViewMode.drawn)?.name.orEmpty(), proposedName,
         changes.ui { TrainingLog(reader).sets.count { set -> set.exerciseId == it } })
-    private fun List<RoutineChange>.ui(logged: (Id<EngineExercise>) -> Int): List<ProposalChange> = mapIndexed { index, change ->
+    private fun List<RoutineChange>.ui(logged: (Id<EngineExercise>) -> Int?): List<ProposalChange> = mapIndexed { index, change ->
         ProposalChange(index + 1, ChangeKind.parse(change.kind), change.exerciseId.text,
             change.before?.let { ProposalTargets(it.sets.orEmpty().map { SetTarget(it.reps, it.weightKg) }) },
             change.after?.let { ProposalTargets(it.sets.orEmpty().map { SetTarget(it.reps, it.weightKg) }) },
             if (change.kind == "removed") logged(change.exerciseId) else null)
     }
+    // Only a proposal still waiting is read against its workout: one settled or set aside says all it can of itself.
     private fun EngineWorkoutProposal.ui(reader: Reader): Proposal {
-        val standing = WorkoutProposalState(reader, id)
+        val standing = if (state == "pending") WorkoutProposalState(reader, id) else WorkoutProposalState(this, null, reader.moment)
         val workout = standing.workout
         val line = standing.outOfDate?.let { Proposal.outOfDateLine(it.reason, it.exerciseId?.let { movement -> workout?.catalogue?.find(movement)?.name }) }
         return Proposal(id.text, sessionId.text, state = ProposalState.parse(state), summary = summary,
             changeCount = changeCount ?: workout?.session?.plan?.let { RoutineChange.count(it.entries, changes) } ?: changes.count { it.kind != "kept" },
             createdAtMs = reader.repository(EngineWorkoutProposal).record(id, ViewMode.drawn)?.let { it.rc ?: it.born?.ms } ?: 0,
             settledAtMs = settledAt?.ms, source = ProposalSource(door, connection, agent, threadId), baseRevision = baseRevision, baseName = Proposal.workoutWord,
-            changes = changes.ui { movement -> workout?.sets.orEmpty().count { it.exerciseId == movement } }, target = ProposalTarget.Workout, outOfDate = line)
+            changes = changes.ui { movement -> workout?.sets?.count { it.exerciseId == movement } }, target = ProposalTarget.Workout, outOfDate = line)
     }
     private fun missing(message: String) = TrainingRefused("unknown-record", message)
     private fun refusal(refusal: GymRefusal): TrainingRefused {

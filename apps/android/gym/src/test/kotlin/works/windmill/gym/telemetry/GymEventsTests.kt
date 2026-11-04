@@ -22,6 +22,15 @@ class GymEventsTests {
             mapOf("screen" to "coach", "action" to "private-draft-text")))
     }
 
+    @Test fun aChangeToTheOpenWorkoutSaysSoAndKeepsOnlyItsBoundedLabels() {
+        val labels = mapOf("target" to "workout", "action" to "apply", "outcome" to "decided")
+        assertEquals(labels, GymEvents.schemas.properties("gym_proposal_outcome", labels + mapOf("summary" to "private", "movement" to "private")))
+        assertEquals(mapOf("action" to "dismiss", "outcome" to "moved"), GymEvents.schemas.properties("gym_proposal_outcome",
+            mapOf("target" to "private-routine-name", "action" to "dismiss", "outcome" to "moved")))
+        val door = mapOf("screen" to "workout", "action" to "open_coach", "outcome" to "ok")
+        assertEquals(door, GymEvents.schemas.properties("gym_action", door + mapOf("question" to "private")))
+    }
+
     @Test fun routineFormAndOuterSaveKeepOnlyBoundedOutcomes() {
         val allowed = listOf("open" to "ok", "cancel" to "ok", "stage" to "ok", "stage" to "refused", "discard" to "ok", "discard" to "cancelled")
             .map { (action, outcome) -> mapOf("screen" to "movement_form", "action" to action, "outcome" to outcome) } +

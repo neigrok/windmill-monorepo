@@ -6,6 +6,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
@@ -15,6 +16,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -121,6 +123,9 @@ class CoachOverWorkoutTests {
         val before = phone.store.coach.selectedChatId
         compose.onNodeWithText("Finish").assertIsDisplayed()
         compose.onNodeWithContentDescription("Hide workout").assertIsDisplayed()
+        compose.onNodeWithText("Push A").getUnclippedBoundsInRoot().let { title ->
+            assertEquals("the title stays centred between Finish and its two actions", 206.dp, (title.left + title.right) / 2)
+        }
 
         compose.onNodeWithContentDescription("Coach").performClick()
 
@@ -155,6 +160,7 @@ class CoachOverWorkoutTests {
         compose.onNodeWithText("2 changes to this workout.").assertIsDisplayed()
         compose.onNodeWithText("2 changes").assertIsDisplayed()
         compose.onNodeWithText(Ask.promise).assertIsDisplayed()
+        assertEquals("over the workout the card and its promise stand on the thread's own edge", 16.dp, compose.onNodeWithText(Ask.promise).getUnclippedBoundsInRoot().left)
         compose.onNodeWithText("Applied · this workout · 2 changes").assertDoesNotExist()
 
         compose.onNodeWithText("Review").performClick()

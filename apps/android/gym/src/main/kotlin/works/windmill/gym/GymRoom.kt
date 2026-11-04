@@ -228,7 +228,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
     val screen = when {
         store.recovery.fixDraft != null -> "workout_fix"
         reviewFlow.reviewing != null -> "proposal"
-        coachSheet.open -> "coach"
+        loggerShown && coachSheet.open -> "coach"
         finishFlow.finished != null -> "finish"
         building != null -> "routine_editor"
         selectedRoutineId != null -> "routine"
