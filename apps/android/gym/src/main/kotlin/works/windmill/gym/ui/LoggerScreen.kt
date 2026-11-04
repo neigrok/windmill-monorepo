@@ -23,7 +23,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -461,10 +461,9 @@ fun LoggerScreen(
     GymScreen(
         title = title,
         titleAlignment = TextAlign.Center,
-        navigation = { Row {
+        // Finish's slot balances the two actions across the bar, so the title stays centred.
+        navigation = { Row(if (onCoach != null) Modifier.widthIn(min = 96.dp) else Modifier) {
             TopAction("Finish", enabled = state.canFinish, onClick = { entry.leave(); onFinish() })
-            // Finish beside this balances the two actions across the bar, so the title stays centred.
-            if (onCoach != null) Spacer(Modifier.width(24.dp))
         } },
         actions = {
             onCoach?.let { open -> IconButton(onClick = { entry.leave(); open() }) {

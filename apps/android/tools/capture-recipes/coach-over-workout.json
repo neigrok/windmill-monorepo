@@ -1,5 +1,69 @@
 [
   {
+    "board": "08.64",
+    "name": "what-coach-read-movement-history",
+    "account": "fixture",
+    "responses": [
+      [
+        {
+          "type": "tool_use",
+          "id": "toolu_stats",
+          "name": "get_stats",
+          "input": {}
+        }
+      ],
+      [
+        {
+          "type": "text",
+          "text": "Keep the same total work each week. Do 3 sets of 3 at 90 kg for a heavier top set."
+        }
+      ]
+    ],
+    "steps": [
+      {
+        "tap": "Coach"
+      },
+      {
+        "wait": "Question"
+      },
+      {
+        "tap": "Question"
+      },
+      {
+        "text": "Is Push A still useful?"
+      },
+      {
+        "wait": "Is Push A still useful?"
+      },
+      {
+        "tap": "Send"
+      },
+      {
+        "keyboard": "hide"
+      },
+      {
+        "wait": "Read your movement history"
+      },
+      {
+        "tap": "Read your movement history"
+      },
+      {
+        "wait": "What Coach read"
+      }
+    ],
+    "after": [
+      {
+        "tap": "Close"
+      },
+      {
+        "tap": "Routines"
+      },
+      {
+        "wait": "Push A"
+      }
+    ]
+  },
+  {
     "board": "08.54",
     "name": "coach-over-workout-fresh",
     "account": "fixture",
@@ -171,6 +235,9 @@
       },
       {
         "tap": "Send"
+      },
+      {
+        "keyboard": "hide"
       },
       {
         "wait": "Review"
@@ -467,6 +534,9 @@
         "tap": "Send"
       },
       {
+        "keyboard": "hide"
+      },
+      {
         "wait": "Proposal \u00b7 Push A \u00b7 next time"
       },
       {
@@ -631,6 +701,9 @@
         "tap": "Send"
       },
       {
+        "keyboard": "hide"
+      },
+      {
         "wait": "Proposal \u00b7 This workout"
       }
     ]
@@ -668,9 +741,6 @@
       },
       {
         "wait": "Question"
-      },
-      {
-        "keyboard": "show"
       },
       {
         "tap": "Question"

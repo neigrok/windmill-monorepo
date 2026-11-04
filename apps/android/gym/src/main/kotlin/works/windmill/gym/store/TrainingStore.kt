@@ -176,7 +176,6 @@ class TrainingStore(
             workout.preferences = training.settings()
             routines.readCatalogue()
             routines.readProgram()
-            workoutProposals.read()
             bodyweight.readSeries()
             routines.adoptReceipts()
             seat.pendingConnection = null
@@ -197,6 +196,8 @@ class TrainingStore(
             if (owner != seat.owner) return
             workout.resume()
             if (workout.lastSetsWanted) workout.loadLastSets()
+            if (owner != seat.owner) return
+            workoutProposals.read()
         } catch (_: TrainingReadChanged) {
             // The observer resumes the pending connection after the superseding engine revision.
         } catch (cancelled: CancellationException) {
