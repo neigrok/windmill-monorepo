@@ -435,6 +435,8 @@ class MailFixture(BaseHTTPRequestHandler):
 
 
 class Device:
+    patience = 1
+
     def __init__(self, sdk, port, auth_code=None):
         self.auth_code = auth_code
         self.adb = sdk / "platform-tools/adb"
@@ -559,7 +561,7 @@ class Device:
 
     def settle(self, *, resend_countdown=False, notification_clock=False, tile_clock=False, workout_clock=False, timeout=30):
         previous = None
-        deadline = time.monotonic() + timeout
+        deadline = time.monotonic() + timeout * self.patience
         while time.monotonic() < deadline:
             tree = self.tree()
             compared = ET.fromstring(ET.tostring(tree))
@@ -801,6 +803,7 @@ def start_emulator(sdk, output, port, stack, auth_code=None):
                 raise RuntimeError("Capture emulator must be API 36 or later.")
             device.run("shell", "input", "keyevent", "KEYCODE_WAKEUP")
             device.run("shell", "wm", "dismiss-keyguard")
+            device.run("shell", "settings", "put", "global", "hide_error_dialogs", "1")
             return device
         time.sleep(1)
     raise RuntimeError("The isolated emulator did not finish booting.")
@@ -832,6 +835,7 @@ def main():
     parser.add_argument("--profile-seconds", type=int, default=10)
     parser.add_argument("--baseline", action="store_true", help="Record an expected over-budget baseline without passing performance acceptance.")
     parser.add_argument("--sentry-dsn", default="", help="Optional local collector DSN; no vendor endpoint is accepted.")
+    parser.add_argument("--patience", type=int, default=1, help="Multiplies every wait for a state, for a loaded host.")
     parser.add_argument("--acceptance-pause-seconds", type=int, default=0,
                         help="Keep the isolated stack and emulator available after captures, up to 600 seconds.")
     args = parser.parse_args()
@@ -933,6 +937,7 @@ def main():
         manifest["step"] = "emulator"
         manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
         device = start_emulator(args.sdk, args.output, args.emulator_port, stack, auth_code=lambda: mail.code)
+        device.patience = args.patience
         if any(scenario.get("notification_clock") for scenario in scenarios):
             device.prepare_notification_capture()
         elif any(scenario.get("tile_clock") or scenario.get("workout_clock") or scenario.get("model_timing") for scenario in scenarios):
