@@ -148,3 +148,24 @@ for (const width of [390, 744]) {
     } finally { await page.close(); }
   });
 }
+
+for (const width of [744, 1024, 1440]) {
+  hostTest(`Chromium: with a step selected on the Graph at ${width}px, More and What's next stand over its panel`, async () => {
+    const { page, errors } = await openHost({ width, surface: 'tree' });
+    const onTop = (locator) => locator.evaluate((element) => {
+      const box = element.getBoundingClientRect();
+      return element.contains(document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2))
+        && element.contains(document.elementFromPoint(box.right - 8, box.top + box.height / 2));
+    });
+    try {
+      await page.evaluate(() => window.scene.select('wind'));
+      await page.locator('.st-detail-panel--open').waitFor();
+      await page.locator('[data-roadmap-more]').click();
+      assert.equal(await onTop(page.locator('.st-roadmap-menu [role="menuitem"]').first()), true);
+      await page.keyboard.press('Escape');
+      await page.getByRole('button', { name: /^Next/ }).click();
+      assert.equal(await onTop(page.locator('.st-roadmap-next-card').first()), true);
+      assert.deepEqual(errors, []);
+    } finally { await page.close(); }
+  });
+}

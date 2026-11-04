@@ -373,7 +373,7 @@ nothing. The dock previews a hovered kind on the node and adds Manage kinds besi
 
 From 744px the camera controls form a bottom-right pill whose viewport block clears the dock or tablet panel;
 phone camera controls sit beneath the measured row. From 744px the selected-step dock sits beneath the
-measured identity and any refusal banner, so neither is covered. The tablet Graph keeps its panel editor, aim,
+measured identity and any refusal banner, so neither is covered, and the row's menus stand over it. The tablet Graph keeps its panel editor, aim,
 link removal and multi-select surfaces.
 
 A roadmap keeps a root, by one rule for every door: `takesEveryRoot` in `board/acts.js`, which `deletable` builds on, asked of
