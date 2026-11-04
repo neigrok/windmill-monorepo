@@ -221,7 +221,7 @@ class AbilityExecutorTests {
         assertEquals(listOf("Push"), a.stored(Routine).map { it.name })
     }
 
-    // Plan §3.5: a call the server sends again under its id keeps one record. It re-runs, since a record holds no result; a first record that answered stands, and a refused one gives way in its place.
+    // Plan §3.5: a call the server sends again under its id keeps one record, in its place. It re-runs, since a record holds no result; the record says what this run served and every id either run created, and a first record that answered stands only when this run was refused.
     @Test fun aCallRerunUnderItsIdKeepsOneRecord() = phones { a, _ ->
         val turn = a.open()
         val exercise = """{"id":"tn7Qm2Kx9Lp4Wz8R-1","name":"Cable fly","pattern":"isolation","equipment":"cable"}"""
@@ -250,9 +250,62 @@ class AbilityExecutorTests {
         assertEquals(standing, a.engine.engine.snapshot())
         assertEquals(calls, a.calls(turn))
 
-        result(a.call(turn, "create_exercise", """{"id":"tn7Qm2Kx9Lp4Wz8R-3","name":"Face pull","pattern":"pull","equipment":"cable"}""", "call-3"))
-        assertEquals(calls, a.calls(turn))
+        val facePull = """{"id":"tn7Qm2Kx9Lp4Wz8R-3","name":"Face pull","pattern":"pull","equipment":"cable"}"""
+        result(a.call(turn, "create_exercise", facePull, "call-3"))
+        assertEquals(calls.take(2) + AbilityCall("call-3", "create_exercise", Json.parse(facePull), AbilityCall.Outcome.Ok, listOf(ref(Exercise.type, "tn7Qm2Kx9Lp4Wz8R-3"))) + calls.drop(3), a.calls(turn))
         assertTrue("Face pull" in a.stored(Exercise).map { it.name })
+    }
+
+    // The server sends a batch again only when it never read the answer, so the record says what this run served: the receipt counts what the model read.
+    @Test fun aRereadRecordsWhatThisRunServed() = phones { a, _ ->
+        val turn = a.open()
+        assertEquals(Json.parse("""{"sessions":[]}"""), result(a.call(turn, "list_sessions", "{}", "same")))
+        val session = workout(0)
+        a.seed(listOf(session), sixtySets(session, 0).take(1))
+        assertEquals(Json.parse("""{"sets":0,"sessions":1,"weeks":1}"""), result(a.call(turn, "list_sessions", "{}", "same")).member("read"))
+        assertEquals(Json.parse("""{"read":{"sets":0,"sessions":1,"weeks":1},"results":[]}"""), AbilityCall.receipt(a.calls(turn)))
+        assertEquals(Json.parse("""{"sets":1,"sessions":1,"weeks":1}"""), result(a.call(turn, "get_session", """{"sessionId":"${session.id}"}""", "same")).member("read"))
+        assertEquals(listOf("same"), a.calls(turn).map { it.callId })
+        assertEquals(Json.parse("""{"read":{"sets":1,"sessions":1,"weeks":1},"results":[]}"""), AbilityCall.receipt(a.calls(turn)))
+    }
+
+    // A write that landed stays on the receipt whatever re-runs under its id.
+    @Test fun aRerunKeepsEveryIdEitherRunCreated() = phones { a, _ ->
+        val turn = a.open()
+        val first = """{"id":"tn7Qm2Kx9Lp4Wz8R-1","name":"Cable fly","pattern":"isolation","equipment":"cable"}"""
+        result(a.call(turn, "create_exercise", first, "same"))
+        result(a.call(turn, "create_exercise", """{"id":"tn7Qm2Kx9Lp4Wz8R-2","name":"Face pull","pattern":"pull","equipment":"cable"}""", "same"))
+        val both = listOf(ref(Exercise.type, "tn7Qm2Kx9Lp4Wz8R-1"), ref(Exercise.type, "tn7Qm2Kx9Lp4Wz8R-2"))
+        assertEquals(both, a.calls(turn).single().created)
+        result(a.call(turn, "list_notes", "{}", "same"))
+        assertEquals(both, a.calls(turn).single().created)
+        assertEquals(Json.parse("""{"read":{"sets":0,"sessions":0,"weeks":0},"results":[{"t":"exercise","id":"tn7Qm2Kx9Lp4Wz8R-1"},{"t":"exercise","id":"tn7Qm2Kx9Lp4Wz8R-2"}]}"""), AbilityCall.receipt(a.calls(turn)))
+    }
+
+    // A record both runs created, as when its row is gone from this phone between them, is named once.
+    @Test fun aRerunNamesARecordBothRunsCreatedOnce() {
+        val created = listOf(ref(Exercise.type, "tn7Qm2Kx9Lp4Wz8R-1"))
+        val input = """{"id":"tn7Qm2Kx9Lp4Wz8R-1","name":"Cable fly","pattern":"isolation","equipment":"cable"}"""
+        val coach = CoachMessage(Id("turnAAAAAAAAAAA1", CoachMessage), Id("thrdAAAAAAAAAAA1", CoachThread), CoachMessage.Role.coach, "rp_00000000000000000000000000000001",
+            calls = listOf(AbilityCall("same", "create_exercise", null, AbilityCall.Outcome.Ok, created)), at = Instant(1))
+        val run = RunAbility(AbilityRequest("same", "create_exercise", Json.parse(input)), coach.id, Seat.bound, Catalog(Contract.json("gym/catalog.json")), "https://windmill.works")
+        val written = (decide(run, reader(listOf(row(coach)))) as Decision.Write).plan.operations.single { it.entity.type == CoachMessage.type }.values["calls"]
+        assertEquals(Json.Arr(listOf(AbilityCall("same", "create_exercise", Json.parse(input), AbilityCall.Outcome.Ok, created).json)), written)
+    }
+
+    // A re-run the calls have no room for is refused `coach-turn-volume` with its writes dropped, and the record that answered stands, whatever it created.
+    @Test fun aRerunWithNoRoomLeavesTheRecordThatAnswered() = phones { a, _ ->
+        val turn = a.open()
+        result(a.call(turn, "list_notes", "{}", "same"))
+        val current = a.message(turn.coach).callsBytes
+        val steering = bytes(AbilityCall("fill", "list_sessions", Json.parse("""{"before":1,"beforeId":""}"""), AbilityCall.Outcome.Ok).json)
+        result(a.call(turn, "list_sessions", """{"before":1,"beforeId":"${"x".repeat(CoachRules.maxCallsBytes - 20 - current - 1 - steering)}"}""", "fill"))
+        val calls = a.calls(turn)
+        assertEquals(CoachRules.maxCallsBytes - 20, a.message(turn.coach).callsBytes)
+        val rerun = a.call(turn, "create_exercise", """{"id":"tn7Qm2Kx9Lp4Wz8R-3","name":"Cable fly","pattern":"isolation","equipment":"cable"}""", "same")
+        assertEquals(Outcome.Unchanged(refused(AbilityRefusal.volume)), rerun)
+        assertEquals(calls, a.calls(turn))
+        assertEquals(emptyList<Exercise>(), a.stored(Exercise))
     }
 
     @Test fun aRerunOfARefusedCallLandsItsWritesWithItsRecord() = phones { a, _ ->
@@ -487,7 +540,62 @@ class AbilityExecutorTests {
         assertEquals(refused(AbilityRefusal.refused), answered(a.call(turn, "list_bodyweight", """{"to":"2026-02-30"}""", "call-6")))
     }
 
-    // A call's record holds no U+0000, and the engine's bound on `calls` is no refusal of the call: the record goes without its input, and the turn goes on.
+    // An input nested past the bound is `invalid-arguments` before anything reads it, so no record holds it: a store the engine could not read back would stop the app opening.
+    @Test fun anInputNestedPastItsBoundIsMalformedAndNoRecordHoldsIt() = phones { a, b ->
+        val turn = a.open()
+        fun nested(depth: Int) = "{\"a\":".repeat(depth) + "1" + "}".repeat(depth)
+        fun routine(n: Int, proposal: Int) = """{"id":"tn7Qm2Kx9Lp4Wz8R-$n","name":"Open $n","position":0,"entries":[{"exerciseId":"plank"}],"pendingProposal":${nested(proposal)}}"""
+        val atTheBound = routine(1, CoachRules.maxInputDepth - 1)
+        assertEquals(CoachRules.maxInputDepth, Json.parse(atTheBound).depth)
+        result(a.call(turn, "create_routine", atTheBound, "at-the-bound"))
+        assertEquals(Json.parse(atTheBound), a.calls(turn).single().input)
+        for ((n, depth) in listOf(CoachRules.maxInputDepth, 100, 124, 126).withIndex()) {
+            val callId = "past-$n"
+            assertEquals(refused(AbilityRefusal.invalidArguments), answered(a.call(turn, "create_routine", routine(n + 2, depth), callId)))
+            assertEquals(AbilityCall(callId, "create_routine", null, AbilityCall.Outcome.Refused(AbilityRefusal.invalidArguments)), a.calls(turn).last())
+        }
+        val arrays = "[".repeat(CoachRules.maxInputDepth) + "]".repeat(CoachRules.maxInputDepth)
+        val ofArrays = """{"id":"tn7Qm2Kx9Lp4Wz8R-9","name":"Of arrays","position":0,"entries":[{"exerciseId":"plank"}],"pendingProposal":{"a":$arrays}}"""
+        assertEquals(refused(AbilityRefusal.invalidArguments), answered(a.call(turn, "create_routine", ofArrays, "past-of-arrays")))
+        assertEquals(listOf("Open 1"), a.stored(Routine).map { it.name })
+        a.engine.sync()
+        assertEquals(emptyList<Any>(), a.engine.notices("gym"))
+        assertEquals(a.calls(turn), b.calls(turn))
+        assertEquals(a.engine.engine.snapshot(), Json.parse(a.engine.engine.snapshot().jcs))
+    }
+
+    // A new routine meets its movements' floors as the log will, so it is refused here rather than taken back at the sync.
+    @Test fun aNewRoutineMeetsItsMovementsFloorsOnThePhone() = phones { a, b ->
+        val turn = a.open()
+        val below = """{"id":"tn7Qm2Kx9Lp4Wz8R-1","name":"Below","position":0,"entries":[{"exerciseId":"bench-press","sets":[{"reps":5,"weightKg":-5}]}]}"""
+        assertEquals(refused(AbilityRefusal.loadFloor), answered(a.call(turn, "create_routine", below, "call-1")))
+        assertEquals(emptyList<Routine>(), a.stored(Routine))
+        assertEquals(AbilityCall("call-1", "create_routine", Json.parse(below), AbilityCall.Outcome.Refused(AbilityRefusal.loadFloor)), a.calls(turn).single())
+        result(a.call(turn, "create_routine", """{"id":"tn7Qm2Kx9Lp4Wz8R-2","name":"Assisted","position":0,"entries":[{"exerciseId":"plank","sets":[{"reps":5,"weightKg":-5}]}]}""", "call-2"))
+        result(a.call(turn, "create_routine", """{"id":"tn7Qm2Kx9Lp4Wz8R-3","name":"At the floor","position":1,"entries":[{"exerciseId":"bench-press","sets":[{"reps":5,"weightKg":0}]}]}""", "call-3"))
+        a.engine.sync()
+        assertEquals(emptyList<Any>(), a.engine.notices("gym"))
+        assertEquals(listOf("Assisted", "At the floor"), b.stored(Routine).map { it.name })
+        assertEquals(listOf("call-1", "call-2", "call-3"), b.calls(turn).map { it.callId })
+    }
+
+    // Another phone's running message is that phone's to write: its calls would replace the ones its own phone records, so this phone refuses and records nothing.
+    @Test fun anotherPhoneCannotWriteOnThisPhonesRunningMessage() = phones { a, b ->
+        val turn = a.open()
+        a.engine.sync()
+        val before = b.engine.engine.snapshot()
+        val theirs = GymRefusal.Other(Refused(RefusalCode(Gym.Codes.messageFinal), turn.coach.ref, path = Refused.Path.predicted))
+        assertEquals(theirs, (b.call(turn, "list_notes", "{}", "b-1") as Outcome.Refused).refusal)
+        assertEquals(theirs, (b.call(turn, "save_note", """{"id":"tn7Qm2Kx9Lp4Wz8R-1","title":"Tone","body":"Blunt."}""", "b-2") as Outcome.Refused).refusal)
+        assertEquals(before, b.engine.engine.snapshot())
+        result(a.call(turn, "list_notes", "{}", "a-1"))
+        a.engine.sync()
+        assertEquals(emptyList<Any>(), a.engine.notices("gym"))
+        assertEquals(listOf("a-1"), b.calls(turn).map { it.callId })
+        assertEquals(emptyList<Note>(), a.stored(Note))
+    }
+
+    // A call's record holds no U+0000, in a value or a key, and the engine's bound on `calls` is no refusal of the call: the record goes without its input, and the turn goes on.
     @Test fun aCallHoldingANulRecordsWithoutItsInputAndTheTurnGoesOn() = phones { a, _ ->
         val turn = a.open()
         assertEquals(Json.parse("""{"sessions":[]}"""), result(a.call(turn, "list_sessions", """{"before":1,"beforeId":"a\u0000b"}""", "call-1")))
@@ -496,6 +604,9 @@ class AbilityExecutorTests {
         assertEquals(refused(AbilityRefusal.refused), answered(a.call(turn, "create_routine", """{"id":"tn7Qm2Kx9Lp4Wz8R-2","name":"a\u0000b","position":0,"entries":[{"exerciseId":"bench-press"}]}""", "call-4")))
         assertEquals(listOf(AbilityCall.Outcome.Ok, AbilityCall.Outcome.Refused(AbilityRefusal.refused), AbilityCall.Outcome.Refused(AbilityRefusal.invalidArguments), AbilityCall.Outcome.Refused(AbilityRefusal.refused)), a.calls(turn).map { it.outcome })
         assertEquals(listOf(null, null, null, null), a.calls(turn).map { it.input })
+        result(a.call(turn, "create_routine", """{"id":"tn7Qm2Kx9Lp4Wz8R-3","name":"A key","position":0,"entries":[{"exerciseId":"plank"}],"pendingProposal":{"a\u0000b":1}}""", "call-5"))
+        assertNull(a.calls(turn).last().input)
+        assertEquals(AbilityCall.Outcome.Ok, a.calls(turn).last().outcome)
         a.engine.sync()
         assertEquals(emptyList<Any>(), a.engine.notices("gym"))
     }

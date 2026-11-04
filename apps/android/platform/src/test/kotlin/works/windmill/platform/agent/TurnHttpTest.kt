@@ -6,12 +6,15 @@ import java.util.concurrent.TimeUnit
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -19,6 +22,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import okhttp3.Call
 import okhttp3.Cookie
@@ -26,6 +30,7 @@ import okhttp3.CookieJar
 import okhttp3.EventListener
 import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
+import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.RecordedRequest
@@ -77,7 +82,8 @@ class TurnHttpTest {
 
     private fun http(client: OkHttpClient = shared) = TurnHttp(server.url("/"), "/v1/agent/turns", 13, client)
     private fun settled(): String {
-        repeat(100) { if (shared.dispatcher.runningCallsCount() != 0) Thread.sleep(50) }
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(60)
+        while (shared.dispatcher.runningCallsCount() != 0 && System.nanoTime() < deadline) Thread.sleep(20)
         shared.connectionPool.evictAll()
         return "running=${shared.dispatcher.runningCallsCount()} connections=${shared.connectionPool.connectionCount()}"
     }
@@ -97,9 +103,10 @@ class TurnHttpTest {
     }
     private fun sse(body: String) = MockResponse().setHeader("Content-Type", "text/event-stream; charset=utf-8").setBody(body)
     private fun json(status: Int, body: String) = MockResponse().setResponseCode(status).setHeader("Content-Type", "application/json").setBody(body)
-    private fun request(): RecordedRequest = server.takeRequest(5, TimeUnit.SECONDS)!!
+    private fun request(): RecordedRequest = server.takeRequest(60, TimeUnit.SECONDS)!!
     private fun RecordedRequest.seen() = listOf(method, path, headers["Sync-Schema"], headers["Authorization"], headers["X-Windmill-Installation"], headers["Accept"], headers["Content-Type"], headers["Cookie"], body.readUtf8())
-    private fun <T> within(work: suspend () -> T): T = runBlocking { withTimeout(20.seconds) { work() } }
+    // Every wait here is for a condition: the bounds only say when a test that will never pass gives up, so they leave room for the slowest machine.
+    private fun <T> within(work: suspend () -> T): T = runBlocking { withTimeout(60.seconds) { work() } }
     private fun thrown(work: suspend () -> Unit): Exception = within {
         var failure: Exception? = null
         try { work() } catch (caught: Exception) { failure = caught }
@@ -208,8 +215,8 @@ class TurnHttpTest {
 
     @Test fun theIdleTimeoutIsIdleNotTotal() {
         val beat = ": heartbeat\n\n"
-        server.enqueue(sse(beat.repeat(10) + "event: done\ndata: {\"state\":\"completed\"}\n\n").throttleBody(beat.length.toLong(), 100, TimeUnit.MILLISECONDS))
-        val http = TurnHttp(server.url("/"), "/v1/agent/turns", 13, shared, idleTimeout = 500.milliseconds)
+        server.enqueue(sse(beat.repeat(7) + "event: done\ndata: {\"state\":\"completed\"}\n\n").throttleBody(beat.length.toLong(), 1, TimeUnit.SECONDS))
+        val http = TurnHttp(server.url("/"), "/v1/agent/turns", 13, shared, idleTimeout = 5.seconds)
         assertEquals(listOf(TurnEvent.Done(TurnState.completed, false)), within { http.resume("tn_1", bound).toList() })
     }
 
@@ -324,15 +331,7 @@ class TurnHttpTest {
 
     @Test fun aCallCancelledFromOutsideIsNoCoroutineCancellation() {
         server.enqueue(sse("event: text\ndata: {\"delta\":\"x\"}\n\n: more\n\n").throttleBody(40, 20, TimeUnit.SECONDS))
-        val failure = thrown {
-            coroutineScope {
-                launch(Dispatchers.IO) {
-                    delay(300)
-                    shared.dispatcher.cancelAll()
-                }
-                http().open(open, bound).collect { }
-            }
-        }
+        val failure = thrown { http().resume("tn_1", bound).collect { shared.dispatcher.cancelAll() } }
         assertTrue("$failure", failure !is CancellationException)
     }
 
@@ -341,8 +340,14 @@ class TurnHttpTest {
         server.enqueue(sse(many + ": more\n\n").throttleBody(many.length.toLong(), 30, TimeUnit.SECONDS))
         within {
             coroutineScope {
-                val job = launch(Dispatchers.Default) { http().open(open, bound).collect { delay(10_000) } }
-                delay(700)
+                val collecting = CompletableDeferred<Unit>()
+                val job = launch(Dispatchers.Default) {
+                    http().open(open, bound).collect {
+                        collecting.complete(Unit)
+                        awaitCancellation()
+                    }
+                }
+                collecting.await()
                 job.cancelAndJoin()
             }
         }
@@ -360,7 +365,7 @@ class TurnHttpTest {
         within {
             coroutineScope {
                 val job = launch(Dispatchers.Default) { http().answer("tn_1", 1, emptyList(), bound) }
-                delay(300)
+                withContext(Dispatchers.IO) { request() }
                 job.cancelAndJoin()
             }
         }
@@ -371,22 +376,27 @@ class TurnHttpTest {
     @Test fun abandoningWhileFramesPileUpLeavesNoThreadBehind() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         val calls = "event: calls\ndata: {\"batch\":1,\"calls\":[{\"callId\":\"a\",\"name\":\"list_things\",\"input\":{}}]}\n\n"
+        val posted = Channel<Unit>(Channel.UNLIMITED)
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse = when {
+                request.path.orEmpty().endsWith("/results") -> MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE).also { posted.trySend(Unit) }
+                request.path.orEmpty().endsWith("/stop") -> MockResponse().setResponseCode(202).setBody("""{"state":"running"}""")
+                else -> sse(calls + frames(200) + ": more\n\n").throttleBody(40_000, 60, TimeUnit.SECONDS)
+            }
+        }
         repeat(5) {
-            server.enqueue(sse(calls + frames(200) + ": more\n\n").throttleBody(40_000, 60, TimeUnit.SECONDS))
-            server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))
-            server.enqueue(MockResponse().setResponseCode(202).setBody("""{"state":"running"}"""))
             val driver = TurnDriver(http(), quietTelemetry(), scope, elapsedMs = { 0L })
             within {
                 coroutineScope {
                     val run = async(Dispatchers.Default) { driver.run("tn_1", bound, echo()) }
-                    delay(500)
+                    driver.activity.first { it != null }
+                    posted.receive()
                     driver.abandon()
                     assertEquals(TurnExit.abandoned, run.await())
                 }
             }
         }
         val running = settled()
-        server.enqueue(MockResponse().setResponseCode(202).setBody("""{"state":"running"}"""))
         within { http().stop("tn_next", bound) }
         scope.cancel()
         assertTrue(running, running.startsWith("running=0 "))
@@ -417,6 +427,6 @@ class TurnHttpTest {
         val frame = "event: text\ndata: {\"delta\":\"Hi\"}\n\n"
         server.enqueue(sse(frame + ": a heartbeat still on its way\n\n").throttleBody(frame.length.toLong(), 2, TimeUnit.SECONDS))
         assertEquals(TurnEvent.Text("Hi"), within { http(client).resume("tn_1", bound).first() })
-        assertTrue(cancelled.await(5, TimeUnit.SECONDS))
+        assertTrue(cancelled.await(60, TimeUnit.SECONDS))
     }
 }

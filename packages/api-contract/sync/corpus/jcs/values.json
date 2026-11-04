@@ -180,6 +180,33 @@
     }
   },
   {
+    "name": "2^-24, whose nearest 16 digits miss where the neighbour above round-trips",
+    "input": {
+      "bits": "3e70000000000000"
+    },
+    "expect": {
+      "jcs": "5.960464477539063e-8"
+    }
+  },
+  {
+    "name": "2^-44, whose nearest 16 digits miss where the neighbour above round-trips",
+    "input": {
+      "bits": "3d30000000000000"
+    },
+    "expect": {
+      "jcs": "5.684341886080802e-14"
+    }
+  },
+  {
+    "name": "2^89, whose nearest 16 digits miss where the neighbour above round-trips",
+    "input": {
+      "bits": "4580000000000000"
+    },
+    "expect": {
+      "jcs": "6.189700196426902e+26"
+    }
+  },
+  {
     "name": "a shortest round trip, rounding up",
     "input": {
       "bits": "41b3de4355555556"

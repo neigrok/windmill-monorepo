@@ -1,6 +1,7 @@
 package works.windmill.gym.telemetry
 
 import works.windmill.agent.TurnFailure
+import works.windmill.agent.TurnLabel
 import works.windmill.agent.TurnRefusal
 import works.windmill.agent.TurnState
 import works.windmill.agent.SeatKind
@@ -96,7 +97,7 @@ object GymEvents {
             "coach_turn" to LabelSchema(mapOf(
                 "state" to TurnState.entries.filter { it.terminal }.map { it.name }.toSet(),
                 "seat" to SeatKind.entries.map { it.name }.toSet(),
-                "code" to TurnRefusal.codes + TurnFailure.entries.map { it.name } + InterruptedCause.entries.map { it.name } + GymTurnTelemetry.other,
+                "code" to TurnRefusal.codes + TurnFailure.entries.map { it.name } + InterruptedCause.entries.map { it.name } + TurnLabel.gone + GymTurnTelemetry.other,
             ), counts = setOf("ability_calls", "refusals", "answer_bytes", "duration_ms")),
             "gym_coach_import" to LabelSchema(mapOf("outcome" to setOf("started", "committed", "replayed", "refused", "failed"))),
             "gym_proposal_outcome" to LabelSchema(mapOf(

@@ -2,6 +2,7 @@ package works.windmill.gym.domain.coach
 
 import works.windmill.domain.kit.*
 import works.windmill.gym.domain.sync.GymRefusal
+import works.windmill.gym.domain.sync.RoutineRules
 import works.windmill.gym.domain.sync.Session
 import works.windmill.gym.domain.sync.TrainingSet
 import works.windmill.sync.api.RecordRef
@@ -133,6 +134,7 @@ object CoachRules {
     const val maxReceiptBytes = 16_384
     const val maxCallsBytes = 32_768
     const val maxResultBytes = 16_384
+    const val maxInputDepth = 32
     const val question = "message.question"
     val title = TextSpec("thread.title", MeasureUnit.bytes, 1, 8_000, trim = false, nfc = false)
     val role = ChoiceSpec("message.role", listOf("lifter", "coach"))
@@ -157,7 +159,12 @@ object CoachRules {
 // The codes a call the phone refused carries back (Coach §5, §6.4).
 enum class AbilityRefusal(val code: String) {
     notOffered("not-offered"), seatRequired("seat-required"), invalidInput("invalid-input"), invalidArguments("invalid-arguments"),
-    refused("refused"), resultTooLarge("result-too-large"), volume("coach-turn-volume"),
+    refused("refused"), loadFloor("load-floor"), resultTooLarge("result-too-large"), volume("coach-turn-volume");
+
+    companion object {
+        // What a rule refused, in the server tool's word: `load-floor` for a target below its movement's floor, `refused` for any other.
+        fun of(refusal: GymRefusal): AbilityRefusal = if ((refusal as? GymRefusal.Invalid)?.violation?.rule == RoutineRules.loadFloor) loadFloor else refused
+    }
 }
 
 // How many log rows a read served, as a result states it and a receipt sums it.
@@ -254,8 +261,7 @@ data class AbilityCall(val callId: String, val name: String, val input: Json?, v
         fun decode(json: Json): AbilityCall {
             val f = Fields(json)
             val outcome = f.string("outcome")
-            val ended = if (outcome == "ok") Outcome.Ok else AbilityRefusal.entries.firstOrNull { it.code == outcome }?.let(Outcome::Refused)
-                ?: throw DecodeError(CoachMessage.type, "calls.outcome", "not an outcome")
+            val ended = if (outcome == "ok") Outcome.Ok else Outcome.Refused(AbilityRefusal.entries.firstOrNull { it.code == outcome } ?: AbilityRefusal.refused)
             val created = (f.json("created") as? Json.Arr)?.values ?: throw DecodeError(CoachMessage.type, "calls.created", "absent")
             val refs = created.map { item ->
                 val ref = Fields(item)
@@ -316,16 +322,16 @@ class OpenTurn(val thread: Id<CoachThread>? = null, val question: String, val pi
     }
 }
 
-// Coach §4.4, §4.5: the terminal state, the answer and the receipt in one transaction, `runningTurn` cleared. A turn a writer already ended is final.
+// Coach §4.4, §4.5: the terminal state, the answer and the receipt in one transaction, and `runningTurn` cleared unless it names another turn, as a merge's row can. A turn a writer already ended is final.
 class EndTurn(val message: Id<CoachMessage>, val state: MessageState, val text: String? = null, val truncated: Boolean = false) : Action<EndTurn.Loaded, Unit, GymRefusal> {
-    data class Loaded(val message: CoachMessage?, val moment: Moment)
+    data class Loaded(val message: CoachMessage?, val moment: Moment, val named: Json?)
 
     init { require(state.isTerminal) { "a turn ends in a terminal state" } }
 
     override val scope = CoachMessage.scope
     override val refusals = GymRefusal
 
-    override fun load(read: Reader) = Loaded(read.repository(CoachMessage).find(message, ViewMode.drawn), read.moment)
+    override fun load(read: Reader) = Loaded(read.repository(CoachMessage).find(message, ViewMode.drawn), read.moment, read.device(runningTurnKey))
 
     override fun decide(loaded: Loaded, ids: IDSource): Decision<Unit, GymRefusal> {
         val running = loaded.message?.takeIf { it.role == CoachMessage.Role.coach }
@@ -335,12 +341,27 @@ class EndTurn(val message: Id<CoachMessage>, val state: MessageState, val text: 
         val written = listOf("state", "text", "receipt", "truncated")
         val plan = Plan()
         plan.update(Valid(ended, CoachMessage, written, loaded.moment), written)
-        plan.device(runningTurnKey, null)
+        if (loaded.named == null || loaded.named == message.json) plan.device(runningTurnKey, null)
         return Decision.Write(plan, Unit)
     }
 
     companion object {
         const val runningTurnKey = "runningTurn"
+    }
+}
+
+// A turn whose message is gone, as a conversation deleted on another phone takes it: `runningTurn` lets go of it, and of no other.
+class ForgetRunningTurn(val message: Id<CoachMessage>) : Action<Json?, Unit, GymRefusal> {
+    override val scope = CoachMessage.scope
+    override val refusals = GymRefusal
+
+    override fun load(read: Reader) = read.device(EndTurn.runningTurnKey)
+
+    override fun decide(loaded: Json?, ids: IDSource): Decision<Unit, GymRefusal> {
+        if (loaded != message.json) return Decision.Unchanged(Unit)
+        val plan = Plan()
+        plan.device(EndTurn.runningTurnKey, null)
+        return Decision.Write(plan, Unit)
     }
 }
 
@@ -375,6 +396,45 @@ class KeepPicture(val picture: CoachPictureRow) : Action<Unit, Unit, GymRefusal>
     }
 }
 
+// The row of a picture kept for a turn that did not open; the caller deletes its files.
+class ForgetPicture(val id: String) : Action<Unit, Unit, GymRefusal> {
+    override val scope = CoachMessage.scope
+    override val refusals = GymRefusal
+
+    override fun load(read: Reader) = Unit
+
+    override fun decide(loaded: Unit, ids: IDSource): Decision<Unit, GymRefusal> {
+        val plan = Plan()
+        plan.device(CoachPictureRow.key(id), null)
+        return Decision.Write(plan, Unit)
+    }
+}
+
+// The rows no message claims: a conversation deleted on another phone, or a process that died between `KeepPicture` and `OpenTurn`. A replica behind its log cannot tell a message gone from one not yet arrived, so it forgets nothing.
+class ForgetUnclaimedPictures : Action<ForgetUnclaimedPictures.Loaded, Unit, GymRefusal> {
+    data class Loaded(val rows: Set<String>, val claimed: Set<String>)
+
+    override val scope = CoachMessage.scope
+    override val refusals = GymRefusal
+
+    override fun load(read: Reader): Loaded {
+        val rows = read.devices(CoachPictureRow.key("")).keys
+        if (rows.isEmpty() || !read.caughtUpWithItsLog) return Loaded(emptySet(), emptySet())
+        return Loaded(rows, read.repository(CoachMessage).all(ViewMode.drawn).flatMap { it.pictures }.map { CoachPictureRow.key(it.id) }.toSet())
+    }
+
+    override fun decide(loaded: Loaded, ids: IDSource): Decision<Unit, GymRefusal> {
+        val unclaimed = loaded.rows - loaded.claimed
+        if (unclaimed.isEmpty()) return Decision.Unchanged(Unit)
+        val plan = Plan()
+        unclaimed.forEach { plan.device(it, null) }
+        return Decision.Write(plan, Unit)
+    }
+}
+
+// Whether a record this replica lacks is truly gone, rather than not yet arrived.
+val Reader.caughtUpWithItsLog: Boolean get() = isAnonymous || firstPullComplete() && checkpoint().cleanSeq != null
+
 // The answer as it streams: this replica's running Coach message takes the text so far; a message that ended, or another replica's, takes nothing.
 class StreamTurnText(val message: Id<CoachMessage>, val text: String) : Action<StreamTurnText.Loaded, Unit, GymRefusal> {
     data class Loaded(val message: CoachMessage?, val replica: String, val moment: Moment)
@@ -395,33 +455,36 @@ class StreamTurnText(val message: Id<CoachMessage>, val text: String) : Action<S
     }
 }
 
-// A turn the server refused before its stream never happened: its messages, its pictures, the thread when it held nothing else, and `runningTurn` go. It answers the picture ids removed, for the caller to delete their files.
-class WithdrawTurn(val turn: OpenTurn.Turn) : Action<List<CoachMessage>, List<String>, GymRefusal> {
-    override val scope = CoachMessage.scope
-    override val refusals = GymRefusal
-
-    override fun load(read: Reader) = read.repository(CoachMessage).children(turn.thread, "threadId", ViewMode.stored)
-
-    override fun decide(loaded: List<CoachMessage>, ids: IDSource): Decision<List<String>, GymRefusal> {
-        val withdrawn = loaded.filter { it.id == turn.lifter || it.id == turn.coach }
-        val plan = Plan()
-        withdrawn.forEach { plan.remove(it.id) }
-        val pictures = plan.forgetPictures(withdrawn)
-        if (withdrawn.size == loaded.size) plan.remove(turn.thread)
-        plan.device(EndTurn.runningTurnKey, null)
-        return Decision.Write(plan, pictures)
-    }
-}
-
-// A conversation deleted from History: the thread, its messages and their pictures. It answers the picture ids removed, for the caller to delete their files.
-class DeleteConversation(val thread: Id<CoachThread>) : Action<DeleteConversation.Loaded, List<String>, GymRefusal> {
+// A turn the server refused before its stream never happened: its messages, its pictures, the thread when it stands and held nothing else, and `runningTurn` go. It answers the picture ids removed, for the caller to delete their files.
+class WithdrawTurn(val turn: OpenTurn.Turn) : Action<WithdrawTurn.Loaded, List<String>, GymRefusal> {
     data class Loaded(val thread: CoachThread?, val messages: List<CoachMessage>)
 
     override val scope = CoachMessage.scope
     override val refusals = GymRefusal
 
+    override fun load(read: Reader) = Loaded(read.repository(CoachThread).find(turn.thread, ViewMode.drawn),
+        read.repository(CoachMessage).children(turn.thread, "threadId", ViewMode.stored))
+
+    override fun decide(loaded: Loaded, ids: IDSource): Decision<List<String>, GymRefusal> {
+        val withdrawn = loaded.messages.filter { it.id == turn.lifter || it.id == turn.coach }
+        val plan = Plan()
+        withdrawn.forEach { plan.remove(it.id) }
+        val pictures = plan.forgetPictures(withdrawn)
+        if (loaded.thread != null && withdrawn.size == loaded.messages.size) plan.remove(turn.thread)
+        plan.device(EndTurn.runningTurnKey, null)
+        return Decision.Write(plan, pictures)
+    }
+}
+
+// A conversation deleted from History: the thread, its messages, their pictures, and `runningTurn` when it names one of them. It answers the picture ids removed, for the caller to delete their files.
+class DeleteConversation(val thread: Id<CoachThread>) : Action<DeleteConversation.Loaded, List<String>, GymRefusal> {
+    data class Loaded(val thread: CoachThread?, val messages: List<CoachMessage>, val running: Json?)
+
+    override val scope = CoachMessage.scope
+    override val refusals = GymRefusal
+
     override fun load(read: Reader) = Loaded(read.repository(CoachThread).find(thread, ViewMode.drawn),
-        read.repository(CoachMessage).children(thread, "threadId", ViewMode.stored))
+        read.repository(CoachMessage).children(thread, "threadId", ViewMode.stored), read.device(EndTurn.runningTurnKey))
 
     override fun decide(loaded: Loaded, ids: IDSource): Decision<List<String>, GymRefusal> {
         if (loaded.thread == null) return Decision.Unchanged(emptyList())
@@ -429,6 +492,7 @@ class DeleteConversation(val thread: Id<CoachThread>) : Action<DeleteConversatio
         plan.remove(thread)
         loaded.messages.forEach { plan.remove(it.id) }
         val pictures = plan.forgetPictures(loaded.messages)
+        if (loaded.messages.any { it.id.json == loaded.running }) plan.device(EndTurn.runningTurnKey, null)
         return Decision.Write(plan, pictures)
     }
 }

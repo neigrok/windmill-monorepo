@@ -211,9 +211,11 @@ The bundled movement catalogue uses backend seed identities. Only shares and con
 through `GymRest`.
 `coach/turn/` is the phone Coach: `CoachTurns` (one per application, handed out by
 `TrainingStore.coachTurns`) admits a question, records it and runs the turn through `:agent`'s driver;
-`GymTurnHost` runs each step on the replica the turn opened on, through `EngineTraining.pinnedOn`, which keeps
-`writable`'s one rule, so a turn writes nothing during a transition or onto the replica that replaced its own: it
-waits out a transition a sheet can still cancel, and a change of the active replica abandons it. `PictureFiles`
+`GymTurnHost` runs each step under the seat the turn opened with, through `EngineTraining.pinnedOn`, which keeps
+`writable`'s one rule and holds to the replica and to whether it is anonymous, so a turn reads and writes nothing
+during a transition, under a sign-in's open decision, or under the seat that replaced its own: it waits out what can
+still be cancelled, and a change of the active replica or a rebind abandons it. The record takes the streamed text
+every 5 s, at each batch and at the end, and the room draws `CoachTurns.liveAnswer` meanwhile. `PictureFiles`
 keeps a turn's originals and model copies in `noBackupFilesDir/coach-pictures`, with one metadata row per picture on
 the replica; the engine stays in `filesDir`, and neither rides a backup or a device transfer. `TurnLease` holds an
 expedited WorkManager job for the length of a turn on API 31 and above. WorkManager starts on demand

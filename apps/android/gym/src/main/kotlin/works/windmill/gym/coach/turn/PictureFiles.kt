@@ -10,18 +10,10 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
 import kotlin.math.roundToInt
-import works.windmill.domain.kit.Action
-import works.windmill.domain.kit.Decision
-import works.windmill.domain.kit.IDSource
-import works.windmill.domain.kit.Plan
-import works.windmill.domain.kit.Reader
 import works.windmill.gym.coach.CoachAttachment
 import works.windmill.gym.coach.CoachPhotos
-import works.windmill.gym.domain.coach.CoachMessage
 import works.windmill.gym.domain.coach.CoachPictureRow
 import works.windmill.gym.domain.coach.CoachTurnBounds
-import works.windmill.gym.domain.sync.GymRefusal
-import works.windmill.sync.api.ViewMode
 
 // A picture the composer chose, as `CoachPhotos.read` made it.
 class ChosenPicture(val attachment: CoachAttachment, val original: ByteArray)
@@ -112,28 +104,5 @@ class PictureFiles(private val directory: () -> File) {
         private const val originalSuffix = "original"
         private const val modelSuffix = "model"
         private val fileId = Regex("[A-Za-z0-9_-]{8,64}")
-    }
-}
-
-// The rows no message claims: a conversation deleted on another phone, or a process that died between `KeepPicture` and `OpenTurn`. A replica behind its log cannot tell a message gone from one not yet arrived, so it forgets nothing.
-class ForgetUnclaimedPictures : Action<ForgetUnclaimedPictures.Loaded, Unit, GymRefusal> {
-    data class Loaded(val rows: Set<String>, val claimed: Set<String>)
-
-    override val scope = CoachMessage.scope
-    override val refusals = GymRefusal
-
-    override fun load(read: Reader): Loaded {
-        val rows = read.devices(CoachPictureRow.key("")).keys
-        val caughtUp = read.isAnonymous || read.firstPullComplete() && read.checkpoint().cleanSeq != null
-        if (rows.isEmpty() || !caughtUp) return Loaded(emptySet(), emptySet())
-        return Loaded(rows, read.repository(CoachMessage).all(ViewMode.drawn).flatMap { it.pictures }.map { CoachPictureRow.key(it.id) }.toSet())
-    }
-
-    override fun decide(loaded: Loaded, ids: IDSource): Decision<Unit, GymRefusal> {
-        val unclaimed = loaded.rows - loaded.claimed
-        if (unclaimed.isEmpty()) return Decision.Unchanged(Unit)
-        val plan = Plan()
-        unclaimed.forEach { plan.device(it, null) }
-        return Decision.Write(plan, Unit)
     }
 }

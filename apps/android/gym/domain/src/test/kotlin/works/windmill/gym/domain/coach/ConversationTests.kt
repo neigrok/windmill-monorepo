@@ -61,6 +61,36 @@ class ConversationTests {
     private fun row(picture: Picture) = CoachPictureRow(picture.id, picture.mediaType, 1200, 900, 345_678)
     private fun gone(type: String, id: Id<*>) = GymRefusal.Gone(RecordRef(type, id.record), Refused.Path.predicted)
 
+    // A merge can leave the row naming another turn: an end lets go of its own alone, and a gone turn the same way.
+    @Test fun anEndClearsTheRunningTurnOnlyWhenItNamesThatMessage() = twoPhones { a, _ ->
+        val first = (a.runner.run(OpenTurn(question = "First")) as Outcome.Committed).result
+        val second = (a.runner.run(OpenTurn(first.thread, question = "Second")) as Outcome.Committed).result
+        assertEquals(second.coach.json, a.device(EndTurn.runningTurnKey))
+        assertTrue(a.runner.run(EndTurn(first.coach, MessageState.interrupted)) is Outcome.Committed)
+        assertEquals(second.coach.json, a.device(EndTurn.runningTurnKey))
+        assertEquals(Outcome.Unchanged(Unit), a.runner.run(ForgetRunningTurn(first.coach)))
+        assertEquals(second.coach.json, a.device(EndTurn.runningTurnKey))
+        assertTrue(a.runner.run(ForgetRunningTurn(second.coach)) is Outcome.Committed)
+        assertNull(a.device(EndTurn.runningTurnKey))
+    }
+
+    @Test fun aPictureRowGoesWhenItsTurnDidNotOpenOrNoMessageClaimsIt() = twoPhones { a, _ ->
+        val row = CoachPictureRow("picture-1", "image/jpeg", 40, 30, 100)
+        assertTrue(a.runner.run(KeepPicture(row)) is Outcome.Committed)
+        assertEquals(row.json, a.device(CoachPictureRow.key("picture-1")))
+        assertTrue(a.runner.run(ForgetPicture("picture-1")) is Outcome.Committed)
+        assertNull(a.device(CoachPictureRow.key("picture-1")))
+
+        assertTrue(a.runner.run(KeepPicture(row)) is Outcome.Committed)
+        assertTrue(a.runner.run(KeepPicture(row.copy(id = "picture-2"))) is Outcome.Committed)
+        assertTrue(a.runner.run(OpenTurn(question = "Look", pictures = listOf(Picture("picture-2", "image/jpeg", localOnly = true)))) is Outcome.Committed)
+        a.engine.sync()
+        assertTrue(a.runner.run(ForgetUnclaimedPictures()) is Outcome.Committed)
+        assertNull(a.device(CoachPictureRow.key("picture-1")))
+        assertEquals(row.copy(id = "picture-2").json, a.device(CoachPictureRow.key("picture-2")))
+        assertEquals(Outcome.Unchanged(Unit), a.runner.run(ForgetUnclaimedPictures()))
+    }
+
     @Test fun theEntitiesAgreeWithTheRegistry() {
         val threadId = Id("thrdAAAAAAAAAAA1", CoachThread)
         RegistryCheck.entity(CoachThread, CoachThread(threadId, "How heavy today?"), CoachRules.book)
@@ -88,7 +118,8 @@ class ConversationTests {
         assertEquals("calls: not an array", refused(fields + ("calls" to Json.of("x"))))
         val call = mapOf("callId" to Json.of("c"), "name" to Json.of("n"), "outcome" to Json.of("ok"), "created" to Json.Arr(emptyList()), "read" to ReadServed.none.json)
         fun refusedCall(values: Map<String, Json>) = assertThrows(DecodeError::class.java) { AbilityCall.decode(Json.Obj(values.toList())) }.let { "${it.field}: ${it.reason}" }
-        assertEquals("calls.outcome: not an outcome", refusedCall(call + ("outcome" to Json.of("maybe"))))
+        assertEquals(AbilityCall.Outcome.Refused(AbilityRefusal.refused), AbilityCall.decode(Json.Obj((call + ("outcome" to Json.of("a-code-of-a-later-build"))).toList())).outcome)
+        assertEquals("outcome: not a string", refusedCall(call + ("outcome" to Json.of(1))))
         assertEquals("calls.created: absent", refusedCall(call - "created"))
         assertEquals("calls.created: not an id", refusedCall(call + ("created" to Json.array(Json.objectOf("t" to Json.of("note"), "id" to Json.of(1))))))
         assertEquals("calls.read: absent", refusedCall(call - "read"))
@@ -199,9 +230,9 @@ class ConversationTests {
         assertEquals(emptyList<CoachThread>(), b.threads())
         assertEquals(emptyList<CoachMessage>(), b.messages())
 
-        val withdrawn = a.engine.engine.snapshot()
-        assertEquals(gone(CoachThread.type, sent.thread), (a.runner.run(WithdrawTurn(sent)) as Outcome.Refused).refusal)
-        assertEquals(withdrawn, a.engine.engine.snapshot())
+        assertEquals(emptyList<String>(), (a.runner.run(WithdrawTurn(sent)) as Outcome.Committed).result)
+        a.engine.sync()
+        assertEquals(emptyList<Any>(), a.engine.notices("gym"))
     }
 
     @Test fun aWithdrawnTurnInAThreadHoldingEarlierTurnsLeavesThem() = twoPhones { a, b ->
@@ -254,6 +285,34 @@ class ConversationTests {
         assertEquals(a.threads(), b.threads())
         assertEquals(a.messages(), b.messages())
         assertEquals(Outcome.Unchanged(emptyList<String>()), b.runner.run(DeleteConversation(turn.thread)))
+    }
+
+    // A conversation deleted mid-turn takes `runningTurn` with it; one deleted beside the turn leaves it.
+    @Test fun aDeletedConversationClearsARunningTurnThatNamesItsMessage() = twoPhones { a, _ ->
+        val other = a.open("Another conversation")
+        assertTrue(a.runner.run(EndTurn(other.coach, MessageState.completed, "Yes.")) is Outcome.Committed)
+        val turn = a.open()
+        assertTrue(a.runner.run(DeleteConversation(other.thread)) is Outcome.Committed)
+        assertEquals(turn.coach.json, a.device(EndTurn.runningTurnKey))
+        assertTrue(a.runner.run(DeleteConversation(turn.thread)) is Outcome.Committed)
+        assertNull(a.device(EndTurn.runningTurnKey))
+        a.engine.sync()
+        assertEquals(emptyList<Any>(), a.engine.notices("gym"))
+    }
+
+    // Another phone deleted the conversation: the turn's end finds no message, and withdrawing it still clears `runningTurn`, so the next launch finds no turn to sweep.
+    @Test fun aTurnWhoseConversationWentElsewhereStillWithdraws() = twoPhones { a, b ->
+        val turn = a.open()
+        a.engine.sync()
+        assertTrue(b.runner.run(DeleteConversation(turn.thread)) is Outcome.Committed)
+        b.engine.sync()
+        assertNull(a.thread(turn.thread))
+        assertEquals(turn.coach.json, a.device(EndTurn.runningTurnKey))
+        assertEquals(gone(CoachMessage.type, turn.coach), (a.runner.run(EndTurn(turn.coach, MessageState.stopped)) as Outcome.Refused).refusal)
+        assertEquals(emptyList<String>(), (a.runner.run(WithdrawTurn(turn)) as Outcome.Committed).result)
+        assertNull(a.device(EndTurn.runningTurnKey))
+        a.engine.sync()
+        assertEquals(emptyList<Any>(), a.engine.notices("gym"))
     }
 
     // Coach §9.1: the state merges by rank whatever its stamp. A device created first sends first, so the phone made second is the writer whose older answer lands after the other's newer interrupted.

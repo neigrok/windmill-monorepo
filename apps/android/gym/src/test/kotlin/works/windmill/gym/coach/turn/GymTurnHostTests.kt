@@ -57,7 +57,7 @@ class GymTurnHostTests(private val name: String) {
             val history = body.member("history").arr()
             val earlier = history.takeIf { it.isNotEmpty() }?.let {
                 val replica = phone.engine.activeReplica()
-                phone.room.training.pinnedOn(replica) { runner ->
+                phone.room.training.pinnedOn(replica, anonymous) { runner ->
                     val first = (runner.run(OpenTurn(question = history[0].member("text").str())) as Outcome.Committed).result
                     assertTrue(runner.run(EndTurn(first.coach, MessageState.completed, history[1].member("text").str())) is Outcome.Committed)
                     first

@@ -62,8 +62,11 @@ data class TurnActivity(val turnId: String, val stopping: Boolean, val reconnect
 // How `run` came back. `abandoned` was cancelled before it could say how the turn ended, and a write in flight can outlive that, so the caller re-reads the record before deciding it. The two stops ended the turn `stopped` on this phone alone, because the server never heard: `stoppedOffline` for want of a connection, `stopUnheard` for any other reason.
 enum class TurnExit { ended, withdrawn, abandoned, stoppedOffline, stopUnheard }
 
-// The record of the turn refused a write of its own (gone, ended, full): a defect of this turn on this phone, and it ends the turn.
+// The record of the turn refused a write of its own (ended, full): a defect of this turn on this phone, and it ends the turn.
 class TurnRecordRefused : Exception()
+
+// The record of the turn is gone, removed elsewhere: nothing is broken, and it ends the turn all the same.
+class TurnRecordGone : Exception()
 
 // What a product does in a turn. One per turn, built after its opening transaction, so it already holds the turn's records and seat.
 interface TurnHost {
@@ -88,7 +91,8 @@ data class TurnLabel private constructor(val value: String) {
     companion object {
         private const val other = "other"
         private val word = Regex("[a-z0-9_-]{1,64}")
-        private val causes = setOf(TurnFailure.transport.name, TurnFailure.decode.name, TurnFailure.storage.name, TurnFailure.refusal.name)
+        const val gone = "gone"
+        private val causes = setOf(TurnFailure.transport.name, TurnFailure.decode.name, TurnFailure.storage.name, TurnFailure.refusal.name, gone)
 
         // A catalog name or an ability's refusal code, which the product's catalog bounds and this module cannot list.
         fun of(name: String) = TurnLabel(if (word.matches(name)) name else other)

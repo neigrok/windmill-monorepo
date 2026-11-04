@@ -8,13 +8,16 @@ object Collation {
         levels.firstNotNullOfOrNull { level -> lexicographic(level(left), level(right)).takeIf { it != 0 } } ?: 0
     }
 
-    fun precedes(a: String, b: String): Boolean = order.compare(a, b) < 0
-
     private val levels: List<(List<Int>) -> List<Int>> = listOf(
         { scalars -> scalars.filter { !isCombining(it) }.flatMap { lowercased(it) } },
         { scalars -> scalars.flatMap { lowercased(it) } },
-        { scalars -> scalars.map { if (Character.isUpperCase(it)) 1 else 0 } },
+        { scalars -> scalars.map { if (isUppercase(it)) 1 else 0 } },
     )
+
+    // Character.isUpperCase reads Other_Uppercase on the JVM and not on Android, so this holds it itself.
+    private val otherUppercase = listOf(0x2160..0x216F, 0x24B6..0x24CF, 0x1F130..0x1F149, 0x1F150..0x1F169, 0x1F170..0x1F189)
+
+    private fun isUppercase(scalar: Int): Boolean = Character.isUpperCase(scalar) || otherUppercase.any { scalar in it }
 
     private fun scalars(text: String): List<Int> = buildList {
         var at = 0

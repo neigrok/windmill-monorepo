@@ -198,7 +198,11 @@ internal fun Engine.commitGesture(replica: ReplicaState, scope: ScopeRef, gestur
         is Json.Arr -> json.values.any(::nul)
         else -> false
     }
-    if (nul(Intent(scope, deltas = deltas, guards = guards, command = command, gestureId = gesture.gestureId).json)) malformed("nul")
+    val written = Intent(scope, deltas = deltas, guards = guards, command = command, gestureId = gesture.gestureId).json
+    if (nul(written)) malformed("nul")
+    // Opening the store parses every entry and notice under MAX_DEPTH. The deepest of them, a notice's dependent, holds a delta three levels deeper than its intent does.
+    val deepest = maxOf(written.depth, Json.Arr(predict.map { it.json }).depth)
+    if (deepest + 3 > Json.MAX_DEPTH || gesture.local.any { (it.value?.depth ?: 0) > Json.MAX_DEPTH }) malformed("too-deep")
     for (type in deltas.mapNotNull { registry.type(it.key.type) }.distinct()) {
         val cap = type.cap ?: continue
         val keys = keys(replica, scope, type.name) + deltas.filter { it.key.type == type.name }.map { it.key }

@@ -1182,16 +1182,18 @@ class SyncRuntimeTests {
     @Test fun aDigestStoppedScopeIsStillPulledAndHearsTheServersUpgrade() = runBlocking {
         Fixture().use { fixture ->
             fixture.transport.controlPulls = true
-            fixture.runtime.enter()
-            for (number in 1L..2L) {
-                if (number > 1) assertTrue(fixture.runtime.pullAgain())
-                val pull = fixture.pull()
-                pull.answer.complete(Reply.Answer(SyncResponse(200, Json.objectOf("serverTime" to Json.of(5_000), "epoch" to Json.of("ep-1"),
+            // The runtime may start the next pull on its own, and `pullAgain` waits its turn behind a pull in flight: the answers cannot wait on it.
+            val answering = launch {
+                for (pull in fixture.transport.pulls) pull.answer.complete(Reply.Answer(SyncResponse(200, Json.objectOf("serverTime" to Json.of(5_000), "epoch" to Json.of("ep-1"),
                     "as" to Json.of("A"), "pages" to Json.array(Json.objectOf("scope" to Json.of(product.text), "kind" to Json.of("rows"),
                         "rows" to Json.array(), "cursor" to Json.of(WireCursor("ep-1", "live", 1).text), "more" to Json.of(false),
                         "seq" to Json.of(1), "digest" to Json.of("1".padStart(64, '0'))))))))
-                until { fixture.runtime.pulls.value.ended == number }
             }
+            fixture.runtime.enter()
+            until { fixture.runtime.pulls.value.ended >= 1 }
+            assertTrue(fixture.runtime.pullAgain())
+            until { fixture.runtime.pulls.value.ended >= 2 }
+            answering.cancelAndJoin()
             assertEquals(Json.of("1"), fixture.engine.device.current().cursors[product.text]?.get("digestStop"))
             fixture.runtime.leave()
             fixture.runtime.enter()

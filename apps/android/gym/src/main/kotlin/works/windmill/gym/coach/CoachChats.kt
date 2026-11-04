@@ -24,6 +24,7 @@ import works.windmill.gym.coach.turn.ChosenPicture
 import works.windmill.gym.coach.turn.CoachTurnFault
 import works.windmill.gym.coach.turn.CoachTurnRefusal
 import works.windmill.gym.coach.turn.CoachTurns
+import works.windmill.gym.coach.turn.WithdrawnTurn
 import works.windmill.gym.domain.coach.CoachThread
 import works.windmill.gym.domain.coach.OpenTurn
 import works.windmill.gym.presentation.Ids
@@ -50,7 +51,7 @@ class CoachChats internal constructor(
     private val seatReplica: () -> String? = { null },
 ) {
     private class Sending(val chat: String, val owner: String, val question: String, val photo: CoachAttachment?, val atMs: Long)
-    private class Sent(val turn: OpenTurn.Turn, val chat: String, val authority: LocalCoach.Authority?, val draft: CoachDraft, val photo: ByteArray?)
+    private class Sent(val chat: String, val authority: LocalCoach.Authority?)
 
     private val owner: String? get() = accountOwner()
     private val anonymousOwner by lazy {
@@ -291,7 +292,7 @@ class CoachChats internal constructor(
                 failure = null
                 // The chat takes its thread first, so a withdrawal already on its way finds it there and its restore comes after.
                 opened(seat, id, authority, turn)
-                sent = Sent(turn, id, authority, CoachDraft(text, photo), bytes)
+                sent = Sent(id, authority)
                 settleSent()
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (failure: Exception) { telemetry.unexpected("gym.saveConversation", failure) }
@@ -325,25 +326,26 @@ class CoachChats internal constructor(
     private fun settleSent() {
         val held = sent ?: return
         val live = turns ?: return
-        if (live.withdrawn.value == held.turn) {
+        val withdrawn = live.withdrawn.value
+        if (withdrawn != null) {
             sent = null
-            scope.launch { restoreWithdrawn(held) }
+            scope.launch { restoreWithdrawn(held, withdrawn) }
         } else if (live.turn.value == null) sent = null
     }
 
-    private suspend fun restoreWithdrawn(held: Sent) {
-        val thread = checkNotNull(held.turn.thread.record.string) { "a thread's id is a string" }
-        val conversation = thread.takeIf { conversations?.holds(it) == true }
+    private suspend fun restoreWithdrawn(held: Sent, withdrawn: WithdrawnTurn) {
+        val conversation = withdrawn.thread?.record?.string
+        val draft = CoachDraft(withdrawn.question, withdrawn.picture?.attachment)
         val seat = held.authority?.owner ?: archiveOwner
         chats[seat to held.chat]?.let { chats[seat to held.chat] = it.copy(conversation = conversation) }
         try {
-            if (held.authority == null) drafts[seat to held.chat] = held.draft
+            if (held.authority == null) drafts[seat to held.chat] = draft
             else withContext(storageDispatcher) {
-                localCoach?.withAuthority(held.authority) { localCoach.turnWithdrawn(seat, held.chat, conversation, held.draft, held.photo) }
+                localCoach?.withAuthority(held.authority) { localCoach.turnWithdrawn(seat, held.chat, conversation, draft, withdrawn.picture?.original) }
             }
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (failure: Exception) {
-            drafts[seat to held.chat] = held.draft
+            drafts[seat to held.chat] = draft
             unsavedDrafts += seat to held.chat
             telemetry.unexpected("gym.saveDraft", failure)
         }

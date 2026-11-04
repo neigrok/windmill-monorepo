@@ -37,8 +37,11 @@ class TurnDriver(
 ) {
     private val published = MutableStateFlow<TurnActivity?>(null)
     private val driving = AtomicReference<DrivenTurn?>(null)
+    private val live = MutableStateFlow<String?>(null)
 
     val activity: StateFlow<TurnActivity?> = published.asStateFlow()
+    // The answer so far, at every delta, while a turn runs; the record takes it every `coalesce`, at each batch and at the end.
+    val liveText: StateFlow<String?> = live.asStateFlow()
 
     // One turn at a time. Cancelling the caller passes through and ends nothing.
     suspend fun run(turnId: String, seat: TurnSeat, host: TurnHost): TurnExit = coroutineScope {
@@ -46,11 +49,12 @@ class TurnDriver(
         turn.work = launch(start = CoroutineStart.LAZY) { turn.drive() }
         check(driving.compareAndSet(null, turn)) { "A driver runs one turn at a time" }
         published.value = TurnActivity(turnId, stopping = false, reconnecting = false)
+        live.value = ""
         try {
             turn.work.join()
             turn.exit ?: TurnExit.abandoned
         } finally {
-            driving.compareAndSet(turn, null)
+            if (driving.compareAndSet(turn, null) || driving.get() == null) live.value = null
             turn.publish { null }
         }
     }
@@ -69,6 +73,7 @@ class TurnDriver(
     // The seat changed under the turn: the run is cancelled, its record left to the caller, and the server is told to stop once so its slot is not held; whether that lands changes nothing here.
     fun abandon() {
         val turn = driving.getAndSet(null) ?: return
+        live.value = null
         turn.publish { null }
         turn.work.cancel()
         if (turn.stopAsked.compareAndSet(false, true)) tellServerToStop(turn) {}
@@ -149,8 +154,8 @@ class TurnDriver(
                 val committer = launch {
                     for (waiting in textWaiting) {
                         delay(coalesce)
-                        // A commit that fails is reported once, the stream goes on, and the next commit tries again; a record that refuses it ends the turn.
-                        try { commitText() } catch (failed: TurnInterrupted) { if (failed.code == TurnFailure.refusal.name) throw failed }
+                        // A commit that fails is reported once, the stream goes on, and the next commit tries again; a record that refuses it, or is gone, ends the turn.
+                        try { commitText() } catch (failed: TurnInterrupted) { if (failed.code == TurnFailure.refusal.name || failed.code == TurnLabel.gone) throw failed }
                     }
                 }
                 follow().also { committer.cancel() }
@@ -209,12 +214,12 @@ class TurnDriver(
         // One frame: the close it brings, or null while the stream runs on.
         private suspend fun settle(event: TurnEvent): Close? = when (event) {
             is TurnEvent.Text -> {
-                streamed += event.delta
+                landText(streamed + event.delta)
                 textWaiting.trySend(Unit)
                 null
             }
             is TurnEvent.Snapshot -> {
-                streamed = event.text
+                landText(event.text)
                 commitText()
                 // A terminal snapshot is followed by the turn's closing frame, which alone names its code, its moment and its truncation.
                 if (!event.state.terminal) event.batch?.let { answer(it) }
@@ -230,6 +235,11 @@ class TurnDriver(
                 if (event.code == TurnRefusal.streamReplaced) throw TurnWireFault(TurnWireFault.replaced)
                 Ended(TurnState.failed, code = event.code, budgetResetsAtMs = event.budgetResetsAtMs)
             }
+        }
+
+        private fun landText(text: String) {
+            streamed = text
+            if (driving.get() === this) live.value = text
         }
 
         // §4.3: every call of the batch, in order, through the host, then the batch's results in one request, asked again after a lost answer, since the same body answers 204. §4.5: nothing runs or posts once Stop is asked, and a late post the server turns away is no failure; the stream's closing frame, or this phone's own stop, ends the turn.
@@ -282,6 +292,8 @@ class TurnDriver(
         // A cancellation that is not this turn's own (a timeout inside the port, work its own scope gave up) is that port's failure; `ensureActive` lets the turn's own pass through.
         private suspend fun <T> onHost(work: suspend () -> T): T = try {
             work()
+        } catch (gone: TurnRecordGone) {
+            throw TurnInterrupted(TurnLabel.gone)
         } catch (refused: TurnRecordRefused) {
             report(TurnFailure.refusal)
             throw TurnInterrupted(TurnFailure.refusal.name)
@@ -316,6 +328,8 @@ class TurnDriver(
         private suspend fun quietly(write: suspend () -> Unit) {
             try {
                 write()
+            } catch (gone: TurnRecordGone) {
+                currentCoroutineContext().ensureActive()
             } catch (refused: TurnRecordRefused) {
                 report(TurnFailure.refusal)
             } catch (failure: Exception) {
