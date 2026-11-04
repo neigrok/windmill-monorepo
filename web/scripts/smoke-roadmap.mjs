@@ -1,10 +1,4 @@
-// The production smoke for the roadmap room: a signed-out reader's walk through the demo, a public roadmap and the landings,
-// at phone, tablet and desktop width, and one returning visit through the service worker. It never signs in and never writes,
-// and it blocks the event intake and Sentry at the network layer, so it leaves no trace in production analytics.
-//
-// A walk fails on a page error, a console error, a failed same-origin request, a Graph with no painted pixels, a session whose
-// socket never got its reply, any Sentry attempt, a `client_error` beacon, a landing the app never mounted over, or a service
-// worker that never took the page or answers a returning visit badly.
+// The production smoke for the roadmap room, read-only: web/CLAUDE.md says what it walks and what fails it.
 //
 //   node scripts/smoke-roadmap.mjs --base https://windmill.works [--roadmap t_9e407a96b5330ebe] [--api <origin>]
 //
@@ -313,8 +307,7 @@ function landingWalk(path, app) {
   };
 }
 
-// Every other walk blocks the worker, and a broken one first hurts whoever comes back: this walk lets it take the page and
-// prime its shell, then returns to the brand landing and a room through it.
+// Every other walk blocks the worker; this one lets it take the page and prime its shell, then comes back to a landing and a room through it.
 async function returningVisitWalk(page, { site, visit }) {
   await page.goto(`${site.base}/`);
   await appMounted(page, ROOT_LANDING_APP);

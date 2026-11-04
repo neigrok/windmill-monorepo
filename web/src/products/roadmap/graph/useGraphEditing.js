@@ -165,9 +165,8 @@ export function useGraphEditing({ room, legendRef, desktopEditorRef, selection, 
     if (written) track('roadmap_board_bulk', { step: 'recolor', count: countBucket(ids.length), view: 'graph' });
   }, [announce]);
 
-  // onTreeChanged re-lays out synchronously, so grafted nodes are seated before they are pulsed. The toast and its Undo stand on
-  // whichever view took the plan.
-  const graftImported = useCallback((parse, view = 'graph') => {
+  // onTreeChanged re-lays out synchronously, so grafted nodes are seated before they are pulsed; the toast stands on the view that took the plan.
+  const graftImported = useCallback((parse, view) => {
     const nodes = projectionRef.current?.nodes;
     const session = sessionRef.current;
     if (!nodes || !session) return;

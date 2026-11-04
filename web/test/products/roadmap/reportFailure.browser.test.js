@@ -84,8 +84,7 @@ after(async () => { await browser?.close(); await server?.close(); });
 
 const json = (body, status = 200) => ({ status, contentType: 'application/json', body: JSON.stringify(body) });
 
-// One fresh page holding `door`, with every API path answered by `answers`: { 'POST /v1/x': reply }, a reply being fulfil
-// options, 'abort', or a function of the route.
+// One fresh page holding `door`, with `answers` replying to each API path: { 'POST /v1/x': fulfil options, 'abort' or a function of the route }.
 async function withDoor(door, answers, run) {
   await start();
   const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, reducedMotion: 'reduce' });

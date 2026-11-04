@@ -40,8 +40,7 @@ export async function deviceKeepsTrees() {
 // This browser will not keep a tree planted on it, the browser's own refusal: nothing was accepted, and no Issue is owed.
 const deviceRefused = () => new DOMException('This device refuses to keep a roadmap', 'SecurityError');
 
-// The registry entry first, then the lattice, seeded with the default legend at genesis so it converges with the server's
-// claim-create. A plant is accepted only once it is kept; a save that fails takes its row back with it.
+// The index row, then the lattice seeded at genesis so it converges with the claim-create; a plant stands once kept, and a failed save takes its row back.
 async function bear(title, plant) {
   if (!await deviceKeepsTrees()) throw deviceRefused();
   const treeId = mintTreeId();
@@ -67,8 +66,7 @@ export function bearLocalTree({ title }) {
   });
 }
 
-// The paste-import plant: never the parsed kinds at genesis — the claim converges only while both sides seed byte-equal
-// legends. The parsed legend arrives as stamped gestures. Imported [x] marks are status seeds, not progress rows.
+// The paste-import plant: the parsed legend arrives as stamped gestures, as a claim converges only on byte-equal genesis legends; [x] marks are status seeds.
 export function bearImportedTree({ title, nodes, kinds }) {
   return bear(title, (session) => {
     // The legend diff must go first, while no node wears a hue: RecolorKind repaints as it lands.

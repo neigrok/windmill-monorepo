@@ -6,8 +6,7 @@ import { API_BASE } from '../../../shell/apiBase.js';
 import { BoundaryFailure, pageWatching, reportRoadmapFailure } from '../reportFailure.js';
 
 export class HttpTreeRepository {
-  // An owner naming `operation` reports every read under it. A tree that did not come from this repository's own read came
-  // off this device, and its reads report nothing: the tree's read already told what the server is doing.
+  // An owner naming `operation` reports every read under it; a tree this repository did not read came off this device, and its reads report nothing.
   constructor({ baseUrl = API_BASE, treeId, operation = null, reportFailure = reportRoadmapFailure } = {}) {
     if (!treeId) throw new Error('HttpTreeRepository requires a treeId — there is no default roadmap');
     this.baseUrl = baseUrl;
@@ -17,9 +16,7 @@ export class HttpTreeRepository {
     this.treeRead = false;
   }
 
-  // One read of this tree: its parsed answer, null when a 2xx is not JSON. A server failure, and a request lost while the page
-  // is visible, online and still wants it, report `operation`. A refusal, an abort and a loss nobody is waiting on report
-  // nothing. Anything but a 2xx throws.
+  // One read's parsed answer, null when a 2xx is not JSON; anything else throws, reporting `operation` for a server failure or a loss someone was waiting on.
   async answer(reading, path, { operation, signal }) {
     const report = () => { if (operation) this.reportFailure(operation); };
     let response;
@@ -46,9 +43,7 @@ export class HttpTreeRepository {
     return { ...body.data, visibility: body.visibility ?? null, mine: body.mine ?? false, createdAt: body.createdAt ?? 0 };
   }
 
-  // On a share the server answers with the owner's marks; falls back to the document's authoring seeds when it holds none.
-  // A server tree whose marks can't be read throws rather than opening on a false count. A device tree keeps its seeds, and
-  // its session's lane brings its marks.
+  // The owner's marks on a share, else the document's seeds. A server tree whose marks can't be read throws rather than open on a false count.
   async loadProgress(treeData, { signal } = {}) {
     const operation = this.treeRead ? this.operation ?? 'roadmap-progress-load' : null;
     const body = await this.answer('loadProgress', '/progress', { operation, signal }).catch((error) => {

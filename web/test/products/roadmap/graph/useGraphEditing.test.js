@@ -63,7 +63,7 @@ const ACTS = [
     editing.tree.bulkRecolor('gold');
   }],
   ['paste graft', 'graft', 'Added 2 steps under “Choose a course”', ({ editing }) => {
-    editing.tree.graftImported(parsePlan('- Rent a boat\n- Find a crew', [], { bindOnly: true }));
+    editing.tree.graftImported(parsePlan('- Rent a boat\n- Find a crew', [], { bindOnly: true }), 'graph');
   }],
   ['tablet rename', 'rename', 'Renamed', ({ tablet }) => tablet.tree.renameStep('wind', 'Read the sky')],
   ['tablet recolor', 'recolor', 'Recolored', ({ tablet }) => tablet.tree.recolorStep('wind', 'gold')],

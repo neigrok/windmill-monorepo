@@ -74,8 +74,7 @@ export function downloadExport({ name, text, bytes, type = 'text/markdown;charse
   }
 }
 
-// Its reads report as the export's, so a failed export never reads as a roadmap that would not open. A roadmap whose marks
-// can't be read stays out of the zip rather than going in with the wrong ones.
+// Its reads report as the export's; a roadmap whose marks can't be read stays out of the zip rather than go in with the wrong ones.
 async function loadServerTree(treeId) {
   const repository = new HttpTreeRepository({
     treeId,

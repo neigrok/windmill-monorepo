@@ -1,7 +1,6 @@
 // Each lane keeps its projected lattice, server-confirmed baseline and discard epoch in one record.
 // A transaction joins matching epochs only; a discarded lane can never be revived by an older writer.
-// Where the browser refuses the database the same records live in this document's memory: writes still reach
-// the server and only their offline durability is gone.
+// Where the browser refuses the database the same records live in this document's memory: only offline durability is gone.
 
 import { TreeLattice } from './lattice.js';
 import { ProgressLattice } from './progressLattice.js';
@@ -163,8 +162,7 @@ export class SyncStore {
     });
   }
 
-  // Leaving the page leaves no time for a read or its callback: the record goes down whole, joined from the last one this
-  // store saw, and commit() asks the browser to finish it after the document has gone. Runs synchronously up to there.
+  // Leaving leaves no time for a read or a callback: the record goes down whole, joined from the last one seen, and commit() asks the browser to finish.
   async saveWhileLeaving(treeId, value) {
     if (!this.opened || !this.latest.has(treeId)) return this.save(treeId, value);
     const { merged, staleLanes } = mergedRecord(this.latest.get(treeId), value);

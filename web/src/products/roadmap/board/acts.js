@@ -42,8 +42,7 @@ export function receiptUndo({ session, receipt, before, onReverted, onFailure })
   };
 }
 
-// A roadmap keeps a root: the one rule every door into a delete asks, on both views and every band, of the tree a hold leaves
-// standing. A delete that takes every root it has is refused.
+// A roadmap keeps a root: the one rule every door into a delete asks, on both views and every band, of the tree a hold leaves standing.
 export function takesEveryRoot(tree, ids) {
   const roots = tree?.roots() ?? [];
   return roots.length > 0 && roots.every((root) => ids.includes(root.id));

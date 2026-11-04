@@ -114,17 +114,23 @@ function propsOf(object, event) {
   return shape;
 }
 
-const isUnboundedCount = (value) => {
-  let found = false;
-  walk(value, (node) => { if (node.type === 'MemberExpression' && node.property.name === 'length') found = true; });
-  return found;
-};
+// A count that reaches a bucketed row around `countBucket`: the value is neither its call nor a name that holds one.
+const isUnboundedCount = (value, buckets) => !buckets.has(value.type === 'MemberExpression' ? value.property.name : value.name);
 
-function fitsRow(shape, row, { partial }) {
+// The names a source binds to a bucket: `const pending = countBucket(…)`.
+function bucketNames(ast) {
+  const names = new Set();
+  walk(ast, (node) => {
+    if (node.type === 'VariableDeclarator' && node.init?.type === 'CallExpression' && calleeName(node.init) === 'countBucket') names.add(node.id.name);
+  });
+  return names;
+}
+
+function fitsRow(shape, row, { partial, buckets }) {
   for (const [key, prop] of shape.keys) {
     if (!row[key]) return false;
     if (prop.values && !prop.values.every((value) => row[key].values.includes(value) || row[key].values[0].startsWith('<'))) return false;
-    if (prop.opaque && row[key].values.includes('2-5') && isUnboundedCount(prop.value)) return false;
+    if (prop.opaque && row[key].values.includes('2-5') && isUnboundedCount(prop.value, buckets)) return false;
   }
   if (partial) return true;
   return Object.entries(row).every(([key, { optional }]) => optional || shape.keys.has(key));
@@ -147,7 +153,7 @@ function readParsedEvents(parsedSources) {
       if (node.type === 'ObjectExpression') {
         const name = node.properties.find((property) => property.key?.name === 'name');
         const props = node.properties.find((property) => property.key?.name === 'props');
-        if (name?.value.type === 'Literal' && props?.value.type === 'ObjectExpression') found.calls.push({ path, events: [name.value.value], props: props.value });
+        if (name?.value.type === 'Literal' && props?.value.type === 'ObjectExpression') found.calls.push({ path, ast, events: [name.value.value], props: props.value });
         return;
       }
       if (node.type !== 'CallExpression') return;
@@ -159,12 +165,12 @@ function readParsedEvents(parsedSources) {
         const events = event?.type === 'Identifier' && event.name === 'eventName' ? eventNameChoices : literalValues(event);
         if (!events) found.problems.push(`${path}: an event name that is not a literal`);
         else if (props && props.type !== 'ObjectExpression') found.problems.push(`${path}: ${events[0]} takes props that are not an object literal`);
-        else found.calls.push({ path, events, props });
+        else found.calls.push({ path, ast, events, props });
       }
       const forwarder = FORWARDERS[path]?.[callee];
       const passed = node.arguments.at(-1);
       if (forwarder && node.arguments.length === 2) {
-        if (passed.type === 'ObjectExpression') found.calls.push({ path, events: [forwarder.event], props: passed, partial: true });
+        if (passed.type === 'ObjectExpression') found.calls.push({ path, ast, events: [forwarder.event], props: passed, partial: true });
         else if (passed.type !== 'Identifier' || passed.name !== forwarder.spread) found.problems.push(`${path}: ${callee} takes props that are not an object literal`);
       }
     });
@@ -181,14 +187,15 @@ test('every prop of every event fits one row of its event in OBSERVABILITY.md, a
   const rows = documentedRows();
   const { calls, problems } = readParsedEvents(await parsedSources);
   assert.ok(calls.length > 150, `read ${calls.length} events`);
-  for (const { path, events, props, partial } of calls) {
+  for (const { path, ast, events, props, partial } of calls) {
     const shape = propsOf(props, events[0]);
+    const buckets = bucketNames(ast);
     problems.push(...shape.problems.map((problem) => `${path}: ${problem}`));
     for (const spread of shape.spreads) {
       if (!Object.values(FORWARDERS[path] ?? {}).some((forwarder) => forwarder.spread === spread)) problems.push(`${path}: ${events[0]} spreads ${spread}`);
     }
     // A composer's one call names two events, and only the running code knows which rows it can reach.
-    const fits = events.some((event) => (rows.get(event) ?? []).some((row) => fitsRow(shape, row, { partial: partial || shape.spreads.length > 0 })));
+    const fits = events.some((event) => (rows.get(event) ?? []).some((row) => fitsRow(shape, row, { partial: partial || shape.spreads.length > 0, buckets })));
     if (!fits) problems.push(`${path}: ${events.join(' or ')} { ${[...shape.keys.keys()].join(', ')} } fits no row`);
   }
   assert.deepEqual(problems, []);

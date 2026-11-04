@@ -8,7 +8,7 @@
 //    malformed frame forces a resubscribe.
 //  - live sends fire only in the `live` phase; graft replies may also flush the outbox.
 
-import { reportRoadmapFailure } from '../reportFailure.js';
+import { pageWatching, reportRoadmapFailure } from '../reportFailure.js';
 import { socketUrl } from '../../../shell/apiBase.js';
 import { HlcClock, TreeLattice, VersionVector, hlcText, parseHlc } from './lattice.js';
 import { ProgressLattice } from './progressLattice.js';
@@ -435,8 +435,7 @@ export class SyncSession {
   // A socket that stays unanswered, online and in view, is broken; being offline or hidden is not a failure.
   noteUnanswered() {
     if (this.unansweredSince === null || Date.now() - this.unansweredSince < SOCKET_FAILING_MS) return;
-    if (!this.online || (typeof document !== 'undefined' && document.visibilityState === 'hidden')) return;
-    this.reportOnce('roadmap-sync-socket', new Error('Roadmap socket unanswered'));
+    if (this.online && pageWatching()) this.reportOnce('roadmap-sync-socket', new Error('Roadmap socket unanswered'));
   }
 
   reportOnce(operation, error) {
@@ -822,8 +821,7 @@ export class SyncSession {
     };
   }
 
-  // A held delete is the last act though nothing is written yet: the next Undo takes it back and leaves the stack alone.
-  // Its record is read now, because leaving the page leaves no time to.
+  // A held delete is the last act though nothing is written yet: the next Undo takes it back. Its record is read now, as leaving leaves no time to.
   holdAct(cancel) {
     this.heldAct = cancel;
     this.store.load?.(this.treeId).catch(() => {});
@@ -917,8 +915,7 @@ export class SyncSession {
     });
   }
 
-  // A closed session's send still goes: the socket waits for it. A send the page is leaving behind cannot wait for the
-  // epoch's read, and carries only what was written this instant, so it goes at once.
+  // A closed session's send still goes, as its socket waits for it; a send the page is leaving behind goes at once, without the epoch's read.
   sendWithEpoch(lane, send) {
     const socket = this.ws;
     const epoch = this.epochs[lane];
@@ -940,8 +937,7 @@ export class SyncSession {
     return sending;
   }
 
-  // The page is going with a write still to make, and nothing asynchronous will finish: from here on writes save and send
-  // synchronously. Only a held delete asks: a save that cannot read the record first can overwrite what another tab stored.
+  // The page is going with a write still to make, so writes save and send synchronously; only a hold asks, as a blind save can overwrite another tab's.
   leavePage() {
     this.leaving = true;
   }

@@ -17,8 +17,7 @@ export function pageWatching() {
 
 const STORAGE_REFUSALS = new Set(['SecurityError', 'QuotaExceededError']);
 
-// A refusal, a request nobody was waiting on and a browser refusing storage are expected answers; a server failure, a
-// request lost while someone watched and any other exception are not.
+// A refusal, a request nobody was waiting on and a browser refusing storage are expected answers; anything else reports.
 export function reportUnexpectedFailure(operation, error) {
   if (STORAGE_REFUSALS.has(error?.name)) return;
   if (error?.status === 0 && !pageWatching()) return;
