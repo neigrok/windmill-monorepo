@@ -86,18 +86,19 @@ interface AskState {
     val catalog: List<Exercise>
     val settledProposals: Map<String, Proposal>
     val replicaReadRevision: Long
-    val caughtUpTo: Long?
     val pulled: Pulls
     fun proposalRecorded(id: String): Boolean
     // Coach's changes to the open workout this phone holds, and whether a workout is open, so a routine's change reads for next time.
-    val workoutProposals: Map<String, Proposal> get() = emptyMap()
-    val workoutOpen: Boolean get() = false
+    val workoutProposals: Map<String, Proposal>
+    val workoutOpen: Boolean
 }
 
 // What a conversation asks of the training stores.
 interface AskEvents {
     suspend fun proposal(id: String): ProposalRead
     suspend fun pullAgain(): Boolean
+    // How far this phone has read into the account, off the main thread, since the engine's lock waits behind whatever a turn is reading.
+    suspend fun caughtUpTo(): Long?
 }
 
 // A conversation over the room's stores.
@@ -114,13 +115,13 @@ class AskBinding(
     override val catalog: List<Exercise> get() = routines.catalog
     override val settledProposals: Map<String, Proposal> get() = routines.settledProposals
     override val replicaReadRevision: Long get() = seat.replicaReadRevision
-    override val caughtUpTo: Long? get() = routines.caughtUpTo
     override val pulled: Pulls get() = history.pulled
     override fun proposalRecorded(id: String): Boolean = routines.proposalRecorded(id)
     override val workoutProposals: Map<String, Proposal> get() = proposals.held
     override val workoutOpen: Boolean get() = workout.session != null
     override suspend fun proposal(id: String): ProposalRead = routines.proposal(id)
     override suspend fun pullAgain(): Boolean = history.pullAgain()
+    override suspend fun caughtUpTo(): Long? = seat.tried("gym.readConversation") { seat.readTraining { routines.caughtUpTo } }
 }
 
 @Composable
@@ -469,15 +470,13 @@ internal class AnsweredProposals(private val state: AskState, private val events
     fun gone(id: String): Boolean = missing[id]?.gone == true
 
     suspend fun read(wanted: List<String>) {
-        val caughtUpTo = state.caughtUpTo
-        val caughtUpPull = state.pulled.caughtUp
         missing.keys.removeAll(state.workoutProposals.keys)
-        for (id in wanted) {
-            if (minted.containsKey(id)) continue
-            when (val read = events.proposal(id)) {
-                is ProposalRead.Found -> { minted[id] = read.proposal; missing.remove(id) }
-                ProposalRead.Gone -> missing[id] = (missing[id] ?: Miss()).read(state.proposalRecorded(id), caughtUpTo, caughtUpPull)
-            }
+        val unread = wanted.filterNot(minted::containsKey)
+        val caughtUpTo = if (unread.isEmpty()) null else events.caughtUpTo()
+        val caughtUpPull = state.pulled.caughtUp
+        for (id in unread) when (val read = events.proposal(id)) {
+            is ProposalRead.Found -> { minted[id] = read.proposal; missing.remove(id) }
+            ProposalRead.Gone -> missing[id] = (missing[id] ?: Miss()).read(state.proposalRecorded(id), caughtUpTo, caughtUpPull)
         }
         report()
     }
@@ -503,8 +502,9 @@ private data class PreviewAsk(
     override val catalog: List<Exercise> = emptyList(),
     override val settledProposals: Map<String, Proposal> = emptyMap(),
     override val replicaReadRevision: Long = 0,
-    override val caughtUpTo: Long? = null,
     override val pulled: Pulls = Pulls(),
+    override val workoutProposals: Map<String, Proposal> = emptyMap(),
+    override val workoutOpen: Boolean = false,
 ) : AskState {
     override fun proposalRecorded(id: String): Boolean = false
 }
@@ -512,6 +512,7 @@ private data class PreviewAsk(
 private object PreviewAskEvents : AskEvents {
     override suspend fun proposal(id: String): ProposalRead = ProposalRead.Gone
     override suspend fun pullAgain(): Boolean = false
+    override suspend fun caughtUpTo(): Long? = null
 }
 
 @Composable
