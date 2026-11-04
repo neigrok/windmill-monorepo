@@ -1378,6 +1378,13 @@ iOS. It and the product differ in these places.
   them unnamed. For the designer: a conversation noun in the sign-in question and the discard confirmation on both
   phones. Android reaches this state when its signed-out Coach moves to phone turns
   ([plan](../engineering/android-phone-coach-plan.md) §5); iOS holds it now.
+- **6y · Android's exchange against its boards.** Where the build and the drawings differ: 08.36's rows are no doors,
+  so What Coach read opens no workout; 08.35 draws no card beside its *wrote a proposal* step, and the build draws the
+  card when the call lands, as iOS does; 08.69's close glyph is the kit's inverse-on-surface, which barely reads on its
+  band, so the build draws it in text/secondary; 08.70 stands the read tally 16 dp under the answer where 01.19 and 08.36
+  stand it 6 dp under, and the build holds the 6; the note card comes from 08.25, which draws one paragraph, so the build
+  shows the note's body and its title stands in What Coach read. No board draws `stopping`, or the words of a Stop refused
+  for another reason (`stopUnheard`, said in 08.69's band, whose *Try again* names a turn already ended).
 
 ### Native and web differences
 
