@@ -240,7 +240,10 @@ class WindmillApplication : Application(), WorkoutNotificationHost, WorkoutTileH
         }
         val lifecycle = object : DefaultLifecycleObserver {
             override fun onStart(owner: LifecycleOwner) { applyRuntimeActivity() }
-            override fun onStop(owner: LifecycleOwner) { scope.launch { engineSession.leave() } }
+            override fun onStop(owner: LifecycleOwner) {
+                coachTurns.appStopped()
+                scope.launch { engineSession.leave() }
+            }
         }
         processLifecycle = lifecycle
         ProcessLifecycleOwner.get().lifecycle.addObserver(lifecycle)

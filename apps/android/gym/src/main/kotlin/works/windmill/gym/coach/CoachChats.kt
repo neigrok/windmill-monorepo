@@ -112,7 +112,7 @@ class CoachChats internal constructor(
     // A cap the server refills and a deployment without Coach stand on every chat; anything else on the chat that met it.
     fun refusal(chat: String): CoachTurnRefusal? {
         val refusal = refused ?: return null
-        if (askedSeat != archiveOwner) return null
+        if (sending != null || askedSeat != archiveOwner) return null
         return refusal.takeIf { it.capped || refusedChat == chat }
     }
 
@@ -313,7 +313,6 @@ class CoachChats internal constructor(
         val authority = admit(seat)
         val replica = seatReplica()
         sending = Sending(id, seat, question, photo, atMs)
-        refusedChat = id
         askedSeat = seat
         scope.launch {
             try {
@@ -330,6 +329,8 @@ class CoachChats internal constructor(
                     live.heldBack(CoachTurnFault.accountChanging)
                     return@launch
                 }
+                // What the turns answer from here is this chat's; a send stopped before here leaves the last refusal with the chat that met it.
+                refusedChat = id
                 val turn = live.send(question, photo?.let { ChosenPicture(it, requireNotNull(bytes)) }, thread?.let { Id(it, CoachThread) }, anonymous, once, on = replica) ?: return@launch
                 failure = null
                 // The chat takes its thread first, so a withdrawal already on its way finds it there and its restore comes after.

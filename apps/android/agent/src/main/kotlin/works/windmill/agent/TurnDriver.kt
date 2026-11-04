@@ -70,6 +70,11 @@ class TurnDriver(
         }
     }
 
+    // The app is leaving the screen, and a death from here loses what the last commit had not taken: the record takes the words so far now, on the turn's own work, and one commit however often this is asked.
+    fun commitNow() {
+        driving.get()?.commitAsked?.trySend(Unit)
+    }
+
     // The seat changed under the turn: the run is cancelled, its record left to the caller, and the server is told to stop once so its slot is not held; whether that lands changes nothing here.
     fun abandon() {
         val turn = driving.getAndSet(null) ?: return
@@ -104,6 +109,7 @@ class TurnDriver(
         private var committed = ""
         private val writing = Mutex()
         private val textWaiting = Channel<Unit>(Channel.CONFLATED)
+        val commitAsked = Channel<Unit>(Channel.CONFLATED)
 
         private var calls = 0
         private var refusals = 0
@@ -158,14 +164,21 @@ class TurnDriver(
         // Everything until the turn's close is known. The committer has stopped by then, so no text commit lands after the end.
         private suspend fun followed(): Close = try {
             coroutineScope {
+                // A commit that fails is reported once, the stream goes on, and the next commit tries again; a record that refuses it, or is gone, ends the turn.
+                suspend fun committing() {
+                    try { commitText() } catch (failed: TurnInterrupted) { if (failed.code == TurnFailure.refusal.name || failed.code == TurnLabel.gone) throw failed }
+                }
                 val committer = launch {
                     for (waiting in textWaiting) {
                         delay(coalesce)
-                        // A commit that fails is reported once, the stream goes on, and the next commit tries again; a record that refuses it, or is gone, ends the turn.
-                        try { commitText() } catch (failed: TurnInterrupted) { if (failed.code == TurnFailure.refusal.name || failed.code == TurnLabel.gone) throw failed }
+                        committing()
                     }
                 }
-                follow().also { committer.cancel() }
+                val asked = launch { for (waiting in commitAsked) committing() }
+                follow().also {
+                    committer.cancel()
+                    asked.cancel()
+                }
             }
         } catch (interrupted: TurnInterrupted) {
             interruptedHere(interrupted.code)

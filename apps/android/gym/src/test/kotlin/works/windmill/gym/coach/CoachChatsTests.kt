@@ -127,7 +127,9 @@ class CoachChatsTests {
             assertEquals(reply.calls.map { works.windmill.gym.coach.turn.TurnPhone.catalog().ability(it.name)?.phrase }, reply.steps)
             assertEquals(CoachReceipt(ReadTally(), truncated = false, created = listOf(RecordRef(Gym.Types.routine, RecordID("rt_00000009")))), reply.receipt)
             assertEquals(listOf(CreatedRoutine("rt_00000009", "Day 1", movements = 1)), reply.routines)
-            assertEquals(listOf("Read your recent workouts" to null, "Read your notes" to null, "Read your movement list" to null, "Read your program" to "Day 1", "Created a routine" to "Day 1"),
+            reply.calls.forEach { it.detail }
+            advanceUntilIdle()
+            assertEquals("the program it read before making Day 1 did not hold Day 1", listOf("Read your recent workouts" to null, "Read your notes" to null, "Read your movement list" to null, "Read your program" to null, "Created a routine" to "Day 1"),
                 reply.calls.map { it.title to it.detail })
             assertEquals(CoachDraft(), coach.draft(chat))
             assertFalse(coach.isAsking(chat))
@@ -423,6 +425,36 @@ class CoachChatsTests {
             assertFalse(coach.accountChanging)
             assertFalse(coach.sendHeld)
             assertNull(coach.fault)
+        }
+    }
+
+    // Chat A was refused. Chat B's send never reached a server, so B says its own failure and A's refusal stays with A; B's own refusal, the same one, is B's.
+    @Test fun aRefusalStaysOnTheChatThatMetIt() = runTest {
+        val server = answers("Hi")
+        server.refuseOpen = TurnRefusal(503, "coach-busy", null)
+        room(server).use { room ->
+            room.select("alice")
+            room.sync(EngineRoomFixture.server())
+            advanceUntilIdle()
+            val coach = room.store.coach
+            val first = coach.freshChat()
+            assertTrue(coach.send(first, "Question"))
+            advanceUntilIdle()
+            val said = CoachTurnRefusal.Said("coach-busy")
+            assertEquals(said, coach.refusal(first))
+
+            val second = coach.freshChat()
+            assertNull(coach.refusal(second))
+            assertTrue(coach.send(second, "Another", CoachAttachment("attachment-missing", "image/jpeg", 8, 8, 3)))
+            advanceUntilIdle()
+            assertEquals(CoachTurnFault.pictureUnavailable.sentence, coach.failure)
+            assertNull(coach.refusal(second))
+            assertEquals(said, coach.refusal(first))
+
+            assertTrue(coach.send(second, "Another"))
+            advanceUntilIdle()
+            assertEquals(said, coach.refusal(second))
+            assertNull(coach.refusal(first))
         }
     }
 

@@ -281,8 +281,9 @@ The model's reasoning and every assistant content block stay on the server.
   transaction.
 - Every terminal state keeps the partial text and every write that committed. Text reaches the record
   in coalesced commits, each syncing the whole text so far: iOS every 250 ms; Android every 5 s, at each
-  batch and at the end, while its room draws the answer so far from the turn driver. A process death
-  loses what the last commit had not taken.
+  batch, when the app stops and at the end, while its room draws the answer so far from the turn driver. A
+  process death loses what the last commit had not taken. With nothing committed, the question stands over an
+  `interrupted` answer with no words.
 
 ### §4.5 Stop, disconnect and resume
 

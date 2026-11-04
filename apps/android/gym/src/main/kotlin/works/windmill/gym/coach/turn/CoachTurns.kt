@@ -162,6 +162,9 @@ class CoachTurns(
 
     fun requestStop() = driver.requestStop()
 
+    // The app stopped: a running turn's record takes its words now, off the main thread, since a death from here loses what it had not taken.
+    fun appStopped() = driver.commitNow()
+
     // A new seat hears nothing of the last one's sends, and the same words said to it again are news. A deployment without Coach is no seat's, and stays said.
     fun forgetSeat() {
         faulted.value = null
@@ -192,6 +195,9 @@ class CoachTurns(
     }
 
     private suspend fun admit(question: String, picture: ChosenPicture?, thread: Id<CoachThread>?, anonymous: Boolean, once: String?, on: String?): OpenTurn.Turn? {
+        // Each send answers for itself: what the last one met goes as this one is admitted.
+        refused.value = null
+        faulted.value = null
         if (running != null) return said(CoachTurnFault.busy)
         if (MeasureUnit.bytes.length(question) > CoachRules.maxQuestionBytes) return null
         if (!engine.status.state.value.online) return refusing(CoachTurnRefusal.Offline)

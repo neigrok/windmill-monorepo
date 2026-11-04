@@ -7,6 +7,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
@@ -994,5 +995,63 @@ class CoachTurnsTests {
             return
         }
         throw AssertionError("The record took the write")
+    }
+
+    // "What arrived is kept" holds for an app that stopped before it died: the record takes the words so far when the app stops, between its coalesced commits, and takes them once.
+    @Test fun whatArrivedIsCommittedWhenTheAppStopsAndStandsOverADeath() = runTest {
+        val server = script("""[{"event":"text","data":{"delta":"Four words arrived here"}},{"await":"stop"},{"event":"done","data":{"state":"stopped"}}]""")
+        TurnPhone(this, folder.newFolder(), server).use { phone ->
+            phone.signIn()
+            phone.turns.start()
+            advanceUntilIdle()
+            val turn = checkNotNull(phone.turns.send("Question", null, null, anonymous = false))
+            advanceTimeBy(1_000)
+            assertEquals("the coalesced commit has not come round", "", phone.message(turn.coach)?.text)
+            val before = phone.engine.readRevision()
+
+            phone.turns.appStopped()
+            phone.turns.appStopped()
+            advanceTimeBy(1)
+            assertEquals("Four words arrived here", phone.message(turn.coach)?.text)
+            assertEquals("asked twice, one commit", before + 1, phone.engine.readRevision())
+            val snapshot = phone.engine.snapshot()
+            phone.turns.requestStop()
+            advanceUntilIdle()
+
+            TurnPhone(this, folder.newFolder(), script("[]"), snapshot = snapshot).use { reopened ->
+                reopened.turns.start()
+                advanceUntilIdle()
+                val message = reopened.message(turn.coach)
+                assertEquals(MessageState.interrupted, message?.state)
+                assertEquals("Four words arrived here", message?.text)
+            }
+        }
+    }
+
+    // Nothing has arrived when the app stops: nothing is written, and after a death the question stands over an interrupted answer with no words.
+    @Test fun anAppThatStopsBeforeAnyWordCommitsNothingAndTheQuestionStands() = runTest {
+        val server = script("""[{"await":"stop"},{"event":"done","data":{"state":"stopped"}}]""")
+        TurnPhone(this, folder.newFolder(), server).use { phone ->
+            phone.signIn()
+            phone.turns.start()
+            advanceUntilIdle()
+            val turn = checkNotNull(phone.turns.send("Question", null, null, anonymous = false))
+            advanceTimeBy(1_000)
+            val before = phone.engine.readRevision()
+            phone.turns.appStopped()
+            advanceTimeBy(1)
+            assertEquals(before, phone.engine.readRevision())
+            val snapshot = phone.engine.snapshot()
+            phone.turns.requestStop()
+            advanceUntilIdle()
+
+            TurnPhone(this, folder.newFolder(), script("[]"), snapshot = snapshot).use { reopened ->
+                reopened.turns.start()
+                advanceUntilIdle()
+                assertEquals(MessageState.interrupted, reopened.message(turn.coach)?.state)
+                assertEquals("", reopened.message(turn.coach)?.text)
+                assertEquals("Question", reopened.message(turn.lifter)?.text)
+            }
+        }
     }
 }
