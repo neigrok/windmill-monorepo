@@ -2,6 +2,16 @@
 // text in order, `done` closes clean, `fail` means the model stopped mid-plan. Chunk boundaries
 // land anywhere and heartbeats are ':' comment lines.
 
+const SHAPE_FAILURE_REASONS = new Set(['unavailable', 'unreachable', 'failed', 'no-first-word', 'stopped-mid-plan']);
+
+// What a failed shape may tell Sentry: a closed reason and a coarse size, never the text, a count or a status.
+export function shapeFailureLabels(reason, bytes) {
+  return {
+    reason: SHAPE_FAILURE_REASONS.has(reason) ? reason : 'other',
+    size: bytes < 1024 ? 'under-1kb' : (bytes < 8192 ? '1-8kb' : 'over-8kb'),
+  };
+}
+
 export function parseSseFrames(buffered) {
   const events = [];
   let rest = buffered.replace(/\r\n/g, '\n');
