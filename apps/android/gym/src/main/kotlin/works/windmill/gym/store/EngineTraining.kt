@@ -142,6 +142,8 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
     }
 
     private fun <T> read(body: (Reader) -> T): T = reader.read(EngineSession.scope, body)
+    // Coach's read models over the same scope, for the seat's guarded read.
+    fun <T> reading(body: (Reader) -> T): T = read(body)
     private suspend fun <T> writing(replica: Replica = writable, body: (ActionRunner) -> T): T = withGymActionContext { context ->
         check(!context.insideRun) { "a run cannot enter inside a run" }
         body(ActionRunner(replica, engine.registry, zone, context))

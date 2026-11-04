@@ -41,9 +41,9 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.withTimeoutOrNull
 import works.windmill.gym.coach.Ask
-import works.windmill.gym.coach.AskCap
 import works.windmill.gym.coach.CoachAttachment
-import works.windmill.gym.coach.onboarding.AnonymousCoachAccess
+import works.windmill.gym.coach.CoachDraft
+import works.windmill.gym.coach.AnonymousCoachAccess
 import works.windmill.gym.sharing.WorkoutSharing
 import works.windmill.gym.sharing.WorkoutShareActions
 import works.windmill.gym.presentation.Ids
@@ -164,11 +164,9 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
     var pushedDraftOpen by remember { mutableStateOf(false) }
     val reviewFlow = rememberReviewFlow()
     val conversationId = store.coach.selectedChatId.orEmpty()
-    val selectedChat = store.coach.chat(conversationId)
-    val conversation = selectedChat?.exchanges.orEmpty()
+    val conversation = store.coach.exchanges(conversationId)
     val asking = store.coach.isAsking(conversationId)
-    val coachUpload = store.coach.upload(conversationId)
-    val cap = AskCap.entries.firstOrNull { it.name == selectedChat?.cap }
+    val refusal = store.coach.refusal(conversationId)
     val anonymousCoachAccess = store.coach.anonymousAccess
     LaunchedEffect(account.identityRevision, store.coach.accountKey, navigator.tab, navigator.away.lastOrNull()) {
         if (account.isSignedIn || !initialTabChosen || navigator.tab == Tab.Coach || navigator.away.lastOrNull() is Away.Coach || navigator.away.lastOrNull() is Away.Thread)
@@ -185,7 +183,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
     // so the first frame of every launch looks like nobody signed in.
     var seatRead by remember { mutableStateOf(account.user != null) }
     val sessionStates = rememberFrameStates(seat, navigator.ownedStateKeys(building != null)).holder
-    val askAbsent = selectedChat?.absent == true
+    val askAbsent = store.coach.absent
     // The room's one haptic vocabulary, used for the acts the room itself owns: a finish, and a save
     // the room performs on a screen's behalf.
     val haptics = rememberGymHaptics()
@@ -310,13 +308,6 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
         }
         if (standing != null) seatRead = true
         store.connect(account)
-        try {
-            store.coach.resumeChats()
-        } catch (failure: Exception) {
-            if (!currentCoroutineContext().isActive) throw failure
-            telemetry.failure("gym.restoreConversation", failure)
-        }
-
     }
 
     LaunchedEffect(account.user?.id, account.resolved, store.seat.accountReady) {
@@ -509,13 +500,16 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
         }
     }
 
-    fun ask(question: String, requestId: String = Ids.thread(), photo: CoachAttachment? = null) {
-        val id = store.coach.selectedChatId ?: try { store.coach.freshChat() }
-            catch (_: Exception) { note = "Your message couldn’t be saved. Try again."; return }
-        if (!store.coach.submit(id, question, photo, requestId)) note = "Your message couldn’t be saved. Try again."
+    // A question typed before any chat stood takes its draft into the chat it opens.
+    fun ask(question: String, photo: CoachAttachment?) {
+        val id = store.coach.selectedChatId ?: try {
+            store.coach.freshChat().also { fresh ->
+                store.coach.saveDraft(fresh, CoachDraft(question, photo))
+                store.coach.saveDraft("new", CoachDraft())
+            }
+        } catch (_: Exception) { note = "Your message couldn’t be saved. Try again."; return }
+        if (!store.coach.send(id, question, photo)) note = "Your message couldn’t be saved. Try again."
     }
-
-    fun stopCoach() { store.coach.stopChat(conversationId) }
 
     fun enterCoach() {
         navigator.reset()
@@ -712,14 +706,14 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
             fun CoachStance(otherwise: @Composable () -> Unit) = when {
                 !account.isSignedIn && anonymousCoachAccess != AnonymousCoachAccess.Available ->
                     CoachAccessStance(seat = youInitial, onSignIn = shell.openSignIn,
-                        bound = anonymousCoachAccess == AnonymousCoachAccess.Bound && store.coach.allThreads.isNotEmpty(),
-                        onThreads = if (store.coach.allThreads.isEmpty()) null else ({ look(Away.Threads) }))
+                        bound = anonymousCoachAccess == AnonymousCoachAccess.Bound && store.coach.hasConversations,
+                        onThreads = if (store.coach.hasConversations) ({ look(Away.Threads) }) else null)
                 askAbsent -> AskAbsentStance(seat = youInitial, onThreads = { look(Away.Threads) })
                 else -> otherwise()
             }
 
             @Composable
-            fun Conversation(backTo: String?, onBack: (() -> Unit)?) = remember(store) { AskBinding(store) }.let { ask -> AskScreen(
+            fun Conversation() = remember(store) { AskBinding(store) }.let { ask -> AskScreen(
                 state = ask, events = ask,
                 seat = youInitial,
                 thread = conversation,
@@ -730,21 +724,15 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                 receipts = reviewFlow.receiptsAt(Reviewing.coach),
                 lookedAt = lookedAtIds,
                 asking = asking,
-                cap = cap,
-                onAsk = { asked -> ask(asked) },
-                onPhotoAsk = { asked, photo -> ask(asked, photo = photo) },
-                onStop = if (account.isSignedIn) ::stopCoach else null, upload = coachUpload,
+                refusal = refusal,
+                onAsk = ::ask,
+                onStop = { store.coach.stop() },
                 onSignIn = shell.openSignIn,
                 onBuildRoutine = { building = RoutineDraft(position = store.routines.all.size) },
-                onRetry = { ask(it.question, it.requestId.ifEmpty { Ids.thread() }, it.attachments.firstOrNull()) },
-                onAskNew = { askSomethingNew() },
                 seed = "",
-                onNewDraft = { askSomethingNew(it) },
                 onThreads = { look(Away.Threads) },
                 onConnections = { look(Away.Connections) },
                 origin = origin,
-                backTo = backTo,
-                onBack = onBack,
                 onReview = { review(it.id, it.routineId, Reviewing.coach) },
             ) }
 
@@ -763,7 +751,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                     recovery = recoveryRead,
                     transient = transient,
                 ) }
-                Tab.Coach -> CoachStance { Conversation(backTo = null, onBack = null) }
+                Tab.Coach -> CoachStance { Conversation() }
                 Tab.Routines -> RoutinesScreen(
                     state = routinesHome,
                     events = routinesHome,
@@ -859,7 +847,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                         say = { note = it },
                         onDraftOpen = { pushedDraftOpen = it },
                     ) }
-                    is Away.Coach -> CoachStance { Conversation(backTo = backTo, onBack = { back() }) }
+                    is Away.Coach -> CoachStance { Conversation() }
                     Away.Threads -> remember(store) { ThreadsBinding(store.coach) }.let { threads -> ThreadsScreen(
                         state = threads, events = threads,
                         backTo = backTo,
@@ -874,7 +862,6 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                         composerEnabled = account.isSignedIn || anonymousCoachAccess == AnonymousCoachAccess.Available,
                         onSignIn = shell.openSignIn,
                         onBuildRoutine = { building = RoutineDraft(position = store.routines.all.size) },
-                        onAskNew = { askSomethingNew() },
                         origin = origin,
                         onThreads = { look(Away.Threads) },
                         onConnections = { look(Away.Connections) },

@@ -6,6 +6,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
@@ -14,6 +15,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.*
 import org.junit.Rule
@@ -23,7 +25,13 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.SQLiteMode
+import works.windmill.domain.kit.Fields
 import works.windmill.domain.kit.Id
+import works.windmill.gym.coach.AnonymousCoachAccess
+import works.windmill.gym.coach.Ask
+import works.windmill.gym.coach.CoachChats
+import works.windmill.gym.coach.DraftOutcome
+import works.windmill.gym.coach.LocalCoach
 import works.windmill.gym.domain.sync.CoachImportReceipt
 import works.windmill.gym.domain.sync.CoachRoutineImport
 import works.windmill.gym.domain.sync.Exercise
@@ -31,19 +39,19 @@ import works.windmill.gym.domain.sync.ImportCoachRoutineBatch
 import works.windmill.gym.domain.sync.Routine
 import works.windmill.gym.domain.sync.RoutineEntry
 import works.windmill.gym.domain.sync.SetTarget
+import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.store.EngineTraining
 import works.windmill.platform.ai.AiAllowance
+import works.windmill.platform.net.WindmillJson
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.sync.api.DeviceWrite
 import works.windmill.sync.api.Gesture
 import works.windmill.sync.core.Json
 import works.windmill.sync.core.RecordID
-import works.windmill.sync.engine.Engine
-import works.windmill.sync.engine.EngineClock
-import works.windmill.sync.engine.AndroidSqlite
-import works.windmill.sync.engine.IdentitySource
-import works.windmill.sync.engine.signIn
-import works.windmill.sync.engine.signOut
+import works.windmill.sync.core.ScopeRef
+import works.windmill.sync.core.ClockReading
+import works.windmill.sync.engine.*
+import works.windmill.sync.modelserver.Credential
 import works.windmill.sync.schema.Gym
 import works.windmill.sync.schema.SyncSchema
 
@@ -263,6 +271,91 @@ class CoachRoutineImportsTests {
         assertEquals(48, key.removePrefix(ImportCoachRoutineBatch.receiptPrefix).length)
         assertEquals(key, CoachRoutineImports.receiptKey(opaque))
         assertNotEquals(key, CoachRoutineImports.receiptKey(opaque + "y"))
+    }
+
+    @Test fun aRetainedDraftsSaveSaysHowItEndedAndOnlyASaveRefreshesTheProgram() = runTest {
+        engine().use { engine ->
+            val origin = CoachOnboardingSeat("anonymous:fixture", engine.activeReplica())
+            var seat: CoachOnboardingSeat? = null
+            val file = File(temporary.root, "retained-save")
+            file.writeText("""{"anonymousId":"anonymous:fixture","onboarding":{"anonymous:fixture":{"11111111-1111-4111-8111-111111111111":${
+                WindmillJson.encodeToString(CoachOnboardingRecord.serializer(), record(origin.replica))}}}}""")
+            var refreshes = 0
+            val chats = CoachChats({ null }, { refreshes++ }, null, null, LocalCoach(file), CoachRoutineImports(engine, { seat }, backgroundScope),
+                { AnonymousCoachAccess.Unavailable }, Telemetry.None, backgroundScope)
+            val requestId = "11111111-1111-4111-8111-111111111111"
+            val before = engine.snapshot()
+            assertEquals(DraftOutcome.Closed(Ask.draftInvalid), chats.saveRetainedDrafts("original-chat", requestId))
+            assertEquals(before, engine.snapshot())
+            seat = origin
+            engine.failNextCommit()
+            assertEquals(DraftOutcome.Failed(Ask.draftRetry), chats.saveRetainedDrafts("original-chat", requestId))
+            assertEquals(before, engine.snapshot())
+            assertEquals(0, refreshes)
+            assertEquals(DraftOutcome.Saved, chats.saveRetainedDrafts("original-chat", requestId))
+            assertEquals(DraftOutcome.Saved, chats.saveRetainedDrafts("original-chat", requestId))
+            assertEquals(2, refreshes)
+            assertEquals(1, engine.read(Routine.scope) { it.drawn(Routine.type).size })
+            assertEquals(DraftOutcome.Closed(Ask.draftGone), chats.saveRetainedDrafts("original-chat", "gone"))
+        }
+    }
+
+    @Test fun leavingTheScreenMidSaveStillLandsTheRoutineAndItsRefresh() = runTest {
+        engine().use { engine ->
+            val record = record(engine.activeReplica())
+            val file = File(temporary.root, "left-mid-save")
+            file.writeText("""{"anonymousId":"anonymous:fixture","onboarding":{"anonymous:fixture":{"${record.requestId}":${
+                WindmillJson.encodeToString(CoachOnboardingRecord.serializer(), record)}}}}""")
+            var refreshes = 0
+            val imports = CoachRoutineImports(engine, { CoachOnboardingSeat(record.owner, record.replica) }, backgroundScope)
+            val chats = CoachChats({ null }, { refreshes++ }, null, null, LocalCoach(file), imports, { AnonymousCoachAccess.Unavailable }, Telemetry.None, backgroundScope)
+            val screen = async(start = CoroutineStart.UNDISPATCHED) { chats.saveRetainedDrafts(record.chat, record.requestId) }
+            screen.cancel()
+            runCurrent()
+            assertTrue(screen.isCancelled)
+            assertEquals(1, refreshes)
+            assertEquals(1, imports.receipt("result")?.routines?.size)
+            assertEquals(1, engine.read(Routine.scope) { it.drawn(Routine.type).size })
+        }
+    }
+
+    @Test fun anImportedDraftReachesTheServerThroughTheSyncDoorAndItsReceiptStands() = runTest {
+        engine().use { engine ->
+            val record = record(engine.activeReplica())
+            val imports = CoachRoutineImports(engine, { CoachOnboardingSeat(record.owner, record.replica) }, backgroundScope)
+            val receipt = (imports.apply(record, routines, listOf(movement)) as CoachImportOutcome.Committed).receipt
+            assertTrue(engine.signIn("account", mapOf("gym" to false), serverSchema = SyncSchema.registry.version).member("complete").bool())
+            engine.subscribe(ScopeRef(Gym.scope))
+            val server = EngineRoomFixture.server()
+            val at = 1_800_000_000_000L
+            val reading = ClockReading(at, at, "test")
+            fun pull() {
+                val request = checkNotNull(engine.pullRequest(listOf(ScopeRef(Gym.scope))))
+                val answer = server.pull(request, Credential.Account("account"), at)
+                assertEquals(200, answer.status)
+                engine.onPullResponse(request, SyncResponse(answer.status, answer.body), RequestTiming(reading, reading))
+            }
+            while (true) {
+                val request = engine.nextPush() ?: break
+                val answer = server.push(request, Credential.Account("account"), at)
+                assertEquals(200, answer.status)
+                engine.onPushResponse(request, SyncResponse(answer.status, answer.body), RequestTiming(reading, reading))
+                pull()
+            }
+            pull()
+            val adopted = checkNotNull(imports.receipt("result"))
+            assertEquals(receipt.fingerprint, adopted.fingerprint)
+            assertEquals(receipt.resultId, adopted.resultId)
+            engine.read(Routine.scope) { read ->
+                val drawn = read.drawn(Routine.type)
+                assertEquals(adopted.routines.map { it.record }.toSet(), drawn.map { it.id }.toSet())
+                assertTrue(drawn.none { it.isPending })
+                val movements = read.drawn(Exercise.type)
+                assertEquals(adopted.movements.map { it.record }, movements.map { it.id })
+                assertTrue(movements.none { it.isPending })
+                assertEquals(listOf("Lower", "Upper"), drawn.map { Routine.decode(Fields(it)).name }.sorted())
+            }
+        }
     }
 
     @Test fun parallelAndRetriedAppliesWithFreshlyMintedIdsImportOnce() = runBlocking {

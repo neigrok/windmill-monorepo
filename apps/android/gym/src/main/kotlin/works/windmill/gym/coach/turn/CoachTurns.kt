@@ -32,10 +32,14 @@ import works.windmill.agent.TurnFailure
 import works.windmill.agent.TurnSeat
 import works.windmill.agent.TurnState
 import works.windmill.agent.TurnTransport
+import works.windmill.domain.kit.Action
 import works.windmill.domain.kit.ActionRunner
 import works.windmill.domain.kit.Catalog
+import works.windmill.domain.kit.Decision
+import works.windmill.domain.kit.IDSource
 import works.windmill.domain.kit.Id
 import works.windmill.domain.kit.Outcome
+import works.windmill.domain.kit.Reader
 import works.windmill.gym.domain.coach.CoachMessage
 import works.windmill.gym.domain.coach.CoachPictureRow
 import works.windmill.gym.domain.coach.CoachRules
@@ -46,6 +50,7 @@ import works.windmill.gym.domain.coach.KeepPicture
 import works.windmill.gym.domain.coach.MessageState
 import works.windmill.gym.domain.coach.OpenTurn
 import works.windmill.gym.domain.coach.Picture
+import works.windmill.gym.domain.sync.GymRefusal
 import works.windmill.gym.store.EngineTraining
 import works.windmill.gym.store.TrainingRefused
 import works.windmill.platform.agent.TurnHttp
@@ -67,8 +72,8 @@ class CoachTurns(
     transport: TurnTransport,
     private val installation: AiInstallation,
     private val accountToken: () -> String?,
-    private val pictures: PictureFiles,
-    private val catalog: Lazy<Catalog>,
+    val pictures: PictureFiles,
+    val catalog: Lazy<Catalog>,
     telemetry: Telemetry,
     private val lease: (Job) -> Unit,
     private val appBaseUrl: String,
@@ -87,12 +92,19 @@ class CoachTurns(
     private val engine = training.engine
     private val started = AtomicBoolean(false)
     private val admitting = Mutex()
+    private val runningTurn = MutableStateFlow<OpenTurn.Turn?>(null)
     @Volatile private var running: LiveTurn? = null
+        set(value) {
+            field = value
+            runningTurn.value = value?.turn
+        }
     private val refused = MutableStateFlow<CoachTurnRefusal?>(null)
     private val faulted = MutableStateFlow<CoachTurnFault?>(null)
     private val takenBack = MutableStateFlow<OpenTurn.Turn?>(null)
 
     val activity: StateFlow<TurnActivity?> get() = driver.activity
+    // The one turn running on this phone, whichever chat it belongs to.
+    val turn: StateFlow<OpenTurn.Turn?> = runningTurn.asStateFlow()
     internal val idle: Boolean get() = running == null
     // How the last send was refused, said once at the conversation's end.
     val refusal: StateFlow<CoachTurnRefusal?> = refused.asStateFlow()
@@ -122,9 +134,9 @@ class CoachTurns(
         }
     }
 
-    // §4.1, in order: the turn it opened, or null with the reason in `refusal` or `fault` and the draft kept. Nothing runs on the caller's thread.
-    suspend fun send(question: String, picture: ChosenPicture?, thread: Id<CoachThread>?, anonymous: Boolean): OpenTurn.Turn? = withContext(storage) {
-        admitting.withLock { admit(question, picture, thread, anonymous) }
+    // §4.1, in order: the turn it opened, or null with the reason in `refusal` or `fault` and the draft kept. Nothing runs on the caller's thread. A question with `once` opens one turn however often it is asked, and answers that turn again. A question with `on` belongs to that replica, and opens on no other.
+    suspend fun send(question: String, picture: ChosenPicture?, thread: Id<CoachThread>?, anonymous: Boolean, once: String? = null, on: String? = null): OpenTurn.Turn? = withContext(storage) {
+        admitting.withLock { admit(question, picture, thread, anonymous, once, on) }
     }
 
     fun requestStop() = driver.requestStop()
@@ -149,11 +161,12 @@ class CoachTurns(
         }
     }
 
-    private suspend fun admit(question: String, picture: ChosenPicture?, thread: Id<CoachThread>?, anonymous: Boolean): OpenTurn.Turn? {
+    private suspend fun admit(question: String, picture: ChosenPicture?, thread: Id<CoachThread>?, anonymous: Boolean, once: String?, on: String?): OpenTurn.Turn? {
         if (running != null) return said(CoachTurnFault.busy)
         if (MeasureUnit.bytes.length(question) > CoachRules.maxQuestionBytes) return null
         if (!engine.status.state.value.online) return refusing(CoachTurnRefusal.Offline)
         val replica = engine.activeReplica()
+        if (on != null && on != replica) return said(CoachTurnFault.accountChanging)
         val seat = try {
             if (anonymous) TurnSeat.Anon(installation.forAnonymousSend()) else TurnSeat.Bound(accountToken() ?: return said(CoachTurnFault.accountChanging))
         } catch (failure: Exception) {
@@ -168,7 +181,7 @@ class CoachTurns(
         if (arriving == null) return said(CoachTurnFault.accountChanging)
         if (arriving) return refusing(CoachTurnRefusal.LogArriving)
         interruptNamed(tell = false)
-        return opened(question, picture, thread, replica, seat)
+        return opened(question, picture, thread, replica, seat, once)
     }
 
     // A seat the phone could not take: no connection, or the installation the server refused by code. Anything else is this phone's own, which `AiInstallation` has reported.
@@ -179,7 +192,7 @@ class CoachTurns(
     }
 
     // §4.1 step 2, then the driver. Past the commit nothing may stop the turn from starting: a caller that went away leaves it running, and `running` tells the next send.
-    private suspend fun opened(question: String, picture: ChosenPicture?, thread: Id<CoachThread>?, replica: String, seat: TurnSeat): OpenTurn.Turn? {
+    private suspend fun opened(question: String, picture: ChosenPicture?, thread: Id<CoachThread>?, replica: String, seat: TurnSeat, once: String?): OpenTurn.Turn? {
         val abilities: Catalog
         val row: CoachPictureRow?
         try {
@@ -193,13 +206,14 @@ class CoachTurns(
             return said(CoachTurnFault.unsaved)
         }
         return withContext(NonCancellable) {
-            val turn = try {
+            val (turn, fresh) = try {
                 training.pinnedOn(replica) { runner ->
                     if (row != null && runner.run(KeepPicture(row)) is Outcome.Refused) return@pinnedOn null
                     val onMessage = listOfNotNull(row?.let { Picture(it.id, PictureFiles.modelMediaType, localOnly = true) })
-                    when (val outcome = runner.run(OpenTurn(thread, question, onMessage))) {
-                        is Outcome.Committed -> outcome.result
-                        is Outcome.Unchanged -> outcome.result
+                    val opening = OpenTurn(thread, question, onMessage)
+                    when (val outcome = runner.run(if (once == null) opening else OpenTurnOnce(once, opening))) {
+                        is Outcome.Committed -> outcome.result to true
+                        is Outcome.Unchanged -> outcome.result to false
                         is Outcome.Refused -> null
                     }
                 }
@@ -209,7 +223,7 @@ class CoachTurns(
                 tells.failure(TurnFailure.storage, null)
                 return@withContext said(CoachTurnFault.unsaved)
             } ?: return@withContext said(CoachTurnFault.unsaved)
-            launched(LiveTurn(turn, replica, seat, elapsedMs()), question, abilities)
+            if (fresh) launched(LiveTurn(turn, replica, seat, elapsedMs()), question, abilities)
             turn
         }
     }
@@ -386,5 +400,31 @@ class CoachTurns(
                 lazy { Catalog(application.assets.open(catalogAsset).use { Json.parse(it.readBytes()) }) },
                 telemetry, lease::hold, baseUrl.toString().trimEnd('/'), scope)
         }
+    }
+}
+
+// A question one gesture may ask twice, across a recreation or a process death: the finish share. Its key and the turn it opened commit in one transaction in a device row, so no death between them can open a second turn. The row remembers the newest such question; a turn the server withdrew leaves no thread behind to find, and opens again.
+internal class OpenTurnOnce(private val once: String, private val opening: OpenTurn) : Action<OpenTurnOnce.Loaded, OpenTurn.Turn, GymRefusal> {
+    class Loaded(val opened: OpenTurn.Turn?, val inner: OpenTurn.Loaded)
+
+    override val scope = opening.scope
+    override val refusals = opening.refusals
+
+    override fun load(read: Reader): Loaded {
+        val row = read.device(key)?.takeIf { it["once"]?.str() == once }
+        val turn = row?.let { OpenTurn.Turn(Id(RecordID(it.member("thread")), CoachThread), Id(RecordID(it.member("lifter")), CoachMessage), Id(RecordID(it.member("coach")), CoachMessage)) }
+        return Loaded(turn?.takeIf { read.repository(CoachThread).find(it.thread, ViewMode.drawn) != null }, opening.load(read))
+    }
+
+    override fun decide(loaded: Loaded, ids: IDSource): Decision<OpenTurn.Turn, GymRefusal> {
+        loaded.opened?.let { return Decision.Unchanged(it) }
+        val decided = opening.decide(loaded.inner, ids)
+        if (decided is Decision.Write) decided.plan.device(key, Json.objectOf("once" to Json.of(once), "thread" to decided.result.thread.json,
+            "lifter" to decided.result.lifter.json, "coach" to decided.result.coach.json))
+        return decided
+    }
+
+    companion object {
+        const val key = "rack:coachOnceTurn"
     }
 }

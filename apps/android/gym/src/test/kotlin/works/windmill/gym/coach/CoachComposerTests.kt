@@ -61,9 +61,9 @@ import org.robolectric.annotation.GraphicsMode
 import org.robolectric.annotation.Implementation
 import org.robolectric.annotation.Implements
 import org.robolectric.shadows.ShadowKeyCharacterMap
-import works.windmill.gym.net.FakeGymRest
 import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.platform.storage.AtomicDocument
+import works.windmill.platform.telemetry.Telemetry
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
@@ -78,7 +78,7 @@ class CoachComposerTests {
     fun closeRooms() = rooms.forEach(EngineRoomFixture::close)
 
     private fun signedIn(scope: CoroutineScope, localCoach: LocalCoach = LocalCoach(File(tmp.root, "coach.json"))): EngineRoomFixture =
-        EngineRoomFixture(tmp.newFolder(), scope, rest = FakeGymRest(), localCoach = localCoach).also { room ->
+        EngineRoomFixture(tmp.newFolder(), scope, localCoach = localCoach).also { room ->
             rooms += room
             runBlocking { room.select("user-a") }
         }
@@ -96,13 +96,13 @@ class CoachComposerTests {
             }
         }
         val phone = local.anonymousOwner()
-        local.saveChat(phone, LocalChat("phone-chat"), true); local.saveDraft(phone, "phone-chat", CoachDraft("Phone draft", setup = true))
-        local.saveChat("user-a", LocalChat("account-chat"), true); local.saveDraft("user-a", "account-chat", CoachDraft("Account draft"))
+        local.saveChat(phone, LocalChat("phone-chat", 1, setup = true), true); local.saveDraft(phone, "phone-chat", CoachDraft("Phone draft"))
+        local.saveChat("user-a", LocalChat("account-chat", 1), true); local.saveDraft("user-a", "account-chat", CoachDraft("Account draft"))
         local.adoptPhoneDraft("user-a") { true }
         val held = local.keptDrafts("user-a", "account-chat").single()
         val store = signedIn(scope, local).store.coach
         var shown by mutableStateOf(true)
-        compose.setContent { if (shown) CoachComposer(store, "account-chat", "", false, { _, _ -> }, null, null, true) }
+        compose.setContent { if (shown) CoachComposer(store, "account-chat", "", false, { _, _ -> }, null) }
         compose.runOnIdle {
             unreadable = true
             org.junit.Assert.assertThrows(IOException::class.java) { store.continueDraft("account-chat", held.id) }
@@ -140,7 +140,7 @@ class CoachComposerTests {
         file.outputStream().use { Bitmap.createBitmap(8, 8, Bitmap.Config.ARGB_8888).compress(Bitmap.CompressFormat.PNG, 100, it) }
         compose.setContent {
             CompositionLocalProvider(LocalActivityResultRegistryOwner provides registryOwner) {
-                CoachComposer(store, chat, "", false, { _, _ -> }, null, null, true)
+                CoachComposer(store, chat, "", false, { _, _ -> }, null)
             }
         }
         compose.onNodeWithContentDescription("Add photo").performClick()
@@ -161,12 +161,11 @@ class CoachComposerTests {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         val disk = LocalCoach(File(tmp.root, "captions.json"))
         var owner by mutableStateOf<String?>(null)
-        val store = CoachStore({ owner }, {}, { null }, disk,
-            works.windmill.platform.telemetry.Telemetry.None, System::nanoTime, scope)
+        val store = CoachChats({ owner }, {}, null, null, disk, null, { AnonymousCoachAccess.Unavailable }, Telemetry.None, scope)
         val chat = "caption-chat"
         store.freshChat(id = chat)
         var sent: Pair<String, CoachAttachment?>? = null
-        compose.setContent { CoachComposer(store, chat, "", false, { text, photo -> sent = text to photo }, null, null, true) }
+        compose.setContent { CoachComposer(store, chat, "", false, { text, photo -> sent = text to photo }, null) }
         compose.onNodeWithContentDescription("Send").assertDoesNotExist()
         compose.onNodeWithText("Sent to Coach. Saved only on this phone.").assertDoesNotExist()
         val photo = CoachAttachment("attachment-caption", "image/png", 1, 1, 3)
@@ -188,19 +187,22 @@ class CoachComposerTests {
         scope.cancel()
     }
 
-    @Test fun anonymousSendUsesItsExistingFourThousandByteBoundWithoutChangingTheBuffer() {
+    @Test fun bothSeatsHoldToOneQuestionBoundWithoutChangingTheBuffer() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val store = CoachStore({ null }, {}, { null }, LocalCoach(File(tmp.root, "anonymous.json")),
-            works.windmill.platform.telemetry.Telemetry.None, System::nanoTime, scope)
+        var owner by mutableStateOf<String?>(null)
+        val store = CoachChats({ owner }, {}, null, null, LocalCoach(File(tmp.root, "bound.json")), null, { AnonymousCoachAccess.Unavailable }, Telemetry.None, scope)
         val chat = store.freshChat()
-        compose.setContent { CoachComposer(store, chat, "", false, { _, _ -> error("No automatic Send") }, null, null, true) }
+        compose.setContent { CoachComposer(store, chat, "", false, { _, _ -> error("No automatic Send") }, null) }
         val field = compose.onNodeWithContentDescription("Question")
-        field.performTextReplacement("x".repeat(4_001))
-        compose.onNodeWithContentDescription("Send").assertIsNotEnabled()
-        assertEquals("x".repeat(4_001), field.fetchSemanticsNode().config[SemanticsProperties.EditableText].text)
-        field.performTextReplacement("x".repeat(4_000))
-        compose.onNodeWithContentDescription("Send").assertIsEnabled()
-        assertEquals("x".repeat(4_000), field.fetchSemanticsNode().config[SemanticsProperties.EditableText].text)
+        repeat(2) {
+            field.performTextReplacement("x".repeat(8_001))
+            compose.onNodeWithContentDescription("Send").assertIsNotEnabled()
+            assertEquals("x".repeat(8_001), field.fetchSemanticsNode().config[SemanticsProperties.EditableText].text)
+            field.performTextReplacement("x".repeat(8_000))
+            compose.onNodeWithContentDescription("Send").assertIsEnabled()
+            assertEquals("x".repeat(8_000), field.fetchSemanticsNode().config[SemanticsProperties.EditableText].text)
+            compose.runOnIdle { owner = "alice"; store.freshChat(id = chat) }
+        }
         scope.cancel()
     }
 
@@ -210,8 +212,7 @@ class CoachComposerTests {
         val photo = CoachAttachment("attachment-a", "image/png", 1, 1, 3)
         val draft = CoachDraft("Retained draft", photo)
         store.coach.saveDraft("thread-a", draft)
-        compose.setContent { CoachComposer(store.coach, "thread-a", "", false, { _, _ -> error("Read-only history sent a message") },
-            null, null, true, enabled = false) }
+        compose.setContent { CoachComposer(store.coach, "thread-a", "", false, { _, _ -> error("Read-only history sent a message") }, null, enabled = false) }
         compose.onNodeWithContentDescription("Question").assertIsNotEnabled()
         compose.onNodeWithContentDescription("Add photo").assertIsNotEnabled()
         compose.onNodeWithContentDescription("Send").assertIsNotEnabled()
@@ -229,7 +230,7 @@ class CoachComposerTests {
         val photo = CoachAttachment("attachment-a", "image/png", 1, 1, 3)
         store.coach.saveDraft("thread-a", draft)
         compose.setContent {
-            CoachComposer(store.coach, "thread-a", "", false, { _, _ -> }, null, null, true)
+            CoachComposer(store.coach, "thread-a", "", false, { _, _ -> }, null)
         }
         val field = compose.onNodeWithContentDescription("Question")
         field.performClick()
@@ -258,40 +259,32 @@ class CoachComposerTests {
     }
 
     @Test
-    fun latestEditAndPhotoSurviveUploadCancellationAndHiddenInputWhileAsking() {
+    fun latestEditAndPhotoSurviveHiddenInputWhileAskingAndReturnWhenStopped() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val store = signedIn(scope).store
         val photo = CoachAttachment("attachment-a", "image/png", 1, 1, 3)
         store.coach.saveDraft("thread-a", CoachDraft("Old caption", photo))
         var busy by mutableStateOf(false)
-        var upload by mutableStateOf<Float?>(null)
         val sent = mutableListOf<CoachDraft>()
         compose.setContent {
             CoachComposer(store.coach, "thread-a", "", busy,
-                onSend = { text, attachment -> sent += CoachDraft(text, attachment); busy = true; upload = .25f },
-                onStop = { busy = false; upload = null }, upload = upload, retainDraft = true)
+                onSend = { text, attachment -> sent += CoachDraft(text, attachment); busy = true },
+                onStop = { busy = false })
         }
         val field = compose.onNodeWithContentDescription("Question")
         field.performTextReplacement("Latest caption")
         compose.onNodeWithContentDescription("Send").performClick()
         assertEquals(listOf(CoachDraft("Latest caption", photo)), sent)
         assertEquals(CoachDraft("Latest caption", photo), LocalCoach(File(tmp.root, "coach.json")).draft("user-a", "thread-a"))
-        assertEquals("Latest caption", field.fetchSemanticsNode().config[SemanticsProperties.EditableText].text)
-        field.assertIsNotEnabled()
-
-        compose.onNodeWithContentDescription("Cancel upload").performClick()
-        assertEquals("Latest caption", field.fetchSemanticsNode().config[SemanticsProperties.EditableText].text)
-        compose.onNodeWithContentDescription("Remove photo").assertIsDisplayed()
-        compose.onNodeWithContentDescription("Send").performClick()
-        compose.runOnIdle { upload = null }
         assertEquals("", field.fetchSemanticsNode().config[SemanticsProperties.EditableText].text)
+        field.assertIsNotEnabled()
         compose.onNodeWithContentDescription("Remove photo").assertDoesNotExist()
         assertEquals(CoachDraft("Latest caption", photo), LocalCoach(File(tmp.root, "coach.json")).draft("user-a", "thread-a"))
 
         compose.onNodeWithContentDescription("Stop response").performClick()
         assertEquals("Latest caption", field.fetchSemanticsNode().config[SemanticsProperties.EditableText].text)
         compose.onNodeWithContentDescription("Remove photo").assertIsDisplayed()
-        assertEquals(List(2) { CoachDraft("Latest caption", photo) }, sent)
+        assertEquals(listOf(CoachDraft("Latest caption", photo)), sent)
         scope.cancel()
     }
 
@@ -306,7 +299,7 @@ class CoachComposerTests {
         var account by mutableStateOf("user-a")
         compose.setContent {
             key(account) {
-                CoachComposer(store.coach, thread, "", false, { _, _ -> }, null, null, true)
+                CoachComposer(store.coach, thread, "", false, { _, _ -> }, null)
             }
         }
         val field = compose.onNodeWithContentDescription("Question")
@@ -343,7 +336,7 @@ class CoachComposerTests {
         val sent = mutableListOf<CoachDraft>()
         compose.setContent {
             CoachComposer(store.coach, "thread-a", "", false,
-                { text, photo -> sent += CoachDraft(text, photo) }, null, null, false)
+                { text, photo -> sent += CoachDraft(text, photo) }, null)
         }
         val field = compose.onNodeWithContentDescription("Question")
         compose.runOnIdle { diskAvailable = false }
@@ -359,8 +352,8 @@ class CoachComposerTests {
         field.performTextReplacement("Saved question")
         compose.onNodeWithContentDescription("Send").performClick()
         assertEquals(listOf(CoachDraft("Saved question")), sent)
-        assertEquals("", field.fetchSemanticsNode().config[SemanticsProperties.EditableText].text)
-        assertEquals(CoachDraft(), LocalCoach(File(tmp.root, "coach.json")).draft("user-a", "thread-a"))
+        assertEquals("Saved question", field.fetchSemanticsNode().config[SemanticsProperties.EditableText].text)
+        assertEquals(CoachDraft("Saved question"), LocalCoach(File(tmp.root, "coach.json")).draft("user-a", "thread-a"))
         scope.cancel()
     }
 
@@ -374,7 +367,7 @@ class CoachComposerTests {
         val sent = mutableListOf<CoachDraft>()
         compose.setContent {
             CoachComposer(store.coach, "thread-a", "", false,
-                { text, photo -> sent += CoachDraft(text, photo) }, null, null, true)
+                { text, photo -> sent += CoachDraft(text, photo) }, null)
         }
         val field = compose.onNodeWithContentDescription("Question")
         field.performTextReplacement("Second question")

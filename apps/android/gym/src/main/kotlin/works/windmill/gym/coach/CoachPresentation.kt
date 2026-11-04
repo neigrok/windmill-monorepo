@@ -15,8 +15,8 @@ import androidx.compose.ui.layout.layout
 // The one owner of the conversation's scroll offset. Every correction lands in the layout phase,
 // after the scroller measured its content and before it places it, so text that grew this frame is
 // in view this frame: nothing animates after it and no frame shows it below the fold.
-internal class CoachPresentation(initial: List<AskExchange>, val scroll: ScrollState, initialFollowEnd: Boolean = true) {
-    private var exchanges: List<AskExchange> = emptyList()
+internal class CoachPresentation(initial: List<CoachExchange>, val scroll: ScrollState, initialFollowEnd: Boolean = true) {
+    private var exchanges: List<CoachExchange> = emptyList()
     var keys: List<String> = emptyList()
         private set
     var followEnd by mutableStateOf(initialFollowEnd)
@@ -63,20 +63,14 @@ internal class CoachPresentation(initial: List<AskExchange>, val scroll: ScrollS
         }
     }
 
-    fun replace(next: List<AskExchange>) {
+    // A conversation syncing from another phone can land messages above the ones on screen, which keep their place.
+    fun replace(next: List<CoachExchange>) {
         if (next == exchanges) return
         val prepended = exchanges.isNotEmpty() && next.size > exchanges.size &&
-            next.last().requestId == exchanges.last().requestId && next.takeLast(exchanges.size) == exchanges
+            next.last().id == exchanges.last().id && next.takeLast(exchanges.size) == exchanges
         if (prepended) historyPrepended = true
         exchanges = next
-        val occurrences = mutableMapOf<String, Int>()
-        keys = next.asReversed().map { exchange ->
-            exchange.requestId.ifEmpty {
-                val occurrence = occurrences.getOrDefault(exchange.question, 0)
-                occurrences[exchange.question] = occurrence + 1
-                "legacy:$occurrence:${exchange.question}"
-            }
-        }.asReversed()
+        keys = next.map { it.id }
     }
 
     suspend fun jumpToLatest() {
@@ -95,7 +89,7 @@ internal class CoachPresentation(initial: List<AskExchange>, val scroll: ScrollS
 }
 
 @Composable
-internal fun rememberCoachPresentation(conversationId: String, thread: List<AskExchange>, owner: String = "", scroll: Int = 0, followEnd: Boolean = true): CoachPresentation {
+internal fun rememberCoachPresentation(conversationId: String, thread: List<CoachExchange>, owner: String = "", scroll: Int = 0, followEnd: Boolean = true): CoachPresentation {
     val presentation = remember(owner, conversationId) { CoachPresentation(thread, ScrollState(scroll), followEnd) }
     presentation.replace(thread)
     return presentation

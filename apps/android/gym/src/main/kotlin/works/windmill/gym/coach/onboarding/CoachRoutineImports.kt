@@ -17,6 +17,9 @@ import works.windmill.sync.engine.DeviceValueRewrite
 import works.windmill.sync.engine.Engine
 import works.windmill.sync.schema.Gym
 
+// The anonymous seat a retained answer was had on: its routines are saved only on that replica.
+data class CoachOnboardingSeat(val owner: String, val replica: String)
+
 sealed interface CoachImportOutcome {
     data class Committed(val receipt: CoachImportReceipt) : CoachImportOutcome
     data class Replayed(val receipt: CoachImportReceipt) : CoachImportOutcome

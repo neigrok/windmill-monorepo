@@ -1,12 +1,16 @@
 package works.windmill.gym.store
 
-import works.windmill.gym.coach.AskOutcome
-import works.windmill.gym.coach.Ask
+import kotlin.coroutines.ContinuationInterceptor
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
@@ -19,29 +23,32 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import works.windmill.sync.engine.signIn
+import works.windmill.agent.TurnRefusal
 import works.windmill.domain.kit.ActionContext
 import works.windmill.domain.kit.ActionRunner
 import works.windmill.domain.kit.FixedZone
 import works.windmill.domain.kit.Id
 import works.windmill.domain.kit.Outcome
-import works.windmill.gym.coach.AskAnswer
-import works.windmill.gym.coach.AskCap
-import works.windmill.gym.coach.AskThread
-import works.windmill.gym.coach.AskTurn
+import works.windmill.gym.coach.CoachDraft
+import works.windmill.gym.coach.CoachExchange
+import works.windmill.gym.coach.CoachReceipt
+import works.windmill.gym.coach.ConversationRow
+import works.windmill.gym.coach.heldConversation
+import works.windmill.gym.coach.heldThreads
+import works.windmill.gym.coach.turn.CoachTurnRefusal
+import works.windmill.gym.coach.turn.ScriptedTurns
+import works.windmill.gym.domain.coach.CoachThread
+import works.windmill.gym.domain.coach.ReadTally
 import works.windmill.gym.presentation.GymPreferences
 import works.windmill.gym.presentation.LastSet
 import works.windmill.gym.presentation.Proposal
 import works.windmill.gym.presentation.ProposalState
-import works.windmill.gym.coach.ReadTally
 import works.windmill.gym.presentation.Readout
 import works.windmill.gym.presentation.Routine
 import works.windmill.gym.presentation.RoutineDraft
 import works.windmill.gym.presentation.SetTarget
-import works.windmill.gym.coach.ThreadOutcome
 import works.windmill.gym.domain.sync.ProposeRoutine
 import works.windmill.gym.net.FakeGymRest
-import works.windmill.platform.net.Refusal
-import works.windmill.platform.net.WindmillApiException
 import works.windmill.sync.core.Json
 import works.windmill.sync.engine.*
 import works.windmill.sync.modelserver.ModelServer
@@ -51,12 +58,15 @@ import works.windmill.gym.domain.sync.Routine as EngineRoutine
 import works.windmill.gym.domain.sync.RoutineEntry as EngineEntry
 import works.windmill.gym.domain.sync.SetTarget as EngineTarget
 
-private fun refusal(status: Int, code: String? = null, message: String) =
-    WindmillApiException.Refused(status, Refusal(message = message, code = code))
-
+@OptIn(ExperimentalCoroutinesApi::class)
 class TrainingStoreTests {
     @get:Rule
     val tmp = TemporaryFolder()
+
+    private fun script(frames: String) = ScriptedTurns(Json.parse(frames).arr())
+
+    // Virtual time, one dispatcher: the test advances it, and closing the room ends its work.
+    private fun TestScope.work() = CoroutineScope(SupervisorJob() + coroutineContext[ContinuationInterceptor] as CoroutineDispatcher)
 
     // A second phone signed into the same account reads what the log holds, or writes as somebody
     // elsewhere would.
@@ -203,182 +213,179 @@ class TrainingStoreTests {
     }
 
     @Test
-    fun testAskSignedOutNeverReachesTheLogAndSaysWhy() = runTest {
-        val rest = FakeGymRest()
-        EngineRoomFixture(tmp.newFolder(), backgroundScope, rest = rest).use { room ->
-            room.select(null)
-
-            assertEquals(AskOutcome.Refused("Sign in first."), room.store.coach.ask("thr_1", "what's stalled?"))
-            assertEquals(emptyList<String>(), rest.calls)
-            runCurrent()
-        }
-    }
-
-    @Test
     fun testAProposalMintedInAConversationLandsOnTodayWithoutLeavingTheRoom() = runTest {
-        val rest = FakeGymRest()
         val server = EngineRoomFixture.server()
-        EngineRoomFixture(tmp.newFolder(), backgroundScope, rest = rest).use { room ->
+        val turns = script("""[
+            {"event":"text","data":{"delta":"Done — as a proposal on Push A."}},
+            {"event":"calls","data":{"batch":1,"calls":[{"callId":"toolu_1","name":"propose_routine_change","input":{"id":"proposal1","routineId":"rt_00000001","name":"Push A — heavy",
+                "entries":[{"exerciseId":"bench-press","sets":[{"reps":3,"weightKg":87.5},{"reps":3,"weightKg":87.5},{"reps":3,"weightKg":87.5}]}],"summary":"Heavier triples."}}]}},
+            {"await":"results","batch":1},
+            {"event":"done","data":{"state":"completed"}}]""")
+        EngineRoomFixture(tmp.newFolder(), work(), coachServer = turns, mintRoutine = { "rt_00000001" }).use { room ->
             room.select("alice"); room.pull(server)
-            val pushA = (room.store.routines.saveRoutine(RoutineDraft(name = "Push A").adding("bench-press")
-                .targeting("bench-press", List(5) { SetTarget(5, 82.5) }).capturingMovements(room.store.routines.catalog)) as GymResult.Ok).value
+            room.store.routines.saveRoutine(RoutineDraft(name = "Push A").adding("bench-press")
+                .targeting("bench-press", List(5) { SetTarget(5, 82.5) }).capturingMovements(room.store.routines.catalog))
             room.sync(server); room.store.refreshEngine()
             assertEquals(emptyList<Proposal>(), room.store.routines.pendingProposals)
 
-            rest.answers.add(AskAnswer(answer = "Done — as a proposal on Push A.",
-                read = ReadTally(sets = 214, sessions = 34, weeks = 12), proposals = listOf("proposal1")))
-            rest.onAsk = {
-                coachProposes(server, room.now, pushA.id, "proposal1")
-                room.pull(server)
+            val chat = room.store.coach.freshChat()
+            assertTrue(room.store.coach.send(chat, "write the triples block"))
+            advanceUntilIdle()
+            room.store.conversations.read()
+            room.store.refreshEngine()
+
+            val reply = checkNotNull(room.store.coach.exchanges(chat).single().answer)
+            assertEquals("Done — as a proposal on Push A.", reply.text)
+            assertEquals(listOf("proposal1"), reply.proposals)
+            assertEquals(listOf("proposal1"), room.store.routines.pendingProposals.map { it.id })
+            assertEquals("the routine reads as it did until the lifter applies", "Push A", room.store.routines.routine("rt_00000001")?.name)
+        }
+    }
+
+    @Test
+    fun testTheReceiptCountsWhatTheTurnReadFromTheLog() = runTest {
+        val turns = script("""[{"event":"text","data":{"delta":"three sessions at the same top set."}},{"event":"done","data":{"state":"completed"}}]""")
+        EngineRoomFixture(tmp.newFolder(), work(), coachServer = turns).use { room ->
+            room.select("alice"); room.sync(EngineRoomFixture.server())
+            room.workout()
+            val chat = room.store.coach.freshChat()
+            assertTrue(room.store.coach.send(chat, "what's stalled?"))
+            advanceUntilIdle()
+            room.store.conversations.read()
+            assertEquals(CoachReceipt(ReadTally(sessions = 1, weeks = 1), truncated = false, created = emptyList()),
+                room.store.coach.exchanges(chat).single().answer?.receipt)
+        }
+    }
+
+    @Test
+    fun testEveryCeilingKeepsItsTypedNoticeAQuietLogIsARetryAndAnAbsentRouteTakesTheDoorDown() = runTest {
+        val turns = script("[]")
+        EngineRoomFixture(tmp.newFolder(), work(), coachServer = turns).use { room ->
+            room.select("alice"); room.sync(EngineRoomFixture.server())
+            val coach = room.store.coach
+            val other = coach.freshChat()
+            val chat = coach.freshChat()
+            for ((refusal, said) in listOf(
+                TurnRefusal(429, "subject_exhausted", null) to CoachTurnRefusal.Allowance("subject_exhausted"),
+                TurnRefusal(429, "free_day_exhausted", null) to CoachTurnRefusal.Allowance("free_day_exhausted"),
+                TurnRefusal(429, "free_month_exhausted", 1_900_000_000_000L) to CoachTurnRefusal.FreeMonthExhausted(1_900_000_000_000L),
+                TurnRefusal(429, TurnRefusal.rateLimited, null) to CoachTurnRefusal.RateLimited,
+            )) {
+                turns.refuseOpen = refusal
+                assertTrue(coach.send(chat, "what's stalled?"))
+                advanceUntilIdle()
+                assertEquals(said, coach.refusal(chat))
+                assertEquals("a cap the server refills stands on every chat", said, coach.refusal(other))
+                assertEquals(CoachDraft("what's stalled?"), coach.draft(chat))
+                assertFalse(coach.absent)
             }
 
-            val outcome = room.store.coach.ask("thr_1", "write the triples block")
+            turns.refuseOpen = TurnRefusal(500, TurnRefusal.vendorError, null)
+            assertTrue(coach.send(chat, "what's stalled?"))
+            advanceUntilIdle()
+            assertEquals(CoachTurnRefusal.Said(TurnRefusal.vendorError), coach.refusal(chat))
+            assertNull("a quiet server is that chat's to ask again", coach.refusal(other))
+            assertEquals(CoachDraft("what's stalled?"), coach.draft(chat))
+            assertFalse(coach.absent)
 
-            assertEquals(AskOutcome.Answered(AskAnswer(answer = "Done — as a proposal on Push A.",
-                read = ReadTally(sets = 214, sessions = 34, weeks = 12), proposals = listOf("proposal1"))),
-                outcome)
-            runCurrent()
-            assertEquals(listOf("proposal1"), room.store.routines.pendingProposals.map { it.id })
+            turns.refuseOpen = TurnRefusal(404, "not-found", null)
+            assertTrue(coach.send(chat, "what's stalled?"))
+            advanceUntilIdle()
+            assertEquals(CoachTurnRefusal.Absent, coach.refusal(chat))
+            assertEquals(CoachTurnRefusal.Absent, coach.refusal(other))
+            assertTrue(coach.absent)
         }
     }
 
     @Test
-    fun testTheReceiptIsTheServersNumberCarriedThrough() = runTest {
-        val rest = FakeGymRest()
-        rest.answers.add(AskAnswer(answer = "three sessions at the same top set.",
-            read = ReadTally(sets = 214, sessions = 34, weeks = 12)))
-        EngineRoomFixture(tmp.newFolder(), backgroundScope, rest = rest).use { room ->
+    fun testHistoryReadsEveryThreadFromTheEngineNewestFirst() = runTest {
+        EngineRoomFixture(tmp.newFolder(), work(), coachServer = script("[]")).use { room ->
             room.select("alice")
+            val older = room.heldConversation("Bench has been stuck at 82.5. What do you see?", "Hold the load a week.")
+            val olderAt = room.now
+            room.now += 3_000
+            val newer = room.heldConversation("Is my squat volume too low?", "It is fine.")
+            val newerAt = room.now
 
-            val outcome = room.store.coach.ask("thr_1", "what's stalled?")
+            val conversations = room.store.conversations
+            conversations.watchHistory(true)
+            conversations.read()
+            assertEquals(listOf(
+                ConversationRow(newer, "Is my squat volume too low?", newerAt, answerPreview = "It is fine."),
+                ConversationRow(older, "Bench has been stuck at 82.5. What do you see?", olderAt, answerPreview = "Hold the load a week."),
+            ), room.store.coach.history)
 
-            assertEquals(ReadTally(sets = 214, sessions = 34, weeks = 12),
-                (outcome as AskOutcome.Answered).answer.read)
-            runCurrent()
+            room.now += 3_000
+            val newest = room.heldConversation("And my deadlift?")
+            conversations.read()
+            assertEquals(listOf(newest, newer, older), room.store.coach.history.map { it.id })
+            assertEquals(listOf(older, newer, newest).toSet(), conversations.threads.map { it.id.record.string }.toSet())
         }
     }
 
     @Test
-    fun testBothCeilingsKeepTheirTypedNoticeAQuietLogIsARetryAndAnAbsentRouteTakesTheDoorDown() = runTest {
-        val rest = FakeGymRest()
-        EngineRoomFixture(tmp.newFolder(), backgroundScope, rest = rest).use { room ->
+    fun testAConversationIsReadWholeAndAMissingOneReadsNothing() = runTest {
+        EngineRoomFixture(tmp.newFolder(), work(), coachServer = script("[]")).use { room ->
             room.select("alice")
-            rest.refuseAsk = refusal(429, code = "ask-daily-limit", message = "the next question frees up in a couple of hours")
-            assertEquals("the daily cap keeps its distinct typed outcome",
-                AskOutcome.Capped(Ask.capReached, AskCap.Daily),
-                room.store.coach.ask("thr_1", "what's stalled?"))
-            rest.refuseAsk = refusal(429, code = "ask-out-of-budget", message = "this account has reached its AI ceiling")
-            assertEquals("the account's 30-day ceiling carries its own sentence",
-                AskOutcome.Capped("this account has reached its AI ceiling", AskCap.Ceiling),
-                room.store.coach.ask("thr_1", "what's stalled?"))
+            val thread = room.heldConversation("what's stalled?", "bench, three weeks.")
+            val coach = room.store.coach
 
-            rest.refuseAsk = refusal(500, message = "internal error")
-            assertEquals(AskOutcome.Failed("internal error"), room.store.coach.ask("thr_1", "what's stalled?"))
+            coach.selectChat(thread)
+            room.store.conversations.read()
+            val exchange = coach.exchanges(thread).single()
+            assertEquals("what's stalled?", exchange.question)
+            assertEquals("bench, three weeks.", exchange.answer?.text)
 
-            rest.refuseAsk = refusal(404, message = "not found")
-            assertEquals(AskOutcome.Absent, room.store.coach.ask("thr_1", "what's stalled?"))
-
-            rest.refuseAsk = refusal(409, code = "ask-thread-full", message = "that conversation is full")
-            assertEquals(AskOutcome.Fresh("that conversation is full"), room.store.coach.ask("thr_1", "what's stalled?"))
-            runCurrent()
-        }
-    }
-
-    @Test
-    fun testTheThreadsListIsReadEveryTimeAndCarriesNoTurns() = runTest {
-        val rest = FakeGymRest()
-        rest.conversations["thr_1"] = AskThread(
-            id = "thr_1", title = "Bench has been stuck at 82.5. What do you see?",
-            askedAtMs = 2_000, outcome = ThreadOutcome("applied", changes = 4, routine = "Push A"),
-            turns = listOf(AskTurn("lifter", "Bench has been stuck at 82.5. What do you see?", 2_000)))
-        rest.conversations["thr_2"] = AskThread(
-            id = "thr_2", title = "Is my squat volume too low?", askedAtMs = 5_000,
-            outcome = ThreadOutcome("read-only"))
-        EngineRoomFixture(tmp.newFolder(), backgroundScope, rest = rest).use { room ->
-            room.select("alice")
-
-            val listed = room.store.coach.readThreads()
-
-            assertEquals(listOf("thr_2", "thr_1"), (listed as GymResult.Ok).value.map { it.id })
-            assertEquals("no turns on the list read", listOf(0, 0), listed.value.map { it.turns.size })
-            assertEquals("4 changes → Push A", listed.value[1].outcome.detail)
-
-            room.store.coach.readThreads()
-            assertEquals(2, rest.calls.count { it == "threads" })
-            runCurrent()
-        }
-    }
-
-    @Test
-    fun testAConversationIsReadWholeAndAMissingOneAnswersInWords() = runTest {
-        val rest = FakeGymRest()
-        rest.conversations["thr_1"] = AskThread(id = "thr_1", title = "what's stalled?",
-            turns = listOf(AskTurn("lifter", "what's stalled?", 1_000),
-                AskTurn("ask", "bench, three weeks.", 1_200)))
-        EngineRoomFixture(tmp.newFolder(), backgroundScope, rest = rest).use { room ->
-            room.select("alice")
-
-            val opened = room.store.coach.thread("thr_1")
-
-            assertEquals(listOf("what's stalled?", "bench, three weeks."),
-                (opened as GymResult.Ok).value.turns.map { it.text })
-            assertEquals(GymResult.Failed(WriteFailure.Refused("that conversation is no longer on the log")),
-                room.store.coach.thread("thr_missing"))
-            runCurrent()
+            coach.selectChat("thr_missing")
+            room.store.conversations.read()
+            assertEquals(emptyList<CoachExchange>(), coach.exchanges("thr_missing"))
         }
     }
 
     @Test
     fun testDeletingAThreadPreservesTheAppliedProposal() = runTest {
-        val rest = FakeGymRest()
         val server = EngineRoomFixture.server()
-        rest.conversations["thr_1"] = AskThread(id = "thr_1", title = "write the triples block")
-        EngineRoomFixture(tmp.newFolder(), backgroundScope, rest = rest).use { room ->
+        EngineRoomFixture(tmp.newFolder(), work(), coachServer = script("[]")).use { room ->
             val pushA = pushAWaitingOnADiff(room, server)
             assertTrue(deciding(room, server) { room.store.routines.applyProposal("proposal1") } is ProposalOutcome.Decided)
+            val thread = room.heldConversation("write the triples block")
 
-            assertEquals(GymResult.Ok(Unit), room.store.coach.deleteThread("thr_1"))
+            assertEquals(GymResult.Ok(Unit), room.store.coach.deleteThread(thread))
 
             val row = room.training.proposal("proposal1")!!
             assertEquals(ProposalState.Applied, row.state)
             assertEquals("the row still says the change came from Coach", "ask", row.source.door)
-            assertEquals("and the conversation it opened is gone",
-                GymResult.Failed(WriteFailure.Refused("that conversation is no longer on the log")),
-                room.store.coach.thread("thr_1"))
+            assertEquals("and the conversation it opened is gone", emptyList<CoachThread>(), room.heldThreads())
             assertEquals("the program did not move on the delete", 2, room.store.routines.routine(pushA.id)?.revision)
-            runCurrent()
         }
     }
 
     @Test
     fun testDeletingAConversationThatIsAlreadyGoneSucceedsAndAnythingElseIsSaid() = runTest {
-        val rest = FakeGymRest()
-        EngineRoomFixture(tmp.newFolder(), backgroundScope, rest = rest).use { room ->
+        EngineRoomFixture(tmp.newFolder(), work(), coachServer = script("[]")).use { room ->
             room.select("alice")
 
             assertEquals(GymResult.Ok(Unit), room.store.coach.deleteThread("thr_gone"))
 
-            rest.refuseThreads = refusal(500, message = "internal error")
-            assertEquals(GymResult.Failed(WriteFailure.Refused("internal error")), room.store.coach.deleteThread("thr_1"))
-            runCurrent()
+            val thread = room.heldConversation("what's stalled?")
+            room.engine.failNextCommit()
+            assertEquals(GymResult.Failed(WriteFailure.NoAnswer), room.store.coach.deleteThread(thread))
+            assertEquals(listOf(thread), room.heldThreads().map { it.id.record.string })
         }
     }
 
     @Test
-    fun testTheThreadDoorsNeverReachTheLogSignedOut() = runTest {
+    fun testAPhoneOnlyDraftListsInHistoryAndDeletesSignedOutWithoutReachingRest() = runTest {
         val rest = FakeGymRest()
-        EngineRoomFixture(tmp.newFolder(), backgroundScope, rest = rest).use { room ->
+        EngineRoomFixture(tmp.newFolder(), work(), rest = rest, coachServer = script("[]")).use { room ->
             room.select(null)
-            assertEquals(GymResult.Ok(emptyList<AskThread>()), room.store.coach.readThreads())
-            assertEquals(GymResult.Failed(WriteFailure.Refused("that conversation is no longer on the log")), room.store.coach.thread("thr_1"))
-            val id = room.store.coach.freshChat("A phone-only draft")
-            val local = room.store.coach.allThreads.single()
-            assertEquals(GymResult.Ok(listOf(local)), room.store.coach.readThreads())
-            assertEquals(GymResult.Ok(local), room.store.coach.thread(id))
-            assertEquals(GymResult.Ok(Unit), room.store.coach.deleteThread(id))
-            assertEquals(GymResult.Ok(emptyList<AskThread>()), room.store.coach.readThreads())
+            val coach = room.store.coach
+            assertEquals(emptyList<ConversationRow>(), coach.history)
+            val id = coach.freshChat("A phone-only draft")
+            assertEquals(listOf(ConversationRow(id, "A phone-only draft", coach.chat(id)!!.updatedAtMs)), coach.history)
+            assertEquals(GymResult.Ok(Unit), coach.deleteThread(id))
+            assertEquals(emptyList<ConversationRow>(), coach.history)
             assertEquals(emptyList<String>(), rest.calls)
-            runCurrent()
         }
     }
 

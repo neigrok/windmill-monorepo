@@ -24,7 +24,6 @@ import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -50,12 +49,11 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import works.windmill.gym.R
-import works.windmill.gym.coach.onboarding.CoachOnboardingLimits
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun CoachComposer(store: CoachStore, key: String, seed: String, asking: Boolean,
-    onSend: (String, CoachAttachment?) -> Unit, onStop: (() -> Unit)?, upload: Float?, retainDraft: Boolean, enabled: Boolean = true,
+internal fun CoachComposer(store: CoachChats, key: String, seed: String, asking: Boolean,
+    onSend: (String, CoachAttachment?) -> Unit, onStop: (() -> Unit)?, enabled: Boolean = true,
     photoRequest: Int = 0,
     onDraftSync: (((() -> Boolean)?) -> Unit)? = null,
 ) {
@@ -65,7 +63,7 @@ internal fun CoachComposer(store: CoachStore, key: String, seed: String, asking:
     val keyboard = LocalSoftwareKeyboardController.current
     val scope = rememberCoroutineScope()
     val account = store.accountKey
-    val hidden by rememberUpdatedState(asking && upload == null)
+    val hidden by rememberUpdatedState(asking)
     val editor = remember(account, key) { CoachDraftEditor(store, key, hidden) }
     DisposableEffect(editor) {
         onDraftSync?.invoke { editor.sync(hidden, retry = true) }
@@ -84,8 +82,7 @@ internal fun CoachComposer(store: CoachStore, key: String, seed: String, asking:
         }
     }
     var preparing by remember(account, key) { mutableStateOf(false) }
-    fun canSend(next: CoachDraft) = next.text.trim().toByteArray().size <=
-        (if (store.anonymous) CoachOnboardingLimits.textBytes else Ask.maxTurnBytes) && (Ask.sendable(next.text) || next.photo != null)
+    fun canSend(next: CoachDraft) = next.text.trim().encodeToByteArray().size <= Ask.maxQuestionBytes && (Ask.sendable(next.text) || next.photo != null)
     var pickerOwner by rememberSaveable { mutableStateOf<String?>(null) }
     var pickerChat by rememberSaveable { mutableStateOf<String?>(null) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
@@ -114,15 +111,15 @@ internal fun CoachComposer(store: CoachStore, key: String, seed: String, asking:
         if (photoRequest > 0 && enabled && !asking && !preparing) pickPhoto()
     }
     Column {
-        editor.draft.photo?.takeIf { !asking || upload != null }?.let { photo ->
+        editor.draft.photo?.takeIf { !asking }?.let { photo ->
             Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 4.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(if (store.anonymous) "Sent to Coach. Saved only on this phone." else "Saved only in this chat.",
                     style = WindmillType.caption, color = colors.onSurfaceVariant,
                     textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
                 Box(Modifier.padding(start = 40.dp).size(width = 88.dp, height = 84.dp)) {
-                    CoachPhoto(store, key, photo, Modifier.offset(y = 12.dp).size(72.dp))
-                    if (!asking) Box(Modifier.offset(x = 44.dp, y = (-8).dp).size(48.dp), contentAlignment = Alignment.Center) {
+                    CoachPhoto(store, photo, Modifier.offset(y = 12.dp).size(72.dp))
+                    Box(Modifier.offset(x = 44.dp, y = (-8).dp).size(48.dp), contentAlignment = Alignment.Center) {
                         FilledIconButton(onClick = { if (editor.sync(hidden)) editor.removePhoto() },
                             enabled = enabled && !preparing, modifier = Modifier.size(32.dp),
                             colors = IconButtonDefaults.filledIconButtonColors(containerColor = colors.surfaceContainerHighest, contentColor = colors.onSurfaceVariant)) {
@@ -133,9 +130,6 @@ internal fun CoachComposer(store: CoachStore, key: String, seed: String, asking:
             }
         }
         if (preparing) Text("Preparing photo…", style = WindmillType.captionCompact, color = colors.onSurfaceVariant)
-        upload?.let {
-            LinearProgressIndicator(progress = { it }, modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Photo upload" })
-        }
         editor.trouble?.let { Text(it, style = WindmillType.detailCompact, color = colors.onSurfaceVariant) }
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.fillMaxWidth().padding(start = 4.dp, end = 12.dp, top = 8.dp, bottom = 8.dp)) {
@@ -174,12 +168,11 @@ internal fun CoachComposer(store: CoachStore, key: String, seed: String, asking:
                                     focus.clearFocus()
                                     keyboard?.hide()
                                     onSend(next.text.trim(), next.photo)
-                                    if (!retainDraft) editor.keep(CoachDraft())
                                 }
                             }
                         }) {
                         Icon(painterResource(if (asking) R.drawable.gym_coach_stop else R.drawable.gym_coach_send),
-                            if (asking) if (upload != null) "Cancel upload" else "Stop response" else "Send", Modifier.size(24.dp))
+                            if (asking) "Stop response" else "Send", Modifier.size(24.dp))
                     }
                 }
             }
@@ -187,7 +180,7 @@ internal fun CoachComposer(store: CoachStore, key: String, seed: String, asking:
     }
 }
 
-private class CoachDraftEditor(private val store: CoachStore, private val key: String, private var hidden: Boolean) {
+private class CoachDraftEditor(private val store: CoachChats, private val key: String, private var hidden: Boolean) {
     private val account = store.accountKey
     var draft by mutableStateOf(store.draft(key))
         private set
@@ -245,16 +238,17 @@ private class CoachDraftEditor(private val store: CoachStore, private val key: S
 }
 
 @Composable
-internal fun CoachPhoto(store: CoachStore, threadId: String, photo: CoachAttachment, modifier: Modifier = Modifier) {
+internal fun CoachPhoto(store: CoachChats, photo: CoachAttachment, modifier: Modifier = Modifier, onThisPhone: Boolean = true) {
     val colors = MaterialTheme.colorScheme
-    var bitmap by remember(store.accountKey, threadId, photo.id) { mutableStateOf<android.graphics.Bitmap?>(null) }
-    var failure by remember(store.accountKey, threadId, photo.id) { mutableStateOf(false) }
+    var bitmap by remember(store.accountKey, photo.id) { mutableStateOf<android.graphics.Bitmap?>(null) }
+    var failure by remember(store.accountKey, photo.id) { mutableStateOf(false) }
     var attempt by remember { mutableIntStateOf(0) }
     var expanded by remember { mutableStateOf(false) }
-    LaunchedEffect(store.accountKey, threadId, photo.id, attempt) {
+    LaunchedEffect(store.accountKey, photo.id, attempt, onThisPhone) {
         failure = false
+        if (!onThisPhone) return@LaunchedEffect
         try {
-            val bytes = store.photo(threadId, photo)
+            val bytes = store.photo(photo.id)
             bitmap = withContext(Dispatchers.Default) {
                 var sample = 1
                 while (photo.width / sample > 1024 || photo.height / sample > 1024) sample *= 2

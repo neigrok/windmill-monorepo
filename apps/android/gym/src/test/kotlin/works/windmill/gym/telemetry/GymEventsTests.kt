@@ -113,7 +113,7 @@ class GymEventsTests {
     }
 
     @Test fun coachArchiveActionsAndDeletionDialogRejectContentAndUnboundedLabels() {
-        val steps = listOf("fresh_entry", "history_open", "draft_restored", "reply_open", "read_sources", "copy", "jump_latest", "choose", "continue_draft")
+        val steps = listOf("fresh_entry", "history_open", "draft_restored", "reply_open", "read_sources", "copy", "jump_latest", "continue_draft")
         val allowed = steps.map { mapOf("screen" to "coach", "action" to it, "outcome" to "ok") } +
             listOf(mapOf("screen" to "coach", "action" to "copy", "outcome" to "failed")) +
             listOf("available", "bound", "unavailable").map { mapOf("screen" to "coach", "action" to "access", "outcome" to it) } +

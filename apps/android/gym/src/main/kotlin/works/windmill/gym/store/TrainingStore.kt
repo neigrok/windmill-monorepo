@@ -9,9 +9,11 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
-import works.windmill.gym.coach.CoachStore
+import works.windmill.gym.coach.AnonymousCoachAccess
+import works.windmill.gym.coach.CoachChats
+import works.windmill.gym.coach.CoachConversations
 import works.windmill.gym.coach.LocalCoach
-import works.windmill.gym.coach.onboarding.CoachOnboardingStore
+import works.windmill.gym.coach.onboarding.CoachRoutineImports
 import works.windmill.gym.coach.turn.CoachTurns
 import works.windmill.gym.net.GymRest
 import works.windmill.gym.presentation.Ids
@@ -24,7 +26,7 @@ import works.windmill.sync.engine.Pulls
 
 // The gym's training, one feature store per screen family over one seat. This is where the stores are composed and
 // where they move together: a change of account, an engine refresh, a restore, a transition and an erased owner.
-// Main-thread state; Coach owns its conversations, drafts and network requests.
+// Main-thread state; Coach's turns run in `coachTurns`, its conversations are engine records, and `coach` holds its chats on this phone.
 class TrainingStore(
     private val controls: WorkoutControls,
     private val training: EngineTraining,
@@ -39,11 +41,11 @@ class TrainingStore(
     workoutClock: WorkoutClock = WorkoutClock { val at = now(); WorkoutMoment(at, at, "local") },
     workoutAuthority: (String?) -> Boolean = { true },
     telemetry: Telemetry = Telemetry.None,
-    elapsedNanos: () -> Long = System::nanoTime,
     localCoach: LocalCoach? = null,
-    coachOnboarding: CoachOnboardingStore? = null,
-    // The phone Coach's turns, which no screen sends yet.
+    coachImports: CoachRoutineImports? = null,
+    coachAccess: suspend () -> AnonymousCoachAccess = { AnonymousCoachAccess.Unavailable },
     val coachTurns: CoachTurns? = null,
+    coachStorage: CoroutineDispatcher = Dispatchers.IO,
     readDispatcher: CoroutineDispatcher = Dispatchers.Default,
     // Asks the sync runtime for the account's copy again; false when it is not pulling.
     pullAgain: suspend () -> Boolean = { false },
@@ -62,11 +64,12 @@ class TrainingStore(
         workoutClock, refresh = ::refreshEngine)
     val deletions = DeletionsStore(seat, held, controls, training, bodyweight, routines, notes, workout, scope, telemetry, now,
         undoWindowMs)
-    val coach = CoachStore(
+    val conversations = CoachConversations(seat, training, telemetry) { name -> coachTurns?.catalog?.value?.ability(name) }
+    val coach = CoachChats(
         accountOwner = { seat.owner },
         onProgramChanged = { scope.launch { seat.tried("gym.refreshWorkout") { routines.readProgram() } } },
-        rest = rest, localCoach = localCoach, telemetry = telemetry, elapsedNanos = elapsedNanos, scope = scope,
-        onboarding = coachOnboarding,
+        conversations = conversations, turns = coachTurns, localCoach = localCoach, imports = coachImports, access = coachAccess,
+        telemetry = telemetry, scope = scope, storageDispatcher = coachStorage, now = now, seatReplica = { seat.replica },
     )
 
     private var connecting = false
@@ -157,7 +160,7 @@ class TrainingStore(
             history.forgetSeat()
             deletions.forgetSeat(sameWeightSeat)
             notes.forgetSeat()
-            coach.resetThreads()
+            coach.forgetSeat()
             sharing.forgetSeat()
         }
         if (connecting) return
@@ -219,6 +222,7 @@ class TrainingStore(
         }
         scope.launch { engine.status.state.collect { refreshes.trySend(Unit) } }
         history.observePulls()
+        scope.launch { conversations.observe() }
         scope.launch { engine.notices("gym").notices.collect { refreshes.trySend(Unit) } }
         scope.launch { engine.offers.offers.collect { refreshes.trySend(Unit) } }
         for (type in listOf("exercise", "exerciseName", "routine", "routineCreation", "session", "set", "prefs", "note", "weighin", "proposal"))

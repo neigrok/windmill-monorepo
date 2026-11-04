@@ -42,6 +42,9 @@ import works.windmill.gym.store.TrainingRefused
 import works.windmill.sync.api.ViewMode
 import works.windmill.sync.core.Json
 
+// A call the turn makes of itself at its opening, before the model has asked for anything (Coach §4.1 step 3).
+const val contextCallPrefix = "context-"
+
 // What gym does in one turn, on the replica the turn opened on (Coach §4.1 steps 3-5, §4.3, §4.4). It holds the turn's records and seat, and every step is one transaction on the storage dispatcher that cancellation never cuts short: a commit in flight lands, and whoever abandoned the turn reads the record again.
 class GymTurnHost(
     private val turn: OpenTurn.Turn,
@@ -70,7 +73,7 @@ class GymTurnHost(
         val outcomes = mutableListOf<ToolOutcome>()
         var bytes = 0
         for ((name, input) in reads) {
-            val call = ToolCall("context-$name", name, input)
+            val call = ToolCall(contextCallPrefix + name, name, input)
             val answered = ability(call)
             outcomes += tool(call, answered)
             if (answered is AbilityOutcome.Result && bytes + answered.jcs.size <= CoachTurnBounds.contextReadBytes) {

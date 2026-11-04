@@ -8,7 +8,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
-import java.io.IOException
+import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -27,10 +27,16 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import works.windmill.gym.GymRoom
-import works.windmill.gym.coach.AskThread
+import works.windmill.gym.coach.ConversationRow
+import works.windmill.gym.coach.LocalCoach
 import works.windmill.gym.coach.Threads
 import works.windmill.gym.coach.ThreadsBinding
 import works.windmill.gym.coach.ThreadsScreen
+import works.windmill.gym.coach.heldConversation
+import works.windmill.gym.coach.heldThreads
+import works.windmill.gym.coach.turn.ScriptedTurns
+import works.windmill.gym.domain.coach.CoachThread
+import works.windmill.gym.domain.coach.DeleteConversation
 import works.windmill.gym.net.FakeGymRest
 import works.windmill.gym.presentation.Readout
 import works.windmill.gym.presentation.RoutineDraft
@@ -40,10 +46,22 @@ import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.Older
 import works.windmill.gym.store.Withheld
+import works.windmill.domain.kit.ActionContext
+import works.windmill.domain.kit.ActionRunner
+import works.windmill.domain.kit.FixedZone
+import works.windmill.domain.kit.Id
+import works.windmill.domain.kit.Outcome
 import works.windmill.platform.Account
 import works.windmill.platform.User
-import works.windmill.platform.net.Refusal
-import works.windmill.platform.net.WindmillApiException
+import works.windmill.platform.telemetry.Telemetry
+import works.windmill.sync.api.Change
+import works.windmill.sync.api.CommitOutcome
+import works.windmill.sync.api.Gesture
+import works.windmill.sync.api.NewID
+import works.windmill.sync.core.Json
+import works.windmill.sync.core.RecordID
+import works.windmill.sync.core.ScopeRef
+import works.windmill.sync.schema.Gym
 
 // `docs/design/guidelines/system-architecture.md` §3: a window decides which ROWS are drawn; it never decides what state a
 // screen is in. The three rooms below each read a list the withheld window thins, and each of them
@@ -81,10 +99,12 @@ class StanceReadsTheAccountTests {
 
     private fun room(
         scope: CoroutineScope,
-        rest: FakeGymRest = FakeGymRest(),
         undoWindowMs: Long = Withheld.windowMs,
         startingAt: Long = 1_800_000_000_000L,
-    ): EngineRoomFixture = EngineRoomFixture(tmp.newFolder(), scope, rest = rest, undoWindowMs = undoWindowMs).also { room ->
+        localCoach: LocalCoach? = null,
+        telemetry: Telemetry = Telemetry.None,
+    ): EngineRoomFixture = EngineRoomFixture(tmp.newFolder(), scope, rest = FakeGymRest(), undoWindowMs = undoWindowMs,
+        telemetry = telemetry, localCoach = localCoach, coachServer = ScriptedTurns(emptyList())).also { room ->
         rooms += room
         room.now = startingAt
         runBlocking {
@@ -160,18 +180,19 @@ class StanceReadsTheAccountTests {
     @Test
     fun theThreadsRoomReadsTheAccountAndADeletedConversationNeverComesBack() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-        val server = FakeGymRest()
-        server.conversations["thr_1"] = AskThread(id = "thr_1", title = "why is my bench stalled?")
-        val store = room(scope, server).store
+        val room = room(scope)
+        val store = room.store
+        val thread = room.heldConversation("why is my bench stalled?")
+        store.observeEngine()
         val threads = ThreadsBinding(store.coach)
         compose.setContent { ThreadsScreen(threads, threads, "Coach", {}, {}, {}) }
-        compose.onNodeWithText("why is my bench stalled?").assertIsDisplayed()
-        val deleted = compose.runOnIdle { scope.async { store.coach.deleteThread("thr_1") } }
+        compose.waitUntil(5_000) { compose.onAllNodesWithText("why is my bench stalled?").fetchSemanticsNodes().isNotEmpty() }
+        val deleted = compose.runOnIdle { scope.async { store.coach.deleteThread(thread) } }
         compose.waitUntil(5_000) { deleted.isCompleted }
         assertEquals(GymResult.Ok(Unit), runBlocking { deleted.await() })
         compose.runOnIdle {
-            assertEquals(emptyList<AskThread>(), store.coach.allThreads)
-            assertEquals(emptySet<String>(), server.conversations.keys)
+            assertEquals(emptyList<ConversationRow>(), store.coach.history)
+            assertEquals(emptyList<CoachThread>(), room.heldThreads())
             assertEquals(emptyList<Any>(), store.held.withheld)
         }
         compose.onNodeWithText(Threads.none).assertIsDisplayed()
@@ -215,44 +236,49 @@ class StanceReadsTheAccountTests {
     }
 
     @Test
-    fun aFailedHistoryRefreshKeepsOwnerScopedRowsUnderTheFailureLine() {
-        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val server = FakeGymRest()
-        server.conversations["thr_1"] = AskThread(id = "thr_1", title = "why is my bench stalled?")
-        val store = room(scope, server).store
-        runBlocking { store.coach.readThreads() }
-        server.refuseThreads = IOException("offline")
-
+    fun anUnreadableRecordCostsThatRecordAndKeepsTheRowsAndIsReportedOnce() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+        val failures = mutableListOf<String>()
+        val telemetry = object : Telemetry {
+            override fun event(name: String, properties: Map<String, String>) = Unit
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { failures += operation + ":" + error.message }
+        }
+        val room = room(scope, telemetry = telemetry)
+        val store = room.store
+        val thread = room.heldConversation("why is my bench stalled?", "Hold the load.")
+        assertTrue(room.engine.commit(ScopeRef(Gym.scope), Gesture(listOf(Change.create(Gym.Types.message, NewID.Given(RecordID("msgLaterBuild0001")), mapOf(
+            "threadId" to Json.of(thread), "role" to Json.of("coach"), "at" to Json.of(room.now), "text" to Json.of("private answer"),
+            "calls" to Json.parse("""[{"callId":"c1","name":"a_later_ability","outcome":"a later outcome","created":[],"read":{"sessions":[],"sets":[],"weeks":[]}}]""")))))) is CommitOutcome.Committed)
+        store.observeEngine()
         val threads = ThreadsBinding(store.coach)
-        compose.setContent {
-            ThreadsScreen(state = threads, events = threads, backTo = "Coach", onBack = {}, onOpen = {},
-                onAskNew = {})
-        }
-
-        compose.onNodeWithText(Threads.outOfReach).assertIsDisplayed()
-        compose.onNodeWithText("why is my bench stalled?").assertIsDisplayed()
-        compose.onNodeWithText("Your conversations").assertDoesNotExist()
+        compose.setContent { ThreadsScreen(state = threads, events = threads, backTo = "Coach", onBack = {}, onOpen = {}, onAskNew = {}) }
+        compose.waitUntil(5_000) { compose.onAllNodesWithText("why is my bench stalled?").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("Hold the load.").assertIsDisplayed()
         compose.onNodeWithText(Threads.none).assertDoesNotExist()
-        compose.runOnIdle {
-            assertEquals("the owner-scoped archive retains the received conversation",
-                listOf("thr_1"), store.coach.allThreads.map { it.id })
-        }
+        compose.runOnIdle { assertEquals(listOf(ConversationRow(thread, "why is my bench stalled?", store.coach.history.single().askedAtMs, answerPreview = "Hold the load.")), store.coach.history) }
+        assertEquals(listOf("gym.readConversation:coach-record-unreadable"), failures)
         scope.cancel()
     }
 
     @Test
     fun anAlreadyDeletedConversationStillLeavesTheLocalArchive() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-        val server = FakeGymRest()
-        server.conversations["thr_1"] = AskThread(id = "thr_1", title = "why is my bench stalled?")
-        val store = room(scope, server).store
-        runBlocking { store.coach.readThreads() }
-        server.refuseThreads = WindmillApiException.Refused(404, Refusal(message = "no such conversation"))
-        val deleted = scope.async { store.coach.deleteThread("thr_1") }
+        val disk = LocalCoach(File(tmp.newFolder(), LocalCoach.fileName))
+        val room = room(scope, localCoach = disk)
+        val store = room.store
+        val thread = room.heldConversation("why is my bench stalled?")
+        store.coach.selectChat(thread)
+        assertEquals(listOf(thread), disk.chats("u1").map { it.id })
+        // Another phone deleted it, and that delete has reached this one.
+        val elsewhere = ActionRunner(room.engine, room.engine.registry, FixedZone(0), object : ActionContext { override var insideRun = false })
+        assertTrue(elsewhere.run(DeleteConversation(Id(thread, CoachThread))) is Outcome.Committed)
+        val deleted = scope.async { store.coach.deleteThread(thread) }
         org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
         assertTrue(deleted.isCompleted)
         assertEquals(GymResult.Ok(Unit), runBlocking { deleted.await() })
-        assertEquals(emptyList<AskThread>(), store.coach.allThreads)
+        assertEquals(emptyList<ConversationRow>(), store.coach.history)
+        assertEquals(emptyList<String>(), disk.chats("u1").map { it.id })
+        assertNull(store.coach.selectedChatId)
         assertEquals(emptyList<Any>(), store.held.withheld)
         scope.cancel()
     }

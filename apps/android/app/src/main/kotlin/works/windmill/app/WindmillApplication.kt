@@ -5,10 +5,9 @@ import works.windmill.platform.you.AccountDeletionStore
 import works.windmill.platform.you.AccountDeletionHttp
 import works.windmill.platform.you.DeletionIdentity
 import works.windmill.gym.coach.LocalCoach
+import works.windmill.gym.coach.anonymousCoachAccess
 import works.windmill.gym.telemetry.GymEvents
-import works.windmill.gym.coach.onboarding.CoachOnboardingHttp
 import works.windmill.gym.coach.onboarding.CoachOnboardingSeat
-import works.windmill.gym.coach.onboarding.CoachOnboardingStore
 import works.windmill.gym.coach.onboarding.CoachRoutineImports
 import works.windmill.gym.coach.turn.CoachTurns
 import works.windmill.gym.coach.turn.TurnLease
@@ -80,10 +79,6 @@ class WindmillApplication : Application(), WorkoutNotificationHost, WorkoutTileH
         private set
     lateinit var engineSession: GymEngineSession
         private set
-    lateinit var coachOnboarding: CoachOnboardingStore
-        private set
-    lateinit var coachImports: CoachRoutineImports
-        private set
     lateinit var onboardingLaunch: OnboardingLaunch
         private set
     override lateinit var workoutNotifications: WorkoutNotifications
@@ -139,8 +134,7 @@ class WindmillApplication : Application(), WorkoutNotificationHost, WorkoutTileH
             if (accountWritable() && sessions.localSession == LocalSession.Absent && training.anonymous)
                 CoachOnboardingSeat(localCoach.anonymousOwner(), engine.activeReplica()) else null
         }
-        coachOnboarding = CoachOnboardingStore(localCoach, installation, CoachOnboardingHttp(baseUrl, telemetry), anonymousSeat, scope, telemetry)
-        coachImports = CoachRoutineImports(engine, anonymousSeat, scope, telemetry)
+        val coachImports = CoachRoutineImports(engine, anonymousSeat, scope, telemetry)
         turnLease = TurnLease(this, telemetry)
         val coachTurns = CoachTurns.onThisDevice(this, training, baseUrl, coachClient, installation,
             accountToken = { (sessions.localSession as? LocalSession.Owned)?.let { sessions.read() } }, turnLease, telemetry, scope)
@@ -157,7 +151,8 @@ class WindmillApplication : Application(), WorkoutNotificationHost, WorkoutTileH
                 }
             }, telemetry = telemetry,
             localCoach = localCoach,
-            coachOnboarding = coachOnboarding,
+            coachImports = coachImports,
+            coachAccess = { anonymousCoachAccess(installation, anonymousSeat, telemetry) },
             coachTurns = coachTurns,
             pullAgain = syncRuntime::pullAgain, pulls = syncRuntime.pulls,
         )
@@ -199,10 +194,10 @@ class WindmillApplication : Application(), WorkoutNotificationHost, WorkoutTileH
                 if (credential != null) engineStorage.delete(pending.user.id)
                 auth.completeAccountDeletion(pending.user, pending.credential)
             }, telemetry = telemetry)
-        scope.launch {
-            try { if (!deletionPending()) store.coach.resumeAnonymous() }
+        scope.launch(Dispatchers.IO) {
+            try { localCoach.settle() }
             catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
-            catch (_: Exception) { telemetry.failure("gym.coachOnboarding", java.io.IOException("Coach recovery could not be read.")) }
+            catch (_: Exception) { telemetry.failure("gym.restoreConversation", java.io.IOException("The Coach archive could not be settled.")) }
         }
         gym = GymRuntime(store, cachedOwner = { sessions.localSession.user?.id },
             authorityAvailable = { accountWritable() && sessions.localSession !is LocalSession.Unresolved },

@@ -50,7 +50,7 @@ class CoachBubbleTests {
         val answer = "First paragraph.\n\nSecond paragraph 🏋🏽‍♀️"
         compose.setContent { GymMaterial { CompositionLocalProvider(LocalTelemetry provides telemetry) {
             clipboard = LocalClipboard.current
-            Column { CoachQuestion(question); CoachAnswer(answer, null, emptyList(), 0) }
+            Column { CoachQuestion(question); CoachAnswer(answer, coachReply(answer), emptyList()) }
         } } }
         compose.onNodeWithText(question).performClick()
         compose.onNodeWithText("Copy question").assertDoesNotExist()
@@ -84,7 +84,7 @@ class CoachBubbleTests {
                 }
             }
             GymMaterial { CompositionLocalProvider(LocalTelemetry provides telemetry, LocalClipboard provides clipboard) {
-                CoachAnswer("Exact fixture answer", null, emptyList(), 0)
+                CoachAnswer("Exact fixture answer", coachReply("Exact fixture answer"), emptyList())
             } }
         }
         compose.onNodeWithText("Exact fixture answer").performTouchInput { longClick() }
@@ -121,7 +121,7 @@ class CoachBubbleTests {
                 }
             }
             GymMaterial { CompositionLocalProvider(LocalTelemetry provides telemetry, LocalClipboard provides clipboard) {
-                CoachAnswer("Exact fixture answer", null, emptyList(), 0)
+                CoachAnswer("Exact fixture answer", coachReply("Exact fixture answer"), emptyList())
             } }
         }
         val copy = compose.onNodeWithText("Exact fixture answer").fetchSemanticsNode().config[SemanticsActions.CustomActions].single()
@@ -149,7 +149,7 @@ class CoachBubbleTests {
         val displayed = "Try a top set. More on top sets."
         compose.setContent { GymMaterial { CompositionLocalProvider(LocalTelemetry provides telemetry) {
             clipboard = LocalClipboard.current
-            CoachAnswer("Try a top set. [More on top sets]($url).", null, emptyList(), 0)
+            CoachAnswer("Try a top set. [More on top sets]($url).", coachReply("Try a top set. [More on top sets]($url)."), emptyList())
         } } }
         val actions = compose.onNodeWithText(displayed).fetchSemanticsNode().config[SemanticsActions.CustomActions]
         assertEquals(listOf("Copy answer", "Copy link"), actions.map { it.label })
@@ -173,7 +173,7 @@ class CoachBubbleTests {
         val answer = mutableStateOf("[Read the plan](https://example.org/first)")
         compose.setContent { GymMaterial {
             clipboard = LocalClipboard.current
-            CoachAnswer(answer.value, null, emptyList(), 0)
+            CoachAnswer(answer.value, coachReply(answer.value), emptyList())
         } }
         val copyLink = compose.onNodeWithText("Read the plan").fetchSemanticsNode()
             .config[SemanticsActions.CustomActions].single { it.label == "Copy link" }
@@ -190,8 +190,8 @@ class CoachBubbleTests {
 
     @Test fun answersWithNoLinkOrSeveralLinksOnlyOfferCopyAnswer() {
         compose.setContent { GymMaterial { Column {
-            CoachAnswer("No links here.", null, emptyList(), 0)
-            CoachAnswer("[First](https://example.org/a) and [second](https://example.org/b).", null, emptyList(), 0)
+            CoachAnswer("No links here.", coachReply("No links here."), emptyList())
+            CoachAnswer("[First](https://example.org/a) and [second](https://example.org/b).", coachReply("[First](https://example.org/a) and [second](https://example.org/b)."), emptyList())
         } } }
         for (label in listOf("No links here.", "First and second.")) {
             val actions = compose.onNodeWithText(label).fetchSemanticsNode().config[SemanticsActions.CustomActions]
@@ -210,7 +210,7 @@ class CoachBubbleTests {
         }
         val displayed = "Read this plan."
         compose.setContent { GymMaterial { CompositionLocalProvider(LocalTelemetry provides telemetry) {
-            CoachAnswer("Read [this plan](https://example.org/plan).", null, emptyList(), 0)
+            CoachAnswer("Read [this plan](https://example.org/plan).", coachReply("Read [this plan](https://example.org/plan)."), emptyList())
         } } }
         val layout = mutableListOf<TextLayoutResult>()
         val text = compose.onNodeWithText(displayed, useUnmergedTree = true)
@@ -239,7 +239,7 @@ class CoachBubbleTests {
                 override suspend fun setClipEntry(clipEntry: ClipEntry?) { throw refusal }
             }
             GymMaterial { CompositionLocalProvider(LocalTelemetry provides telemetry, LocalClipboard provides clipboard) {
-                CoachAnswer("[Read the plan](https://example.org/private)", null, emptyList(), 0)
+                CoachAnswer("[Read the plan](https://example.org/private)", coachReply("[Read the plan](https://example.org/private)"), emptyList())
             } }
         }
         compose.onNodeWithText("Read the plan").performTouchInput { longClick() }
@@ -259,7 +259,7 @@ class CoachBubbleTests {
         val answer = "## Thursday · Push A\n\nKeep the same total work each week.\n\n- Bench — 3 × 3 at 90 kg\n\n| Movement | Sets | Load |\n| --- | --- | --- |\n| Incline Press | 3 × 10 | 24 kg |"
         compose.setContent { GymMaterial { Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
             CoachQuestion("What should Thursday look like?")
-            CoachAnswer(answer, null, emptyList(), 0)
+            CoachAnswer(answer, coachReply(answer), emptyList())
         } } }
         val question = compose.onNodeWithText("What should Thursday look like?").getUnclippedBoundsInRoot()
         val markdown = compose.onNodeWithText("Thursday · Push A").getUnclippedBoundsInRoot()

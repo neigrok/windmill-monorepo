@@ -1,6 +1,10 @@
 package works.windmill.gym.store
 
 import works.windmill.gym.coach.LocalCoach
+import works.windmill.gym.coach.turn.CoachTurns
+import works.windmill.gym.coach.turn.PictureFiles
+import works.windmill.gym.coach.turn.TurnPhone
+import works.windmill.gym.coach.turn.TurnPhoneInstallation
 import java.io.File
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -32,7 +36,8 @@ import works.windmill.sync.schema.Gym
 import works.windmill.sync.schema.SyncSchema
 
 // One phone over the memory engine, composed the way the application composes it: the training
-// store reads and writes through the engine, and only Coach, shares and credential lists reach REST.
+// store reads and writes through the engine, Coach's turns run on a scripted server when one is given,
+// and only shares and credential lists reach REST.
 internal class EngineRoomFixture(
     val directory: File,
     scope: CoroutineScope,
@@ -44,8 +49,10 @@ internal class EngineRoomFixture(
     private val workoutAuthority: (String?) -> Boolean = { true },
     private val writeAuthority: () -> Boolean = { true },
     private val localCoach: LocalCoach? = null,
-    private val coachOnboarding: works.windmill.gym.coach.onboarding.CoachOnboardingStore? = null,
-    private val elapsedNanos: () -> Long = System::nanoTime,
+    private val coachImports: ((Engine) -> works.windmill.gym.coach.onboarding.CoachRoutineImports)? = null,
+    private val coachAccess: suspend () -> works.windmill.gym.coach.AnonymousCoachAccess = { works.windmill.gym.coach.AnonymousCoachAccess.Unavailable },
+    coachServer: works.windmill.agent.TurnTransport? = null,
+    private val coachInstallation: works.windmill.platform.ai.AiInstallation? = null,
     private val mintRoutine: () -> String = Ids::routine,
     private val mintExercise: () -> String = Ids::exercise,
     private val controlsWrite: (File, String) -> Unit = AtomicDocument::write,
@@ -93,6 +100,11 @@ internal class EngineRoomFixture(
         intentResultWrites = EngineTraining.intentResultWrites, pendingDeviceWork = WorkoutImports.pendingDeviceWork,
         rewriteDeviceValue = WorkoutImports.rewriteDeviceValue)
     val training = EngineTraining(engine, writeAuthority = writeAuthority)
+    val coachTurns: CoachTurns? = coachServer?.let { server ->
+        val dispatcher = scope.coroutineContext[ContinuationInterceptor] as CoroutineDispatcher
+        CoachTurns(training, server, coachInstallation ?: TurnPhoneInstallation.onMemory(), { "account-token".takeIf { selected != null } },
+            PictureFiles { File(directory, "coach-pictures") }, lazy { TurnPhone.catalog() }, telemetry, {}, "https://windmill.works", this.scope, dispatcher)
+    }
     val controlsFile = File(directory, "control.json")
     val store = freshStore()
     // As in the application: the REST doors answer only while an account is signed in.
@@ -103,8 +115,8 @@ internal class EngineRoomFixture(
             scope, rest = { rest.takeIf { selected != null } }, now = { ++now }, mintSession = { "session${(++nextSession).toString().padStart(2, '0')}" },
             mintSet = Ids::set, mintRoutine = mintRoutine, mintExercise = mintExercise,
             undoWindowMs = undoWindowMs, workoutClock = workoutClock ?: WorkoutClock { val at = ++now; WorkoutMoment(at, at, "local") },
-            workoutAuthority = workoutAuthority, telemetry = telemetry, elapsedNanos = elapsedNanos, localCoach = localCoach,
-            readDispatcher = reads, coachOnboarding = coachOnboarding, pullAgain = pullAgain, pulls = pulls)
+            workoutAuthority = workoutAuthority, telemetry = telemetry, localCoach = localCoach,
+            readDispatcher = reads, coachImports = coachImports?.invoke(engine), coachAccess = coachAccess, coachTurns = coachTurns, coachStorage = dispatcher ?: Dispatchers.IO, pullAgain = pullAgain, pulls = pulls)
     }
     suspend fun seedFeedback(document: GymPreferences) {
         val fields = mapOf("confirmHaptic" to Json.of(document.confirmHaptic), "confirmSound" to Json.of(document.confirmSound))

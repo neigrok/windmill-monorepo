@@ -23,11 +23,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Text
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -46,16 +44,24 @@ import works.windmill.gym.ui.DeleteSwipeRow
 import works.windmill.gym.ui.DarkAndDaylight
 import works.windmill.gym.ui.GymPreview
 import works.windmill.platform.telemetry.LocalTelemetry
-import works.windmill.gym.presentation.Ids
+import works.windmill.gym.presentation.Proposal
 import works.windmill.gym.store.GymResult
 import kotlinx.coroutines.launch
 
-// What the conversation list draws.
+object Threads {
+    const val title = "History"
+    const val open = "New chat"
+    const val conversation = "Conversation"
+    const val none = "No conversations"
+}
+
+// What the conversation list draws. `reading` holds the empty line back until the first read of the engine has landed.
 @Stable
 interface ThreadsState {
     val accountKey: String
-    val threads: List<AskThread>
-    val nextThreadCursor: String?
+    val threads: List<ConversationRow>
+    val reading: Boolean
+    fun nowMs(): Long
     fun draft(id: String): CoachDraft
     fun draftSaved(id: String): Boolean
     fun isAsking(id: String): Boolean
@@ -63,23 +69,23 @@ interface ThreadsState {
 
 // What the conversation list asks of Coach.
 interface ThreadsEvents {
-    suspend fun readThreads(cursor: String? = null): GymResult<List<AskThread>>
+    fun watching(on: Boolean)
     suspend fun deleteThread(id: String): GymResult<Unit>
 }
 
-// The conversation list over Coach's store.
-class ThreadsBinding(private val coach: CoachStore) : ThreadsState, ThreadsEvents {
+// The conversation list over Coach's chats.
+class ThreadsBinding(private val coach: CoachChats) : ThreadsState, ThreadsEvents {
     override val accountKey: String get() = coach.accountKey
-    override val threads: List<AskThread> get() = coach.allThreads
-    override val nextThreadCursor: String? get() = coach.nextThreadCursor
+    override val threads: List<ConversationRow> get() = coach.history
+    override val reading: Boolean get() = coach.conversations?.rows == null
+    override fun nowMs(): Long = coach.now()
     override fun draft(id: String): CoachDraft = coach.draft(id)
     override fun draftSaved(id: String): Boolean = coach.draftSaved(id)
     override fun isAsking(id: String): Boolean = coach.isAsking(id)
-    override suspend fun readThreads(cursor: String?): GymResult<List<AskThread>> = coach.readThreads(cursor)
+    override fun watching(on: Boolean) { coach.conversations?.watchHistory(on) }
     override suspend fun deleteThread(id: String): GymResult<Unit> = coach.deleteThread(id)
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ThreadsScreen(
     state: ThreadsState,
@@ -92,21 +98,15 @@ fun ThreadsScreen(
     val colors = MaterialTheme.colorScheme
     val gymColors = MaterialTheme.gymColors
     val telemetry = LocalTelemetry.current
-    val nowMs = System.currentTimeMillis()
+    val nowMs = state.nowMs()
     val scope = rememberCoroutineScope()
-    var attempt by remember { mutableIntStateOf(0) }
-    var loading by remember { mutableStateOf(false) }
     var failure by remember(state.accountKey) { mutableStateOf<String?>(null) }
     var confirming by remember(state.accountKey) { mutableStateOf<String?>(null) }
     var deleting by remember(state.accountKey) { mutableStateOf(emptySet<String>()) }
 
-    LaunchedEffect(state.accountKey, attempt) {
-        loading = true
-        failure = when (val read = events.readThreads()) {
-            is GymResult.Ok -> null
-            is GymResult.Failed -> read.why.line("your conversations are out of reach")
-        }
-        loading = false
+    DisposableEffect(events) {
+        events.watching(true)
+        onDispose { events.watching(false) }
     }
 
     fun requestDelete(id: String) {
@@ -122,46 +122,31 @@ fun ThreadsScreen(
 
     GymScreen(title = Threads.title, onBack = onBack, backTo = backTo) {
         Box(Modifier.fillMaxSize()) {
-            PullToRefreshBox(isRefreshing = loading, onRefresh = { attempt++ }) {
-                LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(top = 8.dp, bottom = 88.dp)) {
-                    failure?.let { line -> item("failure") {
-                        Text(line, style = GymType.coachLine, color = colors.onSurfaceVariant, modifier = Modifier.padding(16.dp))
-                    } }
-                    val held = state.threads.filterNot { it.id in deleting }
-                    if (!loading && held.isEmpty() && failure == null) item("none") {
-                        Text(Threads.none, style = GymType.coachNone, color = colors.onSurfaceVariant, modifier = Modifier.padding(16.dp))
-                    }
-                    items(held, key = { it.id }) { thread ->
-                        DeleteSwipeRow(actionLabel = "Delete conversation", onDelete = { requestDelete(thread.id); false }) {
-                            val draft = state.draft(thread.id)
-                            val preview = when {
-                                state.isAsking(thread.id) || thread.generation?.status == "running" -> "Answering…"
-                                draft.text.isNotBlank() || draft.photo != null -> if (state.draftSaved(thread.id)) "Draft · saved on this device" else "Draft"
-                                else -> thread.outcome.detail?.replaceFirstChar { it.uppercase() }
-                                    ?: CoachMarkdown.plain(thread.answerPreview)
-                            }
-                            ListItem(
-                                headlineContent = { Text(thread.title, style = GymType.coachTitle) },
-                                supportingContent = preview.takeIf { it.isNotBlank() }?.let { { Text(it, style = GymType.coachSupporting, maxLines = 2) } },
-                                trailingContent = { thread.day(nowMs)?.let { Text(it.replaceFirstChar { c -> c.uppercase() }, style = GymType.coachSupporting) } },
-                                colors = ListItemDefaults.colors(containerColor = colors.surface, headlineColor = colors.onSurface,
-                                    supportingColor = colors.onSurfaceVariant, trailingIconColor = colors.onSurfaceVariant),
-                                modifier = Modifier.clickable(role = Role.Button, onClickLabel = "Open conversation") { onOpen(thread.id) },
-                            )
+            LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(top = 8.dp, bottom = 88.dp)) {
+                failure?.let { line -> item("failure") {
+                    Text(line, style = GymType.coachLine, color = colors.onSurfaceVariant, modifier = Modifier.padding(16.dp))
+                } }
+                val held = state.threads.filterNot { it.id in deleting }
+                if (!state.reading && held.isEmpty() && failure == null) item("none") {
+                    Text(Threads.none, style = GymType.coachNone, color = colors.onSurfaceVariant, modifier = Modifier.padding(16.dp))
+                }
+                items(held, key = { it.id }) { thread ->
+                    DeleteSwipeRow(actionLabel = "Delete conversation", onDelete = { requestDelete(thread.id); false }) {
+                        val draft = state.draft(thread.id)
+                        val preview = when {
+                            thread.answering || state.isAsking(thread.id) -> "Answering…"
+                            draft.text.isNotBlank() || draft.photo != null -> if (state.draftSaved(thread.id)) "Draft · saved on this device" else "Draft"
+                            else -> CoachMarkdown.plain(thread.answerPreview)
                         }
+                        ListItem(
+                            headlineContent = { Text(thread.title, style = GymType.coachTitle) },
+                            supportingContent = preview.takeIf { it.isNotBlank() }?.let { { Text(it, style = GymType.coachSupporting, maxLines = 2) } },
+                            trailingContent = { thread.day(nowMs)?.let { Text(it.replaceFirstChar { c -> c.uppercase() }, style = GymType.coachSupporting) } },
+                            colors = ListItemDefaults.colors(containerColor = colors.surface, headlineColor = colors.onSurface,
+                                supportingColor = colors.onSurfaceVariant, trailingIconColor = colors.onSurfaceVariant),
+                            modifier = Modifier.clickable(role = Role.Button, onClickLabel = "Open conversation") { onOpen(thread.id) },
+                        )
                     }
-                    state.nextThreadCursor?.let { cursor -> item("older") {
-                        CoachAction(if (loading) "Reading conversations…" else "Earlier conversations", enabled = !loading, onClick = {
-                            loading = true
-                            scope.launch {
-                                failure = when (val read = events.readThreads(cursor)) {
-                                    is GymResult.Ok -> null
-                                    is GymResult.Failed -> read.why.line("your conversations are out of reach")
-                                }
-                                loading = false
-                            }
-                        })
-                    } }
                 }
             }
             ExtendedFloatingActionButton(
@@ -203,9 +188,8 @@ fun ThreadScreen(
     lookedAt: Set<String>,
     backTo: String,
     onBack: () -> Unit,
-    onReview: (ThreadProposal) -> Unit,
+    onReview: (Proposal) -> Unit,
     say: (String?) -> Unit,
-    onAskNew: () -> Unit = onBack,
     origin: String = "https://windmill.works",
     onThreads: () -> Unit = onBack,
     onConnections: (() -> Unit)? = null,
@@ -217,105 +201,65 @@ fun ThreadScreen(
     onSignIn: (() -> Unit)? = null,
     onBuildRoutine: (() -> Unit)? = null,
 ) {
-    val scope = rememberCoroutineScope()
     val coach = state.coach
     val chat = coach.chat(threadId)
-    val history = chat?.history
-    val conversation = chat?.exchanges.orEmpty()
-    val asking = coach.isAsking(threadId)
-    val upload = coach.upload(threadId)
-    val cap = AskCap.entries.firstOrNull { it.name == chat?.cap }
-    var failure by remember(threadId, coach.accountKey) { mutableStateOf<String?>(null) }
-    var attempt by remember(threadId) { mutableIntStateOf(0) }
-    var olderBusy by remember(threadId) { mutableStateOf(false) }
 
-    fun ask(question: String, requestId: String = Ids.thread(), photo: CoachAttachment? = null) {
-        if (!coach.submit(threadId, question, photo, requestId)) say("Your message couldn’t be saved. Try again.")
+    LaunchedEffect(threadId, coach.accountKey) {
+        if (coach.selectedChatId != threadId) coach.selectChat(threadId)
     }
 
-    LaunchedEffect(threadId, coach.accountKey, attempt) {
-        failure = null
-        olderBusy = true
-        try {
-            if (coach.selectedChatId != threadId) coach.selectChat(threadId)
-            when (val read = coach.thread(threadId)) {
-                is GymResult.Ok -> coach.resumeChats()
-                is GymResult.Failed -> failure = read.why.line("that conversation didn’t open")
-            }
-        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
-        catch (_: Exception) { failure = "that conversation didn’t open" }
-        finally { olderBusy = false }
-    }
-
-    if (chat == null || (failure != null && chat.history == null && chat.exchanges.isEmpty())) {
+    if (chat == null) {
         GymScreen(title = Threads.conversation, onBack = onBack, backTo = backTo) {
             Column(Modifier.padding(GymLayout.gutter)) {
-                Text(failure ?: "Reading conversation…", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                if (failure != null) CoachAction("Try again", { attempt++ })
+                Text("Reading conversation…", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
         return
     }
     AskScreen(
-        state = state, events = events, thread = conversation, conversationId = threadId,
-        receipts = receipts, lookedAt = lookedAt, asking = asking, cap = cap,
-        onAsk = { ask(it) }, onPhotoAsk = { text, photo -> ask(text, photo = photo) },
-        onStop = if (coach.anonymous) null else ({ coach.stopChat(threadId) }), upload = upload,
-        onRetry = { ask(it.question, it.requestId.ifEmpty { Ids.thread() }, it.attachments.firstOrNull()) },
-        onAskNew = onAskNew, seed = "", origin = origin, backTo = backTo, onBack = onBack, seat = seat, composerEnabled = composerEnabled,
-        composerVisible = !coach.anonymous || coach.anonymousAccess == works.windmill.gym.coach.onboarding.AnonymousCoachAccess.Available,
+        state = state, events = events, thread = coach.exchanges(threadId), conversationId = threadId,
+        receipts = receipts, lookedAt = lookedAt, asking = coach.isAsking(threadId), refusal = coach.refusal(threadId),
+        onAsk = { question, photo -> if (!coach.send(threadId, question, photo)) say("Your message couldn’t be saved. Try again.") },
+        onStop = { coach.stop() }, seed = "", origin = origin, seat = seat, composerEnabled = composerEnabled,
+        composerVisible = !coach.anonymous || coach.anonymousAccess == AnonymousCoachAccess.Available,
         onSignIn = onSignIn,
         onBuildRoutine = onBuildRoutine,
         onThreads = onThreads, onConnections = onConnections, onOpenRoutine = onOpenRoutine,
         onOpenWorkout = onOpenWorkout, onOpenChat = onOpenChat,
-        onReview = { onReview(ThreadProposal(it.id, it.state, it.changeCount, it.routineId, it.routineName, it.createdAtMs)) },
-        onOlder = history?.nextCursor?.let { cursor -> {
-            if (!olderBusy) {
-                olderBusy = true
-                scope.launch {
-                    when (val read = coach.readOlderChat(threadId, cursor)) {
-                        is GymResult.Ok -> failure = null
-                        is GymResult.Failed -> failure = read.why.line("Earlier messages didn’t open.")
-                    }
-                    olderBusy = false
-                }
-            }
-        } },
-        olderBusy = olderBusy, historyFailure = failure,
-        proposalIds = history?.proposals.orEmpty().map { it.id },
+        onReview = onReview,
     )
 }
 
 private data class PreviewThreads(
-    override val threads: List<AskThread>,
+    override val threads: List<ConversationRow>,
     override val accountKey: String = "preview-lifter",
-    override val nextThreadCursor: String? = null,
+    override val reading: Boolean = false,
 ) : ThreadsState {
+    override fun nowMs(): Long = System.currentTimeMillis()
     override fun draft(id: String): CoachDraft = CoachDraft()
     override fun draftSaved(id: String): Boolean = true
     override fun isAsking(id: String): Boolean = false
 }
 
 private object PreviewThreadsEvents : ThreadsEvents {
-    override suspend fun readThreads(cursor: String?): GymResult<List<AskThread>> = GymResult.Ok(emptyList())
+    override fun watching(on: Boolean) = Unit
     override suspend fun deleteThread(id: String): GymResult<Unit> = GymResult.Ok(Unit)
 }
 
 @Composable
-private fun ThreadsPreview(threads: List<AskThread>) {
+private fun ThreadsPreview(threads: List<ConversationRow>) {
     GymPreview {
         ThreadsScreen(PreviewThreads(threads), PreviewThreadsEvents, backTo = "Coach", onBack = {}, onOpen = {}, onAskNew = {})
     }
 }
 
-private val previewThreads: List<AskThread> get() {
+private val previewThreads: List<ConversationRow> get() {
     val now = System.currentTimeMillis()
     return listOf(
-        AskThread("preview-1", "Can you add a second leg day to my week?", askedAtMs = now - 3_600_000,
-            outcome = ThreadOutcome(ThreadOutcome.applied, changes = 2, routine = "Legs B")),
-        AskThread("preview-2", "My left shoulder clicks on overhead press", askedAtMs = now - 86_400_000,
+        ConversationRow("preview-1", "Can you add a second leg day to my week?", now - 3_600_000, answering = true),
+        ConversationRow("preview-2", "My left shoulder clicks on overhead press", now - 86_400_000,
             answerPreview = "Swap to a landmine press for two weeks and keep the load where it stays pain-free."),
-        AskThread("preview-3", "How long should I rest between heavy squat sets?", askedAtMs = now - 6 * 86_400_000,
+        ConversationRow("preview-3", "How long should I rest between heavy squat sets?", now - 6 * 86_400_000,
             answerPreview = "Three to five minutes on your top sets; two is enough on back-off sets."),
     )
 }

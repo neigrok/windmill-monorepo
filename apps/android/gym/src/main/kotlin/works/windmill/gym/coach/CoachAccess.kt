@@ -2,7 +2,6 @@ package works.windmill.gym.coach
 
 import works.windmill.gym.ui.GymType
 import androidx.compose.material3.MaterialTheme
-import android.text.format.DateFormat
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -15,22 +14,21 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
-import java.time.Instant
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
-import java.time.format.FormatStyle
-import java.util.Locale
-import kotlinx.coroutines.delay
+import java.io.IOException
+import kotlinx.coroutines.CancellationException
 import works.windmill.gym.R
+import works.windmill.gym.coach.onboarding.CoachOnboardingSeat
+import works.windmill.gym.coach.turn.CoachRecovery
+import works.windmill.gym.coach.turn.CoachTurnRefusal
 import works.windmill.gym.ui.GymScreen
 import works.windmill.gym.ui.YouSeat
+import works.windmill.platform.ai.AiInstallation
+import works.windmill.platform.ai.AiInstallationStorageFailure
+import works.windmill.platform.net.WindmillApiException
+import works.windmill.platform.telemetry.Telemetry
 
 @Composable
 fun CoachAccessStance(seat: String, onSignIn: () -> Unit, onThreads: (() -> Unit)? = null, bound: Boolean = false) {
@@ -77,68 +75,50 @@ fun AskAbsentStance(seat: String, onThreads: (() -> Unit)? = null) {
     }
 }
 
-internal fun coachDailyNotice(deadline: Long?, now: Long, locale: Locale, zone: ZoneId): String? {
-    if (deadline == null || deadline <= 0) return Ask.capReached
-    if (deadline <= now) return null
-    val time = DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM, FormatStyle.SHORT).withLocale(locale).withZone(zone)
-        .format(Instant.ofEpochMilli(deadline))
-    return "You can ask again on $time."
-}
-
-// The reset names its year only when it falls in another year than now.
-internal fun coachAllowanceNotice(anonymous: Boolean, deadline: Long?, now: Long, locale: Locale, zone: ZoneId): String {
-    if (anonymous) return AskCap.Allowance.wordless + "\nSign in to continue."
-    if (deadline == null || deadline <= 0) return AskCap.Allowance.wordless
-    val at = Instant.ofEpochMilli(deadline).atZone(zone)
-    val format = if (at.year == Instant.ofEpochMilli(now).atZone(zone).year)
-        DateTimeFormatter.ofPattern(DateFormat.getBestDateTimePattern(locale, "MMMdjmm"), locale)
-    else DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM, FormatStyle.SHORT).withLocale(locale)
-    return AskCap.Allowance.wordless + "\nYou can use Coach again on ${format.format(at)}."
-}
-
+// What a refused send says at the conversation's end: its sentence, and the one door that exists.
 @Composable
-internal fun CoachCapNotice(cap: AskCap, exchange: AskExchange?, anonymous: Boolean = false,
-    onSignIn: (() -> Unit)? = null, onConnections: () -> Unit) {
+internal fun CoachRefusalNotice(refusal: CoachTurnRefusal, anonymous: Boolean = false, onSignIn: (() -> Unit)? = null, onConnections: () -> Unit, onTryAgain: () -> Unit) {
     val colors = MaterialTheme.colorScheme
-    val lifecycle = LocalLifecycleOwner.current
-    val configuration = LocalConfiguration.current
-    if (cap == AskCap.Allowance) {
-        Column(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(coachAllowanceNotice(anonymous, exchange?.retryAtMs, System.currentTimeMillis(), configuration.locales[0], ZoneId.systemDefault()),
-                style = GymType.coachSupporting, color = colors.onSurfaceVariant, textAlign = TextAlign.Center,
-                modifier = Modifier.widthIn(max = 300.dp))
-            if (anonymous && onSignIn != null) FilledTonalButton(onClick = onSignIn,
+    val recovery = refusal.recovery(anonymous)
+    val notice = refusal.sentence + if (refusal is CoachTurnRefusal.Allowance && recovery == CoachRecovery.signIn) "\nSign in to continue." else ""
+    Column(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(notice, style = GymType.coachSupporting, color = colors.onSurfaceVariant, textAlign = TextAlign.Center,
+            modifier = Modifier.widthIn(max = 300.dp))
+        when (recovery) {
+            CoachRecovery.signIn -> if (onSignIn != null) FilledTonalButton(onClick = onSignIn,
                 colors = ButtonDefaults.filledTonalButtonColors(containerColor = colors.surfaceContainerHighest, contentColor = colors.onSurface),
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)) {
-                Text("Sign in", style = GymType.coachAction)
+                Text(recovery.title, style = GymType.coachAction)
             }
-        }
-        return
-    }
-    var now by remember(exchange?.requestId) { mutableLongStateOf(System.currentTimeMillis()) }
-    DisposableEffect(lifecycle) {
-        val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_RESUME) now = System.currentTimeMillis() }
-        lifecycle.lifecycle.addObserver(observer)
-        onDispose { lifecycle.lifecycle.removeObserver(observer) }
-    }
-    LaunchedEffect(exchange?.retryAtMs) {
-        val deadline = exchange?.retryAtMs ?: return@LaunchedEffect
-        while (deadline > now) {
-            delay((deadline - now).coerceIn(1, 60_000))
-            now = System.currentTimeMillis()
-        }
-    }
-    val notice = if (cap == AskCap.Daily) coachDailyNotice(exchange?.retryAtMs, now, configuration.locales[0], ZoneId.systemDefault())
-        else exchange?.trouble ?: Ask.ceilingReached
-    notice?.let {
-        Column(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(it, style = GymType.coachSupporting, color = colors.onSurfaceVariant, textAlign = TextAlign.Center,
-                modifier = Modifier.widthIn(max = 300.dp))
-            TextButton(onClick = onConnections, modifier = Modifier.heightIn(min = 48.dp)) {
-                Text("Use your own AI agent", style = GymType.coachStrong, color = colors.primary)
+            CoachRecovery.ownAgent -> TextButton(onClick = onConnections, modifier = Modifier.heightIn(min = 48.dp)) {
+                Text(recovery.title, style = GymType.coachStrong, color = colors.primary)
             }
+            CoachRecovery.tryAgain -> TextButton(onClick = onTryAgain, modifier = Modifier.heightIn(min = 48.dp)) {
+                Text(recovery.title, style = GymType.coachStrong, color = colors.primary)
+            }
+            CoachRecovery.update, null -> Unit
         }
+    }
+}
+
+enum class AnonymousCoachAccess { Checking, Available, Bound, Unavailable }
+
+// Whether this phone can ask Coach signed out: it reads the installation, and the seat it asked for must still stand when the answer comes.
+suspend fun anonymousCoachAccess(installation: AiInstallation, seat: () -> CoachOnboardingSeat?, telemetry: Telemetry): AnonymousCoachAccess {
+    val origin = seat() ?: return AnonymousCoachAccess.Unavailable
+    return try {
+        installation.forAnonymousSend()
+        if (seat() == origin) AnonymousCoachAccess.Available else AnonymousCoachAccess.Unavailable
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (failure: WindmillApiException.Refused) {
+        if (seat() == origin && failure.refusal.code in setOf("device_bound", "installation_bound")) AnonymousCoachAccess.Bound
+        else AnonymousCoachAccess.Unavailable
+    } catch (_: WindmillApiException) {
+        AnonymousCoachAccess.Unavailable
+    } catch (failure: Exception) {
+        if (failure !is AiInstallationStorageFailure) telemetry.failure("gym.coachAccess", IOException("The installation could not be read."))
+        AnonymousCoachAccess.Unavailable
     }
 }

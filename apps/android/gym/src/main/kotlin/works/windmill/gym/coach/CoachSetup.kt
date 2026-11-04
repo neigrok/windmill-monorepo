@@ -1,10 +1,8 @@
 package works.windmill.gym.coach
 
-import works.windmill.gym.ui.overContainer
 import works.windmill.gym.ui.GymType
 import androidx.compose.material3.MaterialTheme
 import works.windmill.gym.ui.gymColors
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -16,10 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.TextButton
-import androidx.compose.ui.graphics.Color
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
@@ -66,31 +61,6 @@ internal fun CoachGreeting(signedIn: Boolean, enabled: Boolean, onScreenshot: ()
                     Icon(painterResource(icon), null, Modifier.size(20.dp))
                     Text(label, style = GymType.coachAction,
                         modifier = Modifier.padding(start = 8.dp))
-                }
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-internal fun CoachChoices(clarification: CoachClarification, selected: Map<String, List<String>>, enabled: Boolean,
-    onChoose: (String, String) -> Unit) {
-    val colors = MaterialTheme.colorScheme
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        clarification.groups.forEach { group ->
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(group.label, style = GymType.coachGroupLabel, color = colors.onSurfaceVariant)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    group.options.forEach { option ->
-                        val chosen = option.id in selected[group.id].orEmpty()
-                        FilterChip(selected = chosen, enabled = enabled, onClick = { onChoose(group.id, option.id) },
-                            label = { Text(option.label, Modifier.padding(vertical = 6.dp), style = GymType.coachChoice.overContainer()) },
-                            leadingIcon = if (chosen) { { Icon(painterResource(R.drawable.gym_coach_selected), null, Modifier.size(18.dp)) } } else null,
-                            border = BorderStroke(1.dp, if (chosen) colors.primary else colors.outlineVariant),
-                            colors = FilterChipDefaults.filterChipColors(containerColor = Color.Transparent, labelColor = colors.onSurface,
-                                selectedContainerColor = colors.primaryContainer, selectedLabelColor = colors.primary, selectedLeadingIconColor = colors.primary))
-                    }
                 }
             }
         }

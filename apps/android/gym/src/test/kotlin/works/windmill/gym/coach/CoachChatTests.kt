@@ -1,33 +1,93 @@
 package works.windmill.gym.coach
 
 import java.io.File
+import java.io.IOException
+import kotlin.coroutines.ContinuationInterceptor
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
-import kotlinx.coroutines.async
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
-import org.junit.Assert.*
+import org.junit.Assert.assertArrayEquals
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
-import works.windmill.gym.net.FakeGymRest
-import works.windmill.gym.net.GymRest
+import works.windmill.agent.TurnEvent
+import works.windmill.agent.TurnOpen
+import works.windmill.agent.TurnRefusal
+import works.windmill.agent.TurnSeat
+import works.windmill.agent.TurnTransport
+import works.windmill.gym.coach.turn.ScriptedTurns
+import works.windmill.gym.coach.turn.TellingRecorder
+import works.windmill.gym.domain.coach.CoachMessage
+import works.windmill.gym.domain.coach.CoachThread
+import works.windmill.gym.domain.coach.MessageState
+import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.store.GymResult
+import works.windmill.gym.store.WriteFailure
 import works.windmill.platform.storage.AtomicDocument
-import works.windmill.platform.net.WindmillApiException
-import works.windmill.platform.net.Refusal
 import works.windmill.platform.telemetry.Telemetry
+import works.windmill.sync.core.Json
+import works.windmill.sync.core.ScopeRef
+import works.windmill.sync.schema.Gym
 
+// The chats a phone keeps beside the engine's records: each belongs to its owner, keeps its draft and place across a restart, and a turn's words reach only the seat that asked.
 @OptIn(ExperimentalCoroutinesApi::class)
 class CoachChatTests {
     @get:Rule val tmp = TemporaryFolder()
 
+    private fun script(frames: String) = ScriptedTurns(Json.parse(frames).arr())
+
+    private fun answers(text: String) = script("""[{"event":"text","data":{"delta":"$text"}},{"event":"done","data":{"state":"completed"}}]""")
+
+    private val holdsOpen get() = script("""[{"event":"text","data":{"delta":"Reading"}},{"await":"stop"},{"event":"done","data":{"state":"stopped"}}]""")
+
+    // A server whose answer to the open waits for the test, so what it says arrives late.
+    private class LateOpen(private val server: ScriptedTurns) : TurnTransport by server {
+        val release = CompletableDeferred<Unit>()
+        override fun open(open: TurnOpen, seat: TurnSeat): Flow<TurnEvent> = flow {
+            release.await()
+            emitAll(server.open(open, seat))
+        }
+    }
+
+    // Virtual time, one dispatcher: the test advances it, and closing the room ends its work.
+    private fun TestScope.work() = CoroutineScope(SupervisorJob() + coroutineContext[ContinuationInterceptor] as CoroutineDispatcher)
+
+    private fun TestScope.chats(disk: LocalCoach, telemetry: Telemetry = Telemetry.None, owner: () -> String? = { "alice" }) =
+        CoachChats(owner, {}, null, null, disk, null, { AnonymousCoachAccess.Unavailable }, telemetry, work())
+
+    private fun TestScope.room(server: TurnTransport, disk: LocalCoach = LocalCoach(File(tmp.newFolder(), LocalCoach.fileName)), telling: Telemetry = Telemetry.None,
+        directory: File = tmp.newFolder(), snapshot: Json? = null) =
+        EngineRoomFixture(directory, work(), snapshot = snapshot, telemetry = telling, localCoach = disk, coachServer = server)
+
+    private fun EngineRoomFixture.messages(): List<CoachMessage> = engine.read(ScopeRef(Gym.scope)) { read ->
+        works.windmill.domain.kit.Repository.decode(CoachMessage, read.drawn(CoachMessage.type))
+    }
+
+    private fun EngineRoomFixture.threads(): List<CoachThread> = engine.read(ScopeRef(Gym.scope)) { read ->
+        works.windmill.domain.kit.Repository.decode(CoachThread, read.drawn(CoachThread.type))
+    }
+
     @Test fun freshChatRetainsThePreviousDraftPhotoPositionAndSelectionAcrossRestart() = runTest {
         val file = File(tmp.root, "coach")
         val disk = LocalCoach(file)
-        val store = CoachStore({ "alice" }, {}, { FakeGymRest() }, disk, Telemetry.None, System::nanoTime, backgroundScope)
+        val store = chats(disk)
         val first = store.freshChat()
         val photo = CoachAttachment("attachment-a", "image/png", 1, 1, 3)
         disk.savePhoto("alice", photo.id, byteArrayOf(1, 2, 3))
@@ -36,9 +96,9 @@ class CoachChatTests {
         val second = store.freshChat()
         assertNotEquals(first, second)
         assertEquals(CoachDraft(), store.draft(second))
-        assertEquals(listOf(first), store.allThreads.map { it.id })
+        assertEquals(listOf(first), store.history.map { it.id })
         store.selectChat(first)
-        val restored = CoachStore({ "alice" }, {}, { FakeGymRest() }, LocalCoach(file), Telemetry.None, System::nanoTime, backgroundScope)
+        val restored = chats(LocalCoach(file))
         assertEquals(first, restored.selectedChatId)
         assertEquals(CoachDraft("A meaningful draft", photo), restored.draft(first))
         assertEquals(124, restored.chat(first)?.scroll)
@@ -56,8 +116,7 @@ class CoachChatTests {
             override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { error("Unexpected $operation") }
         }
         val file = File(tmp.root, "stable-chat")
-        val disk = LocalCoach(file)
-        val store = CoachStore({ owner }, {}, { FakeGymRest() }, disk, telemetry, System::nanoTime, backgroundScope)
+        val store = chats(LocalCoach(file), telemetry) { owner }
         val id = store.freshChat("Original draft", id = "stable-share")
         store.keepPosition(id, 88, false)
         val original = store.chat(id)
@@ -69,7 +128,7 @@ class CoachChatTests {
         assertEquals(CoachDraft("Other draft"), store.draft(other))
         assertEquals(id, store.selectedChatId)
         assertEquals(before, actions)
-        val cold = CoachStore({ owner }, {}, { FakeGymRest() }, LocalCoach(file), telemetry, System::nanoTime, backgroundScope)
+        val cold = chats(LocalCoach(file), telemetry) { owner }
         assertEquals(id, cold.selectedChatId)
         assertEquals(id, cold.freshChat("Ignored replacement", id))
         assertEquals(original, cold.chat(id))
@@ -82,61 +141,47 @@ class CoachChatTests {
         assertEquals(before + "fresh_entry", actions)
     }
 
-    @Test fun aDurablePendingRequestIsKnownBeforeItsChatHasResumed() = runTest {
-        var owner: String? = "alice"
-        val disk = LocalCoach(File(tmp.root, "pending-share"))
-        disk.saveChat("alice", LocalChat("share"), select = true)
-        disk.keep("alice", AskQuestion("share", "Check my last workout.", "share"))
-        val store = CoachStore({ owner }, {}, { FakeGymRest() }, disk, Telemetry.None, System::nanoTime, backgroundScope)
-        assertEquals(emptyList<AskExchange>(), store.chat("share")!!.exchanges)
-        assertTrue(store.hasRequest("share", "share"))
-        assertFalse(store.hasRequest("other", "share"))
-        assertFalse(store.hasRequest("share", "other"))
-        owner = "bob"
-        assertFalse(store.hasRequest("share", "share"))
-        assertEquals(listOf(AskQuestion("share", "Check my last workout.", "share")), disk.pending("alice"))
-    }
-
     @Test fun aReplyArrivesInItsOriginWhileANewChatKeepsItsOwnDraft() = runTest {
-        val started = CompletableDeferred<AskQuestion>()
         val release = CompletableDeferred<Unit>()
-        val api = object : GymRest by FakeGymRest() {
-            override suspend fun stream(question: AskQuestion, onSnapshot: suspend (AskGeneration) -> Unit): AskAnswer {
-                started.complete(question)
-                val partial = AskGeneration("generation-a", requireNotNull(question.requestId), question.question, "running", "First", revision = 1)
-                onSnapshot(partial)
-                release.await()
-                return partial.copy(status = "completed", answer = "First answer", revision = 2).response()
-            }
+        val server = script("""[
+            {"event":"text","data":{"delta":"First"}},
+            {"event":"calls","data":{"batch":1,"calls":[{"callId":"toolu_1","name":"list_notes","input":{}}]}},
+            {"await":"results","batch":1},
+            {"event":"text","data":{"delta":" answer"}},
+            {"event":"done","data":{"state":"completed"}}]""").apply { beforePost = { release.await() } }
+        val file = File(tmp.newFolder(), LocalCoach.fileName)
+        room(server, LocalCoach(file)).use { room ->
+            val coach = room.store.coach
+            val first = coach.freshChat()
+            assertTrue(coach.send(first, "First question"))
+            advanceUntilIdle()
+            assertEquals(listOf("First question"), server.opened.map { it.question })
+            val second = coach.freshChat()
+            coach.saveDraft(second, CoachDraft("Second draft"))
+            assertEquals(ConversationRow(first, "First question", 0, answering = true), coach.pendingChat(second))
+            assertTrue(coach.isAsking(first))
+            release.complete(Unit)
+            advanceUntilIdle()
+            room.store.conversations.read()
+            assertFalse(coach.isAsking(first))
+            assertEquals(second, coach.selectedChatId)
+            assertEquals(CoachDraft("Second draft"), coach.draft(second))
+            assertEquals(emptyList<CoachExchange>(), coach.exchanges(second))
+            assertEquals(room.threads().single().id.record.string, LocalCoach(file).chat(LocalCoach(file).anonymousOwner(), first)?.conversation)
+            coach.selectChat(first)
+            room.store.conversations.read()
+            val answered = coach.exchanges(first).single()
+            assertEquals("First question", answered.question)
+            assertEquals("First answer", answered.answer?.text)
+            assertEquals(MessageState.completed, answered.answer?.state)
         }
-        val file = File(tmp.root, "pending")
-        val store = CoachStore({ "alice" }, {}, { api }, LocalCoach(file), Telemetry.None, System::nanoTime, backgroundScope)
-        val first = store.freshChat()
-        assertTrue(store.submit(first, "First question", requestId = "request-a"))
-        runCurrent()
-        assertEquals(AskQuestion(first, "First question", "request-a", purpose = "conversation"), started.await())
-        val second = store.freshChat()
-        store.saveDraft(second, CoachDraft("Second draft"))
-        assertEquals(first, store.pendingChat(second)?.id)
-        assertTrue(store.isAsking(first))
-        release.complete(Unit)
-        while (store.isAsking(first)) { runCurrent(); Thread.yield() }
-        assertEquals(second, store.selectedChatId)
-        assertEquals(CoachDraft("Second draft"), store.draft(second))
-        assertEquals("First answer", store.chat(first)?.exchanges?.single()?.answer?.answer)
-        assertEquals(emptyList<AskExchange>(), store.chat(second)?.exchanges)
-        assertEquals("First answer", LocalCoach(file).chats("alice").first { it.id == first }.exchanges.single().answer?.answer)
     }
 
-    @Test fun anonymousHistoryNeverCallsTheServerAndAccountArchivesStayIsolated() = runTest {
+    @Test fun eachOwnersChatsAndDraftsStayIsolatedAndThePhonesOwnerHoldsAcrossThem() = runTest {
         var owner: String? = null
-        var serverCalls = 0
         val file = File(tmp.root, "owners")
-        val api = object : GymRest by FakeGymRest() {
-            override suspend fun threads(cursor: String?): ThreadPage { serverCalls++; error("No signed-out server history") }
-        }
         val disk = LocalCoach(file)
-        val store = CoachStore({ owner }, {}, { api }, disk, Telemetry.None, System::nanoTime, backgroundScope)
+        val store = chats(disk) { owner }
         val anonymous = store.freshChat()
         store.saveDraft(anonymous, CoachDraft("Anonymous draft"))
         val anonymousOwner = disk.anonymousOwner()
@@ -144,428 +189,293 @@ class CoachChatTests {
         val alice = store.freshChat()
         store.saveDraft(alice, CoachDraft("Alice draft"))
         owner = "bob"
-        assertEquals(emptyList<AskThread>(), store.allThreads)
+        assertEquals(emptyList<ConversationRow>(), store.history)
         assertEquals(CoachDraft(), store.draft(alice))
         assertNull(store.chat(anonymous))
         owner = null
-        assertEquals(GymResult.Ok(store.allThreads), store.readThreads())
-        assertEquals(listOf(anonymous), store.allThreads.map { it.id })
+        assertEquals(listOf(anonymous), store.history.map { it.id })
         assertEquals(anonymousOwner, LocalCoach(file).anonymousOwner())
-        assertEquals(0, serverCalls)
         owner = "alice"
-        assertEquals(listOf(alice), store.allThreads.map { it.id })
+        assertEquals(listOf(alice), store.history.map { it.id })
         assertEquals(CoachDraft("Alice draft"), store.draft(alice))
     }
 
-    @Test fun localDraftAndServerConversationMergeIntoOneHistoryRow() = runTest {
-        val api = object : GymRest by FakeGymRest() {
-            var id = ""
-            override suspend fun threads(cursor: String?) = ThreadPage(listOf(AskThread(id, "Server first question", askedAtMs = 10)))
+    @Test fun aChatsDraftAndItsConversationMergeIntoOneHistoryRow() = runTest {
+        room(answers("Rest more")).use { room ->
+            val coach = room.store.coach
+            val chat = coach.freshChat()
+            assertTrue(coach.send(chat, "Am I overtraining?"))
+            advanceUntilIdle()
+            coach.saveDraft(chat, CoachDraft("Still typing"))
+            room.store.conversations.watchHistory(true)
+            room.store.conversations.read()
+            assertEquals(listOf(ConversationRow(chat, "Am I overtraining?", coach.chat(chat)!!.updatedAtMs, answerPreview = "Rest more")), coach.history)
+            assertEquals(CoachDraft("Still typing"), coach.draft(chat))
         }
-        val store = CoachStore({ "alice" }, {}, { api }, LocalCoach(File(tmp.root, "merge")), Telemetry.None, System::nanoTime, backgroundScope)
-        val id = store.freshChat()
-        store.saveDraft(id, CoachDraft("Still typing"))
-        api.id = id
-        assertTrue(store.readThreads() is GymResult.Ok)
-        assertEquals(listOf(id), store.allThreads.map { it.id })
-        assertEquals(CoachDraft("Still typing"), store.draft(id))
     }
 
-    @Test fun cachedServerSummariesSurviveOfflineRestartAndNeverAppearForAnotherOwner() = runTest {
-        var owner: String? = "alice"
-        val file = File(tmp.root, "cached-history")
-        val summary = AskThread("thread-a", "First question", askedAtMs = 10, answerPreview = "Completed answer")
-        val api = FakeGymRest().apply { conversations[summary.id] = summary }
-        val store = CoachStore({ owner }, {}, { api }, LocalCoach(file), Telemetry.None, System::nanoTime, backgroundScope)
-        assertEquals(GymResult.Ok(listOf(summary)), store.readThreads())
-        owner = "bob"
-        assertEquals(emptyList<AskThread>(), store.allThreads)
-        owner = null
-        assertEquals(emptyList<AskThread>(), store.allThreads)
-        owner = "alice"
-        val restored = CoachStore({ owner }, {}, { null }, LocalCoach(file), Telemetry.None, System::nanoTime, backgroundScope)
-        assertEquals(listOf(summary), restored.allThreads)
-        assertTrue(restored.readThreads() is GymResult.Failed)
-        assertEquals(listOf(summary), restored.allThreads)
+    @Test fun aConversationsRowSurvivesARestartAndNeverAppearsForAnotherOwner() = runTest {
+        val log = EngineRoomFixture.server()
+        val directory = tmp.newFolder()
+        val file = File(tmp.newFolder(), LocalCoach.fileName)
+        val (snapshot, row) = room(answers("Completed answer"), LocalCoach(file), directory = directory).use { room ->
+            val coach = room.store.coach
+            val conversations = room.store.conversations
+            room.select("alice")
+            room.sync(log)
+            val chat = coach.freshChat()
+            assertTrue(coach.send(chat, "First question"))
+            advanceUntilIdle()
+            conversations.watchHistory(true)
+            conversations.read()
+            val row = ConversationRow(chat, "First question", room.messages().maxOf { it.at.ms }, answerPreview = "Completed answer")
+            assertEquals(listOf(row), coach.history)
+            room.select("bob")
+            room.sync(log)
+            conversations.read()
+            assertEquals(emptyList<ConversationRow>(), coach.history)
+            room.select(null)
+            conversations.read()
+            assertEquals(emptyList<ConversationRow>(), coach.history)
+            room.select("alice")
+            room.sync(log)
+            conversations.read()
+            assertEquals(listOf(row), coach.history)
+            room.engine.snapshot() to row
+        }
+        room(script("[]"), LocalCoach(file), directory = directory, snapshot = snapshot).use { restarted ->
+            restarted.selected = "alice"
+            restarted.store.connect(restarted.account())
+            restarted.store.conversations.watchHistory(true)
+            restarted.store.conversations.read()
+            assertEquals(listOf(row), restarted.store.coach.history)
+        }
     }
 
-    @Test fun restartResumesTheOriginalRequestWithoutChangingTheSelectedDraft() = runTest {
-        val file = File(tmp.root, "restart-pending")
+    // No turn resumes per chat: the running one ended with the process, and the chat on screen is untouched by that.
+    @Test fun aRestartEndsTheRunningTurnWithoutChangingTheSelectedDraft() = runTest {
+        val directory = tmp.newFolder()
+        val file = File(tmp.newFolder(), LocalCoach.fileName)
+        val (snapshot, origin, selected) = room(holdsOpen, LocalCoach(file), directory = directory).use { room ->
+            val coach = room.store.coach
+            val origin = coach.freshChat()
+            assertTrue(coach.send(origin, "Original question"))
+            advanceUntilIdle()
+            val selected = coach.freshChat()
+            coach.saveDraft(selected, CoachDraft("Keep editing"))
+            Triple(room.engine.snapshot(), origin, selected)
+        }
+        val server = script("[]")
+        room(server, LocalCoach(file), directory = directory, snapshot = snapshot).use { restarted ->
+            val coach = restarted.store.coach
+            checkNotNull(restarted.coachTurns).start()
+            advanceUntilIdle()
+            assertEquals(emptyList<TurnOpen>(), server.opened)
+            assertFalse(coach.isAsking(origin))
+            assertEquals(selected, coach.selectedChatId)
+            assertEquals(CoachDraft("Keep editing"), coach.draft(selected))
+            coach.selectChat(origin)
+            restarted.store.conversations.read()
+            val ended = coach.exchanges(origin).single()
+            assertEquals("Original question", ended.question)
+            assertEquals(MessageState.interrupted, ended.answer?.state)
+            assertEquals(CoachDraft(), coach.draft(origin))
+        }
+    }
+
+    @Test fun aLateRefusalCannotRestoreADraftAfterItsOwnerWasErased() = runTest {
+        val late = LateOpen(script("[]").apply { refuseOpen = TurnRefusal(429, "subject_exhausted", null) })
+        val file = File(tmp.newFolder(), LocalCoach.fileName)
         val disk = LocalCoach(file)
-        val request = AskQuestion("origin", "Original question", "request-a")
-        disk.saveChat("alice", LocalChat(request.thread))
-        disk.keep("alice", request)
-        disk.record("alice", AskGeneration("generation-a", "request-a", request.question, "running", "Partial", revision = 1))
-        disk.saveChat("alice", LocalChat("selected"), select = true)
-        disk.saveDraft("alice", "selected", CoachDraft("Keep editing"))
-        val calls = mutableListOf<AskQuestion>()
-        val api = object : GymRest by FakeGymRest() {
-            override suspend fun stream(question: AskQuestion, onSnapshot: suspend (AskGeneration) -> Unit): AskAnswer {
-                calls += question
-                return AskGeneration("generation-a", "request-a", question.question, "completed", "Complete", revision = 2).response()
-            }
-        }
-        val store = CoachStore({ "alice" }, {}, { api }, LocalCoach(file), Telemetry.None, System::nanoTime, backgroundScope)
-        store.resumeChats()
-        val deadline = System.nanoTime() + 5_000_000_000
-        while (store.isAsking("origin") && System.nanoTime() < deadline) { runCurrent(); Thread.yield() }
-        assertFalse(store.isAsking("origin"))
-        assertEquals(listOf(request), calls)
-        assertEquals("selected", store.selectedChatId)
-        assertEquals(CoachDraft("Keep editing"), store.draft("selected"))
-        assertEquals("Complete", store.chat("origin")?.exchanges?.single()?.answer?.answer)
-        assertEquals(emptyList<AskQuestion>(), LocalCoach(file).pending("alice"))
-    }
-
-    @Test fun aFullHistoryReadKeepsTheExactLocalRefusalAndDeadlineAcrossRestart() = runTest {
-        for (marked in listOf(false, true)) {
-            val file = File(tmp.root, "terminal-history-$marked")
-            val disk = LocalCoach(file)
-            val page = AskThread("thread-a", "First question", turns = listOf(
-                AskTurn(Ask.fromLifter, "First question", requestId = "answered", position = 1),
-                AskTurn("coach", "First answer", requestId = "answered", position = 2)))
-            val photo = CoachAttachment("attachment-a", "image/png", 1, 1, 3)
-            val refusal = AskExchange("Retained question", trouble = Ask.capReached, requestId = "refused",
-                attachments = listOf(photo), retryAtMs = 1_800_000_000_000L, terminalRefusal = marked)
-            val draft = CoachDraft(refusal.question, photo)
-            disk.savePhoto("alice", photo.id, byteArrayOf(1, 2, 3))
-            disk.saveChat("alice", LocalChat(page.id, exchanges = page.exchanges() + refusal, cap = "Daily"))
-            disk.saveDraft("alice", page.id, draft)
-            val api = FakeGymRest().apply { conversations[page.id] = page }
-            repeat(2) {
-                val reopened = LocalCoach(file)
-                val store = CoachStore({ "alice" }, {}, { api }, reopened, Telemetry.None,
-                    System::nanoTime, backgroundScope)
-                repeat(2) { assertEquals(GymResult.Ok(page), store.thread(page.id)) }
-                store.resumeChats(); runCurrent()
-                val saved = LocalCoach(file).archivedChat("alice", page.id)!!
-                assertEquals(page.exchanges() + refusal, saved.exchanges)
-                assertEquals("Daily", saved.cap)
-                assertNull(saved.history?.nextCursor)
-                assertEquals(draft, reopened.draft("alice", page.id))
-                assertArrayEquals(byteArrayOf(1, 2, 3), reopened.photoFile("alice", photo.id).readBytes())
-                assertEquals(emptyList<AskQuestion>(), reopened.pending("alice"))
-            }
-            assertEquals(emptyList<AskQuestion>(), api.asked)
-        }
-    }
-
-    @Test fun aMatchingServerTurnReplacesTheLocalTerminalRefusalWithoutADuplicate() = runTest {
-        val completed = AskThread("thread-a", "Question", turns = listOf(
-            AskTurn(Ask.fromLifter, "Question", requestId = "same-request", position = 1),
-            AskTurn("coach", "Answer", requestId = "same-request", position = 2)))
-        val running = completed.copy(turns = emptyList(),
-            generation = AskGeneration("generation-a", "same-request", "Question", "running", "Partial"))
-        for ((index, page) in listOf(completed, running).withIndex()) for (absent in listOf(false, true)) {
-            val file = File(tmp.root, "terminal-matched-history-$index-$absent")
-            val disk = LocalCoach(file)
-            disk.saveChat("alice", LocalChat(page.id, exchanges = listOf(AskExchange("Question",
-                trouble = if (absent) Ask.notHere else Ask.capReached, requestId = "same-request",
-                retryAtMs = 1_800_000_000_000L.takeUnless { absent }, terminalRefusal = true)),
-                cap = "Daily".takeUnless { absent }, absent = absent))
-            val api = FakeGymRest().apply { conversations[page.id] = page }
-            val store = CoachStore({ "alice" }, {}, { api }, disk, Telemetry.None,
-                System::nanoTime, backgroundScope)
-            repeat(2) { assertEquals(GymResult.Ok(page), store.thread(page.id)) }
-            val saved = LocalCoach(file).archivedChat("alice", page.id)!!
-            assertEquals(page.exchanges(), saved.exchanges)
-            assertNull(saved.cap)
-            assertFalse(saved.absent)
-            assertEquals(emptyList<AskQuestion>(), api.asked)
-        }
-    }
-
-    @Test fun aLateHistoryReadCannotRestoreARefusalAfterOwnerChangeOrDeletion() = runTest {
-        for (deleting in listOf(false, true)) {
-            val file = File(tmp.root, "terminal-late-history-$deleting")
-            val disk = LocalCoach(file)
-            var owner = "alice"
-            val release = CompletableDeferred<Unit>()
-            val page = AskThread("thread-a", "Question", turns = listOf(AskTurn("coach", "Answer")))
-            val api = object : GymRest by FakeGymRest() {
-                override suspend fun thread(id: String, before: String?): AskThread { release.await(); return page }
-            }
-            disk.saveChat("alice", LocalChat(page.id, exchanges = listOf(AskExchange("Question",
-                trouble = Ask.capReached, requestId = "refused", retryAtMs = 1_800_000_000_000L)), cap = "Daily"))
-            disk.saveChat("bob", LocalChat("bob-chat"))
-            val store = CoachStore({ owner }, {}, { api }, disk, Telemetry.None,
-                System::nanoTime, backgroundScope)
-            val reading = async { store.thread(page.id) }
-            runCurrent()
-            if (deleting) { store.eraseOwner("alice"); disk.reopenVerifiedOwner("alice") }
-            else { owner = "bob"; store.resetThreads() }
+        room(late, disk).use { room ->
+            val coach = room.store.coach
+            room.select("alice")
+            room.sync(EngineRoomFixture.server())
+            val chat = coach.freshChat()
+            coach.saveDraft(chat, CoachDraft("Alice question"))
+            assertTrue(coach.send(chat, "Alice question"))
+            advanceUntilIdle()
+            assertEquals(CoachDraft(), coach.draft(chat))
+            coach.eraseOwner("alice")
+            disk.reopenVerifiedOwner("alice")
             val before = file.readText()
-            release.complete(Unit)
-            assertEquals(GymResult.Failed(works.windmill.gym.store.WriteFailure.Refused(
-                "The account changed. Open this again.")), reading.await())
+            late.release.complete(Unit)
+            advanceUntilIdle()
             assertEquals(before, file.readText())
-            assertEquals(listOf("bob-chat"), LocalCoach(file).chats("bob").map { it.id })
-            if (deleting) assertEquals(emptyList<LocalChat>(), LocalCoach(file).chats("alice"))
+            assertEquals(emptyList<LocalChat>(), LocalCoach(file).chats("alice"))
+            assertEquals(CoachDraft(), LocalCoach(file).draft("alice", chat))
+            assertEquals(CoachDraft(), coach.draft(chat))
+            assertNull(coach.chat(chat))
+            assertEquals(emptyList<CoachThread>(), room.threads())
         }
     }
 
-    @Test fun loadedOlderMessagesAndManualScrollSurviveRestartAndNewestPageRefresh() = runTest {
-        val file = File(tmp.root, "paged-restart")
-        fun page(request: String, position: Long, older: String?) = AskThread("thread-a", "First question",
-            turns = listOf(AskTurn(Ask.fromLifter, "Question $request", position = position, requestId = request),
-                AskTurn("coach", "Answer $request", position = position + 1, requestId = request)), nextCursor = older)
-        val latest = page("new", 3, "older")
-        val old = page("old", 1, null)
-        val api = object : GymRest by FakeGymRest() {
-            override suspend fun thread(id: String, before: String?) = if (before == null) latest else old
+    @Test fun aThreadThisPhoneKeepsNothingBesideOpensAsAChatAndItsPlaceSurvivesARestart() = runTest {
+        val directory = tmp.newFolder()
+        val file = File(tmp.newFolder(), LocalCoach.fileName)
+        val (snapshot, thread) = room(answers("Answer"), LocalCoach(file), directory = directory).use { room ->
+            val turn = checkNotNull(checkNotNull(room.coachTurns).send("First question", null, null, anonymous = true))
+            advanceUntilIdle()
+            val thread = checkNotNull(turn.thread.record.string)
+            val coach = room.store.coach
+            coach.selectChat(thread)
+            room.store.conversations.read()
+            assertEquals(listOf("First question" to "Answer"), coach.exchanges(thread).map { it.question to it.answer?.text })
+            coach.keepPosition(thread, 140, false)
+            room.engine.snapshot() to thread
         }
-        val store = CoachStore({ "alice" }, {}, { api }, LocalCoach(file), Telemetry.None, System::nanoTime, backgroundScope)
-        store.selectChat("thread-a")
-        assertTrue(store.thread("thread-a") is GymResult.Ok)
-        assertEquals(GymResult.Ok(Unit), store.readOlderChat("thread-a", "older"))
-        store.keepPosition("thread-a", 140, false)
-        val restored = CoachStore({ "alice" }, {}, { api }, LocalCoach(file), Telemetry.None, System::nanoTime, backgroundScope)
-        assertTrue(restored.thread("thread-a") is GymResult.Ok)
-        assertEquals(listOf("old", "new"), restored.chat("thread-a")?.exchanges?.map { it.requestId })
-        assertEquals(listOf(1L, 3L), restored.chat("thread-a")?.exchanges?.map { it.position })
-        assertEquals(140, restored.chat("thread-a")?.scroll)
-        assertEquals(false, restored.chat("thread-a")?.followEnd)
-        assertEquals("thread-a", restored.selectedChatId)
+        room(script("[]"), LocalCoach(file), directory = directory, snapshot = snapshot).use { restarted ->
+            val coach = restarted.store.coach
+            assertEquals(thread, coach.selectedChatId)
+            assertEquals(thread, coach.chat(thread)?.conversation)
+            assertEquals(140, coach.chat(thread)?.scroll)
+            assertEquals(false, coach.chat(thread)?.followEnd)
+            restarted.store.conversations.read()
+            assertEquals(listOf("First question" to "Answer"), coach.exchanges(thread).map { it.question to it.answer?.text })
+        }
     }
 
-    @Test fun repeatedOverlappingPagesAndRefreshRetainTheOldestCursorAndCanonicalHeadline() = runTest {
-        val file = File(tmp.root, "overlapping-pages")
-        fun pair(position: Long, request: String = "") = listOf(
-            AskTurn(Ask.fromLifter, "Repeated question", position = position, requestId = request),
-            AskTurn("coach", "Repeated answer", position = position + 1, requestId = request),
-        )
-        val latest = AskThread("thread-a", "Original first question", turns = pair(40, "new"), nextCursor = "40")
-        val middle = latest.copy(turns = pair(20) + pair(30) + pair(40, "new"), nextCursor = "20")
-        val first = latest.copy(turns = pair(10) + pair(20), nextCursor = null)
-        val calls = mutableListOf<String?>()
-        val api = object : GymRest by FakeGymRest() {
-            override suspend fun thread(id: String, before: String?): AskThread {
-                calls += before
-                return when (before) { "40" -> middle; "20" -> first; else -> latest }
-            }
-        }
-        val store = CoachStore({ "alice" }, {}, { api }, LocalCoach(file), Telemetry.None, System::nanoTime, backgroundScope)
-        store.selectChat("thread-a")
-        assertTrue(store.thread("thread-a") is GymResult.Ok)
-        assertEquals("Original first question", store.allThreads.single().title)
-        assertEquals(GymResult.Ok(Unit), store.readOlderChat("thread-a", "40"))
-        assertEquals(GymResult.Ok(Unit), store.readOlderChat("thread-a", "40"))
-        assertEquals(listOf(null, "40"), calls)
-        assertTrue(store.thread("thread-a") is GymResult.Ok)
-        assertEquals("20", store.chat("thread-a")?.history?.nextCursor)
-        val restored = CoachStore({ "alice" }, {}, { api }, LocalCoach(file), Telemetry.None, System::nanoTime, backgroundScope)
-        assertTrue(restored.thread("thread-a") is GymResult.Ok)
-        assertEquals("20", restored.chat("thread-a")?.history?.nextCursor)
-        assertEquals(GymResult.Ok(Unit), restored.readOlderChat("thread-a", "20"))
-        assertEquals(GymResult.Ok(Unit), restored.readOlderChat("thread-a", "20"))
-        assertTrue(restored.thread("thread-a") is GymResult.Ok)
-        assertEquals(listOf(null, "40", null, null, "20", null), calls)
-        assertNull(restored.chat("thread-a")?.history?.nextCursor)
-        assertEquals((pair(10) + pair(20) + pair(30) + pair(40, "new")).let { latest.copy(turns = it).exchanges() },
-            restored.chat("thread-a")?.exchanges)
-        assertEquals("Original first question", restored.allThreads.single().title)
-        assertEquals("Original first question", LocalCoach(file).chats("alice").single().title)
-    }
-
-    @Test fun localDraftDeletionNeverUsesTransportAndAQueuedOwnerChangeRefusesIt() = runTest {
+    @Test fun localDraftDeletionNeedsNoTurnHostAndAQueuedOwnerChangeRefusesIt() = runTest {
         var owner: String? = "alice"
-        var transports = 0
-        val store = CoachStore({ owner }, {}, { transports++; FakeGymRest() },
-            LocalCoach(File(tmp.root, "local-delete")), Telemetry.None, System::nanoTime, backgroundScope)
+        val store = chats(LocalCoach(File(tmp.root, "local-delete"))) { owner }
         val draft = store.freshChat("Draft to delete")
         assertEquals(GymResult.Ok(Unit), store.deleteThread(draft))
-        assertEquals(0, transports)
         assertNull(store.chat(draft))
         val retained = store.freshChat("Alice draft")
         val deletion = async(start = CoroutineStart.UNDISPATCHED) { store.deleteThread(retained) }
         owner = "bob"
-        runCurrent()
-        assertTrue(deletion.await() is GymResult.Failed)
-        assertEquals(0, transports)
+        assertEquals(GymResult.Failed(WriteFailure.Refused("The account changed. Open this again.")), deletion.await())
         assertNull(store.chat(retained))
         owner = "alice"
         assertEquals(CoachDraft("Alice draft"), store.draft(retained))
     }
 
-    @Test fun aServer404CompletesDeletionAndLeavingTheScreenDoesNotCancelAnAdmittedDelete() = runTest {
-        val entered = CompletableDeferred<Unit>()
-        val release = CompletableDeferred<Unit>()
-        val api = object : GymRest by FakeGymRest() {
-            override suspend fun deleteThread(id: String) {
-                entered.complete(Unit)
-                release.await()
-                throw WindmillApiException.Refused(404, Refusal())
-            }
+    @Test fun leavingTheScreenDoesNotCancelAnAdmittedDelete() = runTest {
+        val telling = TellingRecorder()
+        val file = File(tmp.newFolder(), LocalCoach.fileName)
+        room(answers("Answer"), LocalCoach(file), telling).use { room ->
+            val coach = room.store.coach
+            val chat = coach.freshChat()
+            assertTrue(coach.send(chat, "Server question"))
+            advanceUntilIdle()
+            val screen = launch(start = CoroutineStart.UNDISPATCHED) { coach.deleteThread(chat) }
+            screen.cancel()
+            advanceUntilIdle()
+            assertEquals(emptyList<CoachThread>(), room.threads())
+            assertEquals(emptyList<CoachMessage>(), room.messages())
+            assertNull(coach.chat(chat))
+            assertEquals(emptyList<LocalChat>(), LocalCoach(file).chats(LocalCoach(file).anonymousOwner()))
+            assertEquals(listOf(mapOf("screen" to "threads", "action" to "delete", "outcome" to "ok")), telling.named("gym_action").filter { it["action"] == "delete" })
+            assertEquals(emptyList<Map<String, String>>(), telling.failures)
         }
-        val file = File(tmp.root, "server-delete")
-        val disk = LocalCoach(file)
-        disk.saveChat("alice", LocalChat("thread-a", history = AskThread("thread-a", "Server question")))
-        val outcomes = mutableListOf<Map<String, String>>()
-        val telemetry = object : Telemetry {
-            override fun event(name: String, properties: Map<String, String>) { outcomes += properties }
-            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { fail(operation) }
-        }
-        val store = CoachStore({ "alice" }, {}, { api }, disk, telemetry, System::nanoTime, backgroundScope)
-        val screen = launch { store.deleteThread("thread-a") }
-        runCurrent()
-        entered.await()
-        screen.cancel()
-        release.complete(Unit)
-        runCurrent()
-        assertNull(store.chat("thread-a"))
-        assertEquals(emptyList<LocalChat>(), LocalCoach(file).chats("alice"))
-        assertEquals(listOf(mapOf("screen" to "threads", "action" to "delete", "outcome" to "ok")), outcomes)
     }
 
     @Test fun failedDraftPersistenceKeepsTheRecoverableTextAndReportsOneStaticBoundary() = runTest {
         var failWrites = false
-        val failures = mutableListOf<String>()
-        val telemetry = object : Telemetry {
-            override fun event(name: String, properties: Map<String, String>) {}
-            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { failures += operation }
-        }
+        val telling = TellingRecorder()
         val disk = LocalCoach(File(tmp.root, "failed")) { file, text ->
-            if (failWrites) throw java.io.IOException("private draft must not reach telemetry")
+            if (failWrites) throw IOException("private draft must not reach telemetry")
             AtomicDocument.write(file, text)
         }
-        val store = CoachStore({ "alice" }, {}, { FakeGymRest() }, disk, telemetry, System::nanoTime, backgroundScope)
+        val store = chats(disk, telling)
         val id = store.freshChat()
         failWrites = true
-        assertThrows(java.io.IOException::class.java) { store.saveDraft(id, CoachDraft("Recover me")) }
+        assertThrows(IOException::class.java) { store.saveDraft(id, CoachDraft("Recover me")) }
         assertEquals(CoachDraft("Recover me"), store.draft(id))
-        assertEquals(listOf("gym.saveDraft"), failures)
+        assertEquals(listOf(mapOf("operation" to "gym.saveDraft")), telling.failures)
         failWrites = false
         store.saveDraft(id, CoachDraft("Recover me"))
         assertEquals(CoachDraft("Recover me"), LocalCoach(File(tmp.root, "failed")).draft("alice", id))
     }
-    @Test fun aQueuedSubmissionCannotResolveTransportFromTheNextAccount() = runTest {
-        var owner: String? = "alice"
-        val calls = mutableListOf<String?>()
-        val file = File(tmp.root, "queued-ask")
-        val store = CoachStore({ owner }, {}, {
-            calls += owner
-            FakeGymRest()
-        }, LocalCoach(file), Telemetry.None, System::nanoTime, backgroundScope)
-        val id = store.freshChat()
-        assertTrue(store.submit(id, "Alice private draft", requestId = "request-a"))
-        owner = "bob"
-        runCurrent()
-        assertEquals(emptyList<String?>(), calls)
-        assertNull(store.chat(id))
-        assertEquals(CoachDraft(), store.draft(id))
-        owner = "alice"
-        assertEquals(CoachDraft("Alice private draft"), store.draft(id))
-        assertEquals("Alice private draft", store.chat(id)?.exchanges?.single()?.question)
-        assertFalse(store.isAsking(id))
+
+    @Test fun aQueuedSendCannotOpenUnderTheNextAccount() = runTest {
+        val server = script("[]")
+        val log = EngineRoomFixture.server()
+        room(server).use { room ->
+            val coach = room.store.coach
+            room.select("alice")
+            room.sync(log)
+            val chat = coach.freshChat()
+            coach.saveDraft(chat, CoachDraft("Alice private draft"))
+            assertTrue(coach.send(chat, "Alice private draft"))
+            room.select("bob")
+            room.sync(log)
+            advanceUntilIdle()
+            assertEquals(emptyList<TurnOpen>(), server.opened)
+            assertEquals(emptyList<CoachMessage>(), room.messages())
+            assertNull(coach.chat(chat))
+            assertEquals(CoachDraft(), coach.draft(chat))
+            assertFalse(coach.isAsking(chat))
+            room.select("alice")
+            assertEquals(CoachDraft("Alice private draft"), coach.draft(chat))
+            assertNull(coach.chat(chat)?.conversation)
+            assertFalse(coach.isAsking(chat))
+            assertEquals(emptyList<CoachMessage>(), room.messages())
+        }
     }
 
-    @Test fun queuedResumeAndStopCannotUseTheNextAccountsTransport() = runTest {
-        var owner: String? = "alice"
-        var transports = 0
-        val file = File(tmp.root, "queued-resume")
-        val disk = LocalCoach(file)
-        val request = AskQuestion("thread-a", "Alice question", "request-a")
-        disk.keep("alice", request)
-        disk.saveDraft("alice", request.thread, CoachDraft(request.question))
-        val store = CoachStore({ owner }, {}, { transports++; FakeGymRest() },
-            disk, Telemetry.None, System::nanoTime, backgroundScope)
-        store.resumeChats()
-        owner = "bob"
-        runCurrent()
-        assertEquals(0, transports)
-        owner = "alice"
-        store.stopChat(request.thread)
-        owner = "bob"
-        runCurrent()
-        assertEquals(0, transports)
-        assertEquals(CoachDraft("Alice question"), LocalCoach(file).draft("alice", request.thread))
+    @Test fun aTurnLeftByASeatChangeNeverReachesTheNextAccountAndALaterStopGoesNowhere() = runTest {
+        val server = holdsOpen
+        val log = EngineRoomFixture.server()
+        room(server).use { room ->
+            val coach = room.store.coach
+            val conversations = room.store.conversations
+            checkNotNull(room.coachTurns).start()
+            room.select("alice")
+            room.sync(log)
+            advanceUntilIdle()
+            val chat = coach.freshChat()
+            assertTrue(coach.send(chat, "Alice private question"))
+            advanceUntilIdle()
+            assertTrue(coach.isAsking(chat))
+            room.select("bob")
+            advanceUntilIdle()
+            room.sync(log)
+            conversations.watchHistory(true)
+            conversations.read()
+            assertFalse(coach.isAsking(chat))
+            assertNull(coach.pendingChat(chat))
+            assertEquals(emptyList<CoachExchange>(), coach.exchanges(chat))
+            assertEquals(emptyList<ConversationRow>(), coach.history)
+            assertNull(coach.refusal(chat))
+            assertEquals(emptyList<CoachMessage>(), room.messages())
+            assertEquals("the seat change told the server once", 1, server.stops)
+            coach.stop()
+            advanceUntilIdle()
+            assertEquals(1, server.stops)
+            room.select("alice")
+            advanceUntilIdle()
+            conversations.read()
+            val left = coach.exchanges(chat).single()
+            assertEquals("Alice private question", left.question)
+            assertEquals(MessageState.interrupted, left.answer?.state)
+        }
     }
 
-    @Test fun aFailedHistoryArchiveWriteReportsOnceAndRetainsTheReceivedSummary() = runTest {
+    // The question is a message now, so a failed write of the chat beside it costs the phone its place and never the turn.
+    @Test fun aFailedWriteOfTheChatsThreadReportsOnceAndKeepsTheAnswerAndItsOutcome() = runTest {
         var failNext = false
-        val failures = mutableListOf<String>()
-        val telemetry = object : Telemetry {
-            override fun event(name: String, properties: Map<String, String>) {}
-            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { failures += operation }
-        }
-        val disk = LocalCoach(File(tmp.root, "history-write")) { file, text ->
-            if (failNext) { failNext = false; throw java.io.IOException("private local content") }
+        val telling = TellingRecorder()
+        val disk = LocalCoach(File(tmp.newFolder(), LocalCoach.fileName)) { file, text ->
+            if (failNext) {
+                failNext = false
+                throw IOException("private local content")
+            }
             AtomicDocument.write(file, text)
         }
-        val api = FakeGymRest().apply { conversations["thread-a"] = AskThread("thread-a", "First question", askedAtMs = 10) }
-        val store = CoachStore({ "alice" }, {}, { api }, disk, telemetry, System::nanoTime, backgroundScope)
-        failNext = true
-        assertTrue(store.readThreads() is GymResult.Ok)
-        assertEquals(listOf("thread-a"), store.allThreads.map { it.id })
-        assertEquals("First question", store.chat("thread-a")?.history?.title)
-        assertEquals(listOf("gym.saveConversation"), failures)
+        room(answers("Final answer"), disk, telling).use { room ->
+            val coach = room.store.coach
+            val chat = coach.freshChat()
+            failNext = true
+            assertTrue(coach.send(chat, "Question"))
+            advanceUntilIdle()
+            room.store.conversations.read()
+            assertEquals(room.threads().single().id.record.string, coach.chat(chat)?.conversation)
+            assertEquals(listOf("Question" to "Final answer"), coach.exchanges(chat).map { it.question to it.answer?.text })
+            assertEquals(CoachDraft(), coach.draft(chat))
+            assertEquals("Your conversation couldn’t be saved. Try again.", coach.failure)
+            assertEquals(listOf(mapOf("operation" to "gym.saveConversation")), telling.failures)
+            assertEquals(listOf(mapOf("screen" to "coach", "outcome" to "answered")), telling.named("gym_ask_outcome").map { it - "duration_ms" })
+        }
     }
-
-    @Test fun aFailedFinalAnswerArchiveWriteKeepsTheAnswerAndItsAnsweredOutcome() = runTest {
-        var failFinal = true
-        val failures = mutableListOf<String>()
-        val outcomes = mutableListOf<Map<String, String>>()
-        val telemetry = object : Telemetry {
-            override fun event(name: String, properties: Map<String, String>) {
-                if (name == "gym_ask_outcome") outcomes += properties.filterKeys { it != "duration_ms" }
-            }
-            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { failures += operation }
-        }
-        val disk = LocalCoach(File(tmp.root, "answer-write")) { file, text ->
-            if (failFinal && text.contains("Final answer")) { failFinal = false; throw java.io.IOException("private local content") }
-            AtomicDocument.write(file, text)
-        }
-        val api = object : GymRest by FakeGymRest() {
-            override suspend fun stream(question: AskQuestion, onSnapshot: suspend (AskGeneration) -> Unit) = AskAnswer("Final answer", ReadTally())
-        }
-        val store = CoachStore({ "alice" }, {}, { api }, disk, telemetry, System::nanoTime, backgroundScope)
-        val id = store.freshChat()
-        assertTrue(store.submit(id, "Question", requestId = "request-a"))
-        val deadline = System.nanoTime() + 5_000_000_000
-        while (store.isAsking(id) && System.nanoTime() < deadline) { runCurrent(); Thread.yield() }
-        assertFalse(store.isAsking(id))
-        assertEquals("Final answer", store.chat(id)?.exchanges?.single()?.answer?.answer)
-        assertEquals(listOf(mapOf("outcome" to "answered")), outcomes)
-        assertEquals(listOf("gym.saveConversation"), failures)
-    }
-
-    @Test fun snapshotPersistenceFailureReportsOnceAndKeepsTheReceivedAnswerInItsChat() = runTest {
-        var failSnapshot = false
-        val failures = mutableListOf<String>()
-        val outcomes = mutableListOf<Map<String, String>>()
-        val telemetry = object : Telemetry {
-            override fun event(name: String, properties: Map<String, String>) {
-                if (name == "gym_ask_outcome") outcomes += properties.filterKeys { it != "duration_ms" }
-            }
-            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { failures += operation }
-        }
-        val file = File(tmp.root, "snapshot-failure")
-        val disk = LocalCoach(file) { target, text ->
-            if (failSnapshot) { failSnapshot = false; throw java.io.IOException("private local content") }
-            AtomicDocument.write(target, text)
-        }
-        lateinit var store: CoachStore
-        var chat = ""
-        val api = object : GymRest by FakeGymRest() {
-            override suspend fun stream(question: AskQuestion, onSnapshot: suspend (AskGeneration) -> Unit): AskAnswer {
-                val partial = AskGeneration("generation-a", requireNotNull(question.requestId), question.question,
-                    "running", "Partial answer", revision = 1)
-                failSnapshot = true
-                onSnapshot(partial)
-                assertEquals("Partial answer", store.chat(chat)?.exchanges?.single()?.generation?.answer)
-                return partial.copy(status = "completed", answer = "Final answer", revision = 2).response()
-            }
-        }
-        store = CoachStore({ "alice" }, {}, { api }, disk, telemetry, System::nanoTime, backgroundScope)
-        chat = store.freshChat()
-        assertTrue(store.submit(chat, "Question", requestId = "request-a"))
-        val deadline = System.nanoTime() + 5_000_000_000
-        while (store.isAsking(chat) && System.nanoTime() < deadline) { runCurrent(); Thread.yield() }
-        assertFalse(store.isAsking(chat))
-        assertEquals("Final answer", store.chat(chat)?.exchanges?.single()?.answer?.answer)
-        assertEquals("Final answer", LocalCoach(file).chats("alice").single().exchanges.single().answer?.answer)
-        assertEquals(listOf(mapOf("outcome" to "answered")), outcomes)
-        assertEquals(listOf("gym.saveConversation"), failures)
-    }
-
 }

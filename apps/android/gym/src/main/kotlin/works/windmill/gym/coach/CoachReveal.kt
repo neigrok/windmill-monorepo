@@ -74,9 +74,6 @@ internal class CoachReveal(initial: String) {
 // so a room revisited mid-stream never re-types. Arrival stamps and advancement both take the frame
 // clock, so the test clock drives the whole reveal.
 @Composable
-internal fun rememberRevealedText(messageKey: String, generation: AskGeneration): String = rememberRevealedText(messageKey, generation.answer, generation.status in listOf("failed", "stopped"))
-
-@Composable
 internal fun rememberRevealedText(messageKey: String, text: String, settled: Boolean = false): String {
     val reveal = remember(messageKey) { CoachReveal(text) }
     var shown by remember(messageKey) { mutableStateOf(text) }

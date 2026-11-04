@@ -141,6 +141,17 @@ internal class ScriptedTurns(private val events: List<Json>) : TurnTransport {
     }
 }
 
+// An installation that keeps its credential in memory, on a scripted issuer.
+internal object TurnPhoneInstallation {
+    fun onMemory(server: AiInstallationApi = ScriptedInstallation()): AiInstallation {
+        val kept = mutableMapOf<String, String?>()
+        return AiInstallation(object : KeptValues {
+            override fun read(key: String) = kept[key]
+            override fun write(values: Map<String, String?>) { kept.putAll(values) }
+        }, KeyGenerator.getInstance("AES").apply { init(256) }.generateKey().let { key -> SecretVault { key } }, server)
+    }
+}
+
 // Every event and failure a phone told, for a test to read whole.
 internal class TellingRecorder : Telemetry {
     val events: MutableList<Pair<String, Map<String, String>>> = Collections.synchronizedList(mutableListOf())
@@ -198,11 +209,7 @@ internal class TurnPhone(
     val installationServer = ScriptedInstallation()
     val pictureFolder = File(directory, "pictures")
     val pictures = PictureFiles { pictureFolder }
-    private val kept = mutableMapOf<String, String?>()
-    val installation = AiInstallation(object : KeptValues {
-        override fun read(key: String) = kept[key]
-        override fun write(values: Map<String, String?>) { kept.putAll(values) }
-    }, KeyGenerator.getInstance("AES").apply { init(256) }.generateKey().let { key -> SecretVault { key } }, installationServer)
+    val installation = TurnPhoneInstallation.onMemory(installationServer)
     val server = transport as? ScriptedTurns ?: ScriptedTurns(emptyList())
     val turns = CoachTurns(room.training, transport, installation, accountToken, pictures, lazy { catalog() }, telling, lease,
         "https://windmill.works", scope, test.coroutineContext[ContinuationInterceptor] as CoroutineDispatcher, elapsedMs = { test.testScheduler.currentTime })

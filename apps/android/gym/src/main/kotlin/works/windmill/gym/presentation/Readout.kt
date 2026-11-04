@@ -12,8 +12,6 @@ object Readout {
     private val weekdays = listOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
     private val months = listOf("Jan", "Feb", "Mar", "Apr", "May", "Jun",
                                 "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
-    private val fullMonths = listOf("January", "February", "March", "April", "May", "June",
-                                    "July", "August", "September", "October", "November", "December")
     private val names = listOf("zero", "one", "two", "three", "four", "five",
                                "six", "seven", "eight", "nine", "ten")
 
@@ -129,13 +127,6 @@ object Readout {
         val date = "${at.dayOfMonth} ${months[at.monthValue - 1]}"
         if (at.year == here.year) return date
         return "$date ${at.year}"
-    }
-
-    fun month(ms: Long, now: Long): String {
-        val at = at(ms)
-        val name = fullMonths[at.monthValue - 1]
-        if (at.year == at(now).year) return name
-        return "$name ${at.year}"
     }
 
     fun briefDay(ms: Long, now: Long): String {

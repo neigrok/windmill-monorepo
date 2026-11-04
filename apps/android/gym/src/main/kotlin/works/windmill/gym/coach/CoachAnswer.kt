@@ -60,37 +60,32 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import works.windmill.gym.presentation.Exercise
 import works.windmill.gym.presentation.Readout
+import works.windmill.gym.presentation.SessionSummary
 import works.windmill.gym.ui.GymType
 import works.windmill.platform.design.WindmillType
 import works.windmill.platform.telemetry.LocalTelemetry
 import works.windmill.platform.telemetry.Telemetry
 
+// An answer: its words, the routines it created, the drafts a retained answer holds, and what it read once it ended.
 @Composable
 internal fun CoachAnswer(
     text: String,
-    receipt: AnswerReceipt?,
+    reply: CoachReply,
     catalog: List<Exercise>,
-    nowMs: Long,
-    legacyRead: ReadTally? = null,
-    legacySteps: List<AskStep> = emptyList(),
-    results: List<CoachResult> = emptyList(),
+    workouts: (String) -> SessionSummary? = { null },
     onOpenRoutine: ((String) -> Unit)? = null,
     routineDrafts: List<CoachRoutineDraft> = emptyList(),
-    onConfirmRoutine: (suspend (CoachRoutineDraft) -> DraftOutcome)? = null,
-    hasProposals: Boolean = false,
+    onSaveDrafts: (suspend () -> DraftOutcome)? = null,
     onOpenWorkout: ((String) -> Unit)? = null,
-    copyText: String = text,
     receiptInset: Dp = 0.dp,
     onSourcesTop: (Int?) -> Unit = {},
 ) {
     val colors = MaterialTheme.colorScheme
     val copyMenu = remember { CoachCopyMenu() }
-    val evidence = receipt?.takeIf { it.supported }
-    val readOnly = CoachSources.readOnly(evidence?.steps ?: legacySteps,
-        hasProposals || evidence?.proposals.orEmpty().isNotEmpty(), results.isNotEmpty(), routineDrafts.isNotEmpty())
+    val readOnly = CoachSources.readOnly(reply.calls, reply.proposals.isNotEmpty(), reply.routines.isNotEmpty(), routineDrafts.isNotEmpty())
     Column(verticalArrangement = Arrangement.spacedBy(if (readOnly) 2.dp else 24.dp), modifier = Modifier.fillMaxWidth()) {
-        CoachText(text, copyText, copyMenu)
-        routineDrafts.filter { it.state == "pending" }.forEach { draft ->
+        CoachText(text, reply.text, copyMenu)
+        routineDrafts.forEachIndexed { index, draft ->
             key(draft.operationId) {
                 val scope = rememberCoroutineScope()
                 var busy by remember { mutableStateOf(false) }
@@ -122,14 +117,15 @@ internal fun CoachAnswer(
                         }
                     }
                     note?.let { Text(it, style = WindmillType.supporting, color = colors.onSurfaceVariant) }
-                    if (!closed) CoachAction(if (busy) "Saving…" else "Save routine", primary = true, enabled = !busy && onConfirmRoutine != null, onClick = {
-                        if (!busy && onConfirmRoutine != null) {
+                    // One answer's drafts are one save: the door stands under the last of them.
+                    if (!closed && index == routineDrafts.lastIndex) CoachAction(if (busy) "Saving…" else "Save routine", primary = true, enabled = !busy && onSaveDrafts != null, onClick = {
+                        if (!busy && onSaveDrafts != null) {
                             busy = true
                             note = null
                             scope.launch {
                                 try {
-                                    when (val saved = onConfirmRoutine(draft)) {
-                                        is DraftOutcome.Saved -> Unit
+                                    when (val saved = onSaveDrafts()) {
+                                        DraftOutcome.Saved -> Unit
                                         is DraftOutcome.Closed -> { note = saved.said; closed = true }
                                         is DraftOutcome.Failed -> note = saved.said
                                     }
@@ -140,80 +136,36 @@ internal fun CoachAnswer(
                 }
             }
         }
-        results.filter { it.kind == "routine-created" }.distinctBy { it.operationId }.forEach { result ->
+        reply.routines.forEach { routine ->
             Column(verticalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.fillMaxWidth().padding(horizontal = receiptInset).background(colors.surfaceContainer, RoundedCornerShape(20.dp)).padding(16.dp)) {
                 Text("Routine created", style = WindmillType.supporting, color = colors.onSurfaceVariant)
-                Text(result.routineName, style = GymType.headingCompact, color = colors.onSurface)
-                onOpenRoutine?.let { open -> CoachAction("Open routine", { open(result.routineId) }) }
+                Text(routine.name, style = GymType.headingCompact, color = colors.onSurface)
+                onOpenRoutine?.let { open -> CoachAction("Open routine", { open(routine.id) }) }
             }
         }
-        if (readOnly) {
-            (evidence?.read ?: legacyRead)?.let { tally ->
-                Box(Modifier.fillMaxWidth().padding(horizontal = receiptInset)) {
-                    CoachReadSources(tally, evidence, evidence?.steps ?: legacySteps, onOpenWorkout, onSourcesTop)
-                }
-            }
-        } else {
-            val focus = evidence?.workouts?.singleOrNull()
-            if (focus != null) Text("From your log", style = WindmillType.kicker, color = colors.onSurfaceVariant, modifier = Modifier.padding(horizontal = receiptInset))
-            listOfNotNull(focus).forEach { observation ->
-                val workout = requireNotNull(observation.workout)
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = receiptInset).background(colors.surfaceContainer, RoundedCornerShape(20.dp)).padding(16.dp),
-                ) {
-                    Text(
-                        "${observation.routine?.takeIf { it.isNotBlank() } ?: Readout.noRoutine} · ${Readout.shortDate(observation.startedAtMs, nowMs)}",
-                        style = WindmillType.kicker, color = colors.onSurfaceVariant,
-                    )
-                    val facts = listOfNotNull(
-                        "Sets" to workout.workingSetCount.toString(),
-                        "Volume" to (workout.tonnageKg?.let { "${Readout.weight(it)} kg" } ?: "—"),
-                        workout.durationMs?.let { "Duration" to if (it < 60_000) "<1 min" else "${it / 60_000} min" },
-                    )
-                    facts.forEach { (label, value) ->
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.Top) {
-                            Text(label, style = WindmillType.paragraph, color = colors.onSurfaceVariant, modifier = Modifier.weight(1f))
-                            Text(value, style = WindmillType.labelParagraph, color = colors.onSurface)
-                        }
-                    }
-                }
-            }
-            val tally = evidence?.read ?: legacyRead
-            if (tally != null) {
-                val phrases = Ask.steps(evidence?.steps ?: legacySteps, drafted = routineDrafts.isNotEmpty())
-                val observations = evidence?.observed.orEmpty()
-                val expandable = phrases.isNotEmpty() || observations.isNotEmpty()
+        if (reply.state.isTerminal) {
+            val tally = reply.receipt.read
+            if (readOnly) Box(Modifier.fillMaxWidth().padding(horizontal = receiptInset)) {
+                CoachReadSources(tally, reply.workoutsRead.mapNotNull(workouts), reply.calls, onOpenWorkout, onSourcesTop)
+            } else {
+                val phrases = reply.steps.distinct()
                 var expanded by rememberSaveable { mutableStateOf(false) }
                 Column(Modifier.padding(horizontal = receiptInset), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).then(
-                            if (!expandable) Modifier else Modifier.semantics {
+                            if (phrases.isEmpty()) Modifier else Modifier.semantics {
                                 stateDescription = if (expanded) "expanded" else "collapsed"
                             }.clickable(role = Role.Button) { expanded = !expanded },
                         ),
                     ) {
                         Text(Ask.receipt(tally).replaceFirstChar { it.uppercase() }, style = WindmillType.detail, color = colors.onSurfaceVariant, modifier = Modifier.weight(1f))
-                        if (expandable) Text(if (expanded) "−" else "+", color = colors.onSurfaceVariant)
+                        if (phrases.isNotEmpty()) Text(if (expanded) "−" else "+", color = colors.onSurfaceVariant)
                     }
-                    if (expanded) {
-                        observations.forEach { fact ->
-                            val about = fact.routine?.takeIf { it.isNotBlank() } ?: Readout.noRoutine
-                            val scope = when (fact.coverage) {
-                                "movement" -> "${Readout.movement(requireNotNull(fact.exerciseId), catalog)} · ${Readout.setCount(fact.setsRead)} read"
-                                "session" -> "Workout · ${Readout.setCount(fact.setsRead)} read"
-                                else -> "Workout summary"
-                            }
-                            val totals = fact.workout?.takeIf { fact.wholeWorkout }?.let { " · ${Readout.setCount(it.workingSetCount)}" +
-                                (it.tonnageKg?.let { kg -> " · ${Readout.weight(kg)}kg" } ?: "") }.orEmpty()
-                            Text("$about · ${Readout.shortDate(fact.startedAtMs, nowMs)}\n$scope$totals", style = WindmillType.detail, color = colors.onSurfaceVariant)
-                        }
-                        phrases.forEach { phrase ->
-                            Text(phrase.replaceFirstChar { it.uppercase() }, style = WindmillType.detail, color = colors.onSurfaceVariant)
-                        }
+                    if (expanded) phrases.forEach { phrase ->
+                        Text(phrase.replaceFirstChar { it.uppercase() }, style = WindmillType.detail, color = colors.onSurfaceVariant)
                     }
                 }
             }

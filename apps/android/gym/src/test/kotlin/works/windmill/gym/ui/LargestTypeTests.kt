@@ -51,9 +51,8 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
-import works.windmill.gym.coach.Ask
-import works.windmill.gym.coach.AskCap
-import works.windmill.gym.coach.AskExchange
+import works.windmill.gym.coach.CoachExchange
+import works.windmill.gym.coach.turn.CoachTurnRefusal
 import works.windmill.gym.presentation.Ladder
 import works.windmill.gym.presentation.Proposal
 import works.windmill.gym.presentation.RoutineDraft
@@ -139,18 +138,17 @@ class LargestTypeTests {
     @Test
     fun theCeilingSentenceScrollsWithTheThreadAndLeavesTheConversationReadableAtFontScaleTwo() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val ceiling = "this account has reached its AI ceiling for the last 30 days. Coach will " +
-            "answer again as that window rolls on"
+        val refusal = CoachTurnRefusal.of("free_day_exhausted")
         try { store(scope).use { room ->
             val ask = AskBinding(room.store)
             compose.setContent {
                 CompositionLocalProvider(LocalDensity provides Density(density = 2f, fontScale = 2f)) {
                     AskScreen(
                         state = ask, events = ask,
-                        thread = listOf(AskExchange(question = "what’s stalled?", trouble = ceiling)),
+                        thread = listOf(CoachExchange("exchange-1", "what’s stalled?", room.now)),
                         receipts = emptyList(), lookedAt = emptySet(), asking = false,
-                        cap = AskCap.Ceiling, onAsk = {}, onRetry = {}, onAskNew = {}, seed = "",
-                        origin = "https://windmill.works", backTo = null, onBack = null,
+                        refusal = refusal, onAsk = { _, _ -> }, seed = "",
+                        origin = "https://windmill.works",
                         onThreads = {}, onReview = {},
                     )
                 }
@@ -160,12 +158,9 @@ class LargestTypeTests {
             val left = with(compose.density) { scroller.size.height.toDp() }
             assertTrue("the thread is $left at fontScale 2.0", left >= floor)
 
-            val sentence = compose.onNodeWithText(ceiling).fetchSemanticsNode()
+            val sentence = compose.onNodeWithText(refusal.sentence).fetchSemanticsNode()
             assertTrue("and the sentence is inside it, not pinned on top of it",
                 sentence.positionInRoot.y >= scroller.positionInRoot.y)
-            // And under THIS ceiling the promise is not drawn at all: ten a day is the day's rule, and
-            // pinned under the sentence refusing the question it would read as the reason for it.
-            compose.onNodeWithText(Ask.allowance).assertDoesNotExist()
         } } finally { scope.cancel() }
     }
 

@@ -307,15 +307,11 @@ internal class FinishFlow(
             }
             if (!account.resolved || !account.isSignedIn || !store.seat.accountReady) return@LaunchedEffect
             if (owner == null || account.user?.id != owner || store.seat.accountKey != Seat.of(owner)) return@LaunchedEffect
-            val authenticatedOwner = owner
-            queuedShareOwner = authenticatedOwner
+            queuedShareOwner = owner
             try {
                 val chat = store.coach.freshChat(FinishCoach.question, id = request)
                 onCoach()
-                if (!store.coach.hasRequest(chat, request) &&
-                    !store.coach.submit(chat, FinishCoach.question, requestId = request, authenticatedOwner = authenticatedOwner)) {
-                    say("Your message couldn’t be saved. Try again.")
-                }
+                if (!store.coach.send(chat, FinishCoach.question, once = request)) say("Your message couldn’t be saved. Try again.")
             } catch (_: Exception) {
                 say("Your message couldn’t be saved. Try again.")
             }

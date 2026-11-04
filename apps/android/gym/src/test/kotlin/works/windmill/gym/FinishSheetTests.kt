@@ -12,6 +12,7 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isEnabled
@@ -42,7 +43,6 @@ import androidx.compose.runtime.setValue
 import java.util.concurrent.ConcurrentLinkedQueue
 import kotlin.coroutines.CoroutineContext
 import kotlinx.coroutines.CoroutineDispatcher
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -58,9 +58,16 @@ import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import works.windmill.agent.TurnRefusal
 import works.windmill.gym.coach.Ask
 import works.windmill.gym.coach.CoachDraft
 import works.windmill.gym.coach.LocalCoach
+import works.windmill.gym.coach.heldThreads
+import works.windmill.gym.coach.turn.CoachTurnFault
+import works.windmill.gym.coach.turn.OpenTurnOnce
+import works.windmill.gym.coach.turn.ScriptedTurns
+import works.windmill.gym.domain.coach.CoachThread
+import works.windmill.gym.domain.coach.MessageState
 import works.windmill.platform.storage.AtomicDocument
 import java.io.File
 import java.io.IOException
@@ -74,9 +81,10 @@ import works.windmill.gym.store.TrainingStore
 import works.windmill.gym.ui.FinishCoach
 import works.windmill.gym.ui.GymMaterial
 import works.windmill.platform.telemetry.Telemetry
+import works.windmill.sync.core.Json
+import works.windmill.sync.core.ScopeRef
 import works.windmill.sync.engine.signOut
-import works.windmill.platform.net.Refusal
-import works.windmill.platform.net.WindmillApiException
+import works.windmill.sync.schema.Gym
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
@@ -94,10 +102,10 @@ class FinishSheetTests {
     private var suppliedRegistry by mutableStateOf<SaveableStateRegistry?>(null)
     private var presentedStore by mutableStateOf<TrainingStore?>(null)
 
-    private fun inRoom(server: FakeGymRest = FakeGymRest(), seat: String? = "u1", telemetry: Telemetry = Telemetry.None, localCoach: LocalCoach? = null, test: (EngineRoomFixture) -> Unit) {
+    private fun inRoom(server: ScriptedTurns = ScriptedTurns(emptyList()), seat: String? = "u1", telemetry: Telemetry = Telemetry.None, localCoach: LocalCoach? = null, test: (EngineRoomFixture) -> Unit) {
         roomTelemetry = telemetry
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-        val room = EngineRoomFixture(tmp.newFolder(), scope, rest = server, telemetry = telemetry, localCoach = localCoach)
+        val room = EngineRoomFixture(tmp.newFolder(), scope, rest = FakeGymRest(), telemetry = telemetry, localCoach = localCoach, coachServer = server)
         try {
             room.store.observeEngine()
             runBlocking { room.select(seat) }
@@ -188,10 +196,18 @@ class FinishSheetTests {
     }
 
     private fun askAQuestion() {
-        compose.onNodeWithText("Coach").performClick()
+        compose.onNode(hasText("Coach") and hasClickAction()).performClick()
         compose.onNodeWithContentDescription("Question").performTextInput("What’s stalled?")
         compose.onNodeWithContentDescription("Send").performClick()
     }
+
+    // The server as the turns ahead run: each frame in turn, and a held turn waits for its Stop.
+    private fun script(frames: String) = ScriptedTurns(Json.parse(frames).arr())
+
+    // A signed-in turn waits for the first pull of the account's log.
+    private fun read(room: EngineRoomFixture) = room.pull(EngineRoomFixture.server())
+
+    private fun onceRow(room: EngineRoomFixture): String? = room.engine.read(ScopeRef(Gym.scope)) { it.device(OpenTurnOnce.key) }?.member("once")?.str()
 
     @Test
     fun testTheReceiptStandsOverTheWorkoutItClosedAndSaysItsOwnTitle() {
@@ -330,8 +346,11 @@ class FinishSheetTests {
 
     @Test
     fun testShareWithCoachOpensAFreshConversationAndSendsTheOneLine() {
-        val server = FakeGymRest()
+        val server = script("""[
+            {"event":"text","data":{"delta":"nothing has moved in three weeks."}},{"event":"done","data":{"state":"completed"}},
+            {"await":"stop"},{"event":"done","data":{"state":"stopped"}}]""")
         inRoom(server) { room ->
+            read(room)
             show(room)
             compose.waitForIdle()
 
@@ -339,9 +358,6 @@ class FinishSheetTests {
             compose.waitUntil(10_000) {
                 compose.onAllNodesWithText("nothing has moved in three weeks.").fetchSemanticsNodes().isNotEmpty()
             }
-            val answer = CompletableDeferred<Unit>()
-            val entered = CompletableDeferred<Unit>()
-            server.onAsk = { entered.complete(Unit); answer.await() }
             startAWorkout(room)
             finish()
 
@@ -357,19 +373,16 @@ class FinishSheetTests {
             compose.onNodeWithContentDescription("Coach is thinking").assertIsDisplayed()
             compose.onAllNodesWithText("What’s stalled?").assertCountEquals(0)
             compose.onAllNodesWithText("nothing has moved in three weeks.").assertCountEquals(0)
-            compose.waitUntil(10_000) { compose.runOnIdle { entered.isCompleted } }
             compose.runOnIdle {
-                assertEquals(listOf("What’s stalled?", "Check my last workout."),
-                             server.asked.map { it.question })
-                assertTrue("a new conversation, not the one that stood",
-                           server.asked[0].thread != server.asked[1].thread)
-                assertTrue(server.asked[1].thread.isNotEmpty())
+                assertEquals(listOf("What’s stalled?", "Check my last workout."), server.opened.map { it.question })
+                assertEquals("a new conversation, not the one that stood",
+                             setOf("What’s stalled?", "Check my last workout."), room.heldThreads().map { it.title }.toSet())
             }
             compose.onNodeWithText("The log").assertIsDisplayed()
 
-            answer.complete(Unit)
+            compose.onNodeWithContentDescription("Stop response").performClick()
             compose.waitUntil(10_000) {
-                compose.onAllNodesWithText("nothing has moved in three weeks.").fetchSemanticsNodes().isNotEmpty()
+                compose.onAllNodesWithText(Ask.stopped).fetchSemanticsNodes().isNotEmpty()
             }
             compose.onAllNodesWithText(FinishCoach.question).assertCountEquals(1)
         }
@@ -377,10 +390,11 @@ class FinishSheetTests {
 
     @Test
     fun testTwoTapsOnShareWithCoachAreOneAskAndTheFollowUpStaysInThatThread() {
-        val server = FakeGymRest()
-        val answer = CompletableDeferred<Unit>()
-        server.onAsk = { answer.await() }
+        val server = script("""[
+            {"await":"stop"},{"event":"done","data":{"state":"stopped"}},
+            {"event":"text","data":{"delta":"Your squat is fine."}},{"event":"done","data":{"state":"completed"}}]""")
         inRoom(server) { room ->
+            read(room)
             finishAWorkout(room)
 
             val tap = compose.onNodeWithText(FinishCoach.action)
@@ -400,12 +414,11 @@ class FinishSheetTests {
                 compose.onAllNodesWithContentDescription("Coach is thinking").fetchSemanticsNodes().isNotEmpty()
             }
             compose.onAllNodesWithText(FinishCoach.question).assertCountEquals(1)
-            compose.waitUntil(10_000) { compose.runOnIdle { server.calls.count { it == "ask" } == 1 } }
-            compose.runOnIdle { assertEquals("one tap, one ask", 1, server.calls.count { it == "ask" }) }
+            compose.runOnIdle { assertEquals("one tap, one turn", listOf(FinishCoach.question), server.opened.map { it.question }) }
 
-            answer.complete(Unit)
+            compose.onNodeWithContentDescription("Stop response").performClick()
             compose.waitUntil(10_000) {
-                compose.onAllNodesWithText("nothing has moved in three weeks.").fetchSemanticsNodes().isNotEmpty()
+                compose.onAllNodesWithText(Ask.stopped).fetchSemanticsNodes().isNotEmpty()
             }
             compose.waitUntil(10_000) { compose.runOnIdle {
                 val id = room.store.coach.selectedChatId.orEmpty()
@@ -421,25 +434,28 @@ class FinishSheetTests {
                 assertEquals(false, room.store.coach.isAsking(key))
             }
             compose.onNodeWithContentDescription("Send").assertIsEnabled().performClick()
+            compose.waitUntil(10_000) { compose.runOnIdle { server.opened.size == 2 } }
+            compose.waitUntil(10_000) {
+                compose.onAllNodesWithText("Your squat is fine.").fetchSemanticsNodes().isNotEmpty()
+            }
             compose.runOnIdle {
                 val key = room.store.coach.selectedChatId!!
-                assertEquals("Send admits the follow-up on the original chat", listOf(FinishCoach.question, "And my squat?"), room.store.coach.chat(key)!!.exchanges.map { it.question })
-            }
-            compose.waitUntil(10_000) { server.asked.size == 2 }
-            compose.runOnIdle {
-                assertEquals(listOf(FinishCoach.question, "And my squat?"), server.asked.map { it.question })
+                assertEquals("Send admits the follow-up on the original chat", listOf(FinishCoach.question, "And my squat?"), room.store.coach.exchanges(key).map { it.question })
+                assertEquals(listOf(FinishCoach.question, "And my squat?"), server.opened.map { it.question })
                 assertEquals("the follow-up continues the conversation the tap opened",
-                             server.asked[0].thread, server.asked[1].thread)
+                             listOf(FinishCoach.question), room.heldThreads().map { it.title })
             }
         }
     }
 
+    // One turn runs at a time: the share's question waits in its own chat until the running one ends.
     @Test
     fun shareStartsItsOwnChatWhileThePreviousChatKeepsWorking() {
-        val server = FakeGymRest()
-        val answer = CompletableDeferred<Unit>()
-        server.onAsk = { answer.await() }
+        val server = script("""[
+            {"await":"stop"},{"event":"done","data":{"state":"stopped"}},
+            {"event":"text","data":{"delta":"Looks strong."}},{"event":"done","data":{"state":"completed"}}]""")
         inRoom(server) { room ->
+            read(room)
             show(room)
             compose.waitForIdle()
 
@@ -447,6 +463,7 @@ class FinishSheetTests {
             compose.waitUntil(10_000) {
                 compose.onAllNodesWithContentDescription("Coach is thinking").fetchSemanticsNodes().isNotEmpty()
             }
+            val asked = compose.runOnIdle { room.store.coach.selectedChatId!! }
             startAWorkout(room)
             finish()
 
@@ -454,24 +471,37 @@ class FinishSheetTests {
             compose.waitUntil(10_000) {
                 compose.onAllNodesWithText("Ended early.").fetchSemanticsNodes().isEmpty()
             }
-            compose.onNodeWithContentDescription("Coach is thinking").assertIsDisplayed()
-            compose.onAllNodesWithText("What’s stalled?").assertCountEquals(0)
-            compose.onAllNodesWithText(FinishCoach.question).assertCountEquals(1)
-            compose.runOnIdle {
-                assertEquals(listOf("What’s stalled?", FinishCoach.question), server.asked.map { it.question })
-                assertTrue(server.asked[0].thread != server.asked[1].thread)
-            }
-
-            answer.complete(Unit)
             compose.waitUntil(10_000) {
-                compose.onAllNodesWithText("nothing has moved in three weeks.").fetchSemanticsNodes().isNotEmpty()
+                compose.onAllNodesWithText(CoachTurnFault.busy.sentence).fetchSemanticsNodes().isNotEmpty()
+            }
+            val share = compose.runOnIdle { room.store.coach.selectedChatId!! }
+            compose.onNodeWithText("Reply pending").assertIsDisplayed()
+            compose.onNodeWithText("What’s stalled?").assertIsDisplayed()
+            compose.onNodeWithText("View chat").assertIsDisplayed()
+            compose.runOnIdle {
+                assertTrue(share != asked)
+                assertTrue(room.store.coach.isAsking(asked))
+                assertEquals(CoachDraft(FinishCoach.question), room.store.coach.draft(share))
+                assertEquals(null, room.store.coach.chat(share)?.conversation)
+                assertEquals(listOf("What’s stalled?"), server.opened.map { it.question })
+                assertEquals(listOf("What’s stalled?"), room.heldThreads().map { it.title })
+                room.store.coach.stop()
+            }
+            compose.waitUntil(10_000) { compose.runOnIdle { !room.store.coach.isAsking(asked) } }
+            compose.onNodeWithContentDescription("Send").assertIsEnabled().performClick()
+            compose.waitUntil(10_000) {
+                compose.onAllNodesWithText("Looks strong.").fetchSemanticsNodes().isNotEmpty()
+            }
+            compose.runOnIdle {
+                assertEquals(listOf("What’s stalled?", FinishCoach.question), server.opened.map { it.question })
+                assertEquals(setOf("What’s stalled?", FinishCoach.question), room.heldThreads().map { it.title }.toSet())
             }
         }
     }
 
     @Test
     fun signedOutTheReceiptOffersShareThroughSignIn() {
-        val server = FakeGymRest()
+        val server = ScriptedTurns(emptyList())
         inRoom(server, seat = null) { room ->
             show(room)
             compose.waitForIdle()
@@ -480,15 +510,15 @@ class FinishSheetTests {
 
             compose.onAllNodesWithText(FinishCoach.action).assertCountEquals(1)
             compose.onNodeWithText("Only on this phone · Keep it").assertIsDisplayed()
-            assertEquals("nothing was asked", 0, server.calls.count { it == "ask" })
+            assertEquals("nothing was asked", emptyList<String>(), server.opened.map { it.question })
         }
     }
 
     @Test
     fun testWithoutCoachOnThisDeploymentTheReceiptOffersNoShareWithCoach() {
-        val server = FakeGymRest()
-        server.refuseAsk = WindmillApiException.Refused(404, Refusal(message = "not found", code = "not-found"))
+        val server = ScriptedTurns(emptyList()).apply { refuseOpen = TurnRefusal(404, "not-found", null) }
         inRoom(server) { room ->
+            read(room)
             show(room)
             compose.waitForIdle()
 
@@ -500,7 +530,7 @@ class FinishSheetTests {
             finish()
 
             compose.onAllNodesWithText(FinishCoach.action).assertCountEquals(0)
-            assertEquals("the one ask was the opener", 1, server.calls.count { it == "ask" })
+            assertEquals("the one ask was the opener", listOf("What’s stalled?"), server.opened.map { it.question })
         }
     }
 
@@ -573,7 +603,7 @@ class FinishSheetTests {
 
     @Test
     fun signedOutShareRetainsItsRequestAcrossRecreationAndWaitsForTheAccountDecision() {
-        val server = FakeGymRest()
+        val server = script("""[{"event":"text","data":{"delta":"Looks strong."}},{"event":"done","data":{"state":"completed"}}]""")
         val attempts = SignInAttempts()
         val opened = mutableListOf<String>()
         suppliedShell = ShellActions(openYou = {}, openSignInForResult = { id -> opened += id; attempts.begin(id) }, signInAttempts = attempts)
@@ -590,24 +620,25 @@ class FinishSheetTests {
                 attempts.complete("u1")
                 presentedAccount = Account("https://windmill.works", works.windmill.platform.User("u1", "u1@example.com"), resolved = false)
             }
-            compose.runOnIdle { assertEquals(emptyList<works.windmill.gym.coach.AskQuestion>(), server.asked) }
+            compose.runOnIdle { assertEquals(emptyList<String>(), server.opened.map { it.question }) }
             runBlocking { room.select("u1") }
+            read(room)
             compose.runOnIdle { presentedAccount = room.account() }
-            compose.waitUntil(10_000) { compose.runOnIdle { server.asked.isNotEmpty() } }
+            compose.waitUntil(10_000) { compose.runOnIdle { server.opened.isNotEmpty() } }
             compose.runOnIdle {
-                assertEquals(listOf(FinishCoach.question), server.asked.map { it.question })
-                assertEquals(request, server.asked.single().requestId)
+                assertEquals(listOf(FinishCoach.question), server.opened.map { it.question })
+                assertEquals(request, onceRow(room))
                 assertEquals(null, attempts.result)
             }
             restoration.emulateSavedInstanceStateRestore()
             compose.waitForIdle()
-            compose.runOnIdle { assertEquals(1, server.asked.size) }
+            compose.runOnIdle { assertEquals(listOf(FinishCoach.question), server.opened.map { it.question }) }
         }
     }
 
     @Test
     fun cancellingShareSignInDoesNotSendOnAnUnrelatedLaterSignIn() {
-        val server = FakeGymRest()
+        val server = ScriptedTurns(emptyList())
         val attempts = SignInAttempts()
         val opened = mutableListOf<String>()
         suppliedShell = ShellActions(openYou = {}, openSignInForResult = { id -> opened += id; attempts.begin(id) }, signInAttempts = attempts)
@@ -618,15 +649,16 @@ class FinishSheetTests {
             compose.runOnIdle { attempts.cancel() }
             compose.waitForIdle()
             runBlocking { room.select("u1") }
+            read(room)
             compose.runOnIdle { presentedAccount = room.account() }
             compose.waitForIdle()
-            compose.runOnIdle { assertEquals(emptyList<works.windmill.gym.coach.AskQuestion>(), server.asked); assertEquals(null, attempts.result) }
+            compose.runOnIdle { assertEquals(emptyList<String>(), server.opened.map { it.question }); assertEquals(null, attempts.result) }
         }
     }
 
     @Test
     fun keepOpensOrdinarySignInWithoutQueuingAQuestionAndTheNextReceiptHasNoOffer() {
-        val server = FakeGymRest()
+        val server = ScriptedTurns(emptyList())
         var ordinary = 0
         val tracked = mutableListOf<String>()
         suppliedShell = ShellActions(openYou = {}, openSignIn = { ordinary++ }, openSignInForResult = { tracked += it })
@@ -634,7 +666,7 @@ class FinishSheetTests {
             finishAWorkout(room)
             compose.onNodeWithText("Only on this phone · Keep it").performScrollTo().performClick()
             compose.waitUntil(10_000) { ordinary == 1 }
-            compose.runOnIdle { assertEquals(emptyList<String>(), tracked); assertEquals(emptyList<works.windmill.gym.coach.AskQuestion>(), server.asked) }
+            compose.runOnIdle { assertEquals(emptyList<String>(), tracked); assertEquals(emptyList<String>(), server.opened.map { it.question }) }
             compose.onNodeWithContentDescription("Back to Routines").performClick()
             startAWorkout(room)
             finish()
@@ -642,9 +674,10 @@ class FinishSheetTests {
             compose.onNodeWithText("Done").performClick()
             compose.waitUntil(10_000) { compose.onAllNodesWithText("Ended early.").fetchSemanticsNodes().isEmpty() }
             runBlocking { room.select("u1") }
+            read(room)
             compose.runOnIdle { presentedAccount = room.account() }
             compose.waitForIdle()
-            compose.runOnIdle { assertEquals(emptyList<works.windmill.gym.coach.AskQuestion>(), server.asked) }
+            compose.runOnIdle { assertEquals(emptyList<String>(), server.opened.map { it.question }) }
         }
     }
 
@@ -685,7 +718,7 @@ class FinishSheetTests {
 
     @Test
     fun aCompletedSignInForAWaitingAccountCannotShareIntoAnotherAccount() {
-        val server = FakeGymRest()
+        val server = ScriptedTurns(emptyList())
         val attempts = SignInAttempts()
         val opened = mutableListOf<String>()
         suppliedShell = ShellActions(openYou = {}, openSignInForResult = { id -> opened += id; attempts.begin(id) }, signInAttempts = attempts)
@@ -698,10 +731,11 @@ class FinishSheetTests {
                 presentedAccount = Account("https://windmill.works", works.windmill.platform.User("alice", "a@example.com"), resolved = false)
             }
             runBlocking { room.select("bob") }
+            read(room)
             compose.runOnIdle { presentedAccount = room.account() }
             compose.waitForIdle()
             compose.runOnIdle {
-                assertEquals(emptyList<works.windmill.gym.coach.AskQuestion>(), server.asked)
+                assertEquals(emptyList<String>(), server.opened.map { it.question })
                 assertEquals(null, attempts.result)
                 assertEquals(null, room.store.coach.selectedChatId)
             }
@@ -710,7 +744,7 @@ class FinishSheetTests {
 
     @Test
     fun ordinarySignInReplacesAnAlreadyCompletedShareAttemptBeforeAccountReadiness() {
-        val server = FakeGymRest()
+        val server = ScriptedTurns(emptyList())
         val attempts = SignInAttempts()
         val opened = mutableListOf<String>()
         suppliedShell = ShellActions(openYou = {}, openSignIn = { attempts.cancel() },
@@ -725,9 +759,10 @@ class FinishSheetTests {
                 suppliedShell!!.openSignIn()
             }
             runBlocking { room.select("alice") }
+            read(room)
             compose.runOnIdle { presentedAccount = room.account() }
             compose.waitForIdle()
-            compose.runOnIdle { assertEquals(emptyList<works.windmill.gym.coach.AskQuestion>(), server.asked); assertEquals(null, attempts.result) }
+            compose.runOnIdle { assertEquals(emptyList<String>(), server.opened.map { it.question }); assertEquals(null, attempts.result) }
         }
     }
 
@@ -859,7 +894,7 @@ class FinishSheetTests {
 
     @Test
     fun recreatingDuringTheShareExitContinuesItsOneExplicitSignInAndQuestion() {
-        val server = FakeGymRest()
+        val server = script("""[{"event":"text","data":{"delta":"Looks strong."}},{"event":"done","data":{"state":"completed"}}]""")
         val attempts = SignInAttempts()
         val opened = mutableListOf<String>()
         suppliedShell = ShellActions(openYou = {}, openSignInForResult = { id -> opened += id; attempts.begin(id) }, signInAttempts = attempts)
@@ -884,25 +919,26 @@ class FinishSheetTests {
             compose.waitUntil(10_000) { opened.isNotEmpty() }
             val request = opened.single()
             runBlocking { room.select("u1") }
+            read(room)
             compose.runOnIdle { attempts.complete("u1"); presentedAccount = room.account() }
-            compose.waitUntil(10_000) { compose.runOnIdle { server.asked.isNotEmpty() } }
+            compose.waitUntil(10_000) { compose.runOnIdle { server.opened.isNotEmpty() } }
             compose.runOnIdle {
                 assertEquals(listOf(request), opened)
-                assertEquals(listOf(FinishCoach.question), server.asked.map { it.question })
-                assertEquals(request, server.asked.single().requestId)
+                assertEquals(listOf(FinishCoach.question), server.opened.map { it.question })
+                assertEquals(request, onceRow(room))
             }
             val afterShare = compose.runOnIdle { saveRoom() }
             compose.runOnIdle { showing = false }
             compose.waitForIdle()
             compose.runOnIdle { suppliedRegistry = SaveableStateRegistry(afterShare) { true }; showing = true }
             compose.waitForIdle()
-            compose.runOnIdle { assertEquals(1, server.asked.size); assertEquals(listOf(request), opened) }
+            compose.runOnIdle { assertEquals(listOf(FinishCoach.question), server.opened.map { it.question }); assertEquals(listOf(request), opened) }
         }
     }
 
     @Test
     fun anOldQueuedShareReopensItsCompletedChatWithoutAnotherQuestionOrFreshEntry() {
-        val server = FakeGymRest()
+        val server = script("""[{"event":"text","data":{"delta":"Looks strong."}},{"event":"done","data":{"state":"completed"}}]""")
         val steps = mutableListOf<String>()
         val telemetry = object : Telemetry {
             override fun event(name: String, properties: Map<String, String>) {
@@ -912,6 +948,7 @@ class FinishSheetTests {
         }
         val disk = LocalCoach(File(tmp.root, "completed-share"))
         inRoom(server, telemetry = telemetry, localCoach = disk) { room ->
+            read(room)
             suppliedRegistry = SaveableStateRegistry(null) { true }
             finishAWorkout(room)
             val share = compose.onNodeWithText(FinishCoach.action).fetchSemanticsNode().config[SemanticsActions.OnClick].action!!
@@ -919,8 +956,8 @@ class FinishSheetTests {
             compose.runOnIdle { share() }
             val queued = compose.runOnIdle { saveRoom() }
             compose.mainClock.autoAdvance = true
-            compose.waitUntil(10_000) { compose.runOnIdle { server.asked.size == 1 && !room.store.coach.isAsking(server.asked.single().thread) } }
-            val request = server.asked.single().requestId!!
+            compose.waitUntil(10_000) { compose.runOnIdle { server.opened.size == 1 && room.store.coach.selectedChatId?.let { room.store.coach.chat(it)?.conversation != null && !room.store.coach.isAsking(it) } == true } }
+            val request = compose.runOnIdle { room.store.coach.selectedChatId!! }
             val original = disk.chats("u1").single { it.id == request }
             val other = compose.runOnIdle { room.store.coach.freshChat("Another draft") }
             val before = steps.toList()
@@ -932,24 +969,22 @@ class FinishSheetTests {
             restoreRoom(queued)
             compose.waitUntil(10_000) { compose.runOnIdle { restored.coach.selectedChatId == request } }
             compose.runOnIdle {
-                assertEquals(listOf(request), server.asked.map { it.requestId })
-                assertEquals(request, server.asked.single().thread)
+                assertEquals(listOf(FinishCoach.question), server.opened.map { it.question })
+                assertEquals(request, onceRow(room))
                 assertEquals(original, restored.coach.chat(request))
                 assertEquals(CoachDraft("Another draft"), restored.coach.draft(other))
                 assertEquals(before, steps)
-                assertEquals(2, restored.coach.allThreads.size)
-                assertEquals(emptyList<works.windmill.gym.coach.AskQuestion>(), disk.pending("u1"))
+                assertEquals(listOf(FinishCoach.question), room.heldThreads().map { it.title })
             }
         }
     }
 
     @Test
     fun anOldQueuedShareDoesNotResubmitOrCancelItsPendingQuestion() {
-        val server = FakeGymRest()
-        val answer = CompletableDeferred<Unit>()
-        server.onAsk = { answer.await() }
+        val server = script("""[{"await":"stop"},{"event":"text","data":{"delta":"nothing has moved in three weeks."}},{"event":"done","data":{"state":"stopped"}}]""")
         val disk = LocalCoach(File(tmp.root, "pending-share"))
         inRoom(server, localCoach = disk) { room ->
+            read(room)
             suppliedRegistry = SaveableStateRegistry(null) { true }
             finishAWorkout(room)
             val share = compose.onNodeWithText(FinishCoach.action).fetchSemanticsNode().config[SemanticsActions.OnClick].action!!
@@ -957,23 +992,24 @@ class FinishSheetTests {
             compose.runOnIdle { share() }
             val queued = compose.runOnIdle { saveRoom() }
             compose.mainClock.autoAdvance = true
-            compose.waitUntil(10_000) { compose.runOnIdle { server.asked.size == 1 } }
-            val request = server.asked.single().requestId!!
+            compose.waitUntil(10_000) { compose.runOnIdle { server.opened.size == 1 && room.store.coach.selectedChatId?.let { room.store.coach.chat(it)?.conversation } != null } }
+            val request = compose.runOnIdle { room.store.coach.selectedChatId!! }
             val other = compose.runOnIdle { room.store.coach.freshChat("Keep typing") }
             restoreRoom(queued)
             compose.waitUntil(10_000) { compose.runOnIdle { room.store.coach.selectedChatId == request } }
             compose.runOnIdle {
-                assertEquals(listOf(request), server.asked.map { it.requestId })
+                assertEquals(listOf(FinishCoach.question), server.opened.map { it.question })
                 assertTrue(room.store.coach.isAsking(request))
-                assertEquals(listOf(request), disk.pending("u1").map { it.requestId })
+                assertEquals("the second asking finds its turn and is never told Coach is busy", null, room.store.coach.fault)
                 assertEquals(CoachDraft("Keep typing"), room.store.coach.draft(other))
-                assertEquals(listOf(request), room.store.coach.chat(request)!!.exchanges.map { it.requestId })
+                assertEquals(listOf(FinishCoach.question), room.store.coach.exchanges(request).map { it.question })
+                room.store.coach.stop()
             }
-            answer.complete(Unit)
             compose.waitUntil(10_000) { compose.runOnIdle { !room.store.coach.isAsking(request) } }
+            compose.waitUntil(10_000) { compose.runOnIdle { room.store.coach.exchanges(request).singleOrNull()?.answer?.state == MessageState.stopped } }
             compose.runOnIdle {
-                assertEquals(1, server.asked.size)
-                assertEquals("nothing has moved in three weeks.", room.store.coach.chat(request)!!.exchanges.single().answer?.answer)
+                assertEquals(listOf(FinishCoach.question), server.opened.map { it.question })
+                assertEquals("nothing has moved in three weeks.", room.store.coach.exchanges(request).single().answer?.text)
                 assertEquals(request, room.store.coach.selectedChatId)
             }
         }
@@ -999,8 +1035,9 @@ class FinishSheetTests {
             override fun event(name: String, properties: Map<String, String>) {}
             override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { failures += operation }
         }
-        val server = FakeGymRest()
+        val server = script("""[{"event":"text","data":{"delta":"Looks strong."}},{"event":"done","data":{"state":"completed"}}]""")
         inRoom(server, telemetry = telemetry, localCoach = disk) { room ->
+            read(room)
             suppliedRegistry = SaveableStateRegistry(null) { true }
             finishAWorkout(room)
             val share = compose.onNodeWithText(FinishCoach.action).fetchSemanticsNode().config[SemanticsActions.OnClick].action!!
@@ -1013,7 +1050,7 @@ class FinishSheetTests {
             compose.runOnIdle {
                 assertEquals(request, failedDraftId)
                 assertEquals(listOf("gym.saveDraft"), failures)
-                assertEquals(emptyList<works.windmill.gym.coach.AskQuestion>(), server.asked)
+                assertEquals(emptyList<String>(), server.opened.map { it.question })
                 assertEquals(listOf(request), disk.chats("u1").map { it.id })
             }
             compose.runOnIdle { showing = false }
@@ -1022,20 +1059,22 @@ class FinishSheetTests {
             runBlocking { restored.connect(room.account()) }
             compose.runOnIdle { presentedStore = restored }
             restoreRoom(queued)
-            compose.waitUntil(10_000) { compose.runOnIdle { server.asked.size == 1 } }
+            compose.waitUntil(10_000) { compose.runOnIdle { server.opened.size == 1 } }
+            compose.waitUntil(10_000) { compose.runOnIdle { restored.coach.chat(request)?.conversation != null } }
             compose.runOnIdle {
-                assertEquals(request, server.asked.single().thread)
-                assertEquals(request, server.asked.single().requestId)
+                assertEquals(listOf(FinishCoach.question), server.opened.map { it.question })
+                assertEquals(request, onceRow(room))
                 assertEquals(listOf(request), disk.chats("u1").map { it.id })
-                assertEquals(listOf(request), restored.coach.chat(request)!!.exchanges.map { it.requestId })
+                assertEquals(listOf(FinishCoach.question), room.heldThreads().map { it.title })
             }
         }
     }
 
     @Test
     fun anOldQueuedShareNeverOpensOrSubmitsInTheReplacementOwner() {
-        val server = FakeGymRest()
+        val server = ScriptedTurns(emptyList())
         inRoom(server) { room ->
+            read(room)
             suppliedRegistry = SaveableStateRegistry(null) { true }
             finishAWorkout(room)
             val share = compose.onNodeWithText(FinishCoach.action).fetchSemanticsNode().config[SemanticsActions.OnClick].action!!
@@ -1046,6 +1085,7 @@ class FinishSheetTests {
             compose.mainClock.advanceTimeByFrame()
             compose.waitForIdle()
             runBlocking { room.select("bob") }
+            read(room)
             compose.runOnIdle {
                 presentedAccount = room.account()
                 suppliedRegistry = SaveableStateRegistry(queued) { true }
@@ -1054,9 +1094,9 @@ class FinishSheetTests {
             compose.mainClock.autoAdvance = true
             compose.waitForIdle()
             compose.runOnIdle {
-                assertEquals(emptyList<works.windmill.gym.coach.AskQuestion>(), server.asked)
+                assertEquals(emptyList<String>(), server.opened.map { it.question })
                 assertEquals(null, room.store.coach.selectedChatId)
-                assertEquals(emptyList<works.windmill.gym.coach.AskThread>(), room.store.coach.allThreads)
+                assertEquals(emptyList<CoachThread>(), room.heldThreads())
             }
             compose.onNodeWithText("Ended early.").assertDoesNotExist()
         }

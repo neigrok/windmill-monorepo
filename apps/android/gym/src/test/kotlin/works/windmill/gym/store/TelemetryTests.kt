@@ -1,11 +1,16 @@
 package works.windmill.gym.store
 
-import works.windmill.gym.coach.AskOutcome
 import java.io.File
-import java.net.SocketTimeoutException
-import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.ThreadContextElement
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.withContext
+import kotlin.coroutines.ContinuationInterceptor
 import kotlin.coroutines.CoroutineContext
 import works.windmill.sync.api.Change
 import works.windmill.sync.api.CommitOutcome
@@ -21,111 +26,167 @@ import works.windmill.gym.domain.sync.StartSession
 import works.windmill.sync.core.RecordID
 import works.windmill.sync.core.ScopeRef
 import works.windmill.sync.schema.Gym
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
-import works.windmill.gym.coach.AskCap
+import works.windmill.agent.TurnEvent
+import works.windmill.agent.TurnOpen
+import works.windmill.agent.TurnRefusal
+import works.windmill.agent.TurnSeat
+import works.windmill.agent.TurnTransport
+import works.windmill.gym.coach.CoachDraft
+import works.windmill.gym.coach.turn.CoachTurnFault
+import works.windmill.gym.coach.turn.ScriptedTurns
 import works.windmill.gym.presentation.LogSetAcceptance
 import works.windmill.gym.presentation.LogSetCommand
 import works.windmill.gym.presentation.NoteWrite
 import works.windmill.gym.presentation.Session
-import works.windmill.gym.net.FakeGymRest
-import works.windmill.platform.net.Refusal
-import works.windmill.platform.net.WindmillApiException
 import works.windmill.platform.telemetry.Telemetry
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class TelemetryTests {
     @get:Rule val tmp = TemporaryFolder()
 
     private class Recorder : Telemetry {
         val events = mutableListOf<Pair<String, Map<String, String>>>()
         val failures = mutableListOf<Pair<String, Throwable>>()
+        val failureProperties = mutableListOf<Map<String, String>>()
         override fun event(name: String, properties: Map<String, String>) { events += name to properties }
         override fun failure(operation: String, error: Throwable, properties: Map<String, String>) {
             failures += operation to error
+            failureProperties += properties
         }
+    }
+
+    private fun script(frames: String) = ScriptedTurns(Json.parse(frames).arr())
+
+    // Virtual time, one dispatcher: the test advances it, and closing the room ends its work.
+    private fun TestScope.work() = CoroutineScope(SupervisorJob() + coroutineContext[ContinuationInterceptor] as CoroutineDispatcher)
+
+    // One private question on a room of its own, and a Stop for a turn still open: everything the room told from the send on.
+    private suspend fun TestScope.asking(server: TurnTransport, account: String? = "account", pulled: Boolean = true): Recorder {
+        val telemetry = Recorder()
+        EngineRoomFixture(tmp.newFolder(), work(), telemetry = telemetry, coachServer = server).use { room ->
+            room.select(account)
+            if (account != null && pulled) room.sync(EngineRoomFixture.server())
+            val chat = room.store.coach.freshChat()
+            telemetry.events.clear()
+            assertTrue(room.store.coach.send(chat, "private question"))
+            advanceUntilIdle()
+            room.store.coach.stop()
+            advanceUntilIdle()
+        }
+        return telemetry
+    }
+
+    // The time a turn took is the one number a test cannot name, so it only has to be a number.
+    private fun Recorder.timeless(): List<Pair<String, Map<String, String>>> = events.map { (name, properties) ->
+        properties["duration_ms"]?.let { assertTrue("$name took $it", it.toLong() >= 0) }
+        name to properties - "duration_ms"
+    }
+
+    private fun assertToldNothingSaid(told: Recorder) {
+        val everything = told.events.flatMap { (name, properties) -> listOf(name) + properties.keys + properties.values } +
+            told.failures.flatMap { (operation, error) -> listOf(operation, error.message.orEmpty(), error.toString()) } +
+            told.failureProperties.flatMap { it.keys + it.values }
+        assertEquals(emptyList<String>(), everything.filter { it.contains("private") || it.contains("conversation content") })
     }
 
     @Test fun everyCoachOutcomeEmitsOneResultWithoutConversationOrTrainingContent() = runTest {
-        val telemetry = Recorder()
-        val server = FakeGymRest()
-        var tick = 0L
-        EngineRoomFixture(tmp.newFolder(), backgroundScope, rest = server, telemetry = telemetry,
-            elapsedNanos = { tick++ * 1_000_000 }).use { room ->
-            val store = room.store
-            room.select("account")
-            telemetry.events.clear()
-            assertTrue(store.coach.ask("private-thread-id", "private question") is AskOutcome.Answered)
-            assertEquals(listOf("gym_ask_started" to emptyMap<String, String>(),
-                "gym_ask_outcome" to mapOf("outcome" to "answered", "duration_ms" to "1")), telemetry.events)
+        val started = "gym_ask_started" to mapOf("screen" to "coach")
+        val abilities = listOf("list_sessions", "list_notes", "list_exercises", "list_routines").map { "coach_ability" to mapOf("name" to it, "outcome" to "ok") }
+        fun asked(outcome: String, cap: String? = null) = "gym_ask_outcome" to mapOf("screen" to "coach", "outcome" to outcome) + listOfNotNull(cap?.let { "cap" to it })
+        fun ended(state: String, seat: String = "bound", code: String? = null, calls: Int = 4, bytes: Int = 0) = "coach_turn" to mapOf("state" to state, "seat" to seat,
+            "ability_calls" to calls.toString(), "refusals" to "0", "answer_bytes" to bytes.toString()) + listOfNotNull(code?.let { "code" to it })
+        fun request(status: Int) = "api_request_failed" to mapOf("operation" to "gym_coach_turn", "route" to "/v1/gym", "method" to "POST", "failure_kind" to "http", "status" to status.toString())
+        fun refusing(status: Int, code: String) = script("[]").apply { refuseOpen = TurnRefusal(status, code, null) }
 
-            val cases = listOf(
-                Triple(WindmillApiException.Refused(401, Refusal(message = "sign in first")),
-                    AskOutcome.Refused("sign in first", terminal = true),
-                    mapOf("outcome" to "refused", "failure_kind" to "http", "status" to "401")),
-                Triple(WindmillApiException.Refused(429, Refusal(code = "ask-out-of-budget")),
-                    AskOutcome.Capped("This account has reached its AI ceiling for the last 30 days. Coach will answer again as that window rolls on.", AskCap.Ceiling),
-                    mapOf("outcome" to "capped", "cap" to "ceiling", "failure_kind" to "http", "status" to "429")),
-                Triple(WindmillApiException.Refused(429, Refusal(code = "ask-daily-limit")),
-                    AskOutcome.Capped(works.windmill.gym.coach.Ask.capReached, AskCap.Daily),
-                    mapOf("outcome" to "capped", "cap" to "daily", "failure_kind" to "http", "status" to "429")),
-                Triple(WindmillApiException.Refused(404, Refusal()), AskOutcome.Absent,
-                    mapOf("outcome" to "absent", "failure_kind" to "http", "status" to "404")),
-                Triple(WindmillApiException.Refused(409, Refusal(code = "ask-thread-full")),
-                    AskOutcome.Fresh("This conversation is unavailable. Start a new one."),
-                    mapOf("outcome" to "fresh", "failure_kind" to "http", "status" to "409")),
-                Triple(WindmillApiException.Refused(503, Refusal()),
-                    AskOutcome.Failed("Coach didn’t answer. Try again in a moment"),
-                    mapOf("outcome" to "failed", "failure_kind" to "http", "status" to "503")),
-                Triple(WindmillApiException.Timeout(SocketTimeoutException("private URL")),
-                    AskOutcome.Failed("Coach didn’t answer. Try again in a moment"),
-                    mapOf("outcome" to "failed", "failure_kind" to "timeout")),
-                Triple(WindmillApiException.Offline,
-                    AskOutcome.Failed("Coach didn’t answer. Try again in a moment"),
-                    mapOf("outcome" to "failed", "failure_kind" to "offline")),
-                Triple(WindmillApiException.Malformed,
-                    AskOutcome.Failed("Coach didn’t answer. Try again in a moment"),
-                    mapOf("outcome" to "failed", "failure_kind" to "malformed")),
-            )
-            for ((error, expected, properties) in cases) {
-                telemetry.events.clear()
-                server.refuseAsk = error
-                assertEquals(expected, store.coach.ask("private-thread-id", "private question"))
-                assertEquals(listOf("gym_ask_started" to emptyMap<String, String>(),
-                    "gym_ask_outcome" to (properties + ("duration_ms" to "1"))), telemetry.events)
-            }
-            assertEquals("HTTP owns reporting these failures once", emptyList<Pair<String, Throwable>>(), telemetry.failures)
+        val cases = listOf(
+            script("""[{"event":"text","data":{"delta":"private answer"}},{"event":"done","data":{"state":"completed"}}]""") to
+                listOf(started) + abilities + listOf(asked("answered"), ended("completed", bytes = 14)),
+            script("""[{"event":"text","data":{"delta":"private answer"}},{"event":"done","data":{"state":"declined"}}]""") to
+                listOf(started) + abilities + listOf(asked("refused"), ended("declined", bytes = 14)),
+            script("""[{"event":"text","data":{"delta":"private answer"}},{"await":"stop"},{"event":"done","data":{"state":"stopped"}}]""") to
+                listOf(started) + abilities + listOf(asked("cancelled"), ended("stopped", bytes = 14)),
+            script("""[{"event":"error","data":{"code":"subject_exhausted"}}]""") to
+                listOf(started) + abilities + listOf(asked("capped", "allowance"), ended("failed", code = "subject_exhausted")),
+            script("""[{"event":"error","data":{"code":"coach-vendor-error"}}]""") to
+                listOf(started) + abilities + listOf(asked("failed"), ended("failed", code = "coach-vendor-error")),
+            script("""[{"event":"calls","data":{"batch":1,"calls":[{"callId":"toolu_1","name":"list_notes","input":{}}]}},{"await":"timeout"}]""") to
+                listOf(started) + abilities + listOf("coach_ability" to mapOf("name" to "list_notes", "outcome" to "ok"), asked("failed"), ended("interrupted", code = TurnRefusal.turnOrder, calls = 5)),
+            refusing(429, "subject_exhausted") to listOf(started) + abilities + listOf(request(429), asked("capped", "allowance")),
+            refusing(429, "free_month_exhausted") to listOf(started) + abilities + listOf(request(429), asked("capped", "allowance")),
+            refusing(429, TurnRefusal.rateLimited) to listOf(started) + abilities + listOf(request(429), asked("capped", "daily")),
+            refusing(404, "not-found") to listOf(started) + abilities + listOf(request(404), asked("absent")),
+            refusing(400, "coach-bad-request") to listOf(started) + abilities + listOf(request(400), asked("refused")),
+        )
+        for ((server, expected) in cases) {
+            val told = asking(server)
+            assertEquals(expected, told.timeless())
+            assertEquals("a turn's own ending is no failure", emptyList<Pair<String, Throwable>>(), told.failures)
+            assertToldNothingSaid(told)
         }
+
+        val quiet = asking(refusing(503, TurnRefusal.vendorError))
+        assertEquals(listOf(started) + abilities + listOf(request(503), asked("failed")), quiet.timeless())
+        assertEquals("a server that broke is the one reported", listOf("gym.coachTurn" to "http"), quiet.failures.map { (operation, error) -> operation to error.message })
+        assertEquals(listOf(mapOf("failure_kind" to "http", "status" to "503")), quiet.failureProperties)
+        assertToldNothingSaid(quiet)
+
+        val signedOut = asking(script("""[{"event":"text","data":{"delta":"private answer"}},{"event":"done","data":{"state":"completed"}}]"""), account = null)
+        assertEquals(listOf(started) + abilities + listOf(asked("answered"), ended("completed", seat = "anon", bytes = 14)), signedOut.timeless())
+        assertToldNothingSaid(signedOut)
+
+        val arriving = asking(script("[]"), pulled = false)
+        assertEquals("a send the phone refuses tells that alone", listOf(asked("refused")), arriving.timeless())
+        assertToldNothingSaid(arriving)
     }
 
     @Test fun unexpectedHandledCoachFailureIsReportedButCancellationRemainsCancellation() = runTest {
+        val started = "gym_ask_started" to mapOf("screen" to "coach")
+        val abilities = listOf("list_sessions", "list_notes", "list_exercises", "list_routines").map { "coach_ability" to mapOf("name" to it, "outcome" to "ok") }
+        val broken = object : TurnTransport by script("[]") {
+            override fun open(open: TurnOpen, seat: TurnSeat): Flow<TurnEvent> = flow { throw IllegalStateException("do not publish conversation content") }
+            override fun resume(turnId: String, seat: TurnSeat): Flow<TurnEvent> = flow { throw IllegalStateException("do not publish conversation content") }
+        }
+        val told = asking(broken)
+        assertEquals(listOf(started) + abilities + listOf(
+            "gym_ask_outcome" to mapOf("screen" to "coach", "outcome" to "failed"),
+            "coach_turn" to mapOf("state" to "interrupted", "seat" to "bound", "ability_calls" to "4", "refusals" to "0", "answer_bytes" to "0", "code" to "transport")), told.timeless())
+        assertEquals(listOf("gym.coachTurn" to "transport"), told.failures.map { (operation, error) -> operation to error.message })
+        assertEquals(listOf(mapOf("failure_kind" to "transport")), told.failureProperties)
+        assertToldNothingSaid(told)
+
         val telemetry = Recorder()
-        val server = FakeGymRest()
-        EngineRoomFixture(tmp.newFolder(), backgroundScope, rest = server, telemetry = telemetry,
-            elapsedNanos = { 1_000_000 }).use { room ->
-            val store = room.store
+        EngineRoomFixture(tmp.newFolder(), work(), telemetry = telemetry, coachServer = script("""[{"await":"stop"}]""")).use { room ->
             room.select("account")
-            val broken = IllegalStateException("do not publish conversation content")
-            server.refuseAsk = broken
-            assertEquals(AskOutcome.Failed("Coach didn’t answer. Try again in a moment"), store.coach.ask("thread", "question"))
-            assertEquals(listOf("gym.ask" to broken), telemetry.failures)
-            assertEquals(listOf("gym_ask_started" to emptyMap<String, String>(),
-                "gym_ask_outcome" to mapOf("outcome" to "failed", "failure_kind" to "unexpected", "duration_ms" to "0")), telemetry.events)
+            room.sync(EngineRoomFixture.server())
+            val chat = room.store.coach.freshChat()
+            room.store.coach.saveDraft(chat, CoachDraft("private question"))
             telemetry.events.clear()
-            val cancelled = CancellationException("left the request")
-            server.refuseAsk = cancelled
-            try {
-                store.coach.ask("thread", "question")
-                fail("cancellation must propagate")
-            } catch (error: CancellationException) {
-                assertSame(cancelled, error)
-            }
-            assertEquals(listOf("gym.ask" to broken), telemetry.failures)
-            assertEquals(listOf("gym_ask_started" to emptyMap<String, String>(),
-                "gym_ask_outcome" to mapOf("outcome" to "cancelled", "duration_ms" to "0")), telemetry.events)
+            room.engine.failNextCommit()
+            assertTrue(room.store.coach.send(chat, "private question"))
+            advanceUntilIdle()
+            assertEquals(CoachTurnFault.unsaved, room.store.coach.fault)
+            assertEquals("a question the store could not keep stays with the lifter", CoachDraft("private question"), room.store.coach.draft(chat))
+            assertNull(room.store.coach.chat(chat)?.conversation)
+            assertEquals(listOf("gym.coachTurn" to "storage"), telemetry.failures.map { (operation, error) -> operation to error.message })
+            assertEquals(emptyList<Pair<String, Map<String, String>>>(), telemetry.events)
+            telemetry.failures.clear()
+
+            assertTrue(room.store.coach.send(chat, "private question"))
+            advanceUntilIdle()
+            assertEquals(listOf(started) + abilities, telemetry.timeless())
+            room.scope.cancel()
+            advanceUntilIdle()
+            assertEquals("a room going away under a turn tells nothing: the next launch ends it", listOf(started) + abilities, telemetry.timeless())
+            assertEquals(emptyList<Pair<String, Throwable>>(), telemetry.failures)
+            assertToldNothingSaid(telemetry)
         }
     }
 

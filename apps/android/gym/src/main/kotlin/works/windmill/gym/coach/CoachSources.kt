@@ -27,20 +27,16 @@ import androidx.compose.ui.unit.dp
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import works.windmill.domain.kit.AbilityClass
 import works.windmill.gym.R
+import works.windmill.gym.domain.coach.ReadTally
 import works.windmill.gym.presentation.Readout
+import works.windmill.gym.presentation.SessionSummary
 import works.windmill.platform.telemetry.LocalTelemetry
 
 internal object CoachSources {
-    private val readTools = setOf("list_sessions", "get_session", "last_time", "list_exercises", "list_routines", "get_stats", "list_notes", "list_bodyweight")
-
-    fun readOnly(steps: List<AskStep>, proposals: Boolean, results: Boolean, drafts: Boolean): Boolean =
-        !proposals && !results && !drafts && steps.all { it.tool in readTools }
-
-    // Choices that read nothing from the log stand alone: a sources row would only say so.
-    fun choicesAlone(steps: List<AskStep>, read: ReadTally, acted: Boolean): Boolean =
-        !acted && !read.anything && steps.all { it.tool in readTools || it.tool == "ask_setup_details" } &&
-            steps.none { it.tool == "list_notes" && !it.failed }
+    fun readOnly(calls: List<CoachCall>, proposals: Boolean, routines: Boolean, drafts: Boolean): Boolean =
+        !proposals && !routines && !drafts && calls.all { it.kind == AbilityClass.read }
 
     fun tally(read: ReadTally): String {
         val parts = buildList {
@@ -51,11 +47,9 @@ internal object CoachSources {
         return parts.joinToString(" · ")
     }
 
-    fun facts(observation: SessionObservation): String {
-        val date = DateTimeFormatter.ofPattern("EEE, MMM d").format(Instant.ofEpochMilli(observation.startedAtMs).atZone(ZoneId.systemDefault()))
-        val workout = observation.workout?.takeIf { observation.wholeWorkout }
-            ?: return "$date · ${Readout.setCount(observation.setsRead)} read"
-        val sets = Readout.setCount(workout.workingSetCount)
+    fun facts(workout: SessionSummary): String {
+        val date = DateTimeFormatter.ofPattern("EEE, MMM d").format(Instant.ofEpochMilli(workout.startedAtMs).atZone(ZoneId.systemDefault()))
+        val sets = Readout.setCount(workout.workingSetCount ?: workout.setCount)
         val volume = workout.tonnageKg?.let { "${Readout.weight(it)} kg" } ?: "—"
         return "$date · $sets · $volume"
     }
@@ -65,8 +59,8 @@ internal object CoachSources {
 @Composable
 internal fun CoachReadSources(
     tally: ReadTally,
-    receipt: AnswerReceipt?,
-    steps: List<AskStep>,
+    workouts: List<SessionSummary>,
+    calls: List<CoachCall>,
     onOpenWorkout: ((String) -> Unit)?,
     onSheetTop: (Int?) -> Unit,
 ) {
@@ -75,7 +69,7 @@ internal fun CoachReadSources(
     var expanded by remember { mutableStateOf(false) }
     val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val counted = CoachSources.tally(tally)
-    val notesRead = steps.any { it.tool == "list_notes" && !it.failed }
+    val notesRead = calls.any { it.name == "list_notes" && it.ran && !it.context }
     val line = if (counted.isNotEmpty()) "Read $counted" else if (notesRead) "Read your notes" else "Read nothing from your log"
     // The line keeps its 13 sp size; its touch target is the platform's 48 dp.
     Row(verticalAlignment = Alignment.CenterVertically,
@@ -104,18 +98,17 @@ internal fun CoachReadSources(
         ) {
             Text("What Coach read", style = GymType.coachSourcesTitle, color = colors.onSurface)
             if (counted.isNotEmpty()) Text(counted, style = GymType.coachSourceLine, color = colors.onSurfaceVariant)
-            receipt?.observed.orEmpty().groupBy { it.sessionId }.values.forEach { observations ->
-                val observation = observations.lastOrNull { it.wholeWorkout } ?: observations.last()
+            workouts.forEach { workout ->
                 Row(verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.fillMaxWidth().clickable(enabled = onOpenWorkout != null, role = Role.Button) {
                         expanded = false
-                        onOpenWorkout?.invoke(observation.sessionId)
+                        onOpenWorkout?.invoke(workout.id)
                     }.padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 12.dp),
                 ) {
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Text(observation.routine?.takeIf { it.isNotBlank() } ?: Readout.noRoutine,
+                        Text(workout.plan?.routine?.takeIf { it.isNotBlank() } ?: Readout.noRoutine,
                             style = GymType.coachSourceTitle, color = colors.onSurface)
-                        Text(CoachSources.facts(observation), style = GymType.coachSourceLine, color = colors.onSurfaceVariant)
+                        Text(CoachSources.facts(workout), style = GymType.coachSourceLine, color = colors.onSurfaceVariant)
                     }
                     Icon(painterResource(R.drawable.gym_coach_source_chevron), null, Modifier.size(18.dp), tint = colors.onSurfaceVariant)
                 }

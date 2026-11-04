@@ -50,19 +50,31 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import works.windmill.domain.kit.AbilityClass
+import works.windmill.gym.domain.coach.MessageState
+import works.windmill.gym.domain.coach.ReadServed
+import works.windmill.gym.domain.coach.ReadTally
+import works.windmill.gym.domain.coach.RecordedRead
 import works.windmill.gym.presentation.Exercise
+import works.windmill.gym.presentation.PlanSnapshot
 import works.windmill.gym.presentation.Readout
 import works.windmill.gym.presentation.RoutineEntry
+import works.windmill.gym.presentation.SessionSummary
 import works.windmill.gym.presentation.SetTarget
 import works.windmill.gym.ui.GymMaterial
 import works.windmill.platform.design.LocalWindmillDark
 import works.windmill.platform.telemetry.LocalTelemetry
 import works.windmill.platform.telemetry.Telemetry
+import works.windmill.sync.core.Json
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
 class CoachAnswerTests {
     @get:Rule val compose = createComposeRule()
+
+    // A read that served these workouts by identity, as a message's call records it.
+    private fun workoutsRead(vararg sessions: String) = RecordedRead.Ids(ReadServed.decode(Json.objectOf(
+        "sessions" to Json.Arr(sessions.map { Json.of(it) }), "sets" to Json.Arr(emptyList()), "weeks" to Json.Arr(emptyList()))))
 
     @Test
     fun linksKeepOnlyTheirLabelAndUseTheCurrentThemesPrimaryUnderline() {
@@ -72,7 +84,7 @@ class CoachAnswerTests {
         compose.setContent {
             CompositionLocalProvider(LocalWindmillDark provides dark.value) { GymMaterial {
                 primary = MaterialTheme.colorScheme.primary
-                CoachAnswer("Read [more]($url).", null, emptyList(), 0)
+                CoachAnswer("Read [more]($url).", coachReply("Read [more]($url)."), emptyList())
             } }
         }
         val primaries = mutableListOf<Color>()
@@ -99,7 +111,7 @@ class CoachAnswerTests {
             }
         }
         compose.setContent { GymMaterial { CompositionLocalProvider(LocalTelemetry provides telemetry) {
-            CoachAnswer("Read [more](https://example.org/top-sets).", null, emptyList(), 0)
+            CoachAnswer("Read [more](https://example.org/top-sets).", coachReply("Read [more](https://example.org/top-sets)."), emptyList())
         } } }
         val node = compose.onNodeWithText("Read more.", useUnmergedTree = true)
         val layouts = mutableListOf<TextLayoutResult>()
@@ -118,9 +130,9 @@ class CoachAnswerTests {
 
     @Test
     fun ordinaryMarkdownUsesSixteenDpGuttersAndTheReadTallyKeepsItsThirtyTwoDpStart() {
+        val answer = "## Thursday\n\nA complete paragraph."
         compose.setContent { GymMaterial { Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
-            CoachAnswer("## Thursday\n\nA complete paragraph.", AnswerReceipt(1, ReadTally(1, 1, 1)),
-                emptyList(), 0, receiptInset = 4.dp)
+            CoachAnswer(answer, coachReply(answer, read = ReadTally(1, 1, 1)), emptyList(), receiptInset = 4.dp)
         } } }
         val bubble = compose.onNodeWithText("Thursday").getUnclippedBoundsInRoot()
         assertEquals(16.dp, bubble.left)
@@ -134,19 +146,18 @@ class CoachAnswerTests {
     @Test
     fun aMixedWriteReceiptRetainsItsTwentyDpLaneAndExistingTypography() {
         val read = ReadTally(2, 1, 1)
-        val receipt = AnswerReceipt(1, read, steps = listOf(AskStep("get_session"), AskStep("save_note")),
-            observations = listOf(SessionObservation("asked", 2000, "get_session", "session", 2,
-                routine = "My actual workout", workout = WorkoutObservation(2, 960.0, 90000))))
+        val reply = coachReply("Ordinary prose.", read = read, calls = listOf(
+            coachCall("get_session", "read one workout"), coachCall("save_note", "saved a note", AbilityClass.add)))
         compose.setContent { GymMaterial { Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
-            CoachAnswer("Ordinary prose.", receipt, emptyList(), 4000, receiptInset = 4.dp)
+            CoachAnswer("Ordinary prose.", reply, emptyList(), receiptInset = 4.dp)
         } } }
-        assertEquals(20.dp, compose.onNodeWithText("From your log").getUnclippedBoundsInRoot().left)
-        assertEquals(36.dp, compose.onNodeWithText("Sets").getUnclippedBoundsInRoot().left)
-        assertEquals(376.dp, compose.onNodeWithText("960 kg").getUnclippedBoundsInRoot().right)
+        val receipt = Ask.receipt(read).replaceFirstChar { it.uppercase() }
+        assertEquals(20.dp, compose.onNodeWithText(receipt).getUnclippedBoundsInRoot().left)
         val layout = mutableListOf<TextLayoutResult>()
-        compose.onNodeWithText("Sets").fetchSemanticsNode().config[SemanticsActions.GetTextLayoutResult].action?.invoke(layout)
-        assertEquals(16.sp, layout.single().layoutInput.style.fontSize)
-        compose.onNodeWithText(Ask.receipt(read).replaceFirstChar { it.uppercase() }).performClick()
+        compose.onNodeWithText(receipt, useUnmergedTree = true).fetchSemanticsNode().config[SemanticsActions.GetTextLayoutResult].action?.invoke(layout)
+        assertEquals(13.sp, layout.single().layoutInput.style.fontSize)
+        compose.onNodeWithText(receipt).performClick()
+        compose.onNodeWithText("Read one workout").assertIsDisplayed()
         compose.onNodeWithText("Saved a note").assertIsDisplayed()
         compose.onNodeWithText("What Coach read").assertDoesNotExist()
     }
@@ -155,12 +166,12 @@ class CoachAnswerTests {
     fun aSecondParagraphCopyMenuAndExpandedReceiptSurviveReplacementByOneParagraph() {
         lateinit var clipboard: Clipboard
         val initial = "First paragraph.\n\nCafé\n東京"
-        val final = "Café\n東京 — 🏋🏽‍♀️ é\nFinal words."
+        val final = "Café\n東京 — 🏋🏽‍♀️ é\nFinal words."
         val text = mutableStateOf(initial)
-        val receipt = AnswerReceipt(1, ReadTally(), steps = listOf(AskStep("list_notes"), AskStep("save_note")))
+        val calls = listOf(coachCall("list_notes", "read your notes"), coachCall("save_note", "saved a note", AbilityClass.add))
         compose.setContent { GymMaterial {
             clipboard = LocalClipboard.current
-            CoachAnswer(text.value, receipt, emptyList(), 0)
+            CoachAnswer(text.value, coachReply(text.value, calls = calls), emptyList())
         } }
         compose.onNodeWithText("Read nothing from your log").performClick()
         compose.onNodeWithText("Read your notes").assertIsDisplayed()
@@ -180,7 +191,7 @@ class CoachAnswerTests {
         val answer = "First paragraph.\n\nSecond paragraph — exact text."
         compose.setContent { GymMaterial {
             clipboard = LocalClipboard.current
-            Column { CoachQuestion(question); CoachAnswer(answer, null, emptyList(), 0) }
+            Column { CoachQuestion(question); CoachAnswer(answer, coachReply(answer), emptyList()) }
         } }
         compose.onNodeWithText(question).performTouchInput { longClick() }
         compose.onNodeWithText("Copy question").performClick()
@@ -204,7 +215,7 @@ class CoachAnswerTests {
         val answer = "## Your week\n\n**Bold** start\n\n- Squat\n- Bench\n- Row\n\n1. Warm up\n2. Work"
         compose.setContent { GymMaterial {
             clipboard = LocalClipboard.current
-            CoachAnswer(answer, null, emptyList(), 0)
+            CoachAnswer(answer, coachReply(answer), emptyList())
         } }
         val bold = compose.onNodeWithText("Bold start").fetchSemanticsNode().config[SemanticsProperties.Text].single { it.text == "Bold start" }
         assertEquals(listOf(AnnotatedString.Range(SpanStyle(fontWeight = FontWeight.Bold), 0, 4)), bold.spanStyles)
@@ -226,11 +237,15 @@ class CoachAnswerTests {
 
     @Test
     fun readOnlyFactsMoveIntoTheSourcesSheetWithoutInventingWorkoutTotals() {
-        val summary = SessionObservation("old", 1000, "list_sessions", "summary", 0, routine = "Old workout", workout = WorkoutObservation(9, 2700.0, 2880000))
-        val full = SessionObservation("asked", 2000, "get_session", "session", 3, routine = "My actual workout", workout = WorkoutObservation(2, 960.0, 90000))
-        val movement = SessionObservation("movement", 3000, "last_time", "movement", 1, routine = "Movement only", exerciseId = "bench", workout = WorkoutObservation(99, 9999.0))
+        val log = listOf(
+            SessionSummary("session-old", 1000, plan = PlanSnapshot("Old workout"), setCount = 9, tonnageKg = 2700.0),
+            SessionSummary("session-asked", 2000, plan = PlanSnapshot("My actual workout"), setCount = 2, tonnageKg = 960.0),
+        )
+        val answer = "Keep these exact words.\n\nNo invented summary."
+        val reply = coachReply(answer, read = ReadTally(4, 3, 1), calls = listOf(
+            coachCall("get_sessions", "read your workouts", read = workoutsRead("session-old", "session-asked", "session-gone"))))
         compose.setContent { GymMaterial { Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-            CoachAnswer("Keep these exact words.\n\nNo invented summary.", AnswerReceipt(1, ReadTally(4, 3, 1), observations = listOf(summary, full, movement)), emptyList(), 4000)
+            CoachAnswer(answer, reply, emptyList(), workouts = { id -> log.firstOrNull { it.id == id } })
         } } }
         compose.onNodeWithText("Keep these exact words.").assertIsDisplayed()
         compose.onNodeWithText("No invented summary.").assertIsDisplayed()
@@ -239,29 +254,31 @@ class CoachAnswerTests {
         compose.onNodeWithText("Read 3 workouts · 1 week").performScrollTo().performClick()
         compose.onNodeWithText("What Coach read").assertIsDisplayed()
         compose.onNodeWithText("2 sets · 960 kg", substring = true).assertIsDisplayed()
-        compose.onNodeWithText("9999 kg", substring = true).assertDoesNotExist()
-        compose.onNodeWithText("Old workout", substring = true).performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("Movement only", substring = true).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("9 sets · 2700 kg", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("My actual workout").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Old workout").performScrollTo().assertIsDisplayed()
+        compose.onAllNodes(hasText(" sets · ", substring = true)).assertCountEquals(2)
     }
 
     @Test
     fun multipleFullReadsHaveOneCompactReceiptAndNoStackOfMetricCards() {
-        val reads = (1..5).map { SessionObservation("s$it", it * 1000L, "get_session", "session", it,
-            routine = "Workout $it", workout = WorkoutObservation(it, it * 120.0)) }
+        val log = (1..5).map { SessionSummary("session-$it", it * 1000L, plan = PlanSnapshot("Workout $it"), setCount = it, tonnageKg = it * 120.0) }
+        val reply = coachReply("The model's focal answer stays first.", read = ReadTally(15, 5, 1),
+            calls = listOf(coachCall("get_sessions", "read your workouts", read = workoutsRead(*log.map { it.id }.toTypedArray()))))
         compose.setContent { GymMaterial { Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-            CoachAnswer("The model's focal answer stays first.", AnswerReceipt(1, ReadTally(15, 5, 1), observations = reads), emptyList(), 6000)
+            CoachAnswer("The model's focal answer stays first.", reply, emptyList(), workouts = { id -> log.firstOrNull { it.id == id } })
         } } }
         compose.onNodeWithText("The model's focal answer stays first.").assertIsDisplayed()
         compose.onNodeWithText("Sets").assertDoesNotExist()
         compose.onNodeWithText("Read 5 workouts · 1 week").assertIsDisplayed().performClick()
-        compose.onNodeWithText("Workout 5", substring = true).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Workout 5").performScrollTo().assertIsDisplayed()
     }
 
     @Test fun unavailableVolumeKeepsTheExistingSourcesSlotWithoutClaimingZero() {
-        val fact = SessionObservation("unavailable", 2000, "get_session", "session", 3,
-            routine = "Unavailable fixture", workout = WorkoutObservation(3, null, 90000))
+        val workout = SessionSummary("session-unavailable", 2000, plan = PlanSnapshot("Unavailable fixture"), setCount = 3, tonnageKg = null)
+        val reply = coachReply("A factual answer.", read = ReadTally(3, 1, 1), calls = listOf(coachCall("get_session", "read one workout", read = workoutsRead(workout.id))))
         compose.setContent { GymMaterial {
-            CoachAnswer("A factual answer.", AnswerReceipt(1, ReadTally(3, 1, 1), observations = listOf(fact)), emptyList(), 4000)
+            CoachAnswer("A factual answer.", reply, emptyList(), workouts = { workout })
         } }
         compose.onNodeWithText("Read 1 workout · 1 week").performClick()
         compose.onNodeWithText("3 sets · —", substring = true).assertIsDisplayed()
@@ -269,50 +286,55 @@ class CoachAnswerTests {
     }
 
     @Test
-    fun aPastAnswerWithoutEvidenceNeverTreatsProseAsFacts() {
-        compose.setContent { GymMaterial { CoachAnswer("Nine sets, 2700kg, 48 minutes.", null, emptyList(), 5000) } }
+    fun anAnswerNeverTreatsItsProseAsFactsAndSaysWhatItReadOnlyOnceItEnds() {
+        val reply = mutableStateOf(coachReply("Nine sets, 2700kg, 48 minutes.", MessageState.running))
+        compose.setContent { GymMaterial { CoachAnswer(reply.value.text, reply.value, emptyList()) } }
+        compose.onNodeWithText("Nine sets, 2700kg, 48 minutes.").assertIsDisplayed()
+        compose.onNodeWithText("Read nothing from your log").assertDoesNotExist()
+        compose.runOnIdle { reply.value = reply.value.copy(state = MessageState.completed) }
         compose.onNodeWithText("Nine sets, 2700kg, 48 minutes.").assertIsDisplayed()
         compose.onNodeWithText("Sets").assertDoesNotExist()
         compose.onNodeWithText("From your log").assertDoesNotExist()
-        compose.onNodeWithText("Read nothing from your log").assertDoesNotExist()
+        compose.onNodeWithText("Read nothing from your log").assertIsDisplayed()
     }
+
     @Test fun routineDraftShowsEquipmentAndTargetsBeforeAnExplicitSave() {
-        val draft = CoachRoutineDraft("operation-a", "routine-a", "Push", 1,
-            listOf(RoutineEntry(1, "dumbbell-bench-press", listOf(SetTarget(8, 16.0)))), "pending")
-        val requests = mutableListOf<CoachRoutineDraft>()
+        val draft = CoachRoutineDraft("operation-a", "Push", listOf(RoutineEntry(1, "dumbbell-bench-press", listOf(SetTarget(8, 16.0)))))
+        var saves = 0
         compose.setContent { GymMaterial {
-            CoachAnswer("Review this plan", null, listOf(Exercise("dumbbell-bench-press", "Flat press", equipment = "dumbbell")), 0,
-                routineDrafts = listOf(draft), onConfirmRoutine = {
-                    requests += it
-                    if (requests.size == 1) DraftOutcome.Failed(Ask.draftRetry) else DraftOutcome.Closed(Ask.draftGone)
+            CoachAnswer("Review this plan", coachReply("Review this plan"), listOf(Exercise("dumbbell-bench-press", "Flat press", equipment = "dumbbell")),
+                routineDrafts = listOf(draft), onSaveDrafts = {
+                    saves++
+                    if (saves == 1) DraftOutcome.Failed(Ask.draftRetry) else DraftOutcome.Closed(Ask.draftGone)
                 })
         } }
         compose.onNodeWithText("Review routine").assertIsDisplayed()
         compose.onNodeWithText("Push").assertIsDisplayed()
         compose.onNodeWithText("Flat press").assertIsDisplayed()
         compose.onNodeWithText("1 × 8 · 16 kg each · Two dumbbells").assertIsDisplayed()
-        compose.runOnIdle { assertEquals(emptyList<CoachRoutineDraft>(), requests) }
+        compose.runOnIdle { assertEquals(0, saves) }
         compose.onNodeWithText("Save routine").performClick()
         compose.onNodeWithText("Couldn’t save the routine. Try again.").assertIsDisplayed()
         compose.onNodeWithText("Save routine").performClick()
         compose.onNodeWithText("This draft is no longer available.").assertIsDisplayed()
         compose.onNodeWithText("Save routine").assertDoesNotExist()
         compose.onNodeWithText("Couldn’t save the routine. Try again.").assertDoesNotExist()
-        compose.runOnIdle { assertEquals(listOf(draft, draft), requests) }
+        compose.runOnIdle { assertEquals(2, saves) }
     }
+
     @Test fun routineDraftNamesEachLoadBasisByEquipmentAndCount() {
-        val draft = CoachRoutineDraft("operation-b", "routine-b", "Mixed", 1, listOf(
+        val draft = CoachRoutineDraft("operation-b", "Mixed", listOf(
             RoutineEntry(0, "goblet-squat", listOf(SetTarget(8, 24.0))),
             RoutineEntry(1, "back-squat", listOf(SetTarget(5, 100.0))),
             RoutineEntry(2, "pull-up", listOf(SetTarget(6, -10.0))),
-            RoutineEntry(3, "cable-row", listOf(SetTarget(10, 40.0)))), "pending")
+            RoutineEntry(3, "cable-row", listOf(SetTarget(10, 40.0)))))
         compose.setContent { GymMaterial {
-            CoachAnswer("Review this plan", null, listOf(
+            CoachAnswer("Review this plan", coachReply("Review this plan"), listOf(
                 Exercise("goblet-squat", "Goblet Squat", equipment = "dumbbell", loadCount = 1),
                 Exercise("back-squat", "Back Squat", equipment = "barbell"),
                 Exercise("pull-up", "Pull Up", equipment = "bodyweight"),
-                Exercise("cable-row", "Cable Row", equipment = "cable")), 0,
-                routineDrafts = listOf(draft), onConfirmRoutine = { DraftOutcome.Closed(Ask.draftGone) })
+                Exercise("cable-row", "Cable Row", equipment = "cable")),
+                routineDrafts = listOf(draft), onSaveDrafts = { DraftOutcome.Closed(Ask.draftGone) })
         } }
         compose.onNodeWithText("1 × 8 · 24 kg · One dumbbell").assertIsDisplayed()
         compose.onNodeWithText("1 × 5 · 100 kg total · Barbell").assertIsDisplayed()
@@ -321,20 +343,18 @@ class CoachAnswerTests {
     }
 
     @Test fun aTurnThatCreatedItsRoutineAtOnceKeepsThePastTenseStep() {
+        val opened = mutableListOf<String>()
+        val reply = coachReply("Made it", read = ReadTally(sets = 1), routines = listOf(CreatedRoutine("routine-a", "Push")),
+            calls = listOf(coachCall("create_routine", "created a routine", AbilityClass.add)))
         compose.setContent { GymMaterial {
-            Column {
-                CoachAnswer("Made it", null, emptyList(), 0, legacyRead = ReadTally(sets = 1), legacySteps = listOf(AskStep("create_routine")),
-                    results = listOf(CoachResult("routine-created", "operation-a", "routine-a", "Push")))
-                CoachAnswer("Drafted it", null, emptyList(), 0, legacyRead = ReadTally(sets = 2), legacySteps = listOf(AskStep("update_exercise"), AskStep("create_routine")),
-                    routineDrafts = listOf(CoachRoutineDraft("operation-b", "routine-b", "Pull", 1, emptyList(), "saved")),
-                    results = listOf(CoachResult("routine-created", "operation-b", "routine-b", "Pull")))
-            }
+            CoachAnswer("Made it", reply, emptyList(), onOpenRoutine = { opened += it })
         } }
+        compose.onNodeWithText("Routine created").assertIsDisplayed()
+        compose.onNodeWithText("Push").assertIsDisplayed()
+        compose.onNodeWithText("Save routine").assertDoesNotExist()
+        compose.onNodeWithText("Open routine").performClick()
+        compose.runOnIdle { assertEquals(listOf("routine-a"), opened) }
         compose.onNodeWithText("Read 1 set").performClick()
         compose.onNodeWithText("Created a routine").assertIsDisplayed()
-        compose.onNodeWithText("Read 2 sets").performClick()
-        compose.onNodeWithText("Updated a movement").assertIsDisplayed()
-        compose.onNodeWithText("Drafted a routine for your review").assertIsDisplayed()
     }
-
 }
