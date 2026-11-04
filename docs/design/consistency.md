@@ -1390,7 +1390,9 @@ iOS. It and the product differ in these places.
   shows the note's body and its title stands in What Coach read; every board stands the rail's icons and labels 6 dp
   above where Material's NavigationBar lays them, and the build keeps Material's. An answer that read no workout and no
   movement history says the catalog's phrases of the reads it ran, joined as the step line joins them, over What Coach
-  read; no board draws that line. The composer's picture line is one sentence on both seats, `CoachPhotos.whereItGoes`
+  read; no board draws that line, and since a phone turn always runs its context reads, 01.8 and 01.16's *Read nothing
+  from your log* stands only where no read ran. 08.61 draws its disabled Send's glyph on-accent, which barely reads on
+  its circle, and the build keeps Material's disabled colours. The composer's picture line is one sentence on both seats, `CoachPhotos.whereItGoes`
   and `keptHere` as 01.5 draws them, since a picture goes to the provider from either seat (`gym_coach.md` §9.3): board
   01.4 still draws *Sent to Coach. Saved only on this phone.*, and iOS says those words signed out and *A copy goes to
   the AI provider to read it. Windmill keeps none. Kept only on this phone.* signed in (`CoachTab.swift`). 03.46 draws a
