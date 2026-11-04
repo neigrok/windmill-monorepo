@@ -116,7 +116,7 @@ enum class CoachTurnFault(val sentence: String) {
     unsaved("Your message couldn’t be saved. Try again."),
     pictureUnavailable("That photo is unavailable. Remove it and choose it again."),
     stoppedOffline("Coach is stopped on this phone. Stopping it on the server needs a connection."),
-    stopUnheard("The stop request didn’t reach Coach. Try again.");
+    stopUnheard("Coach is stopped on this phone.");
 
     // The `gym_ask_outcome` a send held back by this fault ends with. A stop's fault belongs to a turn that told its own.
     val askOutcome: String get() = if (this == unsaved || this == pictureUnavailable) "failed" else "refused"

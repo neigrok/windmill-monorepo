@@ -883,7 +883,8 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   The root bar holds only title/account; the paired 03/17 native check verifies full/empty Dark and
   Daylight, a 56 dp FAB and a 48 dp account target at standard and 320 dp/200% text.
   Boards 02.1 `1252:27415`, 02.7 `1252:30574`. *Weigh in*: 9q. The current Coach proposal card and
-  Review destination remain while action appearance changes are deferred at the user's request.
+  Review destination remain while action appearance changes are deferred at the user's request; its words are set in
+  Nunito, as 02.1 sets the row it stands for.
 - **11g · Coach chat in the Google Messages style (owner ruling, 2026-10-22).** Coach and lifter in
   grouped Material bubbles with timestamps, a typing bubble while Coach thinks, the answer streaming
   into its bubble, long Markdown at full width. Today the question is a raised bubble at 90 % width
@@ -902,15 +903,15 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   `AI_ALLOWANCES_ENABLED` (both default off).
 - **11j · The allowance-used copy.** Boards 01.10–01.12 say *You have used all of your AI
   allowance.*, a sentence no server sends (the nearest is *Your AI allowance is fully used or
-  reserved.*, 10v). Android reads only `ask-daily-limit` and `ask-out-of-budget`
-  (`coach/CoachStore.kt:396-411`) and ignores `allowance.resetsAtMs`, so it cannot say when Coach
-  comes back (01.11). Windmill One (01.12) ships only with checkout open.
+  reserved.*, 10v); Android says it for `subject_exhausted` (`coach/turn/CoachTurnRefusal.kt`). It says when Coach
+  comes back only of a paused pool (`free_month_exhausted`, `free_day_exhausted`), not of the seat's own
+  allowance (01.11). Windmill One (01.12) ships only with checkout open.
 - **11k · Proposals decided on the card — postponed from this Android release.** Preserve the current
   action cards, review route and outcome wording under the owner's 2026-10-25 scope decision.
   Android decides a proposal in a review sheet
   (`ui/ReviewSheet.kt`: apply after scrolling to the end, *Turn this down* behind a confirm), its card
   says *Review* under the promise line (`coach/CoachProposalCards.kt`, `Ask.promise`), and receipts
-  say *Turned down* (`presentation/Proposal.kt:184-274`, `coach/Thread.kt:53,77,88`). The boards decide on
+  say *Turned down* (`presentation/Proposal.kt`). The boards decide on
   the card with a per-field diff and Apply / Reject: 08.2 `1252:27854`, 08.3 `1253:28311`, 08.12–08.14,
   the catalogue 08.15–08.31 (`1254:37242` … `1254:38214`). 10v covers the words on every surface.
 - **11l · Outside the app.** The native ongoing notification and promoted Live Update show a
@@ -1383,11 +1384,14 @@ iOS. It and the product differ in these places.
   card when the call lands, as iOS does; 08.69's close glyph is the kit's inverse-on-surface, which barely reads on its
   band, so the build draws it in text/secondary; 08.70 stands the read tally 16 dp under the answer where 01.19 and 08.36
   stand it 6 dp under, and the build holds the 6; the note card comes from 08.25, which draws one paragraph, so the build
-  shows the note's body and its title stands in What Coach read. The composer's picture line is one sentence on both seats,
+  shows the note's body and its title stands in What Coach read. An answer that read no workout and no movement history says the
+  catalog's phrases of the reads it ran, joined as the step line joins them, over What Coach read; no board draws that line. The composer's picture line is one sentence on both seats,
   `CoachPhotos.whereItGoes` and `keptHere` as 01.5 draws them, since a picture goes to the provider from either seat
   (`gym_coach.md` §9.3): board 01.4 still draws *Sent to Coach. Saved only on this phone.*, and iOS says those words signed out
-  and *A copy goes to the AI provider to read it. Windmill keeps none. Kept only on this phone.* signed in (`CoachTab.swift`). No board draws `stopping`, or the words of a Stop refused
-  for another reason (`stopUnheard`, said in 08.69's band, whose *Try again* names a turn already ended).
+  and *A copy goes to the AI provider to read it. Windmill keeps none. Kept only on this phone.* signed in (`CoachTab.swift`). 03.46 draws
+  a set as *1*, a ladder of −5, −2.5, +2.5, +5 and the movement in Nunito, where the shipped rack draws *Set 1*, −2.5, −1, +2.5, +5 and a
+  sans name, and the rack stays as today (D5). No board draws `stopping`; a Stop refused for another reason (`stopUnheard`) says the first
+  sentence of 08.69's band, *Coach is stopped on this phone.*, since the turn has already ended.
 
 ### Native and web differences
 
