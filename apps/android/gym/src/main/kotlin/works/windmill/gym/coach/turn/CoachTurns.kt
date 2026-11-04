@@ -141,6 +141,7 @@ class CoachTurns(
         scope.launch(storage, start = CoroutineStart.UNDISPATCHED) {
             engine.activeReplicaRebinds().collect { replica -> attempted(Unit) { seatChanged(replica) { it.replica == replica && it.seat.kind == SeatKind.anon } } }
         }
+        scope.launch(storage, start = CoroutineStart.UNDISPATCHED) { engine.revisions().collect { accountSettled() } }
         sweep()
     }
 
@@ -342,7 +343,7 @@ class CoachTurns(
         }
     }
 
-    // The account's change a send met is over once the seat in hand may write again, and its sentence goes with it.
+    // The account's change a send met is over once the seat in hand may write again, and its sentence goes with it, so Send comes back with no gesture: at every revision, and at each sweep for what no revision marks.
     private suspend fun accountSettled() {
         attempted(Unit) {
             if (faulted.value == CoachTurnFault.accountChanging && training.mayWriteOn(engine.activeReplica(), training.anonymous)) faulted.value = null

@@ -294,8 +294,9 @@ The model's reasoning and every assistant content block stay on the server.
   batch waits up to `CALL_RESULT_TIMEOUT`.
 - **Before any frame.** On Android, until a turn's first frame arrives the phone cannot know the server
   heard of it, so a reconnect sends the open again: the same body under the same `turnId`, after 1, 2,
-  4 and 8 beats, which attaches to a turn that did land (§6.2 step 3). The driver's activity says it is
-  reconnecting throughout. A turn that never began withdraws rather than ends `interrupted`: its records
+  4 and 8 beats, which attaches to a turn that did land (§6.2 step 3). Each connect is bounded at 10 s, apart
+  from a stream's 60 s of silence, so a black-holed network returns the question in about a minute. The driver's
+  activity says it is reconnecting throughout. A turn that never began withdraws rather than ends `interrupted`: its records
   go, and its question and picture return to the field. It withdraws when:
   - an open is refused, on any attempt, under that refusal;
   - every attempt is lost, under the refusal that says there is no connection, with nothing filed for lost
@@ -335,9 +336,10 @@ The model's reasoning and every assistant content block stay on the server.
   hold to the replica and to its seat, so nothing the account holds leaves under the `anon` seat. iOS has
   no such signal or hold yet.
 - **A sign-in's decision.** While a sign-in waits on its decision (engine §7.10), a running turn's reads
-  and writes wait with it on Android, since each write would move what the decision counted, and a
-  transition the lifter can still cancel, as the sign-out sheet, holds them the same way: Cancel lets the
-  turn go on, and a seat change ends it. iOS does not wait.
+  and writes wait with it on Android, and Send waits too, since each write would move what the decision
+  counted, and a transition the lifter can still cancel, as the sign-out sheet, holds them the same way: Cancel
+  lets the turn go on, and a seat change ends it. A sign-in that lost its hello asks nothing yet, so nothing
+  waits on it. iOS does not wait.
 - **A record gone.** A Coach message removed under its running turn, as a conversation deleted on another
   phone, ends the turn on Android: `runningTurn` lets go of it, the server hears a Stop, and nothing is
   reported as a failure.

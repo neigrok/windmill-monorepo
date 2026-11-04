@@ -27,6 +27,7 @@ import works.windmill.sync.engine.SignInSession
 import works.windmill.sync.engine.SignOutChoice
 import works.windmill.sync.engine.SignOutSession
 import works.windmill.sync.engine.SyncRuntime
+import works.windmill.sync.engine.anonDrawn
 import works.windmill.sync.engine.discardDormant
 import works.windmill.sync.schema.Gym
 
@@ -49,7 +50,7 @@ class GymEngineSession(
         private set
     var decisionBusy by mutableStateOf(false)
         private set
-    // What the sign-in question names, by room and kind. The engine counts every record with unsent work, a conversation deleted since among them, so the conversations are read off the replica.
+    // What the sign-in question names, by room and kind: what the person would see of the work the engine counts, so nothing deleted since is named.
     var decisionCounts: Map<String, Map<String, Int>> by mutableStateOf(emptyMap())
         private set
     private var answer: CompletableDeferred<Unit>? = null
@@ -66,12 +67,21 @@ class GymEngineSession(
             val prepared = EngineTraining(engine).prepareAdoption(telemetry)
             var session = runtime.signIn(user.id, token, retainAnonymous = !prepared)
             while (!session.isComplete) {
+                val seen = session.decisions.associate { held -> held.product to engine.anonDrawn(held.product) }
+                // Nothing the person would see is left to ask about: all of it was deleted on this phone, so it stays off the account with no question.
+                if (seen.values.all { it.isEmpty() }) {
+                    try {
+                        session.complete(session.decisions.associate { it.product to LineageAnswer.discard })
+                        telemetry.event("gym_sign_in_decision", mapOf("action" to "discard", "state" to "nothing_left", "outcome" to "completed"))
+                    } catch (changed: EngineError) {
+                        if (changed.code != EngineError.Code.signInChanged) throw changed
+                        session = runtime.resumeSignIn() ?: throw EngineError(EngineError.Code.signInEnded)
+                    }
+                    continue
+                }
                 val completion = CompletableDeferred<Unit>()
                 decisionRevision += 1
-                val conversations = engine.read(ScopeRef.product("gym")) { it.drawn(Gym.Types.thread).size }
-                decisionCounts = session.decisions.associate { held ->
-                    held.product to if (held.product == "gym" && Gym.Types.thread in held.count) held.count + (Gym.Types.thread to conversations) else held.count
-                }
+                decisionCounts = seen
                 decision = session
                 decisionFailure = null
                 answer = completion

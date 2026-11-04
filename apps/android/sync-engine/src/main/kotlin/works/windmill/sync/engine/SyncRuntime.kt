@@ -338,6 +338,7 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
         return continueSignIn(account, token)
     }
     private suspend fun continueSignIn(account: String, token: String): SignInSession {
+        engine.decisionAsked = false
         val reply = hello(token)
         if (storageIO { tokens.token(account) } != token) throw EngineError(EngineError.Code.signInEnded)
         val response = reply.answer ?: throw EngineError(EngineError.Code.unreachable)
@@ -368,8 +369,10 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
         val matched = storageIO { tokens.token(account) } == token
         val completed = engine.write(EngineOperation.lifecycle) { active ->
             if (active.state == "bound" && active.account == account) return@write true
-            if (matched && engine.device.meta["pendingSignIn"]?.get("account") == Json.of(account))
+            if (matched && engine.device.meta["pendingSignIn"]?.get("account") == Json.of(account)) {
                 engine.device.meta = engine.device.meta.with("pendingSignIn" to null)
+                engine.decisionAsked = false
+            }
             false
         }
         if (matched && !completed) storageIO { tokens.delete(account) }

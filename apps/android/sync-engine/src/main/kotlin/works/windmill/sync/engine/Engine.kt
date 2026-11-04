@@ -90,8 +90,9 @@ class Engine internal constructor(val registry: Registry, internal val store: En
         ensureOpen()
         return activeNow ?: throw IllegalStateException("no-active-replica")
     }
-    // A sign-in waiting on its decision (§7.10): what it counted must hold still until it is answered.
-    fun signInPending(): Boolean = lock.withLock { ensureOpen(); device.meta["pendingSignIn"] != null }
+    // A sign-in this process has asked its decision of (§7.10): what it counted must hold still until it is answered. One a lost hello or an earlier process left asks nothing yet, and counts again when it does.
+    fun signInAsking(): Boolean { ensureOpen(); return decisionAsked }
+    @Volatile internal var decisionAsked = false
     // The keys under `prefix` of a product's device rows, across every retained replica.
     fun retainedDeviceKeys(product: String, prefix: String): Set<String> = lock.withLock {
         ensureOpen()

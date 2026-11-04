@@ -1,5 +1,9 @@
 package works.windmill.platform.agent
 
+import java.net.InetAddress
+import java.net.Socket
+import java.net.SocketAddress
+import java.net.SocketTimeoutException
 import java.util.Collections
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -35,6 +39,7 @@ import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.RecordedRequest
 import okhttp3.mockwebserver.SocketPolicy
+import javax.net.SocketFactory
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -211,6 +216,43 @@ class TurnHttpTest {
         server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))
         val http = TurnHttp(server.url("/"), "/v1/agent/turns", 13, shared, idleTimeout = 200.milliseconds)
         assertTrue(failure(http.open(open, bound)) is TurnConnectionLost)
+    }
+
+    private class Recorded(private val answers: Boolean) : SocketFactory() {
+        val connects: MutableList<Int> = Collections.synchronizedList(mutableListOf())
+        val silences: MutableList<Int> = Collections.synchronizedList(mutableListOf())
+        override fun createSocket(): Socket = object : Socket() {
+            override fun connect(endpoint: SocketAddress, timeout: Int) {
+                connects += timeout
+                if (!answers) throw SocketTimeoutException("connect timed out")
+                super.connect(endpoint, timeout)
+            }
+            override fun setSoTimeout(timeout: Int) {
+                silences += timeout
+                super.setSoTimeout(timeout)
+            }
+        }
+        override fun createSocket(host: String, port: Int): Socket = error("unused")
+        override fun createSocket(host: String, port: Int, local: InetAddress, localPort: Int): Socket = error("unused")
+        override fun createSocket(host: InetAddress, port: Int): Socket = error("unused")
+        override fun createSocket(address: InetAddress, port: Int, local: InetAddress, localPort: Int): Socket = error("unused")
+    }
+
+    // A black-holed network never answers a connect, so it has a short bound of its own; silence on a stream that stands keeps the long one.
+    @Test fun aConnectHasItsOwnShortTimeoutAndStreamSilenceKeepsItsLongOne() {
+        val recorded = Recorded(answers = true)
+        server.enqueue(sse("event: done\ndata: {\"state\":\"completed\"}\n\n"))
+        val client = OkHttpClient.Builder().socketFactory(recorded).build()
+        assertEquals(listOf(TurnEvent.Done(TurnState.completed, false)), within { http(client).resume("tn_1", bound).toList() })
+        assertEquals(listOf(10_000), recorded.connects.distinct())
+        assertTrue("silence on the stream: ${recorded.silences}", 60_000 in recorded.silences)
+    }
+
+    @Test fun aConnectThatNeverAnswersIsALostConnection() {
+        val recorded = Recorded(answers = false)
+        val client = OkHttpClient.Builder().socketFactory(recorded).build()
+        assertTrue(failure(http(client).open(open, bound)) is TurnConnectionLost)
+        assertEquals(listOf(10_000), recorded.connects.distinct())
     }
 
     @Test fun theIdleTimeoutIsIdleNotTotal() {

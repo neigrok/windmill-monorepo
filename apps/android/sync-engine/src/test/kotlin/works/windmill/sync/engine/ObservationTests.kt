@@ -213,19 +213,19 @@ class ObservationTests {
         }
     }
 
-    // A sign-in waits on its decision while it is pending, and keys read across every replica the phone retains.
-    @Test fun aSignInPendingAndDeviceKeysAcrossRetainedReplicas() = runBlocking<Unit> {
+    // A sign-in asks its decision until it is answered, and keys read across every replica the phone retains.
+    @Test fun aSignInAskingAndDeviceKeysAcrossRetainedReplicas() = runBlocking<Unit> {
         Engine.memory(SyncSchema.registry).use { engine ->
             val gym = ScopeRef.product("gym")
             fun routine(id: String) = Change.create("routine", NewID.Given(RecordID(id)), mapOf("name" to Json.of(id), "position" to Json.of(0), "entries" to Json.array()))
-            assertFalse(engine.signInPending())
+            assertFalse(engine.signInAsking())
             engine.commit(gym, Gesture(listOf(routine("rt_00000001")), local = listOf(DeviceWrite("picture:pictureone", Json.of(1)), DeviceWrite("runningTurn", Json.of("message01")))))
             val question = engine.signIn("A", mapOf("gym" to true))
             assertFalse(question.flag("complete"))
-            assertTrue(engine.signInPending())
+            assertTrue(engine.signInAsking())
             val pins = question.items("due").associate { it.member("product").str() to it.member("counted").arr().map(Json::str) }
             assertTrue(engine.signIn("A", mapOf("gym" to true), mapOf("gym" to "add"), pins).flag("complete"))
-            assertFalse(engine.signInPending())
+            assertFalse(engine.signInAsking())
             assertTrue(engine.signOut("keep").flag("complete"))
             engine.commit(gym, Gesture(listOf(routine("rt_00000002")), local = listOf(DeviceWrite("picture:picturetwo", Json.of(3)))))
             assertEquals(setOf("picture:pictureone", "picture:picturetwo"), engine.retainedDeviceKeys("gym", "picture:"))

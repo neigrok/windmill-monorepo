@@ -118,7 +118,7 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
         }
     }
     private fun requireSeat(replica: String, anonymous: Boolean, reader: ScopeReader) {
-        if (engine.activeReplica() != replica || engine.signInPending() || reader.isAnonymous != anonymous) throw TrainingRefused("account-changed", "The account changed. Open this again.")
+        if (engine.activeReplica() != replica || engine.signInAsking() || reader.isAnonymous != anonymous) throw TrainingRefused("account-changed", "The account changed. Open this again.")
     }
     // A turn's door: `writable`'s one rule, and the seat the turn opened under alone: its replica, and whether that replica is anonymous, since a sign-in can rebind it under the same id. Reads hold to it too, or an account's records would leave under the seat before it. A sign-in waiting on its decision closes it, since what the decision counted must hold still.
     private fun pinnedTo(replica: String, anonymous: Boolean) = object : Replica by writable {
@@ -128,7 +128,7 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
             writable.read(scope) { reader -> requireSeat(replica, anonymous, reader); body(reader) }
     }
     // Whether `pinnedOn` would let a turn through now: asking first keeps a refused commit, which the engine files as a fault, for the race.
-    fun mayWriteOn(replica: String, anonymous: Boolean): Boolean = writeAuthority() && engine.activeReplica() == replica && !engine.signInPending() && this.anonymous == anonymous
+    fun mayWriteOn(replica: String, anonymous: Boolean): Boolean = writeAuthority() && engine.activeReplica() == replica && !engine.signInAsking() && this.anonymous == anonymous
     suspend fun <T> pinnedOn(replica: String, anonymous: Boolean, body: (ActionRunner) -> T): T = writing(pinnedTo(replica, anonymous), body)
     // A held removal lasts the window the room asked for; every other gesture keeps the engine's own.
     private fun holding(holdMs: Long) = object : Replica by writable {

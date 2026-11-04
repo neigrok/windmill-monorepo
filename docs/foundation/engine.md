@@ -2020,7 +2020,8 @@ incomplete, `DeviceMeta.pendingSignIn` holds A.
   device work, a **signed-out decision** is due: an explicit add or discard of that work, of every type, with no
   default and no "later". The engine exposes `anonCount(product)` per decision: the count, by type,
   of the distinct records `(scope, type, id)` its entries create or change. Pending device work is
-  counted separately, one item per product-identified row. A decision covers exactly the work it
+  counted separately, one item per product-identified row. Kotlin's `anonDrawn(product)` is the same count of the
+  records still drawn, for a question that names only what the person would see. A decision covers exactly the work it
   counted: the engine pins entry local ids and each pending device row's key and full value bytes.
   When the entries or device work differ at the answer (a commit, edit, undo or result in between), the decision is due again with the new
   count. How the decisions are presented is product canon. Until every due decision is made the

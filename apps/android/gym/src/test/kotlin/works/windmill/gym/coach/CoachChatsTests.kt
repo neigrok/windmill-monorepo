@@ -53,6 +53,7 @@ import works.windmill.sync.api.RecordRef
 import works.windmill.sync.core.Json
 import works.windmill.sync.core.RecordID
 import works.windmill.sync.core.ScopeRef
+import works.windmill.sync.engine.EngineError
 import works.windmill.sync.engine.Reply
 import works.windmill.sync.engine.SessionTokens
 import works.windmill.sync.engine.SyncRuntime
@@ -455,6 +456,74 @@ class CoachChatsTests {
             advanceUntilIdle()
             assertEquals(said, coach.refusal(second))
             assertNull(coach.refusal(first))
+        }
+    }
+
+    private class Unreachable : SyncTransport {
+        override suspend fun hello(token: String?) = Reply.Unreachable
+        override suspend fun push(request: Json, token: String) = Reply.Unreachable
+        override suspend fun pull(request: Json, token: String?) = Reply.Unreachable
+        override suspend fun openLive(token: String) = Reply.Unreachable
+    }
+
+    private class HeldTokens : SessionTokens {
+        val values = mutableMapOf<String, String>()
+        override fun token(account: String) = values[account]
+        override fun save(account: String, token: String) { values[account] = token }
+        override fun delete(account: String) { values.remove(account) }
+        override fun accounts() = values.keys.toSet()
+    }
+
+    // A sign-in that lost its hello stays pending for its retry and asks nothing: the seat in hand is settled, and Send is the lifter's.
+    @Test fun aSignInThatLostItsHelloHoldsNothingBack() = runTest {
+        val server = answers("Hi")
+        room(server).use { room ->
+            room.store.connect(room.account(null))
+            val coach = room.store.coach
+            val tokens = HeldTokens()
+            SyncRuntime(room.engine, Unreachable(), tokens, "test", activityAllowed = { false }).use { runtime ->
+                assertEquals(EngineError.Code.unreachable, (runCatching { runtime.signIn("alice", "token-alice") }.exceptionOrNull() as EngineError).code)
+            }
+            assertEquals(Json.of("alice"), room.engine.snapshot().member("meta")["pendingSignIn"]?.get("account"))
+            assertFalse(room.engine.signInAsking())
+            val chat = coach.freshChat()
+            assertTrue(coach.send(chat, "Question"))
+            advanceUntilIdle()
+            assertFalse(coach.accountChanging)
+            assertFalse(coach.sendHeld)
+            assertEquals(listOf("Question"), server.opened.map { it.question })
+        }
+    }
+
+    // A sign-in asking its decision holds Send; when it ends with no seat change, Send comes back on its own: nothing taps, retries or sweeps.
+    @Test fun sendHeldByASignInsDecisionComesBackWhenTheDecisionEnds() = runTest {
+        val server = answers("Hi")
+        room(server).use { room ->
+            room.store.connect(room.account(null))
+            room.coachTurns?.start()
+            advanceUntilIdle()
+            val coach = room.store.coach
+            assertTrue(coach.send(coach.freshChat(), "First"))
+            advanceUntilIdle()
+            val tokens = HeldTokens().apply { save("alice", "token-alice") }
+            assertFalse(room.engine.signIn("alice", mapOf("gym" to true)).member("complete").bool())
+            assertTrue(room.engine.signInAsking())
+
+            val waiting = coach.freshChat()
+            coach.saveDraft(waiting, CoachDraft("Second"))
+            assertTrue(coach.send(waiting, "Second"))
+            advanceUntilIdle()
+            assertTrue(coach.accountChanging)
+            assertTrue(coach.sendHeld)
+            assertEquals(CoachDraft("Second"), coach.draft(waiting))
+
+            SyncRuntime(room.engine, Unreachable(), tokens, "test", activityAllowed = { false }).use { runtime ->
+                assertFalse(runtime.abandonSignIn("alice", "token-alice"))
+            }
+            advanceUntilIdle()
+            assertFalse(room.engine.signInAsking())
+            assertFalse(coach.accountChanging)
+            assertFalse(coach.sendHeld)
         }
     }
 

@@ -360,7 +360,7 @@ class CoachTurnsLiveWireTests {
                 val holds = body.member("holdsRecords").obj().mapValues { it.value.bool() }
                 val question = engine.signIn(account, holds, serverSchema = body.member("schema").long())
                 assertFalse(question.member("complete").bool())
-                assertTrue(engine.signInPending())
+                assertTrue(engine.signInAsking())
                 val pins = question.member("due").arr().associate { due -> due.member("product").str() to due.member("counted").arr().map(Json::str) }
                 assertTrue(engine.signIn(account, holds, mapOf("gym" to "add"), pins, serverSchema = body.member("schema").long()).member("complete").bool())
                 assertEquals(replica, engine.activeReplica())

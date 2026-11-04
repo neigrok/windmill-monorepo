@@ -152,9 +152,10 @@ class CoachChats internal constructor(
     // The answers a chat retains from earlier versions. One this build cannot read costs that answer, reported once by a failure that says nothing of it.
     private fun retained(seat: String, chat: String): List<CoachOnboardingRecord> = try {
         localCoach?.retained(seat, chat).orEmpty().filter { record ->
-            if (!record.readable && !retainedReported) telemetry.failure("gym.restoreConversation", CoachRecordUnreadable())
-            if (!record.readable) retainedReported = true
-            record.readable
+            record.readable.also { readable ->
+                if (!readable && !retainedReported) telemetry.failure("gym.restoreConversation", CoachRecordUnreadable())
+                retainedReported = retainedReported || !readable
+            }
         }
     } catch (failure: Exception) {
         archiveFailed(failure)

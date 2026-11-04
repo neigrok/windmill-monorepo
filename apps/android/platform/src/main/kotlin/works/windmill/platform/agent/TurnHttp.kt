@@ -36,7 +36,7 @@ import works.windmill.agent.turnAnswer
 import works.windmill.platform.telemetry.TelemetryPolicy
 import works.windmill.sync.core.Json
 
-// The four routes of a turn over OkHttp. `idleTimeout` bounds silence, so frames and heartbeats keep a stream open, and `totalTimeout` bounds any one call, a stream included; either ending is a lost connection, which the driver resumes. A credential stays on the configured host, so no redirect is followed and no cookie is kept.
+// The four routes of a turn over OkHttp. `connectTimeout` bounds reaching the server, so a black-holed network hands the question back in about a minute; `idleTimeout` bounds silence, so frames and heartbeats keep a stream open; `totalTimeout` bounds any one call, a stream included. Each ending is a lost connection, which the driver resumes. A credential stays on the configured host, so no redirect is followed and no cookie is kept.
 class TurnHttp(
     private val baseUrl: HttpUrl,
     private val route: String,
@@ -44,9 +44,10 @@ class TurnHttp(
     client: OkHttpClient,
     idleTimeout: Duration = 60.seconds,
     totalTimeout: Duration = 3600.seconds,
+    connectTimeout: Duration = 10.seconds,
 ) : TurnTransport {
     private val client = client.newBuilder()
-        .connectTimeout(idleTimeout.inWholeMilliseconds, TimeUnit.MILLISECONDS)
+        .connectTimeout(connectTimeout.inWholeMilliseconds, TimeUnit.MILLISECONDS)
         .readTimeout(idleTimeout.inWholeMilliseconds, TimeUnit.MILLISECONDS)
         .writeTimeout(idleTimeout.inWholeMilliseconds, TimeUnit.MILLISECONDS)
         .callTimeout(totalTimeout.inWholeMilliseconds, TimeUnit.MILLISECONDS)
