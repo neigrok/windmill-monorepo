@@ -947,6 +947,8 @@ def main():
             device.prepare_notification_capture()
         elif any(scenario.get("tile_clock") or scenario.get("workout_clock") or scenario.get("model_timing") for scenario in scenarios):
             device.prepare_hierarchy_capture()
+        if args.shared_avd:
+            device.run("uninstall", PACKAGE, check=False)
         device.run("install", apk)
         if any(scenario.get("tile_clock") for scenario in scenarios):
             device.prepare_workout_tile()
