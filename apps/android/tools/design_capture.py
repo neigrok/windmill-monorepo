@@ -786,7 +786,7 @@ def start_emulator(sdk, output, port, stack, auth_code=None):
         "AvdId=WindmillCapture", "avd.ini.displayname=Windmill Capture", "hw.device.name=pixel_8", "hw.device.manufacturer=Google", "abi.type=arm64-v8a", "hw.cpu.arch=arm64",
         "hw.cpu.ncore=4", "hw.ramSize=4096", "hw.lcd.width=1080", "hw.lcd.height=2400", "hw.lcd.density=420",
         "hw.keyboard=yes", "hw.gpu.enabled=yes", "hw.gpu.mode=host", "hw.mainKeys=no", "hw.battery=yes",
-        "disk.dataPartition.size=4G", "PlayStore.enabled=false", f"image.sysdir.1={image}/", "tag.id=google_apis"]) + "\n")
+        "disk.dataPartition.size=2G", "PlayStore.enabled=false", f"image.sysdir.1={image}/", "tag.id=google_apis"]) + "\n")
     log = stack.enter_context((output / "emulator.log").open("wb"))
     process = subprocess.Popen([str(sdk / "emulator/emulator"), "-avd", "WindmillCapture", "-port", str(port),
         "-no-snapshot", "-no-audio", "-no-boot-anim", "-no-window"], env={**os.environ, "ANDROID_AVD_HOME": str(avds)},
