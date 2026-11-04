@@ -62,6 +62,7 @@ class TrainingStore(
         followOpenWorkout = { open -> workout.follow(open) })
     val workout = WorkoutSession(seat, held, controls, training, history, routines, scope, telemetry, now, mintSession, mintSet,
         workoutClock, refresh = ::refreshEngine)
+    val workoutProposals = WorkoutProposalsStore(seat, training, telemetry, refresh = ::refreshEngine)
     val deletions = DeletionsStore(seat, held, controls, training, bodyweight, routines, notes, workout, scope, telemetry, now,
         undoWindowMs)
     val conversations = CoachConversations(seat, training, telemetry, coachTurns)
@@ -156,6 +157,7 @@ class TrainingStore(
             seat.workoutReady = false
             workout.forgetSeat()
             routines.forgetSeat()
+            workoutProposals.forgetSeat()
             bodyweight.forgetSeat()
             history.forgetSeat()
             deletions.forgetSeat(sameWeightSeat)
@@ -196,6 +198,8 @@ class TrainingStore(
             if (owner != seat.owner) return
             workout.resume()
             if (workout.lastSetsWanted) workout.loadLastSets()
+            if (owner != seat.owner) return
+            workoutProposals.read()
         } catch (_: TrainingReadChanged) {
             // The observer resumes the pending connection after the superseding engine revision.
         } catch (cancelled: CancellationException) {
@@ -227,7 +231,7 @@ class TrainingStore(
         scope.launch { conversations.observe() }
         scope.launch { engine.notices("gym").notices.collect { refreshes.trySend(Unit) } }
         scope.launch { engine.offers.offers.collect { refreshes.trySend(Unit) } }
-        for (type in listOf("exercise", "exerciseName", "routine", "routineCreation", "session", "set", "prefs", "note", "weighin", "proposal"))
+        for (type in listOf("exercise", "exerciseName", "routine", "routineCreation", "session", "set", "prefs", "note", "weighin", "proposal", "workoutProposal"))
             scope.launch { engine.records(ScopeRef.product("gym"), type).state.collect { refreshes.trySend(Unit) } }
         return requireNotNull(engineObservation)
     }
@@ -252,7 +256,7 @@ class TrainingStore(
         held.deletedSets = held.deletedSets - details.flatMap { detail -> detail.sets.map { it.id } }.toSet()
         history.refreshRetained(details)
         routines.readCatalogue()
-        if (seat.tried("gym.refreshWorkout") { routines.readProgram(); true } != true) return
+        if (seat.tried("gym.refreshWorkout") { routines.readProgram(); workoutProposals.read(); true } != true) return
         routines.readReceipts()
         workout.preferences = training.settings()
         notes.reread(owner)

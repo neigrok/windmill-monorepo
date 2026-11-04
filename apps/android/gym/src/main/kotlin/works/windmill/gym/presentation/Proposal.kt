@@ -8,8 +8,7 @@ import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
 
-// Every type here is read-only on the wire: nothing on this phone mints a proposal, and one does
-// nothing until the lifter taps Apply.
+// A proposal does nothing until the lifter taps Apply.
 
 @Serializable(with = ProposalIntentSerializer::class)
 enum class ProposalIntent(val wire: String) {
@@ -41,6 +40,10 @@ object ProposalStateSerializer : KSerializer<ProposalState> {
     override fun serialize(encoder: Encoder, value: ProposalState) = encoder.encodeString(value.wire)
     override fun deserialize(decoder: Decoder): ProposalState = ProposalState.parse(decoder.decodeString())
 }
+
+// What a proposal changes: a routine, from its next workout on, or the workout open now.
+@Serializable
+enum class ProposalTarget { Routine, Workout }
 
 // `door` stays a String where `state` and `kind` are enums; `thread` is absent where there is no
 // conversation to open.
@@ -111,18 +114,17 @@ data class ProposalChange(
     }
 
     // Zero is a real answer and an absent count says neither.
-    val removedLine: String
-        get() {
-            val kept = loggedSets ?: return "removed from the routine"
-            if (kept == 0) return "removed from the routine · never logged"
-            val sets = if (kept == 1) "1 logged set" else "$kept logged sets"
-            return "removed from the routine · $sets kept"
-        }
+    fun removedLine(from: String = Proposal.routineWord): String {
+        val kept = loggedSets ?: return "removed from $from"
+        if (kept == 0) return "removed from $from · never logged"
+        val sets = if (kept == 1) "1 logged set" else "$kept logged sets"
+        return "removed from $from · $sets kept"
+    }
 
     val compactLine: String
         get() {
             if (kind == ChangeKind.Added) return after?.let { "+ added · ${Proposal.asks(it)}" } ?: "+ added"
-            if (kind == ChangeKind.Removed) return "− $removedLine"
+            if (kind == ChangeKind.Removed) return "− ${removedLine()}"
             // A retarget, and any kind this build cannot name: read off whichever side arrived. Each
             // move carries its label — `set 4 · 100 × 1 → 102.5 × 1` — the review row's own line.
             val moved = before?.let { was -> after?.let { now -> Proposal.moves(was, now) } }.orEmpty()
@@ -149,6 +151,10 @@ data class Proposal(
     val baseName: String = "",
     val name: String = "",
     val changes: List<ProposalChange> = emptyList(),
+    // A workout proposal's `routineId` names its session, and `baseName` is `workoutWord`.
+    val target: ProposalTarget = ProposalTarget.Routine,
+    // Why a workout proposal can no longer be applied, read with it so the two never disagree.
+    val outOfDate: String? = null,
 ) {
     val isPending: Boolean get() = state == ProposalState.Pending
 
@@ -174,6 +180,15 @@ data class Proposal(
             }
             closeRun()
             return rows
+        }
+
+    // A workout's sheet reads what changes first: what moves, what goes and what comes, then one count of what stands (08.55b).
+    val changesFirst: List<DocumentRow>
+        get() {
+            val rank = listOf(ChangeKind.Retargeted, ChangeKind.Removed, ChangeKind.Added)
+            val kept = changes.filter { it.kind == ChangeKind.Kept }
+            return drawn.sortedBy { rank.indexOf(it.kind) }.map { DocumentRow.Changed(it) } +
+                listOfNotNull(DocumentRow.Unchanged(kept).takeIf { kept.isNotEmpty() })
         }
 
     // Derived from the SERVER's reply and never from the model's prose: the name the routine now
@@ -255,7 +270,29 @@ data class Proposal(
 
     val routineName: String get() = baseName.ifBlank { "this routine" }
 
+    // What the card and the sheet are addressed by.
+    val subject: String get() = if (target == ProposalTarget.Workout) "This workout" else routineName
+
+    // Where its change lines land.
+    val within: String get() = if (target == ProposalTarget.Workout) workoutWord else routineWord
+
     companion object {
+        const val routineWord = "the routine"
+        const val workoutWord = "this workout"
+        const val nextTime = "next time"
+        const val outOfDateWord = "out of date"
+
+        // Why a workout proposal can no longer be applied (08.57): one cause, then that nothing was applied.
+        fun outOfDateLine(reason: String, movement: String?): String {
+            val cause = when (reason) {
+                "replaced" -> "A newer suggestion replaced this one."
+                "workout-finished" -> "This workout has finished."
+                "workout-moved" -> "You logged ${movement ?: "a movement"} since this suggestion."
+                else -> "This workout changed after this suggestion."
+            }
+            return "$cause Nothing was applied."
+        }
+
         const val review = "Review"
         const val apply = "Apply"
 

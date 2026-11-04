@@ -477,8 +477,8 @@ and Android disagree.
   *Set 1 · 8 × 10 kg → 8 × 12.5 kg* and every set line of a changed movement stands (03.32 draws
   *10 × 8 → 12.5 × 8* and the changed set alone); and a reorder an applied Coach change made counts in
   *‹n› changes* but draws no Moved block, since the plan's diff carries no order lines.
-  Android and web still refuse Coach while a workout is open (Android Ask, server Ask
-  `ask-session-open`); only iOS answers during one.
+  Web still refuses Coach while a workout is open (server Ask `ask-session-open`); iOS and Android
+  answer during one.
 - **Proposal · one suggestion on an empty Coach (owner decision).** Outside first-use setup, board
   08.1 draws an empty Coach as the bar, canvas and composer. The
   proposal: while no conversation exists, at most one `.glass` capsule above the composer, chosen
@@ -909,7 +909,7 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   action cards, review route and outcome wording under the owner's 2026-10-25 scope decision.
   Android decides a proposal in a review sheet
   (`ui/ReviewSheet.kt`: apply after scrolling to the end, *Turn this down* behind a confirm), its card
-  says *Review* under the promise line (`coach/CoachAnswer.kt:338-352`, `Ask.promise`), and receipts
+  says *Review* under the promise line (`coach/CoachProposalCards.kt`, `Ask.promise`), and receipts
   say *Turned down* (`presentation/Proposal.kt:184-274`, `coach/Thread.kt:53,77,88`). The boards decide on
   the card with a per-field diff and Apply / Reject: 08.2 `1252:27854`, 08.3 `1253:28311`, 08.12–08.14,
   the catalogue 08.15–08.31 (`1254:37242` … `1254:38214`). 10v covers the words on every surface.
