@@ -404,7 +404,7 @@
     "name": "coach-stopped",
     "account": "fixture",
     "model_timing": {
-      "start_delay_ms": 10000
+      "start_delay_ms": 20000
     },
     "responses": [
       [
@@ -478,7 +478,7 @@
     "name": "coach-stop-not-reached",
     "account": "fixture",
     "model_timing": {
-      "start_delay_ms": 10000
+      "start_delay_ms": 20000
     },
     "responses": [
       [
@@ -552,7 +552,7 @@
     "name": "coach-interrupted",
     "account": "fixture",
     "model_timing": {
-      "start_delay_ms": 10000
+      "start_delay_ms": 20000
     },
     "responses": [
       [

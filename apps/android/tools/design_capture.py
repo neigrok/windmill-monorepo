@@ -889,6 +889,7 @@ def main():
     parser.add_argument("--sentry-dsn", default="", help="Optional local collector DSN; no vendor endpoint is accepted.")
     parser.add_argument("--shared-avd", help="Boot this existing AVD read-only instead of a fresh one, for a host short of disk.")
     parser.add_argument("--patience", type=int, default=1, help="Multiplies every wait for a state, for a loaded host.")
+    parser.add_argument("--appearance", choices=("dark", "light"), help="Capture one appearance instead of both.")
     parser.add_argument("--acceptance-pause-seconds", type=int, default=0,
                         help="Keep the isolated stack and emulator available after captures, up to 600 seconds.")
     args = parser.parse_args()
@@ -1003,6 +1004,8 @@ def main():
         manifest["sdk"] = int(device.run("shell", "getprop", "ro.build.version.sdk"))
         for account in ("empty", "fixture"):
             for mode, value in (("dark", "yes"), ("light", "no")):
+                if args.appearance not in (None, mode):
+                    continue
                 if args.fresh_mode_fixture and account == "fixture" and mode == "light":
                     fixture = Fixture(origin, database_url)
                     fixture.seed(replacement)
