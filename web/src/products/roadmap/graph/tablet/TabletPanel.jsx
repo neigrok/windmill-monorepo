@@ -220,7 +220,7 @@ function BulkBar({ count, choice, onRecolor, onDelete, onDone }) {
   );
 }
 
-export function TabletPanel({ tablet, open, top, selectedNode, selectedState, nodesById, prerequisites, unlocks, completedAt, kinds, autoFocusName, deletable, onMarkDone, onUnmarkDone, onDelete, onJump, selectedCount, bulkChoice, onBulkRecolor, onBulkDelete, onBulkDone }) {
+export function TabletPanel({ tablet, open, top, selectedNode, selectedState, nodesById, prerequisites, unlocks, completedAt, legend, autoFocusName, deletable, onMarkDone, onUnmarkDone, onDelete, onJump, selectedCount, bulkChoice, onBulkRecolor, onBulkDelete, onBulkDone }) {
   const { surface, aim } = tablet;
   return (
     <GraphDock open={open} top={top} tablet tenant={surface === 'editor' ? selectedNode.id : surface}>
@@ -239,7 +239,7 @@ export function TabletPanel({ tablet, open, top, selectedNode, selectedState, no
           prerequisites={prerequisites}
           unlocks={unlocks}
           completedAt={completedAt}
-          kinds={kinds}
+          legend={legend}
           autoFocusName={autoFocusName}
           onRename={tablet.renameStep}
           onAddStep={tablet.addStepUnder}

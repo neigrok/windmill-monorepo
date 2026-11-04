@@ -1,9 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Icon, Card } from '../../../../design-system';
 import { NodeAnnotation, ReadOnlyStateChip, SheetStateFruit, SheetRelations } from '../StepPanel.jsx';
-import { KIND_CSS, DEFAULT_NODE_COLOR } from '../../theme.js';
-import { deleteCostLine } from '../../copy.js';
-import { kindName } from '../../model/Legend.js';
+import { KindChoice } from '../../board/BoardControls.jsx';
+import { KIND_CSS, NODE_COLOR_NAMES, DEFAULT_NODE_COLOR } from '../../theme.js';
+import { COMPOSER, deleteCostLine } from '../../copy.js';
+import { kindOptionsForHues } from '../../model/Legend.js';
 
 const verbBase = {
   display: 'flex',
@@ -35,7 +36,7 @@ export function progressVerb(state) {
   return 'complete';
 }
 
-export function TabletEditor({ node, state, prerequisites = [], unlocks = [], completedAt, kinds = [], autoFocusName = false, deletable = true, onRename, onAddStep, onConnect, onSetKind, onMarkDone, onUnmarkDone, onDelete, onJump }) {
+export function TabletEditor({ node, state, prerequisites = [], unlocks = [], completedAt, legend = [], autoFocusName = false, deletable = true, onRename, onAddStep, onConnect, onSetKind, onMarkDone, onUnmarkDone, onDelete, onJump }) {
   const [editingName, setEditingName] = useState(!!autoFocusName);
   const [draft, setDraft] = useState(node?.label ?? '');
   const inputRef = useRef(null);
@@ -51,7 +52,6 @@ export function TabletEditor({ node, state, prerequisites = [], unlocks = [], co
 
   const currentKind = node.color ?? DEFAULT_NODE_COLOR;
   const hue = KIND_CSS[currentKind] ?? KIND_CSS[DEFAULT_NODE_COLOR];
-  const legendKinds = kinds.length > 0 ? kinds : Object.keys(KIND_CSS).map((h) => ({ id: h, hue: h }));
   const progress = progressVerb(state);
   const blocker = state === 'locked' ? prerequisites.find((prerequisite) => !prerequisite.complete)?.label : null;
   const showChip = state === 'complete' || state === 'locked';
@@ -137,26 +137,14 @@ export function TabletEditor({ node, state, prerequisites = [], unlocks = [], co
         </button>
       </div>
 
-      <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }} role="group" aria-label="Recolor this step">
-        {legendKinds.map((kind) => (
-          <button
-            key={kind.id}
-            type="button"
-            aria-label={`Set kind to ${kindName(kind)}`}
-            style={{ width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, border: 0, background: 'none', cursor: 'pointer' }}
-            onClick={() => { if (kind.hue !== currentKind) onSetKind(node.id, kind.hue); }}
-          >
-            <span
-              style={{
-                width: 34,
-                height: 34,
-                borderRadius: '50%',
-                background: (KIND_CSS[kind.hue] ?? KIND_CSS[DEFAULT_NODE_COLOR]).base,
-                boxShadow: kind.hue === currentKind ? '0 0 0 3px var(--text-primary)' : '0 0 0 1px var(--border-default)',
-              }}
-            />
-          </button>
-        ))}
+      <div className="st-step-kind">
+        <KindChoice
+          kinds={kindOptionsForHues(NODE_COLOR_NAMES, legend)}
+          value={currentKind}
+          label={COMPOSER.kind}
+          follow={false}
+          onChoose={(choice) => { if (choice !== currentKind) onSetKind(node.id, choice); }}
+        />
       </div>
 
       {deletable && (

@@ -157,6 +157,7 @@ step and how many steps are up next.
   **Save**; Cancel.
 - Kind offers six choices inline: the legend kinds by name and the unnamed hues by hue name (Build,
   Learn, Milestone, Brick, Sky, Plum). A choice changes only the draft.
+- The Graph's step panel offers the same six choices. A choice saves at once and hovering previews it on the node. The desktop dock adds *Manage kinds* beside them; the tablet panel has no link, because the legend is read-only there.
 - The prerequisite picker shows each candidate's state, groups steps that cannot be prerequisites
   (*Comes after this step*), keeps the selection across queries in a chip strip, and enables Apply
   only when the draft changes. It writes nothing; the form's commit does. Phone: search sits above

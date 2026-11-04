@@ -560,10 +560,6 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   ([design-system note 499:42374](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=499-42374)).
   Web's shared token and static-page chrome use that ring; dark, journal and gym overrides retain
   their own values.
-- **Board · kind choices in the editor.** The proposal's create and edit form offers six kinds: the
-  legend kinds by name and the unnamed hues by hue name (Kind choice 306:4848; desktop 09.05
-  384:19561). The shipped `graph/StepPanel.jsx` offers only the legend's kinds, falling back to the six
-  hues when the legend is empty, plus *Manage kinds*. Rule which one is canon.
 - **Board · no Complete offer after the last subtask in the Graph.** The Board's step page and modal
   offer *All subtasks done · Complete step* once every subtask is checked (phone 07.06 231:1174,
   desktop 03.09 399:19282). Checking the last subtask in the Graph's step panel (`graph/StepPanel.jsx`)
@@ -672,7 +668,7 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   publisher retain the global notice.
 - **Board · the drawings of what the lift retired.** The product has no List, phone editor sheet, phone aim, remove-link and bulk bars,
   ControlBar or Next up shelf. Their Web Mobile and Web boards (the [flow index](../index.md#roadmap--web)'s *02 · Find and edit in List*,
-  *List vocabulary*, and the Next up states in *05 · Progress and feedback*) still stand in Figma. The designer deletes them and their
+  *List vocabulary*, the phone owner sheets in *04 · Edit and complete steps* (Web Mobile 04.01–04.05, 04.08), and the Next up states in *05 · Progress and feedback*) still stand in Figma. The designer deletes them and their
   index rows in the 🚀 pass.
 - **Board · Shell from 744.** Every role's frames from 744 ([04.02](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=376-12955),
   [04.06](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=376-12775), 04.09 · 744) draw the Shared Shell's

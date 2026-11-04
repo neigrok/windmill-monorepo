@@ -90,6 +90,7 @@ test('copy — one word per state, one title per column, one label per sort', ()
     columns: 'Columns',
     findStep: 'Find a step',
     filterByKind: 'Filter by kind',
+    manageKinds: 'Manage kinds',
     allKinds: 'All',
     newStep: 'New step',
     recolor: 'Recolor',
