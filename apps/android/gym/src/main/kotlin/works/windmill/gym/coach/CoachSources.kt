@@ -71,9 +71,12 @@ internal fun CoachReadSources(line: String, rows: List<CoachCall>, onSheetTop: (
                 Box(Modifier.width(32.dp).height(4.dp).background(colors.onSurfaceVariant, RoundedCornerShape(2.dp)))
             }
         },
+        contentWindowInsets = { WindowInsets(0, 0, 0, 0) },
     ) {
+        // The board's 24 dp under Close holds the gesture bar; a taller bar takes what it needs.
+        val bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding().coerceAtLeast(24.dp)
         Column(Modifier.fillMaxWidth()
-            .verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(top = 12.dp, bottom = 24.dp),
+            .verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(top = 12.dp, bottom = bottom),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(Ask.sourcesTitle, style = GymType.coachSourcesTitle, color = colors.onSurface)
