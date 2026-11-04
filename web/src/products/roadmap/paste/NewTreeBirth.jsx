@@ -25,7 +25,7 @@ function openBorn(treeId) {
 
 
 export function NewTreeBirth() {
-  const { status } = useAuth();
+  const { status, holdDeviceLine } = useAuth();
   const { breakpoint } = useViewMode();
   const [name, setName] = useState('');
   const [phase, setPhase] = useState('naming'); // naming | planting | error
@@ -49,6 +49,8 @@ export function NewTreeBirth() {
     deviceKeepsTrees().then((keeps) => { if (current) setDeviceRefused(!keeps); });
     return () => { current = false; };
   }, [status]);
+
+  useEffect(() => (deviceRefused ? holdDeviceLine() : undefined), [deviceRefused, holdDeviceLine]);
 
   const parse = useMemo(
     () => (composerOpen ? parsePlan(draft, draftKinds) : null),

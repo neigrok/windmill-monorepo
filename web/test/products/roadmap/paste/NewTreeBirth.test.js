@@ -17,7 +17,8 @@ function door(t, { status, indexedDB }) {
   globalThis.window.matchMedia = () => ({ matches: true, addEventListener() {}, removeEventListener() {} });
   Object.defineProperty(globalThis, 'indexedDB', { configurable: true, writable: true, value: indexedDB });
   Object.defineProperty(globalThis, 'localStorage', { configurable: true, writable: true, value: globalThis.window.localStorage });
-  return { status };
+  const holds = { current: 0 };
+  return { status, holds, holdDeviceLine: () => { holds.current += 1; return () => { holds.current -= 1; }; } };
 }
 
 const refused = { open() { throw new DOMException('refused', 'SecurityError'); } };
@@ -32,7 +33,9 @@ for (const status of ['ghost', 'loading']) {
     await new Promise((resolve) => setImmediate(resolve));
     assert.deepEqual(said(view), ['Couldn’t open this device’s saved workReload to try again.']);
     assert.equal(fields(view), 0);
+    assert.equal(context.holds.current, 1);
     view.unmount();
+    assert.equal(context.holds.current, 0);
   });
 }
 
@@ -42,7 +45,7 @@ test('a browser that keeps its plans, and a signed-in account the server keeps t
     const { NewTreeBirth } = await loadScreen('products/roadmap/paste/NewTreeBirth.jsx');
     const view = renderHook(t, () => NewTreeBirth(), { context });
     await new Promise((resolve) => setTimeout(resolve, 20));
-    assert.deepEqual([status, said(view), fields(view)], [status, [], 1]);
+    assert.deepEqual([status, said(view), fields(view), context.holds.current], [status, [], 1, 0]);
     view.unmount();
   }
 });
