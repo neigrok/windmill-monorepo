@@ -400,3 +400,174 @@ test('pending gestures survive reload and repeated edits to one register, then a
   assert.equal(await session.discard(), true);
   assert.deepEqual((await store.load('tree')).gestures, { structure: {}, progress: saved.gestures.progress });
 });
+
+function refuseDatabase(t) {
+  environment(t);
+  const prior = Object.getOwnPropertyDescriptor(globalThis, 'indexedDB');
+  Object.defineProperty(globalThis, 'indexedDB', { configurable: true, value: { open() { throw new DOMException('private refusal', 'SecurityError'); } } });
+  t.after(() => Object.defineProperty(globalThis, 'indexedDB', prior));
+  t.mock.method(console, 'warn', () => {});
+  const reports = [];
+  return {
+    reports,
+    async session(treeId) {
+      const session = new SyncSession({ treeId, store: new SyncStore(), registry: null, reportFailure: (operation) => reports.push(operation) });
+      t.after(() => session.close());
+      await session.start();
+      session.ws.open();
+      return session;
+    },
+  };
+}
+
+test('a refused database still carries a write to the server, reports nothing, and keeps it for this document only', async (t) => {
+  const { reports, session: open } = refuseDatabase(t);
+  const session = await open('refused-send');
+  session.receiveState({ ...baseline, seq: 1 });
+  session.receiveProgressGraft({ marks: [] });
+  session.dispatch({ kind: 'RenameNode', id: 'root', label: 'Sent' });
+  session.markProgress('root', 'complete');
+  await settle([session.store]);
+  assert.deepEqual(session.ws.frames.filter(({ t }) => t !== 'subscribe').map(({ t, nodes, marks }) => [t, nodes?.[0].label ?? marks[0].status]), [['subgraph', 'Sent'], ['progress', 'complete']]);
+  assert.deepEqual(reports, []);
+  assert.equal(session.statusSnapshot().refused, null);
+  assert.equal(await session.store.holdsOnDevice(), false);
+  assert.equal(await session.store.requestPersistent(), false);
+});
+
+test('an offline write under a refused database outlives its session in this document and flushes on the next', async (t) => {
+  const { reports, session: open } = refuseDatabase(t);
+  const first = await open('refused-offline');
+  first.receiveState({ ...baseline, seq: 1 });
+  first.receiveProgressGraft({ marks: [] });
+  first.ws.close();
+  first.dispatch({ kind: 'RenameNode', id: 'root', label: 'Unsent' });
+  await settle([first.store]);
+  first.close();
+  const second = await open('refused-offline');
+  assert.equal(second.lattice.toTreeData().nodes[0].label, 'Unsent');
+  second.receiveState({ ...baseline, seq: 1 });
+  await settle([second.store]);
+  assert.equal(second.ws.frames.at(-1).nodes.find(({ id }) => id === 'root').label, 'Unsent');
+  assert.deepEqual(reports, []);
+});
+
+test('a refused database still discards: the refused write goes and the confirmed lane stands', async (t) => {
+  const { session: open } = refuseDatabase(t);
+  const session = await open('refused-discard');
+  session.receiveState({ ...baseline, seq: 1 });
+  session.receiveProgressGraft({ marks: [] });
+  await settle([session.store]);
+  session.dispatch({ kind: 'RenameNode', id: 'root', label: 'Refused' });
+  await settle([session.store]);
+  session.receiveReject({ t: 'reject', frameId: [...session.inFlight.keys()].at(-1), code: 'server-error' });
+  assert.equal(await session.discard(), true);
+  assert.equal(session.lattice.toTreeData().nodes[0].label, 'Root');
+});
+
+test('a database that opens after refusing takes back what the document held', async (t) => {
+  const env = environment(t);
+  const real = globalThis.indexedDB;
+  t.mock.method(console, 'warn', () => {});
+  Object.defineProperty(globalThis, 'indexedDB', { configurable: true, writable: true, value: { open() { throw new DOMException('private refusal', 'SecurityError'); } } });
+  await new SyncStore().save('returned', value());
+  globalThis.indexedDB = real;
+  const store = env.store();
+  assert.deepEqual((await store.load('returned')).frame, value().frame);
+  assert.deepEqual((await env.store().load('returned')).frame, value().frame);
+});
+
+async function liveTab(env, store) {
+  const session = await env.session(store);
+  session.ws.open();
+  session.receiveState({ ...baseline, seq: 1 });
+  session.receiveProgressGraft(progress);
+  await settle([store]);
+  return session;
+}
+
+const labels = (session) => Object.fromEntries(session.lattice.toTreeData().nodes.map(({ id, label }) => [id, label]));
+
+test('a discard in one tab takes only what it showed: the other tab keeps its unsent writes, stores them and sends them', async (t) => {
+  const env = environment(t);
+  const storeA = env.store();
+  const storeB = env.store();
+  const tabA = await liveTab(env, storeA);
+  const tabB = await liveTab(env, storeB);
+  tabB.ws.close();
+  tabB.dispatch({ kind: 'CreateNode', id: 'bs', label: 'B work', prerequisites: ['root'] });
+  tabB.markProgress('root', 'complete');
+  await settle([storeB]);
+  tabA.dispatch({ kind: 'RenameNode', id: 'root', label: 'A refused' });
+  await settle([storeA]);
+  tabA.receiveReject({ t: 'reject', frameId: [...tabA.inFlight.keys()].at(-1), code: 'server-error' });
+  assert.equal(tabA.statusSnapshot().structureGestures, 1);
+  assert.equal(await tabA.discard(), true);
+  assert.deepEqual(labels(tabA), { root: 'Root', bs: 'B work' });
+  const stored = await env.store().load('tree');
+  assert.deepEqual(stored.frame.nodes.map(({ id, label }) => [id, label]), [['root', 'Root'], ['bs', 'B work']]);
+  Channel.deliver();
+  await settle([storeA, storeB]);
+  assert.equal(tabB.epochs.structure, 1);
+  assert.deepEqual(labels(tabB), { root: 'Root', bs: 'B work' });
+  assert.equal(tabB.progress.overlay().completed.has('root'), true);
+  assert.equal(tabB.pendingEditCount(), 1);
+  tabB.connect();
+  tabB.ws.open();
+  tabB.receiveState({ ...baseline, seq: 1 });
+  await settle([storeB]);
+  const flushed = tabB.ws.frames.filter(({ t }) => t === 'subgraph').at(-1);
+  assert.deepEqual(flushed.nodes.filter(({ id }) => id === 'bs').map(({ label }) => label), ['B work']);
+  assert.equal(flushed.nodes.some(({ label }) => label === 'A refused'), false);
+});
+
+test('the same tab hears about a discard through its stale save and still keeps its own write', async (t) => {
+  const env = environment(t);
+  const storeA = env.store();
+  const storeB = env.store();
+  const tabA = await liveTab(env, storeA);
+  const tabB = await liveTab(env, storeB);
+  tabA.dispatch({ kind: 'RenameNode', id: 'root', label: 'A refused' });
+  await settle([storeA]);
+  tabA.receiveReject({ t: 'reject', frameId: [...tabA.inFlight.keys()].at(-1), code: 'server-error' });
+  assert.equal(await tabA.discard(), true);
+  tabB.ws.close();
+  tabB.dispatch({ kind: 'CreateNode', id: 'bs', label: 'B after the discard', prerequisites: ['root'] });
+  await settle([storeB]);
+  assert.equal(tabB.epochs.structure, 1);
+  assert.deepEqual(labels(tabB), { root: 'Root', bs: 'B after the discard' });
+  assert.deepEqual((await env.store().load('tree')).frame.nodes.map(({ id }) => id), ['root', 'bs']);
+});
+
+test('a discard scoped to what one writer showed keeps the rest of the lane and its gestures', async (t) => {
+  const env = environment(t);
+  const store = env.store();
+  const frame = changed('Mine', '5:0:mine');
+  frame.nodes.push({ id: 'other', createdAt: '6:0:other', label: 'Theirs', labelAt: '6:0:other' });
+  await store.save('tree', { ...value(), frame, progress: { marks: [] }, gestures: { structure: {}, progress: {} } });
+  const shown = { [JSON.stringify(['nodes', 'root', 'labelAt'])]: '5:0:mine' };
+  const { value: replaced } = await store.replaceLane('tree', 'structure', 0, shown);
+  assert.deepEqual(replaced.frame.nodes, [
+    { id: 'root', createdAt: '1:0:server', label: 'Root', labelAt: '1:0:server' },
+    { id: 'other', createdAt: '6:0:other', label: 'Theirs', labelAt: '6:0:other' },
+  ]);
+  assert.deepEqual(replaced.gestures.structure, { '6:0:other': {
+    [JSON.stringify(['nodes', 'other', 'createdAt'])]: '6:0:other',
+    [JSON.stringify(['nodes', 'other', 'labelAt'])]: '6:0:other',
+  } });
+});
+
+test('a stored lane the store cannot read gives way to what the writer holds', async (t) => {
+  const env = environment(t);
+  const store = env.store();
+  const db = await store.db();
+  await new Promise((resolve, reject) => {
+    const transaction = db.transaction('trees', 'readwrite');
+    transaction.objectStore('trees').put({ frame: { edges: 7 }, progress: { marks: 'private' } }, 'tree');
+    transaction.oncomplete = resolve;
+    transaction.onerror = () => reject(transaction.error);
+  });
+  const result = await store.save('tree', value());
+  assert.equal(result.status, 'saved');
+  assert.deepEqual(result.value.frame, value().frame);
+});

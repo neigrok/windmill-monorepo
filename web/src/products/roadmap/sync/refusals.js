@@ -12,6 +12,9 @@ const CAPACITY_CODES = new Set(['tree-too-large']);
 const EVENT_CODES = new Set(['tree-too-large', 'bad-frame', 'no-such-tree', 'server-error']);
 const EXPECTED_CODES = new Set(['tree-too-large', 'no-such-tree']);
 
+// Not the server's word: this browser could not send the write at all.
+export const UNSENDABLE = 'unsendable';
+
 export function isOwnershipRefusal(frame) {
   return OWNERSHIP_CODES.has(frame?.code);
 }

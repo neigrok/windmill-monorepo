@@ -64,6 +64,7 @@ export const SYNC_OFFLINE_SHORT = 'Offline';
 export const REFUSED_SYNC = { body: 'Couldn’t sync this change.', retry: 'Retry', discard: 'Discard change' };
 export const ANONYMOUS_OWNER = 'Saved on this device — sign in to keep it';
 export const LAPSED_SESSION = 'Signed out — saved on this device';
+export const DEVICE_REFUSED = { title: 'Couldn’t open this device’s saved work', body: 'Reload to try again.' };
 export const FORK_OFFER = 'Fork this tree';
 export const DELETE_CONFIRM = { cancel: 'Cancel', delete: 'Delete' };
 export const COMPOSER = {

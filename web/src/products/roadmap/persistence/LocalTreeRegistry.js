@@ -62,6 +62,17 @@ export class LocalTreeRegistry {
     }
   }
 
+  // Whether the index takes a write: the row it already has, written back.
+  keeps() {
+    try {
+      const row = this.storage.getItem(KEY) ?? '{}';
+      this.storage.setItem(KEY, row);
+      return this.storage.getItem(KEY) === row;
+    } catch {
+      return false;
+    }
+  }
+
   list(owner = deviceOwner()) {
     return Object.entries(this.entries())
       .filter(([, entry]) => visibleTo(entry, owner))

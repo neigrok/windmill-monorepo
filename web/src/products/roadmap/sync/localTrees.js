@@ -32,39 +32,57 @@ function ownerForBirth() {
   ]);
 }
 
-// The registry entry first, then the lattice: the default legend at genesis, so it converges with
-// the server's claim-create, and the named root as a stamped write.
-export async function bearLocalTree({ title }) {
-  const treeId = mintTreeId();
-  // The owner is asked of the server, never of a remembered marker.
-  new LocalTreeRegistry().record(treeId, title, await ownerForBirth());
-  const session = new SyncSession({ treeId, title });
-  session.seed({ id: treeId, title, nodes: [], kinds: DEFAULT_KINDS });
-  const rootId = crypto.randomUUID?.() ?? `n-${Date.now()}`;
-  session.dispatch({ kind: 'CreateNode', id: rootId, label: title, icon: 'sparkles', color: DEFAULT_KINDS[0].hue, x: 0, y: 0 });
-  await session.persistNow();
-  session.close();
-  return treeId;
+// This browser will not keep a tree planted on it: nothing was accepted.
+export class DeviceRefused extends Error {
+  constructor() {
+    super('this device refuses to keep a roadmap');
+  }
 }
 
-// The paste-import plant: the lattice is seeded with the default legend at genesis, never the
-// parsed kinds — the claim converges only while both sides seed byte-equal legends. The parsed
-// legend arrives as stamped gestures. Imported [x] marks are status seeds, not progress rows.
-export async function bearImportedTree({ title, nodes, kinds }) {
+// Whether a tree planted here outlives this document: its index row and its lattice both have somewhere to stay.
+export async function deviceKeepsTrees() {
+  return new LocalTreeRegistry().keeps() && new SyncStore().holdsOnDevice();
+}
+
+// The registry entry first, then the lattice, seeded with the default legend at genesis so it converges with the server's
+// claim-create. A plant is accepted only once it is kept; a save that fails takes its row back with it.
+async function bear(title, plant) {
+  if (!await deviceKeepsTrees()) throw new DeviceRefused();
   const treeId = mintTreeId();
-  new LocalTreeRegistry().record(treeId, title, await ownerForBirth());
+  const registry = new LocalTreeRegistry();
+  // The owner is asked of the server, never of a remembered marker.
+  registry.record(treeId, title, await ownerForBirth());
   const session = new SyncSession({ treeId, title });
   session.seed({ id: treeId, title, nodes: [], kinds: DEFAULT_KINDS });
-  // The legend diff must go first, while no node wears a hue: RecolorKind repaints as it lands.
-  for (const gesture of legendGestures(kinds)) session.dispatch(gesture);
-  session.dispatch({
-    kind: 'ImportSubgraph',
-    nodes: nodes.map((n) => ({ id: n.id, label: n.label, icon: n.icon, color: n.color, status: n.status, description: n.description, links: n.links, order: n.order })),
-    edges: nodes.flatMap((n) => n.prerequisites.map((from) => ({ from, to: n.id }))),
-  });
+  plant(session);
   await session.persistNow();
+  const kept = !session.durabilityAtRisk;
   session.close();
-  return treeId;
+  if (kept) return treeId;
+  registry.remove(treeId);
+  throw new DeviceRefused();
+}
+
+// The named root as a stamped write.
+export function bearLocalTree({ title }) {
+  return bear(title, (session) => {
+    const rootId = crypto.randomUUID?.() ?? `n-${Date.now()}`;
+    session.dispatch({ kind: 'CreateNode', id: rootId, label: title, icon: 'sparkles', color: DEFAULT_KINDS[0].hue, x: 0, y: 0 });
+  });
+}
+
+// The paste-import plant: never the parsed kinds at genesis — the claim converges only while both sides seed byte-equal
+// legends. The parsed legend arrives as stamped gestures. Imported [x] marks are status seeds, not progress rows.
+export function bearImportedTree({ title, nodes, kinds }) {
+  return bear(title, (session) => {
+    // The legend diff must go first, while no node wears a hue: RecolorKind repaints as it lands.
+    for (const gesture of legendGestures(kinds)) session.dispatch(gesture);
+    session.dispatch({
+      kind: 'ImportSubgraph',
+      nodes: nodes.map((n) => ({ id: n.id, label: n.label, icon: n.icon, color: n.color, status: n.status, description: n.description, links: n.links, order: n.order })),
+      edges: nodes.flatMap((n) => n.prerequisites.map((from) => ({ from, to: n.id }))),
+    });
+  });
 }
 
 // What separates the parsed legend from the genesis seed, as ordinary kind gestures.

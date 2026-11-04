@@ -824,3 +824,255 @@ test('one chunk acknowledgement cannot clear a partly confirmed multi-record ges
   }
   assert.equal(session.statusSnapshot().structureGestures, 1);
 });
+
+test('a send the browser cannot make reports once and stands the existing refused card, with the bank kept', async (t) => {
+  const failure = new Error('private storage');
+  const { session } = connectedSession(t, { withEpoch: async () => { throw failure; } });
+  const reports = [];
+  session.reportFailure = (operation, error) => reports.push({ operation, error });
+  const states = [];
+  session.subscribeStatus((state) => states.push(state));
+  const receipt = session.dispatch({ kind: 'RenameNode', id: 'root', label: 'Unsent' });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.ok(receipt);
+  assert.deepEqual(reports, [{ operation: 'roadmap-sync-send', error: failure }]);
+  assert.deepEqual({ lane: states.at(-1).refused.lane, code: states.at(-1).refused.code, gestures: states.at(-1).structureGestures }, { lane: 'structure', code: 'unsendable', gestures: 1 });
+  assert.equal(session.lattice.toTreeData().nodes[0].label, 'Unsent');
+  session.retry();
+  assert.equal(session.statusSnapshot().refused, null);
+});
+
+test('a socket frame that is not JSON and one that does not parse as a lane report once each session and heal', (t) => {
+  const { session } = connectedSession(t);
+  const reports = [];
+  session.reportFailure = (operation) => reports.push(operation);
+  session.ws.message('x');
+  session.ws.dispatchEvent(new MessageEvent('message', { data: '{not json' }));
+  session.ws.dispatchEvent(new MessageEvent('message', { data: '{not json' }));
+  assert.deepEqual(reports, ['roadmap-sync-frame']);
+  session.connect();
+  session.ws.open();
+  session.receiveState({ t: 'subgraph', intent: 'delta', seq: 2, nodes: [{ id: null }], edges: [], kinds: [] });
+  session.connect();
+  session.ws.open();
+  session.receiveProgressGraft({ marks: [{ node: null }] });
+  assert.deepEqual(reports, ['roadmap-sync-frame']);
+  assert.equal(session.phase, 'offline');
+});
+
+test('a socket unanswered past its bound, online and in view, reports once; offline and hidden do not', (t) => {
+  t.mock.method(globalThis, 'setTimeout', () => 0);
+  t.mock.method(globalThis, 'setInterval', () => 0);
+  t.mock.method(globalThis, 'clearInterval', () => {});
+  t.mock.timers.enable({ apis: ['Date'], now: 1000 });
+  const priors = ['WebSocket', 'window', 'document'].map((key) => [key, globalThis[key]]);
+  globalThis.WebSocket = TestSocket;
+  globalThis.window = new EventTarget();
+  globalThis.document = { visibilityState: 'visible' };
+  t.after(() => { for (const [key, value] of priors) globalThis[key] = value; });
+  const reports = [];
+  const session = new SyncSession({ treeId: 'tree', registry: null, store: { save: async () => {} }, reportFailure: (operation) => reports.push(operation) });
+  session.connect();
+  session.ws.close();
+  session.connect();
+  t.mock.timers.tick(9999);
+  session.ws.close();
+  assert.deepEqual(reports, []);
+  session.online = false;
+  session.connect();
+  t.mock.timers.tick(5000);
+  session.ws.close();
+  assert.deepEqual(reports, []);
+  session.online = true;
+  document.visibilityState = 'hidden';
+  session.connect();
+  session.ws.close();
+  assert.deepEqual(reports, []);
+  document.visibilityState = 'visible';
+  session.connect();
+  session.ws.close();
+  session.connect();
+  session.ws.close();
+  assert.deepEqual(reports, ['roadmap-sync-socket']);
+});
+
+test('any answer proves the socket: a reject keeps a device tree quiet and a reconnect starts its own bound', (t) => {
+  const { session } = connectedSession(t);
+  const reports = [];
+  session.reportFailure = (operation) => reports.push(operation);
+  t.mock.timers.enable({ apis: ['Date'], now: 1000 });
+  session.connect();
+  session.ws.open();
+  t.mock.timers.tick(30000);
+  session.ws.message({ t: 'reject', code: 'nobodys-tree' });
+  session.ws.close();
+  assert.deepEqual(reports, []);
+  assert.equal(session.unansweredSince, null);
+});
+
+test('a mark the store refuses reports its save, and the mark still goes to the server', async (t) => {
+  const failure = new Error('private storage');
+  const { session } = connectedSession(t, { save: async () => { throw failure; } });
+  const reports = [];
+  session.reportFailure = (operation, error) => reports.push({ operation, error });
+  session.markProgress('root', 'complete');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(reports, [{ operation: 'roadmap-sync-persist', error: failure }]);
+  assert.equal(session.ws.frames.at(-1).t, 'progress');
+  assert.equal(session.durabilityAtRisk, true);
+});
+
+test('a stored lane that cannot be read reports once, stays out of the room and leaves the rest to the graft', async (t) => {
+  const priorWindow = globalThis.window;
+  const priorDocument = globalThis.document;
+  const priorSocket = globalThis.WebSocket;
+  globalThis.window = new EventTarget();
+  globalThis.document = new EventTarget();
+  globalThis.WebSocket = TestSocket;
+  t.after(() => { globalThis.window = priorWindow; globalThis.document = priorDocument; globalThis.WebSocket = priorSocket; });
+  const reports = [];
+  const trees = [];
+  const unreadable = { nodes: 'private', edges: 7, kinds: 7, marks: 'private' };
+  const session = new SyncSession({ treeId: 'tree', title: 'Sail', registry: null, reportFailure: (operation) => reports.push(operation),
+    store: { load: async () => ({ frame: unreadable, progress: unreadable, lastSeq: 9, epochs: { structure: 0, progress: 0 }, confirmed: { structure: unreadable, progress: unreadable } }),
+      requestPersistent: async () => true, save: async () => {} } });
+  t.after(() => session.close());
+  session.onTreeChanged((tree) => trees.push(tree));
+  await session.start();
+  assert.deepEqual(reports, ['roadmap-sync-restore']);
+  assert.deepEqual(trees, []);
+  assert.deepEqual({ ready: session.ready, lastSeq: session.lastSeq, title: session.lattice.title, known: session.confirmedKnown }, { ready: false, lastSeq: 0, title: 'Sail', known: { structure: false, progress: false } });
+  session.ws.open();
+  session.receiveState({ t: 'subgraph', intent: 'delta', seq: 1, nodes: [{ id: 'root', createdAt: '1:0:server', label: 'Root', labelAt: '1:0:server' }], edges: [], kinds: [] });
+  assert.equal(trees.at(-1).nodes[0].label, 'Root');
+  assert.equal(session.ready, true);
+});
+
+test('a store that cannot load reports once and the session goes on to the server', async (t) => {
+  const priorWindow = globalThis.window;
+  const priorDocument = globalThis.document;
+  const priorSocket = globalThis.WebSocket;
+  globalThis.window = new EventTarget();
+  globalThis.document = new EventTarget();
+  globalThis.WebSocket = TestSocket;
+  t.after(() => { globalThis.window = priorWindow; globalThis.document = priorDocument; globalThis.WebSocket = priorSocket; });
+  const reports = [];
+  const session = new SyncSession({ treeId: 'tree', registry: null, reportFailure: (operation) => reports.push(operation),
+    store: { load: async () => { throw new Error('private read'); }, requestPersistent: async () => true, save: async () => {} } });
+  t.after(() => session.close());
+  await session.start();
+  assert.deepEqual(reports, ['roadmap-sync-restore']);
+  assert.ok(session.ws);
+});
+
+for (const [name, frame] of [
+  ['a live frame', { t: 'subgraph', seq: 2, nodes: [{ id: 'peer', createdAt: '999:0:peer' }], edges: [], kinds: [] }],
+  ['a graft', { t: 'subgraph', intent: 'delta', seq: 2, nodes: [{ id: 'peer', createdAt: '999:0:peer' }], edges: [], kinds: [] }],
+  ['a progress echo', { t: 'progress', marks: [{ node: 'root', status: 'complete', at: '999:0:peer' }] }],
+  ['a progress graft', { t: 'progress', intent: 'graft', marks: [{ node: 'root', status: 'complete', at: '999:0:peer' }] }],
+]) {
+  test(`${name} whose notification fails reports roadmap-sync-notify and the session stands`, (t) => {
+    const { session } = connectedSession(t);
+    const failure = new Error('private notification');
+    const reports = [];
+    session.reportFailure = (operation, error) => reports.push({ operation, error });
+    session.onTreeChanged(() => { throw failure; });
+    session.onProgress(() => { throw failure; });
+    assert.doesNotThrow(() => session.ws.message(frame));
+    assert.deepEqual(reports, [{ operation: 'roadmap-sync-notify', error: failure }]);
+    assert.equal(session.phase, 'live');
+  });
+}
+
+test('one act is one change however many records it wrote', () => {
+  const session = sessionWith();
+  session.dispatch({ kind: 'CreateNode', id: 'middle', label: 'Middle', parentId: 'root' });
+  session.dispatch({ kind: 'CreateNode', id: 'child', label: 'Child', parentId: 'middle' });
+  const before = session.pendingEditCount();
+  session.dispatch({ kind: 'BulkDelete', nodeIds: ['middle'] });
+  assert.equal(session.pendingEditCount(), before + 1);
+  assert.ok(session.statusSnapshot().structurePending > 1);
+});
+
+test('a revert leaves a field written since its receipt, by this person or a peer, and takes back the rest', () => {
+  const session = sessionWith();
+  const receipt = session.dispatch({ kind: 'EditNode', id: 'root', label: 'Edited', color: 'sky', addPrerequisites: [], removePrerequisites: [] });
+  session.dispatch({ kind: 'SetNodeColor', id: 'root', color: 'gold' });
+  assert.equal(session.revert(receipt), true);
+  assert.deepEqual([session.lattice.toTreeData().nodes[0].label, session.lattice.toTreeData().nodes[0].color], ['Root', 'gold']);
+  const peered = session.dispatch({ kind: 'SetNodeColor', id: 'root', color: 'olive' });
+  session.lattice.join({ nodes: [{ id: 'root', color: 'plum', colorAt: `${Date.now() + 60000}:0:peer` }] });
+  assert.equal(session.revert(peered), true);
+  assert.equal(session.lattice.toTreeData().nodes[0].color, 'plum');
+  assert.deepEqual(session.undoStack.length, 1);
+});
+
+test('a delete a peer deleted again stays deleted through its revert, and an edge a peer rewrote stays as they left it', () => {
+  const session = sessionWith();
+  session.dispatch({ kind: 'CreateNode', id: 'child', label: 'Child', parentId: 'root' });
+  const deleted = session.dispatch({ kind: 'DeleteNode', id: 'child' });
+  session.lattice.join({ nodes: [{ id: 'child', deletedAt: `${Date.now() + 60000}:0:peer` }] });
+  assert.equal(session.revert(deleted), true);
+  assert.deepEqual(snapshot(session).map(({ id }) => id), ['root']);
+  session.dispatch({ kind: 'CreateNode', id: 'other', label: 'Other' });
+  const linked = session.dispatch({ kind: 'AddEdge', from: 'root', to: 'other' });
+  const writes = [];
+  session.apply = ((apply) => (next) => { writes.push(next); apply.call(session, next); })(session.apply);
+  session.lattice.join({ edges: [{ from: 'root', to: 'other', addedAt: `${Date.now() + 90000}:0:peer` }] });
+  assert.equal(session.revert(linked), true);
+  assert.deepEqual(writes, []);
+  assert.equal(session.lattice.edgePresent('root', 'other'), true);
+});
+
+test('Undo and Redo spend receipts and say so, so a toast backed by one can leave', () => {
+  const session = sessionWith();
+  const versions = [];
+  session.subscribeStatus((state) => versions.push(state.receiptVersion));
+  const receipt = session.dispatch({ kind: 'RenameNode', id: 'root', label: 'Renamed' });
+  assert.equal(versions.at(-1), 0);
+  session.undo();
+  assert.equal(versions.at(-1), 1);
+  session.redo();
+  assert.equal(versions.at(-1), 2);
+  assert.equal(session.revert(receipt), false);
+});
+
+test('Undo takes a held act back before anything on the stack, and the stack stays as it was', () => {
+  const session = sessionWith();
+  session.dispatch({ kind: 'RenameNode', id: 'root', label: 'Renamed' });
+  const cancelled = [];
+  session.holdAct(() => { cancelled.push(true); session.endHeldAct(); });
+  session.undo();
+  assert.deepEqual(cancelled, [true]);
+  assert.deepEqual([session.lattice.toTreeData().nodes[0].label, session.undoStack.length, session.redoStack.length], ['Renamed', 1, 0]);
+  session.undo();
+  assert.deepEqual([session.lattice.toTreeData().nodes[0].label, session.undoStack.length, session.redoStack.length], ['Root', 0, 1]);
+});
+
+test('a write made as the session closes still reaches the socket, and only then does the socket close', async (t) => {
+  let check;
+  const { session } = connectedSession(t, { withEpoch: (treeId, lane, epoch, send) => new Promise((resolve) => {
+    check = () => { send(); resolve({ status: 'current' }); };
+  }) });
+  const socket = session.ws;
+  session.dispatch({ kind: 'RenameNode', id: 'root', label: 'Last' });
+  session.close();
+  assert.equal(socket.readyState, TestSocket.OPEN);
+  check();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(socket.frames.at(-1).nodes[0].label, 'Last');
+  assert.equal(socket.readyState, 3);
+});
+
+test('leaving the page saves and sends at once: nothing waits on an epoch read or a callback', (t) => {
+  const left = [];
+  const { session } = connectedSession(t, {
+    withEpoch: () => { throw new Error('leaving does not read'); },
+    saveWhileLeaving: async (treeId, value) => { left.push(value.frame.nodes[0].label); return { status: 'saved' }; },
+  });
+  const socket = session.ws;
+  session.leavePage();
+  session.dispatch({ kind: 'RenameNode', id: 'root', label: 'Left' });
+  assert.deepEqual(left, ['Root', 'Left']);
+  assert.equal(socket.frames.at(-1).nodes[0].label, 'Left');
+});
