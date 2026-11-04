@@ -424,7 +424,7 @@ class CoachChats internal constructor(
             val answers = retained(seat, chat.id)
             val kept = localCoach?.keptDrafts(seat, chat.id).orEmpty()
             if (held.isEmpty && answers.isEmpty() && kept.isEmpty()) return@mapNotNull null
-            val title = listOfNotNull(answers.firstOrNull()?.request()?.text, held.text, kept.firstOrNull()?.draft?.text).firstOrNull { it.isNotEmpty() } ?: "Photo"
+            val title = listOfNotNull(answers.firstOrNull()?.question, held.text, kept.firstOrNull()?.draft?.text).firstOrNull { it.isNotEmpty() } ?: "Photo"
             ConversationRow(chat.id, title, chat.updatedAtMs, answerPreview = answers.lastOrNull { it.response?.status == "completed" }?.response?.message.orEmpty())
         }
         return (rows + local).sortedByDescending { it.askedAtMs }

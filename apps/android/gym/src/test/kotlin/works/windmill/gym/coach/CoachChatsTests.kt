@@ -696,7 +696,7 @@ class CoachChatsTests {
         assertEquals(listOf(KeptCoachDraft("kept-1", CoachDraft("Kept too"))), coach.keptDrafts("alice", "kept-chat"))
         assertNull("a selected chat that kept nothing goes with it", coach.selected("alice"))
         assertEquals("answered-chat", coach.selected("anonymous:phone"))
-        assertEquals("Plan me", coach.retained("anonymous:phone", "answered-chat").single().request().text)
+        assertEquals("Plan me", coach.retained("anonymous:phone", "answered-chat").single().question)
         assertEquals(setOf("anonymous:phone", "alice"), setOf("anonymous:phone", "alice").filter { coach.chats(it).isNotEmpty() }.toSet())
 
         coach.settle()

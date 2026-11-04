@@ -445,6 +445,6 @@ private fun CoachExchange(record: CoachOnboardingRecord, saved: CoachImportRecei
     val reply = response?.takeIf { answered }?.let {
         CoachReply(record.requestId, it.message, MessageState.completed, truncated = false, onThisPhone = true, calls = emptyList(), receipt = CoachReceipt(emptyList()), routines = routines)
     }
-    return CoachExchange(record.requestId, record.request().text, record.createdAtMs, listOfNotNull(record.attachment?.let { SentPicture(it, true) }), reply,
+    return CoachExchange(record.requestId, record.question, record.createdAtMs, listOfNotNull(record.attachment?.let { SentPicture(it, true) }), reply,
         retained = RetainedAnswer(record.requestId, line, code == "account_required", drafts))
 }
