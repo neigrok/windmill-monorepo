@@ -612,7 +612,7 @@ class CoachChats internal constructor(
                     conversations?.read()
                     DraftOutcome.Saved
                 }
-                is CoachImportOutcome.Refused -> DraftOutcome.Closed(Ask.draftInvalid)
+                CoachImportOutcome.Refused -> DraftOutcome.Closed(Ask.draftInvalid)
                 CoachImportOutcome.Failed -> DraftOutcome.Failed(Ask.draftRetry)
             }
         }.await()

@@ -2,7 +2,6 @@ package works.windmill.gym.coach.onboarding
 
 import kotlinx.serialization.Serializable
 import works.windmill.gym.coach.CoachAttachment
-import works.windmill.platform.ai.AiAllowance
 import works.windmill.platform.net.WindmillJson
 
 // The signed-out onboarding answers earlier versions kept on this phone: their shape, so an archived chat still draws them, and the routines they drafted can still be saved. Nothing here sends.
@@ -15,9 +14,7 @@ data class CoachOnboardingResponse(
     val requestId: String,
     val resultId: String,
     val status: String,
-    val expiresAtMs: Long,
     val routines: List<Routine>,
-    val allowance: AiAllowance,
     val errorCode: String? = null,
     val message: String = "",
 ) {

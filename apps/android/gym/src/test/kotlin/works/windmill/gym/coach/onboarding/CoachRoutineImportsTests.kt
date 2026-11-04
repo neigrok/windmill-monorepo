@@ -5,6 +5,7 @@ import java.io.File
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
@@ -33,15 +34,11 @@ import works.windmill.gym.coach.CoachChats
 import works.windmill.gym.coach.DraftOutcome
 import works.windmill.gym.coach.LocalCoach
 import works.windmill.gym.domain.sync.CoachImportReceipt
-import works.windmill.gym.domain.sync.CoachRoutineImport
 import works.windmill.gym.domain.sync.Exercise
 import works.windmill.gym.domain.sync.ImportCoachRoutineBatch
 import works.windmill.gym.domain.sync.Routine
-import works.windmill.gym.domain.sync.RoutineEntry
-import works.windmill.gym.domain.sync.SetTarget
 import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.store.EngineTraining
-import works.windmill.platform.ai.AiAllowance
 import works.windmill.platform.net.WindmillJson
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.sync.api.DeviceWrite
@@ -60,48 +57,47 @@ import works.windmill.sync.schema.SyncSchema
 @SQLiteMode(SQLiteMode.Mode.NATIVE)
 class CoachRoutineImportsTests {
     @get:Rule val temporary = TemporaryFolder()
-    private val allowance = AiAllowance("ok", "USD", "lifetime", "anonymous", true, null, "0", "0", "0")
     private fun engine(initial: Json? = null) = Engine.memory(SyncSchema.registry, initial,
         clock = object : EngineClock { override fun now() = 1_800_000_000_000L },
         rewriteDeviceValue = EngineTraining.rewriteDeviceValue)
-    private fun record(replica: String) = CoachOnboardingRecord("anonymous:fixture", "original-chat", replica,
+    private fun routine(name: String, movement: String = "bench-press", reps: Int = 5) = CoachOnboardingResponse.Routine(name, listOf(CoachOnboardingResponse.Entry(movement,
+        listOf(CoachOnboardingResponse.Target(reps, 0.0)), 90)))
+    private fun record(replica: String, routines: List<CoachOnboardingResponse.Routine> = listOf(routine("Upper"))) = CoachOnboardingRecord("anonymous:fixture", "original-chat", replica,
         "11111111-1111-4111-8111-111111111111", "", 1_800_000_000_000, response = CoachOnboardingResponse(
-            "11111111-1111-4111-8111-111111111111", "result", "completed", 1_900_000_000_000,
-            listOf(CoachOnboardingResponse.Routine("Upper", listOf(CoachOnboardingResponse.Entry("bench-press",
-                listOf(CoachOnboardingResponse.Target(5, 0.0)), 90)))), allowance))
-    private val movement = Exercise(Id("movement1", Exercise), "Single press", "press", "dumbbell", 2.0, loadCount = 1)
-    private val routines = listOf(CoachRoutineImport(Id("routineA", Routine), "Upper", listOf(RoutineEntry(movement.id,
-        listOf(SetTarget(5, 0.0)), 90))), CoachRoutineImport(Id("routineB", Routine), "Lower",
-        listOf(RoutineEntry(Id("back-squat", Exercise), listOf(SetTarget(5, 501.0)), 120))))
+            "11111111-1111-4111-8111-111111111111", "result", "completed", routines))
+    private fun recordOfTwo(replica: String) = record(replica, listOf(routine("Upper"), routine("Lower", "back-squat")))
+    private fun Engine.receipt(resultId: String): CoachImportReceipt? = read(Routine.scope) { it.device(CoachRoutineImports.receiptKey(resultId))?.let(CoachImportReceipt::decode) }
+    private fun minting(): () -> String {
+        val minted = AtomicInteger()
+        return { if (minted.getAndIncrement() % 2 == 0) "routineA" else "routineB" }
+    }
 
     @Test fun oneAtomicImportReplaysAfterProcessDeathBeforeAnyChatSavedStateUpdate() = runTest {
         val snapshot: Json
         val receipt: CoachImportReceipt
         engine().use { engine ->
-            val record = record(engine.activeReplica())
-            val imports = CoachRoutineImports(engine, { CoachOnboardingSeat(record.owner, record.replica) }, backgroundScope)
-            receipt = (imports.apply(record, routines, listOf(movement)) as CoachImportOutcome.Committed).receipt
+            val record = recordOfTwo(engine.activeReplica())
+            val imports = CoachRoutineImports(engine, { CoachOnboardingSeat(record.owner, record.replica) }, backgroundScope, mintRoutine = minting())
+            receipt = (imports.apply(record) as CoachImportOutcome.Committed).receipt
             assertEquals(listOf("routineA", "routineB"), receipt.routines.map { it.record.string })
-            assertEquals(listOf("movement1"), receipt.movements.map { it.record.string })
-            assertEquals(receipt, imports.receipt("result"))
+            assertEquals(receipt, engine.receipt("result"))
             assertEquals(2, engine.read(Routine.scope) { it.drawn(Routine.type).size })
-            assertEquals(1, engine.read(Exercise.scope) { it.drawn(Exercise.type).size })
             snapshot = engine.snapshot()
         }
         engine(snapshot).use { restored ->
-            val record = record(restored.activeReplica())
-            val imports = CoachRoutineImports(restored, { CoachOnboardingSeat(record.owner, record.replica) }, backgroundScope)
-            assertEquals(CoachImportOutcome.Replayed(receipt), imports.apply(record, routines, listOf(movement)))
+            val record = recordOfTwo(restored.activeReplica())
+            val imports = CoachRoutineImports(restored, { CoachOnboardingSeat(record.owner, record.replica) }, backgroundScope, mintRoutine = minting())
+            assertEquals(CoachImportOutcome.Replayed(receipt), imports.apply(record))
             assertEquals(snapshot, restored.snapshot())
-            val changed = routines.mapIndexed { index, value -> if (index == 1) value.copy(name = "Different payload") else value }
-            assertTrue(imports.apply(record, changed, listOf(movement)) is CoachImportOutcome.Refused)
+            val changed = record(restored.activeReplica(), listOf(routine("Upper"), routine("Different payload", "back-squat")))
+            assertEquals(CoachImportOutcome.Refused, imports.apply(changed))
             assertEquals(snapshot, restored.snapshot())
         }
     }
 
     @Test fun invalidNthDraftAndStorageFailureLeaveEveryRecordAndReceiptAbsent() = runTest {
         engine().use { engine ->
-            val record = record(engine.activeReplica())
+            val record = recordOfTwo(engine.activeReplica())
             val issues = mutableListOf<String>()
             val telemetry = object : Telemetry {
                 override fun event(name: String, properties: Map<String, String>) = Unit
@@ -109,41 +105,40 @@ class CoachRoutineImportsTests {
             }
             val imports = CoachRoutineImports(engine, { CoachOnboardingSeat(record.owner, record.replica) }, backgroundScope, telemetry)
             val before = engine.snapshot()
-            assertTrue(imports.apply(record, routines.dropLast(1) + routines.last().copy(name = " "), listOf(movement)) is CoachImportOutcome.Refused)
+            assertEquals(CoachImportOutcome.Refused, imports.apply(record(record.replica, listOf(routine("Upper"), routine(" ")))))
             assertEquals(before, engine.snapshot())
             engine.failNextCommit()
-            assertEquals(CoachImportOutcome.Failed, imports.apply(record, routines, listOf(movement)))
+            assertEquals(CoachImportOutcome.Failed, imports.apply(record))
             assertEquals(before, engine.snapshot())
-            assertNull(imports.receipt("result"))
+            assertNull(engine.receipt("result"))
             assertEquals(listOf("gym.coachOnboarding"), issues)
-            assertTrue(imports.apply(record, routines, listOf(movement)) is CoachImportOutcome.Committed)
+            assertTrue(imports.apply(record) is CoachImportOutcome.Committed)
         }
     }
 
     @Test fun concurrentApplyReturnsOneCommittedReceiptAndOneReplay() = runTest {
         engine().use { engine ->
-            val record = record(engine.activeReplica())
-            val imports = CoachRoutineImports(engine, { CoachOnboardingSeat(record.owner, record.replica) }, backgroundScope)
-            val a = async { imports.apply(record, routines, listOf(movement)) }
-            val b = async { imports.apply(record, routines, listOf(movement)) }
+            val record = recordOfTwo(engine.activeReplica())
+            val imports = CoachRoutineImports(engine, { CoachOnboardingSeat(record.owner, record.replica) }, backgroundScope, mintRoutine = minting())
+            val a = async { imports.apply(record) }
+            val b = async { imports.apply(record) }
             val results = listOf(a.await(), b.await())
             assertEquals(1, results.count { it is CoachImportOutcome.Committed })
             assertEquals(1, results.count { it is CoachImportOutcome.Replayed })
             assertEquals(2, engine.read(Routine.scope) { it.drawn(Routine.type).size })
-            assertEquals(1, engine.read(Exercise.scope) { it.drawn(Exercise.type).size })
         }
     }
 
     @Test fun authorityIsRecheckedInsideTheAtomicLoadAndCannotWriteIntoANewOwner() = runTest {
         engine().use { engine ->
-            val record = record(engine.activeReplica())
+            val record = recordOfTwo(engine.activeReplica())
             var checks = 0
             val imports = CoachRoutineImports(engine, {
                 checks++
                 if (checks == 1) CoachOnboardingSeat(record.owner, record.replica) else null
             }, backgroundScope)
             val before = engine.snapshot()
-            assertTrue(imports.apply(record, routines, listOf(movement)) is CoachImportOutcome.Refused)
+            assertEquals(CoachImportOutcome.Refused, imports.apply(record))
             assertEquals(2, checks)
             assertEquals(before, engine.snapshot())
         }
@@ -151,7 +146,7 @@ class CoachRoutineImportsTests {
 
     @Test fun disposingTheCallerWhileWriterAdmissionWaitsDoesNotCancelTheOwnedImport() = runBlocking {
         engine().use { engine ->
-            val record = record(engine.activeReplica())
+            val record = recordOfTwo(engine.activeReplica())
             val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
             val writer = Executors.newSingleThreadExecutor()
             val locked = CountDownLatch(1)
@@ -160,22 +155,22 @@ class CoachRoutineImportsTests {
             val imports = CoachRoutineImports(engine, {
                 admitted.countDown()
                 CoachOnboardingSeat(record.owner, record.replica)
-            }, scope)
+            }, scope, mintRoutine = minting())
             try {
                 val held = writer.submit {
                     engine.commit(Routine.scope) { locked.countDown(); check(release.await(5, TimeUnit.SECONDS)); null to Unit }
                 }
                 assertTrue(locked.await(5, TimeUnit.SECONDS))
-                val caller = launch(Dispatchers.Default) { imports.apply(record, routines, listOf(movement)) }
+                val caller = launch(Dispatchers.Default) { imports.apply(record) }
                 assertTrue(admitted.await(5, TimeUnit.SECONDS))
                 caller.cancel()
                 release.countDown()
                 held.get(5, TimeUnit.SECONDS)
                 caller.join()
-                withTimeout(5_000) { while (imports.receipt("result") == null) delay(10) }
+                withTimeout(5_000) { while (engine.receipt("result") == null) delay(10) }
                 assertTrue(caller.isCancelled)
                 assertEquals(2, engine.read(Routine.scope) { it.drawn(Routine.type).size })
-                assertEquals(listOf(Id("routineA", Routine), Id("routineB", Routine)), imports.receipt("result")?.routines)
+                assertEquals(listOf(Id("routineA", Routine), Id("routineB", Routine)), engine.receipt("result")?.routines)
             } finally {
                 release.countDown()
                 scope.cancel()
@@ -190,23 +185,23 @@ class CoachRoutineImportsTests {
             val old = CoachImportReceipt("older-result", "b".repeat(64), listOf(Id("older-routine", Routine)), emptyList())
             engine.commit(Routine.scope, Gesture(emptyList(), local = listOf(DeviceWrite(CoachRoutineImports.receiptKey("older-result"), old.json))))
             engine.signOut("keep")
-            val record = record(engine.activeReplica())
-            val imports = CoachRoutineImports(engine, { CoachOnboardingSeat(record.owner, record.replica) }, backgroundScope)
-            val saved = (imports.apply(record, routines, listOf(movement)) as CoachImportOutcome.Committed).receipt
+            val record = recordOfTwo(engine.activeReplica())
+            val imports = CoachRoutineImports(engine, { CoachOnboardingSeat(record.owner, record.replica) }, backgroundScope, mintRoutine = minting())
+            val saved = (imports.apply(record) as CoachImportOutcome.Committed).receipt
             assertTrue(engine.signIn("account", mapOf("gym" to true), mapOf("gym" to choice)).member("complete").bool())
-            assertEquals(old, imports.receipt("older-result"))
+            assertEquals(old, engine.receipt("older-result"))
             if (choice == "add") {
-                assertEquals(saved, imports.receipt("result"))
+                assertEquals(saved, engine.receipt("result"))
                 assertEquals(2, engine.read(Routine.scope) { it.drawn(Routine.type).size })
             } else {
-                assertNull(imports.receipt("result"))
+                assertNull(engine.receipt("result"))
                 assertTrue(engine.read(Routine.scope) { it.drawn(Routine.type).isEmpty() })
             }
         }
     }
 
     @Test fun adoptionHookRewritesOnlyRecordReferencesAndPreservesTheFingerprintAndOtherReceipts() {
-        val receipt = CoachImportReceipt("result", "a".repeat(64), listOf(Id("routineA", Routine), Id("routineB", Routine)), listOf(movement.id))
+        val receipt = CoachImportReceipt("result", "a".repeat(64), listOf(Id("routineA", Routine), Id("routineB", Routine)), listOf(Id("movement1", Exercise)))
         val routine = EngineTraining.rewriteDeviceValue("gym", CoachRoutineImports.receiptKey("result"), receipt.json,
             Gym.Types.routine, RecordID("routineA"), RecordID("adopted-routine"))
         val movement = EngineTraining.rewriteDeviceValue("gym", CoachRoutineImports.receiptKey("result"), routine,
@@ -230,36 +225,34 @@ class CoachRoutineImportsTests {
         fun open() = AndroidSqlite.open(database, SyncSchema.registry, initial, clock, identities, identities.actorID(),
             rewriteDeviceValue = EngineTraining.rewriteDeviceValue)
         open().use { engine ->
-            val record = record(engine.activeReplica())
-            val imports = CoachRoutineImports(engine, { CoachOnboardingSeat(record.owner, record.replica) }, backgroundScope)
+            val record = recordOfTwo(engine.activeReplica())
+            val imports = CoachRoutineImports(engine, { CoachOnboardingSeat(record.owner, record.replica) }, backgroundScope, mintRoutine = minting())
             val before = engine.snapshot()
             SQLiteDatabase.openDatabase(database.path, null, SQLiteDatabase.OPEN_READWRITE).use { db ->
                 db.execSQL("CREATE TRIGGER fail_coach_receipt BEFORE INSERT ON device_row WHEN NEW.key LIKE 'rack:coachImport%' BEGIN SELECT RAISE(ABORT,'injected'); END")
             }
-            assertEquals(CoachImportOutcome.Failed, imports.apply(record, routines, listOf(movement)))
+            assertEquals(CoachImportOutcome.Failed, imports.apply(record))
             assertEquals(before, engine.snapshot())
         }
         val receipt = open().use { engine ->
             assertTrue(engine.read(Routine.scope) { it.drawn(Routine.type).isEmpty() })
-            assertTrue(engine.read(Exercise.scope) { it.drawn(Exercise.type).isEmpty() })
             assertTrue(engine.read(Routine.scope) { it.devices(ImportCoachRoutineBatch.receiptPrefix).isEmpty() })
             SQLiteDatabase.openDatabase(database.path, null, SQLiteDatabase.OPEN_READWRITE).use { db ->
                 db.rawQuery("SELECT count(*) FROM outbox", null).use { cursor -> assertTrue(cursor.moveToFirst()); assertEquals(0, cursor.getInt(0)) }
                 db.execSQL("DROP TRIGGER fail_coach_receipt")
             }
-            val record = record(engine.activeReplica())
-            val imports = CoachRoutineImports(engine, { CoachOnboardingSeat(record.owner, record.replica) }, backgroundScope)
-            (imports.apply(record, routines, listOf(movement)) as CoachImportOutcome.Committed).receipt
+            val record = recordOfTwo(engine.activeReplica())
+            val imports = CoachRoutineImports(engine, { CoachOnboardingSeat(record.owner, record.replica) }, backgroundScope, mintRoutine = minting())
+            (imports.apply(record) as CoachImportOutcome.Committed).receipt
         }
         open().use { engine ->
-            val record = record(engine.activeReplica())
-            val imports = CoachRoutineImports(engine, { CoachOnboardingSeat(record.owner, record.replica) }, backgroundScope)
+            val record = recordOfTwo(engine.activeReplica())
+            val imports = CoachRoutineImports(engine, { CoachOnboardingSeat(record.owner, record.replica) }, backgroundScope, mintRoutine = minting())
             val before = engine.snapshot()
-            assertEquals(CoachImportOutcome.Replayed(receipt), imports.apply(record, routines, listOf(movement)))
+            assertEquals(CoachImportOutcome.Replayed(receipt), imports.apply(record))
             assertEquals(before, engine.snapshot())
             assertEquals(2, engine.read(Routine.scope) { it.drawn(Routine.type).size })
-            assertEquals(1, engine.read(Exercise.scope) { it.drawn(Exercise.type).size })
-            assertEquals(receipt, imports.receipt("result"))
+            assertEquals(receipt, engine.receipt("result"))
         }
     }
 
@@ -314,16 +307,16 @@ class CoachRoutineImportsTests {
             runCurrent()
             assertTrue(screen.isCancelled)
             assertEquals(1, refreshes)
-            assertEquals(1, imports.receipt("result")?.routines?.size)
+            assertEquals(1, engine.receipt("result")?.routines?.size)
             assertEquals(1, engine.read(Routine.scope) { it.drawn(Routine.type).size })
         }
     }
 
     @Test fun anImportedDraftReachesTheServerThroughTheSyncDoorAndItsReceiptStands() = runTest {
         engine().use { engine ->
-            val record = record(engine.activeReplica())
-            val imports = CoachRoutineImports(engine, { CoachOnboardingSeat(record.owner, record.replica) }, backgroundScope)
-            val receipt = (imports.apply(record, routines, listOf(movement)) as CoachImportOutcome.Committed).receipt
+            val record = recordOfTwo(engine.activeReplica())
+            val imports = CoachRoutineImports(engine, { CoachOnboardingSeat(record.owner, record.replica) }, backgroundScope, mintRoutine = minting())
+            val receipt = (imports.apply(record) as CoachImportOutcome.Committed).receipt
             assertTrue(engine.signIn("account", mapOf("gym" to false), serverSchema = SyncSchema.registry.version).member("complete").bool())
             engine.subscribe(ScopeRef(Gym.scope))
             val server = EngineRoomFixture.server()
@@ -343,16 +336,13 @@ class CoachRoutineImportsTests {
                 pull()
             }
             pull()
-            val adopted = checkNotNull(imports.receipt("result"))
+            val adopted = checkNotNull(engine.receipt("result"))
             assertEquals(receipt.fingerprint, adopted.fingerprint)
             assertEquals(receipt.resultId, adopted.resultId)
             engine.read(Routine.scope) { read ->
                 val drawn = read.drawn(Routine.type)
                 assertEquals(adopted.routines.map { it.record }.toSet(), drawn.map { it.id }.toSet())
                 assertTrue(drawn.none { it.isPending })
-                val movements = read.drawn(Exercise.type)
-                assertEquals(adopted.movements.map { it.record }, movements.map { it.id })
-                assertTrue(movements.none { it.isPending })
                 assertEquals(listOf("Lower", "Upper"), drawn.map { Routine.decode(Fields(it)).name }.sorted())
             }
         }
@@ -361,15 +351,8 @@ class CoachRoutineImportsTests {
     @Test fun parallelAndRetriedAppliesWithFreshlyMintedIdsImportOnce() = runBlocking {
         Engine.memory(SyncSchema.registry, null as Json?, clock = object : EngineClock { override fun now() = 1_800_000_000_000L },
             rewriteDeviceValue = EngineTraining.rewriteDeviceValue).use { engine ->
-            val record = CoachOnboardingRecord("anonymous:fixture", "chat", engine.activeReplica(),
-                "11111111-1111-4111-8111-111111111111", "", 1_800_000_000_000, response = CoachOnboardingResponse(
-                    "11111111-1111-4111-8111-111111111111", "result", "completed", 1_900_000_000_000,
-                    listOf(CoachOnboardingResponse.Routine("Upper", listOf(CoachOnboardingResponse.Entry("bench-press",
-                        listOf(CoachOnboardingResponse.Target(5, 0.0)), 90))),
-                        CoachOnboardingResponse.Routine("Lower", listOf(CoachOnboardingResponse.Entry("back-squat",
-                            listOf(CoachOnboardingResponse.Target(5, 60.0)), 120)))),
-                    allowance))
-            val minted = java.util.concurrent.atomic.AtomicInteger()
+            val record = recordOfTwo(engine.activeReplica())
+            val minted = AtomicInteger()
             val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
             val imports = CoachRoutineImports(engine, { CoachOnboardingSeat(record.owner, record.replica) }, scope,
                 mintRoutine = { "routine" + minted.incrementAndGet() })
