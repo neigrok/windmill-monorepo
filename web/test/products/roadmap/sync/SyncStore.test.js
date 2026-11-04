@@ -571,3 +571,51 @@ test('a stored lane the store cannot read gives way to what the writer holds', a
   assert.equal(result.status, 'saved');
   assert.deepEqual(result.value.frame, value().frame);
 });
+
+test('a save made while leaving lands from memory, in one call, joined with the record the store last read', async (t) => {
+  const env = environment(t);
+  const store = env.store();
+  const other = env.store();
+  await store.load('tree');
+  await other.save('tree', value());
+  await store.load('tree');
+  const leaving = changed('Left', '9:0:leaving');
+  const started = store.saveWhileLeaving('tree', { frame: leaving, lastSeq: 2, epochs: { structure: 0, progress: 0 }, confirmed: { structure: baseline } });
+  const stored = await other.load('tree');
+  await started;
+  assert.deepEqual(stored.frame, leaving);
+  assert.deepEqual(stored.progress, value().progress);
+  assert.deepEqual(stored.confirmed, value().confirmed);
+  assert.equal(stored.lastSeq, 2);
+});
+
+test('with no record read yet, a save while leaving falls back to the read-first save', async (t) => {
+  const env = environment(t);
+  const store = env.store();
+  const other = env.store();
+  await other.save('tree', value());
+  const result = await store.saveWhileLeaving('tree', { frame: changed('Left', '9:0:leaving'), epochs: { structure: 0, progress: 0 } });
+  assert.equal(result.status, 'saved');
+  assert.deepEqual((await other.load('tree')).progress, value().progress);
+});
+
+test('a hold reads the record ahead, so leaving keeps what another tab stored before it began', async (t) => {
+  const env = environment(t);
+  const storeA = env.store();
+  const tabA = await liveTab(env, storeA);
+  const other = env.store();
+  const stored = await other.load('tree');
+  const peer = new TreeLattice();
+  peer.join(stored.frame);
+  peer.join({ nodes: [{ id: 'closed', createdAt: '8:0:closed', label: 'From a closed tab', labelAt: '8:0:closed' }] });
+  await other.save('tree', { ...stored, frame: peer.toFrame() });
+  tabA.holdAct(() => {});
+  await settle([storeA]);
+  await new Promise((resolve) => setImmediate(resolve));
+  tabA.ws.readyState = 3;
+  tabA.leavePage();
+  tabA.dispatch({ kind: 'RenameNode', id: 'root', label: 'Left' });
+  await settle([storeA]);
+  const after = await env.store().load('tree');
+  assert.deepEqual(after.frame.nodes.map(({ id, label }) => [id, label]), [['root', 'Left'], ['closed', 'From a closed tab']]);
+});

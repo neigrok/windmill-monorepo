@@ -1073,6 +1073,32 @@ test('leaving the page saves and sends at once: nothing waits on an epoch read o
   const socket = session.ws;
   session.leavePage();
   session.dispatch({ kind: 'RenameNode', id: 'root', label: 'Left' });
-  assert.deepEqual(left, ['Root', 'Left']);
+  assert.deepEqual(left, ['Left']);
   assert.equal(socket.frames.at(-1).nodes[0].label, 'Left');
+});
+
+test('an ordinary page leave reads before it saves, so it cannot overwrite what another tab stored', async (t) => {
+  const priorDocument = globalThis.document;
+  const priorSocket = globalThis.WebSocket;
+  const priorWindow = globalThis.window;
+  globalThis.document = new EventTarget();
+  globalThis.WebSocket = TestSocket;
+  globalThis.window = new EventTarget();
+  t.after(() => { globalThis.document = priorDocument; globalThis.WebSocket = priorSocket; globalThis.window = priorWindow; });
+  const saved = [];
+  const session = new SyncSession({ treeId: 'tree', registry: null, store: {
+    load: async () => null, requestPersistent: async () => true,
+    save: async (treeId, value) => { saved.push('read-first'); return { status: 'saved', value }; },
+    saveWhileLeaving: async () => { saved.push('blind'); return { status: 'saved' }; },
+  } });
+  t.after(() => session.close());
+  await session.start();
+  window.dispatchEvent(new Event('pagehide'));
+  assert.deepEqual(saved, ['read-first']);
+  session.leavePage();
+  window.dispatchEvent(new Event('pagehide'));
+  assert.deepEqual(saved, ['read-first']);
+  window.dispatchEvent(new Event('pageshow'));
+  window.dispatchEvent(new Event('pagehide'));
+  assert.deepEqual(saved, ['read-first', 'read-first']);
 });

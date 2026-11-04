@@ -361,7 +361,7 @@ export class SyncSession {
     this.store.requestPersistent().then((granted) => { if (!granted) this.durabilityAtRisk = true; });
     this.online = typeof navigator === 'undefined' || navigator.onLine !== false;
     if (typeof window !== 'undefined') {
-      this.pagehide = () => this.leavePage();
+      this.pagehide = () => { if (!this.leaving) this.persistNow(); };
       this.pageshow = () => { this.leaving = false; };
       window.addEventListener('pagehide', this.pagehide);
       window.addEventListener('pageshow', this.pageshow);
@@ -938,10 +938,10 @@ export class SyncSession {
     return sending;
   }
 
-  // The page is going and nothing asynchronous will finish: writes from here on save and send synchronously.
+  // The page is going with a write still to make, and nothing asynchronous will finish: from here on writes save and send
+  // synchronously. Only a held delete asks: a save that cannot read the record first can overwrite what another tab stored.
   leavePage() {
     this.leaving = true;
-    return this.persistNow();
   }
 
   // Persists both lanes + lastSeq atomically; the snapshot is taken synchronously, before any

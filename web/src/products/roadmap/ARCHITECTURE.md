@@ -316,8 +316,8 @@ pagehide. The toast's Undo and ⌘Z cancel it without sending.
 A release while the roadmap changes reaches the server first: a closing session's socket waits for the sends already
 on their way. A release as the page goes turns the session synchronous first (`SyncSession.leavePage`): the session
 sends without its epoch read, and the store puts the whole record from the last one it saw and calls `commit()`, because
-no read or callback will run again. The record is read afresh when a hold starts, so what it can overwrite is only another
-tab's save made during those nine seconds.
+no read or callback will run again. Only a hold does this. The record is read afresh when a hold starts, so what its put can
+overwrite is another tab's save made during those nine seconds, which that tab's next save restores unless it has closed.
 
 An already-absent step is a quiet no-op. A session not ready at the start says *Couldn't delete Rig the boat* with Retry
 at once and holds nothing, which logs a line and files no Issue. A release that fails on its timer brings the step back and
