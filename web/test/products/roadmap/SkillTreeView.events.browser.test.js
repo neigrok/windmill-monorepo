@@ -24,8 +24,8 @@ hostTest('Chromium: every write the Graph makes without a form names what it cha
     assert.deepEqual(await events(page, 'roadmap_board_create'), [{ step: 'saved', door: 'canvas', view: 'graph' }]);
     await page.evaluate(() => window.scene.options.onDeleteNode('dock'));
     assert.deepEqual(await events(page, 'roadmap_board_delete'), [{ step: 'sent', via: 'direct', view: 'graph' }]);
-    await page.locator('.st-toast-undo').click();
-    assert.deepEqual(await events(page, 'roadmap_graph_toast'), [{ act: 'edit', step: 'undo' }]);
+    await page.locator('.st-graph-toast .st-board-toast-undo').click();
+    assert.deepEqual(await events(page, 'roadmap_graph_toast'), [{ act: 'delete', step: 'shown' }, { act: 'delete', step: 'undo' }]);
     assert.deepEqual(errors, []);
   } finally { await page.close(); }
 });
