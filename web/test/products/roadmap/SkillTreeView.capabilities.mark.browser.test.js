@@ -147,7 +147,7 @@ for (const width of phones) {
 
 hostTest('One kind rule: the desktop bar, the tablet panel and the phone Board offer the same kinds and ring the same one', async () => {
   const fixture = { legend: true, broad: true };
-  const expected = ['Build', 'Learn', 'Sky', 'Gold', 'Brick', 'Plum'].map((label) => [label, label === 'Build']);
+  const expected = ['Build', 'Learn', 'Gold', 'Brick', 'Sky', 'Plum'].map((label) => [label, label === 'Build']);
 
   const desktop = await openHost({ width: 1440, ...fixture });
   try {
