@@ -39,12 +39,14 @@ export function useStepPage({ treeId, tree, loading, address, setSelectedId, vie
     [...stops].find((element) => element.getClientRects().length > 0)?.focus();
   });
 
+  // The Board's cards hold on to this one, so it keeps its identity through unrelated renders.
+  const openFromBoard = useCallback((id) => {
+    setSelectedId(id);
+    address.open(id, 'card');
+  }, [setSelectedId, address.open]);
+
   return {
-    detailId, focusGraph, focusLayer, graphStepReturnRef,
-    openFromBoard: (id) => {
-      setSelectedId(id);
-      address.open(id, 'card');
-    },
+    detailId, focusGraph, focusLayer, graphStepReturnRef, openFromBoard,
     openFromGraph: (id) => {
       onGraphStepOpen();
       graphStepReturnRef.current = true;
