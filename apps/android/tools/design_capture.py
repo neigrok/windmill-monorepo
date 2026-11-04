@@ -770,27 +770,31 @@ class Device:
                 raise ValueError("Unknown capture step.")
 
 
-def start_emulator(sdk, output, port, stack, auth_code=None):
+def start_emulator(sdk, output, port, stack, auth_code=None, shared_avd=None):
     serial = f"emulator-{port}"
     if serial in command([sdk / "platform-tools/adb", "devices"]).decode().split():
         raise RuntimeError("The selected emulator port already belongs to a device; refusing install.")
-    images = sorted((sdk / "system-images").glob("android-*/*/*/system.img"), reverse=True)
-    image = next((value.parent for value in images if int(re.search(r"android-(\d+)", str(value))[1]) >= 36), None)
-    if image is None:
-        raise RuntimeError("Install an Android API 36+ emulator system image first.")
-    avds = output / "avd"
-    avd = avds / "WindmillCapture.avd"
-    avd.mkdir(parents=True)
-    (avds / "WindmillCapture.ini").write_text(f"avd.ini.encoding=UTF-8\npath={avd}\ntarget=android-36\n")
-    (avd / "config.ini").write_text("\n".join([
-        "AvdId=WindmillCapture", "avd.ini.displayname=Windmill Capture", "hw.device.name=pixel_8", "hw.device.manufacturer=Google", "abi.type=arm64-v8a", "hw.cpu.arch=arm64",
-        "hw.cpu.ncore=4", "hw.ramSize=4096", "hw.lcd.width=1080", "hw.lcd.height=2400", "hw.lcd.density=420",
-        "hw.keyboard=yes", "hw.gpu.enabled=yes", "hw.gpu.mode=host", "hw.mainKeys=no", "hw.battery=yes",
-        "disk.dataPartition.size=2G", "PlayStore.enabled=false", f"image.sysdir.1={image}/", "tag.id=google_apis"]) + "\n")
     log = stack.enter_context((output / "emulator.log").open("wb"))
-    process = subprocess.Popen([str(sdk / "emulator/emulator"), "-avd", "WindmillCapture", "-port", str(port),
-        "-no-snapshot", "-no-audio", "-no-boot-anim", "-no-window"], env={**os.environ, "ANDROID_AVD_HOME": str(avds)},
-        stdout=log, stderr=subprocess.STDOUT)
+    if shared_avd:
+        process = subprocess.Popen([str(sdk / "emulator/emulator"), "-avd", shared_avd, "-read-only", "-port", str(port),
+            "-no-snapshot", "-no-audio", "-no-boot-anim", "-no-window"], stdout=log, stderr=subprocess.STDOUT)
+    else:
+        images = sorted((sdk / "system-images").glob("android-*/*/*/system.img"), reverse=True)
+        image = next((value.parent for value in images if int(re.search(r"android-(\d+)", str(value))[1]) >= 36), None)
+        if image is None:
+            raise RuntimeError("Install an Android API 36+ emulator system image first.")
+        avds = output / "avd"
+        avd = avds / "WindmillCapture.avd"
+        avd.mkdir(parents=True)
+        (avds / "WindmillCapture.ini").write_text(f"avd.ini.encoding=UTF-8\npath={avd}\ntarget=android-36\n")
+        (avd / "config.ini").write_text("\n".join([
+            "AvdId=WindmillCapture", "avd.ini.displayname=Windmill Capture", "hw.device.name=pixel_8", "hw.device.manufacturer=Google", "abi.type=arm64-v8a", "hw.cpu.arch=arm64",
+            "hw.cpu.ncore=4", "hw.ramSize=4096", "hw.lcd.width=1080", "hw.lcd.height=2400", "hw.lcd.density=420",
+            "hw.keyboard=yes", "hw.gpu.enabled=yes", "hw.gpu.mode=host", "hw.mainKeys=no", "hw.battery=yes",
+            "disk.dataPartition.size=4G", "PlayStore.enabled=false", f"image.sysdir.1={image}/", "tag.id=google_apis"]) + "\n")
+        process = subprocess.Popen([str(sdk / "emulator/emulator"), "-avd", "WindmillCapture", "-port", str(port),
+            "-no-snapshot", "-no-audio", "-no-boot-anim", "-no-window"], env={**os.environ, "ANDROID_AVD_HOME": str(avds)},
+            stdout=log, stderr=subprocess.STDOUT)
     stack.callback(stop, process)
     device = Device(sdk, port, auth_code)
     device.output = output
@@ -799,7 +803,7 @@ def start_emulator(sdk, output, port, stack, auth_code=None):
         if process.poll() is not None:
             raise RuntimeError("The isolated emulator failed to boot; see emulator.log.")
         if device.run("shell", "getprop", "sys.boot_completed", check=False).strip() == b"1":
-            if int(device.run("shell", "getprop", "ro.build.version.sdk").strip()) < 36:
+            if not shared_avd and int(device.run("shell", "getprop", "ro.build.version.sdk").strip()) < 36:
                 raise RuntimeError("Capture emulator must be API 36 or later.")
             device.run("shell", "input", "keyevent", "KEYCODE_WAKEUP")
             device.run("shell", "wm", "dismiss-keyguard")
@@ -835,6 +839,7 @@ def main():
     parser.add_argument("--profile-seconds", type=int, default=10)
     parser.add_argument("--baseline", action="store_true", help="Record an expected over-budget baseline without passing performance acceptance.")
     parser.add_argument("--sentry-dsn", default="", help="Optional local collector DSN; no vendor endpoint is accepted.")
+    parser.add_argument("--shared-avd", help="Boot this existing AVD read-only instead of a fresh one, for a host short of disk.")
     parser.add_argument("--patience", type=int, default=1, help="Multiplies every wait for a state, for a loaded host.")
     parser.add_argument("--acceptance-pause-seconds", type=int, default=0,
                         help="Keep the isolated stack and emulator available after captures, up to 600 seconds.")
@@ -936,7 +941,7 @@ def main():
         manifest["apkSha256"] = hashlib.sha256(apk.read_bytes()).hexdigest()
         manifest["step"] = "emulator"
         manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
-        device = start_emulator(args.sdk, args.output, args.emulator_port, stack, auth_code=lambda: mail.code)
+        device = start_emulator(args.sdk, args.output, args.emulator_port, stack, auth_code=lambda: mail.code, shared_avd=args.shared_avd)
         device.patience = args.patience
         if any(scenario.get("notification_clock") for scenario in scenarios):
             device.prepare_notification_capture()

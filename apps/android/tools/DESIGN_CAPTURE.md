@@ -13,6 +13,8 @@ the probe, while a valid `[]` explicitly expects an empty program. Identities ne
 Requirements: JDK 17+, Python 3, PostgreSQL client tools and a running server on `/tmp`, an Android
 SDK with an API 36+ arm64 system image, and a backend binary rebuilt from the current source.
 The default ports are backend 8098, model 8099, mail 8101 and emulator 5580/5581; occupied ports are refused.
+On a loaded host, `--patience N` multiplies every wait for a state. On a host short of disk, `--shared-avd NAME`
+boots an existing AVD read-only instead of a fresh API 36+ one, at that AVD's API level.
 Run from the monorepo root:
 
 ```sh
