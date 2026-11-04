@@ -600,10 +600,6 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   so no rail.
 - **Board · New step on an empty phone roadmap.** An owner's empty roadmap reaches the Board on phone, tablet and desktop. Its New
   step opens the composer (185:2149, 226:1055); the tablet uses the desktop empty-state structure pending 15.06.
-- **Board · a held delete that cannot send.** An unexpected failed release restores the step silently and reports
-  `roadmap-board-delete` with stack frames. An already-absent step or not-ready session is an expected no-op, not an Issue. Proposed,
-  awaiting the owner: toast *Couldn't delete Rig the boat* · **Retry** (25.04, 15.07). *Couldn't sync this change* belongs to
-  `rb-refused-sync`.
 - **Board · composer and picker at 744px.** At 744–1023px the owner-approved picker is a page inside
   the 600px composer dialog: back chevron, Prerequisites, *for <draft>*, search, chips, results, Cancel
   and Apply. The implementation uses this page layout. The canon is ✅ 744 09.02–09.04: 470:23411,

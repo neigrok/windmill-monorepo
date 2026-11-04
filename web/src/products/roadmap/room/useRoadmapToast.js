@@ -44,6 +44,7 @@ export function useRoadmapToast() {
     timersRef.current.push(setTimeout(() => {
       if (liveToastRef.current !== current) return;
       current.onLeave?.('timer');
+      if (liveToastRef.current !== current) return; // leaving said something of its own, and what it says stands
       liveToastRef.current = null;
       setToast((shown) => (shown?.key === key ? { ...shown, leaving: true } : shown));
       timersRef.current.push(setTimeout(() => setToast((shown) => (shown?.key === key ? null : shown)), LEAVE_MS));

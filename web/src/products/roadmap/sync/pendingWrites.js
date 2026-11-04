@@ -1,20 +1,52 @@
 import { compareHlc, parseHlc } from './lattice.js';
 import { GENESIS_STAMP } from '../model/Legend.js';
 
+const SECTIONS = ['nodes', 'edges', 'kinds', 'marks'];
+const TITLE_KEY = JSON.stringify(['title', '', 'at']);
+
+const rowId = (section, row) => (section === 'edges' ? [row.from, row.to] : row.id ?? row.node);
+const stampKey = (section, id, field) => JSON.stringify([section, id, field]);
+const isStamp = (field, value) => (field.endsWith('At') || field === 'at') && typeof value === 'string';
+
 export function writeStamps(frame = {}) {
   const stamps = {};
-  for (const section of ['nodes', 'edges', 'kinds', 'marks']) {
+  for (const section of SECTIONS) {
     for (const row of frame?.[section] ?? []) {
-      const id = section === 'edges' ? [row.from, row.to] : row.id ?? row.node;
+      const id = rowId(section, row);
       for (const [field, stamp] of Object.entries(row)) {
-        if ((field.endsWith('At') || field === 'at') && typeof stamp === 'string') {
-          stamps[JSON.stringify([section, id, field])] = stamp;
-        }
+        if (isStamp(field, stamp)) stamps[stampKey(section, id, field)] = stamp;
       }
     }
   }
-  if (frame?.title?.at) stamps[JSON.stringify(['title', '', 'at'])] = frame.title.at;
+  if (frame?.title?.at) stamps[TITLE_KEY] = frame.title.at;
   return stamps;
+}
+
+// The part of a row whose registers `keeps` answers for; a mark is one register, so it stands or goes whole.
+function rowWrites(section, row, keeps) {
+  const id = rowId(section, row);
+  if (section === 'marks') return keeps(stampKey(section, id, 'at'), row.at) ? row : null;
+  const part = section === 'edges' ? { from: row.from, to: row.to } : { id: row.id };
+  let kept = false;
+  for (const [field, stamp] of Object.entries(row)) {
+    if (!isStamp(field, stamp) || !keeps(stampKey(section, id, field), stamp)) continue;
+    part[field] = stamp;
+    const register = field.slice(0, -2);
+    if (register in row) part[register] = row[register];
+    kept = true;
+  }
+  return kept ? part : null;
+}
+
+// The part of a frame whose registers `keeps` answers for: what one writer wrote, or what a discard leaves.
+export function frameWrites(frame = {}, keeps) {
+  const part = {};
+  for (const section of SECTIONS) {
+    if (!frame?.[section]) continue;
+    part[section] = frame[section].map((row) => rowWrites(section, row, keeps)).filter(Boolean);
+  }
+  if (frame?.title?.at && keeps(TITLE_KEY, frame.title.at)) part.title = frame.title;
+  return part;
 }
 
 export function unconfirmedStamps(stamps, confirmed) {

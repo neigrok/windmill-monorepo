@@ -91,3 +91,21 @@ test('dismissToastIf leaves a toast it does not name, and tells the one it does 
   assert.deepEqual([hook.tree.toast, left], [null, ['left']]);
   hook.tree.dismissToastIf(() => assert.fail('nothing is standing'));
 });
+
+test('a toast that says something as its hold ends leaves what it said standing, on its own hold', (t) => {
+  const hook = slot(t);
+  hook.tree.showToast('Read the wind deleted', { holdMs: 9000, onLeave: (via) => {
+    if (via === 'timer') hook.tree.showToast('Couldn’t delete Read the wind', { action: { label: 'Retry', run: () => {} } });
+  } });
+  hook.tree.toastShown(hook.tree.toast.key);
+  t.mock.timers.tick(9000);
+  const failed = hook.tree.toast;
+  assert.deepEqual([failed.message, failed.leaving, failed.holdMs], ['Couldn’t delete Read the wind', false, 6000]);
+  hook.tree.toastShown(failed.key);
+  t.mock.timers.tick(5999);
+  assert.equal(hook.tree.toast.leaving, false);
+  t.mock.timers.tick(1);
+  assert.equal(hook.tree.toast.leaving, true);
+  t.mock.timers.tick(280);
+  assert.equal(hook.tree.toast, null);
+});

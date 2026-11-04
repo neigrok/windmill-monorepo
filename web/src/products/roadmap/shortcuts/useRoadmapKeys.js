@@ -37,7 +37,7 @@ export function handleRoomKey(event, room) {
     return;
   }
   if (room.desktopEditor && modified(event) && event.key.toLowerCase() === 'z') {
-    if (covered) return;
+    if (covered || typing) return;
     event.preventDefault();
     track('roadmap_board_undo', { act: event.shiftKey ? 'redoKey' : 'undoKey' });
     if (event.shiftKey) room.redo();

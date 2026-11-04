@@ -264,6 +264,33 @@ test('Chromium Board notices: an empty phone pane receives focus after the refus
 
 
 for (const width of [320, 390]) {
+  test(`Chromium Board notices: ${width}px a held delete stands above the refused card, clear of it and of the band, and its hold runs`, async () => {
+    const toast = { key: 1, act: 'delete', overRefusal: true, message: 'Read the wind deleted', action: { label: 'Undo' } };
+    await inRoom(width, { refusal: { code: 'bad-frame', count: 1 }, toast }, async (page) => {
+      await page.getByRole('alert').waitFor();
+      await page.clock.runFor(120);
+      await page.locator('.st-board-toast').waitFor();
+      assert.deepEqual(await page.evaluate(() => window.calls), ['toast_shown']);
+      assert.deepEqual(await page.evaluate(() => {
+        for (const animation of document.getAnimations()) animation.finish();
+        const toast = document.querySelector('.st-board-toast').getBoundingClientRect();
+        const refusal = document.querySelector('[data-board-refusal]').getBoundingClientRect();
+        const band = document.querySelector('.st-board-phone-band').getBoundingClientRect();
+        const pane = document.querySelector('.st-board-phone-panes').getBoundingClientRect();
+        return {
+          aboveCard: toast.bottom <= refusal.top,
+          gap: refusal.top - toast.bottom,
+          overPane: toast.top >= pane.top,
+          aboveBand: toast.bottom <= band.top,
+          sameEdges: Math.abs(toast.left - refusal.left) < 1 && Math.abs(toast.right - refusal.right) < 1,
+          inViewport: toast.left >= 0 && toast.right <= window.innerWidth,
+        };
+      }), { aboveCard: true, gap: 8, overPane: true, aboveBand: true, sameEdges: true, inViewport: true });
+      await page.getByRole('button', { name: 'Undo', exact: true }).click({ trial: true });
+      await page.getByRole('button', { name: 'Retry', exact: true }).click({ trial: true });
+    });
+  });
+
   test(`Chromium Board notices: ${width}px refusal and creation toast never overlap`, async () => {
     const toast = { key: 1, message: createdToast({ step: 'Read the wind', column: 'upNext' }), action: { label: 'Undo' } };
     await inRoom(width, { refusal: { code: 'bad-frame', count: 1 }, toast }, async (page) => {
