@@ -598,6 +598,12 @@ class AskScreenTests {
         compose.onNodeWithText("Thursday is still a Push day.").assertIsDisplayed()
         val band = compose.onNodeWithTag("coach-band", useUnmergedTree = true).getUnclippedBoundsInRoot()
         assertEquals(68.dp, band.bottom - band.top)
+        assertEquals(380.dp, band.right - band.left)
+        val words = compose.onNodeWithText(said, useUnmergedTree = true).getUnclippedBoundsInRoot()
+        val close = compose.onNodeWithContentDescription("Close").getUnclippedBoundsInRoot()
+        assertEquals("the words start on the band's margin", band.left + 16.dp, words.left)
+        assertEquals("the close button is the band's last 48 dp", band.right - 48.dp, close.left)
+        assertTrue("the words stop before the close button", words.right <= band.right - 48.dp)
         compose.onNodeWithContentDescription("Close").performClick()
         compose.onNodeWithText(said).assertDoesNotExist()
         compose.runOnIdle {
