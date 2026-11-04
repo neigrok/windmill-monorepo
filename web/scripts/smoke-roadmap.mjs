@@ -1,6 +1,10 @@
 // The production smoke for the roadmap room: a signed-out reader's walk through the demo, a public roadmap and the landings,
-// at phone, tablet and desktop width. It never signs in and never writes, and it blocks the event intake and Sentry at the
-// network layer, so it leaves no trace in production analytics.
+// at phone, tablet and desktop width, and one returning visit through the service worker. It never signs in and never writes,
+// and it blocks the event intake and Sentry at the network layer, so it leaves no trace in production analytics.
+//
+// A walk fails on a page error, a console error, a failed same-origin request, a Graph with no painted pixels, a session whose
+// socket never got its reply, any Sentry attempt, a `client_error` beacon, a landing the app never mounted over, or a service
+// worker that never took the page or answers a returning visit badly.
 //
 //   node scripts/smoke-roadmap.mjs --base https://windmill.works [--roadmap t_9e407a96b5330ebe] [--api <origin>]
 //
@@ -18,14 +22,23 @@ const BANDS = [
 ];
 const WAIT_MS = 30000;
 const INTAKE = /\/v1\/events(\?|$)/;
-const ANALYTICS_HOSTS = /(^|\.)(sentry\.io|sentry\.invalid|cloudflareinsights\.com)$/;
-// The block itself: production's edge injects Cloudflare's script, which reports its emptied body as a failed integrity check.
+const SENTRY_HOSTS = /(^|\.)(sentry\.io|sentry\.invalid)$/;
+// Production's edge injects Cloudflare's script on a healthy page, so it counts as analytics and never as a failure.
+const CLOUDFLARE_HOST = /(^|\.)cloudflareinsights\.com$/;
+// The block itself: that script reports its emptied body as a failed integrity check.
 const BLOCKED_SCRIPT_COMPLAINT = /cloudflareinsights\.com/;
 // What a signed-out reader's page answers 4xx to by design. Anything else is a failure.
 const EXPECTED_REFUSALS = [
   { path: /^\/v1\/me$/, status: 401 },
 ];
 const WRITE_FRAMES = /"t":"(subgraph|progress)"/;
+const ROOT_LANDING_APP = '.rootBand';
+const ROADMAP_LANDING_APP = '.beats';
+// Every element but the canvas hides for the Graph's shot, so its pixels are what WebGL drew and no caption or chrome.
+const CANVAS_ONLY = '* { visibility: hidden !important; } canvas.st-canvas { visibility: visible !important; }';
+const GROUND_DISTANCE = 24;
+// The share of the shot far from its commonest colour. A blank canvas reads 0; the smallest healthy roadmap walked reads 1.4%.
+const PAINTED_SHARE = 0.002;
 
 function argumentsOf(argv) {
   const named = new Map();
@@ -39,27 +52,36 @@ function argumentsOf(argv) {
   };
 }
 
+function parsedJson(text) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
 // One fresh signed-out browser context, watching everything a reader's page should never do.
 class Visit {
-  constructor({ browser, band, site }) {
+  constructor({ browser, band, site, serviceWorkers }) {
     this.browser = browser;
     this.band = band;
     this.site = site;
+    this.serviceWorkers = serviceWorkers;
     this.problems = [];
-    this.blocked = { intake: 0, analytics: 0 };
+    this.blocked = { intake: 0, sentry: 0, analytics: 0 };
+    this.session = { sockets: 0, answered: false };
   }
 
   async open() {
     const { width, height, phone } = this.band;
     this.context = await this.browser.newContext({
       viewport: { width, height }, isMobile: phone, hasTouch: phone, deviceScaleFactor: phone ? 3 : 1,
-      reducedMotion: 'reduce', serviceWorkers: 'block',
+      reducedMotion: 'reduce', serviceWorkers: this.serviceWorkers,
     });
-    await this.context.route((url) => INTAKE.test(url.pathname) || ANALYTICS_HOSTS.test(url.hostname), (route) => {
-      const intake = INTAKE.test(new URL(route.request().url()).pathname);
-      this.blocked[intake ? 'intake' : 'analytics'] += 1;
-      return route.fulfill({ status: intake ? 202 : 200, contentType: 'application/json', body: '{}' });
-    });
+    await this.context.route(
+      (url) => INTAKE.test(url.pathname) || SENTRY_HOSTS.test(url.hostname) || CLOUDFLARE_HOST.test(url.hostname),
+      (route) => this.onBlocked(route),
+    );
     this.page = await this.context.newPage();
     this.page.setDefaultTimeout(WAIT_MS);
     this.page.on('pageerror', (error) => this.problems.push(`pageerror: ${error.message}`));
@@ -67,10 +89,46 @@ class Visit {
     this.page.on('response', (response) => this.onResponse(response));
     this.page.on('requestfailed', (request) => this.onRequestFailed(request));
     this.page.on('request', (request) => this.onRequest(request));
-    this.page.on('websocket', (socket) => socket.on('framesent', ({ payload }) => {
-      if (WRITE_FRAMES.test(String(payload))) this.problems.push('wrote over the socket');
-    }));
+    this.page.on('websocket', (socket) => this.onSocket(socket));
     return this.page;
+  }
+
+  onBlocked(route) {
+    const request = route.request();
+    const { hostname, pathname } = new URL(request.url());
+    if (INTAKE.test(pathname)) {
+      this.blocked.intake += 1;
+      const beacon = parsedJson(request.postData());
+      if (beacon?.events?.some((event) => event.name === 'client_error')) this.problems.push('a client_error beacon');
+      return route.fulfill({ status: 202, contentType: 'application/json', body: '{}' });
+    }
+    if (SENTRY_HOSTS.test(hostname)) {
+      this.blocked.sentry += 1;
+      const report = parsedJson(String(request.postData()).split('\n')[2]);
+      this.problems.push(`a Sentry report: ${report?.exception?.values?.[0]?.value ?? 'unreadable'}`);
+    } else {
+      this.blocked.analytics += 1;
+    }
+    return route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+  }
+
+  onSocket(socket) {
+    this.session.sockets += 1;
+    socket.on('framesent', ({ payload }) => {
+      if (WRITE_FRAMES.test(String(payload))) this.problems.push('wrote over the socket');
+    });
+    socket.on('framereceived', ({ payload }) => {
+      const frame = parsedJson(String(payload));
+      if (frame?.t === 'subgraph' && frame.intent === 'delta') this.session.answered = true;
+    });
+  }
+
+  // The reply to the session's subscribe: what takes a room from syncing to live.
+  async sessionAnswered() {
+    const deadline = Date.now() + WAIT_MS;
+    while (!this.session.answered && Date.now() < deadline) await this.page.waitForTimeout(200);
+    if (this.session.answered) return;
+    throw new Error(this.session.sockets > 0 ? "the session's socket never got its reply" : 'the session never opened a socket');
   }
 
   ours(url) {
@@ -119,6 +177,47 @@ const identity = (page, role, view) => page.locator(`.st-roadmap-identity[data-r
 const boardCards = (page) => page.locator('.st-view-layer--board.is-active .st-board-card:visible');
 const stepDialog = (page) => page.locator('.st-board-step-layer [role="dialog"]');
 
+async function paintedShare(page) {
+  const shot = await page.screenshot({ style: CANVAS_ONLY, animations: 'allow' });
+  const blank = await page.context().newPage();
+  const share = await blank.evaluate(async ({ png, groundDistance }) => {
+    const bitmap = await createImageBitmap(await (await fetch(`data:image/png;base64,${png}`)).blob());
+    const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+    const drawing = canvas.getContext('2d');
+    drawing.drawImage(bitmap, 0, 0);
+    const { data } = drawing.getImageData(0, 0, bitmap.width, bitmap.height);
+    const colours = new Map();
+    for (let at = 0; at < data.length; at += 4) {
+      const colour = (data[at] << 16) | (data[at + 1] << 8) | data[at + 2];
+      colours.set(colour, (colours.get(colour) ?? 0) + 1);
+    }
+    const [ground] = [...colours.entries()].reduce((most, entry) => (entry[1] > most[1] ? entry : most));
+    const channels = [ground >> 16, (ground >> 8) & 255, ground & 255];
+    let painted = 0;
+    for (let at = 0; at < data.length; at += 4) {
+      if (channels.some((channel, index) => Math.abs(data[at + index] - channel) > groundDistance)) painted += 1;
+    }
+    return painted / (data.length / 4);
+  }, { png: shot.toString('base64'), groundDistance: GROUND_DISTANCE });
+  await blank.close();
+  return share;
+}
+
+async function graphPainted(page) {
+  await page.locator('canvas.st-canvas').waitFor();
+  const deadline = Date.now() + WAIT_MS;
+  while (Date.now() < deadline) {
+    if (await paintedShare(page) >= PAINTED_SHARE) return;
+    await page.waitForTimeout(500);
+  }
+  throw new Error('the Graph painted nothing');
+}
+
+async function appMounted(page, selector) {
+  await page.locator(selector).first().waitFor({ state: 'attached' })
+    .catch(() => { throw new Error(`the app never mounted: no ${selector} over the no-JS body`); });
+}
+
 async function switchToBoard(page, role) {
   await page.locator('.st-roadmap-identity button[aria-label="Board"]').click();
   await identity(page, role, 'board').waitFor();
@@ -159,11 +258,12 @@ async function reopenWithForward(page) {
   await stepDialog(page).waitFor();
 }
 
-async function demoWalk(page, { band, site }) {
+async function demoWalk(page, { band, site, visit }) {
   await page.goto(`${site.base}/#/demo`);
   await identity(page, 'demo', 'tree').waitFor();
   await page.locator('.st-roadmap-sample').waitFor();
-  await page.locator('canvas.st-canvas').waitFor();
+  await graphPainted(page);
+  await visit.sessionAnswered();
   await switchToBoard(page, 'demo');
   await openFirstStep(page);
   await closeWithBack(page);
@@ -172,9 +272,11 @@ async function demoWalk(page, { band, site }) {
   await openAndCloseFork(page, band);
 }
 
-async function publicRoadmapWalk(page, { site }) {
+async function publicRoadmapWalk(page, { site, visit }) {
   await page.goto(`${site.base}/t/${site.roadmap}`);
   await identity(page, 'reader', 'tree').waitFor();
+  await graphPainted(page);
+  await visit.sessionAnswered();
   await switchToBoard(page, 'reader');
   for (const control of ['button[aria-label="New step"]', '.st-board-swipe-complete']) {
     if (await page.locator(control).count()) throw new Error(`a reader's Board offers ${control}`);
@@ -188,7 +290,7 @@ async function publicRoadmapWalk(page, { site }) {
   await closeWithBack(page);
 }
 
-async function stepLinkWalk(page, { site }) {
+async function stepLinkWalk(page, { site, visit }) {
   const reply = await page.request.get(`${site.api}/v1/trees/${site.roadmap}`);
   if (!reply.ok()) throw new Error(`the public roadmap answered ${reply.status()}`);
   const { data, visibility } = await reply.json();
@@ -197,37 +299,57 @@ async function stepLinkWalk(page, { site }) {
   await page.goto(`${site.base}/t/${site.roadmap}#?step=${encodeURIComponent(step.id)}`);
   await stepDialog(page).waitFor();
   if (!(await stepDialog(page).innerText()).includes(step.label)) throw new Error(`the link did not land on "${step.label}"`);
+  await visit.sessionAnswered();
 }
 
-function landingWalk(path) {
+function landingWalk(path, app) {
   return async (page, { site }) => {
     await page.goto(`${site.base}${path}`);
-    await page.waitForFunction(() => document.querySelector('#root')?.childElementCount > 0);
+    await appMounted(page, app);
     await page.locator('h1').first().waitFor({ state: 'attached' });
   };
+}
+
+// Every other walk blocks the worker, and a broken one first hurts whoever comes back: this walk lets it take the page and
+// prime its shell, then returns to the brand landing and a room through it.
+async function returningVisitWalk(page, { site, visit }) {
+  await page.goto(`${site.base}/`);
+  await appMounted(page, ROOT_LANDING_APP);
+  await page.waitForFunction(() => navigator.serviceWorker.controller !== null)
+    .catch(() => { throw new Error('the service worker never took the page'); });
+  await page.waitForFunction(async () => (await caches.keys()).some((name) => name.startsWith('windmill-generation-')))
+    .catch(() => { throw new Error('the service worker never primed its offline shell'); });
+  const landing = await page.goto(`${site.base}/`);
+  if (!landing.fromServiceWorker()) throw new Error('the returning visit did not come through the service worker');
+  if (!landing.ok()) throw new Error(`the service worker answered a returning visit with ${landing.status()}`);
+  await appMounted(page, ROOT_LANDING_APP);
+  await page.goto(`${site.base}/t/${site.roadmap}`);
+  await identity(page, 'reader', 'tree').waitFor();
+  await graphPainted(page);
+  await visit.sessionAnswered();
 }
 
 const WALKS = [
   ['the demo lands on the Graph, its Board opens a step, Back returns, Fork opens and closes', demoWalk],
   ['a public roadmap lands on the Graph, its Board reads read-only, and Back and Forward walk its step', publicRoadmapWalk],
   ['a step link lands on its step', stepLinkWalk],
-  ['/roadmap renders', landingWalk('/roadmap')],
-  ['/ renders', landingWalk('/')],
+  ['/roadmap mounts its app', landingWalk('/roadmap', ROADMAP_LANDING_APP)],
+  ['/ mounts its app', landingWalk('/', ROOT_LANDING_APP)],
 ];
 
-async function runWalk({ browser, band, site, walk, label }) {
-  const visit = new Visit({ browser, band, site });
+async function runWalk({ browser, band, site, walk, label, serviceWorkers = 'block' }) {
+  const visit = new Visit({ browser, band, site, serviceWorkers });
   const page = await visit.open();
   const started = Date.now();
   try {
-    await walk(page, { band, site });
+    await walk(page, { band, site, visit });
   } catch (error) {
     visit.problems.push(error.message.split('\n')[0]);
   }
   await visit.close();
   const seconds = ((Date.now() - started) / 1000).toFixed(1);
   const failed = visit.problems.length > 0;
-  console.log(`${failed ? 'FAIL' : 'ok  '} ${String(band.width).padStart(4)} · ${label} (${seconds}s; blocked ${visit.blocked.intake} beacons, ${visit.blocked.analytics} analytics)`);
+  console.log(`${failed ? 'FAIL' : 'ok  '} ${String(band.width).padStart(4)} · ${label} (${seconds}s; blocked ${visit.blocked.intake} beacons, ${visit.blocked.sentry} Sentry, ${visit.blocked.analytics} analytics)`);
   for (const problem of visit.problems) console.log(`       ${problem}`);
   return { blocked: visit.blocked, failed };
 }
@@ -240,6 +362,10 @@ async function main() {
   for (const band of BANDS) {
     for (const [label, walk] of WALKS) results.push(await runWalk({ browser, band, site, walk, label }));
   }
+  results.push(await runWalk({
+    browser, band: BANDS.at(-1), site, walk: returningVisitWalk, serviceWorkers: 'allow',
+    label: 'a returning visit through the service worker reaches the landing and a room',
+  }));
   await browser.close();
   const failures = results.filter((result) => result.failed).length;
   console.log(`${results.length - failures} of ${results.length} checks passed`);
