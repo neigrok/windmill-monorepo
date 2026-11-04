@@ -401,6 +401,22 @@ class CoachAnswerTests {
         }
     }
 
+    // Text wraps only under native graphics. Two phrases do not fit beside the chevron at 380 dp, so the words wrap and the chevron keeps its 18 dp at the column's end, inside the same touch.
+    @Test @Config(qualifiers = "w380dp-h800dp-xhdpi") @GraphicsMode(GraphicsMode.Mode.NATIVE) fun aReadLineOfTwoPhrasesWrapsBesideAChevronThatKeepsItsWidth() {
+        val reply = coachReply("Prose.", calls = listOf(coachCall("get_last_times", "read the last time you trained each movement"), coachCall("list_sessions", "read your recent workouts")))
+        compose.setContent { GymMaterial { Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) { CoachAnswer("Prose.", reply, emptyList()) } } }
+        val words = compose.onNodeWithText("read the last time you trained each movement · read your recent workouts", useUnmergedTree = true)
+        val layouts = mutableListOf<TextLayoutResult>()
+        words.fetchSemanticsNode().config[SemanticsActions.GetTextLayoutResult].action?.invoke(layouts)
+        assertEquals(2, layouts.single().lineCount)
+        val line = words.getUnclippedBoundsInRoot()
+        val chevron = compose.onNodeWithTag("coach-read-chevron", useUnmergedTree = true).getUnclippedBoundsInRoot()
+        assertEquals(listOf(28.dp, 344.dp), listOf(line.left, line.right))
+        assertEquals(listOf(346.dp, 364.dp, 18.dp), listOf(chevron.left, chevron.right, chevron.bottom - chevron.top))
+        val target = compose.onNodeWithTag("coach-read-sources").assertHasClickAction().getUnclippedBoundsInRoot()
+        assertEquals(48.dp, target.bottom - target.top)
+    }
+
     @Test fun anInterruptionSaysWhatArrivedIsKeptOnlyOverWordsThatArrived() {
         val reply = mutableStateOf(coachReply("Thursday is still a Push day.", MessageState.interrupted))
         compose.setContent { GymMaterial { CoachAnswer(reply.value.text, reply.value, emptyList()) } }

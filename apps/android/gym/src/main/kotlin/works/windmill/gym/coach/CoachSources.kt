@@ -57,8 +57,8 @@ internal fun CoachReadSources(line: String, rows: List<CoachCall>, onSheetTop: (
         }.padding(bottom = 8.dp), contentAlignment = Alignment.BottomStart,
     ) {
         Row(Modifier.indication(pressing, ripple()).padding(start = 12.dp, top = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(line, style = GymType.coachSourceLine, color = colors.onSurfaceVariant)
-            Icon(painterResource(R.drawable.gym_coach_source_chevron), null, Modifier.size(18.dp), tint = colors.onSurfaceVariant)
+            Text(line, style = GymType.coachSourceLine, color = colors.onSurfaceVariant, modifier = Modifier.weight(1f, fill = false))
+            Icon(painterResource(R.drawable.gym_coach_source_chevron), null, Modifier.size(18.dp).testTag("coach-read-chevron"), tint = colors.onSurfaceVariant)
         }
     }
     if (!expanded) return
