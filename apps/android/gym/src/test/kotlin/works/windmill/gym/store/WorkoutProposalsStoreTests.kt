@@ -28,6 +28,8 @@ import works.windmill.gym.presentation.RoutineDraft
 import works.windmill.gym.presentation.SetTarget
 import works.windmill.gym.presentation.SetWrite
 import works.windmill.platform.telemetry.Telemetry
+import works.windmill.sync.engine.Reply
+import works.windmill.sync.engine.SyncResponse
 import works.windmill.gym.domain.sync.Exercise as EngineExercise
 import works.windmill.gym.domain.sync.RoutineEntry as EngineEntry
 import works.windmill.gym.domain.sync.Session as EngineSession
@@ -295,12 +297,52 @@ class WorkoutProposalsStoreTests {
             coachProposes(room, swapped)
             room.store.refreshEngine()
 
-            assertEquals(ProposalOutcome.Failed(WriteFailure.Refused("Sign in again to decide this proposal.")), room.store.workoutProposals.apply("wp000000000000001"))
+            assertEquals(ProposalOutcome.Failed(WriteFailure.Refused("Sign in to review this proposal.")), room.store.workoutProposals.apply("wp000000000000001"))
 
             assertEquals(pushA, room.store.workout.session!!.plan!!.entries.map { it.exerciseId })
             assertEquals(ProposalState.Pending, room.store.workoutProposals.held.getValue("wp000000000000001").state)
             assertEquals(listOf(mapOf("target" to "workout", "action" to "apply", "outcome" to "failed")), telling.outcomes())
             assertEquals(emptyList<String>(), telling.failures)
+            finishing()
+        }
+    }
+
+    // A session that lapsed is a door this phone has already used, and it keeps saying so.
+    @Test
+    fun aLapsedSessionAsksToSignInAgainAndNothingMoves() = runTest {
+        val server = EngineRoomFixture.server()
+        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            open(room, server)
+            coachProposes(room, swapped)
+            room.store.refreshEngine()
+            room.push(Reply.Answer(SyncResponse(401, null)))
+            assertTrue(room.engine.status.state.value.authPaused)
+
+            assertEquals(ProposalOutcome.Failed(WriteFailure.Refused("Sign in again to decide this proposal.")), room.store.workoutProposals.apply("wp000000000000001"))
+            assertEquals(pushA, room.store.workout.session!!.plan!!.entries.map { it.exerciseId })
+            finishing()
+        }
+    }
+
+    // A pure reorder changes no line, and its count rests on the plan it moved: the card, the receipt before the log answers and the receipt after say one number.
+    @Test
+    fun aReorderSaysTheSameCountBeforeAndAfterItsApply() = runTest {
+        val server = EngineRoomFixture.server()
+        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            open(room, server)
+            coachProposes(room, listOf(entry("cable-fly"), entry("bench-press"), entry("overhead-press"), entry("incline-dumbbell-press"), entry("triceps-pushdown")))
+            room.store.refreshEngine()
+            val pending = room.store.workoutProposals.held.getValue("wp000000000000001")
+            assertEquals("1 change", pending.counted)
+            assertEquals("Apply", pending.applyLabel)
+
+            val decided = room.store.workoutProposals.apply("wp000000000000001") as ProposalOutcome.Decided
+            assertEquals(listOf("cable-fly", "bench-press", "overhead-press", "incline-dumbbell-press", "triceps-pushdown"), room.store.workout.session!!.plan!!.entries.map { it.exerciseId })
+            assertEquals("Applied · this workout · 1 change", decided.proposal.receipt)
+
+            room.sync(server)
+            room.store.refreshEngine()
+            assertEquals("Applied · this workout · 1 change", room.store.workoutProposals.held.getValue("wp000000000000001").receipt)
             finishing()
         }
     }

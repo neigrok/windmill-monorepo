@@ -473,6 +473,7 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
     fun program(): List<Routine> = read { reader ->
         details()
         val lastTrainedAt = requireNotNull(parsedLog).lastTrainedAt
+        val log = lazy { TrainingLog(reader) }
         val decisions = reader.commands().filter { it.command.name in setOf(Gym.Commands.applyProposal, Gym.Commands.dismissProposal) }
             .mapNotNull { it.command.args["proposalId"]?.str() }.toSet()
         val proposals = reader.readable(EngineProposal).map { proposal ->
@@ -489,7 +490,7 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
                 ?.takeIf { it.isVisible }?.let { EngineRoutine.decode(Fields(it)) } ?: drawn
             value.ui(
             lastTrainedAt[value.id.text],
-            proposals.filter { it.routineId == value.id && it.state == "pending" }.maxWithOrNull(compareBy<EngineProposal> { proposalCreatedAt(it, reader) }.thenBy { it.id.text })?.ui(reader)) }
+            proposals.filter { it.routineId == value.id && it.state == "pending" }.maxWithOrNull(compareBy<EngineProposal> { proposalCreatedAt(it, reader) }.thenBy { it.id.text })?.ui(reader, log)) }
         served.sortedWith(compareByDescending<Routine> { it.lastTrainedAtMs ?: Long.MIN_VALUE }.thenBy { it.position }.thenBy { it.id })
     }
     fun routine(id: String): Routine? = program().firstOrNull { it.id == id }
@@ -610,17 +611,24 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
         else reader.repository(EngineProposal).find(identity, ViewMode.drawn)?.ui(reader)
     } ?: removalReceipts.proposals()[id]?.takeIf { it.isPending }
     // Whether this phone holds any row of the proposal, alive or dead.
-    fun proposalRecorded(id: String): Boolean = read { reader -> reader.repository(EngineProposal).record(Id(id, EngineProposal), ViewMode.drawn) != null }
+    fun proposalRecorded(id: String): Boolean = read { reader ->
+        reader.repository(EngineProposal).record(Id(id, EngineProposal), ViewMode.drawn) != null || reader.repository(EngineWorkoutProposal).record(Id(id, EngineWorkoutProposal), ViewMode.drawn) != null
+    }
     // The proposals the log would refuse to apply, decided against the routine as the engine holds and confirms it.
     fun outOfDateProposals(): Set<String> = read { reader ->
         reader.readable(EngineProposal).filter { EngineProposalState(reader, it.id).outOfDate }.mapTo(mutableSetOf()) { it.id.text }
+    }
+    // A proposal is decided against the log, so it asks an account: a phone signed out reads the door it has never used, and a session that lapsed the one it has.
+    private fun requireDecidingSeat() {
+        if (anonymous) throw TrainingRefused("sign-in", "Sign in to review this proposal.")
+        if (engine.status.state.value.authPaused) throw TrainingRefused("sign-in", "Sign in again to decide this proposal.")
     }
     suspend fun applyProposal(id: String) = decideProposal(id, applying = true)
     suspend fun dismissProposal(id: String) = decideProposal(id, applying = false)
     private suspend fun decideProposal(id: String, applying: Boolean): ProposalDecision {
         val replica = engine.activeReplica()
         val status = engine.status.state.value
-        if (anonymous || status.authPaused) throw TrainingRefused("sign-in", "Sign in again to decide this proposal.")
+        requireDecidingSeat()
         if (applying) removalReceipts.result(id, replica)?.let { return ProposalDecision(it) }
         if (!status.online) throw TrainingUnanswered
         val before = engine.notices("gym").notices.value.map { it.id }.toSet()
@@ -664,9 +672,12 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
         } ?: throw TrainingUnanswered
     }
     // Coach's changes to the open workout as this phone draws them. A decision stands as soon as it is made: Apply rewrites the running plan at once and the log confirms it, offline too.
-    fun workoutProposals(): List<Proposal> = read { reader -> reader.readable(EngineWorkoutProposal).map { it.ui(reader) } }
+    fun workoutProposals(): List<Proposal> = read { reader ->
+        val workouts = OpenWorkouts(reader)
+        reader.readable(EngineWorkoutProposal).map { it.ui(reader, workouts) }
+    }
     suspend fun decideWorkoutProposal(id: String, applying: Boolean) {
-        if (anonymous || engine.status.state.value.authPaused) throw TrainingRefused("sign-in", "Sign in again to decide this proposal.")
+        requireDecidingSeat()
         val identity = Id(id, EngineWorkoutProposal)
         if (applying) apply(ApplyWorkoutProposal(identity)) else apply(DismissWorkoutProposal(identity))
     }
@@ -975,11 +986,11 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
         entries.map { entry -> EngineEntry(Id(entry.exerciseId, EngineExercise), entry.sets.takeIf { it.isNotEmpty() }?.map { EngineTarget(it.reps, it.weightKg) },
             entry.restSeconds ?: old?.entries?.firstOrNull { it.exerciseId.text == entry.exerciseId }?.restSeconds) }, old?.revision)
     private fun proposalCreatedAt(proposal: EngineProposal, reader: Reader): Long = reader.repository(EngineProposal).record(proposal.id, ViewMode.drawn)?.let { it.rc ?: it.born?.ms } ?: 0
-    private fun EngineProposal.ui(reader: Reader): Proposal = Proposal(id.text, routineId.text, ProposalIntent.parse(intent), ProposalState.parse(state), summary,
+    private fun EngineProposal.ui(reader: Reader, log: Lazy<TrainingLog> = lazy { TrainingLog(reader) }): Proposal = Proposal(id.text, routineId.text, ProposalIntent.parse(intent), ProposalState.parse(state), summary,
         changeCount ?: changes.count { it.kind != "kept" }, proposalCreatedAt(this, reader), settledAt?.ms, ProposalSource(door, connection, agent, threadId), baseRevision,
         // The log stamps the name it read; a proposal this phone's own turn just minted is still addressed by its routine.
         baseName ?: reader.repository(EngineRoutine).find(routineId, ViewMode.drawn)?.name.orEmpty(), proposedName,
-        changes.ui { TrainingLog(reader).sets.count { set -> set.exerciseId == it } })
+        changes.ui { log.value.sets.count { set -> set.exerciseId == it } })
     private fun List<RoutineChange>.ui(logged: (Id<EngineExercise>) -> Int?): List<ProposalChange> = mapIndexed { index, change ->
         ProposalChange(index + 1, ChangeKind.parse(change.kind), change.exerciseId.text,
             change.before?.let { ProposalTargets(it.sets.orEmpty().map { SetTarget(it.reps, it.weightKg) }) },
@@ -987,12 +998,15 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
             if (change.kind == "removed") logged(change.exerciseId) else null)
     }
     // Only a proposal still waiting is read against its workout: one settled or set aside says all it can of itself.
-    private fun EngineWorkoutProposal.ui(reader: Reader): Proposal {
-        val standing = if (state == "pending") WorkoutProposalState(reader, id) else WorkoutProposalState(this, null, reader.moment)
+    private fun EngineWorkoutProposal.ui(reader: Reader, workouts: OpenWorkouts): Proposal {
+        val standing = if (state == "pending") WorkoutProposalState(reader, id, workouts) else WorkoutProposalState(this, null, reader.moment)
         val workout = standing.workout
         val line = standing.outOfDate?.let { Proposal.outOfDateLine(it.reason, it.exerciseId?.let { movement -> workout?.catalogue?.find(movement)?.name }) }
+        // The log's own count once it has answered. Until then Apply has already moved this phone's plan, so a decided proposal counts against the plan the log last confirmed, and says the same before and after.
+        val counted = changeCount ?: (workout?.session ?: reader.confirmed(EngineSession, sessionId)?.takeIf { it.isVisible }?.let { decoded(EngineSession, it) })?.plan
+            ?.let { RoutineChange.count(it.entries, changes) } ?: changes.count { it.kind != "kept" }
         return Proposal(id.text, sessionId.text, state = ProposalState.parse(state), summary = summary,
-            changeCount = changeCount ?: workout?.session?.plan?.let { RoutineChange.count(it.entries, changes) } ?: changes.count { it.kind != "kept" },
+            changeCount = counted,
             createdAtMs = reader.repository(EngineWorkoutProposal).record(id, ViewMode.drawn)?.let { it.rc ?: it.born?.ms } ?: 0,
             settledAtMs = settledAt?.ms, source = ProposalSource(door, connection, agent, threadId), baseRevision = baseRevision, baseName = Proposal.workoutWord,
             changes = changes.ui { movement -> workout?.sets?.count { it.exerciseId == movement } }, target = ProposalTarget.Workout, outOfDate = line)

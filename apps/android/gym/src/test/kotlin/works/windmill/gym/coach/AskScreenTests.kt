@@ -1159,6 +1159,33 @@ class AskScreenTests {
         scope.cancel()
     }
 
+    // A change to this workout goes by the same rule: Coach can answer on another phone before its proposal reaches this one, so the clock alone calls nothing gone.
+    @Test
+    fun aWorkoutProposalThatNeverArrivesIsReadingUntilThePhoneHasReadPastItsMissAndIsReportedOnce() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val server = EngineRoomFixture.server()
+        val room = signedIn(scope)
+        room.pull(server)
+        room.store.observeEngine()
+        val telling = TellingRecorder()
+        fun answer(text: String) = CoachExchange("request1", "What next?", 0, answer = coachReply(text, id = "request1-answer", created = listOf(RecordRef(Gym.Types.workoutProposal, RecordID("wp000000000000001")))))
+        var thread by mutableStateOf(listOf(asking("What next?", "request1")))
+        roomTelling(room.store, telling) { thread }
+        compose.runOnIdle { thread = listOf(answer("The answer stays readable.")) }
+        compose.onNodeWithText("Reading proposal…").assertIsDisplayed()
+        compose.mainClock.advanceTimeBy(AnsweredProposals.settleMs + 1_000)
+        compose.onNodeWithText("Reading proposal…").assertIsDisplayed()
+        compose.onNodeWithText(ProposalRead.Gone.line).assertDoesNotExist()
+        compose.runOnIdle { assertEquals(emptyList<Map<String, String>>(), telling.named("gym_proposal_missing")) }
+
+        saved(room, server, RoutineDraft(name = "Pull").adding("bench-press", List(3) { SetTarget(5) }))
+        compose.waitUntil(5_000) { compose.runOnIdle { telling.named("gym_proposal_missing").isNotEmpty() } }
+        compose.onNodeWithText(ProposalRead.Gone.line).assertIsDisplayed()
+        compose.onNodeWithText("Reading proposal…").assertDoesNotExist()
+        compose.runOnIdle { assertEquals(listOf(emptyMap<String, String>()), telling.named("gym_proposal_missing")) }
+        scope.cancel()
+    }
+
     // The first miss lands while the phone is behind the account. The pull that brings it level is where the miss is measured from, not past it: nothing is reported or drawn until the phone reads further into the account.
     @Test
     fun aMissFirstSeenWhileBehindIsMeasuredFromWhereThePhoneCatchesUp() {

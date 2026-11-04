@@ -23,12 +23,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
@@ -36,7 +31,6 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.delay
 import works.windmill.gym.R
 import works.windmill.gym.presentation.Proposal
 import works.windmill.gym.store.ProposalRead
@@ -53,6 +47,7 @@ internal fun AnswerProposals(
     nowMs: Long,
     lookedAt: Set<String>,
     overWorkout: Boolean,
+    gone: (String) -> Boolean = { false },
     onReview: (Proposal) -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
@@ -63,7 +58,10 @@ internal fun AnswerProposals(
         verticalArrangement = Arrangement.spacedBy(if (overWorkout) 12.dp else 20.dp),
         modifier = Modifier.fillMaxWidth().padding(horizontal = if (overWorkout) 0.dp else 4.dp),
     ) {
-        answer.workoutProposals.filter { it !in state.workoutProposals }.forEach { key(it) { ArrivingProposal() } }
+        // A change to this workout the phone does not hold yet: Coach can answer on another phone before its proposal reaches this one, and a miss settles by `AnsweredProposals`' rule.
+        answer.workoutProposals.filter { it !in state.workoutProposals }.forEach {
+            Text(if (gone(it)) ProposalRead.Gone.line else "Reading proposal…", style = WindmillType.supporting, color = colors.onSurfaceVariant)
+        }
         (workouts + minted).forEach { proposal ->
             key(proposal.id) {
                 ProposalCard(proposal, proposal.routineName, nowMs, stillWaiting = proposal.id in lookedAt, nextTime = state.workoutOpen) { onReview(proposal) }
@@ -72,17 +70,6 @@ internal fun AnswerProposals(
         }
         if ((workouts + minted).any { it.isPending && it.outOfDate == null }) Text(Ask.promise, style = GymType.coachSourceLine, color = colors.onSurfaceVariant)
     }
-}
-
-// A change to this workout the phone does not hold yet: Coach can answer on another phone before its proposal reaches this one. It is read again every time the replica changes, and past the wait a miss says so.
-@Composable
-private fun ArrivingProposal() {
-    var gone by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
-        delay(AnsweredProposals.settleMs)
-        gone = true
-    }
-    Text(if (gone) ProposalRead.Gone.line else "Reading proposal…", style = WindmillType.supporting, color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 
 // The card: what it is about, the summary, the counted changes, why it can no longer be applied, and one affordance. Nothing on it decides anything.

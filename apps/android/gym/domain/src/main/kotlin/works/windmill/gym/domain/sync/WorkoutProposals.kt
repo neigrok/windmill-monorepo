@@ -84,8 +84,8 @@ data class WorkoutProposalState(val proposal: WorkoutProposal?, val workout: Ope
         val json: Json get() = Json.Obj(listOfNotNull("reason" to Json.of(reason), exerciseId?.let { "exerciseId" to it.json }))
     }
 
-    constructor(read: Reader, id: Id<WorkoutProposal>) : this(read, read.repository(WorkoutProposal).find(id, ViewMode.stored))
-    private constructor(read: Reader, proposal: WorkoutProposal?) : this(proposal, proposal?.let { OpenWorkout(read, it.sessionId) }, read.moment)
+    constructor(read: Reader, id: Id<WorkoutProposal>, workouts: OpenWorkouts = OpenWorkouts(read)) : this(read, read.repository(WorkoutProposal).find(id, ViewMode.stored), workouts)
+    private constructor(read: Reader, proposal: WorkoutProposal?, workouts: OpenWorkouts) : this(proposal, proposal?.let { workouts.of(it.sessionId) }, read.moment)
 
     val outOfDate: OutOfDate? get() {
         val value = proposal ?: return null

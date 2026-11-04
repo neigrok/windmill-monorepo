@@ -216,8 +216,8 @@ fun AskScreen(
     val minted = proposals.minted
     val waitedHere = remember { mutableSetOf<String>() }
     thread.forEach { if (it.waiting) waitedHere += it.id }
-    proposals.fresh = thread.filter { it.id in waitedHere }.flatMap { it.answer?.proposals.orEmpty() }.toSet()
-    val wanted = thread.flatMap { it.answer?.proposals.orEmpty() }.distinct()
+    proposals.fresh = thread.filter { it.id in waitedHere }.flatMap { it.answer?.proposals.orEmpty() + it.answer?.workoutProposals.orEmpty() }.toSet()
+    val wanted = thread.flatMap { it.answer?.proposals.orEmpty() + it.answer?.workoutProposals.orEmpty().filter { id -> id !in state.workoutProposals } }.distinct()
     LaunchedEffect(wanted, state.replicaReadRevision, state.pulled.caughtUp) { proposals.read(wanted) }
     proposals.missing.keys.forEach { id -> key(id) { LaunchedEffect(Unit) { proposals.settle(id) } } }
 
@@ -256,7 +256,7 @@ fun AskScreen(
                             if (exchange.question.isNotEmpty() || exchange.pictures.isNotEmpty()) LifterGroup(coach, exchange)
                             if (exchange.sending) CoachTyping()
                             exchange.answer?.let { answer ->
-                                Answer(answer, exchange.retained, minted + state.settledProposals, state, nowMs, lookedAt, onReview, openRoutine, conversationId, !asking,
+                                Answer(answer, exchange.retained, minted + state.settledProposals, proposals::gone, state, nowMs, lookedAt, onReview, openRoutine, conversationId, !asking,
                                     onSignIn = signInForCall.takeIf { coach.anonymous && index == thread.lastIndex }, onKeep = keepRoutines.takeIf { coach.anonymous }, overWorkout = overWorkout) { sourcesTop = it }
                                 answer.proposals.filter { it !in minted && it !in state.settledProposals }.forEach { id ->
                                     if (proposals.gone(id)) Trouble(ProposalRead.Gone.line)
@@ -396,6 +396,7 @@ private fun Answer(
     record: CoachReply,
     retained: RetainedAnswer?,
     minted: Map<String, Proposal>,
+    gone: (String) -> Boolean,
     state: AskState,
     nowMs: Long,
     lookedAt: Set<String>,
@@ -416,7 +417,7 @@ private fun Answer(
             onSaveDrafts = if (canSave && retained != null) { { state.coach.saveRetainedDrafts(chat, retained.requestId) } } else null,
             onSignIn = onSignIn, onKeep = onKeep, saysWhatItRead = retained == null || answer.routines.isNotEmpty(), onSourcesTop = onSourcesTop)
         // Drawn from the LOG's own copy and never from what the model said about it.
-        AnswerProposals(answer, minted, state, nowMs, lookedAt, overWorkout, onReview)
+        AnswerProposals(answer, minted, state, nowMs, lookedAt, overWorkout, gone, onReview)
     }
 }
 
@@ -436,7 +437,7 @@ private fun Trouble(said: String) {
     Text(said, style = GymType.quietParagraph, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 4.dp))
 }
 
-// The proposals a room's answers name. Coach can answer before its proposal reaches this phone, so an id not found is
+// The proposals a room's answers name, a routine's and a workout's alike. Coach can answer before its proposal reaches this phone, so an id not found is
 // read again each time the replica changes or a pull lands caught up. A proposal the phone holds a dead row of is gone at
 // once. One it holds no row of is gone once its miss settles: 10 s after its first miss, and once the phone, caught up at
 // or after that miss, has read further into the account, or a pull sent after the wait ended has landed caught up. The
@@ -467,6 +468,7 @@ internal class AnsweredProposals(private val state: AskState, private val events
     suspend fun read(wanted: List<String>) {
         val caughtUpTo = state.caughtUpTo
         val caughtUpPull = state.pulled.caughtUp
+        missing.keys.removeAll(state.workoutProposals.keys)
         for (id in wanted) {
             if (minted.containsKey(id)) continue
             when (val read = events.proposal(id)) {
