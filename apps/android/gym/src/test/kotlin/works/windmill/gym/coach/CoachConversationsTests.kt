@@ -30,6 +30,7 @@ import org.robolectric.annotation.Config
 import works.windmill.domain.kit.ActionContext
 import works.windmill.domain.kit.ActionRunner
 import works.windmill.domain.kit.FixedZone
+import works.windmill.domain.kit.Id
 import works.windmill.domain.kit.Outcome
 import works.windmill.domain.kit.Repository
 import works.windmill.domain.kit.Seat
@@ -229,6 +230,90 @@ class CoachConversationsTests {
         }
     }
 
+    private fun EngineRoomFixture.turn(thread: Id<CoachThread>?, vararg calls: Pair<String, String>): OpenTurn.Turn {
+        val runner = ActionRunner(engine, engine.registry, FixedZone(0), object : ActionContext { override var insideRun = false })
+        val turn = (runner.run(OpenTurn(thread, "Question")) as Outcome.Committed).result
+        val executor = AbilityExecutor(runner, TurnPhone.catalog(), "https://windmill.works")
+        calls.forEachIndexed { index, (name, input) ->
+            val outcome = executor.run(AbilityRequest("call-$index-$name", name, Json.parse(input)), turn.coach, Seat.bound)
+            assertTrue("$name ran: $outcome", (outcome as Outcome.Committed).result is AbilityOutcome.Result)
+        }
+        check(runner.run(EndTurn(turn.coach, MessageState.completed, "An answer")) is Outcome.Committed)
+        return turn
+    }
+
+    private suspend fun TestScope.rows(room: EngineRoomFixture, turn: OpenTurn.Turn): List<Pair<String?, String?>> {
+        val conversations = room.store.conversations
+        conversations.watch("chat", checkNotNull(turn.thread.record.string), emptyList())
+        conversations.read()
+        val reply = checkNotNull(conversations.exchanges("chat").first().answer)
+        reply.readRows.forEach { it.detail }
+        advanceUntilIdle()
+        return reply.readRows.map { it.title to it.detail }
+    }
+
+    // A turn over the program and the notes read something: the line says what, and the sheet it opens does not contradict it.
+    @Test fun aTurnThatReadTheProgramAndTheNotesSaysWhatItRead() = runTest {
+        EngineRoomFixture(folder.newFolder(), work(), coachServer = ScriptedTurns(emptyList())).use { room ->
+            room.select("u1")
+            val seeded = room.turn(null, "save_note" to """{"id":"note00000001","title":"Shoulder","body":"Left shoulder hurts."}""",
+                "create_routine" to """{"id":"rt_00000001","name":"Push A","position":0,"entries":[{"exerciseId":"bench-press"}]}""")
+            room.now += 60_000
+            val asked = room.turn(seeded.thread, "list_sessions" to "{}", "list_notes" to "{}", "list_exercises" to "{}", "list_routines" to "{}")
+            val conversations = room.store.conversations
+            conversations.watch("chat", checkNotNull(asked.thread.record.string), emptyList())
+            conversations.read()
+            val reply = checkNotNull(conversations.exchanges("chat").last().answer)
+            assertEquals("read your recent workouts · read your notes · read your movement list · read your program", reply.readLine)
+            assertEquals(listOf("Read your recent workouts", "Read your notes", "Read your movement list", "Read your program"), reply.readRows.map { it.title })
+        }
+    }
+
+    // What an old turn read does not grow when the log does; what its own earlier calls made it did read, and one made since does not stand under it.
+    @Test fun aTurnsListRowSaysWhatItReadThenNotWhatStandsNow() = runTest {
+        EngineRoomFixture(folder.newFolder(), work(), coachServer = ScriptedTurns(emptyList())).use { room ->
+            room.select("u1")
+            val old = room.turn(null, "save_note" to """{"id":"note00000001","title":"Shoulder","body":"Left shoulder hurts."}""", "list_notes" to "{}", "list_routines" to "{}")
+            val then = listOf("Saved a note" to "Shoulder", "Read your notes" to "1 note", "Read your program" to null)
+            assertEquals(then, rows(room, old))
+            room.turn(null, "save_note" to """{"id":"note00000002","title":"Knee","body":"Left knee is fine."}""",
+                "create_routine" to """{"id":"rt_00000001","name":"Made Later","position":0,"entries":[{"exerciseId":"bench-press"}]}""")
+            room.store.conversations.forgetSeat()
+            assertEquals(then, rows(room, old))
+        }
+    }
+
+    // §9.2 records a later call less what earlier calls hold, weeks included: a row's weeks are its own workouts'.
+    @Test fun aSecondReadInTheSameWeekSaysItsOwnWeek() = runTest {
+        EngineRoomFixture(folder.newFolder(), work(), coachServer = ScriptedTurns(emptyList())).use { room ->
+            room.select("u1")
+            val first = room.workout()
+            val second = room.workout()
+            val asked = room.turn(null, "get_session" to """{"sessionId":"${first.id}"}""", "get_session" to """{"sessionId":"${second.id}"}""")
+            fun day(at: Long) = DateTimeFormatter.ofPattern("MMM d").format(Instant.ofEpochMilli(at).atZone(ZoneId.systemDefault()))
+            assertEquals(listOf("Read 1 workout" to "1 week · ${day(first.startedAtMs)}", "Read 1 workout" to "1 week · ${day(second.startedAtMs)}"), rows(room, asked))
+        }
+    }
+
+    // A revision reads the transcript: What Coach read waits for its sheet, reads once however many rows ask, and keeps what it read across every read after.
+    @Test fun whatCoachReadWaitsForItsSheetAndStandsAcrossRevisions() = runTest {
+        EngineRoomFixture(folder.newFolder(), work(), coachServer = ScriptedTurns(emptyList())).use { room ->
+            room.select("u1")
+            val turn = room.turn(null, "save_note" to """{"id":"note00000001","title":"Shoulder","body":"Left shoulder hurts."}""")
+            val conversations = room.store.conversations
+            conversations.watch("chat", checkNotNull(turn.thread.record.string), emptyList())
+            conversations.read()
+            val reply = checkNotNull(conversations.exchanges("chat").single().answer)
+            val row = reply.readRows.single()
+            assertEquals(null, row.detail)
+            advanceUntilIdle()
+            assertEquals("Shoulder", row.detail)
+            conversations.read()
+            assertEquals("the next read's row says it at once", "Shoulder", checkNotNull(conversations.exchanges("chat").single().answer).readRows.single().detail)
+            assertEquals("an unchanged answer reads equal, so nothing draws again", reply, conversations.exchanges("chat").single().answer)
+        }
+    }
+
     @Test fun whatACallServedOrWroteIsReadFromTheRecordsNow() = runTest {
         EngineRoomFixture(folder.newFolder(), work(), coachServer = ScriptedTurns(emptyList())).use { room ->
             room.select("u1")
@@ -257,6 +342,8 @@ class CoachConversationsTests {
 
             val reply = checkNotNull(conversations.exchanges("chat").single().answer)
             val day = DateTimeFormatter.ofPattern("MMM d").format(Instant.ofEpochMilli(session.startedAtMs).atZone(ZoneId.systemDefault()))
+            assertEquals("no revision pays for what the sheet says", null, reply.readRows.first().detail)
+            advanceUntilIdle()
             assertEquals(listOf(
                 "Read 1 workout" to "1 week · $day",
                 "Saved a note" to "Shoulder",

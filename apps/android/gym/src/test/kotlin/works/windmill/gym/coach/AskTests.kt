@@ -43,12 +43,18 @@ class AskTests {
     }
 
     @Test
-    fun theReceiptSaysTheWorkoutsItReadElseWhatItReadInWordsElseNothing() {
+    fun theReceiptSaysTheWorkoutsItReadThenItsMovementHistoryThenItsOtherReadsAndNothingOnlyWhenNoReadRan() {
         assertEquals("Read 18 workouts · 6 weeks", coachReply(read = ReadTally(sets = 214, sessions = 18, weeks = 6)).readLine)
         assertEquals("Read 1 workout · 1 week", coachReply(read = ReadTally(sets = 1, sessions = 1, weeks = 1)).readLine)
         assertEquals("Read nothing from your log", coachReply().readLine)
         assertEquals("Read your movement history", coachReply(read = ReadTally(sets = 9, weeks = 2), calls = listOf(said("get_stats"))).readLine)
-        assertEquals(null, coachReply(read = ReadTally(sets = 9, weeks = 2), calls = listOf(said("last_time"))).readLine)
+        assertEquals("Read 1 workout · 1 week", coachReply(read = ReadTally(sets = 1, sessions = 1, weeks = 1), calls = listOf(said("get_stats"), said("list_notes"))).readLine)
+        assertEquals("Read your movement history", coachReply(read = ReadTally(sets = 9, weeks = 2), calls = listOf(said("list_notes"), said("get_stats"))).readLine)
+        assertEquals("read your notes · read your program", coachReply(calls = listOf(said("list_notes"), said("list_routines"))).readLine)
+        assertEquals("a write is no read", "Read nothing from your log", coachReply(calls = listOf(said("create_routine"))).readLine)
+        assertEquals("a read that was refused did not run", "Read nothing from your log",
+            coachReply(calls = listOf(said("list_notes", AbilityCall.Outcome.Refused(AbilityRefusal.refused)))).readLine)
+        assertEquals("a read no phrase can say leaves no line", null, coachReply(calls = listOf(coachCall("list_notes", phrase = null))).readLine)
     }
 
     @Test

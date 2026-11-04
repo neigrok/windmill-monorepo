@@ -3,6 +3,8 @@ package works.windmill.gym.coach
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import java.util.concurrent.ConcurrentHashMap
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
@@ -12,6 +14,7 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.coroutineScope
+import works.windmill.domain.kit.AbilityClass
 import works.windmill.domain.kit.DecodeError
 import works.windmill.domain.kit.Entity
 import works.windmill.domain.kit.EntityType
@@ -30,6 +33,7 @@ import works.windmill.gym.domain.coach.CoachPictureRow
 import works.windmill.gym.domain.coach.CoachThread
 import works.windmill.gym.domain.coach.MessageState
 import works.windmill.gym.domain.coach.Picture
+import works.windmill.gym.domain.coach.ReadServed
 import works.windmill.gym.domain.coach.ReadTally
 import works.windmill.gym.domain.coach.RecordedRead
 import works.windmill.gym.domain.coach.inOrder
@@ -50,13 +54,36 @@ import works.windmill.sync.api.ViewMode
 import works.windmill.sync.core.Json
 import works.windmill.sync.core.JsonError
 import works.windmill.sync.core.RecordID
+import works.windmill.sync.core.Stamp
 import works.windmill.sync.schema.Gym
 
 // A picture on a message. `onThisPhone` says this phone holds its file: a picture stays on the phone that sent it (Coach §9.3).
 data class SentPicture(val photo: CoachAttachment, val onThisPhone: Boolean)
 
-// One ability call as the room says it: `phrase` is the catalog's, absent for a name this build's catalog does not hold. `detail` is what the call served or wrote, read from the records when the conversation was read.
-data class CoachCall(val name: String, val phrase: String?, val outcome: AbilityCall.Outcome, val read: RecordedRead, val created: List<RecordRef>, val detail: String? = null) {
+// What the rows of one answer's What Coach read say beyond their titles. Each reads the records its call names, so no revision pays for them: the first row the sheet draws starts one read off the main thread, and the rows fill in when it lands. An answer holds one of these across every read of it, so a sheet left open keeps what it read.
+class CoachCallDetails private constructor(private val scope: CoroutineScope?, private val read: (suspend () -> Map<String, String>?)?, said: Map<String, String>) {
+    internal constructor(scope: CoroutineScope, read: suspend () -> Map<String, String>?) : this(scope, read, emptyMap())
+    internal constructor(said: Map<String, String>) : this(null, null, said)
+
+    private var asked = false
+    private var said by mutableStateOf(said)
+
+    fun of(callId: String): String? {
+        if (read != null && !asked) {
+            asked = true
+            scope?.launch {
+                val answered = read.invoke()
+                if (answered != null) said = answered else asked = false
+            }
+        }
+        return said[callId]
+    }
+}
+
+// One ability call as the room says it: `phrase` is the catalog's, absent for a name this build's catalog does not hold, and `reads` says the catalog holds it as a read. `detail` is what the call served or wrote, read from the records when What Coach read first draws it.
+data class CoachCall(val name: String, val phrase: String?, val outcome: AbilityCall.Outcome, val read: RecordedRead, val created: List<RecordRef>,
+    val reads: Boolean = false, private val callId: String = name, private val details: CoachCallDetails? = null) {
+    val detail: String? get() = details?.of(callId)
     val ran: Boolean get() = outcome == AbilityCall.Outcome.Ok
     val seatRefused: Boolean get() = (outcome as? AbilityCall.Outcome.Refused)?.code == AbilityRefusal.seatRequired
     // Its row in What Coach read: a read that served workouts says how many, every other call its phrase.
@@ -108,12 +135,15 @@ data class CoachReply(
     val stepLine: String? get() = steps.takeIf { it.isNotEmpty() }?.joinToString(" · ")
     // The rows of What Coach read.
     val readRows: List<CoachCall> get() = calls.filter { it.ran && it.title != null }
-    // The receipt under an ended answer: the workouts it read by identity, else what it read in words with no number, and none when it read what no line can say.
-    val readLine: String? get() = when {
-        receipt.read.sessions > 0 -> "Read ${Readout.sessionCount(receipt.read.sessions)} · ${Readout.weekCount(receipt.read.weeks)}"
-        receipt.read == ReadTally() -> Ask.readNothing
-        calls.any { it.ran && it.name == "get_stats" } -> Ask.readMovementHistory
-        else -> null
+    // The receipt under an ended answer, by the first that holds: the workouts it read by identity, its movement history, the catalog's phrases of the other reads it ran, or that it read nothing, when no read ran at all.
+    val readLine: String? get() {
+        val reads = calls.filter { it.ran && it.reads }
+        return when {
+            receipt.read.sessions > 0 -> "Read ${Readout.sessionCount(receipt.read.sessions)} · ${Readout.weekCount(receipt.read.weeks)}"
+            reads.any { it.name == "get_stats" } -> Ask.readMovementHistory
+            reads.isEmpty() -> Ask.readNothing
+            else -> reads.mapNotNull { it.phrase }.joinToString(" · ").ifEmpty { null }
+        }
     }
     // The routine proposals this answer minted, in the order it minted them.
     val proposals: List<String> get() = receipt.created.filter { it.type == Gym.Types.proposal }.mapNotNull { it.id.string }
@@ -155,6 +185,7 @@ class CoachConversations(
     private val training: EngineTraining,
     private val telemetry: Telemetry,
     private val turns: CoachTurns?,
+    private val scope: CoroutineScope,
 ) {
     private data class Watched(val chat: String? = null, val thread: String? = null, val retained: List<CoachOnboardingRecord> = emptyList(), val screens: Int = 0, val history: Boolean = false) {
         val shown: Boolean get() = screens > 0 || history
@@ -167,6 +198,7 @@ class CoachConversations(
     private var open by mutableStateOf<Transcript?>(null)
     private var undecodedReported = false
     private var live by mutableStateOf<LiveAnswer?>(null)
+    private val details = ConcurrentHashMap<Pair<String, Int>, CoachCallDetails>()
 
     // Whether this phone's turn has lost its stream and is finding it again.
     var reconnecting by mutableStateOf(false)
@@ -202,6 +234,7 @@ class CoachConversations(
     fun forgetSeat() {
         live = null
         reconnecting = false
+        details.clear()
         open = null
         threads = emptyList()
         rows = null
@@ -276,22 +309,27 @@ class CoachConversations(
         return exchanges
     }
 
+    // An answer holds its details for as long as its calls stand as they are.
+    private fun details(message: CoachMessage, id: String): CoachCallDetails = details.getOrPut(id to message.calls.size) {
+        CoachCallDetails(scope) { seat.tried("gym.readConversation") { seat.readTraining { training.reading { reader -> Named(reader).details(message) } } } }
+    }
+
     private fun reply(message: CoachMessage, id: String, replica: String, named: Named): CoachReply {
         val receipt = CoachReceipt(message.calls)
         val routines = receipt.created.mapNotNull { ref -> named.routine(ref)?.let { CreatedRoutine(checkNotNull(ref.id.string), it.name, it.entries.size) } }
         val notes = receipt.created.mapNotNull { ref -> named.note(ref)?.let { SavedNote(checkNotNull(ref.id.string), it.body.ifBlank { it.title }) } }
         val movements = receipt.created.mapNotNull { ref -> named.movement(ref)?.let { MadeMovement(checkNotNull(ref.id.string), it.name, Readout.equipment(it.equipment, it.loadCount), it.stepKg) } }
-        val calls = message.calls.map { call -> CoachCall(call.name, phrase(call.name), call.outcome, call.read, call.created, named.detail(call)) }
+        val rows = details(message, id)
+        val calls = message.calls.map { call -> CoachCall(call.name, phrase(call.name), call.outcome, call.read, call.created, reads(call.name), call.callId, rows) }
         return CoachReply(id, message.text, message.state, message.truncated, message.replica == replica, calls, receipt, routines, notes, movements)
     }
 
     private fun phrase(name: String): String? = turns?.catalog?.value?.ability(name)?.phrase
 
-    // What an answer's calls name, read from the records now, as What Coach read says it. The lists read once however many calls ask.
-    private inner class Named(private val reader: Reader) {
-        private val routines by lazy { Routine.ordered(decoded(Routine, reader.source.drawn(Routine.type))) }
-        private val notes by lazy { decoded(Note, reader.source.drawn(Note.type)) }
+    private fun reads(name: String): Boolean = turns?.catalog?.value?.ability(name)?.kind == AbilityClass.read
 
+    // What an answer's calls name, read from the records now, as What Coach read says it.
+    private inner class Named(private val reader: Reader) {
         fun routine(ref: RecordRef): Routine? = held(Routine, ref)
         fun note(ref: RecordRef): Note? = held(Note, ref)
         fun movement(ref: RecordRef): Exercise? = held(Exercise, ref)
@@ -301,21 +339,36 @@ class CoachConversations(
             return reader.source.drawn(type.type, ref.id)?.let { decoded(type, listOf(it)).singleOrNull() }
         }
 
-        // A read that served workouts says over which weeks and days; every other call what the records it read or wrote hold now.
-        fun detail(call: AbilityCall): String? {
+        // What each call of this message says, by its id.
+        fun details(message: CoachMessage): Map<String, String> {
+            val born = reader.source.drawn(CoachMessage.type, message.id.record)?.born
+            return message.calls.withIndex().mapNotNull { (at, call) ->
+                detail(call, born, message.calls.take(at).flatMap { it.created })?.let { call.callId to it }
+            }.toMap()
+        }
+
+        // A read that served workouts says over which weeks and days, and the weeks are that call's own: §9.2 records a later call less what earlier calls hold. Every other call says what the records it read or wrote hold now.
+        private fun detail(call: AbilityCall, born: Stamp?, madeBefore: List<RecordRef>): String? {
             val served = (call.read as? RecordedRead.Ids)?.served
             val counted = (call.read as? RecordedRead.Counts)?.tally
             if ((served?.sessions?.size ?: counted?.sessions ?: 0) > 0) {
-                val days = served?.sessions.orEmpty().mapNotNull { held(Session, RecordRef(Session.type, it.record))?.startedAt?.ms }.sorted().map(::dayLabel)
+                val sessions = served?.sessions.orEmpty().mapNotNull { held(Session, RecordRef(Session.type, it.record)) }
+                val days = sessions.map { it.startedAt.ms }.sorted().map(::dayLabel)
                 val span = if (days.firstOrNull() != days.lastOrNull()) listOf("${days.first()} – ${days.last()}") else days.take(1)
-                return (listOf(Readout.weekCount(served?.weeks?.size ?: counted?.weeks ?: 0)) + span).joinToString(" · ")
+                val weeks = if (sessions.isEmpty()) served?.weeks?.size ?: counted?.weeks ?: 0 else sessions.map { ReadServed.week(it.startedAt) }.toSet().size
+                return (listOfNotNull(weeks.takeIf { it > 0 }?.let(Readout::weekCount)) + span).joinToString(" · ").ifEmpty { null }
             }
             return when (call.name) {
-                "list_notes" -> notes.size.takeIf { it > 0 }?.let(Readout::noteCount)
-                "list_routines" -> routines.takeIf { it.isNotEmpty() }?.joinToString(" · ") { it.name }
+                "list_notes" -> listed(Note, born, madeBefore).size.takeIf { it > 0 }?.let(Readout::noteCount)
+                "list_routines" -> Routine.ordered(listed(Routine, born, madeBefore)).takeIf { it.isNotEmpty() }?.joinToString(" · ") { it.name }
                 else -> call.created.mapNotNull(::named).filter { it.isNotBlank() }.takeIf { it.isNotEmpty() }?.joinToString(" · ")
             }
         }
+
+        // What a list call read, as near as the records can say until `calls` records it: those born by its message's moment, and those its earlier calls made. A record deleted since drops out of the row, and a name reads as it stands now.
+        private fun <E : Entity<E>> listed(type: EntityType<E>, born: Stamp?, madeBefore: List<RecordRef>): List<E> = decoded(type, reader.source.drawn(type.type).filter { record ->
+            born == null || record.born.let { it == null || it <= born } || RecordRef(type.type, record.id) in madeBefore
+        })
 
         private fun named(ref: RecordRef): String? = when (ref.type) {
             Routine.type -> routine(ref)?.name

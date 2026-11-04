@@ -228,7 +228,8 @@ generated assets by a Gradle task and parsed at the first send.
 `message` records, on both seats. While a screen of Coach stands in a started app (its tab, a pushed chat, the sheet over
 the workout, History), `CoachConversations` reads them off the main thread through the seat's guarded read, again on each
 revision of the engine: the chat on screen, every thread's title, and History's rows only while History is up, from what
-each row says of a message alone. A turn running with no such screen keeps its words and asks for no read. `CoachExchange` and `CoachReply` are what a screen draws of them. `CoachChats` holds what the
+each row says of a message alone. What Coach read's details wait for its sheet: the first row it draws starts one read off the
+main thread. A turn running with no such screen keeps its words and asks for no read. `CoachExchange` and `CoachReply` are what a screen draws of them. `CoachChats` holds what the
 composer needs for the seat in hand and starts turns; `TrainingStore` composes it with the seat's account.
 `LocalCoach` atomically retains what is no engine record: the chats (the composer's identity before a turn opens a
 thread, then the thread it opened, and the reader's place), composer drafts, kept drafts and draft photos, under owner

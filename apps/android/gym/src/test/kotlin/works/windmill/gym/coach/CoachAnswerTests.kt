@@ -361,7 +361,7 @@ class CoachAnswerTests {
         compose.onNodeWithTag("coach-read-sources").assertDoesNotExist()
         compose.runOnIdle { reply.value = reply.value.copy(state = MessageState.completed) }
         compose.onNodeWithTag("coach-step-line").assertDoesNotExist()
-        compose.onNodeWithText("Read nothing from your log").assertIsDisplayed()
+        compose.onNodeWithText("read your recent workouts · read your notes").assertIsDisplayed()
     }
 
     @Test fun anAnswerOnItsWayWithNoWordsYetDrawsTheDotsOverItsSteps() {

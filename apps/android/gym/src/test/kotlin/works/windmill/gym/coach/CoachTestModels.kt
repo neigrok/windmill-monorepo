@@ -1,10 +1,12 @@
 package works.windmill.gym.coach
 
+import works.windmill.domain.kit.AbilityClass
 import works.windmill.domain.kit.ActionContext
 import works.windmill.domain.kit.ActionRunner
 import works.windmill.domain.kit.FixedZone
 import works.windmill.domain.kit.Outcome
 import works.windmill.domain.kit.Repository
+import works.windmill.gym.coach.turn.TurnPhone
 import works.windmill.gym.domain.coach.AbilityCall
 import works.windmill.gym.domain.coach.CoachThread
 import works.windmill.gym.domain.coach.EndTurn
@@ -25,7 +27,8 @@ internal fun coachReply(text: String = "", state: MessageState = MessageState.co
     CoachReply(id, text, state, truncated, onThisPhone, calls, CoachReceipt(read, truncated = false, created = created), routines, savedNotes, madeMovements)
 
 internal fun coachCall(name: String, phrase: String? = name, outcome: AbilityCall.Outcome = AbilityCall.Outcome.Ok,
-    read: RecordedRead = RecordedRead.Ids(ReadServed.none), created: List<RecordRef> = emptyList(), detail: String? = null) = CoachCall(name, phrase, outcome, read, created, detail)
+    read: RecordedRead = RecordedRead.Ids(ReadServed.none), created: List<RecordRef> = emptyList(), detail: String? = null) =
+    CoachCall(name, phrase, outcome, read, created, TurnPhone.catalog().ability(name)?.kind == AbilityClass.read, name, CoachCallDetails(listOfNotNull(detail?.let { name to it }).toMap()))
 
 // A conversation the engine holds, as a turn that ended whole left it: its thread's id.
 internal fun EngineRoomFixture.heldConversation(question: String, answer: String = "An answer"): String {

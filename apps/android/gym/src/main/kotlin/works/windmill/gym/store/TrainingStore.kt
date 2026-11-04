@@ -65,7 +65,7 @@ class TrainingStore(
     val workoutProposals = WorkoutProposalsStore(seat, training, telemetry, refresh = ::refreshEngine)
     val deletions = DeletionsStore(seat, held, controls, training, bodyweight, routines, notes, workout, scope, telemetry, now,
         undoWindowMs)
-    val conversations = CoachConversations(seat, training, telemetry, coachTurns)
+    val conversations = CoachConversations(seat, training, telemetry, coachTurns, scope)
     val coach = CoachChats(
         accountOwner = { seat.owner },
         onProgramChanged = { scope.launch { seat.tried("gym.refreshWorkout") { routines.readProgram() } } },
