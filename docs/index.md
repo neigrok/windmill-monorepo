@@ -62,7 +62,7 @@ approved 2026-10-31; the build is dogfood node `roadmap-board-web-build`.
 | Activity | [260:5150](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=260-5150) · [527:48637](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=527-48637) | [487:12770](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=487-12770) · [527:16010](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=527-16010) | More or roadmap sheet → Activity → step |
 | Waves 6–8 states | [481:23657](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=481-23657) | [487:12770](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=487-12770) | Sync states at 744, readers and Fork, Graph row and What's next, roadmap sheet, Ask AI, demo byline |
 | Wave 7 sync states | [517:30937](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=517-30937) | [519:15146](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=519-15146) | Couldn't sync on Graph, at its limit, several changes, offline |
-| 💡 Finishing states | [544:53326](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=544-53326) | [539:16665](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=539-16665) | Proposals awaiting the owner; not ready for dev |
+| 💡 Finishing states | [544:53326](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=544-53326) | [539:16665](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=539-16665) | Proposals awaiting the owner; ✅ 15.07 and 25.04, the held delete that fails, are ready for dev |
 
 ## Gym · iOS
 

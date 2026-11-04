@@ -10,7 +10,7 @@ Drawn on two pages of the Roadmap file:
 744px) and [✅ Board · Web](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-901)
 (744px and up). Start at the [phone Board](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-1433)
 and the [desktop Board](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=184-1543).
-Boards carry ✅ or 🔨; proposals awaiting the owner sit in the 💡 *Finishing states* sections. Desktop boards come in light and dark pairs; phone dark specimens sit in
+Boards carry ✅ or 🔨; proposals awaiting the owner sit in the 💡 *Finishing states* sections, beside the ✅ held-delete frames 25.04 and 15.07. Desktop boards come in light and dark pairs; phone dark specimens sit in
 their sections and in section 19.
 
 ## The idea
@@ -198,6 +198,7 @@ One string per event.
 | Reset preview before tapping | *Reset returns 2 steps to Locked* |
 | Create | *Reefing basics added · Locked* · **Undo**; when a filter clears: *Reefing basics added · filter cleared* · **Undo** |
 | Delete (held) | *Rig the boat deleted* · **Undo**; the confirm's cost line carries the resplice count |
+| Delete fails on release | *Couldn't delete Rig the boat* · **Retry** |
 | Bulk | *3 steps recolored* · **Undo** / *3 steps deleted* · **Undo** |
 | Subtask | *Try a small turn checked* · **Undo** |
 | Copy link | *Link copied* |
