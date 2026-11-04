@@ -52,6 +52,16 @@ function argumentsOf(argv) {
   };
 }
 
+// For what the page can't wait on itself: true once `check` holds, false when the wait runs out.
+async function holdsWithin(page, check) {
+  const deadline = Date.now() + WAIT_MS;
+  while (Date.now() < deadline) {
+    if (await check()) return true;
+    await page.waitForTimeout(250);
+  }
+  return false;
+}
+
 function parsedJson(text) {
   try {
     return JSON.parse(text);
@@ -125,9 +135,7 @@ class Visit {
 
   // The reply to the session's subscribe: what takes a room from syncing to live.
   async sessionAnswered() {
-    const deadline = Date.now() + WAIT_MS;
-    while (!this.session.answered && Date.now() < deadline) await this.page.waitForTimeout(200);
-    if (this.session.answered) return;
+    if (await holdsWithin(this.page, () => this.session.answered)) return;
     throw new Error(this.session.sockets > 0 ? "the session's socket never got its reply" : 'the session never opened a socket');
   }
 
@@ -205,12 +213,7 @@ async function paintedShare(page) {
 
 async function graphPainted(page) {
   await page.locator('canvas.st-canvas').waitFor();
-  const deadline = Date.now() + WAIT_MS;
-  while (Date.now() < deadline) {
-    if (await paintedShare(page) >= PAINTED_SHARE) return;
-    await page.waitForTimeout(500);
-  }
-  throw new Error('the Graph painted nothing');
+  if (!(await holdsWithin(page, async () => await paintedShare(page) >= PAINTED_SHARE))) throw new Error('the Graph painted nothing');
 }
 
 async function appMounted(page, selector) {
@@ -317,8 +320,8 @@ async function returningVisitWalk(page, { site, visit }) {
   await appMounted(page, ROOT_LANDING_APP);
   await page.waitForFunction(() => navigator.serviceWorker.controller !== null)
     .catch(() => { throw new Error('the service worker never took the page'); });
-  await page.waitForFunction(async () => (await caches.keys()).some((name) => name.startsWith('windmill-generation-')))
-    .catch(() => { throw new Error('the service worker never primed its offline shell'); });
+  const primed = () => page.evaluate(async () => (await caches.keys()).some((name) => name.startsWith('windmill-generation-')));
+  if (!(await holdsWithin(page, primed))) throw new Error('the service worker never primed its offline shell');
   const landing = await page.goto(`${site.base}/`);
   if (!landing.fromServiceWorker()) throw new Error('the returning visit did not come through the service worker');
   if (!landing.ok()) throw new Error(`the service worker answered a returning visit with ${landing.status()}`);
