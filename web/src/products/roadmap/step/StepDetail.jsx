@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import './detail.css';
 import { track } from '../../../telemetry/beacon.js';
+import { reportRoadmapFailure } from '../reportFailure.js';
 import { hueOf } from '../theme.js';
 import { SAFE_URL } from '../graph/tree/NodeWorkspace.jsx';
 import { StepWorkspace, StepHistory } from './StepWorkspace.jsx';
@@ -206,9 +207,13 @@ export function StepDetail({
   };
 
   const undo = () => {
-    onRestore(id, outcome.before);
+    try {
+      onRestore(id, outcome.before);
+      act('undo');
+    } catch (error) {
+      reportRoadmapFailure('roadmap-step-restore', error);
+    }
     setOutcome(null);
-    act('undo');
   };
 
   const copyLink = async () => {

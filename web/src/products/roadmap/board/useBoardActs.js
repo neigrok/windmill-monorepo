@@ -3,7 +3,7 @@ import { HeldDelete, StepSelection, completionOutcome, creationOutcome, countBuc
 import { sharedKind } from '../model/bulkSelection.js';
 import { SkillTree } from '../model/SkillTree.js';
 import { UnlockRules } from '../model/UnlockRules.js';
-import { LABELS } from '../copy.js';
+import { LABELS, SAVE_FAILURE, deleteFailedToast } from '../copy.js';
 import { BoardQuery } from './Board.js';
 
 export class BoardComposer {
@@ -128,10 +128,14 @@ export class BoardActs {
       surface: 'board', act: 'complete', reveal: outcome.reveal, holdMs: 6000,
       action: { label: LABELS.undo, run: () => {
         const current = this.collaborators;
-        current.onQuiet();
-        current.restoreStep(id, before);
-        current.onReveal(id);
-        current.track('roadmap_board_undo', { act: 'complete' });
+        try {
+          current.onQuiet();
+          current.restoreStep(id, before);
+          current.onReveal(id);
+          current.track('roadmap_board_undo', { act: 'complete' });
+        } catch (error) {
+          current.report('roadmap-step-restore', error);
+        }
       } },
     });
     c.track('roadmap_board_complete', { door });
@@ -199,27 +203,21 @@ export class BoardActs {
     if (!deletable(tree, selected)) return false;
     this.release('replaced');
     const held = new HeldDelete(selected, tree.nodesById.get(selected[0]).label);
+    if (!c.session?.ready && !c.session?.rebaselining) {
+      this.deleteFailed(held, { door, surface, outcome: 'not_ready' });
+      return false;
+    }
     this.held = held;
-    this.pending = { held, session: c.session, surface };
+    this.pending = { held, session: c.session, surface, door };
+    c.session.holdAct(() => {
+      this.cancelHold(held, graph);
+      this.collaborators.clearBoardToast?.();
+    });
     c.onHeld(held);
     c.showToast(held.message, {
-      surface, act: 'delete', reveal: null, holdMs: 9000,
+      surface, act: 'delete', reveal: null, holdMs: 9000, overRefusal: true,
       onLeave: (via) => { if (this.held === held) this.release(via); },
-      action: { label: LABELS.undo, run: () => {
-        if (this.held !== held) return;
-        this.held = null;
-        this.pending = null;
-        const current = this.collaborators;
-        current.onQuiet();
-        current.onHeld(null);
-        if (graph) {
-          current.onGraphReveal(selected[0]);
-          current.track('roadmap_graph_toast', { act: 'delete', step: 'undo' });
-          return;
-        }
-        current.onReveal(selected[0]);
-        current.track('roadmap_board_undo', { act: 'delete' });
-      } },
+      action: { label: LABELS.undo, run: () => this.cancelHold(held, graph) },
     });
     if (graph) c.track('roadmap_graph_toast', { act: 'delete', step: 'shown' });
     c.track('roadmap_board_delete', { step: 'held', door, view: surface });
@@ -227,26 +225,69 @@ export class BoardActs {
     return true;
   }
 
+  // Toast Undo and ⌘Z both end here: nothing was written, so nothing is sent and the stack is as it was.
+  cancelHold(held, graph) {
+    if (this.held !== held) return;
+    this.pending.session.endHeldAct();
+    this.held = null;
+    this.pending = null;
+    const current = this.collaborators;
+    current.onQuiet();
+    current.onHeld(null);
+    if (graph) {
+      current.onGraphReveal(held.ids[0]);
+      current.track('roadmap_graph_toast', { act: 'delete', step: 'undo' });
+      return;
+    }
+    current.onReveal(held.ids[0]);
+    current.track('roadmap_board_undo', { act: 'delete' });
+  }
+
   release(via = 'left') {
     const pending = this.pending;
     if (!pending) return;
-    if (pending.session?.rebaselining) {
+    if (pending.session.rebaselining) {
       pending.releaseVia = via;
       return;
     }
     this.pending = null;
     this.held = null;
+    pending.session.endHeldAct();
     const c = this.collaborators;
+    let outcome = null;
     try {
-      if (!pending.session) throw new Error('Missing Board session');
       const receipt = pending.session.dispatch({ kind: 'BulkDelete', nodeIds: pending.held.ids });
       if (receipt) c.track('roadmap_board_delete', { step: 'sent', via, view: pending.surface });
       if (!receipt) c.onQuiet();
+      if (!receipt && !pending.session.ready) outcome = 'not_ready';
     } catch (error) {
       c.onQuiet();
       c.report('roadmap-board-delete', error);
+      outcome = 'error';
     }
     c.onHeld(null);
+    if (outcome) this.deleteFailed(pending.held, { door: pending.door, surface: pending.surface, outcome, say: via === 'timer' });
+  }
+
+  // The step stands, and the person is told while their toast is the one to tell them: a replacing or left toast says nothing.
+  deleteFailed(held, { door, surface, outcome, say = true }) {
+    const c = this.collaborators;
+    if (outcome === 'not_ready') console.warn('[sync] a delete could not land: the session is not ready');
+    c.track('roadmap_board_delete', { step: 'failed', outcome, view: surface });
+    if (!say) return;
+    c.showToast(deleteFailedToast({ step: held.subject, count: held.ids.length }), {
+      surface, act: 'delete', reveal: null, overRefusal: true,
+      action: { label: SAVE_FAILURE.retry, run: () => {
+        this.collaborators.track('roadmap_board_delete', { step: 'retry', view: surface });
+        this.delete(held.ids, door);
+      } },
+    });
+  }
+
+  // The page is going: the session turns synchronous first, so the release lands before the document does.
+  leavePage() {
+    this.pending?.session.leavePage();
+    this.release('left');
   }
 
   revealToast(toast) {
@@ -291,7 +332,7 @@ export function useBoardActs(collaborators) {
   useEffect(() => () => acts.release('left'), [acts, collaborators.treeId]);
   useEffect(() => {
     const leave = () => {
-      acts.release('left');
+      acts.leavePage();
       acts.collaborators.clearBoardToast?.();
     };
     window.addEventListener('pagehide', leave);

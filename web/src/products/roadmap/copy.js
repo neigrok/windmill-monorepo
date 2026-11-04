@@ -239,6 +239,10 @@ export function deletedToast({ step }) {
   return `${step} deleted`;
 }
 
+export function deleteFailedToast({ step, count = 1 }) {
+  return `Couldn’t delete ${count > 1 ? stepCount(count) : step || STEP_DETAIL.unnamed}`;
+}
+
 export function recoloredToast({ count }) {
   return `${stepCount(count)} recolored`;
 }

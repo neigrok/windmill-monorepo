@@ -130,3 +130,13 @@ test('⌘K toggles Ask AI where it can, Escape closes it first, and a key alread
   handled.key({ key: 'z', metaKey: true, defaultPrevented: true });
   assert.deepEqual(handled.calls, []);
 });
+
+test('in a text field ⌘Z and ⇧⌘Z belong to the field', (t) => {
+  for (const [field, boardActive] of [[true, true], [false, true], [true, false]]) {
+    const typing = room(t, { typing: true, field, boardActive });
+    typing.key({ key: 'z', metaKey: true });
+    typing.key({ key: 'Z', metaKey: true, shiftKey: true });
+    typing.key({ key: 'z', ctrlKey: true });
+    assert.deepEqual(typing.calls, []);
+  }
+});

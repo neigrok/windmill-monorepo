@@ -178,6 +178,17 @@ function BoardView({
     selectedId, doneExpanded, onExpandDone, query, onQuery,
   };
 
+  const toastSlot = (
+    <BoardToast
+      toast={toast}
+      phone={phone}
+      ready={motion.phase === 'settled'}
+      blocked={phone && Boolean(refusal)}
+      onToastShown={onToastShown}
+      onToastReveal={onToastReveal}
+      onToastUndo={onToastUndo}
+    />
+  );
   const refusedNotice = refusal && (
     <div className="st-board-refusal" data-board-refusal="">
       <RefusedSync band={breakpoint} code={refusal.code} count={refusal.count}
@@ -186,6 +197,7 @@ function BoardView({
   );
   const phoneNotices = phone && (refusal || onFork) && (
     <div className="st-board-phone-notices">
+      {refusal && toastSlot}
       {refusedNotice}
       {onFork && (
         <Button variant="secondary" full onClick={() => {
@@ -258,15 +270,7 @@ function BoardView({
         </UpNextRest.Provider>
       )}
       {frame !== 'columns' && phoneNotices}
-      <BoardToast
-        toast={toast}
-        phone={phone}
-        ready={motion.phase === 'settled'}
-        blocked={phone && Boolean(refusal)}
-        onToastShown={onToastShown}
-        onToastReveal={onToastReveal}
-        onToastUndo={onToastUndo}
-      />
+      {!(phone && refusal) && toastSlot}
     </div>
   );
 }
