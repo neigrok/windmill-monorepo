@@ -129,11 +129,11 @@ class TurnDriver(
             if (stopAsked.compareAndSet(false, true)) tellServerToStop(this) {}
         }
 
-        // A lost connection and a 4xx say nothing is broken; a 5xx, a bad certificate or a wire fault do.
+        // A lost connection, a 4xx and a refusal the server meant say nothing is broken; any other 5xx, a bad certificate or a wire fault do.
         fun reportStop(failure: Exception) {
             when (failure) {
                 is TurnConnectionLost -> return
-                is TurnRefusal -> if (failure.status >= 500) report(TurnFailure.http, failure.status)
+                is TurnRefusal -> if (failure.serverFault) report(TurnFailure.http, failure.status)
                 is TurnWireFault -> report(TurnFailure.decode)
                 else -> report(TurnFailure.transport)
             }
@@ -217,7 +217,7 @@ class TurnDriver(
                         if (reconnects > 0) tellServerOnce()
                         return Withdrawn(refusal)
                     }
-                    if (refusal.status >= 500) report(TurnFailure.http, refusal.status)
+                    if (refusal.serverFault) report(TurnFailure.http, refusal.status)
                     if (!frameArrived) return Withdrawn(TurnRefusal.unreached)
                     throw TurnInterrupted(refusal.code)
                 } catch (failure: Exception) {
@@ -285,7 +285,7 @@ class TurnDriver(
                     return
                 } catch (refusal: TurnRefusal) {
                     if (refusal.code == TurnRefusal.turnOrder && stopAsked.get()) return
-                    if (refusal.status >= 500) report(TurnFailure.http, refusal.status)
+                    if (refusal.serverFault) report(TurnFailure.http, refusal.status)
                     throw TurnInterrupted(refusal.code)
                 } catch (fault: TurnWireFault) {
                     report(TurnFailure.decode)
@@ -346,7 +346,7 @@ class TurnDriver(
         // A turn that never began, refused before any frame or never reaching a server: the host takes its records back.
         private suspend fun withdraw(refusal: TurnRefusal): TurnExit {
             quietly { host.withdraw(refusal) }
-            if (refusal.status >= 500 && !refusal.capped) report(TurnFailure.http, refusal.status)
+            if (refusal.serverFault) report(TurnFailure.http, refusal.status)
             telemetry.withdrawn(refusal.status, TurnLabel.code(refusal.code), elapsedMs() - started)
             return TurnExit.withdrawn
         }

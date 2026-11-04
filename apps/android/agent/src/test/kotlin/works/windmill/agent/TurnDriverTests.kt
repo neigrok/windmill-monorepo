@@ -574,7 +574,9 @@ class TurnDriverTests {
             TurnRefusal(429, "free_month_exhausted", 1_793_000_000_000) to emptyList(),
             TurnRefusal(503, "free_month_exhausted", 1_793_000_000_000) to emptyList(),
             TurnRefusal(503, "coach-rate-limited", null) to emptyList(),
-            TurnRefusal(503, "coach-busy", null) to listOf("failure http 503"),
+            TurnRefusal(503, "coach-busy", null) to emptyList(),
+            TurnRefusal(503, TurnRefusal.vendorError, null) to listOf("failure http 503"),
+            TurnRefusal(500, "an unknown thing", null) to listOf("failure http 500"),
         )) {
             val server = server().apply { streams += flow<TurnEvent> { throw refusal } }
             val host = EchoHost()
@@ -624,7 +626,8 @@ class TurnDriverTests {
             TurnRefusal(426, "client-update-required", null) to emptyList(),
             TurnRefusal(429, "subject_exhausted", 1_793_000_000_000) to emptyList(),
             TurnRefusal(503, "free_month_exhausted", 1_793_000_000_000) to emptyList(),
-            TurnRefusal(503, "coach-busy", null) to listOf("failure http 503"),
+            TurnRefusal(503, "coach-busy", null) to emptyList(),
+            TurnRefusal(503, TurnRefusal.vendorError, null) to listOf("failure http 503"),
         )) {
             val server = server().apply { repeat(2) { streams += lost }; streams += flow<TurnEvent> { throw refusal } }
             val host = EchoHost()
@@ -653,6 +656,17 @@ class TurnDriverTests {
         run.await()
         assertEquals(listOf(TurnEnd(TurnState.interrupted, "A", false, "other", null)), host.ends)
         assertEquals(listOf("failure http 500", "ended interrupted bound other calls=0 refusals=0 bytes=1 ms=0"), telemetry.lines)
+    }
+
+    @Test fun aLaterBusyServerIsNotAFailure() = runTest {
+        val server = server().apply { streams += flow { emit(TurnEvent.Text("A")); throw TurnRefusal(503, "coach-busy", null) } }
+        val host = EchoHost()
+        val telemetry = RecordingTelemetry()
+        val run = async { driver(server, telemetry).run("tn_1", seat, host) }
+        advanceUntilIdle()
+        run.await()
+        assertEquals(listOf(TurnEnd(TurnState.interrupted, "A", false, "coach-busy", null)), host.ends)
+        assertEquals(listOf("ended interrupted bound coach-busy calls=0 refusals=0 bytes=1 ms=0"), telemetry.lines)
     }
 
     @Test fun anErrorFrameEndsFailedAndCarriesTheResetToTheHost() = runTest {
@@ -709,7 +723,7 @@ class TurnDriverTests {
     }
 
     @Test fun refusedResultsAreNotAskedAgain() = runTest {
-        for ((refusal, failures) in listOf(TurnRefusal(409, TurnRefusal.turnOrder, null) to emptyList(), TurnRefusal(502, TurnRefusal.vendorError, null) to listOf("failure http 502"))) {
+        for ((refusal, failures) in listOf(TurnRefusal(409, TurnRefusal.turnOrder, null) to emptyList(), TurnRefusal(503, "coach-busy", null) to emptyList(), TurnRefusal(502, TurnRefusal.vendorError, null) to listOf("failure http 502"))) {
             val server = server().apply { streams += flow { emit(calls(1, call("a"))); awaitCancellation() }; answers.addLast { throw refusal } }
             val host = EchoHost()
             val telemetry = RecordingTelemetry()
@@ -778,7 +792,8 @@ class TurnDriverTests {
         val cases = listOf<Pair<Exception, List<String>>>(
             TurnConnectionLost(null) to emptyList(),
             TurnRefusal(404, TurnRefusal.turnUnknown, null) to emptyList(),
-            TurnRefusal(503, "coach-busy", null) to listOf("failure http 503"),
+            TurnRefusal(503, "coach-busy", null) to emptyList(),
+            TurnRefusal(503, TurnRefusal.vendorError, null) to listOf("failure http 503"),
             IOException("Certificate pinning failure") to listOf("failure transport -"),
             TurnWireFault(TurnWireFault.notAStream) to listOf("failure decode -"),
         )
@@ -850,7 +865,7 @@ class TurnDriverTests {
 
     // A read refused while the Stop is on its way says nothing of the open: the question returns under no connection, whatever its code, and a 5xx stays reported.
     @Test fun aReadRefusedAfterAStopBeforeAnyFrameWithdraws() = runTest {
-        for ((refusal, reports) in listOf(TurnRefusal(404, TurnRefusal.turnUnknown, null) to emptyList(), TurnRefusal(502, TurnRefusal.vendorError, null) to listOf("failure http 502"))) {
+        for ((refusal, reports) in listOf(TurnRefusal(404, TurnRefusal.turnUnknown, null) to emptyList(), TurnRefusal(503, "coach-busy", null) to emptyList(), TurnRefusal(502, TurnRefusal.vendorError, null) to listOf("failure http 502"))) {
             val heard = CompletableDeferred<Unit>()
             val server = server().apply {
                 streams += lost
@@ -1040,7 +1055,8 @@ class TurnDriverTests {
         val cases = listOf<Triple<Exception, TurnExit, List<String>>>(
             Triple(TurnConnectionLost(null), TurnExit.stoppedOffline, emptyList()),
             Triple(TurnRefusal(404, TurnRefusal.turnUnknown, null), TurnExit.stopUnheard, emptyList()),
-            Triple(TurnRefusal(503, "coach-busy", null), TurnExit.stopUnheard, listOf("failure http 503")),
+            Triple(TurnRefusal(503, "coach-busy", null), TurnExit.stopUnheard, emptyList()),
+            Triple(TurnRefusal(503, TurnRefusal.vendorError, null), TurnExit.stopUnheard, listOf("failure http 503")),
             Triple(IOException("Certificate pinning failure"), TurnExit.stopUnheard, listOf("failure transport -")),
             Triple(TurnWireFault(TurnWireFault.badAddress), TurnExit.stopUnheard, listOf("failure decode -")),
         )

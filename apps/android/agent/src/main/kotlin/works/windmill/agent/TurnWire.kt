@@ -48,18 +48,22 @@ data class TurnRefusal(val status: Int, val code: String, val budgetResetsAtMs: 
     // A cap the server refills, which is expected however it is answered.
     val capped: Boolean get() = code == rateLimited || code in allowanceCodes && code !in installationCodes
 
+    // A failure of the server's own, which files a report: a 5xx it did not mean. A cap and `busy`, a process at capacity, are refusals it meant.
+    val serverFault: Boolean get() = status >= 500 && !capped && code != busy
+
     companion object {
         const val turnOrder = "coach-turn-order"
         const val turnUnknown = "coach-turn-unknown"
         const val streamReplaced = "coach-stream-replaced"
         const val rateLimited = "coach-rate-limited"
         const val vendorError = "coach-vendor-error"
+        const val busy = "coach-busy"
         const val unreachable = "unreachable"
         private val installationCodes = setOf("device_bound", "invalid_installation")
         val allowanceCodes = setOf("subject_exhausted", "free_month_exhausted", "free_day_exhausted", "concurrency_exhausted",
             "funding_required", "debt_outstanding") + installationCodes
         val codes = allowanceCodes + setOf("coach-bad-request", "coach-update-required", "coach-turn-conflict", turnUnknown, turnOrder,
-            "coach-turn-volume", rateLimited, "coach-replica-syncing", "coach-busy", vendorError, streamReplaced)
+            "coach-turn-volume", rateLimited, "coach-replica-syncing", busy, vendorError, streamReplaced)
 
         // No server said this: no attempt to open the turn reached one this phone could read, so it names no status, and the turn never began.
         val unreached: TurnRefusal get() = TurnRefusal(0, unreachable, null)

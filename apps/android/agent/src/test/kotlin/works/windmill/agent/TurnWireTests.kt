@@ -119,6 +119,14 @@ class TurnWireTests {
         assertEquals(listOf(false, false, false, false), listOf("device_bound", "invalid_installation", "coach-busy", "coach-vendor-error").map(::capped))
     }
 
+    @Test fun onlyA5xxTheServerDidNotMeanIsItsFault() {
+        fun fault(status: Int, code: String) = TurnRefusal(status, code, null).serverFault
+        assertEquals(listOf(true, true, true, true),
+            listOf(fault(503, TurnRefusal.vendorError), fault(500, TurnRefusal.vendorError), fault(500, "an unknown thing"), fault(502, "unavailable")))
+        assertEquals(listOf(false, false, false, false, false),
+            listOf(fault(503, TurnRefusal.busy), fault(503, "subject_exhausted"), fault(503, TurnRefusal.rateLimited), fault(429, TurnRefusal.vendorError), fault(404, TurnRefusal.turnUnknown)))
+    }
+
     @Test fun theBodiesAreTheWireShapeInCanonicalForm() {
         val open = TurnOpen("tn_1", "catalog/2", "Hi", listOf(TurnPicture("p1", "image/jpeg", byteArrayOf(1, 2, 3))), listOf(TurnLine("lifter", "Before")),
             listOf(ContextRead("list_things", Json.objectOf(), data("""{"things":[]}"""))), emptyList())
