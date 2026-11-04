@@ -20,7 +20,8 @@ sealed interface CoachTurnRefusal {
             }
         }
     }
-    data class Allowance(val allowance: String, val resetsAtMs: Long? = null) : CoachTurnRefusal
+    // `spent`: the server's read says the balance is gone. `subject_exhausted` alone does not: a positive balance refuses a round that does not fit (§7.1).
+    data class Allowance(val allowance: String, val resetsAtMs: Long? = null, val spent: Boolean = false) : CoachTurnRefusal
     data class FreeMonthExhausted(val resetsAtMs: Long?) : CoachTurnRefusal
     data object RateLimited : CoachTurnRefusal
     data object UpdateRequired : CoachTurnRefusal
@@ -33,11 +34,11 @@ sealed interface CoachTurnRefusal {
         Offline -> "No connection. Your question is kept here."
         LogArriving -> "Your log is still arriving on this phone. Ask again in a moment."
         is TooLong -> "Too long by ${count(overBytes)} ${if (overBytes == 1) "byte" else "bytes"}. The limit is ${count(Ask.maxQuestionBytes)} bytes.\nEnglish letters take 1 byte each. Other letters and emoji take more."
-        is Allowance -> when (allowance) {
-            "subject_exhausted" -> "You have used all of your AI allowance."
-            "free_day_exhausted" -> "Coach’s shared free AI capacity is unavailable for today. Signing in does not bypass this limit."
-            "concurrency_exhausted" -> "Another AI request is still in progress. Try again when it finishes."
-            "funding_required" -> "Your plan has no funded AI allowance for this period."
+        is Allowance -> when {
+            allowance == "subject_exhausted" && spent -> "You have used all of your AI allowance."
+            allowance == "free_day_exhausted" -> "Coach’s shared free AI capacity is unavailable for today. Signing in does not bypass this limit."
+            allowance == "concurrency_exhausted" -> "Another AI request is still in progress. Try again when it finishes."
+            allowance == "funding_required" -> "Your plan has no funded AI allowance for this period."
             else -> "Coach’s AI allowance is unavailable right now."
         }
         is FreeMonthExhausted -> "Coach is paused for everyone this month."
@@ -65,7 +66,7 @@ sealed interface CoachTurnRefusal {
     // A cap the server refills and a deployment without Coach stand on every chat; everything else on the chat that met it.
     val capped: Boolean get() = this is Allowance || this is FreeMonthExhausted || this == RateLimited || this == Absent
 
-    // The one door the notice offers: sign-in where the phone's own AI access is spent or belongs to an account, the lifter's own agent where Coach's shared capacity is paused, the update, or Send again. Signed in, a spent allowance offers nothing while paid plans are closed.
+    // The one door the notice offers: sign-in where the phone's own AI allowance refused the send or belongs to an account, the lifter's own agent where Coach's shared capacity is paused, the update, or Send again. Signed in, an allowance that refused the send offers nothing while paid plans are closed.
     fun recovery(anonymous: Boolean): CoachRecovery? = when (this) {
         Offline -> CoachRecovery.tryAgain
         LogArriving, is TooLong, Absent, is Said -> null
@@ -90,11 +91,11 @@ sealed interface CoachTurnRefusal {
     }
 
     companion object {
-        fun of(code: String, status: Int? = null, resetsAtMs: Long? = null): CoachTurnRefusal = when {
+        fun of(code: String, status: Int? = null, resetsAtMs: Long? = null, spent: Boolean = false): CoachTurnRefusal = when {
             code == TurnRefusal.unreachable -> Offline
             code == "free_month_exhausted" -> FreeMonthExhausted(resetsAtMs)
             code == "invalid_installation" || code == "installation_bound" || code == "device_bound" -> Installation(code)
-            code in TurnRefusal.allowanceCodes -> Allowance(code, resetsAtMs)
+            code in TurnRefusal.allowanceCodes -> Allowance(code, resetsAtMs, spent)
             code == TurnRefusal.rateLimited -> RateLimited
             code == "coach-update-required" || code == "client-update-required" -> UpdateRequired
             status == 401 -> SessionLapsed

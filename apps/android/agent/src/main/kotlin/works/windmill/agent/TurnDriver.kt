@@ -260,7 +260,7 @@ class TurnDriver(
             is TurnEvent.Done -> Ended(event.state, event.truncated)
             is TurnEvent.Error -> {
                 if (event.code == TurnRefusal.streamReplaced) throw TurnWireFault(TurnWireFault.replaced)
-                Ended(TurnState.failed, code = event.code, budgetResetsAtMs = event.budgetResetsAtMs)
+                Ended(TurnState.failed, code = event.code, budgetResetsAtMs = event.budgetResetsAtMs, spent = event.spent)
             }
         }
 
@@ -338,7 +338,7 @@ class TurnDriver(
         // §4.4: the terminal state and all the text in one write, then what the telemetry says of it.
         private suspend fun end(close: Ended): TurnExit {
             val text = streamed
-            quietly { host.end(TurnEnd(close.state, text, close.truncated, close.code, close.budgetResetsAtMs)) }
+            quietly { host.end(TurnEnd(close.state, text, close.truncated, close.code, close.budgetResetsAtMs, close.spent)) }
             telemetry.ended(close.state, seat.kind, close.code?.let(TurnLabel::code), TurnTally(calls, refusals, text.encodeToByteArray().size), elapsedMs() - started)
             return TurnExit.ended
         }
@@ -368,7 +368,7 @@ class TurnDriver(
 }
 
 private sealed interface Close
-private data class Ended(val state: TurnState, val truncated: Boolean = false, val code: String? = null, val budgetResetsAtMs: Long? = null) : Close
+private data class Ended(val state: TurnState, val truncated: Boolean = false, val code: String? = null, val budgetResetsAtMs: Long? = null, val spent: Boolean = false) : Close
 private data class Withdrawn(val refusal: TurnRefusal) : Close
 private data object StoppedHere : Close
 

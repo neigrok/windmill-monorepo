@@ -540,7 +540,11 @@ debt remain effective after a period ends.
 `done.allowance` carries exact decimal USD limit, used, reserved and remaining; its period;
 individual `resetsAtMs`; and the constrained scope's `budgetResetsAtMs`. Lifetime reset is null.
 A free daily pause must identify the daily boundary rather than the individual monthly reset.
-A positive balance does not promise that a particular request can fit its reservation.
+A positive balance does not promise that a particular request can fit its reservation, so
+`subject_exhausted` alone does not say a balance is gone: only a read with nothing remaining and
+nothing reserved does. Android says "You have used all of your AI allowance." only then, and otherwise
+"Coach’s AI allowance is unavailable right now.", with the same recovery. iOS still says the first
+sentence for every `subject_exhausted` a turn meets.
 
 ### §7.2 Metering and implementation boundary
 

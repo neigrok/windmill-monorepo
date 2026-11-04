@@ -143,7 +143,7 @@ class CoachAnonymousChatTests {
     @Test fun everyCapKeepsTheQuestionInItsChatAcrossAReopenAndStandsOverEveryChatUntilThen() = runTest {
         data class Cap(val code: String, val refusal: CoachTurnRefusal, val sentence: String, val named: String)
         for ((code, refusal, sentence, named) in listOf(
-            Cap("subject_exhausted", CoachTurnRefusal.Allowance("subject_exhausted"), "You have used all of your AI allowance.", "allowance"),
+            Cap("subject_exhausted", CoachTurnRefusal.Allowance("subject_exhausted", spent = true), "You have used all of your AI allowance.", "allowance"),
             Cap("free_day_exhausted", CoachTurnRefusal.Allowance("free_day_exhausted"), "Coach’s shared free AI capacity is unavailable for today. Signing in does not bypass this limit.", "allowance"),
             Cap("free_month_exhausted", CoachTurnRefusal.FreeMonthExhausted(null), "Coach is paused for everyone this month.", "allowance"),
             Cap("concurrency_exhausted", CoachTurnRefusal.Allowance("concurrency_exhausted"), "Another AI request is still in progress. Try again when it finishes.", "allowance"),
@@ -151,7 +151,7 @@ class CoachAnonymousChatTests {
             Cap(TurnRefusal.rateLimited, CoachTurnRefusal.RateLimited, "You can ask again later.", "daily"),
         )) {
             val telling = TellingRecorder()
-            val server = script("[]").apply { refuseOpen = TurnRefusal(429, code, null) }
+            val server = script("[]").apply { refuseOpen = TurnRefusal(429, code, null, spent = code == "subject_exhausted") }
             val file = File(temporary.newFolder(), LocalCoach.fileName)
             val directory = temporary.newFolder()
             val (chat, other, snapshot) = room(server, LocalCoach(file), directory, telling = telling).use { room ->

@@ -701,6 +701,45 @@ class CoachTurnsTests {
         }
     }
 
+    // A round the server refuses says the balance is gone only when its read does: the same code on a positive balance says the allowance is unavailable, with the same sign-in, and neither takes the question back.
+    @Test fun aRefusedRoundSaysAnAllowanceIsUsedOnlyWhenItsReadSaysSo() = runTest {
+        for ((read, refused, words) in listOf(
+            Triple(""","allowance":{"remaining":"0.007075000","reserved":"0.000000000"}""", CoachTurnRefusal.Allowance("subject_exhausted"), "Coach’s AI allowance is unavailable right now.\nSign in to continue."),
+            Triple(""","allowance":{"remaining":"0.000000000","reserved":"0.000000000"}""", CoachTurnRefusal.Allowance("subject_exhausted", spent = true), "You have used all of your AI allowance.\nSign in to continue."),
+            Triple("", CoachTurnRefusal.Allowance("subject_exhausted"), "Coach’s AI allowance is unavailable right now.\nSign in to continue."),
+        )) {
+            val server = script("""[{"event":"error","data":{"code":"subject_exhausted"$read}}]""")
+            TurnPhone(this, folder.newFolder(), server).use { phone ->
+                val turn = checkNotNull(phone.turns.send("Private question", null, null, anonymous = true))
+                advanceUntilIdle()
+                assertEquals(refused, phone.turns.refusal.value)
+                assertEquals(words, phone.turns.refusal.value?.notice(anonymous = true, clock24 = false))
+                assertEquals(CoachRecovery.signIn, phone.turns.refusal.value?.recovery(anonymous = true))
+                assertNull(phone.turns.withdrawn.value)
+                assertEquals("Private question", checkNotNull(phone.message(turn.lifter)).text)
+                assertEquals(MessageState.failed, checkNotNull(phone.message(turn.coach)).state)
+                assertEquals(emptyList<Map<String, String>>(), phone.telling.failures)
+            }
+        }
+    }
+
+    // The same words before the stream, from the read the refusal's body carries.
+    @Test fun aRefusedOpenSaysAnAllowanceIsUsedOnlyWhenItsBodySaysSo() = runTest {
+        for ((read, refused) in listOf(
+            """{"code":"subject_exhausted","allowance":{"remaining":"0.000000000","reserved":"0.000000000"}}""" to CoachTurnRefusal.Allowance("subject_exhausted", spent = true),
+            """{"code":"subject_exhausted","allowance":{"remaining":"0.000000000","reserved":"0.040775000"}}""" to CoachTurnRefusal.Allowance("subject_exhausted"),
+        )) {
+            val server = script("[]").apply { refuseOpen = TurnRefusal.of(429, read.encodeToByteArray()) }
+            TurnPhone(this, folder.newFolder(), server).use { phone ->
+                checkNotNull(phone.turns.send("Private question", null, null, anonymous = true))
+                advanceUntilIdle()
+                assertEquals(refused, phone.turns.refusal.value)
+                assertEquals(WithdrawnTurn("Private question", null, null), phone.turns.withdrawn.value)
+                assertEquals(emptyList<CoachMessage>(), phone.messages())
+            }
+        }
+    }
+
     // A turn withdrawn from a conversation that stands returns to it.
     @Test fun aWithdrawnTurnInAConversationThatStandsNamesIt() = runTest {
         val server = script("""[{"event":"done","data":{"state":"completed"}}]""")

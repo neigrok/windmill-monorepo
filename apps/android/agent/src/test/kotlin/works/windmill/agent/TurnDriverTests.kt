@@ -244,8 +244,10 @@ class TurnExchangeTests(private val name: String) {
         val silent = vector["phone"]?.str() == "silent"
         val code = end["code"]?.str() ?: if (silent) TurnRefusal.turnOrder else null
         val state = end.member("state").str()
-        val reset = events.lastOrNull { it["event"]?.str() == "error" }?.member("data")?.get("budgetResetsAtMs")?.long()
-        assertEquals(listOf(TurnEnd(TurnState.valueOf(state), text, end["truncated"]?.bool() ?: false, code, reset)), host.ends)
+        val closing = events.lastOrNull { it["event"]?.str() == "error" }?.member("data")
+        val reset = closing?.get("budgetResetsAtMs")?.long()
+        val spent = closing?.get("allowance")?.member("remaining")?.str() == "0.000000000"
+        assertEquals(listOf(TurnEnd(TurnState.valueOf(state), text, end["truncated"]?.bool() ?: false, code, reset, spent)), host.ends)
 
         assertEquals(listOf(body.obj().toMutableMap().apply { put("catalog", Json.of("catalog/2")) }.let { fields -> Json.Obj(fields.toList()) }), server.opened.map { it.json })
         assertEquals(setOf(seat), server.seats.toSet())
@@ -669,15 +671,17 @@ class TurnDriverTests {
         assertEquals(listOf("ended interrupted bound coach-busy calls=0 refusals=0 bytes=1 ms=0"), telemetry.lines)
     }
 
-    @Test fun anErrorFrameEndsFailedAndCarriesTheResetToTheHost() = runTest {
-        val server = server().apply { streams += flowOf(TurnEvent.Text("A"), TurnEvent.Error("free_month_exhausted", 1_793_000_000_000)) }
-        val host = EchoHost()
-        val telemetry = RecordingTelemetry()
-        val run = async { driver(server, telemetry).run("tn_1", seat, host) }
-        advanceUntilIdle()
-        run.await()
-        assertEquals(listOf(TurnEnd(TurnState.failed, "A", false, "free_month_exhausted", 1_793_000_000_000)), host.ends)
-        assertEquals(listOf("ended failed bound free_month_exhausted calls=0 refusals=0 bytes=1 ms=0"), telemetry.lines)
+    @Test fun anErrorFrameEndsFailedAndCarriesTheResetAndTheBalanceToTheHost() = runTest {
+        for (spent in listOf(false, true)) {
+            val server = server().apply { streams += flowOf(TurnEvent.Text("A"), TurnEvent.Error("free_month_exhausted", 1_793_000_000_000, spent)) }
+            val host = EchoHost()
+            val telemetry = RecordingTelemetry()
+            val run = async { driver(server, telemetry).run("tn_1", seat, host) }
+            advanceUntilIdle()
+            run.await()
+            assertEquals(listOf(TurnEnd(TurnState.failed, "A", false, "free_month_exhausted", 1_793_000_000_000, spent)), host.ends)
+            assertEquals(listOf("ended failed bound free_month_exhausted calls=0 refusals=0 bytes=1 ms=0"), telemetry.lines)
+        }
     }
 
     @Test fun theResultsAreAskedAgainWithTheSameBodyAfterALostAnswer() = runTest {

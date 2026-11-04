@@ -700,7 +700,7 @@ class AskScreenTests {
         val store = signedOut(scope).store
         store.coach.saveDraft("new", CoachDraft("Swap chin-ups for pulldowns"))
         val doors = mutableListOf<String>()
-        room(store, emptyList(), CoachTurnRefusal.Allowance("subject_exhausted"), doors)
+        room(store, emptyList(), CoachTurnRefusal.Allowance("subject_exhausted", spent = true), doors)
         compose.onNodeWithText("You have used all of your AI allowance.\nSign in to continue.").assertIsDisplayed()
         compose.onNodeWithText("Use your own AI agent").assertDoesNotExist()
         compose.onNodeWithText("Upgrade").assertDoesNotExist()
@@ -717,7 +717,7 @@ class AskScreenTests {
         val fixture = signedIn(scope)
         fixture.store.coach.saveDraft("new", CoachDraft("Swap chin-ups for pulldowns"))
         val earlier = answered("How heavy should I start squats?", "Choose a weight you can lift 8 times.", atMs = fixture.now)
-        room(fixture.store, listOf(earlier), CoachTurnRefusal.Allowance("subject_exhausted"), mutableListOf())
+        room(fixture.store, listOf(earlier), CoachTurnRefusal.Allowance("subject_exhausted", spent = true), mutableListOf())
         compose.onNodeWithText("You have used all of your AI allowance.").assertIsDisplayed()
         assertEquals(1, compose.onAllNodesWithText("Today ", substring = true).fetchSemanticsNodes().size)
         scope.cancel()
@@ -728,7 +728,7 @@ class AskScreenTests {
         val store = signedIn(scope).store
         store.coach.saveDraft("new", CoachDraft("Retained input"))
         val doors = mutableListOf<String>()
-        room(store, emptyList(), CoachTurnRefusal.Allowance("subject_exhausted"), doors)
+        room(store, emptyList(), CoachTurnRefusal.Allowance("subject_exhausted", spent = true), doors)
         compose.onNodeWithText("You have used all of your AI allowance.").assertIsDisplayed()
         for (label in listOf("Sign in", "Upgrade", "Use your own AI agent", "You can use Coach again on"))
             compose.onNodeWithText(label, substring = true).assertDoesNotExist()

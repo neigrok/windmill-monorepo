@@ -184,7 +184,7 @@ class ThreadScreenTests {
     fun aRefusedSendReturnsItsQuestionToTheComposerEditableAndTheTranscriptHoldsOnlyWhatWasSaid() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val turns = ScriptedTurns(Json.parse("""[{"event":"text","data":{"delta":"Pulldowns it is."}},{"event":"done","data":{"state":"completed"}}]""").arr())
-            .apply { refuseOpen = TurnRefusal(429, "subject_exhausted", null) }
+            .apply { refuseOpen = TurnRefusal(429, "subject_exhausted", null, spent = true) }
         val file = File(tmp.newFolder(), LocalCoach.fileName)
         val room = signedIn(scope, turns, LocalCoach(file))
         room.sync(EngineRoomFixture.server())
