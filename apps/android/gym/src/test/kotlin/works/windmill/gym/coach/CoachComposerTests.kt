@@ -61,9 +61,11 @@ import org.robolectric.annotation.GraphicsMode
 import org.robolectric.annotation.Implementation
 import org.robolectric.annotation.Implements
 import org.robolectric.shadows.ShadowKeyCharacterMap
+import works.windmill.gym.coach.turn.ScriptedTurns
 import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.platform.storage.AtomicDocument
 import works.windmill.platform.telemetry.Telemetry
+import works.windmill.sync.core.Json
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
@@ -258,6 +260,34 @@ class CoachComposerTests {
         scope.cancel()
     }
 
+    // The one button turns from Send to Stop under the finger: the second tap of a double tap sends nothing and stops nothing, and Stop takes the next tap once the gesture is over.
+    @Test
+    fun aDoubleTapOnSendNeitherStopsTheTurnNorSendsTwice() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+        val server = ScriptedTurns(Json.parse("""[{"event":"text","data":{"delta":"Reading"}},{"await":"stop"},{"event":"done","data":{"state":"stopped"}}]""").arr())
+        val room = EngineRoomFixture(tmp.newFolder(), scope, localCoach = LocalCoach(File(tmp.root, "coach.json")), coachServer = server).also { rooms += it }
+        runBlocking {
+            room.select("user-a")
+            room.sync(EngineRoomFixture.server())
+        }
+        val coach = room.store.coach
+        val chat = coach.freshChat()
+        compose.setContent { CoachComposer(coach, chat, "", coach.isAsking(chat), onSend = { question, photo -> coach.send(chat, question, photo) }, onStop = { coach.stop() }) }
+        compose.onNodeWithContentDescription("Question").performTextReplacement("Double tapped question")
+        compose.waitForIdle()
+        compose.onNodeWithContentDescription("Send").performTouchInput { doubleClick() }
+        compose.waitForIdle()
+        assertEquals(0, server.stops)
+        assertEquals(listOf("Double tapped question"), server.opened.map { it.question })
+
+        compose.mainClock.advanceTimeBy(1_000)
+        compose.waitForIdle()
+        compose.onNodeWithContentDescription("Stop response").performClick()
+        compose.waitUntil(5_000) { server.stops == 1 }
+        assertEquals(listOf("Double tapped question"), server.opened.map { it.question })
+        scope.cancel()
+    }
+
     @Test
     fun latestEditAndPhotoSurviveHiddenInputWhileAskingAndReturnWhenStopped() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -281,6 +311,7 @@ class CoachComposerTests {
         compose.onNodeWithContentDescription("Remove photo").assertDoesNotExist()
         assertEquals(CoachDraft("Latest caption", photo), LocalCoach(File(tmp.root, "coach.json")).draft("user-a", "thread-a"))
 
+        compose.mainClock.advanceTimeBy(1_000)
         compose.onNodeWithContentDescription("Stop response").performClick()
         assertEquals("Latest caption", field.fetchSemanticsNode().config[SemanticsProperties.EditableText].text)
         compose.onNodeWithContentDescription("Remove photo").assertIsDisplayed()
@@ -380,6 +411,7 @@ class CoachComposerTests {
         assertEquals(listOf(CoachDraft("First question")), sent)
         assertEquals(CoachDraft("First question"), LocalCoach(File(tmp.root, "coach.json")).draft("user-a", "thread-a"))
 
+        compose.mainClock.advanceTimeBy(1_000)
         field.performClick()
         compose.onNode(isRoot() and hasAnyDescendant(hasContentDescription("Question"))).performMultiModalInput {
             key { withKeysDown(listOf(Key.CtrlLeft, Key.ShiftLeft)) { pressKey(Key.Z) } }

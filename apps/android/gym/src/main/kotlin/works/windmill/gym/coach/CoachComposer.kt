@@ -37,6 +37,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -46,6 +47,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -85,6 +87,15 @@ internal fun CoachComposer(store: CoachChats, key: String, seed: String, asking:
         }
     }
     var preparing by remember(account, key) { mutableStateOf(false) }
+    // The one button turns from Send to Stop under the finger, so the gesture that sent gives Stop no tap.
+    var sendGesture by remember(account, key) { mutableStateOf(false) }
+    val doubleTapMs = LocalViewConfiguration.current.doubleTapTimeoutMillis
+    LaunchedEffect(sendGesture) {
+        if (sendGesture) {
+            delay(doubleTapMs)
+            sendGesture = false
+        }
+    }
     fun canSend(next: CoachDraft) = CoachTurnRefusal.TooLong.of(next.text) == null && (asked(next.text).isNotEmpty() || next.photo != null)
     var pickerOwner by rememberSaveable { mutableStateOf<String?>(null) }
     var pickerChat by rememberSaveable { mutableStateOf<String?>(null) }
@@ -164,10 +175,12 @@ internal fun CoachComposer(store: CoachChats, key: String, seed: String, asking:
                     FilledIconButton(enabled = ready || (asking && onStop != null), modifier = Modifier.size(40.dp),
                         colors = IconButtonDefaults.filledIconButtonColors(containerColor = colors.primary, contentColor = colors.onPrimary),
                         onClick = {
-                            if (asking) onStop?.invoke()
+                            if (sendGesture) Unit
+                            else if (asking) onStop?.invoke()
                             else if (editor.sync(hidden, retry = true)) {
                                 val next = editor.draft
                                 if (canSend(next)) {
+                                    sendGesture = true
                                     focus.clearFocus()
                                     keyboard?.hide()
                                     onSend(next.text.trim(), next.photo)

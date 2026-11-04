@@ -233,6 +233,7 @@ class ThreadScreenTests {
         compose.waitUntil(5_000) { compose.onAllNodesWithContentDescription("Stop response").fetchSemanticsNodes().isNotEmpty() }
         read("Reading your week").performScrollTo().assertIsDisplayed()
         compose.onNodeWithContentDescription("Coach is thinking").assertDoesNotExist()
+        compose.mainClock.advanceTimeBy(1_000)
         compose.onNodeWithContentDescription("Stop response").performClick()
         read(Ask.stopped).performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Reading your week").performScrollTo().assertIsDisplayed()

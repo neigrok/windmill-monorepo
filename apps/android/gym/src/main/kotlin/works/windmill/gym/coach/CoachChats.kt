@@ -217,6 +217,8 @@ class CoachChats internal constructor(
         restoreArchive(archiveOwner)
         val said = conversations?.exchanges(id).orEmpty()
         val going = sending?.takeIf { it.chat == id && it.owner == archiveOwner } ?: return said
+        // A read can publish the question's record before its send has ended, and it is one question.
+        if (said.lastOrNull()?.let { it.answer?.running == true && it.question == going.question } == true) return said
         return said + CoachExchange("sending", going.question, going.atMs, listOfNotNull(going.photo?.let { SentPicture(it, true) }), sending = true)
     }
 
@@ -365,7 +367,7 @@ class CoachChats internal constructor(
         conversations?.read()
     }
 
-    // A send the server refused before its stream: the question and its photo return to the field. The chat keeps its thread only while the thread stands: a withdrawn first turn takes it along. What a turn still running or just ended holds is no one's to restore.
+    // A turn that never began, refused before its stream or never reaching the server: the question and its photo return to the field. The chat keeps its thread only while the thread stands: a withdrawn first turn takes it along. What a turn still running or just ended holds is no one's to restore.
     private fun settleSent() {
         val held = sent ?: return
         val live = turns ?: return
@@ -381,17 +383,18 @@ class CoachChats internal constructor(
         val draft = CoachDraft(withdrawn.question, withdrawn.picture?.attachment)
         val seat = held.authority?.owner ?: archiveOwner
         chats[seat to held.chat]?.let { chats[seat to held.chat] = it.copy(conversation = conversation) }
+        // An owner erased since keeps nothing. Any other seat's question stands in the field: written, it answers an unwritten clear before it, and unwritten, it is retried with the next change while the disk still holds it.
         try {
-            if (held.authority == null) drafts[seat to held.chat] = draft
-            else withContext(storageDispatcher) {
+            if (held.authority != null) withContext(storageDispatcher) {
                 localCoach?.withAuthority(held.authority) { localCoach.turnWithdrawn(seat, held.chat, conversation, draft, withdrawn.picture?.original) }
             }
+            unsavedDrafts -= seat to held.chat
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (failure: Exception) {
-            drafts[seat to held.chat] = draft
             unsavedDrafts += seat to held.chat
             telemetry.unexpected("gym.saveDraft", failure)
         }
+        drafts[seat to held.chat] = draft
         draftVersion++
         if (seat == archiveOwner) watchSelected()
         conversations?.read()

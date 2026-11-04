@@ -12,6 +12,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
@@ -47,6 +48,7 @@ import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.TrainingSeat
 import works.windmill.gym.store.WriteFailure
+import works.windmill.platform.storage.AtomicDocument
 import works.windmill.sync.api.RecordRef
 import works.windmill.sync.core.Json
 import works.windmill.sync.core.RecordID
@@ -612,6 +614,94 @@ class CoachChatsTests {
         assertEquals(coach.chats("alice"), reopened.chats("alice"))
         assertEquals(coach.draft("alice", "drafted-chat"), reopened.draft("alice", "drafted-chat"))
         assertEquals("anonymous:phone", reopened.anonymousOwner())
+    }
+
+    // The clear the turn's record asked for did not reach the disk, then the turn was withdrawn: the question stands in the field and on the disk, saved.
+    @Test fun aWithdrawalAfterAnUnwrittenClearReturnsTheQuestionToTheField() = runTest {
+        val file = File(folder.newFolder(), LocalCoach.fileName)
+        var failNext = false
+        val disk = LocalCoach(file) { target, text ->
+            if (failNext) { failNext = false; throw IOException("disk full, once") }
+            AtomicDocument.write(target, text)
+        }
+        val server = answers("Hi")
+        EngineRoomFixture(folder.newFolder(), work(), localCoach = disk, coachServer = server).use { room ->
+            room.select("alice")
+            room.sync(EngineRoomFixture.server())
+            advanceUntilIdle()
+            val coach = room.store.coach
+            val chat = coach.freshChat()
+            coach.saveDraft(chat, CoachDraft("Refused question"))
+            server.refuseOpen = TurnRefusal(429, "coach-rate-limited", null)
+            failNext = true
+            assertTrue(coach.send(chat, "Refused question"))
+            advanceUntilIdle()
+            assertEquals(CoachTurnRefusal.RateLimited, coach.refusal(chat))
+            assertEquals(CoachDraft("Refused question"), coach.draft(chat))
+            assertTrue(coach.draftSaved(chat))
+            assertEquals(CoachDraft("Refused question"), LocalCoach(file).draft("alice", chat))
+        }
+    }
+
+    // Neither write reached the disk: the field holds the question, unsaved, and the disk still holds what it held, which is the question.
+    @Test fun aWithdrawalTheDiskWillNotTakeKeepsTheQuestionInBothPlaces() = runTest {
+        val file = File(folder.newFolder(), LocalCoach.fileName)
+        var failing = false
+        val disk = LocalCoach(file) { target, text ->
+            if (failing) throw IOException("disk full")
+            AtomicDocument.write(target, text)
+        }
+        val telling = TellingRecorder()
+        val server = answers("Hi")
+        EngineRoomFixture(folder.newFolder(), work(), telemetry = telling, localCoach = disk, coachServer = server).use { room ->
+            room.select("alice")
+            room.sync(EngineRoomFixture.server())
+            advanceUntilIdle()
+            val coach = room.store.coach
+            val chat = coach.freshChat()
+            coach.saveDraft(chat, CoachDraft("Refused question"))
+            server.refuseOpen = TurnRefusal(429, "coach-rate-limited", null)
+            failing = true
+            assertTrue(coach.send(chat, "Refused question"))
+            advanceUntilIdle()
+            assertEquals(CoachDraft("Refused question"), coach.draft(chat))
+            assertFalse(coach.draftSaved(chat))
+            assertEquals(CoachDraft("Refused question"), LocalCoach(file).draft("alice", chat))
+            assertEquals(listOf(mapOf("operation" to "gym.saveConversation"), mapOf("operation" to "gym.saveDraft")), telling.failures)
+
+            failing = false
+            coach.saveDraft(chat, CoachDraft("Refused question"))
+            assertTrue(coach.draftSaved(chat))
+        }
+    }
+
+    // A read can publish the question's record while its chat is still being written, a revision's read on another thread: the room draws one question.
+    @Test fun aQuestionItsRecordHoldsIsDrawnOnceWhileItsChatIsWritten() = runTest {
+        var written: (() -> Unit)? = null
+        val disk = LocalCoach(File(folder.newFolder(), LocalCoach.fileName)) { target, text ->
+            AtomicDocument.write(target, text)
+            written?.invoke()
+        }
+        val server = answers("One")
+        EngineRoomFixture(folder.newFolder(), work(), localCoach = disk, coachServer = server, readDispatcher = Dispatchers.Unconfined).use { room ->
+            room.select("alice")
+            room.sync(EngineRoomFixture.server())
+            advanceUntilIdle()
+            val coach = room.store.coach
+            val chat = coach.freshChat()
+            assertTrue(coach.send(chat, "First"))
+            advanceUntilIdle()
+            server.rewind()
+            var drawn: List<Pair<String, Boolean>>? = null
+            written = {
+                written = null
+                runBlocking { room.store.conversations.read() }
+                drawn = coach.exchanges(chat).map { it.question to it.sending }
+            }
+            assertTrue(coach.send(chat, "Second"))
+            advanceUntilIdle()
+            assertEquals(listOf("First" to false, "Second" to false), drawn)
+        }
     }
 
     private val retainedResponse = """{"requestId":"answered-1","resultId":"result-1","status":"completed","expiresAtMs":9,"routines":[],"allowance":{"code":"ok","currency":"USD","period":"lifetime","tier":"anonymous","configured":true,"used":"0","reserved":"0","remaining":"1"},"message":"Here is a plan"}"""
