@@ -226,7 +226,7 @@ the rest in `gym/telemetry/GymEvents.kt`, owns the `onboarding_` prefix, and the
 | `gym_session_started` | gym | none |
 | `gym_set_logged` | gym | none |
 | `gym_setup_step` | gym | `screen`: `coach`; `action`: `shown`, `screenshot`, `build_manually`, `photo_selected`, `photo_removed`, `sign_in`, `open_routine`, `keep_routines`, `connect` (a refusal's Use your own AI agent door) |
-| `gym_sign_in_decision` | gym, app | `state`: `shown`, `discard_confirmation`, `nothing_left` (all the work counted was deleted on this phone, so it is discarded with no question); `action`: `add`, `discard`, `cancel`; `outcome`: `completed`, `cancelled`, `changed` or the engine's error code |
+| `gym_sign_in_decision` | gym, app | `state`: `shown`, `discard_confirmation`; `action`: `add`, `discard`, `cancel`; `outcome`: `completed`, `cancelled`, `changed` or the engine's error code |
 | `gym_sign_out` | gym | `state`: `shown`; `action`: `keep`, `discard`, `cancel`; `outcome`: `completed`, `failed`. Keep and Discard send their outcome signed out, under the phone's device id, so it cannot be joined to `shown` per user. A sign-out nobody was asked about (an expired session, account deletion) sends none |
 | `onboarding_action` | gym | `state`: `first_launch`, `replay`; `screen`: `windmill`, `roadmap`, `journal`, `gym`; `action`: `next`, `back`, `swipe`, `adjust` |
 | `onboarding_exited` | gym, app | `state`: `first_launch`, `replay`; `screen`: `windmill`, `roadmap`, `journal`, `gym`; `outcome`: `skipped`, `completed`, `back`, `closed` |

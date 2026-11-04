@@ -50,7 +50,7 @@ class GymEngineSession(
         private set
     var decisionBusy by mutableStateOf(false)
         private set
-    // What the sign-in question names, by room and kind: what the person would see of the work the engine counts, so nothing deleted since is named.
+    // What the sign-in question names, by room and kind: what the person would see of the work the engine counts, so nothing deleted since is named. A count of nothing still asks, and the question says "training".
     var decisionCounts: Map<String, Map<String, Int>> by mutableStateOf(emptyMap())
         private set
     private var answer: CompletableDeferred<Unit>? = null
@@ -67,21 +67,9 @@ class GymEngineSession(
             val prepared = EngineTraining(engine).prepareAdoption(telemetry)
             var session = runtime.signIn(user.id, token, retainAnonymous = !prepared)
             while (!session.isComplete) {
-                val seen = session.decisions.associate { held -> held.product to engine.anonDrawn(held.product) }
-                // Nothing the person would see is left to ask about: all of it was deleted on this phone, so it stays off the account with no question.
-                if (seen.values.all { it.isEmpty() }) {
-                    try {
-                        session.complete(session.decisions.associate { it.product to LineageAnswer.discard })
-                        telemetry.event("gym_sign_in_decision", mapOf("action" to "discard", "state" to "nothing_left", "outcome" to "completed"))
-                    } catch (changed: EngineError) {
-                        if (changed.code != EngineError.Code.signInChanged) throw changed
-                        session = runtime.resumeSignIn() ?: throw EngineError(EngineError.Code.signInEnded)
-                    }
-                    continue
-                }
                 val completion = CompletableDeferred<Unit>()
                 decisionRevision += 1
-                decisionCounts = seen
+                decisionCounts = session.decisions.associate { held -> held.product to engine.anonDrawn(held.product) }
                 decision = session
                 decisionFailure = null
                 answer = completion
