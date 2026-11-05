@@ -1182,23 +1182,22 @@ class SyncRuntimeTests {
     @Test fun aDigestStoppedScopeIsStillPulledAndHearsTheServersUpgrade() = runBlocking {
         Fixture().use { fixture ->
             fixture.transport.controlPulls = true
-            // The runtime may start the next pull on its own, and `pullAgain` waits its turn behind a pull in flight: the answers cannot wait on it.
-            val answering = launch {
-                for (pull in fixture.transport.pulls) pull.answer.complete(Reply.Answer(SyncResponse(200, Json.objectOf("serverTime" to Json.of(5_000), "epoch" to Json.of("ep-1"),
-                    "as" to Json.of("A"), "pages" to Json.array(Json.objectOf("scope" to Json.of(product.text), "kind" to Json.of("rows"),
-                        "rows" to Json.array(), "cursor" to Json.of(WireCursor("ep-1", "live", 1).text), "more" to Json.of(false),
-                        "seq" to Json.of(1), "digest" to Json.of("1".padStart(64, '0'))))))))
-            }
+            var answer: Reply<SyncResponse> = Reply.Answer(SyncResponse(200, Json.objectOf("serverTime" to Json.of(5_000), "epoch" to Json.of("ep-1"),
+                "as" to Json.of("A"), "pages" to Json.array(Json.objectOf("scope" to Json.of(product.text), "kind" to Json.of("rows"),
+                    "rows" to Json.array(), "cursor" to Json.of(WireCursor("ep-1", "live", 1).text), "more" to Json.of(false),
+                    "seq" to Json.of(1), "digest" to Json.of("1".padStart(64, '0')))))))
+            // The runtime may start the next pull on its own, and a receive cancelled mid-handover loses its pull, so one answerer stays for the whole test.
+            val answering = launch { for (pull in fixture.transport.pulls) pull.answer.complete(answer) }
             fixture.runtime.enter()
             until { fixture.runtime.pulls.value.ended >= 1 }
             assertTrue(fixture.runtime.pullAgain())
             until { fixture.runtime.pulls.value.ended >= 2 }
-            answering.cancelAndJoin()
             assertEquals(Json.of("1"), fixture.engine.device.current().cursors[product.text]?.get("digestStop"))
             fixture.runtime.leave()
+            answer = Reply.Failed(upgradeRequired)
             fixture.runtime.enter()
-            fixture.pull().answer.complete(Reply.Failed(upgradeRequired))
             withTimeout(2_000) { fixture.engine.status.state.first { it.upgradeRequired } }
+            answering.cancelAndJoin()
             assertTrue(fixture.transport.hellos.tryReceive().isFailure)
             assertTrue(fixture.transport.pushes.tryReceive().isFailure)
             assertEquals(emptyList<Json>(), fixture.engine.device.current().entries().map { it.json })
