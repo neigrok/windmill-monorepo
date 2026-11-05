@@ -3,6 +3,7 @@
 #include "platform/adapters/json/AiBudgetJson.h"
 #include "platform/adapters/json/JsonText.h"
 #include "platform/adapters/llm/AgentLoop.h"
+#include "platform/application/WriteObservation.h"
 #include "products/gym/adapters/llm/AnthropicAsk.h"
 #include "products/gym/coach/PhoneToolHost.h"
 
@@ -12,6 +13,7 @@
 #include <chrono>
 #include <exception>
 #include <utility>
+#include <vector>
 
 namespace wm::gym::coach {
 
@@ -74,20 +76,32 @@ bool isAllowanceCode(const std::string& code) {
   return false;
 }
 
+bool lingerPassed(const Turn& turn, std::uint64_t nowMs) {
+  const auto linger = static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(kTurnLinger).count());
+  const std::optional<std::uint64_t> endedAt = turn.endedAtMs();
+  return endedAt && *endedAt + linger <= nowMs;
+}
+
 }  // namespace
 
-TurnService::TurnService(std::shared_ptr<CoachModel> model, const AbilityCatalog& catalog, ToolHost& server,
+TurnService::TurnService(std::shared_ptr<CoachModel> model, const AbilityCatalog& catalog, ToolHost& server, GymWriteDoor& door,
                          Entitlements& entitlements, std::shared_ptr<AiInstallations> installations, Clock& clock,
                          int maxOutputTokens, std::shared_ptr<FailureReporter> failures,
                          std::chrono::milliseconds resultTimeout)
-    : model_(std::move(model)), catalog_(catalog), server_(server), entitlements_(entitlements),
+    : model_(std::move(model)), catalog_(catalog), server_(server), door_(door), entitlements_(entitlements),
       installations_(std::move(installations)), clock_(clock), maxOutputTokens_(maxOutputTokens),
       failures_(std::move(failures)), resultTimeout_(resultTimeout) {}
 
 TurnService::~TurnService() { stop(); }
 
+void TurnService::start() {
+  const auto period = static_cast<double>(kTurnSweep.count());
+  sweeper_.start(period, period, [this] { sweep(); });
+}
+
 void TurnService::stop() {
   stopping_ = true;
+  sweeper_.stop();
   {
     std::lock_guard lock(registryMutex_);
     for (auto& [id, turn] : turns_) turn->requestStop();
@@ -97,13 +111,51 @@ void TurnService::stop() {
 
 bool TurnService::configured() const { return model_ && model_->configured(); }
 
-void TurnService::sweep(std::uint64_t nowMs) {
-  const auto linger = static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(kTurnLinger).count());
-  for (auto entry = turns_.begin(); entry != turns_.end();) {
-    const std::optional<std::uint64_t> endedAt = entry->second->endedAtMs();
-    if (endedAt && *endedAt + linger <= nowMs) entry = turns_.erase(entry);
-    else ++entry;
+void TurnService::sweep() {
+  const std::uint64_t now = clock_.nowMs();
+  std::vector<std::shared_ptr<Turn>> passed;
+  {
+    std::lock_guard lock(registryMutex_);
+    for (const auto& [id, turn] : turns_)
+      if (lingerPassed(*turn, now)) passed.push_back(turn);
   }
+  for (const std::shared_ptr<Turn>& turn : passed) {
+    if (!endMessage(*turn)) continue;
+    std::lock_guard lock(registryMutex_);
+    const auto held = turns_.find(turn->id());
+    if (held != turns_.end() && held->second == turn) turns_.erase(held);
+  }
+}
+
+bool TurnService::endMessage(const Turn& turn) {
+  const TurnPrincipal& principal = turn.principal();
+  if (principal.seat != Seat::bound) return true;
+  WriteObservation observation("gym.coach_turn.interrupt", "gym", "background", "", failures_.get());
+  WriteContext context(observation);
+  try {
+    if (!door_.interrupt(principal.account->id, turn.id())) {
+      observation.skip();
+      return true;
+    }
+    observation.finish();
+    LOG_INFO << "coach_turn_interrupted turn=" << turn.id() << " request_id=" << observation.requestId();
+    return true;
+  } catch (const GymUnavailable& refused) {
+    observation.finish(refused.code);
+    return refused.code != "gym-engine-busy";
+  } catch (const std::exception& error) {
+    observation.fail(error);
+    return true;
+  } catch (...) {
+    observation.failUnknown();
+    return true;
+  }
+}
+
+std::shared_ptr<Turn> TurnService::standing(const std::string& turnId, std::uint64_t nowMs) const {
+  const auto seen = turns_.find(turnId);
+  if (seen == turns_.end() || lingerPassed(*seen->second, nowMs)) return nullptr;
+  return seen->second;
 }
 
 TurnAdmission TurnService::allowanceRefusal(const TurnPrincipal& principal, const std::string& turnId) const {
@@ -140,12 +192,9 @@ TurnAdmission TurnService::open(const TurnPrincipal& principal, TurnOpen open) {
   const std::uint64_t now = clock_.nowMs();
   {
     std::lock_guard lock(registryMutex_);
-    sweep(now);
-    const auto seen = turns_.find(open.turnId);
-    if (seen != turns_.end()) {
-      const Turn& held = *seen->second;
-      if (held.principal().id() != principal.id() || held.open().digest != open.digest) return {nullptr, false, "coach-turn-conflict"};
-      return {seen->second, true, {}};
+    if (const std::shared_ptr<Turn> held = standing(open.turnId, now)) {
+      if (held->principal().id() != principal.id() || held->open().digest != open.digest) return {nullptr, false, "coach-turn-conflict"};
+      return {held, true, {}};
     }
   }
   if (!configured()) return {nullptr, false, "coach-busy"};
@@ -170,13 +219,11 @@ TurnAdmission TurnService::open(const TurnPrincipal& principal, TurnOpen open) {
   auto turn = std::make_shared<Turn>(principal, std::move(open), now);
   {
     std::lock_guard lock(registryMutex_);
-    const auto seen = turns_.find(turn->id());
-    if (seen != turns_.end()) {
+    if (const std::shared_ptr<Turn> held = standing(turn->id(), now)) {
       vendorRounds_.release();
       --live_;
-      const Turn& held = *seen->second;
-      if (held.principal().id() != principal.id() || held.open().digest != turn->open().digest) return {nullptr, false, "coach-turn-conflict"};
-      return {seen->second, true, {}};
+      if (held->principal().id() != principal.id() || held->open().digest != turn->open().digest) return {nullptr, false, "coach-turn-conflict"};
+      return {held, true, {}};
     }
     turns_[turn->id()] = turn;
   }
@@ -192,10 +239,9 @@ TurnAdmission TurnService::open(const TurnPrincipal& principal, TurnOpen open) {
 
 std::shared_ptr<Turn> TurnService::find(const TurnPrincipal& principal, const std::string& turnId) {
   std::lock_guard lock(registryMutex_);
-  sweep(clock_.nowMs());
-  const auto seen = turns_.find(turnId);
-  if (seen == turns_.end() || seen->second->principal().id() != principal.id()) return nullptr;
-  return seen->second;
+  const std::shared_ptr<Turn> held = standing(turnId, clock_.nowMs());
+  if (!held || held->principal().id() != principal.id()) return nullptr;
+  return held;
 }
 
 void TurnService::run(const std::shared_ptr<Turn>& turn) {

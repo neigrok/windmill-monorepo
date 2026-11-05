@@ -331,16 +331,23 @@ The model's reasoning and every assistant content block stay on the server.
 - **Background.** While a turn runs, the phone keeps its process alive within the platform
   allowance: an iOS background task, an Android expedited job on API 31 and above. Below API 31 Android holds
   no lease, and a killed turn ends `interrupted` at the next engine start.
-- **Lost turn.** A server restart drops running turns. A resume then answers
-  `coach-turn-unknown`, and the phone ends the turn `interrupted`. When the server drops a turn (§4.4) whose
-  `bound` Coach message is still `running`, it MAY write `interrupted` on it, as a server-origin write that
-  sets only `state` (engine §6.3).
+- **Lost turn.** The server sweeps every `TURN_SWEEP` and drops each turn whose `TURN_LINGER` has passed (§4.4). When
+  it drops a turn whose `bound` Coach message is still `running`, it MUST write `interrupted` on it, as a server-origin
+  write that sets only `state` (engine §6.3). A message that already ended stays as it is; a writer's terminal state
+  written after beats `interrupted` whatever the stamps, and a later `running` write leaves it standing, its text
+  admitted (engine Appendix A). An `anon` turn has no server replica, so nothing is written. A write the engine is too
+  busy for is tried at the next sweep.
+
+  A resume once the linger has passed answers `coach-turn-unknown`, and the phone ends the turn `interrupted`. A server
+  restart drops every turn with no sweep and no write: a phone still driving its turn resumes and ends it the same way,
+  and a Coach message whose writer has gone, as one a sign-out left, stays `running` on the account.
 - **Writer.** Only the replica named on the Coach message writes its state, text, receipt and
-  calls; another device shows a running turn as answering on another device and never writes it. One
-  write is excepted: the device whose active replica's id changed from the named one —
-  `activeReplicaChanged(previous, replica)` with `previous` the message's `replica` (engine §7.12) —
-  ends that `running` turn `interrupted`, under its new id, since the turn's stream ended with its
-  identity.
+  calls; another device shows a running turn as answering on another device and never writes it. Two
+  writes are excepted: the server's when it drops the turn, above, and the one of the device whose active
+  replica's id changed from the named one — `activeReplicaChanged(previous, replica)` with `previous` the
+  message's `replica` (engine §7.12) — which ends that `running` turn `interrupted`, under its new id, since the
+  turn's stream ended with its identity. A sign-out's new id is the signed-out replica, so its write stays there,
+  and the account's message waits for the server's.
 - **Rebind.** A sign-in that rebinds the `anon` replica keeps its id, so `activeReplicaChanged` does not
   fire, and the seat has changed all the same (D-10). On Android the engine announces the rebind apart
   (engine §7.12) and a running `anon` turn ends `interrupted`, its code `seat_changed`; its reads and writes
@@ -790,6 +797,7 @@ A phone Coach requires a gym replica per [the engine](../engine.md) with:
 | `OPEN_BODY_BYTES` | 4 MiB |
 | `CALL_RESULT_TIMEOUT` | 60 s |
 | `TURN_LINGER` | 10 min |
+| `TURN_SWEEP` | 30 s |
 | `ASK_BURST` | 3 |
 | `ASK_PER_DAY` | 10 |
 | `AI_ANONYMOUS_LIFETIME_USD` | 0.05 |

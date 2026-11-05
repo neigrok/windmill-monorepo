@@ -2969,8 +2969,8 @@ stale. Logging after a stale close issues a new `gym.start`.
 **Projections outside synced fields:** note `position` is client-derived (R118 above); set revisions
 (what a correction or a delete replaced). A session's death also deletes its workout share, which is outside the engine (§0).
 
-**Server-origin doors.** MCP, the server Coach and the import door (`POST /v1/gym/sessions/import`)
-admit as server origins (§6.3, D-23). [Gym ARCHITECTURE](../../backend/products/gym/ARCHITECTURE.md)
+**Server-origin doors.** MCP, the server Coach, the import door (`POST /v1/gym/sessions/import`) and the drop of a
+phone Coach turn (gym Coach §4.5) admit as server origins (§6.3, D-23). [Gym ARCHITECTURE](../../backend/products/gym/ARCHITECTURE.md)
 states how each builds its intents, what its builders read under the scope lock and answer without
 admitting (a start whose clock is ahead, a start under a discarded session's id, a discard of an
 unfinished session, a replayed create, a Coach note save the notes already hold), and how it

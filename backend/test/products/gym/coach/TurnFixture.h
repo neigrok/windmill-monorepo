@@ -7,6 +7,7 @@
 #include "platform/domain/sync/Jcs.h"
 #include "test/platform/Fakes.h"
 #include "test/platform/FakeAiBudgetRepository.h"
+#include "test/products/gym/Fakes.h"
 #include "test/products/gym/onboarding/OnboardingFixture.h"
 #include "test/testing.h"
 
@@ -92,6 +93,16 @@ struct FakeServer : ToolHost {
   }
 };
 
+// The door a dropped turn's message ends through: records who asked for what and answers as the test says.
+struct TurnDoor : gym::fake::ReadOnlyDoor {
+  std::vector<std::string> interrupts;
+  std::function<bool(const std::string&)> answer = [](const std::string&) { return true; };
+  bool interrupt(const UserId& user, const std::string& messageId) override {
+    interrupts.push_back(user.str() + " " + messageId);
+    return answer(messageId);
+  }
+};
+
 // Every frame the turn sent, in order, across every attach.
 struct Recorder : TurnSink {
   std::mutex mutex;
@@ -131,23 +142,24 @@ struct Harness {
   explicit Harness(bool durableAllowances = false)
       : entitlements(subscriptions, usage, {}, {}, durableAllowances ? budgets : nullptr) {}
 
-  fake::FakeClock clock;
+  wm::fake::FakeClock clock;
   OpenSslTokenGenerator tokens;
-  fake::FakeAiBudgetRepository budgetRepository;
+  wm::fake::FakeAiBudgetRepository budgetRepository;
   AiBudgetLimits limits;
   std::shared_ptr<AiBudgetService> budgets =
       std::make_shared<AiBudgetService>(budgetRepository, [this] { return limits; }, [this] { return clock.now; });
   onboardingtest::Installations installationRepository;
   std::shared_ptr<AiInstallations> installations =
       std::make_shared<AiInstallations>(installationRepository, budgets, tokens, clock, std::string(64, 'k'));
-  fake::FakeSubscriptionRepository subscriptions;
-  fake::FakeAiUsageRepository usage;
+  wm::fake::FakeSubscriptionRepository subscriptions;
+  wm::fake::FakeAiUsageRepository usage;
   Entitlements entitlements;
   FakeServer server;
+  TurnDoor door;
   std::shared_ptr<ScriptedModel> model = std::make_shared<ScriptedModel>();
   std::shared_ptr<onboardingtest::Failures> failures = std::make_shared<onboardingtest::Failures>();
   std::shared_ptr<TurnService> service = std::make_shared<TurnService>(
-      model, gymAbilityCatalog(), server, entitlements, installations, clock, 2000, failures, std::chrono::milliseconds(300));
+      model, gymAbilityCatalog(), server, door, entitlements, installations, clock, 2000, failures, std::chrono::milliseconds(300));
 
   TurnPrincipal bound() {
     TurnPrincipal principal;

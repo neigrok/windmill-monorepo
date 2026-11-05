@@ -27,13 +27,13 @@ namespace {
 
 struct ApiHarness {
   Harness h;
-  fake::FakeAuthRepository accounts;
-  fake::FakeEmail email;
-  fake::FakeTokens authTokens;
-  fake::FakeOAuthRepository oauthRepo;
+  wm::fake::FakeAuthRepository accounts;
+  wm::fake::FakeEmail email;
+  wm::fake::FakeTokens authTokens;
+  wm::fake::FakeOAuthRepository oauthRepo;
   OAuthService oauth{oauthRepo, authTokens, h.clock};
-  fake::FakeAccountFootprint footprint;
-  fake::FakeSessionRevocations revocations;
+  wm::fake::FakeAccountFootprint footprint;
+  wm::fake::FakeSessionRevocations revocations;
   std::shared_ptr<AuthService> auth = std::make_shared<AuthService>(accounts, email, authTokens, h.clock, oauth, footprint,
                                                                    revocations, "https://windmill.works");
   std::shared_ptr<Entitlements> entitlements = std::make_shared<Entitlements>(h.subscriptions, h.usage);

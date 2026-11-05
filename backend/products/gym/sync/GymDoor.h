@@ -41,8 +41,7 @@ public:
 
   void closeStale(const UserId&) override;
   void unlinkThread(const UserId&, const ThreadId&) override;
-  // Gym Coach §4.5: the server ends a running Coach message's turn as `interrupted`; any other state stands.
-  void interrupt(const UserId&, const std::string& messageId);
+  bool interrupt(const UserId&, const std::string& messageId) override;
 
   StartOutcome start(const UserId&, const SessionStart&) override;
   AppendOutcome append(const UserId&, const SessionId&, const SetWrite&) override;

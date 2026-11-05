@@ -334,6 +334,174 @@ TEST(coach_turn_capacity_is_two_vendor_rounds_and_a_third_open_is_busy) {
   h.service->stop();
 }
 
+namespace {
+
+// A turn run to its end under the principal, its stream closed.
+void endedTurn(Harness& h, const TurnPrincipal& principal, const std::string& id) {
+  Json::Value body = parse(R"({"catalog":"catalog/1","question":"Hi","history":[],"context":[],"pictures":[]})");
+  body["turnId"] = id;
+  h.model->replies = parse(R"([{"stop_reason":"end_turn","content":[{"type":"text","text":"Done."}]}])");
+  h.model->index = 0;
+  const TurnAdmission admission = h.service->open(principal, openOf(body));
+  REQUIRE(admission.turn);
+  auto recorder = std::make_shared<Recorder>();
+  admission.turn->attach(recorder, false);
+  h.model->start();
+  REQUIRE(recorder->waitFor(2));
+}
+
+// Every write line while `body` runs, as operation, product, door and outcome.
+std::vector<std::string> writeLinesOf(const std::function<void()>& body) {
+  std::vector<std::string> lines;
+  installWriteSink([&](const WriteCompletion& line) {
+    lines.push_back(line.operation + " " + line.product + " " + line.door + " " + line.outcome);
+  });
+  body();
+  installWriteSink({});
+  return lines;
+}
+
+}  // namespace
+
+TEST(coach_turn_sweep_ends_a_bound_message_once_its_linger_passed_and_drops_the_turn) {
+  Harness h;
+  endedTurn(h, h.bound(), "tn_sweep_bound_1");
+
+  h.clock.now += 10 * 60 * 1000 - 1;
+  h.service->sweep();
+  CHECK_EQ(h.door.interrupts, std::vector<std::string>{});
+  CHECK(h.service->find(h.bound(), "tn_sweep_bound_1"));
+
+  h.clock.now += 1;
+  const std::vector<std::string> lines = writeLinesOf([&] { h.service->sweep(); });
+  CHECK_EQ(h.door.interrupts, std::vector<std::string>{"44444444-4444-4444-4444-444444444444 tn_sweep_bound_1"});
+  CHECK_EQ(lines, std::vector<std::string>{"gym.coach_turn.interrupt gym background ok"});
+  CHECK_FALSE(h.service->find(h.bound(), "tn_sweep_bound_1"));
+
+  h.service->sweep();
+  CHECK_EQ(h.door.interrupts, std::vector<std::string>{"44444444-4444-4444-4444-444444444444 tn_sweep_bound_1"});
+  CHECK_EQ(h.failures->reports, std::vector<std::string>{});
+  h.service->stop();
+}
+
+TEST(coach_turn_sweep_logs_no_write_for_a_message_the_phone_already_ended) {
+  Harness h;
+  h.door.answer = [](const std::string&) { return false; };
+  endedTurn(h, h.bound(), "tn_sweep_ended_1");
+
+  h.clock.now += 10 * 60 * 1000;
+  const std::vector<std::string> lines = writeLinesOf([&] {
+    h.service->sweep();
+    h.service->sweep();
+  });
+
+  CHECK_EQ(h.door.interrupts, std::vector<std::string>{"44444444-4444-4444-4444-444444444444 tn_sweep_ended_1"});
+  CHECK_EQ(lines, std::vector<std::string>{});
+  CHECK_EQ(h.failures->reports, std::vector<std::string>{});
+  h.service->stop();
+}
+
+TEST(coach_turn_sweep_writes_nothing_for_an_anon_seat) {
+  Harness h;
+  const TurnPrincipal anon = h.anon();
+  endedTurn(h, anon, "tn_sweep_anon_01");
+
+  h.clock.now += 10 * 60 * 1000;
+  const std::vector<std::string> lines = writeLinesOf([&] { h.service->sweep(); });
+
+  CHECK_EQ(h.door.interrupts, std::vector<std::string>{});
+  CHECK_EQ(lines, std::vector<std::string>{});
+  CHECK_FALSE(h.service->find(anon, "tn_sweep_anon_01"));
+  h.service->stop();
+}
+
+TEST(coach_turn_sweep_leaves_a_turn_still_running_however_long_it_has_run) {
+  Harness h;
+  const TurnOpen open = openOf(parse(R"({"catalog":"catalog/1","turnId":"tn_sweep_live_01","question":"Hi","history":[],"context":[],"pictures":[]})"));
+  h.model->replies = parse(R"([{"stop_reason":"end_turn","content":[{"type":"text","text":"Done."}]}])");
+  const TurnAdmission admission = h.service->open(h.bound(), open);
+  REQUIRE(admission.turn);
+
+  h.clock.now += 2 * 10 * 60 * 1000;
+  h.service->sweep();
+
+  CHECK_EQ(h.door.interrupts, std::vector<std::string>{});
+  CHECK(h.service->find(h.bound(), "tn_sweep_live_01"));
+  auto recorder = std::make_shared<Recorder>();
+  admission.turn->attach(recorder, false);
+  h.model->start();
+  REQUIRE(recorder->waitFor(2));
+  h.service->stop();
+}
+
+TEST(coach_turn_sweep_tries_a_busy_door_again_on_the_next_pass) {
+  Harness h;
+  bool busy = true;
+  h.door.answer = [&](const std::string&) -> bool {
+    if (busy) throw GymUnavailable("gym-engine-busy", "gym engine is temporarily unavailable");
+    return true;
+  };
+  endedTurn(h, h.bound(), "tn_sweep_busy_01");
+
+  h.clock.now += 10 * 60 * 1000;
+  const std::vector<std::string> refused = writeLinesOf([&] { h.service->sweep(); });
+  CHECK_EQ(refused, std::vector<std::string>{"gym.coach_turn.interrupt gym background gym-engine-busy"});
+  CHECK_EQ(h.door.interrupts, std::vector<std::string>{"44444444-4444-4444-4444-444444444444 tn_sweep_busy_01"});
+  CHECK_FALSE(h.service->find(h.bound(), "tn_sweep_busy_01"));
+
+  busy = false;
+  const std::vector<std::string> written = writeLinesOf([&] { h.service->sweep(); });
+  CHECK_EQ(written, std::vector<std::string>{"gym.coach_turn.interrupt gym background ok"});
+  CHECK_EQ(h.door.interrupts, (std::vector<std::string>{"44444444-4444-4444-4444-444444444444 tn_sweep_busy_01", "44444444-4444-4444-4444-444444444444 tn_sweep_busy_01"}));
+
+  h.service->sweep();
+  CHECK_EQ(h.door.interrupts.size(), 2u);
+  CHECK_EQ(h.failures->reports, std::vector<std::string>{});
+  h.service->stop();
+}
+
+TEST(coach_turn_sweep_drops_a_turn_the_engine_refused_with_a_line_and_no_issue) {
+  Harness h;
+  h.door.answer = [](const std::string&) -> bool { throw GymUnavailable("gym-engine-unavailable", "gym engine refused: gone"); };
+  endedTurn(h, h.bound(), "tn_sweep_gone_01");
+
+  h.clock.now += 10 * 60 * 1000;
+  const std::vector<std::string> lines = writeLinesOf([&] {
+    h.service->sweep();
+    h.service->sweep();
+  });
+
+  CHECK_EQ(lines, std::vector<std::string>{"gym.coach_turn.interrupt gym background gym-engine-unavailable"});
+  CHECK_EQ(h.door.interrupts, std::vector<std::string>{"44444444-4444-4444-4444-444444444444 tn_sweep_gone_01"});
+  CHECK_EQ(h.failures->reports, std::vector<std::string>{});
+  h.service->stop();
+}
+
+TEST(coach_turn_sweep_reports_a_failed_write_without_its_message_and_goes_on_to_the_next_turn) {
+  Harness h;
+  h.door.answer = [](const std::string& message) -> bool {
+    if (message == "tn_sweep_fail_01") throw std::runtime_error("What should I lift today?");
+    return true;
+  };
+  endedTurn(h, h.bound(), "tn_sweep_fail_01");
+  endedTurn(h, h.bound(), "tn_sweep_fail_02");
+
+  h.clock.now += 10 * 60 * 1000;
+  const std::vector<std::string> lines = writeLinesOf([&] {
+    h.service->sweep();
+    h.service->sweep();
+  });
+
+  CHECK_EQ(h.door.interrupts, (std::vector<std::string>{"44444444-4444-4444-4444-444444444444 tn_sweep_fail_01", "44444444-4444-4444-4444-444444444444 tn_sweep_fail_02"}));
+  CHECK_EQ(lines, (std::vector<std::string>{"gym.coach_turn.interrupt gym background failed", "gym.coach_turn.interrupt gym background ok"}));
+  REQUIRE_EQ(h.failures->reports.size(), 1u);
+  const std::string report = h.failures->reports[0];
+  const std::string opening = "gym:gym.coach_turn.interrupt:door=background outcome=failed request_id=";
+  CHECK_EQ(report.substr(0, opening.size()), opening);
+  CHECK(report.find("What should I lift") == std::string::npos);
+  h.service->stop();
+}
+
 TEST(coach_turn_is_dropped_after_its_linger_and_a_resume_then_finds_nothing) {
   Harness h;
   h.model->replies = parse(R"([{"stop_reason":"end_turn","content":[{"type":"text","text":"Done."}]}])");
@@ -387,7 +555,7 @@ TEST(coach_turn_open_refuses_an_anonymous_seat_without_installations_and_a_retir
     CHECK_FALSE(read.open);
     CHECK_EQ(read.code, std::string("coach-bad-request"));
   }
-  TurnService lonely(h.model, gymAbilityCatalog(), h.server, h.entitlements, nullptr, h.clock, 2000, h.failures);
+  TurnService lonely(h.model, gymAbilityCatalog(), h.server, h.door, h.entitlements, nullptr, h.clock, 2000, h.failures);
   const TurnAdmission anon = lonely.open(h.anon(), openOf(parse(R"({"catalog":"catalog/1","turnId":"tn_anon_000001","question":"Hi"})")));
   CHECK_FALSE(anon.turn);
   CHECK_EQ(anon.code, std::string("anonymous_ai_unavailable"));
@@ -568,7 +736,7 @@ TEST(coach_turn_anonymous_seat_runs_on_sonnet_and_its_round_fits_the_default_lif
   CHECK_EQ(request["max_tokens"].asInt(), 2000);
   CHECK_EQ(request["tools"].size(), gymAbilityCatalog().offered(Seat::anon).size());
 
-  fake::FakeAuthRepository accounts;
+  wm::fake::FakeAuthRepository accounts;
   AiCallBudget budget(h.budgets, h.entitlements, accounts, *h.failures);
   AiSpend spend;
   spend.product = "gym";

@@ -43,6 +43,7 @@ constexpr std::size_t kOpenBodyBytes = 4 * 1024 * 1024;
 constexpr std::size_t kResultsBodyBytes = kMaxAbilityCalls * kToolResultBytes + 16 * 1024;
 constexpr std::chrono::seconds kCallResultTimeout{60};
 constexpr std::chrono::minutes kTurnLinger{10};
+constexpr std::chrono::seconds kTurnSweep{30};
 // D-8: a turn id seeds every record id the turn mints (G-7), so it fits the gym seed bound.
 constexpr std::size_t kTurnIdMaxLength = 58;
 constexpr std::size_t kTurnIdMinLength = 8;
