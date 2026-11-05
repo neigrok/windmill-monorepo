@@ -622,7 +622,8 @@ Progress rejections also clear their in-flight entry. Events from superseded soc
 timers are deduplicated, and closing a session sets its phase offline.
 
 **Device trees.** `LocalTreeRegistry` associates device trees with accounts, and device reads require identity
-confirmed on this document load. A remembered face does not authorize a store read. A session lapse keeps the
+confirmed on this document load. A remembered face does not authorize a store read. Offline the shell gives that answer from
+the replica it restores, so a device read that finds no row waits up to two seconds for it. A session lapse keeps the
 confirmed device owner and pending work on this document; the same account's sign-in resumes synchronization.
 Explicit sign-out and a different account still invoke device cleanup. `ProgressStore.drainInto` migrates
 older local marks into the private lane. Displayed completion dates use the server's `markedAt`; local

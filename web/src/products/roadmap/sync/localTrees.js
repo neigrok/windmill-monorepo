@@ -6,7 +6,7 @@ import { SyncSession } from './SyncSession.js';
 import { SyncStore } from './SyncStore.js';
 import { pendingGestures } from './pendingWrites.js';
 import { HlcClock, TreeLattice, hlcText } from './lattice.js';
-import { LocalTreeRegistry, resolveDeviceOwner, deviceOwner } from '../persistence/LocalTreeRegistry.js';
+import { LocalTreeRegistry, resolveDeviceOwner, deviceOwner, deviceOwnerAnswered } from '../persistence/LocalTreeRegistry.js';
 import { PlaceStore } from '../persistence/PlaceStore.js';
 import { ProgressStore } from '../persistence/ProgressStore.js';
 import { WorkspaceStore } from '../persistence/WorkspaceStore.js';
@@ -22,6 +22,7 @@ export function mintTreeId() {
 }
 
 const BIRTH_OWNER_WAIT_MS = 2000;
+const DEVICE_READ_OWNER_WAIT_MS = 2000;
 
 // A birth never waits on the network: past BIRTH_OWNER_WAIT_MS it plants with whatever this load
 // has already confirmed, which on an unconfirmed device is anonymous.
@@ -104,7 +105,12 @@ function legendGestures(kinds) {
 // TreeData shape a server seed has, or null when this browser has no standing to open it. Only a
 // device row visible to the account the server says is here opens the door.
 export async function loadDeviceTree(treeId) {
-  const entry = new LocalTreeRegistry().get(treeId, await resolveDeviceOwner());
+  const registry = new LocalTreeRegistry();
+  let entry = registry.get(treeId, await resolveDeviceOwner());
+  if (!entry) {
+    await deviceOwnerAnswered(DEVICE_READ_OWNER_WAIT_MS);
+    entry = registry.get(treeId);
+  }
   if (!entry) return null;
   const saved = await new SyncStore().load(treeId).catch(() => null);
   if (!saved?.frame) return null;

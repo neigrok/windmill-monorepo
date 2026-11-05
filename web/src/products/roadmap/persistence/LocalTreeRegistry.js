@@ -19,12 +19,25 @@ export function deviceOwner() {
   return confirmation()?.owner ?? null;
 }
 
+const waitingForOwner = new Set();
+
 // A server-confirmed answer about who holds this device; it also attributes anything unstamped.
 export function confirmDeviceOwner(userId) {
   const owner = userId ?? null;
   window.wmDeviceConfirmation = { owner };
   new LocalTreeRegistry().stampUnattributed(owner);
+  for (const wake of waitingForOwner) wake();
+  waitingForOwner.clear();
   return owner;
+}
+
+// Offline /v1/me cannot answer but the shell can, from the replica it restores: this settles on its answer, or after `withinMs`.
+export function deviceOwnerAnswered(withinMs) {
+  if (confirmation()) return Promise.resolve();
+  return new Promise((resolve) => {
+    waitingForOwner.add(resolve);
+    setTimeout(resolve, withinMs);
+  });
 }
 
 export async function resolveDeviceOwner() {
