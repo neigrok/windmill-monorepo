@@ -7,6 +7,10 @@ underscores because `/v1/events` accepts snake_case names. Each engine instance 
 injected limits are capped at 100. No raw exception, stack, body, field value, ID, scope reference,
 account, email or token is forwarded.
 
+Only a deployed build reports as `environment: production`. `scripts/test.mjs` drops the build's DSN, so a test run never reaches
+Sentry, though a branch that predates that rule can still report from CI as `development`: read production's failures under
+`environment:production`.
+
 Gym load validation accepts finite normalized values without a fixed kg cap; explicit zero remains
 distinct from an absent target. An unrepresentable derived metric is unavailable data, rendered in
 existing unavailable slots, and creates no technical failure or event. Existing set, target, fix and
