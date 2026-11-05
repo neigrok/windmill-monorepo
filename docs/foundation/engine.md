@@ -2357,6 +2357,10 @@ last change to any of them, D-6), or `null` when `count` is 0. A client restorin
 replica reads them to say what is arriving and to open first the product the person last wrote to; a
 client that does not know the field ignores it.
 
+A hello writes nothing, so Kotlin's transport lets OkHttp send it again on a fresh connection, and a
+socket the server closed while idle never reads as offline; it sends a push or a pull once, for §7.4
+and §7.5 to retry.
+
 ### §9.3 Push: `POST /v1/sync/push`
 
 ```ts
