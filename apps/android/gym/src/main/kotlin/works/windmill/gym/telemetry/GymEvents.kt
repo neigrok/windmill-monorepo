@@ -68,6 +68,7 @@ object GymActions : EventSchema {
             "fix" to setOf("ok", "refused", "failed"),
         ),
         "tile" to mapOf("open" to setOf("ok", "failed"), "routines" to setOf("ok", "failed")),
+        "proposal" to mapOf("sign_in" to setOf("ok")),
     )
     val asking: Map<String, Set<String>> = mapOf(
         "threads" to setOf("delete"), "finish" to setOf("discard"), "session" to setOf("discard"), "log" to setOf("discard", "first_pull"),

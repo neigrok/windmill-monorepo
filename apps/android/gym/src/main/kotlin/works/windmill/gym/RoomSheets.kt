@@ -94,9 +94,13 @@ internal class ReviewFlow(
         reviewing = Reviewing(proposal.id, proposal.target, door)
     }
 
-    fun close() {
+    // What a door does next waits for the sheet to be off.
+    fun close(then: () -> Unit = {}) {
         if (busy) return
-        scope.launch { sheet.hide() }.invokeOnCompletion { reviewing = null }
+        scope.launch { sheet.hide() }.invokeOnCompletion { cause ->
+            reviewing = null
+            if (cause == null) then()
+        }
     }
 
     // A thread's receipts live exactly as long as that thread is on screen.
@@ -118,7 +122,7 @@ internal class ReviewFlow(
     // Over the conversation or the routines home, never a push. Closing it — swipe, scrim, back —
     // decides nothing: the proposal stays pending and its card reads `still waiting`.
     @Composable
-    fun Sheet(store: TrainingStore, onAsk: ((about: String) -> Unit)?, say: (String) -> Unit) {
+    fun Sheet(store: TrainingStore, onAsk: ((about: String) -> Unit)?, onSignIn: () -> Unit, say: (String) -> Unit) {
         val colors = MaterialTheme.colorScheme
         reviewing?.let { open ->
             val workout = open.target == ProposalTarget.Workout
@@ -155,6 +159,7 @@ internal class ReviewFlow(
                             close()
                         }
                     },
+                    onSignIn = { close(onSignIn) },
                 )
             }
         }

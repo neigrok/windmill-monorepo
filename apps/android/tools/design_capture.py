@@ -352,6 +352,16 @@ class Fixture:
             raise RuntimeError("Capture fixture did not retain all six weigh-ins and two notes.")
 
 
+# A signed-out phone's workout never reaches the log, so its id is read from the get_session its own request carries.
+def phone_session(body):
+    lead = "Here is what get_session returns on my phone right now, exactly as it answers:\n"
+    for message in body["messages"]:
+        for block in message["content"] if isinstance(message["content"], list) else []:
+            if block.get("type") == "text" and block["text"].startswith(lead):
+                return json.loads(block["text"][len(lead):])["session"]["id"]
+    raise ValueError("The request carries no read of an open workout.")
+
+
 class ModelFixture(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
@@ -362,6 +372,8 @@ class ModelFixture(BaseHTTPRequestHandler):
         body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
         self.server.calls += 1
         content = self.server.responses.pop(0) if self.server.responses else MODEL_FALLBACK
+        if "$phone_session" in json.dumps(content):
+            content = json.loads(json.dumps(content).replace("$phone_session", phone_session(body)))
         start_delay, chunk_chars, chunk_delay = getattr(self.server, "timing", (0, None, 0))
         named_stop = next((block["reason"] for block in content if block["type"] == "stop"), None)
         content = [block for block in content if block["type"] != "stop"]
@@ -1020,7 +1032,7 @@ def main():
                     device.find("Hi, I’m Coach. I can help you with:" if args.capture_only else "Push A")
                 for scenario in [item for item in scenarios if item["account"] == account]:
                     # A record's id is taken across accounts, so a planted row or a model's write names the account it was made for.
-                    scenario = json.loads(json.dumps(scenario).replace("$account", fixture.account.replace("-", "")[:12]))
+                    scenario = json.loads(json.dumps(scenario).replace("$account", fixture.account.replace("-", "")[:12]).replace("$mode", mode))
                     completions = sum(step.get("auth_code") == "valid" for step in scenario["steps"] + scenario.get("after", []))
                     sessions_before = int(fixture.sql("SELECT count(*) FROM sessions;")) if completions else 0
                     responses = json.dumps(scenario.get("responses", []))

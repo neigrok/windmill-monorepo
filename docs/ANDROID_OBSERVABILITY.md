@@ -289,6 +289,7 @@ foot turns to Retry.
 | `notes` | `delete` | `ok`, `refused`, `failed` | |
 | `notification` | `log_set` | `ok`, `refused` | |
 | `notification` | `open` | `ok`, `refused` | |
+| `proposal` | `sign_in` | `ok` | |
 | `record` | `edit` | `ok`, `refused`, `failed` | |
 | `routine_editor` | `discard` | `ok`, `cancelled` | yes |
 | `routine_editor` | `save` | `ok`, `refused`, `failed` | |

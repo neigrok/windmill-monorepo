@@ -204,7 +204,7 @@ class LargestTypeTests {
                     Box(Modifier.fillMaxWidth().height(700.dp)) {
                         ReviewSheet(
                             proposalId = "proposal1", state = review, events = review,
-                            onAsk = null, onDecided = {},
+                            onAsk = null, onDecided = {}, onSignIn = {},
                         )
                     }
                 }

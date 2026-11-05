@@ -72,6 +72,7 @@ import works.windmill.gym.presentation.TheSix
 import works.windmill.gym.store.ProposalOutcome
 import works.windmill.gym.store.ProposalRead
 import works.windmill.gym.store.RoutinesStore
+import works.windmill.gym.store.Seat
 import works.windmill.gym.store.TrainingSeat
 import works.windmill.gym.store.TrainingStore
 import works.windmill.gym.store.WorkoutProposalsStore
@@ -86,6 +87,8 @@ interface ReviewState {
     // Why this proposal can no longer be applied, said on the sheet; absent while it can.
     fun outOfDateLine(id: String): String?
     val accountKey: String
+    // Signed out a proposal can be read, and deciding it asks an account.
+    val signedOut: Boolean get() = accountKey == Seat.anonymous
 }
 
 // What the review asks of the stores.
@@ -150,6 +153,8 @@ fun ReviewSheet(
     // room learns it from the first bare 404 and takes both doors down for the life of the room.
     onAsk: ((String) -> Unit)?,
     onDecided: (Proposal) -> Unit,
+    // A signed-out sheet's one door; the room closes the sheet first.
+    onSignIn: () -> Unit,
     onBusy: (Boolean) -> Unit = {},
 ) {
     val colors = MaterialTheme.colorScheme
@@ -281,7 +286,7 @@ fun ReviewSheet(
             LaunchedEffect(proposal, receiptVisible, lifecycle, seat) {
                 if (receiptVisible && lifecycle == Lifecycle.State.RESUMED) events.proposalReceiptShown(proposal, seat)
             }
-            Foot(proposal, decidable, deciding, seen, said.takeUnless { it == outOfDate }, onDecide = ::decide,
+            Foot(proposal, decidable, state.signedOut, deciding, seen, said.takeUnless { it == outOfDate }, onDecide = ::decide, onSignIn = onSignIn,
                 receiptModifier = Modifier.onGloballyPositioned { receiptVisible = !it.boundsInWindow().isEmpty })
         }
     }
@@ -412,9 +417,11 @@ private fun ChangeRow(proposal: Proposal, change: ProposalChange, catalog: List<
         val title = when (change.kind) {
             ChangeKind.Added -> "Add $name"
             ChangeKind.Removed -> "Remove $name"
+            ChangeKind.Kept -> "Move $name"
             else -> name
         }
         Text(title, style = type.row, color = colors.onSurface)
+        change.order?.let { MoveLine(it.label, it.before, it.after, type = type) }
         when (change.kind) {
             ChangeKind.Added -> {
                 val target = change.after?.let { after ->
@@ -424,6 +431,7 @@ private fun ChangeRow(proposal: Proposal, change: ProposalChange, catalog: List<
                 Text("$target · $after", style = type.rowLine, color = colors.onSurfaceVariant)
             }
             ChangeKind.Removed -> Text(change.removedLine(proposal.within), style = type.rowLine, color = colors.onSurfaceVariant)
+            ChangeKind.Kept -> Unit
             else -> {
                 val before = change.before
                 val after = change.after
@@ -491,10 +499,12 @@ private fun ChangeCard(tight: Boolean = false, content: @Composable () -> Unit) 
 private fun Foot(
     proposal: Proposal,
     decidable: Boolean,
+    signedOut: Boolean,
     deciding: Boolean,
     seen: Boolean,
     said: String?,
     onDecide: (Boolean) -> Unit,
+    onSignIn: () -> Unit,
     receiptModifier: Modifier,
 ) {
     val colors = MaterialTheme.colorScheme
@@ -511,6 +521,18 @@ private fun Foot(
         if (!decidable) {
             proposal.receipt?.let { Text(it, style = type.row, color = colors.primary,
                 modifier = receiptModifier) }
+            return@Column
+        }
+        if (signedOut) {
+            Text(Proposal.signInToReview, style = type.rowLine, color = colors.onSurfaceVariant)
+            Button(
+                onClick = onSignIn,
+                modifier = Modifier.fillMaxWidth().heightIn(min = GymTap.secondary),
+                shape = RoundedCornerShape(WindmillRadius.lg),
+                colors = ButtonDefaults.buttonColors(containerColor = colors.primary, contentColor = colors.onPrimary),
+            ) {
+                Text("Sign in", style = type.action)
+            }
             return@Column
         }
         var turningDown by remember { mutableStateOf(false) }
@@ -647,7 +669,7 @@ private fun PendingProposalPreview() {
     )
     GymPreview {
         Box(Modifier.background(MaterialTheme.colorScheme.surfaceContainer)) {
-            ReviewSheet(pending.id, PreviewReviewState(), PreviewReviewEvents(pending), onAsk = {}, onDecided = {})
+            ReviewSheet(pending.id, PreviewReviewState(), PreviewReviewEvents(pending), onAsk = {}, onDecided = {}, onSignIn = {})
         }
     }
 }

@@ -3,6 +3,7 @@ package works.windmill.gym.presentation
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 import kotlinx.serialization.descriptors.PrimitiveKind
 import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
 import kotlinx.serialization.encoding.Decoder
@@ -105,7 +106,12 @@ data class ProposalChange(
     val before: ProposalTargets? = null,
     val after: ProposalTargets? = null,
     val loggedSets: Int? = null,
+    // Its old and new place while the proposal waits, read against the routine or the workout's plan and never stored.
+    @Transient val order: FieldMove? = null,
 ) {
+    // Kept where it stood, so a count says it.
+    val stands: Boolean get() = kind == ChangeKind.Kept && order == null
+
     fun addedLine(follows: String?): String {
         val said = mutableListOf("added")
         after?.let { said += Proposal.asks(it) }
@@ -158,7 +164,7 @@ data class Proposal(
 ) {
     val isPending: Boolean get() = state == ProposalState.Pending
 
-    val drawn: List<ProposalChange> get() = changes.filterNot { it.kind == ChangeKind.Kept }
+    val drawn: List<ProposalChange> get() = changes.filterNot { it.stands }
 
     // The rows ARE the document as well as the diff: a kept row keeps its place in the run the routine
     // takes on, and a run of them collapses to one counted row that expands where it stands.
@@ -172,7 +178,7 @@ data class Proposal(
                 kept = mutableListOf()
             }
             changes.forEach { change ->
-                if (change.kind == ChangeKind.Kept) kept += change
+                if (change.stands) kept += change
                 else {
                     closeRun()
                     rows += DocumentRow.Changed(change)
@@ -182,11 +188,11 @@ data class Proposal(
             return rows
         }
 
-    // A workout's sheet reads what changes first: what moves, what goes and what comes, then one count of what stands (08.55b).
+    // A workout's sheet reads what changes first: what only moved, what changes, what goes and what comes, then one count of what stands (08.55b).
     val changesFirst: List<DocumentRow>
         get() {
-            val rank = listOf(ChangeKind.Retargeted, ChangeKind.Removed, ChangeKind.Added)
-            val kept = changes.filter { it.kind == ChangeKind.Kept }
+            val rank = listOf(ChangeKind.Kept, ChangeKind.Retargeted, ChangeKind.Removed, ChangeKind.Added)
+            val kept = changes.filter { it.stands }
             return drawn.sortedBy { rank.indexOf(it.kind) }.map { DocumentRow.Changed(it) } +
                 listOfNotNull(DocumentRow.Unchanged(kept).takeIf { kept.isNotEmpty() })
         }
@@ -309,6 +315,9 @@ data class Proposal(
         const val turnDownAsk = "Turn this down?"
         const val turnDownBody = "Nothing changes."
         const val turnDown = "Turn down"
+
+        // A signed-out phone reads a proposal and cannot decide it.
+        const val signInToReview = "Sign in to review this proposal."
 
         // The row the review sheet unfolds to the ladder on tap.
         const val setsLabel = "sets"

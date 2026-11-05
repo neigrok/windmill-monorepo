@@ -262,6 +262,15 @@ response `$session` is the workout the app has open, read from the log as the re
 device would. Anywhere in a recipe `$account` is the account's own short name, since a record's id is taken across accounts:
 a planted row and a model's write both name the account they were made for.
 
+With `--fresh-mode-fixture` and `--fixture capture-recipes/review-sheet-fixture.json`,
+`capture-recipes/review-sheet.json` captures a routine's review with a moved movement (08.71).
+`capture-recipes/review-sheet-signed-out.json`, with `--capture-only --fixture capture-recipes/coach-setup-fixture.json`,
+captures the workout's review signed out (08.72), the sign-in the door opens and the room after it. Anywhere in a recipe
+`$mode` is the appearance, so each signs in to its own new account. In a response
+`$phone_session` is the workout a signed-out phone has open, read from its own request, since the log never sees it.
+Its plan is four movements, so the kept count reads as 08.72 draws it; its added movement is Dumbbell Bench Press,
+which the catalogue holds, where the board's specimen says Dumbbell Floor Press.
+
 With `--fresh-mode-fixture` and `--fixture capture-recipes/coach-history-fixture.json`,
 `capture-recipes/coach-messages.json` captures empty Coach, Markdown, thinking and streaming;
 `capture-recipes/coach-history.json` captures History, sources, delete confirmation, Copy and

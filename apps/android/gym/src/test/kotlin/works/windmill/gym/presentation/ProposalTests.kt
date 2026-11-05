@@ -40,6 +40,27 @@ class ProposalTests {
         createdAtMs = yesterdayMs, settledAtMs = settledAtMs, source = source,
         baseRevision = baseRevision, baseName = baseName, name = name, changes = changes)
 
+    // A kept movement that moved is a row where it lands; only what stands is counted among the unchanged (08.71).
+    @Test fun aMovedMovementIsARowWhereItLandsAndTheCountOfWhatStandsLeavesItOut() {
+        val moved = ProposalChange(1, ChangeKind.Kept, "overhead-press", targets(3, 6), targets(3, 6), order = FieldMove("Order", "3rd", "1st"))
+        val stood = listOf("bench-press", "cable-fly").mapIndexed { at, id -> ProposalChange(at + 2, ChangeKind.Kept, id, targets(3, 8), targets(3, 8)) }
+        val added = ProposalChange(4, ChangeKind.Added, "dips", null, targets(3, 8))
+        val changed = ProposalChange(5, ChangeKind.Retargeted, "triceps-pushdown", targets(3, 8), targets(4, 8))
+        val whole = proposal(listOf(moved) + stood + listOf(added, changed), changeCount = 3)
+        assertEquals(listOf(DocumentRow.Changed(moved), DocumentRow.Unchanged(stood), DocumentRow.Changed(added), DocumentRow.Changed(changed)), whole.document)
+        assertEquals(listOf(DocumentRow.Changed(moved), DocumentRow.Changed(changed), DocumentRow.Changed(added), DocumentRow.Unchanged(stood)), whole.changesFirst)
+        assertEquals(listOf(moved, added, changed), whole.drawn)
+        assertEquals("and 2 lines unchanged", DocumentRow.Unchanged(stood).label)
+        assertEquals("3 changes", whole.counted)
+    }
+
+    // A place is read against the base where it is read; a stored proposal carries none of it.
+    @Test fun aMoveIsNeverStoredWithTheProposal() {
+        val moved = ProposalChange(1, ChangeKind.Kept, "overhead-press", targets(3, 6), targets(3, 6), order = FieldMove("Order", "3rd", "1st"))
+        val stored = WindmillJson.decodeFromString<ProposalChange>(WindmillJson.encodeToString(moved))
+        assertEquals(moved.copy(order = null), stored)
+    }
+
     @Test
     fun testARoutineCarriesItsRevisionAndTheCardWaitingOnIt() {
         val wire = """

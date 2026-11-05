@@ -635,6 +635,11 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                 } else {
                     null
                 },
+                // Over the workout's Coach the door closes that sheet too, as its other doors do.
+                onSignIn = {
+                    telemetry.event("gym_action", mapOf("screen" to "proposal", "action" to "sign_in", "outcome" to "ok"))
+                    coachSheet.close(shell.openSignIn)
+                },
                 say = { note = it },
             )
 

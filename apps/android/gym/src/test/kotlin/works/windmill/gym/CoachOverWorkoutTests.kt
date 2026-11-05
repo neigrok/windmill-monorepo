@@ -6,6 +6,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -32,9 +33,11 @@ import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import works.windmill.gym.coach.AnonymousCoachAccess
 import works.windmill.gym.coach.Ask
 import works.windmill.gym.coach.Threads
 import works.windmill.gym.coach.turn.ScriptedTurns
+import works.windmill.gym.presentation.Proposal
 import works.windmill.gym.presentation.Routine
 import works.windmill.gym.presentation.RoutineDraft
 import works.windmill.gym.presentation.SetTarget
@@ -69,10 +72,12 @@ class CoachOverWorkoutTests {
 
     private val pushA = listOf("bench-press", "overhead-press", "incline-dumbbell-press", "cable-fly", "triceps-pushdown")
 
+    private var signInsOpened = 0
+
     private fun workoutRoom(server: ScriptedTurns = ScriptedTurns(emptyList()), signedIn: Boolean = true, routineId: String = "rt_00000001", coachShown: Boolean = true,
-        log: ModelServer = EngineRoomFixture.server(), test: (EngineRoomFixture, Routine) -> Unit) {
+        log: ModelServer = EngineRoomFixture.server(), access: AnonymousCoachAccess = AnonymousCoachAccess.Unavailable, test: (EngineRoomFixture, Routine) -> Unit) {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val phone = EngineRoomFixture(tmp.newFolder(), scope, telemetry = telemetry, coachServer = server, mintRoutine = { routineId }, coachShown = coachShown)
+        val phone = EngineRoomFixture(tmp.newFolder(), scope, telemetry = telemetry, coachServer = server, mintRoutine = { routineId }, coachShown = coachShown, coachAccess = { access })
         var showing by mutableStateOf(true)
         try {
             val routine = runBlocking {
@@ -86,7 +91,7 @@ class CoachOverWorkoutTests {
             }
             phone.store.observeEngine()
             val account = phone.account()
-            val shell = ShellActions(openYou = {})
+            val shell = ShellActions(openYou = {}, openSignIn = { signInsOpened += 1 })
             compose.setContent {
                 if (showing) CompositionLocalProvider(LocalShellActions provides shell, LocalTelemetry provides telemetry) {
                     GymMaterial { GymRoom(account, phone.store) }
@@ -298,6 +303,89 @@ class CoachOverWorkoutTests {
                 assertEquals(listOf(mapOf("action" to "apply", "outcome" to "decided")), outcomes())
                 assertEquals(emptyList<String>(), failures)
             }
+        }
+    }
+
+    // A reorder Coach just wrote on this phone, before the log has counted it: the domain counts one change, and the row says what moved (08.71).
+    @Test fun aRoutinesChangeThatOnlyReordersCountsOneAndDrawsItsMoveBeforeTheLogAnswers() {
+        val routineId = "rt_00000009"
+        workoutRoom(answering(routineChange(routineId, "overhead-press", "bench-press", "incline-dumbbell-press", "cable-fly", "triceps-pushdown")), routineId = routineId) { _, _ ->
+            asking()
+            waitFor("Proposal · Push A · next time")
+            compose.onNodeWithText("1 change to Push A.").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("Review").performScrollTo().performClick()
+
+            waitFor("Move Overhead Press")
+            compose.onNodeWithText("Order · 2nd → 1st").assertIsDisplayed()
+            compose.onNodeWithText("and 4 lines unchanged").assertIsDisplayed()
+            compose.onNodeWithText("Apply").assertIsDisplayed()
+        }
+    }
+
+    // 08.71 on the workout's own sheet: the move is read against the workout's plan and stands first, and Apply reorders that plan alone.
+    @Test fun aChangeThatOnlyReordersThisWorkoutDrawsItsMoveAndAppliesToThePlanAlone() {
+        val reorder = """{"callId":"toolu_1","name":"propose_workout_change","input":{"id":"wpWWWWWWWWWWWWW1","sessionId":"$session","summary":"","entries":[${listOf("bench-press", "overhead-press", "triceps-pushdown", "incline-dumbbell-press", "cable-fly").joinToString(",") { entry(it) }}]}}"""
+        workoutRoom(answering(reorder)) { phone, routine ->
+            asking()
+            waitFor("Proposal · This workout")
+            compose.onNodeWithText("1 change to this workout.").assertIsDisplayed()
+            compose.onNodeWithText("Review").performClick()
+
+            waitFor("Move Triceps Pushdown")
+            compose.onNodeWithText("Order · 5th → 3rd").assertIsDisplayed()
+            compose.onNodeWithText("and 4 lines unchanged").assertIsDisplayed()
+            compose.onNodeWithText("Apply").performClick()
+
+            waitFor("Applied · this workout · 1 change")
+            compose.runOnIdle {
+                assertEquals(listOf("bench-press", "overhead-press", "triceps-pushdown", "incline-dumbbell-press", "cable-fly"), phone.store.workout.session!!.plan!!.entries.map { it.exerciseId })
+                assertEquals("the routine it came from stands", pushA, phone.store.routines.routine(routine.id)!!.entries.map { it.exerciseId })
+            }
+        }
+    }
+
+    // 08.72: signed out a sheet can only be read, so one Sign in takes Apply's place; it never waits for the scroll, and it closes both sheets first.
+    @Test fun signedOutTheWorkoutsSheetOffersOneSignInThatClosesBothSheetsAndCountsOneStep() = workoutRoom(answering(swap), signedIn = false, access = AnonymousCoachAccess.Available) { phone, _ ->
+        asking()
+        waitFor("Proposal · This workout")
+        compose.onNodeWithText("Review").performClick()
+
+        waitFor(Proposal.signInToReview)
+        compose.onNodeWithText("Sign in").assertIsDisplayed().assertIsEnabled()
+        compose.onNodeWithText("Remove Incline Dumbbell Press").assertIsDisplayed()
+        compose.onNodeWithText("Apply all 2").assertDoesNotExist()
+        compose.onNodeWithText("All two or none. Nothing is applied until you tap.").assertDoesNotExist()
+        compose.onNodeWithText(Proposal.applyHint).assertDoesNotExist()
+        compose.onNodeWithText("Turn this down").assertDoesNotExist()
+        compose.runOnIdle { assertEquals(0, signInsOpened) }
+        events.clear()
+
+        compose.onNodeWithText("Sign in").performClick()
+
+        compose.waitUntil(5_000) { compose.runOnIdle { signInsOpened > 0 } }
+        compose.onNodeWithText(Proposal.signInToReview).assertDoesNotExist()
+        compose.onNodeWithText(Ask.placeholder).assertDoesNotExist()
+        compose.onNodeWithText("Finish").assertIsDisplayed()
+        compose.runOnIdle {
+            assertEquals(1, signInsOpened)
+            assertEquals(pushA, phone.store.workout.session!!.plan!!.entries.map { it.exerciseId })
+            assertEquals(listOf(mapOf("screen" to "proposal", "action" to "sign_in", "outcome" to "ok")), events.filter { it.first == "gym_action" }.map { it.second })
+            assertEquals(emptyList<Map<String, String>>(), outcomes())
+        }
+    }
+
+    @Test fun signedOutARoutinesSheetTakesTheSameFoot() {
+        val routineId = "rt_00000009"
+        workoutRoom(answering(routineChange(routineId, "bench-press")), signedIn = false, routineId = routineId, access = AnonymousCoachAccess.Available) { _, _ ->
+            asking()
+            waitFor("Proposal · Push A · next time")
+            compose.onNodeWithText("Review").performScrollTo().performClick()
+
+            waitFor(Proposal.signInToReview)
+            compose.onNodeWithText("Remove Incline Dumbbell Press").assertIsDisplayed()
+            compose.onNodeWithText("Sign in").assertIsDisplayed().assertIsEnabled()
+            compose.onNodeWithText("Apply all 4").assertDoesNotExist()
+            compose.onNodeWithText("Turn this down").assertDoesNotExist()
         }
     }
 

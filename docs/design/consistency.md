@@ -1382,9 +1382,14 @@ Android. It and the product differ in these places.
   letter capitalised, over What Coach read; no board draws that line. 08.61 draws its disabled Send's glyph on-accent, which barely reads on
   its circle, and the build keeps Material's disabled colours. 03.46 draws a
   set as *1*, a ladder of −5, −2.5, +2.5, +5 and the movement in Nunito, where the shipped rack draws *Set 1*, −2.5, −1,
-  +2.5, +5 and a sans name, and the rack stays as today (D5). A proposal that only reorders a routine's movements counts a
-  change on its card and draws no row on the sheet, and no board draws one. Signed out, a sheet's Apply says *Sign in to
-  review this proposal.* with no door, and no board draws one there. A Stop refused for another
+  +2.5, +5 and a sans name, and the rack stays as today (D5). 08.71 and 08.72 draw the kept row 20 dp tall
+  and the build keeps its 48 dp target, so each sheet stands taller than its board. 08.71 draws 08.55b's sheet, and a routine's
+  keeps its own type, row height, inset kept row and Ask Coach, as the caption says. A movement that moved and changed says
+  *Order* over its targets, and a settled proposal draws no move, since a move reads against what the proposal waited on; no
+  board draws either. No board draws the way back from 08.72's Sign in: the sheets close and sign-in stands over the rack, and
+  after the code a new account lands on the rack, where the log has refused one signed-out write `stale` and the rack says
+  *“Saved training” stays on this phone* over *That changed. Open it again.*, and an account with training first asks *Add to
+  your account?*. A Stop refused for another
   reason (`stopUnheard`) says the first sentence of 08.69's band, *Coach is stopped on this phone.*, since the turn has
   already ended. No board draws an interruption with no words, and the build says the first sentence of 08.50's line,
   *Interrupted.*
@@ -1394,8 +1399,7 @@ Android. It and the product differ in these places.
   ✅, so a task links 01.8 and 01.16 by the redraw's id. 08.58's original and 08.58b stay, since the build draws them, and 01.7,
   01.14 and 01.15 stand for retained onboarding answers alone. 08.63 stays 🚧 under a section header that reads ✅. The page's
   Snackbar sets its words in Roboto (`1254:38382`), and `Android / Diff field`'s *Equipment* stands 78 px wide (08.26), which
-  the designer measures 6 px past its label column. Two drafts stand 🚧 for the owner: 08.71, a moved row on the review sheet,
-  invents *Move*; 08.72 draws one Sign in on the sheet signed out, with no Apply and no Turn this down. Neither is built.
+  the designer measures 6 px past its label column.
 - **6aa · Words the Android boards added, for the owner to check.** 08.41 *Too long by 1,400 bytes. The limit is 8,000 bytes.*
   / *English letters take 1 byte each. Other letters and emoji take more.*; 08.70 *Held on the phone that sent it*; 08.55b
   *removed from this workout*; 08.56 *Proposal · Push A · next time*; 07.15 and 07.16 *conversation* as the sign-in noun; the
