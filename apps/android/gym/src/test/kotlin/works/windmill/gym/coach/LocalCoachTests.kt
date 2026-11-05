@@ -117,7 +117,7 @@ class LocalCoachTests {
     // What a retained answer's allowance read holds outlives the settle that rewrites the file; a file written before it held one, or by a build that dropped it, reads as well and stays as it is.
     @Test
     fun aRetainedAnswerKeepsItsBalanceThroughTheSettleAndAnOlderFileWithoutOneReads() {
-        val release = """"allowance":{"code":"subject_exhausted","currency":"USD","period":"lifetime","tier":"anonymous","configured":true,"limit":"0.05","used":"0.05","reserved":"0.00","remaining":"0.00"},"""
+        val release = """"allowance":{"code":"subject_exhausted","currency":"USD","period":"lifetime","tier":"anonymous","configured":true,"limit":"0.25","used":"0.25","reserved":"0.00","remaining":"0.00"},"""
         fun document(extra: String, allowance: String) = """{"anonymousId":"a"$extra,"onboarding":{"a":{"r":{"owner":"a","chat":"c","replica":"x","requestId":"r","body":"{}","createdAtMs":1,"response":{"requestId":"r","resultId":"z","status":"failed","routines":[],$allowance"errorCode":"subject_exhausted"}}}}}"""
         val rewritten = File(tmp.newFolder(), "coach").apply { writeText(document(""","chats":{}""", release)) }
         val stamp = rewritten.lastModified()
