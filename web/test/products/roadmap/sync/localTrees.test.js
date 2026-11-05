@@ -71,6 +71,9 @@ test('a move never deletes its source when the destination has a newer discard e
 for (const action of [deleteLocalTree, forgetDeviceTrees]) {
   test(`${action.name} removes obsolete share history and card preferences`, async (t) => {
     const original = globalThis.window;
+    const originalDatabase = globalThis.indexedDB;
+    globalThis.indexedDB = new IDBFactory();
+    t.after(() => { globalThis.indexedDB = originalDatabase; });
     const disk = new Map([
       ['windmill:shared:t_old', JSON.stringify({ completed: ['n_private'], history: [{ at: 100, delta: 1 }] })],
       ['windmill:shared:t_orphan', '{}'],

@@ -6,6 +6,10 @@ import { ANONYMOUS_OWNER, LAPSED_SESSION, SYNC_OFFLINE_SHORT, SYNC_STATUS } from
 import { refusalEventCode } from './refusals.js';
 import { deriveSyncStatus, OFFLINE_GRACE_MS, SAVING_DELAY_MS, SAVED_HOLD_MS } from './status.js';
 
+const OFFLINE_STATUS = Object.freeze({
+  line: SYNC_STATUS.offline, short: SYNC_OFFLINE_SHORT, icon: 'offline', narrow: 'icon', connectivity: 'offline',
+});
+
 const SYNC_CLOCK = {
   now: () => Date.now(),
   setTimeout: (...args) => setTimeout(...args),
@@ -134,6 +138,13 @@ export function useRoomSyncNotices({ treeId, syncSession, owner, status, lapsed,
       lease.release();
     };
   }, [treeId, roomStatusEnabled]);
+  // Publish before the platform's bubbling offline listener can reveal the global notice.
+  useLayoutEffect(() => {
+    if (!syncEligible || syncSession?.treeId !== treeId) return undefined;
+    const publishOffline = () => roomStatusLease.current?.publish(OFFLINE_STATUS);
+    window.addEventListener('offline', publishOffline, true);
+    return () => window.removeEventListener('offline', publishOffline, true);
+  }, [treeId, syncSession, syncEligible]);
   useLayoutEffect(() => {
     const lease = roomStatusLease.current;
     if (!lease) return;
@@ -146,7 +157,7 @@ export function useRoomSyncNotices({ treeId, syncSession, owner, status, lapsed,
       return;
     }
     const roomStatus = syncState === 'offline'
-      ? { line: SYNC_STATUS.offline, short: SYNC_OFFLINE_SHORT, icon: 'offline', narrow: 'icon', connectivity: 'offline' }
+      ? OFFLINE_STATUS
       : { line: SYNC_STATUS[syncState], narrow: 'announce' };
     lease.publish(roomStatus);
   }, [treeId, roomStatusEnabled, deviceLine, phone, syncEligible, syncState]);

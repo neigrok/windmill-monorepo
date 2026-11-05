@@ -48,8 +48,10 @@ retry reconcile that session before recovering the discard. A new session keeps 
 one that reopens the same account. Closure refuses an unavailable session identity before deleting.
 The device holder restored after a lapse uses the bound replica’s existing durable account metadata; it is
 not an authentication answer or an event property. Sign-in recovery uses the existing sync transition
-events. Automatic retries of unavailable roadmap reads keep the existing load and transport failure
-reporting; an expected unavailable tree is not a Sentry Issue.
+events. Pending product cleanup is recorded with the replica transition and retried after reload; a failure
+reports `auth-session` and retains the cleanup marker. Automatic retries compare the account with the owner
+the read actually used, so ordinary signed-in cold loads do not repeat a read or its failure report. An
+expected unavailable tree or offline transport failure is not a Sentry Issue.
 Offline copy identifies the REST features that need a connection.
 No account identifier or decision content is included.
 

@@ -15,7 +15,7 @@ async function account(t) {
   const listeners = new Map();
   const broadcasts = [];
   const globals = {
-    window: { location: { hash: '#/app/t_pending' },
+    window: { location: { hash: '#/app/t_pending' }, setTimeout: () => 0,
       addEventListener: (event, listener) => listeners.set(event, listener),
       removeEventListener: (event) => listeners.delete(event) },
     localStorage: { getItem: (key) => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value) },
@@ -38,7 +38,7 @@ async function account(t) {
   t.mock.method(globalThis, 'fetch', async () => ({ ok: !!me, status: me ? 200 : 401, json: async () => ({ user: me }) }));
   const forgotten = [];
   t.mock.method(roadmapRoutes, 'forgetDevice', (change) => forgotten.push(change));
-  t.mock.method(syncSession, 'open', () => Promise.resolve(engine));
+  t.mock.method(syncSession, 'open', (options) => { engine.credentials = options.credentials; return Promise.resolve(engine); });
   t.mock.method(syncSession, 'getSnapshot', () => ({ engine, ready: true, online: true, error: false }));
   const prior = { engine: syncSession.engine, opening: syncSession.opening };
   syncSession.engine = engine;
@@ -53,7 +53,7 @@ async function account(t) {
   await engine.commit('self/probe', [{ op: 'create', t: 'card', id: 'card0001', f: { title: 'pending' } }]);
   const replica = engine.device.activeReplica.id;
   const entries = structuredClone(engine.device.activeReplica.outbox);
-  return { env, get engine() { return engine; }, auth, view, forgotten, replica, entries, broadcasts, async reload() {
+  return { env, get engine() { return engine; }, auth, get view() { return view; }, forgotten, replica, entries, broadcasts, async reload() {
     view.unmount();
     await engine.close();
     engine = await BrowserSyncEngine.open(env.options);
@@ -197,3 +197,143 @@ for (const returning of ['A', 'B']) {
     assert.deepEqual(state.env.failures, []);
   });
 }
+
+
+for (const interruption of ['question', 'handshake']) {
+  test(`an interrupted account replacement keeps cleanup owed through a ${interruption} and reload`, async (t) => {
+    const state = await account(t);
+    state.setMe(null);
+    await state.auth().refresh();
+    await state.engine.finishSignOut({ choice: 'keep', deviceCleanup: true });
+    state.setMe({ id: 'B', name: 'Bea' });
+    if (interruption === 'question')
+      await state.engine.commit('self/probe', [{ op: 'create', t: 'card', id: 'anon0001', f: { title: 'anonymous' } }]);
+    state.env.transport.response = () => ({ response: interruption === 'handshake'
+      ? { status: 503, body: {} }
+      : { status: 200, body: { as: 'B', holdsRecords: { probe: true }, epoch: 'ep-1', serverTime: 1000, schema: 1, minSchema: 1 } },
+      timing: { send: state.engine.reading(), recv: state.engine.reading() } });
+    const result = await state.engine.signIn('B');
+    assert.equal(result.complete, false);
+    assert.equal(interruption === 'question' ? result.due[0].kind : result.authPaused, interruption === 'question' ? 'signed-out' : true);
+    assert.deepEqual(state.engine.device.meta.deviceCleanup, { previous: 'A', generation: 2 });
+    assert.deepEqual(state.forgotten, []);
+    if (interruption === 'handshake') state.env.transport.response = null;
+    await state.reload();
+    await until(() => state.forgotten.length === 1);
+    await until(() => state.engine.device.meta.deviceCleanup === undefined);
+    if (interruption === 'question') {
+      await until(() => elementsOf(state.view.tree).some((node) => node.props.onDecision && node.props.question));
+      const decision = elementsOf(state.view.tree).find((node) => node.props.onDecision);
+      await decision.props.onDecision('add');
+    }
+    await until(() => state.auth().status === 'signed-in');
+    assert.deepEqual(state.forgotten, [{ previous: 'A', next: null }]);
+    assert.equal(state.engine.device.activeReplica.meta.account, 'B');
+    assert.equal(state.engine.device.meta.deviceCleanup, undefined);
+  });
+}
+
+test('an explicit sign-out interrupted before the product wipe resumes it while signed out after reload', async (t) => {
+  const state = await account(t);
+  await state.engine.finishSignOut({ choice: 'keep', deviceCleanup: true });
+  state.setMe(null);
+  assert.deepEqual(state.engine.device.meta.deviceCleanup, { previous: 'A', generation: 2 });
+  assert.deepEqual(state.forgotten, []);
+  await state.reload();
+  await until(() => state.auth().status === 'ghost');
+  assert.deepEqual(state.forgotten, [{ previous: 'A', next: null }]);
+  assert.equal(state.engine.device.meta.deviceCleanup, undefined);
+  assert.equal(state.auth().lapsed, false);
+});
+
+test('a failed product wipe retains its durable intent until a later refresh succeeds', async (t) => {
+  const state = await account(t);
+  await state.engine.finishSignOut({ choice: 'keep', deviceCleanup: true });
+  state.setMe(null);
+  let attempts = 0;
+  roadmapRoutes.forgetDevice.mock.mockImplementation((change) => {
+    attempts++;
+    if (attempts === 1) throw new Error('device-cleanup-refused');
+    state.forgotten.push(change);
+  });
+  await state.reload();
+  await until(() => elementsOf(state.view.tree).some((node) => node.props.role === 'alert'));
+  assert.deepEqual(state.engine.device.meta.deviceCleanup, { previous: 'A', generation: 2 });
+  assert.deepEqual(state.forgotten, []);
+  await state.auth().refresh();
+  assert.equal(attempts, 2);
+  assert.deepEqual(state.forgotten, [{ previous: 'A', next: null }]);
+  assert.equal(state.engine.device.meta.deviceCleanup, undefined);
+});
+
+test('an incomplete discard decision does not owe product cleanup', async (t) => {
+  const state = await account(t);
+  const result = await state.engine.finishSignOut({ choice: 'discard', counted: [], deviceCleanup: true });
+  assert.equal(result.complete, false);
+  assert.equal(state.engine.device.activeReplica.meta.state, 'bound');
+  assert.equal(state.engine.device.meta.deviceCleanup, undefined);
+  assert.deepEqual(state.forgotten, []);
+});
+
+
+test('a failed explicit sign-out wipe retries in the same document after the replica is anonymous', async (t) => {
+  const state = await account(t);
+  state.engine.online = false;
+  state.setMe(null);
+  let attempts = 0;
+  roadmapRoutes.forgetDevice.mock.mockImplementation((change) => {
+    attempts++;
+    if (attempts === 1) throw new Error('device-cleanup-refused');
+    state.forgotten.push(change);
+  });
+  const finished = state.auth().signOut();
+  await until(() => elementsOf(state.view.tree).some((node) => node.props.onDecision && node.props.question));
+  const decision = () => elementsOf(state.view.tree).find((node) => node.props.onDecision);
+  await decision().props.onDecision('keep');
+  assert.equal(state.engine.device.activeReplica.meta.state, 'anon');
+  assert.deepEqual(state.engine.device.meta.deviceCleanup, { previous: 'A', generation: state.engine.device.meta.authGeneration });
+  assert.equal(decision().props.error, true);
+  await decision().props.onDecision('keep');
+  assert.equal(await finished, true);
+  assert.equal(state.engine.device.meta.deviceCleanup, undefined);
+  assert.deepEqual(state.forgotten, [{ previous: 'A', next: null }]);
+  assert.deepEqual({ status: state.auth().status, lapsed: state.auth().lapsed }, { status: 'ghost', lapsed: false });
+});
+
+test('replaying stored cleanup never confirms a stored arriving account', async (t) => {
+  const state = await account(t);
+  await state.engine.finishSignOut({ choice: 'keep', deviceCleanup: true });
+  await state.engine.write(null, (device) => { device.meta.deviceCleanup.next = 'B'; });
+  state.setMe(null);
+  const { confirmDeviceOwner, deviceOwner } = await import('../../../src/products/roadmap/persistence/LocalTreeRegistry.js');
+  roadmapRoutes.forgetDevice.mock.mockImplementation((change) => {
+    state.forgotten.push(change);
+    confirmDeviceOwner(change.next);
+  });
+  await state.reload();
+  await until(() => state.auth().status === 'ghost');
+  assert.deepEqual(state.forgotten, [{ previous: 'A', next: null }]);
+  assert.equal(deviceOwner(), null);
+});
+
+
+test('finishing an old cleanup cannot acknowledge a newer departure by the same account', async (t) => {
+  const state = await account(t);
+  await state.engine.finishSignOut({ choice: 'keep', deviceCleanup: true });
+  state.setMe(null);
+  let started;
+  let release;
+  const began = new Promise((resolve) => { started = resolve; });
+  const delayed = new Promise((resolve) => { release = resolve; });
+  roadmapRoutes.forgetDevice.mock.mockImplementation(async () => { started(); await delayed; });
+  const refresh = state.auth().refresh();
+  await began;
+  await state.engine.write(null, (device) => {
+    device.meta.authGeneration++;
+    device.meta.deviceCleanup = { previous: 'A', generation: device.meta.authGeneration };
+  });
+  const newer = structuredClone(state.engine.device.meta.deviceCleanup);
+  release();
+  await refresh;
+  assert.deepEqual(state.engine.device.meta.deviceCleanup, newer);
+});

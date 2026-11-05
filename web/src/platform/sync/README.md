@@ -42,6 +42,9 @@ bounded flush and Keep/Discard session. `cancelSignOut()` resolves after the sha
 released. Before the sender numbers a push it asks a fresh hello and sends only when the account, schema floor and device still match; otherwise it backs off. The leader flushes; every numbering transaction checks the shared session, and a Web Lock
 identifies its live owner. Cancel, finish and owner death release the pause. Pending product device
 work uses `pendingDeviceWork`.
+The shell passes `deviceCleanup: true` to `finishSignOut` when product residue must be erased. A completed
+transition records the departing account and transition generation in `device.meta.deviceCleanup` in the
+same transaction. The shell clears that exact marker after product cleanup succeeds and replays it after reload.
 
 Each store mutation uses one strict-durability IndexedDB transaction. Indexed reads precede the
 synchronous read-and-commit callback inside that same transaction; it cannot await. Writes hydrate

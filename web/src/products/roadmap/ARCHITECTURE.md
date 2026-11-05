@@ -146,7 +146,8 @@ can't read stays out, marks included, and the line says *Exported 1 of 2 roadmap
 line is the export's error.
 
 **The device line.** The host derives an anonymous or lapsed line: the Shell carries it from 744px, and both
-phone views receive the tappable `DeviceLine`.
+phone views receive the tappable `DeviceLine`. A restored paused account keeps `lapsed` true after reload;
+the line reads `LAPSED_SESSION` and `roadmap_device_line` reports `line: 'lapsed'`.
 
 **Activity.** Desktop and tablet owners open it through the row or A on either view. The feed never opens
 itself and carries no unread signal. On desktop, opening it from the Board switches to the Graph dock. At
@@ -569,12 +570,13 @@ eligible owner keeps that lease while idle; releasing it removes the Shell slot,
 neither publish nor release the next room. The Shell mounts an empty polite live region before its first text
 and keeps the node across idle, Saving, Saved and Offline. From 744px the line is visible; phones show the
 short form where supplied. Registered phone rooms reserve the status slot and keep the mark hidden throughout
-the visit, so status changes do not move navigation. Every desktop room reserves the same status and account
-columns, including rooms without a publication, so room changes do not move the navigation track. Phone device-only
+the visit, so status changes do not move navigation. Registered desktop rooms reserve the status width. Phone device-only
 rooms keep an empty publication for the Sign in seat, with their device text below the identity row. Readers
 and the demo publish nothing: on phones `sharedShell` alone gives them the same links and seat, with no slot, and
 the global offline notice stays theirs. The global offline notice yields only while a room publishes
 `connectivity: 'offline'`, before first paint; a registration or device-only line does not replace it.
+An eligible signed-in room publishes Offline in the browser event's capture phase, before the platform's
+offline listener can reveal the global notice; its ordinary sync reading then keeps that publication.
 Below 360px Saving and Saved are announced only, and Offline uses a named icon button
 whose controlled Tooltip opens below the slot for four seconds, until another tap, an outside tap or Escape.
 
@@ -628,8 +630,12 @@ confirmed on this document load. A remembered face does not authorize a store re
 the replica it restores, so a device read that finds no row waits up to two seconds for it. A session lapse keeps the
 confirmed device owner and pending work on this document. The shell restores the previous holder from the
 bound sync replica after a reload without granting session authority. The same account's sign-in resumes
-synchronization and retries an unavailable room read automatically; explicit sign-out and a different account
-invoke device cleanup across reloads. `ProgressStore.drainInto` migrates
+synchronization. A fresh sign-in can retry an unavailable read; ordinary signed-in cold loads compare against
+the owner the read actually used and do not reread when the shell settles. Explicit sign-out and account
+replacement atomically record pending device cleanup with the replica transition. The shell replays it before
+engine networking on reload and clears it only after product cleanup finishes; roadmap blob deletions must
+commit before their index stamps are removed. A failed cleanup retains the marker for retry. The marker grants
+no session or device-read authority. `ProgressStore.drainInto` migrates
 older local marks into the private lane. Displayed completion dates use the server's `markedAt`; local
 completion clocks support only incomplete local history.
 

@@ -47,6 +47,8 @@ const ready = (async () => {
         import { syncSession } from '/src/platform/sync/session.js';
         import { BrowserSyncEngine } from '/src/platform/sync/engine.js';
         import { Registry } from '/@fs${reference}core/registry.js';
+        import { PRODUCTS } from '/src/shell/products.js';
+        PRODUCTS.push({ id: 'probe', sync: { signedOutWork: { type: 'card', one: 'card', many: 'cards' } } });
         import '/src/styles/global.css';
         window.events = []; window.issues = []; window.sent = [];
         window.ceremonies = []; window.revealed = []; window.revealFrames = []; window.cameraCalls = [];
@@ -84,13 +86,15 @@ const ready = (async () => {
             React.createElement('output', { id: 'auth-state' }, auth.status + ':' + auth.lapsed),
             hash === '#/app/t_kept' && React.createElement(SkillTreeView, { treeId: 't_kept' }));
         }
-        window.mountDevice = async (name, account, seed) => {
+        window.mountDevice = async (name, account, seed, interruption = null) => {
+          window.holdsProbe = interruption === 'question';
+          window.rejectHello = false;
           window.serverAccount = account;
           const registry = new Registry(await (await fetch('/@fs${registryPath}')).json());
           window.engine = await BrowserSyncEngine.open({ name, registry,
-            transport: { request: async (endpoint) => ({ response: endpoint === 'hello'
+            transport: { request: async (endpoint) => ({ response: endpoint === 'hello' && !window.rejectHello
               ? { status: 200, body: { serverTime: Date.now(), epoch: 'test', as: window.serverAccount,
-                schema: registry.version, minSchema: registry.minVersion, holdsRecords: { probe: false } } }
+                schema: registry.version, minSchema: registry.minVersion, holdsRecords: { probe: window.holdsProbe } } }
               : { status: 503, body: {} }, timing: { send: engine.reading(), recv: engine.reading() } }),
               openLive() { return { close() {} }; } },
             telemetry: { failure(operation) { issues.push(operation); }, event() {} } });
@@ -107,7 +111,8 @@ const ready = (async () => {
             ] });
             await session.persistNow();
           }
-          createRoot(document.getElementById('root')).render(React.createElement(AuthProvider, null, React.createElement(Room)));
+          window.deviceRoot = createRoot(document.getElementById('root'));
+          deviceRoot.render(React.createElement(AuthProvider, null, React.createElement(Room)));
         };
       `;
     },
@@ -170,6 +175,67 @@ for (const reload of [false, true]) for (const returning of ['A', 'B']) {
           await page.locator('.st-board-card-title').waitFor({ state: 'detached' });
           assert.equal(await page.locator('.st-board-card-title').count(), 0);
         }
+        assert.deepEqual(await page.evaluate(() => issues), []);
+      });
+    } finally { await context.close(); }
+  });
+}
+
+
+for (const interruption of ['question', 'handshake', 'signout']) {
+  test(`device cleanup survives a reload after the replica transition during ${interruption}`, async () => {
+    await ready;
+    const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+    try {
+      let account = 'A';
+      await context.route('**/v1/**', (route) => {
+        const path = new URL(route.request().url()).pathname;
+        const body = path === '/v1/me' ? { user: account ? { id: account, name: account } : null }
+          : path === '/v1/trees' ? { trees: [] } : { enabled: false, runs: [] };
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
+      });
+      const page = await context.newPage();
+      await withBrowserErrors(page, async () => {
+        const name = `device-interruption-${interruption}`;
+        await page.goto(`${origin}/device-test#/app/t_kept`);
+        await page.waitForFunction(() => typeof mountDevice === 'function');
+        await page.evaluate((name) => mountDevice(name, 'A', true), name);
+        await page.locator('.st-board-card-title').filter({ hasText: 'Kept device step' }).waitFor();
+        await page.waitForFunction(() => document.getElementById('auth-state').textContent === 'signed-in:false');
+        await page.waitForFunction(() => window.roadmapSession?.phase === 'live');
+        account = interruption === 'signout' ? null : 'B';
+        const interrupted = await page.evaluate(async ({ interruption, account }) => {
+          deviceRoot.unmount();
+          serverAccount = account;
+          await engine.finishSignOut({ choice: 'keep', deviceCleanup: true });
+          if (interruption === 'signout') return { complete: true };
+          if (interruption === 'question') {
+            holdsProbe = true;
+            await engine.commit('self/probe', [{ op: 'create', t: 'card', id: 'anon0001', f: { title: 'Anonymous work' } }]);
+          } else rejectHello = true;
+          return engine.signIn('B');
+        }, { interruption, account });
+        assert.equal(interrupted.complete, interruption === 'signout');
+        if (interruption === 'question') assert.equal(interrupted.due[0].kind, 'signed-out');
+        if (interruption === 'handshake') assert.equal(interrupted.authPaused, true);
+        const cleanup = await page.evaluate(() => engine.device.meta.deviceCleanup);
+        assert.equal(cleanup.previous, 'A');
+        assert.equal(Number.isSafeInteger(cleanup.generation) && cleanup.generation > 0, true);
+        assert.deepEqual(Object.keys(cleanup).sort(), ['generation', 'previous']);
+        assert.deepEqual(await page.evaluate(() => deviceStore.treeIds()), ['t_kept']);
+        await page.reload();
+        await page.waitForFunction(() => typeof mountDevice === 'function');
+        await page.evaluate(({ name, account, interruption }) => mountDevice(name, account, false, interruption), { name, account, interruption });
+        await page.waitForFunction(async () => engine.device.meta.deviceCleanup === undefined && (await deviceStore.treeIds()).length === 0);
+        assert.deepEqual(await page.evaluate(() => deviceIndex.entries()), {});
+        assert.deepEqual(await page.evaluate(() => deviceStore.treeIds()), []);
+        if (interruption === 'question') {
+          const dialog = page.getByRole('dialog');
+          await dialog.waitFor();
+          await dialog.getByRole('button', { name: 'Add', exact: true }).click();
+        }
+        await page.waitForFunction((expected) => document.getElementById('auth-state').textContent === expected,
+          interruption === 'signout' ? 'ghost:false' : 'signed-in:false');
         assert.deepEqual(await page.evaluate(() => issues), []);
       });
     } finally { await context.close(); }

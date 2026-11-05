@@ -5,7 +5,7 @@ import { layoutNameFrom, loadLayoutEngine } from '../layout/index.js';
 import { SkillTree } from '../model/SkillTree.js';
 import { UnlockRules } from '../model/UnlockRules.js';
 import { HttpTreeRepository } from '../persistence/HttpTreeRepository.js';
-import { LocalTreeRegistry, resolveDeviceOwner } from '../persistence/LocalTreeRegistry.js';
+import { LocalTreeRegistry, resolveDeviceOwner, deviceOwner, deviceOwnerAnswered } from '../persistence/LocalTreeRegistry.js';
 import { PlaceStore } from '../persistence/PlaceStore.js';
 import { ReturnLedger } from '../persistence/ReturnLedger.js';
 import { peekBorn, takePlantNote } from '../persistence/ViewPrefs.js';
@@ -26,15 +26,13 @@ function savedPlace(place, seed) {
   return { camera, selection };
 }
 
-// Who is at the door, and what the server or this device holds for them. A tree neither has is an expected answer.
+// What the server or this device holds for the confirmed owner. A tree neither has is an expected answer.
 async function readRoadmap({ treeId, demo, signal }) {
   const repo = new HttpTreeRepository({ treeId });
-  // Confirm who holds this device before anything is read from it or written to it.
-  await resolveDeviceOwner();
   let seed = null;
   try { seed = await repo.loadTree({ signal }); } catch { /* fall through to the blob */ }
   if (signal.aborted) return null;
-  if (!seed) seed = await loadDeviceTree(treeId);
+  if (!seed) seed = await loadDeviceTree(treeId, { ownerResolved: true });
   if (!seed) return { unknown: true };
   const overlay = demo
     ? { completed: new Set(DEMO_STAGED_COMPLETED), completedAt: {}, server: false }
@@ -54,7 +52,7 @@ export function useRoomLoad({ treeId, accountId, demo, shared, demotion, breakpo
   const [treeVisibility, setTreeVisibility] = useState(null); // 'private'|'unlisted'|'public'|null
   const [treeMine, setTreeMine] = useState(false);
   const [syncSession, setSyncSession] = useState(null);
-  const accountAtLoad = useRef(accountId);
+  const accountAtLoad = useRef(null);
   const plantNoteRef = useRef(null); // null until read; survives StrictMode’s double effect
   const latest = useRef(null);
   latest.current = { structure, onRemoteProgress };
@@ -63,7 +61,6 @@ export function useRoomLoad({ treeId, accountId, demo, shared, demotion, breakpo
 
   useEffect(() => {
     let cancelled = false;
-    accountAtLoad.current = accountId;
     const wanted = new AbortController();
     const { signal } = wanted;
     setLoading(true);
@@ -75,6 +72,10 @@ export function useRoomLoad({ treeId, accountId, demo, shared, demotion, breakpo
     if (plantNoteRef.current === null) plantNoteRef.current = takePlantNote();
 
     async function loadTree() {
+      await resolveDeviceOwner();
+      await deviceOwnerAnswered();
+      if (cancelled) return;
+      accountAtLoad.current = deviceOwner();
       const layoutName = layoutNameFrom(window.location);
       const engine = await loadLayoutEngine(layoutName);
       if (cancelled) return;
@@ -171,13 +172,13 @@ export function useRoomLoad({ treeId, accountId, demo, shared, demotion, breakpo
     };
   }, [reloadKey, treeId, demo, dismissToast]);
 
+  useEffect(() => {
+    if (!accountId) accountAtLoad.current = null;
+  }, [accountId]);
+
   // A sign-in can arrive before or after the first unavailable read settles.
   useEffect(() => {
-    if (!accountId) {
-      accountAtLoad.current = null;
-      return;
-    }
-    if (loadError && accountAtLoad.current !== accountId) setReloadKey((key) => key + 1);
+    if (loadError && accountId && accountAtLoad.current !== accountId) setReloadKey((key) => key + 1);
   }, [accountId, loadError]);
 
   useEffect(() => {

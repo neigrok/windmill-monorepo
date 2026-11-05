@@ -22,7 +22,6 @@ export function mintTreeId() {
 }
 
 const BIRTH_OWNER_WAIT_MS = 2000;
-const DEVICE_READ_OWNER_WAIT_MS = 2000;
 
 // A birth never waits on the network: past BIRTH_OWNER_WAIT_MS it plants with whatever this load
 // has already confirmed, which on an unconfirmed device is anonymous.
@@ -104,13 +103,14 @@ function legendGestures(kinds) {
 // This device's answer for a tree the server did not give us: the lattice blob replayed into the
 // TreeData shape a server seed has, or null when this browser has no standing to open it. Only a
 // device row visible to the account the server says is here opens the door.
-export async function loadDeviceTree(treeId) {
+export async function loadDeviceTree(treeId, { ownerResolved = false } = {}) {
   const registry = new LocalTreeRegistry();
-  let entry = registry.get(treeId, await resolveDeviceOwner());
-  if (!entry) {
-    await deviceOwnerAnswered(DEVICE_READ_OWNER_WAIT_MS);
-    entry = registry.get(treeId);
+  // A room that already resolved and waited still reads only the currently confirmed owner.
+  if (!ownerResolved) {
+    await resolveDeviceOwner();
+    if (!registry.get(treeId)) await deviceOwnerAnswered();
   }
+  const entry = registry.get(treeId);
   if (!entry) return null;
   const saved = await new SyncStore().load(treeId).catch(() => null);
   if (!saved?.frame) return null;
@@ -175,13 +175,11 @@ export async function forgetDeviceTrees() {
   clearShareResidue();
   const registry = new LocalTreeRegistry();
   const anonymous = new Set(registry.list(null).map((tree) => tree.id));
-  for (const treeId of Object.keys(registry.entries())) {
-    if (!anonymous.has(treeId)) await deleteLocalTree(treeId);
-  }
-
+  if (!registry.keeps()) throw new Error('device-index-unavailable');
   const store = new SyncStore();
-  const blobs = await store.treeIds().catch(() => []);
-  for (const treeId of blobs) if (!anonymous.has(treeId)) await store.clear(treeId).catch(() => {});
+  const blobs = await store.treeIds({ durable: true });
+  const owned = new Set([...Object.keys(registry.entries()), ...blobs]);
+  for (const treeId of owned) if (!anonymous.has(treeId)) await store.clear(treeId, { durable: true });
 
   for (const PerTreeStore of [ProgressStore, WorkspaceStore, LegendStore, ReturnLedger, MilestoneLedger]) {
     const perTree = new PerTreeStore();
@@ -191,6 +189,8 @@ export async function forgetDeviceTrees() {
   const place = new PlaceStore();
   const stood = place.load()?.treeId;
   if (stood && !anonymous.has(stood)) place.forget(stood);
+  for (const treeId of owned) if (!anonymous.has(treeId)) registry.remove(treeId);
+  if (Object.keys(registry.entries()).some((treeId) => !anonymous.has(treeId))) throw new Error('device-index-cleanup');
 }
 
 // Everything the old id owned moves under the fresh one: the blob with seq reset to 0, the

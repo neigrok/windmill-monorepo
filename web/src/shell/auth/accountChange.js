@@ -19,6 +19,11 @@ export class DeviceSeat {
     this.previousAccount = meta.state === 'bound' ? meta.account : null;
   }
 
+  async finishDeviceCleanup(change) {
+    await Promise.all(this.products.map(async (product) => product.forgetDevice?.(change)));
+    if (this.previousAccount === change.previous) this.previousAccount = null;
+  }
+
   // `me` is a user, null for a real 401, undefined for a blip. Returns null when nothing changes.
   receive(me, { signedOut = false } = {}) {
     if (me === undefined) {
