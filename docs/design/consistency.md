@@ -1404,7 +1404,8 @@ Android. It and the product differ in these places.
   ✅, so a task links 01.8 and 01.16 by the redraw's id. 08.58's original and 08.58b stay, since the build draws them, and 01.7,
   01.14 and 01.15 stand for retained onboarding answers alone. 08.63 stays 🚧 under a section header that reads ✅. The page's
   Snackbar sets its words in Roboto (`1254:38382`), and `Android / Diff field`'s *Equipment* stands 78 px wide (08.26), which
-  the designer measures 6 px past its label column.
+  the designer measures 6 px past its label column. Two drafts stand 🚧 for the owner: 08.71, a moved row on the review sheet,
+  invents *Move*; 08.72 draws one Sign in on the sheet signed out, with no Apply and no Turn this down. Neither is built.
 - **6aa · Words the Android boards added, for the owner to check.** 08.41 *Too long by 1,400 bytes. The limit is 8,000 bytes.*
   / *English letters take 1 byte each. Other letters and emoji take more.*; 08.70 *Held on the phone that sent it*; 08.55b
   *removed from this workout*; 08.56 *Proposal · Push A · next time*; 07.15 and 07.16 *conversation* as the sign-in noun; the
