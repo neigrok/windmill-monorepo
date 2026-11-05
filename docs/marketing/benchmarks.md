@@ -243,8 +243,8 @@ Researched 2026-11-02; sources are 2025 to 2026 unless the date column says othe
 | Fact | Number | Source | Date | Trust |
 |---|---|---|---|---|
 | Windmill One price | $12/month, planned, not on sale; checkout closed while no Paddle price id is configured | `web/src/shell/billing/checkout.js`, `docs/PRODUCT_LOG.md` | 2026-11-02 | primary |
-| AI allowance per tier | anonymous $0.25 lifetime per installation; verified free $0.25 per calendar month; One $7 per funded period | `backend/AI_ALLOWANCES.md` | 2026-11-02 | primary |
-| Shared free pool | $100 per calendar month and $5 per day across all anonymous and free accounts; saturates at 400 verified accounts using the full $0.25 | `backend/AI_ALLOWANCES.md` | 2026-11-02 | primary |
+| AI allowance per tier | anonymous $0.25 lifetime per installation; verified free $0.50 per calendar month; One $7 per funded period | `backend/AI_ALLOWANCES.md` | 2026-11-05 | primary |
+| Shared free pool | $100 per calendar month and $5 per day across all anonymous and free accounts; saturates at 200 verified accounts using the full $0.50 | `backend/AI_ALLOWANCES.md` | 2026-11-05 | primary |
 | One contribution after fees | $12 at a 15% store fee leaves $10.20; full use of the $7 allowance leaves $3.20 before other costs | derived from `backend/AI_ALLOWANCES.md` and the Apple Small Business Program | 2026-11-02 | primary |
 | Paid behaviour per product | Gym: Coach (Opus 5 per turn; anonymous phone onboarding turns on Sonnet 5); Roadmap: Tend assistance, 30 requests/month free and 300 on One; Journal: Voice transcription, One only | `backend/AI_ALLOWANCES.md`, `docs/AI_USAGE_REVIEW.md`, `backend/products/journal/ARCHITECTURE.md` | 2026-11-02 | primary |
 | Journal Echoes | free for every signed-in writer on an internal passive budget; never debit the allowance | `backend/products/journal/ARCHITECTURE.md` | 2026-11-02 | primary |

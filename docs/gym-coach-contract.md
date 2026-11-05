@@ -186,7 +186,7 @@ an empty `sets` array means the source omitted a set count. Unreadable, unsuppor
 programs return `insufficient_details`; incomplete model output returns `output_truncated` without
 partial routines. Domain validation rejects invented IDs, duplicate exercises and malformed values.
 
-The installation receives $0.05 of lifetime actual provider cost. Every call reserves its estimated
+The installation receives $0.25 of lifetime actual provider cost. Every call reserves its estimated
 maximum before dispatch against that allowance and the free $5/day and $100/calendar-month pools,
 then settles actual usage, including charged failures. Unknown provider outcomes retain their hold.
 The current allowance accompanies stored results; an original refusal retains its own code and

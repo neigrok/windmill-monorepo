@@ -172,7 +172,7 @@ class LiveCoachProof:
         return reply
 
     def run(self):
-        for role, tier, limit in [("free", "logged_in", "0.250000000"), ("free_photo", "logged_in", "0.250000000"), ("owner", "windmill_one", "7.000000000")]:
+        for role, tier, limit in [("free", "logged_in", "0.500000000"), ("free_photo", "logged_in", "0.500000000"), ("owner", "windmill_one", "7.000000000")]:
             status, allowance, headers = self.request("GET", "/v1/ai/allowance", role=role)
             self.check("fresh_allowance_" + role, status == 200 and allowance["tier"] == tier and
                        allowance["limit"] == limit and allowance["used"] == "0.000000000" and headers["cache-control"] == "no-store")

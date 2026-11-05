@@ -73,7 +73,7 @@ TEST(ai_allowance_reads_fixed_point_account_month_and_refuses_ambiguous_credenti
   CHECK_EQ(response->getStatusCode(), drogon::k200OK);
   Json::Value expected;
   Json::Reader parser;
-  REQUIRE(parser.parse(R"({"currency":"USD","period":"calendar_month_utc","tier":"logged_in","configured":true,"code":"ok","limit":"0.250000000","used":"0.025000000","reserved":"0.050000000","remaining":"0.175000000","resetsAtMs":1793491200000,"budgetResetsAtMs":null,"status":"available"})", expected));
+  REQUIRE(parser.parse(R"({"currency":"USD","period":"calendar_month_utc","tier":"logged_in","configured":true,"code":"ok","limit":"0.500000000","used":"0.025000000","reserved":"0.050000000","remaining":"0.425000000","resetsAtMs":1793491200000,"budgetResetsAtMs":null,"status":"available"})", expected));
   expected["resetsAtMs"] = Json::Int64{1'793'491'200'000};
   REQUIRE(response->getJsonObject());
   CHECK(*response->getJsonObject() == expected);

@@ -267,8 +267,8 @@ TEST(gym_turn_route_answers_an_allowance_refusal_429_with_the_allowance_and_file
   };
   const Json::Value monthEnd = Json::Int64(1'701'388'800'000);
   const Json::Value dayEnd = Json::Int64(1'700'006'400'000);
-  Json::Value account = parse(R"({"configured":true,"currency":"USD","limit":"0.250000000","period":"calendar_month_utc",
-      "remaining":"0.250000000","reserved":"0.000000000","tier":"logged_in","used":"0.000000000"})");
+  Json::Value account = parse(R"({"configured":true,"currency":"USD","limit":"0.500000000","period":"calendar_month_utc",
+      "remaining":"0.500000000","reserved":"0.000000000","tier":"logged_in","used":"0.000000000"})");
   account["resetsAtMs"] = monthEnd;
   const auto allowanceOf = [&](const char* code, const Json::Value& reset, const Json::Value& changes) {
     Json::Value allowance = account;
@@ -278,8 +278,8 @@ TEST(gym_turn_route_answers_an_allowance_refusal_429_with_the_allowance_and_file
     return allowance;
   };
   const std::vector<Case> cases{
-      {"subject_exhausted", [](ApiHarness& a) { a.h.budgetRepository.totals.subject.spentNanos = 250'000'000; },
-       allowanceOf("subject_exhausted", monthEnd, parse(R"({"used":"0.250000000","remaining":"0.000000000"})"))},
+      {"subject_exhausted", [](ApiHarness& a) { a.h.budgetRepository.totals.subject.spentNanos = 500'000'000; },
+       allowanceOf("subject_exhausted", monthEnd, parse(R"({"used":"0.500000000","remaining":"0.000000000"})"))},
       {"free_month_exhausted", [](ApiHarness& a) { a.h.budgetRepository.totals.freeMonth.spentNanos = a.h.limits.freeMonthlyNanos; },
        allowanceOf("free_month_exhausted", monthEnd, Json::Value(Json::objectValue))},
       {"free_day_exhausted", [](ApiHarness& a) { a.h.budgetRepository.totals.freeDay.spentNanos = a.h.limits.freeDailyNanos; },

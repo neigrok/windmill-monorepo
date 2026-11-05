@@ -253,13 +253,13 @@ TEST(pg_ai_budget_anonymous_lifetime_and_account_calendar_month_have_distinct_re
   CHECK_EQ(anonymous.subject.spentNanos, 250'000'000);
   CHECK_EQ(anonymous.freeMonth.spentNanos, 20'000'000);
   const AiBudgetPrincipal account{{AiBudgetSubjectKind::Account, "account"}, AiBudgetTier::LoggedIn};
-  CHECK_EQ(repository.reserve({"account-january", account, 250'000'000, january}, limits).code, AiBudgetCode::Ok);
+  CHECK_EQ(repository.reserve({"account-january", account, 500'000'000, january}, limits).code, AiBudgetCode::Ok);
   CHECK_EQ(repository.markDispatched("account-january").code, AiBudgetCode::Ok);
-  CHECK_EQ(repository.settle("account-january", 250'000'000).code, AiBudgetCode::Ok);
+  CHECK_EQ(repository.settle("account-january", 500'000'000).code, AiBudgetCode::Ok);
   CHECK_EQ(repository.reserve({"account-january-extra", account, 1, january}, limits).code, AiBudgetCode::SubjectExhausted);
-  CHECK_EQ(repository.reserve({"account-february", account, 250'000'000, february}, limits).code, AiBudgetCode::Ok);
+  CHECK_EQ(repository.reserve({"account-february", account, 500'000'000, february}, limits).code, AiBudgetCode::Ok);
   CHECK_EQ(repository.snapshot(account, february, limits).subject.spentNanos, 0);
-  CHECK_EQ(repository.snapshot(account, february, limits).subject.heldNanos, 250'000'000);
+  CHECK_EQ(repository.snapshot(account, february, limits).subject.heldNanos, 500'000'000);
   const auto alerts = repository.claimAlerts(february, 100, february + 1000);
   CHECK_EQ(std::count_if(alerts.begin(), alerts.end(), [](const auto& alert) {
     return alert.scope == AiBudgetScope::AnonymousLifetime;
@@ -550,8 +550,8 @@ TEST(pg_ai_budget_device_claim_preserves_current_spend_inflight_cost_and_permane
   CHECK_EQ(complete.subject.heldNanos, 0);
   CHECK_EQ(complete.freeMonth.spentNanos, 40'000'000);
   CHECK_EQ(complete.freeDay.spentNanos, 40'000'000);
-  CHECK_EQ(repository.reserve({"extra", account, 210'000'001, at}, limits).code, AiBudgetCode::SubjectExhausted);
-  CHECK_EQ(repository.reserve({"remaining", account, 210'000'000, at}, limits).code, AiBudgetCode::Ok);
+  CHECK_EQ(repository.reserve({"extra", account, 460'000'001, at}, limits).code, AiBudgetCode::SubjectExhausted);
+  CHECK_EQ(repository.reserve({"remaining", account, 460'000'000, at}, limits).code, AiBudgetCode::Ok);
   CHECK_EQ(repository.release("remaining").code, AiBudgetCode::Ok);
   const long long nextMonth = AiBudgetPeriod::at(at)->endMs;
   CHECK_EQ(repository.snapshot(account, nextMonth, limits).subject.spentNanos, 0);

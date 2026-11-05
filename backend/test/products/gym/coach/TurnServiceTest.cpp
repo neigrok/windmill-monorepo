@@ -867,7 +867,7 @@ TEST(coach_turn_error_frame_on_a_bound_seat_names_the_end_of_its_own_period) {
   h.model->start();
   REQUIRE(recorder->waitFor(1));
   h.service->stop();
-  const std::string frame = R"({"data":{"allowance":{"budgetResetsAtMs":null,"code":"ok","configured":true,"currency":"USD","limit":"0.250000000","period":"calendar_month_utc","remaining":"0.250000000","reserved":"0.000000000","resetsAtMs":1793491200000,"tier":"logged_in","used":"0.000000000"},"budgetResetsAtMs":1793491200000,"code":"subject_exhausted"},"event":"error"})";
+  const std::string frame = R"({"data":{"allowance":{"budgetResetsAtMs":null,"code":"ok","configured":true,"currency":"USD","limit":"0.500000000","period":"calendar_month_utc","remaining":"0.500000000","reserved":"0.000000000","resetsAtMs":1793491200000,"tier":"logged_in","used":"0.000000000"},"budgetResetsAtMs":1793491200000,"code":"subject_exhausted"},"event":"error"})";
   CHECK_EQ(Replay::dumpAll(recorder->snapshot()), "[" + frame + "]");
   auto resumed = std::make_shared<Recorder>();
   admission.turn->attach(resumed, true);

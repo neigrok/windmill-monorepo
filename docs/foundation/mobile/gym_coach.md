@@ -523,7 +523,7 @@ The backend owns exactly three tiers. Amounts are USD of model cost, never quest
 | Tier | Individual allowance | Period |
 |---|---|---|
 | Anonymous | $0.25 per installation credential | Lifetime |
-| Verified logged-in | $0.25 per account, including associated anonymous spend from the current month | UTC calendar month |
+| Verified logged-in | $0.50 per account, including associated anonymous spend from the current month | UTC calendar month |
 | Windmill One | $7 per funded account period | Subscription billing period; owner grants use UTC calendar months |
 
 Every hosted AI cost, including background Journal work, consumes the individual allowance.
@@ -804,7 +804,7 @@ A phone Coach requires a gym replica per [the engine](../engine.md) with:
 | `ASK_BURST` | 3 |
 | `ASK_PER_DAY` | 10 |
 | `AI_ANONYMOUS_LIFETIME_USD` | 0.25 |
-| `AI_LOGGED_IN_MONTHLY_USD` | 0.25 |
+| `AI_LOGGED_IN_MONTHLY_USD` | 0.50 |
 | `AI_ONE_PERIOD_USD` | 7 |
 | `AI_FREE_MONTHLY_USD` | 100 |
 | `AI_FREE_DAILY_USD` | 5 |

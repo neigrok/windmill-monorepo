@@ -11,7 +11,7 @@ amounts are exact decimal USD strings.
 | Tier | Individual allowance | Period | Shared spending controls | Concurrent calls |
 | --- | --- | --- | --- | --- |
 | Anonymous | $0.25 per authenticated installation | Lifetime | Free pool: $100 per UTC calendar month and $5 per UTC day | 1 |
-| Verified logged-in | $0.25 per account, including associated anonymous usage | UTC calendar month | The same free monthly and daily pools | 1 |
+| Verified logged-in | $0.50 per account, including associated anonymous usage | UTC calendar month | The same free monthly and daily pools | 1 |
 | Windmill One | $7 per funded account period | Paid subscription billing period; owner grants use UTC calendar months | The funded grant itself | 2 |
 
 Every hosted AI call debits the individual allowance, including background Journal processing.
@@ -38,7 +38,7 @@ allowance or move costs into a paid grant. An attempted rebind to another accoun
 | `AI_INSTALLATION_ISSUES_PER_DAY` | `10` per network per UTC day |
 | `AI_INSTALLATION_GENERATIONS_PER_HOUR` | `30` per network per UTC hour |
 | `AI_ANONYMOUS_LIFETIME_USD` | `0.25` |
-| `AI_LOGGED_IN_MONTHLY_USD` | `0.25` |
+| `AI_LOGGED_IN_MONTHLY_USD` | `0.50` |
 | `AI_ONE_PERIOD_USD` | `7` |
 | `AI_FREE_MONTHLY_USD` | `100` |
 | `AI_FREE_DAILY_USD` | `5` |
@@ -219,7 +219,7 @@ Existing credential authentication, allowance reads, account binding and saved r
 available while USD allowances are enabled, without requiring the network key. This keeps signed-in
 Coach available after anonymous access is disabled. Network limits return 429
 `installation_rate_limited`. Unexpected storage failures return bounded accounting failures and
-report static Sentry operations. Network limits complement the individual $0.25 and shared $5/day
+report static Sentry operations. Network limits complement the individual $0.25 and $0.50 and shared $5/day
 and $100/month budgets; a reset installation is not guaranteed to be recognizable.
 
 ## Read and refusal contracts

@@ -132,7 +132,7 @@ TEST(ai_budget_months_follow_utc_calendar_and_leap_years) {
 TEST(ai_budget_policy_has_exact_lifetime_free_and_funded_amounts) {
   const AiBudgetLimits limits;
   CHECK_EQ(limits.anonymousLifetimeNanos, 250'000'000);
-  CHECK_EQ(limits.loggedInMonthlyNanos, 250'000'000);
+  CHECK_EQ(limits.loggedInMonthlyNanos, 500'000'000);
   CHECK_EQ(limits.paidPeriodNanos, 7'000'000'000);
   CHECK_EQ(limits.freeMonthlyNanos, 100'000'000'000);
   CHECK_EQ(limits.freeDailyNanos, 5'000'000'000);
@@ -168,7 +168,7 @@ TEST(ai_budget_free_account_spend_and_holds_are_checked_with_both_shared_pools) 
   const AiBudgetPrincipal principal{{AiBudgetSubjectKind::Account, "account"}, AiBudgetTier::LoggedIn};
   AiBudgetSnapshot snapshot;
   snapshot.period = *AiBudgetPeriod::at(0);
-  snapshot.subject = {200'000'000, 20'000'000};
+  snapshot.subject = {450'000'000, 20'000'000};
   const AiBudgetLimits limits;
   CHECK_EQ(admitAiBudget({"call", principal, 30'000'000, 0}, limits, snapshot), AiBudgetCode::Ok);
   CHECK_EQ(admitAiBudget({"call", principal, 30'000'001, 0}, limits, snapshot), AiBudgetCode::SubjectExhausted);
