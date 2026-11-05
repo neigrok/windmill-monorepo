@@ -202,7 +202,7 @@ class TrainingStore(
             if (owner != seat.owner) return
             workoutProposals.read()
         } catch (_: TrainingReadChanged) {
-            // The observer resumes the pending connection after the superseding engine revision.
+            // The read that met the change already asked the observer, and `finally` asks it for a connection still pending.
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {

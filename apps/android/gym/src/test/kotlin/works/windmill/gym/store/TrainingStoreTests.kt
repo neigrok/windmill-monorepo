@@ -1,6 +1,7 @@
 package works.windmill.gym.store
 
 import kotlin.coroutines.ContinuationInterceptor
+import kotlin.coroutines.CoroutineContext
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -8,6 +9,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -59,6 +61,7 @@ import works.windmill.gym.domain.sync.RoutineEntry as EngineEntry
 import works.windmill.gym.domain.sync.SetTarget as EngineTarget
 import works.windmill.gym.coach.turn.TellingRecorder
 import works.windmill.gym.domain.sync.ProposeWorkout
+import works.windmill.platform.Account
 import works.windmill.gym.domain.sync.WorkoutProposal
 import works.windmill.sync.api.Change
 import works.windmill.sync.api.CommitOutcome
@@ -67,6 +70,7 @@ import works.windmill.sync.api.NewID
 import works.windmill.sync.core.RecordID
 import works.windmill.sync.core.ScopeRef
 import works.windmill.sync.schema.Gym
+import works.windmill.sync.schema.SyncSchema
 import works.windmill.gym.domain.sync.Session as EngineSession
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -541,5 +545,53 @@ class TrainingStoreTests {
             reopened.refreshEngine()
             assertEquals(listOf(mapOf("operation" to "gym.refreshWorkout")), telling.failures)
         }
+    }
+
+    // Reads run only when the test steps them, so a connect stands at whichever read the test chooses.
+    private class SteppedReads : CoroutineDispatcher() {
+        private val held = ArrayDeque<Runnable>()
+        override fun isDispatchNeeded(context: CoroutineContext) = true
+        override fun dispatch(context: CoroutineContext, block: Runnable) { held.add(block) }
+        fun step(): Boolean {
+            val read = held.removeFirstOrNull() ?: return false
+            read.run()
+            return true
+        }
+    }
+
+    // The same seat arrives again at every read of the connect in hand, which forgets the log and leaves the reading to the observer.
+    private fun aSecondArrivalReadsTheLog(signedIn: Boolean, cancelsTheFirst: Boolean) {
+        var readsBefore = 0
+        var firstFinished = false
+        while (!firstFinished) {
+            runTest {
+                val reads = SteppedReads()
+                EngineRoomFixture(tmp.newFolder(), backgroundScope, readDispatcher = reads).use { room ->
+                    if (signedIn) {
+                        assertTrue(room.engine.signIn("alice", mapOf("gym" to true), serverSchema = SyncSchema.registry.version).member("complete").bool())
+                        room.selected = "alice"
+                        room.pull(EngineRoomFixture.server())
+                    }
+                    room.store.observeEngine()
+                    val first = backgroundScope.launch { room.store.connect(Account(room.account().origin, room.account().user, verified = !signedIn)) }
+                    repeat(readsBefore) { runCurrent(); reads.step() }
+                    runCurrent()
+                    firstFinished = first.isCompleted
+                    if (cancelsTheFirst) first.cancel()
+                    backgroundScope.launch { room.store.connect(room.account()) }
+                    do runCurrent() while (reads.step())
+                    assertEquals("the second connect arrived after $readsBefore reads", true, room.store.initialGymEmpty)
+                }
+            }
+            readsBefore += 1
+        }
+    }
+
+    @Test fun aSecondConnectAtAnyReadOfTheFirstLeavesTheLogRead() {
+        for (signedIn in listOf(false, true)) aSecondArrivalReadsTheLog(signedIn, cancelsTheFirst = false)
+    }
+
+    @Test fun aConnectCancelledAtAnyReadByTheNextLeavesTheLogRead() {
+        for (signedIn in listOf(false, true)) aSecondArrivalReadsTheLog(signedIn, cancelsTheFirst = true)
     }
 }
