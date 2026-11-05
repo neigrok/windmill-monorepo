@@ -10,9 +10,12 @@ import { track } from '../../../telemetry/beacon.js';
 import { Button } from '../../../design-system';
 import { KIND_CSS, hueOf, prefersReducedMotion } from '../theme.js';
 import { focusableElements, wrapTab } from '../../../design-system/feedback/dialogFocus.js';
+import { usePopoverDismissal } from '../popoverDismissal.js';
 import {
   BULK, COMPOSER, FILTERED_EMPTY, LABELS, SORT_LABELS, SORT_MENU, branchChip, deleteStepsAction, emptyColumn, removeChip, selectedCount, sortButtonLabel,
 } from '../copy.js';
+
+export { dismissOverlayOutside } from '../popoverDismissal.js';
 
 const MENU_STEPS = { ArrowDown: 1, ArrowUp: -1 };
 const RECOLOR_PULSE_MS = 120;
@@ -20,14 +23,8 @@ const RECOLOR_FADE_MS = 150;
 const RECOLOR_PULSE_SCALE = 1.04;
 const RECOLOR_FADE_OPACITY = 0.6;
 
-export function dismissOverlayOutside(event, root, onClose) {
-  if (root?.contains(event.target)) return;
-  event.preventDefault();
-  onClose();
-}
-
 export function handleMenuKey(event, { root, selector = '[role="menuitem"]', onEscape, onTab }) {
-  if (event.key === 'Escape') {
+  if (event.key === 'Escape' && onEscape) {
     event.preventDefault();
     event.stopPropagation();
     onEscape();
@@ -407,17 +404,11 @@ function SortMenu({ query, onQuery }) {
   const box = useRef(null);
   const opener = useRef(null);
 
-  useEffect(() => {
-    if (!open) return undefined;
-    const away = (event) => { if (!box.current.contains(event.target)) setOpen(false); };
-    window.addEventListener('pointerdown', away);
-    return () => window.removeEventListener('pointerdown', away);
-  }, [open]);
-
-  const dismiss = () => {
+  const dismiss = useCallback((outcome = 'close', restoreFocus = true) => {
     setOpen(false);
-    opener.current.focus();
-  };
+    if (restoreFocus) opener.current.focus();
+  }, []);
+  usePopoverDismissal({ open, root: box, onClose: dismiss, restoreOutsideFocus: false });
 
   const toggle = () => {
     if (!open) track('roadmap_board_menu', { menu: 'sort' });
@@ -428,7 +419,6 @@ function SortMenu({ query, onQuery }) {
     <div
       className="st-board-sort"
       ref={box}
-      onBlur={(event) => { if (open && !box.current.contains(event.relatedTarget)) setOpen(false); }}
     >
       <button
         ref={opener}
@@ -444,7 +434,7 @@ function SortMenu({ query, onQuery }) {
       </button>
       {open && (
         <div className="st-board-sort-popover">
-          <SortOptions sort={query.sort} onPick={(sort) => { sortBy(query, onQuery, sort); dismiss(); }} onDismiss={dismiss} />
+          <SortOptions sort={query.sort} onPick={(sort) => { sortBy(query, onQuery, sort); dismiss(); }} />
         </div>
       )}
     </div>
