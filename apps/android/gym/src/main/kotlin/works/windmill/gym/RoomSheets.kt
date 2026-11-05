@@ -19,8 +19,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.NonSkippableComposable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -73,7 +75,6 @@ internal data class Reviewing(val proposalId: String, val target: ProposalTarget
 @Stable
 internal class ReviewFlow(
     private val scope: CoroutineScope,
-    private val sheet: SheetState,
     reviewingState: MutableState<Reviewing?>,
     busyState: MutableState<Boolean>,
     lookedAtState: MutableState<String>,
@@ -84,6 +85,8 @@ internal class ReviewFlow(
     private var busy by busyState
     private var lookedAt by lookedAtState
     private var receipts by receiptsState
+    internal var sheet: SheetState? = null
+        private set
 
     val lookedAtIds: Set<String> get() = lookedAt.split(' ').filter { it.isNotEmpty() }.toSet()
 
@@ -97,7 +100,7 @@ internal class ReviewFlow(
     // What a door does next waits for the sheet to be off.
     fun close(then: () -> Unit = {}) {
         if (busy) return
-        scope.launch { sheet.hide() }.invokeOnCompletion { cause ->
+        scope.launch { sheet?.hide() }.invokeOnCompletion { cause ->
             reviewing = null
             if (cause == null) then()
         }
@@ -124,15 +127,18 @@ internal class ReviewFlow(
     @Composable
     fun Sheet(store: TrainingStore, onAsk: ((about: String) -> Unit)?, onSignIn: () -> Unit, say: (String) -> Unit) {
         val colors = MaterialTheme.colorScheme
-        reviewing?.let { open ->
+        reviewing?.let { open -> key(open) {
             val workout = open.target == ProposalTarget.Workout
+            // Each opening has its own state: with animations off, a state a closed sheet left behind stands at the height it first measured and leaves the rows and Apply below the window.
+            val opening = rememberModalBottomSheetState(skipPartiallyExpanded = true, confirmValueChange = { !busy })
+            SideEffect { sheet = opening }
             WindmillSheet(
                 onDismissRequest = {
                     if (busy) return@WindmillSheet
                     reviewing = null
                     if (open.proposalId !in lookedAtIds) lookedAt = (lookedAtIds + open.proposalId).joinToString(" ")
                 },
-                sheetState = sheet,
+                sheetState = opening,
                 containerColor = colors.surfaceContainer,
                 scrimColor = colors.scrim,
                 dragHandle = if (workout) { { SheetHandle() } } else { { BottomSheetDefaults.DragHandle() } },
@@ -162,7 +168,7 @@ internal class ReviewFlow(
                     onSignIn = { close(onSignIn) },
                 )
             }
-        }
+        } }
     }
 }
 
@@ -174,13 +180,12 @@ internal fun rememberReviewFlow(): ReviewFlow {
     // mid-review lands back on the card, which decides nothing either.
     val reviewing = remember { mutableStateOf<Reviewing?>(null) }
     val busy = remember { mutableStateOf(false) }
-    val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true, confirmValueChange = { !busy.value })
     // Reviews opened and closed with nothing decided: their cards read `still waiting`. Saved as the
     // string it is, ids joined by a space.
     val lookedAt = rememberSaveable { mutableStateOf("") }
     // The room keeps shown receipts with their doors; unseen removal receipts live in the replica.
     val receipts = remember { mutableStateOf<Map<String, List<String>>>(emptyMap()) }
-    return remember(scope, sheet) { ReviewFlow(scope, sheet, reviewing, busy, lookedAt, receipts) }
+    return remember(scope) { ReviewFlow(scope, reviewing, busy, lookedAt, receipts) }
 }
 
 // A sheet's drag handle in its 24 dp strip.
@@ -196,18 +201,18 @@ private fun SheetHandle() {
 @Stable
 internal class CoachSheetFlow(
     private val scope: CoroutineScope,
-    private val sheet: SheetState,
     openState: MutableState<Boolean>,
 ) {
     var open by openState
         private set
+    private var sheet: SheetState? = null
 
     fun show() { open = true }
 
     // What a door does next waits for the sheet to be off.
     fun close(then: () -> Unit) {
         if (!open) { then(); return }
-        scope.launch { sheet.hide() }.invokeOnCompletion { cause ->
+        scope.launch { sheet?.hide() }.invokeOnCompletion { cause ->
             open = false
             if (cause == null) then()
         }
@@ -220,9 +225,11 @@ internal class CoachSheetFlow(
     fun Sheet(content: @Composable () -> Unit) {
         val colors = MaterialTheme.colorScheme
         if (!open) return
+        val opening = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        SideEffect { sheet = opening }
         WindmillSheet(
             onDismissRequest = { open = false },
-            sheetState = sheet,
+            sheetState = opening,
             containerColor = colors.surface,
             scrimColor = colors.scrim,
             shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
@@ -235,9 +242,8 @@ internal class CoachSheetFlow(
 @Composable
 internal fun rememberCoachSheetFlow(): CoachSheetFlow {
     val scope = rememberCoroutineScope()
-    val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val open = rememberSaveable { mutableStateOf(false) }
-    return remember(scope, sheet) { CoachSheetFlow(scope, sheet, open) }
+    return remember(scope) { CoachSheetFlow(scope, open) }
 }
 
 // The finish receipt over the room, and the Share with Coach request it queues under its own saved
@@ -249,7 +255,6 @@ internal class FinishFlow(
     private val scope: CoroutineScope,
     private val context: Context,
     private val telemetry: Telemetry,
-    private val sheet: SheetState,
     private val states: SaveableStateHolder,
     finishedState: MutableState<FinishedSession?>,
     queuedShareState: MutableState<String?>,
@@ -263,6 +268,7 @@ internal class FinishFlow(
     private var queuedShareOwner by queuedShareOwnerState
     private var shareReady by shareReadyState
     private var closing by closingState
+    private var sheet: SheetState? = null
 
     val shareQueued: Boolean get() = queuedShare != null
 
@@ -301,7 +307,7 @@ internal class FinishFlow(
         if (closing || queuedShare != null) return
         if (finished == null) { then(); return }
         closing = true
-        scope.launch { sheet.hide() }.invokeOnCompletion { cause ->
+        scope.launch { sheet?.hide() }.invokeOnCompletion { cause ->
             closing = false
             if (cause != null) return@invokeOnCompletion
             finished?.let { states.removeState(it.session.id) }
@@ -364,7 +370,7 @@ internal class FinishFlow(
             if (!shareReady) {
                 closing = true
                 try {
-                    if (finished != null) launch { sheet.hide() }.join()
+                    if (finished != null) launch { sheet?.hide() }.join()
                     if (queuedShare != request) return@LaunchedEffect
                     finished?.let { states.removeState(it.session.id) }
                     finished = null
@@ -403,13 +409,15 @@ internal class FinishFlow(
             val canonical = store.history.retainedSession(SessionDetail(original.session, original.sets))
             val ended = original.copy(session = canonical.session,
                 sets = canonical.sets.filterNot { it.id in store.held.deletedSets })
+            val opening = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+            SideEffect { sheet = opening }
             WindmillSheet(
                 onDismissRequest = {
                     states.removeState(original.session.id)
                     finished = null
                     if (ended.sets.isEmpty()) onLeftEmpty()
                 },
-                sheetState = sheet,
+                sheetState = opening,
                 contentWindowInsets = { WindowInsets(0, 0, 0, 0) },
                 containerColor = colors.surfaceContainer,
                 scrimColor = colors.scrim,
@@ -468,10 +476,9 @@ internal fun rememberFinishFlow(telemetry: Telemetry, context: Context = LocalCo
     // The committed detail survives process replacement after the workout closes.
     val finished = rememberSaveable(stateSaver = remember(telemetry) { finishedSaver(telemetry) }) { mutableStateOf<FinishedSession?>(null) }
     val states = rememberSaveableStateHolder()
-    val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     // Whether the receipt is on its way down, so a second tap during the descent is one tap.
     val closing = remember { mutableStateOf(false) }
-    return remember(scope, context, telemetry, sheet, states) {
-        FinishFlow(scope, context, telemetry, sheet, states, finished, queuedShare, queuedShareOwner, shareReady, closing)
+    return remember(scope, context, telemetry, states) {
+        FinishFlow(scope, context, telemetry, states, finished, queuedShare, queuedShareOwner, shareReady, closing)
     }
 }

@@ -1,6 +1,8 @@
 package works.windmill.gym
 
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.MotionDurationScale
+import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -25,6 +27,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -61,7 +64,9 @@ import works.windmill.sync.schema.Gym
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
 class CoachOverWorkoutTests {
-    @get:Rule val compose = createComposeRule()
+    private val motion = object : MotionDurationScale { override var scaleFactor = 1f }
+    @OptIn(ExperimentalTestApi::class)
+    @get:Rule val compose = createComposeRule(motion)
     @get:Rule val tmp = TemporaryFolder()
     private val events = mutableListOf<Pair<String, Map<String, String>>>()
     private val failures = mutableListOf<String>()
@@ -226,6 +231,59 @@ class CoachOverWorkoutTests {
             assertEquals("the routine it came from stands", pushA, phone.store.routines.routine(routine.id)!!.entries.map { it.exerciseId })
             assertEquals("the log has not answered", emptyList<Map<String, String>>(), outcomes())
             assertEquals(emptyList<String>(), failures)
+        }
+    }
+
+    // Android's accessibility setting turns animator scale to 0: a sheet opened again stands at its whole height and draws what it holds.
+    @Test fun aReviewOpenedAgainWithAnimationsOffStillDrawsItsRowsAndApply() {
+        val routineId = "rt_00000009"
+        workoutRoom(answering(swap, routineChange(routineId, "bench-press")), routineId = routineId) { _, _ ->
+            motion.scaleFactor = 0f
+            asking()
+            waitFor("Proposal · Push A · next time")
+            repeat(3) {
+                compose.onAllNodesWithText("Review")[1].performScrollTo().performClick()
+                waitFor("Apply all 4")
+                compose.onNodeWithText("Remove Incline Dumbbell Press").assertIsDisplayed()
+                compose.onNodeWithText("Apply all 4").assertIsDisplayed()
+                compose.onAllNodes(hasContentDescription("Close sheet")).onLast().performSemanticsAction(SemanticsActions.OnClick)
+                compose.waitUntil(10_000) { compose.onAllNodesWithText("Apply all 4").fetchSemanticsNodes().isEmpty() }
+            }
+        }
+    }
+
+    // What the device's failure turns on: an opening never reuses the state the last one left behind.
+    @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+    @Test fun eachOpeningOfAReviewHasItsOwnSheetState() {
+        motion.scaleFactor = 0f
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val phone = EngineRoomFixture(tmp.newFolder(), scope, telemetry = telemetry)
+        var showing by mutableStateOf(true)
+        lateinit var flow: ReviewFlow
+        try {
+            runBlocking { phone.select("u1") }
+            compose.setContent {
+                if (showing) CompositionLocalProvider(LocalTelemetry provides telemetry) {
+                    GymMaterial {
+                        flow = rememberReviewFlow()
+                        flow.Sheet(phone.store, null, {}, {})
+                    }
+                }
+            }
+            val proposal = Proposal(id = "prop_1", routineId = "rt_1")
+            compose.runOnIdle { flow.open(proposal, Reviewing.routines) }
+            compose.waitForIdle()
+            val first = checkNotNull(flow.sheet)
+            compose.runOnIdle { flow.close() }
+            compose.waitForIdle()
+            assertEquals(null, flow.reviewing)
+            compose.runOnIdle { flow.open(proposal, Reviewing.routines) }
+            compose.waitForIdle()
+            assertNotSame(first, flow.sheet)
+        } finally {
+            compose.runOnIdle { showing = false }
+            compose.waitForIdle()
+            scope.cancel(); phone.close()
         }
     }
 
