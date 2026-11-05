@@ -14,8 +14,10 @@ import kotlinx.coroutines.test.runTest
 import okhttp3.*
 import okhttp3.internal.http2.ErrorCode
 import okhttp3.internal.http2.StreamResetException
+import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
+import okhttp3.mockwebserver.RecordedRequest
 import okhttp3.mockwebserver.SocketPolicy
 import okio.ByteString
 import okio.ByteString.Companion.toByteString
@@ -31,6 +33,8 @@ class TransportTests {
     private val frame = """{"op":"gone","scope":"self/gym","as":"A"}"""
     private fun answer(reply: Reply<SyncResponse>) = (reply as Reply.Answer).value
     private fun connected(reply: Reply<LiveConnection>) = (reply as Reply.Answer).value
+    // A response that promises keep-alive, then a closed socket: what a server's idle timeout leaves in the pool.
+    private fun closedWhenIdle(body: String) = MockResponse().setBody(body).setSocketPolicy(SocketPolicy.DISCONNECT_AT_END)
     private fun socketResponse(socket: CompletableDeferred<WebSocket>) = MockResponse().withWebSocketUpgrade(object : WebSocketListener() {
         override fun onOpen(webSocket: WebSocket, response: Response) { socket.complete(webSocket) }
     })
@@ -520,6 +524,82 @@ class TransportTests {
                 }
                 assertSame(Reply.Unreachable, transport.hello(null))
                 assertEquals(listOf(unreachable(EngineOperation.live), unreachable(EngineOperation.hello)), List(2) { withTimeout(5_000) { events.receive() } })
+            }
+        }
+        assertTrue(events.tryReceive().isFailure)
+    }
+
+    @Test fun aHelloOnIdleSocketsTheServerClosedIsAnsweredOnAFreshConnection() = runBlocking {
+        val events = kotlinx.coroutines.channels.Channel<EngineEvent>(8)
+        for ((sockets, h2) in listOf(1 to false, 2 to false, 1 to true)) MockWebServer().use { server ->
+            val arrived = CountDownLatch(sockets)
+            server.dispatcher = object : Dispatcher() {
+                override fun dispatch(request: RecordedRequest): MockResponse {
+                    if (request.path != "/v1/sync/pull") return MockResponse().setBody(hello)
+                    arrived.countDown(); arrived.await(5, TimeUnit.SECONDS)
+                    return closedWhenIdle(pull)
+                }
+            }
+            if (h2) server.protocols = listOf(Protocol.H2_PRIOR_KNOWLEDGE)
+            val client = OkHttpClient.Builder().apply { if (h2) protocols(listOf(Protocol.H2_PRIOR_KNOWLEDGE)) }.build()
+            HTTPTransport("http://127.0.0.1:${server.port}/", 4, telemetry = EngineTelemetry { events.send(it) }, client = client).use { transport ->
+                val pulls = coroutineScope { List(sockets) { async { answer(transport.pull(Json.objectOf(), "token")) } }.awaitAll() }
+                assertEquals(List(sockets) { SyncResponse(200, json(pull)) }, pulls)
+                assertEquals(SyncResponse(200, json(hello)), answer(transport.hello("token")))
+                assertEquals(sockets + 1, server.requestCount)
+                val reached = List(sockets + 1) { server.takeRequest() }
+                assertEquals(List(sockets) { "POST /v1/sync/pull HTTP/1.1" } + "GET /v1/sync/hello HTTP/1.1", reached.map { it.requestLine })
+                assertEquals(0, reached.last().sequenceNumber)
+            }
+        }
+        assertTrue(events.tryReceive().isFailure)
+    }
+
+    @Test fun aHelloWhoseFreshConnectionAlsoFailsIsLostNetworkReportedOnce() = runBlocking {
+        val events = kotlinx.coroutines.channels.Channel<EngineEvent>(8)
+        val lost = EngineEvent(EngineOperation.hello, EngineOutcome.failure, "unreachable")
+        for (fresh in listOf(SocketPolicy.DISCONNECT_AFTER_REQUEST, SocketPolicy.NO_RESPONSE)) MockWebServer().use { server ->
+            HTTPTransport("http://127.0.0.1:${server.port}/", 4, requestTimeoutMs = 1_000, telemetry = EngineTelemetry { events.send(it) }).use { transport ->
+                server.enqueue(closedWhenIdle(pull)); assertEquals(SyncResponse(200, json(pull)), answer(transport.pull(Json.objectOf(), "token")))
+                server.enqueue(MockResponse().setSocketPolicy(fresh))
+                assertSame(Reply.Unreachable, withTimeout(5_000) { transport.hello("token") })
+                server.enqueue(MockResponse().setResponseCode(500)); assertEquals(500, answer(transport.hello("token")).status)
+                assertEquals(listOf(lost, EngineEvent(EngineOperation.hello, EngineOutcome.failure, "http", 500)), List(2) { withTimeout(5_000) { events.receive() } })
+                assertEquals(listOf("POST /v1/sync/pull HTTP/1.1", "GET /v1/sync/hello HTTP/1.1", "GET /v1/sync/hello HTTP/1.1"), List(3) { server.takeRequest().requestLine })
+                assertEquals(3, server.requestCount)
+            }
+        }
+        MockWebServer().use { server ->
+            HTTPTransport("http://127.0.0.1:${server.port}/", 4, telemetry = EngineTelemetry { events.send(it) }).use { transport ->
+                server.enqueue(closedWhenIdle(pull)); assertEquals(SyncResponse(200, json(pull)), answer(transport.pull(Json.objectOf(), "token")))
+                server.shutdown()
+                assertSame(Reply.Unreachable, withTimeout(5_000) { transport.hello("token") })
+                assertEquals(lost, withTimeout(5_000) { events.receive() })
+                assertEquals(1, server.requestCount)
+            }
+        }
+        assertTrue(events.tryReceive().isFailure)
+    }
+
+    @Test fun aPushOrPullOnAClosedSocketIsOneLostAttemptUntilTenIdleSecondsLetOkHttpCheckTheSocketFirst() = runBlocking {
+        val events = kotlinx.coroutines.channels.Channel<EngineEvent>(8)
+        MockWebServer().use { server ->
+            HTTPTransport("http://127.0.0.1:${server.port}/", 4, telemetry = EngineTelemetry { events.send(it) }).use { transport ->
+                val answered = SyncResponse(200, json(pull))
+                server.enqueue(closedWhenIdle(pull)); assertEquals(answered, answer(transport.pull(Json.objectOf(), "token")))
+                assertSame(Reply.Unreachable, transport.pull(Json.objectOf(), "token"))
+                server.enqueue(closedWhenIdle(pull)); assertEquals(answered, answer(transport.pull(Json.objectOf(), "token")))
+                assertSame(Reply.Unreachable, transport.push(Json.objectOf(), "token"))
+                assertEquals(listOf(EngineEvent(EngineOperation.pull, EngineOutcome.failure, "unreachable"), EngineEvent(EngineOperation.push, EngineOutcome.failure, "unreachable")),
+                    List(2) { withTimeout(5_000) { events.receive() } })
+                assertEquals(2, server.requestCount)
+                server.enqueue(closedWhenIdle(pull)); assertEquals(answered, answer(transport.pull(Json.objectOf(), "token")))
+                delay(10_100)
+                server.enqueue(MockResponse().setBody(pull)); assertEquals(answered, answer(transport.pull(Json.objectOf(), "token")))
+                val reached = List(4) { server.takeRequest() }
+                assertEquals(List(4) { "POST /v1/sync/pull HTTP/1.1" }, reached.map { it.requestLine })
+                assertEquals(List(4) { 0 }, reached.map { it.sequenceNumber })
+                assertEquals(4, server.requestCount)
             }
         }
         assertTrue(events.tryReceive().isFailure)

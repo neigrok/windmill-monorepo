@@ -1313,8 +1313,7 @@ class SyncRuntimeTests {
                             "Bearer token-B" -> "B"
                             else -> return MockResponse().setResponseCode(401)
                         }
-                        if (drop.compareAndSet(true, false)) return MockResponse()
-                            .setSocketPolicy(okhttp3.mockwebserver.SocketPolicy.DISCONNECT_AFTER_REQUEST)
+                        if (drop.get()) return MockResponse().setSocketPolicy(okhttp3.mockwebserver.SocketPolicy.DISCONNECT_AFTER_REQUEST)
                         return MockResponse().setBody(Json.objectOf("serverTime" to Json.of(5_000), "epoch" to Json.of("epoch"),
                             "schema" to Json.of(registry.version), "minSchema" to Json.of(registry.minVersion),
                             "holdsRecords" to Json.objectOf("probe" to Json.of(false)), "as" to Json.of(account)).jcs)
@@ -1334,11 +1333,15 @@ class SyncRuntimeTests {
                             if (loseResponse) {
                                 val failure = runCatching { runtime.signIn("B", "token-B") }.exceptionOrNull()
                                 assertEquals(EngineError.Code.unreachable, (failure as EngineError).code)
-                                val interrupted = server.takeRequest(2, java.util.concurrent.TimeUnit.SECONDS)!!
-                                assertEquals("GET", interrupted.method)
-                                assertEquals("Bearer token-B", interrupted.getHeader("Authorization"))
-                                assertEquals(2, server.requestCount)
+                                // The hello is lost on the reused socket, then on the fresh connection it tries once more.
+                                repeat(2) {
+                                    val interrupted = server.takeRequest(2, java.util.concurrent.TimeUnit.SECONDS)!!
+                                    assertEquals("GET", interrupted.method)
+                                    assertEquals("Bearer token-B", interrupted.getHeader("Authorization"))
+                                }
+                                assertEquals(3, server.requestCount)
                                 assertEquals("token-B", tokens.token("B"))
+                                drop.set(false)
                                 assertTrue(requireNotNull(runtime.resumeSignIn()).isComplete)
                             } else {
                                 assertTrue(runtime.signIn("B", "token-B").isComplete)
@@ -1347,7 +1350,7 @@ class SyncRuntimeTests {
                             val second = server.takeRequest(2, java.util.concurrent.TimeUnit.SECONDS)!!
                             assertEquals("GET", second.method)
                             assertEquals("Bearer token-B", second.getHeader("Authorization"))
-                            assertEquals(if (loseResponse) 3 else 2, server.requestCount)
+                            assertEquals(if (loseResponse) 4 else 2, server.requestCount)
                             assertEquals("B", engine.lock.withLock { engine.device.current().account })
                             assertNull(tokens.token("A"))
                             assertEquals("token-B", tokens.token("B"))
