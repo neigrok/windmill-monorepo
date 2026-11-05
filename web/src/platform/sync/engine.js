@@ -931,7 +931,7 @@ export class BrowserSyncEngine {
     }
   }
 
-  async finishSignOut({ choice, counted }) {
+  async finishSignOut({ choice, counted, deviceCleanup = false }) {
     if (this.device.activeReplica.meta.state !== 'bound') throw new CommitError('sign-out requires a bound account');
     const account = this.device.activeReplica.meta.account;
     const handle = this.device.activeReplica.storageHandle;
@@ -942,7 +942,11 @@ export class BrowserSyncEngine {
         throw new CommitError('account changed during sign-out');
       device.meta.authGeneration = (device.meta.authGeneration ?? 0) + 1;
       const result = signOut(device, ctx, { choice, counted });
-      if (result.complete) { device.meta.clearCredential = account; delete device.meta.signOut; }
+      if (result.complete) {
+        device.meta.clearCredential = account;
+        if (deviceCleanup) device.meta.deviceCleanup = { previous: account, generation: device.meta.authGeneration };
+        delete device.meta.signOut;
+      }
       return result;
     });
     if (result.complete) {

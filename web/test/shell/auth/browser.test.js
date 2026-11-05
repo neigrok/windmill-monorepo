@@ -4,7 +4,7 @@ import { after, test } from 'node:test';
 import { chromium } from 'playwright';
 import { createServer } from 'vite';
 import { fileURLToPath } from 'node:url';
-import { withBrowserErrors } from '../../products/roadmap/browserFixture.js';
+import { beacon, withBrowserErrors } from '../../products/roadmap/browserFixture.js';
 
 let server, browser, origin;
 const root = fileURLToPath(new URL('../../../', import.meta.url));
@@ -12,15 +12,19 @@ const referencePath = fileURLToPath(new URL('../../../../packages/api-contract/s
 const registryPath = fileURLToPath(new URL('../../../../packages/api-contract/sync/probe.registry.json', import.meta.url));
 const ready = (async () => {
   server = await createServer({ configFile: false, root, cacheDir: `${root}/node_modules/.vite-auth-test`, plugins: [{
-    name: 'auth-upgrade-fixture',
+    name: 'auth-upgrade-fixture', enforce: 'pre',
     configureServer(server) {
       server.middlewares.use('/auth-test', (_request, response) => {
         response.setHeader('Content-Type', 'text/html');
         response.end('<!doctype html><title>Account update test</title><div id="root"></div><script type="module" src="/auth-test-fixture.js"></script>');
       });
     },
-    resolveId(id) { if (id === '/auth-test-fixture.js') return id; },
+    resolveId(id) {
+      if (id === '/auth-test-fixture.js') return id;
+      if (id.endsWith('/telemetry/beacon.js')) return '\0auth-events';
+    },
     load(id) {
+      if (id === '\0auth-events') return beacon;
       if (id === '/auth-test-fixture.js') return `
         import React from 'react';
         import { createRoot } from 'react-dom/client';
@@ -30,7 +34,27 @@ const ready = (async () => {
         import { syncSession } from '/src/platform/sync/session.js';
         import { BrowserSyncEngine } from '/src/platform/sync/engine.js';
         import { Registry } from '/@fs${referencePath}core/registry.js';
-        import { registerRoomStatus } from '/src/shell/roomStatus.js';
+        import { registerRoomStatus, useRoomStatus } from '/src/shell/roomStatus.js';
+        import { Shell } from '/src/shell/chrome/Shell.jsx';
+        import { SignInDoorProvider } from '/src/shell/auth/SignInDoor.jsx';
+        import { SyncSession as RoadmapSyncSession } from '/src/products/roadmap/sync/SyncSession.js';
+        import { useRoomSyncNotices } from '/src/products/roadmap/sync/useRoomSyncNotices.js';
+        import '/src/styles/global.css';
+        const nothing = () => {};
+        function LiveRoom() {
+          const { status, lapsed } = useAuth();
+          const [session, setSession] = React.useState(null);
+          React.useEffect(() => {
+            const current = new RoadmapSyncSession({ treeId: 't_offline_transition' });
+            current.connect = function () { this.phase = 'live'; this.emitStatus(); return this; };
+            current.start().then(() => setSession(current));
+            return () => current.close();
+          }, []);
+          const { syncSnapshot } = useRoomSyncNotices({ treeId: 't_offline_transition', syncSession: session,
+            owner: true, status, lapsed, phone: false, openSignInDoor: nothing, setBoardQuiet: nothing });
+          return React.createElement('output', { id: 'live-room', 'data-phase': syncSnapshot?.phase,
+            'data-online': String(syncSnapshot?.online) }, status);
+        }
         function RoomPublication() {
           React.useLayoutEffect(() => {
             const room = registerRoomStatus();
@@ -41,7 +65,12 @@ const ready = (async () => {
         }
         function AuthView({ room }) {
           const auth = useAuth(); window.auth = auth;
-          return React.createElement('div', null, room && React.createElement(RoomPublication), React.createElement('p', { id: 'auth-state' }, auth.status),
+          const publication = useRoomStatus();
+          return React.createElement('div', null, room === true && React.createElement(RoomPublication),
+            room === 'live' && React.createElement(SignInDoorProvider, null, React.createElement(Shell, {
+              location: { pathname: '/app', hash: '', search: '' }, neutral: { Component: LiveRoom },
+            })), React.createElement('p', { id: 'auth-state' }, auth.status),
+            React.createElement('p', { id: 'room-publication' }, JSON.stringify(publication)),
             auth.status === 'signed-in' && React.createElement(React.Fragment, null,
               React.createElement(SessionsSection), React.createElement(CloseAccountSection)));
         }
@@ -49,18 +78,22 @@ const ready = (async () => {
           const probe = await (await fetch('/@fs${registryPath}')).json();
           window.syncFailures = [];
           const registry = new Registry(probe);
-          window.engine = await BrowserSyncEngine.open({ name, registry, limits: { SIGNOUT_FLUSH_MS: 30 },
+          const options = { name, registry, limits: { SIGNOUT_FLUSH_MS: 30 },
             transport: { request: async (endpoint) => ({ response: upgrade ? { status: 426, body: {} }
               : endpoint === 'hello' ? { status: 200, body: { serverTime: Date.now(), epoch: 'test', as: 'A',
                 schema: registry.version, minSchema: registry.minVersion, holdsRecords: { probe: false } } }
-              : { status: 503, body: {} }, timing: { send: engine.reading(), recv: engine.reading() } }),
+              : { status: 503, body: {} }, timing: { send: (window.engine ?? syncSession.engine).reading(), recv: (window.engine ?? syncSession.engine).reading() } }),
               openLive() { throw new Error('offline'); } },
-            telemetry: { failure(operation) { syncFailures.push(operation); }, event() {} } });
-          await engine.start();
+            telemetry: { failure(operation) { syncFailures.push(operation); }, event() {} } };
+          if (room === 'live') window.engine = await syncSession.open(options);
+          else {
+            window.engine = await BrowserSyncEngine.open(options);
+            await engine.start();
+          }
           syncSession.engine = engine;
           syncSession.opening = Promise.resolve(engine);
           syncSession.open = (options) => { engine.credentials = options.credentials; return syncSession.opening; };
-          syncSession.publish({ engine, ready: true, online: !room });
+          syncSession.publish({ engine, ready: true, online: room !== true });
           window.app = createRoot(document.getElementById('root'));
           app.render(React.createElement(AuthProvider, null, React.createElement(AuthView, { room })));
         };
@@ -435,7 +468,7 @@ test('Chromium: a persisted restore refreshes the account; focus and delayed aut
 });
 
 
-test('Chromium: the global offline notice yields to any room publisher and returns when it leaves', async () => {
+test('Chromium: the global offline notice yields only while a room publishes offline connectivity', async () => {
   await ready;
   const context = await browser.newContext();
   try {
@@ -451,7 +484,8 @@ test('Chromium: the global offline notice yields to any room publisher and retur
         const { registerRoomStatus } = await import('/src/shell/roomStatus.js');
         window.firstRoom = registerRoomStatus();
       });
-      await notice.waitFor({ state: 'detached' });
+      await page.waitForFunction(() => document.getElementById('room-publication')?.textContent === JSON.stringify({ status: null }));
+      await notice.waitFor();
       for (const status of [
         { line: ANONYMOUS_OWNER },
         { line: LAPSED_SESSION },
@@ -459,7 +493,9 @@ test('Chromium: the global offline notice yields to any room publisher and retur
         { line: 'Offline without a connectivity claim' },
       ]) {
         await page.evaluate((status) => firstRoom.publish(status), status);
-        assert.equal(await notice.count(), 0);
+        await page.waitForFunction((status) => document.getElementById('room-publication')?.textContent === JSON.stringify({ status }), status);
+        await notice.waitFor();
+        assert.equal(await notice.count(), 1);
       }
       await page.evaluate(() => firstRoom.publish({ line: 'Room offline', connectivity: 'offline' }));
       await notice.waitFor({ state: 'detached' });
@@ -469,9 +505,13 @@ test('Chromium: the global offline notice yields to any room publisher and retur
         secondRoom.publish({ line: 'Another room offline', connectivity: 'offline' });
         firstRoom.release();
       });
+      await page.waitForFunction(() => document.getElementById('room-publication')?.textContent === JSON.stringify({
+        status: { line: 'Another room offline', connectivity: 'offline' },
+      }));
       assert.equal(await notice.count(), 0);
       await page.evaluate(() => secondRoom.publish(null));
-      assert.equal(await notice.count(), 0);
+      await notice.waitFor();
+      assert.equal(await notice.count(), 1);
       await page.evaluate(() => secondRoom.publish({ line: 'Room offline', connectivity: 'offline' }));
       await notice.waitFor({ state: 'detached' });
       await page.evaluate(() => secondRoom.release());
@@ -512,6 +552,99 @@ test('Chromium: an offline room owns the notice before its first painted frame',
       await page.waitForFunction(() => paintedNotices.length === 3);
       assert.deepEqual(await page.evaluate(() => paintedNotices), [[], [], []]);
       assert.equal(await page.locator('#room-state').textContent(), 'Room offline');
+    });
+  } finally { await context.close(); }
+});
+
+test('Chromium: an anonymous owner keeps the global offline signal beside the device-only line', async () => {
+  await ready;
+  const context = await browser.newContext();
+  try {
+    await context.route('**/v1/me', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '{"user":null}' }));
+    const page = await context.newPage();
+    await withBrowserErrors(page, async () => {
+      await page.goto(`${origin}/auth-test`);
+      await page.waitForFunction(() => typeof mountAuth === 'function');
+      await page.evaluate(() => mountAuth('auth-anonymous-offline', false));
+      await page.waitForFunction(() => document.getElementById('auth-state')?.textContent === 'ghost');
+      await page.evaluate(async (line) => {
+        const { syncSession } = await import('/src/platform/sync/session.js');
+        const { registerRoomStatus } = await import('/src/shell/roomStatus.js');
+        window.anonymousRoom = registerRoomStatus();
+        anonymousRoom.publish({ line, narrow: 'device' });
+        syncSession.publish({ online: false });
+      }, ANONYMOUS_OWNER);
+      const notice = page.getByText('Offline. Coach, echoes, nudges, voice and export need a connection.', { exact: true });
+      await notice.waitFor();
+      assert.deepEqual(await page.evaluate(() => ({ user: auth.user, status: auth.status, lapsed: auth.lapsed })),
+        { user: null, status: 'ghost', lapsed: false });
+      assert.equal(await notice.count(), 1);
+    });
+  } finally { await context.close(); }
+});
+
+
+test('Chromium: a live signed-in room going offline never inserts or paints the global notice', async () => {
+  await ready;
+  const context = await browser.newContext();
+  try {
+    await context.route('**/v1/**', (route) => {
+      const path = new URL(route.request().url()).pathname;
+      const body = path === '/v1/me' ? { user: { id: 'A', name: 'Ada', email: 'ada@example.test' } }
+        : path === '/v1/sessions' ? { sessions: [] } : {};
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
+    });
+    const page = await context.newPage();
+    await withBrowserErrors(page, async () => {
+      await page.goto(`${origin}/auth-test`);
+      await page.waitForFunction(() => typeof mountAuth === 'function');
+      await page.evaluate(() => mountAuth('auth-live-offline-transition', false, 'live'));
+      await page.locator('#live-room[data-phase="live"][data-online="true"]').waitFor();
+      await page.waitForFunction(() => document.getElementById('live-room')?.textContent === 'signed-in');
+      await page.locator('.wm-room-status').waitFor({ state: 'attached' });
+      await page.getByText('No other sessions.', { exact: true }).waitFor();
+      await page.evaluate(() => {
+        window.committedNotices = [];
+        window.paintedNotices = [];
+        const record = (node) => {
+          if (node.nodeType !== Node.ELEMENT_NODE) return;
+          const statuses = [...node.querySelectorAll('[role="status"]')];
+          if (node.matches('[role="status"]')) statuses.unshift(node);
+          for (const status of statuses) if (status.textContent) committedNotices.push(status.textContent);
+        };
+        window.noticeObserver = new MutationObserver((records) => {
+          for (const mutation of records) {
+            for (const node of mutation.addedNodes) record(node);
+            const target = mutation.target.nodeType === Node.ELEMENT_NODE ? mutation.target : mutation.target.parentElement;
+            const status = target?.closest('[role="status"]');
+            if (status?.textContent) committedNotices.push(status.textContent);
+          }
+        });
+        noticeObserver.observe(document.body, { childList: true, subtree: true, characterData: true });
+        window.addEventListener('offline', () => {
+          const inspect = () => {
+            paintedNotices.push([...document.querySelectorAll('[role="status"]')]
+              .map((element) => element.textContent).filter(Boolean));
+            if (paintedNotices.length < 4) requestAnimationFrame(inspect);
+          };
+          requestAnimationFrame(inspect);
+        }, { once: true });
+      });
+      await context.setOffline(true);
+      await page.locator('#live-room[data-online="false"]').waitFor();
+      await page.waitForFunction((line) => document.querySelector('.wm-room-status-announcement')?.textContent === line, SYNC_STATUS.offline);
+      await page.waitForFunction(() => paintedNotices.length === 4);
+      await page.evaluate(async () => {
+        await new Promise(requestAnimationFrame);
+        paintedNotices.push([...document.querySelectorAll('[role="status"]')]
+          .map((element) => element.textContent).filter(Boolean));
+      });
+      const result = await page.evaluate(() => {
+        noticeObserver.disconnect();
+        return { committed: [...new Set(committedNotices)], painted: [...new Set(paintedNotices.flat())],
+          current: [...document.querySelectorAll('[role="status"]')].map((element) => element.textContent).filter(Boolean) };
+      });
+      assert.deepEqual(result, { committed: [SYNC_STATUS.offline], painted: [SYNC_STATUS.offline], current: [SYNC_STATUS.offline] });
     });
   } finally { await context.close(); }
 });

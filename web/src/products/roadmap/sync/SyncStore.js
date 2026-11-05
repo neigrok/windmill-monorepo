@@ -45,9 +45,11 @@ class DatabaseRecords {
 
   clear(treeId) {
     return new Promise((resolve, reject) => {
-      const request = this.db.transaction(STORE, 'readwrite').objectStore(STORE).delete(treeId);
-      request.onsuccess = () => resolve();
-      request.onerror = () => reject(request.error);
+      const transaction = this.db.transaction(STORE, 'readwrite');
+      transaction.objectStore(STORE).delete(treeId);
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error);
     });
   }
 }
@@ -104,8 +106,10 @@ export class SyncStore {
     return this.dbPromise;
   }
 
-  records() {
-    return this.db().then((db) => new DatabaseRecords(db), () => {
+  records(durable = false) {
+    const records = this.db().then((db) => new DatabaseRecords(db));
+    if (durable) return records;
+    return records.catch(() => {
       this.refused.announce();
       return this.refused;
     });
@@ -136,14 +140,14 @@ export class SyncStore {
     this.refused.records.delete(treeId);
   }
 
-  async treeIds() {
-    return (await this.records()).treeIds();
+  async treeIds({ durable = false } = {}) {
+    return (await this.records(durable)).treeIds();
   }
 
-  async clear(treeId) {
+  async clear(treeId, { durable = false } = {}) {
+    await (await this.records(durable)).clear(treeId);
     this.latest.delete(treeId);
     this.refused.records.delete(treeId);
-    return (await this.records()).clear(treeId);
   }
 
   save(treeId, value) {

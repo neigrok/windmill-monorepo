@@ -642,9 +642,9 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   from 744px and in the tappable Device note below the identity on both phone views. The phone
   Graph camera clears the measured note.
 - **Board · single offline notice.** Approved 03.17 shows the room's Offline signal without the global
-  notice. The global notice yields to any room registered for status, idle or device-only included, so
-  a device-only room shows no Offline signal while offline. Readers, the demo and rooms without a
-  publisher retain the global notice.
+  notice. The global notice yields only to a published Offline. By orchestrator ruling under the
+  owner's G-R6 approval, an anonymous owner offline keeps the global notice: a device line is not a
+  connectivity statement. Readers, the demo and rooms without an Offline publication retain it.
 - **Board · the drawings of what the lift retired.** The product has no List, phone editor sheet, phone aim, remove-link and bulk bars,
   ControlBar or Next up shelf. Their Web Mobile and Web boards (the [flow index](../index.md#roadmap--web)'s *02 · Find and edit in List*,
   *List vocabulary*, the phone owner sheets in *04 · Edit and complete steps* (Web Mobile 04.01–04.05, 04.08), and the Next up states in *05 · Progress and feedback*) still stand in Figma. The designer deletes them and their

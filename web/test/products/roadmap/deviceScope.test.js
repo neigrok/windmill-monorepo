@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 
 import { LocalTreeRegistry, confirmDeviceOwner, deviceOwner } from '../../../src/products/roadmap/persistence/LocalTreeRegistry.js';
 import { listAllTrees } from '../../../src/products/roadmap/persistence/TreeRegistry.js';
-import { loadDeviceTree } from '../../../src/products/roadmap/sync/localTrees.js';
+import { loadDeviceTree, forgetDeviceTrees } from '../../../src/products/roadmap/sync/localTrees.js';
+import { SyncStore } from '../../../src/products/roadmap/sync/SyncStore.js';
 import { WorkspaceStore } from '../../../src/products/roadmap/persistence/WorkspaceStore.js';
 import { ProgressStore } from '../../../src/products/roadmap/persistence/ProgressStore.js';
 import { TreeLattice, HlcClock } from '../../../src/products/roadmap/sync/lattice.js';
@@ -296,4 +297,23 @@ test('a lapse in this confirmed document keeps the same owner’s unsynced tree 
   assert.deepEqual(await loadDeviceTree('t_a'), before);
   serverSaying({ me: 'u_b' });
   assert.equal(await loadDeviceTree('t_a'), null);
+});
+
+
+test('failed durable cleanup leaves owner stamps and blobs for the next attempt', async (t) => {
+  const device = browser({ index: { t_a: A_PRIVATE, t_anon: ANON },
+    blobs: { t_a: blobFor('t_a', 'Private', 'private'), t_anon: blobFor('t_anon', 'Anonymous', 'anonymous') } });
+  const clear = SyncStore.prototype.clear;
+  t.mock.method(SyncStore.prototype, 'clear', async function (id, options) {
+    assert.deepEqual(options, { durable: true });
+    if (id === 't_a') throw new Error('cleanup-write-failed');
+    return clear.call(this, id, options);
+  });
+  await assert.rejects(forgetDeviceTrees(), /cleanup-write-failed/);
+  assert.deepEqual(device.index(), { t_a: A_PRIVATE, t_anon: ANON });
+  assert.deepEqual(device.blobIds(), ['t_a', 't_anon']);
+  SyncStore.prototype.clear.mock.restore();
+  await forgetDeviceTrees();
+  assert.deepEqual(device.index(), { t_anon: ANON });
+  assert.deepEqual(device.blobIds(), ['t_anon']);
 });

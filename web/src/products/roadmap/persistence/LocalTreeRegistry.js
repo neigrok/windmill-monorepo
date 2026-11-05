@@ -32,7 +32,7 @@ export function confirmDeviceOwner(userId) {
 }
 
 // Offline /v1/me cannot answer but the shell can, from the replica it restores: this settles on its answer, or after `withinMs`.
-export function deviceOwnerAnswered(withinMs) {
+export function deviceOwnerAnswered(withinMs = 2000) {
   if (confirmation()) return Promise.resolve();
   return new Promise((resolve) => {
     waitingForOwner.add(resolve);

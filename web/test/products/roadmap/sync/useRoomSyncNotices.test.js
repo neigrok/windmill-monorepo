@@ -1,9 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { useRoadmapSyncStatus as syncHook } from '../../../../src/products/roadmap/sync/useRoomSyncNotices.js';
+import { useRoadmapSyncStatus as syncHook, useRoomSyncNotices } from '../../../../src/products/roadmap/sync/useRoomSyncNotices.js';
 import { OFFLINE_GRACE_MS, SAVING_DELAY_MS, SAVED_HOLD_MS } from '../../../../src/products/roadmap/sync/status.js';
 import { renderHook } from '../../gym/harness.mjs';
 import { closuresIn } from '../sourceClosures.js';
+
+import { syncSession as platformSync } from '../../../../src/platform/sync/session.js';
+import { getRoomStatus, registerRoomStatus } from '../../../../src/shell/roomStatus.js';
+import { ANONYMOUS_OWNER, SYNC_OFFLINE_SHORT, SYNC_STATUS } from '../../../../src/products/roadmap/copy.js';
 
 const notices = await closuresIn('sync/useRoomSyncNotices.js');
 
@@ -141,4 +145,51 @@ test('a real pending progress gesture still shows Saving during a structure reba
   assert.equal(hook.tree.state, null);
   session.change({ rebaselining: false, phase: 'live' });
   assert.equal(hook.tree.state, null);
+});
+
+
+test('an eligible room publishes Offline inside the platform publish that goes offline, and yields when it lapses', (t) => {
+  t.after(() => platformSync.publish({ online: true }));
+  const session = { ...statusSession(), treeId: 't_owned' };
+  let status = 'signed-in';
+  let owner = true;
+  const nothing = () => {};
+  const props = { treeId: session.treeId, syncSession: session, lapsed: false, phone: false,
+    openSignInDoor: nothing, setBoardQuiet: nothing };
+  const listening = platformSync.listeners.size;
+  const view = renderHook(t, () => useRoomSyncNotices({ ...props, owner, status }));
+  assert.equal(getRoomStatus(), null);
+  assert.equal(platformSync.listeners.size, listening + 1);
+  platformSync.publish({ online: false });
+  const atPlatformPublish = getRoomStatus();
+  assert.deepEqual(atPlatformPublish, {
+    line: SYNC_STATUS.offline, short: SYNC_OFFLINE_SHORT, icon: 'offline', narrow: 'icon', connectivity: 'offline',
+  });
+  session.change({ online: false });
+  assert.deepEqual(getRoomStatus(), atPlatformPublish);
+  status = 'ghost';
+  view.redraw();
+  assert.equal(platformSync.listeners.size, listening);
+  assert.deepEqual(getRoomStatus(), { line: ANONYMOUS_OWNER });
+  owner = false;
+  view.redraw();
+  assert.equal(getRoomStatus(), null);
+  platformSync.publish({ online: true });
+  platformSync.publish({ online: false });
+  assert.equal(getRoomStatus(), null);
+  view.unmount();
+});
+
+test('a superseded room cannot publish Offline over the current room', (t) => {
+  t.after(() => platformSync.publish({ online: true }));
+  const session = { ...statusSession(), treeId: 't_previous' };
+  const nothing = () => {};
+  const view = renderHook(t, () => useRoomSyncNotices({ treeId: session.treeId, syncSession: session,
+    owner: true, status: 'signed-in', lapsed: false, phone: false, openSignInDoor: nothing, setBoardQuiet: nothing }));
+  const next = registerRoomStatus();
+  next.publish({ line: ANONYMOUS_OWNER });
+  platformSync.publish({ online: false });
+  assert.deepEqual(getRoomStatus(), { line: ANONYMOUS_OWNER });
+  view.unmount();
+  next.release();
 });

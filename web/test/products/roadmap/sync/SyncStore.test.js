@@ -638,3 +638,39 @@ test('a discard that finds another tab got there first takes nothing of its own:
   assert.equal(labels(tabA).root, 'A refused');
   assert.equal(tabA.pendingEditCount(), 1);
 });
+
+
+test('durable deletion waits for commit and rejects an abort after the delete request succeeds', async (t) => {
+  const env = environment(t);
+  const store = env.store();
+  await store.save('tree', value());
+  const db = await store.db();
+  const transaction = db.transaction.bind(db);
+  t.mock.method(db, 'transaction', (...args) => {
+    const txn = transaction(...args);
+    const objectStore = txn.objectStore.bind(txn);
+    txn.objectStore = (...names) => {
+      const rows = objectStore(...names);
+      const remove = rows.delete.bind(rows);
+      rows.delete = (...keys) => {
+        const request = remove(...keys);
+        request.addEventListener('success', () => txn.abort());
+        return request;
+      };
+      return rows;
+    };
+    return txn;
+  });
+  await assert.rejects(store.clear('tree', { durable: true }));
+  db.transaction.mock.restore();
+  assert.deepEqual(await store.load('tree'), value());
+  await store.clear('tree', { durable: true });
+  assert.deepEqual(await store.treeIds({ durable: true }), []);
+});
+
+test('durable cleanup never substitutes the document fallback for an unavailable database', async (t) => {
+  const store = new SyncStore();
+  t.mock.method(store, 'db', async () => { throw new Error('database-unavailable'); });
+  await assert.rejects(store.treeIds({ durable: true }), /database-unavailable/);
+  await assert.rejects(store.clear('tree', { durable: true }), /database-unavailable/);
+});

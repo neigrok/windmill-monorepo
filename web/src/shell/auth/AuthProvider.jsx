@@ -69,6 +69,21 @@ export default function AuthProvider({ children }) {
     channel.current?.postMessage({ type: 'signed-out' });
     signOutResult.current?.resolve(true); signOutResult.current = null;
   }, [settle]);
+  const cleanupDevice = useCallback(async (engine, next = null) => {
+    const change = engine.device.meta.deviceCleanup;
+    if (!change) return;
+    await seat.finishDeviceCleanup({ previous: change.previous, next });
+    await engine.write(null, (device) => {
+      if (device.meta.deviceCleanup?.previous === change.previous && device.meta.deviceCleanup?.generation === change.generation)
+        delete device.meta.deviceCleanup;
+    });
+  }, [seat]);
+  const finishSignOut = useCallback(async (options, next = null) => {
+    const engine = syncSession.engine;
+    const result = await engine.finishSignOut({ ...options, deviceCleanup: true });
+    if (result.complete) await cleanupDevice(engine, next);
+    return result;
+  }, [cleanupDevice]);
   const finishClosure = useCallback(async () => {
     const engine = syncSession.engine;
     const { account, sessionId } = engine.device.meta.closingAccount;
@@ -91,7 +106,7 @@ export default function AuthProvider({ children }) {
         }
       }
       if (engine.device.activeReplica.meta.state === 'bound' && engine.device.activeReplica.meta.account === account)
-        await engine.finishSignOut({ choice: 'discard' });
+        await finishSignOut({ choice: 'discard' });
     }
     if (engine.device.meta.clearCredential === account) {
       await engine.cleanupCredentials();
@@ -99,13 +114,13 @@ export default function AuthProvider({ children }) {
     }
     await engine.write(null, (device) => { if (device.meta.closingAccount?.sessionId === sessionId) delete device.meta.closingAccount; });
     signedOut();
-  }, [signedOut]);
+  }, [signedOut, finishSignOut]);
   const bind = useCallback(async (me, answers = {}) => {
     const engine = syncSession.engine;
     const current = engine.device.activeReplica.meta;
     if (current.state === 'bound' && current.account !== me.id) {
       // A cookie replaced elsewhere cannot move this account's work to its successor.
-      await engine.finishSignOut({ choice: 'keep' });
+      await finishSignOut({ choice: 'keep' }, me?.id ?? null);
     }
     let result = await engine.signIn(me.id, answers);
     if (!result.complete) {
@@ -131,11 +146,13 @@ export default function AuthProvider({ children }) {
       return;
     }
     pending.current = null; setQuestion(null); setError(false); settle(me);
-  }, [settle]);
+  }, [settle, finishSignOut]);
   const refresh = useCallback(({ signedOut = false } = {}) => enqueue(async () => {
     const engine = await syncSession.opening;
     if (engine?.restoring) await engine.restoring;
     if (!engine || engine.closed) return undefined;
+    await cleanupDevice(engine);
+    seat.restoreHolder(engine.device.activeReplica.meta);
     if (engine.device.meta.closingAccount) {
       const lock = engine.device.meta.signOut?.lock;
       if (lock && !engine.releaseSignOut && (await navigator.locks.query()).held.some((held) => held.name === lock)) return undefined;
@@ -158,26 +175,28 @@ export default function AuthProvider({ children }) {
     if (me) { await bind(me, pending.current?.user.id === me.id ? pending.current : {}); return me; }
     const ended = signedOut || Boolean(seat.previousAccount && engine.device.activeReplica.meta.state === 'anon');
     if (ended && engine.device.activeReplica.meta.state === 'bound') {
-      await engine.finishSignOut({ choice: 'keep' });
+      await finishSignOut({ choice: 'keep' }, me?.id ?? null);
     } else if (engine.device.activeReplica.meta.state === 'bound' && !engine.device.activeReplica.meta.authPaused) {
       await engine.write(null, (device) => { device.activeReplica.meta.authPaused = true; });
     }
     pending.current = null; setQuestion(null); settle(null, { signedOut: ended });
     return null;
-  }), [enqueue, settle, bind, seat, finishClosure]);
+  }), [enqueue, settle, bind, seat, finishClosure, finishSignOut, cleanupDevice]);
   const signIn = useCallback((me) => enqueue(async () => {
     await syncSession.opening;
+    await cleanupDevice(syncSession.engine);
+    seat.restoreHolder(syncSession.engine.device.activeReplica.meta);
     if (syncSession.engine.device.meta.closingAccount) await finishClosure();
     // A freshly verified cookie supersedes any cleanup owed for an earlier session.
     await syncSession.engine.write(null, (device) => { delete device.meta.clearCredential; });
     await bind(me);
     channel.current?.postMessage({ type: 'signed-in' });
-  }), [enqueue, bind, finishClosure]);
+  }), [enqueue, bind, finishClosure, seat, cleanupDevice]);
   const signOut = useCallback(() => {
     if (signOutResult.current) return signOutResult.current.promise;
     let resolve;
     const promise = new Promise((done) => { resolve = done; });
-    signOutResult.current = { promise, resolve };
+    signOutResult.current = { promise, resolve, account: syncSession.engine.device.activeReplica.meta.account };
     enqueue(async () => {
       setBusy(true); setError(false);
       try {
@@ -219,7 +238,18 @@ export default function AuthProvider({ children }) {
           track('sync_signin', { outcome: 'pending' });
           await bind(p.user, { decisions, counted });
         } else {
-          const result = await syncSession.engine.finishSignOut({ choice, counted: question.counted });
+          const engine = syncSession.engine;
+          const previous = signOutResult.current?.account;
+          const active = engine.device.activeReplica.meta;
+          if (!previous || (active.state === 'bound' && active.account !== previous)
+            || (engine.device.meta.deviceCleanup && engine.device.meta.deviceCleanup.previous !== previous))
+            throw new Error('account-changed-during-signout');
+          if (active.state === 'anon') {
+            await cleanupDevice(engine);
+            signedOut();
+            return;
+          }
+          const result = await finishSignOut({ choice, counted: question.counted });
           if (!result.complete) { setQuestion(result); return; }
           signedOut();
         }
@@ -276,7 +306,14 @@ export default function AuthProvider({ children }) {
       }
       await logout();
     } },
-      prepare: async (engine) => { for (const each of hooks) await each.prepare?.(engine); },
+      prepare: async (engine) => {
+        try { await cleanupDevice(engine); }
+        catch (error) {
+          captureError('auth', 'auth-session', error?.stack ?? new Error('auth-session').stack, '/auth');
+          throw error;
+        }
+        for (const each of hooks) await each.prepare?.(engine);
+      },
       onPushResult: (...args) => { for (const each of hooks) each.onPushResult?.(...args); },
       pendingDeviceWork: (product, rows) => hooks.flatMap((each) => each.pendingDeviceWork?.(product, rows) ?? []),
       adoptDeviceRows: (product, incoming, kept) => {
@@ -296,7 +333,7 @@ export default function AuthProvider({ children }) {
     const poll = setInterval(wake, 20000);
     return () => { alive = false; broadcast.close(); channel.current = null; clearInterval(poll);
       window.removeEventListener('focus', wake); window.removeEventListener('online', wake); };
-  }, [refresh]);
+  }, [refresh, cleanupDevice]);
   // A surface that says the refused-device line itself holds it from the shell while it stands, so it is said once.
   const holdDeviceLine = useCallback(() => {
     setDeviceLineHolders((holders) => holders + 1);
@@ -304,7 +341,7 @@ export default function AuthProvider({ children }) {
   }, []);
   return <AuthContext.Provider value={{ user, status, account, lapsed, signIn, signOut, closeAccount, refresh, holdDeviceLine }}>
     <div style={{ display: 'contents' }} inert={question && !upgradeRequired ? '' : undefined}>{children}</div>
-    {!session.online && !roomStatus && (
+    {!session.online && roomStatus?.status?.connectivity !== 'offline' && (
       <div role="status" style={{
         position: 'fixed', left: 16, bottom: 62, zIndex: 80, padding: '8px 12px',
         background: 'var(--surface-card)', color: 'var(--text-secondary)', borderRadius: 8, fontSize: 13,
