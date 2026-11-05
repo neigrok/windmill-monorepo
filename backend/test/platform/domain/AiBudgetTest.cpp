@@ -131,7 +131,7 @@ TEST(ai_budget_months_follow_utc_calendar_and_leap_years) {
 
 TEST(ai_budget_policy_has_exact_lifetime_free_and_funded_amounts) {
   const AiBudgetLimits limits;
-  CHECK_EQ(limits.anonymousLifetimeNanos, 50'000'000);
+  CHECK_EQ(limits.anonymousLifetimeNanos, 250'000'000);
   CHECK_EQ(limits.loggedInMonthlyNanos, 250'000'000);
   CHECK_EQ(limits.paidPeriodNanos, 7'000'000'000);
   CHECK_EQ(limits.freeMonthlyNanos, 100'000'000'000);
@@ -150,7 +150,7 @@ TEST(ai_budget_anonymous_allowance_is_lifetime_and_bound_devices_cannot_spend_ag
   AiBudgetSnapshot snapshot;
   snapshot.window = AiBudgetWindow::Lifetime;
   snapshot.period = AiBudgetPeriod::lifetime();
-  snapshot.subject = {40'000'000, 5'000'000, 0};
+  snapshot.subject = {240'000'000, 5'000'000, 0};
   const AiBudgetLimits limits;
   CHECK_EQ(admitAiBudget({"call", principal, 5'000'000, 0}, limits, snapshot), AiBudgetCode::Ok);
   CHECK_EQ(admitAiBudget({"call", principal, 5'000'001, 0}, limits, snapshot), AiBudgetCode::SubjectExhausted);

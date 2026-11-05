@@ -161,7 +161,7 @@ or another installation's request. Both routes return this shape with private/no
   "message":"Here is a draft to review before saving.",
   "routines":[{"name":"Push","entries":[{"exerciseId":"bench-press","sets":[{"reps":8,"weightKg":null}],"restSeconds":120}]}],
   "errorCode":null,
-  "allowance":{"code":"ok","currency":"USD","period":"lifetime","tier":"anonymous","configured":true,"limit":"0.050000000","used":"0.012000000","reserved":"0.000000000","remaining":"0.038000000","resetsAtMs":null,"budgetResetsAtMs":null}
+  "allowance":{"code":"ok","currency":"USD","period":"lifetime","tier":"anonymous","configured":true,"limit":"0.250000000","used":"0.012000000","reserved":"0.000000000","remaining":"0.238000000","resetsAtMs":null,"budgetResetsAtMs":null}
 }
 ```
 

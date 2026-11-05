@@ -5,7 +5,7 @@
 **Figma:** none. The signed-out boards are 01.1, 01.4, 01.10, 01.16, 01.19, and 01.7, 01.14 and 01.15 for retained answers.
 
 **What stands** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start with `platform/`)
-- `platform/ai/AiInstallation.kt` seals a separate installation credential and durable binding intent, and never re-issues over an existing credential. Sign-out retains both. The $0.05 lifetime allowance belongs to that installation.
+- `platform/ai/AiInstallation.kt` seals a separate installation credential and durable binding intent, and never re-issues over an existing credential. Sign-out retains both. The $0.25 lifetime allowance belongs to that installation.
 - Routing, by `coach/CoachAccess.kt`:
   - Unbound valid installation: the composer, whose send is an `anon` turn.
   - `bound=true` or 409 `device_bound`: the bound stance over History and the drafts; no replacement installation.

@@ -240,9 +240,9 @@ TEST(pg_ai_budget_anonymous_lifetime_and_account_calendar_month_have_distinct_re
   const long long february = AiBudgetPeriod::at(january)->endMs;
   PgAiBudgetRepository repository{pgTestPool()};
   const AiBudgetPrincipal device{{AiBudgetSubjectKind::Device, "device"}, AiBudgetTier::Anonymous};
-  CHECK_EQ(repository.reserve({"first", device, 30'000'000, january}, limits).code, AiBudgetCode::Ok);
+  CHECK_EQ(repository.reserve({"first", device, 230'000'000, january}, limits).code, AiBudgetCode::Ok);
   CHECK_EQ(repository.markDispatched("first").code, AiBudgetCode::Ok);
-  CHECK_EQ(repository.settle("first", 30'000'000).code, AiBudgetCode::Ok);
+  CHECK_EQ(repository.settle("first", 230'000'000).code, AiBudgetCode::Ok);
   CHECK_EQ(repository.reserve({"second", device, 20'000'000, february}, limits).code, AiBudgetCode::Ok);
   CHECK_EQ(repository.markDispatched("second").code, AiBudgetCode::Ok);
   CHECK_EQ(repository.settle("second", 20'000'000).code, AiBudgetCode::Ok);
@@ -250,7 +250,7 @@ TEST(pg_ai_budget_anonymous_lifetime_and_account_calendar_month_have_distinct_re
   const auto anonymous = repository.snapshot(device, february, limits);
   CHECK_EQ(anonymous.period, AiBudgetPeriod::lifetime());
   CHECK_EQ(anonymous.window, AiBudgetWindow::Lifetime);
-  CHECK_EQ(anonymous.subject.spentNanos, 50'000'000);
+  CHECK_EQ(anonymous.subject.spentNanos, 250'000'000);
   CHECK_EQ(anonymous.freeMonth.spentNanos, 20'000'000);
   const AiBudgetPrincipal account{{AiBudgetSubjectKind::Account, "account"}, AiBudgetTier::LoggedIn};
   CHECK_EQ(repository.reserve({"account-january", account, 250'000'000, january}, limits).code, AiBudgetCode::Ok);

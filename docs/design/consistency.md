@@ -1411,6 +1411,9 @@ Android. It and the product differ in these places.
   *removed from this workout*; 08.56 *Proposal · Push A · next time*; 07.15 and 07.16 *conversation* as the sign-in noun; the
   specimens *I made 3 routines.* and *I made Incline Dumbbell Press, then*. 08.45 says Android's *Get the update*, not iOS's
   *Update*. 08.68 offers *Use your own AI agent* on a shared free day, which iOS code does not (`CoachTurnRefusal.recovery`).
+  A spent signed-out allowance says *You have used all of your AI allowance.* over *Sign in to continue.* on both phones, and that
+  allowance is $0.25, the whole of an account's month, which counts this phone's spend from the same month: signing in then
+  refuses again until the month turns. For the owner: what the line says.
 
 ### Native and web differences
 

@@ -20,7 +20,7 @@ import SyncSchema
 extension CoachTests {
   func installationBody(credential: String? = nil) throws -> String {
     var body: [String: Any] = ["bound": false, "allowance": ["code": "ok", "currency": "USD", "period": "lifetime", "tier": "anonymous", "configured": true,
-      "limit": "0.050000000", "used": "0.000000000", "reserved": "0.000000000", "remaining": "0.050000000", "resetsAtMs": NSNull(), "budgetResetsAtMs": NSNull()]]
+      "limit": "0.250000000", "used": "0.000000000", "reserved": "0.000000000", "remaining": "0.250000000", "resetsAtMs": NSNull(), "budgetResetsAtMs": NSNull()]]
     body["credential"] = credential
     return String(decoding: try JSONSerialization.data(withJSONObject: body), as: UTF8.self)
   }

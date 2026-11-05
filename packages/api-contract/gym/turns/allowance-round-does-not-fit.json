@@ -14,7 +14,7 @@
     {"refused": "subject_exhausted"}
   ],
   "events": [
-    {"event": "error", "data": {"code": "subject_exhausted", "allowance": {"code": "ok", "currency": "USD", "period": "lifetime", "tier": "anonymous", "configured": true, "limit": "0.050000000", "used": "0.000000000", "reserved": "0.000000000", "remaining": "0.050000000", "resetsAtMs": null, "budgetResetsAtMs": null}}}
+    {"event": "error", "data": {"code": "subject_exhausted", "allowance": {"code": "ok", "currency": "USD", "period": "lifetime", "tier": "anonymous", "configured": true, "limit": "0.250000000", "used": "0.000000000", "reserved": "0.000000000", "remaining": "0.250000000", "resetsAtMs": null, "budgetResetsAtMs": null}}}
   ],
   "results": [],
   "end": {"state": "failed", "code": "subject_exhausted"}

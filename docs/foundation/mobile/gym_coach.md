@@ -522,7 +522,7 @@ The backend owns exactly three tiers. Amounts are USD of model cost, never quest
 
 | Tier | Individual allowance | Period |
 |---|---|---|
-| Anonymous | $0.05 per installation credential | Lifetime |
+| Anonymous | $0.25 per installation credential | Lifetime |
 | Verified logged-in | $0.25 per account, including associated anonymous spend from the current month | UTC calendar month |
 | Windmill One | $7 per funded account period | Subscription billing period; owner grants use UTC calendar months |
 
@@ -800,7 +800,7 @@ A phone Coach requires a gym replica per [the engine](../engine.md) with:
 | `TURN_SWEEP` | 30 s |
 | `ASK_BURST` | 3 |
 | `ASK_PER_DAY` | 10 |
-| `AI_ANONYMOUS_LIFETIME_USD` | 0.05 |
+| `AI_ANONYMOUS_LIFETIME_USD` | 0.25 |
 | `AI_LOGGED_IN_MONTHLY_USD` | 0.25 |
 | `AI_ONE_PERIOD_USD` | 7 |
 | `AI_FREE_MONTHLY_USD` | 100 |
@@ -822,7 +822,7 @@ A phone Coach requires a gym replica per [the engine](../engine.md) with:
   drawn in canon.
 - **B-2 The model per seat.** Decided: an `anon` turn runs on Sonnet 5 under the anonymous
   onboarding effort and 2,000-token output ceiling, so a round of the full catalog fits the
-  $0.05 lifetime allowance; a `bound` turn runs on the Coach model (Opus 5) under
+  $0.25 lifetime allowance; a `bound` turn runs on the Coach model (Opus 5) under
   `COACH_MAX_OUTPUT_TOKENS`. Both reserve adaptively down to the 1,024-token floor.
 - **B-3 Reservation estimates.** Evaluate per-request estimates against actual usage across text,
   tools and images. Do not describe approximate admission as a hard spending ceiling. Original

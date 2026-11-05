@@ -966,7 +966,7 @@ class CoachChatsTests {
     @Test fun aRetainedRefusalSaysSpentOnlyWhereItsOwnReadSaysSo() = runTest {
         val gone = "You have used all of your AI allowance."
         val unavailable = "Coach’s AI allowance is unavailable right now."
-        fun read(remaining: String, reserved: String) = ""","allowance":{"code":"subject_exhausted","currency":"USD","period":"lifetime","tier":"anonymous","configured":true,"limit":"0.050000000","used":"0.050000000","reserved":"$reserved","remaining":"$remaining"}"""
+        fun read(remaining: String, reserved: String) = ""","allowance":{"code":"subject_exhausted","currency":"USD","period":"lifetime","tier":"anonymous","configured":true,"limit":"0.250000000","used":"0.250000000","reserved":"$reserved","remaining":"$remaining"}"""
         for ((allowance, said) in listOf(
             read("0.000000000", "0.000000000") to gone,
             read("0.010000000", "0.000000000") to unavailable,

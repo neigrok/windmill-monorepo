@@ -317,8 +317,8 @@ TEST(gym_turn_route_refuses_a_spent_lifetime_allowance_with_no_reset_moment) {
   const drogon::HttpResponsePtr response = a.openObserved(ApiHarness::request("POST", "/v1/gym/coach/turns", openBody("tn_api_0000006"), {"X-Windmill-Installation: " + a.credential}));
   CHECK_EQ(response->getStatusCode(), drogon::k429TooManyRequests);
   CHECK_EQ(parse(std::string(response->getBody())), parse(R"({"error":"Coach could not take this message.","code":"subject_exhausted","allowance":{
-      "budgetResetsAtMs":null,"code":"subject_exhausted","configured":true,"currency":"USD","limit":"0.050000000","period":"lifetime",
-      "remaining":"0.000000000","reserved":"0.000000000","resetsAtMs":null,"tier":"anonymous","used":"0.050000000"}})"));
+      "budgetResetsAtMs":null,"code":"subject_exhausted","configured":true,"currency":"USD","limit":"0.250000000","period":"lifetime",
+      "remaining":"0.000000000","reserved":"0.000000000","resetsAtMs":null,"tier":"anonymous","used":"0.250000000"}})"));
   CHECK(watch.outcomes == std::vector<std::string>{"subject_exhausted"});
   CHECK(watch.issues.empty());
 }

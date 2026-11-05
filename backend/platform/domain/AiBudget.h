@@ -51,7 +51,7 @@ struct AiBudgetPeriod {
 };
 
 struct AiBudgetLimits {
-  long long anonymousLifetimeNanos = 50'000'000;
+  long long anonymousLifetimeNanos = 250'000'000;
   long long loggedInMonthlyNanos = 250'000'000;
   long long paidPeriodNanos = 7'000'000'000;
   long long freeMonthlyNanos = 100'000'000'000;

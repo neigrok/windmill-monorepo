@@ -717,7 +717,7 @@ TEST(coach_turn_waiting_on_a_phone_holds_no_vendor_slot) {
 }
 
 // B-2: an anonymous turn runs on the onboarding model, and its first round — the full prompt and
-// catalog/2 — is admitted by the real estimator and budget under the default $0.05 lifetime
+// catalog/2 — is admitted by the real estimator and budget under the default $0.25 lifetime
 // allowance; a bound turn keeps the Coach model, and a catalog/1 turn is offered catalog/1.
 TEST(coach_turn_anonymous_seat_runs_on_sonnet_and_its_round_fits_the_default_lifetime_allowance) {
   Harness h;
@@ -743,13 +743,13 @@ TEST(coach_turn_anonymous_seat_runs_on_sonnet_and_its_round_fits_the_default_lif
   spend.operation = "turn";
   spend.model = request["model"].asString();
   spend.runId = "tn_anon_model_0001";
-  CHECK_EQ(h.limits.anonymousLifetimeNanos, 50'000'000LL);
+  CHECK_EQ(h.limits.anonymousLifetimeNanos, 250'000'000LL);
   const AiCallAdmission admitted = budget.beginInstallation(*anon.installation, spend, request, 1'024);
   CHECK_EQ(admitted.refusal, std::string(""));
   REQUIRE(admitted.reservation);
   REQUIRE(admitted.reservation->outputBudget);
   CHECK_EQ(admitted.reservation->outputBudget->tokensFor(admitted.reservation->amountNanos).value_or(0), 2000);
-  CHECK(admitted.reservation->amountNanos <= 50'000'000LL);
+  CHECK(admitted.reservation->amountNanos <= 250'000'000LL);
   h.service->stop();
 }
 
@@ -823,7 +823,7 @@ TEST(coach_turn_error_frame_names_when_the_refused_budget_returns_and_only_a_fai
     std::string frame;
     std::vector<std::string> issues;
   };
-  const std::string read = R"("allowance":{"budgetResetsAtMs":null,"code":"ok","configured":true,"currency":"USD","limit":"0.050000000","period":"lifetime","remaining":"0.050000000","reserved":"0.000000000","resetsAtMs":null,"tier":"anonymous","used":"0.000000000"})";
+  const std::string read = R"("allowance":{"budgetResetsAtMs":null,"code":"ok","configured":true,"currency":"USD","limit":"0.250000000","period":"lifetime","remaining":"0.250000000","reserved":"0.000000000","resetsAtMs":null,"tier":"anonymous","used":"0.000000000"})";
   const std::vector<Case> cases{
       {R"({"refused":"free_day_exhausted"})", "free_day_exhausted", "{" + read + R"(,"budgetResetsAtMs":1793059200000,"code":"free_day_exhausted"})", {}},
       {R"({"refused":"free_month_exhausted"})", "free_month_exhausted", "{" + read + R"(,"budgetResetsAtMs":1793491200000,"code":"free_month_exhausted"})", {}},
@@ -881,7 +881,7 @@ TEST(coach_turn_error_frame_reads_a_balance_the_round_found_gone) {
   Harness h;
   h.clock.now = 1'793'000'000'000;
   h.model->replies = parse(R"([{"refused":"subject_exhausted"}])");
-  h.model->beforeReply = [&h](int) { h.budgetRepository.totals.subject.spentNanos = 50'000'000; };
+  h.model->beforeReply = [&h](int) { h.budgetRepository.totals.subject.spentNanos = 250'000'000; };
   const TurnAdmission admission = h.service->open(h.anon(), openOf(parse(R"({"catalog":"catalog/1","turnId":"tn_refused_000004","question":"Hi"})")));
   REQUIRE(admission.turn);
   auto recorder = std::make_shared<Recorder>();
@@ -890,7 +890,7 @@ TEST(coach_turn_error_frame_reads_a_balance_the_round_found_gone) {
   REQUIRE(recorder->waitFor(1));
   h.service->stop();
   CHECK_EQ(Replay::dumpAll(recorder->snapshot()),
-           std::string(R"([{"data":{"allowance":{"budgetResetsAtMs":null,"code":"subject_exhausted","configured":true,"currency":"USD","limit":"0.050000000","period":"lifetime","remaining":"0.000000000","reserved":"0.000000000","resetsAtMs":null,"tier":"anonymous","used":"0.050000000"},"code":"subject_exhausted"},"event":"error"}])"));
+           std::string(R"([{"data":{"allowance":{"budgetResetsAtMs":null,"code":"subject_exhausted","configured":true,"currency":"USD","limit":"0.250000000","period":"lifetime","remaining":"0.000000000","reserved":"0.000000000","resetsAtMs":null,"tier":"anonymous","used":"0.250000000"},"code":"subject_exhausted"},"event":"error"}])"));
   CHECK(h.failures->reports.empty());
 }
 
