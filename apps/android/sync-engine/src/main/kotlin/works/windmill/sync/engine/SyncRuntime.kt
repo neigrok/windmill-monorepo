@@ -63,6 +63,8 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
     private val liveClosedByClient = AtomicReference<LiveConnection?>()
     // How a live step ended (§7.5): `refused` an open that failed and `dropped` a socket the server or the network ended, both reconnects; `closed` a close the client made, or a step that opened nothing because no socket is wanted.
     private enum class LiveEnd { refused, dropped, closed }
+    // How a sender step ended: `rest` with nothing to send now, `again` having pushed, `helloAgain` with an epoch its hello learned, so nothing was numbered and the next hello may.
+    private enum class SenderTurn { rest, again, helloAgain }
     private val heldWake = Channel<Unit>(Channel.CONFLATED)
     private val pullWaits = mutableMapOf<ScopeRef, SenderWait>()
     @Volatile private var pullFloor = 0L
@@ -279,7 +281,10 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
         engine.lock.withLock { if (foreground) { foreground = false; readinessGeneration++ } }
         closeLive()
         engine.lock.withLock { if (activityAllowed()) engine.releaseHeld(true) }
-        if (online && wait.leaveMayPush(mono())) deadline(2_000) { senderStep(leaving = true) }
+        // The one push leaving owes (§7.3): the sender's worker stays still in the background, so a hello that learned the epoch goes again here.
+        if (online && wait.leaveMayPush(mono())) deadline(2_000) {
+            do { val turn = runSenderStep(leaving = true, draining = false) } while (turn == SenderTurn.helloAgain)
+        }
         wakeAll()
     }
     suspend fun hello(token: String?): Reply<SyncResponse> = hello(token) { true }
@@ -386,7 +391,7 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
         if (!alreadyHeld) deadline(Constants.SIGNOUT_FLUSH_MS.toLong()) {
             var first = true
             while (true) {
-                if (!runSenderStep(leaving = first, draining = true)) break
+                if (runSenderStep(leaving = first, draining = true) == SenderTurn.rest) break
                 first = false
                 yield()
             }
@@ -433,19 +438,19 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
         storageIO { tokens.save(account, token) }; engine.reauthenticate(); reopenLiveFresh(); closeLive(); launchWorker(EngineOperation.lifecycle) { senderTurn.withLock { wait.kick(mono()) }; wakeAll() }
         launchWorker(EngineOperation.hello) { hello(token) }
     }
-    suspend fun senderStep(leaving: Boolean = false): Boolean = runSenderStep(leaving, false)
-    private suspend fun runSenderStep(leaving: Boolean, draining: Boolean): Boolean {
-        if (closed) return false
+    suspend fun senderStep(leaving: Boolean = false): Boolean = runSenderStep(leaving, false) != SenderTurn.rest
+    private suspend fun runSenderStep(leaving: Boolean, draining: Boolean): SenderTurn {
+        if (closed) return SenderTurn.rest
         val work = scope.async { senderStepInLane(leaving, draining) }
         try { return work.await() } finally { if (!currentCoroutineContext().isActive) work.cancel() }
     }
-    private suspend fun senderStepInLane(leaving: Boolean, draining: Boolean): Boolean = senderTurn.withLock {
+    private suspend fun senderStepInLane(leaving: Boolean, draining: Boolean): SenderTurn = senderTurn.withLock {
         fun admitted() = activityAllowed() || draining && signOutDrainAllowed()
-        if (!admitted() || closed || !online || upgradeRequired || !leaving && !draining && !foreground || !leaving && !wait.due(mono()) || leaving && !wait.leaveMayPush(mono())) return@withLock false
+        if (!admitted() || closed || !online || upgradeRequired || !leaving && !draining && !foreground || !leaving && !wait.due(mono()) || leaving && !wait.leaveMayPush(mono())) return@withLock SenderTurn.rest
         val earlier = if (leaving) wait.snapshot() else null
         try {
-            val seat = seat() ?: return@withLock false
-            if (signOutHold == seat.account || !helloWait.due(mono())) return@withLock false
+            val seat = seat() ?: return@withLock SenderTurn.rest
+            if (signOutHold == seat.account || !helloWait.due(mono())) return@withLock SenderTurn.rest
             val queued = engine.lock.withLock {
                 val replica = engine.device.current()
                 val back = engine.heldBack(replica)
@@ -453,7 +458,7 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
                 entries.any { it.state == "sent" } || entries.filter { it.state == "ready" }
                     .takeWhile { it !in back || it.intent.command == null }.any { it !in back }
             }
-            if (!queued) return@withLock false
+            if (!queued) return@withLock SenderTurn.rest
             val (epoch, generation) = engine.lock.withLock { engine.device.current().meta["serverEpoch"] to readinessGeneration }
             fun ready() = admitted() && !closed && online && (leaving || draining || foreground) && readinessGeneration == generation
             var response: SyncResponse? = null
@@ -461,7 +466,7 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
             var invalidated = false
             try {
                 response = hello(seat.token, ::admitted).answer
-                if (!current(seat) || !ready()) { invalidated = true; return@withLock false }
+                if (!current(seat) || !ready()) { invalidated = true; return@withLock SenderTurn.rest }
                 compatible = !upgradeRequired && response?.status == 200 && response.body?.get("as") == Json.of(seat.account!!) &&
                     response.body["schema"]?.long()?.let { it >= engine.registry.minVersion } == true
             } finally {
@@ -473,7 +478,7 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
                     else helloWait.backoff(now, engine::draw)
                 }
             }
-            if (!compatible) return@withLock false
+            if (!compatible) return@withLock SenderTurn.rest
             helloWait.kick(mono())
             var changedEpoch = false
             val request = engine.lock.withLock {
@@ -482,20 +487,21 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
                 if (changedEpoch) null else engine.nextPush(pushLimit)
             } ?: run {
                 // An epoch learned during the hello needs another hello before numbering, and a pull never wakes the sender.
-                if (changedEpoch) senderWake.trySend(Unit)
-                return@withLock changedEpoch
+                if (!changedEpoch) return@withLock SenderTurn.rest
+                senderWake.trySend(Unit)
+                return@withLock SenderTurn.helloAgain
             }
-            if (!current(seat) || !ready()) return@withLock false
+            if (!current(seat) || !ready()) return@withLock SenderTurn.rest
             val send = engine.clock.reading()
             val job = currentCoroutineContext()[Job]
             if (!engine.lock.withLock {
                 if (signOutHold == seat.account || !ready()) false else { activePush = job; true }
-            }) return@withLock false
+            }) return@withLock SenderTurn.rest
             // §7.4 What holds work back: a push that fails before its reply is taken records its scopes as answered; a cancelled push records nothing.
             try {
                 val reply = try { deadline(Constants.REQUEST_TIMEOUT_MS.toLong()) { transport.push(request, seat.token!!) } ?: Reply.Unreachable }
                     finally { activePush = null }
-                takeReply(request, seat, reply, RequestTiming(send, engine.clock.reading()), draining)
+                if (takeReply(request, seat, reply, RequestTiming(send, engine.clock.reading()), draining)) SenderTurn.again else SenderTurn.rest
             } catch (failure: Exception) {
                 if (failure !is CancellationException) engine.recordPushFailure(request, PushFailure.answered)
                 throw failure

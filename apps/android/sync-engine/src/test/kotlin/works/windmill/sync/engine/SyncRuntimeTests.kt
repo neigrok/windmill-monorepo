@@ -115,15 +115,17 @@ class SyncRuntimeTests {
         val hellos = Channel<String?>(Channel.UNLIMITED)
         var holdsRecords = false
         var schema = 2L
-        var helloAnswer: CompletableDeferred<Reply<SyncResponse>>? = null
+        @Volatile var helloAnswer: CompletableDeferred<Reply<SyncResponse>>? = null
         @Volatile var refuseReopen = false
         @Volatile var liveRefusal: SyncResponse? = null
         @Volatile var freshSockets = false
         val socket = Socket()
         val sockets = CopyOnWriteArrayList<Socket>()
         override suspend fun hello(token: String?): Reply<SyncResponse> {
+            // Taken before the hello is announced: a test that saw it and set the next answer has not changed this one's.
+            val answer = helloAnswer
             hellos.send(token)
-            return helloAnswer?.await() ?: Reply.Answer(SyncResponse(200, Json.objectOf(
+            return answer?.await() ?: Reply.Answer(SyncResponse(200, Json.objectOf(
                 "serverTime" to Json.of(5_000), "epoch" to Json.of("ep-1"), "as" to (token?.removePrefix("token:")?.let(Json::of) ?: Json.Null),
                 "schema" to Json.of(schema), "minSchema" to Json.of(2), "holdsRecords" to Json.objectOf("probe" to Json.of(holdsRecords)))))
         }
@@ -357,6 +359,35 @@ class SyncRuntimeTests {
             val push = fixture.push()
             push.answer.complete(ok(push.request))
             until { fixture.engine.device.current().entries().map { it.state } == listOf("acked") }
+        }
+    }
+
+    @Test fun theFirstPullLandingDuringTheLeavingHelloStillSendsThePushLeavingOwes() = runBlocking {
+        Fixture().use { fixture ->
+            fixture.transport.controlPulls = true
+            fixture.runtime.enter()
+            val pull = fixture.pull()
+            val foregroundHello = CompletableDeferred<Reply<SyncResponse>>()
+            fixture.transport.helloAnswer = foregroundHello
+            fixture.create()
+            assertEquals("token:A", withTimeout(2_000) { fixture.transport.hellos.receive() })
+            val leavingHello = CompletableDeferred<Reply<SyncResponse>>()
+            fixture.transport.helloAnswer = leavingHello
+            val leaving = async(start = CoroutineStart.UNDISPATCHED) { fixture.runtime.leave() }
+            foregroundHello.complete(helloResponse())
+            assertEquals("token:A", withTimeout(2_000) { fixture.transport.hellos.receive() })
+            pull.answer.complete(Reply.Answer(SyncResponse(200, Json.objectOf("serverTime" to Json.of(5_000), "epoch" to Json.of("ep-1"),
+                "as" to Json.of("A"), "pages" to Json.array()))))
+            until { fixture.engine.device.current().meta["serverEpoch"] == Json.of("ep-1") }
+            fixture.transport.helloAnswer = null
+            leavingHello.complete(helloResponse())
+            assertEquals("the epoch learned during the hello asks for another hello before numbering",
+                "token:A", withTimeout(2_000) { fixture.transport.hellos.receive() })
+            val push = fixture.push()
+            push.answer.complete(ok(push.request))
+            leaving.await()
+            assertEquals(listOf("acked"), fixture.engine.device.current().entries().map { it.state })
+            assertTrue(fixture.transport.pushes.tryReceive().isFailure)
         }
     }
 
