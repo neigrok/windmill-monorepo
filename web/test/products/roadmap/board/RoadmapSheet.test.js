@@ -5,6 +5,8 @@ import { chromium } from 'playwright';
 import { createServer } from 'vite';
 import { beacon, withBrowserErrors } from './composerFixture.js';
 
+import { ACTIVITY, LABELS, ROADMAP_SHEET, ROADMAP_VERBS, STEP_DETAIL, roadmapMatches, roadmapsHeading } from '../../../../src/products/roadmap/board/copy.js';
+
 const root = fileURLToPath(new URL('../../../../', import.meta.url));
 const entry = `
 import React, { useState } from 'react';
@@ -15,14 +17,26 @@ import '/src/styles/global.css';
 import { RoadmapSheet } from '/src/products/roadmap/board/RoadmapSheet.jsx';
 const root = createRoot(document.getElementById('root'));
 window.mount = (options = {}) => {
+  if (options.keyboardHeight) {
+    const visible = Object.assign(new EventTarget(), { offsetTop: 0, offsetLeft: 0, width: window.innerWidth, height: options.keyboardHeight, scale: options.viewportScale ?? 1 });
+    Object.defineProperty(window, 'visualViewport', { configurable: true, value: visible });
+  }
   const current = options.current ?? { id: 'sail', title: 'Learn to sail', done: 3, total: 8, dominantKind: 'sky' };
-  const listTrees = () => options.pending ? new Promise((resolve) => { window.resolveTrees = resolve; }) : options.fail ? Promise.reject(new Error('offline')) : Promise.resolve([
+  const listTrees = () => options.pending ? new Promise((resolve) => { window.resolveTrees = resolve; }) : options.fail ? Promise.reject(new Error('offline')) : Promise.resolve(options.rows ?? [
     { id: 'coast', title: 'Coastal navigation handbook', done: 3200, total: 5000, dominantKind: 'olive' },
     { id: 'sail', title: 'Stale title', done: 0, total: 8, dominantKind: 'sky' },
     { id: 'spanish', title: 'Spanish basics', done: 12, total: 40, dominantKind: 'sky' },
   ]);
   const record = (name) => { (window.actions ??= []).push({ name, closed: !document.querySelector('[role="dialog"]'), focused: document.activeElement.id }); };
-  const sheet = { current, listTrees, onPickTree: (id) => record(id), onNewRoadmap: () => record('new'), onBrowse: () => record('browse') };
+  const sheet = { current, listTrees, onPickTree: (id) => record(id), onNewRoadmap: () => record('new'), onBrowse: () => record('browse'),
+    activity: options.activity ? {
+      groups: options.emptyActivity ? [] : [{ label: 'Today', events: [
+        { id: 'completed', actor: 'You', verb: 'completed', nodeId: 'wind', label: 'Read the wind', kind: 'sky', at: 0 },
+        { id: 'removed', actor: 'You', verb: 'removed', nodeId: 'removed', label: 'An old step', kind: 'sky', at: 0 },
+      ] }],
+      nodesById: new Map([['wind', { id: 'wind', label: 'Read the wind', color: 'sky' }]]),
+      onOpenStep: (id) => record(id),
+    } : null };
   function Room() {
     const [open, setOpen] = useState(false);
     return React.createElement(React.Fragment, null,
@@ -30,6 +44,7 @@ window.mount = (options = {}) => {
       open && React.createElement(RoadmapSheet, { sheet, view: 'tree', band: 'phone',
         onAskAI: options.noAsk ? null : () => record('askAI'), onShare: () => record('share'),
         onExport: () => record('export'), onSettings: () => record('settings'),
+        onActivity: options.callbackOnly ? () => record('unexpected-activity') : null,
         onClose: () => { flushSync(() => setOpen(false)); document.getElementById('title').focus(); } }));
   }
   root.render(React.createElement(Room));
@@ -221,6 +236,237 @@ test('Chromium: exact progress includes zero counts from 1,000 and stays absent 
       await page.locator('#title').click();
       await page.getByRole('dialog', { name: 'Roadmap', exact: true }).waitFor();
       assert.deepEqual(await page.locator('.st-roadmap-sheet-progress').allTextContents(), []);
+    });
+  } finally { await page.close(); }
+});
+
+const searchableRows = [
+  { id: 'coast', title: 'Coastal navigation handbook', done: 3200, total: 5000, dominantKind: 'olive' },
+  { id: 'code', title: 'Learn to code', done: 4, total: 20, dominantKind: 'olive' },
+  ...Array.from({ length: 6 }, (_, index) => ({ id: `roadmap-${index}`, title: `Roadmap ${index}`, description: 'co', total: 8 })),
+];
+
+for (const width of [320, 390]) {
+  test(`Chromium: sheet ${width} searches only above eight roadmaps and pins 44px controls`, async () => {
+    const page = await open({ rows: searchableRows.slice(0, 7), activity: true }, width);
+    try {
+      await withBrowserErrors(page, async () => {
+        await page.locator('.st-roadmap-sheet-tree').nth(7).waitFor();
+        assert.equal(await page.getByRole('searchbox', { name: ROADMAP_SHEET.findRoadmap }).count(), 0);
+        assert.equal(await page.locator('.st-roadmap-sheet-label').textContent(), ROADMAP_SHEET.yourRoadmaps);
+        assert.equal(await page.getByRole('button', { name: ROADMAP_SHEET.newRoadmap, exact: true }).textContent(), ROADMAP_SHEET.newRoadmap);
+        await page.getByRole('button', { name: LABELS.close, exact: true }).click();
+        await page.evaluate((rows) => window.mount({ rows, activity: true }), searchableRows);
+        await page.locator('#title').click();
+        await page.getByRole('searchbox', { name: ROADMAP_SHEET.findRoadmap }).waitFor();
+        assert.equal(await page.locator('.st-roadmap-sheet-label').textContent(), roadmapsHeading({ count: 9 }));
+        assert.deepEqual(await page.locator('.st-roadmap-sheet-search-bar').evaluate((bar) => ({
+          heights: [...bar.children].map((child) => child.getBoundingClientRect().height),
+          fits: bar.scrollWidth <= bar.clientWidth,
+        })), { heights: [44, 44], fits: true });
+        assert.equal(await page.locator('.st-roadmap-sheet-content').getByRole('button', { name: ROADMAP_SHEET.newRoadmap, exact: true }).count(), 0);
+      });
+    } finally { await page.close(); }
+  });
+}
+
+test('Chromium: roadmap search hides context, marks title matches, and clears before Escape dismisses', async () => {
+  const page = await open({ rows: searchableRows, activity: true });
+  try {
+    await withBrowserErrors(page, async () => {
+      const field = page.getByRole('searchbox', { name: ROADMAP_SHEET.findRoadmap });
+      await field.fill('CO');
+      assert.equal(await page.locator('.st-roadmap-sheet-label').textContent(), roadmapMatches({ shown: 2, total: 9 }));
+      assert.deepEqual(await page.locator('.st-roadmap-sheet-tree').evaluateAll((rows) => rows.map((row) => ({
+        name: row.getAttribute('aria-label'), match: row.querySelector('mark').textContent,
+      }))), [{ name: 'Coastal navigation handbook', match: 'Co' }, { name: 'Learn to code', match: 'co' }]);
+      assert.equal(await page.locator('.st-roadmap-sheet-name, .st-roadmap-sheet-verbs').count(), 0);
+      assert.equal(await page.getByRole('button', { name: ROADMAP_VERBS.activity, exact: true }).count(), 0);
+      assert.equal(await page.getByRole('button', { name: ROADMAP_SHEET.plantedInPublic, exact: true }).count(), 1);
+      await field.fill('sail');
+      assert.deepEqual(await page.locator('.st-roadmap-sheet-tree').evaluateAll((rows) => rows.map((row) => ({
+        name: row.getAttribute('aria-label'), current: row.getAttribute('aria-current'), checked: Boolean(row.querySelector('.st-roadmap-sheet-check svg')),
+      }))), [{ name: 'Learn to sail', current: 'true', checked: true }]);
+      await field.fill('no result');
+      assert.equal(await page.locator('.st-roadmap-sheet-label').textContent(), roadmapMatches({ shown: 0, total: 9 }));
+      assert.equal(await page.locator('.st-roadmap-sheet-tree').count(), 0);
+      assert.equal(await page.getByRole('button', { name: ROADMAP_SHEET.plantedInPublic, exact: true }).count(), 1);
+      await page.getByRole('button', { name: LABELS.clearSearch, exact: true }).click();
+      assert.equal(await field.inputValue(), '');
+      assert.equal(await field.evaluate((input) => input === document.activeElement), true);
+      await field.fill('co');
+      await page.keyboard.press('Escape');
+      assert.equal(await field.inputValue(), '');
+      assert.equal(await page.getByRole('dialog').count(), 1);
+      await page.keyboard.press('Escape');
+      await page.getByRole('dialog').waitFor({ state: 'detached' });
+      assert.equal(await page.locator('#title').evaluate((button) => button === document.activeElement), true);
+      assert.deepEqual(await page.evaluate(() => window.events), [
+        { name: 'roadmap_sheet', props: { step: 'search' } },
+        { name: 'roadmap_sheet', props: { step: 'close', via: 'escape' } },
+      ]);
+      await page.locator('#title').click();
+      await field.fill('co');
+      assert.deepEqual(await page.evaluate(() => window.events.filter(({ props }) => props.step === 'search')), [
+        { name: 'roadmap_sheet', props: { step: 'search' } }, { name: 'roadmap_sheet', props: { step: 'search' } },
+      ]);
+    });
+  } finally { await page.close(); }
+});
+
+test('Chromium: the pinned new button dismisses before acting with bounded events', async () => {
+  const page = await open({ rows: searchableRows, activity: true });
+  try {
+    await withBrowserErrors(page, async () => {
+      await page.getByRole('searchbox', { name: ROADMAP_SHEET.findRoadmap }).fill('co');
+      await page.getByRole('button', { name: ROADMAP_SHEET.newRoadmap, exact: true }).click();
+      await page.getByRole('dialog').waitFor({ state: 'detached' });
+      assert.deepEqual(await page.evaluate(() => window.actions), [{ name: 'new', closed: true, focused: 'title' }]);
+      assert.deepEqual(await page.evaluate(() => window.events), [
+        { name: 'roadmap_sheet', props: { step: 'search' } },
+        { name: 'roadmap_sheet', props: { step: 'new', door: 'search' } },
+      ]);
+    });
+  } finally { await page.close(); }
+});
+
+test('Chromium: the search footer stays above the keyboard using the composer viewport', async () => {
+  const page = await open({ rows: searchableRows, keyboardHeight: 592 });
+  try {
+    await withBrowserErrors(page, async () => {
+      await page.getByRole('searchbox', { name: ROADMAP_SHEET.findRoadmap }).fill('co');
+      assert.deepEqual(await page.locator('.st-roadmap-sheet-search-bar').evaluate((bar) => ({
+        height: bar.getBoundingClientRect().height,
+        bottom: bar.getBoundingClientRect().bottom,
+        dialogTop: bar.closest('[role="dialog"]').getBoundingClientRect().top,
+      })), { height: 68, bottom: 592, dialogTop: 60 });
+    });
+  } finally { await page.close(); }
+});
+
+for (const width of [320, 390]) {
+  for (const theme of ['light', 'dark']) {
+    test(`Chromium: Activity ${width} ${theme} pushes at the approved height and backs before closing`, async () => {
+      const page = await open({ activity: true }, width, theme);
+      try {
+        await withBrowserErrors(page, async () => {
+          const entry = page.getByRole('button', { name: ROADMAP_VERBS.activity, exact: true });
+          await entry.click();
+          const activity = page.getByRole('dialog', { name: ACTIVITY.heading, exact: true });
+          await activity.waitFor();
+          assert.deepEqual(await activity.evaluate((dialog) => ({
+            height: dialog.getBoundingClientRect().height,
+            top: dialog.getBoundingClientRect().top,
+            fits: dialog.scrollWidth <= dialog.clientWidth,
+          })), { height: 611, top: 233, fits: true });
+          assert.equal(await page.getByRole('button', { name: STEP_DETAIL.back, exact: true }).evaluate((button) => document.activeElement === button), true);
+          assert.equal(await page.locator('.st-roadmap-sheet-activity').getAttribute('tabindex'), '-1');
+          assert.equal(await activity.getByRole('button').filter({ hasText: 'Read the wind' }).count(), 1);
+          assert.equal(await activity.getByRole('button').filter({ hasText: 'An old step' }).count(), 0);
+          assert.equal(await activity.getByText('An old step', { exact: true }).count(), 1);
+          await page.keyboard.press('Escape');
+          await page.getByRole('dialog', { name: ROADMAP_SHEET.title, exact: true }).waitFor();
+          assert.equal(await entry.evaluate((button) => document.activeElement === button), true);
+          await entry.click();
+          await page.getByRole('button', { name: STEP_DETAIL.back, exact: true }).click();
+          assert.equal(await entry.evaluate((button) => document.activeElement === button), true);
+          await page.keyboard.press('Escape');
+          await page.getByRole('dialog').waitFor({ state: 'detached' });
+          assert.equal(await page.locator('#title').evaluate((button) => document.activeElement === button), true);
+          assert.deepEqual(await page.evaluate(() => window.actions ?? []), []);
+          assert.deepEqual(await page.evaluate(() => window.events), [
+            { name: 'roadmap_verb', props: { verb: 'activity', door: 'sheet', view: 'graph', band: 'phone' } },
+            { name: 'roadmap_verb', props: { verb: 'activity', door: 'sheet', view: 'graph', band: 'phone' } },
+            { name: 'roadmap_sheet', props: { step: 'close', via: 'escape' } },
+          ]);
+        });
+      } finally { await page.close(); }
+    });
+
+    test(`Chromium: empty Activity ${width} ${theme} keeps its height, even from the search sheet`, async () => {
+      const page = await open({ rows: searchableRows, activity: true, emptyActivity: true }, width, theme);
+      try {
+        await withBrowserErrors(page, async () => {
+          await page.getByRole('searchbox', { name: ROADMAP_SHEET.findRoadmap }).waitFor();
+          await page.getByRole('button', { name: ROADMAP_VERBS.activity, exact: true }).click();
+          const activity = page.getByRole('dialog', { name: ACTIVITY.heading, exact: true });
+          assert.equal(await activity.getByText(ACTIVITY.empty, { exact: true }).count(), 1);
+          assert.deepEqual(await activity.evaluate((dialog) => [dialog.getBoundingClientRect().top, dialog.getBoundingClientRect().height]), [233, 611]);
+          assert.equal(await page.getByRole('searchbox').count(), 0);
+          await page.getByRole('button', { name: LABELS.close, exact: true }).click();
+          await page.getByRole('dialog').waitFor({ state: 'detached' });
+          assert.equal(await page.locator('#title').evaluate((button) => document.activeElement === button), true);
+        });
+      } finally { await page.close(); }
+    });
+  }
+}
+
+test('Chromium: an Activity row dismisses the sheet before the pinned step callback', async () => {
+  const page = await open({ activity: true });
+  try {
+    await withBrowserErrors(page, async () => {
+      await page.getByRole('button', { name: ROADMAP_VERBS.activity, exact: true }).click();
+      await page.getByRole('dialog', { name: ACTIVITY.heading, exact: true }).getByRole('button').filter({ hasText: 'Read the wind' }).click();
+      await page.getByRole('dialog').waitFor({ state: 'detached' });
+      assert.deepEqual(await page.evaluate(() => window.actions), [{ name: 'wind', closed: true, focused: 'title' }]);
+      assert.deepEqual(await page.evaluate(() => window.events), [
+        { name: 'roadmap_verb', props: { verb: 'activity', door: 'sheet', view: 'graph', band: 'phone' } },
+      ]);
+    });
+  } finally { await page.close(); }
+});
+
+test('Chromium: a callback without sheet.activity exposes no phone Activity door or event', async () => {
+  const page = await open({ callbackOnly: true });
+  try {
+    await withBrowserErrors(page, async () => {
+      assert.equal(await page.getByRole('button', { name: ROADMAP_VERBS.activity, exact: true }).count(), 0);
+      assert.deepEqual(await page.evaluate(() => ({ actions: window.actions ?? [], events: window.events ?? [] })), { actions: [], events: [] });
+    });
+  } finally { await page.close(); }
+});
+
+test('Chromium: an Activity edge swipe backs and consumes its release without swallowing keyboard activation', async () => {
+  const page = await open({ activity: true });
+  try {
+    await withBrowserErrors(page, async () => {
+      const entry = page.getByRole('button', { name: ROADMAP_VERBS.activity, exact: true });
+      await entry.click();
+      await page.locator('.st-roadmap-sheet-activity').evaluate((body) => {
+        const y = body.getBoundingClientRect().top + 100;
+        body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 7, pointerType: 'touch', isPrimary: true, clientX: 8, clientY: y }));
+        body.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true, pointerId: 7, pointerType: 'touch', isPrimary: true, clientX: 100, clientY: y }));
+      });
+      await page.getByRole('dialog', { name: ROADMAP_SHEET.title, exact: true }).waitFor();
+      await entry.evaluate((button) => button.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 1 })));
+      assert.equal(await page.getByRole('dialog', { name: ROADMAP_SHEET.title, exact: true }).count(), 1);
+      assert.equal(await entry.evaluate((button) => document.activeElement === button), true);
+      await page.keyboard.press('Enter');
+      await page.getByRole('dialog', { name: ACTIVITY.heading, exact: true }).waitFor();
+      assert.deepEqual(await page.evaluate(() => window.events), [
+        { name: 'roadmap_verb', props: { verb: 'activity', door: 'sheet', view: 'graph', band: 'phone' } },
+        { name: 'roadmap_verb', props: { verb: 'activity', door: 'sheet', view: 'graph', band: 'phone' } },
+      ]);
+    });
+  } finally { await page.close(); }
+});
+
+test('Chromium: pinch zoom does not use the keyboard footer and trimmed Unicode queries mark original titles', async () => {
+  const rows = [{ id: 'unicode', title: 'İstanbul harbor' }, ...searchableRows];
+  const page = await open({ rows, keyboardHeight: 592, viewportScale: 2 });
+  try {
+    await withBrowserErrors(page, async () => {
+      const field = page.getByRole('searchbox', { name: ROADMAP_SHEET.findRoadmap });
+      await field.fill(' harbor  ');
+      assert.deepEqual(await page.locator('.st-roadmap-sheet-tree').evaluateAll((buttons) => buttons.map((button) => ({
+        title: button.getAttribute('aria-label'), marked: button.querySelector('mark').textContent,
+      }))), [{ title: 'İstanbul harbor', marked: 'harbor' }]);
+      assert.equal(await page.locator('.st-roadmap-sheet-search-bar').evaluate((bar) => bar.getBoundingClientRect().height), 80);
+      await field.fill('   ');
+      assert.equal(await page.locator('.st-roadmap-sheet-tree').count(), 10);
+      assert.equal(await page.locator('.st-roadmap-sheet-label').textContent(), roadmapsHeading({ count: 10 }));
+      assert.equal(await page.locator('.st-roadmap-sheet-name').count(), 1);
     });
   } finally { await page.close(); }
 });

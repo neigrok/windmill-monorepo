@@ -1,6 +1,4 @@
-// A step open on the Board lives in the URL as `?step=<id>` inside the hash, so a link lands on it and Back leaves it.
-// Each step opened from the Board or from another step is its own history entry; the entry remembers the trail of steps
-// that led to it, so closing pops them all and a step pushed from a step names the one before it.
+// Open steps use `?step=<id>` inside the hash; each history entry retains the visit trail.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -37,8 +35,7 @@ function hrefWith(hash) {
   return `${window.location.pathname}${window.location.search}${hash === '#' ? '' : hash}`;
 }
 
-// Stale only once this view's own roadmap has loaded without the step, and only while the Board can show at all: with the
-// Board's gate closed nothing here ever touches the URL.
+// Stale steps leave the URL only after this route loads its roadmap and while the Board gate is open.
 export function stepIsStale({ boardOpen, loading, tree, treeId, stepId }) {
   return boardOpen && !loading && tree !== null && tree.treeId === treeId && stepId !== null && !tree.nodesById.has(stepId);
 }

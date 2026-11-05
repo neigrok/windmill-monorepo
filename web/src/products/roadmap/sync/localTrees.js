@@ -4,6 +4,7 @@
 
 import { SyncSession } from './SyncSession.js';
 import { SyncStore } from './SyncStore.js';
+import { pendingGestures } from './pendingWrites.js';
 import { HlcClock, TreeLattice, hlcText } from './lattice.js';
 import { LocalTreeRegistry, resolveDeviceOwner, deviceOwner } from '../persistence/LocalTreeRegistry.js';
 import { PlaceStore } from '../persistence/PlaceStore.js';
@@ -105,19 +106,34 @@ export async function loadDeviceTree(treeId) {
 
 // The registry keeps the listing title and the blob takes one stamped title write, so the name
 // survives the claim's flush.
-export async function renameLocalTree(treeId, title) {
+export async function renameLocalTree(treeId, title, { trackGestures = false } = {}) {
   const next = title.trim();
   if (!next) return;
-  new LocalTreeRegistry().rename(treeId, next);
+  const registry = new LocalTreeRegistry();
   const store = new SyncStore();
-  const saved = await store.load(treeId).catch(() => null);
-  if (!saved?.frame) return;
-  const lattice = new TreeLattice(treeId);
-  lattice.join(saved.frame);
-  const clock = new HlcClock(`r_${crypto.randomUUID?.().slice(0, 8) ?? `${Date.now()}`}`);
-  lattice.seedClock(clock);
-  lattice.join({ nodes: [], edges: [], kinds: [], title: { v: next, at: hlcText(clock.tick(Date.now())) } });
-  await store.save(treeId, { frame: lattice.toFrame(), lastSeq: saved.lastSeq ?? 0 });
+  let saved = await store.load(treeId).catch(() => null);
+  if (!saved?.frame) {
+    registry.rename(treeId, next);
+    return;
+  }
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const lattice = new TreeLattice(treeId);
+    lattice.join(saved.frame);
+    const clock = new HlcClock(`r_${crypto.randomUUID?.().slice(0, 8) ?? `${Date.now()}`}`);
+    lattice.seedClock(clock);
+    lattice.join({ nodes: [], edges: [], kinds: [], title: { v: next, at: hlcText(clock.tick(Date.now())) } });
+    const result = await store.save(treeId, { frame: lattice.toFrame(), lastSeq: saved.lastSeq ?? 0, epochs: saved.epochs,
+      ...(trackGestures ? { gestures: {
+        structure: pendingGestures(lattice.toFrame(), saved.confirmed?.structure, saved.gestures?.structure),
+        progress: saved.gestures?.progress ?? {},
+      } } : {}) });
+    if (result.status === 'saved') {
+      registry.rename(treeId, next);
+      return;
+    }
+    saved = result.value;
+  }
+  throw new Error('local tree changed during rename');
 }
 
 // No server call, ever. The caller must close any live session first, or its pagehide flush
@@ -165,7 +181,9 @@ export async function moveLocalTree(fromId, toId) {
   const store = new SyncStore();
   const saved = await store.load(fromId).catch(() => null);
   if (saved?.frame) {
-    await store.save(toId, { frame: saved.frame, progress: saved.progress, lastSeq: 0 });
+    const result = await store.save(toId, { frame: saved.frame, progress: saved.progress, lastSeq: 0,
+      epochs: { structure: 0, progress: 0 }, ...(saved.gestures ? { gestures: saved.gestures } : {}) });
+    if (result.status !== 'saved') throw new Error('local tree destination changed');
     await store.clear(fromId).catch(() => {});
   }
   for (const PerTreeStore of [WorkspaceStore, LegendStore]) {

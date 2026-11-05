@@ -6,15 +6,16 @@
 //    for one of our own frames; live third-party frames never touch it.
 //  - dense seq gates the live plane: a frame joins only when seq === lastSeq + 1, and a gap or a
 //    malformed frame forces a resubscribe.
-//  - sends fire only in the `live` phase, so the server acquires each actor's stamps as a prefix.
+//  - live sends fire only in the `live` phase; graft replies may also flush the outbox.
 
 import { captureError } from '../../../telemetry/sentry.js';
 import { socketUrl } from '../../../shell/apiBase.js';
-import { HlcClock, TreeLattice, VersionVector, hlcText, parseHlc, compareHlc } from './lattice.js';
+import { HlcClock, TreeLattice, VersionVector, hlcText } from './lattice.js';
 import { ProgressLattice } from './progressLattice.js';
 import { materialize } from './materialize.js';
 import { isOwnershipRefusal, isSessionRefusal, strandsTheBank } from './refusals.js';
 import { SyncStore } from './SyncStore.js';
+import { pendingGestures, pendingRecordCount, unconfirmedStamps, writeStamps } from './pendingWrites.js';
 import { LocalTreeRegistry } from '../persistence/LocalTreeRegistry.js';
 import { ProgressStore } from '../persistence/ProgressStore.js';
 import { GENESIS_STAMP } from '../model/Legend.js';
@@ -38,7 +39,7 @@ function frameFrontier(writes) {
 }
 
 export class SyncSession {
-  constructor({ url = DEFAULT_URL, treeId, title = '', registry = new LocalTreeRegistry(), store = new SyncStore(),
+  constructor({ url = DEFAULT_URL, treeId, title = '', registry = new LocalTreeRegistry(), store = new SyncStore(), trackGestures = false,
     reportFailure = (operation, error) => captureError('roadmap', operation,
       typeof error?.stack === 'string' && error.stack ? error.stack : new Error(operation).stack, '#/app') } = {}) {
     this.url = url;
@@ -49,6 +50,15 @@ export class SyncSession {
     this.lattice = new TreeLattice(treeId, title);  // the doc title is the stampless baseline; any stamped rename dominates
     // This account's own marks: same clock and same blob as the structure, never the same frame.
     this.progress = new ProgressLattice();
+    this.confirmedStructure = new TreeLattice(treeId, title);
+    this.confirmedProgress = new ProgressLattice();
+    this.confirmedKnown = { structure: false, progress: false };
+    this.trackGestures = trackGestures;
+    this.gestures = { structure: {}, progress: {} };
+    this.epochs = { structure: 0, progress: 0 };
+    this.structureWrites = new Map();
+    this.progressWrites = new Map();
+    this.unsubscribeEpochs = null;
     this.store = store;
     this.registry = registry;                       // the device-tree index persistNow keeps fresh; null for read-only views
     this.ackedServerVector = new VersionVector();  // in-memory; what the server is known to hold
@@ -81,6 +91,17 @@ export class SyncSession {
     this.onVisible = null;  // refocus reconnect
     this.onOnline = null;   // network-return reconnect
     this.closed = false;
+    this.statusHandlers = new Set();
+    this.refusalHandlers = new Set();
+    this.online = typeof navigator === 'undefined' || navigator.onLine !== false;
+    this.refusals = new Map();
+    this.refusalEpisodes = new Map();
+    this.receiptVersion = 0;
+    this.rebaselining = null;
+    this.discardPending = false;
+    this.deferredSave = false;
+    this.status = null;
+    this.onOffline = null;
   }
 
   onTreeChanged(handler) { this.treeHandler = handler; return this; }
@@ -88,6 +109,151 @@ export class SyncSession {
   onPeer(handler) { this.peerHandler = handler; return this; }
   onProgress(handler) { this.progressHandler = handler; return this; }
   onDrained(handler) { this.drainedHandler = handler; return this; }
+
+  subscribeStatus(handler) {
+    this.statusHandlers.add(handler);
+    this.status = this.statusSnapshot();
+    handler(this.status);
+    return () => this.statusHandlers.delete(handler);
+  }
+
+  subscribeRefusals(handler) {
+    this.refusalHandlers.add(handler);
+    for (const refusal of this.refusals.values()) handler(refusal);
+    return () => this.refusalHandlers.delete(handler);
+  }
+
+  statusSnapshot() {
+    const confirmed = { structure: writeStamps(this.confirmedStructure.toFrame()), progress: writeStamps(this.confirmedProgress.toFrame()) };
+    const pending = (lane, frame) => pendingRecordCount(unconfirmedStamps(writeStamps(frame), confirmed[lane]));
+    const structurePending = this.rebaselining?.has('structure') ? 0 : pending('structure', this.lattice.toFrame());
+    const progressPending = this.rebaselining?.has('progress') ? 0 : pending('progress', this.progress.toFrame());
+    const inFlightCount = (lane, frames) => [...frames.values()].filter((frame) => pending(lane, frame) > 0).length;
+    const snapshot = {
+      phase: this.phase,
+      online: this.online,
+      structurePending,
+      progressPending,
+      structureInFlight: this.rebaselining?.has('structure') ? 0 : inFlightCount('structure', this.structureWrites),
+      progressInFlight: this.rebaselining?.has('progress') ? 0 : inFlightCount('progress', this.progressWrites),
+      structureGestures: this.rebaselining?.has('structure') ? 0 : Object.keys(this.gestures.structure).length,
+      progressGestures: this.rebaselining?.has('progress') ? 0 : Object.keys(this.gestures.progress).length,
+      rebaselining: this.rebaselining != null,
+      refused: this.refusals.values().next().value ?? null,
+      receiptVersion: this.receiptVersion,
+    };
+    if (this.status && Object.keys(snapshot).every((key) => this.status[key] === snapshot[key])) return this.status;
+    return Object.freeze(snapshot);
+  }
+
+  emitStatus() {
+    if (!this.statusHandlers.size) return;
+    const previous = this.status;
+    const snapshot = this.statusSnapshot();
+    if (snapshot === previous) return;
+    this.status = snapshot;
+    for (const handler of this.statusHandlers) handler(snapshot);
+  }
+
+  retry() {
+    this.refusals.clear();
+    this.emitStatus();
+    this.forceReconnect();
+  }
+
+  async discard() {
+    const refused = this.refusals.values().next().value;
+    if (!refused || this.rebaselining || this.discardPending) return false;
+    const lane = refused.lane;
+    if (!this.confirmedKnown[lane]) return false;
+    const previousReady = this.ready;
+    this.ready = false;
+    this.rebaselining = new Set([lane]);
+    this.discardPending = true;
+    clearTimeout(this.saveTimer);
+    this.saveTimer = null;
+    this.forceReconnect();
+    clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
+    this.phase = this.online ? 'syncing' : 'offline';
+    this.refusals.delete(lane);
+    this.emitProjection(lane);
+    this.emitStatus();
+    let result;
+    try {
+      result = await this.store.replaceLane(this.treeId, lane, this.epochs[lane]);
+    } catch (error) {
+      this.ready = previousReady;
+      this.rebaselining = null;
+      this.discardPending = false;
+      this.refusals.set(lane, refused);
+      this.emitProjection(lane);
+      this.emitStatus();
+      this.reportFailure('roadmap-sync-discard', error);
+      await this.persistDeferred();
+      if (!this.closed) this.scheduleReconnect();
+      return false;
+    }
+    this.discardPending = false;
+    this.rebaselining = null;
+    if (result.status === 'unavailable') {
+      this.ready = previousReady;
+      this.refusals.set(lane, refused);
+      this.emitProjection(lane);
+      this.emitStatus();
+      await this.persistDeferred();
+      if (!this.closed) this.scheduleReconnect();
+      return false;
+    }
+    this.adoptEpochs(result.value);
+    if (result.notificationError) this.reportFailure('roadmap-sync-notify', result.notificationError);
+    await this.persistDeferred();
+    return result.status === 'replaced';
+  }
+
+  adoptEpochs(value) {
+    if (this.closed || !value) return;
+    const changed = ['structure', 'progress'].filter((lane) => value.epochs[lane] > this.epochs[lane]);
+    if (!changed.length) return;
+    this.ready = false;
+    this.rebaselining = new Set([...(this.rebaselining ?? []), ...changed]);
+    for (const lane of changed) {
+      this.epochs[lane] = value.epochs[lane];
+      this.refusals.delete(lane);
+      this.refusalEpisodes.delete(lane);
+      this.confirmedKnown[lane] = value.confirmed[lane] != null;
+      this.gestures[lane] = {};
+      if (lane === 'structure') {
+        const title = this.confirmedStructure.title;
+        this.lattice = new TreeLattice(this.treeId, title);
+        this.lattice.join(value.frame);
+        this.confirmedStructure = new TreeLattice(this.treeId, title);
+        if (value.confirmed.structure) this.confirmedStructure.join(value.confirmed.structure);
+        this.ackedServerVector = new VersionVector();
+        this.structureWrites.clear();
+        this.inFlight.clear();
+        this.sent.clear();
+        this.lastSeq = 0;
+      } else {
+        this.progress = new ProgressLattice();
+        this.progress.join(value.progress);
+        this.confirmedProgress = new ProgressLattice();
+        if (value.confirmed.progress) this.confirmedProgress.join(value.confirmed.progress);
+        this.ackedProgressVector = new VersionVector();
+        this.progressWrites.clear();
+        this.progressInFlight.clear();
+      }
+    }
+    this.undoStack = [];
+    this.redoStack = [];
+    this.receipts = new WeakMap();
+    this.receiptVersion += 1;
+    for (const lane of changed) this.emitProjection(lane);
+    this.phase = this.online ? 'syncing' : 'offline';
+    this.emitStatus();
+    this.forceReconnect();
+    if (!this.closed) this.scheduleReconnect();
+  }
 
   // Seed a local-only lattice from projected TreeData: every field takes a genesis stamp, so any
   // later edit dominates it. No socket, no IndexedDB.
@@ -115,11 +281,36 @@ export class SyncSession {
     this.lattice.seedClock(this.clock);
     this.ready = true;
     this.emitTree();
+    this.emitStatus();
   }
 
   async start() {
+    try {
+      this.unsubscribeEpochs = this.store.subscribeEpochs?.(this.treeId, ({ lane, epoch }) => {
+        if (this.closed || this.discardPending || epoch <= this.epochs[lane]) return;
+        this.store.load(this.treeId).then((value) => this.adoptEpochs(value)).catch((error) => {
+          this.durabilityAtRisk = true;
+          this.reportFailure('roadmap-sync-persist', error);
+        });
+      });
+    } catch (error) {
+      this.reportFailure('roadmap-sync-notify', error);
+    }
     let saved = null;
     try { saved = await this.store.load(this.treeId); } catch { this.durabilityAtRisk = true; }
+    if (saved?.epochs) this.epochs = { ...saved.epochs };
+    if (saved?.confirmed?.structure) {
+      try {
+        this.confirmedStructure.join(saved.confirmed.structure);
+        this.confirmedKnown.structure = true;
+      } catch { this.durabilityAtRisk = true; }
+    }
+    if (saved?.confirmed?.progress) {
+      try {
+        this.confirmedProgress.join(saved.confirmed.progress);
+        this.confirmedKnown.progress = true;
+      } catch { this.durabilityAtRisk = true; }
+    }
     if (saved?.frame) {
       try { this.lattice.join(saved.frame); this.lastSeq = saved.lastSeq ?? 0; }
       catch { this.lattice = new TreeLattice(this.treeId); this.lastSeq = 0; }  // corrupt blob → start fresh
@@ -132,53 +323,78 @@ export class SyncSession {
       try { this.progress.join(saved.progress); }
       catch { this.progress = new ProgressLattice(); }
     }
+    if (this.trackGestures) {
+      this.gestures.structure = pendingGestures(saved?.gestures?.structure ? {} : saved?.frame, saved?.confirmed?.structure, saved?.gestures?.structure);
+    }
     // localStorage residue folds in uncovered, so the first graft flushes it.
     if (this.registry) new ProgressStore().drainInto(this.treeId, this.progress);
+    if (this.trackGestures) this.gestures.progress = pendingGestures(this.progress.toFrame(), saved?.confirmed?.progress, saved?.gestures?.progress);
     if (this.progress.marks.size) {
       this.progress.seedClock(this.clock);
       this.progressHandler?.(this.progress.overlay());
     }
     this.store.requestPersistent().then((granted) => { if (!granted) this.durabilityAtRisk = true; });
+    this.online = typeof navigator === 'undefined' || navigator.onLine !== false;
     if (typeof window !== 'undefined') {
       this.pagehide = () => this.persistNow();
       window.addEventListener('pagehide', this.pagehide);
       // A sleep/wake or network flap can leave the socket half-open: OPEN, no bytes, no `close`.
       this.onVisible = () => { if (document.visibilityState === 'visible') this.reconnectIfStale(); };
-      this.onOnline = () => this.reconnectIfStale();
+      this.onOnline = () => {
+        this.online = true;
+        this.emitStatus();
+        this.reconnectIfStale();
+      };
+      this.onOffline = () => {
+        this.online = false;
+        this.emitStatus();
+      };
       document.addEventListener('visibilitychange', this.onVisible);
       window.addEventListener('online', this.onOnline);
+      window.addEventListener('offline', this.onOffline);
     }
+    this.emitStatus();
     this.connect();
     return this;
   }
 
   connect() {
     clearTimeout(this.reconnectTimer);
-    this.ws = new WebSocket(this.url);
-    this.ws.addEventListener('open', () => {
+    const socket = new WebSocket(this.url);
+    this.ws = socket;
+    socket.addEventListener('open', () => {
+      if (this.closed || this.discardPending || this.ws !== socket) return;
       this.phase = 'syncing';
+      this.emitStatus();
       // Send our coverage so the server replies with only the gap.
       this.ws.send(JSON.stringify({ t: 'subscribe', treeId: this.treeId, lastSeq: this.lastSeq, vector: this.ackedServerVector.toJSON() }));
       this.startHeartbeat();
     });
-    this.ws.addEventListener('message', (event) => {
+    socket.addEventListener('message', (event) => {
+      if (this.closed || this.discardPending || this.ws !== socket) return;
       this.lastRecvAt = Date.now();  // any inbound frame proves the pipe is alive — bump before parse
       this.pingsSinceRecv = 0;
       let frame;
       try { frame = JSON.parse(event.data); } catch { return; }
       this.receive(frame);
     });
-    this.ws.addEventListener('close', () => {
+    socket.addEventListener('close', () => {
+      if (this.ws !== socket) return;
       this.stopHeartbeat();
-      this.phase = 'offline';
+      this.phase = this.rebaselining && this.online ? 'syncing' : 'offline';
       this.inFlight.clear();  // unacked frontiers die with the connection — never persisted
-      if (!this.closed) this.scheduleReconnect();
+      this.progressInFlight.clear();
+      this.structureWrites.clear();
+      this.progressWrites.clear();
+      this.emitStatus();
+      if (!this.closed && !this.discardPending) this.scheduleReconnect();
     });
-    this.ws.addEventListener('error', () => { try { this.ws?.close(); } catch { /* close handler reconnects */ } });
+    socket.addEventListener('error', () => { try { socket.close(); } catch { /* close handler reconnects */ } });
     return this;
   }
 
   scheduleReconnect() {
+    clearTimeout(this.reconnectTimer);
     const wait = this.backoffMs * (0.5 + Math.random() * 0.5);  // full jitter
     this.backoffMs = Math.min(this.backoffMs * 2, MAX_BACKOFF_MS);
     this.reconnectTimer = setTimeout(() => this.connect(), wait);
@@ -212,6 +428,7 @@ export class SyncSession {
   }
 
   receive(frame) {
+    if (this.discardPending || this.closed) return;
     if (frame.t === 'pong' || frame.t === 'ping') return;  // liveness already bumped by the listener
     // Only the subscribe reply ('delta') may re-baseline coverage.
     if (frame.t === 'subgraph') return frame.intent === 'delta' ? this.receiveState(frame) : this.receiveLive(frame);
@@ -229,44 +446,72 @@ export class SyncSession {
   // missing. A frame with no `coverage` is a full state, so its join frontier is the frontier.
   receiveState(frame) {
     let frontier;
-    try { frontier = this.lattice.join(frame); } catch { this.forceReconnect(); return; }
+    try {
+      frontier = this.lattice.join(frame);
+      this.confirmedStructure.join(frame);
+      this.confirm('structure');
+    } catch { this.forceReconnect(); return; }
     for (const [actor, m] of frontier.marks) this.clock.observe({ ms: m.ms, counter: m.counter, actor });
     if (typeof frame.seq === 'number') this.lastSeq = frame.seq;
     this.ackedServerVector = frame.coverage ? VersionVector.fromJSON(frame.coverage) : frontier;
+    this.confirmedKnown.structure = true;
     this.persistNow();
-    this.ready = true;
+    this.rebaselining?.delete('structure');
+    if (this.rebaselining?.size === 0) this.rebaselining = null;
+    this.ready = this.rebaselining == null;
     this.emitTree();
     this.flush();
-    this.phase = 'live';
+    this.phase = this.rebaselining ? 'syncing' : 'live';
     this.backoffMs = 500;
     this.noteDrained();    // an empty flush means the server already covers everything
+    this.emitStatus();
   }
 
   // A live broadcast: dense-seq gated, and never touches coverage.
   receiveLive(frame) {
+    if (this.rebaselining?.has('structure') || this.discardPending) return;
     if (typeof frame.seq !== 'number') return;
     if (frame.seq <= this.lastSeq) return;                                 // duplicate / already seen
     if (frame.seq > this.lastSeq + 1) { this.forceReconnect(); return; }   // gap → heal via a fresh graft
     let frontier;
-    try { frontier = this.lattice.join(frame); } catch { this.forceReconnect(); return; }
+    try {
+      frontier = this.lattice.join(frame);
+      this.confirmedStructure.join(frame);
+      this.confirm('structure');
+    } catch { this.forceReconnect(); return; }
     for (const [actor, m] of frontier.marks) this.clock.observe({ ms: m.ms, counter: m.counter, actor });
     this.lastSeq = frame.seq;  // advance only after a successful join
     const mine = frame.frameId && this.sent.has(frame.frameId);
     if (mine) this.sent.delete(frame.frameId);
     this.scheduleSave();       // received content is already server-durable → coalesced save is safe
     if (!mine) this.emitTree();
+    this.emitStatus();
   }
 
   receiveAck(frame) {
     const vector = this.inFlight.get(frame.frameId);
-    if (vector) { this.ackedServerVector.join(vector); this.inFlight.delete(frame.frameId); this.noteDrained(); }
+    if (!vector) return;
+    this.ackedServerVector.join(vector);
+    const writes = this.structureWrites.get(frame.frameId);
+    if (writes) {
+      this.confirmedStructure.join(writes);
+      this.confirm('structure');
+    }
+    this.structureWrites.delete(frame.frameId);
+    this.inFlight.delete(frame.frameId);
+    this.persistNow();
+    this.noteDrained();
+    this.emitStatus();
   }
 
   // Fires whenever the wire goes idle with full coverage: live, nothing pending, nothing in flight.
   noteDrained() {
+    if (this.refusals.has('structure') && this.pendingEditCount() === 0) this.refusals.delete('structure');
+    if (this.refusals.has('progress') && this.pendingProgressCount() === 0) this.refusals.delete('progress');
+    if (!this.drainedHandler) return;
     if (this.phase !== 'live' || this.inFlight.size > 0 || this.progressInFlight.size > 0) return;
     if (this.pendingEditCount() > 0) return;
-    if (this.progress.deltaSince(this.ackedProgressVector).marks.length > 0) return;
+    if (this.pendingProgressCount() > 0) return;
     this.drainedHandler?.();
   }
 
@@ -274,52 +519,94 @@ export class SyncSession {
   // so a mark the server no longer holds re-flushes; an empty graft still has to arrive.
   receiveProgressGraft(frame) {
     let frontier;
-    try { frontier = this.progress.join(frame); } catch { this.forceReconnect(); return; }
+    try {
+      frontier = this.progress.join(frame);
+      this.confirmedProgress.join(frame);
+      this.confirm('progress');
+    } catch { this.forceReconnect(); return; }
     for (const [actor, m] of frontier.marks) this.clock.observe({ ms: m.ms, counter: m.counter, actor });
     this.ackedProgressVector = frontier;
+    this.confirmedKnown.progress = true;
+    this.rebaselining?.delete('progress');
+    if (this.rebaselining?.size === 0) {
+      this.rebaselining = null;
+      this.phase = 'live';
+      this.ready = true;
+    }
     this.persistNow();
     this.progressHandler?.(this.progress.overlay());
     this.flushProgress();
+    this.noteDrained();
+    this.emitStatus();
   }
 
   // A live echo, folded in and never a coverage input.
   receiveProgress(frame) {
+    if (this.rebaselining?.has('progress') || this.discardPending) return;
     let frontier;
-    try { frontier = this.progress.join(frame); } catch { this.forceReconnect(); return; }
+    try {
+      frontier = this.progress.join(frame);
+      this.confirmedProgress.join(frame);
+      this.confirm('progress');
+    } catch { this.forceReconnect(); return; }
     for (const [actor, m] of frontier.marks) this.clock.observe({ ms: m.ms, counter: m.counter, actor });
     this.persistNow();
     this.progressHandler?.(this.progress.overlay());
+    this.emitStatus();
   }
 
   receiveProgressAck(frame) {
     const vector = this.progressInFlight.get(frame.frameId);
     if (!vector) return;
     this.ackedProgressVector.join(vector);
+    const writes = this.progressWrites.get(frame.frameId);
+    if (writes) {
+      this.confirmedProgress.join(writes);
+      this.confirm('progress');
+    }
+    this.progressWrites.delete(frame.frameId);
     this.progressInFlight.delete(frame.frameId);
+    this.persistNow();
     this.noteDrained();
+    this.emitStatus();
   }
 
   // Queue the local snapshot before sending; an unacknowledged mark remains in the derived outbox.
-  markProgress(nodeId, status) {
+  markProgress(nodeIds, status) {
+    if (this.rebaselining?.has('progress')) return this.progress.overlay();
     const now = Date.now();
-    if (!this.progress.mark(nodeId, status, this.clock.tick(now), now)) return this.progress.overlay();
+    const at = this.clock.tick(now);
+    const targets = Array.isArray(nodeIds) ? nodeIds : [nodeIds];
+    let changed = false;
+    for (const nodeId of targets) {
+      if (this.progress.mark(nodeId, status, at, now)) changed = true;
+    }
+    if (!changed) return this.progress.overlay();
+    if (this.trackGestures) this.gestures.progress = pendingGestures(this.progress.toFrame(), this.confirmedProgress.toFrame(), this.gestures.progress);
     this.persistNow();
     this.flushProgress();
+    this.emitStatus();
     return this.progress.overlay();
   }
 
   flushProgress() {
+    if (this.rebaselining?.has('progress') || this.discardPending) return;
     if (this.phase !== 'live' || this.ws?.readyState !== WebSocket.OPEN) return;
     const pending = this.progress.deltaSince(this.ackedProgressVector);
     if (!pending.marks.length) return;
-    const frameId = crypto.randomUUID?.() ?? `p-${Date.now()}-${Math.round(Math.random() * 1e6)}`;
-    this.progressInFlight.set(frameId, new ProgressLattice().join(pending));
-    this.ws.send(JSON.stringify({ t: 'progress', treeId: this.treeId, frameId, marks: pending.marks }));
+    this.sendWithEpoch('progress', () => {
+      const frameId = crypto.randomUUID?.() ?? `p-${Date.now()}-${Math.round(Math.random() * 1e6)}`;
+      this.progressInFlight.set(frameId, new ProgressLattice().join(pending));
+      this.progressWrites.set(frameId, structuredClone(pending));
+      this.emitStatus();
+      this.ws.send(JSON.stringify({ t: 'progress', treeId: this.treeId, frameId, marks: pending.marks }));
+    });
   }
 
   receiveSkew(frame) {
     this.clock.observe({ ms: frame.serverNow ?? 0, counter: 0, actor: 'srv' });
     this.inFlight.delete(frame.frameId);
+    this.emitStatus();
     this.durabilityAtRisk = true;  // pending edits are stranded until the clock catches up
     // Real time overtakes any finite skew: re-flush once the local max stamp is no longer ahead.
     const pending = frameFrontier(this.lattice.deltaSince(this.ackedServerVector));
@@ -330,7 +617,27 @@ export class SyncSession {
   }
 
   receiveReject(frame) {
-    if (frame.frameId) this.inFlight.delete(frame.frameId);
+    const lane = this.inFlight.has(frame.frameId) ? 'structure'
+      : this.progressInFlight.has(frame.frameId) ? 'progress' : null;
+    if (strandsTheBank(frame) && lane && !isOwnershipRefusal(frame) && !isSessionRefusal(frame)) {
+      const pending = lane === 'structure' ? this.lattice.deltaSince(this.ackedServerVector)
+        : this.progress.deltaSince(this.ackedProgressVector);
+      const frontier = lane === 'structure' ? frameFrontier(pending) : new ProgressLattice().join(pending);
+      const signature = JSON.stringify(frontier.toJSON());
+      const previous = this.refusalEpisodes.get(lane);
+      const episode = previous?.signature === signature ? previous.episode : Object.freeze({});
+      this.refusalEpisodes.set(lane, { signature, episode });
+      const refusal = Object.freeze({ lane, code: frame.code, episode });
+      this.refusals.set(lane, refusal);
+      for (const handler of this.refusalHandlers) handler(refusal);
+    }
+    if (frame.frameId) {
+      this.inFlight.delete(frame.frameId);
+      this.progressInFlight.delete(frame.frameId);
+      this.structureWrites.delete(frame.frameId);
+      this.progressWrites.delete(frame.frameId);
+    }
+    this.emitStatus();
     // A refused subgraph frame strands the edits banked behind it, whatever its code.
     if (strandsTheBank(frame)) this.durabilityAtRisk = true;
     if (!strandsTheBank(frame) && !isOwnershipRefusal(frame) && !isSessionRefusal(frame)) {
@@ -340,22 +647,53 @@ export class SyncSession {
     window.dispatchEvent(new CustomEvent('wm-edit-forbidden', { detail: frame }));
   }
 
-  emitTree() { this.treeHandler?.(this.lattice.toTreeData()); }
+  confirm(lane) {
+    if (!this.trackGestures) return;
+    const confirmed = lane === 'structure' ? this.confirmedStructure.toFrame() : this.confirmedProgress.toFrame();
+    this.gestures[lane] = pendingGestures({}, confirmed, this.gestures[lane]);
+  }
+
+  emitProjection(lane) {
+    try {
+      if (lane === 'structure') {
+        this.emitTree();
+        return;
+      }
+      const progress = this.rebaselining?.has('progress') ? this.confirmedProgress : this.progress;
+      this.progressHandler?.(progress.overlay());
+    } catch (error) {
+      this.reportFailure('roadmap-sync-notify', error);
+    }
+  }
+
+  emitTree() {
+    const lattice = this.rebaselining?.has('structure') ? this.confirmedStructure : this.lattice;
+    this.treeHandler?.(lattice.toTreeData());
+  }
 
   // How much of the bank the server does not hold.
   pendingEditCount() {
-    const pending = this.lattice.deltaSince(this.ackedServerVector);
-    return pending.nodes.length + pending.edges.length + pending.kinds.length + (pending.title ? 1 : 0);
+    if (!this.trackGestures) {
+      const pending = this.lattice.deltaSince(this.ackedServerVector);
+      return pending.nodes.length + pending.edges.length + pending.kinds.length + (pending.title ? 1 : 0);
+    }
+    return pendingRecordCount(unconfirmedStamps(writeStamps(this.lattice.toFrame()), writeStamps(this.confirmedStructure.toFrame())));
+  }
+
+  pendingProgressCount() {
+    if (!this.trackGestures) return this.progress.deltaSince(this.ackedProgressVector).marks.length;
+    return pendingRecordCount(unconfirmedStamps(writeStamps(this.progress.toFrame()), writeStamps(this.confirmedProgress.toFrame())));
   }
 
   // Everything the server does not yet cover — the outbox, derived not queued.
   flush() {
+    if (this.rebaselining?.has('structure') || this.discardPending) return;
     const pending = this.lattice.deltaSince(this.ackedServerVector);
     if (!pending.nodes.length && !pending.edges.length && !pending.kinds.length && !pending.title) return;
     for (const chunk of chunkDelta(pending)) this.send(chunk, 'flush');
   }
 
-  dispatch(gesture, { captureFailures = false } = {}) {
+  dispatch(gesture) {
     if (!this.ready) return null;
     const writes = materialize(gesture, this.lattice, this.clock);
     if (!writes.nodes.length && !writes.edges.length && !writes.kinds.length) return null;
@@ -365,29 +703,26 @@ export class SyncSession {
     this.undoStack.push(inverse);
     this.redoStack = [];
     try {
-      this.apply(writes, { captureFailures });
+      this.apply(writes);
     } catch (error) {
-      if (captureFailures) {
-        this.undoStack.splice(this.undoStack.indexOf(inverse), 1);
-        this.redoStack = redo;
-      }
+      this.undoStack.splice(this.undoStack.indexOf(inverse), 1);
+      this.redoStack = redo;
       throw error;
     }
-    this.receipts.set(receipt, { inverse, captureFailures });
+    this.receipts.set(receipt, inverse);
     return receipt;
   }
 
   revert(receipt) {
     if (!this.ready) return false;
-    const captured = this.receipts.get(receipt);
-    if (!captured) return false;
-    const { inverse, captureFailures } = captured;
+    const inverse = this.receipts.get(receipt);
+    if (!inverse) return false;
     const index = this.undoStack.indexOf(inverse);
     if (index === -1) return false;
+    this.apply(this.restamp(inverse, this.clock.tick(Date.now())));
     this.receipts.delete(receipt);
     this.undoStack.splice(index, 1);
     this.redoStack = [];
-    this.apply(this.restamp(inverse, this.clock.tick(Date.now())), { captureFailures });
     return true;
   }
 
@@ -406,20 +741,23 @@ export class SyncSession {
   redo() { this.replay(this.redoStack, this.undoStack); }
 
   replay(from, to) {
-    const inverse = from.pop();
+    if (this.rebaselining) return;
+    const inverse = from.at(-1);
     if (!inverse) return;
     const writes = this.restamp(inverse, this.clock.tick(Date.now()));
-    to.push(this.captureInverse(writes));  // the counter-inverse, captured before applying
+    const counterInverse = this.captureInverse(writes);
     this.apply(writes);
+    from.pop();
+    to.push(counterInverse);
   }
 
-  apply(writes, { captureFailures = false } = {}) {
+  apply(writes) {
     this.lattice.join(writes);
-    if (!captureFailures) {
-      this.emitTree();
-      this.persistNow();
-      if (this.phase === 'live') this.send(writes);
-      return;
+    if (this.trackGestures) this.gestures.structure = pendingGestures(writes, this.confirmedStructure.toFrame(), this.gestures.structure);
+    try {
+      this.emitStatus();
+    } catch (error) {
+      this.reportFailure('roadmap-sync-notify', error);
     }
     try {
       this.emitTree();
@@ -427,7 +765,7 @@ export class SyncSession {
       this.reportFailure('roadmap-sync-notify', error);
     }
     try {
-      this.persistNow({ captureFailures });
+      this.persistNow((error) => this.reportFailure('roadmap-sync-persist', error));
     } catch (error) {
       this.durabilityAtRisk = true;
       this.reportFailure('roadmap-sync-persist', error);
@@ -442,30 +780,73 @@ export class SyncSession {
   }
 
   send(writes, intent = 'live') {
+    if (this.rebaselining?.has('structure') || this.discardPending) return;
     if (this.ws?.readyState !== WebSocket.OPEN) return;
-    const frameId = crypto.randomUUID?.() ?? `f-${Date.now()}-${Math.random()}`;
-    this.sent.add(frameId);
-    this.inFlight.set(frameId, frameFrontier(writes));  // remembered so its ack can advance coverage
-    const frame = {
-      t: 'subgraph', v: 1, treeId: this.treeId, frameId, actor: this.actor, intent,
-      nodes: writes.nodes ?? [], edges: writes.edges ?? [], kinds: writes.kinds ?? [],
+    this.sendWithEpoch('structure', () => {
+      const frameId = crypto.randomUUID?.() ?? `f-${Date.now()}-${Math.random()}`;
+      this.sent.add(frameId);
+      this.inFlight.set(frameId, frameFrontier(writes));
+      this.structureWrites.set(frameId, structuredClone(writes));
+      const frame = {
+        t: 'subgraph', v: 1, treeId: this.treeId, frameId, actor: this.actor, intent,
+        nodes: writes.nodes ?? [], edges: writes.edges ?? [], kinds: writes.kinds ?? [],
+      };
+      if (writes.title) frame.title = writes.title;
+      this.emitStatus();
+      this.ws.send(JSON.stringify(frame));
+    });
+  }
+
+  sendWithEpoch(lane, send) {
+    const socket = this.ws;
+    const epoch = this.epochs[lane];
+    const checkedSend = () => {
+      if (this.closed || this.discardPending || this.rebaselining?.has(lane)) return;
+      if (socket !== this.ws || socket?.readyState !== WebSocket.OPEN || this.epochs[lane] !== epoch) return;
+      send();
     };
-    if (writes.title) frame.title = writes.title;
-    this.ws.send(JSON.stringify(frame));
+    if (!this.store.withEpoch) return checkedSend();
+    return this.store.withEpoch(this.treeId, lane, epoch, checkedSend).then((result) => {
+      if (result.status === 'stale') this.adoptEpochs(result.value);
+    }).catch((error) => {
+      this.durabilityAtRisk = true;
+      this.reportFailure('roadmap-sync-send', error);
+    });
   }
 
   // Persists both lanes + lastSeq atomically; the snapshot is taken synchronously, before any
   // await. A closed session never writes. Returns the save's settle.
-  persistNow({ captureFailures = false } = {}) {
+  persistNow(onFailure = null) {
     if (this.closed) return Promise.resolve();
+    if (this.discardPending) {
+      this.deferredSave = true;
+      return Promise.resolve();
+    }
     clearTimeout(this.saveTimer);
     this.saveTimer = null;
-    const value = { frame: this.lattice.toFrame(), progress: this.progress.toFrame(), lastSeq: this.lastSeq };
+    const value = {
+      frame: this.lattice.toFrame(), progress: this.progress.toFrame(), lastSeq: this.lastSeq,
+      epochs: { ...this.epochs },
+      ...(this.trackGestures ? { gestures: structuredClone(this.gestures) } : {}),
+      confirmed: {
+        structure: this.confirmedKnown.structure ? this.confirmedStructure.toFrame() : null,
+        progress: this.confirmedKnown.progress ? this.confirmedProgress.toFrame() : null,
+      },
+    };
     this.registry?.touch(this.treeId, this.lattice.title);
-    return this.store.save(this.treeId, value).catch((error) => {
+    return this.store.save(this.treeId, value).then((result) => {
+      if (result?.status === 'stale') this.adoptEpochs(result.value);
+      return result;
+    }, (error) => {
       this.durabilityAtRisk = true;
-      if (captureFailures) this.reportFailure('roadmap-sync-persist', error);
+      onFailure?.(error);
     });
+  }
+
+  persistDeferred() {
+    if (!this.deferredSave) return Promise.resolve();
+    this.deferredSave = false;
+    return this.persistNow((error) => this.reportFailure('roadmap-sync-persist', error));
   }
 
   // Coalesced save for the receive path: received content is already server-durable.
@@ -559,12 +940,15 @@ export class SyncSession {
 
   close() {
     this.closed = true;
+    this.unsubscribeEpochs?.();
+    this.unsubscribeEpochs = null;
     if (typeof window !== 'undefined') {
       if (this.pagehide) window.removeEventListener('pagehide', this.pagehide);
       if (this.onVisible) document.removeEventListener('visibilitychange', this.onVisible);
       if (this.onOnline) window.removeEventListener('online', this.onOnline);
+      if (this.onOffline) window.removeEventListener('offline', this.onOffline);
     }
-    this.pagehide = this.onVisible = this.onOnline = null;
+    this.pagehide = this.onVisible = this.onOnline = this.onOffline = null;
     this.stopHeartbeat();
     clearTimeout(this.presenceTimer);
     clearTimeout(this.reconnectTimer);
@@ -572,6 +956,14 @@ export class SyncSession {
     this.presenceTimer = this.reconnectTimer = this.saveTimer = null;
     this.ws?.close();
     this.ws = null;
+    this.phase = 'offline';
+    this.inFlight.clear();
+    this.progressInFlight.clear();
+    this.structureWrites.clear();
+    this.progressWrites.clear();
+    this.emitStatus();
+    this.statusHandlers.clear();
+    this.refusalHandlers.clear();
   }
 }
 
@@ -593,3 +985,4 @@ function* chunkDelta(delta) {
     yield chunk;
   }
 }
+

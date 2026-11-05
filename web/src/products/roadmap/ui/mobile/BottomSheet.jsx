@@ -1,7 +1,7 @@
 // Opens at a peek and lifts to at most MAX_VH, so the canvas is never fully covered.
 // A raised keyboard forces the sheet fully expanded and pads the scroller by the measured inset.
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 const PEEK_HEIGHT = 216;
 const MAX_VH = 62;
@@ -13,13 +13,16 @@ const peekOffsetPx = (maxVh, peekHeight) => Math.max(0, sheetHeightPx(maxVh) - p
 const prefersReducedMotion = () =>
   typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-export function BottomSheet({ open, onDismiss, children, peekHeight = PEEK_HEIGHT, maxVh = MAX_VH }) {
+export function BottomSheet({ open, onDismiss, children, peekHeight = PEEK_HEIGHT, maxVh = MAX_VH, onHeight }) {
   const [rendered, setRendered] = useState(false);
   const [shown, setShown] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [dragOffset, setDragOffset] = useState(null); // px while dragging, else null
   const [kbInset, setKbInset] = useState(0); // px of viewport the on-screen keyboard eats
 
+  const [viewport, setViewport] = useState(() => ({ height: typeof window === 'undefined' ? 0 : window.innerHeight }));
+  const reportedViewport = useRef(viewport);
+  const reportedHeight = useRef(0);
   const wasOpen = useRef(false);
   const dragging = useRef(false);
   const startY = useRef(0);
@@ -93,11 +96,42 @@ export function BottomSheet({ open, onDismiss, children, peekHeight = PEEK_HEIGH
     setExpanded(settled < peek / 2);
   };
 
+  const fullHeight = viewport.height * maxVh / 100;
+  const lifted = kbInset > 0;
+  const followingFinger = dragOffset !== null && !lifted;
+  const visibleHeight = expanded || lifted ? fullHeight : Math.min(peekHeight, fullHeight);
+  const occupiedHeight = followingFinger ? fullHeight - dragOffset : visibleHeight;
+  const targetHeight = rendered && shown ? Math.max(0, occupiedHeight) : 0;
+  useLayoutEffect(() => {
+    if (!onHeight) return;
+    const resized = reportedViewport.current !== viewport;
+    reportedViewport.current = viewport;
+    const shrinking = targetHeight < reportedHeight.current;
+    const transitioning = rendered && !reduced && !followingFinger && !(resized && shown);
+    if (shrinking && transitioning) return;
+    reportedHeight.current = targetHeight;
+    onHeight(targetHeight);
+  }, [onHeight, rendered, shown, reduced, followingFinger, targetHeight, viewport]);
+  useEffect(() => {
+    if (!onHeight) return undefined;
+    const resize = () => {
+      setViewport({ height: window.innerHeight });
+    };
+    window.addEventListener('resize', resize);
+    return () => {
+      window.removeEventListener('resize', resize);
+      onHeight(0);
+    };
+  }, [onHeight]);
+  const settleHeight = (event) => {
+    if (event.target !== event.currentTarget || event.propertyName !== 'transform') return;
+    reportedHeight.current = targetHeight;
+    onHeight?.(targetHeight);
+  };
+
   if (!rendered) return null;
 
   // max(0px, …) so a peek taller than the sheet can't push resting negative and float it off the bottom edge.
-  const lifted = kbInset > 0;
-  const followingFinger = dragOffset != null && !lifted;
   const resting = expanded || lifted ? 'translateY(0)' : `translateY(max(0px, calc(${maxVh}vh - ${peekHeight}px)))`;
   let transform;
   if (followingFinger) transform = `translateY(${dragOffset}px)`;
@@ -113,6 +147,7 @@ export function BottomSheet({ open, onDismiss, children, peekHeight = PEEK_HEIGH
 
   return (
     <div
+      onTransitionEnd={onHeight ? settleHeight : undefined}
       style={{
         position: 'fixed',
         left: 0,

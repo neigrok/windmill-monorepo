@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { isOwnershipRefusal, isSessionRefusal, isCapacityRefusal, strandsTheBank } from '../../../../src/products/roadmap/sync/refusals.js';
+import { isOwnershipRefusal, isSessionRefusal, isCapacityRefusal, strandsTheBank, refusalEventCode, isExpectedRefusal } from '../../../../src/products/roadmap/sync/refusals.js';
 
 // The codes are the wire contract; the sentences beside them are prose the client never reads.
 test('the editor demotes on exactly the two ownership codes, whatever the sentence says', () => {
@@ -45,4 +45,17 @@ test('any reject naming a frame strands the bank; a reject naming none strands n
   assert.equal(strandsTheBank({ code: 'not-yours', frameId: 'f3' }), true);
   assert.equal(strandsTheBank({ code: 'sign-in-required' }), false);
   assert.equal(strandsTheBank(undefined), false);
+});
+
+test('refusal telemetry labels and expected failures share the wire-code classifier', () => {
+  assert.deepEqual(['tree-too-large', 'bad-frame', 'no-such-tree', 'server-error', 'unknown', undefined].map((code) => ({
+    code: refusalEventCode({ code }), expected: isExpectedRefusal({ code }),
+  })), [
+    { code: 'tree-too-large', expected: true },
+    { code: 'bad-frame', expected: false },
+    { code: 'no-such-tree', expected: true },
+    { code: 'server-error', expected: false },
+    { code: 'other', expected: false },
+    { code: 'other', expected: false },
+  ]);
 });

@@ -25,8 +25,9 @@ function muted() {
   }
 }
 
-// Flood guard: collapse a repeating error (same kind+message+route) within a short window, and cap
-// total events per rolling minute, so a throw inside a rAF loop cannot burn the quota.
+// Flood guard: collapse a repeating error (same kind, operation, route, tags and crashing frame)
+// within a short window, and cap total events per rolling minute, so a throw inside a rAF loop cannot
+// burn the quota.
 const DEDUP_MS = 10000;
 const RATE_WINDOW_MS = 60000;
 const RATE_MAX = 30;
@@ -55,27 +56,41 @@ function eventId() {
   return hex.length === 32 ? hex : Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
 }
 
-// A V8/Safari stack into Sentry frames, ordered oldest-first (the crashing frame last, as Sentry
-// expects). Lines with no file:line:col are skipped.
+// A stack into Sentry frames, ordered oldest-first (the crashing frame last, as Sentry expects). They
+// are read up from the bottom and stop at the first line that is not a frame: above stands the head,
+// `Name: message`, which can run many lines and hold what someone wrote. A frame with no file:line:col
+// is skipped. V8 indents `at`; Safari and Firefox write `name@file`.
 function framesFromStack(stack) {
   const frames = [];
-  for (const line of String(stack).split('\n')) {
+  for (const line of String(stack).trimEnd().split('\n').reverse()) {
+    if (!/^\s+at\s|^\S*(?: code)?@/.test(line)) break;
     const at = /\(?(\S+):(\d+):(\d+)\)?\s*$/.exec(line.trim());
     if (!at) continue;
     const named = /at\s+([^(]+?)\s*\(/.exec(line);
     frames.push({ filename: at[1], lineno: Number(at[2]), colno: Number(at[3]), function: named ? named[1].trim() : '?', in_app: true });
   }
-  return frames.reverse();
+  return frames;
 }
 
-export function captureError(kind, message, stack, route) {
+export function captureError(kind, message, stack, route, tags = {}) {
   // The whole body is guarded: captureError runs from the window 'error' handler, so a throw here
   // would re-dispatch 'error' → captureError → throw.
   try {
     if (!parsed || muted()) return;
     const type = String(kind || 'Error').slice(0, 40);
     const value = String(message ?? 'unknown').slice(0, 1000);
-    if (!allowed(`${type}|${value}|${route}`)) return;
+    const labels = {};
+    for (const [key, label] of Object.entries(tags)) {
+      if (key === 'kind') continue;
+      if (!/^[a-z][a-z0-9_]{0,39}$/.test(key) || typeof label !== 'string') continue;
+      if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$/.test(label)) continue;
+      labels[key] = label;
+    }
+    const tagSignature = Object.keys(labels).sort().map((key) => `${key}:${labels[key]}`).join('|');
+    const frames = framesFromStack(stack);
+    const crash = frames.at(-1);
+    const signature = [type, value, route, tagSignature, crash && `${crash.filename}:${crash.lineno}:${crash.colno}`].join('|');
+    if (!allowed(signature)) return;
     const id = eventId();
     const event = {
       event_id: id,
@@ -85,11 +100,10 @@ export function captureError(kind, message, stack, route) {
       logger: 'windmill-web',
       environment: import.meta.env?.PROD ? 'production' : 'development',
       ...(RELEASE ? { release: RELEASE } : {}),
-      tags: { kind: type },
-      // Already reduced to its family by reportError, the one caller: falling back to
-      // window.location.href here would put the magic-link and shared-workout secrets back.
+      tags: { ...labels, kind: type },
+      // Callers supply a route family; the full location can contain magic-link or sharing secrets.
       request: { url: route || '' },
-      exception: { values: [{ type, value, stacktrace: { frames: framesFromStack(stack) } }] },
+      exception: { values: [{ type, value, stacktrace: { frames } }] },
     };
     const envelope = `${JSON.stringify({ event_id: id, dsn: DSN })}\n${JSON.stringify({ type: 'event' })}\n${JSON.stringify(event)}`;
     fetch(`https://${parsed.host}/api/${parsed.projectId}/envelope/`, {

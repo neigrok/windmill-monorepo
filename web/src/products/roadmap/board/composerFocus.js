@@ -1,7 +1,6 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { boardFocusTarget } from './traversal.js';
-
-const FOCUSABLE = 'button:not(:disabled):not([tabindex="-1"]), input:not(:disabled), textarea:not(:disabled), [contenteditable="true"], [tabindex="0"]';
+import { wrapTab } from '../../../design-system/feedback/dialogFocus.js';
 
 const coveredLayers = new WeakMap();
 
@@ -68,32 +67,16 @@ export function useComposerFocus(ref, active = true, { restore = true, preserveO
   }, [active]);
 
   return (event) => {
-    if (!active || event.key !== 'Tab') return;
-    event.stopPropagation();
-    const stops = [...ref.current.querySelectorAll(FOCUSABLE)].filter((element) => (
-      !element.closest('[inert]') && element.getClientRects().length > 0
-    ));
-    const first = stops[0];
-    const last = stops.at(-1);
-    if (!first) {
-      event.preventDefault();
-      return;
-    }
-    if (event.shiftKey && (document.activeElement === first || !stops.includes(document.activeElement))) {
-      event.preventDefault();
-      last.focus();
-      return;
-    }
-    if (!event.shiftKey && (document.activeElement === last || !stops.includes(document.activeElement))) {
-      event.preventDefault();
-      first.focus();
-    }
+    if (!active) return;
+    wrapTab(event, ref.current);
   };
 }
 
 export function useComposerViewport(phone) {
   const [viewport, setViewport] = useState(() => ({
     width: typeof window === 'undefined' ? 0 : window.innerWidth,
+    layoutHeight: typeof window === 'undefined' ? 0 : window.innerHeight,
+    scale: typeof window === 'undefined' ? 1 : window.visualViewport?.scale ?? 1,
     visible: typeof window === 'undefined' || !window.visualViewport ? null : {
       top: window.visualViewport.offsetTop,
       left: window.visualViewport.offsetLeft,
@@ -105,6 +88,8 @@ export function useComposerViewport(phone) {
     const visible = window.visualViewport;
     const resize = () => setViewport({
       width: window.innerWidth,
+      layoutHeight: window.innerHeight,
+      scale: visible?.scale ?? 1,
       visible: visible ? {
         top: visible.offsetTop,
         left: visible.offsetLeft,
@@ -124,6 +109,8 @@ export function useComposerViewport(phone) {
   }, []);
   return {
     panelFits: viewport.width >= 1440,
+    keyboardVisible: Boolean(phone && viewport.visible && viewport.scale === 1
+      && viewport.visible.top + viewport.visible.height < viewport.layoutHeight),
     style: phone && viewport.visible ? { position: 'fixed', ...viewport.visible } : undefined,
   };
 }

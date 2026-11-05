@@ -1,4 +1,4 @@
-// Board step detail: a pushed page below 744px and a modal otherwise.
+// Roadmap step detail: a pushed page below 744px and a modal otherwise.
 
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import './detail.css';
@@ -8,10 +8,11 @@ import { SAFE_URL } from '../ui/tree/NodeWorkspace.jsx';
 import { StepWorkspace, StepHistory } from './StepWorkspace.jsx';
 import { deletionCost } from './acts.js';
 import { deleteCostLine } from '../ui/mobile/editorSheet.js';
-import { StepFacts, STEP_SECTIONS, offersCompletion } from './StepFacts.js';
+import { StepFacts, STEP_SECTIONS, offersCompletion, titleOf } from './StepFacts.js';
 import { handleMenuKey } from './BoardControls.jsx';
 import { StepIcons } from './StepIcons.jsx';
 import { coverBeneath, DetailFocusContext } from './composerFocus.js';
+import { wrapTab } from '../../../design-system/feedback/dialogFocus.js';
 import { boardFocusTarget } from './traversal.js';
 import './modal.css';
 import './page.css';
@@ -21,12 +22,9 @@ import {
 } from './copy.js';
 
 const UNDO_HOLD_MS = 6000;
-const FOCUSABLE = 'button:not([disabled]), a[href], input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
 const ROW_GLYPHS = { done: StepIcons.rowDone, upNext: StepIcons.rowUpNext, locked: StepIcons.rowLocked };
 const STATUS_GLYPHS = { done: StepIcons.statusDone, upNext: StepIcons.statusUpNext, locked: StepIcons.statusLocked };
 const TAB_STOP = '[data-column] [tabindex="0"], [data-column][tabindex="0"]';
-
-const titleOf = (step) => step.label?.trim() || STEP_DETAIL.unnamed;
 
 // `address` is the open step and how it was reached (stepAddress.js). Without `editable` the reader gets the overview and
 // the menu alone: no sections, no Complete, no Delete.
@@ -236,21 +234,7 @@ export function StepDetail({
     },
   ].filter(Boolean);
 
-  // Tab wraps inside the layer.
-  const onKeyDown = (event) => {
-    if (event.key !== 'Tab' || event.defaultPrevented) return;
-    const stops = [...layerRef.current.querySelectorAll(FOCUSABLE)].filter((element) => !element.closest('[inert]') && element.getClientRects().length > 0);
-    if (stops.length === 0) return;
-    const [first, last] = [stops[0], stops[stops.length - 1]];
-    const outside = !stops.includes(document.activeElement);
-    if (event.shiftKey && (document.activeElement === first || outside)) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && (document.activeElement === last || outside)) {
-      event.preventDefault();
-      first.focus();
-    }
-  };
+  const onKeyDown = (event) => wrapTab(event, layerRef.current);
 
   const offer = editable && section === 'workspace' && offersCompletion(workspace, facts.column)
     ? <SubtaskOffer onComplete={() => complete('completeFromSubtasks')} />
@@ -329,9 +313,7 @@ export function StepDetail({
     </DetailFocusContext.Provider>
   );
 
-  // Below 744px the step is a page pushed over the Board, which stays mounted beneath it with its pane and scroll; the
-  // back row names the screen it returns to, and the sections and actions sit under the thumb. From 744px it is a modal
-  // centred over the scrim, 760 wide and 24px in from the window below that (05.06); a press on the scrim closes it.
+  // Below 744px the step overlays the current view; from 744px it uses the 05.06 modal.
   if (surface === 'page') {
     const previous = trail.length > 1 ? tree.nodesById.get(trail[trail.length - 2]) : null;
     const backLabel = previous ? titleOf(previous) : roadmapTitle;
@@ -681,14 +663,7 @@ function DeleteConfirmation({ confirm, phone = false }) {
             confirm.cancel();
             return;
           }
-          if (event.key === 'Tab') {
-            event.preventDefault();
-            event.stopPropagation();
-            const buttons = [...ref.current.querySelectorAll('button')];
-            const direction = event.shiftKey ? -1 : 1;
-            const next = (buttons.indexOf(document.activeElement) + direction + buttons.length) % buttons.length;
-            buttons[next].focus();
-          }
+          wrapTab(event, ref.current);
         }}>
         <h3 id={title}>{confirm.title}</h3>
         <p id={description}>{confirm.cost}</p>

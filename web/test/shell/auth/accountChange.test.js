@@ -37,12 +37,14 @@ test('a blip after confirmation changes nothing at all — the confirmed account
   assert.equal(seat.confirmed, true);
 });
 
-test('a real 401 is not a blip: it settles to nobody', () => {
+test('a real 401 removes session authority and retains the previous device owner', () => {
   const seat = new DeviceSeat([]);
   seat.receive(A);
 
   assert.deepEqual(seat.receive(null), { status: 'ghost', user: null, account: null, confirmed: true });
   assert.equal(seat.account, null);
+  assert.equal(seat.previousAccount, 'u_A');
+  assert.equal(seat.lapsed, true);
 });
 
 test('a sign-out forgets the device — every product hears the same change', () => {
@@ -51,7 +53,7 @@ test('a sign-out forgets the device — every product hears the same change', ()
   const seat = new DeviceSeat([roadmap.product, journal.product]);
   seat.receive(A);
 
-  seat.receive(null);
+  seat.receive(null, { signedOut: true });
   assert.deepEqual(roadmap.calls, [{ previous: 'u_A', next: null }]);
   assert.deepEqual(journal.calls, [{ previous: 'u_A', next: null }]);
 });
@@ -99,7 +101,7 @@ test('a blip between two confirmed answers does not break the change that follow
 
   seat.receive(A);
   seat.receive(undefined);
-  seat.receive(null);
+  seat.receive(null, { signedOut: true });
   assert.deepEqual(roadmap.calls, [{ previous: 'u_A', next: null }]);
 });
 
@@ -115,7 +117,7 @@ test('one product throwing neither stops the others nor throws at the caller —
   const realError = console.error;
   console.error = (...args) => complaints.push(args[0]);
   try {
-    assert.deepEqual(seat.receive(null), { status: 'ghost', user: null, account: null, confirmed: true });
+    assert.deepEqual(seat.receive(null, { signedOut: true }), { status: 'ghost', user: null, account: null, confirmed: true });
     await Promise.resolve();  // the rejected cleanup is caught a microtask later, not inline
     await Promise.resolve();
   } finally {
@@ -129,4 +131,33 @@ test('a product that keeps nothing on the device is simply skipped', () => {
   const seat = new DeviceSeat([{ id: 'nothing-to-forget' }]);
   seat.receive(A);
   assert.deepEqual(seat.receive(B), { status: 'signed-in', user: B, account: B, confirmed: true });
+});
+
+for (const returning of [A, B]) {
+  test(`a lapse retains unsynced device work until ${returning.id} signs in`, () => {
+    const roadmap = recorder('roadmap');
+    const seat = new DeviceSeat([roadmap.product]);
+    seat.receive(A);
+    seat.receive(null);
+    seat.receive(null);
+    seat.receive(undefined);
+    assert.deepEqual(roadmap.calls, []);
+    assert.equal(seat.lapsed, true);
+    assert.equal(seat.previousAccount, A.id);
+    assert.deepEqual(seat.receive(returning), { status: 'signed-in', user: returning, account: returning, confirmed: true });
+    assert.deepEqual(roadmap.calls, returning === A ? [] : [{ previous: A.id, next: B.id }]);
+    assert.equal(seat.lapsed, false);
+  });
+}
+
+test('explicit sign-out after a lapse clears the remembered account and forgets once', () => {
+  const roadmap = recorder('roadmap');
+  const seat = new DeviceSeat([roadmap.product]);
+  seat.receive(A);
+  seat.receive(null);
+  seat.receive(null, { signedOut: true });
+  seat.receive(null);
+  assert.deepEqual(roadmap.calls, [{ previous: A.id, next: null }]);
+  assert.equal(seat.previousAccount, null);
+  assert.equal(seat.lapsed, false);
 });

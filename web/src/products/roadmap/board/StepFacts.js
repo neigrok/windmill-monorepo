@@ -3,10 +3,12 @@
 
 import { UnlockRules, owedStepsOf } from '../model/UnlockRules.js';
 import { advanceProgress } from '../model/progress.js';
+import { STEP_DETAIL } from './copy.js';
 
 const COLUMN_OF_STATE = { locked: 'locked', available: 'upNext', complete: 'done' };
 
 export const STEP_SECTIONS = ['overview', 'workspace', 'history'];
+export const titleOf = (step) => step.label?.trim() || STEP_DETAIL.unnamed;
 
 class RelatedStep {
   constructor(step, state) {

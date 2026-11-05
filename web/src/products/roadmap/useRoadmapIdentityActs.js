@@ -11,7 +11,7 @@ export function useRoadmapIdentityActs({
   owner, phone, treeId, tree, boardTree, shownStats, identityActive, boardActive, completed, completedAt,
   boardQuery, boardQueryRef, setBoardQuery, switchView, switchFocusRef, setTendOpen, setForkOpen,
   setShortcutsOpen, setShareOpen, newStepFromBoard, handleSheetJump, editorRef, showToast, reportBoardFailure,
-  shareRequestRef, currentTreeIdRef, graphViewRef, identityActiveRef,
+  shareRequestRef, currentTreeIdRef, graphViewRef, identityActiveRef, activity = null,
 }) {
   const openRowTend = useCallback(() => setTendOpen(true), [setTendOpen]);
   const openRowFork = useCallback(() => setForkOpen(true), [setForkOpen]);
@@ -80,8 +80,8 @@ export function useRoadmapIdentityActs({
   }), [treeId, tree?.title, shownStats?.done, shownStats?.total, shownStats?.dominantKind, identityBoard]);
   const identitySheet = useMemo(() => ({
     listTrees: listAllTrees, current: currentRoadmap,
-    onPickTree: pickRoadmap, onNewRoadmap: newRoadmap, onBrowse: browseRoadmaps,
-  }), [currentRoadmap, pickRoadmap, newRoadmap, browseRoadmaps]);
+    onPickTree: pickRoadmap, onNewRoadmap: newRoadmap, onBrowse: browseRoadmaps, activity,
+  }), [currentRoadmap, pickRoadmap, newRoadmap, browseRoadmaps, activity]);
   return {
     openRowTend, openRowFork, openRowShortcuts, openRowSettings, openRowCreate, identityFind, graphNext,
     identityNext, shareFromRow, exportFromRow, newRoadmap, currentRoadmap, identitySheet,

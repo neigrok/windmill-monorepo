@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { hostTest, openHost, startRoadmapHost } from './skillTreeViewHost.js';
+import { ROADMAP_VERBS } from '../../../src/products/roadmap/board/copy.js';
 
 startRoadmapHost('identity');
 
@@ -63,4 +64,88 @@ for (const width of [744, 1024, 1440]) {
       } finally { await page.close(); }
     });
   }
+}
+
+hostTest('Chromium: the 744 Activity panel sits below the filter strip with the row menu and sort menu above it', async () => {
+  const { page, errors } = await openHost({ width: 744, surface: 'board', shell: true });
+  try {
+    await page.evaluate(() => document.fonts.ready);
+    await page.keyboard.press('a');
+    const panel = page.locator('.st-roadmap-activity-panel');
+    await panel.waitFor();
+    assert.deepEqual(await panel.evaluate((element) => {
+      const strip = document.querySelector('.st-view-layer--board.is-active .st-board-strip').getBoundingClientRect();
+      return { gapBelowStrip: element.getBoundingClientRect().top - strip.bottom, floor: Math.max(172, strip.bottom + 12) === element.getBoundingClientRect().top };
+    }), { gapBelowStrip: 12, floor: true });
+    await page.getByRole('button', { name: /Roadmap order/ }).click();
+    const newest = page.getByRole('menuitemradio', { name: 'Newest first' });
+    await newest.click();
+    await panel.waitFor();
+    await page.getByRole('button', { name: ROADMAP_VERBS.more, exact: true }).click();
+    await page.getByRole('menuitem', { name: ROADMAP_VERBS.activity }).click();
+    await panel.waitFor({ state: 'detached' });
+    await page.waitForFunction(() => document.activeElement?.matches('button.st-roadmap-icon[aria-haspopup="menu"]'));
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
+});
+
+hostTest('Chromium: the 744 Activity panel keeps its drawn height on the Graph and clears a refusal banner', async () => {
+  const { page, errors } = await openHost({ width: 744, surface: 'tree', shell: true });
+  try {
+    await page.keyboard.press('a');
+    const panel = page.locator('.st-roadmap-activity-panel');
+    await panel.waitFor();
+    assert.equal(await panel.evaluate((element) => element.getBoundingClientRect().top), 172);
+    await page.evaluate(() => {
+      const session = window.session;
+      session.dispatch({ kind: 'RenameNode', id: 'wind', label: 'Read gusts' });
+      session.inFlight.set('fixture-refused', session.lattice.frontier());
+      session.receiveReject({ frameId: 'fixture-refused', code: 'server-error' });
+    });
+    await page.getByRole('alert').waitFor();
+    await page.waitForFunction(() => document.querySelector('.st-roadmap-activity-panel').getBoundingClientRect().top
+      === document.querySelector('.st-graph-refusal').getBoundingClientRect().bottom + 12);
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
+});
+
+for (const width of [390, 744]) {
+  hostTest(`Chromium: touch Activity rows at ${width}px wear the drawn sunken avatar, inset badge and 11px kind dot`, async () => {
+    const { page, errors } = await openHost({ width, surface: 'board' });
+    try {
+      if (width === 744) {
+        await page.keyboard.press('a');
+      } else {
+        await page.locator('.st-roadmap-title-button').click();
+        await page.getByRole('button', { name: ROADMAP_VERBS.activity, exact: true }).click();
+      }
+      const row = page.locator('.st-roadmap-activity-rows button.st-event', { has: page.locator('.st-event-badge') }).first();
+      await row.waitFor();
+      assert.deepEqual(await row.evaluate((element) => {
+        const box = (part) => {
+          const bounds = part.getBoundingClientRect();
+          const origin = element.querySelector('.st-event-avatar').getBoundingClientRect();
+          return [bounds.left - origin.left, bounds.top - origin.top, bounds.width, bounds.height];
+        };
+        const avatar = element.querySelector('.st-event-avatar > div');
+        const badge = element.querySelector('.st-event-badge');
+        const dot = element.querySelector('.st-event-obj i');
+        const styles = getComputedStyle(avatar);
+        const sunken = document.createElement('i');
+        sunken.style.color = 'var(--surface-sunken)';
+        document.body.append(sunken);
+        const expected = getComputedStyle(sunken).color;
+        sunken.remove();
+        return {
+          avatar: box(avatar), badge: box(badge), dot: [dot.offsetWidth, dot.offsetHeight],
+          background: styles.backgroundColor === expected, shadow: styles.boxShadow, size: styles.fontSize, weight: styles.fontWeight,
+          ring: getComputedStyle(badge).borderTopWidth,
+        };
+      }), {
+        avatar: [0, 0, 22, 22], badge: [12, 12, 13, 13], dot: [11, 11],
+        background: true, shadow: 'none', size: '10px', weight: '700', ring: '2px',
+      });
+      assert.deepEqual(errors, []);
+    } finally { await page.close(); }
+  });
 }

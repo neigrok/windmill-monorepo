@@ -95,9 +95,14 @@
   background-color: var(--color-brand-soft);
 }
 
-/* ---- The device notice sits the Board's gap under the chrome row, not the List's margin. ---- */
-.st-board .st-list-notice {
-  margin-top: 0;
+.st-board-refusal {
+  flex-shrink: 0;
+}
+
+.st-board--phone > .board-device-line {
+  flex-shrink: 0;
+  width: calc(100% + var(--space-8));
+  margin-inline: calc(-1 * var(--space-4));
 }
 
 /* ---- A column's run: the cards in view, with a spacer standing in for each stretch not rendered. ---- */

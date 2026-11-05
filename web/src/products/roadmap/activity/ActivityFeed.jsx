@@ -1,4 +1,4 @@
-import { COLUMN_TITLES } from '../board/copy.js';
+import { ACTIVITY, COLUMN_TITLES } from '../board/copy.js';
 import React from 'react';
 import { Icon, IconButton } from '../../../design-system';
 import { EventRow } from './EventRow.jsx';
@@ -21,7 +21,7 @@ export function ActivityFeed({ groups, count, nodesById, now, hoveredId, newIds,
       )}
       <div className="st-activity-list">
         {groups.length === 0 ? (
-          <div className="st-activity-empty">No activity yet — changes you make will appear here.</div>
+          <div className="st-activity-empty">{ACTIVITY.empty}</div>
         ) : (
           groups.map((group) => (
             <React.Fragment key={group.label}>

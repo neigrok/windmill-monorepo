@@ -8,6 +8,7 @@ import { syncSession } from '../../platform/sync/session.js';
 import { captureError } from '../../telemetry/sentry.js';
 import { track } from '../../telemetry/beacon.js';
 import { SyncDecisions } from './SyncDecisions.jsx';
+import { useRoomStatus } from '../roomStatus.js';
 
 const AuthContext = createContext(null);
 const HINT_KEY = 'windmill:auth-hint';
@@ -28,11 +29,13 @@ export default function AuthProvider({ children }) {
   const [user, setUser] = useState(hint);
   const [status, setStatus] = useState('loading');
   const [account, setAccount] = useState(null);
+  const [lapsed, setLapsed] = useState(false);
   const [question, setQuestion] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(false);
   const [updating, setUpdating] = useState(false);
   const [updateError, setUpdateError] = useState(false);
+  const roomStatus = useRoomStatus();
   const session = useSyncExternalStore(syncSession.subscribe, syncSession.getSnapshot, syncSession.getSnapshot);
   const upgradeRequired = useSyncExternalStore(
     useCallback((listener) => session.engine?.observeEngine(listener) ?? (() => {}), [session.engine]),
@@ -46,18 +49,22 @@ export default function AuthProvider({ children }) {
   const queue = useRef(Promise.resolve());
   const enqueue = useCallback((run) => {
     const next = queue.current.then(run);
-    queue.current = next.catch(() => { captureError('auth', 'auth-session', '', '/auth'); setError(true); });
+    queue.current = next.catch((error) => {
+      captureError('auth', 'auth-session', error?.stack ?? new Error('auth-session').stack, '/auth');
+      setError(true);
+    });
     return next;
   }, []);
-  const settle = useCallback((me) => {
-    const value = seat.receive(me);
+  const settle = useCallback((me, options) => {
+    const value = seat.receive(me, options);
     if (!value) return;
     setUser(value.user); setStatus(value.status); setAccount(value.account);
+    setLapsed(seat.lapsed);
     syncSession.publish({ signedIn: Boolean(value.account) });
     if (value.confirmed) remember(value.user);
   }, [seat]);
   const signedOut = useCallback(() => {
-    pending.current = null; setQuestion(null); setError(false); settle(null);
+    pending.current = null; setQuestion(null); setError(false); settle(null, { signedOut: true });
     channel.current?.postMessage({ type: 'signed-out' });
     signOutResult.current?.resolve(true); signOutResult.current = null;
   }, [settle]);
@@ -124,7 +131,7 @@ export default function AuthProvider({ children }) {
     }
     pending.current = null; setQuestion(null); setError(false); settle(me);
   }, [settle]);
-  const refresh = useCallback(() => enqueue(async () => {
+  const refresh = useCallback(({ signedOut = false } = {}) => enqueue(async () => {
     const engine = await syncSession.opening;
     if (engine?.restoring) await engine.restoring;
     if (!engine || engine.closed) return undefined;
@@ -136,7 +143,7 @@ export default function AuthProvider({ children }) {
     }
     if (engine.signingOut || signOutResult.current) return undefined;
     await engine.cleanupCredentials();
-    if (engine.device.meta.clearCredential) { settle(null); return null; }
+    if (engine.device.meta.clearCredential) { settle(null, { signedOut: true }); return null; }
     const me = await fetchMe();
     if (engine.restoring) await engine.restoring;
     if (engine.closed || engine.signingOut || engine.device.meta.closingAccount || signOutResult.current) return undefined;
@@ -148,8 +155,13 @@ export default function AuthProvider({ children }) {
       return undefined;
     }
     if (me) { await bind(me, pending.current?.user.id === me.id ? pending.current : {}); return me; }
-    if (engine.device.activeReplica.meta.state === 'bound') await engine.finishSignOut({ choice: 'keep' });
-    pending.current = null; setQuestion(null); settle(null);
+    const ended = signedOut || Boolean(seat.previousAccount && engine.device.activeReplica.meta.state === 'anon');
+    if (ended && engine.device.activeReplica.meta.state === 'bound') {
+      await engine.finishSignOut({ choice: 'keep' });
+    } else if (engine.device.activeReplica.meta.state === 'bound' && !engine.device.activeReplica.meta.authPaused) {
+      await engine.write(null, (device) => { device.activeReplica.meta.authPaused = true; });
+    }
+    pending.current = null; setQuestion(null); settle(null, { signedOut: ended });
     return null;
   }), [enqueue, settle, bind, seat, finishClosure]);
   const signIn = useCallback((me) => enqueue(async () => {
@@ -277,16 +289,23 @@ export default function AuthProvider({ children }) {
     }).then(() => { if (alive) refresh().catch(() => {}); }).catch(() => {});
     const broadcast = new BroadcastChannel('wm-auth');
     channel.current = broadcast;
-    broadcast.onmessage = () => refresh().catch(() => {});
+    broadcast.onmessage = ({ data }) => refresh({ signedOut: data?.type === 'signed-out' }).catch(() => {});
     const wake = () => refresh().catch(() => {});
     window.addEventListener('focus', wake); window.addEventListener('online', wake);
     const poll = setInterval(wake, 20000);
     return () => { alive = false; broadcast.close(); channel.current = null; clearInterval(poll);
       window.removeEventListener('focus', wake); window.removeEventListener('online', wake); };
   }, [refresh]);
-  return <AuthContext.Provider value={{ user, status, account, signIn, signOut, closeAccount, refresh }}>
+  return <AuthContext.Provider value={{ user, status, account, lapsed, signIn, signOut, closeAccount, refresh }}>
     <div style={{ display: 'contents' }} inert={question && !upgradeRequired ? '' : undefined}>{children}</div>
-    {!session.online && <div role="status" style={{ position: 'fixed', left: 16, bottom: 62, zIndex: 80, padding: '8px 12px', background: 'var(--surface-card)', color: 'var(--text-secondary)', borderRadius: 8, fontSize: 13 }}>Offline. Coach, echoes, nudges, voice and export need a connection.</div>}
+    {!session.online && !roomStatus && (
+      <div role="status" style={{
+        position: 'fixed', left: 16, bottom: 62, zIndex: 80, padding: '8px 12px',
+        background: 'var(--surface-card)', color: 'var(--text-secondary)', borderRadius: 8, fontSize: 13,
+      }}>
+        Offline. Coach, echoes, nudges, voice and export need a connection.
+      </div>
+    )}
     {session.error && <div role="alert">Couldn’t open this device’s saved work. Reload to try again.</div>}
     {upgradeRequired && <div role="alert" style={{ position: 'fixed', left: 16, bottom: 16, zIndex: 90, padding: '12px 16px', background: 'var(--surface-card)', color: 'var(--text-primary)', borderRadius: 8 }}>
       <p>Update required. Reload Windmill to reconnect your account. Your pending work stays on this device.</p>

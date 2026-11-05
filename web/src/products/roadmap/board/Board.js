@@ -6,7 +6,7 @@ import { UnlockRules, unmetPrerequisitesOf, owedCounts, unlocksOf } from '../mod
 export const BOARD_SORTS = ['roadmap', 'newest', 'oldest'];
 export const DONE_RECENT_LIMIT = 12;
 
-const COLUMN_OF_STATE = { locked: 'locked', available: 'upNext', complete: 'done' };
+export const COLUMN_OF_STATE = { locked: 'locked', available: 'upNext', complete: 'done' };
 
 class BoardCard {
   constructor(tree, states, owed, step) {

@@ -16,7 +16,7 @@ const ARROW_STEPS = { ArrowLeft: -1, ArrowRight: 1 };
 
 // The shown column is the host's: a pick here emits roadmap_board_column, the host following a selected step does not.
 export function PhoneSegments({
-  board, focusBoard = board, shown, onShow, selectedId, onSelect, onAnchor, doneExpanded, onExpandDone,
+  board, focusBoard = board, beforeBand = null, shown, onShow, selectedId, onSelect, onAnchor, doneExpanded, onExpandDone,
   query = new BoardQuery(), worn = [], onQuery, onNewStep, onComplete, onDelete,
   selection = null, selectable, kinds = [], sharedKind = null, onHold, onKinds, onRecolor, onDeleteSelection, onDoneSelection,
   arrived = new Set(), leaving = new Set(), dimmed = new Set(), pinned = new Set(), settle, counts = board,
@@ -136,6 +136,7 @@ export function PhoneSegments({
           </div>;
         })}
       </div>
+      {beforeBand}
       {selection ? (
         <BulkBar count={selection.count} kinds={kinds} sharedKind={sharedKind} onKinds={onKinds}
           onRecolor={onRecolor} onDelete={onDeleteSelection} onDone={onDoneSelection} />

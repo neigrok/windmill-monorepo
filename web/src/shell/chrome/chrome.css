@@ -82,6 +82,135 @@ a.wm-switch-btn:hover {
   justify-self: end;
 }
 
+.wm-head.wm-head--status {
+  grid-template-columns: 32px minmax(0, 1fr) auto auto;
+  position: relative;
+  z-index: 2;
+}
+
+.wm-room-status {
+  position: relative;
+  width: 280px;
+  margin-right: 16px;
+  text-align: right;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.wm-head-sign-in {
+  min-height: 44px;
+  padding: 0 12px;
+  border: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.wm-head-sign-in:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.wm-room-status-announcement {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.wm-room-status-compact,
+.wm-room-status-narrow {
+  display: none;
+}
+
+@media (max-width: 743px) {
+  .wm-head.wm-head--status {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+  }
+
+  .wm-head--status .wm-head-mark {
+    display: none;
+  }
+
+  .wm-head--status .wm-switch {
+    justify-self: start;
+  }
+
+  .wm-head--status .wm-switch-btn {
+    padding-inline: 6px;
+    font-size: 12px;
+  }
+
+  .wm-room-status {
+    display: flex;
+    align-items: center;
+    width: 72px;
+    height: 44px;
+    margin-right: 8px;
+  }
+
+  .wm-room-status-full {
+    display: none;
+  }
+
+  .wm-room-status.wm-room-status--device {
+    width: 0;
+    margin-right: 0;
+  }
+
+  .wm-room-status-compact {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+}
+
+@media (max-width: 359px) {
+  .wm-room-status {
+    width: 44px;
+  }
+
+  .wm-room-status-compact {
+    display: none;
+  }
+
+  .wm-room-status-narrow {
+    display: inline-flex;
+  }
+
+  .wm-room-status-tap {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+  }
+
+  .wm-room-status-tap:focus-visible {
+    outline: 2px solid var(--color-brand);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+  }
+}
+
 /* ---- The room ---- */
 
 .wm-room {
