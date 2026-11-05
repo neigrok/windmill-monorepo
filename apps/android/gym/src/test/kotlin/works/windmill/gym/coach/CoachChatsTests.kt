@@ -887,6 +887,36 @@ class CoachChatsTests {
         }
     }
 
+    // A refused answer says the balance is gone only where its own allowance read says so, and a file holding no read says nothing of the balance. The line outlives the settle that rewrites the file.
+    @Test fun aRetainedRefusalSaysSpentOnlyWhereItsOwnReadSaysSo() = runTest {
+        val gone = "You have used all of your AI allowance."
+        val unavailable = "Coach’s AI allowance is unavailable right now."
+        fun read(remaining: String, reserved: String) = ""","allowance":{"code":"subject_exhausted","currency":"USD","period":"lifetime","tier":"anonymous","configured":true,"limit":"0.050000000","used":"0.050000000","reserved":"$reserved","remaining":"$remaining"}"""
+        for ((allowance, said) in listOf(
+            read("0.000000000", "0.000000000") to gone,
+            read("0.010000000", "0.000000000") to unavailable,
+            read("0.000000000", "0.010000000") to unavailable,
+            ""","allowance":{"remaining":"0.000000000"}""" to unavailable,
+            "" to unavailable,
+        )) {
+            val file = File(folder.newFolder(), LocalCoach.fileName)
+            file.writeText("""{"anonymousId":"anonymous:phone","selected":{"anonymous:phone":"c"},"chats":{},"onboarding":{"anonymous:phone":{"r":{"owner":"anonymous:phone","chat":"c","replica":"x","requestId":"r","body":"{\"text\":\"Again\"}","createdAtMs":1,
+                "response":{"requestId":"r","resultId":"z","status":"failed","expiresAtMs":9,"routines":[]$allowance,"errorCode":"subject_exhausted","message":""}}}}}""")
+            room(answers("Hi"), file).use { room ->
+                val coach = room.store.coach
+                assertEquals("c", coach.selectedChatId)
+                room.store.conversations.read()
+                assertEquals(allowance, said, coach.exchanges("c").single().retained?.line)
+            }
+            LocalCoach(file).settle()
+            room(answers("Hi"), file).use { room ->
+                assertEquals("c", room.store.coach.selectedChatId)
+                room.store.conversations.read()
+                assertEquals(allowance, said, room.store.coach.exchanges("c").single().retained?.line)
+            }
+        }
+    }
+
     private val retainedResponse = """{"requestId":"answered-1","resultId":"result-1","status":"completed","expiresAtMs":9,"routines":[],"allowance":{"code":"ok","currency":"USD","period":"lifetime","tier":"anonymous","configured":true,"used":"0","reserved":"0","remaining":"1"},"message":"Here is a plan"}"""
 
     // One retained answer with a body this build cannot read costs that answer: History, the transcript and the good answer beside it stand, and one failure says nothing of what it held.

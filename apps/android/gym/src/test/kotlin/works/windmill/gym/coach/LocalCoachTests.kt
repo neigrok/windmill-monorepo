@@ -95,7 +95,9 @@ class LocalCoachTests {
 
     @Test
     fun anUnreadableEarlierFileIsLeftWhereItIsAndNeverSettles() {
-        for (text in listOf("""{"chats":""", """{"chats":{},"drafts":5}""", "[]")) {
+        val record = """{"owner":"a","chat":"c","replica":"x","requestId":"r","body":"{}","createdAtMs":1,"response":{"requestId":"r","resultId":"z","status":"failed","routines":[],"allowance":"""
+        for (text in listOf("""{"chats":""", """{"chats":{},"drafts":5}""", "[]",
+            """{"onboarding":{"a":{"r":$record 7}}}}""", """{"onboarding":{"a":{"r":$record {"remaining":7}}}}}""")) {
             val directory = tmp.newFolder()
             val file = File(directory, "coach")
             file.writeText(text)
@@ -110,6 +112,26 @@ class LocalCoachTests {
             assertEquals(text, file.readText())
             assertArrayEquals(byteArrayOf(9), File(photos, "kept-photo").readBytes())
         }
+    }
+
+    // What a retained answer's allowance read holds outlives the settle that rewrites the file; a file written before it held one, or by a build that dropped it, reads as well and stays as it is.
+    @Test
+    fun aRetainedAnswerKeepsItsBalanceThroughTheSettleAndAnOlderFileWithoutOneReads() {
+        val release = """"allowance":{"code":"subject_exhausted","currency":"USD","period":"lifetime","tier":"anonymous","configured":true,"limit":"0.05","used":"0.05","reserved":"0.00","remaining":"0.00"},"""
+        fun document(extra: String, allowance: String) = """{"anonymousId":"a"$extra,"onboarding":{"a":{"r":{"owner":"a","chat":"c","replica":"x","requestId":"r","body":"{}","createdAtMs":1,"response":{"requestId":"r","resultId":"z","status":"failed","routines":[],$allowance"errorCode":"subject_exhausted"}}}}}"""
+        val rewritten = File(tmp.newFolder(), "coach").apply { writeText(document(""","chats":{}""", release)) }
+        val stamp = rewritten.lastModified()
+        LocalCoach(rewritten).settle()
+        assertEquals("""{"anonymousId":"a","localChats":{"a":{"c":{"id":"c","createdAtMs":$stamp,"updatedAtMs":$stamp}}},"onboarding":{"a":{"r":{"owner":"a","chat":"c","replica":"x","requestId":"r","body":"{}","createdAtMs":1,"response":{"requestId":"r","resultId":"z","status":"failed","routines":[],"errorCode":"subject_exhausted","allowance":{"remaining":"0.00","reserved":"0.00"}}}}}}""", rewritten.readText())
+        assertTrue(LocalCoach(rewritten).retained("a", "c").single().response!!.spent)
+
+        val without = document("", "")
+        val older = File(tmp.newFolder(), "coach").apply { writeText(without) }
+        val read = LocalCoach(older)
+        assertTrue(read.readable)
+        read.settle()
+        assertFalse(read.retained("a", "c").single().response!!.spent)
+        assertEquals(without, older.readText())
     }
 
     // Any write drops an earlier file's conversations; the photos only they named still go at the settle that follows it, in this launch or the next.

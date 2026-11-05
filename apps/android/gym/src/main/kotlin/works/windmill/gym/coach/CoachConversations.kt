@@ -436,7 +436,7 @@ private fun CoachExchange(record: CoachOnboardingRecord, saved: CoachImportRecei
     }
     val line = when {
         answered || code == "account_required" -> null
-        code == "subject_exhausted" -> CoachTurnRefusal.of(code).sentence
+        code == "subject_exhausted" -> CoachTurnRefusal.of(code, spent = response?.spent == true).sentence
         code in setOf("free_day_exhausted", "free_month_exhausted", "concurrency_exhausted", "funding_required") ->
             response?.message?.takeIf { it.isNotBlank() } ?: record.refusalMessage ?: Ask.couldNotTake
         else -> Ask.couldNotTake

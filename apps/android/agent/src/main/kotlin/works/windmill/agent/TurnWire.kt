@@ -65,6 +65,10 @@ data class TurnRefusal(val status: Int, val code: String, val budgetResetsAtMs: 
         val codes = allowanceCodes + setOf("coach-bad-request", "coach-update-required", "coach-turn-conflict", turnUnknown, turnOrder,
             "coach-turn-volume", rateLimited, "coach-replica-syncing", busy, vendorError, streamReplaced)
 
+        // §7.1: an allowance read says the balance is gone when nothing remains and no unresolved call holds any of it. A read that is absent or cannot be read says nothing of the balance.
+        fun spent(remaining: String?, reserved: String?): Boolean =
+            remaining?.toBigDecimalOrNull()?.signum() == 0 && reserved?.toBigDecimalOrNull()?.signum() == 0
+
         // No server said this: no attempt to open the turn reached one this phone could read, so it names no status, and the turn never began.
         val unreached: TurnRefusal get() = TurnRefusal(0, unreachable, null)
 
@@ -175,10 +179,9 @@ private inline fun <T> readable(read: () -> T): T = try {
     throw TurnWireFault(TurnWireFault.unreadable)
 }
 
-// §7.1: the allowance read says the balance is gone when nothing remains and no unresolved call holds any of it. A read that is absent or cannot be read says nothing of the balance.
 private fun spent(allowance: Json?): Boolean {
-    fun usd(name: String) = (allowance?.get(name) as? Json.Str)?.value?.toBigDecimalOrNull()
-    return usd("remaining")?.signum() == 0 && usd("reserved")?.signum() == 0
+    fun usd(name: String) = (allowance?.get(name) as? Json.Str)?.value
+    return TurnRefusal.spent(usd("remaining"), usd("reserved"))
 }
 
 // A moment the server names is a courtesy: one that cannot be read is no moment, and the refusal stands.
