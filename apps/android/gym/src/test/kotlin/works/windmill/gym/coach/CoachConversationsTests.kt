@@ -15,6 +15,7 @@ import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -44,6 +45,7 @@ import works.windmill.gym.domain.coach.RunAbility
 import works.windmill.gym.domain.coach.CoachMessage
 import works.windmill.gym.domain.coach.CoachThread
 import works.windmill.gym.domain.coach.CoachTurnBounds
+import works.windmill.gym.domain.coach.DeleteConversation
 import works.windmill.gym.domain.coach.EndTurn
 import works.windmill.gym.domain.coach.MessageState
 import works.windmill.gym.domain.coach.OpenTurn
@@ -159,6 +161,92 @@ class CoachConversationsTests {
             assertEquals(listOf("Another"), coach.exchanges(second).map { it.question })
             coach.stop()
             advanceUntilIdle()
+        }
+    }
+
+    // What a return draws before its first read lands. A turn of this phone's that ended while nothing watched is no longer on its way, and the read says how it ended. History's row of it is held back for that read, as a first visit's are.
+    @Test fun theFirstFrameOfAReturnDrawsNoEndedTurnAsRunning() = runTest {
+        val server = ScriptedTurns(Json.parse("""[{"event":"text","data":{"delta":"Reading"}},{"await":"stop"},{"event":"text","data":{"delta":" it all."}},{"event":"done","data":{"state":"completed"}}]""").arr())
+        EngineRoomFixture(folder.newFolder(), work(), coachServer = server, localCoach = LocalCoach(File(folder.newFolder(), LocalCoach.fileName)), coachShown = false).use { room ->
+            val coach = room.store.coach
+            val conversations = room.store.conversations
+            backgroundScope.launch { conversations.observe() }
+            conversations.showing(true)
+            conversations.watchHistory(true)
+            val chat = coach.freshChat()
+            assertTrue(coach.send(chat, "Question"))
+            advanceTimeBy(1_000)
+            assertEquals(listOf(MessageState.running), coach.exchanges(chat).map { it.answer?.state })
+            assertTrue(coach.exchanges(chat).single().waiting)
+            assertEquals(listOf(true), coach.history.map { it.answering })
+
+            conversations.watchHistory(false)
+            conversations.showing(false)
+            coach.stop()
+            advanceUntilIdle()
+            runCurrent()
+            val first = coach.exchanges(chat).single()
+            assertFalse(first.waiting)
+            assertEquals("", first.answer?.text)
+            assertNull(conversations.rows)
+
+            conversations.showing(true)
+            conversations.watchHistory(true)
+            advanceTimeBy(1_000)
+            val read = checkNotNull(coach.exchanges(chat).single().answer)
+            assertEquals(MessageState.completed, read.state)
+            assertEquals("Reading it all.", read.text)
+            assertEquals(listOf(false), coach.history.map { it.answering })
+        }
+    }
+
+    // A running message from another phone is that phone's: its turn may be alive, so a return draws it running.
+    @Test fun aRunningMessageFromAnotherPhoneStaysRunningOnAReturn() = runTest {
+        val log = EngineRoomFixture.server()
+        val turn = EngineRoomFixture(folder.newFolder(), work()).use { other ->
+            other.select("alice")
+            other.sync(log)
+            val runner = ActionRunner(other.engine, other.engine.registry, FixedZone(0), object : ActionContext { override var insideRun = false })
+            (runner.run(OpenTurn(null, "Question")) as Outcome.Committed).result.also { other.sync(log) }
+        }
+        EngineRoomFixture(folder.newFolder(), work(), coachServer = ScriptedTurns(emptyList()), localCoach = LocalCoach(File(folder.newFolder(), LocalCoach.fileName))).use { room ->
+            room.select("alice")
+            room.sync(log)
+            val coach = room.store.coach
+            val conversations = room.store.conversations
+            val chat = checkNotNull(turn.thread.record.string)
+            coach.selectChat(chat)
+            conversations.read()
+            conversations.showing(false)
+            val first = coach.exchanges(chat).single()
+            assertTrue(first.waiting)
+            assertEquals(true, first.answer?.elsewhere)
+        }
+    }
+
+    // A visit's rows stand while the log stands still, so a return with nothing new draws them at once. Once the log has moved none of them is drawn, a conversation deleted since among them, until the return's first read.
+    @Test fun aReturnToHistoryDrawsNoRowOfAConversationDeletedSince() = runTest {
+        EngineRoomFixture(folder.newFolder(), work(), coachServer = ScriptedTurns(emptyList()), localCoach = LocalCoach(File(folder.newFolder(), LocalCoach.fileName)), coachShown = false).use { room ->
+            val coach = room.store.coach
+            val conversations = room.store.conversations
+            backgroundScope.launch { conversations.observe() }
+            val thread = room.heldConversation("Old question")
+            conversations.watchHistory(true)
+            advanceTimeBy(1_000)
+            assertEquals(listOf(thread), coach.history.map { it.id })
+            conversations.watchHistory(false)
+            advanceTimeBy(1_000)
+            assertEquals(listOf(thread), coach.history.map { it.id })
+
+            val runner = ActionRunner(room.engine, room.engine.registry, FixedZone(0), object : ActionContext { override var insideRun = false })
+            assertTrue(runner.run(DeleteConversation(Id(thread, CoachThread))) is Outcome.Committed)
+            advanceTimeBy(1_000)
+            assertNull(conversations.rows)
+            assertEquals(emptyList<ConversationRow>(), coach.history)
+
+            conversations.watchHistory(true)
+            advanceTimeBy(1_000)
+            assertEquals(emptyList<ConversationRow>(), conversations.rows)
         }
     }
 

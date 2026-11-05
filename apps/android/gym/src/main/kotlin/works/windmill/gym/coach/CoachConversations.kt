@@ -171,11 +171,13 @@ class CoachConversations(
     private data class Transcript(val chat: String, val exchanges: List<CoachExchange>)
     private class Reading(val threads: List<CoachThread>, val transcript: Transcript?, val rows: List<ConversationRow>?)
 
-    // What the reads follow. With no screen of Coach standing nothing is read, and a turn running meanwhile asks for no read: its words follow `live`, and the screen that returns reads what it wrote.
+    // What the reads follow. With no screen of Coach standing nothing is read, and a turn running meanwhile asks for no read: its words follow `words`, and the screen that returns reads what it wrote.
     private val watched = MutableStateFlow(Watched())
     private var open by mutableStateOf<Transcript?>(null)
     private var undecodedReported = false
-    private var live by mutableStateOf<LiveAnswer?>(null)
+    // The message this phone's turn is writing, ahead of what its record holds. It changes twice a turn, so a whole transcript may read it; its words change on every frame, so only the answer they belong to does.
+    private var following by mutableStateOf<Id<CoachMessage>?>(null)
+    private var words by mutableStateOf("")
 
     // Whether this phone's turn has lost its stream and is finding it again.
     var reconnecting by mutableStateOf(false)
@@ -183,11 +185,18 @@ class CoachConversations(
     // Every thread the seat holds, cheap enough to read on each revision of a streaming turn.
     var threads by mutableStateOf<List<CoachThread>>(emptyList())
         private set
-    // History's rows; absent until a read has made them.
+    // History's rows; absent until a read has made them, and again once the log moves with History away.
     var rows by mutableStateOf<List<ConversationRow>?>(null)
         private set
 
-    fun exchanges(chat: String): List<CoachExchange> = open?.takeIf { it.chat == chat }?.exchanges.orEmpty()
+    // The transcript as the last read held it. With no screen standing nothing is read, so what a return draws before its first read lands is that read, with one thing corrected now: a running message this phone wrote and holds no turn for has ended, and the read will say how. Another device's may be alive.
+    fun exchanges(chat: String): List<CoachExchange> = open?.takeIf { it.chat == chat }?.exchanges.orEmpty().map { it.copy(answer = it.answer?.let(::endedHere)) }
+
+    private fun endedHere(reply: CoachReply): CoachReply {
+        if (!reply.running || !reply.onThisPhone) return reply
+        val held = following?.record?.string == reply.id || turns?.turn?.value?.coach?.record?.string == reply.id
+        return if (held) reply else reply.copy(state = MessageState.completed)
+    }
 
     fun watch(chat: String?, thread: String?, retained: List<CoachOnboardingRecord>) {
         watched.update { it.copy(chat = chat, thread = thread, retained = retained) }
@@ -204,12 +213,12 @@ class CoachConversations(
 
     // An answer as it stands this moment. A running message this phone writes carries the words so far, which its record takes only every few seconds. An ended message is its record's alone.
     fun standing(reply: CoachReply): CoachReply {
-        val words = live?.takeIf { reply.running && it.message.record.string == reply.id } ?: return reply
-        return reply.copy(text = words.text)
+        if (!reply.running || following?.record?.string != reply.id) return reply
+        return reply.copy(text = words)
     }
 
     fun forgetSeat() {
-        live = null
+        following = null
         reconnecting = false
         open = null
         threads = emptyList()
@@ -222,13 +231,15 @@ class CoachConversations(
             launch { running.liveAnswer.collect { answer -> follow(answer) } }
             launch { running.activity.collect { reconnecting = it?.reconnecting == true } }
         }
+        launch { training.engine.revisions().collect { if (!watched.value.history) rows = null } }
         combine(training.engine.revisions(), watched) { revision, wanted -> revision to wanted }.collectLatest { read() }
     }
 
     // A turn's end has committed by the time its words go, so what it left is read first and the answer never shows an older commit on its way to the final text.
     private suspend fun follow(answer: LiveAnswer?) {
-        if (answer == null && live != null) read()
-        live = answer
+        if (answer == null && following != null) read()
+        following = answer?.message
+        words = answer?.text.orEmpty()
     }
 
     suspend fun read() {
