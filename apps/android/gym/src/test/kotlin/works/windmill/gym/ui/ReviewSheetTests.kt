@@ -935,7 +935,7 @@ class ReviewSheetTests {
             assertEquals(mapOf(pending.id to settled), room.store.routines.unseenRemovalReceipts)
             owner.lifecycle.currentState = Lifecycle.State.RESUMED
         }
-        compose.waitUntil(5_000) { room.store.routines.unseenRemovalReceipts.isEmpty() }
+        compose.waitUntil(5_000) { compose.runOnIdle { room.store.routines.unseenRemovalReceipts.isEmpty() } }
         compose.onNodeWithText(requireNotNull(settled.receipt)).assertIsDisplayed()
         compose.runOnIdle { runBlocking { assertEquals(ProposalRead.Found(settled), room.store.routines.proposal(pending.id)) } }
         scope.cancel()

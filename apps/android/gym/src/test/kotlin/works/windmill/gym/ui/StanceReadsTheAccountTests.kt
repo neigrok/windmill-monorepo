@@ -188,7 +188,7 @@ class StanceReadsTheAccountTests {
         compose.setContent { ThreadsScreen(threads, threads, "Coach", {}, {}, {}) }
         compose.waitUntil(5_000) { compose.onAllNodesWithText("why is my bench stalled?").fetchSemanticsNodes().isNotEmpty() }
         val deleted = compose.runOnIdle { scope.async { store.coach.deleteThread(thread) } }
-        compose.waitUntil(5_000) { deleted.isCompleted }
+        compose.waitUntil(5_000) { compose.runOnIdle { deleted.isCompleted } }
         assertEquals(GymResult.Ok(Unit), runBlocking { deleted.await() })
         compose.runOnIdle {
             assertEquals(emptyList<ConversationRow>(), store.coach.history)

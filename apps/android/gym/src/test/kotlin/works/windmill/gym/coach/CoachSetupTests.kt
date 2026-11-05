@@ -163,7 +163,7 @@ class CoachSetupTests {
                 runBlocking { room.store.refreshEngine() }
             }
             compose.waitForIdle()
-            compose.waitUntil(5_000) { LocalCoach(file).draft(phone, "phone-chat") == CoachDraft() }
+            compose.waitUntil(5_000) { compose.runOnIdle { LocalCoach(file).draft(phone, "phone-chat") == CoachDraft() } }
             compose.runOnIdle {
                 val adopted = LocalCoach(file)
                 val selected = requireNotNull(adopted.selected("alice"))

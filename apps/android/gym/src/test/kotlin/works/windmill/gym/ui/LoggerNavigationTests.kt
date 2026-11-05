@@ -110,7 +110,7 @@ class LoggerNavigationTests {
             val firstNext = compose.onNode(hasContentDescription("Exercise 1 of 2")).fetchSemanticsNode()
                 .config[SemanticsActions.CustomActions].single()
             compose.runOnIdle { hold = true; firstNext.action() }
-            compose.waitUntil(10_000) { pending.isNotEmpty() }
+            compose.waitUntil(10_000) { compose.runOnIdle { pending.isNotEmpty() } }
             compose.runOnIdle { assertEquals("barbell-row", room.store.workout.exerciseId) }
             compose.onNodeWithText("Log set").assertIsNotEnabled()
             val oldRead = pending.remove()
@@ -133,7 +133,7 @@ class LoggerNavigationTests {
             val secondNext = compose.onNode(hasContentDescription("Exercise 1 of 2")).fetchSemanticsNode()
                 .config[SemanticsActions.CustomActions].single()
             compose.runOnIdle { hold = true; secondNext.action() }
-            compose.waitUntil(10_000) { pending.isNotEmpty() }
+            compose.waitUntil(10_000) { compose.runOnIdle { pending.isNotEmpty() } }
             compose.runOnIdle { oldRead.run() }
             compose.onNodeWithText("Log set").assertIsNotEnabled()
             compose.runOnIdle { assertEquals("overhead-press", room.store.workout.exerciseId) }

@@ -613,7 +613,7 @@ class FinishSheetTests {
             show(room, restoration)
             finish()
             shareReceipt()
-            compose.waitUntil(10_000) { opened.size == 1 }
+            compose.waitUntil(10_000) { compose.runOnIdle { opened.size == 1 } }
             val request = opened.single()
             restoration.emulateSavedInstanceStateRestore()
             compose.runOnIdle {
@@ -645,7 +645,7 @@ class FinishSheetTests {
         inRoom(server, seat = null) { room ->
             finishAWorkout(room)
             shareReceipt()
-            compose.waitUntil(10_000) { opened.size == 1 }
+            compose.waitUntil(10_000) { compose.runOnIdle { opened.size == 1 } }
             compose.runOnIdle { attempts.cancel() }
             compose.waitForIdle()
             runBlocking { room.select("u1") }
@@ -665,7 +665,7 @@ class FinishSheetTests {
         inRoom(server, seat = null) { room ->
             finishAWorkout(room)
             compose.onNodeWithText("Only on this phone · Keep it").performScrollTo().performClick()
-            compose.waitUntil(10_000) { ordinary == 1 }
+            compose.waitUntil(10_000) { compose.runOnIdle { ordinary == 1 } }
             compose.runOnIdle { assertEquals(emptyList<String>(), tracked); assertEquals(emptyList<String>(), server.opened.map { it.question }) }
             compose.onNodeWithContentDescription("Back to Routines").performClick()
             startAWorkout(room)
@@ -725,7 +725,7 @@ class FinishSheetTests {
         inRoom(server, seat = null) { room ->
             finishAWorkout(room)
             shareReceipt()
-            compose.waitUntil(10_000) { opened.isNotEmpty() }
+            compose.waitUntil(10_000) { compose.runOnIdle { opened.isNotEmpty() } }
             compose.runOnIdle {
                 attempts.complete("alice")
                 presentedAccount = Account("https://windmill.works", works.windmill.platform.User("alice", "a@example.com"), resolved = false)
@@ -752,7 +752,7 @@ class FinishSheetTests {
         inRoom(server, seat = null) { room ->
             finishAWorkout(room)
             shareReceipt()
-            compose.waitUntil(10_000) { opened.isNotEmpty() }
+            compose.waitUntil(10_000) { compose.runOnIdle { opened.isNotEmpty() } }
             compose.runOnIdle {
                 attempts.complete("alice")
                 presentedAccount = Account("https://windmill.works", works.windmill.platform.User("alice", "a@example.com"), resolved = false)
@@ -916,7 +916,7 @@ class FinishSheetTests {
                 showing = true
             }
             compose.mainClock.autoAdvance = true
-            compose.waitUntil(10_000) { opened.isNotEmpty() }
+            compose.waitUntil(10_000) { compose.runOnIdle { opened.isNotEmpty() } }
             val request = opened.single()
             runBlocking { room.select("u1") }
             read(room)

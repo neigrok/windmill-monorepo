@@ -49,6 +49,8 @@ ANDROID_SENTRY_DSN=https://local-check@telemetry.invalid/1 ./gradlew build --max
 - Modules use `compileSdk 36`, `minSdk 26` and Java/JVM target 17.
 - Keep the full monorepo: the ladder suite reads `packages/api-contract/gym-ladder.json` directly.
 - Compose UI tests use Robolectric; its first run downloads `android-all` from Maven Central.
+- On Robolectric `waitUntil` only sleeps on the main thread, so its condition goes through `runOnIdle` or the semantics tree,
+  which idle the main looper. `WaitsRunTheLooperTests` holds the rule.
 - Release builds use R8 and resource shrinking; debug stays unminified. `:app:verifyReleaseMapping`
   gates release assembly on the R8 mapping, listed throwable names and bundled library rules.
   Each release APK carries a deterministic ProGuard UUID in `assets/sentry-debug-meta.properties`.

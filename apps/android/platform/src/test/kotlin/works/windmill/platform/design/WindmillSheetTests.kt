@@ -116,7 +116,7 @@ class WindmillSheetTests {
     fun backSlidesTheSheetDownAndDismissesIt() {
         sheet()
         compose.runOnIdle { back.onBackPressed() }
-        compose.waitUntil(5_000) { dismissed == 1 }
+        compose.waitUntil(5_000) { compose.runOnIdle { dismissed == 1 } }
         compose.onNodeWithText("Sheet body").assertDoesNotExist()
     }
 
@@ -131,7 +131,7 @@ class WindmillSheetTests {
             back.dispatchOnBackCancelled()
         }
         compose.mainClock.autoAdvance = true
-        compose.waitUntil(5_000) { dismissed > 0 }
+        compose.waitUntil(5_000) { compose.runOnIdle { dismissed > 0 } }
         compose.waitForIdle()
         assertEquals(1, dismissed)
         compose.onNodeWithText("Sheet body").assertDoesNotExist()

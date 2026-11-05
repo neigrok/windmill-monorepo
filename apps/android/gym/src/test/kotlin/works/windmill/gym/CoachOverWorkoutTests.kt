@@ -155,7 +155,7 @@ class CoachOverWorkoutTests {
         compose.runOnIdle { assertNotEquals(before, phone.store.coach.selectedChatId) }
         compose.runOnIdle { assertEquals(listOf(mapOf("screen" to "coach", "action" to "fresh_entry", "outcome" to "ok"), mapOf("screen" to "workout", "action" to "open_coach", "outcome" to "ok")),
             events.filter { it.first == "gym_action" }.map { it.second }) }
-        compose.waitUntil(5_000) { "coach" in screens() }
+        compose.waitUntil(5_000) { compose.runOnIdle { "coach" in screens() } }
 
         compose.onNode(hasContentDescription("Close sheet")).performSemanticsAction(SemanticsActions.OnClick)
         compose.waitUntil(5_000) { compose.onAllNodesWithText(Ask.placeholder).fetchSemanticsNodes().isEmpty() }
@@ -216,7 +216,7 @@ class CoachOverWorkoutTests {
         compose.onNodeWithText("All two or none. Nothing is applied until you tap.").assertIsDisplayed()
         compose.onNodeWithText("Turn this down").assertIsDisplayed()
         compose.onNodeWithText("Ask Coach").assertDoesNotExist()
-        compose.waitUntil(5_000) { "proposal" in screens() }
+        compose.waitUntil(5_000) { compose.runOnIdle { "proposal" in screens() } }
 
         compose.onNodeWithText("Apply all 2").performClick()
 
@@ -478,7 +478,7 @@ class CoachOverWorkoutTests {
 
         compose.waitUntil(5_000) { compose.onAllNodesWithText(Ask.placeholder).fetchSemanticsNodes().isEmpty() }
         waitFor("History")
-        compose.waitUntil(5_000) { "threads" in screens() }
+        compose.waitUntil(5_000) { compose.runOnIdle { "threads" in screens() } }
 
         val before = compose.runOnIdle { phone.store.coach.selectedChatId }
         compose.onNodeWithContentDescription(Threads.open).performClick()

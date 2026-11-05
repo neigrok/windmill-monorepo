@@ -81,7 +81,7 @@ class LoggerManagementTests {
             compose.runOnIdle { events.clear(); failures.clear(); broken = true }
             if (pick) compose.onNodeWithText("Cable Fly").performScrollTo().performClick()
             else compose.onAllNodes(hasText("Bench Press") and hasClickAction()).onLast().performTouchInput { swipeLeft() }
-            compose.waitUntil(10_000) { said.isNotEmpty() }
+            compose.waitUntil(10_000) { compose.runOnIdle { said.isNotEmpty() } }
             compose.waitUntil(10_000) { compose.onAllNodes(hasText("This workout")).fetchSemanticsNodes().isEmpty() }
             compose.runOnIdle {
                 assertEquals(listOf("The workout could not be saved safely. Restart the app to recover it."), said)

@@ -284,7 +284,7 @@ class CoachComposerTests {
         compose.mainClock.advanceTimeBy(1_000)
         compose.waitForIdle()
         compose.onNodeWithContentDescription("Stop response").performClick()
-        compose.waitUntil(60_000) { server.stops == 1 }
+        compose.waitUntil(60_000) { compose.runOnIdle { server.stops == 1 } }
         assertEquals(listOf("Double tapped question"), server.opened.map { it.question })
         scope.cancel()
     }

@@ -527,7 +527,7 @@ class AskScreenTests {
         room.engine.close()
         compose.onNodeWithTag("coach-read-sources").performClick()
         compose.onNodeWithText("What Coach read").assertIsDisplayed()
-        compose.waitUntil(5_000) { telling.failures.isNotEmpty() }
+        compose.waitUntil(5_000) { compose.runOnIdle { telling.failures.isNotEmpty() } }
         compose.waitForIdle()
         compose.onNodeWithText("Shoulder").assertDoesNotExist()
         compose.onAllNodesWithText("Saved a note").assertCountEquals(2)
