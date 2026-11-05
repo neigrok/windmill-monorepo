@@ -569,11 +569,13 @@ eligible owner keeps that lease while idle; releasing it removes the Shell slot,
 neither publish nor release the next room. The Shell mounts an empty polite live region before its first text
 and keeps the node across idle, Saving, Saved and Offline. From 744px the line is visible; phones show the
 short form where supplied. Registered phone rooms reserve the status slot and keep the mark hidden throughout
-the visit, so status changes do not move navigation. Desktop rooms reserve the status width. Phone device-only
+the visit, so status changes do not move navigation. Every desktop room reserves the same status and account
+columns, including rooms without a publication, so room changes do not move the navigation track. Phone device-only
 rooms keep an empty publication for the Sign in seat, with their device text below the identity row. Readers
 and the demo publish nothing: on phones `sharedShell` alone gives them the same links and seat, with no slot, and
-the global offline notice stays theirs. Rooms with neither keep the existing header and the global offline notice,
-which yields to a registered room before first paint. Below 360px Saving and Saved are announced only, and Offline uses a named icon button
+the global offline notice stays theirs. The global offline notice yields only while a room publishes
+`connectivity: 'offline'`, before first paint; a registration or device-only line does not replace it.
+Below 360px Saving and Saved are announced only, and Offline uses a named icon button
 whose controlled Tooltip opens below the slot for four seconds, until another tap, an outside tap or Escape.
 
 **Refusals.** The host passes refusal code, refused-lane gesture count and stable Retry and Discard actions to
@@ -624,8 +626,10 @@ timers are deduplicated, and closing a session sets its phase offline.
 **Device trees.** `LocalTreeRegistry` associates device trees with accounts, and device reads require identity
 confirmed on this document load. A remembered face does not authorize a store read. Offline the shell gives that answer from
 the replica it restores, so a device read that finds no row waits up to two seconds for it. A session lapse keeps the
-confirmed device owner and pending work on this document; the same account's sign-in resumes synchronization.
-Explicit sign-out and a different account still invoke device cleanup. `ProgressStore.drainInto` migrates
+confirmed device owner and pending work on this document. The shell restores the previous holder from the
+bound sync replica after a reload without granting session authority. The same account's sign-in resumes
+synchronization and retries an unavailable room read automatically; explicit sign-out and a different account
+invoke device cleanup across reloads. `ProgressStore.drainInto` migrates
 older local marks into the private lane. Displayed completion dates use the server's `markedAt`; local
 completion clocks support only incomplete local history.
 

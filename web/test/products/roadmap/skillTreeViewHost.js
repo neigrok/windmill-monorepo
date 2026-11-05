@@ -102,7 +102,7 @@ const content = params.has('shell')
   : React.createElement(SkillTreeView, props);
 createRoot(document.getElementById('root')).render(content);
 `;
-const scene = `
+export const scene = `
 export class SkillTreeScene {
   constructor(canvas, options) {
     this.options = options;

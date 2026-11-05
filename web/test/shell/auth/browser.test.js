@@ -30,7 +30,7 @@ const ready = (async () => {
         import { syncSession } from '/src/platform/sync/session.js';
         import { BrowserSyncEngine } from '/src/platform/sync/engine.js';
         import { Registry } from '/@fs${referencePath}core/registry.js';
-        import { registerRoomStatus } from '/src/shell/roomStatus.js';
+        import { registerRoomStatus, useRoomStatus } from '/src/shell/roomStatus.js';
         function RoomPublication() {
           React.useLayoutEffect(() => {
             const room = registerRoomStatus();
@@ -41,7 +41,9 @@ const ready = (async () => {
         }
         function AuthView({ room }) {
           const auth = useAuth(); window.auth = auth;
+          const publication = useRoomStatus();
           return React.createElement('div', null, room && React.createElement(RoomPublication), React.createElement('p', { id: 'auth-state' }, auth.status),
+            React.createElement('p', { id: 'room-publication' }, JSON.stringify(publication)),
             auth.status === 'signed-in' && React.createElement(React.Fragment, null,
               React.createElement(SessionsSection), React.createElement(CloseAccountSection)));
         }
@@ -435,7 +437,7 @@ test('Chromium: a persisted restore refreshes the account; focus and delayed aut
 });
 
 
-test('Chromium: the global offline notice yields to any room publisher and returns when it leaves', async () => {
+test('Chromium: the global offline notice yields only while a room publishes offline connectivity', async () => {
   await ready;
   const context = await browser.newContext();
   try {
@@ -451,7 +453,8 @@ test('Chromium: the global offline notice yields to any room publisher and retur
         const { registerRoomStatus } = await import('/src/shell/roomStatus.js');
         window.firstRoom = registerRoomStatus();
       });
-      await notice.waitFor({ state: 'detached' });
+      await page.waitForFunction(() => document.getElementById('room-publication')?.textContent === JSON.stringify({ status: null }));
+      await notice.waitFor();
       for (const status of [
         { line: ANONYMOUS_OWNER },
         { line: LAPSED_SESSION },
@@ -459,7 +462,9 @@ test('Chromium: the global offline notice yields to any room publisher and retur
         { line: 'Offline without a connectivity claim' },
       ]) {
         await page.evaluate((status) => firstRoom.publish(status), status);
-        assert.equal(await notice.count(), 0);
+        await page.waitForFunction((status) => document.getElementById('room-publication')?.textContent === JSON.stringify({ status }), status);
+        await notice.waitFor();
+        assert.equal(await notice.count(), 1);
       }
       await page.evaluate(() => firstRoom.publish({ line: 'Room offline', connectivity: 'offline' }));
       await notice.waitFor({ state: 'detached' });
@@ -469,9 +474,13 @@ test('Chromium: the global offline notice yields to any room publisher and retur
         secondRoom.publish({ line: 'Another room offline', connectivity: 'offline' });
         firstRoom.release();
       });
+      await page.waitForFunction(() => document.getElementById('room-publication')?.textContent === JSON.stringify({
+        status: { line: 'Another room offline', connectivity: 'offline' },
+      }));
       assert.equal(await notice.count(), 0);
       await page.evaluate(() => secondRoom.publish(null));
-      assert.equal(await notice.count(), 0);
+      await notice.waitFor();
+      assert.equal(await notice.count(), 1);
       await page.evaluate(() => secondRoom.publish({ line: 'Room offline', connectivity: 'offline' }));
       await notice.waitFor({ state: 'detached' });
       await page.evaluate(() => secondRoom.release());
@@ -512,6 +521,33 @@ test('Chromium: an offline room owns the notice before its first painted frame',
       await page.waitForFunction(() => paintedNotices.length === 3);
       assert.deepEqual(await page.evaluate(() => paintedNotices), [[], [], []]);
       assert.equal(await page.locator('#room-state').textContent(), 'Room offline');
+    });
+  } finally { await context.close(); }
+});
+
+test('Chromium: an anonymous owner keeps the global offline signal beside the device-only line', async () => {
+  await ready;
+  const context = await browser.newContext();
+  try {
+    await context.route('**/v1/me', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '{"user":null}' }));
+    const page = await context.newPage();
+    await withBrowserErrors(page, async () => {
+      await page.goto(`${origin}/auth-test`);
+      await page.waitForFunction(() => typeof mountAuth === 'function');
+      await page.evaluate(() => mountAuth('auth-anonymous-offline', false));
+      await page.waitForFunction(() => document.getElementById('auth-state')?.textContent === 'ghost');
+      await page.evaluate(async (line) => {
+        const { syncSession } = await import('/src/platform/sync/session.js');
+        const { registerRoomStatus } = await import('/src/shell/roomStatus.js');
+        window.anonymousRoom = registerRoomStatus();
+        anonymousRoom.publish({ line, narrow: 'device' });
+        syncSession.publish({ online: false });
+      }, ANONYMOUS_OWNER);
+      const notice = page.getByText('Offline. Coach, echoes, nudges, voice and export need a connection.', { exact: true });
+      await notice.waitFor();
+      assert.deepEqual(await page.evaluate(() => ({ user: auth.user, status: auth.status, lapsed: auth.lapsed })),
+        { user: null, status: 'ghost', lapsed: false });
+      assert.equal(await notice.count(), 1);
     });
   } finally { await context.close(); }
 });

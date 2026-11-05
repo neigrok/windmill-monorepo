@@ -5,6 +5,7 @@ import { environment, until } from '../../platform/sync/fakes.js';
 import { BrowserSyncEngine } from '../../../src/platform/sync/engine.js';
 import { syncSession } from '../../../src/platform/sync/session.js';
 import { roadmapRoutes } from '../../../src/products/roadmap/routes.js';
+import { ANONYMOUS_OWNER, LAPSED_SESSION, SYNC_STATUS } from '../../../src/products/roadmap/copy.js';
 
 async function account(t) {
   let view;
@@ -30,7 +31,7 @@ async function account(t) {
     });
   }
   window.localStorage = localStorage;
-  const engine = await BrowserSyncEngine.open(env.options);
+  let engine = await BrowserSyncEngine.open(env.options);
   t.after(() => engine.close());
   env.transport.account = 'A';
   let me = { id: 'A', name: 'Ada' };
@@ -52,7 +53,15 @@ async function account(t) {
   await engine.commit('self/probe', [{ op: 'create', t: 'card', id: 'card0001', f: { title: 'pending' } }]);
   const replica = engine.device.activeReplica.id;
   const entries = structuredClone(engine.device.activeReplica.outbox);
-  return { env, engine, auth, view, forgotten, replica, entries, broadcasts, setMe(value) {
+  return { env, get engine() { return engine; }, auth, view, forgotten, replica, entries, broadcasts, async reload() {
+    view.unmount();
+    await engine.close();
+    engine = await BrowserSyncEngine.open(env.options);
+    syncSession.engine = engine;
+    syncSession.opening = Promise.resolve(engine);
+    delete window.wmDeviceConfirmation;
+    view = renderHook(t, () => AuthProvider({ children: null }));
+  }, setMe(value) {
     me = value;
     env.transport.account = value?.id ?? null;
   } };
@@ -133,3 +142,58 @@ test('the refused-device line stands in the shell until a surface that says it h
   release();
   assert.deepEqual(said(), ['Couldn’t open this device’s saved work. Reload to try again.']);
 });
+
+test('the global offline notice yields only to a published offline status, including an anonymous device owner', async (t) => {
+  const state = await account(t);
+  state.setMe(null);
+  await state.auth().refresh();
+  syncSession.getSnapshot.mock.mockImplementation(() => ({ engine: state.engine, ready: true, online: false, error: false }));
+  const notices = () => elementsOf(state.view.tree).filter((node) => node.props.role === 'status').map(textOf);
+  const offlineNotice = ['Offline. Coach, echoes, nudges, voice and export need a connection.'];
+  state.view.redraw();
+  assert.deepEqual(notices(), offlineNotice);
+  const { registerRoomStatus } = await loadScreen('shell/roomStatus.js');
+  const room = registerRoomStatus();
+  t.after(room.release);
+  state.view.redraw();
+  assert.deepEqual(notices(), offlineNotice);
+  for (const status of [
+    { line: ANONYMOUS_OWNER, narrow: 'device' },
+    { line: LAPSED_SESSION, narrow: 'device' },
+    { line: SYNC_STATUS.saving, narrow: 'announce' },
+    { line: SYNC_STATUS.offline },
+  ]) {
+    room.publish(status);
+    state.view.redraw();
+    assert.deepEqual(notices(), offlineNotice);
+  }
+  room.publish({ line: SYNC_STATUS.offline, connectivity: 'offline' });
+  state.view.redraw();
+  assert.deepEqual(notices(), []);
+  room.publish(null);
+  state.view.redraw();
+  assert.deepEqual(notices(), offlineNotice);
+  room.release();
+  state.view.redraw();
+  assert.deepEqual(notices(), offlineNotice);
+});
+
+for (const returning of ['A', 'B']) {
+  test(`a lapsed document reload restores the durable holder before ${returning} signs in`, async (t) => {
+    const state = await account(t);
+    state.setMe(null);
+    await state.auth().refresh();
+    await state.reload();
+    await until(() => state.auth().status === 'ghost');
+    assert.equal(state.auth().lapsed, true);
+    assert.deepEqual(state.forgotten, []);
+    const user = { id: returning, name: returning };
+    state.setMe(user);
+    await state.auth().signIn(user);
+    assert.deepEqual(state.forgotten, returning === 'A' ? [] : [{ previous: 'A', next: 'B' }]);
+    assert.equal(state.auth().status, 'signed-in');
+    assert.equal(state.engine.device.activeReplica.meta.account, returning);
+    assert.deepEqual(state.engine.device.activeReplica.outbox, returning === 'A' ? state.entries : []);
+    assert.deepEqual(state.env.failures, []);
+  });
+}

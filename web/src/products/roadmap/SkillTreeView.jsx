@@ -115,7 +115,7 @@ export function SkillTreeView({ treeId, demo = false }) {
   // The canvas, then the tree it draws.
   const { scene, panning, hoveredId } = useRoomScene({ anchors, sceneRef, desktopEditorRef, breakpoint, editing, selection, reorderHint: structure.reorderHint, onPickNothing: closeActivity, showToast });
   const load = useRoomLoad({
-    treeId, demo, shared, demotion, breakpoint, placeKept, room, scene, framing, structure, progressActs, activity,
+    treeId, accountId: account?.id ?? null, demo, shared, demotion, breakpoint, placeKept, room, scene, framing, structure, progressActs, activity,
     legend: legendKit, workspace: { hydrateWorkspaces, pushArcs }, selection, dismissToast, desktopEditorRef,
     onRemoteProgress: (remote) => {
       const said = progressActs.adoptRemote(remote);

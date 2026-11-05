@@ -13,6 +13,7 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { Shell } from '/src/shell/chrome/Shell.jsx';
 import { registerRoomStatus } from '/src/shell/roomStatus.js';
+import { PRODUCTS } from '/src/shell/products.js';
 import '/src/styles/fonts.js';
 import '/src/styles/global.css';
 window.publish = (status) => {
@@ -23,7 +24,15 @@ window.publish = (status) => {
 const outside = () => React.createElement('button', { id: 'outside' }, 'Outside');
 const sharedRoom = { id: 'roadmap', label: 'Roadmap', shell: { scope: { theme: null, brand: 'roadmap' }, sharedShell: true },
   render: () => ({ Component: outside, props: {} }), home: () => '' };
-createRoot(document.getElementById('root')).render(React.createElement(Shell, location.search.includes('shared')
+const root = createRoot(document.getElementById('root'));
+window.showRoom = (id) => {
+  const product = PRODUCTS.find((product) => product.id === id);
+  root.render(React.createElement(Shell, {
+    location: { pathname: product.shell.room, hash: '', search: '' },
+    roomProduct: { ...product, render: () => ({ Component: outside, props: {} }) },
+  }));
+};
+root.render(React.createElement(Shell, location.search.includes('shared')
   ? { location: { pathname: '/', hash: '#/demo', search: '' }, roomProduct: sharedRoom }
   : { location: { pathname: '/app', hash: '', search: '' }, neutral: { Component: outside } }));
 `;
@@ -291,6 +300,51 @@ for (const width of [744, 1440]) {
             return { navClear: nav.right <= slot.left, seatClear: slot.right <= seat.left,
               lineFits: line.width <= slot.width, seatFits: seat.right <= innerWidth };
           }), { navClear: true, seatClear: true, lineFits: true, seatFits: true });
+        }
+      }, query);
+    });
+  }
+}
+
+for (const width of [744, 1440]) {
+  for (const query of ['', '?ghost']) {
+    test(`desktop room links keep their navigation track across routes and publications at ${width} ${query}`, async (t) => {
+      await visit(t, width, async (page) => {
+        const navigationTrack = () => page.locator('.wm-head').evaluate((header) => {
+          const style = getComputedStyle(header);
+          const columns = style.gridTemplateColumns.split(' ').map(Number.parseFloat);
+          const left = header.getBoundingClientRect().left + Number.parseFloat(style.paddingLeft) + columns[0] + Number.parseFloat(style.columnGap);
+          return { left, width: columns[1] };
+        });
+        const initialTrack = await navigationTrack();
+        const navigationAnchor = () => page.locator('.wm-switch').evaluate((navigation) => {
+          const box = navigation.getBoundingClientRect();
+          return box.left + box.width / 2;
+        });
+        const initialAnchor = await navigationAnchor();
+        for (const id of ['roadmap', 'journal', 'gym', 'roadmap']) {
+          await page.evaluate((id) => window.showRoom(id), id);
+          await page.locator(`.wm-switch-btn[href="/app/${id}"][aria-current="page"]`).waitFor();
+          for (const status of [null, { line: ANONYMOUS_OWNER, narrow: 'device' }, offline]) {
+            await page.evaluate((status) => window.publish(status), status);
+            await page.waitForFunction((line) => document.querySelector('.wm-room-status-full')?.textContent === line, status?.line ?? '');
+            assert.deepEqual(await navigationTrack(), initialTrack);
+            assert.ok(Math.abs(await navigationAnchor() - initialAnchor) <= 1, 'room changes preserve the navigation anchor within one CSS pixel');
+            assert.deepEqual(await page.evaluate(() => {
+              const nav = document.querySelector('.wm-switch').getBoundingClientRect();
+              const slot = document.querySelector('.wm-room-status').getBoundingClientRect();
+              const seat = document.querySelector('.wm-head-seat').getBoundingClientRect();
+              const line = document.querySelector('.wm-room-status-full').getBoundingClientRect();
+              return { navClear: nav.right <= slot.left, seatClear: slot.right <= seat.left,
+                lineFits: line.width <= slot.width, seatFits: seat.right <= innerWidth };
+            }), { navClear: true, seatClear: true, lineFits: true, seatFits: true });
+          }
+          const published = await page.locator('.wm-switch').boundingBox();
+          await page.evaluate(() => { window.statusLease.release(); window.statusLease = null; });
+          await page.locator('.wm-room-status').waitFor({ state: 'detached' });
+          assert.deepEqual(await navigationTrack(), initialTrack);
+          assert.ok(Math.abs(await navigationAnchor() - initialAnchor) <= 1, 'releasing a publication preserves the navigation anchor within one CSS pixel');
+          assert.deepEqual(await page.locator('.wm-switch').boundingBox(), published);
         }
       }, query);
     });

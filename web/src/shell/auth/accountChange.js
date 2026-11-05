@@ -13,6 +13,12 @@ export class DeviceSeat {
     this.products = products;
   }
 
+  // The durable bound replica remembers the holder, without granting session authority.
+  restoreHolder(meta) {
+    if (this.confirmed) return;
+    this.previousAccount = meta.state === 'bound' ? meta.account : null;
+  }
+
   // `me` is a user, null for a real 401, undefined for a blip. Returns null when nothing changes.
   receive(me, { signedOut = false } = {}) {
     if (me === undefined) {

@@ -136,6 +136,7 @@ export default function AuthProvider({ children }) {
     const engine = await syncSession.opening;
     if (engine?.restoring) await engine.restoring;
     if (!engine || engine.closed) return undefined;
+    seat.restoreHolder(engine.device.activeReplica.meta);
     if (engine.device.meta.closingAccount) {
       const lock = engine.device.meta.signOut?.lock;
       if (lock && !engine.releaseSignOut && (await navigator.locks.query()).held.some((held) => held.name === lock)) return undefined;
@@ -167,12 +168,13 @@ export default function AuthProvider({ children }) {
   }), [enqueue, settle, bind, seat, finishClosure]);
   const signIn = useCallback((me) => enqueue(async () => {
     await syncSession.opening;
+    seat.restoreHolder(syncSession.engine.device.activeReplica.meta);
     if (syncSession.engine.device.meta.closingAccount) await finishClosure();
     // A freshly verified cookie supersedes any cleanup owed for an earlier session.
     await syncSession.engine.write(null, (device) => { delete device.meta.clearCredential; });
     await bind(me);
     channel.current?.postMessage({ type: 'signed-in' });
-  }), [enqueue, bind, finishClosure]);
+  }), [enqueue, bind, finishClosure, seat]);
   const signOut = useCallback(() => {
     if (signOutResult.current) return signOutResult.current.promise;
     let resolve;
@@ -304,7 +306,7 @@ export default function AuthProvider({ children }) {
   }, []);
   return <AuthContext.Provider value={{ user, status, account, lapsed, signIn, signOut, closeAccount, refresh, holdDeviceLine }}>
     <div style={{ display: 'contents' }} inert={question && !upgradeRequired ? '' : undefined}>{children}</div>
-    {!session.online && !roomStatus && (
+    {!session.online && roomStatus?.status?.connectivity !== 'offline' && (
       <div role="status" style={{
         position: 'fixed', left: 16, bottom: 62, zIndex: 80, padding: '8px 12px',
         background: 'var(--surface-card)', color: 'var(--text-secondary)', borderRadius: 8, fontSize: 13,

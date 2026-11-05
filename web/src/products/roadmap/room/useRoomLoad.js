@@ -44,7 +44,7 @@ async function readRoadmap({ treeId, demo, signal }) {
 }
 
 // From the door to a live session: repository, domain, layout, the first view, then the socket; a retry runs it again.
-export function useRoomLoad({ treeId, demo, shared, demotion, breakpoint, placeKept, room, scene, framing, structure, progressActs, activity, legend, workspace, selection, dismissToast, desktopEditorRef, onRemoteProgress }) {
+export function useRoomLoad({ treeId, accountId, demo, shared, demotion, breakpoint, placeKept, room, scene, framing, structure, progressActs, activity, legend, workspace, selection, dismissToast, desktopEditorRef, onRemoteProgress }) {
   const { sceneRef, sessionRef, projectionRef, treeRef, seedRef, peersRef } = room;
   const [placeStore] = useState(() => new PlaceStore());
   const [returnLedger] = useState(() => new ReturnLedger());
@@ -54,6 +54,7 @@ export function useRoomLoad({ treeId, demo, shared, demotion, breakpoint, placeK
   const [treeVisibility, setTreeVisibility] = useState(null); // 'private'|'unlisted'|'public'|null
   const [treeMine, setTreeMine] = useState(false);
   const [syncSession, setSyncSession] = useState(null);
+  const accountAtLoad = useRef(accountId);
   const plantNoteRef = useRef(null); // null until read; survives StrictMode’s double effect
   const latest = useRef(null);
   latest.current = { structure, onRemoteProgress };
@@ -62,6 +63,7 @@ export function useRoomLoad({ treeId, demo, shared, demotion, breakpoint, placeK
 
   useEffect(() => {
     let cancelled = false;
+    accountAtLoad.current = accountId;
     const wanted = new AbortController();
     const { signal } = wanted;
     setLoading(true);
@@ -168,6 +170,15 @@ export function useRoomLoad({ treeId, demo, shared, demotion, breakpoint, placeK
       setSyncSession(null);
     };
   }, [reloadKey, treeId, demo, dismissToast]);
+
+  // A sign-in can arrive before or after the first unavailable read settles.
+  useEffect(() => {
+    if (!accountId) {
+      accountAtLoad.current = null;
+      return;
+    }
+    if (loadError && accountAtLoad.current !== accountId) setReloadKey((key) => key + 1);
+  }, [accountId, loadError]);
 
   useEffect(() => {
     if (!scene || !placeKept) return undefined;

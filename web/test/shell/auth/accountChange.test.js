@@ -161,3 +161,19 @@ test('explicit sign-out after a lapse clears the remembered account and forgets 
   assert.equal(seat.previousAccount, null);
   assert.equal(seat.lapsed, false);
 });
+
+
+test('restoring the durable holder grants no session authority and cannot replace a confirmed answer', () => {
+  const roadmap = recorder('roadmap');
+  const seat = new DeviceSeat([roadmap.product]);
+  seat.restoreHolder({ state: 'bound', account: A.id });
+  assert.deepEqual({ previous: seat.previousAccount, account: seat.account, confirmed: seat.confirmed, lapsed: seat.lapsed },
+    { previous: A.id, account: null, confirmed: false, lapsed: false });
+  assert.deepEqual(seat.receive(undefined), { status: 'ghost', user: null, account: null, confirmed: false });
+  assert.deepEqual(roadmap.calls, []);
+  seat.receive(A);
+  seat.restoreHolder({ state: 'bound', account: B.id });
+  assert.equal(seat.previousAccount, A.id);
+  assert.equal(seat.account, A);
+  assert.deepEqual(roadmap.calls, []);
+});
