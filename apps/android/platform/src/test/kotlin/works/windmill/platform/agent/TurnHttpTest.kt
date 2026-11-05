@@ -419,10 +419,11 @@ class TurnHttpTest {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         val calls = "event: calls\ndata: {\"batch\":1,\"calls\":[{\"callId\":\"a\",\"name\":\"list_things\",\"input\":{}}]}\n\n"
         val posted = Channel<Unit>(Channel.UNLIMITED)
+        val stops = CountDownLatch(5)
         server.dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse = when {
                 request.path.orEmpty().endsWith("/results") -> MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE).also { posted.trySend(Unit) }
-                request.path.orEmpty().endsWith("/stop") -> MockResponse().setResponseCode(202).setBody("""{"state":"running"}""")
+                request.path.orEmpty().endsWith("/stop") -> MockResponse().setResponseCode(202).setBody("""{"state":"running"}""").also { stops.countDown() }
                 else -> sse(calls + frames(200) + ": more\n\n").throttleBody(40_000, 60, TimeUnit.SECONDS)
             }
         }
@@ -438,6 +439,8 @@ class TurnHttpTest {
                 }
             }
         }
+        // Each abandon tells the server on its own coroutine, so a count taken before its Stop starts reads nothing still to come.
+        assertTrue(stops.await(30, TimeUnit.SECONDS))
         val running = settled()
         within { http().stop("tn_next", bound) }
         scope.cancel()
