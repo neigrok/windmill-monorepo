@@ -795,6 +795,22 @@ function supersede() {
         commitStep('self/probe', [{ op: 'update', t: 'card', id: 'card0010', f: { title: 'Dependent' } }]),
         replace],
     }),
+    stepsVector('supersede drops a later guard on the record it replaces: the guarding entry keeps its write and its other guards', {
+      device: device(anon()),
+      steps: [create,
+        commitStep('self/probe', [{ op: 'create', t: 'card', id: 'card0011', f: { title: 'Other' } }]),
+        commitStep('self/probe', [{ op: 'create', t: 'card', id: 'card0012', f: { title: 'Guarded' } }],
+          { guard: [{ t: 'card', id: 'card0010', field: 'title' }, { t: 'card', id: 'card0011', field: 'title' }] }),
+        commitStep('self/probe', [{ op: 'create', t: 'card', id: 'card0010', f: { title: 'Latest' } }], { supersede: ['g1'] }, 5001)],
+    }),
+    stepsVector('an atomic entry loses its update of the replaced record and its guard on it, and keeps its independent part', {
+      device: device(anon()),
+      steps: [create,
+        commitStep('self/probe', [{ op: 'update', t: 'card', id: 'card0010', f: { title: 'Dependent' } }, { op: 'create', t: 'card', id: 'card0013', f: { title: 'Independent' } }],
+          { atomic: true, guard: [{ t: 'card', id: 'card0010', field: 'title' }] }),
+        commitStep('self/probe', [{ op: 'create', t: 'card', id: 'card0014', f: { title: 'Guarded' } }], { guard: [{ t: 'card', id: 'card0010', field: 'title' }] }),
+        replace],
+    }),
     stepsVector('superseding multiple gestures follows commit order', {
       device: device(anon()),
       steps: [create,

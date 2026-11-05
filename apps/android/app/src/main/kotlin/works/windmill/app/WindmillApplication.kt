@@ -122,7 +122,7 @@ class WindmillApplication : Application(), WorkoutNotificationHost, WorkoutTileH
         val syncRuntime = SyncRuntime(engine, transport,
             engineStorage, BuildConfig.VERSION_NAME, products = listOf("gym"), activityAllowed = ::accountWritable,
             signOutDrainAllowed = { !sessions.signOutPending && !deletionStorage.blocked })
-        val training = EngineTraining(engine, writeAuthority = ::accountWritable)
+        val training = EngineTraining(engine, writeAuthority = ::accountWritable, telemetry = telemetry)
         val localCoach = LocalCoach(File(filesDir, LocalCoach.fileName), writesAllowed = { !deletionPending() })
         val coachClient = OkHttpClient()
         val installation = AiInstallation.onThisDevice(this, AiInstallationHttp(baseUrl, telemetry, coachClient), telemetry, BuildConfig.VERSION_NAME)

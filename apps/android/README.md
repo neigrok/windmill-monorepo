@@ -119,8 +119,10 @@ server's own `426 upgrade-required` still stops an older client normally.
 
 Before every sign-in, `WorkoutImports` prepares each signed-out workout for the account. A finished
 workout becomes one durable atomic strict import. An unfinished one becomes a start that refuses
-joining another open workout; its sets follow under their own identities once the account
-confirms that start, and the server assigns their set numbers. A planned start waits for the
+joining another open workout; once the account confirms that start, a proposal Coach made on it is
+minted again under its own id against the plan the account holds, then its sets follow under their own
+identities and the server assigns their set numbers. A finished workout's proposal has nothing left to
+apply and does not follow it. A planned start waits for the
 account pull and refuses a changed frozen routine plan. Conflicting workouts remain inspectable on
 the phone, with an explicit **Keep** action that imports them finished at their last set.
 An unexpected failure preparing one item is reported once and keeps its source locally for retry;

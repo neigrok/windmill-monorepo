@@ -1030,10 +1030,12 @@ is answered for the caller to resume.
 - `supersede`: distinct gesture ids in the anonymous replica and this scope. Every entry of each
   gesture is held or ready and unnumbered; any missing or ineligible gesture throws atomically.
   The source gestures end by silent fold, with their dependents, only after the replacement commits.
+  A later entry's guard on a record they or their dependents created goes with them: the replacement is
+  numbered after that entry, so no stamp of the record can stand when it arrives.
   The return includes `superseded` in commit order when gestures were named. The caller supplies
   the complete replacement effects, including cumulative first-run retirement fields.
-  `commit/supersede.json` pins ready and held replacement, ordering, dependent folding, other-scope
-  refusal, missing and bound gestures, malformed replacement and an oversized replacement rollback.
+  `commit/supersede.json` pins ready and held replacement, ordering, dependent folding, guards on a
+  replaced record, other-scope refusal, missing and bound gestures, malformed replacement and an oversized replacement rollback.
 - `guard`: a list of registers `{t, id, field}`, guarded exactly, each at its `stored` stamp (`null`
   when unset). A field the type does not declare as a lattice field, `life`, a text field, or a
   register of a type another scope holds throws.
@@ -1184,7 +1186,7 @@ authentication without changing the epoch or ending owed work.
   - Dependency is transitive through the records that folded dependents create and the life
     registers they write.
   - Names include ref fields, key parts and command `ref<t>` arguments.
-  - A guard names nothing: a guard is removed only with a dependent delta on its record.
+  - A guard names nothing: a guard is removed only with a dependent delta on its record, or by a supersede.
 - A queued dependent is removed; its entry ends `fold` when nothing is left of it.
 - A sent entry with any dependent delta or command becomes an orphan (`orphanOf`), its whole
   content in the notice. Its `ok` makes it `acked` like any `ok`; its refusal ends it `refused`,

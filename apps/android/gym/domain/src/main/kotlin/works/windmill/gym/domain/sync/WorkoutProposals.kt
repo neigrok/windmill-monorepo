@@ -76,6 +76,23 @@ class ProposeWorkout(val id: Id<WorkoutProposal>, val sessionId: Id<Session>, va
     }
 }
 
+// A proposal a signed-out phone held on its workout, once the account holds that workout: minted again under its own id and
+// words, read against the plan the account holds and guarding it. Only what the log confirmed is that plan, so a workout it
+// has not confirmed is out of reach. A row under its id is done, and a plan that already reads as proposed leaves nothing.
+class ReissueWorkoutProposal(val saved: WorkoutProposal) : Action<ReissueWorkoutProposal.Loaded, Id<WorkoutProposal>, GymRefusal> {
+    data class Loaded(val written: Boolean, val confirmed: Boolean, val workout: OpenWorkout)
+    private val proposing = ProposeWorkout(saved.id, saved.sessionId, saved.document, saved.summary)
+    override val scope = WorkoutProposal.scope
+    override val refusals = GymRefusal
+    override fun load(read: Reader) = Loaded(read.repository(WorkoutProposal).record(saved.id, ViewMode.stored) != null,
+        read.confirmed(Session, saved.sessionId) != null, proposing.load(read))
+    override fun decide(loaded: Loaded, ids: IDSource): Decision<Id<WorkoutProposal>, GymRefusal> {
+        if (loaded.written) return Decision.Unchanged(saved.id)
+        if (!loaded.confirmed) return Decision.Refuse(GymRefusal.of(Refused(RefusalCode.unknownRecord, saved.sessionId.ref, path = Refused.Path.predicted)))
+        return proposing.decide(loaded.workout, ids)
+    }
+}
+
 // A workout proposal with its workout as this phone stores it. Out of date, it can no longer be applied, by the first that
 // holds: a newer proposal replaced it, its workout is gone, its workout closed, the plan changed since it was made, or a
 // movement it changes was logged since.

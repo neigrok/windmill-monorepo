@@ -1387,9 +1387,9 @@ Android. It and the product differ in these places.
   keeps its own type, row height, inset kept row and Ask Coach, as the caption says. A movement that moved and changed says
   *Order* over its targets, and a settled proposal draws no move, since a move reads against what the proposal waited on; no
   board draws either. No board draws the way back from 08.72's Sign in: the sheets close and sign-in stands over the rack, and
-  after the code a new account lands on the rack, where the log has refused one signed-out write `stale` and the rack says
-  *“Saved training” stays on this phone* over *That changed. Open it again.*, and an account with training first asks *Add to
-  your account?*. A Stop refused for another
+  after the code a new account lands on the rack with the proposal still waiting, and an account with training first asks *Add to
+  your account?*. A refused write that is neither training nor a named record says *That change could not be saved.* over its
+  reason, words the log's other refusals already use; no board draws it. A Stop refused for another
   reason (`stopUnheard`) says the first sentence of 08.69's band, *Coach is stopped on this phone.*, since the turn has
   already ended. No board draws an interruption with no words, and the build says the first sentence of 08.50's line,
   *Interrupted.*

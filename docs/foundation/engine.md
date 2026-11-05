@@ -1343,7 +1343,10 @@ none. A gesture whose diff is empty still runs steps 2–11. One local transacti
    new gesture replaces. It is allowed only in an anonymous replica, whose entries have never
    been sent (§7.10). Each named gesture MUST exist in this replica and scope, and all of its
    entries MUST be held or ready with `n` absent; otherwise throw before changing anything.
-   Remove those whole gestures and fold their dependents silently (§7.3), as for an undo.
+   Remove those whole gestures and fold their dependents silently (§7.3), as for an undo. Unlike an
+   undo, a later entry also loses its guards on the records they or their dependents created: the
+   replacement is numbered after that entry, so no stamp of such a record can stand when it arrives,
+   and what the entry read lives on in the replacement.
    Return their ids as `superseded`, in commit order, when any were named. The replacement MUST
    carry every effect the product keeps, including monotone state writes: superseding does not
    copy old deltas into the replacement. A refusal or failure of this commit supersedes nothing.
@@ -1838,9 +1841,10 @@ notice of its own, as step 3 states):
    an entry with no dependent delta on that record. After this refusal the server refuses that entry
    `stale` (§6.1 step 7), the register it names never having been written. A guard on a register of
    a record a held entry creates names no stamp, unless a held-back entry wrote that register first:
-   guards read `stored` (§7.1 step 6), which holds held-back entries and no held ones. After an undo,
-   retire or supersede (§7.3) the guard holds in the first case, and in the second the fold empties that
-   writer and the server refuses the guarding entry `stale`.
+   guards read `stored` (§7.1 step 6), which holds held-back entries and no held ones. After an undo
+   or a retire (§7.3) the guard holds in the first case, and in the second the fold empties that
+   writer and the server refuses the guarding entry `stale`. A supersede removes such a guard (§7.1
+   step 4).
    - In a held or ready entry, the dependent deltas are removed, with the guards on their records,
      and a dependent command with its prediction. An entry left empty ends `refused`, in this
      notice.

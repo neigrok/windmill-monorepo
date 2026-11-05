@@ -362,6 +362,11 @@ extension WorkoutRecoveryTests {
         case let name: throw ContractError("unclaimed recovery read \(name)")
         }
       }
+    } else if try vector.input.member("action").asString() == "ReissueWorkoutProposal" {
+      let saved = try input.member("proposal")
+      var fields = try saved.asObject(); fields["id"] = nil
+      let proposal = try WorkoutProposal(form: ["id": try saved.member("id"), "fields": .object(fields)])
+      result = try corpus.decision(of: ReissueWorkoutProposal(proposal), vector, result: \.json, refusal: \.form)
     } else {
       let id = ID<Session>(try RecordID(json: input.member("id")))
       let revised = try input["revised"].map { try SignedOutWorkout($0) }

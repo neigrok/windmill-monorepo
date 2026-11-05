@@ -158,6 +158,37 @@ public struct ProposeWorkout: Action {
   }
 }
 
+// A proposal a signed-out phone held on its workout, once the account holds that workout: minted again under its own id
+// and words, read against the plan the account holds and guarding it. Only what the log confirmed is that plan, so a
+// workout it has not confirmed is out of reach. A row under its id is done, and a plan that already reads as proposed
+// leaves nothing.
+public struct ReissueWorkoutProposal: Action {
+  public struct Loaded {
+    let written: Bool
+    let confirmed: Bool
+    let workout: OpenWorkout
+  }
+
+  public let saved: WorkoutProposal
+  var proposing: ProposeWorkout { ProposeWorkout(id: saved.id, sessionId: saved.sessionId, entries: saved.document, summary: saved.summary) }
+  public var scope: ScopeRef { WorkoutProposal.scope }
+
+  public init(_ saved: WorkoutProposal) {
+    self.saved = saved
+  }
+
+  public func load(_ read: Reader) throws -> Loaded {
+    Loaded(written: try read.repository(WorkoutProposal.self).record(saved.id, in: .stored) != nil,
+           confirmed: try read.confirmed(Session.self, saved.sessionId) != nil, workout: try proposing.load(read))
+  }
+
+  public func decide(_ loaded: Loaded, ids: IDSource) throws(Violation) -> Decision<ID<WorkoutProposal>, GymRefusal> {
+    if loaded.written { return .unchanged(saved.id) }
+    guard loaded.confirmed else { return .refuse(.gone(saved.sessionId.ref, .predicted)) }
+    return try proposing.decide(loaded.workout, ids: ids)
+  }
+}
+
 // A workout proposal with its workout: why it can no longer be applied, and what the log would answer a decision on it.
 public struct WorkoutProposalState: Sendable {
   public enum Reason: String, Sendable {

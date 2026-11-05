@@ -79,7 +79,7 @@ public struct CommitPlanner: Sendable {
 
     let superseding = try supersedingEntries(gesture.supersede, in: scope, replica: replica)
     var retired = replica
-    try hold.end(superseding, by: .silentFold, in: &retired)
+    try hold.end(superseding, by: .silentFold, replaced: true, in: &retired)
     let retiring = retiringEntries(of: gesture.retire, in: scope, replica: retired)
     try hold.end(retiring, by: .retire, in: &retired)
     var builder = DeltaBuilder(

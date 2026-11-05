@@ -476,6 +476,11 @@ class CorpusTests {
                 else -> error("unclaimed recovery read")
             }
         }
+        if (vector.input.member("action").str() == "ReissueWorkoutProposal") {
+            val saved = input.member("proposal")
+            return corpus.decision(ReissueWorkoutProposal(WorkoutProposal.decode(Fields(WorkoutProposal.type, RecordID(saved.member("id")), saved.obj() - "id"))),
+                vector, { it.json }, ::refusalForm)
+        }
         val id = f.ref("id", Session)
         val revised = input["revised"]?.let(SignedOutWorkout::decode)
         return when (vector.input.member("action").str()) {

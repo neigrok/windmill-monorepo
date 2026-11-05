@@ -33,7 +33,7 @@ internal fun refusalHeadline(refused: RefusedWrite, catalog: List<Exercise>): St
         "${Readout.movement(refused.exerciseId, catalog)} " +
             "${Readout.effort(refused.weightKg, refused.reps)} never reached the log"
     is RefusedWorkout -> refused.startedAtMs?.let { "Workout on ${Readout.date(it)} stays on this phone" } ?: "Workout stays on this phone"
-    is RefusedChange -> "“${refused.name}” stays on this phone"
+    is RefusedChange -> refused.name?.let { "“$it” stays on this phone" } ?: "That change could not be saved."
 }
 
 @Composable

@@ -40,7 +40,7 @@ class TrainingStore(
     undoWindowMs: Long = Withheld.windowMs,
     workoutClock: WorkoutClock = WorkoutClock { val at = now(); WorkoutMoment(at, at, "local") },
     workoutAuthority: (String?) -> Boolean = { true },
-    telemetry: Telemetry = Telemetry.None,
+    private val telemetry: Telemetry = Telemetry.None,
     localCoach: LocalCoach? = null,
     coachImports: CoachRoutineImports? = null,
     coachAccess: suspend () -> AnonymousCoachAccess = { AnonymousCoachAccess.Unavailable },
@@ -117,7 +117,7 @@ class TrainingStore(
         val controlsReplica = controls.engineReplica
         val drain = EngineTraining(training.engine, writeAuthority = {
             transitionCurrent() && owner == seat.owner && training.engine.activeReplica() == replica && controls.engineReplica == controlsReplica
-        })
+        }, telemetry = telemetry)
         drain.recoverAcceptedSets(controls)
         drain.reconcileImports()
         drain.persistControls(controls)

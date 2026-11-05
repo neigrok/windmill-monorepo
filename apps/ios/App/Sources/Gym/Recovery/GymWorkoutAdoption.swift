@@ -53,6 +53,19 @@ extension GymModel {
     }
   }
 
+  // The proposals a signed-out workout held, minted again once the account holds it: the fold that replaced its start took
+  // them. A finished workout has nothing left to apply; any other refusal is a lost proposal, reported once.
+  func reissueHeldProposals(of saved: [SignedOutWorkout]) throws {
+    for workout in saved where !workout.proposals.isEmpty {
+      guard try runner.read(Gym.scope, { try !$0.isAnonymous && $0.confirmed(Session.self, workout.session.id) != nil }) else { continue }
+      for proposal in workout.proposals {
+        guard let refusal = try runner.run(ReissueWorkoutProposal(proposal)).refusal else { continue }
+        if case .sessionFinished = refusal { continue }
+        if lostProposals.insert(proposal.id).inserted { telemetry.failure("gym_reissue_workout_proposal", kind: "refused") }
+      }
+    }
+  }
+
   // The saved workouts The log draws: every one the account has not taken.
   var waitingWorkouts: [SignedOutWorkout] { adoptionWorkouts }
 

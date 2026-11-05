@@ -167,7 +167,7 @@ internal fun Engine.commitGesture(replica: ReplicaState, scope: ScopeRef, gestur
         entries
     }.sortedBy { it.order }
     val ending = (retiring + superseding).distinct()
-    val folded = silentFold(replica, ending)
+    val folded = silentFold(replica, ending, replaced = superseding.isNotEmpty())
     val gone = (ending.flatMap { it.deltas } + folded.flatMap { (entry, part) -> part.removed + if (part.commandGone) entry.predict else emptyList() }).toSet()
     val builder = DeltaBuilder(this, replica, scope, stamp, now, gone)
     val built = gesture.changes.mapNotNull { change -> builder.build(change)?.let { change to it } }

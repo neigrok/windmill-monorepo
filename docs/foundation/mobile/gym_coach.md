@@ -679,7 +679,11 @@ thirty new generations per IP per UTC hour. Secrets and credentials never appear
 Conversations are records in the `self/gym` scope. They sync for `bound` seats and stay on the
 device for `anon`. At sign-in, signed-out conversations join the account with the rest of the
 signed-out gym data: silently where the account holds no gym records, otherwise under the gym
-signed-out decision (engine §7.10). Gym's registry declares `thread` and `message` (engine A.2);
+signed-out decision (engine §7.10). A workout the account takes as a new start stands under the
+conversation with its proposal: the proposal is minted again under its own id once the account holds
+the workout, against the plan the account holds, and the message that named it arrives first. A finished
+workout's proposal has nothing left to apply, and its card says it is no longer available.
+Gym's registry declares `thread` and `message` (engine A.2);
 the server Coach's legacy conversations stay in the gym backend's Coach tables and are not adopted.
 
 | Type | Identity | Fields |

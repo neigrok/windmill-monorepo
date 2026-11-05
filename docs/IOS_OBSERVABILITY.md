@@ -179,7 +179,7 @@ time it is presented. Signed out or paused, its *Sign in to share* opens You (`f
 `you`); when You closes signed in, the sheet is presented again and records its view again, and a sign-in left
 unfinished shares nothing and records nothing more.
 
-Gym boundary operation labels are `gym_read`, `gym_action`, `gym_flush`, `gym_rest`,
+Gym boundary operation labels are `gym_read`, `gym_action`, `gym_flush`, `gym_rest`, `gym_reissue_workout_proposal` (a proposal a signed-out workout held that the account did not take),
 `gym_activity_request`, `gym_activity_update`, `gym_control_update`, and `gym_import_fix`, `gym_import_keep`, `gym_import_retry`
 and `gym_import_discard` for the commits that recover a saved workout. The gym model reports each distinct `gym_read`
 failure once per launch, a session whose saved plan this build cannot read included, so a record a view reads on every

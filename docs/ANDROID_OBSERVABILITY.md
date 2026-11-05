@@ -114,6 +114,7 @@ type also occurs during network loss. Failures of the telemetry pipeline itself 
 | `gym.preparePhoto` | gym | Preparing a Coach photo fails |
 | `gym.readConversation` | gym | Reading a Coach conversation, History, or how far the phone has read for an answer's unread proposal off the replica fails; What Coach read's details fail to read, once per opening of the sheet, whose rows keep their titles; or a `thread` or `message` record cannot be read: once per process, the record costs itself and never its conversation |
 | `gym.proposal_receipt_shown` | gym | Recording that a proposal receipt was shown fails |
+| `gym.reissueWorkoutProposal` | gym | A proposal a signed-out workout held never reaches the account: the phone or the log refused it for a reason other than the workout having finished. `outcome` names the bounded refusal code |
 | `gym.readNotes` | gym | Reading the notes list, or re-reading it after an unconfirmed note deletion, fails |
 | `gym.readProgram` | gym | Re-reading the program after an unconfirmed routine deletion fails |
 | `gym.reconcileWorkoutTime` | gym | Closing a workout that ran past its automatic close fails |

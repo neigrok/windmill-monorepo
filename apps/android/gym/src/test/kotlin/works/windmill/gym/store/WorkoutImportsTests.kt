@@ -5,8 +5,21 @@ import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import works.windmill.domain.kit.FixedZone
+import works.windmill.domain.kit.Id
+import works.windmill.domain.kit.Instant
+import works.windmill.domain.kit.Moment
 import works.windmill.domain.kit.PlanError
+import works.windmill.domain.kit.Reader
+import works.windmill.gym.domain.sync.Exercise as DomainExercise
+import works.windmill.gym.domain.sync.ProposeWorkout
+import works.windmill.gym.domain.sync.Proposed
+import works.windmill.gym.domain.sync.RoutineEntry
+import works.windmill.gym.domain.sync.Session as DomainSession
+import works.windmill.gym.domain.sync.SetTarget as DomainTarget
+import works.windmill.gym.domain.sync.WorkoutProposal
 import works.windmill.gym.presentation.*
+import works.windmill.platform.telemetry.Telemetry
 import works.windmill.sync.api.Change
 import works.windmill.sync.api.CommitFailure
 import works.windmill.sync.api.DeviceWrite
@@ -1145,6 +1158,142 @@ class WorkoutImportsTests {
                 assertEquals(stable, reopened.snapshot()); assertEquals(3, outbox(reopened).size)
                 assertEquals(row, WorkoutImports(reopened).retainedWorkouts().single())
             }
+        }
+    }
+
+    // Signed out: a routine, a workout from it with one logged set, then Coach's proposal and what its turn wrote in one gesture, guarding the plan.
+    private suspend fun proposalOverWorkout(local: Engine, gym: EngineTraining, entries: List<RoutineEntry> = swapped) {
+        testNow = 200_000
+        val routine = gym.createRoutine(RoutineWrite("routine01", "Push A", 0, pushA.map { RoutineEntryWrite(it, listOf(SetTarget(8, 40.0))) }))
+        gym.startSession(SessionStart("session01", 100_000, routine.id))
+        gym.appendSet("session01", SetWrite("set00001", "bench-press", 40.0, 8, 100_100))
+        local.commit(scope) { context ->
+            val read = Reader(context, scope, Moment(Instant(context.now), FixedZone(0)), local.registry)
+            val proposing = ProposeWorkout(Id("wp000000000000001", WorkoutProposal), Id("session01", DomainSession), entries, "Sore shoulder")
+            val gesture = (proposing.proposed(proposing.load(read)) as Proposed.Minted).plan.gesture(scope, local.registry)
+            gesture.changes += Change.create("thread", NewID.Given(RecordID("thread0000000001")), mapOf("title" to Json.of("Sore shoulder")))
+            gesture.atomic = true
+            gesture to Unit
+        }
+    }
+    private val pushA = listOf("bench-press", "overhead-press", "incline-dumbbell-press", "cable-fly")
+    private fun domainEntry(movement: String, reps: Int = 8, kg: Double = 40.0) = RoutineEntry(Id(movement, DomainExercise), listOf(DomainTarget(reps, kg)))
+    private val swapped get() = listOf(domainEntry("bench-press"), domainEntry("dumbbell-bench-press", 10, 20.0), domainEntry("overhead-press"), domainEntry("cable-fly"))
+    private class Telling : Telemetry {
+        val failures = mutableListOf<Pair<String, Map<String, String>>>()
+        override fun event(name: String, properties: Map<String, String>) {}
+        override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { failures += operation to properties }
+    }
+    private fun accountHolds(server: ModelServer, type: String, id: String): Boolean = engine().use { remote ->
+        signIn(remote, server); pull(remote, server)
+        remote.read(scope) { it.confirmed(type, RecordID(id))?.isVisible == true }
+    }
+
+    @Test fun aProposalASignedOutWorkoutHeldStandsOnTheAccountPendingOverThePlanItHolds() = runBlocking {
+        val server = EngineRoomFixture.server()
+        engine().use { local ->
+            val telling = Telling()
+            val gym = EngineTraining(local, telemetry = telling)
+            proposalOverWorkout(local, gym)
+            gym.prepareAdoption()
+            signIn(local, server); pull(local, server); push(local, server)
+            assertEquals(emptyList<String>(), local.notices("gym").notices.value.map { it.code.text })
+            assertEquals(listOf("wp000000000000001"), WorkoutImports(local).owedProposals().map { it.proposal.id.record.string })
+            gym.reconcileImports()
+            assertEquals(listOf(listOf("workoutProposal"), listOf("set")), outbox(local).map { entry -> entry.member("intent").member("d").arr().map { it.member("t").str() } })
+            push(local, server)
+            assertEquals(emptyList<String>(), local.notices("gym").notices.value.map { it.code.text })
+            assertEquals(emptyList<ImportProposal>(), WorkoutImports(local).owedProposals())
+            assertEquals(emptyList<Pair<String, Map<String, String>>>(), telling.failures)
+            val standing = gym.workoutProposals().single()
+            assertEquals(ProposalState.Pending, standing.state)
+            assertEquals(null, standing.outOfDate)
+            assertEquals(2, standing.changeCount)
+            assertEquals(listOf("wp000000000000001"), gym.workoutProposals().map { it.id })
+            assertTrue(accountHolds(server, "thread", "thread0000000001"))
+            gym.decideWorkoutProposal("wp000000000000001", applying = true)
+            push(local, server)
+            assertEquals(listOf("bench-press", "dumbbell-bench-press", "overhead-press", "cable-fly"),
+                gym.session("session01")!!.session.plan!!.entries.map { it.exerciseId })
+            assertEquals(ProposalState.Applied, gym.workoutProposals().single().state)
+        }
+    }
+
+    @Test fun aSetLoggedAfterTheProposalOnAMovementItChangesReadsItOutOfDateAsItDidOnThisPhone() = runBlocking {
+        val server = EngineRoomFixture.server()
+        engine().use { local ->
+            val telling = Telling()
+            val gym = EngineTraining(local, telemetry = telling)
+            proposalOverWorkout(local, gym)
+            gym.appendSet("session01", SetWrite("set00002", "incline-dumbbell-press", 40.0, 8, 100_200))
+            assertEquals("You logged Incline Dumbbell Press since this suggestion. Nothing was applied.", gym.workoutProposals().single().outOfDate)
+            gym.prepareAdoption()
+            gym.reconcileImports()
+            assertEquals(listOf("gym.start"), outbox(local).mapNotNull { it.member("intent")["cmd"]?.member("name")?.str() })
+            assertEquals(emptyList<String>(), outbox(local).flatMap { entry -> entry.member("intent")["d"]?.arr().orEmpty().filter { it.member("t") == Json.of("set") }.map { it.member("id").str() } })
+            signIn(local, server); pull(local, server); push(local, server)
+            gym.reconcileImports(); push(local, server)
+            assertEquals(emptyList<String>(), local.notices("gym").notices.value.map { it.code.text })
+            assertEquals(emptyList<Pair<String, Map<String, String>>>(), telling.failures)
+            assertEquals("You logged Incline Dumbbell Press since this suggestion. Nothing was applied.", gym.workoutProposals().single().outOfDate)
+        }
+    }
+
+    @Test fun aFinishedWorkoutsProposalHasNothingLeftToApplyAndWhatItsTurnWroteReachesTheAccount() = runBlocking {
+        val server = EngineRoomFixture.server()
+        engine().use { local ->
+            val telling = Telling()
+            val gym = EngineTraining(local, telemetry = telling)
+            proposalOverWorkout(local, gym)
+            gym.finishSession("session01", 100_200)
+            gym.prepareAdoption()
+            signIn(local, server); pull(local, server); push(local, server)
+            gym.reconcileImports(); push(local, server)
+            assertEquals(emptyList<String>(), local.notices("gym").notices.value.map { it.code.text })
+            assertEquals(emptyList<ImportProposal>(), WorkoutImports(local).owedProposals())
+            assertEquals(emptyList<Proposal>(), gym.workoutProposals())
+            assertEquals(emptyList<Pair<String, Map<String, String>>>(), telling.failures)
+            assertTrue(accountHolds(server, "thread", "thread0000000001"))
+            assertTrue(accountHolds(server, "session", "session01"))
+        }
+    }
+
+    @Test fun aProposalWaitsOutTheAccountsOwnWorkoutAndKeepCloses() = runBlocking {
+        val server = EngineRoomFixture.server()
+        accountWorkout(server)
+        engine().use { local ->
+            val telling = Telling()
+            val gym = EngineTraining(local, telemetry = telling)
+            proposalOverWorkout(local, gym)
+            gym.prepareAdoption()
+            signIn(local, server); pull(local, server); push(local, server)
+            local.notices("gym").notices.value.forEach { local.dismissNotice(it.id) }
+            assertEquals("session-open", WorkoutImports(local).refusals().single().code)
+            gym.reconcileImports(); push(local, server)
+            assertEquals(listOf("wp000000000000001"), WorkoutImports(local).owedProposals().map { it.proposal.id.record.string })
+            WorkoutImports(local).keepWorkout("session01")
+            assertEquals(emptyList<ImportProposal>(), WorkoutImports(local).owedProposals())
+            assertEquals(emptyList<Pair<String, Map<String, String>>>(), telling.failures)
+        }
+    }
+
+    @Test fun aProposalTheAccountNoLongerTakesReportsUnderItsOperationOnce() = runBlocking {
+        val server = EngineRoomFixture.server()
+        engine().use { local ->
+            val telling = Telling()
+            val gym = EngineTraining(local, telemetry = telling)
+            proposalOverWorkout(local, gym)
+            gym.prepareAdoption()
+            signIn(local, server); pull(local, server); push(local, server)
+            engine().use { remote ->
+                signIn(remote, server); pull(remote, server)
+                EngineTraining(remote).appendSet("session01", SetWrite("set00009", "incline-dumbbell-press", 40.0, 8, 100_300)); push(remote, server)
+            }
+            pull(local, server)
+            gym.reconcileImports(); push(local, server)
+            gym.reconcileImports()
+            assertEquals(listOf("gym.reissueWorkoutProposal" to mapOf("outcome" to "plan-logged")), telling.failures)
+            assertEquals(emptyList<ImportProposal>(), WorkoutImports(local).owedProposals())
         }
     }
 

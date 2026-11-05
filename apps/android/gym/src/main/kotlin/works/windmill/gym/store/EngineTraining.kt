@@ -71,7 +71,7 @@ private val <E : Entity<E>> Id<E>.text: String get() = record.string ?: error("g
 data class ReplicaPin(val replica: String, val anonymous: Boolean)
 
 class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> Boolean = engine::release,
-    private val writeAuthority: () -> Boolean = { true }) {
+    private val writeAuthority: () -> Boolean = { true }, private val telemetry: Telemetry = Telemetry.None) {
     companion object {
         val rewriteDeviceValue: DeviceValueRewrite = { product, key, value, type, from, to ->
             CoachRoutineImports.rewriteDeviceValue(product, key,
@@ -833,8 +833,16 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
             deleteSet(deletion.sessionId, deletion.setId)
             imports.resolveDeletion(deletion.token)
         }
+        for (proposal in imports.owedProposals()) {
+            if (anonymous || !firstPullComplete) break
+            if (read { it.confirmed(EngineSession, proposal.proposal.sessionId) == null }) continue
+            reconcileProposal(proposal)
+        }
+        for (code in imports.takeLostProposals()) telemetry.failure("gym.reissueWorkoutProposal", LostWorkoutProposal(), mapOf("outcome" to code))
+        val awaitingProposal = imports.owedProposals().mapTo(mutableSetOf()) { it.proposal.sessionId.text }
         for (operation in imports.operations()) {
             if (!anonymous && !firstPullComplete) continue
+            if (operation.sessionId in awaitingProposal) continue
             if (imports.continuesRecovery(operation)) {
                 imports.recoverFinishedOperation(operation)
                 continue
@@ -850,6 +858,25 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
             }
         }
         deferredFailure?.let { throw it }
+    }
+
+    // A proposal the signed-out phone held, minted again against the plan the account holds, ahead of the sets that follow it: a set on a movement it changes reads it out of date, as that set did on this phone. A finished workout has nothing left to apply, so its refusal is said by the card and reports nothing.
+    private fun reconcileProposal(owed: ImportProposal) {
+        val action = ReissueWorkoutProposal(owed.proposal)
+        val outcome = engine.commit(EngineWorkoutProposal.scope) { context ->
+            requireWriteAuthority()
+            val read = Reader(context, EngineWorkoutProposal.scope, Moment(Instant(context.now), zone), engine.registry)
+            val decision = try { action.decide(action.load(read), IDSource(context)) }
+                catch (violation: Violation) { Decision.Refuse(GymRefusal.Invalid(violation)) }
+            val gesture = (decision as? Decision.Write)?.plan?.gesture(EngineWorkoutProposal.scope, engine.registry) ?: Gesture(emptyList())
+            gesture.gestureId = (decision as? Decision.Write)?.let { context.opaqueID() }
+            val code = (decision as? Decision.Refuse)?.refusal?.let { refusal(it).code }?.takeUnless { it == Gym.Codes.sessionFinished }
+            imports.proposalAnswered(owed, context, gesture.gestureId, code)?.let { gesture.local += it }
+            (if (gesture.local.isEmpty()) null else gesture) to Unit
+        }.first
+        if (outcome is CommitOutcome.Refused) engine.commit(EngineWorkoutProposal.scope) { context ->
+            (imports.proposalAnswered(owed, context, null, outcome.code.text)?.let { Gesture(emptyList(), local = listOf(it)) }) to Unit
+        }
     }
 
     internal suspend fun reconcileOperation(operation: ImportOperation) {
@@ -904,7 +931,7 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
             val at = subject?.let { domain.values(it)["startedAt"] } ?: notice.content.command?.args?.get("startedAt")
             val startedAt = at?.let { runCatching { it.long() }.getOrNull() }
             RefusedWorkout(notice.id, startedAt, reason)
-        } else RefusedChange(notice.id, "Saved training", reason)
+        } else RefusedChange(notice.id, subject?.let { (domain.values(it)["name"] as? Json.Str)?.value }, reason)
     }
     fun refusedNotes(): List<RefusedWrite> = engine.notices("gym").notices.value.mapNotNull { notice ->
         val domain = DomainNotice(notice, engine.registry, GymRefusal)
@@ -1068,6 +1095,8 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
 // A write the log's rules refuse, in the words a person reads: an expected answer, never a failure to report.
 class TrainingRefused(val code: String, val line: String) : Exception()
 class TrainingDeleteUnconfirmed(cause: Exception) : Exception(cause)
+// A proposal a signed-out phone held that never reached the account.
+class LostWorkoutProposal : Exception()
 
 // What the replica cannot answer yet: the account's first pull, or the log's receipt for a decision, has not arrived.
 data object TrainingUnanswered : Exception()
