@@ -1314,13 +1314,6 @@ Android. It and the product differ in these places.
   `start_session`, `log_set`, `log_sets`, `finish_session`, `discard_session` and `import_session`.
   The spec gives each ability one agent rule for both doors and withholds these until the owner
   rules (its Appendix B-1).
-- **6r · The provider's retention over a picture (owner).** Gym Coach §9.3 asks the line over a sent picture to name the
-  vendor's retention as verified at release. Android says on both seats *A copy goes to Anthropic, our AI provider, to read
-  it. Windmill keeps none. Anthropic deletes it within 30 days, or keeps it up to 2 years if its safety checks flag it. Kept
-  only on this phone.* (`coach/CoachPhotos.kt`), read from Anthropic's Privacy Center article on stored organization data
-  (last updated 2026-07-01, read 2026-11-03). Board 01.5 `1902:34450` names no provider and still carries the chip
-  *Placeholder: the AI provider’s retention, verified at release*, and iOS names no retention on either seat. For the
-  owner: confirm the sentence, and whether Windmill's account holds a zero-data-retention agreement, which would change it.
 - **6s · Pasted programs.** The Coach contract and both phones accept 8,000 UTF-8 bytes. The web's `QUESTION_BYTES`
   remains at 1,000, and the web textarea also limits character count to 1,000. Align the web when delivering its setup
   flow, preserving the complete draft and a specific length refusal rather than silently truncating a pasted program.
@@ -1349,7 +1342,7 @@ Android. It and the product differ in these places.
   the refusal board 08.39 is deleted. Three
   redraws took their originals' slots and the originals were deleted: 08.6 is now
   the account-changing state `1589:13033` / `1690:13247` / `1590:13302` (replaced the no-seat pair
-  `1186:5415` / `1186:5477` and caption `1117:1740`); 01.5 carries the picture line under R8
+  `1186:5415` / `1186:5477` and caption `1117:1740`); 01.5 is the photo in the composer under R8
   `1589:39166` / `1690:14706` / `1589:39294` (replaced `1173:4111` / `1173:4983` and caption
   `1174:5318`); the 08 section's flow instruction is `1589:13082` (replaced `1117:1706`, still
   ✅ Ready for dev). Drawing facts: 08.37 is drawn on the Changed row with its word overridden because the Added
@@ -1387,10 +1380,7 @@ Android. It and the product differ in these places.
   movement history, where Coach itself asked for a read or a note or a routine stood by its message's moment past what
   its own turn made, says the catalog's phrases of the reads it ran, joined as the step line joins them with the first
   letter capitalised, over What Coach read; no board draws that line. 08.61 draws its disabled Send's glyph on-accent, which barely reads on
-  its circle, and the build keeps Material's disabled colours. The composer's picture line is one sentence on both seats, `CoachPhotos.whereItGoes`
-  and `keptHere` as 01.5 draws them, since a picture goes to the provider from either seat (`gym_coach.md` §9.3): board
-  01.4 still draws *Sent to Coach. Saved only on this phone.*, and iOS says those words signed out and *A copy goes to
-  the AI provider to read it. Windmill keeps none. Kept only on this phone.* signed in (`CoachTab.swift`). 03.46 draws a
+  its circle, and the build keeps Material's disabled colours. 03.46 draws a
   set as *1*, a ladder of −5, −2.5, +2.5, +5 and the movement in Nunito, where the shipped rack draws *Set 1*, −2.5, −1,
   +2.5, +5 and a sans name, and the rack stays as today (D5). A proposal that only reorders a routine's movements counts a
   change on its card and draws no row on the sheet, and no board draws one. Signed out, a sheet's Apply says *Sign in to

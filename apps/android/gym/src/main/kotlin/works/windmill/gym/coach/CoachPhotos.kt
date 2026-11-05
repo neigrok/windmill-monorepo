@@ -13,10 +13,6 @@ import java.io.IOException
 import works.windmill.gym.presentation.Ids
 
 object CoachPhotos {
-    // Where a chosen photo goes, said over the composer. The retention is Anthropic's published policy for API data.
-    const val whereItGoes = "A copy goes to Anthropic, our AI provider, to read it. Windmill keeps none. Anthropic deletes it within 30 days, or keeps it up to 2 years if its safety checks flag it."
-    const val keptHere = "Kept only on this phone."
-
     const val maxBytes = 5 * 1024 * 1024
     const val maxEdge = 4096
     // An upright copy holds a second bitmap of the same size, so the decoded pixels are bounded before it is made.

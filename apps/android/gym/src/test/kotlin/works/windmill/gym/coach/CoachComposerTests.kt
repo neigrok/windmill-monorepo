@@ -21,6 +21,7 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsEnabled
@@ -28,6 +29,7 @@ import androidx.compose.ui.test.click
 import androidx.compose.ui.test.doubleClick
 import androidx.compose.ui.test.hasAnyDescendant
 import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isRoot
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -159,7 +161,7 @@ class CoachComposerTests {
         scope.cancel()
     }
 
-    @Test fun attachedPhotoSaysWhereItGoesOnEitherSeatAndCanBeSentWithoutTextThenRemoved() {
+    @Test fun anAttachedPhotoSaysNothingOfWhereItGoesOnEitherSeatAndCanBeSentWithoutTextThenRemoved() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         val disk = LocalCoach(File(tmp.root, "captions.json"))
         var owner by mutableStateOf<String?>(null)
@@ -168,21 +170,21 @@ class CoachComposerTests {
         store.freshChat(id = chat)
         var sent: Pair<String, CoachAttachment?>? = null
         compose.setContent { CoachComposer(store, chat, false, { text, photo -> sent = text to photo }, null) }
-        val line = "A copy goes to Anthropic, our AI provider, to read it. Windmill keeps none. Anthropic deletes it within 30 days, or keeps it up to 2 years if its safety checks flag it. Kept only on this phone."
+        fun saysNothingOfWhereItGoes() = listOf("Anthropic", "AI provider", "A copy goes", "Windmill keeps none", "Kept only on this phone", "Saved only on this phone", "Sent to Coach")
+            .forEach { compose.onAllNodes(hasText(it, substring = true)).assertCountEquals(0) }
         compose.onNodeWithContentDescription("Send").assertDoesNotExist()
-        compose.onNodeWithText(line).assertDoesNotExist()
         val photo = CoachAttachment("attachment-caption", "image/png", 1, 1, 3)
         compose.runOnIdle { store.saveDraft(chat, CoachDraft(photo = photo)) }
-        compose.onNodeWithText(line).assertIsDisplayed()
+        compose.onNodeWithContentDescription("Remove photo").assertIsDisplayed()
+        saysNothingOfWhereItGoes()
         compose.onNodeWithContentDescription("Send").assertIsEnabled().performClick()
         assertEquals("" to photo, sent)
         compose.onNodeWithContentDescription("Remove photo").performClick()
-        compose.onNodeWithText(line).assertDoesNotExist()
         compose.onNodeWithContentDescription("Send").assertDoesNotExist()
         compose.runOnIdle { owner = "alice"; store.freshChat(id = chat); store.saveDraft(chat, CoachDraft("Caption", photo)) }
-        compose.onNodeWithText(line).assertIsDisplayed()
+        compose.onNodeWithContentDescription("Remove photo").assertIsDisplayed()
+        saysNothingOfWhereItGoes()
         compose.onNodeWithContentDescription("Remove photo").performClick()
-        compose.onNodeWithText(line).assertDoesNotExist()
         compose.onNodeWithContentDescription("Send").assertIsEnabled()
         assertEquals(CoachDraft("Caption"), store.draft(chat))
         scope.cancel()

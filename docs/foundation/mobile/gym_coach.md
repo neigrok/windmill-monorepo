@@ -723,8 +723,7 @@ the server Coach's legacy conversations stay in the gym backend's Coach tables a
   sent it, in that phone's `picture:<id>` device row. On iOS the row holds the original and the model copy as
   base64. On Android it holds their metadata, and the bytes are files in `noBackupFilesDir/coach-pictures`,
   which no backup or device transfer carries.
-- Copy about a sent picture says that a copy goes to the model vendor to read for the answer, that
-  Windmill stores none, and the vendor's retention as verified at release.
+- No screen speaks of where a picture goes. The privacy policy (`web/public/privacy.html`) does.
 
 ---
 

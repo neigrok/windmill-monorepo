@@ -42,7 +42,6 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import kotlinx.coroutines.CancellationException
@@ -118,19 +117,13 @@ internal fun CoachComposer(store: CoachChats, key: String, asking: Boolean,
     }
     Column {
         editor.draft.photo?.takeIf { !asking }?.let { photo ->
-            Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 4.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("${CoachPhotos.whereItGoes} ${CoachPhotos.keptHere}",
-                    style = GymType.coachNote, color = colors.onSurfaceVariant,
-                    textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
-                Box(Modifier.padding(start = 40.dp).size(width = 88.dp, height = 84.dp)) {
-                    CoachPhoto(store, photo, Modifier.offset(y = 12.dp).size(72.dp))
-                    Box(Modifier.offset(x = 44.dp, y = (-8).dp).size(48.dp), contentAlignment = Alignment.Center) {
-                        FilledIconButton(onClick = { if (editor.sync(hidden)) editor.removePhoto() },
-                            enabled = enabled && !preparing, modifier = Modifier.size(32.dp),
-                            colors = IconButtonDefaults.filledIconButtonColors(containerColor = colors.surfaceContainerHighest, contentColor = colors.onSurfaceVariant)) {
-                            Icon(painterResource(R.drawable.gym_coach_close), "Remove photo", Modifier.size(20.dp))
-                        }
+            Box(Modifier.padding(start = 56.dp, top = 4.dp).size(width = 88.dp, height = 84.dp)) {
+                CoachPhoto(store, photo, Modifier.offset(y = 12.dp).size(72.dp))
+                Box(Modifier.offset(x = 44.dp, y = (-8).dp).size(48.dp), contentAlignment = Alignment.Center) {
+                    FilledIconButton(onClick = { if (editor.sync(hidden)) editor.removePhoto() },
+                        enabled = enabled && !preparing, modifier = Modifier.size(32.dp),
+                        colors = IconButtonDefaults.filledIconButtonColors(containerColor = colors.surfaceContainerHighest, contentColor = colors.onSurfaceVariant)) {
+                        Icon(painterResource(R.drawable.gym_coach_close), "Remove photo", Modifier.size(20.dp))
                     }
                 }
             }
