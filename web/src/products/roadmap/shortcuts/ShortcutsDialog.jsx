@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { Dialog } from '../../../design-system';
 import { track } from '../../../telemetry/beacon.js';
-import { SHORTCUTS_TITLE } from '../board/copy.js';
+import { SHORTCUTS_TITLE } from '../copy.js';
 import { visibleGroups, keyLabel, detectPlatform } from './shortcutMap.js';
 
 function Keycap({ children }) {
@@ -14,16 +14,16 @@ function GesturePill({ children }) {
   return <span className="st-gesture">{children}</span>;
 }
 
-export function ShortcutsDialog({ open, onClose, readOnly = false, view = 'graph', trackingEnabled = false, boardOpen = false, preserveOutsideFocus = false }) {
+export function ShortcutsDialog({ open, onClose, readOnly = false, owner = !readOnly, view = 'graph' }) {
   const [platform, setPlatform] = useState(detectPlatform);
   const board = view === 'board';
   const shownPlatform = board ? detectPlatform() : platform;
   useEffect(() => {
-    if (trackingEnabled && open) track('roadmap_shortcuts_open', { view });
-  }, [trackingEnabled, open, view]);
+    if (open) track('roadmap_shortcuts_open', { view });
+  }, [open, view]);
 
   return (
-    <Dialog open={open} onClose={onClose} title={board ? SHORTCUTS_TITLE : 'Keyboard shortcuts'} width={600} preserveOutsideFocus={preserveOutsideFocus}
+    <Dialog open={open} onClose={onClose} title={board ? SHORTCUTS_TITLE : 'Keyboard shortcuts'} width={600} preserveOutsideFocus
       padding={board ? 'calc(var(--space-6) + var(--space-1))' : undefined}>
       {!board && <div className="st-sc-toolbar">
         <div className="st-sc-toggle" role="group" aria-label="Platform">
@@ -33,7 +33,7 @@ export function ShortcutsDialog({ open, onClose, readOnly = false, view = 'graph
       </div>}
 
       <div className={board ? 'st-sc-grid st-sc-grid--board' : 'st-sc-grid'}>
-        {visibleGroups(readOnly, view, boardOpen).map((group) => (
+        {visibleGroups(readOnly, view, owner).map((group) => (
           <section className="st-sc-group" key={group.title}>
             <h3 className="st-sc-heading">{group.title}</h3>
             <ul className="st-sc-list">

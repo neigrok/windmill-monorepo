@@ -7,7 +7,7 @@ import './states.css';
 import { track } from '../../../telemetry/beacon.js';
 import { Button } from '../../../design-system';
 import { NewStep } from './BoardControls.jsx';
-import { COLUMN_TITLES, EMPTY_ROADMAP, LOAD_ERROR, roadmapComplete } from './copy.js';
+import { COLUMN_TITLES, EMPTY_ROADMAP, LOAD_ERROR, roadmapComplete } from '../copy.js';
 
 const COLUMNS = ['locked', 'upNext', 'done'];
 const SKELETON_CARDS = { locked: 3, upNext: 2, done: 3 };
@@ -54,7 +54,7 @@ export function BoardSkeleton({ phone }) {
             {column === 'upNext' && <span className="st-board-columns-accent" aria-hidden />}
             <span className="st-board-columns-title">{COLUMN_TITLES[column]}</span>
           </h2>
-          {Array.from({ length: SKELETON_CARDS[column] }, (_, index) => <SkeletonCard key={index} size="columns" />)}
+          {Array.from({ length: SKELETON_CARDS[column] }, (_, index) => <SkeletonCard key={index} size="plain" />)}
         </section>
       ))}
     </div>

@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { SkillTreeView } from './SkillTreeView.jsx';
-import { NewTreeBirth } from './ui/NewTreeBirth.jsx';
+import { NewTreeBirth } from './paste/NewTreeBirth.jsx';
 import { QuestShelf } from './quests/QuestShelf.jsx';
 import { listAllTrees } from './persistence/TreeRegistry.js';
 

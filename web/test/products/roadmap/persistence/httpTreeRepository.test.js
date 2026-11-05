@@ -2,10 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { HttpTreeRepository } from '../../../../src/products/roadmap/persistence/HttpTreeRepository.js';
+import { BoundaryFailure } from '../../../../src/products/roadmap/reportFailure.js';
 
 const BASE = 'http://backend.test';
 
-function withFetch(handler, run) {
+async function withFetch(handler, run) {
   const real = globalThis.fetch;
   const calls = [];
   globalThis.fetch = async (url, init) => {
@@ -13,7 +14,7 @@ function withFetch(handler, run) {
     return handler(url, init);
   };
   try {
-    return run(calls);
+    return await run(calls);
   } finally {
     globalThis.fetch = real;
   }
@@ -210,4 +211,72 @@ test('loadActivity carries the cursor and the cap, and a miss is silence, not a 
     const repo = new HttpTreeRepository({ baseUrl: BASE, treeId: 't_1' });
     assert.deepEqual(await repo.loadActivity(), []);
   });
+});
+
+// A repository that has read its tree from the server, and what `run` does next, under one answer for every other read.
+async function afterTreeRead(answer, run) {
+  const reported = [];
+  await withFetch((url) => (/\/t_1$/.test(url) ? ok({ data: SEEDED, visibility: 'public' }) : answer()), async () => {
+    const repo = new HttpTreeRepository({ baseUrl: BASE, treeId: 't_1', reportFailure: (operation) => reported.push(operation) });
+    await repo.loadTree();
+    await run(repo);
+  });
+  return reported;
+}
+
+const notJson = () => ({ ok: true, status: 200, json: async () => { throw new SyntaxError('Unexpected token <'); } });
+
+test('a server tree whose marks fail reports and throws a judged failure, rather than opening on a false count', async () => {
+  for (const answer of [() => status(500), notJson]) {
+    const reported = await afterTreeRead(answer, async (repo) => {
+      await assert.rejects(() => repo.loadProgress(SEEDED), (error) => error instanceof BoundaryFailure);
+    });
+    assert.deepEqual(reported, ['roadmap-progress-load']);
+  }
+});
+
+test('a server tree whose marks are refused or lost unwatched throws without reporting', async () => {
+  const reported = await afterTreeRead(() => status(403), async (repo) => {
+    await assert.rejects(() => repo.loadProgress(SEEDED), (error) => error instanceof BoundaryFailure);
+  });
+  assert.deepEqual(reported, []);
+  const lost = await afterTreeRead(() => { throw new TypeError('Failed to fetch'); }, async (repo) => {
+    await assert.rejects(() => repo.loadProgress(SEEDED), (error) => error instanceof BoundaryFailure);
+  });
+  assert.deepEqual(lost, []);
+});
+
+test('an owner naming its operation reports the marks under it too', async () => {
+  const reported = [];
+  await withFetch((url) => (/\/t_1$/.test(url) ? ok({ data: SEEDED }) : status(500)), async () => {
+    const repo = new HttpTreeRepository({ baseUrl: BASE, treeId: 't_1', operation: 'roadmap-export-load', reportFailure: (operation) => reported.push(operation) });
+    await repo.loadTree();
+    await assert.rejects(() => repo.loadProgress(SEEDED), (error) => error instanceof BoundaryFailure);
+  });
+  assert.deepEqual(reported, ['roadmap-export-load']);
+});
+
+test('a device tree keeps its seeds and reports nothing, whatever the server answers about its marks', async () => {
+  for (const answer of [() => status(500), () => status(404), notJson, () => { throw new TypeError('Failed to fetch'); }]) {
+    const reported = [];
+    await withFetch(answer, async () => {
+      const repo = new HttpTreeRepository({ baseUrl: BASE, treeId: 't_1', reportFailure: (operation) => reported.push(operation) });
+      assert.deepEqual((await repo.loadProgress(SEEDED)).completed, new Set(['a']));
+      assert.deepEqual(await repo.loadActivity(), []);
+    });
+    assert.deepEqual(reported, []);
+  }
+});
+
+test('a failed activity read reports and costs only the feed, even a 200 that is not JSON', async () => {
+  for (const answer of [() => status(500), notJson]) {
+    const reported = await afterTreeRead(answer, async (repo) => {
+      assert.deepEqual(await repo.loadActivity(), []);
+    });
+    assert.deepEqual(reported, ['roadmap-activity-load']);
+  }
+  const refused = await afterTreeRead(() => status(403), async (repo) => {
+    assert.deepEqual(await repo.loadActivity(), []);
+  });
+  assert.deepEqual(refused, []);
 });

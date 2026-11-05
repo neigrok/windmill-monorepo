@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { startTend, fetchRun } from './tendingClient.js';
+import { fetchTending, startTend, fetchRun } from './tendingClient.js';
 import { isTerminal, runFace } from './receipts.js';
+import { reportRoadmapFailure } from '../reportFailure.js';
+import { LABELS, TEND_TOAST } from '../copy.js';
+import { track } from '../../../telemetry/beacon.js';
 
 const POLL_INTERVAL_MS = 1200;
 const POLL_CEILING_MS = 90000;  // ceiling before we stop watching
@@ -10,11 +13,15 @@ const POLL_CEILING_MS = 90000;  // ceiling before we stop watching
 export function useTend({ treeId, onFace }) {
   const [working, setWorking] = useState(false);
   const aliveRef = useRef(true);
-  useEffect(() => () => { aliveRef.current = false; }, []);
+  useEffect(() => {
+    aliveRef.current = true;
+    return () => { aliveRef.current = false; };
+  }, []);
 
   const submit = useCallback(async (prompt) => {
     if (working || !prompt.trim()) return;
     setWorking(true);
+    track('roadmap_verb', { verb: 'askAI', step: 'send' });
 
     const started = await startTend(treeId, prompt);
     // A refusal comes back on the POST itself (200, no runId); a started run gives a runId to poll.
@@ -42,4 +49,48 @@ async function pollToRest(runId, aliveRef) {
   if (!aliveRef.current) return null;
   const last = await fetchRun(runId);
   return isTerminal(last) ? last : null;
+}
+
+// Ask AI in the room: who may use it, whether it is open, and the toast each answer leaves behind.
+export function useRoomTend({ treeId, treeMine, status, shared, demo, demotion, room: { sessionRef, sceneRef }, showToast }) {
+  const [tendingEnabled, setTendingEnabled] = useState(false);
+  const [tendOpen, setTendOpen] = useState(false);
+  useEffect(() => {
+    if (!treeMine || status !== 'signed-in' || demo) { setTendingEnabled(false); return undefined; }
+    let alive = true;
+    fetchTending().then((summary) => { if (alive) setTendingEnabled(!!summary?.enabled); });
+    return () => { alive = false; };
+  }, [treeMine, status, demo, treeId]);
+
+  const canTend = tendingEnabled && treeMine && !shared && !demo && !demotion;
+
+  // The run wrote on the server, so no local receipt names it; `created` is exactly what it planted.
+  const undoTend = useCallback((planted) => {
+    try {
+      if (!sessionRef.current?.dispatch({ kind: 'BulkDelete', nodeIds: planted, edges: [] })) return;
+      track('roadmap_graph_toast', { act: 'tend', step: 'undo' });
+      showToast(TEND_TOAST.reverted, { surface: 'tend' });
+    } catch (error) {
+      reportRoadmapFailure('roadmap-tend-undo', error);
+    }
+  }, [showToast]);
+
+  const onTendFace = useCallback((face) => {
+    setTendOpen(false);
+    if (face.kind === 'empty') return;
+    track('roadmap_verb', { verb: 'askAI', step: 'answer', outcome: face.kind });
+    const isReceipt = face.kind === 'receipt';
+    const hasUndo = isReceipt && face.created && face.created.length > 0;
+    if (hasUndo) setTimeout(() => sceneRef.current?.frameNodes(face.created), 600);
+    showToast(face.line, {
+      surface: 'tend',
+      holdMs: isReceipt ? 6000 : 5000,
+      detail: isReceipt ? face.detail : undefined,
+      action: hasUndo ? { label: LABELS.undo, run: () => undoTend(face.created) } : undefined,
+    });
+  }, [showToast, undoTend]);
+
+  const { working: tendWorking, submit: submitTend } = useTend({ treeId, onFace: onTendFace });
+
+  return { canTend, tendOpen, setTendOpen, tendWorking, submitTend };
 }

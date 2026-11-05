@@ -1,25 +1,34 @@
 import test, { after } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
-import { createServer } from 'vite';
+import { build } from 'vite';
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { dirname, resolve } from 'node:path';
-import { beacon } from './board/composerFixture.js';
+import { createServer } from 'node:http';
+import { existsSync, readFileSync, statSync } from 'node:fs';
+import { dirname, extname, join, resolve } from 'node:path';
+import { beacon } from './browserFixture.js';
 
 // The real identity row exercises the host contract; scene and HTTP boundaries are deterministic fakes.
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 const treeData = {
-  id: 't_sail', title: 'Learn to sail', kinds: [], nodes: [
+  id: 't_sail', title: 'Learn to sail', author: 'Ada Lovelace', kinds: [], nodes: [
     { id: 'course', label: 'Choose a course', color: 'terracotta', prerequisites: [], status: 'complete' },
     { id: 'wind', label: 'Read the wind', color: 'terracotta', prerequisites: ['course'] },
     { id: 'dock', label: 'Leave the dock', color: 'terracotta', prerequisites: ['wind'] },
   ],
 };
+const DOCK_DESCRIPTION = 'Cast off on an ebb tide after checking the fenders.';
+const BROAD_NODES = [
+  { id: 'knots', label: 'Tie the knots', color: 'terracotta', prerequisites: ['course'] },
+  { id: 'charts', label: 'Read the charts', color: 'sky', prerequisites: ['course'] },
+];
+const COACHED_NODE = { id: 'rigging', label: 'Rig the boat yourself', color: 'terracotta', prerequisites: [] };
 const entry = `
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { SyncSession } from '/src/products/roadmap/sync/SyncSession.js';
 import { SyncStore } from '/src/products/roadmap/sync/SyncStore.js';
+import { BoardQuery } from '/src/products/roadmap/board/Board.js';
 import { SkillTreeView } from '/src/products/roadmap/SkillTreeView.jsx';
 import { Shell } from '/src/shell/chrome/Shell.jsx';
 import { getRoomStatus } from '/src/shell/roomStatus.js';
@@ -27,6 +36,7 @@ import '/src/styles/fonts.js';
 import '/src/styles/global.css';
 const params = new URLSearchParams(location.search);
 window.fixture = ${JSON.stringify(treeData)};
+if (params.has('longTitle')) window.fixture.title = 'Learn to sail across the whole of the North Atlantic and back again';
 if (params.has('milestone')) window.fixture.nodes[1].status = 'complete';
 if (params.has('single')) window.fixture.nodes = [{ ...window.fixture.nodes[0], status: 'none' }];
 if (params.has('large')) window.fixture.nodes.push(...Array.from({ length: 997 }, (_, index) => ({ id: 'extra-' + index, label: 'Practice ' + index, prerequisites: ['wind'], color: 'terracotta' })));
@@ -34,6 +44,13 @@ if (params.has('empty')) window.fixture.nodes = [];
 if (params.has('legend')) {
   window.fixture.kinds = [{ id: 'build', hue: 'terracotta', label: 'Build' }, { id: 'learn', hue: 'olive', label: 'Learn' }];
   window.fixture.nodes[1].color = 'olive';
+}
+if (params.has('described')) window.fixture.nodes[2].description = ${JSON.stringify(DOCK_DESCRIPTION)};
+if (params.has('allDone')) for (const node of window.fixture.nodes) node.status = 'complete';
+if (params.has('broad')) window.fixture.nodes.push(...${JSON.stringify(BROAD_NODES)});
+if (params.has('coached')) window.fixture.nodes.push(${JSON.stringify(COACHED_NODE)});
+if (params.has('crashBoard')) {
+  BoardQuery.prototype.among = () => { throw new Error('Fixture Board failure'); };
 }
 SyncSession.prototype.start = async function () {
   this.store = new SyncStore();
@@ -61,6 +78,7 @@ window.issues = [];
 window.ceremonies = [];
 window.revealed = [];
 window.revealFrames = [];
+window.cameraCalls = [];
 window.copied = [];
 Object.defineProperty(navigator, 'clipboard', { configurable: true, value: {
   writeText: async (text) => {
@@ -105,6 +123,12 @@ export class SkillTreeScene {
     };
     this.announceCeremony = (message, options) => { window.ceremonies.push({ message, action: options?.action?.label ?? null }); };
     this.select = (id) => options.onNodePick(id);
+    this.setArrivalSummary = (summary) => { window.arrivalSummary = summary; };
+    this.suppressArrival = () => { window.arrivalSuppressed = true; };
+    this.projectToScreen = () => ({ x: 20, y: 300 });
+    this.zoomBy = (factor) => window.cameraCalls.push(['zoomBy', factor]);
+    this.focusWorking = (id, opts) => { if (!opts?.instant) window.cameraCalls.push(['focusWorking', id]); };
+    this.fitToView = () => window.cameraCalls.push(['fitToView']);
     this.setLongPress = (handler) => { window.longPress = handler; };
     this.setEditTap = (handler) => { window.editTap = handler; };
     window.scene = new Proxy(this, { get(target, property) { return property in target ? target[property] : () => {}; } });
@@ -127,46 +151,85 @@ export const useAuth = () => {
   return { status: current, user: current === 'signed-in' ? user : null, account: current === 'signed-in' ? account : null, refresh };
 };
 `;
+const HOST_PLUGIN = { name: 'roadmap-host-contract-test', enforce: 'pre',
+  resolveId(id, importer) {
+    if (id === '/roadmap-host-entry.js') return '\0host-entry';
+    const file = id.startsWith('.') && importer ? resolve(dirname(importer), id) : id;
+    if (file.endsWith('/scene/SkillTreeScene.js')) return '\0host-scene';
+    if (file.endsWith('/shell/auth/AuthProvider.jsx')) return '\0host-auth';
+    if (file.endsWith('/shell/auth/SignInDoor.jsx')) return '\0host-signin';
+    if (file.endsWith('/telemetry/beacon.js')) return '\0host-events';
+    if (file.endsWith('/telemetry/sentry.js')) return '\0host-issues';
+  },
+  load(id) {
+    if (id === '\0host-entry') return entry;
+    if (id === '\0host-scene') return scene;
+    if (id === '\0host-auth') return auth;
+    if (id === '\0host-signin') return 'const open = () => { window.signInOpened = (window.signInOpened ?? 0) + 1; }; export const useSignInDoor = () => open; export const useSignInDoorHost = () => () => {};';
+    if (id === '\0host-events') return beacon;
+    if (id === '\0host-issues') return 'export function captureError(product, operation, stack, route, tags) { window.issues.push({ operation, stack: !!stack, ...(tags ? { tags } : {}) }); }';
+  },
+};
+
+// One development bundle per file, served from memory: a fresh browser context has no cache, so a dev server would answer
+// every module of the host again for every page a test opens.
+async function bundleHost() {
+  const { output } = await build({
+    configFile: false, root, logLevel: 'silent', mode: 'development', plugins: [HOST_PLUGIN],
+    build: {
+      write: false, minify: false, sourcemap: false, cssCodeSplit: false, modulePreload: false,
+      rollupOptions: { input: '/roadmap-host-entry.js', output: { entryFileNames: 'host-entry.js' } },
+    },
+  });
+  return new Map(output.map((file) => ['/' + file.fileName, file.type === 'chunk' ? file.code : file.source]));
+}
+
+const CONTENT_TYPES = { '.js': 'text/javascript', '.css': 'text/css', '.woff2': 'font/woff2', '.woff': 'font/woff', '.svg': 'image/svg+xml', '.png': 'image/png', '.webmanifest': 'application/manifest+json' };
+
+function publicFile(pathname) {
+  const path = join(root, 'public', pathname);
+  return existsSync(path) && statSync(path).isFile() ? readFileSync(path) : null;
+}
+
+function hostPage(view, stylesheet) {
+  return '<!doctype html><meta name="viewport" content="width=device-width"><script>try{localStorage.clear();localStorage.setItem("windmill:view:last",JSON.stringify({t_sail:' + JSON.stringify(view) + '}));}catch{}</script>'
+    + `<link rel="stylesheet" href="${stylesheet}"><div id="root" style="height:100vh"></div><script type="module" src="/host-entry.js"></script>`;
+}
+
 export let origin;
 let server, browser, ready;
 let firstPage = true;
 
-export function startRoadmapHost(concern) {
+export function startRoadmapHost() {
   ready = (async () => {
-    server = await createServer({ configFile: false, root, cacheDir: `${root}/node_modules/.vite-roadmap-host-${concern}-test`,
-      plugins: [{ name: 'roadmap-host-contract-test', enforce: 'pre',
-        resolveId(id, importer) {
-          if (id === '/roadmap-host-entry.js') return '\0host-entry';
-          const file = id.startsWith('.') && importer ? resolve(dirname(importer), id) : id;
-          if (file.endsWith('/scene/SkillTreeScene.js')) return '\0host-scene';
-          if (file.endsWith('/shell/auth/AuthProvider.jsx')) return '\0host-auth';
-          if (file.endsWith('/shell/auth/SignInDoor.jsx')) return '\0host-signin';
-          if (file.endsWith('/telemetry/beacon.js')) return '\0host-events';
-          if (file.endsWith('/telemetry/sentry.js')) return '\0host-issues';
-        },
-        load(id) {
-          if (id === '\0host-entry') return entry;
-          if (id === '\0host-scene') return scene;
-          if (id === '\0host-auth') return auth;
-          if (id === '\0host-signin') return 'const open = () => { window.signInOpened = (window.signInOpened ?? 0) + 1; }; export const useSignInDoor = () => open; export const useSignInDoorHost = () => () => {};';
-          if (id === '\0host-events') return beacon;
-          if (id === '\0host-issues') return 'export function captureError(product, operation, stack, route, tags) { window.issues.push({ operation, stack: !!stack, ...(tags ? { tags } : {}) }); }';
-        },
-        configureServer(server) {
-          server.middlewares.use('/roadmap-host-test', (request, response) => {
-            const params = new URL(request.url, 'http://localhost').searchParams;
-            const gate = params.get('gate') !== 'closed';
-            const view = params.get('surface') ?? 'tree';
-            response.setHeader('Content-Type', 'text/html');
-            response.end('<!doctype html><meta name="viewport" content="width=device-width"><script>localStorage.clear();localStorage.setItem("windmill:board:dev",' + JSON.stringify(gate ? '1' : '0') + ');localStorage.setItem("windmill:view:last",JSON.stringify({t_sail:' + JSON.stringify(view) + '}));</script><div id="root" style="height:100vh"></div><script type="module" src="/roadmap-host-entry.js"></script>');
-          });
-        },
-      }], optimizeDeps: { include: ['react', 'react-dom/client'] }, server: { host: '127.0.0.1', port: 0, fs: { allow: [fileURLToPath(new URL('../../../../', import.meta.url))] } } });
-    await server.listen(0);
-    origin = `http://127.0.0.1:${server.httpServer.address().port}`;
+    const files = await bundleHost();
+    const stylesheet = [...files.keys()].find((path) => path.endsWith('.css'));
+    server = createServer((request, response) => {
+      const url = new URL(request.url, 'http://localhost');
+      if (url.pathname === '/roadmap-host-test') {
+        response.setHeader('Content-Type', 'text/html');
+        response.end(hostPage(url.searchParams.get('surface') ?? 'tree', stylesheet));
+        return;
+      }
+      const file = files.get(url.pathname) ?? publicFile(url.pathname);
+      if (!file) {
+        response.statusCode = 404;
+        response.end();
+        return;
+      }
+      response.setHeader('Content-Type', CONTENT_TYPES[extname(url.pathname)] ?? 'application/octet-stream');
+      response.end(file);
+    });
+    await new Promise((listening) => server.listen(0, '127.0.0.1', listening));
+    origin = `http://127.0.0.1:${server.address().port}`;
     browser = await chromium.launch({ headless: true });
   })();
-  after(async () => { try { await ready; } finally { await browser?.close(); await server?.close(); } });
+  after(async () => {
+    try { await ready; } finally {
+      await browser?.close();
+      server?.close();
+    }
+  });
 }
 
 const runningTest = new AsyncLocalStorage();
@@ -178,22 +241,31 @@ export function hostTest(name, run) {
   });
 }
 
-export async function openHost({ width = 1440, height = 1000, role = 'owner', gate = 'open', surface = 'tree', milestone = false, single = false, crash = false, demo = false, clipboardRefused = false, large = false, empty = false, shell = false, legend = false, fixedClock = false, touch = false } = {}) {
+export async function openHost({ width = 1440, height = 1000, role = 'owner', surface = 'tree', milestone = false, single = false, crash = false, crashBoard = false, demo = false, clipboardRefused = false, large = false, empty = false, shell = false, legend = false, fixedClock = false, described = false, allDone = false, broad = false, coached = false, manyTrees = false, touch = false, motion = false, appUrl = false, pathOnly = false, storageRefused = false, longTitle = false } = {}) {
   await ready;
-  const page = await browser.newPage({ viewport: { width, height }, reducedMotion: 'reduce', hasTouch: touch });
+  const page = await browser.newPage({ viewport: { width, height }, reducedMotion: motion ? 'no-preference' : 'reduce', hasTouch: touch });
   page.setDefaultTimeout(firstPage ? 15000 : 5000);
+  page.setDefaultNavigationTimeout(30000);
   firstPage = false;
 
   const errors = [];
   const { fail } = runningTest.getStore();
   const report = (message) => {
     if (crash && (message.includes('Fixture identity measurement failure') || message.includes('The above error occurred in the <RoadmapIdentity> component'))) return;
+    if (crashBoard && (message.includes('Fixture Board failure') || message.includes('The above error occurred in the <BoardView> component'))) return;
     errors.push(message);
     fail(new Error(message));
     void page.close();
   };
   page.on('pageerror', (error) => report(error.stack ?? error.message));
   page.on('console', (message) => { if (message.type() === 'error') report(message.text()); });
+  if (storageRefused) {
+    await page.addInitScript(() => {
+      for (const name of ['localStorage', 'sessionStorage']) {
+        Object.defineProperty(window, name, { configurable: true, get() { throw new DOMException('Access is denied for this document.', 'SecurityError'); } });
+      }
+    });
+  }
   await page.route('**/v1/**', (route) => {
     const path = new URL(route.request().url()).pathname;
     let body = {};
@@ -209,21 +281,28 @@ export async function openHost({ width = 1440, height = 1000, role = 'owner', ga
         data.kinds = [{ id: 'build', hue: 'terracotta', label: 'Build' }, { id: 'learn', hue: 'olive', label: 'Learn' }];
         data.nodes[1].color = 'olive';
       }
+      if (described) data.nodes[2].description = DOCK_DESCRIPTION;
+      if (allDone) for (const node of data.nodes) node.status = 'complete';
+      if (broad) data.nodes.push(...structuredClone(BROAD_NODES));
+      if (coached) data.nodes.push(structuredClone(COACHED_NODE));
       body = { data, mine: role !== 'reader', visibility: 'public' };
     }
-    if (path === '/v1/trees') body = { trees: [{ id: 't_other', title: 'Spanish basics', done: 12, total: 40, dominantKind: 'sky' }] };
+    if (path === '/v1/trees') {
+      const others = manyTrees ? Array.from({ length: 11 }, (_, index) => ({ id: `t_many_${index}`, title: `Spanish chapter ${index}`, done: 0, total: 5, dominantKind: 'olive' })) : [];
+      body = { trees: [{ id: 't_other', title: 'Spanish basics', done: 12, total: 40, dominantKind: 'sky' }, ...others] };
+    }
     if (path.endsWith('/activity')) body = { events: [] };
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
   });
-  const params = new URLSearchParams({ role, gate, surface });
-  if (role === 'reader') params.set('view', '1');
-  for (const [name, enabled] of Object.entries({ milestone, single, crash, demo, clipboardRefused, large, empty, shell, legend })) {
+  const params = new URLSearchParams({ role, surface });
+  if (role === 'reader' && !appUrl) params.set('view', '1');
+  for (const [name, enabled] of Object.entries({ milestone, single, crash, crashBoard, demo, clipboardRefused, large, empty, shell, legend, described, allDone, broad, coached, longTitle })) {
     if (enabled) params.set(name, '1');
   }
-  await page.goto(`${origin}/roadmap-host-test?${params}#/app/t_sail`);
-  await page.waitForFunction(() => !!window.session?.ready);
-  if (gate === 'open' && !crash && !demo) await page.locator('.st-roadmap-progress').waitFor();
-  if (role === 'reader' && gate === 'open' && surface === 'board') await page.getByRole('button', { name: 'Board', exact: true }).click();
+  await page.goto(`${origin}/roadmap-host-test?${params}${pathOnly ? '' : '#/app/t_sail'}`);
+  await page.waitForFunction(() => !!window.session?.ready, null, { timeout: 30000 });
+  if (!crash && !demo) await page.locator('.st-roadmap-progress').waitFor({ timeout: 30000 });
+  if (role === 'reader' && surface === 'board' && !crash) await page.getByRole('button', { name: 'Board', exact: true }).click();
   if (fixedClock) {
     await page.clock.install({ time: new Date('2026-11-03T11:59:00Z') });
     await page.clock.pauseAt(new Date('2026-11-03T12:00:00Z'));

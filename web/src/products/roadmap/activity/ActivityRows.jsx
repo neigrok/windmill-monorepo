@@ -1,5 +1,6 @@
 import React from 'react';
-import { ACTIVITY } from '../board/copy.js';
+import { Icon, IconButton } from '../../../design-system';
+import { ACTIVITY, LABELS, ROADMAP_VERBS } from '../copy.js';
 import { ActorAvatar, EventSentence, relativeTime } from './grammar.jsx';
 
 export function ActivityRows({ groups, nodesById, onOpenStep }) {
@@ -24,5 +25,18 @@ export function ActivityRows({ groups, nodesById, onOpenStep }) {
         </React.Fragment>
       ))}
     </div>
+  );
+}
+
+// The tablet's Activity panel. The room seats it in whichever layer the view shows, so the Board's menus stand above it.
+export function ActivityPanel({ top, groups, nodesById, onClose, onOpenStep }) {
+  return (
+    <aside className="st-roadmap-activity-panel" aria-label={ROADMAP_VERBS.activity} style={{ top }}>
+      <div className="st-roadmap-activity-header">
+        <h2>{ROADMAP_VERBS.activity}</h2>
+        <IconButton icon={<Icon name="x" size={20} />} label={LABELS.close} onClick={onClose} />
+      </div>
+      <ActivityRows groups={groups} nodesById={nodesById} onOpenStep={onOpenStep} />
+    </aside>
   );
 }

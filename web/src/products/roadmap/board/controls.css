@@ -84,11 +84,6 @@
   line-height: 16px;
   color: var(--text-secondary);
 }
-/* The identity row pushes its field and following controls past the switch. */
-.st-board-identity .st-board-find {
-  margin-left: auto;
-}
-
 .st-board-find--phone {
   flex: 1;
   min-width: 0;

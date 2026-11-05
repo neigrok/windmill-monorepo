@@ -7,6 +7,8 @@ import { SkillTree } from '../../../../src/products/roadmap/model/SkillTree.js';
 import { advanceProgress } from '../../../../src/products/roadmap/model/progress.js';
 import { renderHook } from '../../gym/harness.mjs';
 
+const holdingSession = (session) => ({ ready: true, holdAct: () => {}, endHeldAct: () => {}, leavePage: () => {}, ...session });
+
 function fixture(overrides = {}) {
   const calls = [];
   const receipt = {};
@@ -18,7 +20,7 @@ function fixture(overrides = {}) {
   const c = {
     tree, treeId: tree.id, active: true, owner: true,
     progress: { completed: new Set(), completedAt: {} }, query: new BoardQuery(), now: () => 17,
-    session: { dispatch: (gesture) => { calls.push(['dispatch', gesture]); return receipt; }, revert: (value) => { calls.push(['revert', value]); return true; } },
+    session: holdingSession({ dispatch: (gesture) => { calls.push(['dispatch', gesture]); return receipt; }, revert: (value) => { calls.push(['revert', value]); return true; } }),
     completeStep: (id, options) => { calls.push(['complete', id, options]); return advanceProgress(c.progress, [id], 'complete', options.at); },
     restoreStep: (id, before) => calls.push(['restore', id, before]),
     showToast: (message, options) => { c.toast = { message, ...options }; },
@@ -80,7 +82,7 @@ test('a release retains its original session across roadmap changes', () => {
 });
 
 test('a no-op release clears the projection without reporting an expected refusal', () => {
-  const { acts, c, calls } = fixture({ session: { dispatch: () => null } });
+  const { acts, c, calls } = fixture({ session: holdingSession({ dispatch: () => null }) });
   acts.delete(['wind'], 'menu');
   acts.release('timer');
   assert.equal(c.held, null);
@@ -90,12 +92,145 @@ test('a no-op release clears the projection without reporting an expected refusa
 
 test('an unexpected release failure reports its original error for stack frames', () => {
   const error = new Error('private content');
-  const { acts, c, calls } = fixture({ session: { dispatch: () => { throw error; } } });
+  const { acts, c, calls } = fixture({ session: holdingSession({ dispatch: () => { throw error; } }) });
   acts.delete(['wind'], 'menu');
   acts.release('timer');
   assert.equal(c.held, null);
-  assert.deepEqual(calls, [['event', 'roadmap_board_delete', { step: 'held', door: 'menu', view: 'board' }], ['quiet'], ['report', 'roadmap-board-delete']]);
+  assert.deepEqual(calls, [
+    ['event', 'roadmap_board_delete', { step: 'held', door: 'menu', view: 'board' }], ['quiet'], ['report', 'roadmap-board-delete'],
+    ['event', 'roadmap_board_delete', { step: 'failed', outcome: 'error', view: 'board' }],
+  ]);
   assert.deepEqual(c.errors, [error]);
+});
+
+test('a session not ready says the delete failed at once, holds nothing and reports no Issue; Retry runs it again', (t) => {
+  const warned = [];
+  t.mock.method(console, 'warn', (line) => warned.push(line));
+  const session = holdingSession({ ready: false, dispatch: () => { throw new Error('nothing to dispatch yet'); } });
+  const { acts, c, calls } = fixture({ session });
+  assert.equal(acts.delete(['wind'], 'key'), false);
+  assert.equal(c.held, undefined);
+  assert.deepEqual({ message: c.toast.message, surface: c.toast.surface, act: c.toast.act, label: c.toast.action.label, holdMs: c.toast.holdMs },
+    { message: 'Couldn’t delete Read the wind', surface: 'board', act: 'delete', label: 'Retry', holdMs: undefined });
+  assert.deepEqual(calls, [['event', 'roadmap_board_delete', { step: 'failed', outcome: 'not_ready', view: 'board' }]]);
+  assert.deepEqual(c.errors, []);
+  assert.deepEqual(warned, ['[sync] a delete could not land: the session is not ready']);
+  calls.length = 0;
+  c.toast.action.run();
+  assert.deepEqual(calls, [
+    ['event', 'roadmap_board_delete', { step: 'retry', view: 'board' }],
+    ['event', 'roadmap_board_delete', { step: 'failed', outcome: 'not_ready', view: 'board' }],
+  ]);
+  session.ready = true;
+  calls.length = 0;
+  c.toast.action.run();
+  assert.deepEqual(c.held.ids, ['wind']);
+  assert.equal(c.toast.message, 'Read the wind deleted');
+  assert.deepEqual(calls, [
+    ['event', 'roadmap_board_delete', { step: 'retry', view: 'board' }],
+    ['event', 'roadmap_board_delete', { step: 'held', door: 'key', view: 'board' }],
+  ]);
+});
+
+test('a session with no socket yet is not ready either, and several steps name their count', (t) => {
+  t.mock.method(console, 'warn', () => {});
+  const { acts, c } = fixture({ session: null });
+  assert.equal(acts.delete(['wind', 'dock'], 'bulk'), false);
+  assert.equal(c.toast.message, 'Couldn’t delete 2 steps');
+  assert.deepEqual(c.errors, []);
+});
+
+test('a release that fails when its hold ends brings the step back and says so; Retry holds it again', (t) => {
+  t.mock.method(console, 'warn', () => {});
+  const session = holdingSession({ dispatch: () => null });
+  const { acts, c, calls } = fixture({ session });
+  acts.delete(['wind'], 'menu');
+  session.ready = false;
+  c.toast.onLeave('timer');
+  assert.equal(c.held, null);
+  assert.equal(c.toast.message, 'Couldn’t delete Read the wind');
+  assert.deepEqual(calls.slice(1), [['quiet'], ['event', 'roadmap_board_delete', { step: 'failed', outcome: 'not_ready', view: 'board' }]]);
+  session.ready = true;
+  c.toast.action.run();
+  assert.deepEqual(c.held.ids, ['wind']);
+  assert.equal(c.toast.holdMs, 9000);
+});
+
+for (const via of ['replaced', 'left']) {
+  test(`a release that fails as its toast is ${via} says nothing over what took its place, and still reports`, (t) => {
+    t.mock.method(console, 'warn', () => {});
+    const error = new Error('private content');
+    const { acts, c, calls } = fixture({ session: holdingSession({ dispatch: () => { throw error; } }) });
+    acts.delete(['wind'], 'menu');
+    const shown = c.toast;
+    shown.onLeave(via);
+    assert.equal(c.toast, shown);
+    assert.deepEqual(calls.at(-1), ['event', 'roadmap_board_delete', { step: 'failed', outcome: 'error', view: 'board' }]);
+    assert.deepEqual(c.errors, [error]);
+  });
+}
+
+test('⌘Z during a hold cancels it as the toast\'s Undo does: nothing sent, the stack untouched, the toast gone', () => {
+  const session = new SyncSession({ treeId: 'sail', registry: null, store: { save: async () => {} } });
+  const data = { id: 'sail', title: 'Sail', nodes: [
+    { id: 'spare', label: 'Practice knots', prerequisites: [] },
+    { id: 'wind', label: 'Read the wind', prerequisites: [] },
+  ] };
+  session.seed(data);
+  const renamed = session.dispatch({ kind: 'RenameNode', id: 'spare', label: 'Earlier' });
+  const cleared = [];
+  const { acts, c, calls } = fixture({ tree: new SkillTree(data), session, clearBoardToast: () => cleared.push(true) });
+  acts.delete(['wind'], 'menu');
+  calls.length = 0;
+  session.undo();
+  assert.equal(c.held, null);
+  assert.equal(acts.pending, null);
+  assert.deepEqual(cleared, [true]);
+  assert.deepEqual(calls, [['quiet'], ['reveal', 'wind'], ['event', 'roadmap_board_undo', { act: 'delete' }]]);
+  assert.deepEqual(session.lattice.toTreeData().nodes.map(({ label }) => label), ['Earlier', 'Read the wind']);
+  assert.deepEqual([session.undoStack.length, session.redoStack.length], [1, 0]);
+  c.toast.onLeave('replaced');
+  assert.equal(session.lattice.hasNode('wind'), true);
+  session.undo();
+  assert.equal(session.lattice.toTreeData().nodes[0].label, 'Practice knots');
+  assert.equal(session.revert(renamed), false);
+});
+
+test('after a hold ends, by release or Undo, ⌘Z walks the stack again', () => {
+  const session = new SyncSession({ treeId: 'sail', registry: null, store: { save: async () => {} } });
+  const data = { id: 'sail', title: 'Sail', nodes: [
+    { id: 'spare', label: 'Practice knots', prerequisites: [] },
+    { id: 'wind', label: 'Read the wind', prerequisites: [] },
+  ] };
+  session.seed(data);
+  const { acts, c } = fixture({ tree: new SkillTree(data), session });
+  acts.delete(['wind'], 'menu');
+  c.toast.onLeave('timer');
+  assert.equal(session.lattice.hasNode('wind'), false);
+  session.undo();
+  assert.equal(session.lattice.hasNode('wind'), true);
+});
+
+test('a completion whose Undo throws reports its static operation and lets its toast leave', () => {
+  const error = new Error('private content');
+  const { acts, c, calls } = fixture({ restoreStep: () => { throw error; } });
+  acts.complete('wind', 'key');
+  calls.length = 0;
+  assert.doesNotThrow(() => c.toast.action.run());
+  assert.deepEqual(calls, [['quiet'], ['report', 'roadmap-step-restore']]);
+  assert.deepEqual(c.errors, [error]);
+});
+
+test('leaving the page turns the session synchronous before the release, so the release lands first', () => {
+  const order = [];
+  const { acts } = fixture({ session: holdingSession({
+    leavePage: () => order.push('leaving'),
+    dispatch: () => { order.push('dispatch'); return {}; },
+  }) });
+  acts.delete(['wind'], 'menu');
+  acts.leavePage();
+  acts.leavePage();
+  assert.deepEqual(order, ['leaving', 'dispatch']);
 });
 
 test('complete snapshots progress; Undo targets its own step and reveal names the newly unlocked step', () => {
@@ -176,30 +311,28 @@ test('Graph create Undo refuses expired receipts quietly and reports thrown reve
   }
 });
 
-test('Graph composers expose owner create and open-detail edit only behind the gate', () => {
-  for (const gate of [false, true]) {
-    for (const owner of [false, true]) {
-      for (const detailId of [null, 'wind']) {
-        const calls = [];
-        const draft = { door: 'verbs', view: 'tree' };
-        const composer = new BoardComposer({ gate, active: false, owner, view: 'tree',
-          detailId, composer: draft,
-          acts: { edit: (request) => { calls.push(['edit', request]); return { ok: true }; } },
-          onOpen: (value) => calls.push(['open', value]),
-        });
-        const editable = gate && owner && detailId !== null;
-        assert.equal(composer.shown, gate && owner ? draft : null);
-        composer.openEdit('wind');
-        assert.deepEqual(calls, editable ? [['open', { door: 'detail', editing: 'wind' }]] : []);
-        assert.deepEqual(composer.saveEdit({ id: 'wind' }), { ok: false });
-        composer.composer = { door: 'detail', view: 'tree', editing: 'wind' };
-        assert.equal(composer.shown, editable ? composer.composer : null);
-        assert.deepEqual(composer.saveEdit({ id: 'wind' }), { ok: editable });
-        assert.deepEqual(composer.saveEdit({ id: 'other' }), { ok: false });
-        assert.deepEqual(calls, editable ? [
-          ['open', { door: 'detail', editing: 'wind' }], ['edit', { id: 'wind' }],
-        ] : []);
-      }
+test('Graph composers expose owner create and open-detail edit to the owner alone', () => {
+  for (const owner of [false, true]) {
+    for (const detailId of [null, 'wind']) {
+      const calls = [];
+      const draft = { door: 'verbs', view: 'tree' };
+      const composer = new BoardComposer({ owner, view: 'tree',
+        detailId, composer: draft,
+        acts: { edit: (request) => { calls.push(['edit', request]); return { ok: true }; } },
+        onOpen: (value) => calls.push(['open', value]),
+      });
+      const editable = owner && detailId !== null;
+      assert.equal(composer.shown, owner ? draft : null);
+      composer.openEdit('wind');
+      assert.deepEqual(calls, editable ? [['open', { door: 'detail', editing: 'wind' }]] : []);
+      assert.deepEqual(composer.saveEdit({ id: 'wind' }), { ok: false });
+      composer.composer = { door: 'detail', view: 'tree', editing: 'wind' };
+      assert.equal(composer.shown, editable ? composer.composer : null);
+      assert.deepEqual(composer.saveEdit({ id: 'wind' }), { ok: editable });
+      assert.deepEqual(composer.saveEdit({ id: 'other' }), { ok: false });
+      assert.deepEqual(calls, editable ? [
+        ['open', { door: 'detail', editing: 'wind' }], ['edit', { id: 'wind' }],
+      ] : []);
     }
   }
 });
@@ -208,7 +341,7 @@ test('a composer is hidden immediately after switching away from its originating
   for (const origin of ['board', 'tree']) {
     for (const view of ['board', 'tree']) {
       const draft = { door: 'verbs', view: origin };
-      const composer = new BoardComposer({ gate: true, active: view === 'board', owner: true,
+      const composer = new BoardComposer({ owner: true,
         view, detailId: null, composer: draft,
       });
       assert.equal(composer.shown, origin === view ? draft : null);
@@ -281,7 +414,7 @@ test('delete confirmation and cancellation only emit their bounded event', () =>
 
 test('Board create and held release use the common dispatch receipt policy', () => {
   const options = [];
-  const { acts } = fixture({ session: { dispatch: (_gesture, value) => { options.push(value); return {}; } } });
+  const { acts } = fixture({ session: holdingSession({ dispatch: (_gesture, value) => { options.push(value); return {}; } }) });
   acts.create(request);
   acts.delete(['wind'], 'menu');
   acts.release('timer');
@@ -401,14 +534,14 @@ test('edit diffs, marks quiet before one contained write, emits rename and bound
   const options = [];
   const dispatch = c.session.dispatch;
   c.session.dispatch = (gesture, capture) => { options.push(capture); return dispatch(gesture); };
-  c.emit = (event) => calls.push(['activity', event]);
+  c.emit = (event, emitted) => calls.push(['activity', event, emitted]);
   assert.deepEqual(acts.edit(editRequest), { ok: true });
   assert.deepEqual(options, [undefined]);
   assert.equal(c.toast, undefined);
   assert.deepEqual(calls, [
     ['quiet'],
     ['dispatch', { kind: 'EditNode', id: 'dock', label: 'Leave the harbor', description: 'Practice', color: 'gold', addPrerequisites: [], removePrerequisites: ['wind'] }],
-    ['activity', { verb: 'renamed', nodeId: 'dock', label: 'Leave the harbor', kind: 'gold' }],
+    ['activity', { verb: 'renamed', nodeId: 'dock', label: 'Leave the harbor', kind: 'gold' }, { silent: true }],
     ['event', 'roadmap_board_edit', { step: 'saved', name: true, description: true, kind: true, prerequisites: true }],
   ]);
 });
@@ -678,4 +811,45 @@ test('delete confirmation and cancellation identify the current Graph surface', 
     ['event', 'roadmap_board_delete', { step: 'confirm', view: 'graph' }],
     ['event', 'roadmap_board_delete', { step: 'cancel', view: 'graph' }],
   ]);
+});
+
+test('the edit door belongs to the active owner detail only', () => {
+  for (const [owner, id] of [[false, 'wind'], [true, 'dock'], [true, 'wind']]) {
+    const calls = [];
+    const composer = new BoardComposer({ owner, detailId: 'wind', composer: null,
+      onOpen: (draft) => calls.push(draft) });
+    composer.openEdit(id);
+    assert.deepEqual(calls, owner && id === 'wind' ? [{ door: 'detail', editing: 'wind' }] : []);
+  }
+});
+
+test('closing, removing or replacing an edit detail immediately excludes its composer and rejects writes', () => {
+  for (const detailId of [null, 'dock', 'wind']) {
+    const calls = [];
+    const draft = { door: 'detail', editing: 'wind' };
+    const composer = new BoardComposer({ owner: true, detailId, composer: draft,
+      acts: { edit: (request) => { calls.push(request); return { ok: true }; } } });
+    const request = { id: 'wind', label: 'Read the wind' };
+    assert.equal(composer.shown, detailId === 'wind' ? draft : null);
+    assert.deepEqual(composer.saveEdit(request), { ok: detailId === 'wind' });
+    assert.deepEqual(calls, detailId === 'wind' ? [request] : []);
+  }
+});
+
+test('edit save refuses a lost owner', () => {
+  const composer = new BoardComposer({ owner: false, detailId: 'wind',
+    composer: { door: 'detail', editing: 'wind' },
+    acts: { edit: () => assert.fail('an unavailable edit must not dispatch') } });
+  assert.equal(composer.shown, null);
+  assert.deepEqual(composer.saveEdit({ id: 'wind' }), { ok: false });
+});
+
+test('create composers remain visible without a detail but cannot write through the edit door', () => {
+  const draft = { door: 'verbs' };
+  const composer = new BoardComposer({ owner: true, detailId: null, composer: draft,
+    acts: { edit: () => assert.fail('a create draft must not dispatch an edit') },
+    onOpen: () => assert.fail('there is no detail to edit') });
+  assert.equal(composer.shown, draft);
+  composer.openEdit(null);
+  assert.deepEqual(composer.saveEdit({ id: 'wind' }), { ok: false });
 });

@@ -35,9 +35,9 @@ function render(props, { knots = 0 } = {}) {
   };
 }
 
-test('BoardView — below 744px the phone segments take the columns, lifted clear of a Fork pill', () => {
-  assert.deepEqual(render({ breakpoint: 'phone', bottomInset: 68 }), {
-    wrapper: '<div class="st-board st-board--phone" style="padding-bottom:68px">',
+test('BoardView — below 744px the phone segments take the columns', () => {
+  assert.deepEqual(render({ breakpoint: 'phone' }), {
+    wrapper: '<div class="st-board st-board--phone">',
     columns: false,
     rails: [],
     showAll: [],
@@ -47,7 +47,7 @@ test('BoardView — below 744px the phone segments take the columns, lifted clea
 
 test('BoardView — a tablet stands two columns and folds Done to a rail', () => {
   assert.deepEqual(render({ breakpoint: 'tablet' }), {
-    wrapper: '<div class="st-board st-board--columns" style="padding-bottom:0">',
+    wrapper: '<div class="st-board st-board--columns">',
     columns: true,
     rails: ['done'],
     showAll: [],
@@ -57,7 +57,7 @@ test('BoardView — a tablet stands two columns and folds Done to a rail', () =>
 
 test('BoardView — under the desktop topbar the columns start a gap below where the bar ends', () => {
   assert.deepEqual(render({ breakpoint: 'desktop', topInset: 90 }), {
-    wrapper: '<div class="st-board st-board--columns" style="padding-top:calc(90px + var(--space-3));padding-bottom:0">',
+    wrapper: '<div class="st-board st-board--columns" style="padding-top:calc(90px + var(--space-3))">',
     columns: true,
     rails: [],
     showAll: [],
@@ -86,20 +86,21 @@ import { createRoot } from 'react-dom/client';
 import '/src/styles/fonts.js';
 import '/src/styles/global.css';
 import BoardView from '/src/products/roadmap/board/BoardView.jsx';
-import { coverBeneath } from '/src/products/roadmap/board/composerFocus.js';
+import { coverBeneath } from '/src/products/roadmap/step/composerFocus.js';
 import { boardFocusTarget } from '/src/products/roadmap/board/traversal.js';
 import { BoardQuery } from '/src/products/roadmap/board/Board.js';
 import { SkillTree } from '/src/products/roadmap/model/SkillTree.js';
 import { StepCard } from '/src/products/roadmap/board/StepCard.jsx';
 import { useBoardActs } from '/src/products/roadmap/board/useBoardActs.js';
-import { useStepAddress } from '/src/products/roadmap/board/stepAddress.js';
-import { useRoadmapToast } from '/src/products/roadmap/SkillTreeView.jsx';
+import { useStepAddress } from '/src/products/roadmap/step/stepAddress.js';
+import { useRoadmapToast } from '/src/products/roadmap/room/useRoadmapToast.js';
 import { SyncSession } from '/src/products/roadmap/sync/SyncSession.js';
 
 const legend = [
   { id: 'build', hue: 'terracotta', label: 'Build' },
   { id: 'learn', hue: 'olive', label: 'Learn' },
   { id: 'milestone', hue: 'gold', label: 'Milestone' },
+  { id: 'derived-plum', hue: 'plum', label: '', description: '' },
 ];
 
 window.openBoard = (nodes, completed, breakpoint) => {
@@ -205,13 +206,16 @@ window.openSelectionBoard = (nodes, options = {}) => {
     const [revision, setRevision] = useState(0);
     const address = useStepAddress();
     const progress = useMemo(() => ({ completed: new Set(options.completed ?? ['course', 'parts', 'rig']), completedAt: { course: 1, parts: 2, rig: 3 } }), []);
-    const { toast, showToast, dismissToast, boardToastShown } = useRoadmapToast();
+    const { toast, showToast, dismissToast, toastShown } = useRoadmapToast();
     session.onTreeChanged((data) => setTree(new SkillTree(data)));
     window.writes ??= [];
     window.selectionAttempts ??= [];
     const { held, acts } = useBoardActs({
       tree, treeId: tree.treeId, owner, active, query, progress, now: Date.now,
       session: {
+        ready: session.ready,
+        holdAct: (cancel) => session.holdAct(cancel),
+        endHeldAct: () => session.endHeldAct(),
         dispatch: (gesture, options) => {
           window.selectionAttempts.push(gesture);
           if (window.refuseSelectionWrites) return null;
@@ -243,7 +247,7 @@ window.openSelectionBoard = (nodes, options = {}) => {
         onNewStep: () => {},
         onComplete: (id, door) => acts.complete(id, door),
         onRecolor: (ids, hue) => acts.recolor(ids, hue), onDelete: (ids, door) => acts.delete(ids, door),
-        toast, onToastShown: boardToastShown,
+        toast, onToastShown: toastShown,
         onToastUndo: () => { toast.action.run(); dismissToast(); },
       }));
   }
@@ -507,23 +511,38 @@ test('Chromium: on the phone Roadmap complete takes the Up next pane without its
   }
 });
 
-test('Chromium: from 744px the skeleton breathes, and holds still under reduced motion', async () => {
+test('Chromium: skeleton cards hold still on every band (02.09): from 744 radius 20, height 72, lines 180×14 and up to 240×10; the phone keeps its card', async () => {
   await ready;
   const errors = [];
-  const moving = await openStatePage({ width: 1440, height: 900 }, { nodes: null, loading: true, breakpoint: 'desktop' }, errors);
-  const still = await openStatePage({ width: 1440, height: 900 }, { nodes: null, loading: true, breakpoint: 'desktop' }, errors, { reducedMotion: 'reduce' });
-  try {
-    const animation = (page) => page.evaluate(() => {
-      const style = getComputedStyle(document.querySelector('.st-board-skeleton-card'));
-      return `${style.animationName} ${style.animationDuration}`;
-    });
-    assert.deepEqual([await animation(moving), await animation(still), await moving.locator('.st-board-skeleton-card').count()],
-      ['st-board-skeleton-breathe 1.2s', 'none 0s', 8]);
-    assert.deepEqual(errors, []);
-  } finally {
-    await moving.close();
-    await still.close();
-  }
+  const measure = async (viewport, breakpoint, { reducedMotion } = {}) => {
+    const page = await openStatePage(viewport, { nodes: null, loading: true, breakpoint }, errors, { reducedMotion });
+    try {
+      return await page.evaluate(() => {
+        const cards = [...document.querySelectorAll('.st-board-skeleton-card')];
+        const plain = document.querySelector('.st-board-skeleton-card--plain');
+        const style = getComputedStyle(plain);
+        const [title, detail] = plain.querySelectorAll('.st-board-skeleton-line');
+        const size = (line) => [Math.round(line.getBoundingClientRect().width), Math.round(line.getBoundingClientRect().height)];
+        return {
+          cards: cards.length,
+          moving: cards.filter((card) => getComputedStyle(card).animationName !== 'none' || card.getAnimations().length > 0).length,
+          radius: style.borderRadius,
+          height: Math.round(plain.getBoundingClientRect().height),
+          border: style.borderTopWidth,
+          title: size(title),
+          detail: size(detail),
+        };
+      });
+    } finally {
+      await page.close();
+    }
+  };
+  const desktop = { cards: 8, moving: 0, radius: '20px', height: 72, border: '1px', title: [180, 14], detail: [240, 10] };
+  assert.deepEqual(await measure({ width: 1440, height: 900 }, 'desktop'), desktop);
+  assert.deepEqual(await measure({ width: 1440, height: 900 }, 'desktop', { reducedMotion: 'reduce' }), desktop);
+  assert.deepEqual(await measure({ width: 744, height: 900 }, 'tablet'), { cards: 8, moving: 0, radius: '20px', height: 72, border: '1px', title: [159, 14], detail: [159, 10] });
+  assert.deepEqual(await measure({ width: 390, height: 844 }, 'phone'), { cards: 3, moving: 0, radius: '16px', height: 72, border: '1px', title: [180, 14], detail: [240, 10] });
+  assert.deepEqual(errors, []);
 });
 
 test('Chromium: while the Board is shown, what it covers leaves the tab order — later arrivals too — and comes back after', async () => {
@@ -721,7 +740,6 @@ async function openSelectionPage(width = 390, nodes = learnToSailNodes, options 
   const page = await browser.newPage({ viewport: { width, height: 844 }, hasTouch: true });
   await page.clock.install({ time: new Date(SELECTION_CLOCK.getTime() - 60_000) });
   await page.clock.pauseAt(SELECTION_CLOCK);
-  await page.addInitScript(() => localStorage.setItem('windmill:board:dev', '1'));
   await page.goto(`${origin}/board-view-test#/t/selection`);
   await page.waitForFunction(() => window.entryReady);
   await page.evaluate(([nodes, options]) => openSelectionBoard(nodes, options), [nodes, options]);
@@ -1179,26 +1197,20 @@ for (const change of ['filter', 'remote delete']) {
   });
 }
 
-test('Chromium: deleting both independent roots restores focus to the displayed empty-roadmap action', async () => {
+test('Chromium: a selection of every root offers Recolor and no Delete, and Delete returns once a root is let go', async () => {
   const page = await openSelectionPage(390, [
     { id: 'wind', label: 'Read the wind', prerequisites: [], color: 'sky' },
     { id: 'knots', label: 'Practise knots', prerequisites: [], color: 'olive' },
   ], { completed: [] });
   try {
     await holdStep(page, 'wind');
+    await page.getByRole('button', { name: 'Delete 1 step' }).waitFor();
     await touchStep(page, 'knots');
-    await page.getByRole('button', { name: 'Delete 2 steps' }).click();
-    await page.getByText('Your first step', { exact: true }).waitFor();
-    await page.clock.runFor(1000);
-    await page.waitForFunction(() => !document.querySelector('.st-board-card'));
-    await page.waitForFunction(() => document.activeElement?.matches('.st-board-state button'));
-    assert.deepEqual(await page.evaluate(() => ({
-      name: document.activeElement.getAttribute('aria-label') ?? document.activeElement.textContent.trim(),
-      body: document.activeElement === document.body,
-      held: window.selectionHeld,
-      writes: window.writes,
-    })), { name: 'New step', body: false, held: ['wind', 'knots'], writes: [] });
-    assert.equal(await page.getByRole('tablist').count(), 0);
+    await page.locator('.st-board-bulk-delete').waitFor({ state: 'detached' });
+    assert.equal(await page.locator('.st-board-bulk-recolor').count(), 1);
+    await touchStep(page, 'knots');
+    await page.getByRole('button', { name: 'Delete 1 step' }).waitFor();
+    assert.deepEqual(await page.evaluate(() => window.writes), []);
   } finally { await page.close(); }
 });
 

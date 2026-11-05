@@ -4,14 +4,14 @@ import { register } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { createServer } from 'vite';
-import { beacon, boardEvents, learnToSailNodes, withBrowserErrors } from './composerFixture.js';
+import { beacon, boardEvents, learnToSailNodes, withBrowserErrors } from '../browserFixture.js';
 
 register('../../../jsxLoader.mjs', import.meta.url);
 const React = (await import('react')).default;
 const { renderToStaticMarkup } = await import('react-dom/server');
 const { default: BoardView } = await import('../../../../src/products/roadmap/board/BoardView.jsx');
 const { SkillTree } = await import('../../../../src/products/roadmap/model/SkillTree.js');
-const { ANONYMOUS_OWNER, createdToast } = await import('../../../../src/products/roadmap/board/copy.js');
+const { ANONYMOUS_OWNER, createdToast } = await import('../../../../src/products/roadmap/copy.js');
 
 for (const breakpoint of ['desktop', 'tablet', 'phone']) {
   test(`BoardView notices: ${breakpoint} keeps the device line and Fork offer on phones`, () => {
@@ -23,10 +23,9 @@ for (const breakpoint of ['desktop', 'tablet', 'phone']) {
     assert.deepEqual({
       deviceLine: html.includes('board-device-line'),
       fork: html.includes('Fork this tree'),
-      legacyNotice: html.includes('st-list-notice'),
       complete: html.includes('st-board-swipe-complete'),
       create: html.includes('New step'),
-    }, { deviceLine: breakpoint === 'phone', fork: breakpoint === 'phone', legacyNotice: false, complete: false, create: false });
+    }, { deviceLine: breakpoint === 'phone', fork: breakpoint === 'phone', complete: false, create: false });
   });
 }
 
@@ -54,10 +53,10 @@ import { createRoot } from 'react-dom/client';
 import '/src/styles/fonts.js';
 import '/src/styles/global.css';
 import BoardView from '/src/products/roadmap/board/BoardView.jsx';
-import { StepDetail } from '/src/products/roadmap/board/StepDetail.jsx';
+import { StepDetail } from '/src/products/roadmap/step/StepDetail.jsx';
 import { SkillTree } from '/src/products/roadmap/model/SkillTree.js';
 import { BoardQuery } from '/src/products/roadmap/board/Board.js';
-import { ANONYMOUS_OWNER } from '/src/products/roadmap/board/copy.js';
+import { ANONYMOUS_OWNER } from '/src/products/roadmap/copy.js';
 
 window.openRoom = (nodes, options = {}) => {
   const tree = new SkillTree({ id: 'sail', title: 'Learn to sail', nodes });
@@ -265,6 +264,33 @@ test('Chromium Board notices: an empty phone pane receives focus after the refus
 
 
 for (const width of [320, 390]) {
+  test(`Chromium Board notices: ${width}px a held delete stands above the refused card, clear of it and of the band, and its hold runs`, async () => {
+    const toast = { key: 1, act: 'delete', overRefusal: true, message: 'Read the wind deleted', action: { label: 'Undo' } };
+    await inRoom(width, { refusal: { code: 'bad-frame', count: 1 }, toast }, async (page) => {
+      await page.getByRole('alert').waitFor();
+      await page.clock.runFor(120);
+      await page.locator('.st-board-toast').waitFor();
+      assert.deepEqual(await page.evaluate(() => window.calls), ['toast_shown']);
+      assert.deepEqual(await page.evaluate(() => {
+        for (const animation of document.getAnimations()) animation.finish();
+        const toast = document.querySelector('.st-board-toast').getBoundingClientRect();
+        const refusal = document.querySelector('[data-board-refusal]').getBoundingClientRect();
+        const band = document.querySelector('.st-board-phone-band').getBoundingClientRect();
+        const pane = document.querySelector('.st-board-phone-panes').getBoundingClientRect();
+        return {
+          aboveCard: toast.bottom <= refusal.top,
+          gap: refusal.top - toast.bottom,
+          overPane: toast.top >= pane.top,
+          aboveBand: toast.bottom <= band.top,
+          sameEdges: Math.abs(toast.left - refusal.left) < 1 && Math.abs(toast.right - refusal.right) < 1,
+          inViewport: toast.left >= 0 && toast.right <= window.innerWidth,
+        };
+      }), { aboveCard: true, gap: 8, overPane: true, aboveBand: true, sameEdges: true, inViewport: true });
+      await page.getByRole('button', { name: 'Undo', exact: true }).click({ trial: true });
+      await page.getByRole('button', { name: 'Retry', exact: true }).click({ trial: true });
+    });
+  });
+
   test(`Chromium Board notices: ${width}px refusal and creation toast never overlap`, async () => {
     const toast = { key: 1, message: createdToast({ step: 'Read the wind', column: 'upNext' }), action: { label: 'Undo' } };
     await inRoom(width, { refusal: { code: 'bad-frame', count: 1 }, toast }, async (page) => {

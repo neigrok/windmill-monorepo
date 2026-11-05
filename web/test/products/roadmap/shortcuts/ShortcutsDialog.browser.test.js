@@ -43,29 +43,27 @@ const ready = (async () => {
 })();
 after(async () => { try { await ready; } finally { await browser?.close(); await server?.close(); } });
 
-for (const trackingEnabled of [false, true]) {
-  for (const view of ['graph', 'board']) {
-    test(`Chromium: shortcuts ${view} opening event respects gate ${trackingEnabled}`, async () => {
-      await ready;
-      const page = await browser.newPage();
-      try {
-        await page.goto(`${origin}/shortcuts-test`);
-        await page.waitForFunction(() => typeof window.paint === 'function');
-        const render = async (open, revision) => {
-          await page.evaluate((props) => window.paint(props), { view, open, revision, trackingEnabled });
-          await page.waitForFunction((revision) => window.committed === revision, revision);
-        };
-        await render(false, 1);
-        assert.deepEqual(await page.evaluate(() => window.events), []);
-        await render(true, 2);
-        const opened = [{ name: 'roadmap_shortcuts_open', props: { view } }];
-        assert.deepEqual(await page.evaluate(() => window.events), trackingEnabled ? opened : []);
-        await render(true, 3);
-        await render(false, 4);
-        assert.deepEqual(await page.evaluate(() => window.events), trackingEnabled ? opened : []);
-        await render(true, 5);
-        assert.deepEqual(await page.evaluate(() => window.events), trackingEnabled ? [...opened, ...opened] : []);
-      } finally { await page.close(); }
-    });
-  }
+for (const view of ['graph', 'board']) {
+  test(`Chromium: shortcuts ${view} emits its opening event each time it opens`, async () => {
+    await ready;
+    const page = await browser.newPage();
+    try {
+      await page.goto(`${origin}/shortcuts-test`);
+      await page.waitForFunction(() => typeof window.paint === 'function');
+      const render = async (open, revision) => {
+        await page.evaluate((props) => window.paint(props), { view, open, revision });
+        await page.waitForFunction((revision) => window.committed === revision, revision);
+      };
+      await render(false, 1);
+      assert.deepEqual(await page.evaluate(() => window.events), []);
+      await render(true, 2);
+      const opened = [{ name: 'roadmap_shortcuts_open', props: { view } }];
+      assert.deepEqual(await page.evaluate(() => window.events), opened);
+      await render(true, 3);
+      await render(false, 4);
+      assert.deepEqual(await page.evaluate(() => window.events), opened);
+      await render(true, 5);
+      assert.deepEqual(await page.evaluate(() => window.events), [...opened, ...opened]);
+    } finally { await page.close(); }
+  });
 }

@@ -1,12 +1,14 @@
 // The last place the editor stood — tree, camera, selection. A camera means nothing under another layout, so a place
 // carries the engine's name and the camera format; a mismatch hands back no camera. Storage errors are never fatal.
 
+import { localStorageOrNothing } from './browserStorage.js';
+
 const KEY = 'windmill:last-place';
 // Bumped by hand whenever the camera's meaning changes — the working-zoom frame, or an engine's geometry.
 const CAMERA_FORMAT = 'bubble-168-1';
 
 export class PlaceStore {
-  constructor(storage = window.localStorage) {
+  constructor(storage = localStorageOrNothing()) {
     this.storage = storage;
   }
 

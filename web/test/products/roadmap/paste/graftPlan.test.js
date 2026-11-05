@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parsePlan } from '../../../../src/products/roadmap/paste/planGrammar.js';
-import { graftPlan } from '../../../../src/products/roadmap/paste/graftPlan.js';
+import { graftPlan, graftedStepCount } from '../../../../src/products/roadmap/paste/graftPlan.js';
 import { TreeLattice, HlcClock } from '../../../../src/products/roadmap/sync/lattice.js';
 import { materialize } from '../../../../src/products/roadmap/sync/materialize.js';
 
@@ -172,4 +172,13 @@ test('adds-only legend: a kind adopted into the draft (absent from the live lege
   assert.deepStrictEqual(graft.kinds, [
     { id: 'research', hue: 'gold', label: 'Research', description: 'digging' },
   ]);
+});
+
+test('the composer counts what a graft adds: a headless list does not count the root that never lands', () => {
+  const counted = (text) => {
+    const parse = parsePlan(text, []);
+    return { counted: graftedStepCount(parse), grafted: graftPlan({ parse, targetId: 'root', reservedNodeIds: new Set(), liveKinds: [] }).nodes.length, parsed: parse.readout.steps };
+  };
+  assert.deepEqual(counted('- Rig the boat\n- Read the wind'), { counted: 2, grafted: 2, parsed: 3 });
+  assert.deepEqual(counted('# Sail\n- Rig the boat\n- Read the wind'), { counted: 3, grafted: 3, parsed: 3 });
 });

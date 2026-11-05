@@ -17,6 +17,10 @@ function reporter() {
 }
 
 const stack = 'Error: boundary\n    at save (https://windmill.works/assets/app.js:12:4)';
+test('A test run holds no production DSN, so a failure a test provokes never reaches Sentry', () => {
+  assert.equal(process.env.VITE_SENTRY_DSN, undefined);
+});
+
 test('Sentry preserves its legacy envelope and static operation when no labels are passed', () => {
   const { capture, sent, events } = reporter();
   capture('roadmap', 'roadmap-sync-refused', stack, '#/app');

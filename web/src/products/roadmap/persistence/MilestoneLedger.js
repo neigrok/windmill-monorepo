@@ -1,10 +1,12 @@
 // Which milestones have already offered their share, per tree, so each is offered once ever. A
 // storage error risks a second offer, never a failure.
 
+import { localStorageOrNothing } from './browserStorage.js';
+
 const KEY_PREFIX = 'windmill:milestones:';
 
 export class MilestoneLedger {
-  constructor(storage = window.localStorage) {
+  constructor(storage = localStorageOrNothing()) {
     this.storage = storage;
   }
 

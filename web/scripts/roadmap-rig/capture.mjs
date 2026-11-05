@@ -288,8 +288,7 @@ async function waitForScene(cdp, label) {
         busy: scene && scene.director ? scene.director.busy() : null,
         gliding: scene ? !!scene.camera.glide : null,
         camera: scene ? [scene.camera.x, scene.camera.y, scene.camera.zoom] : null,
-        settling: scene && scene.settle ? !!(scene.settle.moves && scene.settle.moves.length) : false,
-        listView: !!document.querySelector('.st-list, .lv-root, [data-view="list"]') };
+        settling: scene && scene.settle ? !!(scene.settle.moves && scene.settle.moves.length) : false };
     }`);
     if (s.error) { fs.writeFileSync(path.join(outDir, 'error.txt'), s.error); log.push({ t: Date.now() - t0, ...s }); return { ok: false, error: s.error, log }; }
     const ready = s.hasCanvas && s.nodes > 0 && s.busy === false && !s.gliding && !s.settling;
@@ -412,7 +411,7 @@ try {
   await cdp.send('Network.setCookie', { name: 'wm_session', value: cookie, domain: 'localhost', path: '/' });
 
   // Load the app route once (a real document load from about:blank), write the per-tree view
-  // preference so the phone opens the canvas rather than the owner's default list, clear any saved
+  // preference so the phone opens the canvas rather than the owner's default Board, clear any saved
   // camera, then reload so the route decides with those prefs in place. The profile is fresh, so
   // there is no saved place to begin with; the removeItem is belt and braces.
   const appUrl = `${origin}/${layoutName ? `?layout=${encodeURIComponent(layoutName)}` : ''}#/app/${treeId}`;

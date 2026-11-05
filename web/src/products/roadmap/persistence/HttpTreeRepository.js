@@ -3,53 +3,56 @@
 
 import { ProgressLattice } from '../sync/progressLattice.js';
 import { API_BASE } from '../../../shell/apiBase.js';
-import { captureError } from '../../../telemetry/sentry.js';
+import { BoundaryFailure, pageWatching, reportRoadmapFailure } from '../reportFailure.js';
 
 export class HttpTreeRepository {
-  constructor({
-    baseUrl = API_BASE,
-    treeId,
-    operation = 'roadmap-tree-load',
-    reportFailure = (failed) => captureError('roadmap', failed, '', '#/app'),
-  } = {}) {
+  // An owner naming `operation` reports every read under it; a tree this repository did not read came off this device, and its reads report nothing.
+  constructor({ baseUrl = API_BASE, treeId, operation = null, reportFailure = reportRoadmapFailure } = {}) {
     if (!treeId) throw new Error('HttpTreeRepository requires a treeId — there is no default roadmap');
     this.baseUrl = baseUrl;
     this.treeId = treeId;
     this.operation = operation;
     this.reportFailure = reportFailure;
+    this.treeRead = false;
   }
 
-  // Reports its static operation for a server failure, an answer that is not a tree, or a request lost while the page
-  // is visible, online and still wants the tree. A refusal, an abort and a loss nobody is waiting on report nothing.
-  async loadTree({ signal } = {}) {
+  // One read's parsed answer, null when a 2xx is not JSON; anything else throws, reporting `operation` for a server failure or a loss someone was waiting on.
+  async answer(reading, path, { operation, signal }) {
+    const report = () => { if (operation) this.reportFailure(operation); };
     let response;
     try {
-      response = await fetch(`${this.baseUrl}/v1/trees/${this.treeId}`, { credentials: 'include', signal });
+      response = await fetch(`${this.baseUrl}/v1/trees/${this.treeId}${path}`, { credentials: 'include', signal });
     } catch (error) {
       const wanted = error?.name !== 'AbortError' && !signal?.aborted;
-      const watched = globalThis.document?.visibilityState === 'visible' && globalThis.navigator?.onLine !== false;
-      if (wanted && watched) this.reportFailure(this.operation);
+      if (wanted && pageWatching()) report();
       throw error;
     }
-    if (response.status >= 500) this.reportFailure(this.operation);
-    if (!response.ok) throw new Error(`loadTree ${this.treeId}: HTTP ${response.status}`);
-    const body = await response.json().catch(() => null);
+    if (response.status >= 500) report();
+    if (!response.ok) throw new Error(`${reading} ${this.treeId}: HTTP ${response.status}`);
+    return response.json().catch(() => null);
+  }
+
+  async loadTree({ signal } = {}) {
+    const operation = this.operation ?? 'roadmap-tree-load';
+    const body = await this.answer('loadTree', '', { operation, signal });
     if (!Array.isArray(body?.data?.nodes)) {
-      this.reportFailure(this.operation);
+      this.reportFailure(operation);
       throw new Error(`loadTree ${this.treeId}: the answer is not a tree`);
     }
+    this.treeRead = true;
     return { ...body.data, visibility: body.visibility ?? null, mine: body.mine ?? false, createdAt: body.createdAt ?? 0 };
   }
 
-  // On a share the server answers with the owner's marks; falls back to the document's authoring
-  // seeds when it holds none.
+  // The owner's marks on a share, else the document's seeds. A server tree whose marks can't be read throws rather than open on a false count.
   async loadProgress(treeData, { signal } = {}) {
-    let body = null;
-    try {
-      const response = await fetch(`${this.baseUrl}/v1/trees/${this.treeId}/progress`, { credentials: 'include', signal });
-      if (response.ok) body = await response.json();
-    } catch {
-      body = null;
+    const operation = this.treeRead ? this.operation ?? 'roadmap-progress-load' : null;
+    const body = await this.answer('loadProgress', '/progress', { operation, signal }).catch((error) => {
+      if (this.treeRead) throw new BoundaryFailure(`loadProgress ${this.treeId}`, { cause: error });
+      return {};
+    });
+    if (body === null && this.treeRead) {
+      this.reportFailure(operation);
+      throw new BoundaryFailure(`loadProgress ${this.treeId}: the answer is not JSON`);
     }
     if (body?.marks?.length) {
       const lattice = new ProgressLattice();
@@ -63,16 +66,11 @@ export class HttpTreeRepository {
     };
   }
 
-  // `since` is a seq cursor; 0 is the whole tail, capped at `limit`.
+  // `since` is a seq cursor; 0 is the whole tail, capped at `limit`. A failed read costs the feed, never the room.
   async loadActivity({ since = 0, limit = 200, signal } = {}) {
-    let response;
-    try {
-      response = await fetch(`${this.baseUrl}/v1/trees/${this.treeId}/activity?since=${since}&limit=${limit}`, { credentials: 'include', signal });
-    } catch {
-      return [];
-    }
-    if (!response.ok) return [];
-    const body = await response.json();
-    return body.events ?? [];
+    const operation = this.treeRead ? this.operation ?? 'roadmap-activity-load' : null;
+    const body = await this.answer('loadActivity', `/activity?since=${since}&limit=${limit}`, { operation, signal }).catch(() => ({}));
+    if (body === null && operation) this.reportFailure(operation);
+    return body?.events ?? [];
   }
 }

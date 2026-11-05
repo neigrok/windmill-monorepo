@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { LocalTreeRegistry, deviceOwner } from '../../../src/products/roadmap/persistence/LocalTreeRegistry.js';
+import { LocalTreeRegistry, confirmDeviceOwner, deviceOwner } from '../../../src/products/roadmap/persistence/LocalTreeRegistry.js';
 import { listAllTrees } from '../../../src/products/roadmap/persistence/TreeRegistry.js';
 import { loadDeviceTree } from '../../../src/products/roadmap/sync/localTrees.js';
 import { WorkspaceStore } from '../../../src/products/roadmap/persistence/WorkspaceStore.js';
@@ -200,6 +200,16 @@ test("the owner offline still opens their own tree from the blob, and an anonymo
   const anonymous = await loadDeviceTree('t_anon');
   assert.equal(anonymous.title, 'Learn to sail');
   assert.equal(anonymous.mine, true);
+});
+
+test('offline, the shell answering from its restored replica opens the owner\'s tree on the first read, with no Try again', async () => {
+  browser({ index: { t_a: A_PRIVATE }, blobs: { t_a: blobFor('t_a', 'A private therapy plan', 'call the clinic Tuesday') } });
+  serverUnreachable();
+
+  const opening = loadDeviceTree('t_a');
+  setTimeout(() => confirmDeviceOwner('u_a'), 20);
+
+  assert.equal((await opening).title, 'A private therapy plan');
 });
 
 test('forgetDevice drops the departing account and every trace of its trees, and keeps the anonymous one', async () => {

@@ -6,6 +6,7 @@ import { createTree } from '../persistence/TreeRegistry.js';
 import { LocalTreeRegistry, resolveDeviceOwner } from '../persistence/LocalTreeRegistry.js';
 import { SyncSession } from './SyncSession.js';
 import { mintTreeId, moveLocalTree, deleteLocalTree } from './localTrees.js';
+import { countBucket } from '../board/acts.js';
 import { track } from '../../../telemetry/beacon.js';
 
 const DRAIN_TIMEOUT_MS = 30_000;
@@ -48,7 +49,7 @@ export async function claimLocalTrees({ openTreeId = null, openSession = null } 
     }
   }
   window.dispatchEvent(new CustomEvent('wm-claim-done', { detail: { claimed, pending: pending.length } }));
-  if (claimed > 0) track('claim', { treeCount: claimed });
+  if (claimed > 0) track('claim', { treeCount: countBucket(claimed) });
   return { claimed, pending: pending.length };
 }
 

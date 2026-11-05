@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { keyLabel, visibleGroups, keyHint, detectPlatform, graphOnlyKey, boardKey, SHORTCUT_GROUPS, BOARD_SHORTCUT_GROUPS } from '../../../../src/products/roadmap/shortcuts/shortcutMap.js';
+import { keyLabel, visibleGroups, detectPlatform, graphOnlyKey, boardKey, GRAPH_SHORTCUT_GROUPS, BOARD_SHORTCUT_GROUPS } from '../../../../src/products/roadmap/shortcuts/shortcutMap.js';
 
 test('Board groups follow the drawn order and the reader has only navigation and help', () => {
   assert.equal(visibleGroups(false, 'board'), BOARD_SHORTCUT_GROUPS);
@@ -62,18 +62,22 @@ test('keyLabel returns every key unchanged on Mac', () => {
 
 test('visibleGroups keeps every group when editable', () => {
   assert.deepEqual(visibleGroups(false).map((group) => group.title), ['Navigate', 'Select', 'Edit', 'History', 'View']);
-  assert.equal(visibleGroups(false), SHORTCUT_GROUPS);
+  assert.equal(visibleGroups(false), GRAPH_SHORTCUT_GROUPS);
 });
 
 test('visibleGroups drops editing groups when read-only', () => {
   assert.deepEqual(visibleGroups(true).map((group) => group.title), ['Navigate', 'View']);
 });
 
-test('keyHint reads the compact key hint from the shared map', () => {
-  assert.equal(keyHint('Keyboard shortcuts'), '?');
-  assert.equal(keyHint('Activity feed'), 'A');
-  assert.equal(keyHint('Undo'), '⌘Z');
-  assert.equal(keyHint('No such row'), '');
+test('a row marked for owners shows only to owners, with or without the desktop editor', () => {
+  const labels = (...args) => visibleGroups(...args).flatMap(({ rows }) => rows.map(({ label }) => label));
+  assert.deepEqual([
+    labels(true, 'graph', false).includes('Activity feed'),
+    labels(true, 'graph', true).includes('Activity feed'),
+    labels(true, 'board', false).includes('Complete step'),
+    labels(true, 'board', true).includes('Complete step'),
+    labels(true, 'board', true).includes('Paste a plan'),
+  ], [false, true, false, true, false]);
 });
 
 test('detectPlatform defaults to Mac when no Windows platform is present', () => {
@@ -146,22 +150,11 @@ test('boardKey — Share open over the Board is a modal layer, so / and G stand 
   }
 });
 
-test('gated Graph groups move slash to Find without changing the legacy or Board groups', () => {
-  const groups = visibleGroups(false, 'graph', true);
-  const expected = SHORTCUT_GROUPS.map((group) => {
-    if (group.title === 'Navigate') return { ...group, rows: [...group.rows,
-      { label: 'Find a step', chords: [[{ kind: 'key', label: '/' }]] },
-    ] };
-    if (group.title === 'Edit') return { ...group, rows: group.rows.map((row) => row.label === 'Ask AI'
-      ? { label: 'Ask AI', chords: [[{ kind: 'key', label: '⌘' }, { kind: 'key', label: 'K' }]] }
-      : row) };
-    return group;
-  });
-  assert.deepEqual(groups, expected);
-  assert.deepEqual(visibleGroups(true, 'graph', true), expected.filter(({ title }) => title === 'Navigate' || title === 'View'));
-  assert.equal(visibleGroups(false, 'graph', false), SHORTCUT_GROUPS);
-  assert.equal(visibleGroups(false, 'board', true), BOARD_SHORTCUT_GROUPS);
-  assert.deepEqual(visibleGroups(true, 'board', true), visibleGroups(true, 'board', false));
+test('the Graph groups read slash as Find a step and leave Ask AI on ⌘K', () => {
+  const rows = (title) => GRAPH_SHORTCUT_GROUPS.find((group) => group.title === title).rows;
+  assert.deepEqual(rows('Navigate').at(-1), { label: 'Find a step', chords: [[{ kind: 'key', label: '/' }]] });
+  assert.deepEqual(rows('Edit').find(({ label }) => label === 'Ask AI').chords, [[{ kind: 'key', label: '⌘' }, { kind: 'key', label: 'K' }]]);
+  assert.deepEqual(visibleGroups(true, 'graph').map(({ title }) => title), ['Navigate', 'View']);
 });
 
 test('boardKey gives Activity one unmodified owner-neutral key result for host capability checks', () => {

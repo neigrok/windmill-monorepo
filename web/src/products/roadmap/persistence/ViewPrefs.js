@@ -1,12 +1,14 @@
 // Per-tree, per-device view preferences. One localStorage slot each, a { [treeId]: value } map;
 // a broken slot reads as empty. None of it syncs.
 
+import { localStorageOrNothing, sessionStorageOrNothing } from './browserStorage.js';
+
 const LAST_VIEW_KEY = 'windmill:view:last';
 const VIEWS = ['list', 'board', 'tree'];
-const FOLDED_KEY = 'windmill:view:folded';
+const WRITTEN_VIEWS = ['board', 'tree'];
 
 export class ViewPrefs {
-  constructor(storage = window.localStorage) {
+  constructor(storage = localStorageOrNothing()) {
     this.storage = storage;
   }
 
@@ -16,20 +18,10 @@ export class ViewPrefs {
   }
 
   setLastView(treeId, view) {
+    if (!WRITTEN_VIEWS.includes(view)) return;
     const map = this.readMap(LAST_VIEW_KEY);
     map[treeId] = view;
     this.writeMap(LAST_VIEW_KEY, map);
-  }
-
-  foldedSections(treeId) {
-    const folded = this.readMap(FOLDED_KEY)[treeId];
-    return Array.isArray(folded) ? folded : [];
-  }
-
-  setFoldedSections(treeId, headIds) {
-    const map = this.readMap(FOLDED_KEY);
-    map[treeId] = headIds;
-    this.writeMap(FOLDED_KEY, map);
   }
 
   readMap(key) {
@@ -49,18 +41,17 @@ export class ViewPrefs {
   }
 }
 
-// Empty or just-planted roadmaps open the canvas, except editable empty Boards.
-// With the Board enabled, step links open the Board and confirmed readers open the Graph; other visits keep their saved choice.
-export function initialView({ saved, owner, reader = false, empty, born = false, boardOpen = false, linkedStep = null, canAddFirstStep = false }) {
-  const working = boardOpen ? 'board' : 'list';
-  if (boardOpen && owner && empty && canAddFirstStep) return { view: 'board', door: 'empty' };
+// Empty or just-planted roadmaps open the canvas, except editable empty Boards; step links open the Board, readers the Graph,
+// and other visits keep their saved choice, with a saved `list` reading as `board`.
+export function initialView({ saved, owner, reader = false, empty, born = false, linkedStep = null, canAddFirstStep = false }) {
+  if (owner && empty && canAddFirstStep) return { view: 'board', door: 'empty' };
   if (born) return { view: 'tree', door: 'born' };
   if (empty) return { view: 'tree', door: 'empty' };
-  if (boardOpen && linkedStep !== null) return { view: 'board', door: 'link' };
-  if (boardOpen && reader) return { view: 'tree', door: 'default' };
+  if (linkedStep !== null) return { view: 'board', door: 'link' };
+  if (reader) return { view: 'tree', door: 'default' };
   if (saved === 'tree') return { view: 'tree', door: 'saved' };
-  if (saved === 'list' || saved === 'board') return { view: working, door: 'saved' };
-  return { view: owner ? working : 'tree', door: 'default' };
+  if (saved === 'list' || saved === 'board') return { view: 'board', door: 'saved' };
+  return { view: owner ? 'board' : 'tree', door: 'default' };
 }
 
 // The Board shows while its roadmap loads or fails to load, and once loaded unless it crashed; a roadmap with no steps
@@ -79,15 +70,47 @@ export function viewToShow(view, board) {
 // Session-scoped one-shot birth stamp: a planting door stamps the tree it made, the view decision
 // peeks and clears it.
 const BORN_KEY = 'windmill:born';
+// Session-scoped one-shot notes a planting door leaves for what it planted to say on its first open.
+const PLANTED_QUEST_KEY = 'windmill:planted-quest';
+const FORKED_KEY = 'windmill:forked-from-demo';
 
-export function stampBorn(treeId, storage = globalThis.sessionStorage) {
+function leaveNote(key, storage) {
+  try {
+    storage.setItem(key, '1');
+  } catch {
+  }
+}
+
+function takeNote(key, storage) {
+  try {
+    if (storage.getItem(key) !== '1') return false;
+    storage.removeItem(key);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function notePlantedQuest(storage = sessionStorageOrNothing()) {
+  leaveNote(PLANTED_QUEST_KEY, storage);
+}
+
+export function noteForked(storage = sessionStorageOrNothing()) {
+  leaveNote(FORKED_KEY, storage);
+}
+
+export function takePlantNote(storage = sessionStorageOrNothing()) {
+  return { quest: takeNote(PLANTED_QUEST_KEY, storage), forked: takeNote(FORKED_KEY, storage) };
+}
+
+export function stampBorn(treeId, storage = sessionStorageOrNothing()) {
   try {
     storage.setItem(BORN_KEY, treeId);
   } catch {
   }
 }
 
-export function peekBorn(treeId, storage = globalThis.sessionStorage) {
+export function peekBorn(treeId, storage = sessionStorageOrNothing()) {
   try {
     return storage.getItem(BORN_KEY) === treeId;
   } catch {
@@ -95,7 +118,7 @@ export function peekBorn(treeId, storage = globalThis.sessionStorage) {
   }
 }
 
-export function clearBorn(treeId, storage = globalThis.sessionStorage) {
+export function clearBorn(treeId, storage = sessionStorageOrNothing()) {
   try {
     if (storage.getItem(BORN_KEY) === treeId) storage.removeItem(BORN_KEY);
   } catch {

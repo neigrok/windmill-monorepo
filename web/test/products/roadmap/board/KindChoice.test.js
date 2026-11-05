@@ -37,3 +37,20 @@ for (const follow of [undefined, false]) {
     assert.deepEqual(chosen, follow === false ? ['olive'] : ['olive', 'sky', 'olive', 'sky', 'olive']);
   });
 }
+
+test('KindChoice — a hue outside the choices still leaves the first kind as the one tab stop', () => {
+  const group = KindChoice({ kinds, value: 'teal', label: 'Kind', onChoose: () => {} });
+  assert.deepEqual(group.props.children.map((button) => [button.props.tabIndex, button.props['aria-checked']]), [[0, false], [-1, false]]);
+});
+
+test('KindChoice — hovering previews the kind under the pointer and leaving restores, without choosing', () => {
+  const calls = [];
+  const group = KindChoice({
+    kinds, value: 'sky', label: 'Kind', onChoose: (hue) => calls.push(['choose', hue]),
+    onPreview: (hue) => calls.push(['preview', hue]), onRestore: () => calls.push(['restore']),
+  });
+  const [, olive] = group.props.children;
+  olive.props.onPointerEnter();
+  olive.props.onPointerLeave();
+  assert.deepEqual(calls, [['preview', 'olive'], ['restore']]);
+});

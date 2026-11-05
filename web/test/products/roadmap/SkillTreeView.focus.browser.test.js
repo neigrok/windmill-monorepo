@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { hostTest, openHost, startRoadmapHost } from './skillTreeViewHost.js';
 
-startRoadmapHost('focus');
+startRoadmapHost();
 
 hostTest('Chromium: Graph Find hands off without replacing the row or losing input focus; G keeps switch focus', async () => {
   const { page, errors } = await openHost();
@@ -231,22 +231,17 @@ hostTest('Chromium: Ask AI dims and covers navigation outside the real shell roo
 });
 
 for (const width of [390, 744, 1024, 1440]) {
-  for (const gate of ['open', 'closed']) {
-    hostTest(`Chromium: Fork uses approved presentation and returns to its opener at ${width}px with gate ${gate}`, async () => {
-      const { page, errors } = await openHost({ width, role: 'reader', gate });
-      try {
-        const label = gate === 'closed' || width === 390 ? 'Fork this tree' : 'Fork';
-        const opener = page.getByRole('button', { name: label, exact: true });
-        await opener.click();
-        if (width >= 744 || gate === 'open') await page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Make it yours' }) }).waitFor();
-        else await page.getByRole('heading', { name: 'Make it yours' }).waitFor();
-        await page.keyboard.press('Escape');
-        if (width >= 744 || gate === 'open') {
-          await page.waitForFunction((label) => document.activeElement?.getAttribute('aria-label') === label || document.activeElement?.textContent?.trim() === label, label);
-          assert.equal(await opener.evaluate((element) => document.activeElement === element), true);
-        }
-        assert.deepEqual(errors, []);
-      } finally { await page.close(); }
-    });
-  }
+  hostTest(`Chromium: Fork uses approved presentation and returns to its opener at ${width}px`, async () => {
+    const { page, errors } = await openHost({ width, role: 'reader' });
+    try {
+      const label = width === 390 ? 'Fork this tree' : 'Fork';
+      const opener = page.getByRole('button', { name: label, exact: true });
+      await opener.click();
+      await page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Make it yours' }) }).waitFor();
+      await page.keyboard.press('Escape');
+      await page.waitForFunction((label) => document.activeElement?.getAttribute('aria-label') === label || document.activeElement?.textContent?.trim() === label, label);
+      assert.equal(await opener.evaluate((element) => document.activeElement === element), true);
+      assert.deepEqual(errors, []);
+    } finally { await page.close(); }
+  });
 }

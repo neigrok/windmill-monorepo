@@ -2,10 +2,12 @@
 // finished since. Detection is a pure set-diff, never a timestamp; the stored `at` only orders the
 // replay. Storage errors are never fatal.
 
+import { localStorageOrNothing } from './browserStorage.js';
+
 const KEY_PREFIX = 'windmill:return:';
 
 export class ReturnLedger {
-  constructor(storage = window.localStorage) {
+  constructor(storage = localStorageOrNothing()) {
     this.storage = storage;
   }
 

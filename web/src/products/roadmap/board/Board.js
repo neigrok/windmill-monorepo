@@ -1,12 +1,11 @@
 // Three derived columns; filter, search and branch narrow the cards, never the states or progress.
 
 import { DEFAULT_NODE_COLOR } from '../theme.js';
-import { UnlockRules, unmetPrerequisitesOf, owedCounts, unlocksOf } from '../model/UnlockRules.js';
+import { COLUMN_OF_STATE, UnlockRules, unmetPrerequisitesOf, owedCounts, unlocksOf } from '../model/UnlockRules.js';
 
 export const BOARD_SORTS = ['roadmap', 'newest', 'oldest'];
 export const DONE_RECENT_LIMIT = 12;
 
-export const COLUMN_OF_STATE = { locked: 'locked', available: 'upNext', complete: 'done' };
 
 class BoardCard {
   constructor(tree, states, owed, step) {

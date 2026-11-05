@@ -3,7 +3,7 @@
 const DRAG_THRESHOLD_PX = 4;
 const HOVER_THROTTLE_MS = 40;
 
-export class Tool {
+class Tool {
   onPointerDown() {}
   onPointerDrag() {} // the owning pointer moving with the button held
   onPointerMove() {} // a free pointer moving with no button (hover)

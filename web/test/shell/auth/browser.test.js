@@ -1,10 +1,10 @@
-import { SYNC_STATUS, ANONYMOUS_OWNER, LAPSED_SESSION } from '../../../src/products/roadmap/board/copy.js';
+import { SYNC_STATUS, ANONYMOUS_OWNER, LAPSED_SESSION } from '../../../src/products/roadmap/copy.js';
 import assert from 'node:assert/strict';
 import { after, test } from 'node:test';
 import { chromium } from 'playwright';
 import { createServer } from 'vite';
 import { fileURLToPath } from 'node:url';
-import { withBrowserErrors } from '../../products/roadmap/board/composerFixture.js';
+import { withBrowserErrors } from '../../products/roadmap/browserFixture.js';
 
 let server, browser, origin;
 const root = fileURLToPath(new URL('../../../', import.meta.url));
@@ -293,7 +293,9 @@ test('Chromium: closure names the confirmed account and a mismatch keeps its pen
     delete replica.meta.pushRetryAt; delete retained.meta.pushRetryAt;
     delete replica.meta.clockReading; delete retained.meta.clockReading;
     assert.ok(retained.meta.offsetSamples.every(({ offset, rtt }) => Number.isFinite(offset) && Number.isFinite(rtt)));
+    assert.ok(Number.isFinite(retained.meta.serverOffsetMs));
     delete replica.meta.offsetSamples; delete retained.meta.offsetSamples;
+    delete replica.meta.serverOffsetMs; delete retained.meta.serverOffsetMs;
     assert.deepEqual(retained, replica);
     assert.equal(await page.evaluate(() => engine.device.meta.closingAccount), undefined);
     assert.equal(await page.evaluate(() => engine.signingOut), false);

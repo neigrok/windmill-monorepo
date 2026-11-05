@@ -1,10 +1,12 @@
 // Per-node workspaces keyed by tree id: a { [nodeId]: workspace } map. Storage errors are never
 // fatal.
 
+import { localStorageOrNothing } from './browserStorage.js';
+
 const KEY_PREFIX = 'windmill:workspace:';
 
 export class WorkspaceStore {
-  constructor(storage = window.localStorage) {
+  constructor(storage = localStorageOrNothing()) {
     this.storage = storage;
   }
 

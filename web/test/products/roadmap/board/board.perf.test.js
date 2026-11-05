@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { SkillTree } from '../../../../src/products/roadmap/model/SkillTree.js';
 import { Board } from '../../../../src/products/roadmap/board/Board.js';
-import { PrerequisiteChoices } from '../../../../src/products/roadmap/board/StepDraft.js';
+import { PrerequisiteChoices } from '../../../../src/products/roadmap/step/StepDraft.js';
 
 test('Board — a 5,000-step lattice with 1,800 steps unfinished builds in under 50 ms, search keystroke included', () => {
   const tree = new SkillTree({ id: 't', title: 'Lattice', nodes: Array.from({ length: 5000 }, (_, index) => ({

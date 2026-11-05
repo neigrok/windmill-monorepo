@@ -2,7 +2,7 @@ import React from 'react';
 import { Icon, Avatar } from '../../../design-system';
 import { KIND_CSS, DEFAULT_NODE_COLOR } from '../theme.js';
 
-export const VERB_STYLE = {
+const VERB_STYLE = {
   started: { icon: 'play', bg: 'var(--accent-gold-500)', fg: '#fff', label: 'Started' },
   completed: { icon: 'check', bg: 'var(--accent-terracotta-500)', fg: '#fff', label: 'Completed' },
   unlocked: { icon: 'unlock', bg: 'var(--accent-olive-500)', fg: '#fff', label: 'Unlocked' },
@@ -56,7 +56,7 @@ export function ActorAvatar({ event, size = 22 }) {
   );
 }
 
-export function ObjectLabel({ event, node }) {
+function ObjectLabel({ event, node }) {
   const label = (node ? node.label : event.label) || 'Unnamed step';
   if (!node) return <span className="st-event-obj st-event-obj--dead">{label}</span>;
   const kind = node.color ?? event.kind ?? DEFAULT_NODE_COLOR;

@@ -1,8 +1,8 @@
 import { progressChanges } from '../model/progress.js';
 import { UnlockRules } from '../model/UnlockRules.js';
 import { DEFAULT_NODE_COLOR } from '../theme.js';
-import { blockedPrerequisites } from './StepDraft.js';
-import { completedToast, createdToast, deletedToast, deletedStepsToast, recoloredToast } from './copy.js';
+import { blockedPrerequisites } from '../step/StepDraft.js';
+import { LABELS, completedToast, createdToast, deletedToast, deletedStepsToast, recoloredToast } from '../copy.js';
 
 export class StepSelection {
   constructor(ids = []) {
@@ -24,20 +24,33 @@ export class StepSelection {
     if (ids.length === this.ids.length && ids.every((id, index) => id === this.ids[index])) return this;
     return new StepSelection(ids);
   }
+}
 
-  sharedKind(tree) {
-    if (this.count === 0) return null;
-    const steps = this.ids.map((id) => tree.nodesById.get(id));
-    if (steps.some((step) => !step)) return null;
-    const color = steps[0].color ?? DEFAULT_NODE_COLOR;
-    return steps.every((step) => (step.color ?? DEFAULT_NODE_COLOR) === color) ? color : null;
-  }
+// A toast's Undo reverts the act it names and leaves everything later standing; a spent receipt reverts nothing.
+export function receiptUndo({ session, receipt, before, onReverted, onFailure }) {
+  return {
+    label: LABELS.undo,
+    receipt: true,
+    run: () => {
+      try {
+        before?.();
+        if (session.revert(receipt)) onReverted?.();
+      } catch (error) {
+        onFailure(error);
+      }
+    },
+  };
+}
+
+// A roadmap keeps a root: the one rule every door into a delete asks, on both views and every band, of the tree a hold leaves standing.
+export function takesEveryRoot(tree, ids) {
+  const roots = tree?.roots() ?? [];
+  return roots.length > 0 && roots.every((root) => ids.includes(root.id));
 }
 
 export function deletable(tree, ids) {
   if (!tree || ids.length === 0 || ids.some((id) => !tree.nodesById.has(id))) return false;
-  const roots = tree.roots();
-  return roots.length !== 1 || !ids.includes(roots[0].id);
+  return !takesEveryRoot(tree, ids);
 }
 
 export function editGesture(tree, request) {
