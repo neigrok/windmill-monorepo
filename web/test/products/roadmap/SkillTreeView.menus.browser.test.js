@@ -133,13 +133,15 @@ for (const browserName of ['chromium', 'webkit']) {
             await openMenu(page, kind, input);
             const inside = kind === 'more' ? page.locator(popup) : page.locator(kind === 'next' ? '.st-roadmap-next h2' : '.st-board-sort-group');
             const position = kind === 'more' ? { position: { x: 130, y: 4 } } : {};
-            await inside[input](position);
+            // Chromium's touch adjustment snaps a finger anywhere inside More onto an item, so only a pointer presses its padding.
+            const press = kind === 'more' && browserName === 'chromium' ? 'click' : input;
+            await inside[press](position);
             assert.equal(await page.locator(trigger).getAttribute('aria-expanded'), 'true');
             await page.keyboard.press('Escape');
             await returned(page, kind);
 
             await openMenu(page, kind, input);
-            await inside[input](position);
+            await inside[press](position);
             await page.locator('.st-board-switch-option[aria-pressed="true"]').focus();
             await page.locator(popup).waitFor({ state: 'detached' });
             assert.equal(await page.locator('.st-board-switch-option[aria-pressed="true"]').evaluate((element) => document.activeElement === element), true);
@@ -164,16 +166,18 @@ for (const browserName of ['chromium', 'webkit']) {
     }
 
     hostTest(`${browserName}: Tab and Shift+Tab leave each popover at ${width}px without stealing destination focus`, async () => {
+      // Safari's Tab reaches only text fields; Option+Tab reaches every control, as Tab does in Chromium.
+      const [forward, backward] = browserName === 'webkit' ? ['Alt+Tab', 'Alt+Shift+Tab'] : ['Tab', 'Shift+Tab'];
       for (const kind of ['more', 'next', 'sort']) {
-        for (const key of ['Tab', 'Shift+Tab']) {
+        for (const key of [forward, backward]) {
           const { page, errors } = await openHost({ browserName, width, surface: kind === 'sort' ? 'board' : 'tree' });
           const { popup, item } = selectors[kind];
           try {
             await openMenu(page, kind);
             const items = page.locator(popup).locator(item);
-            await (key === 'Tab' ? items.last() : items.first()).focus();
+            await (key === forward ? items.last() : items.first()).focus();
             await page.keyboard.press(key);
-            if (key === 'Shift+Tab' && kind !== 'more') await page.keyboard.press(key);
+            if (key === backward && kind !== 'more') await page.keyboard.press(key);
             await page.locator(popup).waitFor({ state: 'detached' });
             assert.equal(await page.evaluate(() => document.activeElement !== document.body && document.activeElement.isConnected), true);
             assert.equal(await page.evaluate(() => document.activeElement.closest('.st-roadmap-menu, .st-roadmap-next, .st-board-sort-popover') === null), true);
@@ -182,5 +186,22 @@ for (const browserName of ['chromium', 'webkit']) {
         }
       }
     });
+
+    if (browserName === 'webkit') {
+      hostTest(`webkit: plain Tab from each popover's last item closes it at ${width}px, wherever focus lands`, async () => {
+        for (const kind of ['more', 'next', 'sort']) {
+          const { page, errors } = await openHost({ browserName, width, surface: kind === 'sort' ? 'board' : 'tree' });
+          const { popup, item } = selectors[kind];
+          try {
+            await openMenu(page, kind);
+            await page.locator(popup).locator(item).last().focus();
+            await page.keyboard.press('Tab');
+            await page.locator(popup).waitFor({ state: 'detached' });
+            assert.equal(await page.evaluate(() => document.activeElement.closest('.st-roadmap-menu, .st-roadmap-next, .st-board-sort-popover') === null), true);
+            assert.deepEqual(errors, []);
+          } finally { await page.close(); }
+        }
+      });
+    }
   }
 }

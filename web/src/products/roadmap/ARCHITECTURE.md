@@ -129,7 +129,9 @@ More and the roadmap sheet close and focus their surviving trigger before invoki
 keyboard navigation through `BoardControls`. `popoverDismissal.js` owns outside-pointer, outside-focus
 and Escape dismissal for More, What's next and Sort. Focus moving to a containing surface during an
 inside pointer press keeps the popover open, including Safari's unfocused button clicks. Genuine focus
-departure preserves its destination; Escape returns to the trigger.
+departure, to another control or off the page, preserves its destination. Escape returns to the trigger,
+and so does an outside press on More or What's next, which also cancels the mousedown WebKit still sends
+after a finger's cancelled pointerdown.
 
 **The roadmap sheet.** `RoadmapSheet` owns title search above eight roadmaps and the keyboard-aware search and
 New roadmap footer; `roadmapSearch.js` owns the threshold, trimmed title match and highlight offsets in the
