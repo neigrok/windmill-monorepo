@@ -30,6 +30,16 @@ class GymEventsTests {
         }
     }
 
+    // A turn ends on its §6.5 code or a failure of this phone's own. A server's 5xx goes to Sentry as `http` and the turn ends on its code, so no turn names `http`.
+    @Test fun aTurnsEndKeepsTheCodesATurnCanEndOnAndNoOther() {
+        val labels = mapOf("state" to "interrupted", "seat" to "bound")
+        for (code in listOf("coach-busy", "subject_exhausted", "transport", "decode", "storage", "refusal", "gone", "seat_changed", "process_ended", "other")) {
+            val ended = labels + ("code" to code)
+            assertEquals(ended, GymEvents.schemas.properties("coach_turn", ended))
+        }
+        assertEquals(labels, GymEvents.schemas.properties("coach_turn", labels + ("code" to "http")))
+    }
+
     @Test fun aChangeToTheOpenWorkoutSaysSoAndKeepsOnlyItsBoundedLabels() {
         val labels = mapOf("target" to "workout", "action" to "apply", "outcome" to "decided")
         assertEquals(labels, GymEvents.schemas.properties("gym_proposal_outcome", labels + mapOf("summary" to "private", "movement" to "private")))
