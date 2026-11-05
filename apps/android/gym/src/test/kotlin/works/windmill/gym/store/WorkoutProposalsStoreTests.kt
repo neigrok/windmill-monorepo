@@ -1,5 +1,10 @@
 package works.windmill.gym.store
 
+import kotlin.coroutines.CoroutineContext
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Runnable
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.newSingleThreadContext
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -28,8 +33,11 @@ import works.windmill.gym.presentation.RoutineDraft
 import works.windmill.gym.presentation.SetTarget
 import works.windmill.gym.presentation.SetWrite
 import works.windmill.platform.telemetry.Telemetry
+import works.windmill.sync.engine.Engine
+import works.windmill.sync.engine.EngineClock
 import works.windmill.sync.engine.Reply
 import works.windmill.sync.engine.SyncResponse
+import works.windmill.sync.schema.SyncSchema
 import works.windmill.gym.domain.sync.Exercise as EngineExercise
 import works.windmill.gym.domain.sync.RoutineEntry as EngineEntry
 import works.windmill.gym.domain.sync.Session as EngineSession
@@ -103,6 +111,46 @@ class WorkoutProposalsStoreTests {
             )), room.store.workoutProposals.held)
             assertEquals(emptyList<Map<String, String>>(), telling.outcomes())
             finishing()
+        }
+    }
+
+    // The commit leaves the caller's thread, and what a screen reads next still holds it: the outcome the call returns, the card, the running plan and the walk. A read begun before the commit and landing after it is turned away by its revision, and publishes nothing older.
+    @OptIn(kotlinx.coroutines.DelicateCoroutinesApi::class, kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    @Test
+    fun aDecisionCommitsOnStorageAndNothingAScreenReadsNextIsOlderThanIt() = runTest {
+        val server = EngineRoomFixture.server()
+        val askedOn = java.util.concurrent.CopyOnWriteArrayList<String>()
+        val clock = object : EngineClock { override fun now(): Long { askedOn += Thread.currentThread().name; return 1_800_000_000_000L } }
+        newSingleThreadContext("coach-storage").use { storage ->
+            EngineRoomFixture(tmp.newFolder(), backgroundScope, coachStorage = storage,
+                createEngine = { held, _ -> Engine.memory(SyncSchema.registry, held, clock = clock, intentResultWrites = EngineTraining.intentResultWrites, pendingDeviceWork = WorkoutImports.pendingDeviceWork, rewriteDeviceValue = WorkoutImports.rewriteDeviceValue) }).use { room ->
+                open(room, server)
+                coachProposes(room, swapped)
+                room.sync(server); room.store.refreshEngine()
+
+                val earlier = object : CoroutineDispatcher() {
+                    val held = ArrayDeque<Runnable>()
+                    override fun dispatch(context: CoroutineContext, block: Runnable) { held += block }
+                    fun runHeld() { while (held.isNotEmpty()) held.removeFirst().run() }
+                }
+                val landing = launch(earlier) { room.store.workoutProposals.read() }
+                earlier.runHeld()
+                runCurrent()
+                assertEquals(false, landing.isCompleted)
+
+                askedOn.clear()
+                val decided = room.store.workoutProposals.apply("wp000000000000001")
+                val committing = askedOn.filter { it.startsWith("coach-storage") }
+                assertTrue(committing.isNotEmpty())
+                assertEquals("every read this asks for comes after its commit", committing, askedOn.take(committing.size))
+                assertEquals(ProposalState.Applied, (decided as ProposalOutcome.Decided).proposal.state)
+                assertEquals(ProposalState.Applied, room.store.workoutProposals.held.getValue("wp000000000000001").state)
+                assertEquals(listOf("bench-press", "overhead-press", "dumbbell-bench-press", "cable-fly", "triceps-pushdown"), room.store.workout.order)
+
+                while (!landing.isCompleted) { earlier.runHeld(); runCurrent() }
+                assertEquals(ProposalState.Applied, room.store.workoutProposals.held.getValue("wp000000000000001").state)
+                finishing()
+            }
         }
     }
 

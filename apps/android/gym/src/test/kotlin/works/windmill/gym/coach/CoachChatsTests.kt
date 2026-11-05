@@ -1,17 +1,21 @@
 package works.windmill.gym.coach
 
 import android.graphics.Bitmap
+import android.os.Looper
 import android.graphics.Color
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
+import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.coroutines.ContinuationInterceptor
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
@@ -30,6 +34,7 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import works.windmill.agent.TurnConnectionLost
@@ -37,6 +42,8 @@ import works.windmill.agent.TurnOpen
 import works.windmill.agent.TurnRefusal
 import works.windmill.agent.TurnSeat
 import works.windmill.agent.TurnTransport
+import works.windmill.gym.coach.onboarding.CoachOnboardingSeat
+import works.windmill.gym.coach.onboarding.CoachRoutineImports
 import works.windmill.gym.coach.turn.CoachTurnFault
 import works.windmill.gym.coach.turn.CoachTurnRefusal
 import works.windmill.gym.domain.coach.OpenTurnOnce
@@ -48,6 +55,7 @@ import works.windmill.gym.domain.coach.CoachThread
 import works.windmill.gym.domain.coach.MessageState
 import works.windmill.gym.domain.coach.ReadTally
 import works.windmill.gym.store.EngineRoomFixture
+import works.windmill.gym.store.EngineTraining
 import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.TrainingSeat
 import works.windmill.gym.store.WriteFailure
@@ -56,6 +64,8 @@ import works.windmill.sync.api.RecordRef
 import works.windmill.sync.core.Json
 import works.windmill.sync.core.RecordID
 import works.windmill.sync.core.ScopeRef
+import works.windmill.sync.engine.Engine
+import works.windmill.sync.engine.EngineClock
 import works.windmill.sync.engine.EngineError
 import works.windmill.sync.engine.Reply
 import works.windmill.sync.engine.SessionTokens
@@ -885,6 +895,41 @@ class CoachChatsTests {
             advanceUntilIdle()
             assertEquals(listOf("First" to false, "Second" to false), drawn)
         }
+    }
+
+    // A retained answer's save leaves the main thread, and what the room reads next holds it: the drafts are gone from the answer, and the routines stand. The engine asks its clock inside every commit, so the clock says who asked.
+    @Test fun aRetainedSaveCommitsOffTheMainThreadAndTheRoomReadsItAfter() {
+        val onMain = CopyOnWriteArrayList<Boolean>()
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+        val clock = object : EngineClock { override fun now(): Long { onMain += Looper.myLooper() == Looper.getMainLooper(); return 1_800_000_000_000L } }
+        val file = File(folder.newFolder(), LocalCoach.fileName)
+        val engine = Engine.memory(SyncSchema.registry, null, clock = clock, rewriteDeviceValue = EngineTraining.rewriteDeviceValue)
+        val replica = engine.activeReplica()
+        val snapshot = engine.snapshot()
+        engine.close()
+        file.writeText("""{"anonymousId":"anonymous:phone","selected":{"anonymous:phone":"c"},"onboarding":{"anonymous:phone":{"r":{"owner":"anonymous:phone","chat":"c","replica":"$replica","requestId":"r","body":"{\"text\":\"Q\"}","createdAtMs":5,
+            "response":{"requestId":"r","resultId":"result-1","status":"completed","routines":[{"name":"Day 1","entries":[{"exerciseId":"bench-press","sets":[]}]}],"message":"m"}}}}}""")
+        EngineRoomFixture(folder.newFolder(), scope, snapshot = snapshot, localCoach = LocalCoach(file), coachStorage = Dispatchers.IO, readDispatcher = Dispatchers.Default,
+            createEngine = { held, _ -> Engine.memory(SyncSchema.registry, held, clock = clock, rewriteDeviceValue = EngineTraining.rewriteDeviceValue) },
+            coachImports = { live -> CoachRoutineImports(live, { CoachOnboardingSeat("anonymous:phone", replica) }, scope) }).use { room ->
+            val coach = room.store.coach
+            assertEquals("c", coach.selectedChatId)
+            runBlocking { room.store.conversations.read() }
+            assertEquals(listOf("Day 1"), coach.exchanges("c").single().retained?.drafts?.map { it.name })
+            onMain.clear()
+            var outcome: DraftOutcome? = null
+            scope.launch { outcome = coach.saveRetainedDrafts("c", "r") }
+            val deadline = System.currentTimeMillis() + 20_000
+            while (outcome == null && System.currentTimeMillis() < deadline) { shadowOf(Looper.getMainLooper()).idle(); Thread.sleep(5) }
+            shadowOf(Looper.getMainLooper()).idle()
+            assertTrue(onMain.isNotEmpty())
+            assertEquals(DraftOutcome.Saved, outcome)
+            assertEquals(0, onMain.count { it })
+            assertEquals(emptyList<CoachRoutineDraft>(), coach.exchanges("c").single().retained?.drafts)
+            assertEquals(listOf("Day 1"), coach.exchanges("c").single().answer?.routines?.map { it.name })
+            assertEquals(listOf("Day 1"), room.store.routines.all.map { it.name })
+        }
+        scope.cancel()
     }
 
     // A refused answer says the balance is gone only where its own allowance read says so, and a file holding no read says nothing of the balance. The line outlives the settle that rewrites the file.

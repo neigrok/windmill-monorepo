@@ -4,6 +4,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.withContext
 import works.windmill.gym.presentation.Proposal
 import works.windmill.gym.presentation.ProposalState
 import works.windmill.gym.store.TrainingSeat.Companion.accountChanged
@@ -15,6 +17,7 @@ class WorkoutProposalsStore(
     private val seat: TrainingSeat,
     private val training: EngineTraining,
     private val telemetry: Telemetry,
+    private val storage: CoroutineDispatcher,
     private val refresh: suspend () -> Unit,
 ) {
     var held: Map<String, Proposal> by mutableStateOf(emptyMap())
@@ -54,7 +57,7 @@ class WorkoutProposalsStore(
         if (!seat.workoutAuthorized) return ProposalOutcome.Failed(WriteFailure.Refused(accountChanged))
         val owner = seat.owner
         try {
-            training.decideWorkoutProposal(id, applying)
+            withContext(storage) { training.decideWorkoutProposal(id, applying) }
         } catch (interrupted: CancellationException) {
             throw interrupted
         } catch (refusing: Exception) {

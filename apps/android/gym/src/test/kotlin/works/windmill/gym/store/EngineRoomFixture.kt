@@ -61,6 +61,7 @@ internal class EngineRoomFixture(
     private val controlsWrite: (File, String) -> Unit = AtomicDocument::write,
     private val createEngine: ((Json?, EngineClock) -> Engine)? = null,
     private val readDispatcher: CoroutineDispatcher? = null,
+    private val coachStorage: CoroutineDispatcher? = null,
     private val pullAgain: suspend () -> Boolean = { false },
     private val pulls: StateFlow<Pulls> = MutableStateFlow(Pulls()),
     // Whether a screen of Coach stands from the start, for what asks of Coach with no room composed.
@@ -121,7 +122,7 @@ internal class EngineRoomFixture(
             mintSet = Ids::set, mintRoutine = mintRoutine, mintExercise = mintExercise,
             undoWindowMs = undoWindowMs, workoutClock = workoutClock ?: WorkoutClock { val at = ++now; WorkoutMoment(at, at, "local") },
             workoutAuthority = workoutAuthority, telemetry = telemetry, localCoach = localCoach,
-            readDispatcher = reads, coachImports = coachImports?.invoke(engine), coachAccess = coachAccess, coachTurns = coachTurns, coachStorage = dispatcher ?: Dispatchers.IO, pullAgain = pullAgain, pulls = pulls)
+            readDispatcher = reads, coachImports = coachImports?.invoke(engine), coachAccess = coachAccess, coachTurns = coachTurns, coachStorage = coachStorage ?: dispatcher ?: Dispatchers.IO, pullAgain = pullAgain, pulls = pulls)
             .also { if (coachShown) it.conversations.showing(true) }
     }
     suspend fun seedFeedback(document: GymPreferences) {

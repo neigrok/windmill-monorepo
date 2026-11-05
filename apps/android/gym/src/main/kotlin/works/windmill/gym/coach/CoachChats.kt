@@ -615,7 +615,7 @@ class CoachChats internal constructor(
         return bytes
     }
 
-    // A retained answer's drafts, in one gesture: replayed by the answer's result identity, so a second tap makes no new routines. Runs in the store's scope, so leaving Coach does not cancel it.
+    // A retained answer's drafts, in one gesture: replayed by the answer's result identity, so a second tap makes no new routines. Runs in the store's scope, so leaving Coach does not cancel it; it commits on storage, and what it asks to read goes after the commit.
     suspend fun saveRetainedDrafts(chat: String, requestId: String): DraftOutcome {
         val seat = archiveOwner
         // Its drafts are the answer's own, so a question this build cannot read does not cost them.
@@ -623,7 +623,7 @@ class CoachChats internal constructor(
             catch (failure: Exception) { archiveFailed(failure); null } ?: return DraftOutcome.Closed(Ask.draftGone)
         val saving = imports ?: return DraftOutcome.Closed(Ask.draftInvalid)
         return scope.async {
-            when (saving.apply(record)) {
+            when (withContext(storageDispatcher) { saving.apply(record) }) {
                 is CoachImportOutcome.Committed, is CoachImportOutcome.Replayed -> {
                     onProgramChanged()
                     conversations?.read()

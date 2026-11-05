@@ -62,7 +62,7 @@ class TrainingStore(
         followOpenWorkout = { open -> workout.follow(open) })
     val workout = WorkoutSession(seat, held, controls, training, history, routines, scope, telemetry, now, mintSession, mintSet,
         workoutClock, refresh = ::refreshEngine)
-    val workoutProposals = WorkoutProposalsStore(seat, training, telemetry, refresh = ::refreshEngine)
+    val workoutProposals = WorkoutProposalsStore(seat, training, telemetry, coachStorage, refresh = ::refreshEngine)
     val deletions = DeletionsStore(seat, held, controls, training, bodyweight, routines, notes, workout, scope, telemetry, now,
         undoWindowMs)
     val conversations = CoachConversations(seat, training, telemetry, coachTurns)
