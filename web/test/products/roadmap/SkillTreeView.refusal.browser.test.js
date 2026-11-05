@@ -13,7 +13,7 @@ for (const width of [320, 390, 744, 1440]) {
         await page.evaluate(() => {
           const session = window.session;
           session.dispatch({ kind: 'RenameNode', id: 'wind', label: 'Read gusts' });
-          session.inFlight.set('fixture-refused', session.lattice.frontier());
+          session.inFlight.set('fixture-refused', session.lattice.toFrame());
           session.receiveReject({ frameId: 'fixture-refused', code: 'server-error' });
         });
         const alert = page.getByRole('alert');
@@ -38,7 +38,7 @@ for (const width of [320, 390, 744, 1440]) {
         assert.equal(await page.evaluate(() => window.reconnects), 1);
         await page.evaluate(() => {
           const session = window.session;
-          session.inFlight.set('fixture-refused-again', session.lattice.frontier());
+          session.inFlight.set('fixture-refused-again', session.lattice.toFrame());
           session.receiveReject({ frameId: 'fixture-refused-again', code: 'server-error' });
         });
         await alert.waitFor();
@@ -70,7 +70,7 @@ hostTest('Chromium: discarding a Graph create dismisses its invalidated Undo toa
     await page.locator('.st-graph-toast').waitFor();
     await page.evaluate(() => {
       const session = window.session;
-      session.inFlight.set('fixture-create', session.lattice.frontier());
+      session.inFlight.set('fixture-create', session.lattice.toFrame());
       session.receiveReject({ frameId: 'fixture-create', code: 'bad-frame' });
     });
     await page.getByRole('alert').getByRole('button', { name: /^Discard/ }).click();
@@ -87,15 +87,14 @@ for (const width of [390, 1440]) {
       await page.evaluate(() => {
         const session = window.session;
         session.dispatch({ kind: 'RenameNode', id: 'wind', label: 'Read gusts' });
-        session.inFlight.set('fixture-refused', session.lattice.frontier());
+        session.inFlight.set('fixture-refused', session.lattice.toFrame());
         session.receiveReject({ frameId: 'fixture-refused', code: 'server-error' });
       });
       const alert = page.getByRole('alert');
       await alert.getByRole('button', { name: 'Retry', exact: true }).focus();
       await page.evaluate(() => {
         const session = window.session;
-        session.inFlight.set('fixture-drained', session.lattice.frontier());
-        session.structureWrites.set('fixture-drained', session.lattice.toFrame());
+        session.inFlight.set('fixture-drained', session.lattice.toFrame());
         session.receiveAck({ frameId: 'fixture-drained' });
       });
       await alert.waitFor({ state: 'detached' });
@@ -115,7 +114,7 @@ for (const width of [744, 900, 1024, 1280, 1440]) {
       await page.evaluate(() => {
         const session = window.session;
         session.dispatch({ kind: 'RenameNode', id: 'wind', label: 'Read gusts' });
-        session.inFlight.set('fixture-refused', session.lattice.frontier());
+        session.inFlight.set('fixture-refused', session.lattice.toFrame());
         session.receiveReject({ frameId: 'fixture-refused', code: 'server-error' });
       });
       await page.getByRole('alert').getByText(REFUSED_SYNC.body, { exact: true }).waitFor();
@@ -143,7 +142,7 @@ hostTest('Chromium: a structure discard preserves the Graph completion Undo', as
     await page.evaluate(() => {
       const session = window.session;
       session.dispatch({ kind: 'RenameNode', id: 'wind', label: 'Read gusts' });
-      session.inFlight.set('fixture-refused', session.lattice.frontier());
+      session.inFlight.set('fixture-refused', session.lattice.toFrame());
       session.receiveReject({ frameId: 'fixture-refused', code: 'server-error' });
     });
     await page.getByRole('alert').getByRole('button', { name: REFUSED_SYNC.discard, exact: true }).click();
@@ -165,7 +164,7 @@ hostTest('Chromium: one create with a prerequisite counts once and discard clear
     await page.evaluate(() => {
       const session = window.session;
       session.dispatch({ kind: 'CreateNode', id: 'knots', label: 'Practice knots', prerequisites: ['wind'] });
-      session.inFlight.set('fixture-create', session.lattice.frontier());
+      session.inFlight.set('fixture-create', session.lattice.toFrame());
       session.receiveReject({ frameId: 'fixture-create', code: 'bad-frame' });
     });
     const alert = page.getByRole('alert');

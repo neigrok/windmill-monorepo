@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { TreeLattice, VersionVector } from '../../../../src/products/roadmap/sync/lattice.js';
+import { TreeLattice } from '../../../../src/products/roadmap/sync/lattice.js';
 
 test('legacy authored progress aliases become none through projection, persistence, and replay', () => {
   const lattice = new TreeLattice('t_1');
@@ -9,7 +9,7 @@ test('legacy authored progress aliases become none through projection, persisten
     { id: 'old-active', createdAt: '100:0:legacy', status: 'active', statusAt: '200:0:legacy' },
     { id: 'old-inProgress', createdAt: '100:0:legacy', status: 'inProgress', statusAt: '200:0:legacy' },
   ] });
-  const frame = lattice.deltaSince(new VersionVector());
+  const frame = lattice.toFrame();
   const copy = new TreeLattice('t_1');
   copy.join(frame);
 

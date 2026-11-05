@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { IDBFactory } from 'fake-indexeddb';
 import { SyncStore } from '../../../../src/products/roadmap/sync/SyncStore.js';
 import { SyncSession } from '../../../../src/products/roadmap/sync/SyncSession.js';
+import { outboxWrites } from '../../../../src/products/roadmap/sync/pendingWrites.js';
 import { TreeLattice } from '../../../../src/products/roadmap/sync/lattice.js';
 
 const baseline = { nodes: [{ id: 'root', createdAt: '1:0:server', label: 'Root', labelAt: '1:0:server' }], edges: [], kinds: [] };
@@ -186,6 +187,7 @@ for (const lane of ['structure', 'progress']) {
     oldSocket.frames = [];
     await ownerStore.replaceLane('tree', lane, 0);
     assert.ok(Channel.pending.length > 0);
+    (lane === 'structure' ? peer.inFlight : peer.progressInFlight).clear();
     if (lane === 'structure') peer.flush();
     else peer.flushProgress();
     await settle([peerStore]);
@@ -340,7 +342,7 @@ test('progress Undo persists during a structure discard transaction and before t
   const saved = await store.load('tree');
   assert.deepEqual(saved.frame, baseline);
   assert.equal(saved.progress.marks[0].status, 'none');
-  assert.equal(session.progress.deltaSince(session.ackedProgressVector).marks.length, 1);
+  assert.equal(outboxWrites(session.progress.toFrame(), session.confirmedProgress.toFrame()).marks.length, 1);
   session.markProgress('root', 'complete');
   await settle([store]);
   assert.equal((await store.load('tree')).progress.marks[0].status, 'complete');
@@ -367,6 +369,7 @@ test('BroadcastChannel construction failure reports once and falls back to trans
   const socket = session.ws;
   socket.frames = [];
   await peer.replaceLane('tree', 'structure', 0);
+  session.inFlight.clear();
   session.flush();
   await settle([store]);
   assert.deepEqual(socket.frames, []);
@@ -396,7 +399,13 @@ test('pending gestures survive reload and repeated edits to one register, then a
   session.receiveAck({ frameId: first });
   await settle([store]);
   assert.deepEqual((await store.load('tree')).gestures, { structure: Object.fromEntries(Object.entries(saved.gestures.structure).slice(1)), progress: saved.gestures.progress });
+  const reports = [];
+  session.reportFailure = (operation, error, tags) => reports.push({ operation, error, tags });
   session.receiveReject({ frameId: [...session.inFlight.keys()].at(-1), code: 'bad-frame' });
+  assert.equal(reports.length, 1);
+  assert.deepEqual({ operation: reports[0].operation, message: reports[0].error.message, tags: reports[0].tags },
+    { operation: 'roadmap-sync-dropped', message: 'Roadmap frame unanswered', tags: { lane: 'structure' } });
+  assert.ok(reports[0].error.stack);
   assert.equal(await session.discard(), true);
   assert.deepEqual((await store.load('tree')).gestures, { structure: {}, progress: saved.gestures.progress });
 });

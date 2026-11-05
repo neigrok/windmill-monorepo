@@ -69,34 +69,44 @@ remain visible as a durability problem. Server limits and rejection codes live i
 
 ## Coverage and reconnect
 
-`ackedServerVector` means content the server has acknowledged, not everything the browser has seen.
+`ackedServerVector` reduces subscribe replies; it does not decide pending work or outbound writes.
 It changes through only two paths:
 
-1. The `delta` response to `subscribe {treeId, lastSeq, vector}` replaces coverage with the
-   server's stated frontier.
-2. An acknowledgement joins the frontier saved for that outbound frame.
+1. The `delta` response to `subscribe {treeId, lastSeq, vector}` replaces it with the server's stated frontier.
+2. An acknowledgement joins the frontier derived from that frame's retained writes.
 
-Live broadcasts, echoes and grafts join content without advancing coverage. Replacing coverage on
-subscribe lets a replica resend content a restarted server no longer holds. Coverage must never
-advance past content the client failed to join.
+Live broadcasts and echoes never advance this vector. On reconnect, the server computes
+`deltaBetween(state, vector)` from the room's current lattice. An empty vector gets full state.
+The browser joins the response, adopts its coverage and seq, then flushes each register whose stamp
+is greater than its confirmed baseline's stamp, excluding the same register and stamp already in
+flight. Status counts the same unconfirmed registers. Actor frontiers cannot confirm individual
+registers: a rejected or unanswered frame can leave a gap below an accepted frame's frontier.
+Flushes split above 256 KiB into independent subgraphs, with title on the first chunk.
 
-On reconnect, the server computes `deltaBetween(state, vector)` from the room's current lattice.
-An empty vector gets full state. The browser joins the response, adopts its coverage and seq, then
-flushes `lattice.deltaSince(ackedServerVector)`. Pending work is derived from state, not a command
-queue. Flushes split above 256 KiB into independent subgraphs, with title on the first chunk.
+The confirmed baseline joins grafts, other replicas' live frames and the exact writes retained for
+an acknowledged frame. Own echoes join the lattice without confirming: the server broadcasts them
+before persistence and acknowledges only after persistence. Both confirmed baselines persist with
+the lanes in IndexedDB; the first subscription of a new session requests full state.
+
+A connection's write frames are handled in arrival order, with a reply in that order or no reply.
+An ack, reject or skew naming a frame settles every earlier unanswered frame in that lane without
+confirming it. The client reports `roadmap-sync-dropped` once per session with only a bounded lane
+tag, and coalesces a resend starting at one second, doubling to eight seconds until the lane drains.
+Resends pause while refused, offline, rebaselining or closed. A late acknowledgement for a settled
+frame is ignored. A final unanswered frame waits for a later reply or reconnection.
 
 A live frame joins only at `seq === lastSeq + 1`; already-seen seqs are ignored, and a gap or failed
-join forces reconnect. A subscribe delta is the recovery path. Echoes still join idempotently;
-authorship only suppresses repeated local animation.
+join forces reconnect. A subscribe delta is the recovery path. Own echoes suppress repeated local
+animation and await their acknowledgement before confirming.
 
 Each send mints a new frame ID. Reconnection can therefore resend the same content under a new ID;
 content convergence comes from idempotent join, not stable frame identity across restarts.
 
 ## Offline storage
 
-`SyncStore` keeps `{frame, progress, lastSeq}` in one IndexedDB record per tree. Coverage is not
-persisted; the next subscribe reconstructs it. Saving is a read-join-put in one transaction, so two
-tabs preserve each other's writes instead of replacing the record blindly. Join and put run
+`SyncStore` keeps `{frame, progress, lastSeq, confirmed, epochs, gestures}` in one IndexedDB record
+per tree. Actor coverage is not persisted; the next subscribe reconstructs it. Saving is a read-join-put
+in one transaction, so two tabs preserve each other's writes instead of replacing the record blindly. Join and put run
 synchronously inside `get.onsuccess`, before IndexedDB can auto-commit.
 
 `SyncSession` snapshots both lanes synchronously and queues a save before sending. It requests
@@ -107,8 +117,8 @@ Current limits:
 
 - `apply()` and `markProgress()` do not await `persistNow()` before sending, so queuing a save does
   not establish that it committed before the socket write.
-- `SyncStore.save()` catches queued transaction failures; its caller's catch cannot reliably
-  report them. Browser eviction, denied persistence and a failed local write remain loss risks.
+- `SyncStore.save()` returns transaction failures to its caller. Browser eviction, denied persistence
+  and a failed local write remain loss risks.
 - The primitive [golden corpus](../backend/test/golden/SCHEMA.md) runs only against its own
   restatement of the laws, not the shipped C++ and JavaScript lattices. Native test suites exercise
   those implementations independently; the corpus does not prevent cross-language drift.
@@ -120,9 +130,11 @@ Progress is a separate per-account lattice: one stamped `complete | none` regist
 frames share a socket and clock but never an envelope; progress echoes go only to the same
 account's connections.
 
-Pending marks are `progress.deltaSince(ackedProgressVector)`. A subscribe reply with
-`intent: graft` replaces progress coverage, an acknowledgement joins its sent frontier, and an
-echo joins content without coverage. Both lanes are stored together in IndexedDB.
+Pending marks use the same per-register outbox rule against the confirmed progress baseline,
+excluding identical stamps already in flight. Outbound marks carry only `{node, status, at}`;
+`markedAt` stays in the stored replica and server receipts. A subscribe reply with `intent: graft`
+replaces progress coverage, and an acknowledgement joins its sent frontier and confirms its exact
+marks. Both lanes are stored together in IndexedDB.
 
 The HLC orders marks; `markedAt` is the server receipt time displayed to readers. A device clock
 can be arbitrarily old, so its HLC physical time is not a reliable date of completion. Postgres

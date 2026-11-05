@@ -65,8 +65,6 @@ const ready = (async () => {
             session.phase = 'offline';
             session.inFlight.clear();
             session.progressInFlight.clear();
-            session.structureWrites.clear();
-            session.progressWrites.clear();
             session.emitStatus();
             queueMicrotask(() => { if (!session.closed) session.connect(); });
           },

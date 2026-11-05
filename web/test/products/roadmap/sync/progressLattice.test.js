@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { ProgressLattice } from '../../../../src/products/roadmap/sync/progressLattice.js';
-import { HlcClock, VersionVector, parseHlc } from '../../../../src/products/roadmap/sync/lattice.js';
+import { HlcClock, parseHlc } from '../../../../src/products/roadmap/sync/lattice.js';
+import { outboxWrites } from '../../../../src/products/roadmap/sync/pendingWrites.js';
 import { ProgressStore } from '../../../../src/products/roadmap/persistence/ProgressStore.js';
 
 const stamp = (ms, actor = 'r_a') => ({ ms, counter: 0, actor });
@@ -72,24 +73,14 @@ test('two replicas that see the same frames in opposite orders agree', () => {
   assert.deepEqual(backward.toFrame(), forward.toFrame());
 });
 
-test('the outbox is what the coverage does not account for — no queue is kept', () => {
+test('the outbox retains marks absent from the confirmed baseline', () => {
   const lattice = new ProgressLattice();
   lattice.join(frame(row('known', 'complete', '500:0:r_server', 1000), row('offline', 'complete', '900:0:r_me', 2000)));
-  const acked = new VersionVector();
-  acked.observe(parseHlc('500:0:r_server'));
+  const confirmed = frame(row('known', 'complete', '500:0:r_server', 1000));
 
-  assert.deepEqual(lattice.deltaSince(acked), {
-    marks: [{ node: 'offline', status: 'complete', at: '900:0:r_me' }],
+  assert.deepEqual(outboxWrites(lattice.toFrame(), confirmed), {
+    marks: [{ node: 'offline', status: 'complete', at: '900:0:r_me', markedAt: 2000 }],
   });
-});
-
-test('the outbox never asserts a receipt instant back upward — that is the server\'s to state', () => {
-  const lattice = new ProgressLattice();
-  lattice.join(frame(row('a', 'complete', '900:0:r_me', 2000)));
-
-  const [mark] = lattice.deltaSince(new VersionVector()).marks;
-
-  assert.deepEqual(mark, { node: 'a', status: 'complete', at: '900:0:r_me' });
 });
 
 test('a local mark is dated by this device until the server echo replaces the instant', () => {
@@ -236,10 +227,10 @@ test('legacy progress aliases serialize and replay as none, including the offlin
   copy.join(lattice.toFrame());
 
   assert.deepEqual(copy.overlay(), { completed: new Set(['done']), completedAt: { done: 1100 } });
-  assert.deepEqual(copy.deltaSince(new VersionVector()), { marks: [
-    { node: 'done', status: 'complete', at: '600:0:r_a' },
-    { node: 'old-active', status: 'none', at: '500:0:r_a' },
-    { node: 'old-inProgress', status: 'none', at: '550:0:r_a' },
+  assert.deepEqual(outboxWrites(copy.toFrame(), {}), { marks: [
+    { node: 'done', status: 'complete', at: '600:0:r_a', markedAt: 1100 },
+    { node: 'old-active', status: 'none', at: '500:0:r_a', markedAt: 1000 },
+    { node: 'old-inProgress', status: 'none', at: '550:0:r_a', markedAt: 1050 },
   ] });
   assert.throws(() => copy.mark('old-active', 'active', parseHlc('900:0:r_a'), 900), /unknown progress status/);
   assert.throws(() => copy.mark('old-inProgress', 'inProgress', parseHlc('950:0:r_a'), 950), /unknown progress status/);

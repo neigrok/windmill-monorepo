@@ -277,6 +277,7 @@ function. A report's `route` is a family (`#/app`, `#/settings`), never an addre
 | `roadmap-sync-send` | Sending a local write, including the IndexedDB epoch check on a database that opened | The pending bank stays and the refused card says so; durability is at risk |
 | `roadmap-sync-restore` | A stored lane or record that cannot be read, once per session | That lane stays out until the server's graft fills it |
 | `roadmap-sync-socket` | A socket with no inbound frame for ten seconds while online and in view, once per session | The Shell's sync status; reconnects keep trying |
+| `roadmap-sync-dropped` | A lane reply proves an earlier frame unanswered, once per session, with only `lane: structure/progress` as a tag | The write stays pending and is sent again |
 | `roadmap-sync-frame` | A server frame that cannot be parsed or joined, once per session | The frame is dropped; a lane frame resubscribes |
 | `roadmap-sync-discard` | An unexpected discard failure | The refusal stays |
 | `roadmap-sync-refused` | An unexpected refusal, once per bounded code per session, with `code` as a tag | The refusal notice |

@@ -1,10 +1,7 @@
 import { reportRoadmapFailure } from '../reportFailure.js';
 
-// A reject frame is classified by its `code`, never by its prose. An ownership refusal is a
-// verdict — the editor demotes to read-only. A session refusal may clear on re-checking the
-// session. A capacity refusal never resolves on its own: the outbox is derived from what the
-// server acked, so the same frame re-flushes forever. A code in none of the three sets is not
-// guessed at; `strandsTheBank` reads the frameId instead.
+// Reject codes classify ownership, session and capacity refusals; frameId identifies a stranded bank.
+// The outbox retains each register newer than its confirmed baseline until an ack or graft confirms it.
 
 const OWNERSHIP_CODES = new Set(['not-yours', 'nobodys-tree']);
 const SESSION_CODES = new Set(['sign-in-required']);

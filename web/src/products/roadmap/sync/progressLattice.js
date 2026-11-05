@@ -67,21 +67,7 @@ export class ProgressLattice {
     return { marks: [{ node: nodeId, status, at: hlcText(at) }] };
   }
 
-  // The outbox, derived rather than kept: every register the coverage does not account for.
-  // `markedAt` never goes on the wire. Emitted in node order, here and in toFrame, so equal
-  // replicas serialize to equal bytes.
-  deltaSince(vector) {
-    const marks = [];
-    for (const node of [...this.marks.keys()].sort()) {
-      const record = this.marks.get(node);
-      if (record.at.ms === 0 && record.at.counter === 0 && !record.at.actor) continue;
-      if (vector && vector.covers(record.at)) continue;
-      marks.push({ node, status: record.status, at: hlcText(record.at) });
-    }
-    return { marks };
-  }
-
-  // The whole replica as one frame, for the stored blob; it carries `markedAt`.
+  // The stored replica carries `markedAt`; the transport projects marks to node, status and at.
   toFrame() {
     const marks = [];
     for (const node of [...this.marks.keys()].sort()) {

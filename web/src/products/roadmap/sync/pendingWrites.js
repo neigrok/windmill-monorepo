@@ -54,6 +54,16 @@ export function unconfirmedStamps(stamps, confirmed) {
     !confirmed[key] || compareHlc(parseHlc(stamp), parseHlc(confirmed[key])) > 0));
 }
 
+export function outboxWrites(frame, confirmedFrame, carriedFrames = []) {
+  const pending = unconfirmedStamps(writeStamps(frame), writeStamps(confirmedFrame));
+  for (const carried of carriedFrames) {
+    for (const [key, stamp] of Object.entries(writeStamps(carried))) {
+      if (pending[key] === stamp) delete pending[key];
+    }
+  }
+  return frameWrites(frame, (key, stamp) => pending[key] === stamp);
+}
+
 export function pendingRecordCount(stamps) {
   return new Set(Object.keys(stamps).map((key) => JSON.stringify(JSON.parse(key).slice(0, 2)))).size;
 }
