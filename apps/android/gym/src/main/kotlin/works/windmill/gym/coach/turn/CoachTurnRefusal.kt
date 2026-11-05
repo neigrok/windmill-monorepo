@@ -52,6 +52,13 @@ sealed interface CoachTurnRefusal {
         Unanswered -> CoachTurnFault.noAnswer.sentence
     }
 
+    // The moment a cap the server named is over.
+    val endsAtMs: Long? get() = when (this) {
+        is Allowance -> resetsAtMs
+        is FreeMonthExhausted -> resetsAtMs
+        else -> null
+    }
+
     // The words the notice draws: the sentence, when a paused pool comes back where the server named it, in the phone's zone and clock, and the sign-in a spent allowance offers.
     fun notice(anonymous: Boolean, clock24: Boolean, zone: ZoneId = ZoneId.systemDefault()): String {
         fun moment(ms: Long, pattern: String) = DateTimeFormatter.ofPattern(pattern, Locale.getDefault()).format(Instant.ofEpochMilli(ms).atZone(zone))

@@ -897,6 +897,36 @@ class CoachChatsTests {
         }
     }
 
+    // A notice never names a moment gone by: a cap stands until the moment it named, on every chat, and then says nothing. A cap that named none stands.
+    @Test fun aCapNoticeGoesOnceTheMomentItNamedHasPassed() = runTest {
+        for ((code, said) in listOf("free_month_exhausted" to CoachTurnRefusal.FreeMonthExhausted(1_800_000_600_000), "free_day_exhausted" to CoachTurnRefusal.Allowance("free_day_exhausted", 1_800_000_600_000))) {
+            val server = script("[]").apply { refuseOpen = TurnRefusal(429, code, 1_800_000_600_000) }
+            room(server).use { room ->
+                val coach = room.store.coach
+                val chat = coach.freshChat()
+                val other = coach.freshChat()
+                assertTrue(coach.send(chat, "Question"))
+                advanceUntilIdle()
+                assertEquals(said, coach.refusal(chat))
+                assertEquals(said, coach.refusal(other))
+                room.now = 1_800_000_599_000
+                assertEquals(said, coach.refusal(chat))
+                room.now = 1_800_000_600_000
+                assertNull(coach.refusal(chat))
+                assertNull(coach.refusal(other))
+            }
+        }
+        val noMoment = script("[]").apply { refuseOpen = TurnRefusal(429, "subject_exhausted", null) }
+        room(noMoment).use { room ->
+            val coach = room.store.coach
+            val chat = coach.freshChat()
+            assertTrue(coach.send(chat, "Question"))
+            advanceUntilIdle()
+            room.now += 86_400_000
+            assertEquals(CoachTurnRefusal.Allowance("subject_exhausted"), coach.refusal(chat))
+        }
+    }
+
     // A retained answer's save leaves the main thread, and what the room reads next holds it: the drafts are gone from the answer, and the routines stand. The engine asks its clock inside every commit, so the clock says who asked.
     @Test fun aRetainedSaveCommitsOffTheMainThreadAndTheRoomReadsItAfter() {
         val onMain = CopyOnWriteArrayList<Boolean>()

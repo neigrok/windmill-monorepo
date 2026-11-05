@@ -107,10 +107,10 @@ class CoachChats internal constructor(
         }
     }
 
-    // A cap the server refills and a deployment without Coach stand on every chat; anything else on the chat that met it.
+    // A cap the server refills and a deployment without Coach stand on every chat, a cap until the moment it named; anything else on the chat that met it.
     fun refusal(chat: String): CoachTurnRefusal? {
         val refusal = refused ?: return null
-        if (sending != null || askedSeat != archiveOwner) return null
+        if (sending != null || askedSeat != archiveOwner || refusal.endsAtMs?.let { it <= now() } == true) return null
         return refusal.takeIf { it.capped || askedChat == chat }
     }
 
