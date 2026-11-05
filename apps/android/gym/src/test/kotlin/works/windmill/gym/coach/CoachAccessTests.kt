@@ -128,6 +128,12 @@ class CoachAccessTests {
         }
         assertEquals("Coach’s shared free AI capacity is unavailable for today. Signing in does not bypass this limit.\nYou can use Coach again on Nov 4 at 3:00.",
             CoachTurnRefusal.of("free_day_exhausted", 429, dayTurns).notice(anonymous = false, clock24 = true, zone = utc))
+        assertEquals("You have used all of your AI allowance. It comes back on Nov 4.",
+            CoachTurnRefusal.of("subject_exhausted", 429, dayTurns, spent = true).notice(anonymous = false, clock24 = true, zone = utc))
+        assertEquals("Coach’s AI allowance is unavailable right now. It comes back on Nov 4.",
+            CoachTurnRefusal.of("subject_exhausted", 429, dayTurns).notice(anonymous = false, clock24 = true, zone = utc))
+        assertEquals("Coach’s AI allowance is unavailable right now.\nSign in to continue.",
+            CoachTurnRefusal.of("subject_exhausted", 429, dayTurns).notice(anonymous = true, clock24 = true, zone = utc))
     }
 
     @Test fun theUpdateDoorOpensTheUpdateAndSaysWhenItCouldNot() {

@@ -46,7 +46,7 @@ sealed interface CoachTurnRefusal {
         RateLimited -> "You can ask again later."
         UpdateRequired -> "This version can’t ask Coach any more. Update Windmill to continue."
         Absent -> Ask.notHere
-        is Installation -> if (installation == "invalid_installation") "This phone can’t ask Coach signed out any more. Sign in to continue."
+        is Installation -> if (installation == "invalid_installation") "This phone can’t ask Coach signed out any more. $signInToContinue"
             else "This phone is linked to an account. Sign in to ask Coach."
         SessionLapsed -> Ask.accessNeedsSignIn
         Unanswered -> CoachTurnFault.noAnswer.sentence
@@ -59,14 +59,15 @@ sealed interface CoachTurnRefusal {
         else -> null
     }
 
-    // The words the notice draws: the sentence, when a paused pool comes back where the server named it, in the phone's zone and clock, and the sign-in a spent allowance offers.
+    // The words the notice draws: the sentence, when what refused comes back where the server named it, in the phone's zone and clock, and the sign-in a spent allowance offers.
     fun notice(anonymous: Boolean, clock24: Boolean, zone: ZoneId = ZoneId.systemDefault()): String {
         fun moment(ms: Long, pattern: String) = DateTimeFormatter.ofPattern(pattern, Locale.getDefault()).format(Instant.ofEpochMilli(ms).atZone(zone))
         return when {
             this is FreeMonthExhausted && resetsAtMs != null -> "$sentence It comes back on ${moment(resetsAtMs, "MMM d")}."
             this is Allowance && allowance == "free_day_exhausted" && resetsAtMs != null ->
                 "$sentence\nYou can use Coach again on ${moment(resetsAtMs, "MMM d")} at ${moment(resetsAtMs, if (clock24) "H:mm" else "h:mm a")}."
-            this is Allowance && recovery(anonymous) == CoachRecovery.signIn -> "$sentence\nSign in to continue."
+            this is Allowance && recovery(anonymous) == CoachRecovery.signIn -> "$sentence\n$signInToContinue"
+            this is Allowance && allowance == "subject_exhausted" && resetsAtMs != null -> "$sentence It comes back on ${moment(resetsAtMs, "MMM d")}."
             else -> sentence
         }
     }
@@ -99,6 +100,8 @@ sealed interface CoachTurnRefusal {
     }
 
     companion object {
+        const val signInToContinue = "Sign in to continue."
+
         fun of(code: String, status: Int? = null, resetsAtMs: Long? = null, spent: Boolean = false): CoachTurnRefusal = when {
             code == TurnRefusal.unreachable -> Offline
             code == "free_month_exhausted" -> FreeMonthExhausted(resetsAtMs)
