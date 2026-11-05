@@ -346,8 +346,8 @@ routine is deleted.
   lock, and the supersede that clears the pending slot runs in the mint's own admission. A document
   identical to what the routine already says is `noChange`. An applied REMOVAL kills its own proposal
   with the routine, so reading it back answers `404`; a second apply answers `ok` from its receipt.
-- **`Apply all N` counts** every row that moves, one for a renamed routine, and one for a run the
-  proposal reorders: `countedChanges` on the door, `changeCountOf` (and one for a rename) in GymRules,
+- **`Apply all N` counts** every row not kept, every kept row that moved (`keptLinesMoved`), and one for a
+  renamed routine: `countedChanges` on the door, `changeCountOf` (and one for a rename) in GymRules,
   which writes it as `changeCount`. It is what `noChange` is decided off. A removal leaves `proposedName` blank, as both
   phones mint one (engine A.2 admits the blank there), so the rule counts it as the rename it is.
 - **Each side is a scheme frozen as jsonb** — the same `sets` array the wire carries, null on an open

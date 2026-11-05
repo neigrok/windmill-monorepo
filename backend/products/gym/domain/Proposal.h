@@ -149,8 +149,19 @@ struct BelowFloor {
 // catalog lacks has no floor here.
 std::optional<BelowFloor> firstBelowFloor(const std::vector<RoutineChange>& changes, const std::vector<Exercise>& catalog);
 
-// Every row that moves, one for a renamed routine, and one for a run the proposal reorders. A
-// `kept` row is not counted, but a reorder of kept rows is.
+// One line a proposal keeps or retargets, by its place in the base and in the proposal.
+struct PlacedLine {
+  bool kept;
+  int from;
+  int to;
+};
+
+// How many kept lines a proposal moved, given its surviving lines in proposed order. A line at the same place in both never
+// moved. Of the rest, a line that crosses one of those moved; of what is left, the longest run that keeps the base's order
+// stands, the one whose places come first of equal runs, and every other line moved.
+int keptLinesMoved(const std::vector<PlacedLine>& retained);
+
+// What a card, a sheet and a receipt say: every line not kept, every kept line that moved, and one for a renamed routine.
 int countedChanges(const std::vector<RoutineEntry>& base, const std::vector<RoutineChange>& changes,
                    const std::string& baseName, const std::string& proposedName);
 

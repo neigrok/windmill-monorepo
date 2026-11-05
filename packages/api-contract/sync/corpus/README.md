@@ -249,7 +249,9 @@ bases are captured:
   revision and name as its base and writes `state := superseded`, `supersededBy :=` its id and
   `settledAt := serverNow` on stored and earlier created pending proposals of the same routine, door
   and connection. The last same-key create remains pending. R118 freezes server `baseRevision`, `baseName` and
-  `changeCount`: non-kept rows + one rename + one reorder among matched surviving base occurrences.
+  `changeCount`: non-kept rows + one rename + each kept row that moved among matched surviving base occurrences: a line at the same
+  place in both never moved, a line that crosses one of those moved, and of what is left the longest run in base order stands, the one
+  whose places come first of equal runs.
   Settlement preserves those fields; no client re-counts without the frozen base order.
 - **Metadata writers.** Public replica/server-door deltas supplying metadata, and every public
   `routineCreation` delta (including an empty one), refuse `invalid`; only the binding writes them.

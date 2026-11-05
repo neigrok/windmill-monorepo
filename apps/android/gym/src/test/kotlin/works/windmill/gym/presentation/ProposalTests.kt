@@ -8,9 +8,37 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import works.windmill.domain.kit.Id
+import works.windmill.gym.domain.sync.Exercise as DomainExercise
+import works.windmill.gym.domain.sync.ProposalDiff
+import works.windmill.gym.domain.sync.RoutineChange
+import works.windmill.gym.domain.sync.RoutineEntry as DomainEntry
+import works.windmill.gym.domain.sync.SetTarget as DomainTarget
 import works.windmill.platform.net.WindmillJson
 
 class ProposalTests {
+    // The sheet's own rows over random proposals: a count on the card is the rows it opens on, with a rename's row beside them.
+    @Test fun theCountIsTheRowsTheSheetDrawsOverRandomProposals() {
+        val random = java.util.Random(20261105)
+        val movements = (0 until 12).map { Id("movement$it", DomainExercise) }
+        repeat(2000) {
+            val base = List(1 + random.nextInt(8)) { DomainEntry(movements[random.nextInt(12)], listOf(DomainTarget(5, 60.0))) }
+            val proposed = base.filter { random.nextInt(5) > 0 }.toMutableList()
+            repeat(random.nextInt(3)) { proposed.add(random.nextInt(proposed.size + 1), DomainEntry(movements[random.nextInt(12)], listOf(DomainTarget(8, 40.0)))) }
+            for (at in proposed.indices) if (random.nextInt(5) == 0) proposed[at] = proposed[at].copy(sets = listOf(DomainTarget(3, 70.0)))
+            repeat(random.nextInt(3)) { if (proposed.size > 1) { val at = random.nextInt(proposed.size); proposed.add(random.nextInt(proposed.size), proposed.removeAt(at)) } }
+            val lines = RoutineChange.between(base, proposed)
+            val moves = ProposalDiff.moves(lines, base)
+            val renamed = random.nextBoolean()
+            val drawn = Proposal(id = "prop_1", routineId = "rt_1", baseName = "Push A", name = if (renamed) "Push B" else "Push A",
+                changeCount = RoutineChange.count(base, lines) + if (renamed) 1 else 0,
+                changes = lines.mapIndexed { index, line -> ProposalChange(index + 1, ChangeKind.parse(line.kind), line.exerciseId.record.string!!,
+                    order = moves[index]?.field?.let { FieldMove(it.label, it.before.orEmpty(), it.after.orEmpty()) }) })
+            assertEquals("$lines", drawn.drawn.size + if (drawn.renames) 1 else 0, drawn.changeCount)
+            assertEquals("$lines", drawn.document.filterIsInstance<DocumentRow.Changed>().size + if (drawn.renames) 1 else 0, drawn.changeCount)
+        }
+    }
+
     private val zone: ZoneId = ZoneId.systemDefault()
     private val nowMs = LocalDate.parse("2025-08-01").atStartOfDay(zone).plusHours(12)
         .toInstant().toEpochMilli()

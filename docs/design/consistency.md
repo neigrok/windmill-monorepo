@@ -1411,6 +1411,9 @@ Android. It and the product differ in these places.
 
 ### Native and web differences
 
+- **A retargeted line that moved, on the web.** A proposal's count is every line not kept and every kept line that moved, and the
+  phones draw a move as *Order* on its row. The web never sees the base, so it marks the order only when the count holds more than
+  its marked rows: one *order* row however many kept lines moved, and none when the only line that moved was also retargeted.
 - **Web Coach capability line.** The Coach header says “Reads your log · proposes only”, while
   requested routine creation saves routines directly and returns creation receipts. Existing
   routine changes still require Review/Apply. Replace the inaccurate header with wording that

@@ -198,7 +198,7 @@ data class Proposal(
         }
 
     // Derived from the SERVER's reply and never from the model's prose: the name the routine now
-    // carries and the server's own count of what moved, or that the routine is gone.
+    // carries and the server's own count of what changed, or that the routine is gone.
     val receipt: String?
         get() = when (state) {
             ProposalState.Applied -> {
@@ -243,7 +243,7 @@ data class Proposal(
         return "$routineName · $counted · $waiting"
     }
 
-    // The server's count, never the rows this build drew: apply is atomic against the document.
+    // The count, which is what the sheet draws; apply is atomic against the document.
     val applyLabel: String
         get() = when {
             intent == ProposalIntent.Remove -> "Remove $routineName"

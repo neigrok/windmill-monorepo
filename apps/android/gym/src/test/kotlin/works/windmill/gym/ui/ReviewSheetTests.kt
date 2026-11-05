@@ -439,7 +439,7 @@ class ReviewSheetTests {
     }
 
     @Test
-    fun twoMovedMovementsDrawTwoRowsAndTheCountStaysOne() {
+    fun twoMovedMovementsDrawTwoRowsAndCountTwo() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val server = EngineRoomFixture.server()
         val room = signedIn(scope)
@@ -450,13 +450,13 @@ class ReviewSheetTests {
             kept("bench-press", 3), kept("back-squat", 4), kept("triceps-pushdown", 5)))
         sheet(room.store, mutableListOf())
 
-        compose.onNodeWithText("1 change to Push Day.").assertIsDisplayed()
+        compose.onNodeWithText("2 changes to Push Day.").assertIsDisplayed()
         compose.onNodeWithText("Move Cable Fly").assertIsDisplayed()
         compose.onNodeWithText("Order · 4th → 1st").assertIsDisplayed()
         compose.onNodeWithText("Move Overhead Press").assertIsDisplayed()
         compose.onNodeWithText("Order · 3rd → 2nd").assertIsDisplayed()
         compose.onNodeWithText("and 3 lines unchanged").assertIsDisplayed()
-        compose.onNodeWithText("Apply").assertIsDisplayed()
+        compose.onNodeWithText("Apply all 2").assertIsDisplayed()
         scope.cancel()
     }
 

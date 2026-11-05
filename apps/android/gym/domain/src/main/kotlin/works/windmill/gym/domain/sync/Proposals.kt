@@ -45,15 +45,9 @@ data class RoutineChange(val kind: String, val exerciseId: Id<Exercise>, val bef
         fun document(changes: List<RoutineChange>): List<RoutineEntry> =
             changes.filter { it.kind != "removed" }.map { RoutineEntry(it.exerciseId, it.after?.sets, it.after?.restSeconds) }
 
-        // R118's count: every line that is not kept, and one more when the kept movements left the base's order.
-        fun count(base: List<RoutineEntry>, changes: List<RoutineChange>): Int {
-            val unmatched = base.indices.toMutableList()
-            val retained = changes.filter { it.kind == "kept" || it.kind == "retargeted" }.mapNotNull { change ->
-                val at = unmatched.indexOfFirst { base[it].exerciseId == change.exerciseId }
-                if (at < 0) null else unmatched.removeAt(at)
-            }
-            return changes.count { it.kind != "kept" } + (if (retained != retained.sorted()) 1 else 0)
-        }
+        // The count a card, a sheet and a receipt say: every line that is not kept and every kept line that moved.
+        fun count(base: List<RoutineEntry>, changes: List<RoutineChange>): Int =
+            changes.count { it.kind != "kept" } + ProposalDiff.moves(changes, base).keys.count { changes[it].kind == "kept" }
     }
 }
 

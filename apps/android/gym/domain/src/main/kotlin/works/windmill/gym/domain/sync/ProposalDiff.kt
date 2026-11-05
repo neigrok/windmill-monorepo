@@ -102,32 +102,33 @@ class ProposalDiff(proposal: Proposal, routine: Routine?, units: GymUnits = GymU
         private data class Kept(val change: Int, val from: Int, val to: Int)
 
         // The movements a pending proposal moves, by change index, each with its place in the base and in the proposal: the
-        // base is a routine's entries, or a workout's plan. A movement whose place is the same in both never moved; of the rest,
-        // those in the longest run that keeps the base's order stand — of equal runs, the one whose places come first — and
-        // every other one moved.
+        // base is a routine's entries, or a workout's plan. A movement whose place is the same in both never moved. Of the
+        // rest, one that crosses such a movement moved; of those left, the longest run that keeps the base's order stands — of
+        // equal runs, the one whose places come first — and every other one moved.
         fun moves(changes: List<RoutineChange>, base: List<RoutineEntry>): Map<Int, Move> {
             val unmatched = base.indices.toMutableList()
-            val kept = mutableListOf<Kept>()
+            val retained = mutableListOf<Kept>()
             changes.withIndex().filter { it.value.kind != "removed" }.forEachIndexed { to, (index, change) ->
                 if (change.kind != "kept" && change.kind != "retargeted") return@forEachIndexed
                 val at = unmatched.indexOfFirst { base[it].exerciseId == change.exerciseId }
                 if (at < 0) return@forEachIndexed
-                val from = unmatched.removeAt(at)
-                if (from != to) kept += Kept(index, from, to)
+                retained += Kept(index, unmatched.removeAt(at), to)
             }
+            val (placed, left) = retained.partition { it.from == it.to }
+            val kept = left.filter { line -> placed.all { (line.to < it.to) == (line.from < it.from) } }
             val longest = MutableList(kept.size) { 1 }
             for (i in kept.indices.reversed()) {
                 for (j in kept.indices) if (j > i && kept[j].from > kept[i].from) longest[i] = maxOf(longest[i], longest[j] + 1)
             }
-            val standing = mutableSetOf<Int>()
+            val standing = mutableSetOf<Kept>()
             var previous = -1
             var length = longest.maxOrNull() ?: 0
             var start = 0
             while (length > 0) {
                 val next = kept.indices.filter { it >= start && kept[it].from > previous && longest[it] == length }.minByOrNull { kept[it].from }!!
-                standing += next; previous = kept[next].from; start = next + 1; length -= 1
+                standing += kept[next]; previous = kept[next].from; start = next + 1; length -= 1
             }
-            return kept.withIndex().filter { it.index !in standing }.associate { (_, entry) -> entry.change to Move(entry.from + 1, entry.to + 1) }
+            return left.filter { it !in standing }.associate { it.change to Move(it.from + 1, it.to + 1) }
         }
     }
 }

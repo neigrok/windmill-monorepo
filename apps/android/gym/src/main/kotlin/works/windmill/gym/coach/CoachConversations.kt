@@ -41,6 +41,7 @@ import works.windmill.gym.domain.sync.Exercise
 import works.windmill.gym.domain.sync.Note
 import works.windmill.gym.domain.sync.Proposal
 import works.windmill.gym.domain.sync.Routine
+import works.windmill.gym.domain.sync.RoutineChange
 import works.windmill.gym.domain.sync.Session
 import works.windmill.gym.domain.sync.WorkoutProposal
 import works.windmill.gym.presentation.Readout
@@ -369,13 +370,18 @@ class CoachConversations(
             Note.type -> held(Note, ref)?.title
             Exercise.type -> held(Exercise, ref)?.name
             Proposal.type -> held(Proposal, ref)?.let(::proposalTitle)
-            WorkoutProposal.type -> held(WorkoutProposal, ref)?.let { "This workout · ${Readout.changeCount(it.changes.size)}" }
+            WorkoutProposal.type -> held(WorkoutProposal, ref)?.let(::workoutProposalTitle)
             else -> null
+        }
+
+        private fun workoutProposalTitle(proposal: WorkoutProposal): String {
+            val plan = held(Session, RecordRef(Session.type, proposal.sessionId.record))?.plan
+            return "This workout · ${Readout.changeCount(proposal.changeCount ?: plan?.let { RoutineChange.count(it.entries, proposal.changes) } ?: proposal.changes.count { it.kind != "kept" })}"
         }
 
         private fun proposalTitle(proposal: Proposal): String {
             val routine = held(Routine, RecordRef(Routine.type, proposal.routineId.record))
-            val what = if (proposal.intent == "remove") "a removal" else Readout.changeCount(routine?.let { proposal.changeCount(it) } ?: proposal.changeCount ?: proposal.changes.size)
+            val what = if (proposal.intent == "remove") "a removal" else Readout.changeCount(routine?.let { proposal.changeCount(it) } ?: proposal.changeCount ?: proposal.changes.count { it.kind != "kept" })
             return listOfNotNull(proposal.baseName ?: routine?.name, what).joinToString(" · ")
         }
     }
