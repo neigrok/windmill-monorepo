@@ -1,10 +1,12 @@
 // A tree's legend — ordered kinds plus whether the key is open — keyed by tree id. Storage
 // errors are never fatal.
 
+import { localStorageOrNothing } from './browserStorage.js';
+
 const KEY_PREFIX = 'windmill:legend:';
 
 export class LegendStore {
-  constructor(storage = window.localStorage) {
+  constructor(storage = localStorageOrNothing()) {
     this.storage = storage;
   }
 

@@ -8,11 +8,11 @@ import { Check, ChevronDown, Trash2 } from 'lucide-react';
 import './controls.css';
 import { track } from '../../../telemetry/beacon.js';
 import { Button } from '../../../design-system';
-import { KIND_CSS, hueOf } from '../theme.js';
+import { KIND_CSS, hueOf, prefersReducedMotion } from '../theme.js';
 import { focusableElements, wrapTab } from '../../../design-system/feedback/dialogFocus.js';
 import {
   BULK, COMPOSER, FILTERED_EMPTY, LABELS, SORT_LABELS, SORT_MENU, branchChip, deleteStepsAction, emptyColumn, removeChip, selectedCount, sortButtonLabel,
-} from './copy.js';
+} from '../copy.js';
 
 const MENU_STEPS = { ArrowDown: 1, ArrowUp: -1 };
 const RECOLOR_PULSE_MS = 120;
@@ -45,7 +45,8 @@ export function handleMenuKey(event, { root, selector = '[role="menuitem"]', onE
   options[(current + direction + options.length) % options.length]?.focus();
 }
 
-export function KindChoice({ kinds, value, onChoose, label, follow = true }) {
+export function KindChoice({ kinds, value, onChoose, label, follow = true, onPreview, onRestore }) {
+  const tabStop = kinds.some((kind) => kind.hue === value) ? value : kinds[0]?.hue;
   return (
     <div role="radiogroup" aria-label={label}>
       {kinds.map((kind, index) => (
@@ -54,10 +55,12 @@ export function KindChoice({ kinds, value, onChoose, label, follow = true }) {
           type="button"
           role="radio"
           aria-checked={value === kind.hue}
-          tabIndex={value === kind.hue || (value === null && index === 0) ? 0 : -1}
+          tabIndex={kind.hue === tabStop ? 0 : -1}
           className="st-board-draft-kind-choice"
           style={{ '--draft-kind': KIND_CSS[kind.hue].base, '--draft-kind-ring': KIND_CSS[kind.hue].ring }}
           onClick={() => onChoose(kind.hue)}
+          onPointerEnter={onPreview && (() => onPreview(kind.hue))}
+          onPointerLeave={onRestore}
           onKeyDown={(event) => {
             const direction = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[event.key];
             if (!direction) return;
@@ -115,7 +118,7 @@ export function BulkBar({ count, kinds, sharedKind, onKinds, onRecolor, onDelete
 
   const choose = (hue) => {
     if (applying.current !== null) return;
-    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const reduced = prefersReducedMotion();
     const chip = bar.current.querySelectorAll('[role="radio"]')[kinds.findIndex((kind) => kind.hue === hue)];
     const duration = reduced ? RECOLOR_FADE_MS : RECOLOR_PULSE_MS;
     chip.animate(reduced
@@ -141,10 +144,12 @@ export function BulkBar({ count, kinds, sharedKind, onKinds, onRecolor, onDelete
           <span>{BULK.recolor}</span>
           {open && <ChevronDown size={16} aria-hidden />}
         </button>
-        <button type="button" className="st-board-bulk-delete" onClick={onDelete}>
-          <Trash2 size={16} aria-hidden />
-          <span>{deleteStepsAction({ count })}</span>
-        </button>
+        {onDelete && (
+          <button type="button" className="st-board-bulk-delete" onClick={onDelete}>
+            <Trash2 size={16} aria-hidden />
+            <span>{deleteStepsAction({ count })}</span>
+          </button>
+        )}
       </div>
     </div>
   );
@@ -197,6 +202,8 @@ export function FindStep({ query, onQuery, phone = false, folded = false, toolti
   }, []);
   const [expanded, setExpanded] = useState(false);
   const committed = useRef('');
+  const pressing = useRef(false);
+  const closeOnRelease = useRef(false);
   const typed = query.search !== '';
 
   useLayoutEffect(() => {
@@ -204,6 +211,24 @@ export function FindStep({ query, onQuery, phone = false, folded = false, toolti
     focusExpanded.current = false;
     input.current.focus();
   }, [folded, expanded, typed]);
+
+  // A press that takes the focus lands before a folded field closes: closing under it would move the row out from under the press.
+  useEffect(() => {
+    if (!folded) return undefined;
+    const press = () => { pressing.current = true; };
+    const release = () => {
+      pressing.current = false;
+      if (!closeOnRelease.current) return;
+      closeOnRelease.current = false;
+      setTimeout(() => { if (document.activeElement !== input.current) setExpanded(false); });
+    };
+    window.addEventListener('mousedown', press, true);
+    window.addEventListener('mouseup', release, true);
+    return () => {
+      window.removeEventListener('mousedown', press, true);
+      window.removeEventListener('mouseup', release, true);
+    };
+  }, [folded]);
 
   const commit = () => {
     const asked = query.search.trim();
@@ -271,10 +296,14 @@ export function FindStep({ query, onQuery, phone = false, folded = false, toolti
         spellCheck={false}
         onChange={(event) => onQuery((current) => current.searchingFor(event.target.value))}
         onKeyDown={onKeyDown}
-        onFocus={() => setExpanded(true)}
+        onFocus={() => {
+          closeOnRelease.current = false;
+          setExpanded(true);
+        }}
         onBlur={() => {
           commit();
-          setExpanded(false);
+          if (pressing.current) closeOnRelease.current = true;
+          else setExpanded(false);
         }}
       />
       {typed && (

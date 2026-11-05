@@ -1,4 +1,4 @@
-import { STATE_WORDS, completedToast } from '../board/copy.js';
+import { STATE_WORDS, completedToast } from '../copy.js';
 
 export const DEMO_TREE_ID = 't_9e407a96b5330ebe';
 
@@ -16,14 +16,11 @@ export const COACHED_NODE_ID = 'rigging';        // "Rig the boat yourself" — 
 export const COACHED_CHILDREN = ['jibing', 'tacking']; // the two paths its completion opens
 
 export const COACH_DONE_KEY = 'wm-coach-done';   // once ever, per human
-export const FORKED_FROM_DEMO_KEY = 'windmill:forked-from-demo'; // one-shot note the fork leaves for the re-plant
 
 export const DEMO_COPY = {
-  plaqueByline: 'Windmill demo',
   coachSentence: `This step is ${STATE_WORDS.upNext} — mark it done.`,
   coachButton: 'Mark it done',
   unlockToast: completedToast({ step: 'Rig the boat yourself', unlockedCount: COACHED_CHILDREN.length }),
-  forkToast: 'Forked — 17 steps planted',
 };
 
 export function coachEligible({ coachDone, signedIn, ownsTrees }) {

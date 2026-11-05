@@ -1,22 +1,22 @@
 # Roadmap Board proposal
 
 Status: ✅ Ready for dev, owner approved 2026-10-31. The build is tracked under dogfood node
-`roadmap-board-web-build`. The production Graph and List canon stays on the Roadmap file's Web and
-Web Mobile pages until the Board ships. The [review](roadmap-board-review.md)
-holds the rulings, the findings and the limits.
+`roadmap-board-web-build`. The Board and the Graph are the only views. The Graph's flows also stand on the
+Roadmap file's Web and Web Mobile pages, beside the List boards the designer deletes in the 🚀 pass. The
+[review](roadmap-board-review.md) holds the rulings, the findings and the limits.
 
 Drawn on two pages of the Roadmap file:
 [✅ Board · Web Mobile](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-900) (below
 744px) and [✅ Board · Web](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-901)
 (744px and up). Start at the [phone Board](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-1433)
 and the [desktop Board](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=184-1543).
-Every first-wave board carries ✅; the *Later · Activity overlay* sections stay 💡. Desktop boards come in light and dark pairs; phone dark specimens sit in
+Boards carry ✅ or 🔨; proposals awaiting the owner sit in the 💡 *Finishing states* sections, beside the ✅ held-delete frames 25.04 and 15.07. Desktop boards come in light and dark pairs; phone dark specimens sit in
 their sections and in section 19.
 
 ## The idea
 
 A board for doing, a graph for seeing. The Board answers *what can I do right now*; the Graph shows
-shape and distance. Both read one roadmap and one model. On phones the Board replaces the List.
+shape and distance. Both read one roadmap and one model.
 
 ## Model
 
@@ -78,6 +78,7 @@ switched-to state.
   truncation specimen (353:5801). Focus is a 2px `:focus-visible` ring with 2px offset in the brand colour.
 - Accessible names: the view switch is a two-option group named *View* with `aria-pressed` on the
   active option; *3/8* reads *3 of 8 steps done*; a heading reads *Up next, 2 steps*.
+- The view glyphs are one pair on every band: three outlined columns for Board, a branching tree for Graph (01.02).
 
 ## Step page and modal
 
@@ -85,14 +86,14 @@ switched-to state.
   Workspace, History. Actions are pinned at the bottom.
 - Overview: description, status row with a leading glyph, step links, Prerequisites (*1 / 1*),
   Unlocks, *View branch*.
-- Up next: *Edit step* and the primary **Complete**. Locked: *Locked · 1 to go*, the unfinished
-  prerequisite row marked with its state, *Edit step* only. Done: *Edit step* and a secondary
+- Up next: *Edit step* and the primary **Complete**. Locked: *Locked · 1 to go*, each unfinished
+  prerequisite on a sunken row marked with its column, on the page and in the modal, *Edit step* only. Done: *Edit step* and a secondary
   **Reset**.
 - **Complete and Reset stay in place.** The status row flips with an inline **Undo** that lasts the
   hold window; a secondary line names the outcome. No toast from a page or a modal. Reset is always
   secondary and quiet.
 - The `…` menu holds the same three verbs on both pages: *Copy link · Open in Graph · Delete step*.
-- **Delete step:** a confirm with the cost line from `ui/mobile/editorSheet.js`
+- **Delete step:** a confirm with the cost line from `copy.js`
   (*Removes this step · 1 branch resplices*), then a delete held for nine seconds with Undo, as
   `guidelines/system-architecture.md` §3 requires on the web, then the regrouped Board.
 - A step pushed from a step names the previous screen in its back label.
@@ -115,7 +116,7 @@ real button after the card link in DOM order; Tab focus reveals it. Reduced moti
 tracking and turns removal and entrance into 150ms cross-fades. Spec: 379:17279.
 
 **Select several (phone).** Long-press a card to enter selection. The bottom bar carries the shipped
-`ui/mobile/BulkBar.jsx` verbs: the count with Done beside it, then **Recolor** and *Delete N steps*
+tablet panel's bulk verbs: the count with Done beside it, then **Recolor** and *Delete N steps*
 at equal width, so the destructive action is never the widest target. Recolor reveals the kind
 swatches.
 
@@ -127,8 +128,8 @@ completes the focused Up next card, and focus follows it to Done; C does nothing
 ⌘K stays Ask AI. Locked and Done cards stay focusable.
 
 **Motion.** Complete is a full bloom; the newly up-next step wakes; the toast speaks last, 120ms
-after the last beat, and holds 6s with Undo. A second completion inside the hold coalesces into one
-toast. Downward changes are a silent 280ms dim with no toast. The live region announces the done
+after the last beat, and holds 6s with Undo. A second completion inside the hold replaces the older toast;
+Undo covers only the step the new toast names. Downward changes are a silent 280ms dim with no toast. The live region announces the done
 step and how many steps are up next.
 
 ## Find, filter and sort
@@ -157,6 +158,7 @@ step and how many steps are up next.
   **Save**; Cancel.
 - Kind offers six choices inline: the legend kinds by name and the unnamed hues by hue name (Build,
   Learn, Milestone, Brick, Sky, Plum). A choice changes only the draft.
+- The Graph's step panel offers the same six choices. A choice saves at once and hovering previews it on the node. The desktop dock adds *Manage kinds* beside them; the tablet panel has no link, because the legend is read-only there.
 - The prerequisite picker shows each candidate's state, groups steps that cannot be prerequisites
   (*Comes after this step*), keeps the selection across queries in a chip strip, and enables Apply
   only when the draft changes. It writes nothing; the form's commit does. Phone: search sits above
@@ -196,13 +198,14 @@ One string per event.
 | Reset preview before tapping | *Reset returns 2 steps to Locked* |
 | Create | *Reefing basics added · Locked* · **Undo**; when a filter clears: *Reefing basics added · filter cleared* · **Undo** |
 | Delete (held) | *Rig the boat deleted* · **Undo**; the confirm's cost line carries the resplice count |
+| Delete fails on release | *Couldn't delete Rig the boat* · **Retry** |
 | Bulk | *3 steps recolored* · **Undo** / *3 steps deleted* · **Undo** |
-| Checklist item | *Try a small turn checked* · **Undo** |
+| Subtask | *Try a small turn checked* · **Undo** |
 | Copy link | *Link copied* |
 | Not-done precondition | *Read the wind isn't done* |
 | Empty roadmap | **Your first step** / *Give your roadmap a place to start.* / **New step** |
 | Roadmap complete | **All 8 steps done** / *Add a step whenever you're ready.* / owner secondary **Share it** |
-| Loading | Skeletons, no copy |
+| Loading | Still skeletons, no motion, no copy |
 | Load error | **Couldn't load this roadmap** / *It may have moved, or the server is unreachable.* / **Try again** |
 | Save failure | *Couldn't save. Your draft is kept.* / **Retry** · **Keep editing** |
 | Discard confirm | **Discard draft?** / *Your changes will be lost.* / **Keep editing** · **Discard** |
@@ -290,9 +293,8 @@ Web Mobile ([page](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1
 | [19 · Dark and 320px · new states](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=383-18664) | [01.05 · Step page · done · dark](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=383-18665) |
 | [20 · Delete a step](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=397-28207) | [20.01 · Rig the boat · step menu](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=397-28208) |
 | [21 · Select several steps](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=398-28881) | [21.01 · Long-press selects](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=398-28882) |
-| [Later · Activity overlay](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=360-10601) | Out of the first wave; nothing routes into it |
 
-Phone components: [Board · Proposal components](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-906),
+Phone components: [Board · Core components](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-906),
 [Shared Shell](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=290-7056),
 [Kind choice](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=306-4751),
 [Note editor](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=321-5044),
@@ -314,6 +316,5 @@ Web ([page](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-901)
 | [09 · Create steps](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=232-1086) | [09.01 · Empty roadmap](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=232-1688) |
 | [10 · Keyboard](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=386-13311) | [10.01 · Focus traversal](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=386-13312) |
 | [11 · Explore a branch](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=294-8978) | [11.01 · Branch board · Read the wind](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=294-8979) |
-| [Later · Activity overlay](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=246-3690) | Out of the first wave; nothing routes into it |
 
 Desktop components: [Board · Desktop components](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=367-10089).

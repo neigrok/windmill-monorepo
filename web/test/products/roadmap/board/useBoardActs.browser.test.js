@@ -5,13 +5,13 @@ import { readFile } from 'node:fs/promises';
 import { parse } from 'acorn';
 import { chromium } from 'playwright';
 import { createServer, transformWithEsbuild } from 'vite';
-import { withBrowserErrors } from './composerFixture.js';
+import { withBrowserErrors } from '../browserFixture.js';
 
 const CLOCK_START = new Date('2026-11-02T12:00:00Z');
 
 const root = fileURLToPath(new URL('../../../../', import.meta.url));
-const source = await readFile(new URL('../../../../src/products/roadmap/SkillTreeView.jsx', import.meta.url), 'utf8');
-const { code } = await transformWithEsbuild(source, 'SkillTreeView.jsx', { loader: 'jsx' });
+const source = await readFile(new URL('../../../../src/products/roadmap/graph/useGraphStructure.js', import.meta.url), 'utf8');
+const { code } = await transformWithEsbuild(source, 'useGraphStructure.js', { loader: 'jsx' });
 const treeHandlers = [];
 const visit = (node) => {
   if (!node || typeof node !== 'object') return;
@@ -30,13 +30,14 @@ const entry = `
 import React, { useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { flushSync } from 'react-dom';
-import { useRoadmapToast } from '/src/products/roadmap/SkillTreeView.jsx';
+import { useRoadmapToast } from '/src/products/roadmap/room/useRoadmapToast.js';
 import BoardView from '/src/products/roadmap/board/BoardView.jsx';
 import { useBoardActs } from '/src/products/roadmap/board/useBoardActs.js';
 import { BoardQuery } from '/src/products/roadmap/board/Board.js';
 import { SkillTree } from '/src/products/roadmap/model/SkillTree.js';
 import { SyncSession } from '/src/products/roadmap/sync/SyncSession.js';
 import { hlcText } from '/src/products/roadmap/sync/lattice.js';
+import { GRAPH_TOAST, keptStepsToast } from '/src/products/roadmap/copy.js';
 import '/src/styles/global.css';
 const root = createRoot(document.getElementById('root'));
 const initialTree = new SkillTree({ id: 'sail', title: 'Sail', nodes: [
@@ -59,34 +60,40 @@ function Room() {
   });
   const [query, setQuery] = useState(() => new BoardQuery());
   const [quiet, setQuiet] = useState(0);
-  const { toast, showToast: displayToast, dismissToast, boardToastShown, boardToastRef } = useRoadmapToast();
+  const { toast, showToast: displayToast, dismissToast, dismissToastIf, toastShown } = useRoadmapToast();
   const showToast = (message, options) => {
     if (options.action?.label === 'Restore') window.restoreOffers.push(message);
     displayToast(message, options);
   };
-  const editorRef = useRef({ present: null });
-  const collabRef = { current: session };
+  const projectionRef = useRef(initialTree);
+  const sessionRef = { current: session };
   const maskedShownRef = useRef('');
-  const syncStructure = () => setTree(new SkillTree(editorRef.current.present));
+  const syncStructure = () => setTree(new SkillTree(projectionRef.current));
   const syncLegendFromTree = () => {};
   const setStranded = () => {};
   session.onTreeChanged(${treeHandlers[0]});
   window.maskedWork = () => session.maskedWork();
   window.projectedSteps = () => session.lattice.toTreeData().nodes.map(({ id, prerequisites }) => ({ id, prerequisites }));
   window.recheckTree = () => session.emitTree();
-  window.deleteLegacy = () => session.dispatch({ kind: 'DeleteNode', id: 'wind' });
+  window.deleteOnGraph = () => session.dispatch({ kind: 'DeleteNode', id: 'wind' });
   window.loadHistoricalDelete = () => {
     session.lattice.join({ nodes: [{ id: 'wind', deletedAt: hlcText(session.clock.tick(Date.now())) }] });
     session.emitTree();
   };
   const { held, acts } = useBoardActs({
     tree, treeId, active, owner, query, progress, now: Date.now,
-    session: { dispatch: (gesture) => {
-      window.calls.push(['dispatch', treeId, gesture]);
-      return session.dispatch(gesture);
-    } },
+    session: {
+      ready: session.ready,
+      holdAct: (cancel) => session.holdAct(cancel),
+      endHeldAct: () => session.endHeldAct(),
+      leavePage: () => session.leavePage(),
+      dispatch: (gesture) => {
+        window.calls.push(['dispatch', treeId, gesture]);
+        return session.dispatch(gesture);
+      },
+    },
     showToast,
-    clearBoardToast: () => { if (boardToastRef.current) dismissToast(); },
+    clearBoardToast: () => dismissToastIf(() => true),
     emit: () => {},
     track: (name, props) => window.calls.push(['event', name, props]), report: (op) => window.calls.push(['report', op]),
     onQuiet: () => setQuiet((current) => current + 1), onReveal: () => {},
@@ -105,7 +112,7 @@ function Room() {
     React.createElement(BoardView, {
       tree: held ? held.projected(tree) : tree, ...progress, query, onQuery: setQuery, quiet,
       active, breakpoint: 'desktop', onSelect: () => {},
-      toast, onToastShown: (key) => { window.shownAt = Date.now(); boardToastShown(key); },
+      toast, onToastShown: (key) => { window.shownAt = Date.now(); toastShown(key); },
       onToastUndo: () => { toast.action.run(); dismissToast(); },
     }));
 }
@@ -120,7 +127,7 @@ const ready = (async () => {
       configureServer(server) {
         server.middlewares.use('/board-acts-test', (_request, response) => {
           response.setHeader('Content-Type', 'text/html');
-          response.end('<!doctype html><script>localStorage.setItem("windmill:board:dev", "1")</script><div id="root"></div><script type="module" src="/board-acts-entry.js"></script>');
+          response.end('<!doctype html><div id="root"></div><script type="module" src="/board-acts-entry.js"></script>');
         });
       },
     }], optimizeDeps: { include: ['react', 'react-dom/client'] },
@@ -224,15 +231,15 @@ test('Chromium: the real host offer boundary still reports masked work from a pr
   } finally { await page.close(); }
 });
 
-test('Chromium: the real host offer boundary stays clear after a Graph or List delete', async () => {
+test('Chromium: the real host offer boundary stays clear after a Graph delete', async () => {
   await ready;
   const page = await browser.newPage();
 
   try {
     await withBrowserErrors(page, async () => {
       await page.goto(`${origin}/board-acts-test`);
-      await page.waitForFunction(() => !!window.deleteLegacy);
-      await page.evaluate(() => window.deleteLegacy());
+      await page.waitForFunction(() => !!window.deleteOnGraph);
+      await page.evaluate(() => window.deleteOnGraph());
       assert.deepEqual(await page.evaluate(() => ({ masked: window.maskedWork(), offers: window.restoreOffers })), {
         masked: [], offers: [],
       });

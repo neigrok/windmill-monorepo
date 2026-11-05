@@ -3,12 +3,14 @@
 // The deterministic parser is the only door into TreeData; the AI handle only rewrites the text.
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { KindLegend } from '../ui/tree/KindLegend.jsx';
+import { KindLegend } from '../graph/tree/KindLegend.jsx';
 import { withCounts, renameKind, recolorKind, describeKind, addKind, removeKind } from '../model/Legend.js';
 import { KIND_CSS } from '../theme.js';
 import { API_BASE } from '../../../shell/apiBase.js';
 import { readComposeStream, shapeFailureLabels } from './composeStream.js';
+import { graftedStepCount } from './graftPlan.js';
 import { reportError } from '../../../telemetry/beacon.js';
+import { kindName } from '../model/Legend.js';
 
 const PLACEHOLDER = 'Paste anything — a to-do list, an outline, markdown checkboxes.';
 const AI_RESET_MS = 5000;
@@ -305,7 +307,8 @@ export function PasteComposer({ text, onTextChange, kinds, onKindsChange, parse,
     shape(source);
   };
 
-  const readout = [`${parse.readout.steps} step${parse.readout.steps === 1 ? '' : 's'}`];
+  const steps = append ? graftedStepCount(parse) : parse.readout.steps;
+  const readout = [`${steps} step${steps === 1 ? '' : 's'}`];
   if (parse.readout.branches > 0) readout.push(`${parse.readout.branches} branch${parse.readout.branches === 1 ? '' : 'es'}`);
   if (parse.readout.done > 0) readout.push(`${parse.readout.done} already done`);
 
@@ -373,7 +376,7 @@ export function PasteComposer({ text, onTextChange, kinds, onKindsChange, parse,
           {parse.kinds.map((kind) => (
             <span key={kind.id} className="pc-chip">
               <i style={{ background: KIND_CSS[kind.hue]?.base }} />
-              {kind.label || kind.hue.charAt(0).toUpperCase() + kind.hue.slice(1)}
+              {kindName(kind)}
             </span>
           ))}
         </div>

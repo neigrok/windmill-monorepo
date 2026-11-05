@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { IDBFactory } from 'fake-indexeddb';
+import { IDBFactory, IDBObjectStore } from 'fake-indexeddb';
 import { SyncStore } from '../../../../src/products/roadmap/sync/SyncStore.js';
-import { renameLocalTree, moveLocalTree, deleteLocalTree, forgetDeviceTrees } from '../../../../src/products/roadmap/sync/localTrees.js';
+import { bearImportedTree, bearLocalTree, deviceKeepsTrees, renameLocalTree, moveLocalTree, deleteLocalTree, forgetDeviceTrees } from '../../../../src/products/roadmap/sync/localTrees.js';
 import { LocalTreeRegistry } from '../../../../src/products/roadmap/persistence/LocalTreeRegistry.js';
 
 const frame = { nodes: [{ id: 'root', createdAt: '1:0:server', label: 'Root', labelAt: '1:0:server' }], edges: [], kinds: [] };
@@ -95,10 +95,10 @@ for (const action of [deleteLocalTree, forgetDeviceTrees]) {
 test('tracked local renames retain gesture history through repeated title changes and an id move', async (t) => {
   const { store } = device(t);
   await store.save('source', { frame, confirmed: { structure: frame }, gestures: { structure: {}, progress: {} } });
-  await renameLocalTree('source', 'First title', { trackGestures: true });
+  await renameLocalTree('source', 'First title');
   const first = await store.load('source');
   assert.deepEqual(Object.keys(first.gestures.structure), [first.frame.title.at]);
-  await renameLocalTree('source', 'Second title', { trackGestures: true });
+  await renameLocalTree('source', 'Second title');
   const second = await store.load('source');
   assert.deepEqual(Object.keys(second.gestures.structure), [first.frame.title.at, second.frame.title.at]);
   await moveLocalTree('source', 'destination');
@@ -106,4 +106,47 @@ test('tracked local renames retain gesture history through repeated title change
   assert.deepEqual(moved.gestures, second.gestures);
   assert.equal(await store.load('source'), null);
   assert.equal(moved.frame.title.v, 'Second title');
+});
+
+const plan = { title: 'Pottery', kinds: [], nodes: [{ id: 'clay', label: 'Wedge clay', color: 'terracotta', prerequisites: [] }] };
+
+function refuseDatabase(t) {
+  const prior = Object.getOwnPropertyDescriptor(globalThis, 'indexedDB');
+  Object.defineProperty(globalThis, 'indexedDB', { configurable: true, value: { open() { throw new DOMException('refused', 'SecurityError'); } } });
+  t.after(() => Object.defineProperty(globalThis, 'indexedDB', prior));
+}
+
+function refuseIndex(registry) {
+  globalThis.window.localStorage = { ...registry.storage, setItem: () => { throw new DOMException('full', 'QuotaExceededError'); } };
+}
+
+test('a device whose database and index both answer keeps a plant: the index row and the lattice stand', async (t) => {
+  const { registry, store } = device(t);
+  assert.equal(await deviceKeepsTrees(), true);
+  const treeId = await bearImportedTree(plan);
+  assert.deepEqual((await store.load(treeId)).frame.nodes.map(({ id, label }) => ({ id, label })), [{ id: 'clay', label: 'Wedge clay' }]);
+  assert.equal(registry.entries()[treeId].title, 'Pottery');
+});
+
+for (const [refusal, refuse] of [
+  ['a refused database', (t) => refuseDatabase(t)],
+  ['a full index', (t, registry) => refuseIndex(registry)],
+]) {
+  test(`${refusal} refuses a plant before anything is written, and says so before anyone types`, async (t) => {
+    const { registry } = device(t);
+    refuse(t, registry);
+    assert.equal(await deviceKeepsTrees(), false);
+    await assert.rejects(bearImportedTree(plan), { name: 'SecurityError' });
+    await assert.rejects(bearLocalTree({ title: 'Pottery' }), { name: 'SecurityError' });
+    assert.deepEqual(Object.keys(registry.entries()), ['source']);
+  });
+}
+
+test('a lattice the store refuses to take leaves no index row behind: the plant was not accepted', async (t) => {
+  const { registry } = device(t);
+  const put = IDBObjectStore.prototype.put;
+  IDBObjectStore.prototype.put = () => { throw new DOMException('full', 'QuotaExceededError'); };
+  t.after(() => { IDBObjectStore.prototype.put = put; });
+  await assert.rejects(bearImportedTree(plan), { name: 'SecurityError' });
+  assert.deepEqual(Object.keys(registry.entries()), ['source']);
 });

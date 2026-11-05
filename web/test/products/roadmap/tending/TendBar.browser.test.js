@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { createServer } from 'vite';
-import { ASK_AI_PLACEHOLDER } from '../../../../src/products/roadmap/board/copy.js';
-import { withBrowserErrors } from '../board/composerFixture.js';
+import { ASK_AI_PLACEHOLDER } from '../../../../src/products/roadmap/copy.js';
+import { withBrowserErrors } from '../browserFixture.js';
 
 const root = fileURLToPath(new URL('../../../../', import.meta.url));
 const entry = `
@@ -13,21 +13,11 @@ import { createRoot } from 'react-dom/client';
 import '/src/styles/fonts.js';
 import '/src/styles/global.css';
 import { TendBar } from '/src/products/roadmap/tending/TendBar.jsx';
-import { ASK_AI_PLACEHOLDER } from '/src/products/roadmap/board/copy.js';
+import { ASK_AI_PLACEHOLDER } from '/src/products/roadmap/copy.js';
 window.submitted = [];
 window.dismissed = 0;
 const query = new URLSearchParams(location.search);
-const presentation = query.get('presentation');
-window.viewportListeners = [];
-if (query.has('observeViewport')) {
-  for (const target of [window, window.visualViewport].filter(Boolean)) {
-    const add = target.addEventListener.bind(target);
-    target.addEventListener = (type, ...args) => {
-      if (type === 'resize' || type === 'scroll') window.viewportListeners.push(type);
-      return add(type, ...args);
-    };
-  }
-}
+const presentation = query.get('presentation') ?? 'overlay';
 if (presentation === 'docked') {
   const visible = Object.assign(new EventTarget(), { offsetTop: 0, offsetLeft: 0, width: innerWidth, height: 592 });
   Object.defineProperty(window, 'visualViewport', { value: visible, configurable: true });
@@ -36,12 +26,13 @@ if (presentation === 'docked') {
 const root = createRoot(document.getElementById('root'));
 document.getElementById('opener').focus();
 root.render(React.createElement(TendBar, {
-  variant: query.get('variant') ?? 'desktop', examples: ['Is this realistic?', 'What am I missing?'],
+  examples: ['Is this realistic?', 'What am I missing?'],
   presentation,
   topInset: Number(query.get('topInset') ?? 173),
-  ...(presentation ? { placeholder: ASK_AI_PLACEHOLDER[query.get('empty') ? 'empty' : presentation === 'docked' ? 'phone' : 'wide'], portalTarget: document.body, preserveOutsideFocus: true } : {}),
+  placeholder: ASK_AI_PLACEHOLDER[query.get('empty') ? 'empty' : presentation === 'docked' ? 'phone' : 'wide'],
+  portalTarget: document.body,
   onSubmit(value) { window.submitted.push(value); },
-  onDismiss() { window.dismissed += 1; if (presentation) root.render(null); },
+  onDismiss() { window.dismissed += 1; root.render(null); },
 }));
 `;
 let server, browser, origin;
@@ -69,7 +60,7 @@ for (const width of [320, 390, 744]) {
     const page = await browser.newPage({ viewport: { width, height: 844 } });
     try {
       await withBrowserErrors(page, async () => {
-      await page.goto(`${origin}/tend-band-test`);
+      await page.goto(`${origin}/tend-band-test?presentation=overlay`);
       const input = page.getByRole('textbox', { name: 'Tell the tree what to change' });
       await input.waitFor();
       await page.evaluate(() => document.fonts.ready);
@@ -89,7 +80,7 @@ for (const width of [320, 390, 744]) {
       await input.fill('Add a practice step');
       await page.getByRole('button', { name: 'Ask AI', exact: true }).click();
       assert.deepEqual(await page.evaluate(() => window.submitted), ['Add a practice step']);
-      await input.press('Escape');
+      await page.keyboard.press('Escape');
       assert.equal(await page.evaluate(() => window.dismissed), 1);
       });
     } finally {
@@ -173,20 +164,3 @@ test('Chromium: the 744 overlay sits beneath the row and the empty roadmap keeps
     await page.close();
   }
 });
-
-for (const variant of ['phone', 'desktop']) {
-  test(`Chromium: the legacy ${variant} Ask AI installs no viewport listeners`, async () => {
-    await ready;
-    const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
-    try {
-      await withBrowserErrors(page, async () => {
-        await page.goto(`${origin}/tend-band-test?variant=${variant}&observeViewport=1`);
-        await page.getByRole('textbox').waitFor();
-        await page.evaluate(() => new Promise(requestAnimationFrame));
-        assert.deepEqual(await page.evaluate(() => window.viewportListeners), []);
-      });
-    } finally {
-      await page.close();
-    }
-  });
-}

@@ -1,8 +1,8 @@
 import { lazy } from 'react';
 import { PlaceStore } from './persistence/PlaceStore.js';
+import { noteForked } from './persistence/ViewPrefs.js';
 import { confirmDeviceOwner } from './persistence/LocalTreeRegistry.js';
 import { DEMO_TREE_ID } from './demo/demoStage.js';
-import { boardOpen } from './board/gate.js';
 import { paidPlansOpen } from '../../shell/billing/checkout.js';
 import { roadmapLandingHead } from './marketing/landingHead.js';
 
@@ -25,8 +25,9 @@ function home() {
 }
 
 function landingAfterSignIn(forkedTree) {
-  if (forkedTree) return `#/app/${forkedTree}`;
-  return home();
+  if (!forkedTree) return home();
+  noteForked();
+  return `#/app/${forkedTree}`;
 }
 
 function appTarget(hash) {
@@ -48,13 +49,13 @@ function pathTarget(pathname = typeof window === 'undefined' ? '' : window.locat
   return id ? { treeId: id } : null;
 }
 
-// Returns a { Component, props, inRoom } descriptor, or null to let the next product answer. `inRoom` mounts a share
-// link or the demo inside the room's chrome: the identity row replaces the wordmark, so the Shell is their way home.
+// Returns a { Component, props, inRoom } descriptor, or null to let the next product answer. `inRoom` mounts a roadmap,
+// a share link or the demo inside the room's chrome on its own URL: the Shell is their way home and their Sign in.
 function render({ hash, pathname, search }) {
   // The hash wins over the /t/:id path when it names an app destination.
   const pathShare = pathTarget(pathname);
   if (pathShare && !hash.startsWith('#/')) {
-    return { Component: SkillTreeApp, props: { treeId: pathShare.treeId, birth: false, start: false, demo: false }, inRoom: boardOpen() };
+    return { Component: SkillTreeApp, props: { treeId: pathShare.treeId, birth: false, start: false, demo: false }, inRoom: true };
   }
 
   if (hash.startsWith('#/browse')) return { Component: BrowsePage, props: {} };
@@ -64,7 +65,7 @@ function render({ hash, pathname, search }) {
   if (!isApp) return null;
 
   const target = appTarget(hash);
-  return { Component: SkillTreeApp, props: { treeId: target.treeId, birth: target.birth, start: target.start, demo: target.demo }, inRoom: boardOpen() };
+  return { Component: SkillTreeApp, props: { treeId: target.treeId, birth: target.birth, start: target.start, demo: target.demo }, inRoom: true };
 }
 
 // Explicit sign-out and account replacement wipe stamped work; a session lapse never calls this hook.
@@ -130,6 +131,7 @@ export const roadmapRoutes = {
     // The module the boot preloads this room from (scripts/appBoot.js), checked by test/shell-boundaries.
     module: 'src/products/roadmap/index.js',
     scope: { theme: null, brand: 'roadmap' },
+    sharedShell: true,
     status: 'open',
     landingHref: '/roadmap',
     HomeCard,

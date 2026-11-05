@@ -5,16 +5,16 @@ import './board.css';
 import { Board, BoardQuery } from './Board.js';
 import { useStepSelection } from './useStepSelection.js';
 import { boardFocusTarget } from './traversal.js';
-import { NODE_COLOR_NAMES } from '../theme.js';
-import { kindOptions, kindOptionsForHues } from '../model/Legend.js';
+import { kindOptions } from '../model/Legend.js';
+import { bulkKindChoice } from '../model/bulkSelection.js';
 import { FilterStrip } from './BoardControls.jsx';
 import { BoardColumns, DEFAULT_RAIL, railToReveal, swapRail } from './BoardColumns.jsx';
 import { useRegroup } from './ColumnCards.jsx';
 import { PhoneSegments } from './PhoneSegments.jsx';
 import { BoardSkeleton, EmptyRoadmap, LoadError, RoadmapComplete, UpNextRest, boardFrame } from './BoardStates.jsx';
 import { BoardToast } from './BoardToast.jsx';
-import { DeviceLine, RefusedSync } from './SyncNotices.jsx';
-import { FORK_OFFER } from './copy.js';
+import { DeviceLine, RefusedSync } from '../sync/SyncNotices.jsx';
+import { FORK_OFFER } from '../copy.js';
 import { Button } from '../../../design-system/core/Button.jsx';
 import { track } from '../../../telemetry/beacon.js';
 
@@ -49,7 +49,6 @@ function BoardView({
   reveal = null,
   quiet = 0,
   topInset = 0,
-  bottomInset = 0,
   query: asked = EVERY_STEP,
   onQuery,
   legend = [],
@@ -82,7 +81,7 @@ function BoardView({
     root: boardRef, leaving: motion.leaving, onSelect, onRecolor, onDelete,
   });
   const selecting = selection.selection;
-  const selectionKinds = useMemo(() => kindOptionsForHues(NODE_COLOR_NAMES, legend), [legend]);
+  const selectionKinds = useMemo(() => bulkKindChoice(tree, selecting?.ids ?? [], legend), [tree, selecting, legend]);
   const selectionPins = useMemo(() => {
     if (!selection.starterId) return motion.pinned;
     return new Set([...motion.pinned, selection.starterId]);
@@ -172,6 +171,24 @@ function BoardView({
     if (revealFocus.current?.dataset.stepId !== id) motion.settle(id);
   };
 
+  // What the phone's panes and the columns both show.
+  const cards = {
+    board, focusBoard: nextBoard, counts: motion.counts, arrived: motion.arrived, leaving: motion.leaving,
+    dimmed: motion.phase === 'quiet' ? motion.dimmed : undefined, settle: settleFocus,
+    selectedId, doneExpanded, onExpandDone, query, onQuery,
+  };
+
+  const toastSlot = (
+    <BoardToast
+      toast={toast}
+      phone={phone}
+      ready={motion.phase === 'settled'}
+      blocked={phone && Boolean(refusal)}
+      onToastShown={onToastShown}
+      onToastReveal={onToastReveal}
+      onToastUndo={onToastUndo}
+    />
+  );
   const refusedNotice = refusal && (
     <div className="st-board-refusal" data-board-refusal="">
       <RefusedSync band={breakpoint} code={refusal.code} count={refusal.count}
@@ -180,6 +197,7 @@ function BoardView({
   );
   const phoneNotices = phone && (refusal || onFork) && (
     <div className="st-board-phone-notices">
+      {refusal && toastSlot}
       {refusedNotice}
       {onFork && (
         <Button variant="secondary" full onClick={() => {
@@ -196,7 +214,7 @@ function BoardView({
       onFocus={(event) => { lastFocus.current = event.target; }}
       onPointerDown={(event) => motion.settle(event.target.closest('.st-board-card')?.dataset.stepId)}
       className={`st-board ${phone ? 'st-board--phone' : 'st-board--columns'}`}
-      style={{ paddingTop: topInset > 0 ? `calc(${topInset}px + ${topGap})` : undefined, paddingBottom: bottomInset }}
+      style={{ paddingTop: topInset > 0 ? `calc(${topInset}px + ${topGap})` : undefined }}
     >
       {phone && deviceLine && <DeviceLine text={deviceLine.text} onSignIn={deviceLine.onSignIn} />}
       {frame !== 'columns' && !phone && refusedNotice}
@@ -210,20 +228,14 @@ function BoardView({
           {phone
             ? (
               <PhoneSegments
-                board={board}
+                {...cards}
                 beforeBand={phoneNotices}
-                focusBoard={nextBoard}
-                counts={motion.counts}
-                arrived={motion.arrived}
-                leaving={motion.leaving}
-                dimmed={motion.phase === 'quiet' ? motion.dimmed : undefined}
                 pinned={selectionPins}
-                settle={settleFocus}
                 onComplete={selecting ? undefined : onComplete}
                 onDelete={editable && !selecting ? selection.deleteFromKey : undefined}
                 selection={selecting}
-                kinds={selectionKinds}
-                sharedKind={selecting?.sharedKind(tree) ?? null}
+                kinds={selectionKinds.kinds}
+                sharedKind={selectionKinds.shared}
                 onHold={canSelect && !selecting ? selection.start : undefined}
                 selectable={selection.selectable}
                 onKinds={selection.kinds}
@@ -233,14 +245,9 @@ function BoardView({
                 onNewStep={onNewStep && (() => onNewStep('band'))}
                 shown={shown}
                 onShow={setShown}
-                selectedId={selectedId}
                 onSelect={selection.pick}
                 onAnchor={anchor}
-                doneExpanded={doneExpanded}
-                onExpandDone={onExpandDone}
-                query={query}
                 worn={worn}
-                onQuery={onQuery}
               />
             )
             : (
@@ -248,41 +255,22 @@ function BoardView({
                 <FilterStrip board={board} worn={worn} query={query} onQuery={onQuery} onAnchor={anchor} />
                 {refusedNotice}
                 <BoardColumns
-                  board={board}
-                  focusBoard={nextBoard}
-                  counts={motion.counts}
-                  arrived={motion.arrived}
-                  leaving={motion.leaving}
-                  dimmed={motion.phase === 'quiet' ? motion.dimmed : undefined}
+                  {...cards}
                   pinned={motion.pinned}
-                  settle={settleFocus}
                   onComplete={onComplete}
                   onDelete={editable ? selection.deleteFromKey : undefined}
                   onStandColumn={(column) => { if (breakpoint === 'tablet') setRailed((current) => railToReveal(current, column)); }}
                   band={breakpoint}
                   railed={railed}
                   onShowRail={() => setRailed(swapRail)}
-                  selectedId={selectedId}
                   onSelect={onSelect}
-                  doneExpanded={doneExpanded}
-                  onExpandDone={onExpandDone}
-                  query={query}
-                  onQuery={onQuery}
                 />
               </>
             )}
         </UpNextRest.Provider>
       )}
       {frame !== 'columns' && phoneNotices}
-      <BoardToast
-        toast={toast}
-        phone={phone}
-        ready={motion.phase === 'settled'}
-        blocked={phone && Boolean(refusal)}
-        onToastShown={onToastShown}
-        onToastReveal={onToastReveal}
-        onToastUndo={onToastUndo}
-      />
+      {!(phone && refusal) && toastSlot}
     </div>
   );
 }

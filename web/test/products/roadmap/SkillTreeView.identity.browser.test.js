@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { hostTest, openHost, startRoadmapHost } from './skillTreeViewHost.js';
-import { ROADMAP_VERBS } from '../../../src/products/roadmap/board/copy.js';
+import { ROADMAP_VERBS } from '../../../src/products/roadmap/copy.js';
 
-startRoadmapHost('identity');
+startRoadmapHost();
 
 for (const [width, band] of [[390, 'phone'], [744, 'tablet'], [1024, 'desktop'], [1440, 'desktop']]) {
   for (const role of ['owner', 'reader']) {
@@ -24,7 +24,6 @@ for (const [width, band] of [[390, 'phone'], [744, 'tablet'], [1024, 'desktop'],
             sheet: band === 'phone' && role === 'owner',
           });
           assert.equal(await page.locator('.st-roadmap-identity').count(), 1);
-          assert.equal(await page.locator('.st-action-lane').count(), 0);
           assert.deepEqual(errors, []);
         } finally { await page.close(); }
       });
@@ -145,6 +144,27 @@ for (const width of [390, 744]) {
         avatar: [0, 0, 22, 22], badge: [12, 12, 13, 13], dot: [11, 11],
         background: true, shadow: 'none', size: '10px', weight: '700', ring: '2px',
       });
+      assert.deepEqual(errors, []);
+    } finally { await page.close(); }
+  });
+}
+
+for (const width of [744, 1024, 1440]) {
+  hostTest(`Chromium: with a step selected on the Graph at ${width}px, More and What's next stand over its panel`, async () => {
+    const { page, errors } = await openHost({ width, surface: 'tree' });
+    const onTop = (locator) => locator.evaluate((element) => {
+      const box = element.getBoundingClientRect();
+      return element.contains(document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2))
+        && element.contains(document.elementFromPoint(box.right - 8, box.top + box.height / 2));
+    });
+    try {
+      await page.evaluate(() => window.scene.select('wind'));
+      await page.locator('.st-detail-panel--open').waitFor();
+      await page.locator('[data-roadmap-more]').click();
+      assert.equal(await onTop(page.locator('.st-roadmap-menu [role="menuitem"]').first()), true);
+      await page.keyboard.press('Escape');
+      await page.getByRole('button', { name: /^Next/ }).click();
+      assert.equal(await onTop(page.locator('.st-roadmap-next-card').first()), true);
       assert.deepEqual(errors, []);
     } finally { await page.close(); }
   });

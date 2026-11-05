@@ -350,7 +350,8 @@
   box-shadow: var(--shadow-lg);
   animation: st-board-toast-enter var(--duration-base) var(--ease-soft) both;
 }
-.st-board-toast--delete {
+.st-board-toast--delete,
+.st-board-toast--notice {
   border-left-color: var(--text-secondary);
 }
 .st-board-toast.is-leaving {
@@ -397,6 +398,11 @@ button.st-board-toast-message {
   border-left-color: var(--border-subtle);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-md);
+}
+.st-board-phone-notices .st-board-toast {
+  bottom: calc(100% + var(--space-2));
+  width: 100%;
+  max-width: 100%;
 }
 .st-board--phone .st-board-toast-message,
 .st-graph-toast--phone .st-board-toast-message {

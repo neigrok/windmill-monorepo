@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Dialog, Button } from '../../../design-system';
 import { setVisibility } from '../persistence/TreeRegistry.js';
+import { reportUnexpectedFailure } from '../reportFailure.js';
 import { track } from '../../../telemetry/beacon.js';
 
 // A roadmap's public address, or null for one with no id yet; a step's link adds its `?step=` to this.
@@ -8,7 +9,7 @@ export function treeShareUrl(treeId) {
   return treeId && treeId !== 'new' ? `${window.location.origin}/t/${treeId}` : null;
 }
 
-export function ShareDialog({ open, onClose, treeId, visibility, mine, onStanceChange, preserveOutsideFocus = false }) {
+export function ShareDialog({ open, onClose, treeId, visibility, mine, onStanceChange }) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -38,10 +39,13 @@ export function ShareDialog({ open, onClose, treeId, visibility, mine, onStanceC
     try {
       if (publish) {
         await setVisibility(treeId, 'public');
+        track('roadmap_verb', { verb: 'share', step: 'publish', outcome: 'ok' });
         if (!mounted.current) return;
         onStanceChange?.('public');
       }
     } catch (failure) {
+      track('roadmap_verb', { verb: 'share', step: 'publish', outcome: 'failed' });
+      reportUnexpectedFailure('roadmap-share', failure);
       if (!mounted.current) return;
       setError(`${failure.message || 'Could not publish the roadmap'}. Try again.`);
       pending.current = false;
@@ -54,6 +58,7 @@ export function ShareDialog({ open, onClose, treeId, visibility, mine, onStanceC
       track('link_copy', {});
       setMessage('Link copied.');
     } catch {
+      track('roadmap_verb', { verb: 'share', step: 'copy', outcome: 'failed' });
       if (!mounted.current) return;
       urlRef.current?.select();
       setError('Could not copy the link. Select the link to copy it manually, or try again.');
@@ -71,10 +76,13 @@ export function ShareDialog({ open, onClose, treeId, visibility, mine, onStanceC
     setError('');
     try {
       await setVisibility(treeId, 'private');
+      track('roadmap_verb', { verb: 'share', step: 'private', outcome: 'ok' });
       if (!mounted.current) return;
       onStanceChange?.('private');
       setMessage('Roadmap is private. Only you can view it.');
     } catch (failure) {
+      track('roadmap_verb', { verb: 'share', step: 'private', outcome: 'failed' });
+      reportUnexpectedFailure('roadmap-share', failure);
       if (!mounted.current) return;
       setError(`${failure.message || 'Could not make the roadmap private'}. Try again.`);
     } finally {
@@ -84,7 +92,7 @@ export function ShareDialog({ open, onClose, treeId, visibility, mine, onStanceC
   }
 
   return (
-    <Dialog open={open} onClose={busy ? undefined : onClose} title="Share roadmap" width={640} footer={null} preserveOutsideFocus={preserveOutsideFocus}>
+    <Dialog open={open} onClose={busy ? undefined : onClose} title="Share roadmap" width={640} footer={null} preserveOutsideFocus>
       {!shareUrl ? <p>This roadmap has no shareable link yet.</p> : (
         <div>
           <p>

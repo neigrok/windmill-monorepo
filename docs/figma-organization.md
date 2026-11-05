@@ -18,7 +18,7 @@ within its owner, not a separate product file. Proposals remain separate from de
 
 | Owner | Pages |
 |---|---|
-| Roadmap | Cover, Model, Components, Web, Web Mobile, Proposals, 💡 Board · Web Mobile, 💡 Board · Web |
+| Roadmap | Cover, Model, Components, Web, Web Mobile, Proposals, ✅ Board · Web Mobile, ✅ Board · Web |
 | Journal | Cover, Model, Components, Web, iOS, Proposals |
 | Gym | Cover, Model, Components, Web, iOS, Android, Proposals |
 | Marketing | Landings, Static pages, Emails, Store listings |

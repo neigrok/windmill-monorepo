@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { ViewPrefs, initialView, boardCanShow, viewToShow, stampBorn, peekBorn, clearBorn } from '../../../../src/products/roadmap/persistence/ViewPrefs.js';
+import { ViewPrefs, initialView, boardCanShow, viewToShow, stampBorn, peekBorn, clearBorn, notePlantedQuest, noteForked, takePlantNote } from '../../../../src/products/roadmap/persistence/ViewPrefs.js';
 
 function memoryStorage() {
   const map = new Map();
@@ -24,13 +24,21 @@ test('ViewPrefs — last view round-trips per tree and defaults to null', () => 
   const prefs = new ViewPrefs(memoryStorage());
   assert.equal(prefs.lastView('t1'), null);
 
-  prefs.setLastView('t1', 'list');
   prefs.setLastView('t2', 'tree');
   prefs.setLastView('t3', 'board');
-  assert.equal(prefs.lastView('t1'), 'list');
   assert.equal(prefs.lastView('t2'), 'tree');
   assert.equal(prefs.lastView('t3'), 'board');
   assert.equal(prefs.lastView('t4'), null);
+});
+
+test('ViewPrefs — a saved `list` from before the Board still reads, and `list` is never written again', () => {
+  const storage = memoryStorage();
+  storage.setItem('windmill:view:last', JSON.stringify({ t1: 'list' }));
+  const prefs = new ViewPrefs(storage);
+  assert.equal(prefs.lastView('t1'), 'list');
+  prefs.setLastView('t2', 'list');
+  assert.equal(prefs.lastView('t2'), null);
+  assert.equal(storage.getItem('windmill:view:last'), JSON.stringify({ t1: 'list' }));
 });
 
 test('ViewPrefs — a view this device does not know reads as no choice', () => {
@@ -39,101 +47,70 @@ test('ViewPrefs — a view this device does not know reads as no choice', () => 
   assert.equal(new ViewPrefs(storage).lastView('t1'), null);
 });
 
-test('ViewPrefs — folded sections round-trip per tree and default to empty', () => {
+test('ViewPrefs — a later write keeps the earlier tree', () => {
   const prefs = new ViewPrefs(memoryStorage());
-  assert.deepEqual(prefs.foldedSections('t1'), []);
 
-  prefs.setFoldedSections('t1', ['a', 'b']);
-  prefs.setFoldedSections('t2', ['c']);
-  assert.deepEqual(prefs.foldedSections('t1'), ['a', 'b']);
-  assert.deepEqual(prefs.foldedSections('t2'), ['c']);
-  assert.deepEqual(prefs.foldedSections('t3'), []);
-});
-
-test('ViewPrefs — the two slots do not collide, and a later write keeps the earlier tree', () => {
-  const storage = memoryStorage();
-  const prefs = new ViewPrefs(storage);
-
-  prefs.setLastView('t1', 'list');
-  prefs.setFoldedSections('t1', ['a']);
+  prefs.setLastView('t1', 'board');
   prefs.setLastView('t2', 'tree');
 
-  assert.equal(prefs.lastView('t1'), 'list');
+  assert.equal(prefs.lastView('t1'), 'board');
   assert.equal(prefs.lastView('t2'), 'tree');
-  assert.deepEqual(prefs.foldedSections('t1'), ['a']);
 });
 
 test('ViewPrefs — a garbage slot reads as empty rather than throwing', () => {
   const storage = memoryStorage();
   storage.setItem('windmill:view:last', '{ not json');
-  storage.setItem('windmill:view:folded', '["stray-array"]');
   const prefs = new ViewPrefs(storage);
 
   assert.equal(prefs.lastView('t1'), null);
-  assert.deepEqual(prefs.foldedSections('t1'), []);
 });
 
 test('ViewPrefs — a throwing storage never throws and reads as empty', () => {
   const prefs = new ViewPrefs(throwingStorage());
 
   assert.equal(prefs.lastView('t1'), null);
-  assert.deepEqual(prefs.foldedSections('t1'), []);
-  assert.doesNotThrow(() => prefs.setLastView('t1', 'list'));
-  assert.doesNotThrow(() => prefs.setFoldedSections('t1', ['a']));
+  assert.doesNotThrow(() => prefs.setLastView('t1', 'board'));
   assert.equal(prefs.lastView('t1'), null);
 });
 
-test('initialView — a step link opens the Board for owner and visitor alike while the Board is open, and nothing while it is closed', () => {
+test('initialView — a step link opens the Board for owner and visitor alike', () => {
   assert.deepEqual([
-    initialView({ saved: 'tree', owner: true, empty: false, boardOpen: true, linkedStep: 'wind' }).view,
-    initialView({ saved: null, owner: false, empty: false, boardOpen: true, linkedStep: 'wind' }).view,
-    initialView({ saved: null, owner: false, empty: false, boardOpen: false, linkedStep: 'wind' }).view,
-    initialView({ saved: null, owner: false, empty: false, born: true, boardOpen: true, linkedStep: 'wind' }).view,
-  ], ['board', 'board', 'tree', 'tree']);
+    initialView({ saved: 'tree', owner: true, empty: false, linkedStep: 'wind' }).view,
+    initialView({ saved: null, owner: false, empty: false, linkedStep: 'wind' }).view,
+    initialView({ saved: null, owner: false, empty: false, born: true, linkedStep: 'wind' }).view,
+  ], ['board', 'board', 'tree']);
 });
 
-test('initialView — an empty tree always opens as the bud canvas, saved choice notwithstanding', () => {
+test('initialView — an empty tree opens on the canvas, saved choice notwithstanding, without an owner who can plant it', () => {
   assert.equal(initialView({ saved: 'list', owner: true, empty: true }).view, 'tree');
   assert.equal(initialView({ saved: 'tree', owner: false, empty: true }).view, 'tree');
   assert.equal(initialView({ saved: null, owner: true, empty: true }).view, 'tree');
 });
 
-test('initialView — a saved choice wins on a non-empty tree', () => {
-  assert.equal(initialView({ saved: 'list', owner: false, empty: false }).view, 'list');
-  assert.equal(initialView({ saved: 'tree', owner: true, empty: false }).view, 'tree');
-});
-
-test('initialView — no saved choice sends the owner to work and the visitor to the portrait', () => {
-  assert.equal(initialView({ saved: null, owner: true, empty: false }).view, 'list');
+test('initialView — no saved choice sends the owner to the Board and the visitor to the Graph', () => {
+  assert.equal(initialView({ saved: null, owner: true, empty: false }).view, 'board');
   assert.equal(initialView({ saved: null, owner: false, empty: false }).view, 'tree');
 });
 
 test('initialView — a just-born tree opens on the canvas over every other signal', () => {
   assert.equal(initialView({ saved: 'list', owner: true, empty: false, born: true }).view, 'tree');
+  assert.equal(initialView({ saved: 'board', owner: true, empty: false, born: true }).view, 'tree');
   assert.equal(initialView({ saved: null, owner: true, empty: false, born: true }).view, 'tree');
-  assert.equal(initialView({ saved: null, owner: true, empty: false, born: false }).view, 'list');
+  assert.equal(initialView({ saved: null, owner: true, empty: false, born: false }).view, 'board');
 });
 
-test('initialView — with the Board open, the owner opens on the Board and the visitor on the Graph', () => {
-  assert.equal(initialView({ saved: null, owner: true, empty: false, boardOpen: true }).view, 'board');
-  assert.equal(initialView({ saved: null, owner: false, empty: false, boardOpen: true }).view, 'tree');
+test('initialView — an owner keeps the saved choice, a saved `list` reads as `board`, and a reader opens the Graph', () => {
+  assert.equal(initialView({ saved: 'tree', owner: true, empty: false }).view, 'tree');
+  assert.equal(initialView({ saved: 'board', owner: true, empty: false }).view, 'board');
+  assert.equal(initialView({ saved: 'list', owner: true, empty: false }).view, 'board');
+  assert.equal(initialView({ saved: 'board', owner: false, reader: true, empty: false }).view, 'tree');
 });
 
-test('initialView — with the Board open, an owner keeps the saved choice and a reader opens the Graph', () => {
-  assert.equal(initialView({ saved: 'tree', owner: true, empty: false, boardOpen: true }).view, 'tree');
-  assert.equal(initialView({ saved: 'board', owner: false, reader: true, empty: false, boardOpen: true }).view, 'tree');
-  assert.equal(initialView({ saved: 'list', owner: true, empty: false, boardOpen: true }).view, 'board');
-});
-
-test('initialView — with the Board closed, a saved Board becomes the List', () => {
-  assert.equal(initialView({ saved: 'board', owner: false, empty: false, boardOpen: false }).view, 'list');
-});
-
-test('initialView — readers with the Board open land on the Graph for every saved choice unless a step link opens the Board', () => {
+test('initialView — readers land on the Graph for every saved choice unless a step link opens the Board', () => {
   for (const saved of [null, 'tree', 'list', 'board']) {
     assert.deepEqual([
-      initialView({ saved, owner: false, reader: true, empty: false, boardOpen: true }).view,
-      initialView({ saved, owner: false, reader: true, empty: false, boardOpen: true, linkedStep: 'wind' }).view,
+      initialView({ saved, owner: false, reader: true, empty: false }).view,
+      initialView({ saved, owner: false, reader: true, empty: false, linkedStep: 'wind' }).view,
     ], ['tree', 'board']);
   }
 });
@@ -150,39 +127,9 @@ test('initialView — confirmed readers override saved choices while the demo an
   ];
   for (const { label, owner, reader, expected } of populations) {
     const choices = [null, 'tree', 'list', 'board'];
-    assert.deepEqual(choices.map((saved) => initialView({ saved, owner, reader, empty: false, boardOpen: true }).view), expected, label);
-    assert.deepEqual(choices.map((saved) => initialView({ saved, owner, reader, empty: false, boardOpen: true, linkedStep: 'wind' }).view), ['board', 'board', 'board', 'board'], label);
+    assert.deepEqual(choices.map((saved) => initialView({ saved, owner, reader, empty: false }).view), expected, label);
+    assert.deepEqual(choices.map((saved) => initialView({ saved, owner, reader, empty: false, linkedStep: 'wind' }).view), ['board', 'board', 'board', 'board'], label);
   }
-});
-
-test('initialView — gate-closed choices retain all ownership, empty, birth, link and first-step combinations', () => {
-  for (const owner of [false, true]) {
-    for (const empty of [false, true]) {
-      for (const born of [false, true]) {
-        for (const linkedStep of [null, 'wind']) {
-          for (const canAddFirstStep of [false, true]) {
-            const results = [null, 'tree', 'list', 'board'].map((saved) => initialView({
-              saved, owner, reader: false, empty, born, linkedStep, canAddFirstStep, boardOpen: false,
-            }).view);
-            const readerResults = [null, 'tree', 'list', 'board'].map((saved) => initialView({
-              saved, owner, reader: true, empty, born, linkedStep, canAddFirstStep, boardOpen: false,
-            }).view);
-            assert.deepEqual(readerResults, results);
-            if (empty || born) {
-              assert.deepEqual(results, ['tree', 'tree', 'tree', 'tree']);
-              continue;
-            }
-            assert.deepEqual(results, [owner ? 'list' : 'tree', 'tree', 'list', 'list']);
-          }
-        }
-      }
-    }
-  }
-});
-
-test('initialView — with the Board open, an empty or just-born tree still opens on the canvas', () => {
-  assert.equal(initialView({ saved: 'board', owner: true, empty: true, boardOpen: true }).view, 'tree');
-  assert.equal(initialView({ saved: 'board', owner: true, empty: false, born: true, boardOpen: true }).view, 'tree');
 });
 
 test('boardCanShow — the Board shows while its roadmap loads or fails to, and once loaded with steps', () => {
@@ -214,10 +161,9 @@ test('viewToShow — a Board that cannot show shows the Graph; every other view 
     viewToShow('board', { loaded: true, empty: true, canAddFirstStep: true }),
     viewToShow('board', { loaded: true, empty: true, canAddFirstStep: false }),
     viewToShow('board', { crashed: true, loaded: true }),
-    viewToShow('list', { loaded: true, empty: true }),
     viewToShow('tree', { loaded: false }),
     viewToShow(null, { loaded: false }),
-  ], ['board', 'board', 'board', 'tree', 'tree', 'list', 'tree', null]);
+  ], ['board', 'board', 'board', 'tree', 'tree', 'tree', null]);
 });
 
 test('birth stamp — peek reads without consuming; clear removes only the tree it names', () => {
@@ -255,22 +201,20 @@ test('birth stamp — a throwing storage never throws and reads as not born', ()
 test('initialView — an owner with an empty Board and New step opens the Board across saved and birth states', () => {
   for (const saved of [null, 'tree', 'list', 'board']) {
     for (const born of [false, true]) {
-      assert.equal(initialView({ saved, owner: true, empty: true, born, boardOpen: true, canAddFirstStep: true }).view, 'board');
+      assert.equal(initialView({ saved, owner: true, empty: true, born, canAddFirstStep: true }).view, 'board');
     }
   }
 });
 
-test('initialView — the empty Board rule leaves visitors and the closed gate on the canvas', () => {
+test('initialView — the empty Board rule leaves visitors and an owner who cannot plant on the canvas', () => {
   assert.deepEqual([
-    initialView({ saved: 'board', owner: false, empty: true, boardOpen: true, canAddFirstStep: true }).view,
-    initialView({ saved: 'board', owner: true, empty: true, boardOpen: false, canAddFirstStep: true }).view,
-    initialView({ saved: 'board', owner: true, empty: true, boardOpen: true, canAddFirstStep: false }).view,
-  ], ['tree', 'tree', 'tree']);
+    initialView({ saved: 'board', owner: false, empty: true, canAddFirstStep: true }).view,
+    initialView({ saved: 'board', owner: true, empty: true, canAddFirstStep: false }).view,
+  ], ['tree', 'tree']);
 });
 
-
 test('initialView returns the deciding door with the view in branch order', () => {
-  const base = { saved: 'tree', owner: true, reader: false, empty: false, boardOpen: true };
+  const base = { saved: 'tree', owner: true, reader: false, empty: false };
   const cases = [
     [{ empty: true, canAddFirstStep: true, born: true, linkedStep: 'wind' }, { view: 'board', door: 'empty' }],
     [{ born: true, empty: true, linkedStep: 'wind' }, { view: 'tree', door: 'born' }],
@@ -282,8 +226,28 @@ test('initialView returns the deciding door with the view in branch order', () =
     [{ saved: 'board' }, { view: 'board', door: 'saved' }],
     [{ saved: null }, { view: 'board', door: 'default' }],
     [{ saved: null, owner: false }, { view: 'tree', door: 'default' }],
-    [{ boardOpen: false, saved: 'board', linkedStep: 'wind' }, { view: 'list', door: 'saved' }],
-    [{ boardOpen: false, saved: null, linkedStep: 'wind' }, { view: 'list', door: 'default' }],
   ];
   for (const [overrides, expected] of cases) assert.deepEqual(initialView({ ...base, ...overrides }), expected);
+});
+
+test('plant notes — each is read once, and a throwing storage reads as none', () => {
+  const storage = memoryStorage();
+  assert.deepEqual(takePlantNote(storage), { quest: false, forked: false });
+  notePlantedQuest(storage);
+  noteForked(storage);
+  assert.equal(storage.getItem('windmill:planted-quest'), '1');
+  assert.equal(storage.getItem('windmill:forked-from-demo'), '1');
+  assert.deepEqual(takePlantNote(storage), { quest: true, forked: true });
+  assert.deepEqual(takePlantNote(storage), { quest: false, forked: false });
+  noteForked(throwingStorage());
+  assert.deepEqual(takePlantNote(throwingStorage()), { quest: false, forked: false });
+});
+
+test('an email fork lands on its copy with the same note an instant fork leaves', async (t) => {
+  const storage = memoryStorage();
+  globalThis.sessionStorage = storage;
+  t.after(() => { delete globalThis.sessionStorage; });
+  const { roadmapRoutes } = await import('../../../../src/products/roadmap/routes.js');
+  assert.equal(roadmapRoutes.landingAfterSignIn('t_copy'), '#/app/t_copy');
+  assert.deepEqual(takePlantNote(storage), { quest: false, forked: true });
 });

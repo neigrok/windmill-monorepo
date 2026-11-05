@@ -26,8 +26,6 @@ test('copy — the canon strings the demo speaks verbatim', () => {
   assert.equal(DEMO_COPY.coachSentence, 'This step is up next — mark it done.');
   assert.equal(DEMO_COPY.coachButton, 'Mark it done');
   assert.equal(DEMO_COPY.unlockToast, 'Rig the boat yourself done · 2 up next');
-  assert.equal(DEMO_COPY.forkToast, 'Forked — 17 steps planted');
-  assert.equal(DEMO_COPY.plaqueByline, 'Windmill demo');
 });
 
 test('coachEligible — a stranger is eligible, a returning or tree-owning visitor is not', () => {

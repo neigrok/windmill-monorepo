@@ -4,6 +4,9 @@ import { join } from 'node:path';
 import { run } from 'node:test';
 import { spec } from 'node:test/reporters';
 
+// `npm run build` holds production's DSN for its bundle. Tests that report inject their own, so a failure a test provokes never reaches production's Sentry project.
+delete process.env.VITE_SENTRY_DSN;
+
 const files = [];
 function discover(directory) {
   for (const entry of readdirSync(directory, { withFileTypes: true })) {

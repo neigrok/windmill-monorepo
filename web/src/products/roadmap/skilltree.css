@@ -83,54 +83,6 @@
   color: var(--text-primary);
 }
 
-/* ---- Top bar: brand (left), dataset + camera controls (right) ---- */
-.st-topbar {
-  position: absolute;
-  inset: 0 0 auto 0;
-  z-index: 20;
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--space-4);
-  padding: var(--space-6);
-  pointer-events: none;
-}
-.st-brand,
-.st-controls {
-  pointer-events: auto;
-}
-
-.st-brand {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-2) var(--space-3);
-  background: color-mix(in srgb, var(--surface-card) 88%, transparent);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-full);
-  box-shadow: var(--shadow-sm);
-  backdrop-filter: saturate(1.3) blur(8px);
-}
-.st-brand-home {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  text-decoration: none;
-  border-radius: var(--radius-full);
-}
-.st-brand-home:hover .st-brand-name {
-  color: var(--color-brand-hover);
-}
-.st-brand-name {
-  font-family: var(--font-display);
-  font-weight: 800;
-  font-size: var(--text-base);
-  color: var(--text-primary);
-}
-.st-brand-title {
-  font-size: var(--text-xs);
-  color: var(--text-tertiary);
-}
 .st-switcher-flash {
   animation: wm-switcher-flash 700ms var(--ease-standard);
 }
@@ -150,35 +102,6 @@
   from { opacity: 0; }
   to   { opacity: 1; }
 }
-.st-controls {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  /* Desktop only: an open dock reserves the docked step panel's width (360px at right: 24px) plus a gutter
-     here so the controls never sit under it. Inert on tablet and phone, where the topbar is not rendered. */
-  padding-right: 0;
-  transition: padding-right var(--duration-fast) var(--ease-standard);
-}
-.st-root--panel-open .st-controls {
-  padding-right: calc(360px + var(--space-6));
-}
-@media (prefers-reduced-motion: reduce) {
-  .st-controls {
-    transition: none;
-  }
-}
-.st-zoom-group {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  padding: var(--space-1);
-  background: color-mix(in srgb, var(--surface-card) 88%, transparent);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-full);
-  box-shadow: var(--shadow-sm);
-  backdrop-filter: saturate(1.3) blur(8px);
-}
-/* Focus · All steps: the two camera verbs, as text so the words carry the meaning on every surface. */
 .st-view-action {
   padding: 0 10px;
   min-height: 32px;
@@ -197,7 +120,7 @@
   outline: 2px solid currentColor;
   outline-offset: -2px;
 }
-.st-mobile-chrome .st-view-action {
+.st-graph-chrome .st-view-action {
   min-height: 44px;
   padding: 0 14px;
 }
@@ -322,7 +245,7 @@
   color: var(--text-tertiary);
 }
 
-/* Kind: one round swatch per category hue; hover previews, ring marks the current */
+/* The selection bar's recolor: one round swatch per category hue; hover previews, ring marks the current */
 .st-step-kinds {
   display: flex;
   gap: var(--space-2);
@@ -345,23 +268,44 @@
 .st-step-swatch--current:hover {
   box-shadow: 0 0 0 2px var(--text-primary);
 }
-/* The ghost "+" swatch: opens the legend */
-.st-step-swatch--add {
-  border: 1.5px dashed var(--neutral-400);
-  box-shadow: none;
-  background: transparent;
-  color: var(--text-tertiary);
+/* Kind in the dock and the tablet panel: the six choices wrap to the panel, and the dock's heading row opens the legend. */
+.st-step-kind {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.st-step-kind [role="radiogroup"] {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+}
+.st-step-kind button:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+}
+.st-step-kind-heading {
   display: flex;
   align-items: center;
-  justify-content: center;
-  font-size: var(--text-sm);
-  font-weight: 800;
-  line-height: 1;
+  justify-content: space-between;
+  line-height: 18px;
 }
-.st-step-swatch--add:hover {
-  border-color: var(--text-secondary);
-  color: var(--text-secondary);
-  box-shadow: none;
+.st-step-kind-heading .st-step-heading {
+  margin-bottom: 0;
+}
+.st-step-manage-kinds {
+  margin: -3px 0;
+  padding: 3px 0;
+  border: none;
+  background: none;
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 12.5px;
+  line-height: 18px;
+  color: var(--color-brand);
+  cursor: pointer;
+}
+.st-step-manage-kinds:hover {
+  color: var(--color-brand-hover);
 }
 
 /* Delete: isolated at the very bottom */
@@ -484,10 +428,10 @@
   color: var(--text-on-accent);
 }
 
-/* ---- Toast: Undo pill + ceremony summary; enter fade-rise, exit fade ---- */
+/* ---- Ask AI's answers: enter fade-rise, exit fade ---- */
 .st-toast {
   position: absolute;
-  z-index: 50; /* the undo snackbar floats above the z-40 mobile surfaces (sheet/aim/remove/bulk) */
+  z-index: 50;
   left: 50%;
   bottom: var(--space-8);
   transform: translateX(-50%);
@@ -560,7 +504,7 @@
   text-align: left;
 }
 
-/* Phone: transient toasts move to the top, below the chrome's plaque row, and fade in place. The selection bar stays at the bottom. */
+/* Phone: an answer over the Board moves to the top and fades in place. */
 @media (max-width: 743px) {
   .st-toast {
     top: calc(max(env(safe-area-inset-top, 0px), 44px) + 88px);
@@ -1002,19 +946,7 @@
   background: var(--neutral-100);
   border-radius: var(--radius-full);
   padding: 1px 7px;
-}
-/* The stacked dock's second section head: ACTIVITY follows NEXT UP */
-.st-activity-head--section {
-  padding-top: var(--space-3);
-  border-top: 1px solid var(--border-subtle);
-}
-.st-activity-live {
-  width: 6px;
-  height: 6px;
-  margin-left: auto;
-  border-radius: 50%;
-  background: var(--accent-olive-500);
-  box-shadow: 0 0 6px 1px var(--accent-olive-400);
+  margin-right: auto;
 }
 .st-activity-list {
   flex: 1;
@@ -1138,144 +1070,6 @@
   color: var(--text-tertiary);
 }
 
-/* ---- Next up: up to three ready rows + an in-place expander, leading the activity feed ---- */
-.st-nextup {
-  flex: none;
-  display: flex;
-  flex-direction: column;
-  padding: 0 var(--space-2);
-  max-height: 46vh;
-  overflow-y: auto;
-}
-.st-nextup-rows {
-  display: flex;
-  flex-direction: column;
-}
-.st-nextup-row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  width: 100%;
-  box-sizing: border-box;
-  padding: var(--space-2);
-  border: 0;
-  border-radius: var(--radius-md);
-  background: none;
-  text-align: left;
-  font-family: var(--font-body);
-  cursor: pointer;
-  transition: background var(--duration-fast) var(--ease-standard);
-}
-.st-nextup-row:hover {
-  background: var(--surface-hover);
-}
-.st-nextup-disc {
-  flex: none;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: var(--surface-card);
-}
-.st-nextup-text {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-.st-nextup-name {
-  font-size: var(--text-sm);
-  font-weight: 700;
-  color: var(--text-primary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.st-nextup-sub {
-  font-size: var(--text-xs);
-  color: var(--text-tertiary);
-}
-.st-nextup-fly {
-  flex: none;
-  color: var(--text-tertiary);
-  opacity: 0;
-  transition: opacity var(--duration-fast) var(--ease-standard);
-}
-.st-nextup-row:hover .st-nextup-fly,
-.st-nextup-row:focus-visible .st-nextup-fly {
-  opacity: 1;
-}
-.st-nextup-more {
-  align-self: flex-start;
-  margin: 0 var(--space-2) var(--space-2);
-  padding: 2px 0;
-  border: 0;
-  background: none;
-  font-family: var(--font-body);
-  font-size: var(--text-xs);
-  font-weight: 700;
-  color: var(--text-tertiary);
-  cursor: pointer;
-  transition: color var(--duration-fast) var(--ease-standard);
-}
-.st-nextup-more:hover {
-  color: var(--text-secondary);
-}
-
-/* The two empty states: all done and nothing unlocked. */
-.st-nextup--empty {
-  padding: var(--space-2) var(--space-4) var(--space-3);
-  gap: 2px;
-}
-.st-nextup--empty .st-nextup-rows {
-  margin: var(--space-1) calc(-1 * var(--space-2)) 0;
-}
-.st-nextup-crown {
-  margin-bottom: var(--space-1);
-  color: var(--accent-gold-500);
-}
-.st-nextup-line {
-  margin: 0;
-  font-size: var(--text-sm);
-  font-weight: 700;
-  color: var(--text-primary);
-}
-.st-nextup-tally {
-  margin: 0;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  color: var(--text-tertiary);
-}
-.st-nextup-hint {
-  margin: 0;
-  font-size: var(--text-xs);
-  color: var(--text-tertiary);
-}
-.st-nextup-links {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  margin: var(--space-2) 0 0;
-  font-size: var(--text-xs);
-  color: var(--text-tertiary);
-}
-.st-nextup-links button,
-.st-nextup-links a {
-  padding: 0;
-  border: 0;
-  background: none;
-  font-family: var(--font-body);
-  font-size: var(--text-xs);
-  font-weight: 700;
-  color: var(--text-secondary);
-  text-decoration: none;
-  cursor: pointer;
-  transition: color var(--duration-fast) var(--ease-standard);
-}
-.st-nextup-links button:hover,
-.st-nextup-links a:hover {
-  color: var(--color-brand-hover);
-}
 
 /* ---- Step panel: status, one progress action, and completion time ---- */
 .st-step-state {
@@ -1374,84 +1168,11 @@
   border-color: transparent;
 }
 
-/* ---- Activity chip: the toolbar summon ---- */
-.st-activity-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  font-family: var(--font-body);
-  font-size: var(--text-sm);
-  font-weight: 800;
-  color: var(--text-secondary);
-  background: color-mix(in srgb, var(--surface-card) 88%, transparent);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-full);
-  box-shadow: var(--shadow-sm);
-  backdrop-filter: saturate(1.3) blur(8px);
-  cursor: pointer;
-  transition: background var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard), box-shadow var(--duration-fast) var(--ease-standard);
-}
-.st-activity-chip:hover {
-  background: var(--surface-hover);
-  color: var(--text-primary);
-}
-.st-activity-chip--on {
-  color: var(--color-brand-hover);
-  background: var(--color-brand-soft);
-  border-color: var(--accent-terracotta-400);
-}
-
-/* AI assistance’s front door (desktop). Only rendered for an owner of an armed tree. */
-.st-tend-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  font-family: var(--font-body);
-  font-size: var(--text-sm);
-  font-weight: 800;
-  color: var(--color-brand);
-  background: var(--color-brand-soft);
-  border: 1px solid var(--accent-terracotta-200);
-  border-radius: var(--radius-full);
-  box-shadow: var(--shadow-sm);
-  cursor: pointer;
-  transition: background var(--duration-fast) var(--ease-standard), border-color var(--duration-fast) var(--ease-standard);
-}
-.st-tend-chip:hover {
-  background: var(--surface-card);
-  border-color: var(--accent-terracotta-400);
-}
-.st-activity-chip-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 16px;
-  height: 16px;
-  padding: 0 5px;
-  box-sizing: border-box;
-  font-family: var(--font-mono);
-  font-size: 9px;
-  font-weight: 800;
-  color: var(--text-on-accent);
-  background: var(--accent-terracotta-500);
-  border-radius: var(--radius-full);
-}
-.st-activity-chip--ping {
-  animation: wm-chip-ping var(--duration-glow) var(--ease-glow) 2;
-}
-@keyframes wm-chip-ping {
-  0%, 100% { box-shadow: var(--shadow-sm); }
-  50% { box-shadow: 0 0 0 5px var(--color-brand-soft); }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .st-dock-tenant,
   .st-event--new,
   .st-ticker-item,
-  .st-ws-add-menu,
-  .st-activity-chip--ping {
+  .st-ws-add-menu {
     animation: none;
   }
   /* Toast still fades, but without the 8px rise; exit stays the opacity-only fade above. */
@@ -1538,7 +1259,7 @@
   color: var(--text-tertiary);
 }
 
-/* ---- Checklist: round kind-hued checkboxes on a single/double-click grammar ---- */
+/* ---- Subtasks: round kind-hued checkboxes on a single/double-click grammar ---- */
 .st-check-head {
   display: flex;
   align-items: center;
@@ -1866,26 +1587,14 @@
   color: var(--text-tertiary);
 }
 
-/* ---- Read-only & mobile: the responsive reflow. The mobile chrome self-positions in screen space. ---- */
+/* ---- The Graph's chrome self-positions in screen space. ---- */
 
 /* Chrome yields while panning: it fades to a whisper, then eases back ~200ms after the pan. */
-.st-mobile-chrome {
+.st-graph-chrome {
   transition: opacity 200ms var(--ease-soft);
 }
 
-/* The wordmark chip is a real link home: hover surface + focus ring. */
-.st-wordmark-link {
-  background: var(--surface-card);
-  transition: background var(--duration-fast) var(--ease-standard);
-}
-.st-wordmark-link:hover {
-  background: var(--surface-hover);
-}
-.st-wordmark-link:focus-visible {
-  outline: 2px solid var(--color-brand);
-  outline-offset: 2px;
-}
-.st-root.panning .st-mobile-chrome {
+.st-root.panning .st-graph-chrome {
   opacity: 0.35;
 }
 
@@ -1897,60 +1606,39 @@
   max-height: 70%;
 }
 
-/* Small screens: the minimap retires; on tablet the Fork pill owns the bottom-left corner. */
+/* Small screens: the minimap retires. */
 @media (max-width: 1023px) {
   .st-minimap {
     display: none;
   }
 }
 
-/* Phone (<744): full-bleed canvas, only the mobile chrome and the bottom sheet remain. */
+/* Phone (<744): full-bleed canvas without the legend. */
 @media (max-width: 743px) {
-  .st-topbar,
   .st-legend-dock {
     display: none;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .st-mobile-chrome {
+  .st-graph-chrome {
     transition: none;
   }
 }
 
-/* ---- View layers: the phone list, and the Board while its gate is open, cross-fade over the still-mounted canvas and stay mounted once shown. The list never shows above 743px; the Board shows on every band. ---- */
+/* ---- View layer: the Board cross-fades over the still-mounted canvas and stays mounted once shown, on every band. ---- */
 .st-canvas--layer {
   transition: opacity 240ms var(--ease-standard);
 }
 .st-view-layer {
   position: absolute;
   inset: 0;
-  z-index: 18; /* above the canvas, below the mobile chrome (z20) */
+  z-index: 18; /* above the canvas, below the Graph chrome (z20) */
 }
-/* The hidden list goes visibility:hidden after the fade so nothing in it stays focusable or hit-testable; the delay holds it visible for the 240ms fade-out. */
-.st-view-layer--list {
-  opacity: 0;
-  visibility: hidden;
-  pointer-events: none;
-  background: var(--surface-canvas);
-  transition: opacity 240ms var(--ease-standard), visibility 0s 240ms;
-}
-.st-view-layer--list.is-active {
-  opacity: 1;
-  visibility: visible;
-  pointer-events: auto;
-  transition: opacity 240ms var(--ease-standard), visibility 0s 0s;
-}
-/* Re-assert the cross-fade past the global reduce rule, the visibility delay included, or the hidden layer flips focusable on the wrong beat. */
+/* Re-assert the cross-fade past the global reduce rule. */
 @media (prefers-reduced-motion: reduce) {
   .st-canvas--layer {
     transition: opacity 240ms var(--ease-standard) !important;
-  }
-  .st-view-layer--list {
-    transition: opacity 240ms var(--ease-standard), visibility 0s 240ms !important;
-  }
-  .st-view-layer--list.is-active {
-    transition: opacity 240ms var(--ease-standard), visibility 0s 0s !important;
   }
 }
 
@@ -2358,6 +2046,26 @@
   --nd-glow: var(--kind-gold-glow);
   animation: wm-soft-pulse var(--duration-glow) var(--ease-glow) infinite;
 }
+.birth-plant {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  font-weight: 800;
+  padding: 10px 20px;
+  border: none;
+  border-radius: var(--radius-full);
+  background: var(--color-brand);
+  color: var(--text-on-accent);
+  box-shadow: var(--shadow-sm);
+  transition: background var(--duration-fast) var(--ease-standard);
+}
+.birth-plant:hover { background: var(--color-brand-hover); }
+.birth-plant:disabled { opacity: 0.5; cursor: default; }
+.birth-plant:disabled:hover { background: var(--color-brand); }
+
 .pc-plant {
   width: 100%;
   gap: var(--space-2);
@@ -2494,21 +2202,9 @@
 .st-roadmap-identity-host {
   position: absolute;
   inset: 0 0 auto;
-  z-index: 24;
+  z-index: 27;
 }
 
-.st-roadmap-identity-fallback {
-  position: absolute;
-  inset: 0;
-  z-index: 24;
-  pointer-events: none;
-}
-
-.st-roadmap-fallback-switch {
-  position: absolute;
-  left: var(--space-6);
-  pointer-events: auto;
-}
 
 .st-graph-camera {
   position: absolute;
@@ -2583,24 +2279,23 @@
   max-width: calc(100% - 48px);
 }
 
-.st-roadmap-identity-fallback--board .st-zoom-group,
-.st-roadmap-identity-fallback--board .st-activity-chip {
-  display: none;
-}
-
 @media (max-width: 743px) {
   .st-graph-toast.st-graph-toast--phone {
     right: 0;
     left: 0;
   }
 
+  .st-graph-toast.st-graph-toast--phone .st-board-toast {
+    bottom: var(--graph-toast-bottom, calc(var(--space-24) + var(--space-6) + env(safe-area-inset-bottom)));
+  }
+
   .st-toast.st-toast--graph {
     top: auto;
     left: 50%;
+    bottom: var(--graph-toast-bottom, 24px);
     width: auto;
     max-width: calc(100% - 56px);
   }
-
 }
 
 .st-roadmap-device-nudge {
@@ -2624,12 +2319,12 @@
 }
 
 @media (min-width: 744px) {
-  .st-mobile-chrome .st-roadmap-device-nudge {
+  .st-graph-chrome .st-roadmap-device-nudge {
     left: calc(env(safe-area-inset-left, 0px) + 24px);
   }
 }
 
-.st-root--board-enabled .st-detail-panel--tablet button:focus-visible {
+.st-detail-panel--tablet button:focus-visible {
   outline: 2px solid var(--color-brand);
   outline-offset: 2px;
 }
@@ -2825,12 +2520,3 @@ button.st-graph-step-title {
   text-align: left;
 }
 
-.st-root--board-enabled .st-activity-live {
-  display: none;
-}
-
-@media (max-width: 743px) {
-  .st-root--board-enabled .st-graph-toast--phone .st-board-toast {
-    bottom: var(--graph-toast-bottom, 24px);
-  }
-}

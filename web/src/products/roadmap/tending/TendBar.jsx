@@ -2,41 +2,32 @@ import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Icon } from '../../../design-system';
 import { useDialogFocus } from '../../../design-system/feedback/Dialog.jsx';
-import { coverBeneath, useComposerViewport } from '../board/composerFocus.js';
-import { ASK_AI_PLACEHOLDER, ROADMAP_VERBS } from '../board/copy.js';
+import { coverBeneath, useComposerViewport } from '../step/composerFocus.js';
+import { ASK_AI_PLACEHOLDER, ROADMAP_VERBS } from '../copy.js';
 
 export function TendBar({
-  variant = 'phone',
-  presentation = null,
+  presentation,
   topInset = 0,
   placeholder = ASK_AI_PLACEHOLDER.wide,
   examples = [],
   working,
   onSubmit,
   onDismiss,
-  preserveOutsideFocus = false,
-  portalTarget = null,
+  portalTarget,
 }) {
   const [value, setValue] = useState('');
   const inputRef = useRef(null);
-  const desktop = variant === 'desktop';
   const docked = presentation === 'docked';
-  const modal = presentation !== null;
-  const managesFocus = modal || (desktop && preserveOutsideFocus);
-  const formStyle = formStyles[presentation ?? variant];
   const formRef = useRef(null);
   const layerRef = useRef(null);
+  const viewport = useComposerViewport(docked);
+
+  useEffect(() => coverBeneath(layerRef.current), []);
+  const dialogFocus = useDialogFocus({ open: true, cardRef: formRef, onClose: onDismiss, preserveOutsideFocus: true });
 
   useEffect(() => {
-    if (!modal || !layerRef.current) return undefined;
-    return coverBeneath(layerRef.current);
-  }, [modal]);
-  const dialogFocus = useDialogFocus({ open: managesFocus, cardRef: formRef, onClose: onDismiss, preserveOutsideFocus });
-
-  // The inline phone lane waits for a tap; overlays and the docked bar take focus when opened.
-  useEffect(() => {
-    if ((desktop || modal) && !working) inputRef.current?.focus();
-  }, [desktop, modal, working]);
+    if (!working) inputRef.current?.focus();
+  }, [working]);
 
   const submit = (event) => {
     event.preventDefault();
@@ -64,16 +55,13 @@ export function TendBar({
   const bar = (
     <form
       ref={formRef}
-      role={modal ? 'dialog' : undefined}
-      aria-modal={modal ? true : undefined}
-      aria-label={modal ? ROADMAP_VERBS.askAI : undefined}
-      tabIndex={modal || preserveOutsideFocus ? -1 : undefined}
+      role="dialog"
+      aria-modal
+      aria-label={ROADMAP_VERBS.askAI}
+      tabIndex={-1}
       onSubmit={submit}
-      onKeyDown={(event) => {
-        dialogFocus(event);
-        if (event.key === 'Escape' && !managesFocus) onDismiss?.();
-      }}
-      style={formStyle}
+      onKeyDown={dialogFocus}
+      style={formStyles[presentation]}
     >
       {starters}
       <div style={shell}>
@@ -101,40 +89,20 @@ export function TendBar({
     </form>
   );
 
-  if (!desktop && !modal) return bar;
   const overlayStyle = {
     ...scrim,
-    position: portalTarget || docked ? 'fixed' : 'absolute',
+    paddingTop: docked ? 0 : topInset,
+    alignItems: docked ? 'flex-end' : 'flex-start',
+    paddingBottom: docked ? 12 : 0,
+    ...viewport.style,
   };
-  if (modal) {
-    Object.assign(overlayStyle, {
-      background: 'var(--surface-overlay)',
-      paddingTop: docked ? 0 : topInset,
-      alignItems: docked ? 'flex-end' : 'flex-start',
-      paddingBottom: docked ? 12 : 0,
-      boxSizing: 'border-box',
-    });
-  }
   const dismissScrim = (event) => {
     if (event.target === event.currentTarget) onDismiss?.();
   };
-  const overlayProps = {
-    className: 'st-tend-overlay',
-    'data-presentation': presentation ?? undefined,
-    style: overlayStyle,
-    onClick: modal ? dismissScrim : undefined,
-    onMouseDown: modal ? undefined : dismissScrim,
-    children: bar,
-  };
-  const overlay = docked
-    ? <DockedLayer layerRef={layerRef} {...overlayProps} />
-    : <div ref={layerRef} {...overlayProps} />;
-  return portalTarget ? createPortal(overlay, portalTarget) : overlay;
-}
-
-function DockedLayer({ layerRef, style, ...props }) {
-  const viewport = useComposerViewport(true);
-  return <div ref={layerRef} {...props} style={{ ...style, ...viewport.style }} />;
+  return createPortal(
+    <div ref={layerRef} className="st-tend-overlay" data-presentation={presentation} style={overlayStyle} onClick={dismissScrim}>{bar}</div>,
+    portalTarget,
+  );
 }
 
 const shell = {
@@ -162,14 +130,11 @@ const send = {
   cursor: 'pointer', transition: 'opacity var(--duration-fast) var(--ease-standard)',
 };
 const scrim = {
-  position: 'absolute', inset: 0, zIndex: 30, display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
-  paddingTop: '18vh', background: 'rgba(33,27,19,.14)', pointerEvents: 'auto',
+  position: 'fixed', inset: 0, zIndex: 30, display: 'flex', justifyContent: 'center', boxSizing: 'border-box',
+  background: 'var(--surface-overlay)', pointerEvents: 'auto',
 };
-const deskForm = { width: 'min(560px, calc(100vw - 48px))' };
 const formStyles = {
-  phone: { width: '100%' },
-  desktop: deskForm,
-  overlay: deskForm,
+  overlay: { width: 'min(560px, calc(100vw - 48px))' },
   docked: { width: 'calc(100% - 24px)' },
 };
 const exampleRow = { display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 };

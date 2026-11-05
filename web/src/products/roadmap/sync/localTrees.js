@@ -6,7 +6,7 @@ import { SyncSession } from './SyncSession.js';
 import { SyncStore } from './SyncStore.js';
 import { pendingGestures } from './pendingWrites.js';
 import { HlcClock, TreeLattice, hlcText } from './lattice.js';
-import { LocalTreeRegistry, resolveDeviceOwner, deviceOwner } from '../persistence/LocalTreeRegistry.js';
+import { LocalTreeRegistry, resolveDeviceOwner, deviceOwner, deviceOwnerAnswered } from '../persistence/LocalTreeRegistry.js';
 import { PlaceStore } from '../persistence/PlaceStore.js';
 import { ProgressStore } from '../persistence/ProgressStore.js';
 import { WorkspaceStore } from '../persistence/WorkspaceStore.js';
@@ -22,6 +22,7 @@ export function mintTreeId() {
 }
 
 const BIRTH_OWNER_WAIT_MS = 2000;
+const DEVICE_READ_OWNER_WAIT_MS = 2000;
 
 // A birth never waits on the network: past BIRTH_OWNER_WAIT_MS it plants with whatever this load
 // has already confirmed, which on an unconfirmed device is anonymous.
@@ -32,39 +33,51 @@ function ownerForBirth() {
   ]);
 }
 
-// The registry entry first, then the lattice: the default legend at genesis, so it converges with
-// the server's claim-create, and the named root as a stamped write.
-export async function bearLocalTree({ title }) {
-  const treeId = mintTreeId();
-  // The owner is asked of the server, never of a remembered marker.
-  new LocalTreeRegistry().record(treeId, title, await ownerForBirth());
-  const session = new SyncSession({ treeId, title });
-  session.seed({ id: treeId, title, nodes: [], kinds: DEFAULT_KINDS });
-  const rootId = crypto.randomUUID?.() ?? `n-${Date.now()}`;
-  session.dispatch({ kind: 'CreateNode', id: rootId, label: title, icon: 'sparkles', color: DEFAULT_KINDS[0].hue, x: 0, y: 0 });
-  await session.persistNow();
-  session.close();
-  return treeId;
+// Whether a tree planted here outlives this document: its index row and its lattice both have somewhere to stay.
+export async function deviceKeepsTrees() {
+  return new LocalTreeRegistry().keeps() && new SyncStore().holdsOnDevice();
 }
 
-// The paste-import plant: the lattice is seeded with the default legend at genesis, never the
-// parsed kinds — the claim converges only while both sides seed byte-equal legends. The parsed
-// legend arrives as stamped gestures. Imported [x] marks are status seeds, not progress rows.
-export async function bearImportedTree({ title, nodes, kinds }) {
+// This browser will not keep a tree planted on it, the browser's own refusal: nothing was accepted, and no Issue is owed.
+const deviceRefused = () => new DOMException('This device refuses to keep a roadmap', 'SecurityError');
+
+// The index row, then the lattice seeded at genesis so it converges with the claim-create; a plant stands once kept, and a failed save takes its row back.
+async function bear(title, plant) {
+  if (!await deviceKeepsTrees()) throw deviceRefused();
   const treeId = mintTreeId();
-  new LocalTreeRegistry().record(treeId, title, await ownerForBirth());
+  const registry = new LocalTreeRegistry();
+  // The owner is asked of the server, never of a remembered marker.
+  registry.record(treeId, title, await ownerForBirth());
   const session = new SyncSession({ treeId, title });
   session.seed({ id: treeId, title, nodes: [], kinds: DEFAULT_KINDS });
-  // The legend diff must go first, while no node wears a hue: RecolorKind repaints as it lands.
-  for (const gesture of legendGestures(kinds)) session.dispatch(gesture);
-  session.dispatch({
-    kind: 'ImportSubgraph',
-    nodes: nodes.map((n) => ({ id: n.id, label: n.label, icon: n.icon, color: n.color, status: n.status, description: n.description, links: n.links, order: n.order })),
-    edges: nodes.flatMap((n) => n.prerequisites.map((from) => ({ from, to: n.id }))),
-  });
+  plant(session);
   await session.persistNow();
+  const kept = !session.durabilityAtRisk;
   session.close();
-  return treeId;
+  if (kept) return treeId;
+  registry.remove(treeId);
+  throw deviceRefused();
+}
+
+// The named root as a stamped write.
+export function bearLocalTree({ title }) {
+  return bear(title, (session) => {
+    const rootId = crypto.randomUUID?.() ?? `n-${Date.now()}`;
+    session.dispatch({ kind: 'CreateNode', id: rootId, label: title, icon: 'sparkles', color: DEFAULT_KINDS[0].hue, x: 0, y: 0 });
+  });
+}
+
+// The paste-import plant: the parsed legend arrives as stamped gestures, as a claim converges only on byte-equal genesis legends; [x] marks are status seeds.
+export function bearImportedTree({ title, nodes, kinds }) {
+  return bear(title, (session) => {
+    // The legend diff must go first, while no node wears a hue: RecolorKind repaints as it lands.
+    for (const gesture of legendGestures(kinds)) session.dispatch(gesture);
+    session.dispatch({
+      kind: 'ImportSubgraph',
+      nodes: nodes.map((n) => ({ id: n.id, label: n.label, icon: n.icon, color: n.color, status: n.status, description: n.description, links: n.links, order: n.order })),
+      edges: nodes.flatMap((n) => n.prerequisites.map((from) => ({ from, to: n.id }))),
+    });
+  });
 }
 
 // What separates the parsed legend from the genesis seed, as ordinary kind gestures.
@@ -92,7 +105,12 @@ function legendGestures(kinds) {
 // TreeData shape a server seed has, or null when this browser has no standing to open it. Only a
 // device row visible to the account the server says is here opens the door.
 export async function loadDeviceTree(treeId) {
-  const entry = new LocalTreeRegistry().get(treeId, await resolveDeviceOwner());
+  const registry = new LocalTreeRegistry();
+  let entry = registry.get(treeId, await resolveDeviceOwner());
+  if (!entry) {
+    await deviceOwnerAnswered(DEVICE_READ_OWNER_WAIT_MS);
+    entry = registry.get(treeId);
+  }
   if (!entry) return null;
   const saved = await new SyncStore().load(treeId).catch(() => null);
   if (!saved?.frame) return null;
@@ -106,7 +124,7 @@ export async function loadDeviceTree(treeId) {
 
 // The registry keeps the listing title and the blob takes one stamped title write, so the name
 // survives the claim's flush.
-export async function renameLocalTree(treeId, title, { trackGestures = false } = {}) {
+export async function renameLocalTree(treeId, title) {
   const next = title.trim();
   if (!next) return;
   const registry = new LocalTreeRegistry();
@@ -123,10 +141,10 @@ export async function renameLocalTree(treeId, title, { trackGestures = false } =
     lattice.seedClock(clock);
     lattice.join({ nodes: [], edges: [], kinds: [], title: { v: next, at: hlcText(clock.tick(Date.now())) } });
     const result = await store.save(treeId, { frame: lattice.toFrame(), lastSeq: saved.lastSeq ?? 0, epochs: saved.epochs,
-      ...(trackGestures ? { gestures: {
+      gestures: {
         structure: pendingGestures(lattice.toFrame(), saved.confirmed?.structure, saved.gestures?.structure),
         progress: saved.gestures?.progress ?? {},
-      } } : {}) });
+      } });
     if (result.status === 'saved') {
       registry.rename(treeId, next);
       return;

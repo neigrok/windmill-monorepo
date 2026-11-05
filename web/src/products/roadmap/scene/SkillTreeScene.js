@@ -1,5 +1,5 @@
 // Orchestrator for the hand-rolled WebGL2 renderer: the GL context, the 2D camera, the node/connector batches and the DOM overlays above them.
-import { NODE_SIZE, WORKING_ZOOM, nodeTier, TIER_COMPLETE, DEFAULT_NODE_COLOR, sceneTheme, isNightFor } from '../theme.js';
+import { ARRIVAL_MIN_STEPS, NODE_SIZE, WORKING_ZOOM, nodeTier, TIER_COMPLETE, DEFAULT_NODE_COLOR, sceneTheme, isNightFor } from '../theme.js';
 import { SpatialGrid } from '../model/SpatialGrid.js';
 import { CeremonyDirector } from '../ceremony/CeremonyDirector.js';
 import { Camera2D } from './Camera2D.js';
@@ -126,9 +126,7 @@ export class SkillTreeScene {
       motion: () => this.motion,
     });
     this.nodeStates = new Map(); // diff baseline
-    this.arrivalNoun = 'Roadmap';
-    this.arrivalSummaryOverride = null;
-    this.arrivalToastSuppressed = false;
+    this.arrivalSummary = null; // one-shot; an arrival nobody announced lands in silence
     this.arrivalSuppressed = false; // one-shot intent, latched into arrivalSkipped by the next setModel
     this.arrivalSkipped = false;
     this.returnRecap = null; // { sinceIds, summary } | null
@@ -473,7 +471,7 @@ export class SkillTreeScene {
   // ---- arrival cascade --------------------------------------------------
 
   arrivalLikely() {
-    return !this.arrivalSkipped && !!this.renderModel && this.renderModel.nodes.length >= 2;
+    return !this.arrivalSkipped && !!this.renderModel && this.renderModel.nodes.length >= ARRIVAL_MIN_STEPS;
   }
 
   shouldAnimateArrival(statesMap) {
@@ -515,12 +513,8 @@ export class SkillTreeScene {
     for (const edge of this.renderModel.edges) {
       if ((statesMap.get(edge.from) ?? 'locked') === 'complete') litEdgesByRing[depth.get(edge.from) ?? 0].push({ from: edge.from, to: edge.to });
     }
-    let done = 0;
-    for (const state of statesMap.values()) if (state === 'complete') done += 1;
-    const defaultSummary = `${this.arrivalNoun} planted · ${nodes.length} steps${done > 0 ? ` · ${done} already done` : ''}`;
-    const summary = this.arrivalToastSuppressed ? null : (this.arrivalSummaryOverride ?? defaultSummary);
-    this.arrivalToastSuppressed = false;
-    this.arrivalSummaryOverride = null;
+    const summary = this.arrivalSummary;
+    this.arrivalSummary = null;
     return { rings, litEdgesByRing, summary };
   }
 
@@ -561,12 +555,7 @@ export class SkillTreeScene {
     return depth;
   }
 
-  setArrivalNoun(noun) {
-    this.arrivalNoun = noun;
-  }
-
-  setArrivalSummary(text) { this.arrivalSummaryOverride = text; }
-  suppressArrivalToast() { this.arrivalToastSuppressed = true; }
+  setArrivalSummary(text) { this.arrivalSummary = text; }
   // The owner's first view opens on the frontier at the working zoom; the crown-outward arrival would play off screen.
   suppressArrival() { this.arrivalSuppressed = true; }
 

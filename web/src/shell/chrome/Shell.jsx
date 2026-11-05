@@ -126,6 +126,7 @@ export function Shell({ location, neutral = null, roomProduct = null }) {
   const room = resolveRoom(location.pathname, neutral, roomProduct);
   const redirect = room.redirect ?? null;
   const theme = room.scope.theme ?? appearance;
+  const sharedShell = Boolean(room.product?.shell.sharedShell);
 
   // Attributes, then the browser's chrome: scripts/appBoot.js emits the rule that paints the ground
   // off data-wm-boot, and the address bar is told that ground on every room or theme change.
@@ -155,7 +156,7 @@ export function Shell({ location, neutral = null, roomProduct = null }) {
 
   return (
     <div className="wm-shell" ref={lendDoorSkin} data-brand={room.scope.brand} data-theme={theme}>
-      <header className={roomStatus ? 'wm-head wm-head--status' : 'wm-head'}>
+      <header className={`wm-head${sharedShell ? ' wm-head--shared' : ''}${roomStatus ? ' wm-head--status' : ''}`}>
         <a className="wm-head-mark" href="/" title="Windmill" aria-label="Windmill — home"><BrandMark size={30} /></a>
         <nav className="wm-switch" aria-label="Rooms">
           <RoomLink href="/app" label="Home" active={room.kind === 'home' && !redirect} />
@@ -166,7 +167,7 @@ export function Shell({ location, neutral = null, roomProduct = null }) {
         {roomStatus && <RoomStatus status={roomStatus.status} />}
         {/* The seat is always clay; both scope attributes ride together, keyed on the pair. */}
         <div className="wm-head-seat" data-brand="clay" data-theme={theme}>
-          {(roomStatus || roomProduct) && status === 'ghost' ? (
+          {(roomStatus || sharedShell) && status === 'ghost' ? (
             <button type="button" className="wm-head-sign-in" onClick={openSignInDoor}>Sign in</button>
           ) : (
             <AccountSeat

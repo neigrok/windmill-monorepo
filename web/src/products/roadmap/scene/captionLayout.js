@@ -4,11 +4,11 @@ import { NODE_SIZE, BODY_FRACTION, ROOT_BODY_SCALE, MIN_BODY_PX, MIN_ROOT_BODY_P
 import { BEND_REACH, bendOf, controlPoint, pointOnCurve } from './edgeCurve.js';
 
 export const CAPTION_POOL = 96; // the most captions on screen at once — also the DOM pool
-export const WORKING_BODY_PX = 18; // drawn body from which every node may be named
-export const FRONTIER_BODY_PX = 12; // drawn body from which the frontier is named beside the landmarks
+const WORKING_BODY_PX = 18; // drawn body from which every node may be named
+const FRONTIER_BODY_PX = 12; // drawn body from which the frontier is named beside the landmarks
 export const SHOW_AFTER_MS = 200; // continuous eligibility before a caption appears
 export const HIDE_AFTER_MS = 200; // continuous ineligibility before a shown caption goes
-export const BRANCH_HEAD_MIN_SUBTREE = 8;
+const BRANCH_HEAD_MIN_SUBTREE = 8;
 
 const TEXT_WIDTH = CAPTION.maxWidthPx - CAPTION.padPx * 2; // the text column inside the 168 px box
 const RIM_FRACTION = BODY_FRACTION / 2;
@@ -20,9 +20,9 @@ const RIBBON_STEP_PX = 16; // the longest sampled crossing near a caption
 const RIBBON_STEPS_MAX = 96;
 const RIBBON_HALF_PX = 3; // half the drawn ribbon, plus its halo
 
-export const RANK_SELECTED = 0;
-export const RANK_HOVERED = 1;
-export const RANK_FAMILY = 2; // the selected node's trunk parent and trunk children
+const RANK_SELECTED = 0;
+const RANK_HOVERED = 1;
+const RANK_FAMILY = 2; // the selected node's trunk parent and trunk children
 export const RANK_ANCHOR = 3; // crowned roots and branch heads
 export const RANK_FRONTIER = 4; // available
 export const RANK_REST = 5;
@@ -104,7 +104,7 @@ function inside(rect, area) {
   return rect.left >= area.left && rect.right <= area.right && rect.top >= area.top && rect.bottom <= area.bottom;
 }
 
-// A corner-anchored chrome box (`ui/viewport.js` blocks) against the live viewport.
+// A corner-anchored chrome box (`graph/viewport.js` blocks) against the live viewport.
 function blockRect(block, view) {
   const left = block.left ?? view.viewportWidth - block.right - block.width;
   const top = block.top ?? view.viewportHeight - block.bottom - block.height;

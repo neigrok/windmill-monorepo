@@ -1,9 +1,17 @@
-// The canonical map of editor shortcuts, feeding both the ShortcutsDialog and the ControlBar tooltips. A chord is an ordered token list: modifiers lead, the letter lands.
+// The canonical map of roadmap shortcuts behind the ShortcutsDialog. A chord is an ordered token list: modifiers lead, the letter lands.
 
 const key = (label) => ({ kind: 'key', label });
 const gesture = (label) => ({ kind: 'gesture', label });
 
-export const SHORTCUT_GROUPS = [
+const HISTORY_GROUP = {
+  title: 'History',
+  rows: [
+    { label: 'Undo', chords: [[key('⌘'), key('Z')]] },
+    { label: 'Redo', chords: [[key('⇧'), key('⌘'), key('Z')]] },
+  ],
+};
+
+export const GRAPH_SHORTCUT_GROUPS = [
   {
     title: 'Navigate',
     rows: [
@@ -12,6 +20,7 @@ export const SHORTCUT_GROUPS = [
       { label: 'Zoom to a point', chords: [[gesture('Double-click')]] },
       { label: 'Focus on a step', chords: [[key('F')]] },
       { label: 'All steps', chords: [[key('0')]] },
+      { label: 'Find a step', chords: [[key('/')]] },
     ],
   },
   {
@@ -30,36 +39,18 @@ export const SHORTCUT_GROUPS = [
       { label: 'Rename step', chords: [[key('⏎')]] },
       { label: 'Delete step', chords: [[key('⌫')]] },
       { label: 'Paste a plan (append)', chords: [[key('⌘'), key('V')]] },
-      { label: 'Ask AI', chords: [[key('⌘'), key('K')], [key('/')]] },
+      { label: 'Ask AI', chords: [[key('⌘'), key('K')]] },
     ],
   },
-  {
-    title: 'History',
-    rows: [
-      { label: 'Undo', chords: [[key('⌘'), key('Z')]] },
-      { label: 'Redo', chords: [[key('⇧'), key('⌘'), key('Z')]] },
-    ],
-  },
+  HISTORY_GROUP,
   {
     title: 'View',
     rows: [
       { label: 'Keyboard shortcuts', chords: [[key('?')]] },
-      { label: 'Activity feed', chords: [[key('A')]] },
+      { label: 'Activity feed', chords: [[key('A')]], owner: true },
     ],
   },
 ];
-
-const GRAPH_SHORTCUT_GROUPS = SHORTCUT_GROUPS.map((group) => {
-  if (group.title === 'Navigate') {
-    return { ...group, rows: [...group.rows, { label: 'Find a step', chords: [[key('/')]] }] };
-  }
-  if (group.title === 'Edit') {
-    return { ...group, rows: group.rows.map((row) => row.label === 'Ask AI'
-      ? { ...row, chords: [[key('⌘'), key('K')]] }
-      : row) };
-  }
-  return group;
-});
 
 export const BOARD_SHORTCUT_GROUPS = [
   {
@@ -82,7 +73,7 @@ export const BOARD_SHORTCUT_GROUPS = [
       { label: 'Paste a plan', chords: [[key('⌘'), key('V')]] },
     ],
   },
-  SHORTCUT_GROUPS.find((group) => group.title === 'History'),
+  HISTORY_GROUP,
   {
     title: 'View',
     rows: [{ label: 'Keyboard shortcuts', chords: [[key('?')]] }],
@@ -104,27 +95,17 @@ export function detectPlatform() {
   return 'mac';
 }
 
-export function visibleGroups(readOnly, view = 'graph', boardOpen = false) {
-  if (view === 'board') {
-    if (!readOnly) return BOARD_SHORTCUT_GROUPS;
-    return BOARD_SHORTCUT_GROUPS
-      .filter((group) => group.title === 'Board' || group.title === 'View')
-      .map((group) => ({ ...group, rows: group.rows.filter((row) => !row.owner) }));
-  }
-  const groups = boardOpen ? GRAPH_SHORTCUT_GROUPS : SHORTCUT_GROUPS;
+// Without the desktop editor only navigation and help remain, and a row marked for owners shows to owners alone.
+export function visibleGroups(readOnly, view = 'graph', owner = !readOnly) {
+  const groups = view === 'board' ? BOARD_SHORTCUT_GROUPS : GRAPH_SHORTCUT_GROUPS;
   if (!readOnly) return groups;
-  return groups.filter((group) => group.title === 'Navigate' || group.title === 'View');
+  const reading = view === 'board' ? 'Board' : 'Navigate';
+  return groups
+    .filter((group) => group.title === reading || group.title === 'View')
+    .map((group) => ({ ...group, rows: group.rows.filter((row) => owner || !row.owner) }));
 }
 
-export function keyHint(rowLabel) {
-  for (const group of SHORTCUT_GROUPS) {
-    const row = group.rows.find((candidate) => candidate.label === rowLabel);
-    if (row) return row.chords[0].map((token) => token.label).join('');
-  }
-  return '';
-}
-
-// Legacy Graph keys are ignored by the Board after the shared gated Activity key is resolved.
+// The Graph's own keys, which the Board ignores once the shared Activity key is resolved.
 export function graphOnlyKey({ key, metaKey = false, ctrlKey = false, altKey = false }) {
   if (key === 'Backspace' || key === 'Delete') return true;
   if (metaKey || ctrlKey) return key.toLowerCase() === 'a';

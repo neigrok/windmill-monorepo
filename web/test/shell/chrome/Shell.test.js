@@ -1,4 +1,4 @@
-import { SYNC_STATUS, SYNC_OFFLINE_SHORT, ANONYMOUS_OWNER } from '../../../src/products/roadmap/board/copy.js';
+import { SYNC_STATUS, SYNC_OFFLINE_SHORT, ANONYMOUS_OWNER } from '../../../src/products/roadmap/copy.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { elementsOf, loadScreen, renderHook, textOf } from '../../products/gym/harness.mjs';
@@ -164,6 +164,19 @@ test('a signed-out visitor in a route-named room gets the drawn Sign in, not the
   };
   assert.deepEqual([
     seatIn({ location: { pathname: '/', hash: '#/demo', search: '' }, roomProduct: roadmap }),
+    seatIn({ location: { pathname: '/app/roadmap', hash: '#/t/t_shared', search: '' } }),
+    seatIn({ location: { pathname: '/app/journal', hash: '', search: '' } }),
     seatIn({ location }),
-  ], ['wm-head-sign-in', 'AccountSeat']);
+  ], ['wm-head-sign-in', 'wm-head-sign-in', 'AccountSeat', 'AccountSeat']);
+});
+
+test('roadmap alone wears the Shared Shell, and its head says so with no status published', async (t) => {
+  browser();
+  const { Shell } = await loadScreen('shell/chrome/Shell.jsx');
+  const { PRODUCTS } = await loadScreen('shell/products.js');
+  const headOf = (pathname) => elementsOf(renderHook(t, () => Shell({ location: { pathname, hash: '', search: '' } }), { context }).tree)
+    .find((element) => element.type === 'header').props.className;
+  assert.deepEqual(PRODUCTS.filter((product) => product.shell?.sharedShell).map((product) => product.id), ['roadmap']);
+  assert.deepEqual(['/app/roadmap', '/app/journal', '/app/gym', '/app'].map(headOf),
+    ['wm-head wm-head--shared', 'wm-head', 'wm-head', 'wm-head']);
 });

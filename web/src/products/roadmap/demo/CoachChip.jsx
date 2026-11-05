@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { COACH_DONE_KEY, DEMO_COPY } from './demoStage.js';
-import { KIND_CSS, DEFAULT_NODE_COLOR, NODE_SIZE } from '../theme.js';
+import { KIND_CSS, DEFAULT_NODE_COLOR, NODE_SIZE, prefersReducedMotion } from '../theme.js';
 
 const ARRIVAL_SETTLE_MS = 1200;
 const IDLE_MS = 800;            // pointer-quiet required before mounting
@@ -8,13 +8,11 @@ const SETTLE_AT = 0.9;          // camera settle fraction required before mounti
 const POLL_MS = 100;
 const CARD_WIDTH = 264;
 const ANCHOR_GAP = 18;          // px between the node's edge and the card
-
-const prefersReducedMotion = () =>
-  typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const VIEW_MARGIN = 12;
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
-export function CoachChip({ scene, nodeId, onMarkDone, completionCount = 0, covered }) {
+export function CoachChip({ scene, nodeId, onMarkDone, completionCount = 0, covered, bottomChrome = 0 }) {
   const [shown, setShown] = useState(false);
   const [retired, setRetired] = useState(false);
   const containerRef = useRef(null);
@@ -97,8 +95,8 @@ export function CoachChip({ scene, nodeId, onMarkDone, completionCount = 0, cove
       if (!origin) return;
       const edge = scene.projectToScreen(n.x + NODE_SIZE, n.y);
       const radius = Math.abs(edge.x - origin.x) / 2;
-      const vw = window.innerWidth;
-      const vh = window.innerHeight;
+      const vw = container.parentElement.clientWidth;
+      const vh = container.parentElement.clientHeight;
 
       if (origin.x < -radius || origin.x > vw + radius || origin.y < -radius || origin.y > vh + radius) {
         container.style.display = 'none';
@@ -106,13 +104,22 @@ export function CoachChip({ scene, nodeId, onMarkDone, completionCount = 0, cove
       }
       container.style.display = 'block';
 
+      const halfCard = container.querySelector('.wm-coach-card').offsetHeight / 2;
       const rightStart = origin.x + radius + ANCHOR_GAP;
-      const placeRight = rightStart + CARD_WIDTH <= vw - 12;
-      const left = placeRight ? rightStart : origin.x - radius - ANCHOR_GAP - CARD_WIDTH;
+      const leftStart = origin.x - radius - ANCHOR_GAP - CARD_WIDTH;
+      const placeRight = rightStart + CARD_WIDTH <= vw - VIEW_MARGIN;
+      const placeLeft = !placeRight && leftStart >= VIEW_MARGIN;
       container.classList.toggle('wm-coach--left', placeRight);   // arrow on the card's left, pointing back at the node
-      container.classList.toggle('wm-coach--right', !placeRight);
-      container.style.left = `${left}px`;
-      container.style.top = `${clamp(origin.y, 88, vh - 88)}px`;
+      container.classList.toggle('wm-coach--right', placeLeft);
+      if (placeRight || placeLeft) {
+        container.style.left = `${placeRight ? rightStart : leftStart}px`;
+        container.style.top = `${clamp(origin.y, 88, vh - Math.max(88, bottomChrome + VIEW_MARGIN + halfCard))}px`;
+      } else {
+        // Neither side fits a phone: the card seats under its step, or over it near the bottom, with no arrow.
+        const under = origin.y + radius + ANCHOR_GAP + halfCard;
+        container.style.left = `${clamp(origin.x - CARD_WIDTH / 2, VIEW_MARGIN, vw - CARD_WIDTH - VIEW_MARGIN)}px`;
+        container.style.top = `${under + halfCard <= vh - Math.max(88, bottomChrome + VIEW_MARGIN) ? under : origin.y - radius - ANCHOR_GAP - halfCard}px`;
+      }
 
       const ring = ringRef.current;
       if (ring) {
@@ -127,15 +134,13 @@ export function CoachChip({ scene, nodeId, onMarkDone, completionCount = 0, cove
     const unsubscribe = scene.subscribeViewport?.(place);
     window.addEventListener('resize', place);
     return () => { unsubscribe?.(); window.removeEventListener('resize', place); };
-  }, [scene, nodeId, shown]);
+  }, [scene, nodeId, shown, bottomChrome]);
 
-  // Esc retires the chip and nothing else — capture + stop, so the press cannot also deselect.
-  // With a `covered` rule, Esc belongs to the chip only while the chip is the top thing on screen.
+  // While the chip is the top thing on screen, Esc retires it and nothing else — capture + stop, so the press cannot also deselect.
   useEffect(() => {
     if (!shown) return undefined;
     const onKey = (event) => {
-      if (event.key !== 'Escape') return;
-      if (covered && (retiredRef.current || covered())) return;
+      if (event.key !== 'Escape' || retiredRef.current || covered()) return;
       event.stopPropagation();
       retire();
     };

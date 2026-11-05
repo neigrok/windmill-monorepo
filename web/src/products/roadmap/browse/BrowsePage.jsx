@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../../../shell/auth/AuthProvider.jsx';
-import { useViewMode } from '../ui/useViewMode.js';
+import { useViewMode } from '../room/useViewMode.js';
 import { forkTree } from '../persistence/TreeRegistry.js';
 import { GalleryCard, GALLERY_CARD_CSS } from '../share/GalleryCard.jsx';
-import { ForkDoor } from '../ui/mobile/ForkDoor.jsx';
+import { ForkDoor } from '../share/ForkDoor.jsx';
+import { reportUnexpectedFailure } from '../reportFailure.js';
 import { track } from '../../../telemetry/beacon.js';
 import { GalleryIndex, galleryHeader } from './galleryIndex.js';
 import { fetchGallery } from './GalleryClient.js';
@@ -79,7 +80,10 @@ export function BrowsePage() {
       track('fork_claim', { mode: 'browse' });
       setIndex((current) => current.forked(entry.id, treeId));
     } catch (error) {
-      if (error?.code === 'unauthenticated') setDoorFor(entry.id);
+      const unauthenticated = error?.code === 'unauthenticated';
+      track('fork_attempt', { mode: 'browse', outcome: unauthenticated ? 'unauthenticated' : 'failed' });
+      reportUnexpectedFailure('roadmap-fork', error);
+      if (unauthenticated) setDoorFor(entry.id);
       else setForkFailedId(entry.id);
     } finally {
       setForkingId('');
@@ -160,7 +164,6 @@ export function BrowsePage() {
       <ForkDoor
         open={Boolean(doorFor)}
         presentation={breakpoint !== 'phone' ? 'dialog' : 'sheet'}
-        drawn={false}
         treeId={doorFor}
         signedIn={false}
         onClose={() => setDoorFor('')}

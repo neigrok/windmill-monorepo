@@ -35,6 +35,7 @@ export default function AuthProvider({ children }) {
   const [error, setError] = useState(false);
   const [updating, setUpdating] = useState(false);
   const [updateError, setUpdateError] = useState(false);
+  const [deviceLineHolders, setDeviceLineHolders] = useState(0);
   const roomStatus = useRoomStatus();
   const session = useSyncExternalStore(syncSession.subscribe, syncSession.getSnapshot, syncSession.getSnapshot);
   const upgradeRequired = useSyncExternalStore(
@@ -296,7 +297,12 @@ export default function AuthProvider({ children }) {
     return () => { alive = false; broadcast.close(); channel.current = null; clearInterval(poll);
       window.removeEventListener('focus', wake); window.removeEventListener('online', wake); };
   }, [refresh]);
-  return <AuthContext.Provider value={{ user, status, account, lapsed, signIn, signOut, closeAccount, refresh }}>
+  // A surface that says the refused-device line itself holds it from the shell while it stands, so it is said once.
+  const holdDeviceLine = useCallback(() => {
+    setDeviceLineHolders((holders) => holders + 1);
+    return () => setDeviceLineHolders((holders) => holders - 1);
+  }, []);
+  return <AuthContext.Provider value={{ user, status, account, lapsed, signIn, signOut, closeAccount, refresh, holdDeviceLine }}>
     <div style={{ display: 'contents' }} inert={question && !upgradeRequired ? '' : undefined}>{children}</div>
     {!session.online && !roomStatus && (
       <div role="status" style={{
@@ -306,7 +312,7 @@ export default function AuthProvider({ children }) {
         Offline. Coach, echoes, nudges, voice and export need a connection.
       </div>
     )}
-    {session.error && <div role="alert">Couldn’t open this device’s saved work. Reload to try again.</div>}
+    {session.error && !deviceLineHolders && <div role="alert">Couldn’t open this device’s saved work. Reload to try again.</div>}
     {upgradeRequired && <div role="alert" style={{ position: 'fixed', left: 16, bottom: 16, zIndex: 90, padding: '12px 16px', background: 'var(--surface-card)', color: 'var(--text-primary)', borderRadius: 8 }}>
       <p>Update required. Reload Windmill to reconnect your account. Your pending work stays on this device.</p>
       <button type="button" onClick={reloadLatest} disabled={updating}>{updating ? 'Fetching update…' : 'Reload latest version'}</button>

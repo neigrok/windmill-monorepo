@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { loadScreen, renderHook } from '../../products/gym/harness.mjs';
+import { elementsOf, loadScreen, renderHook, textOf } from '../../products/gym/harness.mjs';
 import { environment, until } from '../../platform/sync/fakes.js';
 import { BrowserSyncEngine } from '../../../src/platform/sync/engine.js';
 import { syncSession } from '../../../src/platform/sync/session.js';
@@ -52,7 +52,7 @@ async function account(t) {
   await engine.commit('self/probe', [{ op: 'create', t: 'card', id: 'card0001', f: { title: 'pending' } }]);
   const replica = engine.device.activeReplica.id;
   const entries = structuredClone(engine.device.activeReplica.outbox);
-  return { env, engine, auth, forgotten, replica, entries, broadcasts, setMe(value) {
+  return { env, engine, auth, view, forgotten, replica, entries, broadcasts, setMe(value) {
     me = value;
     env.transport.account = value?.id ?? null;
   } };
@@ -120,4 +120,16 @@ test('a tab that missed sign-out broadcast recognizes the completed replica tran
   await state.auth().refresh();
   assert.deepEqual(state.forgotten, [{ previous: 'A', next: null }]);
   assert.deepEqual({ status: state.auth().status, lapsed: state.auth().lapsed }, { status: 'ghost', lapsed: false });
+});
+
+test('the refused-device line stands in the shell until a surface that says it holds it, and comes back when that surface goes', async (t) => {
+  const state = await account(t);
+  syncSession.getSnapshot.mock.mockImplementation(() => ({ engine: state.engine, ready: false, online: true, error: true }));
+  const said = () => elementsOf(state.view.tree).filter((node) => node.props.role === 'alert').map(textOf);
+  state.view.redraw();
+  assert.deepEqual(said(), ['Couldn’t open this device’s saved work. Reload to try again.']);
+  const release = state.auth().holdDeviceLine();
+  assert.deepEqual(said(), []);
+  release();
+  assert.deepEqual(said(), ['Couldn’t open this device’s saved work. Reload to try again.']);
 });
