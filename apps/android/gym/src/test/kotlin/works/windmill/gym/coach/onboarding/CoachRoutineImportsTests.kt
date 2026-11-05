@@ -16,6 +16,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.*
@@ -301,7 +302,7 @@ class CoachRoutineImportsTests {
                 WindmillJson.encodeToString(CoachOnboardingRecord.serializer(), record)}}}}""")
             var refreshes = 0
             val imports = CoachRoutineImports(engine, { CoachOnboardingSeat(record.owner, record.replica) }, backgroundScope)
-            val chats = CoachChats({ null }, { refreshes++ }, null, null, LocalCoach(file), imports, { AnonymousCoachAccess.Unavailable }, Telemetry.None, backgroundScope)
+            val chats = CoachChats({ null }, { refreshes++ }, null, null, LocalCoach(file), imports, { AnonymousCoachAccess.Unavailable }, Telemetry.None, backgroundScope, StandardTestDispatcher(testScheduler))
             val screen = async(start = CoroutineStart.UNDISPATCHED) { chats.saveRetainedDrafts(record.chat, record.requestId) }
             screen.cancel()
             runCurrent()
