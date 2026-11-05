@@ -79,6 +79,7 @@ import works.windmill.gym.store.FinishOutcome
 import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.ProposalRead
 import works.windmill.gym.store.TrainingStore
+import works.windmill.platform.telemetry.Telemetry
 import works.windmill.sync.core.Json
 import works.windmill.sync.modelserver.ModelServer
 import works.windmill.sync.modelserver.ServerCall
@@ -332,37 +333,74 @@ class ReviewSheetTests {
         scope.cancel()
     }
 
-    @Test
-    fun startingAWorkoutRemovesBothDecisionActionsUntilThatWorkoutFinishes() {
-        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val server = EngineRoomFixture.server()
-        val room = signedIn(scope)
+    // A routine, a proposal on it and a workout running from that routine, as the log has them.
+    private fun proposalOverAWorkout(scope: CoroutineScope, server: ModelServer, events: MutableList<Pair<String, Map<String, String>>>): Pair<EngineRoomFixture, Routine> {
+        val room = EngineRoomFixture(tmp.newFolder(), scope, rest = FakeGymRest(), telemetry = object : Telemetry {
+            override fun event(name: String, properties: Map<String, String>) { events += name to properties }
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) = throw error
+        }).also { room ->
+            rooms += room
+            runBlocking { room.select("u1") }
+        }
         val changes = listOf(retarget("bench-press", 1))
         val routine = routineFor(room, server, "Push Day", changes)
-        val pending = propose(room, server, routine, changes, summary = "")!!
+        propose(room, server, routine, changes, summary = "")
+        assertTrue(runBlocking { room.store.workout.start(routine.id) } is GymResult.Ok)
+        return room to routine
+    }
+
+    @Test
+    fun aRoutinesProposalAppliesWithAWorkoutOpenAndTheRunningPlanAndRackStand() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val server = EngineRoomFixture.server()
+        val events = mutableListOf<Pair<String, Map<String, String>>>()
+        val (room, routine) = proposalOverAWorkout(scope, server, events)
         val store = room.store
+        val plan = store.workout.session!!.plan
+        val rack = store.workout.rack
         val decided = mutableListOf<Proposal>()
         sheet(store, decided)
-        compose.onNodeWithText("Apply").assertIsEnabled()
-        val startingWorkout = compose.runOnIdle { scope.async { (store.workout.start(routine.id) as GymResult.Ok).value } }
-        compose.waitUntil(10_000) { compose.runOnIdle { startingWorkout.isCompleted } }
-        val live = runBlocking { startingWorkout.await() }
-        compose.onNodeWithText("Finish this session").assertIsDisplayed()
-        compose.onNodeWithText("Apply").assertDoesNotExist()
-        compose.onNodeWithText("Turn this down").assertDoesNotExist()
-        val finishingWorkout = compose.runOnIdle { scope.async {
-            assertEquals(live, store.workout.session)
-            assertEquals(pending, room.training.proposal("proposal1"))
-            assertEquals(emptyList<Proposal>(), decided)
-            assertEquals(emptyList<String>(), decisions(room))
-            assertTrue(store.workout.finish() is FinishOutcome.Closed)
-        } }
-        compose.waitUntil(10_000) { compose.runOnIdle { finishingWorkout.isCompleted } }
-        runBlocking { finishingWorkout.await() }
+
+        compose.onNodeWithText("1 change to Push Day.").assertIsDisplayed()
+        compose.onNodeWithText("Bench Press").assertIsDisplayed()
         compose.onNodeWithText("Finish this session").assertDoesNotExist()
-        compose.onNodeWithText("Apply").assertIsEnabled()
         compose.onNodeWithText("Turn this down").assertIsEnabled()
-        compose.runOnIdle { assertEquals(pending, runBlocking { room.training.proposal("proposal1") }) }
+        compose.onNodeWithText("Apply").assertIsEnabled().performClick()
+        receipt(room, server, decided)
+
+        compose.runOnIdle {
+            assertEquals(listOf(ProposalState.Applied), decided.map { it.state })
+            assertEquals(listOf(List(5) { SetTarget(3) }), store.routines.routine(routine.id)!!.entries.map { it.sets })
+            assertEquals("the running plan stands", plan, store.workout.session!!.plan)
+            assertEquals("the rack stands", rack, store.workout.rack)
+            assertEquals(listOf(mapOf("action" to "apply", "outcome" to "decided")), events.filter { it.first == "gym_proposal_outcome" }.map { it.second })
+        }
+        scope.cancel()
+    }
+
+    @Test
+    fun aRoutinesProposalTurnsDownWithAWorkoutOpenAndNothingMoves() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val server = EngineRoomFixture.server()
+        val events = mutableListOf<Pair<String, Map<String, String>>>()
+        val (room, routine) = proposalOverAWorkout(scope, server, events)
+        val store = room.store
+        val plan = store.workout.session!!.plan
+        val rack = store.workout.rack
+        val decided = mutableListOf<Proposal>()
+        sheet(store, decided)
+
+        compose.onNodeWithText("Turn this down").performClick()
+        compose.onNodeWithText("Turn down").performClick()
+        receipt(room, server, decided)
+
+        compose.runOnIdle {
+            assertEquals(listOf(ProposalState.Dismissed), decided.map { it.state })
+            assertEquals(listOf(List(3) { SetTarget(5) }), store.routines.routine(routine.id)!!.entries.map { it.sets })
+            assertEquals("the running plan stands", plan, store.workout.session!!.plan)
+            assertEquals("the rack stands", rack, store.workout.rack)
+            assertEquals(listOf(mapOf("action" to "dismiss", "outcome" to "decided")), events.filter { it.first == "gym_proposal_outcome" }.map { it.second })
+        }
         scope.cancel()
     }
 

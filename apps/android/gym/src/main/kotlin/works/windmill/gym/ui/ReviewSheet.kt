@@ -75,7 +75,6 @@ import works.windmill.gym.store.RoutinesStore
 import works.windmill.gym.store.TrainingSeat
 import works.windmill.gym.store.TrainingStore
 import works.windmill.gym.store.WorkoutProposalsStore
-import works.windmill.gym.store.WorkoutSession
 import works.windmill.platform.design.WindmillRadius
 import works.windmill.platform.design.WindmillSpace
 
@@ -86,8 +85,6 @@ interface ReviewState {
     val settledProposals: Map<String, Proposal>
     // Why this proposal can no longer be applied, said on the sheet; absent while it can.
     fun outOfDateLine(id: String): String?
-    // A workout is open and this proposal is not about it: it waits until that workout is finished.
-    val workoutOpen: Boolean
     val accountKey: String
 }
 
@@ -107,14 +104,12 @@ interface ProposalReview : ReviewState, ReviewEvents
 class ReviewBinding(
     private val seat: TrainingSeat,
     private val routines: RoutinesStore,
-    private val workout: WorkoutSession,
 ) : ProposalReview {
-    constructor(store: TrainingStore) : this(store.seat, store.routines, store.workout)
+    constructor(store: TrainingStore) : this(store.seat, store.routines)
 
     override val catalog: List<Exercise> get() = routines.catalog
     override val settledProposals: Map<String, Proposal> get() = routines.settledProposals
     override fun outOfDateLine(id: String): String? = supersededLine.takeIf { id in routines.outOfDateProposals }
-    override val workoutOpen: Boolean get() = workout.session != null
     override val accountKey: String get() = seat.accountKey
     override suspend fun proposal(id: String): ProposalRead = routines.proposal(id)
     override suspend fun applyProposal(id: String): ProposalOutcome = routines.applyProposal(id)
@@ -123,7 +118,7 @@ class ReviewBinding(
     override fun proposalReceiptShown(proposal: Proposal, seatKey: String) = routines.proposalReceiptShown(proposal, seatKey)
 }
 
-// A change to the open workout, over its own store. No workout gate stands over it: the workout is what it changes.
+// A change to the open workout, over its own store.
 class WorkoutReviewBinding(
     private val seat: TrainingSeat,
     private val routines: RoutinesStore,
@@ -134,7 +129,6 @@ class WorkoutReviewBinding(
     override val catalog: List<Exercise> get() = routines.catalog
     override val settledProposals: Map<String, Proposal> get() = proposals.held
     override fun outOfDateLine(id: String): String? = proposals.held[id]?.outOfDate
-    override val workoutOpen: Boolean get() = false
     override val accountKey: String get() = seat.accountKey
     override suspend fun proposal(id: String): ProposalRead = proposals.proposal(id)
     override suspend fun applyProposal(id: String): ProposalOutcome = proposals.apply(id)
@@ -198,7 +192,7 @@ fun ReviewSheet(
     // will refuse the tap. A window taking the row off the routines home changes none of it.
     val standing = proposal
     val outOfDate = state.outOfDateLine(proposalId)
-    val decidable = standing != null && standing.isPending && outOfDate == null && !overtaken && !state.workoutOpen
+    val decidable = standing != null && standing.isPending && outOfDate == null && !overtaken
 
     fun decide(apply: Boolean) {
         val open = proposal ?: return
@@ -259,8 +253,7 @@ fun ReviewSheet(
                 .padding(bottom = WindmillSpace.x4),
         ) {
             if (gone) Text(ProposalRead.Gone.line, style = WindmillType.paragraphSmall, color = colors.onSurfaceVariant)
-            if (state.workoutOpen) Text("Finish this session", style = GymType.cardTitle, color = colors.onSurface)
-            if (!state.workoutOpen) standing?.let { Body(it, state.catalog, outOfDate) }
+            standing?.let { Body(it, state.catalog, outOfDate) }
             standing?.let { proposal ->
                 onAsk?.let { ask ->
                     Row(
@@ -584,7 +577,7 @@ private fun Foot(
     }
 }
 
-// A proposal's card, addressed by what it changes. While a workout is open a routine's change waits for that routine's next workout, never this one (08.56).
+// A proposal's card, addressed by what it changes. While a workout is open a routine's change reaches that routine's next workout, never this one (08.56).
 @Composable
 fun ProposalCard(
     proposal: Proposal,
@@ -623,7 +616,6 @@ fun ProposalChip(onReview: () -> Unit) {
 private data class PreviewReviewState(
     override val catalog: List<Exercise> = TheSix.movements,
     override val settledProposals: Map<String, Proposal> = emptyMap(),
-    override val workoutOpen: Boolean = false,
     override val accountKey: String = "preview",
 ) : ReviewState {
     override fun outOfDateLine(id: String): String? = null

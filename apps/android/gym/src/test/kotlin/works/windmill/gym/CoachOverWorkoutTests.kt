@@ -10,6 +10,7 @@ import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onLast
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -46,6 +47,7 @@ import works.windmill.platform.ShellActions
 import works.windmill.platform.telemetry.LocalTelemetry
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.sync.core.Json
+import works.windmill.sync.modelserver.ModelServer
 import works.windmill.sync.api.Change
 import works.windmill.sync.api.Gesture
 import works.windmill.sync.api.NewID
@@ -67,14 +69,15 @@ class CoachOverWorkoutTests {
 
     private val pushA = listOf("bench-press", "overhead-press", "incline-dumbbell-press", "cable-fly", "triceps-pushdown")
 
-    private fun workoutRoom(server: ScriptedTurns = ScriptedTurns(emptyList()), signedIn: Boolean = true, routineId: String = "rt_00000001", coachShown: Boolean = true, test: (EngineRoomFixture, Routine) -> Unit) {
+    private fun workoutRoom(server: ScriptedTurns = ScriptedTurns(emptyList()), signedIn: Boolean = true, routineId: String = "rt_00000001", coachShown: Boolean = true,
+        log: ModelServer = EngineRoomFixture.server(), test: (EngineRoomFixture, Routine) -> Unit) {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val phone = EngineRoomFixture(tmp.newFolder(), scope, telemetry = telemetry, coachServer = server, mintRoutine = { routineId }, coachShown = coachShown)
         var showing by mutableStateOf(true)
         try {
             val routine = runBlocking {
                 phone.select("u1".takeIf { signedIn })
-                if (signedIn) phone.pull(EngineRoomFixture.server())
+                if (signedIn) phone.pull(log)
                 val draft = pushA.fold(RoutineDraft(name = "Push A")) { held, movement -> held.adding(movement, List(3) { SetTarget(8) }) }
                 val saved = (phone.store.routines.saveRoutine(draft.capturingMovements(phone.store.routines.catalog)) as GymResult.Ok).value
                 assertTrue(phone.store.workout.start(saved.id) is GymResult.Ok)
@@ -203,7 +206,6 @@ class CoachOverWorkoutTests {
         compose.onNodeWithText("All two or none. Nothing is applied until you tap.").assertIsDisplayed()
         compose.onNodeWithText("Turn this down").assertIsDisplayed()
         compose.onNodeWithText("Ask Coach").assertDoesNotExist()
-        compose.onNodeWithText("Finish this session").assertDoesNotExist()
         compose.waitUntil(5_000) { "proposal" in screens() }
 
         compose.onNodeWithText("Apply all 2").performClick()
@@ -234,11 +236,14 @@ class CoachOverWorkoutTests {
         compose.runOnIdle { assertEquals(pushA, phone.store.workout.session!!.plan!!.entries.map { it.exerciseId }) }
     }
 
-    // A routine's change waits for that routine's next workout: its card says so, and its review waits for the finish (08.56).
-    @Test fun oneAnswerCarriesBothKindsEachOnItsOwnCardAndTheWorkoutsAloneIsDecidedNow() {
+    private fun routineChange(routineId: String, vararg movements: String) =
+        """{"callId":"toolu_2","name":"propose_routine_change","input":{"id":"prWWWWWWWWWWWWW1","routineId":"$routineId","summary":"","entries":[${movements.joinToString(",") { entry(it) }}]}}"""
+
+    // A routine's change reaches that routine's next workout: its card says so, and its review is the ordinary one (08.56).
+    @Test fun oneAnswerCarriesBothKindsEachOnItsOwnCardAndClosingARoutinesReviewReturnsToCoachOverTheRack() {
         val routineId = "rt_00000009"
-        val nextTime = """{"callId":"toolu_2","name":"propose_routine_change","input":{"id":"prWWWWWWWWWWWWW1","routineId":"$routineId","summary":"","entries":[${entry("bench-press")}]}}"""
-        workoutRoom(answering(swap, nextTime), routineId = routineId) { _, _ ->
+        workoutRoom(answering(swap, routineChange(routineId, "bench-press")), routineId = routineId) { phone, _ ->
+            val rack = phone.store.workout.rack
             asking()
             waitFor("Proposal · This workout")
             waitFor("Proposal · Push A · next time")
@@ -249,10 +254,50 @@ class CoachOverWorkoutTests {
             assertEquals(2, compose.onAllNodesWithText("Review").fetchSemanticsNodes().size)
             compose.onAllNodesWithText("Review")[1].performScrollTo().performClick()
 
-            waitFor("Finish this session")
-            compose.onNodeWithText("Apply").assertDoesNotExist()
-            compose.onNodeWithText("Turn this down").assertDoesNotExist()
+            waitFor("Proposal · Push A")
+            compose.onNodeWithText("Finish this session").assertDoesNotExist()
+            compose.onNodeWithText("Remove Incline Dumbbell Press").assertIsDisplayed()
+            compose.onNodeWithText("Apply all 4").assertIsDisplayed()
+            compose.onNodeWithText("Turn this down").assertIsDisplayed()
             compose.onNodeWithText("Ask Coach").assertDoesNotExist()
+
+            compose.onAllNodes(hasContentDescription("Close sheet")).onLast().performSemanticsAction(SemanticsActions.OnClick)
+            compose.waitUntil(5_000) { compose.onAllNodesWithText("Apply all 4").fetchSemanticsNodes().isEmpty() }
+            compose.onNodeWithText(Ask.placeholder).assertIsDisplayed()
+            compose.onNodeWithText("Finish").assertExists()
+            compose.runOnIdle { assertEquals(rack, phone.store.workout.rack) }
+        }
+    }
+
+    @Test fun aRoutinesChangeAppliedOverTheWorkoutsCoachLandsInTheConversationAndTheRackStands() {
+        val routineId = "rt_00000009"
+        val log = EngineRoomFixture.server()
+        workoutRoom(answering(routineChange(routineId, "bench-press", "overhead-press", "cable-fly", "triceps-pushdown")), routineId = routineId, log = log) { phone, _ ->
+            val rack = phone.store.workout.rack
+            val plan = phone.store.workout.session!!.plan
+            asking()
+            waitFor("Proposal · Push A · next time")
+            compose.onNodeWithText("Review").performScrollTo().performClick()
+            waitFor("Remove Incline Dumbbell Press")
+            compose.runOnIdle { phone.sync(log) }
+
+            compose.onNodeWithText("Apply").performClick()
+            compose.waitUntil(5_000) { compose.runOnIdle { phone.outbox().any { it["intent"]?.get("cmd")?.get("name")?.str() == "gym.applyProposal" } } }
+            compose.runOnIdle { phone.sync(log) }
+
+            compose.waitUntil(15_000) {
+                org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+                compose.onAllNodesWithText("Applied · Push A · 1 change").fetchSemanticsNodes().isNotEmpty()
+            }
+            compose.onNodeWithText(Ask.placeholder).assertIsDisplayed()
+            compose.runOnIdle {
+                assertEquals(listOf("bench-press", "overhead-press", "cable-fly", "triceps-pushdown"), phone.store.routines.routine(routineId)!!.entries.map { it.exerciseId })
+                assertEquals("the running plan stands", plan, phone.store.workout.session!!.plan)
+                assertEquals(pushA, phone.store.workout.session!!.plan!!.entries.map { it.exerciseId })
+                assertEquals("the rack stands", rack, phone.store.workout.rack)
+                assertEquals(listOf(mapOf("action" to "apply", "outcome" to "decided")), outcomes())
+                assertEquals(emptyList<String>(), failures)
+            }
         }
     }
 

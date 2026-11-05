@@ -916,8 +916,8 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   (`coach/CoachProposalCards.kt`, `Ask.promise`), and receipts say *Turned down* (`presentation/Proposal.kt`). The boards
   decide on the card with a per-field diff and Apply / Reject: 08.2 `1252:27854`, 08.3 `1253:28311`, 08.12–08.14,
   the catalogue 08.15–08.31 (`1254:37242` … `1254:38214`). A change to the open workout decides during the workout
-  (`WorkoutReviewBinding`). A routine's proposal does not: its card says *next time*, as 08.56 `1901:34078` draws, and its
-  sheet says *Finish this session* with no decision (`ReviewBinding`), where iOS applies it. For the owner: which holds.
+  (`WorkoutReviewBinding`), and so does a routine's proposal, as on iOS: its card says *next time*, as 08.56 `1901:34078`
+  draws, and its sheet is the ordinary routine review (`ReviewBinding`).
   10v covers the words on every surface.
 - **11l · Outside the app.** The native ongoing notification and promoted Live Update show a
   chronometer from the last visible workout set, or workout start before the first set. The silent
