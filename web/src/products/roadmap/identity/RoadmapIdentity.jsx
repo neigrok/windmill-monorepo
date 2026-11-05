@@ -4,7 +4,8 @@ import { Activity, Compass, Download, GitFork, Keyboard, MoreHorizontal, Setting
 import { Tooltip } from '../../../design-system';
 import { track } from '../../../telemetry/beacon.js';
 import { hueOf } from '../theme.js';
-import { FindStep, NewStep, handleMenuKey, dismissOverlayOutside } from '../board/BoardControls.jsx';
+import { FindStep, NewStep, handleMenuKey } from '../board/BoardControls.jsx';
+import { usePopoverDismissal } from '../popoverDismissal.js';
 import { RoadmapSheet } from './RoadmapSheet.jsx';
 import { ViewSwitch } from './ViewSwitch.jsx';
 import { countBucket } from '../board/acts.js';
@@ -97,29 +98,11 @@ export function RoadmapIdentity({
     const triggers = { sheet: titleButton, more: moreButton, next: nextButton };
     triggers[overlay?.kind]?.current?.focus();
   }, [overlay]);
-  const leaveOverlay = useCallback((event) => {
-    const root = open === 'more' ? moreBox.current : nextBox.current;
-    if (!open || event.currentTarget !== root || root.contains(event.relatedTarget)) return;
-    close('close', false);
-  }, [open, close]);
-
-  useEffect(() => {
-    if (open !== 'more' && open !== 'next') return undefined;
-    const box = open === 'more' ? moreBox : nextBox;
-    const away = (event) => dismissOverlayOutside(event, box.current, close);
-    const escape = (event) => {
-      if (open !== 'next' || event.key !== 'Escape' || event.defaultPrevented) return;
-      event.preventDefault();
-      event.stopPropagation();
-      close();
-    };
-    document.addEventListener('pointerdown', away, true);
-    document.addEventListener('keydown', escape);
-    return () => {
-      document.removeEventListener('pointerdown', away, true);
-      document.removeEventListener('keydown', escape);
-    };
-  }, [open, close]);
+  usePopoverDismissal({
+    open: open === 'more' || open === 'next',
+    root: open === 'more' ? moreBox : nextBox,
+    onClose: close,
+  });
 
   useLayoutEffect(() => {
     if (open === 'more') moreBox.current.querySelector('[role="menuitem"]')?.focus();
@@ -183,7 +166,7 @@ export function RoadmapIdentity({
             }}
           />
         )}
-        {nextAvailable && <div ref={nextBox} className="st-roadmap-popover-anchor" onBlur={leaveOverlay}>
+        {nextAvailable && <div ref={nextBox} className="st-roadmap-popover-anchor">
           <Tooltip label={nextChip(next)} side="bottom" disabled={!desktop || open === 'next'}>
             <button
               ref={nextButton}
@@ -246,7 +229,7 @@ export function RoadmapIdentity({
             onFork();
           }} />
         )}
-        {moreAvailable && <div ref={moreBox} className="st-roadmap-popover-anchor" onBlur={leaveOverlay}>
+        {moreAvailable && <div ref={moreBox} className="st-roadmap-popover-anchor">
           <Tooltip label={ROADMAP_VERBS.more} side="bottom" disabled={!desktop || open === 'more'}>
             <button
               ref={moreButton}
@@ -267,7 +250,7 @@ export function RoadmapIdentity({
             role="menu"
             aria-label={ROADMAP_VERBS.more}
             onKeyDown={(event) => handleMenuKey(event, {
-              root: moreBox.current, onEscape: close, onTab: close,
+              root: moreBox.current, onTab: close,
             })}
           >
             {menuItems.map((item) => (
