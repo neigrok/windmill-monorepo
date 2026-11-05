@@ -168,7 +168,9 @@ for (const reload of [false, true]) for (const returning of ['A', 'B']) {
           assert.equal(await page.evaluate(() => engine.device.activeReplica.meta.account), 'A');
         } else {
           await page.waitForURL(`${origin}/device-test#/app`);
-          await page.waitForFunction(async () => (await deviceStore.treeIds()).length === 0);
+          await page.evaluate(async () => {
+            while ((await deviceStore.treeIds()).length) await new Promise((resolve) => setTimeout(resolve, 20));
+          });
           assert.deepEqual(await page.evaluate(() => deviceIndex.entries()), {});
           assert.deepEqual(await page.evaluate(() => deviceStore.treeIds()), []);
           assert.deepEqual(await page.evaluate(() => sent), []);
@@ -226,7 +228,10 @@ for (const interruption of ['question', 'handshake', 'signout']) {
         await page.reload();
         await page.waitForFunction(() => typeof mountDevice === 'function');
         await page.evaluate(({ name, account, interruption }) => mountDevice(name, account, false, interruption), { name, account, interruption });
-        await page.waitForFunction(async () => engine.device.meta.deviceCleanup === undefined && (await deviceStore.treeIds()).length === 0);
+        await page.evaluate(async () => {
+          while (engine.device.meta.deviceCleanup !== undefined || (await deviceStore.treeIds()).length)
+            await new Promise((resolve) => setTimeout(resolve, 20));
+        });
         assert.deepEqual(await page.evaluate(() => deviceIndex.entries()), {});
         assert.deepEqual(await page.evaluate(() => deviceStore.treeIds()), []);
         if (interruption === 'question') {

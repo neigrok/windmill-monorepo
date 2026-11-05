@@ -5,6 +5,7 @@ import { OFFLINE_GRACE_MS, SAVING_DELAY_MS, SAVED_HOLD_MS } from '../../../../sr
 import { renderHook } from '../../gym/harness.mjs';
 import { closuresIn } from '../sourceClosures.js';
 
+import { syncSession as platformSync } from '../../../../src/platform/sync/session.js';
 import { getRoomStatus, registerRoomStatus } from '../../../../src/shell/roomStatus.js';
 import { ANONYMOUS_OWNER, SYNC_OFFLINE_SHORT, SYNC_STATUS } from '../../../../src/products/roadmap/copy.js';
 
@@ -147,60 +148,47 @@ test('a real pending progress gesture still shows Saving during a structure reba
 });
 
 
-test('an eligible room publishes Offline in capture before the platform bubble listener, and yields when it lapses', (t) => {
-  const prior = globalThis.window;
-  const listeners = [];
-  globalThis.window = {
-    setTimeout: () => 0,
-    addEventListener(type, handler, capture) { listeners.push({ type, handler, capture }); },
-    removeEventListener(type, handler, capture) {
-      const index = listeners.findIndex((listener) => listener.type === type && listener.handler === handler && listener.capture === capture);
-      if (index !== -1) listeners.splice(index, 1);
-    },
-  };
-  t.after(() => { globalThis.window = prior; });
+test('an eligible room publishes Offline inside the platform publish that goes offline, and yields when it lapses', (t) => {
+  t.after(() => platformSync.publish({ online: true }));
   const session = { ...statusSession(), treeId: 't_owned' };
   let status = 'signed-in';
   let owner = true;
   const nothing = () => {};
   const props = { treeId: session.treeId, syncSession: session, lapsed: false, phone: false,
     openSignInDoor: nothing, setBoardQuiet: nothing };
+  const listening = platformSync.listeners.size;
   const view = renderHook(t, () => useRoomSyncNotices({ ...props, owner, status }));
   assert.equal(getRoomStatus(), null);
-  assert.deepEqual(listeners.map(({ type, capture }) => ({ type, capture })), [{ type: 'offline', capture: true }]);
-  const capture = listeners[0].handler;
-  capture();
-  const atPlatformBubble = getRoomStatus();
-  assert.deepEqual(atPlatformBubble, {
+  assert.equal(platformSync.listeners.size, listening + 1);
+  platformSync.publish({ online: false });
+  const atPlatformPublish = getRoomStatus();
+  assert.deepEqual(atPlatformPublish, {
     line: SYNC_STATUS.offline, short: SYNC_OFFLINE_SHORT, icon: 'offline', narrow: 'icon', connectivity: 'offline',
   });
   session.change({ online: false });
-  assert.deepEqual(getRoomStatus(), atPlatformBubble);
+  assert.deepEqual(getRoomStatus(), atPlatformPublish);
   status = 'ghost';
   view.redraw();
-  assert.deepEqual(listeners, []);
+  assert.equal(platformSync.listeners.size, listening);
   assert.deepEqual(getRoomStatus(), { line: ANONYMOUS_OWNER });
   owner = false;
   view.redraw();
   assert.equal(getRoomStatus(), null);
-  capture();
+  platformSync.publish({ online: true });
+  platformSync.publish({ online: false });
   assert.equal(getRoomStatus(), null);
   view.unmount();
 });
 
 test('a superseded room cannot publish Offline over the current room', (t) => {
-  const prior = globalThis.window;
-  let capture;
-  globalThis.window = { setTimeout: () => 0,
-    addEventListener(_type, handler) { capture = handler; }, removeEventListener() {} };
-  t.after(() => { globalThis.window = prior; });
+  t.after(() => platformSync.publish({ online: true }));
   const session = { ...statusSession(), treeId: 't_previous' };
   const nothing = () => {};
   const view = renderHook(t, () => useRoomSyncNotices({ treeId: session.treeId, syncSession: session,
     owner: true, status: 'signed-in', lapsed: false, phone: false, openSignInDoor: nothing, setBoardQuiet: nothing }));
   const next = registerRoomStatus();
   next.publish({ line: ANONYMOUS_OWNER });
-  capture();
+  platformSync.publish({ online: false });
   assert.deepEqual(getRoomStatus(), { line: ANONYMOUS_OWNER });
   view.unmount();
   next.release();

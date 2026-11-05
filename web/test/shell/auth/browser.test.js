@@ -590,7 +590,7 @@ test('Chromium: a live signed-in room going offline never inserts or paints the 
   try {
     await context.route('**/v1/**', (route) => {
       const path = new URL(route.request().url()).pathname;
-      const body = path === '/v1/me' ? { user: { id: 'A', name: 'Ada' } }
+      const body = path === '/v1/me' ? { user: { id: 'A', name: 'Ada', email: 'ada@example.test' } }
         : path === '/v1/sessions' ? { sessions: [] } : {};
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
     });
@@ -601,7 +601,7 @@ test('Chromium: a live signed-in room going offline never inserts or paints the 
       await page.evaluate(() => mountAuth('auth-live-offline-transition', false, 'live'));
       await page.locator('#live-room[data-phase="live"][data-online="true"]').waitFor();
       await page.waitForFunction(() => document.getElementById('live-room')?.textContent === 'signed-in');
-      await page.locator('.wm-room-status').waitFor();
+      await page.locator('.wm-room-status').waitFor({ state: 'attached' });
       await page.getByText('No other sessions.', { exact: true }).waitFor();
       await page.evaluate(() => {
         window.committedNotices = [];

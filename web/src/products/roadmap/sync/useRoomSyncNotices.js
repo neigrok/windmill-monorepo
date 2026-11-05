@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { syncSession as platformSync } from '../../../platform/sync/session.js';
 import { registerRoomStatus } from '../../../shell/roomStatus.js';
 import { track } from '../../../telemetry/beacon.js';
 import { countBucket } from '../board/acts.js';
@@ -138,12 +139,15 @@ export function useRoomSyncNotices({ treeId, syncSession, owner, status, lapsed,
       lease.release();
     };
   }, [treeId, roomStatusEnabled]);
-  // Publish before the platform's bubbling offline listener can reveal the global notice.
+  // Offline lands in the same platform publish that would reveal the global notice, so React never commits that notice.
   useLayoutEffect(() => {
     if (!syncEligible || syncSession?.treeId !== treeId) return undefined;
-    const publishOffline = () => roomStatusLease.current?.publish(OFFLINE_STATUS);
-    window.addEventListener('offline', publishOffline, true);
-    return () => window.removeEventListener('offline', publishOffline, true);
+    let online = platformSync.getSnapshot().online;
+    return platformSync.subscribe(() => {
+      const wasOnline = online;
+      online = platformSync.getSnapshot().online;
+      if (wasOnline && !online) roomStatusLease.current?.publish(OFFLINE_STATUS);
+    });
   }, [treeId, syncSession, syncEligible]);
   useLayoutEffect(() => {
     const lease = roomStatusLease.current;

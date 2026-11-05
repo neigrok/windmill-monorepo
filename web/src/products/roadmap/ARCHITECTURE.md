@@ -575,8 +575,9 @@ rooms keep an empty publication for the Sign in seat, with their device text bel
 and the demo publish nothing: on phones `sharedShell` alone gives them the same links and seat, with no slot, and
 the global offline notice stays theirs. The global offline notice yields only while a room publishes
 `connectivity: 'offline'`, before first paint; a registration or device-only line does not replace it.
-An eligible signed-in room publishes Offline in the browser event's capture phase, before the platform's
-offline listener can reveal the global notice; its ordinary sync reading then keeps that publication.
+An eligible signed-in room subscribes to the platform sync session and publishes Offline inside the same
+publish that turns it offline, so React renders both together and never commits the global notice; its
+ordinary sync reading then keeps that publication.
 Below 360px Saving and Saved are announced only, and Offline uses a named icon button
 whose controlled Tooltip opens below the slot for four seconds, until another tap, an outside tap or Escape.
 
