@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { track } from '../../../telemetry/beacon.js';
-import { coverBeneath } from '../step/composerFocus.js';
+import { coverBeneath, useCoveredLayer } from '../step/composerFocus.js';
 import { ViewPrefs, boardCanShow, clearBorn, initialView, peekBorn, viewToShow } from '../persistence/ViewPrefs.js';
 import { reportRoadmapFailure } from '../reportFailure.js';
 
@@ -46,6 +46,7 @@ export function useRoomView({ treeId, tree, loading, loadError, who, linkedStep,
   // The Board stays mounted through a reload or an emptied tree, so Done's fold survives; only a crash drops it.
   if (boardActive) boardShownRef.current = true;
   const boardMounted = !boardCrashed && boardShownRef.current;
+  useCoveredLayer(boardLayerRef, boardMounted && !boardActive);
   useEffect(() => (boardActive ? coverBeneath(boardLayerRef.current) : undefined), [boardActive]);
 
   // stop() only cancels the RAF; applyModel runs fine while stopped and renders on the first frame after start().

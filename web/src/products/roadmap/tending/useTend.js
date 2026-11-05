@@ -10,7 +10,7 @@ const POLL_CEILING_MS = 90000;  // ceiling before we stop watching
 
 // The poll is abortable: leaving the tree stops the watch, and the run carries on server-side with
 // its receipt waiting on the catch-up read.
-export function useTend({ treeId, onFace }) {
+export function useTend({ treeId, onFace, onStart }) {
   const [working, setWorking] = useState(false);
   const aliveRef = useRef(true);
   useEffect(() => {
@@ -20,6 +20,7 @@ export function useTend({ treeId, onFace }) {
 
   const submit = useCallback(async (prompt) => {
     if (working || !prompt.trim()) return;
+    onStart();
     setWorking(true);
     track('roadmap_verb', { verb: 'askAI', step: 'send' });
 
@@ -33,7 +34,7 @@ export function useTend({ treeId, onFace }) {
     if (!aliveRef.current) return;
     setWorking(false);
     onFace(face);
-  }, [treeId, working, onFace]);
+  }, [treeId, working, onFace, onStart]);
 
   return { working, submit };
 }
@@ -54,7 +55,13 @@ async function pollToRest(runId, aliveRef) {
 // Ask AI in the room: who may use it, whether it is open, and the toast each answer leaves behind.
 export function useRoomTend({ treeId, treeMine, status, shared, demo, demotion, room: { sessionRef, sceneRef }, showToast }) {
   const [tendingEnabled, setTendingEnabled] = useState(false);
-  const [tendOpen, setTendOpen] = useState(false);
+  const [tendOpen, updateTendOpen] = useState(false);
+  const [tendFailure, setTendFailure] = useState('');
+  const clearTendFailure = useCallback(() => setTendFailure(''), []);
+  const setTendOpen = useCallback((next) => {
+    setTendFailure('');
+    updateTendOpen(next);
+  }, []);
   useEffect(() => {
     if (!treeMine || status !== 'signed-in' || demo) { setTendingEnabled(false); return undefined; }
     let alive = true;
@@ -76,7 +83,8 @@ export function useRoomTend({ treeId, treeMine, status, shared, demo, demotion, 
   }, [showToast]);
 
   const onTendFace = useCallback((face) => {
-    setTendOpen(false);
+    if (face.kind === 'failed') setTendFailure(face.line);
+    else setTendOpen(false);
     if (face.kind === 'empty') return;
     track('roadmap_verb', { verb: 'askAI', step: 'answer', outcome: face.kind });
     const isReceipt = face.kind === 'receipt';
@@ -88,9 +96,9 @@ export function useRoomTend({ treeId, treeMine, status, shared, demo, demotion, 
       detail: isReceipt ? face.detail : undefined,
       action: hasUndo ? { label: LABELS.undo, run: () => undoTend(face.created) } : undefined,
     });
-  }, [showToast, undoTend]);
+  }, [showToast, undoTend, setTendOpen]);
 
-  const { working: tendWorking, submit: submitTend } = useTend({ treeId, onFace: onTendFace });
+  const { working: tendWorking, submit: submitTend } = useTend({ treeId, onFace: onTendFace, onStart: clearTendFailure });
 
-  return { canTend, tendOpen, setTendOpen, tendWorking, submitTend };
+  return { canTend, tendOpen, setTendOpen, tendWorking, tendFailure, submitTend };
 }

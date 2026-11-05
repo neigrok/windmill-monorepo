@@ -86,6 +86,9 @@ for (const width of [320, 390]) {
         if (close === 'Escape') await page.keyboard.press('Escape');
         if (close === 'scrim') await page.locator('.st-tend-overlay').click({ position: { x: 4, y: 4 } });
         if (close === 'submit') {
+          await page.route('**/v1/trees/t_sail/tend', (route) => route.fulfill({
+            status: 200, contentType: 'application/json', body: JSON.stringify({ status: 'done', edits: 0 }),
+          }));
           await input.fill('Add a practice step');
           await input.press('Enter');
         }

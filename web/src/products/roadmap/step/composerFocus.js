@@ -1,21 +1,34 @@
-import { createContext, useContext, useEffect, useRef, useState } from 'react';
+import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { boardFocusTarget } from '../board/traversal.js';
 import { wrapTab } from '../../../design-system/feedback/dialogFocus.js';
 
 const coveredLayers = new WeakMap();
 
+export function coverLayer(layer) {
+  const coverage = coveredLayers.get(layer) ?? { owners: 0, inert: layer.inert };
+  coverage.owners += 1;
+  coveredLayers.set(layer, coverage);
+  layer.inert = true;
+  return () => {
+    coverage.owners -= 1;
+    if (coverage.owners > 0) return;
+    layer.inert = coverage.inert;
+    coveredLayers.delete(layer);
+  };
+}
+
+export function useCoveredLayer(ref, covered) {
+  useLayoutEffect(() => (covered && ref.current ? coverLayer(ref.current) : undefined), [ref, covered]);
+}
+
 export function coverBeneath(layer) {
   const root = layer.parentElement;
   const floor = Number(getComputedStyle(layer).zIndex);
-  const covered = new Set();
+  const covered = new Map();
   const cover = () => {
     for (const sibling of root.children) {
       if (sibling === layer || covered.has(sibling) || Number(getComputedStyle(sibling).zIndex) > floor) continue;
-      const coverage = coveredLayers.get(sibling) ?? { owners: 0, inert: sibling.inert };
-      coverage.owners += 1;
-      coveredLayers.set(sibling, coverage);
-      sibling.inert = true;
-      covered.add(sibling);
+      covered.set(sibling, coverLayer(sibling));
     }
   };
   cover();
@@ -23,13 +36,7 @@ export function coverBeneath(layer) {
   watcher.observe(root, { childList: true });
   return () => {
     watcher.disconnect();
-    for (const sibling of covered) {
-      const coverage = coveredLayers.get(sibling);
-      coverage.owners -= 1;
-      if (coverage.owners > 0) continue;
-      sibling.inert = coverage.inert;
-      coveredLayers.delete(sibling);
-    }
+    for (const uncover of covered.values()) uncover();
   };
 }
 

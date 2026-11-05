@@ -11,6 +11,10 @@ import { dirname, resolve } from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { confirmDeviceOwner } from '../../../../src/products/roadmap/persistence/LocalTreeRegistry.js';
+import { SyncStore } from '../../../../src/products/roadmap/sync/SyncStore.js';
+import { syncSession as platformSession } from '../../../../src/platform/sync/session.js';
+import { useRoomSyncNotices } from '../../../../src/products/roadmap/sync/useRoomSyncNotices.js';
+import { LAPSED_SESSION } from '../../../../src/products/roadmap/copy.js';
 
 function roomProps(treeId) {
   const handle = (current = null) => ({ current });
@@ -48,6 +52,54 @@ const result = await build({ configFile: false, root, logLevel: 'silent', plugin
   },
 }], build: { write: false, minify: false, rollupOptions: { input: 'room-load-entry', preserveEntrySignatures: 'strict', output: { format: 'es', inlineDynamicImports: true } } } });
 const captured = await import(`data:text/javascript;base64,${Buffer.from(result.output[0].code).toString('base64')}`);
+
+test('a lapsed cold room loads its owned replica and presents the existing signed-out device line', async (t) => {
+  globalThis.roomLoadIssues = [];
+  t.after(() => { delete globalThis.roomLoadIssues; });
+  const disk = new Map([['windmill:device-trees', JSON.stringify({ t_kept: { title: 'Kept roadmap', owner: 'A', claimed: true } })]]);
+  const storage = { getItem: (key) => disk.get(key) ?? null, setItem: (key, value) => disk.set(key, value) };
+  const globals = {
+    window: { location: { search: '', hash: '#/app/t_kept' }, localStorage: storage, setTimeout: () => 0 },
+    localStorage: storage,
+  };
+  for (const [key, value] of Object.entries(globals)) {
+    const previous = Object.getOwnPropertyDescriptor(globalThis, key);
+    Object.defineProperty(globalThis, key, { configurable: true, writable: true, value });
+    t.after(() => {
+      if (previous) Object.defineProperty(globalThis, key, previous);
+      else delete globalThis[key];
+    });
+  }
+  const priorOpening = platformSession.opening;
+  let restore;
+  platformSession.opening = new Promise((resolve) => { restore = resolve; });
+  t.after(() => { platformSession.opening = priorOpening; });
+  const saved = { frame: { nodes: [{ id: 'pending', createdAt: '1:0:device', label: 'Unsynced step', labelAt: '1:0:device' }], edges: [], kinds: [] }, lastSeq: 0 };
+  t.mock.method(globalThis, 'fetch', async () => ({ ok: false, status: 401 }));
+  const loads = t.mock.method(SyncStore.prototype, 'load', async () => saved);
+  t.mock.method(SyncSession.prototype, 'start', function () { return this; });
+  const props = roomProps('t_kept');
+  props.structure.layoutPositions = () => new Map([['pending', { x: 0, y: 0 }]]);
+  let accountId = null;
+  const view = renderHook(t, () => captured.useRoomLoad({ ...props, accountId }));
+  await settle();
+  assert.equal(loads.mock.callCount(), 0, 'the room waits for durable identity before reading a blob');
+  restore({ device: { meta: {}, activeReplica: { meta: { state: 'bound', account: 'A', authPaused: true } } } });
+  await until(() => !view.tree.loading);
+  assert.deepEqual({ error: view.tree.loadError, owner: view.tree.treeMine, title: props.room.treeRef.current.title,
+    labels: [...props.room.treeRef.current.nodes.values()].map((node) => node.label) },
+  { error: false, owner: true, title: 'Kept roadmap', labels: ['Unsynced step'] });
+  const notices = renderHook(t, () => useRoomSyncNotices({ treeId: 't_kept', syncSession: view.tree.syncSession,
+    owner: view.tree.treeMine, status: 'ghost', lapsed: true, phone: false,
+    openSignInDoor() {}, setBoardQuiet() {} }));
+  assert.equal(notices.tree.deviceLine.text, LAPSED_SESSION);
+  assert.deepEqual(saved.frame.nodes, [{ id: 'pending', createdAt: '1:0:device', label: 'Unsynced step', labelAt: '1:0:device' }]);
+  accountId = 'A';
+  view.redraw();
+  await settle();
+  assert.equal(loads.mock.callCount(), 1, 'the returning account retains the open replica for reconnect');
+  assert.deepEqual(globalThis.roomLoadIssues, []);
+});
 
 for (const arrivesDuringRead of [false, true]) for (const startedSignedIn of [false, true]) for (const available of [false, true]) {
   test(`sign-in retries an unavailable room: ${arrivesDuringRead ? 'during' : 'after'} read, ${startedSignedIn ? 'same account lapses' : 'anonymous visit'}, retry ${available ? 'loads' : 'unavailable'}`, async (t) => {

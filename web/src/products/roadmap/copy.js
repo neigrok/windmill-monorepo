@@ -119,7 +119,12 @@ export const NOTE_EDITOR = {
   urlPlaceholder: 'Paste or type URL',
   apply: 'Apply',
 };
-export const BULK = { done: 'Done', recolor: 'Recolor' };
+export const BULK = { done: 'Done', recolor: LABELS.recolor };
+export const RECOLOR = {
+  steps: `${LABELS.recolor} selected steps`,
+  kind: (name) => `${LABELS.recolor} ${name}`,
+  selection: (name) => `${LABELS.recolor} selection to ${name}`,
+};
 
 export const COMPACT_COUNT_THRESHOLD = 1000;
 const MILLION = 1_000_000;

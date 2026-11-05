@@ -67,6 +67,8 @@ role gets the drawn Shared Shell: no mark, the room links from the 16px edge wit
 While the Board is shown, `coverBeneath` in `composerFocus.js` makes everything stacked under its layer inert,
 the Graph's overlays and legend included. The identity sits above that layer and stays operable; step detail,
 composer and sheet layers cover it. Covered elements stay inert until the last covering layer closes.
+The same coverage owner keeps a hidden Board and every closed Graph dock inert. The Graph selection bar
+mounts only while the Graph is shown, so none of these hidden controls enter the tab order.
 
 A render failure in the Board reports `roadmap-board` and shows the Graph with focus on the row's pressed
 switch; choosing Board tries again. A failure in the row reports `roadmap-identity` and leaves `ViewSwitch` at
@@ -80,6 +82,11 @@ fallback's measured bottom feeds the same insets. The step and the composer clos
 `SkillTree`, derives progress through `UnlockRules`, runs layout and installs the render model in
 `SkillTreeScene`. Layout is synchronous and cached by graph structure, effective engine and, for caption-aware
 engines, labels.
+
+After a session lapse, device reads restore the holder from the shell's active bound replica before looking
+up a saved roadmap. This grants local access only; pending sign-out, credential clearing, device cleanup or
+account closure prevents that restoration. The room opens its replica with the lapsed device line, and
+signing back into the same account reconnects its pending changes.
 
 The repository judges its own reads, and `BoundaryFailure` says so to any catch above it. A server tree whose marks can't be
 read reports `roadmap-progress-load` and stops the load, so the room shows the load error and Try again rather than a false
@@ -162,7 +169,9 @@ sheet before opening its step. `activity/ActivityRows.jsx` owns the shared rows,
 empty state.
 
 **Ask AI** uses an overlay from 744px and a modal dock on phones, with examples above its field. The dock
-reuses composer viewport tracking to clear the keyboard, and Escape, scrim or submit dismisses it.
+reuses composer viewport tracking to clear the keyboard. Escape and the scrim dismiss it. Submitting keeps
+the sentence until the answer; a failed answer leaves the bar open with the sentence intact. Its unchanged
+failure copy is also announced inside the active dialog while the room's toast is covered.
 
 ## The Board
 
@@ -626,11 +635,11 @@ A closed socket clears both lanes' in-flight bookkeeping without dropping their 
 Progress rejections also clear their in-flight entry. Events from superseded sockets do nothing, reconnect
 timers are deduplicated, and closing a session sets its phase offline.
 
-**Device trees.** `LocalTreeRegistry` associates device trees with accounts, and device reads require identity
-confirmed on this document load. A remembered face does not authorize a store read. Offline the shell gives that answer from
-the replica it restores, so a device read that finds no row waits up to two seconds for it. A session lapse keeps the
-confirmed device owner and pending work on this document. The shell restores the previous holder from the
-bound sync replica after a reload without granting session authority. The same account's sign-in resumes
+**Device trees.** `LocalTreeRegistry` associates device trees with accounts, and device reads require a server
+answer or the shell's restored active bound replica. A remembered face does not authorize a store read. On a
+cold 401 or offline read, the registry waits for replica opening and restoration before resolving the holder;
+pending cleanup prevents restoration. A session lapse keeps the device owner and pending work without
+granting session authority. The same account's sign-in resumes
 synchronization. A fresh sign-in can retry an unavailable read; ordinary signed-in cold loads compare against
 the owner the read actually used and do not reread when the shell settles. Explicit sign-out and account
 replacement atomically record pending device cleanup with the replica transition. The shell replays it before

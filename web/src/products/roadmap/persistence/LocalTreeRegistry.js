@@ -3,25 +3,24 @@
 // of unclaimed entries, so a claim can never adopt a tree this device didn't bear.
 
 import { fetchMe } from '../../../shell/auth/AuthClient.js';
+import { syncSession } from '../../../platform/sync/session.js';
 import { localStorageOrNothing } from './browserStorage.js';
 
 const KEY = 'windmill:device-trees';
 
-// The account stays unknown — which reads as the anonymous scope — until this document load has
-// had one successful /v1/me. It hangs off `window`, never storage, so a reload or a new tab starts
-// out not knowing.
+// Device reads use this document's server answer or the shell's restored bound replica, never a cached face.
 function confirmation() {
   return typeof window === 'undefined' ? null : window.wmDeviceConfirmation ?? null;
 }
 
-// The account this document load has confirmed with the server, or null while unknown.
+// The holder authorized for device reads, without granting session authority.
 export function deviceOwner() {
   return confirmation()?.owner ?? null;
 }
 
 const waitingForOwner = new Set();
 
-// A server-confirmed answer about who holds this device; it also attributes anything unstamped.
+// An authoritative answer about who holds this device; it also attributes anything unstamped.
 export function confirmDeviceOwner(userId) {
   const owner = userId ?? null;
   window.wmDeviceConfirmation = { owner };
@@ -42,6 +41,14 @@ export function deviceOwnerAnswered(withinMs = 2000) {
 
 export async function resolveDeviceOwner() {
   const me = await fetchMe();
+  if (!me && !confirmation()) {
+    const engine = await syncSession.opening?.catch(() => null);
+    if (engine?.restoring) await engine.restoring;
+    const meta = engine?.device?.meta;
+    const replica = engine?.device?.activeReplica?.meta;
+    const clearing = engine?.closed || engine?.signingOut || meta?.signOut || meta?.deviceCleanup || meta?.clearCredential || meta?.closingAccount;
+    if (!confirmation() && !clearing && replica?.state === 'bound') return confirmDeviceOwner(replica.account);
+  }
   if (me === undefined) return deviceOwner(); // a blip is not an account change, in either direction
   if (me === null && deviceOwner()) return deviceOwner();
   return confirmDeviceOwner(me?.id ?? null);

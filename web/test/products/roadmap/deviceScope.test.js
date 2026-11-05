@@ -10,6 +10,7 @@ import { ProgressStore } from '../../../src/products/roadmap/persistence/Progres
 import { TreeLattice, HlcClock } from '../../../src/products/roadmap/sync/lattice.js';
 import { materialize } from '../../../src/products/roadmap/sync/materialize.js';
 import { roadmapRoutes } from '../../../src/products/roadmap/routes.js';
+import { syncSession } from '../../../src/platform/sync/session.js';
 
 const BASE = 'http://localhost:8088';
 const INDEX = 'windmill:device-trees';
@@ -251,7 +252,7 @@ test('forgetDevice on an account switch stamps the arriving account and leaves i
   assert.deepEqual(device.blobIds(), []);
 });
 
-// A remembered identity may not open a device store until this document load has had one successful /v1/me.
+// A remembered face alone cannot open a device store without a server answer or a restored bound replica.
 test('a cold boot with no network is nobody — the account\'s own rows stay shut, anonymous work still opens', async () => {
   browser({
     index: { t_a: A_PRIVATE, t_anon: ANON },
@@ -298,6 +299,47 @@ test('a lapse in this confirmed document keeps the same owner’s unsynced tree 
   serverSaying({ me: 'u_b' });
   assert.equal(await loadDeviceTree('t_a'), null);
 });
+
+for (const offline of [false, true]) {
+  test(`a cold ${offline ? 'offline' : '401'} load waits for its bound replica and opens only that holder's device work`, async (t) => {
+    const saved = blobFor('t_a', 'A private therapy plan', 'unsynced step');
+    const device = browser({ index: { t_a: A_PRIVATE, t_b: { ...A_PRIVATE, owner: 'u_b' } }, blobs: { t_a: saved, t_b: saved } });
+    if (offline) serverUnreachable();
+    else serverSaying({});
+    const previous = syncSession.opening;
+    let opened;
+    syncSession.opening = new Promise((resolve) => { opened = resolve; });
+    t.after(() => { syncSession.opening = previous; });
+    const opening = loadDeviceTree('t_a');
+    const engine = { device: { meta: {}, activeReplica: { meta: { state: 'bound', account: 'u_a', authPaused: true } } } };
+    opened(engine);
+    const result = await opening;
+    const lattice = new TreeLattice('t_a', A_PRIVATE.title);
+    lattice.join(saved.frame);
+    assert.deepEqual(result, { ...lattice.toTreeData(), mine: true });
+    assert.equal(deviceOwner(), 'u_a');
+    assert.equal(await loadDeviceTree('t_b'), null);
+    assert.deepEqual(engine.device.activeReplica.meta, { state: 'bound', account: 'u_a', authPaused: true });
+    assert.deepEqual(device.blobIds(), ['t_a', 't_b']);
+  });
+}
+
+for (const guard of ['anonymous', 'dormant', 'closed', 'signingOut', 'signOut', 'deviceCleanup', 'clearCredential', 'closingAccount', 'explicit sign-out', 'different account']) {
+  test(`a restored replica grants no device-read authority during ${guard}`, async (t) => {
+    browser({ index: { t_a: A_PRIVATE }, blobs: { t_a: blobFor('t_a', 'A private therapy plan', 'unsynced step') } });
+    const engine = { device: { meta: {}, activeReplica: { meta: { state: 'bound', account: 'u_a', authPaused: true } } } };
+    if (guard === 'anonymous' || guard === 'dormant') engine.device.activeReplica.meta.state = guard === 'anonymous' ? 'anon' : guard;
+    else if (guard === 'closed' || guard === 'signingOut') engine[guard] = true;
+    else if (guard === 'explicit sign-out') confirmDeviceOwner(null);
+    else if (guard !== 'different account') engine.device.meta[guard] = { previous: 'u_a' };
+    serverSaying({ me: guard === 'different account' ? 'u_b' : null });
+    const previous = syncSession.opening;
+    syncSession.opening = Promise.resolve(engine);
+    t.after(() => { syncSession.opening = previous; });
+    assert.equal(await loadDeviceTree('t_a'), null);
+    assert.equal(deviceOwner(), guard === 'different account' ? 'u_b' : null);
+  });
+}
 
 
 test('failed durable cleanup leaves owner stamps and blobs for the next attempt', async (t) => {

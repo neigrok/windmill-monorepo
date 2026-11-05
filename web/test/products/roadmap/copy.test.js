@@ -506,3 +506,10 @@ test('deleteCostLine — many children read in the plural', () => {
   assert.equal(deleteCostLine(2), 'Removes this step · 2 branches resplice');
   assert.equal(deleteCostLine(7), 'Removes this step · 7 branches resplice');
 });
+
+test('Board and Graph share the shipped Recolor spelling for every action label', async () => {
+  const { RECOLOR } = await import('../../../src/products/roadmap/copy.js');
+  assert.deepEqual({ button: BULK.recolor, kind: RECOLOR.kind('Learn'), steps: RECOLOR.steps, selection: RECOLOR.selection('Learn') }, {
+    button: LABELS.recolor, kind: `${LABELS.recolor} Learn`, steps: `${LABELS.recolor} selected steps`, selection: `${LABELS.recolor} selection to Learn`,
+  });
+});

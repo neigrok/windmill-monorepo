@@ -80,6 +80,7 @@ for (const width of [320, 390, 744]) {
       await input.fill('Add a practice step');
       await page.getByRole('button', { name: 'Ask AI', exact: true }).click();
       assert.deepEqual(await page.evaluate(() => window.submitted), ['Add a practice step']);
+      assert.equal(await input.inputValue(), 'Add a practice step');
       await page.keyboard.press('Escape');
       assert.equal(await page.evaluate(() => window.dismissed), 1);
       });
@@ -90,7 +91,7 @@ for (const width of [320, 390, 744]) {
 }
 
 for (const width of [320, 390]) {
-  for (const close of ['submit', 'Escape', 'scrim']) {
+  for (const close of ['Escape', 'scrim']) {
     test(`Chromium: docked Ask AI at ${width}px follows the keyboard and closes by ${close}`, async () => {
       await ready;
       const page = await browser.newPage({ viewport: { width, height: 844 } });
@@ -117,7 +118,6 @@ for (const width of [320, 390]) {
           assert.equal(await page.evaluate(() => document.activeElement.getAttribute('aria-label')), 'Ask AI');
           await page.keyboard.press('Tab');
           assert.equal(await page.evaluate(() => document.activeElement.tagName), 'INPUT');
-          if (close === 'submit') await input.press('Enter');
           if (close === 'Escape') await input.press('Escape');
           if (close === 'scrim') {
             await page.mouse.move(4, 4);
@@ -128,7 +128,7 @@ for (const width of [320, 390]) {
           }
           await page.getByRole('dialog').waitFor({ state: 'detached' });
           assert.deepEqual(await page.evaluate(() => ({ dismissed: window.dismissed, submitted: window.submitted, focus: document.activeElement.id })), {
-            dismissed: 1, submitted: close === 'submit' ? ['Add a practice step'] : [], focus: 'opener',
+            dismissed: 1, submitted: [], focus: 'opener',
           });
         });
       } finally {
@@ -164,3 +164,21 @@ test('Chromium: the 744 overlay sits beneath the row and the empty roadmap keeps
     await page.close();
   }
 });
+
+for (const presentation of ['docked', 'overlay']) {
+  test(`Chromium: ${presentation} Ask AI keeps its sentence and waits for the owner to close after submit`, async () => {
+    await ready;
+    const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+    try {
+      await withBrowserErrors(page, async () => {
+        await page.goto(`${origin}/tend-band-test?presentation=${presentation}`);
+        const input = page.getByRole('textbox', { name: 'Tell the tree what to change' });
+        await input.fill('  Add a practice step  ');
+        await input.press('Enter');
+        assert.equal(await input.inputValue(), '  Add a practice step  ');
+        assert.deepEqual(await page.evaluate(() => ({ submitted: window.submitted, dismissed: window.dismissed })),
+          { submitted: ['Add a practice step'], dismissed: 0 });
+      });
+    } finally { await page.close(); }
+  });
+}

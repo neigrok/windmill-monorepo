@@ -11,6 +11,7 @@ export function TendBar({
   placeholder = ASK_AI_PLACEHOLDER.wide,
   examples = [],
   working,
+  failure = '',
   onSubmit,
   onDismiss,
   portalTarget,
@@ -34,8 +35,6 @@ export function TendBar({
     const prompt = value.trim();
     if (!prompt || working) return;
     onSubmit(prompt);
-    setValue('');
-    if (docked) onDismiss?.();
   };
 
   const starters = !working && !value && examples.length > 0 && (
@@ -63,6 +62,7 @@ export function TendBar({
       onKeyDown={dialogFocus}
       style={formStyles[presentation]}
     >
+      <span className="st-board-spoken" role="status" aria-live="polite" aria-atomic="true">{failure}</span>
       {starters}
       <div style={shell}>
         <span style={mark}><Icon name="sparkles" size={17} /></span>

@@ -245,3 +245,77 @@ for (const width of [390, 744, 1024, 1440]) {
     } finally { await page.close(); }
   });
 }
+
+for (const width of [744, 1440]) {
+  hostTest(`Chromium: Enter Escape G G keeps the hidden Graph dock out of Tab at ${width}px`, async () => {
+    const { page, errors } = await openHost({ width, surface: 'board' });
+    try {
+      await page.locator('.st-board-card[data-step-id="wind"]').focus();
+      await page.keyboard.press('Enter');
+      await page.locator('.st-board-step-layer [role="dialog"]').waitFor();
+      await page.keyboard.press('Escape');
+      await page.locator('.st-board-step-layer').waitFor({ state: 'detached' });
+      await page.keyboard.press('g');
+      await page.waitForFunction(() => document.querySelector('.st-roadmap-identity').dataset.view === 'tree');
+      assert.equal(await page.locator('.st-view-layer--board').evaluate((layer) => layer.inert), true);
+      await page.keyboard.press('g');
+      await page.waitForFunction(() => document.querySelector('.st-roadmap-identity').dataset.view === 'board');
+      assert.deepEqual(await page.locator('.st-detail-panel').evaluateAll((layers) => layers.map((layer) => layer.inert)), [true]);
+      assert.equal(await page.locator('.st-view-layer--board').evaluate((layer) => layer.inert), false);
+      const card = page.locator('.st-board-card').last();
+      await card.focus();
+      for (let index = 0; index < 8; index += 1) {
+        await page.keyboard.press('Tab');
+        assert.equal(await page.evaluate(() => Boolean(document.activeElement?.closest('.st-detail-panel, [inert]'))), false);
+      }
+      assert.deepEqual(errors, []);
+    } finally { await page.close(); }
+  });
+}
+
+for (const width of [390, 744, 1440]) {
+  hostTest(`Chromium: failed Ask AI retains its exact sentence and successful retry closes the bar at ${width}px`, async () => {
+    const { page, errors } = await openHost({ width });
+    try {
+      const { runFace } = await import('../../../src/products/roadmap/tending/receipts.js');
+      let failed = true;
+      await page.route('**/v1/trees/t_sail/tend', (route) => route.fulfill({
+        status: 200, contentType: 'application/json', body: JSON.stringify(failed ? { status: 'failed' } : { status: 'done', edits: 0 }),
+      }));
+      if (width === 390) {
+        await page.locator('.st-roadmap-title-button').click();
+        await page.getByRole('dialog', { name: 'Roadmap', exact: true }).getByRole('button', { name: 'Ask AI', exact: true }).click();
+      } else if (width === 744) {
+        await page.getByRole('button', { name: 'More', exact: true }).click();
+        await page.getByRole('menuitem', { name: 'Ask AI', exact: true }).click();
+      } else {
+        await page.locator('.st-roadmap-identity').getByRole('button', { name: 'Ask AI', exact: true }).click();
+      }
+      const input = page.getByRole('textbox', { name: 'Tell the tree what to change' });
+      const sentence = '  Add a practice step  ';
+      await input.fill(sentence);
+      await input.press('Enter');
+      await page.waitForFunction(() => window.events.some(({ name, props }) => name === 'roadmap_verb' && props.verb === 'askAI' && props.outcome === 'failed'));
+      await input.waitFor();
+      assert.equal(await input.inputValue(), sentence);
+      const failureLine = runFace({ status: 'failed' }).line;
+      assert.equal(await page.locator('.st-toast-row').getByText(failureLine, { exact: true }).count(), 1);
+      const announcement = page.locator('.st-tend-overlay [role="status"]');
+      assert.deepEqual(await announcement.evaluate((element) => ({
+        text: element.textContent, live: element.getAttribute('aria-live'), atomic: element.getAttribute('aria-atomic'),
+        inDialog: Boolean(element.closest('[role="dialog"]')), inert: Boolean(element.closest('[inert]')),
+      })), { text: failureLine, live: 'polite', atomic: 'true', inDialog: true, inert: false });
+      await page.waitForFunction(() => document.activeElement?.tagName === 'INPUT');
+      failed = false;
+      await input.press('Enter');
+      await page.locator('.st-tend-overlay').waitFor({ state: 'detached' });
+      assert.deepEqual(await page.evaluate(() => window.events.filter(({ name, props }) => name === 'roadmap_verb' && props.verb === 'askAI' && props.step)), [
+        { name: 'roadmap_verb', props: { verb: 'askAI', step: 'send' } },
+        { name: 'roadmap_verb', props: { verb: 'askAI', step: 'answer', outcome: 'failed' } },
+        { name: 'roadmap_verb', props: { verb: 'askAI', step: 'send' } },
+        { name: 'roadmap_verb', props: { verb: 'askAI', step: 'answer', outcome: 'receipt' } },
+      ]);
+      assert.deepEqual(errors, []);
+    } finally { await page.close(); }
+  });
+}
