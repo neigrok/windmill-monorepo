@@ -621,10 +621,11 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   The tablet Activity panel keeps the drawn 12px gap beneath the strip, so on the Board it stands at
   y=184 where [08.13](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=527-48638) draws
   y=172; on the Graph, with no strip, it stands at y=172. Reconcile the strip's padding with the frame.
-- **Graph and Board · last root.** A roadmap keeps a root on every view and band. The desktop dock drops *Delete step* for a sole root, and the
-  desktop and tablet selection bars and the phone Board's bulk bar drop Delete while the selection takes every root, with nothing saying why. No frame draws that dock or
-  those bars. On the phone bar that leaves Recolor alone at half width: a designer is drawing that state for the owner, and the build stays as it is
-  until it lands. For the other bars and the dock, draw them, or rule that not offering is enough.
+- **Graph and Board · last root.** A roadmap keeps a root on every view and band. While a selection takes every root, the phone Board's bulk bar and the desktop and
+  tablet selection bars drop Delete with nothing saying why, and the phone's Recolor sits at half width beside an empty half. Proposed, awaiting the owner: Delete keeps
+  its place, dimmed and `aria-disabled`, with *A roadmap keeps one starting step* under the count, on all three bars
+  ([25.25](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=591-19626)). The desktop dock drops *Delete step* for a sole root with nothing saying why, and no
+  frame draws that dock.
 - **Board · Activity shortcut in help.** From 744px A opens Activity on both Board and Graph. The Board shortcuts dialog does not list A.
   Proposed, awaiting the owner: an *Activity* row after *Board / Graph*, owner only (15.17), before adding it to `BOARD_SHORTCUT_GROUPS`.
   A does nothing on phones.
@@ -637,8 +638,6 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   download as feedback; Settings retains the all-roadmaps zip. G24 copies the reader's roadmap link and uses the existing *Link copied*
   toast; a refused clipboard shows nothing. Proposed, awaiting the owner: *Learn to sail exported* and *Couldn't export this roadmap* ·
   **Retry** (25.05–25.06, 15.18–15.19), and reader Share copied, failed and link shown (25.07–25.09, 15.20–15.22).
-- **Board · phone twin status.** 02.03 (375:11884 🔨, 383:18901 ✅), 03.01 (185:2149 🔨, 383:18926 ✅) and 10.05 (381:9227 🔨, 383:19007 ✅)
-  disagree between light and dark. The build owner aligns them when the frames move to 🚀.
 - **Board · device-only status.** The host carries the anonymous or lapsed line in the Shell
   from 744px and in the tappable Device note below the identity on both phone views. The phone
   Graph camera clears the measured note.

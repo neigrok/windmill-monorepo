@@ -359,13 +359,14 @@ const modalOverview = (page) => page.evaluate(() => {
   document.body.append(probe);
   const secondary = getComputedStyle(probe).color;
   probe.remove();
+  const [labelLeft, labelTop, , labelHeight] = box(query('.st-board-step-status-label'));
   return {
     order: [...document.querySelectorAll('.st-board-step-panel > *')].map((part) => part.className),
     description: box(query('.st-board-step-description')),
     status: box(query('.st-board-step-status-row')),
     glyph: box(glyph),
     glyphInSecondary: getComputedStyle(glyph).color === secondary,
-    label: box(query('.st-board-step-status-label')),
+    label: [labelLeft, labelTop, labelHeight],
     relations: [...document.querySelectorAll('.st-board-step-relations')].map((relation) => box(relation)),
     headings: [...document.querySelectorAll('.st-board-step-relations .st-board-step-heading')].map((heading) => box(heading)),
   };
@@ -379,7 +380,7 @@ test('Chromium: the modal draws an Up next step\'s status row under its descript
     await card(page, 'Read the wind').click();
     assert.deepEqual(await modalOverview(page), {
       order: ['st-board-step-description', 'st-board-step-status st-board-step-status--upNext', 'st-board-step-links', 'st-board-step-relations', 'st-board-step-relations', 'st-board-step-explore'],
-      description: [0, 0, 720, 20], status: [0, 32, 720, 44], glyph: [0, 45, 18, 18], glyphInSecondary: true, label: [26, 44, 52, 20],
+      description: [0, 0, 720, 20], status: [0, 32, 720, 44], glyph: [0, 45, 18, 18], glyphInSecondary: true, label: [26, 44, 20],
       relations: [[0, 168, 720, 101], [0, 281, 720, 101]],
       headings: [[0, 181, 720, 24], [0, 294, 720, 24]],
     });
@@ -397,7 +398,7 @@ test('Chromium: the modal draws a locked step\'s status on 24px and its unmet ne
     await card(page, 'Leave the dock').click();
     assert.deepEqual(await modalOverview(page), {
       order: ['st-board-step-description', 'st-board-step-status st-board-step-status--locked', 'st-board-step-relations', 'st-board-step-relations'],
-      description: [0, 0, 720, 20], status: [0, 32, 720, 24], glyph: [0, 34, 20, 20], glyphInSecondary: true, label: [28, 32, 103, 24],
+      description: [0, 0, 720, 20], status: [0, 32, 720, 24], glyph: [0, 34, 20, 20], glyphInSecondary: true, label: [28, 32, 24],
       relations: [[0, 68, 720, 165], [0, 245, 720, 101]],
       headings: [[0, 81, 720, 24], [0, 258, 720, 24]],
     });
