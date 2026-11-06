@@ -280,3 +280,18 @@ test('a failed activity read reports and costs only the feed, even a 200 that is
   });
   assert.deepEqual(refused, []);
 });
+
+test('loadProgress keeps every valid mark around an invalid legacy row and reports only static failure metadata', async () => {
+  await withFetch(() => ok({ marks: [
+    { node: 'a', status: 'complete', at: '5:0:server', markedAt: 5 },
+    { node: 'private-invalid-node', status: 'complete', at: '0:0:' },
+    { node: 'b', status: 'complete', at: '6:0:server', markedAt: 6 },
+  ] }), async () => {
+    const reports = [];
+    const repository = new HttpTreeRepository({ baseUrl: BASE, treeId: 't_1',
+      reportFailure: (operation, error, tags) => reports.push({ operation, error, tags }) });
+    assert.deepEqual(await repository.loadProgress(SEEDED), { completed: new Set(['a', 'b']), completedAt: { a: 5, b: 6 }, server: true });
+    assert.deepEqual(reports.map(({ operation, error, tags }) => ({ operation, message: error.message, stack: !!error.stack, tags })),
+      [{ operation: 'roadmap-sync-progress-mark', message: 'Roadmap progress mark invalid', stack: true, tags: { lane: 'progress' } }]);
+  });
+});

@@ -50,9 +50,9 @@ class DeliveryTimers {
 }
 
 // Collab's subscribe masks the payload by actor, but coverage describes the entire room.
-function serverDelta(lattice, vector) {
+function serverDelta(frame, vector) {
   const coverage = VersionVector.fromJSON(vector);
-  return frameWrites(lattice.toFrame(), (key, stamp) => !coverage.covers(parseHlc(stamp)));
+  return frameWrites(frame, (key, stamp) => !coverage.covers(parseHlc(stamp)));
 }
 
 class DeliveryServer {
@@ -76,8 +76,9 @@ class DeliveryServer {
       const { socket, frame } = this.queue.shift();
       if (socket.readyState !== 1) continue;
       if (frame.t === 'subscribe') {
+        const state = this.lattice.toFrame();
         socket.message({ t: 'subgraph', intent: 'delta', seq: this.head,
-          ...serverDelta(this.lattice, frame.vector), coverage: this.lattice.frontier().toJSON() });
+          ...serverDelta(state, frame.vector), coverage: this.lattice.frontier().toJSON() }, state);
         socket.message({ t: 'progress', intent: 'graft', ...this.progress.toFrame() });
         continue;
       }
@@ -139,10 +140,10 @@ class DeliveryServer {
       socket.message({ t: 'progressAck', frameId: frame.frameId });
     }
   }
-  peer(socket, node) {
+  peer(socket, node, field = 'description') {
     const stamp = `${++this.timers.now}:0:r_peer`;
     const frame = { t: 'subgraph', intent: 'live', frameId: `peer-${this.head + 1}`, actor: 'r_peer',
-      nodes: [{ id: node, description: `Peer ${this.head}`, descriptionAt: stamp }], edges: [], kinds: [] };
+      nodes: [{ id: node, [field]: `Peer ${this.head}`, [`${field}At`]: stamp }], edges: [], kinds: [] };
     this.lattice.join(frame);
     this.head += 1;
     if (socket?.readyState === 1) socket.message({ ...frame, seq: this.head });
@@ -160,9 +161,10 @@ async function deliveryHarness(t, seed) {
   let drained = 0;
   let step = -1;
   const label = () => `seed ${seed}, step ${step}`;
+  const copyRecord = (value) => JSON.parse(JSON.stringify(value));
   const store = {
-    load: async () => structuredClone(record),
-    save: async (treeId, value) => { record = structuredClone(value); },
+    load: async () => copyRecord(record),
+    save: async (treeId, value) => { record = copyRecord(value); },
     requestPersistent: async () => true,
     replaceLane: async (treeId, lane, epoch, discarded) => {
       assert.equal(record.epochs[lane], epoch, label());
@@ -175,7 +177,7 @@ async function deliveryHarness(t, seed) {
       record.epochs[lane] += 1;
       record.gestures[lane] = pendingGestures(record[field], record.confirmed[lane]);
       if (lane === 'structure') record.lastSeq = 0;
-      return { status: 'replaced', value: structuredClone(record) };
+      return { status: 'replaced', value: copyRecord(record) };
     },
   };
   class DeliverySocket extends EventTarget {
@@ -184,10 +186,20 @@ async function deliveryHarness(t, seed) {
       super();
       this.readyState = 0;
       this.frames = new Map();
+      this.frameStamps = new Map();
+      this.confirmedOnGraft = {};
     }
     send(text) {
       const frame = JSON.parse(text);
-      if (frame.frameId) this.frames.set(frame.frameId, frame);
+      if (frame.frameId) {
+        this.frames.set(frame.frameId, frame);
+        this.frameStamps.set(frame.frameId, writeStamps(frame));
+      }
+      if (frame.t === 'subgraph' && frame.intent === 'flush') {
+        for (const [key, stamp] of Object.entries(this.frameStamps.get(frame.frameId))) {
+          assert.notEqual(this.confirmedOnGraft[key], stamp, `${label()}: resends a mutually confirmed register ${key}`);
+        }
+      }
       if (frame.t === 'subgraph' || frame.t === 'progress') {
         const lane = frame.t === 'subgraph' ? 'structure' : 'progress';
         assert.equal(session.rebaselining?.has(lane) ?? false, false, label());
@@ -201,7 +213,12 @@ async function deliveryHarness(t, seed) {
       this.readyState = 1;
       this.dispatchEvent(new Event('open'));
     }
-    message(frame) {
+    message(frame, serverState) {
+      if (frame.t === 'subgraph' && frame.intent === 'delta') {
+        const confirmed = writeStamps(session.confirmedStructure.toFrame());
+        const remote = writeStamps(serverState);
+        this.confirmedOnGraft = Object.fromEntries(Object.entries(confirmed).filter(([key, stamp]) => remote[key] === stamp));
+      }
       this.dispatchEvent(new MessageEvent('message', { data: JSON.stringify(frame) }));
     }
     close() {
@@ -242,14 +259,15 @@ async function deliveryHarness(t, seed) {
   });
   const accounted = () => {
     for (const lane of ['structure', 'progress']) {
+      if (session.refusals.has(lane) || session.resendTimers?.[lane] != null
+        || session.skewTimers?.[lane] != null || session.phase !== 'live') continue;
       const local = lane === 'structure' ? session.lattice : session.progress;
       const confirmed = lane === 'structure' ? session.confirmedStructure : session.confirmedProgress;
       const inFlight = lane === 'structure' ? session.inFlight : session.progressInFlight;
-      const carried = [...inFlight.keys()].map((id) => writeStamps(session.ws.frames.get(id)));
+      const carried = [...inFlight.keys()].map((id) => session.ws.frameStamps.get(id));
       const pending = unconfirmedStamps(writeStamps(local.toFrame()), writeStamps(confirmed.toFrame()));
       for (const [key, stamp] of Object.entries(pending)) {
-        assert.ok(carried.some((frame) => frame[key] === stamp) || session.refusals.has(lane)
-          || session.resendTimers?.[lane] != null || session.skewTimers?.[lane] != null || session.phase !== 'live',
+        assert.ok(carried.some((frame) => frame[key] === stamp),
         `${label()}: unaccounted ${lane} ${key}`);
       }
     }
@@ -266,7 +284,9 @@ async function deliveryHarness(t, seed) {
       server.deliver();
       advance(400000);
       accounted();
-      if (!session.pendingStructureCount() && !session.pendingProgressCount()) break;
+      const structureSettled = !session.pendingStructureCount() || session.refusals.has('structure');
+      const progressSettled = !session.pendingProgressCount() || session.refusals.has('progress');
+      if (structureSettled && progressSettled && !session.inFlight.size && !session.progressInFlight.size) break;
     }
   };
   const assertDelivery = (strict = false) => {
@@ -305,7 +325,7 @@ async function deliveryHarness(t, seed) {
 
 // Permanent seeds exercise failures observed against the original actor-frontier delivery rule.
 const PERMANENT_SEEDS = [7, 19];
-const seedCount = Number(process.env.DELIVERY_SEEDS ?? 16);
+const seedCount = Number(process.env.DELIVERY_SEEDS ?? 64);
 assert.ok(Number.isSafeInteger(seedCount) && seedCount > 0, 'DELIVERY_SEEDS must be a positive integer');
 
 for (const seed of [...new Set([...PERMANENT_SEEDS, ...Array.from({ length: seedCount }, (_, index) => index + 1)])]) {
@@ -320,7 +340,7 @@ for (const seed of [...new Set([...PERMANENT_SEEDS, ...Array.from({ length: seed
       const session = harness.session;
       const nodes = session.lattice.toTreeData().nodes.map(({ id }) => id);
       const node = nodes[Math.floor(random() * nodes.length)] ?? 'root';
-      const action = Math.floor(random() * 12);
+      const action = Math.floor(random() * 13);
       actions.add(action);
       if (action === 0) session.dispatch({ kind: 'RenameNode', id: node, label: `Name ${step}` });
       if (action === 1) session.dispatch({ kind: 'DescribeNode', id: node, description: `Description ${step}` });
@@ -344,6 +364,10 @@ for (const seed of [...new Set([...PERMANENT_SEEDS, ...Array.from({ length: seed
       if (action === 9) session.ws.close();
       if (action === 10) await harness.reload();
       if (action === 11) harness.advance(400000);
+      if (action === 12) {
+        session.ws.close();
+        server.peer(session.ws, node, 'label');
+      }
       server.deliver();
       harness.accounted();
     }
@@ -359,6 +383,32 @@ for (const seed of [...new Set([...PERMANENT_SEEDS, ...Array.from({ length: seed
     assert.ok(server.verdicts.has('accept'), label());
   });
 }
+
+test('disconnected peer supersedes the last old actor register without resending a confirmed room', async (t) => {
+  const harness = await deliveryHarness(t, 902);
+  const { server, session } = harness;
+  server.acceptAll = true;
+  const nodes = Array.from({ length: 299 }, (_, index) => ({
+    id: `node-${index}`, createdAt: '5:0:server', label: `Node ${index}`, labelAt: '5:0:server',
+  }));
+  server.lattice.join({ nodes: [...nodes, { id: 'old', createdAt: '5:0:server', label: 'Old', labelAt: '7:0:r_old' }], edges: [], kinds: [] });
+  server.head += 1;
+  session.ws.close();
+  session.connect();
+  session.ws.open();
+  server.deliver();
+  assert.equal(session.lattice.toTreeData().nodes.length, 301);
+  assert.equal(session.pendingStructureCount(), 0);
+  session.ws.close();
+  server.peer(session.ws, 'old', 'label');
+  assert.equal(server.lattice.frontier().toJSON().r_old, undefined);
+  session.connect();
+  session.ws.open();
+  server.deliver();
+  assert.deepEqual([...session.ws.frames.values()].filter((frame) => frame.t === 'subgraph'), []);
+  assert.equal(session.pendingStructureCount(), 0);
+  harness.assertDelivery(true);
+});
 
 for (const lane of ['structure', 'progress']) {
   test(`server restore reopens confirmed multi-record ${lane} writes after reload`, async (t) => {

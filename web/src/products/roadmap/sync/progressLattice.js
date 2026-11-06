@@ -15,6 +15,13 @@ function newMark() {
   return { status: 'none', at: { ...UNSET }, markedAt: null };
 }
 
+export function progressStamp(text) {
+  if (typeof text !== 'string' || !/^(0|[1-9]\d*):(0|[1-9]\d*):[\x20-\x7e]{1,64}$/.test(text)) return null;
+  const at = parseHlc(text);
+  if (!Number.isSafeInteger(at.ms) || at.counter >= 2 ** 32) return null;
+  return at;
+}
+
 export class ProgressLattice {
   constructor() {
     this.marks = new Map(); // nodeId -> { status, at, markedAt }
@@ -26,21 +33,27 @@ export class ProgressLattice {
     return record;
   }
 
-  // Folds a frame of stamped registers in and returns the frontier of the stamps it carried.
-  // Validates before mutating, so a malformed frame leaves the replica untouched.
-  join(frame) {
+  // Invalid rows are reported and skipped; every valid row in the frame still joins.
+  join(frame, onInvalidMark = () => {}) {
     const rows = frame?.marks ?? [];
+    if (!Array.isArray(rows)) {
+      onInvalidMark();
+      return new VersionVector();
+    }
+    const valid = [];
     for (const row of rows) {
-      if (typeof row?.node !== 'string' || !row.node) throw new Error('malformed progress mark');
-      if (row.status !== 'active' && row.status !== 'inProgress' && !STATUSES.has(row.status)) throw new Error(`unknown progress status "${row.status}"`);
-      if (typeof row.at !== 'string' || !/^(0|[1-9]\d*):(0|[1-9]\d*):[\x20-\x7e]{1,64}$/.test(row.at)) throw new Error('malformed progress stamp');
-      const at = parseHlc(row.at);
-      if (!Number.isSafeInteger(at.ms) || at.counter >= 2 ** 32) throw new Error('malformed progress stamp');
+      const identity = typeof row?.node === 'string' && row.node.length > 0;
+      const status = row?.status === 'active' || row?.status === 'inProgress' || STATUSES.has(row?.status);
+      const at = progressStamp(row?.at);
+      if (!identity || !status || !at) {
+        onInvalidMark();
+        continue;
+      }
+      valid.push({ row, at });
     }
 
     const frontier = new VersionVector();
-    for (const row of rows) {
-      const at = parseHlc(row.at);
+    for (const { row, at } of valid) {
       frontier.observe(at);
       const record = this.markRecord(row.node);
       const order = compareHlc(at, record.at);

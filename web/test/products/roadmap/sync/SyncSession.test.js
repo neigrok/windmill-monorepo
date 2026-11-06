@@ -1,5 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { TreeLattice, VersionVector, parseHlc } from '../../../../src/products/roadmap/sync/lattice.js';
+import { frameWrites } from '../../../../src/products/roadmap/sync/pendingWrites.js';
 import { SyncSession } from '../../../../src/products/roadmap/sync/SyncSession.js';
 
 function sessionWith({ notify = () => {}, registry = null, save = () => Promise.resolve(), reportFailure = () => {}, Session = SyncSession } = {}) {
@@ -854,9 +856,12 @@ test('a socket frame that is not JSON and one that does not parse as a lane repo
   session.receiveState({ t: 'subgraph', intent: 'delta', seq: 2, nodes: [{ id: null }], edges: [], kinds: [] });
   session.connect();
   session.ws.open();
+  session.receiveState({ ...session.lattice.toFrame(), seq: 2 });
+  const socket = session.ws;
   session.receiveProgressGraft({ marks: [{ node: null }] });
-  assert.deepEqual(reports, ['roadmap-sync-frame']);
-  assert.equal(session.phase, 'offline');
+  assert.deepEqual(reports, ['roadmap-sync-frame', 'roadmap-sync-progress-mark']);
+  assert.equal(session.ws, socket);
+  assert.equal(session.phase, 'live');
 });
 
 test('a socket unanswered past its bound, online and in view, reports once; offline and hidden do not', (t) => {
@@ -921,7 +926,7 @@ test('a mark the store refuses reports its save, and the mark still goes to the 
   assert.equal(session.durabilityAtRisk, true);
 });
 
-test('a stored lane that cannot be read reports once, stays out of the room and leaves the rest to the graft', async (t) => {
+test('unreadable stored structure stays out while invalid progress containers report and skip', async (t) => {
   const priorWindow = globalThis.window;
   const priorDocument = globalThis.document;
   const priorSocket = globalThis.WebSocket;
@@ -938,9 +943,9 @@ test('a stored lane that cannot be read reports once, stays out of the room and 
   t.after(() => session.close());
   session.onTreeChanged((tree) => trees.push(tree));
   await session.start();
-  assert.deepEqual(reports, ['roadmap-sync-restore']);
+  assert.deepEqual(reports, ['roadmap-sync-restore', 'roadmap-sync-progress-mark', 'roadmap-sync-progress-mark']);
   assert.deepEqual(trees, []);
-  assert.deepEqual({ ready: session.ready, lastSeq: session.lastSeq, title: session.lattice.title, known: session.confirmedKnown }, { ready: false, lastSeq: 0, title: 'Sail', known: { structure: false, progress: false } });
+  assert.deepEqual({ ready: session.ready, lastSeq: session.lastSeq, title: session.lattice.title, known: session.confirmedKnown }, { ready: false, lastSeq: 0, title: 'Sail', known: { structure: false, progress: true } });
   session.ws.open();
   session.receiveState({ t: 'subgraph', intent: 'delta', seq: 1, nodes: [{ id: 'root', createdAt: '1:0:server', label: 'Root', labelAt: '1:0:server' }], edges: [], kinds: [] });
   assert.equal(trees.at(-1).nodes[0].label, 'Root');
@@ -1298,13 +1303,18 @@ test('S6 progress resend excludes confirmed marks and never sends receipt instan
 });
 
 test('S7 an own echo cannot confirm before the ack and reconnect resends it', (t) => {
-  const { session } = connectedSession(t);
+  const timers = manualTimers();
+  const { session } = connectedSession(t, {}, { timers });
   const baseline = session.confirmedStructure.toFrame();
   session.dispatch({ kind: 'RenameNode', id: 'root', label: 'Echoed' });
   const first = structureFrames(session.ws)[0];
   session.receiveLive({ ...first, seq: 2 });
   assert.equal(session.statusSnapshot().structurePending, 1);
-  const socket = reconnectWith(session, baseline, { server: '1:0:server' });
+  reconnectWith(session, baseline, { server: '1:0:server' });
+  timers.run(session.reconnectTimer);
+  session.ws.open();
+  session.receiveState({ ...baseline, seq: 1, coverage: { server: '1:0:server' } });
+  const socket = session.ws;
   assert.deepEqual(structureFrames(socket).map(withoutFrameId), [flushFrame(writesOf(first), session.actor)]);
   session.receiveAck({ frameId: structureFrames(socket)[0].frameId });
   assert.equal(session.pendingStructureCount(), 0);
@@ -1443,19 +1453,6 @@ for (const lane of ['structure', 'progress']) {
     assert.deepEqual([restored.pendingStructureCount(), restored.pendingProgressCount()], [0, 0]);
   });
 }
-
-test('a regressed peer frontier rebuilds structure confirmation even when the graft payload is partial', (t) => {
-  const { session } = connectedSession(t);
-  const baseline = session.confirmedStructure.toFrame();
-  const peer = { nodes: [{ id: 'root', description: 'Peer write', descriptionAt: '9:0:peer' }], edges: [], kinds: [] };
-  session.receiveLive({ ...peer, seq: 2 });
-  assert.equal(session.pendingStructureCount(), 0);
-  const socket = reconnectWith(session, { nodes: [], edges: [], kinds: [] }, { server: '1:0:server', peer: '5:0:peer' });
-  assert.deepEqual(structureFrames(socket).map(withoutFrameId), [flushFrame({
-    ...baseline, nodes: [{ ...baseline.nodes[0], ...peer.nodes[0] }],
-  }, session.actor)]);
-  assert.deepEqual(session.confirmedStructure.toFrame(), { nodes: [], edges: [], kinds: [] });
-});
 
 test('a non-regressing partial graft preserves confirmed registers omitted from its delta', (t) => {
   const { session } = connectedSession(t);
@@ -1678,4 +1675,135 @@ test('an unexpected structure send failure leaves the write pending until reconn
   assert.deepEqual(structureFrames(session.ws).map(withoutFrameId), [flushFrame({
     nodes: [{ id: 'root', label: 'Retained after failure', labelAt }], edges: [], kinds: [],
   }, session.actor)]);
+});
+
+for (const role of ['owner', 'reader']) {
+  test(`a disconnected peer overwrite removing an old actor causes no resend of the 301-node room (${role})`, (t) => {
+    const { session } = connectedSession(t);
+    const server = new TreeLattice('tree');
+    server.join({ nodes: [
+      { id: 'root', createdAt: '5:0:server', label: 'Old tab', labelAt: '7:0:r_old' },
+      ...Array.from({ length: 300 }, (_, index) => ({ id: `n${index}`, createdAt: '5:0:server', label: `Node ${index}`, labelAt: '5:0:server' })),
+    ], edges: [], kinds: [] });
+    session.receiveState({ ...server.toFrame(), seq: 2, coverage: server.frontier().toJSON() });
+    assert.equal(session.pendingStructureCount(), 0);
+    session.ws.close();
+    server.join({ nodes: [{ id: 'root', label: 'Peer overwrite', labelAt: '9:0:server' }] });
+    session.connect();
+    session.ws.open();
+    assert.deepEqual(session.ws.frames[0], { t: 'subscribe', treeId: 'tree', lastSeq: 2,
+      vector: { server: '5:0:server', r_old: '7:0:r_old' } });
+    const vector = VersionVector.fromJSON(session.ws.frames[0].vector);
+    const delta = frameWrites(server.toFrame(), (key, at) => !vector.covers(parseHlc(at)));
+    assert.deepEqual(delta, { nodes: [{ id: 'root', labelAt: '9:0:server', label: 'Peer overwrite' }], edges: [], kinds: [] });
+    const forbidden = [];
+    window.addEventListener('wm-edit-forbidden', (event) => forbidden.push(event.detail));
+    session.ws.message({ t: 'subgraph', intent: 'delta', ...delta, seq: 3, coverage: server.frontier().toJSON() });
+    for (const frame of structureFrames(session.ws)) {
+      if (role === 'reader') session.receiveReject({ frameId: frame.frameId, code: 'not-yours' });
+      else session.receiveAck({ frameId: frame.frameId });
+    }
+    assert.deepEqual(structureFrames(session.ws), []);
+    assert.deepEqual(forbidden, []);
+    assert.deepEqual(session.lattice.toFrame(), server.toFrame());
+    assert.deepEqual(session.confirmedStructure.toFrame(), server.toFrame());
+    assert.equal(session.pendingStructureCount(), 0);
+  });
+}
+
+test('a full graft replaces confirmation even when a surviving register keeps every actor frontier unchanged', async (t) => {
+  connectedSession(t);
+  const priorDocument = globalThis.document;
+  globalThis.document = new EventTarget();
+  t.after(() => { globalThis.document = priorDocument; });
+  const local = { nodes: [{ id: 'root', createdAt: '1:0:server', label: 'Lost in backup', labelAt: '5:0:r_old',
+    description: 'Still stored', descriptionAt: '10:0:r_old' }], edges: [], kinds: [] };
+  const graft = { ...local, nodes: [{ ...local.nodes[0], label: 'Root', labelAt: '1:0:server' }] };
+  const session = new SyncSession({ treeId: 'tree', registry: null, store: {
+    load: async () => ({ frame: local, progress: { marks: [] }, lastSeq: 20, epochs: { structure: 0, progress: 0 },
+      confirmed: { structure: local, progress: { marks: [] } } }),
+    save: async () => {}, requestPersistent: async () => true,
+  } });
+  t.after(() => session.close());
+  await session.start();
+  session.ws.open();
+  assert.deepEqual(session.ws.frames[0], { t: 'subscribe', treeId: 'tree', lastSeq: 20, vector: {} });
+  session.ws.message({ t: 'subgraph', intent: 'delta', ...graft, seq: 20,
+    coverage: { server: '1:0:server', r_old: '10:0:r_old' } });
+  assert.deepEqual(structureFrames(session.ws).map(withoutFrameId), [flushFrame({ nodes: [
+    { id: 'root', label: 'Lost in backup', labelAt: '5:0:r_old' },
+  ], edges: [], kinds: [] }, session.actor)]);
+  assert.deepEqual(session.confirmedStructure.toFrame(), graft);
+  assert.equal(session.statusSnapshot().structureGestures, 1);
+});
+
+test('a regressed room sequence requests a full graft before resending restored writes', (t) => {
+  const timers = manualTimers();
+  const { session } = connectedSession(t, {}, { timers });
+  const baseline = session.confirmedStructure.toFrame();
+  session.dispatch({ kind: 'RenameNode', id: 'root', label: 'After backup' });
+  const local = structureFrames(session.ws)[0];
+  session.receiveAck({ frameId: local.frameId });
+  session.receiveLive({ nodes: [{ id: 'root', description: 'Peer after backup', descriptionAt: '8:0:peer' }], seq: 2 });
+  const confirmed = session.confirmedStructure.toFrame();
+  const coverage = session.confirmedStructure.frontier().toJSON();
+  const socket = reconnectWith(session, { nodes: [], edges: [], kinds: [] }, coverage);
+  assert.equal(session.lastSeq, 2);
+  assert.deepEqual(structureFrames(socket), []);
+  assert.deepEqual(session.confirmedStructure.toFrame(), confirmed);
+  assert.ok(timers.pending.has(session.reconnectTimer));
+  timers.run(session.reconnectTimer);
+  session.ws.open();
+  assert.deepEqual(session.ws.frames[0], { t: 'subscribe', treeId: 'tree', lastSeq: 2, vector: {} });
+  session.ws.message({ t: 'subgraph', intent: 'delta', ...baseline, seq: 1, coverage: { server: '1:0:server' } });
+  assert.equal(session.lastSeq, 1);
+  assert.deepEqual(session.confirmedStructure.toFrame(), baseline);
+  const labelAt = local.nodes[0].labelAt;
+  assert.deepEqual(structureFrames(session.ws).map(withoutFrameId), [flushFrame({ nodes: [{ id: 'root',
+    label: 'After backup', labelAt, description: 'Peer after backup', descriptionAt: '8:0:peer',
+  }], edges: [], kinds: [] }, session.actor)]);
+});
+
+test('an equal room sequence and disappearing actor in coverage do not trigger a full resubscribe', (t) => {
+  const timers = manualTimers();
+  const { session } = connectedSession(t, {}, { timers });
+  session.receiveLive({ nodes: [{ id: 'root', label: 'Old actor', labelAt: '7:0:old' }], seq: 2 });
+  session.ws.close();
+  session.connect();
+  session.ws.open();
+  const socket = session.ws;
+  socket.message({ t: 'subgraph', intent: 'delta', nodes: [{ id: 'root', label: 'Replacement', labelAt: '9:0:peer' }],
+    edges: [], kinds: [], seq: 2, coverage: { server: '1:0:server', peer: '9:0:peer' } });
+  assert.equal(session.ws, socket);
+  assert.equal(session.phase, 'live');
+  assert.deepEqual(structureFrames(socket), []);
+  assert.deepEqual(socket.frames.filter(({ t }) => t === 'subscribe'), [
+    { t: 'subscribe', treeId: 'tree', lastSeq: 2, vector: { server: '1:0:server' } },
+  ]);
+});
+
+test('invalid progress rows in repeated grafts and echoes are reported without flapping the socket or losing valid marks', (t) => {
+  const reports = [];
+  const { session } = connectedSession(t, {}, { reportFailure: (operation, error, tags) => reports.push({ operation, error, tags }) });
+  const socket = session.ws;
+  const valid = [
+    { node: 'a', status: 'complete', at: '5:0:server', markedAt: 5 },
+    { node: 'b', status: 'none', at: '6:0:server', markedAt: 6 },
+  ];
+  const invalid = { node: 'private-node', status: 'complete', at: '0:0:' };
+  for (let replay = 0; replay < 2; replay += 1) {
+    socket.message({ t: 'progress', intent: 'graft', marks: [valid[0], invalid, valid[1]] });
+    assert.equal(session.ws, socket);
+    assert.equal(session.phase, 'live');
+    assert.deepEqual(session.progress.toFrame(), { marks: valid });
+    assert.deepEqual(session.confirmedProgress.toFrame(), { marks: valid });
+  }
+  const later = { node: 'c', status: 'complete', at: '7:0:server', markedAt: 7 };
+  socket.message({ t: 'progress', marks: [invalid, later] });
+  assert.equal(session.ws, socket);
+  assert.equal(session.phase, 'live');
+  assert.deepEqual(session.progress.toFrame(), { marks: [...valid, later] });
+  assert.deepEqual(progressFrames(socket), []);
+  assert.deepEqual(reports.map(({ operation, error, tags }) => ({ operation, message: error.message, stack: !!error.stack, tags })),
+    Array.from({ length: 3 }, () => ({ operation: 'roadmap-sync-progress-mark', message: 'Roadmap progress mark invalid', stack: true, tags: { lane: 'progress' } })));
 });

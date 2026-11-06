@@ -86,11 +86,15 @@ Flushes split above 256 KiB into independent subgraphs, with title on the first 
 The confirmed structure baseline joins grafts, other replicas' live frames and the exact writes retained
 for an acknowledged frame. Own structure echoes join the lattice without confirming: the server broadcasts them
 before persistence and acknowledges only after persistence. Both confirmed baselines persist with
-the lanes in IndexedDB; the first subscription of a new session requests full state. If any actor
-in the confirmed structure frontier is ahead of the server's graft coverage, the graft replaces
-that confirmed baseline. A backup restore therefore exposes the server's lost registers as pending
-and sends them again. Non-regressing partial grafts join the existing confirmed baseline. Authored
-frame IDs remain known across reconnects, so delayed own echoes still await acknowledgement.
+the lanes in IndexedDB. The first subscription of every session uses an empty vector, and its full
+graft replaces the confirmed structure baseline. Mid-session partial grafts join that baseline.
+Actor frontiers can shrink when other actors supersede their registers, so they do not indicate a
+restore. A graft whose room sequence is below the client's last sequence instead triggers an
+empty-vector resubscribe; its full graft then reopens lost server writes for delivery. A restored
+room whose sequence has already caught up is rechecked by the next session's full graft.
+Unanswered authored frame IDs remain known across reconnects, so delayed own echoes still await
+acknowledgement. Acknowledged, rejected and skewed frame IDs are released; unanswered IDs remain
+until the session closes or its structure epoch changes.
 
 A connection's write frames are handled in arrival order, with a reply in that order or no reply.
 An ack, reject or skew naming a frame settles every earlier unanswered frame in that lane without
@@ -120,7 +124,7 @@ synchronously inside `get.onsuccess`, before IndexedDB can auto-commit.
 
 `SyncSession` snapshots both lanes synchronously and queues a save before sending. It requests
 persistent storage and exposes durability risk when persistence is unavailable. Corrupt stored
-state can reset a lane on load.
+structure can reset that lane on load; invalid progress rows leave the valid marks intact.
 
 Current limits:
 
@@ -144,13 +148,17 @@ excluding identical stamps already in flight. Outbound marks carry only `{node, 
 `markedAt` stays in the stored replica and server receipts. A subscribe reply with `intent: graft`
 replaces the entire confirmed progress baseline, so a server restore exposes lost marks as pending.
 An acknowledgement confirms its exact sent marks. Progress echoes include the sending connection
-and follow persistence, so own progress echoes also confirm. Unset or malformed progress stamps
-are rejected before joining a frame; they cannot strand valid marks in an outbound batch. Both
-lanes are stored together in IndexedDB.
+and follow persistence, so own progress echoes also confirm. Invalid progress rows are skipped
+individually in server frames, stored records and legacy drains; valid rows still join and unset
+stamps stay off the wire. Each skip invokes the static `roadmap-sync-progress-mark` report with
+only the progress lane tag. Shared Sentry deduplication and rate limits bound repeated reports.
+Both lanes are stored together in IndexedDB.
 
 The HLC orders marks; `markedAt` is the server receipt time displayed to readers. A device clock
 can be arbitrarily old, so its HLC physical time is not a reliable date of completion. Postgres
 progress upserts compare only numeric `(stamp_ms, stamp_counter)`; exact ties keep the stored row.
+The browser also compares actors, so a conflicting actor tie can reopen the local mark on each
+complete graft and produce one redundant resend per reconnect. Aligning this tie rule remains open.
 
 ## Implementation map
 

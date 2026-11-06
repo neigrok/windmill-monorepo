@@ -545,15 +545,17 @@ failures still throw. A progress mark's save reports the same way. The receive p
 separate confirmed baseline. Socket send failures preserve pending writes and reconnect for a fresh graft.
 A server frame whose notification fails reports `roadmap-sync-notify`; one that cannot be parsed or joined reports
 `roadmap-sync-frame` once per session; a stored lane that cannot be read reports `roadmap-sync-restore` once, and the graft
-fills it. A socket with no inbound frame for ten seconds, online and in view, reports `roadmap-sync-socket` once; any frame
+fills it. Invalid progress rows are skipped individually and report `roadmap-sync-progress-mark` with only the
+progress lane tag; valid marks in the same server frame, stored record or legacy drain still join. A socket with no inbound frame for ten seconds, online and in view, reports `roadmap-sync-socket` once; any frame
 clears the count, including a refusal, so a signed-out device tree stays quiet.
 
 **Status.** `SyncSession.subscribeStatus` delivers immutable snapshots of both lanes' unconfirmed user writes,
 pending gestures, unconfirmed in-flight frames, socket phase, browser connectivity and the current refusal.
 `sync/pendingWrites.js` owns unconfirmed-register comparisons and pending-gesture accounting for the session,
 stored lanes and device-tree renames. Status and transport share the per-register outbox rule against confirmed baselines, independently of
-the subscription's actor coverage; transport excludes identical stamps already in flight. A regressed server frontier
-replaces the confirmed structure baseline, and every complete progress graft replaces its confirmed overlay.
+the subscription's actor coverage; transport excludes identical stamps already in flight. A full structure graft
+replaces its confirmed baseline; a lower room sequence triggers an empty-vector resubscribe for that full state.
+Partial grafts join structure confirmation, and every complete progress graft replaces its confirmed overlay.
 Lost server writes then become pending and replay; write replies and heartbeat pongs settle unanswered frames.
 Each local gesture contributes one HLC stamp and its written register references. Pending gestures persist with each lane, survive retries and reload, and clear on confirmation of
 their fields or discard. A partial acknowledgement or a newer unrelated write cannot confirm the rest of a

@@ -275,6 +275,7 @@ function. A report's `route` is a family (`#/app`, `#/settings`), never an addre
 | `roadmap-sync-notify` | Notifying after a local write, a server frame, an epoch change or a discard projection | The write's receipt stays |
 | `roadmap-sync-persist` | Storing a local write or mark on a database that opened | The receipt stays; durability is at risk |
 | `roadmap-sync-send` | Sending a local write or heartbeat, or checking its IndexedDB epoch on a database that opened | Writes stay pending; socket failures reconnect, and failed epoch checks stand the refused card |
+| `roadmap-sync-progress-mark` | Each invalid progress row skipped while reading server frames, stored records or legacy residue, with only `lane: progress`; shared Sentry deduplication and rate limits apply | Valid marks remain available and sync; invalid rows stay off the wire |
 | `roadmap-sync-restore` | A stored lane or record that cannot be read, once per session | That lane stays out until the server's graft fills it |
 | `roadmap-sync-socket` | A socket with no inbound frame for ten seconds while online and in view, once per session | The Shell's sync status; reconnects keep trying |
 | `roadmap-sync-dropped` | A write reply or heartbeat pong proves an earlier frame unanswered, once per session, tagged with the first affected `lane: structure/progress` | The write stays pending and is sent again |

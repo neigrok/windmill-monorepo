@@ -6,7 +6,7 @@ import { ProgressLattice } from '../sync/progressLattice.js';
 import { SyncStore } from '../sync/SyncStore.js';
 import { TreeLattice } from '../sync/lattice.js';
 import { serializePlan } from '../paste/planGrammar.js';
-import { reportRoadmapFailure } from '../reportFailure.js';
+import { reportInvalidProgressMark, reportRoadmapFailure } from '../reportFailure.js';
 
 const CRC_TABLE = (() => {
   const table = new Uint32Array(256);
@@ -49,8 +49,8 @@ async function loadForExport(tree) {
   }
 }
 
-export function reportExportFailure(operation, error) {
-  reportRoadmapFailure(operation, error, undefined, '#/settings');
+export function reportExportFailure(operation, error, tags) {
+  reportRoadmapFailure(operation, error, tags, '#/settings');
 }
 
 export function buildRoadmapExport(treeData, progress) {
@@ -74,12 +74,12 @@ export function downloadExport({ name, text, bytes, type = 'text/markdown;charse
   }
 }
 
-// Its reads report as the export's; a roadmap whose marks can't be read stays out of the zip rather than go in with the wrong ones.
+// Failed progress requests keep the tree out of the export; invalid rows report and leave its valid marks intact.
 async function loadServerTree(treeId) {
   const repository = new HttpTreeRepository({
     treeId,
     operation: 'roadmap-export-load',
-    reportFailure: (operation) => reportExportFailure(operation),
+    reportFailure: reportExportFailure,
   });
   const treeData = await repository.loadTree().catch(() => null);
   if (!treeData) return null;
@@ -95,7 +95,7 @@ async function loadDeviceTree(treeId) {
   lattice.join(saved.frame);
   const treeData = lattice.toTreeData();
   const progress = new ProgressLattice();
-  if (saved.progress) progress.join(saved.progress);
+  if (saved.progress) progress.join(saved.progress, () => reportInvalidProgressMark(reportExportFailure));
   return { treeData, progress: progressFrom(treeData, progress.marks.size ? progress.overlay() : null) };
 }
 

@@ -132,15 +132,19 @@ test('the stored blob carries the receipt instants back, unlike the wire delta',
   assert.deepEqual(reloaded.overlay().completedAt, { a: 2000 });
 });
 
-test('a malformed frame leaves the replica untouched, so the caller can treat it as a gap', () => {
+test('malformed progress rows leave valid rows before and after them intact', () => {
   const lattice = new ProgressLattice();
-  lattice.join(frame(row('a', 'complete', '900:0:r_a', 2000)));
-  const before = lattice.toFrame();
-
-  assert.throws(() => lattice.join(frame(row('b', 'complete', '950:0:r_a', 1), { node: 'c', status: 'finished', at: '960:0:r_a' })), /unknown progress status/);
-  assert.throws(() => lattice.join(frame({ status: 'complete', at: '970:0:r_a' })), /malformed progress mark/);
-
-  assert.deepEqual(lattice.toFrame(), before);
+  const skipped = [];
+  const marks = [
+    row('a', 'complete', '900:0:r_a', 2000),
+    { node: 'invalid-status', status: 'finished', at: '960:0:r_a' },
+    row('b', 'none', '950:0:r_a', 2001),
+    { status: 'complete', at: '970:0:r_a' },
+    row('c', 'complete', '980:0:r_a', 2002),
+  ];
+  assert.doesNotThrow(() => lattice.join({ marks }, (...args) => skipped.push(args)));
+  assert.deepEqual(lattice.toFrame(), { marks: [marks[0], marks[2], marks[4]] });
+  assert.deepEqual(skipped, [[], []]);
 });
 
 test('the clock is seeded past every stamp held, so the next mark dominates them', () => {
@@ -259,15 +263,21 @@ test('an Undo of Reset is a fresh mark: the step completes at the Undo’s time 
 for (const at of [undefined, null, '', 'not-a-stamp', '0:0:', 'NaN:0:r_a', '1:NaN:r_a', 42,
   '01:0:r_a', '1:00:r_a', '-1:0:r_a', '1:-1:r_a', '1.5:0:r_a', '1:1.5:r_a',
   '9007199254740992:0:r_a', '1:4294967296:r_a', '1:0:', `1:0:${'a'.repeat(65)}`, '1:0:with\nline', '1:0:☀']) {
-  test(`an invalid progress stamp ${JSON.stringify(at)} rejects the entire frame before any mutation`, () => {
+  test(`an invalid progress stamp ${JSON.stringify(at)} is skipped while valid marks still join`, () => {
     const lattice = new ProgressLattice();
     lattice.join({ marks: [{ node: 'held', status: 'complete', at: '5:0:r_a', markedAt: 5 }] });
-    const before = lattice.toFrame();
-    assert.throws(() => lattice.join({ marks: [
+    const skipped = [];
+    assert.doesNotThrow(() => lattice.join({ marks: [
       { node: 'valid-first', status: 'complete', at: '6:0:r_a', markedAt: 6 },
       { node: 'invalid', status: 'complete', at },
-    ] }), { message: 'malformed progress stamp' });
-    assert.deepEqual(lattice.toFrame(), before);
+      { node: 'valid-last', status: 'none', at: '7:0:r_a', markedAt: 7 },
+    ] }, (...args) => skipped.push(args)));
+    assert.deepEqual(lattice.toFrame(), { marks: [
+      { node: 'held', status: 'complete', at: '5:0:r_a', markedAt: 5 },
+      { node: 'valid-first', status: 'complete', at: '6:0:r_a', markedAt: 6 },
+      { node: 'valid-last', status: 'none', at: '7:0:r_a', markedAt: 7 },
+    ] });
+    assert.deepEqual(skipped, [[]]);
   });
 }
 
@@ -279,3 +289,34 @@ for (const at of ['0:0:r_a', '1:0:with space', '9007199254740991:4294967295:r:co
     assert.deepEqual(lattice.toFrame(), frame);
   });
 }
+
+test('a legacy drain skips an invalid mark, reports it and moves every valid mark before clearing the key', () => {
+  const storage = new Map([['windmill:progress:t_1', JSON.stringify({
+    completed: ['a', 'invalid-private-id', 'b'], completedAt: { a: 5, 'invalid-private-id': 'not-an-instant', b: 6 },
+  })]]);
+  const reports = [];
+  const store = new ProgressStore({
+    getItem: (key) => storage.get(key) ?? null,
+    removeItem: (key) => storage.delete(key),
+  }, { reportFailure: (operation, error, tags) => reports.push({ operation, error, tags }) });
+  const lattice = new ProgressLattice();
+  assert.equal(store.drainInto('t_1', lattice), 2);
+  assert.deepEqual(lattice.toFrame(), { marks: [
+    { node: 'a', status: 'complete', at: '5:0:legacy' },
+    { node: 'b', status: 'complete', at: '6:0:legacy' },
+  ] });
+  assert.equal(storage.has('windmill:progress:t_1'), false);
+  assert.deepEqual(reports.map(({ operation, error, tags }) => ({ operation, message: error.message, stack: !!error.stack, tags })),
+    [{ operation: 'roadmap-sync-progress-mark', message: 'Roadmap progress mark invalid', stack: true, tags: { lane: 'progress' } }]);
+  assert.equal(store.drainInto('t_1', lattice), 0);
+});
+
+test('a malformed progress marks container reports once and preserves the existing valid bank', () => {
+  const lattice = new ProgressLattice();
+  const before = { marks: [{ node: 'held', status: 'complete', at: '5:0:r_a' }] };
+  lattice.join(before);
+  const skipped = [];
+  assert.doesNotThrow(() => lattice.join({ marks: 'private-invalid-container' }, (...args) => skipped.push(args)));
+  assert.deepEqual(lattice.toFrame(), before);
+  assert.deepEqual(skipped, [[]]);
+});

@@ -62,7 +62,7 @@ function environment(t) {
     }
   });
   return {
-    store() { const store = new SyncStore(); stores.push(store); return store; },
+    store(options = {}) { const store = new SyncStore(options); stores.push(store); return store; },
     async session(store) {
       const session = new SyncSession({ treeId: 'tree', store, registry: null, reportFailure: (operation, error) => {
         throw new Error(`${operation}: ${error.stack}`);
@@ -682,4 +682,78 @@ test('durable cleanup never substitutes the document fallback for an unavailable
   t.mock.method(store, 'db', async () => { throw new Error('database-unavailable'); });
   await assert.rejects(store.treeIds({ durable: true }), /database-unavailable/);
   await assert.rejects(store.clear('tree', { durable: true }), /database-unavailable/);
+});
+
+test('valid unsynced progress survives an invalid stored row through session restore, save and reload', async (t) => {
+  const env = environment(t);
+  const storeReports = [];
+  const store = env.store({ reportFailure: (operation, error, tags) => storeReports.push({ operation, error, tags }) });
+  const valid = [
+    { node: 'a', status: 'complete', at: '5:0:tab', markedAt: 5 },
+    { node: 'b', status: 'none', at: '6:0:tab', markedAt: 6 },
+  ];
+  const reference = (node, at) => ({ [JSON.stringify(['marks', node, 'at'])]: at });
+  const retained = { '4:0:tab': reference('a', '4:0:tab'), '5:0:tab': reference('a', '5:0:tab'), '6:0:tab': reference('b', '6:0:tab') };
+  const gestures = { structure: {}, progress: { ...retained, '0:0:': reference('invalid-private-id', '0:0:'), invalid: reference('b', 'invalid') } };
+  const record = { gestures, frame: baseline, progress: { marks: [valid[0], { node: 'invalid-private-id', status: 'complete', at: '0:0:' }, valid[1]] },
+    lastSeq: 1, epochs: { structure: 0, progress: 0 }, confirmed: { structure: baseline, progress: { marks: [] } } };
+  const db = await store.db();
+  await new Promise((resolve, reject) => {
+    const transaction = db.transaction('trees', 'readwrite');
+    transaction.objectStore('trees').put(record, 'tree');
+    transaction.oncomplete = resolve;
+    transaction.onerror = () => reject(transaction.error);
+  });
+  const reports = [];
+  const session = new SyncSession({ treeId: 'tree', registry: null, store,
+    reportFailure: (operation, error, tags) => reports.push({ operation, error, tags }) });
+  t.after(() => session.close());
+  await session.start();
+  assert.deepEqual(session.progress.toFrame(), { marks: valid });
+  assert.equal(session.pendingProgressCount(), 2);
+  assert.deepEqual(session.gestures, { structure: {}, progress: retained });
+  assert.equal(session.statusSnapshot().progressGestures, 3);
+  assert.deepEqual(reports.map(({ operation, error, tags }) => ({ operation, message: error.message, stack: !!error.stack, tags })),
+    [{ operation: 'roadmap-sync-progress-mark', message: 'Roadmap progress mark invalid', stack: true, tags: { lane: 'progress' } }]);
+  await session.persistNow();
+  await settle([store]);
+  assert.deepEqual((await store.load('tree')).progress, { marks: valid });
+  assert.deepEqual((await store.load('tree')).gestures, { structure: {}, progress: retained });
+  assert.deepEqual(storeReports.map(({ operation, error, tags }) => ({ operation, message: error.message, stack: !!error.stack, tags })),
+    [{ operation: 'roadmap-sync-progress-mark', message: 'Roadmap progress mark invalid', stack: true, tags: { lane: 'progress' } }]);
+  session.close();
+  const reloaded = await env.session(env.store());
+  assert.deepEqual(reloaded.progress.toFrame(), { marks: valid });
+  assert.deepEqual(reloaded.gestures, { structure: {}, progress: retained });
+  reloaded.ws.open();
+  reloaded.receiveState({ ...baseline, seq: 1 });
+  reloaded.receiveProgressGraft({ marks: [] });
+  await settle([store]);
+  assert.deepEqual(reloaded.ws.frames.filter(({ t }) => t === 'progress').map(({ frameId, ...frame }) => frame), [{
+    t: 'progress', treeId: 'tree', marks: valid.map(({ markedAt, ...mark }) => mark),
+  }]);
+  reloaded.receiveProgressAck({ frameId: reloaded.ws.frames.find(({ t }) => t === 'progress').frameId });
+  assert.equal(reloaded.pendingProgressCount(), 0);
+  assert.deepEqual(reloaded.gestures, { structure: {}, progress: {} });
+});
+
+test('an IndexedDB merge keeps valid progress from both records when each has an invalid row', async (t) => {
+  const env = environment(t);
+  const reports = [];
+  const store = env.store({ reportFailure: (operation, error, tags) => reports.push({ operation, error, tags }) });
+  const oldMark = { node: 'a', status: 'complete', at: '5:0:old' };
+  const newMark = { node: 'b', status: 'complete', at: '6:0:new' };
+  const record = { frame: baseline, progress: { marks: [oldMark, { node: 'legacy', status: 'complete', at: '0:0:' }] },
+    lastSeq: 1, epochs: { structure: 0, progress: 0 }, confirmed: { structure: baseline, progress: { marks: [] } } };
+  const db = await store.db();
+  await new Promise((resolve, reject) => {
+    const transaction = db.transaction('trees', 'readwrite');
+    transaction.objectStore('trees').put(record, 'tree');
+    transaction.oncomplete = resolve;
+    transaction.onerror = () => reject(transaction.error);
+  });
+  await store.save('tree', { ...record, progress: { marks: [{ node: 'private-bad', status: 'complete', at: 'invalid' }, newMark] } });
+  assert.deepEqual((await store.load('tree')).progress, { marks: [oldMark, newMark] });
+  assert.deepEqual(reports.map(({ operation, error, tags }) => ({ operation, message: error.message, stack: !!error.stack, tags })),
+    Array.from({ length: 2 }, () => ({ operation: 'roadmap-sync-progress-mark', message: 'Roadmap progress mark invalid', stack: true, tags: { lane: 'progress' } })));
 });

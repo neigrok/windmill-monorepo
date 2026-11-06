@@ -1,4 +1,5 @@
 import { compareHlc, parseHlc } from './lattice.js';
+import { progressStamp } from './progressLattice.js';
 import { GENESIS_STAMP } from '../model/Legend.js';
 
 const SECTIONS = ['nodes', 'edges', 'kinds', 'marks'];
@@ -71,6 +72,16 @@ export function outboxWrites(frame, confirmedFrame, carriedFrames = []) {
 
 export function pendingRecordCount(stamps) {
   return new Set(Object.keys(stamps).map((key) => JSON.stringify(JSON.parse(key).slice(0, 2)))).size;
+}
+
+export function retainedProgressGestures(frame, gestures = {}) {
+  const current = writeStamps(frame);
+  const retained = {};
+  for (const [stamp, references] of Object.entries(gestures)) {
+    const valid = Object.fromEntries(Object.entries(references).filter(([key, at]) => current[key] && progressStamp(at)));
+    if (Object.keys(valid).length) retained[stamp] = valid;
+  }
+  return retained;
 }
 
 export function pendingGestures(frame, confirmedFrame, gestures = {}) {
