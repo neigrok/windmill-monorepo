@@ -4,12 +4,14 @@ import works.windmill.agent.SeatKind
 import works.windmill.agent.TurnFailure
 import works.windmill.agent.TurnLabel
 import works.windmill.agent.TurnState
+import works.windmill.agent.TurnRefusal
 import works.windmill.agent.TurnTally
 import works.windmill.agent.TurnTelemetry
 import works.windmill.domain.kit.Catalog
 import works.windmill.gym.domain.coach.AbilityCall
 import works.windmill.gym.domain.coach.AbilityRefusal
 import works.windmill.gym.domain.coach.CoachMessage
+import works.windmill.gym.telemetry.coachAction
 import works.windmill.platform.telemetry.Telemetry
 
 // What a turn tells (Coach §10.2), in labels and counts: every value is a catalog name, a known code or a number, so no question, answer, input, result or id can leave through here.
@@ -44,9 +46,13 @@ class GymTurnTelemetry(private val telemetry: Telemetry, private val catalog: La
     override fun withdrawn(status: Int, code: TurnLabel, durationMs: Long) {
         val refusal = CoachTurnRefusal.of(code.value, status)
         val (outcome, cap) = refusal.askOutcome
-        val failed = if (refusal == CoachTurnRefusal.Offline) mapOf("failure_kind" to "offline") else mapOf("failure_kind" to "http", "status" to status.toString())
+        val failed = when {
+            code.value == TurnLabel.notAStream -> mapOf("failure_kind" to "malformed")
+            refusal == CoachTurnRefusal.Offline -> mapOf("failure_kind" to "offline")
+            else -> mapOf("failure_kind" to "http", "status" to status.toString())
+        }
         telemetry.event("api_request_failed", mapOf("operation" to "gym_coach_turn", "route" to "/v1/gym", "method" to "POST") + failed)
-        asked(if (outcome == "refused" && status >= 500) "failed" else outcome, cap, durationMs)
+        asked(if (outcome == "refused" && TurnRefusal(status, code.value, null).serverFault) "failed" else outcome, cap, durationMs)
     }
 
     // A lost connection and a cancellation never come here: the driver keeps them from its port, and expected refusals are the events above.
@@ -71,6 +77,9 @@ class GymTurnTelemetry(private val telemetry: Telemetry, private val catalog: La
     fun heldBack(fault: CoachTurnFault) {
         asked(fault.askOutcome, null, null)
     }
+
+    // A picture sweep that met a message this build cannot read: nothing was deleted, and the next sweep tries again.
+    fun pictureSweepHeld() = telemetry.coachAction("picture_sweep", "message_unreadable")
 
     // A turn that ended with no driver to say so: the seat changed under it, or the process died under it. The record tells what it held, when the record is still on this replica, and how it ended if a writer's commit outlived the cancellation.
     fun interrupted(seat: SeatKind, cause: InterruptedCause, message: CoachMessage?, durationMs: Long?) {

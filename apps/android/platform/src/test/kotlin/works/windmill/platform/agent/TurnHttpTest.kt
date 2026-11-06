@@ -42,6 +42,7 @@ import okhttp3.mockwebserver.SocketPolicy
 import javax.net.SocketFactory
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -182,11 +183,12 @@ class TurnHttpTest {
         assertEquals(TurnRefusal(500, TurnRefusal.vendorError, null), failure(http().open(open, bound)))
     }
 
-    @Test fun aTwoHundredThatIsNoEventStreamIsAFault() {
+    // A captive portal's page, or a proxy's interstitial: a lost connection that says so, which the driver resumes on its beats.
+    @Test fun aTwoHundredThatIsNoEventStreamIsALostConnectionThatSaysSo() {
         server.enqueue(json(200, """{"answer":"Hi"}"""))
-        assertEquals(TurnWireFault.notAStream, (failure(http().open(open, bound)) as TurnWireFault).kind)
+        assertTrue((failure(http().open(open, bound)) as TurnConnectionLost).notAStream)
         server.enqueue(MockResponse().setResponseCode(204))
-        assertEquals(TurnWireFault.notAStream, (failure(http().resume("tn_1", bound)) as TurnWireFault).kind)
+        assertTrue((failure(http().resume("tn_1", bound)) as TurnConnectionLost).notAStream)
     }
 
     @Test fun aStreamThatEndsWithoutAClosingFrameIsALostConnection() {
@@ -198,7 +200,7 @@ class TurnHttpTest {
 
     @Test fun aDroppedConnectionIsALostConnection() {
         server.enqueue(sse("event: text\ndata: {\"delta\":\"Hi\"}\n\n").setSocketPolicy(SocketPolicy.DISCONNECT_DURING_RESPONSE_BODY))
-        assertTrue(failure(http().open(open, bound)) is TurnConnectionLost)
+        assertFalse((failure(http().open(open, bound)) as TurnConnectionLost).notAStream)
         server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AFTER_REQUEST))
         assertTrue(thrown { http().answer("tn_1", 1, emptyList(), bound) } is TurnConnectionLost)
     }

@@ -92,7 +92,9 @@ data class TurnLabel private constructor(val value: String) {
         private const val other = "other"
         private val word = Regex("[a-z0-9_-]{1,64}")
         const val gone = "gone"
-        private val causes = setOf(TurnFailure.transport.name, TurnFailure.decode.name, TurnFailure.storage.name, TurnFailure.refusal.name, gone, TurnRefusal.unreachable)
+        // A 2xx that was no event stream at every reconnect: a captive portal's page, a proxy's interstitial.
+        const val notAStream = "not-a-stream"
+        private val causes = setOf(TurnFailure.transport.name, TurnFailure.decode.name, TurnFailure.storage.name, TurnFailure.refusal.name, gone, notAStream, TurnRefusal.unreachable)
 
         // A catalog name or an ability's refusal code, which the product's catalog bounds and this module cannot list.
         fun of(name: String) = TurnLabel(if (word.matches(name)) name else other)

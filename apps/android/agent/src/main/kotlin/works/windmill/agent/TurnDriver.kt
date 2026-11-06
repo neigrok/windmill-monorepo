@@ -198,6 +198,7 @@ class TurnDriver(
             val open = onHost { host.open() }
             open.contextOutcomes.forEach(::tell)
             var reconnects = 0
+            var everyLossAPage = true
             while (true) {
                 val opening = !frameArrived && !stopAsked.get()
                 try {
@@ -221,14 +222,15 @@ class TurnDriver(
                     throw TurnInterrupted(refusal.code)
                 } catch (failure: Exception) {
                     currentCoroutineContext().ensureActive()
-                    // §4.5: a dropped stream, or one another stream of this turn replaced, reconnects after 1, 2, 4 and 8 beats, and a fifth loss closes the turn. A frame that cannot be read closes it at once. With no frame the turn never began, as far as this phone can know, and the server is told in case it did.
+                    // §4.5: a dropped stream, a 2xx that is no stream, or one another stream of this turn replaced, reconnects after 1, 2, 4 and 8 beats, and a fifth loss closes the turn: a lost connection with no report, under its own name when every loss was a page that was no stream. A frame that cannot be read closes it at once. With no frame the turn never began, as far as this phone can know, and the server is told in case it did.
                     val dropped = failure !is TurnWireFault || failure.kind == TurnWireFault.replaced
+                    everyLossAPage = everyLossAPage && failure is TurnConnectionLost && failure.notAStream
                     if (reconnects == 4 || !dropped) {
                         val kind = if (dropped) TurnFailure.transport else TurnFailure.decode
                         if (failure !is TurnConnectionLost) report(kind)
-                        if (frameArrived) throw TurnInterrupted(kind.name)
+                        if (frameArrived) throw TurnInterrupted(if (everyLossAPage) TurnLabel.notAStream else kind.name)
                         tellServerOnce()
-                        return Withdrawn(TurnRefusal.unreached)
+                        return Withdrawn(if (everyLossAPage) TurnRefusal.noStream else TurnRefusal.unreached)
                     }
                     reconnects += 1
                     publish { it.copy(reconnecting = true) }

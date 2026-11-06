@@ -439,17 +439,31 @@ class CoachChats internal constructor(
         }
         val listed = rows.map { it.id }.toSet()
         val local = mine.filter { it.id !in listed }.mapNotNull { chat ->
-            val held = draft(chat.id)
-            val answers = retained(seat, chat.id)
-            val kept = localCoach?.keptDrafts(seat, chat.id).orEmpty().filter { it.draft.holdsSomething }
-            if (!held.holdsSomething && answers.isEmpty() && kept.isEmpty()) return@mapNotNull null
-            val title = listOfNotNull(answers.firstOrNull()?.question, held.text, kept.firstOrNull()?.draft?.text).firstOrNull { it.isNotBlank() } ?: "Photo"
-            ConversationRow(chat.id, title, chat.updatedAtMs, answerPreview = answers.lastOrNull { it.response?.status == "completed" }?.response?.message.orEmpty())
+            val kept = beside(seat, chat.id) ?: return@mapNotNull null
+            val title = listOfNotNull(kept.answers.firstOrNull()?.question, kept.draft.text, kept.drafts.firstOrNull()?.draft?.text).firstOrNull { it.isNotBlank() } ?: "Photo"
+            ConversationRow(chat.id, title, chat.updatedAtMs, answerPreview = kept.answers.lastOrNull { it.response?.status == "completed" }?.response?.message.orEmpty())
         }
         return (rows + local).sortedByDescending { it.askedAtMs }
     }
 
-    val hasConversations: Boolean get() = conversations?.threads.orEmpty().isNotEmpty() || history.isNotEmpty()
+    // What this phone keeps beside a chat and no replica holds: its draft, its retained answers and the drafts kept for it; null when it keeps nothing, which makes no row in History.
+    private class Beside(val draft: CoachDraft, val answers: List<CoachOnboardingRecord>, val drafts: List<KeptCoachDraft>)
+
+    private fun beside(seat: String, chat: String): Beside? {
+        val draft = draft(seat, chat)
+        val answers = retained(seat, chat)
+        val drafts = localCoach?.keptDrafts(seat, chat).orEmpty().filter { it.draft.holdsSomething }
+        if (!draft.holdsSomething && answers.isEmpty() && drafts.isEmpty()) return null
+        return Beside(draft, answers, drafts)
+    }
+
+    // Whether History has a row to show, read without building the rows: a thread on the replica, or a chat this phone keeps something beside.
+    val hasConversations: Boolean get() {
+        val seat = archiveOwner
+        restoreArchive(seat)
+        if (conversations?.threads.orEmpty().isNotEmpty()) return true
+        return chats.keys.any { (owner, id) -> owner == seat && beside(seat, id) != null }
+    }
 
     fun draft(key: String): CoachDraft = draft(archiveOwner, key)
 

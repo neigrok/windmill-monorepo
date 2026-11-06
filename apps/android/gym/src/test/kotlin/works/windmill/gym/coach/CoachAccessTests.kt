@@ -1,5 +1,7 @@
 package works.windmill.gym.coach
 
+import android.os.Looper
+import androidx.compose.material3.Text
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -8,16 +10,22 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.UriHandler
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
@@ -26,6 +34,8 @@ import works.windmill.gym.coach.onboarding.CoachOnboardingSeat
 import works.windmill.gym.coach.turn.CoachRecovery
 import works.windmill.gym.coach.turn.CoachTurnRefusal
 import works.windmill.gym.coach.turn.ScriptedInstallation
+import works.windmill.gym.coach.turn.ScriptedTurns
+import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.coach.turn.TellingRecorder
 import works.windmill.gym.coach.turn.TurnPhoneInstallation
 import works.windmill.platform.ClientUpdateDestination
@@ -41,6 +51,7 @@ import works.windmill.platform.telemetry.Telemetry
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
 class CoachAccessTests {
     @get:Rule val compose = createComposeRule()
+    @get:Rule val tmp = TemporaryFolder()
 
     @Test fun noSeatHasCenteredCurrentCopyAndOnlyTheExistingSignInDoor() {
         var signIns = 0
@@ -111,6 +122,8 @@ class CoachAccessTests {
             Board(CoachTurnRefusal.TooLong(1), false, "Too long by 1 byte. The limit is 8,000 bytes.\nEnglish letters take 1 byte each. Other letters and emoji take more.", null),
             Board(CoachTurnRefusal.of("invalid_installation"), true, "This phone can’t ask Coach signed out any more. Sign in to continue.", CoachRecovery.signIn),
             Board(CoachTurnRefusal.of("device_bound"), true, "This phone is linked to an account. Sign in to ask Coach.", CoachRecovery.signIn),
+            Board(CoachTurnRefusal.of("anonymous_ai_unavailable", 503), true, "Coach needs your workout log. Please sign in.", CoachRecovery.signIn),
+            Board(CoachTurnRefusal.of("anonymous_ai_unavailable", 503), false, "Coach needs your workout log. Please sign in.", CoachRecovery.signIn),
             Board(CoachTurnRefusal.of("free_month_exhausted", 429, monthTurns), false, "Coach is paused for everyone this month. It comes back on Nov 1.", own),
             Board(CoachTurnRefusal.of("free_month_exhausted", 429), false, "Coach is paused for everyone this month.", own),
             Board(CoachTurnRefusal.of("coach-update-required", 426), false, "This version can’t ask Coach any more. Update Windmill to continue.", CoachRecovery.update),
@@ -134,6 +147,33 @@ class CoachAccessTests {
             CoachTurnRefusal.of("subject_exhausted", 429, dayTurns).notice(anonymous = false, clock24 = true, zone = utc))
         assertEquals("Coach’s AI allowance is unavailable right now.\nSign in to continue.",
             CoachTurnRefusal.of("subject_exhausted", 429, dayTurns).notice(anonymous = true, clock24 = true, zone = utc))
+    }
+
+    // A cap's notice goes at the moment the server named, with no tap: the composition waits for that moment on the chats' own clock, and no cap ever held Send.
+    @Test fun aCapNoticeGoesAtTheMomentItNamedWithNoTap() {
+        val resetsAt = 1_800_000_600_000L
+        val server = ScriptedTurns(emptyList()).apply { refuseOpen = TurnRefusal(429, "free_month_exhausted", resetsAt) }
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val phone = EngineRoomFixture(tmp.newFolder(), scope, coachServer = server)
+        try {
+            val coach = phone.store.coach
+            val chat = coach.freshChat()
+            compose.setContent { coach.refusalOnScreen(chat)?.let { Text(it.sentence) } }
+            compose.runOnIdle { assertTrue(coach.send(chat, "Question")) }
+            compose.waitUntil(10_000) { compose.onAllNodesWithText("Coach is paused for everyone this month.").fetchSemanticsNodes().isNotEmpty() }
+            compose.mainClock.autoAdvance = false
+            compose.mainClock.advanceTimeBy(599_000)
+            compose.onNodeWithText("Coach is paused for everyone this month.").assertIsDisplayed()
+            assertFalse(coach.sendHeld)
+            phone.now = resetsAt
+            compose.mainClock.advanceTimeBy(1_000)
+            compose.mainClock.autoAdvance = true
+            compose.waitForIdle()
+            compose.onNodeWithText("Coach is paused for everyone this month.").assertDoesNotExist()
+        } finally {
+            scope.cancel()
+            phone.close()
+        }
     }
 
     @Test fun theUpdateDoorOpensTheUpdateAndSaysWhenItCouldNot() {

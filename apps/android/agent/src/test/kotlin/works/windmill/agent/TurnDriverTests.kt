@@ -485,9 +485,9 @@ class TurnDriverTests {
         }
     }
 
-    // A captive portal's page, or a first frame no build of this phone can read: no beats help, and the wire fault reports once.
+    // A first frame no build of this phone can read: no beats help, and the wire fault reports once.
     @Test fun aFaultBeforeAnyFrameWithdrawsAtOnceAndReportsDecodeOnce() = runTest {
-        for (kind in listOf(TurnWireFault.notAStream, TurnWireFault.unknownEvent, TurnWireFault.lineTooLong)) {
+        for (kind in listOf(TurnWireFault.unknownEvent, TurnWireFault.lineTooLong)) {
             val server = server().apply { streams += flow<TurnEvent> { throw TurnWireFault(kind) } }
             val host = EchoHost()
             val telemetry = RecordingTelemetry()
@@ -504,7 +504,7 @@ class TurnDriverTests {
             assertEquals(1, server.stops)
         }
 
-        val afterALoss = server().apply { streams += lost; streams += flow<TurnEvent> { throw TurnWireFault(TurnWireFault.notAStream) } }
+        val afterALoss = server().apply { streams += lost; streams += flow<TurnEvent> { throw TurnWireFault(TurnWireFault.unknownEvent) } }
         val host = EchoHost()
         val telemetry = RecordingTelemetry()
         val run = async { driver(afterALoss, telemetry).run("tn_1", seat, host) }
@@ -512,6 +512,46 @@ class TurnDriverTests {
         assertEquals(TurnExit.withdrawn, run.await())
         assertEquals(listOf(TurnRefusal(0, "unreachable", null)), host.withdrawals)
         assertEquals(listOf("failure decode -", "withdrawn 0 unreachable ms=1000"), telemetry.lines)
+    }
+
+    // A captive portal's page, or a proxy's interstitial, is a lost connection with a name: the same beats, no report, and the turn ends under that name, taken back when no frame ever came. One plain drop among the losses takes the name away.
+    @Test fun aPageThatIsNoStreamReconnectsOnTheBeatsAndTheFifthEndsTheTurnUnderItsOwnName() = runTest {
+        val portal: Flow<TurnEvent> = flow { throw TurnConnectionLost(null, notAStream = true) }
+        val beforeAnyFrame = server().apply { repeat(5) { streams += portal } }
+        val host = EchoHost()
+        val telemetry = RecordingTelemetry()
+        val run = async { driver(beforeAnyFrame, telemetry).run("tn_1", seat, host) }
+        advanceUntilIdle()
+        assertEquals(TurnExit.withdrawn, run.await())
+        assertEquals(listOf(0L, 1000L, 3000L, 7000L, 15000L), beforeAnyFrame.openedAt)
+        assertEquals(emptyList<Long>(), beforeAnyFrame.resumedAt)
+        assertEquals(listOf(TurnRefusal(0, "not-a-stream", null)), host.withdrawals)
+        assertEquals(emptyList<TurnEnd>(), host.ends)
+        assertEquals(listOf("withdrawn 0 not-a-stream ms=15000"), telemetry.lines)
+        assertEquals(1, beforeAnyFrame.stops)
+
+        val started = testScheduler.currentTime
+        val afterAFrame = server().apply { streams += flow { emit(TurnEvent.Text("A")); throw TurnConnectionLost(null, notAStream = true) }; repeat(4) { streams += portal } }
+        val framed = EchoHost()
+        val told = RecordingTelemetry()
+        val framedRun = async { driver(afterAFrame, told).run("tn_1", seat, framed) }
+        advanceUntilIdle()
+        assertEquals(TurnExit.ended, framedRun.await())
+        assertEquals(listOf(1000L, 3000L, 7000L, 15000L), afterAFrame.resumedAt.map { it - started })
+        assertEquals(emptyList<TurnRefusal>(), framed.withdrawals)
+        assertEquals(listOf(TurnEnd(TurnState.interrupted, "A", false, "not-a-stream", null)), framed.ends)
+        assertEquals(listOf("ended interrupted bound not-a-stream calls=0 refusals=0 bytes=1 ms=15000"), told.lines)
+        assertEquals(1, afterAFrame.stops)
+
+        val mixed = server().apply { repeat(4) { streams += portal }; streams += lost }
+        val plain = EchoHost()
+        val plainTelemetry = RecordingTelemetry()
+        val mixedRun = async { driver(mixed, plainTelemetry).run("tn_1", seat, plain) }
+        advanceUntilIdle()
+        assertEquals(TurnExit.withdrawn, mixedRun.await())
+        assertEquals(listOf(TurnRefusal.unreached), plain.withdrawals)
+        assertEquals(listOf("withdrawn 0 unreachable ms=15000"), plainTelemetry.lines)
+        assertEquals(1, mixed.stops)
     }
 
     @Test fun aReconnectingTurnSaysSoUntilItsNextFrame() = runTest {
@@ -799,7 +839,7 @@ class TurnDriverTests {
             TurnRefusal(503, "coach-busy", null) to emptyList(),
             TurnRefusal(503, TurnRefusal.vendorError, null) to listOf("failure http 503"),
             IOException("Certificate pinning failure") to listOf("failure transport -"),
-            TurnWireFault(TurnWireFault.notAStream) to listOf("failure decode -"),
+            TurnWireFault(TurnWireFault.badAddress) to listOf("failure decode -"),
         )
         for ((failure, reports) in cases) {
             for (during in listOf<ManualServer.() -> Unit>({ streams += lost }, { streams += silent })) {

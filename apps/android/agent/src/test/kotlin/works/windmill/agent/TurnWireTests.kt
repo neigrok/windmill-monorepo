@@ -149,8 +149,8 @@ class TurnWireTests {
         fun fault(status: Int, code: String) = TurnRefusal(status, code, null).serverFault
         assertEquals(listOf(true, true, true, true),
             listOf(fault(503, TurnRefusal.vendorError), fault(500, TurnRefusal.vendorError), fault(500, "an unknown thing"), fault(502, "unavailable")))
-        assertEquals(listOf(false, false, false, false, false),
-            listOf(fault(503, TurnRefusal.busy), fault(503, "subject_exhausted"), fault(503, TurnRefusal.rateLimited), fault(429, TurnRefusal.vendorError), fault(404, TurnRefusal.turnUnknown)))
+        assertEquals(listOf(false, false, false, false, false, false),
+            listOf(fault(503, TurnRefusal.busy), fault(503, "subject_exhausted"), fault(503, TurnRefusal.rateLimited), fault(429, TurnRefusal.vendorError), fault(404, TurnRefusal.turnUnknown), fault(503, TurnRefusal.anonymousUnavailable)))
     }
 
     @Test fun theBodiesAreTheWireShapeInCanonicalForm() {
@@ -165,8 +165,8 @@ class TurnWireTests {
     @Test fun aLabelHoldsAWordAndACodeIsBoundToTheKnownSet() {
         assertEquals(listOf("list_things", "record-dead", "other", "other", "other", "other"),
             listOf("list_things", "record-dead", "How is my squat going?", "Bearer abc", "", "x".repeat(65)).map { TurnLabel.of(it).value })
-        assertEquals(listOf("coach-turn-order", "subject_exhausted", "storage", "transport", "decode", "refusal", "other", "other"),
-            listOf("coach-turn-order", "subject_exhausted", "storage", "transport", "decode", "refusal", "http", "something-new").map { TurnLabel.code(it).value })
+        assertEquals(listOf("coach-turn-order", "subject_exhausted", "storage", "transport", "decode", "refusal", "not-a-stream", "anonymous_ai_unavailable", "coach-turn-stopped", "other", "other"),
+            listOf("coach-turn-order", "subject_exhausted", "storage", "transport", "decode", "refusal", "not-a-stream", "anonymous_ai_unavailable", "coach-turn-stopped", "http", "something-new").map { TurnLabel.code(it).value })
     }
 
     @Test fun aSeatPrintsWithoutItsCredential() {

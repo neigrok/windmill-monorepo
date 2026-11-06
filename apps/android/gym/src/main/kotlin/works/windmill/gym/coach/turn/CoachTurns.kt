@@ -40,6 +40,7 @@ import works.windmill.domain.kit.ActionRunner
 import works.windmill.domain.kit.Catalog
 import works.windmill.domain.kit.Id
 import works.windmill.domain.kit.Outcome
+import works.windmill.domain.kit.refusal
 import works.windmill.gym.domain.coach.CoachMessage
 import works.windmill.gym.domain.coach.CoachPictureRow
 import works.windmill.gym.domain.coach.CoachRules
@@ -386,11 +387,12 @@ class CoachTurns(
         null
     }
 
-    // Rows no message claims go first, while the account allows a write. Then the files no row in any retained replica names, which takes no write and no permission.
+    // Rows no message claims go first, while the account allows a write; a pass that meets a message this build cannot read forgets nothing, says so, and the next sweep tries again. Then the files no row in any retained replica names, which takes no write and no permission.
     private suspend fun sweepPictures() {
         onSeatInHand(Unit) { pin ->
             if (engine.retainedDeviceKeys(gymProduct, pictureKeys).isNotEmpty() && training.mayWriteOn(pin)) {
-                training.pinnedOn(pin) { it.run(ForgetUnclaimedPictures()) }
+                val pass = training.pinnedOn(pin) { it.run(ForgetUnclaimedPictures()) }
+                if (pass.refusal == ForgetUnclaimedPictures.messageUnreadable) tells.pictureSweepHeld()
             }
             val held = pictures.held()
             if (held.isEmpty()) return@onSeatInHand

@@ -48,8 +48,8 @@ data class TurnRefusal(val status: Int, val code: String, val budgetResetsAtMs: 
     // A cap the server refills, which is expected however it is answered.
     val capped: Boolean get() = code == rateLimited || code in allowanceCodes && code !in installationCodes
 
-    // A failure of the server's own, which files a report: a 5xx it did not mean. A cap and `busy`, a process at capacity, are refusals it meant.
-    val serverFault: Boolean get() = status >= 500 && !capped && code != busy
+    // A failure of the server's own, which files a report: a 5xx it did not mean. A cap, `busy` (a process at capacity) and anonymous AI switched off are refusals it meant.
+    val serverFault: Boolean get() = status >= 500 && !capped && code !in meant
 
     companion object {
         const val turnOrder = "coach-turn-order"
@@ -58,12 +58,15 @@ data class TurnRefusal(val status: Int, val code: String, val budgetResetsAtMs: 
         const val rateLimited = "coach-rate-limited"
         const val vendorError = "coach-vendor-error"
         const val busy = "coach-busy"
+        const val anonymousUnavailable = "anonymous_ai_unavailable"
+        const val turnStopped = "coach-turn-stopped"
         const val unreachable = "unreachable"
         private val installationCodes = setOf("device_bound", "invalid_installation")
+        private val meant = setOf(busy, anonymousUnavailable)
         val allowanceCodes = setOf("subject_exhausted", "free_month_exhausted", "free_day_exhausted", "concurrency_exhausted",
             "funding_required", "debt_outstanding") + installationCodes
         val codes = allowanceCodes + setOf("coach-bad-request", "coach-update-required", "coach-turn-conflict", turnUnknown, turnOrder,
-            "coach-turn-volume", rateLimited, "coach-replica-syncing", busy, vendorError, streamReplaced)
+            "coach-turn-volume", rateLimited, "coach-replica-syncing", busy, vendorError, streamReplaced, turnStopped, anonymousUnavailable)
 
         // §7.1: an allowance read says the balance is gone when nothing remains and no unresolved call holds any of it. A read that is absent or cannot be read says nothing of the balance.
         fun spent(remaining: String?, reserved: String?): Boolean =
@@ -71,6 +74,8 @@ data class TurnRefusal(val status: Int, val code: String, val budgetResetsAtMs: 
 
         // No server said this: no attempt to open the turn reached one this phone could read, so it names no status, and the turn never began.
         val unreached: TurnRefusal get() = TurnRefusal(0, unreachable, null)
+        // The same when every answer was a page that is no stream, a captive portal's or a proxy's, which the phone counts apart.
+        val noStream: TurnRefusal get() = TurnRefusal(0, TurnLabel.notAStream, null)
 
         fun of(status: Int, body: ByteArray): TurnRefusal {
             val json = try { Json.parse(body) } catch (unreadable: JsonError) { null }
@@ -81,8 +86,8 @@ data class TurnRefusal(val status: Int, val code: String, val budgetResetsAtMs: 
     }
 }
 
-// No connection, or a stream that dropped before its terminal frame. It reconnects, and it is never an Issue.
-class TurnConnectionLost(cause: Throwable?) : Exception(cause)
+// No connection, a stream that dropped before its terminal frame, or, with `notAStream`, a 2xx that is no event stream (a captive portal's page, a proxy's interstitial). Each reconnects, and none is an Issue.
+class TurnConnectionLost(cause: Throwable?, val notAStream: Boolean = false) : Exception(cause)
 
 // A frame or an answer that cannot be read, or a stream another stream of this turn took over.
 class TurnWireFault(val kind: String) : Exception(kind) {
@@ -90,7 +95,6 @@ class TurnWireFault(val kind: String) : Exception(kind) {
         const val unknownEvent = "unknown-event"
         const val unknownState = "unknown-state"
         const val unreadable = "unreadable"
-        const val notAStream = "not-a-stream"
         const val lineTooLong = "line-too-long"
         const val badAddress = "bad-address"
         const val replaced = "stream-replaced"

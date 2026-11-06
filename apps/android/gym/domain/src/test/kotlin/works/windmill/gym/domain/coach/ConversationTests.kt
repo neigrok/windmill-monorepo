@@ -10,6 +10,10 @@ import works.windmill.gym.domain.sync.Exercise
 import works.windmill.gym.domain.sync.GymRefusal
 import works.windmill.gym.domain.sync.Session
 import works.windmill.gym.domain.sync.TrainingSet
+import works.windmill.sync.api.Change
+import works.windmill.sync.api.CommitOutcome
+import works.windmill.sync.api.Gesture
+import works.windmill.sync.api.NewID
 import works.windmill.sync.api.RecordRef
 import works.windmill.sync.api.ViewMode
 import works.windmill.sync.core.Json
@@ -89,6 +93,26 @@ class ConversationTests {
         assertNull(a.device(CoachPictureRow.key("picture-1")))
         assertEquals(row.copy(id = "picture-2").json, a.device(CoachPictureRow.key("picture-2")))
         assertEquals(Outcome.Unchanged(Unit), a.runner.run(ForgetUnclaimedPictures()))
+    }
+
+    // A message this build cannot read, as another surface or a later build writes one, might claim any row: the pass forgets nothing and says so, and once that message is gone the next pass forgets what no message claims.
+    @Test fun aMessageThisBuildCannotReadHoldsTheSweepUntilItIsGone() = twoPhones { a, _ ->
+        val unclaimed = CoachPictureRow("picture-1", "image/jpeg", 40, 30, 100)
+        val claimed = row(picture(2))
+        assertTrue(a.runner.run(KeepPicture(unclaimed)) is Outcome.Committed)
+        assertTrue(a.runner.run(KeepPicture(claimed)) is Outcome.Committed)
+        val turn = a.open("Look", pictures = listOf(picture(2)))
+        a.engine.sync()
+        val unreadable = RecordID("turnUnreadable01")
+        val laterShape = mapOf("threadId" to turn.thread.record.json, "role" to Json.of("coach"), "at" to Json.of(1_800_000_000_000L),
+            "calls" to Json.parse("""[{"callId":"c","name":"n","outcome":"ok"}]"""))
+        assertTrue(a.engine.replica.commit(CoachMessage.scope, Gesture(listOf(Change.create(Gym.Types.message, NewID.Given(unreadable), laterShape)))) is CommitOutcome.Committed)
+        assertEquals(Outcome.Refused(ForgetUnclaimedPictures.messageUnreadable), a.runner.run(ForgetUnclaimedPictures()))
+        assertEquals(unclaimed.json, a.device(CoachPictureRow.key("picture-1")))
+        assertTrue(a.engine.replica.commit(CoachMessage.scope, Gesture(listOf(Change.delete(Gym.Types.message, unreadable)))) is CommitOutcome.Committed)
+        assertTrue(a.runner.run(ForgetUnclaimedPictures()) is Outcome.Committed)
+        assertNull(a.device(CoachPictureRow.key("picture-1")))
+        assertEquals(claimed.json, a.device(CoachPictureRow.key(picture(2).id)))
     }
 
     @Test fun theEntitiesAgreeWithTheRegistry() {

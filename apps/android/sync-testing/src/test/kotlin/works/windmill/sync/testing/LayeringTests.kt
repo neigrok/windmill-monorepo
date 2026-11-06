@@ -199,7 +199,7 @@ class LayeringTests {
     @Test fun agentSourcesNameNoProduct() {
         val nouns = setOf("gym", "routine", "note", "proposal", "lifter", "exercise", "workout", "journal", "roadmap", "training", "session", "movement", "coach", "coaches")
         val frozenCodes = setOf("coach-bad-request", "coach-update-required", "coach-turn-conflict", "coach-turn-unknown", "coach-turn-order", "coach-turn-volume",
-            "coach-rate-limited", "coach-replica-syncing", "coach-busy", "coach-vendor-error", "coach-stream-replaced")
+            "coach-rate-limited", "coach-replica-syncing", "coach-busy", "coach-vendor-error", "coach-stream-replaced", "coach-turn-stopped")
         val word = Regex("""[A-Z]+(?![a-z])|[A-Z]?[a-z]+""")
         fun named(source: String): Set<String> = word.findAll(frozenCodes.fold(source) { text, code -> text.replace("\"$code\"", "") })
             .map { it.value.lowercase() }.map { if (it in nouns) it else it.removeSuffix("s") }.filter { it in nouns }.toSet()

@@ -36,7 +36,7 @@ import works.windmill.agent.turnAnswer
 import works.windmill.platform.telemetry.TelemetryPolicy
 import works.windmill.sync.core.Json
 
-// The four routes of a turn over OkHttp. `connectTimeout` bounds reaching the server, so a black-holed network hands the question back in about a minute; `idleTimeout` bounds silence, so frames and heartbeats keep a stream open; `totalTimeout` bounds any one call, a stream included. Each ending is a lost connection, which the driver resumes. A credential stays on the configured host, so no redirect is followed and no cookie is kept.
+// The four routes of a turn over OkHttp. `connectTimeout` bounds reaching the server, so a black-holed network hands the question back in about a minute; `idleTimeout` bounds silence, so frames and heartbeats keep a stream open; `totalTimeout` bounds any one call, a stream included. Each ending is a lost connection, which the driver resumes, and so is a 2xx that is no event stream. A credential stays on the configured host, so no redirect is followed and no cookie is kept.
 class TurnHttp(
     private val baseUrl: HttpUrl,
     private val route: String,
@@ -126,7 +126,7 @@ class TurnHttp(
     private fun read(response: Response, emit: (TurnEvent) -> Boolean) {
         val body = accepted(response).body
         val type = body?.contentType()
-        if (body == null || type?.type != "text" || type.subtype != "event-stream") throw TurnWireFault(TurnWireFault.notAStream)
+        if (body == null || type?.type != "text" || type.subtype != "event-stream") throw TurnConnectionLost(null, notAStream = true)
         val source = body.source()
         val parser = TurnSse()
         val chunk = ByteArray(8192)

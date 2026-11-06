@@ -23,6 +23,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import java.io.IOException
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import works.windmill.gym.R
 import works.windmill.gym.coach.onboarding.CoachOnboardingSeat
 import works.windmill.gym.coach.turn.CoachRecovery
@@ -81,6 +82,20 @@ fun AskAbsentStance(seat: String, onThreads: (() -> Unit)? = null) {
             Text(Ask.notHere, style = GymType.coachElsewhere, color = colors.onSurfaceVariant, textAlign = TextAlign.Center)
         }
     }
+}
+
+// The refusal a chat says, which a cap's moment takes away with no tap: the composition waits for that moment on the chats' own clock, then reads the refusal again.
+@Composable
+internal fun CoachChats.refusalOnScreen(chat: String): CoachTurnRefusal? {
+    var capsPassed by remember { mutableIntStateOf(0) }
+    val refusal = refusal(chat)
+    refusal?.endsAtMs?.let { endsAt ->
+        LaunchedEffect(endsAt, capsPassed) {
+            while (now() < endsAt) delay(endsAt - now())
+            capsPassed++
+        }
+    }
+    return refusal
 }
 
 // What a refused send says at the conversation's end: its words, and the one door that exists. A door opening the update says when it could not.

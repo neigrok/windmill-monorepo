@@ -4,6 +4,7 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import works.windmill.agent.TurnLabel
 import works.windmill.agent.TurnRefusal
 import works.windmill.gym.coach.Ask
 import works.windmill.gym.coach.asked
@@ -28,6 +29,8 @@ sealed interface CoachTurnRefusal {
     data object Absent : CoachTurnRefusal
     data class Installation(val installation: String) : CoachTurnRefusal
     data object SessionLapsed : CoachTurnRefusal
+    // Anonymous AI is switched off on the server: the words and the door are the installation door's own.
+    data object AnonymousUnavailable : CoachTurnRefusal
     // Any other refusal the server answered.
     data object Unanswered : CoachTurnRefusal
 
@@ -48,7 +51,7 @@ sealed interface CoachTurnRefusal {
         Absent -> Ask.notHere
         is Installation -> if (installation == "invalid_installation") "This phone can’t ask Coach signed out any more. $signInToContinue"
             else "This phone is linked to an account. Sign in to ask Coach."
-        SessionLapsed -> Ask.accessNeedsSignIn
+        SessionLapsed, AnonymousUnavailable -> Ask.accessNeedsSignIn
         Unanswered -> CoachTurnFault.noAnswer.sentence
     }
 
@@ -87,7 +90,7 @@ sealed interface CoachTurnRefusal {
         is FreeMonthExhausted, RateLimited -> CoachRecovery.ownAgent
         UpdateRequired -> CoachRecovery.update
         is Installation -> if (anonymous) CoachRecovery.signIn else null
-        SessionLapsed -> CoachRecovery.signIn
+        SessionLapsed, AnonymousUnavailable -> CoachRecovery.signIn
     }
 
     // The `gym_ask_outcome` this refusal ends with, and the cap it names.
@@ -96,14 +99,15 @@ sealed interface CoachTurnRefusal {
         is Allowance, is FreeMonthExhausted -> "capped" to "allowance"
         RateLimited -> "capped" to "daily"
         Absent -> "absent" to null
-        LogArriving, is TooLong, UpdateRequired, is Installation, SessionLapsed, Unanswered -> "refused" to null
+        LogArriving, is TooLong, UpdateRequired, is Installation, SessionLapsed, AnonymousUnavailable, Unanswered -> "refused" to null
     }
 
     companion object {
         const val signInToContinue = "Sign in to continue."
 
         fun of(code: String, status: Int? = null, resetsAtMs: Long? = null, spent: Boolean = false): CoachTurnRefusal = when {
-            code == TurnRefusal.unreachable -> Offline
+            code == TurnRefusal.unreachable || code == TurnLabel.notAStream -> Offline
+            code == TurnRefusal.anonymousUnavailable -> AnonymousUnavailable
             code == "free_month_exhausted" -> FreeMonthExhausted(resetsAtMs)
             code == "invalid_installation" || code == "installation_bound" || code == "device_bound" -> Installation(code)
             code in TurnRefusal.allowanceCodes -> Allowance(code, resetsAtMs, spent)

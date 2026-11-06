@@ -56,6 +56,7 @@ object GymActions : EventSchema {
                 "open_link" to setOf("ok", "unavailable", "failed"),
                 "access" to setOf("available", "bound", "unavailable"),
                 "too_long" to setOf("shown"), "account_changing" to setOf("shown"), "answer_in_progress" to setOf("shown"),
+                "picture_sweep" to setOf("message_unreadable"),
             ),
         "threads" to mapOf("delete" to setOf("ok", "refused", "failed", "cancelled"), "empty" to setOf("shown")),
         "notification" to mapOf("open" to setOf("ok", "refused"), "log_set" to setOf("ok", "refused")),
@@ -104,7 +105,7 @@ object GymEvents {
             "coach_turn" to LabelSchema(mapOf(
                 "state" to TurnState.entries.filter { it.terminal }.map { it.name }.toSet(),
                 "seat" to SeatKind.entries.map { it.name }.toSet(),
-                "code" to TurnRefusal.codes + (TurnFailure.entries - TurnFailure.http).map { it.name } + InterruptedCause.entries.map { it.name } + TurnLabel.gone + GymTurnTelemetry.other,
+                "code" to TurnRefusal.codes + (TurnFailure.entries - TurnFailure.http).map { it.name } + InterruptedCause.entries.map { it.name } + TurnLabel.gone + TurnLabel.notAStream + GymTurnTelemetry.other,
             ), counts = setOf("ability_calls", "refusals", "answer_bytes", "duration_ms")),
             "gym_coach_import" to LabelSchema(mapOf("outcome" to setOf("started", "committed", "replayed", "refused", "failed"))),
             "gym_proposal_outcome" to LabelSchema(mapOf(

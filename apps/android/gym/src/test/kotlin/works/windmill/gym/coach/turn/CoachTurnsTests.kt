@@ -36,6 +36,7 @@ import works.windmill.domain.kit.Outcome
 import works.windmill.gym.coach.Ask
 import works.windmill.gym.domain.coach.AbilityCall
 import works.windmill.gym.domain.coach.CoachMessage
+import works.windmill.gym.domain.coach.CoachPictureRow
 import works.windmill.gym.domain.coach.CoachThread
 import works.windmill.gym.domain.coach.CoachTurnBounds
 import works.windmill.gym.domain.coach.DeleteConversation
@@ -263,7 +264,7 @@ class CoachTurnsTests {
     @Test fun aSeatTheServerRefusesIsSaidAndKeepsNothing() = runTest {
         for ((failure, said) in listOf(
             WindmillApiException.Refused(401, Refusal(code = "invalid_installation")) to CoachTurnRefusal.Installation("invalid_installation"),
-            WindmillApiException.Refused(503, Refusal(code = "anonymous_ai_unavailable")) to CoachTurnRefusal.Unanswered,
+            WindmillApiException.Refused(503, Refusal(code = "anonymous_ai_unavailable")) to CoachTurnRefusal.AnonymousUnavailable,
             WindmillApiException.Offline to CoachTurnRefusal.Offline,
         )) {
             TurnPhone(this, folder.newFolder(), script("[]")).use { phone ->
@@ -931,10 +932,10 @@ class CoachTurnsTests {
         }
     }
 
-    // A captive portal's page: the same taking back at once, and the one report of a wire this phone could not read.
-    @Test fun aPageThatIsNoStreamTakesTheTurnBackAtOnceAndReportsDecode() = runTest {
+    // A captive portal's page at every attempt: the beats of a lost connection, the same taking back, no report, and a count of its own.
+    @Test fun aPageThatIsNoStreamReconnectsLikeALostConnectionAndTakesTheTurnBackUnderItsOwnName() = runTest {
         val server = object : TurnTransport by script("[]") {
-            override fun open(open: TurnOpen, seat: TurnSeat): Flow<TurnEvent> = flow { throw works.windmill.agent.TurnWireFault(works.windmill.agent.TurnWireFault.notAStream) }
+            override fun open(open: TurnOpen, seat: TurnSeat): Flow<TurnEvent> = flow { throw works.windmill.agent.TurnConnectionLost(null, notAStream = true) }
         }
         TurnPhone(this, folder.newFolder(), server).use { phone ->
             checkNotNull(phone.turns.send("Question", null, null, anonymous = true))
@@ -943,9 +944,48 @@ class CoachTurnsTests {
             assertEquals(CoachTurnRefusal.Offline, phone.turns.refusal.value)
             assertEquals(emptyList<CoachMessage>(), phone.messages())
             assertNull(phone.device(EndTurn.runningTurnKey))
-            assertEquals(listOf(mapOf("screen" to "coach", "outcome" to "offline", "duration_ms" to "0")), phone.telling.named("gym_ask_outcome"))
+            assertEquals(listOf(mapOf("operation" to "gym_coach_turn", "route" to "/v1/gym", "method" to "POST", "failure_kind" to "malformed")), phone.telling.named("api_request_failed"))
+            assertEquals(listOf(mapOf("screen" to "coach", "outcome" to "offline", "duration_ms" to "15000")), phone.telling.named("gym_ask_outcome"))
             assertEquals(emptyList<Map<String, String>>(), phone.telling.named("coach_turn"))
-            assertEquals(listOf(mapOf("failure_kind" to "decode", "operation" to "gym.coachTurn")), phone.telling.failures)
+            assertEquals(emptyList<Map<String, String>>(), phone.telling.failures)
+        }
+    }
+
+    // Anonymous AI switched off on the server is a refusal it meant: the turn comes back with the sign-in door, under `refused`, and nothing is filed.
+    @Test fun anonymousAiSwitchedOffIsARefusalTheServerMeant() = runTest {
+        val server = script("[]").apply { refuseOpen = TurnRefusal(503, TurnRefusal.anonymousUnavailable, null) }
+        TurnPhone(this, folder.newFolder(), server).use { phone ->
+            checkNotNull(phone.turns.send("Question", null, null, anonymous = true))
+            advanceUntilIdle()
+            assertEquals(CoachTurnRefusal.AnonymousUnavailable, phone.turns.refusal.value)
+            assertEquals(WithdrawnTurn("Question", null, null), phone.turns.withdrawn.value)
+            assertEquals(listOf(mapOf("operation" to "gym_coach_turn", "route" to "/v1/gym", "method" to "POST", "failure_kind" to "http", "status" to "503")), phone.telling.named("api_request_failed"))
+            assertEquals(listOf(mapOf("screen" to "coach", "outcome" to "refused", "duration_ms" to "0")), phone.telling.named("gym_ask_outcome"))
+            assertEquals(emptyList<Map<String, String>>(), phone.telling.failures)
+        }
+    }
+
+    // A Coach message of a shape this build cannot read, as another surface or a later build writes one: the sweep deletes no picture, files nothing and says so once per pass; once that message is gone the next sweep forgets the row no message claims.
+    @Test fun aMessageThisBuildCannotReadHoldsThePictureSweepWithNoFailure() = runTest {
+        TurnPhone(this, folder.newFolder(), script("""[{"event":"text","data":{"delta":"Hi"}},{"event":"done","data":{"state":"completed"}}]""")).use { phone ->
+            val turn = checkNotNull(phone.turns.send("Question", null, null, anonymous = true))
+            advanceUntilIdle()
+            val unclaimed = CoachPictureRow("picture-1", "image/jpeg", 40, 30, 100)
+            phone.engine.commit(ScopeRef(Gym.scope), works.windmill.sync.api.Gesture(emptyList(), local = listOf(works.windmill.sync.api.DeviceWrite(CoachPictureRow.key(unclaimed.id), unclaimed.json))))
+            val unreadable = works.windmill.sync.core.RecordID("turnUnreadable01")
+            phone.engine.commit(ScopeRef(Gym.scope), works.windmill.sync.api.Gesture(listOf(works.windmill.sync.api.Change.create(Gym.Types.message, works.windmill.sync.api.NewID.Given(unreadable),
+                mapOf("threadId" to turn.thread.record.json, "role" to Json.of("coach"), "at" to Json.of(1_800_000_000_000L), "calls" to Json.parse("""[{"callId":"c","name":"n","outcome":"ok"}]"""))))))
+            phone.turns.sweep()
+            advanceUntilIdle()
+            assertEquals(unclaimed.json, phone.device(CoachPictureRow.key(unclaimed.id)))
+            assertEquals(listOf(mapOf("screen" to "coach", "action" to "picture_sweep", "outcome" to "message_unreadable")), phone.telling.named("gym_action"))
+            assertEquals(emptyList<Map<String, String>>(), phone.telling.failures)
+            phone.engine.commit(ScopeRef(Gym.scope), works.windmill.sync.api.Gesture(listOf(works.windmill.sync.api.Change.delete(Gym.Types.message, unreadable))))
+            phone.turns.sweep()
+            advanceUntilIdle()
+            assertNull(phone.device(CoachPictureRow.key(unclaimed.id)))
+            assertEquals(1, phone.telling.named("gym_action").size)
+            assertEquals(emptyList<Map<String, String>>(), phone.telling.failures)
         }
     }
 

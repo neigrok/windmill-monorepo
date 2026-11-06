@@ -221,7 +221,7 @@ fun ThreadScreen(
     }
     AskScreen(
         state = state, events = events, thread = coach.exchanges(threadId), conversationId = threadId,
-        receipts = receipts, lookedAt = lookedAt, asking = coach.isAsking(threadId), refusal = coach.refusal(threadId),
+        receipts = receipts, lookedAt = lookedAt, asking = coach.isAsking(threadId), refusal = coach.refusalOnScreen(threadId),
         onAsk = { question, photo -> if (!coach.send(threadId, question, photo)) say("Your message couldn’t be saved. Try again.") },
         onStop = { coach.stop() }, seat = seat, composerEnabled = composerEnabled,
         composerVisible = !coach.anonymous || coach.anonymousAccess == AnonymousCoachAccess.Available,

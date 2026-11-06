@@ -436,25 +436,33 @@ class ForgetPicture(val id: String) : Action<Unit, Unit, GymRefusal> {
     }
 }
 
-// The rows no message claims: a conversation deleted on another phone, or a process that died between `KeepPicture` and `OpenTurn`. A replica behind its log cannot tell a message gone from one not yet arrived, so it forgets nothing.
+// The rows no message claims: a conversation deleted on another phone, or a process that died between `KeepPicture` and `OpenTurn`. A replica behind its log cannot tell a message gone from one not yet arrived, so it forgets nothing. A message this build cannot read might claim any row, so a pass that meets one refuses with `messageUnreadable`, forgets nothing, and the next pass tries again.
 class ForgetUnclaimedPictures : Action<ForgetUnclaimedPictures.Loaded, Unit, GymRefusal> {
-    data class Loaded(val rows: Set<String>, val claimed: Set<String>)
+    data class Loaded(val rows: Set<String>, val claimed: Set<String>, val unreadable: Boolean)
 
     override val scope = CoachMessage.scope
     override val refusals = GymRefusal
 
     override fun load(read: Reader): Loaded {
         val rows = read.devices(CoachPictureRow.key("")).keys
-        if (rows.isEmpty() || !read.caughtUpWithItsLog) return Loaded(emptySet(), emptySet())
-        return Loaded(rows, read.repository(CoachMessage).all(ViewMode.drawn).flatMap { it.pictures }.map { CoachPictureRow.key(it.id) }.toSet())
+        if (rows.isEmpty() || !read.caughtUpWithItsLog) return Loaded(emptySet(), emptySet(), unreadable = false)
+        val messages = read.source.drawn(CoachMessage.type).filter { it.isVisible }.map { record ->
+            try { CoachMessage.decode(Fields(record)) } catch (_: DecodeError) { null } catch (_: JsonError) { null }
+        }
+        return Loaded(rows, messages.filterNotNull().flatMap { it.pictures }.map { CoachPictureRow.key(it.id) }.toSet(), unreadable = null in messages)
     }
 
     override fun decide(loaded: Loaded, ids: IDSource): Decision<Unit, GymRefusal> {
+        if (loaded.unreadable) return Decision.Refuse(messageUnreadable)
         val unclaimed = loaded.rows - loaded.claimed
         if (unclaimed.isEmpty()) return Decision.Unchanged(Unit)
         val plan = Plan()
         unclaimed.forEach { plan.device(it, null) }
         return Decision.Write(plan, Unit)
+    }
+
+    companion object {
+        val messageUnreadable: GymRefusal = GymRefusal.of(Refused(RefusalCode("coach-message-unreadable"), null, path = Refused.Path.predicted))
     }
 }
 

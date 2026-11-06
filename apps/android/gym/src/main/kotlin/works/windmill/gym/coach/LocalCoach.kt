@@ -60,8 +60,10 @@ class LocalCoach(private val file: File, private val writesAllowed: () -> Boolea
         fun selecting(owner: String, chat: String) = copy(selected = selected + (owner to chat))
     }
 
-    // A document as it reads today: whatever an earlier version left keeps its drafts, kept drafts and retained answers, each under a chat stamped with the file's own time, and nothing else of what it held. The stamp holds across rereads because only a write moves it.
-    private fun parsed(text: String): Document {
+    // One read of the file: the document as it reads today, and whether the file is still an earlier version's. Whatever an earlier version left keeps its drafts, kept drafts and retained answers, each under a chat stamped with the file's own time, and nothing else of what it held. The stamp holds across rereads because only a write moves it.
+    private class OnDisk(val document: Document, val legacy: Boolean)
+
+    private fun parsed(text: String): OnDisk {
         val tree = diskJson.parseToJsonElement(text) as JsonObject
         val read = diskJson.decodeFromJsonElement(Document.serializer(), tree)
         val stamp = file.lastModified()
@@ -70,17 +72,17 @@ class LocalCoach(private val file: File, private val writesAllowed: () -> Boolea
             val ids = read.drafts[owner].orEmpty().keys + read.keptDrafts[owner].orEmpty().filterValues { it.isNotEmpty() }.keys + read.onboarding[owner].orEmpty().values.map { it.chat }
             ids.associateWith { LocalChat(it, stamp) } + read.localChats[owner].orEmpty()
         }
-        return read.copy(localChats = chats, selected = read.selected.filter { (owner, id) -> chats[owner]?.containsKey(id) == true })
+        return OnDisk(read.copy(localChats = chats, selected = read.selected.filter { (owner, id) -> chats[owner]?.containsKey(id) == true }), legacyKeys.any(tree::containsKey))
     }
 
     private fun encoded(next: Document): String = diskJson.encodeToString(Document.serializer(), next)
 
-    private val restored = runCatching { if (file.exists()) parsed(file.readText()) else Document() }
+    private val restored = runCatching { if (file.exists()) parsed(file.readText()) else OnDisk(Document(), legacy = false) }
     // Whether this build could read the file at all. One it could not is never written, and holds nothing for anyone.
     val readable: Boolean get() = restored.isSuccess
-    private var document = restored.getOrDefault(Document())
+    private var document = restored.getOrNull()?.document ?: Document()
     // Whether the file on disk is still an earlier version's: every write of this document replaces it.
-    private var legacyOnDisk = restored.isSuccess && file.exists() && legacyKeys.any((diskJson.parseToJsonElement(file.readText()) as JsonObject)::containsKey)
+    private var legacyOnDisk = restored.getOrNull()?.legacy == true
 
     // Off the main thread, once at launch: rewrites a file an earlier version left, so the conversations it held leave the disk, then removes the photos nothing here names. Any write before this drops those conversations as well; the photos wait for this, at this launch or the next. A file this build cannot read stays as it is, for whoever reads it to report.
     @Synchronized fun settle() {
@@ -154,7 +156,7 @@ class LocalCoach(private val file: File, private val writesAllowed: () -> Boolea
 
     private fun reconcileOwnerState() {
         val expected = uncertainOwnerWrite ?: return
-        val retained = parsed(file.readText())
+        val retained = parsed(file.readText()).document
         check(retained == expected.first || retained == expected.second) { "The account archive changed." }
         document = retained
         uncertainOwnerWrite = null
@@ -164,7 +166,7 @@ class LocalCoach(private val file: File, private val writesAllowed: () -> Boolea
         val before = document
         try { write(file, encoded(next)) }
         catch (failure: Exception) {
-            val retained = runCatching { parsed(file.readText()) }.getOrNull()
+            val retained = runCatching { parsed(file.readText()).document }.getOrNull()
             if (retained == null || retained != before && retained != next) {
                 uncertainOwnerWrite = before to next
                 throw failure
@@ -185,7 +187,7 @@ class LocalCoach(private val file: File, private val writesAllowed: () -> Boolea
         uncertainWrite?.let { intended ->
             val text = file.readText()
             val actual = diskJson.parseToJsonElement(text)
-            document = parsed(text)
+            document = parsed(text).document
             uncertainDraftRecovery?.let { draftRecovery = it.copy(published = actual == intended) }
             uncertainDraftRecovery = null
             uncertainWrite = null
@@ -207,7 +209,7 @@ class LocalCoach(private val file: File, private val writesAllowed: () -> Boolea
         try { write(file, published) }
         catch (failure: Exception) {
             val text = try {
-                file.readText().also { document = parsed(it) }
+                file.readText().also { document = parsed(it).document }
             } catch (_: Exception) {
                 uncertainWrite = diskJson.parseToJsonElement(published)
                 uncertainDraftRecovery = recovery

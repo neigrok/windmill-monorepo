@@ -45,6 +45,7 @@ import works.windmill.gym.coach.Ask
 import works.windmill.gym.coach.CoachAttachment
 import works.windmill.gym.coach.CoachDraft
 import works.windmill.gym.coach.AnonymousCoachAccess
+import works.windmill.gym.coach.refusalOnScreen
 import works.windmill.gym.sharing.WorkoutSharing
 import works.windmill.gym.sharing.WorkoutShareActions
 import works.windmill.gym.presentation.Ids
@@ -717,10 +718,12 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
             fun CoachStance(otherwise: @Composable () -> Unit) {
                 ReadingCoach()
                 when {
-                    !account.isSignedIn && anonymousCoachAccess != AnonymousCoachAccess.Available ->
+                    !account.isSignedIn && anonymousCoachAccess != AnonymousCoachAccess.Available -> {
+                        val conversations = store.coach.hasConversations
                         CoachAccessStance(seat = youInitial, onSignIn = shell.openSignIn,
-                            bound = anonymousCoachAccess == AnonymousCoachAccess.Bound && store.coach.hasConversations,
-                            onThreads = if (store.coach.hasConversations) ({ look(Away.Threads) }) else null)
+                            bound = anonymousCoachAccess == AnonymousCoachAccess.Bound && conversations,
+                            onThreads = if (conversations) ({ look(Away.Threads) }) else null)
+                    }
                     askAbsent -> AskAbsentStance(seat = youInitial, onThreads = { look(Away.Threads) })
                     else -> otherwise()
                 }
@@ -741,7 +744,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                     receipts = reviewFlow.receiptsAt(Reviewing.coach),
                     lookedAt = lookedAtIds,
                     asking = store.coach.isAsking(conversationId),
-                    refusal = store.coach.refusal(conversationId),
+                    refusal = store.coach.refusalOnScreen(conversationId),
                     onAsk = ::ask,
                     onStop = { store.coach.stop() },
                     composerEnabled = !overWorkout || coachOffered,
