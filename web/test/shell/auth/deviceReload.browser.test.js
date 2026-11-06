@@ -6,7 +6,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { beacon, withBrowserErrors } from '../../products/roadmap/browserFixture.js';
 import { scene } from '../../products/roadmap/skillTreeViewHost.js';
-import { LOAD_ERROR } from '../../../src/products/roadmap/copy.js';
+import { LAPSED_SESSION, LOAD_ERROR } from '../../../src/products/roadmap/copy.js';
 
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 const reference = fileURLToPath(new URL('../../../../packages/api-contract/sync/reference/', import.meta.url));
@@ -48,9 +48,11 @@ const ready = (async () => {
         import { BrowserSyncEngine } from '/src/platform/sync/engine.js';
         import { Registry } from '/@fs${reference}core/registry.js';
         import { PRODUCTS } from '/src/shell/products.js';
+        import { getRoomStatus } from '/src/shell/roomStatus.js';
         PRODUCTS.push({ id: 'probe', sync: { signedOutWork: { type: 'card', one: 'card', many: 'cards' } } });
         import '/src/styles/global.css';
         window.events = []; window.issues = []; window.sent = [];
+        window.roomLine = () => getRoomStatus()?.line ?? null;
         window.ceremonies = []; window.revealed = []; window.revealFrames = []; window.cameraCalls = [];
         window.deviceStore = new SyncStore();
         window.deviceIndex = new LocalTreeRegistry();
@@ -148,13 +150,16 @@ for (const reload of [false, true]) for (const returning of ['A', 'B']) {
         account = null;
         await page.evaluate(async () => { serverAccount = null; await auth.refresh(); await roadmapSession.persistNow(); });
         await page.waitForFunction(() => document.getElementById('auth-state').textContent === 'ghost:true');
+        await page.waitForFunction((line) => roomLine() === line, LAPSED_SESSION);
         assert.deepEqual(await page.evaluate(() => deviceStore.treeIds()), ['t_kept']);
         if (reload) {
           await page.reload();
           await page.waitForFunction(() => typeof mountDevice === 'function');
           await page.evaluate((name) => mountDevice(name, null, false), name);
           await page.waitForFunction(() => document.getElementById('auth-state').textContent === 'ghost:true');
-          await page.getByRole('button', { name: LOAD_ERROR.action, exact: true }).waitFor();
+          await page.locator('.st-board-card-title').filter({ hasText: 'Kept device step' }).waitFor();
+          await page.waitForFunction((line) => roomLine() === line, LAPSED_SESSION);
+          assert.equal(await page.getByRole('button', { name: LOAD_ERROR.action, exact: true }).count(), 0);
           assert.deepEqual(await page.evaluate(() => deviceStore.treeIds()), ['t_kept']);
         }
         account = returning;
