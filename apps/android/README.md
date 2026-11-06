@@ -356,8 +356,8 @@ Recipe, once the commit is on `main` (`V` the version, `SHA` the commit):
 1. `git tag android-vV SHA && git push origin android-vV`. CI tests, assembles and uploads
    `windmill-V-signing-input-run-<run id>-<attempt>`: the candidate APK, its SHA-256 and provenance, the mapping.
 2. `gh run watch <run id> --exit-status`, then `gh run download <run id> -n <artifact> -D signing-input`.
-3. `python3 tools/release.py finalize --candidate signing-input/windmill-V-signing-input.apk --provenance signing-input/windmill-V-signing-input.apk.provenance.json --mapping signing-input/windmill-V-mapping.txt --keystore <retained PKCS12> --out final --build-tools "$ANDROID_HOME/build-tools/36.0.0" --expected-event push --expected-ref refs/tags/android-vV --expected-version V --expected-commit SHA --expected-workflow-commit SHA --expected-run-id <run id> --expected-run-number <run number> --expected-run-attempt <attempt>`,
-   the password on stdin. The key and password are held outside the repo.
+3. `security find-generic-password -s works.windmill.android.release-signing -a windmill-android -w | python3 tools/release.py finalize --candidate signing-input/windmill-V-signing-input.apk --provenance signing-input/windmill-V-signing-input.apk.provenance.json --mapping signing-input/windmill-V-mapping.txt --keystore ~/.local/share/windmill/signing/android-release.p12 --out final --build-tools "$ANDROID_HOME/build-tools/36.0.0" --expected-event push --expected-ref refs/tags/android-vV --expected-version V --expected-commit SHA --expected-workflow-commit SHA --expected-run-id <run id> --expected-run-number <run number> --expected-run-attempt <attempt>`.
+   The `--expected-*` values come from the run, not from the artifact's own provenance.
 4. `sentry-cli upload-proguard --uuid <apk.proguardUuid of final/windmill-V.apk.provenance.json> final/windmill-V-mapping.txt`.
 5. Acceptance on `Release_API34`: the eight steps below.
 6. `gh release create android-vV final/windmill-V.apk final/windmill-V.apk.sha256 final/windmill-V.apk.provenance.json --title "Android V" --notes-file <notes>`, then record the release below.
@@ -368,8 +368,14 @@ a non-debuggable, minified APK, SHA-256, R8 mapping and schema 3 source/run prov
 release identity. CI has read-only repository permissions and no private signing key.
 `versionCode` is the workflow run number and must exceed every previously published version code.
 
-Release signing is local. The retained encrypted PKCS12 key and password are held separately;
-`release-signing.json` pins the public certificate. `tools/release.py finalize` checks independently
+Release signing is local, on the owner's Mac, and the key never enters the repository or CI: the
+repository is public, and a sideload signing key cannot be rotated without ending in-place updates for
+every installed copy, so a compromised CI must not be able to produce a validly signed APK. The retained
+PKCS12 key is `~/.local/share/windmill/signing/android-release.p12` (alias `windmill-android`), with a
+copy under `~/Library/Application Support/Windmill/Backups/` and a custody record beside the key naming
+both. Its password is the macOS Keychain item with service `works.windmill.android.release-signing` and
+account `windmill-android`, piped into the helper's stdin as step 3 shows; it is never written to a file
+or a command line. `release-signing.json` pins the public certificate. `tools/release.py finalize` checks independently
 verified commit/ref/version/workflow/run identities, receives the password through stdin, verifies
 the input, signs and checks the certificate and unchanged application contents. Pass
 `--mapping signing-input/windmill-<version>-mapping.txt` alongside `--candidate`, `--provenance`
