@@ -3,21 +3,24 @@ import { track } from '../../../telemetry/beacon.js';
 import { StepSelection, deletable } from './acts.js';
 import { stepOf } from '../step/stepAddress.js';
 import { boardFocusTarget } from './traversal.js';
+import { selectedCount, selectingAnnouncement } from '../copy.js';
 
-const IDLE = { phase: 'idle', visit: null, ids: [], focus: null };
+const IDLE = { phase: 'idle', visit: null, ids: [], last: null, announcement: '', focus: null };
 const SELECTING = new Set(['cards', 'kinds', 'closingKinds']);
 
 export function selectionState(state, event) {
   switch (event.type) {
     case 'start':
       if (state.phase !== 'idle') return state;
-      return { phase: 'cards', visit: event.visit, ids: [event.visit.id], focus: 'start' };
+      return { phase: 'cards', visit: event.visit, ids: [event.visit.id], last: event.visit.id, announcement: selectingAnnouncement({ count: 1 }), focus: 'start' };
     case 'toggle':
       if (!SELECTING.has(state.phase)) return state;
-      return { ...state, ids: event.ids };
-    case 'pruned':
+      return { ...state, ids: event.ids, last: event.id, announcement: selectedCount({ count: event.ids.length }) };
+    case 'pruned': {
       if (!SELECTING.has(state.phase)) return state;
-      return { ...state, ids: state.ids.filter((id) => !event.ids.includes(id)) };
+      const ids = state.ids.filter((id) => !event.ids.includes(id));
+      return { ...state, ids, announcement: selectedCount({ count: ids.length }) };
+    }
     case 'openKinds':
       if (state.phase !== 'cards') return state;
       return { ...state, phase: 'kinds' };
@@ -33,17 +36,18 @@ export function selectionState(state, event) {
         ...state,
         phase: state.phase === 'closingKinds' ? 'endingKinds' : 'ending',
         focus: event.restore ? 'restore' : null,
+        announcement: '',
       };
     case 'leaveKinds':
       if (state.phase !== 'endingKinds') return state;
       return { ...state, phase: 'ending' };
     case 'left':
       if (!['ending', 'endingKinds'].includes(state.phase)) return state;
-      return { ...IDLE, visit: state.focus ? state.visit : null, focus: state.focus };
+      return { ...IDLE, visit: state.focus ? state.visit : null, last: state.focus ? state.last : null, focus: state.focus };
     case 'focused':
       if (!state.focus) return state;
       if (state.focus === 'restore' && state.phase !== 'idle') return state;
-      return { ...state, visit: state.phase === 'idle' ? null : state.visit, focus: null };
+      return { ...state, visit: state.phase === 'idle' ? null : state.visit, last: state.phase === 'idle' ? null : state.last, focus: null };
     default:
       return state;
   }
@@ -129,11 +133,11 @@ export function useStepSelection({ tree, board, shown, doneExpanded, active, ena
         }
         if (!['cards', 'kinds'].includes(context.state.phase) || !context.selection || !deletable(context.tree, [id])) return;
         const next = context.selection.toggle(id, context.board, context.shown, { doneExpanded: context.doneExpanded });
+        transition({ type: 'toggle', id, ids: next.ids });
         if (next.count === 0) {
           end('emptied');
           return;
         }
-        transition({ type: 'toggle', ids: next.ids });
       },
       recolor(hue) {
         const context = current.current;
@@ -225,7 +229,8 @@ export function useStepSelection({ tree, board, shown, doneExpanded, active, ena
   useLayoutEffect(() => {
     if (!state.focus || !active || !state.visit) return;
     if (state.focus === 'restore' && state.phase !== 'idle') return;
-    const { id, column } = state.visit;
+    const { column } = state.visit;
+    const id = state.focus === 'start' ? state.visit.id : state.last;
     const shownIds = board?.shownCards(column, { doneExpanded }).cards.map((card) => card.id) ?? [];
     const stillShown = shown === column && shownIds.includes(id) && !leaving.has(id);
     const starter = stillShown ? root.current?.querySelector(`.st-board-phone-pane.is-shown .st-board-card:not(.is-leaving)[data-step-id="${CSS.escape(id)}"]`) : null;
@@ -235,10 +240,11 @@ export function useStepSelection({ tree, board, shown, doneExpanded, active, ena
     target.focus({ preventScroll: true });
     if (state.focus === 'restore') target.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     transition({ type: 'focused' });
-  }, [state.focus, state.phase, state.visit, active, board, shown, doneExpanded, leaving, root, transition]);
+  }, [state.focus, state.phase, state.visit, state.last, active, board, shown, doneExpanded, leaving, root, transition]);
 
-  const starterId = state.visit && (SELECTING.has(state.phase) || state.focus) ? state.visit.id : null;
+  const starterId = state.visit && SELECTING.has(state.phase) ? state.visit.id : null;
+  const restoreId = state.visit && (SELECTING.has(state.phase) || state.focus) ? state.last : null;
   // A selection that takes every root the roadmap has left offers no Delete, as the Graph's selection bars do.
   const selectionDeletable = derived.selection !== null && deletable(tree, derived.selection.ids);
-  return { selection: derived.selection, starterId, ...handlers, deleteSelected: selectionDeletable ? handlers.deleteSelected : null };
+  return { selection: derived.selection, starterId, restoreId, announcement: state.announcement, ...handlers, deleteSelected: selectionDeletable ? handlers.deleteSelected : null };
 }

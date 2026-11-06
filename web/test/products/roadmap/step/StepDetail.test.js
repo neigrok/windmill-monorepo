@@ -4,6 +4,63 @@ import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { createServer } from 'vite';
 
+import { register } from 'node:module';
+import { STEP_DETAIL } from '../../../../src/products/roadmap/copy.js';
+
+register('../../../jsxLoader.mjs', import.meta.url);
+const React = (await import('react')).default;
+const { renderToStaticMarkup } = await import('react-dom/server');
+const { StepDetail } = await import('../../../../src/products/roadmap/step/StepDetail.jsx');
+const { SkillTree } = await import('../../../../src/products/roadmap/model/SkillTree.js');
+
+test('StepDetail — the Select offer follows Graph and precedes Delete, and dispatches its step', () => {
+  const tree = new SkillTree({ id: 'sail', title: 'Learn to sail', nodes: [
+    { id: 'course', label: 'Course', prerequisites: [] },
+    { id: 'wind', label: 'Wind', prerequisites: ['course'] },
+  ] });
+  const selected = [];
+  const props = { tree, completed: new Set(['course']), completedAt: {}, address: { id: 'wind', trail: ['wind'], door: 'card' },
+    breakpoint: 'phone', roadmapTitle: tree.title, editable: true, deletable: true, stepLink: 'https://windmill.test/t/sail#?step=wind',
+    onOpenInGraph: () => {}, onSelect: (id) => selected.push(id) };
+  const menu = (extra) => {
+    let items;
+    function Inspect() {
+      const rendered = StepDetail({ ...props, ...extra });
+      const visit = (element) => {
+        if (!React.isValidElement(element)) return;
+        if (element.props.items) items = element.props.items;
+        React.Children.forEach(element.props.children, visit);
+      };
+      visit(rendered);
+      return null;
+    }
+    renderToStaticMarkup(React.createElement(Inspect));
+    return items;
+  };
+  const offered = menu({});
+  assert.deepEqual(offered.map(({ label }) => label), [STEP_DETAIL.copyLink, STEP_DETAIL.openInGraph, STEP_DETAIL.select, STEP_DETAIL.deleteStep]);
+  assert.deepEqual(menu({ onSelect: null }).map(({ label }) => label), [STEP_DETAIL.copyLink, STEP_DETAIL.openInGraph, STEP_DETAIL.deleteStep]);
+  assert.deepEqual(menu({ onOpenInGraph: null, stepLink: null, deletable: false }).map(({ label }) => label), [STEP_DETAIL.select]);
+  const previousWindow = globalThis.window;
+  const previousFetch = globalThis.fetch;
+  const sent = [];
+  let flush;
+  globalThis.window = { location: { hostname: 'windmill.test' }, setTimeout: (callback) => { flush = callback; return 0; } };
+  globalThis.fetch = async (_url, options) => { sent.push(JSON.parse(options.body)); };
+  try {
+    offered.find(({ label }) => label === STEP_DETAIL.select).run();
+    flush();
+    assert.deepEqual(selected, ['wind']);
+    assert.deepEqual(sent.flatMap(({ events }) => events.map(({ name, props }) => ({ name, props }))), [
+      { name: 'roadmap_board_step_action', props: { surface: 'page', action: 'select' } },
+    ]);
+  } finally {
+    if (previousWindow === undefined) delete globalThis.window;
+    else globalThis.window = previousWindow;
+    globalThis.fetch = previousFetch;
+  }
+});
+
 const root = fileURLToPath(new URL('../../../../', import.meta.url));
 const entry = `
 import React, { startTransition, useEffect, useMemo, useState } from 'react';
@@ -115,7 +172,9 @@ window.entryReady = true;
 `;
 
 let server, browser, origin;
-const ready = (async () => {
+let ready;
+function start() {
+  ready ??= (async () => {
   server = await createServer({ configFile: false, root, cacheDir: `${root}/node_modules/.vite-step-detail-test`,
     plugins: [{ name: 'step-detail-test', enforce: 'pre',
       resolveId(id) {
@@ -145,7 +204,9 @@ const ready = (async () => {
   await server.listen(0);
   origin = `http://127.0.0.1:${server.httpServer.address().port}`;
   browser = await chromium.launch({ headless: true });
-})();
+  })();
+  return ready;
+}
 after(async () => {
   try { await ready; } finally { await browser?.close(); await server?.close(); }
 });
@@ -193,7 +254,7 @@ const waitForColumn = (page, name, titles) => page.waitForFunction(({ name, titl
 const card = (page, label) => page.locator('.st-board-card:visible', { has: page.locator('.st-board-card-title', { hasText: new RegExp(`^${label}$`) }) });
 
 test('Chromium: Enter on a card opens the labelled modal, Tab stays inside it, Escape closes it and focus returns to the card', async () => {
-  await ready;
+  await start();
   const errors = [];
   const page = await openRoom({ viewport: { width: 1440, height: 960 } }, errors);
   try {
@@ -224,7 +285,7 @@ test('Chromium: Enter on a card opens the labelled modal, Tab stays inside it, E
 });
 
 test('Chromium: from 744px the modal takes the 696px form, 24px in from the window', async () => {
-  await ready;
+  await start();
   const errors = [];
   const page = await openRoom({ viewport: { width: 744, height: 960 } }, errors);
   try {
@@ -238,7 +299,7 @@ test('Chromium: from 744px the modal takes the 696px form, 24px in from the wind
 });
 
 test('Chromium: an inline Undo that throws reports its static operation and its offer leaves, with no event claiming it worked', async () => {
-  await ready;
+  await start();
   const errors = [];
   const page = await openRoom({ viewport: { width: 1440, height: 960 } }, errors);
   try {
@@ -256,7 +317,7 @@ test('Chromium: an inline Undo that throws reports its static operation and its 
 });
 
 test('Chromium: Complete and Reset act in place — the modal stays, the status flips with Undo, a line names what moved, nothing toasts', async () => {
-  await ready;
+  await start();
   const errors = [];
   const page = await openRoom({ viewport: { width: 1440, height: 960 } }, errors);
   try {
@@ -292,7 +353,7 @@ test('Chromium: Complete and Reset act in place — the modal stays, the status 
 });
 
 test('Chromium: Undo lasts the hold window, then goes; the outcome line and Reset remain', async () => {
-  await ready;
+  await start();
   const errors = [];
   const page = await openRoom({ viewport: { width: 1440, height: 960 }, clock: true }, errors);
   try {
@@ -310,7 +371,7 @@ test('Chromium: Undo lasts the hold window, then goes; the outcome line and Rese
 });
 
 test('Chromium: a locked step leads with what it still needs; on both surfaces each unmet need names its column and opens it', async () => {
-  await ready;
+  await start();
   const errors = [];
   const desktop = await openRoom({ viewport: { width: 1440, height: 960 } }, errors);
   const phone = await openRoom({ viewport: { width: 390, height: 844 } }, errors);
@@ -373,7 +434,7 @@ const modalOverview = (page) => page.evaluate(() => {
 });
 
 test('Chromium: the modal draws an Up next step\'s status row under its description (03.01)', async () => {
-  await ready;
+  await start();
   const errors = [];
   const page = await openRoom({ viewport: { width: 1440, height: 960 } }, errors);
   try {
@@ -391,7 +452,7 @@ test('Chromium: the modal draws an Up next step\'s status row under its descript
 });
 
 test('Chromium: the modal draws a locked step\'s status on 24px and its unmet need on a sunken row with its column (03.07)', async () => {
-  await ready;
+  await start();
   const errors = [];
   const page = await openRoom({ viewport: { width: 1440, height: 960 } }, errors);
   try {
@@ -435,7 +496,7 @@ test('Chromium: the modal draws a locked step\'s status on 24px and its unmet ne
 });
 
 test('Chromium: on the phone a step is a pushed page, and Back returns to the same pane, scroll and card', async () => {
-  await ready;
+  await start();
   const errors = [];
   const knots = Array.from({ length: 14 }, (_, index) => ({ id: `knot${index + 1}`, label: `Knot ${index + 1}`, prerequisites: ['solo'], color: 'plum' }));
   const page = await openRoom({ viewport: { width: 390, height: 844 }, nodes: [...learnToSailNodes, ...knots] }, errors);
@@ -466,7 +527,7 @@ test('Chromium: on the phone a step is a pushed page, and Back returns to the sa
 });
 
 test('Chromium: checking the last subtask offers Complete step; the subtasks alone complete nothing', async () => {
-  await ready;
+  await start();
   const errors = [];
   const workspaces = { wind: { subtasks: [{ id: 's1', label: 'Watch the telltales', done: true }, { id: 's2', label: 'Try a small turn', done: false }], note: '', links: [] } };
   const page = await openRoom({ viewport: { width: 1440, height: 960 }, workspaces }, errors);
@@ -489,7 +550,7 @@ test('Chromium: checking the last subtask offers Complete step; the subtasks alo
 });
 
 test('Chromium: the step menu copies the step’s link with Link copied and opens the step in the Graph; a reader’s has no Delete', async () => {
-  await ready;
+  await start();
   const errors = [];
   const page = await openRoom({ viewport: { width: 1440, height: 960 }, permissions: ['clipboard-read', 'clipboard-write'] }, errors);
   const reader = await openRoom({ viewport: { width: 390, height: 844 }, editable: false }, errors);
@@ -521,7 +582,7 @@ test('Chromium: the step menu copies the step’s link with Link copied and open
 });
 
 test('Chromium: View branch closes the step and scopes the Board to it; a locked step offers no View branch', async () => {
-  await ready;
+  await start();
   const errors = [];
   const page = await openRoom({ viewport: { width: 1440, height: 960 } }, errors);
   try {
@@ -551,7 +612,7 @@ const activeIs = (page) => page.evaluate(() => {
 });
 
 test('Chromium: crossing 744px with a step open swaps the modal for the page and back on one live layer: focus, Back and Escape still work', async () => {
-  await ready;
+  await start();
   const errors = [];
   const page = await openRoom({ viewport: { width: 1440, height: 960 } }, errors);
   try {
@@ -580,7 +641,7 @@ test('Chromium: crossing 744px with a step open swaps the modal for the page and
 });
 
 test('Chromium: focus never falls to the page — Complete, Undo, Reset and the subtask offer land on the status row, Escape still closes', async () => {
-  await ready;
+  await start();
   const errors = [];
   const workspaces = { wind: { subtasks: [{ id: 's1', label: 'Try a small turn', done: false }], note: '', links: [] } };
   const page = await openRoom({ viewport: { width: 1440, height: 960 }, workspaces }, errors);
@@ -613,7 +674,7 @@ test('Chromium: focus never falls to the page — Complete, Undo, Reset and the 
 });
 
 test('Chromium: Undo expiry recovers to status, subtask Cancel returns to its opener, and Escape still closes', async () => {
-  await ready;
+  await start();
   const errors = [];
   const page = await openRoom({ viewport: { width: 1440, height: 960 }, clock: true }, errors);
   try {
@@ -638,7 +699,7 @@ test('Chromium: Undo expiry recovers to status, subtask Cancel returns to its op
 });
 
 test('Chromium: Undo after Reset gives the step back its mark, quietly; it completes at the Undo’s time, so it heads Done', async () => {
-  await ready;
+  await start();
   const errors = [];
   const page = await openRoom({ viewport: { width: 1440, height: 960 } }, errors);
   try {
@@ -658,7 +719,7 @@ test('Chromium: Undo after Reset gives the step back its mark, quietly; it compl
 });
 
 test('Chromium: Delete from ⋯ hands focus to the columns’ tab stop, drops the step from the URL, and restoring the step reopens nothing', async () => {
-  await ready;
+  await start();
   const errors = [];
   const page = await openRoom({ viewport: { width: 1440, height: 960 } }, errors);
   try {
@@ -709,7 +770,7 @@ test('Chromium: Delete from ⋯ hands focus to the columns’ tab stop, drops th
 });
 
 test('Chromium: a stale step link leaves the URL without opening anything', async () => {
-  await ready;
+  await start();
   const errors = [];
   const context = await browser.newContext({ viewport: { width: 1440, height: 960 } });
   const page = await context.newPage();
@@ -728,7 +789,7 @@ test('Chromium: a stale step link leaves the URL without opening anything', asyn
 });
 
 test('Chromium: View branch from a step the visit reached by rows hands focus to the scoped Board’s stop when the first card left the branch', async () => {
-  await ready;
+  await start();
   const errors = [];
   const page = await openRoom({ viewport: { width: 1440, height: 960 } }, errors);
   try {
@@ -746,7 +807,7 @@ test('Chromium: View branch from a step the visit reached by rows hands focus to
 });
 
 test('Chromium: with no link to share, the step menu offers no Copy link', async () => {
-  await ready;
+  await start();
   const errors = [];
   const page = await openRoom({ viewport: { width: 1440, height: 960 }, linked: false }, errors);
   try {
@@ -762,7 +823,7 @@ test('Chromium: with no link to share, the step menu offers no Copy link', async
 const sea = { sea: [{ id: 'tide', label: 'Read the tide', prerequisites: [], color: 'sky' }] };
 
 test('Chromium: arriving at a step link from another roadmap opens the step once its own roadmap loads, and keeps it in the URL', async () => {
-  await ready;
+  await start();
   const errors = [];
   const page = await openRoom({ viewport: { width: 1440, height: 960 }, others: sea, start: '#/app/sea' }, errors);
   try {
@@ -776,7 +837,7 @@ test('Chromium: arriving at a step link from another roadmap opens the step once
 });
 
 test('Chromium: Back from another roadmap into a step link keeps the step and opens it again', async () => {
-  await ready;
+  await start();
   const errors = [];
   const page = await openRoom({ viewport: { width: 1440, height: 960 }, others: sea, start: '#/app/sail?step=wind' }, errors);
   try {
@@ -793,7 +854,7 @@ test('Chromium: Back from another roadmap into a step link keeps the step and op
 });
 
 test('Chromium: delete confirmation cancels without writing on phone and desktop', async () => {
-  await ready;
+  await start();
   for (const viewport of [{ width: 390, height: 844 }, { width: 1440, height: 960 }]) {
     const errors = [];
     const page = await openRoom({ viewport }, errors);
@@ -811,7 +872,7 @@ test('Chromium: delete confirmation cancels without writing on phone and desktop
 });
 
 test('Chromium: the sole root keeps Delete unavailable; one of several roots can be deleted', async () => {
-  await ready;
+  await start();
   for (const extraRoot of [false, true]) {
     const errors = [];
     const nodes = extraRoot
@@ -829,7 +890,7 @@ test('Chromium: the sole root keeps Delete unavailable; one of several roots can
 
 for (const moveFocus of [false, true]) {
   test(`Chromium: deleting the phone pane's last card focuses its segment during regroup${moveFocus ? ' without stealing a later focus move' : ' then follows the surviving card'}`, async () => {
-    await ready;
+    await start();
     const errors = [];
     const nodes = learnToSailNodes.filter((step) => !['bowline', 'solo'].includes(step.id));
     const page = await openRoom({ viewport: { width: 390, height: 844 }, nodes }, errors);
@@ -866,7 +927,7 @@ for (const moveFocus of [false, true]) {
 for (const width of [390, 744, 1440]) {
   for (const [id, title, primary] of [['wind', 'Read the wind', 'Complete'], ['parts', 'Name the boat parts', 'Reset'], ['dock', 'Leave the dock', null]]) {
     test(`Chromium ${width}: ${id} actions follow the tab and column`, async () => {
-      await ready;
+      await start();
       const errors = [];
       const page = await openRoom({ viewport: { width, height: 960 }, start: `#/app/sail?step=${id}`, editingEnabled: true }, errors);
       try {
@@ -914,7 +975,7 @@ for (const width of [390, 744, 1440]) {
   }
 
   test(`Chromium ${width}: empty workspace add buttons center their icons with a six-pixel text gap`, async () => {
-    await ready;
+    await start();
     const errors = [];
     const page = await openRoom({ viewport: { width, height: 960 }, start: '#/app/sail?step=wind' }, errors);
     try {
@@ -948,7 +1009,7 @@ for (const width of [390, 744, 1440]) {
   });
 
   test(`Chromium ${width}: Edit Save returns to its opener and Escape never closes the covered step`, async () => {
-    await ready;
+    await start();
     const errors = [];
     const page = await openRoom({ viewport: { width, height: 960 }, editingEnabled: true }, errors);
     try {
@@ -987,7 +1048,7 @@ for (const width of [390, 744, 1440]) {
   });
 
   test(`Chromium ${width}: note discard traps focus and returns to the note opener`, async () => {
-    await ready;
+    await start();
     const errors = [];
     const page = await openRoom({ viewport: { width, height: 960 }, editingEnabled: true,
       workspaces: { wind: { subtasks: [], note: 'Watch the water', links: [] } } }, errors);
@@ -1021,7 +1082,7 @@ for (const width of [390, 744, 1440]) {
   });
 
   test(`Chromium ${width}: readers have no edit action or personal workspace`, async () => {
-    await ready;
+    await start();
     const errors = [];
     const page = await openRoom({ viewport: { width, height: 960 }, editable: false, editingEnabled: true }, errors);
     try {
@@ -1039,7 +1100,7 @@ for (const width of [390, 744, 1440]) {
 
 
 test('Chromium: system Back closes the phone detail without saving its local note draft', async () => {
-  await ready;
+  await start();
   const errors = [];
   const page = await openRoom({ viewport: { width: 390, height: 844 }, editingEnabled: true,
     workspaces: { wind: { subtasks: [], note: 'Keep this note', links: [] } } }, errors);

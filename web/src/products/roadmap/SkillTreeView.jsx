@@ -17,7 +17,7 @@ import { StepComposer } from './step/StepComposer.jsx';
 import { StepDetail } from './step/StepDetail.jsx';
 import { RefusedSync } from './sync/SyncNotices.jsx';
 import { deletable, takesEveryRoot } from './board/acts.js';
-import { ASK_AI_PLACEHOLDER, GRAPH_LOAD, LOAD_ERROR, forkedToast } from './copy.js';
+import { ASK_AI_PLACEHOLDER, GRAPH_LOAD, GRAPH_UNAVAILABLE, LOAD_ERROR, forkedToast } from './copy.js';
 import { hashWithStep, useStepAddress } from './step/stepAddress.js';
 import { BoardComposer, useBoardActs } from './board/useBoardActs.js';
 import { CoachChip } from './demo/CoachChip.jsx';
@@ -113,7 +113,7 @@ export function SkillTreeView({ treeId, demo = false }) {
   const { undo, redo, bulkDelete, deleteSelected, handleDeleteEdge, handleCreateRoot, graftImported, bulkRecolor, composerOpen, closeComposer, openComposer } = editing;
 
   // The canvas, then the tree it draws.
-  const { scene, panning, hoveredId } = useRoomScene({ anchors, sceneRef, desktopEditorRef, breakpoint, editing, selection, reorderHint: structure.reorderHint, onPickNothing: closeActivity, showToast });
+  const { scene, graphUnavailable, panning, hoveredId } = useRoomScene({ anchors, sceneRef, desktopEditorRef, breakpoint, editing, selection, reorderHint: structure.reorderHint, onPickNothing: closeActivity, showToast });
   const load = useRoomLoad({
     treeId, accountId: account?.id ?? null, demo, shared, demotion, breakpoint, placeKept, room, scene, framing, structure, progressActs, activity,
     legend: legendKit, workspace: { hydrateWorkspaces, pushArcs }, selection, dismissToast, desktopEditorRef,
@@ -160,7 +160,7 @@ export function SkillTreeView({ treeId, demo = false }) {
     stopEditing();
     collapse();
   }, [closeComposer, stopEditing, collapse]);
-  const view = useRoomView({ treeId, tree, loading, loadError, who, linkedStep: stepAddress.id, scene, anchors, onLeave: onLeaveView, onSwitched: onViewSwitched });
+  const view = useRoomView({ treeId, tree, loading, loadError, who, linkedStep: stepAddress.id, scene, graphUnavailable, anchors, onLeave: onLeaveView, onSwitched: onViewSwitched });
   const { decidedView, boardActive, canvasView, shownView, boardFacts, boardAwaitsRoadmap, switchView, onSwitchView } = view;
 
   const graphMulti = canvasView && (selection.multiMode || selectedIds.size + selectedEdges.size > 1);
@@ -180,8 +180,10 @@ export function SkillTreeView({ treeId, demo = false }) {
   const [boardQuery, setBoardQuery] = useState(() => new BoardQuery());
   const [boardQuiet, setBoardQuiet] = useState(0);
   const [boardReveal, setBoardReveal] = useState(null);
+  const [boardSelect, setBoardSelect] = useState(null);
+  const boardSelectionOpen = phone && boardActive && owner;
   const [boardOverall, setBoardOverall] = useState(null);
-  useEffect(() => { setBoardComposer(null); setBoardOverall(null); setBoardReveal(null); }, [treeId, load.reloadKey]);
+  useEffect(() => { setBoardComposer(null); setBoardOverall(null); setBoardReveal(null); setBoardSelect(null); }, [treeId, load.reloadKey]);
   const { syncSnapshot, deviceLine, refusal } = useRoomSyncNotices({ treeId, syncSession, owner, status, lapsed: sessionLapsed || lapsed, phone, openSignInDoor, setBoardQuiet });
   const revealOnGraph = useCallback((id) => {
     if (selectedIdRef.current !== id) framing.graphRevealRef.current = id;
@@ -203,6 +205,10 @@ export function SkillTreeView({ treeId, demo = false }) {
     onQuiet: () => setBoardQuiet((current) => current + 1),
     track, emit, report: reportRoadmapFailure,
   });
+  const explainGraphUnavailable = useCallback(() => {
+    track('roadmap_graph_unavailable', { band: breakpoint });
+    if (phone && !boardHeld) showToast(GRAPH_UNAVAILABLE);
+  }, [breakpoint, phone, boardHeld, showToast]);
   const boardTree = useMemo(() => (boardHeld && tree ? boardHeld.projected(tree) : tree), [boardHeld, tree]);
   room.standingTreeRef.current = boardTree;
   const heldGraphModel = useMemo(() => {
@@ -222,7 +228,7 @@ export function SkillTreeView({ treeId, demo = false }) {
 
   // A step open over either view, and the composer that writes one.
   const stepPage = useStepPage({
-    treeId, tree, loading, address: stepAddress, setSelectedId, view, anchors, sceneRef, boardActs,
+    treeId, tree, loading, address: stepAddress, setSelectedId, view, anchors, sceneRef, boardActs, boardTree, setBoardQuery, setBoardSelect,
     viewBranch: (id) => setBoardQuery((query) => query.inBranch(id)),
     onGraphStepOpen: () => { framing.firstFrameRef.current = null; },
   });
@@ -248,7 +254,7 @@ export function SkillTreeView({ treeId, demo = false }) {
   const forkPresent = (reader || demo) && !demotion?.cardOpen;
   const { graphStep, forkPillShown, openGraphFork, rememberGraphFocus } = useGraphStepBar({ phoneGraph, selection, selectedNode, selectedState, covered: stepCovering, forkPresent, forkOpen, setForkOpen, rootRef, canvasRef, focusGraph });
   const verbs = useRowVerbs({
-    treeId, tree, boardTree, shownStats, who, view, boardQuery, setBoardQuery, progress, activity, address: stepAddress,
+    treeId, tree, boardTree, shownStats, who, view, boardQuery, setBoardQuery, progress, activity, graphUnavailable, address: stepAddress,
     graphStepReturnRef: stepPage.graphStepReturnRef, anchors, room, revealOnGraph, setSelectedId, setShareOpen, showToast,
   });
   const legendWithCounts = useMemo(() => withCounts(legend, tree?.nodes ?? []), [legend, tree]);
@@ -298,7 +304,7 @@ export function SkillTreeView({ treeId, demo = false }) {
     activityEnabled: verbs.activityEnabled, openActivity: verbs.openRowActivity,
     covered: keyboardCovered,
     // G follows the switch from 744px, for either role.
-    switchViews: !phone && onSwitchView ? () => switchView(boardActive ? 'tree' : 'board') : null,
+    switchViews: !graphUnavailable && !phone && onSwitchView ? () => switchView(boardActive ? 'tree' : 'board') : null,
     toggleShortcuts: () => setShortcutsOpen((visible) => !visible),
     openComposer,
     selectEveryStep: () => selectAll(projectionRef.current?.nodes.map((node) => node.id) ?? []),
@@ -346,7 +352,7 @@ export function SkillTreeView({ treeId, demo = false }) {
 
       <div className="st-roadmap-identity-host" ref={identityRef}>
         <ErrorBoundary
-          fallback={<RoadmapIdentityFallback view={boardActive ? 'board' : 'tree'} phone={phone} onSwitchView={onSwitchView} onBottom={setTopbarBottom} />}
+          fallback={<RoadmapIdentityFallback view={boardActive ? 'board' : 'tree'} phone={phone} onSwitchView={onSwitchView} graphUnavailable={graphUnavailable} onGraphUnavailable={explainGraphUnavailable} onBottom={setTopbarBottom} />}
           onCrash={(error) => reportRoadmapFailure('roadmap-identity', error)}
         >
           <RoadmapIdentity
@@ -357,6 +363,8 @@ export function SkillTreeView({ treeId, demo = false }) {
             switcher={owner && !phone && !boardAwaitsRoadmap ? <TreeSwitcher {...verbs.switcher} /> : null}
             progress={boardAwaitsRoadmap || !shownStats ? null : { done: shownStats.done, total: shownStats.total }}
             onSwitchView={onSwitchView}
+            graphUnavailable={graphUnavailable}
+            onGraphUnavailable={explainGraphUnavailable}
             find={!phone && boardFacts.loaded && !boardFacts.empty ? verbs.identityFind : null}
             next={canvasView && owner && !phone && verbs.graphNext?.count > 0 ? verbs.identityNext : null}
             onAskAI={canTend && owner ? () => setTendOpen(true) : null}
@@ -365,7 +373,7 @@ export function SkillTreeView({ treeId, demo = false }) {
             onExport={owner && boardFacts.loaded ? verbs.exportFromRow : null}
             onSettings={owner ? verbs.openRowSettings : null}
             onShortcuts={owner ? () => setShortcutsOpen(true) : null}
-            onActivity={owner && !phone ? verbs.openRowActivity : null}
+            onActivity={verbs.activityEnabled ? verbs.openRowActivity : null}
             activityOpen={activityOpen}
             onFork={!owner && forkPresent ? openFork : null}
             sheet={phone && owner && boardFacts.loaded ? verbs.identitySheet : null}
@@ -376,9 +384,10 @@ export function SkillTreeView({ treeId, demo = false }) {
 
       {view.boardMounted && (
         <div ref={boardLayerRef} className={`st-view-layer st-view-layer--board ${boardActive ? 'is-active' : ''}`}>
-          <ErrorBoundary fallback={null} onCrash={view.crashBoard}>
+          <ErrorBoundary fallback={graphUnavailable ? undefined : null} onCrash={view.crashBoard}>
             <BoardView
               tree={boardTree}
+              graphUnavailable={graphUnavailable}
               completed={completed}
               completedAt={completedAt}
               loading={loading}
@@ -402,6 +411,8 @@ export function SkillTreeView({ treeId, demo = false }) {
               quiet={boardQuiet}
               onDisplayedOverall={setBoardOverall}
               reveal={boardReveal}
+              selectionOpen={boardSelectionOpen}
+              selectRequest={stepAddress.id === null ? boardSelect : null}
               toast={seat === 'board' ? toast : null}
               onToastShown={toastShown}
               onToastReveal={() => boardActs.revealToast(toast)}
@@ -440,7 +451,8 @@ export function SkillTreeView({ treeId, demo = false }) {
               setBoardQuiet((current) => current + 1);
               progressActs.restore(id, snapshot);
             }}
-            onOpenInGraph={boardActive ? stepPage.openInGraph : null}
+            onOpenInGraph={boardActive && !graphUnavailable ? stepPage.openInGraph : null}
+            onSelect={boardSelectionOpen && deletable(boardTree, [detailId]) ? stepPage.select : null}
             onViewBranch={stepPage.viewBranch}
             onDelete={stepPage.deleteStep}
             onDeletePrompt={(step) => boardActs.deletePrompt(step)}
@@ -496,13 +508,13 @@ export function SkillTreeView({ treeId, demo = false }) {
         />
       )}
 
-      <Minimap
+      {canvasView && <Minimap
         nodes={heldGraphModel?.nodes ?? []}
         states={states}
         bounds={bounds}
         subscribeViewport={scene?.subscribeViewport ?? null}
         onPanTo={(x, y) => sceneRef.current?.panTo(x, y)}
-      />
+      />}
 
       {legendVisible && (
         <div ref={legendDockRef} className="st-legend-dock" style={{ position: 'absolute', left: 'var(--space-6)', bottom: 'calc(var(--space-6) + 196px)', zIndex: 16 }}>
@@ -645,7 +657,7 @@ export function SkillTreeView({ treeId, demo = false }) {
         </div>
       )}
 
-      <ShortcutsDialog open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} readOnly={!desktopEditor} owner={owner} view={boardActive ? 'board' : 'graph'} />
+      <ShortcutsDialog open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} readOnly={!desktopEditor} owner={owner} view={boardActive ? 'board' : 'graph'} graphAvailable={!graphUnavailable} />
 
       <ShareDialog
         key={treeId}

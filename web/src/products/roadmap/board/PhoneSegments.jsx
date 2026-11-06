@@ -18,7 +18,7 @@ const ARROW_STEPS = { ArrowLeft: -1, ArrowRight: 1 };
 export function PhoneSegments({
   board, focusBoard = board, beforeBand = null, shown, onShow, selectedId, onSelect, onAnchor, doneExpanded, onExpandDone,
   query = new BoardQuery(), worn = [], onQuery, onNewStep, onComplete, onDelete,
-  selection = null, selectable, kinds = [], sharedKind = null, onHold, onKinds, onRecolor, onDeleteSelection, onDoneSelection,
+  selection = null, selectionAnnouncement = null, selectable, kinds = [], sharedKind = null, onHold, onKinds, onRecolor, onDeleteSelection, onDoneSelection,
   arrived = new Set(), leaving = new Set(), dimmed = new Set(), pinned = new Set(), settle, counts = board,
 }) {
   const [scrolled, setScrolled] = useState({ locked: false, upNext: false, done: false });
@@ -90,6 +90,7 @@ export function PhoneSegments({
 
   return (
     <div className="st-board-phone">
+      {selectionAnnouncement !== null && <span className="st-board-spoken" role="status" aria-live="polite" aria-atomic="true">{selectionAnnouncement}</span>}
       <ActiveFilters board={board} worn={worn} query={query} onQuery={onQuery} onAnchor={onAnchor} />
       <div className="st-board-phone-panes" ref={roving.ref}
         onFocus={(event) => {

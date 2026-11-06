@@ -1,8 +1,9 @@
-// Board ⇄ Graph: the phone's pair of icon targets, and from 744px the segmented control. The canvas view is 'tree'.
+// Board ⇄ Graph uses the same icon targets on every band. The canvas view is 'tree'.
 
-import React from 'react';
+import React, { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { CircleAlert } from 'lucide-react';
 import { Tooltip } from '../../../design-system';
-import { VIEW_SWITCH } from '../copy.js';
+import { GRAPH_UNAVAILABLE, VIEW_SWITCH } from '../copy.js';
 
 const GLYPHS = {
   board: (
@@ -27,10 +28,13 @@ const OPTIONS = [
   { view: 'tree', label: VIEW_SWITCH.graph },
 ];
 
-export function ViewSwitch({ view, onSwitch, phone = false }) {
+export function ViewSwitch({ view, onSwitch, phone = false, graphUnavailable = false, onGraphUnavailable }) {
   return (
     <div className={`st-board-switch ${phone ? 'st-board-switch--phone' : 'st-board-switch--wide'}`} role="group" aria-label={VIEW_SWITCH.group}>
       {OPTIONS.map((option) => {
+        if (option.view === 'tree' && graphUnavailable) {
+          return <UnavailableGraph key={option.view} phone={phone} onPress={onGraphUnavailable} />;
+        }
         const button = (
           <button
             key={option.view}
@@ -46,5 +50,59 @@ export function ViewSwitch({ view, onSwitch, phone = false }) {
         return phone ? button : <Tooltip key={option.view} label={option.label} side="bottom">{button}</Tooltip>;
       })}
     </div>
+  );
+}
+
+function UnavailableGraph({ phone, onPress }) {
+  const reasonId = useId();
+  const root = useRef(null);
+  const button = useRef(null);
+  const [open, setOpen] = useState(false);
+  const [position, setPosition] = useState({ left: 16, top: 0 });
+  const shown = open && !phone;
+
+  useLayoutEffect(() => {
+    if (!shown) return undefined;
+    const place = () => {
+      const box = button.current.getBoundingClientRect();
+      setPosition({ left: Math.max(16, Math.min(box.left - 84, window.innerWidth - 308)), top: box.bottom + 10 });
+    };
+    place();
+    window.addEventListener('resize', place);
+    return () => window.removeEventListener('resize', place);
+  }, [shown]);
+
+  useEffect(() => {
+    if (!shown) return undefined;
+    const outside = (event) => {
+      if (!root.current.contains(event.target)) setOpen(false);
+    };
+    const escape = (event) => {
+      if (event.key !== 'Escape') return;
+      event.stopPropagation();
+      setOpen(false);
+    };
+    document.addEventListener('pointerdown', outside);
+    document.addEventListener('keydown', escape, true);
+    return () => {
+      document.removeEventListener('pointerdown', outside);
+      document.removeEventListener('keydown', escape, true);
+    };
+  }, [shown]);
+
+  return (
+    <span ref={root} className="st-graph-unavailable" onMouseLeave={() => setOpen(false)}>
+      <button ref={button} type="button" className="st-board-switch-option" aria-label={VIEW_SWITCH.graph}
+        aria-pressed={false} aria-disabled="true" aria-describedby={reasonId}
+        onMouseEnter={() => setOpen(true)} onFocus={() => setOpen(true)} onBlur={() => setOpen(false)}
+        onClick={() => { setOpen(true); onPress?.(); }}>
+        {GLYPHS.tree}
+      </button>
+      <span id={reasonId} role={phone ? undefined : 'tooltip'} className={phone ? 'st-graph-unavailable-description' : 'st-graph-unavailable-reason'}
+        hidden={!phone && !shown} style={phone ? undefined : position}>
+        {!phone && <CircleAlert size={20} aria-hidden />}
+        <span>{GRAPH_UNAVAILABLE}</span>
+      </span>
+    </span>
   );
 }

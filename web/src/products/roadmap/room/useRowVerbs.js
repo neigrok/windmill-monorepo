@@ -10,12 +10,12 @@ import { treeShareUrl } from '../share/ShareDialog.jsx';
 import { deleteLocalTree, renameLocalTree } from '../sync/localTrees.js';
 
 // What the identity row reads and does: Find's handoff, the Next chip, the switcher, the phone's sheet and its verbs.
-export function useRowVerbs({ treeId, tree, boardTree, shownStats, who, view, boardQuery, setBoardQuery, progress, activity, address, graphStepReturnRef, anchors: { identityRef }, room: { sessionRef, projectionRef }, revealOnGraph, setSelectedId, setShareOpen, showToast }) {
+export function useRowVerbs({ treeId, tree, boardTree, shownStats, who, view, boardQuery, setBoardQuery, progress, activity, graphUnavailable = false, address, graphStepReturnRef, anchors: { identityRef }, room: { sessionRef, projectionRef }, revealOnGraph, setSelectedId, setShareOpen, showToast }) {
   const { owner, phone, breakpoint } = who;
   const { boardActive, canvasView, switchView } = view;
   const { completed, completedAt } = progress;
   const { feedVisible, activityGroups, openActivity, closeActivity } = activity;
-  const activityEnabled = owner && !phone;
+  const activityEnabled = owner && !phone && !(graphUnavailable && breakpoint === 'desktop');
   const boardQueryRef = useRef(boardQuery);
   boardQueryRef.current = boardQuery;
   const shareRequestRef = useRef(0);

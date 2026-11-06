@@ -95,20 +95,20 @@ export function useRoomLoad({ treeId, accountId, demo, shared, demotion, breakpo
       const mountedScene = sceneRef.current;
       const remembers = !demo && desktopEditorRef.current;
       const sinceIds = ReturnLedger.since(overlay.completed, remembers ? returnLedger.load(seed.id) : null, states);
-      if (sinceIds.length) mountedScene.armReturnRecap(sinceIds, welcomeBackToast({ count: sinceIds.length }));
+      if (sinceIds.length) mountedScene?.armReturnRecap(sinceIds, welcomeBackToast({ count: sinceIds.length }));
 
       const owner = seed.mine === true && !shared && !demo;
       const born = owner && peekBorn(seed.id);
       const place = savedPlace(placeKept ? placeStore.load(layoutRef.current.name) : null, seed);
       const onFrontier = opensOnFrontier({ savedCamera: place.camera, owner, born, stepCount: seed.nodes.length });
-      if (onFrontier) mountedScene.suppressArrival();
+      if (onFrontier) mountedScene?.suppressArrival();
       if (born) {
         const done = [...states.values()].filter((state) => state === 'complete').length;
-        mountedScene.setArrivalSummary(plantedToast({ quest: plantNoteRef.current.quest, count: seed.nodes.length, done }));
+        mountedScene?.setArrivalSummary(plantedToast({ quest: plantNoteRef.current.quest, count: seed.nodes.length, done }));
       }
-      mountedScene.setModel(model);
-      if (place.camera) mountedScene.restoreViewpoint(place.camera);
-      if (onFrontier) {
+      mountedScene?.setModel(model);
+      if (place.camera) mountedScene?.restoreViewpoint(place.camera);
+      if (onFrontier && mountedScene) {
         const target = frontierTarget(nextTree, overlay, { selectedId: place.selection });
         mountedScene.setViewportInsets(framing.insetsRef.current ?? viewportInsets({ breakpoint, dockOpen: !!place.selection && placeKept }));
         mountedScene.focusWorking(target, { instant: true });
@@ -120,14 +120,14 @@ export function useRoomLoad({ treeId, accountId, demo, shared, demotion, breakpo
       seedRef.current = seed;
       progressActs.adoptLoaded(overlay);
       activity.seedActivity({ tree: nextTree, states, completedAt: overlay.completedAt, serverActivity });
-      structure.install(nextTree, model, mountedScene.getBounds());
+      structure.install(nextTree, model, mountedScene?.getBounds() ?? null);
       setTreeVisibility(seed.visibility ?? null);
       setTreeMine(seed.mine ?? false);
       workspace.hydrateWorkspaces(seed.id);
       legend.hydrateLegend(seed.id, nextTree.nodes, seed.kinds ?? null);
       workspace.pushArcs();
       if (place.selection) setSelectedId(place.selection);
-      if (placeKept) placeStore.save({ treeId: seed.id, layout: layoutRef.current.name, camera: mountedScene.getViewpoint(), selectedId: place.selection });
+      if (placeKept && mountedScene) placeStore.save({ treeId: seed.id, layout: layoutRef.current.name, camera: mountedScene.getViewpoint(), selectedId: place.selection });
       if (remembers) returnLedger.save(seed.id, { completed: [...overlay.completed], at: Date.now() });
       setLoading(false);
       if (shared && seed.id === DEMO_TREE_ID) track('demo_open', { treeId: seed.id });
@@ -195,7 +195,7 @@ export function useRoomLoad({ treeId, accountId, demo, shared, demotion, breakpo
   }, [scene, treeId, placeKept]);
 
   useEffect(() => {
-    if (!placeKept || loading || !seedRef.current) return;
+    if (!sceneRef.current || !placeKept || loading || !seedRef.current) return;
     placeStore.save({ treeId, layout: layoutRef.current.name, camera: sceneRef.current?.getViewpoint?.() ?? null, selectedId });
   }, [selectedId, loading, treeId, placeKept]);
 

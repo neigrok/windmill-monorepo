@@ -15,7 +15,7 @@ import './identity.css';
 const FULL_DESKTOP_QUERY = '(min-width: 1280px)';
 
 export function RoadmapIdentity({
-  band, view, role, title, switcher, progress, onSwitchView, find, next,
+  band, view, role, title, switcher, progress, onSwitchView, graphUnavailable = false, onGraphUnavailable, find, next,
   onAskAI, onShare, onNewStep, onExport, onSettings, onShortcuts, onFork, sheet, onBottom, onActivity, activityOpen = false,
 }) {
   const bar = useRef(null);
@@ -148,7 +148,7 @@ export function RoadmapIdentity({
           {progressFigure({ ...progress, compact: phone })}
         </span>
       )}
-      {onSwitchView && <ViewSwitch view={view} onSwitch={onSwitchView} phone={phone} />}
+      {onSwitchView && <ViewSwitch view={view} onSwitch={onSwitchView} phone={phone} graphUnavailable={graphUnavailable} onGraphUnavailable={onGraphUnavailable} />}
       {!phone && <>
         <div className="st-roadmap-space" />
         {find && <FindStep {...find} folded={!fullDesktop} tooltip={desktop} onExpand={() => verb('find')} />}
@@ -284,7 +284,7 @@ export function RoadmapIdentity({
 }
 
 // A row that crashed leaves its switch at its position: the Shell carries the way home, and the camera lives on its own.
-export function RoadmapIdentityFallback({ view, phone, onSwitchView, onBottom }) {
+export function RoadmapIdentityFallback({ view, phone, onSwitchView, onBottom, graphUnavailable = false, onGraphUnavailable }) {
   const bar = useRef(null);
 
   useLayoutEffect(() => {
@@ -301,7 +301,7 @@ export function RoadmapIdentityFallback({ view, phone, onSwitchView, onBottom })
 
   return (
     <div ref={bar} tabIndex={-1} className="st-roadmap-identity-fallback">
-      {onSwitchView && <ViewSwitch view={view} onSwitch={onSwitchView} phone={phone} />}
+      {onSwitchView && <ViewSwitch view={view} onSwitch={onSwitchView} phone={phone} graphUnavailable={graphUnavailable} onGraphUnavailable={onGraphUnavailable} />}
     </div>
   );
 }
