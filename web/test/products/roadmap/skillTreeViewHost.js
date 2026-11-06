@@ -197,10 +197,11 @@ function hostPage(view, stylesheet) {
 }
 
 export let origin;
-let server, browser, ready;
+let server, ready;
+const browsers = new Map();
 let firstPage = true;
 
-export function startRoadmapHost() {
+export function startRoadmapHost({ browserTypes = { chromium } } = {}) {
   ready = (async () => {
     const files = await bundleHost();
     const stylesheet = [...files.keys()].find((path) => path.endsWith('.css'));
@@ -222,11 +223,13 @@ export function startRoadmapHost() {
     });
     await new Promise((listening) => server.listen(0, '127.0.0.1', listening));
     origin = `http://127.0.0.1:${server.address().port}`;
-    browser = await chromium.launch({ headless: true });
+    for (const [name, type] of Object.entries(browserTypes)) {
+      browsers.set(name, await type.launch({ headless: true }));
+    }
   })();
   after(async () => {
     try { await ready; } finally {
-      await browser?.close();
+      for (const browser of browsers.values()) await browser.close();
       server?.close();
     }
   });
@@ -241,9 +244,9 @@ export function hostTest(name, run) {
   });
 }
 
-export async function openHost({ width = 1440, height = 1000, role = 'owner', surface = 'tree', milestone = false, single = false, crash = false, crashBoard = false, demo = false, clipboardRefused = false, large = false, empty = false, shell = false, legend = false, fixedClock = false, described = false, allDone = false, broad = false, coached = false, manyTrees = false, touch = false, motion = false, appUrl = false, pathOnly = false, storageRefused = false, longTitle = false } = {}) {
+export async function openHost({ browserName = 'chromium', width = 1440, height = 1000, role = 'owner', surface = 'tree', milestone = false, single = false, crash = false, crashBoard = false, demo = false, clipboardRefused = false, large = false, empty = false, shell = false, legend = false, fixedClock = false, described = false, allDone = false, broad = false, coached = false, manyTrees = false, touch = false, motion = false, appUrl = false, pathOnly = false, storageRefused = false, longTitle = false } = {}) {
   await ready;
-  const page = await browser.newPage({ viewport: { width, height }, reducedMotion: motion ? 'no-preference' : 'reduce', hasTouch: touch });
+  const page = await browsers.get(browserName).newPage({ viewport: { width, height }, reducedMotion: motion ? 'no-preference' : 'reduce', hasTouch: touch });
   page.setDefaultTimeout(firstPage ? 15000 : 5000);
   page.setDefaultNavigationTimeout(30000);
   firstPage = false;

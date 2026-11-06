@@ -207,7 +207,7 @@ goes through `countBucket`: `0/1/2-5/6-20/21+`.
 | Roadmap sheet closed | `roadmap_sheet` | `step: close`, `via: close/escape/scrim` |
 | Tablet and desktop roadmap switcher; a rename or a delete once the request succeeded | `roadmap_sheet` | `step: open/switch/new/browse/rename/delete`, `door: switcher` |
 | The switcher's rename or delete failed | `roadmap_sheet` | `step: rename/delete`, `door: switcher`, `outcome: failed` |
-| What's next | `roadmap_whats_next` | `step: open/pick/close`, `count: 0/1/2-5/6-20/21+` |
+| What's next opened, a card picked, or closed by toggle, outside pointer, genuine focus departure, Escape or context change | `roadmap_whats_next` | `step: open/pick/close`, `count: 0/1/2-5/6-20/21+` |
 | Export this roadmap | `roadmap_export` | `outcome: done/failed`, `door: more/sheet` |
 | Settings' Export all | `roadmap_export` | `outcome: done/partial/failed`, `door: settings` |
 | Shortcut help | `roadmap_shortcuts_open` | `view: board/graph` |
