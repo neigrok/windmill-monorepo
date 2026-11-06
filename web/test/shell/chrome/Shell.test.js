@@ -200,3 +200,26 @@ test('roadmap alone wears the Shared Shell, and its head says so with no status 
   assert.deepEqual(['/app/roadmap', '/app/journal', '/app/gym', '/app'].map(headOf),
     ['wm-head wm-head--shared', 'wm-head', 'wm-head', 'wm-head']);
 });
+
+test('each room link reserves its own label without changing the visible text or link semantics', async (t) => {
+  browser();
+  const { Shell } = await loadScreen('shell/chrome/Shell.jsx');
+  const { PRODUCTS } = await loadScreen('shell/products.js');
+  const view = renderHook(t, () => Shell({ location }), { context });
+  const links = elementsOf(view.tree).filter((element) => element.type?.name === 'RoomLink');
+  assert.deepEqual(links.map((element) => {
+    const link = element.type(element.props);
+    return {
+      tag: link.type,
+      label: link.props['data-label'],
+      text: textOf(link),
+      href: link.props.href,
+      current: link.props['aria-current'],
+    };
+  }), [
+    { tag: 'a', label: 'Home', text: 'Home', href: '/app', current: 'page' },
+    ...PRODUCTS.filter((product) => product.shell?.status === 'open').map((product) => ({
+      tag: 'a', label: product.label, text: product.label, href: product.shell.room, current: undefined,
+    })),
+  ]);
+});

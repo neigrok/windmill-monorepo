@@ -62,9 +62,12 @@ scroll; crossing 744px rebuilds the columns, and a column that folds to a rail s
 stands again.
 
 Share links and the demo mount inside the roadmap room's Shell (`inRoom` on the route's answer), keeping their
-URLs; the Shell is their way home and their Sign in. The roadmap room registers `sharedShell`, so on a phone every
-role gets the drawn Shared Shell: no mark, the room links from the 16px edge with the active room in bold alone, and
-*Sign in* in words when signed out. Journal and gym register neither and keep their mark and geometry.
+URLs; the Shell is their way home and their Sign in. From 744px every room shares one 52px head: no mark,
+room links from the 16px edge with 16px gaps, and 44px-high targets that reserve each label's bold width. The active
+room is bold primary text without a fill. Below 744px only roadmap registers `sharedShell`: every role gets
+the drawn phone Shell, while Home, journal and gym keep their mark and phone geometry. Seat selection is the
+same at every band: signed-out shared or status rooms show *Sign in*; other rooms keep the avatar with its
+Appearance and Settings popover.
 
 While the Board is shown, `coverBeneath` in `composerFocus.js` makes everything stacked under its layer inert,
 the Graph's overlays and legend included. The identity sits above that layer and stays operable; step detail,
@@ -622,8 +625,9 @@ eligible owner keeps that lease while idle; releasing it removes the Shell slot,
 neither publish nor release the next room. The Shell mounts an empty polite live region before its first text
 and keeps the node across idle, Saving, Saved and Offline. From 744px the line is visible; phones show the
 short form where supplied. Registered phone rooms reserve the status slot and keep the mark hidden throughout
-the visit, so status changes do not move navigation. Registered desktop rooms reserve the status width. Phone device-only
-rooms keep an empty publication for the Sign in seat, with their device text below the identity row. Readers
+the visit, so status changes do not move navigation. From 744px status hugs its words, 16px left of the seat;
+the room links stay fixed as the status changes, and the seat's target ends 16px from the viewport edge.
+Phone device-only rooms keep an empty publication for the Sign in seat, with their device text below the identity row. Readers
 and the demo publish nothing: on phones `sharedShell` alone gives them the same links and seat, with no slot, and
 the global offline notice stays theirs. The global offline notice yields only while a room publishes
 `connectivity: 'offline'`, before first paint; a registration or device-only line does not replace it.

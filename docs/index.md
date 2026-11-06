@@ -41,8 +41,9 @@ Separate [✅ Board · Web](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?
 [✅ Board · Web Mobile](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-900) pages.
 Start at the [desktop Board](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=184-1543)
 and the [phone Board](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-1433).
-[Proposal](design/roadmap-board-proposal.md) · [Review](design/roadmap-board-review.md). Owner
-approved 2026-10-31; the build is dogfood node `roadmap-board-web-build`.
+[Design brief](design/roadmap-board-proposal.md) · [Review](design/roadmap-board-review.md). The Board is shipped;
+its delivered frames carry 🚀 In production. Approved follow-ups carry 🔨 while in implementation.
+Outstanding design gaps are tracked in the [consistency ledger](design/consistency.md).
 
 | Flow | Web | Web Mobile | Entry → exit |
 |---|---|---|---|
@@ -62,7 +63,7 @@ approved 2026-10-31; the build is dogfood node `roadmap-board-web-build`.
 | Activity | [260:5150](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=260-5150) · [527:48637](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=527-48637) | [487:12770](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=487-12770) · [527:16010](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=527-16010) | More or roadmap sheet → Activity → step |
 | Waves 6–8 states | [481:23657](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=481-23657) | [487:12770](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=487-12770) | Sync states at 744, readers and Fork, Graph row and What's next, roadmap sheet, Ask AI, demo byline |
 | Wave 7 sync states | [517:30937](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=517-30937) | [519:15146](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=519-15146) | Couldn't sync on Graph, at its limit, several changes, offline |
-| 🚀 Follow-ups 2026-11-06 · PR 2 | [626:38889](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=626-38889) | [629:19778](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=629-19778) | Step menu Select → keyboard selection and the Selection bar; no WebGL2 → Board with the Graph dimmed |
+| 🚀 Follow-ups 2026-11-06 | [626:38889](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=626-38889) | [629:19778](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=629-19778) | 16.01–16.02: one Shell head from 744 in every room, signed-out seats unchanged; 16.03 and 26.04: no WebGL2 → Board with the Graph dimmed; 26.01–26.03: step menu Select → keyboard selection and the Selection bar |
 | 💡 Finishing states | [544:53326](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=544-53326) | [539:16665](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=539-16665) | Proposals awaiting the owner; ✅ 15.07 and 25.04, the held delete that fails, are built |
 
 ## Gym · iOS

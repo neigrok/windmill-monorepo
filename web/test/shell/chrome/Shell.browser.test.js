@@ -2,7 +2,7 @@ import { SYNC_STATUS, SYNC_OFFLINE_SHORT, ANONYMOUS_OWNER } from '../../../src/p
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
-import { chromium } from 'playwright';
+import { chromium, webkit } from 'playwright';
 import { createServer } from 'vite';
 import { beacon, withBrowserErrors } from '../../products/roadmap/browserFixture.js';
 
@@ -13,6 +13,7 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { Shell } from '/src/shell/chrome/Shell.jsx';
 import { registerRoomStatus } from '/src/shell/roomStatus.js';
+import { PRODUCTS } from '/src/shell/products.js';
 import '/src/styles/fonts.js';
 import '/src/styles/global.css';
 window.publish = (status) => {
@@ -21,24 +22,35 @@ window.publish = (status) => {
   return () => { window.statusLease.release(); window.statusLease = null; };
 };
 const outside = () => React.createElement('button', { id: 'outside' }, 'Outside');
-const sharedRoom = { id: 'roadmap', label: 'Roadmap', shell: { scope: { theme: null, brand: 'roadmap' }, sharedShell: true },
-  render: () => ({ Component: outside, props: {} }), home: () => '' };
-createRoot(document.getElementById('root')).render(React.createElement(Shell, location.search.includes('shared')
-  ? { location: { pathname: '/', hash: '#/demo', search: '' }, roomProduct: sharedRoom }
-  : { location: { pathname: '/app', hash: '', search: '' }, neutral: { Component: outside } }));
+const query = new URLSearchParams(location.search);
+const room = query.get('room') ?? (query.has('shared') ? 'roadmap' : null);
+const props = { location: { pathname: room ? '/app/' + room : '/app', hash: '', search: '' } };
+if (room === 'roadmap') {
+  props.location = { pathname: '/', hash: '#/demo', search: '' };
+  props.roomProduct = PRODUCTS.find((product) => product.id === 'roadmap');
+} else if (room === 'home') {
+  props.location.pathname = '/app';
+} else if (!room) {
+  props.neutral = { Component: outside };
+}
+createRoot(document.getElementById('root')).render(React.createElement(Shell, props));
 `;
-let server, browser, origin;
+let server, origin;
+const browsers = new Map();
 const ready = (async () => {
   server = await createServer({ configFile: false, root, cacheDir: `${root}/node_modules/.vite-shell-status-test`,
     plugins: [{ name: 'shell-status-test', enforce: 'pre',
-      resolveId(id) {
+      resolveId(id, importer) {
         if (id === '/shell-status-entry.js') return '\0shell-status-entry';
+        if (id === './ShellHome.jsx' && importer?.endsWith('/shell/chrome/Shell.jsx')) return '\0shell-status-room';
+        if (importer?.endsWith('/routes.js') && ['./index.js', './JournalApp.jsx', './GymApp.jsx', './CanvasGhost.jsx', './RoutinesGhost.jsx'].includes(id)) return '\0shell-status-room';
         if (id.endsWith('/auth/AuthProvider.jsx')) return '\0shell-status-auth';
         if (id.endsWith('/auth/SignInDoor.jsx')) return '\0shell-status-door';
         if (id.endsWith('/telemetry/beacon.js')) return '\0shell-status-events';
       },
       load(id) {
         if (id === '\0shell-status-entry') return entry;
+        if (id === '\0shell-status-room') return `import React from 'react'; const Room = () => React.createElement('button', { id: 'outside' }, 'Outside'); export { Room as SkillTreeApp, Room as JournalApp, Room as GymApp, Room as ShellHome, Room as CanvasGhost, Room as RoutinesGhost };`;
         if (id === '\0shell-status-auth') return `export const useAuth = () => ({ status: location.search.includes('ghost') ? 'ghost' : 'signed-in', user: location.search.includes('ghost') ? null : { name: 'Ada' }, signOut() {} });`;
         if (id === '\0shell-status-door') return `export const useSignInDoor = () => () => { window.signInOpened = true; }; export const useSignInDoorHost = () => () => {};`;
         if (id === '\0shell-status-events') return beacon;
@@ -54,19 +66,27 @@ const ready = (async () => {
   });
   await server.listen(0);
   origin = `http://127.0.0.1:${server.httpServer.address().port}`;
-  browser = await chromium.launch({ headless: true });
 })();
 ready.catch(() => {});
-after(async () => { await browser?.close(); await server?.close(); });
+after(async () => {
+  for (const browser of browsers.values()) await browser.then((instance) => instance.close(), () => {});
+  await server?.close();
+});
 
-async function visit(t, width, run, query = '') {
+async function visit(t, width, run, query = '', engine = chromium) {
   await ready;
-  const page = await browser.newPage({ viewport: { width, height: 900 } });
+  if (!browsers.has(engine)) browsers.set(engine, engine.launch({ headless: true }));
+  const browser = await browsers.get(engine);
+  const page = await browser.newPage({ viewport: { width, height: 900 }, colorScheme: query.includes('dark') ? 'dark' : 'light' });
   t.after(() => page.close());
   await withBrowserErrors(page, async () => {
     await page.goto(`${origin}/shell-status-test${query}`);
     await page.locator('.wm-head-seat button').waitFor();
-    await page.evaluate(() => document.fonts.ready);
+    await page.evaluate(async () => {
+      const family = getComputedStyle(document.querySelector('.wm-switch-btn')).fontFamily;
+      await Promise.all([400, 600, 700].map((weight) => document.fonts.load(`${weight} 12px ${family}`, 'Home Roadmap Journal Gym')));
+      await document.fonts.ready;
+    });
     await run(page);
   });
 }
@@ -148,9 +168,9 @@ for (const width of [390, 320]) {
   });
 }
 
-test('from 744 a Shared Shell room keeps the mark it shares with every room', async (t) => {
+test('from 744 a Shared Shell room hides the mark like every room', async (t) => {
   await visit(t, 744, async (page) => {
-    assert.equal(await page.locator('.wm-head-mark').evaluate((element) => getComputedStyle(element).display), 'flex');
+    assert.equal(await page.locator('.wm-head-mark').evaluate((element) => getComputedStyle(element).display), 'none');
   }, '?ghost&shared');
 });
 
@@ -195,6 +215,7 @@ test('the live region stays mounted across status changes and equal publication 
     }, SYNC_STATUS.saved);
     await page.waitForFunction((line) => document.querySelector('[role="status"]')?.textContent === line, SYNC_STATUS.saved);
     assert.equal(await page.evaluate(() => window.liveRegion === document.querySelector('[role="status"]')), true);
+    assert.equal(await page.evaluate(() => window.mutations.length), 1);
     await page.evaluate((line) => { window.mutations = []; window.publish({ line, narrow: 'announce' }); }, SYNC_STATUS.saved);
     assert.deepEqual(await page.evaluate(() => window.mutations), []);
   });
@@ -294,5 +315,190 @@ for (const width of [744, 1440]) {
         }
       }, query);
     });
+  }
+}
+
+const linkBoxesByBand = new Map();
+
+async function assertWideGeometry(page, { width, room, ghost, status, engine }) {
+  const { actual, expected } = await page.evaluate(({ width, room, ghost, status }) => {
+    const shell = document.querySelector('.wm-shell');
+    const head = document.querySelector('.wm-head');
+    const nav = document.querySelector('.wm-switch');
+    const seat = document.querySelector('.wm-head-seat');
+    const control = seat.querySelector('button');
+    const slot = document.querySelector('.wm-room-status');
+    const probe = document.createElement('span');
+    probe.style.position = 'absolute';
+    probe.style.whiteSpace = 'nowrap';
+    probe.style.visibility = 'hidden';
+    shell.append(probe);
+    const color = (token) => {
+      probe.style.color = `var(${token})`;
+      return getComputedStyle(probe).color;
+    };
+    const primary = color('--text-primary');
+    const secondary = color('--text-secondary');
+    const expectedLinks = [];
+    let left = 16;
+    const links = [...nav.querySelectorAll('a')].map((link) => {
+      const style = getComputedStyle(link);
+      const box = link.getBoundingClientRect();
+      probe.style.fontFamily = style.fontFamily;
+      probe.style.fontSize = '12px';
+      probe.style.fontWeight = '700';
+      probe.style.lineHeight = '18px';
+      probe.textContent = link.textContent;
+      const width = Math.max(44, probe.getBoundingClientRect().width + 8);
+      const current = link.textContent.toLowerCase() === room;
+      expectedLinks.push({
+        left, width, height: 44,
+        fontSize: '12px', lineHeight: '18px', fontWeight: current ? '700' : '400',
+        color: current ? primary : secondary, background: 'rgba(0, 0, 0, 0)',
+        current: current ? 'page' : null, label: link.textContent,
+      });
+      left += width + 16;
+      return {
+        left: box.left, width: box.width, height: box.height,
+        fontSize: style.fontSize, lineHeight: style.lineHeight, fontWeight: style.fontWeight,
+        color: style.color, background: style.backgroundColor,
+        current: link.getAttribute('aria-current'), label: link.dataset.label,
+      };
+    });
+    const seatBox = control.getBoundingClientRect();
+    let expectedStatus = null;
+    let actualStatus = null;
+    if (slot) {
+      const style = getComputedStyle(slot);
+      const box = slot.getBoundingClientRect();
+      probe.style.fontFamily = style.fontFamily;
+      probe.style.fontSize = '12px';
+      probe.style.fontWeight = '600';
+      probe.style.lineHeight = style.lineHeight;
+      probe.textContent = status.line;
+      expectedStatus = {
+        width: probe.getBoundingClientRect().width,
+        right: seatBox.left - 16,
+        fontSize: '12px', fontWeight: '600', color: secondary,
+      };
+      actualStatus = {
+        width: box.width, right: box.right,
+        fontSize: style.fontSize, fontWeight: style.fontWeight, color: style.color,
+      };
+    }
+    probe.remove();
+    const signIn = ghost && (room === 'roadmap' || status !== null);
+    const actual = {
+      links,
+      headHeight: head.getBoundingClientRect().height,
+      mark: getComputedStyle(document.querySelector('.wm-head-mark')).display,
+      status: actualStatus,
+      seat: {
+        right: seatBox.right, height: seatBox.height,
+        avatarWidth: signIn ? null : seatBox.width,
+        count: seat.querySelectorAll('button').length,
+        tabIndex: control.tabIndex,
+        visible: getComputedStyle(control).visibility,
+        signIn: control.classList.contains('wm-head-sign-in'),
+      },
+      order: [...head.children].map((element) => element.classList[0]),
+      clear: nav.getBoundingClientRect().right <= (slot?.getBoundingClientRect().left ?? seatBox.left),
+      overflow: document.documentElement.scrollWidth > innerWidth,
+    };
+    const expected = {
+      links: expectedLinks,
+      headHeight: 52,
+      mark: 'none',
+      status: expectedStatus,
+      seat: { right: width - 16, height: 44, avatarWidth: signIn ? null : 44, count: 1, tabIndex: 0, visible: 'visible', signIn },
+      order: ['wm-head-mark', 'wm-switch', ...(status ? ['wm-room-status'] : []), 'wm-head-seat'],
+      clear: true,
+      overflow: false,
+    };
+    return { actual, expected };
+  }, { width, room, ghost, status });
+  assert.deepEqual(actual, expected);
+  const boxes = actual.links.map(({ left, width, height }) => ({ left, width, height }));
+  const band = `${engine.name()}:${width}`;
+  if (!linkBoxesByBand.has(band)) linkBoxesByBand.set(band, boxes);
+  assert.deepEqual(boxes, linkBoxesByBand.get(band));
+}
+
+for (const [engine, widths] of [[chromium, [744, 1024, 1440]], [webkit, [1024]]]) {
+  for (const width of widths) {
+    for (const room of ['home', 'roadmap', 'journal', 'gym']) {
+      for (const ghost of [false, true]) {
+        test(`${engine.name()} keeps every link fixed in ${room}, ${ghost ? 'ghost' : 'signed in'}, at ${width}`, async (t) => {
+          await visit(t, width, async (page) => {
+            await assertWideGeometry(page, { width, room, ghost, status: null, engine });
+            for (const status of [{ line: SYNC_STATUS.saving }, { line: SYNC_STATUS.saved }, offline, { line: ANONYMOUS_OWNER }]) {
+              await page.evaluate((status) => window.publish(status), status);
+              await page.waitForFunction((line) => document.querySelector('[role="status"]')?.textContent === line, status.line);
+              await page.evaluate(() => document.fonts.ready);
+              await assertWideGeometry(page, { width, room, ghost, status, engine });
+            }
+          }, `?room=${room}${ghost ? '&ghost' : ''}`, engine);
+        });
+      }
+    }
+  }
+}
+
+for (const room of ['home', 'roadmap', 'journal', 'gym']) {
+  test(`dark ${room} uses scoped tokens and the same wide geometry`, async (t) => {
+    await visit(t, 1440, async (page) => {
+      assert.equal(await page.locator('.wm-shell').getAttribute('data-theme'), 'dark');
+      await assertWideGeometry(page, { width: 1440, room, ghost: true, status: null, engine: chromium });
+      await page.evaluate((status) => window.publish(status), offline);
+      await page.waitForFunction((line) => document.querySelector('[role="status"]')?.textContent === line, offline.line);
+      await page.evaluate(() => document.fonts.ready);
+      await assertWideGeometry(page, { width: 1440, room, ghost: true, status: offline, engine: chromium });
+    }, `?room=${room}&ghost&dark`);
+  });
+}
+
+for (const width of [390, 320]) {
+  for (const room of ['home', 'journal', 'gym']) {
+    test(`${room} retains its phone mark and avatar at ${width}`, async (t) => {
+      await visit(t, width, async (page) => {
+        assert.deepEqual(await page.evaluate(() => ({
+          mark: getComputedStyle(document.querySelector('.wm-head-mark')).display,
+          avatar: document.querySelectorAll('.wm-head-seat button[aria-expanded]').length,
+          signIn: document.querySelectorAll('.wm-head-sign-in').length,
+        })), { mark: 'flex', avatar: 1, signIn: 0 });
+      }, `?room=${room}&ghost`);
+    });
+  }
+}
+
+for (const engine of [chromium, webkit]) {
+  for (const width of [600, 743, 744]) {
+    for (const ghost of [false, true]) {
+      test(`${engine.name()} keeps the ${ghost ? 'ghost' : 'signed-in'} account popover eight pixels below its visual at ${width}`, async (t) => {
+        await visit(t, width, async (page) => {
+          await page.emulateMedia({ reducedMotion: 'reduce' });
+          const control = page.locator('.wm-account-seat button[aria-expanded]');
+          await control.dispatchEvent('click');
+          await page.waitForFunction(() => document.querySelector('.wm-account-seat button[aria-expanded]')?.getAttribute('aria-expanded') === 'true');
+          const geometry = await control.evaluate((button) => {
+            const target = button.getBoundingClientRect();
+            const visual = button.firstElementChild.getBoundingClientRect();
+            const popover = document.getElementById(button.getAttribute('aria-controls')).getBoundingClientRect();
+            return {
+              target: [target.width, target.height],
+              visual: [visual.width, visual.height],
+              inset: [visual.left - target.left, visual.top - target.top],
+              popoverGap: popover.top - visual.bottom,
+              rightOffset: popover.right - target.right,
+            };
+          });
+          const size = width >= 744 ? 44 : 30;
+          const inset = (size - 30) / 2;
+          assert.deepEqual(geometry, {
+            target: [size, size], visual: [30, 30], inset: [inset, inset], popoverGap: 8, rightOffset: 0,
+          });
+        }, `?room=home${ghost ? '&ghost' : ''}`, engine);
+      });
+    }
   }
 }

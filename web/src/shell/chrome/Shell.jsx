@@ -73,8 +73,8 @@ function RoomLink({ href, label, active }) {
     navigate(href);
   };
   return (
-    <a className="wm-switch-btn" href={href} title={href} aria-current={active ? 'page' : undefined} onClick={onClick}>
-      {label}
+    <a className="wm-switch-btn" href={href} title={href} data-label={label} aria-current={active ? 'page' : undefined} onClick={onClick}>
+      <span>{label}</span>
     </a>
   );
 }
