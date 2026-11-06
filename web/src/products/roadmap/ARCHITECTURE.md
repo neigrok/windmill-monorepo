@@ -641,7 +641,10 @@ cold 401 or offline read, the registry bounds its wait for the engine's holder a
 stuck engine cannot indefinitely hold public links, the demo or the roadmap list. The shell's owner rule
 refuses restoration during sign-out or pending cleanup. A session lapse keeps the device owner and pending
 work without granting session authority; the room shows the lapsed device line. The same account's sign-in
-resumes synchronization. A fresh sign-in can retry an unavailable read; ordinary signed-in cold loads compare against
+resumes synchronization without remounting the room. When the server confirms a different account, the shell
+synchronously unmounts the previous holder's room and shows its loading state through device cleanup and
+account binding. Pending cleanup also blocks the room on reload; a failed cleanup keeps it blocked for retry.
+A fresh sign-in can retry an unavailable read; ordinary signed-in cold loads compare against
 the owner the read actually used and do not reread when the shell settles. Explicit sign-out and account
 replacement atomically record pending device cleanup with the replica transition. The shell replays it before
 engine networking on reload and clears it only after product cleanup finishes; roadmap blob deletions must

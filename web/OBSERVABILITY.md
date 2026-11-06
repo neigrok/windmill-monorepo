@@ -54,7 +54,10 @@ one that reopens the same account. Closure refuses an unavailable session identi
 The device holder restored after a lapse uses the bound replica’s existing durable account metadata; it is
 not an authentication answer or an event property. Sign-in recovery uses the existing sync transition
 events. Pending product cleanup is recorded with the replica transition and retried after reload; a failure
-reports `auth-session` and retains the cleanup marker. Automatic retries compare the account with the owner
+reports `auth-session` and retains the cleanup marker. A different confirmed account synchronously replaces
+the previous holder's room with the shell's loading state until cleanup and binding complete. A failure keeps
+the room blocked and uses the existing auth-session failure report and sync transition events.
+Automatic retries compare the account with the owner
 the read actually used, so ordinary signed-in cold loads do not repeat a read or its failure report. An
 expected unavailable tree or offline transport failure is not a Sentry Issue.
 Offline copy identifies the REST features that need a connection.

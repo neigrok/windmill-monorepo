@@ -102,6 +102,8 @@ function RoomFallback({ Ghost = null }) {
 }
 
 function RoomContent({ room, location }) {
+  const { roomChanging } = useAuth();
+  if (roomChanging) return <RoomFallback />;
   if (room.kind === 'redirect') return null;
   if (room.kind === 'home') return <ShellHome />;
   if (room.kind === 'neutral') {
