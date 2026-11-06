@@ -75,8 +75,7 @@ for (const width of [320, 390, 744, 1440]) {
       await page.evaluate(() => {
         const session = window.session;
         const writes = session.lattice.toFrame();
-        session.inFlight.set('fixture-ack', session.lattice.frontier());
-        session.structureWrites.set('fixture-ack', writes);
+        session.inFlight.set('fixture-ack', writes);
         session.receiveAck({ frameId: 'fixture-ack' });
       });
       await page.getByRole('status').filter({ hasText: SYNC_STATUS.saved }).waitFor();
@@ -162,3 +161,37 @@ for (const width of [320, 390, 744, 1440]) {
     });
   }
 }
+
+hostTest('Chromium: a silent structure drop is reported, resent and changes Saving to Saved', async () => {
+  const { page, errors } = await openHost({ shell: true, fixedClock: true });
+  try {
+    await page.evaluate(() => {
+      const session = window.session;
+      window.deliveryFrames = [];
+      window.deliveryReports = [];
+      session.store = { save: async () => {} };
+      session.ws = { readyState: WebSocket.OPEN, send: (text) => window.deliveryFrames.push(JSON.parse(text)), close() {} };
+      session.reportFailure = (operation, error, tags) => window.deliveryReports.push({ operation, message: error.message, tags });
+      session.dispatch({ kind: 'RenameNode', id: 'wind', label: 'Read gusts' });
+      session.dispatch({ kind: 'SetNodeColor', id: 'dock', color: 'sky' });
+      session.receiveAck({ frameId: window.deliveryFrames[1].frameId });
+    });
+    await page.clock.runFor(300);
+    await page.getByRole('status').filter({ hasText: SYNC_STATUS.saving }).waitFor();
+    assert.deepEqual(await page.evaluate(() => window.deliveryReports), [
+      { operation: 'roadmap-sync-dropped', message: 'Roadmap frame unanswered', tags: { lane: 'structure' } },
+    ]);
+    await page.clock.runFor(700);
+    assert.deepEqual(await page.evaluate(() => {
+      const [{ frameId: firstId, intent: firstIntent, ...first }, , { frameId: resendId, intent, ...resend }] = window.deliveryFrames;
+      return { first, resend, intent, frames: window.deliveryFrames.length };
+    }), await page.evaluate(() => {
+      const { frameId, intent, ...first } = window.deliveryFrames[0];
+      return { first, resend: first, intent: 'flush', frames: 3 };
+    }));
+    await page.evaluate(() => window.session.receiveAck({ frameId: window.deliveryFrames[2].frameId }));
+    await page.getByRole('status').filter({ hasText: SYNC_STATUS.saved }).waitFor();
+    assert.equal(await page.evaluate(() => window.session.pendingStructureCount()), 0);
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
+});

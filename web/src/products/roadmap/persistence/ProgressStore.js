@@ -2,18 +2,20 @@
 // moves residue into the SyncStore private lane and clears the key.
 // TODO: delete this file once the drain has plausibly run everywhere.
 
+import { reportInvalidProgressMark, reportRoadmapFailure } from '../reportFailure.js';
 import { localStorageOrNothing } from './browserStorage.js';
 
 const KEY_PREFIX = 'windmill:progress:';
 
 export class ProgressStore {
-  constructor(storage = localStorageOrNothing()) {
+  constructor(storage = localStorageOrNothing(), { reportFailure = reportRoadmapFailure } = {}) {
     this.storage = storage;
+    this.reportFailure = reportFailure;
   }
 
   // Marks are stamped by the instant they recorded, under a `legacy` actor; a mark with no
   // instant gets the smallest stamp and loses to everything. Returns how many registers it moved.
-  drainInto(treeId, lattice) {
+  drainInto(treeId, lattice, onInvalidMark = () => reportInvalidProgressMark(this.reportFailure)) {
     let saved = null;
     try {
       const text = this.storage.getItem(KEY_PREFIX + treeId);
@@ -31,13 +33,17 @@ export class ProgressStore {
       if ((saved.completed ?? []).includes(id)) continue;
       marks.push({ node: id, status: 'none', at: `${saved.startedAt?.[id] ?? 1}:0:legacy` });
     }
+    let skipped = 0;
     try {
-      lattice.join({ marks });
+      lattice.join({ marks }, () => {
+        skipped += 1;
+        onInvalidMark();
+      });
     } catch {
       return 0;
     }
     this.clear(treeId);
-    return marks.length;
+    return marks.length - skipped;
   }
 
   // Residue for a tree the device index never knew is reachable only through the keys.

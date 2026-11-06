@@ -98,7 +98,7 @@ hostTest('Chromium: the 744 Activity panel keeps its drawn height on the Graph a
     await page.evaluate(() => {
       const session = window.session;
       session.dispatch({ kind: 'RenameNode', id: 'wind', label: 'Read gusts' });
-      session.inFlight.set('fixture-refused', session.lattice.frontier());
+      session.inFlight.set('fixture-refused', session.lattice.toFrame());
       session.receiveReject({ frameId: 'fixture-refused', code: 'server-error' });
     });
     await page.getByRole('alert').waitFor();

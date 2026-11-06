@@ -2,9 +2,10 @@
 // A transaction joins matching epochs only; a discarded lane can never be revived by an older writer.
 // Where the browser refuses the database the same records live in this document's memory: only offline durability is gone.
 
+import { reportInvalidProgressMark, reportRoadmapFailure } from '../reportFailure.js';
 import { TreeLattice } from './lattice.js';
 import { ProgressLattice } from './progressLattice.js';
-import { frameWrites, pendingGestures, unconfirmedStamps, writeStamps } from './pendingWrites.js';
+import { frameWrites, pendingGestures, retainedProgressGestures, unconfirmedStamps, writeStamps } from './pendingWrites.js';
 
 const DB_NAME = 'windmill-sync';
 const STORE = 'trees';
@@ -78,7 +79,8 @@ class DocumentRecords {
 const THIS_DOCUMENT = new DocumentRecords();
 
 export class SyncStore {
-  constructor() {
+  constructor({ reportFailure = reportRoadmapFailure } = {}) {
+    this.reportInvalidProgressMark = () => reportInvalidProgressMark(reportFailure);
     this.refused = THIS_DOCUMENT;
     this.dbPromise = null;
     this.opened = null;
@@ -159,7 +161,7 @@ export class SyncStore {
 
   async saveOnce(treeId, value) {
     return (await this.records()).transact(treeId, 'readwrite', (stored, put) => {
-      const { merged, staleLanes } = mergedRecord(stored, value);
+      const { merged, staleLanes } = mergedRecord(stored, value, this.reportInvalidProgressMark);
       put(merged);
       this.latest.set(treeId, merged);
       return { status: staleLanes.length ? 'stale' : 'saved', staleLanes, value: merged };
@@ -169,7 +171,7 @@ export class SyncStore {
   // Leaving leaves no time for a read or a callback: the record goes down whole, joined from the last one seen, and commit() asks the browser to finish.
   async saveWhileLeaving(treeId, value) {
     if (!this.opened || !this.latest.has(treeId)) return this.save(treeId, value);
-    const { merged, staleLanes } = mergedRecord(this.latest.get(treeId), value);
+    const { merged, staleLanes } = mergedRecord(this.latest.get(treeId), value, this.reportInvalidProgressMark);
     this.latest.set(treeId, merged);
     const txn = this.opened.transaction(STORE, 'readwrite');
     txn.objectStore(STORE).put(merged, treeId);
@@ -185,7 +187,7 @@ export class SyncStore {
         const value = normalizeRecord(stored);
         if (value.epochs[lane] !== epoch) return { status: 'stale', value };
         if (value.confirmed[lane] == null) return { status: 'unavailable', value };
-        const replaced = withoutDiscarded(value, lane, discarded);
+        const replaced = withoutDiscarded(value, lane, discarded, this.reportInvalidProgressMark);
         put(replaced);
         this.latest.set(treeId, replaced);
         return { status: 'replaced', value: replaced };
@@ -262,21 +264,21 @@ function laneField(lane) {
   return lane === 'structure' ? 'frame' : 'progress';
 }
 
-// A lane this store cannot read joins as nothing: the session reported it when it opened, and what the writer holds replaces it.
-function joinLane(lane, left, right) {
+// Unreadable structure frames yield to the writer; invalid progress rows report and leave valid rows intact.
+function joinLane(lane, left, right, onInvalidMark) {
   const blank = () => (lane === 'structure' ? new TreeLattice() : new ProgressLattice());
   let lattice = blank();
   try {
-    if (left) lattice.join(left);
+    if (left) lattice.join(left, onInvalidMark);
   } catch {
     lattice = blank();
   }
-  if (right) lattice.join(right);
+  if (right) lattice.join(right, onInvalidMark);
   return lattice.toFrame();
 }
 
 // What a writer's value makes of a stored record; only a lane at its stored epoch joins.
-function mergedRecord(record, value) {
+function mergedRecord(record, value, onInvalidMark) {
   const stored = normalizeRecord(record);
   const merged = normalizeRecord(stored);
   const staleLanes = [];
@@ -287,14 +289,14 @@ function mergedRecord(record, value) {
       staleLanes.push(lane);
       continue;
     }
-    merged[field] = joinLane(lane, stored[field], value[field]);
+    merged[field] = joinLane(lane, stored[field], value[field], onInvalidMark);
     const confirmed = value.confirmed?.[lane];
-    if (confirmed != null) merged.confirmed[lane] = joinLane(lane, stored.confirmed[lane], confirmed);
-    if (value.gestures?.[lane]) {
+    if (confirmed != null) merged.confirmed[lane] = joinLane(lane, stored.confirmed[lane], confirmed, onInvalidMark);
+    if (value.gestures?.[lane] || (lane === 'progress' && stored.gestures?.progress)) {
       merged.gestures ??= { structure: {}, progress: {} };
-      merged.gestures[lane] = pendingGestures({}, merged.confirmed[lane], {
-        ...stored.gestures?.[lane], ...value.gestures[lane],
-      });
+      const gestures = { ...stored.gestures?.[lane], ...value.gestures?.[lane] };
+      const retained = lane === 'progress' ? retainedProgressGestures(merged[field], gestures) : gestures;
+      merged.gestures[lane] = pendingGestures({}, merged.confirmed[lane], retained);
     }
     if (lane === 'structure') merged.lastSeq = Math.max(stored.lastSeq, value.lastSeq ?? 0);
   }
@@ -302,14 +304,14 @@ function mergedRecord(record, value) {
 }
 
 // The lane at its confirmed baseline, with only the discarded registers gone from what stood above it.
-function withoutDiscarded(value, lane, discarded) {
+function withoutDiscarded(value, lane, discarded, onInvalidMark) {
   const field = laneField(lane);
   const confirmed = value.confirmed[lane];
   const unconfirmed = unconfirmedStamps(writeStamps(value[field]), writeStamps(confirmed));
   const gone = discarded ?? unconfirmed;
   const standing = frameWrites(value[field], (key, stamp) => unconfirmed[key] === stamp && gone[key] !== stamp);
   const replaced = { ...value, epochs: { ...value.epochs, [lane]: value.epochs[lane] + 1 } };
-  replaced[field] = joinLane(lane, confirmed, standing);
+  replaced[field] = joinLane(lane, confirmed, standing, onInvalidMark);
   if (lane === 'structure') replaced.lastSeq = 0;
   if (value.gestures) replaced.gestures = { ...value.gestures, [lane]: pendingGestures(replaced[field], confirmed) };
   return replaced;

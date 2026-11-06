@@ -1,4 +1,5 @@
 import { compareHlc, parseHlc } from './lattice.js';
+import { progressStamp } from './progressLattice.js';
 import { GENESIS_STAMP } from '../model/Legend.js';
 
 const SECTIONS = ['nodes', 'edges', 'kinds', 'marks'];
@@ -54,8 +55,33 @@ export function unconfirmedStamps(stamps, confirmed) {
     !confirmed[key] || compareHlc(parseHlc(stamp), parseHlc(confirmed[key])) > 0));
 }
 
+export function outboxStamps(stamps, confirmed, carried = []) {
+  const pending = unconfirmedStamps(stamps, confirmed);
+  for (const references of carried) {
+    for (const [key, stamp] of Object.entries(references)) {
+      if (pending[key] === stamp) delete pending[key];
+    }
+  }
+  return pending;
+}
+
+export function outboxWrites(frame, confirmedFrame, carriedFrames = []) {
+  const pending = outboxStamps(writeStamps(frame), writeStamps(confirmedFrame), Array.from(carriedFrames, writeStamps));
+  return frameWrites(frame, (key, stamp) => pending[key] === stamp);
+}
+
 export function pendingRecordCount(stamps) {
   return new Set(Object.keys(stamps).map((key) => JSON.stringify(JSON.parse(key).slice(0, 2)))).size;
+}
+
+export function retainedProgressGestures(frame, gestures = {}) {
+  const current = writeStamps(frame);
+  const retained = {};
+  for (const [stamp, references] of Object.entries(gestures)) {
+    const valid = Object.fromEntries(Object.entries(references).filter(([key, at]) => current[key] && progressStamp(at)));
+    if (Object.keys(valid).length) retained[stamp] = valid;
+  }
+  return retained;
 }
 
 export function pendingGestures(frame, confirmedFrame, gestures = {}) {

@@ -136,18 +136,15 @@ export class VersionVector {
   }
 }
 
-// Emits one stamped field unless it is unset or already covered by `vector`; a null vector masks
-// nothing.
-function emitField(entry, key, atKey, value, at, vector) {
+// Emits one field when its register has a stamp.
+function emitField(entry, key, atKey, value, at) {
   if (!hlcIsSet(at)) return;
-  if (vector && vector.covers(at)) return;
   entry[key] = value;
   entry[atKey] = hlcText(at);
 }
 
-function emitStamp(entry, key, at, vector) {
+function emitStamp(entry, key, at) {
   if (!hlcIsSet(at)) return;
-  if (vector && vector.covers(at)) return;
   entry[key] = hlcText(at);
 }
 
@@ -337,53 +334,47 @@ export class TreeLattice {
     return vector;
   }
 
-  // A subgraph frame carrying every entry with a stamp `vector` does not cover, covered fields
-  // masked out. A null vector masks nothing — the whole lattice as one frame.
-  deltaSince(vector) {
+  // The whole lattice as one frame.
+  toFrame() {
     const nodes = [];
     for (const [id, record] of this.nodes) {
       const entry = { id };
-      emitStamp(entry, 'createdAt', record.life.addedAt, vector);
-      emitStamp(entry, 'deletedAt', record.life.removedAt, vector);
-      emitField(entry, 'label', 'labelAt', record.label.v, record.label.at, vector);
-      emitField(entry, 'icon', 'iconAt', record.icon.v, record.icon.at, vector);
-      emitField(entry, 'color', 'colorAt', record.color.v, record.color.at, vector);
-      emitField(entry, 'order', 'orderAt', record.order.v, record.order.at, vector);
-      emitField(entry, 'position', 'positionAt', record.position.v, record.position.at, vector);
-      emitField(entry, 'status', 'statusAt', record.status.v, record.status.at, vector);
-      emitField(entry, 'description', 'descriptionAt', record.description.v, record.description.at, vector);
-      emitField(entry, 'links', 'linksAt', record.links.v, record.links.at, vector);
+      emitStamp(entry, 'createdAt', record.life.addedAt);
+      emitStamp(entry, 'deletedAt', record.life.removedAt);
+      emitField(entry, 'label', 'labelAt', record.label.v, record.label.at);
+      emitField(entry, 'icon', 'iconAt', record.icon.v, record.icon.at);
+      emitField(entry, 'color', 'colorAt', record.color.v, record.color.at);
+      emitField(entry, 'order', 'orderAt', record.order.v, record.order.at);
+      emitField(entry, 'position', 'positionAt', record.position.v, record.position.at);
+      emitField(entry, 'status', 'statusAt', record.status.v, record.status.at);
+      emitField(entry, 'description', 'descriptionAt', record.description.v, record.description.at);
+      emitField(entry, 'links', 'linksAt', record.links.v, record.links.at);
       if (Object.keys(entry).length > 1) nodes.push(entry);
     }
     const edges = [];
     for (const [key, record] of this.edges) {
       const [from, to] = key.split(EDGE_SEP);
       const entry = { from, to };
-      emitStamp(entry, 'addedAt', record.addedAt, vector);
-      emitStamp(entry, 'removedAt', record.removedAt, vector);
+      emitStamp(entry, 'addedAt', record.addedAt);
+      emitStamp(entry, 'removedAt', record.removedAt);
       if (Object.keys(entry).length > 2) edges.push(entry);
     }
     const kinds = [];
     for (const [id, record] of this.kinds) {
       const entry = { id };
-      emitStamp(entry, 'createdAt', record.life.addedAt, vector);
-      emitStamp(entry, 'deletedAt', record.life.removedAt, vector);
-      emitField(entry, 'hue', 'hueAt', record.hue.v, record.hue.at, vector);
-      emitField(entry, 'label', 'labelAt', record.label.v, record.label.at, vector);
-      emitField(entry, 'description', 'descriptionAt', record.description.v, record.description.at, vector);
-      emitField(entry, 'rank', 'rankAt', record.rank.v, record.rank.at, vector);
+      emitStamp(entry, 'createdAt', record.life.addedAt);
+      emitStamp(entry, 'deletedAt', record.life.removedAt);
+      emitField(entry, 'hue', 'hueAt', record.hue.v, record.hue.at);
+      emitField(entry, 'label', 'labelAt', record.label.v, record.label.at);
+      emitField(entry, 'description', 'descriptionAt', record.description.v, record.description.at);
+      emitField(entry, 'rank', 'rankAt', record.rank.v, record.rank.at);
       if (Object.keys(entry).length > 1) kinds.push(entry);
     }
     const frame = { nodes, edges, kinds };
-    if (this._titleAt && hlcIsSet(this._titleAt) && !(vector && vector.covers(this._titleAt))) {
+    if (this._titleAt && hlcIsSet(this._titleAt)) {
       frame.title = { v: this.title, at: hlcText(this._titleAt) };
     }
     return frame;
-  }
-
-  // The whole lattice as one frame.
-  toFrame() {
-    return this.deltaSince(null);
   }
 
   // The present-time projection every render path consumes.

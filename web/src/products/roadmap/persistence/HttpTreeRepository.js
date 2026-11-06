@@ -3,7 +3,7 @@
 
 import { ProgressLattice } from '../sync/progressLattice.js';
 import { API_BASE } from '../../../shell/apiBase.js';
-import { BoundaryFailure, pageWatching, reportRoadmapFailure } from '../reportFailure.js';
+import { BoundaryFailure, reportInvalidProgressMark, pageWatching, reportRoadmapFailure } from '../reportFailure.js';
 
 export class HttpTreeRepository {
   // An owner naming `operation` reports every read under it; a tree this repository did not read came off this device, and its reads report nothing.
@@ -56,7 +56,7 @@ export class HttpTreeRepository {
     }
     if (body?.marks?.length) {
       const lattice = new ProgressLattice();
-      lattice.join(body);
+      lattice.join(body, () => reportInvalidProgressMark(this.reportFailure));
       return { ...lattice.overlay(), server: true };
     }
     return {

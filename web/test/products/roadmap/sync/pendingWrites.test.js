@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { pendingGestures, pendingRecordCount, unconfirmedStamps, writeStamps } from '../../../../src/products/roadmap/sync/pendingWrites.js';
+import { GENESIS_STAMP } from '../../../../src/products/roadmap/model/Legend.js';
+import { outboxStamps, outboxWrites, pendingGestures, pendingRecordCount, unconfirmedStamps, writeStamps } from '../../../../src/products/roadmap/sync/pendingWrites.js';
 
 const key = (section, id, field) => JSON.stringify([section, id, field]);
 
@@ -30,4 +31,56 @@ test('a newer stamp covers only its exact register while superseded gestures rem
   assert.deepEqual(Object.keys(gestures), ['3:0:tab', '4:0:tab']);
   assert.deepEqual(pendingGestures({}, later, gestures), {});
   assert.deepEqual(unconfirmedStamps(writeStamps(before), writeStamps({ nodes: [{ id: 'other', labelAt: '9:0:tab' }] })), writeStamps(before));
+});
+
+for (const [name, confirmed, carried, expected] of [
+  ['unconfirmed', {}, [], { nodes: [{ id: 'a', labelAt: '5:0:r', label: 'A' }] }],
+  ['equal confirmation', { nodes: [{ id: 'a', labelAt: '5:0:r' }] }, [], { nodes: [] }],
+  ['newer confirmation', { nodes: [{ id: 'a', labelAt: '6:0:r' }] }, [], { nodes: [] }],
+  ['same carried stamp', {}, [{ nodes: [{ id: 'a', labelAt: '5:0:r' }] }], { nodes: [] }],
+  ['older carried stamp', {}, [{ nodes: [{ id: 'a', labelAt: '4:0:r' }] }], { nodes: [{ id: 'a', labelAt: '5:0:r', label: 'A' }] }],
+]) {
+  test(`outbox keeps exactly the current register: ${name}`, () => {
+    assert.deepEqual(outboxWrites({ nodes: [{ id: 'a', label: 'A', labelAt: '5:0:r' }] }, confirmed, carried), expected);
+  });
+}
+
+test('outbox keys title, directed edges and marks independently even at the same stamp', () => {
+  const frame = {
+    title: { v: 'Tree', at: '7:0:r' },
+    edges: [{ from: 'a', to: 'b', addedAt: '7:0:r' }, { from: 'b', to: 'a', addedAt: '7:0:r' }],
+    marks: [{ node: 'a', status: 'complete', at: '7:0:r', markedAt: 7 }],
+  };
+  assert.deepEqual(outboxWrites(frame, { edges: [frame.edges[0]] }), {
+    title: frame.title, edges: [frame.edges[1]], marks: frame.marks,
+  });
+  assert.deepEqual(outboxWrites(frame, {}, [frame]), { edges: [], marks: [] });
+});
+
+test('outbox and pending status both retain unconfirmed genesis registers', () => {
+  const frame = { nodes: [{ id: 'root', createdAt: GENESIS_STAMP }] };
+  const unconfirmed = unconfirmedStamps(writeStamps(frame), {});
+  assert.equal(pendingRecordCount(unconfirmed), 1);
+  assert.deepEqual(outboxWrites(frame, {}), frame);
+  assert.deepEqual(writeStamps(outboxWrites(frame, {})), unconfirmed);
+});
+
+
+test('precomputed outbox stamps preserve their inputs and agree with frame delivery', () => {
+  const frame = { nodes: [
+    { id: 'a', label: 'Confirmed', labelAt: '5:0:r' },
+    { id: 'b', label: 'In flight', labelAt: '6:0:r' },
+    { id: 'c', label: 'Superseded in flight', labelAt: '8:0:r' },
+  ] };
+  const baseline = { nodes: [frame.nodes[0]] };
+  const inFlight = [{ nodes: [frame.nodes[1], { id: 'c', label: 'Older', labelAt: '7:0:r' }] }];
+  const stamps = Object.freeze(writeStamps(frame));
+  const confirmed = Object.freeze(writeStamps(baseline));
+  const carried = inFlight.map((writes) => Object.freeze(writeStamps(writes)));
+  const expected = { [key('nodes', 'c', 'labelAt')]: '8:0:r' };
+  assert.deepEqual(outboxStamps(stamps, confirmed, carried), expected);
+  assert.deepEqual(writeStamps(outboxWrites(frame, baseline, inFlight)), expected);
+  assert.deepEqual(stamps, writeStamps(frame));
+  assert.deepEqual(confirmed, writeStamps(baseline));
+  assert.deepEqual(carried, inFlight.map(writeStamps));
 });

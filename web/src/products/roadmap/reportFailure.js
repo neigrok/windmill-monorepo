@@ -10,6 +10,11 @@ export function reportRoadmapFailure(operation, error, tags, route = '#/app') {
   captureError('roadmap', operation, stack.trim() ? stack : new Error(operation).stack, route, tags);
 }
 
+// Invalid progress rows report no content; the shared Sentry boundary bounds repeated reports.
+export function reportInvalidProgressMark(report = reportRoadmapFailure) {
+  report('roadmap-sync-progress-mark', new Error('Roadmap progress mark invalid'), { lane: 'progress' });
+}
+
 // Whether a lost request had anyone waiting on it: offline or behind a hidden page, losing one is expected.
 export function pageWatching() {
   return globalThis.document?.visibilityState === 'visible' && globalThis.navigator?.onLine !== false;

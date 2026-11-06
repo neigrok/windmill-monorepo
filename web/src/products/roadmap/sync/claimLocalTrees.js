@@ -78,7 +78,7 @@ function claimBody(id, title) {
   return trimmed ? { id, title: trimmed } : { id };
 }
 
-// Step 2 — drain both lanes; the flush is derived from coverage, not a queue.
+// Step 2 — drain both lanes; each flush carries unconfirmed registers not already in flight.
 async function syncTreeUp(treeId, title, { openTreeId, openSession }) {
   // Identity-check the live session, or a tree switched since the run started takes this progress.
   const candidate = treeId === openTreeId ? openSession?.() : null;
