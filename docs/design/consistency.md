@@ -568,9 +568,10 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   build shows nothing. Proposed, awaiting the owner: toast *Couldn't copy the link* · **Show link**, then the link selected with
   **Retry** (phone 25.01–25.02, desktop 15.01–15.02).
 - **Board · Shell at 200% text.** The Shell defines no reflow: from 744px `web/src/shell/chrome/chrome.css` keeps room links in
-  one row of 44px-high targets with no fill, bold-width reservation and `white-space: nowrap`. Phone geometry is unchanged,
-  and the 18.05 specimen (380:18803) leaves the Shell out. Proposed, awaiting the owner: the links fold into one current-room
-  menu by em width (phone 25.23–25.24). The Shell owner draws it in the Shell file and builds it.
+  one row of 44px-high targets with no fill, bold-width reservation and `white-space: nowrap`. Below 744px room links are
+  30px high with `white-space: nowrap`; Home, journal and gym use a filled active pill. The 18.05 specimen (380:18803) leaves
+  the Shell out. Proposed, awaiting the owner: the links fold into one current-room menu by em width (phone 25.23–25.24).
+  The Shell owner draws it in the Shell file and builds it.
 - **Board · Roadmap complete for a reader.** The Board shows a reader the title alone, plus the crown and a secondary Fork offer on
   phones. Proposed, awaiting the owner: *All 8 steps done* / *Fork it to walk these steps yourself.*, with Fork primary on phones
   (25.03, 15.03).
@@ -661,10 +662,13 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
 - **Graph · ticker over the selection bar.** Web 16's ticker and the selection bar share the bottom of the canvas with no drawn
   stacking. A rename on the dock followed by a selection inside the ticker's 4.5 seconds lays the ticker across the bar; presses pass
   through it to the bar. Draw where the ticker stands while a selection bar is up.
-- **Shell · avatar visual.** From 744px the existing 30px avatar sits inside a 44px target; 16.01 and 16.02 draw a 28px visual.
+- **Shell · avatar visual.** From 744px the 30px avatar sits inside a 44px target. The signed-in visual uses the filled product
+  `Avatar`; 16.01 and 16.02 draw a 28px `--surface-card` chip with an initial.
 - **Shell · signed-out Appearance.** Home, journal and gym keep the ghost avatar's Appearance (Light, Dark, System), Sign in
   and Settings popover at every width. Shared or status rooms keep their Sign in text seat; a signed-out roadmap visitor
-  reaches Appearance through Home's avatar.
+  reaches Appearance through Home's avatar. 16.01's Home signed-out row (626:38890 and dark 627:39049) and Shared Shell
+  290:7085's Account=Signed out variant still draw *Sign in* for Home, journal and gym from 744px, against the owner's ruling
+  to keep the avatar seat. A designer is updating those drawings.
 - **Demo · coach card on a phone.** [P4](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=64-2) draws the
   card beside its step with an arrow. At phone width neither side fits, so the card seats under its step, or over it
   near the bottom and clear of the Fork pill and selected-step bar, with no arrow. Draw the phone seat.

@@ -17,19 +17,14 @@
 .wm-head {
   flex: none;
   height: calc(52px + env(safe-area-inset-top, 0px));
-  display: grid;
-  grid-template-columns: 32px minmax(0, 1fr) 32px;
+  display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 16px;
   padding: env(safe-area-inset-top, 0px) 16px 0;
 }
 
 .wm-head-mark {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 44px;
+  display: none;
 }
 .wm-head-mark:focus-visible {
   outline: none;
@@ -41,27 +36,41 @@
 
 .wm-switch {
   display: flex;
-  justify-self: center;
+  flex: none;
   align-items: center;
-  gap: 2px;
+  gap: 16px;
+  margin-right: auto;
 }
 
 .wm-switch-btn {
-  height: 30px;
-  padding: 0 13px;
-  display: inline-flex;
-  align-items: center;
+  height: 44px;
+  min-width: 44px;
+  padding: 0 4px;
+  display: inline-grid;
+  place-items: center;
   border-radius: var(--radius-full);
   color: var(--text-secondary);
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 400;
   white-space: nowrap;
   transition: color var(--duration-fast) var(--ease-standard), background var(--duration-fast) var(--ease-standard);
 }
 
 .wm-switch-btn[aria-current='page'] {
-  background: var(--surface-card);
+  background: transparent;
   color: var(--text-primary);
+  font-weight: 700;
+}
+
+.wm-switch-btn > span,
+.wm-switch-btn::after {
+  grid-area: 1 / 1;
+}
+
+.wm-switch-btn::after {
+  content: attr(data-label);
+  visibility: hidden;
   font-weight: 700;
 }
 
@@ -78,21 +87,23 @@ a.wm-switch-btn:hover {
 
 .wm-head-seat {
   display: flex;
+  flex: none;
   align-items: center;
   justify-self: end;
 }
 
+.wm-head-seat .wm-account-seat {
+  --wm-account-seat-target-size: 44px;
+}
+
 .wm-head.wm-head--status {
-  grid-template-columns: 32px minmax(0, 1fr) auto auto;
   position: relative;
   z-index: 2;
 }
 
 .wm-room-status {
   position: relative;
-  width: 280px;
-  margin-right: 16px;
-  text-align: right;
+  flex: none;
   color: var(--text-secondary);
   font-size: var(--text-xs);
   line-height: var(--leading-xs);
@@ -136,71 +147,50 @@ a.wm-switch-btn:hover {
   display: none;
 }
 
-@media (min-width: 744px) {
+@media (width < 744px) {
   .wm-head {
-    display: flex;
-    gap: 16px;
+    display: grid;
+    grid-template-columns: 32px minmax(0, 1fr) 32px;
+    gap: 4px;
   }
 
   .wm-head-mark {
-    display: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 44px;
   }
 
   .wm-switch {
-    flex: none;
-    gap: 16px;
-    margin-right: auto;
-  }
-
-  .wm-switch-btn {
-    display: inline-grid;
-    place-items: center;
-    min-width: 44px;
-    height: 44px;
-    padding-inline: 4px;
-    font-size: 12px;
-    line-height: 18px;
-    font-weight: 400;
-  }
-
-  .wm-switch-btn > span,
-  .wm-switch-btn::after {
-    grid-area: 1 / 1;
-  }
-
-  .wm-switch-btn::after {
-    content: attr(data-label);
-    visibility: hidden;
-    font-weight: 700;
-  }
-
-  .wm-switch-btn[aria-current='page'] {
-    background: transparent;
-  }
-
-  .wm-room-status {
-    flex: none;
-    width: auto;
+    justify-self: center;
+    gap: 2px;
     margin-right: 0;
   }
 
-  .wm-head-seat {
-    flex: none;
-  }
-
-  .wm-head-seat > div > button {
-    min-width: 44px;
-    min-height: 44px;
-  }
-
-  .wm-head-seat > div > button > span {
-    width: 30px;
+  .wm-switch-btn {
+    display: inline-flex;
+    align-items: center;
+    min-width: auto;
     height: 30px;
-    margin: auto;
+    padding-inline: 13px;
+    font-size: 13px;
+    line-height: normal;
+    font-weight: 600;
   }
-}
 
-@media (max-width: 743px) {
+  .wm-switch-btn::after {
+    content: none;
+  }
+
+  .wm-switch-btn[aria-current='page'] {
+    background: var(--surface-card);
+  }
+
+  .wm-head-seat .wm-account-seat {
+    --wm-account-seat-target-size: auto;
+  }
+
   .wm-head.wm-head--shared {
     grid-template-columns: minmax(0, 1fr) auto;
     padding-inline: 16px;

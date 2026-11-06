@@ -58,7 +58,7 @@ export function AccountSeat({ user, status, size = 36, onSignIn, onSignOut, onSe
   const crossfade = `opacity ${reduced ? 'var(--duration-fast)' : 'var(--duration-slow)'} var(--ease-soft)`;
 
   return (
-    <div ref={rootRef} style={{ position: 'relative', display: 'inline-flex' }}>
+    <div ref={rootRef} className="wm-account-seat" style={{ position: 'relative', display: 'inline-flex' }}>
       <style>{`
         @keyframes wm-seat-wake { 0% { transform: scale(1); } 45% { transform: scale(1.02); } 100% { transform: scale(1); } }
       `}</style>
@@ -78,6 +78,8 @@ export function AccountSeat({ user, status, size = 36, onSignIn, onSignOut, onSe
           position: 'relative',
           width: display === 'label' ? 'auto' : size,
           height: display === 'label' ? 40 : size,
+          minWidth: display === 'label' ? undefined : 'var(--wm-account-seat-target-size, auto)',
+          minHeight: display === 'label' ? undefined : 'var(--wm-account-seat-target-size, auto)',
           padding: 0,
           border: 'none',
           borderRadius: 'var(--radius-full)',
@@ -92,6 +94,9 @@ export function AccountSeat({ user, status, size = 36, onSignIn, onSignOut, onSe
           style={{
             position: 'absolute',
             inset: 0,
+            width: size,
+            height: size,
+            margin: 'auto',
             display: 'inline-flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -115,6 +120,9 @@ export function AccountSeat({ user, status, size = 36, onSignIn, onSignOut, onSe
             style={{
               position: 'absolute',
               inset: 0,
+              width: size,
+              height: size,
+              margin: 'auto',
               display: 'inline-flex',
               opacity: signedIn ? 1 : 0,
               transition: crossfade,
@@ -132,7 +140,7 @@ export function AccountSeat({ user, status, size = 36, onSignIn, onSignOut, onSe
           id={popoverId}
           style={{
             position: 'absolute',
-            top: 'calc(100% + 8px)',
+            top: display === 'label' ? 'calc(100% + 8px)' : `calc(50% + ${size / 2}px + 8px)`,
             right: 0,
             width: 'min(272px, calc(100vw - 24px))',
             boxSizing: 'border-box',

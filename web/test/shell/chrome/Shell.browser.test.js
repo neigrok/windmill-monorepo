@@ -470,3 +470,35 @@ for (const width of [390, 320]) {
     });
   }
 }
+
+for (const engine of [chromium, webkit]) {
+  for (const width of [600, 743, 744]) {
+    for (const ghost of [false, true]) {
+      test(`${engine.name()} keeps the ${ghost ? 'ghost' : 'signed-in'} account popover eight pixels below its visual at ${width}`, async (t) => {
+        await visit(t, width, async (page) => {
+          await page.emulateMedia({ reducedMotion: 'reduce' });
+          const control = page.locator('.wm-account-seat button[aria-expanded]');
+          await control.dispatchEvent('click');
+          await page.waitForFunction(() => document.querySelector('.wm-account-seat button[aria-expanded]')?.getAttribute('aria-expanded') === 'true');
+          const geometry = await control.evaluate((button) => {
+            const target = button.getBoundingClientRect();
+            const visual = button.firstElementChild.getBoundingClientRect();
+            const popover = document.getElementById(button.getAttribute('aria-controls')).getBoundingClientRect();
+            return {
+              target: [target.width, target.height],
+              visual: [visual.width, visual.height],
+              inset: [visual.left - target.left, visual.top - target.top],
+              popoverGap: popover.top - visual.bottom,
+              rightOffset: popover.right - target.right,
+            };
+          });
+          const size = width >= 744 ? 44 : 30;
+          const inset = (size - 30) / 2;
+          assert.deepEqual(geometry, {
+            target: [size, size], visual: [30, 30], inset: [inset, inset], popoverGap: 8, rightOffset: 0,
+          });
+        }, `?room=home${ghost ? '&ghost' : ''}`, engine);
+      });
+    }
+  }
+}

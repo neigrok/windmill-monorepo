@@ -181,7 +181,6 @@ test('roadmap alone wears the Shared Shell, and its head says so with no status 
     ['wm-head wm-head--shared', 'wm-head', 'wm-head', 'wm-head']);
 });
 
-
 test('each room link reserves its own label without changing the visible text or link semantics', async (t) => {
   browser();
   const { Shell } = await loadScreen('shell/chrome/Shell.jsx');
