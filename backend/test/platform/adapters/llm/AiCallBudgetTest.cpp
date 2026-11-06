@@ -455,11 +455,11 @@ TEST(ai_call_budget_admits_small_free_requests_but_refuses_large_requests_and_un
   request["model"] = spend.model;
   request["max_tokens"] = 16'000;
   request["messages"] = parse(R"([{"role":"user","content":"Hi"}])");
-  CHECK_EQ(entitlements.aiAllowanceView(account.id, account.email.value).remainingNanos, 250'000'000);
+  CHECK_EQ(entitlements.aiAllowanceView(account.id, account.email.value).remainingNanos, 500'000'000);
   const auto small = budget.begin(spend, request);
   REQUIRE(small.reservation);
-  CHECK(small.reservation->amountNanos < 250'000'000);
-  request["messages"][0]["content"] = std::string(300'000, 'a');
+  CHECK(small.reservation->amountNanos < 500'000'000);
+  request["messages"][0]["content"] = std::string(600'000, 'a');
   CHECK_EQ(budget.begin(spend, request).refusal, std::string{"subject_exhausted"});
   CHECK_EQ(repository.reservations.size(), 1u);
   subscriptions.subscribe(account.id);

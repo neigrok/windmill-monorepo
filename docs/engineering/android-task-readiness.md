@@ -87,9 +87,7 @@ U/P additional proposals are deferred from the current release scope and remain 
 | N | `android-gym-no-routine-picker-design` | External/no-routine workout entry only if replacing its existing picker; task 13's routine-start cleanup proceeds. |
 | M | `android-gym-mcp-proposal-row-design` | Review entry and destination for a proposal with no Coach conversation. Keep its functioning review path until a replacement is approved. |
 | U · deferred from release scope, unapproved | `android-coach-uncertain-apply-design` | Awaiting confirmation, Check again and resolved Apply/removal states; no opposing decision while unresolved. Existing failure boards only establish proven no-write failures. |
-| P · deferred from release scope, unapproved | `android-coach-partial-drafts-design` | Pending, saved and refused account drafts together; Retry/Reject scoped to unresolved work and durable per-draft receipts. |
-| B · access approved; recovery unapproved | `android-coach-bound-installation-design` | Canonical 08.58b signed-out access retains History and Sign in with no anonymous Send; human-approved 2026-10-28. B.2 recovery of already-submitted requests remains unapproved. |
-| A · unapproved | Consistency ledger 6t | Anonymous provider refusal, truncated output, invalid/unavailable installation credentials, waiting versus local saving, and truthful Stop waiting copy. Task 38 must retain the originating draft. |
+| B · access approved | `android-coach-bound-installation-design` | Canonical 08.58b signed-out access retains History and Sign in with no anonymous Send; human-approved 2026-10-28. |
 | D · approved | `android-account-delete-recovery-design` | [D1–D5 recovery](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=116-754) is 🚀 In production, human-approved 2026-10-25. The `account-delete-reconciliation` backend contract is deployed in `ac1e0c75`; task 48 ships it in Android 0.14.0. |
 
 The [combined editor Load keyboard](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1452-22388)

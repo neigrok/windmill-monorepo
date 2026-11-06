@@ -334,7 +334,7 @@ class GymServerRules : ServerRules {
                 }
                 "workoutProposal" -> {
                     if (!created) continue
-                    val sessionId = value(row, "sessionId")!!.str(); val session = staged[key("session", sessionId)]
+                    val sessionId = (value(row, "sessionId") as? Json.Str)?.value ?: ""; val session = staged[key("session", sessionId)]
                     if (c.origin.isReplica) {
                         if (value(row, "door") != Json.of("ask") || (value(row, "connection") ?: Json.of("")) != Json.of("") || (value(row, "agent") ?: Json.of("")) != Json.of("")) throw Refusal("invalid")
                         if (c.guards.none { it.key == key("session", sessionId) && it.field == "plan" && it.stamp == session?.lattice?.fields?.get("plan")?.stamp }) throw Refusal("invalid")
@@ -342,7 +342,7 @@ class GymServerRules : ServerRules {
                     if (session?.isAlive != true) throw Refusal("unknown-record")
                     val plan = value(session, "plan")?.orNull() ?: throw Refusal("invalid")
                     if (closed(session, records("set"), c.serverNow)) throw Refusal("session-finished")
-                    val base = entries(plan); val lines = value(row, "changes")!!.arr(); val proposed = document(lines)
+                    val base = entries(plan); val lines = (value(row, "changes") as? Json.Arr)?.values.orEmpty(); val proposed = document(lines)
                     if (proposed.size > 50 || lines != diff(base, proposed)) throw Refusal("invalid")
                     checkPlanShape(base, proposed, ::known)
                     checkLoggedKept(base, proposed, session.key.id.json, records("set"))
@@ -379,17 +379,32 @@ class GymServerRules : ServerRules {
         for (index in base.indices.filter { it !in matched }) expected.add(Json.objectOf("kind" to Json.of("removed"), "before" to targets(base[index])).with("exerciseId" to base[index]["exerciseId"]))
         return expected
     }
-    private fun changeCount(base: List<Json>, changes: List<Json>): Int {
-        val count = changes.count { it["kind"] != Json.of("kept") }
-        val matched = mutableSetOf<Int>(); var highest = -1
-        for (change in changes.filter { it["kind"] !in listOf(Json.of("added"), Json.of("removed")) }) {
-            val index = base.indices.firstOrNull { it !in matched && base[it]["exerciseId"] == change["exerciseId"] } ?: continue
-            matched.add(index)
-            if (index < highest) return count + 1
-            highest = index
+    private data class PlacedLine(val change: Json, val from: Int, val to: Int)
+    // The kept and retargeted lines a diff moved, each matched to the first unmatched base entry of its exercise in proposed order. A line at the same place in both never moved. Of the rest, a line that crosses one of those moved; of what is left, the longest run that keeps the base's order stands, the one whose places come first of equal runs, and every other line moved.
+    private fun movedLines(base: List<Json>, changes: List<Json>): List<PlacedLine> {
+        val matched = mutableSetOf<Int>()
+        val retained = mutableListOf<PlacedLine>()
+        changes.filter { it["kind"] != Json.of("removed") }.forEachIndexed { to, change ->
+            if (change["kind"] == Json.of("added")) return@forEachIndexed
+            val from = base.indices.firstOrNull { it !in matched && base[it]["exerciseId"] == change["exerciseId"] } ?: return@forEachIndexed
+            matched.add(from)
+            retained.add(PlacedLine(change, from, to))
         }
-        return count
+        val (placed, left) = retained.partition { it.from == it.to }
+        val candidates = left.filter { line -> placed.all { (line.to < it.to) == (line.from < it.from) } }
+        val longest = MutableList(candidates.size) { 1 }
+        for (i in candidates.indices.reversed()) for (j in i + 1 until candidates.size) if (candidates[j].from > candidates[i].from) longest[i] = maxOf(longest[i], longest[j] + 1)
+        val standing = mutableSetOf<PlacedLine>()
+        var previous = -1; var start = 0; var length = longest.maxOrNull() ?: 0
+        while (length > 0) {
+            val next = (start until candidates.size).filter { candidates[it].from > previous && longest[it] == length }.minBy { candidates[it].from }
+            standing.add(candidates[next]); previous = candidates[next].from; start = next + 1; length -= 1
+        }
+        return left.filter { it !in standing }
     }
+    // The apply count of a diff, what a card, a sheet and a receipt say: every line not kept and every kept line that moved.
+    private fun changeCount(base: List<Json>, changes: List<Json>): Int =
+        changes.count { it["kind"] != Json.of("kept") } + movedLines(base, changes).count { it.change["kind"] == Json.of("kept") }
     private fun checkPlanShape(before: List<Json>, after: List<Json>, known: (Json?) -> Boolean) {
         if (after.any { it["sets"]?.arr()?.isEmpty() == true }) throw Refusal("invalid")
         if (after.any { !known(it["exerciseId"]) }) throw Refusal("unknown-exercise")

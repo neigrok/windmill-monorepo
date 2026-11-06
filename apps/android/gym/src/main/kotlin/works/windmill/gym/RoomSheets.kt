@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.SheetState
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -18,8 +19,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.NonSkippableComposable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -36,8 +39,10 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import works.windmill.gym.presentation.Ids
+import works.windmill.gym.presentation.Proposal
 import works.windmill.gym.presentation.ProposalIntent
 import works.windmill.gym.presentation.ProposalState
+import works.windmill.gym.presentation.ProposalTarget
 import works.windmill.gym.presentation.SessionDetail
 import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.Seat
@@ -45,8 +50,10 @@ import works.windmill.gym.store.TrainingStore
 import works.windmill.gym.ui.FinishCoach
 import works.windmill.gym.ui.FinishScreen
 import works.windmill.gym.ui.FinishedSession
+import works.windmill.gym.ui.ProposalReview
 import works.windmill.gym.ui.ReviewBinding
 import works.windmill.gym.ui.ReviewSheet
+import works.windmill.gym.ui.WorkoutReviewBinding
 import works.windmill.platform.Account
 import works.windmill.platform.LocalShellActions
 import works.windmill.platform.design.WindmillSheet
@@ -54,9 +61,9 @@ import works.windmill.platform.net.WindmillJson
 import works.windmill.platform.telemetry.Telemetry
 
 // The review sheet and the door it opened from, which is where its receipt lands: the live
-// conversation, a stored thread, or the routines home. The proposal carries the routine the diff was
-// written against.
-internal data class Reviewing(val proposalId: String, val routineId: String, val door: String) {
+// conversation, a stored thread, or the routines home. A change to the open workout keeps its receipt
+// on its own card.
+internal data class Reviewing(val proposalId: String, val target: ProposalTarget, val door: String) {
     companion object {
         const val coach = "coach"
         const val routines = "routines"
@@ -68,7 +75,6 @@ internal data class Reviewing(val proposalId: String, val routineId: String, val
 @Stable
 internal class ReviewFlow(
     private val scope: CoroutineScope,
-    private val sheet: SheetState,
     reviewingState: MutableState<Reviewing?>,
     busyState: MutableState<Boolean>,
     lookedAtState: MutableState<String>,
@@ -79,19 +85,25 @@ internal class ReviewFlow(
     private var busy by busyState
     private var lookedAt by lookedAtState
     private var receipts by receiptsState
+    internal var sheet: SheetState? = null
+        private set
 
     val lookedAtIds: Set<String> get() = lookedAt.split(' ').filter { it.isNotEmpty() }.toSet()
 
     fun receiptsAt(door: String): List<String> = receipts[door].orEmpty()
 
     // Opened over whatever is standing; the door is where the receipt will land.
-    fun open(proposalId: String, routineId: String, door: String) {
-        reviewing = Reviewing(proposalId, routineId, door)
+    fun open(proposal: Proposal, door: String) {
+        reviewing = Reviewing(proposal.id, proposal.target, door)
     }
 
-    fun close() {
+    // What a door does next waits for the sheet to be off.
+    fun close(then: () -> Unit = {}) {
         if (busy) return
-        scope.launch { sheet.hide() }.invokeOnCompletion { reviewing = null }
+        scope.launch { sheet?.hide() }.invokeOnCompletion { cause ->
+            reviewing = null
+            if (cause == null) then()
+        }
     }
 
     // A thread's receipts live exactly as long as that thread is on screen.
@@ -113,27 +125,32 @@ internal class ReviewFlow(
     // Over the conversation or the routines home, never a push. Closing it — swipe, scrim, back —
     // decides nothing: the proposal stays pending and its card reads `still waiting`.
     @Composable
-    fun Sheet(store: TrainingStore, onAsk: ((about: String) -> Unit)?, say: (String) -> Unit) {
+    fun Sheet(store: TrainingStore, onAsk: ((about: String) -> Unit)?, onSignIn: () -> Unit, say: (String) -> Unit) {
         val colors = MaterialTheme.colorScheme
-        reviewing?.let { open ->
+        reviewing?.let { open -> key(open) {
+            val workout = open.target == ProposalTarget.Workout
+            // Each opening has its own state: with animations off, a state a closed sheet left behind stands at the height it first measured and leaves the rows and Apply below the window.
+            val opening = rememberModalBottomSheetState(skipPartiallyExpanded = true, confirmValueChange = { !busy })
+            SideEffect { sheet = opening }
             WindmillSheet(
                 onDismissRequest = {
                     if (busy) return@WindmillSheet
                     reviewing = null
                     if (open.proposalId !in lookedAtIds) lookedAt = (lookedAtIds + open.proposalId).joinToString(" ")
                 },
-                sheetState = sheet,
+                sheetState = opening,
                 containerColor = colors.surfaceContainer,
                 scrimColor = colors.scrim,
+                dragHandle = if (workout) { { SheetHandle() } } else { { BottomSheetDefaults.DragHandle() } },
             ) {
                 BackHandler(enabled = busy) {}
-                val proposalReview = remember(store) { ReviewBinding(store) }
+                val proposalReview: ProposalReview = remember(store, workout) { if (workout) WorkoutReviewBinding(store) else ReviewBinding(store) }
                 ReviewSheet(
                     onBusy = { busy = it },
                     proposalId = open.proposalId,
                     state = proposalReview,
                     events = proposalReview,
-                    onAsk = if (onAsk == null) null else { about ->
+                    onAsk = if (onAsk == null || workout) null else { about ->
                         close()
                         onAsk(about)
                     },
@@ -141,16 +158,17 @@ internal class ReviewFlow(
                         if (settled.intent != ProposalIntent.Remove || settled.state != ProposalState.Applied) {
                             // The server's reply, never the model's prose. From the routines home there is no
                             // thread to land in, so the room's own line carries it until the next move.
-                            settled.receipt?.let { line ->
+                            settled.receipt?.takeUnless { workout }?.let { line ->
                                 if (open.door == Reviewing.routines) say(line)
                                 else receipts = receipts + (open.door to receipts[open.door].orEmpty() + line)
                             }
                             close()
                         }
                     },
+                    onSignIn = { close(onSignIn) },
                 )
             }
-        }
+        } }
     }
 }
 
@@ -162,13 +180,70 @@ internal fun rememberReviewFlow(): ReviewFlow {
     // mid-review lands back on the card, which decides nothing either.
     val reviewing = remember { mutableStateOf<Reviewing?>(null) }
     val busy = remember { mutableStateOf(false) }
-    val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true, confirmValueChange = { !busy.value })
     // Reviews opened and closed with nothing decided: their cards read `still waiting`. Saved as the
     // string it is, ids joined by a space.
     val lookedAt = rememberSaveable { mutableStateOf("") }
     // The room keeps shown receipts with their doors; unseen removal receipts live in the replica.
     val receipts = remember { mutableStateOf<Map<String, List<String>>>(emptyMap()) }
-    return remember(scope, sheet) { ReviewFlow(scope, sheet, reviewing, busy, lookedAt, receipts) }
+    return remember(scope) { ReviewFlow(scope, reviewing, busy, lookedAt, receipts) }
+}
+
+// A sheet's drag handle in its 24 dp strip.
+@Composable
+private fun SheetHandle() {
+    Box(Modifier.fillMaxWidth().height(24.dp), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(32.dp, 4.dp).background(MaterialTheme.colorScheme.onSurfaceVariant, RoundedCornerShape(2.dp)))
+    }
+}
+
+// Coach over the open workout (08.54): the conversation raised over the rack, which it leaves as it was. A door to the rest of the room closes it first; a review opens over it.
+@OptIn(ExperimentalMaterial3Api::class)
+@Stable
+internal class CoachSheetFlow(
+    private val scope: CoroutineScope,
+    openState: MutableState<Boolean>,
+) {
+    var open by openState
+        private set
+    private var sheet: SheetState? = null
+
+    fun show() { open = true }
+
+    // What a door does next waits for the sheet to be off.
+    fun close(then: () -> Unit) {
+        if (!open) { then(); return }
+        scope.launch { sheet?.hide() }.invokeOnCompletion { cause ->
+            open = false
+            if (cause == null) then()
+        }
+    }
+
+    // It belongs to the workout and the seat it was opened on.
+    fun forget() { open = false }
+
+    @Composable
+    fun Sheet(content: @Composable () -> Unit) {
+        val colors = MaterialTheme.colorScheme
+        if (!open) return
+        val opening = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        SideEffect { sheet = opening }
+        WindmillSheet(
+            onDismissRequest = { open = false },
+            sheetState = opening,
+            containerColor = colors.surface,
+            scrimColor = colors.scrim,
+            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+            dragHandle = { SheetHandle() },
+        ) { content() }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun rememberCoachSheetFlow(): CoachSheetFlow {
+    val scope = rememberCoroutineScope()
+    val open = rememberSaveable { mutableStateOf(false) }
+    return remember(scope) { CoachSheetFlow(scope, open) }
 }
 
 // The finish receipt over the room, and the Share with Coach request it queues under its own saved
@@ -180,7 +255,6 @@ internal class FinishFlow(
     private val scope: CoroutineScope,
     private val context: Context,
     private val telemetry: Telemetry,
-    private val sheet: SheetState,
     private val states: SaveableStateHolder,
     finishedState: MutableState<FinishedSession?>,
     queuedShareState: MutableState<String?>,
@@ -194,6 +268,7 @@ internal class FinishFlow(
     private var queuedShareOwner by queuedShareOwnerState
     private var shareReady by shareReadyState
     private var closing by closingState
+    private var sheet: SheetState? = null
 
     val shareQueued: Boolean get() = queuedShare != null
 
@@ -232,7 +307,7 @@ internal class FinishFlow(
         if (closing || queuedShare != null) return
         if (finished == null) { then(); return }
         closing = true
-        scope.launch { sheet.hide() }.invokeOnCompletion { cause ->
+        scope.launch { sheet?.hide() }.invokeOnCompletion { cause ->
             closing = false
             if (cause != null) return@invokeOnCompletion
             finished?.let { states.removeState(it.session.id) }
@@ -295,7 +370,7 @@ internal class FinishFlow(
             if (!shareReady) {
                 closing = true
                 try {
-                    if (finished != null) launch { sheet.hide() }.join()
+                    if (finished != null) launch { sheet?.hide() }.join()
                     if (queuedShare != request) return@LaunchedEffect
                     finished?.let { states.removeState(it.session.id) }
                     finished = null
@@ -307,15 +382,11 @@ internal class FinishFlow(
             }
             if (!account.resolved || !account.isSignedIn || !store.seat.accountReady) return@LaunchedEffect
             if (owner == null || account.user?.id != owner || store.seat.accountKey != Seat.of(owner)) return@LaunchedEffect
-            val authenticatedOwner = owner
-            queuedShareOwner = authenticatedOwner
+            queuedShareOwner = owner
             try {
                 val chat = store.coach.freshChat(FinishCoach.question, id = request)
                 onCoach()
-                if (!store.coach.hasRequest(chat, request) &&
-                    !store.coach.submit(chat, FinishCoach.question, requestId = request, authenticatedOwner = authenticatedOwner)) {
-                    say("Your message couldn’t be saved. Try again.")
-                }
+                if (!store.coach.send(chat, FinishCoach.question, once = request)) say("Your message couldn’t be saved. Try again.")
             } catch (_: Exception) {
                 say("Your message couldn’t be saved. Try again.")
             }
@@ -338,13 +409,15 @@ internal class FinishFlow(
             val canonical = store.history.retainedSession(SessionDetail(original.session, original.sets))
             val ended = original.copy(session = canonical.session,
                 sets = canonical.sets.filterNot { it.id in store.held.deletedSets })
+            val opening = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+            SideEffect { sheet = opening }
             WindmillSheet(
                 onDismissRequest = {
                     states.removeState(original.session.id)
                     finished = null
                     if (ended.sets.isEmpty()) onLeftEmpty()
                 },
-                sheetState = sheet,
+                sheetState = opening,
                 contentWindowInsets = { WindowInsets(0, 0, 0, 0) },
                 containerColor = colors.surfaceContainer,
                 scrimColor = colors.scrim,
@@ -403,10 +476,9 @@ internal fun rememberFinishFlow(telemetry: Telemetry, context: Context = LocalCo
     // The committed detail survives process replacement after the workout closes.
     val finished = rememberSaveable(stateSaver = remember(telemetry) { finishedSaver(telemetry) }) { mutableStateOf<FinishedSession?>(null) }
     val states = rememberSaveableStateHolder()
-    val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     // Whether the receipt is on its way down, so a second tap during the descent is one tap.
     val closing = remember { mutableStateOf(false) }
-    return remember(scope, context, telemetry, sheet, states) {
-        FinishFlow(scope, context, telemetry, sheet, states, finished, queuedShare, queuedShareOwner, shareReady, closing)
+    return remember(scope, context, telemetry, states) {
+        FinishFlow(scope, context, telemetry, states, finished, queuedShare, queuedShareOwner, shareReady, closing)
     }
 }

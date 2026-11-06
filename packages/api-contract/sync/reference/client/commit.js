@@ -427,7 +427,7 @@ function commitGesture(replica, ctx, physNow, scope, changes, opts) {
   const retiring = retiringEntries(replica, scope, opts.retire ?? []);
   const superseding = supersedingEntries(replica, scope, opts.supersede ?? []);
   const ending = [...new Set([...retiring, ...superseding])];
-  const folded = silentFoldOf(replica, registry, ending.map((entry) => ({ entry, deltas: deltasOf(entry) })));
+  const folded = silentFoldOf(replica, registry, ending.map((entry) => ({ entry, deltas: deltasOf(entry) })), { replaced: superseding.length > 0 });
   const gone = new Set([...ending.flatMap(deltasOf), ...folded.flatMap(({ entry, part }) => [...part.removed, ...(part.cmdGone ? entry.predict ?? [] : [])])]);
   const drawnView = drawn(replica, registry, scope, gone);
   const storedView = stored(replica, registry, scope, gone);

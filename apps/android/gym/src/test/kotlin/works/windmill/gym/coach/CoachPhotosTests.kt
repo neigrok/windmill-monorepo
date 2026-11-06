@@ -1,13 +1,17 @@
 package works.windmill.gym.coach
 
-import works.windmill.gym.store.*
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import androidx.exifinterface.media.ExifInterface
 import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
 import java.io.File
-import org.junit.Assert.*
+import org.junit.Assert.assertArrayEquals
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -15,7 +19,6 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
-import works.windmill.gym.presentation.*
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
@@ -83,22 +86,19 @@ class CoachPhotosTests {
     }
 
     @Test
-    fun unresolvedDraftPhotoAndRequestSurviveRestartOnlyForTheirOwnerThenAreRemovedTogether() {
+    fun anUnresolvedDraftPhotoSurvivesRestartOnlyForItsOwnerAndGoesWithItsDraft() {
         val file = File(tmp.root, "coach")
         val photo = CoachAttachment("attachment-a", "image/png", 1, 1, 4)
         val bytes = byteArrayOf(1, 2, 3, 4)
         val draft = CoachDraft("Caption", photo)
-        val request = AskQuestion("thread-a", "Caption", "request-a", listOf(photo.id))
-        LocalCoach(file).apply { savePhoto("a", photo.id, bytes); saveDraft("a", "thread-a", draft); keep("a", request) }
+        LocalCoach(file).apply { savePhoto("a", photo.id, bytes); saveDraft("a", "thread-a", draft) }
         val restored = LocalCoach(file)
         assertEquals(draft, restored.draft("a", "thread-a"))
         assertEquals(CoachDraft(), restored.draft("b", "thread-a"))
         assertArrayEquals(bytes, restored.photoFile("a", photo.id).readBytes())
         assertFalse(restored.photoFile("b", photo.id).exists())
         restored.saveDraft("a", "thread-a", CoachDraft())
-        assertTrue(restored.photoFile("a", photo.id).exists())
-        restored.clear("a", "thread-a", "request-a")
         assertFalse(restored.photoFile("a", photo.id).exists())
-        assertEquals(emptyList<AskQuestion>(), LocalCoach(file).pending("a"))
+        assertEquals(CoachDraft(), LocalCoach(file).draft("a", "thread-a"))
     }
 }

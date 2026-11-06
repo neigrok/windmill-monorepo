@@ -160,6 +160,8 @@ android {
     lint {
         checkDependencies = true
         error += "UnusedResources"
+        // It reads this module's manifest alone; `:gym`'s removes the initializer, and WindmillApplicationTests pins the merged manifest.
+        disable += "RemoveWorkManagerInitializer"
     }
 }
 

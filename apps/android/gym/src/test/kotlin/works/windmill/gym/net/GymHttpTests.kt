@@ -8,7 +8,6 @@ import okhttp3.Protocol
 import okhttp3.Response
 import okhttp3.ResponseBody.Companion.toResponseBody
 import java.util.concurrent.TimeUnit
-import works.windmill.gym.coach.AskQuestion
 import works.windmill.platform.net.WindmillApi
 import works.windmill.sync.schema.SyncSchema
 import org.junit.Assert.assertEquals
@@ -22,34 +21,6 @@ import works.windmill.platform.net.WindmillApiException
 import works.windmill.platform.net.WindmillJson
 
 class GymHttpTests {
-    @Test
-    fun coachKeepsPendingSeparateFromCompletedRepliesAndEncodesOpaquePageCursors() = runBlocking {
-        val paths = mutableListOf<String>()
-        val bodies = mutableListOf<String>()
-        val client = OkHttpClient.Builder().addInterceptor { chain ->
-            val request = chain.request()
-            assertEquals(SyncSchema.version.toString(), request.header("Sync-Schema"))
-            paths += request.url.encodedPath + request.url.encodedQuery?.let { "?$it" }.orEmpty()
-            request.body?.let { body -> val buffer = okio.Buffer(); body.writeTo(buffer); bodies += buffer.readUtf8() }
-            val reply = when (request.url.encodedPath) {
-                "/v1/gym/ask" -> """{"generation":{"id":"generation-a","requestId":"request-a","question":"Question","status":"running"}}"""
-                "/v1/gym/threads" -> """{"threads":[{"id":"thread-old","title":"Old question"}],"nextCursor":"older+/="}"""
-                else -> """{"id":"thread-old","turns":[{"from":"lifter","text":"Question","position":1,"generationId":"generation-a","requestId":"request-a"},{"from":"coach","text":"Answer","position":2,"generationId":"generation-a","requestId":"request-a"}],"nextCursor":"before+/="}"""
-            }
-            Response.Builder().request(request).protocol(Protocol.HTTP_1_1)
-                .code(if (request.url.encodedPath == "/v1/gym/ask") 202 else 200).message("OK")
-                .body(reply.toResponseBody("application/json".toMediaType())).build()
-        }.build()
-        val gym = GymHttp(WindmillApi("https://windmill.works".toHttpUrl(), { null }, client))
-        val pending = gym.ask(AskQuestion("thread-old", "Question", "request-a"))
-        assertEquals("running", pending.generation?.status)
-        assertEquals("", pending.answer)
-        assertEquals("older+/=", gym.threads("old+/=").nextCursor)
-        assertEquals("before+/=", gym.thread("thread-old", "old+/=")?.nextCursor)
-        assertEquals(listOf("""{"thread":"thread-old","question":"Question","requestId":"request-a","attachmentIds":[],"stream":false,"routineReview":true}"""), bodies)
-        assertEquals(listOf("/v1/gym/ask", "/v1/gym/threads?limit=50&cursor=old%2B%2F%3D", "/v1/gym/threads/thread-old?limit=50&before=old%2B%2F%3D"), paths)
-    }
-
     @Test
     fun failedRequestsIdentifyTheirActionWithoutIdsQueriesOrContent() = runBlocking {
         val events = mutableListOf<Pair<String, Map<String, String>>>()
@@ -72,8 +43,6 @@ class GymHttpTests {
             { gym.revokeShare("private-session") },
             { gym.grants() },
             { gym.mcpKeys() },
-            { gym.deleteThread("private-thread") },
-            { gym.ask(AskQuestion("private-thread", "private question")) },
         )
         for (request in requests) {
             try {
@@ -85,7 +54,7 @@ class GymHttpTests {
         }
         val actions = listOf(
             "gym_share" to "POST", "gym_revoke_share" to "DELETE", "gym_grants" to "GET",
-            "gym_mcp_keys" to "GET", "gym_delete_thread" to "DELETE", "gym_ask" to "POST",
+            "gym_mcp_keys" to "GET",
         )
         val expected = actions.map { (operation, method) -> operation to mapOf(
             "method" to method, "route" to if (operation == "gym_grants") "/v1/oauth" else if (operation == "gym_mcp_keys") "/v1/mcp-keys" else "/v1/gym", "failure_kind" to "http", "operation" to operation, "status" to "503",
@@ -98,21 +67,18 @@ class GymHttpTests {
     }
 
     @Test
-    fun coachReceivesItsBoundedModelBudgetWhileOrdinaryRequestsKeepTheirTimeout() = runBlocking {
+    fun ordinaryRequestsCarryTheSchemaAndKeepTheirTimeout() = runBlocking {
         val timeouts = mutableListOf<Triple<String, Int, Long>>()
         val client = OkHttpClient.Builder().addInterceptor { chain ->
+            assertEquals(SyncSchema.version.toString(), chain.request().header("Sync-Schema"))
             timeouts += Triple(chain.request().url.encodedPath, chain.readTimeoutMillis(),
                 TimeUnit.NANOSECONDS.toSeconds(chain.call().timeout().timeoutNanos()))
-            val body = if (chain.request().url.encodedPath == "/v1/gym/ask")
-                """{"answer":"An answer","read":{}}""" else """{"grants":[]}"""
             Response.Builder().request(chain.request()).protocol(Protocol.HTTP_1_1)
-                .code(200).message("OK").body(body.toResponseBody("application/json".toMediaType())).build()
+                .code(200).message("OK").body("""{"grants":[]}""".toResponseBody("application/json".toMediaType())).build()
         }.build()
         val gym = GymHttp(WindmillApi("https://windmill.works".toHttpUrl(), { null }, client))
-        assertEquals("An answer", gym.ask(AskQuestion("thread", "question")).answer)
         assertEquals(emptyList<OAuthGrant>(), gym.grants())
-        assertEquals(listOf(Triple("/v1/gym/ask", 660_000, 660L),
-            Triple("/v1/oauth/grants", 10_000, 0L)), timeouts)
+        assertEquals(listOf(Triple("/v1/oauth/grants", 10_000, 0L)), timeouts)
     }
 
     // The wire's `lastUsedMs` is a last-used and is not read: a row would draw it as a last-read. A

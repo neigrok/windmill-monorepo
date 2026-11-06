@@ -1,0 +1,21 @@
+{
+  "case": "allowance-round-does-not-fit",
+  "seat": "anon",
+  "clockMs": 1793000000000,
+  "open": {
+    "catalog": "catalog/1",
+    "turnId": "tn_doesnotfit_0001",
+    "question": "What does this program say?",
+    "history": [],
+    "context": [],
+    "pictures": []
+  },
+  "model": [
+    {"refused": "subject_exhausted"}
+  ],
+  "events": [
+    {"event": "error", "data": {"code": "subject_exhausted", "allowance": {"code": "ok", "currency": "USD", "period": "lifetime", "tier": "anonymous", "configured": true, "limit": "0.250000000", "used": "0.000000000", "reserved": "0.000000000", "remaining": "0.250000000", "resetsAtMs": null, "budgetResetsAtMs": null}}}
+  ],
+  "results": [],
+  "end": {"state": "failed", "code": "subject_exhausted"}
+}

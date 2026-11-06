@@ -1,0 +1,249 @@
+[
+  {
+    "board": "01.19",
+    "name": "coach-answer-signed-out",
+    "account": "empty",
+    "responses": [
+      [
+        {
+          "type": "text",
+          "text": "You squatted 40 kg for 8 twice last week and logged it as easy. Start at 45 kg and do 5 reps."
+        }
+      ]
+    ],
+    "steps": [
+      {
+        "tap": "Coach"
+      },
+      {
+        "wait": "Question"
+      },
+      {
+        "tap": "Question"
+      },
+      {
+        "text": "How heavy should I start squats"
+      },
+      {
+        "wait": "How heavy should I start squats"
+      },
+      {
+        "tap": "Send"
+      },
+      {
+        "wait_contains": "You squatted 40 kg"
+      },
+      {
+        "wait_contains": "read your program"
+      }
+    ]
+  },
+  {
+    "board": "01.16",
+    "name": "coach-routines-signed-out",
+    "account": "empty",
+    "responses": [
+      [
+        {
+          "type": "tool_use",
+          "id": "toolu_A",
+          "name": "create_routine",
+          "input": {
+            "id": "rt_$account_a",
+            "name": "Full body A",
+            "position": 10,
+            "entries": [
+              {
+                "exerciseId": "back-squat"
+              },
+              {
+                "exerciseId": "bench-press"
+              },
+              {
+                "exerciseId": "barbell-row"
+              }
+            ]
+          }
+        },
+        {
+          "type": "tool_use",
+          "id": "toolu_B",
+          "name": "create_routine",
+          "input": {
+            "id": "rt_$account_b",
+            "name": "Full body B",
+            "position": 11,
+            "entries": [
+              {
+                "exerciseId": "romanian-deadlift"
+              },
+              {
+                "exerciseId": "overhead-press"
+              },
+              {
+                "exerciseId": "chin-up"
+              }
+            ]
+          }
+        },
+        {
+          "type": "tool_use",
+          "id": "toolu_C",
+          "name": "create_routine",
+          "input": {
+            "id": "rt_$account_c",
+            "name": "Full body C",
+            "position": 12,
+            "entries": [
+              {
+                "exerciseId": "back-squat"
+              },
+              {
+                "exerciseId": "bench-press"
+              },
+              {
+                "exerciseId": "barbell-row"
+              }
+            ]
+          }
+        }
+      ],
+      [
+        {
+          "type": "text",
+          "text": "Your screenshot has 3 full-body days. I made 3 routines."
+        }
+      ]
+    ],
+    "steps": [
+      {
+        "tap": "History"
+      },
+      {
+        "tap": "New chat"
+      },
+      {
+        "tap": "Question"
+      },
+      {
+        "text": "My program, 3 days a week"
+      },
+      {
+        "wait": "My program, 3 days a week"
+      },
+      {
+        "tap": "Send"
+      },
+      {
+        "wait_contains": "I made 3 routines"
+      },
+      {
+        "wait": "Keep it"
+      }
+    ]
+  },
+  {
+    "board": "01.8",
+    "name": "coach-routines-signed-in",
+    "account": "fixture",
+    "responses": [
+      [
+        {
+          "type": "tool_use",
+          "id": "toolu_A",
+          "name": "create_routine",
+          "input": {
+            "id": "rt_$account_as",
+            "name": "Full body A",
+            "position": 10,
+            "entries": [
+              {
+                "exerciseId": "back-squat"
+              },
+              {
+                "exerciseId": "bench-press"
+              },
+              {
+                "exerciseId": "barbell-row"
+              }
+            ]
+          }
+        },
+        {
+          "type": "tool_use",
+          "id": "toolu_B",
+          "name": "create_routine",
+          "input": {
+            "id": "rt_$account_bs",
+            "name": "Full body B",
+            "position": 11,
+            "entries": [
+              {
+                "exerciseId": "romanian-deadlift"
+              },
+              {
+                "exerciseId": "overhead-press"
+              },
+              {
+                "exerciseId": "chin-up"
+              }
+            ]
+          }
+        },
+        {
+          "type": "tool_use",
+          "id": "toolu_C",
+          "name": "create_routine",
+          "input": {
+            "id": "rt_$account_cs",
+            "name": "Full body C",
+            "position": 12,
+            "entries": [
+              {
+                "exerciseId": "back-squat"
+              },
+              {
+                "exerciseId": "bench-press"
+              },
+              {
+                "exerciseId": "barbell-row"
+              }
+            ]
+          }
+        }
+      ],
+      [
+        {
+          "type": "text",
+          "text": "Your screenshot has 3 full-body days. I made 3 routines."
+        }
+      ]
+    ],
+    "steps": [
+      {
+        "tap": "Coach"
+      },
+      {
+        "wait": "Question"
+      },
+      {
+        "tap": "Question"
+      },
+      {
+        "text": "My program, 3 days a week"
+      },
+      {
+        "wait": "My program, 3 days a week"
+      },
+      {
+        "tap": "Send"
+      },
+      {
+        "wait_contains": "I made 3 routines"
+      },
+      {
+        "wait_contains": "read your program"
+      }
+    ]
+  }
+]

@@ -101,7 +101,7 @@ class YouSheetTests {
         }
         val label = if (count == 0) "Sign out" else if (choice == AuthSignOutChoice.Keep) "Keep" else "Discard"
         compose.onNode(hasText(label) and hasAnyAncestor(hasTestTag("sign-out-question"))).performClick()
-        compose.waitUntil(5_000) { !visible }
+        compose.waitUntil(5_000) { compose.runOnIdle { !visible } }
         assertEquals(listOf(choice), lifecycle.choices)
         assertEquals(AuthStatus.SignedOut, auth.status)
         assertFalse(auth.transitionPending)
@@ -153,7 +153,7 @@ class YouSheetTests {
         compose.onNodeWithContentDescription("Email").assertDoesNotExist()
         val click = compose.onNodeWithText("Product settings").fetchSemanticsNode().config[SemanticsActions.OnClick].action!!
         compose.runOnIdle { click(); click() }
-        compose.waitUntil(5_000) { !visible }
+        compose.waitUntil(5_000) { compose.runOnIdle { !visible } }
         assertEquals(listOf("dismiss", "settings"), events)
         compose.onNodeWithText("You").assertDoesNotExist()
     }
@@ -168,7 +168,7 @@ class YouSheetTests {
         compose.onNodeWithContentDescription("Email").assertIsDisplayed()
         compose.onNodeWithText("You").assertDoesNotExist()
         compose.runOnIdle { (ShadowDialog.getLatestDialog() as ComponentDialog).onBackPressedDispatcher.onBackPressed() }
-        compose.waitUntil(5_000) { !visible }
+        compose.waitUntil(5_000) { compose.runOnIdle { !visible } }
         assertEquals(listOf("dismiss"), events)
     }
 
@@ -195,7 +195,7 @@ class YouSheetTests {
         compose.mainClock.autoAdvance = true
         compose.runOnIdle { assertTrue(visible); assertEquals(emptyList<String>(), events) }
         destination.assertIsDisplayed().assertIsEnabled().performClick()
-        compose.waitUntil(5_000) { !visible }
+        compose.waitUntil(5_000) { compose.runOnIdle { !visible } }
         assertEquals(listOf("dismiss", "settings"), events)
     }
 
@@ -215,14 +215,14 @@ class YouSheetTests {
             startSignIn = true) } }
         compose.onNodeWithContentDescription("Email").performTextReplacement("a@example.com")
         compose.onNodeWithText("Send code").performClick()
-        compose.waitUntil(5_000) { server.requestCount == 1 }
+        compose.waitUntil(5_000) { compose.runOnIdle { server.requestCount == 1 } }
         compose.runOnIdle { (ShadowDialog.getLatestDialog() as ComponentDialog).onBackPressedDispatcher.onBackPressed() }
         compose.onNodeWithText("Sending…").assertIsDisplayed().assertIsNotEnabled()
         compose.runOnIdle { assertTrue(visible); assertEquals(0, dismissed); release.countDown() }
         compose.waitUntil(5_000) { compose.onAllNodesWithText("Try another email.").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithContentDescription("Email").assertTextContains("a@example.com")
         compose.runOnIdle { (ShadowDialog.getLatestDialog() as ComponentDialog).onBackPressedDispatcher.onBackPressed() }
-        compose.waitUntil(5_000) { !visible }
+        compose.waitUntil(5_000) { compose.runOnIdle { !visible } }
         assertEquals(1, dismissed)
     }
 

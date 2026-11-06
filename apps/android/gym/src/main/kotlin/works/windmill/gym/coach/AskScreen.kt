@@ -4,21 +4,17 @@ import works.windmill.platform.design.WindmillType
 import works.windmill.gym.ui.GymType
 import androidx.compose.material3.MaterialTheme
 import works.windmill.gym.ui.GymScreen
-import works.windmill.gym.ui.GymTap
-import works.windmill.gym.ui.ProposalCard
-import works.windmill.gym.ui.YouSeat
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -32,7 +28,7 @@ import androidx.compose.material3.ElevatedButton
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.TextButton
+import androidx.compose.material3.Snackbar
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -53,16 +49,17 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionOnScreen
 import kotlin.math.roundToInt
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.drop
 import works.windmill.gym.R
-import works.windmill.gym.presentation.ConnectedLog
+import works.windmill.gym.coach.turn.CoachTurnFault
+import works.windmill.gym.coach.turn.CoachTurnRefusal
+import works.windmill.gym.domain.coach.MessageState
+import works.windmill.gym.domain.coach.ReadTally
 import works.windmill.gym.presentation.Exercise
 import works.windmill.gym.presentation.Proposal
 import works.windmill.gym.store.HistoryReads
@@ -70,96 +67,99 @@ import works.windmill.gym.store.ProposalRead
 import works.windmill.gym.store.RoutinesStore
 import works.windmill.gym.store.TrainingSeat
 import works.windmill.gym.store.TrainingStore
+import works.windmill.gym.store.WorkoutProposalsStore
+import works.windmill.gym.store.WorkoutSession
 import works.windmill.sync.engine.Pulls
 import works.windmill.platform.telemetry.LocalTelemetry
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.gym.ui.DarkAndDaylight
 import works.windmill.gym.ui.GymPreview
 import works.windmill.platform.design.WindmillSpace
+import works.windmill.gym.telemetry.coachAction
+import works.windmill.gym.telemetry.coachSetupStep
 
-// What a conversation draws: Coach's own store, and the training its answers name.
+// What a conversation draws: Coach's chats, and the training its answers name.
 @Stable
 interface AskState {
-    val coach: CoachStore
+    val coach: CoachChats
     val catalog: List<Exercise>
     val settledProposals: Map<String, Proposal>
     val replicaReadRevision: Long
-    val caughtUpTo: Long?
     val pulled: Pulls
     fun proposalRecorded(id: String): Boolean
+    // Coach's changes to the open workout this phone holds, and whether a workout is open, so a routine's change reads for next time.
+    val workoutProposals: Map<String, Proposal>
+    val workoutOpen: Boolean
 }
 
 // What a conversation asks of the training stores.
 interface AskEvents {
     suspend fun proposal(id: String): ProposalRead
     suspend fun pullAgain(): Boolean
+    // How far this phone has read into the account, off the main thread, since the engine's lock waits behind whatever a turn is reading.
+    suspend fun caughtUpTo(): Long?
 }
 
 // A conversation over the room's stores.
 class AskBinding(
-    override val coach: CoachStore,
+    override val coach: CoachChats,
     private val seat: TrainingSeat,
     private val routines: RoutinesStore,
     private val history: HistoryReads,
+    private val workout: WorkoutSession,
+    private val proposals: WorkoutProposalsStore,
 ) : AskState, AskEvents {
-    constructor(store: TrainingStore) : this(store.coach, store.seat, store.routines, store.history)
+    constructor(store: TrainingStore) : this(store.coach, store.seat, store.routines, store.history, store.workout, store.workoutProposals)
 
     override val catalog: List<Exercise> get() = routines.catalog
     override val settledProposals: Map<String, Proposal> get() = routines.settledProposals
     override val replicaReadRevision: Long get() = seat.replicaReadRevision
-    override val caughtUpTo: Long? get() = routines.caughtUpTo
     override val pulled: Pulls get() = history.pulled
     override fun proposalRecorded(id: String): Boolean = routines.proposalRecorded(id)
+    override val workoutProposals: Map<String, Proposal> get() = proposals.held
+    override val workoutOpen: Boolean get() = workout.session != null
     override suspend fun proposal(id: String): ProposalRead = routines.proposal(id)
     override suspend fun pullAgain(): Boolean = history.pullAgain()
+    override suspend fun caughtUpTo(): Long? = seat.tried("gym.readConversation") { seat.readTraining { routines.caughtUpTo } }
 }
 
 @Composable
 fun AskScreen(
     state: AskState,
     events: AskEvents,
-    thread: List<AskExchange>,
+    thread: List<CoachExchange>,
     // Ephemeral lines derived from the server's apply reply; they die with the conversation.
     receipts: List<String>,
     // Reviews opened and closed with nothing decided: those cards read `still waiting`.
     lookedAt: Set<String>,
     asking: Boolean,
-    cap: AskCap?,
-    onAsk: (String) -> Unit,
-    onRetry: (AskExchange) -> Unit,
-    onAskNew: () -> Unit,
-    seed: String,
-    origin: String,
-    backTo: String? = null,
-    onBack: (() -> Unit)? = null,
+    refusal: CoachTurnRefusal?,
+    onAsk: (String, CoachAttachment?) -> Unit,
     seat: String? = null,
     onThreads: () -> Unit,
     onReview: (Proposal) -> Unit,
-    onConnections: (() -> Unit)? = null,
-    onNewDraft: (String) -> Unit = { onAskNew() },
+    onConnections: () -> Unit = {},
     conversationId: String = "",
     onOpenRoutine: ((String) -> Unit)? = null,
-    onOlder: (() -> Unit)? = null,
-    olderBusy: Boolean = false,
-    historyFailure: String? = null,
-    proposalIds: List<String> = emptyList(),
-    onPhotoAsk: ((String, CoachAttachment?) -> Unit)? = null,
     onStop: (() -> Unit)? = null,
-    upload: Float? = null,
-    onOpenWorkout: ((String) -> Unit)? = null,
     onOpenChat: ((String) -> Unit)? = null,
     composerEnabled: Boolean = true,
     composerVisible: Boolean = true,
     onSignIn: (() -> Unit)? = null,
     onBuildRoutine: (() -> Unit)? = null,
+    // The same room as a sheet over the open workout: its head is the sheet's, and its account stays with the tabs.
+    overWorkout: Boolean = false,
 ) {
     val colors = MaterialTheme.colorScheme
     val coach = state.coach
-    val nowMs = remember(conversationId) { System.currentTimeMillis() }
+    val nowMs = remember(conversationId) { coach.now() }
     val savedPosition = coach.chat(conversationId)
     val account = coach.accountKey
     val keptDrafts = coach.keptDrafts(conversationId)
     val greeting = savedPosition?.setup == true && thread.isEmpty() && composerVisible && keptDrafts.isEmpty()
+    val draftKey = conversationId.ifEmpty { "new" }
+    val accountChangingAlone = coach.accountChanging && thread.isEmpty() && !greeting
+    val pending = coach.pendingChat(conversationId)?.takeIf { thread.isEmpty() }
     var syncDraft by remember(account, conversationId) { mutableStateOf<(() -> Boolean)?>(null) }
     val keyboardVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
     var photoRequest by remember(account, conversationId) { mutableIntStateOf(0) }
@@ -185,118 +185,91 @@ fun AskScreen(
     val telemetry = LocalTelemetry.current
     var greetingCounted by rememberSaveable(account, conversationId) { mutableStateOf(false) }
     LaunchedEffect(account, conversationId, greeting) {
-        if (greeting && !greetingCounted) telemetry.event("gym_setup_step", mapOf("screen" to "coach", "action" to "shown"))
+        if (greeting && !greetingCounted) telemetry.coachSetupStep("shown")
         greetingCounted = greeting
     }
-    val web = LocalUriHandler.current
     var draftFailure by remember { mutableStateOf<String?>(null) }
+    val reconnecting = asking && coach.conversations?.reconnecting == true
+    val fault = coach.fault(conversationId)
+    val stopNotice = fault?.takeIf { it in stopFaults }
+    LaunchedEffect(reconnecting) { if (reconnecting) telemetry.coachAction("reconnecting") }
+    LaunchedEffect(stopNotice) { if (stopNotice != null) telemetry.coachAction("stop_notice") }
+    val signInForCall = onSignIn?.let { signIn -> {
+        telemetry.coachSetupStep("sign_in")
+        signIn()
+    } }
+    val keepRoutines = onSignIn?.let { signIn -> {
+        telemetry.coachSetupStep("keep_routines")
+        signIn()
+    } }
+    val openRoutine = onOpenRoutine?.let { open -> { id: String ->
+        telemetry.coachSetupStep("open_routine")
+        open(id)
+    } }
 
-    // Read back off the log: the reply carries ids only. A proposal moves when anybody decides, and a
-    // decision taken in this room overrides the copy read here, so the card and the receipt agree.
+    // Read back off the replica: an answer's receipt carries ids only. A proposal moves when anybody decides, and a decision taken in this room overrides the copy read here, so the card and the receipt agree.
     val proposals = remember { AnsweredProposals(state, events, telemetry) }
     val minted = proposals.minted
     val waitedHere = remember { mutableSetOf<String>() }
-    thread.forEach { if (it.pending && it.requestId.isNotEmpty()) waitedHere += it.requestId }
-    proposals.fresh = thread.filter { it.requestId in waitedHere }.flatMap { it.answer?.proposals.orEmpty() }.toSet()
-    val attachedProposals = thread.flatMap { it.answer?.proposals.orEmpty() }.toSet()
-    val headerProposals = proposalIds.filterNot { it in attachedProposals }
-    val wanted = (attachedProposals + proposalIds).toList()
+    thread.forEach { if (it.waiting) waitedHere += it.id }
+    proposals.fresh = thread.filter { it.id in waitedHere }.flatMap { it.answer?.proposals.orEmpty() + it.answer?.workoutProposals.orEmpty() }.toSet()
+    val wanted = thread.flatMap { it.answer?.proposals.orEmpty() + it.answer?.workoutProposals.orEmpty().filter { id -> id !in state.workoutProposals } }.distinct()
     LaunchedEffect(wanted, state.replicaReadRevision, state.pulled.caughtUp) { proposals.read(wanted) }
     proposals.missing.keys.forEach { id -> key(id) { LaunchedEffect(Unit) { proposals.settle(id) } } }
 
-    GymScreen(
-        title = Ask.title,
-        actions = {
-            IconButton(onClick = onThreads, modifier = Modifier.size(48.dp)) {
-                Icon(painterResource(R.drawable.gym_coach_history), "History", tint = colors.onSurface, modifier = Modifier.size(24.dp))
-            }
-            seat?.let { YouSeat(it) }
-        },
-    ) {
+    AskFrame(overWorkout, fresh = thread.isEmpty() && keptDrafts.isEmpty(), seat, onThreads) {
       Column(
         Modifier
             .fillMaxSize()
             .imePadding(),
       ) {
         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().onGloballyPositioned { viewportBottom = (it.positionOnScreen().y + it.size.height).roundToInt() }) {
-            Column(
+            // The thread's padding is the scroller's content, so what stands in it, the read line's touch among it, stands inside what scrolls.
+            val viewport = maxHeight
+            Box(Modifier.fillMaxSize().testTag("coach-thread").nestedScroll(presentation.gestures)
+                .then(if (greeting) Modifier else presentation.anchoring).verticalScroll(presentation.scroll)) {
+              Column(
                 verticalArrangement = Arrangement.spacedBy(12.dp, if (greeting && !keyboardVisible) Alignment.Top else Alignment.Bottom),
                 modifier = Modifier
-                    .fillMaxSize()
-                    .testTag("coach-thread")
-                    .nestedScroll(presentation.gestures)
-                    .then(if (greeting) Modifier else presentation.anchoring)
-                    .verticalScroll(presentation.scroll)
-                    .heightIn(min = maxHeight)
+                    .fillMaxWidth()
+                    .heightIn(min = viewport)
                     .padding(horizontal = 16.dp)
                     .padding(top = 8.dp, bottom = 8.dp + sourcesSpace),
-            ) {
+              ) {
                 if (greeting) CoachGreeting(!coach.anonymous, composerEnabled && !asking,
                     onScreenshot = {
-                        telemetry.event("gym_setup_step", mapOf("screen" to "coach", "action" to "screenshot"))
+                        telemetry.coachSetupStep("screenshot")
                         photoRequest++
                     }, onBuild = {
-                        telemetry.event("gym_setup_step", mapOf("screen" to "coach", "action" to "build_manually"))
+                        telemetry.coachSetupStep("build_manually")
                         onBuildRoutine?.invoke()
                     })
-                onOlder?.let { older -> CoachAction(if (olderBusy) "Reading messages…" else "Earlier messages", older, enabled = !olderBusy && !asking) }
-                (historyFailure ?: draftFailure ?: coach.archiveFailure)?.let { Text(it, style = WindmillType.supporting, color = colors.onSurfaceVariant) }
+                (draftFailure ?: coach.failure(draftKey) ?: fault?.takeUnless { it in stopFaults }?.sentence)?.let { Text(it, style = WindmillType.supporting, color = colors.onSurfaceVariant) }
                 thread.forEachIndexed { index, exchange ->
-                    if (upload != null && index == thread.lastIndex && exchange.generation == null) return@forEachIndexed
                     key(messageKeys[index]) {
                         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            val heldInComposer = cap != null && index == thread.lastIndex && exchange.answer == null &&
-                                exchange.question == coach.draft(conversationId.ifEmpty { "new" }).text
-                            if (!heldInComposer || exchange.attachments.isNotEmpty() || exchange.generation != null) ChatTimestamp(exchange.atMs, nowMs)
-                            Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                exchange.attachments.forEach { CoachPhoto(coach, conversationId, it, Modifier.size(160.dp)) }
-                                if (exchange.question.isNotEmpty() && !heldInComposer) CoachQuestion(exchange.question, if (exchange.attachments.isEmpty()) CoachGroup.Single else CoachGroup.Last)
-                            }
-                            val answered = exchange.answer ?: exchange.generation?.response()
-                            val text = rememberRevealedText(messageKeys[index], answered?.answer.orEmpty(), exchange.generation?.status in listOf("failed", "stopped"))
-                            if (exchange.pending && text.isEmpty()) CoachTyping()
-                            answered?.let { answer ->
-                                val clarification = remember(answer.clarification) { CoachClarification.from(answer.clarification) }
-                                val setupOnly = clarification != null && CoachSources.choicesAlone(answer.receipt?.steps ?: answer.steps,
-                                    answer.receipt?.read ?: answer.read,
-                                    acted = answer.proposals.isNotEmpty() || answer.results.isNotEmpty() || answer.routineDrafts.isNotEmpty())
-                                if (setupOnly) CoachAnswer(text.ifEmpty { requireNotNull(clarification).question }, null, state.catalog, nowMs,
-                                    copyText = answer.answer.ifEmpty { requireNotNull(clarification).question })
-                                else Answer(answer, text, exchange.answer != null, minted + state.settledProposals, state.catalog, nowMs, lookedAt, onReview, onOpenRoutine, coach, conversationId, exchange.requestId, !asking, onOpenWorkout, index == thread.lastIndex && headerProposals.isNotEmpty()) { sourcesTop = it }
-                                if (clarification != null) CoachChoices(clarification,
-                                    coach.choices(conversationId, exchange.requestId, clarification.id),
-                                    enabled = composerVisible && composerEnabled && !asking && syncDraft != null) { group, option ->
-                                    if (coach.accountKey == account && coach.draftChangeReady(conversationId) && syncDraft?.invoke() == true) {
-                                        try { coach.choose(conversationId, exchange.requestId, clarification, group, option); draftFailure = null }
-                                        catch (_: Exception) { draftFailure = "Your draft couldn’t be saved. Try again." }
-                                    }
-                                }
+                            if (!overWorkout) ChatTimestamp(exchange.atMs, nowMs)
+                            if (exchange.question.isNotEmpty() || exchange.pictures.isNotEmpty()) LifterGroup(coach, exchange)
+                            if (exchange.sending) CoachTyping()
+                            exchange.answer?.let { answer ->
+                                Answer(answer, exchange.retained, minted + state.settledProposals, proposals::gone, state, nowMs, lookedAt, onReview, openRoutine, conversationId, !asking,
+                                    onSignIn = signInForCall.takeIf { coach.anonymous && index == thread.lastIndex }, onKeep = keepRoutines.takeIf { coach.anonymous }, overWorkout = overWorkout) { sourcesTop = it }
                                 answer.proposals.filter { it !in minted && it !in state.settledProposals }.forEach { id ->
-                                    if (proposals.gone(id)) Trouble(ProposalRead.Gone.line, null)
+                                    if (proposals.gone(id)) Trouble(ProposalRead.Gone.line)
                                     else if (id !in proposals.missing) Text("Reading proposal…", style = WindmillType.supporting, color = colors.onSurfaceVariant, modifier = Modifier.padding(horizontal = 4.dp))
                                 }
                             }
-                            if (exchange.refusalCode == "account_required") {
-                                CoachBubble(copyText = { Ask.accountRequired }) {
-                                    Text(Ask.accountRequired, style = GymType.coachParagraph, color = colors.onSurface)
+                            exchange.retained?.let { held ->
+                                if (held.accountRequired) {
+                                    CoachBubble(copyText = { Ask.accountRequired }) {
+                                        Text(Ask.accountRequired, style = GymType.coachParagraph, color = colors.onSurface)
+                                    }
+                                    onSignIn?.let { CoachAction("Sign in", it, primary = true) }
                                 }
-                                onSignIn?.let { CoachAction("Sign in", it, primary = true) }
-                            }
-                            exchange.trouble?.takeUnless { exchange.refusalCode == "account_required" }?.let { said ->
-                                if ((cap != null || exchange.needsNew) && index == thread.lastIndex) return@let
-                                Trouble(
-                                    said = said,
-                                    onRetry = if (exchange.again && !asking) ({ onRetry(exchange) }) else null,
-                                )
+                                held.line?.let { Trouble(it) }
                             }
                         }
                     }
-                }
-                headerProposals.forEach { id ->
-                    (state.settledProposals[id] ?: minted[id])?.let { proposal ->
-                        Minted(proposal, state.catalog, nowMs, id in lookedAt) { onReview(proposal) }
-                    }
-                    if (proposals.gone(id)) Trouble(ProposalRead.Gone.line, null)
                 }
                 val shown = (minted + state.settledProposals).values.mapNotNull { it.receipt }.toSet()
                 receipts.filterNot { it in shown }.forEach { receipt ->
@@ -310,19 +283,22 @@ fun AskScreen(
                         }
                     } }
                 }
-                cap?.let {
-                    CoachCapNotice(it, thread.lastOrNull(), anonymous = coach.anonymous,
-                        onSignIn = onSignIn?.let { signIn -> {
-                            telemetry.event("gym_setup_step", mapOf("screen" to "coach", "action" to "sign_in"))
-                            signIn()
-                        } }) {
-                        if (onConnections != null) onConnections() else runCatching { web.openUri(ConnectedLog.setupUrl(origin)) }
-                            .onFailure { telemetry.failure("gym.openConnections", it) }
-                    }
+                (coach.tooLong(draftKey).takeIf { composerVisible } ?: refusal)?.let {
+                    CoachRefusalNotice(it, anonymous = coach.anonymous,
+                        onSignIn = signInForCall, onConnections = {
+                            telemetry.coachSetupStep("connect")
+                            onConnections()
+                        }, onTryAgain = {
+                            if (syncDraft?.invoke() != false) coach.draft(draftKey).let { draft -> onAsk(draft.text.trim(), draft.photo) }
+                        })
                 }
+                if (coach.accountChanging && !accountChangingAlone) CoachAccountChanging(alone = false)
+                pending?.let { AnswerInProgress(it, onOpenChat) }
+              }
             }
+            if (accountChangingAlone) CoachAccountChanging(alone = true, Modifier.align(Alignment.Center))
             if (!presentation.followEnd && thread.isNotEmpty() && presentation.awayFromEnd) ElevatedButton(onClick = {
-                telemetry.event("gym_action", mapOf("screen" to "coach", "action" to "jump_latest", "outcome" to "ok"))
+                telemetry.coachAction("jump_latest")
                 scope.launch { presentation.jumpToLatest() }
             }, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp).heightIn(min = 40.dp),
                 colors = ButtonDefaults.elevatedButtonColors(containerColor = colors.surfaceContainer, contentColor = colors.primary),
@@ -331,118 +307,121 @@ fun AskScreen(
                 Text("Jump to latest", style = GymType.coachStrong, modifier = Modifier.padding(start = 8.dp))
             }
         }
-        coach.pendingChat(conversationId)?.takeIf { thread.isEmpty() }?.let { pending ->
-            Row(Modifier.fillMaxWidth().padding(horizontal = 32.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("Reply pending", style = GymType.coachTitle, color = colors.onSurface)
-                    Text(pending.title, style = GymType.coachSupporting, color = colors.onSurfaceVariant)
-                }
-                TextButton(onClick = { onOpenChat?.invoke(pending.id) }, enabled = onOpenChat != null) { Text("View chat") }
-            }
-        }
+        if (reconnecting) Band(Ask.reconnecting)
+        else if (stopNotice != null) Band(stopNotice.sentence, onClose = {
+            coach.closeFault(stopNotice)
+            telemetry.coachAction("stop_notice_closed")
+        })
         Column(
             verticalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
             modifier = Modifier
-                .fillMaxWidth(),
+                .fillMaxWidth()
+                .padding(top = if (overWorkout) 12.dp else 0.dp),
         ) {
-            when {
-                Ask.needsNew(thread) -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(thread.lastOrNull()?.takeIf { it.needsNew }?.trouble ?: Ask.threadFull, style = WindmillType.supportingParagraph, color = colors.onSurfaceVariant)
-                    CoachAction("Ask new", onClick = {
-                        onNewDraft(thread.lastOrNull()?.takeIf { it.answer == null && !it.pending }?.question.orEmpty())
-                    })
-                }
-                else -> if (composerVisible) CoachComposer(coach, conversationId.ifEmpty { "new" }, seed, asking,
-                    onSend = { text, photo ->
-                        val last = thread.lastOrNull()
-                        if (last?.again == true && last.question == text && last.attachments.map { it.id } == listOfNotNull(photo?.id)) onRetry(last)
-                        else if (onPhotoAsk != null) onPhotoAsk(text, photo)
-                        else { onAsk(text); coach.saveDraft(conversationId.ifEmpty { "new" }, CoachDraft()) }
-                    }, onStop = onStop, upload = upload, retainDraft = onPhotoAsk != null, enabled = composerEnabled && !olderBusy, photoRequest = photoRequest, onDraftSync = { syncDraft = it })
-            }
+            if (composerVisible) CoachComposer(coach, draftKey, asking,
+                onSend = onAsk, onStop = onStop, enabled = composerEnabled, photoRequest = photoRequest, holdSend = coach.sendHeld || pending != null, onDraftSync = { syncDraft = it })
         }
       }
     }
 }
 
+// A Stop that never reached the server, which the band says with the turn already ended on this phone.
+private val stopFaults = setOf(CoachTurnFault.stoppedOffline, CoachTurnFault.stopUnheard)
+
+// The band over the composer, on the platform's snackbar: what this phone's own turn is doing or did.
+@Composable
+private fun Band(said: String, onClose: (() -> Unit)? = null) {
+    val colors = MaterialTheme.colorScheme
+    // Material's snackbar fills its width by itself; a fixed width reaches its close button too and stands it over the words.
+    Snackbar(
+        modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 4.dp).testTag("coach-band"),
+        shape = RoundedCornerShape(4.dp),
+        containerColor = colors.surfaceContainerHighest,
+        contentColor = colors.onSurface,
+        dismissAction = onClose?.let { close -> {
+            IconButton(onClick = close, modifier = Modifier.size(48.dp)) {
+                Icon(painterResource(R.drawable.gym_coach_close), "Close", Modifier.size(24.dp), tint = colors.onSurfaceVariant)
+            }
+        } },
+    ) { Text(said, style = GymType.coachDetail) }
+}
+
+// The lifter's turn: each picture its own bubble, then the words in the bubble that closes the group, at the trailing edge.
+@Composable
+private fun LifterGroup(coach: CoachChats, exchange: CoachExchange) {
+    val count = exchange.pictures.size + if (exchange.question.isNotEmpty()) 1 else 0
+    fun group(index: Int) = when {
+        count == 1 -> CoachGroup.Single
+        index == 0 -> CoachGroup.First
+        index == count - 1 -> CoachGroup.Last
+        else -> CoachGroup.Middle
+    }
+    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        exchange.pictures.forEachIndexed { index, picture ->
+            if (picture.onThisPhone) CoachPhoto(coach, picture.photo, Modifier.size(200.dp, 180.dp), group(index).shape(fromLifter = true))
+            else CoachPictureElsewhere(group(index))
+        }
+        if (exchange.question.isNotEmpty()) CoachQuestion(exchange.question, group(count - 1))
+    }
+}
+
+// The room's head: the screen's own bar, or the sheet's over the workout.
+@Composable
+private fun AskFrame(overWorkout: Boolean, fresh: Boolean, seat: String?, onThreads: () -> Unit, content: @Composable BoxScope.() -> Unit) {
+    if (overWorkout) {
+        CoachSheetFrame(fresh, onThreads, content)
+        return
+    }
+    GymScreen(title = Ask.title, actions = { CoachHead(seat, onThreads) }, content = content)
+}
+
+// An answer as it stands this moment. It reads the running words itself, so only this answer draws again at every delta. Drawn from the LOG's own copy and never from what the model said about it, its proposals follow what it read.
 @Composable
 private fun Answer(
-    answer: AskAnswer,
-    text: String,
-    settled: Boolean,
+    record: CoachReply,
+    retained: RetainedAnswer?,
     minted: Map<String, Proposal>,
-    catalog: List<Exercise>,
+    gone: (String) -> Boolean,
+    state: AskState,
     nowMs: Long,
     lookedAt: Set<String>,
     onReview: (Proposal) -> Unit,
     onOpenRoutine: ((String) -> Unit)?,
-    coach: CoachStore,
-    threadId: String,
-    requestId: String,
-    canConfirm: Boolean,
-    onOpenWorkout: ((String) -> Unit)?,
-    hasHeaderProposals: Boolean,
+    chat: String,
+    canSave: Boolean,
+    onSignIn: (() -> Unit)?,
+    onKeep: (() -> Unit)?,
+    overWorkout: Boolean,
     onSourcesTop: (Int?) -> Unit,
 ) {
+    val answer = state.coach.conversations?.standing(record) ?: record
+    val text = rememberRevealedText(answer.id, answer.text, answer.state.isTerminal && answer.state != MessageState.completed)
     Column(verticalArrangement = Arrangement.spacedBy(WindmillSpace.x3)) {
-        val current = answer.confirmedBy(coach.confirmedGeneration(requestId))
-        CoachAnswer(text, current.receipt, catalog, nowMs, current.read.takeIf { settled }, current.steps, current.results, onOpenRoutine,
-            routineDrafts = current.routineDrafts,
-            onConfirmRoutine = if (canConfirm && requestId.isNotBlank()) { draft -> coach.confirmRoutine(threadId, requestId, draft) } else null,
-            hasProposals = hasHeaderProposals || current.proposals.isNotEmpty(), onOpenWorkout = onOpenWorkout, copyText = current.answer, receiptInset = 4.dp, onSourcesTop = onSourcesTop)
-        // Drawn from the LOG's own copy and never from what the model said about it.
-        answer.proposals.mapNotNull { minted[it] }.forEach { proposal ->
-            Minted(proposal, catalog, nowMs, stillWaiting = proposal.id in lookedAt) { onReview(proposal) }
-        }
+        CoachAnswer(text, answer, state.catalog, onOpenRoutine,
+            routineDrafts = retained?.drafts.orEmpty(),
+            onSaveDrafts = if (canSave && retained != null) { { state.coach.saveRetainedDrafts(chat, retained.requestId) } } else null,
+            onSignIn = onSignIn, onKeep = onKeep, saysWhatItRead = retained == null || answer.routines.isNotEmpty(),
+            withDetails = { rows -> state.coach.conversations?.withDetails(answer.id, rows) ?: rows }, onSourcesTop = onSourcesTop)
+        AnswerProposals(answer, minted, state, nowMs, lookedAt, overWorkout, gone, onReview)
     }
 }
 
-// What the server said it did, the moment it said so. Not stored: reopening the thread does not
-// draw it again, and nothing here pretends otherwise.
+// What the server said it did, the moment it said so. Not stored: reopening the thread does not draw it again, and nothing here pretends otherwise.
 @Composable
 fun ReceiptLine(line: String) {
     val colors = MaterialTheme.colorScheme
     val applied = line.startsWith("Applied")
-    Text(line, style = WindmillType.labelParagraph,
+    Text(line, style = GymType.button,
         color = if (applied) colors.primary else colors.onSurface,
         modifier = Modifier.fillMaxWidth().then(if (applied) Modifier.background(colors.surfaceContainer, RoundedCornerShape(20.dp)).padding(16.dp) else Modifier.padding(vertical = 8.dp)))
 }
 
 @Composable
-private fun Minted(proposal: Proposal, catalog: List<Exercise>, nowMs: Long, stillWaiting: Boolean, onReview: () -> Unit) {
-    val colors = MaterialTheme.colorScheme
-    Column(Modifier.padding(horizontal = 4.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
-        ProposalCard(proposal, proposal.routineName, nowMs, stillWaiting, onReview)
-        if (proposal.isPending) Text(Ask.promise, style = WindmillType.detail, color = colors.onSurfaceVariant)
-        proposal.receipt?.let { ReceiptLine(it) }
-    }
+private fun Trouble(said: String) {
+    Text(said, style = GymType.quietParagraph, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 4.dp))
 }
 
-@Composable
-private fun Trouble(said: String, onRetry: (() -> Unit)?) {
-    val colors = MaterialTheme.colorScheme
-    Column(Modifier.padding(horizontal = 4.dp), verticalArrangement = Arrangement.spacedBy(WindmillSpace.x1)) {
-        Text(
-            said,
-            style = GymType.quietParagraph,
-            color = colors.onSurfaceVariant,
-        )
-        onRetry?.let { retry ->
-            Box(
-                Modifier.heightIn(min = GymTap.minimum).clickable(role = Role.Button, onClick = retry),
-                contentAlignment = Alignment.CenterStart,
-            ) {
-                Text("Try again", style = GymType.retry, color = colors.primary)
-            }
-        }
-    }
-}
-
-// The proposals a room's answers name. Coach can answer before its proposal reaches this phone, so an id not found is
-// read again each time the replica changes or a pull lands caught up. A proposal the phone holds a dead row of is gone at
-// once. One it holds no row of is gone once its miss settles: 10 s after its first miss, and once the phone, caught up at
-// or after that miss, has read further into the account, or a pull sent after the wait ended has landed caught up. The
-// wait's end asks for that pull once. One named by an answer this visit waited for and gone that way is reported once.
+// The proposals a room's answers name, a routine's and a workout's alike. Coach can answer before its proposal reaches this phone, so an id not found is read again each time the replica changes or a pull lands caught up. A proposal the phone holds a dead row of is gone at once. One it holds no row of is gone once its miss settles: 10 s after its first miss, and once the phone, caught up at or after that miss, has read further into the account, or a pull sent after the wait ended has landed caught up. The wait's end asks for that pull once. One named by an answer this visit waited for and gone that way is reported once.
 internal class AnsweredProposals(private val state: AskState, private val events: AskEvents, private val telemetry: Telemetry) {
     data class Miss(val recorded: Boolean = false, val caughtUpAt: Long? = null, val readPast: Boolean = false,
         val waitedAt: Long? = null, val pulledPast: Boolean = false) {
@@ -467,14 +446,13 @@ internal class AnsweredProposals(private val state: AskState, private val events
     fun gone(id: String): Boolean = missing[id]?.gone == true
 
     suspend fun read(wanted: List<String>) {
-        val caughtUpTo = state.caughtUpTo
+        missing.keys.removeAll(state.workoutProposals.keys)
+        val unread = wanted.filterNot(minted::containsKey)
+        val caughtUpTo = if (unread.isEmpty()) null else events.caughtUpTo()
         val caughtUpPull = state.pulled.caughtUp
-        for (id in wanted) {
-            if (minted.containsKey(id)) continue
-            when (val read = events.proposal(id)) {
-                is ProposalRead.Found -> { minted[id] = read.proposal; missing.remove(id) }
-                ProposalRead.Gone -> missing[id] = (missing[id] ?: Miss()).read(state.proposalRecorded(id), caughtUpTo, caughtUpPull)
-            }
+        for (id in unread) when (val read = events.proposal(id)) {
+            is ProposalRead.Found -> { minted[id] = read.proposal; missing.remove(id) }
+            ProposalRead.Gone -> missing[id] = (missing[id] ?: Miss()).read(state.proposalRecorded(id), caughtUpTo, caughtUpPull)
         }
         report()
     }
@@ -496,12 +474,13 @@ internal class AnsweredProposals(private val state: AskState, private val events
 }
 
 private data class PreviewAsk(
-    override val coach: CoachStore,
+    override val coach: CoachChats,
     override val catalog: List<Exercise> = emptyList(),
     override val settledProposals: Map<String, Proposal> = emptyMap(),
     override val replicaReadRevision: Long = 0,
-    override val caughtUpTo: Long? = null,
     override val pulled: Pulls = Pulls(),
+    override val workoutProposals: Map<String, Proposal> = emptyMap(),
+    override val workoutOpen: Boolean = false,
 ) : AskState {
     override fun proposalRecorded(id: String): Boolean = false
 }
@@ -509,31 +488,34 @@ private data class PreviewAsk(
 private object PreviewAskEvents : AskEvents {
     override suspend fun proposal(id: String): ProposalRead = ProposalRead.Gone
     override suspend fun pullAgain(): Boolean = false
+    override suspend fun caughtUpTo(): Long? = null
 }
 
 @Composable
-private fun AskPreview(setup: Boolean, thread: List<AskExchange>) {
+private fun AskPreview(setup: Boolean, thread: List<CoachExchange>) {
     val scope = rememberCoroutineScope()
     val coach = remember {
-        CoachStore({ "preview-lifter" }, {}, { null }, null, Telemetry.None, { 0L }, scope)
+        CoachChats({ "preview-lifter" }, {}, null, null, null, null, { AnonymousCoachAccess.Unavailable }, Telemetry.None, scope)
             .also { it.freshChat(id = "preview-chat", setup = setup) }
     }
     GymPreview {
         AskScreen(PreviewAsk(coach), PreviewAskEvents, thread, receipts = emptyList(), lookedAt = emptySet(), asking = false,
-            cap = null, onAsk = {}, onRetry = {}, onAskNew = {}, seed = "", origin = "https://windmill.works", seat = "M",
+            refusal = null, onAsk = { _, _ -> }, seat = "M",
             onThreads = {}, onReview = {}, conversationId = "preview-chat")
     }
 }
 
-private val previewConversation: List<AskExchange> get() {
+private fun previewAnswer(id: String, text: String, read: ReadTally = ReadTally()) = CoachReply(id, text, MessageState.completed, truncated = false, onThisPhone = true,
+    calls = emptyList(), receipt = CoachReceipt(read, created = emptyList()), routines = emptyList())
+
+private val previewConversation: List<CoachExchange> get() {
     val now = System.currentTimeMillis()
     return listOf(
-        AskExchange("How should I come back to squats after a deload week?", requestId = "preview-1", atMs = now - 360_000,
-            answer = AskAnswer("Start at about 90% of your last top set for the first week. Then add 2.5 kg a session while every set still leaves two reps in reserve.",
+        CoachExchange("preview-1", "How should I come back to squats after a deload week?", now - 360_000,
+            answer = previewAnswer("preview-1a", "Start at about 90% of your last top set for the first week. Then add 2.5 kg a session while every set still leaves two reps in reserve.",
                 ReadTally(sets = 24, sessions = 6, weeks = 3))),
-        AskExchange("And if a session feels heavy?", requestId = "preview-2", atMs = now - 120_000,
-            answer = AskAnswer("Repeat the weight next time instead of adding. One heavy day is noise; two in a row means stay put for a week.",
-                ReadTally())),
+        CoachExchange("preview-2", "And if a session feels heavy?", now - 120_000,
+            answer = previewAnswer("preview-2a", "Repeat the weight next time instead of adding. One heavy day is noise; two in a row means stay put for a week.")),
     )
 }
 

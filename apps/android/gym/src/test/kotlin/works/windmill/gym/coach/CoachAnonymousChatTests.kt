@@ -1,344 +1,309 @@
 package works.windmill.gym.coach
 
 import java.io.File
-import javax.crypto.KeyGenerator
+import kotlin.coroutines.ContinuationInterceptor
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.test.StandardTestDispatcher
-import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
-import org.junit.Assert.*
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
-import works.windmill.gym.coach.onboarding.*
-import works.windmill.platform.ai.*
-import works.windmill.platform.auth.KeptValues
-import works.windmill.platform.auth.SecretVault
-import works.windmill.platform.net.Refusal
-import works.windmill.platform.net.WindmillApiException
-import works.windmill.platform.net.WindmillJson
+import works.windmill.agent.TurnEvent
+import works.windmill.agent.TurnOpen
+import works.windmill.agent.TurnRefusal
+import works.windmill.agent.TurnSeat
+import works.windmill.agent.TurnTransport
+import works.windmill.gym.coach.onboarding.CoachOnboardingSeat
+import works.windmill.gym.coach.turn.CoachTurnRefusal
+import works.windmill.gym.coach.turn.ScriptedInstallation
+import works.windmill.gym.coach.turn.ScriptedTurns
+import works.windmill.gym.coach.turn.TellingRecorder
+import works.windmill.gym.coach.turn.TurnPhoneInstallation
+import works.windmill.gym.domain.coach.CoachMessage
+import works.windmill.gym.domain.coach.CoachThread
+import works.windmill.gym.domain.coach.MessageState
+import works.windmill.gym.store.EngineRoomFixture
+import works.windmill.platform.ai.AiInstallation
+import works.windmill.platform.ai.AiInstallationApi
+import works.windmill.platform.ai.AiInstallationResponse
 import works.windmill.platform.telemetry.Telemetry
+import works.windmill.sync.core.Json
+import works.windmill.sync.core.ScopeRef
+import works.windmill.sync.schema.Gym
 
+// A signed-out phone's chats on the one path every seat takes: its refusals keep the question, its bound installation keeps its chats, and a dead process never asks again.
 @OptIn(ExperimentalCoroutinesApi::class)
 class CoachAnonymousChatTests {
     @get:Rule val temporary = TemporaryFolder()
-    private val id = "11111111-1111-4111-8111-111111111111"
-    private val allowance = AiAllowance("ok", "USD", "lifetime", "anonymous", true, null, "0", "0", "0")
-    private val key = KeyGenerator.getInstance("AES").apply { init(256) }.generateKey()
-    private val values = object : KeptValues {
-        val kept = mutableMapOf<String, String>()
-        override fun read(key: String) = kept[key]
-        override fun write(values: Map<String, String?>) {
-            values.forEach { (key, value) -> if (value == null) kept.remove(key) else kept[key] = value }
-        }
-    }
-    private var bound = false
-    private var issued = 0
-    private fun installation() = AiInstallation(values, SecretVault { key }, object : AiInstallationApi {
-        override suspend fun issue(): AiInstallationResponse { issued++; return AiInstallationResponse(false, allowance, "A".repeat(43)) }
-        override suspend fun current(credential: String) = AiInstallationResponse(bound, allowance)
-        override suspend fun bind(credential: String, token: String) = AiInstallationResponse(true, allowance)
-    })
 
-    @Test fun aLateTypedRefusalKeepsTheOriginalInputAndDoesNotReplaceANewerDraftOrOwner() = runTest {
-        val local = LocalCoach(File(temporary.root, "archive"))
-        var owner: String? = null
-        val origin = CoachOnboardingSeat(local.anonymousOwner(), "replica")
-        val waiting = CompletableDeferred<CoachOnboardingResponse>()
-        val posts = mutableListOf<String>()
-        val api = object : CoachOnboardingApi {
-            override suspend fun start(body: String, credential: String): CoachOnboardingResponse { posts += body; return waiting.await() }
-            override suspend fun get(requestId: String, credential: String): CoachOnboardingResponse = error("unexpected GET")
-        }
-        val dispatcher = StandardTestDispatcher(testScheduler)
-        val coordinator = CoachOnboardingStore(local, installation(), api, { origin.takeIf { owner == null } }, backgroundScope,
-            storageDispatcher = dispatcher, requestId = { id })
-        val store = CoachStore({ owner }, {}, { null }, local, Telemetry.None, System::nanoTime,
-            backgroundScope, dispatcher, coordinator)
-        store.refreshAnonymousAccess(); runCurrent()
-        assertEquals(AnonymousCoachAccess.Available, store.anonymousAccess)
-        val original = store.freshChat()
-        assertFalse(store.submit(original, "x".repeat(4_001)))
-        assertEquals(CoachDraft(), store.draft(original))
-        assertTrue(posts.isEmpty())
-        assertTrue(store.submit(original, "Make Push A harder"))
-        runCurrent()
-        assertTrue(store.isAsking(original))
-        store.saveDraft(original, CoachDraft("A newer input in the original chat"))
-        val other = store.freshChat("Another chat's input")
-        owner = "account-owner"
-        store.freshChat("Account input", original)
-        waiting.complete(CoachOnboardingResponse(id, "result", "failed", 1_900_000_000_000, emptyList(), allowance,
-            errorCode = "account_required"))
-        runCurrent()
-        assertEquals(CoachDraft("Account input"), store.draft(original))
-        owner = null
-        assertEquals(other, store.selectedChatId)
-        assertEquals(CoachDraft("Another chat's input"), store.draft(other))
-        assertEquals(CoachDraft("A newer input in the original chat"), store.draft(original))
-        val exchange = store.chat(original)!!.exchanges.single()
-        assertEquals("Make Push A harder", exchange.question)
-        assertEquals("account_required", exchange.refusalCode)
-        assertEquals(Ask.accountRequired, exchange.trouble)
-        assertFalse(exchange.pending)
-        assertFalse(store.isAsking(original))
-        store.keepPosition(original, 91, false)
-        assertEquals(emptyList<AskExchange>(), local.archivedChat(origin.owner, original)!!.exchanges)
-        val restored = CoachStore({ owner }, {}, { null }, LocalCoach(File(temporary.root, "archive")), Telemetry.None,
-            System::nanoTime, backgroundScope, dispatcher, coordinator)
-        assertEquals(listOf(exchange), restored.chat(original)!!.exchanges)
-        assertEquals(91, restored.chat(original)!!.scroll)
-        assertEquals(1, posts.size)
-        assertEquals("Make Push A harder", local.onboarding(origin.owner, id)!!.request().text)
+    private fun script(frames: String) = ScriptedTurns(Json.parse(frames).arr())
+
+    private fun answers(text: String) = script("""[{"event":"text","data":{"delta":"$text"}},{"event":"done","data":{"state":"completed"}}]""")
+
+    private val holdsOpen get() = script("""[{"event":"text","data":{"delta":"Reading"}},{"await":"stop"},{"event":"done","data":{"state":"stopped"}}]""")
+
+    // Virtual time, one dispatcher: the test advances it, and closing the room ends its work.
+    private fun TestScope.work() = CoroutineScope(SupervisorJob() + coroutineContext[ContinuationInterceptor] as CoroutineDispatcher)
+
+    private fun TestScope.room(server: TurnTransport, disk: LocalCoach = LocalCoach(File(temporary.newFolder(), LocalCoach.fileName)), directory: File = temporary.newFolder(),
+        snapshot: Json? = null, telling: Telemetry = Telemetry.None, installation: AiInstallation? = null, access: suspend () -> AnonymousCoachAccess = { AnonymousCoachAccess.Available }) =
+        EngineRoomFixture(directory, work(), snapshot = snapshot, telemetry = telling, localCoach = disk, coachServer = server, coachInstallation = installation, coachAccess = access)
+
+    private fun EngineRoomFixture.messages(): List<CoachMessage> = engine.read(ScopeRef(Gym.scope)) { read ->
+        works.windmill.domain.kit.Repository.decode(CoachMessage, read.drawn(CoachMessage.type))
     }
 
-    @Test fun boundInstallationKeepsItsArchiveAndCannotPostOrIssueAReplacement() = runTest {
-        val local = LocalCoach(File(temporary.root, "archive"))
-        val origin = CoachOnboardingSeat(local.anonymousOwner(), "replica")
-        val identity = installation()
+    private fun EngineRoomFixture.threads(): List<CoachThread> = engine.read(ScopeRef(Gym.scope)) { read ->
+        works.windmill.domain.kit.Repository.decode(CoachThread, read.drawn(CoachThread.type))
+    }
+
+    @Test fun aLateRefusalReturnsTheQuestionToItsOwnChatAndLeavesTheNewerChatAlone() = runTest {
+        val release = CompletableDeferred<Unit>()
+        val server = script("[]").apply { refuseOpen = TurnRefusal(401, "invalid_installation", null) }
+        val late = object : TurnTransport by server {
+            override fun open(open: TurnOpen, seat: TurnSeat): Flow<TurnEvent> = flow {
+                release.await()
+                emitAll(server.open(open, seat))
+            }
+        }
+        val file = File(temporary.newFolder(), LocalCoach.fileName)
+        room(late, LocalCoach(file)).use { room ->
+            val coach = room.store.coach
+            coach.refreshAnonymousAccess()
+            advanceUntilIdle()
+            assertEquals(AnonymousCoachAccess.Available, coach.anonymousAccess)
+            val original = coach.freshChat()
+            assertTrue(coach.send(original, "Make Push A harder"))
+            advanceUntilIdle()
+            assertTrue(coach.isAsking(original))
+            assertEquals(CoachDraft(), coach.draft(original))
+            val other = coach.freshChat("Another chat's input")
+            release.complete(Unit)
+            advanceUntilIdle()
+            assertEquals(other, coach.selectedChatId)
+            assertEquals(CoachDraft("Another chat's input"), coach.draft(other))
+            assertEquals(CoachDraft("Make Push A harder"), coach.draft(original))
+            assertEquals(CoachTurnRefusal.Installation("invalid_installation"), coach.refusal(original))
+            assertNull(coach.refusal(other))
+            assertFalse(coach.isAsking(original))
+            assertNull(coach.chat(original)?.conversation)
+            assertEquals(emptyList<CoachMessage>(), room.messages())
+            assertEquals(1, server.opened.size)
+            coach.keepPosition(original, 91, false)
+            val restored = LocalCoach(file)
+            val phone = restored.anonymousOwner()
+            assertEquals(CoachDraft("Make Push A harder"), restored.draft(phone, original))
+            assertEquals(CoachDraft("Another chat's input"), restored.draft(phone, other))
+            assertEquals(91, restored.chat(phone, original)?.scroll)
+            assertEquals(other, restored.selected(phone))
+        }
+    }
+
+    @Test fun boundInstallationKeepsItsChatsAndCannotOpenATurnOrIssueAReplacement() = runTest {
+        var issued = 0
+        val scripted = ScriptedInstallation()
+        val identity = TurnPhoneInstallation.onMemory(object : AiInstallationApi by scripted {
+            override suspend fun issue(): AiInstallationResponse = scripted.issue().also { issued++ }
+        })
         identity.forAnonymousSend()
         identity.markBound()
-        val api = object : CoachOnboardingApi {
-            override suspend fun start(body: String, credential: String): CoachOnboardingResponse = error("bound phone must not POST")
-            override suspend fun get(requestId: String, credential: String): CoachOnboardingResponse = error("unexpected GET")
+        val server = script("[]")
+        val disk = LocalCoach(File(temporary.newFolder(), LocalCoach.fileName))
+        room(server, disk, installation = identity, access = { anonymousCoachAccess(identity, { CoachOnboardingSeat(disk.anonymousOwner(), "replica") }, Telemetry.None) }).use { room ->
+            val coach = room.store.coach
+            val chat = coach.freshChat("Earlier input")
+            coach.refreshAnonymousAccess()
+            advanceUntilIdle()
+            assertEquals(AnonymousCoachAccess.Bound, coach.anonymousAccess)
+            assertTrue(coach.send(chat, "New input"))
+            advanceUntilIdle()
+            assertEquals(CoachTurnRefusal.Installation("device_bound"), coach.refusal(chat))
+            assertEquals(CoachDraft("Earlier input"), coach.draft(chat))
+            assertEquals(listOf(chat), coach.history.map { it.id })
+            assertTrue(coach.hasConversations)
+            assertEquals(emptyList<TurnOpen>(), server.opened)
+            assertEquals(emptyList<CoachMessage>(), room.messages())
+            assertEquals(1, issued)
         }
-        val dispatcher = StandardTestDispatcher(testScheduler)
-        val coordinator = CoachOnboardingStore(local, identity, api, { origin }, backgroundScope, storageDispatcher = dispatcher)
-        val store = CoachStore({ null }, {}, { null }, local, Telemetry.None, System::nanoTime,
-            backgroundScope, dispatcher, coordinator)
-        val chat = store.freshChat("Earlier input")
-        store.refreshAnonymousAccess(); runCurrent()
-        assertEquals(AnonymousCoachAccess.Bound, store.anonymousAccess)
-        assertFalse(store.submit(chat, "New input"))
-        assertEquals(CoachDraft("Earlier input"), store.draft(chat))
-        assertEquals(listOf(chat), store.allThreads.map { it.id })
-        assertEquals(1, issued)
     }
 
-    @Test fun anonymousAllowanceAndOtherBudgetSentencesStayWithTheirOriginalChatAfterReopen() = runTest {
-        for (code in listOf("subject_exhausted", "free_day_exhausted", "free_month_exhausted", "concurrency_exhausted", "funding_required")) {
-            val file = File(temporary.root, code)
-            val local = LocalCoach(file)
-            val origin = CoachOnboardingSeat(local.anonymousOwner(), "replica")
-            val api = object : CoachOnboardingApi {
-                override suspend fun start(body: String, credential: String): CoachOnboardingResponse =
-                    throw WindmillApiException.Refused(429, Refusal("Server budget sentence", code = code))
-                override suspend fun get(requestId: String, credential: String): CoachOnboardingResponse = error("Unexpected GET")
+    @Test fun everyCapKeepsTheQuestionInItsChatAcrossAReopenAndStandsOverEveryChatUntilThen() = runTest {
+        data class Cap(val code: String, val refusal: CoachTurnRefusal, val sentence: String, val named: String)
+        for ((code, refusal, sentence, named) in listOf(
+            Cap("subject_exhausted", CoachTurnRefusal.Allowance("subject_exhausted", spent = true), "You have used all of your AI allowance.", "allowance"),
+            Cap("free_day_exhausted", CoachTurnRefusal.Allowance("free_day_exhausted"), "Coach’s shared free AI capacity is unavailable for today. Signing in does not bypass this limit.", "allowance"),
+            Cap("free_month_exhausted", CoachTurnRefusal.FreeMonthExhausted(null), "Coach is paused for everyone this month.", "allowance"),
+            Cap("concurrency_exhausted", CoachTurnRefusal.Allowance("concurrency_exhausted"), "Another AI request is still in progress. Try again when it finishes.", "allowance"),
+            Cap("funding_required", CoachTurnRefusal.Allowance("funding_required"), "Your plan has no funded AI allowance for this period.", "allowance"),
+            Cap(TurnRefusal.rateLimited, CoachTurnRefusal.RateLimited, "You can ask again later.", "daily"),
+        )) {
+            val telling = TellingRecorder()
+            val server = script("[]").apply { refuseOpen = TurnRefusal(429, code, null, spent = code == "subject_exhausted") }
+            val file = File(temporary.newFolder(), LocalCoach.fileName)
+            val directory = temporary.newFolder()
+            val (chat, other, snapshot) = room(server, LocalCoach(file), directory, telling = telling).use { room ->
+                val coach = room.store.coach
+                val chat = coach.freshChat()
+                assertTrue(coach.send(chat, "Retained input"))
+                advanceUntilIdle()
+                val other = coach.freshChat("Other draft")
+                assertEquals(refusal, coach.refusal(chat))
+                assertEquals(refusal, coach.refusal(other))
+                assertEquals(sentence, coach.refusal(chat)?.sentence)
+                assertEquals(CoachDraft("Retained input"), coach.draft(chat))
+                assertEquals(emptyList<CoachThread>(), room.threads())
+                assertEquals(emptyList<Map<String, String>>(), telling.failures)
+                assertEquals(listOf(mapOf("screen" to "coach", "outcome" to "capped", "cap" to named)), telling.named("gym_ask_outcome").map { it - "duration_ms" })
+                Triple(chat, other, room.engine.snapshot())
             }
-            val events = mutableListOf<Pair<String, Map<String, String>>>()
-            val failures = mutableListOf<String>()
-            val telemetry = object : Telemetry {
-                override fun event(name: String, properties: Map<String, String>) { events += name to properties }
-                override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { failures += operation }
+            room(script("[]"), LocalCoach(file), directory, snapshot).use { reopened ->
+                val coach = reopened.store.coach
+                assertEquals(CoachDraft("Retained input"), coach.draft(chat))
+                assertEquals(CoachDraft("Other draft"), coach.draft(other))
+                assertEquals(other, coach.selectedChatId)
+                assertNull(coach.refusal(chat))
             }
-            val dispatcher = StandardTestDispatcher(testScheduler)
-            val coordinator = CoachOnboardingStore(local, installation(), api, { origin }, backgroundScope,
-                telemetry = telemetry, storageDispatcher = dispatcher, requestId = { id })
-            val store = CoachStore({ null }, {}, { null }, local, telemetry, System::nanoTime,
-                backgroundScope, dispatcher, coordinator)
-            store.refreshAnonymousAccess(); runCurrent()
-            val chat = store.freshChat()
-            assertTrue(store.submit(chat, "Retained input")); runCurrent()
-            val other = store.freshChat("Other draft")
-            val restored = CoachStore({ null }, {}, { null }, LocalCoach(file), telemetry, System::nanoTime,
-                backgroundScope, dispatcher, coordinator)
-            val exchange = restored.chat(chat)!!.exchanges.single()
-            assertEquals(if (code == "subject_exhausted") AskCap.Allowance.wordless else "Server budget sentence", exchange.trouble)
-            assertEquals("Allowance".takeIf { code == "subject_exhausted" }, restored.chat(chat)!!.cap)
-            assertNull(restored.chat(other)!!.cap)
-            assertEquals(CoachDraft("Retained input"), restored.draft(chat))
-            assertEquals(CoachDraft("Other draft"), restored.draft(other))
-            assertEquals(emptyList<String>(), failures)
-            val outcome = events.single { it.first == "gym_ask_outcome" }.second - "duration_ms"
-            assertEquals(mapOf("state" to "anonymous", "outcome" to "capped", "cap" to "allowance"), outcome)
         }
     }
 
-    @Test fun dailyRefusalDeadlineSurvivesChatAndDocumentRecreationWithoutRestartingTheWait() = runTest {
-        val file = File(temporary.root, "archive")
-        val disk = LocalCoach(file)
-        val refusal = WindmillApiException.Refused(429, Refusal(code = "ask-daily-limit"), 1_800_000_000_123L)
-        val api = object : works.windmill.gym.net.GymRest by works.windmill.gym.net.FakeGymRest() {
-            override suspend fun stream(question: AskQuestion, onSnapshot: suspend (AskGeneration) -> Unit): AskAnswer = throw refusal
-        }
-        val dispatcher = StandardTestDispatcher(testScheduler)
-        val store = CoachStore({ "account" }, {}, { api }, disk, Telemetry.None, System::nanoTime,
-            backgroundScope, dispatcher)
-        val chat = store.freshChat()
-        assertTrue(store.submit(chat, "Refused input"))
-        runCurrent()
-        assertEquals(CoachDraft("Refused input"), store.draft(chat))
-        val restored = CoachStore({ "account" }, {}, { api }, LocalCoach(file), Telemetry.None, System::nanoTime,
-            backgroundScope, dispatcher)
-        assertEquals("Daily", restored.chat(chat)!!.cap)
-        assertEquals(1_800_000_000_123L, restored.chat(chat)!!.exchanges.single().retryAtMs)
-        assertEquals(CoachDraft("Refused input"), restored.draft(chat))
-    }
-
-    @Test fun acceptedAttachmentRemainsAfterComposerClearAndOnlyUnreferencedChatPhotosAreDeleted() = runTest {
-        val file = File(temporary.root, "photos")
-        val local = LocalCoach(file)
-        val origin = CoachOnboardingSeat(local.anonymousOwner(), "replica")
+    @Test fun aRetainedAnswersPhotoStaysUntilNoRetainedAnswerNamesIt() = runTest {
+        val file = File(temporary.newFolder(), LocalCoach.fileName)
         val photo = CoachAttachment("image001", "image/png", 1, 1, 3)
-        local.savePhoto(origin.owner, photo.id, byteArrayOf(1, 2, 3))
-        fun retain(chat: String, requestId: String) {
-            local.saveChat(origin.owner, LocalChat(chat))
-            local.saveDraft(origin.owner, chat, CoachDraft(photo = photo))
-            val request = CoachOnboardingRequest(requestId, "conversation", "", emptyList(), CoachOnboardingImage("image/png", "AQID"))
-            assertTrue(local.keepOnboarding(CoachOnboardingRecord(origin.owner, chat, origin.replica, requestId,
-                WindmillJson.encodeToString(CoachOnboardingRequest.serializer(), request), 1_800_000_000_000,
-                response = CoachOnboardingResponse(requestId, "result-$chat", "completed", 1_900_000_000_000, emptyList(), allowance, message = "Read the photo."),
-                attachment = photo)))
-            local.saveDraft(origin.owner, chat, CoachDraft())
+        val owner = "anonymous:phone"
+        fun retained(chat: String, request: String) = """"$request":{"owner":"$owner","chat":"$chat","replica":"replica","requestId":"$request","body":"{\"text\":\"\"}","createdAtMs":5,
+            "attachment":{"id":"image001","mediaType":"image/png","width":1,"height":1,"bytes":3},
+            "response":{"requestId":"$request","resultId":"result-$chat","status":"completed","expiresAtMs":9,"routines":[],"allowance":{"code":"ok","currency":"USD","period":"lifetime","tier":"anonymous","configured":true,"used":"0","reserved":"0","remaining":"1"},"message":"Read the photo."}}"""
+        file.writeText("""{"anonymousId":"$owner","selected":{"$owner":"original"},
+            "localChats":{"$owner":{"original":{"id":"original","createdAtMs":1},"another":{"id":"another","createdAtMs":2}}},
+            "onboarding":{"$owner":{${retained("original", "request-a")},${retained("another", "request-b")}}}}""")
+        val local = LocalCoach(file)
+        local.savePhoto(owner, photo.id, byteArrayOf(1, 2, 3))
+        room(script("[]"), local).use { room ->
+            val coach = room.store.coach
+            assertEquals("original", coach.selectedChatId)
+            room.store.conversations.read()
+            val answered = coach.exchanges("original").single()
+            assertEquals(listOf(SentPicture(photo, onThisPhone = true)), answered.pictures)
+            assertEquals("Read the photo.", answered.answer?.text)
+            coach.saveDraft("original", CoachDraft(photo = photo))
+            coach.saveDraft("original", CoachDraft())
+            assertEquals(CoachDraft(), coach.draft("original"))
+            assertEquals(byteArrayOf(1, 2, 3).toList(), local.photoFile(owner, photo.id).readBytes().toList())
+            local.clear(owner, "original")
+            assertEquals(emptyList<Any>(), local.retained(owner, "original"))
+            assertTrue(local.photoFile(owner, photo.id).isFile)
+            assertEquals(photo, local.retained(owner, "another").single().attachment)
+            local.clear(owner, "another")
+            assertFalse(local.photoFile(owner, photo.id).exists())
         }
-        retain("original", id)
-        retain("another", "22222222-2222-4222-8222-222222222222")
-        val coordinator = CoachOnboardingStore(local, installation(), object : CoachOnboardingApi {
-            override suspend fun start(body: String, credential: String): CoachOnboardingResponse = error("unexpected POST")
-            override suspend fun get(requestId: String, credential: String): CoachOnboardingResponse = error("unexpected GET")
-        }, { origin }, backgroundScope)
-        val store = CoachStore({ null }, {}, { null }, local, Telemetry.None, System::nanoTime,
-            backgroundScope, StandardTestDispatcher(testScheduler), coordinator)
-        assertEquals(CoachDraft(), store.draft("original"))
-        assertEquals(listOf(photo), store.chat("original")!!.exchanges.single().attachments)
-        assertEquals(photo, LocalCoach(file).onboarding(origin.owner, id)!!.attachment)
-        assertArrayEquals(byteArrayOf(1, 2, 3), local.photoFile(origin.owner, photo.id).readBytes())
-        local.clear(origin.owner, "original")
-        assertNull(local.onboarding(origin.owner, id))
-        assertTrue(local.photoFile(origin.owner, photo.id).isFile)
-        assertEquals(photo, local.onboarding(origin.owner, "22222222-2222-4222-8222-222222222222")!!.attachment)
-        local.clear(origin.owner, "another")
-        assertFalse(local.photoFile(origin.owner, photo.id).exists())
     }
 
-    @Test fun aNewQuestionAfterAFailedRecoveryIsPostedAndTheEarlierOneStaysRetryable() = runTest {
-        val local = LocalCoach(File(temporary.root, "archive"))
-        val origin = CoachOnboardingSeat(local.anonymousOwner(), "replica")
-        val second = "22222222-2222-4222-8222-222222222222"
-        val ids = ArrayDeque(listOf(id, second))
-        val posts = mutableListOf<String>()
-        val api = object : CoachOnboardingApi {
-            override suspend fun start(body: String, credential: String): CoachOnboardingResponse {
-                posts += WindmillJson.decodeFromString(CoachOnboardingRequest.serializer(), body).text
-                if (posts.size == 1) throw WindmillApiException.Timeout(java.io.IOException("fixture"))
-                return CoachOnboardingResponse(second, "result", "completed", 1_900_000_000_000, emptyList(), allowance, message = "Answer")
-            }
-            override suspend fun get(requestId: String, credential: String): CoachOnboardingResponse =
-                throw WindmillApiException.Transport(java.io.IOException("fixture"))
+    @Test fun aNewQuestionAfterAFailedTurnOpensTheNextTurnAndTheEarlierOneStaysAsItEnded() = runTest {
+        val server = script("""[
+            {"event":"error","data":{"code":"coach-vendor-error"}},
+            {"event":"text","data":{"delta":"Answer"}},
+            {"event":"done","data":{"state":"completed"}}]""")
+        room(server).use { room ->
+            val coach = room.store.coach
+            val chat = coach.freshChat()
+            assertTrue(coach.send(chat, "First question"))
+            advanceUntilIdle()
+            room.store.conversations.read()
+            assertEquals(MessageState.failed, coach.exchanges(chat).single().answer?.state)
+            assertEquals("Coach couldn’t finish. Ask again.", Ask.ending(MessageState.failed, truncated = false, wordsArrived = false))
+            coach.saveDraft(chat, CoachDraft("Second question"))
+            assertTrue(coach.send(chat, "Second question"))
+            advanceUntilIdle()
+            room.store.conversations.read()
+            assertEquals(listOf("First question", "Second question"), server.opened.map { it.question })
+            assertEquals(CoachDraft(), coach.draft(chat))
+            assertEquals(listOf("First question" to MessageState.failed, "Second question" to MessageState.completed), coach.exchanges(chat).map { it.question to it.answer?.state })
+            assertEquals("Answer", coach.exchanges(chat).last().answer?.text)
+            assertEquals(1, room.threads().size)
+            assertNull(coach.refusal(chat))
         }
-        val dispatcher = StandardTestDispatcher(testScheduler)
-        val coordinator = CoachOnboardingStore(local, installation(), api, { origin }, backgroundScope,
-            storageDispatcher = dispatcher, requestId = { ids.removeFirst() })
-        val store = CoachStore({ null }, {}, { null }, local, Telemetry.None, System::nanoTime,
-            backgroundScope, dispatcher, coordinator)
-        store.refreshAnonymousAccess(); runCurrent()
-        val chat = store.freshChat()
-        assertTrue(store.submit(chat, "First question")); repeat(50) { runCurrent() }
-        assertTrue(store.chat(chat)!!.exchanges.single().again)
-        store.saveDraft(chat, CoachDraft("Second question"))
-        assertTrue(store.submit(chat, "Second question")); repeat(50) { runCurrent() }
-        assertEquals(listOf("First question", "Second question"), posts)
-        assertEquals(CoachDraft(), store.draft(chat))
-        assertEquals(listOf(Triple("First question", Ask.interrupted, true), Triple("Second question", null, false)),
-            store.chat(chat)!!.exchanges.map { Triple(it.question, it.trouble, it.again) })
-        assertEquals("Answer", store.chat(chat)!!.exchanges.last().answer?.answer)
-        assertEquals(CoachOnboardingRecord.unanswered, local.onboarding(origin.owner, id)?.refusalCode)
     }
 
-    @Test fun aNewQuestionAfterAnUnansweredRequestIsPostedAndTheOldOneNeverReplays() = runTest {
-        val local = LocalCoach(File(temporary.root, "archive"))
-        val origin = CoachOnboardingSeat(local.anonymousOwner(), "replica")
-        val second = "22222222-2222-4222-8222-222222222222"
-        val ids = ArrayDeque(listOf(id, second))
-        val posts = mutableListOf<String>()
-        val events = mutableListOf<String>()
-        val telemetry = object : Telemetry {
-            override fun event(name: String, properties: Map<String, String>) { events += name }
-            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) = error("No failure is expected: $operation")
+    @Test fun aNewQuestionAfterARestartOpensItsOwnTurnAndTheOldOneNeverReplays() = runTest {
+        val directory = temporary.newFolder()
+        val file = File(temporary.newFolder(), LocalCoach.fileName)
+        val first = holdsOpen
+        val (snapshot, chat, clock) = room(first, LocalCoach(file), directory).use { room ->
+            val coach = room.store.coach
+            val chat = coach.freshChat()
+            assertTrue(coach.send(chat, "First question"))
+            advanceUntilIdle()
+            Triple(room.engine.snapshot(), chat, room.now)
         }
-        val api = object : CoachOnboardingApi {
-            override suspend fun start(body: String, credential: String): CoachOnboardingResponse {
-                posts += WindmillJson.decodeFromString(CoachOnboardingRequest.serializer(), body).text
-                if (posts.size == 1) throw WindmillApiException.Timeout(java.io.IOException("fixture"))
-                return CoachOnboardingResponse(second, "result", "completed", 1_900_000_000_000, emptyList(), allowance, message = "Answer")
-            }
-            override suspend fun get(requestId: String, credential: String): CoachOnboardingResponse =
-                throw WindmillApiException.Refused(404, Refusal(code = "not_found"))
+        assertEquals(listOf("First question"), first.opened.map { it.question })
+        val telling = TellingRecorder()
+        val server = answers("Answer")
+        room(server, LocalCoach(file), directory, snapshot, telling).use { restarted ->
+            restarted.now = clock + 60_000
+            val coach = restarted.store.coach
+            assertEquals(chat, coach.selectedChatId)
+            checkNotNull(restarted.coachTurns).start()
+            advanceUntilIdle()
+            assertEquals(emptyList<TurnOpen>(), server.opened)
+            coach.saveDraft(chat, CoachDraft("Second question"))
+            assertTrue(coach.send(chat, "Second question"))
+            advanceUntilIdle()
+            restarted.store.conversations.read()
+            assertEquals(listOf("Second question"), server.opened.map { it.question })
+            assertEquals(1, telling.named("gym_ask_started").size)
+            assertEquals(CoachDraft(), coach.draft(chat))
+            assertEquals(listOf("First question" to MessageState.interrupted, "Second question" to MessageState.completed), coach.exchanges(chat).map { it.question to it.answer?.state })
+            assertEquals(1, restarted.threads().size)
         }
-        val dispatcher = StandardTestDispatcher(testScheduler)
-        val coordinator = CoachOnboardingStore(local, installation(), api, { origin }, backgroundScope, telemetry,
-            storageDispatcher = dispatcher, requestId = { ids.removeFirst() })
-        val store = CoachStore({ null }, {}, { null }, local, Telemetry.None, System::nanoTime,
-            backgroundScope, dispatcher, coordinator)
-        store.refreshAnonymousAccess(); runCurrent()
-        val chat = store.freshChat()
-        assertTrue(store.submit(chat, "First question")); repeat(50) { runCurrent() }
-        assertEquals(CoachOnboardingRecord.unanswered, local.onboarding(origin.owner, id)?.refusalCode)
-        assertEquals(Triple("First question", Ask.interrupted, true), store.chat(chat)!!.exchanges.single().let { Triple(it.question, it.trouble, it.again) })
-        store.saveDraft(chat, CoachDraft("Second question"))
-        assertTrue(store.submit(chat, "Second question")); repeat(50) { runCurrent() }
-        repeat(3) { coordinator.resume().forEach { it.await() } }
-        assertEquals(listOf("First question", "Second question"), posts)
-        assertEquals(2, events.count { it == "gym_ask_started" })
-        assertEquals(CoachDraft(), store.draft(chat))
     }
 
-    @Test fun aQuestionAnsweredWhileTheAppWasDeadLeavesTheComposerEmptySoSendCannotAskItAgain() = runTest {
-        val file = File(temporary.root, "archive")
-        val posts = mutableListOf<String>()
-        val dispatcher = StandardTestDispatcher(testScheduler)
-        val dead = LocalCoach(file)
-        val origin = CoachOnboardingSeat(dead.anonymousOwner(), "replica")
-        val stalled = object : CoachOnboardingApi {
-            override suspend fun start(body: String, credential: String): CoachOnboardingResponse {
-                posts += body
-                return CompletableDeferred<CoachOnboardingResponse>().await()
-            }
-            override suspend fun get(requestId: String, credential: String): CoachOnboardingResponse = error("unexpected GET")
+    @Test fun aQuestionLeftRunningByADeadProcessLeavesTheComposerEmptySoSendCannotAskItAgain() = runTest {
+        val directory = temporary.newFolder()
+        val file = File(temporary.newFolder(), LocalCoach.fileName)
+        val server = holdsOpen
+        val (snapshot, chat) = room(server, LocalCoach(file), directory).use { room ->
+            val coach = room.store.coach
+            val chat = coach.freshChat()
+            coach.saveDraft(chat, CoachDraft("Make Push A harder "))
+            assertTrue(coach.send(chat, "Make Push A harder "))
+            advanceUntilIdle()
+            room.engine.snapshot() to chat
         }
-        val before = CoachStore({ null }, {}, { null }, dead, Telemetry.None, System::nanoTime, backgroundScope, dispatcher,
-            CoachOnboardingStore(dead, installation(), stalled, { origin }, backgroundScope, storageDispatcher = dispatcher, requestId = { id }))
-        before.refreshAnonymousAccess(); runCurrent()
-        val chat = before.freshChat()
-        before.saveDraft(chat, CoachDraft("Make Push A harder "))
-        assertTrue(before.submit(chat, "Make Push A harder ")); runCurrent()
-        assertEquals(1, posts.size)
-        val relaunched = LocalCoach(file)
-        val answering = object : CoachOnboardingApi {
-            override suspend fun start(body: String, credential: String): CoachOnboardingResponse { posts += body; error("unexpected POST") }
-            override suspend fun get(requestId: String, credential: String) =
-                CoachOnboardingResponse(id, "result", "completed", 1_900_000_000_000, emptyList(), allowance, message = "Answer")
+        room(server, LocalCoach(file), directory, snapshot).use { restarted ->
+            val coach = restarted.store.coach
+            assertEquals(chat, coach.selectedChatId)
+            checkNotNull(restarted.coachTurns).start()
+            advanceUntilIdle()
+            restarted.store.conversations.read()
+            assertEquals(CoachDraft(), coach.draft(chat))
+            assertEquals(CoachDraft(), LocalCoach(file).let { it.draft(it.anonymousOwner(), chat) })
+            assertEquals(listOf("Make Push A harder" to MessageState.interrupted), coach.exchanges(chat).map { it.question to it.answer?.state })
+            assertEquals(1, server.opened.size)
         }
-        val after = CoachStore({ null }, {}, { null }, relaunched, Telemetry.None, System::nanoTime, backgroundScope, dispatcher,
-            CoachOnboardingStore(relaunched, installation(), answering, { origin }, backgroundScope, storageDispatcher = dispatcher, requestId = { id }))
-        after.resumeAnonymous(); repeat(50) { runCurrent() }
-        assertEquals(CoachDraft(), after.draft(chat))
-        assertEquals(CoachDraft(), LocalCoach(file).draft(origin.owner, chat))
-        assertEquals(listOf("Make Push A harder" to "Answer"), after.chat(chat)!!.exchanges.map { it.question to it.answer?.answer })
-        assertEquals(1, posts.size)
     }
 
     @Test fun trailingWhitespaceIsTrimmedBeforeTheLimitAndTheRequest() = runTest {
-        val local = LocalCoach(File(temporary.root, "archive"))
-        val origin = CoachOnboardingSeat(local.anonymousOwner(), "replica")
-        val posts = mutableListOf<String>()
-        val api = object : CoachOnboardingApi {
-            override suspend fun start(body: String, credential: String): CoachOnboardingResponse {
-                posts += WindmillJson.decodeFromString(CoachOnboardingRequest.serializer(), body).text
-                return CoachOnboardingResponse(id, "result", "completed", 1_900_000_000_000, emptyList(), allowance, message = "Answer")
-            }
-            override suspend fun get(requestId: String, credential: String): CoachOnboardingResponse = error("unexpected GET")
+        val server = answers("Answer")
+        room(server).use { room ->
+            val coach = room.store.coach
+            val chat = coach.freshChat()
+            assertTrue(coach.send(chat, "x".repeat(7_990) + " ".repeat(20)))
+            advanceUntilIdle()
+            room.store.conversations.read()
+            assertEquals(listOf("x".repeat(7_990)), server.opened.map { it.question })
+            assertEquals("x".repeat(7_990) to "Answer", coach.exchanges(chat).single().let { it.question to it.answer?.text })
         }
-        val dispatcher = StandardTestDispatcher(testScheduler)
-        val coordinator = CoachOnboardingStore(local, installation(), api, { origin }, backgroundScope,
-            storageDispatcher = dispatcher, requestId = { id })
-        val store = CoachStore({ null }, {}, { null }, local, Telemetry.None, System::nanoTime,
-            backgroundScope, dispatcher, coordinator)
-        store.refreshAnonymousAccess(); runCurrent()
-        val chat = store.freshChat()
-        assertTrue(store.submit(chat, "x".repeat(3_990) + " ".repeat(20))); repeat(50) { runCurrent() }
-        assertEquals(listOf("x".repeat(3_990)), posts)
-        assertEquals("Answer", store.chat(chat)!!.exchanges.single().answer?.answer)
     }
 }

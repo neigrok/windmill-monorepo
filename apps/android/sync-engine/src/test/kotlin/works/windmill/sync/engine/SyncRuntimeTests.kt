@@ -115,15 +115,17 @@ class SyncRuntimeTests {
         val hellos = Channel<String?>(Channel.UNLIMITED)
         var holdsRecords = false
         var schema = 2L
-        var helloAnswer: CompletableDeferred<Reply<SyncResponse>>? = null
+        @Volatile var helloAnswer: CompletableDeferred<Reply<SyncResponse>>? = null
         @Volatile var refuseReopen = false
         @Volatile var liveRefusal: SyncResponse? = null
         @Volatile var freshSockets = false
         val socket = Socket()
         val sockets = CopyOnWriteArrayList<Socket>()
         override suspend fun hello(token: String?): Reply<SyncResponse> {
+            // Taken before the hello is announced: a test that saw it and set the next answer has not changed this one's.
+            val answer = helloAnswer
             hellos.send(token)
-            return helloAnswer?.await() ?: Reply.Answer(SyncResponse(200, Json.objectOf(
+            return answer?.await() ?: Reply.Answer(SyncResponse(200, Json.objectOf(
                 "serverTime" to Json.of(5_000), "epoch" to Json.of("ep-1"), "as" to (token?.removePrefix("token:")?.let(Json::of) ?: Json.Null),
                 "schema" to Json.of(schema), "minSchema" to Json.of(2), "holdsRecords" to Json.objectOf("probe" to Json.of(holdsRecords)))))
         }
@@ -357,6 +359,35 @@ class SyncRuntimeTests {
             val push = fixture.push()
             push.answer.complete(ok(push.request))
             until { fixture.engine.device.current().entries().map { it.state } == listOf("acked") }
+        }
+    }
+
+    @Test fun theFirstPullLandingDuringTheLeavingHelloStillSendsThePushLeavingOwes() = runBlocking {
+        Fixture().use { fixture ->
+            fixture.transport.controlPulls = true
+            fixture.runtime.enter()
+            val pull = fixture.pull()
+            val foregroundHello = CompletableDeferred<Reply<SyncResponse>>()
+            fixture.transport.helloAnswer = foregroundHello
+            fixture.create()
+            assertEquals("token:A", withTimeout(2_000) { fixture.transport.hellos.receive() })
+            val leavingHello = CompletableDeferred<Reply<SyncResponse>>()
+            fixture.transport.helloAnswer = leavingHello
+            val leaving = async(start = CoroutineStart.UNDISPATCHED) { fixture.runtime.leave() }
+            foregroundHello.complete(helloResponse())
+            assertEquals("token:A", withTimeout(2_000) { fixture.transport.hellos.receive() })
+            pull.answer.complete(Reply.Answer(SyncResponse(200, Json.objectOf("serverTime" to Json.of(5_000), "epoch" to Json.of("ep-1"),
+                "as" to Json.of("A"), "pages" to Json.array()))))
+            until { fixture.engine.device.current().meta["serverEpoch"] == Json.of("ep-1") }
+            fixture.transport.helloAnswer = null
+            leavingHello.complete(helloResponse())
+            assertEquals("the epoch learned during the hello asks for another hello before numbering",
+                "token:A", withTimeout(2_000) { fixture.transport.hellos.receive() })
+            val push = fixture.push()
+            push.answer.complete(ok(push.request))
+            leaving.await()
+            assertEquals(listOf("acked"), fixture.engine.device.current().entries().map { it.state })
+            assertTrue(fixture.transport.pushes.tryReceive().isFailure)
         }
     }
 
@@ -1182,21 +1213,22 @@ class SyncRuntimeTests {
     @Test fun aDigestStoppedScopeIsStillPulledAndHearsTheServersUpgrade() = runBlocking {
         Fixture().use { fixture ->
             fixture.transport.controlPulls = true
+            var answer: Reply<SyncResponse> = Reply.Answer(SyncResponse(200, Json.objectOf("serverTime" to Json.of(5_000), "epoch" to Json.of("ep-1"),
+                "as" to Json.of("A"), "pages" to Json.array(Json.objectOf("scope" to Json.of(product.text), "kind" to Json.of("rows"),
+                    "rows" to Json.array(), "cursor" to Json.of(WireCursor("ep-1", "live", 1).text), "more" to Json.of(false),
+                    "seq" to Json.of(1), "digest" to Json.of("1".padStart(64, '0')))))))
+            // The runtime may start the next pull on its own, and a receive cancelled mid-handover loses its pull, so one answerer stays for the whole test.
+            val answering = launch { for (pull in fixture.transport.pulls) pull.answer.complete(answer) }
             fixture.runtime.enter()
-            for (number in 1L..2L) {
-                if (number > 1) assertTrue(fixture.runtime.pullAgain())
-                val pull = fixture.pull()
-                pull.answer.complete(Reply.Answer(SyncResponse(200, Json.objectOf("serverTime" to Json.of(5_000), "epoch" to Json.of("ep-1"),
-                    "as" to Json.of("A"), "pages" to Json.array(Json.objectOf("scope" to Json.of(product.text), "kind" to Json.of("rows"),
-                        "rows" to Json.array(), "cursor" to Json.of(WireCursor("ep-1", "live", 1).text), "more" to Json.of(false),
-                        "seq" to Json.of(1), "digest" to Json.of("1".padStart(64, '0'))))))))
-                until { fixture.runtime.pulls.value.ended == number }
-            }
+            until { fixture.runtime.pulls.value.ended >= 1 }
+            assertTrue(fixture.runtime.pullAgain())
+            until { fixture.runtime.pulls.value.ended >= 2 }
             assertEquals(Json.of("1"), fixture.engine.device.current().cursors[product.text]?.get("digestStop"))
             fixture.runtime.leave()
+            answer = Reply.Failed(upgradeRequired)
             fixture.runtime.enter()
-            fixture.pull().answer.complete(Reply.Failed(upgradeRequired))
             withTimeout(2_000) { fixture.engine.status.state.first { it.upgradeRequired } }
+            answering.cancelAndJoin()
             assertTrue(fixture.transport.hellos.tryReceive().isFailure)
             assertTrue(fixture.transport.pushes.tryReceive().isFailure)
             assertEquals(emptyList<Json>(), fixture.engine.device.current().entries().map { it.json })
@@ -1311,8 +1343,7 @@ class SyncRuntimeTests {
                             "Bearer token-B" -> "B"
                             else -> return MockResponse().setResponseCode(401)
                         }
-                        if (drop.compareAndSet(true, false)) return MockResponse()
-                            .setSocketPolicy(okhttp3.mockwebserver.SocketPolicy.DISCONNECT_AFTER_REQUEST)
+                        if (drop.get()) return MockResponse().setSocketPolicy(okhttp3.mockwebserver.SocketPolicy.DISCONNECT_AFTER_REQUEST)
                         return MockResponse().setBody(Json.objectOf("serverTime" to Json.of(5_000), "epoch" to Json.of("epoch"),
                             "schema" to Json.of(registry.version), "minSchema" to Json.of(registry.minVersion),
                             "holdsRecords" to Json.objectOf("probe" to Json.of(false)), "as" to Json.of(account)).jcs)
@@ -1332,11 +1363,15 @@ class SyncRuntimeTests {
                             if (loseResponse) {
                                 val failure = runCatching { runtime.signIn("B", "token-B") }.exceptionOrNull()
                                 assertEquals(EngineError.Code.unreachable, (failure as EngineError).code)
-                                val interrupted = server.takeRequest(2, java.util.concurrent.TimeUnit.SECONDS)!!
-                                assertEquals("GET", interrupted.method)
-                                assertEquals("Bearer token-B", interrupted.getHeader("Authorization"))
-                                assertEquals(2, server.requestCount)
+                                // The hello is lost on the reused socket, then on the fresh connection it tries once more.
+                                repeat(2) {
+                                    val interrupted = server.takeRequest(2, java.util.concurrent.TimeUnit.SECONDS)!!
+                                    assertEquals("GET", interrupted.method)
+                                    assertEquals("Bearer token-B", interrupted.getHeader("Authorization"))
+                                }
+                                assertEquals(3, server.requestCount)
                                 assertEquals("token-B", tokens.token("B"))
+                                drop.set(false)
                                 assertTrue(requireNotNull(runtime.resumeSignIn()).isComplete)
                             } else {
                                 assertTrue(runtime.signIn("B", "token-B").isComplete)
@@ -1345,7 +1380,7 @@ class SyncRuntimeTests {
                             val second = server.takeRequest(2, java.util.concurrent.TimeUnit.SECONDS)!!
                             assertEquals("GET", second.method)
                             assertEquals("Bearer token-B", second.getHeader("Authorization"))
-                            assertEquals(if (loseResponse) 3 else 2, server.requestCount)
+                            assertEquals(if (loseResponse) 4 else 2, server.requestCount)
                             assertEquals("B", engine.lock.withLock { engine.device.current().account })
                             assertNull(tokens.token("A"))
                             assertEquals("token-B", tokens.token("B"))

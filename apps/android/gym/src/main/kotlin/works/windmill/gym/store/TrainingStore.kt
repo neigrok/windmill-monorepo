@@ -9,9 +9,12 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
-import works.windmill.gym.coach.CoachStore
+import works.windmill.gym.coach.AnonymousCoachAccess
+import works.windmill.gym.coach.CoachChats
+import works.windmill.gym.coach.CoachConversations
 import works.windmill.gym.coach.LocalCoach
-import works.windmill.gym.coach.onboarding.CoachOnboardingStore
+import works.windmill.gym.coach.onboarding.CoachRoutineImports
+import works.windmill.gym.coach.turn.CoachTurns
 import works.windmill.gym.net.GymRest
 import works.windmill.gym.presentation.Ids
 import works.windmill.gym.presentation.WorkoutClock
@@ -23,7 +26,7 @@ import works.windmill.sync.engine.Pulls
 
 // The gym's training, one feature store per screen family over one seat. This is where the stores are composed and
 // where they move together: a change of account, an engine refresh, a restore, a transition and an erased owner.
-// Main-thread state; Coach owns its conversations, drafts and network requests.
+// Main-thread state; Coach's turns run in `coachTurns`, its conversations are engine records, and `coach` holds its chats on this phone.
 class TrainingStore(
     private val controls: WorkoutControls,
     private val training: EngineTraining,
@@ -37,10 +40,12 @@ class TrainingStore(
     undoWindowMs: Long = Withheld.windowMs,
     workoutClock: WorkoutClock = WorkoutClock { val at = now(); WorkoutMoment(at, at, "local") },
     workoutAuthority: (String?) -> Boolean = { true },
-    telemetry: Telemetry = Telemetry.None,
-    elapsedNanos: () -> Long = System::nanoTime,
+    private val telemetry: Telemetry = Telemetry.None,
     localCoach: LocalCoach? = null,
-    coachOnboarding: CoachOnboardingStore? = null,
+    coachImports: CoachRoutineImports? = null,
+    coachAccess: suspend () -> AnonymousCoachAccess = { AnonymousCoachAccess.Unavailable },
+    val coachTurns: CoachTurns? = null,
+    coachStorage: CoroutineDispatcher = Dispatchers.IO,
     readDispatcher: CoroutineDispatcher = Dispatchers.Default,
     // Asks the sync runtime for the account's copy again; false when it is not pulling.
     pullAgain: suspend () -> Boolean = { false },
@@ -57,13 +62,15 @@ class TrainingStore(
         followOpenWorkout = { open -> workout.follow(open) })
     val workout = WorkoutSession(seat, held, controls, training, history, routines, scope, telemetry, now, mintSession, mintSet,
         workoutClock, refresh = ::refreshEngine)
+    val workoutProposals = WorkoutProposalsStore(seat, training, telemetry, coachStorage, refresh = ::refreshEngine)
     val deletions = DeletionsStore(seat, held, controls, training, bodyweight, routines, notes, workout, scope, telemetry, now,
         undoWindowMs)
-    val coach = CoachStore(
+    val conversations = CoachConversations(seat, training, telemetry, coachTurns)
+    val coach = CoachChats(
         accountOwner = { seat.owner },
         onProgramChanged = { scope.launch { seat.tried("gym.refreshWorkout") { routines.readProgram() } } },
-        rest = rest, localCoach = localCoach, telemetry = telemetry, elapsedNanos = elapsedNanos, scope = scope,
-        onboarding = coachOnboarding,
+        conversations = conversations, turns = coachTurns, localCoach = localCoach, imports = coachImports, access = coachAccess,
+        telemetry = telemetry, scope = scope, storageDispatcher = coachStorage, now = now, seatReplica = { seat.replica }, seatReady = { seat.accountReady && training.mayWrite },
     )
 
     private var connecting = false
@@ -110,7 +117,7 @@ class TrainingStore(
         val controlsReplica = controls.engineReplica
         val drain = EngineTraining(training.engine, writeAuthority = {
             transitionCurrent() && owner == seat.owner && training.engine.activeReplica() == replica && controls.engineReplica == controlsReplica
-        })
+        }, telemetry = telemetry)
         drain.recoverAcceptedSets(controls)
         drain.reconcileImports()
         drain.persistControls(controls)
@@ -150,11 +157,13 @@ class TrainingStore(
             seat.workoutReady = false
             workout.forgetSeat()
             routines.forgetSeat()
+            workoutProposals.forgetSeat()
             bodyweight.forgetSeat()
             history.forgetSeat()
             deletions.forgetSeat(sameWeightSeat)
             notes.forgetSeat()
-            coach.resetThreads()
+            // The same seat connected again keeps Coach's conversation and the running words on screen.
+            if (!sameWeightSeat) coach.forgetSeat()
             sharing.forgetSeat()
         }
         if (connecting) return
@@ -175,6 +184,8 @@ class TrainingStore(
             workout.reconcileWorkoutTime()
             workout.drawFromControls()
             seat.isLoading = false
+            // A new seat forgot what Coach had read, and a read that met this connect was dropped; nothing but a new revision would read either again.
+            conversations.read()
 
             val owner = seat.owner
             history.shelved = seat.tried("gym.loadLog") { history.refusedImports() } ?: return
@@ -188,8 +199,10 @@ class TrainingStore(
             if (owner != seat.owner) return
             workout.resume()
             if (workout.lastSetsWanted) workout.loadLastSets()
+            if (owner != seat.owner) return
+            workoutProposals.read()
         } catch (_: TrainingReadChanged) {
-            // The observer resumes the pending connection after the superseding engine revision.
+            // The read that met the change already asked the observer, and `finally` asks it for a connection still pending.
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
@@ -216,9 +229,10 @@ class TrainingStore(
         }
         scope.launch { engine.status.state.collect { refreshes.trySend(Unit) } }
         history.observePulls()
+        scope.launch { conversations.observe() }
         scope.launch { engine.notices("gym").notices.collect { refreshes.trySend(Unit) } }
         scope.launch { engine.offers.offers.collect { refreshes.trySend(Unit) } }
-        for (type in listOf("exercise", "exerciseName", "routine", "routineCreation", "session", "set", "prefs", "note", "weighin", "proposal"))
+        for (type in listOf("exercise", "exerciseName", "routine", "routineCreation", "session", "set", "prefs", "note", "weighin", "proposal", "workoutProposal"))
             scope.launch { engine.records(ScopeRef.product("gym"), type).state.collect { refreshes.trySend(Unit) } }
         return requireNotNull(engineObservation)
     }
@@ -243,7 +257,7 @@ class TrainingStore(
         held.deletedSets = held.deletedSets - details.flatMap { detail -> detail.sets.map { it.id } }.toSet()
         history.refreshRetained(details)
         routines.readCatalogue()
-        if (seat.tried("gym.refreshWorkout") { routines.readProgram(); true } != true) return
+        if (seat.tried("gym.refreshWorkout") { routines.readProgram(); workoutProposals.read(); true } != true) return
         routines.readReceipts()
         workout.preferences = training.settings()
         notes.reread(owner)

@@ -17,6 +17,7 @@ import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performTouchInput
@@ -28,14 +29,14 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import works.windmill.gym.coach.AskThread
+import works.windmill.gym.coach.heldConversation
+import works.windmill.gym.coach.heldThreads
 import works.windmill.gym.presentation.RoutineDraft
 import works.windmill.gym.net.FakeGymRest
 import works.windmill.gym.store.EngineRoomFixture
@@ -57,8 +58,8 @@ class RowSwipeAccessibilityTests {
     @get:Rule
     val tmp = TemporaryFolder()
 
-    private fun store(scope: CoroutineScope, rest: FakeGymRest = FakeGymRest()): EngineRoomFixture {
-        val room = EngineRoomFixture(tmp.newFolder(), scope, rest = rest)
+    private fun store(scope: CoroutineScope): EngineRoomFixture {
+        val room = EngineRoomFixture(tmp.newFolder(), scope, rest = FakeGymRest())
         room.now = System.currentTimeMillis()
         runBlocking {
             room.select("u1")
@@ -139,9 +140,8 @@ class RowSwipeAccessibilityTests {
     @Test
     fun theThreadRowSwipesToDeleteAndDeclaresThatActionByHand() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val rest = FakeGymRest()
-        rest.conversations["thr_1"] = AskThread(id = "thr_1", title = "why is my bench stalled?")
-        try { store(scope, rest).use { room ->
+        try { store(scope).use { room ->
+            val thread = room.heldConversation("why is my bench stalled?")
             val threads = ThreadsBinding(room.store.coach)
             compose.setContent {
                 ThreadsScreen(
@@ -149,6 +149,7 @@ class RowSwipeAccessibilityTests {
                     onAskNew = {},
                 )
             }
+            compose.waitUntil(10_000) { compose.onAllNodesWithText("why is my bench stalled?").fetchSemanticsNodes().isNotEmpty() }
 
             val row = compose.onNodeWithText("why is my bench stalled?").fetchSemanticsNode()
             assertEquals("no overflow on this row, so the swipe declares its own alternative",
@@ -159,7 +160,7 @@ class RowSwipeAccessibilityTests {
 
             compose.onNodeWithText("why is my bench stalled?").performTouchInput { swipeLeft() }
             compose.onNodeWithText("Delete this conversation?").assertIsDisplayed()
-            compose.runOnIdle { assertTrue("confirmation is required", "deleteThread" !in rest.calls) }
+            compose.runOnIdle { assertEquals("confirmation is required", listOf(thread), room.heldThreads().map { it.id.record.string }) }
             compose.onNodeWithText("Cancel").performClick()
             compose.onNodeWithText("why is my bench stalled?").assertIsDisplayed()
         } } finally { scope.cancel() }

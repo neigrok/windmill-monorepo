@@ -218,6 +218,7 @@ public enum AbilityRefusal: String, Sendable, Equatable {
   case invalidInput = "invalid-input"
   case invalidArguments = "invalid-arguments"
   case refused
+  case loadFloor = "load-floor"
   case resultTooLarge = "result-too-large"
   case volume = "coach-turn-volume"
 }

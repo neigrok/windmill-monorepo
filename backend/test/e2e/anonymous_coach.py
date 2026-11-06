@@ -109,7 +109,7 @@ class AnonymousCoachProof(coach_live.LiveCoachProof):
 
     def install(self, label):
         status, body, headers = self.call("POST", "/v1/ai/installations", {})
-        self.check("installation_" + label, status == 201 and body.get("allowance", {}).get("limit") == "0.050000000" and headers.get("cache-control") == "no-store")
+        self.check("installation_" + label, status == 201 and body.get("allowance", {}).get("limit") == "0.250000000" and headers.get("cache-control") == "no-store")
         self.credentials.append(body["credential"])
         return body["credential"]
 
@@ -126,8 +126,8 @@ class AnonymousCoachProof(coach_live.LiveCoachProof):
                                              "routineCount": len(body.get("routines", [])), "allowance": body.get("allowance"),
                                              "usageAfter": self.usage()})
         self.check("terminal_" + label, status == 200 and body.get("status") == expected)
-        self.check("lifetime_bound_" + label, self.usage()["costNanos"] <= 150_000_000)
-        self.check("individual_actual_bound_" + label, self.sql("SELECT coalesce(sum(actual_nanos),0)<=50000000 FROM ai_budget_reservations WHERE subject_id=(SELECT device_id FROM gym_coach_onboarding WHERE request_id='" + payload["requestId"] + "')") == "t")
+        self.check("lifetime_bound_" + label, self.usage()["costNanos"] <= 750_000_000)
+        self.check("individual_actual_bound_" + label, self.sql("SELECT coalesce(sum(actual_nanos),0)<=250000000 FROM ai_budget_reservations WHERE subject_id=(SELECT device_id FROM gym_coach_onboarding WHERE request_id='" + payload["requestId"] + "')") == "t")
         self.check("no_debt_" + label, self.sql("SELECT count(*) FROM ai_budget_balances WHERE debt_nanos<>0") == "0")
         original = body
         status, replay, _ = self.call("POST", "/v1/gym/coach/onboarding", payload, credential)

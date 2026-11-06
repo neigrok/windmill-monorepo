@@ -2,8 +2,9 @@
 
 The shared gym vectors follow [the domain kit](../../../../docs/foundation/domain-kit.md) §15.3.
 Swift `GymDomain`, Kotlin `:gym:domain` and the web's gym domain run every case over the shared
-v12/minimum-11 registry composition and reproduce each `expect` by JCS equality; `recovery-actions.json` runs in
-Swift and Kotlin and does not apply on the web (its row says why); every other file runs in all three.
+v12/minimum-11 registry composition and reproduce each `expect` by JCS equality; `recovery-actions.json`,
+`coach-onboarding-actions.json`, `coach-conversation-actions.json` and `../rules/collation.json` run in Swift and Kotlin and do
+not apply on the web (their rows say why); every other file runs in all three.
 `workout-plan-actions.json` and `workout-proposals-actions.json` hold the open workout's editable plan and its
 workout proposals. R118 metadata reads remain optional
 for legacy records. The pinned rule book covers ten entities, `WorkoutProposal` the newest; `RoutineCreation`
@@ -21,10 +22,11 @@ answers otherwise, each by the one field it reads by another rule, and the one c
 without its session).
 
 The ability conformance corpus beside this one, `../abilities/` ([README](../../README.md)), is claimed by the Swift replica
-executor (`apps/ios/Domain/Sources/GymDomain/Coach/`, `CoachAbilitiesTests`): each case runs through `RunAbility` over its
+executor (`apps/ios/Domain/Sources/GymDomain/Coach/`, `CoachAbilitiesTests`) and the Kotlin one
+(`apps/android/gym/domain/src/main/kotlin/works/windmill/gym/domain/coach/`, `CorpusTests`): each case runs through `RunAbility` over its
 given records as the case's seat at its moment, and the result's JCS bytes, its SHA-256 and the records the gesture writes
 are compared with the server's golden. The Coach `thread` and `message` entities keep a rule book of their own
-(`CoachRules.book`) until every gym implementation carries them, so `rules.json` stays the book the three share.
+(`CoachRules.book`, in Swift and Kotlin) until every gym implementation carries them, so `rules.json` stays the book the three share.
 
 ## Files
 
@@ -36,16 +38,18 @@ are compared with the server's golden. The Coach `thread` and `message` entities
 | `bodyweight-actions.json` | Whole-day weigh-in saves, corrections and held deletes |
 | `routines-actions.json` | Guarded editor saves, atomic routine/catalogue plans, reorder, delete, ordered targets, frozen-plan decoding |
 | `coach-onboarding-actions.json` | One batch of preassigned routines and required custom movements with a transactional per-result replay receipt; Kotlin and Swift claim the cases, while web carries no anonymous import door |
+| `coach-conversation-actions.json` | A phone turn's records: `OpenTurn`, `EndTurn` with the receipt its calls derive, a call's record as the calls bound fills, and a read's week. Kotlin and Swift claim the cases; a web turn writes its conversation on the server, so the web holds no `thread` or `message` entity |
 | `catalogue-actions.json` | Create (a dumbbell movement's count included), rename, seed overrides, aliases, byte-sensitive search, decoding failures |
 | `preferences-actions.json` | Draft preference saves and rest defaults |
 | `training-actions.json` | Start/join, append, correct/delete set, discard, finish, import, replace completed workout; serial, time, overlap and log reads |
-| `recovery-actions.json` | A saved signed-out workout the account has not taken: its review row and reason, the fix editor's live line, which notices it owns, keep/restart adoption, stranded-set recovery and discard. Runs in Swift `GymDomain` and Kotlin `:gym:domain`; the web holds no signed-out workout, so it records the file as not applying |
+| `recovery-actions.json` | A saved signed-out workout the account has not taken: its review row and reason, the fix editor's live line, which notices it owns, keep/restart adoption, stranded-set recovery, discard, and the proposal a signed-out phone held minted again once the account holds its workout. Runs in Swift `GymDomain` and Kotlin `:gym:domain`; the web holds no signed-out workout, so it records the file as not applying |
 | `proposals-actions.json` | Propose, apply/dismiss, the proposal state's refusals and out of date, ordered diff, change count, the card's change blocks, provenance and optional R118 metadata reads |
 | `workout-plan-actions.json` | Every `ReviseWorkoutPlan` operation, the logged-movement refusal per operation, stale bases, closed and missing workouts, unknown and duplicate movements, bounds; and the reads over an edited plan: prefill, the workout and review documents, the receipt's plan changes |
 | `workout-proposals-actions.json` | Propose a workout change (diff, swap, reorder, unchanged, refusals), apply/dismiss with every out-of-date reason, and the card's `WorkoutOutOfDate` |
 | `training-reads.json` | Prefill and the loads it offers ahead, the rest target, last time, readouts, the canonical estimate, complete progress projection, movement records, the log's new bests, chart windows and shared history documents |
 | `units.json` | Units, signed weight ladder, formatting, rounding and rep steps |
 | `../rules/bodyweight.json` | Bodyweight stance, readings, chart windows and gaps |
+| `../rules/collation.json` | The kit's `Collation`, which orders `list_exercises`: `{read: "collation", names}` → `{result: {order}}`, the names sorted stably. Accents composed and decomposed, the marks of combining class 0 (U+FE0F, U+0E31, U+0941), case, punctuation, digits, emoji, ties at each level, and every edge of the combining table the toolchains share. The Swift rule writes the expectations; Swift and Kotlin claim them, and the web runs no replica executor |
 | `../../gym-ladder.json` | The existing cross-surface ladder, also run directly by both domains |
 
 Entity vectors may name `nonFinite: {path, value}` with `NaN`, `Infinity` or `-Infinity` to exercise the declared field check on a typed draft value. The harness exercises that check before completing whole-entity validation, keeping non-finite numbers outside wire JSON and production decoders.
@@ -165,6 +169,10 @@ separately and is outside the v4 rule book because v4 has no such type.
 | `ReviseWorkoutPlan` | `{sessionId,base,operations}`; `base` is the plan the editor read, `operations` a non-empty list applied in order (below) | `null`; one guarded write of the whole `plan`, or nothing when the plan stands |
 | `ProposeWorkout` | `{id,sessionId,entries,summary}`; `entries` is the whole plan proposed | Proposal id; the diff against the stored plan, guarding `plan`; the stored plan makes no proposal |
 | `ApplyWorkoutProposal`, `DismissWorkoutProposal` | `{id}` | `null`; apply predicts the settled state and the session's `plan` |
+| `OpenTurn` | `{thread?,question,pictures?}`; `pictures` are `{id,mediaType,localOnly?}`; `ids` mint the thread when none is named, the lifter's message, then the Coach message | `{thread,lifter,coach}`; one gesture of the thread, the two messages and the `runningTurn` device row |
+| `EndTurn` | `{message,state,text?,truncated?}`; `text` absent keeps the partial text | `null`; one gesture of `state`, `text`, `receipt` and `truncated` with `runningTurn` cleared, or nothing once a writer ended the turn |
+| `AbilityCall.recorded` | `{message:{id,fields},call}`, with no records: a pure rule | `{recorded,callsBytes}`: the first form the message's calls hold within 32,768 UTF-8 bytes of JCS, in order whole (the read less the rows earlier `ok` calls hold by identity), without `input`, its read as counts alone (`readTruncated`), refused `coach-turn-volume` with its id and name alone, or `null`; `callsBytes` is the calls' size after it |
+| `ReadServed.week` | `{at}`, with no records: a pure rule | `{week}`: the Monday 00:00 UTC at or before `at`, at least 1 |
 
 **Plan operations.** Each names an entry by its `index` in the plan and a planned set by `set`, both from 0:
 `{op:"retarget",index,set,target:{reps?,weightKg?}}` replaces one planned set's target;

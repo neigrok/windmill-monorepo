@@ -12,25 +12,30 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ColorScheme
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -39,9 +44,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.UriHandler
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
@@ -57,167 +62,222 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import kotlinx.coroutines.launch
+import works.windmill.gym.R
 import works.windmill.gym.presentation.Exercise
 import works.windmill.gym.presentation.Readout
 import works.windmill.gym.ui.GymType
 import works.windmill.platform.design.WindmillType
 import works.windmill.platform.telemetry.LocalTelemetry
 import works.windmill.platform.telemetry.Telemetry
+import works.windmill.gym.telemetry.coachAction
 
+// An answer: its words as they stand, the step line while it works, what it wrote, how the turn ended when it ended short, and what it read. `onSignIn` is the door under an answer a call needed the account for; `onKeep` the one under the routines a signed-out turn created. A retained answer says what it read only where `saysWhatItRead`. `withDetails` fills What Coach read's rows when its sheet opens.
 @Composable
 internal fun CoachAnswer(
     text: String,
-    receipt: AnswerReceipt?,
+    reply: CoachReply,
     catalog: List<Exercise>,
-    nowMs: Long,
-    legacyRead: ReadTally? = null,
-    legacySteps: List<AskStep> = emptyList(),
-    results: List<CoachResult> = emptyList(),
     onOpenRoutine: ((String) -> Unit)? = null,
     routineDrafts: List<CoachRoutineDraft> = emptyList(),
-    onConfirmRoutine: (suspend (CoachRoutineDraft) -> DraftOutcome)? = null,
-    hasProposals: Boolean = false,
-    onOpenWorkout: ((String) -> Unit)? = null,
-    copyText: String = text,
-    receiptInset: Dp = 0.dp,
+    onSaveDrafts: (suspend () -> DraftOutcome)? = null,
+    onSignIn: (() -> Unit)? = null,
+    onKeep: (() -> Unit)? = null,
+    saysWhatItRead: Boolean = true,
+    withDetails: suspend (List<CoachCall>) -> List<CoachCall> = { it },
     onSourcesTop: (Int?) -> Unit = {},
 ) {
     val colors = MaterialTheme.colorScheme
     val copyMenu = remember { CoachCopyMenu() }
-    val evidence = receipt?.takeIf { it.supported }
-    val readOnly = CoachSources.readOnly(evidence?.steps ?: legacySteps,
-        hasProposals || evidence?.proposals.orEmpty().isNotEmpty(), results.isNotEmpty(), routineDrafts.isNotEmpty())
-    Column(verticalArrangement = Arrangement.spacedBy(if (readOnly) 2.dp else 24.dp), modifier = Modifier.fillMaxWidth()) {
-        CoachText(text, copyText, copyMenu)
-        routineDrafts.filter { it.state == "pending" }.forEach { draft ->
-            key(draft.operationId) {
-                val scope = rememberCoroutineScope()
-                var busy by remember { mutableStateOf(false) }
-                var note by remember { mutableStateOf<String?>(null) }
-                var closed by remember { mutableStateOf(false) }
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = receiptInset).background(colors.surfaceContainer, RoundedCornerShape(20.dp)).padding(16.dp)) {
-                    Text("Review routine", style = WindmillType.supporting, color = colors.onSurfaceVariant)
-                    Text(draft.name, style = GymType.cardTitle, color = colors.onSurface)
-                    draft.entries.forEach { entry ->
-                        val exercise = catalog.firstOrNull { it.id == entry.exerciseId }
-                        val equipment = when (exercise?.equipment) {
-                            "bodyweight" -> "Bodyweight"
-                            "dumbbell" -> if (exercise.loadCount == 1) "One dumbbell" else "Two dumbbells"
-                            null -> "Equipment not available"
-                            else -> exercise.equipment.replaceFirstChar { it.uppercase() }
-                        }
-                        val basis = when (exercise?.equipment) {
-                            "dumbbell" -> if (exercise.loadCount == 1) "" else " each"
-                            "bodyweight" -> if (entry.sets.any { (it.weightKg ?: 0.0) < 0 }) " assisted" else " added"
-                            "barbell" -> " total"
-                            else -> ""
-                        }
-                        val scheme = Readout.target(entry.sets) + if (entry.sets.any { it.weightKg != null }) " kg$basis" else ""
-                        val rest = entry.restSeconds?.let { " · ${it}s rest" }.orEmpty()
-                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text(Readout.movement(entry.exerciseId, catalog), style = WindmillType.label, color = colors.onSurface)
-                            Text("$scheme · $equipment$rest", style = WindmillType.supporting, color = colors.onSurfaceVariant)
-                        }
-                    }
-                    note?.let { Text(it, style = WindmillType.supporting, color = colors.onSurfaceVariant) }
-                    if (!closed) CoachAction(if (busy) "Saving…" else "Save routine", primary = true, enabled = !busy && onConfirmRoutine != null, onClick = {
-                        if (!busy && onConfirmRoutine != null) {
-                            busy = true
-                            note = null
-                            scope.launch {
-                                try {
-                                    when (val saved = onConfirmRoutine(draft)) {
-                                        is DraftOutcome.Saved -> Unit
-                                        is DraftOutcome.Closed -> { note = saved.said; closed = true }
-                                        is DraftOutcome.Failed -> note = saved.said
-                                    }
-                                } finally { busy = false }
+    val ended = reply.state.isTerminal
+    val ending = Ask.ending(reply.state, reply.truncated, wordsArrived = reply.text.isNotBlank())
+    val seatDoor = onSignIn.takeIf { ended && reply.calls.any { it.seatRefused } }
+    val readLine = reply.readLine.takeIf { ended && saysWhatItRead }
+    val wrote = routineDrafts.isNotEmpty() || reply.routines.isNotEmpty() || reply.savedNotes.isNotEmpty() || reply.madeMovements.isNotEmpty()
+    // With nothing between them, what it read stands right under its words.
+    val readUnderWords = readLine.takeIf { ending == null && !wrote && seatDoor == null }
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+        if (!ended || text.isNotEmpty() || reply.text.isNotEmpty() || readUnderWords != null) Column(verticalArrangement = Arrangement.spacedBy(2.dp), modifier = Modifier.fillMaxWidth()) {
+            if (!ended && !reply.elsewhere && text.isEmpty()) CoachTyping()
+            CoachText(text, reply.text, copyMenu)
+            if (reply.elsewhere) AnsweringElsewhere()
+            else if (!ended) reply.stepLine?.let { CoachLine(it, "coach-step-line") }
+            readUnderWords?.let { CoachReadSources(it, reply.readRows, withDetails, onSourcesTop) }
+        }
+        seatDoor?.let { CoachAction("Sign in", it, primary = true) }
+        if (routineDrafts.isNotEmpty()) Column(verticalArrangement = Arrangement.spacedBy(24.dp), modifier = Modifier.padding(top = 12.dp).fillMaxWidth()) {
+            routineDrafts.forEachIndexed { index, draft ->
+                key(draft.operationId) {
+                    val scope = rememberCoroutineScope()
+                    var busy by remember { mutableStateOf(false) }
+                    var note by remember { mutableStateOf<String?>(null) }
+                    var closed by remember { mutableStateOf(false) }
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp),
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp).background(colors.surfaceContainer, RoundedCornerShape(20.dp)).padding(16.dp)) {
+                        Text("Review routine", style = WindmillType.supporting, color = colors.onSurfaceVariant)
+                        Text(draft.name, style = GymType.cardTitle, color = colors.onSurface)
+                        draft.entries.forEach { entry ->
+                            val exercise = catalog.firstOrNull { it.id == entry.exerciseId }
+                            val equipment = when (exercise?.equipment) {
+                                "bodyweight" -> "Bodyweight"
+                                "dumbbell" -> if (exercise.loadCount == 1) "One dumbbell" else "Two dumbbells"
+                                null -> "Equipment not available"
+                                else -> exercise.equipment.replaceFirstChar { it.uppercase() }
+                            }
+                            val basis = when (exercise?.equipment) {
+                                "dumbbell" -> if (exercise.loadCount == 1) "" else " each"
+                                "bodyweight" -> if (entry.sets.any { (it.weightKg ?: 0.0) < 0 }) " assisted" else " added"
+                                "barbell" -> " total"
+                                else -> ""
+                            }
+                            val scheme = Readout.target(entry.sets) + if (entry.sets.any { it.weightKg != null }) " kg$basis" else ""
+                            val rest = entry.restSeconds?.let { " · ${it}s rest" }.orEmpty()
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text(Readout.movement(entry.exerciseId, catalog), style = WindmillType.label, color = colors.onSurface)
+                                Text("$scheme · $equipment$rest", style = WindmillType.supporting, color = colors.onSurfaceVariant)
                             }
                         }
-                    })
+                        note?.let { Text(it, style = WindmillType.supporting, color = colors.onSurfaceVariant) }
+                        // One answer's drafts are one save: the door stands under the last of them.
+                        if (!closed && index == routineDrafts.lastIndex) CoachAction(if (busy) "Saving…" else "Save routine", primary = true, enabled = !busy && onSaveDrafts != null, onClick = {
+                            if (!busy && onSaveDrafts != null) {
+                                busy = true
+                                note = null
+                                scope.launch {
+                                    try {
+                                        when (val saved = onSaveDrafts()) {
+                                            DraftOutcome.Saved -> Unit
+                                            is DraftOutcome.Closed -> { note = saved.said; closed = true }
+                                            is DraftOutcome.Failed -> note = saved.said
+                                        }
+                                    } finally { busy = false }
+                                }
+                            }
+                        })
+                    }
                 }
             }
         }
-        results.filter { it.kind == "routine-created" }.distinctBy { it.operationId }.forEach { result ->
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxWidth().padding(horizontal = receiptInset).background(colors.surfaceContainer, RoundedCornerShape(20.dp)).padding(16.dp)) {
-                Text("Routine created", style = WindmillType.supporting, color = colors.onSurfaceVariant)
-                Text(result.routineName, style = GymType.headingCompact, color = colors.onSurface)
-                onOpenRoutine?.let { open -> CoachAction("Open routine", { open(result.routineId) }) }
-            }
+        if (reply.routines.isNotEmpty()) {
+            CreatedRoutines(reply.routines, onOpenRoutine)
+            onKeep?.let { KeepRoutines(it) }
         }
-        if (readOnly) {
-            (evidence?.read ?: legacyRead)?.let { tally ->
-                Box(Modifier.fillMaxWidth().padding(horizontal = receiptInset)) {
-                    CoachReadSources(tally, evidence, evidence?.steps ?: legacySteps, onOpenWorkout, onSourcesTop)
-                }
-            }
-        } else {
-            val focus = evidence?.workouts?.singleOrNull()
-            if (focus != null) Text("From your log", style = WindmillType.kicker, color = colors.onSurfaceVariant, modifier = Modifier.padding(horizontal = receiptInset))
-            listOfNotNull(focus).forEach { observation ->
-                val workout = requireNotNull(observation.workout)
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = receiptInset).background(colors.surfaceContainer, RoundedCornerShape(20.dp)).padding(16.dp),
+        reply.savedNotes.forEach { note -> key(note.id) { SavedNoteCard(note) } }
+        reply.madeMovements.forEach { movement -> key(movement.id) { MadeMovementCard(movement) } }
+        if (readUnderWords == null && (ending != null || readLine != null)) Column(Modifier.fillMaxWidth()) {
+            ending?.let { CoachLine(it, "coach-ending") }
+            readLine?.let { CoachReadSources(it, reply.readRows, withDetails, onSourcesTop) }
+        }
+    }
+}
+
+// A line under an answer, on the receipt's margin: the step line and how the turn ended. It stands over the receipt, whose touch reaches up across it and would hide it from the accessibility tree.
+@Composable
+private fun CoachLine(said: String, tag: String) {
+    Text(said, style = GymType.coachSourceLine, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.zIndex(1f).padding(start = 12.dp, top = 4.dp).testTag(tag))
+}
+
+// A running answer another device writes (Coach §4.5).
+@Composable
+private fun AnsweringElsewhere() {
+    val colors = MaterialTheme.colorScheme
+    val telemetry = LocalTelemetry.current
+    LaunchedEffect(Unit) { telemetry.coachAction("answering_elsewhere") }
+    Row(Modifier.fillMaxWidth().testTag("coach-answering-elsewhere"), horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically) {
+        Icon(painterResource(R.drawable.gym_coach_phone), null, Modifier.size(18.dp), tint = colors.onSurfaceVariant)
+        Text(Ask.answeringElsewhere, style = GymType.coachSourceLine, color = colors.onSurfaceVariant)
+    }
+}
+
+// One receipt per routine a turn created, each a door to its summary.
+@Composable
+private fun CreatedRoutines(routines: List<CreatedRoutine>, onOpen: ((String) -> Unit)?) {
+    val colors = MaterialTheme.colorScheme
+    Column(Modifier.fillMaxWidth().background(colors.surfaceContainer, RoundedCornerShape(20.dp)).padding(vertical = 8.dp)) {
+        routines.forEach { routine ->
+            key(routine.id) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)
+                        .clickable(enabled = onOpen != null, role = Role.Button, onClickLabel = "Open routine") { onOpen?.invoke(routine.id) }
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
                 ) {
-                    Text(
-                        "${observation.routine?.takeIf { it.isNotBlank() } ?: Readout.noRoutine} · ${Readout.shortDate(observation.startedAtMs, nowMs)}",
-                        style = WindmillType.kicker, color = colors.onSurfaceVariant,
-                    )
-                    val facts = listOfNotNull(
-                        "Sets" to workout.workingSetCount.toString(),
-                        "Volume" to (workout.tonnageKg?.let { "${Readout.weight(it)} kg" } ?: "—"),
-                        workout.durationMs?.let { "Duration" to if (it < 60_000) "<1 min" else "${it / 60_000} min" },
-                    )
-                    facts.forEach { (label, value) ->
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.Top) {
-                            Text(label, style = WindmillType.paragraph, color = colors.onSurfaceVariant, modifier = Modifier.weight(1f))
-                            Text(value, style = WindmillType.labelParagraph, color = colors.onSurface)
-                        }
+                    Icon(painterResource(R.drawable.gym_coach_check), null, Modifier.size(20.dp), tint = colors.primary)
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(routine.name, style = GymType.coachReceiptTitle, color = colors.onSurface)
+                        Text("Routine created · ${Readout.movementCount(routine.movements)}", style = GymType.coachDetail, color = colors.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
-                }
-            }
-            val tally = evidence?.read ?: legacyRead
-            if (tally != null) {
-                val phrases = Ask.steps(evidence?.steps ?: legacySteps, drafted = routineDrafts.isNotEmpty())
-                val observations = evidence?.observed.orEmpty()
-                val expandable = phrases.isNotEmpty() || observations.isNotEmpty()
-                var expanded by rememberSaveable { mutableStateOf(false) }
-                Column(Modifier.padding(horizontal = receiptInset), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).then(
-                            if (!expandable) Modifier else Modifier.semantics {
-                                stateDescription = if (expanded) "expanded" else "collapsed"
-                            }.clickable(role = Role.Button) { expanded = !expanded },
-                        ),
-                    ) {
-                        Text(Ask.receipt(tally).replaceFirstChar { it.uppercase() }, style = WindmillType.detail, color = colors.onSurfaceVariant, modifier = Modifier.weight(1f))
-                        if (expandable) Text(if (expanded) "−" else "+", color = colors.onSurfaceVariant)
-                    }
-                    if (expanded) {
-                        observations.forEach { fact ->
-                            val about = fact.routine?.takeIf { it.isNotBlank() } ?: Readout.noRoutine
-                            val scope = when (fact.coverage) {
-                                "movement" -> "${Readout.movement(requireNotNull(fact.exerciseId), catalog)} · ${Readout.setCount(fact.setsRead)} read"
-                                "session" -> "Workout · ${Readout.setCount(fact.setsRead)} read"
-                                else -> "Workout summary"
-                            }
-                            val totals = fact.workout?.takeIf { fact.wholeWorkout }?.let { " · ${Readout.setCount(it.workingSetCount)}" +
-                                (it.tonnageKg?.let { kg -> " · ${Readout.weight(kg)}kg" } ?: "") }.orEmpty()
-                            Text("$about · ${Readout.shortDate(fact.startedAtMs, nowMs)}\n$scope$totals", style = WindmillType.detail, color = colors.onSurfaceVariant)
-                        }
-                        phrases.forEach { phrase ->
-                            Text(phrase.replaceFirstChar { it.uppercase() }, style = WindmillType.detail, color = colors.onSurfaceVariant)
-                        }
-                    }
+                    Icon(painterResource(R.drawable.gym_coach_source_chevron), null, Modifier.size(20.dp), tint = colors.onSurfaceVariant)
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun KeepRoutines(onKeep: () -> Unit) {
+    val colors = MaterialTheme.colorScheme
+    Row(Modifier.padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(Ask.onlyOnThisPhone, style = GymType.coachSupporting, color = colors.onSurfaceVariant)
+        TextButton(onClick = onKeep, modifier = Modifier.heightIn(min = 48.dp), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)) {
+            Text(Ask.keepIt, style = GymType.coachAction, color = colors.primary)
+        }
+    }
+}
+
+// What Coach wrote besides answering: what it did, a hairline, and the record it wrote. `outlined` draws the card's edge.
+@Composable
+private fun WriteCard(did: String, outlined: Boolean, record: @Composable () -> Unit) {
+    val colors = MaterialTheme.colorScheme
+    val shape = RoundedCornerShape(20.dp)
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = Modifier.fillMaxWidth().background(colors.surfaceContainer, shape).then(if (outlined) Modifier.border(1.dp, colors.outline, shape) else Modifier).padding(16.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            Icon(painterResource(R.drawable.gym_coach_check), null, Modifier.size(20.dp), tint = colors.onSurfaceVariant)
+            Text(did, style = GymType.coachSourceTitle, color = colors.onSurfaceVariant)
+        }
+        Box(Modifier.fillMaxWidth().height(1.dp).background(colors.outlineVariant))
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) { record() }
+    }
+}
+
+@Composable
+private fun WriteBadge(icon: Int, said: String) {
+    val colors = MaterialTheme.colorScheme
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        Icon(painterResource(icon), null, Modifier.size(18.dp), tint = colors.primary)
+        Text(said, style = GymType.coachStrong, color = colors.primary)
+    }
+}
+
+@Composable
+private fun SavedNoteCard(note: SavedNote) {
+    WriteCard("Saved a note", outlined = false) {
+        WriteBadge(R.drawable.gym_coach_note, "Note")
+        Text(note.text, style = GymType.coachParagraph, color = MaterialTheme.colorScheme.onSurface)
+    }
+}
+
+// A movement Coach made: the movement as one Added change, every value new.
+@Composable
+private fun MadeMovementCard(movement: MadeMovement) {
+    WriteCard("Made a movement", outlined = true) {
+        WriteBadge(R.drawable.gym_native_add, "Added")
+        Text(movement.name, style = GymType.coachHeading, color = MaterialTheme.colorScheme.onSurface)
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            MadeField("Name", movement.name)
+            MadeField("Equipment", movement.equipment)
+            MadeField("Step", "${Readout.weight(movement.stepKg)} kg")
+        }
+    }
+}
+
+@Composable
+private fun MadeField(label: String, value: String) {
+    val colors = MaterialTheme.colorScheme
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text(label, style = GymType.coachParagraph, color = colors.onSurfaceVariant, modifier = Modifier.widthIn(min = 72.dp))
+        Text(value, style = GymType.button, color = colors.onSurface)
     }
 }
 
@@ -369,7 +429,7 @@ internal class CoachLinkHandler(
             copyMenu.selected = bubbleIndex
             "failed"
         }
-        telemetry.event("gym_action", mapOf("screen" to "coach", "action" to "open_link", "outcome" to outcome))
+        telemetry.coachAction("open_link", outcome)
     }
 }
 
@@ -383,22 +443,5 @@ internal fun CoachAction(label: String, onClick: () -> Unit, primary: Boolean = 
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick).padding(horizontal = 16.dp, vertical = 12.dp),
     ) {
         Text(label, style = WindmillType.label, color = if (primary) colors.onPrimary else colors.onSurface)
-    }
-}
-
-@Composable
-internal fun CoachProposalCard(routine: String, summary: String, count: String, onReview: () -> Unit) {
-    val colors = MaterialTheme.colorScheme
-    Column(
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-        modifier = Modifier.fillMaxWidth().background(colors.surfaceContainer, RoundedCornerShape(20.dp)).padding(16.dp),
-    ) {
-        Text("Proposal · $routine", style = WindmillType.kicker, color = colors.onSurfaceVariant)
-        Text(summary, style = GymType.proposalSummary, color = colors.onSurface)
-        Text(count, style = WindmillType.supportingParagraph, color = colors.onSurfaceVariant)
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).clickable(role = Role.Button, onClick = onReview).padding(12.dp),
-        ) { Text("Review", style = WindmillType.label, color = colors.onSurface) }
     }
 }

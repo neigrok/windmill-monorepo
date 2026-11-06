@@ -9,6 +9,8 @@ import org.junit.Assert.*
 import org.junit.Test
 import org.junit.Rule
 import org.junit.rules.TemporaryFolder
+import works.windmill.domain.kit.Outcome
+import works.windmill.gym.domain.coach.OpenTurn
 import works.windmill.gym.presentation.*
 import works.windmill.sync.api.*
 import works.windmill.sync.core.Json
@@ -23,6 +25,7 @@ import works.windmill.sync.engine.signIn
 import works.windmill.sync.engine.signOut
 import works.windmill.sync.engine.nextPush
 import works.windmill.sync.engine.onPushResponse
+import works.windmill.sync.engine.reidentify
 import works.windmill.sync.engine.RequestTiming
 import works.windmill.sync.engine.SyncResponse
 import works.windmill.sync.modelserver.Credential
@@ -43,6 +46,55 @@ class EngineTrainingTests {
     }
     private fun seedRoutine(engine: Engine) = seed(engine, Gym.Types.routine, "routine1", mapOf(
         "name" to Json.of("Original"), "position" to Json.of(2), "entries" to Json.parse("""[{"exerciseId":"bench-press","sets":[{"reps":8}],"restSeconds":90},{"exerciseId":"back-squat","sets":[{"reps":5,"weightKg":100}],"restSeconds":120},{"exerciseId":"deadlift","restSeconds":60}]""")))
+
+    // A turn's door: `writable`'s one rule, and the seat it was pinned to alone. Reads cross no more than writes do.
+    @Test fun aPinnedDoorHoldsToItsSeatAndTheAccountsAuthority() = runTest {
+        var permitted = true
+        suspend fun refused(work: suspend () -> Unit) = try { work(); false } catch (changed: TrainingRefused) { changed.code == "account-changed" }
+        val scope = ScopeRef(Gym.scope)
+        EngineRoomFixture(tmp.newFolder(), backgroundScope, writeAuthority = { permitted }).use { room ->
+            val door = room.training
+            val replica = room.engine.activeReplica()
+            fun messages() = room.engine.read(scope) { it.drawn(Gym.Types.message) }.size
+
+            permitted = false
+            assertFalse(door.mayWriteOn(ReplicaPin(replica, true)))
+            assertEquals(replica, door.pinnedOn(ReplicaPin(replica, true)) { runner -> runner.read(scope) { it.replica } })
+            assertTrue(refused { door.pinnedOn(ReplicaPin(replica, true)) { runner -> runner.run(OpenTurn(question = "Held")) } })
+            assertEquals(0, messages())
+
+            permitted = true
+            assertTrue(door.mayWriteOn(ReplicaPin(replica, true)))
+            assertFalse(door.mayWriteOn(ReplicaPin(replica, false)))
+            assertTrue(refused { door.pinnedOn(ReplicaPin(replica, false)) { runner -> runner.read(scope) { it.replica } } })
+            assertTrue(door.pinnedOn(ReplicaPin(replica, true)) { runner -> runner.run(OpenTurn(question = "Mine")) } is Outcome.Committed)
+            assertEquals(2, messages())
+
+            // A sign-in waiting on its decision closes the door: what it counted holds still.
+            val question = room.engine.signIn("account-1", mapOf("gym" to true))
+            assertFalse(question.member("complete").bool())
+            assertFalse(door.mayWriteOn(ReplicaPin(replica, true)))
+            assertTrue(refused { door.pinnedOn(ReplicaPin(replica, true)) { runner -> runner.read(scope) { it.replica } } })
+            assertTrue(refused { door.pinnedOn(ReplicaPin(replica, true)) { runner -> runner.run(OpenTurn(question = "Under the sheet")) } })
+
+            // The decision lands and the replica rebinds: the id stands, and the seat it opened under is over.
+            val pins = question.member("due").arr().associate { due -> due.member("product").str() to due.member("counted").arr().map(Json::str) }
+            assertTrue(room.engine.signIn("account-1", mapOf("gym" to true), mapOf("gym" to "add"), pins).member("complete").bool())
+            assertEquals(replica, room.engine.activeReplica())
+            assertFalse(door.mayWriteOn(ReplicaPin(replica, true)))
+            assertTrue(door.mayWriteOn(ReplicaPin(replica, false)))
+            assertTrue(refused { door.pinnedOn(ReplicaPin(replica, true)) { runner -> runner.read(scope) { it.replica } } })
+            assertTrue(refused { door.pinnedOn(ReplicaPin(replica, true)) { runner -> runner.run(OpenTurn(question = "Crossed")) } })
+
+            room.engine.reidentify()
+            val renamed = room.engine.activeReplica()
+            assertFalse(door.mayWriteOn(ReplicaPin(replica, false)))
+            assertTrue(door.mayWriteOn(ReplicaPin(renamed, false)))
+            assertTrue(refused { door.pinnedOn(ReplicaPin(replica, false)) { runner -> runner.read(scope) { it.replica } } })
+            assertEquals(renamed, door.pinnedOn(ReplicaPin(renamed, false)) { runner -> runner.read(scope) { it.replica } })
+            assertEquals(2, messages())
+        }
+    }
 
     @Test fun aNoteAcceptedAtTheStoreEntryCannotCommitAfterItsTransitionFenceCloses() = runTest {
         var permitted = true

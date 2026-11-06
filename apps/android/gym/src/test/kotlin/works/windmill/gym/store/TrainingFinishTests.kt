@@ -847,7 +847,7 @@ class TrainingFinishTests {
             room.select(null)
             val id = room.workout().id
             val saved = room.training.session(id)
-            val failing = EngineTraining(room.engine) { throw IOException("local-release-failed") }
+            val failing = EngineTraining(room.engine, writeAuthority = { throw IOException("local-release-failed") })
             assertTrue(runCatching { failing.discardSession(id) }.exceptionOrNull() is IOException)
             assertEquals(saved, room.training.session(id))
             assertEquals(emptyList<works.windmill.sync.api.UndoOffer>(), room.engine.undoOffers())

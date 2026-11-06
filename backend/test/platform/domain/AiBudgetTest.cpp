@@ -131,8 +131,8 @@ TEST(ai_budget_months_follow_utc_calendar_and_leap_years) {
 
 TEST(ai_budget_policy_has_exact_lifetime_free_and_funded_amounts) {
   const AiBudgetLimits limits;
-  CHECK_EQ(limits.anonymousLifetimeNanos, 50'000'000);
-  CHECK_EQ(limits.loggedInMonthlyNanos, 250'000'000);
+  CHECK_EQ(limits.anonymousLifetimeNanos, 250'000'000);
+  CHECK_EQ(limits.loggedInMonthlyNanos, 500'000'000);
   CHECK_EQ(limits.paidPeriodNanos, 7'000'000'000);
   CHECK_EQ(limits.freeMonthlyNanos, 100'000'000'000);
   CHECK_EQ(limits.freeDailyNanos, 5'000'000'000);
@@ -150,7 +150,7 @@ TEST(ai_budget_anonymous_allowance_is_lifetime_and_bound_devices_cannot_spend_ag
   AiBudgetSnapshot snapshot;
   snapshot.window = AiBudgetWindow::Lifetime;
   snapshot.period = AiBudgetPeriod::lifetime();
-  snapshot.subject = {40'000'000, 5'000'000, 0};
+  snapshot.subject = {240'000'000, 5'000'000, 0};
   const AiBudgetLimits limits;
   CHECK_EQ(admitAiBudget({"call", principal, 5'000'000, 0}, limits, snapshot), AiBudgetCode::Ok);
   CHECK_EQ(admitAiBudget({"call", principal, 5'000'001, 0}, limits, snapshot), AiBudgetCode::SubjectExhausted);
@@ -168,7 +168,7 @@ TEST(ai_budget_free_account_spend_and_holds_are_checked_with_both_shared_pools) 
   const AiBudgetPrincipal principal{{AiBudgetSubjectKind::Account, "account"}, AiBudgetTier::LoggedIn};
   AiBudgetSnapshot snapshot;
   snapshot.period = *AiBudgetPeriod::at(0);
-  snapshot.subject = {200'000'000, 20'000'000};
+  snapshot.subject = {450'000'000, 20'000'000};
   const AiBudgetLimits limits;
   CHECK_EQ(admitAiBudget({"call", principal, 30'000'000, 0}, limits, snapshot), AiBudgetCode::Ok);
   CHECK_EQ(admitAiBudget({"call", principal, 30'000'001, 0}, limits, snapshot), AiBudgetCode::SubjectExhausted);
@@ -186,6 +186,16 @@ TEST(ai_budget_free_account_spend_and_holds_are_checked_with_both_shared_pools) 
   const auto month = aiBudgetView(principal, 0, limits, snapshot);
   CHECK_EQ(month.code, AiBudgetCode::FreeMonthExhausted);
   CHECK_EQ(month.budgetResetsAtMs, month.resetsAtMs);
+}
+
+TEST(ai_budget_a_refusal_names_when_its_own_budget_returns_and_any_other_code_names_no_moment) {
+  const std::optional<long long> period{2'678'400'000};
+  CHECK_EQ(aiBudgetReturnsAt("free_day_exhausted", period, 1), std::optional<long long>{86'400'000});
+  CHECK_EQ(aiBudgetReturnsAt("free_month_exhausted", std::nullopt, 1), std::optional<long long>{2'678'400'000});
+  CHECK_EQ(aiBudgetReturnsAt("subject_exhausted", period, 1), period);
+  CHECK_EQ(aiBudgetReturnsAt("subject_exhausted", std::nullopt, 1), std::optional<long long>{});
+  CHECK_EQ(aiBudgetReturnsAt("concurrency_exhausted", period, 1), std::optional<long long>{});
+  CHECK_EQ(aiBudgetReturnsAt("coach-vendor-error", period, 1), std::optional<long long>{});
 }
 
 TEST(ai_budget_request_that_cannot_fit_personal_allowance_does_not_blame_shared_pools) {

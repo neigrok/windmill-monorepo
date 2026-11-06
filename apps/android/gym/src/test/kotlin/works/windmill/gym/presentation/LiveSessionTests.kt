@@ -76,6 +76,60 @@ class LiveOrderTests {
         assertEquals(listOf("romanian-deadlift"), order)
     }
 
+    private fun plan(vararg movements: String) = PlanSnapshot("Push A", movements.map { PlanEntry(it) })
+
+    @Test
+    fun aSwapTakesThePlaceOfWhatItReplaces() {
+        assertEquals(listOf("bench-press", "overhead-press", "floor-press", "fly", "dip"),
+            LiveOrder.replanned(listOf("bench-press", "overhead-press", "incline-press", "fly", "dip"),
+                plan("bench-press", "overhead-press", "incline-press", "fly", "dip"),
+                plan("bench-press", "overhead-press", "floor-press", "fly", "dip"), emptyList()))
+    }
+
+    @Test
+    fun aRetargetLeavesTheWalkTheLifterMadeAlone() {
+        val walked = listOf("overhead-press", "bench-press")
+        assertEquals(walked, LiveOrder.replanned(walked, plan("bench-press", "overhead-press"), plan("bench-press", "overhead-press"), emptyList()))
+    }
+
+    @Test
+    fun whatLeftThePlanStaysInTheWalkWhileASetStandsUnderIt() {
+        assertEquals(listOf("bench-press", "overhead-press"),
+            LiveOrder.replanned(listOf("bench-press", "overhead-press"), plan("bench-press", "overhead-press"), plan("bench-press"),
+                listOf(aSet("overhead-press", 40.0, 5, at = 1_000))))
+    }
+
+    @Test
+    fun aMovementWalkedBesideThePlanKeepsItsPlace() {
+        assertEquals(listOf("cable-fly", "bench-press", "floor-press"),
+            LiveOrder.replanned(listOf("cable-fly", "bench-press", "incline-press"), plan("bench-press", "incline-press"), plan("bench-press", "floor-press"), emptyList()))
+    }
+
+    @Test
+    fun aLineAddedFirstStandsFirst() {
+        assertEquals(listOf("floor-press", "bench-press"),
+            LiveOrder.replanned(listOf("bench-press"), plan("bench-press"), plan("floor-press", "bench-press"), emptyList()))
+    }
+
+    @Test
+    fun linesThePlanReorderedTradeThePlacesTheyHold() {
+        assertEquals(listOf("cable-fly", "overhead-press", "bench-press"),
+            LiveOrder.replanned(listOf("cable-fly", "bench-press", "overhead-press"), plan("bench-press", "overhead-press"), plan("overhead-press", "bench-press"), emptyList()))
+    }
+
+    @Test
+    fun aPlanThatNamesAMovementTwiceWalksItOnce() {
+        assertEquals(listOf("bench-press", "fly"),
+            LiveOrder.replanned(listOf("bench-press"), plan("bench-press", "bench-press"), plan("bench-press", "bench-press", "fly"), emptyList()))
+    }
+
+    @Test
+    fun theLifterStandsOnWhatTookTheMovementsPlaceOrOnTheLastThereIs() {
+        assertEquals("floor-press", LiveOrder.standing(listOf("bench-press", "incline-press", "fly"), "incline-press", listOf("bench-press", "floor-press", "fly")))
+        assertEquals("bench-press", LiveOrder.standing(listOf("bench-press", "incline-press"), "incline-press", listOf("bench-press")))
+        assertEquals(null, LiveOrder.standing(listOf("incline-press"), "incline-press", emptyList()))
+    }
+
     @Test
     fun testResumingStandsAtTheMovementTheLastSetWentInto() {
         val order = listOf("bench-press", "overhead-press", "cable-fly")

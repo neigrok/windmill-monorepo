@@ -11,6 +11,7 @@ import org.robolectric.annotation.SQLiteMode
 import works.windmill.sync.api.*
 import works.windmill.sync.core.*
 import works.windmill.sync.core.RecordID
+import works.windmill.sync.schema.SyncSchema
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], manifest = Config.NONE)
@@ -40,6 +41,42 @@ class AndroidSqliteTests {
             assertEquals(listOf("g1/0"), engine.releaseHeld(true))
         }
         open(file).use { assertFalse(it.read(scope) { reader -> reader.drawn("card", RecordID("card0001"))!!.isHeld }) }
+    }
+    // Opening parses every entry and notice under MAX_DEPTH, so a value the store could not read back would stop the app opening. The deepest a commit admits reads back as an entry, and as a dependent of a notice, the deepest form; one level more is refused and writes nothing.
+    @Test fun nothingACommitAdmitsIsTooDeepToReadBack() = database { file ->
+        val gym = SyncSchema.registry
+        val scope = ScopeRef.product("gym")
+        val replica = "rp_00000000000000000000000000000001"
+        val initial = Json.objectOf("active" to Json.of(replica), "replicas" to Json.array(freshReplica(replica).json()))
+        val message = RecordID("turnAAAAAAAAAAA1")
+        fun deep(depth: Int): Json = (0 until depth).fold(Json.of(1)) { inner, _ -> Json.objectOf("a" to inner) }
+        fun calls(depth: Int) = Gesture(listOf(Change.update("message", message, mapOf("calls" to deep(depth)))))
+        val deepest = Json.MAX_DEPTH - 8
+        AndroidSqlite.open(file, gym, initial, clock, ids, "actor").use { engine ->
+            engine.commit(scope, Gesture(listOf(Change.create("thread", NewID.Given(RecordID("thrdAAAAAAAAAAA1")), mapOf("title" to Json.of("q"))),
+                Change.create("message", NewID.Given(message), mapOf("threadId" to Json.of("thrdAAAAAAAAAAA1"), "role" to Json.of("coach"), "at" to Json.of(1), "text" to Json.of(""), "replica" to Json.of(replica)))),
+                atomic = true, gestureId = "open"))
+            val before = engine.snapshot()
+            assertEquals(CommitFailure.Kind.malformed, assertThrows(CommitFailure::class.java) { engine.commit(scope, calls(deepest + 1)) }.kind)
+            assertEquals(CommitFailure.Kind.malformed, assertThrows(CommitFailure::class.java) {
+                engine.commit(scope, Gesture(emptyList(), local = listOf(DeviceWrite("runningTurn", deep(Json.MAX_DEPTH + 1)))))
+            }.kind)
+            assertEquals(before, engine.snapshot())
+            assertTrue(engine.commit(scope, calls(deepest).copy(gestureId = "deep", local = listOf(DeviceWrite("runningTurn", deep(Json.MAX_DEPTH))))) is CommitOutcome.Committed)
+        }
+        AndroidSqlite.open(file, gym, initial, clock, ids, "actor").use { engine ->
+            assertEquals(Json.MAX_DEPTH, engine.read(scope) { it.device("runningTurn") }!!.depth)
+            engine.write { held ->
+                val opening = held.entries().first { it.gestureId == "open" }
+                opening.state = "sent"
+                engine.refuse(held, opening, "refuse", "invalid")
+            }
+            assertEquals(1, engine.device.current().notices.single().member("content").items("dependents").size)
+            assertEquals(Json.MAX_DEPTH, engine.device.current().notices.single().depth)
+        }
+        AndroidSqlite.open(file, gym, initial, clock, ids, "actor").use { engine ->
+            assertEquals(1, engine.device.current().notices.size)
+        }
     }
     @Test fun failingMetadataCommitRollsBackTheWriterAndReopenShowsNoPartialIntent() = database { file ->
         open(file).use { engine ->

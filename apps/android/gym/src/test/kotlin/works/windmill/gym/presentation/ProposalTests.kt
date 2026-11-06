@@ -8,9 +8,37 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import works.windmill.domain.kit.Id
+import works.windmill.gym.domain.sync.Exercise as DomainExercise
+import works.windmill.gym.domain.sync.ProposalDiff
+import works.windmill.gym.domain.sync.RoutineChange
+import works.windmill.gym.domain.sync.RoutineEntry as DomainEntry
+import works.windmill.gym.domain.sync.SetTarget as DomainTarget
 import works.windmill.platform.net.WindmillJson
 
 class ProposalTests {
+    // The sheet's own rows over random proposals: a count on the card is the rows it opens on, with a rename's row beside them.
+    @Test fun theCountIsTheRowsTheSheetDrawsOverRandomProposals() {
+        val random = java.util.Random(20261105)
+        val movements = (0 until 12).map { Id("movement$it", DomainExercise) }
+        repeat(2000) {
+            val base = List(1 + random.nextInt(8)) { DomainEntry(movements[random.nextInt(12)], listOf(DomainTarget(5, 60.0))) }
+            val proposed = base.filter { random.nextInt(5) > 0 }.toMutableList()
+            repeat(random.nextInt(3)) { proposed.add(random.nextInt(proposed.size + 1), DomainEntry(movements[random.nextInt(12)], listOf(DomainTarget(8, 40.0)))) }
+            for (at in proposed.indices) if (random.nextInt(5) == 0) proposed[at] = proposed[at].copy(sets = listOf(DomainTarget(3, 70.0)))
+            repeat(random.nextInt(3)) { if (proposed.size > 1) { val at = random.nextInt(proposed.size); proposed.add(random.nextInt(proposed.size), proposed.removeAt(at)) } }
+            val lines = RoutineChange.between(base, proposed)
+            val moves = ProposalDiff.moves(lines, base)
+            val renamed = random.nextBoolean()
+            val drawn = Proposal(id = "prop_1", routineId = "rt_1", baseName = "Push A", name = if (renamed) "Push B" else "Push A",
+                changeCount = RoutineChange.count(base, lines) + if (renamed) 1 else 0,
+                changes = lines.mapIndexed { index, line -> ProposalChange(index + 1, ChangeKind.parse(line.kind), line.exerciseId.record.string!!,
+                    order = moves[index]?.field?.let { FieldMove(it.label, it.before.orEmpty(), it.after.orEmpty()) }) })
+            assertEquals("$lines", drawn.drawn.size + if (drawn.renames) 1 else 0, drawn.changeCount)
+            assertEquals("$lines", drawn.document.filterIsInstance<DocumentRow.Changed>().size + if (drawn.renames) 1 else 0, drawn.changeCount)
+        }
+    }
+
     private val zone: ZoneId = ZoneId.systemDefault()
     private val nowMs = LocalDate.parse("2025-08-01").atStartOfDay(zone).plusHours(12)
         .toInstant().toEpochMilli()
@@ -39,6 +67,27 @@ class ProposalTests {
         summary = "Four weeks of heavier bench triples.", changeCount = changeCount,
         createdAtMs = yesterdayMs, settledAtMs = settledAtMs, source = source,
         baseRevision = baseRevision, baseName = baseName, name = name, changes = changes)
+
+    // A kept movement that moved is a row where it lands; only what stands is counted among the unchanged (08.71).
+    @Test fun aMovedMovementIsARowWhereItLandsAndTheCountOfWhatStandsLeavesItOut() {
+        val moved = ProposalChange(1, ChangeKind.Kept, "overhead-press", targets(3, 6), targets(3, 6), order = FieldMove("Order", "3rd", "1st"))
+        val stood = listOf("bench-press", "cable-fly").mapIndexed { at, id -> ProposalChange(at + 2, ChangeKind.Kept, id, targets(3, 8), targets(3, 8)) }
+        val added = ProposalChange(4, ChangeKind.Added, "dips", null, targets(3, 8))
+        val changed = ProposalChange(5, ChangeKind.Retargeted, "triceps-pushdown", targets(3, 8), targets(4, 8))
+        val whole = proposal(listOf(moved) + stood + listOf(added, changed), changeCount = 3)
+        assertEquals(listOf(DocumentRow.Changed(moved), DocumentRow.Unchanged(stood), DocumentRow.Changed(added), DocumentRow.Changed(changed)), whole.document)
+        assertEquals(listOf(DocumentRow.Changed(moved), DocumentRow.Changed(changed), DocumentRow.Changed(added), DocumentRow.Unchanged(stood)), whole.changesFirst)
+        assertEquals(listOf(moved, added, changed), whole.drawn)
+        assertEquals("and 2 lines unchanged", DocumentRow.Unchanged(stood).label)
+        assertEquals("3 changes", whole.counted)
+    }
+
+    // A place is read against the base where it is read; a stored proposal carries none of it.
+    @Test fun aMoveIsNeverStoredWithTheProposal() {
+        val moved = ProposalChange(1, ChangeKind.Kept, "overhead-press", targets(3, 6), targets(3, 6), order = FieldMove("Order", "3rd", "1st"))
+        val stored = WindmillJson.decodeFromString<ProposalChange>(WindmillJson.encodeToString(moved))
+        assertEquals(moved.copy(order = null), stored)
+    }
 
     @Test
     fun testARoutineCarriesItsRevisionAndTheCardWaitingOnIt() {
@@ -294,11 +343,11 @@ class ProposalTests {
 
         val gone = ProposalChange(position = 4, kind = ChangeKind.Removed, exerciseId = "cable-fly",
             before = targets(3, 12, 22.5), loggedSets = 41)
-        assertEquals("removed from the routine · 41 logged sets kept", gone.removedLine)
-        assertEquals("removed from the routine · 1 logged set kept", gone.copy(loggedSets = 1).removedLine)
-        assertEquals("removed from the routine · never logged", gone.copy(loggedSets = 0).removedLine)
+        assertEquals("removed from the routine · 41 logged sets kept", gone.removedLine())
+        assertEquals("removed from the routine · 1 logged set kept", gone.copy(loggedSets = 1).removedLine())
+        assertEquals("removed from the routine · never logged", gone.copy(loggedSets = 0).removedLine())
         assertEquals("a count the log did not send is not a zero", "removed from the routine",
-            gone.copy(loggedSets = null).removedLine)
+            gone.copy(loggedSets = null).removedLine())
     }
 
     @Test
@@ -411,5 +460,65 @@ class ProposalTests {
         assertEquals(ProposalIntent.Remove, whole.intent)
         assertEquals("Push B", whole.routineName)
         assertTrue(whole.summary.isEmpty())
+    }
+
+    private fun workoutProposal(changes: List<ProposalChange>, state: ProposalState = ProposalState.Pending) = Proposal(
+        id = "wp_1", routineId = "session_1", state = state, changeCount = changes.count { it.kind != ChangeKind.Kept },
+        baseName = Proposal.workoutWord, changes = changes, target = ProposalTarget.Workout)
+
+    private val swap = listOf(
+        ProposalChange(1, ChangeKind.Kept, "bench-press", targets(3, 5), targets(3, 5)),
+        ProposalChange(2, ChangeKind.Added, "floor-press", after = targets(3, 10, 20.0)),
+        ProposalChange(3, ChangeKind.Kept, "fly", targets(3, 12), targets(3, 12)),
+        ProposalChange(4, ChangeKind.Removed, "incline-press", before = targets(3, 8), loggedSets = 0),
+    )
+
+    @Test
+    fun aWorkoutProposalIsAddressedToThisWorkoutInEveryLine() {
+        val proposal = workoutProposal(swap)
+        assertEquals("This workout", proposal.subject)
+        assertEquals("2 changes to this workout.", proposal.summaryLine(proposal.routineName))
+        assertEquals("Apply all 2", proposal.applyLabel)
+        assertEquals("All two or none. Nothing is applied until you tap.", proposal.atomicLine)
+        assertEquals("removed from this workout · never logged", swap[3].removedLine(proposal.within))
+        assertEquals("Applied · this workout · 2 changes", workoutProposal(swap, ProposalState.Applied).receipt)
+        assertEquals("Turned down · nothing changed.", workoutProposal(swap, ProposalState.Dismissed).receipt)
+    }
+
+    @Test
+    fun aRoutineProposalStillSpeaksOfTheRoutine() {
+        val routine = proposal(swap)
+        assertEquals("Push A", routine.subject)
+        assertEquals("removed from the routine · never logged", swap[3].removedLine(routine.within))
+        assertEquals("− removed from the routine · never logged", swap[3].compactLine)
+    }
+
+    @Test
+    fun aMovementLoggedSinceSaysItsSetsStayRatherThanNeverLogged() {
+        assertEquals("removed from this workout · 2 logged sets kept", swap[3].copy(loggedSets = 2).removedLine(Proposal.workoutWord))
+    }
+
+    @Test
+    fun aWorkoutsSheetReadsWhatChangesFirstThenOneCountOfWhatStands() {
+        val retargeted = ProposalChange(5, ChangeKind.Retargeted, "dip", targets(3, 8), targets(3, 6))
+        assertEquals(listOf(
+            DocumentRow.Changed(retargeted), DocumentRow.Changed(swap[3]), DocumentRow.Changed(swap[1]),
+            DocumentRow.Unchanged(listOf(swap[0], swap[2])),
+        ), workoutProposal(swap + retargeted).changesFirst)
+        assertEquals("and 2 lines unchanged", (workoutProposal(swap).changesFirst.last() as DocumentRow.Unchanged).label)
+    }
+
+    @Test
+    fun aChangeThatKeepsNothingEndsOnItsChanges() {
+        assertEquals(listOf(DocumentRow.Changed(swap[3]), DocumentRow.Changed(swap[1])), workoutProposal(listOf(swap[1], swap[3])).changesFirst)
+    }
+
+    @Test
+    fun whyAProposalIsOutOfDateSaysOneCauseThenThatNothingWasApplied() {
+        assertEquals("A newer suggestion replaced this one. Nothing was applied.", Proposal.outOfDateLine("replaced", null))
+        assertEquals("This workout changed after this suggestion. Nothing was applied.", Proposal.outOfDateLine("workout-changed", null))
+        assertEquals("This workout has finished. Nothing was applied.", Proposal.outOfDateLine("workout-finished", null))
+        assertEquals("You logged Incline Dumbbell Press since this suggestion. Nothing was applied.", Proposal.outOfDateLine("workout-moved", "Incline Dumbbell Press"))
+        assertEquals("You logged a movement since this suggestion. Nothing was applied.", Proposal.outOfDateLine("workout-moved", null))
     }
 }

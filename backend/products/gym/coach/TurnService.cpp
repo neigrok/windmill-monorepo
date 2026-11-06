@@ -3,6 +3,7 @@
 #include "platform/adapters/json/AiBudgetJson.h"
 #include "platform/adapters/json/JsonText.h"
 #include "platform/adapters/llm/AgentLoop.h"
+#include "platform/application/WriteObservation.h"
 #include "products/gym/adapters/llm/AnthropicAsk.h"
 #include "products/gym/coach/PhoneToolHost.h"
 
@@ -10,8 +11,12 @@
 
 #include <algorithm>
 #include <chrono>
+#include <deque>
 #include <exception>
+#include <iterator>
+#include <optional>
 #include <utility>
+#include <vector>
 
 namespace wm::gym::coach {
 
@@ -65,20 +70,46 @@ std::string tally(const std::map<std::string, int>& counts) {
   return out.empty() ? "-" : out;
 }
 
+// §6.5's allowance codes: the `error` frames that carry the seat's allowance, so a phone can tell a
+// balance that is gone from a round that did not fit a positive one (§7.1).
+bool isAllowanceCode(const std::string& code) {
+  for (const AiBudgetCode allowance : {AiBudgetCode::SubjectExhausted, AiBudgetCode::FreeDayExhausted, AiBudgetCode::FreeMonthExhausted,
+                                       AiBudgetCode::ConcurrencyExhausted, AiBudgetCode::FundingRequired, AiBudgetCode::DebtOutstanding})
+    if (code == aiBudgetCodeName(allowance)) return true;
+  return false;
+}
+
+// A turn lingers for TURN_LINGER after it ends, and a tombstone for TURN_LINGER after its Stop.
+bool lingerPassed(std::uint64_t sinceMs, std::uint64_t nowMs) {
+  const auto linger = static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(kTurnLinger).count());
+  return sinceMs + linger <= nowMs;
+}
+
+bool lingerPassed(const Turn& turn, std::uint64_t nowMs) {
+  const std::optional<std::uint64_t> endedAt = turn.endedAtMs();
+  return endedAt && lingerPassed(*endedAt, nowMs);
+}
+
 }  // namespace
 
-TurnService::TurnService(std::shared_ptr<CoachModel> model, const AbilityCatalog& catalog, ToolHost& server,
+TurnService::TurnService(std::shared_ptr<CoachModel> model, const AbilityCatalog& catalog, ToolHost& server, GymWriteDoor& door,
                          Entitlements& entitlements, std::shared_ptr<AiInstallations> installations, Clock& clock,
                          int maxOutputTokens, std::shared_ptr<FailureReporter> failures,
                          std::chrono::milliseconds resultTimeout)
-    : model_(std::move(model)), catalog_(catalog), server_(server), entitlements_(entitlements),
+    : model_(std::move(model)), catalog_(catalog), server_(server), door_(door), entitlements_(entitlements),
       installations_(std::move(installations)), clock_(clock), maxOutputTokens_(maxOutputTokens),
       failures_(std::move(failures)), resultTimeout_(resultTimeout) {}
 
 TurnService::~TurnService() { stop(); }
 
+void TurnService::start() {
+  const auto period = static_cast<double>(kTurnSweep.count());
+  sweeper_.start(period, period, [this] { sweep(); });
+}
+
 void TurnService::stop() {
   stopping_ = true;
+  sweeper_.stop();
   {
     std::lock_guard lock(registryMutex_);
     for (auto& [id, turn] : turns_) turn->requestStop();
@@ -88,70 +119,120 @@ void TurnService::stop() {
 
 bool TurnService::configured() const { return model_ && model_->configured(); }
 
-void TurnService::sweep(std::uint64_t nowMs) {
-  const auto linger = static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(kTurnLinger).count());
-  for (auto entry = turns_.begin(); entry != turns_.end();) {
-    const std::optional<std::uint64_t> endedAt = entry->second->endedAtMs();
-    if (endedAt && *endedAt + linger <= nowMs) entry = turns_.erase(entry);
-    else ++entry;
+void TurnService::sweep() {
+  const std::uint64_t now = clock_.nowMs();
+  std::vector<std::shared_ptr<Turn>> passed;
+  {
+    std::lock_guard lock(registryMutex_);
+    for (const auto& [id, turn] : turns_)
+      if (lingerPassed(*turn, now)) passed.push_back(turn);
+    for (auto stops = tombstones_.begin(); stops != tombstones_.end();) {
+      std::deque<Tombstone>& left = stops->second;
+      while (!left.empty() && lingerPassed(left.front().stoppedAtMs, now)) left.pop_front();
+      stops = left.empty() ? tombstones_.erase(stops) : std::next(stops);
+    }
+  }
+  for (const std::shared_ptr<Turn>& turn : passed) {
+    const MessageEnding ending = endMessage(*turn);
+    std::lock_guard lock(registryMutex_);
+    if (ending == MessageEnding::busy) continue;
+    if (ending == MessageEnding::failed && ++interruptFailures_[turn->id()] < kInterruptAttempts) continue;
+    if (ending == MessageEnding::failed) LOG_WARN << "coach_turn_interrupt_abandoned turn=" << turn->id() << " attempts=" << kInterruptAttempts;
+    interruptFailures_.erase(turn->id());
+    const auto held = turns_.find(turn->id());
+    if (held != turns_.end() && held->second == turn) turns_.erase(held);
   }
 }
 
-std::string TurnService::allowanceRefusal(const TurnPrincipal& principal, const std::string& turnId) const {
+TurnService::MessageEnding TurnService::endMessage(const Turn& turn) const {
+  const TurnPrincipal& principal = turn.principal();
+  if (principal.seat != Seat::bound) return MessageEnding::ended;
+  WriteObservation observation("gym.coach_turn.interrupt", "gym", "background", "", failures_.get());
+  WriteContext context(observation);
+  try {
+    if (!door_.interrupt(principal.account->id, turn.id())) {
+      observation.skip();
+      return MessageEnding::ended;
+    }
+    observation.finish();
+    LOG_INFO << "coach_turn_interrupted turn=" << turn.id() << " request_id=" << observation.requestId();
+    return MessageEnding::ended;
+  } catch (const GymUnavailable& refused) {
+    observation.finish(refused.code);
+    return refused.code == "gym-engine-busy" ? MessageEnding::busy : MessageEnding::ended;
+  } catch (const std::exception& error) {
+    observation.fail(error);
+  } catch (...) {
+    observation.failUnknown();
+  }
+  return MessageEnding::failed;
+}
+
+std::shared_ptr<Turn> TurnService::standing(const std::string& turnId, std::uint64_t nowMs) const {
+  const auto seen = turns_.find(turnId);
+  if (seen == turns_.end() || lingerPassed(*seen->second, nowMs)) return nullptr;
+  return seen->second;
+}
+
+std::optional<TurnAdmission> TurnService::seenBefore(const TurnPrincipal& principal, const TurnOpen& open, std::uint64_t nowMs) const {
+  if (const std::shared_ptr<Turn> held = standing(open.turnId, nowMs)) {
+    if (held->principal().id() != principal.id() || held->open().digest != open.digest) return TurnAdmission{nullptr, false, "coach-turn-conflict"};
+    return TurnAdmission{held, true, {}};
+  }
+  const auto stops = tombstones_.find(principal.id());
+  if (stops == tombstones_.end()) return std::nullopt;
+  const bool stopped = std::any_of(stops->second.begin(), stops->second.end(), [&](const Tombstone& left) {
+    return left.turnId == open.turnId && !lingerPassed(left.stoppedAtMs, nowMs);
+  });
+  if (!stopped) return std::nullopt;
+  return TurnAdmission{nullptr, false, "coach-turn-stopped"};
+}
+
+TurnAdmission TurnService::allowanceRefusal(const TurnPrincipal& principal, const std::string& turnId) const {
   if (principal.seat == Seat::anon) {
-    if (!installations_ || !principal.installation) return "anonymous_ai_unavailable";
+    if (!installations_ || !principal.installation) return {nullptr, false, "anonymous_ai_unavailable"};
     switch (installations_->admitGeneration(*principal.installation, turnId, principal.address)) {
       case AiInstallationCode::Ok:
       case AiInstallationCode::Replay: break;
-      case AiInstallationCode::RateLimited: return "coach-rate-limited";
-      case AiInstallationCode::DeviceBound: return "device_bound";
-      case AiInstallationCode::Unavailable: return "anonymous_ai_unavailable";
-      case AiInstallationCode::Invalid: return "coach-bad-request";
+      case AiInstallationCode::RateLimited: return {nullptr, false, "coach-rate-limited"};
+      case AiInstallationCode::DeviceBound: return {nullptr, false, "device_bound"};
+      case AiInstallationCode::Unavailable: return {nullptr, false, "anonymous_ai_unavailable"};
+      case AiInstallationCode::Invalid: return {nullptr, false, "coach-bad-request"};
     }
-    const AiBudgetView view = installations_->allowance(*principal.installation);
-    if (view.code != AiBudgetCode::Ok) return std::string(aiBudgetCodeName(view.code));
-    return {};
+  }
+  if (const std::optional<AiBudgetView> view = seatAllowance(principal)) {
+    if (view->code == AiBudgetCode::Ok) return {};
+    return {nullptr, false, std::string(aiBudgetCodeName(view->code)), aiAllowanceJson(*view)};
   }
   const User& account = *principal.account;
-  if (entitlements_.aiAllowancesEnabled()) {
-    const AiBudgetView view = entitlements_.aiAllowanceView(account.id, account.email.value);
-    if (view.code != AiBudgetCode::Ok) return std::string(aiBudgetCodeName(view.code));
-    return {};
-  }
-  if (!entitlements_.aiAllowanceFor(account.id, account.email.value).allows()) return "subject_exhausted";
+  if (!entitlements_.aiAllowanceFor(account.id, account.email.value).allows()) return {nullptr, false, "subject_exhausted"};
   return {};
 }
 
-Json::Value TurnService::allowance(const TurnPrincipal& principal) const {
+std::optional<AiBudgetView> TurnService::seatAllowance(const TurnPrincipal& principal) const {
   if (principal.seat == Seat::anon) {
-    if (!installations_ || !principal.installation) return Json::Value();
-    return aiAllowanceJson(installations_->allowance(*principal.installation));
+    if (!installations_ || !principal.installation) return std::nullopt;
+    return installations_->allowance(*principal.installation);
   }
-  if (!entitlements_.aiAllowancesEnabled()) return Json::Value();
-  return aiAllowanceJson(entitlements_.aiAllowanceView(principal.account->id, principal.account->email.value));
+  if (!entitlements_.aiAllowancesEnabled()) return std::nullopt;
+  return entitlements_.aiAllowanceView(principal.account->id, principal.account->email.value);
 }
 
 TurnAdmission TurnService::open(const TurnPrincipal& principal, TurnOpen open) {
   const std::uint64_t now = clock_.nowMs();
   {
     std::lock_guard lock(registryMutex_);
-    sweep(now);
-    const auto seen = turns_.find(open.turnId);
-    if (seen != turns_.end()) {
-      const Turn& held = *seen->second;
-      if (held.principal().id() != principal.id() || held.open().digest != open.digest) return {nullptr, false, "coach-turn-conflict"};
-      return {seen->second, true, {}};
-    }
+    if (const std::optional<TurnAdmission> seen = seenBefore(principal, open, now)) return *seen;
   }
   if (!configured()) return {nullptr, false, "coach-busy"};
-  std::string refusal;
+  TurnAdmission refused;
   try {
-    refusal = allowanceRefusal(principal, open.turnId);
+    refused = allowanceRefusal(principal, open.turnId);
   } catch (const std::exception&) {
     if (failures_) failures_->report("gym", "coach_turn.open", "allowance unavailable");
-    refusal = "ai_accounting_unavailable";
+    refused.code = "ai_accounting_unavailable";
   }
-  if (!refusal.empty()) return {nullptr, false, refusal};
+  if (!refused.code.empty()) return refused;
 
   // The open takes the first round's vendor slot; `run` releases it when that round ends.
   if (live_.fetch_add(1) >= kMaxLiveTurns) {
@@ -165,13 +246,10 @@ TurnAdmission TurnService::open(const TurnPrincipal& principal, TurnOpen open) {
   auto turn = std::make_shared<Turn>(principal, std::move(open), now);
   {
     std::lock_guard lock(registryMutex_);
-    const auto seen = turns_.find(turn->id());
-    if (seen != turns_.end()) {
+    if (const std::optional<TurnAdmission> seen = seenBefore(principal, turn->open(), now)) {
       vendorRounds_.release();
       --live_;
-      const Turn& held = *seen->second;
-      if (held.principal().id() != principal.id() || held.open().digest != turn->open().digest) return {nullptr, false, "coach-turn-conflict"};
-      return {seen->second, true, {}};
+      return *seen;
     }
     turns_[turn->id()] = turn;
   }
@@ -187,10 +265,24 @@ TurnAdmission TurnService::open(const TurnPrincipal& principal, TurnOpen open) {
 
 std::shared_ptr<Turn> TurnService::find(const TurnPrincipal& principal, const std::string& turnId) {
   std::lock_guard lock(registryMutex_);
-  sweep(clock_.nowMs());
-  const auto seen = turns_.find(turnId);
-  if (seen == turns_.end() || seen->second->principal().id() != principal.id()) return nullptr;
-  return seen->second;
+  const std::shared_ptr<Turn> held = standing(turnId, clock_.nowMs());
+  if (!held || held->principal().id() != principal.id()) return nullptr;
+  return held;
+}
+
+std::shared_ptr<Turn> TurnService::stop(const TurnPrincipal& principal, const std::string& turnId) {
+  const std::uint64_t now = clock_.nowMs();
+  std::lock_guard lock(registryMutex_);
+  const std::shared_ptr<Turn> held = standing(turnId, now);
+  if (held && held->principal().id() == principal.id()) {
+    held->requestStop();
+    return held;
+  }
+  std::deque<Tombstone>& left = tombstones_[principal.id()];
+  std::erase_if(left, [&](const Tombstone& tombstone) { return tombstone.turnId == turnId; });
+  left.push_back({turnId, now});
+  if (left.size() > kTombstonesPerPrincipal) left.pop_front();
+  return nullptr;
 }
 
 void TurnService::run(const std::shared_ptr<Turn>& turn) {
@@ -282,14 +374,16 @@ void TurnService::run(const std::shared_ptr<Turn>& turn) {
   }
 
   if (slotHeld) vendorRounds_.release();  // a turn stopped before its first call still holds the open's slot
-  Json::Value allowed;
+  std::optional<AiBudgetView> seat;
   try {
-    allowed = allowance(principal);
+    seat = seatAllowance(principal);
   } catch (const std::exception&) {
     if (failures_) failures_->report("gym", "coach_turn.loop", "allowance unavailable after the turn");
   }
   --live_;  // the turn leaves the count before the stream hears the end, so a waiting open finds room
-  turn->end(state, truncated, allowed, errorCode, clock_.nowMs());
+  const std::uint64_t endedAt = clock_.nowMs();
+  if (state == TurnState::failed) turn->fail(errorCode, aiBudgetReturnsAt(errorCode, seat ? seat->resetsAtMs : std::nullopt, endedAt), seat && isAllowanceCode(errorCode) ? aiAllowanceJson(*seat) : Json::Value(), endedAt);
+  else turn->end(state, truncated, seat ? aiAllowanceJson(*seat) : Json::Value(), endedAt);
 
   const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started);
   LOG_INFO << "coach_turn turn=" << turn->id() << " seat=" << std::string(nameOf(principal.seat)) << " state=" << std::string(nameOf(state))

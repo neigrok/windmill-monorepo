@@ -1,6 +1,6 @@
 # Coach conversation contract
 
-This is the server Coach that Android and the web speak; iOS runs Coach turns on the phone over the turn routes of [Gym Coach on the client](foundation/mobile/gym_coach.md). The `/v1/gym/ask` JSON route accepts `{thread, question, requestId, purpose?, routineReview?}`. Questions are at most 8,000 UTF-8 bytes; invalid UTF-8 and NUL bytes are refused. `purpose` is `conversation` by default or `routine_setup`; setup clients keep that purpose on subsequent turns in the same setup conversation. An omitted purpose inherits the stored purpose on a retry, so older clients can reopen setup exchanges. An explicitly supplied purpose is immutable on a request retry and is emitted on generations and history turns only when it is `routine_setup`. `requestId` is a client-minted 8–64 character ASCII identifier containing letters, digits, `_` or `-`. Persist it with the draft before sending and reuse it, the same thread and the same question after a timeout, reconnect or retry. A different question requires a different request ID. Clients without `requestId` remain accepted; each legacy request is a new generation and cannot recover an ambiguous submission by identity. `routineReview` is a boolean: a client that renders routine drafts and their Save routine control sends `true` on every ask, retries included. The generation keeps the value its request created it with, and a generation without it is never offered `create_routine`; its prompt says new routines are not saved from that app version and the lifter can update the app or build the routine in Routines. A non-boolean value is `400`.
+This is the server Coach that the web speaks; iOS and Android run Coach turns on the phone over the turn routes of [Gym Coach on the client](foundation/mobile/gym_coach.md). The `/v1/gym/ask` JSON route accepts `{thread, question, requestId, purpose?, routineReview?}`. Questions are at most 8,000 UTF-8 bytes; invalid UTF-8 and NUL bytes are refused. `purpose` is `conversation` by default or `routine_setup`; setup clients keep that purpose on subsequent turns in the same setup conversation. An omitted purpose inherits the stored purpose on a retry, so older clients can reopen setup exchanges. An explicitly supplied purpose is immutable on a request retry and is emitted on generations and history turns only when it is `routine_setup`. `requestId` is a client-minted 8–64 character ASCII identifier containing letters, digits, `_` or `-`. Persist it with the draft before sending and reuse it, the same thread and the same question after a timeout, reconnect or retry. A different question requires a different request ID. Clients without `requestId` remain accepted; each legacy request is a new generation and cannot recover an ambiguous submission by identity. `routineReview` is a boolean: a client that renders routine drafts and their Save routine control sends `true` on every ask, retries included. The generation keeps the value its request created it with, and a generation without it is never offered `create_routine`; its prompt says new routines are not saved from that app version and the lifter can update the app or build the routine in Routines. A non-boolean value is `400`.
 
 A completed reply contains `answer`, `steps`, `read`, `proposals`, `thread`, `receipt`, `generation` and `results`. `generation` contains `id`, `requestId`, `question`, `status` (`running`, `completed`, `failed`, `stopped`), `answer`, `at` (the original question acceptance time in epoch milliseconds), `steps`, optional `receipt`, and `results`. A result has `{kind:"routine-created", operationId, routineId, routineName, movementCount?}`. `movementCount` counts entries in the durable original creation document; it is absent on older receipts. These values are server-observed durable facts, including when answer generation fails after creating a routine. Open a result using the routine route and handle a routine that was subsequently deleted.
 
@@ -103,10 +103,10 @@ The installation-scoped API supports dialogue and routine drafts before sign-in.
 seed exercise catalog, makes one bounded model call, and returns an assistant message with optional
 validated routine drafts. It
 does not create an account, a Coach conversation, a server routine or a stored photo. Account Coach,
-history, attachments and account tools still require account authentication. Android uses this
-installation-scoped dialogue while anonymous access is available. Signed out, iOS holds the whole conversation as phone turns
-([gym_coach.md](foundation/mobile/gym_coach.md)), and keeps the onboarding answers earlier
-versions stored so that their drafts can still be saved.
+history, attachments and account tools still require account authentication. Neither phone's source starts
+this installation-scoped dialogue: signed out, iOS and Android hold the whole conversation as phone turns
+([gym_coach.md](foundation/mobile/gym_coach.md)), and keep the onboarding answers earlier builds stored so
+that their drafts can still be saved. The published Android 0.14.0 still starts it.
 
 Obtain a credential from `POST /v1/ai/installations` with `{}` and retain its opaque `credential`.
 Send it as `X-Windmill-Installation` on the following requests. Malformed or conflicting account
@@ -161,7 +161,7 @@ or another installation's request. Both routes return this shape with private/no
   "message":"Here is a draft to review before saving.",
   "routines":[{"name":"Push","entries":[{"exerciseId":"bench-press","sets":[{"reps":8,"weightKg":null}],"restSeconds":120}]}],
   "errorCode":null,
-  "allowance":{"code":"ok","currency":"USD","period":"lifetime","tier":"anonymous","configured":true,"limit":"0.050000000","used":"0.012000000","reserved":"0.000000000","remaining":"0.038000000","resetsAtMs":null,"budgetResetsAtMs":null}
+  "allowance":{"code":"ok","currency":"USD","period":"lifetime","tier":"anonymous","configured":true,"limit":"0.250000000","used":"0.012000000","reserved":"0.000000000","remaining":"0.238000000","resetsAtMs":null,"budgetResetsAtMs":null}
 }
 ```
 
@@ -186,7 +186,7 @@ an empty `sets` array means the source omitted a set count. Unreadable, unsuppor
 programs return `insufficient_details`; incomplete model output returns `output_truncated` without
 partial routines. Domain validation rejects invented IDs, duplicate exercises and malformed values.
 
-The installation receives $0.05 of lifetime actual provider cost. Every call reserves its estimated
+The installation receives $0.25 of lifetime actual provider cost. Every call reserves its estimated
 maximum before dispatch against that allowance and the free $5/day and $100/calendar-month pools,
 then settles actual usage, including charged failures. Unknown provider outcomes retain their hold.
 The current allowance accompanies stored results; an original refusal retains its own code and
@@ -196,7 +196,7 @@ UTC day (`429 request_limit`); it does not renew the lifetime dollar allowance.
 
 The server retains validated result content for seven days. A compact request digest and terminal
 identity remain after expiry so an old request can never redispatch. No prompt or image is persisted.
-iOS retains those completed drafts for review. Only explicit Save atomically imports the selected
+iOS and Android retain those completed drafts for review. Only explicit Save atomically imports the selected
 result’s routines into the local engine together with a `resultId` replay receipt. A retained draft
 can also be saved after account adoption. They can start a workout before sign-in after saving. Keep/sign-in and the existing
 Add/Discard flow adopt those local records through sync. `POST /v1/ai/installations/bind` attributes

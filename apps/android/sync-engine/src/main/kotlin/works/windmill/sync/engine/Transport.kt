@@ -119,6 +119,8 @@ class HTTPTransport(baseURL: String, private val schema: Int, telemetry: EngineT
     private val client = client.newBuilder().cookieJar(CookieJar.NO_COOKIES).cache(null).followRedirects(false).followSslRedirects(false)
         .retryOnConnectionFailure(false).connectTimeout(30, TimeUnit.SECONDS).readTimeout(30, TimeUnit.SECONDS)
         .writeTimeout(30, TimeUnit.SECONDS).callTimeout(requestTimeoutMs, TimeUnit.MILLISECONDS).build()
+    // OkHttp checks an idle pooled socket before any method but GET, and a hello writes nothing, so a hello alone tries again on a fresh connection in the same pool; the engine retries a push or pull (§7.4, §7.5).
+    private val helloClient = this.client.newBuilder().retryOnConnectionFailure(true).build()
     private val liveClient = webSocketFactory ?: this.client.newBuilder().callTimeout(0, TimeUnit.MILLISECONDS).build()
     private val telemetry = TelemetryQueue(telemetry)
     private val outages = ConcurrentHashMap<EngineOperation, String>()
@@ -147,7 +149,7 @@ class HTTPTransport(baseURL: String, private val schema: Int, telemetry: EngineT
         val operation = when (kind) { "hello" -> EngineOperation.hello; "push" -> EngineOperation.push; else -> EngineOperation.pull }
         val expected = if (kind == "push") ExpectedStatuses.push else ExpectedStatuses.all
         val max = if (kind == "pull") Constants.PULL_MAX_SCOPES.toLong() * Constants.PULL_PAGE_BYTES + 65_536 else 4L * 1024 * 1024
-        val call = client.newCall(request(kind, body, token)); calls.add(call)
+        val call = (if (kind == "hello") helloClient else client).newCall(request(kind, body, token)); calls.add(call)
         if (closed.get()) { call.cancel(); calls.remove(call); return Reply.Unreachable }
         try {
             return suspendCancellableCoroutine { continuation ->
