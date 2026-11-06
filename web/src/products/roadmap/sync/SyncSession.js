@@ -1,5 +1,5 @@
 // The outbox is each lattice register newer than its confirmed baseline, minus the same stamp already in flight.
-// Actor vectors only reduce subscribe grafts; a write confirms through its ack, never its own echo.
+// The structure vector only reduces subscribe grafts; own structure echoes do not confirm.
 // Dense sequence numbers gate live frames; a gap or malformed frame forces a resubscribe.
 
 import { pageWatching, reportRoadmapFailure } from '../reportFailure.js';
@@ -9,13 +9,15 @@ import { ProgressLattice } from './progressLattice.js';
 import { materialize } from './materialize.js';
 import { UNSENDABLE, isOwnershipRefusal, isSessionRefusal, strandsTheBank } from './refusals.js';
 import { SyncStore } from './SyncStore.js';
-import { frameWrites, outboxWrites, pendingGestures, pendingRecordCount, writeStamps } from './pendingWrites.js';
+import { frameWrites, outboxStamps, outboxWrites, pendingGestures, pendingRecordCount, writeStamps } from './pendingWrites.js';
 import { LocalTreeRegistry } from '../persistence/LocalTreeRegistry.js';
 import { ProgressStore } from '../persistence/ProgressStore.js';
 import { GENESIS_STAMP } from '../model/Legend.js';
 
 const DEFAULT_URL = socketUrl();
 const MAX_BACKOFF_MS = 8000;
+const FIRST_RESEND_MS = 1000;
+const MAX_TIMER_MS = 2 ** 31 - 1;
 const FLUSH_CHUNK_BYTES = 256 * 1024;
 const HEARTBEAT_MS = 20000;
 // Dead-socket detection counts consecutive unanswered pings, not wall-clock silence: a
@@ -41,7 +43,8 @@ export class SyncSession {
     this.timers = timers;
     this.resendTimers = { structure: null, progress: null };
     this.skewTimers = { structure: null, progress: null };
-    this.resendBackoffMs = { structure: 1000, progress: 1000 };
+    this.resendBackoffMs = { structure: FIRST_RESEND_MS, progress: FIRST_RESEND_MS };
+    this.pingBoundaries = [];
     this.reportFailure = reportFailure;
     this.treeId = treeId;
     this.actor = replicaActor();
@@ -58,7 +61,6 @@ export class SyncSession {
     this.store = store;
     this.registry = registry;                       // the device-tree index persistNow keeps fresh; null for read-only views
     this.ackedServerVector = new VersionVector();  // in-memory subscribe frontier, never delivery truth
-    this.ackedProgressVector = new VersionVector(); // subscribe frontier for the private lane
     this.inFlight = new Map();                      // frameId -> sent structure writes
     this.progressInFlight = new Map();              // frameId -> sent progress writes
     this.ws = null;
@@ -126,8 +128,8 @@ export class SyncSession {
   }
 
   statusSnapshot() {
-    const confirmed = { structure: this.confirmedStructure.toFrame(), progress: this.confirmedProgress.toFrame() };
-    const pending = (lane, frame) => pendingRecordCount(writeStamps(outboxWrites(frame, confirmed[lane])));
+    const confirmed = { structure: writeStamps(this.confirmedStructure.toFrame()), progress: writeStamps(this.confirmedProgress.toFrame()) };
+    const pending = (lane, frame) => pendingRecordCount(outboxStamps(writeStamps(frame), confirmed[lane]));
     const structurePending = this.rebaselining?.has('structure') ? 0 : pending('structure', this.lattice.toFrame());
     const progressPending = this.rebaselining?.has('progress') ? 0 : pending('progress', this.progress.toFrame());
     const inFlightCount = (lane, frames) => [...frames.values()].filter((frame) => pending(lane, frame) > 0).length;
@@ -222,7 +224,7 @@ export class SyncSession {
 
   unconfirmedWrites(lane) {
     const { frame, confirmed } = this.laneFrames(lane);
-    return writeStamps(outboxWrites(frame, confirmed));
+    return outboxStamps(writeStamps(frame), writeStamps(confirmed));
   }
 
   // What this tab wrote and the server does not hold: another tab's discard took only what that tab showed.
@@ -261,7 +263,6 @@ export class SyncSession {
         if (kept.progress) this.progress.join(kept.progress);
         this.confirmedProgress = new ProgressLattice();
         if (value.confirmed.progress) this.confirmedProgress.join(value.confirmed.progress);
-        this.ackedProgressVector = new VersionVector();
         this.progressInFlight.clear();
       }
       const { frame, confirmed } = this.laneFrames(lane);
@@ -386,6 +387,9 @@ export class SyncSession {
 
   connect() {
     this.timers.clearTimeout(this.reconnectTimer);
+    this.clearDeliveryTimers();
+    this.inFlight.clear();
+    this.progressInFlight.clear();
     this.unansweredSince ??= Date.now();
     const socket = new WebSocket(this.url);
     this.ws = socket;
@@ -418,7 +422,6 @@ export class SyncSession {
       this.clearDeliveryTimers();
       this.inFlight.clear();
       this.progressInFlight.clear();
-      this.sent.clear();
       this.emitStatus();
       this.noteUnanswered();
       if (!this.closed && !this.discardPending) this.scheduleReconnect();
@@ -459,9 +462,17 @@ export class SyncSession {
     this.heartbeatTimer = this.timers.setInterval(() => {
       if (this.ws?.readyState !== WebSocket.OPEN) return;  // the close handler owns reconnection while not open
       this.noteUnanswered();
-      this.ws.send(JSON.stringify({ t: 'ping', treeId: this.treeId }));
+      const boundary = { structure: [...this.inFlight.keys()].at(-1), progress: [...this.progressInFlight.keys()].at(-1) };
+      this.pingBoundaries.push(boundary);
+      try {
+        this.ws.send(JSON.stringify({ t: 'ping', treeId: this.treeId }));
+      } catch (error) {
+        this.reportFailure('roadmap-sync-send', error);
+        this.forceReconnect();
+        return;
+      }
       this.pingsSinceRecv += 1;
-      if (this.pingsSinceRecv >= MISSED_PINGS_LIMIT) this.forceReconnect();  // unanswered ⇒ half-open
+      if (this.pingsSinceRecv >= MISSED_PINGS_LIMIT || this.pingBoundaries.length >= MISSED_PINGS_LIMIT) this.forceReconnect();
     }, HEARTBEAT_MS);
   }
 
@@ -476,27 +487,38 @@ export class SyncSession {
 
   receive(frame) {
     if (this.discardPending || this.closed) return;
-    if (frame.t === 'pong' || frame.t === 'ping') return;  // liveness already bumped by the listener
+    if (frame.t === 'pong') {
+      const boundary = this.pingBoundaries.shift();
+      if (!boundary) return;
+      for (const lane of ['structure', 'progress']) this.settleUnanswered(lane, boundary[lane], true);
+      this.emitStatus();
+      return;
+    }
+    if (frame.t === 'ping') return;
     // Only the subscribe reply ('delta') may re-baseline coverage.
     if (frame.t === 'subgraph') return frame.intent === 'delta' ? this.receiveState(frame) : this.receiveLive(frame);
     if (frame.t === 'subgraphAck') return this.receiveAck(frame);
     if (frame.t === 'skew') return this.receiveSkew(frame);
     if (frame.t === 'presence') return void this.presenceHandler?.(frame);
     if (frame.t === 'peer') return void this.peerHandler?.(frame);
-    // The private lane's two frames: a graft re-baselines its coverage, an echo only folds in.
+    // Progress grafts replace the confirmed overlay; durable echoes join it.
     if (frame.t === 'progress') return frame.intent === 'graft' ? this.receiveProgressGraft(frame) : this.receiveProgress(frame);
     if (frame.t === 'progressAck') return this.receiveProgressAck(frame);
     if (frame.t === 'reject') return this.receiveReject(frame);
   }
 
-  // The subscribe response: re-baselines coverage and seq, then flushes whatever the server is
-  // missing. A frame with no `coverage` is a full state, so its join frontier is the frontier.
+  // A subscribe graft replaces the subscribe frontier and seq, then flushes unconfirmed registers.
   receiveState(frame) {
     let frontier;
+    let coverage;
     try {
       frontier = this.lattice.join(frame);
+      coverage = frame.coverage ? VersionVector.fromJSON(frame.coverage) : frontier;
+      const regressed = [...this.confirmedStructure.frontier().marks].some(([actor, at]) => !coverage.covers({ ...at, actor }));
+      if (regressed) this.confirmedStructure = new TreeLattice(this.treeId, this.confirmedStructure.title);
       this.confirmedStructure.join(frame);
-      this.confirm('structure');
+      if (regressed) this.gestures.structure = pendingGestures(this.lattice.toFrame(), this.confirmedStructure.toFrame(), this.gestures.structure);
+      else this.confirm('structure');
     } catch (error) {
       this.reportOnce('roadmap-sync-frame', error);
       this.forceReconnect();
@@ -504,7 +526,7 @@ export class SyncSession {
     }
     for (const [actor, m] of frontier.marks) this.clock.observe({ ms: m.ms, counter: m.counter, actor });
     if (typeof frame.seq === 'number') this.lastSeq = frame.seq;
-    this.ackedServerVector = frame.coverage ? VersionVector.fromJSON(frame.coverage) : frontier;
+    this.ackedServerVector = coverage;
     this.confirmedKnown.structure = true;
     this.persistNow();
     this.rebaselining?.delete('structure');
@@ -514,7 +536,7 @@ export class SyncSession {
     this.flush();
     this.phase = this.rebaselining ? 'syncing' : 'live';
     this.backoffMs = 500;
-    this.noteDrained();    // an empty flush means the server already covers everything
+    this.noteDrained();
     this.emitStatus();
   }
 
@@ -559,30 +581,45 @@ export class SyncSession {
 
   // Fires when the live session has no unconfirmed registers and no frames in flight.
   noteDrained() {
-    if (this.refusals.has('structure') && this.pendingStructureCount() === 0) this.refusals.delete('structure');
-    if (this.refusals.has('progress') && this.pendingProgressCount() === 0) this.refusals.delete('progress');
-    if (!this.drainedHandler) return;
-    if (this.phase !== 'live' || this.inFlight.size > 0 || this.progressInFlight.size > 0) return;
-    if (this.pendingStructureCount() > 0) return;
-    if (this.pendingProgressCount() > 0) return;
-    this.drainedHandler?.();
+    const pending = {};
+    for (const lane of ['structure', 'progress']) {
+      if (!this.refusals.has(lane)) continue;
+      pending[lane] = pendingRecordCount(this.unconfirmedWrites(lane));
+      if (pending[lane] === 0) this.refusals.delete(lane);
+    }
+    if (this.phase !== 'live') return;
+    for (const lane of ['structure', 'progress']) {
+      if (this.inFlightOf(lane).size) continue;
+      if (pending[lane] === undefined) {
+        const checkingResend = this.resendBackoffMs[lane] !== FIRST_RESEND_MS
+          && this.resendTimers[lane] === null && this.skewTimers[lane] === null;
+        if (!this.drainedHandler && !checkingResend) continue;
+        pending[lane] = pendingRecordCount(this.unconfirmedWrites(lane));
+      }
+      if (pending[lane] !== 0) continue;
+      this.timers.clearTimeout(this.resendTimers[lane]);
+      this.resendTimers[lane] = null;
+      this.resendBackoffMs[lane] = FIRST_RESEND_MS;
+    }
+    if (!this.drainedHandler || this.inFlight.size || this.progressInFlight.size) return;
+    if (pending.structure || pending.progress) return;
+    this.drainedHandler();
   }
 
-  // The private lane's graft: the server's whole overlay for this account. It replaces coverage,
-  // so a mark the server no longer holds re-flushes; an empty graft still has to arrive.
+  // The complete progress graft replaces its confirmed baseline, exposing any marks the server lost.
   receiveProgressGraft(frame) {
     let frontier;
     try {
       frontier = this.progress.join(frame);
+      this.confirmedProgress = new ProgressLattice();
       this.confirmedProgress.join(frame);
-      this.confirm('progress');
+      this.gestures.progress = pendingGestures(this.progress.toFrame(), this.confirmedProgress.toFrame(), this.gestures.progress);
     } catch (error) {
       this.reportOnce('roadmap-sync-frame', error);
       this.forceReconnect();
       return;
     }
     for (const [actor, m] of frontier.marks) this.clock.observe({ ms: m.ms, counter: m.counter, actor });
-    this.ackedProgressVector = frontier;
     this.confirmedKnown.progress = true;
     this.rebaselining?.delete('progress');
     if (this.rebaselining?.size === 0) {
@@ -597,7 +634,7 @@ export class SyncSession {
     this.emitStatus();
   }
 
-  // A live echo, folded in and never a coverage input.
+  // Progress echoes follow server persistence, so even our own echo confirms its marks.
   receiveProgress(frame) {
     if (this.rebaselining?.has('progress') || this.discardPending) return;
     let frontier;
@@ -620,7 +657,6 @@ export class SyncSession {
     const writes = this.progressInFlight.get(frame.frameId);
     if (!writes) return;
     this.settleUnanswered('progress', frame.frameId);
-    this.ackedProgressVector.join(new ProgressLattice().join(writes));
     this.confirmedProgress.join(writes);
     this.confirm('progress');
     this.progressInFlight.delete(frame.frameId);
@@ -629,7 +665,7 @@ export class SyncSession {
     this.emitStatus();
   }
 
-  // Queue the local snapshot before sending; an unacknowledged mark remains in the derived outbox.
+  // Queue the local snapshot before sending; a mark stays pending until an ack, durable echo or graft confirms it.
   markProgress(nodeIds, status) {
     if (this.rebaselining?.has('progress')) return this.progress.overlay();
     const now = Date.now();
@@ -657,20 +693,28 @@ export class SyncSession {
       if (!pending.marks.length) return;
       const writes = { marks: pending.marks.map(({ node, status, at }) => ({ node, status, at })) };
       const frameId = crypto.randomUUID?.() ?? `p-${Date.now()}-${Math.round(Math.random() * 1e6)}`;
-      this.progressInFlight.set(frameId, writes);
-      socket.send(JSON.stringify({ t: 'progress', treeId: this.treeId, frameId, marks: writes.marks }));
-      this.emitStatus();
+      this.sendFrame('progress', socket, { t: 'progress', treeId: this.treeId, frameId, marks: writes.marks }, writes);
     });
   }
 
-  settleUnanswered(lane, frameId) {
-    const inFlight = lane === 'structure' ? this.inFlight : this.progressInFlight;
+  inFlightOf(lane) {
+    return lane === 'structure' ? this.inFlight : this.progressInFlight;
+  }
+
+  flushLane(lane) {
+    if (lane === 'structure') return this.flush();
+    return this.flushProgress();
+  }
+
+  settleUnanswered(lane, frameId, inclusive = false) {
+    const inFlight = this.inFlightOf(lane);
     if (!inFlight.has(frameId)) return;
     let dropped = false;
     for (const earlierId of inFlight.keys()) {
-      if (earlierId === frameId) break;
+      if (earlierId === frameId && !inclusive) break;
       inFlight.delete(earlierId);
       dropped = true;
+      if (earlierId === frameId) break;
     }
     if (!dropped) return;
     this.reportOnce('roadmap-sync-dropped', new Error('Roadmap frame unanswered'), { lane });
@@ -680,8 +724,8 @@ export class SyncSession {
     this.resendTimers[lane] = this.timers.setTimeout(() => {
       this.resendTimers[lane] = null;
       if (!this.canResend(lane)) return;
-      if (lane === 'structure') this.flush();
-      else this.flushProgress();
+      this.flushLane(lane);
+      this.noteDrained();
     }, delay);
   }
 
@@ -691,6 +735,7 @@ export class SyncSession {
   }
 
   clearDeliveryTimers() {
+    this.pingBoundaries = [];
     for (const lane of ['structure', 'progress']) {
       this.timers.clearTimeout(this.resendTimers[lane]);
       this.timers.clearTimeout(this.skewTimers[lane]);
@@ -705,7 +750,7 @@ export class SyncSession {
     if (!lane) return;
     this.clock.observe({ ms: frame.serverNow ?? 0, counter: 0, actor: 'srv' });
     this.settleUnanswered(lane, frame.frameId);
-    const inFlight = lane === 'structure' ? this.inFlight : this.progressInFlight;
+    const inFlight = this.inFlightOf(lane);
     inFlight.delete(frame.frameId);
     this.emitStatus();
     this.durabilityAtRisk = true;
@@ -714,13 +759,13 @@ export class SyncSession {
     const frontier = lane === 'structure' ? frameFrontier(pending) : new ProgressLattice().join(pending);
     let maxMs = 0;
     for (const mark of frontier.marks.values()) maxMs = Math.max(maxMs, mark.ms);
-    const deficit = Math.max(1000, maxMs - (frame.serverNow ?? 0) + 1000);
+    const deficit = Math.min(MAX_TIMER_MS, Math.max(FIRST_RESEND_MS, maxMs - (frame.serverNow ?? 0) + FIRST_RESEND_MS));
     this.timers.clearTimeout(this.skewTimers[lane]);
     this.skewTimers[lane] = this.timers.setTimeout(() => {
       this.skewTimers[lane] = null;
       if (!this.canResend(lane)) return;
-      if (lane === 'structure') this.flush();
-      else this.flushProgress();
+      this.flushLane(lane);
+      this.noteDrained();
     }, deficit);
   }
 
@@ -733,7 +778,7 @@ export class SyncSession {
     }
     if (lane) {
       this.settleUnanswered(lane, frame.frameId);
-      const inFlight = lane === 'structure' ? this.inFlight : this.progressInFlight;
+      const inFlight = this.inFlightOf(lane);
       inFlight.delete(frame.frameId);
     }
     this.emitStatus();
@@ -748,7 +793,7 @@ export class SyncSession {
 
   // The lane's refused card: the same bank keeps its episode across re-flushes.
   standRefusal(lane, code) {
-    const signature = JSON.stringify(Object.entries(this.unconfirmedWrites(lane)).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0));
+    const signature = JSON.stringify(Object.entries(this.unconfirmedWrites(lane)).sort());
     const previous = this.refusalEpisodes.get(lane);
     const episode = previous?.signature === signature ? previous.episode : Object.freeze({});
     this.refusalEpisodes.set(lane, { signature, episode });
@@ -760,10 +805,6 @@ export class SyncSession {
   confirm(lane) {
     const confirmed = lane === 'structure' ? this.confirmedStructure.toFrame() : this.confirmedProgress.toFrame();
     this.gestures[lane] = pendingGestures({}, confirmed, this.gestures[lane]);
-    if (this.resendBackoffMs[lane] === 1000 || Object.keys(this.unconfirmedWrites(lane)).length) return;
-    this.timers.clearTimeout(this.resendTimers[lane]);
-    this.resendTimers[lane] = null;
-    this.resendBackoffMs[lane] = 1000;
   }
 
   emitProjection(lane) {
@@ -924,6 +965,7 @@ export class SyncSession {
     } catch (error) {
       this.durabilityAtRisk = true;
       this.reportFailure('roadmap-sync-send', error);
+      this.forceReconnect();
     }
   }
 
@@ -952,10 +994,22 @@ export class SyncSession {
         nodes: writes.nodes ?? [], edges: writes.edges ?? [], kinds: writes.kinds ?? [],
       };
       if (writes.title) frame.title = writes.title;
-      this.inFlight.set(frameId, structuredClone(writes));
-      socket.send(JSON.stringify(frame));
-      this.emitStatus();
+      this.sendFrame('structure', socket, frame, structuredClone(writes));
     });
+  }
+
+  sendFrame(lane, socket, frame, writes) {
+    const inFlight = this.inFlightOf(lane);
+    inFlight.set(frame.frameId, writes);
+    try {
+      socket.send(JSON.stringify(frame));
+    } catch (error) {
+      inFlight.delete(frame.frameId);
+      this.durabilityAtRisk = true;
+      this.reportFailure('roadmap-sync-send', error);
+      this.forceReconnect();
+    }
+    this.emitStatus();
   }
 
   // A closed session's send still goes, as its socket waits for it; a send the page is leaving behind goes at once, without the epoch's read.

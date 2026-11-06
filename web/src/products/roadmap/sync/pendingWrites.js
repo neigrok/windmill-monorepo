@@ -54,13 +54,18 @@ export function unconfirmedStamps(stamps, confirmed) {
     !confirmed[key] || compareHlc(parseHlc(stamp), parseHlc(confirmed[key])) > 0));
 }
 
-export function outboxWrites(frame, confirmedFrame, carriedFrames = []) {
-  const pending = unconfirmedStamps(writeStamps(frame), writeStamps(confirmedFrame));
-  for (const carried of carriedFrames) {
-    for (const [key, stamp] of Object.entries(writeStamps(carried))) {
+export function outboxStamps(stamps, confirmed, carried = []) {
+  const pending = unconfirmedStamps(stamps, confirmed);
+  for (const references of carried) {
+    for (const [key, stamp] of Object.entries(references)) {
       if (pending[key] === stamp) delete pending[key];
     }
   }
+  return pending;
+}
+
+export function outboxWrites(frame, confirmedFrame, carriedFrames = []) {
+  const pending = outboxStamps(writeStamps(frame), writeStamps(confirmedFrame), Array.from(carriedFrames, writeStamps));
   return frameWrites(frame, (key, stamp) => pending[key] === stamp);
 }
 

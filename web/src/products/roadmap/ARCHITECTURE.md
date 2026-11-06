@@ -537,7 +537,8 @@ The new-roadmap door asks `deviceKeepsTrees` first: short of a signed-in account
 **Local failures.** Every local structural apply, including dispatch, targeted revert, global Undo and Redo
 and tree rename, contains notification, persistence and transport failures after the lattice join. Applied
 dispatches keep their receipt, and persistence or transport failures mark durability at risk. Pre-apply
-failures still throw. A progress mark's save reports the same way. The receive path keeps its server-durable save policy.
+failures still throw. A progress mark's save reports the same way. The receive path stores the lattice and its
+separate confirmed baseline. Socket send failures preserve pending writes and reconnect for a fresh graft.
 A server frame whose notification fails reports `roadmap-sync-notify`; one that cannot be parsed or joined reports
 `roadmap-sync-frame` once per session; a stored lane that cannot be read reports `roadmap-sync-restore` once, and the graft
 fills it. A socket with no inbound frame for ten seconds, online and in view, reports `roadmap-sync-socket` once; any frame
@@ -547,8 +548,10 @@ clears the count, including a refusal, so a signed-out device tree stays quiet.
 pending gestures, unconfirmed in-flight frames, socket phase, browser connectivity and the current refusal.
 `sync/pendingWrites.js` owns unconfirmed-register comparisons and pending-gesture accounting for the session,
 stored lanes and device-tree renames. Status and transport share the per-register outbox rule against confirmed baselines, independently of
-the subscription's actor coverage; transport excludes identical stamps already in flight. Each local gesture contributes one HLC stamp and its written register
-references. Pending gestures persist with each lane, survive retries and reload, and clear on confirmation of
+the subscription's actor coverage; transport excludes identical stamps already in flight. A regressed server frontier
+replaces the confirmed structure baseline, and every complete progress graft replaces its confirmed overlay.
+Lost server writes then become pending and replay; write replies and heartbeat pongs settle unanswered frames.
+Each local gesture contributes one HLC stamp and its written register references. Pending gestures persist with each lane, survive retries and reload, and clear on confirmation of
 their fields or discard. A partial acknowledgement or a newer unrelated write cannot confirm the rest of a
 gesture. Legacy records recover distinct surviving stamps; overwritten gestures cannot be reconstructed.
 

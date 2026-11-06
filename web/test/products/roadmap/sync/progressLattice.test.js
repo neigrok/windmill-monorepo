@@ -255,3 +255,27 @@ test('an Undo of Reset is a fresh mark: the step completes at the Undo’s time 
   lattice.mark('parts', 'complete', stamp(500), 500);
   assert.deepEqual([doneOrder(), lattice.overlay().completedAt.parts], [['parts', 'rig', 'course'], 500]);
 });
+
+for (const at of [undefined, null, '', 'not-a-stamp', '0:0:', 'NaN:0:r_a', '1:NaN:r_a', 42,
+  '01:0:r_a', '1:00:r_a', '-1:0:r_a', '1:-1:r_a', '1.5:0:r_a', '1:1.5:r_a',
+  '9007199254740992:0:r_a', '1:4294967296:r_a', '1:0:', `1:0:${'a'.repeat(65)}`, '1:0:with\nline', '1:0:☀']) {
+  test(`an invalid progress stamp ${JSON.stringify(at)} rejects the entire frame before any mutation`, () => {
+    const lattice = new ProgressLattice();
+    lattice.join({ marks: [{ node: 'held', status: 'complete', at: '5:0:r_a', markedAt: 5 }] });
+    const before = lattice.toFrame();
+    assert.throws(() => lattice.join({ marks: [
+      { node: 'valid-first', status: 'complete', at: '6:0:r_a', markedAt: 6 },
+      { node: 'invalid', status: 'complete', at },
+    ] }), { message: 'malformed progress stamp' });
+    assert.deepEqual(lattice.toFrame(), before);
+  });
+}
+
+for (const at of ['0:0:r_a', '1:0:with space', '9007199254740991:4294967295:r:colon', `1:0:${'a'.repeat(64)}`]) {
+  test(`a valid boundary progress stamp ${at} round trips unchanged`, () => {
+    const lattice = new ProgressLattice();
+    const frame = { marks: [{ node: 'root', status: 'complete', at }] };
+    lattice.join(frame);
+    assert.deepEqual(lattice.toFrame(), frame);
+  });
+}

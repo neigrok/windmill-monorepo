@@ -61,7 +61,6 @@ SyncSession.prototype.start = async function () {
   for (const node of window.fixture.nodes) if (node.status === 'complete') this.markProgress(node.id, 'complete');
   this.phase = 'live';
   this.ackedServerVector = this.lattice.frontier();
-  this.ackedProgressVector = this.progress.join(this.progress.toFrame());
   window.serverTree = this.lattice.toFrame();
   window.serverProgress = this.progress.toFrame();
   this.receiveState({ ...window.serverTree, seq: 1 });

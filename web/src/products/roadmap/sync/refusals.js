@@ -1,7 +1,7 @@
 import { reportRoadmapFailure } from '../reportFailure.js';
 
 // Reject codes classify ownership, session and capacity refusals; frameId identifies a stranded bank.
-// The outbox retains each register newer than its confirmed baseline until an ack or graft confirms it.
+// The outbox retains each register newer than its confirmed baseline until an ack, graft or server-attested live frame confirms it.
 
 const OWNERSHIP_CODES = new Set(['not-yours', 'nobodys-tree']);
 const SESSION_CODES = new Set(['sign-in-required']);

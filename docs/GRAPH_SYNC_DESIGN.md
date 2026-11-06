@@ -83,21 +83,30 @@ flight. Status counts the same unconfirmed registers. Actor frontiers cannot con
 registers: a rejected or unanswered frame can leave a gap below an accepted frame's frontier.
 Flushes split above 256 KiB into independent subgraphs, with title on the first chunk.
 
-The confirmed baseline joins grafts, other replicas' live frames and the exact writes retained for
-an acknowledged frame. Own echoes join the lattice without confirming: the server broadcasts them
+The confirmed structure baseline joins grafts, other replicas' live frames and the exact writes retained
+for an acknowledged frame. Own structure echoes join the lattice without confirming: the server broadcasts them
 before persistence and acknowledges only after persistence. Both confirmed baselines persist with
-the lanes in IndexedDB; the first subscription of a new session requests full state.
+the lanes in IndexedDB; the first subscription of a new session requests full state. If any actor
+in the confirmed structure frontier is ahead of the server's graft coverage, the graft replaces
+that confirmed baseline. A backup restore therefore exposes the server's lost registers as pending
+and sends them again. Non-regressing partial grafts join the existing confirmed baseline. Authored
+frame IDs remain known across reconnects, so delayed own echoes still await acknowledgement.
 
 A connection's write frames are handled in arrival order, with a reply in that order or no reply.
 An ack, reject or skew naming a frame settles every earlier unanswered frame in that lane without
-confirming it. The client reports `roadmap-sync-dropped` once per session with only a bounded lane
-tag, and coalesces a resend starting at one second, doubling to eight seconds until the lane drains.
+confirming it. Each heartbeat ping snapshots both lanes' in-flight boundaries. A pong settles only
+frames through the oldest outstanding ping's boundaries, including a final unanswered write. The
+FIFO boundary queue conservatively handles rate-limited pings: a later pong cannot settle writes
+sent after the ping it is matched with. Three outstanding pings force reconnection, bounding the
+queue even while other traffic arrives. The client reports `roadmap-sync-dropped` once per session
+with only a bounded lane tag, and coalesces a resend starting at one second, doubling to eight seconds
+until the lane drains.
 Resends pause while refused, offline, rebaselining or closed. A late acknowledgement for a settled
-frame is ignored. A final unanswered frame waits for a later reply or reconnection.
+frame is ignored. Socket closure and epoch adoption clear pending ping boundaries and delivery timers.
 
 A live frame joins only at `seq === lastSeq + 1`; already-seen seqs are ignored, and a gap or failed
-join forces reconnect. A subscribe delta is the recovery path. Own echoes suppress repeated local
-animation and await their acknowledgement before confirming.
+join forces reconnect. A subscribe delta is the recovery path. Own structure echoes suppress repeated
+local animation and await their acknowledgement before confirming.
 
 Each send mints a new frame ID. Reconnection can therefore resend the same content under a new ID;
 content convergence comes from idempotent join, not stable frame identity across restarts.
@@ -133,8 +142,11 @@ account's connections.
 Pending marks use the same per-register outbox rule against the confirmed progress baseline,
 excluding identical stamps already in flight. Outbound marks carry only `{node, status, at}`;
 `markedAt` stays in the stored replica and server receipts. A subscribe reply with `intent: graft`
-replaces progress coverage, and an acknowledgement joins its sent frontier and confirms its exact
-marks. Both lanes are stored together in IndexedDB.
+replaces the entire confirmed progress baseline, so a server restore exposes lost marks as pending.
+An acknowledgement confirms its exact sent marks. Progress echoes include the sending connection
+and follow persistence, so own progress echoes also confirm. Unset or malformed progress stamps
+are rejected before joining a frame; they cannot strand valid marks in an outbound batch. Both
+lanes are stored together in IndexedDB.
 
 The HLC orders marks; `markedAt` is the server receipt time displayed to readers. A device clock
 can be arbitrarily old, so its HLC physical time is not a reliable date of completion. Postgres

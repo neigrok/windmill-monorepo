@@ -33,6 +33,9 @@ export class ProgressLattice {
     for (const row of rows) {
       if (typeof row?.node !== 'string' || !row.node) throw new Error('malformed progress mark');
       if (row.status !== 'active' && row.status !== 'inProgress' && !STATUSES.has(row.status)) throw new Error(`unknown progress status "${row.status}"`);
+      if (typeof row.at !== 'string' || !/^(0|[1-9]\d*):(0|[1-9]\d*):[\x20-\x7e]{1,64}$/.test(row.at)) throw new Error('malformed progress stamp');
+      const at = parseHlc(row.at);
+      if (!Number.isSafeInteger(at.ms) || at.counter >= 2 ** 32) throw new Error('malformed progress stamp');
     }
 
     const frontier = new VersionVector();

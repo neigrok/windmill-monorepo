@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { GENESIS_STAMP } from '../../../../src/products/roadmap/model/Legend.js';
-import { outboxWrites, pendingGestures, pendingRecordCount, unconfirmedStamps, writeStamps } from '../../../../src/products/roadmap/sync/pendingWrites.js';
+import { outboxStamps, outboxWrites, pendingGestures, pendingRecordCount, unconfirmedStamps, writeStamps } from '../../../../src/products/roadmap/sync/pendingWrites.js';
 
 const key = (section, id, field) => JSON.stringify([section, id, field]);
 
@@ -63,4 +63,24 @@ test('outbox and pending status both retain unconfirmed genesis registers', () =
   assert.equal(pendingRecordCount(unconfirmed), 1);
   assert.deepEqual(outboxWrites(frame, {}), frame);
   assert.deepEqual(writeStamps(outboxWrites(frame, {})), unconfirmed);
+});
+
+
+test('precomputed outbox stamps preserve their inputs and agree with frame delivery', () => {
+  const frame = { nodes: [
+    { id: 'a', label: 'Confirmed', labelAt: '5:0:r' },
+    { id: 'b', label: 'In flight', labelAt: '6:0:r' },
+    { id: 'c', label: 'Superseded in flight', labelAt: '8:0:r' },
+  ] };
+  const baseline = { nodes: [frame.nodes[0]] };
+  const inFlight = [{ nodes: [frame.nodes[1], { id: 'c', label: 'Older', labelAt: '7:0:r' }] }];
+  const stamps = Object.freeze(writeStamps(frame));
+  const confirmed = Object.freeze(writeStamps(baseline));
+  const carried = inFlight.map((writes) => Object.freeze(writeStamps(writes)));
+  const expected = { [key('nodes', 'c', 'labelAt')]: '8:0:r' };
+  assert.deepEqual(outboxStamps(stamps, confirmed, carried), expected);
+  assert.deepEqual(writeStamps(outboxWrites(frame, baseline, inFlight)), expected);
+  assert.deepEqual(stamps, writeStamps(frame));
+  assert.deepEqual(confirmed, writeStamps(baseline));
+  assert.deepEqual(carried, inFlight.map(writeStamps));
 });
