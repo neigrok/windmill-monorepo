@@ -351,6 +351,17 @@ app observations belong in the task report, rather than a lasting evidence file.
 
 ## CI and releases
 
+Recipe, once the commit is on `main` (`V` the version, `SHA` the commit):
+
+1. `git tag android-vV SHA && git push origin android-vV`. CI tests, assembles and uploads
+   `windmill-V-signing-input-run-<run id>-<attempt>`: the candidate APK, its SHA-256 and provenance, the mapping.
+2. `gh run watch <run id> --exit-status`, then `gh run download <run id> -n <artifact> -D signing-input`.
+3. `python3 tools/release.py finalize --candidate signing-input/windmill-V-signing-input.apk --provenance signing-input/windmill-V-signing-input.apk.provenance.json --mapping signing-input/windmill-V-mapping.txt --keystore <retained PKCS12> --out final --build-tools "$ANDROID_HOME/build-tools/36.0.0" --expected-event push --expected-ref refs/tags/android-vV --expected-version V --expected-commit SHA --expected-workflow-commit SHA --expected-run-id <run id> --expected-run-number <run number> --expected-run-attempt <attempt>`,
+   the password on stdin. The key and password are held outside the repo.
+4. `sentry-cli upload-proguard --uuid <apk.proguardUuid of final/windmill-V.apk.provenance.json> final/windmill-V-mapping.txt`.
+5. Acceptance on `Release_API34`: the eight steps below.
+6. `gh release create android-vV final/windmill-V.apk final/windmill-V.apk.sha256 final/windmill-V.apk.provenance.json --title "Android V" --notes-file <notes>`, then record the release below.
+
 [Android CI](../../.github/workflows/android.yml) builds/tests relevant main pushes and pull
 requests. An `android-v*` tag or versioned dispatch also produces unpublished signing inputs:
 a non-debuggable, minified APK, SHA-256, R8 mapping and schema 3 source/run provenance. The temporary signature is not the
