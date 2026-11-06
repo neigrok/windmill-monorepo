@@ -7,6 +7,11 @@ underscores because `/v1/events` accepts snake_case names. Each engine instance 
 injected limits are capped at 100. No raw exception, stack, body, field value, ID, scope reference,
 account, email or token is forwarded.
 
+The beacon keeps up to 200 newest queued events in memory while the browser is offline and flushes
+them on reconnect in batches of at most 50. It adds no content or properties and stores no queue on
+disk, keeping best-effort delivery independent of browser storage and leaving no behavioral history on a
+possibly shared device. Reloading loses that queue; failed attempted sends remain fire-and-forget.
+
 Only a deployed build reports as `environment: production`. `scripts/test.mjs` drops the build's DSN, so a test run never reaches
 Sentry, though a branch that predates that rule can still report from CI as `development`: read production's failures under
 `environment:production`.
@@ -49,7 +54,10 @@ one that reopens the same account. Closure refuses an unavailable session identi
 The device holder restored after a lapse uses the bound replica’s existing durable account metadata; it is
 not an authentication answer or an event property. Sign-in recovery uses the existing sync transition
 events. Pending product cleanup is recorded with the replica transition and retried after reload; a failure
-reports `auth-session` and retains the cleanup marker. Automatic retries compare the account with the owner
+reports `auth-session` and retains the cleanup marker. A different confirmed account synchronously replaces
+the previous holder's room with the shell's loading state until cleanup and binding complete. A failure keeps
+the room blocked and uses the existing auth-session failure report and sync transition events.
+Automatic retries compare the account with the owner
 the read actually used, so ordinary signed-in cold loads do not repeat a read or its failure report. An
 expected unavailable tree or offline transport failure is not a Sentry Issue.
 Offline copy identifies the REST features that need a connection.
@@ -66,7 +74,8 @@ the current address: `/`, `/app`, `/app/roadmap`, `/app/gym`, `/app/journal`, `/
 classes and thrown non-errors. No exception message, stack, identifier, token, date or query enters the
 event. The same failure reports to Sentry under the static message `client-error`, with `kind` as its
 type and tag, `failure_kind` as a tag, `route` as its request URL, and its stack frames (file, line,
-column and function name only). The exception message reaches neither: the stack's head line, where V8
+column and function name only), parsing both V8's `at fn (url:line:col)` and Safari/Firefox's
+`fn@url:line:col`. The exception message reaches neither: the stack's head line, where V8
 repeats it, is cut before the frames are read, frames are only the last unbroken run of frame lines,
 and share addresses, `token=` and `code=` values are struck out of them. A rejected non-error has no
 frames. A failed paste shape adds the Sentry tags `reason` (`unavailable`, `unreachable`, `failed`,
@@ -127,7 +136,7 @@ goes through `countBucket`: `0/1/2-5/6-20/21+`.
 
 | Step | Event | Allowlisted props |
 |---|---|---|
-| Open a roadmap, first resolved view of the visit | `roadmap_view_open` | `view: board/graph`, `band: phone/tablet/desktop`, `role: owner/reader/demo`, `door: saved/default/link/empty/born` |
+| Open a roadmap, first resolved view of the visit | `roadmap_view_open` | `view: board/graph`, `band: phone/tablet/desktop`, `role: owner/reader/demo`, `door: saved/default/link/empty/born/no_graph` |
 | Switch Board and Graph | `roadmap_view_switch` | `view: board/graph` |
 | Phone column tab | `roadmap_board_column` | `column: locked/upNext/done` |
 | Tablet rail's Show | `roadmap_board_rail` | `column: locked/done` |
@@ -143,7 +152,7 @@ goes through `countBucket`: `0/1/2-5/6-20/21+`.
 | A state's action | `roadmap_board_state_action` | `state: empty`, `action: newStep` |
 | A state's action | `roadmap_board_state_action` | `state: complete`, `action: share/newStep` |
 | Open a step | `roadmap_board_step_open` | `surface: modal/page`, `column: locked/upNext/done`, `door: card/graph/activity/step/link` |
-| Step page or modal action | `roadmap_board_step_action` | `surface: modal/page`, `action: complete/completeFromSubtasks/reset/undo/openInGraph/viewBranch/delete/edit/editNote` |
+| Step page or modal action | `roadmap_board_step_action` | `surface: modal/page`, `action: complete/completeFromSubtasks/reset/undo/openInGraph/viewBranch/delete/edit/editNote/select` |
 | Step section | `roadmap_board_step_action` | `surface: modal/page`, `action: section`, `section: overview/workspace/history` |
 | Copy a step's link | `roadmap_board_step_action` | `surface: modal/page`, `action: copyLink`, `outcome: ok/failed` |
 | Reset from the Graph's dock or tablet panel | `roadmap_board_step_action` | `surface: dock/panel`, `action: reset` |
@@ -215,7 +224,8 @@ goes through `countBucket`: `0/1/2-5/6-20/21+`.
 | Device line shown | `roadmap_device_line` | `step: shown`, `line: anonymous/lapsed`, `place: row/shell` |
 | Device line's phone row tapped | `roadmap_device_line` | `step: sign_in`, `line: anonymous/lapsed`, `place: row` |
 | The demo's roadmap opened | `demo_open` | `treeId: t_9e407a96b5330ebe` |
-| WebGL2 unavailable | `webgl_init_fail` | — |
+| WebGL2 unavailable, once per room visit | `webgl_init_fail` | `band: phone/tablet/desktop` |
+| Press the unavailable Graph option | `roadmap_graph_unavailable` | `band: phone/tablet/desktop` |
 | A roadmap planted from a quest | `birth` | `quest: <authored quest id>`, `steps: 0/1/2-5/6-20/21+`, `local?: true` |
 | A roadmap planted blank or from an import | `birth` | `import?: true`, `steps?: 0/1/2-5/6-20/21+`, `local?: true` |
 | Device roadmaps claimed at sign-in | `claim` | `treeCount: 0/1/2-5/6-20/21+` |
@@ -234,6 +244,7 @@ A step is a thing a reader did or was told. These emit nothing:
   a clean Save, which writes nothing and emits `unchanged` from the edit composer alone.
 - Moving back to a step already open in the visit, closing a step, and system Back or a remote change dropping a note draft.
 - The Prerequisites row with no candidates.
+- The unavailable Graph option's reason opening on hover or focus.
 - A Delete key on a selection that takes every root a roadmap has left, on either view: Delete is not offered, so nothing
   happened.
 - A rebaseline's pending records, an online discard, Saving and Saved. Refusal counts stay local.
@@ -271,7 +282,7 @@ function. A report's `route` is a family (`#/app`, `#/settings`), never an addre
 | `roadmap-switcher-rename` | The switcher's rename: a server failure, a request lost while visible and online, or an exception | The old name returns |
 | `roadmap-switcher-delete` | The switcher's delete: a server failure, a request lost while visible and online, or an exception | The row stays |
 | `roadmap-plant` | Planting a roadmap, blank, pasted or from a quest: a server failure, a request lost while visible and online, or an exception | The door's own error, or a device roadmap when the server can't be reached |
-| `roadmap-tend` | Ask AI's reads and its send: a server failure, a request lost while visible and online, or a 200 that is not JSON | Ask AI's `failed` answer |
+| `roadmap-tend` | Ask AI's reads and its send: a server failure, a request lost while visible and online, or a 200 that is not JSON | Ask AI's `failed` answer; the bar reopens with its sentence unless explicitly dismissed during the run, and announces the same failure copy when opened |
 | `roadmap-sync-notify` | Notifying after a local write, a server frame, an epoch change or a discard projection | The write's receipt stays |
 | `roadmap-sync-persist` | Storing a local write or mark on a database that opened | The receipt stays; durability is at risk |
 | `roadmap-sync-send` | Sending a local write, including the IndexedDB epoch check on a database that opened | The pending bank stays and the refused card says so; durability is at risk |

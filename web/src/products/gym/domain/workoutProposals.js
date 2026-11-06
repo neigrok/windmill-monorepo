@@ -110,8 +110,8 @@ export function ProposeWorkout({ id, sessionId, entries, summary }) {
 }
 
 // A workout proposal with its workout as this device stores it. Out of date, it can no longer be applied, by the first
-// that holds: a newer proposal replaced it, its workout closed, the plan changed since it was made, or a movement it
-// changes was logged since.
+// that holds: a newer proposal replaced it, its workout is gone, its workout closed, the plan changed since it was made,
+// or a movement it changes was logged since.
 export class WorkoutProposalState {
   /** @param {{ proposal: WorkoutProposalValue | null, workout: OpenWorkout | null, moment: Moment }} parts */
   constructor({ proposal, workout, moment }) {
@@ -132,9 +132,10 @@ export class WorkoutProposalState {
     const proposal = this.proposal;
     if (proposal === null) return null;
     if (proposal.state === 'superseded') return { reason: proposal.supersededBy !== null ? 'replaced' : 'workout-changed' };
+    if (proposal.state !== 'pending') return null;
     const workout = this.workout;
     const session = workout?.session ?? null;
-    if (proposal.state !== 'pending' || workout === null || session === null) return null;
+    if (workout === null || session === null) return { reason: 'workout-changed' };
     if (workout.isClosed) return { reason: 'workout-finished' };
     if (proposal.baseRevision !== null && (session.planRevision ?? 1) !== proposal.baseRevision) return { reason: 'workout-changed' };
     // A plan edit this device has not had confirmed moves no revision yet, so the stored plan itself must still be the

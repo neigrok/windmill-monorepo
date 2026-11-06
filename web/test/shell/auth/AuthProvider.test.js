@@ -87,7 +87,10 @@ for (const trigger of ['refresh', 'poll']) {
     await auth().refresh();
     assert.deepEqual(forgotten, []);
     state.setMe({ id: 'A', name: 'Ada' });
-    await auth().signIn({ id: 'A', name: 'Ada' });
+    const signingIn = auth().signIn({ id: 'A', name: 'Ada' });
+    assert.equal(auth().roomChanging, false);
+    await signingIn;
+    assert.equal(auth().roomChanging, false);
     assert.deepEqual({ status: auth().status, lapsed: auth().lapsed, id: engine.device.activeReplica.id,
       authPaused: engine.device.activeReplica.meta.authPaused, outbox: engine.device.activeReplica.outbox },
     { status: 'signed-in', lapsed: false, id: replica, authPaused: false, outbox: entries });
@@ -109,6 +112,121 @@ test('a different account after a lapse keeps its own replica and invokes roadma
   const retained = state.engine.device.replicas.find((replica) => replica.id === state.replica);
   assert.equal(retained.meta.state, 'dormant');
   assert.deepEqual(retained.outbox, state.entries);
+});
+
+test('a confirmed replacement hides the room synchronously until its product cleanup finishes', async (t) => {
+  const state = await account(t);
+  state.setMe(null);
+  await state.auth().refresh();
+  let release;
+  const cleanup = new Promise((resolve) => { release = resolve; });
+  roadmapRoutes.forgetDevice.mock.mockImplementation(async (change) => {
+    state.forgotten.push(change);
+    await cleanup;
+  });
+  const me = { id: 'B', name: 'Bea' };
+  state.setMe(me);
+  const signingIn = state.auth().signIn(me);
+  assert.equal(state.auth().roomChanging, true);
+  await until(() => state.forgotten.length === 1);
+  assert.deepEqual(state.forgotten, [{ previous: 'A', next: 'B' }]);
+  assert.equal(state.auth().roomChanging, true);
+  release();
+  await signingIn;
+  assert.equal(state.auth().account.id, 'B');
+  assert.equal(state.auth().roomChanging, false);
+});
+
+test('a refreshed replacement hides the room before waiting for engine restoration', async (t) => {
+  const state = await account(t);
+  let release;
+  const restoring = new Promise((resolve) => { release = resolve; });
+  const me = { id: 'B', name: 'Bea' };
+  state.setMe(me);
+  globalThis.fetch.mock.mockImplementation(async () => ({ ok: true, status: 200, json: async () => {
+    state.engine.restoring = restoring;
+    return { user: me };
+  } }));
+  const refreshing = state.auth().refresh();
+  await until(() => state.auth().roomChanging);
+  assert.equal(state.engine.device.activeReplica.meta.account, 'A');
+  assert.deepEqual(state.forgotten, []);
+  release();
+  await refreshing;
+  assert.equal(state.auth().account.id, 'B');
+  assert.equal(state.auth().roomChanging, false);
+});
+
+for (const returning of ['B', 'A']) {
+  test(`an older queued account settlement cannot expose the room after ${returning === 'A' ? 'B then A are' : 'B is'} confirmed`, async (t) => {
+    const state = await account(t);
+    const signIn = state.engine.signIn.bind(state.engine);
+    let releaseOlder, olderSettling = false, releaseCleanup;
+    const older = new Promise((resolve) => { releaseOlder = resolve; });
+    const cleanup = new Promise((resolve) => { releaseCleanup = resolve; });
+    t.mock.method(state.engine, 'signIn', async (...args) => {
+      const result = await signIn(...args);
+      if (args[0] === 'A') { olderSettling = true; await older; }
+      return result;
+    });
+    roadmapRoutes.forgetDevice.mock.mockImplementation(async (change) => {
+      state.forgotten.push(change);
+      await cleanup;
+    });
+    const priorSignIn = state.auth().signIn({ id: 'A', name: 'Ada' });
+    await until(() => olderSettling);
+    const me = { id: 'B', name: 'Bea' };
+    state.setMe(me);
+    const replacement = state.auth().signIn(me);
+    const latest = returning === 'A' ? { id: 'A', name: 'Ada' } : me;
+    state.setMe(latest);
+    const finalSignIn = returning === 'A' ? state.auth().signIn(latest) : replacement;
+    assert.equal(state.auth().roomChanging, true);
+    releaseOlder();
+    await priorSignIn;
+    assert.equal(state.auth().roomChanging, true);
+    await until(() => state.forgotten.length === 1);
+    assert.equal(state.auth().roomChanging, true);
+    releaseCleanup();
+    await replacement;
+    await finalSignIn;
+    assert.equal(state.auth().account.id, returning);
+    assert.equal(state.auth().roomChanging, false);
+  });
+}
+
+test('a reload with cleanup owed starts with the room hidden and waits for the wipe', async (t) => {
+  const state = await account(t);
+  await state.engine.finishSignOut({ choice: 'keep', deviceCleanup: true });
+  let release;
+  const cleanup = new Promise((resolve) => { release = resolve; });
+  roadmapRoutes.forgetDevice.mock.mockImplementation(async (change) => {
+    state.forgotten.push(change);
+    await cleanup;
+  });
+  state.setMe({ id: 'B', name: 'Bea' });
+  await state.reload();
+  assert.equal(state.auth().roomChanging, true);
+  await until(() => state.forgotten.length === 1);
+  assert.equal(state.auth().roomChanging, true);
+  release();
+  await until(() => state.auth().status === 'signed-in');
+  assert.equal(state.auth().account.id, 'B');
+  assert.equal(state.auth().roomChanging, false);
+});
+
+test('failed replacement cleanup keeps the room hidden until a successful retry', async (t) => {
+  const state = await account(t);
+  roadmapRoutes.forgetDevice.mock.mockImplementation(() => { throw new Error('device-cleanup-refused'); });
+  const me = { id: 'B', name: 'Bea' };
+  state.setMe(me);
+  await assert.rejects(state.auth().signIn(me), /device-cleanup-refused/);
+  assert.equal(state.auth().roomChanging, true);
+  assert.equal(state.engine.device.meta.deviceCleanup.previous, 'A');
+  roadmapRoutes.forgetDevice.mock.mockImplementation((change) => state.forgotten.push(change));
+  await state.auth().refresh();
+  assert.equal(state.auth().account.id, 'B');
+  assert.equal(state.auth().roomChanging, false);
 });
 
 test('an explicit sign-out broadcast still clears roadmap work instead of becoming a lapse', async (t) => {

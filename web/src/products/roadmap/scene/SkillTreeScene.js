@@ -18,7 +18,6 @@ import { createTextureFromCanvas } from './glcore.js';
 import { hitTest as pickAt } from './picking.js';
 import { InputController } from './input/InputController.js';
 import { NavigateTool, ReadOnlyTool } from './input/tools.js';
-import { track } from '../../../telemetry/beacon.js';
 
 const SPATIAL_CELL_SIZE = NODE_SIZE * 2;
 const PAN_SETTLE_MS = 200;
@@ -40,6 +39,8 @@ function hexRgb(hex) {
   return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
 }
 
+export class GraphUnavailable extends Error {}
+
 export class SkillTreeScene {
   constructor(canvas, options = {}) {
     this.canvas = canvas;
@@ -47,10 +48,7 @@ export class SkillTreeScene {
     this.readOnly = !!options.readOnly;
 
     const gl = canvas.getContext('webgl2', { antialias: true, alpha: false, premultipliedAlpha: false });
-    if (!gl) {
-      track('webgl_init_fail');
-      throw new Error('WebGL2 is not available');
-    }
+    if (!gl) throw new GraphUnavailable('WebGL2 is not available');
     this.gl = gl;
     gl.enable(gl.BLEND);
     gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);

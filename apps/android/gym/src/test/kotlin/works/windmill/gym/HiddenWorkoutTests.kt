@@ -30,10 +30,7 @@ import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import works.windmill.gym.net.FakeGymRest
-import works.windmill.gym.coach.AskAnswer
-import works.windmill.gym.coach.ReadTally
-import works.windmill.gym.coach.CoachResult
+import works.windmill.gym.coach.turn.ScriptedTurns
 import works.windmill.gym.presentation.RoutineDraft
 import works.windmill.gym.presentation.Readout
 import works.windmill.gym.presentation.WorkoutChange
@@ -43,6 +40,7 @@ import works.windmill.platform.LocalShellActions
 import works.windmill.platform.ShellActions
 import works.windmill.platform.telemetry.LocalTelemetry
 import works.windmill.platform.telemetry.Telemetry
+import works.windmill.sync.core.Json
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
@@ -51,14 +49,14 @@ class HiddenWorkoutTests {
     @get:Rule val tmp = TemporaryFolder()
     private lateinit var activity: ComponentActivity
 
-    private fun room(withWorkout: Boolean = true, rest: FakeGymRest? = null, test: (EngineRoomFixture, StateRestorationTester, MutableList<Pair<String, Map<String, String>>>) -> Unit) {
+    private fun room(withWorkout: Boolean = true, coach: ScriptedTurns? = null, test: (EngineRoomFixture, StateRestorationTester, MutableList<Pair<String, Map<String, String>>>) -> Unit) {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val events = mutableListOf<Pair<String, Map<String, String>>>()
         val telemetry = object : Telemetry {
             override fun event(name: String, properties: Map<String, String>) { events += name to properties }
             override fun failure(operation: String, error: Throwable, properties: Map<String, String>) = Unit
         }
-        val phone = EngineRoomFixture(tmp.newFolder(), scope, telemetry = telemetry, rest = rest)
+        val phone = EngineRoomFixture(tmp.newFolder(), scope, telemetry = telemetry, coachServer = coach)
         var showing by mutableStateOf(true)
         try {
             runBlocking {
@@ -182,21 +180,23 @@ class HiddenWorkoutTests {
     }
 
     @Test fun startingFromACoachRoutineDoorReturnsToCoachWhenHidden() {
-        val rest = FakeGymRest()
-        room(withWorkout = false, rest = rest) { phone, _, _ ->
-            val routine = phone.store.routines.all.first()
-            rest.answers += AskAnswer("Your routine is ready.", ReadTally(),
-                results = listOf(CoachResult("routine-created", "operation", routine.id, routine.name)))
+        val server = ScriptedTurns(Json.parse("""[
+            {"event":"calls","data":{"batch":1,"calls":[{"callId":"toolu_1","name":"create_routine","input":{"id":"rt_00000009","name":"Leg Day","position":1,"entries":[{"exerciseId":"back-squat"}]}}]}},
+            {"await":"results","batch":1},
+            {"event":"text","data":{"delta":"Your routine is ready."}},
+            {"event":"done","data":{"state":"completed"}}]""").arr())
+        room(withWorkout = false, coach = server) { phone, _, _ ->
+            phone.store.observeEngine()
             compose.onNode(hasText("Coach") and hasClickAction()).performClick()
             compose.onNodeWithContentDescription("Question").performClick().performTextReplacement("Show my routine")
             compose.onNodeWithContentDescription("Send").performClick()
-            compose.waitUntil(10_000) { compose.onAllNodesWithText("Open routine").fetchSemanticsNodes().isNotEmpty() }
-            compose.onNodeWithText("Open routine").performClick()
+            compose.waitUntil(10_000) { compose.onAllNodesWithText("Routine created · 1 movement", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithText("Leg Day", useUnmergedTree = true).performClick()
             compose.onNodeWithText("Start workout").performClick()
             compose.waitUntil(10_000) { compose.onAllNodesWithText("Finish").fetchSemanticsNodes().isNotEmpty() }
             compose.onNodeWithContentDescription("Hide workout").performClick()
             compose.onNode(hasText("Coach") and hasClickAction()).assertIsSelected()
-            compose.onNodeWithContentDescription("Push A, in progress").assertIsDisplayed()
+            compose.onNodeWithContentDescription("Leg Day, in progress").assertIsDisplayed()
         }
     }
 

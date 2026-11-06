@@ -78,5 +78,69 @@ class ModelServerTests {
         assertEquals(emptyList<LiveEvent>(), admitted.events)
         assertEquals(before, after.json); assertEquals(before, state.json)
     }
+    @Test fun gymThreadCreatedWithoutItsTitleIsInvalid() {
+        val input = gymVector("a phone turn creates the conversation, the lifter message and the running Coach message in one intent").member("input")
+        assertRefused("invalid", input, without(input.member("intent"), "thread", "title"))
+    }
+    @Test fun gymThreadDeleteTakesItsMessagesAndUnlinksItsProposals() {
+        for (name in listOf("a conversation delete kills its messages and unlinks the proposals naming it", "a conversation delete unlinks the workout proposals naming it")) {
+            val vector = gymVector(name); val input = vector.member("input")
+            val (after, admitted) = admit(input, input.member("intent"))
+            assertEquals(vector.member("expect"), Json.objectOf("result" to admitted.result, "state" to after.json))
+        }
+    }
+    @Test fun gymLifterMessageBoundIsMeasuredInBytes() {
+        val input = gymVector("a lifter message of 8,000 bytes is admitted").member("input")
+        fun saying(text: String) = input.member("intent").let { intent ->
+            intent.with("d" to Json.Arr(intent.member("d").arr().map { d ->
+                if (d.member("f")["role"]?.arr()?.first() != Json.of("lifter")) d
+                else d.with("f" to d.member("f").with("text" to Json.array(Json.of(text), d.member("f").member("text").arr()[1])))
+            }))
+        }
+        assertEquals(Json.of("ok"), admit(input, saying("é".repeat(4000))).second.result.member("s"))
+        assertRefused("invalid", input, saying("é".repeat(4000) + "x"))
+    }
+    @Test fun gymWritersTerminalStateBeatsInterruptedWhateverItsStamp() {
+        val interrupted = gymVector("a server-origin interrupted lands on a running Coach message").member("expect").member("state")
+        val writer = gymVector("the writer ends its turn with its text, receipt, calls and truncation").member("input")
+        val (after, admitted) = admit(writer.with("state" to interrupted), writer.member("intent"))
+        assertEquals(Json.of("ok"), admitted.result.member("s"))
+        val row = after.json.member("rows").member("acct:A/gym").arr().single { it.member("id") == Json.of("turn00000001") }.member("f")
+        val written = writer.member("intent").member("d").arr().single().member("f")
+        assertEquals(written.member("state"), row.member("state"))
+        assertEquals(written.member("text"), row.member("text"))
+    }
+    @Test fun gymMessageFinalHoldsAfterAWritersTerminalAndLeavesTruncatedWritable() {
+        for (register in listOf("state", "text", "receipt", "calls")) {
+            val input = gymVector("a write of $register after the writer ended its turn is refused message-final").member("input")
+            assertRefused("message-final", input, input.member("intent"))
+        }
+        val truncated = gymVector("truncated stays writable after the writer ended its turn")
+        val (after, admitted) = admit(truncated.member("input"), truncated.member("input").member("intent"))
+        assertEquals(truncated.member("expect"), Json.objectOf("result" to admitted.result, "state" to after.json))
+    }
+    @Test fun gymWorkoutProposalWithoutItsWorkoutOrChangesIsRefusedNeverAFault() {
+        val replica = gymVector("a replica's workout proposal from the phone Coach door, guarded on the plan, is admitted").member("input")
+        assertEquals(Json.of("ok"), admit(replica, replica.member("intent")).second.result.member("s"))
+        assertRefused("invalid", replica, without(replica.member("intent"), "workoutProposal", "sessionId"))
+        assertRefused("invalid", replica, without(replica.member("intent"), "workoutProposal", "changes"))
+        val server = gymVector("a workout proposal naming an absent workout is refused unknown-record").member("input")
+        assertRefused("unknown-record", server, without(server.member("intent"), "workoutProposal", "sessionId"))
+    }
+    private fun admit(input: Json, intent: Json): Pair<ServerState, Admitted> {
+        val gym = Registry(Json.parse(File(System.getProperty("windmill.contract"), "sync/gym.registry.json").readBytes()))
+        val origin = input.member("origin"); val account = origin.member("account").str()
+        val from = if (origin.member("kind").str() == "replica") IntentOrigin(account, origin.member("replica").str(), origin.member("n").long()) else IntentOrigin(account)
+        return Admission(gym, GymServerRules()).admit(intent, from, input.member("serverNow").long(), ServerState(input.member("state")))
+    }
+    private fun assertRefused(code: String, input: Json, intent: Json) {
+        val (after, admitted) = admit(input, intent)
+        assertEquals(Json.objectOf("s" to Json.of("refused"), "code" to Json.of(code)), admitted.result)
+        assertEquals(emptyList<LiveEvent>(), admitted.events)
+        assertEquals(input.member("state"), after.json)
+    }
+    private fun without(intent: Json, type: String, field: String) = intent.with("d" to Json.Arr(intent.member("d").arr().map { d ->
+        if (d.member("t") == Json.of(type)) d.with("f" to d.member("f").with(field to null)) else d
+    }))
     private fun gymVector(name: String) = Json.parse(File(System.getProperty("windmill.contract"), "sync/corpus/gym/admit.json").readBytes()).arr().single { it.member("name") == Json.of(name) }
 }

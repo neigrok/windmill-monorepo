@@ -1,6 +1,6 @@
 // @ts-check
 
-import { precondition } from '../../../platform/domain-kit/values.js';
+import { RoutineChange } from './proposals.js';
 import { Readout } from './trainingReads.js';
 import { GymUnits } from './units.js';
 
@@ -41,7 +41,7 @@ export class ProposalDiff {
   /** @param {ProposalValue} proposal @param {RoutineValue | null} routine @param {GymUnits} units @param {readonly ExerciseId[]} each */
   constructor(proposal, routine = null, units = GymUnits.kg, each = []) {
     const pending = proposal.state === 'pending';
-    const moves = pending && routine !== null ? ProposalDiff.moves(proposal, routine) : new Map();
+    const moves = pending && routine !== null ? RoutineChange.moves(routine.entries, proposal.changes) : new Map();
     /** @type {ProposalDiffBlock[]} */
     const blocks = [];
     const name = proposal.baseName ?? (pending ? routine?.name ?? null : null);
@@ -125,39 +125,5 @@ export class ProposalDiff {
     const suffixes = /** @type {Record<number, string>} */ ({ 1: 'st', 2: 'nd', 3: 'rd' });
     const suffix = place % 100 >= 11 && place % 100 <= 13 ? 'th' : suffixes[place % 10] ?? 'th';
     return `${place}${suffix}`;
-  }
-
-  // The movements a pending proposal moves, by change index, each with its place in the routine and in the proposal. A
-  // movement whose place is the same in both never moved; of the rest, those in the longest run that keeps the routine's
-  // order stand — of equal runs, the one whose places come first — and every other one moved.
-  /** @param {ProposalValue} proposal @param {RoutineValue} base @returns {Map<number, { from: number, to: number }>} */
-  static moves(proposal, base) {
-    const unmatched = base.entries.map((entry, index) => ({ entry, index }));
-    /** @type {{ change: number, from: number, to: number }[]} */
-    const kept = [];
-    proposal.changes.map((change, index) => ({ change, index })).filter(({ change }) => change.kind !== 'removed').forEach(({ change, index }, to) => {
-      if (change.kind !== 'kept' && change.kind !== 'retargeted') return;
-      const at = unmatched.findIndex(({ entry }) => entry.exerciseId.equals(change.exerciseId));
-      if (at === -1) return;
-      const [matched] = unmatched.splice(at, 1);
-      precondition(matched !== undefined, 'a matched routine entry is present');
-      if (matched.index !== to) kept.push({ change: index, from: matched.index, to });
-    });
-    /** @type {{ change: number, from: number, to: number, index: number, longest: number }[]} */
-    const runs = [];
-    for (const [index, entry] of [...kept.entries()].reverse()) {
-      runs.unshift({ ...entry, index, longest: 1 + Math.max(0, ...runs.filter((later) => later.from > entry.from).map((later) => later.longest)) });
-    }
-    const standing = new Set();
-    let previous = -1;
-    let start = 0;
-    for (let length = Math.max(0, ...runs.map((run) => run.longest)); length > 0; length -= 1) {
-      const next = runs.filter((run) => run.index >= start && run.from > previous && run.longest === length)
-        .reduce((least, run) => run.from < least.from ? run : least);
-      standing.add(next.index);
-      previous = next.from;
-      start = next.index + 1;
-    }
-    return new Map(runs.filter((run) => !standing.has(run.index)).map((run) => [run.change, { from: run.from + 1, to: run.to + 1 }]));
   }
 }

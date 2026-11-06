@@ -30,27 +30,29 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import works.windmill.gym.domain.coach.MessageState
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class CoachPresentationTests {
     @get:Rule val compose = createComposeRule()
 
+    private fun running(text: String) = CoachExchange("request-a", "Question", 0, answer = coachReply(text, MessageState.running))
+
     @Test
     fun aBurstOfSupersedingRevisionsLeavesOneTextNodeShowingTheFinalUnicodeText() {
-        val first = AskGeneration("generation-a", "request-a", "Question", "running", "First", revision = 1)
-        var generation by mutableStateOf(first)
+        var reply by mutableStateOf(coachReply("First", MessageState.running))
         lateinit var presentation: CoachPresentation
         compose.setContent { GymMaterial {
-            presentation = rememberCoachPresentation("thread-a", listOf(generation.exchange()))
+            presentation = rememberCoachPresentation("thread-a", listOf(CoachExchange("request-a", "Question", 0, answer = reply)))
             Column(Modifier.fillMaxSize().then(presentation.anchoring).verticalScroll(presentation.scroll)) {
-                CoachAnswer(generation.answer, null, emptyList(), 0)
+                CoachAnswer(reply.text, reply, emptyList())
             }
         } }
-        val final = List(500) { "Café 東京 مرحبًا 🏋🏽‍♀️ é" }.joinToString("\n")
+        val final = List(500) { "Café 東京 مرحبًا 🏋🏽‍♀️ é" }.joinToString("\n")
         compose.runOnIdle {
-            for (revision in 2..100) generation = first.copy(answer = "word ".repeat(revision), revision = revision.toLong())
-            generation = first.copy(status = "stopped", answer = final, revision = 101)
+            for (revision in 2..100) reply = reply.copy(text = "word ".repeat(revision))
+            reply = reply.copy(text = final, state = MessageState.stopped)
         }
         compose.onAllNodes(hasText(final), useUnmergedTree = true).assertCountEquals(1)
         compose.onAllNodes(hasText("word", substring = true), useUnmergedTree = true).assertCountEquals(0)
@@ -62,13 +64,13 @@ class CoachPresentationTests {
 
     @Test
     fun noPlacementEverShowsTheOffsetLaggingTheEndWhileFollowing() {
-        var generation by mutableStateOf(AskGeneration("generation-a", "request-a", "Question", "running", "Line\n".repeat(60), revision = 1))
+        var answer by mutableStateOf("Line\n".repeat(60))
         lateinit var presentation: CoachPresentation
         val placements = mutableListOf<Pair<Int, Int>>()
         compose.setContent {
-            presentation = rememberCoachPresentation("thread-a", listOf(generation.exchange()))
+            presentation = rememberCoachPresentation("thread-a", listOf(running(answer)))
             Column(Modifier.height(100.dp).fillMaxWidth().then(presentation.anchoring).verticalScroll(presentation.scroll)) {
-                Text(generation.answer, Modifier.onPlaced {
+                Text(answer, Modifier.onPlaced {
                     placements += presentation.scroll.maxValue to presentation.scroll.value
                 })
             }
@@ -78,8 +80,8 @@ class CoachPresentationTests {
             opened = presentation.scroll.maxValue
             assertTrue(opened > 0)
         }
-        for (revision in 2..6) {
-            compose.runOnIdle { generation = generation.copy(answer = generation.answer + "More\n".repeat(10), revision = revision.toLong()) }
+        repeat(5) {
+            compose.runOnIdle { answer += "More\n".repeat(10) }
         }
         compose.runOnIdle {
             assertTrue(presentation.scroll.maxValue > opened)
@@ -91,21 +93,21 @@ class CoachPresentationTests {
 
     @Test
     fun aShortUpwardDragInterruptsFollowAndStaysPausedInsideTheEndTolerance() {
-        var generation by mutableStateOf(AskGeneration("generation-a", "request-a", "Question", "running", "Line\n".repeat(60), revision = 1))
+        var answer by mutableStateOf("Line\n".repeat(60))
         lateinit var presentation: CoachPresentation
         lateinit var scope: CoroutineScope
         compose.setContent {
-            presentation = rememberCoachPresentation("thread-a", listOf(generation.exchange()))
+            presentation = rememberCoachPresentation("thread-a", listOf(running(answer)))
             scope = rememberCoroutineScope()
             presentation.tolerance = 96
             Column(Modifier.height(100.dp).fillMaxWidth().then(presentation.anchoring).verticalScroll(presentation.scroll)) {
-                Text(generation.answer)
+                Text(answer)
             }
         }
         compose.runOnIdle { scope.launch { presentation.jumpToLatest() } }
         compose.waitForIdle()
         compose.mainClock.autoAdvance = false
-        compose.runOnIdle { generation = generation.copy(answer = generation.answer + "Next line\n", revision = 2) }
+        compose.runOnIdle { answer += "Next line\n" }
         compose.mainClock.advanceTimeBy(48)
         compose.runOnIdle {
             presentation.gestures.onPreScroll(Offset(0f, 20f), NestedScrollSource.UserInput)
@@ -117,7 +119,7 @@ class CoachPresentationTests {
             pausedAt = presentation.scroll.value
             assertFalse(presentation.followEnd)
             assertTrue(presentation.scroll.maxValue - pausedAt <= presentation.tolerance)
-            generation = generation.copy(answer = generation.answer + "More lines\n".repeat(5), revision = 3)
+            answer += "More lines\n".repeat(5)
         }
         compose.mainClock.advanceTimeBy(256)
         compose.runOnIdle {

@@ -6,6 +6,7 @@
 
 #include <trantor/utils/Logger.h>
 
+#include <algorithm>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -54,6 +55,13 @@ TurnOpen openOf(const Json::Value& body) {
   const TurnOpenRead read = readTurnOpen(body);
   if (!read.open) throw std::runtime_error("a scripted open body is out of shape: " + read.code);
   return *read.open;
+}
+
+// The open of one id, a plain question and nothing else.
+TurnOpen openNamed(const std::string& turnId) {
+  Json::Value body = parse(R"({"catalog":"catalog/1","turnId":"","question":"Hi","history":[],"context":[],"pictures":[]})");
+  body["turnId"] = turnId;
+  return openOf(body);
 }
 
 std::string answerName(ResultsAnswer answer) {
@@ -226,6 +234,30 @@ struct Replay {
   }
 };
 
+// Every `coach_*` line the service logs while it lives, each up to its duration.
+struct LogLines {
+  std::mutex mutex;
+  std::vector<std::string> lines;
+  trantor::Logger::LogLevel level = trantor::Logger::logLevel();
+  LogLines() {
+    trantor::Logger::setLogLevel(trantor::Logger::kInfo);
+    trantor::Logger::setOutputFunction(
+        [this](const char* message, std::uint64_t length) {
+          const std::string line(message, length);
+          const std::size_t start = line.find("coach_");
+          if (start == std::string::npos) return;
+          std::lock_guard lock(mutex);
+          lines.push_back(line.substr(start, line.find(" duration_ms=") - start));
+        },
+        [] {});
+  }
+  ~LogLines() {
+    trantor::Logger::setOutputFunction([](const char* message, std::uint64_t length) { fwrite(message, 1, length, stdout); },
+                                       [] { fflush(stdout); });
+    trantor::Logger::setLogLevel(level);
+  }
+};
+
 struct Registered {
   Registered() {
     for (const std::filesystem::path& path : scripts()) {
@@ -233,6 +265,7 @@ struct Registered {
       ::testing::registry().push_back({name, [path] {
         const Json::Value script = readScript(path);
         Harness h;
+        if (script.isMember("clockMs")) h.clock.now = script["clockMs"].asUInt64();
         Replay replay(h, script);
         replay.run();
         for (const std::string& problem : replay.problems) ::testing::fail(problem.c_str(), path.c_str(), 0);
@@ -283,14 +316,9 @@ TEST(coach_turn_capacity_is_two_vendor_rounds_and_a_third_open_is_busy) {
   h.model->replies = parse(R"([{"stop_reason":"end_turn","content":[{"type":"text","text":"a"}]},
                                {"stop_reason":"end_turn","content":[{"type":"text","text":"b"}]},
                                {"stop_reason":"end_turn","content":[{"type":"text","text":"c"}]}])");
-  const auto body = [](const char* id) {
-    Json::Value body = parse(R"({"catalog":"catalog/1","turnId":"","question":"Hi","history":[],"context":[],"pictures":[]})");
-    body["turnId"] = id;
-    return openOf(body);
-  };
-  const TurnAdmission first = h.service->open(h.bound(), body("tn_capacity_000001"));
-  const TurnAdmission second = h.service->open(h.bound(), body("tn_capacity_000002"));
-  const TurnAdmission third = h.service->open(h.bound(), body("tn_capacity_000003"));
+  const TurnAdmission first = h.service->open(h.bound(), openNamed("tn_capacity_000001"));
+  const TurnAdmission second = h.service->open(h.bound(), openNamed("tn_capacity_000002"));
+  const TurnAdmission third = h.service->open(h.bound(), openNamed("tn_capacity_000003"));
   REQUIRE(first.turn);
   REQUIRE(second.turn);
   CHECK_FALSE(third.turn);
@@ -304,8 +332,223 @@ TEST(coach_turn_capacity_is_two_vendor_rounds_and_a_third_open_is_busy) {
   REQUIRE(secondStream->waitFor(2));
   CHECK_EQ(std::string(nameOf(first.turn->state())), std::string("completed"));
   CHECK_EQ(std::string(nameOf(second.turn->state())), std::string("completed"));
-  const TurnAdmission fourth = h.service->open(h.bound(), body("tn_capacity_000004"));
+  const TurnAdmission fourth = h.service->open(h.bound(), openNamed("tn_capacity_000004"));
   CHECK(fourth.turn);
+  h.service->stop();
+}
+
+namespace {
+
+// A turn run to its end under the principal, its stream closed.
+void endedTurn(Harness& h, const TurnPrincipal& principal, const std::string& id) {
+  Json::Value body = parse(R"({"catalog":"catalog/1","question":"Hi","history":[],"context":[],"pictures":[]})");
+  body["turnId"] = id;
+  h.model->replies = parse(R"([{"stop_reason":"end_turn","content":[{"type":"text","text":"Done."}]}])");
+  h.model->index = 0;
+  const TurnAdmission admission = h.service->open(principal, openOf(body));
+  REQUIRE(admission.turn);
+  auto recorder = std::make_shared<Recorder>();
+  admission.turn->attach(recorder, false);
+  h.model->start();
+  REQUIRE(recorder->waitFor(2));
+}
+
+// Every write line while `body` runs, as operation, product, door and outcome.
+std::vector<std::string> writeLinesOf(const std::function<void()>& body) {
+  std::vector<std::string> lines;
+  installWriteSink([&](const WriteCompletion& line) {
+    lines.push_back(line.operation + " " + line.product + " " + line.door + " " + line.outcome);
+  });
+  body();
+  installWriteSink({});
+  return lines;
+}
+
+}  // namespace
+
+TEST(coach_turn_sweep_ends_a_bound_message_once_its_linger_passed_and_drops_the_turn) {
+  Harness h;
+  endedTurn(h, h.bound(), "tn_sweep_bound_1");
+
+  h.clock.now += 10 * 60 * 1000 - 1;
+  h.service->sweep();
+  CHECK_EQ(h.door.interrupts, std::vector<std::string>{});
+  CHECK(h.service->find(h.bound(), "tn_sweep_bound_1"));
+
+  h.clock.now += 1;
+  const std::vector<std::string> lines = writeLinesOf([&] { h.service->sweep(); });
+  CHECK_EQ(h.door.interrupts, std::vector<std::string>{"44444444-4444-4444-4444-444444444444 tn_sweep_bound_1"});
+  CHECK_EQ(lines, std::vector<std::string>{"gym.coach_turn.interrupt gym background ok"});
+  CHECK_FALSE(h.service->find(h.bound(), "tn_sweep_bound_1"));
+
+  h.service->sweep();
+  CHECK_EQ(h.door.interrupts, std::vector<std::string>{"44444444-4444-4444-4444-444444444444 tn_sweep_bound_1"});
+  CHECK_EQ(h.failures->reports, std::vector<std::string>{});
+  h.service->stop();
+}
+
+TEST(coach_turn_sweep_logs_no_write_for_a_message_the_phone_already_ended) {
+  Harness h;
+  h.door.answer = [](const std::string&) { return false; };
+  endedTurn(h, h.bound(), "tn_sweep_ended_1");
+
+  h.clock.now += 10 * 60 * 1000;
+  const std::vector<std::string> lines = writeLinesOf([&] {
+    h.service->sweep();
+    h.service->sweep();
+  });
+
+  CHECK_EQ(h.door.interrupts, std::vector<std::string>{"44444444-4444-4444-4444-444444444444 tn_sweep_ended_1"});
+  CHECK_EQ(lines, std::vector<std::string>{});
+  CHECK_EQ(h.failures->reports, std::vector<std::string>{});
+  h.service->stop();
+}
+
+TEST(coach_turn_sweep_writes_nothing_for_an_anon_seat) {
+  Harness h;
+  const TurnPrincipal anon = h.anon();
+  endedTurn(h, anon, "tn_sweep_anon_01");
+
+  h.clock.now += 10 * 60 * 1000;
+  const std::vector<std::string> lines = writeLinesOf([&] { h.service->sweep(); });
+
+  CHECK_EQ(h.door.interrupts, std::vector<std::string>{});
+  CHECK_EQ(lines, std::vector<std::string>{});
+  CHECK_FALSE(h.service->find(anon, "tn_sweep_anon_01"));
+  h.service->stop();
+}
+
+TEST(coach_turn_sweep_leaves_a_turn_still_running_however_long_it_has_run) {
+  Harness h;
+  const TurnOpen open = openOf(parse(R"({"catalog":"catalog/1","turnId":"tn_sweep_live_01","question":"Hi","history":[],"context":[],"pictures":[]})"));
+  h.model->replies = parse(R"([{"stop_reason":"end_turn","content":[{"type":"text","text":"Done."}]}])");
+  const TurnAdmission admission = h.service->open(h.bound(), open);
+  REQUIRE(admission.turn);
+
+  h.clock.now += 2 * 10 * 60 * 1000;
+  h.service->sweep();
+
+  CHECK_EQ(h.door.interrupts, std::vector<std::string>{});
+  CHECK(h.service->find(h.bound(), "tn_sweep_live_01"));
+  auto recorder = std::make_shared<Recorder>();
+  admission.turn->attach(recorder, false);
+  h.model->start();
+  REQUIRE(recorder->waitFor(2));
+  h.service->stop();
+}
+
+TEST(coach_turn_sweep_tries_a_busy_door_again_on_the_next_pass) {
+  Harness h;
+  bool busy = true;
+  h.door.answer = [&](const std::string&) -> bool {
+    if (busy) throw GymUnavailable("gym-engine-busy", "gym engine is temporarily unavailable");
+    return true;
+  };
+  endedTurn(h, h.bound(), "tn_sweep_busy_01");
+
+  h.clock.now += 10 * 60 * 1000;
+  const std::vector<std::string> refused = writeLinesOf([&] { h.service->sweep(); });
+  CHECK_EQ(refused, std::vector<std::string>{"gym.coach_turn.interrupt gym background gym-engine-busy"});
+  CHECK_EQ(h.door.interrupts, std::vector<std::string>{"44444444-4444-4444-4444-444444444444 tn_sweep_busy_01"});
+  CHECK_FALSE(h.service->find(h.bound(), "tn_sweep_busy_01"));
+
+  busy = false;
+  const std::vector<std::string> written = writeLinesOf([&] { h.service->sweep(); });
+  CHECK_EQ(written, std::vector<std::string>{"gym.coach_turn.interrupt gym background ok"});
+  CHECK_EQ(h.door.interrupts, (std::vector<std::string>{"44444444-4444-4444-4444-444444444444 tn_sweep_busy_01", "44444444-4444-4444-4444-444444444444 tn_sweep_busy_01"}));
+
+  h.service->sweep();
+  CHECK_EQ(h.door.interrupts.size(), 2u);
+  CHECK_EQ(h.failures->reports, std::vector<std::string>{});
+  h.service->stop();
+}
+
+TEST(coach_turn_sweep_drops_a_turn_the_engine_refused_with_a_line_and_no_issue) {
+  Harness h;
+  h.door.answer = [](const std::string&) -> bool { throw GymUnavailable("gym-engine-unavailable", "gym engine refused: gone"); };
+  endedTurn(h, h.bound(), "tn_sweep_gone_01");
+
+  h.clock.now += 10 * 60 * 1000;
+  const std::vector<std::string> lines = writeLinesOf([&] {
+    h.service->sweep();
+    h.service->sweep();
+  });
+
+  CHECK_EQ(lines, std::vector<std::string>{"gym.coach_turn.interrupt gym background gym-engine-unavailable"});
+  CHECK_EQ(h.door.interrupts, std::vector<std::string>{"44444444-4444-4444-4444-444444444444 tn_sweep_gone_01"});
+  CHECK_EQ(h.failures->reports, std::vector<std::string>{});
+  h.service->stop();
+}
+
+TEST(coach_turn_sweep_reports_a_failed_write_without_its_message_and_goes_on_to_the_next_turn) {
+  Harness h;
+  h.door.answer = [](const std::string& message) -> bool {
+    if (message == "tn_sweep_fail_01") throw std::runtime_error("What should I lift today?");
+    return true;
+  };
+  endedTurn(h, h.bound(), "tn_sweep_fail_01");
+  endedTurn(h, h.bound(), "tn_sweep_fail_02");
+
+  h.clock.now += 10 * 60 * 1000;
+  const std::vector<std::string> lines = writeLinesOf([&] { h.service->sweep(); });
+
+  CHECK_EQ(h.door.interrupts, (std::vector<std::string>{"44444444-4444-4444-4444-444444444444 tn_sweep_fail_01", "44444444-4444-4444-4444-444444444444 tn_sweep_fail_02"}));
+  CHECK_EQ(lines, (std::vector<std::string>{"gym.coach_turn.interrupt gym background failed", "gym.coach_turn.interrupt gym background ok"}));
+  REQUIRE_EQ(h.failures->reports.size(), 1u);
+  const std::string report = h.failures->reports[0];
+  const std::string opening = "gym:gym.coach_turn.interrupt:door=background outcome=failed request_id=";
+  CHECK_EQ(report.substr(0, opening.size()), opening);
+  CHECK(report.find("What should I lift") == std::string::npos);
+  h.service->stop();
+}
+
+// A write that failed is tried again at the next sweep, each attempt its own Issue; the third failure
+// drops the turn with a line that says so, and no sweep after it asks the door again.
+TEST(coach_turn_sweep_keeps_a_turn_whose_interrupt_failed_and_drops_it_after_the_third_failure) {
+  LogLines logs;
+  Harness h;
+  h.door.answer = [](const std::string&) -> bool { throw std::runtime_error("What should I lift today?"); };
+  endedTurn(h, h.bound(), "tn_sweep_fail_03");
+
+  h.clock.now += 10 * 60 * 1000;
+  const std::vector<std::string> lines = writeLinesOf([&] {
+    for (int pass = 0; pass < kInterruptAttempts + 1; ++pass) h.service->sweep();
+  });
+  h.service->stop();
+
+  const std::string asked = "44444444-4444-4444-4444-444444444444 tn_sweep_fail_03";
+  CHECK_EQ(h.door.interrupts, (std::vector<std::string>{asked, asked, asked}));
+  const std::string failed = "gym.coach_turn.interrupt gym background failed";
+  CHECK_EQ(lines, (std::vector<std::string>{failed, failed, failed}));
+  CHECK_EQ(h.failures->reports.size(), 3u);
+  std::lock_guard lock(logs.mutex);
+  const std::string abandoned = "coach_turn_interrupt_abandoned turn=tn_sweep_fail_03 attempts=3";
+  CHECK_EQ(std::count_if(logs.lines.begin(), logs.lines.end(),
+                         [&](const std::string& line) { return line.rfind(abandoned, 0) == 0; }), 1);
+}
+
+TEST(coach_turn_sweep_ends_a_message_whose_first_interrupt_failed_on_the_next_pass) {
+  Harness h;
+  bool failing = true;
+  h.door.answer = [&](const std::string&) -> bool {
+    if (failing) throw std::runtime_error("What should I lift today?");
+    return true;
+  };
+  endedTurn(h, h.bound(), "tn_sweep_fail_04");
+
+  h.clock.now += 10 * 60 * 1000;
+  const std::vector<std::string> first = writeLinesOf([&] { h.service->sweep(); });
+  CHECK_EQ(first, std::vector<std::string>{"gym.coach_turn.interrupt gym background failed"});
+
+  failing = false;
+  const std::vector<std::string> then = writeLinesOf([&] {
+    h.service->sweep();
+    h.service->sweep();
+  });
+  CHECK_EQ(then, std::vector<std::string>{"gym.coach_turn.interrupt gym background ok"});
+  const std::string asked = "44444444-4444-4444-4444-444444444444 tn_sweep_fail_04";
+  CHECK_EQ(h.door.interrupts, (std::vector<std::string>{asked, asked}));
+  CHECK_EQ(h.failures->reports.size(), 1u);
   h.service->stop();
 }
 
@@ -328,6 +571,62 @@ TEST(coach_turn_is_dropped_after_its_linger_and_a_resume_then_finds_nothing) {
   const TurnAdmission reopened = h.service->open(h.bound(), open);
   CHECK(reopened.turn);
   CHECK_FALSE(reopened.resumed);
+  h.service->stop();
+}
+
+// §4.5: a Stop for a turn the server never held leaves a tombstone, and every open of that id still on
+// its way is refused before any round while the tombstone stands, since Android sends the same open at
+// each reconnect; another id's tombstone stands, and a resume of a tombstoned id finds nothing, as before.
+TEST(coach_turn_stop_of_an_unseen_id_refuses_every_open_of_it_and_runs_no_round) {
+  Harness h;
+  CHECK_FALSE(h.service->stop(h.bound(), "tn_tomb_other_0001"));
+  CHECK_FALSE(h.service->stop(h.bound(), "tn_tomb_000000001"));
+  CHECK_FALSE(h.service->find(h.bound(), "tn_tomb_000000001"));
+  for (int attempt = 0; attempt < 2; ++attempt) {
+    const TurnAdmission refused = h.service->open(h.bound(), openNamed("tn_tomb_000000001"));
+    REQUIRE(!refused.turn);
+    CHECK_EQ(refused.code, std::string("coach-turn-stopped"));
+  }
+  CHECK_FALSE(h.service->find(h.bound(), "tn_tomb_000000001"));
+  CHECK_EQ(h.model->requests.size(), 0u);
+  CHECK_EQ(h.service->open(h.bound(), openNamed("tn_tomb_other_0001")).code, std::string("coach-turn-stopped"));
+  h.service->stop();
+}
+
+TEST(coach_turn_tombstone_stands_for_the_linger_and_no_longer) {
+  Harness h;
+  CHECK_FALSE(h.service->stop(h.bound(), "tn_tomb_linger_01"));
+  CHECK_FALSE(h.service->stop(h.bound(), "tn_tomb_linger_02"));
+
+  h.clock.now += 10 * 60 * 1000 - 1;
+  h.service->sweep();
+  CHECK_EQ(h.service->open(h.bound(), openNamed("tn_tomb_linger_01")).code, std::string("coach-turn-stopped"));
+
+  h.clock.now += 1;
+  endedTurn(h, h.bound(), "tn_tomb_linger_02");
+  h.service->stop();
+}
+
+TEST(coach_turn_tombstones_per_principal_are_capped_and_the_oldest_goes_first) {
+  Harness h;
+  for (std::size_t n = 0; n <= kTombstonesPerPrincipal; ++n) {
+    h.clock.now += 1;
+    CHECK_FALSE(h.service->stop(h.bound(), "tn_tomb_cap_" + std::to_string(n)));
+  }
+  CHECK_EQ(h.service->open(h.bound(), openNamed("tn_tomb_cap_1")).code, std::string("coach-turn-stopped"));
+  CHECK_EQ(h.service->open(h.bound(), openNamed("tn_tomb_cap_" + std::to_string(kTombstonesPerPrincipal))).code,
+           std::string("coach-turn-stopped"));
+  endedTurn(h, h.bound(), "tn_tomb_cap_0");
+  h.service->stop();
+}
+
+TEST(coach_turn_tombstone_of_one_principal_leaves_another_principals_open_alone) {
+  Harness h;
+  const TurnPrincipal anon = h.anon();
+  CHECK_FALSE(h.service->stop(h.bound(), "tn_tomb_seat_0001"));
+  endedTurn(h, anon, "tn_tomb_seat_0001");
+  CHECK_FALSE(h.service->stop(anon, "tn_tomb_seat_0002"));
+  endedTurn(h, h.bound(), "tn_tomb_seat_0002");
   h.service->stop();
 }
 
@@ -362,10 +661,16 @@ TEST(coach_turn_open_refuses_an_anonymous_seat_without_installations_and_a_retir
     CHECK_FALSE(read.open);
     CHECK_EQ(read.code, std::string("coach-bad-request"));
   }
-  TurnService lonely(h.model, gymAbilityCatalog(), h.server, h.entitlements, nullptr, h.clock, 2000, h.failures);
+  TurnService lonely(h.model, gymAbilityCatalog(), h.server, h.door, h.entitlements, nullptr, h.clock, 2000, h.failures);
   const TurnAdmission anon = lonely.open(h.anon(), openOf(parse(R"({"catalog":"catalog/1","turnId":"tn_anon_000001","question":"Hi"})")));
   CHECK_FALSE(anon.turn);
   CHECK_EQ(anon.code, std::string("anonymous_ai_unavailable"));
+  // Installations exist but signed-out Coach is switched off: the same code, from the installation's admission.
+  const auto off = std::make_shared<AiInstallations>(h.installationRepository, h.budgets, h.tokens, h.clock);
+  TurnService dark(h.model, gymAbilityCatalog(), h.server, h.door, h.entitlements, off, h.clock, 2000, h.failures);
+  const TurnAdmission unplugged = dark.open(h.anon(), openOf(parse(R"({"catalog":"catalog/1","turnId":"tn_anon_000002","question":"Hi"})")));
+  CHECK_FALSE(unplugged.turn);
+  CHECK_EQ(unplugged.code, std::string("anonymous_ai_unavailable"));
 }
 
 TEST(coach_turn_results_are_read_in_shape_and_within_their_byte_bound) {
@@ -491,16 +796,11 @@ TEST(coach_turn_waiting_on_a_phone_holds_no_vendor_slot) {
   h.model->replies = parse(R"([{"stop_reason":"tool_use","content":[{"type":"tool_use","id":"toolu_1","name":"list_routines","input":{}}]},
                                {"stop_reason":"tool_use","content":[{"type":"tool_use","id":"toolu_1","name":"list_routines","input":{}}]},
                                {"stop_reason":"end_turn","content":[{"type":"text","text":"Third."}]}])");
-  const auto body = [](const char* id) {
-    Json::Value body = parse(R"({"catalog":"catalog/1","turnId":"","question":"Hi","history":[],"context":[],"pictures":[]})");
-    body["turnId"] = id;
-    return openOf(body);
-  };
-  const TurnAdmission first = h.service->open(h.bound(), body("tn_waiting_000001"));
-  const TurnAdmission second = h.service->open(h.bound(), body("tn_waiting_000002"));
+  const TurnAdmission first = h.service->open(h.bound(), openNamed("tn_waiting_000001"));
+  const TurnAdmission second = h.service->open(h.bound(), openNamed("tn_waiting_000002"));
   REQUIRE(first.turn);
   REQUIRE(second.turn);
-  CHECK_EQ(h.service->open(h.bound(), body("tn_waiting_000003")).code, std::string("coach-busy"));
+  CHECK_EQ(h.service->open(h.bound(), openNamed("tn_waiting_000003")).code, std::string("coach-busy"));
   auto firstStream = std::make_shared<Recorder>();
   auto secondStream = std::make_shared<Recorder>();
   first.turn->attach(firstStream, false);
@@ -510,7 +810,7 @@ TEST(coach_turn_waiting_on_a_phone_holds_no_vendor_slot) {
   REQUIRE(secondStream->waitFor(1));
   CHECK_EQ(firstStream->snapshot()[0]["event"].asString(), std::string("calls"));
   CHECK_EQ(secondStream->snapshot()[0]["event"].asString(), std::string("calls"));
-  const TurnAdmission third = h.service->open(h.bound(), body("tn_waiting_000003"));
+  const TurnAdmission third = h.service->open(h.bound(), openNamed("tn_waiting_000003"));
   REQUIRE(third.turn);
   auto thirdStream = std::make_shared<Recorder>();
   third.turn->attach(thirdStream, false);
@@ -524,7 +824,7 @@ TEST(coach_turn_waiting_on_a_phone_holds_no_vendor_slot) {
 }
 
 // B-2: an anonymous turn runs on the onboarding model, and its first round — the full prompt and
-// catalog/2 — is admitted by the real estimator and budget under the default $0.05 lifetime
+// catalog/2 — is admitted by the real estimator and budget under the default $0.25 lifetime
 // allowance; a bound turn keeps the Coach model, and a catalog/1 turn is offered catalog/1.
 TEST(coach_turn_anonymous_seat_runs_on_sonnet_and_its_round_fits_the_default_lifetime_allowance) {
   Harness h;
@@ -543,20 +843,20 @@ TEST(coach_turn_anonymous_seat_runs_on_sonnet_and_its_round_fits_the_default_lif
   CHECK_EQ(request["max_tokens"].asInt(), 2000);
   CHECK_EQ(request["tools"].size(), gymAbilityCatalog().offered(Seat::anon).size());
 
-  fake::FakeAuthRepository accounts;
+  wm::fake::FakeAuthRepository accounts;
   AiCallBudget budget(h.budgets, h.entitlements, accounts, *h.failures);
   AiSpend spend;
   spend.product = "gym";
   spend.operation = "turn";
   spend.model = request["model"].asString();
   spend.runId = "tn_anon_model_0001";
-  CHECK_EQ(h.limits.anonymousLifetimeNanos, 50'000'000LL);
+  CHECK_EQ(h.limits.anonymousLifetimeNanos, 250'000'000LL);
   const AiCallAdmission admitted = budget.beginInstallation(*anon.installation, spend, request, 1'024);
   CHECK_EQ(admitted.refusal, std::string(""));
   REQUIRE(admitted.reservation);
   REQUIRE(admitted.reservation->outputBudget);
   CHECK_EQ(admitted.reservation->outputBudget->tokensFor(admitted.reservation->amountNanos).value_or(0), 2000);
-  CHECK(admitted.reservation->amountNanos <= 50'000'000LL);
+  CHECK(admitted.reservation->amountNanos <= 250'000'000LL);
   h.service->stop();
 }
 
@@ -580,28 +880,7 @@ TEST(coach_turn_bound_seat_runs_on_the_coach_model_under_the_configured_ceiling)
 // F6: a call the phone answered `ok: false` is counted as the phone's refusal, by code, on both
 // lines; a batch the phone refused whole is `refused`, and a code that is not a slug logs as `other`.
 TEST(coach_turn_logs_count_the_phone_refusals_by_code_and_a_batch_refused_whole_is_refused) {
-  struct LogLines {
-    std::mutex mutex;
-    std::vector<std::string> lines;
-    trantor::Logger::LogLevel level = trantor::Logger::logLevel();
-    LogLines() {
-      trantor::Logger::setLogLevel(trantor::Logger::kInfo);
-      trantor::Logger::setOutputFunction(
-          [this](const char* message, std::uint64_t length) {
-            const std::string line(message, length);
-            const std::size_t start = line.find("coach_");
-            if (start == std::string::npos) return;
-            std::lock_guard lock(mutex);
-            lines.push_back(line.substr(start, line.find(" duration_ms=") - start));
-          },
-          [] {});
-    }
-    ~LogLines() {
-      trantor::Logger::setOutputFunction([](const char* message, std::uint64_t length) { fwrite(message, 1, length, stdout); },
-                                         [] { fflush(stdout); });
-      trantor::Logger::setLogLevel(level);
-    }
-  } logs;
+  LogLines logs;
 
   Harness h;
   h.model->replies = parse(R"([
@@ -638,4 +917,104 @@ TEST(coach_turn_logs_count_the_phone_refusals_by_code_and_a_batch_refused_whole_
       "coach_turn turn=tn_phone_refused1 seat=bound state=completed truncated=0 code=- model_calls=3 batches=2 "
       "ability_calls=list_exercises:1,list_notes:1,list_routines:1,save_note:1 refusals=- "
       "phone_refusals=coach-turn-volume:1,other:1,record-dead:1 question_bytes=2 answer_bytes=5"}));
+}
+
+// §6.3: an `error` frame names when the budget its code names returns and no other moment: a shared
+// free pool's UTC day or month, nothing for a lifetime allowance or a code no period ends. An allowance
+// code carries the seat's read, here a positive balance the round did not fit, and no other code does.
+// An expected refusal is a `coach_turn` line with its code and never an Issue; a vendor failure stays one.
+TEST(coach_turn_error_frame_names_when_the_refused_budget_returns_and_only_a_failure_files_an_issue) {
+  struct Case {
+    const char* reply;
+    const char* code;
+    std::string frame;
+    std::vector<std::string> issues;
+  };
+  const std::string read = R"("allowance":{"budgetResetsAtMs":null,"code":"ok","configured":true,"currency":"USD","limit":"0.250000000","period":"lifetime","remaining":"0.250000000","reserved":"0.000000000","resetsAtMs":null,"tier":"anonymous","used":"0.000000000"})";
+  const std::vector<Case> cases{
+      {R"({"refused":"free_day_exhausted"})", "free_day_exhausted", "{" + read + R"(,"budgetResetsAtMs":1793059200000,"code":"free_day_exhausted"})", {}},
+      {R"({"refused":"free_month_exhausted"})", "free_month_exhausted", "{" + read + R"(,"budgetResetsAtMs":1793491200000,"code":"free_month_exhausted"})", {}},
+      {R"({"refused":"subject_exhausted"})", "subject_exhausted", "{" + read + R"(,"code":"subject_exhausted"})", {}},
+      {R"({"refused":"concurrency_exhausted"})", "concurrency_exhausted", "{" + read + R"(,"code":"concurrency_exhausted"})", {}},
+      {R"({"refused":"funding_required"})", "funding_required", "{" + read + R"(,"code":"funding_required"})", {}},
+      {R"({"refused":"debt_outstanding"})", "debt_outstanding", "{" + read + R"(,"code":"debt_outstanding"})", {}},
+      {R"({"refused":"coach-busy"})", "coach-busy", R"({"code":"coach-busy"})", {}},
+      {R"({"refused":"coach-rate-limited"})", "coach-rate-limited", R"({"code":"coach-rate-limited"})", {}},
+      {"null", "coach-vendor-error", R"({"code":"coach-vendor-error"})", {"gym:coach_turn.loop:the model loop failed"}}};
+  for (const Case& refusal : cases) {
+    LogLines logs;
+    Harness h;
+    h.clock.now = 1'793'000'000'000;
+    h.model->replies = parse(std::string("[") + refusal.reply + "]");
+    const TurnAdmission admission = h.service->open(h.anon(), openOf(parse(R"({"catalog":"catalog/1","turnId":"tn_refused_000001","question":"Hi"})")));
+    REQUIRE(admission.turn);
+    auto recorder = std::make_shared<Recorder>();
+    admission.turn->attach(recorder, false);
+    h.model->start();
+    REQUIRE(recorder->waitFor(1));
+    h.service->stop();
+    CHECK_EQ(Replay::dumpAll(recorder->snapshot()), std::string(R"([{"data":)") + refusal.frame + R"(,"event":"error"}])");
+    CHECK(h.failures->reports == refusal.issues);
+    std::lock_guard lock(logs.mutex);
+    CHECK(logs.lines == (std::vector<std::string>{
+        std::string("coach_turn turn=tn_refused_000001 seat=anon state=failed truncated=0 code=") + refusal.code +
+        " model_calls=0 batches=0 ability_calls=- refusals=- phone_refusals=- question_bytes=2 answer_bytes=0"}));
+  }
+}
+
+// A bound seat's own allowance returns at the end of its month, and a resume hears the same frame.
+TEST(coach_turn_error_frame_on_a_bound_seat_names_the_end_of_its_own_period) {
+  Harness h(true);
+  h.clock.now = 1'793'000'000'000;
+  h.model->replies = parse(R"([{"refused":"subject_exhausted"}])");
+  const TurnAdmission admission = h.service->open(h.bound(), openOf(parse(R"({"catalog":"catalog/1","turnId":"tn_refused_000002","question":"Hi"})")));
+  REQUIRE(admission.turn);
+  auto recorder = std::make_shared<Recorder>();
+  admission.turn->attach(recorder, false);
+  h.model->start();
+  REQUIRE(recorder->waitFor(1));
+  h.service->stop();
+  const std::string frame = R"({"data":{"allowance":{"budgetResetsAtMs":null,"code":"ok","configured":true,"currency":"USD","limit":"0.500000000","period":"calendar_month_utc","remaining":"0.500000000","reserved":"0.000000000","resetsAtMs":1793491200000,"tier":"logged_in","used":"0.000000000"},"budgetResetsAtMs":1793491200000,"code":"subject_exhausted"},"event":"error"})";
+  CHECK_EQ(Replay::dumpAll(recorder->snapshot()), "[" + frame + "]");
+  auto resumed = std::make_shared<Recorder>();
+  admission.turn->attach(resumed, true);
+  CHECK_EQ(Replay::dumpAll(resumed->snapshot()), R"([{"data":{"state":"failed","text":""},"event":"snapshot"},)" + frame + "]");
+  CHECK(h.failures->reports.empty());
+}
+
+// §7.1: a phone tells a balance that is gone from a round that did not fit by this read, so a seat the
+// round found spent says so: nothing remaining, nothing reserved.
+TEST(coach_turn_error_frame_reads_a_balance_the_round_found_gone) {
+  Harness h;
+  h.clock.now = 1'793'000'000'000;
+  h.model->replies = parse(R"([{"refused":"subject_exhausted"}])");
+  h.model->beforeReply = [&h](int) { h.budgetRepository.totals.subject.spentNanos = 250'000'000; };
+  const TurnAdmission admission = h.service->open(h.anon(), openOf(parse(R"({"catalog":"catalog/1","turnId":"tn_refused_000004","question":"Hi"})")));
+  REQUIRE(admission.turn);
+  auto recorder = std::make_shared<Recorder>();
+  admission.turn->attach(recorder, false);
+  h.model->start();
+  REQUIRE(recorder->waitFor(1));
+  h.service->stop();
+  CHECK_EQ(Replay::dumpAll(recorder->snapshot()),
+           std::string(R"([{"data":{"allowance":{"budgetResetsAtMs":null,"code":"subject_exhausted","configured":true,"currency":"USD","limit":"0.250000000","period":"lifetime","remaining":"0.000000000","reserved":"0.000000000","resetsAtMs":null,"tier":"anonymous","used":"0.250000000"},"code":"subject_exhausted"},"event":"error"}])"));
+  CHECK(h.failures->reports.empty());
+}
+
+// The seat's period is read from its allowance, so a read that fails after the turn names no moment
+// rather than a guess, and reports itself; a pool's boundary is the calendar's and needs no read.
+TEST(coach_turn_error_frame_names_no_seat_period_when_the_allowance_cannot_be_read_after_the_turn) {
+  Harness h(true);
+  h.clock.now = 1'793'000'000'000;
+  h.model->replies = parse(R"([{"refused":"subject_exhausted"}])");
+  h.model->beforeReply = [&h](int) { h.budgetRepository.failRead = true; };
+  const TurnAdmission admission = h.service->open(h.bound(), openOf(parse(R"({"catalog":"catalog/1","turnId":"tn_refused_000003","question":"Hi"})")));
+  REQUIRE(admission.turn);
+  auto recorder = std::make_shared<Recorder>();
+  admission.turn->attach(recorder, false);
+  h.model->start();
+  REQUIRE(recorder->waitFor(1));
+  h.service->stop();
+  CHECK_EQ(Replay::dumpAll(recorder->snapshot()), std::string(R"([{"data":{"code":"subject_exhausted"},"event":"error"}])"));
+  CHECK(h.failures->reports == std::vector<std::string>{"gym:coach_turn.loop:allowance unavailable after the turn"});
 }

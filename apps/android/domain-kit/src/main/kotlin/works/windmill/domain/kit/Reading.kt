@@ -11,6 +11,7 @@ import works.windmill.sync.core.lives
 
 class Reader(val source: ScopeReader, val scope: ScopeRef, val moment: Moment, val registry: Registry) {
     val actor: String get() = (source as? CommitContext)?.actor ?: ""
+    val replica: String get() = (source as? CommitContext)?.replica ?: ""
     val isAnonymous: Boolean get() = source.isAnonymous
     fun commands(): List<QueuedCommand> = (source as? CommitContext)?.commands() ?: emptyList()
     fun devices(prefix: String): Map<String, Json> = source.devices(prefix)

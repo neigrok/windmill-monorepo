@@ -13,11 +13,7 @@ private const val nanosPerSecond = 1e9
 private const val floorCharsPerSecond = 40.0
 private const val intervalWeight = 0.3
 
-// Paces the live answer between the transport's snapshots, which land about once a second carrying
-// a few lines each: what is pending is spread over the measured inter-arrival interval, so the text
-// reads as typing instead of lines dropping in, and a stalled stream shows what it has and stops.
-// Text present when the reveal is made is shown at once; only what lands afterwards is paced.
-// Every stamp is a frame time, so the one clock that draws the answer also paces it.
+// Paces the live answer between the transport's snapshots, which land about once a second carrying a few lines each: what is pending is spread over the measured inter-arrival interval, so the text reads as typing instead of lines dropping in, and a stalled stream shows what it has and stops. Text present when the reveal is made is shown at once; only what lands afterwards is paced. Every stamp is a frame time, so the one clock that draws the answer also paces it.
 internal class CoachReveal(initial: String) {
     private var received = initial
     private var revealed = initial.length.toDouble()
@@ -62,20 +58,14 @@ internal class CoachReveal(initial: String) {
         return received.substring(0, cut)
     }
 
-    // One product from the last anchor, never a sum of per-frame steps that would drift below whole
-    // characters.
+    // One product from the last anchor, never a sum of per-frame steps that would drift below whole characters.
     private fun advance(atNanos: Long) {
         val elapsed = (atNanos - anchorNanos).coerceAtLeast(0) / nanosPerSecond
         revealed = minOf(received.length.toDouble(), anchor + charsPerSecond * elapsed)
     }
 }
 
-// The running answer as the reader sees it this frame. It mounts settled on the text already there,
-// so a room revisited mid-stream never re-types. Arrival stamps and advancement both take the frame
-// clock, so the test clock drives the whole reveal.
-@Composable
-internal fun rememberRevealedText(messageKey: String, generation: AskGeneration): String = rememberRevealedText(messageKey, generation.answer, generation.status in listOf("failed", "stopped"))
-
+// The running answer as the reader sees it this frame. It mounts settled on the text already there, so a room revisited mid-stream never re-types. Arrival stamps and advancement both take the frame clock, so the test clock drives the whole reveal.
 @Composable
 internal fun rememberRevealedText(messageKey: String, text: String, settled: Boolean = false): String {
     val reveal = remember(messageKey) { CoachReveal(text) }

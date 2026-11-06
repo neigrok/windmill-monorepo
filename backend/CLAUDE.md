@@ -89,11 +89,12 @@ journal's `page` and `journalState` and its two commands, `journal.savePage` and
 `platform/infra/SyncProducts` seals the two into the gym + journal v12/minimum-11 catalog. `windmill_server`
 always serves it at `/v1/sync/hello`, `push`, `pull` and `/v1/sync/live`, and the engine is the only
 writer of gym and journal client data. Every gym write the server makes for a lifter — the MCP gym
-tools, Coach, `POST /v1/gym/sessions/import`, the lazy close of a workout walked away from, and the
-proposal unlink a Coach conversation's delete makes — goes through `GymDoor`, the one `GymWriteDoor`,
-as a server-origin intent; it builds its own admission stack and four-thread worker pool beside the
-engine's. `GymTools` and the import handler take the door directly; `TrainingService` uses it for
-stale closes and `ThreadService` for proposal unlinking. Catalog, program, notes, settings and
+tools, Coach, `POST /v1/gym/sessions/import`, the lazy close of a workout walked away from, the
+proposal unlink a Coach conversation's delete makes, and the `interrupted` a dropped phone Coach turn
+leaves — goes through `GymDoor`, the one `GymWriteDoor`, as a server-origin intent; it builds its own
+admission stack and four-thread worker pool beside the engine's. `GymTools` and the import handler take
+the door directly; `TrainingService` uses it for stale closes, `ThreadService` for proposal unlinking and
+`coach::TurnService` for a dropped turn's message. Catalog, program, notes, settings and
 weigh-in reads use repository ports directly. The gym repositories only read, but for shares and
 Coach threads. No server door writes a journal page: `JournalRepository` only reads, and `JournalFeed` hands each committed page to the
 `PageWatcher` (echo derivation) after the live feed, reporting a failure of either after the commit.

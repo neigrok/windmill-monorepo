@@ -27,7 +27,9 @@ import works.windmill.sync.engine.SignInSession
 import works.windmill.sync.engine.SignOutChoice
 import works.windmill.sync.engine.SignOutSession
 import works.windmill.sync.engine.SyncRuntime
+import works.windmill.sync.engine.anonDrawn
 import works.windmill.sync.engine.discardDormant
+import works.windmill.sync.schema.Gym
 
 class GymEngineSession(
     val engine: Engine,
@@ -48,6 +50,9 @@ class GymEngineSession(
         private set
     var decisionBusy by mutableStateOf(false)
         private set
+    // What the sign-in question names, by room and kind: what the person would see of the work the engine counts, so nothing deleted since is named. A count of nothing still asks, and the question says "training".
+    var decisionCounts: Map<String, Map<String, Int>> by mutableStateOf(emptyMap())
+        private set
     private var answer: CompletableDeferred<Unit>? = null
 
     override suspend fun signedIn(user: User, token: String, restoring: Boolean) {
@@ -64,6 +69,7 @@ class GymEngineSession(
             while (!session.isComplete) {
                 val completion = CompletableDeferred<Unit>()
                 decisionRevision += 1
+                decisionCounts = session.decisions.associate { held -> held.product to engine.anonDrawn(held.product) }
                 decision = session
                 decisionFailure = null
                 answer = completion

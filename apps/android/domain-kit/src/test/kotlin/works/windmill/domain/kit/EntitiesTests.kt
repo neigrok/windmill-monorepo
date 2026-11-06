@@ -86,4 +86,10 @@ class EntitiesTests {
         assertTrue(Capacity("sample", 3, 2).isFull)
         assertNull(Refused(RefusalCode.cap, null, Json.objectOf("type" to Json.of("sample"), "cap" to Json.of(1.5)), Refused.Path.notice).cap)
     }
+
+    @Test fun aNulIsFoundInAKeyAsInAValue() {
+        assertEquals(Path("at.a.b\u0000c"), Json.parse("""{"a":{"b\u0000c":1}}""").firstNul(Path("at")))
+        assertEquals(Path("at.a.0"), Json.parse("""{"a":["b\u0000c"]}""").firstNul(Path("at")))
+        assertNull(Json.parse("""{"a":["b"]}""").firstNul(Path("at")))
+    }
 }

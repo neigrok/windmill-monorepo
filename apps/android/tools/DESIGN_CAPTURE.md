@@ -13,6 +13,9 @@ the probe, while a valid `[]` explicitly expects an empty program. Identities ne
 Requirements: JDK 17+, Python 3, PostgreSQL client tools and a running server on `/tmp`, an Android
 SDK with an API 36+ arm64 system image, and a backend binary rebuilt from the current source.
 The default ports are backend 8098, model 8099, mail 8101 and emulator 5580/5581; occupied ports are refused.
+On a loaded host, `--patience N` multiplies every wait for a state. On a host short of disk, `--shared-avd NAME`
+boots an existing AVD read-only instead of a fresh API 36+ one, at that AVD's API level. `--appearance dark` or `light`
+captures one appearance instead of both.
 Run from the monorepo root:
 
 ```sh
@@ -159,8 +162,25 @@ observed control bounds and release in `finally` as described below.
 ```
 
 `tap` and `wait` match exact accessibility text, description or resource ID. `wait_contains`
-explicitly matches a visible partial label while a model answer grows. Other steps are `text`, `key`
-(Android key name) and `swipe` (`[fromX, fromY, toX, toY, durationMs]`). Canonical board IDs such as
+explicitly matches a visible partial label while a model answer grows. `text` reads the focused field
+back and sends again the keys a loaded emulator dropped. Other steps are `key`
+(Android key name), `swipe` (`[fromX, fromY, toX, toY, durationMs]`), `network` (`on` or `off`, the
+emulator's airplane mode, so a running stream drops) and `relaunch` (a force-stop and a launch, so a
+running turn dies with its process).
+
+A response may hold a `{"type": "stop", "reason": "..."}` block, which names the round's stop reason:
+`max_tokens` ends a turn truncated, `refusal` declined, and any other unknown reason failed. A recipe's
+optional `sync` array holds rows pushed through the sync door before its steps, as another device
+wrote them; `$now` is the moment they are planted, so they stand newest in History, and `$stamp` the run's write stamp.
+
+With `--fresh-mode-fixture`, `--scenarios apps/android/tools/capture-recipes/coach-exchange.json` captures the
+signed-in phone turn's states against the seeded account. `coach-exchange-signed-out.json`, with `--capture-only
+--fixture apps/android/tools/capture-recipes/coach-setup-fixture.json`, captures the signed-out answer and the routines
+a turn created. Its log is empty, so 01.19's receipt names the reads the turn ran where its board's specimen counts
+two workouts. No recipe sends a picture from the phone, so 01.8 and 01.16 stand without the screenshot their boards draw;
+08.70's picture is a row planted as another phone's.
+
+Canonical board IDs such as
 `02.7`, `08.58b`, `15a`, `27g` and `A4`, and filename
 slugs are validated. Choose a body-state selector, not the navigation label. Two matching fresh
 accessibility trees establish settlement. Recipes may opt into `resend_countdown: true`, which
@@ -226,11 +246,30 @@ accepts a valid acknowledged prefix, retains operation identity for the suffix, 
 
 Each `responses` entry is one Anthropic response's content blocks. Text and `tool_use` blocks work
 in JSON and streaming responses. `$routine0` is replaced with the first fixture routine's id.
-Optional `model_timing` supplies integer `start_delay_ms` (0–10000), `chunk_chars` (1–4096)
-and `chunk_delay_ms` (0–1000). Validation bounds the entire scenario to 256 text chunks and ten
+Optional `model_timing` supplies integer `start_delay_ms` (0–60000), `chunk_chars` (1–4096)
+and `chunk_delay_ms` (0–1000). Validation bounds the entire scenario to 256 text chunks and sixty
 seconds of fixture delay before startup. Text chunks preserve Unicode characters; tool JSON and
 default responses retain their existing event sequence. A stopped response may close its local
 fixture connection without a transport log.
+
+With `--fresh-mode-fixture` and `--fixture capture-recipes/coach-over-workout-fixture.json`,
+`capture-recipes/coach-over-workout.json` captures Coach raised over an open workout: the fresh sheet
+(08.54) and the same sheet over the keyboard, a change to this workout (08.55), its review (08.55b), applied (08.65), the
+rack on what replaced a movement (03.46), one answer with both kinds (08.56), a card gone out of date (08.57) and what
+Coach read for one movement (08.64). In a
+response `$session` is the workout the app has open, read from the log as the recipe starts. A recipe's optional
+`logged_elsewhere` is a set the log takes through its MCP door into that workout before the recipe's steps, as another
+device would. Anywhere in a recipe `$account` is the account's own short name, since a record's id is taken across accounts:
+a planted row and a model's write both name the account they were made for.
+
+With `--fresh-mode-fixture` and `--fixture capture-recipes/review-sheet-fixture.json`,
+`capture-recipes/review-sheet.json` captures a routine's review with a moved movement (08.71).
+`capture-recipes/review-sheet-signed-out.json`, with `--capture-only --fixture capture-recipes/coach-setup-fixture.json`,
+captures the workout's review signed out (08.72), the sign-in the door opens and the room after it. Anywhere in a recipe
+`$mode` is the appearance, so each signs in to its own new account. In a response
+`$phone_session` is the workout a signed-out phone has open, read from its own request, since the log never sees it.
+Its plan is four movements, so the kept count reads as 08.72 draws it; its added movement is Dumbbell Bench Press,
+which the catalogue holds, where the board's specimen says Dumbbell Floor Press.
 
 With `--fresh-mode-fixture` and `--fixture capture-recipes/coach-history-fixture.json`,
 `capture-recipes/coach-messages.json` captures empty Coach, Markdown, thinking and streaming;
@@ -239,6 +278,10 @@ Jump to latest. Each group uses at most three asks per fresh account. Coach reci
 exact native input echo before sending or navigating; a partial fixture input fails that
 precondition. Use two separate runs, each with a new output directory. The synthetic source workout has one set and
 400 kg volume; the previews are deterministic fixture answers.
+
+`capture-recipes/coach-notices.json`, with `--capture-only --fixture capture-recipes/coach-setup-fixture.json`, captures
+empty History (08.53) and a fresh chat waiting on an answer running in another (08.61). The other notices need a refusal from the server, no connection or a question
+past its bound, which these steps cannot make: Coach's notices test holds their words and doors.
 
 Recipes fail if their queued model responses were not consumed. A model-backed write recipe must
 assert its actual backend receipt as well as its UI result.
@@ -287,4 +330,4 @@ captures the approved 01.1/01.2 greeting in both appearances. This mode accepts 
 empty exercises/routines/history fixture, enables anonymous Coach on its disposable local backend,
 and waits for the greeting after account sign-in. It retains runtime logs and first-party events;
 `performanceAccepted` is null because it runs no cold-workout or idle profile. Normal fixture runs
-retain their existing Push A performance gate. Native setup acceptance is pending.
+retain their existing Push A performance gate.

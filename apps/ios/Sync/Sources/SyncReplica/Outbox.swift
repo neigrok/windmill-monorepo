@@ -1,8 +1,8 @@
 import SyncAPI
 import SyncCore
 
-// The outbox's own moves: hold, release and undo, with the silent fold an undo and a retire share (§7.3), and the
-// dependents that folds, refusals and held-back numbering read (§7.7 step 3, §7.4).
+// The outbox's own moves: hold, release and undo, with the silent fold an undo, a retire and a supersede share (§7.3),
+// and the dependents that folds, refusals and held-back numbering read (§7.7 step 3, §7.4).
 
 // MARK: - Dependents (§7.7 step 3)
 
@@ -10,12 +10,14 @@ import SyncCore
 // source wrote, or that target a scope its governing record creates. Records are keyed by scope, and dependency is
 // transitive through `absorb`.
 public struct Dependents: Sendable {
-  // One later entry's dependent part: its dependent deltas, and whether its command is dependent.
+  // One later entry's dependent part: its dependent deltas, whether its command is dependent, and, when the sources are
+  // being replaced, its guards on what they created.
   public struct Part: Sendable {
     public let removed: [Delta]
     public let commandGone: Bool
+    public let guards: [Guard]
 
-    public var any: Bool { !removed.isEmpty || commandGone }
+    public var any: Bool { !removed.isEmpty || commandGone || !guards.isEmpty }
   }
 
   struct ScopedLife: Hashable {
@@ -24,12 +26,15 @@ public struct Dependents: Sendable {
   }
 
   let registry: Registry
+  // A replacement takes the sources' place and is numbered after their dependents, so a guard on what they created can no longer hold.
+  let replaced: Bool
   var created: Set<ScopedKey> = []
   var governed: Set<ScopeRef> = []
   var lives: Set<ScopedLife> = []
 
-  public init(registry: Registry) {
+  public init(registry: Registry, replaced: Bool = false) {
     self.registry = registry
+    self.replaced = replaced
   }
 
   // A source's deltas, written at `stamp`: the records they create (a life made alive at its born), the scopes their
@@ -76,7 +81,8 @@ public struct Dependents: Sendable {
           return delta.lattice.life.map { lives.contains(ScopedLife(record: record, life: $0)) } == true
         }
     } ?? false
-    return Part(removed: removed, commandGone: commandGone)
+    let guards = replaced ? entry.intent.guards.filter { created.contains(ScopedKey(scope: entry.scope, key: $0.key)) } : []
+    return Part(removed: removed, commandGone: commandGone, guards: guards)
   }
 
   func references(of delta: Delta) -> [RecordKey] {
@@ -92,13 +98,13 @@ public struct Dependents: Sendable {
     }
   }
 
-  // Removes a queued entry's dependent part: its deltas, the guards on their records, and a dependent command with its
-  // prediction. Answers the removed content; the entry may be left empty.
+  // Removes a queued entry's dependent part: its deltas, the guards on their records and those the part names, and a
+  // dependent command with its prediction. Answers the removed content; the entry may be left empty.
   public static func remove(_ part: Part, from entry: inout OutboxEntry) -> NoticeContent {
     let content = NoticeContent(deltas: part.removed, command: part.commandGone ? entry.intent.command : nil)
     let removedKeys = Set(part.removed.map(\.key))
     entry.intent.deltas.removeAll { part.removed.contains($0) }
-    entry.intent.guards.removeAll { removedKeys.contains($0.key) }
+    entry.intent.guards.removeAll { removedKeys.contains($0.key) || part.guards.contains($0) }
     if part.commandGone {
       entry.intent.command = nil
       entry.predict = []
@@ -147,20 +153,17 @@ public struct Hold: Sendable {
   public func undo(_ gestureId: String, in replica: inout LoadedReplica) throws -> Bool {
     let gesture = replica.outbox.filter { $0.gestureId.utf8.elementsEqual(gestureId.utf8) }
     guard !gesture.isEmpty, gesture.allSatisfy({ $0.state == .held }) else { return false }
-    try end(gesture, by: .undo, in: &replica)
+    try end(gesture.map { (entry: $0, event: .undo) }, in: &replica)
     return true
   }
 
-  // The silent fold of an undo and a retire (§7.1 step 4): the held entries end by `event`, and every later held or
-  // ready entry loses its dependent part without a notice; one left empty ends undone. The parts are found before
-  // anything moves, among the entries that touch what the load read: an undo reads the whole outbox, and a retire the
-  // records it names, the only ones a dependent of a retired removal touches. §7.4 numbers no entry that depends on a held
-  // one, so the fold never meets a sent entry.
-  func end(_ held: [OutboxEntry], by event: IntentEvent, in replica: inout LoadedReplica) throws {
-    var dependents = Dependents(registry: registry)
+  // The silent fold of an undo, a retire and a supersede (§7.1 step 4): each entry of `ending` ends by its event, and every
+  // later held or ready entry loses its dependent part without a notice, found in one pass before anything moves; one left empty ends undone.
+  func end(_ ending: [(entry: OutboxEntry, event: IntentEvent)], replaced: Bool = false, in replica: inout LoadedReplica) throws {
+    var dependents = Dependents(registry: registry, replaced: replaced)
     var parts: [(entry: OutboxEntry, part: Dependents.Part)] = []
     for entry in replica.entriesTouchingReads {
-      if held.contains(where: { $0.commitOrder == entry.commitOrder }) {
+      if ending.contains(where: { $0.entry.commitOrder == entry.commitOrder }) {
         dependents.absorb(scope: entry.scope, deltas: entry.drawnDeltas, stamp: entry.stamp)
         continue
       }
@@ -170,7 +173,7 @@ public struct Hold: Sendable {
       dependents.absorb(part, of: entry)
       parts.append((entry, part))
     }
-    for entry in held { try replica.move(entry.localId, event) }
+    for (entry, event) in ending { try replica.move(entry.localId, event) }
     for (entry, part) in parts {
       replica.update(entry: entry.localId) { _ = Dependents.remove(part, from: &$0) }
       if replica.entry(entry.localId)!.isEmpty { try replica.move(entry.localId, .silentFold) }

@@ -136,10 +136,10 @@ hostTest('Chromium: unnamed Graph steps share the detail title rule for owner an
 });
 
 for (const [role, surface, items] of [
-  ['owner', 'tree', ['Copy link', 'Delete step']],
-  ['reader', 'tree', ['Copy link']],
-  ['reader', 'board', ['Copy link', 'Open in Graph']],
-  ['owner', 'board', ['Copy link', 'Open in Graph', 'Delete step']],
+  ['owner', 'tree', [STEP_DETAIL.copyLink, STEP_DETAIL.deleteStep]],
+  ['reader', 'tree', [STEP_DETAIL.copyLink]],
+  ['reader', 'board', [STEP_DETAIL.copyLink, STEP_DETAIL.openInGraph]],
+  ['owner', 'board', [STEP_DETAIL.copyLink, STEP_DETAIL.openInGraph, STEP_DETAIL.select, STEP_DETAIL.deleteStep]],
 ]) {
   hostTest(`Chromium: the ${role}'s step page over the ${surface === 'tree' ? 'Graph' : 'Board'} offers ${items.join(', ')}`, async () => {
     const { page, errors } = await openHost({ width: 390, role, surface });

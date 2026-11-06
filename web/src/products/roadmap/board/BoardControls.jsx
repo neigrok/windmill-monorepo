@@ -128,11 +128,9 @@ export function BulkBar({ count, kinds, sharedKind, onKinds, onRecolor, onDelete
   };
 
   return (
-    <div ref={bar} className={`st-board-bulk${open ? ' is-open' : ''}`}>
-      <div className="st-board-bulk-heading">
-        <span>{selectedCount({ count })}</span>
-        <button type="button" onClick={onDone}>{BULK.done}</button>
-      </div>
+    <div ref={bar} role="region" aria-label={BULK.region} className={`st-board-bulk${open ? ' is-open' : ''}`}>
+      <h2 className="st-board-bulk-heading">{selectedCount({ count })}</h2>
+      <button className="st-board-bulk-done" type="button" onClick={onDone}>{BULK.done}</button>
       <div className="st-board-bulk-kinds" inert={!open ? '' : undefined} aria-hidden={!open}>
         <KindChoice kinds={kinds} value={sharedKind} label={COMPOSER.kind} follow={false} onChoose={choose} />
       </div>

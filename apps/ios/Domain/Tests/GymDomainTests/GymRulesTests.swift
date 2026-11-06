@@ -12,8 +12,17 @@ struct GymRulesTests {
   @Test func everySharedFileHasARunner() throws {
     let handled = ["rules.json", "values.json", "notes-actions.json", "bodyweight-actions.json", "routines-actions.json",
                    "catalogue-actions.json", "preferences-actions.json", "proposals-actions.json", "recovery-actions.json", "training-actions.json",
-                   "coach-onboarding-actions.json", "training-reads.json", "units.json", "workout-plan-actions.json", "workout-proposals-actions.json"]
+                   "coach-onboarding-actions.json", "coach-conversation-actions.json", "training-reads.json", "units.json", "workout-plan-actions.json",
+                   "workout-proposals-actions.json"]
     #expect(try Contract.files(under: "gym/domain") == handled.map { "gym/domain/" + $0 }.sorted())
+    #expect(try Contract.files(under: "gym/rules") == ["gym/rules/bodyweight.json", "gym/rules/collation.json"])
+  }
+
+  @Test(arguments: try Contract.vectors("gym/rules/collation.json"))
+  func namesOrderByTheCollation(_ vector: Vector) throws {
+    let names = try vector.input.member("names").asArray().map { try $0.asString() }
+    let result: JSON = ["result": ["order": .array(names.sorted(by: Collation.precedes).map { .string($0) })]]
+    #expect(result == vector.expect, "\(vector)\n  got    \(result.jcsText)\n  expect \(vector.expect.jcsText)")
   }
 
   @Test func aNotesServerTimestampIsOptionalAndNeverWritten() throws {

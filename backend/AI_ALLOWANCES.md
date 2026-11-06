@@ -10,8 +10,8 @@ amounts are exact decimal USD strings.
 
 | Tier | Individual allowance | Period | Shared spending controls | Concurrent calls |
 | --- | --- | --- | --- | --- |
-| Anonymous | $0.05 per authenticated installation | Lifetime | Free pool: $100 per UTC calendar month and $5 per UTC day | 1 |
-| Verified logged-in | $0.25 per account, including associated anonymous usage | UTC calendar month | The same free monthly and daily pools | 1 |
+| Anonymous | $0.25 per authenticated installation | Lifetime | Free pool: $100 per UTC calendar month and $5 per UTC day | 1 |
+| Verified logged-in | $0.50 per account, including associated anonymous usage | UTC calendar month | The same free monthly and daily pools | 1 |
 | Windmill One | $7 per funded account period | Paid subscription billing period; owner grants use UTC calendar months | The funded grant itself | 2 |
 
 Every hosted AI call debits the individual allowance, including background Journal processing.
@@ -37,8 +37,8 @@ allowance or move costs into a paid grant. An attempted rebind to another accoun
 | `AI_INSTALLATION_PROXY_MODE` | `direct` locally; fixed `cloudflare` in production Compose |
 | `AI_INSTALLATION_ISSUES_PER_DAY` | `10` per network per UTC day |
 | `AI_INSTALLATION_GENERATIONS_PER_HOUR` | `30` per network per UTC hour |
-| `AI_ANONYMOUS_LIFETIME_USD` | `0.05` |
-| `AI_LOGGED_IN_MONTHLY_USD` | `0.25` |
+| `AI_ANONYMOUS_LIFETIME_USD` | `0.25` |
+| `AI_LOGGED_IN_MONTHLY_USD` | `0.50` |
 | `AI_ONE_PERIOD_USD` | `7` |
 | `AI_FREE_MONTHLY_USD` | `100` |
 | `AI_FREE_DAILY_USD` | `5` |
@@ -56,7 +56,7 @@ The 1,024-token floor is Coach policy, not a provider API minimum. Insufficient 
 floor refuses dispatch. Configuration accepts only decimal integers from 1,024 through 8,000;
 invalid values refuse startup. The model is Opus 5 for Ask and for a phone turn on a bound seat; a
 phone turn on an anonymous seat runs on Sonnet 5 with the onboarding effort and a 2,000-token
-ceiling, the only pairing whose round fits the $0.05 lifetime allowance. A provider response
+ceiling. A provider response
 that reaches the output cap is a failed generation with its incurred usage reconciled and any
 durable routine receipts retained.
 Routine setup offers only its eight relevant history, notes, catalog, routine and clarification
@@ -167,7 +167,7 @@ settlement. Available original funding absorbs a covered underestimate; an unfun
 creates debt that blocks further admission until reconciled. Missing or ambiguous usage retains
 the hold. A positive remaining balance still does not promise that a particular request can fit.
 For example, an Opus 5 request with an 8,000-token output cap reserves $0.20 for output alone,
-exceeding the $0.05 anonymous lifetime allowance.
+more than the balance of an allowance with $0.10 left.
 Anonymous previews use Sonnet 5 with a bounded input, one provider request and an affordable
 output cap, and an anonymous phone turn runs every round on Sonnet 5 the same way. Signed-in Coach,
 Ask and bound phone turns alike, uses Opus 5. Audio requires its own supported accounting.
@@ -219,7 +219,7 @@ Existing credential authentication, allowance reads, account binding and saved r
 available while USD allowances are enabled, without requiring the network key. This keeps signed-in
 Coach available after anonymous access is disabled. Network limits return 429
 `installation_rate_limited`. Unexpected storage failures return bounded accounting failures and
-report static Sentry operations. Network limits complement the individual $0.05 and shared $5/day
+report static Sentry operations. Network limits complement the individual $0.25 and $0.50 and shared $5/day
 and $100/month budgets; a reset installation is not guaranteed to be recognizable.
 
 ## Read and refusal contracts
@@ -237,7 +237,9 @@ an individual monthly reset. It does not guarantee that unresolved holds will be
 Neither endpoint nor telemetry exposes aggregate budget amounts.
 
 Coach JSON and SSE preserve expected allowance refusal codes and metadata. A request too large
-for positive remaining capacity is distinguished from a fully used allowance. Stored generations
+for positive remaining capacity is distinguished from a fully used allowance by the allowance
+object: a turn's refusal body and the `error` frame of a turn an allowance code ended both carry it,
+with the frame's budget code and the object's own read code side by side. Stored generations
 carry `allowanceRefusal` as a historical refusal snapshot; an accepted retry clears it, while a
 refused retry updates it. The same failed request id may retry after capacity recovers.
 

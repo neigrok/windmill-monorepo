@@ -194,9 +194,9 @@ has no port.
 [ECHOES.md](ECHOES.md) owns the derivation pipeline, selection rules, persistence, scheduling and
 budgets. `JournalFeed` hands each committed page to `EchoDerivations`, the `PageWatcher`, which
 debounces derivation; `EchoSweep` repairs the corpus every six hours. Embedding stays on the
-self-hosted sidecar; curation sends passages to Anthropic. Curation requires a zero-retention,
-no-training agreement and privacy copy naming the processor. Echoes are available to every
-signed-in writer.
+self-hosted sidecar; curation sends passages to Anthropic under its standard API terms, which the
+privacy copy names along with the processor; no zero-retention agreement is in place. Echoes are
+available to every signed-in writer.
 
 ## Entitlement
 
@@ -317,8 +317,8 @@ hard ceilings are the ledger-backed account allowance and the process fuse
 Rules:
 
 - Audio lives only in the request buffer. It is never persisted and never logged.
-- The vendor must be on a zero-retention, no-training agreement, and the voice copy names the
-  processor.
+- The vendor runs under its standard API terms, and the voice copy names the processor; no
+  zero-retention agreement is in place.
 - Transcription may format (punctuation, casing, paragraph breaks, dropped filler) and must never
   reword, summarize or improve. Keep any vendor "smart-format" mode off.
 - `transcribe` produces no page. It returns text; the client writes it into today's page with

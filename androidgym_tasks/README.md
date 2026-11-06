@@ -21,11 +21,11 @@ Implement one commit per numbered task. Ship batches to main after adversarial r
 
 **All 42 tasks of the original active scope are on main.** Tasks **36, 38–40, 43 and 46–49** landed with pull request [#41](https://github.com/neigrok/windmill-monorepo/pull/41) (`de637b58`) after native and local-stack acceptance, and ship in Android 0.14.0. That release's acceptance was signed out and did not re-accept #41's last fix pass natively. Their boards are 🚀 In production. Tasks 19, 25 and 50 are shipped and their frames are 🚀 In production on the canonical Android page (`56:2`).
 
-At the user's request, tasks **29–35, 41–42 and 44 are postponed from this release**. Preserve the existing Coach action appearance: proposal/change cards, Apply/Reject controls, diff blocks and action/save receipts. Keep their existing review routes and outcome wording. The task identities remain unchanged; 42 numbered tasks made up that release scope.
+Tasks **29–34 and 44 are postponed**: the owner keeps Android's proposal cards, review route and outcome wording (ledger 11k). The phone Coach supersedes tasks **35, 41 and 42**. Coach writes land at once with their cards, `update_exercise` is withheld, and only a retained onboarding answer still holds drafts. The task identities remain unchanged; 42 numbered tasks made up that release scope.
 
-Task 28's general bubbles, composer and chrome and task 37's History/chat lifecycle remain active. Task 37 does not wait for task 30's postponed outcome-word changes, and retains tool-write receipt content in its current presentation while task 35 waits. Task 17 keeps the existing proposal review route while task 29 waits. Task 49 remains active: its choices populate chat input and its kept draft is composer text, not a tool-action output.
+Task 28's general bubbles, composer and chrome and task 37's History/chat lifecycle are on main. Task 17 keeps the existing proposal review route while task 29 waits. Task 49's kept draft is composer text, and Coach asks in prose.
 
-The additional U/P proposals and A2 local-save cards are deferred from this release and are not approved. A request-recovery cards and B.2 pending-result recovery remain unapproved. The two [08.58b signed-out access screens](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1489-49152), formerly B.1, are human-approved 2026-10-28 and 🚀 In production on the Android design page. [Z zero-set Finish](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1489-49458) is 🚀 In production with task 14. [D account-deletion recovery](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=116-754) is 🚀 In production. Both additions were human-approved 2026-10-25. Active tasks retain their remaining scoped design and backend prerequisites.
+The additional U proposals are deferred and not approved. The two [08.58b signed-out access screens](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1489-49152), formerly B.1, are human-approved 2026-10-28 and 🚀 In production on the Android design page. [Z zero-set Finish](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1489-49458) is 🚀 In production with task 14. [D account-deletion recovery](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=116-754) is 🚀 In production. Both additions were human-approved 2026-10-25. Active tasks retain their remaining scoped design and backend prerequisites.
 
 ## Scoped prerequisites
 
@@ -41,8 +41,7 @@ These review follow-ups affect the named subparts, not all 52 tasks. Approved in
 | `android-gym-no-routine-picker-design` | [13](13-free-workout-start.md) | Changing the existing picker for an externally started workout without a routine |
 | `android-gym-mcp-proposal-row-design` | [17](17-routines-list.md), [29](29-coach-change-card.md) | New proposal route without a Coach conversation; keep its existing review path |
 | `android-coach-uncertain-apply-design` · deferred from release scope, unapproved | [34](34-proposal-long-failure-retry.md) | New unknown-outcome Apply/removal state |
-| `android-coach-partial-drafts-design` · deferred from release scope, unapproved | [41](41-coach-drafts-card.md), [42](42-coach-drafts-saved.md) | New signed-in partial-save/recovery states |
-| `android-coach-bound-installation-design` · resolved for access | [36](36-coach-access-states.md), [38](38-signed-out-coach.md) | Approved 08.58b retains History and Sign in; no anonymous Send. The separate B.2 recovery card remains unapproved. |
+| `android-coach-bound-installation-design` · resolved for access | [36](36-coach-access-states.md), [38](38-signed-out-coach.md) | Approved 08.58b retains History and Sign in; no anonymous Send. |
 | `android-account-delete-recovery-design` · resolved | [48](48-delete-account.md) | [D1–D5 recovery states](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=116-754) are 🚀 In production, human-approved 2026-10-25; backend receipt/recovery is deployed in `ac1e0c75`; Android task 48 ships them in 0.14.0 |
 | `account-delete-reconciliation` · resolved | [48](48-delete-account.md) | Backend receipt/recovery across session revocation is deployed in `ac1e0c75`; task 48 still owns Android integration and acceptance |
 
@@ -170,27 +169,27 @@ Task 17 supplies the Routines list/navigation contract while preserving the exis
 - [26](26-notes.md) — Notes and the note editor
 - [27](27-sign-in-fields.md) — Sign-in: outlined fields, no standing line, the server's refusal (Shell file)
 - [28](28-coach-messages-chat.md) — Fresh Coach chat, stable navigation, clean composer and Material messages
-- [29](29-coach-change-card.md) — **Postponed from this release.** The proposal card in the conversation, with a field diff (no review sheet)
-- [30](30-proposal-decided-states.md) — **Postponed from this release.** Proposal decided states: Applied, Rejected, Out of date, two proposals
-- [31](31-proposal-routine-changes.md) — **Postponed from this release.** Proposal: rename a routine, remove a routine
-- [32](32-proposal-movement-changes.md) — **Postponed from this release.** Proposal movement changes and durable applied-history diffs
-- [33](33-proposal-target-changes.md) — **Postponed from this release.** Proposal: sets, reps and load; vary by set; ramp up; rest and a first target
-- [34](34-proposal-long-failure-retry.md) — **Postponed from this release.** Proposal failures: known refusal, unknown outcome and safe reconciliation
-- [35](35-coach-write-receipts.md) — **Postponed from this release.** Coach write receipts: changed a movement, saved a note
+- [29](29-coach-change-card.md) — **Postponed.** The proposal card in the conversation, with a field diff (no review sheet)
+- [30](30-proposal-decided-states.md) — **Postponed.** Proposal decided states: Applied, Rejected, Out of date, two proposals
+- [31](31-proposal-routine-changes.md) — **Postponed.** Proposal: rename a routine, remove a routine
+- [32](32-proposal-movement-changes.md) — **Postponed.** Proposal movement changes and durable applied-history diffs
+- [33](33-proposal-target-changes.md) — **Postponed.** Proposal: sets, reps and load; vary by set; ramp up; rest and a first target
+- [34](34-proposal-long-failure-retry.md) — **Postponed.** Proposal failures: known refusal, unknown outcome and safe reconciliation
+- [35](35-coach-write-receipts.md) — **Superseded.** Coach write receipts: changed a movement, saved a note
 - [36](36-coach-access-states.md) — Coach access states with server-derived retry timing
 - [37](37-coach-history-sources.md) — Fresh-entry chat lifecycle, retained drafts, History, deletion and sources
-- [38](38-signed-out-coach.md) — Signed-out Coach transport, bound-installation handling and atomic local draft import
+- [38](38-signed-out-coach.md) — The installation credential, bound-installation handling and retained answers' atomic draft import
 - [39](39-coach-greeting.md) — First open: Coach greets in two bubbles; an empty Gym opens on Coach
 - [40](40-coach-photo-caption.md) — The photo in the composer and its caption
-- [41](41-coach-drafts-card.md) — **Postponed from this release.** Routine draft decisions with atomic local import and durable per-draft account outcomes
-- [42](42-coach-drafts-saved.md) — **Postponed from this release.** After Apply: receipts, one tap from Start
+- [41](41-coach-drafts-card.md) — **Superseded.** Routine draft decisions with atomic local import and durable per-draft account outcomes
+- [42](42-coach-drafts-saved.md) — **Superseded.** After Apply: receipts, one tap from Start
 - [43](43-coach-allowance-used.md) — Allowance used: signed out, signed in (interim), Windmill One
-- [44](44-coach-after-sign-in.md) — **Postponed from this release.** After sign-in, the conversation continues and proposes a change
+- [44](44-coach-after-sign-in.md) — **Postponed.** After sign-in, the conversation continues and proposes a change
 - [45](45-hide-workout.md) — Hide workout: the workout bar above the tabs, and the notification's swipe only turns it off
 - [46](46-remove-gym-settings.md) — Remove Gym settings and the lb toggle; You holds Notes, Connected log, About Windmill (Shell file)
 - [47](47-sign-out-asks.md) — Sign out asks first, with Keep or Discard for unconfirmed changes (Shell file)
 - [48](48-delete-account.md) — Account deletion with pinned cleanup, lost-response recovery and backend prerequisites
-- [49](49-coach-choices-kept-draft.md) — Coach asks with choice chips; a draft written signed out waits as Draft kept on this phone
+- [49](49-coach-choices-kept-draft.md) — A draft written signed out waits as Draft kept on this phone
 - [50](50-routine-history-yours.md) — The routine editor's History, and *· yours* on a movement the lifter made
 - [51](51-connected-log-notes-signed-out.md) — Connected log follows iOS, names ChatGPT or Claude and says it saves notes; Notes signed out
 - [52](52-onboarding-gym-glimpse.md) — Onboarding Gym glimpse uses the approved compact headerless rack
@@ -239,7 +238,7 @@ Task 17 supplies the Routines list/navigation contract while preserving the exis
 - [95](95-one-stated-best.md) — The Best tile follows the stated rule the records follow
 - [96](96-shared-performed-range.md) — Every surface states what was lifted, every set counted
 - [97](97-coach-read-receipt-weeks.md) — What Coach read counts only weeks it can show
-- [98](98-coach-during-a-workout.md) — Coach answers during a workout on Android
+- [98](98-coach-during-a-workout.md) — Coach answers during a workout on Android, on the phone turn
 - [99](99-destructive-actions-in-red.md) — The last three destructive actions use the error role
 - [100](100-proposal-diff-unit-space.md) — A proposal's load change spaces its unit like every other readout
 - [101](101-capture-recipes-name-current-boards.md) — The capture recipes name the workout page's current boards

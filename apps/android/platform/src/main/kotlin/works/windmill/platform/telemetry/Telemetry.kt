@@ -37,10 +37,11 @@ fun interface EventSchema {
     fun allowedKeys(properties: Map<String, String>): Set<String>
 }
 
-// Each key with the bounded values it may carry.
-class LabelSchema(val values: Map<String, Set<String>>) : EventSchema {
-    override fun allowedKeys(properties: Map<String, String>): Set<String> =
-        properties.filter { (key, value) -> value in values[key].orEmpty() }.keys
+// Each key with the bounded values it may carry; a count is digits alone.
+class LabelSchema(val values: Map<String, Set<String>>, private val counts: Set<String> = emptySet()) : EventSchema {
+    override fun allowedKeys(properties: Map<String, String>): Set<String> = properties.filter { (key, value) ->
+        value in values[key].orEmpty() || key in counts && value.isNotEmpty() && value.all(Char::isDigit)
+    }.keys
 }
 
 // The events a module registers by name. A reserved prefix belongs to its module: no unregistered name may use it.
@@ -54,7 +55,7 @@ class EventSchemas(val events: Map<String, EventSchema>, val reservedPrefixes: S
     fun properties(name: String, properties: Map<String, String>): Map<String, String> {
         val schema = events[name] ?: return TelemetryPolicy.properties(properties)
         val allowed = schema.allowedKeys(properties - commonKeys)
-        return TelemetryPolicy.properties(properties.filterKeys { it in commonKeys || it in allowed })
+        return TelemetryPolicy.bounded(properties.filterKeys { it in commonKeys || it in allowed })
     }
 
     companion object {
@@ -81,11 +82,13 @@ object TelemetryPolicy {
         "app_version", "build", "duration_ms", "network_phase", "screen",
     )
 
-    fun properties(properties: Map<String, String>): Map<String, String> {
+    fun properties(properties: Map<String, String>): Map<String, String> = bounded(properties.filterKeys { it in keys })
+
+    // Properties whose keys are already chosen, by this allowlist or by an event's own schema: labels, within the byte budget.
+    fun bounded(properties: Map<String, String>): Map<String, String> {
         var bytes = 2
         return properties.filter { (key, value) ->
-            key in keys && label.matches(value) &&
-                (key != "network_phase" || NetworkPhase.entries.any { it.value == value })
+            label.matches(value) && (key != "network_phase" || NetworkPhase.entries.any { it.value == value })
         }.entries
             .takeWhile { bytes += it.key.length + it.value.length + 6; bytes <= 900 }
             .associate { it.key to it.value }

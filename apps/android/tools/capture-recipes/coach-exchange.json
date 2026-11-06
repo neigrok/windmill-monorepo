@@ -1,0 +1,869 @@
+[
+  {
+    "board": "08.36",
+    "name": "coach-what-coach-read",
+    "account": "fixture",
+    "responses": [
+      [
+        {
+          "type": "tool_use",
+          "id": "toolu_prop",
+          "name": "propose_routine_change",
+          "input": {
+            "id": "pr_$account_1",
+            "routineId": "$routine0",
+            "summary": "Heavier triples.",
+            "entries": [
+              {
+                "exerciseId": "bench-press",
+                "sets": [
+                  {
+                    "reps": 3,
+                    "weightKg": 90
+                  },
+                  {
+                    "reps": 3,
+                    "weightKg": 90
+                  },
+                  {
+                    "reps": 3,
+                    "weightKg": 90
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      [
+        {
+          "type": "text",
+          "text": "Keep the same total work each week. Do 3 sets of 3 at 90 kg for a heavier top set."
+        }
+      ]
+    ],
+    "steps": [
+      {
+        "tap": "Coach"
+      },
+      {
+        "tap": "Question"
+      },
+      {
+        "text": "Is Push A still doing anything"
+      },
+      {
+        "wait": "Is Push A still doing anything"
+      },
+      {
+        "tap": "Send"
+      },
+      {
+        "wait_contains": "Keep the same total work"
+      },
+      {
+        "tap_contains": "workouts ·"
+      },
+      {
+        "wait": "What Coach used, in order"
+      }
+    ],
+    "after": [
+      {
+        "tap": "Close"
+      }
+    ]
+  },
+  {
+    "board": "08.35",
+    "name": "coach-step-line",
+    "account": "fixture",
+    "settle": false,
+    "model_timing": {
+      "chunk_chars": 8,
+      "chunk_delay_ms": 1000
+    },
+    "responses": [
+      [
+        {
+          "type": "tool_use",
+          "id": "toolu_prop",
+          "name": "propose_routine_change",
+          "input": {
+            "id": "pr_$account_2",
+            "routineId": "$routine0",
+            "summary": "Heavier triples.",
+            "entries": [
+              {
+                "exerciseId": "bench-press",
+                "sets": [
+                  {
+                    "reps": 3,
+                    "weightKg": 90
+                  },
+                  {
+                    "reps": 3,
+                    "weightKg": 90
+                  },
+                  {
+                    "reps": 3,
+                    "weightKg": 90
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      [
+        {
+          "type": "text",
+          "text": "Thursday is still a Push day. Keep the same total work, and change the last set to a heavier triple. Bench first: 3 sets of 5 at 82.5 kg, then one set of 3 at 90 kg"
+        }
+      ]
+    ],
+    "steps": [
+      {
+        "tap": "Routines"
+      },
+      {
+        "tap": "Coach"
+      },
+      {
+        "tap": "History"
+      },
+      {
+        "tap": "New chat"
+      },
+      {
+        "tap": "Question"
+      },
+      {
+        "text": "What should Thursday look like"
+      },
+      {
+        "wait": "What should Thursday look like"
+      },
+      {
+        "tap": "Send"
+      },
+      {
+        "wait_contains": "Thursday is still"
+      },
+      {
+        "wait": "Stop response"
+      }
+    ],
+    "after": [
+      {
+        "wait_contains": "workouts ·"
+      }
+    ]
+  },
+  {
+    "board": "08.52",
+    "name": "coach-reconnecting",
+    "account": "fixture",
+    "settle": false,
+    "model_timing": {
+      "chunk_chars": 8,
+      "chunk_delay_ms": 1000
+    },
+    "responses": [
+      [
+        {
+          "type": "text",
+          "text": "Thursday is still a Push day. Keep the same total work, and change the last set to a heavier triple. Bench first: 3 sets of 5 at 82.5 kg, then one set of 3 at 90 kg"
+        }
+      ]
+    ],
+    "steps": [
+      {
+        "tap": "Routines"
+      },
+      {
+        "tap": "Coach"
+      },
+      {
+        "tap": "History"
+      },
+      {
+        "tap": "New chat"
+      },
+      {
+        "tap": "Question"
+      },
+      {
+        "text": "What should Thursday look like"
+      },
+      {
+        "wait": "What should Thursday look like"
+      },
+      {
+        "tap": "Send"
+      },
+      {
+        "wait_contains": "Thursday is still"
+      },
+      {
+        "network": "off"
+      },
+      {
+        "wait": "Reconnecting…"
+      }
+    ],
+    "after": [
+      {
+        "network": "on"
+      },
+      {
+        "wait_contains": "workouts ·"
+      }
+    ]
+  },
+  {
+    "board": "08.37",
+    "name": "coach-made-a-movement",
+    "account": "fixture",
+    "responses": [
+      [
+        {
+          "type": "tool_use",
+          "id": "toolu_move",
+          "name": "create_exercise",
+          "input": {
+            "id": "ex_$account_a",
+            "name": "Incline Dumbbell Press",
+            "pattern": "press",
+            "equipment": "dumbbell",
+            "stepKg": 2.5
+          }
+        }
+      ],
+      [
+        {
+          "type": "text",
+          "text": "Done. Incline Dumbbell Press is in your movements: dumbbells, 2.5 kg steps."
+        }
+      ]
+    ],
+    "steps": [
+      {
+        "tap": "History"
+      },
+      {
+        "tap": "New chat"
+      },
+      {
+        "tap": "Question"
+      },
+      {
+        "text": "Add incline dumbbell press to my movements. I go up in 2.5 kg steps."
+      },
+      {
+        "wait": "Add incline dumbbell press to my movements. I go up in 2.5 kg steps."
+      },
+      {
+        "tap": "Send"
+      },
+      {
+        "wait": "Made a movement"
+      },
+      {
+        "wait_contains": "workouts ·"
+      }
+    ]
+  },
+  {
+    "board": "08.46",
+    "name": "coach-truncated",
+    "account": "fixture",
+    "responses": [
+      [
+        {
+          "type": "text",
+          "text": "Thursday is still a Push day. Keep the same total work and change the last set to a heavier triple. For the bench, start at"
+        },
+        {
+          "type": "stop",
+          "reason": "max_tokens"
+        }
+      ]
+    ],
+    "steps": [
+      {
+        "tap": "History"
+      },
+      {
+        "tap": "New chat"
+      },
+      {
+        "tap": "Question"
+      },
+      {
+        "text": "What should Thursday look like"
+      },
+      {
+        "wait": "What should Thursday look like"
+      },
+      {
+        "tap": "Send"
+      },
+      {
+        "wait": "Cut short. Ask Coach to go on."
+      },
+      {
+        "wait_contains": "workouts ·"
+      }
+    ]
+  },
+  {
+    "board": "08.47",
+    "name": "coach-declined",
+    "account": "fixture",
+    "responses": [
+      [
+        {
+          "type": "stop",
+          "reason": "refusal"
+        }
+      ]
+    ],
+    "steps": [
+      {
+        "tap": "History"
+      },
+      {
+        "tap": "New chat"
+      },
+      {
+        "tap": "Question"
+      },
+      {
+        "text": "Bench has stalled for three weeks. Is Push A still doing anything"
+      },
+      {
+        "wait": "Bench has stalled for three weeks. Is Push A still doing anything"
+      },
+      {
+        "tap": "Send"
+      },
+      {
+        "wait": "Coach declined to answer this."
+      },
+      {
+        "wait_contains": "workouts ·"
+      }
+    ]
+  },
+  {
+    "board": "08.48",
+    "name": "coach-failed",
+    "account": "fixture",
+    "responses": [
+      [
+        {
+          "type": "text",
+          "text": "Thursday is still a Push day."
+        },
+        {
+          "type": "stop",
+          "reason": "other"
+        }
+      ]
+    ],
+    "steps": [
+      {
+        "tap": "History"
+      },
+      {
+        "tap": "New chat"
+      },
+      {
+        "tap": "Question"
+      },
+      {
+        "text": "What should Thursday look like"
+      },
+      {
+        "wait": "What should Thursday look like"
+      },
+      {
+        "tap": "Send"
+      },
+      {
+        "wait": "Coach couldn’t finish. Ask again."
+      },
+      {
+        "wait_contains": "workouts ·"
+      }
+    ]
+  },
+  {
+    "board": "08.49",
+    "name": "coach-stopped",
+    "account": "fixture",
+    "model_timing": {
+      "start_delay_ms": 20000
+    },
+    "responses": [
+      [
+        {
+          "type": "text",
+          "text": "Thursday is still a Push day. I made Incline Dumbbell Press, then"
+        },
+        {
+          "type": "tool_use",
+          "id": "toolu_move",
+          "name": "create_exercise",
+          "input": {
+            "id": "ex_$account_b",
+            "name": "Incline Dumbbell Press B",
+            "pattern": "press",
+            "equipment": "dumbbell",
+            "stepKg": 2.5
+          }
+        }
+      ],
+      [
+        {
+          "type": "tool_use",
+          "id": "toolu_notes",
+          "name": "list_notes",
+          "input": {}
+        }
+      ]
+    ],
+    "steps": [
+      {
+        "tap": "Routines"
+      },
+      {
+        "tap": "Coach"
+      },
+      {
+        "tap": "History"
+      },
+      {
+        "tap": "New chat"
+      },
+      {
+        "tap": "Question"
+      },
+      {
+        "text": "What should Thursday look like"
+      },
+      {
+        "wait": "What should Thursday look like"
+      },
+      {
+        "tap": "Send"
+      },
+      {
+        "wait": "Made a movement"
+      },
+      {
+        "tap": "Stop response"
+      },
+      {
+        "wait": "Stopped."
+      },
+      {
+        "wait_contains": "workouts ·"
+      }
+    ]
+  },
+  {
+    "board": "08.69",
+    "name": "coach-stop-not-reached",
+    "account": "fixture",
+    "model_timing": {
+      "start_delay_ms": 20000
+    },
+    "responses": [
+      [
+        {
+          "type": "text",
+          "text": "Thursday is still a Push day. I made Incline Dumbbell Press, then"
+        },
+        {
+          "type": "tool_use",
+          "id": "toolu_move",
+          "name": "create_exercise",
+          "input": {
+            "id": "ex_$account_c",
+            "name": "Incline Dumbbell Press C",
+            "pattern": "press",
+            "equipment": "dumbbell",
+            "stepKg": 2.5
+          }
+        }
+      ]
+    ],
+    "steps": [
+      {
+        "tap": "Routines"
+      },
+      {
+        "tap": "Coach"
+      },
+      {
+        "tap": "History"
+      },
+      {
+        "tap": "New chat"
+      },
+      {
+        "tap": "Question"
+      },
+      {
+        "text": "What should Thursday look like"
+      },
+      {
+        "wait": "What should Thursday look like"
+      },
+      {
+        "tap": "Send"
+      },
+      {
+        "wait": "Made a movement"
+      },
+      {
+        "network": "off"
+      },
+      {
+        "tap": "Stop response"
+      },
+      {
+        "wait": "Coach is stopped on this phone. Stopping it on the server needs a connection."
+      }
+    ],
+    "after": [
+      {
+        "tap": "Close"
+      },
+      {
+        "network": "on"
+      }
+    ]
+  },
+  {
+    "board": "08.50",
+    "name": "coach-interrupted",
+    "account": "fixture",
+    "model_timing": {
+      "start_delay_ms": 20000
+    },
+    "responses": [
+      [
+        {
+          "type": "text",
+          "text": "Thursday is still a Push day. I made Incline Dumbbell Press, then"
+        },
+        {
+          "type": "tool_use",
+          "id": "toolu_move",
+          "name": "create_exercise",
+          "input": {
+            "id": "ex_$account_d",
+            "name": "Incline Dumbbell Press D",
+            "pattern": "press",
+            "equipment": "dumbbell",
+            "stepKg": 2.5
+          }
+        }
+      ]
+    ],
+    "steps": [
+      {
+        "tap": "Routines"
+      },
+      {
+        "tap": "Coach"
+      },
+      {
+        "tap": "History"
+      },
+      {
+        "tap": "New chat"
+      },
+      {
+        "tap": "Question"
+      },
+      {
+        "text": "What should Thursday look like"
+      },
+      {
+        "wait": "What should Thursday look like"
+      },
+      {
+        "tap": "Send"
+      },
+      {
+        "wait": "Made a movement"
+      },
+      {
+        "relaunch": true
+      },
+      {
+        "tap": "Coach"
+      },
+      {
+        "tap": "History"
+      },
+      {
+        "tap": "What should Thursday look like"
+      },
+      {
+        "wait": "Interrupted. What arrived is kept."
+      }
+    ]
+  },
+  {
+    "board": "08.51",
+    "name": "coach-another-device",
+    "account": "fixture",
+    "sync": [
+      {
+        "t": "thread",
+        "id": "thr_$account_else",
+        "life": [
+          "alive",
+          "$stamp"
+        ],
+        "born": "$stamp",
+        "f": {
+          "title": [
+            "Bench plateau",
+            "$stamp"
+          ]
+        }
+      },
+      {
+        "t": "message",
+        "id": "msg_$account_else_q",
+        "life": [
+          "alive",
+          "$stamp"
+        ],
+        "born": "$stamp",
+        "f": {
+          "threadId": [
+            "thr_$account_else",
+            "$stamp"
+          ],
+          "role": [
+            "lifter",
+            "$stamp"
+          ],
+          "at": [
+            "$now",
+            "$stamp"
+          ],
+          "text": [
+            "Bench has stalled for three weeks. Is Push A still doing anything?",
+            "$stamp"
+          ]
+        }
+      },
+      {
+        "t": "message",
+        "id": "msg_$account_else_a",
+        "life": [
+          "alive",
+          "$stamp"
+        ],
+        "born": "$stamp",
+        "f": {
+          "threadId": [
+            "thr_$account_else",
+            "$stamp"
+          ],
+          "role": [
+            "coach",
+            "$stamp"
+          ],
+          "at": [
+            "$now",
+            "$stamp"
+          ],
+          "text": [
+            "",
+            "$stamp"
+          ],
+          "replica": [
+            "rp_0123456789abcdef0123456789abcdef",
+            "$stamp"
+          ],
+          "state": [
+            "running",
+            "$stamp"
+          ],
+          "truncated": [
+            false,
+            "$stamp"
+          ],
+          "calls": [
+            [],
+            "$stamp"
+          ]
+        }
+      }
+    ],
+    "steps": [
+      {
+        "tap": "History"
+      },
+      {
+        "tap": "Bench plateau"
+      },
+      {
+        "wait": "Answering on another device"
+      }
+    ],
+    "after": [
+      {
+        "tap": "History"
+      },
+      {
+        "tap": "New chat"
+      },
+      {
+        "wait": "Question"
+      }
+    ]
+  },
+  {
+    "board": "08.70",
+    "name": "coach-picture-elsewhere",
+    "account": "fixture",
+    "sync": [
+      {
+        "t": "thread",
+        "id": "thr_$account_pic",
+        "life": [
+          "alive",
+          "$stamp"
+        ],
+        "born": "$stamp",
+        "f": {
+          "title": [
+            "Is this program balanced?",
+            "$stamp"
+          ]
+        }
+      },
+      {
+        "t": "message",
+        "id": "msg_$account_pic_q",
+        "life": [
+          "alive",
+          "$stamp"
+        ],
+        "born": "$stamp",
+        "f": {
+          "threadId": [
+            "thr_$account_pic",
+            "$stamp"
+          ],
+          "role": [
+            "lifter",
+            "$stamp"
+          ],
+          "at": [
+            "$now",
+            "$stamp"
+          ],
+          "text": [
+            "Is this program balanced?",
+            "$stamp"
+          ],
+          "pictures": [
+            [
+              {
+                "id": "pic_$account",
+                "mediaType": "image/jpeg",
+                "localOnly": true
+              }
+            ],
+            "$stamp"
+          ]
+        }
+      },
+      {
+        "t": "message",
+        "id": "msg_$account_pic_a",
+        "life": [
+          "alive",
+          "$stamp"
+        ],
+        "born": "$stamp",
+        "f": {
+          "threadId": [
+            "thr_$account_pic",
+            "$stamp"
+          ],
+          "role": [
+            "coach",
+            "$stamp"
+          ],
+          "at": [
+            "$now",
+            "$stamp"
+          ],
+          "text": [
+            "It is balanced: 3 full-body days, each with a squat, a press and a pull.",
+            "$stamp"
+          ],
+          "replica": [
+            "rp_0123456789abcdef0123456789abcdef",
+            "$stamp"
+          ],
+          "state": [
+            "completed",
+            "$stamp"
+          ],
+          "truncated": [
+            false,
+            "$stamp"
+          ],
+          "calls": [
+            [
+              {
+                "callId": "toolu_read",
+                "name": "list_sessions",
+                "input": {},
+                "outcome": "ok",
+                "created": [],
+                "read": {
+                  "sets": 54,
+                  "sessions": 18,
+                  "weeks": 6
+                },
+                "readTruncated": true
+              }
+            ],
+            "$stamp"
+          ]
+        }
+      }
+    ],
+    "steps": [
+      {
+        "relaunch": true
+      },
+      {
+        "tap": "Coach"
+      },
+      {
+        "tap": "History"
+      },
+      {
+        "tap": "Is this program balanced?"
+      },
+      {
+        "wait_contains": "Held on the phone"
+      }
+    ]
+  }
+]

@@ -166,3 +166,14 @@ test('boardKey gives Activity one unmodified owner-neutral key result for host c
     assert.equal(boardKey({ key: 'a', [modifier]: true }), null);
   }
 });
+
+
+test('Board help without the Graph omits only the unavailable G switch', () => {
+  for (const readOnly of [true, false]) {
+    for (const owner of [true, false]) {
+      assert.deepEqual(visibleGroups(readOnly, 'board', owner, false), visibleGroups(readOnly, 'board', owner).map((group) => ({
+        ...group, rows: group.rows.filter((row) => row.label !== 'Board / Graph'),
+      })));
+    }
+  }
+});

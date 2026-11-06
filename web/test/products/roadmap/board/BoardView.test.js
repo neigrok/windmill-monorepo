@@ -242,7 +242,7 @@ window.openSelectionBoard = (nodes, options = {}) => {
     return React.createElement('div', { className: 'st-view-layer--board' + (active ? ' is-active' : ''), 'data-revision': revision, style: { height: '100vh' } },
       React.createElement(BoardView, {
         tree: held ? held.projected(tree) : tree, ...progress, query, onQuery: setQuery, quiet,
-        breakpoint: 'phone', active, editable: owner && active, legend,
+        breakpoint: 'phone', active, editable: owner && active, selectionOpen: owner && active, legend,
         onSelect: (id) => { (window.opened ??= []).push(id); address.open(id, 'card'); },
         onNewStep: () => {},
         onComplete: (id, door) => acts.complete(id, door),
@@ -564,7 +564,7 @@ test('Chromium: while the Board is shown, what it covers leaves the tab order â€
     });
     await page.evaluate(() => {
       document.body.insertAdjacentHTML('beforeend', `<div id="stage" style="position: relative; height: 400px">
-        <button style="position: absolute; z-index: 16">Recolour</button>
+        <button style="position: absolute; z-index: 16">Recolor</button>
         <div style="position: absolute"><button>Graph overlay</button></div>
         <div class="layer" style="position: absolute; inset: 0; z-index: 18"><button>Card</button></div>
         <header style="position: absolute; z-index: 20"><button>Topbar</button></header>
@@ -579,7 +579,7 @@ test('Chromium: while the Board is shown, what it covers leaves the tab order â€
     assert.deepEqual([covered, arrived, await tabbed()], [
       ['Card', 'Topbar'],
       ['Card', 'Topbar'],
-      ['Recolour', 'Graph overlay', 'Card', 'Topbar', 'Edge Ã—'],
+      ['Recolor', 'Graph overlay', 'Card', 'Topbar', 'Edge Ã—'],
     ]);
     for (const lowerFirst of [true, false]) {
       assert.deepEqual(await page.evaluate((lowerFirst) => {
@@ -779,7 +779,7 @@ for (const width of [390, 320]) {
       await holdStep(page, 'dock');
       await touchStep(page, 'triangle');
       await touchStep(page, 'solo');
-      assert.equal(await page.locator('.st-board-bulk-heading > span').textContent(), '3 selected');
+      assert.equal(await page.locator('.st-board-bulk-heading').textContent(), '3 selected');
       assert.deepEqual(await page.evaluate(() => window.opened ?? []), []);
       assert.equal(await page.locator('.st-board-swipe').count(), 0);
       const closedActions = await page.locator('.st-board-bulk-actions').boundingBox();
@@ -810,7 +810,7 @@ for (const width of [390, 320]) {
       await page.clock.runFor(1000);
       await page.getByText('3 steps recolored', { exact: true }).last().waitFor();
       assert.deepEqual(await page.evaluate(() => window.writes), [{ kind: 'BulkRecolor', nodeIds: ['dock', 'triangle', 'solo'], color: 'olive' }]);
-      assert.equal(await focused(page), 'Leave the dock');
+      assert.equal(await focused(page), 'Sail solo');
       await page.getByRole('button', { name: 'Undo', exact: true }).click();
       await page.clock.runFor(300);
       assert.deepEqual(await page.evaluate(() => window.selectionSteps.filter(({ id }) => ['dock', 'triangle', 'solo'].includes(id))), [
@@ -835,7 +835,7 @@ test('Chromium: choosing the focused shared kind closes only kinds without a wri
     await page.clock.runFor(150);
     await page.waitForFunction(() => document.querySelector('.st-board-bulk-recolor')?.getAttribute('aria-expanded') === 'false');
     await page.waitForFunction(() => history.state?.boardSelection?.kinds === false);
-    assert.equal(await page.locator('.st-board-bulk-heading > span').textContent(), '1 selected');
+    assert.equal(await page.locator('.st-board-bulk-heading').textContent(), '1 selected');
     assert.equal(await page.locator('.st-board-card[data-step-id="bowline"]').getAttribute('aria-pressed'), 'true');
     assert.deepEqual(await page.evaluate(() => [window.writes, window.opened ?? []]), [[], []]);
     assert.equal(await page.locator('.st-board-toast').count(), 0);
@@ -879,7 +879,7 @@ test('Chromium: Back and Escape close kinds before selection, and finished selec
     await settleKinds(page);
     await page.evaluate(() => history.back());
     await page.waitForFunction(() => document.querySelector('.st-board-bulk-recolor')?.getAttribute('aria-expanded') === 'false');
-    assert.equal(await page.locator('.st-board-bulk-heading > span').textContent(), '1 selected');
+    assert.equal(await page.locator('.st-board-bulk-heading').textContent(), '1 selected');
     await page.keyboard.press('Escape');
     await page.getByRole('tablist').waitFor();
     await page.waitForFunction(() => !history.state?.boardSelection);
@@ -893,7 +893,7 @@ test('Chromium: Back and Escape close kinds before selection, and finished selec
     assert.equal(await page.evaluate(() => window.hostEscapes), 0);
     await settleKinds(page, false);
     await page.evaluate(() => {
-      document.querySelector('.st-board-bulk-heading button').click();
+      document.querySelector('.st-board-bulk-done').click();
       document.querySelector('.st-board-card[data-step-id="bowline"]').click();
     });
     await page.getByRole('tablist').waitFor();
@@ -983,7 +983,7 @@ test('Chromium: pruning uses the live pane, recolor preserves the kind filter, a
     await holdStep(page, 'dock');
     await touchStep(page, 'locked-0');
     await page.evaluate(() => filterSelection('terracotta'));
-    await page.waitForFunction(() => document.querySelector('.st-board-bulk-heading > span')?.textContent === '1 selected');
+    await page.waitForFunction(() => document.querySelector('.st-board-bulk-heading')?.textContent === '1 selected');
     await page.getByRole('button', { name: 'Recolor', exact: true }).click();
     await settleKinds(page);
     await page.getByRole('radio', { name: 'Learn', exact: true }).click();
@@ -1083,7 +1083,7 @@ test('Chromium: an unrelated parent render preserves card memoization and a hold
     await page.locator('.st-board-bulk').waitFor();
     await starter.dispatchEvent('pointerup', { pointerType: 'touch', pointerId: 7, isPrimary: true, clientX: 100, clientY: 200 });
     await starter.dispatchEvent('click');
-    assert.equal(await page.locator('.st-board-bulk-heading > span').textContent(), '1 selected');
+    assert.equal(await page.locator('.st-board-bulk-heading').textContent(), '1 selected');
     assert.deepEqual(await page.evaluate(() => window.opened ?? []), []);
     assert.deepEqual((await events(page)).filter((event) => event.startsWith('roadmap_board_select')), [
       'roadmap_board_select {"step":"start"}',
@@ -1102,7 +1102,7 @@ test('Chromium: a delayed kind apply reads the selection pruned during its anima
     await page.getByRole('radio', { name: 'Sky', exact: true }).evaluate((chip) => chip.click());
     await page.clock.runFor(60);
     await page.evaluate(() => window.filterSelection('terracotta'));
-    await page.waitForFunction(() => document.querySelector('.st-board-bulk-heading > span')?.textContent === '1 selected');
+    await page.waitForFunction(() => document.querySelector('.st-board-bulk-heading')?.textContent === '1 selected');
     assert.deepEqual(await page.evaluate(() => window.writes), []);
     await page.clock.runFor(60);
     await page.getByRole('tablist').waitFor();
@@ -1128,7 +1128,7 @@ test('Chromium: refused recolor keeps the selection and controls live for a late
     await page.clock.runFor(120);
     await page.waitForFunction(() => window.selectionAttempts.length === 1);
     assert.deepEqual(await page.evaluate(() => ({ writes: window.writes, reports: window.reports ?? [] })), { writes: [], reports: [] });
-    assert.equal(await page.locator('.st-board-bulk-heading > span').textContent(), '1 selected');
+    assert.equal(await page.locator('.st-board-bulk-heading').textContent(), '1 selected');
     assert.equal(await page.getByRole('button', { name: 'Recolor', exact: true }).getAttribute('aria-expanded'), 'true');
     assert.equal(await page.locator('.st-board-toast').count(), 0);
     assert.deepEqual((await events(page)).filter((event) => event.startsWith('roadmap_board_select')), ['roadmap_board_select {"step":"start"}']);
@@ -1155,12 +1155,12 @@ test('Chromium: clearing a filter never resurrects choices pruned from the selec
     await holdStep(page, 'dock');
     await touchStep(page, 'triangle');
     await page.evaluate(() => window.filterSelection('terracotta'));
-    await page.waitForFunction(() => document.querySelector('.st-board-bulk-heading > span')?.textContent === '1 selected');
+    await page.waitForFunction(() => document.querySelector('.st-board-bulk-heading')?.textContent === '1 selected');
     await page.evaluate(() => window.filterSelection('terracotta'));
     await page.waitForFunction(() => window.selectionQuery.length === 0);
     await page.clock.runFor(1000);
     await page.locator('.st-board-phone-pane.is-shown .st-board-card[data-step-id="triangle"]').waitFor();
-    assert.equal(await page.locator('.st-board-bulk-heading > span').textContent(), '1 selected');
+    assert.equal(await page.locator('.st-board-bulk-heading').textContent(), '1 selected');
     assert.deepEqual(await page.locator('.st-board-phone-pane.is-shown .st-board-card').evaluateAll((cards) => cards.map((card) => ({
       id: card.dataset.stepId, selected: card.getAttribute('aria-pressed'),
     }))), [

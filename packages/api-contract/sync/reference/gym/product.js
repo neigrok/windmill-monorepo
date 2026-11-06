@@ -114,20 +114,45 @@ function documentOf(changes) {
   return changes.filter((change) => change.kind !== 'removed').map((change) => ({ exerciseId: change.exerciseId, ...change.after }));
 }
 
-// R118's apply count of a diff: every line not kept, and one more when the kept and retargeted lines,
-// matched to their base lines in proposed order, take a base line before one already visited.
-function changeCountOf(base, changes) {
-  const count = changes.filter((change) => change.kind !== 'kept').length;
+// The kept and retargeted lines a diff moved, each matched to the first unmatched base entry of its exercise in proposed
+// order. A line at the same place in both never moved. Of the rest, a line that crosses one of those moved; of what is
+// left, the longest run that keeps the base's order stands, the one whose places come first of equal runs, and every other
+// line moved. Added and removed lines take no part in the order, though the places count them.
+function movedLines(base, changes) {
   const matched = new Set();
-  let highest = -1;
-  for (const change of changes) {
-    if (change.kind === 'added' || change.kind === 'removed') continue;
-    const i = base.findIndex((entry, at) => !matched.has(at) && entry.exerciseId === change.exerciseId);
-    matched.add(i);
-    if (i < highest) return count + 1;
-    highest = i;
+  const retained = [];
+  changes.filter((change) => change.kind !== 'removed').forEach((change, to) => {
+    if (change.kind === 'added') return;
+    const from = base.findIndex((entry, at) => !matched.has(at) && entry.exerciseId === change.exerciseId);
+    if (from === -1) return;
+    matched.add(from);
+    retained.push({ change, from, to });
+  });
+  const placed = retained.filter((line) => line.from === line.to);
+  const left = retained.filter((line) => line.from !== line.to);
+  const candidates = left.filter((line) => placed.every((other) => (line.to < other.to) === (line.from < other.from)));
+  const longest = candidates.map(() => 1);
+  for (let i = candidates.length - 1; i >= 0; i -= 1) {
+    for (let j = i + 1; j < candidates.length; j += 1) if (candidates[j].from > candidates[i].from) longest[i] = Math.max(longest[i], longest[j] + 1);
   }
-  return count;
+  const standing = new Set();
+  let previous = -1;
+  let start = 0;
+  for (let length = Math.max(0, ...longest); length > 0; length -= 1) {
+    let next = -1;
+    for (let i = start; i < candidates.length; i += 1) {
+      if (candidates[i].from > previous && longest[i] === length && (next === -1 || candidates[i].from < candidates[next].from)) next = i;
+    }
+    standing.add(candidates[next]);
+    previous = candidates[next].from;
+    start = next + 1;
+  }
+  return left.filter((line) => !standing.has(line));
+}
+
+// The apply count of a diff, what a card, a sheet and a receipt say: every line not kept and every kept line that moved.
+function changeCountOf(base, changes) {
+  return changes.filter((change) => change.kind !== 'kept').length + movedLines(base, changes).filter((line) => line.change.kind === 'kept').length;
 }
 
 // The movements of a session holding an alive set, among the rows given.

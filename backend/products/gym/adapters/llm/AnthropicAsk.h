@@ -21,7 +21,7 @@ constexpr const char* kCoachModel = "claude-opus-5";
 constexpr const char* kCoachEffort = "medium";
 
 // A phone turn on an anonymous seat runs on the anonymous onboarding model, under its effort and
-// output ceiling: a round of the Coach model does not fit the $0.05 lifetime allowance.
+// output ceiling.
 constexpr const char* kCoachAnonymousModel = "claude-sonnet-5";
 constexpr const char* kCoachAnonymousEffort = "low";
 constexpr int kCoachAnonymousMaxOutputTokens = 2000;

@@ -121,12 +121,6 @@ class AiInstallation(
         saved.credential
     }
 
-    suspend fun forRecovery(): String = mutex.withLock {
-        val saved = existing() ?: throw WindmillApiException.Refused(401, Refusal(code = "invalid_installation"))
-        if (saved.invalid) throw WindmillApiException.Refused(401, Refusal(code = "invalid_installation"))
-        saved.credential
-    }
-
     suspend fun markBound() = mutex.withLock {
         existing()?.let { persist(it.copy(bound = true)) }
         currentRead = true

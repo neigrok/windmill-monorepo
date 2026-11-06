@@ -49,8 +49,8 @@ with their test support `DomainKitTesting` and `:domain-kit-testing`.
 product, its scope and names (`Gym.scope`, `Gym.Types.note`). Together they are the kit's whole lower
 boundary.
 
-**D-3 Layer.** One of: engine API, engine runtime, kit, product domain, UI, test, composition (the
-app). Each module belongs to exactly one, the row of §2.2 that lists it.
+**D-3 Layer.** One of: engine API, engine runtime, kit, product domain, agent, UI, test, composition
+(the app). Each module belongs to exactly one, the row of §2.2 that lists it.
 
 **D-4 Entity.** A product type whose values are records of one registry type (engine D-6, D-7). It
 has a typed id and a constructor from a record, and when the client writes it, the fields it writes
@@ -163,12 +163,18 @@ closed by package identity; the checked-in `Package.resolved` pins their revisio
 The app injects `SyncSchema.registry` into the runner and the UI modules, which do not import
 `SyncSchema`.
 
-The Kotlin modules `:sync-core`, `:sync-api`, `:sync-schema`, `:sync-testing` (ER-10), `:domain-kit`,
-`:domain-kit-testing` and `:gym:domain` are `jvm` modules; `:sync-engine`, `:platform`, `:gym` and
-`:app` are `android` modules. Each depends as its Swift twin above does, with `:sync-testing` for
-`SyncEngine` and `SyncTesting`; `:sync-engine` and `:platform`, with no twin above, follow §2.2.
-A Kotlin module `:a:b` lives at `apps/android/a/b`. `settings.gradle.kts` includes exactly these
-modules and no other build. A `jvm` module applies exactly the plugin set `{org.jetbrains.kotlin.jvm}`.
+The Kotlin modules `:sync-core`, `:sync-api`, `:sync-schema`, `:sync-model-server`, `:sync-testing`
+(ER-10), `:domain-kit`, `:domain-kit-testing`, `:gym:domain` and `:agent` are `jvm` modules;
+`:sync-engine`, `:platform`, `:gym` and `:app` are `android` modules. Each depends as its Swift twin
+above does, with `:sync-testing` for `SyncEngine` and `SyncTesting`; `:sync-engine`,
+`:sync-model-server`, `:platform` and `:agent`, with no twin above, follow §2.2. `:agent` holds the
+product-neutral turn of [the phone Coach](mobile/gym_coach.md) (§4): it depends on `:sync-core` and
+kotlinx-coroutines-core, so it is neither kit nor domain and §2.3's class rules do not read it. The
+conversation's records, its receipts and context reads, and every screen stay gym's. `:gym:domain` holds the
+actions of a turn's records (`StreamTurnText`, `WithdrawTurn`, `KeepPicture`, `DeleteConversation`), which Swift
+keeps in the app target (`Gym/Coach/Turn/CoachTurnRecords.swift`). A
+Kotlin module `:a:b` lives at `apps/android/a/b`. `settings.gradle.kts` includes exactly these modules
+and no other build. A `jvm` module applies exactly the plugin set `{org.jetbrains.kotlin.jvm}`.
 
 ### §2.2 The layer rules, in test code
 
@@ -179,17 +185,21 @@ manifest. A test target is in the test layer. Every other module is in the one r
 |---|---|---|---|
 | composition | the app target | `:app` | anything |
 | engine API | `SyncCore`, `SyncAPI`, `SyncSchema` | `:sync-core`, `:sync-api`, `:sync-schema` | engine API |
-| engine runtime | `SyncReplica`, `SyncStore`, `SyncModelServer`, `SyncEngine`, `SyncIOS`, `SyncSchemaGen`; `GRDB` | `:sync-engine` | engine API, engine runtime; `GRDB` from `SyncStore` only |
+| engine runtime | `SyncReplica`, `SyncStore`, `SyncModelServer`, `SyncEngine`, `SyncIOS`, `SyncSchemaGen`; `GRDB` | `:sync-engine`, `:sync-model-server` | engine API, engine runtime; `GRDB` from `SyncStore` only |
 | engine test support | `SyncTesting` | `:sync-testing` | engine API, engine runtime |
 | kit | `DomainKit`, `DomainKitNFC` | `:domain-kit` | engine API, kit |
 | kit test support | `DomainKitTesting` | `:domain-kit-testing` | kit, engine API, `SyncEngine`, `SyncTesting` |
 | product domain | `GymDomain`, `JournalDomain` | `:gym:domain` | kit, engine API |
-| platform | `WindmillPlatform` | `:platform` | kit, engine API, `SyncEngine` |
-| product UI | `WindmillGym`, `WindmillJournal` | `:gym` | its own product domain, kit, engine API, `SyncEngine`, platform |
+| agent | none: the turn is in the app target | `:agent` | `:sync-core` |
+| platform | `WindmillPlatform` | `:platform` | kit, engine API, `SyncEngine`, agent |
+| product UI | `WindmillGym`, `WindmillJournal` | `:gym` | its own product domain, kit, engine API, `SyncEngine`, platform, agent |
 | test | test targets; the modules of the package whose identity is `swift-syntax` | test source sets | anything but platform, product UI and composition; `<M>Tests` also `<M>` |
 
 - No product domain depends on another product domain. Platform never depends on a product module,
   and a product UI on no other product's modules.
+- No kit or product-domain module depends on `:agent`, and `:agent` depends on no product. Its sources
+  name no product either: `LayeringTests` scans them for product nouns, and only the frozen `coach-…`
+  wire codes of `TurnRefusal.codes`, quoted whole, may say that word.
 - The transitive closure of every kit and product-domain module stays inside kit and engine API. A
   dependency on a library product counts as a dependency on every target the product bundles.
 
@@ -258,7 +268,7 @@ denials, `monitorenter` and `native` are the determinism lint:
 | `kotlin/**` | except `kotlin/io`, `kotlin/concurrent`, `kotlin/system`, `kotlin/random`, `kotlin/time`, `kotlin/reflect`, `kotlin/uuid`, `kotlin/coroutines` | `kotlin/math/MathKt`: `pow`, `exp`, `ln`, `log`, `log10`, `log2`; `kotlin/collections/*` and `kotlin/sequences/*`: `shuffled`, `shuffle`, `random`, `randomOrNull` |
 | `java/lang/` | `Object`, `String`, `CharSequence`, `StringBuilder`, `Comparable`, `Enum`, `Iterable`, `Number`, the boxed primitives, `Math`, `Class`, `Throwable` and the `*Exception` and `*Error` classes; `Thread` in the kit's `Draft` and `ActionRunner` classes only | every `Thread` member but `currentThread`; `Object.wait`, `notify`, `notifyAll`; `String.format`, `formatted`, and `toUpperCase` and `toLowerCase` with descriptor `()Ljava/lang/String;` (the `(Ljava/util/Locale;)` forms that `uppercase()` and `lowercase()` emit pass); the boxed types' `getInteger`, `getLong`, `getBoolean`; `Throwable.printStackTrace`; every member of `Class`; every `Math` member but `abs`, `min`, `max`, `floor`, `ceil`, `rint`, `round`, `sqrt`, `signum`, `copySign`, `floorDiv`, `floorMod` and the `*Exact` family |
 | `java/util/` | the collection interfaces, `ArrayList`, `LinkedHashMap`, `LinkedHashSet`, `Comparator`, `Locale` | every member of `Locale` but the field `ROOT` |
-| `java/text/Normalizer` | in the kit's NFC class only, which declares one method | — |
+| `java/text/Normalizer`, `java/text/Normalizer$Form` | in the kit's `Nfc` class only, which declares `normalise` and `nfd` and no other method | — |
 | the module's own packages and its allowed dependencies' | yes | — |
 
 Kotlin does not check global mutable state (an `object` holding a `var`); a domain holds none
@@ -375,7 +385,9 @@ interface TimestampedType<E : Writable<E>> : DraftType<E> { val timestampField: 
 Kotlin follows every Swift signature in this spec by these conventions: static requirements are
 members of the entity's companion object; a typed `throws(Violation)` is a thrown `Violation`; an
 optional is a nullable type, and an overload that differs from another only in that carries its own
-`@JvmName`; `inout` is a returned copy.
+`@JvmName`; `inout` is a returned copy. `Plan` is a value in Swift and mutable in Kotlin, so a decider that
+may refuse after building one leaves the plan a refusal path reuses untouched. `Decider.decision` turns only a
+`Violation` into a refusal, so a decider reading untrusted JSON turns `DecodeError` and `JsonError` into its own.
 
 **The developer declares** per entity: its type and scope, its stored properties, its constructor
 from `Fields`, and when written, `fields` and `checks`.
@@ -660,6 +672,19 @@ public struct Valid<E: Writable>: Sendable {
   within the registry, and that today's checks would refuse, never blocks an edit of another field,
   except in a record that is one fact, whose every save writes and so validates every field.
 
+### §4.6 Collation
+
+`Collation` lists names as a database's `en_US.UTF-8` collation does, by three levels over the scalars of each name's
+NFD (`DomainKitNFC.nfd`, Kotlin `Nfc.nfd`): first the scalars of canonical combining class 0, each by its lowercase
+mapping; then every scalar by its lowercase mapping; then lowercase before uppercase, scalar by scalar. Levels compare
+by scalar value, never by UTF-16 unit. Spaces and punctuation count as the characters they are at every level, and two
+names equal at all three levels are equal, and a caller breaks the tie. A mark of class 0
+(U+FE0F, U+0E31, U+0941) stays at the first level, so no general-category test stands in for the class. Swift reads the
+class from `Unicode.Scalar.Properties`; the JDK has no API for it, so Kotlin carries the non-zero ranges as a table in
+`Collation`, generated by `apps/android/tools/combining_ranges.py` from the UCD's `DerivedCombiningClass.txt`, and holds
+Other_Uppercase itself, since `Character.isUpperCase` reads it on the JVM and not on Android.
+`packages/api-contract/gym/rules/collation.json` holds Swift and Kotlin to one order, the table's edges included.
+
 ---
 
 ## §5 Time
@@ -804,6 +829,7 @@ public struct RuleBook: Sendable {
 ```swift
 public struct Reader {                                  // valid only inside one run or read
   public let moment: Moment
+  public var replica: String { get }                   // the replica a run's commit writes to (engine §7.12), "" in a read
   public func repository<E: Entity>(_ type: E.Type) -> Repository<E>
   public func device(_ key: String) throws -> JSON?    // device/<product> rows (engine §2.5)
   public func firstPullComplete() throws -> Bool       // engine §7.9, for the reader's scope
@@ -1114,6 +1140,25 @@ plan, on `refuse` it writes that update alone. A plan the engine refuses at comm
 an executor that can hear of such a refusal in decide does: `cap` by the growth rule (§7.3), as
 `save_note` does at the 10-note cap. It saves a note of its own with `SaveDraft(creating:)` and
 returns a result of its own, never `Saved` (§10.1).
+
+### §9.4 Abilities
+
+An ability is one operation of a product's catalog, reached from every door its seat allows (gym Coach §2). Kotlin's kit
+holds what one is, in `Abilities.kt`: `Ability` with its
+`AbilityClass`, `AgentRule` and `AbilitySeats`, `Seat`, `Catalog` and `JsonSchema` with its `SchemaFault`; none names a
+product. Swift keeps the same types in `GymDomain/Coach/Catalog.swift` (`JSONSchema`), its `Catalog` generated from the file.
+
+- `Catalog(document)` reads a product's `catalog.json` as JSON, because the kit loads no resource: the module that may
+  read files passes the parsed document. A document that breaks the catalog's shape throws: a key it does not list, a word
+  outside `class`, `agent` or `seats`, a `since` that names no catalog version, two abilities of one name.
+- `offered(seat)` leaves out a withheld ability, one marked `declared: false`, and one that needs an account for `anon`.
+- `JsonSchema(schema).fault(value)` answers the first fault or nil. It reads `type`, `enum`, `const`, `properties`,
+  `required`, `additionalProperties: false`, `items`, `minItems`, `maxItems`, `uniqueItems`, `minLength`, `maxLength`,
+  `pattern`, `minimum` and `maximum`; every other keyword passes, `multipleOf` among them, and so does a schema that is not
+  an object. Object members check in key order, the JCS order both languages hold, `required` in its own order before them.
+  Lengths count Unicode scalars, `enum`, `const` and `uniqueItems` compare by JCS, a pattern matches the whole string, and
+  a pattern that does not compile refuses. A fault's path and reason read the same in both languages. Swift's `Regex` and
+  `java.util.regex` read `.`, `\d`, `\w` and `\s` by different rules, so a catalog's patterns keep to explicit classes.
 
 ---
 
@@ -1666,7 +1711,7 @@ run. Records are engine §9.1 `Row`s listed per view (`drawn`, `stored`), which 
 | `domain/values.json` | each LOCAL rule: spec cases, the kit's value-vector forms (§15.2) over a spec of the book, and entity cases (`{entity, id, fields, now, offsetSeconds}` → `{fields}` or `{violation}`) pinning check order |
 | `domain/<feature>-actions.json` | each action and draft save of a feature: `{action, input, records: {drawn, stored?, device?}, ids, now, offsetSeconds}` → `{decision}`: the action's `load` and `decision` over the records and the device keys, `stored` defaulting to `drawn`, minting `ids` in order, opaque ones included; a draft save's decision over the draft its editor opens there |
 | `domain/README.md` | each action's and read's `input` and result, and the forms of the product refusal |
-| `rules/<read>.json` | each derived read (§7.4; for gym, gym Coach §3.5 `rules/`): `{read, input?, records: {drawn, stored?}, firstPullComplete?, now, offsetSeconds}` → `{result}`, the read over a reader of the records in its scope at the moment, `firstPullComplete` defaulting to true |
+| `rules/<read>.json` | each derived read (§7.4; for gym, gym Coach §3.5 `rules/`): `{read, input?, records: {drawn, stored?}, firstPullComplete?, now, offsetSeconds}` → `{result}`, the read over a reader of the records in its scope at the moment, `firstPullComplete` defaulting to true; a read of plain values names them and no records (`collation.json`, §4.6) |
 
 An entity in a product's corpus is `{id, fields}`. A decision's `refuse` holds the product refusal's
 form, which the product's README states.

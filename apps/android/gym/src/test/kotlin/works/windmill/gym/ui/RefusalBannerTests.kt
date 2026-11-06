@@ -25,5 +25,8 @@ class RefusalBannerTests {
 
         assertEquals("“Push Day” stays on this phone",
             refusalHeadline(RefusedChange(id = "rt_push", name = "Push Day", reason = "that document is unclaimable"), catalog))
+
+        assertEquals("That change could not be saved.",
+            refusalHeadline(RefusedChange(id = "notice", name = null, reason = "That changed. Open it again."), catalog))
     }
 }

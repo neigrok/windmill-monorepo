@@ -35,8 +35,8 @@ by side with catalog/2.
   `read`-level tool, a `remove` a `delete`-level one, and only a `propose_*` tool `proposes`.
   `propose_workout_change`'s set items list an empty `required`, so they are not among the open
   `input` objects.
-- `phrase` is the step-line text a Coach client prints for a call, the same words the web and Android
-  phrase tables hold today.
+- `phrase` is the step-line text a Coach client prints for a call. Both phones take it from this file, and the
+  web's `TOOL_PHRASE` holds the same words for the abilities it lists.
 
 Read as a test by `backend/test/products/gym/adapters/mcp/CatalogContractTest.cpp`, which embeds the
 file into `windmill_gym` at configure time (`catalogText()`). A change to this file or to a tool
@@ -70,8 +70,8 @@ Coach is offered (`agent` other than `withheld`), each an array of
 - An input's text may arrive decomposed. A field `gym/domain/rules.json` marks `nfc` is stored and
   answered in NFC (gym_coach.md §3.3), and a replay or duplicate is matched on that composed form,
   as the decomposed cases in `create_routine` and `save_note` pin.
-- A refusal's code is the server tool's outcome code: `refused` for a rule's refusal,
-  `invalid-arguments` for a malformed input.
+- A refusal's code is the server tool's outcome code: `refused` for a rule's refusal, `load-floor`
+  for a target below its movement's load floor, `invalid-arguments` for a malformed input.
 - The server runs every case as Coach does, for the account, with proposals stamped `door: ask` and
   no thread.
 
@@ -122,9 +122,10 @@ turn driver replays the same file against a fake server that emits `events` and 
 |---|---|
 | `case` | The file's name. |
 | `seat` | `anon` or `bound`: the seat the open runs under. |
+| `clockMs` | Server side only: the server's clock through the exchange, where a frame names a moment derived from it. |
 | `open` | The §6.2 body, verbatim. |
 | `model` | Server side only: the vendor's reply per model call — `{stop_reason, content}`, `null` for a transport failure, `{"refused": code}` for a round the allowance refused. |
-| `events` | The frames the server sends, in order, heartbeats aside. A `done` frame's `allowance` is omitted: it belongs to the environment, and the comparison drops it. `{"await": …}` entries are not frames: they mark where the server waits for the phone — `results` of a `batch`, `stop`, `resume`, or the `timeout` of a silent phone. |
+| `events` | The frames the server sends, in order, heartbeats aside. A `done` frame's `allowance` is omitted: it belongs to the environment, and the comparison drops it. An `error` frame's `allowance` is the script's: what the phone says depends on it, and the server's read of a seat with nothing spent is what the comparison expects. `{"await": …}` entries are not frames: they mark where the server waits for the phone — `results` of a `batch`, `stop`, `resume`, or the `timeout` of a silent phone. |
 | `results` | The bodies the phone posts, in order, each on the `calls` frame of its `batch` — or of `on`, when a probe answers another batch on purpose. `expect` is `accepted` (the default, 200), `replay` (204) or `coach-turn-order` (409). |
 | `stop` | `{"afterModelCall": n}`: Stop is requested as soon as the n-th model call returns, before its batch. |
 | `resume` | `{"onBatch": n}`: the phone reconnects on that `calls` frame, before answering, and reads a `snapshot`. |
@@ -135,7 +136,7 @@ turn driver replays the same file against a fake server that emits `events` and 
 | `serverCalls` | Server side only: the calls the server executor ran (ruling R2). |
 | `end` | The terminal `state`, `truncated` where set, and the `code` of a `failed` turn. |
 
-A `failed` turn ends with an `error {code}` frame, every other terminal state with `done {state, truncated?, allowance}`.
+A `failed` turn ends with an `error {code, budgetResetsAtMs?, allowance?}` frame, every other terminal state with `done {state, truncated?, allowance}`.
 
 ## `gym-history.md`
 

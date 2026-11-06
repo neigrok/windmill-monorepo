@@ -32,6 +32,13 @@ function markup(props) {
   }));
 }
 
+test('PhoneSegments — selection has one initially empty polite status before the panes', () => {
+  const plain = markup({});
+  const opening = '<div class="st-board-phone">';
+  assert.equal(markup({ selectionAnnouncement: '' }), plain.replace(opening,
+    `${opening}<span class="st-board-spoken" role="status" aria-live="polite" aria-atomic="true"></span>`));
+});
+
 function tab(name, title, count, spoken, selected) {
   return `<button id=":R0:tab-${name}" type="button" role="tab" class="st-board-phone-segment" aria-label="${spoken}" aria-selected="${selected}" aria-controls=":R0:panel-${name}" tabindex="${selected ? 0 : -1}">`
     + `<span class="st-board-phone-segment-surface"><span class="st-board-phone-segment-label">${title}</span><span class="st-board-phone-segment-count">${count}</span></span></button>`;
@@ -156,7 +163,9 @@ window.entryReady = true;
 `;
 
 let server, browser, origin;
-const ready = (async () => {
+let ready;
+function start() {
+  ready ??= (async () => {
   server = await createServer({ configFile: false, root, cacheDir: `${root}/node_modules/.vite-phone-segments-test`,
     plugins: [{ name: 'phone-segments-test',
       enforce: 'pre',
@@ -182,7 +191,9 @@ const ready = (async () => {
   await server.listen(0);
   origin = `http://127.0.0.1:${server.httpServer.address().port}`;
   browser = await chromium.launch({ headless: true });
-})();
+  })();
+  return ready;
+}
 after(async () => {
   try { await ready; } finally { await browser?.close(); await server?.close(); }
 });
@@ -215,7 +226,7 @@ const events = (page) => page.evaluate(() => window.events ?? []);
 const scrollShown = (page, top) => page.locator('.st-board-phone-pane.is-shown').evaluate((pane, top) => { pane.scrollTop = top; }, top);
 
 test('Chromium: tapping a tab shows its column, and each column keeps its own scroll across tabs and the Graph', async () => {
-  await ready;
+  await start();
   const errors = [];
   const page = await openCoast({ width: 390, height: 844 }, errors);
   try {
@@ -245,7 +256,7 @@ test('Chromium: tapping a tab shows its column, and each column keeps its own sc
 });
 
 test('Chromium: arrow keys, Home and End move between tabs, choosing and focusing as they go', async () => {
-  await ready;
+  await start();
   const errors = [];
   const page = await openCoast({ width: 390, height: 844 }, errors);
   try {
@@ -270,7 +281,7 @@ test('Chromium: arrow keys, Home and End move between tabs, choosing and focusin
 });
 
 test('Chromium: Done shows its twelve newest and the drawn Show all row; End reaches it, Enter unfolds the rest into its place', async () => {
-  await ready;
+  await start();
   const errors = [];
   const page = await openCoast({ width: 390, height: 844 }, errors);
   try {
@@ -313,7 +324,7 @@ test('Chromium: Done shows its twelve newest and the drawn Show all row; End rea
 });
 
 test('Chromium: inside a pane the arrow keys move between its cards, and the pane keeps that card as its one tab stop', async () => {
-  await ready;
+  await start();
   const errors = [];
   const page = await openCoast({ width: 390, height: 844 }, errors);
   try {
@@ -340,7 +351,7 @@ test('Chromium: inside a pane the arrow keys move between its cards, and the pan
 // At 100% both phone widths hold one track, even with the large roadmap's longest counts.
 for (const width of [390, 320]) {
   test(`Chromium: at ${width}px the tabs share one track`, async () => {
-    await ready;
+    await start();
     const errors = [];
     const page = await openCoast({ width, height: 844 }, errors);
     try {
@@ -358,7 +369,7 @@ for (const { width, rows } of [
   { width: 160, rows: [['Locked'], ['Up next'], ['Done']] },
 ]) {
   test(`Chromium: at 200% text on a ${width * 2}px phone the tabs part into ${rows.length} rows and stay whole`, async () => {
-    await ready;
+    await start();
     const errors = [];
     const page = await openBoardPage({ width, height: 844 }, errors, learnToSailBoard().columns.flatMap((column) => column.cards)
       .map((card) => ({ id: card.id, label: card.step.label, prerequisites: card.step.prerequisites })), ['course', 'parts', 'rig']);
@@ -389,7 +400,7 @@ function tabLayout(page) {
 
 
 test('Chromium: Tab reveals Complete, Escape closes it, and only pressing its button completes', async () => {
-  await ready;
+  await start();
   const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));

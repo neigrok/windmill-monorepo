@@ -64,6 +64,7 @@ import works.windmill.gym.domain.sync.SeedExercises
 import works.windmill.gym.domain.sync.SetTarget as SyncTarget
 import works.windmill.gym.net.FakeGymRest
 import works.windmill.gym.presentation.ChangeKind
+import works.windmill.gym.presentation.FieldMove
 import works.windmill.gym.presentation.Proposal
 import works.windmill.gym.presentation.ProposalChange
 import works.windmill.gym.presentation.ProposalIntent
@@ -79,6 +80,7 @@ import works.windmill.gym.store.FinishOutcome
 import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.ProposalRead
 import works.windmill.gym.store.TrainingStore
+import works.windmill.platform.telemetry.Telemetry
 import works.windmill.sync.core.Json
 import works.windmill.sync.modelserver.ModelServer
 import works.windmill.sync.modelserver.ServerCall
@@ -206,6 +208,7 @@ class ReviewSheetTests {
                     state = review, events = review,
                     onAsk = null,
                     onDecided = { decided += it },
+                    onSignIn = {},
                 )
             }
         }
@@ -309,7 +312,7 @@ class ReviewSheetTests {
         val review = ReviewBinding(room.store)
         compose.setContent {
             Box(Modifier.height(540.dp)) {
-                ReviewSheet(opened.value, review, review, null, { decided += it })
+                ReviewSheet(opened.value, review, review, null, { decided += it }, onSignIn = {})
             }
         }
         compose.onNodeWithText("Apply").assertIsEnabled()
@@ -332,37 +335,146 @@ class ReviewSheetTests {
         scope.cancel()
     }
 
+    // A routine, a proposal on it and a workout running from that routine, as the log has them.
+    private fun proposalOverAWorkout(scope: CoroutineScope, server: ModelServer, events: MutableList<Pair<String, Map<String, String>>>): Pair<EngineRoomFixture, Routine> {
+        val room = EngineRoomFixture(tmp.newFolder(), scope, rest = FakeGymRest(), telemetry = object : Telemetry {
+            override fun event(name: String, properties: Map<String, String>) { events += name to properties }
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) = throw error
+        }).also { room ->
+            rooms += room
+            runBlocking { room.select("u1") }
+        }
+        val changes = listOf(retarget("bench-press", 1))
+        val routine = routineFor(room, server, "Push Day", changes)
+        propose(room, server, routine, changes, summary = "")
+        assertTrue(runBlocking { room.store.workout.start(routine.id) } is GymResult.Ok)
+        return room to routine
+    }
+
     @Test
-    fun startingAWorkoutRemovesBothDecisionActionsUntilThatWorkoutFinishes() {
+    fun aRoutinesProposalAppliesWithAWorkoutOpenAndTheRunningPlanAndRackStand() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val server = EngineRoomFixture.server()
+        val events = mutableListOf<Pair<String, Map<String, String>>>()
+        val (room, routine) = proposalOverAWorkout(scope, server, events)
+        val store = room.store
+        val plan = store.workout.session!!.plan
+        val rack = store.workout.rack
+        val decided = mutableListOf<Proposal>()
+        sheet(store, decided)
+
+        compose.onNodeWithText("1 change to Push Day.").assertIsDisplayed()
+        compose.onNodeWithText("Bench Press").assertIsDisplayed()
+        compose.onNodeWithText("Finish this session").assertDoesNotExist()
+        compose.onNodeWithText("Turn this down").assertIsEnabled()
+        compose.onNodeWithText("Apply").assertIsEnabled().performClick()
+        receipt(room, server, decided)
+
+        compose.runOnIdle {
+            assertEquals(listOf(ProposalState.Applied), decided.map { it.state })
+            assertEquals(listOf(List(5) { SetTarget(3) }), store.routines.routine(routine.id)!!.entries.map { it.sets })
+            assertEquals("the running plan stands", plan, store.workout.session!!.plan)
+            assertEquals("the rack stands", rack, store.workout.rack)
+            assertEquals(listOf(mapOf("action" to "apply", "outcome" to "decided")), events.filter { it.first == "gym_proposal_outcome" }.map { it.second })
+        }
+        scope.cancel()
+    }
+
+    @Test
+    fun aRoutinesProposalTurnsDownWithAWorkoutOpenAndNothingMoves() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val server = EngineRoomFixture.server()
+        val events = mutableListOf<Pair<String, Map<String, String>>>()
+        val (room, routine) = proposalOverAWorkout(scope, server, events)
+        val store = room.store
+        val plan = store.workout.session!!.plan
+        val rack = store.workout.rack
+        val decided = mutableListOf<Proposal>()
+        sheet(store, decided)
+
+        compose.onNodeWithText("Turn this down").performClick()
+        compose.onNodeWithText("Turn down").performClick()
+        receipt(room, server, decided)
+
+        compose.runOnIdle {
+            assertEquals(listOf(ProposalState.Dismissed), decided.map { it.state })
+            assertEquals(listOf(List(3) { SetTarget(5) }), store.routines.routine(routine.id)!!.entries.map { it.sets })
+            assertEquals("the running plan stands", plan, store.workout.session!!.plan)
+            assertEquals("the rack stands", rack, store.workout.rack)
+            assertEquals(listOf(mapOf("action" to "dismiss", "outcome" to "decided")), events.filter { it.first == "gym_proposal_outcome" }.map { it.second })
+        }
+        scope.cancel()
+    }
+
+    // 08.71: what moved stands where it lands, with its old and new place read off the change data; the count stays the server's.
+    @Test
+    fun aProposalThatOnlyReordersDrawsAMoveRowWhereItLandsAndCountsOneChange() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val server = EngineRoomFixture.server()
         val room = signedIn(scope)
-        val changes = listOf(retarget("bench-press", 1))
-        val routine = routineFor(room, server, "Push Day", changes)
-        val pending = propose(room, server, routine, changes, summary = "")!!
-        val store = room.store
+        val routine = routineFor(room, server, "Push Day", listOf("bench-press", "cable-fly", "overhead-press", "back-squat", "triceps-pushdown").mapIndexed { at, id -> kept(id, at + 1) })
+        propose(room, server, routine, summary = "", changes = listOf(
+            kept("overhead-press", 1).copy(order = FieldMove("Order", "3rd", "1st")),
+            kept("bench-press", 2), kept("cable-fly", 3), kept("back-squat", 4), kept("triceps-pushdown", 5)))
         val decided = mutableListOf<Proposal>()
-        sheet(store, decided)
-        compose.onNodeWithText("Apply").assertIsEnabled()
-        val startingWorkout = compose.runOnIdle { scope.async { (store.workout.start(routine.id) as GymResult.Ok).value } }
-        compose.waitUntil(10_000) { compose.runOnIdle { startingWorkout.isCompleted } }
-        val live = runBlocking { startingWorkout.await() }
-        compose.onNodeWithText("Finish this session").assertIsDisplayed()
-        compose.onNodeWithText("Apply").assertDoesNotExist()
-        compose.onNodeWithText("Turn this down").assertDoesNotExist()
-        val finishingWorkout = compose.runOnIdle { scope.async {
-            assertEquals(live, store.workout.session)
-            assertEquals(pending, room.training.proposal("proposal1"))
-            assertEquals(emptyList<Proposal>(), decided)
-            assertEquals(emptyList<String>(), decisions(room))
-            assertTrue(store.workout.finish() is FinishOutcome.Closed)
-        } }
-        compose.waitUntil(10_000) { compose.runOnIdle { finishingWorkout.isCompleted } }
-        runBlocking { finishingWorkout.await() }
-        compose.onNodeWithText("Finish this session").assertDoesNotExist()
-        compose.onNodeWithText("Apply").assertIsEnabled()
-        compose.onNodeWithText("Turn this down").assertIsEnabled()
-        compose.runOnIdle { assertEquals(pending, runBlocking { room.training.proposal("proposal1") }) }
+        sheet(room.store, decided)
+
+        compose.onNodeWithText("1 change to Push Day.").assertIsDisplayed()
+        compose.onNodeWithText("Move Overhead Press").assertIsDisplayed()
+        compose.onNodeWithText("Order · 3rd → 1st").assertIsDisplayed()
+        compose.onNodeWithText("and 4 lines unchanged").assertIsDisplayed()
+        compose.onNodeWithText("Nothing is applied until you tap.").assertIsDisplayed()
+        assertTrue("the row stands above the run it left", compose.onNodeWithText("Order · 3rd → 1st").getUnclippedBoundsInRoot().bottom < compose.onNodeWithText("and 4 lines unchanged").getUnclippedBoundsInRoot().top)
+
+        compose.onNodeWithText("Apply").performClick()
+        compose.runOnIdle {
+            assertEquals("an Apply on its way reads against the routine the log confirmed", FieldMove("Order", "3rd", "1st"),
+                runBlocking { room.training.proposal("proposal1") }!!.changes.first().order)
+        }
+        receipt(room, server, decided)
+        compose.runOnIdle {
+            assertEquals(listOf("overhead-press", "bench-press", "cable-fly", "back-squat", "triceps-pushdown"), room.store.routines.routine(routine.id)!!.entries.map { it.exerciseId })
+        }
+        scope.cancel()
+    }
+
+    @Test
+    fun twoMovedMovementsDrawTwoRowsAndCountTwo() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val server = EngineRoomFixture.server()
+        val room = signedIn(scope)
+        val routine = routineFor(room, server, "Push Day", listOf("bench-press", "back-squat", "overhead-press", "cable-fly", "triceps-pushdown").mapIndexed { at, id -> kept(id, at + 1) })
+        propose(room, server, routine, summary = "", changes = listOf(
+            kept("cable-fly", 1).copy(order = FieldMove("Order", "4th", "1st")),
+            kept("overhead-press", 2).copy(order = FieldMove("Order", "3rd", "2nd")),
+            kept("bench-press", 3), kept("back-squat", 4), kept("triceps-pushdown", 5)))
+        sheet(room.store, mutableListOf())
+
+        compose.onNodeWithText("2 changes to Push Day.").assertIsDisplayed()
+        compose.onNodeWithText("Move Cable Fly").assertIsDisplayed()
+        compose.onNodeWithText("Order · 4th → 1st").assertIsDisplayed()
+        compose.onNodeWithText("Move Overhead Press").assertIsDisplayed()
+        compose.onNodeWithText("Order · 3rd → 2nd").assertIsDisplayed()
+        compose.onNodeWithText("and 3 lines unchanged").assertIsDisplayed()
+        compose.onNodeWithText("Apply all 2").assertIsDisplayed()
+        scope.cancel()
+    }
+
+    @Test
+    fun aMovementThatMovedAndChangedSaysItsPlaceOverItsTargets() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val server = EngineRoomFixture.server()
+        val room = signedIn(scope)
+        val routine = routineFor(room, server, "Push Day", listOf(kept("bench-press", 1), kept("cable-fly", 2), retarget("overhead-press", 3)))
+        propose(room, server, routine, summary = "", changes = listOf(
+            retarget("overhead-press", 1).copy(order = FieldMove("Order", "3rd", "1st")), kept("bench-press", 2), kept("cable-fly", 3)))
+        sheet(room.store, mutableListOf())
+
+        compose.onNodeWithText("Overhead Press").assertIsDisplayed()
+        compose.onNodeWithText("Move Overhead Press").assertDoesNotExist()
+        compose.onNodeWithText("Order · 3rd → 1st").assertIsDisplayed()
+        compose.onNodeWithText("3 × 5 → 5 × 3").assertIsDisplayed()
+        compose.onNodeWithText("and 2 lines unchanged").assertIsDisplayed()
         scope.cancel()
     }
 
@@ -678,7 +790,7 @@ class ReviewSheetTests {
         compose.setContent {
             key(visit.value) {
                 Box(Modifier.height(900.dp)) {
-                    ReviewSheet("proposal1", review, review, null, { decided += it })
+                    ReviewSheet("proposal1", review, review, null, { decided += it }, onSignIn = {})
                 }
             }
         }
@@ -727,7 +839,7 @@ class ReviewSheetTests {
         compose.setContent {
             key(displayed.value) {
                 Box(Modifier.height(900.dp)) {
-                    ReviewBinding(displayed.value).let { review -> ReviewSheet(pending.id, review, review, null, { decided += it }) }
+                    ReviewBinding(displayed.value).let { review -> ReviewSheet(pending.id, review, review, null, { decided += it }, onSignIn = {}) }
                 }
             }
         }
@@ -792,7 +904,7 @@ class ReviewSheetTests {
         compose.setContent {
             CompositionLocalProvider(LocalLifecycleOwner provides owner) {
                 Box(Modifier.height(900.dp).offset(y = if (offscreen.value) 2000.dp else 0.dp)) {
-                    ReviewSheet(pending.id, review, review, null, {}, onBusy = { busy = it })
+                    ReviewSheet(pending.id, review, review, null, {}, onSignIn = {}, onBusy = { busy = it })
                 }
             }
         }
@@ -823,7 +935,7 @@ class ReviewSheetTests {
             assertEquals(mapOf(pending.id to settled), room.store.routines.unseenRemovalReceipts)
             owner.lifecycle.currentState = Lifecycle.State.RESUMED
         }
-        compose.waitUntil(5_000) { room.store.routines.unseenRemovalReceipts.isEmpty() }
+        compose.waitUntil(5_000) { compose.runOnIdle { room.store.routines.unseenRemovalReceipts.isEmpty() } }
         compose.onNodeWithText(requireNotNull(settled.receipt)).assertIsDisplayed()
         compose.runOnIdle { runBlocking { assertEquals(ProposalRead.Found(settled), room.store.routines.proposal(pending.id)) } }
         scope.cancel()

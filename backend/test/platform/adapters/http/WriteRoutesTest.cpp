@@ -209,6 +209,7 @@ TEST(write_http_coach_turn_refusals_log_their_codes_and_a_vendor_failure_stays_a
     CHECK_EQ(writeHttpOutcome(error(drogon::k503ServiceUnavailable, "private", code), open), std::string(code));
   CHECK_EQ(writeHttpOutcome(error(drogon::k409Conflict, "private", "coach-turn-order"), "gym.coach.turn.results"),
            std::string("coach-turn-order"));
+  CHECK_EQ(writeHttpOutcome(error(drogon::k409Conflict, "private", "coach-turn-stopped"), open), std::string("coach-turn-stopped"));
   CHECK_EQ(writeHttpOutcome(error(drogon::k426UpgradeRequired, "private", "coach-update-required"), open),
            std::string("coach-update-required"));
   CHECK_EQ(writeHttpOutcome(error(drogon::k503ServiceUnavailable, "private", "coach-vendor-error"), open), std::string("failed"));

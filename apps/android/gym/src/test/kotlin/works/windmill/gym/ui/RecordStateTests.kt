@@ -144,7 +144,7 @@ class RecordStateTests {
             compose.onNodeWithText("Save").performClick()
             compose.onNodeWithText("Paused Bench").assertIsDisplayed()
             compose.onNodeWithText("Edit movement").assertDoesNotExist()
-            compose.waitUntil(5_000) { store.routines.catalog.single { it.id == movement.id } == renamed }
+            compose.waitUntil(5_000) { compose.runOnIdle { store.routines.catalog.single { it.id == movement.id } == renamed } }
             compose.runOnIdle {
                 assertEquals(listOf(renamed), store.routines.catalog.filter { it.id == movement.id })
                 assertEquals(listOf(renamed), room.training.catalogue().filter { it.id == movement.id })

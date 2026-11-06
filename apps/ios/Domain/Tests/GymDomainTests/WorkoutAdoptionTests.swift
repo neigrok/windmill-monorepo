@@ -61,6 +61,38 @@ struct WorkoutAdoptionTests {
     #expect(try h.runner.read(Gym.scope) { try $0.commands().count } == 1)
   }
 
+  // The fold that replaces a joining start takes the proposals waiting on it: the copy holds them for the account, and what
+  // the turn wrote with them keeps its write and loses its guard on the plan.
+  @Test func anOpenCopyHoldsTheProposalsWaitingOnItAndAFinishedOneNone() throws {
+    func signedOutWorkout() throws -> Harness {
+      let h = Harness(registry: SyncSchema.registry, start: Instant(ms: WorkoutPlanTests.now), account: nil)
+      for (id, equipment) in [("squat001", "barbell"), ("pullup01", "bodyweight"), ("facepull", "cable")] {
+        _ = try h.runner.run(CreateExercise(Exercise(id: ID(RecordID(id)), name: id, pattern: "pull", equipment: equipment, stepKg: 2.5)))
+      }
+      var routine = Draft(new: Routine(id: WorkoutPlanTests.routineId, name: "Upper A", entries: WorkoutPlanTests.entries))
+      try #require(saved(h.runner.save(&routine, SaveRoutine.self)))
+      _ = try #require(committed(h.runner.run(StartSession(id: WorkoutPlanTests.sessionId, routineId: WorkoutPlanTests.routineId))))
+      return h
+    }
+    let h = try signedOutWorkout()
+    let id = WorkoutPlanTests.sessionId
+    let proposal = ID<WorkoutProposal>(RecordID("wproposal1"))
+    let entries = Array(WorkoutPlanTests.entries.reversed())
+    #expect(try h.runner.run(ProposeWorkout(id: proposal, sessionId: id, entries: entries, summary: "Sore shoulder")).receipt != nil)
+    #expect(try h.runner.run(AdoptWorkout(id, mode: .prepare)).refusal == nil)
+    let held = try #require(try h.runner.read(Gym.scope) { try SignedOutWorkout.read($0) }.first)
+    #expect(held.proposals.map(\.id) == [proposal] && held.proposals[0].document == entries)
+    #expect(try SignedOutWorkout(held.json) == held)
+    #expect(try h.stored(WorkoutProposal.self).isEmpty)
+    #expect(try h.notices(GymRefusal.self).isEmpty)
+
+    let finishing = try signedOutWorkout()
+    #expect(try finishing.runner.run(ProposeWorkout(id: proposal, sessionId: id, entries: entries, summary: "Sore shoulder")).receipt != nil)
+    _ = try finishing.runner.run(FinishSession(id: id, finishedAt: Instant(ms: WorkoutPlanTests.now)))
+    #expect(try finishing.runner.run(AdoptWorkout(id, mode: .prepare)).refusal == nil)
+    #expect(try finishing.runner.read(Gym.scope) { try SignedOutWorkout.read($0) }.first?.proposals == [])
+  }
+
   @Test func aStaleAnonymousWorkoutImportsAtItsLastSet() throws {
     let h = Harness(registry: SyncSchema.registry, start: Instant(ms: TrainingTests.now), account: nil)
     let id = h.runner.mint(Session.self), start = Instant(ms: TrainingTests.now - SessionRules.staleAfterMs - 20_000)

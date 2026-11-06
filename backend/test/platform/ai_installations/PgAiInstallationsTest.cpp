@@ -175,7 +175,7 @@ TEST(pg_ai_installation_binding_preserves_lifetime_spend_holds_and_account_erasu
   const auto view = budgets->view({{AiBudgetSubjectKind::Account, account.str()}, AiBudgetTier::LoggedIn});
   CHECK_EQ(view.usedNanos, 10'000'000);
   CHECK_EQ(view.heldNanos, 15'000'000);
-  CHECK_EQ(view.remainingNanos, 225'000'000);
+  CHECK_EQ(view.remainingNanos, 475'000'000);
   CHECK_EQ(view.code, AiBudgetCode::ConcurrencyExhausted);
   CHECK_EQ(budgets->reserve("bound-refused", anonymous, 1'000'000).code, AiBudgetCode::DeviceBound);
   {
@@ -205,5 +205,5 @@ TEST(pg_ai_installation_binding_preserves_lifetime_spend_holds_and_account_erasu
   const auto nextMonth = budgets->view({{AiBudgetSubjectKind::Account, account.str()}, AiBudgetTier::LoggedIn});
   CHECK_EQ(nextMonth.usedNanos, 0);
   CHECK_EQ(nextMonth.heldNanos, 15'000'000);
-  CHECK_EQ(nextMonth.remainingNanos, 235'000'000);
+  CHECK_EQ(nextMonth.remainingNanos, 485'000'000);
 }

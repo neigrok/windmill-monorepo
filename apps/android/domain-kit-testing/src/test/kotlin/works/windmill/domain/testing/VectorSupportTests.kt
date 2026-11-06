@@ -14,6 +14,34 @@ import works.windmill.sync.core.RefusalCode
 class VectorSupportTests {
     private val empty = VectorRecords(emptyList(), emptyList())
     private val registry get() = probeRegistry()
+    private fun abilityFile(zone: String = "UTC", copies: Int = 1): String {
+        val case = """{"case":"a note lands","seat":"anon","now":1790000000000,"zone":"$zone","given":{"appBaseUrl":"https://w","records":[{"t":"note"}]},"call":{"name":"save_note","input":{"id":"n"}},"expect":{"refused":"refused"}}"""
+        return File.createTempFile("ability", ".json").apply { deleteOnExit(); writeText(List(copies) { case }.joinToString(",", "[", "]")) }.absolutePath
+    }
+
+    @Test fun anAbilityFileReadsAsItsCasesAndRefusesWhatItCannotPlace() {
+        val path = abilityFile()
+        assertEquals(listOf(AbilityCase(path, "a note lands", works.windmill.domain.kit.Seat.anon, 1_790_000_000_000, listOf(Json.parse("""{"t":"note"}""")), "https://w",
+            "save_note", Json.parse("""{"id":"n"}"""), Json.parse("""{"refused":"refused"}"""))), Contract.abilityCases(path))
+        assertThrows(ContractError::class.java) { Contract.abilityCases(abilityFile(zone = "Europe/Paris")) }
+        assertThrows(IllegalArgumentException::class.java) { Contract.abilityCases(abilityFile(copies = 2)) }
+    }
+
+    @Test fun anAbilityAnswerListsWhatItsGestureWroteLessTheCallsOwnRecord() {
+        val note = Json.parse("""{"t":"note","id":"n1","f":{"ord":["a0","1:0:r_aaaaaaaaaaaa"]}}""")
+        val case = AbilityCase("file", "case", works.windmill.domain.kit.Seat.bound, 1, listOf(note), null, "save_note", Json.objectOf(), Json.Null)
+        fun decision(below: String) = Json.parse("""{"decision":{"write":{"result":{"result":{"a":1},"sha256":"x"},"gesture":{"changes":[
+            {"op":"update","t":"message","id":"m","f":{"calls":[]}},
+            {"op":"delete","t":"set","id":"s1"},
+            {"op":"create","t":"note","id":"n2","f":{"title":"T"},"anchor":{"field":"ord","below":$below}}]}}}}""")
+        assertEquals(Json.parse("""{"result":{"a":1},"sha256":"x","writes":[
+            {"f":{"ord":"a1","title":"T"},"id":"n2","life":"alive","t":"note"},
+            {"f":{},"id":"s1","life":"dead","t":"set"}]}"""), case.answer(decision("\"n1\""), "message"))
+        assertEquals("a0", case.answer(decision("null"), "message").member("writes").arr()[0].member("f").member("ord").str())
+        assertThrows(ContractError::class.java) { case.answer(decision("\"absent\""), "message") }
+        assertThrows(ContractError::class.java) { case.answer(Json.parse("""{"decision":{"refuse":{}}}"""), "message") }
+    }
+
     @Test fun scopeReaderRefusesForeignTypeInEveryOverloadEvenWhenEmpty() {
         val source = VectorReader(empty, 0, scope = Probe.scope, registry = registry)
         val id = RecordID("mark0001")

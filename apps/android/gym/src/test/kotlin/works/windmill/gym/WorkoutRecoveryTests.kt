@@ -190,7 +190,7 @@ class WorkoutRecoveryTests {
                     GymMaterial { GymRoom(account, room.store) }
                 }
             }
-            compose.waitUntil(10_000) { waiting.isNotEmpty() }
+            compose.waitUntil(10_000) { compose.runOnIdle { waiting.isNotEmpty() } }
             compose.runOnIdle {
                 assertFalse(room.store.workout.canFinish)
                 assertEquals(null, room.store.workout.session)
@@ -206,7 +206,7 @@ class WorkoutRecoveryTests {
             compose.onNodeWithText(NumberEntry.notANumber).assertExists()
             compose.runOnIdle { holdReads = true }
             restored.emulateSavedInstanceStateRestore()
-            compose.waitUntil(10_000) { waiting.isNotEmpty() }
+            compose.waitUntil(10_000) { compose.runOnIdle { waiting.isNotEmpty() } }
             compose.runOnIdle { assertEquals(null, room.store.workout.session) }
             compose.onNodeWithText("Fix set").assertDoesNotExist()
             compose.runOnIdle {

@@ -18,13 +18,13 @@ import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -37,26 +37,28 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import works.windmill.gym.R
-import works.windmill.gym.coach.onboarding.CoachOnboardingLimits
+import works.windmill.gym.coach.turn.CoachTurnRefusal
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun CoachComposer(store: CoachStore, key: String, seed: String, asking: Boolean,
-    onSend: (String, CoachAttachment?) -> Unit, onStop: (() -> Unit)?, upload: Float?, retainDraft: Boolean, enabled: Boolean = true,
+internal fun CoachComposer(store: CoachChats, key: String, asking: Boolean,
+    onSend: (String, CoachAttachment?) -> Unit, onStop: (() -> Unit)?, enabled: Boolean = true,
     photoRequest: Int = 0,
+    holdSend: Boolean = false,
     onDraftSync: (((() -> Boolean)?) -> Unit)? = null,
 ) {
     val colors = MaterialTheme.colorScheme
@@ -65,7 +67,7 @@ internal fun CoachComposer(store: CoachStore, key: String, seed: String, asking:
     val keyboard = LocalSoftwareKeyboardController.current
     val scope = rememberCoroutineScope()
     val account = store.accountKey
-    val hidden by rememberUpdatedState(asking && upload == null)
+    val hidden by rememberUpdatedState(asking)
     val editor = remember(account, key) { CoachDraftEditor(store, key, hidden) }
     DisposableEffect(editor) {
         onDraftSync?.invoke { editor.sync(hidden, retry = true) }
@@ -75,17 +77,17 @@ internal fun CoachComposer(store: CoachStore, key: String, seed: String, asking:
         snapshotFlow { Triple(editor.field.text.toString(), store.draftVersion, hidden) }
             .collect { editor.sync(hidden) }
     }
-    LaunchedEffect(account, key) {
-        if (store.accountKey != account) return@LaunchedEffect
-        val current = store.draft(key)
-        if (current.text.isEmpty() && current.photo == null && seed.isNotEmpty()) {
-            try { store.saveDraft(key, CoachDraft(seed)) }
-            catch (_: Exception) { }
+    var preparing by remember(account, key) { mutableStateOf(false) }
+    // The one button turns from Send to Stop under the finger, so the gesture that sent gives Stop no tap.
+    var sendGesture by remember(account, key) { mutableStateOf(false) }
+    val doubleTapMs = LocalViewConfiguration.current.doubleTapTimeoutMillis
+    LaunchedEffect(sendGesture) {
+        if (sendGesture) {
+            delay(doubleTapMs)
+            sendGesture = false
         }
     }
-    var preparing by remember(account, key) { mutableStateOf(false) }
-    fun canSend(next: CoachDraft) = next.text.trim().toByteArray().size <=
-        (if (store.anonymous) CoachOnboardingLimits.textBytes else Ask.maxTurnBytes) && (Ask.sendable(next.text) || next.photo != null)
+    fun canSend(next: CoachDraft) = CoachTurnRefusal.TooLong.of(next.text) == null && (asked(next.text).isNotEmpty() || next.photo != null)
     var pickerOwner by rememberSaveable { mutableStateOf<String?>(null) }
     var pickerChat by rememberSaveable { mutableStateOf<String?>(null) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
@@ -114,28 +116,19 @@ internal fun CoachComposer(store: CoachStore, key: String, seed: String, asking:
         if (photoRequest > 0 && enabled && !asking && !preparing) pickPhoto()
     }
     Column {
-        editor.draft.photo?.takeIf { !asking || upload != null }?.let { photo ->
-            Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 4.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(if (store.anonymous) "Sent to Coach. Saved only on this phone." else "Saved only in this chat.",
-                    style = WindmillType.caption, color = colors.onSurfaceVariant,
-                    textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
-                Box(Modifier.padding(start = 40.dp).size(width = 88.dp, height = 84.dp)) {
-                    CoachPhoto(store, key, photo, Modifier.offset(y = 12.dp).size(72.dp))
-                    if (!asking) Box(Modifier.offset(x = 44.dp, y = (-8).dp).size(48.dp), contentAlignment = Alignment.Center) {
-                        FilledIconButton(onClick = { if (editor.sync(hidden)) editor.removePhoto() },
-                            enabled = enabled && !preparing, modifier = Modifier.size(32.dp),
-                            colors = IconButtonDefaults.filledIconButtonColors(containerColor = colors.surfaceContainerHighest, contentColor = colors.onSurfaceVariant)) {
-                            Icon(painterResource(R.drawable.gym_coach_close), "Remove photo", Modifier.size(20.dp))
-                        }
+        editor.draft.photo?.takeIf { !asking }?.let { photo ->
+            Box(Modifier.padding(start = 56.dp, top = 4.dp).size(width = 88.dp, height = 84.dp)) {
+                CoachPhoto(store, photo, Modifier.offset(y = 12.dp).size(72.dp))
+                Box(Modifier.offset(x = 44.dp, y = (-8).dp).size(48.dp), contentAlignment = Alignment.Center) {
+                    FilledIconButton(onClick = { if (editor.sync(hidden)) editor.removePhoto() },
+                        enabled = enabled && !preparing, modifier = Modifier.size(32.dp),
+                        colors = IconButtonDefaults.filledIconButtonColors(containerColor = colors.surfaceContainerHighest, contentColor = colors.onSurfaceVariant)) {
+                        Icon(painterResource(R.drawable.gym_coach_close), "Remove photo", Modifier.size(20.dp))
                     }
                 }
             }
         }
         if (preparing) Text("Preparing photo…", style = WindmillType.captionCompact, color = colors.onSurfaceVariant)
-        upload?.let {
-            LinearProgressIndicator(progress = { it }, modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Photo upload" })
-        }
         editor.trouble?.let { Text(it, style = WindmillType.detailCompact, color = colors.onSurfaceVariant) }
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.fillMaxWidth().padding(start = 4.dp, end = 12.dp, top = 8.dp, bottom = 8.dp)) {
@@ -161,25 +154,26 @@ internal fun CoachComposer(store: CoachStore, key: String, seed: String, asking:
                         interactionSource = interaction, shape = RoundedCornerShape(28.dp), colors = fieldColors,
                         placeholder = { Text(Ask.placeholder, style = GymType.coachComposer) })
                 }, modifier = Modifier.weight(1f).heightIn(min = 56.dp, max = 160.dp).semantics { contentDescription = "Question" })
-            val ready = enabled && !asking && !preparing && canSend(editor.draft.copy(text = editor.field.text.toString()))
+            val ready = enabled && !asking && !preparing && !holdSend && canSend(editor.draft.copy(text = editor.field.text.toString()))
             if (asking || editor.field.text.isNotEmpty() || editor.draft.photo != null) {
                 Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
                     FilledIconButton(enabled = ready || (asking && onStop != null), modifier = Modifier.size(40.dp),
                         colors = IconButtonDefaults.filledIconButtonColors(containerColor = colors.primary, contentColor = colors.onPrimary),
                         onClick = {
-                            if (asking) onStop?.invoke()
+                            if (sendGesture) Unit
+                            else if (asking) onStop?.invoke()
                             else if (editor.sync(hidden, retry = true)) {
                                 val next = editor.draft
                                 if (canSend(next)) {
+                                    sendGesture = true
                                     focus.clearFocus()
                                     keyboard?.hide()
                                     onSend(next.text.trim(), next.photo)
-                                    if (!retainDraft) editor.keep(CoachDraft())
                                 }
                             }
                         }) {
                         Icon(painterResource(if (asking) R.drawable.gym_coach_stop else R.drawable.gym_coach_send),
-                            if (asking) if (upload != null) "Cancel upload" else "Stop response" else "Send", Modifier.size(24.dp))
+                            if (asking) "Stop response" else "Send", Modifier.size(24.dp))
                     }
                 }
             }
@@ -187,7 +181,7 @@ internal fun CoachComposer(store: CoachStore, key: String, seed: String, asking:
     }
 }
 
-private class CoachDraftEditor(private val store: CoachStore, private val key: String, private var hidden: Boolean) {
+private class CoachDraftEditor(private val store: CoachChats, private val key: String, private var hidden: Boolean) {
     private val account = store.accountKey
     var draft by mutableStateOf(store.draft(key))
         private set
@@ -245,16 +239,16 @@ private class CoachDraftEditor(private val store: CoachStore, private val key: S
 }
 
 @Composable
-internal fun CoachPhoto(store: CoachStore, threadId: String, photo: CoachAttachment, modifier: Modifier = Modifier) {
+internal fun CoachPhoto(store: CoachChats, photo: CoachAttachment, modifier: Modifier = Modifier, shape: Shape = RoundedCornerShape(12.dp)) {
     val colors = MaterialTheme.colorScheme
-    var bitmap by remember(store.accountKey, threadId, photo.id) { mutableStateOf<android.graphics.Bitmap?>(null) }
-    var failure by remember(store.accountKey, threadId, photo.id) { mutableStateOf(false) }
+    var bitmap by remember(store.accountKey, photo.id) { mutableStateOf<android.graphics.Bitmap?>(null) }
+    var failure by remember(store.accountKey, photo.id) { mutableStateOf(false) }
     var attempt by remember { mutableIntStateOf(0) }
     var expanded by remember { mutableStateOf(false) }
-    LaunchedEffect(store.accountKey, threadId, photo.id, attempt) {
+    LaunchedEffect(store.accountKey, photo.id, attempt) {
         failure = false
         try {
-            val bytes = store.photo(threadId, photo)
+            val bytes = store.photo(photo.id)
             bitmap = withContext(Dispatchers.Default) {
                 var sample = 1
                 while (photo.width / sample > 1024 || photo.height / sample > 1024) sample *= 2
@@ -264,7 +258,7 @@ internal fun CoachPhoto(store: CoachStore, threadId: String, photo: CoachAttachm
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (_: Exception) { failure = true }
     }
-    Box(modifier.clip(RoundedCornerShape(12.dp)).background(colors.surfaceContainer)
+    Box(modifier.clip(shape).background(colors.surfaceContainer)
         .clickable(role = Role.Button, onClickLabel = if (failure) "Retry photo" else "View photo") {
             if (failure) attempt++ else expanded = true
         }.semantics { contentDescription = if (failure) "Photo unavailable. Retry photo" else "Attached photo" }, contentAlignment = Alignment.Center) {

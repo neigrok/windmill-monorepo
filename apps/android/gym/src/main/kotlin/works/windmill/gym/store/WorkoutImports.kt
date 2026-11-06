@@ -19,6 +19,7 @@ import works.windmill.gym.domain.sync.StrandedSet
 import works.windmill.gym.domain.sync.TrainingLog
 import works.windmill.gym.domain.sync.TrainingSet as SyncSet
 import works.windmill.gym.domain.sync.WorkoutFix
+import works.windmill.gym.domain.sync.WorkoutProposal
 import works.windmill.gym.domain.sync.WorkoutRecovery
 import works.windmill.gym.domain.sync.nonJoiningStart
 import works.windmill.gym.presentation.PlanSnapshot
@@ -88,6 +89,7 @@ data class ImportRecovery(val id: String, val workout: SavedWorkout?, val refusa
 }
 
 data class ImportOperation(val token: String, val sessionId: String, val entry: OwedSet)
+data class ImportProposal(val token: String, val proposal: WorkoutProposal, val order: Long)
 data class ImportDeletion(val token: String, val sessionId: String, val setId: String)
 
 // Signed-out training prepared for an account at sign-in. Each finished workout becomes one strict import and an unfinished one a start whose sets follow it; a refused workout stays on this phone, inspectable and correctable, until it is kept, retried or discarded.
@@ -103,6 +105,7 @@ class WorkoutImports(private val engine: Engine, private val writeAuthority: () 
                 .sortedWith(compareBy({ it.completedAtMs }, { it.id })))
         }
         data class Operation(val entry: OwedSet) : Source
+        data class Proposal(val proposal: WorkoutProposal) : Source
         data object Unreadable : Source
     }
 
@@ -111,7 +114,7 @@ class WorkoutImports(private val engine: Engine, private val writeAuthority: () 
         val copies = retainedWorkouts().toMutableList()
         val retainedIds = copies.mapTo(mutableSetOf()) { it.session.id }
         val waiting = engine.read(scope) { reader -> reader.devices(journalPrefix).values.flatMap { journal ->
-            journal["items"]?.obj().orEmpty().values.filter { it["state"] in setOf(Json.of("queued"), Json.of("pending"), Json.of("refused"), Json.of("retained"), Json.of("recovering"), Json.of("submitted")) }
+            journal["items"]?.obj().orEmpty().values.filter { it["kind"] != Json.of("proposal") && it["state"] in setOf(Json.of("queued"), Json.of("pending"), Json.of("refused"), Json.of("retained"), Json.of("recovering"), Json.of("submitted")) }
         } }
         val operations = waiting.filter { it["kind"] == Json.of("operation") }
         val operationSources = operations.map { item -> item to (source(item) as? Source.Operation)?.entry }
@@ -163,8 +166,7 @@ class WorkoutImports(private val engine: Engine, private val writeAuthority: () 
 
     private fun sources(reader: ScopeReader, id: String): Map<String, String> = reader.devices(journalPrefix).flatMap { (key, journal) ->
         journal["items"]?.obj().orEmpty().mapNotNull { (token, item) ->
-            if (item["id"] == Json.of(id) || item["kind"] == Json.of("operation") && item["source"]?.get("sessionId") == Json.of(id))
-                "$key:$token" to item.jcs else null
+            if (item["id"] == Json.of(id) || owedBy(item, id)) "$key:$token" to item.jcs else null
         }
     }.toMap()
 
@@ -310,8 +312,10 @@ class WorkoutImports(private val engine: Engine, private val writeAuthority: () 
                 }
                 val typedSession = Json.parse(snapshotJson.encodeToString(Session.serializer(), row.session))
                 val history = priorStart?.let { Json.objectOf("session" to it.member("session"), "sets" to Json.Arr(entries.values.map { value -> value.member("set") })) }
+                val waiting = (priorStart?.get("proposals")?.arr().orEmpty() + waitingProposals(context, row.session.id)).distinctBy { it.member("id") }
                 (priorStart ?: Json.objectOf()).changed("session" to (priorStart?.get("session") ?: typedSession).changed(*typedSession.obj()
-                    .filterKeys { it != "plan" || history == null || !unknownFinishedFields(history) }.map { it.key to it.value }.toTypedArray()), "entries" to Json.Obj(entries.toList()))
+                    .filterKeys { it != "plan" || history == null || !unknownFinishedFields(history) }.map { it.key to it.value }.toTypedArray()), "entries" to Json.Obj(entries.toList()),
+                    "proposals" to Json.Arr(waiting).takeIf { waiting.isNotEmpty() })
             }
             if (previous?.get("source") == source && context.device(deferredKey(row.session.id)) == null) return@commitWithPrerequisites null to null
             val records = (row.sets.map { RecordKey(Gym.Types.set, RecordID(it.id)) } + row.deleted.map { RecordKey(Gym.Types.set, RecordID(it)) } +
@@ -347,12 +351,9 @@ class WorkoutImports(private val engine: Engine, private val writeAuthority: () 
                 if (existing == null) {
                     items[item.token] = saved
                     expected["$key:${item.token}"] = saved.jcs
-                    if (!finished) for ((id, entry) in source.member("entries").obj()) {
-                        val operation = Item(Seat.anonymous, "operation", id, entry, sourceSeat = item.sourceSeat)
-                        val child = Json.objectOf("id" to Json.of(id), "kind" to Json.of("operation"), "seat" to Json.of(Seat.anonymous),
-                            "sourceSeat" to Json.of(item.sourceSeat), "source" to entry, "state" to Json.of("pending"))
-                        items[operation.token] = child
-                        expected["$key:${operation.token}"] = child.jcs
+                    if (!finished) for ((token, child) in owedItems(source, item.sourceSeat)) {
+                        items[token] = child
+                        expected["$key:$token"] = child.jcs
                     }
                     gesture.local += DeviceWrite(key, withItems(journal, items))
                 }
@@ -382,18 +383,13 @@ class WorkoutImports(private val engine: Engine, private val writeAuthority: () 
         for ((otherKey, otherJournal) in context.devices(journalPrefix)) {
             val before = otherJournal["items"]?.obj().orEmpty()
             val changed = before.mapValues { (_, old) ->
-                if (old["id"] == Json.of(id) && old["kind"] in setOf(Json.of("start"), Json.of("finished")) ||
-                    old["kind"] == Json.of("operation") && old["source"]?.get("sessionId") == Json.of(id)) old.changed("state" to Json.of("resolved")) else old
+                if (old["id"] == Json.of(id) && old["kind"] in setOf(Json.of("start"), Json.of("finished")) || owedBy(old, id)) old.changed("state" to Json.of("resolved")) else old
             }
             if (otherKey == key) items.putAll(changed)
             else if (before != changed) gesture.local += DeviceWrite(otherKey, withItems(otherJournal, changed))
         }
         items[token] = saved
-        if (saved["kind"] == Json.of("start")) for ((setId, entry) in saved.member("source").member("entries").obj()) {
-            val operation = Item(Seat.anonymous, "operation", setId, entry, sourceSeat = saved.member("sourceSeat").str())
-            items[operation.token] = Json.objectOf("id" to Json.of(setId), "kind" to Json.of("operation"), "seat" to Json.of(Seat.anonymous),
-                "sourceSeat" to saved.member("sourceSeat"), "source" to entry, "state" to Json.of("pending"))
-        }
+        if (saved["kind"] == Json.of("start")) items.putAll(owedItems(saved.member("source"), saved.member("sourceSeat").str()))
         gesture.local += DeviceWrite(key, withItems(journal, items))
         if (context.device(deferredKey(id)) != null) gesture.local += DeviceWrite(deferredKey(id), null)
     }
@@ -557,6 +553,42 @@ class WorkoutImports(private val engine: Engine, private val writeAuthority: () 
         if (reader.device(deferredKey(entry.sessionId)) != null) return@mapNotNull null
         ImportOperation(token, item["targetSessionId"]?.str() ?: entry.sessionId, entry)
     } }.sortedWith(compareBy<ImportOperation>({ it.sessionId }, { it.entry.set.completedAtMs }, { it.entry.set.id }, { it.token })) }
+
+    // The proposals an unfinished workout still owes the account, oldest first, none while its import is deferred.
+    fun owedProposals(): List<ImportProposal> = engine.read(scope) { reader -> reader.devices(journalPrefix).values.flatMap { journal -> journal["items"]?.obj().orEmpty().mapNotNull { (token, item) ->
+        if (item["kind"] != Json.of("proposal") || item["state"] != Json.of("pending")) return@mapNotNull null
+        val proposal = (source(item) as? Source.Proposal)?.proposal ?: return@mapNotNull null
+        if (reader.device(deferredKey(proposal.sessionId.record.string.orEmpty())) != null) return@mapNotNull null
+        ImportProposal(token, proposal, item.member("source").member("order").long())
+    } }.sortedWith(compareBy<ImportProposal>({ it.proposal.sessionId.record.string }, { it.order }, { it.token })) }
+
+    // Where an owed proposal's reissue stands: on its way under a gesture, written already, or refused under a code nothing will answer again.
+    internal fun proposalAnswered(proposal: ImportProposal, reader: ScopeReader, gestureId: String?, code: String? = null): DeviceWrite? {
+        val saved = reader.devices(journalPrefix).entries.firstOrNull { proposal.token in it.value["items"]?.obj().orEmpty() } ?: return null
+        val items = saved.value.member("items").obj().toMutableMap()
+        val item = items.getValue(proposal.token)
+        if (item["state"] != Json.of("pending")) return null
+        items[proposal.token] = item.changed("state" to Json.of(if (gestureId != null) "submitted" else if (code != null) "refused" else "resolved"),
+            "submissionGesture" to gestureId?.let(Json::of), "code" to code?.let(Json::of))
+        return DeviceWrite(saved.key, withItems(saved.value, items))
+    }
+
+    // The proposals the account refused or this phone could not mint, each named once: the journal closes them as it answers.
+    fun takeLostProposals(): List<String> {
+        val lost = engine.read(scope) { reader -> reader.devices(journalPrefix).values.flatMap { it["items"]?.obj().orEmpty().values }
+            .filter { it["kind"] == Json.of("proposal") && it["state"] == Json.of("refused") }.map { it["code"]?.str() ?: "unknown" } }
+        if (lost.isEmpty()) return lost
+        engine.commit(scope) { context ->
+            if (!writeAuthority()) throw TrainingRefused("account-changed", "The account changed. Open this again.")
+            val writes = context.devices(journalPrefix).mapNotNull { (key, journal) ->
+                val before = journal["items"]?.obj().orEmpty()
+                val items = before.mapValues { (_, item) -> if (item["kind"] == Json.of("proposal") && item["state"] == Json.of("refused")) item.changed("state" to Json.of("resolved")) else item }
+                if (items == before) null else DeviceWrite(key, withItems(journal, items))
+            }
+            if (writes.isEmpty()) null to Unit else Gesture(emptyList(), local = writes) to Unit
+        }
+        return lost
+    }
 
     fun hasOwedSets(sessionId: String): Boolean = engine.read(scope) { reader ->
         reader.devices(journalPrefix).values.any { journal -> journal["items"]?.obj().orEmpty().values.any { item ->
@@ -822,7 +854,7 @@ class WorkoutImports(private val engine: Engine, private val writeAuthority: () 
                 var code: String? = null
                 val gesture = try { imported(payload, context) } catch (error: Exception) { code = refusalCode(error); Gesture(emptyList()) }
                 val gestureId = context.opaqueID(); gesture.gestureId = gestureId
-                items.replaceAll { _, previous -> if (previous["id"] == Json.of(id) && previous["kind"] == Json.of("start") || previous["kind"] == Json.of("operation") && previous["source"]?.get("sessionId") == Json.of(id)) previous.changed("state" to Json.of("resolved")) else previous }
+                items.replaceAll { _, previous -> if (previous["id"] == Json.of(id) && previous["kind"] == Json.of("start") || owedBy(previous, id)) previous.changed("state" to Json.of("resolved")) else previous }
                 items[item.token] = Json.objectOf("id" to Json.of(id), "kind" to Json.of("finished"), "seat" to Json.of(item.seat),
                     "sourceSeat" to Json.of(item.sourceSeat), "source" to payload, "original" to original,
                     "state" to Json.of(if (code == null) "queued" else if (code == "waiting-for-firstpull") "pending" else "refused"), "gestureId" to Json.of(gestureId)).changed("code" to code?.let(Json::of))
@@ -846,6 +878,7 @@ class WorkoutImports(private val engine: Engine, private val writeAuthority: () 
                     val decoded = source(item)
                     val parent = when (decoded) {
                         is Source.Operation -> decoded.entry.sessionId
+                        is Source.Proposal -> decoded.proposal.sessionId.record.string.orEmpty()
                         is Source.Start -> decoded.session.id
                         is Source.Finished -> decoded.workout.session.id
                         Source.Unreadable -> return@mapValues item
@@ -902,7 +935,7 @@ class WorkoutImports(private val engine: Engine, private val writeAuthority: () 
     }
 
     fun refusals(): List<ImportRefusal> = engine.read(scope) { reader ->
-        reader.devices(journalPrefix).values.flatMap { journal -> journal["items"]?.obj().orEmpty().values.filter { it["state"] == Json.of("refused") }.map { item ->
+        reader.devices(journalPrefix).values.flatMap { journal -> journal["items"]?.obj().orEmpty().values.filter { it["state"] == Json.of("refused") && it["kind"] != Json.of("proposal") }.map { item ->
             val source = source(item)
             val row = (source as? Source.Finished)?.workout
             val start = source as? Source.Start
@@ -1012,7 +1045,7 @@ class WorkoutImports(private val engine: Engine, private val writeAuthority: () 
             val starts = before.values.filter { it["id"] == Json.of(id) && it["kind"] == Json.of("start") && (it["state"] == Json.of("refused") || deferred) }
                 .map { it.member("source").member("session").member("id") }.toSet()
             val items = before.mapValues { (_, item) ->
-                val child = item["kind"] == Json.of("operation") && item["source"]?.get("sessionId") in starts &&
+                val child = item["kind"] in setOf(Json.of("operation"), Json.of("proposal")) && item["source"]?.get("sessionId") in starts &&
                     item["state"] in setOf(Json.of("pending"), Json.of("refused"))
                 if (child || item["id"] == Json.of(id) && (deferred || item["state"] == Json.of("refused") || item["state"] == Json.of("pending") && item["code"] == Json.of("waiting-for-firstpull"))) item.changed("state" to Json.of("discarded")) else item
             }
@@ -1030,10 +1063,31 @@ class WorkoutImports(private val engine: Engine, private val writeAuthority: () 
                 "start" -> Source.Start(decode(source.member("session"), Session.serializer()),
                     source["entries"]?.obj().orEmpty().values.map { decode(it, OwedSet.serializer()) })
                 "operation" -> Source.Operation(decode(source, OwedSet.serializer()))
+                "proposal" -> Source.Proposal(WorkoutProposal.decode(Fields(WorkoutProposal.type, RecordID(source.member("id")), source.obj() - setOf("id", "order"))))
                 else -> Source.Unreadable
             }
         } catch (_: SerializationException) { Source.Unreadable }
         catch (_: JsonError) { Source.Unreadable }
+        catch (_: DecodeError) { Source.Unreadable }
+
+        // An owed set or an owed proposal of this workout.
+        private fun owedBy(item: Json, sessionId: String) =
+            item["kind"] in setOf(Json.of("operation"), Json.of("proposal")) && item["source"]?.get("sessionId") == Json.of(sessionId)
+
+        // What an unfinished workout owes the account once it holds the workout, by journal token: each set its source keeps, and each proposal.
+        private fun owedItems(source: Json, sourceSeat: String): Map<String, Json> {
+            fun owed(kind: String, id: String, value: Json) = Item(Seat.anonymous, kind, id, value, sourceSeat = sourceSeat).token to
+                Json.objectOf("id" to Json.of(id), "kind" to Json.of(kind), "seat" to Json.of(Seat.anonymous), "sourceSeat" to Json.of(sourceSeat), "source" to value, "state" to Json.of("pending"))
+            return source.member("entries").obj().map { (id, entry) -> owed("operation", id, entry) }.toMap() +
+                source["proposals"]?.arr().orEmpty().map { owed("proposal", it.member("id").str(), it) }
+        }
+
+        // The proposals waiting on a workout, oldest first and each with its place among them. The fold that replaces the workout takes them; an account that holds it reads them again.
+        private fun waitingProposals(reader: ScopeReader, sessionId: String): List<Json> =
+            reader.stored(Gym.Types.workoutProposal, "sessionId", RecordID(sessionId)).filter { it.isVisible }.sortedWith(compareBy { it.born })
+                .map { WorkoutProposal.decode(Fields(it)) }.filter { it.state == "pending" }.mapIndexed { order, proposal ->
+                    Json.Obj((proposal.fields() + ("id" to proposal.id.json) + ("order" to Json.of(order))).toList())
+                }
 
         const val journalPrefix = "rack:legacyMigration"
         private const val deferredPrefix = "rack:deferredImport"
@@ -1056,6 +1110,7 @@ class WorkoutImports(private val engine: Engine, private val writeAuthority: () 
                 .groupingBy { item -> when (item["kind"]?.str()) {
                     "finished", "start" -> Gym.Types.session
                     "operation" -> Gym.Types.set
+                    "proposal" -> Gym.Types.workoutProposal
                     else -> "pending"
                 } }.eachCount().toMutableMap()
             val retainedSets = items.values.sumOf { item ->

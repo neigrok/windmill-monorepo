@@ -1,6 +1,6 @@
 # After sign-in, the conversation continues and proposes a change
 
-**Release status:** Postponed from this release at user request; preserve existing Coach action visuals. Its proposal and draft-action integration depends on postponed tasks.
+**Release status:** The conversation continues: a signed-out conversation joins the account through the engine's signed-out decision, and the chat keeps its thread. Its proposal stays on the review sheet while task 29 is postponed (ledger 11k).
 
 **Figma:**
 - 01.13 after sign-in and Add, signed in: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-36454) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-39744)
@@ -10,10 +10,9 @@
   - `Android / Button` `210:181`: Filled *Apply*, Tonal *Reject*
   - `Android / Chat bubble` `337:2761`
 
-**Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start with `app/` or `platform/`)
-- There is no signed-out conversation to continue (38).
-- After sign-in, the Add / Discard decision (`app/MainActivity.kt:248`) adopts this phone's training. Coach then starts from an empty thread.
-- A proposal is the card *Proposal · Full body B* with **Review** (`coach/CoachAnswer.kt:338-352`), the line `Ask.promise` (`coach/AskScreen.kt:390`), and a review sheet with *Turn this down*.
+**Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
+- After sign-in, the Add / Discard decision adopts this phone's training and conversations together, and the chat keeps its thread.
+- A proposal is the card *Proposal · Full body B* with **Review**, the line `Ask.promise`, and a review sheet with *Turn this down*.
 
 **Change**
 - After sign-in and **Add**, the same thread stays on screen.
@@ -45,4 +44,4 @@
 
 **Depends on:** 29, 32, 37, 38, 39.
 
-**Ledger:** 11h, 6p, 10v; dogfood `android-gym-target-page`.
+**Ledger:** 11h, 10v; dogfood `android-gym-target-page`.

@@ -120,6 +120,21 @@ private class Keystore2 : Provider("AndroidKeyStore", 1.0, "keystore2 stand-in")
 class WindmillApplicationTests {
     private val sam = User("sam", "sam@example.com")
 
+    // The turn's job runs on JobScheduler alone: WorkManager adds no permission, no foreground service and nothing at launch.
+    @Test fun theManifestAsksForNothingATurnsJobDoesNotUse() {
+        val context = RuntimeEnvironment.getApplication()
+        val manager = context.packageManager
+        val info = manager.getPackageInfo(context.packageName, android.content.pm.PackageManager.GET_PERMISSIONS or android.content.pm.PackageManager.GET_SERVICES)
+        assertEquals(setOf("android.permission.INTERNET", "android.permission.ACCESS_NETWORK_STATE", "android.permission.POST_NOTIFICATIONS",
+            "android.permission.POST_PROMOTED_NOTIFICATIONS", "${context.packageName}.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"), info.requestedPermissions!!.toSet())
+        val services = info.services!!.map { it.name }
+        assertTrue(services.contains("androidx.work.impl.background.systemjob.SystemJobService"))
+        assertFalse(services.contains("androidx.work.impl.foreground.SystemForegroundService"))
+        val startup = manager.getProviderInfo(android.content.ComponentName(context, "androidx.startup.InitializationProvider"), android.content.pm.PackageManager.GET_META_DATA).metaData
+        assertTrue(startup.containsKey("androidx.lifecycle.ProcessLifecycleInitializer"))
+        assertFalse(startup.containsKey("androidx.work.WorkManagerInitializer"))
+    }
+
     // Airplane mode loses the default network while the system still names it as active: the callback's own word is what
     // turns the phone offline, and a late loss of a network that is no longer the default changes nothing.
     @Test fun aLostDefaultNetworkReadsOfflineWhileTheSystemStillNamesItActive() {

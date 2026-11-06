@@ -76,7 +76,7 @@ class SignInDoorTests {
         compose.onNodeWithContentDescription("Code").assert(SemanticsMatcher.expectValue(SemanticsProperties.Error, refusedCode))
         val finalClick = compose.onNodeWithText("Sign in").fetchSemanticsNode().config[SemanticsActions.OnClick].action!!
         compose.runOnIdle { finalClick() }
-        compose.waitUntil(5_000) { done == 1 }
+        compose.waitUntil(5_000) { compose.runOnIdle { done == 1 } }
         compose.runOnIdle { finalClick(); assertEquals(4, server.requestCount) }
         assertEquals(AuthStatus.SignedIn(User("A", "a@example.com", "Ana")), auth.status)
         assertEquals(listOf("""{"email":"a@example.com","door":"app"}""", """{"email":"a@example.com","door":"app"}""",
@@ -170,12 +170,12 @@ class SignInDoorTests {
         compose.onNodeWithText("Resend in 20s").assertIsNotEnabled()
         compose.runOnIdle { clock = 31_000L }
         compose.onNodeWithText("Resend").assertIsEnabled().performClick()
-        compose.waitUntil(5_000) { server.requestCount == 2 }
+        compose.waitUntil(5_000) { compose.runOnIdle { server.requestCount == 2 } }
         compose.onNodeWithText("Sending…").assertIsDisplayed().assertIsNotEnabled()
         compose.waitUntil(5_000) { compose.onAllNodesWithText("Resend in 30s").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithContentDescription("Code").performTextReplacement(" https://windmill.works/#/auth?token=exact-token&next=log ")
         compose.onNodeWithText("Sign in").performClick()
-        compose.waitUntil(5_000) { done == 1 }
+        compose.waitUntil(5_000) { compose.runOnIdle { done == 1 } }
         server.takeRequest(); server.takeRequest()
         val request = server.takeRequest()
         assertEquals("/v1/auth/verify", request.path)
@@ -201,12 +201,12 @@ class SignInDoorTests {
         compose.onNodeWithContentDescription("Email").performTextReplacement("old@example.com")
         val click = compose.onNodeWithText("Send code").fetchSemanticsNode().config[SemanticsActions.OnClick].action!!
         compose.runOnIdle { click(); click() }
-        compose.waitUntil(5_000) { server.requestCount == 1 }
+        compose.waitUntil(5_000) { compose.runOnIdle { server.requestCount == 1 } }
         compose.onNodeWithText("Sending…").assertIsNotEnabled()
         compose.onNodeWithContentDescription("Email").assertIsNotEnabled()
         compose.runOnIdle { assertTrue(busy); auth = AuthStore(server.url("/"), MemorySessions()) }
         compose.runOnIdle { assertFalse(busy); release.countDown() }
-        compose.waitUntil(5_000) { old.linkSentTo != null }
+        compose.waitUntil(5_000) { compose.runOnIdle { old.linkSentTo != null } }
         compose.onNodeWithText("Check your email").assertDoesNotExist()
         compose.runOnIdle { assertFalse(busy); assertEquals(1, server.requestCount) }
     }
@@ -247,7 +247,7 @@ class SignInDoorTests {
         assertEquals(AuthStatus.SignedOut, auth.status)
         assertEquals(0, done)
         compose.onNodeWithText("Sign in").performClick()
-        compose.waitUntil(5_000) { done == 1 }
+        compose.waitUntil(5_000) { compose.runOnIdle { done == 1 } }
         assertEquals("fresh", sessions.read())
         assertEquals(2, stages)
         assertEquals(listOf(

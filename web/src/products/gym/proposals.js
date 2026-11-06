@@ -267,9 +267,9 @@ export function documentLine(proposal) {
 }
 
 // Every line of the document, in its order. A `kept` row is drawn unmarked; a rename is a row of its
-// own, the store counting it in `changeCount`. A reorder is a counted change no marked row carries,
-// and the client never sees the base — so whatever the count holds beyond the marked rows is the
-// order moving.
+// own, the store counting it in `changeCount`. A kept line that moved is a counted change no marked row
+// carries, and the client never sees the base — so whatever the count holds beyond the marked rows is
+// the order moving.
 export function diffRows(proposal) {
   const rows = [];
   // A removal carries a blank name, which the store counts as a rename: no row, but it is marked.

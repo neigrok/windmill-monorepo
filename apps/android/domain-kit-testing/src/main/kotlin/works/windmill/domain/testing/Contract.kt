@@ -1,6 +1,7 @@
 package works.windmill.domain.testing
 
 import java.io.File
+import works.windmill.domain.kit.Seat
 import works.windmill.sync.core.*
 import works.windmill.sync.core.RecordID
 import works.windmill.sync.api.*
@@ -30,11 +31,48 @@ object Contract {
             Vector(path, name, it.member("input"), it.member("expect"))
         }
     }
+    fun abilityCases(path: String): List<AbilityCase> {
+        val names = mutableSetOf<String>()
+        return json(path).arr().map { case ->
+            case.expectKeys(listOf("case", "seat", "now", "zone", "given", "call", "expect"))
+            val name = case.member("case").str()
+            require(names.add(name)) { "duplicate ability case $path · $name" }
+            if (case.member("zone").str() != "UTC") throw ContractError("$path · $name: a zone the runner does not place")
+            val given = case.member("given")
+            val call = case.member("call")
+            AbilityCase(path, name, Seat.valueOf(case.member("seat").str()), case.member("now").long(), given.member("records").arr(), given["appBaseUrl"]?.str(),
+                call.member("name").str(), call.member("input"), case.member("expect"))
+        }
+    }
     fun files(directory: String): List<String> {
         val base = File(root(), directory)
         require(base.isDirectory) { "no directory $directory" }
         return base.walkTopDown().filter { it.isFile && it.extension == "json" }
             .map { "$directory/${it.relativeTo(base).invariantSeparatorsPath}" }.toList().sorted()
+    }
+}
+
+// A case of an ability conformance corpus (gym_coach.md §3.5): the store it stands on, the call, and the server's golden.
+data class AbilityCase(val file: String, val name: String, val seat: Seat, val now: Long, val records: List<Json>, val appBaseUrl: String?,
+    val call: String, val input: Json, val expect: Json) {
+    // The case as a decider's vector: its records beside the ones the caller adds, at its moment in UTC.
+    fun vector(beside: List<Json>): Vector = Vector(file, name, Json.objectOf("records" to Json.objectOf("drawn" to Json.Arr(records + beside)),
+        "now" to Json.of(now), "offsetSeconds" to Json.of(0), "ids" to Json.Arr(emptyList())), expect)
+
+    // A decision's answer in the corpus's form: the result that decision always writes, and what its gesture wrote less the records of type `recording`, each `{t, id, life, f}` by type and id, an inserted record's order key resolved from its anchor as the engine resolves it.
+    fun answer(decision: Json, recording: String): Json {
+        val write = decision.member("decision")["write"] ?: throw ContractError("$file · $name: the call was not recorded: $decision")
+        val writes = write.member("gesture").member("changes").arr().filter { it.member("t").str() != recording }.map { change ->
+            val placed = change["anchor"]?.let { listOf(it.member("field").str() to Json.of(FractionalKey.between(lastKey(it), null).text)) }.orEmpty()
+            Json.objectOf("t" to change.member("t"), "id" to change.member("id"), "life" to Json.of(if (change.member("op").str() == "delete") "dead" else "alive"),
+                "f" to Json.Obj((change["f"]?.obj().orEmpty() + placed).toList()))
+        }.sortedWith { a, b -> compareBytes(a.jcs, b.jcs) }
+        return Json.Obj(write.member("result").obj().toList() + ("writes" to Json.Arr(writes)))
+    }
+
+    private fun lastKey(anchor: Json): FractionalKey? = anchor.member("below").orNull()?.let { below ->
+        val record = records.firstOrNull { it.member("id") == below } ?: throw ContractError("$file · $name: no given record $below to anchor below")
+        FractionalKey(record.member("f").member(anchor.member("field").str()).arr()[0].str())
     }
 }
 

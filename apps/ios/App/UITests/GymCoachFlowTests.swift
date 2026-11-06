@@ -27,6 +27,26 @@ import XCTest
     XCTAssertTrue(app.descendants(matching: .any)["gym-coach"].waitForExistence(timeout: 10))
     return app
   }
+  // A drafted photo stands in the field and says nothing of where it goes, signed out or signed in: the privacy policy does.
+  func testADraftedPhotoSaysNothingOfWhereItGoesOnEitherSeat() {
+    for seat in [[], ["-coach-fixture", "-coach-setup-fixture"]] {
+      let app = XCUIApplication()
+      app.launchEnvironment["TZ"] = "UTC"
+      app.launchArguments = ["-model-server", "-board", "shell-last-room", "-onboarding-appearance", "light",
+                             "-AppleLocale", "en_US", "-AppleLanguages", "(en)", "-coach-draft-photo"] + seat
+      app.launch()
+      XCTAssertTrue(app.textViews["journal-editor"].waitForExistence(timeout: 10))
+      let menu = app.buttons["room-menu"]
+      XCTAssertTrue(menu.waitForExistence(timeout: 10)); menu.tap()
+      let gym = app.roomItem("Gym")
+      XCTAssertTrue(gym.waitForExistence(timeout: 5)); gym.tap()
+      XCTAssertTrue(app.buttons["Remove photo"].waitForExistence(timeout: 20))
+      for words in ["Anthropic", "AI provider", "A copy goes", "Windmill keeps none", "Kept only on this phone", "Saved only on this phone", "Sent to Coach"] {
+        XCTAssertEqual(app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", words)).count, 0, words)
+      }
+      app.terminate()
+    }
+  }
   func waitForVisible(_ element: XCUIElement, in app: XCUIApplication) -> Bool {
     let viewport = app.frame
     let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in

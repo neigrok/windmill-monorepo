@@ -61,6 +61,16 @@ sealed interface ProposalOutcome {
     data class Refused(val said: String) : ProposalOutcome
     data class Gone(val said: String) : ProposalOutcome
     data class Failed(val why: WriteFailure) : ProposalOutcome
+
+    // The event's bounded word for it.
+    val label: String get() = when (this) {
+        is Decided -> "decided"
+        is Moved -> "moved"
+        is Gone -> "gone"
+        is Settled -> "settled"
+        is Refused -> "refused"
+        is Failed -> "failed"
+    }
 }
 
 sealed interface ProposalRead {
@@ -103,7 +113,7 @@ data class RefusedSet(
 // sticks and two passes over the same refusal are one loss on the banner.
 data class RefusedWorkout(override val id: String, val startedAtMs: Long?, override val reason: String) : RefusedWrite
 
-data class RefusedChange(override val id: String, val name: String, override val reason: String) : RefusedWrite
+data class RefusedChange(override val id: String, val name: String?, override val reason: String) : RefusedWrite
 
 // How a write reports itself. Silence is a state: a room that has just opened says nothing.
 sealed class SaveState {

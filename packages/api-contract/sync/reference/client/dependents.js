@@ -1,7 +1,7 @@
 // §7.7 step 3 dependents: later deltas and commands that touch or name a record a source created, that
 // carry a life register a source wrote, or that target a scope its governing record creates; by
-// (scope, t, id), and transitive through absorb(). The refusal fold (§7.7), the silent fold of an undo
-// and a retire (§7.3), and held-back numbering (§7.4) all use it.
+// (scope, t, id), and transitive through absorb(). The refusal fold (§7.7), the silent fold of an undo,
+// a retire and a supersede (§7.3), and held-back numbering (§7.4) all use it.
 
 import { moveEntry } from '../core/machines.js';
 import { recordKey } from '../core/rows.js';
@@ -70,9 +70,10 @@ export class Dependents {
     return this.created.has(scopedKey(scopeOfType(this.registry, fromScope, t), t, id));
   }
 
-  // One later entry's dependent part: the dependent deltas, whether its command is dependent, and
-  // whether nothing of the entry is independent.
-  of(entry) {
+  // One later entry's dependent part: the dependent deltas, whether its command is dependent, whether
+  // nothing of the entry is independent, and, when the sources are being replaced, its guards on what
+  // they created: a replacement is numbered after the entry, so the record it read is not there yet.
+  of(entry, { replaced = false } = {}) {
     const deltas = entry.intent.d ?? [];
     const removed = deltas.filter((delta) => this.governed.has(entry.scope)
       || this.created.has(scopedKey(entry.scope, delta.t, delta.id))
@@ -83,7 +84,8 @@ export class Dependents {
       && (this.governed.has(entry.scope)
         || commandRefs(this.registry, cmd).some((ref) => this.names(entry.scope, ref.t, ref.id))
         || (entry.predict ?? []).some((delta) => delta.life !== undefined && this.lives.has(lifeKey(entry.scope, delta))));
-    return { removed, cmdGone, any: removed.length > 0 || cmdGone, whole: removed.length === deltas.length && (cmd === undefined || cmdGone) };
+    const guards = replaced ? (entry.intent.guard ?? []).filter((guard) => this.created.has(scopedKey(entry.scope, guard.t, guard.id))) : [];
+    return { removed, cmdGone, guards, any: removed.length > 0 || cmdGone || guards.length > 0, whole: removed.length === deltas.length && (cmd === undefined || cmdGone) };
   }
 
   // A dependent part joins the sources, so dependency is transitive through the records it creates.
@@ -92,9 +94,10 @@ export class Dependents {
   }
 }
 
-// Removes a queued entry's dependent part: the deltas, the guards on their records, and a dependent
-// command with its prediction. Answers the removed content, a snapshot; the entry may be left empty.
-export function removeDependent(entry, { removed, cmdGone }) {
+// Removes a queued entry's dependent part: the deltas, the guards on their records and those the part
+// names, and a dependent command with its prediction. Answers the removed content, a snapshot; the entry
+// may be left empty.
+export function removeDependent(entry, { removed, cmdGone, guards = [] }) {
   const content = {};
   if (removed.length) content.d = structuredClone(removed);
   if (cmdGone) content.cmd = structuredClone(entry.intent.cmd);
@@ -103,7 +106,7 @@ export function removeDependent(entry, { removed, cmdGone }) {
   if (kept.length) entry.intent.d = kept;
   else delete entry.intent.d;
   if (entry.intent.guard) {
-    entry.intent.guard = entry.intent.guard.filter((guard) => !removedKeys.has(recordKey(guard.t, guard.id)));
+    entry.intent.guard = entry.intent.guard.filter((guard) => !removedKeys.has(recordKey(guard.t, guard.id)) && !guards.includes(guard));
     if (entry.intent.guard.length === 0) delete entry.intent.guard;
   }
   if (cmdGone) {
@@ -117,11 +120,12 @@ export function isEmpty(entry) {
   return entry.intent.d === undefined && entry.intent.cmd === undefined;
 }
 
-// The silent fold of an undo and a retire (§7.3), planned before anything moves: `sources` are
-// `[{entry, deltas}]`, each with the deltas it gives up, and the answer is each later entry's dependent
-// part, `[{entry, part}]`. Sources are held, and §7.4 numbers no entry that depends on a held one, so a
-// numbered dependent is a broken invariant.
-export function silentFoldOf(replica, registry, sources) {
+// The silent fold of an undo, a retire and a supersede (§7.3), planned before anything moves: `sources`
+// are `[{entry, deltas}]`, each with the deltas it gives up, and the answer is each later entry's
+// dependent part, `[{entry, part}]`. `replaced` says a replacement takes the sources' place. Sources are
+// held or never sent, and §7.4 numbers no entry that depends on a held one, so a numbered dependent is a
+// broken invariant.
+export function silentFoldOf(replica, registry, sources, { replaced = false } = {}) {
   const dependents = new Dependents(registry);
   const parts = [];
   for (const entry of replica.entries()) {
@@ -130,7 +134,7 @@ export function silentFoldOf(replica, registry, sources) {
       dependents.absorb(entry.scope, source.deltas, entry.stamp);
       continue;
     }
-    const part = dependents.of(entry);
+    const part = dependents.of(entry, { replaced });
     if (!part.any) continue;
     if (entry.state !== 'held' && entry.state !== 'ready') throw new Error(`${entry.localId} is ${entry.state} and depends on a held entry`);
     dependents.absorbPart(entry, part);

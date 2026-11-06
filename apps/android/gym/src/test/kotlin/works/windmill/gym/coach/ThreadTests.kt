@@ -1,167 +1,103 @@
 package works.windmill.gym.coach
 
-import works.windmill.gym.presentation.*
+import java.io.File
+import kotlin.coroutines.ContinuationInterceptor
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Rule
 import org.junit.Test
-import works.windmill.platform.net.WindmillJson
+import org.junit.rules.TemporaryFolder
+import works.windmill.gym.coach.turn.ScriptedTurns
+import works.windmill.gym.presentation.Ids
+import works.windmill.gym.presentation.ProposalSource
+import works.windmill.gym.store.EngineRoomFixture
+import works.windmill.sync.core.Json
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class ThreadTests {
-    private fun thread(
-        id: String = "thr_1",
-        title: String = "Bench has been stuck at 82.5 for three weeks. What do you see?",
-        askedAtMs: Long = 0,
-        outcome: ThreadOutcome = ThreadOutcome(),
-    ) = AskThread(id = id, title = title, createdAtMs = askedAtMs, askedAtMs = askedAtMs, outcome = outcome)
+    @get:Rule val folder = TemporaryFolder()
 
-    private val august = 1_785_844_800_000L
-    private val july = august - 21L * 24 * 3_600_000
+    private fun TestScope.room(server: ScriptedTurns) = EngineRoomFixture(folder.newFolder(), CoroutineScope(SupervisorJob() + coroutineContext[ContinuationInterceptor] as CoroutineDispatcher),
+        localCoach = LocalCoach(File(folder.newFolder(), LocalCoach.fileName)), coachServer = server)
+
+    private fun answers(text: String) = ScriptedTurns(listOf(Json.objectOf("event" to Json.of("text"), "data" to Json.objectOf("delta" to Json.of(text))),
+        Json.objectOf("event" to Json.of("done"), "data" to Json.objectOf("state" to Json.of("completed")))))
 
     @Test
-    fun theTitleIsTheLiftersFirstMessageVerbatim() {
-        val asked = "  bench STUCK at 82.5 💀 — what do you see??  "
-
-        val read = WindmillJson.decodeFromString(
-            AskThread.serializer(),
-            """{"id":"thr_1","title":"  bench STUCK at 82.5 💀 — what do you see??  "}""",
-        )
-
-        assertEquals(asked, read.title)
+    fun theTitleIsTheLiftersFirstMessageVerbatim() = runTest {
+        val server = answers("Rest more")
+        room(server).use { room ->
+            val coach = room.store.coach
+            val conversations = room.store.conversations
+            val asked = "bench STUCK at 82.5 💀 — what do you see??"
+            val chat = coach.freshChat()
+            assertTrue(coach.send(chat, "  $asked  "))
+            advanceUntilIdle()
+            server.rewind()
+            assertTrue(coach.send(chat, "and my squat?"))
+            advanceUntilIdle()
+            conversations.watchHistory(true)
+            conversations.read()
+            assertEquals(listOf(asked), coach.history.map { it.title })
+            assertEquals(listOf(asked), conversations.threads.map { it.title })
+        }
     }
 
     @Test
-    fun everySubtitleIsSomethingTheServerObserved() {
-        assertEquals("4 changes → Push A",
-            ThreadOutcome("applied", changes = 4, routineId = "rt_1", routine = "Push A").detail)
-        assertEquals("6 changes",
-            ThreadOutcome("applied", changes = 6).detail)
-        assertNull(ThreadOutcome("read-only").detail)
-        assertEquals("4 changes waiting", ThreadOutcome("proposed", changes = 4).detail)
-        assertEquals("3 changes superseded", ThreadOutcome("superseded", changes = 3).detail)
-        assertEquals("one change is counted as one", "1 change → Legs",
-            ThreadOutcome("applied", changes = 1, routine = "Legs").detail)
-    }
-
-    @Test
-    fun createdOutcomesNameASoleRoutineAndCountMultipleRoutines() {
-        val read = WindmillJson.decodeFromString(ThreadOutcome.serializer(),
-            """{"kind":"created","changes":1,"routineId":"routine-one","routine":"Push A"}""")
-
-        assertEquals("created", read.label)
-        assertEquals("created Push A", read.detail)
-        assertEquals("1 routine created", read.copy(routine = null).detail)
-        assertEquals("1 routine created", read.copy(routine = "").detail)
-        assertEquals("2 routines created", read.copy(changes = 2, routine = null).detail)
-        assertNull(ThreadOutcome("read-only").label)
-    }
-
-    @Test
-    fun aTurnedDownRowSaysWhatWasTurnedDownAndNeverWhy() {
-        val dismissed = ThreadOutcome("dismissed", changes = 4)
-
-        assertEquals("4 changes turned down", dismissed.detail)
-        assertEquals("turned down", dismissed.label)
-        assertEquals(
-            "no motive survives the wire",
-            ThreadOutcome("dismissed", changes = 4),
-            WindmillJson.decodeFromString(
-                ThreadOutcome.serializer(),
-                """{"kind":"dismissed","changes":4,"reason":"built it myself instead"}""",
-            ),
-        )
-    }
-
-    @Test
-    fun anOrdinaryConversationOmitsAnOutcome() {
-        val read = WindmillJson.decodeFromString(
-            AskThread.serializer(),
-            """{"id":"thr_2","title":"Is my squat volume too low?","outcome":{"kind":"read-only","changes":0}}""",
-        )
-
-        assertNull(read.outcome.detail)
-        assertEquals(0, read.outcome.changes)
-        assertNull(read.outcome.label)
-    }
-
-    @Test
-    fun anOutcomeThisBuildCannotNameSaysNothingRatherThanGuessing() {
-        val unknown = ThreadOutcome("half-applied", changes = 2)
-
-        assertNull(unknown.detail)
-        assertNull(unknown.label)
-        assertEquals("and it is not the one the accent is spent on", false, unknown.moved)
-    }
-
-    @Test
-    fun conversationsAreGroupedByMonthNewestFirst() {
-        val months = Threads.months(
-            listOf(
-                thread(id = "thr_july", askedAtMs = july),
-                thread(id = "thr_old", askedAtMs = august),
-                thread(id = "thr_new", askedAtMs = august + 3_600_000),
-            ),
-            august + 7_200_000,
-        )
-
-        assertEquals(listOf("August", "July"), months.map { it.label })
-        assertEquals(listOf("thr_new", "thr_old"), months[0].threads.map { it.id })
-        assertEquals(listOf("thr_july"), months[1].threads.map { it.id })
-        assertEquals("a year the lifter is not standing in is named",
-            "July 2025", Readout.month(july - 365L * 24 * 3_600_000, august))
-    }
-
-    @Test
-    fun theHeaderCountsConversationsAndNeverAnythingUnread() {
-        assertEquals("9 conversations · yours to delete", Threads.counted(9))
-        assertEquals("1 conversation · yours to delete", Threads.counted(1))
-        assertEquals("0 conversations · yours to delete", Threads.counted(0))
-        assertTrue("nothing on this screen speaks of unread anything",
-            listOf(Threads.counted(9), Threads.none, Threads.open, Threads.outOfReach)
-                .none { it.contains("unread", ignoreCase = true) || it.contains("new message", ignoreCase = true) })
-        assertTrue("no member of Threads is named for an unread anything",
-            Threads::class.java.declaredFields.map { it.name }
-                .none { it.contains("unread", ignoreCase = true) })
+    fun aConversationsRowSaysItsNewestAnswerAndNeverRunsPastThePreviewBound() = runTest {
+        val answer = "💪".repeat(241)
+        room(answers(answer)).use { room ->
+            val coach = room.store.coach
+            val conversations = room.store.conversations
+            val chat = coach.freshChat()
+            assertTrue(coach.send(chat, "Long?"))
+            advanceUntilIdle()
+            conversations.watchHistory(true)
+            conversations.read()
+            assertEquals(listOf("💪".repeat(240)), coach.history.map { it.answerPreview })
+            assertEquals(listOf(false), coach.history.map { it.answering })
+        }
     }
 
     @Test
     fun aConversationTheLogGaveNoInstantForIsDrawnWithoutADateRatherThanIn1970() {
-        val undated = thread(id = "thr_x", title = "what's stalled?")
-        val months = Threads.months(listOf(thread(id = "thr_aug", askedAtMs = august), undated), august)
-
-        assertNull(undated.day(august))
-        assertEquals("Yesterday", thread(id = "thr_aug", askedAtMs = august).day(august + 86_400_000))
-        assertEquals(listOf("August", null), months.map { it.label })
-        assertEquals(listOf(listOf("thr_aug"), listOf("thr_x")), months.map { it.threads.map { held -> held.id } })
-        assertEquals("4 changes to Push A · applied",
-            ThreadProposal(id = "prop_1", state = ProposalState.Applied, changeCount = 4,
-                routineId = "rt_1", routine = "Push A").line(august))
+        val august = 1_785_844_800_000L
+        val row = { askedAtMs: Long -> ConversationRow("thr_1", "what's stalled?", askedAtMs) }
+        assertNull(row(0).day(august))
+        assertEquals("Today", row(august).day(august))
+        assertEquals("Yesterday", row(august).day(august + 86_400_000))
+        assertEquals("Jul 14", row(august - 21L * 86_400_000).day(august))
     }
 
-    // The act left this screen for the list's row, and every word about it went too: what the delete
-    // KEEPS is now said by the transient at the moment of the act, and what it cannot take back was
-    // deleted outright — it can, for nine seconds, like every other delete in the room.
+    @Test
+    fun theHistoryScreenSpeaksInItsOwnWordsAndNeverOfAnythingUnread() {
+        val everything = listOf(Threads.title, Threads.open, Threads.conversation, Threads.none)
+        assertEquals(listOf("History", "New chat", "Conversation", "No conversations yet.\nWhat you ask Coach on this phone is listed here."), everything)
+        assertTrue("nothing on this screen speaks of unread anything",
+            everything.none { it.contains("unread", ignoreCase = true) || it.contains("new message", ignoreCase = true) })
+        assertTrue("no member of Threads is named for an unread anything",
+            Threads::class.java.declaredFields.map { it.name }.none { it.contains("unread", ignoreCase = true) })
+    }
+
+    // A delete is made on the list's row and its Undo says what it keeps.
     @Test
     fun nothingOnThisScreenLecturesAboutADeleteThatIsMadeSomewhereElse() {
-        val everything = listOf(Threads.title, Threads.open, Threads.door, Threads.conversation,
-            Threads.none, Threads.outOfReach, Threads.counted(2))
+        val everything = listOf(Threads.title, Threads.open, Threads.conversation, Threads.none)
         assertTrue("no standing caption survives about deleting",
             everything.none { it.contains("Deleting", ignoreCase = true) })
         assertFalse("and nothing here claims finality the undo has made false",
             everything.any { it.contains("no undoing", ignoreCase = true) })
         assertTrue("the constant that carried it is gone, not merely unused",
             Threads::class.java.declaredFields.map { it.name }.none { it == "deleteRule" })
-    }
-
-    @Test
-    fun aKeptQuestionCarriesBothItsThreadAndItsWords() {
-        val encoded = WindmillJson.encodeToString(
-            AskQuestion.serializer(),
-            AskQuestion(thread = "thr_1", question = "what's stalled?"),
-        )
-
-        assertEquals("""{"thread":"thr_1","question":"what's stalled?"}""", encoded)
     }
 
     @Test
@@ -173,52 +109,6 @@ class ThreadTests {
         assertTrue(minted.all { it.isLetterOrDigit() || it == '_' || it == '-' })
         assertTrue("a fresh id every time — a spent one would land in somebody's old evening",
             minted != Ids.thread())
-    }
-
-    @Test
-    fun turnsArriveOnTheDetailReadAndTheListHasNone() {
-        val listed = WindmillJson.decodeFromString(
-            AskThread.serializer(),
-            """{"id":"thr_1","title":"what's stalled?","askedAt":10}""",
-        )
-        val opened = WindmillJson.decodeFromString(
-            AskThread.serializer(),
-            """{"id":"thr_1","title":"what's stalled?","turns":[
-                 {"from":"lifter","text":"what's stalled?","at":10},
-                 {"from":"ask","text":"bench, three weeks.","at":12}]}""",
-        )
-
-        assertEquals(emptyList<AskTurn>(), listed.turns)
-        assertEquals(
-            listOf(AskTurn("lifter", "what's stalled?", 10), AskTurn("ask", "bench, three weeks.", 12)),
-            opened.turns,
-        )
-        assertEquals(listOf(true, false), opened.turns.map { it.fromLifter })
-    }
-
-    @Test
-    fun aTurnFromASideThisBuildHasNeverHeardOfIsReadAndDrawnAsCoachsRatherThanRefused() {
-        val opened = WindmillJson.decodeFromString(
-            AskThread.serializer(),
-            """{"id":"thr_1","title":"what's stalled?","turns":[
-                 {"from":"oracle","text":"bench, three weeks."}]}""",
-        )
-
-        assertEquals(listOf(AskTurn("oracle", "bench, three weeks.")), opened.turns)
-        assertEquals(listOf(false), opened.turns.map { it.fromLifter })
-    }
-
-    @Test
-    fun aMintedProposalIsCountedTheWayTheProgramCountsIt() {
-        val minted = ThreadProposal(id = "prop_1", state = ProposalState.Applied, changeCount = 4,
-            routineId = "rt_1", routine = "Push A", createdAtMs = august)
-
-        assertEquals("4 Aug · 4 changes to Push A · applied", minted.line(august))
-        assertEquals("4 Aug · 1 change to Push A · turned down",
-            minted.copy(state = ProposalState.Dismissed, changeCount = 1).line(august))
-        assertEquals("a routine the reply could not name is left unnamed rather than guessed",
-            "4 Aug · 2 changes · waiting",
-            minted.copy(state = ProposalState.Pending, changeCount = 2, routine = "").line(august))
     }
 
     @Test

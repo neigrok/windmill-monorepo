@@ -109,3 +109,24 @@ hostTest('Chromium: empty phone Activity has shipped copy and Close returns to t
     assert.deepEqual(errors, []);
   } finally { await page.close(); }
 });
+
+for (const surface of ['board', 'tree']) {
+  hostTest(`Chromium: a 744px Activity panel row opens its step over ${surface}`, async () => {
+    const { page, errors } = await openHost({ width: 744, surface });
+    try {
+      await page.keyboard.press('a');
+      const panel = page.locator('.st-roadmap-activity-panel');
+      await panel.waitFor();
+      const row = panel.locator('button.st-event').filter({ hasText: 'Choose a course' }).first();
+      await row.click();
+      await panel.waitFor({ state: 'detached' });
+      const step = page.locator('.st-board-step-layer [role="dialog"]');
+      await step.waitFor();
+      assert.equal(await step.evaluate((element) => document.getElementById(element.getAttribute('aria-labelledby')).textContent), 'Choose a course');
+      assert.equal(await page.locator('.st-roadmap-identity').getAttribute('data-view'), surface);
+      await page.waitForFunction(() => document.querySelector('.st-board-step-layer [role="dialog"]')?.contains(document.activeElement));
+      assert.equal(await step.evaluate((element) => element.contains(document.activeElement)), true);
+      assert.deepEqual(errors, []);
+    } finally { await page.close(); }
+  });
+}

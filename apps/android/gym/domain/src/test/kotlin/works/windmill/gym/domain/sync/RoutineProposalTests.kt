@@ -144,6 +144,32 @@ class RoutineProposalTests {
         assertEquals(1, proposal.copy(proposedName = base.name, changes = ProposalRules.changesBetween(base.entries, listOf(entry))).changeCount(base))
     }
 
+    // Random proposals over routines of up to eight movements, repeats among them: the count is what the sheet draws, a move always reads two places, what stays undrawn keeps the base's order, and an order that changed draws at least one row.
+    @Test fun theCountIsTheRowsDrawnOverRandomProposals() {
+        val random = java.util.Random(20261105)
+        val movements = (0 until 12).map { Id("movement$it", Exercise) }
+        repeat(2000) {
+            val base = routine.copy(name = "Lower A", entries = List(1 + random.nextInt(8)) { RoutineEntry(movements[random.nextInt(movements.size)], listOf(SetTarget(5, 60.0))) })
+            val proposed = base.entries.filter { random.nextInt(5) > 0 }.toMutableList()
+            repeat(random.nextInt(3)) { proposed.add(random.nextInt(proposed.size + 1), RoutineEntry(movements[random.nextInt(movements.size)], listOf(SetTarget(8, 40.0)))) }
+            for (at in proposed.indices) if (random.nextInt(5) == 0) proposed[at] = proposed[at].copy(sets = listOf(SetTarget(3, 70.0)))
+            repeat(random.nextInt(3)) { if (proposed.size > 1) { val at = random.nextInt(proposed.size); proposed.add(random.nextInt(proposed.size), proposed.removeAt(at)) } }
+            val changes = RoutineChange.between(base.entries, proposed)
+            val named = proposal.copy(proposedName = if (random.nextBoolean()) base.name else "Lower B", changes = changes)
+            val diff = ProposalDiff(named, base)
+            assertEquals("$changes", diff.blocks.size, named.changeCount(base))
+            val moves = ProposalDiff.moves(changes, base.entries)
+            assertTrue("$moves", moves.values.all { it.from != it.to })
+            val unmatched = base.entries.indices.toMutableList()
+            val places = changes.withIndex().filter { it.value.kind == "kept" || it.value.kind == "retargeted" }.map { (index, change) ->
+                index to unmatched.removeAt(unmatched.indexOfFirst { base.entries[it].exerciseId == change.exerciseId })
+            }
+            val standing = places.filter { (index, _) -> index !in moves }.map { it.second }
+            assertEquals("$changes", standing.sorted(), standing)
+            if (places.map { it.second } != places.map { it.second }.sorted()) assertTrue("$changes", moves.isNotEmpty())
+        }
+    }
+
     @Test fun proposalCreateUsesStoredBaseAndGuardsBothRegisters() {
         val drawn = routine.copy(name = "Local edit")
         val action = ProposeRoutine(proposalId, routineId, "Lower B", proposal.document, "  More load  ")

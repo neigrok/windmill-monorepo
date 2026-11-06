@@ -1,0 +1,309 @@
+[
+  {
+    "board": "08.72",
+    "name": "review-sheet-signed-out",
+    "account": "empty",
+    "workout_clock": true,
+    "responses": [
+      [
+        {
+          "type": "tool_use",
+          "id": "toolu_push",
+          "name": "create_routine",
+          "input": {
+            "id": "rt_$account_push",
+            "name": "Push A",
+            "position": 10,
+            "entries": [
+              {
+                "exerciseId": "bench-press",
+                "sets": [
+                  {
+                    "reps": 8,
+                    "weightKg": 75
+                  },
+                  {
+                    "reps": 8,
+                    "weightKg": 75
+                  },
+                  {
+                    "reps": 8,
+                    "weightKg": 75
+                  }
+                ]
+              },
+              {
+                "exerciseId": "overhead-press",
+                "sets": [
+                  {
+                    "reps": 6,
+                    "weightKg": 45
+                  },
+                  {
+                    "reps": 6,
+                    "weightKg": 45
+                  },
+                  {
+                    "reps": 6,
+                    "weightKg": 45
+                  }
+                ]
+              },
+              {
+                "exerciseId": "incline-dumbbell-press",
+                "sets": [
+                  {
+                    "reps": 10,
+                    "weightKg": 17.5
+                  },
+                  {
+                    "reps": 10,
+                    "weightKg": 17.5
+                  },
+                  {
+                    "reps": 10,
+                    "weightKg": 17.5
+                  }
+                ]
+              },
+              {
+                "exerciseId": "cable-fly",
+                "sets": [
+                  {
+                    "reps": 12,
+                    "weightKg": 15
+                  },
+                  {
+                    "reps": 12,
+                    "weightKg": 15
+                  },
+                  {
+                    "reps": 12,
+                    "weightKg": 15
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      [
+        {
+          "type": "text",
+          "text": "I made Push A."
+        }
+      ],
+      [
+        {
+          "type": "tool_use",
+          "id": "toolu_swap",
+          "name": "propose_workout_change",
+          "input": {
+            "id": "wp_$account_swap",
+            "sessionId": "$phone_session",
+            "summary": "",
+            "entries": [
+              {
+                "exerciseId": "bench-press",
+                "sets": [
+                  {
+                    "reps": 8,
+                    "weightKg": 75
+                  },
+                  {
+                    "reps": 8,
+                    "weightKg": 75
+                  },
+                  {
+                    "reps": 8,
+                    "weightKg": 75
+                  }
+                ]
+              },
+              {
+                "exerciseId": "dumbbell-bench-press",
+                "sets": [
+                  {
+                    "reps": 10,
+                    "weightKg": 20
+                  },
+                  {
+                    "reps": 10,
+                    "weightKg": 20
+                  },
+                  {
+                    "reps": 10,
+                    "weightKg": 20
+                  }
+                ]
+              },
+              {
+                "exerciseId": "overhead-press",
+                "sets": [
+                  {
+                    "reps": 6,
+                    "weightKg": 45
+                  },
+                  {
+                    "reps": 6,
+                    "weightKg": 45
+                  },
+                  {
+                    "reps": 6,
+                    "weightKg": 45
+                  }
+                ]
+              },
+              {
+                "exerciseId": "cable-fly",
+                "sets": [
+                  {
+                    "reps": 12,
+                    "weightKg": 15
+                  },
+                  {
+                    "reps": 12,
+                    "weightKg": 15
+                  },
+                  {
+                    "reps": 12,
+                    "weightKg": 15
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      [
+        {
+          "type": "text",
+          "text": "Overhead Press is logged, so it stays. Swap the incline press for a dumbbell press."
+        }
+      ]
+    ],
+    "steps": [
+      {
+        "tap": "Coach"
+      },
+      {
+        "tap": "Question"
+      },
+      {
+        "text": "Make me a push day"
+      },
+      {
+        "wait": "Make me a push day"
+      },
+      {
+        "tap": "Send"
+      },
+      {
+        "wait_contains": "I made Push A"
+      },
+      {
+        "tap": "Routines"
+      },
+      {
+        "tap": "Push A"
+      },
+      {
+        "tap": "Start workout"
+      },
+      {
+        "wait_contains": "Load, kg"
+      },
+      {
+        "tap": "Bench Press"
+      },
+      {
+        "tap": "Overhead Press"
+      },
+      {
+        "wait_contains": "Load, kg"
+      },
+      {
+        "tap": "Log set"
+      },
+      {
+        "wait_contains": "Set 2, current, "
+      },
+      {
+        "tap": "Coach"
+      },
+      {
+        "wait": "Question"
+      },
+      {
+        "tap": "Question"
+      },
+      {
+        "text": "My shoulder is sore today"
+      },
+      {
+        "wait": "My shoulder is sore today"
+      },
+      {
+        "tap": "Send"
+      },
+      {
+        "wait": "Review"
+      },
+      {
+        "tap": "Review"
+      },
+      {
+        "wait": "Sign in to review this proposal."
+      },
+      {
+        "wait": "Sign in"
+      }
+    ]
+  },
+  {
+    "board": "08.72",
+    "name": "review-sheet-after-the-door",
+    "account": "empty",
+    "workout_clock": true,
+    "steps": [
+      {
+        "tap": "Sign in"
+      },
+      {
+        "wait": "Email"
+      }
+    ]
+  },
+  {
+    "board": "08.72",
+    "name": "review-sheet-after-sign-in",
+    "account": "empty",
+    "workout_clock": true,
+    "steps": [
+      {
+        "keyboard": "show"
+      },
+      {
+        "tap": "Email"
+      },
+      {
+        "text": "lifter$mode@example.com"
+      },
+      {
+        "tap": "Send code"
+      },
+      {
+        "wait": "Check your email"
+      },
+      {
+        "auth_code": "valid"
+      },
+      {
+        "tap": "Sign in"
+      },
+      {
+        "wait": "Finish"
+      }
+    ]
+  }
+]

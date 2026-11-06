@@ -249,7 +249,9 @@ bases are captured:
   revision and name as its base and writes `state := superseded`, `supersededBy :=` its id and
   `settledAt := serverNow` on stored and earlier created pending proposals of the same routine, door
   and connection. The last same-key create remains pending. R118 freezes server `baseRevision`, `baseName` and
-  `changeCount`: non-kept rows + one rename + one reorder among matched surviving base occurrences.
+  `changeCount`: non-kept rows + one rename + each kept row that moved among matched surviving base occurrences: a line at the same
+  place in both never moved, a line that crosses one of those moved, and of what is left the longest run in base order stands, the one
+  whose places come first of equal runs.
   Settlement preserves those fields; no client re-counts without the frozen base order.
 - **Metadata writers.** Public replica/server-door deltas supplying metadata, and every public
   `routineCreation` delta (including an empty one), refuse `invalid`; only the binding writes them.
@@ -1028,17 +1030,21 @@ is answered for the caller to resume.
 - `supersede`: distinct gesture ids in the anonymous replica and this scope. Every entry of each
   gesture is held or ready and unnumbered; any missing or ineligible gesture throws atomically.
   The source gestures end by silent fold, with their dependents, only after the replacement commits.
+  A later entry's guard on a record they or their dependents created goes with them: the replacement is
+  numbered after that entry, so no stamp of the record can stand when it arrives.
   The return includes `superseded` in commit order when gestures were named. The caller supplies
   the complete replacement effects, including cumulative first-run retirement fields.
-  `commit/supersede.json` pins ready and held replacement, ordering, dependent folding, other-scope
-  refusal, missing and bound gestures, malformed replacement and an oversized replacement rollback.
+  `commit/supersede.json` pins ready and held replacement, ordering, dependent folding, guards on a
+  replaced record, a retire beside a supersede, other-scope refusal, missing and bound gestures, malformed
+  replacement and an oversized replacement rollback.
 - `guard`: a list of registers `{t, id, field}`, guarded exactly, each at its `stored` stamp (`null`
   when unset). A field the type does not declare as a lattice field, `life`, a text field, or a
   register of a type another scope holds throws.
 - `retire`: a list of records `{t, id}`. Every held gesture of the scope that carries no command and
   whose every delta removes (`life → dead`) a listed record ends `undone` (event `retire`), its
   dependents folding silently as an undo's do (event `silent-fold`), and the diff runs on views without
-  either.
+  either. Beside a `supersede`, the retired and the superseded gestures fold their dependents in one
+  pass, as a replacement: a later guard on a record a retired gesture's dependents created goes too.
   `retired` lists those gesture ids in commit order; a refused commit retires nothing.
 - `cmd`: `{name, args}`.
 - `predict`: a list of `create`, `update`, `delete`, `put` and `write` changes, kept locally and never
@@ -1182,7 +1188,7 @@ authentication without changing the epoch or ending owed work.
   - Dependency is transitive through the records that folded dependents create and the life
     registers they write.
   - Names include ref fields, key parts and command `ref<t>` arguments.
-  - A guard names nothing: a guard is removed only with a dependent delta on its record.
+  - A guard names nothing: a guard is removed only with a dependent delta on its record, or by a supersede.
 - A queued dependent is removed; its entry ends `fold` when nothing is left of it.
 - A sent entry with any dependent delta or command becomes an orphan (`orphanOf`), its whole
   content in the notice. Its `ok` makes it `acked` like any `ok`; its refusal ends it `refused`,
