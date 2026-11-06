@@ -11,7 +11,10 @@
 
 #include <algorithm>
 #include <chrono>
+#include <deque>
 #include <exception>
+#include <iterator>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -76,10 +79,15 @@ bool isAllowanceCode(const std::string& code) {
   return false;
 }
 
-bool lingerPassed(const Turn& turn, std::uint64_t nowMs) {
+// A turn lingers for TURN_LINGER after it ends, and a tombstone for TURN_LINGER after its Stop.
+bool lingerPassed(std::uint64_t sinceMs, std::uint64_t nowMs) {
   const auto linger = static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(kTurnLinger).count());
+  return sinceMs + linger <= nowMs;
+}
+
+bool lingerPassed(const Turn& turn, std::uint64_t nowMs) {
   const std::optional<std::uint64_t> endedAt = turn.endedAtMs();
-  return endedAt && *endedAt + linger <= nowMs;
+  return endedAt && lingerPassed(*endedAt, nowMs);
 }
 
 }  // namespace
@@ -118,44 +126,66 @@ void TurnService::sweep() {
     std::lock_guard lock(registryMutex_);
     for (const auto& [id, turn] : turns_)
       if (lingerPassed(*turn, now)) passed.push_back(turn);
+    for (auto stops = tombstones_.begin(); stops != tombstones_.end();) {
+      std::deque<Tombstone>& left = stops->second;
+      while (!left.empty() && lingerPassed(left.front().stoppedAtMs, now)) left.pop_front();
+      stops = left.empty() ? tombstones_.erase(stops) : std::next(stops);
+    }
   }
   for (const std::shared_ptr<Turn>& turn : passed) {
-    if (!endMessage(*turn)) continue;
+    const MessageEnding ending = endMessage(*turn);
     std::lock_guard lock(registryMutex_);
+    if (ending == MessageEnding::busy) continue;
+    if (ending == MessageEnding::failed && ++interruptFailures_[turn->id()] < kInterruptAttempts) continue;
+    if (ending == MessageEnding::failed) LOG_WARN << "coach_turn_interrupt_abandoned turn=" << turn->id() << " attempts=" << kInterruptAttempts;
+    interruptFailures_.erase(turn->id());
     const auto held = turns_.find(turn->id());
     if (held != turns_.end() && held->second == turn) turns_.erase(held);
   }
 }
 
-bool TurnService::endMessage(const Turn& turn) {
+TurnService::MessageEnding TurnService::endMessage(const Turn& turn) const {
   const TurnPrincipal& principal = turn.principal();
-  if (principal.seat != Seat::bound) return true;
+  if (principal.seat != Seat::bound) return MessageEnding::ended;
   WriteObservation observation("gym.coach_turn.interrupt", "gym", "background", "", failures_.get());
   WriteContext context(observation);
   try {
     if (!door_.interrupt(principal.account->id, turn.id())) {
       observation.skip();
-      return true;
+      return MessageEnding::ended;
     }
     observation.finish();
     LOG_INFO << "coach_turn_interrupted turn=" << turn.id() << " request_id=" << observation.requestId();
-    return true;
+    return MessageEnding::ended;
   } catch (const GymUnavailable& refused) {
     observation.finish(refused.code);
-    return refused.code != "gym-engine-busy";
+    return refused.code == "gym-engine-busy" ? MessageEnding::busy : MessageEnding::ended;
   } catch (const std::exception& error) {
     observation.fail(error);
-    return true;
   } catch (...) {
     observation.failUnknown();
-    return true;
   }
+  return MessageEnding::failed;
 }
 
 std::shared_ptr<Turn> TurnService::standing(const std::string& turnId, std::uint64_t nowMs) const {
   const auto seen = turns_.find(turnId);
   if (seen == turns_.end() || lingerPassed(*seen->second, nowMs)) return nullptr;
   return seen->second;
+}
+
+std::optional<TurnAdmission> TurnService::seenBefore(const TurnPrincipal& principal, const TurnOpen& open, std::uint64_t nowMs) const {
+  if (const std::shared_ptr<Turn> held = standing(open.turnId, nowMs)) {
+    if (held->principal().id() != principal.id() || held->open().digest != open.digest) return TurnAdmission{nullptr, false, "coach-turn-conflict"};
+    return TurnAdmission{held, true, {}};
+  }
+  const auto stops = tombstones_.find(principal.id());
+  if (stops == tombstones_.end()) return std::nullopt;
+  const bool stopped = std::any_of(stops->second.begin(), stops->second.end(), [&](const Tombstone& left) {
+    return left.turnId == open.turnId && !lingerPassed(left.stoppedAtMs, nowMs);
+  });
+  if (!stopped) return std::nullopt;
+  return TurnAdmission{nullptr, false, "coach-turn-stopped"};
 }
 
 TurnAdmission TurnService::allowanceRefusal(const TurnPrincipal& principal, const std::string& turnId) const {
@@ -192,10 +222,7 @@ TurnAdmission TurnService::open(const TurnPrincipal& principal, TurnOpen open) {
   const std::uint64_t now = clock_.nowMs();
   {
     std::lock_guard lock(registryMutex_);
-    if (const std::shared_ptr<Turn> held = standing(open.turnId, now)) {
-      if (held->principal().id() != principal.id() || held->open().digest != open.digest) return {nullptr, false, "coach-turn-conflict"};
-      return {held, true, {}};
-    }
+    if (const std::optional<TurnAdmission> seen = seenBefore(principal, open, now)) return *seen;
   }
   if (!configured()) return {nullptr, false, "coach-busy"};
   TurnAdmission refused;
@@ -219,11 +246,10 @@ TurnAdmission TurnService::open(const TurnPrincipal& principal, TurnOpen open) {
   auto turn = std::make_shared<Turn>(principal, std::move(open), now);
   {
     std::lock_guard lock(registryMutex_);
-    if (const std::shared_ptr<Turn> held = standing(turn->id(), now)) {
+    if (const std::optional<TurnAdmission> seen = seenBefore(principal, turn->open(), now)) {
       vendorRounds_.release();
       --live_;
-      if (held->principal().id() != principal.id() || held->open().digest != turn->open().digest) return {nullptr, false, "coach-turn-conflict"};
-      return {held, true, {}};
+      return *seen;
     }
     turns_[turn->id()] = turn;
   }
@@ -242,6 +268,21 @@ std::shared_ptr<Turn> TurnService::find(const TurnPrincipal& principal, const st
   const std::shared_ptr<Turn> held = standing(turnId, clock_.nowMs());
   if (!held || held->principal().id() != principal.id()) return nullptr;
   return held;
+}
+
+std::shared_ptr<Turn> TurnService::stop(const TurnPrincipal& principal, const std::string& turnId) {
+  const std::uint64_t now = clock_.nowMs();
+  std::lock_guard lock(registryMutex_);
+  const std::shared_ptr<Turn> held = standing(turnId, now);
+  if (held && held->principal().id() == principal.id()) {
+    held->requestStop();
+    return held;
+  }
+  std::deque<Tombstone>& left = tombstones_[principal.id()];
+  std::erase_if(left, [&](const Tombstone& tombstone) { return tombstone.turnId == turnId; });
+  left.push_back({turnId, now});
+  if (left.size() > kTombstonesPerPrincipal) left.pop_front();
+  return nullptr;
 }
 
 void TurnService::run(const std::shared_ptr<Turn>& turn) {

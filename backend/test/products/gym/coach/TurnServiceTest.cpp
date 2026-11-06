@@ -6,6 +6,7 @@
 
 #include <trantor/utils/Logger.h>
 
+#include <algorithm>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -54,6 +55,13 @@ TurnOpen openOf(const Json::Value& body) {
   const TurnOpenRead read = readTurnOpen(body);
   if (!read.open) throw std::runtime_error("a scripted open body is out of shape: " + read.code);
   return *read.open;
+}
+
+// The open of one id, a plain question and nothing else.
+TurnOpen openNamed(const std::string& turnId) {
+  Json::Value body = parse(R"({"catalog":"catalog/1","turnId":"","question":"Hi","history":[],"context":[],"pictures":[]})");
+  body["turnId"] = turnId;
+  return openOf(body);
 }
 
 std::string answerName(ResultsAnswer answer) {
@@ -308,14 +316,9 @@ TEST(coach_turn_capacity_is_two_vendor_rounds_and_a_third_open_is_busy) {
   h.model->replies = parse(R"([{"stop_reason":"end_turn","content":[{"type":"text","text":"a"}]},
                                {"stop_reason":"end_turn","content":[{"type":"text","text":"b"}]},
                                {"stop_reason":"end_turn","content":[{"type":"text","text":"c"}]}])");
-  const auto body = [](const char* id) {
-    Json::Value body = parse(R"({"catalog":"catalog/1","turnId":"","question":"Hi","history":[],"context":[],"pictures":[]})");
-    body["turnId"] = id;
-    return openOf(body);
-  };
-  const TurnAdmission first = h.service->open(h.bound(), body("tn_capacity_000001"));
-  const TurnAdmission second = h.service->open(h.bound(), body("tn_capacity_000002"));
-  const TurnAdmission third = h.service->open(h.bound(), body("tn_capacity_000003"));
+  const TurnAdmission first = h.service->open(h.bound(), openNamed("tn_capacity_000001"));
+  const TurnAdmission second = h.service->open(h.bound(), openNamed("tn_capacity_000002"));
+  const TurnAdmission third = h.service->open(h.bound(), openNamed("tn_capacity_000003"));
   REQUIRE(first.turn);
   REQUIRE(second.turn);
   CHECK_FALSE(third.turn);
@@ -329,7 +332,7 @@ TEST(coach_turn_capacity_is_two_vendor_rounds_and_a_third_open_is_busy) {
   REQUIRE(secondStream->waitFor(2));
   CHECK_EQ(std::string(nameOf(first.turn->state())), std::string("completed"));
   CHECK_EQ(std::string(nameOf(second.turn->state())), std::string("completed"));
-  const TurnAdmission fourth = h.service->open(h.bound(), body("tn_capacity_000004"));
+  const TurnAdmission fourth = h.service->open(h.bound(), openNamed("tn_capacity_000004"));
   CHECK(fourth.turn);
   h.service->stop();
 }
@@ -487,10 +490,7 @@ TEST(coach_turn_sweep_reports_a_failed_write_without_its_message_and_goes_on_to_
   endedTurn(h, h.bound(), "tn_sweep_fail_02");
 
   h.clock.now += 10 * 60 * 1000;
-  const std::vector<std::string> lines = writeLinesOf([&] {
-    h.service->sweep();
-    h.service->sweep();
-  });
+  const std::vector<std::string> lines = writeLinesOf([&] { h.service->sweep(); });
 
   CHECK_EQ(h.door.interrupts, (std::vector<std::string>{"44444444-4444-4444-4444-444444444444 tn_sweep_fail_01", "44444444-4444-4444-4444-444444444444 tn_sweep_fail_02"}));
   CHECK_EQ(lines, (std::vector<std::string>{"gym.coach_turn.interrupt gym background failed", "gym.coach_turn.interrupt gym background ok"}));
@@ -499,6 +499,56 @@ TEST(coach_turn_sweep_reports_a_failed_write_without_its_message_and_goes_on_to_
   const std::string opening = "gym:gym.coach_turn.interrupt:door=background outcome=failed request_id=";
   CHECK_EQ(report.substr(0, opening.size()), opening);
   CHECK(report.find("What should I lift") == std::string::npos);
+  h.service->stop();
+}
+
+// A write that failed is tried again at the next sweep, each attempt its own Issue; the third failure
+// drops the turn with a line that says so, and no sweep after it asks the door again.
+TEST(coach_turn_sweep_keeps_a_turn_whose_interrupt_failed_and_drops_it_after_the_third_failure) {
+  LogLines logs;
+  Harness h;
+  h.door.answer = [](const std::string&) -> bool { throw std::runtime_error("What should I lift today?"); };
+  endedTurn(h, h.bound(), "tn_sweep_fail_03");
+
+  h.clock.now += 10 * 60 * 1000;
+  const std::vector<std::string> lines = writeLinesOf([&] {
+    for (int pass = 0; pass < kInterruptAttempts + 1; ++pass) h.service->sweep();
+  });
+  h.service->stop();
+
+  const std::string asked = "44444444-4444-4444-4444-444444444444 tn_sweep_fail_03";
+  CHECK_EQ(h.door.interrupts, (std::vector<std::string>{asked, asked, asked}));
+  const std::string failed = "gym.coach_turn.interrupt gym background failed";
+  CHECK_EQ(lines, (std::vector<std::string>{failed, failed, failed}));
+  CHECK_EQ(h.failures->reports.size(), 3u);
+  std::lock_guard lock(logs.mutex);
+  const std::string abandoned = "coach_turn_interrupt_abandoned turn=tn_sweep_fail_03 attempts=3";
+  CHECK_EQ(std::count_if(logs.lines.begin(), logs.lines.end(),
+                         [&](const std::string& line) { return line.rfind(abandoned, 0) == 0; }), 1);
+}
+
+TEST(coach_turn_sweep_ends_a_message_whose_first_interrupt_failed_on_the_next_pass) {
+  Harness h;
+  bool failing = true;
+  h.door.answer = [&](const std::string&) -> bool {
+    if (failing) throw std::runtime_error("What should I lift today?");
+    return true;
+  };
+  endedTurn(h, h.bound(), "tn_sweep_fail_04");
+
+  h.clock.now += 10 * 60 * 1000;
+  const std::vector<std::string> first = writeLinesOf([&] { h.service->sweep(); });
+  CHECK_EQ(first, std::vector<std::string>{"gym.coach_turn.interrupt gym background failed"});
+
+  failing = false;
+  const std::vector<std::string> then = writeLinesOf([&] {
+    h.service->sweep();
+    h.service->sweep();
+  });
+  CHECK_EQ(then, std::vector<std::string>{"gym.coach_turn.interrupt gym background ok"});
+  const std::string asked = "44444444-4444-4444-4444-444444444444 tn_sweep_fail_04";
+  CHECK_EQ(h.door.interrupts, (std::vector<std::string>{asked, asked}));
+  CHECK_EQ(h.failures->reports.size(), 1u);
   h.service->stop();
 }
 
@@ -521,6 +571,62 @@ TEST(coach_turn_is_dropped_after_its_linger_and_a_resume_then_finds_nothing) {
   const TurnAdmission reopened = h.service->open(h.bound(), open);
   CHECK(reopened.turn);
   CHECK_FALSE(reopened.resumed);
+  h.service->stop();
+}
+
+// §4.5: a Stop for a turn the server never held leaves a tombstone, and every open of that id still on
+// its way is refused before any round while the tombstone stands, since Android sends the same open at
+// each reconnect; another id's tombstone stands, and a resume of a tombstoned id finds nothing, as before.
+TEST(coach_turn_stop_of_an_unseen_id_refuses_every_open_of_it_and_runs_no_round) {
+  Harness h;
+  CHECK_FALSE(h.service->stop(h.bound(), "tn_tomb_other_0001"));
+  CHECK_FALSE(h.service->stop(h.bound(), "tn_tomb_000000001"));
+  CHECK_FALSE(h.service->find(h.bound(), "tn_tomb_000000001"));
+  for (int attempt = 0; attempt < 2; ++attempt) {
+    const TurnAdmission refused = h.service->open(h.bound(), openNamed("tn_tomb_000000001"));
+    REQUIRE(!refused.turn);
+    CHECK_EQ(refused.code, std::string("coach-turn-stopped"));
+  }
+  CHECK_FALSE(h.service->find(h.bound(), "tn_tomb_000000001"));
+  CHECK_EQ(h.model->requests.size(), 0u);
+  CHECK_EQ(h.service->open(h.bound(), openNamed("tn_tomb_other_0001")).code, std::string("coach-turn-stopped"));
+  h.service->stop();
+}
+
+TEST(coach_turn_tombstone_stands_for_the_linger_and_no_longer) {
+  Harness h;
+  CHECK_FALSE(h.service->stop(h.bound(), "tn_tomb_linger_01"));
+  CHECK_FALSE(h.service->stop(h.bound(), "tn_tomb_linger_02"));
+
+  h.clock.now += 10 * 60 * 1000 - 1;
+  h.service->sweep();
+  CHECK_EQ(h.service->open(h.bound(), openNamed("tn_tomb_linger_01")).code, std::string("coach-turn-stopped"));
+
+  h.clock.now += 1;
+  endedTurn(h, h.bound(), "tn_tomb_linger_02");
+  h.service->stop();
+}
+
+TEST(coach_turn_tombstones_per_principal_are_capped_and_the_oldest_goes_first) {
+  Harness h;
+  for (std::size_t n = 0; n <= kTombstonesPerPrincipal; ++n) {
+    h.clock.now += 1;
+    CHECK_FALSE(h.service->stop(h.bound(), "tn_tomb_cap_" + std::to_string(n)));
+  }
+  CHECK_EQ(h.service->open(h.bound(), openNamed("tn_tomb_cap_1")).code, std::string("coach-turn-stopped"));
+  CHECK_EQ(h.service->open(h.bound(), openNamed("tn_tomb_cap_" + std::to_string(kTombstonesPerPrincipal))).code,
+           std::string("coach-turn-stopped"));
+  endedTurn(h, h.bound(), "tn_tomb_cap_0");
+  h.service->stop();
+}
+
+TEST(coach_turn_tombstone_of_one_principal_leaves_another_principals_open_alone) {
+  Harness h;
+  const TurnPrincipal anon = h.anon();
+  CHECK_FALSE(h.service->stop(h.bound(), "tn_tomb_seat_0001"));
+  endedTurn(h, anon, "tn_tomb_seat_0001");
+  CHECK_FALSE(h.service->stop(anon, "tn_tomb_seat_0002"));
+  endedTurn(h, h.bound(), "tn_tomb_seat_0002");
   h.service->stop();
 }
 
@@ -559,6 +665,12 @@ TEST(coach_turn_open_refuses_an_anonymous_seat_without_installations_and_a_retir
   const TurnAdmission anon = lonely.open(h.anon(), openOf(parse(R"({"catalog":"catalog/1","turnId":"tn_anon_000001","question":"Hi"})")));
   CHECK_FALSE(anon.turn);
   CHECK_EQ(anon.code, std::string("anonymous_ai_unavailable"));
+  // Installations exist but signed-out Coach is switched off: the same code, from the installation's admission.
+  const auto off = std::make_shared<AiInstallations>(h.installationRepository, h.budgets, h.tokens, h.clock);
+  TurnService dark(h.model, gymAbilityCatalog(), h.server, h.door, h.entitlements, off, h.clock, 2000, h.failures);
+  const TurnAdmission unplugged = dark.open(h.anon(), openOf(parse(R"({"catalog":"catalog/1","turnId":"tn_anon_000002","question":"Hi"})")));
+  CHECK_FALSE(unplugged.turn);
+  CHECK_EQ(unplugged.code, std::string("anonymous_ai_unavailable"));
 }
 
 TEST(coach_turn_results_are_read_in_shape_and_within_their_byte_bound) {
@@ -684,16 +796,11 @@ TEST(coach_turn_waiting_on_a_phone_holds_no_vendor_slot) {
   h.model->replies = parse(R"([{"stop_reason":"tool_use","content":[{"type":"tool_use","id":"toolu_1","name":"list_routines","input":{}}]},
                                {"stop_reason":"tool_use","content":[{"type":"tool_use","id":"toolu_1","name":"list_routines","input":{}}]},
                                {"stop_reason":"end_turn","content":[{"type":"text","text":"Third."}]}])");
-  const auto body = [](const char* id) {
-    Json::Value body = parse(R"({"catalog":"catalog/1","turnId":"","question":"Hi","history":[],"context":[],"pictures":[]})");
-    body["turnId"] = id;
-    return openOf(body);
-  };
-  const TurnAdmission first = h.service->open(h.bound(), body("tn_waiting_000001"));
-  const TurnAdmission second = h.service->open(h.bound(), body("tn_waiting_000002"));
+  const TurnAdmission first = h.service->open(h.bound(), openNamed("tn_waiting_000001"));
+  const TurnAdmission second = h.service->open(h.bound(), openNamed("tn_waiting_000002"));
   REQUIRE(first.turn);
   REQUIRE(second.turn);
-  CHECK_EQ(h.service->open(h.bound(), body("tn_waiting_000003")).code, std::string("coach-busy"));
+  CHECK_EQ(h.service->open(h.bound(), openNamed("tn_waiting_000003")).code, std::string("coach-busy"));
   auto firstStream = std::make_shared<Recorder>();
   auto secondStream = std::make_shared<Recorder>();
   first.turn->attach(firstStream, false);
@@ -703,7 +810,7 @@ TEST(coach_turn_waiting_on_a_phone_holds_no_vendor_slot) {
   REQUIRE(secondStream->waitFor(1));
   CHECK_EQ(firstStream->snapshot()[0]["event"].asString(), std::string("calls"));
   CHECK_EQ(secondStream->snapshot()[0]["event"].asString(), std::string("calls"));
-  const TurnAdmission third = h.service->open(h.bound(), body("tn_waiting_000003"));
+  const TurnAdmission third = h.service->open(h.bound(), openNamed("tn_waiting_000003"));
   REQUIRE(third.turn);
   auto thirdStream = std::make_shared<Recorder>();
   third.turn->attach(thirdStream, false);

@@ -309,20 +309,24 @@ The model's reasoning and every assistant content block stay on the server.
   - an open is refused, on any attempt, under that refusal;
   - every attempt is lost, under the refusal that says there is no connection, with nothing filed for lost
     network;
-  - an answer the phone cannot read comes back, as a captive portal's page, at once and under the same
-    refusal, with one `decode` report.
+  - a frame the phone cannot read comes back, at once and under the same refusal, with one `decode`
+    report;
+  - every attempt answers a 2xx that is no event stream, as a captive portal's page: each counts as a
+    loss, with nothing filed, and the fifth withdraws under the phone's own `not-a-stream`.
 
   An attempt that was lost or unreadable may have landed, so a turn withdrawn after one tells the server one
   Stop, best effort. Stop before any frame sends no further open, since one could begin what was stopped:
   a reconnect reads instead. A Stop the server heard ends the turn `stopped` through the stream that read
   finds. A Stop it did not hear, lost or refused, withdraws the turn at once, and so does a refused read or
   a fifth loss, under the same no-connection refusal. An open already on its way when that Stop goes out can
-  land after it; that turn runs on the server, unheard, until it ends or a batch goes unanswered for
-  `CALL_RESULT_TIMEOUT`.
+  land after it, and never runs: a Stop for a turn the server does not hold answers `coach-turn-unknown` and
+  leaves a tombstone under its principal for `TURN_LINGER`, and every open of that id meets it while it
+  stands, refused `coach-turn-stopped` before any round.
 
   iOS resumes after any loss and withdraws only on a first attempt's refusal: an open that never landed
   meets `coach-turn-unknown`, and the turn ends `interrupted` with its question on the record. A Stop it
-  cannot deliver ends the turn `stopped`.
+  cannot deliver ends the turn `stopped`. A 2xx that is no event stream is an answer it cannot read: the
+  turn ends at once, with one `decode` report.
 - **Resume.** After a reconnect once a frame has arrived, or a return to the foreground, the phone reads
   the turn stream (§6.1). It starts with a `snapshot` of the text so far, the state and any unanswered batch. At
   engine start, a `running` Coach message the device row `runningTurn` names ends `interrupted`,
@@ -336,7 +340,8 @@ The model's reasoning and every assistant content block stay on the server.
   write that sets only `state` (engine §6.3). A message that already ended stays as it is; a writer's terminal state
   written after beats `interrupted` whatever the stamps, and a later `running` write leaves it standing, its text
   admitted (engine Appendix A). An `anon` turn has no server replica, so nothing is written. A write the engine is too
-  busy for is tried at the next sweep.
+  busy for is tried at the next sweep, and so is one that failed, three sweeps in all; after the third failure the
+  turn goes and the message stays `running` on the account.
 
   A resume once the linger has passed answers `coach-turn-unknown`, and the phone ends the turn `interrupted`. A server
   restart drops every turn with no sweep and no write: a phone still driving its turn resumes and ends it the same way,
@@ -447,7 +452,8 @@ Admission, in order:
    the context reads of §4.1 step 3 (`get_session` only in a catalog/2 turn, of the open workout),
    within `CONTEXT_READ_BYTES`. Otherwise `coach-bad-request`.
 3. **Identity.** An unseen `turnId` opens a turn. A seen `turnId` with the same body digest
-   resumes it. A seen `turnId` with another digest is refused `coach-turn-conflict`.
+   resumes it. A seen `turnId` with another digest is refused `coach-turn-conflict`. A `turnId` a
+   Stop named before the server saw it is refused `coach-turn-stopped` (§4.5).
 4. **Allowance.** Each vendor round reserves USD against the verified principal (§7.1).
 5. **Capacity.** The applicable free pools or funded grant and principal concurrency limit have room (§7.3).
 
@@ -487,27 +493,32 @@ answers `204`. Any other body — including one for a batch that timed out — i
 | `coach-update-required` | The catalog version is retired. |
 | `coach-turn-conflict` | A seen `turnId` with a different body. |
 | `coach-turn-unknown` | No such turn on this server. |
+| `coach-turn-stopped` | The turn's Stop reached the server before its open; nothing ran. |
 | `coach-turn-order` | Results that do not answer the pending batch. |
 | `coach-turn-volume` | An ability call over G-6. |
 | `coach-rate-limited` | The technical burst or concurrency limit is reached; retry later. |
 | `subject_exhausted` | The device/account USD allowance cannot cover this request. Names the end of its period; a lifetime allowance has none. |
 | `invalid_installation` | The installation credential is missing or invalid. |
 | `device_bound` | This installation is permanently associated with an account; sign in. |
+| `anonymous_ai_unavailable` | Signed-out Coach is switched off on this server; sign in. |
 | `free_day_exhausted` | Shared free capacity is unavailable for this UTC day. Names the end of that day. |
 | `free_month_exhausted` | Shared free capacity is unavailable for this UTC month. Names the end of that month. |
 | `concurrency_exhausted` | The principal already has its permitted number of unresolved calls. |
 | `funding_required` | One access has no active funded allowance period. |
 | `debt_outstanding` | An unresolved unfunded accounting overrun blocks further admission. |
 | `coach-replica-syncing` | Local only: the replica's history is still arriving. |
+| `not-a-stream` | Local only, Android: every reconnect answered a 2xx that was no event stream, a captive portal's page. |
 | `coach-busy` | The process is at capacity or its cost fuse is open. |
 | `coach-vendor-error` | The vendor failed. |
 | `coach-stream-replaced` | Another stream took over this turn; sent as the closing `error` of the stream it replaced. |
 
 The allowance codes are `subject_exhausted`, `free_day_exhausted`, `free_month_exhausted`,
 `concurrency_exhausted`, `funding_required` and `debt_outstanding`. Before the stream each answers
-`429`: an expected refusal, never a failure of the server. `coach-busy` and `coach-vendor-error` answer
-`503`. The moment a code names is `budgetResetsAtMs`, read from the refusal's `allowance` before the
-stream, where it is null if the code names none, and from the `error` event after it, which omits it then.
+`429`: an expected refusal, never a failure of the server. `coach-busy`, `coach-vendor-error` and
+`anonymous_ai_unavailable` answer `503`, the last a refusal the server means: signed-out Coach is off.
+`coach-turn-stopped` answers `409`, a refusal the server means as well. The moment a code names is
+`budgetResetsAtMs`, read from the refusal's `allowance` before the stream, where it is null if the code
+names none, and from the `error` event after it, which omits it then.
 An `error` event with an allowance code carries `allowance` in the shared USD read contract when the
 seat's allowance could be read; its `code` is the read's own, which can be `ok` on a positive balance
 the round did not fit.

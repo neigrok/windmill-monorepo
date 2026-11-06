@@ -39,11 +39,17 @@ struct ApiHarness {
   std::shared_ptr<Entitlements> entitlements = std::make_shared<Entitlements>(h.subscriptions, h.usage);
   std::shared_ptr<AiInstallationApi> installations = std::make_shared<AiInstallationApi>(
       h.installations, auth, entitlements, h.failures, AiInstallationProxy::Direct);
-  TurnApi api{h.service, installations, h.failures};
+  // The service the routes serve: the harness's, or one with no installations where no USD allowances exist.
+  std::shared_ptr<TurnService> turns;
+  TurnApi api{turns, installations, h.failures};
   std::string credential;
   const UserId account{"44444444-4444-4444-4444-444444444444"};
 
-  explicit ApiHarness(bool durableAllowances = false) : h(durableAllowances) {
+  explicit ApiHarness(bool durableAllowances = false, bool anonymousCoach = true)
+      : h(durableAllowances),
+        turns(anonymousCoach ? h.service
+                             : std::make_shared<TurnService>(h.model, gymAbilityCatalog(), h.server, h.door, h.entitlements, nullptr,
+                                                             h.clock, 2000, h.failures)) {
     const User user{account, Email{"lifter@example.test"}, "Lifter", {}};
     accounts.usersById[account.str()] = user;
     accounts.insertSession(authTokens.digestOf("s-live"), account, h.clock.now + 1'000'000, "", "", h.clock.now);
@@ -51,6 +57,7 @@ struct ApiHarness {
   }
 
   ~ApiHarness() {
+    turns->stop();
     h.service->stop();
     api.shutdown();
   }
@@ -184,8 +191,22 @@ TEST(gym_turn_routes_refuse_before_the_stream_with_a_status_and_a_code) {
            "404 coach-turn-unknown" + sentence);
   CHECK_EQ(refusalOf(a.stop(ApiHarness::request("POST", "/v1/gym/coach/turns/tn_api_0000009/stop", parse("{}"), {"Cookie: wm_session=s-live"}), "tn_api_0000009")),
            "404 coach-turn-unknown" + sentence);
+  CHECK_EQ(refusalOf(a.open(ApiHarness::request("POST", "/v1/gym/coach/turns", openBody("tn_api_0000009"), {"Cookie: wm_session=s-live"}))),
+           "409 coach-turn-stopped" + sentence);
   CHECK_EQ(refusalOf(a.resume(ApiHarness::request("GET", "/v1/gym/coach/turns/tn_api_0000009", Json::Value(), {"X-Windmill-Installation: " + a.credential}), "tn_api_0000009")),
            "404 coach-turn-unknown" + sentence);
+}
+
+// A signed-out open where this deployment has no anonymous Coach answers 503 `anonymous_ai_unavailable`,
+// a refusal the server means: logged as its code, never an Issue.
+TEST(gym_turn_route_answers_a_signed_out_open_503_anonymous_ai_unavailable_where_the_server_has_none) {
+  WriteWatch watch;
+  ApiHarness a(false, false);
+  const drogon::HttpResponsePtr response = a.openObserved(
+      ApiHarness::request("POST", "/v1/gym/coach/turns", openBody("tn_api_0000010"), {"X-Windmill-Installation: " + a.credential}));
+  CHECK_EQ(refusalOf(response), std::string("503 anonymous_ai_unavailable | Coach could not take this message."));
+  CHECK(watch.outcomes == std::vector<std::string>{"anonymous_ai_unavailable"});
+  CHECK(watch.issues.empty());
 }
 
 TEST(gym_turn_route_binds_a_session_and_a_bound_installation_must_sign_in) {

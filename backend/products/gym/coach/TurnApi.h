@@ -28,7 +28,8 @@ namespace wm::gym::coach {
 using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 
 // The HTTP status a §6.5 code answers with before the stream starts: 429 for every allowance code,
-// which is an expected refusal and never a failure of the server.
+// which is an expected refusal and never a failure of the server; 409 for `coach-turn-stopped` and
+// 503 for `anonymous_ai_unavailable`, refusals the server means as much as any of them.
 drogon::HttpStatusCode statusOf(const std::string& code);
 
 class TurnApi {
