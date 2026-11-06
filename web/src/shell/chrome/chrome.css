@@ -136,6 +136,70 @@ a.wm-switch-btn:hover {
   display: none;
 }
 
+@media (min-width: 744px) {
+  .wm-head {
+    display: flex;
+    gap: 16px;
+  }
+
+  .wm-head-mark {
+    display: none;
+  }
+
+  .wm-switch {
+    flex: none;
+    gap: 16px;
+    margin-right: auto;
+  }
+
+  .wm-switch-btn {
+    display: inline-grid;
+    place-items: center;
+    min-width: 44px;
+    height: 44px;
+    padding-inline: 4px;
+    font-size: 12px;
+    line-height: 18px;
+    font-weight: 400;
+  }
+
+  .wm-switch-btn > span,
+  .wm-switch-btn::after {
+    grid-area: 1 / 1;
+  }
+
+  .wm-switch-btn::after {
+    content: attr(data-label);
+    visibility: hidden;
+    font-weight: 700;
+  }
+
+  .wm-switch-btn[aria-current='page'] {
+    background: transparent;
+  }
+
+  .wm-room-status {
+    flex: none;
+    width: auto;
+    margin-right: 0;
+  }
+
+  .wm-head-seat {
+    flex: none;
+  }
+
+  .wm-head-seat > div > button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .wm-head-seat > div > button > span {
+    width: 30px;
+    height: 30px;
+    margin: auto;
+  }
+}
+
 @media (max-width: 743px) {
   .wm-head.wm-head--shared {
     grid-template-columns: minmax(0, 1fr) auto;

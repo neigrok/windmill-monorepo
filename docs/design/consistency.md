@@ -567,10 +567,10 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
 - **Board · a failed Copy link says nothing.** When the browser refuses the clipboard write from the step menu (01.09, 03.02) the
   build shows nothing. Proposed, awaiting the owner: toast *Couldn't copy the link* · **Show link**, then the link selected with
   **Retry** (phone 25.01–25.02, desktop 15.01–15.02).
-- **Board · Shell at 200% text.** The Shell defines no reflow: `web/src/shell/chrome/chrome.css` keeps room-switcher pills at a
-  fixed 30px height with `white-space: nowrap` and 32px grid gutters, and the 18.05 specimen (380:18803) leaves the Shell out.
-  Proposed, awaiting the owner: the pills fold into one current-room menu by em width (phone 25.23–25.24). The Shell owner draws it
-  in the Shell file and builds it.
+- **Board · Shell at 200% text.** The Shell defines no reflow: from 744px `web/src/shell/chrome/chrome.css` keeps room links in
+  one row of 44px-high targets with no fill, bold-width reservation and `white-space: nowrap`. Phone geometry is unchanged,
+  and the 18.05 specimen (380:18803) leaves the Shell out. Proposed, awaiting the owner: the links fold into one current-room
+  menu by em width (phone 25.23–25.24). The Shell owner draws it in the Shell file and builds it.
 - **Board · Roadmap complete for a reader.** The Board shows a reader the title alone, plus the crown and a secondary Fork offer on
   phones. Proposed, awaiting the owner: *All 8 steps done* / *Fork it to walk these steps yourself.*, with Fork primary on phones
   (25.03, 15.03).
@@ -661,12 +661,10 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
 - **Graph · ticker over the selection bar.** Web 16's ticker and the selection bar share the bottom of the canvas with no drawn
   stacking. A rename on the dock followed by a selection inside the ticker's 4.5 seconds lays the ticker across the bar; presses pass
   through it to the bar. Draw where the ticker stands while a selection bar is up.
-- **Board · Shell from 744.** Every role's frames from 744 ([04.02](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=376-12955),
-  [04.06](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=376-12775), 04.09 · 744) draw the Shared Shell's
-  room links from the left edge, with no mark and no fill on the active room. The built head keeps the mark, fills the
-  active room and centres the links beside the mark and seat, so a room registered for status holds them further left
-  than a reader's or the demo's. Journal, gym and Home share that head. Rule whether roadmap takes the drawn head from
-  744 alone. Phones already wear it in every roadmap room; journal, gym and Home keep the mark there.
+- **Shell · avatar visual.** From 744px the existing 30px avatar sits inside a 44px target; 16.01 and 16.02 draw a 28px visual.
+- **Shell · signed-out Appearance.** Home, journal and gym keep the ghost avatar's Appearance (Light, Dark, System), Sign in
+  and Settings popover at every width. Shared or status rooms keep their Sign in text seat; a signed-out roadmap visitor
+  reaches Appearance through Home's avatar.
 - **Demo · coach card on a phone.** [P4](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=64-2) draws the
   card beside its step with an arrow. At phone width neither side fits, so the card seats under its step, or over it
   near the bottom and clear of the Fork pill and selected-step bar, with no arrow. Draw the phone seat.
