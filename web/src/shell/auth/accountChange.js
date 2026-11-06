@@ -2,10 +2,15 @@
 // account matches the cached hint. A lapse retains that account's device work until sign-in;
 // explicit sign-out or a different account makes every product forget its device residue.
 
-import { PRODUCTS } from '../products.js';
+export function restoredDeviceHolder(engine) {
+  const meta = engine?.device?.meta;
+  if (!engine || engine.closed || engine.signingOut || meta?.signOut || meta?.deviceCleanup || meta?.clearCredential || meta?.closingAccount) return null;
+  const replica = engine.device?.activeReplica?.meta;
+  return replica?.state === 'bound' ? replica.account : null;
+}
 
 export class DeviceSeat {
-  constructor(products = PRODUCTS) {
+  constructor(products) {
     this.account = null;
     this.previousAccount = null;
     this.lapsed = false;
@@ -14,9 +19,9 @@ export class DeviceSeat {
   }
 
   // The durable bound replica remembers the holder, without granting session authority.
-  restoreHolder(meta) {
+  restoreHolder(engine) {
     if (this.confirmed) return;
-    this.previousAccount = meta.state === 'bound' ? meta.account : null;
+    this.previousAccount = restoredDeviceHolder(engine);
   }
 
   async finishDeviceCleanup(change) {

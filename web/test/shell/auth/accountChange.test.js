@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { DeviceSeat } from '../../../src/shell/auth/accountChange.js';
+import { DeviceSeat, restoredDeviceHolder } from '../../../src/shell/auth/accountChange.js';
 
 const A = { id: 'u_A', email: 'a@example.com' };
 const B = { id: 'u_B', email: 'b@example.com' };
@@ -166,14 +166,29 @@ test('explicit sign-out after a lapse clears the remembered account and forgets 
 test('restoring the durable holder grants no session authority and cannot replace a confirmed answer', () => {
   const roadmap = recorder('roadmap');
   const seat = new DeviceSeat([roadmap.product]);
-  seat.restoreHolder({ state: 'bound', account: A.id });
+  seat.restoreHolder({ device: { meta: {}, activeReplica: { meta: { state: 'bound', account: A.id } } } });
   assert.deepEqual({ previous: seat.previousAccount, account: seat.account, confirmed: seat.confirmed, lapsed: seat.lapsed },
     { previous: A.id, account: null, confirmed: false, lapsed: false });
   assert.deepEqual(seat.receive(undefined), { status: 'ghost', user: null, account: null, confirmed: false });
   assert.deepEqual(roadmap.calls, []);
   seat.receive(A);
-  seat.restoreHolder({ state: 'bound', account: B.id });
+  seat.restoreHolder({ device: { meta: {}, activeReplica: { meta: { state: 'bound', account: B.id } } } });
   assert.equal(seat.previousAccount, A.id);
   assert.equal(seat.account, A);
   assert.deepEqual(roadmap.calls, []);
 });
+
+for (const guard of ['none', 'anon', 'dormant', 'closed', 'signingOut', 'signOut', 'deviceCleanup', 'clearCredential', 'closingAccount']) {
+  test(`the shell's restored-holder rule excludes ${guard} from device authority`, () => {
+    let engine = { device: { meta: {}, activeReplica: { meta: { state: 'bound', account: A.id } } } };
+    if (guard === 'none') engine = null;
+    else if (guard === 'anon' || guard === 'dormant') engine.device.activeReplica.meta.state = guard;
+    else if (guard === 'closed' || guard === 'signingOut') engine[guard] = true;
+    else engine.device.meta[guard] = { account: A.id };
+    const seat = new DeviceSeat([]);
+    seat.restoreHolder(engine);
+    assert.equal(restoredDeviceHolder(engine), null);
+    assert.deepEqual({ previous: seat.previousAccount, account: seat.account, confirmed: seat.confirmed, lapsed: seat.lapsed },
+      { previous: null, account: null, confirmed: false, lapsed: false });
+  });
+}

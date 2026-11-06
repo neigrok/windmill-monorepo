@@ -7,6 +7,11 @@ underscores because `/v1/events` accepts snake_case names. Each engine instance 
 injected limits are capped at 100. No raw exception, stack, body, field value, ID, scope reference,
 account, email or token is forwarded.
 
+The beacon keeps up to 200 newest queued events in memory while the browser is offline and flushes
+them on reconnect in batches of at most 50. It adds no content or properties and stores no queue on
+disk, keeping best-effort delivery independent of browser storage and leaving no behavioral history on a
+possibly shared device. Reloading loses that queue; failed attempted sends remain fire-and-forget.
+
 Only a deployed build reports as `environment: production`. `scripts/test.mjs` drops the build's DSN, so a test run never reaches
 Sentry, though a branch that predates that rule can still report from CI as `development`: read production's failures under
 `environment:production`.
@@ -49,7 +54,10 @@ one that reopens the same account. Closure refuses an unavailable session identi
 The device holder restored after a lapse uses the bound replica’s existing durable account metadata; it is
 not an authentication answer or an event property. Sign-in recovery uses the existing sync transition
 events. Pending product cleanup is recorded with the replica transition and retried after reload; a failure
-reports `auth-session` and retains the cleanup marker. Automatic retries compare the account with the owner
+reports `auth-session` and retains the cleanup marker. A different confirmed account synchronously replaces
+the previous holder's room with the shell's loading state until cleanup and binding complete. A failure keeps
+the room blocked and uses the existing auth-session failure report and sync transition events.
+Automatic retries compare the account with the owner
 the read actually used, so ordinary signed-in cold loads do not repeat a read or its failure report. An
 expected unavailable tree or offline transport failure is not a Sentry Issue.
 Offline copy identifies the REST features that need a connection.
@@ -66,7 +74,8 @@ the current address: `/`, `/app`, `/app/roadmap`, `/app/gym`, `/app/journal`, `/
 classes and thrown non-errors. No exception message, stack, identifier, token, date or query enters the
 event. The same failure reports to Sentry under the static message `client-error`, with `kind` as its
 type and tag, `failure_kind` as a tag, `route` as its request URL, and its stack frames (file, line,
-column and function name only). The exception message reaches neither: the stack's head line, where V8
+column and function name only), parsing both V8's `at fn (url:line:col)` and Safari/Firefox's
+`fn@url:line:col`. The exception message reaches neither: the stack's head line, where V8
 repeats it, is cut before the frames are read, frames are only the last unbroken run of frame lines,
 and share addresses, `token=` and `code=` values are struck out of them. A rejected non-error has no
 frames. A failed paste shape adds the Sentry tags `reason` (`unavailable`, `unreachable`, `failed`,
@@ -273,7 +282,7 @@ function. A report's `route` is a family (`#/app`, `#/settings`), never an addre
 | `roadmap-switcher-rename` | The switcher's rename: a server failure, a request lost while visible and online, or an exception | The old name returns |
 | `roadmap-switcher-delete` | The switcher's delete: a server failure, a request lost while visible and online, or an exception | The row stays |
 | `roadmap-plant` | Planting a roadmap, blank, pasted or from a quest: a server failure, a request lost while visible and online, or an exception | The door's own error, or a device roadmap when the server can't be reached |
-| `roadmap-tend` | Ask AI's reads and its send: a server failure, a request lost while visible and online, or a 200 that is not JSON | Ask AI's `failed` answer |
+| `roadmap-tend` | Ask AI's reads and its send: a server failure, a request lost while visible and online, or a 200 that is not JSON | Ask AI's `failed` answer; the bar reopens with its sentence unless explicitly dismissed during the run, and announces the same failure copy when opened |
 | `roadmap-sync-notify` | Notifying after a local write, a server frame, an epoch change or a discard projection | The write's receipt stays |
 | `roadmap-sync-persist` | Storing a local write or mark on a database that opened | The receipt stays; durability is at risk |
 | `roadmap-sync-send` | Sending a local write, including the IndexedDB epoch check on a database that opened | The pending bank stays and the refused card says so; durability is at risk |

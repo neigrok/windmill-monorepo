@@ -3,6 +3,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Icon } from '../../../../design-system/Icon.jsx';
 import { KIND_CSS, NODE_COLOR_NAMES } from '../../theme.js';
+import { RECOLOR } from '../../copy.js';
 import { hueName, kindName } from '../../model/Legend.js';
 
 
@@ -199,7 +200,7 @@ export function KindLegend({
               <Swatch
                 type={Swatch === 'button' ? 'button' : undefined}
                 role={Swatch === 'span' ? 'img' : undefined}
-                aria-label={onRecolor ? `Recolour ${kindName(k)}` : kindName(k)}
+                aria-label={onRecolor ? RECOLOR.kind(kindName(k)) : kindName(k)}
                 onClick={onRecolor ? (e) => { e.stopPropagation(); setSwatchId((id) => (id === k.id ? null : k.id)); } : undefined}
                 style={{
                   display: 'block',

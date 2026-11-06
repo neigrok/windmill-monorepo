@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { coverBeneath } from '../../../../src/products/roadmap/step/composerFocus.js';
+import { coverBeneath, coverLayer } from '../../../../src/products/roadmap/step/composerFocus.js';
 
 for (const lowerFirst of [true, false]) {
   test(`layer coverage restores prior inert state after ${lowerFirst ? 'lower' : 'upper'} owner leaves first`, (t) => {
@@ -41,3 +41,23 @@ for (const lowerFirst of [true, false]) {
     assert.deepEqual(observers.map((observer) => observer.connected), [false, false]);
   });
 }
+
+for (const hiddenFirst of [true, false]) {
+  test(`a hidden view stays inert when ${hiddenFirst ? 'its own' : 'a covering'} owner leaves first`, () => {
+    const layer = { inert: false };
+    const hidden = coverLayer(layer);
+    const modal = coverLayer(layer);
+    assert.equal(layer.inert, true);
+    (hiddenFirst ? hidden : modal)();
+    assert.equal(layer.inert, true);
+    (hiddenFirst ? modal : hidden)();
+    assert.equal(layer.inert, false);
+  });
+}
+
+test('explicit hidden-layer coverage preserves an already inert layer', () => {
+  const layer = { inert: true };
+  const uncover = coverLayer(layer);
+  uncover();
+  assert.equal(layer.inert, true);
+});
