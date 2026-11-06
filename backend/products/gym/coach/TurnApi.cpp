@@ -23,8 +23,12 @@ drogon::HttpResponsePtr privateResponse(const drogon::HttpResponsePtr& response)
   return response;
 }
 
-drogon::HttpResponsePtr refusal(const std::string& code) {
-  return privateResponse(error(statusOf(code), "Coach could not take this message.", code.c_str()));
+drogon::HttpResponsePtr refusal(const std::string& code, const Json::Value& allowance = Json::Value()) {
+  Json::Value body(Json::objectValue);
+  body["error"] = "Coach could not take this message.";
+  body["code"] = code;
+  if (allowance.isObject()) body["allowance"] = allowance;
+  return privateResponse(jsonResponse(body, statusOf(code)));
 }
 
 std::string frame(const std::string& event, const Json::Value& data) {
@@ -108,9 +112,12 @@ drogon::HttpStatusCode statusOf(const std::string& code) {
   if (code == "coach-bad-request" || code == "invalid_network") return drogon::k400BadRequest;
   if (code == "unauthenticated" || code == "invalid_installation") return drogon::k401Unauthorized;
   if (code == "coach-turn-unknown") return drogon::k404NotFound;
-  if (code == "coach-turn-conflict" || code == "coach-turn-order" || code == "device_bound") return drogon::k409Conflict;
+  if (code == "coach-turn-conflict" || code == "coach-turn-order" || code == "coach-turn-stopped" || code == "device_bound")
+    return drogon::k409Conflict;
   if (code == "coach-update-required") return drogon::k426UpgradeRequired;
-  if (code == "coach-rate-limited" || code == "subject_exhausted") return drogon::k429TooManyRequests;
+  if (code == "coach-rate-limited" || code == "subject_exhausted" || code == "free_day_exhausted" ||
+      code == "free_month_exhausted" || code == "concurrency_exhausted" || code == "funding_required" ||
+      code == "debt_outstanding") return drogon::k429TooManyRequests;
   return drogon::k503ServiceUnavailable;
 }
 
@@ -185,7 +192,7 @@ void TurnApi::open(const drogon::HttpRequestPtr& request, HttpCallback&& reply) 
     TurnOpenRead read = body ? readTurnOpen(*body) : TurnOpenRead{std::nullopt, "coach-bad-request"};
     if (!read.open) { reply(refusal(read.code)); return; }
     const TurnAdmission admission = turns_->open(*access.principal, std::move(*read.open));
-    if (!admission.turn) { reply(refusal(admission.code)); return; }
+    if (!admission.turn) { reply(refusal(admission.code, admission.allowance)); return; }
     stream(request, std::move(reply), admission.turn, admission.resumed);
   });
 }
@@ -238,9 +245,8 @@ void TurnApi::stop(const drogon::HttpRequestPtr& request, HttpCallback&& reply, 
   onWorker(request, std::move(reply), [this, request, turnId](HttpCallback&& reply) {
     const Access access = principalOf(request);
     if (!access.principal) { reply(refusal(access.refusal)); return; }
-    const std::shared_ptr<Turn> turn = turns_->find(*access.principal, turnId);
+    const std::shared_ptr<Turn> turn = turns_->stop(*access.principal, turnId);
     if (!turn) { reply(refusal("coach-turn-unknown")); return; }
-    turn->requestStop();
     Json::Value out(Json::objectValue);
     out["state"] = std::string(nameOf(turn->state()));
     reply(privateResponse(jsonResponse(out, drogon::k202Accepted)));

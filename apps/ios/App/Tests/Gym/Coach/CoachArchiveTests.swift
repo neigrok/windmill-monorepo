@@ -1,4 +1,6 @@
+import DomainKitTesting
 import Foundation
+import GymDomain
 import Testing
 import UIKit
 @testable import Windmill
@@ -89,6 +91,129 @@ extension CoachTests {
     #expect(!coach.fresh(door: "tab") && !coach.open("anything"))
     try FileManager.default.removeItem(at: cache.file(owner)); coach.reloadDraft()
     #expect(coach.draftReadable && coach.canCompose && coach.error == nil)
+  }
+
+  // Another phone's conversation has nothing of this phone's beside it: opening it makes its entry, so the selection names
+  // one, and New chat and every later read go on. Reading it gives the entry no date of its own.
+  @Test func openingAnotherPhonesConversationSelectsAnEntryAndNewChatGoesOn() async throws {
+    let (gym, _, _) = try await authed(.stalled), cache = store()
+    defer { try? FileManager.default.removeItem(at: cache.directory) }
+    let coach = CoachConversation(gym: gym, store: cache)
+    await coach.activate()
+    let owner = try #require(coach.owner)
+    let turn = try #require(committed(try gym.runner.run(OpenTurn(question: "Started on the other phone"))))
+    let id = turn.thread.description
+    #expect(try cache.archive(owner).entries.isEmpty)
+
+    #expect(coach.open(id))
+    #expect(coach.saved.threadId == id && coach.saved.conversation == id && coach.saved.text.isEmpty && coach.error == nil)
+    var archive = try cache.archive(owner)
+    #expect(archive.selected == id)
+    #expect(archive.entries.map { [$0.id, $0.saved.conversation ?? "none", $0.saved.text, String($0.updatedAt)] } == [[id, id, "", "0"]])
+
+    let relaunched = CoachConversation(gym: gym, store: cache)
+    await relaunched.activate()
+    #expect(relaunched.draftReadable && relaunched.error == nil && relaunched.saved.conversation == id)
+
+    #expect(coach.fresh(door: "history"))
+    #expect(coach.saved.threadId != id && coach.saved.conversation == nil && coach.draftReadable && coach.error == nil)
+    archive = try cache.archive(owner)
+    #expect(archive.selected == nil)
+    #expect(archive.entries.map { [$0.id, $0.saved.conversation ?? "none", $0.saved.text, String($0.updatedAt)] } == [[id, id, "", "0"]])
+
+    coach.edit("The next question")
+    archive = try cache.archive(owner)
+    #expect(archive.selected == coach.saved.threadId)
+    #expect(archive.entries.map(\.id) == [coach.saved.threadId, id])
+  }
+
+  // A conversation the engine holds nothing of and this phone keeps nothing of has no entry to select.
+  @Test func openingAnIdNothingHoldsSelectsNothing() async throws {
+    let (gym, _, _) = try await authed(.stalled), cache = store()
+    defer { try? FileManager.default.removeItem(at: cache.directory) }
+    let coach = CoachConversation(gym: gym, store: cache)
+    await coach.activate()
+    let owner = try #require(coach.owner)
+
+    #expect(coach.open("nothing-holds-this"))
+
+    let archive = try cache.archive(owner)
+    #expect(archive.selected == nil && archive.entries.isEmpty)
+    #expect(coach.saved.threadId == "nothing-holds-this" && coach.saved.conversation == nil)
+  }
+
+  @Test func theArchiveSelectsOnlyAnEntry() {
+    var archive = CoachArchive(), saved = CoachSaved()
+    saved.threadId = "kept"; saved.text = "A draft"
+    archive.put(saved, select: false, at: 100)
+    archive.select("no-such-entry")
+    #expect(archive.selected == nil)
+    archive.select("kept")
+    #expect(archive.selected == "kept")
+    archive.select("no-such-entry")
+    #expect(archive.selected == nil)
+  }
+
+  // The file a phone holds when it selected a conversation with no entry. It reads as nothing selected, the file stays
+  // byte for byte until the next write, and that write keeps all it holds.
+  @Test func aSelectionNamingNoEntryReadsAsNothingSelectedAndTheFileStandsUntilTheNextWrite() async throws {
+    let (gym, _, _) = try await authed(.stalled), cache = store()
+    defer { try? FileManager.default.removeItem(at: cache.directory) }
+    let owner = try #require(gym.account)
+    let bytes = Data(#"{"version":1,"selected":"from-the-other-phone","shared":{"threadId":"shared-id","acceptedFirstMessage":true,"adoptedSources":["anonymous:phone"],"rejectedDrafts":["declined"],"setupChoice":"describe","text":""},"entries":[{"updatedAt":200,"saved":{"threadId":"local-draft","text":"Kept draft"}},{"updatedAt":100,"saved":{"threadId":"my-thread","conversation":"my-thread","acceptedFirstMessage":true,"text":""}}]}"#.utf8)
+    try FileManager.default.createDirectory(at: cache.directory, withIntermediateDirectories: true)
+    try bytes.write(to: cache.file(owner))
+
+    let archive = try cache.archive(owner)
+    #expect(archive.selected == nil)
+    #expect(archive.version == 1)
+    #expect(archive.entries.map { [$0.id, $0.saved.conversation ?? "none", $0.saved.text, String($0.updatedAt)] } == [["local-draft", "none", "Kept draft", "200"], ["my-thread", "my-thread", "", "100"]])
+    #expect(archive.shared.threadId == "shared-id" && archive.shared.acceptedFirstMessage == true && archive.shared.adoptedSources == ["anonymous:phone"])
+    #expect(archive.shared.rejectedDrafts == ["declined"] && archive.shared.setupChoice == .describe)
+    var read = try cache.read(owner), carried = archive.shared.carried
+    read.threadId = "same"; carried.threadId = "same"
+    #expect(read == carried)
+    #expect(try Data(contentsOf: cache.file(owner)) == bytes)
+
+    let coach = CoachConversation(gym: gym, store: cache)
+    await coach.activate()
+    #expect(coach.draftReadable && coach.canCompose && coach.error == nil && coach.saved.conversation == nil)
+    #expect(try Data(contentsOf: cache.file(owner)) == bytes)
+
+    #expect(coach.fresh(door: "history"))
+    var written = try cache.archive(owner)
+    #expect(written.selected == nil)
+    #expect(written.entries.map { [$0.id, $0.saved.conversation ?? "none", $0.saved.text, String($0.updatedAt)] } == [["local-draft", "none", "Kept draft", "200"], ["my-thread", "my-thread", "", "100"]])
+    #expect(written.shared.threadId == "shared-id" && written.shared.acceptedFirstMessage == true && written.shared.adoptedSources == ["anonymous:phone"])
+    #expect(written.shared.rejectedDrafts == ["declined"] && written.shared.setupChoice == .describe)
+
+    coach.edit("The next question")
+    written = try cache.archive(owner)
+    #expect(written.selected == coach.saved.threadId)
+    #expect(Set(written.entries.map(\.id)) == ["local-draft", "my-thread", coach.saved.threadId])
+    #expect(written.conversation("local-draft").text == "Kept draft" && written.conversation("my-thread").conversation == "my-thread")
+    #expect(written.shared.threadId == "shared-id" && written.shared.setupChoice == .describe)
+  }
+
+  // Only the selection recovers: every other malformed file is refused as it was, and stays as it is.
+  @Test func everyOtherMalformedArchiveIsRefusedAndLeftAlone() throws {
+    let cache = store()
+    defer { try? FileManager.default.removeItem(at: cache.directory) }
+    try FileManager.default.createDirectory(at: cache.directory, withIntermediateDirectories: true)
+    let files = [
+      #"{"version":2,"selected":"gone","shared":{"threadId":"s","text":""},"entries":[]}"#,
+      #"{"version":1,"shared":{"threadId":"s","text":""},"entries":[{"updatedAt":1,"saved":{"threadId":"twice","text":"a"}},{"updatedAt":2,"saved":{"threadId":"twice","text":"b"}}]}"#,
+      #"{"version":1,"selected":"gone","shared":{"threadId":"s","text":""},"entries":[{"updatedAt":1,"saved":{"threadId":"twice","text":"a"}},{"updatedAt":2,"saved":{"threadId":"twice","text":"b"}}]}"#,
+      #"{"version":1,"selected":"gone","shared":{"threadId":"s","text":""},"entries":[{"saved":{"threadId":"undated","text":"a"}}]}"#,
+      #"{"version":1,"selected":7,"shared":{"threadId":"s","text":""},"entries":[]}"#,
+      "corrupt"
+    ]
+    for file in files {
+      let bytes = Data(file.utf8)
+      try bytes.write(to: cache.file("owner"))
+      #expect(throws: (any Error).self) { try cache.archive("owner") }
+      #expect(try Data(contentsOf: cache.file("owner")) == bytes)
+    }
   }
 
   @Test func keepingOrOpeningAnUnchangedConversationDoesNotMoveItsHistoryDate() throws {

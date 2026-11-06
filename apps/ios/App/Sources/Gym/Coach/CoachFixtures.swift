@@ -198,8 +198,8 @@ enum CoachFixture {
           CoachOnboardingOut.Routine.Entry(exerciseId: exercise, sets: Array(repeating: .init(reps: exercise == "chin-up" ? 8 : 5, weightKg: nil), count: 3), restSeconds: 120)
         })
     }
-    let allowance = AiAllowance(code: "ok", currency: "USD", period: "lifetime", tier: "anonymous", configured: true, limit: "0.050000000",
-                                used: "0.001000000", reserved: "0.000000000", remaining: "0.049000000", resetsAtMs: nil, budgetResetsAtMs: nil)
+    let allowance = AiAllowance(code: "ok", currency: "USD", period: "lifetime", tier: "anonymous", configured: true, limit: "0.250000000",
+                                used: "0.001000000", reserved: "0.000000000", remaining: "0.249000000", resetsAtMs: nil, budgetResetsAtMs: nil)
     var response = CoachOnboardingOut(requestId: "setup-request", resultId: "setup-operation", status: "completed", expiresAtMs: 1_900_000_000_000,
                                       routines: routines, errorCode: nil, allowance: allowance)
     response.message = draftNames.count == 1 ? "Here is 1 new routine. Check it, then apply."
@@ -325,7 +325,7 @@ nonisolated final class CoachFixtureProtocol: URLProtocol, @unchecked Sendable {
     let arguments = ProcessInfo.processInfo.arguments
     if path.hasPrefix("/v1/ai/installations") {
       let allowance: [String: Any] = ["code": "ok", "currency": "USD", "period": "lifetime", "tier": "anonymous", "configured": true,
-        "limit": "0.050000000", "used": "0.001000000", "reserved": "0.000000000", "remaining": "0.049000000", "resetsAtMs": NSNull(), "budgetResetsAtMs": NSNull()]
+        "limit": "0.250000000", "used": "0.001000000", "reserved": "0.000000000", "remaining": "0.249000000", "resetsAtMs": NSNull(), "budgetResetsAtMs": NSNull()]
       var response: [String: Any] = ["bound": path.hasSuffix("/bind"), "allowance": allowance]
       if path == "/v1/ai/installations" { response["credential"] = String(repeating: "a", count: 43) }
       respond(200, response); return

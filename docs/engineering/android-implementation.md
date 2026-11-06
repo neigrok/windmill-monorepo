@@ -751,36 +751,14 @@ private fixture file and owned emulator/listeners. There is no performance compa
 
 ## Task 37 · Coach archive, History and sources
 
-The existing atomic Coach document retains owner-scoped local chat identities, selected chat,
-text/photo drafts, turns, request identities, confirmations and scroll position. The application
-scope owns requests and confirmed deletion. Fresh entry creates a new identity; History and
-recreation restore the selected identity. Signed-out History reads only the stable anonymous
-owner, with no server History call or silent archive adoption. Activity saved state carries no
-Coach message tail.
+The atomic Coach document (`LocalCoach`) retains owner-scoped chat identities, the selected chat, text/photo drafts and
+scroll position; the messages are engine records. Fresh entry creates a new identity; History and recreation restore the
+selected identity. A chat takes its thread when its first turn opens. Activity saved state carries no Coach message tail.
+Photo bytes and their draft reference publish under the existing LocalCoach lock; deletion versions prevent late imports
+recreating a chat. Cleanup keeps every photo a retained draft references.
 
-Each admitted request has one runtime identity. Snapshot publication, Stop, pending retirement
-and final cleanup check that attempt, including retries with the same request id. Its critical
-section contains synchronous local mutations and retirement only. Cancelled uploads atomically
-retain a Retry draft and retire automatic resume. Photo bytes and their draft reference publish
-under the existing LocalCoach lock; deletion versions prevent late imports recreating a chat.
-Cleanup keeps every photo referenced by a retained draft, request or exchange.
-
-History combines cached server summaries and local chats, keeps the canonical first-question
-headline and uses bounded raw answer previews after existing outcome wording. Older pages merge
-by nonempty request, position or generation identity; distinct legacy turns remain distinct.
-The oldest loaded cursor survives refresh and restart. Read-only facts use the approved sources
-sheet. Typed writes, proposals, routine drafts/results and unknown tools retain their existing
-receipt/control presentation and wording, including legacy proposal headers.
-
-The combined schema-9 gym gate runs 1,320 cases: 1,303 pass and 17 opt-in LiveWire cases skip,
-with zero failures or errors. Platform runs 134 cases and App runs 48, all passing. The final
-History/Thread accessibility change passes 14 focused cases and assembles Debug; the capture
-tools pass 46 cases. Controlled regressions cover queued account switches, origin-bound responses,
-request restart, pagination replay/overlap/recreation, immutable headlines, Stop during a next
-request and same-id Retry, queued snapshot/clear IO, cancelled upload restart, late photo
-preparation/storage and two imported attachments before main publication. Storage faults retain
-recoverable state and one reporting owner. The backend preview projection and its separate live
-verification are recorded in [Coach history preview](coach-history-preview.md).
+History lists the engine's threads under the chat this phone keeps beside them, and each chat this phone alone holds, with
+the canonical first-question headline. Read-only facts use the approved sources sheet.
 
 The History, sources, deletion, Copy and Jump recipes use `coach-history.json` with
 `coach-history-fixture.json`: one
@@ -790,18 +768,9 @@ counts retain three sets per movement. Capture tooling
 keeps the existing date, routine-index, finite-load and rep guards. The deletion recipe uses the
 shared row-bounds touch target supplied by task 11.
 
-Native API 37 acceptance covers paired History, sources and deletion layouts, local/server History
-merge, exact text/photo restoration through navigation and restart, account archive isolation,
-confirmed server-conversation deletion, and replies returning to their original chat after a new
-chat is selected or the process restarts. The pending-state View chat action opens its origin.
-An actual mixed get_session/list_notes/save_note answer retains the existing workout facts,
-expanded receipt and Saved a note wording. Signed-out native acceptance verifies the current
-access boundary hides account History and composer; anonymous admission remains task 38.
-
-The local first-party intake receives the navigation and ask steps. A controlled native draft-write
-fault retains the in-memory edit and previous durable draft, then recovers on the next edit and
-restart. It produces exactly one content-free gym.saveDraft Issue at the local collector and one
-matching client_error event. Hosted vendor delivery and release acceptance are not claimed.
+A controlled native draft-write fault retains the in-memory edit and previous durable draft, then recovers on the next edit
+and restart. It produces exactly one content-free gym.saveDraft Issue at the local collector and one matching client_error
+event.
 
 
 ## Coach batch integration observations
@@ -981,7 +950,7 @@ are nonempty 96 × 96 assets. The capture recipe targets the approved five-set, 
 Paired Dark/Daylight detail, bottom actions and the five-set confirmation are accepted on frozen source `8d844b43`. The displayed total is 2,455 kg across five sets and three movements; all rows and actions are complete. The preserved first-party intake contains session views and discard shown/cancelled/ok steps. The recipe commits the 80 kg load through IME Done before changing reps, matching the number-entry contract that plain blur cancels an uncommitted edit.
 
 The shared read still has a separate top-set representation: Kotlin
-`gym/domain/…/sync/TrainingHistory.kt`'s local `best`, Swift
+`gym/domain/…/sync/TrainingReads.kt`'s `effort`, Swift
 `apps/ios/Domain/Sources/GymDomain/TrainingHistory.swift`'s `best`, and backend
 `backend/products/gym/domain/Review.cpp`'s `topSetOf` count sets at the top load.
 `apps/ios/App/Sources/Gym/Workout/WorkoutReceipt.swift`'s `Effort.reading` renders the scalar tuple.
@@ -1175,3 +1144,17 @@ F2's Target-summary layout remains deferred until board 02.26's spacing and read
 values are available. All set wording remains unchanged pending S1. Task
 [115](../../androidgym_tasks/115-faint-ink-and-sheet-width.md) holds the remaining cross-surface
 faint-ink drift and sheet-handle observations.
+
+## The phone Coach under a long history
+
+A long history costs the context reads on every turn. At 2,500 sessions and 5,025 sets on the SQLite store (JVM, CPU
+time): a full-log read 1.2 s, `open()` 3.6 s for its three of them, `get_stats` 1.3 s, a `writeText` 10 ms. The same
+reads on the memory store take a tenth of that, so the cost is the store's per-record read; the heap (512 MB against
+2 GB) changes nothing. On an API 34 emulator from a release build, on a host under a load of 900 and so an upper bound:
+`open()` 22-49 s, `get_stats` 10-15 s, `writeText` 83-452 ms.
+
+`Engine.activeReplica()`, `readRevision()` and `EngineTraining.mayWrite` answer without the lock; every other read
+waits for a running ability. On a Robolectric probe of the room over that log on an idle host, `get_stats` takes
+0.4-0.5 s and a main-thread read behind it 0.22-0.38 s, and under the load above 1.5-3 s. What waits on main is
+`TrainingStore.refreshEngine`'s own reads: `reconcileImports`, `HistoryReads.loadLog`, `RoutinesStore.readCatalogue` and
+`readReceipts`, and `WorkoutSession.drawFromControls`.

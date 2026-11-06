@@ -73,13 +73,13 @@ class SheetDismissTests {
             .assertCountEquals(1)
         compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsActions.Dismiss))
             .performSemanticsAction(SemanticsActions.Dismiss)
-        compose.waitUntil(10_000) { dismissed.isNotEmpty() }
+        compose.waitUntil(10_000) { compose.runOnIdle { dismissed.isNotEmpty() } }
         assertEquals(listOf("dismissed"), dismissed)
     }
 
     private fun dismissFromTheScrim(dismissed: List<String>) {
         compose.onNode(hasContentDescription("Close sheet")).performSemanticsAction(SemanticsActions.OnClick)
-        compose.waitUntil(10_000) { dismissed.isNotEmpty() }
+        compose.waitUntil(10_000) { compose.runOnIdle { dismissed.isNotEmpty() } }
         assertEquals(listOf("dismissed"), dismissed)
     }
 

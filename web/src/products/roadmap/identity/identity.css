@@ -440,3 +440,42 @@
   overflow-y: auto;
   touch-action: pan-y;
 }
+
+.st-graph-unavailable {
+  display: inline-flex;
+}
+
+.st-board-switch .st-board-switch-option[aria-disabled="true"] {
+  opacity: 0.45;
+}
+
+.st-graph-unavailable-reason {
+  position: fixed;
+  z-index: 30;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  box-sizing: border-box;
+  width: 292px;
+  padding: 12px 16px 12px 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  background: var(--surface-card);
+  color: var(--text-primary);
+  box-shadow: 0 4px 12px var(--shadow-lg), 0 16px 40px var(--shadow-lg);
+  font: 400 14px/20px var(--font-body);
+}
+
+.st-graph-unavailable-reason[hidden] {
+  display: none;
+}
+
+.st-graph-unavailable-reason > svg {
+  flex: 0 0 20px;
+  color: var(--text-secondary);
+}
+
+.st-graph-unavailable-reason > span {
+  width: 232px;
+}
+

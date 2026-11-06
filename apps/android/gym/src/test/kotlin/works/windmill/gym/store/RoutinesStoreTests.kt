@@ -177,7 +177,7 @@ class RoutinesStoreTests {
             assertTrue(room.store.routines.pendingProposals.isEmpty())
             val before = owed(room)
 
-            assertEquals(ProposalOutcome.Failed(WriteFailure.Refused("Sign in again to decide this proposal.")),
+            assertEquals(ProposalOutcome.Failed(WriteFailure.Refused("Sign in to review this proposal.")),
                 room.store.routines.applyProposal("proposal1"))
             assertEquals("nothing was written", before, owed(room))
             runCurrent()

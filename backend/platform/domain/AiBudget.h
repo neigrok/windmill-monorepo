@@ -51,8 +51,8 @@ struct AiBudgetPeriod {
 };
 
 struct AiBudgetLimits {
-  long long anonymousLifetimeNanos = 50'000'000;
-  long long loggedInMonthlyNanos = 250'000'000;
+  long long anonymousLifetimeNanos = 250'000'000;
+  long long loggedInMonthlyNanos = 500'000'000;
   long long paidPeriodNanos = 7'000'000'000;
   long long freeMonthlyNanos = 100'000'000'000;
   long long freeDailyNanos = 5'000'000'000;
@@ -171,6 +171,10 @@ AiBudgetCode admitAiBudget(const AiBudgetRequest& request, const AiBudgetLimits&
                           const AiBudgetSnapshot& snapshot);
 AiBudgetResult planAiBudget(const AiBudgetRequest& request, const AiBudgetLimits& limits,
                             const AiBudgetSnapshot& snapshot);
+// The moment the budget a refusal names returns, never another budget's: a shared free pool at the
+// end of its UTC day or month, and the subject's own allowance when its period ends, which a lifetime
+// allowance never does. Every other code names no moment.
+std::optional<long long> aiBudgetReturnsAt(std::string_view code, std::optional<long long> subjectResetsAtMs, long long atMs);
 AiBudgetView aiBudgetView(const AiBudgetPrincipal& principal, long long atMs,
                          const AiBudgetLimits& limits, const AiBudgetSnapshot& snapshot);
 std::vector<int> crossedAiBudgetThresholds(const AiBudgetBalance& before, const AiBudgetBalance& after,

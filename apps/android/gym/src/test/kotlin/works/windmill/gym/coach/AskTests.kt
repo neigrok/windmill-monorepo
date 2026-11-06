@@ -1,73 +1,26 @@
 package works.windmill.gym.coach
 
-import works.windmill.gym.presentation.*
-import kotlinx.serialization.SerializationException
-import kotlinx.serialization.builtins.ListSerializer
+import works.windmill.gym.coach.turn.contextCallPrefix
+import works.windmill.gym.coach.turn.CoachTurnFault
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
-import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import works.windmill.platform.net.WindmillJson
+import works.windmill.gym.coach.turn.CoachTurnRefusal
+import works.windmill.gym.coach.turn.TurnPhone
+import works.windmill.gym.domain.coach.AbilityCall
+import works.windmill.gym.domain.coach.AbilityRefusal
+import works.windmill.gym.domain.coach.MessageState
+import works.windmill.gym.domain.coach.ReadServed
+import works.windmill.gym.domain.coach.ReadTally
+import works.windmill.gym.domain.coach.RecordedRead
+import works.windmill.sync.api.RecordRef
+import works.windmill.sync.core.Json
+import works.windmill.sync.core.RecordID
+import works.windmill.sync.schema.Gym
 
 class AskTests {
-    @Test fun clarificationUsesSharedLimitsAndCanonicalSingleOrMultipleChoices() {
-        val days = CoachClarification.Group("days", "Days each week", false,
-            listOf(CoachClarification.Option("two", "2 days"), CoachClarification.Option("three", "3 days")))
-        val equipment = CoachClarification.Group("equipment", "Equipment", true,
-            listOf(CoachClarification.Option("barbell", "Barbell"), CoachClarification.Option("dumbbells", "Dumbbells"), CoachClarification.Option("bodyweight", "Bodyweight")))
-        val valid = CoachClarification("choice-123", "What works for you?", listOf(days, equipment))
-        fun parsed(value: CoachClarification) = CoachClarification.from(WindmillJson.encodeToJsonElement(CoachClarification.serializer(), value))
-        assertEquals(valid, parsed(valid))
-        var selected = requireNotNull(valid.choosing(emptyMap(), "days", "two"))
-        selected = requireNotNull(valid.choosing(selected, "days", "three"))
-        selected = requireNotNull(valid.choosing(selected, "equipment", "bodyweight"))
-        selected = requireNotNull(valid.choosing(selected, "equipment", "dumbbells"))
-        assertEquals(mapOf("days" to listOf("three"), "equipment" to listOf("dumbbells", "bodyweight")), selected)
-        assertEquals("3 days. Dumbbells, Bodyweight.", valid.text(selected))
-        assertEquals(listOf("bodyweight"), valid.choosing(selected, "equipment", "dumbbells")!!["equipment"])
-        assertEquals(emptyList<String>(), valid.choosing(selected, "days", "three")!!["days"])
-        assertNull(valid.choosing(selected, "unknown", "two")); assertNull(valid.choosing(selected, "days", "unknown"))
-        val singleEquipment = valid.copy(groups = listOf(equipment.copy(multiple = false)))
-        assertEquals(singleEquipment, parsed(singleEquipment))
-        assertEquals(mapOf("equipment" to listOf("barbell")), singleEquipment.choosing(selected, "equipment", "barbell"))
-        assertEquals(valid.copy(question = "é".repeat(250)), parsed(valid.copy(question = "é".repeat(250))))
-        val invalid = listOf(valid.copy(id = "short"), valid.copy(question = "é".repeat(251)), valid.copy(question = " "),
-            valid.copy(question = "bad\u0000text"), valid.copy(question = "bad\uD800text"), valid.copy(groups = emptyList()),
-            valid.copy(groups = listOf(days, days)), valid.copy(groups = listOf(days.copy(multiple = true))),
-            valid.copy(groups = listOf(days.copy(id = "unknown"))), valid.copy(groups = listOf(days.copy(label = "é".repeat(41)))),
-            valid.copy(groups = listOf(days.copy(options = emptyList()))), valid.copy(groups = listOf(days.copy(options = List(7) { CoachClarification.Option("id$it", "Label") }))),
-            valid.copy(groups = listOf(days.copy(options = listOf(days.options.first(), days.options.first())))),
-            valid.copy(groups = listOf(days.copy(options = listOf(CoachClarification.Option("BAD", "Label"))))),
-            valid.copy(groups = listOf(days.copy(options = listOf(CoachClarification.Option("valid", "é".repeat(41)))))))
-        invalid.forEach { assertNull(parsed(it)) }
-    }
-
-    @Test fun malformedOptionalClarificationNeverPoisonsTheAnswerOrStoredGeneration() {
-        for (raw in listOf("null", "42", "[]", "{}", "{\"id\":false}")) {
-            val answer = WindmillJson.decodeFromString(AskAnswer.serializer(),
-                """{"answer":"Ordinary answer","read":{},"clarification":$raw}""")
-            assertEquals("Ordinary answer", answer.answer)
-            assertNull(CoachClarification.from(answer.clarification))
-            val generation = AskGeneration("generation", "request", "Question", "completed", "Ordinary answer", clarification = answer.clarification)
-            val restored = WindmillJson.decodeFromString(AskGeneration.serializer(), WindmillJson.encodeToString(AskGeneration.serializer(), generation))
-            assertEquals(generation, restored)
-            assertEquals(answer.clarification, restored.response().clarification)
-        }
-    }
-
-    private fun answered(question: String, said: String) =
-        AskExchange(question = question, answer = AskAnswer(answer = said, read = ReadTally()))
-
-    @Test
-    fun theAllowanceIsOneLineAboveTheComposerAndTheCapReachedMomentSaysWhatToDoNext() {
-        assertEquals("Ten questions a day, three back to back.", Ask.allowance)
-        assertEquals("Coach cannot take another question yet. Try again later.", Ask.capReached)
-        assertEquals("an unavailable conversation has a recovery",
-            "This conversation is unavailable. Start a new one.", Ask.threadFull)
-    }
-
     @Test
     fun theRoomIsCalledCoachAndItsTwoStancesAreTheBlessedOnes() {
         assertEquals("Coach", Ask.title)
@@ -75,110 +28,123 @@ class AskTests {
         assertEquals("This Windmill does not have Coach. You can still read your log.", Ask.notHere)
         assertEquals("the apostrophe is the typographic one everywhere",
             emptyList<String>(),
-            (listOf(Ask.freeDoor, Ask.interrupted, Ask.notHere, Ask.draftGone, Ask.draftInvalid, Ask.draftRetry, Ask.draftSignIn))
+            (listOf(Ask.placeholder, Ask.promise, Ask.stopped, Ask.couldNotTake, CoachTurnFault.noAnswer.sentence, Ask.notHere, Ask.accountRequired, Ask.draftGone, Ask.draftInvalid, Ask.draftRetry))
                 .filter { it.contains('\'') })
     }
 
     @Test
-    fun theFreeDoorContrastsOnScopeNeverOnQuality() {
-        assertTrue(Ask.freeDoor.contains("It’s free, and it reaches what Coach can’t: it knows the rest of your life."))
-        assertFalse("the contrast is scope, never quality", Ask.freeDoor.contains("better"))
-    }
-
-    @Test
     fun theDoorIsShutOnABlankQuestionAndOnOneOverTheCeiling() {
-        assertEquals(8000, Ask.maxTurnBytes)
-        assertFalse(Ask.sendable("   "))
-        assertTrue(Ask.sendable("what’s stalled?"))
-        assertTrue(Ask.sendable("x".repeat(Ask.maxTurnBytes)))
-        assertFalse(Ask.sendable("x".repeat(Ask.maxTurnBytes + 1)))
+        assertEquals(8000, Ask.maxQuestionBytes)
+        assertEquals("", asked("   "))
+        assertEquals("what’s stalled?", asked("  what’s stalled? "))
+        assertNull(CoachTurnRefusal.TooLong.of("x".repeat(Ask.maxQuestionBytes)))
+        assertEquals(CoachTurnRefusal.TooLong(1), CoachTurnRefusal.TooLong.of("x".repeat(Ask.maxQuestionBytes + 1)))
         assertEquals("the ceiling is bytes, not characters",
-            false, Ask.sendable("é".repeat(Ask.maxTurnBytes / 2 + 1)))
+            CoachTurnRefusal.TooLong(2), CoachTurnRefusal.TooLong.of("é".repeat(Ask.maxQuestionBytes / 2 + 1)))
     }
 
     @Test
-    fun theReceiptSpellsWhatWasServedAndLeavesOutWhatWasNot() {
-        assertEquals("read 214 sets · 12 weeks · 34 sessions",
-            Ask.receipt(ReadTally(sets = 214, sessions = 34, weeks = 12)))
-        assertEquals("read 1 set · 1 week · 1 session",
-            Ask.receipt(ReadTally(sets = 1, sessions = 1, weeks = 1)))
-        assertEquals("read 34 sessions", Ask.receipt(ReadTally(sessions = 34)))
+    fun theReceiptSaysTheWorkoutsItReadThenItsMovementHistoryThenNothingOverAnEmptyLogThenItsOtherReads() {
+        assertEquals("Read 18 workouts · 6 weeks", coachReply(read = ReadTally(sets = 214, sessions = 18, weeks = 6)).readLine)
+        assertEquals("Read 1 workout · 1 week", coachReply(read = ReadTally(sets = 1, sessions = 1, weeks = 1)).readLine)
+        assertEquals("Read nothing from your log", coachReply().readLine)
+        assertEquals("Read your movement history", coachReply(read = ReadTally(sets = 9, weeks = 2), calls = listOf(said("get_stats"))).readLine)
+        assertEquals("Read 1 workout · 1 week", coachReply(read = ReadTally(sets = 1, sessions = 1, weeks = 1), calls = listOf(said("get_stats"), said("list_notes"))).readLine)
+        assertEquals("Read your movement history", coachReply(read = ReadTally(sets = 9, weeks = 2), calls = listOf(said("list_notes"), said("get_stats"))).readLine)
+        assertEquals("Read your notes · read your program", coachReply(calls = listOf(said("list_notes"), said("list_routines"))).readLine)
+        val phoneReads = listOf("list_sessions", "list_notes", "list_exercises", "list_routines").map { said(it).copy(callId = contextCallPrefix + it) }
+        val theyAll = "Read your recent workouts · read your notes · read your movement list · read your program"
+        assertEquals("Read nothing from your log", coachReply(calls = phoneReads, logStood = false).readLine)
+        assertEquals(theyAll, coachReply(calls = phoneReads, logStood = true).readLine)
+        assertEquals("a read Coach chose says its phrase over an empty log", "$theyAll · read your bodyweight", coachReply(calls = phoneReads + said("list_bodyweight"), logStood = false).readLine)
+        assertEquals("Read your notes", coachReply(calls = listOf(said("list_notes")), logStood = false).readLine)
+        assertEquals("Read your movement history", coachReply(calls = phoneReads + said("get_stats"), logStood = false).readLine)
+        assertEquals("Read 1 workout · 1 week", coachReply(read = ReadTally(sets = 1, sessions = 1, weeks = 1), calls = phoneReads, logStood = false).readLine)
+        assertEquals("a write is no read", "Read nothing from your log", coachReply(calls = listOf(said("create_routine"))).readLine)
+        assertEquals("a read that was refused did not run", "Read nothing from your log",
+            coachReply(calls = listOf(said("list_notes", AbilityCall.Outcome.Refused(AbilityRefusal.refused)))).readLine)
+        assertEquals("a read no phrase can say leaves no line", null, coachReply(calls = listOf(coachCall("list_notes", phrase = null))).readLine)
     }
 
     @Test
-    fun anAnswerThatReadNothingSaysSo() {
-        assertEquals("read nothing from your log", Ask.receipt(ReadTally()))
-        assertFalse(ReadTally().anything)
-        assertTrue(ReadTally(weeks = 1).anything)
+    fun anAnswerThatEndedShortSaysHowAndAWholeOneSaysNothing() {
+        assertEquals(mapOf(
+            MessageState.running to null,
+            MessageState.completed to null,
+            MessageState.stopped to "Stopped.",
+            MessageState.declined to "Coach declined to answer this.",
+            MessageState.failed to "Coach couldn’t finish. Ask again.",
+            MessageState.interrupted to "Interrupted. What arrived is kept.",
+        ), MessageState.entries.associateWith { Ask.ending(it, truncated = false, wordsArrived = true) })
+        assertEquals("Cut short. Ask Coach to go on.", Ask.ending(MessageState.completed, truncated = true, wordsArrived = true))
     }
 
     @Test
-    fun aStepIsSaidInTheLiftersWordsAndAFailedOneSaysSo() {
-        assertEquals("read your recent workouts", AskStep("list_sessions").phrase())
-        assertEquals("read your movement history (nothing came back)", AskStep("get_stats", failed = true).phrase())
-        assertEquals("read your notes", AskStep("list_notes").phrase())
-        assertEquals("saved a note", AskStep("save_note").phrase())
-        assertEquals("could not confirm a note save", AskStep("save_note", failed = true).phrase())
-        assertEquals("read your bodyweight", AskStep("list_bodyweight").phrase())
-        assertEquals("updated a movement", AskStep("update_exercise").phrase())
+    fun anAnswerWithNoWordsSaysHowItEndedAndAnInterruptionClaimsNothingArrived() {
+        assertEquals(mapOf(
+            MessageState.running to null,
+            MessageState.completed to null,
+            MessageState.stopped to "Stopped.",
+            MessageState.declined to "Coach declined to answer this.",
+            MessageState.failed to "Coach couldn’t finish. Ask again.",
+            MessageState.interrupted to "Interrupted.",
+        ), MessageState.entries.associateWith { Ask.ending(it, truncated = false, wordsArrived = false) })
+    }
+
+    private fun said(name: String, outcome: AbilityCall.Outcome = AbilityCall.Outcome.Ok): CoachCall {
+        val ability = TurnPhone.catalog().ability(name)
+        return coachCall(name, ability?.phrase, outcome)
     }
 
     @Test
-    fun onlyATurnCarryingDraftsSaysCoachDraftedARoutine() {
-        val steps = listOf(AskStep("list_exercises"), AskStep("create_routine"))
-        assertEquals(listOf("read your movement list", "drafted a routine for your review"), Ask.steps(steps, drafted = true))
-        assertEquals(listOf("read your movement list", "created a routine"), Ask.steps(steps, drafted = false))
-        assertEquals("created a routine (nothing came back)", AskStep("create_routine", failed = true).phrase(drafted = false))
-        assertEquals("read your program", AskStep("list_routines").phrase(drafted = false))
-    }
-
-    @Test
-    fun aToolThisBuildCannotNamePrintsNothingAndTheRestStillDo() {
-        assertNull(AskStep("get_preferences").phrase())
-        assertNull(AskStep("get_preferences", failed = true).phrase())
+    fun aStepIsSaidInTheLiftersWordsFromTheCatalog() {
         assertEquals(
-            listOf("read your program", "read your movement history"),
-            Ask.steps(listOf(AskStep("list_routines"), AskStep("summon_lightning"),
-                AskStep("get_stats"), AskStep("list_routines")), drafted = true),
+            "read your recent workouts · read your movement history · read your notes · saved a note · read your bodyweight · updated a movement · created a routine",
+            coachReply(calls = listOf("list_sessions", "get_stats", "list_notes", "save_note", "list_bodyweight", "update_exercise", "create_routine").map { said(it) }).stepLine,
         )
-        assertEquals("the same table the web draws from, plus the notes and bodyweight reads",
-            setOf("list_sessions", "get_session", "last_time", "list_exercises", "list_routines", "get_stats", "list_notes",
-                "save_note", "list_bodyweight", "create_routine", "update_exercise", "propose_routine_change", "propose_routine_removal"),
-            Ask.phrases.keys)
     }
 
     @Test
-    fun aDraftIsSavedWhenEitherTheLogOrThisPhonesConfirmationSaysSo() {
-        fun draft(id: String, state: String) = CoachRoutineDraft(id, "routine-$id", "Routine $id", 1, emptyList(), state)
-        fun created(id: String) = CoachResult("routine-created", id, "routine-$id", "Routine $id")
-        val fromLog = AskAnswer("Two plans", ReadTally(), routineDrafts = listOf(draft("a", "saved"), draft("b", "saved")),
-            results = listOf(created("a"), created("b")))
-        val olderConfirmation = AskGeneration("generation-a", "request-a", "Plans", "completed", revision = 2,
-            routineDrafts = listOf(draft("a", "saved"), draft("b", "pending")), results = listOf(created("a")))
-        assertEquals(fromLog, fromLog.confirmedBy(olderConfirmation))
-        val pending = fromLog.copy(routineDrafts = listOf(draft("a", "pending"), draft("b", "pending")), results = emptyList())
-        assertEquals(pending.copy(routineDrafts = listOf(draft("a", "saved"), draft("b", "pending")), results = listOf(created("a"))),
-            pending.confirmedBy(olderConfirmation))
-        assertEquals(pending, pending.confirmedBy(null))
+    fun theStepLineJoinsThePhrasesOfTheCallsSoFarAndAnAnswerWithNoneDrawsNone() {
+        assertEquals("read your recent workouts · read your notes · read your movement list · read your program · wrote a proposal for one of your routines",
+            coachReply(calls = listOf("list_sessions", "list_notes", "list_exercises", "list_routines", "propose_routine_change").map { said(it) }).stepLine)
+        assertEquals(null, coachReply().stepLine)
     }
 
     @Test
-    fun aStepWithNoNameIsNotAStep() {
-        assertEquals(
-            listOf(AskStep("get_stats"), AskStep("last_time", failed = true)),
-            WindmillJson.decodeFromString(
-                AskAnswer.serializer(),
-                """{"answer":"bench is flat.","read":{"sets":1,"sessions":1,"weeks":1},""" +
-                    """"steps":[{"tool":"get_stats"},{"tool":"last_time","failed":true}]}""",
-            ).steps,
-        )
+    fun aRowOfWhatCoachReadCountsTheWorkoutsItServedAndElseSaysItsPhrase() {
+        val served = ReadServed.decode(Json.objectOf("sessions" to Json.Arr(listOf(Json.of("session01"), Json.of("session02"))), "sets" to Json.Arr(emptyList()), "weeks" to Json.Arr(listOf(Json.of(1_785_000_000_000L)))))
+        assertEquals("Read 2 workouts", coachCall("list_sessions", "read your recent workouts", read = RecordedRead.Ids(served)).title)
+        assertEquals("Read 3 workouts", coachCall("list_sessions", "read your recent workouts", read = RecordedRead.Counts(ReadTally(sessions = 3))).title)
+        assertEquals("Read your recent workouts", coachCall("list_sessions", "read your recent workouts").title)
+        assertEquals(null, coachCall("summon_lightning", phrase = null).title)
+        assertEquals(listOf("list_routines"), coachReply(calls = listOf(said("list_routines"), said("summon_lightning"), said("get_stats", AbilityCall.Outcome.Refused(AbilityRefusal.refused)))).readRows.map { it.name })
+    }
 
-        assertThrows(SerializationException::class.java) {
-            WindmillJson.decodeFromString(
-                AskAnswer.serializer(),
-                """{"answer":"a","read":{"sets":1,"sessions":1,"weeks":1},"steps":[{"failed":true}]}""",
-            )
+    @Test
+    fun aToolThisBuildCannotNameOrThatWasRefusedPrintsNothingAndTheRestStillDo() {
+        val reply = coachReply(calls = listOf(said("list_routines"), said("summon_lightning"),
+            said("save_note", AbilityCall.Outcome.Refused(AbilityRefusal.refused)), said("get_stats")))
+        assertEquals("read your program · read your movement history", reply.stepLine)
+        assertEquals(null, said("summon_lightning").phrase)
+        assertTrue(reply.calls.none { it.seatRefused })
+        assertTrue(said("save_note", AbilityCall.Outcome.Refused(AbilityRefusal.seatRequired)).seatRefused)
+    }
+
+    @Test
+    fun anAnswersReceiptSumsWhatItsCallsReadAndARefusedCallCountsNothing() {
+        val routine = RecordRef(Gym.Types.routine, RecordID("rt_00000001"))
+        val call = { name: String, outcome: AbilityCall.Outcome, read: RecordedRead, created: List<RecordRef> ->
+            AbilityCall("toolu_$name", name, null, outcome, created, read)
         }
+        val served = ReadServed.decode(Json.objectOf("sessions" to Json.Arr(listOf(Json.of("session01"))), "sets" to Json.Arr(emptyList()), "weeks" to Json.Arr(listOf(Json.of(1_785_000_000_000L)))))
+        assertEquals(CoachReceipt(ReadTally(sets = 3, sessions = 1, weeks = 1), listOf(routine)), CoachReceipt(listOf(
+            call("get_session", AbilityCall.Outcome.Ok, RecordedRead.Ids(served), emptyList()),
+            call("list_sessions", AbilityCall.Outcome.Ok, RecordedRead.Counts(ReadTally(sets = 3)), emptyList()),
+            call("create_routine", AbilityCall.Outcome.Ok, RecordedRead.Ids(ReadServed.none), listOf(routine)),
+            call("get_stats", AbilityCall.Outcome.Refused(AbilityRefusal.refused), RecordedRead.Counts(ReadTally(sets = 9)), emptyList()),
+        )))
+        assertEquals(CoachReceipt(ReadTally(), emptyList()), CoachReceipt(emptyList()))
     }
 
     @Test
@@ -198,62 +164,5 @@ class AskTests {
         assertTrue("somebody else signed in", Ask.handedOver("u1", standing = "u2", known = false))
         assertTrue("and the first sign-in of a room that opened anonymous",
             Ask.handedOver("", standing = "u1", known = false))
-    }
-
-    @Test
-    fun anAnswerWithNoReceiptIsNotAnAnswer() {
-        val whole = """{"answer":"bench is flat.","read":{"sets":214,"sessions":34,"weeks":12}}"""
-        assertEquals(
-            AskAnswer(answer = "bench is flat.", read = ReadTally(sets = 214, sessions = 34, weeks = 12)),
-            WindmillJson.decodeFromString(AskAnswer.serializer(), whole),
-        )
-
-        assertThrows(SerializationException::class.java) {
-            WindmillJson.decodeFromString(AskAnswer.serializer(), """{"answer":"bench is flat."}""")
-        }
-    }
-
-    @Test
-    fun aThreadSurvivesBeingWrittenOutAndReadBack() {
-        val thread = listOf(
-            AskExchange(
-                question = "what's stalled?",
-                answer = AskAnswer(
-                    answer = "bench, three weeks.",
-                    read = ReadTally(sets = 214, sessions = 34, weeks = 12),
-                    steps = listOf(AskStep("get_stats"), AskStep("last_time", failed = true)),
-                    proposals = listOf("prop_0a1b2c3d"),
-                ),
-            ),
-            AskExchange(question = "why?", trouble = Ask.interrupted, again = true),
-        )
-        val serializer = ListSerializer(AskExchange.serializer())
-
-        val written = WindmillJson.encodeToString(serializer, thread)
-
-        assertTrue("a receipt of zeros still travels", WindmillJson.encodeToString(
-            serializer, listOf(AskExchange(question = "q", answer = AskAnswer("a", ReadTally()))),
-        ).contains("\"read\""))
-        assertEquals(thread, WindmillJson.decodeFromString(serializer, written))
-    }
-
-    @Test
-    fun aQuestionTheRoomWasTornDownUnderComesBackRetryable() {
-        val thread = listOf(
-            answered("what's stalled?", "bench, three weeks."),
-            AskExchange(question = "why?"),
-        )
-
-        val settled = Ask.settled(thread)
-
-        assertEquals(
-            listOf(
-                answered("what's stalled?", "bench, three weeks."),
-                AskExchange(question = "why?", trouble = Ask.interrupted, again = true),
-            ),
-            settled,
-        )
-        assertTrue("a thread with nothing pending is handed back untouched",
-            Ask.settled(settled) === settled)
     }
 }

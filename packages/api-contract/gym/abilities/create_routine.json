@@ -272,5 +272,24 @@
       "name": "create_routine"
     },
     "expect": {"refused":"refused"}
+  },
+  {
+    "case": "a load below its movement's floor is refused",
+    "seat": "bound",
+    "now": 1790000000000,
+    "zone": "UTC",
+    "given": {
+      "records": []
+    },
+    "call": {
+      "input": {
+        "entries": [{"exerciseId":"bench-press","sets":[{"reps":5,"weightKg":-5}]}],
+        "id": "tn7Qm2Kx9Lp4Wz8R-1",
+        "name": "Below the floor",
+        "position": 1
+      },
+      "name": "create_routine"
+    },
+    "expect": {"refused":"load-floor"}
   }
 ]

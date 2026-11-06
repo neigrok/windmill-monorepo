@@ -13,6 +13,7 @@ dependencies {
     testImplementation(project(":sync-schema"))
     testImplementation(project(":sync-api"))
     testImplementation(project(":domain-kit"))
+    testImplementation(project(":agent"))
     testImplementation("org.ow2.asm:asm:9.7.1")
 }
 
@@ -33,6 +34,7 @@ val layering by tasks.registering(Test::class) {
     systemProperty("windmill.model", rootProject.layout.buildDirectory.file("layering/model.tsv").get().asFile.absolutePath)
     inputs.file(rootProject.layout.buildDirectory.file("layering/model.tsv"))
     inputs.dir(rootProject.file("platform/src/main/kotlin"))
+    inputs.dir(rootProject.file("agent/src/main/kotlin"))
     testLogging { events("failed", "standardOut") }
 }
 tasks.named("check") { dependsOn(layering) }

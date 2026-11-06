@@ -43,50 +43,72 @@ object WorkoutProposalRules {
 }
 
 // The Coach's whole plan for the open workout, as a diff against the plan this phone stores, guarding it. The proposal
-// refuses what the log would: a movement it cannot name, a second entry of one, and a change to a movement with a logged
-// set, which must stand in the proposal as it stands in the plan.
+// refuses what the log would: a movement it cannot name, more entries of a movement than the plan gave it (one, for a
+// movement it does not hold), and a change to the entries of a movement with a logged set, which may move but stand in the
+// proposal as they stand in the plan.
 class ProposeWorkout(val id: Id<WorkoutProposal>, val sessionId: Id<Session>, val entries: List<RoutineEntry>, val summary: String) :
     Action<OpenWorkout, Id<WorkoutProposal>, GymRefusal> {
     override val scope = WorkoutProposal.scope
     override val refusals = GymRefusal
     override fun load(read: Reader) = OpenWorkout(read, sessionId)
-    override fun decide(loaded: OpenWorkout, ids: IDSource): Decision<Id<WorkoutProposal>, GymRefusal> {
-        loaded.refusal(id.ref)?.let { return Decision.Refuse(it) }
-        val stored = loaded.plan.entries
-        val proposal = Valid(WorkoutProposal(id, sessionId, summary, RoutineChange.between(stored, entries)), WorkoutProposal, at = loaded.moment)
-        if (entries.any { loaded.catalogue.find(it.exerciseId) == null }) return Decision.Refuse(GymRefusal.predicted(Gym.Codes.unknownExercise, id.ref))
-        entries.withIndex().firstOrNull { (at, entry) -> entries.take(at).any { it.exerciseId == entry.exerciseId } }?.let { (at, _) ->
-            throw Violation(WorkoutPlanRules.duplicate, Path("entries") + at + "exerciseId", Violation.Reason.Custom("duplicate"))
-        }
-        val changed = (stored + entries).map { it.exerciseId }.distinct().firstOrNull { movement ->
-            movement in loaded.logged && stored.firstOrNull { it.exerciseId == movement } != entries.firstOrNull { it.exerciseId == movement }
-        }
-        if (changed != null) return Decision.Refuse(WorkoutPlanRules.logged(changed, id.ref))
-        RoutineRules.floored(proposal.value.changes, loaded.catalogue)
-        if (entries == stored) return Decision.Unchanged(id)
+    override fun decide(loaded: OpenWorkout, ids: IDSource): Decision<Id<WorkoutProposal>, GymRefusal> = when (val proposed = proposed(loaded)) {
+        is Proposed.Refuse -> Decision.Refuse(proposed.refusal)
+        Proposed.Unchanged -> Decision.Unchanged(id)
+        is Proposed.Minted -> Decision.Write(proposed.plan, id)
+    }
+    fun proposed(over: OpenWorkout): Proposed<WorkoutProposal> {
+        over.refusal(id.ref)?.let { return Proposed.Refuse(it) }
+        val stored = over.plan.entries
+        if (entries == stored) return Proposed.Unchanged
+        val proposal = Valid(WorkoutProposal(id, sessionId, summary, RoutineChange.between(stored, entries)), WorkoutProposal, at = over.moment)
+        if (entries.any { over.catalogue.find(it.exerciseId) == null }) return Proposed.Refuse(GymRefusal.predicted(Gym.Codes.unknownExercise, id.ref))
+        fun held(plan: List<RoutineEntry>, movement: Id<Exercise>) = plan.filter { it.exerciseId == movement }
+        entries.withIndex().firstOrNull { (at, entry) ->
+            held(entries.take(at + 1), entry.exerciseId).size > maxOf(1, held(stored, entry.exerciseId).size)
+        }?.let { (at, _) -> throw Violation(WorkoutPlanRules.duplicate, Path("entries") + at + "exerciseId", Violation.Reason.Custom("duplicate")) }
+        val changed = (stored + entries).map { it.exerciseId }.firstOrNull { it in over.logged && held(stored, it) != held(entries, it) }
+        if (changed != null) return Proposed.Refuse(WorkoutPlanRules.logged(changed, id.ref))
+        RoutineRules.floored(proposal.value.changes, over.catalogue)
         val plan = Plan()
         plan.create(proposal)
         plan.guardRead(sessionId, listOf("plan"))
-        return Decision.Write(plan, id)
+        return Proposed.Minted(proposal, plan)
+    }
+}
+
+// A proposal a signed-out phone held on its workout, once the account holds that workout: minted again under its own id and
+// words, read against the plan the account holds and guarding it. Only what the log confirmed is that plan, so a workout it
+// has not confirmed is out of reach. A row under its id is done, and a plan that already reads as proposed leaves nothing.
+class ReissueWorkoutProposal(val saved: WorkoutProposal) : Action<ReissueWorkoutProposal.Loaded, Id<WorkoutProposal>, GymRefusal> {
+    data class Loaded(val written: Boolean, val confirmed: Boolean, val workout: OpenWorkout)
+    private val proposing = ProposeWorkout(saved.id, saved.sessionId, saved.document, saved.summary)
+    override val scope = WorkoutProposal.scope
+    override val refusals = GymRefusal
+    override fun load(read: Reader) = Loaded(read.repository(WorkoutProposal).record(saved.id, ViewMode.stored) != null,
+        read.confirmed(Session, saved.sessionId) != null, proposing.load(read))
+    override fun decide(loaded: Loaded, ids: IDSource): Decision<Id<WorkoutProposal>, GymRefusal> {
+        if (loaded.written) return Decision.Unchanged(saved.id)
+        if (!loaded.confirmed) return Decision.Refuse(GymRefusal.of(Refused(RefusalCode.unknownRecord, saved.sessionId.ref, path = Refused.Path.predicted)))
+        return proposing.decide(loaded.workout, ids)
     }
 }
 
 // A workout proposal with its workout as this phone stores it. Out of date, it can no longer be applied, by the first that
-// holds: a newer proposal replaced it, its workout closed, the plan changed since it was made, or a movement it changes
-// was logged since.
+// holds: a newer proposal replaced it, its workout is gone, its workout closed, the plan changed since it was made, or a
+// movement it changes was logged since.
 data class WorkoutProposalState(val proposal: WorkoutProposal?, val workout: OpenWorkout?, val moment: Moment) {
     data class OutOfDate(val reason: String, val exerciseId: Id<Exercise>? = null) {
         val json: Json get() = Json.Obj(listOfNotNull("reason" to Json.of(reason), exerciseId?.let { "exerciseId" to it.json }))
     }
 
-    constructor(read: Reader, id: Id<WorkoutProposal>) : this(read, read.repository(WorkoutProposal).find(id, ViewMode.stored))
-    private constructor(read: Reader, proposal: WorkoutProposal?) : this(proposal, proposal?.let { OpenWorkout(read, it.sessionId) }, read.moment)
+    constructor(read: Reader, id: Id<WorkoutProposal>, workouts: OpenWorkouts = OpenWorkouts(read)) : this(read, read.repository(WorkoutProposal).find(id, ViewMode.stored), workouts)
+    private constructor(read: Reader, proposal: WorkoutProposal?, workouts: OpenWorkouts) : this(proposal, proposal?.let { workouts.of(it.sessionId) }, read.moment)
 
     val outOfDate: OutOfDate? get() {
         val value = proposal ?: return null
         if (value.state == "superseded") return OutOfDate(if (value.supersededBy != null) "replaced" else "workout-changed")
-        val session = workout?.session
-        if (value.state != "pending" || session == null) return null
+        if (value.state != "pending") return null
+        val session = workout?.session ?: return OutOfDate("workout-changed")
         if (workout.isClosed) return OutOfDate("workout-finished")
         if (value.baseRevision != null && (session.planRevision ?: 1) != value.baseRevision) return OutOfDate("workout-changed")
         // A plan edit this phone has not had confirmed moves no revision yet, so the stored plan itself must still be the

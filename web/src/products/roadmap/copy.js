@@ -119,7 +119,7 @@ export const NOTE_EDITOR = {
   urlPlaceholder: 'Paste or type URL',
   apply: 'Apply',
 };
-export const BULK = { done: 'Done', recolor: LABELS.recolor };
+export const BULK = { region: 'Selection', done: 'Done', recolor: LABELS.recolor };
 export const RECOLOR = {
   steps: `${LABELS.recolor} selected steps`,
   kind: (name) => `${LABELS.recolor} ${name}`,
@@ -152,6 +152,10 @@ export function upNextCount({ count }) {
 
 export function unlocksWhen({ step }) {
   return `Unlocks when ‘${step}’ is done.`;
+}
+
+export function selectingAnnouncement({ count }) {
+  return `Selecting. ${selectedCount({ count })}.`;
 }
 
 export function selectedCount({ count }) {
@@ -378,6 +382,7 @@ export function sortButtonLabel({ sort }) {
 
 // The step page and modal.
 export const STEP_DETAIL = {
+  select: 'Select',
   sections: { overview: 'Overview', workspace: 'Workspace', history: 'History' },
   stepLinks: 'Step links',
   prerequisites: 'Prerequisites',
@@ -450,3 +455,5 @@ export const ACTIVITY = {
   heading: 'Activity',
   empty: 'No activity yet — changes you make will appear here.',
 };
+
+export const GRAPH_UNAVAILABLE = 'Graph needs WebGL2, which this browser doesn’t support.';

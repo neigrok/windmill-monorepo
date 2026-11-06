@@ -1,5 +1,7 @@
 #include "products/gym/sync/GymRules.h"
 
+#include "products/gym/domain/Proposal.h"
+
 #include "platform/domain/sync/Digest.h"
 #include "platform/domain/sync/Jcs.h"
 #include "platform/domain/sync/TextMerge.h"
@@ -250,24 +252,25 @@ Json::Value documentOf(const Json::Value& changes) {
   return document;
 }
 
-// R118's apply count of a diff: every line not kept, and one more when the kept and retargeted lines, matched to
-// their base lines in proposed order, take a base line before one already visited.
+// The apply count of a diff, what a card, a sheet and a receipt say: every line not kept and every kept line that moved.
 int changeCountOf(const Json::Value& base, const Json::Value& changes) {
   int count = 0;
-  for (const Json::Value& change : changes) if (change["kind"] != "kept") ++count;
   std::set<Json::ArrayIndex> matched;
-  int highest = -1;
+  std::vector<PlacedLine> retained;
+  int place = 0;
   for (const Json::Value& change : changes) {
-    if (change["kind"] == "added" || change["kind"] == "removed") continue;
+    if (change["kind"] != "kept") ++count;
+    if (change["kind"] == "removed") continue;
+    const int to = place++;
+    if (change["kind"] == "added") continue;
     for (Json::ArrayIndex i = 0; i < base.size(); ++i) {
       if (matched.contains(i) || base[i]["exerciseId"] != change["exerciseId"]) continue;
       matched.insert(i);
-      if (static_cast<int>(i) < highest) return count + 1;
-      highest = static_cast<int>(i);
+      retained.push_back({change["kind"] == "kept", static_cast<int>(i), to});
       break;
     }
   }
-  return count;
+  return count + keptLinesMoved(retained);
 }
 
 Json::Value planEntries(const Json::Value& plan) {

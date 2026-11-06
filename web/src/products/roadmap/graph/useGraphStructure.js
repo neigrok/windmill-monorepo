@@ -42,7 +42,7 @@ export function useGraphStructure({ room, progressActs, showToast, syncLegendFro
   const syncStructure = useCallback(() => {
     const projection = projectionRef.current;
     const sceneNow = sceneRef.current;
-    if (!projection || !sceneNow) return;
+    if (!projection) return;
 
     // A concurrent edit can leave a cycle: render without those edges and surface it.
     let nextTree;
@@ -66,11 +66,11 @@ export function useGraphStructure({ room, progressActs, showToast, syncLegendFro
     }
     const nextStates = UnlockRules.derive(nextTree, progressActs.snapshot);
     const model = nextTree.toRenderModel(positions, nextStates);
-    sceneNow.applyModel(model);
+    sceneNow?.applyModel(model);
     treeRef.current = nextTree;
     setTree(nextTree);
     setRenderModel(model);
-    setBounds(sceneNow.getBounds());
+    setBounds(sceneNow?.getBounds() ?? null);
 
     const invalid = !!(cycles && cycles.length > 0);
     if (invalid && !invalidRef.current) {

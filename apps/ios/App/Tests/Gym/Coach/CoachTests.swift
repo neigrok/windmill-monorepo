@@ -183,7 +183,7 @@ import SyncTesting
   @Test func anAllowanceSaysWhenCoachAnswersAgainOnlyWhereAResetBringsItBack() throws {
     let dates = GymDate(Moment(now: Instant(ms: 1_792_152_000_000), zone: FixedZone(offsetSeconds: 0)), locale: Locale(identifier: "en_US"))
     func said(_ code: String, remaining: String, reserved: String) throws -> [String?] {
-      let allowance = try JSONDecoder().decode(AiAllowance.self, from: Data(#"{"code":"\#(code)","currency":"USD","period":"calendar_month_utc","tier":"logged_in","configured":true,"limit":"0.25","used":"0.2","reserved":"\#(reserved)","remaining":"\#(remaining)","resetsAtMs":1793491200000,"budgetResetsAtMs":1792540800000}"#.utf8))
+      let allowance = try JSONDecoder().decode(AiAllowance.self, from: Data(#"{"code":"\#(code)","currency":"USD","period":"calendar_month_utc","tier":"logged_in","configured":true,"limit":"0.50","used":"0.45","reserved":"\#(reserved)","remaining":"\#(remaining)","resetsAtMs":1793491200000,"budgetResetsAtMs":1792540800000}"#.utf8))
       return [allowance.message, allowance.detail(dates)]
     }
     let reset = "You can use Coach again on Nov 1 at 12:00\u{202F}AM.", pool = "You can use Coach again on Oct 21 at 12:00\u{202F}AM."
@@ -197,7 +197,7 @@ import SyncTesting
     #expect(try said("debt_outstanding", remaining: "0", reserved: "0") == ["Coach’s AI allowance is unavailable right now.", nil])
     #expect(try said("device_bound", remaining: "0.05", reserved: "0") == ["This phone’s AI access belongs to an account.", nil])
     let tokyo = GymDate(Moment(now: Instant(ms: 1_792_152_000_000), zone: FixedZone(offsetSeconds: 9 * 3_600)), locale: Locale(identifier: "en_US"))
-    let spent = try JSONDecoder().decode(AiAllowance.self, from: Data(#"{"code":"subject_exhausted","currency":"USD","period":"calendar_month_utc","tier":"logged_in","configured":true,"limit":"0.25","used":"0.25","reserved":"0","remaining":"0","resetsAtMs":1793491200000}"#.utf8))
+    let spent = try JSONDecoder().decode(AiAllowance.self, from: Data(#"{"code":"subject_exhausted","currency":"USD","period":"calendar_month_utc","tier":"logged_in","configured":true,"limit":"0.50","used":"0.50","reserved":"0","remaining":"0","resetsAtMs":1793491200000}"#.utf8))
     #expect(spent.detail(tokyo) == "You can use Coach again on Nov 1 at 9:00\u{202F}AM.")
   }
 

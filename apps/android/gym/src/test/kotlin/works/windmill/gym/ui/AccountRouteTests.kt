@@ -244,7 +244,7 @@ class AccountRouteTests {
             compose.runOnIdle { assertEquals(AuthStatus.Unknown, auth.status) }
             assertEquals(listOf("notes", "connections"), shell.destinations.map { it.id })
             release.countDown()
-            compose.waitUntil(5_000) { auth.status is AuthStatus.SignedIn }
+            compose.waitUntil(5_000) { compose.runOnIdle { auth.status is AuthStatus.SignedIn } }
             compose.onNode(hasText("Connected log") and hasAnyAncestor(isDialog())).performClick()
             compose.onNodeWithContentDescription("Back to Routines").performClick()
             openAccountWhenItIsReachable()

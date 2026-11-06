@@ -136,7 +136,7 @@ goes through `countBucket`: `0/1/2-5/6-20/21+`.
 
 | Step | Event | Allowlisted props |
 |---|---|---|
-| Open a roadmap, first resolved view of the visit | `roadmap_view_open` | `view: board/graph`, `band: phone/tablet/desktop`, `role: owner/reader/demo`, `door: saved/default/link/empty/born` |
+| Open a roadmap, first resolved view of the visit | `roadmap_view_open` | `view: board/graph`, `band: phone/tablet/desktop`, `role: owner/reader/demo`, `door: saved/default/link/empty/born/no_graph` |
 | Switch Board and Graph | `roadmap_view_switch` | `view: board/graph` |
 | Phone column tab | `roadmap_board_column` | `column: locked/upNext/done` |
 | Tablet rail's Show | `roadmap_board_rail` | `column: locked/done` |
@@ -152,7 +152,7 @@ goes through `countBucket`: `0/1/2-5/6-20/21+`.
 | A state's action | `roadmap_board_state_action` | `state: empty`, `action: newStep` |
 | A state's action | `roadmap_board_state_action` | `state: complete`, `action: share/newStep` |
 | Open a step | `roadmap_board_step_open` | `surface: modal/page`, `column: locked/upNext/done`, `door: card/graph/activity/step/link` |
-| Step page or modal action | `roadmap_board_step_action` | `surface: modal/page`, `action: complete/completeFromSubtasks/reset/undo/openInGraph/viewBranch/delete/edit/editNote` |
+| Step page or modal action | `roadmap_board_step_action` | `surface: modal/page`, `action: complete/completeFromSubtasks/reset/undo/openInGraph/viewBranch/delete/edit/editNote/select` |
 | Step section | `roadmap_board_step_action` | `surface: modal/page`, `action: section`, `section: overview/workspace/history` |
 | Copy a step's link | `roadmap_board_step_action` | `surface: modal/page`, `action: copyLink`, `outcome: ok/failed` |
 | Reset from the Graph's dock or tablet panel | `roadmap_board_step_action` | `surface: dock/panel`, `action: reset` |
@@ -224,7 +224,8 @@ goes through `countBucket`: `0/1/2-5/6-20/21+`.
 | Device line shown | `roadmap_device_line` | `step: shown`, `line: anonymous/lapsed`, `place: row/shell` |
 | Device line's phone row tapped | `roadmap_device_line` | `step: sign_in`, `line: anonymous/lapsed`, `place: row` |
 | The demo's roadmap opened | `demo_open` | `treeId: t_9e407a96b5330ebe` |
-| WebGL2 unavailable | `webgl_init_fail` | — |
+| WebGL2 unavailable, once per room visit | `webgl_init_fail` | `band: phone/tablet/desktop` |
+| Press the unavailable Graph option | `roadmap_graph_unavailable` | `band: phone/tablet/desktop` |
 | A roadmap planted from a quest | `birth` | `quest: <authored quest id>`, `steps: 0/1/2-5/6-20/21+`, `local?: true` |
 | A roadmap planted blank or from an import | `birth` | `import?: true`, `steps?: 0/1/2-5/6-20/21+`, `local?: true` |
 | Device roadmaps claimed at sign-in | `claim` | `treeCount: 0/1/2-5/6-20/21+` |
@@ -243,6 +244,7 @@ A step is a thing a reader did or was told. These emit nothing:
   a clean Save, which writes nothing and emits `unchanged` from the edit composer alone.
 - Moving back to a step already open in the visit, closing a step, and system Back or a remote change dropping a note draft.
 - The Prerequisites row with no candidates.
+- The unavailable Graph option's reason opening on hover or focus.
 - A Delete key on a selection that takes every root a roadmap has left, on either view: Delete is not offered, so nothing
   happened.
 - A rebaseline's pending records, an online discard, Saving and Saved. Refusal counts stay local.

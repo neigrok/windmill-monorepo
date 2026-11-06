@@ -292,7 +292,7 @@ class ConnectedLogScreenTests {
             } }
             compose.waitUntil(10_000) { compose.runOnIdle { reconnecting.isCompleted } }
             runBlocking { reconnecting.await() }
-            compose.waitUntil(5_000) { grantReads == 2 && store.sharing.connectedLog.answered }
+            compose.waitUntil(5_000) { compose.runOnIdle { grantReads == 2 && store.sharing.connectedLog.answered } }
             compose.runOnIdle {
                 assertEquals(listOf(2, 2), listOf(grantReads, keyReads))
                 assertEquals(ConnectedLog.state(listOf(OAuthGrant("grant", "Current grant", 1, "gym:read")),

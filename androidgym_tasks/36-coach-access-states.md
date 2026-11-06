@@ -12,20 +12,11 @@
 
 **Implementation** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
 
-`coach/CoachAccess.kt` owns the Ready no-seat, retained-History bound and absent stances, plus the
-Daily/Ceiling notice. The cap keeps the native composer and uses the persisted actual retry deadline;
-missing/invalid timing uses the nonnumeric fallback. `CoachStore` projects task 38's retained request
-into its original anonymous chat and keeps accepted photo metadata after the composer clears.
-The application injects the existing onboarding coordinator through `TrainingStore` into `CoachStore`; installation
-binding and AuthStore's handoff remain separate collaborators. `AnthropicOnboarding.cpp` validates
-conversation-only `errorCode:null|account_required`, preserving the public durable POST/GET shape
-and existing routine decoder. Exact typed policy results use the fixed approved bubble and Sign in.
-The composed schema-11 source passes App compilation, 83 domain, 43 platform and 113 focused Gym
-checks. The anonymous History composer cannot cancel a retained request. Mounted HTTP verification covers
-ordinary dialogue, typed account-required replies, exact replay, a complete photo, binding and
-switches-off fallback. Invalid provider output reaches the backend failure reporter once under
-`gym.coach.onboarding.model`; expected account-required replies create no Issue. Native visual,
-installed-process recovery and device event acceptance remain pending.
+`coach/CoachAccess.kt` owns the Ready no-seat, retained-History bound and absent stances, and
+`coach/turn/CoachTurnRefusal.kt` each refusal's words and door: a cap names a moment only where the server's
+`budgetResetsAtMs` does. `CoachChats` reads the installation through its injected `access`; installation binding and
+AuthStore's handoff remain separate collaborators. A retained onboarding answer that needs an account draws the fixed
+approved bubble and Sign in.
 
 **Change**
 - No seat (08.58): shown when there is no account and the signed-out Coach (38) is not available.

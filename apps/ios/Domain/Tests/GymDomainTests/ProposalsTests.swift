@@ -9,6 +9,27 @@ import SyncTesting
 import Testing
 
 struct ProposalsTests {
+  // Random proposals over routines of up to eight movements, repeats among them: the count is what the sheet draws.
+  @Test func theCountIsTheRowsDrawnOverRandomProposals() throws {
+    var state: UInt64 = 20261105
+    func random(_ below: Int) -> Int {
+      state = state &* 6364136223846793005 &+ 1442695040888963407
+      return Int((state >> 33) % UInt64(below))
+    }
+    let movements = (0..<12).map { ID<Exercise>(RecordID("movement\($0)")) }
+    for _ in 0..<2000 {
+      let base = (0..<(1 + random(8))).map { _ in RoutineEntry(exerciseId: movements[random(12)], sets: [SetTarget(reps: 5, weightKg: 60)], restSeconds: nil) }
+      var proposed = base.filter { _ in random(5) > 0 }
+      for _ in 0..<random(3) { proposed.insert(RoutineEntry(exerciseId: movements[random(12)], sets: [SetTarget(reps: 8, weightKg: 40)], restSeconds: nil), at: random(proposed.count + 1)) }
+      for at in proposed.indices where random(5) == 0 { proposed[at] = RoutineEntry(exerciseId: proposed[at].exerciseId, sets: [SetTarget(reps: 3, weightKg: 70)], restSeconds: nil) }
+      for _ in 0..<random(3) where proposed.count > 1 { let moved = proposed.remove(at: random(proposed.count)); proposed.insert(moved, at: random(proposed.count + 1)) }
+      let changes = RoutineChange.lines(from: base, to: proposed)
+      let routine = Routine(id: Self.routineId, name: "Lower A", entries: base)
+      let proposal = Proposal(id: Self.proposalId, routineId: Self.routineId, intent: "revise", proposedName: random(2) == 0 ? "Lower A" : "Lower B", summary: "", changes: changes)
+      #expect(ProposalDiff(proposal, routine: routine).blocks.count == proposal.countChanges(comparedTo: routine), "\(changes)")
+    }
+  }
+
   static let now: Int64 = 1_800_000_000_000
   static let exerciseId = ID<Exercise>(RecordID("custom01"))
   static let routineId = ID<Routine>(RecordID("routine1"))

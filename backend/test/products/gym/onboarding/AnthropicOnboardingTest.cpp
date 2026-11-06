@@ -128,7 +128,7 @@ TEST(gym_anonymous_transport_unknown_holds_reservation_and_budget_refusal_makes_
   REQUIRE_EQ(h.budgetRepository.reservations.size(),1U);
   CHECK_EQ(h.budgetRepository.reservations.begin()->second.state,AiBudgetState::Uncertain);
   CHECK_FALSE(h.budgetRepository.reservations.begin()->second.actualNanos);
-  h.budgetRepository.totals.subject.spentNanos=50'000'000;
+  h.budgetRepository.totals.subject.spentNanos=250'000'000;
   const auto denied=model.generate(*h.issue.principal,"onb_denied",input,h.catalog->seeds);
   CHECK_EQ(denied.refusal,"subject_exhausted");
   CHECK_EQ(messages->requests.size(),1U);

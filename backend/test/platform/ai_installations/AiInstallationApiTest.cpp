@@ -320,7 +320,7 @@ TEST(ai_installation_budget_is_explicit_and_keeps_legacy_anonymous_calls_closed)
   request.model = spend.model;
   request.system = "Return a routine";
   request.user = "Two sessions";
-  request.maxTokens = 2000;
+  request.maxTokens = 12000;
   CHECK_EQ(budget.begin(spend, messagesBody(request), 1024).refusal, std::string{"device_verification_required"});
   auto admission = budget.beginInstallation(*issued.principal, spend, messagesBody(request), 1024);
   REQUIRE(admission.reservation);

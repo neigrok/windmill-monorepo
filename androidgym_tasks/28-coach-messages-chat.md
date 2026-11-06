@@ -58,4 +58,4 @@
 
 **Depends on:** 03, 05.
 
-**Ledger:** 11g, 12h, 9r; dogfood `android-gym-target-page`.
+**Ledger:** 12h, 9r; dogfood `android-gym-target-page`.

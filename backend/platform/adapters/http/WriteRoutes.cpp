@@ -44,7 +44,7 @@ const std::set<std::string> refusalCodes{
     "ask-not-configured", "ask-out-of-budget", "ask-request-conflict", "ask-request-malformed",
     "ask-session-open", "ask-thread-taken", "bad-id", "bad_request", "client-update-required",
     "checkout_closed", "clock-ahead", "coach-bad-request", "coach-busy", "coach-draft-invalid", "coach-draft-not-found",
-    "coach-rate-limited", "coach-turn-conflict", "coach-turn-order", "coach-turn-unknown", "coach-update-required",
+    "coach-rate-limited", "coach-turn-conflict", "coach-turn-order", "coach-turn-stopped", "coach-turn-unknown", "coach-update-required",
     "compose-unavailable",
     "concurrency_exhausted", "debt_outstanding",
     "device_bound", "device_verification_required", "expired", "free_day_exhausted", "free_month_exhausted",

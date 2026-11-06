@@ -812,13 +812,7 @@ void AskService::run(const std::shared_ptr<Job>& job) {
         if (reply.answer.outcomeCode != aiBudgetCodeName(code)) continue;
         reply.allowance = entitlements_.aiAllowanceView(caller, job->email);
         reply.allowance->code = code;
-        reply.allowance->budgetResetsAtMs.reset();
-        if (code == AiBudgetCode::FreeDayExhausted)
-          reply.allowance->budgetResetsAtMs = AiBudgetPeriod::dayAt(clock_.nowMs())->endMs;
-        if (code == AiBudgetCode::FreeMonthExhausted)
-          reply.allowance->budgetResetsAtMs = AiBudgetPeriod::at(clock_.nowMs())->endMs;
-        if (code == AiBudgetCode::SubjectExhausted)
-          reply.allowance->budgetResetsAtMs = reply.allowance->resetsAtMs;
+        reply.allowance->budgetResetsAtMs = aiBudgetReturnsAt(reply.answer.outcomeCode, reply.allowance->resetsAtMs, clock_.nowMs());
         reply.refusal = AskRefusal::aiBudget;
         break;
       }

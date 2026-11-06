@@ -15,8 +15,8 @@
 
 // The turn wire (gym_coach.md §6): the four turn routes over Drogon. A session opens a `bound`
 // seat, `X-Windmill-Installation` an `anon` one, and every request of a turn is served under the
-// seat that opened it. A refusal before the stream starts is an HTTP error `{error, code}`; after
-// it, an `error` event and the stream closes.
+// seat that opened it. A refusal before the stream starts is an HTTP error `{error, code, allowance?}`;
+// after it, an `error` event `{code, budgetResetsAtMs?}` and the stream closes.
 //
 //   POST /v1/gym/coach/turns                   open; text/event-stream
 //   GET  /v1/gym/coach/turns/{turnId}          resume; `snapshot` first
@@ -27,7 +27,9 @@ namespace wm::gym::coach {
 
 using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 
-// The HTTP status a §6.5 code answers with before the stream starts.
+// The HTTP status a §6.5 code answers with before the stream starts: 429 for every allowance code,
+// which is an expected refusal and never a failure of the server; 409 for `coach-turn-stopped` and
+// 503 for `anonymous_ai_unavailable`, refusals the server means as much as any of them.
 drogon::HttpStatusCode statusOf(const std::string& code);
 
 class TurnApi {

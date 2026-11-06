@@ -12,7 +12,7 @@ class Layering(val packages: List<String>) {
         val findings = linkedSetOf<Finding>()
         val reader = ClassReader(bytes)
         val className = reader.className
-        var declaredMethods = 0
+        val declaredMethods = mutableListOf<String>()
         val bootstrapOwners = mutableSetOf<String>()
         reader.accept(object : ClassVisitor(Opcodes.ASM9) {
             override fun visitMethod(access: Int, name: String, descriptor: String, signature: String?, exceptions: Array<out String>?): MethodVisitor = object : MethodVisitor(Opcodes.ASM9) {
@@ -65,7 +65,7 @@ class Layering(val packages: List<String>) {
         }
         reader.accept(object : ClassVisitor(Opcodes.ASM9) {
             override fun visitMethod(access: Int, name: String, descriptor: String, signature: String?, exceptions: Array<out String>?): MethodVisitor {
-                if (!name.startsWith('<')) declaredMethods++
+                if (!name.startsWith('<')) declaredMethods += name
                 if (access and Opcodes.ACC_NATIVE != 0) findings.add(Finding("native", "$className.$name"))
                 return object : MethodVisitor(Opcodes.ASM9) {
                     override fun visitInsn(opcode: Int) {
@@ -74,7 +74,7 @@ class Layering(val packages: List<String>) {
                 }
             }
         }, ClassReader.SKIP_DEBUG or ClassReader.SKIP_FRAMES)
-        if (className == "works/windmill/domain/kit/Nfc" && declaredMethods != 1) findings.add(Finding("nfc", className))
+        if (className == "works/windmill/domain/kit/Nfc" && declaredMethods.sorted() != listOf("nfd", "normalise")) findings.add(Finding("nfc", className))
         return findings
     }
 }
@@ -122,16 +122,19 @@ class LayeringTests {
     }
     @Test fun ownerAndDeterminismAttackFixtures() {
         val base = "works/windmill/domain/kit"
-        fun fixture(owner: String, member: String? = null, descriptor: String = "()V", className: String = "$base/Fixture", monitor: Boolean = false, native: Boolean = false): ByteArray {
+        fun fixture(owner: String, member: String? = null, descriptor: String = "()V", className: String = "$base/Fixture", monitor: Boolean = false, native: Boolean = false, methods: List<String> = listOf("call")): ByteArray {
             val writer = ClassWriter(0)
             writer.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, className, null, "java/lang/Object", null)
             writer.newClass(owner)
             if (member != null) writer.newMethod(owner, member, descriptor, false)
             if (native) writer.visitMethod(Opcodes.ACC_NATIVE, "nativeCall", "()V", null, null).visitEnd()
-            val method = writer.visitMethod(Opcodes.ACC_PUBLIC, "call", "()V", null, null)
-            method.visitCode()
-            if (monitor) method.visitInsn(Opcodes.MONITORENTER)
-            method.visitInsn(Opcodes.RETURN); method.visitMaxs(1, 1); method.visitEnd(); writer.visitEnd()
+            for (name in methods) {
+                val method = writer.visitMethod(Opcodes.ACC_PUBLIC, name, "()V", null, null)
+                method.visitCode()
+                if (monitor) method.visitInsn(Opcodes.MONITORENTER)
+                method.visitInsn(Opcodes.RETURN); method.visitMaxs(1, 1); method.visitEnd()
+            }
+            writer.visitEnd()
             return writer.toByteArray()
         }
         val checker = Layering(listOf(base, "works/windmill/sync/core"))
@@ -152,8 +155,9 @@ class LayeringTests {
         )) for (member in members) denied(fixture(owner, member, if (member in listOf("toUpperCase", "toLowerCase")) "()Ljava/lang/String;" else "()V"), "member")
         denied(fixture("java/lang/Object", monitor = true), "monitor")
         denied(fixture("java/lang/Object", native = true), "native")
-        assertEquals(emptySet<Layering.Finding>(), checker.inspect(fixture("java/text/Normalizer", className = "$base/Nfc")))
-        assertEquals(emptySet<Layering.Finding>(), checker.inspect(fixture("java/text/Normalizer\$Form", className = "$base/Nfc")))
+        for (methods in listOf(listOf("call"), listOf("normalise"), listOf("normalise", "read"), listOf("normalise", "nfd", "read"))) denied(fixture("java/lang/Object", className = "$base/Nfc", methods = methods), "nfc")
+        assertEquals(emptySet<Layering.Finding>(), checker.inspect(fixture("java/text/Normalizer", className = "$base/Nfc", methods = listOf("normalise", "nfd"))))
+        assertEquals(emptySet<Layering.Finding>(), checker.inspect(fixture("java/text/Normalizer\$Form", className = "$base/Nfc", methods = listOf("normalise", "nfd"))))
         assertEquals(emptySet<Layering.Finding>(), checker.inspect(fixture("java/lang/Thread", "currentThread", className = "$base/Draft")))
         assertEquals(emptySet<Layering.Finding>(), checker.inspect(fixture("java/lang/String", "toUpperCase", "(Ljava/util/Locale;)Ljava/lang/String;")))
         assertEquals(emptySet<Layering.Finding>(), checker.inspect(fixture("java/util/Locale", "ROOT")))
@@ -170,9 +174,13 @@ class LayeringTests {
             model.map { if (it[0] == "classpath" && it[1] == ":domain-kit") it.toMutableList().apply { this[3] += ",module:vendor:foreign:1" } else it },
             model.map { if (it[0] == "classpath" && it[1] == ":domain-kit") it.toMutableList().apply { this[4] = "/vendor/classes" } else it },
             model.map { if (it[0] == "project" && it[1] == ":platform") it.toMutableList().apply { this[3] += ",implementation::gym" } else it },
+            model.map { if (it[0] == "project" && it[1] == ":agent") it.toMutableList().apply { this[3] += ",api::gym:domain" } else it },
+            model.map { if (it[0] == "project" && it[1] == ":agent") it.toMutableList().apply { this[3] += ",api::domain-kit" } else it },
+            model.map { if (it[0] == "project" && it[1] == ":gym:domain") it.toMutableList().apply { this[3] += ",api::agent" } else it },
+            model.map { if (it[0] == "project" && it[1] == ":agent") it.toMutableList().apply { this[4] += ",org.jetbrains.kotlin.gradle.plugin.KotlinAndroidPluginWrapper" } else it },
         )
         for ((index, mutation) in mutations.withIndex()) assertTrue("model attack $index", validateModel(mutation).isNotEmpty())
-        println("layering model: 12 projects, 8 JVM modules, 8 rejected model attacks")
+        println("layering model: 13 projects, 9 JVM modules, 12 rejected model attacks")
     }
 
     // Platform is product-neutral: no label it holds names gym (`gym`, `gym_…`, `gym.…`). Copy, which has spaces, may.
@@ -187,18 +195,37 @@ class LayeringTests {
         assertFalse(gym.containsMatchIn("gymnast"))
     }
 
+    // The turn is product-neutral: its sources name no product, in code or in comment. Only a frozen wire code, quoted whole, may say coach; `turn` is the neutral word and stays legal.
+    @Test fun agentSourcesNameNoProduct() {
+        val nouns = setOf("gym", "routine", "note", "proposal", "lifter", "exercise", "workout", "journal", "roadmap", "training", "session", "movement", "coach", "coaches")
+        val frozenCodes = setOf("coach-bad-request", "coach-update-required", "coach-turn-conflict", "coach-turn-unknown", "coach-turn-order", "coach-turn-volume",
+            "coach-rate-limited", "coach-replica-syncing", "coach-busy", "coach-vendor-error", "coach-stream-replaced", "coach-turn-stopped")
+        val word = Regex("""[A-Z]+(?![a-z])|[A-Z]?[a-z]+""")
+        fun named(source: String): Set<String> = word.findAll(frozenCodes.fold(source) { text, code -> text.replace("\"$code\"", "") })
+            .map { it.value.lowercase() }.map { if (it in nouns) it else it.removeSuffix("s") }.filter { it in nouns }.toSet()
+        val sources = File(android, "agent/src/main/kotlin").walk().filter { it.extension == "kt" }.toList()
+        assertEquals(listOf("Turn.kt", "TurnDriver.kt", "TurnWire.kt"), sources.map { it.name }.sorted())
+        assertEquals(emptyList<String>(), sources.flatMap { file -> named(file.readText()).map { "${file.name}: $it" } })
+        assertEquals(frozenCodes, works.windmill.agent.TurnRefusal.codes.filter { "coach" in it }.toSet())
+        assertEquals(nouns - "exercise" - "workout" - "coaches", named("""class RoutineNotes(val lifter: String, val gymProposal: Int) { val journal = "roadmap"; val trainingSessions = "movements" } // coach"""))
+        assertEquals(setOf("coach", "coaches"), named("""val lead = "Coaches"; val code = "coach-turn-order-now""""))
+        assertEquals(setOf("coach", "routine", "note"), named(""""coach-routine-note""""))
+        assertEquals(setOf("coach"), named(""""coach-turn-order" + "coach_turn""""))
+        assertEquals(emptySet<String>(), named("""the turn denotes "coach-stream-replaced" for a gymnast in an obsession"""))
+    }
+
     fun validateModel(model: List<List<String>>): List<String> {
         val findings = mutableListOf<String>()
-        val jvm = setOf(":sync-model-server", ":sync-core", ":sync-api", ":sync-schema", ":sync-testing", ":domain-kit", ":domain-kit-testing", ":gym:domain")
+        val jvm = setOf(":sync-model-server", ":sync-core", ":sync-api", ":sync-schema", ":sync-testing", ":domain-kit", ":domain-kit-testing", ":gym:domain", ":agent")
         val projects = jvm + setOf(":app", ":platform", ":gym", ":sync-engine")
         val allowed = mapOf(
             ":sync-core" to emptySet(), ":sync-api" to setOf(":sync-core"), ":sync-schema" to setOf(":sync-core"), ":sync-testing" to setOf(":sync-core", ":sync-api", ":sync-engine", ":sync-model-server"), ":sync-model-server" to setOf(":sync-core"),
             ":sync-engine" to setOf(":sync-core", ":sync-api", ":sync-schema"),
             ":domain-kit" to setOf(":sync-core", ":sync-api"), ":domain-kit-testing" to setOf(":domain-kit", ":sync-core", ":sync-api", ":sync-testing", ":sync-engine"),
             ":gym:domain" to setOf(":domain-kit", ":sync-core", ":sync-api", ":sync-schema"),
-
-            ":platform" to setOf(":domain-kit", ":sync-core", ":sync-api", ":sync-schema"),
-            ":gym" to setOf(":gym:domain", ":domain-kit", ":sync-core", ":sync-api", ":sync-schema", ":sync-engine", ":platform"), ":app" to projects,
+            ":agent" to setOf(":sync-core"),
+            ":platform" to setOf(":agent", ":domain-kit", ":sync-core", ":sync-api", ":sync-schema"),
+            ":gym" to setOf(":gym:domain", ":agent", ":domain-kit", ":sync-core", ":sync-api", ":sync-schema", ":sync-engine", ":platform"), ":app" to projects,
         )
         val jvmPlugins = setOf(
             "org.gradle.api.plugins.BasePlugin", "org.gradle.api.plugins.HelpTasksPlugin", "org.gradle.api.plugins.JavaBasePlugin", "org.gradle.api.plugins.JavaPlugin",

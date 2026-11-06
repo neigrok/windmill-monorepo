@@ -4,4 +4,5 @@ import java.text.Normalizer
 
 object Nfc {
     fun normalise(value: String): String = Normalizer.normalize(value, Normalizer.Form.NFC)
+    fun nfd(value: String): String = Normalizer.normalize(value, Normalizer.Form.NFD)
 }

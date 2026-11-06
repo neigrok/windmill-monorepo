@@ -4,10 +4,10 @@
 
 **Figma:** none yet. The state comes from QW2 ([design brief](design-brief-quality-wave.md)), beside the existing proposal card boards.
 
-**Context:** Coach can answer before its proposal reaches the phone. Until the miss settles, Android draws nothing in the card's place, because no board draws a waiting state (ledger 11w). The answer can mention a change that is not visible yet.
+**Context:** On the phone that ran a turn its proposal commits with its call. A conversation synced from another phone can land an answer before its proposal, and the answer can mention a change that is not visible yet (ledger 11w).
 
 **Current implementation**
-- `coach/AskScreen.kt:439-495` re-reads an unseen proposal on every replica change and calls it gone only after a 10 s wait plus a later read, or a pull asked after the wait that landed caught up. Nothing is drawn meanwhile (`:275-277`). The settled miss reads *This proposal is no longer available.*
+- `AnsweredProposals` (`coach/AskScreen.kt`) re-reads an unseen proposal on every replica change and calls it gone only after a 10 s wait plus a later read, or a pull asked after the wait that landed caught up. Until a read misses, the room says *Reading proposal…*; until the miss settles, nothing in a routine card's place and *Reading proposal…* in a workout change's. The settled miss reads *This proposal is no longer available.*
 - `gym_proposal_missing` counts only answers this visit waited for.
 
 **Change**

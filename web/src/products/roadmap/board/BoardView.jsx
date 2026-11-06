@@ -1,6 +1,6 @@
 // The Board owns its frame and regrouping; the host owns identity, query and the toast slot.
 
-import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import './board.css';
 import { Board, BoardQuery } from './Board.js';
 import { useStepSelection } from './useStepSelection.js';
@@ -41,6 +41,9 @@ function BoardView({
   onRecolor,
   onDelete,
   editable = false,
+  selectionOpen = false,
+  selectRequest = null,
+  onSelectRequestTaken,
   toast = null,
   onToastReveal,
   onToastUndo,
@@ -70,12 +73,13 @@ function BoardView({
   const retried = useRef(false);
   const lastFocus = useRef(null);
   const consumedReveal = useRef(null);
+  const consumedSelect = useRef(null);
   const revealFocus = useRef(null);
   const phone = breakpoint === 'phone';
   const topGap = phone && deviceLine ? '0px' : 'var(--space-3)';
   const motion = useRegroup(nextBoard, { quiet, phone, root: boardRef });
   const board = motion.board;
-  const canSelect = editable && active && phone && nextBoard !== null;
+  const canSelect = selectionOpen && nextBoard !== null;
   const selection = useStepSelection({
     tree, board: nextBoard, shown, doneExpanded, active, enabled: canSelect,
     root: boardRef, leaving: motion.leaving, onSelect, onRecolor, onDelete,
@@ -83,22 +87,22 @@ function BoardView({
   const selecting = selection.selection;
   const selectionKinds = useMemo(() => bulkKindChoice(tree, selecting?.ids ?? [], legend), [tree, selecting, legend]);
   const selectionPins = useMemo(() => {
-    if (!selection.starterId) return motion.pinned;
-    return new Set([...motion.pinned, selection.starterId]);
-  }, [motion.pinned, selection.starterId]);
+    if (!selection.starterId && !selection.restoreId) return motion.pinned;
+    return new Set([...motion.pinned, selection.starterId, selection.restoreId].filter(Boolean));
+  }, [motion.pinned, selection.starterId, selection.restoreId]);
   const revealing = active && board !== null;
 
   useLayoutEffect(() => { if (motion.counts) onDisplayedOverall?.(motion.counts.overall); }, [motion.counts, onDisplayedOverall]);
 
   // A step's column opens — the phone's tab, past the Done fold, out of the tablet's rail. A follow, never a pick, so it
   // emits nothing.
-  const standColumnOf = (id) => {
-    const column = board.columnOf(id);
+  const standColumnOf = useCallback((id, displayed = board) => {
+    const column = displayed.columnOf(id);
     if (column === null) return;
     setShown(column);
-    if (column === 'done' && !board.recentDone().cards.some((card) => card.id === id)) setDoneExpanded(true);
+    if (column === 'done' && !displayed.recentDone().cards.some((card) => card.id === id)) setDoneExpanded(true);
     if (breakpoint === 'tablet') setRailed((current) => railToReveal(current, column));
-  };
+  }, [board, breakpoint]);
 
   // Shown with a step selected (Graph → Board, a link, a roadmap that just loaded), its column opens; so does the anchor's
   // when the Board is scoped to a branch.
@@ -110,6 +114,22 @@ function BoardView({
     setBranchShown(asked.branch);
     if (asked.branch !== null) standColumnOf(asked.branch);
   }
+
+  useEffect(() => {
+    if (!canSelect || !selectRequest || consumedSelect.current === selectRequest.key) return;
+    const column = nextBoard.columnOf(selectRequest.id);
+    if (column === null) return;
+    const folded = column === 'done' && !doneExpanded && !nextBoard.recentDone().cards.some((card) => card.id === selectRequest.id);
+    if (shown !== column || folded) {
+      standColumnOf(selectRequest.id, nextBoard);
+      return;
+    }
+    const displayed = board?.shownCards(column, { doneExpanded }).cards.some((card) => card.id === selectRequest.id);
+    if (!displayed || motion.leaving.has(selectRequest.id)) return;
+    if (!selection.start(selectRequest.id)) return;
+    consumedSelect.current = selectRequest.key;
+    onSelectRequestTaken?.(selectRequest.key);
+  }, [canSelect, selectRequest, nextBoard, shown, doneExpanded, selection.start, standColumnOf, board, motion.leaving, onSelectRequestTaken]);
 
   // Then its card scrolls into view at once, so reduced motion has nothing to opt out of.
   useEffect(() => {
@@ -220,7 +240,7 @@ function BoardView({
       {frame !== 'columns' && !phone && refusedNotice}
       {frame === 'loading' && <BoardSkeleton phone={phone} />}
       {frame === 'error' && <LoadError phone={phone} onRetry={retry} />}
-      {frame === 'empty' && <EmptyRoadmap onNewStep={onNewStep && (() => onNewStep('empty'))} />}
+      {frame === 'empty' && onNewStep && <EmptyRoadmap onNewStep={() => onNewStep('empty')} />}
       {frame === 'columns' && (
         <UpNextRest.Provider
           value={complete ? <RoadmapComplete phone={phone} total={board.overall.total} onShare={onShare} onNewStep={onNewStep && (() => onNewStep('complete'))} /> : null}
@@ -234,6 +254,7 @@ function BoardView({
                 onComplete={selecting ? undefined : onComplete}
                 onDelete={editable && !selecting ? selection.deleteFromKey : undefined}
                 selection={selecting}
+                selectionAnnouncement={selectionOpen ? selection.announcement : null}
                 kinds={selectionKinds.kinds}
                 sharedKind={selectionKinds.shared}
                 onHold={canSelect && !selecting ? selection.start : undefined}

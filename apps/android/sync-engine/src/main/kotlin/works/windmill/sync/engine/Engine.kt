@@ -7,6 +7,7 @@ import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.takeWhile
 import kotlinx.coroutines.flow.catch
@@ -21,6 +22,8 @@ interface EngineClock {
 }
 internal object ProcessClock { val boot = java.util.UUID.randomUUID().toString() }
 class EngineCrash : RuntimeException("simulated-process-death")
+// §7.12: `activeReplica()` answers `replica` where it answered `previous`.
+data class ActiveReplicaChange(val previous: String?, val replica: String)
 interface IdentitySource {
     fun opaqueID(): String
     fun draw(bound: Int): Int
@@ -37,8 +40,10 @@ class Engine internal constructor(val registry: Registry, internal val store: En
     internal val pendingDeviceWork: PendingDeviceWork = { _, _ -> emptyList() }) : Replica, AutoCloseable {
     internal val lock = ReentrantLock(true)
     internal var device = DeviceState(store.metadata()).also { device -> device.replicas.forEach { replica -> replica.staging.replaceAll { _, stage -> stage.with("rows" to null) } } }
+    // The answer `activeReplica()` gives, published as each transaction turns durable: the Main thread asks it, and no transaction may hold that thread up.
+    @Volatile private var activeNow = device.active
     internal val ended = mutableListOf<Json>()
-    internal var closed = false
+    @Volatile internal var closed = false
     private var writing = false
     private var crashCountdown: Int? = null
     internal val changedScopes = mutableSetOf<ScopeRef>()
@@ -81,8 +86,19 @@ class Engine internal constructor(val registry: Registry, internal val store: En
     val status get() = observation.status
     fun events(): List<Json> = lock.withLock { events.toList() }
     fun diagnostics(): List<Json> = lock.withLock { diagnostics.toList() }
-    fun activeReplica(): String = lock.withLock { ensureOpen(); device.current().id }
-    fun readRevision(): Long = lock.withLock { ensureOpen(); version }
+    fun activeReplica(): String {
+        ensureOpen()
+        return activeNow ?: throw IllegalStateException("no-active-replica")
+    }
+    // A sign-in this process has asked its decision of (§7.10): what it counted must hold still until it is answered. One a lost hello or an earlier process left asks nothing yet, and counts again when it does.
+    fun signInAsking(): Boolean { ensureOpen(); return decisionAsked }
+    @Volatile internal var decisionAsked = false
+    // The keys under `prefix` of a product's device rows, across every retained replica.
+    fun retainedDeviceKeys(product: String, prefix: String): Set<String> = lock.withLock {
+        ensureOpen()
+        device.replicas.flatMap { replica -> replica.device[product]?.obj()?.keys.orEmpty().filter { it.startsWith(prefix) } }.toSet()
+    }
+    fun readRevision(): Long { ensureOpen(); return version }
     fun revisions(): Flow<Long> = flow {
         var delivered = readRevision()
         emit(delivered)
@@ -94,8 +110,16 @@ class Engine internal constructor(val registry: Registry, internal val store: En
     internal data class Invalidation(val version: Long, val records: Set<Pair<ScopeRef, RecordKey>>, val full: Boolean = false, val scopes: Set<ScopeRef> = emptySet(), val firstPullScopes: Set<ScopeRef> = emptySet(), val operation: EngineOperation = EngineOperation.commit,
         val replica: String? = null, val account: String? = null)
     internal val changes = MutableSharedFlow<Invalidation>(replay = 1, extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+    // A null closes the collectors. A collector hears what commits after it subscribes; §7.12 holds no change for one that was not there.
+    private val replicaChanges = MutableSharedFlow<ActiveReplicaChange?>(extraBufferCapacity = 64, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+    private val replicaRebinds = MutableSharedFlow<String?>(extraBufferCapacity = 64, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+    // Every change of the active replica, once and in order, after the transaction that made it is durable; it ends when the engine closes.
+    fun activeReplicaChanges(): Flow<ActiveReplicaChange> = replicaChanges.takeWhile { it != null }.filterNotNull()
+    // Every sign-in that rebinds the active replica: its id stands, so `activeReplicaChanges` says nothing, and its seat has changed (§7.12). The same delivery, the same end.
+    fun activeReplicaRebinds(): Flow<String> = replicaRebinds.takeWhile { it != null }.filterNotNull()
     private val telemetry = TelemetryQueue(telemetry)
-    internal var version = 0L
+    // The answer `readRevision()` gives. The Main thread asks it, and no read or transaction may hold that thread up; it moves under the lock, once the transaction it names is durable.
+    @Volatile internal var version = 0L
     override fun physNow(): Long = lock.withLock { ensureOpen(); now(device.current()) }
     internal fun now(replica: ReplicaState) = clock.now() + replica.meta.member("serverOffsetMs").long()
     internal fun opaqueID() = identities.opaqueID()
@@ -128,6 +152,7 @@ class Engine internal constructor(val registry: Registry, internal val store: En
                 crashCountdown = if (left == 1) null else left - 1
                 if (left == 1) throw EngineCrash()
             }
+            activeNow = device.active
             val previous = before.replicas.flatMap { it.outbox }.associate { it.id to it.json }
             val current = device.replicas.flatMap { it.outbox }.associate { it.id to it.json }
             val modified = (previous.keys + current.keys).filter { previous[it] != current[it] }
@@ -143,6 +168,10 @@ class Engine internal constructor(val registry: Registry, internal val store: En
                     activeChanged || operation == EngineOperation.lifecycle || operation == EngineOperation.subscription, scopes = changedScopes.toSet(), firstPullScopes = cursorScopes, operation = operation,
                     replica = device.current().id, account = device.current().account))
             }
+            events.drop(eventsBefore).filter { it.member("event").str() == "activeReplicaChanged" }.forEach { change ->
+                replicaChanges.tryEmit(ActiveReplicaChange(change.member("previous").orNull()?.str(), change.member("replica").str()))
+            }
+            if (before.active == device.active && before.current().account != device.current().account) replicaRebinds.tryEmit(device.current().id)
             val outcome = (result as? Pair<*, *>)?.first as? CommitOutcome
             if (changed || outcome is CommitOutcome.Refused) telemetry.offer(operation,
                 if (outcome is CommitOutcome.Refused) EngineOutcome.refused else EngineOutcome.success, (outcome as? CommitOutcome.Refused)?.code?.text)
@@ -379,7 +408,7 @@ class Engine internal constructor(val registry: Registry, internal val store: En
     fun crashAfterTransactions(count: Int) = lock.withLock { require(count > 0); crashCountdown = count }
     fun rowsRead(): Int = lock.withLock { (store as? MemoryStore ?: error("memory-store-required")).rowsRead }
     override fun close() = lock.withLock { if (!closed) {
-        closed = true; changes.tryEmit(Invalidation(Long.MIN_VALUE, emptySet())); telemetry.close(); observation.close(); store.close()
+        closed = true; changes.tryEmit(Invalidation(Long.MIN_VALUE, emptySet())); replicaChanges.tryEmit(null); replicaRebinds.tryEmit(null); telemetry.close(); observation.close(); store.close()
     } }
     companion object {
         fun memory(registry: Registry, snapshot: Json? = null, clock: EngineClock = object : EngineClock { override fun now() = System.currentTimeMillis() },

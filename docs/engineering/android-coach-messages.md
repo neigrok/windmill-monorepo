@@ -20,8 +20,7 @@ with a 56 dp minimum height, 28 dp pill and no indicator. Add photo has a 48 dp 
 field component set is `1243:8725`; the approved placeholder instance uses `1243:8805`.
 Signed-out local History reuses its Filled/Disabled variants `1243:8801` and `1243:8811`, with
 4% container and 38% content opacity. Drafts and photos remain retained while editing and Send
-are disabled. The approved task 36 access-screen body and anonymous network admission are
-separate work.
+are disabled.
 
 The History, image, Send, Stop and down glyphs and both typing bubbles are native vectors
 converted from the exact Figma SVG paths. The icons retain their 24 dp viewports, the down glyph
@@ -56,7 +55,7 @@ viewport changes. Lifecycle and mixed read/write receipt regressions remain in t
 Native API 37 captures cover empty, Markdown, thinking, streaming, Copy and Jump states in both
 appearances. Native checks verify exact input and Send text, double-tap replacement, caret
 insertion, the whole two-paragraph answer through the real clipboard, stable History rail
-navigation, system-picker photo retention, owner isolation and pending-request restart. The current
+navigation, system-picker photo retention and owner isolation. The current
 rendered Routines readiness measurement is 1,436 ms; completed lifecycle runtime scans contain no
 ANR or fatal exception. First-party events and the controlled local Sentry draft-fault receipt are
 verified with task 37. Hosted delivery and public-release acceptance are not claimed.

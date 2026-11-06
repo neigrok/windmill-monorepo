@@ -161,28 +161,58 @@ std::optional<BelowFloor> firstBelowFloor(const std::vector<RoutineChange>& chan
   return std::nullopt;
 }
 
+int keptLinesMoved(const std::vector<PlacedLine>& retained) {
+  std::vector<PlacedLine> placed;
+  std::vector<PlacedLine> left;
+  for (const PlacedLine& line : retained) (line.from == line.to ? placed : left).push_back(line);
+  std::vector<std::size_t> candidates;
+  for (std::size_t at = 0; at < left.size(); ++at) {
+    const bool inOrder = std::all_of(placed.begin(), placed.end(), [&](const PlacedLine& other) {
+      return (left[at].to < other.to) == (left[at].from < other.from);
+    });
+    if (inOrder) candidates.push_back(at);
+  }
+  std::vector<int> longest(candidates.size(), 1);
+  for (std::size_t i = candidates.size(); i-- > 0;)
+    for (std::size_t j = i + 1; j < candidates.size(); ++j)
+      if (left[candidates[j]].from > left[candidates[i]].from) longest[i] = std::max(longest[i], longest[j] + 1);
+  std::vector<bool> standing(left.size(), false);
+  int previous = -1;
+  std::size_t start = 0;
+  for (int length = longest.empty() ? 0 : *std::max_element(longest.begin(), longest.end()); length > 0; --length) {
+    std::size_t next = candidates.size();
+    for (std::size_t i = start; i < candidates.size(); ++i)
+      if (left[candidates[i]].from > previous && longest[i] == length && (next == candidates.size() || left[candidates[i]].from < left[candidates[next]].from)) next = i;
+    standing[candidates[next]] = true;
+    previous = left[candidates[next]].from;
+    start = next + 1;
+  }
+  int moved = 0;
+  for (std::size_t at = 0; at < left.size(); ++at)
+    if (!standing[at] && left[at].kept) ++moved;
+  return moved;
+}
+
 int countedChanges(const std::vector<RoutineEntry>& base, const std::vector<RoutineChange>& changes,
                    const std::string& baseName, const std::string& proposedName) {
   int counted = baseName == proposedName ? 0 : 1;
   for (const RoutineChange& change : changes)
     if (change.kind != ChangeKind::kept) ++counted;
-
-  // The reorder, which the rows say by their order alone. Surviving lines are matched back to the
-  // base as changesBetween matched them, and the run moved if those base lines do not come out in
-  // base order. A line dropped from the middle is not a reorder; added lines consume nothing.
   std::vector<bool> matched(base.size(), false);
-  int highest = -1;
+  std::vector<PlacedLine> retained;
+  int place = 0;
   for (const RoutineChange& change : changes) {
-    if (change.kind == ChangeKind::added || change.kind == ChangeKind::removed) continue;
+    if (change.kind == ChangeKind::removed) continue;
+    const int to = place++;
+    if (change.kind == ChangeKind::added) continue;
     for (std::size_t at = 0; at < base.size(); ++at) {
       if (matched[at] || !(base[at].exercise == change.exercise)) continue;
       matched[at] = true;
-      if (static_cast<int>(at) < highest) return counted + 1;
-      highest = static_cast<int>(at);
+      retained.push_back({change.kind == ChangeKind::kept, static_cast<int>(at), to});
       break;
     }
   }
-  return counted;
+  return counted + keptLinesMoved(retained);
 }
 
 bool isReplayOf(const RoutineProposal& stored, const RoutineProposal& incoming) {

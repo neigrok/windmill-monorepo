@@ -82,6 +82,7 @@ final class GymModel {
   var workoutProposals: [WorkoutProposal] = []
   var outOfDateWorkoutProposals: [ID<WorkoutProposal>: CoachOutOfDate] = [:]
   @ObservationIgnored var awaitedWorkoutDecisions: [String: [ID<WorkoutProposal>: CoachQueuedDecision]] = [:]
+  @ObservationIgnored var lostProposals: Set<ID<WorkoutProposal>> = []
   @ObservationIgnored var awaitedRecoveries: [ID<Session>: RecoveryAction] = [:]
 
   init(runner: ActionRunner, runtime: AppRuntime? = nil, telemetry: any Telemetry = NoopTelemetry(), locale: Locale = .autoupdatingCurrent, rest: GymRESTClient? = nil,
@@ -220,6 +221,7 @@ final class GymModel {
       if runtime == nil || adoptionReadThrough != readThrough {
         adoptionReadThrough = readThrough
         var saved = try runner.read(Gym.scope) { try SignedOutWorkout.read($0) }
+        try reissueHeldProposals(of: saved)
         if !saved.isEmpty, try runner.run(ReconcileAdoptedWorkouts()).receipt != nil {
           saved = try runner.read(Gym.scope) { try SignedOutWorkout.read($0) }
         }

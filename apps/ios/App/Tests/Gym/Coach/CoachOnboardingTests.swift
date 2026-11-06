@@ -20,7 +20,7 @@ import SyncSchema
 extension CoachTests {
   func installationBody(credential: String? = nil) throws -> String {
     var body: [String: Any] = ["bound": false, "allowance": ["code": "ok", "currency": "USD", "period": "lifetime", "tier": "anonymous", "configured": true,
-      "limit": "0.050000000", "used": "0.000000000", "reserved": "0.000000000", "remaining": "0.050000000", "resetsAtMs": NSNull(), "budgetResetsAtMs": NSNull()]]
+      "limit": "0.250000000", "used": "0.000000000", "reserved": "0.000000000", "remaining": "0.250000000", "resetsAtMs": NSNull(), "budgetResetsAtMs": NSNull()]]
     body["credential"] = credential
     return String(decoding: try JSONSerialization.data(withJSONObject: body), as: UTF8.self)
   }
@@ -100,10 +100,10 @@ extension CoachTests {
   // An archived signed-out answer that needed an account offers Sign in while signed out and newest; adopted into an
   // account, it offers nothing, and a spent signed-out allowance is said only while signed out.
   @Test func archivedSignedOutAnswersOfferSignInAndSayTheirAllowanceOnlyWhileSignedOut() async throws {
-    let allowance = #""allowance":{"code":"ok","currency":"USD","period":"lifetime","tier":"anonymous","configured":true,"limit":"0.05","used":"0.01","reserved":"0","remaining":"0.04","resetsAtMs":null,"budgetResetsAtMs":null}"#
+    let allowance = #""allowance":{"code":"ok","currency":"USD","period":"lifetime","tier":"anonymous","configured":true,"limit":"0.25","used":"0.01","reserved":"0","remaining":"0.24","resetsAtMs":null,"budgetResetsAtMs":null}"#
     let needs = try onboardingRecord("onb-2", response: #"{"requestId":"onb-2","resultId":"r2","status":"completed","expiresAtMs":1900000000000,"routines":[],"errorCode":null,"message":"Sign in, then ask again.","needsAccount":true,"#+allowance+"}")
     let earlier = try onboardingRecord("onb-1", response: #"{"requestId":"onb-1","resultId":"r1","status":"completed","expiresAtMs":1900000000000,"routines":[],"errorCode":null,"message":"Sign in first.","needsAccount":true,"#+allowance+"}")
-    let spent = #"{"code":"subject_exhausted","currency":"USD","period":"lifetime","tier":"anonymous","configured":true,"limit":"0.05","used":"0.05","reserved":"0","remaining":"0","resetsAtMs":null,"budgetResetsAtMs":null}"#
+    let spent = #"{"code":"subject_exhausted","currency":"USD","period":"lifetime","tier":"anonymous","configured":true,"limit":"0.25","used":"0.25","reserved":"0","remaining":"0","resetsAtMs":null,"budgetResetsAtMs":null}"#
     let refused = try onboardingRecord("onb-3", response: #"{"requestId":"onb-3","resultId":"r3","status":"failed","expiresAtMs":1900000000000,"routines":[],"errorCode":"subject_exhausted","allowance":"#+spent+"}")
     let (anonymous, anonymousCache) = try await anonymousCoach()
     defer { try? FileManager.default.removeItem(at: anonymousCache.directory) }
@@ -121,7 +121,7 @@ extension CoachTests {
   // Apply on an archived answer replays by its result: a retry returns the routines it made, and an answer an earlier
   // version imported under the single receipt links its routines without making them again.
   @Test func applyReplaysByResultAndKeepsAnswersImportedUnderTheEarlierReceipt() async throws {
-    let allowance = #""allowance":{"code":"ok","currency":"USD","period":"lifetime","tier":"anonymous","configured":true,"limit":"0.05","used":"0.01","reserved":"0","remaining":"0.04","resetsAtMs":null,"budgetResetsAtMs":null}"#
+    let allowance = #""allowance":{"code":"ok","currency":"USD","period":"lifetime","tier":"anonymous","configured":true,"limit":"0.25","used":"0.01","reserved":"0","remaining":"0.24","resetsAtMs":null,"budgetResetsAtMs":null}"#
     let routines = #""routines":[{"name":"Upper","entries":[{"exerciseId":"bench-press","sets":[{"reps":8,"weightKg":null}],"restSeconds":90}]}]"#
     let fresh = try onboardingRecord("onb-1", response: #"{"requestId":"onb-1","resultId":"r1","status":"completed","expiresAtMs":1900000000000,"#+routines+#","errorCode":null,"#+allowance+"}")
     let earlier = try onboardingRecord("onb-2", response: #"{"requestId":"onb-2","resultId":"r2","status":"completed","expiresAtMs":1900000000000,"#+routines+#","errorCode":null,"#+allowance+"}")

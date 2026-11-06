@@ -1,5 +1,6 @@
 package works.windmill.sync.engine
 
+import works.windmill.sync.api.ViewMode
 import kotlin.concurrent.withLock
 import works.windmill.sync.core.*
 import works.windmill.sync.api.PendingDeviceWork
@@ -116,8 +117,8 @@ internal fun Engine.lineageWork(replica: ReplicaState, product: String): List<St
     entriesOf(replica, product).map { it.id } + pendingKeys(replica, product).map { key ->
         "device:$product:$key:${Sha256.hex(replica.device.getValue(product).member(key).jcs.encodeToByteArray())}"
     }
-internal fun Engine.anonCount(replica: ReplicaState, product: String): Json {
-    val records = entriesOf(replica, product).flatMap { entry -> entry.deltas.map { entry.scope to it.key } }.distinct()
+internal fun Engine.anonCount(replica: ReplicaState, product: String, counts: (ScopeRef, RecordKey) -> Boolean = { _, _ -> true }): Json {
+    val records = entriesOf(replica, product).flatMap { entry -> entry.deltas.map { entry.scope to it.key } }.distinct().filter { (scope, key) -> counts(scope, key) }
     val counts = records.groupingBy { it.second.type }.eachCount().toMutableMap()
     for (key in pendingKeys(replica, product)) {
         val detail = replica.device.getValue(product).member(key)["count"]?.obj()
@@ -132,6 +133,12 @@ internal fun Engine.anonCount(replica: ReplicaState, product: String): Json {
     return Json.Obj(counts.map { it.key to Json.of(it.value) })
 }
 fun Engine.anonCount(replica: String, product: String): Json = lock.withLock { ensureOpen(); anonCount(device.replicas.single { it.id == replica }, product) }
+// `anonCount` as the person would see it: of the records the work holds, those still drawn on the active replica, by type, with its device work as counted. A kind with nothing left is absent.
+fun Engine.anonDrawn(product: String): Map<String, Int> = lock.withLock {
+    ensureOpen()
+    val replica = device.current()
+    anonCount(replica, product) { scope, key -> view(replica, scope, key, ViewMode.drawn)?.isVisible == true }.obj().mapValues { it.value.long().toInt() }.filterValues { it > 0 }
+}
 fun Engine.signIn(account: String, holdsRecords: Map<String, Boolean>, decisions: Map<String, String> = emptyMap(), counted: Map<String, List<String>> = emptyMap(), serverSchema: Long? = null, retainAnonymous: Boolean = false): Json = write(EngineOperation.lifecycle) {
     val previous = device.active
     val anon = device.replicas.firstOrNull { it.state == "anon" }?.takeUnless { retainAnonymous }
@@ -145,6 +152,7 @@ fun Engine.signIn(account: String, holdsRecords: Map<String, Boolean>, decisions
             decisions[product] !in setOf("add", "discard") || counted[product]?.let { it != question.member("counted").arr().map(Json::str) } == true
         }) {
         device.meta = device.meta.with("pendingSignIn" to Json.objectOf("account" to Json.of(account)))
+        decisionAsked = true
         return@write Json.objectOf("complete" to Json.of(false), "due" to Json.Arr(due))
     }
     for (question in due) {
@@ -178,7 +186,7 @@ fun Engine.signIn(account: String, holdsRecords: Map<String, Boolean>, decisions
     observe(target, target.entries().flatMap { listOf(it.stamp) + it.deltas.flatMap { delta -> delta.lattice.stamps } })
     target.meta = target.meta.with("authPaused" to Json.of(false))
     serverSchema?.let { target.meta = target.meta.with("serverSchema" to Json.of(it)) }
-    device.meta = device.meta.with("pendingSignIn" to null); activate(previous, target)
+    device.meta = device.meta.with("pendingSignIn" to null); decisionAsked = false; activate(previous, target)
     Json.objectOf("complete" to Json.of(true), "due" to Json.Arr(due))
 }
 fun Engine.signOut(choice: String? = null, counted: List<String>? = null,

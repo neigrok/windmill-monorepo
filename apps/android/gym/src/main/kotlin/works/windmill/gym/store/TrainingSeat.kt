@@ -15,6 +15,9 @@ import works.windmill.sync.core.ScopeRef
 // A read that met a replica, seat or revision other than the one it started on; the observer reads again.
 internal class TrainingReadChanged : Exception()
 
+// A record of this kind that this build cannot decode. The kind is a schema's word, and it says nothing of what the record holds.
+private class TrainingRecordUndecoded(kind: String) : Exception(kind)
+
 // Whose training is in hand, whether this phone may write it, and the one guarded read every feature store reads
 // the replica through. A superseded read never publishes into a different seat.
 class TrainingSeat(
@@ -35,6 +38,7 @@ class TrainingSeat(
     var replicaReadRevision by mutableLongStateOf(-1L)
         internal set
     internal var refreshes: Channel<Unit>? = null
+    private val undecodedTold = mutableSetOf<String>()
 
     internal val workoutAuthorized: Boolean get() = workoutReady && pendingConnection == null && localWorkoutAuthorized &&
         workoutAuthority(owner) && controls.engineReplica == training.engine.activeReplica()
@@ -61,6 +65,8 @@ class TrainingSeat(
                 }
             }
             if (replica != training.engine.activeReplica() || account != seat || owner != holder) changed()
+            // One record this build cannot decode cost that record: the read stands, and each kind is reported once.
+            training.undecoded.filter(undecodedTold::add).forEach { telemetry.failure("gym.refreshWorkout", TrainingRecordUndecoded(it)) }
             if (revision == training.engine.readRevision()) return value
         }
         changed()

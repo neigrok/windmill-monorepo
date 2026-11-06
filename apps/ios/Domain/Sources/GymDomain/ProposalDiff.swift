@@ -109,17 +109,19 @@ public struct ProposalDiff: Equatable, Sendable {
   }
 
   // The movements a pending proposal moves, by change index, each with its place in the base and in the proposal. A
-  // movement whose place is the same in both never moved; of the rest, those in the longest run that keeps the base's
-  // order stand — of equal runs, the one whose places come first — and every other one moved.
+  // movement whose place is the same in both never moved. Of the rest, one that crosses such a movement moved; of those
+  // left, the longest run that keeps the base's order stands — of equal runs, the one whose places come first — and every
+  // other one moved.
   static func moves(_ changes: [RoutineChange], base: [RoutineEntry]) -> [Int: (from: Int, to: Int)] {
     var unmatched = Array(base.indices)
-    var kept: [(change: Int, from: Int, to: Int)] = []
+    var retained: [(change: Int, from: Int, to: Int)] = []
     for (to, (index, change)) in changes.enumerated().filter({ $0.element.kind != "removed" }).enumerated() {
       guard ["kept", "retargeted"].contains(change.kind),
             let at = unmatched.firstIndex(where: { base[$0].exerciseId == change.exerciseId }) else { continue }
-      let from = unmatched.remove(at: at)
-      if from != to { kept.append((index, from, to)) }
+      retained.append((index, unmatched.remove(at: at), to))
     }
+    let placed = retained.filter { $0.from == $0.to }, left = retained.filter { $0.from != $0.to }
+    let kept = left.filter { line in placed.allSatisfy { (line.to < $0.to) == (line.from < $0.from) } }
     var longest = Array(repeating: 1, count: kept.count)
     for i in kept.indices.reversed() {
       for j in kept.indices where j > i && kept[j].from > kept[i].from { longest[i] = max(longest[i], longest[j] + 1) }
@@ -128,10 +130,10 @@ public struct ProposalDiff: Equatable, Sendable {
     var start = 0
     while length > 0 {
       let next = kept.indices.filter { $0 >= start && kept[$0].from > previous && longest[$0] == length }.min { kept[$0].from < kept[$1].from }!
-      standing.insert(next); previous = kept[next].from; start = next + 1; length -= 1
+      standing.insert(kept[next].change); previous = kept[next].from; start = next + 1; length -= 1
     }
     var moves: [Int: (from: Int, to: Int)] = [:]
-    for (index, entry) in kept.enumerated() where !standing.contains(index) { moves[entry.change] = (entry.from + 1, entry.to + 1) }
+    for line in left where !standing.contains(line.change) { moves[line.change] = (line.from + 1, line.to + 1) }
     return moves
   }
 }

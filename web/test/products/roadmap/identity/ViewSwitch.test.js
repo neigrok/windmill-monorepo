@@ -38,3 +38,28 @@ test('ViewSwitch — every band wears one pair of glyphs (01.02): Board three ou
   assert.deepEqual(glyphs({ phone: true }), expected);
   assert.deepEqual(glyphs({}), expected);
 });
+
+
+test('ViewSwitch — unavailable Graph has a stable description on phone and wide, and never switches', async () => {
+  const { GRAPH_UNAVAILABLE, VIEW_SWITCH } = await import('../../../../src/products/roadmap/copy.js');
+  for (const phone of [true, false]) {
+    const choices = [];
+    const presses = [];
+    const props = { view: 'board', phone, graphUnavailable: true, onSwitch: (view) => choices.push(view), onGraphUnavailable: () => presses.push('press') };
+    const html = renderToStaticMarkup(React.createElement(ViewSwitch, props));
+    const reasonId = /aria-describedby="([^"]+)"/.exec(html)[1];
+    const ordinary = ViewSwitch({ view: 'board', phone, onSwitch: () => {} });
+    const board = renderToStaticMarkup(ordinary.props.children[0]);
+    const glyph = renderToStaticMarkup(ViewSwitch({ view: 'board', phone: true }).props.children[1].props.children);
+    const { CircleAlert } = await import('lucide-react');
+    const alert = renderToStaticMarkup(React.createElement(CircleAlert, { size: 20, 'aria-hidden': true }));
+    const description = phone
+      ? `<span id="${reasonId}" hidden=""><span>${GRAPH_UNAVAILABLE}</span></span>`
+      : `<span id="${reasonId}" role="tooltip" class="st-graph-unavailable-reason" hidden="" style="left:16px;top:0">${alert}<span>${GRAPH_UNAVAILABLE}</span></span>`;
+    assert.equal(html, `<div class="st-board-switch st-board-switch--${phone ? 'phone' : 'wide'}" role="group" aria-label="${VIEW_SWITCH.group}">${board}<span class="st-graph-unavailable"><button type="button" class="st-board-switch-option" aria-label="${VIEW_SWITCH.graph}" aria-pressed="false" aria-disabled="true" aria-describedby="${reasonId}">${glyph}</button>${description}</span></div>`);
+    const offered = ViewSwitch(props).props.children[1];
+    offered.props.onPress();
+    assert.deepEqual(presses, ['press']);
+    assert.deepEqual(choices, []);
+  }
+});

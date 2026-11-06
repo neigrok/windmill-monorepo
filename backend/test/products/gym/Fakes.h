@@ -1110,6 +1110,7 @@ struct ReadOnlyDoor : GymWriteDoor {
   }
   void closeStale(const UserId&) override {}
   void unlinkThread(const UserId&, const ThreadId&) override {}
+  bool interrupt(const UserId&, const std::string&) override { refuse(); }
   StartOutcome start(const UserId&, const SessionStart&) override { refuse(); }
   AppendOutcome append(const UserId&, const SessionId&, const SetWrite&) override { refuse(); }
   BatchLogOutcome appendSets(const UserId&, const SessionId&, const std::vector<SetWrite>&) override { refuse(); }

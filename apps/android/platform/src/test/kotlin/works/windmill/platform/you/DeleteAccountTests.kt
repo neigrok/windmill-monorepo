@@ -182,7 +182,7 @@ class DeleteAccountTests {
         compose.onNodeWithTag("deletion-email").assert(SemanticsMatcher.expectValue(SemanticsProperties.EditableText, AnnotatedString("")))
         compose.onNodeWithTag("deletion-primary").assertTextEquals("Delete account").assertIsNotEnabled()
         compose.onNodeWithText("Cancel").performClick()
-        compose.waitUntil(5_000) { exits.isNotEmpty() }
+        compose.waitUntil(5_000) { compose.runOnIdle { exits.isNotEmpty() } }
         assertEquals(listOf(false), exits)
     }
 
@@ -196,7 +196,7 @@ class DeleteAccountTests {
         compose.onNodeWithTag("deletion-primary").performClick()
         compose.onNodeWithText("Checking deletion").assertIsDisplayed()
         compose.onNodeWithText("Back to You").performClick()
-        compose.waitUntil(5_000) { !pending.visible }
+        compose.waitUntil(5_000) { compose.runOnIdle { !pending.visible } }
         compose.runOnIdle { pending.open() }
         compose.onNodeWithText("Check again").performClick()
         compose.onNodeWithText("Your account wasn’t deleted. This phone’s date and time look wrong. Fix them, then try again.").assertExists()
@@ -225,7 +225,7 @@ class DeleteAccountTests {
         compose.setContent { WindmillMaterial { if (mismatched.visible) DeleteAccount(mismatched) { exits += it } } }
         compose.onNodeWithTag("deletion-email").performTextInput(user.email)
         compose.onNodeWithTag("deletion-primary").performClick()
-        compose.waitUntil(5_000) { exits.isNotEmpty() }
+        compose.waitUntil(5_000) { compose.runOnIdle { exits.isNotEmpty() } }
         compose.runOnIdle {
             assertEquals(listOf(false), exits)
             assertFalse(mismatched.visible)

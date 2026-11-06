@@ -65,6 +65,7 @@ public struct CreateRoutineCall: Decider {
     if valid.value.entries.contains(where: { loaded.catalogue.find($0.exerciseId) == nil }) {
       return .refuse(GymRefusal(Refused(Gym.Codes.unknownExercise, subject: routine.id.ref, path: .predicted)))
     }
+    try RoutineRules.floored(valid.value, base: Routine(id: routine.id), movements: [], catalogue: loaded.catalogue)
     var plan = Plan()
     plan.create(valid)
     return .write(plan, AbilityAnswer(CoachDocuments.routine(valid.value), created: [routine.id.ref]))

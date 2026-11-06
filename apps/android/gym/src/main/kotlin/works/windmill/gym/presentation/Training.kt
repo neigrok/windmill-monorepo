@@ -436,7 +436,7 @@ object Ids {
     fun set(): String = mint("set_")
     fun routine(): String = mint("rt_")
 
-    // The one id here that is not a replay key: a fresh one opens a thread, the same one continues it.
+    // The one id here that is not a replay key: a chat on this phone, or what its composer holds. No server reads it.
     fun thread(): String = mint("thr_")
     fun exercise(): String = mint("ex_")
     // Minted once per editor, so a save whose reply was lost replays as the same note.

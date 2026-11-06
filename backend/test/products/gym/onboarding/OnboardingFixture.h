@@ -99,9 +99,9 @@ struct Failures : FailureReporter {
 };
 
 struct Harness {
-  fake::FakeClock clock;
+  wm::fake::FakeClock clock;
   OpenSslTokenGenerator tokens;
-  fake::FakeAiBudgetRepository budgetRepository;
+  wm::fake::FakeAiBudgetRepository budgetRepository;
   AiBudgetLimits limits;
   std::shared_ptr<AiBudgetService> budgets=std::make_shared<AiBudgetService>(budgetRepository,[this]{return limits;},[this]{return clock.now;});
   Installations installationRepository;
