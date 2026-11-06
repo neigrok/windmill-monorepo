@@ -533,9 +533,12 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   [evidence log](roadmap-web-reconciliation.md) and linked from the [flow index](../index.md#roadmap--web).
   🚀 marks source/runtime reconciliation; runtime limits are separate. Native graphs and SwiftShader
   captures do not establish WebGL lighting, animation timing or real-GPU performance.
-- **Web AI failure copy.** `tending/receipts.js` says the submitted sentence remains available, but
-  `TendBar.jsx` clears it on submit and `SkillTreeView.jsx` closes the desktop overlay on terminal
-  outcomes. Preserve the prompt or correct the copy; current drawings retain the implemented face.
+- **Web AI failure recovery.** Ask AI closes on submit on desktop and phone; `useRoomTend` keeps the
+  sentence while the run continues. Failure reopens Ask AI with that sentence unless the user explicitly
+  dismissed it during the run, in which case the next opening restores it. The toast copy is unchanged.
+  Update the Figma Tend drawings ([desktop](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=185-152),
+  [phone](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=185-194)) to show failure reopening
+  with the sentence and recovery after a mid-run dismissal.
 - **Web shortcuts layout.** `skilltree.css` keeps two columns and nonshrinking keycap groups.
   At 390px, Pan/Zoom overlap View; Windows desktop Zoom also extends slightly into Edit. Local
   owner/reader and Mac/Windows captures confirm this. Adapt columns/key wrapping in the implementation;

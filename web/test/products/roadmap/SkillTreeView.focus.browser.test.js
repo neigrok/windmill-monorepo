@@ -273,29 +273,55 @@ for (const width of [744, 1440]) {
   });
 }
 
-for (const width of [390, 744, 1440]) {
-  hostTest(`Chromium: failed Ask AI retains its exact sentence and successful retry closes the bar at ${width}px`, async () => {
+for (const width of [390, 744, 1440]) for (const dismissal of [null, 'Escape', 'scrim']) {
+  hostTest(`Chromium: Ask AI closes on submit and restores its failed sentence ${dismissal ? `after ${dismissal} dismissal` : 'on failure'} at ${width}px`, async () => {
     const { page, errors } = await openHost({ width });
     try {
       const { runFace } = await import('../../../src/products/roadmap/tending/receipts.js');
       let failed = true;
-      await page.route('**/v1/trees/t_sail/tend', (route) => route.fulfill({
-        status: 200, contentType: 'application/json', body: JSON.stringify(failed ? { status: 'failed' } : { status: 'done', edits: 0 }),
-      }));
-      if (width === 390) {
-        await page.locator('.st-roadmap-title-button').click();
-        await page.getByRole('dialog', { name: 'Roadmap', exact: true }).getByRole('button', { name: 'Ask AI', exact: true }).click();
-      } else if (width === 744) {
-        await page.getByRole('button', { name: 'More', exact: true }).click();
-        await page.getByRole('menuitem', { name: 'Ask AI', exact: true }).click();
-      } else {
-        await page.locator('.st-roadmap-identity').getByRole('button', { name: 'Ask AI', exact: true }).click();
-      }
+      let finish;
+      let started;
+      const requestStarted = new Promise((resolve) => { started = resolve; });
+      await page.route('**/v1/trees/t_sail/tend', async (route) => {
+        if (failed) {
+          await new Promise((resolve) => { finish = resolve; started(); });
+          await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ status: 'failed' }) });
+          return;
+        }
+        await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ status: 'done', edits: 0 }) });
+      });
+      const openAskAI = async () => {
+        if (width === 390) {
+          await page.locator('.st-roadmap-title-button').click();
+          await page.getByRole('dialog', { name: 'Roadmap', exact: true }).getByRole('button', { name: 'Ask AI', exact: true }).click();
+        } else if (width === 744) {
+          await page.getByRole('button', { name: 'More', exact: true }).click();
+          await page.getByRole('menuitem', { name: 'Ask AI', exact: true }).click();
+        } else {
+          await page.locator('.st-roadmap-identity').getByRole('button', { name: 'Ask AI', exact: true }).click();
+        }
+        await page.locator('.st-tend-overlay').waitFor();
+      };
+      await openAskAI();
       const input = page.getByRole('textbox', { name: 'Tell the tree what to change' });
       const sentence = '  Add a practice step  ';
       await input.fill(sentence);
       await input.press('Enter');
+      await requestStarted;
+      await page.locator('.st-tend-overlay').waitFor({ state: 'detached' });
+      if (dismissal) {
+        await openAskAI();
+        assert.equal(await page.locator('.st-tend-overlay').getByText('Updating roadmap…', { exact: true }).count(), 1);
+        if (dismissal === 'Escape') await page.keyboard.press('Escape');
+        else await page.locator('.st-tend-overlay').click({ position: { x: 4, y: 4 } });
+        await page.locator('.st-tend-overlay').waitFor({ state: 'detached' });
+      }
+      finish();
       await page.waitForFunction(() => window.events.some(({ name, props }) => name === 'roadmap_verb' && props.verb === 'askAI' && props.outcome === 'failed'));
+      if (dismissal) {
+        assert.equal(await page.locator('.st-tend-overlay').count(), 0);
+        await openAskAI();
+      }
       await input.waitFor();
       assert.equal(await input.inputValue(), sentence);
       const failureLine = runFace({ status: 'failed' }).line;
@@ -304,17 +330,21 @@ for (const width of [390, 744, 1440]) {
       assert.deepEqual(await announcement.evaluate((element) => ({
         text: element.textContent, live: element.getAttribute('aria-live'), atomic: element.getAttribute('aria-atomic'),
         inDialog: Boolean(element.closest('[role="dialog"]')), inert: Boolean(element.closest('[inert]')),
-      })), { text: failureLine, live: 'polite', atomic: 'true', inDialog: true, inert: false });
+        describesInput: element.closest('form').querySelector('input').getAttribute('aria-describedby') === element.id,
+      })), { text: failureLine, live: 'polite', atomic: 'true', inDialog: true, inert: false, describesInput: true });
       await page.waitForFunction(() => document.activeElement?.tagName === 'INPUT');
       failed = false;
       await input.press('Enter');
       await page.locator('.st-tend-overlay').waitFor({ state: 'detached' });
+      await page.waitForFunction(() => window.events.some(({ name, props }) => name === 'roadmap_verb' && props.verb === 'askAI' && props.outcome === 'receipt'));
       assert.deepEqual(await page.evaluate(() => window.events.filter(({ name, props }) => name === 'roadmap_verb' && props.verb === 'askAI' && props.step)), [
         { name: 'roadmap_verb', props: { verb: 'askAI', step: 'send' } },
         { name: 'roadmap_verb', props: { verb: 'askAI', step: 'answer', outcome: 'failed' } },
         { name: 'roadmap_verb', props: { verb: 'askAI', step: 'send' } },
         { name: 'roadmap_verb', props: { verb: 'askAI', step: 'answer', outcome: 'receipt' } },
       ]);
+      await openAskAI();
+      assert.equal(await input.inputValue(), '');
       assert.deepEqual(errors, []);
     } finally { await page.close(); }
   });

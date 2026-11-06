@@ -22,9 +22,9 @@ class RetiredTree extends Error {
 // One pass over the device index. `openSession` is an accessor for the live session of the
 // currently-open tree; every other tree drains through a headless session. Never rejects.
 export async function claimLocalTrees({ openTreeId = null, openSession = null } = {}) {
-  // Who is arriving comes from the server, never from a remembered marker.
+  // The server or restored replica identifies the device holder; claiming still requires a server session.
   const owner = await resolveDeviceOwner();
-  if (!owner) return { claimed: 0 }; // nobody is signed in; there is no account to claim into
+  if (!owner) return { claimed: 0 }; // no known device holder to claim for
   const registry = new LocalTreeRegistry();
   const pending = registry.list(owner).filter((entry) => !entry.claimed);
   if (pending.length === 0) return { claimed: 0 };

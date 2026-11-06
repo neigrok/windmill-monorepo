@@ -564,7 +564,7 @@ test('Chromium: while the Board is shown, what it covers leaves the tab order â€
     });
     await page.evaluate(() => {
       document.body.insertAdjacentHTML('beforeend', `<div id="stage" style="position: relative; height: 400px">
-        <button style="position: absolute; z-index: 16">Recolour</button>
+        <button style="position: absolute; z-index: 16">Recolor</button>
         <div style="position: absolute"><button>Graph overlay</button></div>
         <div class="layer" style="position: absolute; inset: 0; z-index: 18"><button>Card</button></div>
         <header style="position: absolute; z-index: 20"><button>Topbar</button></header>
@@ -579,7 +579,7 @@ test('Chromium: while the Board is shown, what it covers leaves the tab order â€
     assert.deepEqual([covered, arrived, await tabbed()], [
       ['Card', 'Topbar'],
       ['Card', 'Topbar'],
-      ['Recolour', 'Graph overlay', 'Card', 'Topbar', 'Edge Ã—'],
+      ['Recolor', 'Graph overlay', 'Card', 'Topbar', 'Edge Ã—'],
     ]);
     for (const lowerFirst of [true, false]) {
       assert.deepEqual(await page.evaluate((lowerFirst) => {

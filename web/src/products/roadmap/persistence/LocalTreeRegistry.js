@@ -3,6 +3,7 @@
 // of unclaimed entries, so a claim can never adopt a tree this device didn't bear.
 
 import { fetchMe } from '../../../shell/auth/AuthClient.js';
+import { restoredDeviceHolder } from '../../../shell/auth/accountChange.js';
 import { syncSession } from '../../../platform/sync/session.js';
 import { localStorageOrNothing } from './browserStorage.js';
 
@@ -34,20 +35,26 @@ export function confirmDeviceOwner(userId) {
 export function deviceOwnerAnswered(withinMs = 2000) {
   if (confirmation()) return Promise.resolve();
   return new Promise((resolve) => {
-    waitingForOwner.add(resolve);
-    setTimeout(resolve, withinMs);
+    const finish = () => {
+      clearTimeout(timer);
+      waitingForOwner.delete(finish);
+      resolve();
+    };
+    const timer = setTimeout(finish, withinMs);
+    waitingForOwner.add(finish);
   });
 }
 
 export async function resolveDeviceOwner() {
   const me = await fetchMe();
-  if (!me && !confirmation()) {
-    const engine = await syncSession.opening?.catch(() => null);
-    if (engine?.restoring) await engine.restoring;
-    const meta = engine?.device?.meta;
-    const replica = engine?.device?.activeReplica?.meta;
-    const clearing = engine?.closed || engine?.signingOut || meta?.signOut || meta?.deviceCleanup || meta?.clearCredential || meta?.closingAccount;
-    if (!confirmation() && !clearing && replica?.state === 'bound') return confirmDeviceOwner(replica.account);
+  if (!me && !confirmation() && syncSession.opening) {
+    const restored = syncSession.opening.then(async (engine) => {
+      if (engine?.restoring) await engine.restoring;
+      return engine;
+    }).catch(() => null);
+    const engine = await Promise.race([restored, deviceOwnerAnswered(2000)]);
+    const owner = restoredDeviceHolder(engine);
+    if (!confirmation() && owner) return confirmDeviceOwner(owner);
   }
   if (me === undefined) return deviceOwner(); // a blip is not an account change, in either direction
   if (me === null && deviceOwner()) return deviceOwner();
@@ -112,8 +119,7 @@ export class LocalTreeRegistry {
     this.write(entries);
   }
 
-  // Rows with no owner field are attributed on first contact: the first server answer of this
-  // document load writes itself onto them, once. On a signed-out device that answer is null.
+  // Unattributed rows take the first device holder confirmed by the server or restored replica, once.
   stampUnattributed(owner) {
     const entries = this.entries();
     let changed = false;

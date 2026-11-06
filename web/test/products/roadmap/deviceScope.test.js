@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { setImmediate as nextTurn } from 'node:timers/promises';
 
 import { LocalTreeRegistry, confirmDeviceOwner, deviceOwner } from '../../../src/products/roadmap/persistence/LocalTreeRegistry.js';
 import { listAllTrees } from '../../../src/products/roadmap/persistence/TreeRegistry.js';
@@ -321,6 +322,33 @@ for (const offline of [false, true]) {
     assert.equal(await loadDeviceTree('t_b'), null);
     assert.deepEqual(engine.device.activeReplica.meta, { state: 'bound', account: 'u_a', authPaused: true });
     assert.deepEqual(device.blobIds(), ['t_a', 't_b']);
+  });
+}
+
+for (const stalled of ['opening', 'restoring']) {
+  test(`a signed-out roadmap list finishes after two seconds when engine ${stalled} hangs`, async (t) => {
+    browser({ index: { t_a: A_PRIVATE, t_anon: ANON } });
+    serverSaying({});
+    const previous = syncSession.opening;
+    let release;
+    const hung = new Promise((resolve) => { release = resolve; });
+    const engine = { device: { meta: {}, activeReplica: { meta: { state: 'bound', account: 'u_a' } } } };
+    syncSession.opening = stalled === 'opening' ? hung : Promise.resolve({ ...engine, restoring: hung });
+    t.after(() => { syncSession.opening = previous; });
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    let rows;
+    const listing = listAllTrees().then((result) => { rows = result; });
+    await nextTurn();
+    t.mock.timers.tick(1999);
+    await nextTurn();
+    assert.equal(rows, undefined);
+    t.mock.timers.tick(1);
+    await listing;
+    assert.deepEqual(rows, [{ id: 't_anon', title: 'Learn to sail', updatedAt: 20, claimed: false, origin: 'device' }]);
+    assert.equal(deviceOwner(), null);
+    release(engine);
+    await nextTurn();
+    assert.equal(deviceOwner(), null, 'a late engine completion never grants device authority');
   });
 }
 

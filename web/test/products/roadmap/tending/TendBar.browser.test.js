@@ -25,15 +25,22 @@ if (presentation === 'docked') {
 }
 const root = createRoot(document.getElementById('root'));
 document.getElementById('opener').focus();
-root.render(React.createElement(TendBar, {
+function Fixture() {
+  const [value, onChange] = React.useState('');
+  const [open, setOpen] = React.useState(true);
+  window.reopen = () => setOpen(true);
+  return open ? React.createElement(TendBar, {
+  value, onChange,
   examples: ['Is this realistic?', 'What am I missing?'],
   presentation,
   topInset: Number(query.get('topInset') ?? 173),
   placeholder: ASK_AI_PLACEHOLDER[query.get('empty') ? 'empty' : presentation === 'docked' ? 'phone' : 'wide'],
   portalTarget: document.body,
-  onSubmit(value) { window.submitted.push(value); },
-  onDismiss() { window.dismissed += 1; root.render(null); },
-}));
+  onSubmit(value) { window.submitted.push(value); setOpen(false); },
+  onDismiss() { window.dismissed += 1; setOpen(false); },
+}) : null;
+}
+root.render(React.createElement(Fixture));
 `;
 let server, browser, origin;
 const ready = (async () => {
@@ -80,9 +87,8 @@ for (const width of [320, 390, 744]) {
       await input.fill('Add a practice step');
       await page.getByRole('button', { name: 'Ask AI', exact: true }).click();
       assert.deepEqual(await page.evaluate(() => window.submitted), ['Add a practice step']);
-      assert.equal(await input.inputValue(), 'Add a practice step');
-      await page.keyboard.press('Escape');
-      assert.equal(await page.evaluate(() => window.dismissed), 1);
+      await page.getByRole('dialog').waitFor({ state: 'detached' });
+      assert.equal(await page.evaluate(() => window.dismissed), 0);
       });
     } finally {
       await page.close();
@@ -166,7 +172,7 @@ test('Chromium: the 744 overlay sits beneath the row and the empty roadmap keeps
 });
 
 for (const presentation of ['docked', 'overlay']) {
-  test(`Chromium: ${presentation} Ask AI keeps its sentence and waits for the owner to close after submit`, async () => {
+  test(`Chromium: ${presentation} Ask AI closes on submit and restores its controlled sentence when reopened`, async () => {
     await ready;
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
     try {
@@ -175,9 +181,15 @@ for (const presentation of ['docked', 'overlay']) {
         const input = page.getByRole('textbox', { name: 'Tell the tree what to change' });
         await input.fill('  Add a practice step  ');
         await input.press('Enter');
+        await page.getByRole('dialog').waitFor({ state: 'detached' });
+        await page.evaluate(() => window.reopen());
+        await input.waitFor();
         assert.equal(await input.inputValue(), '  Add a practice step  ');
+        assert.deepEqual(await page.locator('.st-tend-spoken').evaluate((element) => ({
+          width: getComputedStyle(element).width, height: getComputedStyle(element).height, overflow: getComputedStyle(element).overflow,
+        })), { width: '1px', height: '1px', overflow: 'hidden' });
         assert.deepEqual(await page.evaluate(() => ({ submitted: window.submitted, dismissed: window.dismissed })),
-          { submitted: ['Add a practice step'], dismissed: 0 });
+          { submitted: ['  Add a practice step  '], dismissed: 0 });
       });
     } finally { await page.close(); }
   });

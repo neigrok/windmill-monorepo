@@ -83,11 +83,6 @@ fallback's measured bottom feeds the same insets. The step and the composer clos
 `SkillTreeScene`. Layout is synchronous and cached by graph structure, effective engine and, for caption-aware
 engines, labels.
 
-After a session lapse, device reads restore the holder from the shell's active bound replica before looking
-up a saved roadmap. This grants local access only; pending sign-out, credential clearing, device cleanup or
-account closure prevents that restoration. The room opens its replica with the lapsed device line, and
-signing back into the same account reconnects its pending changes.
-
 The repository judges its own reads, and `BoundaryFailure` says so to any catch above it. A server tree whose marks can't be
 read reports `roadmap-progress-load` and stops the load, so the room shows the load error and Try again rather than a false
 count. A failed activity read reports `roadmap-activity-load` and costs only the feed. A device tree's reads report nothing and
@@ -169,9 +164,10 @@ sheet before opening its step. `activity/ActivityRows.jsx` owns the shared rows,
 empty state.
 
 **Ask AI** uses an overlay from 744px and a modal dock on phones, with examples above its field. The dock
-reuses composer viewport tracking to clear the keyboard. Escape and the scrim dismiss it. Submitting keeps
-the sentence until the answer; a failed answer leaves the bar open with the sentence intact. Its unchanged
-failure copy is also announced inside the active dialog while the room's toast is covered.
+reuses composer viewport tracking to clear the keyboard. Escape and the scrim dismiss it. Submitting closes
+either presentation while the room retains the sentence. A failed answer reopens Ask AI with the sentence;
+an explicit dismissal during the run keeps it closed and restores the sentence on the next opening. The
+unchanged failure copy is also announced inside the active dialog while the room's toast is covered.
 
 ## The Board
 
@@ -637,10 +633,11 @@ timers are deduplicated, and closing a session sets its phase offline.
 
 **Device trees.** `LocalTreeRegistry` associates device trees with accounts, and device reads require a server
 answer or the shell's restored active bound replica. A remembered face does not authorize a store read. On a
-cold 401 or offline read, the registry waits for replica opening and restoration before resolving the holder;
-pending cleanup prevents restoration. A session lapse keeps the device owner and pending work without
-granting session authority. The same account's sign-in resumes
-synchronization. A fresh sign-in can retry an unavailable read; ordinary signed-in cold loads compare against
+cold 401 or offline read, the registry bounds its wait for the engine's holder answer to two seconds, so a
+stuck engine cannot indefinitely hold public links, the demo or the roadmap list. The shell's owner rule
+refuses restoration during sign-out or pending cleanup. A session lapse keeps the device owner and pending
+work without granting session authority; the room shows the lapsed device line. The same account's sign-in
+resumes synchronization. A fresh sign-in can retry an unavailable read; ordinary signed-in cold loads compare against
 the owner the read actually used and do not reread when the shell settles. Explicit sign-out and account
 replacement atomically record pending device cleanup with the replica transition. The shell replays it before
 engine networking on reload and clears it only after product cleanup finishes; roadmap blob deletions must

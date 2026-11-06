@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { setImmediate as nextTurn } from 'node:timers/promises';
 import { renderHook, settle } from '../../gym/harness.mjs';
 import { until } from '../../../platform/sync/fakes.js';
 import { useRoomLoad } from '../../../../src/products/roadmap/room/useRoomLoad.js';
@@ -52,6 +53,34 @@ const result = await build({ configFile: false, root, logLevel: 'silent', plugin
   },
 }], build: { write: false, minify: false, rollupOptions: { input: 'room-load-entry', preserveEntrySignatures: 'strict', output: { format: 'es', inlineDynamicImports: true } } } });
 const captured = await import(`data:text/javascript;base64,${Buffer.from(result.output[0].code).toString('base64')}`);
+
+for (const demo of [false, true]) {
+  test(`a signed-out ${demo ? 'demo' : 'public roadmap'} opens after the bounded wait when IndexedDB opening hangs`, async (t) => {
+    const previous = globalThis.window;
+    globalThis.window = { location: { search: '', hash: demo ? '#/demo' : '#/t/t_public' }, localStorage: { getItem: () => null, setItem() {} } };
+    t.after(() => { globalThis.window = previous; });
+    const previousOpening = platformSession.opening;
+    platformSession.opening = new Promise(() => {});
+    t.after(() => { platformSession.opening = previousOpening; });
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    t.mock.method(globalThis, 'fetch', async () => ({ ok: false, status: 401 }));
+    const reads = t.mock.method(HttpTreeRepository.prototype, 'loadTree', async () => ({ id: 't_public', title: 'Shared roadmap', nodes: [], mine: false }));
+    t.mock.method(HttpTreeRepository.prototype, 'loadProgress', async () => ({ completed: new Set(), completedAt: {} }));
+    t.mock.method(HttpTreeRepository.prototype, 'loadActivity', async () => []);
+    t.mock.method(SyncSession.prototype, 'start', function () { return this; });
+    t.mock.method(SyncSession.prototype, 'close', () => {});
+    const props = { ...roomProps('t_public'), demo, shared: true };
+    const view = renderHook(t, () => useRoomLoad(props));
+    await nextTurn();
+    t.mock.timers.tick(1999);
+    await nextTurn();
+    assert.equal(reads.mock.callCount(), 0);
+    t.mock.timers.tick(1);
+    await until(() => !view.tree.loading);
+    assert.deepEqual({ error: view.tree.loadError, owner: view.tree.treeMine, title: props.room.treeRef.current.title, reads: reads.mock.callCount() },
+      { error: false, owner: false, title: 'Shared roadmap', reads: 1 });
+  });
+}
 
 test('a lapsed cold room loads its owned replica and presents the existing signed-out device line', async (t) => {
   globalThis.roomLoadIssues = [];

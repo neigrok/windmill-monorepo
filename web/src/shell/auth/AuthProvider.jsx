@@ -43,7 +43,7 @@ export default function AuthProvider({ children }) {
     () => session.engine?.getSnapshot().upgradeRequired ?? false,
     () => false,
   );
-  const [seat] = useState(() => new DeviceSeat());
+  const [seat] = useState(() => new DeviceSeat(PRODUCTS));
   const channel = useRef(null);
   const pending = useRef(null);
   const signOutResult = useRef(null);
@@ -152,7 +152,7 @@ export default function AuthProvider({ children }) {
     if (engine?.restoring) await engine.restoring;
     if (!engine || engine.closed) return undefined;
     await cleanupDevice(engine);
-    seat.restoreHolder(engine.device.activeReplica.meta);
+    seat.restoreHolder(engine);
     if (engine.device.meta.closingAccount) {
       const lock = engine.device.meta.signOut?.lock;
       if (lock && !engine.releaseSignOut && (await navigator.locks.query()).held.some((held) => held.name === lock)) return undefined;
@@ -185,7 +185,7 @@ export default function AuthProvider({ children }) {
   const signIn = useCallback((me) => enqueue(async () => {
     await syncSession.opening;
     await cleanupDevice(syncSession.engine);
-    seat.restoreHolder(syncSession.engine.device.activeReplica.meta);
+    seat.restoreHolder(syncSession.engine);
     if (syncSession.engine.device.meta.closingAccount) await finishClosure();
     // A freshly verified cookie supersedes any cleanup owed for an earlier session.
     await syncSession.engine.write(null, (device) => { delete device.meta.clearCredential; });

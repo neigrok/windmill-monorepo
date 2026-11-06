@@ -144,7 +144,7 @@ export function SkillTreeView({ treeId, demo = false }) {
   const reader = Boolean(tree) && !demo && (!treeMine || Boolean(demotion));
   const tabletEditor = owner && breakpoint === 'tablet';
   const who = { owner, reader, role: demo ? 'demo' : owner ? 'owner' : 'reader', demo, shared, phone, breakpoint, desktopEditor, tabletEditor };
-  const { canTend, tendOpen, setTendOpen, tendWorking, tendFailure, submitTend } = useRoomTend({ treeId, treeMine, status, shared, demo, demotion, room, showToast });
+  const { canTend, tendOpen, setTendOpen, tendDraft, setTendDraft, tendWorking, tendFailure, submitTend } = useRoomTend({ treeId, treeMine, status, shared, demo, demotion, room, showToast });
   const tablet = useTabletEditing({ tabletEditor, scene, tree, nodesById, selectedNode, projectionRef, selection, editing });
   const { stopEditing } = tablet;
 
@@ -488,6 +488,8 @@ export function SkillTreeView({ treeId, demo = false }) {
           presentation={phone ? 'docked' : 'overlay'}
           topInset={geometry.tendTopInset}
           working={tendWorking}
+          value={tendDraft}
+          onChange={setTendDraft}
           failure={tendFailure}
           placeholder={tree?.nodes.length > 0 ? (phone ? ASK_AI_PLACEHOLDER.phone : ASK_AI_PLACEHOLDER.wide) : ASK_AI_PLACEHOLDER.empty}
           examples={tree?.nodes.length > 0 ? ['Is this realistic?', 'What am I missing?'] : []}

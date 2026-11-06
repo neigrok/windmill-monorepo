@@ -1,9 +1,10 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useId, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Icon } from '../../../design-system';
 import { useDialogFocus } from '../../../design-system/feedback/Dialog.jsx';
 import { coverBeneath, useComposerViewport } from '../step/composerFocus.js';
 import { ASK_AI_PLACEHOLDER, ROADMAP_VERBS } from '../copy.js';
+import './tend-bar.css';
 
 export function TendBar({
   presentation,
@@ -11,13 +12,15 @@ export function TendBar({
   placeholder = ASK_AI_PLACEHOLDER.wide,
   examples = [],
   working,
+  value,
+  onChange,
   failure = '',
   onSubmit,
   onDismiss,
   portalTarget,
 }) {
-  const [value, setValue] = useState('');
   const inputRef = useRef(null);
+  const failureId = useId();
   const docked = presentation === 'docked';
   const formRef = useRef(null);
   const layerRef = useRef(null);
@@ -34,7 +37,7 @@ export function TendBar({
     event.preventDefault();
     const prompt = value.trim();
     if (!prompt || working) return;
-    onSubmit(prompt);
+    onSubmit(value);
   };
 
   const starters = !working && !value && examples.length > 0 && (
@@ -42,7 +45,7 @@ export function TendBar({
       {examples.map((example) => (
         <button key={example} type="button" style={exampleChip}
           onClick={() => {
-            setValue(example);
+            onChange(example);
             inputRef.current?.focus();
           }}>
           {example}
@@ -62,7 +65,7 @@ export function TendBar({
       onKeyDown={dialogFocus}
       style={formStyles[presentation]}
     >
-      <span className="st-board-spoken" role="status" aria-live="polite" aria-atomic="true">{failure}</span>
+      <span id={failureId} className="st-tend-spoken" role="status" aria-live="polite" aria-atomic="true">{failure}</span>
       {starters}
       <div style={shell}>
         <span style={mark}><Icon name="sparkles" size={17} /></span>
@@ -72,11 +75,12 @@ export function TendBar({
           <input
             ref={inputRef}
             value={value}
-            onChange={(event) => setValue(event.target.value)}
+            onChange={(event) => onChange(event.target.value)}
             placeholder={placeholder}
             maxLength={2000}
             enterKeyHint="send"
             aria-label="Tell the tree what to change"
+            aria-describedby={failure ? failureId : undefined}
             style={field}
           />
         )}
