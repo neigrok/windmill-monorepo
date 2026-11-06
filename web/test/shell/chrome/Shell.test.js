@@ -20,6 +20,26 @@ function browser() {
 const context = { user: { name: 'Ada' }, status: 'signed-in', signOut() {}, open() {}, lendHost() {} };
 const location = { pathname: '/app', hash: '', search: '' };
 
+test('an account replacement replaces the whole room with the existing loading surface', async (t) => {
+  browser();
+  const { Shell } = await loadScreen('shell/chrome/Shell.jsx');
+  const PreviousRoom = () => 'Previous holder content';
+  const auth = { ...context, roomChanging: false };
+  const shell = renderHook(t, () => Shell({ location, neutral: { Component: PreviousRoom, props: {} } }), { context: auth });
+  const room = elementsOf(shell.tree).find((element) => element.type?.name === 'RoomContent');
+  const rendered = renderHook(t, () => room.type(room.props), { context: auth });
+  assert.deepEqual(elementsOf(rendered.tree).filter((element) => element.type === PreviousRoom).map((element) => element.props), [{}]);
+  auth.roomChanging = true;
+  rendered.redraw();
+  assert.deepEqual(elementsOf(rendered.tree).filter((element) => element.type === PreviousRoom), []);
+  const fallback = rendered.tree.type(rendered.tree.props);
+  assert.deepEqual({ type: fallback.type, props: fallback.props },
+    { type: 'div', props: { className: 'wm-room-fallback', 'aria-hidden': 'true' } });
+  auth.roomChanging = false;
+  rendered.redraw();
+  assert.deepEqual(elementsOf(rendered.tree).filter((element) => element.type === PreviousRoom).map((element) => element.props), [{}]);
+});
+
 test('the unpublished Shell header contains only its unchanged mark, navigation and seat', async (t) => {
   browser();
   const { Shell } = await loadScreen('shell/chrome/Shell.jsx');

@@ -1,6 +1,6 @@
 // First-party funnel telemetry. track() queues; batches flush to POST /v1/events when the queue
-// fills, on a short debounce, and on page hide via sendBeacon. Fire-and-forget by contract: a
-// failed send is silently dropped and must never affect product behavior.
+// fills, on a short debounce, and on page hide via sendBeacon. Offline events stay in the bounded
+// memory queue until reconnect; attempted sends are fire-and-forget and never affect the product.
 
 import { API_BASE } from '../shell/apiBase.js';
 import { captureError } from './sentry.js';
@@ -10,6 +10,7 @@ const DEV_OPT_IN_STORAGE = 'windmill:beacon:dev';
 const FLUSH_AT = 20;
 const FLUSH_AFTER_MS = 5000;
 const MAX_EVENTS_PER_SEND = 50;
+const MAX_QUEUED_EVENTS = 200;
 
 // client_error carries only labels from these closed sets; anything they do not name reads `other`.
 const REPORT_KINDS = new Set(['window', 'promise', 'render', 'shape']);
@@ -53,6 +54,8 @@ let mintedKey = null;
 export function track(name, props) {
   if (typeof window === 'undefined') return;
   queue.push({ name, clientMs: Date.now(), ...(props ? { props } : {}) });
+  if (queue.length > MAX_QUEUED_EVENTS) queue.shift();
+  if (globalThis.navigator?.onLine === false) return;
   if (queue.length >= FLUSH_AT) {
     flush('fetch');
     return;
@@ -101,6 +104,7 @@ function flush(transport) {
     clearTimeout(flushTimer);
     flushTimer = null;
   }
+  if (globalThis.navigator?.onLine === false) return;
   while (queue.length > 0) send(queue.splice(0, MAX_EVENTS_PER_SEND), transport);
 }
 
@@ -155,6 +159,7 @@ function sessionKey() {
 }
 
 if (typeof window !== 'undefined') {
+  window.addEventListener?.('online', () => flush('fetch'));
   window.addEventListener?.('pagehide', () => flush('beacon'));
   globalThis.document?.addEventListener?.('visibilitychange', () => {
     if (document.visibilityState === 'hidden') flush('beacon');

@@ -63,11 +63,13 @@ function eventId() {
 function framesFromStack(stack) {
   const frames = [];
   for (const line of String(stack).trimEnd().split('\n').reverse()) {
-    if (!/^\s+at\s|^\S*(?: code)?@/.test(line)) break;
-    const at = /\(?(\S+):(\d+):(\d+)\)?\s*$/.exec(line.trim());
+    const safari = /^([^\s@]*(?: code)?)@(.*)$/.exec(line);
+    if (!/^\s+at\s/.test(line) && !safari) break;
+    const location = safari ? safari[2] : line.trim();
+    const at = /\(?(\S+):(\d+):(\d+)\)?\s*$/.exec(location);
     if (!at) continue;
-    const named = /at\s+([^(]+?)\s*\(/.exec(line);
-    frames.push({ filename: at[1], lineno: Number(at[2]), colno: Number(at[3]), function: named ? named[1].trim() : '?', in_app: true });
+    const named = safari ? safari[1] : /at\s+([^(]+?)\s*\(/.exec(line)?.[1]?.trim();
+    frames.push({ filename: at[1], lineno: Number(at[2]), colno: Number(at[3]), function: named || '?', in_app: true });
   }
   return frames;
 }

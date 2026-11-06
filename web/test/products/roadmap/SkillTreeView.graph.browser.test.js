@@ -245,3 +245,23 @@ hostTest('Chromium: a room toast over the phone step page stands above its tabs 
     assert.deepEqual(errors, []);
   } finally { await page.close(); }
 });
+
+hostTest('Chromium: Graph legend and selection labels use the shared Recolor copy', async () => {
+  const { RECOLOR } = await import('../../../src/products/roadmap/copy.js');
+  const { page, errors } = await openHost({ width: 1440, legend: true, broad: true });
+  try {
+    const legend = page.locator('.st-legend-dock');
+    await legend.waitFor();
+    assert.deepEqual(await legend.locator('button[aria-label]').evaluateAll((buttons) => buttons.map((button) => button.getAttribute('aria-label'))),
+      ['Build', 'Learn', 'Sky'].map(RECOLOR.kind));
+    await page.evaluate(() => window.scene.options.onSelectionToggle('knots'));
+    await page.locator('.st-detail-panel--open').waitFor();
+    await page.evaluate(() => window.scene.options.onSelectionToggle('dock'));
+    const selection = page.locator('.st-selection-bar');
+    await selection.waitFor();
+    assert.equal(await selection.getByRole('group').getAttribute('aria-label'), RECOLOR.steps);
+    assert.deepEqual(await selection.locator('.st-step-swatch').evaluateAll((buttons) => buttons.map((button) => button.getAttribute('aria-label'))),
+      ['Build', 'Learn', 'Gold', 'Brick', 'Sky', 'Plum'].map(RECOLOR.selection));
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
+});

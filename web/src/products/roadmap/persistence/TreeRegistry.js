@@ -19,13 +19,12 @@ export async function listTrees() {
 
 // The account's server trees united with this device's own, deduped by id with the server row
 // winning. Rows carry their origin: 'server' rows PATCH/DELETE the registry, 'device' rows only
-// touch local seams. The device half is scoped to the account the server says holds this browser.
+// touch local seams. Device rows use the holder confirmed by the server or restored bound replica.
 export async function listAllTrees() {
   const [owner, server] = await Promise.all([resolveDeviceOwner(), fetchServerList()]);
   const registry = new LocalTreeRegistry();
   const serverIds = new Set(server.rows.map((tree) => tree.id));
-  // Both halves must hold before touching the index: rows that arrived while /v1/me blipped
-  // cannot be attributed.
+  // Attribution requires an authoritative server list and a resolved device holder.
   if (server.authoritative && owner) {
     registry.attribute([...serverIds], owner);
     // Unclaimed entries are local-born and waiting to claim; those always stay.

@@ -69,6 +69,8 @@ role gets the drawn Shared Shell: no mark, the room links from the 16px edge wit
 While the Board is shown, `coverBeneath` in `composerFocus.js` makes everything stacked under its layer inert,
 the Graph's overlays and legend included. The identity sits above that layer and stays operable; step detail,
 composer and sheet layers cover it. Covered elements stay inert until the last covering layer closes.
+The same coverage owner keeps a hidden Board and every closed Graph dock inert. The Graph selection bar
+mounts only while the Graph is shown, so none of these hidden controls enter the tab order.
 
 A render failure in the Board reports `roadmap-board` and shows the Graph with focus on the row's pressed
 switch; choosing Board tries again. Without WebGL2 it shows the design-system crash screen with Reload. A failure
@@ -181,7 +183,10 @@ sheet before opening its step. `activity/ActivityRows.jsx` owns the shared rows,
 empty state.
 
 **Ask AI** uses an overlay from 744px and a modal dock on phones, with examples above its field. The dock
-reuses composer viewport tracking to clear the keyboard, and Escape, scrim or submit dismisses it.
+reuses composer viewport tracking to clear the keyboard. Escape and the scrim dismiss it. Submitting closes
+either presentation while the room retains the sentence. A failed answer reopens Ask AI with the sentence;
+an explicit dismissal during the run keeps it closed and restores the sentence on the next opening. The
+unchanged failure copy is also announced inside the active dialog while the room's toast is covered.
 
 ## The Board
 
@@ -673,12 +678,16 @@ A closed socket clears both lanes' in-flight bookkeeping without dropping their 
 Progress rejections also clear their in-flight entry. Events from superseded sockets do nothing, reconnect
 timers are deduplicated, and closing a session sets its phase offline.
 
-**Device trees.** `LocalTreeRegistry` associates device trees with accounts, and device reads require identity
-confirmed on this document load. A remembered face does not authorize a store read. Offline the shell gives that answer from
-the replica it restores, so a device read that finds no row waits up to two seconds for it. A session lapse keeps the
-confirmed device owner and pending work on this document. The shell restores the previous holder from the
-bound sync replica after a reload without granting session authority. The same account's sign-in resumes
-synchronization. A fresh sign-in can retry an unavailable read; ordinary signed-in cold loads compare against
+**Device trees.** `LocalTreeRegistry` associates device trees with accounts, and device reads require a server
+answer or the shell's restored active bound replica. A remembered face does not authorize a store read. On a
+cold 401 or offline read, the registry bounds its wait for the engine's holder answer to two seconds, so a
+stuck engine cannot indefinitely hold public links, the demo or the roadmap list. The shell's owner rule
+refuses restoration during sign-out or pending cleanup. A session lapse keeps the device owner and pending
+work without granting session authority; the room shows the lapsed device line. The same account's sign-in
+resumes synchronization without remounting the room. When the server confirms a different account, the shell
+synchronously unmounts the previous holder's room and shows its loading state through device cleanup and
+account binding. Pending cleanup also blocks the room on reload; a failed cleanup keeps it blocked for retry.
+A fresh sign-in can retry an unavailable read; ordinary signed-in cold loads compare against
 the owner the read actually used and do not reread when the shell settles. Explicit sign-out and account
 replacement atomically record pending device cleanup with the replica transition. The shell replays it before
 engine networking on reload and clears it only after product cleanup finishes; roadmap blob deletions must
