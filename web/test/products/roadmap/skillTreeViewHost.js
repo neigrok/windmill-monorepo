@@ -65,7 +65,8 @@ SyncSession.prototype.start = async function () {
   this.forceReconnect = () => { window.reconnects = (window.reconnects ?? 0) + 1; };
   this.registry = null;
   this.seed(window.fixture);
-  for (const node of window.fixture.nodes) if (node.status === 'complete') this.markProgress(node.id, 'complete');
+  const completed = window.fixture.nodes.filter((node) => node.status === 'complete').map((node) => node.id);
+  if (completed.length) this.markProgress(completed, 'complete');
   this.phase = 'live';
   this.ackedServerVector = this.lattice.frontier();
   this.ackedProgressVector = this.progress.join(this.progress.toFrame());
