@@ -7,7 +7,7 @@ import { track } from '../../../telemetry/beacon.js';
 export function useRoomScene({ anchors, sceneRef, desktopEditorRef, breakpoint, editing, selection, reorderHint, onPickNothing, showToast }) {
   const { canvasRef, rootRef } = anchors;
   const unavailableRef = useRef(false);
-  const [graphUnavailable, setGraphUnavailable] = useState(null);
+  const [graphAvailability, setGraphAvailability] = useState('pending');
   const [scene, setScene] = useState(null);
   const [panning, setPanning] = useState(false);
   const [hoveredId, setHoveredId] = useState(null);
@@ -48,11 +48,11 @@ export function useRoomScene({ anchors, sceneRef, desktopEditorRef, breakpoint, 
     } catch (error) {
       if (!(error instanceof GraphUnavailable)) throw error;
       unavailableRef.current = true;
-      setGraphUnavailable(true);
+      setGraphAvailability('unavailable');
       track('webgl_init_fail', { band: breakpoint });
       return undefined;
     }
-    setGraphUnavailable(false);
+    setGraphAvailability('available');
     sceneRef.current = nextScene;
     setScene(nextScene);
     nextScene.start();
@@ -72,5 +72,5 @@ export function useRoomScene({ anchors, sceneRef, desktopEditorRef, breakpoint, 
     scene?.setWorkingZoom(breakpoint === 'phone' ? PHONE_WORKING_ZOOM : WORKING_ZOOM);
   }, [scene, breakpoint]);
 
-  return { scene, graphUnavailable, panning, hoveredId };
+  return { scene, graphAvailability, panning, hoveredId };
 }

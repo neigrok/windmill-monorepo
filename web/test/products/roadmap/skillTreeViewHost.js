@@ -51,8 +51,13 @@ if (params.has('described')) window.fixture.nodes[2].description = ${JSON.string
 if (params.has('allDone')) for (const node of window.fixture.nodes) node.status = 'complete';
 if (params.has('broad')) window.fixture.nodes.push(...${JSON.stringify(BROAD_NODES)});
 if (params.has('coached')) window.fixture.nodes.push(${JSON.stringify(COACHED_NODE)});
-if (params.has('crashBoard')) {
-  BoardQuery.prototype.among = () => { throw new Error('Fixture Board failure'); };
+if (params.has('crashBoard') || params.has('runtimeBoardCrash')) {
+  const among = BoardQuery.prototype.among;
+  window.boardFailure = params.has('crashBoard');
+  BoardQuery.prototype.among = function (...args) {
+    if (window.boardFailure) throw new Error('Fixture Board failure');
+    return among.apply(this, args);
+  };
 }
 SyncSession.prototype.start = async function () {
   this.store = new SyncStore();
@@ -250,7 +255,7 @@ export function hostTest(name, run) {
   });
 }
 
-export async function openHost({ browserName = 'chromium', width = 1440, height = 1000, role = 'owner', surface = 'tree', milestone = false, single = false, crash = false, crashBoard = false, demo = false, clipboardRefused = false, large = false, empty = false, shell = false, legend = false, fixedClock = false, described = false, allDone = false, broad = false, coached = false, manyTrees = false, touch = false, motion = false, appUrl = false, pathOnly = false, storageRefused = false, longTitle = false, noWebgl2 = false, born = false, sceneFailure = false, address = null } = {}) {
+export async function openHost({ browserName = 'chromium', width = 1440, height = 1000, role = 'owner', surface = 'tree', milestone = false, single = false, crash = false, crashBoard = false, runtimeBoardCrash = false, demo = false, clipboardRefused = false, large = false, empty = false, shell = false, legend = false, fixedClock = false, described = false, allDone = false, broad = false, coached = false, manyTrees = false, touch = false, motion = false, appUrl = false, pathOnly = false, storageRefused = false, longTitle = false, noWebgl2 = false, born = false, sceneFailure = false, address = null } = {}) {
   await ready;
   const page = await browsers.get(browserName).newPage({ viewport: { width, height }, reducedMotion: motion ? 'no-preference' : 'reduce', hasTouch: touch });
   page.setDefaultTimeout(firstPage ? 15000 : 5000);
@@ -262,7 +267,7 @@ export async function openHost({ browserName = 'chromium', width = 1440, height 
   const report = (message) => {
     if (sceneFailure && (message.includes('Fixture renderer construction failure') || message.includes('The above error occurred in the <SkillTreeView> component'))) return;
     if (crash && (message.includes('Fixture identity measurement failure') || message.includes('The above error occurred in the <RoadmapIdentity> component'))) return;
-    if (crashBoard && (message.includes('Fixture Board failure') || message.includes('The above error occurred in the <BoardView> component'))) return;
+    if ((crashBoard || runtimeBoardCrash) && (message.includes('Fixture Board failure') || message.includes('The above error occurred in the <BoardView> component'))) return;
     errors.push(message);
     fail(new Error(message));
     void page.close();
@@ -306,7 +311,7 @@ export async function openHost({ browserName = 'chromium', width = 1440, height 
   });
   const params = new URLSearchParams({ role, surface });
   if (role === 'reader' && !appUrl) params.set('view', '1');
-  for (const [name, enabled] of Object.entries({ milestone, single, crash, crashBoard, demo, clipboardRefused, large, empty, shell, legend, described, allDone, broad, coached, longTitle, noWebgl2, born, sceneFailure })) {
+  for (const [name, enabled] of Object.entries({ milestone, single, crash, crashBoard, runtimeBoardCrash, demo, clipboardRefused, large, empty, shell, legend, described, allDone, broad, coached, longTitle, noWebgl2, born, sceneFailure })) {
     if (enabled) params.set(name, '1');
   }
   if (noWebgl2) {

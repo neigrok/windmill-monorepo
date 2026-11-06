@@ -4,62 +4,8 @@ import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { createServer } from 'vite';
 
-import { register } from 'node:module';
 import { STEP_DETAIL } from '../../../../src/products/roadmap/copy.js';
-
-register('../../../jsxLoader.mjs', import.meta.url);
-const React = (await import('react')).default;
-const { renderToStaticMarkup } = await import('react-dom/server');
-const { StepDetail } = await import('../../../../src/products/roadmap/step/StepDetail.jsx');
-const { SkillTree } = await import('../../../../src/products/roadmap/model/SkillTree.js');
-
-test('StepDetail — the Select offer follows Graph and precedes Delete, and dispatches its step', () => {
-  const tree = new SkillTree({ id: 'sail', title: 'Learn to sail', nodes: [
-    { id: 'course', label: 'Course', prerequisites: [] },
-    { id: 'wind', label: 'Wind', prerequisites: ['course'] },
-  ] });
-  const selected = [];
-  const props = { tree, completed: new Set(['course']), completedAt: {}, address: { id: 'wind', trail: ['wind'], door: 'card' },
-    breakpoint: 'phone', roadmapTitle: tree.title, editable: true, deletable: true, stepLink: 'https://windmill.test/t/sail#?step=wind',
-    onOpenInGraph: () => {}, onSelect: (id) => selected.push(id) };
-  const menu = (extra) => {
-    let items;
-    function Inspect() {
-      const rendered = StepDetail({ ...props, ...extra });
-      const visit = (element) => {
-        if (!React.isValidElement(element)) return;
-        if (element.props.items) items = element.props.items;
-        React.Children.forEach(element.props.children, visit);
-      };
-      visit(rendered);
-      return null;
-    }
-    renderToStaticMarkup(React.createElement(Inspect));
-    return items;
-  };
-  const offered = menu({});
-  assert.deepEqual(offered.map(({ label }) => label), [STEP_DETAIL.copyLink, STEP_DETAIL.openInGraph, STEP_DETAIL.select, STEP_DETAIL.deleteStep]);
-  assert.deepEqual(menu({ onSelect: null }).map(({ label }) => label), [STEP_DETAIL.copyLink, STEP_DETAIL.openInGraph, STEP_DETAIL.deleteStep]);
-  assert.deepEqual(menu({ onOpenInGraph: null, stepLink: null, deletable: false }).map(({ label }) => label), [STEP_DETAIL.select]);
-  const previousWindow = globalThis.window;
-  const previousFetch = globalThis.fetch;
-  const sent = [];
-  let flush;
-  globalThis.window = { location: { hostname: 'windmill.test' }, setTimeout: (callback) => { flush = callback; return 0; } };
-  globalThis.fetch = async (_url, options) => { sent.push(JSON.parse(options.body)); };
-  try {
-    offered.find(({ label }) => label === STEP_DETAIL.select).run();
-    flush();
-    assert.deepEqual(selected, ['wind']);
-    assert.deepEqual(sent.flatMap(({ events }) => events.map(({ name, props }) => ({ name, props }))), [
-      { name: 'roadmap_board_step_action', props: { surface: 'page', action: 'select' } },
-    ]);
-  } finally {
-    if (previousWindow === undefined) delete globalThis.window;
-    else globalThis.window = previousWindow;
-    globalThis.fetch = previousFetch;
-  }
-});
+import { withBrowserErrors } from '../browserFixture.js';
 
 const root = fileURLToPath(new URL('../../../../', import.meta.url));
 const entry = `
@@ -83,7 +29,7 @@ const without = (steps, id) => steps.filter((step) => step.id !== id).map((step)
 
 // Like the shell: the route follows the URL in a transition, and each roadmap is its own view, keyed by its id, that
 // loads its tree a beat after it mounts.
-window.openRoom = ({ nodes, completed, editable = true, workspaces = {}, kinds = [], linked = true, others = {}, editingEnabled = false }) => {
+window.openRoom = ({ nodes, completed, editable = true, workspaces = {}, kinds = [], linked = true, others = {}, editingEnabled = false, selectable = false }) => {
   const trees = { sail: nodes, ...others };
   const routeTree = () => window.location.hash.split('?')[0].replace('#/app/', '');
   function App() {
@@ -150,6 +96,7 @@ window.openRoom = ({ nodes, completed, editable = true, workspaces = {}, kinds =
           mark(id, snapshot.completed.has(id) ? 'complete' : 'none');
         },
         onOpenInGraph: (id) => call('graph ' + id),
+        onSelect: selectable ? (id) => call('select ' + id) : undefined,
         onViewBranch: (id) => { call('branch ' + id); address.close(); setQuery((current) => current.inBranch(id)); },
         onDelete: (id) => { call('delete ' + id); address.close(); setSteps((current) => without(current, id)); },
         onNotify: (message) => call('notify ' + message),
@@ -252,6 +199,35 @@ const waitForColumn = (page, name, titles) => page.waitForFunction(({ name, titl
   return JSON.stringify(shown) === JSON.stringify(titles);
 }, { name, titles });
 const card = (page, label) => page.locator('.st-board-card:visible', { has: page.locator('.st-board-card-title', { hasText: new RegExp(`^${label}$`) }) });
+
+test('Chromium: the real step menu places Select after Graph and before Delete and dispatches its step once', async () => {
+  await start();
+  for (const selectable of [false, true]) {
+    const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+    try {
+      await withBrowserErrors(page, async () => {
+        await page.goto(`${origin}/step-detail-test#/app/sail`);
+        await page.waitForFunction(() => window.entryReady);
+        await page.evaluate((options) => window.openRoom(options), {
+          nodes: learnToSailNodes, completed: ['course', 'parts', 'rig'], selectable,
+        });
+        await card(page, 'Read the wind').click();
+        await page.locator('.st-board-step-layer').getByRole('button', { name: STEP_DETAIL.more, exact: true }).click();
+        assert.deepEqual(await page.getByRole('menuitem').allTextContents(), selectable
+          ? [STEP_DETAIL.copyLink, STEP_DETAIL.openInGraph, STEP_DETAIL.select, STEP_DETAIL.deleteStep]
+          : [STEP_DETAIL.copyLink, STEP_DETAIL.openInGraph, STEP_DETAIL.deleteStep]);
+        if (!selectable) return;
+        await page.getByRole('menuitem', { name: STEP_DETAIL.select, exact: true }).click();
+        await page.getByRole('menu').waitFor({ state: 'detached' });
+        assert.deepEqual(await calls(page), ['select wind']);
+        assert.deepEqual(await events(page), [
+          'roadmap_board_step_open {"surface":"page","column":"upNext","door":"card"}',
+          'roadmap_board_step_action {"surface":"page","action":"select"}',
+        ]);
+      });
+    } finally { await page.close(); }
+  }
+});
 
 test('Chromium: Enter on a card opens the labelled modal, Tab stays inside it, Escape closes it and focus returns to the card', async () => {
   await start();

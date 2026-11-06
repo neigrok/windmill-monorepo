@@ -84,7 +84,10 @@ test('BoardStates — a load error says so in the frame and offers Try again; on
   assert.match(phone, /<div class="st-board-state-pinned"><button type="button"[^>]*>Try again<\/button><\/div><\/div><div class="st-board-phone-band st-board-quiet-band" aria-hidden="true">/);
 });
 
-test('BoardStates — an empty roadmap pins New step as its one primary, with no progress', () => {
+test('BoardStates — an empty roadmap offers owner onboarding only when New step is available', () => {
+  for (const breakpoint of ['phone', 'tablet', 'desktop']) {
+    assert.equal(frame({ tree: sail([]), breakpoint }), '');
+  }
   assert.equal(frame({ tree: sail([]), onNewStep: () => {} }), [
     '<div class="st-board-state st-board-state--empty"><div class="st-board-state-message st-board-state-message--empty">',
     '<h2 class="st-board-state-title">Your first step</h2><p class="st-board-state-body">Give your roadmap a place to start.</p></div>',

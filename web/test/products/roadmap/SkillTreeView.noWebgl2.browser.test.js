@@ -16,6 +16,11 @@ for (const width of [1440, 1024, 744, 390]) {
           description: document.getElementById(button.getAttribute('aria-describedby')).textContent,
           name: button.getAttribute('aria-label'), tabIndex: button.tabIndex,
         })), { opacity: '0.45', disabled: 'true', pressed: 'false', description: GRAPH_UNAVAILABLE, name: VIEW_SWITCH.graph, tabIndex: 0 });
+        if (width === 390) {
+          assert.equal(await graph.evaluate((button) => document.getElementById(button.getAttribute('aria-describedby')).hidden), true);
+          const view = page.getByRole('group', { name: VIEW_SWITCH.group, exact: true });
+          assert.equal((await view.ariaSnapshot()).includes(GRAPH_UNAVAILABLE), false);
+        }
         const board = page.getByRole('button', { name: VIEW_SWITCH.board, exact: true });
         await board.focus();
         await page.keyboard.press('Tab');
@@ -243,6 +248,26 @@ hostTest('Chromium: scene-less committed deletion updates the Board projection',
     assert.equal(await page.locator('.st-board-card[data-step-id="dock"]').count(), 0);
     assert.equal(await page.locator('.st-roadmap-progress').getAttribute('aria-label'), progressLabel({ done: 1, total: 2 }));
     assert.deepEqual(await page.evaluate(() => window.issues), []);
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
+});
+
+
+hostTest('Chromium: Escape clears focused Find while dismissing the hovered Graph reason', async () => {
+  const { page, errors } = await openHost({ width: 1440, noWebgl2: true });
+  try {
+    const find = page.getByRole('searchbox', { name: LABELS.findStep, exact: true });
+    const graph = page.getByRole('button', { name: VIEW_SWITCH.graph, exact: true });
+    const tooltip = page.locator('.st-graph-unavailable-reason');
+    await find.fill('wind');
+    await graph.hover();
+    await tooltip.waitFor({ state: 'visible' });
+    assert.equal(await find.evaluate((input) => document.activeElement === input), true);
+    await page.keyboard.press('Escape');
+    await tooltip.waitFor({ state: 'hidden' });
+    assert.deepEqual(await find.evaluate((input) => ({ value: input.value, focused: document.activeElement === input })),
+      { value: '', focused: true });
+    assert.deepEqual(await page.evaluate(() => window.events.filter(({ name }) => name === 'roadmap_graph_unavailable')), []);
     assert.deepEqual(errors, []);
   } finally { await page.close(); }
 });

@@ -5,7 +5,7 @@ import { ViewPrefs, boardCanShow, clearBorn, initialView, peekBorn, viewToShow }
 import { reportRoadmapFailure } from '../reportFailure.js';
 
 // Availability and the loaded tree decide the view; explicit switches are remembered per tree.
-export function useRoomView({ treeId, tree, loading, loadError, who, linkedStep, scene, graphUnavailable = false, anchors, onLeave, onSwitched }) {
+export function useRoomView({ treeId, tree, loading, loadError, who, linkedStep, scene, graphAvailability = 'available', anchors, onLeave, onSwitched }) {
   const { identityRef, boardLayerRef } = anchors;
   const { owner, reader, role, demo, shared, breakpoint } = who;
   const [viewPrefs] = useState(() => new ViewPrefs());
@@ -17,9 +17,10 @@ export function useRoomView({ treeId, tree, loading, loadError, who, linkedStep,
   const switchOptionRef = useRef(null);
   const boardShownRef = useRef(false);
 
-  const graphAvailable = graphUnavailable === false;
+  const graphAvailable = graphAvailability === 'available';
+  const graphSettled = graphAvailability !== 'pending';
 
-  if (view === null && tree && graphUnavailable !== null) {
+  if (view === null && tree && graphSettled) {
     const decision = initialView({ saved: viewPrefs.lastView(treeId), owner, reader, empty: tree.nodes.length === 0, born: peekBorn(treeId), linkedStep, canAddFirstStep: owner, graphAvailable });
     setView(decision.view);
     initialDecisionRef.current = decision;
@@ -46,8 +47,8 @@ export function useRoomView({ treeId, tree, loading, loadError, who, linkedStep,
   const boardActive = shownView === 'board';
 
   // The Board retains its fold through reloads; without a Graph, a crash retains the Board's boundary.
-  if (boardActive && graphUnavailable !== null) boardShownRef.current = true;
-  const boardMounted = (!boardCrashed || !graphAvailable) && boardShownRef.current;
+  if (boardActive && graphSettled) boardShownRef.current = true;
+  const boardMounted = (!boardCrashed || graphAvailability === 'unavailable') && boardShownRef.current;
   useEffect(() => (boardActive && boardMounted ? coverBeneath(boardLayerRef.current) : undefined), [boardActive, boardMounted]);
 
   // stop() only cancels the RAF; applyModel runs fine while stopped and renders on the first frame after start().

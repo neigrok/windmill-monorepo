@@ -918,7 +918,6 @@
 
 @media (prefers-reduced-motion: reduce) {
   .st-board-bulk-kinds {
-  grid-column: 1 / -1;
     transition: opacity 150ms linear;
   }
   .st-board-bulk.is-open .st-board-draft-kind-choice,

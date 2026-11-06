@@ -614,6 +614,9 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
 - **Board · a reader's empty roadmap without WebGL2.** Every visit without WebGL2 opens on the Board. An empty reader roadmap keeps
   its identity and zero-step count without the owner's *Your first step* title, body or New step offer. No approved frame draws this
   reader state; the follow-up is an empty Board for a reader on every band.
+- **Board · planted summary and welcome-back recap without WebGL2.** Both presentations belong to the scene: the planted roadmap's
+  summary follows its arrival, and the welcome-back recap names progress since the previous visit. Without WebGL2 neither appears
+  on the Board. No approved frame draws either Board presentation; the follow-up is to draw both on the applicable bands.
 - **Board · the topbar before a roadmap loads.** Before the load answers, or after it fails, the build knows no name, so it shows none
   rather than *Untitled roadmap*, and it offers no Share. It shows the switch while loading, but not after a failed load: the Graph's
   load error veils the topbar, so the switch would lead where a pointer cannot come back from. Proposed, awaiting the owner: a still name

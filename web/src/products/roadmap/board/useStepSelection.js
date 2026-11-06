@@ -113,14 +113,15 @@ export function useStepSelection({ tree, board, shown, doneExpanded, active, ena
       kinds,
       start(id) {
         const context = current.current;
-        if (!context.enabled || context.state.phase !== 'idle' || stepOf(window.location.hash) !== null || !deletable(context.tree, [id])) return;
+        if (!context.enabled || context.state.phase !== 'idle' || stepOf(window.location.hash) !== null || !deletable(context.tree, [id])) return false;
         const candidate = new StepSelection([id]).prune(context.board, context.shown, { doneExpanded: context.doneExpanded });
-        if (candidate.count === 0) return;
+        if (candidate.count === 0) return false;
         const visit = { token: crypto.randomUUID(), id, column: context.shown, treeId: context.tree.treeId, href: window.location.href };
         ownedTokens.current.add(visit.token);
         transition({ type: 'start', visit });
         window.history.pushState({ ...window.history.state, boardSelection: { token: visit.token, kinds: false } }, '', window.location.href);
         track('roadmap_board_select', { step: 'start' });
+        return true;
       },
       selectable(id) {
         return deletable(current.current.tree, [id]);

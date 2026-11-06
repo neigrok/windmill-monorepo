@@ -5,6 +5,10 @@ import { CircleAlert } from 'lucide-react';
 import { Tooltip } from '../../../design-system';
 import { GRAPH_UNAVAILABLE, VIEW_SWITCH } from '../copy.js';
 
+const TOOLTIP_LEFT_OFFSET = 84;
+const TOOLTIP_ROW_GAP = 10;
+const TOOLTIP_VIEWPORT_GUTTER = 16;
+
 const GLYPHS = {
   board: (
     <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.66667" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -57,15 +61,19 @@ function UnavailableGraph({ phone, onPress }) {
   const reasonId = useId();
   const root = useRef(null);
   const button = useRef(null);
+  const reason = useRef(null);
   const [open, setOpen] = useState(false);
-  const [position, setPosition] = useState({ left: 16, top: 0 });
+  const [position, setPosition] = useState({ left: TOOLTIP_VIEWPORT_GUTTER, top: 0 });
   const shown = open && !phone;
 
   useLayoutEffect(() => {
     if (!shown) return undefined;
     const place = () => {
       const box = button.current.getBoundingClientRect();
-      setPosition({ left: Math.max(16, Math.min(box.left - 84, window.innerWidth - 308)), top: box.bottom + 10 });
+      const width = reason.current.getBoundingClientRect().width;
+      const rightmostLeft = window.innerWidth - width - TOOLTIP_VIEWPORT_GUTTER;
+      const left = Math.max(TOOLTIP_VIEWPORT_GUTTER, Math.min(box.left - TOOLTIP_LEFT_OFFSET, rightmostLeft));
+      setPosition({ left, top: box.bottom + TOOLTIP_ROW_GAP });
     };
     place();
     window.addEventListener('resize', place);
@@ -79,7 +87,7 @@ function UnavailableGraph({ phone, onPress }) {
     };
     const escape = (event) => {
       if (event.key !== 'Escape') return;
-      event.stopPropagation();
+      if (event.target === button.current) event.stopPropagation();
       setOpen(false);
     };
     document.addEventListener('pointerdown', outside);
@@ -98,8 +106,8 @@ function UnavailableGraph({ phone, onPress }) {
         onClick={() => { setOpen(true); onPress?.(); }}>
         {GLYPHS.tree}
       </button>
-      <span id={reasonId} role={phone ? undefined : 'tooltip'} className={phone ? 'st-graph-unavailable-description' : 'st-graph-unavailable-reason'}
-        hidden={!phone && !shown} style={phone ? undefined : position}>
+      <span ref={reason} id={reasonId} role={phone ? undefined : 'tooltip'} className={phone ? undefined : 'st-graph-unavailable-reason'}
+        hidden={phone || !shown} style={phone ? undefined : position}>
         {!phone && <CircleAlert size={20} aria-hidden />}
         <span>{GRAPH_UNAVAILABLE}</span>
       </span>

@@ -98,7 +98,9 @@ A saved camera is scoped to its layout engine and format. Without one, an owner 
 frontier and a visitor receives the whole-tree fit and arrival ceremony. The owner's first view reframes as
 chrome measurements arrive until the reader moves the camera. A plant from paste or a quest fits the whole tree,
 cascades and ends on its one line. A fork opens on its Board and says what happened, counting its own steps. The
-scene stays silent unless it is told what to say.
+scene stays silent unless it is told what to say. Without WebGL2, the planted summary and welcome-back recap
+have no Board presentation and are absent; their undrawn states are in the
+[consistency ledger](../../../../docs/design/consistency.md).
 
 ## The identity row
 
@@ -278,7 +280,9 @@ menu. The host owns whether Board selection is open: phone, active Board and own
 menu offers Select under that rule. `useStepPage` closes the visit, selects the step, clears only query dimensions
 that hide it through `BoardQuery.revealing` and records a request, keeping sort. After the step leaves the URL,
 `BoardView` stands its column past any Done fold and consumes the request once through the hold's same `start`.
-The selected card receives focus, including when the visit began on another card.
+Successful start acknowledges its key to the host, which clears that request; a Board crash also clears any
+pending request. Request keys increase independently of the pending request. The selected card receives focus,
+including when the visit began on another card.
 
 Selection replaces the phone band with `BulkBar`, a region named Selection: a non-focusable `h2` count and
 Done, optional six named kind radios, then equal-width Recolor and Delete. The owner's phone Board keeps one
@@ -510,11 +514,15 @@ latency. Marketing scenes use hand-placed coordinates.
 ## Renderer
 
 `SkillTreeScene` exports `GraphUnavailable`, thrown only when `getContext('webgl2')` returns null.
-`useRoomScene` owns availability for the room's life, catches that typed answer before paint, never retries it
-and emits `webgl_init_fail { band }` once per visit. Absence reports no Sentry Issue, starts no frame loop and
+`useRoomScene` owns `graphAvailability` for the room's life: `pending`, `available` or `unavailable`. It catches
+that typed answer before paint, never retries it and emits `webgl_init_fail { band }` once per visit. Absence reports no Sentry Issue, starts no frame loop and
 keeps Graph chrome, Graph loading, canvas-only demo coaching and Graph toasts out of the painted view. The
-renderer emits no availability telemetry. Minimap mounts only while the canvas view is active, so a Board
-without scene bounds never passes null bounds into it. Other constructor errors propagate unchanged to the render boundary.
+renderer emits no availability telemetry. Minimap mounts only while the canvas view is active. Other
+constructor errors propagate unchanged to the render boundary.
+
+Scene construction runs in a layout effect. On WebGL2-capable devices, GL setup and shader compilation block
+the first paint. A changed write handler reconstructs the scene in that effect and incurs the same synchronous
+setup and compilation cost before the next paint.
 
 `SkillTreeScene` owns `Camera2D`, `NodeBatch`, `ConnectorBatch`, overlays, `CeremonyDirector` and input tools.
 React supplies models, progress, selection and viewport insets. The continuous frame loop advances camera and

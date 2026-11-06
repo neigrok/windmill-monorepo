@@ -54,7 +54,7 @@ test('ViewSwitch — unavailable Graph has a stable description on phone and wid
     const { CircleAlert } = await import('lucide-react');
     const alert = renderToStaticMarkup(React.createElement(CircleAlert, { size: 20, 'aria-hidden': true }));
     const description = phone
-      ? `<span id="${reasonId}" class="st-graph-unavailable-description"><span>${GRAPH_UNAVAILABLE}</span></span>`
+      ? `<span id="${reasonId}" hidden=""><span>${GRAPH_UNAVAILABLE}</span></span>`
       : `<span id="${reasonId}" role="tooltip" class="st-graph-unavailable-reason" hidden="" style="left:16px;top:0">${alert}<span>${GRAPH_UNAVAILABLE}</span></span>`;
     assert.equal(html, `<div class="st-board-switch st-board-switch--${phone ? 'phone' : 'wide'}" role="group" aria-label="${VIEW_SWITCH.group}">${board}<span class="st-graph-unavailable"><button type="button" class="st-board-switch-option" aria-label="${VIEW_SWITCH.graph}" aria-pressed="false" aria-disabled="true" aria-describedby="${reasonId}">${glyph}</button>${description}</span></div>`);
     const offered = ViewSwitch(props).props.children[1];

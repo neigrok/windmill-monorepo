@@ -113,7 +113,8 @@ export function SkillTreeView({ treeId, demo = false }) {
   const { undo, redo, bulkDelete, deleteSelected, handleDeleteEdge, handleCreateRoot, graftImported, bulkRecolor, composerOpen, closeComposer, openComposer } = editing;
 
   // The canvas, then the tree it draws.
-  const { scene, graphUnavailable, panning, hoveredId } = useRoomScene({ anchors, sceneRef, desktopEditorRef, breakpoint, editing, selection, reorderHint: structure.reorderHint, onPickNothing: closeActivity, showToast });
+  const { scene, graphAvailability, panning, hoveredId } = useRoomScene({ anchors, sceneRef, desktopEditorRef, breakpoint, editing, selection, reorderHint: structure.reorderHint, onPickNothing: closeActivity, showToast });
+  const graphUnavailable = graphAvailability === 'unavailable';
   const load = useRoomLoad({
     treeId, accountId: account?.id ?? null, demo, shared, demotion, breakpoint, placeKept, room, scene, framing, structure, progressActs, activity,
     legend: legendKit, workspace: { hydrateWorkspaces, pushArcs }, selection, dismissToast, desktopEditorRef,
@@ -160,7 +161,7 @@ export function SkillTreeView({ treeId, demo = false }) {
     stopEditing();
     collapse();
   }, [closeComposer, stopEditing, collapse]);
-  const view = useRoomView({ treeId, tree, loading, loadError, who, linkedStep: stepAddress.id, scene, graphUnavailable, anchors, onLeave: onLeaveView, onSwitched: onViewSwitched });
+  const view = useRoomView({ treeId, tree, loading, loadError, who, linkedStep: stepAddress.id, scene, graphAvailability, anchors, onLeave: onLeaveView, onSwitched: onViewSwitched });
   const { decidedView, boardActive, canvasView, shownView, boardFacts, boardAwaitsRoadmap, switchView, onSwitchView } = view;
 
   const graphMulti = canvasView && (selection.multiMode || selectedIds.size + selectedEdges.size > 1);
@@ -181,6 +182,13 @@ export function SkillTreeView({ treeId, demo = false }) {
   const [boardQuiet, setBoardQuiet] = useState(0);
   const [boardReveal, setBoardReveal] = useState(null);
   const [boardSelect, setBoardSelect] = useState(null);
+  const selectRequestTaken = useCallback((key) => {
+    setBoardSelect((current) => current?.key === key ? null : current);
+  }, []);
+  const crashBoard = useCallback((error) => {
+    setBoardSelect(null);
+    view.crashBoard(error);
+  }, [view.crashBoard]);
   const boardSelectionOpen = phone && boardActive && owner;
   const [boardOverall, setBoardOverall] = useState(null);
   useEffect(() => { setBoardComposer(null); setBoardOverall(null); setBoardReveal(null); setBoardSelect(null); }, [treeId, load.reloadKey]);
@@ -384,10 +392,9 @@ export function SkillTreeView({ treeId, demo = false }) {
 
       {view.boardMounted && (
         <div ref={boardLayerRef} className={`st-view-layer st-view-layer--board ${boardActive ? 'is-active' : ''}`}>
-          <ErrorBoundary fallback={graphUnavailable ? undefined : null} onCrash={view.crashBoard}>
+          <ErrorBoundary fallback={graphUnavailable ? undefined : null} onCrash={crashBoard}>
             <BoardView
               tree={boardTree}
-              graphUnavailable={graphUnavailable}
               completed={completed}
               completedAt={completedAt}
               loading={loading}
@@ -413,6 +420,7 @@ export function SkillTreeView({ treeId, demo = false }) {
               reveal={boardReveal}
               selectionOpen={boardSelectionOpen}
               selectRequest={stepAddress.id === null ? boardSelect : null}
+              onSelectRequestTaken={selectRequestTaken}
               toast={seat === 'board' ? toast : null}
               onToastShown={toastShown}
               onToastReveal={() => boardActs.revealToast(toast)}

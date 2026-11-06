@@ -8,7 +8,7 @@ const cardSelector = (id) => `.st-board-phone-pane.is-shown .st-board-card[data-
 const liveSelector = '.st-board-phone > .st-board-spoken[role="status"]';
 
 async function selectFromMenu(page, input = 'click') {
-  await page.getByRole('button', { name: STEP_DETAIL.more, exact: true }).click();
+  await page.locator('.st-board-step-layer').getByRole('button', { name: STEP_DETAIL.more, exact: true }).click();
   await page.getByRole('menuitem', { name: STEP_DETAIL.select, exact: true })[input]();
   await page.locator('.st-board-step-layer').waitFor({ state: 'detached' });
   await page.getByRole('region', { name: BULK.region, exact: true }).waitFor();
@@ -69,6 +69,46 @@ export function selectCases({ browserType }) {
   });
 
   if (browserName !== 'chromium') return;
+
+  for (const consumed of [true, false]) {
+    hostTest(`Chromium: Board crash clears a ${consumed ? 'consumed' : 'pending'} Select request before remount`, async () => {
+      const { page, errors } = await openHost({ width: 390, surface: 'board', runtimeBoardCrash: true });
+      try {
+        if (!consumed) await page.getByRole('searchbox', { name: LABELS.findStep, exact: true }).fill('Read the wind');
+        await page.locator(cardSelector('wind')).click();
+        if (consumed) {
+          await selectFromMenu(page);
+          await selectedFocus(page, 'wind');
+          await page.getByRole('button', { name: BULK.done, exact: true }).click();
+          await ended(page, 'wind');
+          await page.evaluate(() => { window.boardFailure = true; });
+          await page.getByRole('searchbox', { name: LABELS.findStep, exact: true }).fill('wind');
+        } else {
+          await page.locator('.st-board-step-row').filter({ hasText: 'Leave the dock' }).click();
+          await page.locator('.st-board-step-layer').getByRole('button', { name: STEP_DETAIL.more, exact: true }).click();
+          await page.evaluate(() => { window.boardFailure = true; });
+          await page.getByRole('menuitem', { name: STEP_DETAIL.select, exact: true }).click();
+        }
+        await page.locator('.st-board-step-layer').waitFor({ state: 'detached' });
+        await page.locator('.st-roadmap-identity[data-view="tree"]').waitFor();
+        await page.locator('.st-board').waitFor({ state: 'detached' });
+        assert.deepEqual(await page.evaluate(() => window.issues), [{ operation: 'roadmap-board', stack: true }]);
+        await page.evaluate(() => { window.boardFailure = false; });
+        await page.getByRole('button', { name: VIEW_SWITCH.board, exact: true }).click();
+        await page.locator('.st-roadmap-identity[data-view="board"]').waitFor();
+        await page.locator('.st-board-phone-band').waitFor();
+        await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+        assert.equal(await page.getByRole('region', { name: BULK.region, exact: true }).count(), 0);
+        assert.equal(await page.locator(liveSelector).textContent(), '');
+        assert.equal(await page.evaluate(() => Boolean(history.state?.boardSelection)), false);
+        assert.deepEqual(await page.evaluate(() => window.events.filter(({ name }) => name === 'roadmap_board_select')), consumed ? [
+          { name: 'roadmap_board_select', props: { step: 'start' } },
+          { name: 'roadmap_board_select', props: { step: 'end', via: 'done' } },
+        ] : []);
+        assert.deepEqual(errors, []);
+      } finally { await page.close(); }
+    });
+  }
 
   hostTest('Chromium: Space and Enter toggle, Tab reaches Done, and Escape and Done restore the last card', async () => {
     const { page, errors } = await openHost({ width: 390, surface: 'board', broad: true });
@@ -168,7 +208,7 @@ export function selectCases({ browserType }) {
         if (options.demo) await page.getByRole('button', { name: VIEW_SWITCH.board, exact: true }).click();
         await page.evaluate((id) => { location.hash = '#/app/t_sail?step=' + id; }, options.single ? 'course' : 'wind');
         await page.locator('.st-board-step-layer').waitFor();
-        await page.getByRole('button', { name: STEP_DETAIL.more, exact: true }).click();
+        await page.locator('.st-board-step-layer').getByRole('button', { name: STEP_DETAIL.more, exact: true }).click();
         assert.equal(await page.getByRole('menuitem', { name: STEP_DETAIL.select, exact: true }).count(), 0);
         assert.deepEqual(errors, []);
       } finally { await page.close(); }

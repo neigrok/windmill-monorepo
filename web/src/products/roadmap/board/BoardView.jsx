@@ -43,7 +43,7 @@ function BoardView({
   editable = false,
   selectionOpen = false,
   selectRequest = null,
-  graphUnavailable = false,
+  onSelectRequestTaken,
   toast = null,
   onToastReveal,
   onToastUndo,
@@ -126,9 +126,10 @@ function BoardView({
     }
     const displayed = board?.shownCards(column, { doneExpanded }).cards.some((card) => card.id === selectRequest.id);
     if (!displayed || motion.leaving.has(selectRequest.id)) return;
+    if (!selection.start(selectRequest.id)) return;
     consumedSelect.current = selectRequest.key;
-    selection.start(selectRequest.id);
-  }, [canSelect, selectRequest, nextBoard, shown, doneExpanded, selection.start, standColumnOf, board, motion.leaving]);
+    onSelectRequestTaken?.(selectRequest.key);
+  }, [canSelect, selectRequest, nextBoard, shown, doneExpanded, selection.start, standColumnOf, board, motion.leaving, onSelectRequestTaken]);
 
   // Then its card scrolls into view at once, so reduced motion has nothing to opt out of.
   useEffect(() => {
@@ -239,7 +240,7 @@ function BoardView({
       {frame !== 'columns' && !phone && refusedNotice}
       {frame === 'loading' && <BoardSkeleton phone={phone} />}
       {frame === 'error' && <LoadError phone={phone} onRetry={retry} />}
-      {frame === 'empty' && !(graphUnavailable && !editable) && <EmptyRoadmap onNewStep={onNewStep && (() => onNewStep('empty'))} />}
+      {frame === 'empty' && onNewStep && <EmptyRoadmap onNewStep={() => onNewStep('empty')} />}
       {frame === 'columns' && (
         <UpNextRest.Provider
           value={complete ? <RoadmapComplete phone={phone} total={board.overall.total} onShare={onShare} onNewStep={onNewStep && (() => onNewStep('complete'))} /> : null}
