@@ -41,7 +41,7 @@ for (const breakpoint of ['desktop', 'phone']) {
         empty: html.includes('Your first step'),
         complete: html.includes('All 8 steps done'),
         create: html.includes('New step'),
-      }, { empty: state === 'empty', complete: state === 'complete', create: false });
+      }, { empty: false, complete: state === 'complete', create: false });
     });
   }
 }

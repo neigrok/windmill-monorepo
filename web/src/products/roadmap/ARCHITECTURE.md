@@ -46,6 +46,8 @@ point for the component showcase.
 `initialView` in `persistence/ViewPrefs.js` chooses the view and returns `{ view, door }`, so the opening
 event uses the same branch that chose it:
 
+0. Without WebGL2 every visit opens on the Board. Its door is `no_graph` when the rules below would choose
+   the Graph, otherwise the door those rules choose. The saved view choice is preserved.
 1. An owner's empty roadmap opens on the Board.
 2. A non-empty just-planted roadmap opens on the Graph.
 3. A step link opens on the Board.
@@ -69,7 +71,8 @@ the Graph's overlays and legend included. The identity sits above that layer and
 composer and sheet layers cover it. Covered elements stay inert until the last covering layer closes.
 
 A render failure in the Board reports `roadmap-board` and shows the Graph with focus on the row's pressed
-switch; choosing Board tries again. A failure in the row reports `roadmap-identity` and leaves `ViewSwitch` at
+switch; choosing Board tries again. Without WebGL2 it shows the design-system crash screen with Reload. A failure
+in the row reports `roadmap-identity` and leaves `ViewSwitch` at
 the row's position with focus on it: the Shell carries the way home, the camera group is separate, and the
 fallback's measured bottom feeds the same insets. The step and the composer close on their own failures.
 [`OBSERVABILITY.md`](../../../OBSERVABILITY.md) tables every event and failure.
@@ -78,8 +81,9 @@ fallback's measured bottom feeds the same insets. The step and the composer clos
 
 `room/useRoomLoad.js` loads a tree through `HttpTreeRepository` or the account's device fallback, constructs
 `SkillTree`, derives progress through `UnlockRules`, runs layout and installs the render model in
-`SkillTreeScene`. Layout is synchronous and cached by graph structure, effective engine and, for caption-aware
-engines, labels.
+`SkillTreeScene` when one is available. Without WebGL2 it installs the tree and model with null scene bounds,
+seeds activity and starts synchronization without any scene or camera calls. Layout is synchronous and cached
+by graph structure, effective engine and, for caption-aware engines, labels.
 
 The repository judges its own reads, and `BoundaryFailure` says so to any catch above it. A server tree whose marks can't be
 read reports `roadmap-progress-load` and stops the load, so the room shows the load error and Try again rather than a false
@@ -94,7 +98,9 @@ A saved camera is scoped to its layout engine and format. Without one, an owner 
 frontier and a visitor receives the whole-tree fit and arrival ceremony. The owner's first view reframes as
 chrome measurements arrive until the reader moves the camera. A plant from paste or a quest fits the whole tree,
 cascades and ends on its one line. A fork opens on its Board and says what happened, counting its own steps. The
-scene stays silent unless it is told what to say.
+scene stays silent unless it is told what to say. Without WebGL2, the planted summary and welcome-back recap
+have no Board presentation and are absent; their undrawn states are in the
+[consistency ledger](../../../../docs/design/consistency.md).
 
 ## The identity row
 
@@ -113,9 +119,17 @@ and shortcuts.
 
 A folded *Find a step* closes once the press that took its focus has landed, so closing never moves a control out from under that press.
 
+Without WebGL2, Graph remains focusable and named, at 45% opacity with `aria-disabled="true"`, unpressed and
+described by *Graph needs WebGL2, which this browser doesn’t support.* From 744px, hover, focus or a press
+opens the product-local tooltip; Escape, blur, mouse-leave or an outside press closes it. On phones a press
+uses the room's toast slot with no action, unless a held delete owns the slot. That press preserves the
+held-delete toast and its deadline; the reason remains in the option's accessible description. The description
+remains available to assistive technology while closed. Presses emit `roadmap_graph_unavailable`; hover and focus stay silent.
+
 **Keys.** From 744px `/` focuses *Find a step* on either view, and G switches Board and Graph for owners and
-readers. A non-empty Graph search hands off to the Board with its query and field focus kept. ⌘K is Ask AI. A
-opens Activity from 744px; on phones it does nothing. `boardKey` in `shortcuts/shortcutMap.js` owns the
+readers when the Graph is available. Without WebGL2, G does nothing and its Board / Graph help row is absent.
+A non-empty Graph search hands off to the Board with its query and field focus kept. ⌘K is Ask AI. A opens
+Activity from 744px when its destination is available; on phones it does nothing. `boardKey` in `shortcuts/shortcutMap.js` owns the
 Board's keys and their shared typing and covered-layer refusal: a step open over either view, a dialog or the
 composer prevents them acting. C completes a focused Up next card; Backspace and Delete start a nine-second
 held delete on a deletable owner card, with no confirm. Graph selection shortcuts do not act on the Board. The
@@ -154,7 +168,8 @@ phone views receive the tappable `DeviceLine`. A restored paused account keeps `
 the line reads `LAPSED_SESSION` and `roadmap_device_line` reports `line: 'lapsed'`.
 
 **Activity.** Desktop and tablet owners open it through the row or A on either view. The feed never opens
-itself and carries no unread signal. On desktop, opening it from the Board switches to the Graph dock. At
+itself and carries no unread signal. On desktop, opening it from the Board switches to the Graph dock, so
+without WebGL2 neither the row nor A offers it. The tablet panel and phone page remain available. At
 744–1023px a separate panel keeps the current view usable; its rows open step details, and X, Escape or the
 callback closes it and returns focus to More, which reads `activityOpen` to stay pressed. It stands at 172px
 from the page top, or 12px below the measured row, Board filter strip or Graph refusal banner when those reach
@@ -261,18 +276,29 @@ and pointer cancellation stop the hold, and its release never opens a step.
 `BoardView` mounts `useStepSelection`, which owns selection, history and focus transitions separately from the
 Graph's multi-select. Its immutable `StepSelection` reads the filtered pane and permanently drops choices that
 leave it. `deletable` in `acts.js` is the one sole-root rule for selection, keyboard deletion and the step
-menu. There is no keyboard entry into multi-select.
+menu. The host owns whether Board selection is open: phone, active Board and owner. A deletable step's page
+menu offers Select under that rule. `useStepPage` closes the visit, selects the step, clears only query dimensions
+that hide it through `BoardQuery.revealing` and records a request, keeping sort. After the step leaves the URL,
+`BoardView` stands its column past any Done fold and consumes the request once through the hold's same `start`.
+Successful start acknowledges its key to the host, which clears that request; a Board crash also clears any
+pending request. Request keys increase independently of the pending request. The selected card receives focus,
+including when the visit began on another card.
 
-Selection replaces the phone band with `BulkBar`: count and Done, optional six named kind radios, then
-equal-width Recolor and Delete. `KindChoice follow={false}` moves focus with arrows and applies only on
+Selection replaces the phone band with `BulkBar`, a region named Selection: a non-focusable `h2` count and
+Done, optional six named kind radios, then equal-width Recolor and Delete. The owner's phone Board keeps one
+polite live region mounted and initially empty. Start announces *Selecting. 1 selected.*; later count changes
+announce *N selected*, and ending clears it. Selected cards are `aria-pressed` toggles operated by tap, Space
+or Enter. With no phone notices, Tab from a card reaches Done. `KindChoice follow={false}` moves focus with arrows and applies only on
 activation. Re-picking the shared kind closes only the kinds row, keeps the selection and writes nothing.
 Selection owns same-URL history entries, separate from step visits; Back and Escape close the kinds before
-ending selection. Ending waits for its history entries to close, then restores its starting card only if it
-belongs to the filtered, displayed pane and is not leaving; otherwise focus returns to the pane's tab, or the
+ending selection. Ending waits for its history entries to close, then restores the last toggled card, whether
+toggled on or off, only if it belongs to the filtered, displayed pane and is not leaving; otherwise focus returns
+to the pane's tab, or the
 state action or loading stop if the pane was replaced. Selection also ends on an act, an empty prune, leaving
 the Board, losing ownership or changing roadmaps. Recolor dispatches one `BulkRecolor` and keeps the selection
 if refused. Bulk Delete creates one held projection and releases one `BulkDelete` after nine seconds, with no
-confirmation. Neither act clears the query.
+confirmation. Neither act clears the query. The starter and the last toggled card stay rendered through
+virtualization while selecting so focus can reach them.
 
 ### Step detail
 
@@ -289,7 +315,8 @@ the step leaves the URL in place, so restoring it reopens nothing.
 
 While open the layer makes everything beneath it inert and wraps Tab inside itself; Escape, wherever focus is,
 closes the topmost editor or confirmation before the detail. Closing returns focus to the card the visit began
-on, or to the columns' tab stop once that card has gone. After a held delete, roving recovery skips the
+on, or to the columns' tab stop once that card has gone. Select hands focus to the selected card instead, and
+closing leaves that deliberate target alone. After a held delete, roving recovery skips the
 deleted card even while regroup still displays it; on phones, if no surviving card is visible yet, focus rests
 on the selected column tab until its stop appears.
 
@@ -303,8 +330,9 @@ subtask is checked offers Complete step, which returns to the overview's status 
 it.
 
 The ⋯ menu copies the step's link (the roadmap's share address plus its step) only while the roadmap is public
-or unlisted, opens the step in the Graph when it stands over the Board, and offers Delete to an owner unless
-deleting the step would leave the roadmap no root. With nothing to offer the menu hides. The owner's up next and done steps offer View branch. A visitor gets the overview and the menu without
+or unlisted, opens the step in the Graph when it stands over the Board and the Graph is available, offers Select
+to a phone owner over the Board for a deletable step, then offers Delete to an owner unless deleting the step
+would leave the roadmap no root. With nothing to offer the menu hides. The owner's up next and done steps offer View branch. A visitor gets the overview and the menu without
 Delete. Owners get Edit step beside Complete or Reset, or alone while locked; the phone Workspace action is
 Add note or Edit note.
 
@@ -342,7 +370,9 @@ release that fails as its toast is replaced or left emits the event and says not
 
 `BoardStates.jsx` draws them. While the roadmap loads, still skeleton cards hold the columns under the identity row
 and band, with no counts, no spinner and no motion. A failed load says *Couldn't load this roadmap* with Try again, which
-reruns the load. An owner's empty roadmap shows *Your first step* and New step on every band. Once every step
+reruns the load. An owner's empty roadmap shows *Your first step* and New step on every band. An empty reader
+roadmap without WebGL2 keeps its identity and zero-step count without the owner title, body or New step offer.
+Once every step
 is done, Up next rests on Roadmap complete: the owner gets its body line, Share it and New step; a reader gets
 the title alone.
 
@@ -410,7 +440,9 @@ Fork pill and selected-step bar.
 ## Toasts and Undo
 
 `useRoadmapToast` is the room's one toast slot, with one hold that starts when a toast is first shown; a newer toast
-replaces the older, with no coalescing. `toastSeat` says where a toast stands: a Board toast inside `BoardView`,
+replaces the older, with no coalescing. The unavailable Graph reason is suppressed while a held delete stands,
+so that press cannot replace its Undo or release the delete early; other Undo toasts follow the replacement rule.
+`toastSeat` says where a toast stands: a Board toast inside `BoardView`,
 where it waits out the regroup; a Graph toast over the canvas, leaving with it; anything else over whatever is
 showing. `BoardToast` renders them all but Ask AI's answers, which keep `tending/TendToast.jsx` and its Why?. A plan pasted with
 ⌘V announces on whichever view took it, so its toast and Undo stand there, and the composer's count is what the graft adds.
@@ -480,6 +512,17 @@ subtrees in their enclosing-circle positions. This ceiling covers the tuck, not 
 latency. Marketing scenes use hand-placed coordinates.
 
 ## Renderer
+
+`SkillTreeScene` exports `GraphUnavailable`, thrown only when `getContext('webgl2')` returns null.
+`useRoomScene` owns `graphAvailability` for the room's life: `pending`, `available` or `unavailable`. It catches
+that typed answer before paint, never retries it and emits `webgl_init_fail { band }` once per visit. Absence reports no Sentry Issue, starts no frame loop and
+keeps Graph chrome, Graph loading, canvas-only demo coaching and Graph toasts out of the painted view. The
+renderer emits no availability telemetry. Minimap mounts only while the canvas view is active. Other
+constructor errors propagate unchanged to the render boundary.
+
+Scene construction runs in a layout effect. On WebGL2-capable devices, GL setup and shader compilation block
+the first paint. A changed write handler reconstructs the scene in that effect and incurs the same synchronous
+setup and compilation cost before the next paint.
 
 `SkillTreeScene` owns `Camera2D`, `NodeBatch`, `ConnectorBatch`, overlays, `CeremonyDirector` and input tools.
 React supplies models, progress, selection and viewport insets. The continuous frame loop advances camera and
@@ -650,8 +693,11 @@ selectable; owners can make a tree private again.
 
 ## Open work
 
-- A device without WebGL2 crashes the room before the Board can serve it: `SkillTreeScene`'s constructor
-  throws, and the reader sees *Something went wrong on this screen* instead of a Board that needs no canvas.
+- A WebGL2-capable device whose renderer fails to build still crashes the room through the existing render
+  boundary; shader and program errors are not treated as WebGL2 absence.
+- Context loss after a successful construction is unhandled.
+- Desktop Activity has no destination without the Graph; its row offer and shortcut stay absent pending a
+  design in the [consistency ledger](../../../../docs/design/consistency.md).
 - Wire retry coverage uses actor frontiers. An accepted newer write can cover an earlier rejected write in
   that frontier without confirming its fields, and a partial chunk can cover the rest of its gesture. The
   status keeps the exact pending work; the retry transport needs separate protocol regression coverage before

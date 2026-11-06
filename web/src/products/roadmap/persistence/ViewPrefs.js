@@ -41,9 +41,12 @@ export class ViewPrefs {
   }
 }
 
-// Empty or just-planted roadmaps open the canvas, except editable empty Boards; step links open the Board, readers the Graph,
-// and other visits keep their saved choice, with a saved `list` reading as `board`.
-export function initialView({ saved, owner, reader = false, empty, born = false, linkedStep = null, canAddFirstStep = false }) {
+// Without the Graph every visit opens the Board; otherwise birth, empty, linked, reader and saved choices decide.
+export function initialView({ saved, owner, reader = false, empty, born = false, linkedStep = null, canAddFirstStep = false, graphAvailable = true }) {
+  if (!graphAvailable) {
+    const decision = initialView({ saved, owner, reader, empty, born, linkedStep, canAddFirstStep });
+    return decision.view === 'tree' ? { view: 'board', door: 'no_graph' } : decision;
+  }
   if (owner && empty && canAddFirstStep) return { view: 'board', door: 'empty' };
   if (born) return { view: 'tree', door: 'born' };
   if (empty) return { view: 'tree', door: 'empty' };
@@ -62,8 +65,9 @@ export function boardCanShow({ crashed = false, loaded = false, empty = false, c
   return canAddFirstStep;
 }
 
-// A Board that cannot show shows the Graph without forgetting the choice.
-export function viewToShow(view, board) {
+// Without the Graph the Board stays present, including its crash screen; otherwise unavailable Boards show the Graph.
+export function viewToShow(view, board, graphAvailable = true) {
+  if (!graphAvailable) return 'board';
   return view === 'board' && !boardCanShow(board) ? 'tree' : view;
 }
 

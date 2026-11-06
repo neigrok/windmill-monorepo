@@ -63,7 +63,7 @@ export const BOARD_SHORTCUT_GROUPS = [
       { label: 'Close step', chords: [[key('esc')]] },
       { label: 'Complete step', chords: [[key('C')]], owner: true },
       { label: 'Delete step', chords: [[key('⌫')]], owner: true },
-      { label: 'Board / Graph', chords: [[key('G')]] },
+      { label: 'Board / Graph', graph: true, chords: [[key('G')]] },
     ],
   },
   {
@@ -96,8 +96,9 @@ export function detectPlatform() {
 }
 
 // Without the desktop editor only navigation and help remain, and a row marked for owners shows to owners alone.
-export function visibleGroups(readOnly, view = 'graph', owner = !readOnly) {
-  const groups = view === 'board' ? BOARD_SHORTCUT_GROUPS : GRAPH_SHORTCUT_GROUPS;
+export function visibleGroups(readOnly, view = 'graph', owner = !readOnly, graphAvailable = true) {
+  const available = view === 'board' ? BOARD_SHORTCUT_GROUPS : GRAPH_SHORTCUT_GROUPS;
+  const groups = graphAvailable ? available : available.map((group) => ({ ...group, rows: group.rows.filter((row) => !row.graph) }));
   if (!readOnly) return groups;
   const reading = view === 'board' ? 'Board' : 'Navigate';
   return groups

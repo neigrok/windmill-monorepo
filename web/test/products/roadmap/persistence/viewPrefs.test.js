@@ -251,3 +251,29 @@ test('an email fork lands on its copy with the same note an instant fork leaves'
   assert.equal(roadmapRoutes.landingAfterSignIn('t_copy'), '#/app/t_copy');
   assert.deepEqual(takePlantNote(storage), { quest: false, forked: true });
 });
+
+
+test('initialView — without WebGL2 every branch keeps its Board door or becomes no_graph', () => {
+  const base = { saved: 'tree', owner: true, reader: false, empty: false, graphAvailable: false };
+  const cases = [
+    [{ empty: true, canAddFirstStep: true, born: true, linkedStep: 'wind' }, { view: 'board', door: 'empty' }],
+    [{ born: true, empty: true, linkedStep: 'wind' }, { view: 'board', door: 'no_graph' }],
+    [{ empty: true, linkedStep: 'wind' }, { view: 'board', door: 'no_graph' }],
+    [{ linkedStep: 'wind', reader: true }, { view: 'board', door: 'link' }],
+    [{ owner: false, reader: true, saved: 'board' }, { view: 'board', door: 'no_graph' }],
+    [{}, { view: 'board', door: 'no_graph' }],
+    [{ saved: 'list' }, { view: 'board', door: 'saved' }],
+    [{ saved: 'board' }, { view: 'board', door: 'saved' }],
+    [{ saved: null }, { view: 'board', door: 'default' }],
+    [{ saved: null, owner: false }, { view: 'board', door: 'no_graph' }],
+  ];
+  for (const [overrides, expected] of cases) assert.deepEqual(initialView({ ...base, ...overrides }), expected);
+});
+
+test('viewToShow — without WebGL2 the Board remains for loading, empty readers and crashes', () => {
+  for (const view of ['board', 'tree', null]) {
+    for (const board of [{ loaded: false }, { loaded: true, empty: false }, { loaded: true, empty: true }, { crashed: true }]) {
+      assert.equal(viewToShow(view, board, false), 'board');
+    }
+  }
+});

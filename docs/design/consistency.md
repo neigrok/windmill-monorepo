@@ -592,9 +592,19 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
 - **Board · shared Undo.** Backspace and Delete on an owner Board card start the nine-second held delete directly; the hold is its
   safety (wave-5 G10). A toast's Undo reverts its own act. Command-Z walks the session's global structural stack across both views, cancels
   a hold first, as the hold is the last act, and is refused under a covering layer and in a text field.
-- **Board · multi-select entry for keyboard and screen readers.** Phone multi-select starts only through a touch hold (wave-5 G14).
-  Proposed, awaiting the owner: *Select* in the step menu, *Select steps* in the roadmap sheet, a selection state with none chosen and
-  the accessible bulk bar (25.18–25.22). The follow-up node is `rb-multi-select-keyboard`.
+- **Board · multi-select entry for keyboard and screen readers.** Phone owners enter selection through a touch hold or *Select* in
+  the step menu. A polite live region announces the count and the bulk bar is a named Selection region with a count heading.
+  Proposed, awaiting the owner: *Select steps* in the roadmap sheet and a selection state with none chosen (25.18–25.22).
+  The follow-up node is `rb-multi-select-keyboard`.
+- **Board · desktop Activity without WebGL2.** At 1024px and above Activity lives in the Graph dock, so the row's Activity offer and
+  A shortcut are absent when WebGL2 is unavailable. The tablet panel and phone sheet page remain available. No approved frame draws
+  a Graph-less desktop Activity destination; the follow-up is to draw that destination and its entry.
+- **Board · a reader's empty roadmap without WebGL2.** Every visit without WebGL2 opens on the Board. An empty reader roadmap keeps
+  its identity and zero-step count without the owner's *Your first step* title, body or New step offer. No approved frame draws this
+  reader state; the follow-up is an empty Board for a reader on every band.
+- **Board · planted summary and welcome-back recap without WebGL2.** Both presentations belong to the scene: the planted roadmap's
+  summary follows its arrival, and the welcome-back recap names progress since the previous visit. Without WebGL2 neither appears
+  on the Board. No approved frame draws either Board presentation; the follow-up is to draw both on the applicable bands.
 - **Board · the topbar before a roadmap loads.** Before the load answers, or after it fails, the build knows no name, so it shows none
   rather than *Untitled roadmap*, and it offers no Share. It shows the switch while loading, but not after a failed load: the Graph's
   load error veils the topbar, so the switch would lead where a pointer cannot come back from. Proposed, awaiting the owner: a still name
@@ -614,7 +624,7 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   its place, dimmed and `aria-disabled`, with *A roadmap keeps one starting step* under the count, on all three bars
   ([25.25](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=591-19626)). The desktop dock drops *Delete step* for a sole root with nothing saying why, and no
   frame draws that dock.
-- **Board · Activity shortcut in help.** From 744px A opens Activity on both Board and Graph. The Board shortcuts dialog does not list A.
+- **Board · Activity shortcut in help.** From 744px A opens Activity on both Board and Graph where its destination is available. The Board shortcuts dialog does not list A.
   Proposed, awaiting the owner: an *Activity* row after *Board / Graph*, owner only (15.17), before adding it to `BOARD_SHORTCUT_GROUPS`.
   A does nothing on phones.
 - **Board · dock beneath the row.** The step dock from 744px starts 8px
