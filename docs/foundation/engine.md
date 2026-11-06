@@ -10,8 +10,8 @@ The key words MUST, MUST NOT, SHOULD and MAY are used as in RFC 2119. Sections, 
 I/O in `web/src/platform/sync`), Swift (`apps/ios/Sync`) and Kotlin (`apps/android/sync-*`).
 `windmill_server` serves the gym and
 journal composition on `/v1/sync`, and the engine is the only writer of their records: web (gym,
-journal), iOS (journal, gym) and Android (gym) write through replicas, and MCP, the Coach and gym's
-import door admit as the server (A.2). Production's gym and journal rows were adopted in place
+journal), iOS (journal, gym) and Android (gym) write through replicas, a phone's Coach among them, and MCP,
+the web's Coach and gym's import door admit as the server (A.2). Production's gym and journal rows were adopted in place
 (Appendices C and D). `windmill_server_probe` carries the test-only contract.
 
 **Registry contract:** The composed source registry is version 12 with minimum version 11. Gym's
@@ -29,7 +29,7 @@ starts from empty stores.
 **Retired REST writes:** gym's former REST write paths answer `410`
 `{"error":"This version of the app can no longer save; update it.","code":"client-update-required"}`
 before authentication, parsing or data access, and [gym ARCHITECTURE](../../backend/products/gym/ARCHITECTURE.md)
-lists them. Journal has no REST page writer. Reads, shares, exports, the Coach, the import door,
+lists them. Journal has no REST page writer. Reads, shares, exports, the web's Coach, the import door,
 echoes and nudges stay REST. `/v1/sync` has its own `426 upgrade-required` minimum-schema refusal
 (§9.1).
 
@@ -1343,7 +1343,10 @@ none. A gesture whose diff is empty still runs steps 2–11. One local transacti
    new gesture replaces. It is allowed only in an anonymous replica, whose entries have never
    been sent (§7.10). Each named gesture MUST exist in this replica and scope, and all of its
    entries MUST be held or ready with `n` absent; otherwise throw before changing anything.
-   Remove those whole gestures and fold their dependents silently (§7.3), as for an undo.
+   Remove those whole gestures and fold their dependents silently (§7.3), as for an undo. Unlike an
+   undo, a later entry also loses its guards on the records they or their dependents created: the
+   replacement is numbered after that entry, so no stamp of such a record can stand when it arrives,
+   and what the entry read lives on in the replacement.
    Return their ids as `superseded`, in commit order, when any were named. The replacement MUST
    carry every effect the product keeps, including monotone state writes: superseding does not
    copy old deltas into the replacement. A refusal or failure of this commit supersedes nothing.
@@ -1352,7 +1355,9 @@ none. A gesture whose diff is empty still runs steps 2–11. One local transacti
    of them, ends `undone`, as `undo` ends it, its dependents folded silently (§7.3). `commit` returns
    their gesture ids as `retired`, in commit order; a commit refused at step 8 retires nothing. A
    retired removal never happened, so the record keeps its untouched fields, and a minted or derived
-   record is back in `drawn`: the gesture writes it by an update. From here on `drawn` and `stored`
+   record is back in `drawn`: the gesture writes it by an update. A commit that names both `supersede`
+   and `retire` folds the dependents of both in one pass, as a replacement: a later entry's guard on a
+   record the retired gestures' dependents created goes with them too. From here on `drawn` and `stored`
    hold neither the retired entries nor the parts their fold removes. Then diff `changes` against
    `drawn`, emitting only changed fields, stamped `s`:
    - A minted or derived delta carries the record's `born`. A create gets `born = s` and
@@ -1415,7 +1420,8 @@ none. A gesture whose diff is empty still runs steps 2–11. One local transacti
    or a command: guards are dropped when the gesture has neither, and a gesture with nothing to send
    enqueues nothing (held or not), so no retire can match it. A string of the intents (their scope,
    deltas, guards, command and gesture id), a key or a value at any depth, that holds U+0000 throws,
-   as §6.1 step 2 refuses it.
+   as §6.1 step 2 refuses it. On Android a value nested so deep that its stored entry or notice would
+   pass the parser's 128 levels throws too, malformed `too-deep`: opening the store parses them all.
 8. **Caps and size.**
    - A gesture whose deltas, applied to `stored`, raise a capped type's visible count above its cap
      by the growth rule (§6.1 step 12) returns `Refused(cap)` with detail `{type, cap}`, as §6.1
@@ -1837,9 +1843,10 @@ notice of its own, as step 3 states):
    an entry with no dependent delta on that record. After this refusal the server refuses that entry
    `stale` (§6.1 step 7), the register it names never having been written. A guard on a register of
    a record a held entry creates names no stamp, unless a held-back entry wrote that register first:
-   guards read `stored` (§7.1 step 6), which holds held-back entries and no held ones. After an undo,
-   retire or supersede (§7.3) the guard holds in the first case, and in the second the fold empties that
-   writer and the server refuses the guarding entry `stale`.
+   guards read `stored` (§7.1 step 6), which holds held-back entries and no held ones. After an undo
+   or a retire (§7.3) the guard holds in the first case, and in the second the fold empties that
+   writer and the server refuses the guarding entry `stale`. A supersede removes such a guard (§7.1
+   step 4).
    - In a held or ready entry, the dependent deltas are removed, with the guards on their records,
      and a dependent command with its prediction. An entry left empty ends `refused`, in this
      notice.
@@ -2019,7 +2026,8 @@ incomplete, `DeviceMeta.pendingSignIn` holds A.
   device work, a **signed-out decision** is due: an explicit add or discard of that work, of every type, with no
   default and no "later". The engine exposes `anonCount(product)` per decision: the count, by type,
   of the distinct records `(scope, type, id)` its entries create or change. Pending device work is
-  counted separately, one item per product-identified row. A decision covers exactly the work it
+  counted separately, one item per product-identified row. Kotlin's `anonDrawn(product)` is the same count of the
+  records still drawn, for a question that names only what the person would see. A decision covers exactly the work it
   counted: the engine pins entry local ids and each pending device row's key and full value bytes.
   When the entries or device work differ at the answer (a commit, edit, undo or result in between), the decision is due again with the new
   count. How the decisions are presented is product canon. Until every due decision is made the
@@ -2134,6 +2142,11 @@ It is not durable: a change whose process dies before delivering it is announced
 so whoever holds an id reads `activeReplica()` again at engine start, or keeps a durable mark of
 its own, such as the gym Coach's `runningTurn` device row (gym Coach §4.5). On web every tab delivers
 it (§7.8).
+
+The Kotlin engine adds two reads of this state. `activeReplicaRebinds()` announces each completed sign-in
+that rebinds the active `anon` replica, whose id stands and whose seat does not (gym Coach D-10), with the
+event's delivery. `activeReplica()` answers from what the last durable transaction published, so no
+transaction holds its caller up.
 
 A sign-in, a sign-out or a re-identify of the active replica runs the puller (§7.5) and ends every
 doubt (§7.9), whether or not its id changed.
@@ -2349,6 +2362,10 @@ declares a `headline` type (§2.4): `count` is the number of rows of that type i
 last change to any of them, D-6), or `null` when `count` is 0. A client restoring onto an empty
 replica reads them to say what is arriving and to open first the product the person last wrote to; a
 client that does not know the field ignores it.
+
+A hello writes nothing, so Kotlin's transport lets OkHttp send it again on a fresh connection, and a
+socket the server closed while idle never reads as offline; it sends a push or a pull once, for §7.4
+and §7.5 to retry.
 
 ### §9.3 Push: `POST /v1/sync/push`
 
@@ -2683,7 +2700,8 @@ as ≤200 chars is a bound in that unit, the field's, or its domain's when neste
 movement), `offer:<session>` (a pre-minted offer id) and `rack:<session>` (rack state); and the gym
 Coach's `runningTurn` (the id of the Coach message whose turn this device is running, gym Coach §4.5)
 and `picture:<id>` (a `localOnly` picture held on this phone, gym Coach §9.3).
-**Surfaces:** web, iOS, Android. MCP, the Coach and the import door write as the server (below).
+**Surfaces:** web, iOS, Android. A phone's Coach writes through its replica. MCP, the web's Coach and the
+import door write as the server (below).
 **Adoption:** production tables are adopted in place (Appendix C).
 
 Every minted type mints 16 base-62 characters and is seeded (D-8): a seed of at most 58 characters,
@@ -2726,7 +2744,7 @@ the binding refuses every public delta of that type, including an empty delta. I
 | Original Coach routine | `routineCreation.snapshot`, JSON, server `const` | An ask routine create writes this independent keyed record in the same intent and seq. Historical and new snapshots share one shape: the exact REST `toJson(Routine)` response at creation, with id, name, position (default 0), revision 1 and entries numbered from 1. No command sets it; `gym.applyProposal` edits/deletes an existing routine. Manual/MCP creates have no snapshot. Edits and routine/conversation death preserve it; account purge removes it. It is the engine view of the existing `gym_routine_creations.routine`, not a duplicate receipt table. |
 | Frozen base revision | `proposal.baseRevision`, integer 1–2 147 483 647, server `const` | Every proposal create freezes the joined routine's final revision after all same-intent routine changes. `gym.applyProposal`, `gym.dismissProposal`, supersession and receipt replay leave it alone. |
 | Frozen base name | `proposal.baseName`, string ≤240 UTF-8 bytes, server `const` | The same create freezes the joined routine's name. Empty historical values remain readable; no default or substitution of today's name. Settlement never writes it. |
-| Apply count | `proposal.changeCount`, integer 0–2 147 483 647, server `const` | The same create freezes the store's count against that joined base. Count every non-`kept` diff row, add one when `baseName ≠ proposedName`, and add one for a reorder: visit kept/retargeted rows in proposed order, matching each to the first unmatched base entry of the same exercise; any matched base index below the greatest visited index means one reorder. Added/removed rows do not participate in that order check. Settlement and replay preserve the count. |
+| Apply count | `proposal.changeCount`, integer 0–2 147 483 647, server `const` | The same create freezes the store's count against that joined base. Count every non-`kept` diff row, add one when `baseName ≠ proposedName`, and add one for each `kept` row that moved: visit kept/retargeted rows in proposed order, matching each to the first unmatched base entry of the same exercise. A row at the same place in the base and the proposal never moved; a row that crosses one of those moved; of the rest the longest run in base order stands, the one whose places come first of equal runs, and every other row moved. Added and removed rows take no part in the order, though the places count them. It is the number a card, a sheet and a receipt say. Settlement and replay preserve the count. |
 | Note content time | `note.updatedAt`, integer epoch ms ≥0, server `lww` | A note create or an admitted net title/body value change writes `serverNow`, including Coach's appended note. Ord-only reorder, equal content, losing writes and retries preserve it. No gym command sets it. Its stamp is the ordinary §10.3 server stamp, not the time value; `ru` still describes every envelope change. |
 
 **(a) Exact client derivations.** Note position is the zero-based index after sorting alive notes
@@ -2736,7 +2754,7 @@ The movement count on an immutable Coach creation receipt is `snapshot.entries.l
 does not supply an unknown routine-history count. The six scalar facts above cannot be derived
 from today's wire: a pull seq or register stamp is not a routine revision or a frozen base;
 current entries/name are not their original values; the diff omits the frozen base ordering
-needed for a reorder count; and reorder changes `ru` while preserving note content time.
+needed to count a move; and reorder changes `ru` while preserving note content time.
 No missing fact uses **(c) a separate server-derived read projection**: server computation is
 carried by these existing field primitives, so pulls, command results, live reads and caches
 share the same authoritative values and digest.
@@ -2759,11 +2777,11 @@ web, Swift and Kotlin domain suites claim them alongside training-rule regressio
 
 **Coach conversations** (gym Coach §9.1) are the engine records `thread` and `message` above, bound
 by the gym binding (§2.4) and stored in `gym_threads` and `gym_messages`. The server Coach's legacy
-conversations (`gym_ask_threads`, `gym_ask_turns`) are not adopted: they stay the server Coach's, and
-web and Android keep writing them until they move to the phone Coach. A proposal's `threadId` is a
+conversations (`gym_ask_threads`, `gym_ask_turns`) are not adopted: they stay the server Coach's, the web
+keeps writing them, and neither phone's source reads or writes them. A proposal's `threadId` is a
 plain string naming either kind of conversation. Deleting a legacy conversation first admits, as the
 server, `threadId = null` on every proposal and workout proposal that names it; a `thread` death does the same by
-consequence. On Android and the web the gym room holds a legacy conversation delete for the same
+consequence. On the web the gym room holds a legacy conversation delete for the same
 window as the **Held** gestures, on the room's own clock rather than the engine's.
 
 **Cross-record checks** read stored records with the intent’s joined records and earlier staged
@@ -2961,8 +2979,8 @@ stale. Logging after a stale close issues a new `gym.start`.
 **Projections outside synced fields:** note `position` is client-derived (R118 above); set revisions
 (what a correction or a delete replaced). A session's death also deletes its workout share, which is outside the engine (§0).
 
-**Server-origin doors.** MCP, the server Coach and the import door (`POST /v1/gym/sessions/import`)
-admit as server origins (§6.3, D-23). [Gym ARCHITECTURE](../../backend/products/gym/ARCHITECTURE.md)
+**Server-origin doors.** MCP, the server Coach, the import door (`POST /v1/gym/sessions/import`) and the drop of a
+phone Coach turn (gym Coach §4.5) admit as server origins (§6.3, D-23). [Gym ARCHITECTURE](../../backend/products/gym/ARCHITECTURE.md)
 states how each builds its intents, what its builders read under the scope lock and answer without
 admitting (a start whose clock is ahead, a start under a discarded session's id, a discard of an
 unfinished session, a replayed create, a Coach note save the notes already hold), and how it

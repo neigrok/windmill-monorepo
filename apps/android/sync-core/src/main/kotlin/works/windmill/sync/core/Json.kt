@@ -48,6 +48,13 @@ sealed class Json {
     }
     fun orNull(): Json? = if (this === Null) null else this
 
+    // How many containers nest here: what the parser counts against MAX_DEPTH.
+    val depth: Int get() = when (this) {
+        is Arr -> 1 + (values.maxOfOrNull { it.depth } ?: 0)
+        is Obj -> 1 + (members.values.maxOfOrNull { it.depth } ?: 0)
+        else -> 0
+    }
+
     val jcs: String get() = when (this) {
         is Null -> "null"
         is Bool -> value.toString()
@@ -140,16 +147,14 @@ internal object Decimal {
         val exact = limbs.last().toString() + limbs.dropLast(1).asReversed().joinToString("") { it.toString().padStart(9, '0') }
         val point = exact.length + minOf(power, 0)
         for (count in 1..minOf(17, exact.length)) {
-            var digits = exact.take(count)
-            if (exact.length > count) {
-                val next = exact[count]
-                val tailNonzero = exact.drop(count + 1).any { it != '0' }
-                if (next > '5' || (next == '5' && (tailNonzero || (digits.last().code - 48) % 2 != 0))) {
-                    digits = (digits.toLong() + 1).toString()
-                }
-            }
+            val down = exact.take(count)
+            val up = (down.toLong() + 1).toString()
+            val roundsUp = exact.length > count && (exact[count] > '5' ||
+                (exact[count] == '5' && (exact.drop(count + 1).any { it != '0' } || (down.last().code - 48) % 2 != 0)))
             val decimalPower = point - count
-            if ((digits + "e" + decimalPower).toDouble() != magnitude) continue
+            // At a power of two the gap below is half the gap above, so the nearest digits can miss where the other neighbour round-trips.
+            var digits = listOf(if (roundsUp) up else down, if (roundsUp) down else up)
+                .firstOrNull { (it + "e" + decimalPower).toDouble() == magnitude } ?: continue
             val n = digits.length + decimalPower
             digits = digits.trimEnd('0')
             val k = digits.length

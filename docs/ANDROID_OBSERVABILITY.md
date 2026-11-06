@@ -48,7 +48,7 @@ Issue, both under the static operation. It sends neither for an expected answer:
 - lost network (`WindmillApiException.Offline`), or a `Transport` failure that
   `TelemetryPolicy.networkLoss` reads as lost network;
 - an HTTP refusal with status 400, 401, 403, 404, 409, 410, 422, 426 or 429;
-- on an AI door (`ai_installation`, `gym.coachOnboarding`), a 503 whose code
+- on an AI door (`ai_installation`), a 503 whose code
   `AiAvailability` declares: `anonymous_ai_unavailable` or an allowance code.
 
 The gym and Coach stores also drop domain refusals (`TrainingRefused`, `TrainingUnanswered`,
@@ -76,19 +76,21 @@ type also occurs during network loss. Failures of the telemetry pipeline itself 
 | `gym.acceptSet` | gym | Logging a set fails |
 | `gym.adoptCoachDraft` | gym | Moving the signed-out Coach draft into the account fails |
 | `gym.applyProposal` | gym | Applying a Coach routine proposal fails |
-| `gym.ask` | gym | Stopping or settling a Coach question fails |
+| `gym.applyWorkoutProposal` | gym | Applying a Coach change to the open workout fails on this phone |
 | `gym.choose` | gym | Reading the last time or saving the movement choice fails |
-| `gym.coachOnboarding` | gym, app | Signed-out Coach transport, request storage, recovery, photo preparation or routine import fails |
-| `gym.coachRoutineConfirm` | gym | Confirming a Coach routine fails |
+| `gym.coachAccess` | gym | Reading this phone's installation for the signed-out Coach fails other than by a server's answer or a store `ai_installation` already reported |
+| `gym.coachOnboarding` | gym | Saving the routines a retained onboarding answer drafted fails |
+| `gym.coachTurn` | gym | A phone Coach turn fails: by `failure_kind`, `transport` (a stream or a post that failed other than by lost network), `decode` (a frame or answer that cannot be read), `storage` (the replica or a picture file threw), `refusal` (the replica refused the turn's own record), `http` with `status` (a 5xx the server did not mean), and `lease` (its job could not be enqueued). Lost network, a 2xx that is no event stream (a captive portal's page, a proxy's interstitial), a cancellation, a seat change, an account in transition, a record removed elsewhere and a refusal the server answered on purpose, `coach-busy`, `anonymous_ai_unavailable` and a cap at any status among them, file nothing; they end the turn with their code on `coach_turn`, or withdraw it when no frame had arrived. A frame that cannot be read before any frame reports `decode` once and withdraws the turn. A picture sweep that meets a Coach message this build cannot read files nothing: it deletes nothing, sends `gym_action` `picture_sweep`: `message_unreadable`, and the next sweep tries again |
 | `gym.connect` | gym | Connecting the training store to the account fails |
 | `gym.copyMessage` | gym | Copying a Coach message or its link to the clipboard fails |
 | `gym.create` | gym | Creating a movement fails |
 | `gym.deleteNote` | gym | Deleting a note fails |
 | `gym.deleteSet` | gym | Deleting a set fails |
-| `gym.deleteThread` | gym | Deleting a Coach conversation fails |
+| `gym.deleteThread` | gym | Clearing what this phone keeps beside a deleted Coach conversation fails; the conversation's own records fail under `gym.coachTurn` |
 | `gym.deleteWeighIn` | gym | Holding or undoing a deleted weigh-in fails; the engine releases it |
 | `gym.discard` | gym | Discarding a workout fails |
 | `gym.dismissProposal` | gym | Dismissing a Coach routine proposal fails |
+| `gym.dismissWorkoutProposal` | gym | Turning down a Coach change to the open workout fails on this phone |
 | `gym.dropMovement` | gym | Removing a movement from the live workout fails |
 | `gym.dropRoutine` | gym | Deleting a routine fails |
 | `gym.editExercise` | gym | Editing a movement fails |
@@ -109,19 +111,20 @@ type also occurs during network loss. Failures of the telemetry pipeline itself 
 | `gym.openConnections` | gym | Opening the Connected log page fails |
 | `gym.openLink` | gym | Opening a Coach answer's link fails unexpectedly; a missing browser sends only `open_link` / `unavailable`, never an Issue |
 | `gym.prepareAdoption` | gym | Preparing an anonymous workout fails and retains that item locally for retry; an outer preparation failure retains the anonymous replica without blocking sign-in |
-| `gym.preparePhoto` | gym | Preparing a signed-in Coach photo fails |
+| `gym.preparePhoto` | gym | Preparing a Coach photo fails |
+| `gym.readConversation` | gym | Reading a Coach conversation, History, or how far the phone has read for an answer's unread proposal off the replica fails; What Coach read's details fail to read, once per opening of the sheet, whose rows keep their titles; or a `thread` or `message` record cannot be read: once per process, the record costs itself and never its conversation |
 | `gym.proposal_receipt_shown` | gym | Recording that a proposal receipt was shown fails |
+| `gym.reissueWorkoutProposal` | gym | A proposal a signed-out workout held never reaches the account: the phone or the log refused it for a reason other than the workout having finished. `outcome` names the bounded refusal code |
 | `gym.readNotes` | gym | Reading the notes list, or re-reading it after an unconfirmed note deletion, fails |
 | `gym.readProgram` | gym | Re-reading the program after an unconfirmed routine deletion fails |
-| `gym.readThreads` | gym | Reading Coach History fails |
 | `gym.reconcileWorkoutTime` | gym | Closing a workout that ran past its automatic close fails |
 | `gym.record` | gym | Reading a movement's record fails |
 | `gym.refreshConnectedLog` | gym | Refreshing the Connected log fails |
-| `gym.refreshWorkout` | gym | Refreshing the program or the workout from the engine fails |
+| `gym.refreshWorkout` | gym | Refreshing the program or the workout from the engine fails, or a `proposal` or `workoutProposal` record cannot be decoded: once per kind per process, naming the kind alone, and that record costs itself and never the workout or the program |
 | `gym.reorderMovements` | gym | Reordering the live workout's movements fails |
 | `gym.reorderNotes` | gym | Reordering notes fails |
 | `gym.rereadRow` | gym | Re-reading a workout row after a set deletion fails |
-| `gym.restoreConversation` | gym | Restoring the Coach archive, chats or pending questions fails |
+| `gym.restoreConversation` | gym, app | The Coach archive cannot be read, once per process when Coach first reads it: the engine's conversations stand and the file is left as it is; a retained answer's body cannot be read, once per process under a static failure, and that answer alone is lost to the room; or rewriting an earlier version's archive at launch fails |
 | `gym.restoreFinishedSession` | gym | Restoring the finish receipt after recreation fails |
 | `gym.restoreNavigation` | gym | Restoring the navigation stack after recreation fails |
 | `gym.restoreRoutineDraft` | gym | Restoring the routine editor's draft after recreation fails |
@@ -131,7 +134,7 @@ type also occurs during network loss. Failures of the telemetry pipeline itself 
 | `gym.revokeShare` | gym | Revoking a workout share fails |
 | `gym.revokeWorkoutAuthority` | gym | Revoking the workout's authority on the phone fails |
 | `gym.routineHistory` | gym | Reading a routine's history fails |
-| `gym.saveConversation` | gym | Saving a Coach conversation or request on the phone fails |
+| `gym.saveConversation` | gym | Saving a Coach chat on the phone fails: its selection, its place, or the thread its turn opened; or a send throws on its way to the turn |
 | `gym.saveDraft` | gym | Saving the Coach composer draft fails |
 | `gym.saveNote` | gym | Saving a note fails |
 | `gym.savePhoto` | gym | Saving a Coach photo fails |
@@ -143,17 +146,10 @@ type also occurs during network loss. Failures of the telemetry pipeline itself 
 | `gym.start` | gym | Starting a workout fails |
 | `gym.storage.decode` | gym | A stored gym document or the workout controls cannot be decoded |
 | `gym.storage.read` | gym | A stored gym document cannot be read |
-| `gym.thread` | gym | Reading a Coach conversation fails |
 | `gym.tile` | gym | The Quick Settings tile cannot listen, launch or open |
 | `gym.weighIn` | gym | Saving a weigh-in fails |
 | `gym.workoutClock` | gym | Reading the boot count for the workout clock fails |
 | `gym.workout_controls` | gym | Reading the workout controls fails |
-| `gym_ask` | gym | `POST /v1/gym/ask` fails unexpectedly |
-| `gym_ask_stop` | gym | Stopping a Coach generation fails unexpectedly |
-| `gym_coach_photo` | gym | Downloading a Coach photo fails unexpectedly |
-| `gym_coach_photo_upload` | gym | Uploading a Coach photo fails unexpectedly |
-| `gym_coach_routine_confirm` | gym | The Coach routine confirmation request fails unexpectedly |
-| `gym_delete_thread` | gym | Deleting a Coach conversation on the server fails unexpectedly |
 | `gym_grants` | gym | Reading the Connected log grants fails unexpectedly |
 | `gym_import_<action>` | gym | Recovering a signed-out workout fails, by action: `keep`, `retry`, `fix` or `discard` |
 | `gym_import_fix` | gym | Reading why a recovery fix was refused fails |
@@ -161,8 +157,6 @@ type also occurs during network loss. Failures of the telemetry pipeline itself 
 | `gym_revoke_share` | gym | Revoking a share on the server fails unexpectedly |
 | `gym_share` | gym | Creating a share on the server fails unexpectedly |
 | `gym_sign_in_decision` | gym | Answering the sign-in decision fails |
-| `gym_thread` | gym | Reading a Coach conversation from the server fails unexpectedly |
-| `gym_threads` | gym | Reading Coach History from the server fails unexpectedly |
 | `http_request` | platform | A request that names no operation fails unexpectedly |
 | `onboarding_motion_settings` | gym | Reading or watching the system animation setting fails |
 | `onboarding_storage` | app | The onboarding flag cannot be read or saved |
@@ -192,8 +186,8 @@ Every event carries `platform`, `app_version`, `build`, `release` and `environme
 `_ . : / -`, at most 900 bytes per event.
 
 A module registers a schema for each event whose labels it bounds, through `:platform`'s
-`EventSchema` (`EventSchemas`, `LabelSchema`); such an event keeps only the labels its schema
-allows. `:platform` registers `account_delete` and `ai_installation_outcome`. `:gym` registers
+`EventSchema` (`EventSchemas`, `LabelSchema`, which also takes counts: digits alone); such an event keeps
+only the labels its schema allows, under any key the schema names. `:platform` registers `account_delete` and `ai_installation_outcome`. `:gym` registers
 the rest in `gym/telemetry/GymEvents.kt`, owns the `onboarding_` prefix, and the app hands
 `GymEvents.schemas` to `AndroidTelemetry`. An unregistered event keeps only the keys `operation`,
 `outcome`, `failure_kind`, `status`, `cap`, `action`, `method`, `route`, `state`, `duration_ms`,
@@ -203,7 +197,7 @@ the rest in `gym/telemetry/GymEvents.kt`, owns the `onboarding_` prefix, and the
 |---|---|---|
 | `account_delete` | platform | `state`: `shown`; `action`: `confirm`, `check`, `cleanup`, `back`, `done`, `retry` (Try again on Not deleted), `date_time` (with `outcome`: `failed` when date settings cannot open); `outcome`: `started`, `cancelled`, `refused`, `clock_refused` (the phone's date and time are wrong), `not_deleted` (the close never reached Windmill in time), `failed`, `ok`, `cleanup_pending`, `pending_confirmation`. Refusals file no Issue. |
 | `ai_installation_outcome` | platform | `action`: `bind`; `outcome`: `refused`, `failed` |
-| `api_request_failed` | platform | `method`, `route` (first two path segments), `operation`, `failure_kind`, `status`, `duration_ms`, `network_phase` |
+| `api_request_failed` | platform, gym | `method`, `route` (first two path segments), `operation`, `failure_kind`, `status`, `duration_ms`, `network_phase`. A Coach turn the server refused before its stream sends `operation`: `gym_coach_turn`, `route`: `/v1/gym`, `method`: `POST`, `failure_kind`: `http`, `status`; one withdrawn with no answer from the server, every attempt lost or the answer unreadable, or a Stop before any frame that went unheard, sends the same with `failure_kind`: `offline` and no `status`; one withdrawn because every answer was a 2xx that was no event stream, a captive portal's page, sends `failure_kind`: `malformed` and no `status` |
 | `app_backgrounded` | app | none |
 | `app_foregrounded` | app | none |
 | `app_started` | app | none |
@@ -214,24 +208,25 @@ the rest in `gym/telemetry/GymEvents.kt`, owns the `onboarding_` prefix, and the
 | `auth_signed_in` | platform | none |
 | `auth_signed_out` | platform | none |
 | `client_error` | platform | `operation`, `failure_kind` and the failure's allowed properties |
+| `coach_ability` | gym | One per ability call a turn ran, the context reads included: `name` (the catalog name, or `other`); `outcome`: `ok`, `not-offered`, `seat-required`, `invalid-input`, `invalid-arguments`, `refused`, `load-floor`, `result-too-large`, `coach-turn-volume`, `other` |
+| `coach_turn` | gym | One per turn that opened, none for a turn withdrawn before any frame: `state`: `interrupted`, `completed`, `declined`, `failed`, `stopped`; `seat`: `anon`, `bound`; `code`: the §6.5 code a failed turn ended on, or an interrupted one's cause: `subject_exhausted`, `free_month_exhausted`, `free_day_exhausted`, `concurrency_exhausted`, `funding_required`, `debt_outstanding`, `device_bound`, `invalid_installation`, `coach-bad-request`, `coach-update-required`, `coach-turn-conflict`, `coach-turn-unknown`, `coach-turn-order`, `coach-turn-volume`, `coach-rate-limited`, `coach-replica-syncing`, `coach-busy`, `coach-vendor-error`, `coach-stream-replaced`, `coach-turn-stopped`, `anonymous_ai_unavailable`, or this phone's own `transport`, `decode`, `storage`, `refusal`, `not-a-stream` (a 2xx that was no event stream at every reconnect after a frame, a captive portal's page), `gone` (its record was removed under it, as a conversation deleted on another phone), `seat_changed` (the active replica changed or a sign-in rebound it; its counts are absent when the record left with that replica), `process_ended` (a sweep found it running with nothing to run it, told once by the sweep that ends it, with no duration), `other`; `ability_calls`, `refusals`, `answer_bytes` and `duration_ms` as counts |
 | `client_update_required` | app, platform | `state`: `shown` with `status`: `426`; or `action`: `dismiss`, `keep`, `update`, with `outcome`: `failed` when the update link cannot open |
 | `gym_action` | gym | `screen`, `action` and `outcome` from the table below; an action that asks first sends `state`: `shown` without an outcome when its question opens |
-| `gym_ask_outcome` | gym | Signed in: `outcome`: `answered`, `refused`, `capped`, `failed`, `fresh`, `absent`, `cancelled`; `duration_ms`; `cap`: `daily`, `ceiling`, `allowance`; `failure_kind`; `status`. Signed out: `state`: `anonymous`; `outcome`: `answered`, `refused`, `capped`, `failed`, `cancelled`; `duration_ms`; `cap`: `allowance` |
-| `gym_ask_started` | gym | none signed in; `state`: `anonymous` signed out |
+| `gym_ask_outcome` | gym | One per send the room takes up, either seat; a send it turns away at once, as a second tap or a question past its bound, returns false and tells nothing, and a finish share asked again is the same send: `screen`: `coach`; `outcome`: `answered` (completed), `cancelled` (stopped), `refused` (declined, a refusal before the stream the server meant, `coach-busy` and `anonymous_ai_unavailable` among them, the local admission of a log still arriving, or a send held back while Coach answers another message, the account is changing or the seat could not be taken), `failed` (failed, interrupted, a 5xx the server did not mean before the stream, or a send held back because this phone could not record it or read its picture), `capped` with `cap`: `allowance` or `daily`, `absent` (a deployment without the turn route), `offline` (a send held back with no network, or withdrawn with no answer from the server: every attempt lost, every answer a page that was no stream, an answer it could not read, or a Stop before any frame that went unheard); `duration_ms` |
+| `gym_ask_started` | gym | A Coach turn, once recorded on the replica, either seat: `screen`: `coach` |
 | `gym_bodyweight_saved` | gym | none |
 | `gym_coach_import` | gym | `outcome`: `started`, `committed`, `replayed`, `refused`, `failed` |
-| `gym_coach_routine_confirm` | gym | `outcome`: `started`, `saved`, `refused`, `failed` |
 | `gym_import_recovery` | gym | `action`: `inspect`, `keep`, `retry`, `fix`, `discard`; `state`: `opened`, `started`, `shown`, `date_opened`, `time_opened`, `date_confirmed`, `time_confirmed`, `date_cancelled`, `time_cancelled`, `marked_finished`, `link_changed`, `set_opened`, `set_staged`, `set_removed`; `outcome`: `ok`, `completed`, `refused`, `failed`, `cancelled` |
 | `gym_note_moved` | gym | none |
 | `gym_proposal_missing` | gym | none. Counts only answers this visit of the Coach room waited for; a proposal deleted before the visit, as on a reopened thread, draws the line and sends nothing. A proposal named by such an answer has no row on the phone, live or dead, 10 s after its own first miss and once the phone, caught up at or after that miss, has read further into the account or a pull sent after the wait ended has landed caught up (the wait's end asks for one); once per proposal while the room stays composed |
-| `gym_proposal_outcome` | gym | `action`: `apply`, `dismiss`; `outcome`: `decided`, `moved` (the routine changed under the proposal), `gone`, `settled` (the other decision was taken first), `refused` (the rules refuse the decision, as a target under its movement's load floor), `failed` |
+| `gym_proposal_outcome` | gym | `target`: `workout` on a change to the open workout, absent on a routine's; `action`: `apply`, `dismiss`; `outcome`: `decided`, `moved` (the routine or workout changed under the proposal), `gone`, `settled` (the other decision was taken first), `refused` (the rules refuse the decision, as a target under its movement's load floor), `failed`. A workout's decision the phone queued is told when the log's answer reaches it: `decided` if it took, `failed` if not. That wait lives in the running process: a death before the answer tells nothing, though the decision stands |
 | `gym_proposal_receipt_shown` | gym | `outcome`: `applied` |
 | `gym_routine_saved` | gym | `action`: `create`, `update` |
 | `gym_screen_viewed` | gym | `screen`: `routines`, `log`, `coach`, `workout`, `workout_fix`, `proposal`, `finish`, `routine_editor`, `routine`, `session`, `movement`, `threads`, `thread`, `connections`, `notes`, `note_editor`, `bodyweight`, `on_this_phone`, `workout_inspect` |
 | `gym_session_finished` | gym | none |
 | `gym_session_started` | gym | none |
 | `gym_set_logged` | gym | none |
-| `gym_setup_step` | gym | `screen`: `coach`; `action`: `shown`, `screenshot`, `build_manually`, `photo_selected`, `photo_removed`, `sign_in` |
+| `gym_setup_step` | gym | `screen`: `coach`; `action`: `shown`, `screenshot`, `build_manually`, `photo_selected`, `photo_removed`, `sign_in`, `open_routine`, `keep_routines`, `connect` (a refusal's Use your own AI agent door) |
 | `gym_sign_in_decision` | gym, app | `state`: `shown`, `discard_confirmation`; `action`: `add`, `discard`, `cancel`; `outcome`: `completed`, `cancelled`, `changed` or the engine's error code |
 | `gym_sign_out` | gym | `state`: `shown`; `action`: `keep`, `discard`, `cancel`; `outcome`: `completed`, `failed`. Keep and Discard send their outcome signed out, under the phone's device id, so it cannot be joined to `shown` per user. A sign-out nobody was asked about (an expired session, account deletion) sends none |
 | `onboarding_action` | gym | `state`: `first_launch`, `replay`; `screen`: `windmill`, `roadmap`, `journal`, `gym`; `action`: `next`, `back`, `swipe`, `adjust` |
@@ -257,7 +252,9 @@ foot turns to Retry.
 | `bodyweight` | `delete` | `held`, `closed`, `refused`, `failed` | |
 | `bodyweight` | `undo` | `ok`, `closed`, `failed` | |
 | `coach` | `access` | `available`, `bound`, `unavailable` | |
-| `coach` | `choose` | `ok` | |
+| `coach` | `answering_elsewhere` | `ok` | |
+| `coach` | `account_changing` | `shown` | |
+| `coach` | `answer_in_progress` | `shown` | |
 | `coach` | `continue_draft` | `ok` | |
 | `coach` | `copy` | `ok`, `failed` | |
 | `coach` | `copy_link` | `ok`, `failed` | |
@@ -266,8 +263,13 @@ foot turns to Retry.
 | `coach` | `history_open` | `ok` | |
 | `coach` | `jump_latest` | `ok` | |
 | `coach` | `open_link` | `ok`, `unavailable`, `failed` | |
+| `coach` | `picture_sweep` | `message_unreadable` (a sweep met a Coach message this build cannot read: it deleted nothing, and the next sweep tries again) | |
 | `coach` | `read_sources` | `ok` | |
+| `coach` | `reconnecting` | `ok` | |
 | `coach` | `reply_open` | `ok` | |
+| `coach` | `stop_notice` | `ok` | |
+| `coach` | `stop_notice_closed` | `ok` | |
+| `coach` | `too_long` | `shown` | |
 | `finish` | `discard` | `ok`, `cancelled`, `refused`, `failed` | yes |
 | `finish` | `done` | `ok` | |
 | `finish` | `keep` | `ok` | |
@@ -289,6 +291,7 @@ foot turns to Retry.
 | `notes` | `delete` | `ok`, `refused`, `failed` | |
 | `notification` | `log_set` | `ok`, `refused` | |
 | `notification` | `open` | `ok`, `refused` | |
+| `proposal` | `sign_in` | `ok` | |
 | `record` | `edit` | `ok`, `refused`, `failed` | |
 | `routine_editor` | `discard` | `ok`, `cancelled` | yes |
 | `routine_editor` | `save` | `ok`, `refused`, `failed` | |
@@ -299,11 +302,13 @@ foot turns to Retry.
 | `session` | `copy_link` | `ok`, `failed` | |
 | `session` | `share_link` | `ok`, `unavailable`, `failed` | |
 | `threads` | `delete` | `ok`, `refused`, `failed`, `cancelled` | yes |
+| `threads` | `empty` | `shown` | |
 | `tile` | `open` | `ok`, `failed` | |
 | `tile` | `routines` | `ok`, `failed` | |
 | `workout` | `fix` | `ok`, `refused`, `failed` | |
 | `workout` | `hide` | `ok`, `refused` | |
 | `workout` | `movement_switch` | `ok` | |
+| `workout` | `open_coach` | `ok` | |
 | `workout` | `open_workout` | `ok` | |
 | `workout` | `picker_add` | `ok`, `refused` | |
 | `workout` | `picker_cancel` | `ok` | |

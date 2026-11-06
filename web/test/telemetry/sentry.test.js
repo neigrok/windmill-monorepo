@@ -76,8 +76,31 @@ test('Sentry reads a Safari or Firefox stack, which has no head and can end in a
   const { capture, events } = reporter();
   capture('roadmap', 'boundary', 'save@https://windmill.works/assets/app.js:12:4\nmap@[native code]\nglobal code@https://windmill.works/assets/app.js:1:1\n', '#/app');
   assert.deepEqual(events()[0].exception.values[0].stacktrace.frames.map((frame) => ({ ...frame })), [
-    { filename: 'code@https://windmill.works/assets/app.js', lineno: 1, colno: 1, function: '?', in_app: true },
-    { filename: 'save@https://windmill.works/assets/app.js', lineno: 12, colno: 4, function: '?', in_app: true },
+    { filename: 'https://windmill.works/assets/app.js', lineno: 1, colno: 1, function: 'global code', in_app: true },
+    { filename: 'https://windmill.works/assets/app.js', lineno: 12, colno: 4, function: 'save', in_app: true },
+  ]);
+});
+
+test('Sentry reads named and anonymous frames in both browser stack formats', () => {
+  const stacks = [
+    'Error: boundary\n    at qh (http://localhost:5173/assets/app.js:12:4)\n    at http://localhost:5173/assets/app.js:1:1',
+    'qh@http://localhost:5173/assets/app.js:12:4\n@http://localhost:5173/assets/app.js:1:1',
+  ];
+  for (const browserStack of stacks) {
+    const { capture, events } = reporter();
+    capture('roadmap', 'boundary', browserStack, '#/app');
+    assert.deepEqual(events()[0].exception.values[0].stacktrace.frames, [
+      { filename: 'http://localhost:5173/assets/app.js', lineno: 1, colno: 1, function: '?', in_app: true },
+      { filename: 'http://localhost:5173/assets/app.js', lineno: 12, colno: 4, function: 'qh', in_app: true },
+    ]);
+  }
+});
+
+test('Sentry preserves an at sign inside a Safari or Firefox frame filename', () => {
+  const { capture, events } = reporter();
+  capture('roadmap', 'boundary', 'save@https://windmill.works/assets/@scope/app.js:12:4', '#/app');
+  assert.deepEqual(events()[0].exception.values[0].stacktrace.frames, [
+    { filename: 'https://windmill.works/assets/@scope/app.js', lineno: 12, colno: 4, function: 'save', in_app: true },
   ]);
 });
 

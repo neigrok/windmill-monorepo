@@ -94,7 +94,7 @@ TEST(gym_onboarding_http_validates_photo_pixels_and_returns_only_device_scoped_r
   CHECK_EQ(body["requestId"],photo["requestId"]);
   CHECK(body["errorCode"].isNull());
   CHECK_EQ(body["routines"],parse(R"([{"name":"Push","entries":[{"exerciseId":"bench-press","sets":[{"reps":8,"weightKg":null}],"restSeconds":120}]}])"));
-  CHECK_EQ(body["allowance"],parse(R"({"code":"ok","currency":"USD","period":"lifetime","tier":"anonymous","configured":true,"limit":"0.050000000","used":"0.000000000","reserved":"0.000000000","remaining":"0.050000000","resetsAtMs":null,"budgetResetsAtMs":null})"));
+  CHECK_EQ(body["allowance"],parse(R"({"code":"ok","currency":"USD","period":"lifetime","tier":"anonymous","configured":true,"limit":"0.250000000","used":"0.000000000","reserved":"0.000000000","remaining":"0.250000000","resetsAtMs":null,"budgetResetsAtMs":null})"));
   CHECK_EQ(body.getMemberNames(),(Json::Value::Members{"allowance","errorCode","expiresAtMs","message","requestId","resultId","routines","status"}));
   CHECK_EQ(result->getHeader("Cache-Control"),"private, no-store");
   const auto other=h.h.installations->issue("127.0.0.2");

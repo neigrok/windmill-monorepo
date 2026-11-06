@@ -6,7 +6,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { beacon, withBrowserErrors } from '../../products/roadmap/browserFixture.js';
 import { scene } from '../../products/roadmap/skillTreeViewHost.js';
-import { LOAD_ERROR } from '../../../src/products/roadmap/copy.js';
+import { LAPSED_SESSION, LOAD_ERROR } from '../../../src/products/roadmap/copy.js';
 
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 const reference = fileURLToPath(new URL('../../../../packages/api-contract/sync/reference/', import.meta.url));
@@ -39,6 +39,7 @@ const ready = (async () => {
         import React from 'react';
         import { createRoot } from 'react-dom/client';
         import AuthProvider, { useAuth } from '/src/shell/auth/AuthProvider.jsx';
+        import { Shell } from '/src/shell/chrome/Shell.jsx';
         import { SkillTreeView } from '/src/products/roadmap/SkillTreeView.jsx';
         import { HttpTreeRepository } from '/src/products/roadmap/persistence/HttpTreeRepository.js';
         import { LocalTreeRegistry } from '/src/products/roadmap/persistence/LocalTreeRegistry.js';
@@ -48,9 +49,11 @@ const ready = (async () => {
         import { BrowserSyncEngine } from '/src/platform/sync/engine.js';
         import { Registry } from '/@fs${reference}core/registry.js';
         import { PRODUCTS } from '/src/shell/products.js';
+        import { getRoomStatus } from '/src/shell/roomStatus.js';
         PRODUCTS.push({ id: 'probe', sync: { signedOutWork: { type: 'card', one: 'card', many: 'cards' } } });
         import '/src/styles/global.css';
         window.events = []; window.issues = []; window.sent = [];
+        window.roomLine = () => getRoomStatus()?.line ?? null;
         window.ceremonies = []; window.revealed = []; window.revealFrames = []; window.cameraCalls = [];
         window.deviceStore = new SyncStore();
         window.deviceIndex = new LocalTreeRegistry();
@@ -72,6 +75,21 @@ const ready = (async () => {
           if (window.serverAccount === 'A') this.receiveState({ nodes: [], edges: [], kinds: [], seq: 0 });
           return this;
         };
+        window.holdDeviceCleanup = () => {
+          const roadmap = PRODUCTS.find((product) => product.id === 'roadmap');
+          const forgetDevice = roadmap.forgetDevice;
+          const held = new Promise((resolve) => { window.releaseDeviceCleanup = resolve; });
+          window.cleanupWaiting = false;
+          roadmap.forgetDevice = async (change) => {
+            roadmap.forgetDevice = forgetDevice;
+            window.cleanupWaiting = true;
+            await held;
+            return forgetDevice(change);
+          };
+        };
+        function KeptRoadmap({ hash }) {
+          return hash === '#/app/t_kept' && React.createElement(SkillTreeView, { treeId: 't_kept' });
+        }
         function Room() {
           const auth = useAuth(); window.auth = auth;
           const [hash, setHash] = React.useState(location.hash);
@@ -82,7 +100,8 @@ const ready = (async () => {
           }, []);
           return React.createElement(React.Fragment, null,
             React.createElement('output', { id: 'auth-state' }, auth.status + ':' + auth.lapsed),
-            hash === '#/app/t_kept' && React.createElement(SkillTreeView, { treeId: 't_kept' }));
+            React.createElement(Shell, { location: { pathname: '/app/roadmap', hash, search: '' },
+              neutral: { Component: KeptRoadmap, props: { hash } } }));
         }
         window.mountDevice = async (name, account, seed, interruption = null) => {
           window.holdsProbe = interruption === 'question';
@@ -146,17 +165,69 @@ for (const reload of [false, true]) for (const returning of ['A', 'B']) {
         account = null;
         await page.evaluate(async () => { serverAccount = null; await auth.refresh(); await roadmapSession.persistNow(); });
         await page.waitForFunction(() => document.getElementById('auth-state').textContent === 'ghost:true');
+        await page.waitForFunction((line) => roomLine() === line, LAPSED_SESSION);
         assert.deepEqual(await page.evaluate(() => deviceStore.treeIds()), ['t_kept']);
         if (reload) {
           await page.reload();
           await page.waitForFunction(() => typeof mountDevice === 'function');
           await page.evaluate((name) => mountDevice(name, null, false), name);
           await page.waitForFunction(() => document.getElementById('auth-state').textContent === 'ghost:true');
-          await page.getByRole('button', { name: LOAD_ERROR.action, exact: true }).waitFor();
+          await page.locator('.st-board-card-title').filter({ hasText: 'Kept device step' }).waitFor();
+          await page.waitForFunction((line) => roomLine() === line, LAPSED_SESSION);
+          assert.equal(await page.getByRole('button', { name: LOAD_ERROR.action, exact: true }).count(), 0);
           assert.deepEqual(await page.evaluate(() => deviceStore.treeIds()), ['t_kept']);
         }
         account = returning;
-        await page.evaluate(async (account) => { sent = []; serverAccount = account; await auth.signIn({ id: account, name: account }); }, returning);
+        if (returning === 'B') {
+          const confirmed = await page.evaluate(() => {
+            holdDeviceCleanup();
+            sent = []; serverAccount = 'B';
+            const title = 'Kept device step';
+            window.accountLeaks = [];
+            const record = (value, where) => {
+              if (value?.includes(title)) accountLeaks.push(where);
+            };
+            const mutations = (records) => {
+              record(document.body.textContent, 'document');
+              for (const mutation of records) {
+                for (const added of mutation.addedNodes) record(added.textContent, 'added');
+                if (mutation.type === 'characterData') {
+                  record(mutation.target.textContent, 'text');
+                  record(mutation.oldValue, 'previous text');
+                }
+              }
+            };
+            const observer = new MutationObserver(mutations);
+            observer.observe(document.body, { subtree: true, childList: true, characterData: true, characterDataOldValue: true });
+            observer.takeRecords();
+            window.finishAccountWatch = () => {
+              mutations(observer.takeRecords());
+              observer.disconnect();
+              return accountLeaks;
+            };
+            // signIn receives the server-confirmed account; sample before awaiting any cleanup.
+            window.accountTransition = auth.signIn({ id: 'B', name: 'B' });
+            record(document.body.textContent, 'confirmation');
+            return { leaks: accountLeaks, loading: Boolean(document.querySelector('.wm-room-fallback')) };
+          });
+          assert.deepEqual(confirmed, { leaks: [], loading: true });
+          await page.waitForFunction(() => cleanupWaiting);
+          assert.equal(await page.locator('.wm-room-fallback').count(), 1);
+          assert.equal(await page.getByRole('navigation', { name: 'Rooms', exact: true }).count(), 1);
+          assert.equal(await page.getByText('Kept device step', { exact: true }).count(), 0);
+          assert.deepEqual(await page.evaluate(() => deviceStore.treeIds()), ['t_kept']);
+          assert.deepEqual(await page.evaluate(() => accountLeaks), []);
+          await page.evaluate(async () => { releaseDeviceCleanup(); await accountTransition; });
+        } else {
+          const unchanged = await page.evaluate(async () => {
+            const card = document.querySelector('.st-board-card-title');
+            sent = []; serverAccount = 'A';
+            await auth.signIn({ id: 'A', name: 'A' });
+            return { sameCard: card === document.querySelector('.st-board-card-title'),
+              loading: Boolean(document.querySelector('.wm-room-fallback')) };
+          });
+          assert.deepEqual(unchanged, { sameCard: true, loading: false });
+        }
         await page.waitForFunction(() => document.getElementById('auth-state').textContent === 'signed-in:false');
         if (returning === 'A') {
           await page.locator('.st-board-card-title').filter({ hasText: 'Kept device step' }).waitFor();
@@ -174,6 +245,7 @@ for (const reload of [false, true]) for (const returning of ['A', 'B']) {
           assert.deepEqual(await page.evaluate(() => sent), []);
           await page.locator('.st-board-card-title').waitFor({ state: 'detached' });
           assert.equal(await page.locator('.st-board-card-title').count(), 0);
+          assert.deepEqual(await page.evaluate(() => finishAccountWatch()), []);
         }
         assert.deepEqual(await page.evaluate(() => issues), []);
       });

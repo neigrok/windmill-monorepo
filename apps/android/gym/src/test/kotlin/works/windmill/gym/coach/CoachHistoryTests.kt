@@ -8,43 +8,48 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
-import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import java.util.concurrent.CopyOnWriteArrayList
 import java.io.File
-import javax.crypto.KeyGenerator
-import kotlinx.coroutines.CompletableDeferred
+import java.io.IOException
+import java.util.concurrent.CopyOnWriteArrayList
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
 import org.junit.After
-import org.junit.Assert.*
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import works.windmill.gym.net.FakeGymRest
 import works.windmill.gym.GymRoom
+import works.windmill.gym.coach.turn.ScriptedTurns
+import works.windmill.gym.domain.coach.CoachMessage
+import works.windmill.gym.domain.coach.CoachThread
+import works.windmill.gym.domain.coach.MessageState
 import works.windmill.gym.store.EngineRoomFixture
-import works.windmill.gym.store.TrainingStore
-import works.windmill.gym.store.WorkoutControls
-import works.windmill.gym.coach.onboarding.*
-import works.windmill.platform.ai.*
-import works.windmill.platform.auth.KeptValues
-import works.windmill.platform.auth.SecretVault
 import works.windmill.gym.ui.GymMaterial
+import works.windmill.platform.storage.AtomicDocument
 import works.windmill.platform.telemetry.LocalTelemetry
 import works.windmill.platform.telemetry.Telemetry
+import works.windmill.sync.api.Change
+import works.windmill.sync.api.Gesture
+import works.windmill.sync.api.NewID
+import works.windmill.sync.core.Json
+import works.windmill.sync.core.RecordID
+import works.windmill.sync.core.ScopeRef
+import works.windmill.sync.schema.Gym
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
@@ -61,65 +66,64 @@ class CoachHistoryTests {
     }
     @After fun close() { room?.close(); scope.cancel() }
 
-    @Test fun anonymousHistoryDoesNotOfferStopForTheApplicationOwnedOnboardingRequest() {
-        val local = LocalCoach(File(tmp.root, "anonymous-history.json"))
-        val fixture = EngineRoomFixture(tmp.newFolder(), scope, localCoach = local, telemetry = telemetry)
+    private fun waitUntil(ready: () -> Boolean) = compose.waitUntil(60_000) {
+        org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+        ready()
+    }
+
+    private fun EngineRoomFixture.threads(): List<CoachThread> = engine.read(ScopeRef(Gym.scope)) { read ->
+        works.windmill.domain.kit.Repository.decode(CoachThread, read.drawn(CoachThread.type))
+    }
+
+    private fun EngineRoomFixture.messages(): List<CoachMessage> = engine.read(ScopeRef(Gym.scope)) { read ->
+        works.windmill.domain.kit.Repository.decode(CoachMessage, read.drawn(CoachMessage.type))
+    }
+
+    // Stop is one door for both seats: a signed-out turn runs the same path as a signed-in one.
+    @Test fun aSignedOutChatOpenedFromHistoryOffersStopAndItStopsTheRunningTurn() {
+        val server = ScriptedTurns(Json.parse("""[{"event":"text","data":{"delta":"Reading"}},{"await":"stop"},{"event":"done","data":{"state":"stopped"}}]""").arr())
+        val fixture = EngineRoomFixture(tmp.newFolder(), scope, telemetry = telemetry, localCoach = LocalCoach(File(tmp.root, "anonymous-history.json")),
+            coachServer = server, coachAccess = { AnonymousCoachAccess.Available })
         room = fixture
         runBlocking { fixture.select(null) }
-        val origin = CoachOnboardingSeat(local.anonymousOwner(), fixture.engine.activeReplica())
-        val allowance = AiAllowance("ok", "USD", "lifetime", "anonymous", true, null, "0", "0", "0")
-        val key = KeyGenerator.getInstance("AES").apply { init(256) }.generateKey()
-        val values = object : KeptValues {
-            val saved = mutableMapOf<String, String>()
-            override fun read(key: String) = saved[key]
-            override fun write(values: Map<String, String?>) {
-                values.forEach { (key, value) -> if (value == null) saved.remove(key) else saved[key] = value }
-            }
-        }
-        val identity = AiInstallation(values, SecretVault { key }, object : AiInstallationApi {
-            override suspend fun issue() = AiInstallationResponse(false, allowance, "A".repeat(43))
-            override suspend fun current(credential: String) = AiInstallationResponse(false, allowance)
-            override suspend fun bind(credential: String, token: String) = AiInstallationResponse(true, allowance)
-        })
-        val response = CompletableDeferred<CoachOnboardingResponse>()
-        val posted = CompletableDeferred<Unit>()
-        var posts = 0
-        val id = "11111111-1111-4111-8111-111111111111"
-        val coordinator = CoachOnboardingStore(local, identity, object : CoachOnboardingApi {
-            override suspend fun start(body: String, credential: String): CoachOnboardingResponse { posts++; posted.complete(Unit); return response.await() }
-            override suspend fun get(requestId: String, credential: String): CoachOnboardingResponse = error("unexpected GET")
-        }, { origin }, scope, telemetry, requestId = { id })
-        val store = TrainingStore(WorkoutControls(File(tmp.root, "history-controls.json")), fixture.training, scope,
-            localCoach = local, coachOnboarding = coordinator, telemetry = telemetry)
-        runBlocking { store.connect(fixture.account()) }
-        val chat = store.coach.freshChat()
+        fixture.store.observeEngine()
+        val coach = fixture.store.coach
+        val chat = coach.freshChat()
         var showing by mutableStateOf(false)
-        val ask = AskBinding(store)
+        val ask = AskBinding(fixture.store)
         compose.setContent { GymMaterial {
             if (showing) ThreadScreen(ask, ask, chat, emptyList(), emptySet(), "History", {}, {}, {}, composerEnabled = true)
         } }
-        compose.runOnIdle { store.coach.refreshAnonymousAccess() }
-        compose.waitUntil(5_000) { org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle(); store.coach.anonymousAccess == AnonymousCoachAccess.Available }
-        compose.runOnIdle { assertTrue(store.coach.submit(chat, "A retained question")) }
-        compose.waitUntil(5_000) { org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle(); posted.isCompleted }
+        compose.runOnIdle { coach.refreshAnonymousAccess() }
+        waitUntil { coach.anonymousAccess == AnonymousCoachAccess.Available }
+        compose.runOnIdle { assertTrue(coach.send(chat, "A retained question")) }
+        waitUntil { server.pending == "stop" }
         compose.runOnIdle { showing = true }
-        compose.onNodeWithContentDescription("Stop response").assertIsNotEnabled().performClick()
-        compose.runOnIdle {
-            assertTrue(store.coach.isAsking(chat))
-            assertFalse(response.isCancelled)
-        }
-        response.complete(CoachOnboardingResponse(id, "result", "completed", 1_900_000_000_000, emptyList(), allowance, message = "A retained answer"))
-        compose.waitUntil(5_000) { org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle(); !store.coach.isAsking(chat) }
+        compose.onNodeWithContentDescription("Stop response").assertIsEnabled().performClick()
+        waitUntil { !coach.isAsking(chat) && fixture.messages().any { it.state == MessageState.stopped } }
         compose.onNodeWithText("A retained question").assertIsDisplayed()
-        assertEquals("A retained answer", store.coach.chat(chat)!!.exchanges.single().answer!!.answer)
-        assertEquals(1, posts)
+        compose.onNodeWithText(Ask.stopped).assertIsDisplayed()
+        assertEquals(1, server.stops)
+        assertEquals(1, server.opened.size)
         assertEquals(emptyList<String>(), failures.toList())
     }
 
-    private fun history(api: FakeGymRest): EngineRoomFixture {
-        val fixture = EngineRoomFixture(tmp.newFolder(), scope, rest = api, telemetry = telemetry)
+    private fun answering(writable: () -> Boolean = { true }): EngineRoomFixture {
+        val server = ScriptedTurns(Json.parse("""[{"event":"text","data":{"delta":"An answer"}},{"event":"done","data":{"state":"completed"}}]""").arr())
+        val fixture = EngineRoomFixture(tmp.newFolder(), scope, telemetry = telemetry, coachServer = server, writeAuthority = writable)
         room = fixture
-        runBlocking { fixture.select("alice") }
+        runBlocking {
+            fixture.select("alice")
+            fixture.sync(EngineRoomFixture.server())
+        }
+        fixture.store.observeEngine()
+        val chat = fixture.store.coach.freshChat()
+        assertTrue(fixture.store.coach.send(chat, "Private first question"))
+        waitUntil { !fixture.store.coach.isAsking(chat) && fixture.messages().any { it.state == MessageState.completed } }
+        return fixture
+    }
+
+    private fun show(fixture: EngineRoomFixture) {
         val threads = ThreadsBinding(fixture.store.coach)
         compose.setContent { GymMaterial { CompositionLocalProvider(LocalTelemetry provides telemetry) {
             ThreadsScreen(threads, threads, "Coach", {}, {}, {})
@@ -128,7 +132,6 @@ class CoachHistoryTests {
         compose.onNodeWithContentDescription(Threads.open).assertIsDisplayed()
         events.clear()
         failures.clear()
-        return fixture
     }
 
     private fun requestDelete() {
@@ -141,7 +144,7 @@ class CoachHistoryTests {
     }
 
     @Test fun theFullRailLeavesASelectedHistoryChatAndRetainsItsDraft() {
-        val fixture = EngineRoomFixture(tmp.newFolder(), scope, rest = FakeGymRest(), telemetry = telemetry)
+        val fixture = EngineRoomFixture(tmp.newFolder(), scope, telemetry = telemetry)
         room = fixture
         runBlocking { fixture.select("alice") }
         val id = fixture.store.coach.freshChat("Retained local draft")
@@ -169,13 +172,14 @@ class CoachHistoryTests {
         }
     }
 
-    @Test fun cancellationRestoresTheRowAndNeverSendsADelete() {
-        val api = FakeGymRest().apply { conversations["thread-a"] = AskThread("thread-a", "Private first question", askedAtMs = 1) }
-        history(api)
+    @Test fun cancellationRestoresTheRowAndDeletesNothing() {
+        val fixture = answering()
+        show(fixture)
         requestDelete()
         compose.onNodeWithText("Cancel").performClick()
         compose.onNodeWithText("Private first question").assertIsDisplayed()
-        assertEquals(emptyList<String>(), api.calls.filter { it == "deleteThread" })
+        assertEquals(listOf("Private first question"), fixture.threads().map { it.title })
+        assertEquals(2, fixture.messages().size)
         assertEquals(listOf(
             "gym_action" to mapOf("screen" to "threads", "action" to "delete", "state" to "shown"),
             "gym_action" to mapOf("screen" to "threads", "action" to "delete", "outcome" to "cancelled"),
@@ -183,41 +187,130 @@ class CoachHistoryTests {
         assertEquals(emptyList<String>(), failures.toList())
     }
 
+    // A recreated room hands the seat a new account object, as a theme switch does with History open, and what it read stands.
+    @Test fun aSeatConnectedAgainReadsHistoryAndTheTranscriptBackWithNoNewRevision() {
+        val fixture = answering()
+        val coach = fixture.store.coach
+        val chat = checkNotNull(coach.selectedChatId)
+        show(fixture)
+        compose.onNodeWithText("Private first question").assertIsDisplayed()
+        runBlocking { fixture.store.connect(fixture.account()) }
+        waitUntil { coach.history.isNotEmpty() && coach.exchanges(chat).isNotEmpty() }
+        compose.onNodeWithText("Private first question").assertIsDisplayed()
+        assertEquals(listOf("Private first question"), coach.exchanges(chat).map { it.question })
+    }
+
+    // The room's own composition asks for the selected chat; Coach reads only while its tab stands, and the tab reads what it missed on the way back.
+    @Test fun theRoomReadsCoachOnlyWhileItsTabStands() {
+        val fixture = EngineRoomFixture(tmp.newFolder(), scope, telemetry = telemetry, coachServer = ScriptedTurns(emptyList()), coachShown = false)
+        room = fixture
+        val conversations = fixture.store.conversations
+        fun plant(id: String) = fixture.engine.commit(ScopeRef(Gym.scope), Gesture(listOf(Change.create(Gym.Types.thread, NewID.Given(RecordID(id)), mapOf("title" to Json.of(id))))))
+        runBlocking {
+            fixture.select("alice")
+            fixture.sync(EngineRoomFixture.server())
+            fixture.workout()
+        }
+        fixture.store.observeEngine()
+        plant("thread-one")
+        compose.setContent { GymMaterial { GymRoom(fixture.account(), fixture.store) } }
+        compose.onNode(hasText("The log") and hasClickAction()).performClick()
+        compose.onNodeWithContentDescription("Weigh in").assertIsDisplayed()
+        assertEquals(emptyList<String>(), conversations.threads.map { it.title })
+
+        compose.onNode(hasText("Coach") and hasClickAction()).performClick()
+        compose.onNodeWithContentDescription("History").assertIsDisplayed()
+        waitUntil { conversations.threads.isNotEmpty() }
+        assertEquals(listOf("thread-one"), conversations.threads.map { it.title })
+
+        compose.onNode(hasText("The log") and hasClickAction()).performClick()
+        compose.onNodeWithContentDescription("Weigh in").assertIsDisplayed()
+        plant("thread-two")
+        compose.waitForIdle()
+        org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+        assertEquals(listOf("thread-one"), conversations.threads.map { it.title })
+
+        compose.onNode(hasText("Coach") and hasClickAction()).performClick()
+        compose.onNodeWithContentDescription("History").assertIsDisplayed()
+        waitUntil { conversations.threads.size == 2 }
+        assertEquals(setOf("thread-one", "thread-two"), conversations.threads.map { it.title }.toSet())
+    }
+
+    @Test fun anEmptyHistorySeatConnectedAgainStillSaysItIsEmpty() {
+        val fixture = EngineRoomFixture(tmp.newFolder(), scope, telemetry = telemetry, coachServer = ScriptedTurns(emptyList()))
+        room = fixture
+        runBlocking { fixture.select(null) }
+        fixture.store.observeEngine()
+        val threads = ThreadsBinding(fixture.store.coach)
+        compose.setContent { GymMaterial { ThreadsScreen(threads, threads, "Coach", {}, {}, {}) } }
+        waitUntil { fixture.store.coach.conversations?.rows != null }
+        compose.onNodeWithText(Threads.none).assertIsDisplayed()
+        runBlocking { fixture.store.connect(fixture.account()) }
+        waitUntil { fixture.store.coach.conversations?.rows != null }
+        compose.onNodeWithText(Threads.none).assertIsDisplayed()
+    }
+
     @Test fun confirmationDeletesImmediatelyWithOneResultAndNoUndo() {
-        val api = FakeGymRest().apply { conversations["thread-a"] = AskThread("thread-a", "Private first question", askedAtMs = 1) }
-        val fixture = history(api)
+        val fixture = answering()
+        show(fixture)
         requestDelete()
         compose.onNodeWithText("Delete").performClick()
-        compose.waitUntil(5_000) {
-            org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
-            api.calls.count { it == "deleteThread" } == 1 && fixture.store.coach.allThreads.isEmpty()
-        }
-        compose.onNodeWithText("No conversations").assertIsDisplayed()
+        waitUntil { fixture.threads().isEmpty() && fixture.store.coach.history.isEmpty() && events.any { it.second["outcome"] == "ok" } }
+        compose.onNodeWithText(Threads.none).assertIsDisplayed()
         compose.onNodeWithText("Undo").assertDoesNotExist()
+        assertEquals(emptyList<CoachMessage>(), fixture.messages())
         assertEquals(emptyList<Any>(), fixture.store.held.withheld)
         assertEquals(listOf(
             "gym_action" to mapOf("screen" to "threads", "action" to "delete", "state" to "shown"),
             "gym_action" to mapOf("screen" to "threads", "action" to "delete", "outcome" to "ok"),
+            "gym_action" to mapOf("screen" to "threads", "action" to "empty", "outcome" to "shown"),
         ), events.toList())
         assertEquals(emptyList<String>(), failures.toList())
     }
 
     @Test fun technicalDeleteFailureReturnsTheRowAndReportsOnceWithoutMessageContent() {
-        val api = FakeGymRest().apply { conversations["thread-a"] = AskThread("thread-a", "Private first question", askedAtMs = 1) }
-        history(api)
-        api.online = false
+        var diskFails = false
+        val disk = LocalCoach(File(tmp.root, "delete-failure.json")) { file, text ->
+            if (diskFails) throw IOException("private local content")
+            AtomicDocument.write(file, text)
+        }
+        val fixture = EngineRoomFixture(tmp.newFolder(), scope, telemetry = telemetry, localCoach = disk)
+        room = fixture
+        runBlocking { fixture.select("alice") }
+        fixture.store.observeEngine()
+        val chat = fixture.store.coach.freshChat("Private first question")
+        show(fixture)
+        diskFails = true
         requestDelete()
         compose.onNodeWithText("Delete").performClick()
-        compose.waitUntil(5_000) {
-            org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
-            events.any { it.second["outcome"] == "failed" }
-        }
+        waitUntil { events.any { it.second["outcome"] == "failed" } }
         compose.onNodeWithText("Private first question").assertIsDisplayed()
         compose.onNodeWithText("the log didn’t answer — that conversation is still here").assertIsDisplayed()
+        assertEquals(CoachDraft("Private first question"), fixture.store.coach.draft(chat))
         assertEquals(listOf(
             "gym_action" to mapOf("screen" to "threads", "action" to "delete", "state" to "shown"),
             "gym_action" to mapOf("screen" to "threads", "action" to "delete", "outcome" to "failed"),
         ), events.toList())
         assertEquals(listOf("gym.deleteThread"), failures.toList())
+    }
+
+    // An account mid-transition closes the engine to this write: expected, so it is said on the row and never reported.
+    @Test fun aDeleteTheEngineWillNotTakeReturnsTheThreadsRowWithNoReport() {
+        var writable = true
+        val fixture = answering { writable }
+        show(fixture)
+        writable = false
+        requestDelete()
+        compose.onNodeWithText("Delete").performClick()
+        waitUntil { events.any { it.second["outcome"] == "failed" } }
+        compose.onNodeWithText("Private first question").assertIsDisplayed()
+        compose.onNodeWithText("the log didn’t answer — that conversation is still here").assertIsDisplayed()
+        assertEquals(listOf("Private first question"), fixture.threads().map { it.title })
+        assertEquals(2, fixture.messages().size)
+        assertEquals(listOf(
+            "gym_action" to mapOf("screen" to "threads", "action" to "delete", "state" to "shown"),
+            "gym_action" to mapOf("screen" to "threads", "action" to "delete", "outcome" to "failed"),
+        ), events.toList())
+        assertEquals(emptyList<String>(), failures.toList())
     }
 }

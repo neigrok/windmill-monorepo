@@ -48,6 +48,7 @@ export function StepDetail({
   onReset,
   onRestore,
   onOpenInGraph,
+  onSelect,
   onViewBranch,
   onDelete,
   onDeletePrompt,
@@ -60,6 +61,7 @@ export function StepDetail({
   const layerRef = useRef(null);
   const originRef = useRef(null);
   const deletedRef = useRef(null);
+  const selectingRef = useRef(false);
   const leaveRef = useRef(null);
   const workspaceRef = useRef(null);
   const pinnedNoteRef = useRef(null);
@@ -136,6 +138,7 @@ export function StepDetail({
       uncover();
       const returnTo = originRef.current;
       requestAnimationFrame(() => {
+        if (selectingRef.current) return;
         const board = document.querySelector('.st-view-layer--board.is-active');
         if (!board) return;
         const returningStop = () => {
@@ -229,6 +232,14 @@ export function StepDetail({
   const menuItems = [
     stepLink && { label: STEP_DETAIL.copyLink, icon: StepIcons.copyLink, run: copyLink },
     onOpenInGraph && { label: STEP_DETAIL.openInGraph, icon: StepIcons.graph, run: () => { act('openInGraph'); onOpenInGraph(id); } },
+    onSelect && {
+      label: STEP_DETAIL.select, icon: StepIcons.select,
+      run: () => {
+        selectingRef.current = true;
+        act('select');
+        onSelect(id);
+      },
+    },
     editable && deletable && {
       label: STEP_DETAIL.deleteStep, icon: StepIcons.trash, danger: true,
       run: () => {

@@ -46,7 +46,7 @@ private fun ComposeTestRule.assertSignedOutEmptyGymOpensRoutines() {
     onNodeWithContentDescription("New routine").assertIsDisplayed()
     onNodeWithContentDescription("Your account").assertIsDisplayed()
     val store = (RuntimeEnvironment.getApplication() as WindmillApplication).gym.store
-    waitUntil(10_000) { store.initialGymEmpty == true }
+    waitUntil(10_000) { runOnIdle { store.initialGymEmpty == true } }
     runOnIdle { assertNull(store.coach.selectedChatId) }
     onNode(heading, useUnmergedTree = true).assertIsDisplayed()
 }

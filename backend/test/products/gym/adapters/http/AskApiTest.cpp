@@ -421,13 +421,13 @@ TEST(gym_known_generation_refusal_retains_the_durable_identity_and_routine_resul
 
 TEST(gym_monthly_allowance_exhaustion_returns_exact_usd_and_calendar_reset_without_a_model_call) {
   AskHarness a{true};
-  a.allowances.totals.subject.spentNanos = 250'000'000;
+  a.allowances.totals.subject.spentNanos = 500'000'000;
   const auto response = a.ask("thr_monthly01", "How did training go?");
   CHECK_EQ(response->getStatusCode(), drogon::k429TooManyRequests);
   auto expected = parse(R"({"code":"subject_exhausted","reason":"allowance_exhausted",
       "error":"Your AI allowance is fully used or reserved.","allowance":{
       "currency":"USD","period":"calendar_month_utc","tier":"logged_in","configured":true,
-      "limit":"0.250000000","used":"0.250000000","reserved":"0.000000000","remaining":"0.000000000"}})");
+      "limit":"0.500000000","used":"0.500000000","reserved":"0.000000000","remaining":"0.000000000"}})");
   expected["allowance"]["resetsAtMs"] = Json::Int64(AiBudgetPeriod::at(a.h.clock.now)->endMs);
   expected["allowance"]["code"] = "subject_exhausted";
   expected["allowance"]["budgetResetsAtMs"] = expected["allowance"]["resetsAtMs"];
@@ -445,7 +445,7 @@ TEST(gym_monthly_shared_cap_refusals_keep_personal_usd_balance_and_do_not_report
     CHECK_EQ(response->getStatusCode(), drogon::k503ServiceUnavailable);
     auto expected = parse(R"({"reason":"unavailable","allowance":{
         "currency":"USD","period":"calendar_month_utc","tier":"logged_in","configured":true,
-        "limit":"0.250000000","used":"0.000000000","reserved":"0.000000000","remaining":"0.250000000"}})");
+        "limit":"0.500000000","used":"0.000000000","reserved":"0.000000000","remaining":"0.500000000"}})");
     expected["code"] = serviceCap ? "free_month_exhausted" : "free_day_exhausted";
     expected["error"] = serviceCap ? "Coach's shared free AI capacity is unavailable for this month."
                                     : "Coach's shared free AI capacity is unavailable for today.";
@@ -461,14 +461,14 @@ TEST(gym_monthly_shared_cap_refusals_keep_personal_usd_balance_and_do_not_report
 
 TEST(gym_provider_admission_refusal_distinguishes_request_capacity_from_spent_monthly_allowance) {
   AskHarness a{true};
-  a.allowances.totals.subject.spentNanos = 200'000'000;
+  a.allowances.totals.subject.spentNanos = 450'000'000;
   a.agent.refusal = "subject_exhausted";
   const auto response = a.ask("thr_capacity1", "How did training go?", "s-live", "req_capacity1");
   CHECK_EQ(response->getStatusCode(), drogon::k429TooManyRequests);
   auto expected = parse(R"({"code":"subject_exhausted","reason":"request_exceeds_remaining",
       "error":"This request needs more AI capacity than your remaining allowance.","allowance":{
       "currency":"USD","period":"calendar_month_utc","tier":"logged_in","configured":true,
-      "limit":"0.250000000","used":"0.200000000","reserved":"0.000000000","remaining":"0.050000000"},
+      "limit":"0.500000000","used":"0.450000000","reserved":"0.000000000","remaining":"0.050000000"},
       "thread":"thr_capacity1","results":[],"generation":{"requestId":"req_capacity1",
       "question":"How did training go?","status":"failed","answer":"","steps":[],"results":[],
       "receipt":{"version":1,"read":{"sets":0,"sessions":0,"weeks":0},"steps":[],"proposals":[],"observations":[]}}})");
@@ -492,11 +492,11 @@ TEST(gym_provider_admission_refusal_distinguishes_request_capacity_from_spent_mo
       getRequest("/v1/gym/threads/thr_capacity1", "s-live"), "thr_capacity1");
   CHECK_EQ(bodyOf(history)["generation"]["allowanceRefusal"], expected["allowance"]);
 
-  a.allowances.totals.subject.spentNanos = 250'000'000;
+  a.allowances.totals.subject.spentNanos = 500'000'000;
   const auto refusedRetry = a.ask("thr_capacity1", "How did training go?", "s-live", "req_capacity1");
   CHECK_EQ(refusedRetry->getStatusCode(), drogon::k429TooManyRequests);
   auto latest = expected["allowance"];
-  latest["used"] = "0.250000000";
+  latest["used"] = "0.500000000";
   latest["remaining"] = "0.000000000";
   CHECK_EQ(bodyOf(refusedRetry)["generation"]["allowanceRefusal"], latest);
   CHECK_EQ(a.agent.runs, 1);
@@ -572,7 +572,7 @@ TEST(gym_streamed_monthly_refusal_preserves_the_json_contract_and_reset_timestam
   auto expected = parse(R"({"code":"free_day_exhausted","reason":"unavailable","status":503,
       "error":"Coach's shared free AI capacity is unavailable for today.","allowance":{
       "currency":"USD","period":"calendar_month_utc","tier":"logged_in","configured":true,
-      "limit":"0.250000000","used":"0.000000000","reserved":"0.000000000","remaining":"0.250000000"}})");
+      "limit":"0.500000000","used":"0.000000000","reserved":"0.000000000","remaining":"0.500000000"}})");
   expected["allowance"]["resetsAtMs"] = Json::Int64(AiBudgetPeriod::at(a.h.clock.now)->endMs);
   expected["allowance"]["code"] = "free_day_exhausted";
   expected["allowance"]["budgetResetsAtMs"] = Json::Int64(AiBudgetPeriod::dayAt(a.h.clock.now)->endMs);

@@ -93,6 +93,8 @@ class AiInstallationTest {
         assertTrue(telemetry.issues.isEmpty())
     }
 
+    private fun assertKeptBound() = assertEquals("{\"credential\":\"$credential\",\"bound\":true}", SecretVault { key }.open(values.kept.getValue("installation.sealed")))
+
     private class Values : KeptValues {
         val kept = mutableMapOf<String, String>()
         var fail = false
@@ -188,12 +190,11 @@ class AiInstallationTest {
         refusal("invalid_installation") { store().forAnonymousSend() }
         api.currentFailure = null
         refusal("invalid_installation") { store().forAnonymousSend() }
-        refusal("invalid_installation") { store().forRecovery() }
         assertEquals(1, api.issues)
         assertEquals(1, api.reads)
     }
 
-    @Test fun boundInstallationSurvivesSignOutAndStillRecoversPendingResults() = runTest {
+    @Test fun aBoundInstallationSurvivesSignOutWithItsCredentialKept() = runTest {
         val installation = store()
         installation.forAnonymousSend()
         installation.bind("account-a", "token-a")
@@ -201,7 +202,7 @@ class AiInstallationTest {
         assertEquals(listOf(credential to "token-a"), api.bindings)
         val restored = store()
         refusal("device_bound") { restored.forAnonymousSend() }
-        assertEquals(credential, restored.forRecovery())
+        assertKeptBound()
         assertEquals(1, api.issues)
         assertEquals(0, api.reads)
     }
@@ -212,7 +213,7 @@ class AiInstallationTest {
         api.bindFailure = WindmillApiException.Refused(409, Refusal(code = "installation_bound"))
         installation.bind("account-b", "token-b")
         refusal("device_bound") { store().forAnonymousSend() }
-        assertEquals(credential, store().forRecovery())
+        assertKeptBound()
         assertEquals(1, api.issues)
         assertTrue(telemetry.issues.isEmpty())
     }
@@ -232,7 +233,7 @@ class AiInstallationTest {
         assertEquals(listOf("ai_installation_outcome" to mapOf("action" to "bind", "outcome" to "refused")), telemetry.events)
         lifecycle.signOut()
         assertEquals(listOf("signed-in", "signed-out"), calls)
-        assertEquals(credential, store().forRecovery())
+        assertKeptBound()
         refusal("device_bound") { store().forAnonymousSend() }
     }
 
@@ -254,7 +255,7 @@ class AiInstallationTest {
         api.bindWait!!.complete(Unit)
         runCurrent()
         refusal("device_bound") { store().forAnonymousSend() }
-        assertEquals(credential, store().forRecovery())
+        assertKeptBound()
         assertEquals(1, api.issues)
     }
 
@@ -277,7 +278,7 @@ class AiInstallationTest {
         assertEquals(listOf(credential to "token"), api.bindings)
         assertEquals("bound", SecretVault { key }.open(values.kept.getValue("binding.sealed")))
         refusal("device_bound") { store().forAnonymousSend() }
-        assertEquals(credential, store().forRecovery())
+        assertKeptBound()
         assertEquals(1, api.issues)
     }
 
@@ -325,7 +326,7 @@ class AiInstallationTest {
         store().bind("account", "token")
         assertEquals(2, api.issues)
         assertEquals(listOf(credential to "token"), api.bindings)
-        assertEquals(credential, store().forRecovery())
+        assertKeptBound()
     }
 
     @Test fun transportSeparatesInstallationAndAccountCredentialsAndExpectedRefusalsHaveNoIssues() = runTest {

@@ -12,8 +12,6 @@ object Readout {
     private val weekdays = listOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
     private val months = listOf("Jan", "Feb", "Mar", "Apr", "May", "Jun",
                                 "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
-    private val fullMonths = listOf("January", "February", "March", "April", "May", "June",
-                                    "July", "August", "September", "October", "November", "December")
     private val names = listOf("zero", "one", "two", "three", "four", "five",
                                "six", "seven", "eight", "nine", "ten")
 
@@ -131,13 +129,6 @@ object Readout {
         return "$date ${at.year}"
     }
 
-    fun month(ms: Long, now: Long): String {
-        val at = at(ms)
-        val name = fullMonths[at.monthValue - 1]
-        if (at.year == at(now).year) return name
-        return "$name ${at.year}"
-    }
-
     fun briefDay(ms: Long, now: Long): String {
         val zone = ZoneId.systemDefault()
         val then = Instant.ofEpochMilli(ms).atZone(zone).toLocalDate()
@@ -190,8 +181,17 @@ object Readout {
     fun setCount(count: Int): String = if (count == 1) "1 set" else "$count sets"
 
     fun routineCount(count: Int): String = if (count == 1) "1 routine" else "$count routines"
+    fun movementCount(count: Int): String = if (count == 1) "1 movement" else "$count movements"
+    fun noteCount(count: Int): String = if (count == 1) "1 note" else "$count notes"
+    fun changeCount(count: Int): String = if (count == 1) "1 change" else "$count changes"
 
     fun sessionCount(count: Int): String = if (count == 1) "1 workout" else "$count workouts"
+
+    // A movement's equipment as its record names it: a pair of dumbbells, or one as itself.
+    fun equipment(equipment: String, loadCount: Int): String = when {
+        equipment == "dumbbell" -> if (loadCount == 1) "One dumbbell" else "Dumbbells"
+        else -> equipment.replaceFirstChar { it.titlecase() }
+    }
 
     // A week is the server's Monday-UTC bucket (`date_trunc('week')`); this only spells the count.
     fun weekCount(count: Int): String = if (count == 1) "1 week" else "$count weeks"

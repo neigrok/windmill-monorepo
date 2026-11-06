@@ -106,22 +106,49 @@ export class RoutineChange {
     });
   }
 
-  // R118's count: every line that is not kept, and one more when the kept movements left the base's order.
-  /** @param {readonly RoutineEntry[]} base @param {readonly RoutineChange[]} changes */
-  static count(base, changes) {
+  // The movements a pending proposal moves, by change index, each with its place in the base and in the proposal. A
+  // movement whose place is the same in both never moved. Of the rest, one that crosses such a movement moved; of those
+  // left, the longest run that keeps the base's order stands — of equal runs, the one whose places come first — and every
+  // other one moved.
+  /** @param {readonly RoutineEntry[]} base @param {readonly RoutineChange[]} changes @returns {Map<number, { from: number, to: number }>} */
+  static moves(base, changes) {
     const unmatched = base.map((entry, index) => ({ entry, index }));
-    let greatest = -1;
-    let reordered = false;
-    for (const change of changes) {
-      if (change.kind !== 'kept' && change.kind !== 'retargeted') continue;
+    /** @type {{ change: number, from: number, to: number }[]} */
+    const retained = [];
+    changes.map((change, index) => ({ change, index })).filter(({ change }) => change.kind !== 'removed').forEach(({ change, index }, to) => {
+      if (change.kind !== 'kept' && change.kind !== 'retargeted') return;
       const at = unmatched.findIndex(({ entry }) => entry.exerciseId.equals(change.exerciseId));
-      if (at === -1) continue;
+      if (at === -1) return;
       const [matched] = unmatched.splice(at, 1);
       precondition(matched !== undefined, 'a matched base entry is present');
-      if (matched.index < greatest) reordered = true;
-      greatest = Math.max(greatest, matched.index);
+      retained.push({ change: index, from: matched.index, to });
+    });
+    const placed = retained.filter((line) => line.from === line.to);
+    const left = retained.filter((line) => line.from !== line.to);
+    const candidates = left.filter((line) => placed.every((other) => (line.to < other.to) === (line.from < other.from)));
+    /** @type {{ change: number, from: number, to: number, index: number, longest: number }[]} */
+    const runs = [];
+    for (const [index, entry] of [...candidates.entries()].reverse()) {
+      runs.unshift({ ...entry, index, longest: 1 + Math.max(0, ...runs.filter((later) => later.from > entry.from).map((later) => later.longest)) });
     }
-    return changes.filter((change) => change.kind !== 'kept').length + (reordered ? 1 : 0);
+    const standing = new Set();
+    let previous = -1;
+    let start = 0;
+    for (let length = Math.max(0, ...runs.map((run) => run.longest)); length > 0; length -= 1) {
+      const next = runs.filter((run) => run.index >= start && run.from > previous && run.longest === length)
+        .reduce((least, run) => run.from < least.from ? run : least);
+      standing.add(next.change);
+      previous = next.from;
+      start = next.index + 1;
+    }
+    return new Map(left.filter((line) => !standing.has(line.change)).map((line) => [line.change, { from: line.from + 1, to: line.to + 1 }]));
+  }
+
+  // The count a card, a sheet and a receipt say: every line that is not kept and every kept line that moved.
+  /** @param {readonly RoutineEntry[]} base @param {readonly RoutineChange[]} changes */
+  static count(base, changes) {
+    const moved = [...RoutineChange.moves(base, changes).keys()].filter((index) => changes[index]?.kind === 'kept');
+    return changes.filter((change) => change.kind !== 'kept').length + moved.length;
   }
 }
 

@@ -1,0 +1,885 @@
+[
+  {
+    "board": "08.64",
+    "name": "what-coach-read-movement-history",
+    "account": "fixture",
+    "steps": [
+      {
+        "tap": "Coach"
+      },
+      {
+        "wait": "Question"
+      },
+      {
+        "tap": "History"
+      },
+      {
+        "tap": "Is Push A still doing anything?"
+      },
+      {
+        "wait": "Read your movement history"
+      },
+      {
+        "tap": "Read your movement history"
+      },
+      {
+        "wait": "What Coach read"
+      }
+    ],
+    "after": [
+      {
+        "tap": "Close"
+      },
+      {
+        "tap": "Routines"
+      },
+      {
+        "wait": "Push A"
+      }
+    ],
+    "sync": [
+      {
+        "t": "thread",
+        "id": "thr_$account",
+        "life": [
+          "alive",
+          "$stamp"
+        ],
+        "born": "$stamp",
+        "f": {
+          "title": [
+            "Is Push A still doing anything?",
+            "$stamp"
+          ]
+        }
+      },
+      {
+        "t": "message",
+        "id": "msg_$account_q",
+        "life": [
+          "alive",
+          "$stamp"
+        ],
+        "born": "$stamp",
+        "f": {
+          "threadId": [
+            "thr_$account",
+            "$stamp"
+          ],
+          "role": [
+            "lifter",
+            "$stamp"
+          ],
+          "at": [
+            "$now",
+            "$stamp"
+          ],
+          "text": [
+            "Is Push A still doing anything?",
+            "$stamp"
+          ]
+        }
+      },
+      {
+        "t": "message",
+        "id": "msg_$account_a",
+        "life": [
+          "alive",
+          "$stamp"
+        ],
+        "born": "$stamp",
+        "f": {
+          "threadId": [
+            "thr_$account",
+            "$stamp"
+          ],
+          "role": [
+            "coach",
+            "$stamp"
+          ],
+          "at": [
+            "$now",
+            "$stamp"
+          ],
+          "text": [
+            "Keep the same total work each week. Do 3 sets of 3 at 90 kg for a heavier top set.",
+            "$stamp"
+          ],
+          "replica": [
+            "rp_0123456789abcdef0123456789abcdef",
+            "$stamp"
+          ],
+          "state": [
+            "completed",
+            "$stamp"
+          ],
+          "truncated": [
+            false,
+            "$stamp"
+          ],
+          "calls": [
+            [
+              {
+                "callId": "context-list_sessions",
+                "name": "list_sessions",
+                "input": {},
+                "outcome": "ok",
+                "created": [],
+                "read": {
+                  "sessions": [],
+                  "sets": [],
+                  "weeks": []
+                }
+              },
+              {
+                "callId": "context-list_notes",
+                "name": "list_notes",
+                "input": {},
+                "outcome": "ok",
+                "created": [],
+                "read": {
+                  "sessions": [],
+                  "sets": [],
+                  "weeks": []
+                }
+              },
+              {
+                "callId": "context-list_exercises",
+                "name": "list_exercises",
+                "input": {},
+                "outcome": "ok",
+                "created": [],
+                "read": {
+                  "sessions": [],
+                  "sets": [],
+                  "weeks": []
+                }
+              },
+              {
+                "callId": "context-list_routines",
+                "name": "list_routines",
+                "input": {},
+                "outcome": "ok",
+                "created": [],
+                "read": {
+                  "sessions": [],
+                  "sets": [],
+                  "weeks": []
+                }
+              },
+              {
+                "callId": "toolu_stats",
+                "name": "get_stats",
+                "input": {},
+                "outcome": "ok",
+                "created": [],
+                "read": {
+                  "sets": 24,
+                  "sessions": 0,
+                  "weeks": 0
+                },
+                "readTruncated": true
+              }
+            ],
+            "$stamp"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "board": "08.54",
+    "name": "coach-over-workout-fresh",
+    "account": "fixture",
+    "workout_clock": true,
+    "steps": [
+      {
+        "tap": "Push A"
+      },
+      {
+        "tap": "Start workout"
+      },
+      {
+        "wait": "Load, kg total"
+      },
+      {
+        "tap": "Bench Press"
+      },
+      {
+        "tap": "Overhead Press"
+      },
+      {
+        "wait": "Load, kg total"
+      },
+      {
+        "tap": "Log set"
+      },
+      {
+        "wait_contains": "Set 2, current, "
+      },
+      {
+        "tap": "Coach"
+      },
+      {
+        "wait": "Question"
+      }
+    ]
+  },
+  {
+    "board": "08.55",
+    "name": "coach-over-workout-proposal",
+    "account": "fixture",
+    "workout_clock": true,
+    "responses": [
+      [
+        {
+          "type": "tool_use",
+          "id": "toolu_read",
+          "name": "list_sessions",
+          "input": {
+            "limit": 12
+          }
+        }
+      ],
+      [
+        {
+          "type": "tool_use",
+          "id": "toolu_workout",
+          "name": "propose_workout_change",
+          "input": {
+            "id": "wp_capture0001",
+            "sessionId": "$session",
+            "summary": "",
+            "entries": [
+              {
+                "exerciseId": "bench-press",
+                "sets": [
+                  {
+                    "reps": 8,
+                    "weightKg": 75
+                  },
+                  {
+                    "reps": 8,
+                    "weightKg": 75
+                  },
+                  {
+                    "reps": 8,
+                    "weightKg": 75
+                  }
+                ]
+              },
+              {
+                "exerciseId": "overhead-press",
+                "sets": [
+                  {
+                    "reps": 6,
+                    "weightKg": 45
+                  },
+                  {
+                    "reps": 6,
+                    "weightKg": 45
+                  },
+                  {
+                    "reps": 6,
+                    "weightKg": 45
+                  }
+                ]
+              },
+              {
+                "exerciseId": "dumbbell-bench-press",
+                "sets": [
+                  {
+                    "reps": 10,
+                    "weightKg": 20
+                  },
+                  {
+                    "reps": 10,
+                    "weightKg": 20
+                  },
+                  {
+                    "reps": 10,
+                    "weightKg": 20
+                  }
+                ]
+              },
+              {
+                "exerciseId": "cable-fly",
+                "sets": [
+                  {
+                    "reps": 12,
+                    "weightKg": 15
+                  },
+                  {
+                    "reps": 12,
+                    "weightKg": 15
+                  },
+                  {
+                    "reps": 12,
+                    "weightKg": 15
+                  }
+                ]
+              },
+              {
+                "exerciseId": "triceps-pushdown",
+                "sets": [
+                  {
+                    "reps": 12,
+                    "weightKg": 25
+                  },
+                  {
+                    "reps": 12,
+                    "weightKg": 25
+                  },
+                  {
+                    "reps": 12,
+                    "weightKg": 25
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      [
+        {
+          "type": "text",
+          "text": "Overhead Press is logged, so it stays. Swap the incline press for a flat dumbbell press."
+        }
+      ]
+    ],
+    "steps": [
+      {
+        "tap": "Question"
+      },
+      {
+        "text": "My shoulder is sore today."
+      },
+      {
+        "wait": "My shoulder is sore today."
+      },
+      {
+        "tap": "Send"
+      },
+      {
+        "wait": "Review"
+      }
+    ]
+  },
+  {
+    "board": "08.55b",
+    "name": "coach-over-workout-review",
+    "account": "fixture",
+    "workout_clock": true,
+    "steps": [
+      {
+        "tap": "Review"
+      },
+      {
+        "wait": "Apply all 2"
+      }
+    ]
+  },
+  {
+    "board": "08.65",
+    "name": "coach-over-workout-applied",
+    "account": "fixture",
+    "workout_clock": true,
+    "steps": [
+      {
+        "tap": "Apply all 2"
+      },
+      {
+        "wait": "Applied \u00b7 this workout \u00b7 2 changes"
+      }
+    ]
+  },
+  {
+    "board": "03.46",
+    "name": "rack-after-a-swap",
+    "account": "fixture",
+    "workout_clock": true,
+    "steps": [
+      {
+        "key": "KEYCODE_BACK"
+      },
+      {
+        "wait": "Finish"
+      },
+      {
+        "tap": "Overhead Press"
+      },
+      {
+        "tap": "Dumbbell Bench Press"
+      },
+      {
+        "wait": "Load, kg each"
+      }
+    ]
+  },
+  {
+    "board": "08.56",
+    "name": "coach-over-workout-two-kinds",
+    "account": "fixture",
+    "workout_clock": true,
+    "responses": [
+      [
+        {
+          "type": "tool_use",
+          "id": "toolu_read",
+          "name": "list_sessions",
+          "input": {
+            "limit": 12
+          }
+        }
+      ],
+      [
+        {
+          "type": "tool_use",
+          "id": "toolu_workout",
+          "name": "propose_workout_change",
+          "input": {
+            "id": "wp_capture0002",
+            "sessionId": "$session",
+            "summary": "",
+            "entries": [
+              {
+                "exerciseId": "bench-press",
+                "sets": [
+                  {
+                    "reps": 8,
+                    "weightKg": 75
+                  },
+                  {
+                    "reps": 8,
+                    "weightKg": 75
+                  },
+                  {
+                    "reps": 8,
+                    "weightKg": 75
+                  }
+                ]
+              },
+              {
+                "exerciseId": "overhead-press",
+                "sets": [
+                  {
+                    "reps": 6,
+                    "weightKg": 45
+                  },
+                  {
+                    "reps": 6,
+                    "weightKg": 45
+                  },
+                  {
+                    "reps": 6,
+                    "weightKg": 45
+                  }
+                ]
+              },
+              {
+                "exerciseId": "dumbbell-bench-press",
+                "sets": [
+                  {
+                    "reps": 10,
+                    "weightKg": 20
+                  },
+                  {
+                    "reps": 10,
+                    "weightKg": 20
+                  },
+                  {
+                    "reps": 10,
+                    "weightKg": 20
+                  }
+                ]
+              },
+              {
+                "exerciseId": "cable-fly",
+                "sets": [
+                  {
+                    "reps": 12,
+                    "weightKg": 15
+                  },
+                  {
+                    "reps": 12,
+                    "weightKg": 15
+                  },
+                  {
+                    "reps": 12,
+                    "weightKg": 15
+                  }
+                ]
+              },
+              {
+                "exerciseId": "triceps-pushdown",
+                "sets": [
+                  {
+                    "reps": 12,
+                    "weightKg": 20
+                  },
+                  {
+                    "reps": 12,
+                    "weightKg": 20
+                  },
+                  {
+                    "reps": 12,
+                    "weightKg": 20
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "type": "tool_use",
+          "id": "toolu_routine",
+          "name": "propose_routine_change",
+          "input": {
+            "id": "pr_capture0002",
+            "routineId": "$routine0",
+            "summary": "",
+            "entries": [
+              {
+                "exerciseId": "bench-press",
+                "sets": [
+                  {
+                    "reps": 8,
+                    "weightKg": 75
+                  },
+                  {
+                    "reps": 8,
+                    "weightKg": 75
+                  },
+                  {
+                    "reps": 8,
+                    "weightKg": 75
+                  }
+                ]
+              },
+              {
+                "exerciseId": "overhead-press",
+                "sets": [
+                  {
+                    "reps": 6,
+                    "weightKg": 45
+                  },
+                  {
+                    "reps": 6,
+                    "weightKg": 45
+                  },
+                  {
+                    "reps": 6,
+                    "weightKg": 45
+                  }
+                ]
+              },
+              {
+                "exerciseId": "incline-dumbbell-press",
+                "sets": [
+                  {
+                    "reps": 10,
+                    "weightKg": 17.5
+                  },
+                  {
+                    "reps": 10,
+                    "weightKg": 17.5
+                  },
+                  {
+                    "reps": 10,
+                    "weightKg": 17.5
+                  }
+                ]
+              },
+              {
+                "exerciseId": "cable-fly",
+                "sets": [
+                  {
+                    "reps": 12,
+                    "weightKg": 15
+                  },
+                  {
+                    "reps": 12,
+                    "weightKg": 15
+                  },
+                  {
+                    "reps": 12,
+                    "weightKg": 15
+                  }
+                ]
+              },
+              {
+                "exerciseId": "triceps-pushdown",
+                "sets": [
+                  {
+                    "reps": 12,
+                    "weightKg": 20
+                  },
+                  {
+                    "reps": 12,
+                    "weightKg": 20
+                  },
+                  {
+                    "reps": 12,
+                    "weightKg": 20
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      [
+        {
+          "type": "text",
+          "text": "Overhead Press is logged, so it stays. One change for today, one for next time."
+        }
+      ]
+    ],
+    "steps": [
+      {
+        "tap": "Coach"
+      },
+      {
+        "wait": "Question"
+      },
+      {
+        "tap": "Question"
+      },
+      {
+        "text": "My shoulder is sore. What should I change"
+      },
+      {
+        "wait": "My shoulder is sore. What should I change"
+      },
+      {
+        "tap": "Send"
+      },
+      {
+        "wait": "Proposal \u00b7 Push A \u00b7 next time"
+      },
+      {
+        "tap": "Review"
+      },
+      {
+        "wait": "Apply"
+      },
+      {
+        "tap": "Apply"
+      },
+      {
+        "wait": "Applied \u00b7 this workout \u00b7 1 change"
+      }
+    ]
+  },
+  {
+    "board": "08.55",
+    "name": "coach-over-workout-waiting",
+    "account": "fixture",
+    "workout_clock": true,
+    "responses": [
+      [
+        {
+          "type": "tool_use",
+          "id": "toolu_read",
+          "name": "list_sessions",
+          "input": {
+            "limit": 12
+          }
+        }
+      ],
+      [
+        {
+          "type": "tool_use",
+          "id": "toolu_workout",
+          "name": "propose_workout_change",
+          "input": {
+            "id": "wp_capture0003",
+            "sessionId": "$session",
+            "summary": "",
+            "entries": [
+              {
+                "exerciseId": "bench-press",
+                "sets": [
+                  {
+                    "reps": 8,
+                    "weightKg": 75
+                  },
+                  {
+                    "reps": 8,
+                    "weightKg": 75
+                  },
+                  {
+                    "reps": 8,
+                    "weightKg": 75
+                  }
+                ]
+              },
+              {
+                "exerciseId": "overhead-press",
+                "sets": [
+                  {
+                    "reps": 6,
+                    "weightKg": 45
+                  },
+                  {
+                    "reps": 6,
+                    "weightKg": 45
+                  },
+                  {
+                    "reps": 6,
+                    "weightKg": 45
+                  }
+                ]
+              },
+              {
+                "exerciseId": "dumbbell-bench-press",
+                "sets": [
+                  {
+                    "reps": 10,
+                    "weightKg": 20
+                  },
+                  {
+                    "reps": 10,
+                    "weightKg": 20
+                  },
+                  {
+                    "reps": 10,
+                    "weightKg": 20
+                  }
+                ]
+              },
+              {
+                "exerciseId": "cable-fly",
+                "sets": [
+                  {
+                    "reps": 12,
+                    "weightKg": 15
+                  },
+                  {
+                    "reps": 12,
+                    "weightKg": 15
+                  },
+                  {
+                    "reps": 12,
+                    "weightKg": 15
+                  }
+                ]
+              },
+              {
+                "exerciseId": "seated-cable-row",
+                "sets": [
+                  {
+                    "reps": 10,
+                    "weightKg": 40
+                  },
+                  {
+                    "reps": 10,
+                    "weightKg": 40
+                  },
+                  {
+                    "reps": 10,
+                    "weightKg": 40
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      [
+        {
+          "type": "text",
+          "text": "Overhead Press is logged, so it stays. Swap the pushdown for a row."
+        }
+      ]
+    ],
+    "steps": [
+      {
+        "key": "KEYCODE_BACK"
+      },
+      {
+        "wait": "Finish"
+      },
+      {
+        "tap": "Coach"
+      },
+      {
+        "wait": "Question"
+      },
+      {
+        "tap": "Question"
+      },
+      {
+        "text": "My shoulder is sore today."
+      },
+      {
+        "wait": "My shoulder is sore today."
+      },
+      {
+        "tap": "Send"
+      },
+      {
+        "wait": "Proposal \u00b7 This workout"
+      }
+    ]
+  },
+  {
+    "board": "08.57",
+    "name": "coach-over-workout-out-of-date",
+    "account": "fixture",
+    "workout_clock": true,
+    "logged_elsewhere": {
+      "exerciseId": "triceps-pushdown",
+      "weightKg": 20,
+      "reps": 12
+    },
+    "steps": [
+      {
+        "wait": "Proposal \u00b7 This workout \u00b7 out of date"
+      }
+    ]
+  },
+  {
+    "board": "08.54",
+    "name": "coach-over-workout-keyboard",
+    "account": "fixture",
+    "workout_clock": true,
+    "steps": [
+      {
+        "key": "KEYCODE_BACK"
+      },
+      {
+        "wait": "Finish"
+      },
+      {
+        "tap": "Coach"
+      },
+      {
+        "wait": "Question"
+      },
+      {
+        "tap": "Question"
+      },
+      {
+        "text": "Is"
+      },
+      {
+        "wait": "Is"
+      }
+    ],
+    "after": [
+      {
+        "keyboard": "hide"
+      },
+      {
+        "key": "KEYCODE_BACK"
+      },
+      {
+        "wait": "Finish"
+      },
+      {
+        "tap": "Hide workout"
+      }
+    ]
+  }
+]

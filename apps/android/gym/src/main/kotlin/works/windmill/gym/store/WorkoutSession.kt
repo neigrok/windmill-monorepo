@@ -28,6 +28,7 @@ import works.windmill.gym.presentation.LiveOrder
 import works.windmill.gym.presentation.LogSetAcceptance
 import works.windmill.gym.presentation.LogSetCommand
 import works.windmill.gym.presentation.PlanEntry
+import works.windmill.gym.presentation.PlanSnapshot
 import works.windmill.gym.presentation.Readout
 import works.windmill.gym.presentation.Session
 import works.windmill.gym.presentation.SessionDetail
@@ -796,16 +797,28 @@ class WorkoutSession(
         if (!seat.workoutAuthorized || owner != seat.owner || live != controls.session?.id) return WorkoutChange.Stale
         if (joined && (detail == null || !detail.session.isOpen)) return WorkoutChange.Stale
         return writeControls(operation) {
+            val before = controls.session?.takeIf { it.id == opened.id }
             controls.hold(detail?.session ?: opened)
             if (detail != null) {
                 val kept = detail.sets.mapTo(mutableSetOf()) { it.id }
                 for (set in controls.sets(opened.id)) if (set.id !in kept) controls.drop(set.id)
                 for (set in detail.sets) controls.store(set, detail.session.id)
             }
+            if (before != null) followPlan(before.plan, controls.session?.plan)
             controls.flush()
             drawFromControls()
             WorkoutChange.Saved
         }
+    }
+
+    // An edit of the plan, from a proposal applied on any phone, moves the walk and stands the lifter on what replaced the movement in hand.
+    private fun followPlan(before: PlanSnapshot?, after: PlanSnapshot?) {
+        val walked = controls.order
+        val walk = LiveOrder.replanned(walked, before, after, controls.sets)
+        if (walk == walked) return
+        val movement = controls.chosenMovement
+        controls.hold(order = walk)
+        if (movement != null && movement !in walk) LiveOrder.standing(walked, movement, walk)?.let(controls::choose)
     }
 
     // Stands at the movement the last set went into, not in the picker. A movement already in hand is re-CHOSEN rather than moved: connect cleared the last-time cache, and re-asking swaps the old seat's answer for this seat's.

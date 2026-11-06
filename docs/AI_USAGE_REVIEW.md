@@ -33,8 +33,8 @@ held. New periods do not fund old calls.
 
 ## Allowances and funding
 
-- Anonymous: $0.05 per installation credential for its lifetime; one in-flight call.
-- Verified logged-in: $0.25 per UTC calendar month, including current-month anonymous spending
+- Anonymous: $0.25 per installation credential for its lifetime; one in-flight call.
+- Verified logged-in: $0.50 per UTC calendar month, including current-month anonymous spending
   associated with the account; one in-flight call.
 - Windmill One: $7 per funded subscription billing period; two in-flight calls. Owner access
   automatically funds $7 per UTC calendar month when no subscription grant is current.

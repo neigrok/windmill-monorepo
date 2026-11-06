@@ -3,25 +3,25 @@
 // of unclaimed entries, so a claim can never adopt a tree this device didn't bear.
 
 import { fetchMe } from '../../../shell/auth/AuthClient.js';
+import { restoredDeviceHolder } from '../../../shell/auth/accountChange.js';
+import { syncSession } from '../../../platform/sync/session.js';
 import { localStorageOrNothing } from './browserStorage.js';
 
 const KEY = 'windmill:device-trees';
 
-// The account stays unknown — which reads as the anonymous scope — until this document load has
-// had one successful /v1/me. It hangs off `window`, never storage, so a reload or a new tab starts
-// out not knowing.
+// Device reads use this document's server answer or the shell's restored bound replica, never a cached face.
 function confirmation() {
   return typeof window === 'undefined' ? null : window.wmDeviceConfirmation ?? null;
 }
 
-// The account this document load has confirmed with the server, or null while unknown.
+// The holder authorized for device reads, without granting session authority.
 export function deviceOwner() {
   return confirmation()?.owner ?? null;
 }
 
 const waitingForOwner = new Set();
 
-// A server-confirmed answer about who holds this device; it also attributes anything unstamped.
+// An authoritative answer about who holds this device; it also attributes anything unstamped.
 export function confirmDeviceOwner(userId) {
   const owner = userId ?? null;
   window.wmDeviceConfirmation = { owner };
@@ -35,13 +35,27 @@ export function confirmDeviceOwner(userId) {
 export function deviceOwnerAnswered(withinMs = 2000) {
   if (confirmation()) return Promise.resolve();
   return new Promise((resolve) => {
-    waitingForOwner.add(resolve);
-    setTimeout(resolve, withinMs);
+    const finish = () => {
+      clearTimeout(timer);
+      waitingForOwner.delete(finish);
+      resolve();
+    };
+    const timer = setTimeout(finish, withinMs);
+    waitingForOwner.add(finish);
   });
 }
 
 export async function resolveDeviceOwner() {
   const me = await fetchMe();
+  if (!me && !confirmation() && syncSession.opening) {
+    const restored = syncSession.opening.then(async (engine) => {
+      if (engine?.restoring) await engine.restoring;
+      return engine;
+    }).catch(() => null);
+    const engine = await Promise.race([restored, deviceOwnerAnswered(2000)]);
+    const owner = restoredDeviceHolder(engine);
+    if (!confirmation() && owner) return confirmDeviceOwner(owner);
+  }
   if (me === undefined) return deviceOwner(); // a blip is not an account change, in either direction
   if (me === null && deviceOwner()) return deviceOwner();
   return confirmDeviceOwner(me?.id ?? null);
@@ -105,8 +119,7 @@ export class LocalTreeRegistry {
     this.write(entries);
   }
 
-  // Rows with no owner field are attributed on first contact: the first server answer of this
-  // document load writes itself onto them, once. On a signed-out device that answer is null.
+  // Unattributed rows take the first device holder confirmed by the server or restored replica, once.
   stampUnattributed(owner) {
     const entries = this.entries();
     let changed = false;

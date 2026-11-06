@@ -63,7 +63,7 @@ def model_timing(scenario):
     timing = scenario.get("model_timing", {})
     if not isinstance(timing, dict) or set(timing) - {"start_delay_ms", "chunk_chars", "chunk_delay_ms"}:
         raise ValueError("Model timing supports only start_delay_ms, chunk_chars and chunk_delay_ms.")
-    for key, low, high in (("start_delay_ms", 0, 10000), ("chunk_chars", 1, 4096), ("chunk_delay_ms", 0, 1000)):
+    for key, low, high in (("start_delay_ms", 0, 60000), ("chunk_chars", 1, 4096), ("chunk_delay_ms", 0, 1000)):
         if key in timing and (type(timing[key]) is not int or not low <= timing[key] <= high):
             raise ValueError("Model timing needs bounded integer delays and chunk sizes.")
     start, chars, delay = timing.get("start_delay_ms", 0), timing.get("chunk_chars"), timing.get("chunk_delay_ms", 0)
@@ -71,8 +71,8 @@ def model_timing(scenario):
         responses = scenario.get("responses") or [MODEL_FALLBACK]
         counts = [sum(max(1, (len(block["text"]) + chars - 1) // chars) if chars else 1
                       for block in content if block["type"] == "text") for content in responses]
-        if sum(counts) > 256 or len(responses) * start + sum(max(0, count - 1) * delay for count in counts) > 10000:
-            raise ValueError("Model timing permits at most 256 text chunks and 10000 ms across a scenario.")
+        if sum(counts) > 256 or len(responses) * start + sum(max(0, count - 1) * delay for count in counts) > 60000:
+            raise ValueError("Model timing permits at most 256 text chunks and 60000 ms across a scenario.")
     return start, chars, delay
 
 
@@ -211,6 +211,16 @@ class Fixture:
             raise RuntimeError(f"Local fixture MCP refused {name}.")
         return result
 
+    # The workout the app has open, once its start has reached the log.
+    def open_session(self):
+        for _ in range(60):
+            _, body = self.request("/v1/gym/sessions?limit=5", token=self.token)
+            session = next((row["id"] for row in body["sessions"] if not row.get("finishedAt")), None)
+            if session:
+                return session
+            time.sleep(.5)
+        raise RuntimeError("The app's open workout did not reach the log.")
+
     def link(self):
         token = secrets.token_hex(24)
         digest = hashlib.sha256(token.encode()).hexdigest()
@@ -252,6 +262,16 @@ class Fixture:
                 raise RuntimeError("Capture fixture received an invalid sync retry.")
             time.sleep(retry["retryAfterMs"] / 1000)
         raise RuntimeError("Capture fixture sync did not acknowledge every intent within 20 attempts.")
+
+    def sync(self, rows):
+        schema = json.loads((ROOT / "packages/api-contract/sync/gym.registry.json").read_text())["version"]
+        _, hello = self.request("/v1/sync/hello", token=self.token, headers={"Sync-Schema": str(schema)})
+        self.push(rows, hello["schema"])
+
+    # Rows a recipe says another device wrote: `$now` is the moment they are planted, so they stand newest in History, and `$stamp` the run's write stamp.
+    def sync_recipe_rows(self, rows):
+        written = json.dumps(rows).replace('"$now"', str(int(time.time() * 1000))).replace("$stamp", f"{self.now}:0:r_capture00000")
+        self.sync(json.loads(written))
 
     def seed(self, replacement=None):
         digest = hashlib.sha256(self.token.encode()).hexdigest()
@@ -325,13 +345,21 @@ class Fixture:
         for index, (title, text) in enumerate([("Training week", "Three sessions each week."), ("Equipment", "Barbells and dumbbells are available.")]):
             rows.append({"t": "note", "id": f"note_{prefix}{index}", "life": ["alive", stamp], "born": stamp,
                          "f": {"title": [title, stamp], "body": [text, stamp], "ord": ["a" + str(index), stamp]}})
-        schema = json.loads((ROOT / "packages/api-contract/sync/gym.registry.json").read_text())["version"]
-        _, hello = self.request("/v1/sync/hello", token=self.token, headers={"Sync-Schema": str(schema)})
-        self.push(rows, hello["schema"])
+        self.sync(rows)
         _, weights = self.request("/v1/gym/bodyweight", token=self.token)
         _, notes = self.request("/v1/gym/notes", token=self.token)
         if len(weights.get("entries", [])) != 6 or len(notes.get("notes", [])) != 2:
             raise RuntimeError("Capture fixture did not retain all six weigh-ins and two notes.")
+
+
+# A signed-out phone's workout never reaches the log, so its id is read from the get_session its own request carries.
+def phone_session(body):
+    lead = "Here is what get_session returns on my phone right now, exactly as it answers:\n"
+    for message in body["messages"]:
+        for block in message["content"] if isinstance(message["content"], list) else []:
+            if block.get("type") == "text" and block["text"].startswith(lead):
+                return json.loads(block["text"][len(lead):])["session"]["id"]
+    raise ValueError("The request carries no read of an open workout.")
 
 
 class ModelFixture(BaseHTTPRequestHandler):
@@ -344,8 +372,12 @@ class ModelFixture(BaseHTTPRequestHandler):
         body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
         self.server.calls += 1
         content = self.server.responses.pop(0) if self.server.responses else MODEL_FALLBACK
+        if "$phone_session" in json.dumps(content):
+            content = json.loads(json.dumps(content).replace("$phone_session", phone_session(body)))
         start_delay, chunk_chars, chunk_delay = getattr(self.server, "timing", (0, None, 0))
-        stop_reason = "tool_use" if any(block["type"] == "tool_use" for block in content) else "end_turn"
+        named_stop = next((block["reason"] for block in content if block["type"] == "stop"), None)
+        content = [block for block in content if block["type"] != "stop"]
+        stop_reason = named_stop or ("tool_use" if any(block["type"] == "tool_use" for block in content) else "end_turn")
         response = {"id": "msg_capture", "type": "message", "role": "assistant", "model": body.get("model", "fixture"),
                     "content": content, "stop_reason": stop_reason, "usage": {"input_tokens": 100, "output_tokens": 25, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}}
         if body.get("stream"):
@@ -425,6 +457,8 @@ class MailFixture(BaseHTTPRequestHandler):
 
 
 class Device:
+    patience = 1
+
     def __init__(self, sdk, port, auth_code=None):
         self.auth_code = auth_code
         self.adb = sdk / "platform-tools/adb"
@@ -519,7 +553,7 @@ class Device:
         self.run("shell", "rm", "-f", "/data/local/tmp/design-capture.xml")
         if self.notification_clock or self.tile_clock or self.workout_clock or self.live_coach:
             self.run("shell", "CLASSPATH=/data/local/tmp/capture-tree.jar:/system/framework/uiautomator.jar",
-                     "app_process", "/system/bin", "works.windmill.capture.CaptureTree")
+                     "app_process", "/system/bin", "works.windmill.capture.CaptureTree", check=False)
         else:
             self.run("shell", "uiautomator", "dump", "/data/local/tmp/design-capture.xml")
         try:
@@ -528,7 +562,7 @@ class Device:
             return ET.Element("unavailable")
 
     def find(self, value, timeout=30, row=False, contains=False):
-        end = time.monotonic() + timeout
+        end = time.monotonic() + timeout * self.patience
         while time.monotonic() < end:
             tree = self.tree()
             for node in tree.iter("node"):
@@ -549,7 +583,7 @@ class Device:
 
     def settle(self, *, resend_countdown=False, notification_clock=False, tile_clock=False, workout_clock=False, timeout=30):
         previous = None
-        deadline = time.monotonic() + timeout
+        deadline = time.monotonic() + timeout * self.patience
         while time.monotonic() < deadline:
             tree = self.tree()
             compared = ET.fromstring(ET.tostring(tree))
@@ -582,7 +616,7 @@ class Device:
 
     def tap(self, value, contains=False):
         previous = None
-        deadline = time.monotonic() + 30
+        deadline = time.monotonic() + 30 * self.patience
         while time.monotonic() < deadline:
             node = self.find(value, timeout=max(.1, deadline - time.monotonic()), contains=contains)
             current = node.get("bounds", "")
@@ -595,6 +629,44 @@ class Device:
                 return
             previous = current
         raise RuntimeError("The capture control did not stop moving.")
+
+    def focused_field(self):
+        return next((node for node in self.tree().iter("node")
+                     if node.get("focused") == "true" and "EditText" in node.get("class", "")), None)
+
+    # The keyboard rises on its own time and moves the field. A key sent before it stands is lost, and a tap aimed at Send
+    # where it stood lands on the keyboard's backspace.
+    def field_rest(self):
+        resting, last = 0, None
+        for _ in range(20):
+            field = self.focused_field()
+            bounds = field.get("bounds") if field is not None else None
+            resting = resting + 1 if bounds == last else 0
+            if resting == 3:
+                return
+            last = bounds
+            time.sleep(.5)
+
+    # `input text` sends its keys one by one and a loaded emulator drops some of them, so a field left short of the text
+    # is cleared and the text goes again. A field that shows its own form of the text is left as it stands.
+    def type(self, text):
+        self.field_rest()
+        def part(shown):
+            keys = iter(text)
+            return all(key in keys for key in shown)
+        for _ in range(6):
+            self.run("shell", "input", "text", text.replace(" ", "%s"))
+            shown = ""
+            for _ in range(10):
+                time.sleep(.2)
+                field = self.focused_field()
+                shown = field.get("text", "") if field is not None else ""
+                if shown == text or not part(shown):
+                    break
+            if shown == text or not shown or not part(shown):
+                break
+            self.run("shell", "input", "keyevent", "KEYCODE_MOVE_END", *(["KEYCODE_DEL"] * len(shown)))
+        self.field_rest()
 
     def launch(self, launcher=False):
         intent = ["-a", "android.intent.action.MAIN", "-c", "android.intent.category.LAUNCHER"] if launcher else ["-a", "android.intent.action.VIEW"]
@@ -668,7 +740,7 @@ class Device:
     def sign_in(self, token):
         self.run("shell", "-T", "run-as", PACKAGE, "dd", "of=files/design-capture-link", "bs=1", f"count={len(token)}", input=token.encode())
         self.run("shell", "am", "start", "-W", "-n", PACKAGE + "/.DesignCaptureActivity")
-        end = time.monotonic() + 30
+        end = time.monotonic() + 30 * self.patience
         while time.monotonic() < end:
             result = self.run("exec-out", "run-as", PACKAGE, "cat", "files/design-capture-result", check=False).decode()
             if result == "signed-in":
@@ -712,7 +784,7 @@ class Device:
                 if tree.tag == "unavailable" or any(step["absent"] in (node.get("text"), node.get("content-desc")) for node in tree.iter("node")):
                     raise RuntimeError("Private notification content was present or unreadable.")
             elif "text" in step:
-                self.run("shell", "input", "text", step["text"].replace(" ", "%s"))
+                self.type(step["text"])
             elif "keyboard" in step:
                 if step["keyboard"] == "show":
                     self.run("shell", "settings", "put", "secure", "show_ime_with_hard_keyboard", "1")
@@ -736,6 +808,13 @@ class Device:
                 self.run("shell", "-T", "sh", input=f"input text {code}\n".encode())
             elif "key" in step:
                 self.run("shell", "input", "keyevent", step["key"])
+            elif "network" in step:
+                if step["network"] not in ("on", "off"):
+                    raise ValueError("Network steps support on and off.")
+                self.run("shell", "cmd", "connectivity", "airplane-mode", "enable" if step["network"] == "off" else "disable")
+            elif "relaunch" in step:
+                self.run("shell", "am", "force-stop", PACKAGE)
+                self.launch()
             elif "swipe" in step:
                 self.run("shell", "input", "swipe", *map(str, step["swipe"]))
             elif "touch" in step:
@@ -751,39 +830,44 @@ class Device:
                 raise ValueError("Unknown capture step.")
 
 
-def start_emulator(sdk, output, port, stack, auth_code=None):
+def start_emulator(sdk, output, port, stack, auth_code=None, shared_avd=None):
     serial = f"emulator-{port}"
     if serial in command([sdk / "platform-tools/adb", "devices"]).decode().split():
         raise RuntimeError("The selected emulator port already belongs to a device; refusing install.")
-    images = sorted((sdk / "system-images").glob("android-*/*/*/system.img"), reverse=True)
-    image = next((value.parent for value in images if int(re.search(r"android-(\d+)", str(value))[1]) >= 36), None)
-    if image is None:
-        raise RuntimeError("Install an Android API 36+ emulator system image first.")
-    avds = output / "avd"
-    avd = avds / "WindmillCapture.avd"
-    avd.mkdir(parents=True)
-    (avds / "WindmillCapture.ini").write_text(f"avd.ini.encoding=UTF-8\npath={avd}\ntarget=android-36\n")
-    (avd / "config.ini").write_text("\n".join([
-        "AvdId=WindmillCapture", "avd.ini.displayname=Windmill Capture", "hw.device.name=pixel_8", "hw.device.manufacturer=Google", "abi.type=arm64-v8a", "hw.cpu.arch=arm64",
-        "hw.cpu.ncore=4", "hw.ramSize=4096", "hw.lcd.width=1080", "hw.lcd.height=2400", "hw.lcd.density=420",
-        "hw.keyboard=yes", "hw.gpu.enabled=yes", "hw.gpu.mode=host", "hw.mainKeys=no", "hw.battery=yes",
-        "disk.dataPartition.size=4G", "PlayStore.enabled=false", f"image.sysdir.1={image}/", "tag.id=google_apis"]) + "\n")
     log = stack.enter_context((output / "emulator.log").open("wb"))
-    process = subprocess.Popen([str(sdk / "emulator/emulator"), "-avd", "WindmillCapture", "-port", str(port),
-        "-no-snapshot", "-no-audio", "-no-boot-anim", "-no-window"], env={**os.environ, "ANDROID_AVD_HOME": str(avds)},
-        stdout=log, stderr=subprocess.STDOUT)
+    if shared_avd:
+        process = subprocess.Popen([str(sdk / "emulator/emulator"), "-avd", shared_avd, "-read-only", "-port", str(port),
+            "-no-snapshot", "-no-audio", "-no-boot-anim", "-no-window"], stdout=log, stderr=subprocess.STDOUT)
+    else:
+        images = sorted((sdk / "system-images").glob("android-*/*/*/system.img"), reverse=True)
+        image = next((value.parent for value in images if int(re.search(r"android-(\d+)", str(value))[1]) >= 36), None)
+        if image is None:
+            raise RuntimeError("Install an Android API 36+ emulator system image first.")
+        avds = output / "avd"
+        avd = avds / "WindmillCapture.avd"
+        avd.mkdir(parents=True)
+        (avds / "WindmillCapture.ini").write_text(f"avd.ini.encoding=UTF-8\npath={avd}\ntarget=android-36\n")
+        (avd / "config.ini").write_text("\n".join([
+            "AvdId=WindmillCapture", "avd.ini.displayname=Windmill Capture", "hw.device.name=pixel_8", "hw.device.manufacturer=Google", "abi.type=arm64-v8a", "hw.cpu.arch=arm64",
+            "hw.cpu.ncore=4", "hw.ramSize=4096", "hw.lcd.width=1080", "hw.lcd.height=2400", "hw.lcd.density=420",
+            "hw.keyboard=yes", "hw.gpu.enabled=yes", "hw.gpu.mode=host", "hw.mainKeys=no", "hw.battery=yes",
+            "disk.dataPartition.size=4G", "PlayStore.enabled=false", f"image.sysdir.1={image}/", "tag.id=google_apis"]) + "\n")
+        process = subprocess.Popen([str(sdk / "emulator/emulator"), "-avd", "WindmillCapture", "-port", str(port),
+            "-no-snapshot", "-no-audio", "-no-boot-anim", "-no-window"], env={**os.environ, "ANDROID_AVD_HOME": str(avds)},
+            stdout=log, stderr=subprocess.STDOUT)
     stack.callback(stop, process)
     device = Device(sdk, port, auth_code)
     device.output = output
-    deadline = time.monotonic() + 180
+    deadline = time.monotonic() + 600
     while time.monotonic() < deadline:
         if process.poll() is not None:
             raise RuntimeError("The isolated emulator failed to boot; see emulator.log.")
         if device.run("shell", "getprop", "sys.boot_completed", check=False).strip() == b"1":
-            if int(device.run("shell", "getprop", "ro.build.version.sdk").strip()) < 36:
+            if not shared_avd and int(device.run("shell", "getprop", "ro.build.version.sdk").strip()) < 36:
                 raise RuntimeError("Capture emulator must be API 36 or later.")
             device.run("shell", "input", "keyevent", "KEYCODE_WAKEUP")
             device.run("shell", "wm", "dismiss-keyguard")
+            device.run("shell", "settings", "put", "global", "hide_error_dialogs", "1", check=False)
             return device
         time.sleep(1)
     raise RuntimeError("The isolated emulator did not finish booting.")
@@ -815,6 +899,9 @@ def main():
     parser.add_argument("--profile-seconds", type=int, default=10)
     parser.add_argument("--baseline", action="store_true", help="Record an expected over-budget baseline without passing performance acceptance.")
     parser.add_argument("--sentry-dsn", default="", help="Optional local collector DSN; no vendor endpoint is accepted.")
+    parser.add_argument("--shared-avd", help="Boot this existing AVD read-only instead of a fresh one, for a host short of disk.")
+    parser.add_argument("--patience", type=int, default=1, help="Multiplies every wait for a state, for a loaded host.")
+    parser.add_argument("--appearance", choices=("dark", "light"), help="Capture one appearance instead of both.")
     parser.add_argument("--acceptance-pause-seconds", type=int, default=0,
                         help="Keep the isolated stack and emulator available after captures, up to 600 seconds.")
     args = parser.parse_args()
@@ -915,17 +1002,22 @@ def main():
         manifest["apkSha256"] = hashlib.sha256(apk.read_bytes()).hexdigest()
         manifest["step"] = "emulator"
         manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
-        device = start_emulator(args.sdk, args.output, args.emulator_port, stack, auth_code=lambda: mail.code)
+        device = start_emulator(args.sdk, args.output, args.emulator_port, stack, auth_code=lambda: mail.code, shared_avd=args.shared_avd)
+        device.patience = args.patience
         if any(scenario.get("notification_clock") for scenario in scenarios):
             device.prepare_notification_capture()
         elif any(scenario.get("tile_clock") or scenario.get("workout_clock") or scenario.get("model_timing") for scenario in scenarios):
             device.prepare_hierarchy_capture()
+        if args.shared_avd:
+            device.run("uninstall", PACKAGE, check=False)
         device.run("install", apk)
         if any(scenario.get("tile_clock") for scenario in scenarios):
             device.prepare_workout_tile()
         manifest["sdk"] = int(device.run("shell", "getprop", "ro.build.version.sdk"))
         for account in ("empty", "fixture"):
             for mode, value in (("dark", "yes"), ("light", "no")):
+                if args.appearance not in (None, mode):
+                    continue
                 if args.fresh_mode_fixture and account == "fixture" and mode == "light":
                     fixture = Fixture(origin, database_url)
                     fixture.seed(replacement)
@@ -939,6 +1031,8 @@ def main():
                     device.sign_in(fixture.link())
                     device.find("Hi, I’m Coach. I can help you with:" if args.capture_only else "Push A")
                 for scenario in [item for item in scenarios if item["account"] == account]:
+                    # A record's id is taken across accounts, so a planted row or a model's write names the account it was made for.
+                    scenario = json.loads(json.dumps(scenario).replace("$account", fixture.account.replace("-", "")[:12]).replace("$mode", mode))
                     completions = sum(step.get("auth_code") == "valid" for step in scenario["steps"] + scenario.get("after", []))
                     sessions_before = int(fixture.sql("SELECT count(*) FROM sessions;")) if completions else 0
                     responses = json.dumps(scenario.get("responses", []))
@@ -946,6 +1040,8 @@ def main():
                         if not fixture.routines:
                             raise ValueError("The empty-training fixture has no routine placeholder.")
                         responses = responses.replace("$routine0", fixture.routines[0])
+                    if "$session" in responses:
+                        responses = responses.replace("$session", fixture.open_session())
                     model.responses = json.loads(responses)
                     model.timing = model_timing(scenario)
                     manifest["step"] = f"{scenario['board']}-{scenario['name']}-{mode}"
@@ -956,6 +1052,11 @@ def main():
                     try:
                         if "viewport" in scenario:
                             device.viewport(scenario["viewport"])
+                        if "sync" in scenario:
+                            fixture.sync_recipe_rows(scenario["sync"])
+                        if "logged_elsewhere" in scenario:
+                            fixture.mcp("gym_log_set", {**scenario["logged_elsewhere"], "sessionId": fixture.open_session(),
+                                "id": "set_capture" + secrets.token_hex(6), "completedAt": int(time.time() * 1000)})
                         device.steps(scenario["steps"])
                         tree = device.settle(resend_countdown=scenario.get("resend_countdown", False),
                                              notification_clock=device.notification_clock,

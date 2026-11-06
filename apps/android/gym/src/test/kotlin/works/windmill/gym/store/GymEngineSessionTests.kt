@@ -20,6 +20,7 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import works.windmill.gym.presentation.*
 import works.windmill.gym.telemetry.GymEvents
+import works.windmill.gym.ui.PhoneSignInCopy
 import works.windmill.platform.User
 import works.windmill.platform.auth.AuthSignOutChoice
 import works.windmill.platform.net.WindmillApiException
@@ -93,6 +94,89 @@ class GymEngineSessionTests {
         room.training.startSession(SessionStart("remote01", room.now - 10_000))
         room.training.appendSet("remote01", SetWrite("remoteset", "back-squat", 60.0, 5, room.now - 9_000))
         room.sync(server)
+    }
+
+    private fun Engine.made(type: String, id: String, fields: Map<String, Json>) { commit(gym) { Gesture(listOf(Change.create(type, NewID.Given(RecordID(id)), fields))) to Unit } }
+    private fun Engine.deleted(type: String, id: String) { commit(gym) { Gesture(listOf(Change.delete(type, RecordID(id)))) to Unit } }
+
+    // The question and Discard name what the person would see, for every kind.
+    @Test fun theSignInQuestionCountsWhatStillStandsForEveryKind(): Unit = runBlocking {
+        val engine = Engine.memory(SyncSchema.registry)
+        val routine = mapOf("name" to Json.of("Push"), "position" to Json.of(0), "entries" to Json.array())
+        val note = mapOf("title" to Json.of("Shoulder"), "body" to Json.of("Left shoulder."))
+        engine.made(Gym.Types.routine, "rt_00000001", routine)
+        engine.made(Gym.Types.routine, "rt_00000002", routine)
+        engine.made(Gym.Types.note, "note00000001", note)
+        engine.made(Gym.Types.thread, "gone-thread", mapOf("title" to Json.of("A question")))
+        engine.deleted(Gym.Types.routine, "rt_00000002")
+        engine.deleted(Gym.Types.note, "note00000001")
+        engine.deleted(Gym.Types.thread, "gone-thread")
+        engine.releaseHeld(true)
+        GymEngineSession(engine, SyncRuntime(engine, transport(true), Tokens(), "test", activityAllowed = { false })).use { session ->
+            val signingIn = async { session.signedIn(User("A", "a@example.com"), "token-A", false) }
+            assertEquals(mapOf("routine" to 2, "note" to 1, "thread" to 1), decision(session).decisions.single().count)
+            assertEquals(mapOf("gym" to mapOf("routine" to 1)), session.decisionCounts)
+            val copy = PhoneSignInCopy(session.decisionCounts)
+            assertEquals("This phone has 1 routine from before you signed in. Your account already has training. Add it, or discard it from this phone.", copy.question)
+            assertEquals("Discard 1 routine?", copy.discardTitle)
+            assertEquals("It is deleted from this phone. You can’t undo this.", copy.discardBody)
+            session.cancel()
+            assertThrows(CancellationException::class.java) { runBlocking { signingIn.await() } }
+        }
+    }
+
+    // Engine §7.10 asks for an explicit add or discard of the work it counted, deleted or not: the question falls back to "training", nothing moves until it is answered, and the answer is the person's.
+    @Test fun aPhoneHoldingOnlyWhatItDeletedIsStillAskedAndMovesNothingUntilItAnswers(): Unit = runBlocking {
+        val engine = Engine.memory(SyncSchema.registry)
+        engine.made(Gym.Types.thread, "gone-thread", mapOf("title" to Json.of("A private question")))
+        engine.deleted(Gym.Types.thread, "gone-thread")
+        engine.releaseHeld(true)
+        val events = mutableListOf<Pair<String, Map<String, String>>>()
+        val telemetry = object : Telemetry {
+            override fun event(name: String, properties: Map<String, String>) { events += name to properties }
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) = Unit
+        }
+        GymEngineSession(engine, SyncRuntime(engine, transport(true), Tokens(), "test", activityAllowed = { false }), telemetry).use { session ->
+            val signingIn = async { session.signedIn(User("A", "a@example.com"), "token-A", false) }
+            val asked = decision(session)
+            assertEquals(mapOf("thread" to 1), asked.decisions.single().count)
+            assertEquals(mapOf("gym" to emptyMap<String, Int>()), session.decisionCounts)
+            val copy = PhoneSignInCopy(session.decisionCounts)
+            assertEquals("This phone has training from before you signed in. Your account already has training. Add it, or discard it from this phone.", copy.question)
+            assertEquals("Discard this phone’s training?", copy.discardTitle)
+            assertEquals("It is deleted from this phone. You can’t undo this.", copy.discardBody)
+            assertEquals("anon", active(engine).member("meta").member("state").str())
+            assertEquals(listOf("gym_sign_in_decision" to mapOf("state" to "shown")), events.filter { it.first == "gym_sign_in_decision" })
+            session.decide(LineageAnswer.discard)
+            signingIn.await()
+            assertNull(session.decision)
+            assertEquals("A", active(engine).member("meta").member("account").str())
+            assertEquals(emptyList<Json>(), active(engine)["outbox"]?.arr().orEmpty())
+            assertEquals(listOf(
+                "gym_sign_in_decision" to mapOf("state" to "shown"),
+                "gym_sign_in_decision" to mapOf("action" to "discard", "outcome" to "completed"),
+            ), events.filter { it.first == "gym_sign_in_decision" })
+        }
+    }
+
+    @Test fun theSignInQuestionCountsTheConversationsTheReplicaStillDraws(): Unit = runBlocking {
+        val engine = Engine.memory(SyncSchema.registry)
+        for (thread in listOf("kept-one", "kept-two", "deleted")) engine.commit(gym) {
+            Gesture(listOf(Change.create(Gym.Types.thread, NewID.Given(RecordID(thread)), mapOf("title" to Json.of("A question"))))) to Unit
+        }
+        engine.commit(gym) { Gesture(listOf(Change.delete(Gym.Types.thread, RecordID("deleted")))) to Unit }
+        engine.releaseHeld(true)
+        val tokens = Tokens()
+        GymEngineSession(engine, SyncRuntime(engine, transport(true), tokens, "test", activityAllowed = { false })).use { session ->
+            val signingIn = async { session.signedIn(User("A", "a@example.com"), "token-A", false) }
+            val decision = decision(session)
+            assertEquals(mapOf("thread" to 3), decision.decisions.single().count)
+            assertEquals(mapOf("gym" to mapOf("thread" to 2)), session.decisionCounts)
+            assertEquals("This phone has 2 conversations from before you signed in. Your account already has training. Add them, or discard them from this phone.",
+                PhoneSignInCopy(session.decisionCounts).question)
+            session.cancel()
+            assertThrows(CancellationException::class.java) { runBlocking { signingIn.await() } }
+        }
     }
 
     @Test fun deletionRecoveryDiscardsOnlyThePinnedReplicaAndRecognizesAlreadyFinished() = runBlocking {

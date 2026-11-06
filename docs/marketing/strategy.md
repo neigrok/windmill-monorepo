@@ -68,9 +68,9 @@ landing change are designed and approved in Figma before an agent implements the
 | One price | $12 a month, one allowance shared across products |
 | After Apple's 15% small-business fee | $10.20 (web checkout through Paddle keeps more) |
 | Allowance on One | $7 a month; full use leaves $3.20 before any other cost |
-| Free AI per verified account | $0.25 a month; $0.05 lifetime per anonymous installation |
-| Free pool today | $100 a month and $5 a day shared by every free user: it saturates at 400 fully active verified accounts, so a launch of 2,000 installs would go dark mid-month. Report 03 replaces it |
-| Stress case | 49 free active accounts per payer at full use cost $12.25 per payer per month |
+| Free AI per verified account | $0.50 a month; $0.25 lifetime per anonymous installation |
+| Free pool today | $100 a month and $5 a day shared by every free user: it saturates at 200 fully active verified accounts, so a launch of 2,000 installs would go dark mid-month. Report 03 replaces it |
+| Stress case | 49 free active accounts per payer at full use cost $24.50 per payer per month |
 
 **C90** is the realised 90-day contribution per acquired payer after store or processor fees, taxes,
 refunds, paid inference, the free and welcome usage attributable to that cohort, and variable support
@@ -90,7 +90,7 @@ from arithmetic means, not medians.
   cross-platform entitlement, cancellation and allowance accounting on twenty scenarios first.
 - **$12 monthly only** at launch. No lifetime AI, no card-based trial.
 - **Welcome allowance**: a one-time $1 grant to verified accounts, no card, decided after task
-  costs are measured and only if $0.25 cannot complete one representative Coach task. Sized so the
+  costs are measured and only if $0.50 cannot complete one representative Coach task. Sized so the
   eligible cohort fits funded capacity.
 - **Annual plan rule**, written now, decided later: consider $120 a year once at least 50 payers
   have 90 days of observation, only if conservatively projected annual contribution is at least

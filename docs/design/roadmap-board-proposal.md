@@ -115,7 +115,7 @@ tap on Complete does. One light haptic tick at 96px where the browser supports i
 real button after the card link in DOM order; Tab focus reveals it. Reduced motion keeps direct
 tracking and turns removal and entrance into 150ms cross-fades. Spec: 379:17279.
 
-**Select several (phone).** Long-press a card to enter selection. The bottom bar carries the shipped
+**Select several (phone).** Long-press a card or choose Select in the step menu to enter selection. The bottom bar carries the shipped
 tablet panel's bulk verbs: the count with Done beside it, then **Recolor** and *Delete N steps*
 at equal width, so the destructive action is never the widest target. Recolor reveals the kind
 swatches.

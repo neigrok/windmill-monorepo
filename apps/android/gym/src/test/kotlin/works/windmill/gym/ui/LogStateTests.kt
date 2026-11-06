@@ -120,7 +120,7 @@ class LogStateTests {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
             runBlocking { room.select("a"); room.store.observeEngine() }
-            compose.waitUntil(5_000) { room.store.history.older == Older.Reading }
+            compose.waitUntil(5_000) { compose.runOnIdle { room.store.history.older == Older.Reading } }
             compose.mainClock.autoAdvance = false
             compose.setContent {
                 CompositionLocalProvider(LocalDensity provides Density(2f, 2f)) {

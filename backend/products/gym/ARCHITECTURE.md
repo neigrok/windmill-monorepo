@@ -56,10 +56,14 @@ coach/        the phone Coach's turn wire (docs/foundation/mobile/gym_coach.md):
               body, the in-memory record) · AbilityCatalog (Appendix C over the declarations, the
               schema check) · TurnGate (G-1..G-8) · PhoneToolHost (one batch per round over the
               stream; a bound turn's shares on GymTools) · CoachModel + AnthropicCoachModel (the
-              metered round) · TurnService (admission, the loop, Stop, linger) · TurnApi (the SSE
-              routes)
+              metered round) · TurnService (admission, the loop, Stop, linger, and the sweep that
+              ends a dropped turn's running message) · TurnApi (the SSE routes)
 routes.h/.cpp gym::GymDeps + gym::registerRoutes(app, deps)
 ```
+
+`coach/` stays under gym while gym is the one product with abilities. A second product's ability list is what
+moves `Turn`, `TurnService`, `TurnApi` and `PhoneToolHost` to `platform/`; `TurnGate` and `AbilityCatalog` hold
+gym's rules (G-4, G-5) and stay. The wire's events carry no gym nouns, so that move changes no client.
 
 Ports are cut by **aggregate**: the log, the catalog, the program (routines and the ledger
 together), Coach's threads, the settings row, the notes, the weigh-ins. The split is not table
@@ -342,8 +346,8 @@ routine is deleted.
   lock, and the supersede that clears the pending slot runs in the mint's own admission. A document
   identical to what the routine already says is `noChange`. An applied REMOVAL kills its own proposal
   with the routine, so reading it back answers `404`; a second apply answers `ok` from its receipt.
-- **`Apply all N` counts** every row that moves, one for a renamed routine, and one for a run the
-  proposal reorders: `countedChanges` on the door, `changeCountOf` (and one for a rename) in GymRules,
+- **`Apply all N` counts** every row not kept, every kept row that moved (`keptLinesMoved`), and one for a
+  renamed routine: `countedChanges` on the door, `changeCountOf` (and one for a rename) in GymRules,
   which writes it as `changeCount`. It is what `noChange` is decided off. A removal leaves `proposedName` blank, as both
   phones mint one (engine A.2 admits the blank there), so the rule counts it as the rename it is.
 - **Each side is a scheme frozen as jsonb** — the same `sets` array the wire carries, null on an open
@@ -530,7 +534,7 @@ The stale close is applied **lazily**: before every read whose answer a close re
 `isStale` says it has gone stale; the command checks again under the scope lock. A read with nothing
 stale admits nothing, opens no transaction and logs no write line. `gym.start` and
 `gym.importSession` run the same close first.
-**No cron, no sweep, no heartbeat**: gym arms zero tickers.
+**No cron, no sweep, no heartbeat** closes a workout.
 
 What settles: `start` and `importSession`, from a phone or a door; and the reads `log` (`GET
 /v1/gym/sessions`, `list_sessions`), `sessions` (`get_sessions`), `detail` (`GET
@@ -960,7 +964,8 @@ REST surface's; a write through `/v1/sync` is refused with the engine's codes an
 - The 400s are the client's and terminal; the 500 is the server's, which is why the import handler
   catches **only** `InvalidTraining` (and `GymUnavailable` for the 503): a broader catch reports a
   lock wait as a malformed set.
-- There are no admin doors, nothing sweeps and nothing mails.
+- There are no admin doors, and nothing mails. Two tickers run: the expiry of anonymous Coach results and the sweep of
+  dropped Coach turns.
 
 ### 8.4 Writes on the sync engine
 
@@ -990,7 +995,7 @@ between a door's read and its admission reaches the engine's own refusal.
 | `saveInsight` · `save_note` | its `gym_note_saves` receipt, the caller's with this text → the saved note, else `idTaken`; a note under the id that is another account's or holds other text → `idTaken`; a standing note with this title and body → that note, the id spent, at ten too; the id held or spent → `idTaken`; ten notes → `full`; else a `note` create after the last `ord`, its receipt written before the commit | `cap` → `full`; `id-taken`, `id-spent` → `idTaken` |
 | `closeStale` · every settling read, `start`, `importSession` | before the call: the open session and its sets; none open, or not `isStale` → nothing admitted; else `gym.closeStale` | none mapped |
 | `unlinkThread` · a Coach conversation's delete | the routine and workout proposals naming the thread, none → nothing admitted; else `threadId = null` on each | none mapped |
-| `interrupt` · no caller yet; gym Coach §4.5 | the `message` under the id: absent, dead or its `state` not `running` (unset reads as `running`) → nothing admitted; else `state = interrupted` | none mapped |
+| `interrupt` · `TurnService::sweep`, a `bound` turn past its linger; gym Coach §4.5 | the `message` under the id: absent, dead, a lifter's or its `state` not `running` (unset reads as `running`) → nothing admitted, answers false; else `state = interrupted`, answers true | none mapped |
 
 An engine refusal a door does not map is `GymUnavailable` (`gym-engine-unavailable`); an internal
 one is a failure. The outcomes reach callers in two shapes: `POST /v1/gym/sessions/import` answers on

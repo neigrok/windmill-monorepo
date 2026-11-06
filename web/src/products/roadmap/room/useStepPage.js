@@ -3,10 +3,11 @@ import { stepIsStale } from '../step/stepAddress.js';
 import { reportRoadmapFailure } from '../reportFailure.js';
 
 // A step opens over either view and rides the URL: a link lands on it, Back leaves it, and selection follows it.
-export function useStepPage({ treeId, tree, loading, address, setSelectedId, view, anchors, sceneRef, boardActs, viewBranch, onGraphStepOpen }) {
+export function useStepPage({ treeId, tree, loading, address, setSelectedId, view, anchors, sceneRef, boardActs, boardTree, setBoardQuery, setBoardSelect, viewBranch, onGraphStepOpen }) {
   const { rootRef, identityRef, boardLayerRef } = anchors;
   const { canvasView, switchView } = view;
   const graphStepReturnRef = useRef(false);
+  const selectKey = useRef(0);
   const detailId = tree?.treeId === treeId && address.id !== null && tree.nodesById.has(address.id) ? address.id : null;
 
   const focusGraph = useCallback(() => {
@@ -62,6 +63,14 @@ export function useStepPage({ treeId, tree, loading, address, setSelectedId, vie
       setSelectedId(id);
       switchView('tree');
       sceneRef.current?.revealNode(id);
+    },
+    select: (id) => {
+      address.close();
+      setSelectedId(id);
+      const step = boardTree.nodesById.get(id);
+      setBoardQuery((query) => query.revealing(step, boardTree));
+      selectKey.current += 1;
+      setBoardSelect({ id, key: selectKey.current });
     },
     viewBranch: (id) => {
       address.close();

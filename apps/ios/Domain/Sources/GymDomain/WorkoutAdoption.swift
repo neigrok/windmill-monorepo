@@ -7,9 +7,12 @@ public struct SignedOutWorkout: Equatable, Sendable {
   public static let key = "rack:adoption"
   public let session: Session
   public let sets: [TrainingSet]
+  // The proposals waiting on an open copy, oldest first: the account takes them once it holds the workout.
+  public let proposals: [WorkoutProposal]
 
-  public init(session: Session, sets: [TrainingSet]) {
+  public init(session: Session, sets: [TrainingSet], proposals: [WorkoutProposal] = []) {
     self.session = session; self.sets = sets.filter { $0.sessionId == session.id }.sorted { $0.completedAt == $1.completedAt ? $0.id < $1.id : $0.completedAt < $1.completedAt }
+    self.proposals = proposals
   }
   public init(_ value: JSON) throws {
     let fields = try Fields(value)
@@ -25,6 +28,15 @@ public struct SignedOutWorkout: Equatable, Sendable {
       guard case .object(let values) = row else { throw DecodeError(type: TrainingSet.type, field: "adoption", reason: "invalid saved set") }
       return try TrainingSet(Fields(type: TrainingSet.type, id: id.record, values: Dictionary(uniqueKeysWithValues: values.members.map { ($0.key, $0.value) })))
     }
+    var held: [WorkoutProposal] = []
+    if case .array(let waiting)? = fields.json("proposals") {
+      held = try waiting.map { row in
+        let fields = try Fields(row), id = try fields.ref("id", WorkoutProposal.self)
+        guard case .object(let values) = row else { throw DecodeError(type: WorkoutProposal.type, field: "adoption", reason: "invalid saved proposal") }
+        return try WorkoutProposal(Fields(type: WorkoutProposal.type, id: id.record, values: Dictionary(uniqueKeysWithValues: values.members.map { ($0.key, $0.value) })))
+      }
+    }
+    proposals = held
   }
   public var json: JSON {
     var sessionFields = session.fields; sessionFields["id"] = session.id.json
@@ -32,7 +44,14 @@ public struct SignedOutWorkout: Equatable, Sendable {
       var fields = set.fields; fields["id"] = set.id.json
       return .object(JSON.Object(uniqueKeysWithValues: fields.map { ($0.key, $0.value) }))
     }
-    return ["session": .object(JSON.Object(uniqueKeysWithValues: sessionFields.map { ($0.key, $0.value) })), "sets": .array(rows)]
+    var saved: JSON.Object = ["session": .object(JSON.Object(uniqueKeysWithValues: sessionFields.map { ($0.key, $0.value) })), "sets": .array(rows)]
+    if !proposals.isEmpty {
+      saved["proposals"] = .array(proposals.map { proposal in
+        var fields = proposal.fields; fields["id"] = proposal.id.json
+        return .object(JSON.Object(uniqueKeysWithValues: fields.map { ($0.key, $0.value) }))
+      })
+    }
+    return .object(saved)
   }
   public var importAction: ImportSession {
     ImportSession(id: session.id, startedAt: session.startedAt,
@@ -139,7 +158,16 @@ public struct AdoptWorkout: Action {
       for set in saved?.sets ?? [] where !sets.contains(where: { $0.id == set.id }) {
         if try read.repository(TrainingSet.self).record(set.id, in: .stored) == nil { sets.append(set) }
       }
-      workout = session.map { SignedOutWorkout(session: SessionRules.drawn($0, sets: sets, now: read.moment.now), sets: sets) }
+      let waiting = saved?.proposals ?? [], repository = read.repository(WorkoutProposal.self)
+      var held: [(proposal: WorkoutProposal, born: Stamp)] = []
+      for proposal in try repository.all(in: .stored) where proposal.sessionId == id && proposal.state == "pending" && !waiting.contains(proposal) {
+        if let born = try repository.record(proposal.id, in: .stored)?.born { held.append((proposal, born)) }
+      }
+      let born = held.sorted { $0.born < $1.born }.map(\.proposal)
+      workout = session.map { session in
+        let drawn = SessionRules.drawn(session, sets: sets, now: read.moment.now)
+        return SignedOutWorkout(session: drawn, sets: sets, proposals: drawn.isOpen ? waiting + born : [])
+      }
     } else { workout = saved.map { revised ?? $0 } }
     return Loaded(anonymous: read.isAnonymous, commands: try read.commands(), backup: backup, workout: workout,
       imported: try workout?.importAction.load(read), confirmed: try read.confirmed(Session.self, id) != nil,

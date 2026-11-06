@@ -220,14 +220,26 @@ std::optional<std::vector<TurnCallResult>> Turn::awaitResults(std::chrono::milli
   return results;
 }
 
-void Turn::end(TurnState state, bool truncated, Json::Value allowance, std::string errorCode,
-               std::uint64_t endedAtMs) {
+void Turn::end(TurnState state, bool truncated, Json::Value allowance, std::uint64_t endedAtMs) {
   std::lock_guard lock(mutex_);
   if (terminal(state_)) return;
   state_ = state;
   truncated_ = truncated;
   allowance_ = std::move(allowance);
-  errorCode_ = std::move(errorCode);
+  close(endedAtMs);
+}
+
+void Turn::fail(std::string code, std::optional<long long> budgetResetsAtMs, Json::Value allowance, std::uint64_t endedAtMs) {
+  std::lock_guard lock(mutex_);
+  if (terminal(state_)) return;
+  state_ = TurnState::failed;
+  errorCode_ = std::move(code);
+  budgetResetsAtMs_ = budgetResetsAtMs;
+  allowance_ = std::move(allowance);
+  close(endedAtMs);
+}
+
+void Turn::close(std::uint64_t endedAtMs) {
   endedAtMs_ = endedAtMs;
   pending_.reset();
   publish(state_ == TurnState::failed ? "error" : "done", terminalData(), true);
@@ -319,6 +331,8 @@ Json::Value Turn::terminalData() const {
   Json::Value data(Json::objectValue);
   if (state_ == TurnState::failed) {
     data["code"] = errorCode_;
+    if (budgetResetsAtMs_) data["budgetResetsAtMs"] = Json::Int64(*budgetResetsAtMs_);
+    if (!allowance_.isNull()) data["allowance"] = allowance_;
     return data;
   }
   data["state"] = std::string(nameOf(state_));

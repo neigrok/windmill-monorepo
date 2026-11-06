@@ -184,19 +184,22 @@ void GymDoor::unlinkThread(const UserId& user, const ThreadId& thread) {
   requireOk(result);
 }
 
-void GymDoor::interrupt(const UserId& user, const std::string& messageId) {
+bool GymDoor::interrupt(const UserId& user, const std::string& messageId) {
+  bool wrote = false;
   const auto result = execute(user, [&](sync::SyncTxn& txn) -> std::optional<Json::Value> {
     const std::optional<sync::Row> message = locked(txn, user, "message", messageId);
-    if (!message) return std::nullopt;
+    if (!message || engine::value(&*message, "role") != "coach") return std::nullopt;
     const Json::Value state = engine::value(&*message, "state");
     if (!state.isNull() && state != "running") return std::nullopt;
     Json::Value fields(Json::objectValue);
     fields["state"] = "interrupted";
     Json::Value interrupted = intent();
     interrupted["d"].append(delta("message", messageId, fields));
+    wrote = true;
     return interrupted;
   });
   requireOk(result);
+  return wrote;
 }
 
 }

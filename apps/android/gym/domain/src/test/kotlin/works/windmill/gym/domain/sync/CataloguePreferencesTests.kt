@@ -129,7 +129,7 @@ class CataloguePreferencesTests {
         assertEquals(420.0, requireNotNull(log.readout(session.id)!!.volumeKg), 0.0)
         assertEquals(16.0 * (1 + 5 / 30.0), log.sets(session.id).first().e1rm!!, 0.0)
         assertEquals(Json.objectOf("sessions" to Json.of(1), "sets" to Json.of(4), "reps" to Json.of(20), "tonnageKg" to Json.of(420)),
-            TrainingHistory(read).history().member("summary"))
+            HistoryDocuments(read).history().member("summary"))
         val seedOverride = ExerciseName(Id("dumbbell-bench-press", ExerciseName), "Flat dumbbells", equipment = "dumbbell", loadCount = 1)
         val result = writing(decide(RenameExercise(Id("dumbbell-bench-press", Exercise), "New name"), reader(listOf(row(seedOverride)))))
         assertEquals(listOf(Change.write(ExerciseName.type, seedOverride.id.record, mapOf("name" to Json.of("New name")))),

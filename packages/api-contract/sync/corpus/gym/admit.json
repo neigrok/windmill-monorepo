@@ -127265,7 +127265,7 @@
     }
   },
   {
-    "name": "R118 proposal count includes one rename and one reorder with no moved targets",
+    "name": "R118 proposal count includes one rename and the one kept line that moved",
     "input": {
       "state": {
         "epoch": "ep-1",
@@ -127611,7 +127611,371 @@
     }
   },
   {
-    "name": "R118 insertion and removal without surviving-line reorder count only moved rows",
+    "name": "a proposal counts every kept line that moved: reversing three moves two",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/gym": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "4e0d8edb30208c2eb16e3ef6aaf5600fb3309c5697fb9889ec788e7ef98ddd24"
+          },
+          "acct:B/gym": {
+            "kind": "product",
+            "owner": "B",
+            "state": "alive",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000"
+          }
+        },
+        "rows": {
+          "acct:A/gym": [
+            {
+              "t": "routine",
+              "id": "routine0001",
+              "life": [
+                "alive",
+                "1760000000001:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1760000000001:0:r_aaaaaaaaaaaa",
+              "f": {
+                "createdEntries": [
+                  3,
+                  "1760000000001:0:r_aaaaaaaaaaaa"
+                ],
+                "entries": [
+                  [
+                    {
+                      "exerciseId": "back-squat"
+                    },
+                    {
+                      "exerciseId": "dip"
+                    },
+                    {
+                      "exerciseId": "bench-press"
+                    }
+                  ],
+                  "1760000000001:0:r_aaaaaaaaaaaa"
+                ],
+                "name": [
+                  "Lower A",
+                  "1760000000001:0:r_aaaaaaaaaaaa"
+                ],
+                "revision": [
+                  7,
+                  "1760000000001:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1760000000000,
+              "ru": 1760000000000
+            }
+          ]
+        },
+        "product": {
+          "seeds": {
+            "back-squat": {
+              "name": "Back Squat",
+              "equipment": "barbell"
+            },
+            "bench-press": {
+              "name": "Bench Press",
+              "equipment": "barbell"
+            },
+            "dip": {
+              "name": "Dip",
+              "equipment": "bodyweight"
+            },
+            "dumbbell-bench-press": {
+              "name": "Dumbbell Bench Press",
+              "equipment": "dumbbell"
+            },
+            "goblet-squat": {
+              "name": "Goblet Squat",
+              "equipment": "dumbbell",
+              "loadCount": 1
+            }
+          }
+        }
+      },
+      "origin": {
+        "kind": "server",
+        "account": "A"
+      },
+      "intent": {
+        "scope": "self/gym",
+        "d": [
+          {
+            "t": "proposal",
+            "id": "proposal003",
+            "born": null,
+            "life": [
+              "alive",
+              null
+            ],
+            "f": {
+              "routineId": [
+                "routine0001",
+                null
+              ],
+              "intent": [
+                "revise",
+                null
+              ],
+              "proposedName": [
+                "Lower A",
+                null
+              ],
+              "changes": [
+                [
+                  {
+                    "kind": "kept",
+                    "exerciseId": "bench-press",
+                    "before": {},
+                    "after": {}
+                  },
+                  {
+                    "kind": "kept",
+                    "exerciseId": "dip",
+                    "before": {},
+                    "after": {}
+                  },
+                  {
+                    "kind": "kept",
+                    "exerciseId": "back-squat",
+                    "before": {},
+                    "after": {}
+                  }
+                ],
+                null
+              ],
+              "summary": [
+                "",
+                null
+              ],
+              "door": [
+                "ask",
+                null
+              ],
+              "connection": [
+                "",
+                null
+              ],
+              "agent": [
+                "",
+                null
+              ]
+            }
+          }
+        ]
+      },
+      "serverNow": 1760036000000
+    },
+    "expect": {
+      "result": {
+        "s": "ok",
+        "seq": 2
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 1760036000000,
+          "counter": 1
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/gym": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 2,
+            "counters": {},
+            "digest": "54e539950d958fbd8acbdf0bf516261a7d2fccfbe763d78e3d6aac4ee2af009d"
+          },
+          "acct:B/gym": {
+            "kind": "product",
+            "owner": "B",
+            "state": "alive",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000"
+          }
+        },
+        "rows": {
+          "acct:A/gym": [
+            {
+              "t": "proposal",
+              "id": "proposal003",
+              "life": [
+                "alive",
+                "1760036000000:0:srv"
+              ],
+              "born": "1760036000000:0:srv",
+              "f": {
+                "agent": [
+                  "",
+                  "1760036000000:0:srv"
+                ],
+                "baseName": [
+                  "Lower A",
+                  "1760036000000:1:srv"
+                ],
+                "baseRevision": [
+                  7,
+                  "1760036000000:1:srv"
+                ],
+                "changeCount": [
+                  2,
+                  "1760036000000:1:srv"
+                ],
+                "changes": [
+                  [
+                    {
+                      "kind": "kept",
+                      "exerciseId": "bench-press",
+                      "before": {},
+                      "after": {}
+                    },
+                    {
+                      "kind": "kept",
+                      "exerciseId": "dip",
+                      "before": {},
+                      "after": {}
+                    },
+                    {
+                      "kind": "kept",
+                      "exerciseId": "back-squat",
+                      "before": {},
+                      "after": {}
+                    }
+                  ],
+                  "1760036000000:0:srv"
+                ],
+                "connection": [
+                  "",
+                  "1760036000000:0:srv"
+                ],
+                "door": [
+                  "ask",
+                  "1760036000000:0:srv"
+                ],
+                "intent": [
+                  "revise",
+                  "1760036000000:0:srv"
+                ],
+                "proposedName": [
+                  "Lower A",
+                  "1760036000000:0:srv"
+                ],
+                "routineId": [
+                  "routine0001",
+                  "1760036000000:0:srv"
+                ],
+                "summary": [
+                  "",
+                  "1760036000000:0:srv"
+                ]
+              },
+              "seq": 2,
+              "rc": 1760036000000,
+              "ru": 1760036000000
+            },
+            {
+              "t": "routine",
+              "id": "routine0001",
+              "life": [
+                "alive",
+                "1760000000001:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1760000000001:0:r_aaaaaaaaaaaa",
+              "f": {
+                "createdEntries": [
+                  3,
+                  "1760000000001:0:r_aaaaaaaaaaaa"
+                ],
+                "entries": [
+                  [
+                    {
+                      "exerciseId": "back-squat"
+                    },
+                    {
+                      "exerciseId": "dip"
+                    },
+                    {
+                      "exerciseId": "bench-press"
+                    }
+                  ],
+                  "1760000000001:0:r_aaaaaaaaaaaa"
+                ],
+                "name": [
+                  "Lower A",
+                  "1760000000001:0:r_aaaaaaaaaaaa"
+                ],
+                "revision": [
+                  7,
+                  "1760000000001:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1760000000000,
+              "ru": 1760000000000
+            }
+          ]
+        },
+        "product": {
+          "seeds": {
+            "back-squat": {
+              "name": "Back Squat",
+              "equipment": "barbell"
+            },
+            "bench-press": {
+              "name": "Bench Press",
+              "equipment": "barbell"
+            },
+            "dip": {
+              "name": "Dip",
+              "equipment": "bodyweight"
+            },
+            "dumbbell-bench-press": {
+              "name": "Dumbbell Bench Press",
+              "equipment": "dumbbell"
+            },
+            "goblet-squat": {
+              "name": "Goblet Squat",
+              "equipment": "dumbbell",
+              "loadCount": 1
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "R118 insertion and removal with no surviving line out of order count only their rows",
     "input": {
       "state": {
         "epoch": "ep-1",

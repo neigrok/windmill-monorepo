@@ -135,10 +135,11 @@ data class TrainingLog(val sessions: List<Session>, val sets: List<TrainingSet>,
         .sortedWith(compareByDescending<Session> { it.startedAt }.thenBy { it.id })
     val open: Session? get() = drawnSessions.firstOrNull { it.isOpen }
     val liveHint: Boolean get() = open != null
-    fun sets(session: Id<Session>): List<TrainingSet> {
-        if (sessions.none { it.id == session }) return emptyList()
-        return sets.filter { it.sessionId == session }.sortedWith(compareBy({ it.completedAt }, { it.id }))
+    private val setsBySession by lazy(LazyThreadSafetyMode.NONE) {
+        val known = sessions.map { it.id }.toSet()
+        sets.filter { it.sessionId in known }.sortedWith(compareBy({ it.completedAt }, { it.id })).groupBy { it.sessionId }
     }
+    fun sets(session: Id<Session>): List<TrainingSet> = setsBySession[session].orEmpty()
     fun volumeKg(session: Id<Session>): Double? = GymVolume.of(sets(session), catalogue)
     fun topE1rm(session: Id<Session>): Double? = GymEstimate.top(sets(session))
 }

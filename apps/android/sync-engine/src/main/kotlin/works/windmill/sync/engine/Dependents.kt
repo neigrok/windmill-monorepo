@@ -2,10 +2,11 @@ package works.windmill.sync.engine
 
 import works.windmill.sync.core.*
 
-internal data class DependentPart(val removed: List<Delta>, val commandGone: Boolean, val whole: Boolean) {
-    val any get() = removed.isNotEmpty() || commandGone
+internal data class DependentPart(val removed: List<Delta>, val commandGone: Boolean, val whole: Boolean, val guards: List<Guard> = emptyList()) {
+    val any get() = removed.isNotEmpty() || commandGone || guards.isNotEmpty()
 }
-internal class Dependents(private val registry: Registry) {
+// `replaced`: a replacement takes the sources' place and is numbered after their dependents, so a guard on what they created can no longer hold.
+internal class Dependents(private val registry: Registry, private val replaced: Boolean = false) {
     private val created = mutableSetOf<Pair<ScopeRef, RecordKey>>()
     private val governed = mutableSetOf<ScopeRef>()
     private val lives = mutableSetOf<Triple<ScopeRef, RecordKey, Life>>()
@@ -31,14 +32,15 @@ internal class Dependents(private val registry: Registry) {
             val ref = arg.ref
             ref != null && command.args[arg.name] is Json.Str && names(entry.scope, RecordKey(ref, RecordID(command.args.member(arg.name))))
         } == true || entry.predict.any { delta -> delta.lattice.life?.let { Triple(entry.scope, delta.key, it) in lives } == true })
-        return DependentPart(removed, commandGone, removed.size == intent.deltas.size && (command == null || commandGone))
+        return DependentPart(removed, commandGone, removed.size == intent.deltas.size && (command == null || commandGone),
+            if (replaced) intent.guards.filter { (entry.scope to it.key) in created } else emptyList())
     }
     fun absorb(entry: Entry, part: DependentPart) = absorb(entry.scope, part.removed + if (part.commandGone) entry.predict else emptyList(), entry.stamp)
 }
 internal fun removeDependent(entry: Entry, part: DependentPart): Json {
     val intent = entry.intent
     val removed = part.removed.map { it.key }.toSet()
-    entry.intent = intent.copy(deltas = intent.deltas.filter { it !in part.removed }, guards = intent.guards.filter { it.key !in removed },
+    entry.intent = intent.copy(deltas = intent.deltas.filter { it !in part.removed }, guards = intent.guards.filter { it.key !in removed && it !in part.guards },
         command = if (part.commandGone) null else intent.command)
     if (part.commandGone) entry.predict = emptyList()
     return Json.Obj(buildList {
@@ -46,8 +48,8 @@ internal fun removeDependent(entry: Entry, part: DependentPart): Json {
         if (part.commandGone) intent.command?.let { add("cmd" to it.json) }
     })
 }
-internal fun Engine.silentFold(replica: ReplicaState, sources: List<Entry>): List<Pair<Entry, DependentPart>> {
-    val dependencies = Dependents(registry)
+internal fun Engine.silentFold(replica: ReplicaState, sources: List<Entry>, replaced: Boolean = false): List<Pair<Entry, DependentPart>> {
+    val dependencies = Dependents(registry, replaced)
     return buildList {
         for (entry in replica.entries()) {
             if (entry in sources) { dependencies.absorb(entry.scope, entry.deltas, entry.stamp); continue }

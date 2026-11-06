@@ -74,14 +74,9 @@ public struct RoutineChange: ValueObject, Equatable {
     return result
   }
 
-  // R118's count of what a diff changes: every line not kept, and one more when the movements it keeps moved.
+  // The count a card, a sheet and a receipt say: every line not kept and every kept line that moved.
   public static func count(_ changes: [RoutineChange], against base: [RoutineEntry]) -> Int {
-    var unmatched = Array(base.indices)
-    let retained = changes.filter { $0.kind == "kept" || $0.kind == "retargeted" }.compactMap { change -> Int? in
-      guard let at = unmatched.firstIndex(where: { base[$0].exerciseId == change.exerciseId }) else { return nil }
-      return unmatched.remove(at: at)
-    }
-    return changes.filter { $0.kind != "kept" }.count + (retained != retained.sorted() ? 1 : 0)
+    changes.filter { $0.kind != "kept" }.count + ProposalDiff.moves(changes, base: base).keys.filter { changes[$0].kind == "kept" }.count
   }
 }
 

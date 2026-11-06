@@ -4,8 +4,9 @@ import React, { useLayoutEffect, useRef, useState } from 'react';
 import { Button, Icon } from '../../../design-system';
 import { KIND_CSS } from '../theme.js';
 import { DOCK_WIDTH, TABLET_PANEL_WIDTH } from './viewport.js';
+import { useCoveredLayer } from '../step/composerFocus.js';
 import { DeviceLine } from '../sync/SyncNotices.jsx';
-import { COLUMN_TITLES, FORK_OFFER, OPEN_STEP } from '../copy.js';
+import { COLUMN_TITLES, FORK_OFFER, OPEN_STEP, RECOLOR } from '../copy.js';
 
 const SAFE_BOTTOM = 'env(safe-area-inset-bottom, 0px)';
 // The reader's Fork this tree pill, above the bottom safe area; whatever must clear it reads its geometry here.
@@ -197,8 +198,10 @@ export function GraphChrome({
 
 // The Graph's right-hand seat: one tenant at a time, keyed so its entrance replays.
 export function GraphDock({ open, top, tablet = false, tenant, children }) {
+  const layerRef = useRef(null);
+  useCoveredLayer(layerRef, !open);
   return (
-    <aside className={`st-detail-panel ${tablet ? 'st-detail-panel--tablet' : ''} ${open ? 'st-detail-panel--open' : ''}`}
+    <aside ref={layerRef} className={`st-detail-panel ${tablet ? 'st-detail-panel--tablet' : ''} ${open ? 'st-detail-panel--open' : ''}`}
       style={{ width: tablet ? TABLET_PANEL_WIDTH : DOCK_WIDTH, top }}>
       <div className="st-dock-tenant" key={tenant}>{children}</div>
     </aside>
@@ -210,7 +213,7 @@ export function GraphSelectionBar({ stepCount, linkCount, choice, onPreviewKind,
     <div className="st-selection-bar" role="status">
       <span className="st-selection-count">{stepCount + linkCount} selected</span>
       {stepCount > 0 && (
-        <div className="st-step-kinds" role="group" aria-label="Recolour selected steps">
+        <div className="st-step-kinds" role="group" aria-label={RECOLOR.steps}>
           {choice.kinds.map((kind) => (
             <button
               key={kind.id}
@@ -218,7 +221,7 @@ export function GraphSelectionBar({ stepCount, linkCount, choice, onPreviewKind,
               className={`st-step-swatch ${kind.hue === choice.shared ? 'st-step-swatch--current' : ''}`}
               style={{ background: KIND_CSS[kind.hue].base }}
               title={kind.label}
-              aria-label={`Recolour selection to ${kind.label}`}
+              aria-label={RECOLOR.selection(kind.label)}
               onPointerEnter={() => onPreviewKind(kind.hue)}
               onPointerLeave={onRestoreKind}
               onClick={() => onRecolor(kind.hue)}

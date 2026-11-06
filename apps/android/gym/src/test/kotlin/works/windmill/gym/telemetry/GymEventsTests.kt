@@ -13,13 +13,40 @@ import works.windmill.platform.telemetry.EventQueue
 @OptIn(ExperimentalCoroutinesApi::class)
 class GymEventsTests {
     @Test fun coachSetupKeepsBoundedActionsAndDropsDraftAndPhotoMetadata() {
-        for (action in listOf("shown", "screenshot", "build_manually", "photo_selected", "photo_removed", "sign_in")) {
+        for (action in listOf("shown", "screenshot", "build_manually", "photo_selected", "photo_removed", "sign_in", "connect")) {
             val labels = mapOf("screen" to "coach", "action" to action)
             assertEquals(labels, GymEvents.schemas.properties("gym_setup_step", labels + mapOf(
                 "question" to "private", "file_name" to "private", "photo_bytes" to "100", "operation" to "private")))
         }
         assertEquals(mapOf("screen" to "coach"), GymEvents.schemas.properties("gym_setup_step",
             mapOf("screen" to "coach", "action" to "private-draft-text")))
+    }
+
+    @Test fun theRoomsNoticesTellThatTheyWereShownAndNothingElse() {
+        for ((screen, action) in listOf("coach" to "too_long", "coach" to "account_changing", "coach" to "answer_in_progress", "threads" to "empty")) {
+            val labels = mapOf("screen" to screen, "action" to action, "outcome" to "shown")
+            assertEquals(labels, GymEvents.schemas.properties("gym_action", labels + mapOf("question" to "private", "over_bytes" to "1400", "title" to "private")))
+            assertEquals(emptyMap<String, String>(), GymEvents.schemas.properties("gym_action", labels + mapOf("outcome" to "private")))
+        }
+    }
+
+    // A turn ends on its §6.5 code or a failure of this phone's own. A server's 5xx goes to Sentry as `http` and the turn ends on its code, so no turn names `http`.
+    @Test fun aTurnsEndKeepsTheCodesATurnCanEndOnAndNoOther() {
+        val labels = mapOf("state" to "interrupted", "seat" to "bound")
+        for (code in listOf("coach-busy", "subject_exhausted", "transport", "decode", "storage", "refusal", "gone", "seat_changed", "process_ended", "other")) {
+            val ended = labels + ("code" to code)
+            assertEquals(ended, GymEvents.schemas.properties("coach_turn", ended))
+        }
+        assertEquals(labels, GymEvents.schemas.properties("coach_turn", labels + ("code" to "http")))
+    }
+
+    @Test fun aChangeToTheOpenWorkoutSaysSoAndKeepsOnlyItsBoundedLabels() {
+        val labels = mapOf("target" to "workout", "action" to "apply", "outcome" to "decided")
+        assertEquals(labels, GymEvents.schemas.properties("gym_proposal_outcome", labels + mapOf("summary" to "private", "movement" to "private")))
+        assertEquals(mapOf("action" to "dismiss", "outcome" to "moved"), GymEvents.schemas.properties("gym_proposal_outcome",
+            mapOf("target" to "private-routine-name", "action" to "dismiss", "outcome" to "moved")))
+        val door = mapOf("screen" to "workout", "action" to "open_coach", "outcome" to "ok")
+        assertEquals(door, GymEvents.schemas.properties("gym_action", door + mapOf("question" to "private")))
     }
 
     @Test fun routineFormAndOuterSaveKeepOnlyBoundedOutcomes() {
@@ -113,7 +140,7 @@ class GymEventsTests {
     }
 
     @Test fun coachArchiveActionsAndDeletionDialogRejectContentAndUnboundedLabels() {
-        val steps = listOf("fresh_entry", "history_open", "draft_restored", "reply_open", "read_sources", "copy", "jump_latest", "choose", "continue_draft")
+        val steps = listOf("fresh_entry", "history_open", "draft_restored", "reply_open", "read_sources", "copy", "jump_latest", "continue_draft", "reconnecting", "answering_elsewhere", "stop_notice", "stop_notice_closed")
         val allowed = steps.map { mapOf("screen" to "coach", "action" to it, "outcome" to "ok") } +
             listOf(mapOf("screen" to "coach", "action" to "copy", "outcome" to "failed")) +
             listOf("available", "bound", "unavailable").map { mapOf("screen" to "coach", "action" to "access", "outcome" to it) } +

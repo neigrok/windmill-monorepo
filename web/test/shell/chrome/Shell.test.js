@@ -20,6 +20,26 @@ function browser() {
 const context = { user: { name: 'Ada' }, status: 'signed-in', signOut() {}, open() {}, lendHost() {} };
 const location = { pathname: '/app', hash: '', search: '' };
 
+test('an account replacement replaces the whole room with the existing loading surface', async (t) => {
+  browser();
+  const { Shell } = await loadScreen('shell/chrome/Shell.jsx');
+  const PreviousRoom = () => 'Previous holder content';
+  const auth = { ...context, roomChanging: false };
+  const shell = renderHook(t, () => Shell({ location, neutral: { Component: PreviousRoom, props: {} } }), { context: auth });
+  const room = elementsOf(shell.tree).find((element) => element.type?.name === 'RoomContent');
+  const rendered = renderHook(t, () => room.type(room.props), { context: auth });
+  assert.deepEqual(elementsOf(rendered.tree).filter((element) => element.type === PreviousRoom).map((element) => element.props), [{}]);
+  auth.roomChanging = true;
+  rendered.redraw();
+  assert.deepEqual(elementsOf(rendered.tree).filter((element) => element.type === PreviousRoom), []);
+  const fallback = rendered.tree.type(rendered.tree.props);
+  assert.deepEqual({ type: fallback.type, props: fallback.props },
+    { type: 'div', props: { className: 'wm-room-fallback', 'aria-hidden': 'true' } });
+  auth.roomChanging = false;
+  rendered.redraw();
+  assert.deepEqual(elementsOf(rendered.tree).filter((element) => element.type === PreviousRoom).map((element) => element.props), [{}]);
+});
+
 test('the unpublished Shell header contains only its unchanged mark, navigation and seat', async (t) => {
   browser();
   const { Shell } = await loadScreen('shell/chrome/Shell.jsx');
@@ -179,4 +199,27 @@ test('roadmap alone wears the Shared Shell, and its head says so with no status 
   assert.deepEqual(PRODUCTS.filter((product) => product.shell?.sharedShell).map((product) => product.id), ['roadmap']);
   assert.deepEqual(['/app/roadmap', '/app/journal', '/app/gym', '/app'].map(headOf),
     ['wm-head wm-head--shared', 'wm-head', 'wm-head', 'wm-head']);
+});
+
+test('each room link reserves its own label without changing the visible text or link semantics', async (t) => {
+  browser();
+  const { Shell } = await loadScreen('shell/chrome/Shell.jsx');
+  const { PRODUCTS } = await loadScreen('shell/products.js');
+  const view = renderHook(t, () => Shell({ location }), { context });
+  const links = elementsOf(view.tree).filter((element) => element.type?.name === 'RoomLink');
+  assert.deepEqual(links.map((element) => {
+    const link = element.type(element.props);
+    return {
+      tag: link.type,
+      label: link.props['data-label'],
+      text: textOf(link),
+      href: link.props.href,
+      current: link.props['aria-current'],
+    };
+  }), [
+    { tag: 'a', label: 'Home', text: 'Home', href: '/app', current: 'page' },
+    ...PRODUCTS.filter((product) => product.shell?.status === 'open').map((product) => ({
+      tag: 'a', label: product.label, text: product.label, href: product.shell.room, current: undefined,
+    })),
+  ]);
 });

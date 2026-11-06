@@ -31,11 +31,13 @@ import { SyncStore } from '/src/products/roadmap/sync/SyncStore.js';
 import { BoardQuery } from '/src/products/roadmap/board/Board.js';
 import { SkillTreeView } from '/src/products/roadmap/SkillTreeView.jsx';
 import { Shell } from '/src/shell/chrome/Shell.jsx';
+import { ErrorBoundary } from '/src/design-system/feedback/ErrorBoundary.jsx';
 import { getRoomStatus } from '/src/shell/roomStatus.js';
 import '/src/styles/fonts.js';
 import '/src/styles/global.css';
 const params = new URLSearchParams(location.search);
 window.fixture = ${JSON.stringify(treeData)};
+if (params.has('born')) sessionStorage.setItem('windmill:born', 't_sail');
 if (params.has('longTitle')) window.fixture.title = 'Learn to sail across the whole of the North Atlantic and back again';
 if (params.has('milestone')) window.fixture.nodes[1].status = 'complete';
 if (params.has('single')) window.fixture.nodes = [{ ...window.fixture.nodes[0], status: 'none' }];
@@ -49,8 +51,13 @@ if (params.has('described')) window.fixture.nodes[2].description = ${JSON.string
 if (params.has('allDone')) for (const node of window.fixture.nodes) node.status = 'complete';
 if (params.has('broad')) window.fixture.nodes.push(...${JSON.stringify(BROAD_NODES)});
 if (params.has('coached')) window.fixture.nodes.push(${JSON.stringify(COACHED_NODE)});
-if (params.has('crashBoard')) {
-  BoardQuery.prototype.among = () => { throw new Error('Fixture Board failure'); };
+if (params.has('crashBoard') || params.has('runtimeBoardCrash')) {
+  const among = BoardQuery.prototype.among;
+  window.boardFailure = params.has('crashBoard');
+  BoardQuery.prototype.among = function (...args) {
+    if (window.boardFailure) throw new Error('Fixture Board failure');
+    return among.apply(this, args);
+  };
 }
 SyncSession.prototype.start = async function () {
   this.store = new SyncStore();
@@ -58,7 +65,8 @@ SyncSession.prototype.start = async function () {
   this.forceReconnect = () => { window.reconnects = (window.reconnects ?? 0) + 1; };
   this.registry = null;
   this.seed(window.fixture);
-  for (const node of window.fixture.nodes) if (node.status === 'complete') this.markProgress(node.id, 'complete');
+  const completed = window.fixture.nodes.filter((node) => node.status === 'complete').map((node) => node.id);
+  if (completed.length) this.markProgress(completed, 'complete');
   this.phase = 'live';
   this.ackedServerVector = this.lattice.frontier();
   window.serverTree = this.lattice.toFrame();
@@ -99,11 +107,15 @@ const props = { treeId: 't_sail', demo: params.has('demo') };
 const content = params.has('shell')
   ? React.createElement(Shell, { location: { pathname: '/app', hash: location.hash, search: location.search }, neutral: { Component: SkillTreeView, props } })
   : React.createElement(SkillTreeView, props);
-createRoot(document.getElementById('root')).render(content);
+createRoot(document.getElementById('root')).render(params.has('sceneFailure') ? React.createElement(ErrorBoundary, null, content) : content);
 `;
 export const scene = `
+export class GraphUnavailable extends Error {}
 export class SkillTreeScene {
   constructor(canvas, options) {
+    window.sceneAttempts = (window.sceneAttempts ?? 0) + 1;
+    if (new URLSearchParams(location.search).has('sceneFailure')) throw new Error('Fixture renderer construction failure');
+    if (new URLSearchParams(location.search).has('noWebgl2')) throw new GraphUnavailable('WebGL2 is not available');
     this.options = options;
     this.nodesById = new Map();
     this.selectedIds = new Set();
@@ -206,7 +218,7 @@ export function startRoadmapHost({ browserTypes = { chromium } } = {}) {
     const stylesheet = [...files.keys()].find((path) => path.endsWith('.css'));
     server = createServer((request, response) => {
       const url = new URL(request.url, 'http://localhost');
-      if (url.pathname === '/roadmap-host-test') {
+      if (url.pathname === '/roadmap-host-test' || url.pathname === '/t/t_sail') {
         response.setHeader('Content-Type', 'text/html');
         response.end(hostPage(url.searchParams.get('surface') ?? 'tree', stylesheet));
         return;
@@ -243,7 +255,7 @@ export function hostTest(name, run) {
   });
 }
 
-export async function openHost({ browserName = 'chromium', width = 1440, height = 1000, role = 'owner', surface = 'tree', milestone = false, single = false, crash = false, crashBoard = false, demo = false, clipboardRefused = false, large = false, empty = false, shell = false, legend = false, fixedClock = false, described = false, allDone = false, broad = false, coached = false, manyTrees = false, touch = false, motion = false, appUrl = false, pathOnly = false, storageRefused = false, longTitle = false } = {}) {
+export async function openHost({ browserName = 'chromium', width = 1440, height = 1000, role = 'owner', surface = 'tree', milestone = false, single = false, crash = false, crashBoard = false, runtimeBoardCrash = false, demo = false, clipboardRefused = false, large = false, empty = false, shell = false, legend = false, fixedClock = false, described = false, allDone = false, broad = false, coached = false, manyTrees = false, touch = false, motion = false, appUrl = false, pathOnly = false, storageRefused = false, longTitle = false, noWebgl2 = false, born = false, sceneFailure = false, address = null } = {}) {
   await ready;
   const page = await browsers.get(browserName).newPage({ viewport: { width, height }, reducedMotion: motion ? 'no-preference' : 'reduce', hasTouch: touch });
   page.setDefaultTimeout(firstPage ? 15000 : 5000);
@@ -253,8 +265,9 @@ export async function openHost({ browserName = 'chromium', width = 1440, height 
   const errors = [];
   const { fail } = runningTest.getStore();
   const report = (message) => {
+    if (sceneFailure && (message.includes('Fixture renderer construction failure') || message.includes('The above error occurred in the <SkillTreeView> component'))) return;
     if (crash && (message.includes('Fixture identity measurement failure') || message.includes('The above error occurred in the <RoadmapIdentity> component'))) return;
-    if (crashBoard && (message.includes('Fixture Board failure') || message.includes('The above error occurred in the <BoardView> component'))) return;
+    if ((crashBoard || runtimeBoardCrash) && (message.includes('Fixture Board failure') || message.includes('The above error occurred in the <BoardView> component'))) return;
     errors.push(message);
     fail(new Error(message));
     void page.close();
@@ -298,10 +311,32 @@ export async function openHost({ browserName = 'chromium', width = 1440, height 
   });
   const params = new URLSearchParams({ role, surface });
   if (role === 'reader' && !appUrl) params.set('view', '1');
-  for (const [name, enabled] of Object.entries({ milestone, single, crash, crashBoard, demo, clipboardRefused, large, empty, shell, legend, described, allDone, broad, coached, longTitle })) {
+  for (const [name, enabled] of Object.entries({ milestone, single, crash, crashBoard, runtimeBoardCrash, demo, clipboardRefused, large, empty, shell, legend, described, allDone, broad, coached, longTitle, noWebgl2, born, sceneFailure })) {
     if (enabled) params.set(name, '1');
   }
-  await page.goto(`${origin}/roadmap-host-test?${params}${pathOnly ? '' : '#/app/t_sail'}`);
+  if (noWebgl2) {
+    await page.addInitScript(() => {
+      window.graphIdentitySeen = false;
+      const inspect = (node) => {
+        if (!(node instanceof Element)) return;
+        if (node.matches('.st-roadmap-identity[data-view="tree"]') || node.querySelector('.st-roadmap-identity[data-view="tree"]')) window.graphIdentitySeen = true;
+      };
+      new MutationObserver((records) => {
+        for (const record of records) {
+          inspect(record.target);
+          for (const node of record.addedNodes) inspect(node);
+          if (record.type === 'attributes' && record.attributeName === 'data-view' && record.oldValue === 'tree') window.graphIdentitySeen = true;
+        }
+      }).observe(document, { subtree: true, childList: true, attributes: true, attributeOldValue: true, attributeFilter: ['data-view'] });
+    });
+  }
+  const path = address === '/t/' ? '/t/t_sail' : '/roadmap-host-test';
+  const hash = address === '#/t/' ? '#/t/t_sail' : address === '#/demo' ? '#/demo' : pathOnly || address === '/t/' || address === '?view' ? '' : '#/app/t_sail';
+  await page.goto(`${origin}${path}?${params}${hash}`);
+  if (sceneFailure) {
+    await page.getByRole('button', { name: 'Reload', exact: true }).waitFor();
+    return { page, errors };
+  }
   await page.waitForFunction(() => !!window.session?.ready, null, { timeout: 30000 });
   if (!crash && !demo) await page.locator('.st-roadmap-progress').waitFor({ timeout: 30000 });
   if (role === 'reader' && surface === 'board' && !crash) await page.getByRole('button', { name: 'Board', exact: true }).click();

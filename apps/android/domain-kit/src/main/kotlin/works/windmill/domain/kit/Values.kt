@@ -115,6 +115,6 @@ data class CountSpec(override val path: String, val min: Int, val max: Int) : Va
 fun Json.firstNul(at: Path): Path? = when (this) {
     is Json.Str -> if ('\u0000' in value) at else null
     is Json.Arr -> values.withIndex().firstNotNullOfOrNull { it.value.firstNul(at + it.index) }
-    is Json.Obj -> members.entries.firstNotNullOfOrNull { it.value.firstNul(at + it.key) }
+    is Json.Obj -> members.entries.firstNotNullOfOrNull { (key, value) -> if ('\u0000' in key) at + key else value.firstNul(at + key) }
     else -> null
 }

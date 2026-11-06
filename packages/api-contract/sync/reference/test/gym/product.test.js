@@ -103,7 +103,7 @@ test('R118 metadata reflects admitted facts and preserves immutable receipts', (
   assert.equal(reordered.ru, 1_760_036_000_000);
   const changed = row('R118 a note title edit uses server admission time rather than the replica stamp', 'note', 'note0000001');
   assert.equal(changed.f.updatedAt[0], changed.ru);
-  const proposal = row('R118 proposal count includes one rename and one reorder with no moved targets', 'proposal', 'proposal003');
+  const proposal = row('R118 proposal count includes one rename and the one kept line that moved', 'proposal', 'proposal003');
   assert.deepEqual([proposal.f.baseRevision[0], proposal.f.baseName[0], proposal.f.changeCount[0]], [7, 'Lower A', 2]);
   const superseded = row('R118 supersession preserves frozen base name revision and count', 'proposal', 'proposal003');
   assert.deepEqual([superseded.f.baseRevision, superseded.f.baseName, superseded.f.changeCount],

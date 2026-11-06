@@ -218,7 +218,7 @@ import SyncSchema
       return false
     }
     var next = saved.carried; next.text = seed
-    do { try store.select(nil, account: owner) } catch {
+    do { try store.deselect(account: owner) } catch {
       self.error = "Your new conversation couldn’t be opened. Try again."
       gym.report("gym_action", error)
       gym.telemetry.event("gym_action", properties: ["screen": "coach", "action": "new_chat", "door": door, "outcome": "failed"])
@@ -245,7 +245,7 @@ import SyncSchema
       var next = archive.entries.contains(where: { $0.id == id }) ? archive.conversation(id) : saved.carried
       next.threadId = id
       if try holds(id) { next.conversation = id }
-      try store.select(next.hasContent ? id : nil, account: owner)
+      try store.open(next, account: owner)
       saved = next; error = nil
       observe()
       gym.telemetry.event("gym_action", properties: ["screen": "history", "action": "open_conversation", "outcome": "ok"])

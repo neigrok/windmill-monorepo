@@ -34,10 +34,9 @@ legacy JSON, Unicode/state selection, empty omission, owner isolation, foreign/a
 unchanged full-answer detail, an injected projection failure and content-free diagnostics. The
 failure returns a generic 500 and records only the static route and compiled exception type.
 No answer, credential or raw SQL error appears in the server log. Sentry is disabled locally, so
-hosted Issue delivery is not claimed. Android history-step events belong to the client portion
-of task 37; this read adds no mutation or event.
+hosted Issue delivery is not claimed. This read adds no mutation or event.
 
-Verification and Android native acceptance use the separately built `backend/build-history-preview`
+Verification uses the separately built `backend/build-history-preview`
 server. The original shared `backend/build` server remains unchanged. Temporary servers and
 databases are removed after their acceptance run. The private evidence packet contains
 the exact source manifest, test logs, HTTP assertions, binary hashes and cleanup proof. This

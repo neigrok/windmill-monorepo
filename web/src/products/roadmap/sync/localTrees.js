@@ -45,7 +45,7 @@ async function bear(title, plant) {
   if (!await deviceKeepsTrees()) throw deviceRefused();
   const treeId = mintTreeId();
   const registry = new LocalTreeRegistry();
-  // The owner is asked of the server, never of a remembered marker.
+  // The owner comes from the server or the restored bound replica, never a cached face.
   registry.record(treeId, title, await ownerForBirth());
   const session = new SyncSession({ treeId, title });
   session.seed({ id: treeId, title, nodes: [], kinds: DEFAULT_KINDS });
@@ -102,7 +102,7 @@ function legendGestures(kinds) {
 
 // This device's answer for a tree the server did not give us: the lattice blob replayed into the
 // TreeData shape a server seed has, or null when this browser has no standing to open it. Only a
-// device row visible to the account the server says is here opens the door.
+// device row visible to the confirmed device holder opens the door.
 export async function loadDeviceTree(treeId, { ownerResolved = false } = {}) {
   const registry = new LocalTreeRegistry();
   // A room that already resolved and waited still reads only the currently confirmed owner.

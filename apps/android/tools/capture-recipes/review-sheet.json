@@ -1,0 +1,151 @@
+[
+  {
+    "board": "08.71",
+    "name": "review-sheet-moved",
+    "account": "fixture",
+    "responses": [
+      [
+        {
+          "type": "tool_use",
+          "id": "toolu_move",
+          "name": "propose_routine_change",
+          "input": {
+            "id": "pr_$account_move",
+            "routineId": "$routine0",
+            "summary": "",
+            "entries": [
+              {
+                "exerciseId": "overhead-press",
+                "sets": [
+                  {
+                    "reps": 6,
+                    "weightKg": 45
+                  },
+                  {
+                    "reps": 6,
+                    "weightKg": 45
+                  },
+                  {
+                    "reps": 6,
+                    "weightKg": 45
+                  }
+                ]
+              },
+              {
+                "exerciseId": "bench-press",
+                "sets": [
+                  {
+                    "reps": 8,
+                    "weightKg": 75
+                  },
+                  {
+                    "reps": 8,
+                    "weightKg": 75
+                  },
+                  {
+                    "reps": 8,
+                    "weightKg": 75
+                  }
+                ]
+              },
+              {
+                "exerciseId": "incline-dumbbell-press",
+                "sets": [
+                  {
+                    "reps": 10,
+                    "weightKg": 17.5
+                  },
+                  {
+                    "reps": 10,
+                    "weightKg": 17.5
+                  },
+                  {
+                    "reps": 10,
+                    "weightKg": 17.5
+                  }
+                ]
+              },
+              {
+                "exerciseId": "cable-fly",
+                "sets": [
+                  {
+                    "reps": 12,
+                    "weightKg": 15
+                  },
+                  {
+                    "reps": 12,
+                    "weightKg": 15
+                  },
+                  {
+                    "reps": 12,
+                    "weightKg": 15
+                  }
+                ]
+              },
+              {
+                "exerciseId": "triceps-pushdown",
+                "sets": [
+                  {
+                    "reps": 12,
+                    "weightKg": 25
+                  },
+                  {
+                    "reps": 12,
+                    "weightKg": 25
+                  },
+                  {
+                    "reps": 12,
+                    "weightKg": 25
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      [
+        {
+          "type": "text",
+          "text": "Do Overhead Press first, when you are fresh."
+        }
+      ]
+    ],
+    "steps": [
+      {
+        "tap": "Coach"
+      },
+      {
+        "tap": "Question"
+      },
+      {
+        "text": "Is Push A still doing anything"
+      },
+      {
+        "wait": "Is Push A still doing anything"
+      },
+      {
+        "tap": "Send"
+      },
+      {
+        "wait": "Review"
+      },
+      {
+        "tap": "Review"
+      },
+      {
+        "wait": "Move Overhead Press"
+      },
+      {
+        "wait": "Apply"
+      }
+    ],
+    "after": [
+      {
+        "key": "KEYCODE_BACK"
+      },
+      {
+        "wait": "Review"
+      }
+    ]
+  }
+]

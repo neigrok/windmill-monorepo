@@ -34,7 +34,8 @@ apps/
                             the dev-only SyncProbe/ app
   android/                  Kotlin/Compose gym app; :app, :platform, :gym (its presentation package
                             projects :gym:domain for the screens) and :gym:domain, the sync engine
-                            (:sync-*) and the domain kit (:domain-kit, :domain-kit-testing)
+                            (:sync-*), the domain kit (:domain-kit, :domain-kit-testing) and the
+                            product-neutral agent turn (:agent)
 packages/
   api-contract/             shared wire contracts, executable golden fixtures and the JS sync core/client
 services/
@@ -114,9 +115,9 @@ contents. Native acceptance and a same-key update check precede publication. See
   [the domain kit](docs/foundation/domain-kit.md), the pure-logic layer every Swift and Kotlin feature
   domain is declared on, built in Swift (`apps/ios/Domain`) and Kotlin (`apps/android/domain-kit`); and
   [phone-hosted Coach abilities](docs/foundation/mobile/gym_coach.md), specified for both phones.
-  iOS implements phone-hosted turns; Android retains its server-hosted Ask transport.
+  Both phones implement phone-hosted turns.
 - [The running Coach conversation contract](docs/gym-coach-contract.md) covers the server-hosted
-  model loop used by web, iOS and Android. [The iOS app](apps/ios/App/README.md) also documents
+  model loop the web uses. [The iOS app](apps/ios/App/README.md) also documents
   signed-in routine onboarding.
 - [Web rules](web/CLAUDE.md), [iOS](apps/ios/README.md) and [Android](apps/android/README.md).
 - [Product direction](docs/PRODUCT_LOG.md) and [design consistency gaps](docs/design/consistency.md).

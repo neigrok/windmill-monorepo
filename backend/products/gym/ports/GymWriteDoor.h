@@ -210,13 +210,17 @@ struct GymUnavailable : std::runtime_error {
 };
 
 // Every gym write the server makes on a lifter's behalf, admitted by the sync engine as a
-// server-origin intent: MCP, Coach, the import route, and the lazy close of a workout walked away from.
+// server-origin intent: MCP, Coach, the import route, the lazy close of a workout walked away from,
+// and the end of a turn the server drops.
 class GymWriteDoor {
 public:
   virtual ~GymWriteDoor() = default;
   // Admits the close only when the open workout isStale; with nothing stale it writes nothing.
   virtual void closeStale(const UserId&) = 0;
   virtual void unlinkThread(const UserId&, const ThreadId&) = 0;
+  // Gym Coach §4.5: a running Coach message ends `interrupted`, its `state` alone; any other state stands.
+  // Answers whether it wrote.
+  virtual bool interrupt(const UserId&, const std::string& messageId) = 0;
   virtual StartOutcome start(const UserId&, const SessionStart&) = 0;
   virtual AppendOutcome append(const UserId&, const SessionId&, const SetWrite&) = 0;
   virtual BatchLogOutcome appendSets(const UserId&, const SessionId&, const std::vector<SetWrite>&) = 0;

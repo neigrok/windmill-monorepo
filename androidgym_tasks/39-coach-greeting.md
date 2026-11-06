@@ -42,7 +42,7 @@ are removed. Focused tests pass; native visual and installed event acceptance re
 - An empty Gym opens on Coach when Coach can answer: signed in, or signed out with anonymous access available. Signed out with that access unavailable, it opens on Routines, since login is never forced.
   - "Empty" means no routines and no workouts, read once when the room opens.
   - Otherwise the room opens on Routines as today. A saved tab still wins after recreation.
-- `Ask.openers` and `Ask.subtitle` are absent. Task 36 owns the `CoachAccessStance` fallback when signed-out Coach is off.
+- Task 36 owns the `CoachAccessStance` fallback when signed-out Coach is off.
 
 **Out of scope:** bubbles and composer (28), the photo caption (40), drafts (41), signed-out transport (38).
 
@@ -61,4 +61,4 @@ are removed. Focused tests pass; native visual and installed event acceptance re
 
 **Depends on:** 28, 38.
 
-**Ledger:** 11h, 12l, 6p, 10v; dogfood `android-gym-target-page`.
+**Ledger:** 11h, 10v; dogfood `android-gym-target-page`.

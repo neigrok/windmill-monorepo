@@ -60,10 +60,12 @@ nonisolated struct CoachArchive: Codable {
     }
   }
   var version = 1
-  var selected: String?
+  // An entry's id or nothing: `select` is the one way to set it.
+  private(set) var selected: String?
   var shared = CoachSaved()
   var entries: [Entry] = []
 
+  mutating func select(_ id: String?) { selected = entries.contains { $0.id == id } ? id : nil }
   mutating func put(_ saved: CoachSaved, select: Bool, at: Int64) {
     shared.acceptedFirstMessage = shared.acceptedFirstMessage == true || saved.acceptedFirstMessage == true
     shared.adoptedSources = Array(Set((shared.adoptedSources ?? []) + (saved.adoptedSources ?? []))).sorted()
@@ -77,7 +79,7 @@ nonisolated struct CoachArchive: Codable {
     let unchanged = previousContent == saved
     entries.removeAll { $0.id == saved.threadId }
     if saved.hasContent { entries.append(Entry(saved: saved, updatedAt: unchanged ? previous?.updatedAt ?? at : at)) }
-    if select { selected = saved.hasContent ? saved.threadId : nil }
+    if select { self.select(saved.threadId) }
     entries.sort { $0.updatedAt == $1.updatedAt ? $0.id > $1.id : $0.updatedAt > $1.updatedAt }
   }
   func conversation(_ id: String? = nil) -> CoachSaved {
@@ -102,9 +104,10 @@ struct CoachDraftStore {
     let data = try Data(contentsOf: url)
     let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
     if object?["version"] != nil {
-      let archive = try JSONDecoder().decode(CoachArchive.self, from: data)
-      let ids = Set(archive.entries.map(\.id))
-      guard archive.version == 1, ids.count == archive.entries.count, archive.selected.map(ids.contains) ?? true else { throw CocoaError(.fileReadCorruptFile) }
+      var archive = try JSONDecoder().decode(CoachArchive.self, from: data)
+      guard archive.version == 1, Set(archive.entries.map(\.id)).count == archive.entries.count else { throw CocoaError(.fileReadCorruptFile) }
+      // A selection naming no entry reads as nothing selected; the file stays as it is until the next write.
+      archive.select(archive.selected)
       return archive
     }
     let saved = try JSONDecoder().decode(CoachSaved.self, from: data)
@@ -119,15 +122,22 @@ struct CoachDraftStore {
     archive.put(saved, select: select, at: Int64(Date().timeIntervalSince1970 * 1000))
     try writeArchive(archive, account: account)
   }
-  func select(_ id: String?, account: String) throws {
+  // History's door: the conversation holds an entry and is selected. Reading one changes nothing of this phone's, so an
+  // entry new here carries no date of its own, and History goes by what was said in it.
+  func open(_ saved: CoachSaved, account: String) throws {
     var archive = try archive(account)
-    archive.selected = id
+    archive.put(saved, select: true, at: 0)
+    try writeArchive(archive, account: account)
+  }
+  func deselect(account: String) throws {
+    var archive = try archive(account)
+    archive.select(nil)
     try writeArchive(archive, account: account)
   }
   func remove(_ id: String, account: String, replacement: CoachSaved? = nil) throws {
     var archive = try archive(account)
     archive.entries.removeAll { $0.id == id }
-    if archive.selected == id { archive.selected = nil }
+    if archive.selected == id { archive.select(nil) }
     if let replacement { archive.put(replacement, select: true, at: Int64(Date().timeIntervalSince1970 * 1000)) }
     try writeArchive(archive, account: account)
   }
@@ -144,7 +154,7 @@ struct CoachDraftStore {
         target.shared.rejectedDrafts = Array(Set((target.shared.rejectedDrafts ?? []) + (local.shared.rejectedDrafts ?? []))).sorted()
         target.shared.adoptedSources = Array(Set((target.shared.adoptedSources ?? []) + [source])).sorted()
         target.shared.setupChoice = target.shared.setupChoice ?? local.shared.setupChoice
-        if target.selected == nil { target.selected = local.selected }
+        if target.selected == nil { target.select(local.selected) }
         target.entries.sort { $0.updatedAt == $1.updatedAt ? $0.id > $1.id : $0.updatedAt > $1.updatedAt }
         try writeArchive(target, account: account)
       }

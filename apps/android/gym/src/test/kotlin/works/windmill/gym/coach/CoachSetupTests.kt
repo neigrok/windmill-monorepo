@@ -15,16 +15,9 @@ import java.io.File
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
-import javax.crypto.KeyGenerator
-import works.windmill.gym.coach.onboarding.CoachOnboardingApi
 import works.windmill.gym.coach.onboarding.CoachOnboardingSeat
-import works.windmill.gym.coach.onboarding.CoachOnboardingStore
-import works.windmill.platform.ai.AiAllowance
-import works.windmill.platform.ai.AiInstallation
-import works.windmill.platform.ai.AiInstallationApi
-import works.windmill.platform.ai.AiInstallationResponse
-import works.windmill.platform.auth.KeptValues
-import works.windmill.platform.auth.SecretVault
+import works.windmill.gym.coach.turn.ScriptedInstallation
+import works.windmill.gym.coach.turn.TurnPhoneInstallation
 import works.windmill.platform.net.Refusal
 import works.windmill.platform.net.WindmillApiException
 import kotlinx.coroutines.CoroutineScope
@@ -41,7 +34,6 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import works.windmill.gym.GymRoom
 import works.windmill.gym.presentation.RoutineDraft
-import works.windmill.gym.net.FakeGymRest
 import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.store.GymResult
 import works.windmill.gym.ui.GymMaterial
@@ -71,30 +63,30 @@ class CoachSetupTests {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         val file = File(temporary.root, "coach.json")
         try {
-            val store = CoachStore({ "alice" }, {}, { FakeGymRest() }, LocalCoach(file), Telemetry.None, System::nanoTime, scope)
+            val store = CoachChats({ "alice" }, {}, null, null, LocalCoach(file), null, { AnonymousCoachAccess.Unavailable }, Telemetry.None, scope)
             val setup = store.freshChat(setup = true)
-            val restored = CoachStore({ "alice" }, {}, { FakeGymRest() }, LocalCoach(file), Telemetry.None, System::nanoTime, scope)
+            val restored = CoachChats({ "alice" }, {}, null, null, LocalCoach(file), null, { AnonymousCoachAccess.Unavailable }, Telemetry.None, scope)
             assertTrue(restored.chat(setup)!!.setup)
-            assertEquals(emptyList<AskExchange>(), restored.chat(setup)!!.exchanges)
+            assertEquals(emptyList<CoachExchange>(), restored.exchanges(setup))
             val ordinary = restored.freshChat()
             assertFalse(restored.chat(ordinary)!!.setup)
-            assertEquals(emptyList<AskExchange>(), restored.chat(ordinary)!!.exchanges)
+            assertEquals(emptyList<CoachExchange>(), restored.exchanges(ordinary))
             assertTrue(restored.chat(setup)!!.setup)
         } finally { scope.cancel() }
     }
 
     @Test fun theSetupGreetingLeavesWhenTheFirstMessageIsAccepted() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-        EngineRoomFixture(temporary.newFolder(), scope, rest = FakeGymRest()).use { room ->
+        EngineRoomFixture(temporary.newFolder(), scope).use { room ->
             runBlocking { room.select("alice") }
             val id = room.store.coach.freshChat(setup = true)
-            var thread by mutableStateOf(emptyList<AskExchange>())
+            var thread by mutableStateOf(emptyList<CoachExchange>())
             val ask = AskBinding(room.store)
             compose.setContent { GymMaterial { AskScreen(ask, ask, thread, emptyList(), emptySet(), false, null,
-                {}, {}, {}, "", "http://localhost", onThreads = {}, onReview = {}, conversationId = id,
+                { _, _ -> }, onThreads = {}, onReview = {}, conversationId = id,
                 onBuildRoutine = {}) } }
             compose.onNodeWithText("Hi, I’m Coach. I can help you with:").assertIsDisplayed()
-            compose.runOnIdle { thread = listOf(AskExchange("A real question", requestId = "accepted")) }
+            compose.runOnIdle { thread = listOf(CoachExchange("accepted", "A real question", 1)) }
             compose.onNodeWithText("Hi, I’m Coach. I can help you with:").assertDoesNotExist()
             compose.onNodeWithText("A real question").assertIsDisplayed()
             compose.onNodeWithText("Build my own").assertDoesNotExist()
@@ -109,13 +101,13 @@ class CoachSetupTests {
             override fun event(name: String, properties: Map<String, String>) { events += name to properties }
             override fun failure(operation: String, error: Throwable, properties: Map<String, String>) = Unit
         }
-        EngineRoomFixture(temporary.newFolder(), scope, rest = FakeGymRest()).use { room ->
+        EngineRoomFixture(temporary.newFolder(), scope).use { room ->
             runBlocking { room.select("alice") }
             val id = room.store.coach.freshChat(setup = true)
             val restore = StateRestorationTester(compose)
             val ask = AskBinding(room.store)
             restore.setContent { CompositionLocalProvider(LocalTelemetry provides telemetry) { GymMaterial {
-                AskScreen(ask, ask, emptyList(), emptyList(), emptySet(), false, null, {}, {}, {}, "", "http://localhost",
+                AskScreen(ask, ask, emptyList(), emptyList(), emptySet(), false, null, { _, _ -> },
                     onThreads = {}, onReview = {}, conversationId = id, onBuildRoutine = {})
             } } }
             compose.onNodeWithText("Hi, I’m Coach. I can help you with:").assertIsDisplayed()
@@ -131,7 +123,7 @@ class CoachSetupTests {
 
     @Test fun emptyHydratedGymOpensCoachAndTheChosenTabWinsRecreation() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-        EngineRoomFixture(temporary.newFolder(), scope, rest = FakeGymRest()).use { room ->
+        EngineRoomFixture(temporary.newFolder(), scope).use { room ->
             runBlocking {
                 room.select("alice")
                 assertNull(room.store.initialGymEmpty)
@@ -156,10 +148,10 @@ class CoachSetupTests {
         val file = File(temporary.root, "coach.json")
         val disk = LocalCoach(file)
         val phone = disk.anonymousOwner()
-        disk.saveChat(phone, LocalChat("phone-chat", setup = true), true)
+        disk.saveChat(phone, LocalChat("phone-chat", 1, setup = true), true)
         disk.saveDraft(phone, "phone-chat", CoachDraft("Phone draft"))
         var settled by mutableStateOf(false)
-        EngineRoomFixture(temporary.newFolder(), scope, rest = FakeGymRest(), localCoach = disk, workoutAuthority = { settled }).use { room ->
+        EngineRoomFixture(temporary.newFolder(), scope, localCoach = disk, workoutAuthority = { settled }).use { room ->
             runBlocking { room.select("alice") }
             assertFalse(room.store.seat.accountReady)
             compose.setContent { GymMaterial { GymRoom(room.account(), room.store) } }
@@ -171,10 +163,12 @@ class CoachSetupTests {
                 runBlocking { room.store.refreshEngine() }
             }
             compose.waitForIdle()
-            compose.waitUntil(5_000) { LocalCoach(file).draft(phone, "phone-chat") == CoachDraft() }
+            compose.waitUntil(5_000) { compose.runOnIdle { LocalCoach(file).draft(phone, "phone-chat") == CoachDraft() } }
             compose.runOnIdle {
                 val adopted = LocalCoach(file)
-                assertEquals(CoachDraft("Phone draft", setup = true), adopted.draft("alice", requireNotNull(adopted.selected("alice"))))
+                val selected = requireNotNull(adopted.selected("alice"))
+                assertEquals(CoachDraft("Phone draft"), adopted.draft("alice", selected))
+                assertEquals(true, adopted.chat("alice", selected)?.setup)
             }
             compose.waitForIdle()
             compose.onNodeWithText("Phone draft").assertIsDisplayed()
@@ -184,7 +178,7 @@ class CoachSetupTests {
 
     @Test fun aRoutineCreatedBeforeTheRoomOpensKeepsTheRoutinesTab() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-        EngineRoomFixture(temporary.newFolder(), scope, rest = FakeGymRest()).use { room ->
+        EngineRoomFixture(temporary.newFolder(), scope).use { room ->
             runBlocking {
                 room.select("alice")
                 room.pull(EngineRoomFixture.server())
@@ -201,25 +195,12 @@ class CoachSetupTests {
     }
 
     private fun signedOutRoom(scope: CoroutineScope, available: Boolean): EngineRoomFixture {
-        val key = KeyGenerator.getInstance("AES").apply { init(256) }.generateKey()
-        val kept = mutableMapOf<String, String>()
-        val allowance = AiAllowance("ok", "USD", "lifetime", "anonymous", true, null, "0", "0", "0")
-        val installation = AiInstallation(object : KeptValues {
-            override fun read(key: String) = kept[key]
-            override fun write(values: Map<String, String?>) = values.forEach { (key, value) -> if (value == null) kept.remove(key) else kept[key] = value }
-        }, SecretVault { key }, object : AiInstallationApi {
-            override suspend fun issue(): AiInstallationResponse =
-                if (available) AiInstallationResponse(false, allowance, "A".repeat(43))
-                else throw WindmillApiException.Refused(503, Refusal(code = "anonymous_ai_unavailable"))
-            override suspend fun current(credential: String) = AiInstallationResponse(false, allowance)
-            override suspend fun bind(credential: String, token: String) = AiInstallationResponse(true, allowance)
+        val installation = TurnPhoneInstallation.onMemory(ScriptedInstallation().apply {
+            if (!available) issueFailure = WindmillApiException.Refused(503, Refusal(code = "anonymous_ai_unavailable"))
         })
         val local = LocalCoach(File(temporary.root, "archive"))
-        val onboarding = CoachOnboardingStore(local, installation, object : CoachOnboardingApi {
-            override suspend fun start(body: String, credential: String) = error("No question is sent")
-            override suspend fun get(requestId: String, credential: String) = error("No question is sent")
-        }, { CoachOnboardingSeat(local.anonymousOwner(), "replica") }, scope)
-        return EngineRoomFixture(temporary.newFolder(), scope, rest = FakeGymRest(), localCoach = local, coachOnboarding = onboarding)
+        return EngineRoomFixture(temporary.newFolder(), scope, localCoach = local,
+            coachAccess = { anonymousCoachAccess(installation, { CoachOnboardingSeat(local.anonymousOwner(), "replica") }, Telemetry.None) })
             .also { runBlocking { it.select(null) } }
     }
 

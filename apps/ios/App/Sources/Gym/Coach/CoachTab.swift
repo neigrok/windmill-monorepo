@@ -284,14 +284,9 @@ struct CoachTab: View {
   }
 
   // A round Add photo beside the field; in the field a chosen photo over the question, and in its trailing end Send while
-  // there is something to send, or Stop while Coach answers. A chosen photo says where it is kept, once, over the field.
+  // there is something to send, or Stop while Coach answers.
   var composer: some View {
     VStack(spacing: RoomSpace.related) {
-      if (preparing || coach.saved.photo != nil) && !coach.asking {
-        Text(coach.anonymous ? "Sent to Coach. Saved only on this phone." : "A copy goes to the AI provider to read it. Windmill keeps none. Kept only on this phone.")
-          .font(.caption).foregroundStyle(GymPalette.inkDim).multilineTextAlignment(.center)
-          .accessibilityIdentifier("coach-photo-caption")
-      }
       HStack(alignment: .bottom, spacing: RoomSpace.related) {
         PhotosPicker(selection: $photo, matching: .images) {
           Image(systemName: "plus").font(.body.weight(.semibold)).dynamicTypeSize(...DynamicTypeSize.xxxLarge).foregroundStyle(GymPalette.ink)

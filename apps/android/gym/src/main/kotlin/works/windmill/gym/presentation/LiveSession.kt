@@ -18,6 +18,24 @@ object LiveOrder {
         return order
     }
 
+    // A plan that changed under the open workout takes the walk with it. What left the plan leaves the walk unless a set stands under it, a line it gained lands after the line it follows, and lines the plan reordered trade the places they hold. A movement walked beside the plan stays where it is.
+    fun replanned(held: List<String>, before: PlanSnapshot?, after: PlanSnapshot?, sets: List<TrainingSet>): List<String> {
+        val was = before?.entries.orEmpty().map { it.exerciseId }.distinct()
+        val now = after?.entries.orEmpty().map { it.exerciseId }.distinct()
+        if (was == now) return held
+        val logged = sets.mapTo(mutableSetOf()) { it.exerciseId }
+        val walk = held.filterTo(mutableListOf()) { it in now || it !in was || it in logged }
+        now.forEachIndexed { at, movement ->
+            if (movement !in walk) walk.add(if (at == 0) 0 else walk.indexOf(now[at - 1]) + 1, movement)
+        }
+        val staying = now.filter { it in was }.iterator()
+        return walk.map { if (it in was && it in now) staying.next() else it }
+    }
+
+    // Where the lifter stands once the movement in hand left the walk: on what took its place.
+    fun standing(walked: List<String>, movement: String, walk: List<String>): String? =
+        walk.getOrNull(walked.indexOf(movement).coerceIn(0, (walk.size - 1).coerceAtLeast(0)))
+
     fun resume(order: List<String>, sets: List<TrainingSet>): String? {
         val last = sets.sortedBy { it.completedAtMs }.lastOrNull()?.exerciseId
         if (last != null && last in order) return last

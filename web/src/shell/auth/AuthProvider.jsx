@@ -1,4 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { flushSync } from 'react-dom';
 import { API_BASE } from '../apiBase.js';
 import { fetchMe, logout } from './AuthClient.js';
 import { closeAccount as requestAccountClosure, listSessions } from './AccountClient.js';
@@ -43,7 +44,27 @@ export default function AuthProvider({ children }) {
     () => session.engine?.getSnapshot().upgradeRequired ?? false,
     () => false,
   );
-  const [seat] = useState(() => new DeviceSeat());
+  const [seat] = useState(() => new DeviceSeat(PRODUCTS));
+  // Earlier queued binds cannot release a newer confirmed account's room.
+  const roomOwnership = useRef({ revision: 0, confirmed: null, target: null,
+    blocked: Boolean(syncSession.engine?.device.meta.deviceCleanup) });
+  const [roomChanging, setRoomChanging] = useState(roomOwnership.current.blocked);
+  const confirmRoom = useCallback((me) => {
+    if (!me) return roomOwnership.current.revision;
+    const previous = roomOwnership.current.confirmed;
+    if (previous !== me.id) roomOwnership.current.revision += 1;
+    roomOwnership.current.confirmed = me.id;
+    const engine = syncSession.engine;
+    const active = engine?.device.activeReplica.meta;
+    const holders = [engine?.device.meta.deviceCleanup?.previous,
+      active?.state === 'bound' ? active.account : null, seat.previousAccount, previous];
+    if (!roomOwnership.current.blocked && engine && !holders.some((holder) => holder && holder !== me.id)) return roomOwnership.current.revision;
+    roomOwnership.current.target = me.id;
+    roomOwnership.current.blocked = true;
+    // Remove the previous room in this turn, before queued writes or cleanup can yield.
+    flushSync(() => setRoomChanging(true));
+    return roomOwnership.current.revision;
+  }, [seat]);
   const channel = useRef(null);
   const pending = useRef(null);
   const signOutResult = useRef(null);
@@ -56,11 +77,17 @@ export default function AuthProvider({ children }) {
     });
     return next;
   }, []);
-  const settle = useCallback((me, options) => {
+  const settle = useCallback((me, options, revision = roomOwnership.current.revision) => {
     const value = seat.receive(me, options);
     if (!value) return;
     setUser(value.user); setStatus(value.status); setAccount(value.account);
     setLapsed(seat.lapsed);
+    if (revision === roomOwnership.current.revision && !syncSession.engine?.device.meta.deviceCleanup
+      && (!roomOwnership.current.target || roomOwnership.current.target === value.account?.id)) {
+      roomOwnership.current.blocked = false;
+      roomOwnership.current.target = null;
+      setRoomChanging(false);
+    }
     syncSession.publish({ signedIn: Boolean(value.account) });
     if (value.confirmed) remember(value.user);
   }, [seat]);
@@ -72,6 +99,8 @@ export default function AuthProvider({ children }) {
   const cleanupDevice = useCallback(async (engine, next = null) => {
     const change = engine.device.meta.deviceCleanup;
     if (!change) return;
+    roomOwnership.current.blocked = true;
+    flushSync(() => setRoomChanging(true));
     await seat.finishDeviceCleanup({ previous: change.previous, next });
     await engine.write(null, (device) => {
       if (device.meta.deviceCleanup?.previous === change.previous && device.meta.deviceCleanup?.generation === change.generation)
@@ -89,7 +118,10 @@ export default function AuthProvider({ children }) {
     const { account, sessionId } = engine.device.meta.closingAccount;
     const replica = engine.device.activeReplica.meta;
     if (replica.state === 'bound' && replica.account === account) {
+      const revision = roomOwnership.current.revision;
       const me = await fetchMe();
+      if (revision !== roomOwnership.current.revision) throw new Error('account-changed-during-closure');
+      confirmRoom(me);
       if (me === undefined) throw new Error('account-closure-unavailable');
       if (me?.id === account) {
         const current = (await listSessions()).find((session) => session.current);
@@ -114,8 +146,8 @@ export default function AuthProvider({ children }) {
     }
     await engine.write(null, (device) => { if (device.meta.closingAccount?.sessionId === sessionId) delete device.meta.closingAccount; });
     signedOut();
-  }, [signedOut, finishSignOut]);
-  const bind = useCallback(async (me, answers = {}) => {
+  }, [signedOut, finishSignOut, confirmRoom]);
+  const bind = useCallback(async (me, answers = {}, revision = roomOwnership.current.revision) => {
     const engine = syncSession.engine;
     const current = engine.device.activeReplica.meta;
     if (current.state === 'bound' && current.account !== me.id) {
@@ -136,7 +168,7 @@ export default function AuthProvider({ children }) {
         result = await engine.signIn(me.id, answers);
       }
     }
-    pending.current = { user: me, ...answers };
+    pending.current = { user: me, ...answers, revision };
     if (!result.complete) {
       const due = result.due?.[0];
       const product = PRODUCTS.find((product) => product.id === due?.product)?.sync;
@@ -145,14 +177,14 @@ export default function AuthProvider({ children }) {
       setError(!result.upgradeRequired && !result.due?.length);
       return;
     }
-    pending.current = null; setQuestion(null); setError(false); settle(me);
+    pending.current = null; setQuestion(null); setError(false); settle(me, undefined, revision);
   }, [settle, finishSignOut]);
   const refresh = useCallback(({ signedOut = false } = {}) => enqueue(async () => {
     const engine = await syncSession.opening;
     if (engine?.restoring) await engine.restoring;
     if (!engine || engine.closed) return undefined;
     await cleanupDevice(engine);
-    seat.restoreHolder(engine.device.activeReplica.meta);
+    seat.restoreHolder(engine);
     if (engine.device.meta.closingAccount) {
       const lock = engine.device.meta.signOut?.lock;
       if (lock && !engine.releaseSignOut && (await navigator.locks.query()).held.some((held) => held.name === lock)) return undefined;
@@ -162,36 +194,42 @@ export default function AuthProvider({ children }) {
     if (engine.signingOut || signOutResult.current) return undefined;
     await engine.cleanupCredentials();
     if (engine.device.meta.clearCredential) { settle(null, { signedOut: true }); return null; }
+    const revision = roomOwnership.current.revision;
     const me = await fetchMe();
+    if (revision !== roomOwnership.current.revision) return undefined;
+    const confirmedRevision = confirmRoom(me);
     if (engine.restoring) await engine.restoring;
     if (engine.closed || engine.signingOut || engine.device.meta.closingAccount || signOutResult.current) return undefined;
     if (me === undefined) {
       const cached = hint();
       const meta = engine.device.activeReplica.meta;
-      if (meta.state === 'bound' && cached?.id === meta.account) settle(cached);
-      else if (!seat.confirmed) settle(undefined);
+      if (meta.state === 'bound' && cached?.id === meta.account) settle(cached, undefined, confirmedRevision);
+      else if (!seat.confirmed) settle(undefined, undefined, confirmedRevision);
       return undefined;
     }
-    if (me) { await bind(me, pending.current?.user.id === me.id ? pending.current : {}); return me; }
+    if (me) { await bind(me, pending.current?.user.id === me.id ? pending.current : {}, confirmedRevision); return me; }
     const ended = signedOut || Boolean(seat.previousAccount && engine.device.activeReplica.meta.state === 'anon');
     if (ended && engine.device.activeReplica.meta.state === 'bound') {
       await finishSignOut({ choice: 'keep' }, me?.id ?? null);
     } else if (engine.device.activeReplica.meta.state === 'bound' && !engine.device.activeReplica.meta.authPaused) {
       await engine.write(null, (device) => { device.activeReplica.meta.authPaused = true; });
     }
-    pending.current = null; setQuestion(null); settle(null, { signedOut: ended });
+    pending.current = null; setQuestion(null); settle(null, { signedOut: ended }, confirmedRevision);
     return null;
-  }), [enqueue, settle, bind, seat, finishClosure, finishSignOut, cleanupDevice]);
-  const signIn = useCallback((me) => enqueue(async () => {
-    await syncSession.opening;
-    await cleanupDevice(syncSession.engine);
-    seat.restoreHolder(syncSession.engine.device.activeReplica.meta);
-    if (syncSession.engine.device.meta.closingAccount) await finishClosure();
-    // A freshly verified cookie supersedes any cleanup owed for an earlier session.
-    await syncSession.engine.write(null, (device) => { delete device.meta.clearCredential; });
-    await bind(me);
-    channel.current?.postMessage({ type: 'signed-in' });
-  }), [enqueue, bind, finishClosure, seat, cleanupDevice]);
+  }), [enqueue, settle, bind, seat, finishClosure, finishSignOut, cleanupDevice, confirmRoom]);
+  const signIn = useCallback((me) => {
+    const revision = confirmRoom(me);
+    return enqueue(async () => {
+      await syncSession.opening;
+      await cleanupDevice(syncSession.engine);
+      seat.restoreHolder(syncSession.engine);
+      if (syncSession.engine.device.meta.closingAccount) await finishClosure();
+      // A freshly verified cookie supersedes any cleanup owed for an earlier session.
+      await syncSession.engine.write(null, (device) => { delete device.meta.clearCredential; });
+      await bind(me, {}, revision);
+      channel.current?.postMessage({ type: 'signed-in' });
+    });
+  }, [enqueue, bind, finishClosure, seat, cleanupDevice, confirmRoom]);
   const signOut = useCallback(() => {
     if (signOutResult.current) return signOutResult.current.promise;
     let resolve;
@@ -236,7 +274,7 @@ export default function AuthProvider({ children }) {
           const decisions = { ...p.decisions, [question.product]: choice };
           const counted = { ...p.counted, [question.product]: question.counted };
           track('sync_signin', { outcome: 'pending' });
-          await bind(p.user, { decisions, counted });
+          await bind(p.user, { decisions, counted }, p.revision);
         } else {
           const engine = syncSession.engine;
           const previous = signOutResult.current?.account;
@@ -295,7 +333,10 @@ export default function AuthProvider({ children }) {
     let alive = true;
     const hooks = PRODUCTS.map((product) => product.sync ?? {});
     syncSession.open({ base: API_BASE, credentials: { clear: async (account) => {
+      const revision = roomOwnership.current.revision;
       const current = await fetchMe();
+      if (revision !== roomOwnership.current.revision) throw new Error('account-changed-during-cleanup');
+      confirmRoom(current);
       if (current === undefined) throw new Error('cookie-cleanup-unavailable');
       if (current?.id !== account) return;
       const closure = syncSession.engine.device.meta.closingAccount;
@@ -333,13 +374,13 @@ export default function AuthProvider({ children }) {
     const poll = setInterval(wake, 20000);
     return () => { alive = false; broadcast.close(); channel.current = null; clearInterval(poll);
       window.removeEventListener('focus', wake); window.removeEventListener('online', wake); };
-  }, [refresh, cleanupDevice]);
+  }, [refresh, cleanupDevice, confirmRoom]);
   // A surface that says the refused-device line itself holds it from the shell while it stands, so it is said once.
   const holdDeviceLine = useCallback(() => {
     setDeviceLineHolders((holders) => holders + 1);
     return () => setDeviceLineHolders((holders) => holders - 1);
   }, []);
-  return <AuthContext.Provider value={{ user, status, account, lapsed, signIn, signOut, closeAccount, refresh, holdDeviceLine }}>
+  return <AuthContext.Provider value={{ user, status, account, lapsed, roomChanging, signIn, signOut, closeAccount, refresh, holdDeviceLine }}>
     <div style={{ display: 'contents' }} inert={question && !upgradeRequired ? '' : undefined}>{children}</div>
     {!session.online && roomStatus?.status?.connectivity !== 'offline' && (
       <div role="status" style={{

@@ -19,7 +19,7 @@ Each shell and Node script's header names its prerequisites and how to run it.
 
 `backend.yml` has a manual `verify_live_anonymous_coach` input. It builds the selected commit and
 runs one goal, one program and one photo generation against the actual provider using the existing
-CI secret, each on a fresh $0.05 lifetime installation. It checks each installation's actual cost
+CI secret, each on a fresh $0.25 lifetime installation. It checks each installation's actual cost
 and debt, exact source targets for program/photo, durable replay without another call, no account
 training/image writes, bind attribution and local telemetry delivery. There are no automatic model
 retries. The verification dispatch publishes no image and retains only bounded `results.json`;

@@ -45,9 +45,8 @@ not emitted.
   `sync.hello` observations including the startup readiness check. The probe
   reported no engine refusals/failures. No product event or hosted Sentry delivery is claimed for
   this nonvisual flow. Its backend, database, credentials and temporary test source were removed.
-- Layering passes: 12 projects, eight JVM modules, eight rejected model attacks, 55 rejected source
-  attacks, five allowed fixtures, and zero findings across 489 deterministic-module classes.
-  Diff whitespace checks pass.
+- Layering passes with zero findings across the deterministic modules, every model and source attack
+  rejected. Diff whitespace checks pass.
 
 Adversarial review checked account changes while hello is in flight, cached readiness, malformed
 or unreachable responses, lower-bound upgrade precedence and retry wakeups. The fix pass made the

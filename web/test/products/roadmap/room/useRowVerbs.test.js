@@ -139,3 +139,17 @@ test('deleting the open roadmap closes its session only once the server took it,
   assert.deepEqual(await run(async () => {}), ['server', 'close', 'blob']);
   assert.deepEqual(await run(async () => { throw new Error('refused'); }), ['server', 'refused']);
 });
+
+test('Activity opens the chosen step and closes its panel, preserving the current view return path', () => {
+  for (const canvasView of [false, true]) {
+    const calls = [];
+    const graphStepReturnRef = { current: false };
+    const open = verbs.callback('openActivityStep', {
+      closeActivity: () => calls.push(['close']), canvasView, graphStepReturnRef,
+      address: { open: (id, source) => calls.push(['step', id, source]) },
+    });
+    open('course');
+    assert.deepEqual(calls, [['close'], ['step', 'course', 'activity']]);
+    assert.equal(graphStepReturnRef.current, canvasView);
+  }
+});

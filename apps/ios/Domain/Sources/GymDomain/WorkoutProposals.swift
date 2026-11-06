@@ -158,6 +158,37 @@ public struct ProposeWorkout: Action {
   }
 }
 
+// A proposal a signed-out phone held on its workout, once the account holds that workout: minted again under its own id
+// and words, read against the plan the account holds and guarding it. Only what the log confirmed is that plan, so a
+// workout it has not confirmed is out of reach. A row under its id is done, and a plan that already reads as proposed
+// leaves nothing.
+public struct ReissueWorkoutProposal: Action {
+  public struct Loaded {
+    let written: Bool
+    let confirmed: Bool
+    let workout: OpenWorkout
+  }
+
+  public let saved: WorkoutProposal
+  var proposing: ProposeWorkout { ProposeWorkout(id: saved.id, sessionId: saved.sessionId, entries: saved.document, summary: saved.summary) }
+  public var scope: ScopeRef { WorkoutProposal.scope }
+
+  public init(_ saved: WorkoutProposal) {
+    self.saved = saved
+  }
+
+  public func load(_ read: Reader) throws -> Loaded {
+    Loaded(written: try read.repository(WorkoutProposal.self).record(saved.id, in: .stored) != nil,
+           confirmed: try read.confirmed(Session.self, saved.sessionId) != nil, workout: try proposing.load(read))
+  }
+
+  public func decide(_ loaded: Loaded, ids: IDSource) throws(Violation) -> Decision<ID<WorkoutProposal>, GymRefusal> {
+    if loaded.written { return .unchanged(saved.id) }
+    guard loaded.confirmed else { return .refuse(.gone(saved.sessionId.ref, .predicted)) }
+    return try proposing.decide(loaded.workout, ids: ids)
+  }
+}
+
 // A workout proposal with its workout: why it can no longer be applied, and what the log would answer a decision on it.
 public struct WorkoutProposalState: Sendable {
   public enum Reason: String, Sendable {
@@ -194,12 +225,13 @@ public struct WorkoutProposalState: Sendable {
   }
 
   // Null for a pending proposal that still applies and for one the lifter decided; otherwise the first reason of a newer
-  // proposal replacing it, its workout closing, its plan changing past the revision it read, or a movement it changes
-  // gaining a logged set.
+  // proposal replacing it, its workout going, its workout closing, its plan changing past the revision it read, or a
+  // movement it changes gaining a logged set.
   public var outOfDate: OutOfDate? {
     guard let proposal else { return nil }
     if proposal.state == "superseded" { return OutOfDate(proposal.supersededBy == nil ? .workoutChanged : .replaced) }
-    guard proposal.state == "pending", let workout, let session = workout.session else { return nil }
+    guard proposal.state == "pending" else { return nil }
+    guard let workout, let session = workout.session else { return OutOfDate(.workoutChanged) }
     if workout.isClosed { return OutOfDate(.workoutFinished) }
     if let base = proposal.baseRevision, base != session.planRevision ?? 1 { return OutOfDate(.workoutChanged) }
     // A plan edit this phone has not had confirmed moves no revision yet, so the stored plan itself must still be the
@@ -213,14 +245,13 @@ public struct WorkoutProposalState: Sendable {
 
   public func refusal(for id: ID<WorkoutProposal>, applying: Bool) -> GymRefusal? {
     guard let proposal else { return GymRefusal(Refused(.unknownRecord, subject: id.ref, path: .predicted)) }
+    if proposal.state == "pending", applying, !(workout.map { $0.session != nil && $0.visible } ?? false) {
+      return GymRefusal(Refused(.unknownRecord, subject: proposal.sessionId.ref, path: .predicted))
+    }
     if let outOfDate, proposal.state == "superseded" || applying {
       return GymRefusal(Refused(Gym.Codes.proposalSuperseded, subject: id.ref, detail: ["reason": .string(outOfDate.reason.rawValue)], path: .predicted))
     }
-    if proposal.state == "pending" {
-      if !applying { return nil }
-      let inSight = workout.map { $0.session != nil && $0.visible } ?? false
-      return inSight ? nil : GymRefusal(Refused(.unknownRecord, subject: proposal.sessionId.ref, path: .predicted))
-    }
+    if proposal.state == "pending" { return nil }
     if proposal.state == (applying ? "applied" : "dismissed") { return nil }
     return GymRefusal(Refused(Gym.Codes.proposalSettled, subject: id.ref, detail: ["state": .string(proposal.state)], path: .predicted))
   }

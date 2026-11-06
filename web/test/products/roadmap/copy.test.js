@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  GRAPH_UNAVAILABLE,
   STATE_WORDS,
   COLUMN_TITLES,
   SORT_LABELS,
@@ -60,6 +61,7 @@ import {
   NOTE_EDITOR,
   BULK,
   selectedCount,
+  selectingAnnouncement,
   leftSelection,
   subtaskTally,
   deleteConfirm,
@@ -211,6 +213,7 @@ test('copy — an emptied column names its way out: the search, the kinds or bot
 test('copy — the step page and modal', async () => {
   const { STEP_DETAIL, prerequisitesTally, backTo } = await import('../../../src/products/roadmap/copy.js');
   assert.deepEqual(STEP_DETAIL, {
+    select: 'Select',
     sections: { overview: 'Overview', workspace: 'Workspace', history: 'History' },
     stepLinks: 'Step links',
     prerequisites: 'Prerequisites',
@@ -370,7 +373,8 @@ test('copy — edit and workspace labels match the wave 5 contract', () => {
 });
 
 test('copy — bulk selection formats full counts', () => {
-  assert.deepEqual(BULK, { done: 'Done', recolor: 'Recolor' });
+  assert.deepEqual(BULK, { region: 'Selection', done: 'Done', recolor: 'Recolor' });
+  assert.equal(selectingAnnouncement({ count: 1 }), 'Selecting. 1 selected.');
   assert.deepEqual([0, 1, 3, 1200].map((count) => selectedCount({ count })), [
     '0 selected', '1 selected', '3 selected', '1,200 selected',
   ]);
@@ -505,4 +509,15 @@ test('deleteCostLine — one child reads in the singular', () => {
 test('deleteCostLine — many children read in the plural', () => {
   assert.equal(deleteCostLine(2), 'Removes this step · 2 branches resplice');
   assert.equal(deleteCostLine(7), 'Removes this step · 7 branches resplice');
+});
+
+test('Board and Graph share the shipped Recolor spelling for every action label', async () => {
+  const { RECOLOR } = await import('../../../src/products/roadmap/copy.js');
+  assert.deepEqual({ button: BULK.recolor, kind: RECOLOR.kind('Learn'), steps: RECOLOR.steps, selection: RECOLOR.selection('Learn') }, {
+    button: LABELS.recolor, kind: `${LABELS.recolor} Learn`, steps: `${LABELS.recolor} selected steps`, selection: `${LABELS.recolor} selection to Learn`,
+  });
+});
+
+test('unavailable Graph says its device requirement without an action promise', () => {
+  assert.equal(GRAPH_UNAVAILABLE, 'Graph needs WebGL2, which this browser doesn’t support.');
 });

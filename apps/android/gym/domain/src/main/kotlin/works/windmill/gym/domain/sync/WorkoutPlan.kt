@@ -12,13 +12,14 @@ import works.windmill.sync.schema.Gym
 // lands), the movements the account can name, and the moment.
 data class OpenWorkout(val id: Id<Session>, val session: Session?, val visible: Boolean, val sets: List<TrainingSet>,
     val logged: Set<Id<Exercise>>, val catalogue: Catalogue, val moment: Moment) {
-    constructor(read: Reader, id: Id<Session>) : this(read, id, read.repository(TrainingSet).all(ViewMode.stored).filter { it.sessionId == id })
-    private constructor(read: Reader, id: Id<Session>, stored: List<TrainingSet>) : this(id,
+    constructor(read: Reader, id: Id<Session>) : this(read, id, read.repository(TrainingSet).all(ViewMode.stored).filter { it.sessionId == id },
+        read.repository(TrainingSet).all(ViewMode.drawn).filter { it.sessionId == id }, Catalogue(read))
+    internal constructor(read: Reader, id: Id<Session>, stored: List<TrainingSet>, drawn: List<TrainingSet>, catalogue: Catalogue) : this(id,
         read.repository(Session).find(id, ViewMode.stored),
         read.repository(Session).find(id, ViewMode.drawn) != null,
         stored,
-        (read.repository(TrainingSet).all(ViewMode.drawn).filter { it.sessionId == id } + stored).map { it.exerciseId }.toSet(),
-        Catalogue(read), read.moment)
+        (drawn + stored).map { it.exerciseId }.toSet(),
+        catalogue, read.moment)
 
     // Closed by its finish, or by the stale rule four hours past its last stored set.
     val isClosed: Boolean get() = session != null && !SessionRules.drawn(session, sets, moment.now).isOpen
@@ -31,6 +32,15 @@ data class OpenWorkout(val id: Id<Session>, val session: Session?, val visible: 
     }
 
     val plan: PlanSnapshot get() = session?.plan ?: throw Violation(WorkoutPlanRules.absent, Path("plan"), Violation.Reason.Custom("absent"))
+}
+
+// Every workout one read asks of, over one reading of the sets and the catalogue, so many waiting proposals cost what one does.
+class OpenWorkouts(private val read: Reader) {
+    private val stored by lazy(LazyThreadSafetyMode.NONE) { read.repository(TrainingSet).all(ViewMode.stored).groupBy { it.sessionId } }
+    private val drawn by lazy(LazyThreadSafetyMode.NONE) { read.repository(TrainingSet).all(ViewMode.drawn).groupBy { it.sessionId } }
+    private val catalogue by lazy(LazyThreadSafetyMode.NONE) { Catalogue(read) }
+
+    fun of(id: Id<Session>) = OpenWorkout(read, id, stored[id].orEmpty(), drawn[id].orEmpty(), catalogue)
 }
 
 // One edit of the plan. It names the entry it edits by `index`, a planned set of that entry by `set`, and the movement it

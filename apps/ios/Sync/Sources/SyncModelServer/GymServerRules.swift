@@ -652,19 +652,35 @@ public struct GymServerRules: ServerRules {
     return expected
   }
 
-  // R118's apply count of a diff: every line not kept, and one more when the kept and retargeted lines, matched to their
-  // base lines in proposed order, take a base line before one already visited.
-  func changeCount(_ base: [JSON], _ changes: [JSON]) -> Int {
-    let count = changes.filter { $0["kind"] != "kept" }.count
+  // The kept and retargeted lines a diff moved, each matched to the first unmatched base entry of its exercise in proposed
+  // order. A line at the same place in both never moved. Of the rest, a line that crosses one of those moved; of what is
+  // left, the longest run that keeps the base's order stands, the one whose places come first of equal runs, and every
+  // other line moved.
+  func movedLines(_ base: [JSON], _ changes: [JSON]) -> [(line: Int, kept: Bool)] {
     var matched = Set<Int>()
-    var highest = -1
-    for change in changes where change["kind"] == "kept" || change["kind"] == "retargeted" {
-      guard let index = base.indices.first(where: { !matched.contains($0) && base[$0]["exerciseId"] == change["exerciseId"] }) else { continue }
-      matched.insert(index)
-      if index < highest { return count + 1 }
-      highest = index
+    var retained: [(line: Int, kept: Bool, from: Int, to: Int)] = []
+    for (to, change) in changes.filter({ $0["kind"] != "removed" }).enumerated() where change["kind"] != "added" {
+      guard let from = base.indices.first(where: { !matched.contains($0) && base[$0]["exerciseId"] == change["exerciseId"] }) else { continue }
+      matched.insert(from)
+      retained.append((retained.count, change["kind"] == "kept", from, to))
     }
-    return count
+    let placed = retained.filter { $0.from == $0.to }, left = retained.filter { $0.from != $0.to }
+    let candidates = left.filter { line in placed.allSatisfy { (line.to < $0.to) == (line.from < $0.from) } }
+    var longest = Array(repeating: 1, count: candidates.count)
+    for i in candidates.indices.reversed() {
+      for j in candidates.indices where j > i && candidates[j].from > candidates[i].from { longest[i] = max(longest[i], longest[j] + 1) }
+    }
+    var standing = Set<Int>(), previous = -1, start = 0, length = longest.max() ?? 0
+    while length > 0 {
+      let next = candidates.indices.filter { $0 >= start && candidates[$0].from > previous && longest[$0] == length }.min { candidates[$0].from < candidates[$1].from }!
+      standing.insert(candidates[next].line); previous = candidates[next].from; start = next + 1; length -= 1
+    }
+    return left.filter { !standing.contains($0.line) }.map { ($0.line, $0.kept) }
+  }
+
+  // The apply count of a diff, what a card, a sheet and a receipt say: every line not kept and every kept line that moved.
+  func changeCount(_ base: [JSON], _ changes: [JSON]) -> Int {
+    changes.filter { $0["kind"] != "kept" }.count + movedLines(base, changes).filter(\.kept).count
   }
 
   // A.2's plan revision rules, shared by a plan write and a workout proposal: no empty set scheme, known movements, and no

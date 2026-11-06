@@ -17,10 +17,13 @@ import works.windmill.sync.engine.DeviceValueRewrite
 import works.windmill.sync.engine.Engine
 import works.windmill.sync.schema.Gym
 
+// The anonymous seat a retained answer was had on: its routines are saved only on that replica.
+data class CoachOnboardingSeat(val owner: String, val replica: String)
+
 sealed interface CoachImportOutcome {
     data class Committed(val receipt: CoachImportReceipt) : CoachImportOutcome
     data class Replayed(val receipt: CoachImportReceipt) : CoachImportOutcome
-    data class Refused(val refusal: GymRefusal?) : CoachImportOutcome
+    data object Refused : CoachImportOutcome
     data object Failed : CoachImportOutcome
 }
 
@@ -33,42 +36,33 @@ class CoachRoutineImports(
 ) {
     private val zone = Zone { at -> ZoneId.systemDefault().rules.getOffset(java.time.Instant.ofEpochMilli(at.ms)).totalSeconds }
 
-    fun receipt(resultId: String): CoachImportReceipt? = engine.read(Routine.scope) {
-        it.device(receiptKey(resultId))?.let(CoachImportReceipt::decode)
-    }
-
-    suspend fun apply(record: CoachOnboardingRecord, drafts: List<CoachRoutineImport>? = null,
-        movements: List<Exercise> = emptyList()): CoachImportOutcome = scope.async(start = CoroutineStart.UNDISPATCHED) {
+    // A retained answer's routines, in one gesture on the replica it was had on: a second save replays the first by the answer's result identity.
+    suspend fun apply(record: CoachOnboardingRecord): CoachImportOutcome = scope.async(start = CoroutineStart.UNDISPATCHED) {
         telemetry.event("gym_coach_import", mapOf("outcome" to "started"))
         var outcome = "failed"
         try {
             val response = record.response
             if (response == null || response.status != "completed" || response.requestId != record.requestId) {
                 outcome = "refused"
-                return@async CoachImportOutcome.Refused(null)
+                return@async CoachImportOutcome.Refused
             }
             val origin = CoachOnboardingSeat(record.owner, record.replica)
             if (seat() != origin || engine.activeReplica() != record.replica) {
                 outcome = "refused"
-                return@async CoachImportOutcome.Refused(null)
+                return@async CoachImportOutcome.Refused
             }
             withGymActionContext { context ->
                 val runner = ActionRunner(engine, engine.registry, zone, context)
                 val moment = runner.moment()
-                val routines = drafts ?: response.routines.map { routine -> CoachRoutineImport(Id(mintRoutine(), Routine), routine.name,
-                    routine.entries.map { entry -> RoutineEntry(Id(entry.exerciseId, Exercise), entry.sets.takeIf { it.isNotEmpty() }
-                        ?.map { SetTarget(it.reps, it.weightKg) }, entry.restSeconds) }) }
-                val normalized = routines.map { value ->
-                    val checked = Valid(Routine(value.id, value.name, entries = value.entries), Routine, at = moment).value
-                    value.copy(name = checked.name, entries = checked.entries)
+                val normalized = response.routines.map { routine ->
+                    val entries = routine.entries.map { entry -> RoutineEntry(Id(entry.exerciseId, Exercise), entry.sets.takeIf { it.isNotEmpty() }?.map { SetTarget(it.reps, it.weightKg) }, entry.restSeconds) }
+                    val checked = Valid(Routine(Id(mintRoutine(), Routine), routine.name, entries = entries), Routine, at = moment).value
+                    CoachRoutineImport(checked.id, checked.name, checked.entries)
                 }
-                val custom = movements.map { Valid(it, Exercise, at = moment).value }
                 val payload = Json.objectOf("routines" to Json.Arr(normalized.map { Json.objectOf("name" to Json.of(it.name),
-                    "entries" to Json.Arr(it.entries.map { entry -> entry.json })) }),
-                    "movements" to Json.Arr(custom.sortedBy { it.id }.map { Json.objectOf("id" to it.id.json,
-                        "fields" to Json.Obj(it.fields().toList()), "loadCount" to Json.of(it.loadCount)) }))
+                    "entries" to Json.Arr(it.entries.map { entry -> entry.json })) }), "movements" to Json.Arr(emptyList()))
                 val fingerprint = Sha256.hex(payload.jcs.toByteArray(Charsets.UTF_8))
-                val action = ImportCoachRoutineBatch(record.replica, response.resultId, fingerprint, receiptKey(response.resultId), normalized, custom)
+                val action = ImportCoachRoutineBatch(record.replica, response.resultId, fingerprint, receiptKey(response.resultId), normalized)
                 val wrapped = object : Action<ImportCoachRoutineBatch.Loaded?, CoachImportReceipt, GymRefusal> {
                     override val scope = action.scope
                     override val refusals = GymRefusal
@@ -84,11 +78,11 @@ class CoachRoutineImports(
                 when (val result = runner.run(wrapped)) {
                     is Outcome.Committed -> { outcome = "committed"; CoachImportOutcome.Committed(result.result) }
                     is Outcome.Unchanged -> { outcome = "replayed"; CoachImportOutcome.Replayed(result.result) }
-                    is Outcome.Refused -> { outcome = "refused"; CoachImportOutcome.Refused(result.refusal) }
+                    is Outcome.Refused -> { outcome = "refused"; CoachImportOutcome.Refused }
                 }
             }
         } catch (cancelled: CancellationException) { throw cancelled }
-        catch (_: Violation) { outcome = "refused"; CoachImportOutcome.Refused(null) }
+        catch (_: Violation) { outcome = "refused"; CoachImportOutcome.Refused }
         catch (_: Exception) {
             telemetry.failure("gym.coachOnboarding", IOException("The Coach routines could not be committed."))
             CoachImportOutcome.Failed
