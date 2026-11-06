@@ -60,8 +60,8 @@ public struct CommitPlanner: Sendable {
     guard meta.state == .anon || meta.state == .bound else { throw CommitFailure(.notWritable, "a \(meta.state.rawValue) replica does not commit") }
   }
 
-  // Steps 2–11, after the checks before step 2. The retire and its silent fold run on a working copy, which the diff reads
-  // and which the replica becomes once the commit is accepted.
+  // Steps 2–11, after the checks before step 2. The retire, the supersede and their one silent fold run on a working copy,
+  // which the diff reads and which the replica becomes once the commit is accepted.
   func commitGesture(_ gesture: Gesture, in scope: ScopeRef, to replica: inout LoadedReplica, as instance: Instance,
                      identities: IdentitySource, gestureIdTaken: Bool, draws: [Draw]) throws -> CommitOutcome {
     guard registry.scopeKind(of: scope) != nil else { throw CommitFailure.malformed("\(scope) is no scope of the registry") }
@@ -77,11 +77,14 @@ public struct CommitPlanner: Sendable {
     clock.observe(replica.meta.hlcHigh)
     let stamp = clock.tick(physNow: physNow, actor: instance.actor)
 
+    // Step 4: the retired gestures end by retire and the superseded by silent fold, a gesture in both by retire, and the
+    // dependents of all of them fold in one pass, as a replacement when any gesture is superseded.
+    let retiring = retiringEntries(of: gesture.retire, in: scope, replica: replica)
     let superseding = try supersedingEntries(gesture.supersede, in: scope, replica: replica)
+    let supersedingOnly = superseding.filter { entry in !retiring.contains { $0.commitOrder == entry.commitOrder } }
+    let ending = retiring.map { (entry: $0, event: IntentEvent.retire) } + supersedingOnly.map { (entry: $0, event: IntentEvent.silentFold) }
     var retired = replica
-    try hold.end(superseding, by: .silentFold, replaced: true, in: &retired)
-    let retiring = retiringEntries(of: gesture.retire, in: scope, replica: retired)
-    try hold.end(retiring, by: .retire, in: &retired)
+    try hold.end(ending, replaced: !superseding.isEmpty, in: &retired)
     var builder = DeltaBuilder(
       registry: registry, replica: retired, scope: scope, stamp: stamp, physNow: physNow,
       drawn: try ScopeView(retired, scope, .drawn, registry: registry),

@@ -1035,14 +1035,16 @@ is answered for the caller to resume.
   The return includes `superseded` in commit order when gestures were named. The caller supplies
   the complete replacement effects, including cumulative first-run retirement fields.
   `commit/supersede.json` pins ready and held replacement, ordering, dependent folding, guards on a
-  replaced record, other-scope refusal, missing and bound gestures, malformed replacement and an oversized replacement rollback.
+  replaced record, a retire beside a supersede, other-scope refusal, missing and bound gestures, malformed
+  replacement and an oversized replacement rollback.
 - `guard`: a list of registers `{t, id, field}`, guarded exactly, each at its `stored` stamp (`null`
   when unset). A field the type does not declare as a lattice field, `life`, a text field, or a
   register of a type another scope holds throws.
 - `retire`: a list of records `{t, id}`. Every held gesture of the scope that carries no command and
   whose every delta removes (`life → dead`) a listed record ends `undone` (event `retire`), its
   dependents folding silently as an undo's do (event `silent-fold`), and the diff runs on views without
-  either.
+  either. Beside a `supersede`, the retired and the superseded gestures fold their dependents in one
+  pass, as a replacement: a later guard on a record a retired gesture's dependents created goes too.
   `retired` lists those gesture ids in commit order; a refused commit retires nothing.
 - `cmd`: `{name, args}`.
 - `predict`: a list of `create`, `update`, `delete`, `put` and `write` changes, kept locally and never

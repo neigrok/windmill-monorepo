@@ -1355,7 +1355,9 @@ none. A gesture whose diff is empty still runs steps 2–11. One local transacti
    of them, ends `undone`, as `undo` ends it, its dependents folded silently (§7.3). `commit` returns
    their gesture ids as `retired`, in commit order; a commit refused at step 8 retires nothing. A
    retired removal never happened, so the record keeps its untouched fields, and a minted or derived
-   record is back in `drawn`: the gesture writes it by an update. From here on `drawn` and `stored`
+   record is back in `drawn`: the gesture writes it by an update. A commit that names both `supersede`
+   and `retire` folds the dependents of both in one pass, as a replacement: a later entry's guard on a
+   record the retired gestures' dependents created goes with them too. From here on `drawn` and `stored`
    hold neither the retired entries nor the parts their fold removes. Then diff `changes` against
    `drawn`, emitting only changed fields, stamped `s`:
    - A minted or derived delta carries the record's `born`. A create gets `born = s` and

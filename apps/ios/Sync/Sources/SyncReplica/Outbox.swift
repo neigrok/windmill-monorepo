@@ -1,8 +1,8 @@
 import SyncAPI
 import SyncCore
 
-// The outbox's own moves: hold, release and undo, with the silent fold an undo and a retire share (§7.3), and the
-// dependents that folds, refusals and held-back numbering read (§7.7 step 3, §7.4).
+// The outbox's own moves: hold, release and undo, with the silent fold an undo, a retire and a supersede share (§7.3),
+// and the dependents that folds, refusals and held-back numbering read (§7.7 step 3, §7.4).
 
 // MARK: - Dependents (§7.7 step 3)
 
@@ -153,20 +153,17 @@ public struct Hold: Sendable {
   public func undo(_ gestureId: String, in replica: inout LoadedReplica) throws -> Bool {
     let gesture = replica.outbox.filter { $0.gestureId.utf8.elementsEqual(gestureId.utf8) }
     guard !gesture.isEmpty, gesture.allSatisfy({ $0.state == .held }) else { return false }
-    try end(gesture, by: .undo, in: &replica)
+    try end(gesture.map { (entry: $0, event: .undo) }, in: &replica)
     return true
   }
 
-  // The silent fold of an undo, a retire and a supersede (§7.1 step 4): the held entries end by `event`, and every later
-  // held or ready entry loses its dependent part without a notice; one left empty ends undone. The parts are found before
-  // anything moves, among the entries that touch what the load read: an undo and a supersede read the whole outbox, and a
-  // retire the records it names, the only ones a dependent of a retired removal touches. §7.4 numbers no entry that depends
-  // on a held one, so the fold never meets a sent entry.
-  func end(_ held: [OutboxEntry], by event: IntentEvent, replaced: Bool = false, in replica: inout LoadedReplica) throws {
+  // The silent fold of an undo, a retire and a supersede (§7.1 step 4): each entry of `ending` ends by its event, and every
+  // later held or ready entry loses its dependent part without a notice, found in one pass before anything moves; one left empty ends undone.
+  func end(_ ending: [(entry: OutboxEntry, event: IntentEvent)], replaced: Bool = false, in replica: inout LoadedReplica) throws {
     var dependents = Dependents(registry: registry, replaced: replaced)
     var parts: [(entry: OutboxEntry, part: Dependents.Part)] = []
     for entry in replica.entriesTouchingReads {
-      if held.contains(where: { $0.commitOrder == entry.commitOrder }) {
+      if ending.contains(where: { $0.entry.commitOrder == entry.commitOrder }) {
         dependents.absorb(scope: entry.scope, deltas: entry.drawnDeltas, stamp: entry.stamp)
         continue
       }
@@ -176,7 +173,7 @@ public struct Hold: Sendable {
       dependents.absorb(part, of: entry)
       parts.append((entry, part))
     }
-    for entry in held { try replica.move(entry.localId, event) }
+    for (entry, event) in ending { try replica.move(entry.localId, event) }
     for (entry, part) in parts {
       replica.update(entry: entry.localId) { _ = Dependents.remove(part, from: &$0) }
       if replica.entry(entry.localId)!.isEmpty { try replica.move(entry.localId, .silentFold) }
