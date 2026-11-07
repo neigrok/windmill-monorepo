@@ -206,7 +206,7 @@ import XCTest
     closeCoach()
     page(to: "Seated Cable Row")
     XCTAssertTrue(app.buttons["workout-reps"].waitForLabel("12 reps", timeout: 5), "The rack takes the applied plan's target")
-    XCTAssertTrue(app.buttons["workout-weight"].label.contains("40"), app.buttons["workout-weight"].label)
+    XCTAssertTrue(app.textFields["workout-load"].label.contains("40"), app.textFields["workout-load"].label)
     let belt = askOverTheWorkout("And the pull-ups?")
     XCTAssertTrue(belt.label.hasPrefix("Changes to this workout"), belt.label)
     closeCoach()

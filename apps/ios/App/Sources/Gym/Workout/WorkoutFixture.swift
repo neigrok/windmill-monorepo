@@ -27,7 +27,7 @@ enum WorkoutFixture {
     if board.hasPrefix("workout-inflight") { return await prepareInFlight(board, model: model) }
     // The rack's boards (03.x) stand at Upper A's dumbbell press, its squat and pull-up sets already logged.
     let upper = board.contains("upper"), planned = upper || board.contains("planned")
-    let other = board == "workout-upper-other"
+    let other = board == "workout-upper-other", varied = board == "workout-planned-varied"
     if other {
       guard gym.run(UpdateExercise(ID("pull-up"), name: "Pull-up", equipment: Equipment.other.rawValue))?.refusal == nil else { return true }
     }
@@ -38,9 +38,13 @@ enum WorkoutFixture {
     }
     var routineId: ID<Routine>?
     if planned {
+      // The varied board ends Lower A's squat on a heavier triple, so its last slot prefills a load no typed set would leave.
+      let squat = varied
+        ? RoutineEntry(exerciseId: ID("back-squat"), sets: Array(repeating: SetTarget(reps: 5, weightKg: 100), count: 3) + [SetTarget(reps: 3, weightKg: 120)], restSeconds: 180)
+        : targets("back-squat", 4, 5, 100)
       var draft = Draft(new: Routine(id: gym.runner.mint(Routine.self), name: upper ? "Upper A" : "Lower A", entries: upper ? [
         targets("back-squat", 4, 5, 100), targets("dumbbell-bench-press", 4, 8, 16), targets("pull-up", 4, 8, other ? -5 : 10), targets("overhead-press", 3, 8, 40),
-      ] : [targets("back-squat", 4, 5, 100), targets("romanian-deadlift", 3, 6, 82.5)]))
+      ] : [squat, targets("romanian-deadlift", 3, 6, 82.5)]))
       guard case .saved = gym.save(&draft) else { return true }
       routineId = draft.current.id
     }

@@ -70,10 +70,8 @@ import XCTest
       let row = app.buttons["routine-" + routine]
       XCTAssertTrue(row.waitForExistence(timeout: 15)); row.tap()
       XCTAssertTrue(app.buttons["routine-start"].waitForExistence(timeout: 5)); app.buttons["routine-start"].tap()
-      XCTAssertTrue(app.buttons["workout-weight"].waitForExistence(timeout: 10)); app.buttons["workout-weight"].tap()
       let field = app.textFields["workout-load"]
-      XCTAssertTrue(field.waitForExistence(timeout: 5)); XCTAssertEqual(try shown(field), load)
-      app.buttons["workout-load-done"].tap()
+      XCTAssertTrue(field.waitForExistence(timeout: 10)); XCTAssertEqual(try shown(field), load)
       XCTAssertTrue(app.buttons["workout-log"].waitForExistence(timeout: 5)); app.buttons["workout-log"].tap()
       XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "workout-set-")).firstMatch.waitForExistence(timeout: 5))
       app.buttons["workout-finish"].tap()
@@ -104,7 +102,8 @@ import XCTest
     }
   }
   func back(_ app: XCUIApplication) { app.navigationBars.buttons.element(boundBy: 0).tap() }
-  func logAndFinish(_ app: XCUIApplication, close: Bool = true, count: Int = 4, keep: Bool = false) {
+  // Logs `count` sets on the rack, after `logged` the caller put there, fixes the first set and finishes.
+  func logAndFinish(_ app: XCUIApplication, close: Bool = true, count: Int = 4, logged: Int = 0, keep: Bool = false) {
     XCTAssertTrue(app.buttons["workout-log"].waitForExistence(timeout: 10))
     for _ in 0..<count { app.buttons["workout-log"].tap() }
     let set = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "workout-set-")).firstMatch
@@ -112,7 +111,7 @@ import XCTest
     app.typeLoad("62.5", into: "workout-fix-load")
     app.buttons["workout-fix-save"].tap()
     XCTAssertTrue(app.buttons["workout-finish"].waitForExistence(timeout: 5)); app.buttons["workout-finish"].tap()
-    XCTAssertTrue(app.staticTexts[count < 4 ? "Ended early." : "Well done."].waitForExistence(timeout: 20))
+    XCTAssertTrue(app.staticTexts[count + logged < 4 ? "Ended early." : "Well done."].waitForExistence(timeout: 20))
     let options = app.buttons["workout-receipt-options"]
     XCTAssertTrue(options.waitForExistence(timeout: 5)); options.tap()
     let discard = app.buttons["Discard workout"]
@@ -163,7 +162,7 @@ import XCTest
     XCTAssertGreaterThanOrEqual(start.frame.width, app.windows.firstMatch.frame.width * 0.85)
     start.tap()
     hideAndReturn(app)
-    let rackWeight = app.buttons["workout-weight"].label
+    let rackWeight = app.textFields["workout-load"].label
     let rackSet = app.descendants(matching: .any)["workout-current-set"].label
     app.buttons["workout-assembly"].tap()
     XCTAssertTrue(app.buttons["workout-assembly-add"].waitForExistence(timeout: 5)); app.buttons["workout-assembly-add"].tap()
@@ -171,10 +170,16 @@ import XCTest
     app.navigationBars.buttons["Cancel"].tap()
     XCTAssertTrue(app.searchFields.firstMatch.waitForNonExistence(timeout: 5))
     XCTAssertTrue(app.buttons["workout-log"].waitForExistence(timeout: 5))
-    XCTAssertEqual(app.buttons["workout-weight"].label, rackWeight)
+    XCTAssertEqual(app.textFields["workout-load"].label, rackWeight)
     XCTAssertEqual(app.descendants(matching: .any)["workout-current-set"].label, rackSet)
     XCTAssertFalse(app.buttons["workout-assembly-add"].exists)
-    logAndFinish(app)
+    // The first set's load is typed through the rack's field, so a typed load's open and land report on the real server.
+    app.typeLoad("65")
+    XCTAssertTrue(app.textFields["workout-load"].waitForLabel("Weight, 65 kg total"))
+    app.buttons["workout-log"].tap()
+    XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+    XCTAssertTrue(app.loggedSet(1).waitForLabel("Set 1, logged, 65 kilograms, 8 reps"))
+    logAndFinish(app, count: 3, logged: 1)
     app.buttons["gym-session-movement"].firstMatch.tap()
     XCTAssertTrue(app.descendants(matching: .any)["gym-movement-record"].waitForExistence(timeout: 5))
     back(app); back(app)
@@ -417,12 +422,9 @@ import XCTest
     return setIDs
   }
   func verifyConflictServerAsync(identity: [String: String], stage: String, recoveryID: String?) async throws -> Set<String> {
-    let origin = try XCTUnwrap(server)
     let accountWorkout = try XCTUnwrap(identity["openSession"])
-    let token = try XCTUnwrap(identity["token"])
     func get(_ path: String) async throws -> [String: Any] {
-      var request = URLRequest(url: URL(string: origin + "/v1/gym/" + path)!); request.timeoutInterval = 5
-      request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
+      var request = try gymRequest(path, identity: identity); request.timeoutInterval = 5
       let (data, response) = try await URLSession.shared.data(for: request)
       XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
       return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])

@@ -687,8 +687,8 @@ import SyncTesting
     #expect(receipt.performed.map(\.exerciseId) == [second, first] && receipt.performed.map(\.reading) == ["1 × 5 · 100", "2 × 5 · 80–85"])
   }
 
-  // A row keeps its place as sets are logged: the set takes over the current row, the next planned row becomes current, and
-  // the plan line and This workout's count read the same sets.
+  // A row keeps its place as sets are logged: the set takes over the current row, the next planned row becomes current with
+  // the numbers the plan states, and the plan line and This workout's count read the same sets.
   @Test func aLoggedSetTakesOverTheCurrentRowAndTheNextPlannedRowMovesUp() throws {
     let (_, gym) = try fixture(), plan = try routine(gym, scheme: Array(repeating: SetTarget(reps: 5, weightKg: 40), count: 3))
     let workout = try begin(gym, routine: plan)
@@ -696,10 +696,11 @@ import SyncTesting
     #expect(before.rows.map(\.id) == [0, 1, 2] && before.rows.map(\.marker) == ["1", "2", "3"])
     #expect(before.rows.map(\.place) == [.current, .planned, .planned] && before.rows.map(\.reading) == ["40 × 5", "40 × 5", "40 × 5"])
     #expect(before.planLine == nil && before.tally == "0 of 3 sets" && !before.complete)
+    workout.weightKg = 42.5
     #expect(workout.logSet())
     let set = try #require(workout.sets.first), logged = workout.ledger(first)
     #expect(logged.rows.map(\.id) == [0, 1, 2] && logged.rows.map(\.place) == [.logged(set), .current, .planned])
-    #expect(logged.tally == "1 of 3 sets")
+    #expect(logged.rows.map(\.reading) == ["42.5 × 5", "40 × 5", "40 × 5"] && logged.tally == "1 of 3 sets")
     #expect(workout.logSet() && workout.logSet())
     let done = workout.ledger(first)
     #expect(done.rows.map(\.marker) == ["1", "2", "3", "4"] && done.rows.map(\.id) == [0, 1, 2, 3] && done.current.reading == Readout.openTarget)
@@ -1040,24 +1041,54 @@ import SyncTesting
     #expect(workout.weightKg == 70 && workout.reps == 3)
   }
 
-  // A load typed on the rack lands on its own movement before the lifter moves on, so it never reaches the next one, and
-  // another account drops it: the field letting go after the change lands nothing.
-  @Test func aTypedLoadLandsOnItsMovementBeforeTheLifterMovesOnAndAnotherAccountDropsIt() throws {
-    let (_, gym) = try fixture(), workout = try begin(gym)
+  // A load typed on the rack edits it key by key, so Log set logs what the field shows, with no tick or save of its own;
+  // a load the keys changed ticks once as the field lets go, when the rack is saved at once, and a change of movement lands
+  // it on its movement first. The pad's rise and a landed load are the typing events; the saves report as every rack save does.
+  @Test func aTypedLoadEditsTheRackKeyByKeyAndCountsOnceAsTheFieldLetsGo() throws {
+    let recorder = TelemetryRecorder(), (_, gym) = try fixture(telemetry: recorder), workout = try begin(gym)
+    let saves = { recorder.entries.withLock { $0.filter { $0.name == "gym_workout_adjusted" }.count } }
+    let typing = { recorder.entries.withLock { $0.filter { $0.name == "gym_workout_load_typed" }.map { $0.properties["action"] ?? "" } } }
     workout.weightKg = 40; workout.add(second); workout.weightKg = 60; workout.select(first)
-    workout.typeLoad(); #expect(workout.typedLoad == 40)
-    workout.typedLoad = 123; workout.select(second)
-    #expect(workout.typedLoad == nil && workout.selected == second && workout.weightKg == 60)
-    workout.select(first)
-    #expect(workout.weightKg == 123)
-    workout.typeLoad(); workout.typedLoad = 125; workout.add(third)
-    #expect(workout.typedLoad == nil && workout.selected == third)
+    #expect(workout.activityOffer()?.weightKg == 40)
+    let (ticks, saved) = (workout.adjustments, saves())
+    workout.typingLoad = true
+    workout.typeLoad(1); workout.typeLoad(12); workout.typeLoad(123)
+    #expect(workout.weightKg == 123 && workout.adjustments == ticks && saves() == saved && workout.rackSave == nil, "No save waits while the load is typed")
+    #expect(try workout.activityRecord()?.offer?.weightKg == 40)
+    workout.typingLoad = false
+    #expect(workout.adjustments == ticks + 1 && saves() == saved + 1)
+    #expect(try workout.activityRecord()?.offer?.weightKg == 123)
+    #expect(typing() == ["open", "land"])
+    workout.typingLoad = true; workout.typingLoad = false
+    #expect(workout.adjustments == ticks + 1 && saves() == saved + 1, "A pad raised and let go unchanged ticks and saves nothing")
+    #expect(typing() == ["open", "land", "open"])
+    workout.typingLoad = true; workout.typeLoad(125); workout.select(second)
+    #expect(workout.selected == second && workout.weightKg == 60 && saves() == saved + 2)
+    workout.typingLoad = false
+    #expect(workout.adjustments == ticks + 2 && saves() == saved + 2)
     workout.select(first)
     #expect(workout.weightKg == 125)
-    workout.typeLoad(); workout.typedLoad = 99; workout.accountChanged()
-    let restored = workout.weightKg
-    workout.landTypedLoad()
-    #expect(workout.typedLoad == nil && workout.weightKg == restored && restored != 99)
+    workout.typingLoad = true; workout.typeLoad(77); workout.logSet()
+    #expect(workout.sets.last?.weightKg == 77 && saves() == saved + 3)
+    workout.typingLoad = false
+    #expect(workout.adjustments == ticks + 3 && saves() == saved + 3)
+    #expect(typing() == ["open", "land", "open", "open", "land", "open", "land"])
+    #expect(recorder.entries.withLock { $0.filter { $0.name == "gym_workout_load_typed" }.allSatisfy { $0.properties == ["screen": "workout", "action": $0.properties["action"]!] } })
+  }
+
+  // Log set while the load is typed logs what the field shows and prefills a varied plan's next set; the field letting go
+  // afterwards lands nothing over it, on the rack or in the Live Activity's offer.
+  @Test func logSetWhileTypingLogsTheTypedLoadAndThePlansNextSetTakesTheRack() throws {
+    let (_, gym) = try fixture(), plan = try routine(gym, scheme: [SetTarget(reps: 8, weightKg: 60), SetTarget(reps: 5, weightKg: 90)])
+    let workout = try begin(gym, routine: plan)
+    #expect(workout.weightKg == 60 && workout.reps == 8)
+    workout.typingLoad = true; workout.typeLoad(65)
+    #expect(workout.logSet())
+    #expect(workout.sets.last?.weightKg == 65 && workout.sets.last?.reps == 8)
+    #expect(workout.weightKg == 90 && workout.reps == 5)
+    workout.typingLoad = false
+    #expect(workout.weightKg == 90 && workout.reps == 5)
+    #expect(workout.activityOffer()?.weightKg == 90 && workout.activityOffer()?.reps == 5)
   }
 
   @Test func lastTimePrefillsFreeWorkoutAndPlanOverridesIt() throws {

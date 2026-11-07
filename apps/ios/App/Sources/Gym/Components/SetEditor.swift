@@ -38,53 +38,53 @@ nonisolated enum LoadText {
   }
 }
 
-// One load on the system decimal pad (03.23, 03.25, 03.30). Editing selects its text, so the first key replaces it. While
-// it is typed in, `weightKg` holds the load the field stands for: a readable value, else the load it opened on, which is
-// what the field shows again when it lets go. Bodyweight and Other add ± to the keyboard row, the pad having no minus,
-// unless the host draws its own; ± flips the load, whatever is typed. `focus` asks for the keyboard; whether the field is
-// being typed in comes from the text field's own editing callback, SwiftUI's focus not reporting back from the rack's
-// reach band.
+// One load on the system decimal pad (03.23A, 03.25, 03.30). Focus selects its text, so the first key replaces it, and
+// every key writes the load the text stands for, a readable value, else the load the field opened on, so the host's
+// `weightKg` is live while it is typed in. As the field lets go only an unreadable text writes, restoring the opening
+// load; the text then resyncs to whatever the host holds, a change the host made meanwhile kept. The field draws no
+// keyboard row: the pad has no minus, and a signed basis gets `FlipSignKey` from its host — the rack leads its ladder
+// with it, a sheet's Load row leads the keyboard row. Focus is the host's, and reports from the rack and a form alike.
 struct LoadField: View {
   @Binding var weightKg: Double
   let basis: MovementEquipment
   let focus: FocusState<Bool>.Binding
   let identifier: String
-  var signInKeyboardRow = true
-  var ended: () -> Void = {}
   @State private var typed = ""
   @State private var opening = 0.0
-  @State private var editing = false
 
   var standsFor: Double { LoadText.parse(typed, signed: basis.signed) ?? opening }
 
   var body: some View {
-    TextField("Load", text: $typed, onEditingChanged: { editing = $0 })
-      .keyboardType(.decimalPad)
-      .focused(focus)
+    TextField("Load", text: $typed).keyboardType(.decimalPad).focused(focus)
       .onAppear { typed = LoadText.typed(weightKg) }
-      .onChange(of: editing) { _, began in
-        if began {
+      .onChange(of: focus.wrappedValue) { _, typing in
+        if typing {
           opening = weightKg; typed = LoadText.typed(weightKg)
           // Focus from code leaves the caret at the end; the editing field is the first responder, which selects its text.
           DispatchQueue.main.async { UIApplication.shared.sendAction(#selector(UIResponder.selectAll(_:)), to: nil, from: nil, for: nil) }
           return
         }
-        weightKg = standsFor; typed = LoadText.typed(weightKg)
-        ended()
+        if LoadText.parse(typed, signed: basis.signed) == nil { weightKg = opening }
+        typed = LoadText.typed(weightKg)
       }
-      .onChange(of: weightKg) { _, value in if !editing || value != standsFor { typed = LoadText.typed(value) } }
-      .onChange(of: typed) { _, _ in if editing { weightKg = standsFor } }
-      .toolbar {
-        if editing, basis.signed, signInKeyboardRow {
-          ToolbarItemGroup(placement: .keyboard) {
-            Button("Flip the sign", systemImage: "plus.forwardslash.minus") { weightKg = -weightKg }
-              .accessibilityIdentifier("\(identifier)-sign")
-            Spacer()
-          }
-        }
-      }
+      .onChange(of: weightKg) { _, value in if !focus.wrappedValue || value != standsFor { typed = LoadText.typed(value) } }
+      .onChange(of: typed) { _, _ in if focus.wrappedValue { weightKg = standsFor } }
       .accessibilityLabel("Load, \(basis.unit)")
       .accessibilityIdentifier(identifier)
+  }
+}
+
+// The ± the decimal pad lacks, for bodyweight and Other: it flips the load, whatever is typed. As a ladder key it fills
+// its cell at the keys' height; in a keyboard row it is its symbol alone.
+struct FlipSignKey: View {
+  @Binding var weightKg: Double
+  let identifier: String
+  var asKey = false
+  var body: some View {
+    Button { weightKg = -weightKg } label: {
+      Image(systemName: "plus.forwardslash.minus").font(asKey ? .title3.weight(.medium) : nil)
+        .frame(maxWidth: asKey ? .infinity : nil, minHeight: asKey ? 48 : nil).contentShape(Rectangle())
+    }.accessibilityLabel("Flip the sign").accessibilityIdentifier("\(identifier)-sign")
   }
 }
 
@@ -124,22 +124,29 @@ struct RepsWheel: View {
 }
 
 // A set's Load row as Fix set and Edit sets draw it (03.25, 03.30): the load on the decimal pad in its well, outlined in
-// the accent while it has focus, then its unit.
+// the accent while it has focus, then its unit. Bodyweight and Other lead the keyboard row with ±.
 struct LoadRow: View {
   @Binding var weightKg: Double
   let basis: MovementEquipment
   let focus: FocusState<Bool>.Binding
   let identifier: String
-  var ended: () -> Void = {}
 
   var body: some View {
     LabeledContent("Load") {
       HStack(spacing: RoomSpace.related) {
-        LoadField(weightKg: $weightKg, basis: basis, focus: focus, identifier: identifier, ended: ended)
+        LoadField(weightKg: $weightKg, basis: basis, focus: focus, identifier: identifier)
           .modifier(FieldWell(focused: focus.wrappedValue))
         Text(basis.unit).foregroundStyle(GymPalette.inkDim).fixedSize()
       }
     }.foregroundStyle(GymPalette.ink)
+      .toolbar {
+        if focus.wrappedValue, basis.signed {
+          ToolbarItemGroup(placement: .keyboard) {
+            FlipSignKey(weightKg: $weightKg, identifier: identifier)
+            Spacer()
+          }
+        }
+      }
   }
 }
 

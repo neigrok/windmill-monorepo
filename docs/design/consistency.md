@@ -163,11 +163,13 @@ for the canonical Coach-led flow, indexed in [the flow index](../index.md). Colo
   calendar boundary. All hosted AI, including background Echoes, consumes the individual budget.
   Signing in binds the device and includes its current-month anonymous spend in free usage.
   Server-issued installation credentials are implemented; customer USD screens remain unbuilt.
-- **6w · Keyboard bars on iOS 26.** The app avoids SwiftUI `.keyboard` toolbars because their
-  retained layout can reduce later sheets' keyboard avoidance. Coach's *Done* is above its composer;
-  the note editor has none. The combined routine movement editor uses `KeyboardBar` with *Next* and
-  *Done* in its bottom inset while a field is focused, above the form's Done/Add action. Its keyboard
-  and commit clearance are part of the compact-phone and large-text verification in 10y.
+- **6w · Keyboard bars on iOS 26.** The app keeps SwiftUI `.keyboard` toolbars to the ± a sheet's
+  Load row adds for a signed basis (`LoadRow`, Fix set and Edit sets) because their retained layout
+  can reduce later sheets' keyboard avoidance; the rack has no keyboard row at all, its ± leading the
+  ladder (03.30). Coach's *Done* is above its composer; the note editor has none. The combined routine
+  movement editor uses `KeyboardBar` with *Next* and *Done* in its bottom inset while a field is
+  focused, above the form's Done/Add action. Its keyboard and commit clearance are part of the
+  compact-phone and large-text verification in 10y.
 
 ### iOS against the drawings and the other phone
 
@@ -468,6 +470,35 @@ and Android disagree.
   *‹n› changes* but draws no Moved block, since the plan's diff carries no order lines.
   Web still refuses Coach while a workout is open (server Ask `ask-session-open`); iOS and Android
   answer during one.
+- **The rack's load is its field (owner ruling 2026-11-06; 03.23A 🚀 In production 2026-11-07).** Board
+  03.23 in the Gym · iOS file (`vdmdiKWrmZoS1FtcvJRf6O`) drew the numeral turning into a field while the
+  ladder, reps and Log set stepped aside and ✓ and ± sat on the numeral's line; the owner ruled the controls'
+  leaving and the numeral's travel on landing a bug. Direction A, approved 2026-11-07, is drawn as 03.23A
+  (`1940:16624` at rest, `1940:16714` typing) with its [note](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1942-17441):
+  the numeral is a permanent load field, the rack rides the keyboard as one block, nothing in it appears,
+  goes, resizes or moves, there is no keyboard row, and Log set commits the typed load and lands the keyboard.
+  The build draws it as [workout-in-flight.md](ios/workout-in-flight.md) states (`WorkoutRack`, `LoadField`);
+  the earlier 03.23 (`1708:14353`, its Daylight twin and caption) is marked 🗄 Superseded until the owner deletes it.
+- **The sign key leads the ladder (03.30 🚀 In production 2026-11-07).** The earlier 03.30 drew ± in the
+  keyboard row over Edit sets. Direction A redraws 03.30 for the rack (`1940:16984` at rest, `1940:17074`
+  typing): for bodyweight and Other a fifth key, ±, leads the ladder, present in both states and for no other
+  basis, and the build draws it (`WorkoutRack.ladder`). Fix set and Edit sets keep ± in their keyboard row
+  until their boards are redrawn; the note says their ± belongs beside the field.
+- **Planned rows read the plan, never today's set (owner ruling 2026-11-06; 03.34a–c 🚀 In production 2026-11-07).**
+  The build before this drew the rows still to lift carrying the load the rack will offer, which after a logged
+  set is that set's load; the Android 03.34 rack-height board (`1742:40960`, `1742:41112`, still canon for
+  its own state) shows open rows at the rack's 22.5 only because its plan and rack coincide, and the planned-rows
+  rule is drawn by its companion `1942:53327`. The owner ruled that a logged row is reality and an
+  unlogged row is trajectory: a current or planned row reads the load the plan expects of it
+  (`Prefill.expectedLoads`: the target's own load, else last time's as the rack resolves a "last" target), and
+  no set logged today, nor anything on the rack, changes it; the rack's own prefill still follows today's last
+  set. 03.34a (`1940:17164`) draws that, 03.34c (`1940:17344`) an unread last time whose load slot is a
+  `.redacted(.placeholder)` bar, and the build draws both (`WorkoutLedgerRow.reading`), planned rows in
+  `gym/ink-dim` as the boards draw them. Two things on these boards contradict the shared contract and are not
+  built: 03.34b (`1940:17254`, a first time with no plan load and no history) draws *— × 10* and a rack at
+  *0 kg*, and 03.34c draws its rack at *0 kg added*, where `Prefill` (`training-reads.json`, Android, iOS, web)
+  prefills the empty bar, 20 kg, so the build reads *20 × 10* and *20* on the rack. Android's 03.34 pair
+  awaits the same ruling (✏️ beside it on the Android page).
 - **Proposal · one suggestion on an empty Coach (owner decision).** Outside first-use setup, board
   08.1 draws an empty Coach as the bar, canvas and composer. The
   proposal: while no conversation exists, at most one `.glass` capsule above the composer, chosen
@@ -972,13 +1003,13 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   | Dirty routine draft on Back (4k) | Built (task 56): Back, the gesture and the back arrow ask on an unsaved draft; a clean one leaves at once | 02.20 `1742:39519` · `1742:39682` |
   | Movement editor discard wording | Built (task 56): *Keep editing* | 02.17 `1443:19730` · `1443:20852` (*Keep editing*) |
   | Load below zero for Barbell/Dumbbells | Accepted in targets and Fix set; the field shows a hyphen, summaries a minus | 02.21 `1742:39774` · `1742:40098`; 03.33 `1742:40425` · `1742:40717` |
-  | Rack height and planned rows | Built (tasks 59 and 58): *22.5 kg total* fits inline and holds the rack's height; planned rows read the load the rack will offer, *22.5 kg total × max*, or *— × max* while last time is unread | 03.34 `1742:40960` · `1742:41112` |
+  | Rack height and planned rows | Built (tasks 59 and 58): *22.5 kg total* fits inline and holds the rack's height; planned rows read the load the plan expects, *100 kg total × max*, or *— × max* while last time is unread, never a set logged today (owner ruling 2026-11-06, below) | 03.34 `1742:40960` · `1742:41112` |
   | Rack at 320dp/200% | Built (task 59): the movement head, the ledger and the rack scroll as one page above the pinned *Log set* band, and rows wrap instead of clipping | 03.35 `1742:41245` · `1742:41402` |
   | Receipt at 320dp/200% | Built (task 60): the receipt opens full height, the facts wrap two to a row and the body scrolls to *Performed* under the pinned actions. A value no size fits on one line stays at the 16 sp floor and drops only its unit to the next line. *Share with Coach* and *Done* are Material filled tonal and filled buttons with one-line labels, which at 200 % run into the 24 dp side padding as the board draws them. The crown is the 24 dp drawable 8 dp before the label, where the board sets an emoji glyph at the label size | 03.36 `1742:41620` · `1742:41702` |
   | Weigh-in Undo | Built (task 61): the snackbar rises above a *Weigh in* that never moves, and the hold lasts the system's accessibility timeout, never less than nine seconds. Material's snackbar is 48 dp tall and Scaffold leaves 12 dp above *Weigh in*; the board draws 56 dp and 8 dp, and *Weigh in* measures 139 dp wide with Material's padding against the board's 132 dp | 05.17 `1742:41789` · `1742:41887` |
 
   Shared rules these change beyond Android: iOS and web accept a load below zero for Barbell and
-  Dumbbells, and iOS planned rows read the load the rack will offer, as 03.34 draws. 03.34 adds a fit-first
+  Dumbbells, and iOS planned rows read the load the plan expects, as Android's do. 03.34 adds a fit-first
   step to the O rule for the rack. 02.20 draws the routine Name field in the outlined
   floating-label idiom the movement sheet uses, and Android builds it (task 56); 02.3, 02.5 and the
   other editor boards still draw a label above the field (designer to redraw). 02.20 draws only a
@@ -1042,8 +1073,8 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
     scrim reads #5e5c5b against the board's #6a6866.
   - *Proposal diff.* The review sheet writes a load change as *30kg → 32.5kg*, with no space before
     the unit (`ui/ReviewSheet.kt:384` over `presentation/Proposal.kt`); every other Android readout spaces it.
-  - *Web planned rows.* Android and iOS planned rows read the load the rack will offer
-    (*22.5 kg total × max*); the web live mirror, which has no rack, still reads *last × max*
+  - *Web planned rows.* Android and iOS planned rows read the load the plan expects
+    (*100 kg total × max*); the web live mirror, which has no rack, still reads *last × max*
     (`web/src/products/gym/log.js`).
 - **11w · An answer's proposal still arriving (designer, design brief QW2, task 103).** On the phone that ran a turn its
   proposal commits with its call, so the card stands with the answer. A conversation synced from another phone can land an

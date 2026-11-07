@@ -198,7 +198,7 @@ Task 17 supplies the Routines list/navigation contract while preserving the exis
 - [55](55-sheets-above-the-keyboard.md) — Sheets stay below the status bar when the keyboard opens
 - [56](56-routine-editor-asks-before-discard.md) — The routine editor asks before Back discards unsaved changes; Keep editing on both discard questions
 - [57](57-load-zero-or-more.md) — Barbell and dumbbell loads are 0 or more on every surface; the field shows a real minus sign
-- [58](58-planned-rows-offered-load.md) — Planned rows show the load the rack will offer, never the word "last"
+- [58](58-planned-rows-offered-load.md) — Planned rows show the load the plan expects, never the word "last"
 - [59](59-rack-fits-and-scrolls.md) — The rack fits its number, scrolls as one at large text, and keeps a typed value when focus moves
 - [60](60-receipt-at-large-text.md) — The Finish receipt opens full height at large text and never hides Performed
 - [61](61-undo-above-a-still-fab.md) — Undo rises above a Weigh-in button that never moves, for the system's accessibility timeout
@@ -234,7 +234,7 @@ Task 17 supplies the Routines list/navigation contract while preserving the exis
 - [91](91-outbox-costs-linear.md) — A phone back from a long time offline drains its outbox in linear time
 - [92](92-catch-up-after-a-reopen.md) — iOS and web catch up after a live socket reopens
 - [93](93-share-page-set-count.md) — The web share page counts sets 1..N in logged order
-- [94](94-web-planned-rows-offered-load.md) — The web live mirror's planned rows read the load the rack will offer
+- [94](94-web-planned-rows-offered-load.md) — The web live mirror's planned rows read the load the plan expects
 - [95](95-one-stated-best.md) — The Best tile follows the stated rule the records follow
 - [96](96-shared-performed-range.md) — Every surface states what was lifted, every set counted
 - [97](97-coach-read-receipt-weeks.md) — What Coach read counts only weeks it can show

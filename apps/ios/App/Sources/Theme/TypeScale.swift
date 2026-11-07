@@ -29,10 +29,20 @@ enum JournalType {
   }
 }
 
+// The big numeral: SF Rounded, bold, monospaced digits, scaled with the large title and capped, at the scaled size unless
+// the host solved a size of its own.
 struct GymNumeral: ViewModifier {
-  @ScaledMetric(relativeTo: .largeTitle) private var size = 68.0
+  static let scaled = 68.0
+  static let cap = 92.0
+  @ScaledMetric(relativeTo: .largeTitle) private var size = scaled
+  var points: CGFloat? = nil
   func body(content: Content) -> some View {
-    content.font(.system(size: min(size, 92), weight: .bold, design: .rounded)).monospacedDigit()
+    content.font(.system(size: points ?? min(size, Self.cap), weight: .bold, design: .rounded)).monospacedDigit()
+  }
+  // The same face as UIKit measures it.
+  static func uiFont(_ size: CGFloat) -> UIFont {
+    let face = UIFont.monospacedDigitSystemFont(ofSize: size, weight: .bold)
+    return UIFont(descriptor: face.fontDescriptor.withDesign(.rounded) ?? face.fontDescriptor, size: size)
   }
 }
 

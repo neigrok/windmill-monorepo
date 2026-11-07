@@ -89,11 +89,22 @@ class PrefillTests {
             Prefill.of(listOf(aSet(82.5, 0, 100)), null, null))
     }
 
-    @Test fun anUnreadLastTimeOffersOnlyThePlansOwnLoadsAndTodaysLastSet() {
+    @Test fun anUnreadLastTimeExpectsOnlyThePlansOwnLoads() {
         assertTrue(unread.isUnread)
         assertFalse("a workout found is read, whatever the rest of the history", lastTime(aSet(60.0, 5, 1)).copy(isComplete = false).isUnread)
-        assertEquals(listOf(60.0, null, 90.0, null, null), Prefill.offeredLoads(emptyList(), lowerA.copy(sets = listOf(
+        assertEquals(listOf(60.0, null, 90.0, null, null), Prefill.expectedLoads(0, lowerA.copy(sets = listOf(
             SetTarget(5, 60.0), SetTarget(5), SetTarget(3, 90.0), SetTarget(1), SetTarget(5))), unread))
-        assertEquals(listOf(82.5, 82.5, 82.5), Prefill.offeredLoads(listOf(aSet(82.5, 5, 100), aSet(82.5, 5, 200)), pushA, unread))
+        assertEquals(listOf(82.5, 82.5, 82.5), Prefill.expectedLoads(2, pushA, unread))
+        assertEquals("a set lifted today names nothing for the sets after it", listOf(null, null, null),
+            Prefill.expectedLoads(2, RoutineEntry(squat, List(5) { SetTarget(5) }), unread))
+    }
+
+    @Test fun theLoadsThePlanExpectsNeverFollowTodaysSets() {
+        val read = lastTime(aSet(100.0, 5, 1), aSet(100.0, 5, 2), aSet(100.0, 5, 3))
+        assertEquals(listOf(100.0, 100.0), Prefill.expectedLoads(1, RoutineEntry(squat, List(3) { SetTarget() }), read))
+        assertEquals(listOf(20.0), Prefill.expectedLoads(1, RoutineEntry(squat, List(2) { SetTarget(10, 20.0) }), read))
+        assertEquals("a varied scheme reads each slot's own load, else last time's set there, else the empty bar",
+            listOf(60.0, 100.0, 110.0, 20.0), Prefill.expectedLoads(0, lowerA.copy(sets = listOf(
+                SetTarget(8, 60.0), SetTarget(5), SetTarget(3, 110.0), SetTarget(5))), read))
     }
 }

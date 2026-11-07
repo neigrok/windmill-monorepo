@@ -124,8 +124,8 @@ struct WorkoutSwapPicker: View {
                      })
         .navigationBarTitleDisplayMode(.inline)
     }.modifier(GymPage()).presentationDetents([.large])
-      .onChange(of: workout.ledger(exerciseId).sets.isEmpty) { _, nothingLogged in
-        guard !nothingLogged else { return }
+      .onChange(of: workout.sets.contains { $0.exerciseId == exerciseId }) { _, logged in
+        guard logged else { return }
         workout.message = WorkoutState.loggedNow(gym.catalogue.find(exerciseId)?.name ?? "Movement")
         dismiss()
       }

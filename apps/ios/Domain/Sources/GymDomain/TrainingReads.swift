@@ -154,25 +154,14 @@ public struct Prefill: Equatable, Sendable {
     at(slot: todaySets.count, after: todaySets.last.map { Prefill(weightKg: $0.weightKg, reps: $0.reps) }, planEntry: planEntry, lastTime: lastTime)
   }
 
-  // The load the rack offers at each set the plan still holds, the set in hand first, each later set offered as though the one
-  // before it were logged as offered. A load that would come from a last time not read yet is nil.
-  public static func offeredLoads(todaySets: [TrainingSet], planEntry: PlannedExercise?, lastTime: LastTime) -> [Double?] {
+  // The load the plan expects at each set still to lift, after `lifted` sets today: the target's own, else last time's as
+  // the rack resolves a "last" target with nothing logged today. Today's sets never enter it; a load that would come from
+  // a last time not read yet is nil.
+  public static func expectedLoads(lifted: Int, planEntry: PlannedExercise?, lastTime: LastTime) -> [Double?] {
     let scheme = planEntry?.sets ?? []
-    let slots = todaySets.count..<max(todaySets.count, scheme.count)
-    if !lastTime.isUnread {
-      var sticky = todaySets.last.map { Prefill(weightKg: $0.weightKg, reps: $0.reps) }
-      return slots.map { slot in
-        let offer = at(slot: slot, after: sticky, planEntry: planEntry, lastTime: lastTime)
-        sticky = offer
-        return offer.weightKg
-      }
-    }
     let straight = SetTarget.straight(scheme)
-    var sticky = todaySets.last?.weightKg
-    return slots.map { slot in
-      let load = straight ? sticky ?? scheme[0].weightKg : scheme[slot].weightKg
-      sticky = load
-      return load
+    return (lifted..<max(lifted, scheme.count)).map { slot in
+      (straight ? scheme[0] : scheme[slot]).weightKg ?? (lastTime.isUnread ? nil : at(slot: slot, after: nil, planEntry: planEntry, lastTime: lastTime).weightKg)
     }
   }
 
@@ -473,13 +462,16 @@ public enum Readout {
     return String(number.description.map { $0 == "-" ? "−" : $0 })
   }
 
-  public static func effort(weightKg: Double, reps: Int, units: GymUnits = .kg) -> String { "\(weight(weightKg, units: units)) × \(reps)" }
+  // A set's numbers, the load then the reps, as every ledger and summary spells them.
+  public static let times = " × "
+  public static func effort(load: String, reps: String) -> String { load + times + reps }
+  public static func effort(weightKg: Double, reps: Int, units: GymUnits = .kg) -> String { effort(load: weight(weightKg, units: units), reps: String(reps)) }
   public static func estimatedWeight(_ e1rm: Double, units: GymUnits = .kg) -> String {
     weight(GymEstimate.stated(units == .lb ? e1rm / GymUnits.kilogramsPerPound : e1rm))
   }
   public static func estimate(_ e1rm: Double, units: GymUnits = .kg) -> String { "e1RM \(estimatedWeight(e1rm, units: units))" }
   public static func repTarget(_ reps: Int?) -> String { reps.map(String.init) ?? "max" }
-  public static func setTarget(_ set: SetTarget) -> String { "\(set.weightKg.map { weight($0) } ?? "last") × \(repTarget(set.reps))" }
+  public static func setTarget(_ set: SetTarget) -> String { effort(load: set.weightKg.map { weight($0) } ?? "last", reps: repTarget(set.reps)) }
   public static func ladder(_ sets: [SetTarget]) -> String { sets.map(setTarget).joined(separator: " · ") }
 
   public static func target(_ sets: [SetTarget]?) -> String {

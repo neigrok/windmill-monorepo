@@ -4,7 +4,7 @@
 
 **Current implementation**
 - **The presentation package says what it is.** `apps/android/gym/src/main/kotlin/works/windmill/gym/presentation/` (package `works.windmill.gym.presentation`, tests mirrored) is the screens' projection of `:gym:domain` (package `works.windmill.gym.domain.sync`). Its `@Serializable`s are the ones saved state and the Coach and credential REST replies decode (`FinishedSession`, the rack, the saved-workout journal, the routine editor and picker, the Coach document), with their `@SerialName`s and the proposal enums' wire serializers; `ProposalDecision`, which nothing decodes, carries none. A saved receipt from before the rename still restores (`FinishTests`). `LiveLines.slots` still takes the workout's id, because the projection's `TrainingSet` carries none and the shared `Prefill` reads shared sets.
-- **Prefill:** `LiveLines` and the rack read the shared `Prefill` and `offeredLoads`; the `:gym` copy and `Scheme.straight` are gone. The shared `SetTarget.straight` compares loads on the ladder's grid, with a Prefill and an OfferedLoads vector on all three surfaces.
+- **Prefill:** `LiveLines` and the rack read the shared `Prefill` and `expectedLoads`; the `:gym` copy and `Scheme.straight` are gone. The shared `SetTarget.straight` compares loads on the ladder's grid, with a Prefill and an ExpectedLoads vector on all three surfaces.
 - **One form of "not read yet":** `WorkoutSession.lastTimeOf` answers the shared `LastTime`, unread (`isUnread`, `isComplete == false`) until its read answers; `EngineTraining.lastTime` returns the shared read and no longer throws for an unread account.
 - **Recovery:** the saved-copy checks (`SignedOutWorkout.importsUnchanged`, `SavedSets`) and stranded-set placement and steps (`StrandedSet`) live in `:gym:domain`; `store/WorkoutImports.kt` keeps the journal's I/O, its JSON merges and its state machine. `recovery-actions.json` is claimed.
 - **Smaller reads:**
@@ -14,7 +14,7 @@
 - **Every surface:** the `lastTime`, last-sets and record documents list sets in logged order on Kotlin, Swift, web and the server, with vectors holding sets numbered out of logged order and unnumbered ones; the server's corpus test claims them. The web's Backfill reads the `lastTime` document; no iOS screen does.
 
 **Change**
-1. **Prefill:** replace the `:gym` copy with the shared read, `LiveLines` calls the shared `offeredLoads`, and the store keeps an unread last time as an incomplete `LastTime`. If the grid comparison is the correct rule, move it into the shared rule with vectors.
+1. **Prefill:** replace the `:gym` copy with the shared read, `LiveLines` calls the shared `expectedLoads`, and the store keeps an unread last time as an incomplete `LastTime`. If the grid comparison is the correct rule, move it into the shared rule with vectors.
 2. **Recovery:** move the import/recovery decisions into `:gym:domain`, claim `recovery-actions.json`, and keep only I/O in the store.
 3. **Records:** `MovementRecord` reads `TrainingHistory.record`, and the shared rule orders a day's sets in logged order (`completedAt`, then id). Add vectors with unnumbered sets.
 4. **Chart:** one chart axis, the shared `window`.

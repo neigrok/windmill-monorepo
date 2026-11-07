@@ -329,3 +329,22 @@ levels between any two runs, the same build's included. Coach's cards were not r
 helpers fail before Coach opens. Their decision style renders byte-identical to the previous one in an
 `ImageRenderer` check, light and dark, enabled and disabled. iOS 18's material branch has no simulator here and
 is unverified.
+
+The rack's load follows Direction A (Gym · iOS 03.23A, 03.30, 03.34a–c, owner approved 2026-11-07). The numeral is
+`LoadField` in both states, so there is no swap between a `Text` and a field and nothing travels on landing; the cost
+is that the numeral no longer rolls on a ladder step, a `TextField` taking no `numericText` transition, and the reps
+value keeps the roll. The field writes live, every key the load its text stands for, and as it lets go only an unreadable
+text writes, restoring the load it opened on, so a change the host made meanwhile — Log set's prefill of the next slot —
+is kept (`WorkoutRenderingTests.testAChangeMadeWhileTheLoadIsFocusedIsKeptAsItLetsGo`). Focus is the screen's
+`@FocusState`, passed to the rack as a sheet passes it to its `LoadRow`; `WorkoutState.typingLoad` follows it, and a land
+flushes the rack at once. The rack is a `ZStack` over a page that ignores the keyboard and keeps the rack's resting height
+as bottom padding (`WorkoutLive`), so the pager keeps its full height and hit-testing while the keyboard is up. It is not
+a `reachBand`: tried on 26.5, a `safeAreaBar` reported no focus for the field, so a typed 105 appended to the selected
+100 as 100105 and the rack never moved. The numeral is sized to its row by measuring its text with its own
+face (`WorkoutRack.numeralPoints`, `testAWideLoadKeepsItsUnitInsideTheRackAtLargeText`): `lineLimit(1).minimumScaleFactor(0.5)`
+on the `TextField` fits a wide load at xxxLarge but never settles its layout at accessibility sizes — the large-text
+render hung past a three-minute allowance until it was removed. A ledger row carries its `load`,
+nil while last time is unread, and its `reps`; `Readout.effort(load:reps:)` spells both the row's reading and the logged
+summary, and `LedgerCard` draws the rows for the page and for the 03.34 renders alike. Observation: the typed load's
+tick and save ride on `typingLoad`'s `didSet`; a small `RackEntry` value (opened load, typed flag) the state owns would
+be the cleaner shape if a third entry mode ever appears.

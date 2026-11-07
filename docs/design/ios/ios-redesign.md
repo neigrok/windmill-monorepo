@@ -18,27 +18,38 @@ them, so a role row keeps its form: `` | `room/role` | dark | light | ``.
    bars, menus, sheets, alerts, lists, pickers, segmented controls, text fields and the keyboard are
    the system's, unmodified. Glass is never imitated: no translucent-white fills, no hairline white
    strokes, no hand-drawn symbol paths. A control that looks like iOS must be iOS.
-2. **One palette per room, by role, in one place.** A room's colours are a set of named roles
+2. **Stock first.** Wherever Apple has a control or a pattern for the job — `Form` and `List` rows,
+   `TextField`, `Stepper`, `Picker`, `Toggle`, `.searchable`, `EditButton` with swipe actions, a sheet
+   with detents, a toolbar's Cancel and Save — the board draws that one, at its stock size, and the
+   board's note names the SwiftUI element for every part. Windmill draws a part of its own only where
+   the system has none (the rack's numeral, ladder and Log set), hosts it in a stock slot, and makes
+   it behave like a system control: it rides the keyboard as one block, nothing appears or reflows
+   when typing starts, and nothing animates in from elsewhere when a value lands. The Stocks app is
+   the reference for how a screen should feel.
+3. **One palette per room, by role, in one place.** A room's colours are a set of named roles
    (§2) resolved by the system for light and dark. No view declares a hex. No screen carries a
    palette of its own.
-3. **Words are chrome and chrome is budgeted.** `guidelines/text-budget.md` holds: 40 words of
+4. **Words are chrome and chrome is budgeted.** `guidelines/text-budget.md` holds: 40 words of
    chrome before the decision window closes. A sentence that explains a control is a defect in the
    control. Captions that restate a label, a footer that repeats a heading, an intro that describes
    the screen — none is drawn.
-4. **Say a thing once.** One door per destination, one title per screen, one band for transients,
+5. **Say a thing once.** One door per destination, one title per screen, one band for transients,
    one way to reach settings. A fact shown twice on one screen is a structure error.
-5. **One primary per screen**, in the reach band (`guidelines/thumb-reach.md`); everything else is
-   quiet. A screen without a primary action has no prominent button.
-6. **Density is the system's.** List rows, insets, section spacing and large titles are the
+6. **One primary per screen**, in the reach band for anything done mid-task
+   (`guidelines/thumb-reach.md`); everything else is quiet. A form the person sits down to fill — a
+   routine, a movement, a weigh-in, settings — commits through the toolbar's Cancel and Save, the
+   system's own shape, and draws no prominent button. A screen without a primary action has no
+   prominent button.
+7. **Density is the system's.** List rows, insets, section spacing and large titles are the
    defaults. We adjust content, never the metrics. A card Windmill draws on a room's canvas takes
    `RoomSpace.cardRadius`, 22 pt continuous (Figma `ios/radius/card`); a list's sections keep the
    system's corners.
-7. **Signed out is first class.** Nothing asks for an account outside the three places
+8. **Signed out is first class.** Nothing asks for an account outside the three places
    `brand-foundations.md` names under Honesty; an account verb the person starts opens the same
    door and resumes. No banners.
-8. **Light and dark are one design.** Every screen is reviewed in both; a room that defines only
+9. **Light and dark are one design.** Every screen is reviewed in both; a room that defines only
    one appearance is unfinished.
-9. **Nothing floats on content.** Whatever floats — a bar, a band, the seat — keeps the system's
+10. **Nothing floats on content.** Whatever floats — a bar, a band, the seat — keeps the system's
    scroll edge, and at rest the content clears it.
 
 ## 2. Colour roles
