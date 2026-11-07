@@ -13,7 +13,7 @@ import SyncStore
 import SyncTesting
 
 // Every view of a type under a view, the view itself included.
-func views<V: UIView>(_ view: UIView, _ type: V.Type) -> [V] {
+@MainActor func views<V: UIView>(_ view: UIView, _ type: V.Type) -> [V] {
   if let match = view as? V { return [match] }
   return view.subviews.flatMap { views($0, type) }
 }
