@@ -47,6 +47,11 @@ extension Proposal {
     case .other: "a connected tool"
     }
   }
+  // The symbol beside that name on its Routines row and its sheet: Coach's bubbles, a connected tool's link (02L.1P).
+  nonisolated var sourceSymbol: String {
+    if case .ask = provenance { return "bubble.left.and.bubble.right" }
+    return "link"
+  }
 }
 
 extension GymModel {

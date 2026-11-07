@@ -190,9 +190,9 @@ struct CoachWrites {
   }
 }
 
-// Coach's answer: its words as they stream and once they stand, the step line while it works, the cards of what it
-// proposed and wrote, how the turn ended when it ended short, and its read receipt; a turn another device drives says
-// only that (Coach §4.5).
+// Coach's answer: its words as they stream and once they stand, the step line while it works, how the turn ended when it
+// ended short and its read receipt, then the cards of what it proposed and wrote; a turn another device drives says only
+// that (Coach §4.5).
 struct CoachAnswerView: View {
   let gym: GymModel
   let message: CoachMessage
@@ -217,6 +217,13 @@ struct CoachAnswerView: View {
             .frame(maxWidth: .infinity).accessibilityIdentifier("coach-answering-elsewhere")
         } else if !ended, let steps = reading.stepLine {
           Text(steps).font(.footnote).foregroundStyle(GymPalette.inkDim).accessibilityIdentifier("coach-step-line")
+        }
+        // How the turn ended and what it read stand under the answer, above what it proposed and wrote (08.2P).
+        if ended {
+          if let ending = Self.ending(message) {
+            Text(ending).font(.footnote).foregroundStyle(GymPalette.inkDim).accessibilityIdentifier("coach-ending")
+          }
+          receiptRow(reading)
         }
       }
       if ended, offersSignIn, message.calls.contains(where: { $0.outcome == .refused(.seatRequired) }) {
@@ -256,14 +263,6 @@ struct CoachAnswerView: View {
           .accessibilityIdentifier("coach-saved-note")
       }
       ForEach(writes.exercises, id: \.id) { exercise in movementCard(exercise) }
-      if ended {
-        VStack(alignment: .leading, spacing: RoomSpace.small) {
-          if let ending = Self.ending(message) {
-            Text(ending).font(.footnote).foregroundStyle(GymPalette.inkDim).accessibilityIdentifier("coach-ending")
-          }
-          receiptRow(reading)
-        }
-      }
     }.frame(maxWidth: .infinity, alignment: .leading)
   }
   // How a turn ended short of a whole answer, in the board's line under what arrived (08.46–08.50).

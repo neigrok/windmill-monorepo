@@ -118,11 +118,13 @@ this receipt; swiping the receipt away saves nothing.
   and `.large` (08.54). Deliberate entry is a fresh chat; History is one tap. Close returns to the
   rack exactly as it was. The open workout is part of what Coach reads.
 - **Two kinds of change**, both proposals the lifter applies on the card:
-  - *CHANGES TO THIS WORKOUT*, with the running dot (08.55). Apply rewrites this workout's plan. It may
-    change movements with nothing logged and add movements, never a logged movement.
-  - *CHANGES TO {ROUTINE} · NEXT TIME* while a workout is open (08.56). It applies mid-workout: Apply
-    changes the routine and never the running workout.
-- One answer may carry one of each; they are decided apart (08.56). Applied: *Applied · this
+  - *This workout*, under `list.bullet.clipboard`, *N suggested changes · now* (08.56P; 08.55 still draws
+    the earlier eyebrow and running dot). Apply rewrites this workout's plan and is the sheet's one
+    prominent button. It may change movements with nothing logged and add movements, never a logged
+    movement.
+  - *{Routine}*, *N suggested changes · next time* while a workout is open (08.56P). It applies
+    mid-workout: Apply, drawn `.glass`, changes the routine and never the running workout.
+- One answer may carry one of each; they are decided apart (08.56P). Applied: *Applied · this
   workout* / *Applied · {routine}*.
 - **Out of date** (08.57). Nothing is applied and one sentence names why: *You logged {movement} since
   this suggestion.* · *This workout changed after this suggestion.* · *A newer suggestion replaced this
