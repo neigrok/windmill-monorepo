@@ -54,37 +54,34 @@ struct MovementEquipment {
   }
 }
 
+// The Equipment menu and, for dumbbells, how many are lifted: stock Pickers in a Form. The movement form (02L.5) takes the
+// count as a menu like the equipment; Edit movement keeps its segmented pair.
 struct MovementEquipmentPicker: View {
+  enum Count { case segmented, menu }
   @Binding var equipment: String
   @Binding var loadCount: Int
   let identifier: String
+  var count = Count.segmented
+
   var body: some View {
-    Group {
-      LabeledContent {
-        Menu {
-          Picker("Equipment", selection: $equipment) {
-            ForEach(MovementEquipment.choices, id: \.self) { value in
-              if let symbol = MovementEquipment(value).symbol {
-                Label(MovementEquipment(value).choice, systemImage: symbol).tag(value)
-              } else {
-                Text(MovementEquipment(value).choice).tag(value)
-              }
-            }
-          }
-        } label: {
-          HStack(spacing: RoomSpace.small) {
-            Text(MovementEquipment(equipment).choice)
-            Image(systemName: "chevron.up.chevron.down").imageScale(.small)
-          }
-        }.accessibilityLabel("Equipment").accessibilityValue(MovementEquipment(equipment).choice).accessibilityIdentifier(identifier)
-      } label: {
-        if let symbol = MovementEquipment(equipment).symbol {
-          Label("Equipment", systemImage: symbol).foregroundStyle(GymPalette.ink)
+    Picker("Equipment", selection: $equipment) {
+      ForEach(MovementEquipment.choices, id: \.self) { value in
+        if let symbol = MovementEquipment(value).symbol {
+          Label(MovementEquipment(value).choice, systemImage: symbol).tag(value)
         } else {
-          Text("Equipment").foregroundStyle(GymPalette.ink)
+          Text(MovementEquipment(value).choice).tag(value)
         }
       }
-      if Equipment(equipment) == .dumbbell {
+    }.pickerStyle(.menu).foregroundStyle(GymPalette.ink)
+      .accessibilityValue(MovementEquipment(equipment).choice).accessibilityIdentifier(identifier)
+    if Equipment(equipment) == .dumbbell {
+      switch count {
+      case .menu:
+        Picker("Dumbbells", selection: $loadCount) {
+          Text("One").tag(1)
+          Text("Two").tag(2)
+        }.pickerStyle(.menu).foregroundStyle(GymPalette.ink).accessibilityIdentifier("\(identifier)-count")
+      case .segmented:
         LabeledContent("Dumbbells lifted") {
           Picker("Dumbbells lifted", selection: $loadCount) {
             Text("One").tag(1)

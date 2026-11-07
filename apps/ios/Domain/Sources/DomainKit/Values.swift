@@ -162,7 +162,7 @@ public struct TextSpec: ValueSpec {
 public struct NumberSpec: ValueSpec {
   public let path: String
   let min: Double?
-  let max: Double?
+  public let max: Double?
   let integer: Bool
   let quantum: Quantum?
 
@@ -246,7 +246,7 @@ public struct ChoiceSpec: ValueSpec {
 public struct CountSpec: ValueSpec {
   public let path: String
   let min: Int
-  let max: Int
+  public let max: Int
 
   public init(_ path: String, min: Int, max: Int) {
     self.path = path

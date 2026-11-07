@@ -7,7 +7,7 @@ import subprocess
 from tempfile import TemporaryDirectory
 
 
-CAPTURE_NAME = re.compile(r"[0-9a-z][0-9a-z.-]*-(dark|daylight)")
+CAPTURE_NAME = re.compile(r"[0-9A-Za-z][0-9A-Za-z.-]*-(dark|daylight)")
 # xcresulttool puts _<index>_<uuid> before a name's first dot: 02_0_<uuid>.1-routines-dark, gym-log-dark_0_<uuid>.png.
 XCRESULT_TOKEN = re.compile(r"_\d+_[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}")
 

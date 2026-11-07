@@ -54,7 +54,6 @@ nonisolated struct MovementLedger: Equatable {
   var targets: [SetTarget] { plan?.sets ?? [] }
   var performed: Int { sets.count }
   var currentTarget: SetTarget? { performed < targets.count ? targets[performed] : nil }
-  var current: Row { rows[performed] }
   // The logged rows, the current one and the plan still ahead; the loads the plan expects of the open rows are read once,
   // and no set logged today changes them.
   var rows: [Row] {
@@ -273,7 +272,10 @@ struct FinishWorkout: Action {
   var typingLoad = false {
     didSet {
       guard oldValue != typingLoad else { return }
+      rackEditingChanged(from: oldValue || wheelOpen)
       if typingLoad { loadTyped = false; gym.telemetry.event("gym_workout_load_typed", properties: ["screen": "workout", "action": "open"]); return }
+      // A field let go by an account change drops what it typed without a word: the rack returns to what it held.
+      if gym.accountTransition { if let previous = rackBase { restoreRack(weightKg: previous.weightKg, reps: previous.reps) }; return }
       if loadTyped { adjustments += 1; gym.telemetry.event("gym_workout_load_typed", properties: ["screen": "workout", "action": "land"]) }
       flushRack()
     }
@@ -296,13 +298,15 @@ struct FinishWorkout: Action {
   // Finish was taken: its receipt is owed until the log shows the finish, however late the confirmation lands.
   @ObservationIgnored var receiptOwed = false
   var handoff: WorkoutHandoff?
-  var rackEditing = false {
-    didSet {
-      if oldValue != rackEditing {
-        if rackEditing { _ = activityOffer() }
-        activityChanged()
-      }
-    }
+  // The rack is being edited while the reps wheel is up or the load is typed in: the Live Activity's offer is revoked for
+  // as long as it is, and comes back with the rack's next write. It is read from the two, so a typed load lands with the
+  // editing already over and the offer rides on the land's own write.
+  var wheelOpen = false { didSet { if oldValue != wheelOpen { rackEditingChanged(from: oldValue || typingLoad) } } }
+  var rackEditing: Bool { wheelOpen || typingLoad }
+  private func rackEditingChanged(from previous: Bool) {
+    guard previous != rackEditing else { return }
+    if rackEditing { _ = activityOffer() }
+    activityChanged()
   }
   var coachAvailable = false
   var syncFailed: Bool { gym.runtime?.engine.status.failedPushes[Gym.scope]?.isEmpty == false }
@@ -329,9 +333,7 @@ struct FinishWorkout: Action {
     rackPrefilled = false
     if rackBase == nil { rackBase = Prefill(weightKg: self.weightKg, reps: self.reps) }
     rackWeightKg = weightKg; rackReps = reps
-    if !typingLoad { saveRackSoon() }
-  }
-  private func saveRackSoon() {
+    guard !typingLoad else { return }
     rackSave?.cancel()
     rackSave = Task { @MainActor [weak gym] in
       do { try await Task.sleep(for: .milliseconds(45)) } catch { return }

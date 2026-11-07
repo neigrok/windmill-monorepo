@@ -1,62 +1,57 @@
 import XCTest
 
+// The Routines boards (02L.1–02L.8) draw one fixture, `-coach-board routines`: Push A as 02L.7 lists it, Pull A, Legs and
+// Upper B, with Coach's three changes to Push A waiting at the head of the list.
 final class RoutinesCaptures: DesignCapture {
   func testRoutines() {
-    captureBoard("02.1-routines", settle: 1.5) { look in
-      let app = launchSignedInCoach(look)
+    captureBoard("02L.1-routines", settle: 1.5) { look in
+      let app = launchSignedInCoach(look, arguments: ["-coach-board", "routines", "-routines-proposal-fixture"])
       open(.routines, app)
       XCTAssertTrue(app.buttons["routine-proposal"].waitForExistence(timeout: 10))
       return app
     }
   }
 
-  // 02.19: Start across the sheet's foot, then the last movement scrolled clear of it.
+  // 02L.7: Start across the summary's foot, then the last movement scrolled clear of it.
   func testRoutineSummary() {
     for look in Look.both + Look.bothAtLargestText {
-      let app = launchSignedInCoach(look, arguments: ["-coach-board", "summary"])
+      let app = launchSignedInCoach(look, arguments: ["-coach-board", "routines"])
       open(.routines, app)
-      app.buttons["routine-board-lower"].tap()
+      app.buttons["routine-board-routine"].tap()
       let start = app.buttons["routine-start"]
       XCTAssertTrue(start.waitForExistence(timeout: 10))
-      capture("02.19-routine-summary", look, app)
+      capture("02L.7-routine-summary", look, app)
       let list = app.collectionViews["routine-detail"]
-      let last = list.cells.containing(.any, identifier: "routine-detail-movement-hip-thrust").firstMatch
+      let last = list.cells.containing(.any, identifier: "routine-detail-movement-triceps-pushdown").firstMatch
       for _ in 0..<6 where !(onScreen(last, app) && last.frame.maxY <= start.frame.minY) { list.swipeUp(velocity: .slow) }
       XCTAssertLessThanOrEqual(last.frame.maxY, start.frame.minY)
-      capture("02.19-routine-summary-end", look, app)
+      capture("02L.7-routine-summary-end", look, app)
       app.terminate()
     }
   }
 
-  // The editor of a routine that has been trained lists its workouts under History.
-  func testEditorHistory() {
-    captureBoard("02.13-editor-history") { look in
-      let app = launchSignedInCoach(look, arguments: ["-coach-board", "change"])
+  // 02L.3: Push A's editor in edit mode, the first row swiped to its trash circle; the editor of a routine that has been
+  // trained lists its workouts under History (02.13).
+  func testEditorInEditMode() {
+    for look in Look.both {
+      let app = launchSignedInCoach(look, arguments: ["-coach-board", "routines"])
       open(.routines, app)
       app.buttons["routine-board-routine"].tap()
       XCTAssertTrue(app.buttons["edit-routine"].waitForExistence(timeout: 10)); app.buttons["edit-routine"].tap()
-      XCTAssertTrue(app.staticTexts["History"].waitForExistence(timeout: 10))
-      return app
-    }
-  }
-
-  func testRoutineEditorSwipe() {
-    captureBoard("02.8-routine-editor-swipe") { look in
-      let app = launch("shell-last-room", look)
-      openGymFromJournal(app, opensOn: .coach)
-      open(.routines, app)
-      app.buttons["new-routine"].tap()
-      let name = app.textFields["routine-name"]
-      XCTAssertTrue(name.waitForExistence(timeout: 5)); name.typeText("Push A\n")
-      for id in ["bench-press", "overhead-press"] {
-        app.buttons["add-movement"].tap()
-        XCTAssertTrue(app.buttons["gym-movement-" + id].waitForExistence(timeout: 5)); app.buttons["gym-movement-" + id].tap()
-        XCTAssertTrue(app.buttons["gym-movement-editor-commit"].waitForExistence(timeout: 5)); app.buttons["gym-movement-editor-commit"].tap()
-      }
-      let row = app.buttons["builder-movement-overhead-press"]
-      XCTAssertTrue(row.waitForExistence(timeout: 5)); row.swipeLeft()
+      XCTAssertTrue(app.textFields["routine-name"].waitForExistence(timeout: 10))
+      XCTAssertTrue(reach(app.staticTexts["History"], app).exists)
+      capture("02.13-editor-history", look, app)
+      let edit = app.buttons["edit-movements"]
+      for _ in 0..<6 where !(edit.exists && edit.isHittable) { app.swipeDown(velocity: .slow) }
+      XCTAssertTrue(edit.isHittable); edit.tap()
+      XCTAssertTrue(edit.waitForLabel("Done"))
+      // In edit mode the system's minus badge leads the row; a tap on it reveals the trash circle.
+      let row = app.buttons["builder-movement-bench-press"]
+      XCTAssertTrue(row.waitForExistence(timeout: 5))
+      row.coordinate(withNormalizedOffset: CGVector(dx: 0.05, dy: 0.5)).tap()
       XCTAssertTrue(app.buttons["trash-swipe"].wait(for: \.isHittable, toEqual: true, timeout: 5))
-      return app
+      capture("02L.3-routine-editor-edit-mode", look, app)
+      app.terminate()
     }
   }
 
@@ -72,7 +67,7 @@ final class RoutinesCaptures: DesignCapture {
     }
   }
 
-  // Empty Routines with a hidden workout exposes one bottom-trailing New routine control.
+  // Empty Routines with a hidden workout keeps New routine in the bar.
   func testEmptySignedIn() {
     for look in Look.both {
       let app = launch("workout-notice", look)
@@ -84,7 +79,10 @@ final class RoutinesCaptures: DesignCapture {
     }
   }
 
-  func testBuildAndTrain() {
+  // 02L.2, 02L.4, 02L.5 and 02L.6 along one build: a new routine takes Bench Press, Incline Dumbbell Press and Chin-up as
+  // the boards plan them, searches for a movement the catalogue lacks (the boards' Bulgarian split squat is a seed, so
+  // Zercher squat stands in), and fills its form straight, then varied.
+  func testBuildARoutine() {
     for look in Look.both {
       let app = launch("shell-last-room", look)
       openGymFromJournal(app, opensOn: .coach)
@@ -94,75 +92,90 @@ final class RoutinesCaptures: DesignCapture {
       app.buttons["new-routine"].tap()
       let name = app.textFields["routine-name"]
       XCTAssertTrue(name.waitForExistence(timeout: 5))
-      capture("02.3-routine-editor-new", look, app)
+      capture("02L.2-routine-editor-new", look, app)
       name.tap(); name.typeText("Push A\n")
+      addMovement(app, "bench-press", searching: "Bench") { app.plan(sets: 3, reps: 8, load: "60", rest: "2:00") }
+      addMovement(app, "incline-dumbbell-press", searching: "Incline dumbbell") {
+        app.plan(sets: 3, reps: 10, load: "16", rest: "1:30")
+        let varied = app.switches["gym-target-varied"]
+        XCTAssertTrue(varied.waitForExistence(timeout: 5)); varied.switches.firstMatch.tap()
+        XCTAssertTrue(varied.waitForValue("1"))
+        app.plan(row: 2, reps: 8, from: 10, load: "18"); app.plan(row: 3, reps: 6, from: 10, load: "20")
+      }
+      addMovement(app, "chin-up", searching: "Chin") { app.plan(sets: 3, reps: 8, load: "0", rest: "2:00") }
+      XCTAssertTrue(app.buttons["builder-movement-chin-up"].waitForExistence(timeout: 5))
+      capture("02L.2-routine-editor", look, app)
       app.buttons["add-movement"].tap()
-      XCTAssertTrue(app.buttons["gym-movement-bench-press"].waitForExistence(timeout: 5))
-      capture("02.4-movement-picker", look, app)
-      app.buttons["gym-new-movement"].tap()
-      XCTAssertTrue(app.textFields["gym-movement-name"].waitForExistence(timeout: 5))
-      capture("gym-create-movement", look, app)
-      app.buttons["gym-movement-editor-cancel"].tap()
-      XCTAssertTrue(app.buttons["gym-movement-bench-press"].waitForExistence(timeout: 5))
-      app.buttons["gym-movement-bench-press"].tap()
-      XCTAssertTrue(app.buttons["gym-movement-editor-commit"].waitForExistence(timeout: 5))
-      let more = app.buttons["gym-target-sets-stepper-Increment"]
-      for _ in 0..<4 { more.tap() }
-      XCTAssertEqual(app.textFields["gym-target-sets"].value as? String, "4")
-      capture("02.6-movement-editor", look, app)
+      let search = app.searchFields.firstMatch
+      XCTAssertTrue(search.waitForExistence(timeout: 5)); search.tap(); search.typeText("Zercher squat")
+      XCTAssertTrue(app.buttons["gym-create-movement"].waitForExistence(timeout: 5))
+      XCTAssertTrue(app.staticTexts["No movement by that name."].waitForExistence(timeout: 5))
+      capture("02L.4-movement-picker", look, app)
+      app.buttons["gym-create-movement"].tap()
+      let movementName = app.textFields["gym-movement-name"]
+      XCTAssertTrue(movementName.waitForExistence(timeout: 5))
+      XCTAssertEqual(movementName.value as? String, "Zercher squat")
+      app.choose("gym-movement-equipment", "Dumbbells")
+      app.plan(sets: 3, reps: 10, load: "16", rest: "1:30")
+      capture("02L.5-movement-form", look, app)
+      let varied = app.switches["gym-target-varied"]
+      varied.switches.firstMatch.tap()
+      XCTAssertTrue(varied.waitForValue("1"))
+      app.plan(row: 2, reps: 8, from: 10, load: "18"); app.plan(row: 3, reps: 6, from: 10, load: "20")
+      // Back to the form's top: a drag lets the keyboard go, and a List keeps a row above the fold at a stale frame, so the
+      // drags are counted, not conditioned on the row.
+      for _ in 0..<4 {
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.28))
+          .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.55)), withVelocity: .slow, thenHoldForDuration: 0.1)
+      }
+      XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+      XCTAssertTrue(app.buttons["gym-target-sets-Increment"].isHittable)
+      capture("02L.6-movement-form-varied", look, app)
       app.buttons["gym-movement-editor-commit"].tap()
       XCTAssertTrue(app.buttons["save-routine"].waitForExistence(timeout: 5))
-      capture("gym-routine-editor-planned", look, app)
+      XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "builder-movement-")).count == 4)
       app.buttons["save-routine"].tap()
       XCTAssertTrue(app.descendants(matching: .any)["routine-detail"].waitForExistence(timeout: 5))
       capture("gym-routine-detail", look, app)
-      app.buttons["edit-routine"].tap()
-      XCTAssertTrue(app.navigationBars["Edit routine"].waitForExistence(timeout: 5))
-      XCTAssertTrue(app.buttons["delete-routine"].waitForExistence(timeout: 5))
-      capture("02.5-routine-editor-sortable", look, app)
-      app.navigationBars["Edit routine"].buttons["Cancel"].tap()
-      app.buttons["routine-close"].tap()
-      let routine = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label BEGINSWITH %@", "routine-", "Push A,")).firstMatch
-      XCTAssertTrue(routine.waitForExistence(timeout: 5))
-      capture("gym-routines-one-routine", look, app)
-      routine.tap()
-      XCTAssertTrue(app.buttons["routine-start"].waitForExistence(timeout: 5)); app.buttons["routine-start"].tap()
-      XCTAssertTrue(app.buttons["workout-log"].waitForExistence(timeout: 10)); app.buttons["workout-log"].tap()
-      app.buttons["workout-finish"].tap()
-      XCTAssertTrue(app.buttons["workout-done"].waitForExistence(timeout: 10)); app.buttons["workout-done"].tap()
-      let record = app.buttons["gym-session-movement"].firstMatch
-      XCTAssertTrue(record.waitForExistence(timeout: 5)); record.tap()
-      XCTAssertTrue(app.descendants(matching: .any)["gym-movement-record"].waitForExistence(timeout: 5))
-      app.navigationBars.buttons["More"].tap()
-      app.buttons["Edit movement"].tap()
-      XCTAssertTrue(app.textFields["gym-rename-movement-name"].waitForExistence(timeout: 5))
-      capture("gym-routine-rename-movement-sheet", look, app)
+      app.terminate()
     }
   }
-  func testCombinedEditorCancelRestoresTheStagedIdentityAndTargets() {
+
+  // 02L.8: the movement form at the largest text, the stepper rows stacked and the Load field under its label.
+  func testMovementFormAtLargestText() {
+    for look in Look.bothAtLargestText {
+      let app = launch("shell-last-room", look)
+      openGymFromJournal(app, opensOn: .coach); open(.routines, app)
+      app.buttons["new-routine"].tap()
+      let name = app.textFields["routine-name"]
+      XCTAssertTrue(name.waitForExistence(timeout: 5)); name.typeText("Push A\n")
+      app.buttons["add-movement"].tap()
+      XCTAssertTrue(app.buttons["gym-new-movement"].waitForExistence(timeout: 5)); app.buttons["gym-new-movement"].tap()
+      let movementName = app.textFields["gym-movement-name"]
+      XCTAssertTrue(movementName.waitForExistence(timeout: 5)); movementName.typeText("Zercher squat\n")
+      app.choose("gym-movement-equipment", "Dumbbells")
+      app.plan(sets: 3, reps: 10, load: "16", rest: "1:30")
+      for _ in 0..<8 where !movementName.isHittable { app.swipeDown(velocity: .slow) }
+      XCTAssertTrue(movementName.isHittable)
+      capture("02L.8-movement-form", look, app)
+      app.terminate()
+    }
+  }
+
+  // Cancel on the form leaves the staged movement as it was; the editor's Cancel asks before discarding the routine.
+  func testFormCancelRestoresTheStagedIdentityAndTargets() {
     for look in Look.both {
       let app = launch("shell-last-room", look)
       openGymFromJournal(app, opensOn: .coach); open(.routines, app)
       app.buttons["new-routine"].tap()
       let name = app.textFields["routine-name"]
       XCTAssertTrue(name.waitForExistence(timeout: 5)); name.typeText("Push A\n")
-      app.buttons["add-movement"].tap(); app.buttons["gym-movement-bench-press"].tap()
-      let commit = app.buttons["gym-movement-editor-commit"]
-      XCTAssertTrue(commit.waitForExistence(timeout: 5))
-      let sets = app.textFields["gym-target-sets"]
-      sets.tap(); sets.typeText("4")
-      app.buttons["gym-target-keyboard-done"].tap()
-      let movementName = app.textFields["gym-movement-name"]
-      let editor = app.collectionViews["gym-routine-movement-editor"]
-      let navigation = app.navigationBars["Add movement"]
-      for _ in 0..<5 where movementName.frame.minY < navigation.frame.maxY + 8 { editor.swipeDown(velocity: .slow) }
-      XCTAssertGreaterThanOrEqual(movementName.frame.minY, navigation.frame.maxY)
-      XCTAssertEqual(movementName.value as? String, "Bench Press")
-      XCTAssertEqual(sets.value as? String, "4")
-      capture("02.6-combined-movement-editor", look, app)
-      commit.tap()
+      addMovement(app, "bench-press") { app.plan(sets: 4) }
       app.buttons["builder-movement-bench-press"].tap()
+      let movementName = app.textFields["gym-movement-name"]
       XCTAssertTrue(movementName.waitForExistence(timeout: 5))
+      XCTAssertEqual(movementName.value as? String, "Bench Press")
+      XCTAssertTrue(app.staticTexts["Sets: 4"].exists)
       movementName.coordinate(withNormalizedOffset: CGVector(dx: 0.99, dy: 0.5)).tap()
       movementName.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: "Bench Press".count) + "Discarded press")
       XCTAssertTrue(movementName.waitForValue("Discarded press"))
@@ -171,71 +184,35 @@ final class RoutinesCaptures: DesignCapture {
       XCTAssertTrue(confirmation.waitForExistence(timeout: 5))
       capture("02.17-movement-unsaved", look, app)
       if confirmation.buttons["Keep editing"].exists { confirmation.buttons["Keep editing"].tap() }
-      else {
-        app.otherElements["PopoverDismissRegion"].coordinate(withNormalizedOffset: CGVector(dx: 0.02, dy: 0.5)).tap()
-      }
+      else { app.otherElements["PopoverDismissRegion"].coordinate(withNormalizedOffset: CGVector(dx: 0.02, dy: 0.5)).tap() }
       XCTAssertTrue(confirmation.waitForNonExistence(timeout: 5))
       XCTAssertEqual(movementName.value as? String, "Discarded press")
       app.buttons["gym-movement-editor-cancel"].tap(); app.buttons["Discard"].tap()
+      XCTAssertTrue(movementName.waitForNonExistence(timeout: 5))
       app.buttons["builder-movement-bench-press"].tap()
+      XCTAssertTrue(movementName.waitForExistence(timeout: 5))
       XCTAssertEqual(movementName.value as? String, "Bench Press")
-      XCTAssertEqual(sets.value as? String, "4")
+      XCTAssertTrue(app.staticTexts["Sets: 4"].exists)
       app.buttons["gym-movement-editor-cancel"].tap()
+      XCTAssertTrue(movementName.waitForNonExistence(timeout: 5))
       app.navigationBars["New routine"].buttons["Cancel"].tap()
       XCTAssertTrue(app.buttons["Discard"].waitForExistence(timeout: 5)); app.buttons["Discard"].tap()
       XCTAssertTrue(app.staticTexts["No routines yet"].waitForExistence(timeout: 5))
     }
   }
 
-  func testCombinedEditorKeyboardValidationAndLargeText() {
-    for look in Look.both + Look.bothAtLargestText {
-      let app = launch("shell-last-room", look)
-      openGymFromJournal(app, opensOn: .coach); open(.routines, app)
-      app.buttons["new-routine"].tap()
-      let name = app.textFields["routine-name"]
-      XCTAssertTrue(name.waitForExistence(timeout: 5)); name.typeText("Push A\n")
-      app.buttons["add-movement"].tap(); app.buttons["gym-new-movement"].tap()
-      let movementName = app.textFields["gym-movement-name"]
-      XCTAssertTrue(movementName.waitForExistence(timeout: 5)); movementName.tap(); movementName.typeText("Custom press")
-      let commit = app.buttons["gym-movement-editor-commit"]
-      XCTAssertTrue(commit.isHittable)
-      if !look.largestText { XCTAssertEqual(commit.frame.height, 52, accuracy: 1) }
-      XCTAssertLessThanOrEqual(commit.frame.maxY, app.keyboards.firstMatch.frame.minY + 1)
-      capture("02.14-create-movement-keyboard", look, app)
-      app.buttons["gym-target-keyboard-done"].tap()
-      let sets = reach(app.textFields["gym-target-sets"], app)
-      sets.tap(); sets.typeText("21")
-      XCTAssertFalse(commit.isEnabled)
-      XCTAssertEqual(sets.value as? String, "21")
-      let refusal = app.staticTexts["gym-target-refusal"]
-      XCTAssertTrue(refusal.waitForExistence(timeout: 5))
-      let navigation = app.navigationBars["Add movement"], keyboardDone = app.buttons["gym-target-keyboard-done"]
-      for _ in 0..<8 {
-        let top = navigation.frame.maxY + 8, bottom = keyboardDone.frame.minY - 8
-        if refusal.frame.minY >= top && refusal.frame.maxY <= bottom { break }
-        let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.08, dy: 0))
-          .withOffset(CGVector(dx: 0, dy: (top + bottom) / 2))
-        let distance: CGFloat = refusal.frame.maxY > bottom ? -80 : 80
-        start.press(forDuration: 0.01, thenDragTo: start.withOffset(CGVector(dx: 0, dy: distance)), withVelocity: .slow, thenHoldForDuration: 0.1)
-      }
-      XCTAssertEqual(refusal.label, "Sets, 1 to 20.")
-      XCTAssertGreaterThanOrEqual(refusal.frame.minY, navigation.frame.maxY)
-      XCTAssertLessThanOrEqual(refusal.frame.maxY, keyboardDone.frame.minY)
-      XCTAssertTrue(commit.isHittable)
-      capture("02.16-movement-target-refusal", look, app)
-      sets.typeText(XCUIKeyboardKey.delete.rawValue + XCUIKeyboardKey.delete.rawValue + "2")
-      app.buttons["gym-target-keyboard-done"].tap()
-      XCTAssertTrue(commit.isEnabled && commit.isHittable)
-      let variation = reach(app.switches["Vary by set"], app)
-      let control = variation.switches.firstMatch
-      XCTAssertTrue(control.isHittable); control.tap()
-      XCTAssertTrue(variation.waitForValue("1"))
-      XCTAssertTrue(reach(app.buttons["gym-target-fill"], app).isHittable)
-      XCTAssertTrue(reach(app.buttons["gym-target-add-set"], app).isHittable)
-      capture("02.15-movement-per-set", look, app)
-      commit.tap()
-      XCTAssertTrue(app.buttons["save-routine"].waitForExistence(timeout: 5))
+  // Add movement, pick one from the catalogue — searched for when it is not among the six — plan it on the form, and add
+  // it to the routine.
+  func addMovement(_ app: XCUIApplication, _ id: String, searching query: String? = nil, planning plan: () -> Void) {
+    app.buttons["add-movement"].tap()
+    if let query {
+      let search = app.searchFields.firstMatch
+      XCTAssertTrue(search.waitForExistence(timeout: 5)); search.tap(); search.typeText(query)
     }
+    XCTAssertTrue(app.buttons["gym-movement-" + id].waitForExistence(timeout: 5)); app.buttons["gym-movement-" + id].tap()
+    XCTAssertTrue(app.buttons["gym-movement-editor-commit"].waitForExistence(timeout: 5))
+    plan()
+    app.buttons["gym-movement-editor-commit"].tap()
+    XCTAssertTrue(app.buttons["builder-movement-" + id].waitForExistence(timeout: 5))
   }
-
 }

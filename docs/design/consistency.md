@@ -163,15 +163,25 @@ for the canonical Coach-led flow, indexed in [the flow index](../index.md). Colo
   calendar boundary. All hosted AI, including background Echoes, consumes the individual budget.
   Signing in binds the device and includes its current-month anonymous spend in free usage.
   Server-issued installation credentials are implemented; customer USD screens remain unbuilt.
-- **6w · Keyboard bars on iOS 26.** The app keeps SwiftUI `.keyboard` toolbars to the ± a sheet's
-  Load row adds for a signed basis (`LoadRow`, Fix set and Edit sets) because their retained layout
-  can reduce later sheets' keyboard avoidance; the rack has no keyboard row at all, its ± leading the
-  ladder (03.30). Coach's *Done* is above its composer; the note editor has none. The combined routine
-  movement editor uses `KeyboardBar` with *Next* and *Done* in its bottom inset while a field is
-  focused, above the form's Done/Add action. Its keyboard and commit clearance are part of the
-  compact-phone and large-text verification in 10y.
+- **6w · Keyboard bars on iOS 26.** The app keeps SwiftUI `.keyboard` toolbars to the ± a Load row
+  adds for a signed basis (`LoadRow`: Fix set, Edit sets and the routine's movement form) because their
+  retained layout can reduce later sheets' keyboard avoidance; the rack has no keyboard row at all, its
+  ± leading the ladder (03.30). Coach's *Done* is above its composer; the note editor has none. The
+  movement form (02L.5) has its Name and Load as text fields and no *Next* or *Done* bar; a scroll lets
+  the keyboard go.
 
 ### iOS against the drawings and the other phone
+
+- **02 · Routines is Direction L on iOS alone** (owner, 2026-11-07). The routine editor, the movement form,
+  the picker and the summary are the stock `Form` parts of 02L.1–02L.8 (`design/ios/routines.md`): the
+  toolbar +, Lift-shaped rows, `EditButton`, Steppers for sets and reps, Load as a decimal field, Equipment
+  and Rest as menu pickers, Varied sets as a toggle. Android keeps its M3 editor (stepper rows, the
+  create-movement target block) and web its own; all three save the same `RoutineEntry(sets, restSeconds)`
+  and `Exercise(equipment, loadCount)`, so the surfaces differ in form, not in data. Ledger drift, not a task.
+  The boards read ✅ until their 🚀 flip after review. The summary row does not tell a lifter's own
+  movement from the catalogue's (02.2 drew a *· yours* mark; the designer owes a drawing if it returns).
+  Android's movement form fills a varied scheme with Ramp up and Match set 1; 02L.6 draws no fill, so iOS
+  has none.
 
 The Gym file's iOS page is the target (10o). These are the places it, the iOS build, older drawings
 and Android disagree.
@@ -316,8 +326,7 @@ and Android disagree.
   Each flow carries its delivery status; the six-flow contract in 10y covers the revised interactions.
   Target inventory:
   - 01 and 08: listed under 10q.
-  - 02: editor always sortable 02.5 `1149:2200`; empty Routines with the floating + 02.7 `1149:2477`;
-    remove by the trash circle 02.8 `1149:2275`.
+  - 02: Direction L (`design/ios/routines.md`), 02L.1–02L.8 `1992:18823`–`1992:19789`.
   - 03: rack with Dumbbells 03.1 `1150:2352`; its states pressed 03.10 `1150:2495`, changed with 56 pt
     hit areas 03.11 `1150:2638`, Bodyweight with added load 03.12 `1150:2793`.
   - 04: the compact Lock Screen card 04.7 `1723:15733` (✅, task 69); the build draws it 141 pt
@@ -325,10 +334,9 @@ and Android disagree.
   - 05: The log with its labelled Weigh in 05.1 `1153:2765`; Edit movement 05.9 `1153:2559`; the
     Equipment menu 05.10 `1153:2603`.
   - 08: Coach updates a movement 08.9, listed under 10q.
-  - Floating actions are Liquid Glass with their symbol in the accent: `_Gym / Floating action`
-    (`1190:195`, Gym Components page) — Label=None, the 60 pt + for New routine (02.1, 02.7);
-    Label=Text, the labelled *Weigh in* capsule on The log (05.1), since a bare + did not say what it
-    adds.
+  - The one floating action left is Liquid Glass with its symbol in the accent: `_Gym / Floating action`
+    (`1190:195`, Gym Components page), Label=Text, the labelled *Weigh in* capsule on The log (05.1),
+    since a bare + did not say what it adds. New routine is the toolbar + (02L.1).
   - The rack names its equipment as a symbol in the movement header (03.1, 03.10–03.12); the
     build's *Two dumbbells · 32 kg total* line is gone from the rack, while totals keep its model.
   - The rack's load is typed in place on the system `.decimalPad` and its reps turn on one wheel in a
@@ -417,10 +425,10 @@ and Android disagree.
 - **10r · Swipe delete is the native trash circle (owner ruling, 2026-10-22).** Everywhere in gym a
   trailing swipe slides the row and reveals a round red trash circle with no text label, drawn with
   the local component `_Gym / Swipe actions` (`1190:172`). iOS draws it with one shared modifier,
-  `TrashSwipe` (`Gym/Components/GymRows.swift`), on the Routines list, the movement editor's per-set target rows, The log,
-  workout detail sets, Bodyweight entries, Notes, Coach History and the routine editor's movements
-  (02.8 `1149:2275`) and This workout's movements (03.4 `1135:1875`), both lists out of edit mode
-  that draw their own handles and drag on a long press. A one-line row draws the system's capsule
+  `TrashSwipe` (`Gym/Components/GymRows.swift`), on the Routines list, The log, workout detail sets,
+  Bodyweight entries, Notes, Coach History, the routine editor's movements (02L.3 `1992:19044`, a list
+  the system `EditButton` orders) and This workout's movements (03.4 `1135:1875`, a list out of edit mode
+  that draws its own handles and drags on a long press). A one-line row draws the system's capsule
   rather than a circle (05.4's set row).
 
   Deletes outside swipes keep their native form: context-menu *Delete routine*, *Delete set*,
@@ -435,7 +443,7 @@ and Android disagree.
   - The Equipment menu (05.10) draws Bodyweight third; the build lists it last, as Create movement
     does (Barbell, Dumbbells, Machine, Cable, Kettlebell, Bodyweight), from the one
     `MovementEquipment.choices`. Its basis help is the one `MovementEquipment.help`, so Edit
-    exercise and the combined routine movement form read the same words.
+    exercise and the routine's movement form read the same words.
   - Notes (09.1, 09.2): on iOS a row and the editor are the note's one text, while the domain still
     stores a title and a body: the editor takes a first line of up to 60 characters as the title and
     the rest as the body, and a longer first line keeps the whole text in the body under a title cut
@@ -1236,8 +1244,8 @@ question; the rest are below. iOS paths are under `apps/ios/App/Sources/Gym/`, A
   `1898:32999`, 08.7 `1253:28776`, 08.32 `1254:31101`, 08.60 `1254:31663`). Android's access stances live in
   `coach/CoachAccess.kt`, and each refusal's words and door in `coach/turn/CoachTurnRefusal.kt`.
 - **12i · Shipped iOS states, drawn on both pages.** *Draft kept on this
-  phone* / *Continue saved draft* (01.18 `1283:40674`), the routine editor's History (02.13 `1283:39087`), *· yours* on a
-  custom movement (02.2) and the Copy menu (08.32). The iOS boards are drawn from the code and await a
+  phone* / *Continue saved draft* (01.18 `1283:40674`), the routine editor's History (02.13 `1283:39087`) and the Copy
+  menu (08.32). The iOS boards are drawn from the code and await a
   device check. Neither phone draws Coach's choice chips and the catalog has no `ask_setup_details`, while 01.17 reads 🚀 on
   both pages (iOS `1283:41514`, Android `1283:40111`): retire it.
 - **12k · No Erase data; Delete account removes the cloud copy.** No phone offers Erase data:
@@ -1437,7 +1445,7 @@ Android. It and the product differ in these places.
   whether that difference is intentional. Android's targets are drawn as number steppers (Android
   02.6, 02.11; 11d).
 - **4k · Leaving drafts.** iOS asks *Discard routine changes?* (Discard · Keep editing) on a
-  dirty Cancel and blocks swipe-dismiss (`RoutineBuilder.swift`). Android follows the same rule and
+  dirty Cancel and blocks swipe-dismiss (`RoutineEditor.swift`). Android follows the same rule and
   words (02.20, the revised 02.17; task 56): Back, the gesture and the back arrow ask
   on an unsaved draft, and the gesture previews nothing while it would ask. Web and restored drafts
   remain open.

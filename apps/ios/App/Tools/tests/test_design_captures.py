@@ -31,16 +31,19 @@ class DesignCaptureExportTests(unittest.TestCase):
 
     def test_export_names_each_capture_by_its_name_and_replaces_an_earlier_export(self):
         self.manifest[0]["attachments"].append({"exportedFileName": "second.png", "suggestedHumanReadableName": "gym-log-end-375-ax3-dark_1_11111111-1111-1111-1111-111111111111.png"})
+        self.manifest[0]["attachments"].append({"exportedFileName": "third.png", "suggestedHumanReadableName": "02L_2_22222222-2222-2222-2222-222222222222.7-routine-summary-dark"})
         self.write_manifest()
         (self.exported / "second.png").write_bytes(b"end pixels")
+        (self.exported / "third.png").write_bytes(b"summary pixels")
         export_design_captures.publish(self.exported, self.destination, self.result)
         (self.exported / "opaque.png").write_bytes(b"newer pixels")
         entries = export_design_captures.publish(self.exported, self.destination, self.result)
-        expected = [{"file": "05.1-log-daylight.png", "test": "LogCaptures/testScreens()", "result": str(self.result)},
+        expected = [{"file": "02L.7-routine-summary-dark.png", "test": "LogCaptures/testScreens()", "result": str(self.result)},
+                    {"file": "05.1-log-daylight.png", "test": "LogCaptures/testScreens()", "result": str(self.result)},
                     {"file": "gym-log-end-375-ax3-dark.png", "test": "LogCaptures/testScreens()", "result": str(self.result)}]
         self.assertEqual(expected, entries)
         self.assertEqual(expected, json.loads((self.destination / "capture-manifest.json").read_text()))
-        self.assertEqual(["05.1-log-daylight.png", "capture-manifest.json", "gym-log-end-375-ax3-dark.png"], sorted(path.name for path in self.destination.iterdir()))
+        self.assertEqual(["02L.7-routine-summary-dark.png", "05.1-log-daylight.png", "capture-manifest.json", "gym-log-end-375-ax3-dark.png"], sorted(path.name for path in self.destination.iterdir()))
         self.assertEqual(b"newer pixels", (self.destination / "05.1-log-daylight.png").read_bytes())
         self.assertEqual(b"end pixels", (self.destination / "gym-log-end-375-ax3-dark.png").read_bytes())
 

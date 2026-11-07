@@ -472,6 +472,8 @@ public enum Readout {
   public static func estimate(_ e1rm: Double, units: GymUnits = .kg) -> String { "e1RM \(estimatedWeight(e1rm, units: units))" }
   public static func repTarget(_ reps: Int?) -> String { reps.map(String.init) ?? "max" }
   public static func setTarget(_ set: SetTarget) -> String { effort(load: set.weightKg.map { weight($0) } ?? "last", reps: repTarget(set.reps)) }
+  // The same set tight, as a varied scheme's sequence reads it on iOS: *16×10*, *last×max*.
+  public static func shortSetTarget(_ set: SetTarget) -> String { "\(set.weightKg.map { weight($0) } ?? "last")×\(repTarget(set.reps))" }
   public static func ladder(_ sets: [SetTarget]) -> String { sets.map(setTarget).joined(separator: " · ") }
 
   public static func target(_ sets: [SetTarget]?) -> String {

@@ -529,8 +529,8 @@ nonisolated struct CoachBoard {
   static func entry(_ exercise: String, _ sets: Int, _ reps: Int?, _ kg: Double? = nil, rest: Int? = nil) -> RoutineEntry {
     RoutineEntry(exerciseId: ID(RecordID(exercise)), sets: Array(repeating: SetTarget(reps: reps, weightKg: kg), count: sets), restSeconds: rest)
   }
-  static func ladder(_ exercise: String, _ sets: [(Int?, Double?)]) -> RoutineEntry {
-    RoutineEntry(exerciseId: ID(RecordID(exercise)), sets: sets.map { SetTarget(reps: $0.0, weightKg: $0.1) })
+  static func ladder(_ exercise: String, _ sets: [(Int?, Double?)], rest: Int? = nil) -> RoutineEntry {
+    RoutineEntry(exerciseId: ID(RecordID(exercise)), sets: sets.map { SetTarget(reps: $0.0, weightKg: $0.1) }, restSeconds: rest)
   }
   // Routine entries as a call's input lists them.
   static func json(_ entries: [RoutineEntry]) -> [[String: Any]] {
@@ -592,7 +592,22 @@ nonisolated struct CoachBoard {
     Turn(question: shoulder, answer: "Bench is logged, so it stays. Go lighter on the row and rest longer.", workout: lighterRow),
     Turn(question: "And the pull-ups?", answer: "Take the belt off for pull-ups today.", workout: [lighterRow[0], lighterRow[1], entry("pull-up", 3, 8, rest: 120), lighterRow[3]]),
   ])
+  // The Routines boards' fixture (02L.1–02L.8): four routines, Push A as 02L.7 draws it, and Coach's three changes to it.
+  static let pushL = [entry("bench-press", 3, 8, 60, rest: 120), ladder("incline-dumbbell-press", [(10, 16), (8, 18), (6, 20)], rest: 90),
+                      entry("chin-up", 3, 8, 0, rest: 120), entry("lateral-raise", 3, 12, 8, rest: 60), entry("triceps-pushdown", 3, 12, 25, rest: 60)]
+  static let routinesL = CoachBoard(
+    routines: [(id: "board-routine", name: "Push A", entries: pushL), (id: "board-pull", name: "Pull A", entries: pullA),
+               (id: "board-legs", name: "Legs", entries: [entry("back-squat", 4, 5, 100, rest: 180), entry("romanian-deadlift", 3, 8, 80, rest: 120),
+                                                           entry("leg-press", 3, 10, 120, rest: 90), entry("walking-lunge", 3, 12, 12, rest: 60),
+                                                           entry("lying-leg-curl", 3, 12, 40, rest: 60), entry("standing-calf-raise", 4, 15, 60, rest: 60)]),
+               (id: "board-upper", name: "Upper B", entries: [entry("overhead-press", 4, 6, 40, rest: 120), entry("barbell-row", 4, 8, 60, rest: 120),
+                                                              entry("dumbbell-bench-press", 3, 10, 22.5, rest: 90), entry("face-pull", 3, 15, 12.5, rest: 60)])],
+    proposals: [Proposed(id: "board-proposal", routine: "board-routine", name: "Push A",
+                         entries: [entry("bench-press", 3, 8, 62.5, rest: 120), pushL[1], pushL[2], pushL[4], entry("cable-fly", 3, 15, 15, rest: 60)])],
+    turns: [Turn(question: "Is Push A still doing anything?", answer: "Bench can go up 2.5 kg. Swap the lateral raises for cable flies.", proposals: ["board-proposal"])])
+
   static let all: [String: CoachBoard] = [
+    "routines": routinesL,
     "after-sign-in": CoachBoard(routines: [], proposals: [
         Proposed(id: "board-proposal", routine: "setup-routine-B", name: "Full body B",
                  entries: [fullBody[1].entries[0], fullBody[1].entries[1], entry("lat-pulldown", 3, 8, 45, rest: 120)])],

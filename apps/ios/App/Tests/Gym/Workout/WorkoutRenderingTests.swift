@@ -26,15 +26,18 @@ func trainingSet(_ id: String, of exercise: ID<Exercise> = ID("back-squat"), in 
 @testable import Windmill
 
 @MainActor final class WorkoutRenderingTests: XCTestCase {
+  // The host's load, and the focus the host sees, so a test steps on what the host holds rather than on time.
   @Observable final class LoadBox {
     var load: Double
+    var focused = false
     init(_ load: Double) { self.load = load }
   }
   struct ExternalLoadProbe: View {
     @Bindable var box: LoadBox
     @FocusState var focused: Bool
     var body: some View {
-      Form { LoadRow(weightKg: $box.load, basis: MovementEquipment("barbell"), focus: $focused, identifier: "probe-load") }
+      Form { LoadRow(load: $box.load.optional, kind: .logged, basis: MovementEquipment("barbell"), focus: $focused, identifier: "probe-load") }
+        .onChange(of: focused) { _, value in box.focused = value }
     }
   }
   struct FixSetNumbersProbe: View {
@@ -44,7 +47,7 @@ func trainingSet(_ id: String, of exercise: ID<Exercise> = ID("back-squat"), in 
     @FocusState var focused: Bool
     var body: some View {
       Form {
-        LoadRow(weightKg: $load, basis: MovementEquipment("other"), focus: $focused, identifier: "probe-load")
+        LoadRow(load: $load.optional, kind: .logged, basis: MovementEquipment("other"), focus: $focused, identifier: "probe-load")
         RepsWheel(reps: $reps, identifier: "probe-reps")
       }
         .onChange(of: load) { _, value in changed(value, reps) }
@@ -81,6 +84,15 @@ func trainingSet(_ id: String, of exercise: ID<Exercise> = ID("back-squat"), in 
     }
     gym.workout.reconcile()
     return (harness, gym)
+  }
+
+  // Polls on the main actor, the run loop turning between reads, until the condition holds or five seconds pass.
+  func waitUntil(_ condition: @escaping () -> Bool) async throws {
+    let deadline = ContinuousClock.now + .seconds(5)
+    while ContinuousClock.now < deadline {
+      if condition() { return }
+      try await Task.sleep(for: .milliseconds(10))
+    }
   }
 
   func host<V: View>(_ view: V, appearance: UIUserInterfaceStyle) throws -> UIWindow {
@@ -436,33 +448,38 @@ func trainingSet(_ id: String, of exercise: ID<Exercise> = ID("back-squat"), in 
   }
 
   // A change the host makes while the load is focused is kept as the field lets go: the text follows the host, and only an
-  // unreadable text writes back, the load the field opened on.
+  // unreadable text writes back, the load the field opened on. Each step waits on what the host holds, and a focus change
+  // UIKit refuses mid-transition is asked again, so no step leans on how fast the simulator runs.
   func testAChangeMadeWhileTheLoadIsFocusedIsKeptAsItLetsGo() async throws {
     let box = LoadBox(60)
     let window = try host(ExternalLoadProbe(box: box), appearance: .light)
     defer { window.isHidden = true; window.rootViewController = nil }
-    try await Task.sleep(for: .milliseconds(300))
-    window.layoutIfNeeded()
+    try await waitUntil { views(window, UITextField.self).first?.text == "60" }
     let field = try XCTUnwrap(views(window, UITextField.self).first)
-    XCTAssertTrue(field.becomeFirstResponder())
-    try await Task.sleep(for: .milliseconds(150))
+    XCTAssertEqual(field.text, "60")
+    try await waitUntil { field.becomeFirstResponder() }
+    try await waitUntil { box.focused }
+    XCTAssertTrue(box.focused)
     field.selectAll(nil); field.insertText("65")
-    try await Task.sleep(for: .milliseconds(150))
+    try await waitUntil { box.load == 65 }
     XCTAssertEqual(box.load, 65)
     box.load = 90
-    try await Task.sleep(for: .milliseconds(150))
+    try await waitUntil { field.text == "90" }
     XCTAssertEqual(field.text, "90")
-    XCTAssertTrue(field.resignFirstResponder())
-    try await Task.sleep(for: .milliseconds(150))
+    XCTAssertTrue(field.isFirstResponder, "The field holds its focus while the host changes the load")
+    try await waitUntil { field.resignFirstResponder() }
+    try await waitUntil { !box.focused }
+    XCTAssertFalse(box.focused)
     XCTAssertEqual(box.load, 90)
     XCTAssertEqual(field.text, "90")
-    XCTAssertTrue(field.becomeFirstResponder())
-    try await Task.sleep(for: .milliseconds(150))
+    try await waitUntil { field.becomeFirstResponder() }
+    try await waitUntil { box.focused }
+    XCTAssertTrue(box.focused)
     field.selectAll(nil); field.deleteBackward()
-    try await Task.sleep(for: .milliseconds(150))
     XCTAssertEqual(field.text, "")
-    XCTAssertTrue(field.resignFirstResponder())
-    try await Task.sleep(for: .milliseconds(150))
+    try await waitUntil { field.resignFirstResponder() }
+    try await waitUntil { !box.focused && field.text == "90" }
+    XCTAssertFalse(box.focused)
     XCTAssertEqual(box.load, 90, "An emptied field restores the load it opened on")
     XCTAssertEqual(field.text, "90")
   }

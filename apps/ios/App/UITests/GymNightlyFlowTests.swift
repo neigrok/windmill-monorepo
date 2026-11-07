@@ -116,7 +116,7 @@ import XCTest
     let add = app.buttons["gym-movement-editor-commit"]
     XCTAssertTrue(add.waitForExistence(timeout: 5)); XCTAssertEqual(add.label, "Add")
     XCTAssertEqual(app.textFields["gym-movement-name"].value as? String, "Bench Press")
-    XCTAssertTrue(app.textFields["gym-target-sets"].exists)
+    XCTAssertTrue(app.buttons["gym-target-sets-Increment"].exists)
     add.tap()
     XCTAssertTrue(app.buttons["builder-movement-bench-press"].waitForExistence(timeout: 5))
     XCTAssertTrue(app.buttons["save-routine"].waitForExistence(timeout: 5))
