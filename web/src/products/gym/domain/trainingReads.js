@@ -161,7 +161,7 @@ export class Prefill {
     /** @type {(number | null)[]} */
     const loads = [];
     for (let slot = lifted; slot < scheme.length; slot += 1) {
-      loads.push((straight ? scheme[0] : scheme[slot]).weightKg ?? (lastTime.isUnread ? null : Prefill.at(slot, null, planEntry, lastTime).weightKg));
+      loads.push((straight ? scheme[0] : scheme[slot])?.weightKg ?? (lastTime.isUnread ? null : Prefill.at(slot, null, planEntry, lastTime).weightKg));
     }
     return loads;
   }
