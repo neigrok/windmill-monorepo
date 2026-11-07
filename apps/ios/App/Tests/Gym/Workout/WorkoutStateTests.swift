@@ -288,6 +288,26 @@ import SyncTesting
     #expect(try runtime.runner.read(Gym.scope) { try $0.commands().isEmpty })
   }
 
+  @Test func anOnlineFinishSaysNothingWhileTheLogConfirmsIt() async throws {
+    let fault = WorkoutFaultTransport(), runtime = try Self.faultRuntime(fault, drivesLoops: true)
+    let identity = fault.model.identity(email: "finish-quiet@example.com")
+    #expect(try await runtime.engine.signIn(account: identity.account, token: identity.token).isComplete)
+    let recorder = TelemetryRecorder(), gym = GymModel(runner: runtime.runner, runtime: runtime, telemetry: recorder)
+    _ = try #require(gym.startWorkout(following: ID("back-squat")))
+    let workout = gym.workout, id = try #require(workout.sessionId)
+    workout.logSet()
+    await runtime.engine.start()
+    await runtime.engine.flushOnLeave(); runtime.engine.foreground()
+    #expect(await Self.until { gym.refresh(); workout.reconcile(); return gym.unconfirmedSets(workout.sets).isEmpty })
+    fault.pullDelay.withLock { $0 = .milliseconds(500) }
+    let finishing = Task { await workout.finish() }
+    #expect(await Self.until { workout.finishQueued && !workout.finishing })
+    #expect(workout.receipt == nil && workout.message == nil)
+    await finishing.value
+    #expect(workout.receipt?.session.id == id && workout.message == nil)
+    #expect(recorder.entries.withLock { $0.filter { $0.name == "gym_session_finished" }.map(\.properties) } == [["screen": "workout", "outcome": "ok"]])
+  }
+
   @Test func finishWaitsOnlineForTheConfirmationOfASetTheLogJustAccepted() async throws {
     let fault = WorkoutFaultTransport(), runtime = try Self.faultRuntime(fault, drivesLoops: true)
     let identity = fault.model.identity(email: "finish-after-fix@example.com")
@@ -375,12 +395,13 @@ import SyncTesting
     fault.pullFailure.withLock { $0 = 503 }
     await workout.finish()
     #expect(workout.receipt == nil && workout.finishQueued && gym.openSession?.id == id)
+    #expect(workout.message == "Finish is saved on this phone. It will be confirmed when a connection is available.")
     fault.pullFailure.withLock { $0 = nil }
     runtime.engine.foreground()
     #expect(await Self.until { (try? runtime.runner.read(Gym.scope) { try $0.commands().isEmpty }) == true })
     workout.reconcile()
     gym.refresh(); workout.reconcile()
-    #expect(gym.openSession == nil && workout.receipt?.session.id == id)
+    #expect(gym.openSession == nil && workout.receipt?.session.id == id && workout.message == nil)
   }
 
   @Test(arguments: [true, false])

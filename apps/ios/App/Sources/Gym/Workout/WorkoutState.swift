@@ -592,6 +592,7 @@ struct FinishWorkout: Action {
   }
 
   static let orderUnread = "The workout is saved. Its movement order could not be read. Try again."
+  static let finishUnconfirmed = "Finish is saved on this phone. It will be confirmed when a connection is available."
   // What a plan editor says as it closes under a set the movement just took.
   static func loggedNow(_ movement: String) -> String { "\(movement) has a logged set now. Nothing changed." }
 
@@ -629,15 +630,14 @@ struct FinishWorkout: Action {
     receiptOwed = true
     reconcile()
     finishing = false
-    if receipt == nil { message = "Finish is saved on this phone. It will be confirmed when a connection is available." }
+    // The queued finish says nothing while the log confirms it; a way out without its receipt says it is saved on this phone.
+    defer { if receipt == nil, message == nil, gym.account == account, sessionId == session.id { message = Self.finishUnconfirmed } }
     if gym.runtime != nil, !gym.isAnonymous {
       guard await drainForFinish(timeout: gym.waits.finish, operation: { await self.flushAndConfirm(session.id, finished: true) }) else { return }
       gym.refresh()
     }
     guard !Task.isCancelled, gym.account == account, sessionId == session.id, !gym.accountTransition else { return }
-    guard let finished = gym.sessions.first(where: { $0.id == session.id }), !finished.isOpen else {
-      message = gym.error ?? "Finish is saved on this phone. It will be confirmed when a connection is available."; return
-    }
+    guard let finished = gym.sessions.first(where: { $0.id == session.id }), !finished.isOpen else { message = gym.error; return }
     completeFinish(finished)
   }
   // A successful push may precede its live hint: pull until the sets (before Finish) or the finish (after it) are confirmed.
