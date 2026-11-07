@@ -249,9 +249,10 @@ start or the last set) and half-open overlap. `SetRules` pins next-number overfl
 
 `LastTime` selects the latest finished movement session; it is unread when it found none and the account's history
 is not all here. `Prefill` follows ordered targets, last-time rows and today's sets. A scheme is straight when its
-sets agree, loads compared on the ladder's grid (`SetTarget.straight`); an open line is straight. `OfferedLoads` is
-the prefill's load at every set the plan still holds, the set in hand first, each later set offered as though the
-one before were logged as offered; a load that would come from an unread last time is null. `SessionReadout` provides duration, set
+sets agree, loads compared on the ladder's grid (`SetTarget.straight`); an open line is straight. `ExpectedLoads` is
+the load the plan expects at every set still to lift, the set in hand first: the target's own, else last time's as the
+prefill resolves a "last" target with nothing logged today; today's sets never enter it, and a load that would come from
+an unread last time is null. `SessionReadout` provides duration, set
 and movement counts, volume and the session estimate. `StatsProgress` groups
 finished facts in total order, with full-precision estimate values. `MovementProgress`
 provides twelve-week/all windows, best, heaviest, most reps, record steps, sparse-chart eligibility

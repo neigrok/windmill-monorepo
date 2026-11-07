@@ -28,24 +28,28 @@ tired, one-handed, sits below it.
 - **A primary button inside a card in the middle of a scroll.** A card may hold the *content*
   of a decision; the buttons that commit it live in the bottom band, pinned, so they do not
   move when the body scrolls.
-- **A primary or destructive action in a top corner.** With a phone in one hand there is no
-  top-right. A **destination** is not an action: the room menu and the account button live there, and
-  so may a planning door the lifter is sitting down to take — never one they need mid-set.
+- **A mid-task action in a top corner.** With a phone in one hand there is no top-right while a
+  set is being logged, a value typed or a step taken. A **destination** is not an action: the room menu
+  and the account button live there. So does a **form's commit**: on iOS a routine, a movement, a
+  weigh-in or a settings screen is filled sitting down and commits through the toolbar's Cancel and
+  Save, the system's own shape (`ios/ios-redesign.md` §1.6), with no full-width button beneath.
 - **A destructive action above the reach band** — it belongs at the bottom too, but as the
   *secondary* slot, never as the widest target.
 
 ## 3. What it prescribes
 
 1. **One primary action per screen**, full width, 54–58px tall, 14–16px from each edge,
-   directly above the tab rail (or above the safe-bottom inset where there is no rail).
+   directly above the tab rail (or above the safe-bottom inset where there is no rail) — for a
+   screen used mid-task. A form commits through the platform's toolbar instead (§2).
 2. **The secondary action sits under or beside it**, visibly lighter: an outline at 48–50px, or
    a plain text row. Two full-strength buttons of the same weight is a failure to decide.
 3. **Explanatory copy is centred** in the middle band when the screen is short, left-aligned
    when the body is a list or a document. Centre the *block*, not every line of a paragraph.
 4. **Inputs travel with the keyboard**: a field the user is filling belongs in the reach band,
    so the keyboard does not cover the thing it is typing into.
-5. **Numbers stay big and high; the controls that change them stay low.** The gym logger is the
-   canonical case: a 104px numeral in the middle band, the ladder and the log button beneath it.
+5. **The value being set and the controls that set it share the reach band.** The gym rack is the
+   canonical case: the load numeral is the text field, with the ladder, the reps stepper and Log set
+   beneath it in one block that rides the keyboard; the ledger reads above it.
 6. **Scroll bodies keep their bottom band pinned** (`flex: none` after a `flex: 1; overflow:
    auto` body), so the action is reachable at every scroll position — including the top.
 

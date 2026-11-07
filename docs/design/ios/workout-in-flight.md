@@ -4,7 +4,10 @@ Status: ✅ Ready for dev — owner approved 2026-10-30. Every board below is bu
 the Gym file's iOS page: 03.20–03.32 in [03 · Workout](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1114-1513)
 with the wave's READ ME (`1717:15737`), 04.6 and 04.7 in [04 · Outside the app](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1115-1576)
 and 08.54–08.57 in [08 · Coach](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1117-1703).
-Every board is drawn Dark and Daylight. Build tasks: `iosgym_tasks/60`–`69`.
+Every board is drawn Dark and Daylight. Build tasks: `iosgym_tasks/60`–`69`. The rack's load, the sign key
+and the ledger's open rows follow Direction A (🚀 In production): 03.23A `1940:16624` / `1940:16714`, 03.30 `1940:16984` / `1940:17074`, 03.34a–c
+`1940:17164` / `1940:17254` / `1940:17344`, with their [note](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1942-17441)
+(`1942:17441`).
 
 ## The fixture
 
@@ -41,20 +44,32 @@ between squat sets (04.6, 04.7).
   light impact plays — once per rest, foreground only, never while a sheet is up, and not when the
   confirmation-haptic preference is off. No sound, banner, countdown or progress ring. VoiceOver reads
   the value as *2 minutes 14 seconds, target 2 minutes* and announces nothing.
-- **Ledger.** Logged rows open Fix set (03.25). A movement with nothing logged opens Edit sets from
-  its current or planned rows. A logged movement's planned rows are not buttons.
+- **Ledger** (03.34a–c). A logged row reads what was lifted, with its check; the current and planned
+  rows read what the plan expects of them — the target's own load, else last time's — and no set
+  logged today changes them (`Prefill.expectedLoads`). While last time is
+  not read yet an open row's load is a placeholder bar that resolves in place. Logged rows open Fix set
+  (03.25). A movement with nothing logged opens Edit sets from its current or planned rows. A logged
+  movement's planned rows are not buttons.
 - **Past the plan** (03.28). Once the plan's sets are logged the ledger offers the next set as an
   open row and Log set logs it. A logged movement grows this way; no control is added.
 
 ## Load and reps
 
-- **Load is typed** on the system `.decimalPad`. On the rack, tapping the numeral turns it into a field
-  in place with its text selected, so the first key replaces it; the ladder, reps and Log set step
-  aside for the keyboard and the ledger stays readable (03.23). ✓ in the keyboard row or a tap outside
-  keeps a valid value; an empty or unreadable value restores the previous one. The unit follows the
-  load basis (*kg each*, *kg total*, *kg added*, *kg*).
-- **The sign.** The decimal pad has no minus, so bodyweight and Other add a `±` key to the keyboard
-  toolbar; it flips assistance and added load (03.30). Other bases never show it.
+- **Load is typed** on the system `.decimalPad` (03.23A). The rack's numeral is the field itself, in
+  both states: a tap into it raises the keyboard with the text selected, so the first key replaces it,
+  and the rack — numeral, ladder, reps, Log set — rides up with the keyboard as one block on the
+  keyboard's own curve. Nothing in it appears, goes, resizes or moves, and no keyboard row appears.
+  The page keeps its head — the movement, its dots and the clock row — while the ledger passes under
+  the rack. Each key edits the rack, so the ladder steps the typed load and Log set logs what the
+  field shows and drops the keyboard in one motion. The load lands as the field lets go: Log set, a
+  tap anywhere outside the rack, a sheet opening or a change of movement keep a valid value; an empty
+  or unreadable value restores the previous one. The unit follows the load basis (*kg each*, *kg
+  total*, *kg added*, *kg*).
+- **The sign** (03.30). The decimal pad has no minus, so for bodyweight and Other a fifth key, `±`,
+  leads the ladder — permanent, the same at rest and with the pad up — and flips assistance and added
+  load whatever is typed. Other bases never show it. Fix set and Edit sets still carry `±` in the
+  keyboard row (03.25, the in-production 03.30 Edit sets board); neither has a *Done* there, their ✓
+  lands the load.
 - **Reps stay on a wheel**: one native column, 1–99. From the rack, tapping the reps value opens a
   compact sheet with Cancel and ✓ (03.24); − and + stay on the rack. In Fix set and Edit sets the
   wheel sits under the load field (03.25, 03.30).
@@ -126,5 +141,6 @@ stays black in both appearances; compact and minimal are unchanged (04.3).
 
 Product events through `/v1/events`, allowlisted labels only:
 `gym_workout_plan_changed {action: retarget | add_set | remove_set | swap | add_movement | remove_movement | rest, outcome: ok | refused | failed, door: workout}` for the lifter's own edits,
-`gym_rest_target_reached` (no duration), `gym_receipt_plan_saved {outcome}`, and
+`gym_rest_target_reached` (no duration), `gym_receipt_plan_saved {outcome}`,
+`gym_workout_load_typed {action: open | land}` for the rack's pad rising and a typed load landing, and
 `gym_proposal_outcome` with `target: workout | routine`, which alone reports a Coach change applied to the workout.

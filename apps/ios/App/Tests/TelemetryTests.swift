@@ -152,6 +152,14 @@ nonisolated final class TelemetryBuffer<Value: Sendable>: Sendable {
                                          "name": "private-marker", "weightKg": "105", "reps": "5"]) == ["screen": .label("workout")])
   }
 
+  @Test func workoutLoadTypingCarriesOnlyItsScreenAndAction() {
+    #expect(TelemetryPrivacy.events.contains("gym_workout_load_typed"))
+    for action in ["open", "land"] {
+      #expect(TelemetryPrivacy.properties(["screen": "workout", "action": action, "weightKg": "105", "typed": "10.5", "exerciseId": "private-id"]) ==
+              ["screen": .label("workout"), "action": .label(action)])
+    }
+  }
+
   @Test func logWeightActionsExcludeMeasurementContent() {
     for item in ["weigh_in", "bodyweight"] {
       #expect(TelemetryPrivacy.properties(["screen": "log", "action": "open", "item": item, "weightKg": "82.5",

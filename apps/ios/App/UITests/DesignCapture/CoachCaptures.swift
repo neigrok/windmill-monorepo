@@ -684,14 +684,14 @@ final class CoachCaptures: DesignCapture {
     XCTAssertTrue(app.buttons["routine-start"].waitForExistence(timeout: 10)); app.buttons["routine-start"].tap()
     XCTAssertTrue(app.buttons["workout-log"].waitForExistence(timeout: 10))
     app.buttons["workout-weight-step-2"].tap()
-    let weight = app.buttons["workout-weight"].label, reps = app.buttons["workout-reps"].label
+    let weight = app.textFields["workout-load"].label, reps = app.buttons["workout-reps"].label
     let coach = app.buttons["workout-coach"]
     XCTAssertTrue(coach.wait(for: \.isHittable, toEqual: true, timeout: 5)); coach.tap()
     XCTAssertTrue(app.descendants(matching: .any)["coach-question"].waitForExistence(timeout: 10))
     XCTAssertTrue(app.buttons["coach-history"].exists && !app.descendants(matching: .any)["coach-proposal-header"].exists)
     app.buttons["coach-close"].tap()
     XCTAssertTrue(app.descendants(matching: .any)["coach-question"].waitForNonExistence(timeout: 5))
-    XCTAssertEqual([app.buttons["workout-weight"].label, app.buttons["workout-reps"].label], [weight, reps], "Close leaves the rack's draft as it was")
+    XCTAssertEqual([app.textFields["workout-load"].label, app.buttons["workout-reps"].label], [weight, reps], "Close leaves the rack's draft as it was")
     XCTAssertTrue(app.buttons["workout-log"].isHittable)
     coach.tap()
     XCTAssertTrue(app.descendants(matching: .any)["coach-question"].waitForExistence(timeout: 10))

@@ -17,10 +17,9 @@ import XCTest
     let ledger = app.collectionViews["workout-ledger"]
     XCTAssertTrue(ledger.waitForExistence(timeout: 5))
     XCTAssertEqual(ledger.frame.height, 132, accuracy: 1)
-    let weight = app.buttons["workout-weight"]
-    let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in weight.exists && weight.isEnabled && weight.isHittable }, object: weight)
+    let load = app.textFields["workout-load"]
+    let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in load.exists && load.isEnabled && load.isHittable }, object: load)
     XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 5), .completed)
-    weight.tap()
     app.typeLoad("105"); app.buttons["workout-log"].tap()
     app.descendants(matching: .any)["workout-current-set"].swipeLeft()
     XCTAssertTrue(app.movementHeader("Romanian Deadlift").waitForExistence(timeout: 5))
@@ -35,7 +34,7 @@ import XCTest
     app.buttons["gym-movement-bench-press"].tap()
     XCTAssertTrue(app.buttons["workout-log"].waitForExistence(timeout: 5))
     XCTAssertTrue(app.movementHeader("Bench Press").waitForExistence(timeout: 5))
-    XCTAssertEqual(app.buttons["workout-weight"].label, "Weight, 20 kg total")
+    XCTAssertEqual(app.textFields["workout-load"].label, "Weight, 20 kg total")
     XCTAssertEqual(app.collectionViews["workout-ledger"].frame.height, 44, accuracy: 1)
     app.buttons["workout-log"].tap()
     let chosenSet = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "workout-set-")).firstMatch
@@ -50,8 +49,8 @@ import XCTest
     let app = XCUIApplication()
     app.launchArguments = ["-model-server", "-board", "workout-planned", "-onboarding-appearance", "light"]
     app.launch()
-    XCTAssertTrue(app.buttons["workout-weight"].waitForExistence(timeout: 10))
-    app.buttons["workout-weight"].tap(); app.typeLoad("105")
+    XCTAssertTrue(app.textFields["workout-load"].waitForExistence(timeout: 10))
+    app.typeLoad("105")
     for _ in 0..<2 {
       app.buttons["workout-assembly"].tap()
       XCTAssertTrue(app.buttons["workout-assembly-add"].waitForExistence(timeout: 5))
@@ -63,7 +62,7 @@ import XCTest
       app.navigationBars.buttons["Cancel"].tap()
       XCTAssertTrue(app.searchFields.firstMatch.waitForNonExistence(timeout: 5))
       XCTAssertTrue(app.buttons["workout-log"].waitForExistence(timeout: 5))
-      XCTAssertEqual(app.buttons["workout-weight"].label, "Weight, 105 kg total")
+      XCTAssertEqual(app.textFields["workout-load"].label, "Weight, 105 kg total")
       XCTAssertFalse(app.buttons["workout-assembly-add"].exists)
     }
     app.buttons["workout-assembly"].tap()
@@ -82,7 +81,7 @@ import XCTest
     XCTAssertTrue(app.movementHeader("Romanian Deadlift").waitForExistence(timeout: 5))
     app.descendants(matching: .any)["workout-current-set"].swipeRight()
     XCTAssertTrue(app.movementHeader("Back Squat").waitForExistence(timeout: 5))
-    XCTAssertEqual(app.buttons["workout-weight"].label, "Weight, 105 kg total")
+    XCTAssertEqual(app.textFields["workout-load"].label, "Weight, 105 kg total")
   }
 
   // A search with no match offers Create “name” from the movement menu's Add movement, and Create movement opens over
@@ -328,90 +327,142 @@ import XCTest
     let app = XCUIApplication()
     app.launchArguments = ["-model-server", "-board", "workout-planned", "-onboarding-appearance", "dark"]
     app.launch()
-    let weight = app.buttons["workout-weight"]
-    XCTAssertTrue(weight.waitForExistence(timeout: 15))
-    let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in weight.exists && weight.isEnabled && weight.isHittable }, object: weight)
-    XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 10), .completed)
-    XCTAssertEqual(weight.label, "Weight, 100 kg total")
-    weight.tap()
-    XCTAssertTrue(app.textFields["workout-load"].waitForValue("100"))
+    let load = app.textFields["workout-load"]
+    XCTAssertTrue(load.waitForHittable(timeout: 25))
+    XCTAssertEqual(load.label, "Weight, 100 kg total")
+    load.tap()
+    XCTAssertTrue(load.waitForValue("100"))
     XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
     return app
   }
 
-  // The rack's numeral opens on the pad with its text selected, so the first key replaces it; ✓ on the numeral's line and a
-  // tap outside each land the load and bring back the ladder, reps and Log set.
-  func testTheRackLoadOpensSelectedAndLandsByCheckOrATapOutside() {
-    let app = launchTypingTheRack()
-    XCTAssertTrue(app.buttons["workout-load-done"].exists)
+  // The rack's load is its field: a tap into it raises the pad with the text selected, so the first key replaces it, and
+  // the rack rides up as one block, the ladder, reps and Log set where they were and the page keeping its head; no keyboard
+  // row appears. Log set logs what the field shows, drops the keyboard and leaves the rack on the plan's next set, a
+  // heavier triple here, not on the field's text; a tap outside lands the load where it is.
+  func testTheRackLoadOpensSelectedAndLandsByLogSetOrATapOutside() {
+    let app = XCUIApplication()
+    app.launchArguments = ["-model-server", "-board", "workout-planned-varied", "-onboarding-appearance", "dark"]
+    app.launch()
+    let load = app.textFields["workout-load"], log = app.buttons["workout-log"]
+    XCTAssertTrue(load.waitForExistence(timeout: 15) && log.waitForExistence(timeout: 5))
+    let rackFrames = { [load, app.buttons["workout-weight-step-0"], app.buttons["workout-reps"], log].map(\.frame) }
+    let rack = rackFrames()
+    let head = [app.buttons["workout-movement-menu"], app.pageIndicators.firstMatch].map(\.frame)
+    load.tap()
+    XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+    XCTAssertTrue(load.waitForValue("100"))
+    XCTAssertFalse(app.buttons["workout-load-done"].exists, "No keyboard row")
     XCTAssertFalse(app.buttons["workout-load-sign"].exists, "A barbell has no sign to flip")
-    XCTAssertFalse(app.buttons["workout-log"].exists)
-    let field = app.textFields["workout-load"]
-    field.typeText("105")
-    XCTAssertTrue(field.waitForValue("105"))
-    app.buttons["workout-load-done"].tap()
-    XCTAssertTrue(app.buttons["workout-weight"].waitForLabel("Weight, 105 kg total"))
-    XCTAssertTrue(app.buttons["workout-log"].waitForExistence(timeout: 5))
+    XCTAssertEqual([app.buttons["workout-movement-menu"], app.pageIndicators.firstMatch].map(\.frame), head, "The page keeps its head")
+    let raised = rackFrames()
+    XCTAssertTrue(log.isHittable && app.buttons["workout-weight-step-0"].isHittable, "The rack stays above the keyboard")
+    XCTAssertEqual(Set(zip(rack, raised).map { ($0.minY - $1.minY).rounded() }).count, 1, "The rack rises as one: \(rack) \(raised)")
+    XCTAssertEqual(zip(rack, raised).map { $0.size == $1.size }, [true, true, true, true], "Nothing in the rack resizes: \(rack) \(raised)")
+    load.typeText("105")
+    XCTAssertTrue(load.waitForValue("105") && load.waitForLabel("Weight, 105 kg total"))
+    log.tap()
+    XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5), "Log set drops the keyboard")
+    let logged = app.loggedSet(3)
+    XCTAssertTrue(logged.waitForExistence(timeout: 5))
+    XCTAssertEqual(logged.label, "Set 3, logged, 105 kilograms, 5 reps")
+    XCTAssertTrue(load.waitForLabel("Weight, 120 kg total"), "The plan's next set takes the rack, not the field's text")
+    XCTAssertEqual(app.buttons["workout-reps"].label, "3 reps")
+    XCTAssertEqual(rackFrames(), rack, "The rack settles where it was")
+    load.tap()
+    XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+    load.typeText("110")
+    XCTAssertTrue(load.waitForValue("110"))
+    app.landTypedLoad()
+    XCTAssertTrue(load.waitForLabel("Weight, 110 kg total"))
     XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
-    app.buttons["workout-weight"].tap()
-    XCTAssertTrue(field.waitForValue("105"))
-    field.typeText("110")
-    XCTAssertTrue(field.waitForValue("110"))
-    app.descendants(matching: .any)["Workout time"].firstMatch.tap()
-    XCTAssertTrue(app.buttons["workout-weight"].waitForLabel("Weight, 110 kg total"))
-    XCTAssertTrue(app.buttons["workout-log"].waitForExistence(timeout: 5))
-    XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+    app.buttons["workout-weight-step-3"].tap()
+    XCTAssertTrue(load.waitForValue("120") && load.waitForLabel("Weight, 120 kg total"))
   }
 
-  // A load typed and not yet landed lands on its own movement when the lifter moves on by This workout, and the next
-  // movement opens on its own rack with Log set; while a load is typed the page dots are outside the field, so a tap there
-  // lands it where it is.
-  func testATypedLoadLandsOnItsMovementWhenTheLifterMovesOn() {
+  // Bodyweight and Other lead the ladder with ±, at rest and with the pad up alike; it flips the load the field shows and
+  // the unit stays. A barbell's ladder has four keys.
+  func testTheSignKeyLeadsTheLadderForASignedLoadAndFlipsIt() {
+    let app = XCUIApplication()
+    app.launchArguments = ["-model-server", "-board", "workout-upper-other", "-onboarding-appearance", "dark"]
+    app.launch()
+    let load = app.textFields["workout-load"], sign = app.buttons["workout-load-sign"]
+    XCTAssertTrue(load.waitForLabel("Weight, −5 kg", timeout: 15))
+    XCTAssertTrue(sign.waitForExistence(timeout: 5))
+    XCTAssertLessThan(sign.frame.maxX, app.buttons["workout-weight-step-0"].frame.minX, "± leads the ladder")
+    XCTAssertEqual(sign.frame.minY, app.buttons["workout-weight-step-0"].frame.minY, accuracy: 1)
+    sign.tap()
+    XCTAssertTrue(load.waitForLabel("Weight, 5 kg") && load.waitForValue("5"))
+    load.tap()
+    XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+    XCTAssertTrue(sign.isHittable)
+    load.typeText("7")
+    XCTAssertTrue(load.waitForValue("7"))
+    sign.tap()
+    XCTAssertTrue(load.waitForValue("−7") && load.waitForLabel("Weight, −7 kg"))
+    app.buttons["workout-log"].tap()
+    XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+    let logged = app.loggedSet(3)
+    XCTAssertTrue(logged.waitForExistence(timeout: 5))
+    XCTAssertEqual(logged.label, "Set 3, logged, −7 kilograms, 7 reps")
+  }
+
+  // A typed load is the rack's as it is typed: the ladder steps it in the field, Log set logs it, and moving on by This
+  // workout lands it on its movement and opens the next on its own rack with the keyboard down; while a load is typed the
+  // page dots are outside the field, so a tap there lands it where it is.
+  func testATypedLoadIsTheRacksAndLandsOnItsMovementWhenTheLifterMovesOn() {
     let app = launchTypingTheRack()
-    app.textFields["workout-load"].typeText("123")
+    let load = app.textFields["workout-load"]
+    load.typeText("120")
+    XCTAssertTrue(load.waitForValue("120"))
+    app.buttons["workout-weight-step-3"].tap()
+    XCTAssertTrue(load.waitForValue("130"), "The ladder steps the typed load")
+    XCTAssertTrue(load.waitForLabel("Weight, 130 kg total"))
+    XCTAssertEqual(app.buttons["workout-log"].label, "Log set, 130 kilograms, 5 reps")
+    app.buttons["workout-log"].tap()
+    let logged = app.loggedSet(3)
+    XCTAssertTrue(logged.waitForExistence(timeout: 5))
+    XCTAssertEqual(logged.label, "Set 3, logged, 130 kilograms, 5 reps")
     app.buttons["workout-assembly"].tap()
     let deadlift = app.buttons["workout-movement-romanian-deadlift"]
     XCTAssertTrue(deadlift.waitForExistence(timeout: 5)); deadlift.tap()
     XCTAssertTrue(app.movementHeader("Romanian Deadlift").waitForExistence(timeout: 5))
-    XCTAssertTrue(app.buttons["workout-log"].waitForExistence(timeout: 5))
-    XCTAssertFalse(app.textFields["workout-load"].exists)
-    let deadliftLoad = app.buttons["workout-weight"].label
-    XCTAssertNotEqual(deadliftLoad, "Weight, 123 kg total")
-    app.buttons["workout-weight"].tap()
-    XCTAssertTrue(app.textFields["workout-load"].waitForExistence(timeout: 5))
-    app.textFields["workout-load"].typeText("77")
+    XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+    XCTAssertNotEqual(load.label, "Weight, 130 kg total")
+    load.tap()
+    XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+    load.typeText("77")
     let dots = app.pageIndicators.firstMatch
     XCTAssertTrue(dots.exists)
     dots.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.5)).tap()
-    XCTAssertTrue(app.buttons["workout-weight"].waitForLabel("Weight, 77 kg total"))
+    XCTAssertTrue(load.waitForLabel("Weight, 77 kg total"))
+    XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
     XCTAssertTrue(app.movementHeader("Romanian Deadlift").exists && app.buttons["workout-log"].exists)
+    RunLoop.current.run(until: Date().addingTimeInterval(0.6))
     app.descendants(matching: .any)["workout-current-set"].swipeRight()
     XCTAssertTrue(app.movementHeader("Back Squat").waitForExistence(timeout: 5))
-    XCTAssertTrue(app.buttons["workout-weight"].waitForLabel("Weight, 123 kg total"))
-    XCTAssertTrue(app.buttons["workout-log"].exists)
+    XCTAssertTrue(load.waitForLabel("Weight, 130 kg total"))
   }
 
-  // Coach over a typed load closes back to the rack exactly as it was, the load still in the field, and ✓ lands it.
+  // Coach over a typed load closes back to the rack exactly as it was, the load in the field.
   func testCoachOverATypedLoadClosesBackToTheFieldAsItWas() {
     let app = launchTypingTheRack()
-    let field = app.textFields["workout-load"]
-    field.typeText("123")
+    let load = app.textFields["workout-load"]
+    load.typeText("123")
+    XCTAssertTrue(load.waitForValue("123"))
     app.buttons["workout-coach"].tap()
     XCTAssertTrue(app.buttons["coach-close"].waitForExistence(timeout: 10)); app.buttons["coach-close"].tap()
     XCTAssertTrue(app.buttons["coach-close"].waitForNonExistence(timeout: 5))
-    XCTAssertTrue(field.waitForValue("123"))
-    XCTAssertTrue(app.buttons["workout-load-done"].exists)
-    app.buttons["workout-load-done"].tap()
-    XCTAssertTrue(app.buttons["workout-weight"].waitForLabel("Weight, 123 kg total"))
-    XCTAssertTrue(app.buttons["workout-log"].exists)
+    XCTAssertTrue(load.waitForValue("123") && load.waitForLabel("Weight, 123 kg total"))
+    XCTAssertTrue(app.buttons["workout-log"].isHittable)
   }
 
   // Fix set's load emptied and saved keeps the set's load: only a readable value replaces it.
   func testFixSetSavesTheOpeningLoadWhenTheFieldIsEmptied() {
     let app = launchTypingTheRack()
-    app.buttons["workout-load-done"].tap()
-    XCTAssertTrue(app.buttons["workout-log"].waitForExistence(timeout: 5)); app.buttons["workout-log"].tap()
-    let set = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label BEGINSWITH %@", "workout-set-", "Set 2,")).firstMatch
+    app.buttons["workout-log"].tap()
+    XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+    let set = app.loggedSet(2)
     XCTAssertTrue(set.waitForExistence(timeout: 5))
     XCTAssertEqual(set.label, "Set 2, logged, 100 kilograms, 5 reps")
     set.tap()
@@ -430,9 +481,9 @@ import XCTest
   // Fix set's load opens selected each time it is tapped into, so the first key replaces the load it shows.
   func testFixSetLoadOpensSelectedSoTheFirstKeyReplacesIt() {
     let app = launchTypingTheRack()
-    app.buttons["workout-load-done"].tap()
-    XCTAssertTrue(app.buttons["workout-log"].waitForExistence(timeout: 5)); app.buttons["workout-log"].tap()
-    let set = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label BEGINSWITH %@", "workout-set-", "Set 2,")).firstMatch
+    app.buttons["workout-log"].tap()
+    XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+    let set = app.loggedSet(2)
     XCTAssertTrue(set.waitForExistence(timeout: 5)); set.tap()
     let field = app.textFields["workout-fix-load"]
     XCTAssertTrue(field.waitForExistence(timeout: 5) && field.waitForValue("100")); field.tap()

@@ -23,6 +23,8 @@ import SyncCore
   var restSeconds: Int?
   var open: Int?
   var failure: String?
+  // The sheet saves once: ✓, Add set and Swap are held while it closes, so a second ✓ changes nothing.
+  var busy = false
   private var minted: Int
 
   init(_ entry: RoutineEntry, opening set: Int?) {
@@ -122,7 +124,7 @@ struct EditSetsSheet: View {
             ForEach(Array(draft.rows.enumerated()), id: \.element.id) { place, row in setRow(row, place: place) }
               .onDelete { draft.delete($0) }
             Button { landingLoad { draft.addSet() } } label: { Label("Add set", systemImage: "plus") }
-              .foregroundStyle(GymPalette.accent).disabled(draft.rows.count >= EditSetsDraft.maxSets)
+              .foregroundStyle(GymPalette.accent).disabled(draft.rows.count >= EditSetsDraft.maxSets || draft.busy)
               .accessibilityIdentifier("edit-sets-add")
           }
           Section {
@@ -140,7 +142,7 @@ struct EditSetsSheet: View {
                 Spacer()
                 Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(GymPalette.inkFaint)
               }.contentShape(Rectangle())
-            }.accessibilityIdentifier("edit-sets-swap")
+            }.accessibilityIdentifier("edit-sets-swap").disabled(draft.busy)
             Button("Remove from workout", role: .destructive) {
               workout.remove(draft.exerciseId)
               if !workout.walk.order.contains(draft.exerciseId) { dismiss() } else { draft.failure = workout.message; workout.message = nil }
@@ -151,8 +153,8 @@ struct EditSetsSheet: View {
         .modifier(GymPage()).disabled(gym.accountTransition)
         .roomTitle("Edit sets", subtitle: "\(name) · this workout")
         .navigationBarTitleDisplayMode(.inline)
-        .sheetCommit("Save", identifier: "edit-sets-save", dismissalIdentifier: "edit-sets-cancel", disabled: gym.accountTransition,
-                     dismiss: { dismiss() }, commit: commit)
+        .sheetCommit("Save", identifier: "edit-sets-save", dismissalIdentifier: "edit-sets-cancel", disabled: gym.accountTransition || draft.busy,
+                     busy: draft.busy, dismiss: { dismiss() }, commit: commit)
         .reachBand {
           GymTransient(gym: gym, message: draft.failure, dismiss: draft.failure == nil ? nil : { draft.failure = nil },
                        errorIdentifier: "edit-sets-failure")
@@ -165,11 +167,12 @@ struct EditSetsSheet: View {
           })
         }
     }.modifier(GymPage()).presentationDetents([.large])
-      .onChange(of: workout.ledger(draft.exerciseId).sets.isEmpty) { _, nothingLogged in
-        guard !nothingLogged else { return }
+      .onChange(of: workout.sets.contains { $0.exerciseId == draft.exerciseId }) { _, logged in
+        guard logged else { return }
         workout.message = WorkoutState.loggedNow(name)
         dismiss()
       }
+      .onChange(of: loadFocused) { _, focused in if !focused { landLoad() } }
       .onChange(of: gym.account) { _, _ in dismiss() }
       .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "edit_sets"]) }
   }
@@ -201,12 +204,7 @@ struct EditSetsSheet: View {
     let load = row.target.weightKg ?? opening.weightKg
     Divider().overlay(GymPalette.line)
     LoadRow(weightKg: Binding(get: { typedLoad ?? load }, set: { typedLoad = $0 }), basis: basis, focus: $loadFocused,
-            identifier: "edit-sets-load", ended: {
-              let value = typedLoad ?? load
-              typedLoad = nil
-              if value != load { draft.retarget(row.id) { $0.weightKg = value } }
-              let next = afterLoad; afterLoad = nil; next?()
-            }).frame(minHeight: RoomSpace.minimumTarget)
+            identifier: "edit-sets-load").frame(minHeight: RoomSpace.minimumTarget)
     if let problem = draft.problem, problem.row == row.id {
       Text(problem.message).font(.footnote).foregroundStyle(GymPalette.alarm).frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityIdentifier("edit-sets-problem")
@@ -221,12 +219,22 @@ struct EditSetsSheet: View {
     afterLoad = action; loadFocused = false
   }
 
+  // The typed load lands on the open row as the field lets go, then whatever waited on it runs.
+  func landLoad() {
+    if let value = typedLoad, let row = draft.rows.first(where: { $0.id == draft.open }), value != row.target.weightKg ?? opening.weightKg {
+      draft.retarget(row.id) { $0.weightKg = value }
+    }
+    typedLoad = nil
+    let next = afterLoad; afterLoad = nil; next?()
+  }
+
   func commit() { landingLoad(save) }
 
   func save() {
+    guard !draft.busy else { return }
     if let problem = draft.problem { draft.open = problem.row; return }
     guard let index = workout.planIndex(draft.exerciseId) else { dismiss(); return }
     guard workout.revise(draft.operations(at: index), against: plan) else { draft.failure = workout.message; workout.message = nil; return }
-    dismiss()
+    draft.busy = true; dismiss()
   }
 }

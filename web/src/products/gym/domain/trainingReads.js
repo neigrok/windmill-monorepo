@@ -151,27 +151,17 @@ export class Prefill {
     return Prefill.at(todaySets.length, last ? new Prefill(last.weightKg, last.reps) : null, planEntry, lastTime);
   }
 
-  // The load the rack offers at each set the plan still holds, the set in hand first, each later set offered as though the one
-  // before it were logged as offered. A load that would come from a last time not read yet is null.
-  /** @param {readonly TrainingSetValue[]} todaySets @param {RoutineEntry | null} planEntry @param {LastTime} lastTime */
-  static offeredLoads(todaySets, planEntry, lastTime) {
+  // The load the plan expects at each set still to lift, after `lifted` sets today: the target's own, else last time's as
+  // the rack resolves a "last" target with nothing logged today. Today's sets never enter it; a load that would come from
+  // a last time not read yet is null.
+  /** @param {number} lifted @param {RoutineEntry | null} planEntry @param {LastTime} lastTime */
+  static expectedLoads(lifted, planEntry, lastTime) {
     const scheme = planEntry?.sets ?? [];
-    const first = scheme[0];
     const straight = SetTarget.straight(scheme);
-    const last = todaySets.at(-1);
-    let offer = last ? new Prefill(last.weightKg, last.reps) : null;
-    /** @type {number | null} */
-    let load = last?.weightKg ?? null;
     /** @type {(number | null)[]} */
     const loads = [];
-    for (let slot = todaySets.length; slot < scheme.length; slot += 1) {
-      if (!lastTime.isUnread) {
-        offer = Prefill.at(slot, offer, planEntry, lastTime);
-        loads.push(offer.weightKg);
-      } else {
-        load = straight ? load ?? first?.weightKg ?? null : scheme[slot]?.weightKg ?? null;
-        loads.push(load);
-      }
+    for (let slot = lifted; slot < scheme.length; slot += 1) {
+      loads.push((straight ? scheme[0] : scheme[slot]).weightKg ?? (lastTime.isUnread ? null : Prefill.at(slot, null, planEntry, lastTime).weightKg));
     }
     return loads;
   }

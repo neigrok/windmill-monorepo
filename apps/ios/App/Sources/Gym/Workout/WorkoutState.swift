@@ -37,13 +37,15 @@ nonisolated struct MovementLedger: Equatable {
   struct Row: Identifiable, Equatable {
     let id: Int
     let marker: String
-    let reading: String
+    // The load and the reps the row reads: a logged row's as lifted, an open row's as the plan expects them, the load nil
+    // while it waits on last time. A current row past the plan has neither and reads as an open target.
+    let load: String?
+    let reps: String?
     // What the plan asks of a current or planned row; nil where it asks nothing, and on a logged row.
     let target: SetTarget?
-    // The load the rack will offer for a current or planned row; nil on a logged row and while it waits on last time.
-    var offered: Double? = nil
     let place: Place
     var set: TrainingSet? { if case .logged(let set) = place { set } else { nil } }
+    var reading: String { reps.map { Readout.effort(load: load ?? "—", reps: $0) } ?? Readout.openTarget }
   }
   let sets: [TrainingSet]
   let plan: RoutineEntry?
@@ -51,28 +53,25 @@ nonisolated struct MovementLedger: Equatable {
 
   var targets: [SetTarget] { plan?.sets ?? [] }
   var performed: Int { sets.count }
-  // The current row's offer, then each planned row's.
-  var offers: [Double?] { Prefill.offeredLoads(todaySets: sets, planEntry: plan, lastTime: lastTime) }
-  var current: Row {
-    let target = performed < targets.count ? targets[performed] : nil, offered = offers.first ?? nil
-    return Row(id: sets.count, marker: "\(performed + 1)", reading: target.map { Self.reading($0, offered: offered) } ?? Readout.openTarget,
-               target: target, offered: offered, place: .current)
-  }
+  var currentTarget: SetTarget? { performed < targets.count ? targets[performed] : nil }
+  var current: Row { rows[performed] }
+  // The logged rows, the current one and the plan still ahead; the loads the plan expects of the open rows are read once,
+  // and no set logged today changes them.
   var rows: [Row] {
     let logged = sets.enumerated().map { index, set in
-      Row(id: index, marker: SetRow.marker(set, in: sets), reading: Readout.effort(weightKg: set.weightKg, reps: set.reps), target: nil, place: .logged(set))
+      Row(id: index, marker: SetRow.marker(set, in: sets), load: Readout.weight(set.weightKg), reps: String(set.reps), target: nil, place: .logged(set))
     }
-    let offers = offers
-    let ahead = targets.indices.dropFirst(performed + 1).map { index in
-      let offered = offers[index - performed]
-      return Row(id: sets.count + index - performed, marker: "\(index + 1)", reading: Self.reading(targets[index], offered: offered),
-                 target: targets[index], offered: offered, place: .planned)
-    }
-    return logged + [current] + ahead
+    let expected = Prefill.expectedLoads(lifted: performed, planEntry: plan, lastTime: lastTime)
+    return logged + [open(at: performed, expected: expected, place: .current)]
+      + targets.indices.dropFirst(performed + 1).map { open(at: $0, expected: expected, place: .planned) }
   }
-  // A row still to lift reads the load the rack will offer, or a dash while there is none to name, by the plan's reps.
-  static func reading(_ target: SetTarget, offered: Double?) -> String {
-    "\(offered.map { Readout.weight($0) } ?? "—") × \(Readout.repTarget(target.reps))"
+  // The row at a slot still to lift: the plan's target for it and, from the loads the plan expects of the open slots, its
+  // load, nil while it waits on last time.
+  func open(at slot: Int, expected: [Double?], place: Place) -> Row {
+    let target = slot < targets.count ? targets[slot] : nil
+    let load = target == nil ? nil : expected[slot - performed]
+    return Row(id: sets.count + slot - performed, marker: "\(slot + 1)", load: load.map { Readout.weight($0) },
+               reps: target.map { Readout.repTarget($0.reps) }, target: target, place: place)
   }
   // Planned rows state the plan, so the line under the name speaks only for a planned movement that holds no targets.
   var planLine: String? { plan != nil && targets.isEmpty ? "plan \(Readout.openTarget)" : nil }
@@ -258,7 +257,7 @@ struct FinishWorkout: Action {
   // The rack drafts load and reps only: a new set is Working, and the Fix sheet is where a kind changes.
   private var rackWeightKg = Prefill.emptyBarKg
   private var rackReps = Prefill.emptyBarReps
-  @ObservationIgnored private var rackSave: Task<Void, Never>?
+  @ObservationIgnored private(set) var rackSave: Task<Void, Never>?
   @ObservationIgnored private var rackBase: Prefill?
   var weightKg: Double {
     get { rackWeightKg }
@@ -268,15 +267,21 @@ struct FinishWorkout: Action {
     get { rackReps }
     set { adjustRack(weightKg: weightKg, reps: newValue) }
   }
-  // The load the rack's numeral stands for while it is a field, nil while the numeral shows. It lands when the field lets
-  // go and before the lifter changes movement; a movement the walk changes under it, another workout or another account
-  // drops it.
-  var typedLoad: Double?
-  func typeLoad() { if typedLoad == nil { typedLoad = weightKg } }
-  func landTypedLoad() {
-    guard let load = typedLoad else { return }
-    typedLoad = nil
-    adjustRack(weightKg: load, reps: reps)
+  // While the rack's load is typed in, each key edits the rack as the ladder does, without a tick or a save of its own: a
+  // load the keys changed counts once, as the field lets go, when whatever the rack holds is saved at once. A change of
+  // movement or of account saves it first, and the field's text follows the rack.
+  var typingLoad = false {
+    didSet {
+      guard oldValue != typingLoad else { return }
+      if typingLoad { loadTyped = false; gym.telemetry.event("gym_workout_load_typed", properties: ["screen": "workout", "action": "open"]); return }
+      if loadTyped { adjustments += 1; gym.telemetry.event("gym_workout_load_typed", properties: ["screen": "workout", "action": "land"]) }
+      flushRack()
+    }
+  }
+  @ObservationIgnored private var loadTyped = false
+  func typeLoad(_ weightKg: Double) {
+    guard weightKg != self.weightKg else { return }
+    loadTyped = true; editRack(weightKg: weightKg, reps: reps)
   }
   // How often the lifter changed load or reps; a prefill or a restored value is not theirs and leaves it.
   private(set) var adjustments = 0
@@ -324,6 +329,9 @@ struct FinishWorkout: Action {
     rackPrefilled = false
     if rackBase == nil { rackBase = Prefill(weightKg: self.weightKg, reps: self.reps) }
     rackWeightKg = weightKg; rackReps = reps
+    if !typingLoad { saveRackSoon() }
+  }
+  private func saveRackSoon() {
     rackSave?.cancel()
     rackSave = Task { @MainActor [weak gym] in
       do { try await Task.sleep(for: .milliseconds(45)) } catch { return }
@@ -428,7 +436,7 @@ struct FinishWorkout: Action {
       finishQueued = true; message = Self.orderUnread
       gym.failRead(error); return
     }
-    if sessionId != open.id { drafts = [:]; receipt = nil; receiptOwed = false; handoff = nil; typedLoad = nil }
+    if sessionId != open.id { drafts = [:]; receipt = nil; receiptOwed = false; handoff = nil }
     sessionId = open.id; (walk, finishQueued) = restored
     if message == Self.orderUnread { message = nil }
     walk.merge(session: open, sets: sets)
@@ -449,7 +457,7 @@ struct FinishWorkout: Action {
     }
     if message == Self.orderUnread { message = nil }
     walk.merge(session: session, sets: sets)
-    if previousSelected != selected { typedLoad = nil; prefill(); restoreActivityDraft() }
+    if previousSelected != selected { prefill(); restoreActivityDraft() }
     else if let previous = offerSession, previous.plan != session.plan, LogWorkoutSet.matchesOfferedSets(sets, offerSets),
             !rackFollows(from: previous, to: session) {
       // The plan changed and the rack's numbers stand: they are offered against the plan as it is now.
@@ -480,7 +488,7 @@ struct FinishWorkout: Action {
     guard let selected, rackBase == nil, rackPrefilled else { return false }
     let slot = { (session: Session) in
       MovementLedger(sets: self.currentSets, plan: session.plan?.entries.first { $0.exerciseId == selected },
-                     lastTime: LastTime(exerciseId: selected, isComplete: false)).current.target
+                     lastTime: LastTime(exerciseId: selected, isComplete: false)).currentTarget
     }
     return slot(previous) != slot(next)
   }
@@ -491,7 +499,6 @@ struct FinishWorkout: Action {
   }
   func select(_ id: ID<Exercise>) {
     guard walk.order.contains(id), id != selected, !finishing else { return }
-    landTypedLoad()
     guard flushRack() else { return }
     if let selected { drafts[selected] = Prefill(weightKg: weightKg, reps: reps) }
     var next = walk; next.selected = id
@@ -502,7 +509,6 @@ struct FinishWorkout: Action {
   @discardableResult func add(_ id: ID<Exercise>) -> Bool {
     guard session?.isOpen == true, !walk.order.contains(id), gym.catalogue.find(id) != nil,
           !finishing, !finishQueued, !paging, !gym.accountTransition, !gym.readFailed else { return false }
-    landTypedLoad()
     guard flushRack() else { return false }
     var next = walk; next.order.append(id); next.selected = id
     let prior = selected, draft = Prefill(weightKg: weightKg, reps: reps)
@@ -517,7 +523,6 @@ struct FinishWorkout: Action {
   }
   func canRemove(_ id: ID<Exercise>) -> Bool { !sets.contains { $0.exerciseId == id } }
   func remove(_ id: ID<Exercise>) {
-    landTypedLoad()
     guard flushRack() else { return }
     guard canRemove(id) else { message = "A movement with a logged set stays in this workout."; return }
     var next = walk; next.order.removeAll { $0 == id }
@@ -690,7 +695,7 @@ struct FinishWorkout: Action {
   func closeReceipt() { receipt = nil; if handoff == nil { handoff = .detail(sessionId) }; message = nil }
   func accountChanged() {
     gym.coachUnavailable = false
-    sessionId = nil; walk = WorkoutWalk(); drafts = [:]; offerSession = nil; offerSets = []; typedLoad = nil
+    sessionId = nil; walk = WorkoutWalk(); drafts = [:]; offerSession = nil; offerSets = []
     restoreRack(weightKg: Prefill.emptyBarKg, reps: Prefill.emptyBarReps); paging = false
     receipt = nil; receiptOwed = false; handoff = nil; message = nil; finishQueued = false; restore()
   }

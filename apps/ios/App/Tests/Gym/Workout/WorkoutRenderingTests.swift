@@ -11,9 +11,32 @@ import SyncSchema
 import SyncEngine
 import SyncStore
 import SyncTesting
+
+// Every view of a type under a view, the view itself included.
+func views<V: UIView>(_ view: UIView, _ type: V.Type) -> [V] {
+  if let match = view as? V { return [match] }
+  return view.subviews.flatMap { views($0, type) }
+}
+
+// A set of a movement in a session, logged at the epoch unless a time is given.
+func trainingSet(_ id: String, of exercise: ID<Exercise> = ID("back-squat"), in session: ID<Session> = ID("session"),
+                 kg: Double, reps: Int, at ms: Int64 = 0) -> TrainingSet {
+  TrainingSet(id: ID(RecordID(id)), sessionId: session, exerciseId: exercise, weightKg: kg, reps: reps, completedAt: Instant(ms: ms))
+}
 @testable import Windmill
 
 @MainActor final class WorkoutRenderingTests: XCTestCase {
+  @Observable final class LoadBox {
+    var load: Double
+    init(_ load: Double) { self.load = load }
+  }
+  struct ExternalLoadProbe: View {
+    @Bindable var box: LoadBox
+    @FocusState var focused: Bool
+    var body: some View {
+      Form { LoadRow(weightKg: $box.load, basis: MovementEquipment("barbell"), focus: $focused, identifier: "probe-load") }
+    }
+  }
   struct FixSetNumbersProbe: View {
     @State var load: Double
     @State var reps: Int
@@ -87,10 +110,7 @@ import SyncTesting
         try await Task.sleep(for: .milliseconds(150))
       }
     }
-    let renderer = UIGraphicsImageRenderer(bounds: window.bounds)
-    let image = renderer.image { _ in window.drawHierarchy(in: window.bounds, afterScreenUpdates: true) }
-    let attachment = XCTAttachment(image: image)
-    attachment.name = name; attachment.lifetime = .keepAlways; add(attachment)
+    let image = snapshot(window, name: name)
     let directory = URL.documentsDirectory.appending(path: "WorkoutScreenshots")
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     try XCTUnwrap(image.pngData()).write(to: directory.appending(path: name + ".png"))
@@ -206,17 +226,14 @@ import SyncTesting
   }
 
   // VoiceOver hears each ledger row's place and its numbers in words: a logged set as it was lifted, the current and
-  // planned rows as the load the rack will offer by the plan's reps, and an open target past the plan.
+  // planned rows as the load the plan expects by the plan's reps, and an open target past the plan.
   func testLedgerRowsSpeakTheirPlaceAndNumbersInWords() {
-    let set = { (id: String, kg: Double, reps: Int) in
-      TrainingSet(id: ID(RecordID(id)), sessionId: ID("session"), exerciseId: ID("back-squat"), weightKg: kg, reps: reps, completedAt: Instant(ms: 0))
-    }
-    let ledger = MovementLedger(sets: [set("first", 100, 1)],
+    let ledger = MovementLedger(sets: [trainingSet("first", kg: 100, reps: 1)],
                                 plan: RoutineEntry(exerciseId: ID("back-squat"), sets: [SetTarget(reps: 1, weightKg: 100), SetTarget(reps: 5, weightKg: 102.5), SetTarget(reps: 5), SetTarget()]),
                                 lastTime: LastTime(exerciseId: ID("back-squat")))
     XCTAssertEqual(ledger.rows.map { WorkoutLedgerRow(row: $0, unsent: $0.set?.id == ID("first")).spoken }, [
       "Set 1, logged, 100 kilograms, 1 rep, on this phone",
-      "Set 2, current, 102.5 kilograms, 5 reps", "Set 3, planned, 102.5 kilograms, 5 reps", "Set 4, planned, 102.5 kilograms, max reps",
+      "Set 2, current, 102.5 kilograms, 5 reps", "Set 3, planned, 20 kilograms, 5 reps", "Set 4, planned, 20 kilograms, max reps",
     ])
     let unread = MovementLedger(sets: [], plan: RoutineEntry(exerciseId: ID("back-squat"), sets: [SetTarget(), SetTarget()]),
                                 lastTime: LastTime(exerciseId: ID("back-squat"), isComplete: false))
@@ -226,17 +243,50 @@ import SyncTesting
     XCTAssertEqual(open.rows.map { WorkoutLedgerRow(row: $0, unsent: false).spoken }, ["Set 1, current, open target"])
   }
 
-  // A row still to lift reads the load its rack will offer, a dash while there is none, and never the word last.
-  func testRowsStillToLiftReadTheOfferedLoad() {
+  // A row still to lift reads the load the plan expects, a dash while there is none, and never the word last; the set
+  // logged before it changes nothing.
+  func testRowsStillToLiftReadThePlansExpectedLoad() {
     let bench = ID<Exercise>("bench-press"), plan = RoutineEntry(exerciseId: bench, sets: Array(repeating: SetTarget(), count: 3))
-    let first = TrainingSet(id: ID(RecordID("first")), sessionId: ID("session"), exerciseId: bench, weightKg: 22.5, reps: 5, completedAt: Instant(ms: 0))
-    let afterOne = MovementLedger(sets: [first], plan: plan, lastTime: LastTime(exerciseId: bench))
-    XCTAssertEqual(afterOne.rows.map(\.reading), ["22.5 × 5", "22.5 × max", "22.5 × max"])
+    let first = trainingSet("first", of: bench, kg: 22.5, reps: 5)
+    let earlier = Session(id: ID("earlier"), startedAt: Instant(ms: 0), finishedAt: Instant(ms: 600_000), closedBy: "finish")
+    let lastTime = LastTime(exerciseId: bench, session: earlier, sets: [
+      trainingSet("last", of: bench, in: earlier.id, kg: 100, reps: 5, at: 1),
+    ])
+    let afterOne = MovementLedger(sets: [first], plan: plan, lastTime: lastTime)
+    XCTAssertEqual(afterOne.rows.map(\.reading), ["22.5 × 5", "100 × max", "100 × max"])
+    let opening = MovementLedger(sets: [], plan: plan, lastTime: lastTime)
+    XCTAssertEqual(opening.rows.map(\.reading), ["100 × max", "100 × max", "100 × max"])
     let firstTime = MovementLedger(sets: [], plan: plan, lastTime: LastTime(exerciseId: bench))
     XCTAssertEqual(firstTime.rows.map(\.reading), ["20 × max", "20 × max", "20 × max"])
     let unread = MovementLedger(sets: [], plan: plan, lastTime: LastTime(exerciseId: bench, isComplete: false))
     XCTAssertEqual(unread.rows.map(\.reading), ["— × max", "— × max", "— × max"])
-    XCTAssertEqual([afterOne, firstTime, unread].flatMap(\.rows).filter { $0.reading.contains("last") }, [])
+    let unreadAfterOne = MovementLedger(sets: [first], plan: plan, lastTime: LastTime(exerciseId: bench, isComplete: false))
+    XCTAssertEqual(unreadAfterOne.rows.map(\.reading), ["22.5 × 5", "— × max", "— × max"])
+    XCTAssertEqual([afterOne, opening, firstTime, unread, unreadAfterOne].flatMap(\.rows).filter { $0.reading.contains("last") }, [])
+  }
+
+  // The ledgers of 03.34a–c, drawn for design review as their boards have no fixture of their own: reality over the plan,
+  // a first time with no plan load and no history, and a last time not read yet, whose loads are placeholder bars.
+  func testLedgerRowsOfThe0334Boards() async throws {
+    try skipUnlessCapturing()
+    let bench = ID<Exercise>("dumbbell-bench-press")
+    let reality = MovementLedger(sets: [trainingSet("first", of: bench, kg: 16, reps: 8), trainingSet("second", of: bench, kg: 18, reps: 7)],
+                                 plan: RoutineEntry(exerciseId: bench, sets: Array(repeating: SetTarget(reps: 8, weightKg: 16), count: 3)),
+                                 lastTime: LastTime(exerciseId: bench))
+    let firstTime = MovementLedger(sets: [], plan: RoutineEntry(exerciseId: bench, sets: Array(repeating: SetTarget(reps: 10), count: 3)),
+                                   lastTime: LastTime(exerciseId: bench))
+    let unread = MovementLedger(sets: [], plan: RoutineEntry(exerciseId: bench, sets: Array(repeating: SetTarget(reps: 8), count: 3)),
+                                lastTime: LastTime(exerciseId: bench, isComplete: false))
+    XCTAssertEqual(reality.rows.map(\.reading), ["16 × 8", "18 × 7", "16 × 8"])
+    XCTAssertEqual(firstTime.rows.map(\.reading), ["20 × 10", "20 × 10", "20 × 10"])
+    XCTAssertEqual(unread.rows.map(\.load), [nil, nil, nil])
+    for (board, ledger) in [("03.34a-ledger-reality", reality), ("03.34b-ledger-first-time", firstTime), ("03.34c-ledger-unread", unread)] {
+      for (name, appearance) in [("light", UIUserInterfaceStyle.light), ("dark", .dark)] {
+        let card = LedgerCard(ledger: ledger, unsent: [], editable: false, open: { _ in }) { EmptyView() }
+          .padding(RoomSpace.inset).frame(maxHeight: .infinity, alignment: .top).background(GymPalette.canvas)
+        try await capture(card, name: board + "-" + name, appearance: appearance)
+      }
+    }
   }
 
   // The rack speaks its numeral in the movement's load basis and Log set with the whole set it logs.
@@ -250,10 +300,6 @@ import SyncTesting
   // Fix set's numbers are one decimal-pad field and one native wheel: the field opens on the load, a typed load in either
   // separator lands, and an empty one gives way to the load before it; the wheel holds the reps alone.
   func testFixSetTypesTheLoadAndTurnsOneRepsWheel() async throws {
-    func views<V: UIView>(_ view: UIView, _ type: V.Type) -> [V] {
-      if let match = view as? V { return [match] }
-      return view.subviews.flatMap { views($0, type) }
-    }
     var seen = (load: -5.0, reps: 8)
     let window = try host(FixSetNumbersProbe(load: -5, reps: 8, changed: { seen = ($0, $1) }), appearance: .light)
     defer { window.isHidden = true; window.rootViewController = nil }
@@ -328,18 +374,8 @@ import SyncTesting
     window.layoutIfNeeded()
     var captures = 0
     func visibleText() throws -> String {
-      let image = UIGraphicsImageRenderer(bounds: window.bounds).image {
-        _ in window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
-      }
-      let attachment = XCTAttachment(image: image)
-      attachment.name = "connection-warning-AX5-\(captures)"
-      attachment.lifetime = .keepAlways; add(attachment); captures += 1
-      let request = VNRecognizeTextRequest()
-      request.recognitionLevel = .accurate
-      request.recognitionLanguages = ["en-US"]
-      try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([request])
-      return (request.results ?? []).sorted { $0.boundingBox.minY > $1.boundingBox.minY }
-        .compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ").lowercased()
+      defer { captures += 1 }
+      return try recognizedWords(in: window, attachment: "connection-warning-AX5-\(captures)").map(\.text).joined(separator: " ").lowercased()
         .split(separator: " ").filter { $0 != "x" }.joined(separator: " ")
     }
     func scrolls(_ view: UIView) -> [UIScrollView] {
@@ -361,6 +397,74 @@ import SyncTesting
     for phrase in ["keep logging", "or hide"] {
       XCTAssertTrue(rendered.contains(phrase), "The warning never showed ‘\(phrase)’: \(rendered)")
     }
+  }
+
+  // A wide load keeps its unit beside it: at large text the numeral's full size would push the unit past the rack's edge,
+  // so it shrinks to its row, and both read back inside the rack's insets.
+  func testAWideLoadKeepsItsUnitInsideTheRackAtLargeText() async throws {
+    let (_, gym) = try fixture()
+    gym.workout.weightKg = 1234.5
+    let window = try host(WorkoutScreen(gym: gym).environment(\.dynamicTypeSize, .xxxLarge), appearance: .dark)
+    defer { window.isHidden = true; window.rootViewController = nil }
+    try await Task.sleep(for: .milliseconds(450))
+    window.layoutIfNeeded()
+    let words = try recognizedWords(in: window, attachment: "wide-load-xxxLarge")
+    let numeral = try XCTUnwrap(words.first { $0.text.contains("1234.5") }, "The numeral never read back: \(words.map(\.text))")
+    let unit = try XCTUnwrap(words.first { $0.text.lowercased().contains("kg") }, "The unit never read back: \(words.map(\.text))")
+    let inset = RoomSpace.inset / window.bounds.width
+    XCTAssertGreaterThanOrEqual(numeral.box.minX, inset - 0.015, "The numeral starts inside the rack: \(numeral)")
+    XCTAssertLessThanOrEqual(unit.box.maxX, 1 - inset + 0.015, "The unit ends inside the rack: \(unit)")
+  }
+
+  // The window as drawn, kept as an attachment under its name.
+  func snapshot(_ window: UIWindow, name: String) -> UIImage {
+    let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in window.drawHierarchy(in: window.bounds, afterScreenUpdates: true) }
+    let attachment = XCTAttachment(image: image)
+    attachment.name = name; attachment.lifetime = .keepAlways; add(attachment)
+    return image
+  }
+
+  // The words a window shows, read back by Vision top to bottom with their boxes in the window's unit square.
+  func recognizedWords(in window: UIWindow, attachment name: String) throws -> [(text: String, box: CGRect)] {
+    let image = snapshot(window, name: name)
+    let request = VNRecognizeTextRequest()
+    request.recognitionLevel = .accurate
+    request.recognitionLanguages = ["en-US"]
+    try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([request])
+    return (request.results ?? []).sorted { $0.boundingBox.minY > $1.boundingBox.minY }
+      .compactMap { result in result.topCandidates(1).first.map { ($0.string, result.boundingBox) } }
+  }
+
+  // A change the host makes while the load is focused is kept as the field lets go: the text follows the host, and only an
+  // unreadable text writes back, the load the field opened on.
+  func testAChangeMadeWhileTheLoadIsFocusedIsKeptAsItLetsGo() async throws {
+    let box = LoadBox(60)
+    let window = try host(ExternalLoadProbe(box: box), appearance: .light)
+    defer { window.isHidden = true; window.rootViewController = nil }
+    try await Task.sleep(for: .milliseconds(300))
+    window.layoutIfNeeded()
+    let field = try XCTUnwrap(views(window, UITextField.self).first)
+    XCTAssertTrue(field.becomeFirstResponder())
+    try await Task.sleep(for: .milliseconds(150))
+    field.selectAll(nil); field.insertText("65")
+    try await Task.sleep(for: .milliseconds(150))
+    XCTAssertEqual(box.load, 65)
+    box.load = 90
+    try await Task.sleep(for: .milliseconds(150))
+    XCTAssertEqual(field.text, "90")
+    XCTAssertTrue(field.resignFirstResponder())
+    try await Task.sleep(for: .milliseconds(150))
+    XCTAssertEqual(box.load, 90)
+    XCTAssertEqual(field.text, "90")
+    XCTAssertTrue(field.becomeFirstResponder())
+    try await Task.sleep(for: .milliseconds(150))
+    field.selectAll(nil); field.deleteBackward()
+    try await Task.sleep(for: .milliseconds(150))
+    XCTAssertEqual(field.text, "")
+    XCTAssertTrue(field.resignFirstResponder())
+    try await Task.sleep(for: .milliseconds(150))
+    XCTAssertEqual(box.load, 90, "An emptied field restores the load it opened on")
+    XCTAssertEqual(field.text, "90")
   }
 
   func testDynamicPaletteResolvesOffMainThreadInBothAppearances() async {

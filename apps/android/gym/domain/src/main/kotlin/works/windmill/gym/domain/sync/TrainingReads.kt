@@ -135,18 +135,16 @@ data class Prefill(val weightKg: Double = emptyBarKg, val reps: Int = emptyBarRe
         fun of(todaySets: List<TrainingSet>, planEntry: RoutineEntry?, lastTime: LastTime?): Prefill =
             at(todaySets.size, todaySets.lastOrNull()?.let { Prefill(it.weightKg, maxOf(1, it.reps)) }, planEntry, lastTime)
 
-        // The load the rack offers at each set the plan still holds, the set in hand first, each later set offered as though
-        // the one before it were logged as offered. A load that would come from a last time not read yet is null.
-        fun offeredLoads(todaySets: List<TrainingSet>, planEntry: RoutineEntry?, lastTime: LastTime): List<Double?> {
+        // The load the plan expects at each set still to lift, after `lifted` sets today: the target's own, else last time's
+        // as the rack resolves a "last" target with nothing logged today. Today's sets never enter it; a load that would
+        // come from a last time not read yet is null.
+        fun expectedLoads(lifted: Int, planEntry: RoutineEntry?, lastTime: LastTime): List<Double?> {
             val scheme = planEntry?.sets.orEmpty()
-            val slots = todaySets.size until scheme.size
-            if (!lastTime.isUnread) {
-                var sticky = todaySets.lastOrNull()?.let { Prefill(it.weightKg, maxOf(1, it.reps)) }
-                return slots.map { slot -> at(slot, sticky, planEntry, lastTime).also { sticky = it }.weightKg }
-            }
             val straight = SetTarget.straight(scheme)
-            var sticky: Double? = todaySets.lastOrNull()?.weightKg
-            return slots.map { slot -> (if (straight) sticky ?: scheme.first().weightKg else scheme[slot].weightKg).also { sticky = it } }
+            return (lifted until scheme.size).map { slot ->
+                (if (straight) scheme.first() else scheme[slot]).weightKg
+                    ?: if (lastTime.isUnread) null else at(slot, null, planEntry, lastTime).weightKg
+            }
         }
 
         // The offer at a slot, `sticky` being the set logged just before it.
