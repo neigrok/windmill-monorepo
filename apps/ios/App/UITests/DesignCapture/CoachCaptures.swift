@@ -768,6 +768,7 @@ final class CoachCaptures: DesignCapture {
       let header = app.descendants(matching: .any)["coach-workout-proposal-header"]
       XCTAssertTrue(header.waitForValue("Applied", timeout: 10))
       XCTAssertTrue(app.buttons["coach-apply-proposal"].isEnabled, "The routine's change is decided apart")
+      XCTAssertEqual(app.descendants(matching: .any)["coach-proposal-header"].label, "Upper A, 1 suggested change · next time")
       raise(app, showing: header)
       return app
     }

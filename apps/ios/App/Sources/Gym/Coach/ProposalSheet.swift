@@ -61,35 +61,45 @@ extension ProposalCard {
           ChangeTitle(kind: block.kind, title: block.title, dimmed: dimmed)
           ForEach(Array(block.fields.enumerated()), id: \.offset) { _, field in ProposalField(field: field, dimmed: dimmed).padding(.leading, column) }
         } header: {
-          if index == 0 { Text(removal ? "Remove a routine" : GymCount.of(gym.coachChangeCount(proposal), "change")) }
+          if index == 0, let changesHeader { Text(changesHeader) }
         } footer: {
-          if index == 0, stance == .open, let failure { failureLine(failure) }
           if index == listed.blocks.count - 1, listed.unchanged > 0 { Text("No change: " + GymCount.of(listed.unchanged, "movement")) }
         }
       }
+      // Why the Apply did not land stands with the decisions, whatever the sheet lists.
       if stance == .open {
         Section {
           Button("Reject") { if gym.coachDecideProposal(proposal, apply: false) { dismiss() } }
             .disabled(!decision(stalled: stalled).rejects).accessibilityIdentifier("coach-reject-proposal")
+        } footer: {
+          if let failure { failureLine(failure) }
         }
       }
     }
   }
 
-  // The toolbar's confirmation: the prominent checkmark that applies, the destructive Remove of a removal, work in flight
+  // The toolbar's confirmation: the prominent checkmark that applies, a removal's destructive Remove routine, work in flight
   // in its place while the log has not answered, and Try again once the Apply failed or stalled.
   @ViewBuilder func confirm(_ proposal: Proposal) -> some View {
     let decision = decision(stalled: stalled)
     Group {
       if pending && !decision.retries { ProgressView().accessibilityLabel(decision.title) }
       else if decision.retries { Button("Try again") { decide(proposal) }.fontWeight(.semibold) }
-      else if removal { Button("Remove", role: .destructive) { decide(proposal) }.fontWeight(.semibold).tint(GymPalette.destructive) }
+      else if removal { Button(decision.title, role: .destructive) { decide(proposal) }.fontWeight(.semibold).tint(GymPalette.destructive) }
       else if #available(iOS 26.0, *) {
         Button(role: .confirm) { decide(proposal) } label: {
           Image(systemName: "checkmark").fontWeight(.semibold).foregroundStyle(decision.applies ? GymPalette.onAccent : GymPalette.inkFaint)
         }.buttonStyle(.glassProminent).tint(GymPalette.accent).accessibilityLabel("Apply")
       } else { Button { decide(proposal) } label: { Text("Apply").bold() }.tint(GymPalette.accent) }
     }.disabled(!decision.applies).accessibilityIdentifier("coach-apply-proposal")
+  }
+
+  // The first change's header: a removal says so; otherwise the count, which while it waits and a workout is open waits for
+  // the routine's next workout, as the card's subtitle says (08.56P).
+  var changesHeader: String? {
+    guard let proposal else { return nil }
+    if removal { return "Remove a routine" }
+    return GymCount.of(gym.coachChangeCount(proposal), "change") + (stance == .open && nextTime ? " · next time" : "")
   }
 
   // Who proposed it, then when the server stamped it, by its symbol: Coach's bubbles or a connected tool's link.

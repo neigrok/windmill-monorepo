@@ -284,18 +284,15 @@ struct WorkoutProposalCard: View {
     let diff = gym.coachWorkoutDiff(proposal)
     let count = gym.coachWorkoutChangeCount(proposal)
     let decidable = stance == .open && gym.coachAccountAvailable && !gym.readFailed
+    // One head through every stance, so the check bounces in as the Apply lands rather than arriving with the new head.
+    let head: (symbol: String, tint: Color, title: String, subtitle: String?, value: String) = switch stance {
+    case .applied: ("checkmark.circle.fill", GymPalette.done, "Applied · this workout", GymCount.of(count, "change"), "Applied")
+    case .outOfDate: ("clock.arrow.circlepath", GymPalette.inkDim, "This workout · " + CoachCopy.outOfDate, nil, CoachCopy.outOfDate)
+    default: ("list.bullet.clipboard", GymPalette.accent, "This workout", GymCount.of(count, "suggested change") + " · now", "")
+    }
     return GroupBox {
-      switch stance {
-      case .applied:
-        ProposalHeading(symbol: "checkmark.circle.fill", tint: GymPalette.done, title: "Applied · this workout", subtitle: GymCount.of(count, "change"),
-                        bounce: applied > 0, identifier: "coach-workout-proposal", value: "Applied")
-      case .outOfDate:
-        ProposalHeading(symbol: "clock.arrow.circlepath", tint: GymPalette.inkDim, title: "This workout · " + CoachCopy.outOfDate, dimmed: true,
-                        reason: outOfDate, identifier: "coach-workout-proposal", value: CoachCopy.outOfDate)
-      default:
-        ProposalHeading(symbol: "list.bullet.clipboard", tint: GymPalette.accent, title: "This workout",
-                        subtitle: GymCount.of(count, "suggested change") + " · now", identifier: "coach-workout-proposal", value: "")
-      }
+      ProposalHeading(symbol: head.symbol, tint: head.tint, title: head.title, dimmed: outOfDate != nil, subtitle: head.subtitle, reason: outOfDate,
+                      bounce: applied > 0, identifier: "coach-workout-proposal", value: head.value)
       ProposalChanges(blocks: diff.blocks.map { ProposalChanges.Shown(kind: $0.kind, title: gym.coachTitle($0), fields: $0.fields) },
                       unchanged: diff.unchanged, dimmed: outOfDate != nil, identifier: "coach-workout-proposal")
       if stance == .open {

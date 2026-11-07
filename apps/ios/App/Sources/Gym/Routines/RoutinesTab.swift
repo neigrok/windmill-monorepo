@@ -15,6 +15,10 @@ struct RoutinesTab: View {
   @State private var building: RoutineEditingSession?
   @State private var selectedID: ID<Routine>?
   @State private var startID: ID<Routine>?
+  #if DEBUG && targetEnvironment(simulator)
+  // The proposal fixture seeds once, though Routines appears again while its proposals are on their way.
+  @State private var proposalFixtureSeeded = false
+  #endif
 
   var body: some View {
     let proposals = gym.routineProposals
@@ -89,7 +93,8 @@ struct RoutinesTab: View {
         // A board's proposals wait on its routines once the fixture has seeded them (02L.1); with -routines-tool-proposal a
         // connected tool proposes them instead, after one to Legs that this phone puts out of date (02L.1P).
         if ProcessInfo.processInfo.arguments.contains("-routines-proposal-fixture"), gym.coachAccountAvailable, let board = CoachBoard.current, gym.proposals.isEmpty,
-           !gym.routines.isEmpty {
+           !gym.routines.isEmpty, !proposalFixtureSeeded {
+          proposalFixtureSeeded = true
           if ProcessInfo.processInfo.arguments.contains("-routines-tool-proposal") { Task { await gym.proposeFromAConnectedTool(board) } }
           else {
             for proposed in board.proposals {
@@ -287,12 +292,12 @@ extension GymModel {
   // The connected-tool fixture (02L.1P): Claude, over a connection, proposes a heavier squat for Legs on the log, as an MCP
   // tool does, and this phone edits Legs under it, so it goes out of date; then it proposes the board's changes, which wait.
   func proposeFromAConnectedTool(_ board: CoachBoard) async {
-    guard let legs = routines.first(where: { $0.name == "Legs" }) else { return }
+    guard let legs = routines.first(where: { $0.name == "Legs" }), legs.entries.count > 1 else { return }
     var heavier = legs.entries
     heavier[0].sets = heavier[0].sets?.map { SetTarget(reps: $0.reps, weightKg: 105) }
     guard await proposeFromAConnectedTool(legs, entries: heavier) else { return }
     do {
-      guard var edit = try runner.open(legs.id) else { return }
+      guard var edit = try runner.open(legs.id), edit.current.entries.count > 1 else { return }
       edit.current.entries[1].restSeconds = 90
       guard saveRoutine(&edit) else { return }
     } catch { self.error = "The connected tool's proposal could not be prepared."; return }
