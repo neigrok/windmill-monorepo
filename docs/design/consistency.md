@@ -478,15 +478,17 @@ and Android disagree.
   the numeral is a permanent load field, the rack rides the keyboard as one block, nothing in it appears,
   goes, resizes or moves, there is no keyboard row, and Log set commits the typed load and lands the keyboard.
   The build draws it as [workout-in-flight.md](ios/workout-in-flight.md) states (`WorkoutRack`, `LoadField`);
-  the earlier 03.23 is removed.
+  the earlier 03.23 (`1708:14353`, its Daylight twin and caption) is marked 🗄 Superseded until the owner deletes it.
 - **The sign key leads the ladder (03.30 🚀 In production 2026-11-07).** The earlier 03.30 drew ± in the
   keyboard row over Edit sets. Direction A redraws 03.30 for the rack (`1940:16984` at rest, `1940:17074`
   typing): for bodyweight and Other a fifth key, ±, leads the ladder, present in both states and for no other
   basis, and the build draws it (`WorkoutRack.ladder`). Fix set and Edit sets keep ± in their keyboard row
   until their boards are redrawn; the note says their ± belongs beside the field.
 - **Planned rows read the plan, never today's set (owner ruling 2026-11-06; 03.34a–c 🚀 In production 2026-11-07).**
-  The earlier 03.34 (`1742:40960` and `1742:41112`) drew the rows still to lift carrying the load the rack
-  will offer, which after a logged set is that set's load. The owner ruled that a logged row is reality and an
+  The build before this drew the rows still to lift carrying the load the rack will offer, which after a logged
+  set is that set's load; the Android 03.34 rack-height board (`1742:40960`, `1742:41112`, still canon for
+  its own state) shows open rows at the rack's 22.5 only because its plan and rack coincide, and the planned-rows
+  rule is drawn by its companion `1942:53327`. The owner ruled that a logged row is reality and an
   unlogged row is trajectory: a current or planned row reads the load the plan expects of it
   (`Prefill.expectedLoads`: the target's own load, else last time's as the rack resolves a "last" target), and
   no set logged today, nor anything on the rack, changes it; the rack's own prefill still follows today's last
