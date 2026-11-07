@@ -761,7 +761,7 @@ import SyncTesting
     let (_, gym) = try fixtures.fixture(), workout = try fixtures.begin(gym)
     let offer = try #require(workout.activityOffer())
     switch state {
-    case "editing": workout.rackEditing = true
+    case "editing": workout.wheelOpen = true
     case "paging": workout.paging = true
     case "identity": gym.accountChanging = true
     case "read": gym.readFailed = true
@@ -802,11 +802,26 @@ import SyncTesting
   @Test func enteringTheKeypadDurablyRevokesTheOfferBeforeProcessExit() throws {
     let (harness, gym) = try fixtures.fixture(), workout = try fixtures.begin(gym)
     let offer = try #require(workout.activityOffer())
-    workout.rackEditing = true
+    workout.wheelOpen = true
     #expect(try workout.activityRecord()?.offer == nil)
     let reopened = GymModel(runner: harness.runner), restored = reopened.workout
     #expect(!restored.logActivityOffer(offer) && restored.sets.isEmpty)
     #expect(restored.activityOffer()?.setID != offer.setID)
+  }
+
+  // Typing revokes the offer; the land writes the rack with the offer on it, in one write, and the next read mints nothing.
+  @Test func aTypedLoadLandsWithItsOfferInTheRacksOneWrite() throws {
+    let (_, gym) = try fixtures.fixture(), workout = try fixtures.begin(gym)
+    let before = try #require(workout.activityOffer())
+    workout.typingLoad = true
+    #expect(workout.rackEditing)
+    #expect(try workout.activityRecord()?.offer == nil)
+    workout.typeLoad(123)
+    workout.typingLoad = false
+    let landed = try #require(try workout.activityRecord()?.offer)
+    #expect(!workout.rackEditing && landed.weightKg == 123 && landed.setID != before.setID)
+    #expect(workout.activityOffer() == landed)
+    #expect(try workout.activityRecord()?.offer == landed)
   }
 
   @Test func onScreenLogReplaysTheSameOfferedSetWithoutASecondWriter() throws {
@@ -823,10 +838,10 @@ import SyncTesting
   @Test func failedOfferPersistenceShowsNoActionAndCannotReplayThePreviousDraft() throws {
     let recorder = TelemetryRecorder(), (harness, gym) = try fixtures.fixture(telemetry: recorder)
     let workout = try fixtures.begin(gym), previous = try #require(workout.activityOffer())
-    workout.rackEditing = true
+    workout.wheelOpen = true
     workout.weightKg = 65
     #expect(workout.flushRack())
-    workout.rackEditing = false
+    workout.wheelOpen = false
     harness.failNextCommit()
     #expect(workout.activityOffer() == nil && workout.sets.isEmpty)
     #expect(try workout.activityRecord()?.offer == nil)

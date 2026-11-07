@@ -149,9 +149,9 @@ extension View {
   }
 }
 
-// A movement in a list the lifter orders, as the routine editor and This workout draw it: the list stays out of edit mode, so
-// a long press lifts the row by its drawn handle and a swipe shows the trash. Its menu and VoiceOver's actions hold the same
-// acts: Edit movement, Move up, Move down and, where it can go, Remove movement. The caller's `onMove` takes the lift.
+// A movement in This workout's list (03.4), which stays out of edit mode, so a long press lifts the row by its drawn handle
+// and a swipe shows the trash. Its menu and VoiceOver's actions hold the same acts: Edit movement, Move up, Move down and,
+// where it can go, Remove movement. The caller's `onMove` takes the lift.
 struct OrderedMovementRow<Label: View>: View {
   let exercise: Exercise?
   let index: Int

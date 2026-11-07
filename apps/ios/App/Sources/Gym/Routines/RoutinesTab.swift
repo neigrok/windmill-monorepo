@@ -66,18 +66,16 @@ struct RoutinesTab: View {
       }
     }.modifier(GymPage(titleDisplayMode: .large))
       .navigationTitle("Routines").accessibilityElement(children: .contain).accessibilityIdentifier("gym-routines")
+      // New routine stands beside the account button (02L.1), the tab's one creation act in the bar.
       .toolbar {
+        ToolbarItem(placement: .topBarTrailing) {
+          Button("New routine", systemImage: "plus") { building = RoutineEditingSession(gym: gym, routine: nil) }
+            .disabled(gym.accountTransition).accessibilityIdentifier("new-routine")
+        }
         ToolbarItem(placement: .topBarTrailing) { RoomAccountButton(action: { openAccount?() }).disabled(gym.accountTransition) }
       }.roomBar(.gym)
-      .reachBand {
-        VStack(spacing: RoomSpace.related) {
-          GymTransient(gym: gym)
-          FloatingAction(title: "New routine", symbol: "plus", identifier: "new-routine") {
-            building = RoutineEditingSession(gym: gym, routine: nil)
-          }.disabled(gym.accountTransition)
-        }
-      }
-      .sheet(item: $building) { editing in RoutineBuilder(gym: gym, editing: editing) { selectedID = $0 } }
+      .reachBand { GymTransient(gym: gym) }
+      .sheet(item: $building) { editing in RoutineEditor(gym: gym, editing: editing) { selectedID = $0 } }
       .sheet(isPresented: Binding(get: { selectedID != nil && building == nil }, set: { if !$0 { selectedID = nil } }), onDismiss: {
         if let id = startID { startID = nil; gym.startWorkout(routineId: id) }
       }) {
@@ -86,7 +84,15 @@ struct RoutinesTab: View {
       .preferredColorScheme(OnboardingFixture.appearance)
       .onAppear {
         #if DEBUG && targetEnvironment(simulator)
-        if ProcessInfo.processInfo.arguments.contains("-routines-proposal-fixture"), gym.coachAccountAvailable, gym.routines.isEmpty {
+        // A board's proposals wait on its routines once the fixture has seeded them (02L.1).
+        if ProcessInfo.processInfo.arguments.contains("-routines-proposal-fixture"), gym.coachAccountAvailable, let board = CoachBoard.current, gym.proposals.isEmpty,
+           !gym.routines.isEmpty {
+          for proposed in board.proposals {
+            gym.run(ProposeRoutine(id: ID(RecordID(proposed.id)), routineId: ID(RecordID(proposed.routine)), name: proposed.name, entries: proposed.entries,
+                                   summary: "", removing: proposed.removing))
+          }
+        }
+        if ProcessInfo.processInfo.arguments.contains("-routines-proposal-fixture"), gym.coachAccountAvailable, CoachBoard.current == nil, gym.routines.isEmpty {
           var fixture = Draft(new: Routine(id: gym.runner.mint(Routine.self), name: "Push A", entries: [RoutineEntry(exerciseId: ID("bench-press"), sets: [SetTarget(reps: 8, weightKg: 60)])]))
           let heavier = [RoutineEntry(exerciseId: ID("bench-press"), sets: [SetTarget(reps: 8, weightKg: 62.5)])]
           if gym.saveRoutine(&fixture) {
@@ -117,7 +123,7 @@ struct RoutineDetail: View {
         List {
           Section {
             ForEach(Array(routine.entries.enumerated()), id: \.offset) { index, entry in
-              GymRow(title: RoutineLines.movement(index, entry.exerciseId, in: gym.catalogue), meta: Readout.target(entry.sets))
+              MovementRow(exercise: gym.catalogue.find(entry.exerciseId), entry: entry, ordinal: index + 1)
                 .accessibilityIdentifier("routine-detail-movement-\(entry.exerciseId)")
             }
           }.listRowBackground(GymPalette.card)
@@ -140,23 +146,24 @@ struct RoutineDetail: View {
       .toolbar {
         ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() }.accessibilityIdentifier("routine-close") }
         if let routine {
-          ToolbarItem(placement: .topBarTrailing) {
+          ToolbarItem(placement: .primaryAction) {
             Button("Edit") { editing = RoutineEditingSession(gym: gym, routine: routine) }.accessibilityIdentifier("edit-routine")
           }
         }
       }.roomBar(.gym)
-      // The movements pass under Start on a hard edge over the bar material, so no row reads through it (02.19).
+      // Start across the sheet's foot (02L.7), the movements passing under it on a hard edge over the bar material, so no
+      // row reads through it.
       .reachBand(onSurface: true) {
         VStack(spacing: 0) {
           GymTransient(gym: gym)
-          if routine != nil {
-            ActionBand(title: "Start", room: .gym, disabled: gym.accountTransition || gym.readFailed,
+          if let routine {
+            ActionBand(title: "Start", room: .gym, disabled: routine.entries.isEmpty || gym.accountTransition || gym.readFailed,
                        actionIdentifier: "routine-start", action: start)
           }
         }
       }
       // The editor deletes the routine at once, so the detail it leaves behind has nothing to show and goes too.
-      .sheet(item: $editing, onDismiss: { if routine == nil { dismiss() } }) { editing in RoutineBuilder(gym: gym, editing: editing) { _ in } }
+      .sheet(item: $editing, onDismiss: { if routine == nil { dismiss() } }) { editing in RoutineEditor(gym: gym, editing: editing) { _ in } }
       .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "routine"]) }
       .task(id: id) { if awaitSync, routine == nil { await refreshReceipt() } }
   }
@@ -187,11 +194,6 @@ struct RoutineSummarySheet: View {
 
 // What a routine, a waiting proposal and a past workout say on their rows.
 enum RoutineLines {
-  // A summary row's movement by its place, marked when it is the lifter's own rather than the catalogue's.
-  static func movement(_ index: Int, _ id: ID<Exercise>, in catalogue: Catalogue) -> String {
-    guard let exercise = catalogue.find(id) else { return "\(index + 1). Movement unavailable" }
-    return "\(index + 1). \(exercise.name)\(SeedExercises.contains(id) ? "" : " · yours")"
-  }
   static func routine(_ routine: Routine, lastTrained: Instant?, historyKnown: Bool, moment: Moment?) -> String {
     let movements = GymCount.of(routine.entries.count, "movement")
     if let lastTrained, let moment { return "\(movements) · trained \(Readout.ago(lastTrained, now: moment.now, zone: moment.zone))" }
@@ -204,13 +206,6 @@ enum RoutineLines {
     guard let createdAt, let dates else { return "From \(source)" }
     let moment = dates.moment
     return "From \(source) · \(LocalDay(createdAt, in: moment.zone) == moment.today ? dates.time(createdAt) : dates.day(createdAt))"
-  }
-
-  // A movement's targets in its load basis: *4 × 8 · 60 kg total*, *3 × 10 · 22.5 kg each*, *3 × 12* with no load, *Open*.
-  static func movement(_ sets: [SetTarget]?, equipment: MovementEquipment) -> String {
-    guard let sets, !sets.isEmpty else { return "Open" }
-    let target = Readout.target(sets)
-    return sets.contains { $0.weightKg != nil } ? "\(target) \(equipment.unit)" : target
   }
 
   static func session(_ readout: SessionReadout) -> String {

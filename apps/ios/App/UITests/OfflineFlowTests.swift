@@ -76,7 +76,7 @@ import XCTest
       ready(app.buttons["gym-movement-bench-press"]); app.buttons["gym-movement-bench-press"].tap()
       let movementName = app.textFields["gym-movement-name"]
       ready(movementName); XCTAssertEqual(movementName.value as? String, "Bench Press")
-      XCTAssertTrue(app.textFields["gym-target-sets"].exists)
+      XCTAssertTrue(app.buttons["gym-target-sets-Increment"].exists)
       let add = app.buttons["gym-movement-editor-commit"]
       ready(add); XCTAssertEqual(add.label, "Add"); add.tap()
       ready(app.buttons["builder-movement-bench-press"])

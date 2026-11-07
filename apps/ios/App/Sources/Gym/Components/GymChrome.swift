@@ -12,18 +12,19 @@ struct GymPage: ViewModifier {
   }
 }
 
-// A sheet that edits a record commits from its bar: the dismissal leading,
-// the commit trailing in the room's accent — the system's prominent checkmark on iOS 26, a bold label before it — so
-// nothing stands at the sheet's foot; a sheet over the workout's rack (03.25) keeps its checkmark in plain glass. Its
-// destructive act is the form's last row.
+// A sheet that edits a record commits from its bar: the dismissal leading, the commit trailing — the prominent
+// checkmark in the room's accent (a bold label before iOS 26); the checkmark in plain glass, over the workout's rack
+// (03.25); or its word, Save or Add, in the confirmation placement's own capsule, for a form filled sitting down (02L.2,
+// 02L.5). Nothing stands at the sheet's foot; its destructive act is the form's last row.
 struct SheetCommit: ViewModifier {
+  enum Commit { case checkmark, plainCheckmark, word }
   let title: String
   let identifier: String
   var dismissal = "Cancel"
   var dismissalIdentifier: String?
   var disabled = false
   var busy = false
-  var prominent = true
+  var style = Commit.checkmark
   let dismiss: () -> Void
   let commit: () -> Void
 
@@ -32,13 +33,13 @@ struct SheetCommit: ViewModifier {
       ToolbarItem(placement: .cancellationAction) {
         Button(dismissal, action: dismiss).disabled(busy).accessibilityIdentifier(dismissalIdentifier ?? dismissal)
       }
-      if prominent {
-        ToolbarItem(placement: .confirmationAction) {
-          confirm.disabled(disabled || busy).accessibilityIdentifier(identifier).tint(GymPalette.accent)
-        }
-      } else {
+      if style == .plainCheckmark {
         ToolbarItem(placement: .topBarTrailing) {
           Button(title, systemImage: "checkmark", action: commit).disabled(disabled || busy).accessibilityIdentifier(identifier)
+        }
+      } else {
+        ToolbarItem(placement: .confirmationAction) {
+          confirm.disabled(disabled || busy).accessibilityIdentifier(identifier).tint(GymPalette.accent)
         }
       }
     }.roomBar(.gym)
@@ -46,7 +47,8 @@ struct SheetCommit: ViewModifier {
 
   // The checkmark is drawn on-accent, as the band's primary is, so it reads at 4.5:1 on the prominent fill.
   @ViewBuilder var confirm: some View {
-    if #available(iOS 26.0, *) {
+    if style == .word { Button(title, action: commit).fontWeight(.semibold) }
+    else if #available(iOS 26.0, *) {
       Button(role: .confirm, action: commit) {
         Image(systemName: "checkmark").fontWeight(.semibold).foregroundStyle(disabled || busy ? GymPalette.inkFaint : GymPalette.onAccent)
       }.buttonStyle(.glassProminent).accessibilityLabel(title)
@@ -107,28 +109,10 @@ extension View {
     toolbar(hidden ? .hidden : .automatic, for: .tabBar).preference(key: TabBarHidden.self, value: hidden)
   }
   func sheetCommit(_ title: String, identifier: String, dismissal: String = "Cancel", dismissalIdentifier: String? = nil,
-                   disabled: Bool = false, busy: Bool = false, prominent: Bool = true, dismiss: @escaping () -> Void,
-                   commit: @escaping () -> Void) -> some View {
+                   disabled: Bool = false, busy: Bool = false, style: SheetCommit.Commit = .checkmark,
+                   dismiss: @escaping () -> Void, commit: @escaping () -> Void) -> some View {
     modifier(SheetCommit(title: title, identifier: identifier, dismissal: dismissal, dismissalIdentifier: dismissalIdentifier,
-                         disabled: disabled, busy: busy, prominent: prominent, dismiss: dismiss, commit: commit))
-  }
-}
-
-// Next and Done above the keyboard while a field has focus, drawn by the page: a keyboard toolbar on iOS 26 shortens
-// the keyboard avoidance of the sheets opened after it.
-struct KeyboardBar: View {
-  var next: (() -> Void)?
-  var nextDisabled = false
-  let doneIdentifier: String
-  let done: () -> Void
-
-  var body: some View {
-    HStack {
-      Spacer()
-      if let next { Button("Next", action: next).frame(minWidth: RoomSpace.minimumTarget, minHeight: RoomSpace.minimumTarget).disabled(nextDisabled) }
-      Button("Done", action: done).frame(minWidth: RoomSpace.minimumTarget, minHeight: RoomSpace.minimumTarget)
-        .accessibilityIdentifier(doneIdentifier)
-    }.padding(.horizontal)
+                         disabled: disabled, busy: busy, style: style, dismiss: dismiss, commit: commit))
   }
 }
 

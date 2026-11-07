@@ -348,3 +348,19 @@ nil while last time is unread, and its `reps`; `Readout.effort(load:reps:)` spel
 summary, and `LedgerCard` draws the rows for the page and for the 03.34 renders alike. Observation: the typed load's
 tick and save ride on `typingLoad`'s `didSet`; a small `RackEntry` value (opened load, typed flag) the state owns would
 be the cleaner shape if a third entry mode ever appears.
+
+Routines follow Direction L (Gym · iOS 02L.1–02L.8, owner approved 2026-11-07): the editor, the movement form, the
+picker and the summary are stock `Form` parts. The targets draft is numeric (`TargetsDraft`: a count over rows that keep
+their place past a smaller count, straight or varied, bounded by `RoutineRules`), so a typed-text refusal has nowhere to
+land; what the form cannot express the domain never sees, and Save keeps the one refusal left, the load floor. A load
+field is one `LoadField` of one of two kinds: logged, a load always a number in its well (the rack, Fix set, Edit sets'
+open row), or planned, a routine target that may be none, a stock trailing field. Letting a field go writes nothing — every
+key already wrote what its text stands for — so a host lands the last key's load and nothing after it. The rack sizes its
+numeral to the text the field reports by preference. The movement form is a sheet stacked over the editor from the
+editor's `NavigationStack`, so it opens over the pushed picker too and a Cancel there returns to the search. The Routines
+boards draw from one fixture, `-coach-board routines`. The capture exporter's name rule admitted only lowercase, so
+`02L.*` captures were dropped until it took the direction letter. In XCUITest a stock menu `Picker` is a Button whose
+label is its title alone, a `Stepper` exposes `<id>-Increment` / `<id>-Decrement`, and in a List's edit mode a swipe on a
+Button row taps it, so the trash circle is reached through the minus badge; a List keeps a row scrolled above the fold at
+a stale frame, so scrolling back to it is counted drags, not a wait on the row. Observation: `MovementEquipmentPicker`
+carries a `count` style only because Edit movement's board still draws the segmented pair.

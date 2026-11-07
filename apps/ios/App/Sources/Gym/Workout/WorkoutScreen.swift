@@ -116,7 +116,7 @@ struct WorkoutScreen: View {
     // The rack's load is typed in while its field has focus; a sheet opening or a change of movement takes the focus, so the
     // load lands before the sheet, and nothing brings the field back after it.
     .onChange(of: loadFocused) { (_: Bool, typing: Bool) in workout.typingLoad = typing }
-    .onChange(of: activeSheet == Sheet.wheel || workout.typingLoad) { (_: Bool, editing: Bool) in workout.rackEditing = editing }
+    .onChange(of: activeSheet == Sheet.wheel) { (_: Bool, open: Bool) in workout.wheelOpen = open }
     .onChange(of: activeSheet) { (_: Sheet?, destination: Sheet?) in if destination != nil { loadFocused = false } }
     .onChange(of: workout.selected) { (_: ID<Exercise>?, _: ID<Exercise>?) in loadFocused = false }
     .sensoryFeedback(.impact(weight: .light), trigger: workout.restReaches) { (_: Int, _: Int) in
@@ -184,7 +184,7 @@ struct WorkoutScreen: View {
   // is cleared here, or a return would find a typing session no field holds.
   func disappear() {
     workout.flushRack()
-    workout.typingLoad = false; workout.rackEditing = false
+    workout.typingLoad = false; workout.wheelOpen = false
     finishTask?.cancel()
     releaseAwake()
   }
@@ -370,9 +370,9 @@ struct LedgerCard<Details: View>: View {
         .environment(\.defaultMinListRowHeight, RoomSpace.minimumTarget)
         .contentMargins(.vertical, 0, for: .scrollContent).modifier(GymPage())
         .accessibilityIdentifier("workout-ledger")
-        .onAppear { scroll.scrollTo(ledger.current.id, anchor: .bottom) }
+        .onAppear { scroll.scrollTo(ledger.performed, anchor: .bottom) }
         .onChange(of: ledger.sets.count) { _, _ in
-          withAnimation(reduceMotion ? nil : .spring) { scroll.scrollTo(ledger.current.id, anchor: .bottom) }
+          withAnimation(reduceMotion ? nil : .spring) { scroll.scrollTo(ledger.performed, anchor: .bottom) }
         }
     }.frame(height: typeSize.isAccessibilitySize ? nil : CGFloat(min(ledger.rows.count, 3)) * RoomSpace.minimumTarget)
       .frame(maxHeight: typeSize.isAccessibilitySize ? .infinity : nil)
@@ -532,6 +532,8 @@ struct WorkoutRack: View {
   @ScaledMetric(relativeTo: .largeTitle) var numeralSize = GymNumeral.scaled
   @State var numeralWidth = 0.0
   @State var unitWidth = 0.0
+  // The text the load field shows, as it reports it; nil until it has.
+  @State var shown: String?
   // The numeral's size: its scaled size, or smaller so its text, measured with its own face and the field's clearance
   // around it, fits the row beside the unit, half the size at the least. The room is the row's width less the unit and its
   // spacing; at accessibility sizes the unit sits under the numeral. A `TextField` takes no `minimumScaleFactor`: with
@@ -552,8 +554,9 @@ struct WorkoutRack: View {
       : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: RoomSpace.related))
     VStack(spacing: RoomSpace.inset) {
       numeral {
-        LoadField(weightKg: Binding(get: { workout.weightKg }, set: { workout.typeLoad($0) }), basis: basis, focus: loadFocused, identifier: "workout-load")
-          .modifier(GymNumeral(points: numeralPoints(LoadText.typed(workout.weightKg))))
+        LoadField(load: Binding(get: { workout.weightKg }, set: { workout.typeLoad($0) }).optional, kind: .logged, basis: basis,
+                  focus: loadFocused, identifier: "workout-load")
+          .modifier(GymNumeral(points: numeralPoints(shown ?? LoadText.typed(workout.weightKg))))
           .tint(GymPalette.accent).fixedSize(horizontal: true, vertical: false)
           .accessibilityLabel(Self.spokenWeight(workout.weightKg, basis: basis))
         Text(basis.unit).font(.title3).foregroundStyle(GymPalette.inkDim).fixedSize()
@@ -561,6 +564,7 @@ struct WorkoutRack: View {
           .accessibilityIdentifier("workout-weight-unit")
       }.frame(maxWidth: .infinity)
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { numeralWidth = $0 }
+        .onPreferenceChange(LoadFieldText.self) { shown = $0 }
       ladder(basis)
       reps
       Button { workout.logSet(); loadFocused.wrappedValue = false } label: {
@@ -578,7 +582,7 @@ struct WorkoutRack: View {
     let keys = typeSize.isAccessibilitySize ? 2 : basis.signed ? 5 : 4
     let labels = WeightLadder.labels(workout.weightKg)
     return LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: keys), spacing: RoomSpace.related) {
-      if basis.signed { FlipSignKey(weightKg: $workout.weightKg, identifier: "workout-load", asKey: true) }
+      if basis.signed { FlipSignKey(load: $workout.weightKg.optional, identifier: "workout-load", asKey: true) }
       ForEach(0..<4) { index in
         Button { workout.weightKg = WeightLadder.bump(workout.weightKg, direction: index < 2 ? -1 : 1, big: index == 0 || index == 3) } label: {
           Text(labels[index]).frame(maxWidth: .infinity, minHeight: 48).contentShape(Rectangle())

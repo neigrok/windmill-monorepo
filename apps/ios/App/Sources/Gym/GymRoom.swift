@@ -87,7 +87,7 @@ struct GymRoom: View {
     }) {
       if let routine { RoutineSummarySheet(gym: gym, id: routine, awaitSync: routineAwaitingSync) { startRoutine = routine; self.routine = nil } }
     }
-    .sheet(item: $setupBuilder) { editing in RoutineBuilder(gym: gym, editing: editing) { routine = $0 } }
+    .sheet(item: $setupBuilder) { editing in RoutineEditor(gym: gym, editing: editing) { routine = $0 } }
     .sheet(item: $proposal) { proposal in ProposalSheet(gym: gym, id: proposal.id) }
     .sheet(item: $share, onDismiss: { follow(routing.shareClosed()) }) { request in
       SessionShareSheet(gym: gym, sessionID: request.id) { routing.signInToShare(request.id) }

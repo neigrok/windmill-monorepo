@@ -34,7 +34,7 @@ func trainingSet(_ id: String, of exercise: ID<Exercise> = ID("back-squat"), in 
     @Bindable var box: LoadBox
     @FocusState var focused: Bool
     var body: some View {
-      Form { LoadRow(weightKg: $box.load, basis: MovementEquipment("barbell"), focus: $focused, identifier: "probe-load") }
+      Form { LoadRow(load: $box.load.optional, kind: .logged, basis: MovementEquipment("barbell"), focus: $focused, identifier: "probe-load") }
     }
   }
   struct FixSetNumbersProbe: View {
@@ -44,7 +44,7 @@ func trainingSet(_ id: String, of exercise: ID<Exercise> = ID("back-squat"), in 
     @FocusState var focused: Bool
     var body: some View {
       Form {
-        LoadRow(weightKg: $load, basis: MovementEquipment("other"), focus: $focused, identifier: "probe-load")
+        LoadRow(load: $load.optional, kind: .logged, basis: MovementEquipment("other"), focus: $focused, identifier: "probe-load")
         RepsWheel(reps: $reps, identifier: "probe-reps")
       }
         .onChange(of: load) { _, value in changed(value, reps) }

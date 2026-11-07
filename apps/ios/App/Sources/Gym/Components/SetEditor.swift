@@ -33,42 +33,74 @@ nonisolated enum LoadText {
   }
 
   // The field's text for a load, in the locale's decimal separator.
-  static func typed(_ weightKg: Double, locale: Locale = .current) -> String {
-    Readout.weight(weightKg).replacingOccurrences(of: ".", with: locale.decimalSeparator ?? ".")
+  static func typed(_ weightKg: Double?, locale: Locale = .current) -> String {
+    guard let weightKg else { return "" }
+    return Readout.weight(weightKg).replacingOccurrences(of: ".", with: locale.decimalSeparator ?? ".")
+  }
+
+  // What a field's text stands for as it is typed: the load it reads; else no load, where the field is emptied and may
+  // hold none; else the load the field opened on.
+  static func standsFor(_ text: String, signed: Bool, opening: Double?, clearable: Bool) -> Double? {
+    if let value = parse(text, signed: signed) { return value }
+    return clearable && text.trimmingCharacters(in: .whitespaces).isEmpty ? nil : opening
   }
 }
 
-// One load on the system decimal pad (03.23A, 03.25, 03.30). Focus selects its text, so the first key replaces it, and
-// every key writes the load the text stands for, a readable value, else the load the field opened on, so the host's
-// `weightKg` is live while it is typed in. As the field lets go only an unreadable text writes, restoring the opening
-// load; the text then resyncs to whatever the host holds, a change the host made meanwhile kept. The field draws no
-// keyboard row: the pad has no minus, and a signed basis gets `FlipSignKey` from its host — the rack leads its ladder
-// with it, a sheet's Load row leads the keyboard row. Focus is the host's, and reports from the rack and a form alike.
+extension Binding where Value == Double {
+  // A load that is always a number, bound to a field that may hold none: none never writes back.
+  var optional: Binding<Double?> { Binding<Double?>(get: { wrappedValue }, set: { if let value = $0 { wrappedValue = value } }) }
+}
+
+// The text a load field shows, for a host that sizes itself to it (the rack's numeral); nil until a field has reported, so
+// a field not yet reported and one emptied read apart.
+struct LoadFieldText: PreferenceKey {
+  static let defaultValue: String? = nil
+  static func reduce(value: inout String?, nextValue: () -> String?) { value = nextValue() ?? value }
+}
+
+// One load on the system decimal pad (03.23A, 03.25, 03.30, 02L.5). Focus selects its text, so the first key replaces it,
+// and every key writes the load the text stands for (`LoadText.standsFor`), so the host's load is live while it is typed
+// in; letting go writes nothing and resyncs the text to whatever the host holds, a change the host made meanwhile kept.
+// The field draws no keyboard row: the pad has no minus, and a signed basis gets `FlipSignKey` from its host — the rack
+// leads its ladder with it, a Load row leads the keyboard row. Focus is the host's, and reports from the rack and a form
+// alike.
 struct LoadField: View {
-  @Binding var weightKg: Double
+  // What the field holds: a load a set is lifted at, always a number, in its well — the rack's, Fix set's, an Edit sets
+  // row's; or a routine's target, which may be none, a stock trailing field whose emptied text is no target.
+  enum Kind {
+    case logged, planned
+    var clearable: Bool { self == .planned }
+    var well: Bool { self == .logged }
+    var placeholder: String { self == .planned ? "Last time" : "Load" }
+  }
+
+  @Binding var load: Double?
+  let kind: Kind
   let basis: MovementEquipment
   let focus: FocusState<Bool>.Binding
   let identifier: String
   @State private var typed = ""
-  @State private var opening = 0.0
+  @State private var opening: Double?
 
-  var standsFor: Double { LoadText.parse(typed, signed: basis.signed) ?? opening }
+  init(load: Binding<Double?>, kind: Kind, basis: MovementEquipment, focus: FocusState<Bool>.Binding, identifier: String) {
+    _load = load; self.kind = kind; self.basis = basis; self.focus = focus; self.identifier = identifier
+  }
+
+  var standsFor: Double? { LoadText.standsFor(typed, signed: basis.signed, opening: opening, clearable: kind.clearable) }
 
   var body: some View {
-    TextField("Load", text: $typed).keyboardType(.decimalPad).focused(focus)
-      .onAppear { typed = LoadText.typed(weightKg) }
+    TextField(kind.placeholder, text: $typed).keyboardType(.decimalPad).focused(focus)
+      .onAppear { typed = LoadText.typed(load) }
       .onChange(of: focus.wrappedValue) { _, typing in
-        if typing {
-          opening = weightKg; typed = LoadText.typed(weightKg)
-          // Focus from code leaves the caret at the end; the editing field is the first responder, which selects its text.
-          DispatchQueue.main.async { UIApplication.shared.sendAction(#selector(UIResponder.selectAll(_:)), to: nil, from: nil, for: nil) }
-          return
-        }
-        if LoadText.parse(typed, signed: basis.signed) == nil { weightKg = opening }
-        typed = LoadText.typed(weightKg)
+        typed = LoadText.typed(load)
+        guard typing else { return }
+        opening = load
+        // Focus from code leaves the caret at the end; the editing field is the first responder, which selects its text.
+        DispatchQueue.main.async { UIApplication.shared.sendAction(#selector(UIResponder.selectAll(_:)), to: nil, from: nil, for: nil) }
       }
-      .onChange(of: weightKg) { _, value in if !focus.wrappedValue || value != standsFor { typed = LoadText.typed(value) } }
-      .onChange(of: typed) { _, _ in if focus.wrappedValue { weightKg = standsFor } }
+      .onChange(of: load) { _, value in if !focus.wrappedValue || value != standsFor { typed = LoadText.typed(value) } }
+      .onChange(of: typed) { _, _ in if focus.wrappedValue { load = standsFor } }
+      .preference(key: LoadFieldText.self, value: typed)
       .accessibilityLabel("Load, \(basis.unit)")
       .accessibilityIdentifier(identifier)
   }
@@ -77,11 +109,12 @@ struct LoadField: View {
 // The ± the decimal pad lacks, for bodyweight and Other: it flips the load, whatever is typed. As a ladder key it fills
 // its cell at the keys' height; in a keyboard row it is its symbol alone.
 struct FlipSignKey: View {
-  @Binding var weightKg: Double
+  @Binding var load: Double?
   let identifier: String
   var asKey = false
+
   var body: some View {
-    Button { weightKg = -weightKg } label: {
+    Button { load = load.map { -$0 } } label: {
       Image(systemName: "plus.forwardslash.minus").font(asKey ? .title3.weight(.medium) : nil)
         .frame(maxWidth: asKey ? .infinity : nil, minHeight: asKey ? 48 : nil).contentShape(Rectangle())
     }.accessibilityLabel("Flip the sign").accessibilityIdentifier("\(identifier)-sign")
@@ -123,10 +156,12 @@ struct RepsWheel: View {
   }
 }
 
-// A set's Load row as Fix set and Edit sets draw it (03.25, 03.30): the load on the decimal pad in its well, outlined in
-// the accent while it has focus, then its unit. Bodyweight and Other lead the keyboard row with ±.
+// A Load row: its field, then its unit. A logged load sits in its well, outlined in the accent while it has focus, as Fix
+// set and Edit sets draw it (03.25, 03.30); a planned target is the stock trailing field the movement form draws (02L.5).
+// Bodyweight and Other lead the keyboard row with ±.
 struct LoadRow: View {
-  @Binding var weightKg: Double
+  @Binding var load: Double?
+  let kind: LoadField.Kind
   let basis: MovementEquipment
   let focus: FocusState<Bool>.Binding
   let identifier: String
@@ -134,19 +169,37 @@ struct LoadRow: View {
   var body: some View {
     LabeledContent("Load") {
       HStack(spacing: RoomSpace.related) {
-        LoadField(weightKg: $weightKg, basis: basis, focus: focus, identifier: identifier)
-          .modifier(FieldWell(focused: focus.wrappedValue))
+        let field = LoadField(load: $load, kind: kind, basis: basis, focus: focus, identifier: identifier)
+        if kind.well { field.modifier(FieldWell(focused: focus.wrappedValue)) }
+        else { field.multilineTextAlignment(.trailing).monospacedDigit() }
         Text(basis.unit).foregroundStyle(GymPalette.inkDim).fixedSize()
       }
     }.foregroundStyle(GymPalette.ink)
       .toolbar {
         if focus.wrappedValue, basis.signed {
           ToolbarItemGroup(placement: .keyboard) {
-            FlipSignKey(weightKg: $weightKg, identifier: identifier)
+            FlipSignKey(load: $load, identifier: identifier)
             Spacer()
           }
         }
       }
+  }
+}
+
+// A movement's rest as a menu: Default, the lifter's rest preference, then the host's choices, and the rest the movement
+// already has when it is none of them (02L.5, 03.29).
+struct RestPicker: View {
+  @Binding var selection: Int?
+  let choices: [Int]
+  let identifier: String
+
+  var body: some View {
+    Picker("Rest", selection: $selection) {
+      Text("Default").tag(Int?.none)
+      ForEach(choices + (selection.map { choices.contains($0) ? [] : [$0] } ?? []), id: \.self) { seconds in
+        Text(WorkoutClocks.reading(Int64(seconds) * 1_000)).tag(Int?.some(seconds))
+      }
+    }.pickerStyle(.menu).tint(GymPalette.accent).foregroundStyle(GymPalette.ink).accessibilityIdentifier(identifier)
   }
 }
 
@@ -259,7 +312,7 @@ struct SetEditor: View {
         Group {
           Section {
             Group {
-              LoadRow(weightKg: $draft.weightKg, basis: MovementEquipment(gym.catalogue.find(draft.exerciseId)),
+              LoadRow(load: $draft.weightKg.optional, kind: .logged, basis: MovementEquipment(gym.catalogue.find(draft.exerciseId)),
                       focus: $loadFocused, identifier: "\(identifier)-load")
               RepsWheel(reps: $draft.reps, identifier: "\(identifier)-reps").frame(height: 140).clipped()
             }.id(draft.exerciseId)
@@ -297,7 +350,7 @@ struct SetEditor: View {
         .modifier(GymPage()).disabled(draft.busy || gym.accountTransition)
         .roomTitle(place, subtitle: movement)
         .sheetCommit("Save", identifier: "\(identifier)-save", dismissalIdentifier: "\(identifier)-cancel", disabled: draft.problem != nil || gym.accountTransition,
-                     busy: draft.busy, prominent: false, dismiss: { dismiss() }, commit: save)
+                     busy: draft.busy, style: .plainCheckmark, dismiss: { dismiss() }, commit: save)
         .reachBand {
           GymTransient(gym: gym, message: draft.failure ?? draft.problem,
                        dismiss: draft.failure == nil ? nil : { draft.failure = nil }, errorIdentifier: "\(identifier)-failure")

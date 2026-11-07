@@ -13,7 +13,7 @@ import SyncCore
     let origin: Int?
     var target: SetTarget
   }
-  static let maxSets = 20
+  static let maxSets = RoutineRules.targets.max
   static let zeroTarget = "A zero target is no target."
   // The rests a movement may take, 15 s to 15 min; nil is the lifter's rest preference.
   static let rests = [15, 30, 45, 60, 75, 90, 105, 120, 150, 180, 210, 240, 300, 360, 420, 480, 540, 600, 720, 900]
@@ -22,6 +22,8 @@ import SyncCore
   var rows: [Row]
   var restSeconds: Int?
   var open: Int?
+  // What the open row's load field has typed so far, landed on the row as the field lets go.
+  var typedLoad: Double?
   var failure: String?
   // The sheet saves once: ✓, Add set and Swap are held while it closes, so a second ✓ changes nothing.
   var busy = false
@@ -55,6 +57,13 @@ import SyncCore
   func retarget(_ id: Int, _ edit: (inout SetTarget) -> Void) {
     guard let index = rows.firstIndex(where: { $0.id == id }) else { return }
     edit(&rows[index].target)
+  }
+  // The typed load lands on the open row as the field lets go, where it differs from what the row showed.
+  func landLoad(opening: Double) {
+    if let value = typedLoad, let row = rows.first(where: { $0.id == open }), value != row.target.weightKg ?? opening {
+      retarget(row.id) { $0.weightKg = value }
+    }
+    typedLoad = nil
   }
 
   // The first set whose target the plan would refuse: a zero, or a load that rounds to one.
@@ -96,7 +105,6 @@ struct EditSetsSheet: View {
   let workout: WorkoutState
   @State private var draft: EditSetsDraft
   @State private var plan: SessionPlan?
-  @State private var typedLoad: Double?
   // What waits on a load still being typed: the field lands its value as it lets go, then this runs.
   @State private var afterLoad: (() -> Void)?
   @State private var swapping = false
@@ -127,14 +135,7 @@ struct EditSetsSheet: View {
               .foregroundStyle(GymPalette.accent).disabled(draft.rows.count >= EditSetsDraft.maxSets || draft.busy)
               .accessibilityIdentifier("edit-sets-add")
           }
-          Section {
-            Picker("Rest", selection: $draft.restSeconds) {
-              Text("Default").tag(Int?.none)
-              ForEach(EditSetsDraft.rests + (draft.restSeconds.map { EditSetsDraft.rests.contains($0) ? [] : [$0] } ?? []), id: \.self) { seconds in
-                Text(WorkoutClocks.reading(Int64(seconds) * 1_000)).tag(Int?.some(seconds))
-              }
-            }.pickerStyle(.menu).tint(GymPalette.accent).foregroundStyle(GymPalette.ink).accessibilityIdentifier("edit-sets-rest")
-          }
+          Section { RestPicker(selection: $draft.restSeconds, choices: EditSetsDraft.rests, identifier: "edit-sets-rest") }
           Section {
             Button { swapping = true } label: {
               HStack {
@@ -203,8 +204,8 @@ struct EditSetsSheet: View {
   @ViewBuilder func editor(_ row: EditSetsDraft.Row) -> some View {
     let load = row.target.weightKg ?? opening.weightKg
     Divider().overlay(GymPalette.line)
-    LoadRow(weightKg: Binding(get: { typedLoad ?? load }, set: { typedLoad = $0 }), basis: basis, focus: $loadFocused,
-            identifier: "edit-sets-load").frame(minHeight: RoomSpace.minimumTarget)
+    LoadRow(load: Binding(get: { draft.typedLoad ?? load }, set: { draft.typedLoad = $0 }).optional, kind: .logged, basis: basis,
+            focus: $loadFocused, identifier: "edit-sets-load").frame(minHeight: RoomSpace.minimumTarget)
     if let problem = draft.problem, problem.row == row.id {
       Text(problem.message).font(.footnote).foregroundStyle(GymPalette.alarm).frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityIdentifier("edit-sets-problem")
@@ -221,10 +222,7 @@ struct EditSetsSheet: View {
 
   // The typed load lands on the open row as the field lets go, then whatever waited on it runs.
   func landLoad() {
-    if let value = typedLoad, let row = draft.rows.first(where: { $0.id == draft.open }), value != row.target.weightKg ?? opening.weightKg {
-      draft.retarget(row.id) { $0.weightKg = value }
-    }
-    typedLoad = nil
+    draft.landLoad(opening: opening.weightKg)
     let next = afterLoad; afterLoad = nil; next?()
   }
 

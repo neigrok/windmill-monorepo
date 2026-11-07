@@ -106,17 +106,18 @@ word (signed in: Build, Goals, Notes, Changes; signed out: Build, Goals, Account
 under them. A signed-in gym that already holds routines opens on an empty conversation. The greeting persists through typing, photo selection/cancellation, navigation,
 relaunch and failed sends until the first accepted message, and steps aside while a message is on its
 way. Goals and constraints use plain dialogue.
-Routines, empty or not, has one bottom-trailing glass plus, *New routine*, opening the routine builder.
-The builder stages exercise name, equipment and targets in one movement form. Done/Add changes the
-routine draft; outer Save commits the routine and changed exercise metadata atomically through
-`SaveRoutinePlan`. Outer Cancel discards those staged edits; editor Cancel restores the entry draft.
-Exercise metadata applies across the account, while targets belong to that routine entry. The form
-keeps optional and per-set targets, Ramp/Match and one/two-dumbbell units without a separate Targets
-destination. Stale metadata or a changed owner refuses the whole save. Received Other movements
+Routines, empty or not, has *New routine* as the toolbar plus beside the account button, opening the
+routine editor, a Form (`docs/design/ios/routines.md`). The editor pushes the movement picker and stacks
+the movement form over it: name, equipment and the dumbbell count beside the targets and rest the
+movement takes in this routine. Add/Save on the form changes the routine draft; the editor's Save
+commits the routine and changed exercise metadata atomically through `SaveRoutinePlan`. The editor's
+Cancel discards those staged edits; the form's Cancel restores the entry draft. Exercise metadata
+applies across the account, while targets belong to that routine entry. The form keeps open plans,
+open reps, per-set targets and one/two-dumbbell units on stock Steppers, a decimal Load
+field, a Toggle and menu Pickers. Stale metadata or a changed owner refuses the whole save. Received Other movements
 retain their category and signed targets through name-only and target edits. Other uses kg without
 an equipment glyph; its rack and Fix set loads take negative, zero and positive values through the ± key. The six
-existing equipment picker choices remain. Name/Equipment explanatory footers are absent, and the
-Other target section has no equipment help.
+existing equipment picker choices remain, and the Other movement's Targets section has no basis help.
 
 The Log groups workouts, every weigh-in and optional records by local date. Timed entries share a
 chronological sequence; a backdated or legacy weight with day-only precision follows timed entries
@@ -457,7 +458,7 @@ class, a subclass of `DesignCapture`: `ShellCaptures`, `JournalCaptures`, `Chrom
 the suite out and check that its guard remains.
 
 A capture's name is its screen, then `-375` on a 375 pt phone, `-ax3` at the largest text, and its appearance:
-`gym-log-end-375-ax3-dark`. A screen drawn on a Figma board starts with the board's number: `02.1-routines-dark`
+`gym-log-end-375-ax3-dark`. A screen drawn on a Figma board starts with the board's number, its direction letter included: `02L.1-routines-dark`
 and `02.1-routines-daylight` sit beside board 02.1. Every test takes its captures in both appearances, and
 `captureBoard` takes one board's pair in one call:
 
@@ -493,7 +494,7 @@ python3 Tools/export_design_captures.py --result "$RESULT" --output "$CAPTURES"
 ```
 
 Repeat `-only-testing:` for more tests, or name `WindmillUITests/RoutinesCaptures` for an area. The exporter writes
-one PNG per capture named by the capture, `$CAPTURES/02.1-routines-dark.png`, replacing that capture's PNG from an
+one PNG per capture named by the capture, `$CAPTURES/02L.1-routines-dark.png`, replacing that capture's PNG from an
 earlier export, and a `capture-manifest.json` linking each PNG to its test and result bundle. Two captures with one
 name in a result fail the export.
 

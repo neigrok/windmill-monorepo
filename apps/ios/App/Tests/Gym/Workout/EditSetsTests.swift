@@ -36,6 +36,27 @@ import SyncCore
             ["remove_set", "retarget", "add_set", "rest"].map { ["action": $0, "outcome": "ok", "door": "workout"] })
   }
 
+  // The field writes what each key's text stands for and nothing as it lets go; the draft lands the last of it on the open
+  // row once. An emptied field stands for the load it opened on, so it lands nothing, and nothing reaches the next row.
+  @Test func aTypedLoadLandsOnceAndAnEmptiedFieldLandsNothingOnTheNextRow() throws {
+    let entry = RoutineEntry(exerciseId: ID("pull-up"), sets: [SetTarget(reps: 8, weightKg: 60), SetTarget(reps: 8, weightKg: 60)])
+    let draft = EditSetsDraft(entry, opening: 0)
+    let type = { (texts: [String], opening: Double) in
+      for text in texts { draft.typedLoad = LoadText.standsFor(text, signed: false, opening: opening, clearable: LoadField.Kind.logged.clearable) }
+    }
+    type(["6", "65"], 60)
+    #expect(draft.typedLoad == 65 && draft.rows[0].target.weightKg == 60)
+    draft.landLoad(opening: 20)
+    #expect(draft.typedLoad == nil && draft.rows.map(\.target.weightKg) == [65, 60])
+    type(["7", ""], 65)
+    #expect(draft.typedLoad == 65)
+    draft.landLoad(opening: 20)
+    draft.toggle(draft.rows[1])
+    #expect(draft.open == 1 && draft.typedLoad == nil)
+    draft.landLoad(opening: 20)
+    #expect(draft.rows.map(\.target.weightKg) == [65, 60])
+  }
+
   @Test func everySetTakenOutOpensTheLineAndAnAddedSetStartsFromNoTarget() throws {
     let entry = RoutineEntry(exerciseId: ID("pull-up"), sets: [SetTarget(reps: 8, weightKg: 10)], restSeconds: 120)
     let emptied = EditSetsDraft(entry, opening: nil)

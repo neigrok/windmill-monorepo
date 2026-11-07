@@ -703,7 +703,7 @@ import SyncTesting
     #expect(logged.rows.map(\.reading) == ["42.5 × 5", "40 × 5", "40 × 5"] && logged.tally == "1 of 3 sets")
     #expect(workout.logSet() && workout.logSet())
     let done = workout.ledger(first)
-    #expect(done.rows.map(\.marker) == ["1", "2", "3", "4"] && done.rows.map(\.id) == [0, 1, 2, 3] && done.current.reading == Readout.openTarget)
+    #expect(done.rows.map(\.marker) == ["1", "2", "3", "4"] && done.rows.map(\.id) == [0, 1, 2, 3] && done.rows[done.performed].reading == Readout.openTarget)
     #expect(done.tally == "3 of 3 sets" && done.complete)
     let open = workout.ledger(second)
     #expect(open.planLine == "plan open" && open.tally == "0 sets" && !open.complete && open.rows.map(\.place) == [.current])
@@ -950,7 +950,8 @@ import SyncTesting
     #expect(workout.weightKg == 55 && workout.reps == 4)
     #expect(workout.revise([.retarget(index: 0, set: 0, target: SetTarget(reps: 3, weightKg: 70))], against: workout.session?.plan))
     #expect(workout.weightKg == 55 && workout.reps == 4)
-    #expect(workout.ledger(first).current.target == SetTarget(reps: 3, weightKg: 70))
+    let retargeted = workout.ledger(first)
+    #expect(retargeted.rows[retargeted.performed].target == SetTarget(reps: 3, weightKg: 70))
   }
 
   // The log confirming the start, or a plan edit of another movement, stamps revisions the rack does not read: the rack the
@@ -1054,7 +1055,7 @@ import SyncTesting
     workout.typingLoad = true
     workout.typeLoad(1); workout.typeLoad(12); workout.typeLoad(123)
     #expect(workout.weightKg == 123 && workout.adjustments == ticks && saves() == saved && workout.rackSave == nil, "No save waits while the load is typed")
-    #expect(try workout.activityRecord()?.offer?.weightKg == 40)
+    #expect(try workout.activityRecord()?.offer == nil, "The pad up revokes the offer until the load lands")
     workout.typingLoad = false
     #expect(workout.adjustments == ticks + 1 && saves() == saved + 1)
     #expect(try workout.activityRecord()?.offer?.weightKg == 123)
@@ -1074,6 +1075,24 @@ import SyncTesting
     #expect(workout.adjustments == ticks + 3 && saves() == saved + 3)
     #expect(typing() == ["open", "land", "open", "open", "land", "open", "land"])
     #expect(recorder.entries.withLock { $0.filter { $0.name == "gym_workout_load_typed" }.allSatisfy { $0.properties == ["screen": "workout", "action": $0.properties["action"]!] } })
+  }
+
+  // The account changing takes the field's focus: what it typed is dropped, the rack back where it was, no refusal and no
+  // save or tick.
+  @Test func aLoadTypedWhenTheAccountChangesIsDroppedWithoutAWord() throws {
+    let recorder = TelemetryRecorder(), (_, gym) = try fixture(telemetry: recorder), workout = try begin(gym)
+    workout.weightKg = 40
+    let saves = { recorder.entries.withLock { $0.filter { $0.name == "gym_workout_adjusted" }.count } }
+    // The pad rising flushes the rack first; what is counted is the typing after it.
+    workout.typingLoad = true
+    let saved = saves(), ticks = workout.adjustments
+    workout.typeLoad(70)
+    gym.accountChanging = true
+    workout.typingLoad = false
+    #expect(workout.weightKg == 40 && gym.error == nil && workout.message == nil)
+    #expect(saves() == saved && workout.adjustments == ticks && workout.rackSave == nil)
+    gym.accountChanging = false
+    #expect(workout.flushRack())
   }
 
   // Log set while the load is typed logs what the field shows and prefills a varied plan's next set; the field letting go

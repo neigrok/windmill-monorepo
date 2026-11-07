@@ -108,22 +108,22 @@ final class ChromeCaptures: DesignCapture {
     }
     XCTAssertTrue(routines.buttons["builder-movement-deadlift"].waitForExistence(timeout: 5))
     capture("gym-layout-builder", look, routines)
-    reach(routines.buttons["builder-movement-deadlift"], routines).press(forDuration: 1)
-    let moveUp = routines.buttons["Move up"]
-    XCTAssertTrue(moveUp.wait(for: \.isHittable, toEqual: true, timeout: 5))
+    reach(routines.buttons["edit-movements"], routines).tap()
+    let done = routines.buttons["edit-movements"]
+    XCTAssertTrue(done.waitForLabel("Done"))
     capture("gym-layout-builder-reorder", look, routines)
-    moveUp.tap()
-    XCTAssertTrue(moveUp.waitForNonExistence(timeout: 5))
+    done.tap()
+    XCTAssertTrue(done.waitForLabel("Edit"))
     reach(routines.buttons["builder-movement-bench-press"], routines).tap()
     let movementName = routines.textFields["gym-movement-name"]
     XCTAssertTrue(movementName.waitForExistence(timeout: 5))
     XCTAssertEqual(movementName.value as? String, "Bench Press")
-    XCTAssertTrue(reach(routines.textFields["gym-target-sets"], routines).exists)
+    XCTAssertTrue(reach(routines.buttons["gym-target-sets-Increment"], routines).exists)
     capture("gym-layout-movement-editor", look, routines)
     routines.buttons["gym-movement-editor-cancel"].tap()
     XCTAssertTrue(routines.buttons["gym-movement-editor-commit"].waitForNonExistence(timeout: 5))
     reach(routines.buttons["add-movement"], routines).tap()
-    let search = routines.textFields["gym-movement-search"]
+    let search = routines.searchFields.firstMatch
     XCTAssertTrue(search.waitForExistence(timeout: 5)); search.tap(); search.typeText("Zercher")
     XCTAssertTrue(routines.buttons["gym-create-movement"].waitForExistence(timeout: 5))
     capture("gym-layout-picker-query", look, routines)
