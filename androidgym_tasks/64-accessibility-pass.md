@@ -9,14 +9,14 @@
   - A `NumberStepper` describes itself by its label, with the unit only when it adds to the label ("Sets", "Reps", "Load, kg total"); the drawn label and unit are silent, and TalkBack reads the typed value from the field: "3, Edit box, Sets".
   - The outlined Name and Equipment fields keep their description ("Routine name", "Movement name", "Equipment"); their drawn floating labels are silent.
   - The account seat says "Your account" without its initial or dot.
-  - The routine editor's back names where it goes: "Back to Routines" from the list, "Back to Push A" from a routine's sheet, else the screen or tab beneath. `GymRoom.wayBackTo` names a pushed screen's way back the same way.
+  - A pushed screen's back names where it goes, such as "Back to The log", through `GymRoom.wayBackTo`; the routine editor and the Note editor close with a ✕ described "Close".
 - **Spoken pass:** recorded in `apps/android/README.md`, with what is still said twice.
-- Tests: `ui/RoutineSaveTests` (the room's line is a polite live region), `coach/CoachAnswerTests` (the 48 dp target), `ui/NumberStepperTests` (label, value and unit each once), `ui/RoutineEditorTests` (the back description from the list and from a routine).
+- Tests: `ui/RoutineSaveTests` (the room's line is a polite live region), `coach/CoachAnswerTests` (the 48 dp target), `ui/NumberStepperTests` (label, value and unit each once), `ui/RoutineEditorTests` (the ✕ Close from the list and from a routine).
 
 **Change**
 - Give the `note` line `liveRegion = LiveRegionMode.Polite`, or move its messages into the snackbar host. Pick the one that leaves a single message channel.
 - "What Coach read" reaches a 48 dp touch target, through `minimumInteractiveComponentSize` or padding, without changing its drawn size.
-- Steppers announce "Sets, 3" and "Reps, 8". Back's description names the actual destination ("Back to Routines" when opened from the list).
+- Steppers announce "Sets, 3" and "Reps, 8". A pushed screen's back names the actual destination ("Back to The log" from the log).
 - Run a spoken TalkBack pass on the emulator over Routines, the editor, the rack, Finish and Coach, and record the result in the README in place of the "unverified" line.
 
 **Done when**

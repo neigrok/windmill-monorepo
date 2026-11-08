@@ -51,7 +51,7 @@ class TargetSheetLayoutTests {
             var draft by mutableStateOf(lowerA)
             val builder = RoutineBuilderBinding(room.store)
             compose.setContent {
-                RoutineBuilder(draft = draft, state = builder, events = builder, saving = false, onDraft = { draft = it }, onSave = {}, onClose = {}, say = {}, backTo = "Routines")
+                RoutineBuilder(draft = draft, state = builder, events = builder, saving = false, onDraft = { draft = it }, onSave = {}, onClose = {}, say = {})
             }
             compose.onNodeWithText("Back Squat").performClick()
 

@@ -36,6 +36,7 @@ import works.windmill.gym.presentation.Exercise
 import works.windmill.gym.presentation.SetFix
 import works.windmill.gym.presentation.TrainingSet
 import works.windmill.gym.store.FixOutcome
+import androidx.compose.ui.test.assertIsFocused
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w320dp-h640dp-xhdpi")
@@ -52,18 +53,40 @@ class FixSheetLayoutTests {
             CompositionLocalProvider(LocalDensity provides Density(density = 2f, fontScale = 2f)) {
                 Box(Modifier.height(340.dp)) {
                     FixSheet(set, "Long movement name with several words", 7, "Push A",
-                        onSave = { saved += it; FixOutcome.Corrected(it.corrected(set)) }, onDelete = {})
+                        onSave = { saved += it; FixOutcome.Corrected(it.corrected(set)) }, onDelete = {}, onClose = {})
                 }
             }
         }
         compose.onNodeWithText("Set note").performScrollTo().performTextInput("Controlled tempo\n".repeat(12))
         compose.onNodeWithText("Save fix").assertIsDisplayed()
         val button = compose.onNodeWithText("Save fix").getBoundsInRoot()
-        assertTrue(button.height >= 64.dp)
+        assertTrue(button.height >= GymTap.primary)
         compose.onNodeWithText("Save fix").performClick()
-        compose.onNodeWithText("Delete set").assertIsDisplayed()
-        compose.onNodeWithText("Push A keeps its planned targets.").assertIsDisplayed()
+        compose.onNodeWithText("Delete set").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Push A keeps its planned targets.").performScrollTo().assertIsDisplayed()
         compose.runOnIdle { assertEquals(listOf(SetFix(note = "Controlled tempo\n".repeat(12))), saved) }
+    }
+
+    // At 200 % above a keyboard-sized viewport the head grows only as its lines need, so the focused field stands whole
+    // between the head and Save fix.
+    @Test
+    fun theFocusedFieldStandsWholeBetweenTheHeadAndSaveFixAtDoubleText() {
+        val set = TrainingSet(id = "set_7", exerciseId = "bench-press", setNumber = 7, weightKg = 80.0, reps = 8, completedAtMs = 0)
+        compose.setContent {
+            CompositionLocalProvider(LocalDensity provides Density(density = 2f, fontScale = 2f)) {
+                Box(Modifier.height(340.dp)) {
+                    GymMaterial { FixSheet(set, "Bench Press", 7, null,
+                        onSave = { FixOutcome.Corrected(it.corrected(set)) }, onDelete = {}, onClose = {}) }
+                }
+            }
+        }
+        val reps = compose.onNodeWithContentDescription("Reps").performScrollTo().performClick()
+        reps.assertIsFocused()
+        val field = reps.getBoundsInRoot()
+        val head = compose.onNodeWithContentDescription("Bench Press, set 7").getBoundsInRoot()
+        val save = compose.onNodeWithText("Save fix").getBoundsInRoot()
+        assertTrue("Reps $field stands whole between the head $head and Save fix $save",
+            field.top >= head.bottom && field.bottom <= save.top)
     }
 
     @Test
@@ -75,7 +98,7 @@ class FixSheetLayoutTests {
             CompositionLocalProvider(LocalDensity provides Density(density = 2f, fontScale = 2f)) {
                 Box(Modifier.height(340.dp)) {
                     GymMaterial { FixSheet(set, "Chin Up", 7, null,
-                        onSave = { saved += it; FixOutcome.Corrected(it.corrected(set)) }, onDelete = {}) }
+                        onSave = { saved += it; FixOutcome.Corrected(it.corrected(set)) }, onDelete = {}, onClose = {}) }
                 }
             }
         }
@@ -94,13 +117,13 @@ class FixSheetLayoutTests {
         compose.runOnIdle { assertEquals(listOf(SetFix(weightKg = -499.99)), saved) }
     }
     @Test
-    fun withTheKeyboardUpSaveFixStandsBelowTheScrollingFieldsAndDeleteScrollsWithThem() {
+    fun withTheKeyboardUpSaveFixStandsBelowTheScrollingBodyThatEndsWithDeleteAndThePlan() {
         val set = TrainingSet(id = "set_7", exerciseId = "bench-press", setNumber = 7, weightKg = 80.0, reps = 5, completedAtMs = 0)
         lateinit var view: android.view.View
         compose.setContent {
             view = androidx.compose.ui.platform.LocalView.current
             Box(Modifier.height(340.dp)) {
-                FixSheet(set, "Bench Press", 7, "Push A", onSave = { FixOutcome.Corrected(it.corrected(set)) }, onDelete = {})
+                FixSheet(set, "Bench Press", 7, "Push A", onSave = { FixOutcome.Corrected(it.corrected(set)) }, onDelete = {}, onClose = {})
             }
         }
         val keyboard = android.view.WindowInsets.Builder()
@@ -110,7 +133,10 @@ class FixSheetLayoutTests {
         compose.onNodeWithText("Save fix").assertIsDisplayed()
         val save = compose.onNodeWithText("Save fix").getBoundsInRoot()
         assertTrue("the whole button stands inside the sheet: $save", save.bottom <= 340.dp)
-        compose.onNodeWithText("Delete set").performScrollTo().assertIsDisplayed()
+        val plan = compose.onNodeWithText("Push A keeps its planned targets.").performScrollTo().getBoundsInRoot()
+        val delete = compose.onNodeWithText("Delete set").assertIsDisplayed().getBoundsInRoot()
+        assertTrue("Delete set is the body's last control, over the plan's line: $delete over $plan", delete.bottom <= plan.top)
+        assertTrue("and the body ends above the commit: $plan over $save", plan.bottom <= save.top)
         compose.onNodeWithText("Save fix").assertIsDisplayed()
     }
 
@@ -120,7 +146,7 @@ class FixSheetLayoutTests {
         compose.setContent {
             CompositionLocalProvider(LocalWindmillDark provides dark.value) {
                 GymMaterial { FixSheet(set, "Bench Press", 1, null,
-                    onSave = { FixOutcome.Corrected(set) }, onDelete = {}) }
+                    onSave = { FixOutcome.Corrected(set) }, onDelete = {}, onClose = {}) }
             }
         }
         for (isDark in listOf(true, false)) {
@@ -141,7 +167,7 @@ class FixSheetLayoutTests {
         compose.setContent {
             GymMaterial { FixSheet(set, "Movement", 1, null,
                 onSave = { FixOutcome.Corrected(set) }, onDelete = {},
-                exercise = Exercise("movement", "Movement", equipment = equipment.value)) }
+                exercise = Exercise("movement", "Movement", equipment = equipment.value), onClose = {}) }
         }
         for ((kind, unit) in listOf("barbell" to "kg total", "dumbbell" to "kg each", "bodyweight" to "kg added", "machine" to "kg", "legacy-cable" to "kg")) {
             compose.runOnIdle { equipment.value = kind }

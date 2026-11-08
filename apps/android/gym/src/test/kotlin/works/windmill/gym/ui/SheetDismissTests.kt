@@ -39,6 +39,7 @@ import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowDialog
 import works.windmill.gym.presentation.Exercise
 import works.windmill.gym.presentation.LiveLines
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 
 // Native sheet dismissal preserves each form’s uncommitted state.
 @OptIn(ExperimentalMaterial3Api::class)
@@ -83,9 +84,10 @@ class SheetDismissTests {
         assertEquals(listOf("dismissed"), dismissed)
     }
 
-    private fun nothingDrawnSaysCancelOrClose() {
+    // A sheet closes from its handle, its scrim or the ✕ in its head; no sheet draws a Cancel.
+    private fun closesWithoutACancel(crosses: Int) {
         compose.onAllNodesWithText("Cancel").assertCountEquals(0)
-        compose.onAllNodesWithText("Close").assertCountEquals(0)
+        compose.onAllNodesWithContentDescription("Close").assertCountEquals(crosses)
     }
 
     private fun row(id: String) = LiveLines.MovementRow(
@@ -101,13 +103,31 @@ class SheetDismissTests {
         raised(dismissed) {
             FixSheet(set, "Bench Press", 1, null, onSave = {
                 committed += it; works.windmill.gym.store.FixOutcome.Corrected(it.corrected(set))
-            }, onDelete = {})
+            }, onDelete = {}, onClose = {})
         }
-        nothingDrawnSaysCancelOrClose()
+        closesWithoutACancel(crosses = 1)
         compose.onNodeWithContentDescription("Load, kg").performClick().performTextReplacement("10")
         compose.onNodeWithText("10").assertIsDisplayed()
         dismissFromTheHandle(dismissed)
         assertEquals(emptyList<works.windmill.gym.presentation.SetFix>(), committed)
+    }
+
+    @Test
+    fun theFixSheetsCloseDismissesWithoutCommittingItsNumericDraft() {
+        val closed = mutableListOf<String>()
+        val committed = mutableListOf<works.windmill.gym.presentation.SetFix>()
+        val set = works.windmill.gym.presentation.TrainingSet("set", "bench-press", weightKg = 82.5, reps = 5, completedAtMs = 0)
+        raised(mutableListOf()) {
+            FixSheet(set, "Bench Press", 1, null, onSave = {
+                committed += it; works.windmill.gym.store.FixOutcome.Corrected(it.corrected(set))
+            }, onDelete = {}, onClose = { closed += "closed" })
+        }
+        compose.onNodeWithContentDescription("Load, kg").performClick().performTextReplacement("10")
+        compose.onNodeWithContentDescription("Close").performClick()
+        compose.runOnIdle {
+            assertEquals(listOf("closed"), closed)
+            assertEquals(emptyList<works.windmill.gym.presentation.SetFix>(), committed)
+        }
     }
 
     @Test
@@ -118,7 +138,7 @@ class SheetDismissTests {
         raised(dismissed) {
             FixSheet(set, "Bench Press", 1, null, onSave = {
                 committed += it; works.windmill.gym.store.FixOutcome.Corrected(it.corrected(set))
-            }, onDelete = {})
+            }, onDelete = {}, onClose = {})
         }
         compose.onNodeWithContentDescription("Reps").performClick().performTextReplacement("8")
         dismissFromTheScrim(dismissed)
@@ -131,10 +151,10 @@ class SheetDismissTests {
         val renamed = mutableListOf<String>()
         raised(dismissed) {
             EditMovementSheet(Exercise("bench-press", "Bench Press"), "Bench Pres", "barbell", 1,
-                refused = null, onName = {}, onEquipment = {}, onSave = { renamed += "saved" })
+                refused = null, onName = {}, onEquipment = {}, onSave = { renamed += "saved" }, onClose = {})
         }
 
-        nothingDrawnSaysCancelOrClose()
+        closesWithoutACancel(crosses = 1)
         compose.onNodeWithText("Save").assertIsDisplayed()
         dismissFromTheHandle(dismissed)
         assertEquals(emptyList<String>(), renamed)
@@ -145,7 +165,7 @@ class SheetDismissTests {
         val dismissed = mutableListOf<String>()
         raised(dismissed) {
             EditMovementSheet(Exercise("bench-press", "Bench Press"), "Bench Press", "barbell", 1,
-                refused = null, onName = {}, onEquipment = {}, onSave = {})
+                refused = null, onName = {}, onEquipment = {}, onSave = {}, onClose = {})
         }
         dismissFromTheScrim(dismissed)
     }
@@ -160,7 +180,7 @@ class SheetDismissTests {
             )
         }
 
-        nothingDrawnSaysCancelOrClose()
+        closesWithoutACancel(crosses = 0)
         compose.onNodeWithText("This workout").assertIsDisplayed()
         dismissFromTheHandle(dismissed)
     }
@@ -213,7 +233,8 @@ class SheetDismissTests {
         compose.waitForIdle()
         compose.waitForIdle()
         compose.onNode(hasText("Create movement") and !hasClickAction()).assertIsDisplayed()
-        compose.onAllNodesWithText("Cancel").assertCountEquals(1)
+        compose.onAllNodesWithText("Cancel").assertCountEquals(0)
+        compose.onAllNodesWithContentDescription("Close").assertCountEquals(1)
 
         val handle = handles()
         assertEquals("the create step's handle exposes SemanticsActions.Dismiss", 1, handle.size)

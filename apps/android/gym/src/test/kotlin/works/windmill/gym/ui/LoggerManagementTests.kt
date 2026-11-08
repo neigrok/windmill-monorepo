@@ -34,6 +34,7 @@ import org.robolectric.annotation.Config
 import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.platform.telemetry.LocalTelemetry
 import works.windmill.platform.telemetry.Telemetry
+import androidx.compose.ui.test.onNodeWithContentDescription
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
@@ -115,7 +116,7 @@ class LoggerManagementTests {
             compose.onNodeWithText("This workout").assertIsDisplayed()
             val dialog = ShadowDialog.getLatestDialog() as ComponentDialog
             compose.onNodeWithText("Add movement").performClick()
-            compose.onNodeWithText("Cancel").assertIsDisplayed()
+            compose.onNodeWithContentDescription("Close").assertIsDisplayed()
             assertSame(dialog, ShadowDialog.getLatestDialog())
             fun nativeBack() = compose.runOnIdle {
                 val layout = ReflectionHelpers.getField<Any>(dialog, "dialogLayout")
@@ -165,9 +166,9 @@ class LoggerManagementTests {
             compose.onNode(hasText("Bench Press") and hasClickAction()).performClick()
             compose.onNodeWithText("This workout").assertIsDisplayed()
             compose.onNodeWithText("Add movement").performClick()
-            compose.onNodeWithText("Cancel").assertIsDisplayed()
+            compose.onNodeWithContentDescription("Close").assertIsDisplayed()
             restoration.emulateSavedInstanceStateRestore()
-            compose.onNodeWithText("Cancel").performClick()
+            compose.onNodeWithContentDescription("Close").performClick()
             compose.onNodeWithText("This workout").assertIsDisplayed()
             compose.onAllNodes(hasText("Bench Press") and hasClickAction()).onLast().performClick()
             compose.waitUntil(10_000) { compose.onAllNodes(hasText("This workout")).fetchSemanticsNodes().isEmpty() }

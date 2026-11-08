@@ -4,14 +4,11 @@ import works.windmill.platform.design.WindmillType
 import androidx.compose.material3.MaterialTheme
 import works.windmill.platform.design.WindmillSheet
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.isImeVisible
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -21,8 +18,6 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -30,8 +25,6 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -49,22 +42,18 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import works.windmill.gym.R
 import works.windmill.gym.presentation.Exercise
 import works.windmill.gym.presentation.ExerciseWrite
 import works.windmill.gym.presentation.RoutineMovement
@@ -79,6 +68,11 @@ import works.windmill.platform.net.WindmillJson
 import works.windmill.gym.store.MovementCreateOutcome
 import works.windmill.gym.store.WriteFailure
 import works.windmill.platform.telemetry.LocalTelemetry
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.DockedSearchBar
+import androidx.compose.material3.SearchBarDefaults
 
 // A movement is a stable identity and never a typed string, so the only way to lift something the
 // catalog has never heard of is to MINT it here. The last-done read is SPARSE, so `never logged` is
@@ -288,44 +282,47 @@ fun MovementPicker(
     val options = PickerOptions.matching(state.query, catalog, taken, lastSets, nowMs,
         sessions = held.value)
 
-    Column(modifier.fillMaxWidth().imePadding(), verticalArrangement = Arrangement.spacedBy(20.dp)) {
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(title, style = GymType.screenHeading, color = colors.onSurface,
-                    modifier = Modifier.weight(1f))
-                onClose?.let { TextButton(onClick = it, modifier = Modifier.heightIn(min = 48.dp)) { Text("Cancel") } }
-            }
+    // In a sheet the picker heads itself with the sheet's bar; on the rack it is the page and keeps a heading. Rows are
+    // full-width ListItems, so everything else lines up with their own inset.
+    val inset = Modifier.padding(horizontal = GymLayout.listInset)
+    Column(modifier.fillMaxWidth().imePadding(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        if (onClose != null) GymSheetBar(title, onClose = onClose)
+        else Column(inset, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(title, style = GymType.screenHeading, color = colors.onSurface)
             subtitle?.let { Text(it, style = WindmillType.supporting, color = colors.onSurfaceVariant) }
         }
-        OutlinedTextField(
-            value = state.query, onValueChange = { state.query = it }, singleLine = true,
-            textStyle = WindmillType.body,
-            placeholder = { Text("Search movements", style = WindmillType.body) },
-            leadingIcon = { Icon(painterResource(R.drawable.gym_search), null, Modifier.size(24.dp)) },
-            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words, autoCorrectEnabled = false),
-            shape = RoundedCornerShape(28.dp),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedContainerColor = colors.surface, unfocusedContainerColor = colors.surface,
-                focusedBorderColor = colors.primary, unfocusedBorderColor = Color.Transparent,
-                focusedTextColor = colors.onSurface, unfocusedTextColor = colors.onSurface,
-                focusedLeadingIconColor = colors.onSurfaceVariant, unfocusedLeadingIconColor = colors.onSurfaceVariant,
-                focusedPlaceholderColor = colors.onSurfaceVariant, unfocusedPlaceholderColor = colors.onSurfaceVariant,
-                cursorColor = colors.primary),
-            modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
-        )
+        DockedSearchBar(
+            inputField = {
+                SearchBarDefaults.InputField(
+                    query = state.query, onQueryChange = { state.query = it },
+                    onSearch = { keyboard?.hide() }, expanded = false, onExpandedChange = {},
+                    placeholder = { Text("Search movements", style = WindmillType.body) },
+                    leadingIcon = { Icon(Icons.Filled.Search, null) },
+                    colors = SearchBarDefaults.inputFieldColors(
+                        focusedTextColor = colors.onSurface, unfocusedTextColor = colors.onSurface,
+                        focusedLeadingIconColor = colors.onSurfaceVariant, unfocusedLeadingIconColor = colors.onSurfaceVariant,
+                        focusedPlaceholderColor = colors.onSurfaceVariant, unfocusedPlaceholderColor = colors.onSurfaceVariant,
+                        cursorColor = colors.primary),
+                )
+            },
+            expanded = false, onExpandedChange = {},
+            colors = SearchBarDefaults.colors(containerColor = colors.surfaceContainerHighest),
+            tonalElevation = 0.dp, shadowElevation = 0.dp,
+            modifier = inset.fillMaxWidth(),
+        ) {}
         Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState())) {
-            options.unread?.let { Text(it, style = WindmillType.supportingParagraph, color = colors.onSurfaceVariant) }
+            options.unread?.let { Text(it, style = WindmillType.supportingParagraph, color = colors.onSurfaceVariant, modifier = inset) }
             if (options.six.isNotEmpty()) {
                 Text("The six", style = GymType.groupLabel, color = colors.onSurfaceVariant,
-                    modifier = Modifier.padding(bottom = 8.dp))
+                    modifier = inset.padding(bottom = 8.dp))
                 options.six.forEach { MovementRow(it, onPick) }
             }
             if (options.six.isNotEmpty() && options.matches.isNotEmpty()) {
                 Text("All movements", style = GymType.groupLabel, color = colors.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 20.dp, bottom = 8.dp))
+                    modifier = inset.padding(top = 20.dp, bottom = 8.dp))
             }
             options.matches.forEach { MovementRow(it, onPick) }
-            options.empty?.let { Text(it, style = WindmillType.supportingParagraph, color = colors.onSurfaceVariant) }
+            options.empty?.let { Text(it, style = WindmillType.supportingParagraph, color = colors.onSurfaceVariant, modifier = inset) }
         }
         TextButton(
             onClick = {
@@ -348,7 +345,7 @@ fun MovementPicker(
                     telemetry.event("gym_action", mapOf("screen" to "movement_form", "action" to "open", "outcome" to "ok"))
                 }
             },
-            modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
+            modifier = inset.fillMaxWidth().heightIn(min = 56.dp),
         ) { Text("Create movement", style = WindmillType.label, color = colors.onSurface) }
     }
     if (state.createOpen && createReady) {
@@ -362,12 +359,6 @@ fun MovementPicker(
         WindmillSheet(
             onDismissRequest = ::cancelCreate, onBack = ::cancelCreate, sheetState = createSheet,
             containerColor = colors.surfaceContainer, scrimColor = colors.scrim,
-            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-            dragHandle = {
-                Box(Modifier.fillMaxWidth().height(24.dp), contentAlignment = Alignment.Center) {
-                    Box(Modifier.width(32.dp).height(4.dp).background(colors.onSurfaceVariant, RoundedCornerShape(2.dp)))
-                }
-            },
         ) {
             val sheetKeyboard = LocalSoftwareKeyboardController.current
             BackHandler(enabled = WindowInsets.isImeVisible) { sheetKeyboard?.hide() }
@@ -420,17 +411,19 @@ fun MovementPicker(
 @Composable
 private fun MovementRow(row: PickerOptions.Row, onPick: (String) -> Unit) {
     val colors = MaterialTheme.colorScheme
-    Row(Modifier.fillMaxWidth().heightIn(min = 64.dp)
-        .clickable(enabled = !row.selected, role = Role.Button, onClickLabel = "add ${row.name}") { onPick(row.id) }
-        .semantics { selected = row.selected }.padding(8.dp),
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(row.name, style = WindmillType.label, color = colors.onSurface)
-            Text(row.equipment.replaceFirstChar { it.uppercase() }, style = WindmillType.detailCompact, color = colors.onSurfaceVariant)
-            row.alias?.let { Text("was “$it”", style = WindmillType.detailCompact, color = colors.onSurfaceVariant) }
-            row.meta?.let { Text(it, style = WindmillType.detailCompact, color = colors.onSurfaceVariant) }
-        }
-        Icon(if (row.selected) Icons.Filled.Check else Icons.Filled.Add, null,
-            tint = colors.onSurfaceVariant, modifier = Modifier.size(24.dp))
-    }
+    ListItem(
+        headlineContent = { Text(row.name, style = WindmillType.label, color = colors.onSurface) },
+        supportingContent = {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(row.equipment.replaceFirstChar { it.uppercase() }, style = WindmillType.detailCompact, color = colors.onSurfaceVariant)
+                row.alias?.let { Text("was “$it”", style = WindmillType.detailCompact, color = colors.onSurfaceVariant) }
+                row.meta?.let { Text(it, style = WindmillType.detailCompact, color = colors.onSurfaceVariant) }
+            }
+        },
+        trailingContent = { Icon(if (row.selected) Icons.Filled.Check else Icons.Filled.Add, null, tint = colors.onSurfaceVariant) },
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+        modifier = Modifier.fillMaxWidth()
+            .clickable(enabled = !row.selected, role = Role.Button, onClickLabel = "add ${row.name}") { onPick(row.id) }
+            .semantics { selected = row.selected },
+    )
 }

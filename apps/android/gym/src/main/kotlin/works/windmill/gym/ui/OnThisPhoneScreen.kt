@@ -9,7 +9,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MoreVert
@@ -21,7 +20,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.error
@@ -36,7 +34,6 @@ import java.time.ZoneId
 import java.time.ZoneOffset
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.launch
-import works.windmill.gym.R
 import works.windmill.gym.presentation.Exercise
 import works.windmill.gym.presentation.PlanEntry
 import works.windmill.gym.presentation.PlanSnapshot
@@ -50,6 +47,8 @@ import works.windmill.gym.store.*
 import works.windmill.platform.LocalClientUpdateDestination
 import works.windmill.platform.open
 import works.windmill.platform.telemetry.LocalTelemetry
+import android.text.format.DateFormat
+import androidx.compose.ui.platform.LocalContext
 
 // What the recovery journal draws: a copy kept on this phone, inspected and fixed.
 @Stable
@@ -148,7 +147,7 @@ fun OnThisPhoneSection(read: RecoveryRead?, onList: () -> Unit, onInspect: (Stri
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         RecoveryHeading("On this phone")
         if (rows.size == 1) RecoveryRow(rows.single()) { onInspect(rows.single().id) }
-        else Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(colors.surfaceContainer)
+        else Row(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.large).background(colors.surfaceContainer)
             .clickable(role = Role.Button, onClick = onList).padding(horizontal = 16.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -157,7 +156,6 @@ fun OnThisPhoneSection(read: RecoveryRead?, onList: () -> Unit, onInspect: (Stri
                 val needs = PhoneRecovery.needsYou(rows)
                 Text(if (needs == 0) "Adding…" else if (counted) "$needs need you" else "Needs you", style = WindmillType.detail, color = colors.onSurfaceVariant)
             }
-            RecoveryChevron()
         }
     }
 }
@@ -186,11 +184,6 @@ private fun RecoveryHeading(text: String) {
 }
 
 @Composable
-private fun RecoveryChevron() {
-    Icon(painterResource(R.drawable.gym_chevron), null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-}
-
-@Composable
 private fun RecoveryRow(row: ImportRecovery, onInspect: () -> Unit) {
     val colors = MaterialTheme.colorScheme
     val date = row.workout?.session?.startedAtMs?.let { ms ->
@@ -198,7 +191,7 @@ private fun RecoveryRow(row: ImportRecovery, onInspect: () -> Unit) {
         if (Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()).toLocalDate() == today) "Today"
         else Readout.date(ms).substringBeforeLast(" ")
     }
-    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(colors.surfaceContainer)
+    Row(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.large).background(colors.surfaceContainer)
         .clickable(role = Role.Button, onClick = onInspect).padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -207,7 +200,6 @@ private fun RecoveryRow(row: ImportRecovery, onInspect: () -> Unit) {
             Text(PhoneRecovery.reason(row), style = WindmillType.detail, color = colors.onSurfaceVariant)
         }
         if (row.adding) CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
-        else RecoveryChevron()
     }
 }
 
@@ -257,7 +249,7 @@ fun WorkoutInspectScreen(state: RecoveryState, events: RecoveryEvents, read: Rec
         Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             message?.let { RecoveryBand(it, failed = true) }
             if (primary != null) Button(onClick = { act(primary) }, enabled = !busy,
-                modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp), shape = RoundedCornerShape(16.dp)) {
+                modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
                 Text(PhoneRecovery.label(primary), style = GymType.strongAction)
             }
         }
@@ -303,7 +295,7 @@ private fun RecoveryFacts(row: ImportRecovery, catalog: List<Exercise>) {
     val summary = SessionSummary(copy.session, sets, catalog)
     val duration = if (row.operationsOnly) "—" else copy.session.finishedAtMs?.let { finish -> runCatching { Math.subtractExact(finish, copy.session.startedAtMs) }.getOrNull()?.takeIf { it >= 0 }?.let(Readout::duration) } ?: "—"
     val volume = summary.tonnageKg?.takeIf { it.isFinite() }?.let { "${Readout.weight(it)} kg" } ?: "—"
-    Row(Modifier.fillMaxWidth().background(colors.surfaceContainer, RoundedCornerShape(16.dp)).padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+    Row(Modifier.fillMaxWidth().background(colors.surfaceContainer, MaterialTheme.shapes.large).padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         for ((value, caption) in listOf(duration to "Duration", sets.size.toString() to "Sets", volume to "Volume")) Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(value, style = GymType.statValue, color = colors.onSurface)
             Text(caption, style = GymType.captionLoose, color = colors.onSurfaceVariant)
@@ -315,7 +307,7 @@ private fun RecoveryFacts(row: ImportRecovery, catalog: List<Exercise>) {
 private fun RecoveryBand(line: String, failed: Boolean = false) {
     val colors = MaterialTheme.colorScheme
     Text(line, style = WindmillType.detail, color = if (failed) colors.error else colors.onSurfaceVariant,
-        modifier = Modifier.fillMaxWidth().background(colors.surfaceContainer, RoundedCornerShape(12.dp)).padding(horizontal = 16.dp, vertical = 12.dp)
+        modifier = Modifier.fillMaxWidth().background(colors.surfaceContainer, MaterialTheme.shapes.medium).padding(horizontal = 16.dp, vertical = 12.dp)
             .semantics { liveRegion = LiveRegionMode.Polite; if (failed) error(line) })
 }
 
@@ -326,7 +318,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.recoveryMovements(set
         item("movement:${movement.id}") { Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             RecoveryHeading(movement.movement)
             val colors = MaterialTheme.colorScheme
-            Column(Modifier.fillMaxWidth().background(colors.surfaceContainer, RoundedCornerShape(16.dp)).padding(horizontal = 16.dp)) {
+            Column(Modifier.fillMaxWidth().background(colors.surfaceContainer, MaterialTheme.shapes.large).padding(horizontal = 16.dp)) {
                 movement.rows.forEachIndexed { index, row ->
                     Row(Modifier.fillMaxWidth().testTag("recovery-set:${row.id}").then(if (onSet == null) Modifier else Modifier.clickable(role = Role.Button) { onSet(row.set) })
                         .heightIn(min = if (times) 59.dp else 42.dp).padding(vertical = 10.dp),
@@ -349,10 +341,11 @@ private fun androidx.compose.foundation.lazy.LazyListScope.recoveryMovements(set
 private fun RecoveryTimes(session: Session, onPick: ((String) -> Unit)? = null, markFinished: (() -> Unit)? = null) {
     val colors = MaterialTheme.colorScheme
     val largeText = GymTextScale.large
-    Column(Modifier.fillMaxWidth().background(colors.surfaceContainer, RoundedCornerShape(16.dp)).padding(horizontal = 16.dp)) {
+    Column(Modifier.fillMaxWidth().background(colors.surfaceContainer, MaterialTheme.shapes.large).padding(horizontal = 16.dp)) {
         for ((index, field) in listOf("Started" to session.startedAtMs, "Finished" to session.finishedAtMs).withIndex()) {
             if (index > 0) HorizontalDivider(color = colors.onSurfaceVariant.copy(alpha = .12f))
             val values: @Composable () -> Unit = {
+                val hours24 = DateFormat.is24HourFormat(LocalContext.current)
                 val instant = field.second
                 if (instant == null) {
                     Text("Not finished", style = WindmillType.supporting, color = colors.onSurfaceVariant)
@@ -360,11 +353,11 @@ private fun RecoveryTimes(session: Session, onPick: ((String) -> Unit)? = null, 
                 } else if (onPick == null) {
                     val otherDay = Instant.ofEpochMilli(instant).atZone(ZoneId.systemDefault()).toLocalDate() !=
                         Instant.ofEpochMilli(session.startedAtMs).atZone(ZoneId.systemDefault()).toLocalDate()
-                    Text(if (otherDay) "${Readout.date(instant)} · ${Readout.time(instant)}" else Readout.time(instant),
+                    Text(if (otherDay) "${Readout.date(instant)} · ${Readout.time(instant, hours24)}" else Readout.time(instant, hours24),
                         style = WindmillType.supportingParagraph, color = colors.onSurfaceVariant)
                 } else {
                     AssistChip(onClick = { onPick("${field.first}:date") }, label = { Text(Readout.date(instant)) })
-                    AssistChip(onClick = { onPick("${field.first}:time") }, label = { Text(Readout.time(instant)) })
+                    AssistChip(onClick = { onPick("${field.first}:time") }, label = { Text(Readout.time(instant, hours24)) })
                 }
             }
             if (largeText) Column(Modifier.fillMaxWidth().padding(vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -446,7 +439,7 @@ fun WorkoutFixScreen(state: RecoveryState, events: RecoveryEvents, currentOwner:
                         })
                     } }
                     draft.row.workout?.session?.plan?.let { plan -> item("link") {
-                        Row(Modifier.fillMaxWidth().background(colors.surfaceContainer, RoundedCornerShape(16.dp)).padding(horizontal = 16.dp, vertical = 10.dp),
+                        Row(Modifier.fillMaxWidth().background(colors.surfaceContainer, MaterialTheme.shapes.large).padding(horizontal = 16.dp, vertical = 10.dp),
                             horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                             Text("Linked to ${plan.routine}", style = WindmillType.supporting, color = colors.onSurface, modifier = Modifier.weight(1f))
                             Switch(checked = draft.copy.session.routineId != null, enabled = !busy, onCheckedChange = { linked ->
@@ -487,7 +480,7 @@ fun WorkoutFixScreen(state: RecoveryState, events: RecoveryEvents, currentOwner:
                         }) { Text("Use date") }
                     }, dismissButton = { TextButton(onClick = ::cancel) { Text("Cancel") } }) { DatePicker(picker) }
                 } else {
-                    val picker = rememberTimePickerState(local.hour, local.minute, is24Hour = true)
+                    val picker = rememberTimePickerState(local.hour, local.minute, is24Hour = DateFormat.is24HourFormat(LocalContext.current))
                     AlertDialog(onDismissRequest = ::cancel, title = { Text(fieldTitle(target)) }, text = { TimePicker(picker) },
                         confirmButton = { TextButton(onClick = { use(local.withHour(picker.hour).withMinute(picker.minute).toInstant().toEpochMilli()) }) { Text("Use time") } },
                         dismissButton = { TextButton(onClick = ::cancel) { Text("Cancel") } })
@@ -511,7 +504,7 @@ fun WorkoutFixScreen(state: RecoveryState, events: RecoveryEvents, currentOwner:
                         change(draft.copy.copy(sets = draft.copy.sets.filterNot { it.id == set.id }, deleted = (draft.copy.deleted + set.id).distinct()))
                         editing = null
                         telemetry.event("gym_import_recovery", mapOf("action" to "fix", "state" to "set_removed"))
-                    }, onSaved = { editing = null }, draftKey = "recovery:${draft.row.sourceKey}:${set.id}",
+                    }, onSaved = { editing = null }, onClose = { editing = null }, draftKey = "recovery:${draft.row.sourceKey}:${set.id}",
                     exercise = state.catalog.firstOrNull { it.id == set.exerciseId })
             }
         }

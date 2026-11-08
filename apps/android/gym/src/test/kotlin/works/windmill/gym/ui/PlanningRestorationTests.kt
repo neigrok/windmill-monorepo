@@ -30,6 +30,8 @@ import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowDialog
 import works.windmill.gym.presentation.*
 import works.windmill.gym.store.*
+import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onLast
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
@@ -99,7 +101,7 @@ class PlanningRestorationTests {
             val builder = RoutineBuilderBinding(store)
             restorer.setContent {
                 contentView = LocalView.current
-                RoutineBuilder(draft, builder, builder, false, { draft = it }, {}, {}, {}, "Routines")
+                RoutineBuilder(draft, builder, builder, false, { draft = it }, {}, {}, {})
             }
             compose.onNodeWithText("Bench Press").performClick()
             compose.onNodeWithContentDescription("Set 3 load").performTextReplacement("1e999")
@@ -116,7 +118,7 @@ class PlanningRestorationTests {
             perSetTargets()
             assertEquals("1e999", raw("Set 3 load"))
             compose.onNodeWithText("Done").assertIsNotEnabled()
-            compose.onNodeWithText("Cancel").performScrollTo().performClick()
+            compose.onAllNodesWithContentDescription("Close").onLast().performClick()
             compose.onNodeWithText("Discard changes?").assertIsDisplayed()
             compose.onNodeWithText("Discard").performClick()
             compose.waitForIdle()
@@ -137,7 +139,7 @@ class PlanningRestorationTests {
             val builder = RoutineBuilderBinding(store)
             restorer.setContent {
                 contentView = LocalView.current
-                RoutineBuilder(draft, builder, builder, false, { draft = it }, {}, {}, {}, "Routines")
+                RoutineBuilder(draft, builder, builder, false, { draft = it }, {}, {}, {})
             }
             compose.onNodeWithText("Add movement").performClick()
             compose.onNode(hasSetTextAction() and hasText("Search movements")).performTextReplacement("Zercher")
@@ -150,7 +152,7 @@ class PlanningRestorationTests {
             hideSearchIme()
             assertEquals("Zercher 🏋 carry", raw("Movement name"))
             compose.onNodeWithText("Dumbbells").assertIsDisplayed()
-            compose.onNodeWithText("Cancel").performScrollTo().performClick()
+            compose.onAllNodesWithContentDescription("Close").onLast().performClick()
             compose.onNodeWithText("Discard").performClick()
             compose.onNode(hasSetTextAction() and hasText("Zercher")).assertIsDisplayed()
             assertEquals(RoutineDraft(name = "Push"), draft)
@@ -254,7 +256,7 @@ class PlanningRestorationTests {
             val builder = RoutineBuilderBinding(store)
             restorer.setContent {
                 contentView = LocalView.current
-                RoutineBuilder(draft, builder, builder, false, { draft = it }, {}, {}, {}, "Routines")
+                RoutineBuilder(draft, builder, builder, false, { draft = it }, {}, {}, {})
             }
             compose.onNodeWithText("Chin Up").performClick()
             uniformTargets()
@@ -269,7 +271,7 @@ class PlanningRestorationTests {
             perSetTargets()
             assertEquals("−10", raw("Set 1 load"))
             assertEquals("−5", raw("Set 2 load"))
-            compose.onNodeWithText("Cancel").performScrollTo().performClick()
+            compose.onAllNodesWithContentDescription("Close").onLast().performClick()
             assertEquals(original, draft)
         } } finally { scope.cancel() }
     }
@@ -302,7 +304,7 @@ class PlanningRestorationTests {
         compose.onNodeWithContentDescription("Movement name").performTextReplacement("Ring Row")
         compose.onNodeWithContentDescription("Equipment").performClick()
         compose.onNodeWithText("Other").performClick()
-        compose.onNodeWithText("Cancel").performClick()
+        compose.onAllNodesWithContentDescription("Close").onLast().performClick()
         compose.waitForIdle()
         compose.onNode(hasSetTextAction()).performTextReplacement("Ring")
         val shown = WindowInsets.Builder().setInsets(WindowInsets.Type.ime(), Insets.of(0, 0, 0, 700))

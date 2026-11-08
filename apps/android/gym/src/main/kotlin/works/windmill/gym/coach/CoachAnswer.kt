@@ -22,7 +22,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -72,6 +71,7 @@ import works.windmill.platform.design.WindmillType
 import works.windmill.platform.telemetry.LocalTelemetry
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.gym.telemetry.coachAction
+import androidx.compose.foundation.shape.CircleShape
 
 // An answer: its words as they stand, the step line while it works, what it wrote, how the turn ended when it ended short, and what it read. `onSignIn` is the door under an answer a call needed the account for; `onKeep` the one under the routines a signed-out turn created. A retained answer says what it read only where `saysWhatItRead`. `withDetails` fills What Coach read's rows when its sheet opens.
 @Composable
@@ -114,7 +114,7 @@ internal fun CoachAnswer(
                     var note by remember { mutableStateOf<String?>(null) }
                     var closed by remember { mutableStateOf(false) }
                     Column(verticalArrangement = Arrangement.spacedBy(12.dp),
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp).background(colors.surfaceContainer, RoundedCornerShape(20.dp)).padding(16.dp)) {
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp).background(colors.surfaceContainer, MaterialTheme.shapes.large).padding(16.dp)) {
                         Text("Review routine", style = WindmillType.supporting, color = colors.onSurfaceVariant)
                         Text(draft.name, style = GymType.cardTitle, color = colors.onSurface)
                         draft.entries.forEach { entry ->
@@ -194,7 +194,7 @@ private fun AnsweringElsewhere() {
 @Composable
 private fun CreatedRoutines(routines: List<CreatedRoutine>, onOpen: ((String) -> Unit)?) {
     val colors = MaterialTheme.colorScheme
-    Column(Modifier.fillMaxWidth().background(colors.surfaceContainer, RoundedCornerShape(20.dp)).padding(vertical = 8.dp)) {
+    Column(Modifier.fillMaxWidth().background(colors.surfaceContainer, MaterialTheme.shapes.large).padding(vertical = 8.dp)) {
         routines.forEach { routine ->
             key(routine.id) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -229,7 +229,7 @@ private fun KeepRoutines(onKeep: () -> Unit) {
 @Composable
 private fun WriteCard(did: String, outlined: Boolean, record: @Composable () -> Unit) {
     val colors = MaterialTheme.colorScheme
-    val shape = RoundedCornerShape(20.dp)
+    val shape = MaterialTheme.shapes.large
     Column(verticalArrangement = Arrangement.spacedBy(12.dp),
         modifier = Modifier.fillMaxWidth().background(colors.surfaceContainer, shape).then(if (outlined) Modifier.border(1.dp, colors.outline, shape) else Modifier).padding(16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
@@ -365,7 +365,7 @@ private fun CoachBlockView(block: CoachBlock, gapAbove: Dp) {
             val widths = List(columns) { index -> if (index == 0) 150.dp else if (columns == 3 && index == 1) 56.dp else 80.dp }
             val needed = widths.fold(24.dp) { sum, width -> sum + width }
             val tableWidth = maxOf(maxWidth, needed)
-            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).border(1.dp, colors.outlineVariant, RoundedCornerShape(12.dp))
+            Column(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.medium).border(1.dp, colors.outlineVariant, MaterialTheme.shapes.medium)
                 .horizontalScroll(rememberScrollState())) {
                 Column(Modifier.width(tableWidth)) {
                     (listOf(block.header) + block.rows).forEachIndexed { rowIndex, row ->
@@ -382,7 +382,7 @@ private fun CoachBlockView(block: CoachBlock, gapAbove: Dp) {
         }
         is CoachBlock.Code -> Text(
             block.text, style = GymType.coachCode, color = colors.onSurface,
-            modifier = slot.background(colors.surfaceContainer, RoundedCornerShape(12.dp)).padding(12.dp),
+            modifier = slot.background(colors.surfaceContainer, MaterialTheme.shapes.medium).padding(12.dp),
         )
         CoachBlock.Rule -> Box(slot.height(1.dp).background(colors.outlineVariant))
     }
@@ -439,7 +439,7 @@ internal fun CoachAction(label: String, onClick: () -> Unit, primary: Boolean = 
     Box(
         contentAlignment = Alignment.Center,
         modifier = modifier.fillMaxWidth().heightIn(min = 56.dp)
-            .background(if (primary) colors.primary else colors.surfaceContainerHighest, RoundedCornerShape(16.dp))
+            .clip(CircleShape).background(if (primary) colors.primary else colors.surfaceContainerHighest)
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick).padding(horizontal = 16.dp, vertical = 12.dp),
     ) {
         Text(label, style = WindmillType.label, color = if (primary) colors.onPrimary else colors.onSurface)

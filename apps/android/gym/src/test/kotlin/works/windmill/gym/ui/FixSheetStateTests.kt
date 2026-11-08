@@ -57,9 +57,9 @@ class FixSheetStateTests {
                     attempts += it
                     if (attempts.size == 1) answer.await() else FixOutcome.Corrected(it.corrected(set))
                 },
-                onDelete = { deletes++ }, onSaved = { saves++ }, onBusy = { busy += it })
+                onDelete = { deletes++ }, onSaved = { saves++ }, onBusy = { busy += it }, onClose = {})
         }
-        compose.onNodeWithText("Bench Press · Set 3").assertIsDisplayed()
+        compose.onNodeWithText("Bench Press · 3").assertIsDisplayed()
         compose.onNodeWithText("Set note").performTextInput("left shoulder")
         compose.onNodeWithText("Save fix").performClick()
         compose.onNodeWithText("Saving…").assertIsNotEnabled().performClick()
@@ -93,7 +93,7 @@ class FixSheetStateTests {
             FixSheet(set, "Bench Press", 3, "Push A", onSave = {
                 attempts += it
                 FixOutcome.Failed(WriteFailure.Refused("This workout belongs to another account."))
-            }, onDelete = {}, onEntryCancel = { cancel = it })
+            }, onDelete = {}, onEntryCancel = { cancel = it }, onClose = {})
         }
         compose.onNodeWithText("Set note").performTextInput("controlled tempo")
         compose.onNodeWithContentDescription("Load, kg").performClick().performTextReplacement("1e999")
@@ -123,7 +123,7 @@ class FixSheetStateTests {
         compose.setContent {
             FixSheet(set, "Bench Press", 7, null,
                 onSave = { FixOutcome.Gone("That set is no longer in the log.") },
-                onDelete = {}, onSaved = { saves++ }, onGone = { missing += it })
+                onDelete = {}, onSaved = { saves++ }, onGone = { missing += it }, onClose = {})
         }
         compose.onNodeWithText("Save fix").performClick()
         compose.runOnIdle {
@@ -139,7 +139,7 @@ class FixSheetStateTests {
         var cancel: (() -> Unit)? = null
         compose.setContent {
             FixSheet(set, "Bench Press", 3, "Push A", draftKey = "local_set",
-                onSave = { attempts += it; FixOutcome.Corrected(it.corrected(set)) }, onDelete = {}, onEntryCancel = { cancel = it })
+                onSave = { attempts += it; FixOutcome.Corrected(it.corrected(set)) }, onDelete = {}, onEntryCancel = { cancel = it }, onClose = {})
         }
         compose.onNodeWithText("Set note").performTextInput("controlled tempo")
         compose.onNodeWithContentDescription("Load, kg").performClick().performTextReplacement("70")
@@ -167,7 +167,7 @@ class FixSheetStateTests {
         val busy = mutableListOf<Boolean>()
         compose.setContent {
             FixSheet(set, "Bench Press", 3, "Push A", draftKey = "local_set",
-                onSave = { attempts += it; answer.await() }, onDelete = {}, onBusy = { busy += it })
+                onSave = { attempts += it; answer.await() }, onDelete = {}, onBusy = { busy += it }, onClose = {})
         }
         compose.onNodeWithText("Set note").performTextInput("controlled tempo")
         compose.onNodeWithText("Save fix").performClick()
@@ -215,7 +215,7 @@ class FixSheetStateTests {
                 compose.setContent { if (shown) GymMaterial {
                     FixSheet(held, "Bench Press", 1, null, origin = FixOrigin.Session,
                         onSave = { room.store.workout.fixSet(session.id, held.id, it, FixOrigin.Session) },
-                        onSaved = { saved++ }, onDelete = {})
+                        onSaved = { saved++ }, onDelete = {}, onClose = {})
                 } }
                 compose.onNodeWithText("Set note").performTextInput("  exact note\n  ")
                 compose.runOnIdle { hold = true }

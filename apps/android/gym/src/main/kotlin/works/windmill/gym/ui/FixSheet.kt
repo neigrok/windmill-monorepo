@@ -3,23 +3,13 @@ package works.windmill.gym.ui
 import works.windmill.platform.design.WindmillType
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -37,15 +27,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.error
-import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
@@ -63,10 +49,10 @@ import works.windmill.gym.presentation.TrainingSet
 import works.windmill.gym.store.FixOrigin
 import works.windmill.gym.store.FixOutcome
 import works.windmill.gym.store.WriteFailure
-import works.windmill.platform.design.WindmillRadius
 import works.windmill.platform.telemetry.LocalTelemetry
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.layout.size
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -77,6 +63,7 @@ fun FixSheet(
     routine: String?,
     onSave: suspend (SetFix) -> FixOutcome,
     onDelete: () -> Unit,
+    onClose: () -> Unit,
     onSaved: () -> Unit = {},
     onGone: (String) -> Unit = {},
     onBusy: (Boolean) -> Unit = {},
@@ -90,8 +77,6 @@ fun FixSheet(
     val scope = rememberCoroutineScope()
     val telemetry = LocalTelemetry.current
     val unit = Readout.loadUnit(exercise)
-    val noteInteraction = remember(draftKey) { MutableInteractionSource() }
-    val noteFocused by noteInteraction.collectIsFocusedAsState()
     val fieldColors = TextFieldDefaults.colors(
         focusedContainerColor = colors.surfaceContainerHighest, unfocusedContainerColor = colors.surfaceContainerHighest,
         disabledContainerColor = colors.surfaceContainerHighest, errorContainerColor = colors.surfaceContainerHighest,
@@ -138,80 +123,57 @@ fun FixSheet(
         return count.accept(value)
     }
 
-    @Composable
-    fun SaveFix(modifier: Modifier) {
-        Button(
-            onClick = {
-                if (busy || tooLong || load.reading.belowFloor) return@Button
-                val loadValue = load.read()
-                val repsValue = count.read()
-                if (loadValue == null || repsValue == null) {
-                    origin?.let { telemetry.event("gym_action", mapOf("screen" to it.screen, "action" to "fix", "outcome" to "refused")) }
-                    return@Button
-                }
-                acceptLoad(loadValue)
-                acceptReps(repsValue)
-                focus.clearFocus()
-                keyboard?.hide()
-                val fix = SetFix(set, weightKg = loadValue, reps = repsValue.toInt(), rpe = rpe, note = note)
-                busy = true
-                onBusy(true)
-                refusal = null
-                scope.launch {
-                    try {
-                        when (val outcome = onSave(fix)) {
-                            is FixOutcome.Corrected -> onSaved()
-                            is FixOutcome.Gone -> onGone(outcome.said)
-                            is FixOutcome.Failed -> refusal = when (val why = outcome.why) {
-                                WriteFailure.NoAnswer -> "The log didn’t answer — that set wasn’t changed."
-                                WriteFailure.UnconfirmedDelete -> why.line("")
-                                is WriteFailure.Refused -> why.said
-                            }
-                        }
-                    } finally {
-                        busy = false
-                        onBusy(false)
+    fun save() {
+        if (busy || tooLong || load.reading.belowFloor) return
+        val loadValue = load.read()
+        val repsValue = count.read()
+        if (loadValue == null || repsValue == null) {
+            origin?.let { telemetry.event("gym_action", mapOf("screen" to it.screen, "action" to "fix", "outcome" to "refused")) }
+            return
+        }
+        acceptLoad(loadValue)
+        acceptReps(repsValue)
+        focus.clearFocus()
+        keyboard?.hide()
+        val fix = SetFix(set, weightKg = loadValue, reps = repsValue.toInt(), rpe = rpe, note = note)
+        busy = true
+        onBusy(true)
+        refusal = null
+        scope.launch {
+            try {
+                when (val outcome = onSave(fix)) {
+                    is FixOutcome.Corrected -> onSaved()
+                    is FixOutcome.Gone -> onGone(outcome.said)
+                    is FixOutcome.Failed -> refusal = when (val why = outcome.why) {
+                        WriteFailure.NoAnswer -> "The log didn’t answer — that set wasn’t changed."
+                        WriteFailure.UnconfirmedDelete -> why.line("")
+                        is WriteFailure.Refused -> why.said
                     }
                 }
-            },
-            enabled = !busy && !tooLong && !load.reading.belowFloor,
-            modifier = modifier.heightIn(min = 64.dp),
-            shape = RoundedCornerShape(WindmillRadius.lg),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = colors.primary, contentColor = colors.onPrimary,
-                disabledContainerColor = colors.primary.copy(alpha = 0.4f), disabledContentColor = colors.onPrimary,
-            ),
-        ) { Text(if (busy) "Saving…" else "Save fix", style = WindmillType.label) }
-    }
-
-    @Composable
-    fun DeleteAndPlanNote() {
-        GymErrorTextButton("Delete set", onClick = onDelete, enabled = !busy,
-            modifier = Modifier.fillMaxWidth(), minimumHeight = 48.dp)
-        routine?.let {
-            Text("$it keeps its planned targets.", style = GymType.supportingTight,
-                color = colors.onSurfaceVariant)
+            } finally {
+                busy = false
+                onBusy(false)
+            }
         }
     }
 
-    // Save fix stands below the scrolling fields, so the keyboard never covers it, as it never covers Log set or
-    // Done. While the keyboard is up, Delete set and the routine line scroll with the fields to leave them room.
-    val typing = WindowInsets.ime.getBottom(LocalDensity.current) > 0
-    Column(Modifier.fillMaxWidth().background(colors.surfaceContainer).padding(bottom = GymLayout.sheetBottom)) {
+    // Save fix stands below the scrolling body in thumb reach, so the keyboard never covers it; Delete set and the
+    // routine's line end the body, so the keyboard never moves a control from one place to another.
+    Column(Modifier.fillMaxWidth().background(colors.surfaceContainer)) {
+        GymSheetBar(
+            title = "Fix set",
+            onClose = onClose,
+            closeEnabled = !busy,
+            subtitle = "$movement · $position",
+            subtitleSpoken = "$movement, set $position",
+            subtitleIcon = exercise?.let { { EquipmentIcon(it.equipment, Modifier.size(16.dp), tint = colors.onSurfaceVariant) } },
+        )
         Column(
             Modifier.fillMaxWidth().weight(1f, fill = false)
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = GymLayout.gutter),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text("Fix set", style = GymType.sheetHeadline,
-                    color = colors.onSurface, modifier = Modifier.semantics { heading() })
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    exercise?.let { EquipmentIcon(it.equipment, tint = colors.onSurfaceVariant) }
-                    Text("$movement · Set $position", style = GymType.subtitle, color = colors.onSurfaceVariant)
-                }
-            }
             SetNumbers(load, count, unit,
                 stepLoad = { step, big -> load.bumped(if (step == NumberStep.Increase) 1 else -1, big)?.let(::acceptLoad) ?: NumberEditResult.Refused },
                 stepReps = { step ->
@@ -245,40 +207,33 @@ fun FixSheet(
                 Text(message, style = GymType.supportingTight, color = gymColors.alarmInk,
                     modifier = Modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite })
             }
-            BasicTextField(
-                value = note, onValueChange = { note = it }, enabled = !busy,
-                textStyle = GymType.noteInput.copy(color = colors.onSurface),
-                cursorBrush = SolidColor(colors.primary), maxLines = 6, interactionSource = noteInteraction,
+            val noteCounter = SetEffort.noteCounter(note)
+            TextField(
+                value = note, onValueChange = { note = it }, enabled = !busy, maxLines = 6, isError = tooLong,
+                textStyle = GymType.noteInput,
+                label = { Text(SetEffort.noteLabel, style = WindmillType.caption) },
+                placeholder = { Text("Add a note", style = GymType.noteInput) },
+                supportingText = if (!tooLong && noteCounter == null) null else { {
+                    Column {
+                        if (tooLong) Text(SetEffort.noteTooLong, style = WindmillType.supporting, color = gymColors.alarmInk,
+                            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+                        noteCounter?.let { Text(it, style = GymType.numeralSmall, color = if (tooLong) gymColors.alarmInk else colors.onSurfaceVariant) }
+                    }
+                } },
+                colors = fieldColors,
                 modifier = Modifier.fillMaxWidth().semantics {
                     stateDescription = SetEffort.noteCaption
                     if (tooLong) error(SetEffort.noteTooLong)
                 },
-                decorationBox = { field ->
-                    Box(Modifier.heightIn(min = 56.dp)) {
-                        TextFieldDefaults.Container(!busy, tooLong, noteInteraction, Modifier.matchParentSize(), fieldColors)
-                        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
-                            Text(SetEffort.noteLabel, style = WindmillType.caption,
-                                color = if (tooLong) colors.error else if (noteFocused) colors.primary else colors.onSurfaceVariant)
-                            Box {
-                                if (note.isEmpty()) Text("Add a note", style = GymType.noteInput, color = colors.onSurfaceVariant)
-                                field()
-                            }
-                        }
-                    }
-                },
             )
-            if (tooLong) {
-                Text(SetEffort.noteTooLong, style = WindmillType.supporting, color = gymColors.alarmInk,
-                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+            GymErrorTextButton("Delete set", onClick = onDelete, enabled = !busy,
+                modifier = Modifier.fillMaxWidth(), minimumHeight = 48.dp)
+            routine?.let {
+                Text("$it keeps its planned targets.", style = GymType.supportingTight,
+                    color = colors.onSurfaceVariant)
             }
-            SetEffort.noteCounter(note)?.let { counter ->
-                Text(counter, style = GymType.numeralSmall, color = if (tooLong) gymColors.alarmInk else colors.onSurfaceVariant)
-            }
-            if (typing) DeleteAndPlanNote()
         }
-        Column(Modifier.padding(horizontal = GymLayout.gutter).padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            SaveFix(Modifier.fillMaxWidth())
-            if (!typing) DeleteAndPlanNote()
-        }
+        GymSheetCommit("Save fix", enabled = !busy && !tooLong && !load.reading.belowFloor, onClick = ::save, busy = busy,
+            modifier = Modifier.padding(horizontal = GymLayout.gutter).padding(top = 12.dp, bottom = GymLayout.sheetBottom))
     }
 }

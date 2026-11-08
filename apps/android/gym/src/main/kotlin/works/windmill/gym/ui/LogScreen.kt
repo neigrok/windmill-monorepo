@@ -10,7 +10,6 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.*
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -60,6 +59,9 @@ import works.windmill.gym.store.TrainingStore
 import works.windmill.gym.store.RecoveryRead
 import works.windmill.gym.store.WriteFailure
 import works.windmill.platform.telemetry.LocalTelemetry
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
+import androidx.compose.ui.graphics.Color
 
 // What the log draws: the account's workouts, weigh-ins and progress, and how far back the log is read.
 @Stable
@@ -246,7 +248,7 @@ fun LogScreen(
     }
     if (weighingIn) WindmillSheet(onDismissRequest = { close() }, onBack = { close() }, sheetState = sheetState,
         containerColor = colors.surfaceContainer, scrimColor = colors.scrim,
-        dragHandle = { WeighInHandle() }, contentWindowInsets = { WindowInsets(0, 0, 0, 0) }) {
+        contentWindowInsets = { WindowInsets(0, 0, 0, 0) }) {
         formState.SaveableStateProvider("weigh-in") {
             BackHandler(saving || closing) {}
             WeighInSheet(null, null, now(), saving || closing, refused,
@@ -262,7 +264,7 @@ fun LogScreen(
                             } finally { saving = false }
                         }
                     }
-                }, onDelete = null, draftKey = "${state.accountKey}:new")
+                }, onDelete = null, onClose = { close() }, draftKey = "${state.accountKey}:new")
         }
     }
 }
@@ -278,46 +280,39 @@ private fun MomentRow(moment: LogEntry.Moment, readout: LogReadout.Moment, onOpe
         }
         return
     }
-    Row(Modifier.fillMaxWidth().testTag(moment.key).heightIn(min = 56.dp)
-        .clickable(role = Role.Button, onClickLabel = "Open record", onClick = onOpenRecord)
-        .padding(horizontal = 12.dp, vertical = 10.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(3.dp, 38.dp).background(gymColors.prInk, RoundedCornerShape(1.5.dp)))
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(readout.title, style = WindmillType.kicker, color = colors.onSurface)
-            Text(readout.detail, style = WindmillType.detail, color = colors.onSurfaceVariant)
-        }
-        LogChevron()
-    }
+    ListItem(
+        leadingContent = { Icon(painterResource(R.drawable.gym_new_best), null, tint = gymColors.prInk) },
+        headlineContent = { Text(readout.title, style = WindmillType.kicker, color = colors.onSurface) },
+        supportingContent = { Text(readout.detail, style = WindmillType.detail, color = colors.onSurfaceVariant) },
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+        modifier = Modifier.fillMaxWidth().testTag(moment.key)
+            .clickable(role = Role.Button, onClickLabel = "Open record", onClick = onOpenRecord),
+    )
 }
 
 @Composable
 private fun WeightRow(weight: LogEntry.Weight, readout: LogReadout.Weight, onOpen: () -> Unit) {
     val colors = MaterialTheme.colorScheme
     val stacked = GymTextScale.stacked
-    Column(Modifier.fillMaxWidth().background(colors.surface)) {
+    Column(Modifier.fillMaxWidth()) {
         HorizontalDivider(color = colors.outlineVariant)
-        Row(Modifier.fillMaxWidth().testTag(weight.key).heightIn(min = 72.dp)
-            .clickable(role = Role.Button, onClickLabel = "Open bodyweight", onClick = onOpen)
-            .padding(horizontal = 12.dp, vertical = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(painterResource(R.drawable.gym_native_monitor_weight), null, Modifier.size(20.dp), tint = colors.onSurfaceVariant)
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(readout.title, style = WindmillType.kicker, color = colors.onSurface)
-                readout.detail?.let { Text(it, style = WindmillType.detail, color = colors.onSurfaceVariant) }
-                if (stacked) readout.time?.let { Text(it, style = WindmillType.detail, color = colors.onSurfaceVariant) }
-            }
-            if (!stacked) readout.time?.let { Text(it, style = WindmillType.detail, color = colors.onSurfaceVariant) }
-            LogChevron()
-        }
+        ListItem(
+            leadingContent = { Icon(painterResource(R.drawable.gym_native_monitor_weight), null, tint = colors.onSurfaceVariant) },
+            headlineContent = { Text(readout.title, style = WindmillType.kicker, color = colors.onSurface) },
+            supportingContent = if (readout.detail == null && !(stacked && readout.time != null)) null else { {
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    readout.detail?.let { Text(it, style = WindmillType.detail, color = colors.onSurfaceVariant) }
+                    if (stacked) readout.time?.let { Text(it, style = WindmillType.detail, color = colors.onSurfaceVariant) }
+                }
+            } },
+            trailingContent = readout.time?.takeIf { !stacked }?.let { time ->
+                { Text(time, style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceVariant) }
+            },
+            colors = ListItemDefaults.colors(containerColor = colors.surface),
+            modifier = Modifier.fillMaxWidth().testTag(weight.key)
+                .clickable(role = Role.Button, onClickLabel = "Open bodyweight", onClick = onOpen),
+        )
         HorizontalDivider(color = colors.outlineVariant)
-    }
-}
-
-@Composable
-private fun LogChevron() {
-    Box(Modifier.size(20.dp), contentAlignment = Alignment.Center) {
-        Icon(painterResource(R.drawable.gym_chevron), null, Modifier.size(10.1771.dp, 15.5052.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -330,7 +325,7 @@ private fun SessionRow(row: LogReadout.Row, onOpen: () -> Unit, onShare: () -> U
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val timeBelowTitle = maxWidth < 320.dp || GymTextScale.stacked
         Row(Modifier.fillMaxWidth().testTag("session:${row.summary.id}").heightIn(min = 72.dp)
-            .clip(RoundedCornerShape(16.dp)).background(colors.surfaceContainer)
+            .clip(MaterialTheme.shapes.large).background(colors.surfaceContainer)
             .combinedClickable(role = Role.Button, onClickLabel = "Open workout", onLongClickLabel = "Workout actions",
                 onClick = onOpen, onLongClick = { haptics.revealed(); menu = true })
             .semantics {

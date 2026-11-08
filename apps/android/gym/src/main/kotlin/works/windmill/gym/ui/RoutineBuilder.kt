@@ -5,15 +5,12 @@ import androidx.compose.material3.MaterialTheme
 import works.windmill.platform.design.WindmillSheet
 import androidx.activity.compose.BackHandler
 import works.windmill.gym.BackGuard
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
@@ -26,11 +23,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.AlertDialog
@@ -56,22 +51,18 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.layout.positionInRoot
-import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
@@ -92,7 +83,6 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import works.windmill.gym.R
 import works.windmill.gym.presentation.Exercise
 import works.windmill.gym.presentation.SessionSummary
 import works.windmill.gym.presentation.SetTarget
@@ -112,6 +102,13 @@ import works.windmill.platform.telemetry.Telemetry
 import works.windmill.platform.telemetry.LocalTelemetry
 import works.windmill.platform.net.WindmillJson
 import androidx.compose.runtime.setValue
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
+import androidx.compose.ui.draw.clip
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.ui.draw.shadow
+import androidx.compose.material.icons.filled.Close
 
 // What the routine builder draws: the draft's movements by name, and the routine's workouts for the seat in hand.
 @Stable
@@ -211,8 +208,6 @@ fun RoutineBuilder(
     onSave: () -> Unit,
     onClose: () -> Unit,
     say: (String?) -> Unit,
-    // What Back returns to, named for its description: the routine, the tab or the screen beneath.
-    backTo: String,
 ) {
     val colors = MaterialTheme.colorScheme
     val scope = rememberCoroutineScope()
@@ -302,7 +297,7 @@ fun RoutineBuilder(
     }
 
     BuildStep(
-        draft = draft, state = state, history = history, editing = editing, editable = !saving, backTo = backTo,
+        draft = draft, state = state, history = history, editing = editing, editable = !saving,
         savable = draft.savable && draft.changed && !saving,
         onDraft = { if (!saving) onDraft(it) },
         onOpenTarget = { id ->
@@ -318,12 +313,7 @@ fun RoutineBuilder(
     if (open != null) {
         WindmillSheet(onDismissRequest = ::requestClose, onBack = ::requestClose, sheetState = sheetState,
             containerColor = colors.surfaceContainer, scrimColor = colors.scrim,
-            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-            dragHandle = {
-                Box(Modifier.fillMaxWidth().height(24.dp), contentAlignment = Alignment.Center) {
-                    Box(Modifier.width(32.dp).height(4.dp).background(colors.onSurfaceVariant, RoundedCornerShape(2.dp)))
-                }
-            }) {
+) {
             val sheetKeyboard = LocalSoftwareKeyboardController.current
             BackHandler(enabled = WindowInsets.isImeVisible) { sheetKeyboard?.hide() }
             when (open) {
@@ -366,8 +356,8 @@ fun RoutineBuilder(
                     onCreateDraft = { exercise, scheme ->
                         sheet = BuilderSheet.Target(exercise.id, scheme, RoutineMovement(null, exercise), adding = true, creating = true)
                     }, state = pickerState,
-                    modifier = Modifier.heightIn(max = pickerMaxHeight()).padding(horizontal = GymLayout.gutter)
-                        .padding(bottom = GymLayout.sheetBottom), onClose = ::close,
+                    modifier = Modifier.heightIn(max = pickerMaxHeight()).padding(bottom = GymLayout.sheetBottom),
+                    onClose = ::close,
                 )
             }
         }
@@ -427,7 +417,6 @@ private fun BuildStep(
     onAdd: () -> Unit,
     onSave: () -> Unit,
     onCancel: () -> Unit,
-    backTo: String,
 ) {
     val colors = MaterialTheme.colorScheme
     val focus = remember { FocusRequester() }
@@ -480,17 +469,20 @@ private fun BuildStep(
     GymScreen(
         title = if (editing) "Edit routine" else "New routine",
         navigation = {
-            IconButton(onClick = onCancel, enabled = editable, modifier = Modifier.size(48.dp)) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back to $backTo",
-                    tint = if (editable) colors.onSurface else colors.onSurfaceVariant, modifier = Modifier.size(24.dp))
+            IconButton(onClick = onCancel, enabled = editable) {
+                Icon(Icons.Filled.Close, "Close", tint = if (editable) colors.onSurface else colors.onSurfaceVariant)
             }
         },
-        actions = { TopAction(if (editable) "Save" else "Saving…", enabled = savable, onClick = onSave) },
+        // The commit stays where the thumb is, a pill pinned above the keyboard under the scrolling body.
+        bottomBar = {
+            GymSheetCommit("Save", enabled = savable, onClick = onSave, busy = !editable,
+                modifier = Modifier.imePadding().padding(horizontal = GymLayout.gutter, vertical = 16.dp))
+        },
     ) {
         LaunchedEffect(Unit) {
             if (!editing && draft.name.isEmpty()) { focus.requestFocus(); keyboard?.show() }
         }
-        Column(Modifier.fillMaxSize().imePadding()
+        Column(Modifier.fillMaxSize()
             .onGloballyPositioned { viewport = it.boundsInRoot() }
             .testTag("routine-editor-body").verticalScroll(scroll).padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(24.dp)) {
@@ -519,23 +511,14 @@ private fun BuildStep(
                     key(entry.exerciseId) {
                         val movement = draft.movement(entry.exerciseId, state.catalog)?.current
                         val name = movement?.name ?: Readout.movement(entry.exerciseId, state.catalog)
+                        val lifted = dragged == entry.exerciseId
                         DeleteSwipeRow(actionLabel = "Remove movement", enabled = editable,
-                            onDelete = { onRemove(entry.exerciseId); true }) {
-                            Row(Modifier.fillMaxWidth().heightIn(min = 72.dp)
-                                .onGloballyPositioned { positions[entry.exerciseId] = it.positionInRoot().y + it.size.height / 2f + scroll.value }
-                                .shadow(if (dragged == entry.exerciseId) 6.dp else 0.dp, RoundedCornerShape(12.dp), clip = false)
-                                .background(if (dragged == entry.exerciseId) colors.surfaceContainerHighest else colors.surface, RoundedCornerShape(12.dp))
-                                .clickable(enabled = editable, role = Role.Button, onClickLabel = "edit this movement") { onOpenTarget(entry.exerciseId) }
-                                .semantics { customActions = if (!editable) emptyList() else buildList {
-                                    if (index > 0) add(CustomAccessibilityAction("Move up") { move(index, index - 1); true })
-                                    if (index < ordered.lastIndex) add(CustomAccessibilityAction("Move down") { move(index, index + 1); true })
-                                } }.padding(8.dp), verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                Box(Modifier.size(48.dp).semantics {
-                                    contentDescription = "Move $name, ${index + 1} of ${ordered.size}"
-                                    if (!editable) disabled()
-                                }
-                                    .pointerInput(entry.exerciseId, editable) {
+                            onDelete = { onRemove(entry.exerciseId); true }, shape = MaterialTheme.shapes.medium,
+                            // The lifted row's shadow stands outside the row's own clip.
+                            modifier = Modifier.shadow(if (lifted) 6.dp else 0.dp, MaterialTheme.shapes.medium, clip = false)) {
+                            ListItem(
+                                leadingContent = {
+                                    GymDragHandle("Move $name, ${index + 1} of ${ordered.size}", enabled = editable, modifier = Modifier.pointerInput(entry.exerciseId, editable) {
                                         if (editable) detectDragGesturesAfterLongPress(
                                             onDragStart = {
                                                 dragged = entry.exerciseId
@@ -549,22 +532,30 @@ private fun BuildStep(
                                                 placeDragged()
                                             },
                                         )
-                                    }) {
-                                    Icon(painterResource(R.drawable.gym_reorder), null, Modifier.size(48.dp), tint = colors.onSurfaceVariant)
-                                }
-                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    Text(name, style = GymType.movementRow, color = colors.onSurface)
-                                    Text(Readout.targetWithUnit(entry.sets, movement), style = GymType.movementTarget, color = colors.onSurfaceVariant)
-                                }
-                            }
+                                    })
+                                },
+                                headlineContent = { Text(name, style = GymType.movementRow, color = colors.onSurface) },
+                                supportingContent = {
+                                    Text(Readout.targetWithUnit(entry.sets, movement), style = GymType.numeral, color = colors.onSurfaceVariant)
+                                },
+                                colors = ListItemDefaults.colors(containerColor = if (lifted) colors.surfaceContainerHighest else colors.surface),
+                                modifier = Modifier.fillMaxWidth()
+                                    .onGloballyPositioned { positions[entry.exerciseId] = it.positionInRoot().y + it.size.height / 2f + scroll.value }
+                                    .clip(MaterialTheme.shapes.medium)
+                                    .clickable(enabled = editable, role = Role.Button, onClickLabel = "edit this movement") { onOpenTarget(entry.exerciseId) }
+                                    .semantics { customActions = if (!editable) emptyList() else buildList {
+                                        if (index > 0) add(CustomAccessibilityAction("Move up") { move(index, index - 1); true })
+                                        if (index < ordered.lastIndex) add(CustomAccessibilityAction("Move down") { move(index, index + 1); true })
+                                    } },
+                            )
                         }
-                        HorizontalDivider(color = colors.outlineVariant)
                     }
                 }
-                if (!draft.full) TextButton(onClick = onAdd, enabled = editable, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
-                    Icon(Icons.Filled.Add, null, tint = colors.onSurface)
-                    Spacer(Modifier.width(8.dp))
-                    Text("Add movement", style = WindmillType.label, color = colors.onSurface)
+                if (!draft.full) FilledTonalButton(onClick = onAdd, enabled = editable,
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp).heightIn(min = GymTap.minimum)) {
+                    Icon(Icons.Filled.Add, null, Modifier.size(ButtonDefaults.IconSize))
+                    Spacer(Modifier.width(ButtonDefaults.IconSpacing))
+                    Text("Add movement", style = WindmillType.label)
                 }
             }
             if (history.isNotEmpty()) Column(Modifier.fillMaxWidth().testTag("routine-history"),
@@ -616,6 +607,6 @@ private fun DraftPreview() {
         .adding("overhead-press", List(3) { SetTarget(6, 47.5) })
     GymPreview {
         RoutineBuilder(draft, PreviewRoutineBuilderState(), PreviewRoutineBuilderEvents, saving = false, onDraft = {},
-            onSave = {}, onClose = {}, say = {}, backTo = "Routines")
+            onSave = {}, onClose = {}, say = {})
     }
 }

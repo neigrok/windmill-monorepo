@@ -5,7 +5,6 @@ import works.windmill.gym.coach.AskScreen
 import androidx.compose.foundation.layout.Box
 import kotlinx.coroutines.launch
 import androidx.compose.ui.test.onNodeWithTag
-import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarDuration
@@ -15,7 +14,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.hasTestTag
-import androidx.compose.ui.test.hasParent
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.DpRect
@@ -73,6 +71,8 @@ import works.windmill.gym.domain.sync.Proposal as EngineProposal
 import works.windmill.gym.domain.sync.Routine as EngineRoutine
 import works.windmill.gym.domain.sync.RoutineEntry as EngineEntry
 import works.windmill.gym.domain.sync.SetTarget as EngineTarget
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.performScrollToIndex
 
 // Two blocks in this room are PINNED outside a scroller — Coach's doors under a cap, and the review
 // band under the diff — and both grew a sentence. A block that grows can starve the region it is
@@ -408,9 +408,11 @@ class LargestTypeTests {
         } } finally { scope.cancel() }
     }
 
+    // Ten sets at 130 %: every row's number and readout stand whole on one line, and the readouts share one column
+    // however wide the number before them.
     @Test
     @Config(sdk = [35], qualifiers = "w411dp-h731dp-xhdpi")
-    fun aTwoDigitSetKeepsItsTickAtOneThirtyPercent() {
+    fun aTwoDigitSetKeepsItsRowWholeAtOneThirtyPercent() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val server = EngineRoomFixture.server()
         try { loggerOnThePhone(scope, server, fontScale = 1.3f).use { room ->
@@ -423,24 +425,18 @@ class LargestTypeTests {
             }
             fun unclipped(text: TextLayoutResult) = text.lineCount == 1 && !text.multiParagraph.didExceedMaxLines &&
                 text.size.width >= kotlin.math.ceil(text.multiParagraph.maxIntrinsicWidth)
-            val ticks = compose.onAllNodes(hasText("✓"), useUnmergedTree = true)
-            ticks.assertCountEquals(10)
-            (0 until 10).forEach { at ->
-                val tick = laid(ticks[at])
-                assertTrue("✓ $at is ${tick.size.width}px wide and needs ${tick.multiParagraph.maxIntrinsicWidth}px", unclipped(tick))
+            val ledger = compose.onNodeWithTag("Set ledger")
+            val columns = (0 until 10).map { at ->
+                ledger.performScrollToIndex(at)
+                val row = hasContentDescription("Set ${at + 1}, logged", substring = true)
+                compose.onNode(row).assertIsDisplayed()
+                val number = compose.onNode(hasText("${at + 1}") and hasAnyAncestor(row), useUnmergedTree = true)
+                assertTrue("${at + 1} is clipped", unclipped(laid(number)))
+                val readout = compose.onNode(hasText("20 kg total × 5") and hasAnyAncestor(row), useUnmergedTree = true)
+                assertTrue("The full load, unit and reps fit on one line", unclipped(laid(readout)))
+                readout.fetchSemanticsNode().positionInRoot.x
             }
-            val ten = laid(compose.onNode(hasText("Set 10"), useUnmergedTree = true))
-            assertTrue("10 is ${ten.size.width}px wide and needs ${ten.multiParagraph.maxIntrinsicWidth}px", unclipped(ten))
-
-            compose.onNode(hasContentDescription("Set 10, logged", substring = true)).assertIsDisplayed()
-            val readouts = compose.onAllNodes(hasText("20 kg total × 5"), useUnmergedTree = true)
-            readouts.assertCountEquals(10)
-            val positions = readouts.fetchSemanticsNodes().map { it.positionInRoot.x }
-            assertEquals(List(10) { positions.first() }, positions)
-            (0 until 10).forEach { at ->
-                val readout = laid(readouts[at])
-                assertTrue("The full load, unit and reps fit on one line", unclipped(readout))
-            }
+            assertEquals(List(10) { columns.first() }, columns)
         } } finally { scope.cancel() }
     }
 
@@ -467,14 +463,15 @@ class LargestTypeTests {
                 }
             }
             val window = compose.onRoot().getBoundsInRoot()
-            val rows = compose.onAllNodes(hasParent(hasTestTag("Set ledger")))
-            val count = rows.fetchSemanticsNodes().size
-            assertEquals(5, count)
-            repeat(count) { at ->
-                rows[at].performScrollTo().assertIsDisplayed()
+            val said = (1..4).map { "Set $it, logged" } + "Set 5, current"
+            assertTrue("the ledger holds exactly ${said.size} rows",
+                runCatching { compose.onNodeWithTag("Set ledger").performScrollToIndex(said.size) }.isFailure)
+            said.forEachIndexed { at, label ->
+                compose.onNodeWithTag("Set ledger").performScrollToIndex(at)
+                val node = compose.onNode(hasContentDescription(label, substring = true)).performScrollTo().assertIsDisplayed()
                 val log = compose.onNodeWithText("Log set").assertIsDisplayed().getBoundsInRoot()
                 val ledger = compose.onNodeWithTag("Set ledger").getBoundsInRoot()
-                val row = rows[at].getBoundsInRoot()
+                val row = node.getBoundsInRoot()
                 assertTrue("row $at at $row inside the ledger $ledger above Log set $log in $window",
                     row.height > 0.dp && row.top >= ledger.top && row.bottom <= ledger.bottom && row.bottom <= log.top &&
                         log.bottom <= window.bottom)

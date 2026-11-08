@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
@@ -87,6 +86,7 @@ import works.windmill.platform.design.WindmillType
 import works.windmill.platform.net.WindmillJson
 import works.windmill.platform.telemetry.LocalTelemetry
 import works.windmill.platform.telemetry.Telemetry
+import androidx.compose.foundation.shape.CircleShape
 
 // What the workout page draws.
 @Stable
@@ -268,16 +268,18 @@ fun SessionScreen(
     var corrected by remember(summary.id) { mutableIntStateOf(0) }
     var fixBusy by remember { mutableStateOf(false) }
     var cancelFixEntry by remember { mutableStateOf<(() -> Unit)?>(null) }
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true, confirmValueChange = { destination ->
-            when {
-                fixBusy -> false
-                destination == SheetValue.Hidden && cancelFixEntry != null -> {
-                    cancelFixEntry?.invoke()
-                    false
-                }
-                else -> true
-            }
-        })
+    // Fix set leaves the same way from its drag, scrim, Back and ✕: a busy save holds the sheet, and open entry is
+    // cancelled before the sheet may close.
+    fun fixMayClose(): Boolean = when {
+        fixBusy -> false
+        cancelFixEntry != null -> {
+            cancelFixEntry?.invoke()
+            false
+        }
+        else -> true
+    }
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true,
+        confirmValueChange = { destination -> destination != SheetValue.Hidden || fixMayClose() })
 
     val currentDetail = detail?.let(state::retainedSession)
     val readId = currentDetail?.session?.id ?: summary.id
@@ -374,7 +376,7 @@ fun SessionScreen(
             }
             item("actions") {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Box(Modifier.fillMaxWidth().heightIn(min = 56.dp).clip(RoundedCornerShape(16.dp)).background(colors.surfaceContainerHighest)
+                    Box(Modifier.fillMaxWidth().heightIn(min = 56.dp).clip(CircleShape).background(colors.surfaceContainerHighest)
                         .clickable(role = Role.Button) { shareOpen = true }, contentAlignment = Alignment.Center) {
                         Text("Share this workout", style = WindmillType.label, color = colors.onSurface)
                     }
@@ -425,6 +427,7 @@ fun SessionScreen(
                 },
                 onSaved = { close(); say(null) },
                 onGone = { close(); say(it) },
+                onClose = { if (fixMayClose()) close() },
                 onBusy = { fixBusy = it },
                 onEntryCancel = { cancelFixEntry = it },
                 onDelete = {

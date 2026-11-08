@@ -88,7 +88,7 @@ class BodyweightStateTests {
         restored.setContent {
             GymMaterial {
                 WeighInSheet(WeighIn(day.toString(), 82.4, 1_000), null, System.currentTimeMillis(), false, null,
-                    { date, weight -> saved += date to weight }, null, draftKey = "u1:new")
+                    { date, weight -> saved += date to weight }, null, draftKey = "u1:new", onClose = {})
             }
         }
         compose.onNodeWithContentDescription(weightField).performTextReplacement("82,4.5")

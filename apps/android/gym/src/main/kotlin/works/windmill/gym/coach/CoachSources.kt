@@ -4,10 +4,8 @@ import works.windmill.gym.ui.GymType
 import androidx.compose.material3.MaterialTheme
 import works.windmill.platform.design.WindmillSheet
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.background
 import androidx.compose.foundation.indication
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -31,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import works.windmill.gym.R
 import works.windmill.platform.telemetry.LocalTelemetry
 import works.windmill.gym.telemetry.coachAction
+import androidx.compose.material3.BottomSheetDefaults
 
 // What an ended answer read, under it: a door to What Coach read while the turn ran anything to list (08.36).
 @OptIn(ExperimentalMaterial3Api::class)
@@ -68,11 +67,8 @@ internal fun CoachReadSources(line: String, rows: List<CoachCall>, withDetails: 
     val shown by produceState(rows, rows) { value = withDetails(rows) }
     WindmillSheet(onDismissRequest = { expanded = false }, sheetState = sheet,
         containerColor = colors.surfaceContainer, scrimColor = colors.scrim,
-        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
         dragHandle = {
-            Box(Modifier.fillMaxWidth().height(24.dp).onGloballyPositioned { onSheetTop(it.positionOnScreen().y.roundToInt()) }, contentAlignment = Alignment.Center) {
-                Box(Modifier.width(32.dp).height(4.dp).background(colors.onSurfaceVariant, RoundedCornerShape(2.dp)))
-            }
+            Box(Modifier.onGloballyPositioned { onSheetTop(it.positionOnScreen().y.roundToInt()) }) { BottomSheetDefaults.DragHandle() }
         },
         contentWindowInsets = { WindowInsets(0, 0, 0, 0) },
     ) {

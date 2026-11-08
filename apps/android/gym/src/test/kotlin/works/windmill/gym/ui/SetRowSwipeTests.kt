@@ -178,7 +178,7 @@ class SetRowSwipeTests {
                 "left was ${survivor.left}", survivor.left >= 0f)
             compose.onNodeWithContentDescription("Set 1, 90 kg total, 3 reps").performClick()
             compose.onNodeWithText("Fix set").assertIsDisplayed()
-            compose.onNodeWithText("Bench Press · Set 1").assertIsDisplayed()
+            compose.onNodeWithText("Bench Press · 1").assertIsDisplayed()
         } } finally { scope.cancel() }
     }
 

@@ -1,0 +1,220 @@
+[
+  {
+    "board": "02.1N",
+    "name": "routines-list-items",
+    "account": "fixture",
+    "steps": [
+      {"tap": "Routines"},
+      {"wait": "New routine"},
+      {"wait": "More for Push A"}
+    ]
+  },
+  {
+    "board": "02.2N",
+    "name": "routine-summary-avatars",
+    "account": "fixture",
+    "steps": [
+      {"tap": "Push A"},
+      {"wait": "Start workout"},
+      {"wait": "Edit routine"}
+    ]
+  },
+  {
+    "board": "02.5Nb",
+    "name": "editor-list-items-bottom-commit",
+    "account": "fixture",
+    "steps": [
+      {"tap": "Edit routine"},
+      {"wait_contains": "Move Bench Press, 1 of"},
+      {"wait": "Add movement"}
+    ]
+  },
+  {
+    "board": "02.4N",
+    "name": "picker-search-bar",
+    "account": "fixture",
+    "steps": [
+      {"tap": "Add movement"},
+      {"wait": "Search movements"},
+      {"wait": "Close"}
+    ],
+    "after": [
+      {"tap": "Close"},
+      {"wait": "Add movement"}
+    ]
+  },
+  {
+    "board": "02.6N",
+    "name": "movement-form-close-head",
+    "account": "fixture",
+    "steps": [
+      {"tap": "Bench Press"},
+      {"wait": "Movement name"},
+      {"wait": "Done"},
+      {"wait": "Close"}
+    ],
+    "after": [
+      {"tap": "Close"},
+      {"wait": "Add movement"},
+      {"key": "KEYCODE_BACK"},
+      {"wait": "Start workout"},
+      {"key": "KEYCODE_BACK"},
+      {"wait": "New routine"}
+    ]
+  },
+  {
+    "board": "05.1N",
+    "name": "log-list-items",
+    "account": "fixture",
+    "steps": [
+      {"tap": "The log"},
+      {"wait": "Back Squat · new best"},
+      {"wait": "80 kg"},
+      {"wait": "Weigh in"}
+    ]
+  },
+  {
+    "board": "06.1N",
+    "name": "weigh-in-close-head",
+    "account": "fixture",
+    "steps": [
+      {"tap": "Weigh in"},
+      {"tap": "weight in kilograms"},
+      {"text": "81.4"},
+      {"wait": "Save weight"},
+      {"wait": "Choose date"}
+    ],
+    "after": [
+      {"keyboard": "hide"},
+      {"tap": "Close"},
+      {"wait": "Weigh in"}
+    ]
+  },
+  {
+    "board": "06.2N",
+    "name": "bodyweight-list-items",
+    "account": "fixture",
+    "steps": [
+      {"tap": "80 kg"},
+      {"wait": "Every weigh-in"},
+      {"wait": "90 days"}
+    ],
+    "after": [
+      {"key": "KEYCODE_BACK"},
+      {"wait": "Weigh in"}
+    ]
+  },
+  {
+    "board": "05.10N",
+    "name": "edit-movement-close-head",
+    "account": "fixture",
+    "steps": [
+      {"tap": "Back Squat · new best"},
+      {"wait": "Estimated strength"},
+      {"tap": "More"},
+      {"tap": "Edit movement"},
+      {"wait": "Movement name"},
+      {"keyboard": "hide"},
+      {"wait": "Close"}
+    ],
+    "after": [
+      {"tap": "Close"},
+      {"wait": "Estimated strength"},
+      {"key": "KEYCODE_BACK"},
+      {"wait": "Weigh in"}
+    ]
+  },
+  {
+    "board": "09.1N",
+    "name": "notes-list-items",
+    "account": "fixture",
+    "steps": [
+      {"tap": "Your account"},
+      {"tap": "Notes"},
+      {"wait": "Training week"},
+      {"wait": "Add a note"}
+    ]
+  },
+  {
+    "board": "09.2N",
+    "name": "note-editor-bottom-commit",
+    "account": "fixture",
+    "steps": [
+      {"tap": "Training week"},
+      {"wait": "Note field"},
+      {"wait": "Delete note"},
+      {"wait": "Save"}
+    ],
+    "after": [
+      {"tap": "Close"},
+      {"wait": "Add a note"},
+      {"key": "KEYCODE_BACK"},
+      {"tap": "Routines"},
+      {"wait": "New routine"}
+    ]
+  },
+  {
+    "board": "03.1N",
+    "name": "rack-list-items",
+    "account": "fixture",
+    "workout_clock": true,
+    "steps": [
+      {"tap": "Push A"},
+      {"tap": "Start workout"},
+      {"wait": "Load, kg total"},
+      {"tap": "Log set"},
+      {"wait_contains": "Set 2, current"}
+    ]
+  },
+  {
+    "board": "03.2N",
+    "name": "rack-keyboard",
+    "account": "fixture",
+    "workout_clock": true,
+    "steps": [
+      {"keyboard": "show"},
+      {"tap": "Load, kg total"},
+      {"wait_contains": "Set 2, current"}
+    ],
+    "after": [
+      {"keyboard": "hide"}
+    ]
+  },
+  {
+    "board": "03.3N",
+    "name": "fix-set-close-head",
+    "account": "fixture",
+    "workout_clock": true,
+    "steps": [
+      {"tap_contains": "Set 1, logged"},
+      {"wait": "Bench Press · 1"},
+      {"wait": "Set note"},
+      {"wait": "Delete set"},
+      {"wait": "Save fix"}
+    ]
+  },
+  {
+    "board": "03.3Nk",
+    "name": "fix-set-keyboard",
+    "account": "fixture",
+    "workout_clock": true,
+    "steps": [
+      {"keyboard": "show"},
+      {"tap": "Load, kg total"},
+      {"wait": "Save fix"}
+    ],
+    "after": [
+      {"keyboard": "hide"},
+      {"tap": "Close"},
+      {"wait": "Fix set"},
+      {"tap": "Close"},
+      {"wait": "Log set"},
+      {"tap": "Finish"},
+      {"wait": "Ended early."},
+      {"key": "KEYCODE_BACK"},
+      {"wait": "Share this workout"},
+      {"tap": "Back to Routines"},
+      {"wait": "Routines"}
+    ]
+  }
+]

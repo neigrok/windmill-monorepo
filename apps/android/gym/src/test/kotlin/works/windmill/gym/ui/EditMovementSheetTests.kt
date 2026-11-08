@@ -26,7 +26,7 @@ class EditMovementSheetTests {
                 Column {
                     EditMovementSheet(Exercise("custom", "Press", equipment = "cable"), "Press", equipment, count, null,
                         onName = {}, onEquipment = { equipment = it; count = if (it == "dumbbell") 2 else 1 },
-                        onSave = { saved += equipment to count })
+                        onSave = { saved += equipment to count }, onClose = {})
                 }
             }
         }
@@ -48,7 +48,7 @@ class EditMovementSheetTests {
             GymMaterial {
                 Column {
                     EditMovementSheet(Exercise("custom", "Press"), " ", "other", 1, refusal,
-                        onName = {}, onEquipment = {}, onSave = { writes += "saved" })
+                        onName = {}, onEquipment = {}, onSave = { writes += "saved" }, onClose = {})
                 }
             }
         }
@@ -62,7 +62,7 @@ class EditMovementSheetTests {
             GymMaterial {
                 Column {
                     EditMovementSheet(Exercise("custom", "Press"), "New press", "other", 1, null,
-                        onName = {}, onEquipment = {}, onSave = {}, saving = true)
+                        onName = {}, onEquipment = {}, onSave = {}, saving = true, onClose = {})
                 }
             }
         }

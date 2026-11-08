@@ -121,10 +121,10 @@ class BodyweightScreenTests {
             log(store, mutableListOf())
 
             compose.onNodeWithContentDescription(Bodyweight.chip).performClick()
-            compose.onNodeWithText(Bodyweight.unit).assertIsDisplayed()
             compose.onNodeWithText("comma or point", substring = true).assertDoesNotExist()
             compose.onNodeWithText(Bodyweight.fullDay(today)).assertIsDisplayed()
             compose.onNodeWithContentDescription(weightField).performTextInput("82,4")
+            compose.onNodeWithText(Bodyweight.unit).assertIsDisplayed()
             compose.onNodeWithText(Bodyweight.save).performClick()
 
             compose.runOnIdle {
@@ -332,7 +332,7 @@ class BodyweightScreenTests {
                 WeighInSheet(
                     initial = WeighIn(tomorrow.toString(), 82.4, 1_000), fixedDate = null,
                     nowMs = System.currentTimeMillis(), saving = false, refused = null,
-                    onSave = { dateLocal, _ -> saved += dateLocal }, onDelete = null,
+                    onSave = { dateLocal, _ -> saved += dateLocal }, onDelete = null, onClose = {},
                 )
             }
 

@@ -1,12 +1,10 @@
 package works.windmill.gym.ui
 
-import works.windmill.platform.design.WindmillType
 import android.content.res.Configuration
 import works.windmill.platform.design.WindmillSheet
 import works.windmill.platform.telemetry.LocalTelemetry
 import androidx.compose.foundation.MutatePriority
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.DragInteraction
@@ -31,7 +29,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -82,10 +79,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.width
-import androidx.compose.runtime.key
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInParent
@@ -94,8 +87,6 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.layout.Layout
-import androidx.compose.ui.graphics.RectangleShape
-import androidx.compose.ui.draw.shadow
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.SideEffect
 import kotlinx.coroutines.delay
@@ -148,6 +139,19 @@ import works.windmill.gym.store.WriteFailure
 import works.windmill.platform.design.WindmillSpace
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material3.Surface
+import androidx.compose.foundation.shape.ZeroCornerSize
+import androidx.compose.material3.BottomAppBar
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.foundation.shape.CircleShape
 
 // What the workout draws: the open session, its walk and sets, the rack, and the catalogue and log the picker reads.
 @Stable
@@ -300,17 +304,18 @@ fun LoggerScreen(
     var nowMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
     // Zero while nothing is showing: an empty host measures no height.
     var transientHeight by remember { mutableStateOf(0.dp) }
+    // Fix set leaves the same way from its drag, scrim, Back and ✕: a busy save holds the sheet, and open entry is
+    // cancelled before the sheet may close.
+    fun fixMayClose(): Boolean = when {
+        fixBusy -> false
+        cancelFixEntry != null -> {
+            cancelFixEntry?.invoke()
+            false
+        }
+        else -> true
+    }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true,
-        confirmValueChange = { destination ->
-            when {
-                fixBusy -> false
-                destination == SheetValue.Hidden && cancelFixEntry != null -> {
-                    cancelFixEntry?.invoke()
-                    false
-                }
-                else -> true
-            }
-        })
+        confirmValueChange = { destination -> destination != SheetValue.Hidden || fixMayClose() })
     val sheetStates = rememberSaveableStateHolder()
     val direction = LocalLayoutDirection.current
 
@@ -487,10 +492,10 @@ fun LoggerScreen(
             WorkoutClocks(session, state.sets.filterNot { it.id in state.deletedSets }, nowMs)
         }
         if (movement == null) {
-            Column(Modifier.fillMaxSize().padding(horizontal = GymLayout.gutter)) {
+            Column(Modifier.fillMaxSize()) {
                 clocks?.let { WorkoutClockRow(it) }
                 Column(
-                    Modifier.fillMaxWidth().padding(top = GymLayout.contentTop),
+                    Modifier.fillMaxWidth().padding(horizontal = GymLayout.gutter).padding(top = GymLayout.contentTop),
                     verticalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
                 ) {
                     StrandedBand(state.strandedCount, state.strandedBy)
@@ -525,7 +530,7 @@ fun LoggerScreen(
         Rack(
             entry = entry,
             modifier = Modifier.weight(1f),
-            top = {
+            top = { room ->
                 val density = LocalDensity.current
                 Box(Modifier.fillMaxWidth().onSizeChanged { pageHeight = with(density) { it.height.toDp() } }) {
                     HorizontalPager(
@@ -548,32 +553,35 @@ fun LoggerScreen(
                         val slots = LiveLines.slots(today, state.session?.id.orEmpty(), state.session?.plan?.entry(pageMovement), state.lastTimeOf(pageMovement),
                             state.stalled, unit)
                         var ledgerBottom by remember(pageMovement) { mutableStateOf(0.dp) }
+                        var headHeight by remember(pageMovement) { mutableStateOf(0.dp) }
                         val pageSemantics = if (!visible) Modifier.clearAndSetSemantics {}
                             else Modifier.semantics { if (!active) hideFromAccessibility() }
-                        Column(
-                            Modifier.fillMaxWidth().then(pageSemantics).padding(horizontal = GymLayout.gutter),
-                        ) {
-                            MovementHead(
-                                name = Readout.movement(pageMovement, state.catalog),
-                                equipment = exercise?.equipment.orEmpty(),
-                                place = LiveLines.place(pageOrder, pageMovement),
-                                enabled = enabled,
-                                previous = pageOrder.getOrNull(page - 1),
-                                next = pageOrder.getOrNull(page + 1),
-                                onMove = { move(it) },
-                                onOpenSession = {
-                                    sheet = LoggerSheet.Assembly
-                                    telemetry.event("gym_action", mapOf("screen" to "workout", "action" to "open_workout", "outcome" to "ok"))
-                                },
-                            )
-                            clocks?.let { WorkoutClockRow(it) }
-                            StrandedBand(state.strandedCount, state.strandedBy)
-                            Refusals(state.refusals, state.catalog, onDismiss = { events.clearRefusals() })
+                        Column(Modifier.fillMaxWidth().then(pageSemantics)) {
+                            Column(Modifier.fillMaxWidth().onSizeChanged { headHeight = with(density) { it.height.toDp() } }
+                                .padding(horizontal = GymLayout.gutter)) {
+                                MovementHead(
+                                    name = Readout.movement(pageMovement, state.catalog),
+                                    equipment = exercise?.equipment.orEmpty(),
+                                    place = LiveLines.place(pageOrder, pageMovement),
+                                    enabled = enabled,
+                                    previous = pageOrder.getOrNull(page - 1),
+                                    next = pageOrder.getOrNull(page + 1),
+                                    onMove = { move(it) },
+                                    onOpenSession = {
+                                        sheet = LoggerSheet.Assembly
+                                        telemetry.event("gym_action", mapOf("screen" to "workout", "action" to "open_workout", "outcome" to "ok"))
+                                    },
+                                )
+                                clocks?.let { WorkoutClockRow(it) }
+                                StrandedBand(state.strandedCount, state.strandedBy)
+                                Refusals(state.refusals, state.catalog, onDismiss = { events.clearRefusals() })
+                            }
                             Ledger(
                                 slots = slots,
                                 inHand = active,
                                 enabled = enabled,
                                 onFix = { sheet = LoggerSheet.Fix(it) },
+                                room = room - headHeight,
                                 coveredBelow = (transientHeight - (pageHeight - ledgerBottom)).coerceAtLeast(0.dp),
                                 modifier = Modifier.onPlaced {
                                     ledgerBottom = with(density) { (it.positionInParent().y + it.size.height).toDp() }
@@ -686,7 +694,6 @@ fun LoggerScreen(
                     modifier = Modifier
                         .heightIn(max = pickerMaxHeight())
                         .background(colors.surfaceContainer)
-                        .padding(horizontal = GymLayout.gutter)
                         .padding(bottom = GymLayout.sheetBottom),
                     onClose = { cancelPicker() },
                 )
@@ -709,6 +716,7 @@ fun LoggerScreen(
                         },
                         onSaved = { close(); say(null) },
                         onGone = { close(); say(it) },
+                        onClose = { if (fixMayClose()) close() },
                         onBusy = { fixBusy = it },
                         onEntryCancel = { cancelFixEntry = it },
                         onDelete = {
@@ -780,7 +788,7 @@ private fun MovementHead(
             markers.forEach { marker ->
                 val size = if (marker.continuation) 4.dp else 6.dp
                 Box(Modifier.size(if (marker.current) 18.dp else size, if (marker.current) 6.dp else size)
-                    .background(if (marker.current) colors.primary else colors.onSurfaceVariant.copy(alpha = 0.45f), RoundedCornerShape(3.dp)))
+                    .background(if (marker.current) colors.primary else colors.onSurfaceVariant.copy(alpha = 0.45f), CircleShape))
             }
         }
     }
@@ -803,80 +811,81 @@ private fun StrandedBand(count: Int, by: Blocker?) {
     }
 }
 
+private val oneLineRow = 56.dp
+
+// The window holds the whole rows that fit the room above the rack, one at least and three at most, however tall large
+// text makes them; its rows scroll inside it, and the set in hand is brought into view without ever stopping mid-row.
 @Composable
 private fun Ledger(
     slots: List<LiveLines.Slot>,
     inHand: Boolean,
     enabled: Boolean,
     onFix: (String) -> Unit,
+    room: Dp,
     coveredBelow: Dp,
     modifier: Modifier = Modifier,
 ) {
     val colors = MaterialTheme.colorScheme
     val gymColors = MaterialTheme.gymColors
-    val reading = rememberScrollState()
-    var current by remember { mutableStateOf<IntRange?>(null) }
-    val landed = slots.count { it is LiveLines.Slot.Landed }
+    val reading = rememberLazyListState()
     val density = LocalDensity.current
     val measurer = rememberTextMeasurer()
-    val indexWidth = remember(slots.size, density, measurer) {
-        with(density) {
-            maxOf(64.dp, (measurer.measure("Set ${slots.size}", GymType.numeralLarge).size.width + measurer.measure("✓", WindmillType.body).size.width + 4.dp.roundToPx()).toDp())
-        }
+    val numberWidth = remember(slots.size, density, measurer) {
+        val widest = listOf(GymType.nativeRowTitle, GymType.numeralLarge).maxOf { measurer.measure(slots.size.toString(), it).size.width }
+        with(density) { maxOf(24.dp, widest.toDp()) }
     }
-    // The window holds three whole rows however tall large text makes them; its rows scroll inside it.
-    val heights = remember { mutableStateMapOf<Any, Int>() }
-    val keys = slots.map { if (it is LiveLines.Slot.Landed) it.row.id else it }
-    val window = keys.mapNotNull { heights[it] }.sortedDescending().take(3).sum()
+    val heights = remember { mutableStateMapOf<String, Int>() }
+    val keys = slots.map { it.key }
     SideEffect { heights.keys.retainAll(keys.toSet()) }
+    // A row the window has not drawn yet counts as tall as the tallest one it has; until any is drawn, a one-line row.
+    val roomPx = with(density) { room.roundToPx() }
+    val tallest = heights.values.maxOrNull() ?: with(density) { oneLineRow.roundToPx() }
+    val window = keys.map { heights[it] ?: tallest }.sortedDescending().take(3)
+        .runningReduce(Int::plus).let { sums -> sums.lastOrNull { it <= roomPx } ?: sums.firstOrNull() ?: 0 }
+    val current = slots.indexOfFirst { it is LiveLines.Slot.Current }
     val coveredPx = with(density) { coveredBelow.roundToPx() }
-    LaunchedEffect(landed, inHand, coveredPx, reading.viewportSize) {
-        if (!inHand) return@LaunchedEffect
+    LaunchedEffect(slots.size, current, inHand, coveredPx, window) {
+        if (!inHand || current < 0) return@LaunchedEffect
         withFrameNanos {}
-        val row = current ?: return@LaunchedEffect
-        val viewport = (reading.viewportSize - coveredPx).coerceAtLeast(0)
+        val shown = reading.layoutInfo
+        val end = shown.viewportEndOffset - coveredPx
+        val whole = shown.visibleItemsInfo.filter { it.offset >= 0 && it.offset + it.size <= end }
         when {
-            row.last > reading.value + viewport -> reading.animateScrollTo(row.last - viewport)
-            row.first < reading.value -> reading.animateScrollTo(row.first)
+            whole.any { it.index == current } -> Unit
+            whole.isNotEmpty() && current > whole.last().index -> reading.scrollToItem((current - whole.size + 1).coerceAtLeast(0))
+            else -> reading.scrollToItem(current)
         }
     }
-    Column(modifier.fillMaxWidth().heightIn(max = if (window > 0) with(density) { window.toDp() } else 144.dp)
-        .testTag("Set ledger").verticalScroll(reading).padding(bottom = coveredBelow)) {
-        slots.forEachIndexed { at, slot ->
-            key(keys[at]) {
-                val active = slot is LiveLines.Slot.Current
-                val index = when (slot) {
-                    is LiveLines.Slot.Landed -> slot.row.index
-                    is LiveLines.Slot.Current -> slot.index.toString()
-                    is LiveLines.Slot.Planned -> slot.index.toString()
-                }
-                val row = (slot as? LiveLines.Slot.Landed)?.row
-                // The line stands beside its index while both fit, and wraps under it when they do not.
-                FlowRow(
-                    Modifier.fillMaxWidth().heightIn(min = GymTap.minimum).onSizeChanged { heights[keys[at]] = it.height }
-                        .clip(RoundedCornerShape(12.dp))
-                        .then(if (active) Modifier.background(colors.primaryContainer)
-                            .drawBehind { drawRect(colors.primary, size = Size(3.dp.toPx(), size.height)) }
-                            .onPlaced { current = it.positionInParent().y.toInt().let { top -> top..(top + it.size.height) } }
-                        else Modifier)
-                        .then(if (row != null) Modifier.clickable(enabled = enabled, role = Role.Button, onClickLabel = "fix this set") { onFix(row.id) } else Modifier)
-                        .semantics(mergeDescendants = true) { contentDescription = slot.spoken }
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterVertically),
-                ) {
-                    Row(Modifier.width(indexWidth).align(Alignment.CenterVertically), horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        verticalAlignment = Alignment.CenterVertically) {
-                        Text("Set $index", style = if (active) WindmillType.label else GymType.numeralLarge,
-                            color = if (active) colors.primary else colors.onSurface)
-                        if (row != null) Text("✓", style = WindmillType.body, color = colors.tertiary)
+    LazyColumn(
+        state = reading,
+        modifier = modifier.fillMaxWidth()
+            .height(with(density) { window.toDp() })
+            .testTag("Set ledger"),
+        contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = coveredBelow),
+    ) {
+        items(slots, key = { it.key }) { slot ->
+            val active = slot is LiveLines.Slot.Current
+            val row = (slot as? LiveLines.Slot.Landed)?.row
+            ListItem(
+                leadingContent = {
+                    Text(slot.number, style = if (active) GymType.nativeRowTitle else GymType.numeralLarge,
+                        color = if (active) colors.primary else colors.onSurface, modifier = Modifier.widthIn(min = numberWidth))
+                },
+                headlineContent = {
+                    slot.line?.let { Text(it, style = GymType.numeralLarge, color = if (active) colors.onSurfaceVariant else colors.onSurface) }
+                },
+                trailingContent = row?.let { landed -> {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        if (landed.isOnThisDevice) Icon(painterResource(R.drawable.gym_cloud_off), contentDescription = null, tint = gymColors.inkFaint)
+                        Icon(Icons.Filled.Check, contentDescription = null, tint = colors.tertiary)
                     }
-                    slot.line?.let { Text(it, style = GymType.numeralLarge, color = if (active) colors.onSurfaceVariant else colors.onSurface,
-                        modifier = Modifier.align(Alignment.CenterVertically)) }
-                    if (row?.isOnThisDevice == true) Icon(painterResource(R.drawable.gym_cloud_off), contentDescription = null, tint = gymColors.inkFaint,
-                        modifier = Modifier.size(14.dp).align(Alignment.CenterVertically))
-                }
-            }
+                } },
+                colors = ListItemDefaults.colors(containerColor = if (active) colors.primaryContainer else Color.Transparent),
+                modifier = Modifier.fillMaxWidth().onSizeChanged { heights[slot.key] = it.height }
+                    .clip(MaterialTheme.shapes.medium)
+                    .then(if (row != null) Modifier.clickable(enabled = enabled, role = Role.Button, onClickLabel = "fix this set") { onFix(row.id) } else Modifier)
+                    .semantics(mergeDescendants = true) { contentDescription = slot.spoken },
+            )
         }
     }
 }
@@ -929,7 +938,10 @@ private class RackEntry(
     }
 }
 
-// The page above the rack and the rack's controls scroll as one; Log set stays in a band pinned below them. While everything fits, the page stands still and the rack sits on the band.
+// The page above the rack and the rack's controls scroll as one; Log set stays in a band pinned below them. While
+// everything fits, the page stands still and the rack sits on the band, and the room left above the rack is handed to
+// the page, whose ledger takes the whole rows that fit there. Only the keyboard moves things: it lifts the rack and the
+// band as one, and the page never scrolls by itself.
 @Composable
 private fun Rack(
     entry: RackEntry,
@@ -939,33 +951,34 @@ private fun Rack(
     enabled: Boolean,
     onEdit: (Boolean) -> Unit,
     onLog: () -> Unit,
-    top: @Composable () -> Unit,
+    top: @Composable (room: Dp) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = MaterialTheme.colorScheme
     val focus = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
+    val density = LocalDensity.current
     val unit = Readout.loadUnit(exercise)
     val load = entry.load
     val count = entry.count
     val page = rememberScrollState()
-    val panel = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
-    val edge = with(LocalDensity.current) { Brush.verticalGradient(listOf(colors.primary, Color.Transparent), endY = 24.dp.toPx()) }
+    var rackHeight by remember { mutableIntStateOf(0) }
     DisposableEffect(load) { onDispose { if (load.focused || count.focused) onEdit(false) } }
-    // While a number is typed, the whole rack stands on the band above the keyboard and the page above it scrolls away.
-    val typing = load.focused || count.focused
-    LaunchedEffect(typing, page.maxValue) { if (typing) page.animateScrollTo(page.maxValue) }
     Column(modifier.fillMaxWidth()) {
         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
             val viewport = constraints.maxHeight
+            val room = with(density) { (viewport - rackHeight).coerceAtLeast(0).toDp() }
             Layout(content = {
-                top()
-                Column(Modifier.fillMaxWidth().clip(panel).background(colors.surfaceContainer).border(1.dp, edge, panel)
-                    .testTag("Numeric rack").padding(horizontal = GymLayout.gutter).padding(top = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    SetNumbers(load, count, unit, stepLoad = entry::stepLoad, stepReps = entry::stepReps, commit = entry::commit,
-                        enabled = enabled && !finishing, loadRefusal = load.shownRefusal ?: failure,
-                        onFocusChange = { onEdit(load.focused || count.focused) })
+                top(room)
+                Surface(color = colors.surfaceContainer,
+                    shape = MaterialTheme.shapes.extraLarge.copy(bottomStart = ZeroCornerSize, bottomEnd = ZeroCornerSize),
+                    modifier = Modifier.fillMaxWidth().onSizeChanged { rackHeight = it.height }.testTag("Numeric rack")) {
+                    Column(Modifier.padding(horizontal = GymLayout.gutter).padding(top = 16.dp, bottom = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        SetNumbers(load, count, unit, stepLoad = entry::stepLoad, stepReps = entry::stepReps, commit = entry::commit,
+                            enabled = enabled && !finishing, loadRefusal = load.shownRefusal ?: failure,
+                            onFocusChange = { onEdit(load.focused || count.focused) })
+                    }
                 }
             }, modifier = Modifier.fillMaxWidth().testTag("Rack page").verticalScroll(page)) { measurables, limits ->
                 val rack = measurables[1].measure(limits.copy(minHeight = 0, maxHeight = Constraints.Infinity))
@@ -977,7 +990,7 @@ private fun Rack(
                 }
             }
         }
-        LogBand(lifted = page.maxValue > 0, finishing = finishing, enabled = enabled) {
+        LogBand(finishing = finishing, enabled = enabled) {
             if (entry.commit(if (count.focused) count else load, both = true) != NumberEditResult.Refused) {
                 focus.clearFocus()
                 keyboard?.hide()
@@ -988,26 +1001,19 @@ private fun Rack(
     }
 }
 
-// The store refuses a set once Finish is in flight, so the button says so before the tap. The two numerals stand directly above it, so it echoes neither. Lifted, the band lies over the scrolled page with its own edge.
+// The store refuses a set once Finish is in flight, so the button says so before the tap. The two numerals stand directly
+// above it, so it echoes neither. The band keeps BottomAppBar's 80 dp around a 64 dp Log set and draws no edge when the
+// page scrolls under it.
 @Composable
-private fun LogBand(lifted: Boolean, finishing: Boolean, enabled: Boolean, onLog: () -> Unit) {
+private fun LogBand(finishing: Boolean, enabled: Boolean, onLog: () -> Unit) {
     val colors = MaterialTheme.colorScheme
-    val shape = if (lifted) RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp) else RectangleShape
-    val edge = with(LocalDensity.current) { Brush.verticalGradient(listOf(colors.primary, Color.Transparent), endY = 24.dp.toPx()) }
-    Box(
-        Modifier.fillMaxWidth()
-            .then(if (lifted) Modifier.shadow(16.dp, shape, ambientColor = Color.Black.copy(alpha = 0.25f), spotColor = Color.Black.copy(alpha = 0.25f)) else Modifier)
-            .background(colors.surfaceContainer, shape)
-            .then(if (lifted) Modifier.border(1.dp, edge, shape) else Modifier)
-            .padding(horizontal = if (lifted) 16.dp else GymLayout.gutter)
-            .padding(top = 12.dp, bottom = 16.dp),
-    ) {
+    BottomAppBar(containerColor = colors.surfaceContainer, tonalElevation = 0.dp,
+        contentPadding = PaddingValues(horizontal = GymLayout.gutter, vertical = 8.dp), windowInsets = WindowInsets(0, 0, 0, 0)) {
         // Disabled reads as 02.16's Done at 38 %; finishing reads as the raised wait.
         Button(
             onClick = onLog,
             enabled = enabled && !finishing,
-            modifier = Modifier.fillMaxWidth().heightIn(min = GymTap.logSet),
-            shape = RoundedCornerShape(16.dp),
+            modifier = Modifier.fillMaxWidth().height(GymTap.logSet),
             colors = ButtonDefaults.buttonColors(
                 containerColor = colors.primary,
                 contentColor = colors.onPrimary,

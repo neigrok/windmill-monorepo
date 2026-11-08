@@ -125,7 +125,7 @@ class WorkoutRecoveryTests {
             compose.onNodeWithText("Push A").performClick()
             awaitRow("Set 1, 40 kg total, 8 reps")
             compose.onNode(hasContentDescription("Set 1, 40 kg total, 8 reps", substring = true)).performClick()
-            compose.onNodeWithText("Bench Press · Set 1").assertIsDisplayed()
+            compose.onNodeWithText("Bench Press · 1").assertIsDisplayed()
             compose.onNodeWithText("Set note").performTextInput("controlled tempo")
             compose.onNodeWithContentDescription("Load, kg total").performClick().performTextReplacement("1e999")
             compose.onNodeWithContentDescription("Load, kg total").performImeAction()
@@ -136,7 +136,7 @@ class WorkoutRecoveryTests {
             compose.runOnIdle { assertEquals(40.0, historical.weightKg, 0.0) }
             compose.runOnIdle { (ShadowDialog.getLatestDialog() as ComponentDialog).onBackPressedDispatcher.onBackPressed() }
             compose.onNodeWithText("controlled tempo").assertIsDisplayed()
-            compose.onNodeWithText("Bench Press · Set 1").assertIsDisplayed()
+            compose.onNodeWithText("Bench Press · 1").assertIsDisplayed()
             for (dismissal in listOf("scrim", "drag")) {
                 compose.onNodeWithContentDescription("Load, kg total").performClick().performTextReplacement("1e999")
                 if (dismissal == "scrim") {
@@ -265,7 +265,7 @@ class WorkoutRecoveryTests {
             compose.onNodeWithText("480 kg").assertIsDisplayed()
             compose.onNode(hasContentDescription("Set 1, 60 kg total, 8 reps", substring = true)).assertIsDisplayed()
             compose.onNode(hasContentDescription("Set 1, 60 kg total, 8 reps", substring = true)).performClick()
-            compose.onNodeWithText("Bench Press · Set 1").assertIsDisplayed()
+            compose.onNodeWithText("Bench Press · 1").assertIsDisplayed()
             val closed = runBlocking { room.training.session(live.id) }!!
             assertEquals(listOf(60.0 to 8), closed.sets.map { it.weightKg to it.reps })
             assertFalse(closed.session.isOpen)
@@ -318,7 +318,7 @@ class WorkoutRecoveryTests {
         compose.onNode(hasContentDescription("Close sheet")).performSemanticsAction(SemanticsActions.OnClick)
         awaitRow("Set 1, 60 kg total, 8 reps")
         compose.onNode(hasContentDescription("Set 1, 60 kg total, 8 reps", substring = true)).performClick()
-        compose.onNodeWithText("Bench Press · Set 1").assertIsDisplayed()
+        compose.onNodeWithText("Bench Press · 1").assertIsDisplayed()
         compose.onNodeWithText("Set note").performTextInput("controlled tempo")
         compose.onNodeWithText("Not rated").performClick()
         compose.onNodeWithText(works.windmill.gym.presentation.SetEffort.rpeReading(9.5)).performScrollTo().performClick()
@@ -330,7 +330,7 @@ class WorkoutRecoveryTests {
         compose.runOnIdle { (ShadowDialog.getLatestDialog() as ComponentDialog).onBackPressedDispatcher.onBackPressed() }
         compose.onNodeWithText("controlled tempo").assertIsDisplayed()
         compose.onNodeWithText(works.windmill.gym.presentation.SetEffort.rpeReading(9.5)).assertIsDisplayed()
-        compose.onNodeWithText("Bench Press · Set 1").assertIsDisplayed()
+        compose.onNodeWithText("Bench Press · 1").assertIsDisplayed()
         compose.onNodeWithText("Save fix").performClick()
         compose.runOnIdle { runBlocking {
             val set = room.training.session(localId)!!.sets.single()
@@ -450,7 +450,7 @@ class WorkoutRecoveryTests {
             awaitRow("Set 1, 70 kg total, 5 reps")
             compose.onNode(hasContentDescription("Set 1, 70 kg total, 5 reps", substring = true)).assertIsDisplayed()
             compose.onNode(hasContentDescription("Set 1, 70 kg total, 5 reps", substring = true)).performClick()
-            compose.onNodeWithText("Bench Press · Set 1").assertIsDisplayed()
+            compose.onNodeWithText("Bench Press · 1").assertIsDisplayed()
             compose.onNodeWithText("A private note").assertDoesNotExist()
         } finally {
             compose.runOnIdle { showing = false }

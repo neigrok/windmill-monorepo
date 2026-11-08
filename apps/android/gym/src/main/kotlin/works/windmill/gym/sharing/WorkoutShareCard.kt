@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -49,7 +48,6 @@ import works.windmill.gym.store.GymResult
 import works.windmill.gym.ui.GymTap
 import works.windmill.gym.ui.GymType
 import works.windmill.gym.ui.gymColors
-import works.windmill.platform.design.WindmillRadius
 import works.windmill.platform.design.WindmillSpace
 import works.windmill.platform.design.WindmillType
 import works.windmill.platform.telemetry.LocalTelemetry
@@ -152,7 +150,7 @@ fun WorkoutShareCard(sharing: WorkoutShareActions, sessionId: String) {
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(colors.surfaceContainerHighest, RoundedCornerShape(WindmillRadius.md))
+                        .background(colors.surfaceContainerHighest, MaterialTheme.shapes.medium)
                         .padding(WindmillSpace.x3),
                 )
             }
@@ -180,7 +178,6 @@ fun WorkoutShareCard(sharing: WorkoutShareActions, sessionId: String) {
                             stateDescription = WorkoutSharing.copiedAnnouncement
                         }
                     },
-                    shape = RoundedCornerShape(16.dp),
                     colors = ButtonDefaults.filledTonalButtonColors(
                         containerColor = colors.surfaceContainerHighest,
                         contentColor = colors.onSurface,
@@ -192,7 +189,6 @@ fun WorkoutShareCard(sharing: WorkoutShareActions, sessionId: String) {
                 Button(
                     onClick = ::shareLink,
                     modifier = Modifier.weight(1f).fillMaxHeight().heightIn(min = GymTap.primary),
-                    shape = RoundedCornerShape(16.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = colors.primary, contentColor = colors.onPrimary),
                     contentPadding = PaddingValues(horizontal = WindmillSpace.x6),
                 ) {
@@ -204,7 +200,6 @@ fun WorkoutShareCard(sharing: WorkoutShareActions, sessionId: String) {
                 onClick = ::getLink,
                 enabled = state != WorkoutSharing.State.Working,
                 modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp),
-                shape = RoundedCornerShape(16.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = colors.primary,
                     contentColor = colors.onPrimary,
@@ -220,7 +215,6 @@ fun WorkoutShareCard(sharing: WorkoutShareActions, sessionId: String) {
             TextButton(
                 onClick = ::revokeLink,
                 modifier = Modifier.fillMaxWidth().heightIn(min = GymTap.minimum),
-                shape = RoundedCornerShape(16.dp),
                 colors = ButtonDefaults.textButtonColors(contentColor = colors.primary),
             ) {
                 Text(revoke, style = GymType.quietAction)

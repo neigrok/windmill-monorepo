@@ -8,7 +8,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -17,8 +16,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -41,7 +38,6 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
@@ -75,6 +71,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import works.windmill.gym.R
 import works.windmill.platform.design.WindmillMotion
+import androidx.compose.foundation.shape.ZeroCornerSize
 
 enum class NumberStepperSize { Regular, Display }
 enum class NumberStepperInput { Count, SignedDecimal }
@@ -153,7 +150,7 @@ fun NumberStepper(
     var editor by remember { mutableStateOf(TextFieldValue(value, TextRange(value.length))) }
     var flash by remember { mutableStateOf(false) }
     val motion = remember { Animatable(1f) }
-    var focusedLayout by remember { mutableStateOf(NumberFieldLayout.Inline) }
+    var restingLayout by remember { mutableStateOf<NumberFieldLayout?>(null) }
     SideEffect {
         if (editor.text != value) editor = editor.copy(text = value,
             selection = TextRange(editor.selection.start.coerceAtMost(value.length), editor.selection.end.coerceAtMost(value.length)))
@@ -201,7 +198,7 @@ fun NumberStepper(
         .copy(color = if (flash) colors.primary else colors.onSurface)
     val unitStyle = if (display) GymType.stepperUnitDisplay else GymType.stepperUnitInline
     val fill = if (flash) colors.primaryContainer.compositeOver(colors.surfaceContainerHighest) else colors.surfaceContainerHighest
-    val fieldShape = RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp)
+    val fieldShape = MaterialTheme.shapes.extraSmall.copy(bottomStart = ZeroCornerSize, bottomEnd = ZeroCornerSize)
     val fieldColors = TextFieldDefaults.colors(focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent,
         disabledContainerColor = Color.Transparent, errorContainerColor = Color.Transparent,
         focusedIndicatorColor = colors.primary, unfocusedIndicatorColor = if (flash) colors.primary else colors.onSurfaceVariant,
@@ -229,8 +226,9 @@ fun NumberStepper(
                 return found
             }
             val baseWidth = numeralWidth(roleSize)
+            val besideUnit = { size: Int -> numeralWidth(size) + gap + unitGap + unitWidth <= sideWidth }
             // The Display numeral first fits beside its unit, from its role's size down; only below that does the unit go under it.
-            val inlineSize = if (display) largest(GymType.stepperDisplayBesideUnit..roleSize) { numeralWidth(it) + gap + unitGap + unitWidth <= sideWidth } else null
+            val inlineSize = if (display) largest(GymType.stepperDisplayBesideUnit..roleSize, besideUnit) else null
             val requiredLayout = when {
                 !display && (input != NumberStepperInput.SignedDecimal ||
                     baseWidth + gap + unitGap + unitWidth <= sideWidth) -> NumberFieldLayout.Inline
@@ -239,19 +237,22 @@ fun NumberStepper(
                 numeralWidth(GymType.stepperDisplayFloor) + gap <= sideWidth && unitWidth <= sideWidth -> NumberFieldLayout.UnitBelow
                 else -> NumberFieldLayout.FullWidth
             }
-            val fieldLayout = if (focused) maxOf(focusedLayout, requiredLayout) else requiredLayout
-            SideEffect { focusedLayout = if (focused) fieldLayout else NumberFieldLayout.Inline }
+            // Focus never moves the field: it keeps the layout it had at rest, so a longer typed value shrinks its numeral
+            // beside the unit, down to its floor, and the field fits itself again once focus leaves on Done or Log set.
+            val fieldLayout = if (focused) restingLayout ?: requiredLayout else requiredLayout
+            SideEffect { restingLayout = if (focused) fieldLayout else null }
             val contentWidth = if (fieldLayout == NumberFieldLayout.FullWidth)
                 (constraints.maxWidth - padding).coerceAtLeast(0) else sideWidth
+            val floor = if (display) GymType.stepperDisplayFloor else GymType.stepperInlineFloor
             val numeralSize = when {
+                fieldLayout == NumberFieldLayout.Inline -> inlineSize ?: largest(floor..roleSize, besideUnit) ?: floor
                 !display -> roleSize
-                fieldLayout == NumberFieldLayout.Inline -> inlineSize ?: GymType.stepperDisplayBesideUnit
-                else -> largest(GymType.stepperDisplayFloor..roleSize) { numeralWidth(it) + gap <= contentWidth } ?: GymType.stepperDisplayFloor
+                else -> largest(floor..roleSize) { numeralWidth(it) + gap <= contentWidth } ?: floor
             }
             val valueStyle = GymType.stepperValue(baseStyle, numeralSize)
             val numeralWidth = textMeasurer.measure(measuredValue, valueStyle).size.width
             // A numeral fitted below its role's size keeps the role's line, so stepping never changes the field's height.
-            val numeralLine = if (display && fieldLayout == NumberFieldLayout.Inline) textMeasurer.measure(measuredValue, measured).size.height else 0
+            val numeralLine = if (fieldLayout == NumberFieldLayout.Inline) textMeasurer.measure(measuredValue, measured).size.height else 0
             val animateValue = !focused && !reducedMotion && numeralWidth + gap <= contentWidth
             Layout(content = {
                 StepperButton(NumberStep.Decrease, label, enabled && decreaseEnabled) {
@@ -357,19 +358,13 @@ fun NumberStepper(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun StepperButton(step: NumberStep, label: String, enabled: Boolean, onClick: () -> Unit) {
-    val interaction = remember { MutableInteractionSource() }
-    val pressed by interaction.collectIsPressedAsState()
     val ink = MaterialTheme.colorScheme.onSurfaceVariant
-    Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
-        Box(Modifier.size(40.dp).background(if (pressed) ink.copy(alpha = 0.08f) else Color.Transparent,
-            if (pressed) RoundedCornerShape(8.dp) else CircleShape))
-        CompositionLocalProvider(LocalRippleConfiguration provides RippleConfiguration(color = ink,
-            rippleAlpha = RippleAlpha(draggedAlpha = 0.16f, focusedAlpha = 0.08f, hoveredAlpha = 0.08f, pressedAlpha = 0.08f))) {
-            IconButton(onClick, modifier = Modifier.size(48.dp), enabled = enabled, interactionSource = interaction,
-                colors = IconButtonDefaults.iconButtonColors(contentColor = MaterialTheme.colorScheme.onSurface)) {
-                Icon(painterResource(if (step == NumberStep.Decrease) R.drawable.gym_native_remove else R.drawable.gym_native_add),
-                    "${if (step == NumberStep.Decrease) "Decrease" else "Increase"} $label", Modifier.size(24.dp))
-            }
+    CompositionLocalProvider(LocalRippleConfiguration provides RippleConfiguration(color = ink,
+        rippleAlpha = RippleAlpha(draggedAlpha = 0.16f, focusedAlpha = 0.08f, hoveredAlpha = 0.08f, pressedAlpha = 0.08f))) {
+        IconButton(onClick, modifier = Modifier.size(48.dp), enabled = enabled,
+            colors = IconButtonDefaults.iconButtonColors(contentColor = MaterialTheme.colorScheme.onSurface)) {
+            Icon(painterResource(if (step == NumberStep.Decrease) R.drawable.gym_native_remove else R.drawable.gym_native_add),
+                "${if (step == NumberStep.Decrease) "Decrease" else "Increase"} $label", Modifier.size(24.dp))
         }
     }
 }

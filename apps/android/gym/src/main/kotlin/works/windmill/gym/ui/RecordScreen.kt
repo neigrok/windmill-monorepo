@@ -9,14 +9,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Edit
@@ -187,13 +184,7 @@ fun RecordScreen(state: RecordState, events: RecordEvents, exerciseId: String, b
     }
     if (renaming && read != null) {
         WindmillSheet(onDismissRequest = { close() }, onBack = { close() }, sheetState = sheetState,
-            containerColor = colors.surfaceContainer, scrimColor = colors.scrim,
-            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-            dragHandle = {
-                Box(Modifier.fillMaxWidth().height(24.dp), contentAlignment = Alignment.Center) {
-                    Box(Modifier.width(32.dp).height(4.dp).background(colors.onSurfaceVariant, RoundedCornerShape(2.dp)))
-                }
-            }) {
+            containerColor = colors.surfaceContainer, scrimColor = colors.scrim) {
             BackHandler(saving || closing) {}
             val base = read.record.exercise.copy(name = openedName, equipment = openedEquipment, loadCount = openedCount)
             EditMovementSheet(base, draft, equipment, loadCount, refused,
@@ -223,7 +214,7 @@ fun RecordScreen(state: RecordState, events: RecordEvents, exerciseId: String, b
                             } finally { saving = false }
                         }
                     }
-                }, saving = saving || closing)
+                }, onClose = { close() }, saving = saving || closing)
         }
     }
 }
@@ -248,7 +239,7 @@ private fun RecordBody(page: Record.Page, equipment: String, progress: MovementP
     if (page.records.isNotEmpty()) {
         Text("Earlier records", style = GymType.heading, color = colors.onSurface)
         page.records.forEach { mark ->
-            Column(Modifier.fillMaxWidth().background(colors.surfaceContainer, RoundedCornerShape(16.dp))
+            Column(Modifier.fillMaxWidth().background(colors.surfaceContainer, MaterialTheme.shapes.large)
                 .padding(horizontal = 16.dp, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text("${mark.effort} · ${mark.estimate}", style = WindmillType.rowLabel, color = colors.onSurface)
                 Text(mark.day, style = WindmillType.detail, color = colors.onSurfaceVariant)
@@ -270,7 +261,7 @@ private fun RecordBody(page: Record.Page, equipment: String, progress: MovementP
 private fun RecordMetric(tile: Record.Tile, modifier: Modifier) {
     val colors = MaterialTheme.colorScheme
     val gymColors = MaterialTheme.gymColors
-    Column(modifier.background(colors.surfaceContainer, RoundedCornerShape(20.dp)).padding(horizontal = 16.dp, vertical = 14.dp),
+    Column(modifier.background(colors.surfaceContainer, MaterialTheme.shapes.large).padding(horizontal = 16.dp, vertical = 14.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Text(tile.label, style = WindmillType.detail, color = colors.onSurfaceVariant)
         Text(tile.value, style = GymType.recordTile, color = if (tile.loud) gymColors.prInk else colors.onSurface)
@@ -293,7 +284,7 @@ internal fun StrengthChart(progress: MovementProgress, nowMs: Long, zone: ZoneId
     var inspected by remember(series, focusSessionId) { mutableStateOf(initial) }
     val shown = inspected ?: series.ordered.lastOrNull()
     val point = window.estimates.firstOrNull { it.id == shown?.id }
-    Column(Modifier.fillMaxWidth().background(colors.surfaceContainer, RoundedCornerShape(20.dp)).padding(horizontal = 16.dp, vertical = 14.dp),
+    Column(Modifier.fillMaxWidth().background(colors.surfaceContainer, MaterialTheme.shapes.large).padding(horizontal = 16.dp, vertical = 14.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Estimated strength", style = GymType.heading, color = colors.onSurface)
         SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {

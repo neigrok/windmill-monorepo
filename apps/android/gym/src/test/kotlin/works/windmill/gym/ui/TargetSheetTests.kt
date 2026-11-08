@@ -71,7 +71,6 @@ class TargetSheetTests {
                 onSave = {},
                 onClose = {},
                 say = {},
-                backTo = "Routines",
             )
         }
         return { draft }

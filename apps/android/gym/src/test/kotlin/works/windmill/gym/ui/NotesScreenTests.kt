@@ -57,6 +57,7 @@ import works.windmill.platform.design.WindmillSpace
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.sync.core.Json
 import works.windmill.sync.modelserver.ModelServer
+import androidx.compose.ui.test.click
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
@@ -118,7 +119,7 @@ class NotesScreenTests {
             compose.onNodeWithText(Notes.honesty).assertIsDisplayed()
             compose.onNodeWithText("what you write for Coach").assertDoesNotExist()
             compose.onNodeWithText("What I am training for").performClick()
-            compose.onNodeWithText(Notes.add).assertIsDisplayed()
+            compose.onNodeWithContentDescription(Notes.add).assertIsDisplayed()
 
             compose.runOnIdle {
                 assertEquals("the editor receives a title hint, and nothing was written",
@@ -154,7 +155,7 @@ class NotesScreenTests {
             compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText(Notes.full))
             compose.onNodeWithText("Top note wins.").assertDoesNotExist()
             compose.onNodeWithText("10 of 10 notes. Delete one to add another.").assertIsDisplayed()
-            compose.onNodeWithText(Notes.add).assertDoesNotExist()
+            compose.onNodeWithContentDescription(Notes.add).assertDoesNotExist()
         } } finally { scope.cancel() }
     }
 
@@ -178,7 +179,7 @@ class NotesScreenTests {
 
             compose.onNodeWithText("note 3").assertDoesNotExist()
             compose.onNodeWithText(Notes.full).assertDoesNotExist()
-            compose.onNodeWithText(Notes.add).assertIsDisplayed()
+            compose.onNodeWithContentDescription(Notes.add).assertIsDisplayed()
             compose.runOnIdle {
                 assertEquals((0..9).filter { it != 3 }.map { "note_00$it" }, room.training.notes().map { it.id })
                 assertEquals(listOf("ready"), room.outbox().map { it.member("state").str() })
@@ -206,7 +207,7 @@ class NotesScreenTests {
             runBlocking { deletingNote.await() }
 
             compose.onNodeWithText("note 3").assertDoesNotExist()
-            compose.onNodeWithText(Notes.add).assertIsDisplayed()
+            compose.onNodeWithContentDescription(Notes.add).assertIsDisplayed()
             compose.onNodeWithText(Notes.full).assertDoesNotExist()
             compose.runOnIdle { room.sync(server) }
             assertEquals("the log holds nine", (0..9).filter { it != 3 }.map { "note_00$it" }, onTheLog(room, server))
@@ -223,7 +224,7 @@ class NotesScreenTests {
             var done = 0
             compose.setContent {
                 NoteEditorScreen(
-                    note = note, seedTitle = "", events = NotesBinding(store), backTo = Notes.title,
+                    note = note, seedTitle = "", events = NotesBinding(store),
                     onBack = {}, onDone = { done += 1 },
                 )
             }
@@ -297,6 +298,7 @@ class NotesScreenTests {
             compose.onAllNodesWithText(Notes.honesty).assertCountEquals(1)
             compose.onNodeWithText("what you write for Coach").assertDoesNotExist()
             compose.onNodeWithText(Notes.signedOut).assertIsDisplayed()
+            compose.onNodeWithContentDescription(Notes.add).assertDoesNotExist()
             compose.onNodeWithText("Sign in").performClick()
             compose.runOnIdle {
                 assertEquals(listOf("signIn"), doors)
@@ -306,6 +308,27 @@ class NotesScreenTests {
     }
 
     private fun threeNotes(room: EngineRoomFixture) = signedIn(room, *numbered(3))
+
+    // The handle belongs to reordering: a tap on it never opens the note it stands in.
+    @Test
+    fun aTapOnTheHandleDoesNotOpenTheNote() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
+            threeNotes(room)
+            val opened = mutableListOf<String>()
+            compose.setContent {
+                remember(room.store) { NotesBinding(room.store) }.let { notes -> NotesScreen(
+                    state = notes, events = notes, isSignedIn = true, backTo = "Coach", onBack = {},
+                    onEdit = { note, _ -> opened += note?.id.orEmpty() }, onSignIn = {}, say = {},
+                ) }
+            }
+            compose.onNodeWithText("note 0").assertIsDisplayed()
+            compose.onNodeWithContentDescription("Reorder note 0").performTouchInput { click(center) }
+            compose.runOnIdle { assertEquals(emptyList<String>(), opened) }
+            compose.onNodeWithText("note 0").performClick()
+            compose.runOnIdle { assertEquals(listOf("note_000"), opened) }
+        } } finally { scope.cancel() }
+    }
 
     // Top of the screen first: the order the rows are drawn in, read off their positions.
     private fun drawnOrder(vararg titles: String): List<String> = titles
@@ -616,7 +639,7 @@ class NotesScreenTests {
             signedIn(room, "note_001" to NoteWrite("Private title", "Private body"))
             var done = 0
             compose.setContent { GymMaterial { NoteEditorScreen(NotesBinding(room.store),
-                Note("note_001", title = "Private title", body = "Private body"), "", "Notes", {}, { done++ }) } }
+                Note("note_001", title = "Private title", body = "Private body"), "", {}, { done++ }) } }
             compose.onNodeWithText(Notes.save).assertIsNotEnabled()
             compose.runOnIdle { telemetry.events.clear(); room.engine.failNextCommit() }
             compose.onNodeWithText(Notes.delete).performScrollTo().performClick()

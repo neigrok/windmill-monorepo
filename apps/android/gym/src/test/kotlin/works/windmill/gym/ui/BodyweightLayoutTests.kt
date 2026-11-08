@@ -51,7 +51,7 @@ class BodyweightLayoutTests {
                 GymMaterial {
                     Box(Modifier.height(340.dp)) {
                         WeighInSheet(WeighIn(day.toString(), 82.4, 1_000), day, System.currentTimeMillis(), false, null,
-                            onSave = { date, weight -> saved += date to weight }, onDelete = { deletes++ })
+                            onSave = { date, weight -> saved += date to weight }, onDelete = { deletes++ }, onClose = {})
                     }
                 }
             }

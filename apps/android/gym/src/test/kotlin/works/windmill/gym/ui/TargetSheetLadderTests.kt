@@ -74,7 +74,6 @@ class TargetSheetLadderTests {
                 onSave = {},
                 onClose = {},
                 say = {},
-                backTo = "Routines",
             )
         }
         compose.onNodeWithText(movement).performClick()

@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.ripple.RippleAlpha
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -160,8 +159,8 @@ private fun LadderRow(weightKg: Double, onDial: (NumberStep, Boolean) -> Unit, e
                             val step = if (index < 2) NumberStep.Decrease else NumberStep.Increase
                             FilledTonalButton(
                                 onClick = { onDial(step, index == 0 || index == 3) },
-                                enabled = enabled && (step == NumberStep.Increase || decreaseEnabled), modifier = Modifier.weight(1f).heightIn(min = 56.dp),
-                                contentPadding = PaddingValues(vertical = 10.dp), shape = RoundedCornerShape(16.dp),
+                                enabled = enabled && (step == NumberStep.Increase || decreaseEnabled), modifier = Modifier.weight(1f).heightIn(min = GymTap.minimum),
+                                contentPadding = PaddingValues(vertical = 10.dp),
                                 colors = ButtonDefaults.filledTonalButtonColors(containerColor = colors.surfaceContainerHighest, contentColor = colors.onSurface),
                             ) { Text(label, style = style, maxLines = 1) }
                         }

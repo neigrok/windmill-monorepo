@@ -66,6 +66,7 @@ import works.windmill.platform.telemetry.Telemetry
 import works.windmill.sync.engine.Reply
 import works.windmill.sync.engine.nextPush
 import works.windmill.sync.modelserver.ModelServer
+import androidx.compose.ui.test.performScrollToIndex
 
 // The quiet ledger logger: the words the old screen drew are now said by the controls that own them,
 // and each pin here reads a control by its name. Signed in and synced with the account's log, so a
@@ -510,15 +511,24 @@ class LoggerScreenTests {
         return room
     }
 
-    // The ledger's rows top to bottom, each as what it says to TalkBack and whether it is a door.
-    private fun ledger(): List<Pair<String, Boolean>> = compose
-        .onAllNodes(SemanticsMatcher("a ledger row") { node ->
-            node.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty()
-                .any { Regex("^Set \\d+, .*").matches(it) }
-        })
-        .fetchSemanticsNodes()
-        .sortedBy { it.positionInRoot.y }
-        .map { it.config[SemanticsProperties.ContentDescription].first() to (SemanticsActions.OnClick in it.config) }
+    // The ledger's rows top to bottom, each as what it says to TalkBack and whether it is a door. The ledger is a lazy
+    // list whose window holds the rows that fit, so it is read by scrolling it through every row.
+    private fun ledger(): List<Pair<String, Boolean>> {
+        val list = compose.onNodeWithTag("Set ledger")
+        val rows = sortedMapOf<Int, Pair<String, Boolean>>()
+        var at = 0
+        while (runCatching { list.performScrollToIndex(at) }.isSuccess) {
+            compose.onAllNodes(SemanticsMatcher("a ledger row") { node ->
+                node.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty()
+                    .any { Regex("^Set \\d+, .*").matches(it) }
+            }).fetchSemanticsNodes().forEach { node ->
+                val said = node.config[SemanticsProperties.ContentDescription].first()
+                rows[said.removePrefix("Set ").substringBefore(",").toInt()] = said to (SemanticsActions.OnClick in node.config)
+            }
+            at++
+        }
+        return rows.values.toList()
+    }
 
     private fun place() = compose.onNode(hasContentDescription("Exercise 1 of 3"))
 
@@ -536,11 +546,11 @@ class LoggerScreenTests {
                 compose.waitForIdle()
             }
 
-            compose.onAllNodes(hasContentDescription("logged", substring = true)).assertCountEquals(3)
             assertEquals("the head did not move", head, place().assertIsDisplayed().getBoundsInRoot())
             assertEquals("the rack did not move", rack, compose.onNodeWithText("Log set").getBoundsInRoot())
             compose.onNodeWithText("Add movement").assertDoesNotExist()
-            assertTrue("compact ledger viewport", compose.onNodeWithTag("Set ledger").getBoundsInRoot().height <= 144.dp)
+            assertTrue("three whole rows at most", compose.onNodeWithTag("Set ledger").getBoundsInRoot().height <= 168.dp)
+            assertEquals(3, ledger().count { (said, _) -> "logged" in said })
         } } finally { scope.cancel() }
     }
 
@@ -695,7 +705,8 @@ class LoggerScreenTests {
             compose.onNode(hasContentDescription("Set 3, current, 90 kg total, 3 reps"))
                 .assert(hasText("90 kg total × 3"))
                 .assert(SemanticsMatcher.keyNotDefined(SemanticsProperties.Role))
-            compose.onAllNodes(hasText("Set 3")).assertCountEquals(1)
+            compose.onNode(hasContentDescription("Set 3, current", substring = true)).assert(hasText("3"))
+            compose.onAllNodes(hasText("Set 3")).assertCountEquals(0)
 
             compose.onNodeWithText("Log set").performClick()
             compose.waitForIdle()
@@ -751,7 +762,7 @@ class LoggerScreenTests {
             val row = compose.onNode(hasContentDescription("Set 1, logged, 60 kg total, 5 reps"))
             row.assertIsDisplayed()
             row.assertHasClickAction()
-            row.assert(hasText("60 kg total × 5") and hasText("✓"))
+            row.assert(hasText("1") and hasText("60 kg total × 5"))
             assertTrue("the row is a whole touch target", row.getBoundsInRoot().height >= GymTap.minimum)
             row.performClick()
             compose.onNodeWithText("Fix set").assertIsDisplayed()
@@ -768,7 +779,7 @@ class LoggerScreenTests {
             runBlocking { assertNull(room.store.deletions.delete(Deletion.Set(room.store.workout.session!!.id, first))) }
 
             compose.onNode(hasContentDescription("Set 1, logged, 65 kg total, 5 reps")).performClick()
-            compose.onNodeWithText("Bench Press · Set 1").assertIsDisplayed()
+            compose.onNodeWithText("Bench Press · 1").assertIsDisplayed()
         } } finally { scope.cancel() }
     }
 
@@ -812,7 +823,8 @@ class LoggerScreenTests {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         try { logger(scope).use {
             assertEquals(listOf("Set 1, current" to false), ledger())
-            compose.onAllNodes(hasText("Set 1")).assertCountEquals(1)
+            compose.onNode(hasContentDescription("Set 1, current")).assert(hasText("1"))
+            compose.onAllNodes(hasText("Set 1")).assertCountEquals(0)
             compose.onAllNodes(hasText("SET 1")).assertCountEquals(0)
             compose.onAllNodes(hasText("no target")).assertCountEquals(0)
             compose.onAllNodes(hasText("target ", substring = true)).assertCountEquals(0)

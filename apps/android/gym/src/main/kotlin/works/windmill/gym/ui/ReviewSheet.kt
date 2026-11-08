@@ -20,7 +20,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -76,7 +75,6 @@ import works.windmill.gym.store.Seat
 import works.windmill.gym.store.TrainingSeat
 import works.windmill.gym.store.TrainingStore
 import works.windmill.gym.store.WorkoutProposalsStore
-import works.windmill.platform.design.WindmillRadius
 import works.windmill.platform.design.WindmillSpace
 
 // What the review draws.
@@ -349,7 +347,7 @@ private fun Body(
             color = colors.onSurfaceVariant,
             modifier = Modifier
                 .fillMaxWidth()
-                .background(colors.surfaceContainerHighest, RoundedCornerShape(WindmillRadius.md))
+                .background(colors.surfaceContainerHighest, MaterialTheme.shapes.medium)
                 .padding(GymLayout.cardInset),
         )
     }
@@ -527,8 +525,7 @@ private fun Foot(
             Text(Proposal.signInToReview, style = type.rowLine, color = colors.onSurfaceVariant)
             Button(
                 onClick = onSignIn,
-                modifier = Modifier.fillMaxWidth().heightIn(min = GymTap.secondary),
-                shape = RoundedCornerShape(WindmillRadius.lg),
+                modifier = Modifier.fillMaxWidth().heightIn(min = GymTap.primary),
                 colors = ButtonDefaults.buttonColors(containerColor = colors.primary, contentColor = colors.onPrimary),
             ) {
                 Text("Sign in", style = type.action)
@@ -554,11 +551,10 @@ private fun Foot(
             enabled = seen && !deciding,
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = GymTap.secondary)
+                .heightIn(min = GymTap.primary)
                 // TalkBack announced `disabled` and nothing else; the reason belongs on the control
                 // that is refusing, not only in the row beneath it.
                 .semantics { if (!seen) stateDescription = Proposal.applyHint },
-            shape = RoundedCornerShape(WindmillRadius.lg),
             colors = ButtonDefaults.buttonColors(
                 containerColor = colors.primary,
                 contentColor = colors.onPrimary,
@@ -591,7 +587,6 @@ private fun Foot(
             onClick = { turningDown = true },
             enabled = !deciding,
             modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
-            shape = RoundedCornerShape(WindmillRadius.lg),
             colors = ButtonDefaults.textButtonColors(contentColor = colors.onSurface),
         ) {
             Text(Proposal.turnDownVerb, style = type.action)

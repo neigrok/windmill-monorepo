@@ -92,7 +92,7 @@ class CreateMovementTargetTests {
                 List(3) { SetTarget(8, 75.0) }))
             val before = room.engine.snapshot()
             val builder = RoutineBuilderBinding(room.store)
-            compose.setContent { GymMaterial { RoutineBuilder(draft, builder, builder, false, { draft = it }, {}, {}, {}, "Routines") } }
+            compose.setContent { GymMaterial { RoutineBuilder(draft, builder, builder, false, { draft = it }, {}, {}, {}) } }
             compose.onNodeWithText("Bench Press").performClick()
             compose.onNodeWithText("Vary by set").performScrollTo().performClick()
             val field = compose.onNodeWithContentDescription("Set 1 load")
@@ -139,7 +139,7 @@ class CreateMovementTargetTests {
             val restorer = StateRestorationTester(compose)
             val builder = RoutineBuilderBinding(room.store)
             restorer.setContent { GymMaterial {
-                RoutineBuilder(draft, builder, builder, false, { draft = it; changes += it }, {}, {}, {}, "Routines")
+                RoutineBuilder(draft, builder, builder, false, { draft = it; changes += it }, {}, {}, {})
             } }
             compose.onNodeWithText("Add movement").performClick()
             compose.onNode(hasText("Create movement") and hasClickAction()).performClick()
@@ -187,7 +187,7 @@ class CreateMovementTargetTests {
             val before = room.engine.snapshot()
             val builder = RoutineBuilderBinding(room.store)
             compose.setContent { GymMaterial {
-                RoutineBuilder(draft, builder, builder, false, { draft = it; changes += it }, {}, {}, {}, "Routines")
+                RoutineBuilder(draft, builder, builder, false, { draft = it; changes += it }, {}, {}, {})
             } }
             compose.onNodeWithText("Add movement").performClick()
             compose.onNode(hasText("Create movement") and hasClickAction()).performClick()

@@ -1,16 +1,10 @@
 package works.windmill.gym
 
 import androidx.compose.material3.MaterialTheme
-import works.windmill.gym.ui.gymColors
 import android.content.Context
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.SheetState
@@ -32,10 +26,7 @@ import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import works.windmill.gym.presentation.Ids
@@ -141,7 +132,6 @@ internal class ReviewFlow(
                 sheetState = opening,
                 containerColor = colors.surfaceContainer,
                 scrimColor = colors.scrim,
-                dragHandle = if (workout) { { SheetHandle() } } else { { BottomSheetDefaults.DragHandle() } },
             ) {
                 BackHandler(enabled = busy) {}
                 val proposalReview: ProposalReview = remember(store, workout) { if (workout) WorkoutReviewBinding(store) else ReviewBinding(store) }
@@ -188,14 +178,6 @@ internal fun rememberReviewFlow(): ReviewFlow {
     return remember(scope) { ReviewFlow(scope, reviewing, busy, lookedAt, receipts) }
 }
 
-// A sheet's drag handle in its 24 dp strip.
-@Composable
-private fun SheetHandle() {
-    Box(Modifier.fillMaxWidth().height(24.dp), contentAlignment = Alignment.Center) {
-        Box(Modifier.size(32.dp, 4.dp).background(MaterialTheme.colorScheme.onSurfaceVariant, RoundedCornerShape(2.dp)))
-    }
-}
-
 // Coach over the open workout (08.54): the conversation raised over the rack, which it leaves as it was. A door to the rest of the room closes it first; a review opens over it.
 @OptIn(ExperimentalMaterial3Api::class)
 @Stable
@@ -232,8 +214,6 @@ internal class CoachSheetFlow(
             sheetState = opening,
             containerColor = colors.surface,
             scrimColor = colors.scrim,
-            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-            dragHandle = { SheetHandle() },
         ) { content() }
     }
 }
@@ -402,7 +382,6 @@ internal class FinishFlow(
     @Composable
     fun Sheet(store: TrainingStore, account: Account, askAbsent: Boolean, onLeftEmpty: () -> Unit, onDiscard: (SessionDetail) -> Unit) {
         val colors = MaterialTheme.colorScheme
-        val gymColors = MaterialTheme.gymColors
         val shell = LocalShellActions.current
         val currentAccount by rememberUpdatedState(account)
         finished?.let { original ->
@@ -421,11 +400,7 @@ internal class FinishFlow(
                 contentWindowInsets = { WindowInsets(0, 0, 0, 0) },
                 containerColor = colors.surfaceContainer,
                 scrimColor = colors.scrim,
-                dragHandle = if (ended.sets.isEmpty()) null else { {
-                    Box(Modifier.fillMaxWidth().height(24.dp), contentAlignment = Alignment.Center) {
-                        Box(Modifier.size(32.dp, 4.dp).background(gymColors.inkFaint, RoundedCornerShape(2.dp)))
-                    }
-                } },
+                dragHandle = if (ended.sets.isEmpty()) null else { { BottomSheetDefaults.DragHandle() } },
             ) {
                 states.SaveableStateProvider(original.session.id) {
                     FinishScreen(

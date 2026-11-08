@@ -100,7 +100,7 @@
     ],
     "after": [
       {
-        "tap": "Back to Push A"
+        "tap": "Close"
       },
       {
         "wait": "Start workout"

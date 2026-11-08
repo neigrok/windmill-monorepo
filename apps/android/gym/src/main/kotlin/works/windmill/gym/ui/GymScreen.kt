@@ -9,11 +9,9 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -38,8 +36,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
-import works.windmill.gym.R
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -52,6 +48,12 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import works.windmill.platform.LocalShellActions
+import androidx.compose.foundation.layout.Column
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.ui.text.rememberTextMeasurer
 
 // A screen that reads the account again when the app comes back from elsewhere: ON_RESUME after an
 // ON_STOP, which is the browser a door opened closing over a tool just connected. A dialog or a
@@ -162,13 +164,51 @@ fun TopAction(label: String, enabled: Boolean = true, onClick: () -> Unit) {
     }
 }
 
-// The trailing mark on a row that opens something. It says nothing TalkBack needs — the row it sits
-// in carries the label — so it has no description of its own.
+// A sheet's head on Material's top app bar: Close dismisses the sheet as a swipe down does and the title names the sheet,
+// over an optional one-line subtitle. The sheet's commit stays a full-width button at its foot, in thumb reach. The bar
+// is as tall as its lines need and never less than Material's 64 dp, so large text neither clips the title nor takes
+// room the body needs above the keyboard.
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun Chevron(modifier: Modifier = Modifier) {
+fun GymSheetBar(
+    title: String,
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier,
+    closeEnabled: Boolean = true,
+    subtitle: String? = null,
+    subtitleSpoken: String? = null,
+    subtitleIcon: (@Composable () -> Unit)? = null,
+) {
     val colors = MaterialTheme.colorScheme
-    Icon(painterResource(R.drawable.gym_chevron), contentDescription = null,
-        tint = colors.onSurfaceVariant, modifier = modifier.width(10.1771.dp).height(15.5052.dp))
+    val density = LocalDensity.current
+    val measurer = rememberTextMeasurer()
+    val lines = measurer.measure(title, GymType.topBarTitle, maxLines = 1).size.height +
+        (subtitle?.let { measurer.measure(it, GymType.nativeSupporting, maxLines = 1).size.height } ?: 0)
+    TopAppBar(
+        title = {
+            Column {
+                Text(title, style = GymType.topBarTitle, color = colors.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.semantics { heading() })
+                subtitle?.let {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.semantics(mergeDescendants = true) { subtitleSpoken?.let { contentDescription = it } }) {
+                        subtitleIcon?.invoke()
+                        Text(it, style = GymType.nativeSupporting, color = colors.onSurfaceVariant, maxLines = 1,
+                            overflow = TextOverflow.Ellipsis)
+                    }
+                }
+            }
+        },
+        navigationIcon = {
+            IconButton(onClick = onClose, enabled = closeEnabled) {
+                Icon(Icons.Filled.Close, contentDescription = "Close", tint = colors.onSurface)
+            }
+        },
+        expandedHeight = maxOf(64.dp, with(density) { lines.toDp() } + 16.dp),
+        windowInsets = WindowInsets(0, 0, 0, 0),
+        colors = TopAppBarDefaults.topAppBarColors(containerColor = colors.surfaceContainer, scrolledContainerColor = colors.surfaceContainer),
+        modifier = modifier,
+    )
 }
 
 @Composable

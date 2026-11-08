@@ -26,7 +26,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -81,7 +80,6 @@ import works.windmill.gym.presentation.Review
 import works.windmill.gym.presentation.Session
 import works.windmill.gym.domain.sync.SessionReview
 import works.windmill.gym.presentation.TrainingSet
-import works.windmill.platform.design.WindmillRadius
 import works.windmill.platform.design.WindmillSpace
 
 // Receipt totals come from committed sets; optional review adds the personal record.
@@ -213,8 +211,8 @@ private fun RecordLine(sentence: String) {
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
         modifier = Modifier
             .fillMaxWidth()
-            .background(gymColors.prSoft, RoundedCornerShape(WindmillRadius.lg))
-            .border(1.dp, gymColors.prInk.copy(alpha = 0.35f), RoundedCornerShape(WindmillRadius.lg))
+            .background(gymColors.prSoft, MaterialTheme.shapes.large)
+            .border(1.dp, gymColors.prInk.copy(alpha = 0.35f), MaterialTheme.shapes.large)
             .padding(horizontal = 16.dp, vertical = 14.dp),
     ) {
         Text("Personal record", style = GymType.numeralDetail, color = gymColors.prInk)
@@ -304,7 +302,7 @@ fun FinishScreen(
                         val volume = Finish.volume(summary.tonnageKg)
                         ReceiptFact(volume, "Volume", modifier, "kg".takeUnless { volume == "—" })
                     }
-                    val tiles = Modifier.fillMaxWidth().background(colors.surfaceContainerHighest, RoundedCornerShape(20.dp))
+                    val tiles = Modifier.fillMaxWidth().background(colors.surfaceContainerHighest, MaterialTheme.shapes.large)
                     if (largeText || maxWidth < 270.dp) {
                         FlowRow(tiles.padding(vertical = 16.dp), maxItemsInEachRow = 2,
                             verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -379,7 +377,6 @@ private fun ReceiptFact(value: String, label: String, modifier: Modifier, unit: 
 private fun ReceiptAction(label: String, onClick: () -> Unit, tonal: Boolean = false, crown: Boolean = false) {
     val colors = MaterialTheme.colorScheme
     val modifier = Modifier.fillMaxWidth().heightIn(min = GymTap.primary)
-    val shape = RoundedCornerShape(16.dp)
     val padding = PaddingValues(horizontal = 24.dp, vertical = 12.dp)
     val content: @Composable RowScope.() -> Unit = {
         Row(Modifier.wrapContentWidth(unbounded = true), verticalAlignment = Alignment.CenterVertically) {
@@ -391,9 +388,9 @@ private fun ReceiptAction(label: String, onClick: () -> Unit, tonal: Boolean = f
             Text(label, style = GymType.actionLabel)
         }
     }
-    if (tonal) FilledTonalButton(onClick, modifier, shape = shape, contentPadding = padding, content = content,
+    if (tonal) FilledTonalButton(onClick, modifier, contentPadding = padding, content = content,
         colors = ButtonDefaults.filledTonalButtonColors(containerColor = colors.surfaceContainerHighest, contentColor = colors.onSurface))
-    else Button(onClick, modifier, shape = shape, contentPadding = padding, content = content,
+    else Button(onClick, modifier, contentPadding = padding, content = content,
         colors = ButtonDefaults.buttonColors(containerColor = colors.primary, contentColor = colors.onPrimary))
 }
 
