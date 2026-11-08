@@ -272,6 +272,7 @@ import UIKit
     #expect(RoutineLines.proposal(coach, createdAt: nil, dates: dates) == "From Coach")
     #expect([agent, unnamed, anonymous, other].map { RoutineLines.proposal($0, createdAt: nil, dates: dates) }
             == ["From Claude", "From My laptop", "From a connected tool", "From a connected tool"])
+    #expect([coach, agent, unnamed, anonymous, other].map(\.sourceSymbol) == ["bubble.left.and.bubble.right", "link", "link", "link", "link"])
     #expect([Int64(2), 1, 0].map { RoutineLines.proposal(coach, createdAt: Instant(ms: moment.now.ms - $0 * 86_400_000), dates: dates) }
             == ["From Coach · Sep 24", "From Coach · Yesterday", "From Coach · 12:00\u{202F}PM"])
     #expect(RoutineLines.proposal(coach, createdAt: moment.now, dates: nil) == "From Coach")

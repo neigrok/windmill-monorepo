@@ -386,13 +386,11 @@ and Android disagree.
   - Drafts have Apply and Reject on one card on iOS (Reject drops them on the phone and leaves *Rejected · N
     routines*); the web and Android's retained onboarding answers still offer only Save. The card's loads read *60 kg* and *22 kg each*, the
     proposals' words, where 01.7 draws *60 kg total* and *22 kg, one dumbbell*.
-  - Block order: 08.27 lists a rename, moves, changes, removals, then additions, as the shared
-    `ProposalDiff` vectors order them; 08.2 and 08.3 draw Changed, Added, Removed, Changed, Moved. iOS
-    follows the vectors, so 08.2's first two blocks read Moved and Changed; 08.2/08.3 want redrawing
-    in that order.
-  - Field lines: 08.21 and 08.27 draw only the fields that change (*Push-up · Reps*, *Lateral Raise · Reps*),
-    where 08.2 and 08.3 draw a set's unchanged fields plain, as iOS and the shared vectors do. 08.21
-    also draws three blocks with no *Show all*, where the card's rule shows two, then *Show all 3 changes*.
+  - Block order: a rename, moves, changes, removals, then additions, as the shared `ProposalDiff`
+    vectors order them; iOS follows the vectors, and 08.2P and 08.27P draw that order.
+  - Field lines: 08.21 draws only the fields that change (*Push-up · Reps*), where 08.2P and 08.27P draw a
+    set's unchanged fields plain, as iOS and the shared vectors do. 08.21 also draws three blocks with no
+    disclosure, where the card's rule shows two, then *1 more change* (08.2P).
   - The card's field diff (per field old → new, per-set lines once sets differ, *Max*, *Last time*,
     *None*, *No change: N movements*), the *Renamed* block for `proposedName`, and swap as removed +
     added are built on iOS from the domain's `ProposalDiff`, whose vectors Android's and the web's
@@ -1313,6 +1311,20 @@ question; the rest are below. iOS paths are under `apps/ios/App/Sources/Gym/`, A
   added or retargeted line sets a barbell or two-dumbbell target under 0 is refused by every domain
   (`routine.loadFloor`). iOS, Android and web show the routine editor's line, *Load, 0 or more.*, where
   each shows an Apply refusal. No board draws this refusal; a designer confirms the reused line.
+- **12t · Proposal card and sheet: iOS has the stock pass, Android the earlier layout (owner, 2026-11-08).**
+  On iOS a proposal — Coach's or a connected tool's — is drawn by 08.2P, 08.12P–08.14P, 08.27P and 08.56P
+  and, from its Routines row, by 02L.1P, 02L.9P and 02L.10P (🚀 In production 2026-11-08, note `2023:21188`): a
+  `GroupBox` card with kind symbols, `LabeledContent` fields, a `DisclosureGroup` (*3 more changes*) and
+  Reject | Apply in one row; a `Form` sheet that lists every change, applies from the toolbar, dismisses on
+  Reject and names its source with `link`. 02L.11P draws a connected tool's routine removal asking first; it
+  stays 🧪 and unbuilt until the owner sees its copy, so the sheet's Remove applies at once, as the card's does. Android's proposal card and review sheet (08 · Coach `1224:13123`) draw the
+  earlier layout until an Android pass follows. Ledger drift, not a task.
+  - On iOS the read line stands under the answer, above every card it carries (08.2P's rule, one placement in
+    `CoachAnswerView`); the boards of an answer that wrote rather than proposed — a saved note (08.9), a created
+    routine, a made movement (08.37), the ended states (08.46–08.50) — still draw it under their cards. The drafts
+    card (01.x), a made movement (08.37) and the workout receipt's plan changes (03.32) keep the kind word over
+    each change, where a proposal leads its movement with the kind's circled symbol. For a designer: redraw
+    those boards to the proposal's language, or rule that they keep their own.
 
 ### Coach on the client
 

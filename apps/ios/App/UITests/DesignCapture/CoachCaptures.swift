@@ -129,27 +129,22 @@ final class CoachCaptures: DesignCapture {
     XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
     return app
   }
-  // Show all, then drag until the card's decision stands over the composer.
+  // Open the rest of the changes, then drag until the card's decisions stand over the composer, both in reach.
   func expandCard(_ app: XCUIApplication) {
     let expand = app.buttons["coach-proposal-expand"]
     XCTAssertTrue(expand.waitForExistence(timeout: 5)); expand.tap()
     XCTAssertTrue(expand.waitForLabel("Show less", timeout: 5))
-    for _ in 0..<6 where !app.buttons["coach-reject-proposal"].isHittable { app.scrollViews.firstMatch.swipeUp(velocity: .slow) }
+    let apply = app.buttons["coach-apply-proposal"], reject = app.buttons["coach-reject-proposal"]
+    for _ in 0..<10 where !(apply.isHittable && reject.isHittable) { app.scrollViews.firstMatch.swipeUp(velocity: .slow) }
+    XCTAssertTrue(apply.isHittable && reject.isHittable, "Apply and Reject both stand in reach")
   }
 
   func testProposalPending() {
     captureBoard("08.2-coach-proposal-pending") { look in askBoard("change", "Is Push A still doing anything?", look) }
-    captureBoard("08.3-coach-proposal-expanded") { look in
+    captureBoard("08.3-coach-proposal-expanded", in: Look.both + Look.bothAtLargestText) { look in
       let app = askBoard("change", "Is Push A still doing anything?", look)
       expandCard(app)
       return app
-    }
-    for look in Look.bothAtLargestText {
-      let app = askBoard("change", "Is Push A still doing anything?", look)
-      expandCard(app)
-      XCTAssertTrue(app.buttons["coach-apply-proposal"].isHittable && app.buttons["coach-reject-proposal"].isHittable)
-      capture("08.3-coach-proposal-expanded", look, app)
-      app.terminate()
     }
   }
 
@@ -269,7 +264,7 @@ final class CoachCaptures: DesignCapture {
     captureBoard("08.24-coach-proposal-rest") { look in askBoard("rest", "Dips have no target.", look) }
   }
   func testLongFailureRetry() {
-    captureBoard("08.27-coach-proposal-long") { look in
+    captureBoard("08.27-coach-proposal-long", in: Look.both + Look.bothAtLargestText) { look in
       let app = askBoard("long", "Rebuild Push A for strength", look)
       expandCard(app)
       return app
@@ -706,7 +701,7 @@ final class CoachCaptures: DesignCapture {
       let header = app.descendants(matching: .any)["coach-proposal-header"]
       XCTAssertTrue(header.waitForExistence(timeout: 15))
       XCTAssertTrue(app.buttons["coach-stop"].waitForNonExistence(timeout: 10))
-      XCTAssertTrue(header.label.hasPrefix("Changes to Push A · Next time"), header.label)
+      XCTAssertTrue(header.label.hasPrefix("Push A, ") && header.label.hasSuffix("suggested changes · next time"), header.label)
       if app.keyboards.firstMatch.exists { app.buttons["coach-keyboard-done"].tap() }
       XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
       let bar = app.navigationBars["Coach"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
@@ -751,18 +746,29 @@ final class CoachCaptures: DesignCapture {
     captureBoard("08.55-coach-proposal-this-workout", settle: 1.5) { look in
       let app = askOverUpperA(look, board: "workout")
       let header = app.descendants(matching: .any)["coach-workout-proposal-header"]
-      XCTAssertTrue(header.label == "Changes to this workout, 1 change", header.label)
+      XCTAssertTrue(header.label == "This workout, 1 suggested change · now", header.label)
       raise(app, showing: app.descendants(matching: .any)["coach-answer"].firstMatch)
       return app
     }
+    // Both waiting: this workout's Apply is the prominent one, the routine's waits for next time in glass (08.56P); then
+    // this workout's applied, decided apart.
     captureBoard("08.56-coach-proposal-one-of-each", settle: 1.5) { look in
       let app = askOverUpperA(look, board: "workout-and-routine")
+      let header = app.descendants(matching: .any)["coach-workout-proposal-header"]
+      XCTAssertEqual(app.descendants(matching: .any)["coach-proposal-header"].label, "Upper A, 1 suggested change · next time")
+      raise(app, showing: header)
+      return app
+    }
+    captureBoard("08.56-coach-proposal-one-of-each-applied", settle: 1.5) { look in
+      let app = askOverUpperA(look, board: "workout-and-routine")
+      // The answer settles on the routine's card, this workout's under the bar: raise the sheet and bring it down to reach.
       let apply = app.buttons["coach-apply-workout-proposal"]
-      for _ in 0..<4 where !apply.isHittable { app.scrollViews.firstMatch.swipeUp(velocity: .slow) }
+      raise(app, showing: apply)
       apply.tap()
       let header = app.descendants(matching: .any)["coach-workout-proposal-header"]
       XCTAssertTrue(header.waitForValue("Applied", timeout: 10))
-      XCTAssertTrue(app.descendants(matching: .any)["coach-proposal-header"].label.hasPrefix("Changes to Upper A · Next time"))
+      XCTAssertTrue(app.buttons["coach-apply-proposal"].isEnabled, "The routine's change is decided apart")
+      XCTAssertEqual(app.descendants(matching: .any)["coach-proposal-header"].label, "Upper A, 1 suggested change · next time")
       raise(app, showing: header)
       return app
     }

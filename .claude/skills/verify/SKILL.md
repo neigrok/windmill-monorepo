@@ -353,6 +353,44 @@ variables the tests run on the app's in-process model server; the conflict fixtu
 relaunches and checks the same session/set assertions. Use the isolated backend fixtures to verify
 the actual server. Mint fresh identities for every run: each link signs in once.
 
+`testAConnectedToolsProposalAppliesFromItsRoutinesRow` skips unless `WM_GYM_E2E_PROPOSAL` names a JSON
+file: `{"routineId", "proposalId", "proposedWeightKg"}`. As the `signed` identity above, mint a personal
+MCP key, create a routine and propose a change to it — a connected tool's proposal, which the test opens
+from its Routines row and applies — then write the file beside the identities:
+
+```sh
+python3 - http://127.0.0.1:8088 /private/tmp/<yours> <<'PY'
+import json, secrets, sys, urllib.request
+origin, out = sys.argv[1:]
+signed = json.load(open(f'{out}/session.json'))
+def call(token, path, body, session=None):
+    headers = {'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'}
+    if session: headers['Mcp-Session-Id'] = session
+    with urllib.request.urlopen(urllib.request.Request(origin + path, json.dumps(body).encode(), headers)) as reply:
+        return reply.headers, json.load(reply)
+_, minted = call(signed['token'], '/v1/mcp-keys', {'name': 'My laptop'})
+headers, _ = call(minted['token'], '/mcp', {'jsonrpc': '2.0', 'id': 1, 'method': 'initialize', 'params': {
+    'protocolVersion': '2024-11-05', 'capabilities': {}, 'clientInfo': {'name': 'Claude', 'version': '0'}}})
+routine, proposal = 'rt_prop_' + secrets.token_hex(6), 'prop_' + secrets.token_hex(8)
+row = {'exerciseId': 'barbell-row', 'sets': [{'reps': 8, 'weightKg': 50}] * 3}
+for tool, arguments in (
+        ('gym_create_routine', {'id': routine, 'name': 'Push A', 'position': 0, 'entries': [
+            {'exerciseId': 'bench-press', 'sets': [{'reps': 5, 'weightKg': 60}] * 3}, row]}),
+        ('gym_propose_routine_change', {'id': proposal, 'routineId': routine, 'entries': [
+            {'exerciseId': 'bench-press', 'sets': [{'reps': 5, 'weightKg': 62.5}] * 3}, row]})):
+    _, reply = call(minted['token'], '/mcp', {'jsonrpc': '2.0', 'id': 2, 'method': 'tools/call',
+                                              'params': {'name': tool, 'arguments': arguments}}, headers['Mcp-Session-Id'])
+    assert not reply['result'].get('isError'), reply
+with open(f'{out}/proposal.json', 'w') as file:
+    json.dump({'routineId': routine, 'proposalId': proposal, 'proposedWeightKg': 62.5}, file)
+PY
+```
+
+Run it with the three variables above and
+`TEST_RUNNER_WM_GYM_E2E_PROPOSAL=/private/tmp/<yours>/proposal.json`. The test reads the routine back
+over REST once the sheet says *Applied*; the server's `events` table then holds the
+`gym_proposal_outcome` the Apply recorded. A proposal applies once, so mint a new one for every run.
+
 ## What the server saw
 
 Every write logs one `write {…}` line with its `operation`, `product`, `door` (`mcp`, `sync`,

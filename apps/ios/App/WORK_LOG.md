@@ -309,9 +309,10 @@ UI tests find a room-menu row by its `room-…` identifier or its room's title t
 carried by the app's bundle.
 
 Every button role a room draws lives in `Theme/RoomControls.swift`: the primary (`RoomPrimaryStyle`), the
-secondary (`RoomSecondaryStyle`, its label in the room's ink when given the room) and the glass seat. A card's
-decisions are the primary and the secondary at full width, stacked by `CardDecisions` beside `ChangeCard`; a removal
-is the secondary with the destructive role. `RoomGlass` is the one Liquid Glass surface, the regular material before
+secondary (`RoomSecondaryStyle`, its label in the room's ink when given the room) and the glass seat. The drafts
+card's decisions are the primary and the secondary at full width, stacked by `CardDecisions` beside `ChangeCard`; a
+proposal's stand in one row, Reject then Apply, through `DecisionRow`; a removal is the secondary with the destructive
+role. `RoomGlass` is the one Liquid Glass surface, the regular material before
 iOS 26, under the seat, the floating act and the transient band. `GymTransient.Band` resolves the band's words
 and its one control from plain values, and `GymModel.dismissError(_:)` clears the error a band showed. A read
 the room cannot make goes through `GymModel.failRead(_:)`, which says `GymModel.unreadable` and reports under `gym_read`.
@@ -364,3 +365,14 @@ label is its title alone, a `Stepper` exposes `<id>-Increment` / `<id>-Decrement
 Button row taps it, so the trash circle is reached through the minus badge; a List keeps a row scrolled above the fold at
 a stale frame, so scrolling back to it is counted drags, not a wait on the row. Observation: `MovementEquipmentPicker`
 carries a `count` style only because Edit movement's board still draws the segmented pair.
+
+Proposals follow the stock pass (Gym · iOS 08.2P, 08.12P–08.14P, 08.27P, 08.56P, 02L.1P, 02L.9P, 02L.10P, owner
+approved 2026-11-08). `ProposalCard` holds one decision — the stall and its Try again, the landed haptic, the queued
+decision, the receipt's acknowledgement — and draws it in one of two presentations: the conversation's `GroupBox`
+card, or the Routines row's sheet as a `Form` (`ProposalSheet.swift`), whose toolbar applies and whose Reject row
+closes it. The change parts are shared from `ChangeBlock.swift` (`ChangeTitle`, `ProposalField`, `ProposalHeading`,
+`DecisionRow`); the drafts card, a made movement and the workout receipt keep `ChangeBlock` with its kind word, the
+language their boards still draw (consistency 12t). The read line stands under every answer, above its cards. The
+capture rig's `-routines-tool-proposal` has Claude, over a connection, propose on the model server — the board's
+changes to Push A, and one to Legs that the phone's edit puts out of date — so the sheet has captures
+(`RoutinesCaptures.testConnectedToolProposals`).

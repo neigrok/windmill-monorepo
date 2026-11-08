@@ -92,6 +92,30 @@ import XCTest
       app.terminate()
     }
   }
+  // A connected tool's proposal, made over MCP as the signed account, waits at the head of Routines; its row opens the
+  // sheet, the toolbar's Apply lands once the log answers, and the server's routine carries the change.
+  func testAConnectedToolsProposalAppliesFromItsRoutinesRow() async throws {
+    guard server != nil, let file = ProcessInfo.processInfo.environment["WM_GYM_E2E_PROPOSAL"] else {
+      throw XCTSkip("requires the isolated proposal fixture")
+    }
+    let fixture = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: file))) as? [String: Any])
+    let routine = try XCTUnwrap(fixture["routineId"] as? String), load = try XCTUnwrap(fixture["proposedWeightKg"] as? Double)
+    let app = launch()
+    let row = app.buttons["routine-proposal"]
+    XCTAssertTrue(row.waitForExistence(timeout: 30))
+    XCTAssertTrue(row.label.contains("From "), row.label)
+    row.tap()
+    let apply = app.buttons["coach-apply-proposal"]
+    XCTAssertTrue(apply.waitForExistence(timeout: 10)); apply.tap()
+    XCTAssertTrue(app.descendants(matching: .any)["coach-proposal-header"].waitForValue("Applied", timeout: 30))
+    let (data, response) = try await URLSession.shared.data(for: gymRequest("routines/" + routine, identity: try XCTUnwrap(identities["signed"])))
+    XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
+    let read = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    let entries = try XCTUnwrap(((read["routine"] as? [String: Any]) ?? read)["entries"] as? [[String: Any]])
+    let sets = try XCTUnwrap(entries.first?["sets"] as? [[String: Any]])
+    XCTAssertEqual(sets.compactMap { $0["weightKg"] as? Double }, Array(repeating: load, count: sets.count))
+    app.terminate()
+  }
   func pickBench(_ app: XCUIApplication, routineEditor: Bool = false) {
     let search = app.searchFields.firstMatch
     XCTAssertTrue(search.waitForExistence(timeout: 5)); search.tap(); search.typeText("Bench")

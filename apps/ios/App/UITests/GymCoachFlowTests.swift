@@ -112,7 +112,7 @@ import XCTest
   }
 
   // Signed in: a question gets an answer with a proposal; What Coach read lists the workout it read, which opens its
-  // detail; Show all reveals every change, Apply applies them, and History keeps the conversation, which reopens.
+  // detail; the disclosure reveals every change, Apply applies them, and History keeps the conversation, which reopens.
   func testAskReadReceiptApplyAndHistory() {
     let app = launch()
     ask("Is Push A still doing anything?", app)
@@ -148,7 +148,7 @@ import XCTest
     XCTAssertEqual(apply.label, "Apply")
     XCTAssertTrue(reject.isEnabled)
     let expand = app.buttons["coach-proposal-expand"]
-    XCTAssertEqual(expand.label, "Show all 3 changes")
+    XCTAssertEqual(expand.label, "1 more change")
     expand.tap()
     XCTAssertTrue(expand.waitForLabel("Show less", timeout: 5))
     for _ in 0..<4 where !apply.isHittable { app.scrollViews.firstMatch.swipeUp() }
@@ -196,7 +196,7 @@ import XCTest
       XCTAssertTrue(app.movementHeader(movement).waitForExistence(timeout: 5))
     }
     let lighter = askOverTheWorkout("Shoulder feels off on bench. What should I change today?")
-    XCTAssertTrue(lighter.label.hasPrefix("Changes to this workout"), lighter.label)
+    XCTAssertTrue(lighter.label.hasPrefix("This workout"), lighter.label)
     let apply = app.buttons["coach-apply-workout-proposal"]
     for _ in 0..<4 where !apply.isHittable { app.scrollViews.firstMatch.swipeUp(velocity: .slow) }
     apply.tap()
@@ -208,7 +208,7 @@ import XCTest
     XCTAssertTrue(app.buttons["workout-reps"].waitForLabel("12 reps", timeout: 5), "The rack takes the applied plan's target")
     XCTAssertTrue(app.textFields["workout-load"].label.contains("40"), app.textFields["workout-load"].label)
     let belt = askOverTheWorkout("And the pull-ups?")
-    XCTAssertTrue(belt.label.hasPrefix("Changes to this workout"), belt.label)
+    XCTAssertTrue(belt.label.hasPrefix("This workout"), belt.label)
     closeCoach()
     page(to: "Pull Up")
     log.tap()

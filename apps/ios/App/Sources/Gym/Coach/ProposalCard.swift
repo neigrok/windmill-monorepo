@@ -5,19 +5,26 @@ import GymDomain
 // The Routines row's door to a proposal it lists, when the conversation on screen does not hold its card.
 nonisolated struct CoachProposalID: Identifiable { let id: String }
 
-// A proposal in the conversation, decided where it stands: its changes as blocks, the first two until *Show all*, the
-// movements it leaves folded into one line, then Apply and Reject. Applied, it stays as the record of what changed;
-// rejected, it folds to one line; out of date, it says why nothing was applied.
+// A proposal, decided where it stands: on Coach's canvas as its card (08.2P), or on its Routines row's sheet as a Form
+// (02L.9P, ProposalSheet.swift). Both read one decision. Applied, it stays as the record of what changed; rejected, the
+// card folds to one line; out of date, it says why nothing was applied.
 struct ProposalCard: View {
+  enum Presentation { case conversation, sheet }
   let gym: GymModel
   let id: String
+  var presentation = Presentation.conversation
   var stallAfter: Duration = .seconds(15)
   @State var stalled = false
   @State var resent = 0
   @State var retrying = false
+  // The sheet's field rows stand under their change's title, past its symbol's column.
+  @ScaledMetric(relativeTo: .body) var column = 32.0
   @Environment(\.scenePhase) var phase
+  @Environment(\.dismiss) var dismiss
 
-  init(gym: GymModel, id: String, stallAfter: Duration = .seconds(15)) { self.gym = gym; self.id = id; self.stallAfter = stallAfter }
+  init(gym: GymModel, id: String, in presentation: Presentation = .conversation, stallAfter: Duration = .seconds(15)) {
+    self.gym = gym; self.id = id; self.presentation = presentation; self.stallAfter = stallAfter
+  }
   // Where the conversation scrolls to show this card.
   static func anchor(_ id: String) -> String { "coach-proposal-" + id }
 
@@ -36,7 +43,7 @@ struct ProposalCard: View {
     return !pending && gym.coachAccountAvailable && !gym.readFailed
   }
   var stance: ProposalStance { proposal.map(gym.coachProposalStance) ?? .open }
-  // Why an out-of-date proposal has no buttons, said once where they stood.
+  // Why an out-of-date proposal has no buttons, said once under its title.
   var outOfDate: String? {
     guard case .outOfDate(let reason) = stance else { return nil }
     return CoachCopy.outOfDateReason(reason, routine: routineName, catalogue: gym.catalogue)
@@ -67,14 +74,53 @@ struct ProposalCard: View {
     return Decision(title: title, retries: retries, applies: retries || decidable, rejects: decidable)
   }
 
+  // The head's words (08.2P): the routine over its count — while a workout is open, a count that waits for the routine's
+  // next workout (08.56P); applied, *Applied · Push A* over what it changed; out of date, the routine says so and the
+  // reason stands under it.
+  var title: String {
+    if stance == .applied { return "Applied · " + routineName + (removal ? " · routine removed" : "") }
+    return outOfDate == nil ? routineName : routineName + " · " + CoachCopy.outOfDate
+  }
+  var subtitle: String? {
+    guard let proposal, outOfDate == nil else { return nil }
+    if removal { return stance == .applied ? nil : "Remove a routine" }
+    let count = gym.coachChangeCount(proposal)
+    if stance == .applied { return GymCount.of(count, "change") }
+    return GymCount.of(count, "suggested change") + (nextTime ? " · next time" : "")
+  }
+  // The word the card stands on, its head's value: Applied or Removed, Out of date, none while it waits.
+  var settled: String {
+    if outOfDate != nil { return CoachCopy.outOfDate }
+    return stance == .applied ? CoachCopy.settled("applied", removal: removal) ?? "" : ""
+  }
+  // While a workout is open the routine waits for next time, so its symbol and its Apply step back for this workout's
+  // (08.56P).
+  var nextTime: Bool { gym.openSession != nil }
+  // The routine's symbol while it waits, the check once applied, the clock once out of date.
+  var symbol: (name: String, tint: Color) {
+    if stance == .applied { return ("checkmark.circle.fill", GymPalette.done) }
+    if outOfDate != nil { return ("clock.arrow.circlepath", GymPalette.inkDim) }
+    return ("list.bullet.rectangle", nextTime ? GymPalette.inkDim : GymPalette.accent)
+  }
+  // What it changes, as both presentations list them: a removal's one block, the routine struck, how many movements go
+  // with it and when it was last done; otherwise the diff's.
+  func changes(_ proposal: Proposal) -> (blocks: [ProposalChanges.Shown], unchanged: Int) {
+    guard !removal else {
+      let done = gym.routineHistory(proposal.routineId).first.map { gym.dates.day($0.startedAt) }
+      let fields = [ProposalDiff.Field("Movements", before: String(proposal.changes.count), after: nil)]
+        + (done.map { [ProposalDiff.Field("Last done", before: $0, after: nil)] } ?? [])
+      return ([ProposalChanges.Shown(kind: .removed, title: routineName, fields: fields)], 0)
+    }
+    let diff = gym.coachDiff(proposal)
+    return (diff.blocks.map { ProposalChanges.Shown(kind: $0.kind, title: gym.coachTitle($0), fields: $0.fields) }, diff.unchanged)
+  }
+
   var body: some View {
     Group {
-      if let proposal {
-        if stance == .rejected {
-          RejectedLine(subject: routineName).accessibilityIdentifier("coach-proposal-header")
-            .accessibilityValue(CoachCopy.settled("dismissed", removal: removal) ?? "")
-        } else { card(proposal) }
-      } else { Text("That proposal is gone.").font(.subheadline).foregroundStyle(GymPalette.inkDim).modifier(ChangeCard()) }
+      switch presentation {
+      case .conversation: conversation
+      case .sheet: sheet
+      }
     }.sensoryFeedback(.success, trigger: landed)
       .onAppear { acknowledgeReceipt() }
       .onChange(of: phase) { _, _ in acknowledgeReceipt() }
@@ -88,82 +134,64 @@ struct ProposalCard: View {
       }
   }
 
+  @ViewBuilder var conversation: some View {
+    if let proposal {
+      if stance == .rejected {
+        RejectedLine(subject: routineName, symbol: "xmark.circle").accessibilityIdentifier("coach-proposal-header")
+          .accessibilityValue(CoachCopy.settled("dismissed", removal: removal) ?? "")
+      } else { card(proposal) }
+    } else { Text("That proposal is gone.").font(.subheadline).foregroundStyle(GymPalette.inkDim).modifier(ChangeCard()) }
+  }
+
   func card(_ proposal: Proposal) -> some View {
-    let stance = stance
-    let diff = gym.coachDiff(proposal)
-    let blocks = removal ? [removalBlock(proposal)] : diff.blocks.map { ProposalChanges.Shown(kind: $0.kind, title: gym.coachTitle($0), fields: $0.fields) }
-    let dimmed = outOfDate != nil
-    return VStack(alignment: .leading, spacing: 0) {
-      header(proposal, stance: stance)
-      ProposalChanges(blocks: blocks, unchanged: removal ? 0 : diff.unchanged, count: gym.coachChangeCount(proposal), outOfDate: outOfDate,
-                      identifier: "coach-proposal")
+    let listed = changes(proposal)
+    return GroupBox {
+      ProposalHeading(symbol: symbol.name, tint: symbol.tint, title: title, dimmed: outOfDate != nil, subtitle: subtitle, reason: outOfDate,
+                      bounce: landed, identifier: "coach-proposal", value: settled)
+      ProposalChanges(blocks: listed.blocks, unchanged: listed.unchanged, dimmed: outOfDate != nil, identifier: "coach-proposal")
       if stance == .open {
-        if let failure {
-          Label(failure, systemImage: "exclamationmark.triangle").labelStyle(ChangeBadgeStyle()).font(.subheadline)
-            .foregroundStyle(GymPalette.destructive).padding(.top, 14)
-            .accessibilityElement(children: .combine).accessibilityIdentifier("coach-proposal-failure")
-        }
-        buttons(proposal)
+        if let failure { failureLine(failure).padding(.vertical, RoomSpace.related) }
+        decisions(proposal)
       }
-    }.modifier(ChangeCard(stroke: stance == .open ? GymPalette.accent : dimmed ? GymPalette.line : nil))
+    }.groupBoxStyle(ProposalBoxStyle())
       .accessibilityElement(children: .contain).accessibilityIdentifier("coach-proposal")
   }
 
-  // Waiting, *CHANGES TO PUSH A* with the store's count, or *REMOVE A ROUTINE*; applied, *✓ Applied · Push A*; out of
-  // date, the eyebrow says so. While a workout is open a change waits for the routine's next workout, never this one (08.56).
-  var eyebrow: String {
-    if removal { return "Remove a routine" }
-    if outOfDate != nil { return "Changes to " + routineName + " · " + CoachCopy.outOfDate }
-    return "Changes to " + routineName + (gym.openSession != nil ? " · Next time" : "")
-  }
-  func header(_ proposal: Proposal, stance: ProposalStance) -> some View {
-    let settled = outOfDate != nil ? CoachCopy.outOfDate : stance == .applied ? CoachCopy.settled("applied", removal: removal) : nil
-    return HStack(alignment: .firstTextBaseline, spacing: RoomSpace.related) {
-      if stance == .applied {
-        // The check bounces in once, when the Apply this phone sent lands.
-        HStack(spacing: RoomSpace.related) {
-          Image(systemName: "checkmark.circle").symbolEffect(.bounce, value: landed).accessibilityHidden(true)
-          Text("Applied · " + routineName + (removal ? " · routine removed" : ""))
-        }.font(.headline).foregroundStyle(GymPalette.ink)
-      } else {
-        Text(eyebrow)
-          .font(.footnote.weight(.semibold)).textCase(.uppercase).foregroundStyle(outOfDate != nil ? GymPalette.inkDim : GymPalette.accent)
-      }
-      Spacer(minLength: 0)
-      if !removal { Text(GymCount.of(gym.coachChangeCount(proposal), "change")).font(.subheadline).foregroundStyle(GymPalette.inkDim) }
-    }.padding(.bottom, 12).accessibilityElement(children: .combine)
-      .accessibilityIdentifier("coach-proposal-header").accessibilityValue(settled ?? "")
+  func failureLine(_ failure: String) -> some View {
+    Label(failure, systemImage: "exclamationmark.triangle").labelStyle(ChangeBadgeStyle()).font(.subheadline)
+      .foregroundStyle(GymPalette.destructive)
+      .accessibilityElement(children: .combine).accessibilityIdentifier("coach-proposal-failure")
   }
 
-  // A removal's one block: the routine struck, how many movements go with it and when it was last done.
-  func removalBlock(_ proposal: Proposal) -> ProposalChanges.Shown {
-    let done = gym.routineHistory(proposal.routineId).first.map { gym.dates.day($0.startedAt) }
-    return ProposalChanges.Shown(kind: .removed, title: routineName, fields: [ProposalDiff.Field("Movements", before: String(proposal.changes.count), after: nil)]
-      + (done.map { [ProposalDiff.Field("Last done", before: $0, after: nil)] } ?? []))
-  }
-
-  func buttons(_ proposal: Proposal) -> some View {
+  // Reject | Apply. A removal's Apply is the destructive *Remove routine* in glass; while a workout is open the routine's
+  // Apply is glass in the accent, and this workout's card holds the one prominent Apply.
+  func decisions(_ proposal: Proposal) -> some View {
     let decision = decision(stalled: stalled)
-    // Try again resends a decision still queued, never writing it twice, or decides again after the log refused it.
-    let apply = Button(role: removal ? .destructive : nil) {
-      guard pending else { _ = gym.coachDecideProposal(proposal, apply: true); return }
-      resent += 1
-      guard let resend = gym.coachResendDecision(proposal.id) else { return }
-      retrying = true
-      Task { await resend.value; retrying = false }
-    } label: {
+    let apply = Button(role: removal ? .destructive : nil) { decide(proposal) } label: {
       HStack(spacing: RoomSpace.related) {
         if pending && !decision.retries { ProgressView().controlSize(.regular).tint(GymPalette.inkDim) }
         Text(decision.title)
       }.frame(maxWidth: .infinity)
     }
-    return CardDecisions {
-      Group {
-        if removal { apply.buttonStyle(RoomSecondaryStyle(room: .gym)) } else { apply.buttonStyle(RoomPrimaryStyle(room: .gym)) }
-      }.disabled(!decision.applies).accessibilityIdentifier("coach-apply-proposal")
+    return DecisionRow {
       Button { _ = gym.coachDecideProposal(proposal, apply: false) } label: { Text("Reject").frame(maxWidth: .infinity) }
         .buttonStyle(RoomSecondaryStyle(room: .gym)).disabled(!decision.rejects).accessibilityIdentifier("coach-reject-proposal")
+    } apply: {
+      Group {
+        if removal { apply.buttonStyle(RoomSecondaryStyle(room: .gym)) }
+        else if nextTime { apply.buttonStyle(RoomSecondaryStyle()).tint(GymPalette.accent) }
+        else { apply.buttonStyle(RoomPrimaryStyle(room: .gym)) }
+      }.disabled(!decision.applies).accessibilityIdentifier("coach-apply-proposal")
     }
+  }
+
+  // Apply, or Try again: a decision still queued is resent, never written twice; one the log refused is decided again.
+  func decide(_ proposal: Proposal) {
+    guard pending else { _ = gym.coachDecideProposal(proposal, apply: true); return }
+    resent += 1
+    guard let resend = gym.coachResendDecision(proposal.id) else { return }
+    retrying = true
+    Task { await resend.value; retrying = false }
   }
 
   func acknowledgeReceipt() {
@@ -172,8 +200,8 @@ struct ProposalCard: View {
   }
 }
 
-// What a card changes, under its header: the first two blocks until *Show all*, the movements it leaves folded into one
-// line, and once it is out of date, dimmed, the one sentence that says why nothing was applied.
+// What a card changes, under its head: the first two changes until the reader opens the rest (*3 more changes*), then
+// the movements it leaves as one line once every change shows. Out of date, every change is dimmed.
 struct ProposalChanges: View {
   struct Shown {
     let kind: ProposalDiff.Kind
@@ -183,42 +211,53 @@ struct ProposalChanges: View {
 
   let blocks: [Shown]
   let unchanged: Int
-  let count: Int
-  let outOfDate: String?
-  // The card's identifier, which its expand button and out-of-date sentence extend.
+  var dimmed = false
+  // The card's identifier, which its disclosure extends.
   let identifier: String
   @State var expanded = false
+  @ScaledMetric(relativeTo: .body) var column = 32.0
 
   var body: some View {
-    let shown = expanded ? blocks : Array(blocks.prefix(2))
-    ForEach(Array(shown.enumerated()), id: \.offset) { _, block in
+    let rest = blocks.dropFirst(2)
+    VStack(alignment: .leading, spacing: 0) {
+      ForEach(Array(blocks.prefix(2).enumerated()), id: \.offset) { _, block in change(block) }
+      if rest.isEmpty { unchangedLine } else {
+        Divider().overlay(GymPalette.line)
+        DisclosureGroup(isExpanded: $expanded.animation()) {
+          VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(rest.enumerated()), id: \.offset) { _, block in change(block) }
+            unchangedLine
+          }
+        } label: {
+          Text(expanded ? "Show less" : GymCount.of(rest.count, "more change")).frame(minHeight: RoomSpace.minimumTarget)
+        }.tint(GymPalette.accent).accessibilityIdentifier(identifier + "-expand")
+      }
+    }.labeledContentStyle(.card).padding(.top, 12)
+  }
+
+  func change(_ block: Shown) -> some View {
+    VStack(alignment: .leading, spacing: 0) {
       Divider().overlay(GymPalette.line)
-      ChangeBlock(kind: block.kind, title: block.title, fields: block.fields, dimmed: outOfDate != nil).padding(.vertical, 14)
+      VStack(alignment: .leading, spacing: 6) {
+        ChangeTitle(kind: block.kind, title: block.title, dimmed: dimmed).font(.body.weight(.semibold))
+        ForEach(Array(block.fields.enumerated()), id: \.offset) { _, field in ProposalField(field: field, dimmed: dimmed) }
+          .padding(.leading, column)
+      }.padding(.vertical, 12)
     }
-    if unchanged > 0, shown.count == blocks.count {
-      Divider().overlay(GymPalette.line)
-      Text("No change: " + GymCount.of(unchanged, "movement")).foregroundStyle(GymPalette.inkDim).padding(.vertical, 14)
-    }
-    if blocks.count > 2 {
-      Divider().overlay(GymPalette.line)
-      Button { withAnimation { expanded.toggle() } } label: {
-        HStack(spacing: 6) {
-          Text(expanded ? "Show less" : "Show all " + GymCount.of(count, "change"))
-          Image(systemName: expanded ? "chevron.up" : "chevron.down").imageScale(.small).accessibilityHidden(true)
-        }.font(.body.weight(.semibold)).foregroundStyle(GymPalette.accent)
-          .frame(maxWidth: .infinity, minHeight: RoomSpace.minimumTarget, alignment: .leading).contentShape(Rectangle())
-      }.buttonStyle(.plain).accessibilityIdentifier(identifier + "-expand")
-    }
-    if let outOfDate {
-      Divider().overlay(GymPalette.line)
-      Text(outOfDate).foregroundStyle(GymPalette.inkDim).padding(.top, 14).accessibilityIdentifier(identifier + "-out-of-date")
+  }
+
+  @ViewBuilder var unchangedLine: some View {
+    if unchanged > 0 {
+      Divider().overlay(GymPalette.line).padding(.leading, column)
+      LabeledContent("No change", value: GymCount.of(unchanged, "movement")).padding(.leading, column).padding(.vertical, 12)
+        .accessibilityElement(children: .ignore).accessibilityLabel("No change: " + GymCount.of(unchanged, "movement"))
     }
   }
 }
 
-// Coach's change to the open workout, decided where it stands (08.55–08.57): *CHANGES TO THIS WORKOUT* under the running
-// dot, its changes in the routine card's language, then Apply, which rewrites the running plan and no routine, and Reject.
-// Applied, it stays as the record of what changed; rejected, it folds to one line; out of date, it says why.
+// Coach's change to the open workout, decided where it stands (08.56P): *This workout* under its clipboard, its changes in
+// the routine card's language, then Reject | Apply — the sheet's one prominent Apply, which rewrites the running plan and
+// no routine. Applied, it stays as the record of what changed; rejected, it folds to one line; out of date, it says why.
 struct WorkoutProposalCard: View {
   let gym: GymModel
   let id: String
@@ -231,7 +270,7 @@ struct WorkoutProposalCard: View {
       if let proposal {
         let stance = gym.coachWorkoutProposalStance(proposal)
         if stance == .rejected {
-          RejectedLine(subject: "this workout").accessibilityIdentifier("coach-workout-proposal-header").accessibilityValue("Rejected")
+          RejectedLine(subject: "this workout", symbol: "xmark.circle").accessibilityIdentifier("coach-workout-proposal-header").accessibilityValue("Rejected")
         } else { card(proposal, stance: stance) }
       } else { Text("That proposal is gone.").font(.subheadline).foregroundStyle(GymPalette.inkDim).modifier(ChangeCard()) }
     }.sensoryFeedback(.success, trigger: applied)
@@ -243,63 +282,29 @@ struct WorkoutProposalCard: View {
     default: nil
     }
     let diff = gym.coachWorkoutDiff(proposal)
+    let count = gym.coachWorkoutChangeCount(proposal)
     let decidable = stance == .open && gym.coachAccountAvailable && !gym.readFailed
-    return VStack(alignment: .leading, spacing: 0) {
-      header(proposal, stance: stance)
+    // One head through every stance, so the check bounces in as the Apply lands rather than arriving with the new head.
+    let head: (symbol: String, tint: Color, title: String, subtitle: String?, value: String) = switch stance {
+    case .applied: ("checkmark.circle.fill", GymPalette.done, "Applied · this workout", GymCount.of(count, "change"), "Applied")
+    case .outOfDate: ("clock.arrow.circlepath", GymPalette.inkDim, "This workout · " + CoachCopy.outOfDate, nil, CoachCopy.outOfDate)
+    default: ("list.bullet.clipboard", GymPalette.accent, "This workout", GymCount.of(count, "suggested change") + " · now", "")
+    }
+    return GroupBox {
+      ProposalHeading(symbol: head.symbol, tint: head.tint, title: head.title, dimmed: outOfDate != nil, subtitle: head.subtitle, reason: outOfDate,
+                      bounce: applied > 0, identifier: "coach-workout-proposal", value: head.value)
       ProposalChanges(blocks: diff.blocks.map { ProposalChanges.Shown(kind: $0.kind, title: gym.coachTitle($0), fields: $0.fields) },
-                      unchanged: diff.unchanged, count: gym.coachWorkoutChangeCount(proposal), outOfDate: outOfDate, identifier: "coach-workout-proposal")
+                      unchanged: diff.unchanged, dimmed: outOfDate != nil, identifier: "coach-workout-proposal")
       if stance == .open {
-        CardDecisions {
-          Button { if gym.coachDecideWorkoutProposal(proposal, apply: true) { applied += 1 } } label: { Text("Apply").frame(maxWidth: .infinity) }
-            .buttonStyle(RoomPrimaryStyle(room: .gym)).disabled(!decidable).accessibilityIdentifier("coach-apply-workout-proposal")
+        DecisionRow {
           Button { _ = gym.coachDecideWorkoutProposal(proposal, apply: false) } label: { Text("Reject").frame(maxWidth: .infinity) }
             .buttonStyle(RoomSecondaryStyle(room: .gym)).disabled(!decidable).accessibilityIdentifier("coach-reject-workout-proposal")
+        } apply: {
+          Button { if gym.coachDecideWorkoutProposal(proposal, apply: true) { applied += 1 } } label: { Text("Apply").frame(maxWidth: .infinity) }
+            .buttonStyle(RoomPrimaryStyle(room: .gym)).disabled(!decidable).accessibilityIdentifier("coach-apply-workout-proposal")
         }
       }
-    }.modifier(ChangeCard(stroke: stance == .open ? GymPalette.accent : outOfDate != nil ? GymPalette.line : nil))
+    }.groupBoxStyle(ProposalBoxStyle())
       .accessibilityElement(children: .contain).accessibilityIdentifier("coach-workout-proposal")
-  }
-
-  // Waiting, the running dot and *CHANGES TO THIS WORKOUT*; applied, *✓ Applied · this workout*; out of date, the eyebrow
-  // says so without the dot. The count stands at the end.
-  func header(_ proposal: WorkoutProposal, stance: ProposalStance) -> some View {
-    HStack(alignment: .firstTextBaseline, spacing: RoomSpace.related) {
-      switch stance {
-      case .applied:
-        HStack(spacing: RoomSpace.related) {
-          Image(systemName: "checkmark.circle").symbolEffect(.bounce, value: applied).accessibilityHidden(true)
-          Text("Applied · this workout")
-        }.font(.headline).foregroundStyle(GymPalette.ink)
-      case .outOfDate:
-        Text("This workout · " + CoachCopy.outOfDate).font(.footnote.weight(.semibold)).textCase(.uppercase).foregroundStyle(GymPalette.inkDim)
-      default:
-        HStack(spacing: 6) {
-          Circle().fill(GymPalette.accent).frame(width: 7, height: 7).accessibilityHidden(true)
-          Text("Changes to this workout")
-        }.font(.footnote.weight(.semibold)).textCase(.uppercase).foregroundStyle(GymPalette.accent)
-      }
-      Spacer(minLength: 0)
-      Text(GymCount.of(gym.coachWorkoutChangeCount(proposal), "change")).font(.subheadline).foregroundStyle(GymPalette.inkDim)
-    }.padding(.bottom, 12).accessibilityElement(children: .combine)
-      .accessibilityIdentifier("coach-workout-proposal-header").accessibilityValue(stance == .applied ? "Applied" : stance == .open ? "" : CoachCopy.outOfDate)
-  }
-}
-
-// A Routines row's proposal that the conversation on screen does not hold, its card on a sheet of its own.
-struct ProposalSheet: View {
-  let gym: GymModel
-  let id: String
-  @Environment(\.dismiss) var dismiss
-  var body: some View {
-    let proposal = gym.proposals.first { $0.id.record.string == id }
-    NavigationStack {
-      ScrollView { ProposalCard(gym: gym, id: id).padding(RoomSpace.inset) }
-        .navigationTitle(proposal.flatMap(gym.coachRoutine)?.name ?? proposal?.baseName ?? "Proposal").navigationBarTitleDisplayMode(.inline)
-        .modifier(GymPage())
-        .safeAreaInset(edge: .bottom) { GymTransient(gym: gym, errorIdentifier: "gym-coach-error") }
-        .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } } }
-    }.presentationDetents([.medium, .large])
-      .accessibilityIdentifier("gym-proposal-sheet")
-      .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "review"]) }
   }
 }

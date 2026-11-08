@@ -12,6 +12,37 @@ final class RoutinesCaptures: DesignCapture {
     }
   }
 
+  // 02L.1P, 02L.9P, 02L.10P: Claude, a connected tool, proposed the three changes to Push A and one to Legs, which an edit to
+  // Legs put out of date. Each row says its source by symbol and opens its proposal's sheet; Apply lands from the toolbar.
+  func testConnectedToolProposals() {
+    for look in Look.both {
+      let app = launchSignedInCoach(look, arguments: ["-coach-board", "routines", "-routines-proposal-fixture", "-routines-tool-proposal"])
+      open(.routines, app)
+      let waiting = app.buttons["routine-proposal"], stale = app.buttons["routine-proposal-out-of-date"]
+      XCTAssertTrue(stale.waitForExistence(timeout: 20) && waiting.waitForExistence(timeout: 20))
+      XCTAssertTrue(waiting.label.hasPrefix("Push A · 3 changes, From Claude"), waiting.label)
+      capture("02L.1-routines-tool-proposals", look, app, settle: 1.5)
+      waiting.tap()
+      let apply = app.buttons["coach-apply-proposal"]
+      XCTAssertTrue(apply.waitForExistence(timeout: 10))
+      capture("02L.9-proposal-sheet", look, app)
+      closeSheet(app)
+      XCTAssertTrue(apply.waitForNonExistence(timeout: 5))
+      stale.tap()
+      let header = app.descendants(matching: .any)["coach-proposal-header"]
+      XCTAssertTrue(header.waitForValue("Out of date", timeout: 10))
+      XCTAssertFalse(apply.exists || app.buttons["coach-reject-proposal"].exists)
+      capture("02L.10-proposal-sheet-out-of-date", look, app)
+      closeSheet(app)
+      XCTAssertTrue(header.waitForNonExistence(timeout: 5))
+      waiting.tap()
+      XCTAssertTrue(apply.waitForExistence(timeout: 10)); apply.tap()
+      XCTAssertTrue(header.waitForValue("Applied", timeout: 10))
+      capture("02L.9-proposal-sheet-applied", look, app)
+      app.terminate()
+    }
+  }
+
   // 02L.7: Start across the summary's foot, then the last movement scrolled clear of it.
   func testRoutineSummary() {
     for look in Look.both + Look.bothAtLargestText {
