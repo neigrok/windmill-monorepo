@@ -35,12 +35,12 @@ struct CoachHistoryScreen: View {
   func meta(of messages: [CoachMessage], draft: CoachArchive.Entry?) -> String? {
     guard let answer = messages.last(where: { $0.role == .coach }) else { return draft?.state }
     switch answer.state {
-    case .running: return "Answering"
-    case .interrupted, .failed: return "Interrupted"
-    case .stopped: return "Stopped"
+    case .running: return String(localized: "Answering")
+    case .interrupted, .failed: return String(localized: "Interrupted")
+    case .stopped: return String(localized: "Stopped")
     case .declined, .completed: break
     }
-    if let draft, draft.state == "Draft" { return "Draft" }
+    if let draft, draft.stance == .draft { return draft.state }
     let writes = CoachWrites(calls: messages.filter { $0.role == .coach }.flatMap(\.calls), gym: gym)
     if let id = writes.proposals.last, let proposal = gym.proposals.first(where: { $0.id.description == id }) {
       let removal = proposal.intent == "remove"
@@ -50,10 +50,10 @@ struct CoachHistoryScreen: View {
     }
     if let id = writes.workoutProposals.last, let proposal = gym.workoutProposals.first(where: { $0.id.description == id }) {
       let settled = gym.outOfDateWorkoutProposals[proposal.id] != nil ? CoachCopy.outOfDate : CoachCopy.settled(proposal.state, removal: false)
-      let title = CoachCopy.proposalTitle(routine: "This workout", changes: gym.coachWorkoutChangeCount(proposal), removal: false)
+      let title = CoachCopy.proposalTitle(routine: String(localized: "This workout"), changes: gym.coachWorkoutChangeCount(proposal), removal: false)
       return ([title] + [settled].compactMap { $0 }).joined(separator: " · ")
     }
-    if !writes.routines.isEmpty { return "Created " + GymCount.of(writes.routines.count, "routine") }
+    if !writes.routines.isEmpty { return String(localized: "Created \(writes.routines.count) routines", locale: .copy) }
     return nil
   }
   var body: some View {
@@ -62,7 +62,7 @@ struct CoachHistoryScreen: View {
       if !coach.allowed {
         CoachUnavailable(symbol: "bubble.left.and.bubble.right", sentence: CoachCopy.accountChanging)
       } else if rows.isEmpty {
-        CoachUnavailable(symbol: "bubble.left.and.bubble.right", sentence: "No conversations yet.\nWhat you ask Coach on this phone is listed here.")
+        CoachUnavailable(symbol: "bubble.left.and.bubble.right", sentence: String(localized: "No conversations yet.\nWhat you ask Coach on this phone is listed here."))
       } else { conversations(rows) }
     }.navigationTitle("History").modifier(GymPage()).accessibilityIdentifier("gym-coach-history")
       .gymTabBar()
@@ -72,7 +72,8 @@ struct CoachHistoryScreen: View {
             .disabled(!coach.allowed).accessibilityIdentifier("coach-new-chat")
         }
       }
-      .destructiveQuestion(gym, screen: "history", title: "Delete this conversation?", message: "You can’t undo this.", act: "Delete",
+      .destructiveQuestion(gym, screen: "history", title: String(localized: "Delete this conversation?"), message: String(localized: "You can’t undo this."),
+                           act: String(localized: "Delete"),
                            isPresented: Binding(get: { deletion != nil }, set: { if !$0 { deletion = nil } })) {
         if let row = deletion, coach.allowed { _ = coach.delete(row.id) }
       }
@@ -97,7 +98,7 @@ struct CoachHistoryScreen: View {
     return Button {
       if coach.open(row.id) { dismiss() }
     } label: {
-      GymRow(title: row.title.isEmpty ? "Conversation" : row.title, meta: row.meta, trailing: day.map { .fact($0, door: true) } ?? .door, lineLimit: 1)
+      GymRow(title: row.title.isEmpty ? String(localized: "Conversation") : row.title, meta: row.meta, trailing: day.map { .fact($0, door: true) } ?? .door, lineLimit: 1)
         .contentShape(Rectangle())
     }.disabled(!coach.allowed)
   }

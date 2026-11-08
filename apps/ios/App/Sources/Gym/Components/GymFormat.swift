@@ -1,15 +1,35 @@
 import SwiftUI
 import DomainKit
 
-// The one place a count's noun agrees with its number.
-nonisolated enum GymCount {
-  static func of(_ count: Int, _ singular: String, plural: String? = nil) -> String {
-    "\(count) \(noun(count, singular, plural: plural))"
-  }
+extension Locale {
+  // The locale copy writes its numbers and picks its plural forms in: English, the one language, with digits as Swift
+  // writes them, 1000 and never 1,000 or ١٠٠٠. A message that interpolates an Int resolves in it.
+  nonisolated static let copy = Locale(identifier: "en_US_POSIX")
+}
 
-  // The noun alone, for a label that stands beside its value: *1 · Set*.
-  static func noun(_ count: Int, _ singular: String, plural: String? = nil) -> String {
-    count == 1 ? singular : plural ?? singular + "s"
+// The room's counted things, each a plural in the String Catalog: *1 set*, *3 sets*. A sentence that holds a count is a
+// plural message of its own, so it reads whole.
+nonisolated enum GymCount {
+  enum Noun { case set, rep, movement, workout, week, routine, note, weighIn, customMovement, change, suggestedChange, moreChange, hour, minute, second }
+
+  static func of(_ count: Int, _ noun: Noun) -> String {
+    switch noun {
+    case .set: String(localized: "\(count) sets", locale: .copy)
+    case .rep: String(localized: "\(count) reps", locale: .copy)
+    case .movement: String(localized: "\(count) movements", locale: .copy)
+    case .workout: String(localized: "\(count) workouts", locale: .copy)
+    case .week: String(localized: "\(count) weeks", locale: .copy)
+    case .routine: String(localized: "\(count) routines", locale: .copy)
+    case .note: String(localized: "\(count) notes", locale: .copy)
+    case .weighIn: String(localized: "\(count) weigh-ins", locale: .copy)
+    case .customMovement: String(localized: "\(count) custom movements", locale: .copy)
+    case .change: String(localized: "\(count) changes", locale: .copy)
+    case .suggestedChange: String(localized: "\(count) suggested changes", locale: .copy)
+    case .moreChange: String(localized: "\(count) more changes", locale: .copy)
+    case .hour: String(localized: "\(count) hours", locale: .copy)
+    case .minute: String(localized: "\(count) minutes", locale: .copy)
+    case .second: String(localized: "\(count) seconds", locale: .copy)
+    }
   }
 }
 
@@ -33,8 +53,10 @@ nonisolated struct GymDate {
 
   // *Sep 23*, the year only when it is not this one; *Today* and *Yesterday* as a value, lowercase inside a sentence.
   func day(_ day: LocalDay, inSentence: Bool = false) -> String {
-    let relative = day == moment.today ? "Today" : day == moment.today.adding(days: -1) ? "Yesterday" : nil
-    if let relative { return inSentence ? relative.lowercased() : relative }
+    if day == moment.today { return inSentence ? String(localized: "today", comment: "A day inside a sentence") : String(localized: "Today") }
+    if day == moment.today.adding(days: -1) {
+      return inSentence ? String(localized: "yesterday", comment: "A day inside a sentence") : String(localized: "Yesterday")
+    }
     return draw(day, dated(day, .dateTime.day().month(.abbreviated)))
   }
 

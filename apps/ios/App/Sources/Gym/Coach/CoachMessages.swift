@@ -138,7 +138,8 @@ struct CoachReading: Identifiable {
     if read.sessions > 0 {
       let days = read.days.sorted { $0.ms < $1.ms }.map { gym.dates.draw(LocalDay($0, in: gym.dates.moment.zone), .dateTime.month(.abbreviated).day()) }
       let span = days.count > 1 && days.first != days.last ? [days.first! + " – " + days.last!] : days.prefix(1).map { $0 }
-      return Step(title: "Read " + GymCount.of(read.sessions, "workout"), detail: ([GymCount.of(read.weeks, "week")] + span).joined(separator: " · "))
+      return Step(title: String(localized: "Read \(read.sessions) workouts", locale: .copy),
+                  detail: ([GymCount.of(read.weeks, .week)] + span).joined(separator: " · "))
     }
     let created = call.created.compactMap { ref -> String? in
       switch ref.type {
@@ -150,25 +151,24 @@ struct CoachReading: Identifiable {
         return CoachCopy.proposalTitle(routine: proposal.baseName ?? gym.coachRoutine(proposal)?.name, changes: gym.coachChangeCount(proposal), removal: removal)
       }
       case WorkoutProposal.type: gym.workoutProposals.first { $0.id.record == ref.id }.map { proposal in
-        CoachCopy.proposalTitle(routine: "This workout", changes: gym.coachWorkoutChangeCount(proposal), removal: false)
+        CoachCopy.proposalTitle(routine: String(localized: "This workout"), changes: gym.coachWorkoutChangeCount(proposal), removal: false)
       }
       default: nil
       }
     }
     let detail: String? = switch call.name {
-    case "list_notes": gym.notes.isEmpty ? nil : GymCount.of(gym.notes.count, "note")
+    case "list_notes": gym.notes.isEmpty ? nil : GymCount.of(gym.notes.count, .note)
     case "list_routines": gym.routines.isEmpty ? nil : gym.routines.map(\.name).joined(separator: " · ")
     default: created.isEmpty ? nil : created.joined(separator: " · ")
     }
     return Step(title: phrase.prefix(1).uppercased() + phrase.dropFirst(), detail: detail)
   }
 
-  var count: String { GymCount.of(workouts, "workout") + " · " + GymCount.of(weeks, "week") }
   // The receipt row: the workouts by identity, else what it read in words with no number; none when it read what no line can say.
   var line: String? {
-    if workouts > 0 { return "Read " + count }
-    if nothing { return "Read nothing from your log" }
-    return stats ? "Read your movement history" : nil
+    if workouts > 0 { return "\(String(localized: "Read \(workouts) workouts", locale: .copy)) · \(GymCount.of(weeks, .week))" }
+    if nothing { return String(localized: "Read nothing from your log") }
+    return stats ? String(localized: "Read your movement history") : nil
   }
 }
 
@@ -243,10 +243,10 @@ struct CoachAnswerView: View {
             } label: {
               HStack(spacing: 12) {
                 Image(systemName: "checkmark.circle").font(.title3).foregroundStyle(GymPalette.ink)
-                GymRow(title: routine.name, meta: "Routine created · " + GymCount.of(routine.entries.count, "movement"))
+                GymRow(title: routine.name, meta: "\(String(localized: "Routine created")) · \(GymCount.of(routine.entries.count, .movement))")
                 Image(systemName: "arrow.up.right").font(.caption).foregroundStyle(GymPalette.inkFaint)
               }.padding(.vertical, 10).contentShape(Rectangle())
-            }.buttonStyle(.plain).accessibilityLabel("Open routine · " + routine.name)
+            }.buttonStyle(.plain).accessibilityLabel(String(localized: "Open routine · \(routine.name)"))
               .accessibilityIdentifier("coach-created-" + routine.id.description)
           }
         }.modifier(ChangeCard())
@@ -268,17 +268,17 @@ struct CoachAnswerView: View {
   // How a turn ended short of a whole answer, in the board's line under what arrived (08.46–08.50).
   static func ending(_ message: CoachMessage) -> String? {
     switch message.state {
-    case .completed: message.truncated ? "Cut short. Ask Coach to go on." : nil
-    case .declined: "Coach declined to answer this."
-    case .failed: "Coach couldn’t finish. Ask again."
-    case .stopped: "Stopped."
-    case .interrupted: "Interrupted. What arrived is kept."
+    case .completed: message.truncated ? String(localized: "Cut short. Ask Coach to go on.") : nil
+    case .declined: String(localized: "Coach declined to answer this.")
+    case .failed: String(localized: "Coach couldn’t finish. Ask again.")
+    case .stopped: String(localized: "Stopped.")
+    case .interrupted: String(localized: "Interrupted. What arrived is kept.")
     case .running: nil
     }
   }
   // What Coach wrote besides answering, one card each with no buttons: its symbol in accent and what it did, the record's
   // own lines under it, and the door's chevron where the card opens what it wrote.
-  func writeCard(_ title: String, symbol: String, lines: [String], door: Bool = false) -> some View {
+  func writeCard(_ title: LocalizedStringResource, symbol: String, lines: [String], door: Bool = false) -> some View {
     HStack(spacing: RoomSpace.related) {
       VStack(alignment: .leading, spacing: RoomSpace.small) {
         Label { Text(title).foregroundStyle(GymPalette.ink) } icon: { Image(systemName: symbol).foregroundStyle(GymPalette.accent) }
@@ -299,9 +299,9 @@ struct CoachAnswerView: View {
         .font(.headline)
       Divider().overlay(GymPalette.line)
       ChangeBlock(kind: .added, title: exercise.name, fields: [
-        ProposalDiff.Field("Name", before: nil, after: exercise.name),
-        ProposalDiff.Field("Equipment", before: nil, after: MovementEquipment(exercise).title),
-        ProposalDiff.Field("Step", before: nil, after: Readout.weight(exercise.stepKg) + " kg"),
+        ProposalDiff.Field(String(localized: "Name"), before: nil, after: exercise.name),
+        ProposalDiff.Field(String(localized: "Equipment"), before: nil, after: MovementEquipment(exercise).title),
+        ProposalDiff.Field(String(localized: "Step", comment: "A movement's load step"), before: nil, after: String(localized: "\(Readout.weight(exercise.stepKg)) kg")),
       ]).padding(.vertical, 4)
     }.modifier(ChangeCard()).accessibilityElement(children: .combine).accessibilityIdentifier("coach-made-movement")
   }

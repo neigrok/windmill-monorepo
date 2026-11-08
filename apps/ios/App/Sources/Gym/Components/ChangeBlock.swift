@@ -8,11 +8,11 @@ import GymDomain
 extension ProposalDiff.Kind {
   var word: String {
     switch self {
-    case .renamed: "Renamed"
-    case .moved: "Moved"
-    case .changed: "Changed"
-    case .removed: "Removed"
-    case .added: "Added"
+    case .renamed: String(localized: "Renamed")
+    case .moved: String(localized: "Moved")
+    case .changed: String(localized: "Changed")
+    case .removed: String(localized: "Removed")
+    case .added: String(localized: "Added")
     }
   }
   var symbol: String {
@@ -57,9 +57,9 @@ extension ProposalDiff.Field {
   }
   var spoken: String {
     switch state {
-    case .changed: "\(label), \(before ?? "") to \(after ?? "")"
+    case .changed: String(localized: "\(label), \(before ?? "") to \(after ?? "")", comment: "A field read aloud: Load, 82.5 kg to 90 kg")
     case .same, .new: "\(label), \(after ?? "")"
-    case .gone: "\(label), \(before ?? ""), removed"
+    case .gone: String(localized: "\(label), \(before ?? ""), removed", comment: "A field read aloud: Load, 82.5 kg, removed")
     }
   }
 }
@@ -90,7 +90,7 @@ struct RejectedLine: View {
   let subject: String
   var symbol = "xmark"
   var body: some View {
-    Label("Rejected · " + subject, systemImage: symbol).labelStyle(ChangeBadgeStyle())
+    Label(String(localized: "Rejected · \(subject)"), systemImage: symbol).labelStyle(ChangeBadgeStyle())
       .font(.subheadline).foregroundStyle(GymPalette.inkDim).frame(maxWidth: .infinity, minHeight: RoomSpace.minimumTarget, alignment: .leading)
       .accessibilityElement(children: .combine)
   }

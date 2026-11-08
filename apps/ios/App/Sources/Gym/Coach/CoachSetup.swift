@@ -19,10 +19,13 @@ struct CoachSetupView: View {
   let signedIn: Bool
   let choose: (CoachSetupChoice) -> Void
   @Environment(\.dynamicTypeSize) var typeSize
+  // Each line a term and what it offers, the term set semibold before the dash.
   var capabilities: [(String, String)] {
-    [("Build", "a program from a screenshot or your own words."), ("Goals", "tell me your goals, and I will plan for them.")]
-      + (signedIn ? [("Notes", "I save important facts, like an old injury."), ("Changes", "ask me, and I suggest changes to your routines.")]
-         : [("Account", "sign in, and I can also save notes and suggest changes to your routines.")])
+    [(String(localized: "Build"), String(localized: "a program from a screenshot or your own words.")),
+     (String(localized: "Goals"), String(localized: "tell me your goals, and I will plan for them."))]
+      + (signedIn ? [(String(localized: "Notes"), String(localized: "I save important facts, like an old injury.")),
+                     (String(localized: "Changes"), String(localized: "ask me, and I suggest changes to your routines."))]
+         : [(String(localized: "Account"), String(localized: "sign in, and I can also save notes and suggest changes to your routines."))])
   }
   var body: some View {
     VStack(alignment: .leading, spacing: RoomSpace.small) {
@@ -46,7 +49,7 @@ struct CoachSetupView: View {
   }
   // What the greeting offers under its bubbles, in order; a goal or just logging is never one of them.
   static let choices: [(choice: CoachSetupChoice, title: String, symbol: String)] = [
-    (.screenshot, "Add screenshot", "photo.badge.plus"), (.buildManually, "Build my own", "plus"),
+    (.screenshot, String(localized: "Add screenshot"), "photo.badge.plus"), (.buildManually, String(localized: "Build my own"), "plus"),
   ]
   @ViewBuilder var actions: some View {
     ForEach(Self.choices, id: \.choice) { action in

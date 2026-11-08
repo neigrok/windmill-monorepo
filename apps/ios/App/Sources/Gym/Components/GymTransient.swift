@@ -13,7 +13,7 @@ struct GymTransient: View {
     enum Control: Equatable {
       case retry, dismiss
 
-      var title: String { self == .retry ? "Try again" : "Dismiss message" }
+      var title: String { self == .retry ? String(localized: "Try again") : String(localized: "Dismiss message") }
       var symbol: String? { self == .dismiss ? "xmark" : nil }
     }
 

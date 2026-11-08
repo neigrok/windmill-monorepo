@@ -23,27 +23,26 @@ nonisolated struct CoachResult: Codable, Equatable, Identifiable, Sendable {
 }
 
 nonisolated enum CoachCopy {
-  static let noAnswer = "Coach didn’t answer. Try again in a moment"
-  static let offline = "Coach needs a connection."
-  static let accountChanging = "Your account is changing. Your question is kept here."
-  static let absent = "This Windmill does not have Coach. You can still read your log."
-  static let unreadableDraft = "Your draft couldn’t be read."
+  static let noAnswer = String(localized: "Coach didn’t answer. Try again in a moment")
+  static let offline = String(localized: "Coach needs a connection.")
+  static let accountChanging = String(localized: "Your account is changing. Your question is kept here.")
+  static let absent = String(localized: "This Windmill does not have Coach. You can still read your log.")
+  static let unreadableDraft = String(localized: "Your draft couldn’t be read.")
   // The day's cap, said of the wait to the server's moment: under a minute, then to the nearest minute below 9½, the nearest
   // five below 52½, and the nearest hour beyond. A refusal that names no moment says only *later*.
   static func daily(waitMs: Int64?) -> String {
-    guard let waitMs else { return "You can ask again later." }
+    guard let waitMs else { return String(localized: "You can ask again later.") }
     let minutes = Double(waitMs) / 60_000
-    let wait = switch minutes {
-    case ..<1: "a minute"
-    case ..<9.5: "about " + GymCount.of(Int(minutes.rounded()), "minute")
-    case ..<52.5: "about " + GymCount.of(Int((minutes / 5).rounded()) * 5, "minute")
-    default: "about " + GymCount.of(Int((minutes / 60).rounded()), "hour")
+    return switch minutes {
+    case ..<1: String(localized: "You can ask again in a minute.")
+    case ..<9.5: String(localized: "You can ask again in about \(Int(minutes.rounded())) minutes.", locale: .copy)
+    case ..<52.5: String(localized: "You can ask again in about \(Int((minutes / 5).rounded()) * 5) minutes.", locale: .copy)
+    default: String(localized: "You can ask again in about \(Int((minutes / 60).rounded())) hours.", locale: .copy)
     }
-    return "You can ask again in \(wait)."
   }
-  static let confirmRetry = "Couldn’t save the routine. Try again."
-  static let draftGone = "This draft is no longer available."
-  static let accountChanged = "The account changed. Open this again."
+  static let confirmRetry = String(localized: "Couldn’t save the routine. Try again.")
+  static let draftGone = String(localized: "This draft is no longer available.")
+  static let accountChanged = String(localized: "The account changed. Open this again.")
   static func escaped(_ component: String) -> String { component.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? "" }
   static func sendable(_ text: String, photo: Bool) -> Bool {
     let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -51,42 +50,42 @@ nonisolated enum CoachCopy {
   }
   // A proposal's one name, on its Routines and History rows: *Push A · 3 changes* or *Push A · a removal*.
   static func proposalTitle(routine: String?, changes: Int, removal: Bool) -> String {
-    [routine, removal ? "a removal" : GymCount.of(changes, "change")].compactMap { $0 }.joined(separator: " · ")
+    [routine, removal ? String(localized: "a removal") : GymCount.of(changes, .change)].compactMap { $0 }.joined(separator: " · ")
   }
-  static let outOfDate = "Out of date"
-  static let notApplied = "Not applied"
+  static let outOfDate = String(localized: "Out of date")
+  static let notApplied = String(localized: "Not applied")
   // A refused Apply, said over its card's buttons: the cause where the refusal names one, then that nothing was applied.
   static func notApplied(_ refusal: GymRefusal?, routine: String) -> String {
-    let cause: String? = switch refusal {
+    switch refusal {
     case .proposalSuperseded(let refused):
       switch try? refused.detail?.member("reason").asString() {
-      case "routine-changed": routine + " changed after this suggestion."
-      case "replaced": "A newer suggestion replaced this one."
-      default: "This suggestion is out of date."
+      case "routine-changed": String(localized: "\(routine) changed after this suggestion. Not applied.")
+      case "replaced": String(localized: "A newer suggestion replaced this one. Not applied.")
+      default: String(localized: "This suggestion is out of date. Not applied.")
       }
-    case .proposalSettled: "This suggestion was already answered."
-    case .gone(let record, _) where record.type == Routine.type: routine + " is no longer in your program."
-    default: nil
+    case .proposalSettled: String(localized: "This suggestion was already answered. Not applied.")
+    case .gone(let record, _) where record.type == Routine.type: String(localized: "\(routine) is no longer in your program. Not applied.")
+    default: String(localized: "Not applied.")
     }
-    return [cause, notApplied + "."].compactMap { $0 }.joined(separator: " ")
   }
   // Why an out-of-date card has no buttons (08.57), one cause and then that nothing was applied.
   static func outOfDateReason(_ reason: CoachOutOfDate, routine: String, catalogue: Catalogue) -> String {
-    let cause = switch reason {
-    case .replaced: "A newer suggestion replaced this one."
-    case .routineChanged: routine + " changed after this suggestion."
-    case .workoutChanged: "This workout changed after this suggestion."
-    case .workoutFinished: "This workout has finished."
-    case .workoutMoved(let movement): "You logged " + (catalogue.find(movement)?.name ?? "a movement") + " since this suggestion."
+    switch reason {
+    case .replaced: String(localized: "A newer suggestion replaced this one. Nothing was applied.")
+    case .routineChanged: String(localized: "\(routine) changed after this suggestion. Nothing was applied.")
+    case .workoutChanged: String(localized: "This workout changed after this suggestion. Nothing was applied.")
+    case .workoutFinished: String(localized: "This workout has finished. Nothing was applied.")
+    case .workoutMoved(let movement):
+      catalogue.find(movement).map { String(localized: "You logged \($0.name) since this suggestion. Nothing was applied.") }
+        ?? String(localized: "You logged a movement since this suggestion. Nothing was applied.")
     }
-    return cause + " Nothing was applied."
   }
   // How a proposal settled, one word on its card and its History row; a waiting one says nothing. The wire keeps
   // *dismissed* for a rejected proposal.
   static func settled(_ state: String, removal: Bool) -> String? {
     switch state {
-    case "applied": removal ? "Removed" : "Applied"
-    case "dismissed": "Rejected"
+    case "applied": removal ? String(localized: "Removed") : String(localized: "Applied")
+    case "dismissed": String(localized: "Rejected")
     case "superseded": outOfDate
     default: nil
     }
@@ -94,18 +93,18 @@ nonisolated enum CoachCopy {
   // What a refused send or a signed-out answer the server could not give says, by the code it named.
   static func refusal(_ code: String) -> String {
     switch code {
-    case "client-update-required": return "Update Windmill to keep using Gym."
-    case "invalid_installation": return "This phone’s AI access couldn’t be verified. Your draft is kept."
-    case "installation_bound", "device_bound": return "This phone’s AI access belongs to an account."
-    case "installation_rate_limited", "onboarding_rate_limited", "request_limit": return "Too many requests from this connection. Your draft is kept; try again later."
-    case "insufficient_details": return "Coach needs a clearer program. Add the movements and sets, or a clearer photo."
-    case "expired", "result_expired": return "This response has expired. Your draft is still on this phone."
-    case "anonymous_ai_unavailable", "unconfigured": return "Coach setup is unavailable right now. Your draft is kept."
-    case "unsupported_equipment": return "Coach can’t plan with that equipment yet. Your draft is kept."
-    case "invalid_input", "invalid_image": return "Check your message or choose a different photo, then send again."
-    case "model_refused": return "Coach couldn’t help with that request. Edit your message and try again."
-    case "output_truncated", "invalid_result": return "Coach couldn’t make complete routines. Your draft is kept."
-    default: return "Coach couldn’t answer that. Your draft is kept."
+    case "client-update-required": return String(localized: "Update Windmill to keep using Gym.")
+    case "invalid_installation": return String(localized: "This phone’s AI access couldn’t be verified. Your draft is kept.")
+    case "installation_bound", "device_bound": return String(localized: "This phone’s AI access belongs to an account.")
+    case "installation_rate_limited", "onboarding_rate_limited", "request_limit": return String(localized: "Too many requests from this connection. Your draft is kept; try again later.")
+    case "insufficient_details": return String(localized: "Coach needs a clearer program. Add the movements and sets, or a clearer photo.")
+    case "expired", "result_expired": return String(localized: "This response has expired. Your draft is still on this phone.")
+    case "anonymous_ai_unavailable", "unconfigured": return String(localized: "Coach setup is unavailable right now. Your draft is kept.")
+    case "unsupported_equipment": return String(localized: "Coach can’t plan with that equipment yet. Your draft is kept.")
+    case "invalid_input", "invalid_image": return String(localized: "Check your message or choose a different photo, then send again.")
+    case "model_refused": return String(localized: "Coach couldn’t help with that request. Edit your message and try again.")
+    case "output_truncated", "invalid_result": return String(localized: "Coach couldn’t make complete routines. Your draft is kept.")
+    default: return String(localized: "Coach couldn’t answer that. Your draft is kept.")
     }
   }
 }
@@ -116,21 +115,21 @@ nonisolated extension AiAllowance {
   func amount(_ value: String) -> Decimal { Decimal(string: value, locale: Locale(identifier: "en_US_POSIX")) ?? 0 }
   var message: String {
     if code == "subject_exhausted" {
-      if amount(remaining) > 0 { return "This request needs more AI capacity than your remaining allowance." }
-      if !spent { return "The rest of your AI allowance is held by a request still in progress." }
+      if amount(remaining) > 0 { return String(localized: "This request needs more AI capacity than your remaining allowance.") }
+      if !spent { return String(localized: "The rest of your AI allowance is held by a request still in progress.") }
     }
     return Self.sentence(code)
   }
   // What a refusal code says when the allowance's amounts are not known, as a turn's refusal names only its code.
   static func sentence(_ code: String) -> String {
     switch code {
-    case "subject_exhausted": "You have used all of your AI allowance."
-    case "free_month_exhausted": "Coach’s shared free AI capacity is unavailable for this month. Signing in does not bypass this limit."
-    case "free_day_exhausted": "Coach’s shared free AI capacity is unavailable for today. Signing in does not bypass this limit."
-    case "concurrency_exhausted": "Another AI request is still in progress. Try again when it finishes."
-    case "funding_required": "Your plan has no funded AI allowance for this period."
-    case "device_bound": "This phone’s AI access belongs to an account."
-    default: "Coach’s AI allowance is unavailable right now."
+    case "subject_exhausted": String(localized: "You have used all of your AI allowance.")
+    case "free_month_exhausted": String(localized: "Coach’s shared free AI capacity is unavailable for this month. Signing in does not bypass this limit.")
+    case "free_day_exhausted": String(localized: "Coach’s shared free AI capacity is unavailable for today. Signing in does not bypass this limit.")
+    case "concurrency_exhausted": String(localized: "Another AI request is still in progress. Try again when it finishes.")
+    case "funding_required": String(localized: "Your plan has no funded AI allowance for this period.")
+    case "device_bound": String(localized: "This phone’s AI access belongs to an account.")
+    default: String(localized: "Coach’s AI allowance is unavailable right now.")
     }
   }
   // When Coach answers again, in the zone `dates` reads days in, said only where a reset brings it back: a spent allowance
@@ -146,6 +145,6 @@ nonisolated extension AiAllowance {
     guard let reset else { return nil }
     let instant = Instant(ms: reset)
     let day = dates.draw(LocalDay(instant, in: dates.moment.zone), .dateTime.month(.abbreviated).day())
-    return "You can use Coach again on \(day) at \(dates.time(instant))."
+    return String(localized: "You can use Coach again on \(day) at \(dates.time(instant)).")
   }
 }

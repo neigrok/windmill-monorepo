@@ -51,15 +51,15 @@ nonisolated enum CoachTurnRefusal: Equatable, Sendable {
 
   var sentence: String {
     switch self {
-    case .offline: "No connection. Your question is kept here."
-    case .logArriving: "Your log is still arriving on this phone. Ask again in a moment."
+    case .offline: String(localized: "No connection. Your question is kept here.")
+    case .logArriving: String(localized: "Your log is still arriving on this phone. Ask again in a moment.")
     case .allowance(let code): AiAllowance.sentence(code)
-    case .freeMonthExhausted: "Coach is paused for everyone this month."
+    case .freeMonthExhausted: String(localized: "Coach is paused for everyone this month.")
     case .rateLimited: CoachCopy.daily(waitMs: nil)
-    case .updateRequired: "This version can’t ask Coach any more. Update Windmill to continue."
+    case .updateRequired: String(localized: "This version can’t ask Coach any more. Update Windmill to continue.")
     case .absent: CoachCopy.absent
-    case .installation("invalid_installation"): "This phone can’t ask Coach signed out any more. Sign in to continue."
-    case .installation: "This phone is linked to an account. Sign in to ask Coach."
+    case .installation("invalid_installation"): String(localized: "This phone can’t ask Coach signed out any more. Sign in to continue.")
+    case .installation: String(localized: "This phone is linked to an account. Sign in to ask Coach.")
     case .said: CoachCopy.noAnswer
     }
   }
@@ -103,10 +103,10 @@ nonisolated enum CoachRecovery: Equatable, Sendable {
 
   var title: String {
     switch self {
-    case .tryAgain: "Try again"
-    case .signIn: "Sign in"
-    case .ownAgent: "Use your own AI agent"
-    case .update: "Update"
+    case .tryAgain: String(localized: "Try again")
+    case .signIn: String(localized: "Sign in")
+    case .ownAgent: String(localized: "Use your own AI agent")
+    case .update: String(localized: "Update")
     }
   }
 }
@@ -223,7 +223,7 @@ nonisolated struct TurnInterrupted: Error {
   // end, the draft kept. A question past the bound never reaches here: the composer refuses it as it is typed.
   func send(_ question: String, picture: CoachPictureRow?, thread: ID<CoachThread>?, anonymous: Bool,
             withdrawn: @escaping @MainActor (OpenTurn.Turn) -> Void) async -> OpenTurn.Turn? {
-    guard running == nil else { error = "Coach is answering another message. Try again when it finishes."; return nil }
+    guard running == nil else { error = String(localized: "Coach is answering another message. Try again when it finishes."); return nil }
     guard question.utf8.count <= CoachRules.maxQuestionBytes else { return nil }
     if offline { refuse(.offline); return nil }
     let seat: TurnSeat
@@ -231,13 +231,13 @@ nonisolated struct TurnInterrupted: Error {
       if let refused = Self.refusal(for: error) { refuse(refused) } else { self.error = (error as? AppFailure)?.message ?? CoachCopy.noAnswer; outcome("refused") }
       return nil
     }
-    guard running == nil else { error = "Coach is answering another message. Try again when it finishes."; return nil }
+    guard running == nil else { error = String(localized: "Coach is answering another message. Try again when it finishes."); return nil }
     do {
       if try logArriving { refuse(.logArriving); return nil }
-      if let picture, try runner.run(KeepPicture(picture: picture)).refusal != nil { error = "Your message couldn’t be saved. Try again."; return nil }
+      if let picture, try runner.run(KeepPicture(picture: picture)).refusal != nil { error = String(localized: "Your message couldn’t be saved. Try again."); return nil }
       let pictures = picture.map { [Picture(id: $0.id, mediaType: "image/jpeg", localOnly: true)] } ?? []
       let outcome = try runner.run(OpenTurn(thread: thread, question: question, pictures: pictures))
-      guard let turn = outcome.value else { error = "Your message couldn’t be saved. Try again."; return nil }
+      guard let turn = outcome.value else { error = String(localized: "Your message couldn’t be saved. Try again."); return nil }
       let running = Running(turn: turn, seat: seat)
       self.running = running; refusal = nil; error = nil; stopping = false; reconnecting = false
       telemetry.event("gym_ask_started", properties: ["screen": "coach"])
@@ -245,7 +245,7 @@ nonisolated struct TurnInterrupted: Error {
       lease = runtime.background.run(named: "windmill.coach.turn") { [work] in await work?.value }
       return turn
     } catch {
-      self.error = "Your message couldn’t be saved. Try again."
+      self.error = String(localized: "Your message couldn’t be saved. Try again.")
       report(TurnInterrupted.storage, error)
       return nil
     }
@@ -505,8 +505,8 @@ nonisolated struct TurnInterrupted: Error {
         guard self.running == running else { return }
         work?.cancel(); work = nil
         end(running, state: .stopped, truncated: false, code: nil, tally: CoachTurnTally(), started: .now)
-        self.error = GymRESTClient.needsConnection(error) ? "Coach is stopped on this phone. Stopping it on the server needs a connection."
-          : "The stop request didn’t reach Coach. Try again."
+        self.error = GymRESTClient.needsConnection(error) ? String(localized: "Coach is stopped on this phone. Stopping it on the server needs a connection.")
+          : String(localized: "The stop request didn’t reach Coach. Try again.")
       }
     }
   }

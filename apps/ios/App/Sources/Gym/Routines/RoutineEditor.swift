@@ -63,7 +63,7 @@ final class RoutineEditingSession: Identifiable {
   @discardableResult func stageMovement(_ gym: GymModel) -> Bool {
     guard let form else { return false }
     guard account == gym.account, anonymous == gym.isAnonymous, !gym.accountTransition else {
-      refusal = "The account changed while editing. Open the routine again."
+      refusal = String(localized: "The account changed while editing. Open the routine again.")
       return false
     }
     guard form.problem == nil else { return false }
@@ -88,7 +88,7 @@ final class RoutineEditingSession: Identifiable {
 
   @discardableResult func save(_ gym: GymModel) -> Bool {
     guard account == gym.account, anonymous == gym.isAnonymous, !gym.accountTransition else {
-      refusal = "The account changed while editing. Open the routine again."
+      refusal = String(localized: "The account changed while editing. Open the routine again.")
       gym.telemetry.event("gym_action", properties: ["screen": "routine_editor", "action": "update", "outcome": "refused"])
       return false
     }
@@ -109,18 +109,18 @@ final class RoutineEditingSession: Identifiable {
       if outcome.receipt != nil { gym.telemetry.event("gym_routine_saved", properties: ["screen": "routine_editor", "action": draft.isNew ? "create" : "update"]) }
       saved = true; return true
     }
-    refusal = gym.error ?? "This routine could not be saved. Try again."
+    refusal = gym.error ?? String(localized: "This routine could not be saved. Try again.")
     return false
   }
 
   @discardableResult func delete(_ gym: GymModel) -> Bool {
     guard account == gym.account, anonymous == gym.isAnonymous, !gym.accountTransition else {
-      refusal = "The account changed while editing. Open the routine again."
+      refusal = String(localized: "The account changed while editing. Open the routine again.")
       gym.telemetry.event("gym_action", properties: ["screen": "routine_editor", "action": "update", "outcome": "refused"])
       return false
     }
     guard let outcome = gym.run(DeleteRoutine(id)), outcome.refusal == nil else {
-      refusal = gym.error ?? "This routine could not be deleted. Try again."; return false
+      refusal = gym.error ?? String(localized: "This routine could not be deleted. Try again."); return false
     }
     return true
   }
@@ -240,15 +240,15 @@ struct RoutineEditor: View {
 }
 
 enum RoutinePlanning {
-  static let belowFloor = "Load, 0 or more."
+  static let belowFloor = String(localized: "Load, 0 or more.")
 
   // Why a routine cannot be saved, its name first.
   static func problem(_ routine: Routine) -> String? { NameField.routine.problem(routine.name) ?? movementsProblem(routine.entries) }
 
   // A routine holds at least one movement and at most the rule's most.
   static func movementsProblem(_ entries: [RoutineEntry]) -> String? {
-    if entries.isEmpty { return "A routine is at least one movement." }
-    if entries.count > RoutineRules.entries.max { return "Use \(RoutineRules.entries.max) movements or fewer." }
+    if entries.isEmpty { return String(localized: "A routine is at least one movement.") }
+    if entries.count > RoutineRules.entries.max { return String(localized: "Use \(RoutineRules.entries.max) movements or fewer.", locale: .copy) }
     return nil
   }
 }

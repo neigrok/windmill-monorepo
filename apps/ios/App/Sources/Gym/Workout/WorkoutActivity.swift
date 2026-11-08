@@ -257,11 +257,11 @@ extension WorkoutState {
     }
   }
   func content(session: Session, offer: WorkoutActivityOffer?) throws -> ActivityContent<WorkoutActivityAttributes.ContentState> {
-    guard let gym else { throw AppFailure(message: "Workout is unavailable.") }
+    guard let gym else { throw AppFailure(message: String(localized: "Workout is unavailable.")) }
     let workout = gym.workout, clocks = try self.clocks(session), movement = workout.selected.flatMap { gym.catalogue.find($0) }
     // Before a movement is chosen the card names neither a movement nor a load. A barbell's load is its total, which kg
     // alone already says; a dumbbell's and a bodyweight movement's keep the basis the rack draws.
-    let basis = MovementEquipment(movement), unit = basis.kind == .barbell ? "kg" : basis.unit
+    let basis = MovementEquipment(movement), unit = basis.kind == .barbell ? String(localized: "kg", comment: "The kilogram unit") : basis.unit
     let state = WorkoutActivityAttributes.ContentState(title: session.name ?? Readout.noRoutine,
       movement: movement?.name ?? "", load: movement == nil ? "" : Readout.weight(workout.weightKg) + " " + unit, reps: workout.reps,
       workingSetOrdinal: workout.currentSets.count + 1,
@@ -272,7 +272,7 @@ extension WorkoutState {
   }
   // The workout's start, last set and four-hour stale point on this phone's wall clock, the server offset subtracted.
   func clocks(_ session: Session) throws -> (startedAt: Date, lastSetAt: Date?, staleAt: Date) {
-    guard let gym else { throw AppFailure(message: "Workout is unavailable.") }
+    guard let gym else { throw AppFailure(message: String(localized: "Workout is unavailable.")) }
     let correction = Double(try gym.runtime?.storageRead { try $0.device().activeReplica.meta.serverOffsetMs } ?? 0)
     let date = { (ms: Int64) in Date(timeIntervalSince1970: (Double(ms) - correction) / 1000) }
     let latest = gym.workout.sets.map(\.completedAt).max()
@@ -336,17 +336,21 @@ nonisolated enum WorkoutLogAnswer: Equatable {
 
   // The set an outside Log set wrote, in Siri's words; a movement this phone cannot name is left out, never given a stand-in.
   static func loggedSet(_ offer: WorkoutActivityOffer, movement: String?) -> WorkoutLogAnswer {
-    let load = Readout.weight(offer.weightKg), reps = GymCount.of(offer.reps, "rep")
-    guard let movement else { return .logged(shown: "Logged \(load) kg × \(offer.reps).", spoken: "Logged \(load) kilograms, \(reps).") }
-    return .logged(shown: "Logged \(load) kg × \(offer.reps) · \(movement).", spoken: "Logged \(load) kilograms, \(reps), \(movement).")
+    let load = Readout.weight(offer.weightKg), reps = offer.reps
+    guard let movement else {
+      return .logged(shown: String(localized: "Logged \(load) kg × \(reps).", locale: .copy),
+                     spoken: String(localized: "Logged \(load) kilograms, \(reps) reps.", locale: .copy))
+    }
+    return .logged(shown: String(localized: "Logged \(load) kg × \(reps) · \(movement).", locale: .copy),
+                   spoken: String(localized: "Logged \(load) kilograms, \(reps) reps, \(movement).", locale: .copy))
   }
 
   // What Siri shows and says for the answer: the shortcut names what happened; the Live Activity's button and the control log or open in silence.
   func dialog(_ surface: WorkoutSurface) -> (shown: String, spoken: String) {
     switch self {
-    case .absent: ("No workout is open.", "No workout is open.")
+    case .absent: (String(localized: "No workout is open."), String(localized: "No workout is open."))
     case .logged(let shown, let spoken): surface == .shortcut ? (shown, spoken) : ("", "")
-    case .opened: surface == .shortcut ? ("Nothing logged. Opening Windmill.", "Nothing logged. Opening Windmill.") : ("", "")
+    case .opened: surface == .shortcut ? (String(localized: "Nothing logged. Opening Windmill."), String(localized: "Nothing logged. Opening Windmill.")) : ("", "")
     }
   }
 }
