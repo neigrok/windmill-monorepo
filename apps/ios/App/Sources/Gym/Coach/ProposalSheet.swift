@@ -108,12 +108,12 @@ extension ProposalCard {
     return GymCount.of(gym.coachChangeCount(proposal), "change") + (stance == .open && nextTime ? " · next time" : "")
   }
 
-  // What a connected tool's removal asks before it applies, in the tool's own name (02L.11P); none for Coach's, asked for in
-  // its conversation, which applies at once.
+  // What a connected tool's removal asks before it applies, in the name the tool gave, as it gave it, else *A connected
+  // tool* (02L.11P); none for Coach's, asked for in its conversation, which applies at once.
   var removalQuestion: (title: String, message: String)? {
     guard let proposal, removal else { return nil }
     if case .ask = proposal.provenance { return nil }
-    let source = proposal.sourceName.prefix(1).uppercased() + proposal.sourceName.dropFirst()
+    let source = proposal.toolName ?? "A connected tool"
     return ("Remove \(routineName)?", "\(source) suggested this. Your past \(routineName) workouts stay in the log.")
   }
 

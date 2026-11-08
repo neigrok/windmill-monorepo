@@ -265,13 +265,18 @@ import UIKit
     let moment = Moment(now: Instant(ms: 1_790_424_000_000), zone: FixedZone(offsetSeconds: 0))
     let dates = GymDate(moment, locale: Locale(identifier: "en_US"))
     let coach = Proposal(id: ID("p"), routineId: ID("r"), intent: "update", proposedName: "A", summary: "Change", changes: [])
-    let agent = Proposal(id: ID("p"), routineId: ID("r"), intent: "update", proposedName: "A", summary: "Change", changes: [], door: "mcp", connection: "My laptop", agent: "Claude")
-    let unnamed = Proposal(id: ID("p"), routineId: ID("r"), intent: "update", proposedName: "A", summary: "Change", changes: [], door: "mcp", connection: "My laptop")
+    // A connection is the credential's opaque id, an OAuth client's 43 characters here, and is never shown as a name.
+    let agent = Proposal(id: ID("p"), routineId: ID("r"), intent: "update", proposedName: "A", summary: "Change", changes: [], door: "mcp",
+                         connection: "eO4duDroOGDrZom5uTyYSeAm1_Z2pk5dMrq02EDf7uU", agent: "Claude")
+    let lowercase = Proposal(id: ID("p"), routineId: ID("r"), intent: "update", proposedName: "A", summary: "Change", changes: [], door: "mcp",
+                             connection: "eO4duDroOGDrZom5uTyYSeAm1_Z2pk5dMrq02EDf7uU", agent: "claude.ai")
+    let unnamed = Proposal(id: ID("p"), routineId: ID("r"), intent: "update", proposedName: "A", summary: "Change", changes: [], door: "mcp",
+                           connection: "eO4duDroOGDrZom5uTyYSeAm1_Z2pk5dMrq02EDf7uU")
     let anonymous = Proposal(id: ID("p"), routineId: ID("r"), intent: "update", proposedName: "A", summary: "Change", changes: [], door: "mcp")
     let other = Proposal(id: ID("p"), routineId: ID("r"), intent: "update", proposedName: "A", summary: "Change", changes: [], door: "import")
     #expect(RoutineLines.proposal(coach, createdAt: nil, dates: dates) == "From Coach")
-    #expect([agent, unnamed, anonymous, other].map { RoutineLines.proposal($0, createdAt: nil, dates: dates) }
-            == ["From Claude", "From My laptop", "From a connected tool", "From a connected tool"])
+    #expect([agent, lowercase, unnamed, anonymous, other].map { RoutineLines.proposal($0, createdAt: nil, dates: dates) }
+            == ["From Claude", "From claude.ai", "From a connected tool", "From a connected tool", "From a connected tool"])
     #expect([coach, agent, unnamed, anonymous, other].map(\.sourceSymbol) == ["bubble.left.and.bubble.right", "link", "link", "link", "link"])
     #expect([Int64(2), 1, 0].map { RoutineLines.proposal(coach, createdAt: Instant(ms: moment.now.ms - $0 * 86_400_000), dates: dates) }
             == ["From Coach · Sep 24", "From Coach · Yesterday", "From Coach · 12:00\u{202F}PM"])

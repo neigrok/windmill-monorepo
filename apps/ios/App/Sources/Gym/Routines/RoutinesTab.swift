@@ -316,7 +316,7 @@ extension GymModel {
       let proposal = Proposal(id: runner.mint(Proposal.self), routineId: routine.id, intent: removing ? "remove" : "revise",
                               proposedName: removing ? "" : routine.name, summary: "A change from a connected tool",
                               changes: try ProposalRules.changesBetween(base: routine.entries, proposed: removing ? [] : entries),
-                              door: "mcp", connection: "My laptop", agent: "Claude")
+                              door: "mcp", connection: "eO4duDroOGDrZom5uTyYSeAm1_Z2pk5dMrq02EDf7uU", agent: "Claude")
       let fields = JSON.Object(uniqueKeysWithValues: proposal.fields.map { ($0.key, [$0.value, .null]) })
       let intent: JSON = ["scope": "self/gym", "d": [["t": .string(Proposal.type), "id": proposal.id.json, "born": .null, "life": ["alive", .null], "f": .object(fields)]]]
       let tool = removing ? "gym.propose_routine_removal" : "gym.propose_routine_change"

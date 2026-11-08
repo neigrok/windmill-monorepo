@@ -461,7 +461,7 @@ and Android disagree.
   it. The original checkout's untracked `iosgym_tasks/done-30-targets.md` still points to the removed
   board and describes the separate Targets destination; its owner must reconcile that local task.
 - **10z · The workout in flight (✅ Ready for dev, owner approved 2026-10-30).** Boards 03.20–03.32,
-  04.6, 04.7 and 08.54–08.57 with a READ ME in section 03 (`1717:15737`); the written half is
+  04.6, 04.7, 08.54, 08.56P and 08.57 with a READ ME in section 03 (`1717:15737`); the written half is
   [workout-in-flight.md](ios/workout-in-flight.md) and the build tasks are `iosgym_tasks/60`–`69`.
   Owner ruling 2026-10-30: a movement with a logged set keeps its plan. The build draws the rest
   target (03.20–03.22), the typed load and the one reps wheel (03.23–03.25), Coach during a workout
@@ -1372,7 +1372,7 @@ Android. It and the product differ in these places.
   the drawings differ: the step line and the What Coach read rows take the catalog's own phrases
   (*read your program*, *wrote a proposal for one of your routines*) where 08.35 and 08.36 drew
   *read your routines* and *proposed a change*; 08.37 draws no receipt row, the build keeps it
-  (brand foundations: always visible); 08.35 and 08.36 omit the context reads the build lists; 08.55–08.57 draw *Read
+  (brand foundations: always visible); 08.35 and 08.36 omit the context reads the build lists; 08.56P and 08.57 draw *Read
   this workout · 6 weeks*, where `CoachReading` prints a count; 08.49 and 08.50 draw a *Changed a movement* card, which no
   ability can land (`update_exercise` is withheld, B-1), so the build's landed write is *Made a
   movement*; 08.41's line counts UTF-8 bytes under the word *characters*, and its field grows to five

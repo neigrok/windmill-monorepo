@@ -743,7 +743,7 @@ final class CoachCaptures: DesignCapture {
   }
 
   func testWorkoutProposals() {
-    captureBoard("08.55-coach-proposal-this-workout", settle: 1.5) { look in
+    captureBoard("08.56-coach-proposal-this-workout", settle: 1.5) { look in
       let app = askOverUpperA(look, board: "workout")
       let header = app.descendants(matching: .any)["coach-workout-proposal-header"]
       XCTAssertTrue(header.label == "This workout, 1 suggested change · now", header.label)

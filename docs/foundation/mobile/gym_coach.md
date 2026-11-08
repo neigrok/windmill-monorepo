@@ -832,7 +832,7 @@ A phone Coach requires a gym replica per [the engine](../engine.md) with:
   them. Coach never logs, fixes or deletes a set, finishes or discards a workout, or writes a
   bodyweight ([brand foundations](../../design/brand-foundations.md), Gym); MCP runs `start_session`, `log_set`, `log_sets`, `finish_session`,
   `discard_session` and `import_session`. Proposals exist for routines and for the open workout,
-  whose review the Gym file's Coach boards draw (08.55–08.57); `proposes` elsewhere needs a review
+  whose review the Gym file's Coach boards draw (08.56P, 08.57); `proposes` elsewhere needs a review
   drawn in canon.
 - **B-2 The model per seat.** Decided: an `anon` turn runs on Sonnet 5 under the anonymous
   onboarding effort and 2,000-token output ceiling, so a round of the full catalog fits the
