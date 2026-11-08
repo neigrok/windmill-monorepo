@@ -35,9 +35,6 @@ nonisolated enum JournalPalette {
   static let inkFaint = Color("journal/ink-faint")
   static let lamp = Color("journal/lamp")
   static let lampSoft = Color("journal/lamp-soft")
-  static let energy = Color("journal/energy")
-  static let moodRamp = (0...10).map { Color("journal/mood-\($0)") }
-  static func mood(_ value: Int) -> Color { moodRamp[min(10, max(0, value))] }
   static let uiInk = UIColor(named: "journal/ink")!
   static let uiInkDim = UIColor(named: "journal/ink-dim")!
   static let uiLamp = UIColor(named: "journal/lamp")!

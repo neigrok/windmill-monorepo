@@ -10,9 +10,9 @@ struct JournalRoomView: View {
 
   var body: some View {
     if #available(iOS 26.1, *) {
-      tabs.tabBarMinimizeBehavior(.onScrollUp).tabViewBottomAccessory(isEnabled: model.writable) { accessory }
+      tabs.tabBarMinimizeBehavior(.onScrollUp).tabViewBottomAccessory(isEnabled: model.writable) { PlacedAccessory { accessory(inline: $0) } }
     } else if #available(iOS 26, *) {
-      tabs.tabBarMinimizeBehavior(.onScrollUp).tabViewBottomAccessory { accessory }
+      tabs.tabBarMinimizeBehavior(.onScrollUp).tabViewBottomAccessory { PlacedAccessory { accessory(inline: $0) } }
     } else { tabs }
   }
 
@@ -23,7 +23,7 @@ struct JournalRoomView: View {
         else {
           canvas.safeAreaInset(edge: .bottom, spacing: 0) {
             if !model.editing {
-              accessory.frame(minHeight: RoomSpace.minimumTarget).background(.bar)
+              accessory(inline: false).frame(minHeight: RoomSpace.minimumTarget).background(.bar)
                 .overlay(alignment: .bottom) { Divider() }
             }
           }
@@ -34,8 +34,8 @@ struct JournalRoomView: View {
 
   var canvas: some View { JournalScreen(model: model, app: app, writeAsked: writeAsked, inkFrames: $inkFrames) }
 
-  // One quiet button for Write; where the accessory cannot leave (iOS 26.0, iOS 18's row) it stands disabled over a read-only page.
-  var accessory: some View {
+  // Write's one quiet button, disabled over a read-only page where it cannot leave (26.0, iOS 18); inline, it drops the symbol.
+  func accessory(inline: Bool) -> some View {
     let writable = model.writable
     return Button { writeAsked += 1 } label: {
       HStack(spacing: RoomSpace.related) {
@@ -44,11 +44,19 @@ struct JournalRoomView: View {
           .inkAnchor("write", enabled: model.inkVisible, frames: $inkFrames)
         Spacer(minLength: RoomSpace.related)
         if let count = model.wordCount { Text(count).foregroundStyle(writable ? JournalPalette.inkDim : JournalPalette.inkFaint) }
-        if let symbol = model.backup.symbol { Image(systemName: symbol).foregroundStyle(writable ? JournalPalette.inkDim : JournalPalette.inkFaint) }
+        if !inline, let symbol = model.backup.symbol { Image(systemName: symbol).foregroundStyle(writable ? JournalPalette.inkDim : JournalPalette.inkFaint) }
       }.font(.subheadline).padding(.horizontal, RoomSpace.inset).frame(maxWidth: .infinity, maxHeight: .infinity).contentShape(Rectangle())
     }.buttonStyle(.plain).disabled(!writable)
       .inkAnchor("accessory", enabled: model.inkVisible, frames: $inkFrames)
       .accessibilityLabel("Write").accessibilityValue([model.wordCount, model.backup.label].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: ", "))
       .accessibilityHint("Opens the keyboard on today's page").accessibilityIdentifier("write-today")
   }
+}
+
+// The tab bar's accessory as its placement asks: expanded under the bar, or inline beside the minimised bar.
+@available(iOS 26, *)
+struct PlacedAccessory<Content: View>: View {
+  @Environment(\.tabViewBottomAccessoryPlacement) var placement
+  @ViewBuilder let content: (Bool) -> Content
+  var body: some View { content(placement == .inline) }
 }

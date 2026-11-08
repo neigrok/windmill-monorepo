@@ -191,7 +191,7 @@ import SyncTesting
     var bodies = Self.bodies
     bodies[Self.recent.day] = remove ? nil : "The old quoted passage was edited away."
     fixture.model.updateBodies(bodies)
-    #expect(fixture.model.pages.isEmpty && fixture.model.sheetDay == nil && fixture.model.destination == nil)
+    #expect(fixture.model.pages.isEmpty && fixture.model.sheetDay == nil && fixture.model.destination == nil && fixture.model.hops.isEmpty)
     fixture.model.walk(from: Self.today, to: Self.recent)
     #expect(fixture.model.destination == nil)
     try await waitUntil { fixture.service.signals.count == 1 }
@@ -502,6 +502,19 @@ import SyncTesting
     fixture.model.close(); fixture.model.open(Self.today)
     #expect(fixture.model.introducing == nil && !fixture.model.pages.isEmpty)
     #expect(fixture.service.signals.isEmpty)
+  }
+
+  // At accessibility sizes the sheet opens on every passage, which counts as reading them all; a step back is counted too.
+  @Test func openingAtEveryPassageAndSteppingBackEachRecordTheirStep() async throws {
+    let fixture = Fixture(); defer { fixture.close() }
+    await fixture.model.reload()
+    fixture.model.toggle(Self.today, expanded: true)
+    fixture.model.walk(from: Self.today, to: Self.recent)
+    fixture.model.stand(on: Self.today)
+    #expect(fixture.model.sheetDay == nil && fixture.model.hops.isEmpty)
+    #expect(fixture.recorder.entries.withLock { $0.map { ([$0.name] + $0.properties.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }).joined(separator: " ") } } == [
+      "journal_echo_ink action=open", "journal_echo_reader_opened", "journal_echo_opened", "journal_echo_ink action=back"
+    ])
   }
 
   @Test func theSheetHoldsEveryPassageAndItsVerdictAnswersThemAll() async throws {

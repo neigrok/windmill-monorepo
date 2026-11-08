@@ -103,7 +103,7 @@ extension JournalEchoMatch {
     }
     pages = verified
     hops.removeAll { $0 != access.today && bodies[$0] == nil }
-    if let sheetDay, pages[sheetDay] == nil { self.sheetDay = nil; introducing = nil }
+    if let sheetDay, pages[sheetDay] == nil { self.sheetDay = nil; introducing = nil; hops = [] }
     if let arrivalDay, pages[arrivalDay] == nil { self.arrivalDay = nil }
     firstEchoDay = firstEver && !preferences.bool(forKey: "journalFirstEchoSeen") ? pages.keys.max() : nil
     if let destination, let text = destination.text,
@@ -155,23 +155,24 @@ extension JournalEchoMatch {
     telemetry.event("journal_echo_shown")
   }
 
-  // A day's count opens its sheet; the sheet keeps the `journal_echo_ink` events the inline ink it replaced recorded.
-  func open(_ day: String) {
+  // A day's count opens its sheet, straight at every passage at accessibility sizes; the events keep the ink's names.
+  func open(_ day: String, expanded: Bool = false) {
     guard pages[day] != nil else { return }
     sheetDay = day; arrivalDay = nil; hops = []
     if day == firstEchoDay { introducing = day; claimFirstEcho() }
     telemetry.event("journal_echo_ink", properties: ["action": "open"])
+    if expanded { expand() }
   }
 
-  func toggle(_ day: String) {
-    if sheetDay == day { close() } else { open(day) }
+  func toggle(_ day: String, expanded: Bool = false) {
+    if sheetDay == day { close() } else { open(day, expanded: expanded) }
   }
 
   // The person closes the sheet: its Close, a swipe down, its count again, or the keyboard. The room's own closes record nothing.
-  func close() {
+  func close(recorded: Bool = true) {
     guard sheetDay != nil else { return }
     sheetDay = nil; introducing = nil; hops = []
-    telemetry.event("journal_echo_ink", properties: ["action": "close"])
+    if recorded { telemetry.event("journal_echo_ink", properties: ["action": "close"]) }
   }
 
   func dismissIntroduction() {
@@ -180,7 +181,7 @@ extension JournalEchoMatch {
     telemetry.event("journal_echo_intro_dismissed")
   }
 
-  // The person raises the sheet to every passage, by year, where the reader once stood.
+  // The sheet stands at every passage, by year, where the reader once stood: opened there, or raised by the person.
   func expand() {
     guard sheetDay != nil else { return }
     telemetry.event("journal_echo_reader_opened")
@@ -227,6 +228,7 @@ extension JournalEchoMatch {
   // Standing on an earlier hop keeps the sheet lowered; back at tonight the walk is over and the sheet goes with it.
   func stand(on day: String) {
     guard day == access.today || bodies[day] != nil else { return }
+    telemetry.event("journal_echo_ink", properties: ["action": "back"])
     if let index = hops.firstIndex(of: day), index > 0 { hops = Array(hops.prefix(through: index)) }
     else { hops = []; sheetDay = nil; introducing = nil }
     destination = JournalEchoDestination(day: day)

@@ -139,8 +139,6 @@ system draws one.
 | `journal/ink-faint` | `#737476` | `#5E6979` |
 | `journal/lamp` | `#E0B972` | `#90651C` |
 | `journal/lamp-soft` | `#E0B972` at 18 % | `#90651C` at 12 % |
-| `journal/energy` | `#9AA859` | `#7D8C43` |
-| `journal/mood-*` | the eleven-step ramp `journal/mood-0`…`mood-10` | each step's day value in `Theme.xcassets` |
 
 Journal answers dark with Night and light with Day; the choice is the shell's — Appearance
 (Light · Dark · System) in You's Settings, System by default, stated as

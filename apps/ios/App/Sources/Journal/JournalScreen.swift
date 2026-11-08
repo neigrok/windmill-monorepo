@@ -23,6 +23,8 @@ struct JournalScreen: View {
   @State var echoNavigationAccount: String?
   @State var echoDetent = PresentationDetent.medium
   @State var echoSheetHeight: CGFloat = 0
+  // The day the sheet last showed, so a closing sheet keeps its passages until it has gone.
+  @State var echoSheetDay: String?
   @AccessibilityFocusState var echoFocus: String?
   @Environment(\.dynamicTypeSize) var typeSize
   @Environment(\.scenePhase) var scenePhase
@@ -118,7 +120,8 @@ struct JournalScreen: View {
         if value { model.liftInk() } else { model.done() }
       }
       .onChange(of: model.editing) { _, value in if focused != value { focused = value } }
-      .onChange(of: model.sheet) { _, _ in writeRequest += 1 }
+      // An account sheet takes the screen: the echo sheet steps aside first, since one presenter holds one sheet.
+      .onChange(of: model.sheet) { _, sheet in writeRequest += 1; if sheet != nil { model.echoes.close(recorded: false) } }
       .onChange(of: model.editorReadOnly) { _, _ in writeRequest += 1 }
       .onDisappear { writeRequest += 1; model.echoes.suspend() }
       .onChange(of: model.echoBodies, initial: true) { _, bodies in model.echoes.updateBodies(bodies) }
@@ -132,10 +135,12 @@ struct JournalScreen: View {
         model.echoes.updateBodies(model.echoBodies)
         await model.echoes.poll()
       }
-      .sheet(isPresented: Binding(get: { echoesVisible && model.echoes.sheetDay != nil }, set: { if !$0 { model.echoes.close() } })) {
-        if let day = model.echoes.sheetDay {
+      .onChange(of: model.echoes.sheetDay) { _, day in if let day { echoSheetDay = day } }
+      .sheet(isPresented: Binding(get: { echoesVisible && model.sheet == nil && model.echoes.sheetDay != nil }, set: { if !$0 { model.echoes.close() } })) {
+        if let day = model.echoes.sheetDay ?? echoSheetDay {
           JournalEchoSheet(echoes: model.echoes, day: day, detent: $echoDetent).environment(\.dynamicTypeSize, typeSize)
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { echoSheetHeight = $0 }
+            .onAppear { app.roomSheetUp = true }.onDisappear { app.roomSheetUp = false }
         }
       }
       .task(id: model.inkVisible) {
@@ -177,7 +182,7 @@ struct JournalScreen: View {
         JournalEchoTab(echoes: model.echoes, day: day.text, writing: focused || model.sheet != nil) {
           focused = false; model.liftInk()
           if model.echoes.sheetDay != day.text { echoDetent = typeSize.isAccessibilitySize ? .large : .medium }
-          model.echoes.toggle(day.text)
+          model.echoes.toggle(day.text, expanded: typeSize.isAccessibilitySize)
         }.padding(.vertical, -11)
       }
     }.frame(minHeight: 22)
@@ -250,17 +255,11 @@ struct JournalScreen: View {
                   Text(JournalBodyText.placeholder).font(JournalType.body).lineSpacing(JournalType.lineSpacing).foregroundStyle(JournalPalette.inkFaint)
                 }
               }.accessibilityHidden(true)
-              if model.showPrivacy {
-                Text("Only you. No prompts, no fields, nothing to fill in — write a line or a page.")
-                  .font(ShellType.meta).lineSpacing(3).foregroundStyle(JournalPalette.inkFaint).inkAnchor("privacy", enabled: inkMounted, frames: $inkFrames)
-              }
+              if model.showPrivacy { privacyLine }
             }.allowsHitTesting(false)
           }
         }.inkAnchor("caret", enabled: inkMounted, frames: $inkFrames)
-        if model.showPrivacy && (!model.document.body.isEmpty || focused) {
-          Text("Only you. No prompts, no fields, nothing to fill in — write a line or a page.")
-            .font(ShellType.meta).lineSpacing(3).foregroundStyle(JournalPalette.inkFaint).inkAnchor("privacy", enabled: inkMounted, frames: $inkFrames).padding(.top, 14)
-        }
+        if model.showPrivacy && (!model.document.body.isEmpty || focused) { privacyLine.padding(.top, 14) }
       }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
         .gesture(TapGesture().onEnded {
           if model.writable && !focused { focused = true }
@@ -276,12 +275,18 @@ struct JournalScreen: View {
         VStack(alignment: .leading, spacing: 0) {
           Text(error).font(.footnote).foregroundStyle(JournalPalette.ink).fixedSize(horizontal: false, vertical: true)
           if model.dirty {
-            Button("Try again") { model.save() }.buttonStyle(.borderless).foregroundStyle(JournalPalette.lamp).font(ShellType.secondaryAction)
+            Button("Try again") { model.choose("retry", screen: "journal"); model.save() }.buttonStyle(.borderless).foregroundStyle(JournalPalette.lamp).font(ShellType.secondaryAction)
               .frame(minHeight: RoomSpace.minimumTarget).accessibilityIdentifier("journal-try-again")
           }
         }.padding(.top, 12)
       }
     }.foregroundStyle(JournalPalette.ink)
+  }
+
+  // The first run's one fact: under the empty page's placeholder, or under the words once there are any.
+  var privacyLine: some View {
+    Text("Only you. No prompts, no fields, nothing to fill in — write a line or a page.")
+      .font(ShellType.meta).lineSpacing(3).foregroundStyle(JournalPalette.inkFaint).inkAnchor("privacy", enabled: inkMounted, frames: $inkFrames)
   }
 
   func date(_ day: LocalDay) -> String {

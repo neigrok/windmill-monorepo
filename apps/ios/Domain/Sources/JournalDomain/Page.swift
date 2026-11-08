@@ -94,8 +94,6 @@ public struct JournalState: Writable, Equatable {
     }
   }
 
-  public var scaleInvitationDue: Bool { firstPage == "retired" && scales == "pending" }
-  public var keepDue: Bool { firstPage == "retired" && scales == "retired" }
 }
 
 public enum JournalRules {

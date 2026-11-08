@@ -139,7 +139,7 @@ struct JournalDomainTests {
     #expect(try d.pending().isEmpty)
     #expect(try d.outbox().allSatisfy { $0.intent.command == nil })
     let room = try d.runner.read(Journal.scope, JournalRoom.init)
-    #expect(room.days.isEmpty && !room.keepDue && !room.scaleInvitationDue)
+    #expect(room.days.isEmpty && !room.keepDue)
     _ = try d.store.signIn(account: "A", holdsRecords: ["journal": true, "gym": false], decisions: [:], counted: [:], identities: d.identities)
     try d.restart()
     #expect(try d.runner.read(Journal.scope) { try JournalRoom($0).days.isEmpty })
@@ -323,13 +323,17 @@ struct JournalDomainTests {
     #expect(try d.runner.read(Journal.scope) { try $0.device("contentClock") } == ["ms": JSON(Self.now), "counter": 0])
   }
 
-  @Test func defaultsAndMonotoneInvitationDismissal() throws {
+  // Keep waits for the first kept page and nothing else: the scales invitation stays as stored and never holds it back.
+  @Test func defaultsAndMonotoneInvitationDismissalAndKeepAfterTheFirstPage() throws {
     let d = try Device()
     _ = try d.runner.run(RetireJournalInvitation("placeholder"))
+    #expect(try !d.runner.read(Journal.scope) { try JournalRoom($0) }.keepDue)
     _ = try d.runner.run(SavePage(day: Self.day, document: PageDocument(body: "first")))
+    var room = try d.runner.read(Journal.scope) { try JournalRoom($0) }
+    #expect(room.state.firstPage == "retired" && room.state.scales == "pending" && room.keepDue)
     _ = try d.runner.run(RetireJournalInvitation("scales"))
-    let room = try d.runner.read(Journal.scope) { try JournalRoom($0) }
+    room = try d.runner.read(Journal.scope) { try JournalRoom($0) }
     #expect(room.state.placeholder == "retired" && room.state.firstPage == "retired" && room.state.scales == "retired")
-    #expect(room.keepDue && !room.scaleInvitationDue)
+    #expect(room.keepDue)
   }
 }

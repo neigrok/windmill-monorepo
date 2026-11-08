@@ -108,6 +108,7 @@ public struct JournalWriteState: Sendable {
   let anonymous: Bool
   let clock: JSON?
   let page: Record?
+  let drawn: PageDocument?
   let state: JournalState
   let pending: [PendingClaim]
   let hasEditorDraft: Bool
@@ -117,6 +118,7 @@ public struct JournalWriteState: Sendable {
   public init(_ read: Reader, day: LocalDay) throws {
     moment = read.moment; actor = read.actor; anonymous = read.isAnonymous
     clock = try read.device("contentClock"); page = try read.confirmed(Page.self, ID(day))
+    drawn = try read.repository(Page.self).find(ID(day), in: .drawn)?.document
     state = try read.repository(JournalState.self).find(ID(RecordID("journalState")), in: .drawn) ?? JournalState()
     let deviceRows = try read.devices(prefix: "pendingClaim:")
     pending = try deviceRows.members.filter { $0.key != EditorDraft.key }.map { try PendingClaim(json: $0.value) }
@@ -195,6 +197,26 @@ public struct SavePage: Action {
     if loaded.hasEditorDraft { plan.device(EditorDraft.key, nil) }
     try JournalWriting.retire(retiring, in: &plan, at: loaded.moment)
     return .write(plan, nil)
+  }
+}
+
+// Words alone: the save carries the day's ratings as the phone holds them now, another surface's included; an emptied page goes whole.
+public struct SaveWords: Action {
+  public typealias Refusal = JournalRefusal
+  public let scope = Journal.scope
+  public let day: LocalDay
+  public let body: String
+  public let source: String
+  public let retirements: [String]
+  public init(day: LocalDay, body: String, source: String = "typed", retiring: [String] = []) {
+    self.day = day; self.body = body; self.source = source; retirements = retiring
+  }
+  public func load(_ read: Reader) throws -> JournalWriteState { try JournalWriteState(read, day: day) }
+
+  public func decide(_ loaded: JournalWriteState, ids: IDSource) throws(Violation) -> Decision<String?, JournalRefusal> {
+    let held = loaded.pending.first(where: { $0.day == day })?.latest ?? loaded.drawn
+    let document = PageDocument(body: body, mood: held?.mood, energy: held?.energy, source: source)
+    return try SavePage(day: day, document: document, retiring: retirements).decide(loaded, ids: ids)
   }
 }
 

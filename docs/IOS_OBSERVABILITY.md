@@ -95,7 +95,9 @@ platform/version/build/release/environment properties. The journal asks no mood 
 scale event exists. Journal ink emits `first_run_screen_viewed` with screen `ink_notes` for its automatic first-open
 presentation and `first_run_choice` with action `dismiss_ink` once when writing or a tap lifts it; no ink replay action
 is allowlisted. Write in the tab bar's accessory, a tap on today's page and *Write tonight* each open the keyboard with
-`first_run_choice` screen journal, action `write`; Done in the keyboard's bar ends it with action `done_writing`.
+`first_run_choice` screen journal, action `write`; Done in the keyboard's bar ends it with action `done_writing`, and
+*Try again* under a page not saved records action `retry`. A save the phone refuses before it leaves, or the log's
+rules refuse, records `journal_save_refused` with its reason alone.
 
 | Area | Events | Properties, as each emitter sends them |
 | --- | --- | --- |
@@ -140,7 +142,8 @@ is allowlisted. Write in the tab bar's accessory, a tap on today's page and *Wri
 | Routine editing | `gym_action` | screen: routine_movement_editor; stage with outcome ok or refused (the account changed, the routine is full), cancel with outcome ok. The routine_movement picker records cancel with outcome ok. Outer routine_editor create/update records saved, refused or failed; cancel records ok. The atomic save reports unexpected failures through gym_action. No name, equipment, target value or identifier is sent. |
 | Import recovery | `gym_import_recovery` | Android's vocabulary: action: inspect, fix, keep, retry, discard; state (a screen opening only): opened; outcome (a commit or a close only): completed, cancelled, and the iOS-only refused, failed; reason, iOS-only: session-open, session-overlap, id-taken, bad-instant, too-many-sets, invalid-set, unknown-exercise, session-finished, unsent, other |
 | Writing | `journal_line_saved` | day_kind: today; emitted after a changed body with non-whitespace text saves |
-| Echo sheet | `journal_echo_ink` | action: open, close |
+| Refused save | `journal_save_refused` | reason: too_large (over the page's byte limit, refused on the phone), invalid, claim_conflict, other (the log's refusal); never the page |
+| Echo sheet | `journal_echo_ink` | action: open, close, back |
 | Echoes | `journal_echo_shown`, `journal_echo_reader_opened`, `journal_echo_intro_dismissed`, `journal_echo_opened`, `journal_echo_useful`, `journal_echo_dismissed` | no properties |
 | Synchronization | `sync_pull_outcome`, `sync_push_outcome` | outcome: ok, failed; failure_kind, status, duration_ms |
 | Reliability | `api_request_failed`, `client_error` | operation, method, route, status, failure_kind, duration_ms; optional coarse scope_kind |
@@ -154,10 +157,12 @@ reasons, dates, similarity scores, echo/page identifiers or counts. Echoes REST 
 routes never enter telemetry. Echo events carry only common app metadata, and `journal_echo_ink` its action.
 
 A day's count opens its echo sheet with `journal_echo_ink` action `open`. Close, a swipe down, the count again or the
-keyboard closes it with action `close`; the room's own closes (Back to tonight, Not useful, an offline or failed read)
-record none. `journal_echo_shown` records each verified passage once per foreground session, when its row draws in the
-sheet; the count draws no passage and records nothing. Raising the sheet to `.large`, every passage by year, records
-`journal_echo_reader_opened`; the sheet's other detent changes are the room's or a drag back down and record nothing.
+keyboard closes it with action `close`; the room's own closes (Back to tonight, Not useful, an account sheet taking the
+screen, an offline or failed read) record none. *Back to tonight*, or a day in its menu, records action `back`.
+`journal_echo_shown` records each verified passage once per foreground session, when its row draws in the sheet; the
+count draws no passage and records nothing. The sheet standing at `.large`, every passage by year, records
+`journal_echo_reader_opened`, whether it opened there at an accessibility size or the person raised it; the sheet's
+other detent changes are the room's or a drag back down and record nothing.
 The first echo's *Got it* records `journal_echo_intro_dismissed`. `journal_echo_opened` records following a passage to
 its source in the canvas, which lowers the sheet to its smallest detent; the REST opened signal is best effort.
 *Useful* records one `journal_echo_useful` per tap and marks every passage the sheet holds, one REST signal each;

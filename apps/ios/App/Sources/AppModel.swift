@@ -25,6 +25,8 @@ final class AppModel {
   var selectedRoom: Room { didSet { preferences.set(selectedRoom.rawValue, forKey: "lastRoom") } }
   var welcome: Bool
   var error: String?
+  // A room's own sheet on screen; the account sheet waits until it has gone, since one presenter holds one sheet.
+  var roomSheetUp = false
   var sheet: Sheet? {
     didSet { if sheet != nil, !welcome, selectedRoom == .journal { journal.liftInk() } }
   }
@@ -449,7 +451,7 @@ final class AppModel {
   func closeKeep() { choose("close", screen: "keep"); sheet = nil; dismissKeep() }
 
   func dismissKeep() {
-    guard journal.keepOffered else { return }
+    guard journal.room?.keepDue == true else { return }
     keepDismissed = true; preferences.set(true, forKey: "keepDismissed")
   }
 

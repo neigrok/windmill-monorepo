@@ -4,26 +4,27 @@ import DomainKit
 
 // Echo presentation stays here so the room's skin can change without changing its evidence.
 
-// A day's count in its date row (Journal · iOS 02.3P): the stock tinted capsule, kindled for a moment when a passage arrives.
+// A day's count in its date row (Journal · iOS 02.3P): a lamp capsule in a 44 pt target, kindled for a moment when a passage arrives.
 struct JournalEchoTab: View {
   let echoes: JournalEchoes
   let day: String
   let writing: Bool
   let toggle: () -> Void
   @Environment(\.accessibilityReduceMotion) var reduceMotion
+  @ScaledMetric(relativeTo: .caption) var capsule = 22.0
   @State private var visible = false
   var page: JournalEchoPage? { echoes.pages[day] }
 
   var body: some View {
     if let page {
       let kindled = echoes.arrivalDay == day
-      Button(action: toggle) { Text(page.matches.count.formatted()).font(JournalType.date).monospacedDigit() }
-        .buttonStyle(.bordered).buttonBorderShape(.capsule).controlSize(.mini).tint(JournalPalette.lamp)
-        .background { Capsule().fill(JournalPalette.kindled).opacity(kindled ? 1 : 0) }
-        .animation(.easeOut(duration: reduceMotion ? 0.2 : 1.2), value: kindled)
-        // The capsule is mini; its row lends it the rest of a 44 pt target.
-        .frame(minWidth: RoomSpace.minimumTarget, minHeight: RoomSpace.minimumTarget).contentShape(Rectangle()).onTapGesture(perform: toggle)
-        .accessibilityElement(children: .ignore).accessibilityAddTraits(.isButton).accessibilityAction(.default, toggle)
+      Button(action: toggle) {
+        Text(page.matches.count.formatted()).font(JournalType.date).monospacedDigit().foregroundStyle(JournalPalette.lamp)
+          .padding(.horizontal, 7).frame(minWidth: capsule, minHeight: capsule)
+          .background(kindled ? JournalPalette.kindled : JournalPalette.lampSoft, in: Capsule())
+          .animation(.easeOut(duration: reduceMotion ? 0.2 : 1.2), value: kindled)
+          .frame(minWidth: RoomSpace.minimumTarget, minHeight: RoomSpace.minimumTarget).contentShape(Rectangle())
+      }.buttonStyle(.plain)
         .accessibilityLabel(Self.label(page.matches.count))
         .accessibilityValue(echoes.sheetDay == day ? "Open" : "Closed")
         .accessibilityIdentifier("journal-echo-\(day)")

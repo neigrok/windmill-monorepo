@@ -57,9 +57,7 @@ final class JournalModel {
   var wordCount: String? { words == 0 ? nil : "\(words) \(words == 1 ? "word" : "words")" }
   var showPrivacy: Bool { room?.firstRunKnown == true && room?.state.privacyLine == "pending" }
   var showPlaceholder: Bool { room?.firstRunKnown == true && room?.state.placeholder == "pending" && document.body.isEmpty }
-  // The phone asks no scales question, so Keep is offered once the first page is kept, whatever the scales invitation holds.
-  var keepOffered: Bool { room.map { $0.isAnonymous && $0.firstRunKnown && !$0.days.isEmpty && $0.state.firstPage == "retired" } == true }
-  var keepDue: Bool { !editing && account == nil && keepOffered && !keepDismissed }
+  var keepDue: Bool { !editing && account == nil && room?.keepDue == true && !keepDismissed }
   var backup: PageBackup {
     if authPaused { return .paused }
     if dirty || readFailed { return .notSaved }
@@ -143,17 +141,20 @@ final class JournalModel {
     do {
       _ = try transitionDay()
       if document.hasText && document.body.utf8.count > 131_072 {
+        telemetry.event("journal_save_refused", properties: ["reason": "too_large"])
         error = "Your draft is kept on this phone. Shorten this page before it can be backed up."; dirty = true; return false
       }
       let previousBody = room?.days.first(where: { $0.day == editorDay })?.document.body ?? ""
       let wasFirst = room?.state.firstPage == "pending"
-      switch try runner.run(SavePage(day: editorDay, document: document, retiring: retiring)) {
+      // The phone writes words alone; the page's ratings stay as the log holds them at the save.
+      switch try runner.run(SaveWords(day: editorDay, body: document.body, source: document.source, retiring: retiring)) {
       case .committed, .unchanged:
         if document.isWritten && editorDay == today && document.body != previousBody { telemetry.event("journal_line_saved", properties: ["day_kind": "today"]) }
         dirty = false; error = nil
         if wasFirst && document.isWritten { firstKept = true }
         refresh(); return true
-      case .refused:
+      case .refused(let refusal):
+        telemetry.event("journal_save_refused", properties: ["reason": Self.reason(refusal)])
         error = "This page couldn't be saved. Your writing stays in the editor."; dirty = true; return false
       }
     } catch {
@@ -200,8 +201,17 @@ final class JournalModel {
 
   func choose(_ action: String, screen: String) { telemetry.event("first_run_choice", properties: ["screen": screen, "action": action]) }
 
+  static func reason(_ refusal: JournalRefusal) -> String {
+    switch refusal {
+    case .invalid: "invalid"
+    case .tooLarge: "too_large"
+    case .claimConflict: "claim_conflict"
+    case .other: "other"
+    }
+  }
+
   func recordInvitations() {
-    if !keepOffered { keepInvitationShown = false }
+    if room?.keepDue != true { keepInvitationShown = false }
     guard !welcome, !editing, app == nil || app?.selectedRoom == .journal else { return }
     if keepDue && !keepInvitationShown { keepInvitationShown = true; screenViewed("keep") }
   }

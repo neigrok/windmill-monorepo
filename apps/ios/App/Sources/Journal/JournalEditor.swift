@@ -41,9 +41,14 @@ struct JournalBodyText: UIViewRepresentable {
   // The page sizes itself to its words at the width it is offered.
   func sizeThatFits(_ proposal: ProposedViewSize, uiView: JournalEditorView, context: Context) -> CGSize? {
     guard let width = proposal.width, width.isFinite, width > 0 else { return nil }
-    guard minimumLines > 0 else { return CGSize(width: width, height: Self.height(for: text, width: width, fontSize: fontSize)) }
+    let text = minimumLines > 0 ? (self.text.isEmpty ? Self.placeholder : self.text + " ") : self.text
+    if let last = context.coordinator.measured, last.width == width, last.fontSize == fontSize, last.text.utf8.elementsEqual(text.utf8) {
+      return CGSize(width: width, height: last.height)
+    }
     let floor = (JournalType.bodyFont(size: fontSize).lineHeight + JournalType.lineSpacing) * CGFloat(minimumLines)
-    return CGSize(width: width, height: max(floor, Self.height(for: text.isEmpty ? Self.placeholder : text + " ", width: width, fontSize: fontSize)))
+    let height = max(floor, Self.height(for: text, width: width, fontSize: fontSize))
+    context.coordinator.measured = (text, width, fontSize, height)
+    return CGSize(width: width, height: height)
   }
 
   func makeUIView(context: Context) -> JournalEditorView {
@@ -59,7 +64,8 @@ struct JournalBodyText: UIViewRepresentable {
     view.textContainerInset = .zero
     view.textContainer.lineFragmentPadding = 0
     view.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-    if writingBar { view.inputAccessoryView = JournalWritingBar { [weak coordinator = context.coordinator] in coordinator?.parent.focused = false } }
+    // Done lets the keyboard go the way UIKit does; the editor's end of editing then ends the writing.
+    if writingBar { view.inputAccessoryView = JournalWritingBar { [weak view] in view?.resignFirstResponder() } }
     return JournalEditorView(textView: view)
   }
 
@@ -69,7 +75,9 @@ struct JournalBodyText: UIViewRepresentable {
     view.isEditable = editable
     view.inkVisible = inkVisible
     // Unfocused taps belong to the page, before keyboard layout moves the text view.
-    editor.isUserInteractionEnabled = focused || !editable
+    // Disabling the first responder resigns it inside this update and loops SwiftUI's focus graph; the deferred resign does it.
+    let interactive = focused || !editable
+    if interactive || !view.isFirstResponder { editor.isUserInteractionEnabled = interactive }
     view.accessibilityLabel = day.map { "\(JournalEchoStamp.long($0)), read only" } ?? (editable ? "Today's page" : nil)
     view.accessibilityIdentifier = day.map { "journal-body-\($0)" } ?? (editable ? "journal-editor" : nil)
     context.coordinator.updateText(view, text: text, fontSize: fontSize)
@@ -85,6 +93,7 @@ struct JournalBodyText: UIViewRepresentable {
         view.becomeFirstResponder()
         view.selectedRange = NSRange(location: view.textStorage.length, length: 0)
       } else if view.isFirstResponder { view.resignFirstResponder() }
+      editor.isUserInteractionEnabled = coordinator.parent.focused || !coordinator.parent.editable
     }
   }
 
@@ -92,6 +101,8 @@ struct JournalBodyText: UIViewRepresentable {
 
   final class Coordinator: NSObject, UITextViewDelegate {
     var parent: JournalBodyText
+    // The last measure, so a layout pass that changes neither the words, the width nor the size measures nothing.
+    var measured: (text: String, width: CGFloat, fontSize: CGFloat, height: CGFloat)?
     var initialized = false
     var publishingText = false
     var appendRequest = 0
@@ -146,17 +157,16 @@ struct JournalBodyText: UIViewRepresentable {
 // UIKit's own toolbar, since SwiftUI's keyboard toolbar never reaches a UIKit text view; iOS 26 draws its items in glass.
 final class JournalWritingBar: UIToolbar {
   let counted = UILabel()
-  let done: () -> Void
 
   init(done: @escaping () -> Void) {
-    self.done = done
     super.init(frame: CGRect(x: 0, y: 0, width: 320, height: RoomSpace.minimumTarget))
-    // The bar's words grow with Dynamic Type as the system's own bar items do, up to a cap that keeps the bar one line.
+    // The bar's words grow with Dynamic Type up to a cap that keeps the bar one line.
     counted.font = UIFontMetrics(forTextStyle: .subheadline).scaledFont(for: .systemFont(ofSize: 15), maximumPointSize: 24)
+    counted.adjustsFontForContentSizeCategory = true
     counted.textColor = JournalPalette.uiInkDim
     let count = UIBarButtonItem(customView: counted)
     if #available(iOS 26.0, *) { count.hidesSharedBackground = true }
-    let finish = UIBarButtonItem(title: "Done", style: .plain, target: self, action: #selector(finishWriting))
+    let finish = UIBarButtonItem(title: "Done", primaryAction: UIAction { _ in done() })
     finish.tintColor = JournalPalette.uiInk
     finish.setTitleTextAttributes([.font: UIFontMetrics(forTextStyle: .body).scaledFont(for: .systemFont(ofSize: 17, weight: .semibold), maximumPointSize: 28)], for: .normal)
     finish.accessibilityLabel = "Done writing"
@@ -172,8 +182,6 @@ final class JournalWritingBar: UIToolbar {
     counted.text = words
     counted.sizeToFit()
   }
-
-  @objc func finishWriting() { done() }
 }
 
 final class JournalEditorView: UIView, UIGestureRecognizerDelegate {

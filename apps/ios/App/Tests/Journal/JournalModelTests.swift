@@ -283,7 +283,7 @@ import Synchronization
     model.journal.type("One line."); #expect(model.journal.save()); model.journal.done()
     #expect(!model.journal.showPrivacy && model.journal.firstKept)
     #expect(model.journal.keepDue && model.journal.backup == .onThisPhone && model.journal.wordCount == "2 words")
-    #expect(model.journal.room?.state.scales == "pending" && model.journal.room?.scaleInvitationDue == true)
+    #expect(model.journal.room?.state.scales == "pending")
   }
 
   @Test func failedSaveRetainsWritingAndDoesNotRetireFirstPage() throws {
@@ -297,12 +297,47 @@ import Synchronization
   }
 
   // Ratings written elsewhere ride along untouched when the phone saves the page's words.
-  @Test func ratingsSetElsewhereSurviveTheWordsSavedHere() throws {
+  // A rating another surface sets mid-sentence arrives through sync, and the next save of the words keeps it.
+  @Test func aRatingThatArrivesMidEditSurvivesTheWordsSavedHere() throws {
+    let (harness, model) = try fixture(account: "account-a")
+    model.account = "account-a"
+    let web = harness.device()
+    harness.sync(); model.refresh()
+    model.journal.editing = true
+    model.journal.type("Morning."); #expect(model.journal.save())
+    harness.sync()
+    let day = model.journal.editorDay
+    _ = try web.runner.run(SavePage(day: day, document: PageDocument(body: "Morning.", mood: 7, energy: 3)))
+    harness.sync(); model.refresh()
+    #expect(model.journal.document.mood == nil, "The open editor still holds the page as it opened")
+    model.journal.type("Morning. Evening."); #expect(model.journal.save())
+    harness.sync()
+    for runner in [harness.runner, web.runner] {
+      let page = try runner.read(Journal.scope, JournalRoom.init).days.first { $0.day == day }?.document
+      #expect(page?.body == "Morning. Evening." && page?.mood == 7 && page?.energy == 3)
+    }
+  }
+
+  // Erasing every word removes the page whole, so ratings another surface set go with it; the domain keeps that rule.
+  @Test func erasingTheWordsRemovesThePageWithItsRatings() throws {
+    let (harness, model) = try fixture(account: "account-a")
+    model.account = "account-a"
+    let web = harness.device()
+    harness.sync(); model.refresh()
+    model.journal.type("Morning."); #expect(model.journal.save()); harness.sync()
+    _ = try web.runner.run(SavePage(day: model.journal.editorDay, document: PageDocument(body: "Morning.", mood: 7)))
+    harness.sync(); model.refresh()
+    model.journal.type(""); #expect(model.journal.save()); harness.sync()
+    #expect(try web.runner.read(Journal.scope, JournalRoom.init).days.isEmpty)
+  }
+
+  // A blank body leaves no day and discards the editor's draft, so nothing waits unsaved.
+  @Test func aBlankBodyLeavesNoDayOrUnsavedDraft() throws {
     let (_, model) = try fixture()
-    model.journal.type("A"); model.journal.document.mood = 0; model.journal.save(); model.journal.done()
-    model.journal.type("A walk."); #expect(model.journal.save())
-    let saved = model.journal.room?.days.first?.document
-    #expect(saved?.body == "A walk." && saved?.mood == 0 && saved?.energy == nil)
+    model.journal.type(" \n\u{a0}"); model.journal.saveTask?.cancel()
+    #expect(model.journal.save())
+    #expect(!model.journal.dirty && model.journal.error == nil && model.journal.room?.days.isEmpty == true && !model.journal.keepDue)
+    #expect(try model.runner.read(Journal.scope) { try $0.device(EditorDraft.key) } == nil)
   }
 
   @Test func closingKeepQuietsItsOffer() throws {
@@ -340,13 +375,16 @@ import Synchronization
     #expect(commands.filter { $0.command.name == Journal.Commands.claimPage }.count == 1)
   }
 
-  @Test func refusedSaveRetainsDocumentAsUnsaved() throws {
-    let (_, model) = try fixture()
+  // A save the log's rules refuse keeps the writing unsaved and is counted by its reason alone.
+  @Test func refusedSaveRetainsDocumentAsUnsavedAndCountsItsReason() throws {
+    let recorder = TelemetryRecorder()
+    let (_, model) = try fixture(telemetry: recorder)
     model.journal.type("Writing to retain"); model.journal.saveTask?.cancel()
-    model.journal.document.energy = 11
+    model.journal.document.source = "dictated"
     #expect(!model.journal.save())
     #expect(model.journal.dirty && model.journal.error != nil && model.journal.backup == .notSaved)
     #expect(model.journal.room?.days.isEmpty == true)
+    #expect(recorder.entries.withLock { $0.filter { $0.name == "journal_save_refused" }.map(\.properties) } == [["reason": "invalid"]])
   }
 
   @Test func pastDayDomainWriteRemainsReadOnly() throws {

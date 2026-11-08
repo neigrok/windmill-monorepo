@@ -118,8 +118,9 @@ import Synchronization
     let transport = JournalModelTransport(), existing = try fixture(transport)
     let identity = transport.identity(email: "unwritten@example.com")
     try await existing.signIn(identity)
-    existing.journal.type("Account writing"); existing.journal.document.mood = 3; existing.journal.document.energy = 4
-    existing.journal.save(); existing.journal.done()
+    // The account's page carries ratings another surface set; the phone writes words alone.
+    _ = try existing.runner.run(SavePage(day: existing.journal.editorDay, document: PageDocument(body: "Account writing", mood: 3, energy: 4)))
+    existing.refresh()
     await existing.beginSignOut(); await existing.finishSignOut(.keep)
     var model = try fixture(transport)
     if legacyClaim {

@@ -88,10 +88,7 @@ enum BoardFixture {
         // Each saved page is today to its fixture runner; the app's past-day guard stays intact.
         let zone = FixedZone(offsetSeconds: DeviceZone().offsetSeconds(at: Instant(ms: BoardClock().nowMs())) - offset * 86_400)
         let runner = ActionRunner(replica: engine, registry: SyncSchema.registry, zone: zone, holdRemovals: false)
-        // The history's second page carries both scales, which the canvas no longer draws.
-        let scored = board.hasPrefix("journal-history") && offset == 2
-        let document = PageDocument(body: shortProse, mood: scored ? 7 : nil, energy: scored ? 4 : nil)
-        guard let saved = try? runner.run(SavePage(day: model.journal.today.adding(days: -offset), document: document, retiring: ["placeholder", "scales"])), saved.refusal == nil else {
+        guard let saved = try? runner.run(SavePage(day: model.journal.today.adding(days: -offset), document: PageDocument(body: shortProse), retiring: ["placeholder", "scales"])), saved.refusal == nil else {
           model.error = "Couldn't prepare the journal board."; return
         }
       }
@@ -100,15 +97,15 @@ enum BoardFixture {
       if board.hasPrefix("journal-history") {
         model.journal.type("Short walk, then an early night."); model.journal.save(); model.journal.done()
       }
-      // Journal · iOS 01.5P: a page the log's rules refuse, here by an energy outside 0–10, so every save is refused.
+      // Journal · iOS 01.5P: a page the log's rules refuse, here by a source no surface writes, so every save is refused.
       if board.hasPrefix("journal-history-refused") {
-        model.journal.type("Short walk, then an early night. A line for the review."); model.journal.document.energy = 11
+        model.journal.type("Short walk, then an early night. A line for the review."); model.journal.document.source = "dictated"
         model.journal.save()
       }
       return
     }
     if AdoptionFixture.pages > 0 {
-      model.journal.type(prose); model.journal.document.mood = 7; model.journal.document.energy = 4
+      model.journal.type(prose)
       model.journal.save(); model.journal.done()
     }
     if board.hasPrefix("14") { model.keep() }

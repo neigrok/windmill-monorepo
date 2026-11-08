@@ -2,15 +2,6 @@ import SwiftUI
 import UIKit
 import CoreText
 
-extension View {
-  func inkAnchor(_ name: String, enabled: Bool, frames: Binding<[String: CGRect]>) -> some View {
-    onGeometryChange(for: CGRect.self) { geometry in
-      enabled ? geometry.frame(in: .global) : .zero
-    } action: { frame in
-      if enabled { frames.wrappedValue[name] = frame }
-    }
-  }
-}
 
 struct InkNotes: View {
   let frames: [String: CGRect]

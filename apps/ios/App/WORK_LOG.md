@@ -392,6 +392,11 @@ shared glass. The editor sizes itself through `sizeThatFits`, so the canvas meas
 and the scroll view runs under both bars. The inline ink, the reader and the trail became one stock sheet whose
 detents the room drives: a passage lowers it to `.height(140)`, where *Back to tonight* stands; its model keeps one
 `sheetDay` and a trail from tonight through the count's day. Mood and energy are hidden on iOS, while the web still
-draws them: the Keep offer is due once the first page is kept (`JournalModel.keepOffered`), because the domain's
-`keepDue` waits for a scales answer the phone no longer asks. Observation: `JournalModelTransport` serves both rooms
-and its name predates the gym.
+draws them: `JournalRoom.keepDue` waits for the first kept page alone, and the phone saves words through `SaveWords`,
+which takes the page's ratings as the phone holds them at the save, so a rating set on the web mid-sentence survives;
+a page emptied of words is still removed whole, ratings included. The echo sheet steps aside before an account sheet
+(`AppModel.roomSheetUp`), since a presenter holding one sheet silently refuses a second. Disabling the editor while
+its text view holds the keyboard resigned it inside SwiftUI's update, and the resign's question to the focus graph looped
+the attribute graph (a sample shows `AG::Graph::print_cycle` under `JournalBodyText.updateUIView`), hanging the app
+once in a few Done taps; Done now resigns through UIKit and the switch waits for the deferred resign. Observation:
+`JournalModelTransport` serves both rooms and its name predates the gym.

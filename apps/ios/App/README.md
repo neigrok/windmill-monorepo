@@ -314,12 +314,16 @@ the Keep offer follows the first kept page. The room (`JournalRoomView`, Journal
 a `TabView` of one Pages tab whose bar minimises on scroll up; the Search tab of 02.8P is not built.
 On iOS 26 the tab bar's bottom accessory holds Write with today's word count and one saved-state
 symbol (`PageBackup`: backed up, on this phone, not backed up yet or paused, not saved), its words
-in the button's VoiceOver value; Write returns from history to today and opens writing. On iOS 26.1
+in the button's VoiceOver value; beside a minimised bar it keeps Write and the count. Write returns from history to today and opens writing. On iOS 26.1
 the accessory leaves during read-only transitions and account sheets; on 26.0, which cannot remove
 it, and on iOS 18, where the same row stands above the tab bar on the bar material, it is disabled
 instead. While writing, the keyboard's own bar (`JournalWritingBar`, UIKit's toolbar, since
 SwiftUI's keyboard toolbar never reaches the UIKit editor) carries the count and a regular Done. A
-refused save says so in ink under the page with a borderless *Try again*.
+save the phone could not make says so in ink under the page, with a borderless *Try again* while the
+writing waits unsaved. A save sends the words alone (`SaveWords`): the page keeps the ratings the phone
+holds for it at that moment, another surface's included, and a page emptied of words is removed whole.
+An echo sheet up when an account sheet is asked for steps aside first (`AppModel.roomSheetUp`), since one
+presenter holds one sheet.
 The room seat is a native Journal · Gym menu with the current room checked; the separate account
 button opens You. The last room persists across launches. A fresh phone gets both doors after the
 introduction on Where to start?. Its quiet Sign in opens the account sheet as *Pick up where you left off* (02b). After that
@@ -382,12 +386,12 @@ every passage the sheet holds; Not useful retires the page's echo. Close, a swip
 keyboard closes it, and today's count does not draw while writing. A passage flies the canvas to its source with
 highlighting and lowers the sheet to `.height(140)`: the source's stamp and a regular-glass *Back to tonight*, whose
 menu holds the trail's days; back at tonight the sheet goes. The first echo an install receives heads its sheet with
-a line and *Got it*, once. Every signed-in account sees echoes.
+a line and *Got it*, once. Echoes ask for no Windmill One: a signed-in account past the server's page floor sees them.
 The model re-locates every full quotation in the phone's current pages before showing its count.
 Shared journal vectors pin NFC-equivalent matching and UTF-16 anchors into the unchanged source;
 equivalent edits retain an echo, while edits that remove its quotation retract it. The model
 follows the server's 20-page floor and waiver, provenance and Useful state. The first-echo
-card requires an explicit server flag; the current list route does not supply it.
+line requires an explicit server flag; the current list route does not supply it.
 Reads poll every 15 seconds only while the room is active. All reads and verdicts use the existing
 REST echoes routes; writing continues through the sync engine. Offline, empty and failed reads
 show no echo surface. Requests are cancelled and old replies discarded across account or lifecycle
