@@ -118,7 +118,7 @@ class NotesScreenTests {
             compose.onNodeWithText(Notes.honesty).assertIsDisplayed()
             compose.onNodeWithText("what you write for Coach").assertDoesNotExist()
             compose.onNodeWithText("What I am training for").performClick()
-            compose.onNodeWithText(Notes.add).assertIsDisplayed()
+            compose.onNodeWithContentDescription(Notes.add).assertIsDisplayed()
 
             compose.runOnIdle {
                 assertEquals("the editor receives a title hint, and nothing was written",
@@ -154,7 +154,7 @@ class NotesScreenTests {
             compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText(Notes.full))
             compose.onNodeWithText("Top note wins.").assertDoesNotExist()
             compose.onNodeWithText("10 of 10 notes. Delete one to add another.").assertIsDisplayed()
-            compose.onNodeWithText(Notes.add).assertDoesNotExist()
+            compose.onNodeWithContentDescription(Notes.add).assertDoesNotExist()
         } } finally { scope.cancel() }
     }
 
@@ -178,7 +178,7 @@ class NotesScreenTests {
 
             compose.onNodeWithText("note 3").assertDoesNotExist()
             compose.onNodeWithText(Notes.full).assertDoesNotExist()
-            compose.onNodeWithText(Notes.add).assertIsDisplayed()
+            compose.onNodeWithContentDescription(Notes.add).assertIsDisplayed()
             compose.runOnIdle {
                 assertEquals((0..9).filter { it != 3 }.map { "note_00$it" }, room.training.notes().map { it.id })
                 assertEquals(listOf("ready"), room.outbox().map { it.member("state").str() })
@@ -206,7 +206,7 @@ class NotesScreenTests {
             runBlocking { deletingNote.await() }
 
             compose.onNodeWithText("note 3").assertDoesNotExist()
-            compose.onNodeWithText(Notes.add).assertIsDisplayed()
+            compose.onNodeWithContentDescription(Notes.add).assertIsDisplayed()
             compose.onNodeWithText(Notes.full).assertDoesNotExist()
             compose.runOnIdle { room.sync(server) }
             assertEquals("the log holds nine", (0..9).filter { it != 3 }.map { "note_00$it" }, onTheLog(room, server))
@@ -297,6 +297,7 @@ class NotesScreenTests {
             compose.onAllNodesWithText(Notes.honesty).assertCountEquals(1)
             compose.onNodeWithText("what you write for Coach").assertDoesNotExist()
             compose.onNodeWithText(Notes.signedOut).assertIsDisplayed()
+            compose.onNodeWithContentDescription(Notes.add).assertDoesNotExist()
             compose.onNodeWithText("Sign in").performClick()
             compose.runOnIdle {
                 assertEquals(listOf("signIn"), doors)

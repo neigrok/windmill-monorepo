@@ -479,8 +479,8 @@ One pure reader owns signed/comma parsing, refusal order, finite-number checks a
 half-away hundredth rounding; performed reps remain 1–99. Planned-target rules stay separate.
 Explicit Log set and Save fix validate the active buffer before a write. Leaving a field commits a
 valid typed value as Done does; an invalid one keeps the committed value and its refusal. Cancel
-restores the committed value. A new focus places the caret at the end, and later selection survives
-layout expansion. Field accessibility actions share the same Increase/Decrease callback and
+restores the committed value. A new focus places the caret at the end, and focus never changes the
+field's layout: a longer value shrinks the numeral toward its floor until Done or Log set re-fits it. Field accessibility actions share the same Increase/Decrease callback and
 48 dp hit targets as the buttons. Only accepted step/IME changes flash and tick; Log set stays silent.
 
 The simplification pass removes the custom keypad and its duplicate readouts, moves raw-buffer

@@ -3,7 +3,9 @@ package works.windmill.gym.ui
 import android.content.res.Configuration
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.ColorScheme
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
@@ -14,6 +16,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.dp
 import works.windmill.platform.design.LocalWindmillDark
 import works.windmill.platform.design.LocalWindmillPalette
 import works.windmill.platform.design.WindmillPalette
@@ -28,9 +31,15 @@ fun GymMaterial(content: @Composable () -> Unit) {
     val palette = remember(skin) { gymPalette(skin) }
     val scheme = remember(skin, dark) { gymColorScheme(skin, dark) }
     CompositionLocalProvider(LocalGymExtendedColors provides extended, LocalWindmillPalette provides palette) {
-        MaterialTheme(colorScheme = scheme, typography = gymTypography, content = content)
+        MaterialTheme(colorScheme = scheme, shapes = gymShapes, typography = gymTypography, content = content)
     }
 }
+
+// Material's own corner scale; screens read corners from these slots, never from a literal radius.
+val gymShapes = Shapes(
+    extraSmall = RoundedCornerShape(4.dp), small = RoundedCornerShape(8.dp), medium = RoundedCornerShape(12.dp),
+    large = RoundedCornerShape(16.dp), extraLarge = RoundedCornerShape(28.dp),
+)
 
 // The room's colour roles Material has no slot for.
 @Immutable

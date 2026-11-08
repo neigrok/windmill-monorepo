@@ -49,7 +49,7 @@ class FixSheetEffortTests {
                     position = 2,
                     routine = null,
                     onSave = { saved = it; FixOutcome.Corrected(it.corrected(set)) },
-                    onDelete = {},
+                    onDelete = {}, onClose = {},
                 )
             }
         }
@@ -178,9 +178,9 @@ class FixSheetEffortTests {
         val notes = mutableListOf<SetFix>()
         restoration.setContent { GymMaterial {
             FixSheet(set, "Bench Press", 1, null,
-                onSave = { notes += it; FixOutcome.Corrected(it.corrected(set)) }, onDelete = {})
+                onSave = { notes += it; FixOutcome.Corrected(it.corrected(set)) }, onDelete = {}, onClose = {})
         } }
-        compose.onNodeWithText("Set note").assertIsDisplayed()
+        compose.onNodeWithText("Set note").assertIsDisplayed().performClick()
         compose.onNodeWithText("Add a note").assertIsDisplayed()
         val raw = "  slow 🏋\nnext set  "
         compose.onNodeWithText("Set note").performTextInput(raw)

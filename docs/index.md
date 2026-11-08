@@ -114,7 +114,7 @@ Figma: Gym file, page [Android](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJR
 Code: `apps/android/gym/src/main/kotlin/works/windmill/gym/`. Components: Design System library,
 Android page. Journeys follow the iOS page and no number names two different screens across
 the phone pages; the page is the
-target ([consistency.md](design/consistency.md) 11a–11z, 12a–12s); build tasks: `androidgym_tasks/`.
+target ([consistency.md](design/consistency.md) 11a–11aa, 12a–12s); build tasks: `androidgym_tasks/`.
 
 | Flow | Section | Entry → exit |
 |---|---|---|
@@ -128,5 +128,13 @@ target ([consistency.md](design/consistency.md) 11a–11z, 12a–12s); build tas
 | 07 · On this phone | [`1224:13119`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1224-13119) | On this phone at the head of The log → list → Inspect → fix, retry, keep or discard; sign in with training on the phone → Add or Discard |
 | 08 · Coach | [`1224:13123`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1224-13123) | Coach tab → conversation → proposal opened from its card, applied or turned down on its review sheet; every change type and situation (08.15–08.31) |
 | 09 · Notes & Connected log | [`1224:13127`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1224-13127) | You → Notes / Connected log |
+
+🚀 In production (2026-11-08) · Android nativeness wave: boards suffixed N (02.1N–02.6N, 03.1N–03.3Nk, 05.1N, 05.10N,
+06.1N–06.2N, 09.1N) stand beside their before pictures in sections 02, 03, 05, 05.9b–05.10b, 06 and 09, each section
+with a NOTE; the wave NOTE is in 03
+([`2040:38794`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=2040-38794)). The owner rejected 09.6N
+and 06.9N on 2026-11-08 to keep the thumb-reach bottom action, and by the same ruling the commits stay at the bottom:
+Fix set, the movement form, Edit movement and the weigh-in commit from a full-width 56 dp stock pill button at the
+sheet's foot under a ✕ Close head, as their redrawn N boards show; signed-out Notes keeps its full-width **Sign in**.
 
 Sign in, You, sign out and Delete account: Shell file, page [Android](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=1-6), section `33:1568`; deletion recovery D1–D6, section `116:754`.

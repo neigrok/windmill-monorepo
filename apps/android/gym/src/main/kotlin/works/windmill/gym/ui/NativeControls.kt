@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
@@ -36,6 +35,9 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import works.windmill.gym.R
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.wrapContentSize
+import androidx.compose.ui.semantics.disabled
 
 @Composable
 fun GymSnackbarHost(state: SnackbarHostState, modifier: Modifier = Modifier) {
@@ -48,8 +50,7 @@ fun GymSnackbarHost(state: SnackbarHostState, modifier: Modifier = Modifier) {
 fun GymFab(label: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val colors = MaterialTheme.colorScheme
     FloatingActionButton(onClick, modifier.size(56.dp).semantics { contentDescription = label },
-        shape = RoundedCornerShape(16.dp), containerColor = colors.primaryContainer.compositeOver(colors.surfaceContainer),
-        contentColor = colors.primary) {
+        containerColor = colors.primaryContainer.compositeOver(colors.surfaceContainer), contentColor = colors.primary) {
         Icon(painterResource(R.drawable.gym_native_add), null, Modifier.size(24.dp))
     }
 }
@@ -64,7 +65,6 @@ fun GymExtendedFab(label: String, onClick: () -> Unit, icon: Painter, modifier: 
         onClick = onClick,
         modifier = modifier.semantics { contentDescription = label },
         expanded = expanded,
-        shape = RoundedCornerShape(16.dp),
         containerColor = colors.primaryContainer.compositeOver(colors.surfaceContainer),
         contentColor = colors.primary,
     )
@@ -72,7 +72,7 @@ fun GymExtendedFab(label: String, onClick: () -> Unit, icon: Painter, modifier: 
 
 @Composable
 fun GymErrorButton(label: String, onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true) {
-    Button(onClick, modifier.heightIn(min = 56.dp), enabled = enabled, shape = RoundedCornerShape(16.dp),
+    Button(onClick, modifier.heightIn(min = 56.dp), enabled = enabled,
         contentPadding = PaddingValues(horizontal = 24.dp, vertical = 12.dp),
         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error,
             contentColor = MaterialTheme.colorScheme.onError)) {
@@ -86,7 +86,7 @@ fun GymErrorTextButton(label: String, onClick: () -> Unit, modifier: Modifier = 
     val error = MaterialTheme.colorScheme.error
     CompositionLocalProvider(LocalRippleConfiguration provides RippleConfiguration(color = error,
         rippleAlpha = RippleAlpha(draggedAlpha = 0.16f, focusedAlpha = 0.08f, hoveredAlpha = 0.08f, pressedAlpha = 0.12f))) {
-        TextButton(onClick, modifier.heightIn(min = minimumHeight), enabled = enabled, shape = RoundedCornerShape(16.dp),
+        TextButton(onClick, modifier.heightIn(min = minimumHeight), enabled = enabled,
             contentPadding = PaddingValues(horizontal = 24.dp, vertical = 12.dp),
             colors = ButtonDefaults.textButtonColors(contentColor = error)) {
             Text(label, style = GymType.button)
@@ -97,7 +97,7 @@ fun GymErrorTextButton(label: String, onClick: () -> Unit, modifier: Modifier = 
 @Composable
 fun GymMenu(expanded: Boolean, onDismissRequest: () -> Unit, modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit) {
-    DropdownMenu(expanded, onDismissRequest, modifier, shape = RoundedCornerShape(16.dp),
+    DropdownMenu(expanded, onDismissRequest, modifier,
         containerColor = MaterialTheme.colorScheme.surfaceContainer, tonalElevation = 0.dp, content = content)
 }
 
@@ -114,4 +114,16 @@ fun GymMenuItem(label: String, icon: Painter, onClick: () -> Unit, modifier: Mod
     }, onClick = onClick, modifier = modifier.heightIn(min = 48.dp), enabled = enabled,
         contentPadding = PaddingValues(horizontal = 16.dp),
         colors = MenuDefaults.itemColors(textColor = ink))
+}
+
+// A list row's drag handle: Material's 24 dp mark in the ListItem's leading slot, standing in the 48 dp target that
+// carries the reorder gesture and its spoken label, a TalkBack stop of its own inside the row.
+@Composable
+fun GymDragHandle(label: String, modifier: Modifier = Modifier, enabled: Boolean = true) {
+    Box(Modifier.size(24.dp).wrapContentSize(unbounded = true)) {
+        Box(Modifier.size(GymTap.minimum).semantics(mergeDescendants = true) { contentDescription = label; if (!enabled) disabled() }.then(modifier),
+            contentAlignment = Alignment.Center) {
+            Icon(painterResource(R.drawable.gym_drag_handle), null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
 }

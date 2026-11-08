@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
@@ -71,7 +70,7 @@ internal fun CoachGreeting(signedIn: Boolean, enabled: Boolean, onScreenshot: ()
 internal fun CoachKeptDraft(draft: CoachDraft, enabled: Boolean, onContinue: () -> Unit) {
     val colors = MaterialTheme.colorScheme
     val gymColors = MaterialTheme.gymColors
-    val shape = RoundedCornerShape(20.dp)
+    val shape = MaterialTheme.shapes.large
     Column(Modifier.fillMaxWidth().background(colors.surfaceContainer, shape).border(1.dp, colors.outlineVariant, shape)
         .padding(horizontal = 16.dp).padding(top = 16.dp, bottom = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text("Draft kept on this phone", style = GymType.coachNote, color = colors.onSurfaceVariant)

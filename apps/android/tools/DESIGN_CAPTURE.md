@@ -181,7 +181,7 @@ two workouts. No recipe sends a picture from the phone, so 01.8 and 01.16 stand 
 08.70's picture is a row planted as another phone's.
 
 Canonical board IDs such as
-`02.7`, `08.58b`, `15a`, `27g` and `A4`, and filename
+`02.7`, `08.58b`, `03.3Nk` (the nativeness wave's N boards), `15a`, `27g` and `A4`, and filename
 slugs are validated. Choose a body-state selector, not the navigation label. Two matching fresh
 accessibility trees establish settlement. Recipes may opt into `resend_countdown: true`, which
 normalizes only the bounded `Resend in 1s` through `Resend in 30s` label for that comparison; the
@@ -311,6 +311,12 @@ failed run preserves its manifest, logs and any completed captures for inspectio
 appearances: Bodyweight over The log, then This workout over the rack, each at rest, held mid-swipe
 from the left edge, and 90 ms after release. The held stills settle normally; the release stills
 are transient. The workout recipe logs one set and finishes the workout in its last `after` steps.
+
+`--scenarios apps/android/tools/capture-recipes/nativeness-wave.json` captures the nativeness wave's boards on the
+default fixture in both appearances: Routines, the routine summary, the editor, its picker and movement form (02.1N,
+02.2N, 02.5N, 02.4N, 02.6N), The log, a new weigh-in, Bodyweight, Edit movement and Notes (05.1N, 06.1N, 06.2N,
+05.10N, 09.1N), then the rack after one set, the rack's keyboard, Fix set and Fix set's keyboard (03.1N, 03.2N,
+03.3N, 03.3Nk). It leaves every draft unsaved and ends its workout through Finish.
 
 `capture-recipes/this-workout.json` uses `this-workout-fixture.json` for the approved 03.4
 four-set management state, an end-to-start removal ground and 320 × 640 dp / 200% text.

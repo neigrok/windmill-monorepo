@@ -9,18 +9,14 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -40,7 +36,6 @@ import kotlinx.coroutines.launch
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -63,6 +58,11 @@ import works.windmill.gym.store.RefusedWrite
 import works.windmill.gym.store.RoutinesStore
 import works.windmill.gym.store.TrainingStore
 import works.windmill.gym.store.WorkoutSession
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.MoreVert
 
 // What the routines home and a routine's sheet draw.
 @Stable
@@ -187,28 +187,30 @@ private fun RoutineRow(
     val scope = rememberCoroutineScope()
     val waiting = routine.pendingProposal
     var menu by remember { mutableStateOf(false) }
-    Row(Modifier.fillMaxWidth().heightIn(min = 68.dp)
-        .background(colors.surface)
-        .clickable(role = Role.Button, onClickLabel = "open ${routine.name}") { onOpenRoutine(routine.id) }
-        .padding(start = 12.dp, top = 8.dp, bottom = 8.dp),
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(routine.name, style = GymType.nativeRowTitle, color = colors.onSurface)
-            Text(routine.entries.sortedBy { it.position }.take(2)
-                .joinToString(" · ") { Readout.movement(it.exerciseId, catalog) },
-                style = GymType.nativeDetail, color = colors.onSurfaceVariant)
-            waiting?.takeIf { it.id != standingProposalId }?.let { ProposalChip { onReview(it) } }
-        }
-        Box {
-            IconButton(onClick = { menu = true }, modifier = Modifier.size(48.dp)) {
-                Icon(painterResource(R.drawable.gym_more), "More for ${routine.name}", Modifier.size(24.dp), tint = colors.onSurfaceVariant)
+    ListItem(
+        headlineContent = { Text(routine.name, style = GymType.nativeRowTitle, color = colors.onSurface) },
+        supportingContent = {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(routine.entries.sortedBy { it.position }.take(2)
+                    .joinToString(" · ") { Readout.movement(it.exerciseId, catalog) },
+                    style = GymType.nativeDetail, color = colors.onSurfaceVariant)
+                waiting?.takeIf { it.id != standingProposalId }?.let { ProposalChip { onReview(it) } }
             }
-            GymMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                GymMenuItem("Delete", painterResource(R.drawable.gym_native_delete), destructive = true,
-                    onClick = { menu = false; scope.launch { onDelete() } })
+        },
+        trailingContent = {
+            Box {
+                IconButton(onClick = { menu = true }) {
+                    Icon(Icons.Filled.MoreVert, "More for ${routine.name}", tint = colors.onSurfaceVariant)
+                }
+                GymMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                    GymMenuItem("Delete", painterResource(R.drawable.gym_native_delete), destructive = true,
+                        onClick = { menu = false; scope.launch { onDelete() } })
+                }
             }
-        }
-    }
+        },
+        modifier = Modifier.fillMaxWidth()
+            .clickable(role = Role.Button, onClickLabel = "open ${routine.name}") { onOpenRoutine(routine.id) },
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -230,18 +232,12 @@ fun RoutineSheet(
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         containerColor = colors.surfaceContainer,
         scrimColor = colors.scrim,
-        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-        dragHandle = {
-            Box(Modifier.fillMaxWidth().height(24.dp), contentAlignment = Alignment.Center) {
-                Box(Modifier.width(32.dp).height(4.dp).background(colors.onSurfaceVariant, RoundedCornerShape(2.dp)))
-            }
-        },
         modifier = Modifier.testTag("routine-sheet"),
     ) {
         Column(Modifier.fillMaxWidth()) {
             Column(
                 modifier = Modifier.weight(1f, fill = false).fillMaxWidth()
-                    .verticalScroll(rememberScrollState()).padding(horizontal = GymLayout.gutter)
+                    .verticalScroll(rememberScrollState()).padding(horizontal = GymLayout.listInset)
                     .padding(top = 8.dp, bottom = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
@@ -253,43 +249,42 @@ fun RoutineSheet(
                     )
                 } else {
                     Text(routine.name, style = GymType.routineSheetTitle, color = colors.onSurface)
-                    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(colors.surfaceContainerHighest),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Column(Modifier.fillMaxWidth()) {
                         routine.entries.sortedBy { it.position }.forEach { entry ->
-                            Row(Modifier.fillMaxWidth().heightIn(min = 68.dp).background(colors.surfaceContainer)
-                                .semantics(mergeDescendants = true) {}
-                                .padding(horizontal = 16.dp, vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                Box(Modifier.size(32.dp).background(colors.surfaceContainerHighest, RoundedCornerShape(8.dp)),
-                                    contentAlignment = Alignment.Center) {
-                                    Text(entry.position.toString(), style = GymType.numeral, color = colors.onSurfaceVariant)
-                                }
-                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    val name = Readout.movement(entry.exerciseId, state.catalog)
-                                    val yours = SeedExercises.all.none { it.id.record.string == entry.exerciseId }
-                                    Text(if (yours) "$name · yours" else name,
-                                        style = WindmillType.label, color = colors.onSurface)
-                                    val target = Readout.targetWithUnit(entry.sets, state.catalog.find { it.id == entry.exerciseId })
-                                    Text(target, style = GymType.numeral, color = colors.onSurfaceVariant)
-                                }
-                            }
+                            val name = Readout.movement(entry.exerciseId, state.catalog)
+                            val yours = SeedExercises.all.none { it.id.record.string == entry.exerciseId }
+                            ListItem(
+                                leadingContent = {
+                                    Box(Modifier.size(40.dp).background(colors.secondaryContainer, CircleShape), contentAlignment = Alignment.Center) {
+                                        Text(entry.position.toString(), style = GymType.numeral, color = colors.onSecondaryContainer)
+                                    }
+                                },
+                                headlineContent = {
+                                    Text(if (yours) "$name · yours" else name, style = WindmillType.label, color = colors.onSurface)
+                                },
+                                supportingContent = {
+                                    Text(Readout.targetWithUnit(entry.sets, state.catalog.find { it.id == entry.exerciseId }),
+                                        style = GymType.numeral, color = colors.onSurfaceVariant)
+                                },
+                                colors = ListItemDefaults.colors(containerColor = colors.surfaceContainer),
+                                modifier = Modifier.fillMaxWidth().semantics(mergeDescendants = true) {},
+                            )
                         }
                     }
                 }
             }
             if (routine != null) {
-                Column(Modifier.fillMaxWidth().padding(horizontal = GymLayout.gutter)
+                Column(Modifier.fillMaxWidth().padding(horizontal = GymLayout.listInset)
                     .padding(top = 4.dp, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     failure?.let { Text(it, style = WindmillType.supporting, color = gymColors.alarmInk,
                         modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }) }
-                    Button(onClick = { onStart(routine.id) }, enabled = !starting, shape = RoundedCornerShape(16.dp),
+                    Button(onClick = { onStart(routine.id) }, enabled = !starting,
                         modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
                         Text("Start workout", style = WindmillType.label)
                     }
                     TextButton(onClick = { onBuild(RoutineDraft.of(routine, state.catalog)) }, enabled = !starting,
                         modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
-                        Text("Edit routine", style = WindmillType.label, color = colors.onSurface)
+                        Text("Edit routine", style = WindmillType.label)
                     }
                 }
             }

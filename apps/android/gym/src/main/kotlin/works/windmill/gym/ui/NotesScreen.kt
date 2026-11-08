@@ -3,7 +3,6 @@ package works.windmill.gym.ui
 import works.windmill.platform.design.WindmillType
 import androidx.compose.material3.MaterialTheme
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -12,8 +11,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -24,11 +21,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
@@ -45,7 +40,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -82,6 +76,8 @@ import works.windmill.gym.store.RefusedWrite
 import works.windmill.gym.store.RoutinesStore
 import works.windmill.gym.store.TrainingStore
 import works.windmill.gym.store.WriteFailure
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 
 // What the notes list draws: the seat's notes, how many, whether they are read, and the writes the log refused.
 @Stable
@@ -172,9 +168,12 @@ fun NotesScreen(
             } finally { order = null; savingOrder = false }
         }
     }
-    GymScreen(title = Notes.title, onBack = onBack, backTo = backTo) {
+    val adding = isSignedIn && hasRead && failure == null && state.noteCount < Notes.maxNotes
+    GymScreen(title = Notes.title, onBack = onBack, backTo = backTo, floatingActionButton = {
+        if (adding) GymExtendedFab(Notes.add, onClick = { if (!savingOrder) onEdit(null, "") }, icon = painterResource(R.drawable.gym_native_add))
+    }) {
         Column(Modifier.fillMaxSize()) {
-            NoteList(order ?: state.notes, enabled = !savingOrder,
+            NoteList(order ?: state.notes, enabled = !savingOrder, underFab = adding,
                 modifier = Modifier.weight(1f), onOpen = { onEdit(it, "") },
                 onMove = { if (!savingOrder) order = it }, onSettle = ::reorder,
                 onDelete = { note ->
@@ -194,14 +193,14 @@ fun NotesScreen(
                         !hasRead -> Text("Reading your notes…", style = WindmillType.body, color = colors.onSurfaceVariant)
                     }
                     if (isSignedIn && hasRead && failure == null && state.noteCount == 0) {
-                        Notes.placeholders.forEach { title ->
-                            Row(Modifier.fillMaxWidth().heightIn(min = 70.dp)
-                                .clickable(role = Role.Button, onClickLabel = "Write a note") { onEdit(null, title) }
-                                .padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                Text(title, style = WindmillType.labelParagraph,
-                                    color = colors.onSurfaceVariant, modifier = Modifier.weight(1f))
-                                Chevron()
+                        Column {
+                            Notes.placeholders.forEach { title ->
+                                ListItem(
+                                    headlineContent = { Text(title, style = WindmillType.labelParagraph, color = colors.onSurfaceVariant) },
+                                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                                    modifier = Modifier.fillMaxWidth()
+                                        .clickable(role = Role.Button, onClickLabel = "Write a note") { onEdit(null, title) },
+                                )
                             }
                         }
                     }
@@ -211,13 +210,11 @@ fun NotesScreen(
                         if (state.noteCount >= Notes.maxNotes) Text(Notes.full, style = WindmillType.supporting, color = colors.onSurfaceVariant)
                     }
                 })
-            if (!isSignedIn || (hasRead && failure == null && state.noteCount < Notes.maxNotes)) {
+            if (!isSignedIn) {
                 Box(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 16.dp)) {
-                    Button(onClick = { if (isSignedIn) onEdit(null, "") else onSignIn() },
-                        enabled = !savingOrder, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
-                        shape = RoundedCornerShape(16.dp),
+                    Button(onClick = onSignIn, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = colors.surfaceContainerHighest, contentColor = colors.onSurface)) {
-                        Text(if (isSignedIn) Notes.add else "Sign in", style = GymType.button)
+                        Text("Sign in", style = GymType.button)
                     }
                 }
             }
@@ -229,6 +226,7 @@ fun NotesScreen(
 private fun NoteList(
     notes: List<Note>,
     enabled: Boolean,
+    underFab: Boolean,
     modifier: Modifier,
     onOpen: (Note) -> Unit,
     onMove: (List<Note>?) -> Unit,
@@ -247,9 +245,8 @@ private fun NoteList(
     var offset by remember { mutableFloatStateOf(0f) }
     var focused by remember { mutableStateOf<String?>(null) }
     LazyColumn(state = list, modifier = modifier.fillMaxWidth(),
-        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 20.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        item("head") { Column(verticalArrangement = Arrangement.spacedBy(12.dp), content = header) }
+        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 8.dp, bottom = if (underFab) 88.dp else 20.dp)) {
+        item("head") { Column(Modifier.padding(bottom = 4.dp), verticalArrangement = Arrangement.spacedBy(12.dp), content = header) }
         if (showRows) itemsIndexed(notes, key = { _, note -> note.id }) { index, note ->
             val focus = remember(note.id) { FocusRequester() }
             LaunchedEffect(focused, enabled) {
@@ -273,98 +270,92 @@ private fun NoteList(
             }, enabled = enabled && dragged == null,
                 modifier = Modifier.zIndex(if (dragged == note.id) 1f else 0f)
                     .graphicsLayer { translationY = if (dragged == note.id) offset else 0f }) {
-                Box(Modifier.fillMaxWidth().background(if (dragged == note.id) colors.surfaceContainerHighest else colors.surfaceContainer)) {
-                    Row(Modifier.fillMaxWidth().heightIn(min = 68.dp)
-                        .focusRequester(focus).clickable(enabled = enabled, role = Role.Button, onClickLabel = "Open note") { onOpen(note) }
-                        .semantics { customActions = actions }.padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        if (notes.size > 1) Spacer(Modifier.size(24.dp))
-                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            Text(note.title, style = GymType.noteTitle, color = colors.onSurface)
-                            Text(problem ?: note.firstLine ?: "empty · tap to write",
-                                style = GymType.nativeDetail,
-                                color = if (problem == null) colors.onSurfaceVariant else colors.error,
-                                modifier = Modifier.semantics { if (problem != null) liveRegion = LiveRegionMode.Polite })
-                        }
-                        Icon(painterResource(R.drawable.gym_note_chevron), null, Modifier.size(24.dp), tint = colors.onSurfaceVariant)
-                    }
-                    if (notes.size > 1) Box(Modifier.size(48.dp).align(Alignment.CenterStart)
-                        .semantics { contentDescription = "Reorder ${note.title}" }
-                        .pointerInput(note.id) {
-                            awaitEachGesture {
-                                val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Main)
-                                if (!mayMove) return@awaitEachGesture
-                                var sideways = false
-                                val started = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) {
-                                    var waiting = true
-                                    while (waiting) {
-                                        val event = awaitPointerEvent(PointerEventPass.Main)
-                                        val change = event.changes.firstOrNull { it.id == down.id }
-                                            ?: return@withTimeoutOrNull false
-                                        if (change.isConsumed || !change.pressed) return@withTimeoutOrNull false
-                                        val distance = change.position - down.position
-                                        if (distance.getDistance() > viewConfiguration.touchSlop) {
-                                            sideways = abs(distance.x) > abs(distance.y)
-                                            if (sideways) event.changes.forEach { it.consume() }
-                                            waiting = false
-                                        } else {
-                                            val final = awaitPointerEvent(PointerEventPass.Final)
-                                            if (final.changes.any { it.isConsumed }) return@withTimeoutOrNull false
-                                        }
-                                    }
-                                    false
-                                } ?: true
-                                if (!started && !sideways) return@awaitEachGesture
-                                var order = standing
-                                var moved = false
-                                if (started) {
-                                    dragged = note.id
-                                    offset = 0f
-                                }
-                                try {
-                                    do {
-                                        val event = awaitPointerEvent(PointerEventPass.Main)
-                                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                                        if (change.isConsumed) break
-                                        event.changes.forEach { it.consume() }
-                                        if (!change.pressed) {
-                                            if (moved && mayMove) onSettle(note.id, order)
-                                            break
-                                        }
-                                        val amount = change.position - change.previousPosition
-                                        if (!started || !mayMove) continue
-                                        offset += amount.y
-                                        val from = order.indexOfFirst { it.id == note.id }
-                                        val visible = list.layoutInfo.visibleItemsInfo
-                                        val row = visible.firstOrNull { it.key == note.id } ?: continue
-                                        if (row.index != from + 1) continue
-                                        val center = row.offset + row.size / 2f + offset
-                                        val above = order.getOrNull(from - 1)?.let { adjacent -> visible.firstOrNull { it.key == adjacent.id } }
-                                        val below = order.getOrNull(from + 1)?.let { adjacent -> visible.firstOrNull { it.key == adjacent.id } }
-                                        val to = when {
-                                            above != null && center < above.offset + above.size / 2f -> from - 1
-                                            below != null && center > below.offset + below.size / 2f -> from + 1
-                                            else -> continue
-                                        }
-                                        val neighbor = if (to < from) above!! else below!!
-                                        order = Notes.moved(order, from, to)
-                                        moved = true
-                                        onMove(order)
-                                        offset += row.offset - if (to < from) neighbor.offset else neighbor.offset + neighbor.size - row.size
-                                    } while (true)
-                                } finally {
-                                    dragged = null
-                                    offset = 0f
-                                    if (started) onMove(null)
+                val reorder = Modifier.pointerInput(note.id) {
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Main)
+                        if (!mayMove) return@awaitEachGesture
+                        var sideways = false
+                        val started = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) {
+                            var waiting = true
+                            while (waiting) {
+                                val event = awaitPointerEvent(PointerEventPass.Main)
+                                val change = event.changes.firstOrNull { it.id == down.id }
+                                    ?: return@withTimeoutOrNull false
+                                if (change.isConsumed || !change.pressed) return@withTimeoutOrNull false
+                                val distance = change.position - down.position
+                                if (distance.getDistance() > viewConfiguration.touchSlop) {
+                                    sideways = abs(distance.x) > abs(distance.y)
+                                    if (sideways) event.changes.forEach { it.consume() }
+                                    waiting = false
+                                } else {
+                                    val final = awaitPointerEvent(PointerEventPass.Final)
+                                    if (final.changes.any { it.isConsumed }) return@withTimeoutOrNull false
                                 }
                             }
-                        }, contentAlignment = Alignment.Center) {
-                        Icon(painterResource(R.drawable.gym_note_drag), null, Modifier.size(24.dp), tint = colors.onSurfaceVariant)
+                            false
+                        } ?: true
+                        if (!started && !sideways) return@awaitEachGesture
+                        var order = standing
+                        var moved = false
+                        if (started) {
+                            dragged = note.id
+                            offset = 0f
+                        }
+                        try {
+                            do {
+                                val event = awaitPointerEvent(PointerEventPass.Main)
+                                val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                if (change.isConsumed) break
+                                event.changes.forEach { it.consume() }
+                                if (!change.pressed) {
+                                    if (moved && mayMove) onSettle(note.id, order)
+                                    break
+                                }
+                                val amount = change.position - change.previousPosition
+                                if (!started || !mayMove) continue
+                                offset += amount.y
+                                val from = order.indexOfFirst { it.id == note.id }
+                                val visible = list.layoutInfo.visibleItemsInfo
+                                val row = visible.firstOrNull { it.key == note.id } ?: continue
+                                if (row.index != from + 1) continue
+                                val center = row.offset + row.size / 2f + offset
+                                val above = order.getOrNull(from - 1)?.let { adjacent -> visible.firstOrNull { it.key == adjacent.id } }
+                                val below = order.getOrNull(from + 1)?.let { adjacent -> visible.firstOrNull { it.key == adjacent.id } }
+                                val to = when {
+                                    above != null && center < above.offset + above.size / 2f -> from - 1
+                                    below != null && center > below.offset + below.size / 2f -> from + 1
+                                    else -> continue
+                                }
+                                val neighbor = if (to < from) above!! else below!!
+                                order = Notes.moved(order, from, to)
+                                moved = true
+                                onMove(order)
+                                offset += row.offset - if (to < from) neighbor.offset else neighbor.offset + neighbor.size - row.size
+                            } while (true)
+                        } finally {
+                            dragged = null
+                            offset = 0f
+                            if (started) onMove(null)
+                        }
                     }
                 }
+                ListItem(
+                    leadingContent = if (notes.size > 1) { { GymDragHandle("Reorder ${note.title}", modifier = reorder) } } else null,
+                    headlineContent = { Text(note.title, style = GymType.noteTitle, color = colors.onSurface) },
+                    supportingContent = {
+                        Text(problem ?: note.firstLine ?: "empty · tap to write",
+                            style = GymType.nativeDetail,
+                            color = if (problem == null) colors.onSurfaceVariant else colors.error,
+                            modifier = Modifier.semantics { if (problem != null) liveRegion = LiveRegionMode.Polite })
+                    },
+                    colors = ListItemDefaults.colors(containerColor = if (dragged == note.id) colors.surfaceContainerHighest else colors.surface),
+                    modifier = Modifier.fillMaxWidth()
+                        .focusRequester(focus).clickable(enabled = enabled, role = Role.Button, onClickLabel = "Open note") { onOpen(note) }
+                        .semantics { customActions = actions },
+                )
             }
         }
-        item("foot") { Column(verticalArrangement = Arrangement.spacedBy(20.dp), content = footer) }
+        item("foot") { Column(Modifier.padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(20.dp), content = footer) }
     }
 }
 

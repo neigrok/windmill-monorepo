@@ -28,6 +28,7 @@ import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.store.GymResult
 import works.windmill.platform.design.WindmillMaterial
 import works.windmill.sync.core.Json
+import androidx.compose.ui.test.onNodeWithContentDescription
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
@@ -61,12 +62,12 @@ class EngineNotesScreenTests {
             room.store.observeEngine()
             show(room)
             compose.onNodeWithText("Reading your notes…").assertIsDisplayed()
-            compose.onNodeWithText(Notes.add).assertDoesNotExist()
+            compose.onNodeWithContentDescription(Notes.add).assertDoesNotExist()
             val server = EngineRoomFixture.server()
             compose.runOnIdle { room.pull(server) }
             waitForNotebook(room) { room.store.notes.notesRead }
             compose.onNodeWithText(Notes.placeholders.first()).assertIsDisplayed()
-            compose.onNodeWithText(Notes.add).assertIsDisplayed()
+            compose.onNodeWithContentDescription(Notes.add).assertIsDisplayed()
         } } finally { scope.cancel() }
     }
 

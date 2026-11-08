@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
@@ -38,6 +37,7 @@ import works.windmill.gym.presentation.Readout
 import works.windmill.gym.presentation.RoutineMovement
 import works.windmill.gym.presentation.TargetEntry
 import works.windmill.gym.domain.sync.SetTarget as DomainSetTarget
+import androidx.compose.material3.Button
 
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
@@ -72,17 +72,10 @@ internal fun MovementForm(
     }
     InterceptPlatformTextInput(input) {
         Column(Modifier.fillMaxWidth().heightIn(max = pickerMaxHeight()).imePadding()) {
+            GymSheetBar(title, onClose = onCancel, closeEnabled = !busy)
             Column(Modifier.fillMaxWidth().weight(1f, fill = false).verticalScroll(rememberScrollState())
                 .testTag("movement-form-body")) {
-                Row(Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(horizontal = 16.dp),
-                    verticalAlignment = Alignment.CenterVertically) {
-                    Text(title, style = WindmillType.headline,
-                        color = colors.onSurface, modifier = Modifier.weight(1f))
-                    TextButton(onClick = onCancel, enabled = !busy, modifier = Modifier.heightIn(min = 48.dp)) {
-                        Text("Cancel", style = WindmillType.label)
-                    }
-                }
-                Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 16.dp, bottom = 8.dp),
+                Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 8.dp, bottom = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     MovementFields(movement.current.name, movement.current.equipment, movement.current.loadCount,
                         onName = { onMovement(movement.named(it)) }, onEquipment = { onMovement(movement.equipped(it)) },
@@ -93,11 +86,8 @@ internal fun MovementForm(
                 }
             }
             Button(onClick = onCommit, enabled = valid && !busy,
-                modifier = Modifier.padding(horizontal = 16.dp).padding(top = 16.dp, bottom = 8.dp)
-                    .fillMaxWidth().heightIn(min = 56.dp), shape = RoundedCornerShape(16.dp),
-                colors = ButtonDefaults.buttonColors(disabledContainerColor = colors.primary.copy(alpha = .38f),
-                    disabledContentColor = colors.onPrimary.copy(alpha = .38f))) {
-                Text(commitLabel, style = WindmillType.label)
+                modifier = Modifier.padding(horizontal = 16.dp).padding(top = 8.dp, bottom = 8.dp).fillMaxWidth().heightIn(min = GymTap.primary)) {
+                Text(commitLabel)
             }
         }
     }
@@ -272,7 +262,7 @@ private fun RoutineTargetField(
             editor = accepted
             if (accepted.text != previous.text) onTyped(accepted.text)
         }, enabled = enabled, singleLine = true,
-            placeholder = { Text(placeholder) }, isError = refusal != null, shape = RoundedCornerShape(4.dp),
+            placeholder = { Text(placeholder) }, isError = refusal != null,
             textStyle = GymType.stockFieldInput,
             keyboardOptions = KeyboardOptions(keyboardType = if (decimal) KeyboardType.Decimal else KeyboardType.Number,
                 autoCorrectEnabled = false, imeAction = ImeAction.Done),

@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
@@ -63,6 +62,7 @@ import kotlin.math.abs
 import works.windmill.gym.R
 import works.windmill.gym.presentation.LiveLines
 import works.windmill.gym.presentation.Readout
+import androidx.compose.foundation.shape.CircleShape
 
 @Composable
 fun AssemblySheet(
@@ -216,7 +216,7 @@ fun AssemblySheet(
                 if (index < drawn.lastIndex) HorizontalDivider(color = colors.outlineVariant)
             }
         }
-        Box(Modifier.fillMaxWidth().heightIn(min = 64.dp).clip(RoundedCornerShape(16.dp))
+        Box(Modifier.fillMaxWidth().heightIn(min = 64.dp).clip(CircleShape)
             .background(colors.surfaceContainerHighest).clickable(role = Role.Button, onClick = onAdd), contentAlignment = Alignment.Center) {
             Text("Add movement", style = WindmillType.label, color = colors.onSurface)
         }

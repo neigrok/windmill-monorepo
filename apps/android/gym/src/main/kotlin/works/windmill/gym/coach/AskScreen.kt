@@ -21,7 +21,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ElevatedButton
@@ -335,7 +334,7 @@ private fun Band(said: String, onClose: (() -> Unit)? = null) {
     // Material's snackbar fills its width by itself; a fixed width reaches its close button too and stands it over the words.
     Snackbar(
         modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 4.dp).testTag("coach-band"),
-        shape = RoundedCornerShape(4.dp),
+        shape = MaterialTheme.shapes.extraSmall,
         containerColor = colors.surfaceContainerHighest,
         contentColor = colors.onSurface,
         dismissAction = onClose?.let { close -> {
@@ -413,7 +412,7 @@ fun ReceiptLine(line: String) {
     val applied = line.startsWith("Applied")
     Text(line, style = GymType.button,
         color = if (applied) colors.primary else colors.onSurface,
-        modifier = Modifier.fillMaxWidth().then(if (applied) Modifier.background(colors.surfaceContainer, RoundedCornerShape(20.dp)).padding(16.dp) else Modifier.padding(vertical = 8.dp)))
+        modifier = Modifier.fillMaxWidth().then(if (applied) Modifier.background(colors.surfaceContainer, MaterialTheme.shapes.large).padding(16.dp) else Modifier.padding(vertical = 8.dp)))
 }
 
 @Composable

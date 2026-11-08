@@ -15,7 +15,6 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -39,6 +38,7 @@ import works.windmill.gym.ui.gymColors
 import works.windmill.gym.ui.GymTextScale
 import works.windmill.platform.design.LocalWindmillDark
 import works.windmill.platform.telemetry.LocalTelemetry
+import androidx.compose.material3.MaterialTheme
 
 private val titles = listOf(R.string.onboarding_title_windmill, R.string.onboarding_title_roadmap,
     R.string.onboarding_title_journal, R.string.onboarding_title_gym)
@@ -229,7 +229,7 @@ fun OnboardingPager(replay: Boolean, onExit: () -> Unit, reducedMotion: Boolean?
             enabled = !pager.isScrollInProgress,
             modifier = Modifier.padding(horizontal = 20.dp).padding(top = 12.dp, bottom = 16.dp).fillMaxWidth()
                 .heightIn(min = 56.dp).semantics { traversalIndex = 7f },
-            shape = RoundedCornerShape(16.dp), contentPadding = PaddingValues(horizontal = 24.dp, vertical = 16.dp),
+            contentPadding = PaddingValues(horizontal = 24.dp, vertical = 16.dp),
             colors = ButtonDefaults.buttonColors(containerColor = accent, contentColor = colors.onPrimary)) {
             Text(stringResource(if (pager.currentPage < 3) R.string.onboarding_next else if (replay) R.string.onboarding_done else R.string.onboarding_start),
                 style = GymType.actionLabel)

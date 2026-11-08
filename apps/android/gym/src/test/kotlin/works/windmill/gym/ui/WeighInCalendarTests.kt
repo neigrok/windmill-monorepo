@@ -43,7 +43,7 @@ class WeighInCalendarTests {
         val content: @androidx.compose.runtime.Composable () -> Unit = {
             CompositionLocalProvider(LocalTelemetry provides telemetry) {
                 GymMaterial { WeighInSheet(WeighIn(day.toString(), 82.4), null, now, false, null,
-                    onSave = { date, kg -> saved += date to kg }, onDelete = null) }
+                    onSave = { date, kg -> saved += date to kg }, onDelete = null, onClose = {}) }
             }
         }
         if (restoration == null) compose.setContent(content) else restoration.setContent(content)
@@ -125,9 +125,22 @@ class WeighInCalendarTests {
         assertEquals(emptyList<Pair<String, Double>>(), saved)
     }
 
+    // A new weigh-in commits in its top bar; its ✕ closes the sheet as a swipe does, leaving a typed weight unsaved.
+    @Test fun theCloseInTheTopBarLeavesWithoutSaving() {
+        val closed = mutableListOf<String>()
+        compose.setContent { GymMaterial { WeighInSheet(null, null, now, false, null,
+            onSave = { date, kg -> saved += date to kg }, onDelete = null, onClose = { closed += "closed" }) } }
+        compose.onNodeWithText(Bodyweight.chip).assertIsDisplayed()
+        compose.onNodeWithContentDescription(weightField).performTextReplacement("82.4")
+        compose.onNodeWithText(Bodyweight.save).assertIsEnabled()
+        compose.onNodeWithContentDescription("Close").performClick()
+        assertEquals(listOf("closed"), closed)
+        assertEquals(emptyList<Pair<String, Double>>(), saved)
+    }
+
     @Test fun invalidInputCannotSaveThroughButtonOrImeAndAValidGestureSubmitsOnce() {
         compose.setContent { GymMaterial { WeighInSheet(null, null, now, false, null,
-            onSave = { date, kg -> saved += date to kg }, onDelete = null) } }
+            onSave = { date, kg -> saved += date to kg }, onDelete = null, onClose = {}) } }
         compose.onNodeWithText(Bodyweight.save).assertIsNotEnabled()
         for (raw in listOf("", "abc", "19.99", "400.01", "82,4.5")) {
             compose.onNodeWithContentDescription(weightField).performTextReplacement(raw)
@@ -150,7 +163,7 @@ class WeighInCalendarTests {
                 saved += date to kg
                 calls++
                 if (calls < 3) refusal = "That weigh-in could not be saved." else { refusal = null; saving = true }
-            }, onDelete = null) } }
+            }, onDelete = null, onClose = {}) } }
         compose.onNodeWithContentDescription(weightField).performTextReplacement("82,45")
         repeat(2) {
             compose.onNodeWithText(Bodyweight.save).assertIsEnabled().performClick()

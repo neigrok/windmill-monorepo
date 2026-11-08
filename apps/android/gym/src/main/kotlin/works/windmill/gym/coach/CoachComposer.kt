@@ -11,7 +11,6 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.input.TextFieldState
@@ -151,7 +150,7 @@ internal fun CoachComposer(store: CoachChats, key: String, asking: Boolean,
                 decorator = { input ->
                     TextFieldDefaults.DecorationBox(value = editor.field.text.toString(), innerTextField = input,
                         enabled = inputEnabled, singleLine = false, visualTransformation = VisualTransformation.None,
-                        interactionSource = interaction, shape = RoundedCornerShape(28.dp), colors = fieldColors,
+                        interactionSource = interaction, shape = MaterialTheme.shapes.extraLarge, colors = fieldColors,
                         placeholder = { Text(Ask.placeholder, style = GymType.coachComposer) })
                 }, modifier = Modifier.weight(1f).heightIn(min = 56.dp, max = 160.dp).semantics { contentDescription = "Question" })
             val ready = enabled && !asking && !preparing && !holdSend && canSend(editor.draft.copy(text = editor.field.text.toString()))
@@ -239,7 +238,7 @@ private class CoachDraftEditor(private val store: CoachChats, private val key: S
 }
 
 @Composable
-internal fun CoachPhoto(store: CoachChats, photo: CoachAttachment, modifier: Modifier = Modifier, shape: Shape = RoundedCornerShape(12.dp)) {
+internal fun CoachPhoto(store: CoachChats, photo: CoachAttachment, modifier: Modifier = Modifier, shape: Shape = MaterialTheme.shapes.medium) {
     val colors = MaterialTheme.colorScheme
     var bitmap by remember(store.accountKey, photo.id) { mutableStateOf<android.graphics.Bitmap?>(null) }
     var failure by remember(store.accountKey, photo.id) { mutableStateOf(false) }
@@ -267,7 +266,7 @@ internal fun CoachPhoto(store: CoachChats, photo: CoachAttachment, modifier: Mod
         else Text(if (failure) "Retry photo" else "Photo", style = WindmillType.captionCompact, color = colors.onSurfaceVariant)
     }
     if (expanded && bitmap != null) Dialog(onDismissRequest = { expanded = false }) {
-        Column(Modifier.background(colors.surfaceContainer, RoundedCornerShape(16.dp)).padding(12.dp)) {
+        Column(Modifier.background(colors.surfaceContainer, MaterialTheme.shapes.large).padding(12.dp)) {
             Image(requireNotNull(bitmap).asImageBitmap(), "Attached photo", Modifier.fillMaxWidth().heightIn(min = 160.dp, max = 520.dp).aspectRatio(photo.width.toFloat() / photo.height), contentScale = ContentScale.Fit)
             CoachAction("Close", { expanded = false })
         }

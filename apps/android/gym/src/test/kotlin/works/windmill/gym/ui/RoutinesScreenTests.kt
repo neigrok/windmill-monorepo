@@ -221,13 +221,13 @@ class RoutinesScreenTests {
     }
 
     @Test
-    fun testTheRowStandsOnTheRoomsRowFloor() {
+    fun testTheRowIsATwoLineListItem() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
             home(room, mutableListOf(), mutableListOf())
 
             val bounds = compose.onNode(hasClickAction() and hasText("Push Day")).getBoundsInRoot()
-            assertEquals(68.dp, bounds.height)
+            assertEquals(72.dp, bounds.height)
         } } finally { scope.cancel() }
     }
 

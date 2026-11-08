@@ -71,8 +71,8 @@ class LoggerNavigationTests {
             assertTrue(head.getBoundsInRoot().height >= 48.dp)
             compose.onNodeWithText("Exercise 1 / 1").assertDoesNotExist()
             compose.onNodeWithText("Add movement").assertDoesNotExist()
-            compose.onNodeWithText("Set 1").performScrollTo().assertIsDisplayed()
-            assertTrue(compose.onNodeWithTag("Set ledger").getBoundsInRoot().height <= 144.dp)
+            compose.onNode(hasContentDescription("Set 1, current", substring = true)).performScrollTo().assertIsDisplayed()
+            assertTrue(compose.onNodeWithTag("Set ledger").getBoundsInRoot().height <= 168.dp)
             compose.onNode(hasContentDescription("Load, kg each")).performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("Log set").assertIsDisplayed().assertIsEnabled()
         } finally { scope.cancel(); room.close() }

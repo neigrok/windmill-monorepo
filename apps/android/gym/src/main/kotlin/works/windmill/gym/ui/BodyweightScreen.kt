@@ -7,7 +7,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -59,7 +58,6 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.error
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -79,6 +77,10 @@ import works.windmill.gym.store.DeletionsStore
 import works.windmill.gym.store.TrainingStore
 import works.windmill.gym.store.WriteFailure
 import works.windmill.platform.telemetry.LocalTelemetry
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.IconButton
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.PressInteraction
 
 // What the bodyweight page draws: the drawn series, the series a held delete still stands on, and whether it is read.
 @Stable
@@ -106,13 +108,6 @@ class BodyweightBinding(private val bodyweight: BodyweightStore, private val del
     override fun withhold(deletion: Deletion.Bodyweight) = deletions.withhold(deletion)
 }
 
-@Composable
-internal fun WeighInHandle() {
-    Box(Modifier.fillMaxWidth().height(24.dp), contentAlignment = Alignment.Center) {
-        Box(Modifier.size(32.dp, 4.dp).background(MaterialTheme.colorScheme.onSurfaceVariant, RoundedCornerShape(100.dp)))
-    }
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WeighInSheet(
@@ -123,6 +118,7 @@ fun WeighInSheet(
     refused: String?,
     onSave: (String, Double) -> Unit,
     onDelete: (() -> Unit)?,
+    onClose: () -> Unit,
     draftKey: String = fixedDate?.toString() ?: "new",
 ) {
     val colors = MaterialTheme.colorScheme
@@ -191,68 +187,81 @@ fun WeighInSheet(
         ) { DatePicker(state = picker, modifier = Modifier.testTag("weigh-in-calendar")) }
     }
 
+    fun openCalendar() {
+        if (busy) return
+        focusManager.clearFocus()
+        keyboard?.hide()
+        pickingDate = true
+        telemetry.event("gym_action", mapOf("screen" to "bodyweight", "action" to "calendar_open", "outcome" to "ok"))
+    }
+    val savable = !busy && parsed is ParsedWeight.Ok && dateFailure == null
+    val fieldColors = OutlinedTextFieldDefaults.colors(
+        focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent,
+        disabledContainerColor = Color.Transparent, errorContainerColor = Color.Transparent,
+        focusedTextColor = colors.onSurface, unfocusedTextColor = colors.onSurface, disabledTextColor = colors.onSurfaceVariant,
+        errorTextColor = colors.onSurface, cursorColor = colors.primary,
+        focusedBorderColor = colors.primary, unfocusedBorderColor = colors.outline,
+        disabledBorderColor = colors.outline, errorBorderColor = MaterialTheme.colorScheme.error)
+
+    // Both modes head the sheet with Close and its title and commit from the bottom, in thumb reach. A new weigh-in labels
+    // its two fields; a correction keeps its field captions, its fixed day and Delete under the commit.
     Column(Modifier.fillMaxWidth().testTag("weigh-in-form").background(colors.surfaceContainer).imePadding().navigationBarsPadding()) {
+        GymSheetBar(Bodyweight.chip, onClose = onClose, closeEnabled = !busy)
         Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp).padding(top = gap, bottom = if (correction) 24.dp else 8.dp),
+            .padding(horizontal = 16.dp).padding(top = gap, bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(gap)) {
-            Box(Modifier.fillMaxWidth().heightIn(min = 48.dp), contentAlignment = Alignment.CenterStart) {
-                Text(Bodyweight.chip, style = GymType.weighInTitle, color = colors.onSurface)
-            }
-            Text("Weight", style = WindmillType.detailLabel, color = colors.onSurfaceVariant)
+            if (correction) Text("Weight", style = WindmillType.detailLabel, color = colors.onSurfaceVariant)
             OutlinedTextField(value = typed, onValueChange = { typed = it; edited = true },
                 singleLine = true, enabled = !busy, isError = weightFailure != null,
                 textStyle = GymType.weighInInput,
+                label = if (correction) null else { { Text("Weight") } },
                 suffix = { Text(Bodyweight.unit, style = WindmillType.paragraphLoose, color = colors.onSurfaceVariant) },
                 supportingText = weightFailure?.let { line -> { Text(line, modifier = Modifier.padding(bottom = 6.dp).semantics { liveRegion = LiveRegionMode.Polite }) } },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, autoCorrectEnabled = false, imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = { save() }),
-                shape = RoundedCornerShape(4.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent,
-                    disabledContainerColor = Color.Transparent, errorContainerColor = Color.Transparent,
-                    focusedTextColor = colors.onSurface, unfocusedTextColor = colors.onSurface, disabledTextColor = colors.onSurfaceVariant,
-                    errorTextColor = colors.onSurface, cursorColor = colors.primary,
-                    focusedBorderColor = colors.primary, unfocusedBorderColor = colors.outline,
-                    disabledBorderColor = colors.outline, errorBorderColor = MaterialTheme.colorScheme.error),
+                colors = fieldColors,
                 modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).focusRequester(focus)
                     .semantics { contentDescription = weightField; weightFailure?.let { error(it) } },
             )
-            if (correction) Text("Date", style = WindmillType.detailLabel, color = colors.onSurfaceVariant)
-            BoxWithConstraints(Modifier.fillMaxWidth()) {
-                val stacked = maxWidth < 320.dp || GymTextScale.stacked
-                Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).clip(RoundedCornerShape(12.dp))
+            if (correction) {
+                Text("Date", style = WindmillType.detailLabel, color = colors.onSurfaceVariant)
+                Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).clip(MaterialTheme.shapes.medium)
                     .background(colors.surface)
-                    .then(if (!correction) Modifier.clickable(enabled = !busy, role = Role.Button,
-                        onClickLabel = "Choose date") {
-                        focusManager.clearFocus()
-                        keyboard?.hide()
-                        pickingDate = true
-                        telemetry.event("gym_action", mapOf("screen" to "bodyweight", "action" to "calendar_open", "outcome" to "ok"))
-                    } else Modifier)
                     .semantics(mergeDescendants = true) {
                         contentDescription = "Date, ${Bodyweight.fullDay(date)}"
                         dateFailure?.let { error(it) }
                     }.padding(horizontal = 16.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    if (stacked) Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        if (!correction) Text("Date", style = WindmillType.detailLabel, color = colors.onSurfaceVariant)
-                        Text(Bodyweight.fullDay(date), style = WindmillType.paragraph, color = if (correction) colors.onSurfaceVariant else colors.onSurface)
-                    } else {
-                        if (!correction) Text("Date", style = WindmillType.detailLabel, color = colors.onSurfaceVariant)
-                        Text(Bodyweight.fullDay(date), modifier = Modifier.weight(1f), textAlign = if (correction) TextAlign.Start else TextAlign.Center, style = WindmillType.paragraph, color = if (correction) colors.onSurfaceVariant else colors.onSurface)
-                    }
-                    if (!correction) Icon(Icons.Default.DateRange, null, Modifier.size(24.dp), tint = colors.onSurface)
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Text(Bodyweight.fullDay(date), modifier = Modifier.weight(1f), style = WindmillType.paragraph, color = colors.onSurfaceVariant)
                 }
+            } else {
+                val press = remember { MutableInteractionSource() }
+                LaunchedEffect(press) {
+                    press.interactions.collect { if (it is PressInteraction.Release) openCalendar() }
+                }
+                OutlinedTextField(value = Bodyweight.fullDay(date), onValueChange = {}, readOnly = true, enabled = !busy,
+                    singleLine = true, isError = dateFailure != null, textStyle = GymType.weighInInput,
+                    label = { Text("Date") },
+                    trailingIcon = {
+                        IconButton(onClick = ::openCalendar, enabled = !busy) {
+                            Icon(Icons.Default.DateRange, "Choose date")
+                        }
+                    },
+                    supportingText = dateFailure?.let { line -> { Text(line, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }) } },
+                    interactionSource = press, colors = fieldColors,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)
+                        .semantics { contentDescription = "Date, ${Bodyweight.fullDay(date)}"; dateFailure?.let { error(it) } },
+                )
             }
-            otherFailure?.let { Text(it, style = GymType.smallParagraph, color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }) }
+            (if (correction) otherFailure else refused.takeIf { weightFailure == null })?.let {
+                Text(it, style = GymType.smallParagraph, color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+            }
         }
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = if (correction) 10.dp else 16.dp),
             verticalArrangement = Arrangement.spacedBy(gap)) {
-            Button(onClick = ::save, enabled = !busy && parsed is ParsedWeight.Ok && dateFailure == null,
-                modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp), shape = RoundedCornerShape(16.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = colors.primary, contentColor = colors.onPrimary)) {
-                Text(if (busy) "Saving…" else Bodyweight.save, style = WindmillType.labelParagraph)
+            Button(onClick = ::save, enabled = savable, modifier = Modifier.fillMaxWidth().heightIn(min = GymTap.primary)) {
+                Text(if (busy) "Saving…" else Bodyweight.save)
             }
             onDelete?.let { GymErrorTextButton(Bodyweight.deleteRow, it, Modifier.fillMaxWidth(), enabled = !busy) }
         }
@@ -316,7 +325,7 @@ fun BodyweightScreen(state: BodyweightState, events: BodyweightEvents, backTo: S
                 }
             } else {
                 if (state.bodyweightRead) {
-                    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(colors.surfaceContainer).padding(horizontal = 16.dp).padding(top = 12.dp, bottom = 16.dp),
+                    Column(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.large).background(colors.surfaceContainer).padding(horizontal = 16.dp).padding(top = 12.dp, bottom = 16.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                             ChartWindow.entries.forEachIndexed { index, option ->
@@ -350,22 +359,20 @@ fun BodyweightScreen(state: BodyweightState, events: BodyweightEvents, backTo: S
                 }
                 if (rows.isNotEmpty()) {
                     Text("Every weigh-in", style = GymType.weighInListTitle, color = colors.onSurface)
-                    rows.asReversed().forEach { entry ->
-                        key(entry.dateLocal) {
-                            DeleteSwipeRow(Bodyweight.deleteRow, onDelete = {
-                                say(null)
-                                events.withhold(Deletion.Bodyweight(entry.dateLocal))
-                                false
-                            }) {
-                                Row(Modifier.fillMaxWidth().heightIn(min = 70.dp).background(colors.surface)
-                                    .clickable(role = Role.Button, onClickLabel = "Correct weigh-in") { repairing = entry }
-                                    .padding(start = 12.dp, top = 12.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                        Text("${Bodyweight.kilograms(entry.weightKg)} kg", style = WindmillType.labelParagraph, color = colors.onSurface)
-                                        Text(Bodyweight.listDay(entry.date), style = WindmillType.supportingParagraph, color = colors.onSurfaceVariant)
-                                    }
-                                    Chevron()
+                    Column {
+                        rows.asReversed().forEach { entry ->
+                            key(entry.dateLocal) {
+                                DeleteSwipeRow(Bodyweight.deleteRow, onDelete = {
+                                    say(null)
+                                    events.withhold(Deletion.Bodyweight(entry.dateLocal))
+                                    false
+                                }) {
+                                    ListItem(
+                                        headlineContent = { Text("${Bodyweight.kilograms(entry.weightKg)} kg", style = WindmillType.labelParagraph, color = colors.onSurface) },
+                                        supportingContent = { Text(Bodyweight.listDay(entry.date), style = WindmillType.supportingParagraph, color = colors.onSurfaceVariant) },
+                                        modifier = Modifier.fillMaxWidth()
+                                            .clickable(role = Role.Button, onClickLabel = "Correct weigh-in") { repairing = entry },
+                                    )
                                 }
                             }
                         }
@@ -378,7 +385,7 @@ fun BodyweightScreen(state: BodyweightState, events: BodyweightEvents, backTo: S
     repairing?.let { open ->
         WindmillSheet(onDismissRequest = { close() }, onBack = { close() }, sheetState = sheetState,
             containerColor = colors.surfaceContainer, scrimColor = colors.scrim,
-            dragHandle = { WeighInHandle() }, contentWindowInsets = { WindowInsets(0, 0, 0, 0) }) {
+            contentWindowInsets = { WindowInsets(0, 0, 0, 0) }) {
             sheetStates.SaveableStateProvider(open.dateLocal) {
                 WeighInSheet(initial = open, fixedDate = open.date, nowMs = nowMs,
                     saving = saving || closing, refused = refused, draftKey = open.dateLocal,
@@ -397,6 +404,7 @@ fun BodyweightScreen(state: BodyweightState, events: BodyweightEvents, backTo: S
                         }
                     },
                     onDelete = { close { say(null); events.withhold(Deletion.Bodyweight(open.dateLocal)) } },
+                    onClose = { close() },
                 )
             }
         }

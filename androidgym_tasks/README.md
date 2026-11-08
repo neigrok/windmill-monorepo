@@ -120,6 +120,25 @@ On 2026-11-01 the dogfood tree's open Android, gym and sync nodes were checked a
 
 Tasks that touch iOS or web pass their own gates too: `swift test` for `GymDomain` and the iOS engine, and web's test suite.
 
+## Nativeness wave (2026-11-08)
+
+The owner approved the nativeness wave on 2026-11-08 with every default: the gym screens are rebuilt from stock Material 3
+parts on the theme's roles and shapes ([wave NOTE](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=2040-38794)).
+The build covers 02.1N, 02.2N, 02.4N, 02.5N, 02.6N, 03.1N, 03.2N, 03.3N, 03.3Nk, 05.1N, 05.10N, 06.1N, 06.2N and 09.1N,
+and the wave's code-only items: Material's default `Shapes` in `GymMaterial` (`ThemeRolesTests` keeps radius literals out
+of gym screens), stock pill buttons, stock sheet drag handles, 16 dp cards, stock menu shapes, one press layer on the
+stepper's − / +, and a time picker that follows the phone's 24-hour setting. Sheet heads share `GymSheetBar` (✕ Close and
+the title); list drag handles share `GymDragHandle`. By the owner's ruling of the same day, Fix set, the movement form,
+Edit movement and the weigh-in keep their commit a full-width stock pill `Button`, 56 dp, at the foot of the sheet in
+thumb reach and pinned above the keyboard, as the redrawn 03.3N, 03.3Nk, 02.6N, 05.10N and 06.1N draw it; the weigh-in
+reads **Save weight** in both modes, and Delete set and the routine's line end Fix set's body above **Save fix**. The board recipe is
+`apps/android/tools/capture-recipes/nativeness-wave.json`.
+
+The owner rejected 09.6N (Notes signed out) and 06.9N (Correct a weigh-in) on 2026-11-08 to keep the thumb-reach
+bottom action: signed-out Notes keeps its full-width **Sign in**, and the correction sheet keeps its field captions, its
+fixed day, and **Save weight** and **Delete weigh-in** at its foot under the shared ✕ Close head, all on stock pill
+buttons.
+
 ## Execution order
 
 Build the shared foundations first, then choose a task whose numbered and named prerequisites are satisfied. The ordering below includes only the active release scope and is checked against its dependency graph; independent work within a row may proceed in parallel. Backend or design gates written inside a task still apply.

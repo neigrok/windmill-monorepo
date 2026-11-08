@@ -147,7 +147,7 @@ internal fun CoachBubble(
             .padding(horizontal = 16.dp, vertical = if (fullWidth) 16.dp else 8.dp),
         ) { content() }
         DropdownMenu(expanded = menu, onDismissRequest = { changeMenu(false) }, containerColor = colors.surfaceContainer,
-            shape = RoundedCornerShape(16.dp), modifier = Modifier.width(208.dp),
+            modifier = Modifier.width(208.dp),
         ) {
             DropdownMenuItem(text = { Text(label, style = GymType.coachSupporting, color = colors.onSurface) }, onClick = { copy(null) })
             if (latestLink != null) DropdownMenuItem(

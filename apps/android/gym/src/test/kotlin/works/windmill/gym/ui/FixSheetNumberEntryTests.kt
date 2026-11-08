@@ -47,7 +47,7 @@ class FixSheetNumberEntryTests {
             CompositionLocalProvider(LocalHapticFeedback provides haptics) {
                 GymMaterial {
                     FixSheet(set, "Bench Press", 2, null,
-                        onSave = { saved += it; FixOutcome.Corrected(it.corrected(set)) }, onDelete = {}, onEntryCancel = entryCancel)
+                        onSave = { saved += it; FixOutcome.Corrected(it.corrected(set)) }, onDelete = {}, onEntryCancel = entryCancel, onClose = {})
                 }
             }
         }
@@ -58,7 +58,7 @@ class FixSheetNumberEntryTests {
         val set = TrainingSet("set_1", exerciseId = exercise.id, setNumber = 1, weightKg = 75.0, reps = 8, completedAtMs = 0)
         compose.setContent { GymMaterial {
             FixSheet(set, exercise.name, 1, null, onSave = { saved += it; FixOutcome.Corrected(it.corrected(set)) }, onDelete = {},
-                exercise = exercise)
+                exercise = exercise, onClose = {})
         } }
     }
 
@@ -80,7 +80,7 @@ class FixSheetNumberEntryTests {
         val set = TrainingSet("set_1", exerciseId = "bench-press", setNumber = 1, weightKg = -10.0, reps = 8, completedAtMs = 0)
         compose.setContent { GymMaterial {
             FixSheet(set, "Bench Press", 1, null, onSave = { saved += it; FixOutcome.Corrected(it.corrected(set)) }, onDelete = {},
-                exercise = Exercise("bench-press", "Bench Press", "press", "barbell", 2.5))
+                exercise = Exercise("bench-press", "Bench Press", "press", "barbell", 2.5), onClose = {})
         } }
         val (bigDown, down, up) = works.windmill.gym.presentation.Ladder.labels(-10.0)
         listOf(bigDown, down).forEach { compose.onNodeWithText(it).assertIsNotEnabled() }
@@ -253,7 +253,7 @@ class FixSheetNumberEntryTests {
         val set = TrainingSet("set_1", "bench-press", weightKg = 75.0, reps = 8, completedAtMs = 0)
         compose.setContent { CompositionLocalProvider(LocalTelemetry provides telemetry) { GymMaterial {
             FixSheet(set, "Private movement", 1, null, origin = FixOrigin.Workout,
-                onSave = { saves++; FixOutcome.Corrected(set) }, onDelete = {})
+                onSave = { saves++; FixOutcome.Corrected(set) }, onDelete = {}, onClose = {})
         } } }
         compose.onNodeWithText("Set note").performTextReplacement("private note")
         val field = compose.onNodeWithContentDescription("Load, kg")

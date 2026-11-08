@@ -427,11 +427,11 @@ class RoutineEditorTests {
         compose.onNodeWithText("Edit routine").performClick()
         compose.onNodeWithText("Bench Press").performClick()
         compose.onNodeWithContentDescription("Movement name").performTextReplacement("Paused Bench")
-        compose.onNodeWithText("Cancel").performScrollTo().performClick()
+        compose.onNodeWithContentDescription("Close").performClick()
         compose.onNodeWithText("Discard changes?").assertIsDisplayed()
         compose.onNodeWithText("Keep editing").performClick()
         compose.onNodeWithText("Discard changes?").assertDoesNotExist()
-        compose.onNodeWithText("Cancel").performScrollTo().performClick()
+        compose.onNodeWithContentDescription("Close").performClick()
         compose.onNodeWithText("Discard").performClick()
         compose.waitUntil(5_000) { compose.onAllNodesWithText("Discard changes?").fetchSemanticsNodes().isEmpty() }
         editorTitle("Edit routine").assertExists()

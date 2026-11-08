@@ -4,7 +4,6 @@ import works.windmill.platform.design.WindmillType
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
@@ -20,6 +19,7 @@ import works.windmill.gym.R
 import works.windmill.gym.presentation.Exercise
 import works.windmill.gym.presentation.Program
 import works.windmill.gym.domain.sync.ExerciseRules
+import androidx.compose.material3.Button
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -32,16 +32,18 @@ fun EditMovementSheet(
     onName: (String) -> Unit,
     onEquipment: (String) -> Unit,
     onSave: () -> Unit,
+    onClose: () -> Unit,
     saving: Boolean = false,
 ) {
     val colors = MaterialTheme.colorScheme
     val problem = Program.nameProblem(name)
     val changed = Program.renamed(base.name, name) != null || equipment != base.equipment ||
         equipment == "dumbbell" && loadCount != base.loadCount
-    Column(Modifier.fillMaxWidth().imePadding().padding(horizontal = 20.dp).padding(top = 16.dp)) {
-        Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()),
+    Column(Modifier.fillMaxWidth().imePadding()) {
+        GymSheetBar("Edit movement", onClose = onClose, closeEnabled = !saving)
+        Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())
+            .padding(horizontal = GymLayout.gutter).padding(top = 8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Edit movement", style = WindmillType.sheetTitle, color = colors.onSurface)
             MovementFields(name, equipment, loadCount, onName, onEquipment, enabled = !saving, problem = problem)
             (refused ?: problem)?.let { sentence ->
                 Text(sentence, style = WindmillType.detail, color = colors.error,
@@ -49,9 +51,8 @@ fun EditMovementSheet(
             }
         }
         Button(onClick = onSave, enabled = changed && problem == null && !saving,
-            modifier = Modifier.padding(top = 16.dp, bottom = 16.dp).fillMaxWidth().heightIn(min = 56.dp),
-            shape = RoundedCornerShape(16.dp)) {
-            Text(if (saving) "Saving…" else "Save", style = WindmillType.label)
+            modifier = Modifier.padding(horizontal = GymLayout.gutter).padding(top = 16.dp, bottom = 16.dp).fillMaxWidth().heightIn(min = GymTap.primary)) {
+            Text(if (saving) "Saving…" else "Save")
         }
     }
 }
@@ -83,8 +84,7 @@ internal fun MovementFields(
                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = menu) },
                 modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth()
                     .heightIn(min = 56.dp).semantics { contentDescription = "Equipment" })
-            ExposedDropdownMenu(expanded = menu && enabled, onDismissRequest = { menu = false }, containerColor = colors.surfaceContainer,
-                shape = RoundedCornerShape(16.dp)) {
+            ExposedDropdownMenu(expanded = menu && enabled, onDismissRequest = { menu = false }, containerColor = colors.surfaceContainer) {
                 labels.keys.forEach { value ->
                     DropdownMenuItem(text = { Text(labels.getValue(value), style = WindmillType.supporting) },
                         leadingIcon = { Box(Modifier.size(20.dp)) { EquipmentIcon(value, Modifier.size(20.dp)) } },

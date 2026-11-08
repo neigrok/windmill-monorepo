@@ -59,6 +59,21 @@ class ThemeRolesTests {
         })
     }
 
+    // Gym screens read corners from Material's shape slots and buttons keep Material's own pill. A radius is written where
+    // the slots are defined, in the segmented group's rule, in a chat bubble's two-radius geometry and in the back
+    // gesture's animated corner.
+    @Test fun noGymScreenWritesACornerRadius() {
+        val shapeRoles = setOf(
+            "gym/src/main/kotlin/works/windmill/gym/ui/GymMaterial.kt",
+            "gym/src/main/kotlin/works/windmill/gym/ui/GymSkin.kt",
+            "gym/src/main/kotlin/works/windmill/gym/coach/CoachBubble.kt",
+            "gym/src/main/kotlin/works/windmill/gym/GymNavigator.kt",
+        )
+        assertEquals(emptyList<String>(), offenders(Regex("""RoundedCornerShape\(""")) { file, _ ->
+            !file.startsWith("gym/src/main/") || file in shapeRoles
+        })
+    }
+
     // The window behind the first frame is the gym canvas, written again in resources for the system to draw before
     // Compose does; the two must not drift.
     @Test fun theWindowGroundIsTheCanvasInBothModes() {

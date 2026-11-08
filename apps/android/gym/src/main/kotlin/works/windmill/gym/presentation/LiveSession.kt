@@ -121,10 +121,14 @@ object LiveLines {
     sealed interface Slot {
         val spoken: String
         val line: String?
+        val number: String
+        val key: String
 
         data class Landed(val row: Row) : Slot {
             override val spoken: String get() = row.spoken
             override val line: String get() = row.line
+            override val number: String get() = row.index
+            override val key: String get() = row.id
         }
 
         // The set about to be lifted. The rack is its editor; past the plan the row names nothing.
@@ -132,11 +136,15 @@ object LiveLines {
             override val line: String? get() = target?.line(expectedKg, unit)
             override val spoken: String
                 get() = listOfNotNull("Set $index", "current", target?.spoken(expectedKg, unit)).joinToString(", ")
+            override val number: String get() = index.toString()
+            override val key: String get() = "current"
         }
 
         data class Planned(val index: Int, val target: SetTarget, val expectedKg: Double?, val unit: String = "kg") : Slot {
             override val line: String get() = target.line(expectedKg, unit)
             override val spoken: String get() = "Set $index, planned, ${target.spoken(expectedKg, unit)}"
+            override val number: String get() = index.toString()
+            override val key: String get() = "planned $index"
         }
     }
 

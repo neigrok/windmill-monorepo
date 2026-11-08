@@ -55,7 +55,6 @@ object GymTap {
     val minimum = 48.dp
     val primary = 56.dp
     val logSet = 64.dp
-    val row = 52.dp        // list rows, ladder pills
     val secondary = 56.dp  // dashed add slots, Apply, Sign in, text fields
 }
 
@@ -65,6 +64,7 @@ object GymLayout {
     val gutter = WindmillSpace.x5          // every screen's horizontal edge, every sheet's
     val cardInset = WindmillSpace.x4       // inner padding of a content card
     val rowInset = WindmillSpace.x3        // horizontal inner padding of a single-line row
+    val listInset = WindmillSpace.x4       // a ListItem's own start and end inset; what lines up with full-width rows
     val cardGap = WindmillSpace.x2         // between sibling cards / rows in a list
     val blockGap = WindmillSpace.x3        // between blocks inside one card
     val sectionGap = WindmillSpace.x4      // between sections of a scroll body
