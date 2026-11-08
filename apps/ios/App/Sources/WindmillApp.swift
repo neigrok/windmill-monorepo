@@ -204,7 +204,7 @@ struct RootScreen: View {
       }
       #endif
     }
-    .sheet(isPresented: Binding(get: { model.sheet != nil }, set: { if !$0 { model.cancelAuthentication(); model.sheet = nil } }), onDismiss: { model.dismissSheet() }) { AccountSheet(model: model) }
+    .sheet(isPresented: Binding(get: { model.sheet != nil && !model.roomSheetUp }, set: { if !$0 { model.cancelAuthentication(); model.sheet = nil } }), onDismiss: { model.dismissSheet() }) { AccountSheet(model: model) }
       .environment(\.dynamicTypeSize, model.runtime?.settings.board?.contains("AX3") == true ? .accessibility3 : typeSize)
   }
 
@@ -316,6 +316,17 @@ struct RoomMenu: View {
       }.inkAnchor("title", enabled: inkEnabled, frames: inkFrames)
     }.accessibilityLabel(app.selectedRoom.title).accessibilityIdentifier("room-menu")
       .disabled(app.editorReadOnly)
+  }
+}
+
+extension View {
+  // Records a control's frame for the first-run ink notes while they are up.
+  func inkAnchor(_ name: String, enabled: Bool, frames: Binding<[String: CGRect]>) -> some View {
+    onGeometryChange(for: CGRect.self) { geometry in
+      enabled ? geometry.frame(in: .global) : .zero
+    } action: { frame in
+      if enabled { frames.wrappedValue[name] = frame }
+    }
   }
 }
 

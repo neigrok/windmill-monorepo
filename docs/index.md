@@ -1,8 +1,8 @@
 # Flow index
 
 Where each user flow is drawn. Each section reads left to right; every board's caption names the code
-that ships it. Status lives in the Figma layer names. Roadmap on web and Gym on iOS and Android are
-indexed here.
+that ships it. Status lives in the Figma layer names. Roadmap on web, Journal on iOS and Gym on iOS and
+Android are indexed here.
 
 ## Roadmap · Web
 
@@ -65,6 +65,21 @@ Outstanding design gaps are tracked in the [consistency ledger](design/consisten
 | Wave 7 sync states | [517:30937](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=517-30937) | [519:15146](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=519-15146) | Couldn't sync on Graph, at its limit, several changes, offline |
 | 🚀 Follow-ups 2026-11-06 | [626:38889](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=626-38889) | [629:19778](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=629-19778) | 16.01–16.02: one Shell head from 744 in every room, signed-out seats unchanged; 16.03 and 26.04: no WebGL2 → Board with the Graph dimmed; 26.01–26.03: step menu Select → keyboard selection and the Selection bar |
 | 💡 Finishing states | [544:53326](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=544-53326) | [539:16665](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=539-16665) | Proposals awaiting the owner; ✅ 15.07 and 25.04, the held delete that fails, are built |
+
+## Journal · iOS
+
+Figma: Journal file, page [iOS](https://www.figma.com/design/pC6ciOUnfLmI42oMihd7l3?node-id=202-2). Code: `apps/ios/App/Sources/Journal/`. Colour roles:
+[ios-redesign.md](design/ios/ios-redesign.md). The wave's [NOTE](https://www.figma.com/design/pC6ciOUnfLmI42oMihd7l3?node-id=252-967) holds the findings and the owner's
+rulings of 2026-11-08: the room is calm and private, and mood and energy are not drawn on iOS.
+
+| Flow | Section | Entry → exit |
+|---|---|---|
+| 2c · Echoes on iOS | [`207:105`](https://www.figma.com/design/pC6ciOUnfLmI42oMihd7l3?node-id=207-105) | The inline ink, the reader and the trail (27a–27e), replaced on the phone by 02.3P–02.5P |
+| 01 · Today — the day canvas and writing | [`242:116`](https://www.figma.com/design/pC6ciOUnfLmI42oMihd7l3?node-id=242-116) | 🚀 In production (2026-11-08): a failed save, one quiet line on the page with Try again 01.5P — [note 253:967](https://www.figma.com/design/pC6ciOUnfLmI42oMihd7l3?node-id=253-967); 🗄 the tab-bar room 01.6P, 01.8P–01.12P, superseded by 05; 🧪 first open's ink notes re-aimed 01.4P; ❌ 01.1P–01.3P, 01.7P |
+| 02 · Past days, echoes and history | [`242:120`](https://www.figma.com/design/pC6ciOUnfLmI42oMihd7l3?node-id=242-120) | A day's echo count → one sheet → a passage → Back to tonight. 🚀 In production (2026-11-08): the sheet at .medium 02.3P, at .large by year 02.4P, lowered over an opened passage 02.5P, iOS 18's sheet 02.6P — [note 253:993](https://www.figma.com/design/pC6ciOUnfLmI42oMihd7l3?node-id=253-993); ✅ the context menu and held delete 02.1P–02.2P, the Search tab 02.8P; 🗄 02.7P |
+| 03 · Windmill One — Talk and Echoes | [`259:1850`](https://www.figma.com/design/pC6ciOUnfLmI42oMihd7l3?node-id=259-1850) | ✅ Talk 03.1P–03.8P; ❌ 03.9P; 🗄 03.10P |
+| 04 · Windmill One — the honest teaser and the purchase | [`266:2808`](https://www.figma.com/design/pC6ciOUnfLmI42oMihd7l3?node-id=266-2808) | 🧪 the teaser, the store sheet and the second door 04.1P–04.8P |
+| 05 · No TabView — the bottom bar | [`277:3241`](https://www.figma.com/design/pC6ciOUnfLmI42oMihd7l3?node-id=277-3241) | Today → Write in the bottom bar → keyboard → Done. 🚀 In production (2026-11-08): today with Write alone at the bottom bar's trailing end 05.1A, reading back with nothing shrinking 05.2P, writing with Done alone in the keyboard's bar 05.3P, the bar's one state 05.4P, the largest text 05.5P, iOS 18's classic bar 05.6P, first open's ink notes at the pencil 05.8P — [note 281:3863](https://www.figma.com/design/pC6ciOUnfLmI42oMihd7l3?node-id=281-3863); 🧪 Search top right 05.7P; 🗄 05.1B, 05.1C |
 
 ## Gym · iOS
 

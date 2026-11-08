@@ -62,6 +62,9 @@ struct JournalRulesTests {
     case "SavePage":
       actual = try Self.decision(SavePage(day: Self.day(input), document: PageDocument(json: input.member("document")),
         retiring: Self.retirements(input)), vector, result: { .of($0) })
+    case "SaveWords":
+      actual = try Self.decision(SaveWords(day: Self.day(input), body: input.member("body").asString(),
+        source: input.member("source").asString(), retiring: Self.retirements(input)), vector, result: { .of($0) })
     case "ClaimPage":
       actual = try Self.decision(ClaimPage(day: Self.day(input), document: PageDocument(json: input.member("document")),
         retiring: Self.retirements(input)), vector, result: { .of($0) })

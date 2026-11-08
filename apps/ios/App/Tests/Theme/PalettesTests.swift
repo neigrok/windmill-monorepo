@@ -29,8 +29,7 @@ import Testing
       .deletingLastPathComponent().appending(path: "Sources/Theme")
     let source = try String(contentsOf: theme.appending(path: "Palettes.swift"), encoding: .utf8)
     let named = source.matches(of: #/(?:Color|UIColor)\((?:named: )?"([^"]+)"\)/#).map { String($0.1) }
-    let moodRamp = JournalPalette.moodRamp.indices.map { "journal/mood-\($0)" }
-    let asked = Set(named.flatMap { $0 == #"journal/mood-\($0)"# ? moodRamp : [$0] }).sorted()
+    let asked = Set(named).sorted()
     let colorsets = try FileManager.default.subpathsOfDirectory(atPath: theme.appending(path: "Theme.xcassets").path)
       .filter { $0.hasSuffix(".colorset") }.map { String($0.dropLast(".colorset".count)) }.sorted()
     #expect(asked == colorsets)

@@ -3,7 +3,7 @@ import XCTest
 @MainActor final class JournalFlowTests: XCTestCase {
   override func setUp() { continueAfterFailure = false }
 
-  // Writing outlives a relaunch with its ratings; erasing every word removes the day, ratings and all, after the next one.
+  // Writing outlives a relaunch, and erasing every word removes the day after the next one; no scale is ever drawn.
   func testWritingPersistsAndErasingItRemovesTheDayAfterRelaunch() {
     let app = XCUIApplication()
     app.launchArguments = ["-model-server", "-board", "05-journal-first-open"]
@@ -14,16 +14,12 @@ import XCTest
     app.buttons["write-today"].tap(); app.typeText(text)
     XCTAssertTrue(editor.waitForValue(text))
     app.buttons["done-writing"].tap()
-    for scale in ["Mood", "Energy"] {
-      let control = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", scale)).firstMatch
-      XCTAssertTrue(control.waitForExistence(timeout: 5))
-      control.coordinate(withNormalizedOffset: CGVector(dx: 0.7, dy: 0.5)).tap()
-      XCTAssertTrue(app.buttons["Clear " + scale.lowercased()].isEnabled)
-    }
+    XCTAssertTrue(app.buttons["write-today"].waitForExistence(timeout: 5))
+    let scales = NSPredicate(format: "label IN %@ OR label BEGINSWITH %@", ["Mood", "Energy", "How did today feel?"], "Clear ")
+    XCTAssertEqual(app.descendants(matching: .any).matching(scales).count, 0)
     app.terminate(); app.launchArguments.append("-restore-board"); app.launch()
     XCTAssertTrue(editor.waitForExistence(timeout: 10))
     XCTAssertEqual(editor.value as? String, text)
-    XCTAssertTrue(app.buttons["Clear mood"].isEnabled && app.buttons["Clear energy"].isEnabled)
     app.buttons["write-today"].tap()
     XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
     app.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: text.count))
@@ -32,8 +28,6 @@ import XCTest
     app.terminate(); app.launch()
     XCTAssertTrue(editor.waitForExistence(timeout: 10))
     XCTAssertEqual(editor.value as? String, "")
-    XCTAssertFalse(app.buttons["Clear mood"].isEnabled)
-    XCTAssertFalse(app.buttons["Clear energy"].isEnabled)
     XCTAssertFalse(app.buttons["Keep it"].exists)
     XCTAssertEqual(app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", "journal-day-")).count, 0)
   }
@@ -48,7 +42,6 @@ import XCTest
     let page = "A page for tomorrow.\nAnother evening worth remembering."
     XCTAssertTrue(editor.waitForExistence(timeout: 10)); editor.tap(); editor.typeText(page)
     app.buttons["done-writing"].tap()
-    app.buttons["Not now"].tap()
     app.buttons["Keep it"].tap()
     app.buttons["email-sign-in"].tap()
     let email = app.textFields["email-address"]
@@ -57,9 +50,7 @@ import XCTest
     app.buttons["Send code"].tap()
     let code = app.textFields["email-code"]
     XCTAssertTrue(code.waitForExistence(timeout: 5)); code.tap(); code.typeText("482913")
-    XCTAssertTrue(app.buttons["you"].waitForExistence(timeout: 10))
-    let backedUp = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "backed up")).firstMatch
-    XCTAssertTrue(backedUp.waitForExistence(timeout: 15))
+    XCTAssertTrue(app.buttons["you"].waitForHittable(timeout: 10))
     app.buttons["you"].tap()
     XCTAssertTrue(app.staticTexts["Sam"].waitForExistence(timeout: 5), "You names the account, never You")
     XCTAssertTrue(app.staticTexts["Backed up"].waitForExistence(timeout: 15))
@@ -81,7 +72,6 @@ import XCTest
     XCTAssertTrue(email.waitForValue("flow@example.com"))
     app.buttons["Send code"].tap()
     XCTAssertTrue(code.waitForExistence(timeout: 5)); code.tap(); code.typeText("482913")
-    XCTAssertTrue(backedUp.waitForExistence(timeout: 15))
-    XCTAssertEqual(app.textViews["journal-editor"].value as? String, page)
+    XCTAssertTrue(app.textViews["journal-editor"].waitForValue(page, timeout: 15))
   }
 }

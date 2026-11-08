@@ -35,8 +35,7 @@ extension JournalEchoMatch {
   let preferences: UserDefaults
   private(set) var access = JournalEchoAccess(account: nil, today: "", available: false)
   private(set) var pages: [String: JournalEchoPage] = [:]
-  private(set) var inkDay: String?
-  var readerDay: String?
+  private(set) var sheetDay: String?
   private(set) var introducing: String?
   private(set) var hops: [String] = []
   private(set) var destination: JournalEchoDestination?
@@ -77,7 +76,7 @@ extension JournalEchoMatch {
     readTask?.cancel(); readTask = nil; readID = nil
     for task in signals.values { task.cancel() }
     signals = [:]; pendingDays = []
-    raw = []; pages = [:]; inkDay = nil; readerDay = nil; introducing = nil; hops = []; destination = nil
+    raw = []; pages = [:]; sheetDay = nil; introducing = nil; hops = []; destination = nil
     firstEchoDay = nil; arrivalDay = nil; presented = []; knownPassages = []
     arrivalAnnounced = false; readOnce = false; firstEver = false
   }
@@ -104,8 +103,7 @@ extension JournalEchoMatch {
     }
     pages = verified
     hops.removeAll { $0 != access.today && bodies[$0] == nil }
-    if let inkDay, pages[inkDay] == nil { self.inkDay = nil; introducing = nil }
-    if let readerDay, pages[readerDay] == nil { self.readerDay = nil }
+    if let sheetDay, pages[sheetDay] == nil { self.sheetDay = nil; introducing = nil; hops = [] }
     if let arrivalDay, pages[arrivalDay] == nil { self.arrivalDay = nil }
     firstEchoDay = firstEver && !preferences.bool(forKey: "journalFirstEchoSeen") ? pages.keys.max() : nil
     if let destination, let text = destination.text,
@@ -137,7 +135,7 @@ extension JournalEchoMatch {
       validate()
       if readOnce {
         let arrived = pages.keys.sorted(by: >).first { day in
-          day != inkDay && pages[day]!.matches.contains { !knownPassages.contains(Passage(trigger: day, day: $0.day, text: $0.text)) }
+          day != sheetDay && pages[day]!.matches.contains { !knownPassages.contains(Passage(trigger: day, day: $0.day, text: $0.text)) }
         }
         if arrivalDay == nil { arrivalDay = arrived; arrivalAnnounced = false }
       }
@@ -151,28 +149,30 @@ extension JournalEchoMatch {
     }
   }
 
-  // A passage is shown once per foreground session, when its row draws in the ink or the reader; the count shows none.
+  // A passage is shown once per foreground session, when its row draws in the sheet; the count shows none.
   func shown(_ match: JournalEchoMatch, on day: String) {
     guard pages[day] != nil, presented.insert(Passage(trigger: day, day: match.day, text: match.text)).inserted else { return }
     telemetry.event("journal_echo_shown")
   }
 
-  func open(_ day: String) {
+  // A day's count opens its sheet, straight at every passage at accessibility sizes; the events keep the ink's names.
+  func open(_ day: String, expanded: Bool = false) {
     guard pages[day] != nil else { return }
-    inkDay = day; arrivalDay = nil
+    sheetDay = day; arrivalDay = nil; hops = []
     if day == firstEchoDay { introducing = day; claimFirstEcho() }
     telemetry.event("journal_echo_ink", properties: ["action": "open"])
+    if expanded { expand() }
   }
 
-  func toggle(_ day: String) {
-    if inkDay == day { closeInk() } else { open(day) }
+  func toggle(_ day: String, expanded: Bool = false) {
+    if sheetDay == day { close() } else { open(day, expanded: expanded) }
   }
 
-  // The person closes the ink: its count again, a tap outside it, or the keyboard. The room's own closes record nothing.
-  func closeInk() {
-    guard inkDay != nil else { return }
-    inkDay = nil; introducing = nil
-    telemetry.event("journal_echo_ink", properties: ["action": "close"])
+  // The person closes the sheet: its Close, a swipe down, its count again, or the keyboard. The room's own closes record nothing.
+  func close(recorded: Bool = true) {
+    guard sheetDay != nil else { return }
+    sheetDay = nil; introducing = nil; hops = []
+    if recorded { telemetry.event("journal_echo_ink", properties: ["action": "close"]) }
   }
 
   func dismissIntroduction() {
@@ -181,20 +181,18 @@ extension JournalEchoMatch {
     telemetry.event("journal_echo_intro_dismissed")
   }
 
-  func openReader(_ day: String) {
-    guard pages[day] != nil else { return }
-    readerDay = day
+  // The sheet stands at every passage, by year, where the reader once stood: opened there, or raised by the person.
+  func expand() {
+    guard sheetDay != nil else { return }
     telemetry.event("journal_echo_reader_opened")
   }
-
-  func inkMatches(_ day: String) -> [JournalEchoMatch] { Array(pages[day]?.matches.prefix(2) ?? []) }
 
   func claimFirstEcho() {
     guard firstEchoDay == access.today else { return }
     preferences.set(true, forKey: "journalFirstEchoSeen"); firstEchoDay = nil
   }
 
-  func clearWalk() { inkDay = nil; introducing = nil; readerDay = nil; hops = []; destination = nil; arrivalDay = nil }
+  func clearWalk() { sheetDay = nil; introducing = nil; hops = []; destination = nil; arrivalDay = nil }
 
   func settleArrival(_ day: String) { if arrivalDay == day { arrivalDay = nil } }
 
@@ -204,13 +202,12 @@ extension JournalEchoMatch {
     return true
   }
 
-  func walk(from trigger: String, to match: JournalEchoMatch) {
+  // Following a passage keeps its sheet, lowered; the trail runs from tonight through the count's day to the passage's page.
+  @discardableResult func walk(from trigger: String, to match: JournalEchoMatch) -> Bool {
     guard pages[trigger]?.matches.contains(match) == true,
-          match.range(in: bodies[match.day] ?? "") != nil else { return }
-    var trail = hops.isEmpty ? [access.today] : hops
-    if let seen = trail.firstIndex(of: match.day) { trail = Array(trail.prefix(through: seen)) }
-    else { trail.append(match.day) }
-    clearWalk(); hops = trail
+          match.range(in: bodies[match.day] ?? "") != nil else { return false }
+    introducing = nil; arrivalDay = nil
+    hops = trigger == access.today ? [trigger, match.day] : [access.today, trigger, match.day]
     destination = JournalEchoDestination(day: match.day, text: match.text, occurrenceHint: match.occurrenceHint)
     telemetry.event("journal_echo_opened")
     let id = UUID(), mine = generation, service = service
@@ -225,18 +222,21 @@ extension JournalEchoMatch {
         }
       }
     }
+    return true
   }
 
+  // Standing on an earlier hop keeps the sheet lowered; back at tonight the walk is over and the sheet goes with it.
   func stand(on day: String) {
     guard day == access.today || bodies[day] != nil else { return }
+    telemetry.event("journal_echo_ink", properties: ["action": "back"])
     if let index = hops.firstIndex(of: day), index > 0 { hops = Array(hops.prefix(through: index)) }
-    else { hops = [] }
-    inkDay = nil; introducing = nil; destination = JournalEchoDestination(day: day)
+    else { hops = []; sheetDay = nil; introducing = nil }
+    destination = JournalEchoDestination(day: day)
   }
 
-  // One verdict, one event: Useful marks the passages the ink shows, Not useful retires the page; a failure rolls back.
+  // One verdict, one event: Useful marks every passage the sheet holds, Not useful retires the page; a failure rolls back.
   func answer(_ signal: JournalEchoSignal, day: String) async {
-    let marking = inkMatches(day).filter { $0.useful != true }.map(\.day)
+    let marking = (pages[day]?.matches ?? []).filter { $0.useful != true }.map(\.day)
     guard signal != .opened, access.available, let previous = raw.first(where: { $0.day == day }), pages[day] != nil,
           !pendingDays.contains(day), signal == .dismiss || !marking.isEmpty else { return }
     let mine = generation, id = UUID(), service = service

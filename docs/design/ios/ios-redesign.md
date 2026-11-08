@@ -70,10 +70,7 @@ named member of `OnboardingSpecimen`, so its contrast is judged where it is defi
 `Sources/Theme/` included, is a colour faded: no `.opacity` or `withAlphaComponent` on a colour value
 (a role, a local alias of one, a specimen), no `.mix(with:by:)`, no hierarchical level of a role or
 the tint (`role.secondary`, `.tint.secondary`, a bare `.secondary` on room text), and no constant
-view `.opacity` other than 0 or 1 on a view that draws text or a symbol. A journal scale thumb glows
-in its own colour — one of the eleven mood steps, or energy — so its glow is a role keyed by the step,
-`JournalPalette.moodGlow(_:)` and `energyGlow(_:)`: the thumb's colour at 45 %, at 78 % on the top
-step. Four dimmings stay, each in one place: a disabled primary takes the system's `.secondary` label
+view `.opacity` other than 0 or 1 on a view that draws text or a symbol. Four dimmings stay, each in one place: a disabled primary takes the system's `.secondary` label
 in `RoomPrimaryStyle`, since a forced `on-accent` label would stand white on the system's disabled
 fill, and a disabled control is outside the contrast floor (WCAG 1.4.3, inactive components); the
 composer's send circle at 40 %, the one control the room draws that dims; *Continue with Apple*
@@ -142,8 +139,6 @@ system draws one.
 | `journal/ink-faint` | `#737476` | `#5E6979` |
 | `journal/lamp` | `#E0B972` | `#90651C` |
 | `journal/lamp-soft` | `#E0B972` at 18 % | `#90651C` at 12 % |
-| `journal/energy` | `#9AA859` | `#7D8C43` |
-| `journal/mood-*` | the eleven-step ramp `journal/mood-0`…`mood-10` | each step's day value in `Theme.xcassets` |
 
 Journal answers dark with Night and light with Day; the choice is the shell's — Appearance
 (Light · Dark · System) in You's Settings, System by default, stated as

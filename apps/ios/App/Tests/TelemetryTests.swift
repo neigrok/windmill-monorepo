@@ -571,17 +571,16 @@ nonisolated final class TelemetryBuffer<Value: Sendable>: Sendable {
     #expect(await events.state.events.count == 2)
   }
 
-  @Test func firstRunReportsChoicesAndSaveWithoutTextOrScaleValues() throws {
+  @Test func firstRunReportsChoicesAndSaveWithoutText() throws {
     let harness = Harness(holdRemovals: false, registry: SyncSchema.registry, start: Instant(ms: 1_790_424_000_000), account: nil,
                           rules: ComposedServerRules.windmill(registry: SyncSchema.registry),
                           commandResultWrites: JournalWriting.resultWrites, pendingDeviceWork: JournalWriting.pendingWork)
     let recorder = TelemetryRecorder()
     let model = try AppModel(runner: harness.runner, preferences: UserDefaults(suiteName: UUID().uuidString)!, telemetry: recorder)
-    model.openJournal(); model.journal.type("private-marker"); #expect(model.journal.save()); model.journal.done(); model.journal.setScale("mood", 8); model.journal.setScale("energy", 2); model.keep(); model.closeKeep()
+    model.openJournal(); model.journal.type("private-marker"); #expect(model.journal.save()); model.journal.done(); model.keep(); model.closeKeep()
     let entries = recorder.entries.withLock { $0 }
     #expect(entries.filter { $0.name == "journal_line_saved" }.count == 1)
-    #expect(entries.contains { $0.name == "scale_invitation_shown" })
-    #expect(entries.filter { $0.name == "scale_invitation_answered" }.map(\.properties) == [["action": "answered"]])
+    #expect(!entries.contains { $0.name.hasPrefix("scale_invitation") })
     #expect(entries.contains { $0.properties == ["screen": "journal", "action": "keep"] })
     #expect(entries.allSatisfy { !$0.properties.values.contains("private-marker") && $0.properties["mood"] == nil && $0.properties["energy"] == nil })
     model.journal.saveTask?.cancel()

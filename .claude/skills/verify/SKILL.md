@@ -432,6 +432,17 @@ fresh `signed` account, since the test expects that one workout alone. The test 
 removes the routine, reads it back as 404 and the workout still listed; with `-telemetry` the `events` table
 holds `gym_action` (screen review: discard shown, then cancel cancelled) and `gym_proposal_outcome`.
 
+### The iOS journal against the backend
+
+`apps/ios/App/UITests/JournalIntegrationFlowTests.swift` reads the server origin from `WM_JOURNAL_E2E_SERVER` and a
+signed-in session from the JSON file at `WM_JOURNAL_E2E_SESSION` (`account`, `email`, `token`, minted like the gym's
+`signed` identity above). It writes a page from the accessory and waits for it to back up, relaunches against
+`http://127.0.0.1:1` and writes more, which waits on the phone as not backed up yet, then relaunches against the server
+and waits for both lines to back up. Pass both prefixed `TEST_RUNNER_`; without them the test skips. Its `-telemetry`
+launches post their events to the same server, so `select name, props from events where props->>'platform'='ios'`
+shows the journey's `first_run_choice` write and done_writing, `journal_line_saved` and the sync outcomes. Echoes stay
+dark on a local server, so the echo sheet is driven by the in-process `journal-echoes` boards instead.
+
 ## What the server saw
 
 Every write logs one `write {…}` line with its `operation`, `product`, `door` (`mcp`, `sync`,

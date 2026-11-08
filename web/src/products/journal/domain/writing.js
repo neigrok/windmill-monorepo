@@ -205,6 +205,7 @@ export class JournalWriteState {
     this.firstPullComplete = read.firstPullComplete();
     this.clock = read.device('contentClock');
     this.page = read.confirmed(Page, Id.ofDay(day, Page));
+    this.drawn = read.repository(Page).find(Id.ofDay(day, Page), 'drawn')?.document ?? null;
     this.state = read.repository(JournalState).find(new Id('journalState', JournalState), 'drawn') ?? new JournalStateValue();
     const devices = read.devices('pendingClaim:');
     this.pending = Object.entries(devices).filter(([key]) => key !== EditorDraft.key && !key.startsWith(EditorDraft.recoveryPrefix)).sort(([a], [b]) => compareText(a, b))
@@ -286,6 +287,30 @@ export class SavePage {
     if (loaded.hasEditorDraft) plan.device(EditorDraft.key, null);
     JournalWriting.retire(retiring, plan, loaded.moment);
     return JournalWriting.write(plan, null);
+  }
+}
+
+// Words alone: the save carries the day's ratings as the device holds them now, another surface's included; an emptied page goes whole.
+export class SaveWords {
+  scope = JOURNAL_SCOPE;
+  refusals = JournalRefusals;
+
+  /** @param {{ day: DayInput, body: string, source?: string, retiring?: string[] }} input */
+  constructor({ day, body, source = 'typed', retiring = [] }) {
+    this.day = dayOf(day);
+    this.body = body;
+    this.source = source;
+    this.retiring = [...retiring];
+  }
+
+  /** @param {Reader} read */
+  load(read) { return new JournalWriteState(read, this.day); }
+
+  /** @param {JournalWriteState} loaded @param {IDSource} ids */
+  decide(loaded, ids) {
+    const held = loaded.pending.find((claim) => claim.day.text === this.day.text)?.latest ?? loaded.drawn;
+    const doc = new PageDocument({ body: this.body, mood: held?.mood ?? null, energy: held?.energy ?? null, source: this.source });
+    return new SavePage({ day: this.day, document: doc, retiring: this.retiring }).decide(loaded, ids);
   }
 }
 

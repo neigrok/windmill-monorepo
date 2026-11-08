@@ -40,7 +40,7 @@ enum BoardFixture {
     if board.hasPrefix("shell-") {
       if board == "shell-anonymous" { model.welcome = true; return }
       model.openJournal()
-      model.journal.type("A page on this phone."); model.journal.done(); model.journal.dismissScales()
+      model.journal.type("A page on this phone."); model.journal.done()
       return
     }
     model.welcome = board.hasPrefix("02")
@@ -88,10 +88,7 @@ enum BoardFixture {
         // Each saved page is today to its fixture runner; the app's past-day guard stays intact.
         let zone = FixedZone(offsetSeconds: DeviceZone().offsetSeconds(at: Instant(ms: BoardClock().nowMs())) - offset * 86_400)
         let runner = ActionRunner(replica: engine, registry: SyncSchema.registry, zone: zone, holdRemovals: false)
-        // The history's second page carries both scales, so its scale line has a page to draw on.
-        let scored = board.hasPrefix("journal-history") && offset == 2
-        let document = PageDocument(body: shortProse, mood: scored ? 7 : nil, energy: scored ? 4 : nil)
-        guard let saved = try? runner.run(SavePage(day: model.journal.today.adding(days: -offset), document: document, retiring: ["placeholder", "scales"])), saved.refusal == nil else {
+        guard let saved = try? runner.run(SavePage(day: model.journal.today.adding(days: -offset), document: PageDocument(body: shortProse), retiring: ["placeholder", "scales"])), saved.refusal == nil else {
           model.error = "Couldn't prepare the journal board."; return
         }
       }
@@ -100,12 +97,16 @@ enum BoardFixture {
       if board.hasPrefix("journal-history") {
         model.journal.type("Short walk, then an early night."); model.journal.save(); model.journal.done()
       }
+      // Journal · iOS 01.5P: a page the log's rules refuse, here by a source no surface writes, so every save is refused.
+      if board.hasPrefix("journal-history-refused") {
+        model.journal.type("Short walk, then an early night. A line for the review."); model.journal.document.source = "dictated"
+        model.journal.save()
+      }
       return
     }
     if AdoptionFixture.pages > 0 {
       model.journal.type(prose)
       model.journal.save(); model.journal.done()
-      model.journal.setScale("mood", 7); model.journal.setScale("energy", 4)
     }
     if board.hasPrefix("14") { model.keep() }
     if board.hasPrefix("23"), let runtime = model.runtime {
@@ -285,7 +286,7 @@ enum AppScenario {
     }
     do {
       model.openJournal(); model.journal.type("A page written before signing in."); guard model.journal.save() else { throw AppFailure(message: "anonymous save failed") }
-      model.journal.done(); model.journal.dismissScales(); guard model.journal.keepDue else { throw AppFailure(message: "Keep not due") }; steps.append("anonymous-writing")
+      model.journal.done(); guard model.journal.keepDue else { throw AppFailure(message: "Keep not due") }; steps.append("anonymous-writing")
       model.keep(); steps.append("keep"); model.email = "journal-e2e@example.com"
       if runtime.settings.codeFile == nil { await model.sendCode() } else { model.sheet = .code }
       model.code = try code()
@@ -351,10 +352,10 @@ enum AppScenario {
 
   static func backedUp(_ model: AppModel) async throws {
     for _ in 0..<200 {
-      model.refresh(); if model.journal.backup == "backed up" { return }
+      model.refresh(); if model.journal.room?.days.first(where: { $0.day == model.journal.editorDay })?.backup == .backedUp { return }
       try await Task.sleep(for: .milliseconds(100))
     }
-    throw AppFailure(message: "backup did not confirm: \(model.error ?? model.journal.backup)")
+    throw AppFailure(message: "backup did not confirm: \(model.error ?? "not backed up yet")")
   }
 }
 

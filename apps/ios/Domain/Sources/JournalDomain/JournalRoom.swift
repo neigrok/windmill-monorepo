@@ -34,8 +34,8 @@ public struct JournalRoom: Sendable {
   public let state: JournalState
   public let firstRunKnown: Bool
   public let isAnonymous: Bool
-  public var scaleInvitationDue: Bool { firstRunKnown && !days.isEmpty && state.scaleInvitationDue }
-  public var keepDue: Bool { isAnonymous && firstRunKnown && !days.isEmpty && state.keepDue }
+  // Keep is offered once the first page is kept; the phone asks no scales question before it.
+  public var keepDue: Bool { isAnonymous && firstRunKnown && !days.isEmpty && state.firstPage == "retired" }
 
   public init(_ read: Reader) throws {
     let complete = try read.firstPullComplete()

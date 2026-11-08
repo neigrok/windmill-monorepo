@@ -753,7 +753,20 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
 
 ## Journal
 
-- **iOS journal first run · R117.** AX3 keeps the longer privacy fact and scales in a scrollable page.
+- **iOS journal first run · R117.** AX3 keeps the longer privacy fact in a scrollable page.
+- **iOS journal without mood and energy (owner, 2026-11-08).** The iOS room draws no scale rows, no
+  invitation and no ratings on earlier pages; the stored values and sync keep them, and the web still draws
+  all three. The Shell file's onboarding Journal glimpse still pictures the page with its scales unasked
+  (`OnboardingGlimpses.swift`, `OnboardingSpecimen.unasked`); redraw it without them, or rule that the
+  glimpse shows the product across surfaces.
+- **iOS echo count while its sheet stands.** Journal · iOS 02.3P–02.6P draw the open count as
+  `.borderedProminent`, a filled lamp capsule; the calm-and-private ruling admits no `.borderedProminent`
+  and no filled accent button in the room, so the count is the same lamp-soft capsule in both states, in a
+  44 pt target a stock mini capsule cannot hold, and its VoiceOver value says Open. Redraw the open count,
+  or rule the exception.
+- **iOS journal bar before Search and Talk.** 05.1A–05.6P draw Talk beside Write in the bottom bar and
+  Search beside the account button; neither is built, so Write stands alone and the account button keeps
+  its own capsule until they ship.
 
 - **Mood and energy entry.** [Input alternatives](https://www.figma.com/design/pC6ciOUnfLmI42oMihd7l3?node-id=204-1159)
   compare quiet rails, a folded picker and a number ribbon. The folded picker is the recommendation,
@@ -773,13 +786,13 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   when its applicable capacity is unavailable. Remove drawing claims that automatic Echoes never
   consume allowance. Existing passages are not cropped or withheld to pressure an upgrade.
 - **iOS Journal daylight.** The journal room answers light with the Day column of
-  `ios/ios-redesign.md` §2: the canvas, source pages, the echo ink and the reader. Its lamp is
+  `ios/ios-redesign.md` §2: the canvas, source pages and the echo sheet. Its lamp is
   `#90651C` (4.82:1 on `#F7F7F5`); the web's day lamp `#986B1E` (`palettes.css`) measures 4.39:1 on
   the same paper, under the 4.5:1 text floor. Move the web and the Figma Day collection to `#90651C`.
 - **The one fact over the scales.** The first-run privacy line is *Only you. No prompts, no fields,
-  nothing to fill in — write a line or a page.* (engine A.3); on iOS the canvas draws it above the
-  mood and energy scales, so *no fields* reads against two fields. Copy owner:
-  reword it (*nothing you have to fill in*) or keep it.
+  nothing to fill in — write a line or a page.* (engine A.3); where the web draws it under the mood and
+  energy scales, *no fields* reads against two fields. Copy owner: reword it (*nothing you have to fill
+  in*) or keep it.
 - **F34 · Type roles.** Reconcile the journal's unassigned first-run, talk, verdict, nudge,
   week-count and narrow scale styles with the named type ramp.
 - **F36 · Phone tools.** Check the fixed `.journal-tools` rail against the writing measure at

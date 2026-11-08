@@ -3,6 +3,8 @@ import UIKit
 import DomainKit
 
 // Echo presentation stays here so the room's skin can change without changing its evidence.
+
+// A day's count in its date row (Journal · iOS 02.3P): a lamp capsule in a 44 pt target, kindled for a moment when a passage arrives.
 struct JournalEchoTab: View {
   let echoes: JournalEchoes
   let day: String
@@ -14,107 +16,152 @@ struct JournalEchoTab: View {
   var page: JournalEchoPage? { echoes.pages[day] }
 
   var body: some View {
-    Group {
-      if let page {
-        let kindled = echoes.arrivalDay == day
-        Button(action: toggle) {
-          Text(page.matches.count.formatted()).font(JournalType.date).monospacedDigit().foregroundStyle(JournalPalette.lamp)
-            .padding(.horizontal, 7).frame(minWidth: capsule, minHeight: capsule)
-            .background(kindled ? JournalPalette.kindled : JournalPalette.lampSoft, in: Capsule())
-            .animation(.easeOut(duration: reduceMotion ? 0.2 : 1.2), value: kindled)
-            .frame(minWidth: RoomSpace.minimumTarget, minHeight: RoomSpace.minimumTarget).contentShape(Rectangle())
-        }.buttonStyle(.plain)
-          .accessibilityLabel(Self.label(page.matches.count))
-          .accessibilityValue(echoes.inkDay == day ? "Open" : "Closed")
-          .accessibilityIdentifier("journal-echo-\(day)")
-          .onScrollVisibilityChange { visible = $0 }
-          .task(id: visible && !writing && kindled) {
-            guard visible, !writing, kindled else { return }
-            if UIAccessibility.isVoiceOverRunning, echoes.claimArrivalAnnouncement(day) {
-              let message = NSAttributedString(string: Self.label(page.matches.count), attributes: [.accessibilitySpeechQueueAnnouncement: true])
-              UIAccessibility.post(notification: .announcement, argument: message)
-            }
-            do { try await Task.sleep(for: .seconds(3)) } catch { return }
-            echoes.settleArrival(day)
+    if let page {
+      let kindled = echoes.arrivalDay == day
+      Button(action: toggle) {
+        Text(page.matches.count.formatted()).font(JournalType.date).monospacedDigit().foregroundStyle(JournalPalette.lamp)
+          .padding(.horizontal, 7).frame(minWidth: capsule, minHeight: capsule)
+          .background(kindled ? JournalPalette.kindled : JournalPalette.lampSoft, in: Capsule())
+          .animation(.easeOut(duration: reduceMotion ? 0.2 : 1.2), value: kindled)
+          .frame(minWidth: RoomSpace.minimumTarget, minHeight: RoomSpace.minimumTarget).contentShape(Rectangle())
+      }.buttonStyle(.plain)
+        .accessibilityLabel(Self.label(page.matches.count))
+        .accessibilityValue(echoes.sheetDay == day ? "Open" : "Closed")
+        .accessibilityIdentifier("journal-echo-\(day)")
+        .onScrollVisibilityChange { visible = $0 }
+        .task(id: visible && !writing && kindled) {
+          guard visible, !writing, kindled else { return }
+          if UIAccessibility.isVoiceOverRunning, echoes.claimArrivalAnnouncement(day) {
+            let message = NSAttributedString(string: Self.label(page.matches.count), attributes: [.accessibilitySpeechQueueAnnouncement: true])
+            UIAccessibility.post(notification: .announcement, argument: message)
           }
-      }
+          do { try await Task.sleep(for: .seconds(3)) } catch { return }
+          echoes.settleArrival(day)
+        }
     }
   }
 
   static func label(_ count: Int) -> String { "\(count) \(count == 1 ? "passage" : "passages") you wrote before" }
 }
 
-struct JournalEchoInk: View {
-  let echoes: JournalEchoes
+// One day's echoes in one stock sheet (Journal · iOS 02.3P–02.6P): passages at .medium, by year at .large, the way back lowered.
+struct JournalEchoSheet: View {
+  static let lowered = PresentationDetent.height(140)
+  @Bindable var echoes: JournalEchoes
   let day: String
-  let read: (JournalEchoMatch) -> Void
-  @Environment(\.dynamicTypeSize) var typeSize
-  @ScaledMetric(relativeTo: .body) var stampColumn = 48.0
-  var indent: CGFloat { typeSize.isAccessibilitySize ? 0 : stampColumn + 12 }
+  @Binding var detent: PresentationDetent
+
+  var standing: Bool { detent == Self.lowered && !echoes.hops.isEmpty }
 
   var body: some View {
-    let shown = echoes.inkMatches(day)
-    let remaining = (echoes.pages[day]?.matches.count ?? 0) - shown.count
-    let useful = !shown.isEmpty && shown.allSatisfy { $0.useful == true }
-    let pending = echoes.pendingDays.contains(day)
-    VStack(alignment: .leading, spacing: 18) {
+    NavigationStack {
+      Group {
+        if standing { whereYouStand } else { passages }
+      }.background(JournalPalette.card)
+        .navigationTitle("From your journal").navigationBarTitleDisplayMode(.inline)
+        .toolbar(standing ? .hidden : .visible, for: .navigationBar)
+        .toolbar { ToolbarItem(placement: .topBarTrailing) { close } }
+        .roomBar(.journal)
+    }.tint(JournalPalette.lamp)
+      .presentationDetents([Self.lowered, .medium, .large], selection: $detent)
+      .presentationDragIndicator(.visible)
+      .presentationBackgroundInteraction(.enabled(upThrough: .medium))
+      .presentationContentInteraction(.scrolls)
+      .presentationBackground(JournalPalette.card)
+      .onChange(of: detent) { _, now in if now == .large { echoes.expand() } }
+  }
+
+  @ViewBuilder var close: some View {
+    if #available(iOS 26.0, *) { Button(role: .close) { echoes.close() }.accessibilityIdentifier("echo-close") }
+    else { Button("Close") { echoes.close() }.accessibilityIdentifier("echo-close") }
+  }
+
+  var passages: some View {
+    let matches = echoes.pages[day]?.matches ?? []
+    return List {
       if echoes.introducing == day { introduction }
-      ForEach(shown, id: \.day) { match in
-        Button { read(match) } label: {
-          JournalEchoRow(echoes: echoes, match: match, trigger: day, namedYear: LocalDay(echoes.access.today)?.year)
-        }.buttonStyle(.plain)
-          .accessibilityHint("Opens this page in the canvas")
-          .accessibilityIdentifier("echo-open-\(match.day)")
+      if detent == .large {
+        ForEach(Array(Set(matches.map { String($0.day.prefix(4)) })).sorted(by: >), id: \.self) { year in
+          Section {
+            ForEach(matches.filter { $0.day.hasPrefix(year) }, id: \.day) { row($0, namedYear: Int(year)) }
+          } header: {
+            Text(year).font(.subheadline.weight(.semibold)).foregroundStyle(JournalPalette.inkDim).accessibilityAddTraits(.isHeader)
+          }
+        }
+      } else {
+        ForEach(matches, id: \.day) { row($0, namedYear: LocalDay(echoes.access.today)?.year) }
       }
-      ViewThatFits(in: .horizontal) {
-        HStack(spacing: 6) { verdict(useful: useful, pending: pending, inline: true) }
-        VStack(alignment: .leading, spacing: 0) { verdict(useful: useful, pending: pending, inline: false) }
-      }.font(.footnote).buttonStyle(.plain).padding(.leading, indent).padding(.vertical, -12)
-      if remaining > 0 {
-        Button { echoes.openReader(day) } label: {
-          HStack(spacing: 4) { Text("\(remaining) more"); DoorChevron(room: .journal) }
-            .foregroundStyle(JournalPalette.lamp).frame(minHeight: RoomSpace.minimumTarget).contentShape(Rectangle())
-        }.buttonStyle(.plain).padding(.leading, indent).accessibilityIdentifier("echo-more")
-      }
-    }.frame(maxWidth: .infinity, alignment: .leading).accessibilityElement(children: .contain).accessibilityIdentifier("echo-ink-\(day)")
+    }.listStyle(.plain).scrollContentBackground(.hidden).accessibilityIdentifier("echo-sheet")
+      .reachBand(onSurface: true) { verdicts(matches) }
   }
 
-  // Side by side the two verdicts keep their dot at every text size; stacked, they need none.
-  @ViewBuilder func verdict(useful: Bool, pending: Bool, inline: Bool) -> some View {
-    Button { Task { await echoes.answer(.useful, day: day) } } label: {
-      Text("Useful").foregroundStyle(useful ? JournalPalette.lamp : JournalPalette.inkDim)
-        .frame(minHeight: RoomSpace.minimumTarget).contentShape(Rectangle())
-    }.disabled(useful || pending)
-      .accessibilityValue(useful ? "Selected" : "Not selected").accessibilityIdentifier("echo-useful-page")
-    if inline { Text("·").foregroundStyle(JournalPalette.inkFaint).accessibilityHidden(true) }
-    Button { Task { await echoes.answer(.dismiss, day: day) } } label: {
-      Text("Not useful").foregroundStyle(JournalPalette.inkDim).frame(minHeight: RoomSpace.minimumTarget).contentShape(Rectangle())
-    }.disabled(pending).accessibilityIdentifier("echo-dismiss-page")
+  func row(_ match: JournalEchoMatch, namedYear: Int?) -> some View {
+    Button { if echoes.walk(from: day, to: match) { detent = Self.lowered } } label: {
+      JournalEchoRow(echoes: echoes, match: match, trigger: day, namedYear: namedYear)
+    }.buttonStyle(.plain).listRowBackground(Color.clear).listSectionSeparator(.hidden)
+      .listRowInsets(EdgeInsets(top: 10, leading: 20, bottom: 10, trailing: 20))
+      .accessibilityHint("Opens this page in the canvas")
+      .accessibilityIdentifier("echo-open-\(match.day)")
   }
 
+  // The first echo ever says once what echoes are, above its passages.
   var introduction: some View {
-    VStack(alignment: .leading, spacing: 6) {
-      Label { Text("From your journal").font(.subheadline.weight(.semibold)).foregroundStyle(JournalPalette.ink) } icon: {
-        Image(systemName: "quote.opening").foregroundStyle(JournalPalette.lamp)
-      }
+    VStack(alignment: .leading, spacing: 4) {
       Text("Older lines that echo what you wrote today. Only you see them; they cost nothing.")
         .font(.footnote).foregroundStyle(JournalPalette.inkDim).fixedSize(horizontal: false, vertical: true)
-      Button { echoes.dismissIntroduction() } label: {
-        Text("Got it").font(.subheadline.weight(.semibold)).foregroundStyle(JournalPalette.lamp)
-          .frame(minHeight: RoomSpace.minimumTarget).contentShape(Rectangle())
-      }.buttonStyle(.plain).accessibilityIdentifier("echo-introduction-done")
-    }.padding(.horizontal, RoomSpace.inset).padding(.top, RoomSpace.inset - 4)
-      .frame(maxWidth: .infinity, alignment: .leading)
-      .background(JournalPalette.card, in: .card)
+      Button("Got it") { echoes.dismissIntroduction() }.buttonStyle(.borderless).font(.subheadline.weight(.semibold))
+        .frame(minHeight: RoomSpace.minimumTarget).accessibilityIdentifier("echo-introduction-done")
+    }.listRowBackground(Color.clear).listRowInsets(EdgeInsets(top: 8, leading: 20, bottom: 0, trailing: 20))
+  }
+
+  // Quiet verdicts in thumb reach, side by side or stacked when the type will not fit; a chosen Useful fills its hand.
+  func verdicts(_ matches: [JournalEchoMatch]) -> some View {
+    let useful = !matches.isEmpty && matches.allSatisfy { $0.useful == true }
+    let pending = echoes.pendingDays.contains(day)
+    let buttons = Group {
+      Button { Task { await echoes.answer(.useful, day: day) } } label: {
+        Label("Useful", systemImage: "hand.thumbsup").symbolVariant(useful ? .fill : .none).frame(minHeight: RoomSpace.minimumTarget)
+      }.tint(useful ? JournalPalette.lamp : JournalPalette.inkDim).disabled(pending)
+        .accessibilityValue(useful ? "Selected" : "Not selected").accessibilityIdentifier("echo-useful-page")
+      Button { Task { await echoes.answer(.dismiss, day: day) } } label: {
+        Label("Not useful", systemImage: "hand.thumbsdown").frame(minHeight: RoomSpace.minimumTarget)
+      }
+        .tint(JournalPalette.inkDim).disabled(pending).accessibilityIdentifier("echo-dismiss-page")
+    }.buttonStyle(.borderless).controlSize(.large).font(.subheadline)
+    return ViewThatFits(in: .horizontal) {
+      HStack(spacing: 24) { buttons }
+      VStack(spacing: 0) { buttons }
+    }.frame(maxWidth: .infinity).padding(.top, RoomSpace.related)
+  }
+
+  // Lowered while the canvas stands on a page: its stamp, and Back to tonight with the trail's days in its menu.
+  var whereYouStand: some View {
+    let here = echoes.hops.last ?? day
+    let distance = here == day ? "" : " · " + JournalEchoStamp.distance(from: here, to: day)
+    let back = Menu {
+      ForEach(echoes.hops, id: \.self) { hop in
+        Button(hop == echoes.access.today ? "Tonight" : JournalEchoStamp.long(hop)) { echoes.stand(on: hop) }
+      }
+    } label: {
+      Text("Back to tonight").fontWeight(.semibold).frame(maxWidth: .infinity)
+    } primaryAction: { echoes.stand(on: echoes.access.today) }
+    return VStack(spacing: 10) {
+      Text(JournalEchoStamp.date(here, namedYear: nil) + distance).font(JournalType.date).tracking(JournalType.dateTracking)
+        .foregroundStyle(JournalPalette.inkDim).accessibilityLabel(JournalEchoStamp.long(here)).accessibilityIdentifier("echo-where")
+      Group {
+        if #available(iOS 26.0, *) { back.buttonStyle(.glass) } else { back.buttonStyle(.bordered) }
+      }.menuStyle(.button).controlSize(.large).tint(JournalPalette.ink).accessibilityIdentifier("echo-back-to-tonight")
+    }.padding(.horizontal, RoomSpace.inset).padding(.top, RoomSpace.panel)
+      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
   }
 }
 
-// One passage as the ink and the reader draw it; on screen, it counts as shown.
+// One passage as the sheet draws it; drawn, it counts as shown.
 struct JournalEchoRow: View {
   let echoes: JournalEchoes
   let match: JournalEchoMatch
   let trigger: String
-  // The year the row's surroundings already name, left out of its stamp: this year in the ink, the header's in the reader.
+  // The year the row's surroundings already name, left out of its stamp: this year at .medium, its header's at .large.
   let namedYear: Int?
   @Environment(\.dynamicTypeSize) var typeSize
   @ScaledMetric(relativeTo: .body) var stampColumn = 48.0
@@ -132,73 +179,10 @@ struct JournalEchoRow: View {
         Text(match.text).font(JournalType.body).lineSpacing(5).foregroundStyle(JournalPalette.lamp)
           .multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
         if let provenance = match.provenance { Text(provenance).font(.footnote).foregroundStyle(JournalPalette.inkDim) }
-      }
+      }.alignmentGuide(.listRowSeparatorLeading) { $0[.leading] }
     }.frame(maxWidth: .infinity, minHeight: RoomSpace.minimumTarget, alignment: .topLeading).contentShape(Rectangle())
       .accessibilityElement(children: .combine)
-      .onScrollVisibilityChange { visible in if visible { echoes.shown(match, on: trigger) } }
-  }
-}
-
-struct JournalEchoReader: View {
-  @Bindable var echoes: JournalEchoes
-  let day: String
-  let read: (JournalEchoDestination) -> Void
-  @Environment(\.dynamicTypeSize) var typeSize
-  @Environment(\.dismiss) var dismiss
-
-  var body: some View {
-    let matches = echoes.pages[day]?.matches ?? []
-    let years = Array(Set(matches.map { String($0.day.prefix(4)) })).sorted(by: >)
-    NavigationStack {
-      ScrollView {
-        LazyVStack(alignment: .leading, spacing: 22) {
-          ForEach(years, id: \.self) { year in
-            Text(year).font(JournalType.date).tracking(JournalType.dateTracking).foregroundStyle(JournalPalette.inkFaint)
-              .accessibilityAddTraits(.isHeader)
-            ForEach(matches.filter { $0.day.hasPrefix(year) }, id: \.day) { match in
-              Button {
-                let previous = echoes.destination
-                echoes.walk(from: day, to: match)
-                if let destination = echoes.destination, destination != previous { read(destination) }
-              } label: { JournalEchoRow(echoes: echoes, match: match, trigger: day, namedYear: Int(year)) }.buttonStyle(.plain)
-                .accessibilityHint("Opens this page in the canvas")
-                .accessibilityIdentifier("echo-read-\(match.day)")
-            }
-          }
-        }.padding(24).frame(maxWidth: .infinity, alignment: .leading)
-      }.accessibilityIdentifier("echo-sheet")
-        .background(JournalPalette.canvas).navigationTitle("From your journal").navigationBarTitleDisplayMode(.inline)
-        .tint(JournalPalette.lamp)
-        .toolbar {
-          ToolbarItem(placement: .topBarTrailing) {
-            Button("Close") { echoes.readerDay = nil; dismiss() }.accessibilityIdentifier("echo-close")
-          }
-        }.roomBar(.journal)
-        .toolbarBackground(JournalPalette.canvas, for: .navigationBar).toolbarBackground(.visible, for: .navigationBar)
-    }.presentationDetents(typeSize.isAccessibilitySize ? [.large] : [.medium, .large])
-      .presentationDragIndicator(.visible)
-      .presentationBackground(JournalPalette.canvas)
-  }
-}
-
-struct JournalEchoTrail: View {
-  let echoes: JournalEchoes
-  var body: some View {
-    ViewThatFits(in: .horizontal) {
-      HStack(spacing: 16) { controls }
-      VStack(alignment: .leading, spacing: 0) { controls }
-    }.font(.subheadline).foregroundStyle(JournalPalette.lamp)
-      .padding(.horizontal, 24).accessibilityElement(children: .contain).accessibilityIdentifier("echo-trail")
-  }
-  @ViewBuilder var controls: some View {
-    Menu {
-      ForEach(echoes.hops, id: \.self) { day in
-        Button(day == echoes.access.today ? "Tonight" : JournalEchoStamp.long(day)) { echoes.stand(on: day) }
-      }
-    } label: { Label("How you got here", systemImage: "point.topleft.down.to.point.bottomright.curvepath").frame(minHeight: 44).contentShape(Rectangle()) }
-    Button { echoes.stand(on: echoes.access.today) } label: {
-      Text("Back to tonight").frame(minHeight: 44).contentShape(Rectangle())
-    }.accessibilityIdentifier("echo-back-to-tonight")
+      .onAppear { echoes.shown(match, on: trigger) }
   }
 }
 

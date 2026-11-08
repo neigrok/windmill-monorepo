@@ -109,6 +109,7 @@ in that result's epoch. A drawn prediction alone is never a confirmed joined row
 | Action | Input | Result |
 |---|---|---|
 | `SavePage`, `ClaimPage` | `{day,document,retiring?}` | Claim id for anonymous or retained pending work; null for an ordinary bound save |
+| `SaveWords` | `{day,body,source,retiring?}` | As `SavePage`, saving the words with the day's ratings as the phone holds them: the pending claim's latest for its day, else the drawn page, else none. A body with no text removes the page, ratings included |
 | `RetireJournalInvitation` | `{field}` | null |
 | `ReconcileClaim` | `{day,claimId}` | true once reconciled or confirmed without edits; false while waiting, refusing unsafe reconciliation, or replaying an old-epoch receipt |
 

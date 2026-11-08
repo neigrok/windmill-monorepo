@@ -26,8 +26,7 @@ def luminance(cell):
 class ThemeAssetsTests(unittest.TestCase):
     def test_colour_assets_match_the_design_contract_in_both_appearances(self):
         rows = contract_rows()
-        assets = sorted(path.parent.name + "/" + path.name.removesuffix(".colorset") for path in THEME.glob("*/*.colorset")
-                        if not path.name.startswith("mood-"))
+        assets = sorted(path.parent.name + "/" + path.name.removesuffix(".colorset") for path in THEME.glob("*/*.colorset"))
         self.assertTrue(assets)
         for name in assets:
             self.assertIn(name, rows, f"{name} has no row in the design contract")
@@ -63,7 +62,6 @@ class ThemeAssetsTests(unittest.TestCase):
     def test_palettes_name_exactly_the_theme_colour_sets(self):
         palettes = (APP / "Sources/Theme/Palettes.swift").read_text()
         named = set(re.findall(r'Color\("((?:gym|journal|shell)/[\w-]+)"\)', palettes))
-        named |= {f"journal/mood-{step}" for step in range(11)} if "journal/mood-\\(" in palettes else set()
         assets = {path.parent.name + "/" + path.name.removesuffix(".colorset") for path in THEME.glob("*/*.colorset")}
         self.assertEqual(named, assets)
 

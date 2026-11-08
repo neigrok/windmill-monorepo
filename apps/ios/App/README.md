@@ -43,7 +43,7 @@ On the `workout-inflight` boards, `-log-set-on-signal` logs a Pull-up set each t
 `-scenario <name> -report <absolute JSON path>` exercises anonymous writing, Keep, email sign-in,
 backup, session revocation, same-account reauthentication, sign-out Keep, and a second sign-in. A local
 server run supplies `-code-file <absolute path>` with development codes in its isolated database.
-Gym end-to-end tests use `-scenario gym-e2e` (signed in) or `gym-e2e-anonymous`; for Gym, `-code-file` names a JSON native session (`account`, `token`, `email`). The verify skill's iOS gym fixtures mint it with the accounts `GymIntegrationFlowTests` reads; against a backend, `TEST_RUNNER_WM_GYM_E2E_SENTRY` names the Sentry DSN those runs report to. These simulator-only fixtures use the real engine and native UI.
+Gym end-to-end tests use `-scenario gym-e2e` (signed in) or `gym-e2e-anonymous`; for Gym, `-code-file` names a JSON native session (`account`, `token`, `email`). The verify skill's iOS gym fixtures mint it with the accounts `GymIntegrationFlowTests` reads; against a backend, `TEST_RUNNER_WM_GYM_E2E_SENTRY` names the Sentry DSN those runs report to. These simulator-only fixtures use the real engine and native UI. `JournalIntegrationFlowTests` writes, waits offline and backs up against the same isolated backend when `WM_JOURNAL_E2E_SERVER` and `WM_JOURNAL_E2E_SESSION` name it and a signed-in session; without them it skips.
 Without `WM_GYM_E2E_SERVER`, conflicting-workout adoption uses `-scenario gym-e2e-conflict`.
 A separate client seeds the model server through real Gym actions; atomic snapshots
 preserve server rows and email sessions across explicit app relaunches. A simulator-only accessibility
@@ -307,10 +307,20 @@ A journal day exists only while its body contains writing. Whitespace and rating
 clearing the body removes the day from journal reads and exports. Synchronization retains empty
 version markers to keep older offline writing from returning.
 Native editing writes today's page only; past days are read-only. Tapping today's page from its date
-through the space above the mood rows opens the keyboard with the caret at the end. The body reserves
-at least three lines at the current text size. An empty, unfocused page shows a still lamp caret.
-The 44 pt Write seat at bottom-right returns from history to today and opens writing; the same seat
-becomes Done writing above the keyboard. It hides during read-only transitions and account sheets.
+down opens the keyboard with the caret at the end. The body reserves at least three lines at the current
+text size. An empty, unfocused page shows a still lamp caret. The iOS journal draws no mood or energy:
+no scale rows and no ratings on earlier pages; the stored values, the domain and sync keep them, and
+the Keep offer follows the first kept page. The room (`JournalScreen`, Journal · iOS 05) is one
+`NavigationStack` with no tab bar: Write stands at the trailing end of the system's bottom bar, in one glass
+capsule on iOS 26 and the classic bar on iOS 18, disabled during read-only transitions and account sheets.
+From anywhere in the canvas it brings today into view and opens the keyboard at its end. Search (05.7P)
+and Talk are not built. The room counts no words and draws no saved state: while saving works nothing
+shows. While writing, the keyboard's own bar, UIKit's toolbar since SwiftUI's keyboard toolbar never
+reaches the UIKit editor, holds Done alone, trailing. A save the phone could not make says so in ink
+under the page with its cloud symbol, and a borderless *Try again* while the writing waits unsaved. A save sends the words alone (`SaveWords`): the page keeps the ratings the phone
+holds for it at that moment, another surface's included, and a page emptied of words is removed whole.
+An echo sheet up when an account sheet is asked for steps aside first (`AppModel.roomSheetUp`), since one
+presenter holds one sheet.
 The room seat is a native Journal · Gym menu with the current room checked; the separate account
 button opens You. The last room persists across launches. A fresh phone gets both doors after the
 introduction on Where to start?. Its quiet Sign in opens the account sheet as *Pick up where you left off* (02b). After that
@@ -320,10 +330,12 @@ in; the other keeps arriving behind it. A lost connection or session opens that 
 in which nothing lands (a hung pull, a server backing off).
 Hand-drawn Caveat ink notes appear automatically only on a true first Journal open. Previous Journal
 visits, retained history, drafts and unreadable state suppress automatic presentation; restored sign-in
-stays quiet. Writing or a tap lifts them while the editor keeps the tap. The room menu contains only the room switcher;
+stays quiet. Writing or a tap lifts them while the editor keeps the tap. No note reaches under the bottom bar: while they
+stand, today sits higher, and *Tap to write* points down at Write from above it (05.8P). The room menu contains only the room switcher;
 ink notes belong to the first Journal open.
 `journal-empty-later` and `journal-history` board fixtures seed past pages through
-the journal actions. A `-RM` suffix exercises the journal's Reduce Motion scroll and glyph swap.
+the journal actions; `journal-history-refused` leaves today's save refused as `JournalModel.save` does. A `-RM`
+suffix exercises the journal's Reduce Motion scroll.
 Focus and dismissal emit the bounded `first_run_choice` actions `write` and `done_writing` on the
 `journal` screen, without page content. When the local day changes at
 midnight or after a timezone change, the whole open draft, including its saved prefix, carries into
@@ -363,19 +375,20 @@ connected-log management. None blocks the local rooms: echoes show nothing extra
 state their connection requirement.
 
 Journal echoes live in `Sources/Journal/Echoes`. `JournalEchoView.swift` owns their presentation, as
-Figma's phone echo boards draw it: a lamp count in a 22 pt capsule at the end of a day's date line, whose
-44 pt target opens that day's ink below its body — up to two older passages beside their mono date
-stamps, *Useful · Not useful*, and *N more* when the reader holds the rest. Useful marks the passages
-the ink shows; Not useful retires the page's echo. One day's ink is open at a time; the count again, a
-tap outside the ink, or the keyboard closes it, and today's count does not draw while writing. The
-reader is a sheet of every passage for the day, grouped by year. A passage, in the ink or the reader,
-flies the canvas to its source with highlighting and a trail back to tonight. The first echo an install
-receives heads its ink with a card, once.
+Journal · iOS 02.3P–02.5P draw it: a lamp count, the stock bordered mini capsule at the end of a day's date line
+with a 44 pt target, opens one stock sheet (`JournalEchoSheet`) at `.medium`, `.large` at accessibility sizes, with
+`.height(140)`, `.medium` and `.large` detents and the page above readable and scrollable. It lists every passage
+beside its mono date stamp, by year at `.large`, with borderless *Useful* and *Not useful* in its foot. Useful marks
+every passage the sheet holds; Not useful retires the page's echo. Close, a swipe down, the count again or the
+keyboard closes it, and today's count does not draw while writing. A passage flies the canvas to its source with
+highlighting and lowers the sheet to `.height(140)`: the source's stamp and a regular-glass *Back to tonight*, whose
+menu holds the trail's days; back at tonight the sheet goes. The first echo an install receives heads its sheet with
+a line and *Got it*, once. Echoes ask for no Windmill One: a signed-in account past the server's page floor sees them.
 The model re-locates every full quotation in the phone's current pages before showing its count.
 Shared journal vectors pin NFC-equivalent matching and UTF-16 anchors into the unchanged source;
 equivalent edits retain an echo, while edits that remove its quotation retract it. The model
 follows the server's 20-page floor and waiver, provenance and Useful state. The first-echo
-card requires an explicit server flag; the current list route does not supply it.
+line requires an explicit server flag; the current list route does not supply it.
 Reads poll every 15 seconds only while the room is active. All reads and verdicts use the existing
 REST echoes routes; writing continues through the sync engine. Offline, empty and failed reads
 show no echo surface. Requests are cancelled and old replies discarded across account or lifecycle
@@ -386,10 +399,10 @@ The `journal-echoes` board fixture uses real journal actions with a deterministi
 `journal-echoes-first` carries the first-echo flag. `journal-echoes-AX3-RM` covers larger type and the
 source-scroll Reduce Motion path, including Back to tonight. The source quote sits after 14 paragraphs;
 the echo flows use the Debug simulator's UIKit quote rectangle to check that the exact passage reaches the
-visible canvas centre and remains read-only. `JournalEchoFlowTests` walks the light flow; the larger-type,
-Reduce Motion and canvas-end checks run in the opt-in `NightlyFlowTests`.
-Journal's principles are in `docs/design/brand-foundations.md`; Figma's phone echo
-boards are `31:211`/`33:327`, the trail `58:530`/`59:550`, in file `pC6ciOUnfLmI42oMihd7l3`.
+visible canvas centre above the lowered sheet and remains read-only. `JournalEchoFlowTests` walks the light flow;
+the larger-type, Reduce Motion and canvas-end checks run in the opt-in `NightlyFlowTests`.
+Journal's principles are in `docs/design/brand-foundations.md`; the room's boards are the Journal file
+`pC6ciOUnfLmI42oMihd7l3`, iOS page `202:2`, sections 01 and 02 ([the flow index](../../../docs/index.md)).
 
 Fonts are bundled from official OFL sources, with licences alongside each family:
 
@@ -440,7 +453,7 @@ continue while Safari is backgrounded. The test finishes the workout and verifie
 disappears after logging from the Island.
 
 `NightlyFlowTests` holds the slow end-to-end checks a daily run is enough for: the workout control in Control
-Center, the Home Screen's quick actions from the background and from a cold start, the journal's Write seat
+Center, the Home Screen's quick actions from the background and from a cold start, the journal's Write and Done
 geometry (Reduce Motion and the largest text included), echoes at accessible text, and the introduction at the
 accessibility sizes. `GymNightlyFlowTests` holds the gym's layout checks at the screen's edges: the log's end clear
 of the tab bar and the accessory, and the conversation's end clear of the composer, after a pushed screen pops or a bounce brings the bar back. XCTest

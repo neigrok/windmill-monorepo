@@ -18,7 +18,6 @@ final class JournalModel {
   let runtime: AppRuntime?
   var echoes: JournalEchoes
   @ObservationIgnored weak var app: AppModel?
-  var invitationShown = false
   var keepInvitationShown = false
   var room: JournalRoom?
   var document = PageDocument()
@@ -49,28 +48,14 @@ final class JournalModel {
   var authPaused: Bool { runtime?.engine.status.authPaused == true }
   var compactAccountSheet: Bool { app?.compactAccountSheet == true }
   var editorReadOnly: Bool { app?.editorReadOnly == true }
-  // The Write seat stands only over a page the person can write now: no account step, sheet or echo reader in front.
-  var writeSeatShown: Bool { !editorReadOnly && sheet == nil && echoes.readerDay == nil }
+  // Write stands only over a page the person can write now: no account step or account sheet in front.
+  var writable: Bool { !editorReadOnly && sheet == nil }
   var keepDismissed: Bool { app?.keepDismissed ?? preferences.bool(forKey: "keepDismissed") }
   var welcome: Bool { app?.welcome ?? !preferences.bool(forKey: "journalOpened") }
   var today: LocalDay { (try? runner.moment().today) ?? editorDay }
-  var words: Int { document.body.split(whereSeparator: \.isWhitespace).filter { $0.contains { $0.isLetter || $0.isNumber } }.count }
   var showPrivacy: Bool { room?.firstRunKnown == true && room?.state.privacyLine == "pending" }
   var showPlaceholder: Bool { room?.firstRunKnown == true && room?.state.placeholder == "pending" && document.body.isEmpty }
-  var scalesDue: Bool { !editing && room?.scaleInvitationDue == true }
-  var keepDue: Bool { !editing && account == nil && room?.keepDue == true && !keepDismissed && !scalesDue }
-  var backup: String {
-    if authPaused { return "backup paused" }
-    if dirty || readFailed { return "not saved" }
-    guard document.isWritten else { return "" }
-    if account == nil { return "saved" }
-    guard let day = room?.days.first(where: { $0.day == editorDay }) else { return "not backed up yet" }
-    switch day.backup {
-    case .backedUp: return "backed up"
-    case .refused: return "not saved"
-    case .pending, .savedHere: return "not backed up yet"
-    }
-  }
+  var keepDue: Bool { !editing && account == nil && room?.keepDue == true && !keepDismissed }
 
   func openJournal() {
     if app == nil { choose("open_journal", screen: "welcome") }
@@ -142,17 +127,20 @@ final class JournalModel {
     do {
       _ = try transitionDay()
       if document.hasText && document.body.utf8.count > 131_072 {
+        telemetry.event("journal_save_refused", properties: ["reason": "too_large"])
         error = "Your draft is kept on this phone. Shorten this page before it can be backed up."; dirty = true; return false
       }
       let previousBody = room?.days.first(where: { $0.day == editorDay })?.document.body ?? ""
       let wasFirst = room?.state.firstPage == "pending"
-      switch try runner.run(SavePage(day: editorDay, document: document, retiring: retiring)) {
+      // The phone writes words alone; the page's ratings stay as the log holds them at the save.
+      switch try runner.run(SaveWords(day: editorDay, body: document.body, source: document.source, retiring: retiring)) {
       case .committed, .unchanged:
         if document.isWritten && editorDay == today && document.body != previousBody { telemetry.event("journal_line_saved", properties: ["day_kind": "today"]) }
         dirty = false; error = nil
         if wasFirst && document.isWritten { firstKept = true }
         refresh(); return true
-      case .refused:
+      case .refused(let refusal):
+        telemetry.event("journal_save_refused", properties: ["reason": Self.reason(refusal)])
         error = "This page couldn't be saved. Your writing stays in the editor."; dirty = true; return false
       }
     } catch {
@@ -190,23 +178,6 @@ final class JournalModel {
 
   func done() { if dirty { _ = save() }; editing = false; refresh() }
 
-  func setScale(_ name: String, _ value: Int?) {
-    guard !editorReadOnly else { return }
-    liftInk()
-    let answeringInvitation = room?.scaleInvitationDue == true && value != nil
-    if name == "mood" { document.mood = value } else { document.energy = value }
-    dirty = true; preserveDraft(); if save(retiring: value == nil ? [] : ["scales"]), answeringInvitation { telemetry.event("scale_invitation_answered", properties: ["action": "answered"]) }
-  }
-
-  func dismissScales() {
-    do {
-      switch try runner.run(RetireJournalInvitation("scales")) {
-      case .committed, .unchanged: telemetry.event("scale_invitation_answered", properties: ["action": "declined"]); refresh()
-      case .refused: error = "Couldn't save this choice. Try again."
-      }
-    } catch { reportBoundary("journal_choice", error: error); self.error = "Couldn't save this choice. Try again." }
-  }
-
   func reportBoundary(_ operation: String, error: any Error) {
     guard Store.failureKind(error) == nil, !(error is KeychainError) else { return }
     telemetry.failure(operation, kind: "unexpected")
@@ -216,11 +187,18 @@ final class JournalModel {
 
   func choose(_ action: String, screen: String) { telemetry.event("first_run_choice", properties: ["screen": screen, "action": action]) }
 
+  static func reason(_ refusal: JournalRefusal) -> String {
+    switch refusal {
+    case .invalid: "invalid"
+    case .tooLarge: "too_large"
+    case .claimConflict: "claim_conflict"
+    case .other: "other"
+    }
+  }
+
   func recordInvitations() {
-    if room?.scaleInvitationDue != true { invitationShown = false }
     if room?.keepDue != true { keepInvitationShown = false }
     guard !welcome, !editing, app == nil || app?.selectedRoom == .journal else { return }
-    if scalesDue && !invitationShown { invitationShown = true; telemetry.event("scale_invitation_shown") }
     if keepDue && !keepInvitationShown { keepInvitationShown = true; screenViewed("keep") }
   }
 
