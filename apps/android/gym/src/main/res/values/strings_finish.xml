@@ -1,10 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="gym_finish_against_plan">Against plan</string>
-    <string name="gym_finish_against_last_routine">Against last %1$s</string>
-    <string name="gym_finish_against_last_time">Against last time</string>
-    <string name="gym_finish_against_performed">Performed</string>
-    <string name="gym_finish_against_comparison">Comparison</string>
     <string name="gym_finish_review_no_answer">the log didn’t answer — the session is saved</string>
     <string name="gym_finish_personal_record">Personal record</string>
     <string name="gym_finish_no_sets">No sets logged</string>

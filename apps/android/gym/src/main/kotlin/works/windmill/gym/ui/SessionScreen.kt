@@ -42,7 +42,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
@@ -256,7 +255,6 @@ fun SessionScreen(
     val colors = MaterialTheme.colorScheme
     val scope = rememberCoroutineScope()
     val telemetry = LocalTelemetry.current
-    val resources = LocalContext.current.resources
     val noLongerOnLog = stringResource(R.string.gym_session_no_longer_on_log)
     var detail by rememberSaveable(summary.id, stateSaver = remember(telemetry) { sessionDetailSaver(telemetry) }) { mutableStateOf<SessionDetail?>(seed) }
     var setsFailure by remember(summary.id) { mutableStateOf<WriteFailure?>(null) }
@@ -376,7 +374,7 @@ fun SessionScreen(
                 }
             }
             if (read && (review == null || Finish.recordSentence(review?.record, state.catalog) != null ||
-                    Finish.comparison(review?.against, state.catalog, resources) != null)) {
+                    Finish.comparison(review?.against, state.catalog) != null)) {
                 item("review") { ReviewRemarks(review, state.catalog) }
             }
             item("actions") {

@@ -1,6 +1,5 @@
 package works.windmill.gym.ui
 
-import android.content.res.Resources
 import works.windmill.platform.design.WindmillType
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -50,7 +49,6 @@ import works.windmill.gym.presentation.SetTarget
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.layout.ContentScale
@@ -115,7 +113,7 @@ object Finish {
         }
     }
 
-    fun comparison(against: Against?, catalog: List<Exercise>, resources: Resources): Comparison? {
+    fun comparison(against: Against?, catalog: List<Exercise>): Comparison? {
         if (against == null) return null
         val sources = against.movements.map { movement ->
             when {
@@ -126,11 +124,10 @@ object Finish {
         }
         val mixed = sources.distinct().size > 1
         val title = when (sources.distinct().singleOrNull()) {
-            "Plan" -> resources.getString(R.string.gym_finish_against_plan)
-            "Last time" -> against.routine?.let { resources.getString(R.string.gym_finish_against_last_routine, it) }
-                ?: resources.getString(R.string.gym_finish_against_last_time)
-            "Performed" -> resources.getString(R.string.gym_finish_against_performed)
-            else -> resources.getString(R.string.gym_finish_against_comparison)
+            "Plan" -> "Against plan"
+            "Last time" -> "Against last ${against.routine ?: "time"}"
+            "Performed" -> "Performed"
+            else -> "Comparison"
         }
         return Comparison(
             title = title,
@@ -203,7 +200,7 @@ fun ReviewRemarks(review: Review?, catalog: List<Exercise>) {
             return@Column
         }
         Finish.recordSentence(review.record, catalog)?.let { RecordLine(it) }
-        Finish.comparison(review.against, catalog, LocalContext.current.resources)?.let { AgainstBlock(it) }
+        Finish.comparison(review.against, catalog)?.let { AgainstBlock(it) }
     }
 }
 
