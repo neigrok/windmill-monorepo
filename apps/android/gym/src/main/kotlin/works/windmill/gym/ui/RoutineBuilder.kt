@@ -26,7 +26,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.AlertDialog
@@ -109,6 +108,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.ui.draw.shadow
+import androidx.compose.material.icons.filled.Close
 
 // What the routine builder draws: the draft's movements by name, and the routine's workouts for the seat in hand.
 @Stable
@@ -208,8 +208,6 @@ fun RoutineBuilder(
     onSave: () -> Unit,
     onClose: () -> Unit,
     say: (String?) -> Unit,
-    // What Back returns to, named for its description: the routine, the tab or the screen beneath.
-    backTo: String,
 ) {
     val colors = MaterialTheme.colorScheme
     val scope = rememberCoroutineScope()
@@ -299,7 +297,7 @@ fun RoutineBuilder(
     }
 
     BuildStep(
-        draft = draft, state = state, history = history, editing = editing, editable = !saving, backTo = backTo,
+        draft = draft, state = state, history = history, editing = editing, editable = !saving,
         savable = draft.savable && draft.changed && !saving,
         onDraft = { if (!saving) onDraft(it) },
         onOpenTarget = { id ->
@@ -419,7 +417,6 @@ private fun BuildStep(
     onAdd: () -> Unit,
     onSave: () -> Unit,
     onCancel: () -> Unit,
-    backTo: String,
 ) {
     val colors = MaterialTheme.colorScheme
     val focus = remember { FocusRequester() }
@@ -472,17 +469,20 @@ private fun BuildStep(
     GymScreen(
         title = if (editing) "Edit routine" else "New routine",
         navigation = {
-            IconButton(onClick = onCancel, enabled = editable, modifier = Modifier.size(48.dp)) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back to $backTo",
-                    tint = if (editable) colors.onSurface else colors.onSurfaceVariant, modifier = Modifier.size(24.dp))
+            IconButton(onClick = onCancel, enabled = editable) {
+                Icon(Icons.Filled.Close, "Close", tint = if (editable) colors.onSurface else colors.onSurfaceVariant)
             }
         },
-        actions = { TopAction(if (editable) "Save" else "Saving…", enabled = savable, onClick = onSave) },
+        // The commit stays where the thumb is, a pill pinned above the keyboard under the scrolling body.
+        bottomBar = {
+            GymSheetCommit("Save", enabled = savable, onClick = onSave, busy = !editable,
+                modifier = Modifier.imePadding().padding(horizontal = GymLayout.gutter, vertical = 16.dp))
+        },
     ) {
         LaunchedEffect(Unit) {
             if (!editing && draft.name.isEmpty()) { focus.requestFocus(); keyboard?.show() }
         }
-        Column(Modifier.fillMaxSize().imePadding()
+        Column(Modifier.fillMaxSize()
             .onGloballyPositioned { viewport = it.boundsInRoot() }
             .testTag("routine-editor-body").verticalScroll(scroll).padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(24.dp)) {
@@ -607,6 +607,6 @@ private fun DraftPreview() {
         .adding("overhead-press", List(3) { SetTarget(6, 47.5) })
     GymPreview {
         RoutineBuilder(draft, PreviewRoutineBuilderState(), PreviewRoutineBuilderEvents, saving = false, onDraft = {},
-            onSave = {}, onClose = {}, say = {}, backTo = "Routines")
+            onSave = {}, onClose = {}, say = {})
     }
 }

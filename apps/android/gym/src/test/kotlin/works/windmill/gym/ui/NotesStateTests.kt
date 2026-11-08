@@ -70,7 +70,7 @@ class NotesStateTests {
             var backs = 0
             var done = 0
             compose.setContent {
-                GymMaterial { NoteEditorScreen(NotesBinding(store), Note("note_tone", title = "Tone"), "", "Notes", { backs++ }, { done++ }) }
+                GymMaterial { NoteEditorScreen(NotesBinding(store), Note("note_tone", title = "Tone"), "", { backs++ }, { done++ }) }
             }
             compose.onNodeWithContentDescription("Note field").performScrollTo().performTextReplacement("  Be precise.  ")
             compose.onNodeWithText(Notes.save).performClick()
@@ -148,7 +148,7 @@ class NotesStateTests {
             signedIn(room)
             val restored = StateRestorationTester(compose)
             var done = 0
-            restored.setContent { GymMaterial { NoteEditorScreen(NotesBinding(room.store), null, "What I am training for", "Notes", {}, { done++ }) } }
+            restored.setContent { GymMaterial { NoteEditorScreen(NotesBinding(room.store), null, "What I am training for", {}, { done++ }) } }
             compose.onNodeWithContentDescription("Title field").performClick()
             compose.onNodeWithText("What I am training for").assertIsDisplayed()
             compose.onNodeWithText(Notes.save).assertIsNotEnabled()

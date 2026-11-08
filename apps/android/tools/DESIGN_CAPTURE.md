@@ -314,8 +314,8 @@ are transient. The workout recipe logs one set and finishes the workout in its l
 
 `--scenarios apps/android/tools/capture-recipes/nativeness-wave.json` captures the nativeness wave's boards on the
 default fixture in both appearances: Routines, the routine summary, the editor, its picker and movement form (02.1N,
-02.2N, 02.5N, 02.4N, 02.6N), The log, a new weigh-in, Bodyweight, Edit movement and Notes (05.1N, 06.1N, 06.2N,
-05.10N, 09.1N), then the rack after one set, the rack's keyboard, Fix set and Fix set's keyboard (03.1N, 03.2N,
+02.2N, 02.5Nb, 02.4N, 02.6N), The log, a new weigh-in, Bodyweight, Edit movement, Notes and the Note editor (05.1N,
+06.1N, 06.2N, 05.10N, 09.1N, 09.2N), then the rack after one set, the rack's keyboard, Fix set and Fix set's keyboard (03.1N, 03.2N,
 03.3N, 03.3Nk). It leaves every draft unsaved and ends its workout through Finish.
 
 `capture-recipes/this-workout.json` uses `this-workout-fixture.json` for the approved 03.4

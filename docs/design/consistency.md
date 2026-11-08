@@ -1188,8 +1188,8 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
     draws targets as form rows and has no summary row.
 - **11aa · Nativeness wave against its N boards (designer).** Captured with
   `capture-recipes/nativeness-wave.json` (Pixel 8 profile, API 37, Dark and Daylight). The commits of Fix set, the
-  movement form, Edit movement and the weigh-in stay a 56 dp pill at the sheet's foot by the owner's ruling, as the
-  redrawn boards show. What still differs:
+  movement form, Edit movement, the weigh-in, the routine editor and the Note editor stay a 56 dp pill at the foot by the
+  owner's ruling, as the redrawn boards show. What still differs:
   - *Margins.* Fix set, Edit movement, the rack and the routine editor keep the 20 dp gutter; 02.5N draws the editor
     at 16 dp. The picker and the routine summary align to the list rows' 16 dp inset, as 02.4N and 02.2N draw.
   - *Routines.* The list keeps 4 dp between its rows; 02.1N draws them touching.

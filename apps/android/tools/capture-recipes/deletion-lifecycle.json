@@ -62,7 +62,7 @@
         }
       },
       {
-        "tap": "Back to Push A"
+        "tap": "Close"
       },
       {
         "wait": "Discard routine changes?"

@@ -60,7 +60,7 @@ class PlanningLargeTextTests {
             val builder = RoutineBuilderBinding(store)
             compose.setContent {
                 contentView = LocalView.current
-                RoutineBuilder(draft, builder, builder, false, { draft = it }, {}, {}, {}, "Routines")
+                RoutineBuilder(draft, builder, builder, false, { draft = it }, {}, {}, {})
             }
             compose.onNodeWithText("Chin Up").performClick()
             val sets = compose.onNodeWithContentDescription("Sets").fetchSemanticsNode().positionInRoot

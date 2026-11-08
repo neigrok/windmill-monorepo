@@ -224,7 +224,7 @@ class NotesScreenTests {
             var done = 0
             compose.setContent {
                 NoteEditorScreen(
-                    note = note, seedTitle = "", events = NotesBinding(store), backTo = Notes.title,
+                    note = note, seedTitle = "", events = NotesBinding(store),
                     onBack = {}, onDone = { done += 1 },
                 )
             }
@@ -639,7 +639,7 @@ class NotesScreenTests {
             signedIn(room, "note_001" to NoteWrite("Private title", "Private body"))
             var done = 0
             compose.setContent { GymMaterial { NoteEditorScreen(NotesBinding(room.store),
-                Note("note_001", title = "Private title", body = "Private body"), "", "Notes", {}, { done++ }) } }
+                Note("note_001", title = "Private title", body = "Private body"), "", {}, { done++ }) } }
             compose.onNodeWithText(Notes.save).assertIsNotEnabled()
             compose.runOnIdle { telemetry.events.clear(); room.engine.failNextCommit() }
             compose.onNodeWithText(Notes.delete).performScrollTo().performClick()

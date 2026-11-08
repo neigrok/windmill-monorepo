@@ -78,6 +78,10 @@ import works.windmill.gym.store.TrainingStore
 import works.windmill.gym.store.WriteFailure
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Icon
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 
 // What the notes list draws: the seat's notes, how many, whether they are read, and the writes the log refused.
 @Stable
@@ -366,7 +370,6 @@ fun NoteEditorScreen(
     events: NoteEditorEvents,
     note: Note?,
     seedTitle: String,
-    backTo: String,
     onBack: () -> Unit,
     onDone: () -> Unit,
 ) {
@@ -393,9 +396,16 @@ fun NoteEditorScreen(
             } finally { saving = false }
         }
     }
-    GymScreen(title = "Note", onBack = { if (!saving) onBack() }, backTo = backTo,
-        actions = { TopAction(if (saving) "Saving…" else Notes.save, enabled = canSave, onClick = ::save) }) {
-        Column(Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 20.dp),
+    GymScreen(title = "Note",
+        navigation = {
+            IconButton(onClick = { if (!saving) onBack() }) { Icon(Icons.Filled.Close, "Close", tint = colors.onSurface) }
+        },
+        // The commit stays where the thumb is, a pill pinned above the keyboard under the scrolling body.
+        bottomBar = {
+            GymSheetCommit(Notes.save, enabled = canSave, onClick = ::save, busy = saving,
+                modifier = Modifier.imePadding().padding(horizontal = GymLayout.gutter, vertical = 16.dp))
+        }) {
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 20.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp)) {
             NoteField("Title", title, { title = it; said = null }, seedTitle.ifBlank { Notes.titlePlaceholder },
                 enabled = !saving, minimum = 56.dp, problem = said?.takeIf { Notes.titleOver(title) })
@@ -478,7 +488,7 @@ private fun NotesListPreview() {
 @Composable
 private fun NoteEditorPreview() {
     GymPreview {
-        NoteEditorScreen(NotesPreviewEvents(notesPreviewNotes), notesPreviewNotes.first(), "", backTo = Notes.title,
+        NoteEditorScreen(NotesPreviewEvents(notesPreviewNotes), notesPreviewNotes.first(), "",
             onBack = {}, onDone = {})
     }
 }

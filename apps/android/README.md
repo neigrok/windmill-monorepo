@@ -469,8 +469,7 @@ exploration, and `uiautomator dump` suspends TalkBack while it reads the screen.
 level at verbose, logcat records every utterance (`SpeechControllerImpl: Speaking fragment`) and the
 text-to-speech engine's word ranges for it. An emulator has no audio check, so the speech is verified
 from that log, not by ear. Heard: steppers say their value, *Edit box* and their label once (*3, Edit
-box, Sets*); outlined fields say their name once; the editor's back names its destination (*Back to
-Routines*, *Back to Push Day*); its discard question is announced as it opens; the routine sheet's
+box, Sets*); outlined fields say their name once; the editor's discard question is announced as it opens; the routine sheet's
 *A workout is already open. Finish it first.* is announced as it appears; *Read 12 workouts · 5 weeks*
 is a button. Still said twice: a rack set row (its description, then its drawn set and target), the
 editor's movement row (the drag handle's *Move Bench Press, 1 of 1*, then the name), and Finish's

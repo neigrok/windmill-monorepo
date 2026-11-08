@@ -128,10 +128,11 @@ The build covers 02.1N, 02.2N, 02.4N, 02.5N, 02.6N, 03.1N, 03.2N, 03.3N, 03.3Nk,
 and the wave's code-only items: Material's default `Shapes` in `GymMaterial` (`ThemeRolesTests` keeps radius literals out
 of gym screens), stock pill buttons, stock sheet drag handles, 16 dp cards, stock menu shapes, one press layer on the
 stepper's − / +, and a time picker that follows the phone's 24-hour setting. Sheet heads share `GymSheetBar` (✕ Close and
-the title); the drag handles of the editor, This workout and Notes share `GymDragHandle`. By the owner's ruling of the same day, Fix set, the movement form,
-Edit movement and the weigh-in keep their commit a full-width stock pill, `GymSheetCommit`, 56 dp, at the foot of the sheet in
-thumb reach and pinned above the keyboard, as the redrawn 03.3N, 03.3Nk, 02.6N, 05.10N and 06.1N draw it; the weigh-in
-reads **Save weight** in both modes, and Delete set and the routine's line end Fix set's body above **Save fix**. The board recipe is
+the title); the drag handles of the editor, This workout and Notes share `GymDragHandle`. By the owner's rulings of the
+same day, Fix set, the movement form, Edit movement, the weigh-in, the routine editor and the Note editor keep their
+commit a full-width stock pill, `GymSheetCommit`, 56 dp, at the foot in thumb reach and pinned above the keyboard, under
+a ✕ Close, as the redrawn 03.3N, 03.3Nk, 02.6N, 05.10N, 06.1N, 02.5Nb and 09.2N draw it; the weigh-in reads **Save
+weight** in both modes, and Delete set and the routine's line end Fix set's body above **Save fix**. The board recipe is
 `apps/android/tools/capture-recipes/nativeness-wave.json`.
 
 The owner rejected 09.6N (Notes signed out) and 06.9N (Correct a weigh-in) on 2026-11-08 to keep the thumb-reach

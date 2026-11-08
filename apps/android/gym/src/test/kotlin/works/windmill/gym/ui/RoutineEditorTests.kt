@@ -33,6 +33,8 @@ import org.robolectric.annotation.Config
 import works.windmill.gym.presentation.*
 import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.EngineRoomFixture
+import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onLast
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
@@ -56,7 +58,6 @@ class RoutineEditorTests {
                 onSave = {},
                 onClose = {},
                 say = {},
-                backTo = "Routines",
             )
         }
         return { draft }
@@ -378,26 +379,26 @@ class RoutineEditorTests {
         assertEquals("Pull Day", typedName())
         handle("Move Back Squat, 1 of 2").assertExists()
         handle("Move Bench Press, 2 of 2").assertExists()
-        compose.onNodeWithContentDescription("Back to Pull").performClick()
+        compose.onAllNodesWithContentDescription("Close").onLast().performClick()
         compose.onNodeWithText("Discard routine changes?").assertIsDisplayed()
         compose.onNodeWithText("Keep editing").performClick()
         editorTitle("Edit routine").assertExists()
         assertEquals(listOf("shown", "cancelled", "shown", "cancelled"), actions.map { it["state"] ?: it.getValue("outcome") })
     }
 
-    // Back's description names where it goes: the list a new routine was opened from, the routine an edit came from.
-    @Test fun backOnACleanDraftLeavesWithoutAskingAndSaysWhereItGoes() = room(
+    // A clean draft leaves at once, from a new routine and from an edit, and its head offers the ✕.
+    @Test fun backOnACleanDraftLeavesWithoutAsking() = room(
         saved = RoutineDraft(name = "Pull", creationId = "routine_pull").adding("bench-press"),
     ) { back, _, actions ->
         compose.onNodeWithContentDescription("New routine").performClick()
         editorTitle("New routine").assertExists()
-        compose.onNodeWithContentDescription("Back to Routines").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Close").assertIsDisplayed()
         back()
         editorTitle("New routine").assertDoesNotExist()
         compose.onNodeWithText("Pull").performClick()
         compose.onNodeWithText("Edit routine").performClick()
         editorTitle("Edit routine").assertExists()
-        compose.onNodeWithContentDescription("Back to Pull").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Close").assertIsDisplayed()
         back()
         editorTitle("Edit routine").assertDoesNotExist()
         compose.onNodeWithText("Start workout").assertIsDisplayed()
@@ -427,11 +428,11 @@ class RoutineEditorTests {
         compose.onNodeWithText("Edit routine").performClick()
         compose.onNodeWithText("Bench Press").performClick()
         compose.onNodeWithContentDescription("Movement name").performTextReplacement("Paused Bench")
-        compose.onNodeWithContentDescription("Close").performClick()
+        compose.onAllNodesWithContentDescription("Close").onLast().performClick()
         compose.onNodeWithText("Discard changes?").assertIsDisplayed()
         compose.onNodeWithText("Keep editing").performClick()
         compose.onNodeWithText("Discard changes?").assertDoesNotExist()
-        compose.onNodeWithContentDescription("Close").performClick()
+        compose.onAllNodesWithContentDescription("Close").onLast().performClick()
         compose.onNodeWithText("Discard").performClick()
         compose.waitUntil(5_000) { compose.onAllNodesWithText("Discard changes?").fetchSemanticsNodes().isEmpty() }
         editorTitle("Edit routine").assertExists()

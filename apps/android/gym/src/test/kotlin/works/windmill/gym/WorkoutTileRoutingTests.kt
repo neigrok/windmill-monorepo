@@ -79,10 +79,10 @@ class WorkoutTileRoutingTests {
             compose.onNode(hasSetTextAction()).performTextInput("Unfinished routine")
             compose.runOnIdle { room.store.workout.requestRoutines() }
             compose.onNodeWithText("Unfinished routine").assertIsDisplayed()
-            compose.onNodeWithContentDescription("Back to Routines").assertIsDisplayed()
+            compose.onNodeWithContentDescription("Close").assertIsDisplayed()
             restored.emulateSavedInstanceStateRestore()
             compose.onNodeWithText("Unfinished routine").assertIsDisplayed()
-            compose.onNodeWithContentDescription("Back to Routines").assertIsDisplayed()
+            compose.onNodeWithContentDescription("Close").assertIsDisplayed()
             compose.runOnIdle {
                 assertNull(room.store.workout.session)
                 assertTrue(room.store.routines.all.isEmpty())

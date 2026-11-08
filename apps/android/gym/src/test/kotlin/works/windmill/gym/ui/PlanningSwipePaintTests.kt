@@ -106,7 +106,7 @@ class PlanningSwipePaintTests {
             val builder = RoutineBuilderBinding(store)
             compose.setContent {
                 contentView = LocalView.current
-                GymMaterial { RoutineBuilder(draft, builder, builder, false, { draft = it }, {}, {}, {}, "Routines") }
+                GymMaterial { RoutineBuilder(draft, builder, builder, false, { draft = it }, {}, {}, {}) }
             }
             val row = compose.onNode(hasText("Bench Press") and hasClickAction())
             val bounds = row.fetchSemanticsNode().boundsInRoot

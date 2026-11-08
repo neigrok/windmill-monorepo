@@ -20,8 +20,8 @@
     ]
   },
   {
-    "board": "02.5N",
-    "name": "editor-list-items",
+    "board": "02.5Nb",
+    "name": "editor-list-items-bottom-commit",
     "account": "fixture",
     "steps": [
       {"tap": "Edit routine"},
@@ -133,8 +133,21 @@
       {"tap": "Notes"},
       {"wait": "Training week"},
       {"wait": "Add a note"}
+    ]
+  },
+  {
+    "board": "09.2N",
+    "name": "note-editor-bottom-commit",
+    "account": "fixture",
+    "steps": [
+      {"tap": "Training week"},
+      {"wait": "Note field"},
+      {"wait": "Delete note"},
+      {"wait": "Save"}
     ],
     "after": [
+      {"tap": "Close"},
+      {"wait": "Add a note"},
       {"key": "KEYCODE_BACK"},
       {"tap": "Routines"},
       {"wait": "New routine"}

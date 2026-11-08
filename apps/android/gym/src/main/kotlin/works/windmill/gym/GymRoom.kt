@@ -834,7 +834,6 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                         events = remember(store) { NotesBinding(store) },
                         note = standing.note,
                         seedTitle = standing.seedTitle,
-                        backTo = backTo,
                         onBack = { back() },
                         onDone = { back() },
                     )
@@ -951,9 +950,6 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                                     onSave = { building?.let(::write) },
                                     onClose = { building = null },
                                     say = { note = it },
-                                    // An edit returns to its routine's sheet; a new draft to what it was opened over.
-                                    backTo = selectedRoutineId?.let { store.routines.routine(it)?.name }
-                                        ?: wayBackTo(navigator.away.lastOrNull(), frame.tab),
                                 )
                             }
                             is Frame.Pushed -> PushedScreen(frame)

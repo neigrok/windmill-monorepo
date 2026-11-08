@@ -4,7 +4,7 @@
     "name": "routine-editor-new",
     "account": "fixture",
     "steps": [{"tap": "New routine"}, {"wait": "Routine name"}],
-    "after": [{"tap": "Back to Routines"}, {"wait": "New routine"}]
+    "after": [{"tap": "Close"}, {"wait": "New routine"}]
   },
   {
     "board": "02.4",
@@ -16,7 +16,7 @@
       {"key": "KEYCODE_BACK"}, {"tap": "Add movement"}, {"wait": "Search movements"}
     ],
     "after": [
-      {"tap": "Cancel"}, {"tap": "Back to Push A"},
+      {"tap": "Cancel"}, {"tap": "Close"},
       {"wait": "Discard routine changes?"}, {"tap": "Discard"}, {"wait": "Start workout"}, {"key": "KEYCODE_BACK"}, {"wait": "New routine"}
     ]
   },
