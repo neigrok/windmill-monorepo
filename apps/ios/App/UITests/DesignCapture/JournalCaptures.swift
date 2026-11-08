@@ -1,24 +1,24 @@
 import XCTest
 
 final class JournalCaptures: DesignCapture {
-  // Journal · iOS 01.8P today with Write in the accessory, 01.10P reading back with the bar minimised, 01.9P writing.
+  // Journal · iOS 05.1A today with Write in the bottom bar, 05.2P reading back, 05.3P writing with Done alone.
   func today(_ look: Look) {
     let app = launch("journal-history", look)
     let write = app.buttons["write-today"]
     XCTAssertTrue(write.waitForExistence(timeout: 10))
-    capture("journal-01.8-today", look, app, settle: 1.5)
+    capture("journal-05.1-today", look, app, settle: 1.5)
     let scroll = app.scrollViews["journal-canvas"]
     for _ in 0..<2 { scroll.swipeDown(velocity: .slow) }
-    capture("journal-01.10-reading-back", look, app, settle: 1.5)
+    capture("journal-05.2-reading-back", look, app, settle: 1.5)
     write.tap()
     XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
     app.typeText(" A line for the review.")
-    capture("journal-01.9-writing", look, app)
+    capture("journal-05.3-writing", look, app)
     app.buttons["done-writing"].tap()
     XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
   }
   func testToday() { for look in Look.both { today(look) } }
-  // Journal · iOS 01.6P: the same room at the largest text.
+  // Journal · iOS 05.5P: the same room at the largest text.
   func testTodayLargestText() { for look in Look.bothAtLargestText { today(look) } }
 
   // Journal · iOS 01.5P: a refused save keeps the writing, says so under it in ink, and offers Try again.
@@ -26,7 +26,6 @@ final class JournalCaptures: DesignCapture {
     for look in Look.both + Look.bothAtLargestText {
       let app = launch("journal-history-refused", look)
       XCTAssertTrue(app.buttons["journal-try-again"].waitForExistence(timeout: 10))
-      XCTAssertEqual(app.buttons["write-today"].value as? String, "11 words, Not saved")
       capture("journal-01.5-save-refused", look, app, settle: 1.5)
       app.terminate()
     }
@@ -74,7 +73,7 @@ final class JournalCaptures: DesignCapture {
     for look in Look.both {
       let app = launch("05-journal-first-open", look)
       XCTAssertTrue(app.textViews["journal-editor"].waitForExistence(timeout: 10))
-      capture("journal-first-open-ink-notes", look, app, settle: 2.0)
+      capture("journal-05.8-first-open-ink-notes", look, app, settle: 2.0)
       app.buttons["you"].tap()
       XCTAssertTrue(app.buttons["about-windmill"].waitForExistence(timeout: 5))
       capture("journal-you-signed-out", look, app)
@@ -121,8 +120,8 @@ final class JournalCaptures: DesignCapture {
       capture("journal-sign-in-email-code", look, app)
       code.tap(); code.typeText("482913")
       XCTAssertTrue(app.buttons["you"].waitForExistence(timeout: 15))
-      XCTAssertTrue(app.todayBackedUp.waitForExistence(timeout: 15))
-      capture("journal-today-signed-in-backed-up", look, app)
+      XCTAssertTrue(app.textViews["journal-editor"].waitForExistence(timeout: 15))
+      capture("journal-today-signed-in", look, app, settle: 2.0)
       app.buttons["you"].tap()
       XCTAssertTrue(app.buttons["sign-out"].waitForExistence(timeout: 5))
       capture("journal-you-signed-in", look, app)

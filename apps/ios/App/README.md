@@ -310,17 +310,14 @@ Native editing writes today's page only; past days are read-only. Tapping today'
 down opens the keyboard with the caret at the end. The body reserves at least three lines at the current
 text size. An empty, unfocused page shows a still lamp caret. The iOS journal draws no mood or energy:
 no scale rows and no ratings on earlier pages; the stored values, the domain and sync keep them, and
-the Keep offer follows the first kept page. The room (`JournalRoomView`, Journal · iOS 01.8P–01.12P) is
-a `TabView` of one Pages tab whose bar minimises on scroll up; the Search tab of 02.8P is not built.
-On iOS 26 the tab bar's bottom accessory holds Write with today's word count and one saved-state
-symbol (`PageBackup`: backed up, on this phone, not backed up yet or paused, not saved), its words
-in the button's VoiceOver value; beside a minimised bar it keeps Write and the count. Write returns from history to today and opens writing. On iOS 26.1
-the accessory leaves during read-only transitions and account sheets; on 26.0, which cannot remove
-it, and on iOS 18, where the same row stands above the tab bar on the bar material, it is disabled
-instead. While writing, the keyboard's own bar (`JournalWritingBar`, UIKit's toolbar, since
-SwiftUI's keyboard toolbar never reaches the UIKit editor) carries the count and a regular Done. A
-save the phone could not make says so in ink under the page, with a borderless *Try again* while the
-writing waits unsaved. A save sends the words alone (`SaveWords`): the page keeps the ratings the phone
+the Keep offer follows the first kept page. The room (`JournalScreen`, Journal · iOS 05) is one
+`NavigationStack` with no tab bar: Write stands at the trailing end of the system's bottom bar, in one glass
+capsule on iOS 26 and the classic bar on iOS 18, disabled during read-only transitions and account sheets.
+From anywhere in the canvas it brings today into view and opens the keyboard at its end. Search (05.7P)
+and Talk are not built. The room counts no words and draws no saved state: while saving works nothing
+shows. While writing, the keyboard's own bar, UIKit's toolbar since SwiftUI's keyboard toolbar never
+reaches the UIKit editor, holds Done alone, trailing. A save the phone could not make says so in ink
+under the page with its cloud symbol, and a borderless *Try again* while the writing waits unsaved. A save sends the words alone (`SaveWords`): the page keeps the ratings the phone
 holds for it at that moment, another surface's included, and a page emptied of words is removed whole.
 An echo sheet up when an account sheet is asked for steps aside first (`AppModel.roomSheetUp`), since one
 presenter holds one sheet.
@@ -333,8 +330,8 @@ in; the other keeps arriving behind it. A lost connection or session opens that 
 in which nothing lands (a hung pull, a server backing off).
 Hand-drawn Caveat ink notes appear automatically only on a true first Journal open. Previous Journal
 visits, retained history, drafts and unreadable state suppress automatic presentation; restored sign-in
-stays quiet. Writing or a tap lifts them while the editor keeps the tap. No note reaches under the accessory: *Tap to
-write* stands above Write only where it clears today's page. The room menu contains only the room switcher;
+stays quiet. Writing or a tap lifts them while the editor keeps the tap. No note reaches under the bottom bar: while they
+stand, today sits higher, and *Tap to write* points down at Write from above it (05.8P). The room menu contains only the room switcher;
 ink notes belong to the first Journal open.
 `journal-empty-later` and `journal-history` board fixtures seed past pages through
 the journal actions; `journal-history-refused` leaves today's save refused as `JournalModel.save` does. A `-RM`

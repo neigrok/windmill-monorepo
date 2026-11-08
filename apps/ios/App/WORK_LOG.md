@@ -385,12 +385,10 @@ Windmill page's Journal band and the Journal page — sit on the same flat groun
 left; its caret's blink is its one motion. Observation: *Where to start?*'s `RoomDoor` still washes each door's card
 toward its corner in the room's soft accent (`lampSoft`, `accentSoft`); it is a door, not the room, so the ruling left it.
 
-The journal room is calm and native (Journal · iOS 01.5P, 01.6P, 01.8P–01.12P, 02.3P–02.6P, owner approved
-2026-11-08). `JournalRoomView` hosts the canvas in a `TabView` of one Pages tab, minimised on scroll up, with Write,
-today's count and one saved-state symbol in the tab bar's bottom accessory; a single tab hosts the accessory, and the
-tab bar draws Pages as one wide tab until Search arrives. SwiftUI's `.keyboard` toolbar never reaches the UIKit
-editor, so the keyboard's bar is UIKit's own `UIToolbar` as the text view's input accessory, its count item without the
-shared glass. The editor sizes itself through `sizeThatFits`, so the canvas measures no width in a `GeometryReader`
+The journal room is calm and native (Journal · iOS 05, 01.5P, 02.3P–02.6P, owner approved 2026-11-08): one
+`NavigationStack` with no tab bar, Write alone in the system's bottom bar, and no word count or saved state anywhere. SwiftUI's `.keyboard` toolbar never reaches the
+UIKit editor, so the keyboard's bar is UIKit's own `UIToolbar` as the text view's input accessory, Done alone. The
+editor sizes itself through `sizeThatFits`, so the canvas measures no width in a `GeometryReader`
 and the scroll view runs under both bars. The inline ink, the reader and the trail became one stock sheet whose
 detents the room drives: a passage lowers it to `.height(140)`, where *Back to tonight* stands; its model keeps one
 `sheetDay` and a trail from tonight through the count's day. Mood and energy are hidden on iOS, while the web still

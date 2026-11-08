@@ -670,7 +670,7 @@ import SyncTesting
     #expect(room.days.first(where: { $0.day == journal.today })?.document.body == "First private line. Writing continues while echoes wait.")
     fixture.service.finishList(0, .failure(URLError(.notConnectedToInternet))); await reading.value
     #expect(journal.document.body == "First private line. Writing continues while echoes wait.")
-    #expect(journal.error == nil && journal.backup == .onThisPhone && journal.echoes.pages.isEmpty)
+    #expect(journal.error == nil && journal.room?.days.first?.backup == .savedHere && journal.echoes.pages.isEmpty)
   }
 }
 

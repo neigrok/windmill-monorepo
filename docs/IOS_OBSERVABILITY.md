@@ -94,7 +94,7 @@ status and duration use the bounded numeric rules above. Every row also carries 
 platform/version/build/release/environment properties. The journal asks no mood or energy question on iOS, so no
 scale event exists. Journal ink emits `first_run_screen_viewed` with screen `ink_notes` for its automatic first-open
 presentation and `first_run_choice` with action `dismiss_ink` once when writing or a tap lifts it; no ink replay action
-is allowlisted. Write in the tab bar's accessory, a tap on today's page and *Write tonight* each open the keyboard with
+is allowlisted. Write in the bottom bar, a tap on today's page and *Write tonight* each open the keyboard with
 `first_run_choice` screen journal, action `write`; Done in the keyboard's bar ends it with action `done_writing`, and
 *Try again* under a page not saved records action `retry`. A save the phone refuses before it leaves, or the log's
 rules refuse, records `journal_save_refused` with its reason alone.

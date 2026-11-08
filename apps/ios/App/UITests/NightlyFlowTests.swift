@@ -154,18 +154,19 @@ import XCTest
     return app
   }
 
-  // Write spans the tab bar's accessory below the page; Done stands trailing in the keyboard's toolbar and gives Write back.
-  func testEmptyLaterPageWritesFromTheAccessoryAndEndsInTheKeyboardBar() {
+  // Write stands at the bottom bar's trailing end below the page; Done stands trailing in the keyboard's bar and gives Write back.
+  func testEmptyLaterPageWritesFromTheBottomBarAndEndsInTheKeyboardBar() {
     let app = launchJournal("journal-empty-later")
     let editor = app.textViews["journal-editor"]
     let write = app.buttons["write-today"]
     XCTAssertTrue(write.waitForExistence(timeout: 10))
     XCTAssertEqual(write.label, "Write")
-    XCTAssertGreaterThanOrEqual(write.frame.height, 44)
-    XCTAssertGreaterThan(write.frame.width, app.frame.width * 0.8)
+    XCTAssertTrue(write.isHittable)
+    XCTAssertGreaterThan(write.frame.midX, app.frame.midX, "Write stands trailing, under the right thumb")
+    XCTAssertGreaterThan(write.frame.minY, app.frame.height * 0.8, "Write stands in the bottom bar")
     XCTAssertEqual(editor.value as? String, "")
     XCTAssertGreaterThanOrEqual(editor.frame.height, 76.5)
-    XCTAssertLessThanOrEqual(editor.frame.maxY, write.frame.minY, "At rest the page clears the accessory")
+    XCTAssertLessThanOrEqual(editor.frame.maxY, write.frame.minY, "At rest the page clears the bar")
     let parked = write.frame
     write.tap()
     XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))

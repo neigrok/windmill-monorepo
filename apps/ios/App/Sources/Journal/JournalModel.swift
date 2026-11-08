@@ -53,23 +53,9 @@ final class JournalModel {
   var keepDismissed: Bool { app?.keepDismissed ?? preferences.bool(forKey: "keepDismissed") }
   var welcome: Bool { app?.welcome ?? !preferences.bool(forKey: "journalOpened") }
   var today: LocalDay { (try? runner.moment().today) ?? editorDay }
-  var words: Int { document.body.split(whereSeparator: \.isWhitespace).filter { $0.contains { $0.isLetter || $0.isNumber } }.count }
-  var wordCount: String? { words == 0 ? nil : "\(words) \(words == 1 ? "word" : "words")" }
   var showPrivacy: Bool { room?.firstRunKnown == true && room?.state.privacyLine == "pending" }
   var showPlaceholder: Bool { room?.firstRunKnown == true && room?.state.placeholder == "pending" && document.body.isEmpty }
   var keepDue: Bool { !editing && account == nil && room?.keepDue == true && !keepDismissed }
-  var backup: PageBackup {
-    if authPaused { return .paused }
-    if dirty || readFailed { return .notSaved }
-    guard document.isWritten else { return .unwritten }
-    if account == nil { return .onThisPhone }
-    guard let day = room?.days.first(where: { $0.day == editorDay }) else { return .waiting }
-    switch day.backup {
-    case .backedUp: return .backedUp
-    case .refused: return .notSaved
-    case .pending, .savedHere: return .waiting
-    }
-  }
 
   func openJournal() {
     if app == nil { choose("open_journal", screen: "welcome") }
@@ -217,30 +203,4 @@ final class JournalModel {
   }
 
   func keep() { app?.keep() }
-}
-
-// Where today's page stands, one symbol in the room's accessory and its words for VoiceOver (Journal · iOS 01.5P).
-enum PageBackup: Equatable {
-  case unwritten, onThisPhone, backedUp, waiting, paused, notSaved
-
-  var label: String {
-    switch self {
-    case .unwritten: ""
-    case .onThisPhone: "Saved on this phone"
-    case .backedUp: "Backed up"
-    case .waiting: "Not backed up yet"
-    case .paused: "Backup paused"
-    case .notSaved: "Not saved"
-    }
-  }
-
-  var symbol: String? {
-    switch self {
-    case .unwritten: nil
-    case .onThisPhone: "iphone"
-    case .backedUp: "checkmark.icloud"
-    case .waiting, .paused: "icloud.slash"
-    case .notSaved: "exclamationmark.icloud"
-    }
-  }
 }

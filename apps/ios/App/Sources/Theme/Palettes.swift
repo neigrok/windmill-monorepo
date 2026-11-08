@@ -36,7 +36,6 @@ nonisolated enum JournalPalette {
   static let lamp = Color("journal/lamp")
   static let lampSoft = Color("journal/lamp-soft")
   static let uiInk = UIColor(named: "journal/ink")!
-  static let uiInkDim = UIColor(named: "journal/ink-dim")!
   static let uiLamp = UIColor(named: "journal/lamp")!
   // Faded roles: a kindled echo count, and an opened passage's highlight on its page.
   static let kindled = lamp.opacity(0.4)

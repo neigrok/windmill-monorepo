@@ -566,6 +566,6 @@ import SyncTesting
     model.refresh()
     #expect(model.account == owner.account && model.journal.document.body == "Owner page before autosave")
     #expect(model.gym.routines.map(\.id) == [id])
-    #expect(model.journal.backup == .backedUp)
+    #expect(model.journal.room?.days.first?.backup == .backedUp)
   }
 }

@@ -352,10 +352,10 @@ enum AppScenario {
 
   static func backedUp(_ model: AppModel) async throws {
     for _ in 0..<200 {
-      model.refresh(); if model.journal.backup == .backedUp { return }
+      model.refresh(); if model.journal.room?.days.first(where: { $0.day == model.journal.editorDay })?.backup == .backedUp { return }
       try await Task.sleep(for: .milliseconds(100))
     }
-    throw AppFailure(message: "backup did not confirm: \(model.error ?? model.journal.backup.label)")
+    throw AppFailure(message: "backup did not confirm: \(model.error ?? "not backed up yet")")
   }
 }
 

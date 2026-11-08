@@ -20,11 +20,6 @@ extension XCUIElement {
 }
 
 extension XCUIApplication {
-  // The journal's Write in the tab bar's accessory, once its value says today's page is backed up.
-  var todayBackedUp: XCUIElement {
-    buttons.matching(NSPredicate(format: "identifier == %@ AND value CONTAINS %@", "write-today", "Backed up")).firstMatch
-  }
-
   // A room in the open room menu, found by its `room-…` identifier or by its room's title; the menu's own button, which
   // carries the current room's title, never is one.
   func roomItem(_ room: String) -> XCUIElement {

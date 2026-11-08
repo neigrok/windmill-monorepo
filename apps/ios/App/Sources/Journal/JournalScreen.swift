@@ -5,13 +5,11 @@ import JournalDomain
 
 nonisolated struct JournalWritingLayout: Equatable { let body: String; let contentHeight: CGFloat }
 
-// The day canvas of the room's Pages tab: earlier pages above, today at the foot, writing in place, echoes in their sheet.
+// The journal room (Journal · iOS 05): earlier pages above, today at the foot, Write in the bottom bar, echoes in their sheet.
 struct JournalScreen: View {
   @Bindable var model: JournalModel
   let app: AppModel
-  // Each tap on the room's Write: today comes into view and the keyboard opens on it.
-  let writeAsked: Int
-  @Binding var inkFrames: [String: CGRect]
+  @State var inkFrames: [String: CGRect] = [:]
   @State var focused = false
   @State var writeRequest = 0
   @State var appendRequest = 0
@@ -33,6 +31,8 @@ struct JournalScreen: View {
   var reduceMotion: Bool { systemReduceMotion || model.runtime?.settings.board?.hasSuffix("-RM") == true }
   // What a compact account sheet covers at the foot of the canvas; today stands above it.
   static let compactSheetClearance: CGFloat = 406
+  // While the first-run notes stand, today stands this far above the bar, so *Tap to write* has room to point at Write.
+  static let inkClearance: CGFloat = 120
 
   var body: some View {
     NavigationStack {
@@ -65,7 +65,7 @@ struct JournalScreen: View {
             pastDay(day, echoesVisible: echoesVisible)
           }
           today(echoesVisible: echoesVisible)
-            .padding(.horizontal, 24).padding(.bottom, 24)
+            .padding(.horizontal, 24).padding(.bottom, inkMounted ? Self.inkClearance : 24)
             .contentShape(Rectangle())
             .gesture(TapGesture().onEnded { if model.writable { appendRequest += 1 } }, including: focused ? .all : .subviews)
             .id("journal-today")
@@ -83,7 +83,7 @@ struct JournalScreen: View {
           editedBodyAtEnd = nil
         }
         .background { JournalPalette.canvas.ignoresSafeArea() }
-        .overlay { GeometryReader { geo in inkNotes(origin: geo.frame(in: .global).origin) } }
+        .overlay { GeometryReader { geo in inkNotes(origin: geo.frame(in: .global).origin, size: geo.size) } }
         .simultaneousGesture(TapGesture().onEnded { model.liftInk() })
         .task(id: echoDestination) {
           echoReadyDestination = nil
@@ -102,7 +102,15 @@ struct JournalScreen: View {
           do { try await Task.sleep(for: .milliseconds(2600)) } catch { return }
           echoHighlight = nil
         }
-        .onChange(of: writeAsked) { _, _ in write(scroll) }
+        // Write in the system's bottom bar, trailing in one glass capsule that Talk will share (05.1A); iOS 18 draws the classic bar.
+        .toolbar {
+          ToolbarItemGroup(placement: .bottomBar) {
+            Spacer()
+            Button { write(scroll) } label: { Label("Write", systemImage: "square.and.pencil") }
+              .labelStyle(.iconOnly).imageScale(.medium).disabled(!model.writable)
+              .accessibilityHint("Opens the keyboard on today's page").accessibilityIdentifier("write-today")
+          }
+        }
         // The page whose count opened the sheet rises to stand above it, unless a passage holds the canvas.
         .onChange(of: echoSheetHeight) { _, height in
           guard height > 0, let day = model.echoes.sheetDay, model.echoes.hops.isEmpty else { return }
@@ -232,9 +240,13 @@ struct JournalScreen: View {
     } ?? true
   }
 
-  @ViewBuilder func inkNotes(origin: CGPoint) -> some View {
+  // The bar's Write is drawn by the system, which reports no frame to the canvas: it stands at the trailing end just below.
+  @ViewBuilder func inkNotes(origin: CGPoint, size: CGSize) -> some View {
     if inkMounted {
-      InkNotes(frames: inkFrames.mapValues { $0.offsetBy(dx: -origin.x, dy: -origin.y) }, visible: model.inkVisible && !focused && model.sheet == nil)
+      let write = CGRect(x: size.width - RoomSpace.inset - RoomSpace.minimumTarget, y: size.height + 4,
+                         width: RoomSpace.minimumTarget, height: RoomSpace.minimumTarget)
+      InkNotes(frames: inkFrames.mapValues { $0.offsetBy(dx: -origin.x, dy: -origin.y) }.merging(["write": write]) { $1 },
+               visible: model.inkVisible && !focused && model.sheet == nil)
         .allowsHitTesting(false)
     }
   }
@@ -244,7 +256,7 @@ struct JournalScreen: View {
       VStack(alignment: .leading, spacing: 0) {
         dateRow(model.editorDay, echoesVisible: echoesVisible).padding(.bottom, 12)
         ZStack(alignment: .topLeading) {
-          JournalBodyText(text: Binding(get: { model.document.body }, set: { model.type($0) }), focused: $focused, fontSize: bodySize, editable: !model.editorReadOnly, appendRequest: appendRequest, inkVisible: inkMounted && model.inkVisible && !focused && model.sheet == nil, didEditAtEnd: { editedBodyAtEnd = $0 }, minimumLines: 3, writingBar: true, wordCount: model.wordCount)
+          JournalBodyText(text: Binding(get: { model.document.body }, set: { model.type($0) }), focused: $focused, fontSize: bodySize, editable: !model.editorReadOnly, appendRequest: appendRequest, inkVisible: inkMounted && model.inkVisible && !focused && model.sheet == nil, didEditAtEnd: { editedBodyAtEnd = $0 }, minimumLines: 3, writingBar: true)
             .accessibilityFocused($echoFocus, equals: model.today.text)
             .allowsHitTesting(focused || model.editorReadOnly)
           if model.document.body.isEmpty && !focused {
@@ -273,7 +285,8 @@ struct JournalScreen: View {
       // A refusal speaks under the words it concerns, in ink; a failed save offers Try again (Journal · iOS 01.5P).
       if let error = model.error {
         VStack(alignment: .leading, spacing: 0) {
-          Text(error).font(.footnote).foregroundStyle(JournalPalette.ink).fixedSize(horizontal: false, vertical: true)
+          Label { Text(error).fixedSize(horizontal: false, vertical: true) } icon: { Image(systemName: "exclamationmark.icloud") }
+            .font(.footnote).foregroundStyle(JournalPalette.ink)
           if model.dirty {
             Button("Try again") { model.choose("retry", screen: "journal"); model.save() }.buttonStyle(.borderless).foregroundStyle(JournalPalette.lamp).font(ShellType.secondaryAction)
               .frame(minHeight: RoomSpace.minimumTarget).accessibilityIdentifier("journal-try-again")

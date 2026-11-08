@@ -13,9 +13,8 @@ struct JournalBodyText: UIViewRepresentable {
   var day: String? = nil
   // Today's page keeps room for this many lines, measured as if a next line had begun; an earlier page keeps none.
   var minimumLines = 0
-  // Today's page rides the keyboard with its own bar: the count, and Done.
+  // Today's page rides the keyboard with its own bar, Done alone at its trailing end.
   var writingBar = false
-  var wordCount: String? = nil
   static let placeholder = "Start anywhere."
 
   static func attributes(fontSize: CGFloat) -> [NSAttributedString.Key: Any] {
@@ -64,8 +63,18 @@ struct JournalBodyText: UIViewRepresentable {
     view.textContainerInset = .zero
     view.textContainer.lineFragmentPadding = 0
     view.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-    // Done lets the keyboard go the way UIKit does; the editor's end of editing then ends the writing.
-    if writingBar { view.inputAccessoryView = JournalWritingBar { [weak view] in view?.resignFirstResponder() } }
+    // While writing, the keyboard's UIKit bar holds Done alone (05.3P): SwiftUI's keyboard toolbar never reaches a UIKit text view.
+    if writingBar {
+      let done = UIBarButtonItem(title: "Done", primaryAction: UIAction { [weak view] _ in view?.resignFirstResponder() })
+      done.tintColor = JournalPalette.uiInk
+      done.setTitleTextAttributes([.font: UIFontMetrics(forTextStyle: .body).scaledFont(for: .systemFont(ofSize: 17, weight: .semibold), maximumPointSize: 28)], for: .normal)
+      done.accessibilityLabel = "Done writing"
+      done.accessibilityIdentifier = "done-writing"
+      let bar = UIToolbar(frame: CGRect(x: 0, y: 0, width: 320, height: RoomSpace.minimumTarget))
+      bar.items = [.flexibleSpace(), done]
+      bar.sizeToFit()
+      view.inputAccessoryView = bar
+    }
     return JournalEditorView(textView: view)
   }
 
@@ -82,7 +91,6 @@ struct JournalBodyText: UIViewRepresentable {
     view.accessibilityIdentifier = day.map { "journal-body-\($0)" } ?? (editable ? "journal-editor" : nil)
     context.coordinator.updateText(view, text: text, fontSize: fontSize)
     context.coordinator.updateHighlight(view, range: highlightedRange)
-    (view.inputAccessoryView as? JournalWritingBar)?.count(wordCount)
     let appending = context.coordinator.appendRequest != appendRequest
     context.coordinator.appendRequest = appendRequest
     guard editable && focused ? (!view.isFirstResponder || appending) : view.isFirstResponder else { return }
@@ -150,37 +158,6 @@ struct JournalBodyText: UIViewRepresentable {
     }
     func textViewDidBeginEditing(_ textView: UITextView) { if !parent.focused { textView.resignFirstResponder() } }
     func textViewDidEndEditing(_ textView: UITextView) { if parent.focused { parent.focused = false } }
-  }
-}
-
-// The keyboard's bar while writing (Journal · iOS 01.9P): today's count leading, a regular Done trailing under the right thumb.
-// UIKit's own toolbar, since SwiftUI's keyboard toolbar never reaches a UIKit text view; iOS 26 draws its items in glass.
-final class JournalWritingBar: UIToolbar {
-  let counted = UILabel()
-
-  init(done: @escaping () -> Void) {
-    super.init(frame: CGRect(x: 0, y: 0, width: 320, height: RoomSpace.minimumTarget))
-    // The bar's words grow with Dynamic Type up to a cap that keeps the bar one line.
-    counted.font = UIFontMetrics(forTextStyle: .subheadline).scaledFont(for: .systemFont(ofSize: 15), maximumPointSize: 24)
-    counted.adjustsFontForContentSizeCategory = true
-    counted.textColor = JournalPalette.uiInkDim
-    let count = UIBarButtonItem(customView: counted)
-    if #available(iOS 26.0, *) { count.hidesSharedBackground = true }
-    let finish = UIBarButtonItem(title: "Done", primaryAction: UIAction { _ in done() })
-    finish.tintColor = JournalPalette.uiInk
-    finish.setTitleTextAttributes([.font: UIFontMetrics(forTextStyle: .body).scaledFont(for: .systemFont(ofSize: 17, weight: .semibold), maximumPointSize: 28)], for: .normal)
-    finish.accessibilityLabel = "Done writing"
-    finish.accessibilityIdentifier = "done-writing"
-    items = [count, .flexibleSpace(), finish]
-    sizeToFit()
-  }
-
-  required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-
-  func count(_ words: String?) {
-    guard counted.text != words else { return }
-    counted.text = words
-    counted.sizeToFit()
   }
 }
 

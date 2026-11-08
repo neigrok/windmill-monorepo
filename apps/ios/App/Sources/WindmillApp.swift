@@ -185,7 +185,7 @@ struct RootScreen: View {
     Group {
       if let restore = model.restore, !restore.opened { arrival(restore) }
       else if model.welcome { welcome.onAppear { model.screenViewed("welcome") } }
-      else if model.selectedRoom == .journal { JournalRoomView(model: model.journal, app: model) }
+      else if model.selectedRoom == .journal { JournalScreen(model: model.journal, app: model) }
       else { GymRoom(gym: model.gym, app: model) }
     }
     .onChange(of: model.updateAlert, initial: true) { _, show in if show { UpdateRequiredAlert.present(for: model) } }

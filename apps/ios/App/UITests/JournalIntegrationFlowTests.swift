@@ -1,7 +1,6 @@
 import XCTest
 
-// The journal against the verify skill's isolated backend: a page written from the accessory backs up, words written while
-// the server cannot be reached wait on the phone, and back up once it answers again.
+// The journal against the verify skill's backend: a page backs up, words written while it is away wait, then back up.
 @MainActor final class JournalIntegrationFlowTests: XCTestCase {
   override func setUp() { continueAfterFailure = false }
 
@@ -29,6 +28,16 @@ import XCTest
     XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
   }
 
+  // You names whether the account holds everything this phone wrote; it closes again before the next step.
+  func assertAccount(_ status: String, in app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
+    app.buttons["you"].tap()
+    let you = app.navigationBars["You"]
+    XCTAssertTrue(you.waitForExistence(timeout: 10), file: file, line: line)
+    XCTAssertTrue(app.staticTexts[status].waitForExistence(timeout: 30), "You reads \(status)", file: file, line: line)
+    you.buttons["Done"].tap()
+    XCTAssertTrue(you.waitForNonExistence(timeout: 5), file: file, line: line)
+  }
+
   func testAPageBacksUpWaitsWhileTheServerIsAwayAndBacksUpWhenItAnswers() throws {
     let environment = ProcessInfo.processInfo.environment
     guard let server = environment["WM_JOURNAL_E2E_SERVER"], let session = environment["WM_JOURNAL_E2E_SESSION"] else {
@@ -37,18 +46,17 @@ import XCTest
     var app = launch(server, session: session, relaunch: false)
     let first = "A page from the phone."
     write(first, after: "", in: app)
-    XCTAssertTrue(app.todayBackedUp.waitForExistence(timeout: 30), "\(app.buttons["write-today"].value ?? "")")
+    assertAccount("Backed up", in: app)
     app.terminate()
 
     app = launch("http://127.0.0.1:1", session: session, relaunch: true)
     let offline = " Written while the server is away."
     write(offline, after: first, in: app)
-    let waiting = app.buttons.matching(NSPredicate(format: "identifier == %@ AND value CONTAINS %@", "write-today", "Not backed up yet")).firstMatch
-    XCTAssertTrue(waiting.waitForExistence(timeout: 15), "\(app.buttons["write-today"].value ?? "")")
+    assertAccount("Not backed up yet", in: app)
     app.terminate()
 
     app = launch(server, session: session, relaunch: true)
-    XCTAssertTrue(app.todayBackedUp.waitForExistence(timeout: 30), "\(app.buttons["write-today"].value ?? "")")
+    assertAccount("Backed up", in: app)
     XCTAssertEqual(app.textViews["journal-editor"].value as? String, first + offline)
   }
 }

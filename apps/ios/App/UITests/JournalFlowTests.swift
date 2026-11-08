@@ -15,7 +15,6 @@ import XCTest
     XCTAssertTrue(editor.waitForValue(text))
     app.buttons["done-writing"].tap()
     XCTAssertTrue(app.buttons["write-today"].waitForExistence(timeout: 5))
-    XCTAssertEqual(app.buttons["write-today"].value as? String, "4 words, Saved on this phone")
     let scales = NSPredicate(format: "label IN %@ OR label BEGINSWITH %@", ["Mood", "Energy", "How did today feel?"], "Clear ")
     XCTAssertEqual(app.descendants(matching: .any).matching(scales).count, 0)
     app.terminate(); app.launchArguments.append("-restore-board"); app.launch()
@@ -29,7 +28,6 @@ import XCTest
     app.terminate(); app.launch()
     XCTAssertTrue(editor.waitForExistence(timeout: 10))
     XCTAssertEqual(editor.value as? String, "")
-    XCTAssertEqual(app.buttons["write-today"].value as? String ?? "", "")
     XCTAssertFalse(app.buttons["Keep it"].exists)
     XCTAssertEqual(app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", "journal-day-")).count, 0)
   }
@@ -52,9 +50,7 @@ import XCTest
     app.buttons["Send code"].tap()
     let code = app.textFields["email-code"]
     XCTAssertTrue(code.waitForExistence(timeout: 5)); code.tap(); code.typeText("482913")
-    XCTAssertTrue(app.buttons["you"].waitForExistence(timeout: 10))
-    let backedUp = app.todayBackedUp
-    XCTAssertTrue(backedUp.waitForExistence(timeout: 15))
+    XCTAssertTrue(app.buttons["you"].waitForHittable(timeout: 10))
     app.buttons["you"].tap()
     XCTAssertTrue(app.staticTexts["Sam"].waitForExistence(timeout: 5), "You names the account, never You")
     XCTAssertTrue(app.staticTexts["Backed up"].waitForExistence(timeout: 15))
@@ -76,7 +72,6 @@ import XCTest
     XCTAssertTrue(email.waitForValue("flow@example.com"))
     app.buttons["Send code"].tap()
     XCTAssertTrue(code.waitForExistence(timeout: 5)); code.tap(); code.typeText("482913")
-    XCTAssertTrue(backedUp.waitForExistence(timeout: 15))
-    XCTAssertEqual(app.textViews["journal-editor"].value as? String, page)
+    XCTAssertTrue(app.textViews["journal-editor"].waitForValue(page, timeout: 15))
   }
 }

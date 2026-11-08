@@ -33,7 +33,7 @@ import Synchronization
     let (_, model) = try fixture()
     #expect(model.journal.showPrivacy && model.journal.showPlaceholder)
     #expect(model.journal.document.mood == nil && model.journal.document.energy == nil)
-    #expect(!model.journal.keepDue && model.journal.backup == .unwritten && model.journal.wordCount == nil)
+    #expect(!model.journal.keepDue && model.journal.room?.days.isEmpty == true)
   }
 
   @Test func firstJournalOpenShowsInkAndConsumesItAtPresentation() throws {
@@ -282,7 +282,7 @@ import Synchronization
     let (_, model) = try fixture()
     model.journal.type("One line."); #expect(model.journal.save()); model.journal.done()
     #expect(!model.journal.showPrivacy && model.journal.firstKept)
-    #expect(model.journal.keepDue && model.journal.backup == .onThisPhone && model.journal.wordCount == "2 words")
+    #expect(model.journal.keepDue && model.journal.room?.days.first?.backup == .savedHere)
     #expect(model.journal.room?.state.scales == "pending")
   }
 
@@ -291,7 +291,7 @@ import Synchronization
     model.journal.type("Still mine"); harness.failNextCommit()
     #expect(!model.journal.save())
     #expect(model.journal.document.body == "Still mine" && model.journal.dirty && model.journal.error != nil)
-    #expect(model.journal.room?.state.firstPage == "pending" && model.journal.backup == .notSaved)
+    #expect(model.journal.room?.state.firstPage == "pending" && model.journal.dirty)
     model.refresh(); #expect(model.journal.document.body == "Still mine")
     #expect(model.journal.save()); #expect(!model.journal.dirty)
   }
@@ -360,9 +360,9 @@ import Synchronization
     model.account = "account-a"
     harness.sync(); model.refresh()
     model.journal.type("Bound writing"); model.journal.save(); model.journal.done()
-    #expect(!model.journal.keepDue && model.journal.backup == .waiting)
+    #expect(!model.journal.keepDue && model.journal.room?.days.first?.backup == .pending)
     harness.sync(); model.refresh()
-    #expect(model.journal.backup == .backedUp && !model.journal.keepDue)
+    #expect(model.journal.room?.days.first?.backup == .backedUp && !model.journal.keepDue)
   }
 
   @Test func anonymousSnapshotCoalescesAndSurvivesModelRecreation() throws {
@@ -382,7 +382,7 @@ import Synchronization
     model.journal.type("Writing to retain"); model.journal.saveTask?.cancel()
     model.journal.document.source = "dictated"
     #expect(!model.journal.save())
-    #expect(model.journal.dirty && model.journal.error != nil && model.journal.backup == .notSaved)
+    #expect(model.journal.dirty && model.journal.error != nil)
     #expect(model.journal.room?.days.isEmpty == true)
     #expect(recorder.entries.withLock { $0.filter { $0.name == "journal_save_refused" }.map(\.properties) } == [["reason": "invalid"]])
   }
@@ -412,13 +412,6 @@ import Synchronization
     harness.sync()
     let reopened = try AppModel(runner: harness.runner, preferences: model.preferences)
     #expect(!reopened.journal.showPlaceholder && !reopened.journal.showPrivacy && !reopened.journal.keepDue)
-  }
-
-  @Test func wordCountUsesCurrentWriting() throws {
-    let (_, model) = try fixture()
-    model.journal.type("One\n—\ntwo three.")
-    #expect(model.journal.words == 3)
-    model.journal.saveTask?.cancel()
   }
 
   @Test func closingYouDoesNotDismissTheKeepInvitation() throws {

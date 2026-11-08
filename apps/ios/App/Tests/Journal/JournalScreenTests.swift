@@ -55,7 +55,7 @@ nonisolated final class ClockCountingReplica: Replica {
       app.openJournal()
       let window = UIWindow(windowScene: scene)
       window.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
-      let host = UIHostingController(rootView: JournalRoomView(model: app.journal, app: app))
+      let host = UIHostingController(rootView: JournalScreen(model: app.journal, app: app))
       window.rootViewController = host; window.makeKeyAndVisible()
       defer { app.journal.saveTask?.cancel(); window.isHidden = true; window.rootViewController = nil }
       host.view.layoutIfNeeded()
@@ -300,7 +300,7 @@ nonisolated final class ClockCountingReplica: Replica {
     let previousKeyWindow = scene.windows.first(where: \.isKeyWindow)
     let window = UIWindow(windowScene: scene)
     window.frame = CGRect(x: 0, y: 0, width: 390, height: 400)
-    let host = UIHostingController(rootView: JournalRoomView(model: app.journal, app: app).ignoresSafeArea(.keyboard))
+    let host = UIHostingController(rootView: JournalScreen(model: app.journal, app: app).ignoresSafeArea(.keyboard))
     window.rootViewController = host
     window.makeKeyAndVisible()
     defer {

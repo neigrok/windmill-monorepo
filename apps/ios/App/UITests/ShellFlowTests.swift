@@ -61,7 +61,7 @@ import XCTest
     switchRoom("Journal", in: app)
     XCTAssertTrue(editor.waitForExistence(timeout: 5))
     XCTAssertEqual(editor.value as? String, page)
-    XCTAssertFalse(app.tabBars.buttons["Routines"].exists, "The journal's own tab bar holds Pages alone")
+    XCTAssertFalse(app.tabBars.firstMatch.exists)
     app.terminate()
     app.launch()
     XCTAssertTrue(editor.waitForExistence(timeout: 10))

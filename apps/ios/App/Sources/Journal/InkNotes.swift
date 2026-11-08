@@ -32,10 +32,10 @@ struct InkNotes: View {
         let youFrame = CGRect(origin: youLabel, size: youSize)
         let write = frames["write"] ?? .zero
         let writeSize = labelFrame("Tap to write", at: CGPoint(x: 24, y: 0), size: fontSize, in: geo.size).size
-        let writeLabel = CGPoint(x: max(24, write.minX), y: write.minY - writeSize.height - 34)
+        let writeLabel = CGPoint(x: min(geo.size.width - 16 - writeSize.width, write.maxX - writeSize.width), y: write.minY - writeSize.height - 40)
         let writeFrame = CGRect(origin: writeLabel, size: writeSize)
-        // No note reaches under the tab bar's accessory, where Write stands.
-        let floor = frames["accessory"].map { min(geo.size.height, $0.minY - 8) } ?? geo.size.height
+        // No note reaches under the bottom bar, where Write stands.
+        let floor = frames["write"].map { min(geo.size.height, $0.minY - 8) } ?? geo.size.height
         let bounds = CGRect(x: 0, y: 0, width: geo.size.width, height: max(0, floor)).insetBy(dx: 12, dy: 8)
         let primaryFrames = [typingFrame, dateFrame]
         let showWrite = !large && frames["write"] != nil && fits(writeFrame, in: bounds, avoiding: primaryFrames + [caret])
@@ -94,8 +94,8 @@ struct InkNotes: View {
             note("Tap to write", at: writeLabel, size: fontSize, index: 5, in: geo.size)
             stroke(index: 5) { p in
               let tip = CGPoint(x: write.midX, y: write.minY - 6)
-              p.move(to: CGPoint(x: writeFrame.maxX + 6, y: writeFrame.midY))
-              p.addQuadCurve(to: tip, control: CGPoint(x: tip.x + 24, y: writeFrame.midY))
+              p.move(to: CGPoint(x: writeFrame.midX + 10, y: writeFrame.maxY + 2))
+              p.addQuadCurve(to: tip, control: CGPoint(x: tip.x - 4, y: writeFrame.maxY + 6))
               arrow(&p, tip, dx: 0, dy: 1)
             }
           }

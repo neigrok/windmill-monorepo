@@ -761,14 +761,12 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   glimpse shows the product across surfaces.
 - **iOS echo count while its sheet stands.** Journal · iOS 02.3P–02.6P draw the open count as
   `.borderedProminent`, a filled lamp capsule; the calm-and-private ruling admits no `.borderedProminent`
-  and no filled accent button in the room, so the count is the stock `.bordered` capsule in both states and
-  its VoiceOver value says Open. Redraw the open count, or rule the exception.
-- **iOS journal tab bar.** 01.8P–01.11P draw Pages beside the Search tab of 02.8P; Search is not built,
-  so the tab bar holds Pages alone, one wide tab under the accessory. Redraw the phase-1 boards or accept
-  the single tab until Search ships.
-- **iOS first-run Write note.** The ink notes are unchanged until 01.4P is ruled; *Tap to write* now
-  points down at Write in the accessory and is drawn only where it clears today's page, which on a first
-  open it does not.
+  and no filled accent button in the room, so the count is the same lamp-soft capsule in both states, in a
+  44 pt target a stock mini capsule cannot hold, and its VoiceOver value says Open. Redraw the open count,
+  or rule the exception.
+- **iOS journal bar before Search and Talk.** 05.1A–05.6P draw Talk beside Write in the bottom bar and
+  Search beside the account button; neither is built, so Write stands alone and the account button keeps
+  its own capsule until they ship.
 
 - **Mood and energy entry.** [Input alternatives](https://www.figma.com/design/pC6ciOUnfLmI42oMihd7l3?node-id=204-1159)
   compare quiet rails, a folded picker and a number ribbon. The folded picker is the recommendation,
