@@ -30,8 +30,8 @@ struct SignInRestore: Equatable {
   }
 
   var rooms: [AppModel.Room] { AppModel.Room.allCases.filter { totals[$0] != nil } }
-  var eyebrow: String { method == "apple" ? "SIGNED IN WITH APPLE" : "SIGNED IN WITH EMAIL" }
-  var line: String { "Opening \(opening.title) as soon as it’s ready." }
+  var eyebrow: String { method == "apple" ? String(localized: "SIGNED IN WITH APPLE") : String(localized: "SIGNED IN WITH EMAIL") }
+  var line: String { String(localized: "Opening \(opening.title) as soon as it’s ready.", comment: "Bringing it back: Opening Journal as soon as it’s ready.") }
 
   // What the replica holds now; any change is progress, and resets the patience.
   mutating func land(_ landed: [AppModel.Room: Int], arrived: Set<AppModel.Room>, at now: Date) {
@@ -41,9 +41,10 @@ struct SignInRestore: Equatable {
 
   // *64 of 142 pages*: what has landed, never more than the account holds.
   func count(_ room: AppModel.Room) -> String {
-    let total = totals[room] ?? 0
-    let noun = room == .journal ? (total == 1 ? "page" : "pages") : (total == 1 ? "workout" : "workouts")
-    return "\(min(landed[room] ?? 0, total)) of \(total) \(noun)"
+    let total = totals[room] ?? 0, arrived = min(landed[room] ?? 0, total)
+    return room == .journal
+      ? String(localized: "\(arrived) of \(total) pages", locale: .copy, comment: "Bringing it back: the journal pages landed of the account's, 64 of 142 pages")
+      : String(localized: "\(arrived) of \(total) workouts", locale: .copy, comment: "Bringing it back: the workouts landed of the account's, 3 of 38 workouts")
   }
 
   // The room last written to opens once its records are in, the server is out of reach, or nothing lands for `patience`.

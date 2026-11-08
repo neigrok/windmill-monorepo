@@ -1,0 +1,1794 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "" : {
+
+    },
+    "  " : {
+
+    },
+    " · %@" : {
+
+    },
+    "%@" : {
+
+    },
+    "%@ %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ %2$@"
+          }
+        }
+      }
+    },
+    "%@ and %@" : {
+      "comment" : "Joins a list's last item: 2 workouts and 1 routine",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ and %2$@"
+          }
+        }
+      }
+    },
+    "%@ are deleted from this phone. You can’t undo this." : {
+      "comment" : "2 workouts, 1 routine and 3 journal pages are deleted…"
+    },
+    "%@ changed since you started." : {
+
+    },
+    "%@ doesn't open a Windmill account. Try the address you signed up with, or create one with Apple." : {
+
+    },
+    "%@ kg est" : {
+
+    },
+    "%@ · %@" : {
+      "comment" : "Where the canvas stands: 29 MAY 2025 · 4 MO",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ · %2$@"
+          }
+        }
+      }
+    },
+    "%@ – %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ – %2$@"
+          }
+        }
+      }
+    },
+    "%@, %@" : {
+      "comment" : "Joins a list's items before its last: 2 workouts, 1 routine",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@, %2$@"
+          }
+        }
+      }
+    },
+    "%@, in progress" : {
+
+    },
+    "%@, read only" : {
+      "comment" : "An earlier journal page, spoken: August 4, 2026, read only"
+    },
+    "%lld" : {
+
+    },
+    "%lld MO" : {
+      "comment" : "How long before a passage was written, in months: 4 MO"
+    },
+    "%lld WK" : {
+      "comment" : "How long before a passage was written, in weeks: 2 WK"
+    },
+    "%lld YR" : {
+      "comment" : "How long before a passage was written, in years: 2 YR"
+    },
+    "%lld changes" : {
+      "comment" : "What a room holds when it holds nothing the sign-in question names",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld change"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld changes"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld changes haven’t been confirmed by your account yet. Keep them on this phone until you sign in again, or discard them from this phone." : {
+      "comment" : "Sign out's question when the account has not confirmed some changes",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld change hasn’t been confirmed by your account yet. Keep it on this phone until you sign in again, or discard it from this phone."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld changes haven’t been confirmed by your account yet. Keep them on this phone until you sign in again, or discard them from this phone."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld changes on this phone haven’t been confirmed by your account. They are deleted too." : {
+      "comment" : "Delete account's line for the changes the account has not confirmed",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld change on this phone hasn’t been confirmed by your account. It is deleted too."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld changes on this phone haven’t been confirmed by your account. They are deleted too."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld journal pages" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld journal page"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld journal pages"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld movements" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld movement"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld movements"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld new routines" : {
+
+    },
+    "%lld notes" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld note"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld notes"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld of %lld pages" : {
+      "comment" : "Bringing it back: the journal pages landed of the account's, 64 of 142 pages",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld of %2$#@pages@"
+          },
+          "substitutions" : {
+            "pages" : {
+              "argNum" : 2,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg page"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg pages"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld of %lld workouts" : {
+      "comment" : "Bringing it back: the workouts landed of the account's, 3 of 38 workouts",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld of %2$#@workouts@"
+          },
+          "substitutions" : {
+            "workouts" : {
+              "argNum" : 2,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg workout"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg workouts"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld of 500 bytes" : {
+
+    },
+    "%lld pages" : {
+      "comment" : "The written journal pages this phone holds, in You",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld page"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld pages"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld passages you wrote before" : {
+      "comment" : "A day's echo count, spoken",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld passage you wrote before"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld passages you wrote before"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld routines" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld routine"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld routines"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld weigh-ins" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld weigh-in"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld weigh-ins"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld workouts" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld workout"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld workouts"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "00" : {
+
+    },
+    "1 new routine" : {
+
+    },
+    "10 of 10 notes. Delete one to add another." : {
+
+    },
+    "100" : {
+
+    },
+    "6-digit code" : {
+
+    },
+    "A page a night." : {
+
+    },
+    "A routine change waits for your Apply; the rest lands at once." : {
+
+    },
+    "A workout read twice counts once." : {
+
+    },
+    "APR" : {
+      "comment" : "April in an echo's date stamp"
+    },
+    "AUG" : {
+      "comment" : "August in an echo's date stamp"
+    },
+    "About Windmill" : {
+
+    },
+    "Add" : {
+
+    },
+    "Add a note" : {
+
+    },
+    "Add movement" : {
+
+    },
+    "Add photo" : {
+
+    },
+    "Add set" : {
+
+    },
+    "Add to your account?" : {
+
+    },
+    "All movements" : {
+
+    },
+    "Already added" : {
+
+    },
+    "Already on Windmill?" : {
+
+    },
+    "Answer in progress" : {
+
+    },
+    "Answering on another device" : {
+
+    },
+    "Any agent you connect can read these too." : {
+
+    },
+    "Appearance" : {
+
+    },
+    "Apple" : {
+
+    },
+    "Apple ID already in use" : {
+
+    },
+    "Apple added" : {
+
+    },
+    "Apple now opens %@." : {
+
+    },
+    "Apple will open this same account." : {
+
+    },
+    "Apple's sign-in lasts 15 minutes, and this one ran out. Nothing was created." : {
+
+    },
+    "Apply" : {
+
+    },
+    "Ask Coach" : {
+
+    },
+    "Ask about your training" : {
+
+    },
+    "Back" : {
+
+    },
+    "Back to tonight" : {
+
+    },
+    "Backed up" : {
+
+    },
+    "Backup is not connected in this build. Your pages are saved on this phone." : {
+
+    },
+    "Backup is not connected in this build. Your work stays on this phone." : {
+
+    },
+    "Best in 12 weeks: %@, from %@." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Best in 12 weeks: %1$@, from %2$@."
+          }
+        }
+      }
+    },
+    "Bodyweight" : {
+
+    },
+    "Bringing it back" : {
+
+    },
+    "Build my routine" : {
+
+    },
+    "Can't complete sign-in right now. Your writing is still on this phone." : {
+
+    },
+    "Cancel" : {
+
+    },
+    "Cancel sign-in" : {
+
+    },
+    "Capsize drill" : {
+
+    },
+    "Change" : {
+
+    },
+    "Changes you kept will return when you sign in to the same account." : {
+
+    },
+    "Check your email" : {
+
+    },
+    "Choose your first movement" : {
+
+    },
+    "Clear note" : {
+
+    },
+    "Close" : {
+
+    },
+    "Closed" : {
+
+    },
+    "Closes this set." : {
+
+    },
+    "Coach" : {
+
+    },
+    "Coach can read your weigh-ins but cannot change them." : {
+
+    },
+    "Coach couldn’t read this phone’s AI access. Try again after unlocking your phone." : {
+
+    },
+    "Coach couldn’t save this phone’s AI access. Try again." : {
+
+    },
+    "Coach is thinking" : {
+
+    },
+    "Coach is unavailable" : {
+
+    },
+    "Connect to the internet to read your connections." : {
+
+    },
+    "Connected" : {
+
+    },
+    "Connected log" : {
+
+    },
+    "Continue saved draft" : {
+
+    },
+    "Continue with Apple" : {
+
+    },
+    "Continue with Apple again" : {
+
+    },
+    "Continue with email" : {
+
+    },
+    "Copy answer" : {
+
+    },
+    "Copy question" : {
+
+    },
+    "Correct this weigh-in" : {
+
+    },
+    "Correct weigh-in" : {
+
+    },
+    "Couldn't cancel the sign-in. Try again." : {
+
+    },
+    "Couldn't continue with Apple. Try again, or use email instead." : {
+
+    },
+    "Couldn't continue with Apple. Use email instead. Your pages stay on this phone." : {
+
+    },
+    "Couldn't finish adding your work. Try again." : {
+
+    },
+    "Couldn't finish adding your work. Your choices are kept; try again." : {
+
+    },
+    "Couldn't keep the draft on this phone. Your writing stays in the editor. Try saving again." : {
+
+    },
+    "Couldn't open the journal on this phone. %@" : {
+      "comment" : "The app could not start; the system's description of the error follows"
+    },
+    "Couldn't open the update. Try again." : {
+
+    },
+    "Couldn't read the account. Your work stays on this phone. Try again." : {
+
+    },
+    "Couldn't read the journal. Your current writing is kept here; try again." : {
+
+    },
+    "Couldn't refresh your choices. Your work stays on this phone." : {
+
+    },
+    "Couldn't save on this phone. Your writing stays in the editor." : {
+
+    },
+    "Couldn't save on this phone. Your writing stays in the editor. Try again." : {
+
+    },
+    "Couldn't sign out. Try again." : {
+
+    },
+    "Couldn’t delete your account. Check your connection and try again." : {
+
+    },
+    "Couldn’t read your connections." : {
+
+    },
+    "Create account" : {
+
+    },
+    "Create movement" : {
+
+    },
+    "Create “%@”" : {
+
+    },
+    "DEC" : {
+      "comment" : "December in an echo's date stamp"
+    },
+    "Dark" : {
+
+    },
+    "Date" : {
+
+    },
+    "Default" : {
+
+    },
+    "Delete account" : {
+
+    },
+    "Delete conversation" : {
+
+    },
+    "Delete note" : {
+
+    },
+    "Delete routine" : {
+
+    },
+    "Delete set" : {
+
+    },
+    "Delete weigh-in" : {
+
+    },
+    "Delete your account?" : {
+
+    },
+    "Deleting…" : {
+
+    },
+    "Discard" : {
+
+    },
+    "Discard %@?" : {
+      "comment" : "Discard 1 routine and 1 journal page?"
+    },
+    "Discard all of it?" : {
+
+    },
+    "Discard movement changes?" : {
+
+    },
+    "Discard routine changes?" : {
+
+    },
+    "Discard workout" : {
+
+    },
+    "Dismiss" : {
+
+    },
+    "Done" : {
+
+    },
+    "Done writing" : {
+
+    },
+    "Draft kept on this phone" : {
+
+    },
+    "Dumbbells" : {
+
+    },
+    "Dumbbells lifted" : {
+
+    },
+    "EXAMPLE" : {
+
+    },
+    "Earlier %@" : {
+
+    },
+    "Earlier records" : {
+
+    },
+    "Edit" : {
+
+    },
+    "Edit movement" : {
+
+    },
+    "Edit routine" : {
+
+    },
+    "Edit sets" : {
+
+    },
+    "Effort" : {
+
+    },
+    "Either one opens this account." : {
+
+    },
+    "Email" : {
+
+    },
+    "Email address" : {
+
+    },
+    "Energy" : {
+
+    },
+    "Enlarge photo" : {
+
+    },
+    "Equipment" : {
+
+    },
+    "Estimated strength" : {
+
+    },
+    "Every device signs out, and connected tools lose access, right away." : {
+
+    },
+    "Everything you logged against it is still in the log." : {
+
+    },
+    "Example of a journal page: yesterday above, tonight below, mood and energy unasked" : {
+
+    },
+    "Example of a set being logged: squat, 100 kilograms for 5" : {
+
+    },
+    "Example of a skill tree: Learn to sail, three steps open, three locked" : {
+
+    },
+    "Example of three rooms: Roadmap, Journal, Gym" : {
+
+    },
+    "FEB" : {
+      "comment" : "February in an echo's date stamp"
+    },
+    "Fewer reps" : {
+
+    },
+    "Finish" : {
+
+    },
+    "Finish signing in" : {
+
+    },
+    "Finished" : {
+
+    },
+    "Finished the chapter I kept avoiding.\nLighter than expected" : {
+
+    },
+    "Finishing…" : {
+
+    },
+    "Fix set" : {
+
+    },
+    "Fix workout" : {
+
+    },
+    "Flip the sign" : {
+
+    },
+    "For 30 days, you can sign in again to bring it all back. After that, it is deleted for good." : {
+
+    },
+    "From your journal" : {
+
+    },
+    "Get started" : {
+
+    },
+    "Get the update" : {
+
+    },
+    "Got it" : {
+
+    },
+    "Gym" : {
+
+    },
+    "Have a written program? An agent can build it — sign in first." : {
+
+    },
+    "Have a written program? Ask Coach to build it into a routine." : {
+
+    },
+    "Hi, I’m Coach. I can help you with:" : {
+
+    },
+    "Hide My Email" : {
+
+    },
+    "Hide workout" : {
+
+    },
+    "History" : {
+
+    },
+    "How this works" : {
+
+    },
+    "How you sign in" : {
+
+    },
+    "In this app" : {
+
+    },
+    "It is deleted from this phone. You can’t undo this." : {
+
+    },
+    "It lives only on this phone. Sign in to back it up and open it on the web." : {
+
+    },
+    "It opens another Windmill account with its own data. Windmill doesn't merge accounts. Remove Apple there first." : {
+
+    },
+    "It works once and lasts 15 minutes." : {
+
+    },
+    "JAN" : {
+      "comment" : "January in an echo's date stamp"
+    },
+    "JUL" : {
+      "comment" : "July in an echo's date stamp"
+    },
+    "JUN" : {
+      "comment" : "June in an echo's date stamp"
+    },
+    "Journal" : {
+
+    },
+    "Jump to latest" : {
+
+    },
+    "Just start\ntyping" : {
+      "comment" : "The first-run note over the caret at the largest text sizes, broken over two lines"
+    },
+    "Just start typing" : {
+
+    },
+    "Keep" : {
+
+    },
+    "Keep a training log" : {
+
+    },
+    "Keep editing" : {
+
+    },
+    "Keep it" : {
+
+    },
+    "Keep working on this phone" : {
+
+    },
+    "Keep your log" : {
+
+    },
+    "Keep your pages" : {
+
+    },
+    "Keep your routines" : {
+
+    },
+    "Knots & lines" : {
+
+    },
+    "Later %@" : {
+
+    },
+    "Learn to sail" : {
+
+    },
+    "Light" : {
+
+    },
+    "Linked to %@" : {
+
+    },
+    "Load" : {
+
+    },
+    "Load, %@" : {
+
+    },
+    "Log %@" : {
+      "comment" : "The workout control's action, spoken: Log 100 × 5"
+    },
+    "Log set" : {
+
+    },
+    "Log the set." : {
+
+    },
+    "Log today’s sets" : {
+
+    },
+    "MAR" : {
+      "comment" : "March in an echo's date stamp"
+    },
+    "MAY" : {
+      "comment" : "May in an echo's date stamp"
+    },
+    "Made a movement" : {
+
+    },
+    "Map what you're learning" : {
+
+    },
+    "Map what you're learning." : {
+
+    },
+    "Mark finished" : {
+
+    },
+    "Matches" : {
+
+    },
+    "Missing movement" : {
+
+    },
+    "Mood" : {
+
+    },
+    "More" : {
+
+    },
+    "More reps" : {
+
+    },
+    "Move down" : {
+
+    },
+    "Move up" : {
+
+    },
+    "Movement" : {
+
+    },
+    "Movement options" : {
+
+    },
+    "Movements" : {
+
+    },
+    "NOV" : {
+      "comment" : "November in an echo's date stamp"
+    },
+    "Name" : {
+
+    },
+    "Name and equipment apply everywhere. Targets stay in this routine." : {
+
+    },
+    "New best" : {
+
+    },
+    "New best · %@" : {
+
+    },
+    "New chat" : {
+
+    },
+    "New here? This also creates your account." : {
+
+    },
+    "New movement" : {
+
+    },
+    "New routine" : {
+
+    },
+    "Next" : {
+
+    },
+    "No account at this email" : {
+
+    },
+    "No change" : {
+
+    },
+    "No eligible estimate in this window." : {
+
+    },
+    "No movement by that name." : {
+
+    },
+    "No routines yet" : {
+
+    },
+    "No weigh-ins yet" : {
+
+    },
+    "Not backed up yet" : {
+
+    },
+    "Not rated" : {
+
+    },
+    "Not selected" : {
+
+    },
+    "Not signed in" : {
+
+    },
+    "Not useful" : {
+
+    },
+    "Note" : {
+
+    },
+    "Notes" : {
+
+    },
+    "Nothing logged yet" : {
+
+    },
+    "Notice what happened" : {
+
+    },
+    "OCT" : {
+      "comment" : "October in an echo's date stamp"
+    },
+    "OK" : {
+
+    },
+    "Older lines that echo what you wrote today. Only you see them; they cost nothing." : {
+
+    },
+    "On the web" : {
+
+    },
+    "On this phone" : {
+
+    },
+    "One" : {
+
+    },
+    "One account keeps them together. You can start without one." : {
+
+    },
+    "Only on this phone" : {
+
+    },
+    "Only on this phone · " : {
+
+    },
+    "Only on this phone · Keep it" : {
+
+    },
+    "Only you. No prompts, no fields, nothing to fill in — write a line or a page." : {
+
+    },
+    "Open" : {
+
+    },
+    "Open plan" : {
+
+    },
+    "Open workout" : {
+
+    },
+    "Opening %@ as soon as it’s ready." : {
+      "comment" : "Bringing it back: Opening Journal as soon as it’s ready."
+    },
+    "Opens Coach to review this workout" : {
+
+    },
+    "Opens Edit sets." : {
+
+    },
+    "Opens Fix set." : {
+
+    },
+    "Opens its record" : {
+
+    },
+    "Opens the keyboard on today's page" : {
+
+    },
+    "Opens the reps wheel." : {
+
+    },
+    "Opens this page in the canvas" : {
+
+    },
+    "Opens this set." : {
+
+    },
+    "Owner" : {
+
+    },
+    "Page %lld of 4" : {
+      "comment" : "The introduction's page control: Page 2 of 4"
+    },
+    "Paste the full sign-in link or its token." : {
+
+    },
+    "Performed" : {
+
+    },
+    "Personal record" : {
+
+    },
+    "Photo" : {
+
+    },
+    "Photo unavailable" : {
+
+    },
+    "Pick up where you left off" : {
+
+    },
+    "Plan changes" : {
+
+    },
+    "Points of sail" : {
+
+    },
+    "Preparing photo" : {
+
+    },
+    "RPE %@" : {
+
+    },
+    "Read nothing from your log" : {
+
+    },
+    "Read the wind" : {
+
+    },
+    "Reefing" : {
+
+    },
+    "Refresh" : {
+
+    },
+    "Reject" : {
+
+    },
+    "Rejected" : {
+
+    },
+    "Remove" : {
+
+    },
+    "Remove Apple" : {
+
+    },
+    "Remove Apple?" : {
+
+    },
+    "Remove from workout" : {
+
+    },
+    "Remove movement" : {
+
+    },
+    "Remove photo" : {
+
+    },
+    "Repetitions" : {
+
+    },
+    "Reps" : {
+
+    },
+    "Reps: %@" : {
+
+    },
+    "Resend code" : {
+
+    },
+    "Resend code in 0:%@" : {
+
+    },
+    "Rest" : {
+
+    },
+    "Revoke the link" : {
+
+    },
+    "Rig the mast" : {
+
+    },
+    "Roadmap" : {
+
+    },
+    "Room" : {
+
+    },
+    "Routine name" : {
+
+    },
+    "Routine not on this phone yet" : {
+
+    },
+    "Routines" : {
+
+    },
+    "SEP" : {
+      "comment" : "September in an echo's date stamp"
+    },
+    "SIGNED IN WITH APPLE" : {
+
+    },
+    "SIGNED IN WITH EMAIL" : {
+
+    },
+    "Save to %@" : {
+
+    },
+    "Save your work before signing in. Try again." : {
+
+    },
+    "Saves as you go." : {
+
+    },
+    "Search movements" : {
+
+    },
+    "Selected" : {
+
+    },
+    "Send code" : {
+
+    },
+    "Sent to %@" : {
+
+    },
+    "Set" : {
+
+    },
+    "Set %lld" : {
+      "comment" : "The set's place past the plan, or without one: Set 5"
+    },
+    "Set %lld of %lld" : {
+      "comment" : "The set's place in the plan: Set 2 of 4",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Set %1$lld of %2$lld"
+          }
+        }
+      }
+    },
+    "Set %lld, planned, %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Set %1$lld, planned, %2$@"
+          }
+        }
+      }
+    },
+    "Set note" : {
+
+    },
+    "Sets: %@" : {
+
+    },
+    "Settings" : {
+
+    },
+    "Share this workout" : {
+
+    },
+    "Share with Coach" : {
+
+    },
+    "Sign in" : {
+
+    },
+    "Sign in again to delete your account." : {
+
+    },
+    "Sign in before %@ to bring it back." : {
+      "comment" : "The account's last day back: Sign in before Dec 8 to bring it back."
+    },
+    "Sign in to continue" : {
+
+    },
+    "Sign in to the same account to resume backup. Your pages stay with this account." : {
+
+    },
+    "Sign in to the same account. Your writing stays on this phone." : {
+
+    },
+    "Sign in with email" : {
+
+    },
+    "Sign out" : {
+
+    },
+    "Sign out?" : {
+
+    },
+    "Sign-in did not finish. Your pages are still on this phone." : {
+
+    },
+    "Sign-in is unavailable." : {
+
+    },
+    "Sign-in link or token" : {
+
+    },
+    "Sign-in needs a connection." : {
+
+    },
+    "Sign-in needs a connection. Your pages are safe on this phone." : {
+
+    },
+    "Sign-in needs a connection. Your work stays on this phone." : {
+
+    },
+    "Signed in as %@" : {
+
+    },
+    "Since last set" : {
+
+    },
+    "Skip" : {
+
+    },
+    "Something changed while you chose. Sign out again." : {
+
+    },
+    "Squat" : {
+
+    },
+    "Start %@" : {
+      "comment" : "A Home Screen quick action: Start Push day"
+    },
+    "Start anywhere." : {
+
+    },
+    "Start workout" : {
+
+    },
+    "Started" : {
+
+    },
+    "Still syncing" : {
+
+    },
+    "Stop response" : {
+
+    },
+    "Swap movement" : {
+
+    },
+    "Syncing paused · sign in again" : {
+
+    },
+    "Syncing paused · update Windmill" : {
+
+    },
+    "System" : {
+
+    },
+    "Tap to write" : {
+
+    },
+    "Targets" : {
+
+    },
+    "That code didn't work. Check the digits, or send a fresh one." : {
+
+    },
+    "That proposal is gone." : {
+
+    },
+    "That routine is no longer in your program." : {
+
+    },
+    "The account changed. Open this note again." : {
+
+    },
+    "The first set you log lands here." : {
+
+    },
+    "The log" : {
+
+    },
+    "The six" : {
+
+    },
+    "The work changed. Choose again for the current counts." : {
+
+    },
+    "They are deleted from this phone. You can’t undo this." : {
+
+    },
+    "They live only on this phone. Sign in to back them up and open them on the web." : {
+
+    },
+    "This Apple ID doesn't open a Windmill account yet. If you have one, confirm its email and Apple will open it too." : {
+
+    },
+    "This deletes your Windmill account and its copy in the cloud: your roadmaps, journal pages and gym log." : {
+
+    },
+    "This note runs past 500 bytes. Shorten it to save." : {
+
+    },
+    "This page couldn't be saved. Your writing stays in the editor." : {
+
+    },
+    "This phone has %@ from before you signed in. Your account already has %@. Add it, or discard it from this phone." : {
+      "comment" : "The sign-in question about one thing: 1 routine; training",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "This phone has %1$@ from before you signed in. Your account already has %2$@. Add it, or discard it from this phone."
+          }
+        }
+      }
+    },
+    "This phone has %@ from before you signed in. Your account already has %@. Add them, or discard them from this phone." : {
+      "comment" : "The sign-in question about several things: 2 routines and 1 journal page; training and journal pages",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "This phone has %1$@ from before you signed in. Your account already has %2$@. Add them, or discard them from this phone."
+          }
+        }
+      }
+    },
+    "This workout" : {
+
+    },
+    "This workout is no longer here" : {
+
+    },
+    "This workout is no longer open" : {
+
+    },
+    "Three ways to grow." : {
+
+    },
+    "Time" : {
+
+    },
+    "Times" : {
+
+    },
+    "To keep a copy, export it first at windmill.works." : {
+
+    },
+    "Today's page" : {
+
+    },
+    "Today’s page" : {
+
+    },
+    "Tonight" : {
+
+    },
+    "Try again" : {
+
+    },
+    "Try another email" : {
+
+    },
+    "Two" : {
+
+    },
+    "Two taps a set, and next time your numbers are already there." : {
+
+    },
+    "Type your email to confirm" : {
+
+    },
+    "Update Windmill to keep syncing. Your work is saved on this phone." : {
+
+    },
+    "Update Windmill to sign in. Your work is saved on this phone." : {
+
+    },
+    "Update required" : {
+
+    },
+    "Use a sign-in link" : {
+
+    },
+    "Use email instead" : {
+
+    },
+    "Use my account" : {
+
+    },
+    "Useful" : {
+
+    },
+    "Varied sets" : {
+
+    },
+    "View chat" : {
+
+    },
+    "Visible dates" : {
+
+    },
+    "WINDMILL" : {
+
+    },
+    "Walked before work. Slept better than the week before." : {
+
+    },
+    "We'll send a six-digit code." : {
+
+    },
+    "Weigh in" : {
+
+    },
+    "Weigh in from the log." : {
+
+    },
+    "Weigh-in, %@" : {
+
+    },
+    "Weight" : {
+
+    },
+    "Weight in kilograms" : {
+
+    },
+    "We’ll send a code to confirm it’s yours." : {
+
+    },
+    "What Coach read" : {
+
+    },
+    "What Coach used, in order" : {
+
+    },
+    "Where to start?" : {
+
+    },
+    "Windmill" : {
+
+    },
+    "Workout" : {
+
+    },
+    "Workout time" : {
+
+    },
+    "Workout unavailable" : {
+
+    },
+    "Works once and lasts 15 minutes." : {
+
+    },
+    "Write" : {
+
+    },
+    "Write a line or a page, in your own words. Nothing is graded or shared." : {
+
+    },
+    "Write tonight" : {
+
+    },
+    "Write tonight’s page" : {
+
+    },
+    "YESTERDAY" : {
+
+    },
+    "You" : {
+
+    },
+    "You and settings" : {
+
+    },
+    "You'll sign in with %@ instead. Apple won't open this account." : {
+
+    },
+    "You, and settings" : {
+
+    },
+    "Your Windmill email" : {
+
+    },
+    "Your account is deleted" : {
+
+    },
+    "Your choices are kept. Try Add again to finish signing in." : {
+
+    },
+    "Your draft is kept on this phone. Shorten this page before it can be backed up." : {
+
+    },
+    "Your full training record needs a connection to finish syncing." : {
+
+    },
+    "Your goal as a skill tree. Each step opens the next, and you watch it grow." : {
+
+    },
+    "Your journal" : {
+
+    },
+    "Your journal and training, no account needed." : {
+
+    },
+    "Your log may still be syncing, or this routine may have been removed. Refresh to check." : {
+
+    },
+    "Your log, read by ChatGPT or Claude." : {
+
+    },
+    "Your pages and log come back to this phone." : {
+
+    },
+    "Your pages and log stay in your account and leave this phone." : {
+
+    },
+    "Your routines live only on this phone. Sign in to back them up and open them on the web. This Coach conversation and photo stay on this phone." : {
+
+    },
+    "Your sign-in finishes once Windmill is updated." : {
+
+    },
+    "Your sign-in link" : {
+
+    },
+    "Your workout could not be read." : {
+
+    },
+    "Your writing is still on this phone. This page hasn't been backed up." : {
+
+    },
+    "collapsed" : {
+
+    },
+    "expanded" : {
+
+    },
+    "from your voice note" : {
+      "comment" : "Where an echoed passage came from"
+    },
+    "journal pages" : {
+      "comment" : "What the account already has, in the sign-in question"
+    },
+    "kg" : {
+
+    },
+    "kg × 5" : {
+
+    },
+    "no %@ · %@ – %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "no %1$@ · %2$@ – %3$@"
+          }
+        }
+      }
+    },
+    "no weigh-in in the last 90 days" : {
+
+    },
+    "opens in your browser" : {
+
+    },
+    "reps" : {
+
+    },
+    "saved" : {
+
+    },
+    "something you copied down" : {
+      "comment" : "Where an echoed passage came from"
+    },
+    "training" : {
+      "comment" : "What the account already has, in the sign-in question"
+    },
+    "training and journal pages" : {
+      "comment" : "What the account already has, in the sign-in question"
+    },
+    "•" : {
+
+    },
+    "✓" : {
+
+    },
+    "👑 Share with Coach" : {
+
+    }
+  },
+  "version" : "1.0"
+}

@@ -41,7 +41,7 @@ struct JournalEchoTab: View {
     }
   }
 
-  static func label(_ count: Int) -> String { "\(count) \(count == 1 ? "passage" : "passages") you wrote before" }
+  static func label(_ count: Int) -> String { String(localized: "\(count) passages you wrote before", locale: .copy, comment: "A day's echo count, spoken") }
 }
 
 // One day's echoes in one stock sheet (Journal · iOS 02.3P–02.6P): passages at .medium, by year at .large, the way back lowered.
@@ -137,16 +137,17 @@ struct JournalEchoSheet: View {
   // Lowered while the canvas stands on a page: its stamp, and Back to tonight with the trail's days in its menu.
   var whereYouStand: some View {
     let here = echoes.hops.last ?? day
-    let distance = here == day ? "" : " · " + JournalEchoStamp.distance(from: here, to: day)
+    let stamp = JournalEchoStamp.date(here, namedYear: nil)
     let back = Menu {
       ForEach(echoes.hops, id: \.self) { hop in
-        Button(hop == echoes.access.today ? "Tonight" : JournalEchoStamp.long(hop)) { echoes.stand(on: hop) }
+        Button(hop == echoes.access.today ? String(localized: "Tonight") : JournalEchoStamp.long(hop)) { echoes.stand(on: hop) }
       }
     } label: {
       Text("Back to tonight").fontWeight(.semibold).frame(maxWidth: .infinity)
     } primaryAction: { echoes.stand(on: echoes.access.today) }
     return VStack(spacing: 10) {
-      Text(JournalEchoStamp.date(here, namedYear: nil) + distance).font(JournalType.date).tracking(JournalType.dateTracking)
+      Text(here == day ? stamp : String(localized: "\(stamp) · \(JournalEchoStamp.distance(from: here, to: day))", comment: "Where the canvas stands: 29 MAY 2025 · 4 MO"))
+        .font(JournalType.date).tracking(JournalType.dateTracking)
         .foregroundStyle(JournalPalette.inkDim).accessibilityLabel(JournalEchoStamp.long(here)).accessibilityIdentifier("echo-where")
       Group {
         if #available(iOS 26.0, *) { back.buttonStyle(.glass) } else { back.buttonStyle(.bordered) }
@@ -188,7 +189,14 @@ struct JournalEchoRow: View {
 
 // The echo stamp (Figma Journal · iOS 2c): 29 MAY over 4 MO, naming the year only when nothing around it does; months as `echoDates.js` counts.
 enum JournalEchoStamp {
-  static let months = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"]
+  static let months = [
+    String(localized: "JAN", comment: "January in an echo's date stamp"), String(localized: "FEB", comment: "February in an echo's date stamp"),
+    String(localized: "MAR", comment: "March in an echo's date stamp"), String(localized: "APR", comment: "April in an echo's date stamp"),
+    String(localized: "MAY", comment: "May in an echo's date stamp"), String(localized: "JUN", comment: "June in an echo's date stamp"),
+    String(localized: "JUL", comment: "July in an echo's date stamp"), String(localized: "AUG", comment: "August in an echo's date stamp"),
+    String(localized: "SEP", comment: "September in an echo's date stamp"), String(localized: "OCT", comment: "October in an echo's date stamp"),
+    String(localized: "NOV", comment: "November in an echo's date stamp"), String(localized: "DEC", comment: "December in an echo's date stamp"),
+  ]
 
   static func date(_ iso: String, namedYear: Int?) -> String {
     guard let day = LocalDay(iso) else { return "" }
@@ -199,8 +207,12 @@ enum JournalEchoStamp {
   static func distance(from source: String, to trigger: String) -> String {
     guard let older = LocalDay(source), let newer = LocalDay(trigger) else { return "" }
     let months = monthsApart(older, newer)
-    if months == 0 { return "\(max(1, Int((Double(older.days(until: newer)) / 7).rounded()))) WK" }
-    return months < 12 ? "\(months) MO" : "\(months / 12) YR"
+    if months == 0 {
+      let weeks = max(1, Int((Double(older.days(until: newer)) / 7).rounded()))
+      return String(localized: "\(weeks) WK", locale: .copy, comment: "How long before a passage was written, in weeks: 2 WK")
+    }
+    return months < 12 ? String(localized: "\(months) MO", locale: .copy, comment: "How long before a passage was written, in months: 4 MO")
+      : String(localized: "\(months / 12) YR", locale: .copy, comment: "How long before a passage was written, in years: 2 YR")
   }
 
   // Months between two days to the nearest month, rounded on the calendar and from zero, so 30 days is one month.

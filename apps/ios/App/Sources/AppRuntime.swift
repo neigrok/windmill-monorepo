@@ -74,8 +74,8 @@ struct AppSettings {
 
   // You's How you sign in footer: what Apple opens, said only where this build offers Apple.
   func signInFooter(_ methods: [SignInMethod]) -> String? {
-    if methods.contains(where: { $0.kind == "apple" }) { return "Either one opens this account." }
-    return appleEnabled ? "Apple will open this same account." : nil
+    if methods.contains(where: { $0.kind == "apple" }) { return String(localized: "Either one opens this account.") }
+    return appleEnabled ? String(localized: "Apple will open this same account.") : nil
   }
 }
 
@@ -299,11 +299,11 @@ nonisolated struct AuthRefusal: Error, LocalizedError, Equatable {
   let code: String
   let message: String
   var errorDescription: String? { message }
-  static let expired = AuthRefusal(code: "apple-ticket-expired", message: "Apple's sign-in lasts 15 minutes, and this one ran out. Nothing was created.")
-  static let wrongCode = AuthRefusal(code: "invalid-code", message: "That code didn't work. Check the digits, or send a fresh one.")
-  static let identityTaken = AuthRefusal(code: "identity-taken", message: "It opens another Windmill account with its own data. Windmill doesn't merge accounts. Remove Apple there first.")
-  static let offline = AuthRefusal(code: "offline", message: "Sign-in needs a connection. Your work stays on this phone.")
-  static let updateRequired = AuthRefusal(code: "upgrade-required", message: "Update Windmill to keep syncing. Your work is saved on this phone.")
+  static let expired = AuthRefusal(code: "apple-ticket-expired", message: String(localized: "Apple's sign-in lasts 15 minutes, and this one ran out. Nothing was created."))
+  static let wrongCode = AuthRefusal(code: "invalid-code", message: String(localized: "That code didn't work. Check the digits, or send a fresh one."))
+  static let identityTaken = AuthRefusal(code: "identity-taken", message: String(localized: "It opens another Windmill account with its own data. Windmill doesn't merge accounts. Remove Apple there first."))
+  static let offline = AuthRefusal(code: "offline", message: String(localized: "Sign-in needs a connection. Your work stays on this phone."))
+  static let updateRequired = AuthRefusal(code: "upgrade-required", message: String(localized: "Update Windmill to keep syncing. Your work is saved on this phone."))
 }
 
 nonisolated struct AppFailure: Error, LocalizedError {
@@ -373,13 +373,13 @@ final class NativeAuth {
     if trimmed.contains("://") {
       guard let link = URLComponents(string: trimmed), ["https", "http"].contains(link.scheme),
             let value = link.queryItems?.first(where: { $0.name == "token" })?.value else {
-        throw AppFailure(message: "Paste the full sign-in link or its token.")
+        throw AppFailure(message: String(localized: "Paste the full sign-in link or its token."))
       }
       token = value
     } else { token = trimmed }
     guard !token.isEmpty, token.count <= 1024,
           token.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || "-_".contains($0)) }) else {
-      throw AppFailure(message: "Paste the full sign-in link or its token.")
+      throw AppFailure(message: String(localized: "Paste the full sign-in link or its token."))
     }
     return token
   }
@@ -453,7 +453,7 @@ final class NativeAuth {
     }
     #endif
     return try await exchange("v1/me", operation: "account_delete", body: ["account": account], token: token, allowUnauthorized: true, method: "DELETE") { body in
-      guard !body.isEmpty else { throw AuthRefusal(code: "unauthorized", message: "Sign in again to delete your account.") }
+      guard !body.isEmpty else { throw AuthRefusal(code: "unauthorized", message: String(localized: "Sign in again to delete your account.")) }
       guard let closes = body["closesMs"] as? NSNumber else { throw URLError(.cannotParseResponse) }
       return Date(timeIntervalSince1970: closes.doubleValue / 1000)
     }
@@ -461,7 +461,7 @@ final class NativeAuth {
 
   func appleResponse(_ body: [String: Any], attaching: Bool) throws -> AppleAuthResponse {
     guard body["created"] == nil || body["created"] as? Bool == false else {
-      throw AppFailure(message: "Couldn't continue with Apple. Use email instead. Your pages stay on this phone.")
+      throw AppFailure(message: String(localized: "Couldn't continue with Apple. Use email instead. Your pages stay on this phone."))
     }
     if attaching {
       guard body["attached"] as? Bool == true else { throw URLError(.cannotParseResponse) }
@@ -507,7 +507,7 @@ final class NativeAuth {
   func identity(_ body: [String: Any]) throws -> AuthIdentity {
     guard let user = body["user"] as? [String: Any], let id = user["id"] as? String,
           let token = body["session"] as? String, !token.isEmpty else {
-      throw AppFailure(message: "Sign-in did not finish. Your pages are still on this phone.")
+      throw AppFailure(message: String(localized: "Sign-in did not finish. Your pages are still on this phone."))
     }
     return AuthIdentity(account: id, token: SessionToken(token), name: (user["name"] as? String)?.nilIfEmpty ?? (user["email"] as? String)?.nilIfEmpty ?? "", email: user["email"] as? String ?? "", appleAttached: body["appleAttached"] as? Bool ?? false)
   }
@@ -518,7 +518,7 @@ final class NativeAuth {
     var kind = "encode"
     var status: Int?
     do {
-      guard let baseURL else { kind = "offline"; throw AppFailure(message: "Backup is not connected in this build. Your pages are saved on this phone.") }
+      guard let baseURL else { kind = "offline"; throw AppFailure(message: String(localized: "Backup is not connected in this build. Your pages are saved on this phone.")) }
       var request = URLRequest(url: baseURL.appending(path: path))
       request.httpMethod = method
       if let body { request.setValue("application/json", forHTTPHeaderField: "Content-Type"); request.httpBody = try JSONSerialization.data(withJSONObject: body) }
@@ -537,14 +537,14 @@ final class NativeAuth {
         let code = refusal["code"] as? String ?? ""
         if code == "apple-ticket-expired" { throw AuthRefusal.expired }
         if code == "identity-taken" { throw AuthRefusal.identityTaken }
-        if code == "no-account" { throw AuthRefusal(code: code, message: "No account at this email") }
+        if code == "no-account" { throw AuthRefusal(code: code, message: String(localized: "No account at this email")) }
         if response.statusCode == 426 { throw AuthRefusal.updateRequired }
         if path == "v1/auth/verify-code", [400, 401, 422].contains(response.statusCode) { throw AuthRefusal.wrongCode }
         if let message = refusal["error"] as? String, !message.isEmpty {
           let detail = refusal["detail"] as? String ?? ""
           throw AuthRefusal(code: code, message: message + (detail.isEmpty ? "" : ". " + detail))
         }
-        throw AppFailure(message: "Can't complete sign-in right now. Your writing is still on this phone.")
+        throw AppFailure(message: String(localized: "Can't complete sign-in right now. Your writing is still on this phone."))
       }
       kind = "decode"
       guard let result = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw URLError(.cannotParseResponse) }

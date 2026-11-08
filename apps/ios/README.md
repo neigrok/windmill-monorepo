@@ -46,6 +46,13 @@ The package is written in the Swift 6 language mode with strict concurrency, for
 `SyncCore` and `SyncAPI`, which other packages compile against, enable `MemberImportVisibility` and
 follow the domain kit's source rules: no import attributes, no access-modified imports, no `#if`.
 
+## Localization
+
+The App reads its copy from String Catalogs, English the only language; [its README](App/README.md#localization) holds
+the convention a new string follows and the command that regenerates the catalogs. The Swift packages hold no catalog:
+the display strings the domain kit and the product domains produce are English, pinned by the shared vectors every
+implementation reproduces, and the App shows them as they come.
+
 ## Build and test
 
 Everything runs on a Mac without a simulator. `swift test` needs Xcode's toolchain, because the
@@ -133,7 +140,8 @@ credentials and sample counts remain failures.
 [CI](../../.github/workflows/ios.yml) pins Xcode 26.3 and runs five parallel jobs. The packages/builds job checks the
 generated registry, tests `WindmillSync`, `WindmillDomain` and `SyncTestingSurface` with the explicit import check,
 checks the App tools, and builds SyncProbe and the App in Release for the simulator's arm64 slice. A pull request runs
-32 seeds of the replay fuzz, a push to main 128. The App's Release build compiles every Sync library for iOS, and the
+32 seeds of the replay fuzz, a push to main 128. The App's Release build compiles every Sync library for iOS, and its
+products check that the App's String Catalogs are current ([Localization](App/README.md#localization)); the
 unit tests compile `SyncTesting`. The probe build, the layering test and the Release build share one package checkout
 per app, under `WM_SOURCE_PACKAGES`. App unit tests run the `WindmillUnitTests` scheme on iPhone 17, which builds the
 app and `WindmillTests` without the UI tests. Three UI shards, balanced on measured test times, select each standard

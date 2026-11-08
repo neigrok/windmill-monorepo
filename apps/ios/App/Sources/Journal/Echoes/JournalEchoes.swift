@@ -24,8 +24,8 @@ extension JournalEchoMatch {
   }
 
   nonisolated var provenance: String? {
-    if isSelf == false { return "something you copied down" }
-    return source == "spoken" ? "from your voice note" : nil
+    if isSelf == false { return String(localized: "something you copied down", comment: "Where an echoed passage came from") }
+    return source == "spoken" ? String(localized: "from your voice note", comment: "Where an echoed passage came from") : nil
   }
 }
 

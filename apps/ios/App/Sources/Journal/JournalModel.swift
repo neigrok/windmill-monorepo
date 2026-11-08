@@ -94,12 +94,12 @@ final class JournalModel {
       if readFailed { error = nil; readFailed = false }
       if !dirty && !editing { document = value.days.first(where: { $0.day == editorDay })?.document ?? PageDocument() }
       if value.days.contains(where: { if case .refused = $0.backup { return true }; return false }) {
-        error = "Your writing is still on this phone. This page hasn't been backed up."
+        error = String(localized: "Your writing is still on this phone. This page hasn't been backed up.")
       }
     } catch {
       if !readFailed { reportBoundary("journal_read", error: error) }
       readFailed = true
-      self.error = "Couldn't read the journal. Your current writing is kept here; try again."
+      self.error = String(localized: "Couldn't read the journal. Your current writing is kept here; try again.")
     }
     recordInvitations()
   }
@@ -109,7 +109,7 @@ final class JournalModel {
     liftInk()
     if PageDocument(body: text).hasText && room?.state.placeholder == "pending" {
       do { _ = try runner.run(RetireJournalInvitation("placeholder")); room = try runner.read(Journal.scope, JournalRoom.init) }
-      catch { reportBoundary("journal_choice", error: error); self.error = "Couldn't save on this phone. Your writing stays in the editor." }
+      catch { reportBoundary("journal_choice", error: error); self.error = String(localized: "Couldn't save on this phone. Your writing stays in the editor.") }
     }
     document.body = text; dirty = true; error = nil
     preserveDraft()
@@ -128,7 +128,7 @@ final class JournalModel {
       _ = try transitionDay()
       if document.hasText && document.body.utf8.count > 131_072 {
         telemetry.event("journal_save_refused", properties: ["reason": "too_large"])
-        error = "Your draft is kept on this phone. Shorten this page before it can be backed up."; dirty = true; return false
+        error = String(localized: "Your draft is kept on this phone. Shorten this page before it can be backed up."); dirty = true; return false
       }
       let previousBody = room?.days.first(where: { $0.day == editorDay })?.document.body ?? ""
       let wasFirst = room?.state.firstPage == "pending"
@@ -141,11 +141,11 @@ final class JournalModel {
         refresh(); return true
       case .refused(let refusal):
         telemetry.event("journal_save_refused", properties: ["reason": Self.reason(refusal)])
-        error = "This page couldn't be saved. Your writing stays in the editor."; dirty = true; return false
+        error = String(localized: "This page couldn't be saved. Your writing stays in the editor."); dirty = true; return false
       }
     } catch {
       reportBoundary("journal_save", error: error)
-      self.error = "Couldn't save on this phone. Your writing stays in the editor. Try again."; dirty = true; return false
+      self.error = String(localized: "Couldn't save on this phone. Your writing stays in the editor. Try again."); dirty = true; return false
     }
   }
 
@@ -156,7 +156,7 @@ final class JournalModel {
       case .refused: break
       }
     } catch { reportBoundary("journal_draft", error: error) }
-    error = "Couldn't keep the draft on this phone. Your writing stays in the editor. Try saving again."
+    error = String(localized: "Couldn't keep the draft on this phone. Your writing stays in the editor. Try saving again.")
     return false
   }
 

@@ -15,7 +15,7 @@ struct JournalBodyText: UIViewRepresentable {
   var minimumLines = 0
   // Today's page rides the keyboard with its own bar, Done alone at its trailing end.
   var writingBar = false
-  static let placeholder = "Start anywhere."
+  static let placeholder = String(localized: "Start anywhere.")
 
   static func attributes(fontSize: CGFloat) -> [NSAttributedString.Key: Any] {
     let paragraph = NSMutableParagraphStyle()
@@ -65,10 +65,10 @@ struct JournalBodyText: UIViewRepresentable {
     view.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
     // While writing, the keyboard's UIKit bar holds Done alone (05.3P): SwiftUI's keyboard toolbar never reaches a UIKit text view.
     if writingBar {
-      let done = UIBarButtonItem(title: "Done", primaryAction: UIAction { [weak view] _ in view?.resignFirstResponder() })
+      let done = UIBarButtonItem(title: String(localized: "Done"), primaryAction: UIAction { [weak view] _ in view?.resignFirstResponder() })
       done.tintColor = JournalPalette.uiInk
       done.setTitleTextAttributes([.font: UIFontMetrics(forTextStyle: .body).scaledFont(for: .systemFont(ofSize: 17, weight: .semibold), maximumPointSize: 28)], for: .normal)
-      done.accessibilityLabel = "Done writing"
+      done.accessibilityLabel = String(localized: "Done writing")
       done.accessibilityIdentifier = "done-writing"
       let bar = UIToolbar(frame: CGRect(x: 0, y: 0, width: 320, height: RoomSpace.minimumTarget))
       bar.items = [.flexibleSpace(), done]
@@ -87,7 +87,8 @@ struct JournalBodyText: UIViewRepresentable {
     // Disabling the first responder resigns it inside this update and loops SwiftUI's focus graph; the deferred resign does it.
     let interactive = focused || !editable
     if interactive || !view.isFirstResponder { editor.isUserInteractionEnabled = interactive }
-    view.accessibilityLabel = day.map { "\(JournalEchoStamp.long($0)), read only" } ?? (editable ? "Today's page" : nil)
+    view.accessibilityLabel = day.map { String(localized: "\(JournalEchoStamp.long($0)), read only", comment: "An earlier journal page, spoken: August 4, 2026, read only") }
+      ?? (editable ? String(localized: "Today's page") : nil)
     view.accessibilityIdentifier = day.map { "journal-body-\($0)" } ?? (editable ? "journal-editor" : nil)
     context.coordinator.updateText(view, text: text, fontSize: fontSize)
     context.coordinator.updateHighlight(view, range: highlightedRange)

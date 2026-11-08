@@ -62,8 +62,9 @@ struct WorkoutActivityWidget: Widget {
             if context.isStale {
               Text("Open workout to continue").font(.subheadline).foregroundStyle(.secondary)
             } else if let offer = context.state.offer {
+              let title: LocalizedStringResource = context.state.effort.map { "Log set  ·  \($0)" } ?? "Log set"
               Button(intent: WorkoutLogSetIntent(offer: offer)) {
-                Text(["Log set", context.state.effort].compactMap(\.self).joined(separator: "  ·  ")).font(.headline).lineLimit(1)
+                Text(title).font(.headline).lineLimit(1)
                   .frame(maxWidth: .infinity, minHeight: 46)
                   .background(GymPalette.accent, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                   .foregroundStyle(GymPalette.onAccent)
@@ -138,7 +139,7 @@ struct WorkoutRestClock: View {
     VStack(alignment: .trailing, spacing: 0) {
       WorkoutActivityClock.rest(state).font(numeral)
       if state.lastSetAt != nil, let rest = state.restReading {
-        Text("/ " + rest).font(target).fontDesign(.monospaced).foregroundStyle(.secondary)
+        Text("/ \(rest)").font(target).fontDesign(.monospaced).foregroundStyle(.secondary)
           .accessibilityLabel("Rest target").accessibilityValue(rest)
       }
     }
@@ -148,7 +149,7 @@ struct WorkoutRestClock: View {
 // A clock the system draws from a timestamp; its name is spoken, never shown. The rest clock counts from the latest set,
 // and from the start until there is one.
 struct WorkoutActivityClock: View {
-  let name: String
+  let name: LocalizedStringResource
   let from: Date
   let until: Date
   static func rest(_ state: WorkoutActivityAttributes.ContentState) -> Self {
@@ -157,6 +158,6 @@ struct WorkoutActivityClock: View {
   }
   var body: some View {
     Text(timerInterval: from...max(from, until), countsDown: false).monospacedDigit().multilineTextAlignment(.trailing)
-      .accessibilityLabel(name)
+      .accessibilityLabel(Text(name))
   }
 }

@@ -460,6 +460,41 @@ of the tab bar and the accessory, and the conversation's end clear of the compos
 skips both classes unless the test runner sees `WM_NIGHTLY_UI=1` (`TEST_RUNNER_WM_NIGHTLY_UI=1` when invoking
 xcodebuild); [iOS nightly](../../../.github/workflows/ios-nightly.yml) runs them once a day.
 
+## Localization
+
+The app and its Live Activity extension read their copy from String Catalogs, with English the only language. Each
+bundle has two: `Resources/Localizable.xcstrings` and `Resources/InfoPlist.xcstrings` for the app,
+`WorkoutActivityWidget/Localizable.xcstrings` and `WorkoutActivityWidget/InfoPlist.xcstrings` for the extension.
+`WorkoutActivityShared/` and `Sources/Theme/` compile into both bundles, so their strings stand in both catalogs. A
+key is its English text; `InfoPlist.xcstrings` keys are the Info.plist keys they name, such as `CFBundleDisplayName`.
+
+A new string follows these rules:
+
+- `Text`, `Button`, `Label`, `navigationTitle`, `alert` and the accessibility modifiers given a literal already
+  localize it.
+- Copy a property, case or parameter holds is a `LocalizedStringResource`, drawn with `Text(resource)`; where an API
+  takes a `String` — UIKit, an alert built from Strings, ActivityKit content, a value tests compare — it is
+  `String(localized: "…")`. User content and what the server sends are shown as they are, never looked up.
+- A message interpolates only a `String` or an `Int`. A `Double`, a `Date` or a measurement is formatted first with the
+  formatter the screen already uses, and that `String` is interpolated: an interpolated `Double` renders through
+  `%lf`, *2.500000*.
+- A sentence is one message with placeholders, never joined from fragments. A count that changes its words is one
+  `%lld` message with a plural variation in the catalog, and English's `one` and `other` must read as the app reads
+  for every count it can receive. A `comment:` says what the English alone leaves unclear.
+
+Then regenerate the catalogs and commit them:
+
+```sh
+python3 Tools/generate_project.py
+python3 Tools/string_catalogs.py
+```
+
+The tool builds the app in Release for the simulator, where `SWIFT_EMIT_LOC_STRINGS` has the compiler record every
+localized string in a `.stringsdata` file, and syncs each bundle's catalogs with `xcstringstool` from its target's
+files: a new string arrives, a string no source names leaves, and plural variations and comments stay. With
+`--derived-data <path>` it reads an existing Release simulator build instead of building; `--check` changes nothing
+and fails when a committed catalog differs, which [CI](../../../.github/workflows/ios.yml) runs on its Release build.
+
 ## Design captures
 
 The design capture suite in `UITests/DesignCapture/` screenshots screens and sheets for design review, each in Dark

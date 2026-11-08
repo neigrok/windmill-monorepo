@@ -65,7 +65,7 @@ import SyncSchema
   }
 
   @Test func locationsAreTheCurrentIPhoneTruthTable() {
-    #expect(OnboardingPage.allCases.map(\.location) == [nil, "On the web", "In this app", "In this app"])
+    #expect(OnboardingPage.allCases.map { $0.location.map { String(localized: $0) } } == [nil, "On the web", "In this app", "In this app"])
   }
 
   // Nothing cuts a sentence: the glimpse gives up height to the text down to its 220 pt floor, and only a page that still
