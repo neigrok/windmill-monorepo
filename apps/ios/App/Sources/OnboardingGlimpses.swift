@@ -11,7 +11,6 @@ struct OnboardingGlimpse: View {
   @State var bands = [1.0, 1.0, 1.0]
   @State var travel = 1.0
   @State var ignition = 1.0
-  @State var glow = 1.0
   @State var press = 1.0
   @State var logged = 1.0
   @State var breathing = false
@@ -53,10 +52,7 @@ struct OnboardingGlimpse: View {
             withAnimation(.easeInOut(duration: reduceMotion ? 0.15 : 0.28)) { ignition = 1 }
             if !reduceMotion { try await Task.sleep(for: .milliseconds(63)); travelling = false }
             if !reduceMotion { withAnimation(.easeInOut(duration: 2.4).repeatForever(autoreverses: true)) { breathing = true } }
-          case .journal:
-            glow = 0
-            try await Task.sleep(for: .milliseconds(16))
-            withAnimation(.timingCurve(0.22, 0.61, 0.36, 1, duration: reduceMotion ? 0.15 : 0.48)) { glow = 1 }
+          case .journal: break
           case .gym:
             logged = 0
             try await Task.sleep(for: .milliseconds(16))
@@ -72,7 +68,7 @@ struct OnboardingGlimpse: View {
   }
 
   func rest() {
-    withAnimation(.easeOut(duration: 0.15)) { bands = [1, 1, 1]; travel = 1; ignition = 1; glow = 1; press = 1; logged = 1; breathing = false; travelling = false }
+    withAnimation(.easeOut(duration: 0.15)) { bands = [1, 1, 1]; travel = 1; ignition = 1; press = 1; logged = 1; breathing = false; travelling = false }
   }
 
   func card<Content: View>(_ ground: Color, _ line: Color, radius: CGFloat = 24, @ViewBuilder content: () -> Content) -> some View {
@@ -102,7 +98,6 @@ struct OnboardingGlimpse: View {
             text(["Map what you're learning", "Notice what happened", "Keep a training log"][index], OnboardingSpecimenType.roomLine, dim, x: 36, y: 50, width: 218)
             if index == 0 { miniatureTree }
             if index == 1 {
-              RadialGradient(colors: [JournalPalette.glimpseGlow, .clear], center: .bottomTrailing, startRadius: 0, endRadius: 140)
               ForEach(0..<3, id: \.self) { row in
                 Capsule().fill(row == 2 ? ink : OnboardingSpecimen.journalPastLine).frame(width: [72.0, 46, 60][row], height: 3).offset(x: 254, y: [30.0, 40, 61][row])
               }
@@ -170,7 +165,6 @@ struct OnboardingGlimpse: View {
     let faint = JournalPalette.inkFaint
     return card(JournalPalette.canvas, JournalPalette.line) {
       ZStack(alignment: .topLeading) {
-        RadialGradient(colors: [JournalPalette.glimpseGlow, .clear], center: .init(x: 0.5, y: 1.15), startRadius: 0, endRadius: 240).opacity(glow)
         text("YESTERDAY", OnboardingSpecimenType.caption, faint, x: 24, y: 22).tracking(1.2)
         text("Walked before work. Slept better than the week before.", OnboardingSpecimenType.journalPast, dim, x: 24, y: 42).lineSpacing(4)
         Circle().fill(JournalPalette.lamp).frame(width: 6, height: 6).offset(x: 24, y: 122)
