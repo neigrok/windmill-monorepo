@@ -38,14 +38,16 @@ nonisolated struct CoachProposalsRead {
 }
 
 extension Proposal {
-  // Who proposed it, said on the Routines row: Coach, the name the tool gave — its agent, else its connection — or *a
-  // connected tool* when it gave none.
+  // The name a connected tool gave, its agent, as it gave it; none for Coach's or a tool that gave none. The connection
+  // is the credential's opaque id, never a name to show.
+  nonisolated var toolName: String? {
+    guard case .mcp(_, let agent) = provenance, !agent.isEmpty else { return nil }
+    return agent
+  }
+  // Who proposed it, said on the Routines row and under its sheet's title: Coach, the tool's name, or *a connected tool*.
   nonisolated var sourceName: String {
-    switch provenance {
-    case .ask: "Coach"
-    case .mcp(let connection, let agent): !agent.isEmpty ? agent : !connection.isEmpty ? connection : "a connected tool"
-    case .other: "a connected tool"
-    }
+    if case .ask = provenance { return "Coach" }
+    return toolName ?? "a connected tool"
   }
   // The symbol beside that name on its Routines row and its sheet: Coach's bubbles, a connected tool's link (02L.1P).
   nonisolated var sourceSymbol: String {

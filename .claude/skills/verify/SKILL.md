@@ -391,6 +391,47 @@ Run it with the three variables above and
 over REST once the sheet says *Applied*; the server's `events` table then holds the
 `gym_proposal_outcome` the Apply recorded. A proposal applies once, so mint a new one for every run.
 
+`testAConnectedToolsRemovalAsksThenRemovesItsRoutine` skips unless `WM_GYM_E2E_REMOVAL` names a JSON file:
+`{"routineId", "routineName", "sessionId", "agent"}`. As the `signed` identity, mint a personal MCP key — its
+name is the agent the dialog names — create a routine, import a past workout on it and propose its removal:
+
+```sh
+python3 - http://127.0.0.1:8088 /private/tmp/<yours> <<'PY'
+import json, secrets, sys, time, urllib.request
+origin, out = sys.argv[1:]
+signed = json.load(open(f'{out}/session.json'))
+schema = json.load(open('packages/api-contract/sync/gym.registry.json'))['version']
+def call(token, path, body, session=None):
+    headers = {'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json', 'Sync-Schema': str(schema)}
+    if session: headers['Mcp-Session-Id'] = session
+    with urllib.request.urlopen(urllib.request.Request(origin + path, json.dumps(body).encode(), headers)) as reply:
+        return reply.headers, json.load(reply)
+agent = 'Claude'
+_, minted = call(signed['token'], '/v1/mcp-keys', {'name': agent})
+headers, _ = call(minted['token'], '/mcp', {'jsonrpc': '2.0', 'id': 1, 'method': 'initialize', 'params': {
+    'protocolVersion': '2024-11-05', 'capabilities': {}, 'clientInfo': {'name': agent, 'version': '0'}}})
+routine, workout, proposal = 'rt_rm_' + secrets.token_hex(6), 'ses_rm_' + secrets.token_hex(6), 'prop_' + secrets.token_hex(8)
+def tool(name, arguments):
+    _, reply = call(minted['token'], '/mcp', {'jsonrpc': '2.0', 'id': 2, 'method': 'tools/call',
+                                              'params': {'name': name, 'arguments': arguments}}, headers['Mcp-Session-Id'])
+    assert not reply['result'].get('isError'), reply
+tool('gym_create_routine', {'id': routine, 'name': 'Arms', 'position': 0, 'entries': [
+    {'exerciseId': 'triceps-pushdown', 'sets': [{'reps': 12, 'weightKg': 30}] * 3}]})
+start = int(time.time() * 1000) - 7 * 86400000
+call(signed['token'], '/v1/gym/sessions/import', {'id': workout, 'startedAt': start, 'finishedAt': start + 3600000,
+     'routineId': routine, 'sets': [{'id': 'set_rm_' + secrets.token_hex(6), 'exerciseId': 'triceps-pushdown',
+     'weightKg': 30, 'reps': 12, 'completedAt': start + 600000}]})
+tool('gym_propose_routine_removal', {'id': proposal, 'routineId': routine, 'summary': 'Not trained in 8 weeks.'})
+with open(f'{out}/removal.json', 'w') as file:
+    json.dump({'routineId': routine, 'routineName': 'Arms', 'sessionId': workout, 'agent': agent}, file)
+PY
+```
+
+Run it with the identity variables and `TEST_RUNNER_WM_GYM_E2E_REMOVAL=/private/tmp/<yours>/removal.json` on a
+fresh `signed` account, since the test expects that one workout alone. The test cancels the dialog once, then
+removes the routine, reads it back as 404 and the workout still listed; with `-telemetry` the `events` table
+holds `gym_action` (screen review: discard shown, then cancel cancelled) and `gym_proposal_outcome`.
+
 ### The iOS journal against the backend
 
 `apps/ios/App/UITests/JournalIntegrationFlowTests.swift` reads the server origin from `WM_JOURNAL_E2E_SERVER` and a

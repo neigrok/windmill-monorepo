@@ -17,6 +17,7 @@ struct ProposalCard: View {
   @State var stalled = false
   @State var resent = 0
   @State var retrying = false
+  @State var confirmingRemoval = false
   // The sheet's field rows stand under their change's title, past its symbol's column.
   @ScaledMetric(relativeTo: .body) var column = 32.0
   @Environment(\.scenePhase) var phase

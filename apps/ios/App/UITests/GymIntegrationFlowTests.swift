@@ -116,6 +116,39 @@ import XCTest
     XCTAssertEqual(sets.compactMap { $0["weightKg"] as? Double }, Array(repeating: load, count: sets.count))
     app.terminate()
   }
+  // A connected tool's removal, made over MCP, asks on its sheet in the name the tool's credential carries (02L.11P);
+  // Cancel leaves it waiting, Remove routine removes the routine on the server, and its past workout stays in the log.
+  func testAConnectedToolsRemovalAsksThenRemovesItsRoutine() async throws {
+    guard server != nil, let file = ProcessInfo.processInfo.environment["WM_GYM_E2E_REMOVAL"] else {
+      throw XCTSkip("requires the isolated removal fixture")
+    }
+    let fixture = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: file))) as? [String: String])
+    let routine = try XCTUnwrap(fixture["routineId"]), name = try XCTUnwrap(fixture["routineName"])
+    let workout = try XCTUnwrap(fixture["sessionId"]), agent = try XCTUnwrap(fixture["agent"])
+    let identity = try XCTUnwrap(identities["signed"])
+    let app = launch()
+    let rows = app.buttons.matching(identifier: "routine-proposal")
+    XCTAssertTrue(rows.firstMatch.waitForExistence(timeout: 30))
+    XCTAssertEqual(rows.count, 1)
+    XCTAssertTrue(rows.firstMatch.label.hasPrefix("\(name) · a removal, From \(agent)"), rows.firstMatch.label)
+    rows.firstMatch.tap()
+    let remove = app.buttons["coach-apply-proposal"], confirm = app.buttons["Remove routine"]
+    XCTAssertTrue(remove.waitForExistence(timeout: 10)); remove.tap()
+    XCTAssertTrue(confirm.waitForExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts["\(agent) suggested this. Your past \(name) workouts stay in the log."].exists)
+    app.cancelConfirmation()
+    XCTAssertTrue(confirm.waitForNonExistence(timeout: 5) && remove.waitForExistence(timeout: 5))
+    remove.tap()
+    XCTAssertTrue(confirm.waitForExistence(timeout: 5)); confirm.tap()
+    XCTAssertTrue(app.descendants(matching: .any)["coach-proposal-header"].waitForValue("Removed", timeout: 30))
+    let (_, gone) = try await URLSession.shared.data(for: gymRequest("routines/" + routine, identity: identity))
+    XCTAssertEqual((gone as? HTTPURLResponse)?.statusCode, 404)
+    let (data, listed) = try await URLSession.shared.data(for: gymRequest("sessions", identity: identity))
+    XCTAssertEqual((listed as? HTTPURLResponse)?.statusCode, 200)
+    let sessions = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])["sessions"] as? [[String: Any]] ?? []
+    XCTAssertEqual(sessions.compactMap { $0["id"] as? String }, [workout])
+    app.terminate()
+  }
   func pickBench(_ app: XCUIApplication, routineEditor: Bool = false) {
     let search = app.searchFields.firstMatch
     XCTAssertTrue(search.waitForExistence(timeout: 5)); search.tap(); search.typeText("Bench")

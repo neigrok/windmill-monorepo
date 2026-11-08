@@ -60,8 +60,9 @@ extension XCUIApplication {
   func cancelConfirmation() {
     let cancel = buttons["Cancel"]
     if cancel.exists { cancel.tap(); return }
-    let dismiss = otherElements["PopoverDismissRegion"]
-    XCTAssertTrue(dismiss.waitForExistence(timeout: 5))
-    dismiss.coordinate(withNormalizedOffset: CGVector(dx: 0.02, dy: 0.5)).tap()
+    // Over a sheet at its medium detent each presentation keeps a dismiss region; the question's is the last, on top.
+    let regions = otherElements.matching(identifier: "PopoverDismissRegion")
+    XCTAssertTrue(regions.firstMatch.waitForExistence(timeout: 5))
+    regions.element(boundBy: regions.count - 1).coordinate(withNormalizedOffset: CGVector(dx: 0.02, dy: 0.5)).tap()
   }
 }
