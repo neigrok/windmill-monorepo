@@ -8,7 +8,7 @@ import { Plan } from '../../../../src/platform/domain-kit/plans.js';
 import { Fault, Violation } from '../../../../src/platform/domain-kit/values.js';
 import { jcs } from '../../../../../packages/api-contract/sync/reference/core/jcs.js';
 import { JournalRefusals, JournalRules, refusalForm } from '../../../../src/products/journal/domain/journalRules.js';
-import { ClaimPage, ClaimPageCommand, ContentClock, EditorDraft, PendingClaim, ReconcileClaim, RetireJournalInvitation, SavePage, SavePageCommand } from '../../../../src/products/journal/domain/writing.js';
+import { ClaimPage, ClaimPageCommand, ContentClock, EditorDraft, PendingClaim, ReconcileClaim, RetireJournalInvitation, SavePage, SavePageCommand, SaveWords } from '../../../../src/products/journal/domain/writing.js';
 import { ProductCorpus } from '../../../platform/domain-kit/productCorpus.js';
 import { RegistryCheck, RuleBookCheck, RuleBookParity } from '../../../platform/domain-kit/checks.js';
 import { Contract, ContractError, momentOf, viewRecords, withRecordsReversed } from '../../../platform/domain-kit/vectors.js';
@@ -94,6 +94,7 @@ const handlers = {
     let action;
     switch (input.action) {
       case 'SavePage': action = new SavePage(input.input); break;
+      case 'SaveWords': action = new SaveWords(input.input); break;
       case 'ClaimPage': action = new ClaimPage(input.input); break;
       case 'ReconcileClaim': action = new ReconcileClaim(input.input); break;
       case 'RetireJournalInvitation': action = new RetireJournalInvitation(input.input); break;
