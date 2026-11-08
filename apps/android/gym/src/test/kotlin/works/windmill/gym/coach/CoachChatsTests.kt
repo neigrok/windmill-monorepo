@@ -1,5 +1,9 @@
 package works.windmill.gym.coach
 
+import works.windmill.gym.presentation.text
+import works.windmill.gym.presentation.Words
+import androidx.test.core.app.ApplicationProvider
+import works.windmill.gym.R
 import android.graphics.Bitmap
 import android.os.Looper
 import android.graphics.Color
@@ -139,9 +143,9 @@ class CoachChatsTests {
             assertEquals(reply.calls.mapNotNull { works.windmill.gym.coach.turn.TurnPhone.catalog().ability(it.name)?.phrase }.joinToString(" · "), reply.stepLine)
             assertEquals(CoachReceipt(ReadTally(), listOf(RecordRef(Gym.Types.routine, RecordID("rt_00000009")))), reply.receipt)
             assertEquals(listOf(CreatedRoutine("rt_00000009", "Day 1", movements = 1)), reply.routines)
-            assertEquals("a real turn's context reads are the phone's own", "Read nothing from your log", reply.readLine)
+            assertEquals("a real turn's context reads are the phone's own", "Read nothing from your log", reply.readLine.spelled())
             assertEquals("the program it read before making Day 1 did not hold Day 1", listOf("Read your recent workouts" to null, "Read your notes" to null, "Read your movement list" to null, "Read your program" to null, "Created a routine" to "Day 1"),
-                room.store.conversations.withDetails(reply.id, reply.calls).map { it.title to it.detail })
+                room.store.conversations.withDetails(reply.id, reply.calls).map { it.title.spelled() to it.detail.spelled() })
             assertEquals(CoachDraft(), coach.draft(chat))
             assertFalse(coach.isAsking(chat))
             assertEquals(room.threads().single().id.record.string, room.thread(chat))
@@ -1150,7 +1154,9 @@ class CoachChatsTests {
             assertEquals(emptyList<CoachRoutineDraft>(), saved.retained?.drafts)
             assertEquals(listOf("Day 1"), saved.answer?.routines?.map { it.name })
             assertEquals(DraftOutcome.Saved, coach.saveRetainedDrafts("answered-chat", "answered-1"))
-            assertEquals(DraftOutcome.Closed(Ask.draftGone), coach.saveRetainedDrafts("answered-chat", "gone"))
+            assertEquals(DraftOutcome.Closed(R.string.gym_coach_draft_gone), coach.saveRetainedDrafts("answered-chat", "gone"))
         }
     }
 }
+
+private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())

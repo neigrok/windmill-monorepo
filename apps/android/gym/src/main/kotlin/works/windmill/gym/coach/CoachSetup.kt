@@ -21,10 +21,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.SpanStyle
+import androidx.compose.runtime.remember
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.text.fromHtml
 import androidx.compose.ui.unit.dp
 import works.windmill.gym.R
 
@@ -32,16 +33,16 @@ import works.windmill.gym.R
 @Composable
 internal fun CoachGreeting(signedIn: Boolean, enabled: Boolean, onScreenshot: () -> Unit, onBuild: () -> Unit) {
     val colors = MaterialTheme.colorScheme
-    val introduction = "Hi, I’m Coach. I can help you with:"
-    val capabilities = buildAnnotatedString {
-        val lines = listOf("Build" to "a program from a screenshot or your own words.",
-            "Goals" to "tell me your goals, and I will plan for them.") + if (signedIn)
-            listOf("Notes" to "I save important facts, like an old injury.", "Changes" to "ask me, and I suggest changes to your routines.")
-        else listOf("Account" to "sign in, and I can also save notes and suggest changes to your routines.")
-        lines.forEachIndexed { index, (anchor, text) ->
-            if (index > 0) append('\n')
-            withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(anchor) }
-            append(" — $text")
+    val introduction = stringResource(R.string.gym_coach_greeting)
+    val lines = listOf(R.string.gym_coach_greeting_build, R.string.gym_coach_greeting_goals) +
+        if (signedIn) listOf(R.string.gym_coach_greeting_notes, R.string.gym_coach_greeting_changes) else listOf(R.string.gym_coach_greeting_account)
+    val marked = lines.map { stringResource(it) }
+    val capabilities = remember(marked) {
+        buildAnnotatedString {
+            marked.forEachIndexed { index, line ->
+                if (index > 0) append('\n')
+                append(AnnotatedString.fromHtml(line))
+            }
         }
     }
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -52,13 +53,13 @@ internal fun CoachGreeting(signedIn: Boolean, enabled: Boolean, onScreenshot: ()
             Text(capabilities, style = GymType.coachParagraph, color = colors.onSurface)
         }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 6.dp)) {
-            listOf(Triple("Add screenshot", R.drawable.gym_coach_image, onScreenshot),
-                Triple("Build my own", R.drawable.gym_native_add, onBuild)).forEach { (label, icon, action) ->
+            listOf(Triple(R.string.gym_coach_add_screenshot, R.drawable.gym_coach_image, onScreenshot),
+                Triple(R.string.gym_coach_build_my_own, R.drawable.gym_native_add, onBuild)).forEach { (label, icon, action) ->
                 FilledTonalButton(onClick = action, enabled = enabled,
                     colors = ButtonDefaults.filledTonalButtonColors(containerColor = colors.surfaceContainerHighest, contentColor = colors.onSurface),
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)) {
                     Icon(painterResource(icon), null, Modifier.size(20.dp))
-                    Text(label, style = GymType.coachAction,
+                    Text(stringResource(label), style = GymType.coachAction,
                         modifier = Modifier.padding(start = 8.dp))
                 }
             }
@@ -73,10 +74,10 @@ internal fun CoachKeptDraft(draft: CoachDraft, enabled: Boolean, onContinue: () 
     val shape = MaterialTheme.shapes.large
     Column(Modifier.fillMaxWidth().background(colors.surfaceContainer, shape).border(1.dp, colors.outlineVariant, shape)
         .padding(horizontal = 16.dp).padding(top = 16.dp, bottom = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text("Draft kept on this phone", style = GymType.coachNote, color = colors.onSurfaceVariant)
+        Text(stringResource(R.string.gym_coach_draft_kept), style = GymType.coachNote, color = colors.onSurfaceVariant)
         if (draft.text.isNotEmpty()) Text(draft.text, style = GymType.coachDraft, color = colors.onSurface)
         TextButton(onClick = onContinue, enabled = enabled, contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)) {
-            Text("Continue saved draft", style = GymType.coachAction,
+            Text(stringResource(R.string.gym_coach_continue_draft), style = GymType.coachAction,
                 color = if (enabled) colors.primary else gymColors.inkFaint)
         }
     }

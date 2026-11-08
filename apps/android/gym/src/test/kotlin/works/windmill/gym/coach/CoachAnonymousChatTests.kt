@@ -1,5 +1,12 @@
 package works.windmill.gym.coach
 
+import works.windmill.gym.R
+import androidx.test.core.app.ApplicationProvider
+import androidx.annotation.StringRes
+import android.content.Context
+import org.robolectric.annotation.Config
+import org.robolectric.RobolectricTestRunner
+import org.junit.runner.RunWith
 import java.io.File
 import kotlin.coroutines.ContinuationInterceptor
 import kotlinx.coroutines.CompletableDeferred
@@ -45,6 +52,8 @@ import works.windmill.sync.schema.Gym
 
 // A signed-out phone's chats on the one path every seat takes: its refusals keep the question, its bound installation keeps its chats, and a dead process never asks again.
 @OptIn(ExperimentalCoroutinesApi::class)
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class CoachAnonymousChatTests {
     @get:Rule val temporary = TemporaryFolder()
 
@@ -222,7 +231,7 @@ class CoachAnonymousChatTests {
             advanceUntilIdle()
             room.store.conversations.read()
             assertEquals(MessageState.failed, coach.exchanges(chat).single().answer?.state)
-            assertEquals("Coach couldn’t finish. Ask again.", Ask.ending(MessageState.failed, truncated = false, wordsArrived = false))
+            assertEquals("Coach couldn’t finish. Ask again.", Ask.ending(MessageState.failed, truncated = false, wordsArrived = false)?.let(::string))
             coach.saveDraft(chat, CoachDraft("Second question"))
             assertTrue(coach.send(chat, "Second question"))
             advanceUntilIdle()
@@ -307,3 +316,5 @@ class CoachAnonymousChatTests {
         }
     }
 }
+
+private fun string(@StringRes id: Int): String = ApplicationProvider.getApplicationContext<Context>().getString(id)

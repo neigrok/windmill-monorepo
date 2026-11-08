@@ -29,6 +29,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
@@ -128,7 +129,8 @@ internal fun TabRail(current: Tab, recoveryCount: Int, onPick: (Tab) -> Unit) {
     Column(Modifier.fillMaxWidth().background(colors.surfaceContainer)) {
         BoxWithConstraints(Modifier.fillMaxWidth()) {
             val barWidth = constraints.maxWidth
-            val labelWidths = remember(barWidth, density) {
+            val titles = Tab.entries.map { stringResource(it.title) }
+            val labelWidths = remember(barWidth, density, titles) {
                 with(density) {
                     fun width(text: String) = measurer.measure(text, GymType.navigationLabel, softWrap = false).size.width.toFloat()
                     val side = 12.dp.toPx()
@@ -136,8 +138,8 @@ internal fun TabRail(current: Tab, recoveryCount: Int, onPick: (Tab) -> Unit) {
                     val spacing = 8.dp.toPx()
                     val slot = (barWidth - 2 * side - spacing * Tab.entries.lastIndex) / Tab.entries.size
                     RailLabels.widths(pitch = slot + spacing, edge = side + slot / 2, gap = RailLabels.gap.toPx(),
-                        line = Tab.entries.map { width(it.title) },
-                        word = Tab.entries.map { tab -> tab.title.split(' ').maxOf(::width) },
+                        line = titles.map(::width),
+                        word = titles.map { title -> title.split(' ').maxOf(::width) },
                     ).map { ceil(it).toInt().toDp() }
                 }
             }
@@ -155,7 +157,7 @@ internal fun TabRail(current: Tab, recoveryCount: Int, onPick: (Tab) -> Unit) {
                             if (entry == Tab.Log && recoveryCount > 0) Badge { Text(recoveryCount.toString()) }
                         }) { Icon(painterResource(railIcon(entry)), contentDescription = null, modifier = Modifier.size(24.dp)) } },
                         label = {
-                            Text(entry.title, style = GymType.navigationLabel, textAlign = TextAlign.Center,
+                            Text(titles[index], style = GymType.navigationLabel, textAlign = TextAlign.Center,
                                 modifier = Modifier.requiredWidth(labelWidths[index]))
                         },
                         colors = NavigationBarItemDefaults.colors(

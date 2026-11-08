@@ -366,9 +366,9 @@ internal class FinishFlow(
             try {
                 val chat = store.coach.freshChat(FinishCoach.question, id = request)
                 onCoach()
-                if (!store.coach.send(chat, FinishCoach.question, once = request)) say("Your message couldn’t be saved. Try again.")
+                if (!store.coach.send(chat, FinishCoach.question, once = request)) say(context.getString(R.string.gym_coach_message_unsaved))
             } catch (_: Exception) {
-                say("Your message couldn’t be saved. Try again.")
+                say(context.getString(R.string.gym_coach_message_unsaved))
             }
             queuedShare = null
             queuedShareOwner = null
