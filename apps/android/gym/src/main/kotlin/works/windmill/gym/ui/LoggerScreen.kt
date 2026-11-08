@@ -59,6 +59,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import works.windmill.gym.R
 import works.windmill.gym.presentation.WorkoutClocks
 import androidx.compose.ui.Alignment
@@ -290,6 +291,9 @@ fun LoggerScreen(
     val notification = state.notification.collectAsState().value
     val scope = rememberCoroutineScope()
     val telemetry = LocalTelemetry.current
+    val workoutChangedReopen = stringResource(R.string.gym_logger_workout_changed_reopen)
+    val checkBeforeLogging = stringResource(R.string.gym_logger_check_before_logging)
+    val workoutClosed = stringResource(R.string.gym_logger_workout_closed)
     val weightKg = state.rack?.weightKg ?: state.prefill.weightKg
     val reps = state.rack?.reps ?: state.prefill.reps
     val pickerState = rememberMovementPickerState(state.accountKey, state.session?.id)
@@ -468,14 +472,14 @@ fun LoggerScreen(
         titleAlignment = TextAlign.Center,
         // Finish's slot balances the two actions across the bar, so the title stays centred.
         navigation = { Row(if (onCoach != null) Modifier.widthIn(min = 96.dp) else Modifier) {
-            TopAction("Finish", enabled = state.canFinish, onClick = { entry.leave(); onFinish() })
+            TopAction(stringResource(R.string.gym_logger_finish), enabled = state.canFinish, onClick = { entry.leave(); onFinish() })
         } },
         actions = {
             onCoach?.let { open -> IconButton(onClick = { entry.leave(); open() }) {
-                Icon(painterResource(R.drawable.gym_coach_open), "Coach", tint = colors.onSurface)
+                Icon(painterResource(R.drawable.gym_coach_open), stringResource(R.string.gym_logger_coach), tint = colors.onSurface)
             } }
             IconButton(onClick = ::hide) {
-                Icon(Icons.Rounded.KeyboardArrowDown, "Hide workout", tint = if (onCoach != null) colors.onSurface else colors.onSurfaceVariant)
+                Icon(Icons.Rounded.KeyboardArrowDown, stringResource(R.string.gym_logger_hide_workout), tint = if (onCoach != null) colors.onSurface else colors.onSurfaceVariant)
             }
         },
     ) {
@@ -508,8 +512,8 @@ fun LoggerScreen(
                     lastSets = state.lastSets,
                     nowMs = nowMs,
                     sessions = state.allSessions,
-                    title = "What are you lifting?",
-                    subtitle = if (state.session?.plan == null) null else "nothing in this plan is left to walk",
+                    title = stringResource(R.string.gym_logger_picker_title),
+                    subtitle = if (state.session?.plan == null) null else stringResource(R.string.gym_logger_picker_plan_walked),
                     onPick = { picked -> scope.launch {
                         val result = events.choose(picked)
                         if (result is WorkoutChange.Unavailable) say(result.reason)
@@ -517,7 +521,7 @@ fun LoggerScreen(
                     onCreate = { write ->
                         val result = events.createForWorkout(write, rackSession.orEmpty(), rackOwner, state.replica)
                         if (state.accountKey == rackOwner && state.session?.id == rackSession) result
-                        else MovementCreateOutcome.Failed(WriteFailure.Refused("The workout changed. Open this again."))
+                        else MovementCreateOutcome.Failed(WriteFailure.Refused(workoutChangedReopen))
                     },
                     state = pickerState,
                     modifier = Modifier.weight(1f),
@@ -606,7 +610,7 @@ fun LoggerScreen(
             },
             onLog = {
                 val offer = state.notification.value?.offer
-                if (offer == null) say(state.workoutFailure ?: "Check the weight and reps before logging.")
+                if (offer == null) say(state.workoutFailure ?: checkBeforeLogging)
                 else when (val accepted = events.acceptSet(LogSetCommand(offer.key, offer.id))) {
                     is LogSetAcceptance.Unavailable -> say(accepted.reason)
                     LogSetAcceptance.Stale -> say("The workout changed. Check the current set.")
@@ -673,13 +677,13 @@ fun LoggerScreen(
                     lastSets = state.lastSets,
                     nowMs = nowMs,
                     sessions = state.allSessions,
-                    title = "Add movement",
+                    title = stringResource(R.string.gym_logger_add_movement),
                     onPick = { move(it, fromPicker = true) },
                     onCreate = { write ->
                         val previous = state.exerciseId
                         val result = events.createForWorkout(write, rackSession.orEmpty(), rackOwner, state.replica)
                         if (state.accountKey != rackOwner || state.session?.id != rackSession)
-                            MovementCreateOutcome.Failed(WriteFailure.Refused("The workout changed. Open this again."))
+                            MovementCreateOutcome.Failed(WriteFailure.Refused(workoutChangedReopen))
                         else {
                             if (result is MovementCreateOutcome.Added && previous != result.movement.id)
                                 telemetry.event("gym_action", mapOf("screen" to "workout", "action" to "movement_switch", "outcome" to "ok"))
@@ -710,7 +714,7 @@ fun LoggerScreen(
                         onSave = { fix ->
                             if (sessionId == null) {
                                 telemetry.event("gym_action", mapOf("screen" to "workout", "action" to "fix", "outcome" to "refused"))
-                                FixOutcome.Gone("that workout is no longer open")
+                                FixOutcome.Gone(workoutClosed)
                             }
                             else events.fixSet(sessionId, set.id, fix, FixOrigin.Workout)
                         },
@@ -739,12 +743,13 @@ internal fun WorkoutClockRow(clocks: WorkoutClocks) {
     FlowRow(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally),
         verticalArrangement = Arrangement.spacedBy(8.dp)) {
         listOf(
-            Triple("Workout time", R.drawable.gym_clock, clocks.workoutMs),
+            Triple(stringResource(R.string.gym_logger_workout_time), R.drawable.gym_clock, clocks.workoutMs),
             Triple(clocks.sinceSetName, R.drawable.gym_stopwatch, clocks.sinceSetMs),
         ).forEach { (name, icon, duration) ->
             val value = Readout.clock(duration)
+            val spoken = stringResource(R.string.gym_logger_clock_spoken, name, value)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
-                modifier = Modifier.clearAndSetSemantics { contentDescription = "$name, $value" }) {
+                modifier = Modifier.clearAndSetSemantics { contentDescription = spoken }) {
                 Icon(painterResource(icon), contentDescription = null, tint = colors.onSurfaceVariant, modifier = Modifier.size(16.dp))
                 Text(value, style = GymType.numeralMedium, color = colors.onSurfaceVariant)
             }
@@ -764,14 +769,16 @@ private fun MovementHead(
     onOpenSession: () -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
+    val previousMovement = stringResource(R.string.gym_logger_previous_movement)
+    val nextMovement = stringResource(R.string.gym_logger_next_movement)
     Column(
         Modifier.fillMaxWidth().heightIn(min = GymTap.minimum)
-            .clickable(enabled = enabled, role = Role.Button, onClickLabel = "open this workout", onClick = onOpenSession)
+            .clickable(enabled = enabled, role = Role.Button, onClickLabel = stringResource(R.string.gym_logger_open_this_workout), onClick = onOpenSession)
             .semantics(mergeDescendants = true) {
                 place?.let { contentDescription = it.spoken }
                 customActions = if (!enabled) emptyList() else buildList {
-                    previous?.let { add(CustomAccessibilityAction("Previous movement") { onMove(it); true }) }
-                    next?.let { add(CustomAccessibilityAction("Next movement") { onMove(it); true }) }
+                    previous?.let { add(CustomAccessibilityAction(previousMovement) { onMove(it); true }) }
+                    next?.let { add(CustomAccessibilityAction(nextMovement) { onMove(it); true }) }
                 }
             }.padding(vertical = 5.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -883,7 +890,7 @@ private fun Ledger(
                 colors = ListItemDefaults.colors(containerColor = if (active) colors.primaryContainer else Color.Transparent),
                 modifier = Modifier.fillMaxWidth().onSizeChanged { heights[slot.key] = it.height }
                     .clip(MaterialTheme.shapes.medium)
-                    .then(if (row != null) Modifier.clickable(enabled = enabled, role = Role.Button, onClickLabel = "fix this set") { onFix(row.id) } else Modifier)
+                    .then(if (row != null) Modifier.clickable(enabled = enabled, role = Role.Button, onClickLabel = stringResource(R.string.gym_logger_fix_this_set)) { onFix(row.id) } else Modifier)
                     .semantics(mergeDescendants = true) { contentDescription = slot.spoken },
             )
         }
@@ -1021,7 +1028,7 @@ private fun LogBand(finishing: Boolean, enabled: Boolean, onLog: () -> Unit) {
                 disabledContentColor = if (finishing) colors.onSurfaceVariant else colors.onPrimary.copy(alpha = .38f),
             ),
         ) {
-            Text("Log set", style = GymType.logSet)
+            Text(stringResource(R.string.gym_logger_log_set), style = GymType.logSet)
         }
     }
 }

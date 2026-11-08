@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import android.content.res.Resources
 import works.windmill.platform.design.WindmillType
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -49,7 +50,9 @@ import works.windmill.gym.presentation.SetTarget
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.rememberTextMeasurer
@@ -112,7 +115,7 @@ object Finish {
         }
     }
 
-    fun comparison(against: Against?, catalog: List<Exercise>): Comparison? {
+    fun comparison(against: Against?, catalog: List<Exercise>, resources: Resources): Comparison? {
         if (against == null) return null
         val sources = against.movements.map { movement ->
             when {
@@ -123,10 +126,11 @@ object Finish {
         }
         val mixed = sources.distinct().size > 1
         val title = when (sources.distinct().singleOrNull()) {
-            "Plan" -> "Against plan"
-            "Last time" -> "Against last ${against.routine ?: "time"}"
-            "Performed" -> "Performed"
-            else -> "Comparison"
+            "Plan" -> resources.getString(R.string.gym_finish_against_plan)
+            "Last time" -> against.routine?.let { resources.getString(R.string.gym_finish_against_last_routine, it) }
+                ?: resources.getString(R.string.gym_finish_against_last_time)
+            "Performed" -> resources.getString(R.string.gym_finish_against_performed)
+            else -> resources.getString(R.string.gym_finish_against_comparison)
         }
         return Comparison(
             title = title,
@@ -192,14 +196,14 @@ fun ReviewRemarks(review: Review?, catalog: List<Exercise>) {
     ) {
         if (review == null) {
             Text(
-                "the log didn’t answer — the session is saved",
+                stringResource(R.string.gym_finish_review_no_answer),
                 style = GymType.numeral,
                 color = colors.onSurfaceVariant,
             )
             return@Column
         }
         Finish.recordSentence(review.record, catalog)?.let { RecordLine(it) }
-        Finish.comparison(review.against, catalog)?.let { AgainstBlock(it) }
+        Finish.comparison(review.against, catalog, LocalContext.current.resources)?.let { AgainstBlock(it) }
     }
 }
 
@@ -215,7 +219,7 @@ private fun RecordLine(sentence: String) {
             .border(1.dp, gymColors.prInk.copy(alpha = 0.35f), MaterialTheme.shapes.large)
             .padding(horizontal = 16.dp, vertical = 14.dp),
     ) {
-        Text("Personal record", style = GymType.numeralDetail, color = gymColors.prInk)
+        Text(stringResource(R.string.gym_finish_personal_record), style = GymType.numeralDetail, color = gymColors.prInk)
         Text(
             sentence,
             style = GymType.finishSentence,
@@ -255,10 +259,10 @@ fun FinishScreen(
             .padding(start = 20.dp, end = 20.dp, top = 24.dp, bottom = bottomPadding),
             verticalArrangement = Arrangement.SpaceBetween) {
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                Text("No sets logged", style = WindmillType.outcomeTitle, color = colors.onSurface)
-                Text("This workout has ended.", style = GymType.emptyFinishLine, color = colors.onSurfaceVariant)
+                Text(stringResource(R.string.gym_finish_no_sets), style = WindmillType.outcomeTitle, color = colors.onSurface)
+                Text(stringResource(R.string.gym_finish_ended), style = GymType.emptyFinishLine, color = colors.onSurfaceVariant)
             }
-            ReceiptAction("Done", onDone)
+            ReceiptAction(stringResource(R.string.gym_action_done), onDone)
         }
         return
     }
@@ -274,17 +278,17 @@ fun FinishScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text(if (finished.slight) "Ended early." else "Well done.",
+                        Text(stringResource(if (finished.slight) R.string.gym_finish_ended_early else R.string.gym_finish_well_done),
                             style = GymType.finishHeadline,
                             color = colors.onSurface, modifier = Modifier.weight(1f))
                         onDiscard?.let { discard ->
                             var expanded by rememberSaveable { mutableStateOf(false) }
                             Box {
                                 IconButton(onClick = { expanded = true }, modifier = Modifier.size(48.dp)) {
-                                    Icon(painterResource(R.drawable.gym_more), contentDescription = "More", tint = colors.onSurface)
+                                    Icon(painterResource(R.drawable.gym_more), contentDescription = stringResource(R.string.gym_action_more), tint = colors.onSurface)
                                 }
                                 DropdownMenu(expanded, onDismissRequest = { expanded = false }) {
-                                    DropdownMenuItem(text = { Text("Discard") }, onClick = { expanded = false; discard() })
+                                    DropdownMenuItem(text = { Text(stringResource(R.string.gym_action_discard)) }, onClick = { expanded = false; discard() })
                                 }
                             }
                         }
@@ -298,9 +302,9 @@ fun FinishScreen(
                 BoxWithConstraints(Modifier.fillMaxWidth()) {
                     val facts: @Composable (Modifier) -> Unit = { modifier ->
                         ReceiptFact(Readout.duration(duration), "Duration", modifier)
-                        ReceiptFact(summary.setCount.toString(), "Sets", modifier)
+                        ReceiptFact(summary.setCount.toString(), stringResource(R.string.gym_finish_sets), modifier)
                         val volume = Finish.volume(summary.tonnageKg)
-                        ReceiptFact(volume, "Volume", modifier, "kg".takeUnless { volume == "—" })
+                        ReceiptFact(volume, stringResource(R.string.gym_finish_volume), modifier, stringResource(R.string.gym_finish_volume_unit).takeUnless { volume == "—" })
                     }
                     val tiles = Modifier.fillMaxWidth().background(colors.surfaceContainerHighest, MaterialTheme.shapes.large)
                     if (largeText || maxWidth < 270.dp) {
@@ -313,16 +317,19 @@ fun FinishScreen(
                     }
                 }
                 onKeep?.let { keep ->
+                    val keepIt = stringResource(R.string.gym_action_keep_it)
+                    val onlyHere = stringResource(R.string.gym_finish_only_on_this_phone, keepIt)
                     Text(buildAnnotatedString {
-                        append("Only on this phone · ")
-                        withStyle(SpanStyle(color = colors.primary, fontWeight = FontWeight.Bold)) { append("Keep it") }
+                        append(onlyHere)
+                        val at = onlyHere.lastIndexOf(keepIt)
+                        if (at >= 0) addStyle(SpanStyle(color = colors.primary, fontWeight = FontWeight.Bold), at, at + keepIt.length)
                     }, style = WindmillType.paragraphSmall, color = colors.onSurfaceVariant,
                         modifier = Modifier.heightIn(min = 48.dp).fillMaxWidth().clickable(role = Role.Button, onClick = keep))
                 }
                 if (onKeep == null && finished.reviewRead) {
                     Finish.recordSentence(finished.review?.record, catalog)?.let { RecordLine(it) }
                 }
-                Text("Performed", style = GymType.numeralDetail, color = colors.onSurfaceVariant,
+                Text(stringResource(R.string.gym_finish_performed), style = GymType.numeralDetail, color = colors.onSurfaceVariant,
                     modifier = Modifier.semantics { heading() })
                 summary.exercises.forEach { id ->
                     val sets = finished.sets.filter { it.exerciseId == id }
@@ -340,7 +347,7 @@ fun FinishScreen(
             Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 onShareWithCoach?.let { ReceiptAction(FinishCoach.action, it, tonal = true, crown = true) }
-                ReceiptAction("Done", onDone)
+                ReceiptAction(stringResource(R.string.gym_action_done), onDone)
             }
         }
     }

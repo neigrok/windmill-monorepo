@@ -44,6 +44,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.semantics
@@ -55,6 +56,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.launch
+import works.windmill.gym.R
 import works.windmill.gym.presentation.ChangeKind
 import works.windmill.gym.presentation.DocumentRow
 import works.windmill.gym.presentation.Exercise
@@ -157,6 +159,7 @@ fun ReviewSheet(
 ) {
     val colors = MaterialTheme.colorScheme
     val scope = rememberCoroutineScope()
+    val removalStillWaiting = stringResource(R.string.gym_review_removal_still_waiting)
     var proposal by remember(proposalId) { mutableStateOf<Proposal?>(null) }
     var gone by remember(proposalId) { mutableStateOf(false) }
     var asked by remember(proposalId) { mutableIntStateOf(0) }
@@ -233,7 +236,7 @@ fun ReviewSheet(
                         gone = true
                     }
                     is ProposalOutcome.Failed -> said = if (apply && events.removalPending(open.id))
-                        "Still waiting for the log. Retry to check this removal."
+                        removalStillWaiting
                         else outcome.why.line(if (apply) "nothing was applied" else "it is still waiting")
                 }
             } finally {
@@ -266,7 +269,7 @@ fun ReviewSheet(
                             .heightIn(min = GymTap.minimum)
                             .clickable(enabled = !deciding, role = Role.Button) { ask(proposal.routineName) },
                     ) {
-                        Text("Ask Coach", style = WindmillType.label, color = colors.primary)
+                        Text(stringResource(R.string.gym_review_ask_coach), style = WindmillType.label, color = colors.primary)
                         Icon(
                             Icons.AutoMirrored.Filled.KeyboardArrowRight,
                             contentDescription = null,
@@ -323,8 +326,8 @@ private fun Body(
     }
     if (proposal.intent == ProposalIntent.Remove) {
         ChangeCard() {
-            Text("Remove ${proposal.routineName}", style = WindmillType.labelParagraph, color = colors.onSurface)
-            Text("The whole routine is removed from your program. Every set you logged against it stays in the log.",
+            Text(stringResource(R.string.gym_review_remove_routine, proposal.routineName), style = WindmillType.labelParagraph, color = colors.onSurface)
+            Text(stringResource(R.string.gym_review_remove_routine_body),
                 style = WindmillType.supportingParagraph, color = colors.onSurfaceVariant)
         }
     } else {
@@ -335,7 +338,7 @@ private fun Body(
             }
         }
         if (proposal.renames) ChangeCard() {
-            Text("Routine name", style = WindmillType.labelParagraph, color = colors.onSurface)
+            Text(stringResource(R.string.gym_review_routine_name), style = WindmillType.labelParagraph, color = colors.onSurface)
             MoveLine("", proposal.baseName, proposal.name)
         }
     }
@@ -363,6 +366,7 @@ private fun KeptRun(row: DocumentRow.Unchanged, catalog: List<Exercise>, inset: 
     val colors = MaterialTheme.colorScheme
     val gymColors = MaterialTheme.gymColors
     var open by remember(row) { mutableStateOf(false) }
+    val openState = stringResource(if (open) R.string.gym_review_expanded else R.string.gym_review_collapsed)
     Column(verticalArrangement = Arrangement.spacedBy(WindmillSpace.x1)) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -370,7 +374,7 @@ private fun KeptRun(row: DocumentRow.Unchanged, catalog: List<Exercise>, inset: 
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = GymTap.minimum)
-                .semantics { stateDescription = if (open) "expanded" else "collapsed" }
+                .semantics { stateDescription = openState }
                 .clickable(role = Role.Button) { open = !open }
                 .padding(horizontal = inset),
         ) {
@@ -413,9 +417,9 @@ private fun ChangeRow(proposal: Proposal, change: ProposalChange, catalog: List<
     val type = ReviewType.of(proposal)
     ChangeCard(tight = workout) {
         val title = when (change.kind) {
-            ChangeKind.Added -> "Add $name"
-            ChangeKind.Removed -> "Remove $name"
-            ChangeKind.Kept -> "Move $name"
+            ChangeKind.Added -> stringResource(R.string.gym_review_add_named, name)
+            ChangeKind.Removed -> stringResource(R.string.gym_review_remove_named, name)
+            ChangeKind.Kept -> stringResource(R.string.gym_review_move_named, name)
             else -> name
         }
         Text(title, style = type.row, color = colors.onSurface)
@@ -450,20 +454,21 @@ private fun ChangeRow(proposal: Proposal, change: ProposalChange, catalog: List<
 @Composable
 private fun SchemeMove(move: FieldMove, standing: List<SetTarget>, proposed: List<SetTarget>, change: ProposalChange, type: ReviewType) {
     var unfolded by remember(change) { mutableStateOf(false) }
+    val unfoldedState = stringResource(if (unfolded) R.string.gym_review_expanded else R.string.gym_review_collapsed)
     Column(verticalArrangement = Arrangement.spacedBy(WindmillSpace.x1)) {
         MoveLine(
             move.label, move.before, move.after, type,
             Modifier
                 .fillMaxWidth()
-                .semantics { stateDescription = if (unfolded) "expanded" else "collapsed" }
-                .clickable(role = Role.Button, onClickLabel = if (unfolded) "hide the sets" else "show the sets") {
+                .semantics { stateDescription = unfoldedState }
+                .clickable(role = Role.Button, onClickLabel = stringResource(if (unfolded) R.string.gym_review_hide_sets else R.string.gym_review_show_sets)) {
                     unfolded = !unfolded
                 },
         )
         if (unfolded) {
             repeat(maxOf(standing.size, proposed.size)) { at ->
                 MoveLine(
-                    label = "set ${at + 1}",
+                    label = stringResource(R.string.gym_review_set_numbered, (at + 1).toString()),
                     before = standing.getOrNull(at)?.let(Readout::setTarget) ?: "—",
                     after = proposed.getOrNull(at)?.let(Readout::setTarget) ?: "—",
                     type = type,
@@ -528,7 +533,7 @@ private fun Foot(
                 modifier = Modifier.fillMaxWidth().heightIn(min = GymTap.primary),
                 colors = ButtonDefaults.buttonColors(containerColor = colors.primary, contentColor = colors.onPrimary),
             ) {
-                Text("Sign in", style = type.action)
+                Text(stringResource(R.string.gym_review_sign_in), style = type.action)
             }
             return@Column
         }
@@ -626,7 +631,7 @@ fun ProposalChip(onReview: () -> Unit) {
             .padding(horizontal = WindmillSpace.x1),
     ) {
         Box(Modifier.size(6.dp).clip(CircleShape).background(colors.primary))
-        Text("1 proposal", style = GymType.proposalBadge, color = colors.primary)
+        Text(stringResource(R.string.gym_review_one_proposal), style = GymType.proposalBadge, color = colors.primary)
     }
 }
 

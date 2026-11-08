@@ -23,6 +23,7 @@ import androidx.compose.ui.platform.PlatformTextInputInterceptor
 import androidx.compose.ui.platform.PlatformTextInputMethodRequest
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import works.windmill.gym.R
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.error
@@ -127,7 +128,7 @@ private fun RoutineTargets(
     }
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("Target", style = WindmillType.detailCompact, color = colors.onSurfaceVariant, modifier = Modifier.weight(1f))
+            Text(stringResource(R.string.gym_movement_target), style = WindmillType.detailCompact, color = colors.onSurfaceVariant, modifier = Modifier.weight(1f))
             Text(summary, style = GymType.numeral, color = colors.onSurfaceVariant)
         }
         if (!perSet) {
@@ -148,7 +149,7 @@ private fun RoutineTargets(
                 enabled && scheme.sets.isNotBlank(), decimal = true,
                 onTyped = { update(scheme.copy(rows = TargetEntry.withWeight(scheme.rows, it))) },
                 onStep = { stepped(TargetEntry.Field.Weight, it) }, reading = reading)
-            if (!creating && shown.all { it.weight.isBlank() }) Text("kg blank: pick it at the rack the first time; after that, last time fills it.",
+            if (!creating && shown.all { it.weight.isBlank() }) Text(stringResource(R.string.gym_movement_kg_blank),
                 style = WindmillType.detail, color = colors.onSurfaceVariant)
         }
         if (!creating || scheme.varyBySet) {
@@ -158,7 +159,7 @@ private fun RoutineTargets(
                     label = { Text(TargetEntry.rampUp, style = WindmillType.supporting) },
                     enabled = enabled && TargetEntry.canRamp(shown), modifier = Modifier.heightIn(min = 48.dp))
                 FilterChip(selected = scheme.varyBySet, onClick = { update(scheme.copy(varyBySet = !scheme.varyBySet)) },
-                    label = { Text("Vary by set", style = if (scheme.varyBySet) GymType.groupLabel else WindmillType.supporting) },
+                    label = { Text(stringResource(R.string.gym_movement_vary_by_set), style = if (scheme.varyBySet) GymType.groupLabel else WindmillType.supporting) },
                     enabled = enabled && scheme.sets.isNotBlank(), modifier = Modifier.heightIn(min = 48.dp))
             }
         }
@@ -178,8 +179,8 @@ private fun RoutineTargets(
                 }
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Set", style = WindmillType.captionCompact, color = colors.onSurfaceVariant, modifier = Modifier.width(32.dp))
-                Text("Reps", style = WindmillType.captionCompact, color = colors.onSurfaceVariant, modifier = Modifier.weight(1f))
+                Text(stringResource(R.string.gym_movement_column_set), style = WindmillType.captionCompact, color = colors.onSurfaceVariant, modifier = Modifier.width(32.dp))
+                Text(stringResource(R.string.gym_movement_column_reps), style = WindmillType.captionCompact, color = colors.onSurfaceVariant, modifier = Modifier.weight(1f))
                 Text(unit, style = WindmillType.captionCompact, color = colors.onSurfaceVariant, modifier = Modifier.weight(1f))
             }
             shown.forEachIndexed { index, row -> key(removals, index) {
@@ -197,7 +198,7 @@ private fun RoutineTargets(
                             fault?.takeIf { it.field == TargetEntry.Field.Reps }?.said, enabled, Modifier.weight(1f)) {
                             update(scheme.copy(rows = scheme.rows.mapIndexed { at, value -> if (at == index) value.copy(reps = it) else value }))
                         }
-                        RoutineTargetField(row.weight, "—", "Set ${index + 1} load", true,
+                        RoutineTargetField(row.weight, "—", stringResource(R.string.gym_movement_set_load, (index + 1).toString()), true,
                             fault?.takeIf { it.field == TargetEntry.Field.Weight }?.said, enabled, Modifier.weight(1f)) {
                             update(scheme.copy(rows = scheme.rows.mapIndexed { at, value -> if (at == index) value.copy(weight = it) else value }))
                         }

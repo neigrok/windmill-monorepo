@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="gym_record_edit_movement">Edit movement</string>
+    <string name="gym_record_unavailable">Record unavailable</string>
+    <string name="gym_record_reading">Reading your log…</string>
+    <string name="gym_record_earlier_records">Earlier records</string>
+    <string name="gym_record_recent_sets">Recent sets</string>
+    <string name="gym_record_estimated_strength">Estimated strength</string>
+    <string name="gym_record_twelve_weeks">12 weeks</string>
+    <string name="gym_record_all">All</string>
+    <string name="gym_record_no_eligible_estimate">No eligible estimate in this window.</string>
+    <string name="gym_record_workout_estimates">Workout estimates</string>
+    <string name="gym_record_earlier_workout">Earlier workout</string>
+    <string name="gym_record_later_workout">Later workout</string>
+    <string name="gym_record_no_data_range">No data · %1$s – %2$s</string>
+</resources>

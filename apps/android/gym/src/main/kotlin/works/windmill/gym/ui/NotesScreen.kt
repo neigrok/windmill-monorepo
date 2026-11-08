@@ -49,6 +49,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
@@ -191,11 +192,11 @@ fun NotesScreen(
                     when {
                         !isSignedIn -> Text(Notes.signedOut, style = GymType.nativeBody, color = colors.onSurfaceVariant)
                         failure != null -> Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Text("Notes unavailable", style = GymType.cardTitle, color = colors.onSurface)
+                            Text(stringResource(R.string.gym_notes_unavailable), style = GymType.cardTitle, color = colors.onSurface)
                             Text(failure!!, style = WindmillType.body, color = colors.onSurfaceVariant)
-                            TextButton(onClick = { attempt++ }, enabled = !reading) { Text("Try again") }
+                            TextButton(onClick = { attempt++ }, enabled = !reading) { Text(stringResource(R.string.gym_action_try_again)) }
                         }
-                        !hasRead -> Text("Reading your notes…", style = WindmillType.body, color = colors.onSurfaceVariant)
+                        !hasRead -> Text(stringResource(R.string.gym_notes_reading), style = WindmillType.body, color = colors.onSurfaceVariant)
                     }
                     if (isSignedIn && hasRead && failure == null && state.noteCount == 0) {
                         Column {
@@ -204,7 +205,7 @@ fun NotesScreen(
                                     headlineContent = { Text(title, style = WindmillType.labelParagraph, color = colors.onSurfaceVariant) },
                                     colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                                     modifier = Modifier.fillMaxWidth()
-                                        .clickable(role = Role.Button, onClickLabel = "Write a note") { onEdit(null, title) },
+                                        .clickable(role = Role.Button, onClickLabel = stringResource(R.string.gym_notes_write_note)) { onEdit(null, title) },
                                 )
                             }
                         }
@@ -219,7 +220,7 @@ fun NotesScreen(
                 Box(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 16.dp)) {
                     Button(onClick = onSignIn, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = colors.surfaceContainerHighest, contentColor = colors.onSurface)) {
-                        Text("Sign in", style = GymType.button)
+                        Text(stringResource(R.string.gym_notes_sign_in), style = GymType.button)
                     }
                 }
             }
@@ -257,6 +258,8 @@ private fun NoteList(
             LaunchedEffect(focused, enabled) {
                 if (focused == note.id && enabled) focus.requestFocus()
             }
+            val moveUp = stringResource(R.string.gym_action_move_up)
+            val moveDown = stringResource(R.string.gym_action_move_down)
             val actions = if (!enabled) emptyList() else buildList {
                 fun move(to: Int) {
                     focused = note.id
@@ -265,8 +268,8 @@ private fun NoteList(
                         scope.launch { list.scrollToItem(to + 1) }
                     }
                 }
-                if (index > 0) add(CustomAccessibilityAction("Move up") { move(index - 1); true })
-                if (index < notes.lastIndex) add(CustomAccessibilityAction("Move down") { move(index + 1); true })
+                if (index > 0) add(CustomAccessibilityAction(moveUp) { move(index - 1); true })
+                if (index < notes.lastIndex) add(CustomAccessibilityAction(moveDown) { move(index + 1); true })
             }
             var problem by remember(note.id) { mutableStateOf<String?>(null) }
             DeleteSwipeRow(actionLabel = Notes.delete, onDelete = {
@@ -346,17 +349,17 @@ private fun NoteList(
                     }
                 }
                 ListItem(
-                    leadingContent = if (notes.size > 1) { { GymDragHandle("Reorder ${note.title}", modifier = reorder) } } else null,
+                    leadingContent = if (notes.size > 1) { { GymDragHandle(stringResource(R.string.gym_notes_reorder_named, note.title), modifier = reorder) } } else null,
                     headlineContent = { Text(note.title, style = GymType.noteTitle, color = colors.onSurface) },
                     supportingContent = {
-                        Text(problem ?: note.firstLine ?: "empty · tap to write",
+                        Text(problem ?: note.firstLine ?: stringResource(R.string.gym_notes_empty_row),
                             style = GymType.nativeDetail,
                             color = if (problem == null) colors.onSurfaceVariant else colors.error,
                             modifier = Modifier.semantics { if (problem != null) liveRegion = LiveRegionMode.Polite })
                     },
                     colors = ListItemDefaults.colors(containerColor = if (dragged == note.id) colors.surfaceContainerHighest else colors.surface),
                     modifier = Modifier.fillMaxWidth()
-                        .focusRequester(focus).clickable(enabled = enabled, role = Role.Button, onClickLabel = "Open note") { onOpen(note) }
+                        .focusRequester(focus).clickable(enabled = enabled, role = Role.Button, onClickLabel = stringResource(R.string.gym_notes_open_note)) { onOpen(note) }
                         .semantics { customActions = actions },
                 )
             }
@@ -396,9 +399,9 @@ fun NoteEditorScreen(
             } finally { saving = false }
         }
     }
-    GymScreen(title = "Note",
+    GymScreen(title = stringResource(R.string.gym_notes_editor_title),
         navigation = {
-            IconButton(onClick = { if (!saving) onBack() }) { Icon(Icons.Filled.Close, "Close", tint = colors.onSurface) }
+            IconButton(onClick = { if (!saving) onBack() }) { Icon(Icons.Filled.Close, stringResource(R.string.gym_action_close), tint = colors.onSurface) }
         },
         // The commit stays where the thumb is, a pill pinned above the keyboard under the scrolling body.
         bottomBar = {

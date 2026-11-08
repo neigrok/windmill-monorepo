@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="gym_notes_unavailable">Notes unavailable</string>
+    <string name="gym_notes_reading">Reading your notes…</string>
+    <string name="gym_notes_write_note">Write a note</string>
+    <string name="gym_notes_sign_in">Sign in</string>
+    <string name="gym_notes_reorder_named">Reorder %1$s</string>
+    <string name="gym_notes_empty_row">empty · tap to write</string>
+    <string name="gym_notes_open_note">Open note</string>
+    <string name="gym_notes_editor_title">Note</string>
+</resources>

@@ -19,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
@@ -179,7 +180,7 @@ fun LogScreen(
         }
     }
     val atTop by remember { derivedStateOf { listState.firstVisibleItemIndex == 0 } }
-    GymScreen(title = "The log", actions = { YouSeat(seat) }, transient = transient, floatingActionButton = {
+    GymScreen(title = stringResource(R.string.gym_log_title), actions = { YouSeat(seat) }, transient = transient, floatingActionButton = {
         GymExtendedFab(Bodyweight.chip, onClick = { weighingIn = true }, painterResource(R.drawable.gym_native_monitor_weight),
             expanded = atTop)
     }) {
@@ -192,17 +193,17 @@ fun LogScreen(
                 }
                 if (state.progressFailure != null) item("progress-failed") {
                     Column {
-                        Text("Progress unavailable", style = WindmillType.body, color = colors.onSurface)
+                        Text(stringResource(R.string.gym_log_progress_unavailable), style = WindmillType.body, color = colors.onSurface)
                         Text(state.progressFailure!!.line("Your progress could not be read."), style = WindmillType.supporting, color = colors.onSurfaceVariant)
-                        TextButton(onClick = { scope.launch { events.loadProgress(force = true) } }) { Text("Try again") }
+                        TextButton(onClick = { scope.launch { events.loadProgress(force = true) } }) { Text(stringResource(R.string.gym_action_try_again)) }
                     }
                 } else if (state.progressLoading && state.progress == null) item("progress-reading") {
-                    Text("Reading progress…", style = WindmillType.supporting, color = colors.onSurfaceVariant)
+                    Text(stringResource(R.string.gym_log_reading_progress), style = WindmillType.supporting, color = colors.onSurfaceVariant)
                 }
                 if (timeline.isEmpty() && state.older == Older.End && !logHolds) item("empty") {
                     Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
-                        Text("No workouts yet", style = GymType.emptyLogTitle, color = colors.onSurface)
-                        Text("Your training will land here.", style = WindmillType.paragraph, color = colors.onSurfaceVariant)
+                        Text(stringResource(R.string.gym_log_empty_title), style = GymType.emptyLogTitle, color = colors.onSurface)
+                        Text(stringResource(R.string.gym_log_empty_detail), style = WindmillType.paragraph, color = colors.onSurfaceVariant)
                     }
                 }
                 days.forEach { day ->
@@ -213,7 +214,7 @@ fun LogScreen(
                         when (entry) {
                             is LogEntry.Workout -> {
                                 val row = LogReadout.row(entry.summary, progress, nowMs, zone, entry.summary.id in marked)
-                                DeleteSwipeRow("Discard workout", onDelete = { onDiscardSession(row.summary.id); false }) {
+                                DeleteSwipeRow(stringResource(R.string.gym_log_discard_workout), onDelete = { onDiscardSession(row.summary.id); false }) {
                                     SessionRow(row,
                                         onOpen = {
                                             telemetry.event("gym_action", mapOf("screen" to "log", "action" to "open_workout", "outcome" to "ok"))
@@ -221,7 +222,7 @@ fun LogScreen(
                                         }, onShare = { onShareSession(row.summary.id) }, onDiscard = { onDiscardSession(row.summary.id) })
                                 }
                             }
-                            is LogEntry.Weight -> DeleteSwipeRow("Delete weigh-in", onDelete = {
+                            is LogEntry.Weight -> DeleteSwipeRow(stringResource(R.string.gym_log_delete_weigh_in), onDelete = {
                                 events.withhold(Deletion.Bodyweight(entry.entry.dateLocal))
                                 false
                             }) {
@@ -286,7 +287,7 @@ private fun MomentRow(moment: LogEntry.Moment, readout: LogReadout.Moment, onOpe
         supportingContent = { Text(readout.detail, style = WindmillType.detail, color = colors.onSurfaceVariant) },
         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
         modifier = Modifier.fillMaxWidth().testTag(moment.key)
-            .clickable(role = Role.Button, onClickLabel = "Open record", onClick = onOpenRecord),
+            .clickable(role = Role.Button, onClickLabel = stringResource(R.string.gym_log_open_record), onClick = onOpenRecord),
     )
 }
 
@@ -310,7 +311,7 @@ private fun WeightRow(weight: LogEntry.Weight, readout: LogReadout.Weight, onOpe
             },
             colors = ListItemDefaults.colors(containerColor = colors.surface),
             modifier = Modifier.fillMaxWidth().testTag(weight.key)
-                .clickable(role = Role.Button, onClickLabel = "Open bodyweight", onClick = onOpen),
+                .clickable(role = Role.Button, onClickLabel = stringResource(R.string.gym_log_open_bodyweight), onClick = onOpen),
         )
         HorizontalDivider(color = colors.outlineVariant)
     }
@@ -322,16 +323,20 @@ private fun SessionRow(row: LogReadout.Row, onOpen: () -> Unit, onShare: () -> U
     val gymColors = MaterialTheme.gymColors
     var menu by remember { mutableStateOf(false) }
     val haptics = rememberGymHaptics()
+    val newBest = stringResource(R.string.gym_log_new_best)
+    val shareWorkout = stringResource(R.string.gym_log_share_workout)
+    val discardWorkout = stringResource(R.string.gym_log_discard_workout)
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val timeBelowTitle = maxWidth < 320.dp || GymTextScale.stacked
         Row(Modifier.fillMaxWidth().testTag("session:${row.summary.id}").heightIn(min = 72.dp)
             .clip(MaterialTheme.shapes.large).background(colors.surfaceContainer)
-            .combinedClickable(role = Role.Button, onClickLabel = "Open workout", onLongClickLabel = "Workout actions",
+            .combinedClickable(role = Role.Button, onClickLabel = stringResource(R.string.gym_log_open_workout),
+                onLongClickLabel = stringResource(R.string.gym_log_workout_actions),
                 onClick = onOpen, onLongClick = { haptics.revealed(); menu = true })
             .semantics {
-                if (row.record) stateDescription = "New best"
-                customActions = listOf(CustomAccessibilityAction("Share this workout") { onShare(); true },
-                    CustomAccessibilityAction("Discard workout") { onDiscard(); true })
+                if (row.record) stateDescription = newBest
+                customActions = listOf(CustomAccessibilityAction(shareWorkout) { onShare(); true },
+                    CustomAccessibilityAction(discardWorkout) { onDiscard(); true })
             }.padding(horizontal = 16.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -345,8 +350,8 @@ private fun SessionRow(row: LogReadout.Row, onOpen: () -> Unit, onShare: () -> U
             }
             if (!timeBelowTitle) row.time?.let { Text(it, style = WindmillType.detail, color = colors.onSurfaceVariant) }
             DropdownMenu(menu, { menu = false }, containerColor = colors.surfaceContainerHighest) {
-                DropdownMenuItem(text = { Text("Share this workout") }, onClick = { menu = false; onShare() })
-                DropdownMenuItem(text = { Text("Discard workout") }, onClick = { menu = false; onDiscard() })
+                DropdownMenuItem(text = { Text(shareWorkout) }, onClick = { menu = false; onShare() })
+                DropdownMenuItem(text = { Text(discardWorkout) }, onClick = { menu = false; onDiscard() })
             }
         }
     }
@@ -364,15 +369,15 @@ private fun LogFoot(older: Older, readingShown: Boolean, first: SessionSummary?,
             .semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite; progressBarRangeInfo = ProgressBarRangeInfo.Indeterminate },
             verticalArrangement = Arrangement.spacedBy(8.dp)) {
             LinearProgressIndicator(Modifier.fillMaxWidth().clearAndSetSemantics {}, color = colors.primary, trackColor = colors.primaryContainer)
-            Text("Reading your log…", style = WindmillType.caption, color = colors.onSurfaceVariant)
+            Text(stringResource(R.string.gym_log_reading_log), style = WindmillType.caption, color = colors.onSurfaceVariant)
         }
         return
     }
     Button(onClick = if (older == Older.Failed) onRetry else onLoad, enabled = older != Older.Loading, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
         colors = ButtonDefaults.buttonColors(containerColor = colors.surfaceContainerHighest, contentColor = colors.onSurface)) {
-        Text(when (older) { Older.Failed -> "Retry"; Older.Loading -> "Loading"; else -> "Load older" })
+        Text(stringResource(when (older) { Older.Failed -> R.string.gym_action_retry; Older.Loading -> R.string.gym_log_loading; else -> R.string.gym_log_load_older }))
     }
-    if (older == Older.Failed) Text("That read failed.", Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+    if (older == Older.Failed) Text(stringResource(R.string.gym_log_read_failed), Modifier.semantics { liveRegion = LiveRegionMode.Polite },
         style = WindmillType.supporting, color = colors.onSurfaceVariant)
 }
 

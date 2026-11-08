@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="gym_picker_search_movements">Search movements</string>
+    <string name="gym_picker_the_six">The six</string>
+    <string name="gym_picker_all_movements">All movements</string>
+    <string name="gym_picker_create_movement">Create movement</string>
+    <string name="gym_picker_title_create_movement">Create movement</string>
+    <string name="gym_picker_creating">Creating…</string>
+    <string name="gym_picker_create_and_add">Create and add</string>
+    <string name="gym_picker_was_alias">was “%1$s”</string>
+    <string name="gym_picker_add_named">add %1$s</string>
+</resources>

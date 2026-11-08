@@ -47,6 +47,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
@@ -54,6 +55,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import works.windmill.gym.R
 import works.windmill.gym.presentation.Exercise
 import works.windmill.gym.presentation.ExerciseWrite
 import works.windmill.gym.presentation.RoutineMovement
@@ -296,7 +298,7 @@ fun MovementPicker(
                 SearchBarDefaults.InputField(
                     query = state.query, onQueryChange = { state.query = it },
                     onSearch = { keyboard?.hide() }, expanded = false, onExpandedChange = {},
-                    placeholder = { Text("Search movements", style = WindmillType.body) },
+                    placeholder = { Text(stringResource(R.string.gym_picker_search_movements), style = WindmillType.body) },
                     leadingIcon = { Icon(Icons.Filled.Search, null) },
                     colors = SearchBarDefaults.inputFieldColors(
                         focusedTextColor = colors.onSurface, unfocusedTextColor = colors.onSurface,
@@ -313,12 +315,12 @@ fun MovementPicker(
         Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState())) {
             options.unread?.let { Text(it, style = WindmillType.supportingParagraph, color = colors.onSurfaceVariant, modifier = inset) }
             if (options.six.isNotEmpty()) {
-                Text("The six", style = GymType.groupLabel, color = colors.onSurfaceVariant,
+                Text(stringResource(R.string.gym_picker_the_six), style = GymType.groupLabel, color = colors.onSurfaceVariant,
                     modifier = inset.padding(bottom = 8.dp))
                 options.six.forEach { MovementRow(it, onPick) }
             }
             if (options.six.isNotEmpty() && options.matches.isNotEmpty()) {
-                Text("All movements", style = GymType.groupLabel, color = colors.onSurfaceVariant,
+                Text(stringResource(R.string.gym_picker_all_movements), style = GymType.groupLabel, color = colors.onSurfaceVariant,
                     modifier = inset.padding(top = 20.dp, bottom = 8.dp))
             }
             options.matches.forEach { MovementRow(it, onPick) }
@@ -346,7 +348,7 @@ fun MovementPicker(
                 }
             },
             modifier = inset.fillMaxWidth().heightIn(min = 56.dp),
-        ) { Text("Create movement", style = WindmillType.label, color = colors.onSurface) }
+        ) { Text(stringResource(R.string.gym_picker_create_movement), style = WindmillType.label, color = colors.onSurface) }
     }
     if (state.createOpen && createReady) {
         val createSheet = rememberModalBottomSheetState(skipPartiallyExpanded = true,
@@ -366,8 +368,8 @@ fun MovementPicker(
             val movement = state.created ?: Exercise(state.requestId, submitted?.name ?: state.createName.orEmpty(),
                 Exercise.unclassified, submitted?.equipment ?: state.equipment, custom = true,
                 loadCount = submitted?.loadCount ?: state.loadCount)
-            MovementForm(RoutineMovement(null, movement), scheme = null, title = "Create movement",
-                commitLabel = if (state.busy) "Creating…" else "Create and add", creating = true,
+            MovementForm(RoutineMovement(null, movement), scheme = null, title = stringResource(R.string.gym_picker_title_create_movement),
+                commitLabel = stringResource(if (state.busy) R.string.gym_picker_creating else R.string.gym_picker_create_and_add), creating = true,
                 onMovement = {
                     state.createName = it.current.name
                     state.equipment = it.current.equipment
@@ -416,14 +418,14 @@ private fun MovementRow(row: PickerOptions.Row, onPick: (String) -> Unit) {
         supportingContent = {
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(row.equipment.replaceFirstChar { it.uppercase() }, style = WindmillType.detailCompact, color = colors.onSurfaceVariant)
-                row.alias?.let { Text("was “$it”", style = WindmillType.detailCompact, color = colors.onSurfaceVariant) }
+                row.alias?.let { Text(stringResource(R.string.gym_picker_was_alias, it), style = WindmillType.detailCompact, color = colors.onSurfaceVariant) }
                 row.meta?.let { Text(it, style = WindmillType.detailCompact, color = colors.onSurfaceVariant) }
             }
         },
         trailingContent = { Icon(if (row.selected) Icons.Filled.Check else Icons.Filled.Add, null, tint = colors.onSurfaceVariant) },
         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
         modifier = Modifier.fillMaxWidth()
-            .clickable(enabled = !row.selected, role = Role.Button, onClickLabel = "add ${row.name}") { onPick(row.id) }
+            .clickable(enabled = !row.selected, role = Role.Button, onClickLabel = stringResource(R.string.gym_picker_add_named, row.name)) { onPick(row.id) }
             .semantics { selected = row.selected },
     )
 }

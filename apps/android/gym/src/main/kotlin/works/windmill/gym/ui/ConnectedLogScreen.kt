@@ -15,6 +15,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -143,14 +144,14 @@ fun ConnectedLogScreen(
                         item("levels") { ConnectionLevels() }
                     }
                     ConnectedLogState.Unknown -> item("reading") {
-                        Text("Reading your connections…", style = GymType.nativeBody, color = colors.onSurfaceVariant,
+                        Text(stringResource(R.string.gym_connected_reading), style = GymType.nativeBody, color = colors.onSurfaceVariant,
                             modifier = Modifier.padding(16.dp))
                     }
                     ConnectedLogState.Refused, ConnectedLogState.Offline -> item("failure") {
                         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text(if (log == ConnectedLogState.Offline) ConnectedLog.offline else ConnectedLog.unread,
                                 style = GymType.nativeBody, color = colors.onSurfaceVariant)
-                            TextButton(onClick = ::refresh, enabled = !refreshing, modifier = Modifier.heightIn(min = 48.dp)) { Text("Try again") }
+                            TextButton(onClick = ::refresh, enabled = !refreshing, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.gym_action_try_again)) }
                         }
                     }
                 }

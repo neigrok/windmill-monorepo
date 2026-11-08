@@ -49,6 +49,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -62,6 +63,7 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.time.ZoneOffset
 import kotlinx.coroutines.launch
+import works.windmill.gym.R
 import works.windmill.gym.presentation.Bodyweight
 import works.windmill.gym.presentation.ChartWindow
 import works.windmill.gym.presentation.DatedPoint
@@ -180,9 +182,9 @@ fun WeighInSheet(
                         pickingDate = false
                         telemetry.event("gym_action", mapOf("screen" to "bodyweight", "action" to "calendar_confirm", "outcome" to "ok"))
                     }
-                }, enabled = usable) { Text("Use date") }
+                }, enabled = usable) { Text(stringResource(R.string.gym_bodyweight_use_date)) }
             },
-            dismissButton = { TextButton(onClick = ::cancelDate) { Text("Cancel") } },
+            dismissButton = { TextButton(onClick = ::cancelDate) { Text(stringResource(R.string.gym_action_cancel)) } },
         ) { DatePicker(state = picker, modifier = Modifier.testTag("weigh-in-calendar")) }
     }
 
@@ -202,11 +204,11 @@ fun WeighInSheet(
         Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp).padding(top = gap, bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(gap)) {
-            if (correction) Text("Weight", style = WindmillType.detailLabel, color = colors.onSurfaceVariant)
+            if (correction) Text(stringResource(R.string.gym_bodyweight_weight), style = WindmillType.detailLabel, color = colors.onSurfaceVariant)
             OutlinedTextField(value = typed, onValueChange = { typed = it; edited = true },
                 singleLine = true, enabled = !busy, isError = weightFailure != null,
                 textStyle = GymType.weighInInput,
-                label = if (correction) null else { { Text("Weight") } },
+                label = if (correction) null else { { Text(stringResource(R.string.gym_bodyweight_weight)) } },
                 suffix = { Text(Bodyweight.unit, style = WindmillType.paragraphLoose, color = colors.onSurfaceVariant) },
                 supportingText = weightFailure?.let { line -> { Text(line, modifier = Modifier.padding(bottom = 6.dp).semantics { liveRegion = LiveRegionMode.Polite }) } },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, autoCorrectEnabled = false, imeAction = ImeAction.Done),
@@ -215,7 +217,7 @@ fun WeighInSheet(
                     .semantics { contentDescription = weightField; weightFailure?.let { error(it) } },
             )
             if (correction) {
-                Text("Date", style = WindmillType.detailLabel, color = colors.onSurfaceVariant)
+                Text(stringResource(R.string.gym_bodyweight_date), style = WindmillType.detailLabel, color = colors.onSurfaceVariant)
                 Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).clip(MaterialTheme.shapes.medium)
                     .background(colors.surface)
                     .semantics(mergeDescendants = true) {
@@ -227,15 +229,16 @@ fun WeighInSheet(
                 }
             } else {
                 val press = remember { MutableInteractionSource() }
+                val chooseDate = stringResource(R.string.gym_bodyweight_choose_date)
                 LaunchedEffect(press) {
                     press.interactions.collect { if (it is PressInteraction.Release) openCalendar() }
                 }
                 OutlinedTextField(value = Bodyweight.fullDay(date), onValueChange = {}, readOnly = true, enabled = !busy,
                     singleLine = true, isError = dateFailure != null, textStyle = GymType.weighInInput,
-                    label = { Text("Date") },
+                    label = { Text(stringResource(R.string.gym_bodyweight_date)) },
                     trailingIcon = {
                         IconButton(onClick = ::openCalendar, enabled = !busy) {
-                            Icon(Icons.Default.DateRange, "Choose date")
+                            Icon(Icons.Default.DateRange, chooseDate)
                         }
                     },
                     supportingText = dateFailure?.let { line -> { Text(line, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }) } },
@@ -243,7 +246,7 @@ fun WeighInSheet(
                     modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).semantics {
                         contentDescription = "Date, ${Bodyweight.fullDay(date)}"
                         role = Role.Button
-                        onClick(label = "Choose date") { openCalendar(); true }
+                        onClick(label = chooseDate) { openCalendar(); true }
                         dateFailure?.let { error(it) }
                     },
                 )
@@ -310,7 +313,7 @@ fun BodyweightScreen(state: BodyweightState, events: BodyweightEvents, backTo: S
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
             if (!state.bodyweightRead) {
-                Text("Reading your weigh-ins…", style = WindmillType.body, color = colors.onSurfaceVariant)
+                Text(stringResource(R.string.gym_bodyweight_reading), style = WindmillType.body, color = colors.onSurfaceVariant)
             }
             if (standing.isEmpty()) {
                 if (state.bodyweightRead) {
@@ -351,7 +354,7 @@ fun BodyweightScreen(state: BodyweightState, events: BodyweightEvents, backTo: S
                     }
                 }
                 if (rows.isNotEmpty()) {
-                    Text("Every weigh-in", style = GymType.weighInListTitle, color = colors.onSurface)
+                    Text(stringResource(R.string.gym_bodyweight_every_weigh_in), style = GymType.weighInListTitle, color = colors.onSurface)
                     Column {
                         rows.asReversed().forEach { entry ->
                             key(entry.dateLocal) {
@@ -364,7 +367,7 @@ fun BodyweightScreen(state: BodyweightState, events: BodyweightEvents, backTo: S
                                         headlineContent = { Text("${Bodyweight.kilograms(entry.weightKg)} kg", style = WindmillType.labelParagraph, color = colors.onSurface) },
                                         supportingContent = { Text(Bodyweight.listDay(entry.date), style = WindmillType.supportingParagraph, color = colors.onSurfaceVariant) },
                                         modifier = Modifier.fillMaxWidth()
-                                            .clickable(role = Role.Button, onClickLabel = "Correct weigh-in") { repairing = entry },
+                                            .clickable(role = Role.Button, onClickLabel = stringResource(R.string.gym_bodyweight_correct_weigh_in)) { repairing = entry },
                                     )
                                 }
                             }

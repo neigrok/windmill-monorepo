@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="gym_review_removal_still_waiting">Still waiting for the log. Retry to check this removal.</string>
+    <string name="gym_review_ask_coach">Ask Coach</string>
+    <string name="gym_review_remove_routine">Remove %1$s</string>
+    <string name="gym_review_remove_routine_body">The whole routine is removed from your program. Every set you logged against it stays in the log.</string>
+    <string name="gym_review_routine_name">Routine name</string>
+    <string name="gym_review_expanded">expanded</string>
+    <string name="gym_review_collapsed">collapsed</string>
+    <string name="gym_review_show_sets">show the sets</string>
+    <string name="gym_review_hide_sets">hide the sets</string>
+    <string name="gym_review_set_numbered">set %1$s</string>
+    <string name="gym_review_sign_in">Sign in</string>
+    <string name="gym_review_one_proposal">1 proposal</string>
+    <string name="gym_review_add_named">Add %1$s</string>
+    <string name="gym_review_remove_named">Remove %1$s</string>
+    <string name="gym_review_move_named">Move %1$s</string>
+</resources>

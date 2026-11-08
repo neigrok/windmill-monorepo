@@ -47,6 +47,7 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
@@ -88,6 +89,9 @@ fun AssemblySheet(
     val added = rows.firstOrNull { it.justAdded }?.id
     val edge = with(LocalDensity.current) { 56.dp.toPx() }
     val speed = with(LocalDensity.current) { 600.dp.toPx() }
+    val moveUp = stringResource(R.string.gym_action_move_up)
+    val moveDown = stringResource(R.string.gym_action_move_down)
+    val notRemoved = stringResource(R.string.gym_logger_movement_not_removed)
     fun place() {
         val id = dragged ?: return
         val walk = preview ?: order
@@ -130,7 +134,7 @@ fun AssemblySheet(
     Column(Modifier.fillMaxWidth().background(colors.surfaceContainer).padding(horizontal = 20.dp)
         .padding(bottom = GymLayout.sheetBottom), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text("This workout", style = GymType.sheetHeadline, color = colors.onSurface)
+            Text(stringResource(R.string.gym_logger_this_workout), style = GymType.sheetHeadline, color = colors.onSurface)
             Text("${Readout.setCount(rows.sumOf { it.sets.size })} logged · ${routine ?: Readout.noRoutine}",
                 style = GymType.subtitle, color = colors.onSurfaceVariant)
         }
@@ -139,12 +143,18 @@ fun AssemblySheet(
                 val held = dragged == row.id
                 var problem by remember(row.id) { mutableStateOf<String?>(null) }
                 val actions = buildList {
-                    if (index > 0) add(CustomAccessibilityAction("Move up") { onReorder(index, index - 1); true })
-                    if (index < drawn.lastIndex) add(CustomAccessibilityAction("Move down") { onReorder(index, index + 1); true })
+                    if (index > 0) add(CustomAccessibilityAction(moveUp) { onReorder(index, index - 1); true })
+                    if (index < drawn.lastIndex) add(CustomAccessibilityAction(moveDown) { onReorder(index, index + 1); true })
                 }
-                DeleteSwipeRow(actionLabel = "Remove movement", onDelete = {
+                val rowState = when {
+                    row.justAdded && row.isCurrent -> stringResource(R.string.gym_logger_just_added_current)
+                    row.justAdded -> stringResource(R.string.gym_logger_just_added)
+                    row.isCurrent -> stringResource(R.string.gym_logger_current_movement)
+                    else -> ""
+                }
+                DeleteSwipeRow(actionLabel = stringResource(R.string.gym_logger_remove_movement), onDelete = {
                     val accepted = onDrop(row.id)
-                    problem = if (accepted) null else "The movement could not be removed. Check the current workout."
+                    problem = if (accepted) null else notRemoved
                     accepted
                 }, enabled = row.canDrop && dragged == null,
                     modifier = Modifier.zIndex(if (held) 1f else 0f).graphicsLayer {
@@ -156,7 +166,7 @@ fun AssemblySheet(
                         supportingContent = { Text(problem ?: row.metadata, style = WindmillType.supportingParagraph,
                             color = if (problem == null) colors.onSurfaceVariant else colors.error,
                             modifier = Modifier.semantics { if (problem != null) liveRegion = LiveRegionMode.Polite }) },
-                        leadingContent = { GymDragHandle("Reorder ${row.name}", modifier = Modifier.pointerInput(row.id, order) {
+                        leadingContent = { GymDragHandle(stringResource(R.string.gym_logger_reorder_named, row.name), modifier = Modifier.pointerInput(row.id, order) {
                             awaitEachGesture {
                                 val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
                                 if (down.isConsumed) return@awaitEachGesture
@@ -198,12 +208,11 @@ fun AssemblySheet(
                             headlineColor = colors.onSurface, supportingColor = colors.onSurfaceVariant, leadingIconColor = colors.onSurfaceVariant, trailingIconColor = colors.onSurfaceVariant),
                         modifier = Modifier.fillMaxWidth()
                             .then(if (row.id == added) Modifier.focusRequester(addedFocus) else Modifier)
-                            .clickable(role = Role.Button, onClickLabel = "walk to ${row.name}") { onJump(row.id) }
+                            .clickable(role = Role.Button, onClickLabel = stringResource(R.string.gym_logger_walk_to_named, row.name)) { onJump(row.id) }
                             .semantics {
                                 customActions = actions
                                 selected = row.isCurrent
-                                stateDescription = listOfNotNull(if (row.justAdded) "Just added" else null,
-                                    if (row.isCurrent) "Current movement" else null).joinToString(", ")
+                                stateDescription = rowState
                             },
                     )
                 }
@@ -212,19 +221,19 @@ fun AssemblySheet(
         }
         Box(Modifier.fillMaxWidth().heightIn(min = 64.dp).clip(CircleShape)
             .background(colors.surfaceContainerHighest).clickable(role = Role.Button, onClick = onAdd), contentAlignment = Alignment.Center) {
-            Text("Add movement", style = WindmillType.label, color = colors.onSurface)
+            Text(stringResource(R.string.gym_logger_add_movement), style = WindmillType.label, color = colors.onSurface)
         }
         Column {
             ListItem(
-                headlineContent = { Text("Hide workout", style = GymType.sheetAction) },
+                headlineContent = { Text(stringResource(R.string.gym_logger_hide_workout), style = GymType.sheetAction) },
                 leadingContent = { Icon(Icons.Rounded.KeyboardArrowDown, null, Modifier.size(20.dp)) },
                 colors = ListItemDefaults.colors(containerColor = colors.surfaceContainer, headlineColor = colors.onSurface, leadingIconColor = colors.onSurfaceVariant),
                 modifier = Modifier.fillMaxWidth().clickable(role = Role.Button, onClick = onHide),
             )
             if (notificationOff) ListItem(
-                headlineContent = { Text("Notification off", style = GymType.sheetAction) },
+                headlineContent = { Text(stringResource(R.string.gym_logger_notification_off), style = GymType.sheetAction) },
                 leadingContent = { Icon(Icons.Outlined.Notifications, null, Modifier.size(20.dp)) },
-                trailingContent = { TextButton(onClick = onShowNotification) { Text("Show", style = WindmillType.label, color = colors.primary) } },
+                trailingContent = { TextButton(onClick = onShowNotification) { Text(stringResource(R.string.gym_logger_show), style = WindmillType.label, color = colors.primary) } },
                 colors = ListItemDefaults.colors(containerColor = colors.surfaceContainer, headlineColor = colors.onSurface, leadingIconColor = colors.onSurfaceVariant),
                 modifier = Modifier.fillMaxWidth(),
             )

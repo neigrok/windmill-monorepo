@@ -25,9 +25,11 @@ import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import works.windmill.platform.design.WindmillSpace
+import works.windmill.gym.R
 import works.windmill.gym.presentation.Ladder
 import works.windmill.gym.presentation.LoggedSetLimits
 import works.windmill.gym.presentation.NumberEntry
@@ -125,14 +127,14 @@ internal fun SetNumbers(
     onFocusChange: () -> Unit = {},
 ) {
     val loadFeedback = rememberNumberStepperFeedback()
-    NumberStepper(load.text, load::edit, "Load", unit,
+    NumberStepper(load.text, load::edit, stringResource(R.string.gym_logger_load), unit,
         onStep = { stepLoad(it, false) }, onCommit = { commit(load) },
         size = NumberStepperSize.Display, input = NumberStepperInput.SignedDecimal,
         refusal = loadRefusal, enabled = enabled, decreaseEnabled = load.canDecrease, feedback = loadFeedback,
         onFocusChange = { load.focus(it) { commit(load) }; onFocusChange() })
     LadderRow(load.reading.value ?: load.committed, onDial = { step, big -> loadFeedback.accept(stepLoad(step, big), step) },
         enabled = enabled, decreaseEnabled = load.canDecrease)
-    NumberStepper(count.text, count::edit, "Reps", "reps",
+    NumberStepper(count.text, count::edit, stringResource(R.string.gym_logger_reps), stringResource(R.string.gym_logger_reps_unit),
         onStep = stepReps, onCommit = { commit(count) }, refusal = count.refusal, enabled = enabled,
         decreaseEnabled = count.reading.value != 1.0, increaseEnabled = count.reading.value != LoggedSetLimits.maxReps.toDouble(),
         onFocusChange = { count.focus(it) { commit(count) }; onFocusChange() })

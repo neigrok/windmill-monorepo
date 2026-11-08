@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="gym_session_no_longer_on_log">That workout is no longer on the log.</string>
+    <string name="gym_session_volume">Volume</string>
+    <string name="gym_session_plan_saved">Plan saved at start</string>
+    <string name="gym_session_closed_itself">Closed after four hours without a set</string>
+    <string name="gym_session_share">Share this workout</string>
+    <string name="gym_session_discard">Discard workout</string>
+    <string name="gym_session_open_this_movement">open this movement</string>
+    <string name="gym_session_fix_this_set">fix this set</string>
+</resources>

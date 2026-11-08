@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="gym_phone_title">On this phone</string>
+    <string name="gym_phone_workouts_count">%1$s workouts</string>
+    <string name="gym_phone_saved_training">Saved training</string>
+    <string name="gym_phone_adding_progress">Adding…</string>
+    <string name="gym_phone_need_you_count">%1$s need you</string>
+    <string name="gym_phone_needs_you_status">Needs you</string>
+    <string name="gym_phone_needs_you_heading">Needs you</string>
+    <string name="gym_phone_adding_heading">Adding</string>
+    <string name="gym_phone_today">Today</string>
+    <string name="gym_phone_keep_as_finished">Keep as finished</string>
+    <string name="gym_phone_fix_workout">Fix workout</string>
+    <string name="gym_phone_discard_workout">Discard workout</string>
+    <string name="gym_phone_keep_failed">The original workout is still saved on this phone. Keep as finished could not be completed.</string>
+    <string name="gym_phone_retry_failed">The original workout is still saved on this phone. Retry could not be completed.</string>
+    <string name="gym_phone_fix_failed">The original workout is still saved on this phone. Fix workout could not be completed.</string>
+    <string name="gym_phone_discard_failed">The original workout is still saved on this phone. Discard workout could not be completed.</string>
+    <string name="gym_phone_reason_open_workout">Your account has an open workout — keep this one as finished.</string>
+    <string name="gym_phone_reason_overlap">Overlaps another workout — fix its times.</string>
+    <string name="gym_phone_reason_bad_time">A time is invalid — fix its times.</string>
+    <string name="gym_phone_duration">Duration</string>
+    <string name="gym_phone_sets">Sets</string>
+    <string name="gym_phone_volume">Volume</string>
+    <string name="gym_phone_started">Started</string>
+    <string name="gym_phone_finished">Finished</string>
+    <string name="gym_phone_not_finished">Not finished</string>
+    <string name="gym_phone_mark_finished">Mark finished</string>
+    <string name="gym_phone_save_and_retry">Save and retry</string>
+    <string name="gym_phone_times">Times</string>
+    <string name="gym_phone_linked_to">Linked to %1$s</string>
+    <string name="gym_phone_use_date">Use date</string>
+    <string name="gym_phone_started_time">Started time</string>
+    <string name="gym_phone_finished_time">Finished time</string>
+    <string name="gym_phone_use_time">Use time</string>
+</resources>

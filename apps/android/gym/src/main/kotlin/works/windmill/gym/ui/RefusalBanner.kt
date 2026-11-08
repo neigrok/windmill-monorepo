@@ -17,9 +17,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
+import works.windmill.gym.R
 import works.windmill.gym.presentation.Exercise
 import works.windmill.gym.presentation.Readout
 import works.windmill.gym.store.RefusedChange
@@ -54,6 +56,7 @@ private fun Refusal(headline: String, reason: String, onDismiss: () -> Unit) {
     val colors = MaterialTheme.colorScheme
     val gymColors = MaterialTheme.gymColors
     val haptics = rememberGymHaptics()
+    val dismiss = stringResource(R.string.gym_action_dismiss)
     val swipe = rememberRowDismiss(settling = { it != SwipeToDismissBoxValue.Settled }) {
         haptics.revealed()
         onDismiss()
@@ -64,7 +67,7 @@ private fun Refusal(headline: String, reason: String, onDismiss: () -> Unit) {
         // Merged: the headline and the reason are one notice, and the action belongs to the whole
         // of it rather than to whichever half a finger lands on.
         modifier = Modifier.semantics(mergeDescendants = true) {
-            customActions = listOf(CustomAccessibilityAction("Dismiss") { onDismiss(); true })
+            customActions = listOf(CustomAccessibilityAction(dismiss) { onDismiss(); true })
         },
     ) {
         Column(
@@ -85,7 +88,7 @@ private fun DismissGround() {
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box { Text("Dismiss", style = GymType.dismiss, color = colors.onSurfaceVariant) }
-        Box { Text("Dismiss", style = GymType.dismiss, color = colors.onSurfaceVariant) }
+        Box { Text(stringResource(R.string.gym_action_dismiss), style = GymType.dismiss, color = colors.onSurfaceVariant) }
+        Box { Text(stringResource(R.string.gym_action_dismiss), style = GymType.dismiss, color = colors.onSurfaceVariant) }
     }
 }

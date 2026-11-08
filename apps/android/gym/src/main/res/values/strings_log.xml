@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="gym_log_title">The log</string>
+    <string name="gym_log_progress_unavailable">Progress unavailable</string>
+    <string name="gym_log_reading_progress">Reading progress…</string>
+    <string name="gym_log_empty_title">No workouts yet</string>
+    <string name="gym_log_empty_detail">Your training will land here.</string>
+    <string name="gym_log_discard_workout">Discard workout</string>
+    <string name="gym_log_delete_weigh_in">Delete weigh-in</string>
+    <string name="gym_log_open_record">Open record</string>
+    <string name="gym_log_open_bodyweight">Open bodyweight</string>
+    <string name="gym_log_open_workout">Open workout</string>
+    <string name="gym_log_workout_actions">Workout actions</string>
+    <string name="gym_log_new_best">New best</string>
+    <string name="gym_log_share_workout">Share this workout</string>
+    <string name="gym_log_reading_log">Reading your log…</string>
+    <string name="gym_log_loading">Loading</string>
+    <string name="gym_log_load_older">Load older</string>
+    <string name="gym_log_read_failed">That read failed.</string>
+</resources>

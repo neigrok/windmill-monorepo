@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="gym_action_cancel">Cancel</string>
+    <string name="gym_action_close">Close</string>
+    <string name="gym_action_delete">Delete</string>
+    <string name="gym_action_discard">Discard</string>
+    <string name="gym_action_done">Done</string>
+    <string name="gym_action_save">Save</string>
+    <string name="gym_action_dismiss">Dismiss</string>
+    <string name="gym_action_more">More</string>
+    <string name="gym_action_back">Back</string>
+    <string name="gym_action_try_again">Try again</string>
+    <string name="gym_action_retry">Retry</string>
+    <string name="gym_action_keep_it">Keep it</string>
+    <string name="gym_action_move_up">Move up</string>
+    <string name="gym_action_move_down">Move down</string>
+</resources>

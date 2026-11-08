@@ -36,6 +36,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -47,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import works.windmill.gym.R
 import works.windmill.platform.LocalShellActions
 import androidx.compose.foundation.layout.Column
 import androidx.compose.material.icons.filled.Close
@@ -116,7 +118,7 @@ fun GymScreen(
                     else onBack?.let { back ->
                         IconButton(onClick = back, modifier = Modifier.size(48.dp)) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = backTo?.let { "Back to $it" } ?: "Back",
+                                contentDescription = backTo?.let { stringResource(R.string.gym_screen_back_to, it) } ?: stringResource(R.string.gym_action_back),
                                 tint = colors.onSurface, modifier = Modifier.size(24.dp))
                         }
                     }
@@ -201,7 +203,7 @@ fun GymSheetBar(
         },
         navigationIcon = {
             IconButton(onClick = onClose, enabled = closeEnabled) {
-                Icon(Icons.Filled.Close, contentDescription = "Close", tint = colors.onSurface)
+                Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.gym_action_close), tint = colors.onSurface)
             }
         },
         expandedHeight = maxOf(64.dp, with(density) { lines.toDp() } + 16.dp),
@@ -215,10 +217,11 @@ fun GymSheetBar(
 fun YouSeat(initial: String) {
     val colors = MaterialTheme.colorScheme
     val shell = LocalShellActions.current
+    val yourAccount = stringResource(R.string.gym_screen_your_account)
     Box(
         Modifier.size(48.dp).clip(CircleShape)
-            .clickable(role = Role.Button, onClickLabel = "open your account", onClick = shell.openYou)
-            .semantics(mergeDescendants = true) { contentDescription = "Your account" },
+            .clickable(role = Role.Button, onClickLabel = stringResource(R.string.gym_screen_open_account), onClick = shell.openYou)
+            .semantics(mergeDescendants = true) { contentDescription = yourAccount },
         contentAlignment = Alignment.Center,
     ) {
         Box(Modifier.size(36.dp).clip(CircleShape).background(colors.surfaceContainerHighest), contentAlignment = Alignment.Center) {

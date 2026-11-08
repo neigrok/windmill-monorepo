@@ -36,6 +36,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
@@ -61,6 +62,7 @@ import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.roundToInt
+import works.windmill.gym.R
 import works.windmill.gym.presentation.DatedGeometry
 import works.windmill.gym.presentation.DatedPoint
 import works.windmill.gym.presentation.DatedSeries
@@ -110,6 +112,9 @@ fun DatedPlot(
     val lastDate = Instant.ofEpochMilli(series.untilMs).atZone(series.zone).toLocalDate()
     val dateFormat = DateTimeFormatter.ofPattern(if (firstDate.year == lastDate.year) "d MMM" else "d MMM yy", Locale.getDefault())
     val gapFormat = DateTimeFormatter.ofPattern("d MMM yyyy", Locale.getDefault())
+    val estimatesDescription = stringResource(R.string.gym_record_workout_estimates)
+    val earlierWorkout = stringResource(R.string.gym_record_earlier_workout)
+    val laterWorkout = stringResource(R.string.gym_record_later_workout)
     if (interaction == PlotInteraction.Inspect) {
         DisposableEffect(facts, series.fromMs, series.zone, series.maxGapDays) {
             onDispose { fling?.cancel(); inspect(null) }
@@ -148,14 +153,14 @@ fun DatedPlot(
             val actions = if (interaction != PlotInteraction.Inspect || series.ordered.isEmpty()) emptyList() else {
                 val index = series.ordered.indexOfFirst { it.id == inspected?.id }.takeIf { it >= 0 } ?: series.ordered.lastIndex
                 buildList {
-                    if (index > 0) add(CustomAccessibilityAction("Earlier workout") {
+                    if (index > 0) add(CustomAccessibilityAction(earlierWorkout) {
                         fling?.cancel()
                         val point = series.ordered[index - 1]
                         pan = currentGeometry.reveal(point.id)
                         inspect(point)
                         true
                     })
-                    if (index < series.ordered.lastIndex) add(CustomAccessibilityAction("Later workout") {
+                    if (index < series.ordered.lastIndex) add(CustomAccessibilityAction(laterWorkout) {
                         fling?.cancel()
                         val point = series.ordered[index + 1]
                         pan = currentGeometry.reveal(point.id)
@@ -228,7 +233,7 @@ fun DatedPlot(
             Box(Modifier.fillMaxWidth().height(with(density) { height.toDp() }).then(gestures).then(
                 if (interaction == PlotInteraction.Inspect) Modifier.semantics {
                     isTraversalGroup = true
-                    contentDescription = "Workout estimates"
+                    contentDescription = estimatesDescription
                     stateDescription = (inspected ?: series.ordered.lastOrNull())?.label.orEmpty()
                     liveRegion = LiveRegionMode.Polite
                     customActions = actions
@@ -284,9 +289,9 @@ fun DatedPlot(
             }
         }
         if (!preview) series.gaps.forEach { (before, after) ->
-            val label = gapLabel?.invoke(before, after) ?: "No data · " +
-                gapFormat.format(Instant.ofEpochMilli(before.atMs).atZone(series.zone)) + " – " +
-                gapFormat.format(Instant.ofEpochMilli(after.atMs).atZone(series.zone))
+            val label = gapLabel?.invoke(before, after) ?: stringResource(R.string.gym_record_no_data_range,
+                gapFormat.format(Instant.ofEpochMilli(before.atMs).atZone(series.zone)),
+                gapFormat.format(Instant.ofEpochMilli(after.atMs).atZone(series.zone)))
             Text(label, style = axisStyle, modifier = Modifier.fillMaxWidth())
         }
     }

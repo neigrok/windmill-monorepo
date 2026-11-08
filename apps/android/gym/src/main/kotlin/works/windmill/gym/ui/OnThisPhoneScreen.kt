@@ -4,6 +4,7 @@ import works.windmill.platform.design.WindmillType
 import androidx.compose.material3.MaterialTheme
 import works.windmill.platform.design.WindmillSheet
 import androidx.activity.compose.BackHandler
+import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -20,6 +21,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.error
@@ -34,6 +36,7 @@ import java.time.ZoneId
 import java.time.ZoneOffset
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.launch
+import works.windmill.gym.R
 import works.windmill.gym.presentation.Exercise
 import works.windmill.gym.presentation.PlanEntry
 import works.windmill.gym.presentation.PlanSnapshot
@@ -124,17 +127,28 @@ object PhoneRecovery {
         if (codes.all { it in setOf("session-open", "session-already-open", "unknown-exercise", "parent-dead", "session-finished", "recovery-session-open", "recovery-stale", "recovery-retry", "unsent") }) return RecoveryAction.Retry
         return null
     }
-    fun label(action: RecoveryAction): String = when (action) {
-        RecoveryAction.Keep -> "Keep as finished"
-        RecoveryAction.Retry -> "Retry"
-        RecoveryAction.Fix -> "Fix workout"
-        RecoveryAction.Discard -> "Discard workout"
+    @Composable
+    fun label(action: RecoveryAction): String = stringResource(when (action) {
+        RecoveryAction.Keep -> R.string.gym_phone_keep_as_finished
+        RecoveryAction.Retry -> R.string.gym_action_retry
+        RecoveryAction.Fix -> R.string.gym_phone_fix_workout
+        RecoveryAction.Discard -> R.string.gym_phone_discard_workout
+    })
+    @StringRes
+    fun failure(action: RecoveryAction): Int = when (action) {
+        RecoveryAction.Keep -> R.string.gym_phone_keep_failed
+        RecoveryAction.Retry -> R.string.gym_phone_retry_failed
+        RecoveryAction.Fix -> R.string.gym_phone_fix_failed
+        RecoveryAction.Discard -> R.string.gym_phone_discard_failed
     }
-    fun reason(row: ImportRecovery): String = if (row.adding) "Adding…" else reason(row.refusals.first().code, row.refusals.first().reason)
+    @Composable
+    fun reason(row: ImportRecovery): String =
+        if (row.adding) stringResource(R.string.gym_phone_adding_progress) else reason(row.refusals.first().code, row.refusals.first().reason)
+    @Composable
     fun reason(code: String, fallback: String = WorkoutImports.reason(code)): String = when (code) {
-        "session-open", "session-already-open" -> "Your account has an open workout — keep this one as finished."
-        "session-overlap" -> "Overlaps another workout — fix its times."
-        "bad-instant", "clock-skew" -> "A time is invalid — fix its times."
+        "session-open", "session-already-open" -> stringResource(R.string.gym_phone_reason_open_workout)
+        "session-overlap" -> stringResource(R.string.gym_phone_reason_overlap)
+        "bad-instant", "clock-skew" -> stringResource(R.string.gym_phone_reason_bad_time)
         else -> fallback
     }
 }
@@ -145,16 +159,19 @@ fun OnThisPhoneSection(read: RecoveryRead?, onList: () -> Unit, onInspect: (Stri
     if (rows.isEmpty()) return
     val colors = MaterialTheme.colorScheme
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        RecoveryHeading("On this phone")
+        RecoveryHeading(stringResource(R.string.gym_phone_title))
         if (rows.size == 1) RecoveryRow(rows.single()) { onInspect(rows.single().id) }
         else Row(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.large).background(colors.surfaceContainer)
             .clickable(role = Role.Button, onClick = onList).padding(horizontal = 16.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 val counted = rows.all { it.workout != null }
-                Text(if (counted) "${rows.size} workouts" else "Saved training", style = GymType.listHeading, color = colors.onSurface)
+                Text(if (counted) stringResource(R.string.gym_phone_workouts_count, rows.size.toString())
+                    else stringResource(R.string.gym_phone_saved_training), style = GymType.listHeading, color = colors.onSurface)
                 val needs = PhoneRecovery.needsYou(rows)
-                Text(if (needs == 0) "Adding…" else if (counted) "$needs need you" else "Needs you", style = WindmillType.detail, color = colors.onSurfaceVariant)
+                Text(if (needs == 0) stringResource(R.string.gym_phone_adding_progress)
+                    else if (counted) stringResource(R.string.gym_phone_need_you_count, needs.toString())
+                    else stringResource(R.string.gym_phone_needs_you_status), style = WindmillType.detail, color = colors.onSurfaceVariant)
             }
         }
     }
@@ -163,10 +180,12 @@ fun OnThisPhoneSection(read: RecoveryRead?, onList: () -> Unit, onInspect: (Stri
 @Composable
 fun OnThisPhoneScreen(read: RecoveryRead, onBack: () -> Unit, onInspect: (String) -> Unit) {
     LaunchedEffect(read.workouts.isEmpty()) { if (read.workouts.isEmpty()) onBack() }
-    GymScreen("On this phone", onBack = onBack, backTo = "The log") {
+    val needsYouHeading = stringResource(R.string.gym_phone_needs_you_heading)
+    val addingHeading = stringResource(R.string.gym_phone_adding_heading)
+    GymScreen(stringResource(R.string.gym_phone_title), onBack = onBack, backTo = stringResource(R.string.gym_log_title)) {
         LazyColumn(Modifier.fillMaxSize().testTag("on-this-phone"), contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            for ((adding, title) in listOf(false to "Needs you", true to "Adding")) {
+            for ((adding, title) in listOf(false to needsYouHeading, true to addingHeading)) {
                 val rows = read.workouts.filter { it.adding == adding }
                 if (rows.isNotEmpty()) {
                     item("heading:$adding") { RecoveryHeading(title) }
@@ -188,7 +207,7 @@ private fun RecoveryRow(row: ImportRecovery, onInspect: () -> Unit) {
     val colors = MaterialTheme.colorScheme
     val date = row.workout?.session?.startedAtMs?.let { ms ->
         val today = LocalDate.now()
-        if (Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()).toLocalDate() == today) "Today"
+        if (Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()).toLocalDate() == today) stringResource(R.string.gym_phone_today)
         else Readout.date(ms).substringBeforeLast(" ")
     }
     Row(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.large).background(colors.surfaceContainer)
@@ -207,6 +226,7 @@ private fun RecoveryRow(row: ImportRecovery, onInspect: () -> Unit) {
 fun WorkoutInspectScreen(state: RecoveryState, events: RecoveryEvents, read: RecoveryRead, row: ImportRecovery,
     onBack: () -> Unit, currentOwner: () -> Boolean) {
     val colors = MaterialTheme.colorScheme
+    val context = LocalContext.current
     val telemetry = LocalTelemetry.current
     val scope = rememberCoroutineScope()
     var submitted by remember(row.sourceKey) { mutableStateOf(false) }
@@ -228,18 +248,18 @@ fun WorkoutInspectScreen(state: RecoveryState, events: RecoveryEvents, read: Rec
             try { when (val result = events.recover(read, row, action, draft = null, currentOwner = currentOwner)) {
                 RecoveryResult.Accepted -> { discardSource = null; if (action == RecoveryAction.Discard) onBack() }
                 is RecoveryResult.Refused -> { discardSource = null; message = result.line }
-                RecoveryResult.Failed -> { discardSource = null; message = "The original workout is still saved on this phone. ${PhoneRecovery.label(action)} could not be completed." }
+                RecoveryResult.Failed -> { discardSource = null; message = context.getString(PhoneRecovery.failure(action)) }
                 null -> Unit
             } } finally { submitted = false }
         }
     }
     LaunchedEffect(row.id) { telemetry.event("gym_import_recovery", mapOf("action" to "inspect", "state" to "opened")) }
-    GymScreen(PhoneRecovery.title(row), onBack = onBack, backTo = "On this phone", actions = {
+    GymScreen(PhoneRecovery.title(row), onBack = onBack, backTo = stringResource(R.string.gym_phone_title), actions = {
         if (PhoneRecovery.canDiscard(row) || PhoneRecovery.canFix(row)) Box {
-            IconButton(onClick = { menu = true }, enabled = !busy) { Icon(Icons.Default.MoreVert, "More") }
+            IconButton(onClick = { menu = true }, enabled = !busy) { Icon(Icons.Default.MoreVert, stringResource(R.string.gym_action_more)) }
             DropdownMenu(menu, onDismissRequest = { menu = false }) {
-                if (PhoneRecovery.canFix(row) && primary != RecoveryAction.Fix) DropdownMenuItem(text = { Text("Fix workout") }, onClick = ::fix)
-                if (PhoneRecovery.canDiscard(row)) DropdownMenuItem(text = { Text("Discard workout", color = colors.error) }, onClick = {
+                if (PhoneRecovery.canFix(row) && primary != RecoveryAction.Fix) DropdownMenuItem(text = { Text(stringResource(R.string.gym_phone_fix_workout)) }, onClick = ::fix)
+                if (PhoneRecovery.canDiscard(row)) DropdownMenuItem(text = { Text(stringResource(R.string.gym_phone_discard_workout), color = colors.error) }, onClick = {
                     menu = false; discardSource = row.sourceKey
                     telemetry.event("gym_import_recovery", mapOf("action" to "discard", "state" to "shown"))
                 })
@@ -296,7 +316,8 @@ private fun RecoveryFacts(row: ImportRecovery, catalog: List<Exercise>) {
     val duration = if (row.operationsOnly) "—" else copy.session.finishedAtMs?.let { finish -> runCatching { Math.subtractExact(finish, copy.session.startedAtMs) }.getOrNull()?.takeIf { it >= 0 }?.let(Readout::duration) } ?: "—"
     val volume = summary.tonnageKg?.takeIf { it.isFinite() }?.let { "${Readout.weight(it)} kg" } ?: "—"
     Row(Modifier.fillMaxWidth().background(colors.surfaceContainer, MaterialTheme.shapes.large).padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        for ((value, caption) in listOf(duration to "Duration", sets.size.toString() to "Sets", volume to "Volume")) Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        for ((value, caption) in listOf(duration to stringResource(R.string.gym_phone_duration), sets.size.toString() to stringResource(R.string.gym_phone_sets),
+            volume to stringResource(R.string.gym_phone_volume))) Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(value, style = GymType.statValue, color = colors.onSurface)
             Text(caption, style = GymType.captionLoose, color = colors.onSurfaceVariant)
         }
@@ -342,14 +363,15 @@ private fun RecoveryTimes(session: Session, onPick: ((String) -> Unit)? = null, 
     val colors = MaterialTheme.colorScheme
     val largeText = GymTextScale.large
     Column(Modifier.fillMaxWidth().background(colors.surfaceContainer, MaterialTheme.shapes.large).padding(horizontal = 16.dp)) {
-        for ((index, field) in listOf("Started" to session.startedAtMs, "Finished" to session.finishedAtMs).withIndex()) {
+        for ((index, field) in listOf(Triple("Started", session.startedAtMs, R.string.gym_phone_started),
+            Triple("Finished", session.finishedAtMs, R.string.gym_phone_finished)).withIndex()) {
             if (index > 0) HorizontalDivider(color = colors.onSurfaceVariant.copy(alpha = .12f))
             val values: @Composable () -> Unit = {
                 val hours24 = DateFormat.is24HourFormat(LocalContext.current)
                 val instant = field.second
                 if (instant == null) {
-                    Text("Not finished", style = WindmillType.supporting, color = colors.onSurfaceVariant)
-                    if (markFinished != null) TextButton(onClick = markFinished) { Text("Mark finished") }
+                    Text(stringResource(R.string.gym_phone_not_finished), style = WindmillType.supporting, color = colors.onSurfaceVariant)
+                    if (markFinished != null) TextButton(onClick = markFinished) { Text(stringResource(R.string.gym_phone_mark_finished)) }
                 } else if (onPick == null) {
                     val otherDay = Instant.ofEpochMilli(instant).atZone(ZoneId.systemDefault()).toLocalDate() !=
                         Instant.ofEpochMilli(session.startedAtMs).atZone(ZoneId.systemDefault()).toLocalDate()
@@ -361,10 +383,10 @@ private fun RecoveryTimes(session: Session, onPick: ((String) -> Unit)? = null, 
                 }
             }
             if (largeText) Column(Modifier.fillMaxWidth().padding(vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(field.first, style = WindmillType.supportingParagraph, color = colors.onSurface)
+                Text(stringResource(field.third), style = WindmillType.supportingParagraph, color = colors.onSurface)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) { values() }
             } else Row(Modifier.fillMaxWidth().heightIn(min = 52.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(field.first, style = WindmillType.supportingParagraph, color = colors.onSurface, modifier = Modifier.weight(1f))
+                Text(stringResource(field.third), style = WindmillType.supportingParagraph, color = colors.onSurface, modifier = Modifier.weight(1f))
                 values()
             }
         }
@@ -376,6 +398,7 @@ private fun RecoveryTimes(session: Session, onPick: ((String) -> Unit)? = null, 
 fun WorkoutFixScreen(state: RecoveryState, events: RecoveryEvents, currentOwner: () -> Boolean) {
     val draft = state.fixDraft ?: return
     val colors = MaterialTheme.colorScheme
+    val context = LocalContext.current
     val telemetry = LocalTelemetry.current
     val scope = rememberCoroutineScope()
     var picking by rememberSaveable(draft.row.sourceKey) { mutableStateOf<String?>(null) }
@@ -403,8 +426,8 @@ fun WorkoutFixScreen(state: RecoveryState, events: RecoveryEvents, currentOwner:
     Dialog(onDismissRequest = ::close, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         Box(Modifier.fillMaxSize().background(colors.surface).systemBarsPadding()) {
             BackHandler { close() }
-            GymScreen("Fix workout", navigation = {
-                IconButton(onClick = ::close, enabled = !busy) { Icon(Icons.Default.Close, "Close") }
+            GymScreen(stringResource(R.string.gym_phone_fix_workout), navigation = {
+                IconButton(onClick = ::close, enabled = !busy) { Icon(Icons.Default.Close, stringResource(R.string.gym_action_close)) }
             }, actions = {
                 TextButton(enabled = !busy && !checking && held == null, onClick = {
                     if (busy || checking || held != null) return@TextButton
@@ -415,12 +438,12 @@ fun WorkoutFixScreen(state: RecoveryState, events: RecoveryEvents, currentOwner:
                             when (val result = events.recover(draft.read, draft.row, RecoveryAction.Fix, draft, currentOwner)) {
                                 RecoveryResult.Accepted -> Unit
                                 is RecoveryResult.Refused -> failure = result.line
-                                RecoveryResult.Failed -> failure = "The original workout is still saved on this phone. Fix workout could not be completed."
+                                RecoveryResult.Failed -> failure = context.getString(PhoneRecovery.failure(RecoveryAction.Fix))
                                 null -> Unit
                             }
                         } finally { submitted = false }
                     }
-                }) { Text("Save and retry") }
+                }) { Text(stringResource(R.string.gym_phone_save_and_retry)) }
             }, bottomBar = {
                 val line = failure ?: held?.let { PhoneRecovery.reason(it) }
                 if (line != null) Box(Modifier.padding(horizontal = 20.dp).padding(bottom = 16.dp)) { RecoveryBand(line, failed = failure != null) }
@@ -428,7 +451,7 @@ fun WorkoutFixScreen(state: RecoveryState, events: RecoveryEvents, currentOwner:
                 LazyColumn(Modifier.fillMaxSize().testTag("recovery-fix"), contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 20.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     item("times") { Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        RecoveryHeading("Times")
+                        RecoveryHeading(stringResource(R.string.gym_phone_times))
                         RecoveryTimes(draft.copy.session, onPick = { if (!busy) {
                             picking = it
                             telemetry.event("gym_import_recovery", mapOf("action" to "fix", "state" to if (it.endsWith(":date")) "date_opened" else "time_opened"))
@@ -441,7 +464,7 @@ fun WorkoutFixScreen(state: RecoveryState, events: RecoveryEvents, currentOwner:
                     draft.row.workout?.session?.plan?.let { plan -> item("link") {
                         Row(Modifier.fillMaxWidth().background(colors.surfaceContainer, MaterialTheme.shapes.large).padding(horizontal = 16.dp, vertical = 10.dp),
                             horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Text("Linked to ${plan.routine}", style = WindmillType.supporting, color = colors.onSurface, modifier = Modifier.weight(1f))
+                            Text(stringResource(R.string.gym_phone_linked_to, plan.routine), style = WindmillType.supporting, color = colors.onSurface, modifier = Modifier.weight(1f))
                             Switch(checked = draft.copy.session.routineId != null, enabled = !busy, onCheckedChange = { linked ->
                                 val original = requireNotNull(draft.row.workout).session
                                 change(draft.copy.copy(session = draft.copy.session.copy(routineId = original.routineId.takeIf { linked }, plan = original.plan.takeIf { linked })))
@@ -477,13 +500,13 @@ fun WorkoutFixScreen(state: RecoveryState, events: RecoveryEvents, currentOwner:
                                 val date = Instant.ofEpochMilli(selected).atZone(ZoneOffset.UTC).toLocalDate()
                                 use(date.atTime(local.toLocalTime()).atZone(local.zone).toInstant().toEpochMilli())
                             }
-                        }) { Text("Use date") }
-                    }, dismissButton = { TextButton(onClick = ::cancel) { Text("Cancel") } }) { DatePicker(picker) }
+                        }) { Text(stringResource(R.string.gym_phone_use_date)) }
+                    }, dismissButton = { TextButton(onClick = ::cancel) { Text(stringResource(R.string.gym_action_cancel)) } }) { DatePicker(picker) }
                 } else {
                     val picker = rememberTimePickerState(local.hour, local.minute, is24Hour = DateFormat.is24HourFormat(LocalContext.current))
-                    AlertDialog(onDismissRequest = ::cancel, title = { Text(fieldTitle(target)) }, text = { TimePicker(picker) },
-                        confirmButton = { TextButton(onClick = { use(local.withHour(picker.hour).withMinute(picker.minute).toInstant().toEpochMilli()) }) { Text("Use time") } },
-                        dismissButton = { TextButton(onClick = ::cancel) { Text("Cancel") } })
+                    AlertDialog(onDismissRequest = ::cancel, title = { Text(stringResource(if (started) R.string.gym_phone_started_time else R.string.gym_phone_finished_time)) }, text = { TimePicker(picker) },
+                        confirmButton = { TextButton(onClick = { use(local.withHour(picker.hour).withMinute(picker.minute).toInstant().toEpochMilli()) }) { Text(stringResource(R.string.gym_phone_use_time)) } },
+                        dismissButton = { TextButton(onClick = ::cancel) { Text(stringResource(R.string.gym_action_cancel)) } })
                 }
             }
         }
@@ -510,8 +533,6 @@ fun WorkoutFixScreen(state: RecoveryState, events: RecoveryEvents, currentOwner:
         }
     }
 }
-
-private fun fieldTitle(target: String): String = "${target.substringBefore(':')} time"
 
 private data class PreviewRecoveryState(
     override val busy: Boolean = false,

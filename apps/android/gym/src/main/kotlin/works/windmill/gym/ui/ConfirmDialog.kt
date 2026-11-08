@@ -6,13 +6,16 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.res.stringResource
+import works.windmill.gym.R
+import works.windmill.platform.i18n.pluralString
 
 @Composable
 fun ConfirmDialog(
     title: String,
     body: String?,
     confirm: String,
-    keep: String = "Keep it",
+    keep: String = stringResource(R.string.gym_action_keep_it),
     destructive: Boolean,
     onConfirm: () -> Unit,
     onKeep: () -> Unit,
@@ -61,19 +64,19 @@ fun WorkoutDiscardDialog(setCount: Int, onDiscard: () -> Unit, onCancel: () -> U
     AlertDialog(
         onDismissRequest = { if (!busy) onCancel() },
         containerColor = colors.surfaceContainer,
-        title = { Text("Discard this workout?", style = GymType.discardWorkoutTitle.overContainer(), color = colors.onSurface) },
-        text = { Text("This deletes the workout and its $setCount ${if (setCount == 1) "set" else "sets"}. You can’t undo this.",
+        title = { Text(stringResource(R.string.gym_logger_discard_workout_title), style = GymType.discardWorkoutTitle.overContainer(), color = colors.onSurface) },
+        text = { Text(pluralString(R.plurals.gym_logger_discard_workout_body, setCount, setCount.toString()),
             style = GymType.discardText.overContainer(), color = colors.onSurfaceVariant) },
         confirmButton = {
             TextButton(onClick = onDiscard, enabled = !busy,
                 colors = ButtonDefaults.textButtonColors(contentColor = colors.error)) {
-                Text("Discard", style = GymType.discardAction.overContainer())
+                Text(stringResource(R.string.gym_action_discard), style = GymType.discardAction.overContainer())
             }
         },
         dismissButton = {
             TextButton(onClick = onCancel, enabled = !busy,
                 colors = ButtonDefaults.textButtonColors(contentColor = colors.onSurfaceVariant)) {
-                Text("Cancel", style = GymType.discardAction.overContainer())
+                Text(stringResource(R.string.gym_action_cancel), style = GymType.discardAction.overContainer())
             }
         },
     )

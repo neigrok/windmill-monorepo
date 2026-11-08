@@ -42,6 +42,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -53,6 +55,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.launch
 import works.windmill.gym.LocalFrameStands
+import works.windmill.gym.R
 import works.windmill.gym.presentation.Exercise
 import works.windmill.gym.presentation.Ladder
 import works.windmill.gym.presentation.PlanEntry
@@ -253,6 +256,8 @@ fun SessionScreen(
     val colors = MaterialTheme.colorScheme
     val scope = rememberCoroutineScope()
     val telemetry = LocalTelemetry.current
+    val resources = LocalContext.current.resources
+    val noLongerOnLog = stringResource(R.string.gym_session_no_longer_on_log)
     var detail by rememberSaveable(summary.id, stateSaver = remember(telemetry) { sessionDetailSaver(telemetry) }) { mutableStateOf<SessionDetail?>(seed) }
     var setsFailure by remember(summary.id) { mutableStateOf<WriteFailure?>(null) }
     var review by remember(summary.id) { mutableStateOf<Review?>(null) }
@@ -290,7 +295,7 @@ fun SessionScreen(
         if (gone && frameStands && !leftGone) {
             leftGone = true
             onBack()
-            say("That workout is no longer on the log.")
+            say(noLongerOnLog)
         }
     }
     val visibleSets = currentDetail?.sets?.filterNot { it.id in state.deletedSets }
@@ -371,16 +376,16 @@ fun SessionScreen(
                 }
             }
             if (read && (review == null || Finish.recordSentence(review?.record, state.catalog) != null ||
-                    Finish.comparison(review?.against, state.catalog) != null)) {
+                    Finish.comparison(review?.against, state.catalog, resources) != null)) {
                 item("review") { ReviewRemarks(review, state.catalog) }
             }
             item("actions") {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Box(Modifier.fillMaxWidth().heightIn(min = 56.dp).clip(CircleShape).background(colors.surfaceContainerHighest)
                         .clickable(role = Role.Button) { shareOpen = true }, contentAlignment = Alignment.Center) {
-                        Text("Share this workout", style = WindmillType.label, color = colors.onSurface)
+                        Text(stringResource(R.string.gym_session_share), style = WindmillType.label, color = colors.onSurface)
                     }
-                    GymErrorTextButton("Discard workout", onClick = { onDiscard(readId) },
+                    GymErrorTextButton(stringResource(R.string.gym_session_discard), onClick = { onDiscard(readId) },
                         modifier = Modifier.fillMaxWidth())
                 }
             }
@@ -453,13 +458,13 @@ private fun SessionHead(summary: SessionSummary) {
     val gymColors = MaterialTheme.gymColors
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Text(headLine(summary), style = WindmillType.detail, color = colors.onSurfaceVariant)
-        Text("Volume", style = WindmillType.caption, color = colors.onSurfaceVariant)
+        Text(stringResource(R.string.gym_session_volume), style = WindmillType.caption, color = colors.onSurfaceVariant)
         Text(summary.tonnageKg?.let { "${Readout.weight(it)} kg" } ?: "—",
             style = GymType.sessionVolume, color = colors.onSurface)
         val count = Readout.setCount(summary.workingSetCount ?: summary.setCount)
         Text("$count · ${summary.exercises.size} ${if (summary.exercises.size == 1) "movement" else "movements"}", style = WindmillType.detail, color = colors.onSurfaceVariant)
-        if (summary.plan != null) Text("Plan saved at start", style = WindmillType.caption, color = gymColors.inkFaint)
-        if (summary.closedItself) Text("Closed after four hours without a set", style = WindmillType.detailCompact, color = colors.onSurfaceVariant)
+        if (summary.plan != null) Text(stringResource(R.string.gym_session_plan_saved), style = WindmillType.caption, color = gymColors.inkFaint)
+        if (summary.closedItself) Text(stringResource(R.string.gym_session_closed_itself), style = WindmillType.detailCompact, color = colors.onSurfaceVariant)
     }
 }
 
@@ -478,7 +483,7 @@ private fun MovementCard(
         Column(
             verticalArrangement = Arrangement.spacedBy(6.dp),
             modifier = Modifier.fillMaxWidth().heightIn(min = GymTap.minimum)
-                .clickable(role = Role.Button, onClickLabel = "open this movement") { onOpenMovement(movement.id) },
+                .clickable(role = Role.Button, onClickLabel = stringResource(R.string.gym_session_open_this_movement)) { onOpenMovement(movement.id) },
         ) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 movement.equipment?.let { EquipmentIcon(it, Modifier.size(20.dp), tint = colors.onSurfaceVariant) }
@@ -497,7 +502,7 @@ private fun MovementCard(
             movement.rows.forEachIndexed { index, performed ->
                 key(performed.id) {
                     val shape = GymSegment.shape(index, movement.rows.size)
-                    DeleteSwipeRow(actionLabel = "Delete", onDelete = { onDelete(performed.set) }, shape = shape, declaresAction = false) {
+                    DeleteSwipeRow(actionLabel = stringResource(R.string.gym_action_delete), onDelete = { onDelete(performed.set) }, shape = shape, declaresAction = false) {
                         SetRow(performed, shape, onFix, onDelete)
                     }
                 }
@@ -525,14 +530,16 @@ private fun SetRow(set: Performed.Row, shape: Shape, onFix: (String) -> Unit, on
     val pressed by pressing.collectIsPressedAsState()
     val largeText = GymTextScale.large
     val underLoad = Modifier.padding(start = 24.dp)
+    val fixThisSet = stringResource(R.string.gym_session_fix_this_set)
+    val deleteAction = stringResource(R.string.gym_action_delete)
     Column(Modifier.fillMaxWidth().heightIn(min = GymTap.minimum).clip(shape)
         .background(if (pressed) colors.surfaceContainerHighest else colors.surfaceContainer)
         .clickable(interactionSource = pressing, indication = null) { onFix(set.id) }
         .clearAndSetSemantics {
             contentDescription = set.spoken
             role = Role.Button
-            onClick("fix this set") { onFix(set.id); true }
-            customActions = listOf(CustomAccessibilityAction("Delete") { scope.launch { onDelete(set.set) }; true })
+            onClick(fixThisSet) { onFix(set.id); true }
+            customActions = listOf(CustomAccessibilityAction(deleteAction) { scope.launch { onDelete(set.set) }; true })
         }
         .padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp),

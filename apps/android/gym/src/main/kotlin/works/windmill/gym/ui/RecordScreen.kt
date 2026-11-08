@@ -44,10 +44,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import java.time.LocalDateTime
 import java.time.ZoneId
 import kotlinx.coroutines.launch
+import works.windmill.gym.R
 import works.windmill.gym.domain.sync.ExerciseRules
 import works.windmill.gym.presentation.Exercise
 import works.windmill.gym.presentation.MovementProgress
@@ -157,9 +159,9 @@ fun RecordScreen(state: RecordState, events: RecordEvents, exerciseId: String, b
     GymScreen(title = read?.record?.exercise?.name ?: Readout.movement(exerciseId, state.catalog),
         onBack = onBack, backTo = backTo,
         actions = { if (read != null && problem == null) Box {
-            IconButton(onClick = { menu = true }) { Icon(Icons.Rounded.MoreVert, contentDescription = "More") }
+            IconButton(onClick = { menu = true }) { Icon(Icons.Rounded.MoreVert, contentDescription = stringResource(R.string.gym_action_more)) }
             GymMenu(menu, { menu = false }) {
-                GymMenuItem("Edit movement", rememberVectorPainter(Icons.Outlined.Edit), onClick = {
+                GymMenuItem(stringResource(R.string.gym_record_edit_movement), rememberVectorPainter(Icons.Outlined.Edit), onClick = {
                     menu = false
                     val exercise = read.record.exercise
                     draft = exercise.name; equipment = exercise.equipment; loadCount = exercise.loadCount
@@ -173,12 +175,12 @@ fun RecordScreen(state: RecordState, events: RecordEvents, exerciseId: String, b
             .padding(top = 4.dp, bottom = 20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             when {
                 problem != null -> {
-                    Text("Record unavailable", style = GymType.screenHeading, color = colors.onSurface)
+                    Text(stringResource(R.string.gym_record_unavailable), style = GymType.screenHeading, color = colors.onSurface)
                     Text(problem.line("Your record could not be read."), style = WindmillType.body, color = colors.onSurfaceVariant)
-                    TextButton(onClick = { asked += 1 }) { Text("Try again") }
+                    TextButton(onClick = { asked += 1 }) { Text(stringResource(R.string.gym_action_try_again)) }
                 }
                 read != null -> RecordBody(Record.page(read, nowMs), read.record.exercise.equipment, read.progress, nowMs, zone, focusSessionId)
-                else -> Text("Reading your log…", style = WindmillType.body, color = colors.onSurfaceVariant)
+                else -> Text(stringResource(R.string.gym_record_reading), style = WindmillType.body, color = colors.onSurfaceVariant)
             }
         }
     }
@@ -237,7 +239,7 @@ private fun RecordBody(page: Record.Page, equipment: String, progress: MovementP
     if (page.strength) StrengthChart(progress, nowMs, zone, focusSessionId)
     page.noEstimate?.let { Text(it, style = WindmillType.supportingParagraph, color = colors.onSurfaceVariant) }
     if (page.records.isNotEmpty()) {
-        Text("Earlier records", style = GymType.heading, color = colors.onSurface)
+        Text(stringResource(R.string.gym_record_earlier_records), style = GymType.heading, color = colors.onSurface)
         page.records.forEach { mark ->
             Column(Modifier.fillMaxWidth().background(colors.surfaceContainer, MaterialTheme.shapes.large)
                 .padding(horizontal = 16.dp, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -247,7 +249,7 @@ private fun RecordBody(page: Record.Page, equipment: String, progress: MovementP
         }
     }
     if (page.days.isNotEmpty()) {
-        Text("Recent sets", style = GymType.listHeading, color = colors.onSurface)
+        Text(stringResource(R.string.gym_record_recent_sets), style = GymType.listHeading, color = colors.onSurface)
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             page.days.forEach { day -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(day.day.replaceFirstChar { it.titlecase() }, style = WindmillType.supportingParagraph, color = colors.onSurfaceVariant)
@@ -286,9 +288,9 @@ internal fun StrengthChart(progress: MovementProgress, nowMs: Long, zone: ZoneId
     val point = window.estimates.firstOrNull { it.id == shown?.id }
     Column(Modifier.fillMaxWidth().background(colors.surfaceContainer, MaterialTheme.shapes.large).padding(horizontal = 16.dp, vertical = 14.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("Estimated strength", style = GymType.heading, color = colors.onSurface)
+        Text(stringResource(R.string.gym_record_estimated_strength), style = GymType.heading, color = colors.onSurface)
         SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-            listOf(false to "12 weeks", true to "All").forEach { (value, label) ->
+            listOf(false to stringResource(R.string.gym_record_twelve_weeks), true to stringResource(R.string.gym_record_all)).forEach { (value, label) ->
                 SegmentedButton(selected = all == value, onClick = { all = value },
                     shape = SegmentedButtonDefaults.itemShape(if (value) 1 else 0, 2),
                     border = BorderStroke(1.dp, colors.outlineVariant),
@@ -308,7 +310,7 @@ internal fun StrengthChart(progress: MovementProgress, nowMs: Long, zone: ZoneId
             onInspect = { inspected = it }, gapLabel = { a, b -> "No workout · ${Readout.date(a.atMs)} – ${Readout.date(b.atMs)}" })
         Text("${if (all) "All" else "Last 12 weeks"} · ${Readout.sessionCount(window.sessions.size)}",
             style = WindmillType.detail, color = colors.onSurfaceVariant)
-        if (window.estimatesComplete && window.estimates.isEmpty()) Text("No eligible estimate in this window.", style = WindmillType.supporting, color = colors.onSurfaceVariant)
+        if (window.estimatesComplete && window.estimates.isEmpty()) Text(stringResource(R.string.gym_record_no_eligible_estimate), style = WindmillType.supporting, color = colors.onSurfaceVariant)
     }
 }
 

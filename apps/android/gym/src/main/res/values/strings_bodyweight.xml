@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="gym_bodyweight_use_date">Use date</string>
+    <string name="gym_bodyweight_weight">Weight</string>
+    <string name="gym_bodyweight_date">Date</string>
+    <string name="gym_bodyweight_choose_date">Choose date</string>
+    <string name="gym_bodyweight_reading">Reading your weigh-ins…</string>
+    <string name="gym_bodyweight_every_weigh_in">Every weigh-in</string>
+    <string name="gym_bodyweight_correct_weigh_in">Correct weigh-in</string>
+</resources>
