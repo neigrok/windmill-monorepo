@@ -100,7 +100,7 @@ class AuthStore(
         private set
     var signOutBusy by mutableStateOf(false)
         private set
-    var signOutFailure by mutableStateOf<String?>(null)
+    var signOutFailed by mutableStateOf(false)
         private set
 
     private fun requireNoTransition() {
@@ -124,7 +124,7 @@ class AuthStore(
         if (signOutBusy) return
         if (sessions.signOutPending || signOutOpening?.choice != null) {
             runSignOutWork { recoverSignOut() }
-            if (signOutFailure != null) status = AuthStatus.Unresolved(sessions.user() ?: signOutOpening?.user)
+            if (signOutFailed) status = AuthStatus.Unresolved(sessions.user() ?: signOutOpening?.user)
             return
         }
         if (signOutTransition) return
@@ -365,7 +365,7 @@ class AuthStore(
         signOutJob?.takeIf { it.isActive }?.let { it.await(); return }
         suspend fun run() {
             signOutBusy = true
-            signOutFailure = null
+            signOutFailed = false
             signOutError = null
             try { body() }
             catch (cancelled: CancellationException) {
@@ -374,7 +374,7 @@ class AuthStore(
                     try { withContext(NonCancellable) { opening?.handle?.cancel() } }
                     catch (failure: Exception) {
                         telemetry.failure("auth_sign_out", failure)
-                        signOutFailure = "Sign-out could not be saved. Your work is still on this phone. Try again."
+                        signOutFailed = true
                         signOutQuestion = opening?.handle?.let { AuthSignOutQuestion(it.unsent) }
                         throw cancelled
                     }
@@ -390,7 +390,7 @@ class AuthStore(
             catch (failure: Exception) {
                 telemetry.failure("auth_sign_out", failure)
                 signOutError = failure
-                signOutFailure = "Sign-out could not be saved. Your work is still on this phone. Try again."
+                signOutFailed = true
                 signOutQuestion = null
                 if (!sessions.signOutPending && signOutOpening?.handle == null && signOutOpening?.choice == null) {
                     signOutTransition = false

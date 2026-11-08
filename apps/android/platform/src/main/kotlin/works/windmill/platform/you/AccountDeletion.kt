@@ -2,6 +2,7 @@ package works.windmill.platform.you
 
 import android.content.Context
 import android.os.SystemClock
+import androidx.annotation.StringRes
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
@@ -21,6 +22,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
+import works.windmill.platform.R
 import works.windmill.platform.User
 import works.windmill.platform.auth.AuthSignOutSession
 import works.windmill.platform.auth.KeptValues
@@ -59,9 +61,9 @@ data class DeletionIdentity(val user: User, val credential: String, val replica:
 
 enum class AccountDeletionPage { Confirm, Deleting, Unknown, TemporarilyUnavailable, Unavailable, NotDeleted, Cleanup, Deleted }
 
-enum class AccountDeletionFailure(val sentence: String) {
-    Connection("Couldn’t delete your account. Check your connection and try again."),
-    Clock("Your account wasn’t deleted. This phone’s date and time look wrong. Fix them, then try again."),
+enum class AccountDeletionFailure(@StringRes val sentence: Int) {
+    Connection(R.string.platform_delete_failed_connection),
+    Clock(R.string.platform_delete_failed_clock),
 }
 
 class AccountDeletionStorage(private val values: KeptValues, private val vault: SecretVault,

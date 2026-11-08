@@ -1,11 +1,73 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <plurals name="platform_delete_unconfirmed_changes">
-        <item quantity="one">%1$s change on this phone hasn’t been confirmed by your account. It is deleted too.</item>
-        <item quantity="other">%1$s changes on this phone haven’t been confirmed by your account. They are deleted too.</item>
-    </plurals>
+    <string name="platform_back">Back</string>
+    <string name="platform_cancel">Cancel</string>
+    <string name="platform_discard">Discard</string>
+    <string name="platform_done">Done</string>
+    <string name="platform_keep">Keep</string>
+    <string name="platform_try_again">Try again</string>
+    <string name="platform_email">Email</string>
+
+    <string name="platform_sign_in">Sign in</string>
+    <string name="platform_sign_in_check_email">Check your email</string>
+    <string name="platform_sign_in_new_here">New here? The same door creates your account.</string>
+    <string name="platform_sign_in_email_placeholder">you@example.com</string>
+    <string name="platform_sign_in_code_sent">Code sent to %1$s.</string>
+    <string name="platform_sign_in_code">Code</string>
+    <string name="platform_sign_in_code_placeholder">6-digit code</string>
+    <string name="platform_sign_in_code_lifetime">Works once. Expires in 15 minutes.</string>
+    <string name="platform_sign_in_paste_link">You can also paste the email link.</string>
+    <string name="platform_sign_in_resend_in">Resend in %1$ss</string>
+    <string name="platform_sign_in_resend">Resend</string>
+    <string name="platform_sign_in_send_code">Send code</string>
+    <string name="platform_sign_in_sending">Sending…</string>
+    <string name="platform_sign_in_signing_in">Signing in…</string>
+    <string name="platform_sign_in_change_email">Change email</string>
+    <string name="platform_sign_in_failed">Sign-in could not be completed. Try again.</string>
+
+    <string name="platform_you_title">You</string>
+    <string name="platform_you_drag_handle">Drag handle</string>
+    <string name="platform_you_deletion_unconfirmed">Deletion unconfirmed</string>
+    <string name="platform_you_finish_deletion">Finish deletion</string>
+    <string name="platform_you_check_deletion">Check deletion</string>
+    <string name="platform_you_signing_out">Signing out…</string>
+    <string name="platform_sign_out">Sign out</string>
+    <string name="platform_sign_out_question">Sign out?</string>
+    <string name="platform_sign_out_nothing_unconfirmed">Your log stays in your account and leaves this phone.</string>
     <plurals name="platform_sign_out_unconfirmed_changes">
         <item quantity="one">%1$s change hasn’t been confirmed by your account yet. Keep them on this phone until you sign in again, or discard them from this phone.</item>
         <item quantity="other">%1$s changes haven’t been confirmed by your account yet. Keep them on this phone until you sign in again, or discard them from this phone.</item>
     </plurals>
+    <string name="platform_sign_out_failed">Sign-out could not be saved. Your work is still on this phone. Try again.</string>
+
+    <string name="platform_delete_account">Delete account</string>
+    <string name="platform_delete_question">Delete your account?</string>
+    <string name="platform_delete_fact_cloud">This deletes your Windmill account and its copy in the cloud: your roadmaps, journal pages and gym log.</string>
+    <string name="platform_delete_fact_devices">Every device signs out, and connected tools lose access, right away.</string>
+    <string name="platform_delete_fact_grace">For 30 days, you can sign in again to bring it all back. After that, it is deleted for good.</string>
+    <string name="platform_delete_fact_export">To keep a copy, export it first at windmill.works.</string>
+    <plurals name="platform_delete_unconfirmed_changes">
+        <item quantity="one">%1$s change on this phone hasn’t been confirmed by your account. It is deleted too.</item>
+        <item quantity="other">%1$s changes on this phone haven’t been confirmed by your account. They are deleted too.</item>
+    </plurals>
+    <string name="platform_delete_type_email">Type your email to confirm</string>
+    <string name="platform_delete_date_time">Date &amp; time</string>
+    <string name="platform_delete_failed_connection">Couldn’t delete your account. Check your connection and try again.</string>
+    <string name="platform_delete_failed_clock">Your account wasn’t deleted. This phone’s date and time look wrong. Fix them, then try again.</string>
+    <string name="platform_delete_done_title">Your account is deleted</string>
+    <string name="platform_delete_sign_in_before">Sign in before %1$s to bring it back.</string>
+    <string name="platform_delete_cant_check_title">Can’t check yet</string>
+    <string name="platform_delete_cant_check_body">Your account may already be closed. Try checking again when your connection is back.</string>
+    <string name="platform_delete_unavailable_title">Confirmation unavailable</string>
+    <string name="platform_delete_unavailable_body">We can’t confirm the result on this phone. Signing in may restore a closing account.</string>
+    <string name="platform_delete_not_deleted_title">Your account wasn’t deleted</string>
+    <string name="platform_delete_not_deleted_body">The request didn’t reach Windmill in time, so nothing changed. Your account works as before.</string>
+    <string name="platform_delete_cleanup_title">Finishing deletion</string>
+    <string name="platform_delete_cleanup_body">Your account is closed. This phone still needs to remove its local copy.</string>
+    <string name="platform_delete_checking_title">Checking deletion</string>
+    <string name="platform_delete_checking_body">Your account may already be closed. We’re waiting for confirmation.</string>
+    <string name="platform_delete_deleting">Deleting…</string>
+    <string name="platform_delete_retry_cleanup">Retry cleanup</string>
+    <string name="platform_delete_check_again">Check again</string>
+    <string name="platform_back_to_you">Back to You</string>
 </resources>
