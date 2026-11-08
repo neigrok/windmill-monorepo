@@ -1,27 +1,74 @@
 import XCTest
 
 final class JournalCaptures: DesignCapture {
+  // Journal · iOS 01.8P today with Write in the accessory, 01.10P reading back with the bar minimised, 01.9P writing.
+  func today(_ look: Look) {
+    let app = launch("journal-history", look)
+    let write = app.buttons["write-today"]
+    XCTAssertTrue(write.waitForExistence(timeout: 10))
+    capture("journal-01.8-today", look, app, settle: 1.5)
+    let scroll = app.scrollViews["journal-canvas"]
+    for _ in 0..<2 { scroll.swipeDown(velocity: .slow) }
+    capture("journal-01.10-reading-back", look, app, settle: 1.5)
+    write.tap()
+    XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+    app.typeText(" A line for the review.")
+    capture("journal-01.9-writing", look, app)
+    app.buttons["done-writing"].tap()
+    XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+  }
+  func testToday() { for look in Look.both { today(look) } }
+  // Journal · iOS 01.6P: the same room at the largest text.
+  func testTodayLargestText() { for look in Look.bothAtLargestText { today(look) } }
+
+  // Journal · iOS 01.5P: a refused save keeps the writing, says so under it in ink, and offers Try again.
+  func testRefusedSave() {
+    for look in Look.both + Look.bothAtLargestText {
+      let app = launch("journal-history-refused", look)
+      XCTAssertTrue(app.buttons["journal-try-again"].waitForExistence(timeout: 10))
+      XCTAssertEqual(app.buttons["write-today"].value as? String, "11 words, Not saved")
+      capture("journal-01.5-save-refused", look, app, settle: 1.5)
+      app.terminate()
+    }
+  }
+
+  // Journal · iOS 02.3P–02.5P: the count's sheet at .medium (.large at the largest text), raised by year, lowered over a passage.
   func echoes(_ look: Look) {
-    let app = launch("journal-echoes-first", look)
-    let tab = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "journal-echo-")).firstMatch
-    XCTAssertTrue(tab.waitForExistence(timeout: 20))
-    capture("journal-echo-tab", look, app, settle: 1.5)
-    reach(tab, app).tap()
-    let gotIt = app.buttons["echo-introduction-done"]
-    XCTAssertTrue(gotIt.waitForExistence(timeout: 5))
-    capture("journal-echo-first-card", look, app)
-    reach(gotIt, app).tap()
-    let more = app.buttons["echo-more"]
-    XCTAssertTrue(more.waitForExistence(timeout: 5))
-    let reachable = reach(more, app)
-    if reachable.frame.maxY > app.frame.maxY - 120 { app.swipeUp(velocity: .slow) }
-    capture("journal-echo-ink", look, app)
-    reachable.tap()
-    XCTAssertTrue(app.scrollViews["echo-sheet"].waitForExistence(timeout: 5))
-    capture("journal-echo-reader", look, app)
+    let app = launch("journal-echoes", look)
+    let count = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "journal-echo-")).firstMatch
+    XCTAssertTrue(count.waitForExistence(timeout: 20))
+    reach(count, app).tap()
+    let sheet = app.descendants(matching: .any)["echo-sheet"]
+    XCTAssertTrue(sheet.waitForExistence(timeout: 5))
+    if look.largestText {
+      capture("journal-02.4-echoes-large", look, app, settle: 1.5)
+    } else {
+      capture("journal-02.3-echoes-medium", look, app, settle: 1.5)
+      let top = app.navigationBars["From your journal"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0))
+      top.press(forDuration: 0.1, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.06)))
+      capture("journal-02.4-echoes-large", look, app, settle: 1.5)
+    }
+    let passage = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "echo-open-")).firstMatch
+    passage.tap()
+    XCTAssertTrue(app.buttons["echo-back-to-tonight"].waitForExistence(timeout: 5))
+    capture("journal-02.5-echo-opened", look, app, settle: 3.2)
   }
   func testEchoes() { for look in Look.both { echoes(look) } }
   func testEchoesLargestText() { for look in Look.bothAtLargestText { echoes(look) } }
+
+  // The first echo ever says what echoes are once, at the head of its sheet.
+  func testFirstEcho() {
+    for look in Look.both {
+      let app = launch("journal-echoes-first", look)
+      let count = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "journal-echo-")).firstMatch
+      XCTAssertTrue(count.waitForExistence(timeout: 20))
+      capture("journal-echo-count", look, app, settle: 1.5)
+      reach(count, app).tap()
+      XCTAssertTrue(app.buttons["echo-introduction-done"].waitForExistence(timeout: 5))
+      capture("journal-echo-first", look, app)
+      app.terminate()
+    }
+  }
 
   func testFirstOpenAndChrome() {
     for look in Look.both {
@@ -45,25 +92,7 @@ final class JournalCaptures: DesignCapture {
     }
   }
 
-  func testHistoryAndWriting() {
-    for look in Look.both {
-      let app = launch("journal-history", look)
-      let editor = app.textViews["journal-editor"]
-      XCTAssertTrue(editor.waitForExistence(timeout: 10))
-      capture("journal-history-today", look, app, settle: 1.5)
-      let scroll = app.scrollViews["journal-canvas"]
-      for _ in 0..<5 { scroll.swipeDown(velocity: .fast) }
-      capture("journal-history-past-pages", look, app)
-      app.buttons["write-today"].tap()
-      XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
-      app.typeText(" A line for the review.")
-      capture("journal-writing-keyboard", look, app)
-      app.buttons["done-writing"].tap()
-      XCTAssertTrue(app.buttons["write-today"].waitForExistence(timeout: 5))
-    }
-  }
-
-  func testAnonymousPromptsAndKeepOffer() {
+  func testAnonymousKeepOffer() {
     for look in Look.both {
       let app = launch("02a-where-to-start-signed-out", look)
       XCTAssertTrue(app.buttons["open-journal"].waitForExistence(timeout: 10)); app.buttons["open-journal"].tap()
@@ -71,9 +100,6 @@ final class JournalCaptures: DesignCapture {
       XCTAssertTrue(editor.waitForExistence(timeout: 10)); editor.tap()
       editor.typeText("A page for tomorrow.\nAnother evening worth remembering.")
       app.buttons["done-writing"].tap()
-      XCTAssertTrue(app.buttons["Not now"].waitForExistence(timeout: 5))
-      capture("journal-mood-energy-prompt", look, app)
-      app.buttons["Not now"].tap()
       XCTAssertTrue(app.buttons["Keep it"].waitForExistence(timeout: 5))
       capture("journal-keep-offer", look, app)
     }
@@ -95,8 +121,7 @@ final class JournalCaptures: DesignCapture {
       capture("journal-sign-in-email-code", look, app)
       code.tap(); code.typeText("482913")
       XCTAssertTrue(app.buttons["you"].waitForExistence(timeout: 15))
-      let backedUp = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "backed up")).firstMatch
-      XCTAssertTrue(backedUp.waitForExistence(timeout: 15))
+      XCTAssertTrue(app.todayBackedUp.waitForExistence(timeout: 15))
       capture("journal-today-signed-in-backed-up", look, app)
       app.buttons["you"].tap()
       XCTAssertTrue(app.buttons["sign-out"].waitForExistence(timeout: 5))

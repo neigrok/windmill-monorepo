@@ -35,7 +35,6 @@ enum JournalEchoFixture {
       model.journal.type("The rain cleared before my walk. I took the long way home and left my phone in my pocket.")
       guard model.journal.save() else { throw JournalEchoFailure.unavailable }
       model.journal.done()
-      model.journal.dismissScales()
       let response = JournalEchoResponse(pages: [JournalEchoPage(day: today.text, matches: [
         JournalEchoMatch(day: first.text, text: spoken, isSelf: true, source: "spoken", useful: false, occurrenceHint: 0),
         JournalEchoMatch(day: second.text, text: copied, isSelf: false, source: "typed", useful: false, occurrenceHint: 0),

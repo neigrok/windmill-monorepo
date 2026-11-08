@@ -39,15 +39,11 @@ nonisolated enum JournalPalette {
   static let moodRamp = (0...10).map { Color("journal/mood-\($0)") }
   static func mood(_ value: Int) -> Color { moodRamp[min(10, max(0, value))] }
   static let uiInk = UIColor(named: "journal/ink")!
+  static let uiInkDim = UIColor(named: "journal/ink-dim")!
   static let uiLamp = UIColor(named: "journal/lamp")!
-  // Faded roles: a kindled echo count, a passage's highlight under its ink, full energy's sheen, a set scale thumb's
-  // ring and its glow.
+  // Faded roles: a kindled echo count, and an opened passage's highlight on its page.
   static let kindled = lamp.opacity(0.4)
   static var uiHighlight: UIColor { uiLamp.withAlphaComponent(0.24) }
-  static let sheen = ink.opacity(0.28)
-  static let ring = ink.opacity(0.78)
-  static func moodGlow(_ value: Int) -> Color { mood(value).opacity(value == 10 ? 0.78 : 0.45) }
-  static func energyGlow(_ value: Int) -> Color { energy.opacity(value == 10 ? 0.78 : 0.45) }
 }
 
 nonisolated enum ShellPalette {

@@ -91,10 +91,10 @@ import Synchronization
 
   @Test func emptyAccountAdoptsSilently() async throws {
     let transport = JournalModelTransport(), model = try fixture(transport)
-    model.journal.type("Local"); model.journal.save(); model.journal.done(); model.journal.dismissScales()
+    model.journal.type("Local"); model.journal.save(); model.journal.done()
     try await model.signIn(transport.identity(email: "empty@example.com"))
     #expect(model.account == "model-empty@example.com" && model.sheet == nil)
-    #expect(model.journal.document.body == "Local" && !model.journal.keepDue && model.journal.backup != "backed up")
+    #expect(model.journal.document.body == "Local" && !model.journal.keepDue && model.journal.backup != .backedUp)
   }
 
   @Test(arguments: [true, false]) func occupiedAccountRequiresExplicitDecision(add: Bool) async throws {
@@ -259,12 +259,12 @@ import Synchronization
     let before = try runtime.store.read { try $0.device().activeReplica.meta.replica }
     transport.state.withLock { $0.sessions[identity.token.value] = nil }
     await runtime.engine.start(); model.refresh()
-    #expect(model.journal.backup == "backup paused")
+    #expect(model.journal.backup == .paused)
     try await model.signIn(transport.identity(email: "paused@example.com")); model.refresh()
     let after = try runtime.store.read { try $0.device().activeReplica.meta.replica }
     #expect(after == before && model.account == identity.account && model.journal.document.body == "Keep this replica")
     for _ in 0..<100 where model.authPaused { try await Task.sleep(for: .milliseconds(5)) }
-    #expect(model.journal.backup != "backup paused")
+    #expect(model.journal.backup != .paused)
   }
 
   @Test(arguments: [SignOutChoice.keep, .discard]) func confirmedSignOutRevokesNativeSession(choice: SignOutChoice) async throws {
@@ -371,7 +371,7 @@ import Synchronization
     let runner = ActionRunner(replica: engine, registry: SyncSchema.registry, zone: FixedZone(offsetSeconds: 0), holdRemovals: false)
     let restoredRuntime = AppRuntime(settings: runtime.settings, store: store, engine: engine, auth: runtime.auth, runner: runner, tokens: tokens, revocations: runtime.revocations)
     let restored = try AppModel(runner: runner, preferences: model.preferences, runtime: restoredRuntime)
-    #expect(restored.account == identity.account && restored.authPaused && restored.journal.backup == "backup paused")
+    #expect(restored.account == identity.account && restored.authPaused && restored.journal.backup == .paused)
     #expect(AccountSheet(model: restored).youDoors && !AccountSheet(model: restored).offline)
     #expect(AccountSheet(model: restored).youFooter == "Sign in to the same account. Your writing stays on this phone.")
     restored.email = "restore@example.com"; restored.code = "482913"; await restored.verifyCode()

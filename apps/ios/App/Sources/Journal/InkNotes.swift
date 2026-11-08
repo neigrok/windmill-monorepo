@@ -2,6 +2,16 @@ import SwiftUI
 import UIKit
 import CoreText
 
+extension View {
+  func inkAnchor(_ name: String, enabled: Bool, frames: Binding<[String: CGRect]>) -> some View {
+    onGeometryChange(for: CGRect.self) { geometry in
+      enabled ? geometry.frame(in: .global) : .zero
+    } action: { frame in
+      if enabled { frames.wrappedValue[name] = frame }
+    }
+  }
+}
+
 struct InkNotes: View {
   let frames: [String: CGRect]
   let visible: Bool
@@ -31,17 +41,20 @@ struct InkNotes: View {
         let youFrame = CGRect(origin: youLabel, size: youSize)
         let write = frames["write"] ?? .zero
         let writeSize = labelFrame("Tap to write", at: CGPoint(x: 24, y: 0), size: fontSize, in: geo.size).size
-        let writeLabel = CGPoint(x: max(24, write.minX - writeSize.width - 38), y: write.midY - writeSize.height / 2)
+        let writeLabel = CGPoint(x: max(24, write.minX), y: write.minY - writeSize.height - 34)
         let writeFrame = CGRect(origin: writeLabel, size: writeSize)
-        let bounds = CGRect(origin: .zero, size: geo.size).insetBy(dx: 12, dy: 8)
+        // No note reaches under the tab bar's accessory, where Write stands.
+        let floor = frames["accessory"].map { min(geo.size.height, $0.minY - 8) } ?? geo.size.height
+        let bounds = CGRect(x: 0, y: 0, width: geo.size.width, height: max(0, floor)).insetBy(dx: 12, dy: 8)
         let primaryFrames = [typingFrame, dateFrame]
-        let showWrite = !large && frames["write"] != nil && fits(writeFrame, in: bounds, avoiding: primaryFrames)
-        let showYou = showWrite && frames["you"] != nil && fits(youFrame, in: bounds, avoiding: primaryFrames + [writeFrame])
-        let showTitle = showYou && frames["title"] != nil && fits(titleFrame, in: bounds, avoiding: primaryFrames + [youFrame, writeFrame])
+        let showWrite = !large && frames["write"] != nil && fits(writeFrame, in: bounds, avoiding: primaryFrames + [caret])
+        let written = showWrite ? [writeFrame] : []
+        let showYou = frames["you"] != nil && fits(youFrame, in: bounds, avoiding: primaryFrames + written)
+        let showTitle = showYou && frames["title"] != nil && fits(titleFrame, in: bounds, avoiding: primaryFrames + [youFrame] + written)
         let savingSize = min(40, fontSize * 5 / 6)
         let savingLabel = CGPoint(x: dateLabel.x - 40, y: dateFrame.maxY + 6)
         let savingFrame = labelFrame("Saves as you go.", at: savingLabel, size: savingSize, in: geo.size)
-        let showSaving = !large && !compact && fits(savingFrame, in: bounds, avoiding: [dateFrame, typingFrame, titleFrame, youFrame, writeFrame])
+        let showSaving = !large && !compact && fits(savingFrame, in: bounds, avoiding: [dateFrame, typingFrame, titleFrame, youFrame] + written)
         if !dateFrame.isEmpty && fits(typingFrame, in: bounds, avoiding: [dateFrame]) && typingFrame.maxY < caret.minY {
         ZStack(alignment: .topLeading) {
           if showTitle {
@@ -89,10 +102,10 @@ struct InkNotes: View {
           if showWrite {
             note("Tap to write", at: writeLabel, size: fontSize, index: 5, in: geo.size)
             stroke(index: 5) { p in
-              let tip = CGPoint(x: write.minX - 8, y: write.midY)
-              p.move(to: CGPoint(x: writeFrame.maxX + 6, y: write.midY + 9))
-              p.addQuadCurve(to: tip, control: CGPoint(x: tip.x - 17, y: tip.y + 15))
-              arrow(&p, tip, dx: 1, dy: 0)
+              let tip = CGPoint(x: write.midX, y: write.minY - 6)
+              p.move(to: CGPoint(x: writeFrame.maxX + 6, y: writeFrame.midY))
+              p.addQuadCurve(to: tip, control: CGPoint(x: tip.x + 24, y: writeFrame.midY))
+              arrow(&p, tip, dx: 0, dy: 1)
             }
           }
         }.opacity(opacity).blur(radius: reduceMotion ? 0 : liftBlur)

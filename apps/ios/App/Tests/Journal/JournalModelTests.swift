@@ -29,11 +29,11 @@ import Synchronization
     return (harness, try JournalModel(runner: harness.runner, preferences: UserDefaults(suiteName: UUID().uuidString)!, telemetry: telemetry))
   }
 
-  @Test func firstOpenHasOptionalScalesAndPrivacy() throws {
+  @Test func firstOpenShowsPrivacyAndNothingToKeepYet() throws {
     let (_, model) = try fixture()
     #expect(model.journal.showPrivacy && model.journal.showPlaceholder)
     #expect(model.journal.document.mood == nil && model.journal.document.energy == nil)
-    #expect(!model.journal.scalesDue && !model.journal.keepDue)
+    #expect(!model.journal.keepDue && model.journal.backup == .unwritten && model.journal.wordCount == nil)
   }
 
   @Test func firstJournalOpenShowsInkAndConsumesItAtPresentation() throws {
@@ -277,11 +277,13 @@ import Synchronization
     #expect(model.journal.showPrivacy)
   }
 
-  @Test func durableFirstPageRetiresCopyAndInvitesScales() throws {
+  // The phone asks no scales question: the first kept page offers Keep at once, and the scales invitation stays as stored.
+  @Test func durableFirstPageRetiresCopyAndOffersKeep() throws {
     let (_, model) = try fixture()
     model.journal.type("One line."); #expect(model.journal.save()); model.journal.done()
-    #expect(!model.journal.showPrivacy && model.journal.firstKept && model.journal.scalesDue)
-    #expect(!model.journal.keepDue && model.journal.backup == "saved")
+    #expect(!model.journal.showPrivacy && model.journal.firstKept)
+    #expect(model.journal.keepDue && model.journal.backup == .onThisPhone && model.journal.wordCount == "2 words")
+    #expect(model.journal.room?.state.scales == "pending" && model.journal.room?.scaleInvitationDue == true)
   }
 
   @Test func failedSaveRetainsWritingAndDoesNotRetireFirstPage() throws {
@@ -289,43 +291,43 @@ import Synchronization
     model.journal.type("Still mine"); harness.failNextCommit()
     #expect(!model.journal.save())
     #expect(model.journal.document.body == "Still mine" && model.journal.dirty && model.journal.error != nil)
-    #expect(model.journal.room?.state.firstPage == "pending" && model.journal.backup == "not saved")
+    #expect(model.journal.room?.state.firstPage == "pending" && model.journal.backup == .notSaved)
     model.refresh(); #expect(model.journal.document.body == "Still mine")
     #expect(model.journal.save()); #expect(!model.journal.dirty)
   }
 
-  @Test func zeroAnswersScaleAndClearKeepsNullDistinct() throws {
+  // Ratings written elsewhere ride along untouched when the phone saves the page's words.
+  @Test func ratingsSetElsewhereSurviveTheWordsSavedHere() throws {
     let (_, model) = try fixture()
-    model.journal.type("A"); model.journal.save(); model.journal.done()
-    model.journal.setScale("mood", 0)
-    #expect(model.journal.document.mood == 0 && !model.journal.scalesDue && model.journal.keepDue)
-    model.journal.setScale("mood", nil)
-    #expect(model.journal.document.mood == nil && model.journal.keepDue)
+    model.journal.type("A"); model.journal.document.mood = 0; model.journal.save(); model.journal.done()
+    model.journal.type("A walk."); #expect(model.journal.save())
+    let saved = model.journal.room?.days.first?.document
+    #expect(saved?.body == "A walk." && saved?.mood == 0 && saved?.energy == nil)
   }
 
-  @Test func dismissScalesUnlocksQuietKeep() throws {
+  @Test func closingKeepQuietsItsOffer() throws {
     let (_, model) = try fixture()
-    model.journal.type("A"); model.journal.save(); model.journal.done(); model.journal.dismissScales()
-    #expect(!model.journal.scalesDue && model.journal.keepDue)
+    model.journal.type("A"); model.journal.save(); model.journal.done()
+    #expect(model.journal.keepDue)
     model.keep(); #expect(model.sheet == .keep)
     model.closeKeep(); #expect(!model.journal.keepDue)
   }
 
-  @Test func editingSuppressesInvitations() throws {
+  @Test func editingSuppressesTheKeepOffer() throws {
     let (_, model) = try fixture()
     model.journal.type("A"); model.journal.save(); model.journal.editing = true
-    #expect(!model.journal.scalesDue && !model.journal.keepDue)
-    model.journal.done(); #expect(model.journal.scalesDue)
+    #expect(!model.journal.keepDue)
+    model.journal.done(); #expect(model.journal.keepDue)
   }
 
   @Test func signedInPagesNeverOfferKeepAndBackupWaitsForSync() throws {
     let (harness, model) = try fixture(account: "account-a")
     model.account = "account-a"
     harness.sync(); model.refresh()
-    model.journal.type("Bound writing"); model.journal.save(); model.journal.done(); model.journal.dismissScales()
-    #expect(!model.journal.keepDue && model.journal.backup == "not backed up yet")
+    model.journal.type("Bound writing"); model.journal.save(); model.journal.done()
+    #expect(!model.journal.keepDue && model.journal.backup == .waiting)
     harness.sync(); model.refresh()
-    #expect(model.journal.backup == "backed up" && !model.journal.keepDue)
+    #expect(model.journal.backup == .backedUp && !model.journal.keepDue)
   }
 
   @Test func anonymousSnapshotCoalescesAndSurvivesModelRecreation() throws {
@@ -338,21 +340,13 @@ import Synchronization
     #expect(commands.filter { $0.command.name == Journal.Commands.claimPage }.count == 1)
   }
 
-  @Test func invalidScaleRetainsDocumentAsUnsaved() throws {
+  @Test func refusedSaveRetainsDocumentAsUnsaved() throws {
     let (_, model) = try fixture()
     model.journal.type("Writing to retain"); model.journal.saveTask?.cancel()
-    model.journal.setScale("energy", 11)
-    #expect(model.journal.dirty && model.journal.error != nil && model.journal.document.energy == 11)
+    model.journal.document.energy = 11
+    #expect(!model.journal.save())
+    #expect(model.journal.dirty && model.journal.error != nil && model.journal.backup == .notSaved)
     #expect(model.journal.room?.days.isEmpty == true)
-  }
-
-  @Test func blankInvalidScaleLeavesNoDayOrUnsavedDraft() throws {
-    let (_, model) = try fixture()
-    model.journal.type(" \n\u{a0}"); model.journal.saveTask?.cancel()
-    model.journal.setScale("energy", 11)
-    #expect(!model.journal.dirty && model.journal.error == nil && model.journal.document == PageDocument())
-    #expect(model.journal.room?.days.isEmpty == true && !model.journal.keepDue && !model.journal.scalesDue)
-    #expect(try model.runner.read(Journal.scope) { try $0.device(EditorDraft.key) } == nil)
   }
 
   @Test func pastDayDomainWriteRemainsReadOnly() throws {
@@ -361,19 +355,16 @@ import Synchronization
     #expect(result.refusal != nil && model.journal.room?.days.isEmpty == true)
   }
 
-  // The Write seat stands over a page the person can write now, and steps aside for a read-only page, a sheet such as the
-  // compact Keep, and the echo reader.
-  @Test func theWriteSeatStandsOnlyOverAWritablePageWithNothingInFront() throws {
+  // Write stands over a page the person can write now, and steps aside for a read-only page and an account sheet.
+  @Test func writeStandsOnlyOverAWritablePageWithNoAccountSheetInFront() throws {
     let (_, model) = try fixture()
-    #expect(model.journal.writeSeatShown)
+    #expect(model.journal.writable)
     model.working = true
-    #expect(model.editorReadOnly && !model.journal.writeSeatShown)
+    #expect(model.editorReadOnly && !model.journal.writable)
     model.working = false; model.keep()
-    #expect(model.sheet == .keep && model.compactAccountSheet && !model.journal.writeSeatShown)
-    model.sheet = nil; model.journal.echoes.readerDay = "2026-09-01"
-    #expect(!model.journal.writeSeatShown)
-    model.journal.echoes.readerDay = nil
-    #expect(model.journal.writeSeatShown)
+    #expect(model.sheet == .keep && model.compactAccountSheet && !model.journal.writable)
+    model.sheet = nil
+    #expect(model.journal.writable)
   }
 
   @Test func accountWithPagesHasNoReonboarding() throws {
@@ -382,7 +373,7 @@ import Synchronization
     _ = try harness.runner.run(SavePage(day: model.journal.today, document: PageDocument(body: "Existing"), retiring: ["scales"]))
     harness.sync()
     let reopened = try AppModel(runner: harness.runner, preferences: model.preferences)
-    #expect(!reopened.journal.showPlaceholder && !reopened.journal.showPrivacy && !reopened.journal.scalesDue)
+    #expect(!reopened.journal.showPlaceholder && !reopened.journal.showPrivacy && !reopened.journal.keepDue)
   }
 
   @Test func wordCountUsesCurrentWriting() throws {
@@ -394,7 +385,7 @@ import Synchronization
 
   @Test func closingYouDoesNotDismissTheKeepInvitation() throws {
     let (_, model) = try fixture()
-    model.journal.type("A page"); model.journal.save(); model.journal.done(); model.journal.dismissScales()
+    model.journal.type("A page"); model.journal.save(); model.journal.done()
     model.sheet = .you; model.sheet = nil; model.dismissSheet()
     #expect(model.journal.keepDue)
     model.keep(); model.closeKeep(); model.dismissSheet()

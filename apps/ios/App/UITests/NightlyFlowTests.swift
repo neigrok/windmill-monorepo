@@ -145,7 +145,7 @@ import XCTest
     }
   }
 
-  // MARK: Journal seat geometry
+  // MARK: Journal writing geometry
 
   func launchJournal(_ board: String, layout: Bool = false) -> XCUIApplication {
     let app = XCUIApplication()
@@ -154,31 +154,29 @@ import XCTest
     return app
   }
 
-  // The 44 pt Write seat stands 16 pt from the trailing edge, becomes Done writing above the keyboard and parks again where it was.
-  func testEmptyLaterPageWriteSeatAndKeyboardSeat() {
+  // Write spans the tab bar's accessory below the page; Done stands trailing in the keyboard's toolbar and gives Write back.
+  func testEmptyLaterPageWritesFromTheAccessoryAndEndsInTheKeyboardBar() {
     let app = launchJournal("journal-empty-later")
     let editor = app.textViews["journal-editor"]
     let write = app.buttons["write-today"]
     XCTAssertTrue(write.waitForExistence(timeout: 10))
     XCTAssertEqual(write.label, "Write")
-    XCTAssertEqual(write.frame.width, 44, accuracy: 1)
-    XCTAssertEqual(write.frame.height, 44, accuracy: 1)
-    XCTAssertEqual(app.frame.maxX - write.frame.maxX, 16, accuracy: 1)
+    XCTAssertGreaterThanOrEqual(write.frame.height, 44)
+    XCTAssertGreaterThan(write.frame.width, app.frame.width * 0.8)
     XCTAssertEqual(editor.value as? String, "")
     XCTAssertGreaterThanOrEqual(editor.frame.height, 76.5)
-    let parkedSeat = write.frame
+    XCTAssertLessThanOrEqual(editor.frame.maxY, write.frame.minY, "At rest the page clears the accessory")
+    let parked = write.frame
     write.tap()
     XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
     let done = app.buttons["done-writing"]
     XCTAssertEqual(done.label, "Done writing")
-    XCTAssertEqual(done.frame.width, parkedSeat.width, accuracy: 0.5)
-    XCTAssertEqual(done.frame.height, parkedSeat.height, accuracy: 0.5)
-    XCTAssertEqual(done.frame.minX, parkedSeat.minX)
-    // XCTest's keyboard frame excludes its prediction bar.
-    XCTAssertLessThanOrEqual(done.frame.maxY, app.keyboards.firstMatch.frame.minY - 12)
+    XCTAssertTrue(done.isHittable)
+    XCTAssertGreaterThan(done.frame.midX, app.frame.midX, "Done stands trailing, under the right thumb")
+    XCTAssertLessThanOrEqual(done.frame.maxY, app.keyboards.firstMatch.frame.minY + 1)
     done.tap()
     XCTAssertTrue(write.waitForExistence(timeout: 5))
-    XCTAssertEqual(write.frame.minY, parkedSeat.minY, accuracy: 0.5)
+    XCTAssertEqual(write.frame.minY, parked.minY, accuracy: 0.5)
     XCTAssertEqual(editor.value as? String, "")
     app.descendants(matching: .any)["journal-date"].tap()
     XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
@@ -186,7 +184,7 @@ import XCTest
     XCTAssertEqual(editor.value as? String, "Today's line.")
   }
 
-  // However long the page grows, the caret and the last line stay above Done writing, and a tap below the text ends at its end.
+  // However long the page grows, the caret and the last line stay above the keyboard's bar, and a tap below the text ends at its end.
   func testFilledLinesStayAboveDoneSeat() throws {
     let app = launchJournal("journal-empty-later", layout: true)
     let write = app.buttons["write-today"]
@@ -220,7 +218,8 @@ import XCTest
       assertCaretAtEnd(in: editor)
       XCTAssertEqual(journalMetrics(in: editor)?["text"] as? String, metrics["text"] as? String)
       try tapIntoLastLine(in: app)
-      let bottom = app.scrollViews["journal-canvas"].frame.maxY - 1
+      // The canvas runs under the keyboard; what a tap can reach ends at the keyboard's bar, where Done stands.
+      let bottom = min(app.scrollViews["journal-canvas"].frame.maxY, done.frame.minY - 8) - 1
       XCTAssertGreaterThan(bottom, lastLine[1] + lastLine[3])
       app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: editor.frame.maxX - 1, dy: bottom)).tap()
       assertCaretAtEnd(in: editor)
@@ -229,8 +228,8 @@ import XCTest
     XCTAssertTrue(write.waitForExistence(timeout: 5))
   }
 
-  // From history the seat brings today back and opens writing, with and without Reduce Motion.
-  func testWriteSeatReturnsFromPastDayToToday() {
+  // From history Write brings today back and opens writing, with and without Reduce Motion.
+  func testWriteReturnsFromPastDayToToday() {
     for board in ["journal-history", "journal-history-RM"] {
       let app = launchJournal(board)
       let editor = app.textViews["journal-editor"]
@@ -273,13 +272,12 @@ import XCTest
     XCTAssertEqual(editor.value as? String, "")
   }
 
-  // At the largest text the room and account buttons stay whole and apart, the seat keeps its size and the body grows.
+  // At the largest text the room and account buttons stay whole and apart, Write stays in reach and the body grows.
   func testLargestTextKeepsNativeJournalControlsReachable() {
     let app = XCUIApplication()
     app.launchArguments = ["-board", "05-journal-first-open"]
     app.launch()
     XCTAssertTrue(app.buttons["room-menu"].waitForExistence(timeout: 10))
-    let writeSize = app.buttons["write-today"].frame.size
     let bodyHeight = app.textViews["journal-editor"].frame.height
     app.terminate()
     app.launchArguments = ["-board", "05-journal-first-open-AX3"]
@@ -292,7 +290,8 @@ import XCTest
     XCTAssertTrue(app.frame.contains(room.frame))
     XCTAssertTrue(app.frame.contains(account.frame))
     XCTAssertFalse(room.frame.intersects(account.frame))
-    XCTAssertEqual(app.buttons["write-today"].frame.size, writeSize)
+    XCTAssertTrue(app.buttons["write-today"].isHittable)
+    XCTAssertTrue(app.frame.contains(app.buttons["write-today"].frame))
     XCTAssertGreaterThan(app.textViews["journal-editor"].frame.height, bodyHeight)
     XCTAssertEqual(app.buttons["room-menu"].label, "Journal")
     XCTAssertEqual(app.buttons["you"].label, "You and settings")
@@ -334,42 +333,35 @@ import XCTest
 
   // MARK: Echoes at large text
 
-  // At rest the canvas's end stands 16 pt above the write seat, and today's opened ink scrolls clear of it with no swipe.
-  func testTheCanvasEndAndAnOpenedInkClearTheWriteSeat() {
+  // At rest the canvas's end clears Write; the first echo's sheet opens at .medium with its introduction and passage in reach.
+  func testTheCanvasEndClearsWriteAndTheFirstEchoSheetOpensAtMedium() {
     let app = EchoCanvas.launch("light", board: "journal-echoes-first").app
     let write = app.buttons["write-today"]
     XCTAssertTrue(write.wait(for: \.isHittable, toEqual: true, timeout: 10))
-    let energy = app.buttons["Clear energy"]
-    XCTAssertTrue(energy.waitForExistence(timeout: 5))
-    XCTAssertLessThanOrEqual(energy.frame.maxY, write.frame.minY - 16 + 0.5, "At rest the last row ends 16 pt above the seat")
+    XCTAssertLessThanOrEqual(app.textViews["journal-editor"].frame.maxY, write.frame.minY, "At rest the page ends above Write")
     let disclosure = app.buttons["journal-echo-\(EchoCanvas.today)"]
     XCTAssertTrue(disclosure.wait(for: \.isHittable, toEqual: true, timeout: 10)); disclosure.tap()
     let gotIt = app.buttons["echo-introduction-done"]
     XCTAssertTrue(gotIt.waitForExistence(timeout: 5))
     let passage = app.buttons["echo-open-\(EchoCanvas.firstSource)"]
-    let cleared = NSPredicate { _, _ in gotIt.isHittable && max(gotIt.frame.maxY, passage.frame.maxY) <= write.frame.minY - 16 }
-    XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: cleared, object: nil)], timeout: 5), .completed,
-                   "The card and its first passage stand above the seat: \(gotIt.frame), \(passage.frame) over \(write.frame)")
+    let ready = NSPredicate { _, _ in gotIt.isHittable && passage.isHittable && app.frame.contains(passage.frame) }
+    XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: ready, object: nil)], timeout: 5), .completed,
+                   "The introduction and its first passage stand in the sheet: \(gotIt.frame), \(passage.frame)")
+    XCTAssertGreaterThan(app.descendants(matching: .any)["echo-sheet"].frame.minY, app.frame.height * 0.3)
   }
 
-  // At AX3 what opened rises by the least that clears the seat, and never so far that its start passes 16 pt under the
-  // bar: where both cannot hold, its start wins and the reader scrolls for the rest.
-  func testAnOpenedInkAtTheLargestTextShowsItsStartBeforeItClearsTheSeat() {
+  // At the largest text the count opens its sheet at .large, every passage by year under the bar.
+  func testAtTheLargestTextTheEchoSheetOpensLarge() {
     let canvas = EchoCanvas.launch("light", board: "journal-echoes-first",
                                    arguments: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXL"])
     let app = canvas.app
-    let write = app.buttons["write-today"], bar = app.navigationBars.firstMatch
-    XCTAssertTrue(write.wait(for: \.isHittable, toEqual: true, timeout: 15))
     let disclosure = app.buttons["journal-echo-\(EchoCanvas.today)"]
     canvas.reveal(disclosure, towardTop: true); disclosure.tap()
-    let ink = app.descendants(matching: .any)["echo-ink-\(EchoCanvas.today)"]
-    XCTAssertTrue(ink.waitForExistence(timeout: 5))
-    let settled = NSPredicate { _, _ in
-      let start = ink.frame.minY - bar.frame.maxY
-      return start >= 16 - 1 && (ink.frame.maxY <= write.frame.minY - 16 + 1 || start <= 16 + 1)
-    }
-    XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: settled, object: nil)], timeout: 5), .completed,
-                   "The ink \(ink.frame) ends 16 pt above the seat \(write.frame) or starts 16 pt under the bar \(bar.frame)")
+    let sheet = app.descendants(matching: .any)["echo-sheet"]
+    XCTAssertTrue(sheet.waitForExistence(timeout: 5))
+    let large = NSPredicate { _, _ in sheet.frame.minY < app.frame.height * 0.25 }
+    XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: large, object: nil)], timeout: 5), .completed,
+                   "The sheet stands at .large: \(sheet.frame)")
   }
 
   // At accessible text with Reduce Motion every echo action keeps its 44 pt target inside the screen, in both looks.
@@ -385,12 +377,14 @@ import XCTest
       XCTAssertGreaterThanOrEqual(open.frame.height, 44)
       XCTAssertLessThanOrEqual(open.frame.maxX, app.frame.maxX)
       XCTAssertGreaterThanOrEqual(open.frame.minX, app.frame.minX)
-      for identifier in ["echo-useful-page", "echo-dismiss-page", "echo-more"] {
+      for identifier in ["echo-useful-page", "echo-dismiss-page"] {
         let action = app.buttons[identifier]
-        canvas.reveal(action)
-        XCTAssertGreaterThanOrEqual(action.frame.height, 44)
-        XCTAssertLessThanOrEqual(action.frame.maxX, app.frame.maxX)
+        XCTAssertTrue(action.isHittable, identifier)
+        XCTAssertGreaterThanOrEqual(action.frame.height, 44, identifier)
+        XCTAssertLessThanOrEqual(action.frame.maxX, app.frame.maxX, identifier)
       }
+      // The system draws Close at its own size.
+      XCTAssertTrue(app.buttons["echo-close"].isHittable)
       canvas.reveal(open, towardTop: true); open.tap()
       try canvas.assertSourcePassageCentered()
       let back = app.buttons["echo-back-to-tonight"]

@@ -62,7 +62,7 @@ enum OfflineFixture {
     model.openJournal()
     model.journal.type("Saved on this phone.")
     guard model.journal.save() else { throw AppFailure(message: "Offline fixture could not save its local page.") }
-    model.journal.done(); model.journal.dismissScales()
+    model.journal.done()
     model.keepDismissed = true; model.preferences.set(true, forKey: "keepDismissed")
     model.sheet = nil
     #endif

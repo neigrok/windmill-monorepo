@@ -449,7 +449,7 @@ final class AppModel {
   func closeKeep() { choose("close", screen: "keep"); sheet = nil; dismissKeep() }
 
   func dismissKeep() {
-    guard journal.room?.keepDue == true else { return }
+    guard journal.keepOffered else { return }
     keepDismissed = true; preferences.set(true, forKey: "keepDismissed")
   }
 

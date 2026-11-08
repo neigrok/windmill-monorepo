@@ -31,8 +31,8 @@ import XCTest
   // Scrolls until the control stands whole in the visible scroll view, at least 44 pt tall, and has stopped moving.
   func reveal(_ element: XCUIElement, towardTop: Bool = false, file: StaticString = #filePath, line: UInt = #line) {
     XCTAssertTrue(element.waitForExistence(timeout: 10), file: file, line: line)
-    let sheet = app.scrollViews["echo-sheet"]
-    let scroller = sheet.exists ? sheet : app.scrollViews.firstMatch
+    let sheet = app.descendants(matching: .any)["echo-sheet"]
+    let scroller = sheet.exists ? sheet : app.scrollViews["journal-canvas"]
     var previous = CGRect.null
     var stableSince = Date()
     var viewport = CGRect.null
@@ -76,19 +76,22 @@ import XCTest
     return (try? JSONSerialization.jsonObject(with: Data(value.utf8))) as? [String: Any]
   }
 
-  // The first source page stands read-only with the quotation, far below its opening, centred in the visible canvas.
+  // The first source page stands read-only with its quotation, far below its opening, centred above the lowered sheet.
   func assertSourcePassageCentered(file: StaticString = #filePath, line: UInt = #line) throws {
-    XCTAssertTrue(app.buttons["echo-close"].waitForNonExistence(timeout: 5), file: file, line: line)
+    let here = app.descendants(matching: .any)["echo-where"]
+    XCTAssertTrue(here.waitForExistence(timeout: 5), file: file, line: line)
     let source = app.textViews["journal-body-\(Self.firstSource)"]
     XCTAssertTrue(source.waitForExistence(timeout: 5), file: file, line: line)
-    let viewport = app.scrollViews.firstMatch.frame.intersection(app.frame)
+    let canvas = app.scrollViews["journal-canvas"].frame.intersection(app.frame)
+    // The canvas a reader sees: under the bar, above the lowered sheet once it has settled.
+    var viewport: CGRect { CGRect(x: canvas.minX, y: canvas.minY, width: canvas.width, height: max(0, here.frame.minY - canvas.minY)) }
     let centered = NSPredicate { _, _ in
       guard let metrics = self.sourceMetrics(source), let rect = metrics["echoRect"] as? [Double], rect.count == 4 else { return false }
       return rect[2] > 0 && rect[3] > 0 && abs(rect[1] + rect[3] / 2 - viewport.midY) <= max(44, rect[3])
     }
     if !centered.evaluate(with: source) {
       XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: centered, object: source)], timeout: 5), .completed,
-                     "source: \(source.value ?? "missing"), viewport: \(viewport)", file: file, line: line)
+                     "source: \(source.value ?? "missing"), viewport: \(viewport), here: \(here.frame), back: \(app.buttons["echo-back-to-tonight"].frame)", file: file, line: line)
     }
     let metrics = try XCTUnwrap(sourceMetrics(source), file: file, line: line)
     let body = try XCTUnwrap(metrics["text"] as? String, file: file, line: line) as NSString
@@ -103,6 +106,12 @@ import XCTest
     XCTAssertGreaterThanOrEqual(rect[1], viewport.minY, file: file, line: line)
     XCTAssertLessThanOrEqual(rect[1] + rect[3], viewport.maxY, file: file, line: line)
     XCTAssertFalse(app.keyboards.firstMatch.exists, file: file, line: line)
-    XCTAssertTrue(app.descendants(matching: .any)["echo-trail"].exists, file: file, line: line)
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    let parts = Self.firstSource.split(separator: "-").compactMap { Int($0) }
+    let formatter = DateFormatter()
+    formatter.calendar = calendar; formatter.timeZone = calendar.timeZone; formatter.dateStyle = .long
+    let named = calendar.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2])).map(formatter.string)
+    XCTAssertEqual(here.label, named, file: file, line: line)
   }
 }
