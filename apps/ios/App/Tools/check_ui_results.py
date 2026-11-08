@@ -11,6 +11,8 @@ FIXTURE_SKIPS = {
         "requires the isolated proposal fixture",
     ("GymIntegrationFlowTests", "testAConnectedToolsRemovalAsksThenRemovesItsRoutine"):
         "requires the isolated removal fixture",
+    ("JournalIntegrationFlowTests", "testAPageBacksUpWaitsWhileTheServerIsAwayAndBacksUpWhenItAnswers"):
+        "requires the isolated journal fixture",
 }
 
 
