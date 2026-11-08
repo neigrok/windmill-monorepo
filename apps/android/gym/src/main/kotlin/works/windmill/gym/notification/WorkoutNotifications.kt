@@ -183,7 +183,7 @@ class WorkoutNotifications(
             val importance = if (legacy?.importance == NotificationManager.IMPORTANCE_NONE)
                 NotificationManager.IMPORTANCE_NONE else NotificationManager.IMPORTANCE_DEFAULT
             notificationManager.createNotificationChannel(
-                NotificationChannel(CHANNEL, "Workout", importance).apply {
+                NotificationChannel(CHANNEL, context.getString(R.string.gym_notification_channel), importance).apply {
                     setSound(null, null)
                     enableVibration(false)
                 },
@@ -248,8 +248,8 @@ class WorkoutNotifications(
             .setSmallIcon(R.drawable.gym_workout_notification)
             .setColor(accent)
             .setContentTitle(snapshot.title)
-            .setContentText("${snapshot.movement} · ${snapshot.rackLine} · ${snapshot.counter}")
-            .setStyle(NotificationCompat.BigTextStyle().bigText("${snapshot.movement} · ${snapshot.rackLine}\n${snapshot.counter}"))
+            .setContentText(context.getString(R.string.gym_notification_text, snapshot.movement, snapshot.rackLine, snapshot.counter))
+            .setStyle(NotificationCompat.BigTextStyle().bigText(context.getString(R.string.gym_notification_big_text, snapshot.movement, snapshot.rackLine, snapshot.counter)))
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setSilent(true)
@@ -262,7 +262,7 @@ class WorkoutNotifications(
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
             .setPublicVersion(public)
             .addAction(
-                NotificationCompat.Action.Builder(0, if (offer == null) "Open workout" else "Log set", pending(action))
+                NotificationCompat.Action.Builder(0, context.getString(if (offer == null) R.string.gym_notification_open_workout else R.string.gym_notification_log_set), pending(action))
                     .setAuthenticationRequired(offer != null && Build.VERSION.SDK_INT >= 31).build(),
             ).build()
         if (!measure(notification).canPost) return
