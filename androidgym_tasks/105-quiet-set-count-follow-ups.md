@@ -11,7 +11,7 @@
 - what a two-digit count does at 200 % text, where it widens its 24 dp column and pushes that row's load inward.
 
 **Current implementation**
-- The workout page: `ui/SessionScreen.kt` (`Performed.Row.position`), passed to `ui/FixSheet.kt` for *Set N*.
+- The workout page: `ui/SessionScreen.kt` (`Performed.Row.position`), passed to `ui/FixSheet.kt` for its subtitle's bare count.
 - The live logger's ledger rows still read *Set 1*, *Set 2* (`ui/LoggerScreen.kt`).
 - The count draws in `text/tertiary`, JetBrains Mono 12/16 on the boards, in a 24 dp column.
 

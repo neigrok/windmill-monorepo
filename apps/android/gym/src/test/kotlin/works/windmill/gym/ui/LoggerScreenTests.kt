@@ -779,7 +779,7 @@ class LoggerScreenTests {
             runBlocking { assertNull(room.store.deletions.delete(Deletion.Set(room.store.workout.session!!.id, first))) }
 
             compose.onNode(hasContentDescription("Set 1, logged, 65 kg total, 5 reps")).performClick()
-            compose.onNodeWithText("Bench Press · Set 1").assertIsDisplayed()
+            compose.onNodeWithText("Bench Press · 1").assertIsDisplayed()
         } } finally { scope.cancel() }
     }
 

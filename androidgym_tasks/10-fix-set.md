@@ -22,7 +22,7 @@
 - Affected Debug and Release gates pass 101 cases each. The final adapter ownership/accepted-result pass has 36 focused cases in each variant. Six API 37 Dark/Daylight captures and an IME-open Save preserve the exact signed load, note and effort. The final controls-fault probe retains the accepted correction, one successful fix event and one `gym.fixSet` Issue; restart and a separate recovered edit succeed. The final fault/observer regression passes eight cases in each variant.
 
 **Change**
-- Subtitle row: the equipment icon (08), then *{movement} · Set {n}*.
+- Subtitle row: the equipment icon (08), then *{movement} · {n}*.
 - Load: the same `NumberStepper` as the rack (07, 09), with the approved Display numeral at 88 sp before system text scaling, the 04 overflow behavior, and the unit by equipment, then the ladder.
 - Reps: the reps stepper. Assisted load entry uses the native keyboard’s minus key as specified in 07. Preserve the approved sizing and the last committed values when an edit is cancelled.
 - The rack behind this sheet uses 09’s compact headerless ledger and visual position indicator; no main Add or paging arrows are reintroduced by the backdrop.

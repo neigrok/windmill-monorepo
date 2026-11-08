@@ -1044,8 +1044,8 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   - *Set numbers on a workout (owner ruling, 2026-11-01).* Each set row on a workout page leads
     with a quiet count: a bare digit with no *Set* word, the set's position within its movement
     counted 1..N in logged order, never the server's set number, so it never reads *2, 3, 1*;
-    after a delete the rows that remain renumber. Fix set keeps *Set N* in its subtitle, N by the
-    same count (*Bench Press · Set 1*). Built on Android (`ui/SessionScreen.kt` `Performed.Row.position`, passed to
+    after a delete the rows that remain renumber. Fix set's subtitle carries the bare count, N by the
+    same count (*Bench Press · 1*, 11z). Built on Android (`ui/SessionScreen.kt` `Performed.Row.position`, passed to
     `ui/FixSheet.kt`). Board 05.3b *Quiet set count* (Dark `1782:26943`, Daylight `1782:27019`,
     caption `1782:27095`, in section 05, 🚀 In production) draws the count in JetBrains Mono 12/16 in
     text/tertiary, in a 24 dp column on the load's baseline, inside each movement's one group of
@@ -1134,9 +1134,9 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
     (Android 03.3, 03.33); iOS titles its reps and Fix set sheets with the movement and the row's
     place, *3 of 3* (iOS 03.24b, 03.25b, 🚧). Number-only boards: the logger rows on 00.6, 03.1, 03.3,
     03.4, 03.10–03.13, 03.33–03.35, 03.38–03.44, 03.46 and 03.52; Coach's diff rows on Android 08.22,
-    08.23, 08.27, 08.54, 08.55 and 08.65; iOS 02.15, 03.32, 08.22, 08.23 and 08.27. Android's logger
-    rows read the number alone (`ui/LoggerScreen.kt` `Ledger`) while Fix set's subtitle keeps *Set N* (11u,
-    `ui/FixSheet.kt`); iOS titles its sheets *Set N*
+    08.23, 08.27, 08.54, 08.55 and 08.65; iOS 02.15, 03.32, 08.22, 08.23 and 08.27. Android's ledger
+    rows (`ui/LoggerScreen.kt` `Ledger`) and Fix set's subtitle (`ui/FixSheet.kt`) both read the number
+    alone; iOS titles its sheets *Set N*
     (`Gym/Workout/WorkoutScreen.swift:99`, `Gym/Components/SetEditor.swift:246`) and labels per-set
     rows *Set N* (`Gym/Routines/RoutineMovementEditor.swift:184`). Spoken labels keep *Set N*. The
     onboarding glimpse's current row reads *3* too: Shell Android's glimpse frames (`66:5725`,

@@ -164,7 +164,7 @@ fun FixSheet(
             title = "Fix set",
             onClose = onClose,
             closeEnabled = !busy,
-            subtitle = "$movement · Set $position",
+            subtitle = "$movement · $position",
             subtitleSpoken = "$movement, set $position",
             subtitleIcon = exercise?.let { { EquipmentIcon(it.equipment, Modifier.size(16.dp), tint = colors.onSurfaceVariant) } },
         )

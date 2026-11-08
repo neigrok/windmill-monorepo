@@ -59,7 +59,7 @@ class FixSheetStateTests {
                 },
                 onDelete = { deletes++ }, onSaved = { saves++ }, onBusy = { busy += it }, onClose = {})
         }
-        compose.onNodeWithText("Bench Press · Set 3").assertIsDisplayed()
+        compose.onNodeWithText("Bench Press · 3").assertIsDisplayed()
         compose.onNodeWithText("Set note").performTextInput("left shoulder")
         compose.onNodeWithText("Save fix").performClick()
         compose.onNodeWithText("Saving…").assertIsNotEnabled().performClick()

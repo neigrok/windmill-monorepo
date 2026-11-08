@@ -187,7 +187,7 @@
     "workout_clock": true,
     "steps": [
       {"tap_contains": "Set 1, logged"},
-      {"wait": "Bench Press · Set 1"},
+      {"wait": "Bench Press · 1"},
       {"wait": "Set note"},
       {"wait": "Delete set"},
       {"wait": "Save fix"}
