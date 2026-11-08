@@ -170,7 +170,8 @@ fun NotesScreen(
     }
     val adding = isSignedIn && hasRead && failure == null && state.noteCount < Notes.maxNotes
     GymScreen(title = Notes.title, onBack = onBack, backTo = backTo, floatingActionButton = {
-        if (adding) GymExtendedFab(Notes.add, onClick = { if (!savingOrder) onEdit(null, "") }, icon = painterResource(R.drawable.gym_native_add))
+        if (adding) GymExtendedFab(Notes.add, onClick = { onEdit(null, "") }, icon = painterResource(R.drawable.gym_native_add),
+            enabled = !savingOrder)
     }) {
         Column(Modifier.fillMaxSize()) {
             NoteList(order ?: state.notes, enabled = !savingOrder, underFab = adding,
@@ -273,6 +274,7 @@ private fun NoteList(
                 val reorder = Modifier.pointerInput(note.id) {
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Main)
+                        down.consume()
                         if (!mayMove) return@awaitEachGesture
                         var sideways = false
                         val started = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) {

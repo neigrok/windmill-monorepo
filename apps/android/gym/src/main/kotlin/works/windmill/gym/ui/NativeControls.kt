@@ -38,6 +38,8 @@ import works.windmill.gym.R
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.ui.semantics.disabled
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.ui.graphics.graphicsLayer
 
 @Composable
 fun GymSnackbarHost(state: SnackbarHostState, modifier: Modifier = Modifier) {
@@ -57,13 +59,16 @@ fun GymFab(label: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
 
 // Collapsed to its icon while the list beneath it is scrolled; the label stays its accessible name.
 @Composable
-fun GymExtendedFab(label: String, onClick: () -> Unit, icon: Painter, modifier: Modifier = Modifier, expanded: Boolean = true) {
+fun GymExtendedFab(label: String, onClick: () -> Unit, icon: Painter, modifier: Modifier = Modifier, expanded: Boolean = true,
+    enabled: Boolean = true) {
     val colors = MaterialTheme.colorScheme
+    // Material's FAB has no disabled state; a disabled one fades to Material's 38 % and does nothing, and says so.
     ExtendedFloatingActionButton(
         text = { Text(label, style = GymType.extendedFabLabel) },
         icon = { Icon(icon, null, Modifier.size(24.dp)) },
-        onClick = onClick,
-        modifier = modifier.semantics { contentDescription = label },
+        onClick = { if (enabled) onClick() },
+        modifier = modifier.graphicsLayer { alpha = if (enabled) 1f else .38f }
+            .semantics { contentDescription = label; if (!enabled) disabled() },
         expanded = expanded,
         containerColor = colors.primaryContainer.compositeOver(colors.surfaceContainer),
         contentColor = colors.primary,
@@ -125,5 +130,14 @@ fun GymDragHandle(label: String, modifier: Modifier = Modifier, enabled: Boolean
             contentAlignment = Alignment.Center) {
             Icon(painterResource(R.drawable.gym_drag_handle), null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+    }
+}
+
+// A sheet's one commit: a full-width stock pill at the sheet's foot, in thumb reach, 56 dp tall because the thumb finds
+// it there. While the write is in flight it says so.
+@Composable
+fun GymSheetCommit(label: String, enabled: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier, busy: Boolean = false) {
+    Button(onClick, modifier.fillMaxWidth().heightIn(min = GymTap.primary), enabled = enabled) {
+        Text(if (busy) "Saving…" else label)
     }
 }

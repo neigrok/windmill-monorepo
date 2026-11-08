@@ -57,6 +57,7 @@ import works.windmill.platform.design.WindmillSpace
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.sync.core.Json
 import works.windmill.sync.modelserver.ModelServer
+import androidx.compose.ui.test.click
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
@@ -307,6 +308,27 @@ class NotesScreenTests {
     }
 
     private fun threeNotes(room: EngineRoomFixture) = signedIn(room, *numbered(3))
+
+    // The handle belongs to reordering: a tap on it never opens the note it stands in.
+    @Test
+    fun aTapOnTheHandleDoesNotOpenTheNote() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
+            threeNotes(room)
+            val opened = mutableListOf<String>()
+            compose.setContent {
+                remember(room.store) { NotesBinding(room.store) }.let { notes -> NotesScreen(
+                    state = notes, events = notes, isSignedIn = true, backTo = "Coach", onBack = {},
+                    onEdit = { note, _ -> opened += note?.id.orEmpty() }, onSignIn = {}, say = {},
+                ) }
+            }
+            compose.onNodeWithText("note 0").assertIsDisplayed()
+            compose.onNodeWithContentDescription("Reorder note 0").performTouchInput { click(center) }
+            compose.runOnIdle { assertEquals(emptyList<String>(), opened) }
+            compose.onNodeWithText("note 0").performClick()
+            compose.runOnIdle { assertEquals(listOf("note_000"), opened) }
+        } } finally { scope.cancel() }
+    }
 
     // Top of the screen first: the order the rows are drawn in, read off their positions.
     private fun drawnOrder(vararg titles: String): List<String> = titles

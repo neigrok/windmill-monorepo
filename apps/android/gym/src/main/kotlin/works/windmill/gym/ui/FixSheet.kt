@@ -5,7 +5,6 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -28,7 +27,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -55,8 +53,6 @@ import works.windmill.platform.telemetry.LocalTelemetry
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.foundation.layout.size
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.material3.Button
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -168,13 +164,9 @@ fun FixSheet(
             title = "Fix set",
             onClose = onClose,
             closeEnabled = !busy,
-            subtitle = {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    exercise?.let { EquipmentIcon(it.equipment, Modifier.size(16.dp), tint = colors.onSurfaceVariant) }
-                    Text("$movement · $position", style = GymType.nativeSupporting, color = colors.onSurfaceVariant, maxLines = 1,
-                        overflow = TextOverflow.Ellipsis)
-                }
-            },
+            subtitle = "$movement · Set $position",
+            subtitleSpoken = "$movement, set $position",
+            subtitleIcon = exercise?.let { { EquipmentIcon(it.equipment, Modifier.size(16.dp), tint = colors.onSurfaceVariant) } },
         )
         Column(
             Modifier.fillMaxWidth().weight(1f, fill = false)
@@ -241,9 +233,7 @@ fun FixSheet(
                     color = colors.onSurfaceVariant)
             }
         }
-        Button(onClick = ::save, enabled = !busy && !tooLong && !load.reading.belowFloor,
-            modifier = Modifier.padding(horizontal = GymLayout.gutter).padding(top = 12.dp, bottom = GymLayout.sheetBottom).fillMaxWidth().heightIn(min = GymTap.primary)) {
-            Text(if (busy) "Saving…" else "Save fix")
-        }
+        GymSheetCommit("Save fix", enabled = !busy && !tooLong && !load.reading.belowFloor, onClick = ::save, busy = busy,
+            modifier = Modifier.padding(horizontal = GymLayout.gutter).padding(top = 12.dp, bottom = GymLayout.sheetBottom))
     }
 }

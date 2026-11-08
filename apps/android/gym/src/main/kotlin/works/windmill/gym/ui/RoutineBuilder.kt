@@ -108,6 +108,7 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.ui.draw.clip
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.ui.draw.shadow
 
 // What the routine builder draws: the draft's movements by name, and the routine's workouts for the seat in hand.
 @Stable
@@ -512,7 +513,9 @@ private fun BuildStep(
                         val name = movement?.name ?: Readout.movement(entry.exerciseId, state.catalog)
                         val lifted = dragged == entry.exerciseId
                         DeleteSwipeRow(actionLabel = "Remove movement", enabled = editable,
-                            onDelete = { onRemove(entry.exerciseId); true }, shape = MaterialTheme.shapes.medium) {
+                            onDelete = { onRemove(entry.exerciseId); true }, shape = MaterialTheme.shapes.medium,
+                            // The lifted row's shadow stands outside the row's own clip.
+                            modifier = Modifier.shadow(if (lifted) 6.dp else 0.dp, MaterialTheme.shapes.medium, clip = false)) {
                             ListItem(
                                 leadingContent = {
                                     GymDragHandle("Move $name, ${index + 1} of ${ordered.size}", enabled = editable, modifier = Modifier.pointerInput(entry.exerciseId, editable) {
@@ -536,7 +539,6 @@ private fun BuildStep(
                                     Text(Readout.targetWithUnit(entry.sets, movement), style = GymType.numeral, color = colors.onSurfaceVariant)
                                 },
                                 colors = ListItemDefaults.colors(containerColor = if (lifted) colors.surfaceContainerHighest else colors.surface),
-                                shadowElevation = if (lifted) 6.dp else 0.dp,
                                 modifier = Modifier.fillMaxWidth()
                                     .onGloballyPositioned { positions[entry.exerciseId] = it.positionInRoot().y + it.size.height / 2f + scroll.value }
                                     .clip(MaterialTheme.shapes.medium)

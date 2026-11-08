@@ -32,9 +32,11 @@ class WeighInCompactTests {
             WeighInSheet(WeighIn(day.toString(), 82.4), null, System.currentTimeMillis(), false, null, { _, _ -> }, null, onClose = {})
         } } }
         val normal = compose.onNodeWithTag("weigh-in-form").getBoundsInRoot().height + 48.dp
+        // 06.1N's approved sheet: handle, head, Weight, Date and Save weight above the keyboard.
         assertEquals(350f, normal.value, 4f)
         compose.onNodeWithContentDescription(weightField).performTextReplacement("400.01")
         val error = compose.onNodeWithTag("weigh-in-form").getBoundsInRoot().height + 48.dp
+        // No board draws the refusal; this measured height, one supporting line taller, is the approved one.
         assertEquals(377f, error.value, 4f)
         compose.onNodeWithText(Bodyweight.save).assertIsDisplayed().assertIsNotEnabled()
     }

@@ -50,7 +50,6 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.selected
@@ -152,66 +151,61 @@ fun AssemblySheet(
                         val item = list.layoutInfo.visibleItemsInfo.firstOrNull { it.key == row.id }
                         translationY = if (held && item != null) centre - item.offset - item.size / 2f else 0f
                     }) {
-                    Box {
-                        ListItem(
-                            headlineContent = { Text(row.name, style = GymType.movementRow) },
-                            supportingContent = { Text(problem ?: row.metadata, style = WindmillType.supportingParagraph,
-                                color = if (problem == null) colors.onSurfaceVariant else colors.error,
-                                modifier = Modifier.semantics { if (problem != null) liveRegion = LiveRegionMode.Polite }) },
-                            leadingContent = { Icon(painterResource(R.drawable.gym_list_reorder), null, Modifier.size(20.dp)) },
-                            trailingContent = { Icon(painterResource(R.drawable.gym_forward), null, Modifier.size(20.dp)) },
-                            colors = ListItemDefaults.colors(containerColor = if (held) colors.surfaceContainerHighest else colors.surfaceContainer,
-                                headlineColor = colors.onSurface, supportingColor = colors.onSurfaceVariant, leadingIconColor = colors.onSurfaceVariant, trailingIconColor = colors.onSurfaceVariant),
-                            modifier = Modifier.fillMaxWidth()
-                                .then(if (row.id == added) Modifier.focusRequester(addedFocus) else Modifier)
-                                .clickable(role = Role.Button, onClickLabel = "walk to ${row.name}") { onJump(row.id) }
-                                .semantics {
-                                    customActions = actions
-                                    selected = row.isCurrent
-                                    stateDescription = listOfNotNull(if (row.justAdded) "Just added" else null,
-                                        if (row.isCurrent) "Current movement" else null).joinToString(", ")
-                                },
-                        )
-                        Box(Modifier.align(Alignment.CenterStart).offset(x = 2.dp).size(48.dp)
-                            .semantics { contentDescription = "Reorder ${row.name}" }
-                            .pointerInput(row.id, order) {
-                                awaitEachGesture {
-                                    val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
-                                    if (down.isConsumed) return@awaitEachGesture
-                                    down.consume()
-                                    var started = false
-                                    var cancelled = false
-                                    try {
-                                        do {
-                                            val event = awaitPointerEvent(PointerEventPass.Initial)
-                                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                                            if (change.isConsumed) break
-                                            event.changes.forEach { it.consume() }
-                                            if (!change.pressed) {
-                                                val to = preview?.indexOf(row.id) ?: index
-                                                if (started && !cancelled && to != index && currentRows.map { it.id } == order) move(index, to)
-                                                break
-                                            }
-                                            if (!started && !cancelled) {
-                                                if (change.uptimeMillis - down.uptimeMillis >= viewConfiguration.longPressTimeoutMillis) {
-                                                    val item = list.layoutInfo.visibleItemsInfo.firstOrNull { it.key == row.id } ?: break
-                                                    started = true
-                                                    dragged = row.id
-                                                    centre = item.offset + item.size / 2f
-                                                } else if ((change.position - down.position).getDistance() > viewConfiguration.touchSlop) cancelled = true
-                                            }
-                                            if (started) {
-                                                centre += change.position.y - change.previousPosition.y
-                                                place()
-                                            }
-                                        } while (true)
-                                    } finally {
-                                        dragged = null
-                                        preview = null
-                                    }
+                    ListItem(
+                        headlineContent = { Text(row.name, style = GymType.movementRow) },
+                        supportingContent = { Text(problem ?: row.metadata, style = WindmillType.supportingParagraph,
+                            color = if (problem == null) colors.onSurfaceVariant else colors.error,
+                            modifier = Modifier.semantics { if (problem != null) liveRegion = LiveRegionMode.Polite }) },
+                        leadingContent = { GymDragHandle("Reorder ${row.name}", modifier = Modifier.pointerInput(row.id, order) {
+                            awaitEachGesture {
+                                val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                                if (down.isConsumed) return@awaitEachGesture
+                                down.consume()
+                                var started = false
+                                var cancelled = false
+                                try {
+                                    do {
+                                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                        if (change.isConsumed) break
+                                        event.changes.forEach { it.consume() }
+                                        if (!change.pressed) {
+                                            val to = preview?.indexOf(row.id) ?: index
+                                            if (started && !cancelled && to != index && currentRows.map { it.id } == order) move(index, to)
+                                            break
+                                        }
+                                        if (!started && !cancelled) {
+                                            if (change.uptimeMillis - down.uptimeMillis >= viewConfiguration.longPressTimeoutMillis) {
+                                                val item = list.layoutInfo.visibleItemsInfo.firstOrNull { it.key == row.id } ?: break
+                                                started = true
+                                                dragged = row.id
+                                                centre = item.offset + item.size / 2f
+                                            } else if ((change.position - down.position).getDistance() > viewConfiguration.touchSlop) cancelled = true
+                                        }
+                                        if (started) {
+                                            centre += change.position.y - change.previousPosition.y
+                                            place()
+                                        }
+                                    } while (true)
+                                } finally {
+                                    dragged = null
+                                    preview = null
                                 }
-                            })
-                    }
+                            }
+                        }) },
+                        trailingContent = { Icon(painterResource(R.drawable.gym_forward), null, Modifier.size(20.dp)) },
+                        colors = ListItemDefaults.colors(containerColor = if (held) colors.surfaceContainerHighest else colors.surfaceContainer,
+                            headlineColor = colors.onSurface, supportingColor = colors.onSurfaceVariant, leadingIconColor = colors.onSurfaceVariant, trailingIconColor = colors.onSurfaceVariant),
+                        modifier = Modifier.fillMaxWidth()
+                            .then(if (row.id == added) Modifier.focusRequester(addedFocus) else Modifier)
+                            .clickable(role = Role.Button, onClickLabel = "walk to ${row.name}") { onJump(row.id) }
+                            .semantics {
+                                customActions = actions
+                                selected = row.isCurrent
+                                stateDescription = listOfNotNull(if (row.justAdded) "Just added" else null,
+                                    if (row.isCurrent) "Current movement" else null).joinToString(", ")
+                            },
+                    )
                 }
                 if (index < drawn.lastIndex) HorizontalDivider(color = colors.outlineVariant)
             }

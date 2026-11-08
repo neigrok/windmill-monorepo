@@ -268,16 +268,18 @@ fun SessionScreen(
     var corrected by remember(summary.id) { mutableIntStateOf(0) }
     var fixBusy by remember { mutableStateOf(false) }
     var cancelFixEntry by remember { mutableStateOf<(() -> Unit)?>(null) }
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true, confirmValueChange = { destination ->
-            when {
-                fixBusy -> false
-                destination == SheetValue.Hidden && cancelFixEntry != null -> {
-                    cancelFixEntry?.invoke()
-                    false
-                }
-                else -> true
-            }
-        })
+    // Fix set leaves the same way from its drag, scrim, Back and ✕: a busy save holds the sheet, and open entry is
+    // cancelled before the sheet may close.
+    fun fixMayClose(): Boolean = when {
+        fixBusy -> false
+        cancelFixEntry != null -> {
+            cancelFixEntry?.invoke()
+            false
+        }
+        else -> true
+    }
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true,
+        confirmValueChange = { destination -> destination != SheetValue.Hidden || fixMayClose() })
 
     val currentDetail = detail?.let(state::retainedSession)
     val readId = currentDetail?.session?.id ?: summary.id
@@ -425,7 +427,7 @@ fun SessionScreen(
                 },
                 onSaved = { close(); say(null) },
                 onGone = { close(); say(it) },
-                onClose = { close() },
+                onClose = { if (fixMayClose()) close() },
                 onBusy = { fixBusy = it },
                 onEntryCancel = { cancelFixEntry = it },
                 onDelete = {

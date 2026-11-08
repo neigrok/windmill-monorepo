@@ -124,11 +124,11 @@ class WorkoutTileRoutingTests {
             compose.onNode(hasContentDescription("Set 1, 40 kg total, 8 reps", substring = true)).performClick()
             compose.onNodeWithText("Set note").performTextInput("Unfinished set note")
             compose.runOnIdle { room.store.workout.requestRoutines() }
-            compose.onNodeWithText("Bench Press · 1").assertIsDisplayed()
+            compose.onNodeWithText("Bench Press · Set 1").assertIsDisplayed()
             compose.onNodeWithText("Unfinished set note").assertIsDisplayed()
             restored.emulateSavedInstanceStateRestore()
             compose.waitUntil(10_000) { compose.onAllNodes(hasText("Unfinished set note")).fetchSemanticsNodes().isNotEmpty() }
-            compose.onNodeWithText("Bench Press · 1").assertIsDisplayed()
+            compose.onNodeWithText("Bench Press · Set 1").assertIsDisplayed()
             compose.onNodeWithText("Unfinished set note").assertIsDisplayed()
             compose.runOnIdle {
                 assertEquals(0L, room.store.workout.routinesOpenRequest)

@@ -36,6 +36,7 @@ import works.windmill.gym.presentation.Exercise
 import works.windmill.gym.presentation.SetFix
 import works.windmill.gym.presentation.TrainingSet
 import works.windmill.gym.store.FixOutcome
+import androidx.compose.ui.test.assertIsFocused
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w320dp-h640dp-xhdpi")
@@ -59,11 +60,33 @@ class FixSheetLayoutTests {
         compose.onNodeWithText("Set note").performScrollTo().performTextInput("Controlled tempo\n".repeat(12))
         compose.onNodeWithText("Save fix").assertIsDisplayed()
         val button = compose.onNodeWithText("Save fix").getBoundsInRoot()
-        assertTrue(button.height >= 48.dp)
+        assertTrue(button.height >= GymTap.primary)
         compose.onNodeWithText("Save fix").performClick()
         compose.onNodeWithText("Delete set").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Push A keeps its planned targets.").performScrollTo().assertIsDisplayed()
         compose.runOnIdle { assertEquals(listOf(SetFix(note = "Controlled tempo\n".repeat(12))), saved) }
+    }
+
+    // At 200 % above a keyboard-sized viewport the head grows only as its lines need, so the focused field stands whole
+    // between the head and Save fix.
+    @Test
+    fun theFocusedFieldStandsWholeBetweenTheHeadAndSaveFixAtDoubleText() {
+        val set = TrainingSet(id = "set_7", exerciseId = "bench-press", setNumber = 7, weightKg = 80.0, reps = 8, completedAtMs = 0)
+        compose.setContent {
+            CompositionLocalProvider(LocalDensity provides Density(density = 2f, fontScale = 2f)) {
+                Box(Modifier.height(340.dp)) {
+                    GymMaterial { FixSheet(set, "Bench Press", 7, null,
+                        onSave = { FixOutcome.Corrected(it.corrected(set)) }, onDelete = {}, onClose = {}) }
+                }
+            }
+        }
+        val reps = compose.onNodeWithContentDescription("Reps").performScrollTo().performClick()
+        reps.assertIsFocused()
+        val field = reps.getBoundsInRoot()
+        val head = compose.onNodeWithContentDescription("Bench Press, set 7").getBoundsInRoot()
+        val save = compose.onNodeWithText("Save fix").getBoundsInRoot()
+        assertTrue("Reps $field stands whole between the head $head and Save fix $save",
+            field.top >= head.bottom && field.bottom <= save.top)
     }
 
     @Test

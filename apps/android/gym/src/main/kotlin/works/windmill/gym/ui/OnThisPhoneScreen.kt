@@ -345,6 +345,7 @@ private fun RecoveryTimes(session: Session, onPick: ((String) -> Unit)? = null, 
         for ((index, field) in listOf("Started" to session.startedAtMs, "Finished" to session.finishedAtMs).withIndex()) {
             if (index > 0) HorizontalDivider(color = colors.onSurfaceVariant.copy(alpha = .12f))
             val values: @Composable () -> Unit = {
+                val hours24 = DateFormat.is24HourFormat(LocalContext.current)
                 val instant = field.second
                 if (instant == null) {
                     Text("Not finished", style = WindmillType.supporting, color = colors.onSurfaceVariant)
@@ -352,11 +353,11 @@ private fun RecoveryTimes(session: Session, onPick: ((String) -> Unit)? = null, 
                 } else if (onPick == null) {
                     val otherDay = Instant.ofEpochMilli(instant).atZone(ZoneId.systemDefault()).toLocalDate() !=
                         Instant.ofEpochMilli(session.startedAtMs).atZone(ZoneId.systemDefault()).toLocalDate()
-                    Text(if (otherDay) "${Readout.date(instant)} · ${Readout.time(instant)}" else Readout.time(instant),
+                    Text(if (otherDay) "${Readout.date(instant)} · ${Readout.time(instant, hours24)}" else Readout.time(instant, hours24),
                         style = WindmillType.supportingParagraph, color = colors.onSurfaceVariant)
                 } else {
                     AssistChip(onClick = { onPick("${field.first}:date") }, label = { Text(Readout.date(instant)) })
-                    AssistChip(onClick = { onPick("${field.first}:time") }, label = { Text(Readout.time(instant)) })
+                    AssistChip(onClick = { onPick("${field.first}:time") }, label = { Text(Readout.time(instant, hours24)) })
                 }
             }
             if (largeText) Column(Modifier.fillMaxWidth().padding(vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {

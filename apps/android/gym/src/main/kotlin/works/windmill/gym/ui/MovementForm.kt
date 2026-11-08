@@ -37,7 +37,6 @@ import works.windmill.gym.presentation.Readout
 import works.windmill.gym.presentation.RoutineMovement
 import works.windmill.gym.presentation.TargetEntry
 import works.windmill.gym.domain.sync.SetTarget as DomainSetTarget
-import androidx.compose.material3.Button
 
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
@@ -85,10 +84,8 @@ internal fun MovementForm(
                         modifier = Modifier.semantics { error(it) }) }
                 }
             }
-            Button(onClick = onCommit, enabled = valid && !busy,
-                modifier = Modifier.padding(horizontal = 16.dp).padding(top = 8.dp, bottom = 8.dp).fillMaxWidth().heightIn(min = GymTap.primary)) {
-                Text(commitLabel)
-            }
+            GymSheetCommit(commitLabel, enabled = valid && !busy, onClick = onCommit,
+                modifier = Modifier.padding(horizontal = 16.dp).padding(top = 8.dp, bottom = 8.dp))
         }
     }
 }

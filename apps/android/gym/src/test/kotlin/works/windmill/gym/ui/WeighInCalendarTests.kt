@@ -25,6 +25,9 @@ import works.windmill.gym.presentation.Bodyweight
 import works.windmill.gym.presentation.WeighIn
 import works.windmill.platform.telemetry.LocalTelemetry
 import works.windmill.platform.telemetry.Telemetry
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w360dp-h800dp-xhdpi")
@@ -125,8 +128,19 @@ class WeighInCalendarTests {
         assertEquals(emptyList<Pair<String, Double>>(), saved)
     }
 
-    // A new weigh-in commits in its top bar; its ✕ closes the sheet as a swipe does, leaving a typed weight unsaved.
-    @Test fun theCloseInTheTopBarLeavesWithoutSaving() {
+    // TalkBack opens the calendar from the date field itself: a button whose action says what it does.
+    @Test fun theDateFieldIsAButtonThatOpensTheCalendar() {
+        compose.setContent { GymMaterial { WeighInSheet(null, null, now, false, null,
+            onSave = { date, kg -> saved += date to kg }, onDelete = null, onClose = {}) } }
+        val field = compose.onNodeWithContentDescription("Date, ${Bodyweight.fullDay(day)}")
+        field.assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button))
+        assertEquals("Choose date", field.fetchSemanticsNode().config[SemanticsActions.OnClick].label)
+        field.performSemanticsAction(SemanticsActions.OnClick)
+        compose.onNodeWithText("Use date").assertIsDisplayed()
+    }
+
+    // The head's ✕ closes the sheet as a swipe does, leaving a typed weight unsaved.
+    @Test fun theCloseInTheHeadLeavesWithoutSaving() {
         val closed = mutableListOf<String>()
         compose.setContent { GymMaterial { WeighInSheet(null, null, now, false, null,
             onSave = { date, kg -> saved += date to kg }, onDelete = null, onClose = { closed += "closed" }) } }

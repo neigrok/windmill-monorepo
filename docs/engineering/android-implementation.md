@@ -257,9 +257,9 @@ Signed load input requests signed and decimal Android flags. Existing screen con
 bidirectional swipe behavior remain in their numbered migration tasks. The approved O addendum
 measures signed Display text at the actual font scale: the numeral first fits beside its unit from 88sp
 down to 64sp and keeps the 88sp line height, then puts the unit below and uses the full control
-width when the 32sp floor needs it. The editor stays in the same composition slot
-as the field and button positions change; focused expansion preserves selection and contracts only
-on blur. Full gym Debug passes 1,196 checks with 17 opt-in live-wire skips (1,213 total); all
+width when the 32sp floor needs it. Focus never moves the field: a focused field keeps the layout it
+had at rest, and a longer typed value shrinks its numeral beside the unit, down to the floor, until
+Done or Log set fits it again; selection survives. Full gym Debug passes 1,196 checks with 17 opt-in live-wire skips (1,213 total); all
 33 focused Release and 32 capture-tool checks pass. Native-font tests cover 372/280dp controls,
 100/200% text, focused selection preservation and unchanged raw invalid input at the 32sp floor.
 
@@ -547,10 +547,9 @@ sign control or validation message.
 
 ## Task 26 · Notes and its editor
 
-Notes uses the single approved honesty line, 20 dp gutter and shared card/swipe anatomy. The row
-has 12 dp padding, 15/22 title and 13/18 preview type; its 68 dp minimum grows with content. Exact
-24 dp drag/chevron assets come from the approved flow, with the handle's 48 dp interaction area.
-The existing Add button remains. The editor uses 4 dp outlined Title/Note fields with 56/240 dp
+Notes uses the single approved honesty line, 20 dp gutter and the shared swipe row. Each note is a
+two-line `ListItem` with 15/22 title and 13/18 preview type, led by the shared 24 dp drag handle in
+its 48 dp target and with no chevron. Signed in, **Add a note** is an extended FAB. The editor uses 4 dp outlined Title/Note fields with 56/240 dp
 minima, the pushed Note bar and the shared error text Delete button. Clean Save is disabled.
 Signed-out Notes and Connected log remain task 51.
 
@@ -631,8 +630,9 @@ sheet. The spoken position remains exact; decorative markers show at most seven 
 smaller endpoints when more positions continue. A single movement has no markers. Previous/Next
 remain accessibility actions, without visible arrow buttons or a text pager.
 
-The headerless ledger combines each load with its equipment unit and reps. It grows from one current
-row to a maximum 144 dp viewport, preserves the current row as sets arrive, and scrolls older sets.
+The headerless ledger is a lazy list of one-line 56 dp rows combining each load with its equipment
+unit and reps. Its window holds the whole rows that fit above the rack, one to three, keeps the current
+row in view as sets arrive, and scrolls the others.
 The main Add movement row is removed; the existing management sheet remains its route. The native
 number buffers, signed keyboard, ladder bands, 48 dp controls and silent Log action stay intact.
 Only the part of a snackbar that overlaps the ledger reserves scrolling space.
@@ -1078,8 +1078,7 @@ All eight linked frames are marked In production on the canonical Android page. 
 Nunito 14 sp/20 sp roles, the connected heading is bold and the empty heading regular. Row title/support
 lines have no extra gap; the caption uses 8 dp above and 16 dp below. The forward icon is the
 existing 20 dp asset. The How chevron reuses the existing note chevron at 20 dp: its normalized
-path matches the approved SVG within 0.000034 dp export precision. The shared Chevron remains
-unchanged. Paired native rendered comparison passes with the physical status-bar inset accounted for.
+path matches the approved SVG within 0.000034 dp export precision. Paired native rendered comparison passes with the physical status-bar inset accounted for.
 
 The capture recipe composes two ordinary empty-account states with the fixture-account connected
 and disclosure pages. An explicit boolean fixture option seeds a disposable scoped Claude Desktop

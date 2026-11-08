@@ -308,7 +308,7 @@ private fun WeightRow(weight: LogEntry.Weight, readout: LogReadout.Weight, onOpe
             trailingContent = readout.time?.takeIf { !stacked }?.let { time ->
                 { Text(time, style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceVariant) }
             },
-            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+            colors = ListItemDefaults.colors(containerColor = colors.surface),
             modifier = Modifier.fillMaxWidth().testTag(weight.key)
                 .clickable(role = Role.Button, onClickLabel = "Open bodyweight", onClick = onOpen),
         )

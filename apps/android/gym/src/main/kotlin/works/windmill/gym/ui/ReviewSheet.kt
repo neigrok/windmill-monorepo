@@ -525,7 +525,7 @@ private fun Foot(
             Text(Proposal.signInToReview, style = type.rowLine, color = colors.onSurfaceVariant)
             Button(
                 onClick = onSignIn,
-                modifier = Modifier.fillMaxWidth().heightIn(min = GymTap.secondary),
+                modifier = Modifier.fillMaxWidth().heightIn(min = GymTap.primary),
                 colors = ButtonDefaults.buttonColors(containerColor = colors.primary, contentColor = colors.onPrimary),
             ) {
                 Text("Sign in", style = type.action)
@@ -551,7 +551,7 @@ private fun Foot(
             enabled = seen && !deciding,
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = GymTap.secondary)
+                .heightIn(min = GymTap.primary)
                 // TalkBack announced `disabled` and nothing else; the reason belongs on the control
                 // that is refusing, not only in the row beneath it.
                 .semantics { if (!seen) stateDescription = Proposal.applyHint },

@@ -19,7 +19,6 @@ import works.windmill.gym.R
 import works.windmill.gym.presentation.Exercise
 import works.windmill.gym.presentation.Program
 import works.windmill.gym.domain.sync.ExerciseRules
-import androidx.compose.material3.Button
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -50,10 +49,8 @@ fun EditMovementSheet(
                     modifier = Modifier.semantics { error(sentence) })
             }
         }
-        Button(onClick = onSave, enabled = changed && problem == null && !saving,
-            modifier = Modifier.padding(horizontal = GymLayout.gutter).padding(top = 16.dp, bottom = 16.dp).fillMaxWidth().heightIn(min = GymTap.primary)) {
-            Text(if (saving) "Saving…" else "Save")
-        }
+        GymSheetCommit("Save", enabled = changed && problem == null && !saving, onClick = onSave, busy = saving,
+            modifier = Modifier.padding(horizontal = GymLayout.gutter).padding(top = 16.dp, bottom = 16.dp))
     }
 }
 

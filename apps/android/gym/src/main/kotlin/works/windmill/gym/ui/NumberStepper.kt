@@ -226,8 +226,9 @@ fun NumberStepper(
                 return found
             }
             val baseWidth = numeralWidth(roleSize)
+            val besideUnit = { size: Int -> numeralWidth(size) + gap + unitGap + unitWidth <= sideWidth }
             // The Display numeral first fits beside its unit, from its role's size down; only below that does the unit go under it.
-            val inlineSize = if (display) largest(GymType.stepperDisplayBesideUnit..roleSize) { numeralWidth(it) + gap + unitGap + unitWidth <= sideWidth } else null
+            val inlineSize = if (display) largest(GymType.stepperDisplayBesideUnit..roleSize, besideUnit) else null
             val requiredLayout = when {
                 !display && (input != NumberStepperInput.SignedDecimal ||
                     baseWidth + gap + unitGap + unitWidth <= sideWidth) -> NumberFieldLayout.Inline
@@ -237,20 +238,21 @@ fun NumberStepper(
                 else -> NumberFieldLayout.FullWidth
             }
             // Focus never moves the field: it keeps the layout it had at rest, so a longer typed value shrinks its numeral
-            // toward the floor in place, and the field fits itself again once focus leaves on Done or Log set.
+            // beside the unit, down to its floor, and the field fits itself again once focus leaves on Done or Log set.
             val fieldLayout = if (focused) restingLayout ?: requiredLayout else requiredLayout
             SideEffect { restingLayout = if (focused) fieldLayout else null }
             val contentWidth = if (fieldLayout == NumberFieldLayout.FullWidth)
                 (constraints.maxWidth - padding).coerceAtLeast(0) else sideWidth
+            val floor = if (display) GymType.stepperDisplayFloor else GymType.stepperInlineFloor
             val numeralSize = when {
+                fieldLayout == NumberFieldLayout.Inline -> inlineSize ?: largest(floor..roleSize, besideUnit) ?: floor
                 !display -> roleSize
-                fieldLayout == NumberFieldLayout.Inline -> inlineSize ?: GymType.stepperDisplayBesideUnit
-                else -> largest(GymType.stepperDisplayFloor..roleSize) { numeralWidth(it) + gap <= contentWidth } ?: GymType.stepperDisplayFloor
+                else -> largest(floor..roleSize) { numeralWidth(it) + gap <= contentWidth } ?: floor
             }
             val valueStyle = GymType.stepperValue(baseStyle, numeralSize)
             val numeralWidth = textMeasurer.measure(measuredValue, valueStyle).size.width
             // A numeral fitted below its role's size keeps the role's line, so stepping never changes the field's height.
-            val numeralLine = if (display && fieldLayout == NumberFieldLayout.Inline) textMeasurer.measure(measuredValue, measured).size.height else 0
+            val numeralLine = if (fieldLayout == NumberFieldLayout.Inline) textMeasurer.measure(measuredValue, measured).size.height else 0
             val animateValue = !focused && !reducedMotion && numeralWidth + gap <= contentWidth
             Layout(content = {
                 StepperButton(NumberStep.Decrease, label, enabled && decreaseEnabled) {

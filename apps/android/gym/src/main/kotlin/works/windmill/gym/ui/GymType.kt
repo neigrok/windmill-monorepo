@@ -112,6 +112,7 @@ object GymType {
     val stepperRefusal = nativeSupporting
     val stepperDisplayBesideUnit = 64
     val stepperDisplayFloor = 32
+    val stepperInlineFloor = 12
     val stockFieldInput = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 16.sp, lineHeight = 24.sp, letterSpacing = .5.sp)
 
     // Readouts in the system mono.

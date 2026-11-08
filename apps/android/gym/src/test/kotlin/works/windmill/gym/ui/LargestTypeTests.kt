@@ -464,6 +464,8 @@ class LargestTypeTests {
             }
             val window = compose.onRoot().getBoundsInRoot()
             val said = (1..4).map { "Set $it, logged" } + "Set 5, current"
+            assertTrue("the ledger holds exactly ${said.size} rows",
+                runCatching { compose.onNodeWithTag("Set ledger").performScrollToIndex(said.size) }.isFailure)
             said.forEachIndexed { at, label ->
                 compose.onNodeWithTag("Set ledger").performScrollToIndex(at)
                 val node = compose.onNode(hasContentDescription(label, substring = true)).performScrollTo().assertIsDisplayed()

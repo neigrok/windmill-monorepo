@@ -79,9 +79,11 @@ object Readout {
         return " · ${weight(low)}–${weight(high)}"
     }
 
-    fun time(ms: Long): String {
+    // A clock time on the phone's own 24-hour or 12-hour setting.
+    fun time(ms: Long, hours24: Boolean = true): String {
         val at = at(ms)
-        return pad(at.hour) + ":" + pad(at.minute)
+        if (hours24) return pad(at.hour) + ":" + pad(at.minute)
+        return "${(at.hour + 11) % 12 + 1}:${pad(at.minute)} ${if (at.hour < 12) "AM" else "PM"}"
     }
 
     // The shared readout omits zero tonnage and spells a positive total without integer narrowing.

@@ -53,9 +53,8 @@ object GymSkin {
 // Native action sizes; the rack keeps its larger logging target.
 object GymTap {
     val minimum = 48.dp
-    val primary = 56.dp
+    val primary = 56.dp    // a screen's or sheet's main action, Apply, Sign in, text fields
     val logSet = 64.dp
-    val secondary = 56.dp  // dashed add slots, Apply, Sign in, text fields
 }
 
 // The room's layout scale: every edge, gap and inset is one of these, so a screen reads like its

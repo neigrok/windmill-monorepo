@@ -304,17 +304,18 @@ fun LoggerScreen(
     var nowMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
     // Zero while nothing is showing: an empty host measures no height.
     var transientHeight by remember { mutableStateOf(0.dp) }
+    // Fix set leaves the same way from its drag, scrim, Back and ✕: a busy save holds the sheet, and open entry is
+    // cancelled before the sheet may close.
+    fun fixMayClose(): Boolean = when {
+        fixBusy -> false
+        cancelFixEntry != null -> {
+            cancelFixEntry?.invoke()
+            false
+        }
+        else -> true
+    }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true,
-        confirmValueChange = { destination ->
-            when {
-                fixBusy -> false
-                destination == SheetValue.Hidden && cancelFixEntry != null -> {
-                    cancelFixEntry?.invoke()
-                    false
-                }
-                else -> true
-            }
-        })
+        confirmValueChange = { destination -> destination != SheetValue.Hidden || fixMayClose() })
     val sheetStates = rememberSaveableStateHolder()
     val direction = LocalLayoutDirection.current
 
@@ -715,7 +716,7 @@ fun LoggerScreen(
                         },
                         onSaved = { close(); say(null) },
                         onGone = { close(); say(it) },
-                        onClose = { close() },
+                        onClose = { if (fixMayClose()) close() },
                         onBusy = { fixBusy = it },
                         onEntryCancel = { cancelFixEntry = it },
                         onDelete = {
@@ -830,7 +831,8 @@ private fun Ledger(
     val density = LocalDensity.current
     val measurer = rememberTextMeasurer()
     val numberWidth = remember(slots.size, density, measurer) {
-        with(density) { maxOf(24.dp, measurer.measure(slots.size.toString(), GymType.nativeRowTitle).size.width.toDp()) }
+        val widest = listOf(GymType.nativeRowTitle, GymType.numeralLarge).maxOf { measurer.measure(slots.size.toString(), it).size.width }
+        with(density) { maxOf(24.dp, widest.toDp()) }
     }
     val heights = remember { mutableStateMapOf<String, Int>() }
     val keys = slots.map { it.key }

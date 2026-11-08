@@ -52,6 +52,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.GraphicsMode
 import org.robolectric.annotation.Config
+import androidx.compose.ui.test.SemanticsNodeInteraction
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
@@ -454,9 +455,7 @@ class NumberStepperTests {
         field.performClick().performTextReplacement("-499.99")
         field.assertIsFocused()
         assertEquals("focus froze the field", resting, field.fetchSemanticsNode().boundsInRoot)
-        val layouts = mutableListOf<TextLayoutResult>()
-        field.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
-        assertEquals(64.sp, layouts.single().layoutInput.style.fontSize)
+        assertTrue("the whole value stands beside its unit", wholeBesideUnit(field, unitGapPx = 16f))
         val increase = compose.onNodeWithContentDescription("Increase Load").fetchSemanticsNode().boundsInRoot
         assertTrue("the + stays beside the field", increase.left >= resting.right && increase.center.y < resting.bottom)
         field.performSemanticsAction(SemanticsActions.SetSelection) { it(2, 5, false) }
@@ -467,6 +466,56 @@ class NumberStepperTests {
         field.assertIsNotFocused()
         field.assertTextEquals("−499.99")
         compose.waitUntil { field.fetchSemanticsNode().boundsInRoot.height > resting.height }
+    }
+
+    // The focused field's value, drawn beside its unit, never runs under it: the numeral's whole line fits the room the
+    // field leaves it, so no leading digit scrolls out of sight.
+    private fun wholeBesideUnit(field: SemanticsNodeInteraction, unitGapPx: Float): Boolean {
+        val layouts = mutableListOf<TextLayoutResult>()
+        field.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+        val unit = compose.onAllNodesWithTag("stepper-unit", useUnmergedTree = true)[0].fetchSemanticsNode().boundsInRoot
+        val bounds = field.fetchSemanticsNode().boundsInRoot
+        return layouts.single().size.width + unitGapPx + unit.width <= bounds.width - 64f
+    }
+
+    @Test fun aLongerTypedValueShrinksBesideItsUnitAtEveryWidthAndScale() {
+        val width = mutableStateOf(372)
+        val scale = mutableStateOf(1f)
+        val display = mutableStateOf(true)
+        compose.setContent {
+            var text by remember { mutableStateOf("60") }
+            CompositionLocalProvider(LocalDensity provides Density(2f, scale.value)) {
+                GymMaterial {
+                    Column {
+                        NumberStepper(text, { text = it }, "Load", "kg",
+                            onStep = { NumberEditResult.Unchanged }, onCommit = { NumberEditResult.Unchanged },
+                            modifier = Modifier.width(width.value.dp),
+                            size = if (display.value) NumberStepperSize.Display else NumberStepperSize.Regular,
+                            input = NumberStepperInput.SignedDecimal)
+                        NumberStepper("8", {}, "Reps", "reps", onStep = { NumberEditResult.Unchanged },
+                            onCommit = { NumberEditResult.Unchanged })
+                    }
+                }
+            }
+        }
+        val field = compose.onNodeWithContentDescription("Load, kg")
+        for (isDisplay in listOf(true, false)) for ((controlWidth, fontScale) in listOf(372 to 1f, 280 to 1f, 372 to 2f)) {
+            compose.runOnIdle { display.value = isDisplay; width.value = controlWidth; scale.value = fontScale }
+            field.performTextReplacement("60")
+            compose.onNodeWithContentDescription("Reps").performClick()
+            val resting = field.fetchSemanticsNode().boundsInRoot
+            val besideUnit = compose.onAllNodesWithTag("stepper-unit", useUnmergedTree = true)[0].fetchSemanticsNode()
+                .boundsInRoot.top < resting.top + resting.height / 2
+            field.performClick()
+            for (value in listOf("102.5", "-12.5")) {
+                field.performTextReplacement(value)
+                field.assertIsFocused()
+                assertEquals("focus froze the field", resting, field.fetchSemanticsNode().boundsInRoot)
+                if (besideUnit) assertTrue("$value at $controlWidth dp / $fontScale scale runs under its unit",
+                    wholeBesideUnit(field, unitGapPx = if (isDisplay) 16f else 12f))
+            }
+            compose.onNodeWithContentDescription("Reps").performClick()
+        }
     }
 
     @Test fun regularLoadMovesItsUnitBelowWithoutShrinkingOrMovingSideControls() {

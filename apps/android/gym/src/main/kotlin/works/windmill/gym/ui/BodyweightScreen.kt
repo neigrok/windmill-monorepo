@@ -15,12 +15,10 @@ import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.SelectableDates
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -48,7 +46,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -81,6 +78,8 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.IconButton
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.PressInteraction
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.onClick
 
 // What the bodyweight page draws: the drawn series, the series a held delete still stands on, and whether it is read.
 @Stable
@@ -195,13 +194,6 @@ fun WeighInSheet(
         telemetry.event("gym_action", mapOf("screen" to "bodyweight", "action" to "calendar_open", "outcome" to "ok"))
     }
     val savable = !busy && parsed is ParsedWeight.Ok && dateFailure == null
-    val fieldColors = OutlinedTextFieldDefaults.colors(
-        focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent,
-        disabledContainerColor = Color.Transparent, errorContainerColor = Color.Transparent,
-        focusedTextColor = colors.onSurface, unfocusedTextColor = colors.onSurface, disabledTextColor = colors.onSurfaceVariant,
-        errorTextColor = colors.onSurface, cursorColor = colors.primary,
-        focusedBorderColor = colors.primary, unfocusedBorderColor = colors.outline,
-        disabledBorderColor = colors.outline, errorBorderColor = MaterialTheme.colorScheme.error)
 
     // Both modes head the sheet with Close and its title and commit from the bottom, in thumb reach. A new weigh-in labels
     // its two fields; a correction keeps its field captions, its fixed day and Delete under the commit.
@@ -219,7 +211,6 @@ fun WeighInSheet(
                 supportingText = weightFailure?.let { line -> { Text(line, modifier = Modifier.padding(bottom = 6.dp).semantics { liveRegion = LiveRegionMode.Polite }) } },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, autoCorrectEnabled = false, imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = { save() }),
-                colors = fieldColors,
                 modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).focusRequester(focus)
                     .semantics { contentDescription = weightField; weightFailure?.let { error(it) } },
             )
@@ -248,9 +239,13 @@ fun WeighInSheet(
                         }
                     },
                     supportingText = dateFailure?.let { line -> { Text(line, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }) } },
-                    interactionSource = press, colors = fieldColors,
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)
-                        .semantics { contentDescription = "Date, ${Bodyweight.fullDay(date)}"; dateFailure?.let { error(it) } },
+                    interactionSource = press,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).semantics {
+                        contentDescription = "Date, ${Bodyweight.fullDay(date)}"
+                        role = Role.Button
+                        onClick(label = "Choose date") { openCalendar(); true }
+                        dateFailure?.let { error(it) }
+                    },
                 )
             }
             (if (correction) otherFailure else refused.takeIf { weightFailure == null })?.let {
@@ -260,9 +255,7 @@ fun WeighInSheet(
         }
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = if (correction) 10.dp else 16.dp),
             verticalArrangement = Arrangement.spacedBy(gap)) {
-            Button(onClick = ::save, enabled = savable, modifier = Modifier.fillMaxWidth().heightIn(min = GymTap.primary)) {
-                Text(if (busy) "Saving…" else Bodyweight.save)
-            }
+            GymSheetCommit(Bodyweight.save, enabled = savable, onClick = ::save, busy = busy)
             onDelete?.let { GymErrorTextButton(Bodyweight.deleteRow, it, Modifier.fillMaxWidth(), enabled = !busy) }
         }
     }

@@ -14,6 +14,14 @@ class ReadoutTests {
     }
 
     @Test
+    fun aClockTimeFollowsThePhonesTwentyFourHourSetting() {
+        fun at(hour: Int, minute: Int) = LocalDate.of(2026, 11, 8).atTime(hour, minute).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+        assertEquals(listOf("00:05", "09:30", "12:00", "18:45"), listOf(at(0, 5), at(9, 30), at(12, 0), at(18, 45)).map { Readout.time(it) })
+        assertEquals(listOf("12:05 AM", "9:30 AM", "12:00 PM", "6:45 PM"),
+            listOf(at(0, 5), at(9, 30), at(12, 0), at(18, 45)).map { Readout.time(it, hours24 = false) })
+    }
+
+    @Test
     fun aWorkoutWithoutARoutineHasOneSharedTitle() {
         assertEquals("Free workout", Readout.noRoutine)
     }
