@@ -339,6 +339,30 @@ Stop listeners by the selected port, drop the test database, stop the emulator a
 daemon started for the check, and remove temporary credentials. Verification counts and installed
 app observations belong in the task report, rather than a lasting evidence file.
 
+## Localization
+
+English is the only language. Copy a person reads is a string resource in the module that reads it:
+`gym/src/main/res/values/strings_<area>.xml`, one file per area (the welcome carousel keeps `onboarding.xml`),
+`platform/src/main/res/values/strings.xml` and `app/src/main/res/values/strings.xml`. Names carry their module and
+area, `gym_<area>_<thing>`, `platform_<thing>` and `app_<thing>`, so merged resources cannot collide; the carousel's
+are `onboarding_<thing>`. Manifest labels point at resources too.
+
+- A composable reads `stringResource(R.string.x, …)`; code outside composition reads `context.getString(…)`.
+- A count reads `pluralString(R.plurals.x, count, …)` from `platform/i18n/AppLanguage.kt`, never
+  `pluralStringResource` or `getQuantityString`: Android picks a plural's category by the system's first language
+  even when the app does not ship it, so a Russian phone would read "21 set".
+- Placeholders are positional `%1$s`, given a value its own formatter already rendered. `%d` and `%f` format in the
+  system's locale and print Arabic-Indic digits on an Arabic phone.
+- A sentence is one message: a value fills a placeholder, never a fragment beside it.
+- User content, server text, test tags, telemetry names and log lines stay in Kotlin.
+- `CopyInResourcesTests` (`:app`) fails on copy written in Kotlin under the source roots it lists and on a literal
+  manifest label; the app's lint fails on an unused resource.
+
+A second language ships as its `values-<language>/` folders, one more entry in `AppLanguage`'s `shipped` list, and
+`generateLocaleConfig` and `localeFilters` in the app's build, all in one change. Neither build setting comes earlier:
+`localeFilters` drops the libraries' own translations, such as Material's date picker, and `generateLocaleConfig`
+adds the app to the system's per-app language setting.
+
 ## Writing Kotlin here
 
 - Every bound is UTF-8 bytes. `jcs` returns a `String`, so measure `encodeToByteArray()`, never `length`.

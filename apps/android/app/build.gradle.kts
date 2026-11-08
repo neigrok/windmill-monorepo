@@ -202,7 +202,8 @@ dependencies {
     testImplementation(libs.okhttp.mockwebserver)
 }
 
-// ObservabilityDocTests reads the sources it names and the doc it holds to them; ThemeRolesTests reads every screen.
+// ObservabilityDocTests reads the sources it names and the doc it holds to them; ThemeRolesTests and CopyInResourcesTests
+// read every screen, and CopyInResourcesTests the manifests.
 tasks.withType<Test>().configureEach {
     val doc = rootProject.file("../../docs/ANDROID_OBSERVABILITY.md")
     systemProperty("windmill.android", rootProject.projectDir.absolutePath)
@@ -211,4 +212,5 @@ tasks.withType<Test>().configureEach {
     for (module in listOf("app", "platform", "gym")) inputs.dir(rootProject.file("$module/src/main/kotlin"))
     for (module in listOf("app", "gym")) inputs.dir(rootProject.file("$module/src/debug/kotlin"))
     inputs.dir(rootProject.file("app/src/main/res"))
+    for (module in listOf("app", "gym")) inputs.file(rootProject.file("$module/src/main/AndroidManifest.xml"))
 }
