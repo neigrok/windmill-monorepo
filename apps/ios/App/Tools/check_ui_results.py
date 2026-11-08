@@ -12,7 +12,7 @@ FIXTURE_SKIPS = {
     ("GymIntegrationFlowTests", "testAConnectedToolsRemovalAsksThenRemovesItsRoutine"):
         "requires the isolated removal fixture",
     ("JournalIntegrationFlowTests", "testAPageBacksUpWaitsWhileTheServerIsAwayAndBacksUpWhenItAnswers"):
-        "requires the isolated journal fixture",
+        "requires the verify skill's isolated backend",
 }
 
 
