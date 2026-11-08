@@ -152,7 +152,8 @@ is the web's journal day ramp — paper in north light with cool ink
 (`web/src/styles/tokens/palettes.css`, `[data-theme="light"][data-brand="journal"]`) — with the
 lamp darkened to `#90651C` for 4.5:1 text. The onboarding glimpse's journal day inks are these
 values. The status bar follows the room: a night canvas under a light status bar is a defect in
-either appearance.
+either appearance. The room's ground is flat `journal/canvas` with no glow over it, and the onboarding
+glimpses picture the journal on the same flat ground.
 
 ### Shell — clay
 

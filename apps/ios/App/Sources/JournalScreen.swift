@@ -59,7 +59,7 @@ struct JournalScreen: View {
       let renderedBody = model.document.body
       GeometryReader { geo in
         ZStack(alignment: .topLeading) {
-          JournalBackdrop()
+          JournalPalette.canvas.ignoresSafeArea()
           VStack(spacing: 0) {
             if echoesVisible && !model.echoes.hops.isEmpty { JournalEchoTrail(echoes: model.echoes) }
             ScrollView {
