@@ -36,6 +36,7 @@ import kotlinx.coroutines.launch
 import works.windmill.platform.R
 import works.windmill.platform.design.LocalWindmillDark
 import works.windmill.platform.design.LocalWindmillPalette
+import works.windmill.platform.i18n.pluralString
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -81,8 +82,7 @@ fun DeleteAccount(store: AccountDeletionStore, onExit: (Boolean) -> Unit) {
                 DeletionFact(if (dark) R.drawable.account_delete_download else R.drawable.account_delete_download_light,
                     "To keep a copy, export it first at windmill.works.")
                 if (store.count > 0) DeletionFact(if (dark) R.drawable.account_delete_cloud_off else R.drawable.account_delete_cloud_off_light,
-                    if (store.count == 1) "1 change on this phone hasn’t been confirmed by your account. It is deleted too."
-                    else "${store.count} changes on this phone haven’t been confirmed by your account. They are deleted too.")
+                    pluralString(R.plurals.platform_delete_unconfirmed_changes, store.count, store.count.toString()))
             }
             Text("Type your email to confirm", style = WindmillType.detailLabel, color = palette.inkDim)
             Spacer(Modifier.height(10.dp))

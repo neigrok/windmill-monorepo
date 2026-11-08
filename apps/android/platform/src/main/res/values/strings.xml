@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <plurals name="platform_delete_unconfirmed_changes">
+        <item quantity="one">%1$s change on this phone hasn’t been confirmed by your account. It is deleted too.</item>
+        <item quantity="other">%1$s changes on this phone haven’t been confirmed by your account. They are deleted too.</item>
+    </plurals>
+    <plurals name="platform_sign_out_unconfirmed_changes">
+        <item quantity="one">%1$s change hasn’t been confirmed by your account yet. Keep them on this phone until you sign in again, or discard them from this phone.</item>
+        <item quantity="other">%1$s changes haven’t been confirmed by your account yet. Keep them on this phone until you sign in again, or discard them from this phone.</item>
+    </plurals>
+</resources>

@@ -31,6 +31,7 @@ import works.windmill.platform.auth.AuthStore
 import works.windmill.platform.auth.SignInDoor
 import works.windmill.platform.design.LocalWindmillPalette
 import works.windmill.platform.design.WindmillSheet
+import works.windmill.platform.i18n.pluralString
 
 data class YouDestination(val id: String, val label: String, val onOpen: () -> Unit)
 
@@ -157,8 +158,7 @@ fun YouSheet(
                             verticalArrangement = Arrangement.spacedBy(16.dp)) {
                             Text("Sign out?", style = MaterialTheme.typography.headlineSmall, color = scheme.onSurface)
                             val copy = if (question.unsent == 0) "Your log stays in your account and leaves this phone."
-                                else "${question.unsent} " + (if (question.unsent == 1) "change hasn’t" else "changes haven’t") +
-                                    " been confirmed by your account yet. Keep them on this phone until you sign in again, or discard them from this phone."
+                                else pluralString(R.plurals.platform_sign_out_unconfirmed_changes, question.unsent, question.unsent.toString())
                             Text(copy, style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
                         }
                         FlowRow(Modifier.fillMaxWidth().padding(start = 8.dp, end = 24.dp, top = 20.dp, bottom = 20.dp),
