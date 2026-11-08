@@ -43,6 +43,36 @@ final class RoutinesCaptures: DesignCapture {
     }
   }
 
+  // 02L.11P: Claude, a connected tool, proposed removing Arms. The sheet's Remove asks first; Cancel leaves it waiting, and
+  // Remove routine removes it.
+  func testConnectedToolRemoval() {
+    for look in Look.both {
+      let app = launchSignedInCoach(look, arguments: ["-coach-board", "remove", "-routines-proposal-fixture", "-routines-tool-proposal"])
+      open(.routines, app)
+      let waiting = app.buttons["routine-proposal"]
+      XCTAssertTrue(waiting.waitForExistence(timeout: 20))
+      XCTAssertTrue(waiting.label.hasPrefix("Arms · a removal, From Claude"), waiting.label)
+      waiting.tap()
+      let remove = app.buttons["coach-apply-proposal"], confirm = app.buttons["Remove routine"]
+      XCTAssertTrue(remove.waitForExistence(timeout: 10))
+      XCTAssertEqual(remove.label, "Remove")
+      let bar = app.navigationBars["Arms"]
+      bar.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(forDuration: 0.1, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.05)))
+      let raised = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in bar.frame.minY < app.frame.height / 4 }, object: nil)
+      XCTAssertEqual(XCTWaiter.wait(for: [raised], timeout: 5), .completed, "The sheet stands at its large detent")
+      remove.tap()
+      XCTAssertTrue(confirm.waitForExistence(timeout: 5))
+      XCTAssertTrue(app.staticTexts["Claude suggested this. Your past Arms workouts stay in the log."].exists)
+      capture("02L.11-proposal-sheet-removal-asks", look, app)
+      app.cancelConfirmation()
+      XCTAssertTrue(confirm.waitForNonExistence(timeout: 5) && remove.waitForExistence(timeout: 5))
+      remove.tap()
+      XCTAssertTrue(confirm.waitForExistence(timeout: 5)); confirm.tap()
+      XCTAssertTrue(app.descendants(matching: .any)["coach-proposal-header"].waitForValue("Removed", timeout: 10))
+      app.terminate()
+    }
+  }
+
   // 02L.7: Start across the summary's foot, then the last movement scrolled clear of it.
   func testRoutineSummary() {
     for look in Look.both + Look.bothAtLargestText {

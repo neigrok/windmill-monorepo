@@ -465,7 +465,7 @@ and Android disagree.
   [workout-in-flight.md](ios/workout-in-flight.md) and the build tasks are `iosgym_tasks/60`–`69`.
   Owner ruling 2026-10-30: a movement with a logged set keeps its plan. The build draws the rest
   target (03.20–03.22), the typed load and the one reps wheel (03.23–03.25), Coach during a workout
-  (08.54), both proposal cards (08.55–08.57: a change to this workout applies to the running plan, a
+  (08.54), both proposal cards (08.56P, 08.57: a change to this workout applies to the running plan, a
   routine change applies for next time), the in-flight plan edits (03.26–03.32), and the rest target
   outside the app on the expanded Island (04.6) and the compact Lock Screen card (04.7, task 69),
   neither of which says what is unsent. 04.3's expanded presentation draws a moving rest bar the build
@@ -1313,12 +1313,12 @@ question; the rest are below. iOS paths are under `apps/ios/App/Sources/Gym/`, A
   each shows an Apply refusal. No board draws this refusal; a designer confirms the reused line.
 - **12t · Proposal card and sheet: iOS has the stock pass, Android the earlier layout (owner, 2026-11-08).**
   On iOS a proposal — Coach's or a connected tool's — is drawn by 08.2P, 08.12P–08.14P, 08.27P and 08.56P
-  and, from its Routines row, by 02L.1P, 02L.9P and 02L.10P (🚀 In production 2026-11-08, note `2023:21188`): a
+  and, from its Routines row, by 02L.1P, 02L.9P, 02L.10P and 02L.11P (🚀 In production 2026-11-08, note `2023:21188`): a
   `GroupBox` card with kind symbols, `LabeledContent` fields, a `DisclosureGroup` (*3 more changes*) and
   Reject | Apply in one row; a `Form` sheet that lists every change, applies from the toolbar, dismisses on
-  Reject and names its source with `link`. 02L.11P draws a connected tool's routine removal asking first; it
-  stays 🧪 and unbuilt until the owner sees its copy, so the sheet's Remove applies at once, as the card's does. Android's proposal card and review sheet (08 · Coach `1224:13123`) draw the
-  earlier layout until an Android pass follows. Ledger drift, not a task.
+  Reject, names its source with `link`, and asks before a connected tool's routine removal applies. Android's
+  proposal card and review sheet (08 · Coach `1224:13123`) draw the earlier layout until an Android pass follows.
+  Ledger drift, not a task.
   - On iOS the read line stands under the answer, above every card it carries (08.2P's rule, one placement in
     `CoachAnswerView`); the boards of an answer that wrote rather than proposed — a saved note (08.9), a created
     routine, a made movement (08.37), the ended states (08.46–08.50) — still draw it under their cards. The drafts

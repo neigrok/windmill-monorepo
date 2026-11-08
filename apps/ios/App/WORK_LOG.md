@@ -375,4 +375,6 @@ closes it. The change parts are shared from `ChangeBlock.swift` (`ChangeTitle`, 
 language their boards still draw (consistency 12t). The read line stands under every answer, above its cards. The
 capture rig's `-routines-tool-proposal` has Claude, over a connection, propose on the model server — the board's
 changes to Push A, and one to Legs that the phone's edit puts out of date — so the sheet has captures
-(`RoutinesCaptures.testConnectedToolProposals`).
+(`RoutinesCaptures.testConnectedToolProposals`). On the `remove` board the same rig has Claude propose removing Arms,
+and the sheet's Remove asks first (02L.11P, `RoutinesCaptures.testConnectedToolRemoval`). The question is the
+shared `DestructiveQuestion` as a dialog on the toolbar's Remove itself, so iOS 26 presents it from that button.

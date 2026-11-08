@@ -726,6 +726,25 @@ import SyncTesting
     #expect(lines(applied) == ["moved | Order 2nd → 1st"] && gym.coachChangeCount(applied) == 1)
     #expect(ProposalDiff(applied, routine: gym.coachRoutine(applied)).blocks.isEmpty, "The routine no longer holds the order it replaced")
   }
+  // A connected tool's removal asks on its sheet before it applies, in the name the tool gave, else *A connected tool*
+  // (02L.11P); Coach's removal and a tool's change apply at once.
+  @Test func aConnectedToolsRemovalAsksBeforeItApplies() {
+    let (_, gym) = fixture()
+    gym.proposals = [
+      Proposal(id: ID("coach-removal"), routineId: ID("arms"), intent: "remove", proposedName: "", summary: "", changes: [], baseName: "Arms"),
+      Proposal(id: ID("claude-removal"), routineId: ID("arms"), intent: "remove", proposedName: "", summary: "", changes: [], door: "mcp",
+               connection: "My laptop", agent: "Claude", baseName: "Arms"),
+      Proposal(id: ID("unnamed-removal"), routineId: ID("arms"), intent: "remove", proposedName: "", summary: "", changes: [], door: "mcp", baseName: "Arms"),
+      Proposal(id: ID("claude-change"), routineId: ID("arms"), intent: "revise", proposedName: "Arms B", summary: "", changes: [], door: "mcp",
+               agent: "Claude", baseName: "Arms"),
+    ]
+    #expect(["coach-removal", "claude-removal", "unnamed-removal", "claude-change"].map { id in
+      ProposalCard(gym: gym, id: id, in: .sheet).removalQuestion.map { $0.title + " | " + $0.message } ?? "applies at once"
+    } == ["applies at once",
+          "Remove Arms? | Claude suggested this. Your past Arms workouts stay in the log.",
+          "Remove Arms? | A connected tool suggested this. Your past Arms workouts stay in the log.",
+          "applies at once"])
+  }
   // The card reads the domain's blocks, named from the catalogue: the new name, the changed movements, removals, then
   // additions, with the movements it keeps folded into one count.
   @Test func aProposalsCardReadsItsChangesAsBlocks() throws {

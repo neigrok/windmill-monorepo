@@ -13,10 +13,11 @@ struct ProposalSheet: View {
   }
 }
 
-// The proposal as its sheet's Form (02L.9P, 02L.10P): every change listed, a Section each, the first headed by the count
-// and the last footed by the movements it leaves; Apply in the toolbar's confirmation slot and Reject a row of its own,
-// which sets the proposal aside and closes the sheet. Who proposed it and when stands under the title, by its symbol.
-// Applied, a row on top says so; out of date, a row on top says why, every change dimmed, and nothing is left to decide.
+// The proposal as its sheet's Form (02L.9P, 02L.10P, 02L.11P): every change listed, a Section each, the first headed by the
+// count and the last footed by the movements it leaves; Apply in the toolbar's confirmation slot, where a connected tool's
+// removal asks first, and Reject a row of its own, which sets the proposal aside and closes the sheet. Who proposed it and
+// when stands under the title, by its symbol. Applied, a row on top says so; out of date, a row on top says why, every
+// change dimmed, and nothing is left to decide.
 extension ProposalCard {
   @ViewBuilder var sheet: some View {
     let proposal = self.proposal
@@ -78,15 +79,20 @@ extension ProposalCard {
     }
   }
 
-  // The toolbar's confirmation: the prominent checkmark that applies, a removal's destructive Remove routine, work in flight
-  // in its place while the log has not answered, and Try again once the Apply failed or stalled.
+  // The toolbar's confirmation: the prominent checkmark that applies, a removal's destructive Remove, work in flight in its
+  // place while the log has not answered, and Try again once the Apply failed or stalled.
   @ViewBuilder func confirm(_ proposal: Proposal) -> some View {
     let decision = decision(stalled: stalled)
     Group {
       if pending && !decision.retries { ProgressView().accessibilityLabel(decision.title) }
       else if decision.retries { Button("Try again") { decide(proposal) }.fontWeight(.semibold) }
-      else if removal { Button(decision.title, role: .destructive) { decide(proposal) }.fontWeight(.semibold).tint(GymPalette.destructive) }
-      else if #available(iOS 26.0, *) {
+      else if removal {
+        let question = removalQuestion
+        Button("Remove", role: .destructive) { if question == nil { decide(proposal) } else { confirmingRemoval = true } }
+          .fontWeight(.semibold).tint(GymPalette.destructive)
+          .destructiveQuestion(gym, screen: "review", title: question?.title ?? "", message: question?.message ?? "", act: "Remove routine",
+                               dialog: true, isPresented: $confirmingRemoval) { decide(proposal) }
+      } else if #available(iOS 26.0, *) {
         Button(role: .confirm) { decide(proposal) } label: {
           Image(systemName: "checkmark").fontWeight(.semibold).foregroundStyle(decision.applies ? GymPalette.onAccent : GymPalette.inkFaint)
         }.buttonStyle(.glassProminent).tint(GymPalette.accent).accessibilityLabel("Apply")
@@ -100,6 +106,15 @@ extension ProposalCard {
     guard let proposal else { return nil }
     if removal { return "Remove a routine" }
     return GymCount.of(gym.coachChangeCount(proposal), "change") + (stance == .open && nextTime ? " · next time" : "")
+  }
+
+  // What a connected tool's removal asks before it applies, in the tool's own name (02L.11P); none for Coach's, asked for in
+  // its conversation, which applies at once.
+  var removalQuestion: (title: String, message: String)? {
+    guard let proposal, removal else { return nil }
+    if case .ask = proposal.provenance { return nil }
+    let source = proposal.sourceName.prefix(1).uppercased() + proposal.sourceName.dropFirst()
+    return ("Remove \(routineName)?", "\(source) suggested this. Your past \(routineName) workouts stay in the log.")
   }
 
   // Who proposed it, then when the server stamped it, by its symbol: Coach's bubbles or a connected tool's link.
