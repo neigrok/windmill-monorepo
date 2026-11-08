@@ -14,6 +14,40 @@ One Vite/React superapp for roadmap, journal and gym. Brand rules are in the roo
 `test/shell-boundaries.test.mjs` checks imports, product landing registrations and public entry
 points. Tests mirror `src/` under `test/`.
 
+## Localization
+
+Copy is read through a translator from catalogs; English is the only locale.
+
+- `platform/i18n/message.js` parses and formats the ICU MessageFormat subset. `platform/i18n/index.js`
+  resolves the app locale (`navigator.languages` against `AVAILABLE_LOCALES`, else English) and exports
+  `createTranslator`.
+- Each owner keeps its catalog in its own `i18n/` and exports `t` from `i18n/index.js`: `shell/i18n`
+  (`shell.*`), `design-system/i18n` (`ds.*`) and `products/<product>/i18n` (`roadmap.*`, `journal.*`,
+  `gym.*`). A catalog is `<locale>.json`, one flat object of key to message. A file reads only its own
+  owner's catalog, through `i18n/index.js`.
+- To add a string, add `"gym.log.emptyTitle": "No workouts yet"` to the owner's `en.json`, import `t`
+  from the owner's `i18n/index.js` and call `t('gym.log.emptyTitle')`. A key is the owner's namespace plus
+  dotted camelCase segments, at most 80 characters, written as a string literal at its call site. Map an
+  enum to copy with an object of `t()` calls, never a built key, and never pass `t` around or bind another
+  `t`.
+- A message is one whole sentence with arguments, never assembled from fragments: `Hello, {name}`,
+  `{count, plural, =0 {No sets} one {# set} other {# sets}}`, `{kind, select, rest {Rest day} other {Day}}`.
+  `''` is an apostrophe and `'{'` a literal brace; a lone `'` and `’` are themselves. The plural category
+  comes from `Intl.PluralRules` of the app locale, never the system's.
+- Formatting stays out of the translator: an argument and `#` render as `String(value)`, so the caller
+  formats a number or date as it always has and passes the result. To show a formatted count, select on
+  the number and show the string: `{count, plural, one {{shown} set} other {{shown} sets}}`.
+- `t` returns a string, or a fragment when an argument is an element (`{ when: <strong>{day}</strong> }`).
+- Outside a production build a missing key or argument throws. A production build renders the key and
+  reports `i18n-missing-message` once per key per page load ([observability](OBSERVABILITY.md)).
+- `test/platform/i18n/catalogs.test.mjs` checks every owner: each `t()` key is a literal its catalog holds,
+  its arguments match its message, every message parses and is used, and keys carry the namespace.
+  `test/platform/i18n/hardcodedCopy.test.mjs` fails on JSX text with letters and on literal copy props
+  (`COPY_PROPS` in `copyAudit.mjs`) under the roots it lists; its allowlist holds brand marks only. It reads
+  JSX, not strings held in plain modules.
+- A second locale is a `<locale>.json` beside each `en.json`, imported in that owner's `index.js`, and one
+  entry in `AVAILABLE_LOCALES`.
+
 ## Run and build
 
 ```sh

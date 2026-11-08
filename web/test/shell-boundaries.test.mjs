@@ -81,7 +81,16 @@ function productOf(absolutePath) {
   return absolutePath.slice(PRODUCTS_DIR.length).split(path.sep)[0];
 }
 
-const violations = { shellIntoProducts: [], productIntoProduct: [], productIntoAppChrome: [] };
+// An owner's catalog lives in its i18n/ beside its code and is read only by that owner, through i18n/index.js.
+const PLATFORM_I18N = path.join(SRC, 'platform', 'i18n') + path.sep;
+function catalogOwnerOf(target) {
+  const parts = path.relative(SRC, target).split(path.sep);
+  const at = parts.indexOf('i18n');
+  if (at < 1 || (target + path.sep).startsWith(PLATFORM_I18N)) return null;
+  return path.join(SRC, ...parts.slice(0, at));
+}
+
+const violations = { shellIntoProducts: [], productIntoProduct: [], productIntoAppChrome: [], catalogAcrossOwners: [] };
 
 for (const file of sourceFiles(SRC)) {
   const fromProduct = productOf(file);
@@ -110,6 +119,11 @@ for (const file of sourceFiles(SRC)) {
     if (fromProduct && (target + path.sep).startsWith(APP_CHROME_DIR)) {
       violations.productIntoAppChrome.push(`src/${relativeFile}:${line} imports ${specifier} — products must never import from the /app chrome`);
     }
+    const catalogOwner = catalogOwnerOf(target);
+    if (catalogOwner && !file.startsWith(path.join(catalogOwner, 'i18n') + path.sep)) {
+      if (!file.startsWith(catalogOwner + path.sep)) violations.catalogAcrossOwners.push(`src/${relativeFile}:${line} imports ${specifier} — only src/${path.relative(SRC, catalogOwner)} reads its own catalog`);
+      else if (target !== path.join(catalogOwner, 'i18n', 'index.js')) violations.catalogAcrossOwners.push(`src/${relativeFile}:${line} imports ${specifier} — read the catalog through its i18n/index.js`);
+    }
   }
 }
 
@@ -123,6 +137,10 @@ test('no product imports from another product', () => {
 
 test('no product imports from the /app chrome', () => {
   assert.deepEqual(violations.productIntoAppChrome, []);
+});
+
+test('every catalog is read only by its owner, through its i18n/index.js', () => {
+  assert.deepEqual(violations.catalogAcrossOwners, []);
 });
 
 // The landing seam. Since the shell stopped hard-coding /roadmap, the router mounts a landing by

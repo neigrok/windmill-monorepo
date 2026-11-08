@@ -83,6 +83,12 @@ frames. A failed paste shape adds the Sentry tags `reason` (`unavailable`, `unre
 status or count. Sentry collapses a repeat of one kind, operation, route, tags and crashing frame
 within ten seconds.
 
+A message the translator cannot show, a key its owner's catalog lacks or an argument its call did not
+pass, renders as its key in a production build and reports to Sentry once per key per page load under the
+static operation `i18n-missing-message`, with `i18n` as its type and `kind` tag, the key (a code
+identifier such as `gym.log.emptyTitle`) as its only other tag and the route family as its request URL. No
+message text or argument value is reported. Outside production the translator throws instead.
+
 Journal reports migration, durable save, pending-claim reconciliation, invitation retirement and
 REST transport failures using static `journal-*` Sentry operation names. Migration and recovery
 emit `sync_commit` with bounded outcome labels; claim/save and first-run retirements use the engine's
