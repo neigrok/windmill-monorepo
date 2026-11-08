@@ -66,6 +66,11 @@ Outstanding design gaps are tracked in the [consistency ledger](design/consisten
 | 🚀 Follow-ups 2026-11-06 | [626:38889](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=626-38889) | [629:19778](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=629-19778) | 16.01–16.02: one Shell head from 744 in every room, signed-out seats unchanged; 16.03 and 26.04: no WebGL2 → Board with the Graph dimmed; 26.01–26.03: step menu Select → keyboard selection and the Selection bar |
 | 💡 Finishing states | [544:53326](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=544-53326) | [539:16665](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=539-16665) | Proposals awaiting the owner; ✅ 15.07 and 25.04, the held delete that fails, are built |
 
+## Roadmap · iOS
+
+Roadmap · iOS: [wave 1](design/ios/roadmap.md), ✅ ruled by the owner 2026-11-08, with the owner's later changes 🧪 until reviewed — page [Roadmap · iOS](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=648-2) in the Roadmap file. Not built.
+Roadmap Coach: 🧪 [proposal](design/roadmap-coach.md), awaiting the owner — page [🧪 Roadmap Coach](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=668-5126) in the Roadmap file; the chat that replaces tending (Ask AI) on iOS, web desktop and web phone.
+
 ## Journal · iOS
 
 Figma: Journal file, page [iOS](https://www.figma.com/design/pC6ciOUnfLmI42oMihd7l3?node-id=202-2). Code: `apps/ios/App/Sources/Journal/`. Colour roles:
