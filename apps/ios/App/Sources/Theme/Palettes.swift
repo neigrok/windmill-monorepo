@@ -40,10 +40,8 @@ nonisolated enum JournalPalette {
   static func mood(_ value: Int) -> Color { moodRamp[min(10, max(0, value))] }
   static let uiInk = UIColor(named: "journal/ink")!
   static let uiLamp = UIColor(named: "journal/lamp")!
-  // Faded roles: the lamp's glow at the canvas's foot and in the onboarding glimpse, a kindled echo count, a passage's
-  // highlight under its ink, full energy's sheen, a set scale thumb's ring and its glow.
-  static let glow = lamp.opacity(0.09)
-  static let glimpseGlow = lamp.opacity(0.18)
+  // Faded roles: a kindled echo count, a passage's highlight under its ink, full energy's sheen, a set scale thumb's
+  // ring and its glow.
   static let kindled = lamp.opacity(0.4)
   static var uiHighlight: UIColor { uiLamp.withAlphaComponent(0.24) }
   static let sheen = ink.opacity(0.28)

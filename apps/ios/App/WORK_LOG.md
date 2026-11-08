@@ -378,3 +378,9 @@ changes to Push A, and one to Legs that the phone's edit puts out of date — so
 (`RoutinesCaptures.testConnectedToolProposals`). On the `remove` board the same rig has Claude propose removing Arms,
 and the sheet's Remove asks first (02L.11P, `RoutinesCaptures.testConnectedToolRemoval`). The question is the
 shared `DestructiveQuestion` as a dialog on the toolbar's Remove itself, so iOS 26 presents it from that button.
+
+The journal canvas is flat (Journal file and the Shell file's onboarding glimpses, owner ruling 2026-11-08): the
+room's ground is `journal/canvas` with nothing drawn over it, and both onboarding glimpses that picture the journal — the
+Windmill page's Journal band and the Journal page — sit on the same flat ground. The Journal glimpse has no entry beat
+left; its caret's blink is its one motion. Observation: *Where to start?*'s `RoomDoor` still washes each door's card
+toward its corner in the room's soft accent (`lampSoft`, `accentSoft`); it is a door, not the room, so the ruling left it.

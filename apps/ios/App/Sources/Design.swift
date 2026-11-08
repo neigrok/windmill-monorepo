@@ -1,17 +1,6 @@
 import SwiftUI
 import UIKit
 
-struct JournalBackdrop: View {
-  var body: some View {
-    GeometryReader { proxy in
-      ZStack {
-        JournalPalette.canvas
-        RadialGradient(colors: [JournalPalette.glow, .clear], center: .init(x: 0.5, y: 1.12), startRadius: 0, endRadius: proxy.size.width * 0.85)
-      }
-    }.ignoresSafeArea()
-  }
-}
-
 extension View {
   func inkAnchor(_ name: String, enabled: Bool, frames: Binding<[String: CGRect]>) -> some View {
     onGeometryChange(for: CGRect.self) { geometry in
