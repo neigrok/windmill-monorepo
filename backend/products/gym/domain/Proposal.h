@@ -43,9 +43,10 @@ enum class ProposalDoor { mcp, ask };
 struct AskThreadTag;
 using ThreadId = Id<AskThreadTag>;
 
-// `connection` and `agent` are empty: `ToolCaller` carries nothing that names one connection apart
-// from another. `thread` is absent from the MCP door, and absent once the lifter deletes the thread
-// an Ask proposal came from — both mean there is nothing here to open.
+// From the MCP door, `connection` is the caller's credential id (an MCP key's id or an OAuth client
+// id), opaque and never shown, and `agent` the name that credential carries, empty when it has none;
+// both are empty from Ask. `thread` is absent from the MCP door, and absent once the lifter deletes
+// the thread an Ask proposal came from — both mean there is nothing here to open.
 struct ProposalSource {
   ProposalDoor door;
   std::string connection;

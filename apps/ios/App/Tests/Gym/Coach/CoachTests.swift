@@ -726,6 +726,28 @@ import SyncTesting
     #expect(lines(applied) == ["moved | Order 2nd → 1st"] && gym.coachChangeCount(applied) == 1)
     #expect(ProposalDiff(applied, routine: gym.coachRoutine(applied)).blocks.isEmpty, "The routine no longer holds the order it replaced")
   }
+  // A connected tool's removal asks on its sheet before it applies, in the name the tool gave, as it gave it, else *A
+  // connected tool*, never the connection's opaque id (02L.11P); Coach's removal and a tool's change apply at once.
+  @Test func aConnectedToolsRemovalAsksBeforeItApplies() {
+    let (_, gym) = fixture()
+    func removal(_ id: String, door: String = "mcp", agent: String = "") -> Proposal {
+      Proposal(id: ID(RecordID(id)), routineId: ID("arms"), intent: "remove", proposedName: "", summary: "", changes: [], door: door,
+               connection: door == "ask" ? "" : "eO4duDroOGDrZom5uTyYSeAm1_Z2pk5dMrq02EDf7uU", agent: agent, baseName: "Arms")
+    }
+    gym.proposals = [
+      removal("coach-removal", door: "ask"), removal("claude-removal", agent: "Claude"), removal("lowercase-removal", agent: "claude.ai"),
+      removal("unnamed-removal"),
+      Proposal(id: ID("claude-change"), routineId: ID("arms"), intent: "revise", proposedName: "Arms B", summary: "", changes: [], door: "mcp",
+               connection: "eO4duDroOGDrZom5uTyYSeAm1_Z2pk5dMrq02EDf7uU", agent: "Claude", baseName: "Arms"),
+    ]
+    #expect(["coach-removal", "claude-removal", "lowercase-removal", "unnamed-removal", "claude-change"].map { id in
+      ProposalCard(gym: gym, id: id, in: .sheet).removalQuestion.map { $0.title + " | " + $0.message } ?? "applies at once"
+    } == ["applies at once",
+          "Remove Arms? | Claude suggested this. Your past Arms workouts stay in the log.",
+          "Remove Arms? | claude.ai suggested this. Your past Arms workouts stay in the log.",
+          "Remove Arms? | A connected tool suggested this. Your past Arms workouts stay in the log.",
+          "applies at once"])
+  }
   // The card reads the domain's blocks, named from the catalogue: the new name, the changed movements, removals, then
   // additions, with the movements it keeps folded into one count.
   @Test func aProposalsCardReadsItsChangesAsBlocks() throws {

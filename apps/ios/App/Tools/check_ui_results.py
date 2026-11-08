@@ -9,6 +9,8 @@ FIXTURE_SKIPS = {
         "requires the isolated schema10 load fixture",
     ("GymIntegrationFlowTests", "testAConnectedToolsProposalAppliesFromItsRoutinesRow"):
         "requires the isolated proposal fixture",
+    ("GymIntegrationFlowTests", "testAConnectedToolsRemovalAsksThenRemovesItsRoutine"):
+        "requires the isolated removal fixture",
 }
 
 

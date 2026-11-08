@@ -3,7 +3,7 @@
 Status: ✅ Ready for dev — owner approved 2026-10-30. Every board below is built. Boards are on
 the Gym file's iOS page: 03.20–03.32 in [03 · Workout](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1114-1513)
 with the wave's READ ME (`1717:15737`), 04.6 and 04.7 in [04 · Outside the app](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1115-1576)
-and 08.54–08.57 in [08 · Coach](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1117-1703).
+and 08.54, 08.56P and 08.57 in [08 · Coach](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1117-1703).
 Every board is drawn Dark and Daylight. Build tasks: `iosgym_tasks/60`–`69`. The rack's load, the sign key
 and the ledger's open rows follow Direction A (🚀 In production): 03.23A `1940:16624` / `1940:16714`, 03.30 `1940:16984` / `1940:17074`, 03.34a–c
 `1940:17164` / `1940:17254` / `1940:17344`, with their [note](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1942-17441)
@@ -26,7 +26,7 @@ Press two (16 × 8, the last at 18:32:33): workout clock 32:10, since last set 1
 (03.30) and adds Face Pull (cable, 2 × 15 · 15). The workout finishes at 18:58: 56 minutes, 15 sets
 (4 + 3 + 3 + 3 + 2), volume 2,000 + 768 + 260 + 1,500 + 450 = 4,978 kg (bodyweight counts only the
 added load). Boards that need another state say so in their caption: 03.28 (a fourth bench set),
-03.31 (swapping Pull-up), the Coach scene at 18:34 before any edit (08.54–08.57) and the Live Activity
+03.31 (swapping Pull-up), the Coach scene at 18:34 before any edit (08.54, 08.56P, 08.57) and the Live Activity
 between squat sets (04.6, 04.7).
 
 ## The live workout
@@ -118,10 +118,9 @@ this receipt; swiping the receipt away saves nothing.
   and `.large` (08.54). Deliberate entry is a fresh chat; History is one tap. Close returns to the
   rack exactly as it was. The open workout is part of what Coach reads.
 - **Two kinds of change**, both proposals the lifter applies on the card:
-  - *This workout*, under `list.bullet.clipboard`, *N suggested changes · now* (08.56P; 08.55 still draws
-    the earlier eyebrow and running dot). Apply rewrites this workout's plan and is the sheet's one
-    prominent button. It may change movements with nothing logged and add movements, never a logged
-    movement.
+  - *This workout*, under `list.bullet.clipboard`, *N suggested changes · now* (08.56P). Apply rewrites
+    this workout's plan and is the sheet's one prominent button. It may change movements with nothing
+    logged and add movements, never a logged movement.
   - *{Routine}*, *N suggested changes · next time* while a workout is open (08.56P). It applies
     mid-workout: Apply, drawn `.glass`, changes the routine and never the running workout.
 - One answer may carry one of each; they are decided apart (08.56P). Applied: *Applied · this

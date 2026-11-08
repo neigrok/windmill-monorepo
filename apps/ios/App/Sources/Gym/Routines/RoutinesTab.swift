@@ -91,7 +91,8 @@ struct RoutinesTab: View {
       .onAppear {
         #if DEBUG && targetEnvironment(simulator)
         // A board's proposals wait on its routines once the fixture has seeded them (02L.1); with -routines-tool-proposal a
-        // connected tool proposes them instead, after one to Legs that this phone puts out of date (02L.1P).
+        // connected tool proposes them instead, after one to Legs, where the board has it, that this phone puts out of date
+        // (02L.1P, 02L.11P).
         if ProcessInfo.processInfo.arguments.contains("-routines-proposal-fixture"), gym.coachAccountAvailable, let board = CoachBoard.current, gym.proposals.isEmpty,
            !gym.routines.isEmpty, !proposalFixtureSeeded {
           proposalFixtureSeeded = true
@@ -289,33 +290,37 @@ extension GymModel {
 
 #if DEBUG && targetEnvironment(simulator)
 extension GymModel {
-  // The connected-tool fixture (02L.1P): Claude, over a connection, proposes a heavier squat for Legs on the log, as an MCP
-  // tool does, and this phone edits Legs under it, so it goes out of date; then it proposes the board's changes, which wait.
+  // The connected-tool fixture (02L.1P, 02L.11P): Claude, over a connection, proposes on the log as an MCP tool does. Where
+  // the board has Legs, a heavier squat for it first, which this phone's edit to Legs puts out of date; then the board's
+  // proposals, its removals among them, which wait.
   func proposeFromAConnectedTool(_ board: CoachBoard) async {
-    guard let legs = routines.first(where: { $0.name == "Legs" }), legs.entries.count > 1 else { return }
-    var heavier = legs.entries
-    heavier[0].sets = heavier[0].sets?.map { SetTarget(reps: $0.reps, weightKg: 105) }
-    guard await proposeFromAConnectedTool(legs, entries: heavier) else { return }
-    do {
-      guard var edit = try runner.open(legs.id), edit.current.entries.count > 1 else { return }
-      edit.current.entries[1].restSeconds = 90
-      guard saveRoutine(&edit) else { return }
-    } catch { self.error = "The connected tool's proposal could not be prepared."; return }
+    if let legs = routines.first(where: { $0.name == "Legs" }), legs.entries.count > 1 {
+      var heavier = legs.entries
+      heavier[0].sets = heavier[0].sets?.map { SetTarget(reps: $0.reps, weightKg: 105) }
+      guard await proposeFromAConnectedTool(legs, entries: heavier) else { return }
+      do {
+        guard var edit = try runner.open(legs.id), edit.current.entries.count > 1 else { return }
+        edit.current.entries[1].restSeconds = 90
+        guard saveRoutine(&edit) else { return }
+      } catch { self.error = "The connected tool's proposal could not be prepared."; return }
+    }
     for proposed in board.proposals {
       guard let routine = routines.first(where: { $0.id == ID(RecordID(proposed.routine)) }) else { continue }
-      guard await proposeFromAConnectedTool(routine, entries: proposed.entries) else { return }
+      guard await proposeFromAConnectedTool(routine, entries: proposed.entries, removing: proposed.removing) else { return }
     }
   }
-  func proposeFromAConnectedTool(_ routine: Routine, entries: [RoutineEntry]) async -> Bool {
+  func proposeFromAConnectedTool(_ routine: Routine, entries: [RoutineEntry], removing: Bool = false) async -> Bool {
     guard let runtime, let server = runtime.auth.fake, let account else { return false }
     await runtime.engine.flushOnLeave()
     do {
-      let proposal = Proposal(id: runner.mint(Proposal.self), routineId: routine.id, intent: "revise", proposedName: routine.name,
-                              summary: "A change from a connected tool", changes: try ProposalRules.changesBetween(base: routine.entries, proposed: entries),
-                              door: "mcp", connection: "My laptop", agent: "Claude")
+      let proposal = Proposal(id: runner.mint(Proposal.self), routineId: routine.id, intent: removing ? "remove" : "revise",
+                              proposedName: removing ? "" : routine.name, summary: "A change from a connected tool",
+                              changes: try ProposalRules.changesBetween(base: routine.entries, proposed: removing ? [] : entries),
+                              door: "mcp", connection: "eO4duDroOGDrZom5uTyYSeAm1_Z2pk5dMrq02EDf7uU", agent: "Claude")
       let fields = JSON.Object(uniqueKeysWithValues: proposal.fields.map { ($0.key, [$0.value, .null]) })
       let intent: JSON = ["scope": "self/gym", "d": [["t": .string(Proposal.type), "id": proposal.id.json, "born": .null, "life": ["alive", .null], "f": .object(fields)]]]
-      let call = ServerCall(account: account, requestId: nil, tool: "gym.propose_routine_change", args: [:], intents: [intent])
+      let tool = removing ? "gym.propose_routine_removal" : "gym.propose_routine_change"
+      let call = ServerCall(account: account, requestId: nil, tool: tool, args: [:], intents: [intent])
       guard server.state.withLock({ $0.server.call(call, at: server.now) })?["s"] == "ok" else { self.error = "The connected tool's proposal was refused."; return false }
       runtime.engine.foreground()
       for _ in 0..<250 where !proposals.contains(where: { $0.id == proposal.id }) {
