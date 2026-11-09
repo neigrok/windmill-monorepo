@@ -112,8 +112,8 @@ final class GymModel {
   }
   var hasData: Bool { personalCounts.values.contains { $0 > 0 } }
   var phoneSummary: String? {
-    let kinds = [(Routine.type, "routine"), (Session.type, "workout"), (WeighIn.type, "weigh-in"), (Note.type, "note"),
-                 (Exercise.type, "custom movement")]
+    let kinds: [(String, GymCount.Noun)] = [(Routine.type, .routine), (Session.type, .workout), (WeighIn.type, .weighIn), (Note.type, .note),
+                                            (Exercise.type, .customMovement)]
     let lines = kinds.compactMap { type, noun -> String? in
       let count = personalCounts[type] ?? 0
       return count == 0 ? nil : GymCount.of(count, noun)
@@ -278,7 +278,7 @@ final class GymModel {
   // `failure` names the static operation an unexpected failure reports under; a feature with its own names passes one.
   @discardableResult
   func run<A: Action>(_ action: A, failure operation: String = "gym_action") -> Outcome<A.Result, GymRefusal>? where A.Refusal == GymRefusal {
-    guard !accountTransition else { error = "Wait for the account change to finish."; return nil }
+    guard !accountTransition else { error = String(localized: "Wait for the account change to finish."); return nil }
     precondition(action.scope == Gym.scope, "Gym runs actions in its own scope")
     refusal = nil; error = nil
     do {
@@ -288,7 +288,7 @@ final class GymModel {
       refresh()
       return outcome
     } catch {
-      self.error = "Gym could not save this change. Try again."
+      self.error = String(localized: "Gym could not save this change. Try again.")
       telemetry.event("gym_action", properties: ["screen": "gym", "outcome": "failed"])
       report(operation, error)
       return nil
@@ -298,7 +298,7 @@ final class GymModel {
   @discardableResult
   func save<E: Draftable>(_ draft: inout Draft<E>) -> SaveResult<GymRefusal> {
     guard !accountTransition else {
-      error = "Wait for the account change to finish."
+      error = String(localized: "Wait for the account change to finish.")
       return .failed(AppFailure(message: error!))
     }
     precondition(E.scope == Gym.scope, "Gym saves drafts in its own scope")
@@ -311,7 +311,7 @@ final class GymModel {
       refusal = refused; error = message(refused)
       telemetry.event("gym_action", properties: ["screen": "gym", "outcome": "refused"])
     case .failed(let failure):
-      error = "Gym could not save this change. Try again."
+      error = String(localized: "Gym could not save this change. Try again.")
       telemetry.event("gym_action", properties: ["screen": "gym", "outcome": "failed"]); report("gym_action", failure)
     }
     return result
@@ -326,14 +326,14 @@ final class GymModel {
     guard let runtime else { return !readFailed }
     defer { runtime.engine.foreground() }
     do { try runtime.engine.leave(); error = nil; refresh(); return !readFailed }
-    catch { self.error = "Gym could not keep pending changes. Try again."; report("gym_flush", error); return false }
+    catch { self.error = String(localized: "Gym could not keep pending changes. Try again."); report("gym_flush", error); return false }
   }
 
   func dismissNotice(_ id: String) {
     do {
       try runtime?.engine.dismissNotice(id)
       notices.removeAll { $0.id == id }; refusal = nil; error = nil; refresh()
-    } catch { self.error = "Gym could not dismiss this message. Try again."; report("gym_action", error) }
+    } catch { self.error = String(localized: "Gym could not dismiss this message. Try again."); report("gym_action", error) }
   }
 
   // A band dismisses the error it showed; a newer one stays.
@@ -346,7 +346,7 @@ final class GymModel {
     workout.flushRack()
     rest.cancel()
     do { try runtime?.engine.leave(); refresh() }
-    catch { self.error = "Gym could not keep pending changes. Try again."; report("gym_flush", error) }
+    catch { self.error = String(localized: "Gym could not keep pending changes. Try again."); report("gym_flush", error) }
   }
 
   // A refresh sets what it read only where it changed, so an engine event or the clock that changes nothing redraws
@@ -355,7 +355,7 @@ final class GymModel {
     if self[keyPath: keyPath] != value { self[keyPath: keyPath] = value }
   }
 
-  static let unreadable = "Gym could not be read from this phone. Try again."
+  static let unreadable = String(localized: "Gym could not be read from this phone. Try again.")
 
   // The room stops on a read it could not make: the band says so and offers only a retry.
   func failRead(_ failure: any Error) {
@@ -375,22 +375,22 @@ final class GymModel {
   func message(_ refusal: GymRefusal) -> String {
     switch refusal {
     case .invalid(let violation) where violation.rule == RoutineRules.loadFloor: RoutinePlanning.belowFloor
-    case .invalid: "Check the values and try again."
-    case .stale: "This changed elsewhere. Review the latest version."
-    case .gone: "This is no longer available."
-    case .taken: "This change already exists."
-    case .full(_, let cap, _): "There is room for \(cap). Remove one before adding another."
-    case .future: "Choose today or an earlier day."
-    case .sessionFinished: "This workout has already finished."
-    case .sessionOpen: "Finish the open workout first."
-    case .sessionOverlap: "This workout overlaps another workout."
-    case .payloadConflict: "This workout changed elsewhere. Review the latest version."
-    case .unknownExercise: "This movement is no longer available."
-    case .planLogged: "That movement already has a logged set."
-    case .badInstant: "Check the workout's start and finish times."
-    case .proposalSettled: "This proposal has already been answered."
+    case .invalid: String(localized: "Check the values and try again.")
+    case .stale: String(localized: "This changed elsewhere. Review the latest version.")
+    case .gone: String(localized: "This is no longer available.")
+    case .taken: String(localized: "This change already exists.")
+    case .full(_, let cap, _): String(localized: "There is room for \(cap). Remove one before adding another.", locale: .copy)
+    case .future: String(localized: "Choose today or an earlier day.")
+    case .sessionFinished: String(localized: "This workout has already finished.")
+    case .sessionOpen: String(localized: "Finish the open workout first.")
+    case .sessionOverlap: String(localized: "This workout overlaps another workout.")
+    case .payloadConflict: String(localized: "This workout changed elsewhere. Review the latest version.")
+    case .unknownExercise: String(localized: "This movement is no longer available.")
+    case .planLogged: String(localized: "That movement already has a logged set.")
+    case .badInstant: String(localized: "Check the workout's start and finish times.")
+    case .proposalSettled: String(localized: "This proposal has already been answered.")
     case .proposalSuperseded(let refused): supersededReason(refused)
-    case .other: "Gym could not accept this change. Try again."
+    case .other: String(localized: "Gym could not accept this change. Try again.")
     }
   }
 }
@@ -408,13 +408,13 @@ final class GymModel {
   }
 
   func request(_ path: String, method: String = "GET", body: Data? = nil) async throws -> Data {
-    guard !blocked else { throw AppFailure(message: "Wait for the account change to finish.") }
+    guard !blocked else { throw AppFailure(message: String(localized: "Wait for the account change to finish.")) }
     guard let runtime, let baseURL = runtime.settings.baseURL,
           let account = try runtime.account(), !runtime.engine.status.authPaused,
-          let token = runtime.tokens.token(for: account) else { throw AppFailure(message: "Sign in to use this part of Gym.") }
+          let token = runtime.tokens.token(for: account) else { throw AppFailure(message: String(localized: "Sign in to use this part of Gym.")) }
     guard path.hasPrefix("/v1/gym/"), !path.contains(".."),
           let url = URL(string: path, relativeTo: baseURL)?.absoluteURL,
-          url.host == baseURL.host, url.scheme == baseURL.scheme, url.port == baseURL.port else { throw AppFailure(message: "Gym could not open this request.") }
+          url.host == baseURL.host, url.scheme == baseURL.scheme, url.port == baseURL.port else { throw AppFailure(message: String(localized: "Gym could not open this request.")) }
     var request = URLRequest(url: url)
     request.httpMethod = method; request.httpBody = body
     request.setValue(String(SyncSchema.version), forHTTPHeaderField: "Sync-Schema")
@@ -440,7 +440,7 @@ final class GymModel {
         let refusal = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
         expectedRefusal = ExpectedStatuses.contains(response.statusCode) || refusal["code"] as? String == "ask-busy" ||
           (response.statusCode == 503 && AiAllowance.refusalCodes.contains(refusal["code"] as? String ?? ""))
-        let message = refusal["error"] as? String ?? "Gym could not complete this request. Try again."
+        let message = refusal["error"] as? String ?? String(localized: "Gym could not complete this request. Try again.")
         let detail = refusal["detail"] as? String ?? ""
         throw GymRESTFailure(status: response.statusCode, body: data, message: message + (detail.isEmpty ? "" : ". " + detail))
       }

@@ -483,7 +483,11 @@ A new string follows these rules:
   the phone's region, *1,000* or *1.000*.
 - A sentence is one message with placeholders, never joined from fragments. A count that changes its words is one
   `%lld` message with a plural variation in the catalog, and English's `one` and `other` must read as the app reads
-  for every count it can receive. A `comment:` says what the English alone leaves unclear.
+  for every count it can receive. A plural variation shows its number; words that follow a count the text does not
+  show, *it* or *them*, are two whole messages chosen by `count == 1`. A `comment:` says what the English alone leaves
+  unclear.
+- A counted thing of the gym, *3 sets* or *1 routine*, is `GymCount.of(_:_:)` in
+  `Sources/Gym/Components/GymFormat.swift`, one plural message per noun, which the sign-in question reuses.
 
 Then regenerate the catalogs and commit them:
 

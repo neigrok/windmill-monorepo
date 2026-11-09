@@ -104,19 +104,19 @@ struct LogTab: View {
   }
 
   // An empty log never says there are no workouts while one is open.
-  var emptyTitle: String { gym.openSession == nil ? "No workouts yet" : "No finished workouts yet" }
+  var emptyTitle: String { gym.openSession == nil ? String(localized: "No workouts yet") : String(localized: "No finished workouts yet") }
 
   // The log's end, its total, once the whole log is loaded and holds more than the one row.
   var total: String? {
     guard gym.isAnonymous || gym.log?.firstPullComplete == true, gym.finishedLogSessions.count > 1 else { return nil }
-    return GymCount.of(gym.finishedLogSessions.count, "workout")
+    return GymCount.of(gym.finishedLogSessions.count, .workout)
   }
 
   // Signed in before the first pull lands, the band says the history is still arriving; it never covers a refusal.
   var historyNotice: String? {
     guard !gym.isAnonymous, gym.log?.firstPullComplete == false, !historyNoticeDismissed,
           gym.error == nil, gym.notices.isEmpty else { return nil }
-    return "Your full training history needs a connection to finish syncing."
+    return String(localized: "Your full training history needs a connection to finish syncing.")
   }
 
   // While the open workout is hidden, the head's first row is that workout, and it brings the logger back. It names the
@@ -125,7 +125,7 @@ struct LogTab: View {
     guard !tabBarAccessory, gym.workoutHidden, let open = gym.openSession else { return nil }
     let dates = gym.dates, start = open.startedAt
     let since = LocalDay(start, in: dates.moment.zone) == dates.moment.today ? dates.time(start) : dates.dayAndTime(start, inSentence: true)
-    return GymRow(title: open.name ?? Readout.noRoutine, meta: "Open since \(since)", trailing: .door)
+    return GymRow(title: open.name ?? Readout.noRoutine, meta: String(localized: "Open since \(since)"), trailing: .door)
   }
   // The row is iOS 18's door back, the one return iOS 26's accessory makes, recorded as door: row.
   func openHiddenWorkout() { gym.openHiddenWorkout(from: .row) }
@@ -171,7 +171,7 @@ struct LogTab: View {
 
   func weightRow(_ weight: Bodyweight.Entry, dates: GymDate) -> some View {
     Button { correct(weight) } label: {
-      LogEntryLabel(title: "\(Readout.weight(weight.kg)) kg", meta: "Weigh-in", symbol: "scalemass",
+      LogEntryLabel(title: String(localized: "\(Readout.weight(weight.kg)) kg"), meta: String(localized: "Weigh-in"), symbol: "scalemass",
                     time: weight.time(in: dates.moment.zone).map(dates.time))
         .padding(.horizontal, RoomSpace.inset).padding(.vertical, 9).frame(minHeight: 60)
         .overlay(alignment: .top) { Rectangle().fill(GymPalette.line).frame(height: 1).padding(.horizontal, RoomSpace.inset) }
@@ -207,7 +207,7 @@ struct LogTab: View {
       HStack(spacing: 14) {
         RoundedRectangle(cornerRadius: 1).fill(GymPalette.record).frame(width: 2, height: 32).accessibilityHidden(true)
         VStack(alignment: .leading, spacing: 2) {
-          Text("New best · \(gym.catalogue.find(id)?.name ?? "Movement")").font(.subheadline).foregroundStyle(GymPalette.record)
+          Text("New best · \(gym.catalogue.find(id)?.name ?? String(localized: "Movement"))").font(.subheadline).foregroundStyle(GymPalette.record)
           Text("\(Readout.estimatedWeight(record.estimate)) kg est").font(.footnote).foregroundStyle(GymPalette.inkDim)
         }.frame(maxWidth: .infinity, alignment: .leading)
         DoorChevron(room: .gym)

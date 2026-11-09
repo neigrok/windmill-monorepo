@@ -31,7 +31,7 @@ struct ProposalCard: View {
 
   var proposal: Proposal? { gym.proposals.first { $0.id.record.string == id } }
   // The routine as the proposal found it, so an applied rename still reads *Applied · Push A*.
-  var routineName: String { proposal?.baseName ?? proposal.flatMap(gym.coachRoutine)?.name ?? "Routine" }
+  var routineName: String { proposal?.baseName ?? proposal.flatMap(gym.coachRoutine)?.name ?? String(localized: "Routine") }
   var removal: Bool { proposal?.intent == "remove" }
   // Only an Apply this phone sent that the log took bounces the check and plays the haptic, as it lands: never one refused
   // before it was sent, one applied elsewhere, or one that landed before this card was drawn.
@@ -53,7 +53,7 @@ struct ProposalCard: View {
   // no answer to its push, or the log's refusal. A long wait alone states no cause.
   var failure: String? {
     guard let proposal, stance == .open, !retrying else { return nil }
-    if pending { return gym.coachDecisionUnreached ? "No connection. " + CoachCopy.notApplied + "." : nil }
+    if pending { return gym.coachDecisionUnreached ? String(localized: "No connection. Not applied.") : nil }
     return gym.coachApplyRefusal(proposal)
   }
   // Apply and Reject as the card draws them. Apply keeps its place through the wait: the act in flight until the log
@@ -67,10 +67,10 @@ struct ProposalCard: View {
   func decision(stalled: Bool) -> Decision {
     let retries = failure != nil || (pending && stalled && !retrying)
     let title = switch waiting {
-    case _ where retries: "Try again"
-    case nil, .reject: removal ? "Remove routine" : "Apply"
-    case .apply: removal ? "Removing…" : "Applying…"
-    case .unreadable: "Sending…"
+    case _ where retries: String(localized: "Try again")
+    case nil, .reject: removal ? String(localized: "Remove routine") : String(localized: "Apply")
+    case .apply: removal ? String(localized: "Removing…") : String(localized: "Applying…")
+    case .unreadable: String(localized: "Sending…")
     }
     return Decision(title: title, retries: retries, applies: retries || decidable, rejects: decidable)
   }
@@ -79,15 +79,17 @@ struct ProposalCard: View {
   // next workout (08.56P); applied, *Applied · Push A* over what it changed; out of date, the routine says so and the
   // reason stands under it.
   var title: String {
-    if stance == .applied { return "Applied · " + routineName + (removal ? " · routine removed" : "") }
+    if stance == .applied {
+      return removal ? String(localized: "Applied · \(routineName) · routine removed") : String(localized: "Applied · \(routineName)")
+    }
     return outOfDate == nil ? routineName : routineName + " · " + CoachCopy.outOfDate
   }
   var subtitle: String? {
     guard let proposal, outOfDate == nil else { return nil }
-    if removal { return stance == .applied ? nil : "Remove a routine" }
+    if removal { return stance == .applied ? nil : String(localized: "Remove a routine") }
     let count = gym.coachChangeCount(proposal)
-    if stance == .applied { return GymCount.of(count, "change") }
-    return GymCount.of(count, "suggested change") + (nextTime ? " · next time" : "")
+    if stance == .applied { return GymCount.of(count, .change) }
+    return ([GymCount.of(count, .suggestedChange)] + (nextTime ? [String(localized: "next time")] : [])).joined(separator: " · ")
   }
   // The word the card stands on, its head's value: Applied or Removed, Out of date, none while it waits.
   var settled: String {
@@ -108,8 +110,8 @@ struct ProposalCard: View {
   func changes(_ proposal: Proposal) -> (blocks: [ProposalChanges.Shown], unchanged: Int) {
     guard !removal else {
       let done = gym.routineHistory(proposal.routineId).first.map { gym.dates.day($0.startedAt) }
-      let fields = [ProposalDiff.Field("Movements", before: String(proposal.changes.count), after: nil)]
-        + (done.map { [ProposalDiff.Field("Last done", before: $0, after: nil)] } ?? [])
+      let fields = [ProposalDiff.Field(String(localized: "Movements"), before: String(proposal.changes.count), after: nil)]
+        + (done.map { [ProposalDiff.Field(String(localized: "Last done"), before: $0, after: nil)] } ?? [])
       return ([ProposalChanges.Shown(kind: .removed, title: routineName, fields: fields)], 0)
     }
     let diff = gym.coachDiff(proposal)
@@ -230,7 +232,7 @@ struct ProposalChanges: View {
             unchangedLine
           }
         } label: {
-          Text(expanded ? "Show less" : GymCount.of(rest.count, "more change")).frame(minHeight: RoomSpace.minimumTarget)
+          Text(expanded ? String(localized: "Show less") : GymCount.of(rest.count, .moreChange)).frame(minHeight: RoomSpace.minimumTarget)
         }.tint(GymPalette.accent).accessibilityIdentifier(identifier + "-expand")
       }
     }.labeledContentStyle(.card).padding(.top, 12)
@@ -250,8 +252,8 @@ struct ProposalChanges: View {
   @ViewBuilder var unchangedLine: some View {
     if unchanged > 0 {
       Divider().overlay(GymPalette.line).padding(.leading, column)
-      LabeledContent("No change", value: GymCount.of(unchanged, "movement")).padding(.leading, column).padding(.vertical, 12)
-        .accessibilityElement(children: .ignore).accessibilityLabel("No change: " + GymCount.of(unchanged, "movement"))
+      LabeledContent("No change", value: GymCount.of(unchanged, .movement)).padding(.leading, column).padding(.vertical, 12)
+        .accessibilityElement(children: .ignore).accessibilityLabel(String(localized: "No change: \(unchanged) movements", locale: .copy))
     }
   }
 }
@@ -271,7 +273,7 @@ struct WorkoutProposalCard: View {
       if let proposal {
         let stance = gym.coachWorkoutProposalStance(proposal)
         if stance == .rejected {
-          RejectedLine(subject: "this workout", symbol: "xmark.circle").accessibilityIdentifier("coach-workout-proposal-header").accessibilityValue("Rejected")
+          RejectedLine(subject: String(localized: "this workout"), symbol: "xmark.circle").accessibilityIdentifier("coach-workout-proposal-header").accessibilityValue("Rejected")
         } else { card(proposal, stance: stance) }
       } else { Text("That proposal is gone.").font(.subheadline).foregroundStyle(GymPalette.inkDim).modifier(ChangeCard()) }
     }.sensoryFeedback(.success, trigger: applied)
@@ -279,7 +281,7 @@ struct WorkoutProposalCard: View {
 
   func card(_ proposal: WorkoutProposal, stance: ProposalStance) -> some View {
     let outOfDate: String? = switch stance {
-    case .outOfDate(let reason): CoachCopy.outOfDateReason(reason, routine: "This workout", catalogue: gym.catalogue)
+    case .outOfDate(let reason): CoachCopy.outOfDateReason(reason, routine: String(localized: "This workout"), catalogue: gym.catalogue)
     default: nil
     }
     let diff = gym.coachWorkoutDiff(proposal)
@@ -287,9 +289,9 @@ struct WorkoutProposalCard: View {
     let decidable = stance == .open && gym.coachAccountAvailable && !gym.readFailed
     // One head through every stance, so the check bounces in as the Apply lands rather than arriving with the new head.
     let head: (symbol: String, tint: Color, title: String, subtitle: String?, value: String) = switch stance {
-    case .applied: ("checkmark.circle.fill", GymPalette.done, "Applied · this workout", GymCount.of(count, "change"), "Applied")
-    case .outOfDate: ("clock.arrow.circlepath", GymPalette.inkDim, "This workout · " + CoachCopy.outOfDate, nil, CoachCopy.outOfDate)
-    default: ("list.bullet.clipboard", GymPalette.accent, "This workout", GymCount.of(count, "suggested change") + " · now", "")
+    case .applied: ("checkmark.circle.fill", GymPalette.done, String(localized: "Applied · this workout"), GymCount.of(count, .change), String(localized: "Applied"))
+    case .outOfDate: ("clock.arrow.circlepath", GymPalette.inkDim, "\(String(localized: "This workout")) · \(CoachCopy.outOfDate)", nil, CoachCopy.outOfDate)
+    default: ("list.bullet.clipboard", GymPalette.accent, String(localized: "This workout"), "\(GymCount.of(count, .suggestedChange)) · \(String(localized: "now", comment: "A change for the workout under way"))", "")
     }
     return GroupBox {
       ProposalHeading(symbol: head.symbol, tint: head.tint, title: head.title, dimmed: outOfDate != nil, subtitle: head.subtitle, reason: outOfDate,

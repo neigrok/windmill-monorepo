@@ -39,7 +39,7 @@ extension GymModel {
     let workouts = try runner.read(Gym.scope) { try $0.repository(Session.self).all(in: .drawn) }
     for workout in workouts {
       if let refusal = try runner.run(AdoptWorkout(workout.id, mode: .prepare)).refusal {
-        throw AppFailure(message: "Your signed-out workout is kept on this phone. " + message(refusal))
+        throw AppFailure(message: String(localized: "Your signed-out workout is kept on this phone. \(message(refusal))"))
       }
     }
     let saved = try runner.read(Gym.scope) { try SignedOutWorkout.read($0) }
@@ -47,7 +47,7 @@ extension GymModel {
       for set in workout.sets {
         let present = try runner.read(Gym.scope) { try $0.repository(TrainingSet.self).find(set.id, in: .drawn) != nil }
         if !present, let refusal = try runner.run(AppendSet(set).recorded).refusal {
-          throw AppFailure(message: "Your signed-out sets are kept on this phone. " + message(refusal))
+          throw AppFailure(message: String(localized: "Your signed-out sets are kept on this phone. \(message(refusal))"))
         }
       }
     }
@@ -78,7 +78,7 @@ extension GymModel {
   // A waiting workout with no reason to give is on its way: Inspect says so until the log confirms it and the copy leaves.
   func addingLine(_ id: ID<Session>) -> String? {
     guard let saved = waitingWorkouts.first(where: { $0.session.id == id }), !workoutsToReview.contains(where: { $0.id == id }) else { return nil }
-    return "Adding \(saved.name) to your log."
+    return String(localized: "Adding \(saved.name) to your log.")
   }
 
   // A queued Keep, Retry or Save and retry is recorded `completed`; when the log's answer reaches the copy's row it is

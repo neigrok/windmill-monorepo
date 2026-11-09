@@ -34,7 +34,7 @@ struct RoomTransient: View {
           }.frame(minWidth: RoomSpace.minimumTarget, minHeight: RoomSpace.minimumTarget)
             .contentShape(Rectangle())
         }.buttonStyle(.plain)
-          .accessibilityIdentifier(actionIdentifier ?? actionTitle ?? "transient-action")
+          .accessibilityIdentifier(actionIdentifier ?? "transient-action")
       }
     }.font(.footnote)
       .padding(.horizontal, RoomSpace.inset).padding(.vertical, RoomSpace.small)

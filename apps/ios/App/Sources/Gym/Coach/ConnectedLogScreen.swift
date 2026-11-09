@@ -8,7 +8,18 @@ nonisolated struct CoachConnection: Identifiable, Equatable {
   let created: Int64
   let levels: String
   let key: Bool
-  func meta(_ dates: GymDate) -> String { (key ? "API key · " : "") + levels + " · since " + dates.day(Instant(ms: created), inSentence: true) }
+  func meta(_ dates: GymDate) -> String {
+    [key ? String(localized: "API key") : nil, levels, String(localized: "since \(dates.day(Instant(ms: created), inSentence: true))")]
+      .compactMap { $0 }.joined(separator: " · ")
+  }
+  // What a grant's scope lets a tool do, in the words its row says them.
+  static func level(_ scope: String) -> String {
+    switch scope {
+    case "read": String(localized: "read", comment: "A connected tool may read the log")
+    case "write": String(localized: "write", comment: "A connected tool may write to the log")
+    default: String(localized: "delete", comment: "A connected tool may delete from the log")
+    }
+  }
   struct Grant: Decodable { let clientId: String; let name: String?; let grantedMs: Int64; let scope: String? }
   struct Key: Decodable { let id: String; let name: String?; let createdMs: Int64 }
   struct Grants: Decodable { let grants: [Grant] }
@@ -21,13 +32,13 @@ nonisolated struct CoachConnection: Identifiable, Equatable {
       let levels = ["read", "write", "delete"].filter { scope.contains("gym:" + $0) }
       guard scope.isEmpty || !levels.isEmpty else { return nil }
       let name = (grant.name ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-      return CoachConnection(id: "grant:" + grant.clientId, name: name.isEmpty ? "A connected tool" : name,
-        created: grant.grantedMs, levels: scope.isEmpty ? "whole account" : levels.joined(separator: " · "), key: false)
+      return CoachConnection(id: "grant:" + grant.clientId, name: name.isEmpty ? String(localized: "A connected tool") : name,
+        created: grant.grantedMs, levels: scope.isEmpty ? String(localized: "whole account") : levels.map(level).joined(separator: " · "), key: false)
     }
     return approved + keys.map { key in
       let name = (key.name ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-      return CoachConnection(id: "key:" + key.id, name: name.isEmpty ? "A static key" : name,
-        created: key.createdMs, levels: "whole account", key: true)
+      return CoachConnection(id: "key:" + key.id, name: name.isEmpty ? String(localized: "A static key") : name,
+        created: key.createdMs, levels: String(localized: "whole account"), key: true)
     }
   }
 }
@@ -105,7 +116,7 @@ struct ConnectedLogScreen: View {
     }.listStyle(.insetGrouped).navigationTitle("Connected log").modifier(GymPage()).accessibilityIdentifier("gym-connected-log")
       .reachBand {
         VStack(spacing: 0) {
-          GymTransient(gym: gym, message: browserError ? "The browser couldn’t be opened. Try again." : nil,
+          GymTransient(gym: gym, message: browserError ? String(localized: "The browser couldn’t be opened. Try again.") : nil,
                        dismiss: { browserError = false }, errorIdentifier: "gym-coach-error")
           connect
         }
@@ -115,7 +126,7 @@ struct ConnectedLogScreen: View {
       .task(id: "\(gym.account ?? ""):\(gym.authPaused):\(gym.accountTransition)") { await connections.load() }
       .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "connected_log"]) }
   }
-  var connectTitle: String { gym.coachAccountAvailable ? "Connect a tool" : "Sign in first" }
+  var connectTitle: String { gym.coachAccountAvailable ? String(localized: "Connect a tool") : String(localized: "Sign in first") }
   // The screen's one primary; signed in, its symbol names the browser it leaves for.
   var connect: some View {
     ActionBand(title: connectTitle, room: .gym, actionIdentifier: "coach-connect-tool",
@@ -142,9 +153,9 @@ struct ConnectedLogCapabilities<Header: View>: View {
   @ViewBuilder let header: () -> Header
   var body: some View {
     Section {
-      GymRow(title: "Read", meta: "sets, workouts, routines, records, notes, weigh-ins")
-      GymRow(title: "Write", meta: "logs sets · saves notes · adds routines · shares workouts · proposes changes")
-      GymRow(title: "Delete", meta: "discards a workout · ends a share")
+      GymRow(title: String(localized: "Read"), meta: String(localized: "sets, workouts, routines, records, notes, weigh-ins"))
+      GymRow(title: String(localized: "Write"), meta: String(localized: "logs sets · saves notes · adds routines · shares workouts · proposes changes"))
+      GymRow(title: String(localized: "Delete"), meta: String(localized: "discards a workout · ends a share"))
     } header: { header() } footer: { Text("A routine change waits for your Apply; the rest lands at once.") }
   }
 }
@@ -157,10 +168,11 @@ struct ConnectedLogGuide: View {
     List {
       Group {
         Section {
-          ForEach(["One URL pasted into your tool. Your browser opens once to approve.",
-                   "A shared workout is public for 30 days, until you end it.", "No tool can apply a proposal or edit a logged set.",
-                   "Delete is approved on its own, and a discard is permanent.",
-                   "End a connection under Settings → Connected tools; a key under API keys."], id: \.self) { Text($0) }
+          ForEach([String(localized: "One URL pasted into your tool. Your browser opens once to approve."),
+                   String(localized: "A shared workout is public for 30 days, until you end it."),
+                   String(localized: "No tool can apply a proposal or edit a logged set."),
+                   String(localized: "Delete is approved on its own, and a discard is permanent."),
+                   String(localized: "End a connection under Settings → Connected tools; a key under API keys.")], id: \.self) { Text($0) }
         }
         if capabilities { ConnectedLogCapabilities { EmptyView() } }
       }.listRowBackground(GymPalette.card)

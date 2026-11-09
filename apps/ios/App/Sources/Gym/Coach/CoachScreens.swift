@@ -85,7 +85,7 @@ struct NotesScreen: View {
   var body: some View {
     Group {
       if gym.coachAccountAvailable { notes }
-      else { CoachUnavailable(symbol: "note.text", sentence: "Notes live with your account, so they need you signed in.", signIn: openAccount) }
+      else { CoachUnavailable(symbol: "note.text", sentence: String(localized: "Notes live with your account, so they need you signed in."), signIn: openAccount) }
     }.navigationTitle("Notes").modifier(GymPage()).accessibilityIdentifier("gym-notes")
       .gymTabBar()
       .toolbar { if gym.coachAccountAvailable, !gym.notes.isEmpty { EditButton().tint(GymPalette.ink) } }
@@ -119,7 +119,7 @@ struct NotesScreen: View {
           let ids = offsets.map { gym.notes[$0].id }; for id in ids { _ = gym.run(DeleteNote(id)) }
         }
         if gym.coachNoteCount == 0 {
-          ForEach(["How I want to be talked to", "What I am training for"], id: \.self) { hint in
+          ForEach([String(localized: "How I want to be talked to"), String(localized: "What I am training for")], id: \.self) { hint in
             Button(hint) { editor = NoteEditorIdentity(note: Note(id: gym.runner.mint(Note.self)), hint: hint, isNew: true) }
               .foregroundStyle(GymPalette.inkDim)
           }
@@ -143,7 +143,7 @@ struct NotesScreen: View {
 
 struct NoteEditorIdentity: Identifiable {
   let note: Note
-  var hint = "How I want to be talked to"
+  var hint = String(localized: "How I want to be talked to")
   var isNew = false
   var id: String { note.id.description }
 }
@@ -198,7 +198,7 @@ struct NoteEditor: View {
       }.scrollDismissesKeyboard(.interactively).navigationTitle("Note").modifier(GymPage())
         .reachBand { GymTransient(gym: gym, errorIdentifier: "gym-coach-error") }
         .sheetCommit("Save", identifier: "coach-note-save", disabled: !savable, dismiss: { dismiss() }) {
-          guard current else { gym.error = "The account changed. Open this note again."; return }
+          guard current else { gym.error = String(localized: "The account changed. Open this note again."); return }
           if case .saved = gym.save(&draft) { saved = true; dismiss() }
         }
         .sensoryFeedback(.success, trigger: saved)

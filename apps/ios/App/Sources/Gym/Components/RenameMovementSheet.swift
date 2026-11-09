@@ -25,7 +25,7 @@ extension GymModel {
     refresh()
     guard !readFailed else { return false }
     if let current = catalogue.find(exercise.id), current.name != exercise.name || current.equipment != exercise.equipment || current.loadCount != exercise.loadCount {
-      error = "That movement changed. Review its name."; return false
+      error = String(localized: "That movement changed. Review its name."); return false
     }
     let outcome = run(UpdateExercise(exercise.id, name: edit.name, equipment: edit.equipment, loadCount: edit.loadCount))
     telemetry.event("gym_exercise_updated", properties: ["screen": "movement", "action": edit.action,
@@ -87,14 +87,14 @@ struct RenameMovementSheet: View {
 
   func rename() {
     guard editingAccount == gym.account, editingAnonymous == gym.isAnonymous else {
-      refusal = "The account changed while renaming."; return
+      refusal = String(localized: "The account changed while renaming."); return
     }
     saving = true; nameFocused = false
     let account = gym.account, anonymous = gym.isAnonymous
     Task { @MainActor in
       await Task.yield()
       guard account == gym.account && anonymous == gym.isAnonymous else {
-        refusal = "The account changed while renaming."; saving = false; return
+        refusal = String(localized: "The account changed while renaming."); saving = false; return
       }
       let renamed = gym.renameMovement(exercise, to: name, equipment: equipment, loadCount: loadCount)
       saving = false

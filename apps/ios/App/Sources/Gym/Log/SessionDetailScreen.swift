@@ -19,9 +19,9 @@ struct SessionDetailScreen: View {
         Section {
           FactTiles(readout)
         } footer: {
-          let lines = [session.closedBy == "stale" ? "Closed after four hours without a set" : nil,
-                       gym.sessionIsUnsent(sessionID) ? "On this phone, not yet on your account." : nil,
-                       sets.isEmpty ? "No sets in this workout." : nil].compactMap { $0 }
+          let lines = [session.closedBy == "stale" ? String(localized: "Closed after four hours without a set") : nil,
+                       gym.sessionIsUnsent(sessionID) ? String(localized: "On this phone, not yet on your account.") : nil,
+                       sets.isEmpty ? String(localized: "No sets in this workout.") : nil].compactMap { $0 }
           if !lines.isEmpty { Text(lines.joined(separator: "\n")).foregroundStyle(GymPalette.inkDim).accessibilityIdentifier("gym-session-footer") }
         }.listRowBackground(GymPalette.card)
         ForEach(SetRow.movements(sets), id: \.self) { id in
@@ -40,7 +40,7 @@ struct SessionDetailScreen: View {
           } header: {
             NavigationLink { MovementRecordScreen(gym: gym, exerciseID: id) } label: {
               VStack(alignment: .leading, spacing: RoomSpace.small) {
-                Text(gym.catalogue.find(id)?.name ?? "Movement").font(.body.weight(.semibold)).foregroundStyle(GymPalette.ink)
+                Text(gym.catalogue.find(id)?.name ?? String(localized: "Movement")).font(.body.weight(.semibold)).foregroundStyle(GymPalette.ink)
                 if let plan = LogPresentation.planLine(id, plan: session.plan) {
                   Text(plan).font(.footnote.monospaced()).foregroundStyle(GymPalette.inkDim)
                 }

@@ -19,8 +19,13 @@ struct LogDatedChart: View {
     case strength, bodyweight
     var gapDays: Int { self == .strength ? MovementProgress.gapDays : Bodyweight.gapDays }
     var axisStep: Double { self == .strength ? 5 : 0.1 }
-    var point: String { self == .strength ? "workout" : "weigh-in" }
-    var title: String { self == .strength ? "Estimated strength chart" : "Bodyweight chart" }
+    var title: String { self == .strength ? String(localized: "Estimated strength chart") : String(localized: "Bodyweight chart") }
+    var earlier: String { self == .strength ? String(localized: "Earlier workout") : String(localized: "Earlier weigh-in") }
+    var later: String { self == .strength ? String(localized: "Later workout") : String(localized: "Later weigh-in") }
+    // A stretch of the chart with no dot in it, *no workout · Sep 2 – Sep 30*.
+    func gap(_ from: String, _ to: String) -> String {
+      self == .strength ? String(localized: "no workout · \(from) – \(to)") : String(localized: "no weigh-in · \(from) – \(to)")
+    }
   }
   static let plotHeight: CGFloat = 176
   let points: [LogPlotPoint]
@@ -146,7 +151,7 @@ struct LogDatedChart: View {
           .accessibilityValue("\(first) – \(last)").accessibilityIdentifier("gym-chart-dates")
       }
       ForEach(Array(gaps.enumerated()), id: \.offset) { _, gap in
-        Text("no \(series.point) · \(day(gap.0.date)) – \(day(gap.1.date))")
+        Text(series.gap(day(gap.0.date), day(gap.1.date)))
           .font(.caption.monospacedDigit()).foregroundStyle(GymPalette.inkDim)
       }
       if let point = ordered.first(where: { $0.id == inspected }) {
@@ -158,9 +163,9 @@ struct LogDatedChart: View {
       }
     }.contentShape(Rectangle()).clipped().accessibilityElement(children: .contain)
       .accessibilityLabel(series.title)
-      .accessibilityValue((ordered.first { $0.id == marked } ?? ordered.last)?.label ?? "No points")
-      .accessibilityAction(named: "Earlier \(series.point)") { step(-1) }
-      .accessibilityAction(named: "Later \(series.point)") { step(1) }
+      .accessibilityValue((ordered.first { $0.id == marked } ?? ordered.last)?.label ?? String(localized: "No points"))
+      .accessibilityAction(named: Text(series.earlier)) { step(-1) }
+      .accessibilityAction(named: Text(series.later)) { step(1) }
       .sensoryFeedback(.selection, trigger: inspected)
       .onDisappear { clearing?.cancel() }
       .onChange(of: points) { _, _ in clearing?.cancel(); inspected = nil }
@@ -229,7 +234,9 @@ struct LogDatedChart: View {
 enum ChartWindow: Hashable {
   case recent, all
 
-  func line(recent: String, holding count: String) -> String { "\(self == .recent ? "last \(recent)" : "the whole series") · \(count)" }
+  func line(recent: String, holding count: String) -> String {
+    self == .recent ? String(localized: "last \(recent) · \(count)") : String(localized: "the whole series · \(count)")
+  }
 }
 
 struct ChartWindowPicker: UIViewRepresentable {
@@ -238,10 +245,10 @@ struct ChartWindowPicker: UIViewRepresentable {
   @Binding var window: ChartWindow
   func makeCoordinator() -> Coordinator { Coordinator(window: $window) }
   func makeUIView(context: Context) -> UISegmentedControl {
-    let control = UISegmentedControl(items: [recent, "All"])
+    let control = UISegmentedControl(items: [recent, String(localized: "All")])
     control.setTitleTextAttributes([.font: UIFont.preferredFont(forTextStyle: .subheadline)], for: .normal)
     control.accessibilityIdentifier = identifier
-    control.accessibilityLabel = "Window"
+    control.accessibilityLabel = String(localized: "Window")
     control.addTarget(context.coordinator, action: #selector(Coordinator.changed), for: .valueChanged)
     return control
   }
@@ -266,7 +273,7 @@ extension MovementProgress {
     estimates.compactMap { point in
       guard let fact = point.fact.estimate, let value = fact.e1rm else { return nil }
       return LogPlotPoint(id: point.id.description, date: point.startedAt.date, value: value,
-        label: "\(Readout.estimatedWeight(value)) kg est · \(dates.day(point.startedAt)) · \(Readout.effort(weightKg: fact.weightKg, reps: fact.reps))")
+        label: String(localized: "\(Readout.estimatedWeight(value)) kg est · \(dates.day(point.startedAt)) · \(Readout.effort(weightKg: fact.weightKg, reps: fact.reps))"))
     }
   }
 }

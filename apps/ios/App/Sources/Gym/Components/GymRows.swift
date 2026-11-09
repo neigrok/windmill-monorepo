@@ -72,7 +72,7 @@ struct GymRow: View {
 // full swipe never commits it. A swipe action fills with the tint around it, so the button clears the room's accent and
 // the system paints its destructive red.
 struct TrashSwipe: ViewModifier {
-  let act: String
+  let act: LocalizedStringResource
   var enabled = true
   let action: () -> Void
 
@@ -80,7 +80,7 @@ struct TrashSwipe: ViewModifier {
     content.swipeActions(edge: .trailing, allowsFullSwipe: false) {
       if enabled {
         Button(role: .destructive, action: action) { Image(systemName: "trash") }.tint(nil)
-          .accessibilityLabel(act).accessibilityIdentifier("trash-swipe")
+          .accessibilityLabel(Text(act)).accessibilityIdentifier("trash-swipe")
       }
     }
   }
@@ -102,7 +102,8 @@ struct DestructiveQuestion: ViewModifier {
   @State var confirmed = false
 
   static func workoutMessage(sets: Int) -> String {
-    (sets == 0 ? "This deletes the workout." : "This deletes the workout and its \(GymCount.of(sets, "set")).") + " You can’t undo this."
+    if sets == 0 { return String(localized: "This deletes the workout. You can’t undo this.") }
+    return String(localized: "This deletes the workout and its \(sets) sets. You can’t undo this.", locale: .copy)
   }
 
   func body(content: Content) -> some View {
@@ -133,7 +134,7 @@ struct DestructiveQuestion: ViewModifier {
 }
 
 extension View {
-  func trashSwipe(_ act: String, enabled: Bool = true, action: @escaping () -> Void) -> some View {
+  func trashSwipe(_ act: LocalizedStringResource, enabled: Bool = true, action: @escaping () -> Void) -> some View {
     modifier(TrashSwipe(act: act, enabled: enabled, action: action))
   }
 
@@ -144,8 +145,8 @@ extension View {
   }
 
   func discardWorkoutQuestion(_ gym: GymModel, screen: String, isPresented: Binding<Bool>, sets: Int, discard: @escaping () -> Void) -> some View {
-    destructiveQuestion(gym, screen: screen, title: "Discard this workout?", message: DestructiveQuestion.workoutMessage(sets: sets),
-                        act: "Discard", isPresented: isPresented, confirm: discard)
+    destructiveQuestion(gym, screen: screen, title: String(localized: "Discard this workout?"), message: DestructiveQuestion.workoutMessage(sets: sets),
+                        act: String(localized: "Discard"), isPresented: isPresented, confirm: discard)
   }
 }
 
@@ -200,7 +201,7 @@ struct SetRow: View {
   @ScaledMetric(relativeTo: .body) private var markerColumn = 28.0
 
   var effort: String { Readout.effort(weightKg: set.weightKg, reps: set.reps) }
-  var second: [String] { [time, set.rpe.map { "RPE \(Readout.weight($0))" }, set.note.isEmpty ? nil : set.note].compactMap { $0 } }
+  var second: [String] { [time, set.rpe.map { String(localized: "RPE \(Readout.weight($0))") }, set.note.isEmpty ? nil : set.note].compactMap { $0 } }
   // VoiceOver reads the row in one line whatever its reading: *1 · 90 × 5, +30 over plan, RPE 8 · Smooth last set.*
   var spoken: String {
     (["\(marker) · \(effort)", caption].compactMap { $0 } + (second.isEmpty ? [] : [second.joined(separator: " · ")])).joined(separator: ", ")
@@ -287,9 +288,10 @@ extension FactTiles {
   // the session has finished. The finish receipt sets each on its own card (03.7).
   init(_ readout: SessionReadout, ground: Ground = .shared) {
     self.init(facts: [
-      readout.durationMs.map { Fact(value: Readout.duration($0), label: "Duration") },
-      Fact(value: "\(readout.workingSetCount)", label: GymCount.noun(readout.workingSetCount, "Set")),
-      Fact(value: readout.volumeKg.map { "\(Readout.weight($0)) kg" } ?? "—", label: "Volume"),
+      readout.durationMs.map { Fact(value: Readout.duration($0), label: String(localized: "Duration")) },
+      Fact(value: "\(readout.workingSetCount)", label: readout.workingSetCount == 1 ? String(localized: "Set", comment: "A tile's label under a count of one set")
+                                                        : String(localized: "Sets", comment: "A tile's label under any other count of sets")),
+      Fact(value: readout.volumeKg.map { String(localized: "\(Readout.weight($0)) kg") } ?? "—", label: String(localized: "Volume")),
     ].compactMap { $0 }, ground: ground)
   }
 }

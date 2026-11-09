@@ -21,7 +21,7 @@ struct WorkoutAssembly: View {
                                  removable: workout.canRemove(id), identifier: "workout-movement-\(id)",
                                  open: { workout.select(id); if workout.selected == id { dismiss() } },
                                  move: { move(index, by: $0) }, remove: { workout.remove(id) }, edit: { exerciseToEdit = $0 }) {
-                GymRow(title: exercise?.name ?? "Movement", meta: ledger.tally, trailing: ledger.complete ? .check : nil)
+                GymRow(title: exercise?.name ?? String(localized: "Movement"), meta: ledger.tally, trailing: ledger.complete ? .check : nil)
                   .tint(GymPalette.done)
               }.accessibilityAddTraits(workout.selected == id ? .isSelected : [])
                 .moveDisabled(workout.finishing)
@@ -118,7 +118,7 @@ struct WorkoutSwapPicker: View {
   @Environment(\.dismiss) private var dismiss
   var body: some View {
     NavigationStack {
-      MovementPicker(gym: gym, purpose: .swap(gym.catalogue.find(exerciseId)?.name ?? "Movement"), selected: Set(workout.walk.order),
+      MovementPicker(gym: gym, purpose: .swap(gym.catalogue.find(exerciseId)?.name ?? String(localized: "Movement")), selected: Set(workout.walk.order),
                      onSelect: { entry in
                        if workout.swap(exerciseId, to: entry.exerciseId, against: workout.session?.plan) { dismiss() }
                      })
@@ -126,7 +126,7 @@ struct WorkoutSwapPicker: View {
     }.modifier(GymPage()).presentationDetents([.large])
       .onChange(of: workout.sets.contains { $0.exerciseId == exerciseId }) { _, logged in
         guard logged else { return }
-        workout.message = WorkoutState.loggedNow(gym.catalogue.find(exerciseId)?.name ?? "Movement")
+        workout.message = WorkoutState.loggedNow(gym.catalogue.find(exerciseId)?.name ?? String(localized: "Movement"))
         dismiss()
       }
   }

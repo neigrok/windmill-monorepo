@@ -30,7 +30,7 @@ struct WorkoutFixSheet: View {
               if let finished = Binding($fix.finishedAt) {
                 DatePicker("Finished", selection: finished.date, in: ...now)
               } else {
-                LabeledContent("Finished", value: "Not finished")
+                LabeledContent("Finished", value: String(localized: "Not finished"))
                 Button("Mark finished") { fix.markFinished() }.accessibilityIdentifier("recovery-fix-mark-finished")
               }
             }
@@ -40,7 +40,7 @@ struct WorkoutFixSheet: View {
           }
           let sets = fix.sets.map { $0.set(in: fix.original.session.id) }
           ForEach(SetRow.movements(sets), id: \.self) { exercise in
-            Section(gym.catalogue.find(exercise)?.name ?? "Missing movement") {
+            Section(gym.catalogue.find(exercise)?.name ?? String(localized: "Missing movement")) {
               let performed = sets.filter { $0.exerciseId == exercise }
               ForEach(performed, id: \.id) { set in
                 let otherDay = !Calendar.current.isDate(fix.startedAt.date, inSameDayAs: set.completedAt.date)
@@ -71,7 +71,7 @@ struct WorkoutFixSheet: View {
   // What holds Save and retry is said in the band below the form, as the Fix set sheet says its problem.
   var held: String? {
     let excess = fix.sets.count - 200
-    if excess > 0 { return "Over 200 sets · remove \(excess)." }
+    if excess > 0 { return String(localized: "Over 200 sets · remove \(excess).", locale: .copy) }
     if let refusal = gym.fixRefusal(fix) { return WorkoutRecovery.Reason(refusal).line(stranded: 0) }
     return gym.canSendRecovery ? nil : gym.recoveryWait
   }

@@ -235,7 +235,7 @@ struct GymRoomRouting: Equatable {
       guard needsSignIn else { return [.ask(WorkoutHandoff.coachQuestion, send: true)] }
       coachAfterSignIn = true
       return [.keep]
-    case .writtenProgram: return signedOut ? [.openYou] : [.ask("Help me turn my written program into a routine.", send: false)]
+    case .writtenProgram: return signedOut ? [.openYou] : [.ask(String(localized: "Help me turn my written program into a routine."), send: false)]
     case .keepRoutines: return [.keepRoutines]
     case .you: return [.openYou]
     case .routine(let id): return [.routine(id)]

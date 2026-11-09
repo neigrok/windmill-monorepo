@@ -18,7 +18,7 @@ struct CoachDraftsCard: View {
   @State var note: String?
   @State var closed = false
   var gym: GymModel { coach.gym }
-  var count: String { GymCount.of(routines.count, "routine") }
+  var count: String { GymCount.of(routines.count, .routine) }
   var body: some View {
     if coach.saved.rejectedDrafts?.contains(id) == true {
       RejectedLine(subject: count).accessibilityIdentifier("coach-drafts-rejected")
@@ -26,7 +26,7 @@ struct CoachDraftsCard: View {
   }
   var card: some View {
     VStack(alignment: .leading, spacing: 0) {
-      Text(routines.count == 1 ? "1 new routine" : "\(routines.count) new routines").font(.footnote.weight(.semibold)).textCase(.uppercase)
+      Text(String(localized: "\(routines.count) new routines", locale: .copy)).font(.footnote.weight(.semibold)).textCase(.uppercase)
         .foregroundStyle(GymPalette.accent).padding(.bottom, 12)
       ForEach(Array(routines.enumerated()), id: \.offset) { index, routine in
         Divider().overlay(GymPalette.line)
@@ -34,7 +34,7 @@ struct CoachDraftsCard: View {
         if routines.count == 1 || open == index {
           ForEach(Array(routine.entries.enumerated()), id: \.offset) { _, entry in
             Divider().overlay(GymPalette.line)
-            ChangeBlock(kind: .added, title: gym.catalogue.find(entry.exerciseId)?.name ?? "New movement",
+            ChangeBlock(kind: .added, title: gym.catalogue.find(entry.exerciseId)?.name ?? String(localized: "New movement"),
                         fields: ProposalDiff.fields(before: nil, after: EntryTargets(entry), each: MovementEquipment(gym.catalogue.find(entry.exerciseId)).each))
               .padding(.vertical, 14)
           }
@@ -64,7 +64,7 @@ struct CoachDraftsCard: View {
           Spacer(minLength: 0)
           if open == index { Image(systemName: "chevron.down").font(.footnote.weight(.semibold)).foregroundStyle(GymPalette.inkDim) }
           else {
-            Text(GymCount.of(routine.entries.count, "movement")).foregroundStyle(GymPalette.inkDim)
+            Text(GymCount.of(routine.entries.count, .movement)).foregroundStyle(GymPalette.inkDim)
             DoorChevron(room: .gym)
           }
         }.frame(minHeight: RoomSpace.minimumTarget).contentShape(Rectangle())
@@ -86,7 +86,7 @@ extension CoachConversation {
   // Reject drops the drafts on this phone: nothing was saved, so nothing needs the server.
   func rejectDrafts(_ id: String) {
     var next = saved; next.rejectedDrafts = (next.rejectedDrafts ?? []) + [id]
-    if keep(next, failure: "Your choice couldn’t be saved. Try again.") { gym.telemetry.event("gym_setup_step", properties: ["screen": "coach", "action": "drafts_rejected"]) }
+    if keep(next, failure: String(localized: "Your choice couldn’t be saved. Try again.")) { gym.telemetry.event("gym_setup_step", properties: ["screen": "coach", "action": "drafts_rejected"]) }
   }
   // Apply saves the answer's routines on this phone, by the answer's result identity, so a second Apply changes nothing.
   func saveRoutines(_ requestId: String) -> CoachDraftsCard.Outcome {
