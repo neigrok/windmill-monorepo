@@ -10,7 +10,6 @@
     <string name="gym_review_show_sets">show the sets</string>
     <string name="gym_review_hide_sets">hide the sets</string>
     <string name="gym_review_set_numbered">set %1$s</string>
-    <string name="gym_review_sign_in">Sign in</string>
     <string name="gym_review_one_proposal">1 proposal</string>
     <string name="gym_review_add_named">Add %1$s</string>
     <string name="gym_review_remove_named">Remove %1$s</string>
@@ -22,7 +21,7 @@
     <string name="gym_review_head_addressed">Proposal · %1$s</string>
     <string name="gym_review_lands_after">after %1$s</string>
     <string name="gym_review_lands_first">first in %1$s</string>
-    <string name="gym_review_added_line">%1$s · %2$s</string>
+    <string name="gym_review_added_line" translatable="false">%1$s · %2$s</string>
     <string name="gym_review_no_targets">No targets</string>
     <string name="gym_review_move">%1$s → %2$s</string>
     <string name="gym_review_move_labelled">%1$s · %2$s → %3$s</string>

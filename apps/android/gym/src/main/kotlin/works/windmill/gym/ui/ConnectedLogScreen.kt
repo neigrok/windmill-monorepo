@@ -22,6 +22,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
+import works.windmill.platform.R as PlatformR
 import works.windmill.gym.R
 import works.windmill.gym.presentation.ConnectedLog
 import works.windmill.gym.presentation.ConnectedLogState
@@ -153,7 +154,7 @@ fun ConnectedLogScreen(
                         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text(stringResource(if (log == ConnectedLogState.Offline) R.string.gym_connected_offline else R.string.gym_connected_unread),
                                 style = GymType.nativeBody, color = colors.onSurfaceVariant)
-                            TextButton(onClick = ::refresh, enabled = !refreshing, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.gym_action_try_again)) }
+                            TextButton(onClick = ::refresh, enabled = !refreshing, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(PlatformR.string.platform_try_again)) }
                         }
                     }
                 }

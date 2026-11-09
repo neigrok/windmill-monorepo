@@ -15,8 +15,11 @@
         <item quantity="one">%1$s rep</item>
         <item quantity="other">%1$s reps</item>
     </plurals>
+    <!-- A rep target left to the lifter, as many as they can: 100 × max. -->
     <string name="gym_readout_max">max</string>
+    <!-- A load taken from last time's set: last × 5. -->
     <string name="gym_readout_last">last</string>
+    <!-- A movement's targets before any set is planned. -->
     <string name="gym_readout_open">open</string>
     <string name="gym_readout_set">%1$s × %2$s</string>
     <string name="gym_readout_scheme">%1$s × %2$s</string>

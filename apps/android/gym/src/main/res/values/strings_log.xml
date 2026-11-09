@@ -19,7 +19,7 @@
     <string name="gym_log_read_failed">That read failed.</string>
     <string name="gym_log_day_today">Today</string>
     <string name="gym_log_day_yesterday">Yesterday</string>
-    <string name="gym_log_day">%1$s · %2$s</string>
+    <string name="gym_log_day" translatable="false">%1$s · %2$s</string>
     <string name="gym_log_under_a_minute">&lt;1 min</string>
     <string name="gym_log_minutes">%1$s min</string>
     <string name="gym_log_hours">%1$s h %2$s min</string>

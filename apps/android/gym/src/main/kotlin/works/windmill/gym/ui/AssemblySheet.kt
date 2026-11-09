@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import works.windmill.platform.R as PlatformR
 import works.windmill.platform.design.WindmillType
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.foundation.background
@@ -91,8 +92,8 @@ fun AssemblySheet(
     val added = rows.firstOrNull { it.justAdded }?.id
     val edge = with(LocalDensity.current) { 56.dp.toPx() }
     val speed = with(LocalDensity.current) { 600.dp.toPx() }
-    val moveUp = stringResource(R.string.gym_action_move_up)
-    val moveDown = stringResource(R.string.gym_action_move_down)
+    val moveUp = stringResource(PlatformR.string.platform_move_up)
+    val moveDown = stringResource(PlatformR.string.platform_move_down)
     val notRemoved = stringResource(R.string.gym_logger_movement_not_removed)
     fun place() {
         val id = dragged ?: return

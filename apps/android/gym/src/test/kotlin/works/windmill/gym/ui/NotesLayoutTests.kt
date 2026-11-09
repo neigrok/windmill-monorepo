@@ -21,6 +21,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
+import works.windmill.platform.R as PlatformR
 import works.windmill.gym.string
 import works.windmill.gym.R
 import works.windmill.gym.presentation.Notes
@@ -54,11 +55,11 @@ class NotesLayoutTests {
             compose.onNodeWithContentDescription("Title field").performScrollTo()
                 .performTextReplacement("Training notes for autumn races")
             compose.onNodeWithContentDescription("Note field").performScrollTo().performTextReplacement("é".repeat(251))
-            compose.onNodeWithText(string(R.string.gym_notes_save)).assertIsDisplayed().assertIsEnabled().performClick()
+            compose.onNodeWithText(string(PlatformR.string.platform_save)).assertIsDisplayed().assertIsEnabled().performClick()
             compose.onNodeWithText("a note runs to 500 bytes").performScrollTo().assertIsDisplayed()
             compose.onNodeWithContentDescription("Note field").performScrollTo().performTextReplacement("Short answers.\nKeep the date and number.")
             compose.onNodeWithText(string(R.string.gym_notes_honesty)).performScrollTo().assertIsDisplayed()
-            val save = compose.onNodeWithText(string(R.string.gym_notes_save)).assertIsDisplayed()
+            val save = compose.onNodeWithText(string(PlatformR.string.platform_save)).assertIsDisplayed()
             assertTrue(save.getBoundsInRoot().height >= 48.dp)
             val layouts = mutableListOf<TextLayoutResult>()
             save.fetchSemanticsNode().config[SemanticsActions.GetTextLayoutResult].action!!(layouts)
@@ -68,7 +69,7 @@ class NotesLayoutTests {
                 assertFalse(layout.isLineEllipsized(line))
                 assertTrue(layout.getLineRight(line) - layout.getLineLeft(line) <= layout.size.width + 1)
             }
-            assertEquals(string(R.string.gym_notes_save).length, layout.getLineEnd(layout.lineCount - 1))
+            assertEquals(string(PlatformR.string.platform_save).length, layout.getLineEnd(layout.lineCount - 1))
             save.performClick()
             compose.runOnIdle {
                 assertEquals(1, saved)

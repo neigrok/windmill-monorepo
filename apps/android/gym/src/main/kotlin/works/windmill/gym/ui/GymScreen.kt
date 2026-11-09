@@ -48,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import works.windmill.platform.R as PlatformR
 import works.windmill.gym.R
 import works.windmill.platform.LocalShellActions
 import androidx.compose.foundation.layout.Column
@@ -118,7 +119,7 @@ fun GymScreen(
                     else onBack?.let { back ->
                         IconButton(onClick = back, modifier = Modifier.size(48.dp)) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = backTo?.let { stringResource(R.string.gym_screen_back_to, it) } ?: stringResource(R.string.gym_action_back),
+                                contentDescription = backTo?.let { stringResource(R.string.gym_screen_back_to, it) } ?: stringResource(PlatformR.string.platform_back),
                                 tint = colors.onSurface, modifier = Modifier.size(24.dp))
                         }
                     }
@@ -203,7 +204,7 @@ fun GymSheetBar(
         },
         navigationIcon = {
             IconButton(onClick = onClose, enabled = closeEnabled) {
-                Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.gym_action_close), tint = colors.onSurface)
+                Icon(Icons.Filled.Close, contentDescription = stringResource(PlatformR.string.platform_close), tint = colors.onSurface)
             }
         },
         expandedHeight = maxOf(64.dp, with(density) { lines.toDp() } + 16.dp),

@@ -3,7 +3,6 @@
     <string name="gym_notes_unavailable">Notes unavailable</string>
     <string name="gym_notes_reading">Reading your notes…</string>
     <string name="gym_notes_write_note">Write a note</string>
-    <string name="gym_notes_sign_in">Sign in</string>
     <string name="gym_notes_reorder_named">Reorder %1$s</string>
     <string name="gym_notes_empty_row">empty · tap to write</string>
     <string name="gym_notes_open_note">Open note</string>
@@ -16,7 +15,6 @@
     <string name="gym_notes_placeholder_training">What I am training for</string>
     <string name="gym_notes_signed_out">Notes live with your account, so they need you signed in.</string>
     <string name="gym_notes_body_placeholder">Write a note for Coach</string>
-    <string name="gym_notes_save">Save</string>
     <string name="gym_notes_delete">Delete note</string>
     <string name="gym_notes_bytes_counter">%1$s of %2$s bytes</string>
     <string name="gym_notes_title_counter">%1$s of %2$s characters</string>

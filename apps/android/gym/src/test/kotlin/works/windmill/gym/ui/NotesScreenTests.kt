@@ -2,6 +2,7 @@ package works.windmill.gym.ui
 
 import android.os.Looper
 import java.io.IOException
+import works.windmill.platform.R as PlatformR
 import works.windmill.gym.spelled
 import works.windmill.gym.string
 import works.windmill.gym.R
@@ -643,7 +644,7 @@ class NotesScreenTests {
             var done = 0
             compose.setContent { GymMaterial { NoteEditorScreen(NotesBinding(room.store),
                 Note("note_001", title = "Private title", body = "Private body"), "", {}, { done++ }) } }
-            compose.onNodeWithText(string(R.string.gym_notes_save)).assertIsNotEnabled()
+            compose.onNodeWithText(string(PlatformR.string.platform_save)).assertIsNotEnabled()
             compose.runOnIdle { telemetry.events.clear(); room.engine.failNextCommit() }
             compose.onNodeWithText(string(R.string.gym_notes_delete)).performScrollTo().performClick()
             compose.onNodeWithText("the log didn’t answer — that note is still here").assertIsDisplayed()

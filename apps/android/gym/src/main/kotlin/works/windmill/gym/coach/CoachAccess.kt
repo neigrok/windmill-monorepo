@@ -1,5 +1,6 @@
 package works.windmill.gym.coach
 
+import works.windmill.platform.R as PlatformR
 import works.windmill.gym.ui.GymType
 import androidx.compose.material3.MaterialTheme
 import android.text.format.DateFormat
@@ -69,7 +70,7 @@ fun CoachAccessStance(seat: String, onSignIn: () -> Unit, onThreads: (() -> Unit
                     textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
                 Spacer(Modifier.weight(1f))
             }
-            CoachAction(stringResource(R.string.gym_coach_sign_in), onSignIn, primary = true)
+            CoachAction(stringResource(PlatformR.string.platform_sign_in), onSignIn, primary = true)
         }
     }
 }
@@ -117,15 +118,15 @@ internal fun CoachRefusalNotice(refusal: CoachTurnRefusal, anonymous: Boolean = 
             textAlign = TextAlign.Center, modifier = Modifier.widthIn(max = 300.dp))
         when (refusal.recovery(anonymous)) {
             CoachRecovery.signIn -> if (onSignIn != null) {
-                if (refusal is CoachTurnRefusal.Installation) NoticeDoor(stringResource(R.string.gym_coach_sign_in), onSignIn)
+                if (refusal is CoachTurnRefusal.Installation) NoticeDoor(stringResource(PlatformR.string.platform_sign_in), onSignIn)
                 else FilledTonalButton(onClick = onSignIn,
                     colors = ButtonDefaults.filledTonalButtonColors(containerColor = colors.surfaceContainerHighest, contentColor = colors.onSurface),
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)) {
-                    Text(stringResource(R.string.gym_coach_sign_in), style = GymType.coachAction)
+                    Text(stringResource(PlatformR.string.platform_sign_in), style = GymType.coachAction)
                 }
             }
             CoachRecovery.ownAgent -> NoticeDoor(stringResource(R.string.gym_coach_own_agent), onConnections)
-            CoachRecovery.tryAgain -> NoticeDoor(stringResource(R.string.gym_coach_try_again), onTryAgain)
+            CoachRecovery.tryAgain -> NoticeDoor(stringResource(PlatformR.string.platform_try_again), onTryAgain)
             CoachRecovery.update -> NoticeDoor(stringResource(update.named)) { updateFailure = update.opening(uri::openUri, telemetry) }
             null -> Unit
         }

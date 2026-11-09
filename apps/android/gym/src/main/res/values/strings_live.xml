@@ -15,7 +15,7 @@
     <string name="gym_live_just_added">just added</string>
     <string name="gym_live_done_of_planned">%1$s of %2$s sets</string>
     <string name="gym_live_no_sets_yet">no sets yet — logging one starts it</string>
-    <string name="gym_live_progress_effort">%1$s · %2$s</string>
+    <string name="gym_live_progress_effort" translatable="false">%1$s · %2$s</string>
     <string name="gym_live_up_next">Up next</string>
     <string name="gym_live_up_next_scheme">Up next · %1$s</string>
     <string name="gym_live_no_sets">No sets yet</string>

@@ -9,7 +9,9 @@
     <string name="gym_program_outside_sets">Sets, 1 to 20.</string>
     <string name="gym_program_zero_target">A zero target is no target — clear the field instead.</string>
     <string name="gym_program_below_floor">Load, %1$s or more.</string>
+    <!-- The sets field before a count is typed: the count is left open. -->
     <string name="gym_program_sets_placeholder">open</string>
+    <!-- The reps field before a count is typed: as many reps as the lifter can. -->
     <string name="gym_program_reps_placeholder">max</string>
     <string name="gym_program_varies">varies</string>
     <string name="gym_program_set_by_set">Each set</string>
@@ -17,7 +19,7 @@
     <string name="gym_program_fill">Fill</string>
     <string name="gym_program_ramp_up">Ramp up</string>
     <string name="gym_program_match_set_one">Match set 1</string>
-    <string name="gym_program_delete">Delete</string>
+    <!-- A verb: the button that sets a movement's targets. -->
     <string name="gym_program_commit">Set</string>
     <string name="gym_program_commit_scheme">Set · %1$s</string>
 </resources>

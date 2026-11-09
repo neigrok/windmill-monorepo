@@ -35,6 +35,7 @@
     <string name="gym_proposal_this_workout_heading">This workout</string>
     <string name="gym_proposal_the_routine">the routine</string>
     <string name="gym_proposal_set_n">set %1$s</string>
+    <!-- Names a change to a movement's sets: sets · 3 × 5 → 4 × 5. -->
     <string name="gym_proposal_sets">sets</string>
     <string name="gym_proposal_stale">%1$s Nothing was applied.</string>
     <string name="gym_proposal_stale_replaced">A newer suggestion replaced this one.</string>

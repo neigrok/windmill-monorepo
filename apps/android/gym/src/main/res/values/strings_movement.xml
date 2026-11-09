@@ -8,6 +8,7 @@
     <string name="gym_movement_target">Target</string>
     <string name="gym_movement_kg_blank">kg blank: pick it at the rack the first time; after that, last time fills it.</string>
     <string name="gym_movement_vary_by_set">Vary by set</string>
+    <!-- A noun: the column that numbers a movement's sets. -->
     <string name="gym_movement_column_set">Set</string>
     <string name="gym_movement_column_reps">Reps</string>
     <string name="gym_movement_set_load">Set %1$s load</string>

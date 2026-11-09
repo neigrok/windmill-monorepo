@@ -2,11 +2,9 @@
 <resources>
     <string name="gym_coach_title">Coach</string>
     <string name="gym_coach_history">History</string>
-    <string name="gym_coach_sign_in">Sign in</string>
     <string name="gym_coach_bound_sign_in">Sign in to ask Coach.</string>
     <string name="gym_coach_bound_chats_stay">Your earlier chats stay on this phone.</string>
     <string name="gym_coach_own_agent">Use your own AI agent</string>
-    <string name="gym_coach_try_again">Try again</string>
     <string name="gym_coach_answer_in_progress">Answer in progress</string>
     <string name="gym_coach_view_chat">View chat</string>
     <string name="gym_coach_copy_question">Copy question</string>
@@ -21,7 +19,6 @@
     <string name="gym_coach_question">Question</string>
     <string name="gym_coach_send">Send</string>
     <string name="gym_coach_stop_response">Stop response</string>
-    <string name="gym_coach_close">Close</string>
     <string name="gym_coach_draft_unsaved">Your draft couldn’t be saved. Try again.</string>
     <string name="gym_coach_photo_add">Add photo</string>
     <string name="gym_coach_photo_remove">Remove photo</string>
@@ -46,8 +43,6 @@
     <string name="gym_coach_draft_saved_here">Draft · saved on this device</string>
     <string name="gym_coach_delete_conversation_ask">Delete this conversation?</string>
     <string name="gym_coach_delete_conversation_body">You can’t undo this.</string>
-    <string name="gym_coach_cancel">Cancel</string>
-    <string name="gym_coach_delete">Delete</string>
     <string name="gym_coach_reading_conversation">Reading conversation…</string>
     <string name="gym_coach_message_unsaved">Your message couldn’t be saved. Try again.</string>
     <plurals name="gym_coach_read_workouts">
@@ -81,7 +76,7 @@
     <string name="gym_coach_draft_kg_assisted">%1$s kg assisted</string>
     <string name="gym_coach_draft_kg_added">%1$s kg added</string>
     <string name="gym_coach_draft_kg_total">%1$s kg total</string>
-    <string name="gym_coach_draft_line">%1$s · %2$s</string>
+    <string name="gym_coach_draft_line" translatable="false">%1$s · %2$s</string>
     <string name="gym_coach_draft_line_rest">%1$s · %2$s · %3$ss rest</string>
     <string name="gym_coach_saving">Saving…</string>
     <string name="gym_coach_save_routine">Save routine</string>
@@ -92,7 +87,6 @@
         <item quantity="other">Routine created · %1$s movements</item>
     </plurals>
     <string name="gym_coach_only_on_this_phone">Only on this phone ·</string>
-    <string name="gym_coach_keep_it">Keep it</string>
     <string name="gym_coach_saved_note">Saved a note</string>
     <string name="gym_coach_note">Note</string>
     <string name="gym_coach_made_movement">Made a movement</string>

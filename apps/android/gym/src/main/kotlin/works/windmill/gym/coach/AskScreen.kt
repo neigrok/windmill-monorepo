@@ -1,5 +1,6 @@
 package works.windmill.gym.coach
 
+import works.windmill.platform.R as PlatformR
 import works.windmill.platform.i18n.text
 import works.windmill.gym.presentation.ProposalReceipt
 import works.windmill.platform.design.WindmillType
@@ -267,7 +268,7 @@ fun AskScreen(
                                     CoachBubble(copyText = { accountRequired }) {
                                         Text(accountRequired, style = GymType.coachParagraph, color = colors.onSurface)
                                     }
-                                    onSignIn?.let { CoachAction(stringResource(R.string.gym_coach_sign_in), it, primary = true) }
+                                    onSignIn?.let { CoachAction(stringResource(PlatformR.string.platform_sign_in), it, primary = true) }
                                 }
                                 held.words?.let { Trouble(it.text()) }
                             }
@@ -343,7 +344,7 @@ private fun Band(said: String, onClose: (() -> Unit)? = null) {
         contentColor = colors.onSurface,
         dismissAction = onClose?.let { close -> {
             IconButton(onClick = close, modifier = Modifier.size(48.dp)) {
-                Icon(painterResource(R.drawable.gym_coach_close), stringResource(R.string.gym_coach_close), Modifier.size(24.dp), tint = colors.onSurfaceVariant)
+                Icon(painterResource(R.drawable.gym_coach_close), stringResource(PlatformR.string.platform_close), Modifier.size(24.dp), tint = colors.onSurfaceVariant)
             }
         } },
     ) { Text(said, style = GymType.coachDetail) }

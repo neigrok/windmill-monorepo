@@ -35,6 +35,7 @@ import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import works.windmill.platform.R as PlatformR
 import works.windmill.gym.string
 import works.windmill.gym.R
 import works.windmill.gym.presentation.RoutineDraft
@@ -133,8 +134,8 @@ class TargetSheetLadderTests {
         rows()
         val rows = compose.onAllNodes(SemanticsMatcher.keyIsDefined(SemanticsActions.CustomActions), useUnmergedTree = true)
             .fetchSemanticsNodes()
-            .filter { node -> node.config[SemanticsActions.CustomActions].any { it.label == string(R.string.gym_program_delete) } }
-        return rows[row - 1].config[SemanticsActions.CustomActions].single { it.label == string(R.string.gym_program_delete) }.action!!
+            .filter { node -> node.config[SemanticsActions.CustomActions].any { it.label == string(PlatformR.string.platform_delete) } }
+        return rows[row - 1].config[SemanticsActions.CustomActions].single { it.label == string(PlatformR.string.platform_delete) }.action!!
     }
 
     @Test

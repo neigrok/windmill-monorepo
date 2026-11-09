@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import works.windmill.platform.R as PlatformR
 import works.windmill.platform.i18n.joined
 import works.windmill.platform.i18n.text
 import works.windmill.platform.i18n.Words
@@ -535,7 +536,7 @@ private fun Foot(
                 modifier = Modifier.fillMaxWidth().heightIn(min = GymTap.primary),
                 colors = ButtonDefaults.buttonColors(containerColor = colors.primary, contentColor = colors.onPrimary),
             ) {
-                Text(stringResource(R.string.gym_review_sign_in), style = type.action)
+                Text(stringResource(PlatformR.string.platform_sign_in), style = type.action)
             }
             return@Column
         }

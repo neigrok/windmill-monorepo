@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import works.windmill.platform.R as PlatformR
 import works.windmill.platform.design.WindmillType
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.foundation.layout.*
@@ -53,7 +54,7 @@ fun EditMovementSheet(
                     modifier = Modifier.semantics { error(sentence) })
             }
         }
-        GymSheetCommit(stringResource(R.string.gym_action_save), enabled = changed && problem == null && !saving, onClick = onSave, busy = saving,
+        GymSheetCommit(stringResource(PlatformR.string.platform_save), enabled = changed && problem == null && !saving, onClick = onSave, busy = saving,
             modifier = Modifier.padding(horizontal = GymLayout.gutter).padding(top = 16.dp, bottom = 16.dp))
     }
 }

@@ -2,6 +2,7 @@ package works.windmill.gym.sharing
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import works.windmill.platform.R as PlatformR
 import works.windmill.gym.R
 import works.windmill.gym.presentation.Readout
 import works.windmill.platform.i18n.Words
@@ -72,7 +73,7 @@ object WorkoutSharing {
     fun card(state: State, base: String): Card = when (state) {
         is State.Closed ->
             Card(title = Words.Message(R.string.gym_sharing_offer_title), body = Words.Message(R.string.gym_sharing_offer), link = null,
-                 action = Words.Message(if (state.note == null) R.string.gym_sharing_get_link else R.string.gym_sharing_try_again), share = null, revoke = null, note = state.note)
+                 action = Words.Message(if (state.note == null) R.string.gym_sharing_get_link else PlatformR.string.platform_try_again), share = null, revoke = null, note = state.note)
         State.Working ->
             Card(title = Words.Message(R.string.gym_sharing_offer_title), body = Words.Message(R.string.gym_sharing_offer), link = null,
                  action = Words.Message(R.string.gym_sharing_working), share = null, revoke = null, note = null)

@@ -8,6 +8,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import works.windmill.platform.R as PlatformR
 import works.windmill.gym.spelled
 import works.windmill.gym.string
 import works.windmill.gym.R
@@ -273,7 +274,7 @@ class TargetEntryTests {
         assertEquals("Fill", string(R.string.gym_program_fill))
         assertEquals("Ramp up", string(R.string.gym_program_ramp_up))
         assertEquals("Match set 1", string(R.string.gym_program_match_set_one))
-        assertEquals("Delete", string(R.string.gym_program_delete))
+        assertEquals("Delete", string(PlatformR.string.platform_delete))
     }
 }
 

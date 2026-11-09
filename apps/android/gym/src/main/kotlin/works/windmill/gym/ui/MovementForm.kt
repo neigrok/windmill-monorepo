@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import works.windmill.platform.R as PlatformR
 import works.windmill.platform.design.WindmillType
 import androidx.compose.material3.MaterialTheme
 import android.text.InputType
@@ -193,7 +194,7 @@ private fun RoutineTargets(
             }
             shown.forEachIndexed { index, row -> key(removals, index) {
                 val fault = refused?.takeIf { it.row == index && headFault == null }
-                DeleteSwipeRow(actionLabel = stringResource(R.string.gym_program_delete), enabled = enabled, onDelete = {
+                DeleteSwipeRow(actionLabel = stringResource(PlatformR.string.platform_delete), enabled = enabled, onDelete = {
                     update(scheme.copy(rows = scheme.rows.filterIndexed { at, _ -> at != index },
                         sets = (shown.size - 1).takeIf { it > 0 }?.toString().orEmpty()))
                     removals += 1

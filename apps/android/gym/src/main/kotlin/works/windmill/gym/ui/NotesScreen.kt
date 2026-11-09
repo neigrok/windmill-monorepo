@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import works.windmill.platform.R as PlatformR
 import works.windmill.platform.design.WindmillType
 import androidx.compose.material3.MaterialTheme
 import androidx.activity.compose.BackHandler
@@ -198,7 +199,7 @@ fun NotesScreen(
                         failure != null -> Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             Text(stringResource(R.string.gym_notes_unavailable), style = GymType.cardTitle, color = colors.onSurface)
                             Text(failure!!.text(), style = WindmillType.body, color = colors.onSurfaceVariant)
-                            TextButton(onClick = { attempt++ }, enabled = !reading) { Text(stringResource(R.string.gym_action_try_again)) }
+                            TextButton(onClick = { attempt++ }, enabled = !reading) { Text(stringResource(PlatformR.string.platform_try_again)) }
                         }
                         !hasRead -> Text(stringResource(R.string.gym_notes_reading), style = WindmillType.body, color = colors.onSurfaceVariant)
                     }
@@ -225,7 +226,7 @@ fun NotesScreen(
                 Box(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 16.dp)) {
                     Button(onClick = onSignIn, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = colors.surfaceContainerHighest, contentColor = colors.onSurface)) {
-                        Text(stringResource(R.string.gym_notes_sign_in), style = GymType.button)
+                        Text(stringResource(PlatformR.string.platform_sign_in), style = GymType.button)
                     }
                 }
             }
@@ -263,8 +264,8 @@ private fun NoteList(
             LaunchedEffect(focused, enabled) {
                 if (focused == note.id && enabled) focus.requestFocus()
             }
-            val moveUp = stringResource(R.string.gym_action_move_up)
-            val moveDown = stringResource(R.string.gym_action_move_down)
+            val moveUp = stringResource(PlatformR.string.platform_move_up)
+            val moveDown = stringResource(PlatformR.string.platform_move_down)
             val actions = if (!enabled) emptyList() else buildList {
                 fun move(to: Int) {
                     focused = note.id
@@ -406,11 +407,11 @@ fun NoteEditorScreen(
     }
     GymScreen(title = stringResource(R.string.gym_notes_editor_title),
         navigation = {
-            IconButton(onClick = { if (!saving) onBack() }) { Icon(Icons.Filled.Close, stringResource(R.string.gym_action_close), tint = colors.onSurface) }
+            IconButton(onClick = { if (!saving) onBack() }) { Icon(Icons.Filled.Close, stringResource(PlatformR.string.platform_close), tint = colors.onSurface) }
         },
         // The commit stays where the thumb is, a pill pinned above the keyboard under the scrolling body.
         bottomBar = {
-            GymSheetCommit(stringResource(R.string.gym_notes_save), enabled = canSave, onClick = ::save, busy = saving,
+            GymSheetCommit(stringResource(PlatformR.string.platform_save), enabled = canSave, onClick = ::save, busy = saving,
                 modifier = Modifier.imePadding().padding(horizontal = GymLayout.gutter, vertical = 16.dp))
         }) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 20.dp),

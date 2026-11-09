@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import works.windmill.platform.R as PlatformR
 import works.windmill.platform.design.WindmillType
 import androidx.compose.material3.MaterialTheme
 import works.windmill.platform.design.WindmillSheet
@@ -144,7 +145,7 @@ object PhoneRecovery {
     @Composable
     fun label(action: RecoveryAction): String = stringResource(when (action) {
         RecoveryAction.Keep -> R.string.gym_phone_keep_as_finished
-        RecoveryAction.Retry -> R.string.gym_action_retry
+        RecoveryAction.Retry -> PlatformR.string.platform_retry
         RecoveryAction.Fix -> R.string.gym_phone_fix_workout
         RecoveryAction.Discard -> R.string.gym_phone_discard_workout
     })
@@ -268,7 +269,7 @@ fun WorkoutInspectScreen(state: RecoveryState, events: RecoveryEvents, read: Rec
     LaunchedEffect(row.id) { telemetry.event("gym_import_recovery", mapOf("action" to "inspect", "state" to "opened")) }
     GymScreen(PhoneRecovery.named(row).text(), onBack = onBack, backTo = stringResource(R.string.gym_phone_title), actions = {
         if (PhoneRecovery.canDiscard(row) || PhoneRecovery.canFix(row)) Box {
-            IconButton(onClick = { menu = true }, enabled = !busy) { Icon(Icons.Default.MoreVert, stringResource(R.string.gym_action_more)) }
+            IconButton(onClick = { menu = true }, enabled = !busy) { Icon(Icons.Default.MoreVert, stringResource(PlatformR.string.platform_more)) }
             DropdownMenu(menu, onDismissRequest = { menu = false }) {
                 if (PhoneRecovery.canFix(row) && primary != RecoveryAction.Fix) DropdownMenuItem(text = { Text(stringResource(R.string.gym_phone_fix_workout)) }, onClick = ::fix)
                 if (PhoneRecovery.canDiscard(row)) DropdownMenuItem(text = { Text(stringResource(R.string.gym_phone_discard_workout), color = colors.error) }, onClick = {
@@ -438,7 +439,7 @@ fun WorkoutFixScreen(state: RecoveryState, events: RecoveryEvents, currentOwner:
         Box(Modifier.fillMaxSize().background(colors.surface).systemBarsPadding()) {
             BackHandler { close() }
             GymScreen(stringResource(R.string.gym_phone_fix_workout), navigation = {
-                IconButton(onClick = ::close, enabled = !busy) { Icon(Icons.Default.Close, stringResource(R.string.gym_action_close)) }
+                IconButton(onClick = ::close, enabled = !busy) { Icon(Icons.Default.Close, stringResource(PlatformR.string.platform_close)) }
             }, actions = {
                 TextButton(enabled = !busy && !checking && held == null, onClick = {
                     if (busy || checking || held != null) return@TextButton
@@ -512,12 +513,12 @@ fun WorkoutFixScreen(state: RecoveryState, events: RecoveryEvents, currentOwner:
                                 use(date.atTime(local.toLocalTime()).atZone(local.zone).toInstant().toEpochMilli())
                             }
                         }) { Text(stringResource(R.string.gym_phone_use_date)) }
-                    }, dismissButton = { TextButton(onClick = ::cancel) { Text(stringResource(R.string.gym_action_cancel)) } }) { DatePicker(picker) }
+                    }, dismissButton = { TextButton(onClick = ::cancel) { Text(stringResource(PlatformR.string.platform_cancel)) } }) { DatePicker(picker) }
                 } else {
                     val picker = rememberTimePickerState(local.hour, local.minute, is24Hour = DateFormat.is24HourFormat(LocalContext.current))
                     AlertDialog(onDismissRequest = ::cancel, title = { Text(stringResource(if (started) R.string.gym_phone_started_time else R.string.gym_phone_finished_time)) }, text = { TimePicker(picker) },
                         confirmButton = { TextButton(onClick = { use(local.withHour(picker.hour).withMinute(picker.minute).toInstant().toEpochMilli()) }) { Text(stringResource(R.string.gym_phone_use_time)) } },
-                        dismissButton = { TextButton(onClick = ::cancel) { Text(stringResource(R.string.gym_action_cancel)) } })
+                        dismissButton = { TextButton(onClick = ::cancel) { Text(stringResource(PlatformR.string.platform_cancel)) } })
                 }
             }
         }

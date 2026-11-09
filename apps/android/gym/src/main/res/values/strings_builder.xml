@@ -19,7 +19,7 @@
     <string name="gym_builder_edit_this_movement">edit this movement</string>
     <string name="gym_builder_add_movement">Add movement</string>
     <string name="gym_builder_history">History</string>
-    <string name="gym_builder_history_counts">%1$s · %2$s</string>
+    <string name="gym_builder_history_counts" translatable="false">%1$s · %2$s</string>
     <plurals name="gym_builder_history_sets">
         <item quantity="one">%1$s set</item>
         <item quantity="other">%1$s sets</item>

@@ -7,6 +7,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.res.stringResource
+import works.windmill.platform.R as PlatformR
 import works.windmill.gym.R
 import works.windmill.platform.i18n.pluralString
 
@@ -15,7 +16,7 @@ fun ConfirmDialog(
     title: String,
     body: String?,
     confirm: String,
-    keep: String = stringResource(R.string.gym_action_keep_it),
+    keep: String = stringResource(PlatformR.string.platform_keep_it),
     destructive: Boolean,
     onConfirm: () -> Unit,
     onKeep: () -> Unit,
@@ -70,13 +71,13 @@ fun WorkoutDiscardDialog(setCount: Int, onDiscard: () -> Unit, onCancel: () -> U
         confirmButton = {
             TextButton(onClick = onDiscard, enabled = !busy,
                 colors = ButtonDefaults.textButtonColors(contentColor = colors.error)) {
-                Text(stringResource(R.string.gym_action_discard), style = GymType.discardAction.overContainer())
+                Text(stringResource(PlatformR.string.platform_discard), style = GymType.discardAction.overContainer())
             }
         },
         dismissButton = {
             TextButton(onClick = onCancel, enabled = !busy,
                 colors = ButtonDefaults.textButtonColors(contentColor = colors.onSurfaceVariant)) {
-                Text(stringResource(R.string.gym_action_cancel), style = GymType.discardAction.overContainer())
+                Text(stringResource(PlatformR.string.platform_cancel), style = GymType.discardAction.overContainer())
             }
         },
     )

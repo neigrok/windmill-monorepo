@@ -4,8 +4,6 @@
     <string name="onboarding_skip">Skip</string>
     <string name="onboarding_next">Next</string>
     <string name="onboarding_start">Get started</string>
-    <string name="onboarding_done">Done</string>
-    <string name="onboarding_back">Back</string>
     <string name="onboarding_about">About Windmill</string>
     <string name="onboarding_title_windmill">Three ways to grow.</string>
     <string name="onboarding_body_windmill">One account keeps them together. You can start without one.</string>

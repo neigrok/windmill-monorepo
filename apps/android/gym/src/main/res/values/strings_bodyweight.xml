@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools">
     <string name="gym_bodyweight_use_date">Use date</string>
     <string name="gym_bodyweight_weight">Weight</string>
     <string name="gym_bodyweight_date">Date</string>
@@ -10,15 +10,16 @@
     <string name="gym_bodyweight_title">Bodyweight</string>
     <string name="gym_bodyweight_chip">Weigh in</string>
     <string name="gym_bodyweight_save">Save weight</string>
-    <string name="gym_bodyweight_unit">kg</string>
+    <string name="gym_bodyweight_unit" translatable="false">kg</string>
     <string name="gym_bodyweight_not_a_number">That is not a number yet.</string>
     <string name="gym_bodyweight_one_point">One decimal point only.</string>
     <string name="gym_bodyweight_out_of_range">Between 20 and 400 kg — check the number.</string>
     <string name="gym_bodyweight_not_a_forecast">A weigh-in is not a forecast — today or earlier.</string>
     <string name="gym_bodyweight_delete">Delete weigh-in</string>
     <string name="gym_bodyweight_nothing_yet">No weigh-ins yet. Weigh in from the log.</string>
-    <string name="gym_bodyweight_none_in_window">no weigh-in in the last 90 days</string>
+    <string name="gym_bodyweight_none_in_window" tools:ignore="Typos">no weigh-in in the last 90 days</string>
     <string name="gym_bodyweight_window_ninety">90 days</string>
+    <!-- The chart window that shows every weigh-in. -->
     <string name="gym_bodyweight_window_all">All</string>
     <plurals name="gym_bodyweight_window_ninety_count">
         <item quantity="one">90 days · %1$s weigh-in</item>

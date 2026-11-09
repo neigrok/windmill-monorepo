@@ -1,12 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Verbs a button or an action says anywhere in the app. -->
     <string name="platform_back">Back</string>
     <string name="platform_cancel">Cancel</string>
     <string name="platform_discard">Discard</string>
     <string name="platform_done">Done</string>
     <string name="platform_keep">Keep</string>
     <string name="platform_try_again">Try again</string>
-    <string name="platform_words_joined">%1$s · %2$s</string>
+    <string name="platform_close">Close</string>
+    <string name="platform_delete">Delete</string>
+    <string name="platform_save">Save</string>
+    <string name="platform_dismiss">Dismiss</string>
+    <!-- The label of a menu that holds more actions. -->
+    <string name="platform_more">More</string>
+    <string name="platform_retry">Retry</string>
+    <string name="platform_keep_it">Keep it</string>
+    <string name="platform_move_up">Move up</string>
+    <string name="platform_move_down">Move down</string>
+
+    <string name="platform_words_joined" translatable="false">%1$s · %2$s</string>
     <string name="platform_email">Email</string>
     <!-- The system's label for text a copy puts on the clipboard. -->
     <string name="platform_clip_label">plain text</string>

@@ -7,6 +7,7 @@
     <string name="gym_record_recent_sets">Recent sets</string>
     <string name="gym_record_estimated_strength">Estimated strength</string>
     <string name="gym_record_twelve_weeks">12 weeks</string>
+    <!-- The record window that reads every workout. -->
     <string name="gym_record_all">All</string>
     <string name="gym_record_no_eligible_estimate">No eligible estimate in this window.</string>
     <string name="gym_record_workout_estimates">Workout estimates</string>

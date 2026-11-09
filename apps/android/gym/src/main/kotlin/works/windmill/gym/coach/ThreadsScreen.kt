@@ -1,6 +1,7 @@
 package works.windmill.gym.coach
 
 import androidx.compose.ui.platform.LocalContext
+import works.windmill.platform.R as PlatformR
 import works.windmill.gym.presentation.ProposalReceipt
 import works.windmill.gym.ui.GymType
 import androidx.compose.material3.MaterialTheme
@@ -167,7 +168,7 @@ fun ThreadsScreen(
             title = { Text(stringResource(R.string.gym_coach_delete_conversation_ask), style = GymType.coachDeleteTitle) },
             text = { Text(stringResource(R.string.gym_coach_delete_conversation_body), style = GymType.coachSupporting) },
             containerColor = colors.surfaceContainer, titleContentColor = colors.onSurface, textContentColor = colors.onSurfaceVariant,
-            dismissButton = { TextButton(onClick = ::cancelDelete) { Text(stringResource(R.string.gym_coach_cancel), style = GymType.coachAction) } },
+            dismissButton = { TextButton(onClick = ::cancelDelete) { Text(stringResource(PlatformR.string.platform_cancel), style = GymType.coachAction) } },
             confirmButton = { TextButton(colors = ButtonDefaults.textButtonColors(contentColor = gymColors.alarmInk), onClick = {
                 confirming = null
                 deleting = deleting + id
@@ -179,7 +180,7 @@ fun ThreadsScreen(
                         }
                     } finally { deleting = deleting - id }
                 }
-            }) { Text(stringResource(R.string.gym_coach_delete), style = GymType.coachAction) } },
+            }) { Text(stringResource(PlatformR.string.platform_delete), style = GymType.coachAction) } },
         )
     }
 }

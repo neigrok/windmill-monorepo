@@ -2,7 +2,7 @@
 <resources>
     <string name="gym_fix_no_answer">The log didn’t answer — that set wasn’t changed.</string>
     <string name="gym_fix_title">Fix set</string>
-    <string name="gym_fix_subtitle">%1$s · %2$s</string>
+    <string name="gym_fix_subtitle" translatable="false">%1$s · %2$s</string>
     <string name="gym_fix_subtitle_spoken">%1$s, set %2$s</string>
     <string name="gym_fix_effort">Effort</string>
     <string name="gym_fix_add_note">Add a note</string>

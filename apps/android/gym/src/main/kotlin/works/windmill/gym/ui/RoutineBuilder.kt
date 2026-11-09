@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import works.windmill.platform.R as PlatformR
 import works.windmill.platform.i18n.text
 import works.windmill.platform.design.WindmillType
 import androidx.compose.material3.MaterialTheme
@@ -331,7 +332,7 @@ fun RoutineBuilder(
                             open.adding -> R.string.gym_builder_title_add_movement
                             else -> R.string.gym_builder_title_edit_movement
                         }),
-                        commitLabel = stringResource(if (open.adding) R.string.gym_builder_add else R.string.gym_action_done),
+                        commitLabel = stringResource(if (open.adding) R.string.gym_builder_add else PlatformR.string.platform_done),
                         onMovement = { changed ->
                             val latest = sheet as? BuilderSheet.Target
                             if (latest != null) sheet = latest.copy(movement = changed, opening = latest.opening ?: movement)
@@ -409,7 +410,7 @@ private fun DiscardQuestion(title: String, text: String, onKeepEditing: () -> Un
     AlertDialog(onDismissRequest = onKeepEditing,
         title = { Text(title, style = GymType.discardRoutineTitle.overContainer(), color = colors.onSurface) },
         text = { Text(text, style = GymType.discardText.overContainer(), color = colors.onSurfaceVariant) },
-        confirmButton = { Action(stringResource(R.string.gym_action_discard), colors.error, onDiscard) },
+        confirmButton = { Action(stringResource(PlatformR.string.platform_discard), colors.error, onDiscard) },
         dismissButton = { Action(stringResource(R.string.gym_builder_keep_editing), colors.primary, onKeepEditing) },
         containerColor = colors.surfaceContainer)
 }
@@ -481,12 +482,12 @@ private fun BuildStep(
         title = stringResource(if (editing) R.string.gym_builder_title_edit_routine else R.string.gym_builder_title_new_routine),
         navigation = {
             IconButton(onClick = onCancel, enabled = editable) {
-                Icon(Icons.Filled.Close, stringResource(R.string.gym_action_close), tint = if (editable) colors.onSurface else colors.onSurfaceVariant)
+                Icon(Icons.Filled.Close, stringResource(PlatformR.string.platform_close), tint = if (editable) colors.onSurface else colors.onSurfaceVariant)
             }
         },
         // The commit stays where the thumb is, a pill pinned above the keyboard under the scrolling body.
         bottomBar = {
-            GymSheetCommit(stringResource(R.string.gym_action_save), enabled = savable, onClick = onSave, busy = !editable,
+            GymSheetCommit(stringResource(PlatformR.string.platform_save), enabled = savable, onClick = onSave, busy = !editable,
                 modifier = Modifier.imePadding().padding(horizontal = GymLayout.gutter, vertical = 16.dp))
         },
     ) {
@@ -519,8 +520,8 @@ private fun BuildStep(
             Column {
                 Text(stringResource(R.string.gym_builder_movements), style = GymType.headingCompact, color = colors.onSurface,
                     modifier = Modifier.semantics { heading() }.padding(bottom = 8.dp))
-                val moveUp = stringResource(R.string.gym_action_move_up)
-                val moveDown = stringResource(R.string.gym_action_move_down)
+                val moveUp = stringResource(PlatformR.string.platform_move_up)
+                val moveDown = stringResource(PlatformR.string.platform_move_down)
                 ordered.forEachIndexed { index, entry ->
                     key(entry.exerciseId) {
                         val movement = draft.movement(entry.exerciseId, state.catalog)?.current

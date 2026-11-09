@@ -21,6 +21,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
+import works.windmill.platform.R as PlatformR
 import works.windmill.gym.R
 import works.windmill.gym.presentation.Exercise
 import works.windmill.gym.presentation.Readout
@@ -58,7 +59,7 @@ private fun Refusal(headline: String, reason: String, onDismiss: () -> Unit) {
     val colors = MaterialTheme.colorScheme
     val gymColors = MaterialTheme.gymColors
     val haptics = rememberGymHaptics()
-    val dismiss = stringResource(R.string.gym_action_dismiss)
+    val dismiss = stringResource(PlatformR.string.platform_dismiss)
     val swipe = rememberRowDismiss(settling = { it != SwipeToDismissBoxValue.Settled }) {
         haptics.revealed()
         onDismiss()
@@ -90,7 +91,7 @@ private fun DismissGround() {
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box { Text(stringResource(R.string.gym_action_dismiss), style = GymType.dismiss, color = colors.onSurfaceVariant) }
-        Box { Text(stringResource(R.string.gym_action_dismiss), style = GymType.dismiss, color = colors.onSurfaceVariant) }
+        Box { Text(stringResource(PlatformR.string.platform_dismiss), style = GymType.dismiss, color = colors.onSurfaceVariant) }
+        Box { Text(stringResource(PlatformR.string.platform_dismiss), style = GymType.dismiss, color = colors.onSurfaceVariant) }
     }
 }

@@ -49,6 +49,7 @@ import androidx.compose.ui.unit.dp
 import java.time.LocalDateTime
 import java.time.ZoneId
 import kotlinx.coroutines.launch
+import works.windmill.platform.R as PlatformR
 import works.windmill.gym.R
 import works.windmill.gym.domain.sync.ExerciseRules
 import works.windmill.gym.presentation.Exercise
@@ -162,7 +163,7 @@ fun RecordScreen(state: RecordState, events: RecordEvents, exerciseId: String, b
     GymScreen(title = read?.record?.exercise?.name ?: Readout.movement(exerciseId, state.catalog),
         onBack = onBack, backTo = backTo,
         actions = { if (read != null && problem == null) Box {
-            IconButton(onClick = { menu = true }) { Icon(Icons.Rounded.MoreVert, contentDescription = stringResource(R.string.gym_action_more)) }
+            IconButton(onClick = { menu = true }) { Icon(Icons.Rounded.MoreVert, contentDescription = stringResource(PlatformR.string.platform_more)) }
             GymMenu(menu, { menu = false }) {
                 GymMenuItem(stringResource(R.string.gym_record_edit_movement), rememberVectorPainter(Icons.Outlined.Edit), onClick = {
                     menu = false
@@ -180,7 +181,7 @@ fun RecordScreen(state: RecordState, events: RecordEvents, exerciseId: String, b
                 problem != null -> {
                     Text(stringResource(R.string.gym_record_unavailable), style = GymType.screenHeading, color = colors.onSurface)
                     Text(problem.says(R.string.gym_record_read_no_answer).text(), style = WindmillType.body, color = colors.onSurfaceVariant)
-                    TextButton(onClick = { asked += 1 }) { Text(stringResource(R.string.gym_action_try_again)) }
+                    TextButton(onClick = { asked += 1 }) { Text(stringResource(PlatformR.string.platform_try_again)) }
                 }
                 read != null -> RecordBody(Record.page(read, nowMs), read.record.exercise.equipment, read.progress, nowMs, zone, focusSessionId)
                 else -> Text(stringResource(R.string.gym_record_reading), style = WindmillType.body, color = colors.onSurfaceVariant)

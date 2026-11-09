@@ -6,7 +6,6 @@
     <string name="gym_sharing_offer_title">Share this workout</string>
     <string name="gym_sharing_offer">Anyone with the link can read this workout.\nIncludes set notes and effort.\nLinks last 30 days. End sharing anytime.</string>
     <string name="gym_sharing_get_link">Get a link</string>
-    <string name="gym_sharing_try_again">Try again</string>
     <string name="gym_sharing_working">…</string>
     <string name="gym_sharing_live_title">The link is live</string>
     <string name="gym_sharing_live_body">Anyone who has this link can read this one workout. It stops working on %1$s, and revoking it kills it immediately.</string>

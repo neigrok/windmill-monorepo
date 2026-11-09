@@ -46,6 +46,7 @@ import androidx.compose.ui.platform.UriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import works.windmill.platform.R as PlatformR
 import works.windmill.platform.i18n.text
 import works.windmill.platform.i18n.pluralString
 import androidx.compose.ui.semantics.Role
@@ -108,7 +109,7 @@ internal fun CoachAnswer(
             else if (!ended) reply.stepLine?.let { CoachLine(it, "coach-step-line") }
             readUnderWords?.let { CoachReadSources(it.text(), reply.readRows, withDetails, onSourcesTop) }
         }
-        seatDoor?.let { CoachAction(stringResource(R.string.gym_coach_sign_in), it, primary = true) }
+        seatDoor?.let { CoachAction(stringResource(PlatformR.string.platform_sign_in), it, primary = true) }
         if (routineDrafts.isNotEmpty()) Column(verticalArrangement = Arrangement.spacedBy(24.dp), modifier = Modifier.padding(top = 12.dp).fillMaxWidth()) {
             routineDrafts.forEachIndexed { index, draft ->
                 key(draft.operationId) {
@@ -221,7 +222,7 @@ private fun KeepRoutines(onKeep: () -> Unit) {
     Row(Modifier.padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(stringResource(R.string.gym_coach_only_on_this_phone), style = GymType.coachSupporting, color = colors.onSurfaceVariant)
         TextButton(onClick = onKeep, modifier = Modifier.heightIn(min = 48.dp), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)) {
-            Text(stringResource(R.string.gym_coach_keep_it), style = GymType.coachAction, color = colors.primary)
+            Text(stringResource(PlatformR.string.platform_keep_it), style = GymType.coachAction, color = colors.primary)
         }
     }
 }

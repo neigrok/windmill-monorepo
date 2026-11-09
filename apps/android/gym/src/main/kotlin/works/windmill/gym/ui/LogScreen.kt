@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import works.windmill.platform.R as PlatformR
 import works.windmill.platform.design.WindmillType
 import androidx.compose.material3.MaterialTheme
 import works.windmill.platform.design.WindmillSheet
@@ -197,7 +198,7 @@ fun LogScreen(
                     Column {
                         Text(stringResource(R.string.gym_log_progress_unavailable), style = WindmillType.body, color = colors.onSurface)
                         Text(state.progressFailure!!.says(R.string.gym_log_progress_no_answer).text(), style = WindmillType.supporting, color = colors.onSurfaceVariant)
-                        TextButton(onClick = { scope.launch { events.loadProgress(force = true) } }) { Text(stringResource(R.string.gym_action_try_again)) }
+                        TextButton(onClick = { scope.launch { events.loadProgress(force = true) } }) { Text(stringResource(PlatformR.string.platform_try_again)) }
                     }
                 } else if (state.progressLoading && state.progress == null) item("progress-reading") {
                     Text(stringResource(R.string.gym_log_reading_progress), style = WindmillType.supporting, color = colors.onSurfaceVariant)
@@ -377,7 +378,7 @@ private fun LogFoot(older: Older, readingShown: Boolean, first: SessionSummary?,
     }
     Button(onClick = if (older == Older.Failed) onRetry else onLoad, enabled = older != Older.Loading, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
         colors = ButtonDefaults.buttonColors(containerColor = colors.surfaceContainerHighest, contentColor = colors.onSurface)) {
-        Text(stringResource(when (older) { Older.Failed -> R.string.gym_action_retry; Older.Loading -> R.string.gym_log_loading; else -> R.string.gym_log_load_older }))
+        Text(stringResource(when (older) { Older.Failed -> PlatformR.string.platform_retry; Older.Loading -> R.string.gym_log_loading; else -> R.string.gym_log_load_older }))
     }
     if (older == Older.Failed) Text(stringResource(R.string.gym_log_read_failed), Modifier.semantics { liveRegion = LiveRegionMode.Polite },
         style = WindmillType.supporting, color = colors.onSurfaceVariant)

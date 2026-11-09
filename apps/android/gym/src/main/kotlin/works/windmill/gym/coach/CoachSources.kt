@@ -1,5 +1,6 @@
 package works.windmill.gym.coach
 
+import works.windmill.platform.R as PlatformR
 import works.windmill.gym.ui.GymType
 import androidx.compose.material3.MaterialTheme
 import works.windmill.platform.design.WindmillSheet
@@ -93,7 +94,7 @@ internal fun CoachReadSources(line: String, rows: List<CoachCall>, withDetails: 
             }
             Text(stringResource(R.string.gym_coach_sources_foot), style = GymType.coachSourceLine, color = colors.onSurfaceVariant)
             TextButton(onClick = { expanded = false }, modifier = Modifier.padding(top = 8.dp).fillMaxWidth().heightIn(min = 56.dp)) {
-                Text(stringResource(R.string.gym_coach_close), style = GymType.button, color = colors.primary)
+                Text(stringResource(PlatformR.string.platform_close), style = GymType.button, color = colors.primary)
             }
         }
     }

@@ -273,8 +273,8 @@ internal fun Root(runtime: WindmillApplication, introduction: Boolean, onIntrodu
                                 Text(stringResource(R.string.app_account_unavailable_title), style = MaterialTheme.typography.headlineSmall)
                                 Text(stringResource(R.string.app_account_unavailable_body),
                                     Modifier.padding(vertical = 16.dp), style = MaterialTheme.typography.bodyLarge)
-                                TextButton(onClick = { scope.launch { auth.restore() } }) { Text(stringResource(R.string.app_try_again)) }
-                                TextButton(onClick = shell.openSignIn) { Text(stringResource(R.string.app_sign_in)) }
+                                TextButton(onClick = { scope.launch { auth.restore() } }) { Text(stringResource(PlatformR.string.platform_try_again)) }
+                                TextButton(onClick = shell.openSignIn) { Text(stringResource(PlatformR.string.platform_sign_in)) }
                             }
                         }
                         if (about) OnboardingPager(replay = true, onExit = { about = false; youUp = true },
@@ -311,7 +311,7 @@ internal fun EngineAccountDecision(session: works.windmill.gym.store.GymEngineSe
             telemetry.event("client_update_required", mapOf("action" to "dismiss")); shown = false
         }, title = { Text(stringResource(R.string.app_update_required_title)) },
             text = { Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(stringResource(R.string.app_update_required_body))
+                Text(stringResource(PlatformR.string.platform_api_update_required))
                 updateFailure?.let { Text(stringResource(it), color = MaterialTheme.colorScheme.error) }
             } },
             confirmButton = { TextButton(onClick = {
@@ -344,8 +344,8 @@ internal fun EngineAccountDecision(session: works.windmill.gym.store.GymEngineSe
         if (discardDecision == session.decisionKey) AlertDialog(onDismissRequest = ::cancelDiscard,
             title = { Text(said.discardTitle.text()) },
             text = { Text(said.discardBody.text()) },
-            confirmButton = { TextButton(enabled = !session.decisionBusy, colors = androidx.compose.material3.ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error), onClick = { scope.launch { session.decide(LineageAnswer.discard, decision) } }) { Text(stringResource(R.string.app_discard)) } },
-            dismissButton = { TextButton(enabled = !session.decisionBusy, onClick = ::cancelDiscard) { Text(stringResource(R.string.app_cancel)) } })
+            confirmButton = { TextButton(enabled = !session.decisionBusy, colors = androidx.compose.material3.ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error), onClick = { scope.launch { session.decide(LineageAnswer.discard, decision) } }) { Text(stringResource(PlatformR.string.platform_discard)) } },
+            dismissButton = { TextButton(enabled = !session.decisionBusy, onClick = ::cancelDiscard) { Text(stringResource(PlatformR.string.platform_cancel)) } })
         else AlertDialog(onDismissRequest = ::cancelSignIn, title = { Text(stringResource(R.string.app_sign_in_add_title)) },
             text = { Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(said.question.text())
@@ -357,7 +357,7 @@ internal fun EngineAccountDecision(session: works.windmill.gym.store.GymEngineSe
                 TextButton(enabled = !session.decisionBusy, contentPadding = padding, colors = androidx.compose.material3.ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error), onClick = {
                     telemetry.event("gym_sign_in_decision", mapOf("action" to "discard", "state" to "discard_confirmation"))
                     discardDecision = session.decisionKey
-                }) { Text(stringResource(R.string.app_discard)) }
+                }) { Text(stringResource(PlatformR.string.platform_discard)) }
                 TextButton(enabled = !session.decisionBusy, contentPadding = padding, onClick = { scope.launch { session.decide(LineageAnswer.add, decision) } }) { Text(stringResource(R.string.app_sign_in_add)) }
             } })
     }

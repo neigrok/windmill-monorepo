@@ -6,7 +6,7 @@
     <string name="gym_notification_open_workout">Open workout</string>
     <string name="gym_notification_log_set">Log set</string>
     <string name="gym_notification_tile_label">Workout</string>
-    <string name="gym_notification_tile_running">%1$s · %2$s</string>
+    <string name="gym_notification_tile_running" translatable="false">%1$s · %2$s</string>
     <string name="gym_notification_tile_off">Off</string>
     <string name="gym_notification_tile_description">Workout, %1$s</string>
     <string name="gym_notification_rack">%1$s kg × %2$s</string>

@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import works.windmill.platform.R as PlatformR
 import works.windmill.platform.design.WindmillType
 import androidx.compose.material3.MaterialTheme
 import works.windmill.platform.design.WindmillSheet
@@ -206,7 +207,7 @@ private fun RoutineRow(
                     Icon(Icons.Filled.MoreVert, stringResource(R.string.gym_routines_more_named, routine.name), tint = colors.onSurfaceVariant)
                 }
                 GymMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                    GymMenuItem(stringResource(R.string.gym_action_delete), painterResource(R.drawable.gym_native_delete), destructive = true,
+                    GymMenuItem(stringResource(PlatformR.string.platform_delete), painterResource(R.drawable.gym_native_delete), destructive = true,
                         onClick = { menu = false; scope.launch { onDelete() } })
                 }
             }

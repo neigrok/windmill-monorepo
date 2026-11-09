@@ -1,5 +1,6 @@
 package works.windmill.gym.coach
 
+import works.windmill.platform.R as PlatformR
 import works.windmill.platform.design.WindmillType
 import works.windmill.gym.ui.GymType
 import androidx.compose.material3.MaterialTheme
@@ -271,7 +272,7 @@ internal fun CoachPhoto(store: CoachChats, photo: CoachAttachment, modifier: Mod
     if (expanded && bitmap != null) Dialog(onDismissRequest = { expanded = false }) {
         Column(Modifier.background(colors.surfaceContainer, MaterialTheme.shapes.large).padding(12.dp)) {
             Image(requireNotNull(bitmap).asImageBitmap(), stringResource(R.string.gym_coach_photo_attached), Modifier.fillMaxWidth().heightIn(min = 160.dp, max = 520.dp).aspectRatio(photo.width.toFloat() / photo.height), contentScale = ContentScale.Fit)
-            CoachAction(stringResource(R.string.gym_coach_close), { expanded = false })
+            CoachAction(stringResource(PlatformR.string.platform_close), { expanded = false })
         }
     }
 }

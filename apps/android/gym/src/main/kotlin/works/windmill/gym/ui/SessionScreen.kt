@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import works.windmill.platform.R as PlatformR
 import works.windmill.platform.i18n.joined
 import works.windmill.platform.i18n.text
 import works.windmill.platform.i18n.Words
@@ -506,7 +507,7 @@ private fun MovementCard(
             movement.rows.forEachIndexed { index, performed ->
                 key(performed.id) {
                     val shape = GymSegment.shape(index, movement.rows.size)
-                    DeleteSwipeRow(actionLabel = stringResource(R.string.gym_action_delete), onDelete = { onDelete(performed.set) }, shape = shape, declaresAction = false) {
+                    DeleteSwipeRow(actionLabel = stringResource(PlatformR.string.platform_delete), onDelete = { onDelete(performed.set) }, shape = shape, declaresAction = false) {
                         SetRow(performed, shape, onFix, onDelete)
                     }
                 }
@@ -536,7 +537,7 @@ private fun SetRow(set: Performed.Row, shape: Shape, onFix: (String) -> Unit, on
     val underLoad = Modifier.padding(start = 24.dp)
     val fixThisSet = stringResource(R.string.gym_session_fix_this_set)
     val spoken = set.said.text()
-    val deleteAction = stringResource(R.string.gym_action_delete)
+    val deleteAction = stringResource(PlatformR.string.platform_delete)
     Column(Modifier.fillMaxWidth().heightIn(min = GymTap.minimum).clip(shape)
         .background(if (pressed) colors.surfaceContainerHighest else colors.surfaceContainer)
         .clickable(interactionSource = pressing, indication = null) { onFix(set.id) }

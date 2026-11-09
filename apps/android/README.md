@@ -345,7 +345,9 @@ English is the only language. Copy a person reads is a string resource in the mo
 `gym/src/main/res/values/strings_<area>.xml`, one file per area (the welcome carousel keeps `onboarding.xml`),
 `platform/src/main/res/values/strings.xml` and `app/src/main/res/values/strings.xml`. Names carry their module and
 area, `gym_<area>_<thing>`, `platform_<thing>` and `app_<thing>`, so merged resources cannot collide; the carousel's
-are `onboarding_<thing>`. Manifest labels point at resources too.
+are `onboarding_<thing>`. A verb a button says anywhere — Cancel, Close, Save, Try again — is one `platform_<verb>`
+that `:gym` and `:app` read as `PlatformR`; a module's own strings carry its sentences. Manifest labels point at
+resources too.
 
 - A composable reads `stringResource(R.string.x, …)`; code outside composition reads `context.getString(…)`.
 - Copy decided where no Context stands — a readout in `gym/presentation`, a store's refusal, Coach's models, a

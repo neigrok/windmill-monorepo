@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import works.windmill.platform.R as PlatformR
 import works.windmill.platform.design.WindmillType
 import works.windmill.platform.design.WindmillSheet
 import androidx.activity.compose.BackHandler
@@ -189,7 +190,7 @@ fun WeighInSheet(
                     }
                 }, enabled = usable) { Text(stringResource(R.string.gym_bodyweight_use_date)) }
             },
-            dismissButton = { TextButton(onClick = ::cancelDate) { Text(stringResource(R.string.gym_action_cancel)) } },
+            dismissButton = { TextButton(onClick = ::cancelDate) { Text(stringResource(PlatformR.string.platform_cancel)) } },
         ) { DatePicker(state = picker, modifier = Modifier.testTag("weigh-in-calendar")) }
     }
 

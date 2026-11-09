@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import works.windmill.platform.R as PlatformR
 import works.windmill.platform.design.WindmillType
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -257,7 +258,7 @@ fun FinishScreen(
                 Text(stringResource(R.string.gym_finish_no_sets), style = WindmillType.outcomeTitle, color = colors.onSurface)
                 Text(stringResource(R.string.gym_finish_ended), style = GymType.emptyFinishLine, color = colors.onSurfaceVariant)
             }
-            ReceiptAction(stringResource(R.string.gym_action_done), onDone)
+            ReceiptAction(stringResource(PlatformR.string.platform_done), onDone)
         }
         return
     }
@@ -280,10 +281,10 @@ fun FinishScreen(
                             var expanded by rememberSaveable { mutableStateOf(false) }
                             Box {
                                 IconButton(onClick = { expanded = true }, modifier = Modifier.size(48.dp)) {
-                                    Icon(painterResource(R.drawable.gym_more), contentDescription = stringResource(R.string.gym_action_more), tint = colors.onSurface)
+                                    Icon(painterResource(R.drawable.gym_more), contentDescription = stringResource(PlatformR.string.platform_more), tint = colors.onSurface)
                                 }
                                 DropdownMenu(expanded, onDismissRequest = { expanded = false }) {
-                                    DropdownMenuItem(text = { Text(stringResource(R.string.gym_action_discard)) }, onClick = { expanded = false; discard() })
+                                    DropdownMenuItem(text = { Text(stringResource(PlatformR.string.platform_discard)) }, onClick = { expanded = false; discard() })
                                 }
                             }
                         }
@@ -312,7 +313,7 @@ fun FinishScreen(
                     }
                 }
                 onKeep?.let { keep ->
-                    val keepIt = stringResource(R.string.gym_action_keep_it)
+                    val keepIt = stringResource(PlatformR.string.platform_keep_it)
                     val onlyHere = stringResource(R.string.gym_finish_only_on_this_phone, keepIt)
                     Text(buildAnnotatedString {
                         append(onlyHere)
@@ -342,7 +343,7 @@ fun FinishScreen(
             Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 onShareWithCoach?.let { ReceiptAction(stringResource(R.string.gym_finish_share_with_coach), it, tonal = true, crown = true) }
-                ReceiptAction(stringResource(R.string.gym_action_done), onDone)
+                ReceiptAction(stringResource(PlatformR.string.platform_done), onDone)
             }
         }
     }
