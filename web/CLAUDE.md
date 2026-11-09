@@ -36,10 +36,9 @@ Copy is read through a translator from catalogs; English is the only locale.
   wrong one. The design system loads with the entry and keeps one catalog.
 - To add a string, add `"gym.log.emptyTitle": "No workouts yet"` to the `en.json` beside the `index.js`
   your file imports `t` from (`i18n/index.js` unless the brand root loads the file) and call
-  `t('gym.log.emptyTitle')`. A key is the owner's namespace plus
-  dotted camelCase segments, at most 80 characters, written as a string literal at its call site. Map an
-  enum to copy with an object of `t()` calls, never a built key, and never pass `t` around or bind another
-  `t`.
+  `t('gym.log.emptyTitle')`. A key is the owner's namespace plus dotted camelCase segments, at most 80
+  characters, written as a string literal at its call site. Map an enum to copy with an object of `t()`
+  calls, never a built key, and never pass `t` around or bind another `t`.
 - The first segment after the namespace names an area. A word an owner's surfaces share in one meaning —
   Cancel, Retry, Close, Save, Undo, Untitled roadmap — lives once under `<ns>.common.*`; a word that only
   looks the same (Board's Done column, the shortcut legend's Delete key) keeps its own key. Every owner
@@ -67,9 +66,8 @@ Copy is read through a translator from catalogs; English is the only locale.
 - A sentence one owner renders around another owner's words takes them as an argument: the shell's sync
   question shows a product's `sync.signedOutWork.counted(n)` ("3 pages"), and each owner keeps its nouns.
 - Landing heads, their no-JS bodies and the legal shelf are read from catalogs at build time and escaped
-  for the HTML text, attribute or JSON-LD they land in.
-  `index.html` carries the brand root's English head and no-JS body, which the build pins to
-  `shell/marketing/landingHeads.js` byte for byte.
+  for the HTML text, attribute or JSON-LD they land in. `index.html` carries the brand root's English head
+  and no-JS body, which the build pins to `shell/marketing/landingHeads.js` byte for byte.
 - Static documents in `public/` (the shelf pages, the 404 and the pause page) are whole per-locale
   documents and read no catalog; a second locale adds a translated copy of each.
 - The showcase (`showcase/`, the unlinked `#/showcase` gallery) is a developer surface: its copy stays
