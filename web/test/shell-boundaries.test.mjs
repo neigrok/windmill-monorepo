@@ -110,12 +110,14 @@ function productOf(absolutePath) {
 }
 
 // An owner's catalog lives in its i18n/ beside its code and is read only by that owner, through i18n/index.js.
-// An owner whose modules load both with the brand root and with a lazy room also keeps i18n/entry/: a module
-// the brand root loads reads that one, so the entry carries only the copy it renders, and every other module
-// reads i18n/index.js, which loads with the room.
+// An owner whose modules load at different moments keeps a catalog per moment: a module the brand root loads
+// reads i18n/entry/, one a product's landing loads reads i18n/landing/, and every other module reads
+// i18n/index.js, which loads with the room. Each page then downloads only the copy it shows.
 const PLATFORM_I18N = path.join(SRC, 'platform', 'i18n') + path.sep;
 const BRAND_ROOT_SCENES = PRODUCTS.map((product) => path.join(PRODUCTS_DIR, product.id, 'marketing', 'RootScenes.jsx'));
 const ENTRY_LOADED = entryLoaded([path.join(SRC, 'main.jsx'), ...BRAND_ROOT_SCENES]);
+const LANDINGS = PRODUCTS.map((product) => path.resolve(SRC, '..', product.landing.head.module));
+const LANDING_LOADED = new Set([...entryLoaded(LANDINGS)].filter((file) => !ENTRY_LOADED.has(file)));
 function catalogOwnerOf(target) {
   const parts = path.relative(SRC, target).split(path.sep);
   const at = parts.indexOf('i18n');
@@ -150,14 +152,16 @@ for (const file of sourceFiles(SRC)) {
     }
     const catalogOwner = catalogOwnerOf(target);
     if (catalogOwner && !file.startsWith(path.join(catalogOwner, 'i18n') + path.sep)) {
-      const ownIndex = path.join(catalogOwner, 'i18n', 'index.js');
-      const entryIndex = path.join(catalogOwner, 'i18n', 'entry', 'index.js');
-      const withEntry = fs.existsSync(entryIndex);
       const owner = `src/${path.relative(SRC, catalogOwner)}`;
+      const indexOf = (tier) => path.join(catalogOwner, 'i18n', ...(tier ? [tier] : []), 'index.js');
+      const doors = [null, 'entry', 'landing'].map(indexOf).filter((index) => fs.existsSync(index));
+      const moment = ENTRY_LOADED.has(file) ? 'entry' : LANDING_LOADED.has(file) ? 'landing' : null;
+      const expected = moment && fs.existsSync(indexOf(moment)) ? moment : null;
+      const loads = { entry: 'with the brand root', landing: 'with its product\'s landing', null: 'with a lazy chunk' }[expected];
+      const where = `${owner}/i18n${expected ? `/${expected}` : ''}`;
       if (!file.startsWith(catalogOwner + path.sep)) violations.catalogAcrossOwners.push(`src/${relativeFile}:${line} imports ${specifier} — only ${owner} reads its own catalog`);
-      else if (target !== ownIndex && !(withEntry && target === entryIndex)) violations.catalogAcrossOwners.push(`src/${relativeFile}:${line} imports ${specifier} — read the catalog through its i18n/index.js`);
-      else if (withEntry && ENTRY_LOADED.has(file) && target !== entryIndex) violations.catalogByLoading.push(`src/${relativeFile}:${line} loads with the brand root, so it reads ${owner}/i18n/entry/index.js and its copy lives in ${owner}/i18n/entry/en.json`);
-      else if (withEntry && !ENTRY_LOADED.has(file) && target !== ownIndex) violations.catalogByLoading.push(`src/${relativeFile}:${line} loads with a lazy chunk, so it reads ${owner}/i18n/index.js and its copy lives in ${owner}/i18n/en.json`);
+      else if (!doors.includes(target)) violations.catalogAcrossOwners.push(`src/${relativeFile}:${line} imports ${specifier} — read the catalog through its i18n/index.js`);
+      else if (target !== indexOf(expected)) violations.catalogByLoading.push(`src/${relativeFile}:${line} loads ${loads}, so it reads ${where}/index.js and its copy lives in ${where}/en.json`);
     }
   }
 }
@@ -178,7 +182,7 @@ test('every catalog is read only by its owner, through its i18n/index.js', () =>
   assert.deepEqual(violations.catalogAcrossOwners, []);
 });
 
-test('a module the brand root loads reads its owner\'s entry catalog, and every other module the catalog that loads with its room', () => {
+test('a module reads the catalog of the moment it loads: the brand root\'s, its product\'s landing\'s, or its room\'s', () => {
   assert.deepEqual(BRAND_ROOT_SCENES.filter((scenes) => !fs.existsSync(scenes)).map((scenes) => `${path.relative(SRC, scenes)} is gone; name the brand-root scenes here`), []);
   assert.deepEqual(violations.catalogByLoading, []);
 });

@@ -14,7 +14,7 @@ for (const owner of [
   });
 }
 
-test('the catalog audit sees every rule fire on its fixture, read in the two locales it holds', () => {
+test('the catalog audit sees every rule fire on its fixture, read in its two locales and three tiers', () => {
   assert.deepEqual(catalogViolations({ namespace: 'fixture', root: 'test/fixtures/i18n', locales: ['en', 'xx'] }), [
     'test/fixtures/i18n/i18n/entry holds en.json, index.js, not en.json, index.js, xx.json',
     'Fixture.badShape is not fixture.dotted.camelCase',
@@ -22,7 +22,8 @@ test('the catalog audit sees every rule fire on its fixture, read in the two loc
     'xx fixture.greeting shows {nom} where en shows {name}',
     'fixture.headline is in both test/fixtures/i18n/i18n/entry/en.json and test/fixtures/i18n/i18n/en.json',
     "test/fixtures/i18n/Dynamic.js reads its owner's catalog other than as one static, relative import { t } from '…/i18n/index.js'",
-    'test/fixtures/i18n/Entry.js:4 reads fixture.greeting through test/fixtures/i18n/i18n/entry/index.js, but test/fixtures/i18n/i18n/en.json holds it; a key the entry asks for lives in test/fixtures/i18n/i18n/entry/en.json',
+    'test/fixtures/i18n/Entry.js:4 reads fixture.greeting through test/fixtures/i18n/i18n/entry/index.js, but test/fixtures/i18n/i18n/en.json holds it; a key that file asks for lives in test/fixtures/i18n/i18n/entry/en.json',
+    'test/fixtures/i18n/Landing.js:3 reads fixture.steps through test/fixtures/i18n/i18n/landing/index.js, but test/fixtures/i18n/i18n/en.json holds it; a key that file asks for lives in test/fixtures/i18n/i18n/landing/en.json',
     "test/fixtures/i18n/Relay.js reads its owner's catalog other than as one static, relative import { t } from '…/i18n/index.js'",
     "test/fixtures/i18n/RootAbsolute.jsx reads its owner's catalog other than as one static, relative import { t } from '…/i18n/index.js'",
     "test/fixtures/i18n/SecondBinding.jsx reads its owner's catalog other than as one static, relative import { t } from '…/i18n/index.js'",
@@ -34,8 +35,8 @@ test('the catalog audit sees every rule fire on its fixture, read in the two loc
     'test/fixtures/i18n/Uses.jsx:7 leaves fixture.steps without count',
     'test/fixtures/i18n/Uses.jsx:8 asks for fixture.absent, which test/fixtures/i18n/i18n/en.json does not hold',
     'fixture.headline is in test/fixtures/i18n/i18n/entry/en.json but nothing asks for it',
-    'fixture.roomOnly is asked for only by modules loaded with the room, so it belongs in test/fixtures/i18n/i18n/en.json',
+    'fixture.roomOnly is asked for only by files that load after test/fixtures/i18n/i18n/entry, so it belongs in test/fixtures/i18n/i18n/en.json',
+    'fixture.landingRoomOnly is asked for only by files that load after test/fixtures/i18n/i18n/landing, so it belongs in test/fixtures/i18n/i18n/en.json',
     'fixture.unused is in test/fixtures/i18n/i18n/en.json but nothing asks for it',
-    'fixture.headline is in test/fixtures/i18n/i18n/en.json but nothing asks for it',
   ]);
 });

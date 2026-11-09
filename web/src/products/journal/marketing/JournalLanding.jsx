@@ -11,7 +11,7 @@ import {
   mountSearchSheet,
 } from './journalScenes.js';
 import './journalLanding.css';
-import { t } from '../i18n/index.js';
+import { t } from '../i18n/landing/index.js';
 
 const SECTION_LINKS = [
   { href: '#how', label: t('journal.landing.nav.howItWorks') },

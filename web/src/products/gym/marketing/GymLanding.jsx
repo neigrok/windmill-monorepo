@@ -1,7 +1,7 @@
 import React from 'react';
 import { Badge, Button } from '../../../design-system';
 import { LandingPage, useScene } from '../../../shell/marketing/LandingChrome.jsx';
-import { t } from '../i18n/index.js';
+import { t } from '../i18n/landing/index.js';
 import { KG, unitSymbol } from '../units.js';
 import { mountMoat, mountSetLogger, mountRemembered, mountE1rmLine } from './gymScenes.js';
 import './gymLanding.css';

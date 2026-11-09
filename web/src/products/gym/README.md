@@ -83,8 +83,8 @@ Gym copy lives under `gym.<area>.*`, one area per screen or module (`gym.log.*`,
 `gym.landing.*`, `gym.landingHead.*`, `gym.product.*` for the shell registry's words, `gym.common.*` for a word
 several screens share). The files the brand root loads — the route table,
 the landing head, the brand root's scenes and the runtime the route table's sync hooks import — read `t` from
-`i18n/entry/index.js`, with their copy in `i18n/entry/en.json`; every other file reads `i18n/index.js` and
-`i18n/en.json`. A shared phrase keeps its exported constant (`COACH_TITLE`, `UNDO_LABEL`), whose value is a `t()`
+`i18n/entry/index.js`, with their copy in `i18n/entry/en.json`; the landing page and its scenes read
+`i18n/landing/`; every other file reads `i18n/index.js` and `i18n/en.json`. A shared phrase keeps its exported constant (`COACH_TITLE`, `UNDO_LABEL`), whose value is a `t()`
 call. A weight is a number and a word: the caller formats the number and passes the wire unit, and the message
 spells it, `{weight} {unit, select, lb {lb} other {kg}}`; `unitSymbol` in `units.js` shows the symbol alone. The
 day labels in `log.js` take weekday and month names and their order from the catalog, never from the system

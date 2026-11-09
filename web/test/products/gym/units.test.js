@@ -107,7 +107,7 @@ test('every field a lifter types into spells the kilogram, not the reading', () 
 
 test('every kilogram field on a screen carries the word kg', () => {
   // The past workout names it once, in the column head over every row, and in each cell's name.
-  const catalog = { ...JSON.parse(read('i18n/entry/en.json')), ...JSON.parse(read('i18n/en.json')) };
+  const catalog = { ...JSON.parse(read('i18n/entry/en.json')), ...JSON.parse(read('i18n/landing/en.json')), ...JSON.parse(read('i18n/en.json')) };
   assert.equal(read('backfill/Backfill.jsx').includes(`t('gym.backfill.columns', { times: <span className="gym-past-times">×</span> })`), true);
   assert.equal(catalog['gym.backfill.columns'], 'kg {times} reps');
   assert.equal(read('backfill/Backfill.jsx').includes("{ field: 'load', key: 'weightKg', label: (name, position, basis) => t('gym.backfill.loadCell', { name, position, basis }) },"), true);

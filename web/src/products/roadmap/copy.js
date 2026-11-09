@@ -146,20 +146,6 @@ export function formatCount(count, { compact = false } = {}) {
 }
 
 // How long ago a roadmap was last changed, in the words its resume line uses; null when it can't tell.
-export function tendedAgo(updatedAt) {
-  if (updatedAt == null) return null;
-  const then = typeof updatedAt === 'number' ? updatedAt : Date.parse(updatedAt);
-  if (Number.isNaN(then)) return null;
-  const mins = Math.max(0, Math.round((Date.now() - then) / 60000));
-  if (mins < 1) return t('roadmap.ago.justNow');
-  if (mins < 60) return t('roadmap.ago.minutes', { count: mins });
-  const hrs = Math.round(mins / 60);
-  if (hrs < 24) return t('roadmap.ago.hours', { count: hrs });
-  const days = Math.round(hrs / 24);
-  if (days < 7) return t('roadmap.ago.days', { count: days });
-  return t('roadmap.ago.weeks', { count: Math.round(days / 7) });
-}
-
 export function nextChip({ count }) {
   return t('roadmap.board.nextChip', { count: formatCount(count) });
 }

@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 const GYM = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../src/products/gym');
 const read = (file) => fs.readFileSync(path.join(GYM, file), 'utf8');
-const catalog = { ...JSON.parse(read('i18n/entry/en.json')), ...JSON.parse(read('i18n/en.json')) };
+const catalog = { ...JSON.parse(read('i18n/entry/en.json')), ...JSON.parse(read('i18n/landing/en.json')), ...JSON.parse(read('i18n/en.json')) };
 
 // A file's words: its code without comments, followed by the catalog messages its t() calls ask for.
 const spoken = (source) => {

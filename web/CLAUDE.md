@@ -26,16 +26,18 @@ Copy is read through a translator from catalogs; English is the only locale.
   and `products/<product>/i18n` (`roadmap.*`, `journal.*`, `gym.*`). A catalog is a folder holding
   `index.js`, which exports `t`, and one `<locale>.json` per locale, a flat object of key to message. A file
   reads only its own owner's catalogs.
-- An owner whose files load both with the brand root and in lazy chunks — the shell and each product —
-  keeps two catalogs, so a page downloads only the copy it shows. `i18n/entry/` holds the copy of the
-  files the brand root loads: what the entry chunk carries (the shell's landing chrome and sign-in, each
-  product's route table and landing head, and what they import, such as gym's runtime) and each product's
-  brand-root scenes (`marketing/RootScenes.jsx`). `i18n/` holds the rest and loads with the lazy chunks
-  that render it; its `t` also reads `entry/`. A file imports `t` from one of the two, and its strings live
-  in the `en.json` beside that `index.js`; `test/shell-boundaries.test.mjs` names a file that reads the
-  wrong one. The design system loads with the entry and keeps one catalog.
+- An owner keeps a catalog per moment its files load, so a page downloads only the copy it shows.
+  `i18n/entry/` holds the copy of the files the brand root loads: what the entry chunk carries (the
+  shell's landing chrome and sign-in, each product's route table and landing head, and what they import,
+  such as gym's runtime) and each product's brand-root scenes (`marketing/RootScenes.jsx`). A product's
+  `i18n/landing/` holds the copy of the files its landing page loads beyond those (the module its landing
+  head names, and what it imports). `i18n/` holds the rest and loads with the lazy chunks that render it.
+  Each tier's `t` also reads the tiers before it, so a word a landing and its room share lives once, in the
+  landing's catalog. A file imports `t` from one tier, and its strings live in the `en.json` beside that
+  `index.js`; `test/shell-boundaries.test.mjs` names a file that reads the wrong one. The shell keeps
+  `entry/` and `i18n/`; the design system loads with the entry and keeps one catalog.
 - To add a string, add `"gym.log.emptyTitle": "No workouts yet"` to the `en.json` beside the `index.js`
-  your file imports `t` from (`i18n/index.js` unless the brand root loads the file) and call
+  your file imports `t` from (`i18n/index.js` unless the brand root or a landing loads the file) and call
   `t('gym.log.emptyTitle')`. A key is the owner's namespace plus dotted camelCase segments, at most 80
   characters, written as a string literal at its call site. Map an enum to copy with an object of `t()`
   calls, never a built key, and never pass `t` around or bind another `t`.
@@ -57,7 +59,7 @@ Copy is read through a translator from catalogs; English is the only locale.
   branch) and reports `i18n-missing-message` once per key per page load ([observability](OBSERVABILITY.md)).
 - `test/platform/i18n/catalogs.test.mjs` checks every owner in every locale: each `t()` key is a literal
   the catalog its file reads holds, its arguments match its message, a translation shows the arguments
-  English shows, every message parses and is asked for where it loads, no key sits in two catalogs, keys
+  English shows, every message lives in the earliest tier that asks for it, no key sits in two catalogs, keys
   carry the namespace, and a file reads its catalog through one static, relative `import { t }`.
   `test/platform/i18n/hardcodedCopy.test.mjs` fails anywhere under `src/` but the showcase on JSX text with
   letters, on literal copy props (`COPY_PROPS` in `copyAudit.mjs`, also inside object and array literals

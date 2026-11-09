@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { listTrees } from './persistence/TreeRegistry.js';
-import { tendedAgo } from './copy.js';
+import { resumeOf, resumeSummary } from './resume.js';
 import { t } from './i18n/index.js';
 
 const KIND_DOT = {
@@ -32,10 +32,7 @@ export function HomeCard() {
   }, []);
 
   const newest = trees?.length ? trees[0] : null;
-  const name = newest ? (newest.title?.trim() || t('roadmap.common.untitled')) : null;
-  const chars = name ? Array.from(name) : []; // cut by code points — an emoji never splits
-  const shortName = chars.length > 18 ? `${chars.slice(0, 17).join('').trimEnd()}…` : name;
-  const tended = newest ? tendedAgo(newest.updatedAt) : null;
+  const resume = newest ? resumeOf(newest) : null;
   const progress = newest && <span className="wm-rhc-mono">{`${newest.done ?? 0}/${newest.total ?? 0}`}</span>;
 
   return (
@@ -48,12 +45,12 @@ export function HomeCard() {
         </span>
         {newest ? (
           <span className="wm-rhc-body">
-            {tended ? t('roadmap.resume.summaryTended', { name, progress, tended }) : t('roadmap.resume.summary', { name, progress })}
+            {resumeSummary(resume, progress)}
           </span>
         ) : (
           <span className="wm-rhc-body">{t('roadmap.landing.firstTreeInBrowser')}</span>
         )}
-        <span className="wm-rhc-link">{newest ? t('roadmap.home.resume', { name: shortName }) : t('roadmap.home.start')}</span>
+        <span className="wm-rhc-link">{newest ? t('roadmap.home.resume', { name: resume.shortName }) : t('roadmap.home.start')}</span>
       </a>
     </>
   );

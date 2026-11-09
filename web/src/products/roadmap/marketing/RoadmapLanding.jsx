@@ -6,8 +6,8 @@ import { listTrees } from '../persistence/TreeRegistry.js';
 import { track } from '../../../telemetry/beacon.js';
 import { KIND_CSS } from '../theme.js';
 import { mountHero, mountBeat, mountThumb } from './treeScenes.js';
-import { tendedAgo } from '../copy.js';
-import { t } from '../i18n/index.js';
+import { resumeOf, resumeSummary } from '../resume.js';
+import { t } from '../i18n/landing/index.js';
 import './roadmapLanding.css';
 
 const SECTION_LINKS = [
@@ -41,11 +41,7 @@ function HeroBand() {
 }
 
 function Hero({ resume }) {
-  const name = resume ? (resume.title?.trim() || t('roadmap.common.untitled')) : null;
-  // Cut by code points so an emoji never splits.
-  const chars = name ? Array.from(name) : [];
-  const shortName = chars.length > 18 ? `${chars.slice(0, 17).join('').trimEnd()}…` : name;
-  const tended = resume ? tendedAgo(resume.updatedAt) : null;
+  const offer = resume ? resumeOf(resume) : null;
   const progress = resume && <span style={{ fontFamily: 'var(--font-mono)' }}>{`${resume.done ?? 0}/${resume.total ?? 0}`}</span>;
   return (
     <section>
@@ -60,13 +56,13 @@ function Hero({ resume }) {
         {resume ? (
           <>
             <div style={{ display: 'flex', gap: 12, marginTop: 32, flexWrap: 'wrap', justifyContent: 'center' }}>
-              <a href={`#/app/${resume.id}`}><Button variant="primary" size="lg">{t('roadmap.landing.resume', { name: shortName })}</Button></a>
+              <a href={`#/app/${resume.id}`}><Button variant="primary" size="lg">{t('roadmap.landing.resume', { name: offer.shortName })}</Button></a>
               <a href={`#/app/${resume.id}`}><Button variant="ghost" size="lg">{t('roadmap.landing.myTrees')}</Button></a>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', gap: 8, fontFamily: 'var(--font-body)', fontSize: 13.5, color: 'var(--text-tertiary)', marginTop: 14 }}>
               <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: '50%', flex: 'none', background: (KIND_CSS[resume.dominantKind] ?? KIND_CSS.terracotta).base }} />
               <span>
-                {tended ? t('roadmap.resume.summaryTended', { name, progress, tended }) : t('roadmap.resume.summary', { name, progress })}
+                {resumeSummary(offer, progress)}
               </span>
             </div>
           </>
