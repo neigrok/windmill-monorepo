@@ -462,9 +462,10 @@ xcodebuild); [iOS nightly](../../../.github/workflows/ios-nightly.yml) runs them
 
 ## Localization
 
-The app and its Live Activity extension read their copy from String Catalogs, with English the only language. Each
-bundle has two: `Resources/Localizable.xcstrings` and `Resources/InfoPlist.xcstrings` for the app,
-`WorkoutActivityWidget/Localizable.xcstrings` and `WorkoutActivityWidget/InfoPlist.xcstrings` for the extension.
+The app and its Live Activity extension read their copy from String Catalogs, with English the only language; the App
+Shortcut phrases alone stay in code, since phrases localize through an `AppShortcuts.xcstrings` that comes with a second
+language. Each bundle has two catalogs: `Resources/Localizable.xcstrings` and `Resources/InfoPlist.xcstrings` for the
+app, `WorkoutActivityWidget/Localizable.xcstrings` and `WorkoutActivityWidget/InfoPlist.xcstrings` for the extension.
 `WorkoutActivityShared/` and `Sources/Theme/` compile into both bundles, so their strings stand in both catalogs. A
 key is its English text. An `InfoPlist.xcstrings` entry is kept by hand under the Info.plist key it localizes: the name
 under the icon, `CFBundleDisplayName`, and any `…UsageDescription` the app adds.
@@ -472,22 +473,34 @@ under the icon, `CFBundleDisplayName`, and any `…UsageDescription` the app add
 A new string follows these rules:
 
 - `Text`, `Button`, `Label`, `navigationTitle`, `alert` and the accessibility modifiers given a literal already
-  localize it.
-- Copy a property, case or parameter holds is a `LocalizedStringResource`, drawn with `Text(resource)`; where an API
-  takes a `String` — UIKit, an alert built from Strings, ActivityKit content, a value tests compare — it is
-  `String(localized: "…")`. User content and what the server sends are shown as they are, never looked up.
+  localize it. A parameter or property that only ever holds literals and that only a view draws is a
+  `LocalizedStringResource`, drawn with `Text(resource)`: `sheetCommit("Save", …)`, an onboarding page's title. Copy
+  decided in a model or a helper, or held as a `String` — a message a model raises, a refusal's sentence, a value an
+  alert, UIKit, ActivityKit or a test reads — is `String(localized: "…")`, resolved where it is decided. User content
+  and what the server sends are shown as they are, never looked up.
 - A message interpolates only a `String` or an `Int`. A `Double`, a `Date` or a measurement is formatted first with the
   formatter the screen already uses, and that `String` is interpolated: an interpolated `Double` renders through
-  `%lf`, *2.500000*. A message that interpolates an `Int` resolves in `Locale.copy` (`String(localized: …, locale:
-  .copy)`), so its digits read as Swift writes them, *1000*, under any region; the current locale would group them by
-  the phone's region, *1,000* or *1.000*.
-- A sentence is one message with placeholders, never joined from fragments. A count that changes its words is one
-  `%lld` message with a plural variation in the catalog, and English's `one` and `other` must read as the app reads
-  for every count it can receive. A plural variation shows its number; words that follow a count the text does not
-  show, *it* or *them*, are two whole messages chosen by `count == 1`. A `comment:` says what the English alone leaves
-  unclear.
+  `%lf`, *2.500000*. A `String(localized:)` that interpolates an `Int` resolves in `Locale.copy`
+  (`Sources/Theme/CopyLocale.swift`, `locale: .copy`), so its digits read as Swift writes them, *1000*, under any
+  region; the current locale would group them by the phone's region, *1,000* or *1.000*. A SwiftUI literal that
+  interpolates an `Int` — `Text("\(count)")`, `Section("Set \(index + 1)")`, an accessibility label — formats in the
+  view's locale, and every such count stays under 1000, where no region groups digits.
+- A sentence is one message with placeholders, never joined from fragments. A word set in its own style is a `Text`
+  interpolated into the whole message: `Text("\(Text("Build").fontWeight(.semibold)) — a program from a screenshot or
+  your own words.")`. A count that changes its words is one `%lld` message with a plural variation in the catalog, and
+  English's `one` and `other` must read as the app reads for every count it can receive. A plural variation shows its
+  number; words that follow a count the text does not show, *it* or *them*, are two whole messages chosen by
+  `count == 1`.
+- A `comment:` says what the English alone leaves unclear: a word with more than one reading, the term a placeholder
+  stands for, a fragment such as *since %@*. Where the call takes no comment — a `Section`, a `LabeledContent`, a
+  picker's title, an App Intent's parameter — the comment is written in the catalog, where the sync keeps it. A word
+  with two senses gets an explicit key for one of them, its English as the default value:
+  `String(localized: "connected-tool.write", defaultValue: "Write", comment: …)` stands beside the verb `Write`.
+- A key that holds only placeholders, digits and marks, `%@ %@` or `•`, is marked `"shouldTranslate" : false` in the
+  catalog by hand; the sync keeps it.
 - A counted thing of the gym, *3 sets* or *1 routine*, is `GymCount.of(_:_:)` in
-  `Sources/Gym/Components/GymFormat.swift`, one plural message per noun, which the sign-in question reuses.
+  `Sources/Gym/Components/GymFormat.swift`, one plural message per noun. The sign-in question writes its counts out
+  itself, with the same messages, so the catalog holds each once.
 
 Then regenerate the catalogs and commit them:
 
@@ -499,10 +512,24 @@ python3 Tools/string_catalogs.py
 The tool builds the app in Release for the simulator, in the DerivedData folder Xcode keeps for the project, where
 `SWIFT_EMIT_LOC_STRINGS` has the compiler record every localized string in a `.stringsdata` file. It syncs each
 bundle's `Localizable.xcstrings` with `xcstringstool` from the files of the sources its target compiles: a new string
-arrives, a string no source names leaves, and plural variations and comments stay. It also holds each
+arrives, a string no source names leaves, and plural variations, comments and `shouldTranslate` stay. It holds the
+English kept by hand to its key: every value and plural form takes its key's placeholders, a substitution counts one of
+the key's `%lld`, a plural has its `one` and `other` forms, and each form shows its number. It also holds each
 `InfoPlist.xcstrings` to the built bundle's Info.plist. With `--derived-data <path>` it reads an existing Release
-simulator build instead of building; `--check` changes nothing and fails when a catalog differs, which
-[CI](../../../.github/workflows/ios.yml) runs on its Release build.
+simulator build instead of building; `--check` changes nothing and fails when a catalog differs or breaks one of those
+rules, which [CI](../../../.github/workflows/ios.yml) runs on its Release build.
+
+`python3 Tools/check_copy_literals.py` fails on a literal a person could read that is no key of its bundle's catalog,
+matched with each interpolation as a placeholder, in `Sources/`, `WorkoutActivityShared/` and `WorkoutActivityWidget/`;
+the launch fixtures, `Verification.swift`, `JournalModelTransport.swift` and the lines inside `#if DEBUG` or
+`#if targetEnvironment(simulator)` stay out. It reads a literal as a name, not copy, when it is one lowercase word, an
+identifier, a path, a URL or a file, when it is handed to a call or a label that names — an identifier, a symbol, a
+telemetry event or property, a log line, a key, a format — or set to such a property, and when it is a dictionary key,
+a subscript, a side of a comparison or a `case` pattern. It also fails on a `String(localized:)` that interpolates an
+`Int` outside `Locale.copy`. Its allowlist names each remaining line and why, the check prints every allowed line with
+its reason, and an entry that no longer matches fails the check. Both targets run it before they build, except the
+build `string_catalogs.py` makes, so a new string can reach its catalog; `python3 -m unittest discover -s Tools/tests -v`
+includes its cases and runs it over the shipped sources.
 
 ## Design captures
 

@@ -48,8 +48,9 @@ follow the domain kit's source rules: no import attributes, no access-modified i
 
 ## Localization
 
-The App reads its copy from String Catalogs, English the only language; [its README](App/README.md#localization) holds
-the convention a new string follows and the command that regenerates the catalogs. The Swift packages hold no catalog:
+The App reads its copy from String Catalogs, English the only language, its App Shortcut phrases aside;
+[its README](App/README.md#localization) holds the convention a new string follows, the command that regenerates the
+catalogs and the check that keeps English out of Swift. The Swift packages hold no catalog:
 the display strings the domain kit and the product domains produce are English, pinned by the shared vectors every
 implementation reproduces, and the App shows them as they come.
 
