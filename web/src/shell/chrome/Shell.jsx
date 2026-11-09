@@ -14,6 +14,7 @@ import { ShellHome } from './ShellHome.jsx';
 import './chrome.css';
 import { navigate } from '../navigation.js';
 import { useRoomStatus } from '../roomStatus.js';
+import { t } from '../i18n/index.js';
 
 const STATUS_TOOLTIP_HOLD = 4000;
 
@@ -159,9 +160,9 @@ export function Shell({ location, neutral = null, roomProduct = null }) {
   return (
     <div className="wm-shell" ref={lendDoorSkin} data-brand={room.scope.brand} data-theme={theme}>
       <header className={`wm-head${sharedShell ? ' wm-head--shared' : ''}${roomStatus ? ' wm-head--status' : ''}`}>
-        <a className="wm-head-mark" href="/" title="Windmill" aria-label="Windmill — home"><BrandMark size={30} /></a>
-        <nav className="wm-switch" aria-label="Rooms">
-          <RoomLink href="/app" label="Home" active={room.kind === 'home' && !redirect} />
+        <a className="wm-head-mark" href="/" title="Windmill" aria-label={t('shell.chrome.homeMark')}><BrandMark size={30} /></a>
+        <nav className="wm-switch" aria-label={t('shell.chrome.rooms')}>
+          <RoomLink href="/app" label={t('shell.chrome.home')} active={room.kind === 'home' && !redirect} />
           {PRODUCTS.filter((p) => p.shell?.status === 'open').map((p) => (
             <RoomLink key={p.id} href={p.shell.room} label={p.label} active={room.product?.id === p.id} />
           ))}
@@ -170,7 +171,7 @@ export function Shell({ location, neutral = null, roomProduct = null }) {
         {/* The seat is always clay; both scope attributes ride together, keyed on the pair. */}
         <div className="wm-head-seat" data-brand="clay" data-theme={theme}>
           {(roomStatus || sharedShell) && status === 'ghost' ? (
-            <button type="button" className="wm-head-sign-in" onClick={openSignInDoor}>Sign in</button>
+            <button type="button" className="wm-head-sign-in" onClick={openSignInDoor}>{t('shell.auth.signIn')}</button>
           ) : (
             <AccountSeat
               user={user}

@@ -14,6 +14,7 @@ import { useAppearance } from '../useAppearance.js';
 import { paintBrowserChrome, restoreBrowserChrome } from '../appearance.js';
 import { LANDING_HEADS, SITE_ORIGIN } from './landingHeads.js';
 import { LEGAL_LINKS, SURFACE_LINKS } from './siteIdentity.js';
+import { t } from '../i18n/index.js';
 import './landing.css';
 
 // `anchored` is the brand root's: its product links scroll to that product's section on the same page.
@@ -76,7 +77,7 @@ export function LandingPage({ brand = null, product = null, links = [], cta = nu
   // data-theme, and palettes.css keys the room's ground on the pair.
   return (
     <div className="landing" ref={lendDoorSkin} data-brand={brand ?? undefined} data-theme={appearance === 'dark' ? 'dark' : undefined}>
-      <a href="#content" className="skip-link">Skip to content</a>
+      <a href="#content" className="skip-link">{t('shell.landing.skipToContent')}</a>
       <LandingNav product={product} links={links} cta={cta} resume={resume} resolving={resolving} seat={seat} anchored={anchored} />
       <main id="content">{children}</main>
       <LandingFooter />
@@ -88,7 +89,7 @@ function LandingNav({ product = null, links = [], cta = null, resume = null, res
   return (
     <header className="landing-header">
       <a className="landing-wordmark" href="/"><BrandWordmark /></a>
-      <nav className="navlinks" aria-label="Primary">
+      <nav className="navlinks" aria-label={t('shell.landing.primaryNav')}>
         {links.map((link) => <a key={link.href} className="navlinks-page" href={link.href}>{link.label}</a>)}
         {links.length > 0 && <span className="navlinks-divider" aria-hidden="true" />}
         {/* The anchored root draws a band only for an open product, so only an open product has an
@@ -102,7 +103,7 @@ function LandingNav({ product = null, links = [], cta = null, resume = null, res
             {entry.label}
           </a>
         ))}
-        <a href="/pricing.html">Pricing</a>
+        <a href="/pricing.html">{t('shell.site.pricing')}</a>
       </nav>
       <NavCluster cta={cta} resume={resume} resolving={resolving} seat={seat} />
     </header>
@@ -134,7 +135,7 @@ function NavCluster({ cta, resume, resolving, seat }) {
       <div className="landing-cluster">
         <AppearanceToggle />
         <span style={{ display: 'contents', visibility: 'hidden' }} aria-hidden="true">
-          <Button variant="ghost" size="sm">Sign in</Button>
+          <Button variant="ghost" size="sm">{t('shell.auth.signIn')}</Button>
           {cta && <Button variant="primary" size="sm">{cta.label}</Button>}
         </span>
       </div>
@@ -171,10 +172,10 @@ function NavCluster({ cta, resume, resolving, seat }) {
           onClick={() => openSignInDoor({ resume: pendingMagicLink(), onSent: noteLinkSent })}
         >
           <i aria-hidden="true" />
-          Link sent — check your email
+          {t('shell.landing.linkSent')}
         </button>
       ) : (
-        <Button variant="ghost" size="sm" onClick={() => openSignInDoor({ onSent: noteLinkSent })}>Sign in</Button>
+        <Button variant="ghost" size="sm" onClick={() => openSignInDoor({ onSent: noteLinkSent })}>{t('shell.auth.signIn')}</Button>
       )}
       {cta && <Button variant="primary" size="sm" href={cta.href}>{cta.label}</Button>}
       <AccountSeat
@@ -201,7 +202,7 @@ function LandingFooter() {
         <div className="landing-footer-shelf">
           <div className="landing-footer-row">
             {LEGAL_LINKS.map((link) => <a key={link.href} href={link.href}>{link.label}</a>)}
-            <button type="button" onClick={() => setFeedbackOpen(true)}>Feedback</button>
+            <button type="button" onClick={() => setFeedbackOpen(true)}>{t('shell.feedback.label')}</button>
           </div>
           <div className="landing-footer-row">
             {PRODUCTS.map((entry) => <a key={entry.id} href={entry.landing.href}>{entry.label}</a>)}

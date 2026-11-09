@@ -6,6 +6,7 @@ import { useAuth } from '../auth/AuthProvider.jsx';
 import { PRODUCTS } from '../products.js';
 import { closingDeal } from './accountClosure.js';
 import { Section, styles } from './Section.jsx';
+import { t } from '../i18n/index.js';
 
 const DEAL = closingDeal(PRODUCTS.map((product) => product.label));
 
@@ -27,20 +28,20 @@ export function CloseAccountSection() {
       window.location.hash = '#/';
     } catch {
       setClosing(false);
-      setCloseError("Couldn’t finish closing your account on this device. Try again.");
+      setCloseError(t('shell.closeAccount.failed'));
     }
   };
 
   return (
-    <Section title="Close your account">
+    <Section title={t('shell.closeAccount.title')}>
       {!expanded ? (
-        <button type="button" style={openRow} onClick={() => setExpanded(true)}>Close my account</button>
+        <button type="button" style={openRow} onClick={() => setExpanded(true)}>{t('shell.closeAccount.close')}</button>
       ) : (
         <div style={openBlock}>
           <ul style={dealList}>
             {DEAL.map((line) => <li key={line} style={dealItem}>{line}</li>)}
           </ul>
-          <p style={styles.fieldLabel}>Type your email to confirm</p>
+          <p style={styles.fieldLabel}>{t('shell.closeAccount.confirmLabel')}</p>
           <div style={{ maxWidth: 280 }}>
             <Input
               type="email"
@@ -52,10 +53,10 @@ export function CloseAccountSection() {
           {closeError && <p style={{ ...styles.metaText, color: 'var(--color-danger)' }}>{closeError}</p>}
           <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
             <Button variant="danger" size="sm" disabled={!emailMatches || closing} onClick={confirmClose}>
-              {closing ? 'Closing…' : 'Close my account'}
+              {closing ? t('shell.closeAccount.closing') : t('shell.closeAccount.close')}
             </Button>
             <Button variant="ghost" size="sm" disabled={closing} onClick={() => { setExpanded(false); setConfirmEmail(''); setCloseError(null); }}>
-              Cancel
+              {t('shell.common.cancel')}
             </Button>
           </div>
         </div>

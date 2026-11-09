@@ -1,1 +1,11 @@
-{}
+{
+  "ds.chart.focusedLabel": "{chart}. {point}",
+  "ds.chart.hint": "Hover or use ← → to read a session",
+  "ds.chart.label": "chart",
+  "ds.crash.message": "Something went wrong on this screen.",
+  "ds.crash.reload": "Reload",
+  "ds.dialog.close": "Close",
+  "ds.tabRail.label": "Rooms",
+  "ds.tag.remove": "Remove",
+  "ds.toast.dismiss": "Dismiss"
+}

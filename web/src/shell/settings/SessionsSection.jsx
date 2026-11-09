@@ -6,6 +6,7 @@ import { listSessions, revokeSession, signOutEverywhere } from '../auth/AccountC
 import { Button } from '../../design-system';
 import { Section, styles, QuietX } from './Section.jsx';
 import { formatUserAgent, relativeTime } from './format.js';
+import { t } from '../i18n/index.js';
 
 export function SessionsSection() {
   const { signOut } = useAuth();
@@ -44,17 +45,14 @@ export function SessionsSection() {
   const others = (sessions ?? []).some((session) => !session.current);
 
   return (
-    <Section title="Sessions & devices">
-      {sessions === null && <p style={styles.calmLine}>Loading your sessions…</p>}
+    <Section title={t('shell.sessions.title')}>
+      {sessions === null && <p style={styles.calmLine}>{t('shell.sessions.loading')}</p>}
 
       {sessions !== null && sessions.length === 0 && (
         <p style={styles.calmLine}>
-          {failed ? (
-            <>
-              Couldn't load your sessions just now.{' '}
-              <button type="button" onClick={retry} style={retryButton}>Try again</button>
-            </>
-          ) : 'No other sessions.'}
+          {failed
+            ? t('shell.sessions.loadFailed', { retry: <button type="button" onClick={retry} style={retryButton}>{t('shell.common.tryAgain')}</button> })
+            : t('shell.sessions.empty')}
         </p>
       )}
 
@@ -62,16 +60,16 @@ export function SessionsSection() {
         <div key={session.id} style={styles.row}>
           <div style={styles.rowMain}>
             <div style={styles.primaryText}>{formatUserAgent(session.userAgent)}</div>
-            <div style={styles.metaText}>{relativeTime(session.lastSeenMs) || 'Active'}</div>
+            <div style={styles.metaText}>{relativeTime(session.lastSeenMs) || t('shell.sessions.active')}</div>
           </div>
-          {session.current && <span style={styles.tag}>THIS DEVICE</span>}
-          <QuietX label={`Revoke ${formatUserAgent(session.userAgent)}`} onClick={() => revoke(session)} />
+          {session.current && <span style={styles.tag}>{t('shell.sessions.thisDevice')}</span>}
+          <QuietX label={t('shell.sessions.revoke', { device: formatUserAgent(session.userAgent) })} onClick={() => revoke(session)} />
         </div>
       ))}
 
       {others && (
         <div style={{ marginTop: 12 }}>
-          <Button variant="ghost" size="sm" onClick={signOutOthers}>Sign out everywhere</Button>
+          <Button variant="ghost" size="sm" onClick={signOutOthers}>{t('shell.sessions.signOutEverywhere')}</Button>
         </div>
       )}
     </Section>

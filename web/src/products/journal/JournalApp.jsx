@@ -19,6 +19,7 @@ import { useEchoes } from './echoes/useEchoes.js';
 import { useToday } from './usePages.js';
 import { useNudge } from './useNudge.js';
 import { openPosition, documentEntry } from './openPosition.js';
+import { t } from './i18n/index.js';
 import './journal.css';
 
 export function JournalApp({ hash }) {
@@ -91,8 +92,8 @@ export function JournalApp({ hash }) {
           type="button"
           className="journal-tool"
           onClick={() => setZoomOpen(true)}
-          aria-label="Zoom out to your months"
-          title="Zoom out"
+          aria-label={t('journal.app.zoom')}
+          title={t('journal.app.zoomTitle')}
         >
           <CalendarRange size={18} strokeWidth={1.9} aria-hidden="true" />
         </button>
@@ -101,8 +102,8 @@ export function JournalApp({ hash }) {
             type="button"
             className="journal-tool"
             onClick={() => setNudgeOpen(true)}
-            aria-label="Nudges"
-            title="Nudges"
+            aria-label={t('journal.app.nudges')}
+            title={t('journal.app.nudges')}
           >
             <Bell size={18} strokeWidth={1.9} aria-hidden="true" />
           </button>
@@ -111,8 +112,8 @@ export function JournalApp({ hash }) {
           type="button"
           className="journal-tool journal-search-open"
           onClick={() => setSearchOpen(true)}
-          aria-label="Search a feeling"
-          title="Search a feeling (⌘K)"
+          aria-label={t('journal.app.search')}
+          title={t('journal.app.searchTitle')}
         >
           <Search size={18} strokeWidth={1.9} aria-hidden="true" />
         </button>

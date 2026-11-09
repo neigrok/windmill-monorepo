@@ -1,4 +1,5 @@
 import { contentWords } from './tokenize.js';
+import { t } from '../i18n/index.js';
 
 // Passage vectors stay on the device and are rebuilt only when a page stamp changes.
 export class SearchIndex {
@@ -54,7 +55,8 @@ function reason(passageText, queryWords) {
   const passageWords = contentWords(passageText);
   const shared = passageWords.find((w) => queryWords.has(w));
   const anchor = shared || passageWords.find((w) => w.length > 4) || passageWords[0] || '';
-  return anchor ? `close to · ${anchor}` : 'close to what you wrote';
+  if (!anchor) return t('journal.search.closeToWriting');
+  return t('journal.search.closeToWord', { word: anchor });
 }
 
 // Every passage keeps its exact half-open [lo, hi) span into the page body.

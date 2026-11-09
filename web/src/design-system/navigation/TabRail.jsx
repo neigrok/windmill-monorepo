@@ -1,4 +1,5 @@
 import React from 'react';
+import { t } from '../i18n/index.js';
 
 // The bottom navigation rail: the rooms of an app, drawn where a thumb already is. `Tabs.jsx` is the
 // segmented pill that switches a view; this is the rail that switches a room, and the two are not
@@ -10,7 +11,7 @@ import React from 'react';
 
 export const RAIL_HEIGHT = 72;
 
-export function TabRail({ items, width = 402, label = 'Rooms' }) {
+export function TabRail({ items, width = 402, label = t('ds.tabRail.label') }) {
   return (
     <>
       <div aria-hidden="true" style={{ height: RAIL_HEIGHT, flex: 'none' }} />

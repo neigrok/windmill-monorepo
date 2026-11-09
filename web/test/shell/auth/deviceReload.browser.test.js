@@ -50,7 +50,7 @@ const ready = (async () => {
         import { Registry } from '/@fs${reference}core/registry.js';
         import { PRODUCTS } from '/src/shell/products.js';
         import { getRoomStatus } from '/src/shell/roomStatus.js';
-        PRODUCTS.push({ id: 'probe', sync: { signedOutWork: { type: 'card', one: 'card', many: 'cards' } } });
+        PRODUCTS.push({ id: 'probe', sync: { signedOutWork: { type: 'card', counted: (count) => count + (count === 1 ? ' card' : ' cards'), many: 'cards' } } });
         import '/src/styles/global.css';
         window.events = []; window.issues = []; window.sent = [];
         window.roomLine = () => getRoomStatus()?.line ?? null;

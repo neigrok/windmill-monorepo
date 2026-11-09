@@ -45,6 +45,15 @@ Copy is read through a translator from catalogs; English is the only locale.
   `test/platform/i18n/hardcodedCopy.test.mjs` fails on JSX text with letters and on literal copy props
   (`COPY_PROPS` in `copyAudit.mjs`) under the roots it lists; its allowlist holds brand marks only. It reads
   JSX, not strings held in plain modules.
+- A sentence one owner renders around another owner's words takes them as an argument: the shell's sync
+  question shows a product's `sync.signedOutWork.counted(n)` ("3 pages"), and each owner keeps its nouns.
+- Landing heads, their no-JS bodies and the legal shelf are read from catalogs at build time.
+  `index.html` carries the brand root's English head and no-JS body, which the build pins to
+  `shell/marketing/landingHeads.js` byte for byte.
+- Static documents in `public/` (the shelf pages, the 404 and the pause page) are whole per-locale
+  documents and read no catalog; a second locale adds a translated copy of each.
+- The showcase (`showcase/`, the unlinked `#/showcase` gallery) is a developer surface: its copy stays
+  literal and it is not a migrated root.
 - A second locale is a `<locale>.json` beside each `en.json`, imported in that owner's `index.js`, and one
   entry in `AVAILABLE_LOCALES`.
 

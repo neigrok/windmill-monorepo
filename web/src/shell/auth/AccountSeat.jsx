@@ -6,6 +6,11 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
 import { Avatar, SegmentedControl } from '../../design-system';
 import { useAppearance } from '../useAppearance.js';
+import { t } from '../i18n/index.js';
+
+const SEAT_CSS = `
+  @keyframes wm-seat-wake { 0% { transform: scale(1); } 45% { transform: scale(1.02); } 100% { transform: scale(1); } }
+`;
 
 const prefersReducedMotion = () =>
   typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -59,16 +64,14 @@ export function AccountSeat({ user, status, size = 36, onSignIn, onSignOut, onSe
 
   return (
     <div ref={rootRef} className="wm-account-seat" style={{ position: 'relative', display: 'inline-flex' }}>
-      <style>{`
-        @keyframes wm-seat-wake { 0% { transform: scale(1); } 45% { transform: scale(1.02); } 100% { transform: scale(1); } }
-      `}</style>
+      <style>{SEAT_CSS}</style>
 
       <button
         ref={seatRef}
         type="button"
         aria-expanded={open}
         aria-controls={open ? popoverId : undefined}
-        aria-label={signedIn ? `Account — ${name}` : 'Account'}
+        aria-label={signedIn ? t('shell.account.seatNamed', { name }) : t('shell.account.label')}
         onClick={() => setOpen((v) => !v)}
         onPointerDown={() => setPressed(true)}
         onPointerUp={() => setPressed(false)}
@@ -89,7 +92,7 @@ export function AccountSeat({ user, status, size = 36, onSignIn, onSignOut, onSe
           transition: 'transform var(--duration-fast) var(--ease-standard)',
         }}
       >
-        {display === 'label' ? <span style={{ color: 'var(--text-primary)', font: '700 13px/18px var(--font-body)' }}>Account</span> : <>
+        {display === 'label' ? <span style={{ color: 'var(--text-primary)', font: '700 13px/18px var(--font-body)' }}>{t('shell.account.label')}</span> : <>
         <span
           style={{
             position: 'absolute',
@@ -171,11 +174,11 @@ export function AccountSeat({ user, status, size = 36, onSignIn, onSignOut, onSe
                 </div>
               </div>
               {appearance && <AppearanceRow />}
-              <div role="menu" aria-label="Account">
+              <div role="menu" aria-label={t('shell.account.label')}>
                 {mine && <MenuRow label={mine.label} detail={mine.count != null ? String(mine.count) : null} onSelect={() => choose(mine.onSelect)} />}
-                {onConnect && <MenuRow label="Connect your LLM tools" onSelect={() => choose(onConnect)} />}
-                <MenuRow label="Account settings" onSelect={() => choose(onSettings)} />
-                <MenuRow label="Sign out" onSelect={() => choose(onSignOut)} />
+                {onConnect && <MenuRow label={t('shell.connect.title')} onSelect={() => choose(onConnect)} />}
+                <MenuRow label={t('shell.settings.title')} onSelect={() => choose(onSettings)} />
+                <MenuRow label={t('shell.auth.signOut')} onSelect={() => choose(onSignOut)} />
               </div>
               {footer && (
                 <div style={{ padding: '8px 10px 4px', marginTop: 4, borderTop: '1px solid var(--border-subtle)', fontSize: 'var(--text-xs)', lineHeight: 1.4, color: 'var(--text-tertiary)' }}>
@@ -186,9 +189,9 @@ export function AccountSeat({ user, status, size = 36, onSignIn, onSignOut, onSe
           ) : (
             <>
               {appearance && <AppearanceRow />}
-              <div role="menu" aria-label="Account">
-                <MenuRow label="Sign in" onSelect={() => choose(onSignIn)} />
-                {onSettings && <MenuRow label="Settings" onSelect={() => choose(onSettings)} />}
+              <div role="menu" aria-label={t('shell.account.label')}>
+                <MenuRow label={t('shell.auth.signIn')} onSelect={() => choose(onSignIn)} />
+                {onSettings && <MenuRow label={t('shell.account.settings')} onSelect={() => choose(onSettings)} />}
               </div>
             </>
           )}
@@ -199,9 +202,9 @@ export function AccountSeat({ user, status, size = 36, onSignIn, onSignOut, onSe
 }
 
 const APPEARANCE_OPTIONS = [
-  { value: 'light', label: 'Light', icon: 'sun' },
-  { value: 'dark', label: 'Dark', icon: 'moon' },
-  { value: 'system', label: 'System', icon: 'monitor' },
+  { value: 'light', label: t('shell.appearance.light'), icon: 'sun' },
+  { value: 'dark', label: t('shell.appearance.dark'), icon: 'moon' },
+  { value: 'system', label: t('shell.appearance.system'), icon: 'monitor' },
 ];
 
 function AppearanceRow() {
@@ -209,7 +212,7 @@ function AppearanceRow() {
   const labelId = useId();
   return (
     <div style={{ padding: '8px 10px 10px', marginBottom: 4, borderBottom: '1px solid var(--border-subtle)' }}>
-      <div id={labelId} style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--text-tertiary)', marginBottom: 6 }}>Appearance</div>
+      <div id={labelId} style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--text-tertiary)', marginBottom: 6 }}>{t('shell.appearance.label')}</div>
       <SegmentedControl labelledBy={labelId} options={APPEARANCE_OPTIONS} value={choice} onChange={set} />
     </div>
   );

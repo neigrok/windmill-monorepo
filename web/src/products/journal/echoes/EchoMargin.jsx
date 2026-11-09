@@ -21,6 +21,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { InkDates, InkRow } from './Ink.jsx';
 import { stampWeekday } from './echoDates.js';
 import { KINDLE_MS } from './arrival.js';
+import { t } from '../i18n/index.js';
 
 const MARGIN_INK = 2;   // two passages read; past that the column is a list of dates, not prose
 
@@ -228,12 +229,12 @@ export function EchoMargin({ echoes, page }) {
       <aside
         ref={marginRef}
         className={'je-margin' + (lit ? ' is-lit' : '') + (settling ? ' is-settling' : '')}
-        aria-label="What you wrote before"
+        aria-label={t('journal.echoes.panel')}
       >
         {/* Outside the swap, not inside it: the body is ramping UP, and a line fading out inside it
             would be multiplied by that ramp and so start from nothing — a step, which is the one shape
             this whole entrance exists to avoid. Two layers on one clock is what a cross-fade is. */}
-        {leaving && <p className="je-margin-rest is-leaving" aria-hidden="true">No echo on this page.</p>}
+        {leaving && <p className="je-margin-rest is-leaving" aria-hidden="true">{t('journal.echoes.noEcho')}</p>}
         <div className={'je-margin-swap' + (swapping ? ' is-out' : '')}>
           {page && (
             <div className="je-margin-head">
@@ -247,7 +248,7 @@ export function EchoMargin({ echoes, page }) {
               <button
                 type="button"
                 className="je-margin-stamp"
-                aria-label={`Go to ${stampWeekday(page.day)}`}
+                aria-label={t('journal.echoes.goTo', { day: stampWeekday(page.day) })}
                 onClick={goToPage}
               >
                 {stampWeekday(page.day)}
@@ -256,7 +257,7 @@ export function EchoMargin({ echoes, page }) {
                   happen is itself the read-out that the panel is not following. */}
               {held && (
                 <button type="button" className="je-margin-follow" onClick={echoes.followScroll}>
-                  Follow again
+                  {t('journal.echoes.followAgain')}
                 </button>
               )}
             </div>
@@ -269,7 +270,7 @@ export function EchoMargin({ echoes, page }) {
             className={'je-margin-body' + (entrance ? ' is-arrival' : '') + (page ? '' : ' is-resting')}
             key={entrance || 'rest'}
           >
-            {!page && <p className="je-margin-rest">No echo on this page.</p>}
+            {!page && <p className="je-margin-rest">{t('journal.echoes.noEcho')}</p>}
             {page && read.map((match, index) => (
               <InkRow
                 key={match.day}
@@ -283,7 +284,7 @@ export function EchoMargin({ echoes, page }) {
               />
             ))}
             {page && <InkDates matches={dated} size="desk" onOpen={(match) => echoes.walkTo(page.day, match)} />}
-            {page && <p className="je-margin-foot">This panel follows the scroll.</p>}
+            {page && <p className="je-margin-foot">{t('journal.echoes.panelFoot')}</p>}
           </div>
         </div>
       </aside>

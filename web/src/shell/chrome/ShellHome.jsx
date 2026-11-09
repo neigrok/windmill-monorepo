@@ -1,13 +1,14 @@
 import React, { Suspense } from 'react';
 import { joinLabels, PRODUCTS } from '../products.js';
 import { InstallChip } from '../pwa/InstallChip.jsx';
+import { t } from '../i18n/index.js';
 
 function statusLine(open, preOpen) {
-  const openPart = open.length ? `${joinLabels(open.map((p) => p.label))} ${open.length === 1 ? 'is' : 'are'} open today` : '';
-  const prePart = preOpen.length ? `${joinLabels(preOpen.map((p) => p.label))} ${preOpen.length === 1 ? 'joins when it opens' : 'join when they open'}` : '';
-  if (openPart && prePart) return `${openPart}; ${prePart}.`;
-  if (openPart) return `${openPart}.`;
-  if (prePart) return `${prePart}.`;
+  const openNames = joinLabels(open.map((p) => p.label));
+  const preOpenNames = joinLabels(preOpen.map((p) => p.label));
+  if (open.length && preOpen.length) return t('shell.home.statusBoth', { open: openNames, openCount: open.length, preOpen: preOpenNames, preOpenCount: preOpen.length });
+  if (open.length) return t('shell.home.statusOpen', { products: openNames, count: open.length });
+  if (preOpen.length) return t('shell.home.statusPreOpen', { products: preOpenNames, count: preOpen.length });
   return '';
 }
 
@@ -31,10 +32,10 @@ export function ShellHome() {
             <div className="wm-home-cell-head">
               <span className="wm-home-dot" aria-hidden="true" />
               <span className="wm-home-cell-name">{p.label}</span>
-              <span className="wm-home-cell-tag">not open yet</span>
+              <span className="wm-home-cell-tag">{t('shell.home.notOpen')}</span>
             </div>
-            <p className="wm-home-cell-body">{p.landing.tagline} — no room in here yet, and its landing says where it stands.</p>
-            <a className="wm-home-cell-link" href={p.shell.landingHref}>Read about it →</a>
+            <p className="wm-home-cell-body">{t('shell.home.preOpenBody', { tagline: p.landing.tagline })}</p>
+            <a className="wm-home-cell-link" href={p.shell.landingHref}>{t('shell.home.readAbout')}</a>
           </div>
         ))}
       </div>

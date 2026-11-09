@@ -9,6 +9,7 @@ import { PRODUCTS, homeHash } from '../products.js';
 import { useAppearance } from '../useAppearance.js';
 import { LandingPage } from './LandingChrome.jsx';
 import { BRAND_PROMISE, START_FREE } from './landingHeads.js';
+import { t } from '../i18n/index.js';
 import './landing.css';
 
 function HeroBand({ product, theme }) {
@@ -25,7 +26,7 @@ function HeroBand({ product, theme }) {
         <div className="rootBand-scene" style={{ '--rootScene-reserve': reserve?.band }}>
           <Suspense fallback={null}><Glimpse /></Suspense>
         </div>
-        <a className="rootBand-link" href={`#${id}`}>See {label} ↓</a>
+        <a className="rootBand-link" href={`#${id}`}>{t('shell.brandLanding.seeProduct', { product: label })}</a>
       </div>
     </section>
   );
@@ -82,7 +83,7 @@ export function BrandLanding() {
       product={null}
       links={[]}
       cta={START_FREE}
-      resume={{ href: homeHash(), label: 'Open Windmill' }}
+      resume={{ href: homeHash(), label: t('shell.brandLanding.open') }}
       anchored
     >
       {/* The page's one top-level heading, saying what the crawlable shell in web/index.html says.

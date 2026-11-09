@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { elementsOf, loadScreen, renderHook, textOf } from '../../products/gym/harness.mjs';
 
 const question = { kind: 'signed-out', product: 'journal', count: { page: 3, journalState: 1 }, counted: ['one'] };
-const work = { type: 'page', one: 'page', many: 'pages' };
+const work = { type: 'page', counted: (count) => `${count} ${count === 1 ? 'page' : 'pages'}`, many: 'pages' };
 test('occupied Journal asks with real page counts, equal Add/Discard and no dismissal', async (t) => {
   const { SyncDecisions } = await loadScreen('shell/auth/SyncDecisions.jsx');
   const decisions = [];

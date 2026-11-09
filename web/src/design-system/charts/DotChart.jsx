@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { t } from '../i18n/index.js';
 
 // A dot per measurement on a truncated, labelled y-axis: the series' own minimum and maximum plus
 // padding, so a series that moves between 82.0 and 84.5 fills the frame instead of drawing as a
@@ -181,7 +182,7 @@ const label = {
 // there is a repair path and an image where there is not, named by the caller's `label`.
 export function DotChart({
   points, domain = null, joins, gapLabel, formatValue, formatDate, caption, onPick = null,
-  height = 220, axisFontSize = 10.5, ariaLabel = 'chart', interactive = false, compact = false, minimal = false, pointPitch = 0, holdMs = 1500,
+  height = 220, axisFontSize = 10.5, ariaLabel = t('ds.chart.label'), interactive = false, compact = false, minimal = false, pointPitch = 0, holdMs = 1500,
 }) {
   const host = useRef(null);
   const viewport = useRef(null);
@@ -243,10 +244,10 @@ export function DotChart({
       {caption && (
         <figcaption style={{ ...label, display: 'block', marginBottom: 6 }}>{caption}</figcaption>
       )}
-      {interactive && <p className={`dot-chart-readout${focused == null ? ' is-hint' : ''}`} aria-live="polite" style={{ ...label, minHeight: minimal ? undefined : 32, margin: minimal ? 0 : '0 0 4px' }}>{focused != null ? layout.dots[focused]?.point.label : 'Hover or use ← → to read a session'}</p>}
+      {interactive && <p className={`dot-chart-readout${focused == null ? ' is-hint' : ''}`} aria-live="polite" style={{ ...label, minHeight: minimal ? undefined : 32, margin: minimal ? 0 : '0 0 4px' }}>{focused != null ? layout.dots[focused]?.point.label : t('ds.chart.hint')}</p>}
       <div ref={host} style={{ width: '100%', position: 'relative' }}>
         <div ref={viewport} style={{ overflowX: interactive ? 'auto' : 'hidden', overscrollBehaviorX: 'contain' }}>
-        <svg width={plotWidth} height={frameHeight} viewBox={`0 0 ${plotWidth} ${frameHeight}`} role="group" aria-label={interactive && focused != null ? `${ariaLabel}. ${layout.dots[focused]?.point.label ?? ''}` : ariaLabel} tabIndex={interactive ? 0 : undefined}
+        <svg width={plotWidth} height={frameHeight} viewBox={`0 0 ${plotWidth} ${frameHeight}`} role="group" aria-label={interactive && focused != null ? t('ds.chart.focusedLabel', { chart: ariaLabel, point: layout.dots[focused]?.point.label ?? '' }) : ariaLabel} tabIndex={interactive ? 0 : undefined}
           onPointerMove={interactive ? hover : undefined}
           onPointerDown={(event) => {
             if (!interactive) return;

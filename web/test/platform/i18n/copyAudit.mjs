@@ -13,6 +13,7 @@ const WEB = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..
 const COPY_PROPS = new Set([
   'aria-label', 'aria-description', 'aria-valuetext', 'aria-roledescription', 'aria-placeholder',
   'ariaLabel', 'title', 'label', 'placeholder', 'alt', 'caption', 'error', 'panePlace',
+  'quiet', 'stamp',
 ]);
 
 export function sourceFiles(root) {
