@@ -19,7 +19,7 @@ export function HomeCard() {
       <a className="wm-jhc" href="#/journal">
         <span className="wm-jhc-head">
           <span className="wm-jhc-dot" aria-hidden="true" />
-          {t('journal.product.label')}
+          {t('journal.product.name')}
         </span>
         <span className="wm-jhc-body">{writer ? t('journal.home.writerBody') : t('journal.home.newBody')}</span>
         <span className="wm-jhc-link">{writer ? t('journal.home.writerLink') : t('journal.home.newLink')}</span>

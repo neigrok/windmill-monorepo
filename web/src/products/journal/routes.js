@@ -36,7 +36,7 @@ function render({ hash }) {
 
 export const journalRoutes = {
   id: 'journal',
-  label: t('journal.product.label'),
+  label: t('journal.product.name'),
   switchHash: '#/journal',
   home,
   landingAfterSignIn,
