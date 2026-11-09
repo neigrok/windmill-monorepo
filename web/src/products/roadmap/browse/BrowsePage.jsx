@@ -9,6 +9,7 @@ import { track } from '../../../telemetry/beacon.js';
 import { GalleryIndex, galleryHeader } from './galleryIndex.js';
 import { fetchGallery } from './GalleryClient.js';
 import { BrowseCard, BROWSE_CARD_CSS } from './BrowseCard.jsx';
+import { t } from '../i18n/index.js';
 
 const SKELETON_AFTER_MS = 400;
 const ARRIVAL_MS = 150;
@@ -96,7 +97,7 @@ export function BrowsePage() {
     <div className="wm-br">
       <style>{GALLERY_CARD_CSS + BROWSE_CARD_CSS + CSS}</style>
 
-      <a className="wm-br-plaque" href="#/app" title="Your trees">
+      <a className="wm-br-plaque" href="#/app" title={t('roadmap.browse.home')}>
         <span className="wm-br-glyph">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M12 20v-8" /><path d="M12 12c0-3 2-5 6-5 0 3-2 5-6 5z" /><path d="M12 14c0-2.5-1.7-4-5-4 0 2.5 1.7 4 5 4z" /></svg>
         </span>
@@ -104,14 +105,13 @@ export function BrowsePage() {
       </a>
 
       <main className="wm-br-main">
-        <h1 className="wm-br-title">Planted in public</h1>
+        <h1 className="wm-br-title">{t('roadmap.browse.title')}</h1>
         <p className="wm-br-sub">
-          Plans people chose to list, ranked by the forks they have inspired. Open one to see how far it has
-          got — or fork it and make the plan yours.
+          {t('roadmap.browse.sub')}
         </p>
         <p className="wm-br-line">
           {header.line && <><span>{header.line}</span><i className="wm-br-sep" /></>}
-          <a href="/gallery">How a tree gets here</a>
+          <a href="/gallery">{t('roadmap.browse.how')}</a>
         </p>
 
         <div className="wm-br-stage">
@@ -138,24 +138,23 @@ export function BrowsePage() {
 
         {index.isBare && (
           <div className="wm-br-bare">
-            <h2>Nothing on the wall yet</h2>
+            <h2>{t('roadmap.browse.bareTitle')}</h2>
             <p>
-              Listing is a deliberate choice — sharing a link keeps a tree unlisted, and putting one here is a
-              separate yes. Yours could be the first.
+              {t('roadmap.browse.bareBody')}
             </p>
-            <a href="#/app/new">Plant a tree</a>
+            <a href="#/app/new">{t('roadmap.browse.plant')}</a>
           </div>
         )}
 
         {index.status === 'failed' ? (
           <div className="wm-br-quiet">
-            <p>Can’t reach the gallery just now.</p>
-            <button type="button" className="wm-br-more" onClick={retry}>Try again</button>
+            <p>{t('roadmap.browse.unreachable')}</p>
+            <button type="button" className="wm-br-more" onClick={retry}>{t('roadmap.browse.retry')}</button>
           </div>
         ) : index.hasMore ? (
           <div className="wm-br-quiet">
             <button type="button" className="wm-br-more" onClick={showMore} disabled={index.status === 'paging'}>
-              {index.status === 'paging' ? 'Loading…' : 'Show more trees'}
+              {index.status === 'paging' ? t('roadmap.browse.loading') : t('roadmap.browse.showMore')}
             </button>
           </div>
         ) : null}

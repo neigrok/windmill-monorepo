@@ -5,6 +5,8 @@ import { Icon } from '../../../../design-system';
 import { KIND_CSS } from '../../theme.js';
 import { GraphDock } from '../GraphChrome.jsx';
 import { TabletEditor } from './TabletEditor.jsx';
+import { BULK, RECOLOR } from '../../copy.js';
+import { t } from '../../i18n/index.js';
 
 const shellBase = {
   display: 'flex',
@@ -57,21 +59,21 @@ const iconButton = {
 };
 
 const SEGMENTS = [
-  { direction: 'unlocks', label: 'unlocks →' },
-  { direction: 'needs', label: '← needs' },
+  { direction: 'unlocks', label: t('roadmap.tablet.directionUnlocks') },
+  { direction: 'needs', label: t('roadmap.tablet.directionNeeds') },
 ];
 
 function AimBar({ sourceLabel, direction, onToggleDirection, onCancel }) {
-  const label = sourceLabel || 'this step';
+  const label = sourceLabel || t('roadmap.tablet.thisStep');
   return (
-    <div style={{ ...shellBase, width: '100%' }} role="group" aria-label="Choose a step to connect">
+    <div style={{ ...shellBase, width: '100%' }} role="group" aria-label={t('roadmap.tablet.chooseStep')}>
       <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
         <span style={prompt}>
           {direction === 'needs'
-            ? <>Tap a prerequisite for <strong>{label}</strong></>
-            : <>Tap the step <strong>{label}</strong> unlocks</>}
+            ? t('roadmap.tablet.tapPrerequisite', { step: <strong>{label}</strong> })
+            : t('roadmap.tablet.tapUnlocked', { step: <strong>{label}</strong> })}
         </span>
-        <div style={{ display: 'flex', gap: 'var(--space-2)' }} role="group" aria-label="Link direction">
+        <div style={{ display: 'flex', gap: 'var(--space-2)' }} role="group" aria-label={t('roadmap.tablet.linkDirection')}>
           {SEGMENTS.map((segment) => {
             const active = direction === segment.direction;
             return (
@@ -95,7 +97,7 @@ function AimBar({ sourceLabel, direction, onToggleDirection, onCancel }) {
           })}
         </div>
       </div>
-      <button type="button" style={iconButton} aria-label="Cancel connect" onClick={onCancel}>
+      <button type="button" style={iconButton} aria-label={t('roadmap.tablet.cancelConnect')} onClick={onCancel}>
         <Icon name="x" size={20} color="var(--color-bark)" />
       </button>
     </div>
@@ -104,21 +106,21 @@ function AimBar({ sourceLabel, direction, onToggleDirection, onCancel }) {
 
 function RemoveLinkBar({ onRemove, onCancel }) {
   return (
-    <div style={{ ...shellBase, width: '100%' }} role="group" aria-label="Remove this link">
-      <span style={{ ...prompt, flex: 1, minWidth: 0 }}>Remove this link?</span>
+    <div style={{ ...shellBase, width: '100%' }} role="group" aria-label={t('roadmap.tablet.removeLink')}>
+      <span style={{ ...prompt, flex: 1, minWidth: 0 }}>{t('roadmap.tablet.removeLinkQuestion')}</span>
       <button
         type="button"
         onClick={onCancel}
         style={{ ...pill, border: '1.5px solid var(--border-default)', background: 'var(--surface-card)', color: 'var(--color-bark)' }}
       >
-        Cancel
+        {t('roadmap.tablet.cancel')}
       </button>
       <button
         type="button"
         onClick={onRemove}
         style={{ ...pill, border: '1.5px solid var(--color-bark)', background: 'var(--color-bark)', color: 'var(--surface-card)' }}
       >
-        Remove
+        {t('roadmap.tablet.remove')}
       </button>
     </div>
   );
@@ -180,20 +182,19 @@ const deleteButton = {
 };
 
 function BulkBar({ count, choice, onRecolor, onDelete, onDone }) {
-  const plural = count === 1 ? '' : 's';
   return (
-    <div style={{ ...bulkShell, width: '100%' }} role="group" aria-label={`${count} selected`}>
+    <div style={{ ...bulkShell, width: '100%' }} role="group" aria-label={t('roadmap.bulk.selected', { count })}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
-        <span style={countLabel}>{count} selected</span>
-        <button type="button" style={doneButton} onClick={onDone}>Done</button>
+        <span style={countLabel}>{t('roadmap.bulk.selected', { count })}</span>
+        <button type="button" style={doneButton} onClick={onDone}>{BULK.done}</button>
       </div>
 
-      <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }} role="group" aria-label="Recolor selected steps">
+      <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }} role="group" aria-label={RECOLOR.steps}>
         {choice.kinds.map((kind) => (
           <button
             key={kind.id}
             type="button"
-            aria-label={`Set kind to ${kind.label}`}
+            aria-label={t('roadmap.tablet.setKind', { kind: kind.label })}
             style={{ width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, border: 0, background: 'none', cursor: 'pointer' }}
             onClick={() => onRecolor(kind.hue)}
           >
@@ -213,7 +214,7 @@ function BulkBar({ count, choice, onRecolor, onDelete, onDone }) {
       {onDelete && (
         <button type="button" style={deleteButton} onClick={onDelete}>
           <Icon name="trash-2" size={16} color="var(--surface-card)" />
-          Delete {count} step{plural}
+          {t('roadmap.bulk.deleteSteps', { count, shown: count })}
         </button>
       )}
     </div>

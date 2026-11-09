@@ -3,6 +3,8 @@
 // leak in here. Parsing can never fail; the worst case is one root and a pile of ¶ notes, and
 // every liberty taken is visible in the gutter.
 
+import { t } from '../i18n/index.js';
+
 const PLAN_HUES = ['terracotta', 'olive', 'gold', 'brick', 'sky', 'plum'];
 const ROOT_LABEL_MAX = 200;
 const KIND_LABEL_MAX = 24;
@@ -174,12 +176,12 @@ function growNodes(lines, root, existingKinds, bindOnly = false) {
       }
       if (root.exported) line.content = unescapeExportText(line.content);
       const liberties = [];
-      if (line.ragged) liberties.push({ type: 'clamp', detail: 'mixed indent clamped' });
+      if (line.ragged) liberties.push({ type: 'clamp', detail: t('roadmap.paste.mixedIndentClamped') });
       let level = line.level;
       const ceiling = (stack.length > 0 ? stack[stack.length - 1].level : -1) + 1;
       if (level > ceiling) {
         level = ceiling;
-        liberties.push({ type: 'clamp', detail: 'indent clamped' });
+        liberties.push({ type: 'clamp', detail: t('roadmap.paste.indentClamped') });
       }
       let sibling = null;
       while (stack.length > 0 && stack[stack.length - 1].level >= level) {
@@ -199,7 +201,7 @@ function growNodes(lines, root, existingKinds, bindOnly = false) {
     if (nearest < 0) return;
     if (/^https?:\/\/\S+$/.test(line.content)) nodes[nearest].links.push(line.content);
     else nodes[nearest].notes.push(line.content);
-    marks[at] = { node: nearest, glyph: '¶', liberties: [{ type: 'note', detail: 'kept as a note' }] };
+    marks[at] = { node: nearest, glyph: '¶', liberties: [{ type: 'note', detail: t('roadmap.paste.keptAsNote') }] };
   });
 
   return { nodes, marks, kinds: book.kinds };
@@ -216,7 +218,7 @@ function assemble(root, grove, lines) {
       let n = 2;
       while (labels.has(`${label} (${n})`)) n += 1;
       label = `${label} (${n})`;
-      grove.marks[draft.line]?.liberties.push({ type: 'rename', detail: `renamed to "${label}"` });
+      grove.marks[draft.line]?.liberties.push({ type: 'rename', detail: t('roadmap.paste.renamedTo', { label }) });
     }
     if (label !== '') labels.add(label);
     const base = slug(label) || (index === 0 ? 'root' : 'step');

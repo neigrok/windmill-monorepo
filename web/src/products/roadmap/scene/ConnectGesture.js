@@ -1,5 +1,6 @@
 // Dragging a branch end onto a node: start() pulls a new edge from a rim port, startReconnect() re-aims one end of an existing one; the node under the cursor rings by verdict — valid, cyclic, or valid-but-costly.
 import { BODY_WU } from '../theme.js';
+import { t } from '../i18n/index.js';
 
 const SVGNS = 'http://www.w3.org/2000/svg';
 const NODE_RADIUS = BODY_WU / 2;
@@ -107,14 +108,14 @@ export class ConnectGesture {
       const rim = NODE_RADIUS * cam.zoom;
       if (cyclic) {
         this.showRing(ex, ey, rim, 'invalid');
-        this.showTip(ex, ey, rim, 'This would create a loop');
+        this.showTip(ex, ey, rim, t('roadmap.connect.loop'));
       } else if (valid) {
         const sameBranch = this.nodesById.get(from).branch === this.nodesById.get(to).branch;
         const redundant = this.active.mode === 'create' && this.active.sourceDescendants && this.active.sourceDescendants.has(to);
         const crossBranch = !sameBranch;
         if (redundant || crossBranch) {
           this.showRing(ex, ey, rim, 'cost');
-          this.showTip(ex, ey, rim, redundant ? 'Already implied' : 'Links across areas');
+          this.showTip(ex, ey, rim, redundant ? t('roadmap.connect.implied') : t('roadmap.connect.acrossAreas'));
         } else {
           this.showRing(ex, ey, rim, 'valid');
           this.hideTip();

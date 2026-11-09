@@ -5,6 +5,7 @@ import { Dialog } from '../../../design-system';
 import { track } from '../../../telemetry/beacon.js';
 import { SHORTCUTS_TITLE } from '../copy.js';
 import { visibleGroups, keyLabel, detectPlatform } from './shortcutMap.js';
+import { t } from '../i18n/index.js';
 
 function Keycap({ children }) {
   return <kbd className="st-keycap">{children}</kbd>;
@@ -23,18 +24,18 @@ export function ShortcutsDialog({ open, onClose, readOnly = false, owner = !read
   }, [open, view]);
 
   return (
-    <Dialog open={open} onClose={onClose} title={board ? SHORTCUTS_TITLE : 'Keyboard shortcuts'} width={600} preserveOutsideFocus
+    <Dialog open={open} onClose={onClose} title={board ? SHORTCUTS_TITLE : t('roadmap.shortcuts.keyboardShortcuts')} width={600} preserveOutsideFocus
       padding={board ? 'calc(var(--space-6) + var(--space-1))' : undefined}>
       {!board && <div className="st-sc-toolbar">
-        <div className="st-sc-toggle" role="group" aria-label="Platform">
-          <button type="button" aria-pressed={platform === 'mac'} onClick={() => setPlatform('mac')}>Mac</button>
-          <button type="button" aria-pressed={platform === 'windows'} onClick={() => setPlatform('windows')}>Windows</button>
+        <div className="st-sc-toggle" role="group" aria-label={t('roadmap.shortcuts.platform')}>
+          <button type="button" aria-pressed={platform === 'mac'} onClick={() => setPlatform('mac')}>{t('roadmap.shortcuts.mac')}</button>
+          <button type="button" aria-pressed={platform === 'windows'} onClick={() => setPlatform('windows')}>{t('roadmap.shortcuts.windows')}</button>
         </div>
       </div>}
 
       <div className={board ? 'st-sc-grid st-sc-grid--board' : 'st-sc-grid'}>
         {visibleGroups(readOnly, view, owner, graphAvailable).map((group) => (
-          <section className="st-sc-group" key={group.title}>
+          <section className="st-sc-group" key={group.id}>
             <h3 className="st-sc-heading">{group.title}</h3>
             <ul className="st-sc-list">
               {group.rows.map((row) => (
@@ -43,7 +44,7 @@ export function ShortcutsDialog({ open, onClose, readOnly = false, owner = !read
                   <span className="st-sc-keys">
                     {row.chords.map((chord, chordIndex) => (
                       <React.Fragment key={chordIndex}>
-                        {chordIndex > 0 && <span className="st-sc-or">or</span>}
+                        {chordIndex > 0 && <span className="st-sc-or">{t('roadmap.shortcuts.or')}</span>}
                         <span className="st-sc-chord">
                           {chord.map((token, tokenIndex) =>
                             token.kind === 'key'

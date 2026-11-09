@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityLog, ActivityEvent } from './ActivityLog.js';
+import { t } from '../i18n/index.js';
 
 const FLASH_MS = 1400;
 const TICKER_MS = 4500;
@@ -18,7 +19,7 @@ export function useActivity({ sceneRef, selectedId }) {
   const emit = useCallback((partial, options = {}) => {
     const event = new ActivityEvent({
       id: crypto.randomUUID?.() ?? `ev-${Date.now()}-${Math.round(Math.random() * 1e6)}`,
-      actor: partial.actor ?? (partial.verb === 'unlocked' ? null : 'You'),
+      actor: partial.actor ?? (partial.verb === 'unlocked' ? null : t('roadmap.activity.you')),
       verb: partial.verb,
       nodeId: partial.nodeId,
       label: partial.label,

@@ -3,6 +3,7 @@ import { Icon } from '../../../../design-system/Icon.jsx';
 import { track } from '../../../../telemetry/beacon.js';
 import { Checklist } from './Checklist.jsx';
 import { WORKSPACE } from '../../copy.js';
+import { t } from '../../i18n/index.js';
 
 // Note dialect: **bold**, *italic*, [text](url), "- " lists. Link hrefs are kept to safe schemes
 // so a note can't smuggle in a javascript: URL.
@@ -21,7 +22,7 @@ export function LinkRow({ url, title, domain, onDelete }) {
         <span className="st-link-go"><Icon name="external-link" size={14} /></span>
       </a>
       {onDelete && (
-        <button type="button" className="st-link-del" aria-label="Remove link" onClick={onDelete}>
+        <button type="button" className="st-link-del" aria-label={WORKSPACE.removeLink} onClick={onDelete}>
           <Icon name="x" size={13} />
         </button>
       )}
@@ -147,8 +148,8 @@ export function renderMarkdown(md, { sourceMap = false } = {}) {
 
 const ADD_CHOICES = [
   { kind: 'subtask', label: WORKSPACE.subtask, icon: 'clipboard-check' },
-  { kind: 'note', label: 'Note', icon: 'pencil' },
-  { kind: 'link', label: 'Link', icon: 'external-link' },
+  { kind: 'note', label: WORKSPACE.note, icon: 'pencil' },
+  { kind: 'link', label: t('roadmap.workspace.link'), icon: 'external-link' },
 ];
 
 const workspaceEvent = (action) => track('roadmap_board_workspace', { action, surface: 'dock' });
@@ -228,13 +229,13 @@ export function NodeWorkspace({ nodeId, workspace, hue, onAddSubtask, onToggleSu
 
       {noteVisible && (
         <div>
-          <div className="st-step-heading">Note</div>
+          <div className="st-step-heading">{WORKSPACE.note}</div>
           {noteEditing ? (
             <textarea
               autoFocus
               className="st-note-edit"
               value={noteDraft}
-              placeholder="Write a note…  **bold**, *italic*, [text](url), - lists"
+              placeholder={t('roadmap.workspace.notePlaceholder')}
               onChange={(event) => setNoteDraft(event.target.value)}
               onBlur={commitNote}
               onKeyDown={(event) => {
@@ -253,7 +254,7 @@ export function NodeWorkspace({ nodeId, workspace, hue, onAddSubtask, onToggleSu
 
       {linksVisible && (
         <div>
-          <div className="st-step-heading">Links</div>
+          <div className="st-step-heading">{t('roadmap.workspace.links')}</div>
           <div className="st-links">
             {links.map((link) => (
               <LinkRow key={link.id} url={link.url} title={link.title} domain={link.domain} onDelete={() => { workspaceEvent('linkDelete'); onDeleteLink(nodeId, link.id); }} />
@@ -263,7 +264,7 @@ export function NodeWorkspace({ nodeId, workspace, hue, onAddSubtask, onToggleSu
                 autoFocus={linkAdding}
                 className="st-link-input"
                 value={linkDraft}
-                placeholder="Paste or type a link"
+                placeholder={t('roadmap.workspace.linkPlaceholder')}
                 onChange={(event) => setLinkDraft(event.target.value)}
                 onBlur={blurLink}
                 onKeyDown={(event) => {
@@ -287,7 +288,7 @@ export function NodeWorkspace({ nodeId, workspace, hue, onAddSubtask, onToggleSu
             onClick={() => setMenuOpen((open) => !open)}
           >
             <Icon name="plus" size={14} />
-            Add to this step
+            {t('roadmap.workspace.addToStep')}
           </button>
           {menuOpen && (
             <div className="st-ws-add-menu" role="menu">

@@ -12,6 +12,7 @@ import { DOCK_WIDTH } from '../graph/viewport.js';
 import { stampBorn } from '../persistence/ViewPrefs.js';
 import { prefersReducedMotion } from '../theme.js';
 import { DEVICE_REFUSED } from '../copy.js';
+import { t } from '../i18n/index.js';
 import { countBucket } from '../board/acts.js';
 import { reportUnexpectedFailure } from '../reportFailure.js';
 import { track } from '../../../telemetry/beacon.js';
@@ -163,7 +164,8 @@ export function NewTreeBirth() {
 
   const planting = phase === 'planting';
   const composing = composerOpen && !deviceRefused;
-  const plaqueName = name.trim() || 'Untitled roadmap';
+  const plaqueName = name.trim() || t('roadmap.untitled');
+  const pasteDoor = <button type="button" className="birth-paste-door" onClick={() => setComposerOpen(true)}>{t('roadmap.birth.pasteDoor')}</button>;
 
   const composer = composing && parse && (
     <PasteComposer
@@ -204,9 +206,9 @@ export function NewTreeBirth() {
           </div>
         ) : phase === 'error' ? (
           <>
-            <div style={title}>Couldn’t plant it just now</div>
-            <p style={sub}>Nothing was created. Try again in a moment.</p>
-            <button type="button" className="birth-plant" onClick={() => setPhase('naming')}>Try again</button>
+            <div style={title}>{t('roadmap.birth.failedTitle')}</div>
+            <p style={sub}>{t('roadmap.birth.failedBody')}</p>
+            <button type="button" className="birth-plant" onClick={() => setPhase('naming')}>{t('roadmap.birth.retry')}</button>
           </>
         ) : (
           <>
@@ -215,20 +217,20 @@ export function NewTreeBirth() {
               value={name}
               onChange={(e) => setName(e.target.value)}
               onKeyDown={onKeyDown}
-              placeholder="Name your roadmap"
+              placeholder={t('roadmap.birth.name')}
               disabled={planting}
-              aria-label="Name your roadmap"
+              aria-label={t('roadmap.birth.name')}
               style={nameInput}
             />
             <div style={hint}>
-              {planting ? 'Planting…' : (<><kbd style={kbd}>↵</kbd> plants your tree</>)}
+              {planting ? t('roadmap.birth.planting') : t('roadmap.birth.enterPlants', { key: <kbd style={kbd}>↵</kbd> })}
             </div>
             {breakpoint !== 'desktop' && (
-              <button type="button" className="birth-plant" onClick={plant} disabled={planting}>Plant</button>
+              <button type="button" className="birth-plant" onClick={plant} disabled={planting}>{t('roadmap.birth.plant')}</button>
             )}
             {!planting && !composerOpen && (
               <div style={hint}>
-                or <button type="button" className="birth-paste-door" onClick={() => setComposerOpen(true)}>paste a plan</button>{breakpoint !== 'phone' && ' — ⌘V anywhere'}
+                {breakpoint !== 'phone' ? t('roadmap.birth.orPasteAnywhere', { paste: pasteDoor }) : t('roadmap.birth.orPaste', { paste: pasteDoor })}
               </div>
             )}
           </>

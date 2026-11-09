@@ -1,87 +1,97 @@
 // The canonical map of roadmap shortcuts behind the ShortcutsDialog. A chord is an ordered token list: modifiers lead, the letter lands.
 
+import { t } from '../i18n/index.js';
+
 const key = (label) => ({ kind: 'key', label });
 const gesture = (label) => ({ kind: 'gesture', label });
 
 const HISTORY_GROUP = {
-  title: 'History',
+  id: 'history',
+  title: t('roadmap.shortcuts.history'),
   rows: [
-    { label: 'Undo', chords: [[key('⌘'), key('Z')]] },
-    { label: 'Redo', chords: [[key('⇧'), key('⌘'), key('Z')]] },
+    { label: t('roadmap.shortcuts.undo'), chords: [[key('⌘'), key('Z')]] },
+    { label: t('roadmap.shortcuts.redo'), chords: [[key('⇧'), key('⌘'), key('Z')]] },
   ],
 };
 
 export const GRAPH_SHORTCUT_GROUPS = [
   {
-    title: 'Navigate',
+    id: 'navigate',
+    title: t('roadmap.shortcuts.navigate'),
     rows: [
-      { label: 'Pan the canvas', chords: [[gesture('Drag')], [gesture('Space+Drag')]] },
-      { label: 'Zoom in / out', chords: [[gesture('Scroll')], [key('⌘'), key('=')], [key('⌘'), key('−')]] },
-      { label: 'Zoom to a point', chords: [[gesture('Double-click')]] },
-      { label: 'Focus on a step', chords: [[key('F')]] },
-      { label: 'All steps', chords: [[key('0')]] },
-      { label: 'Find a step', chords: [[key('/')]] },
+      { label: t('roadmap.shortcuts.pan'), chords: [[gesture(t('roadmap.shortcuts.drag'))], [gesture(t('roadmap.shortcuts.spaceDrag'))]] },
+      { label: t('roadmap.shortcuts.zoom'), chords: [[gesture(t('roadmap.shortcuts.scroll'))], [key('⌘'), key('=')], [key('⌘'), key('−')]] },
+      { label: t('roadmap.shortcuts.zoomToPoint'), chords: [[gesture(t('roadmap.shortcuts.doubleClick'))]] },
+      { label: t('roadmap.shortcuts.focusStep'), chords: [[key('F')]] },
+      { label: t('roadmap.shortcuts.allSteps'), chords: [[key('0')]] },
+      { label: t('roadmap.shortcuts.findStep'), chords: [[key('/')]] },
     ],
   },
   {
-    title: 'Select',
+    id: 'select',
+    title: t('roadmap.shortcuts.select'),
     rows: [
-      { label: 'Select a step', chords: [[gesture('Click')]] },
-      { label: 'Add / remove from set', chords: [[key('⇧'), gesture('Click')]] },
-      { label: 'Select all steps', chords: [[key('⌘'), key('A')]] },
-      { label: 'Marquee select', chords: [[key('⇧'), gesture('Drag')]] },
-      { label: 'Deselect', chords: [[key('esc')]] },
+      { label: t('roadmap.shortcuts.selectStep'), chords: [[gesture(t('roadmap.shortcuts.click'))]] },
+      { label: t('roadmap.shortcuts.toggleInSet'), chords: [[key('⇧'), gesture(t('roadmap.shortcuts.click'))]] },
+      { label: t('roadmap.shortcuts.selectAll'), chords: [[key('⌘'), key('A')]] },
+      { label: t('roadmap.shortcuts.marquee'), chords: [[key('⇧'), gesture(t('roadmap.shortcuts.drag'))]] },
+      { label: t('roadmap.shortcuts.deselect'), chords: [[key(t('roadmap.shortcuts.keyEsc'))]] },
     ],
   },
   {
-    title: 'Edit',
+    id: 'edit',
+    title: t('roadmap.shortcuts.edit'),
     rows: [
-      { label: 'Rename step', chords: [[key('⏎')]] },
-      { label: 'Delete step', chords: [[key('⌫')]] },
-      { label: 'Paste a plan (append)', chords: [[key('⌘'), key('V')]] },
-      { label: 'Ask AI', chords: [[key('⌘'), key('K')]] },
+      { label: t('roadmap.shortcuts.renameStep'), chords: [[key('⏎')]] },
+      { label: t('roadmap.shortcuts.deleteStep'), chords: [[key('⌫')]] },
+      { label: t('roadmap.shortcuts.pastePlanAppend'), chords: [[key('⌘'), key('V')]] },
+      { label: t('roadmap.shortcuts.askAI'), chords: [[key('⌘'), key('K')]] },
     ],
   },
   HISTORY_GROUP,
   {
-    title: 'View',
+    id: 'view',
+    title: t('roadmap.shortcuts.view'),
     rows: [
-      { label: 'Keyboard shortcuts', chords: [[key('?')]] },
-      { label: 'Activity feed', chords: [[key('A')]], owner: true },
+      { label: t('roadmap.shortcuts.keyboardShortcuts'), chords: [[key('?')]] },
+      { label: t('roadmap.shortcuts.activityFeed'), chords: [[key('A')]], owner: true },
     ],
   },
 ];
 
 export const BOARD_SHORTCUT_GROUPS = [
   {
-    title: 'Board',
+    id: 'board',
+    title: t('roadmap.shortcuts.board'),
     rows: [
-      { label: 'Find a step', chords: [[key('/')]] },
-      { label: 'Move between steps', chords: [[key('↑'), key('↓')]] },
-      { label: 'Move between columns', chords: [[key('←'), key('→')]] },
-      { label: 'Open step', chords: [[key('⏎')]] },
-      { label: 'Close step', chords: [[key('esc')]] },
-      { label: 'Complete step', chords: [[key('C')]], owner: true },
-      { label: 'Delete step', chords: [[key('⌫')]], owner: true },
-      { label: 'Board / Graph', graph: true, chords: [[key('G')]] },
+      { label: t('roadmap.shortcuts.findStep'), chords: [[key('/')]] },
+      { label: t('roadmap.shortcuts.moveSteps'), chords: [[key('↑'), key('↓')]] },
+      { label: t('roadmap.shortcuts.moveColumns'), chords: [[key('←'), key('→')]] },
+      { label: t('roadmap.shortcuts.openStep'), chords: [[key('⏎')]] },
+      { label: t('roadmap.shortcuts.closeStep'), chords: [[key(t('roadmap.shortcuts.keyEsc'))]] },
+      { label: t('roadmap.shortcuts.completeStep'), chords: [[key('C')]], owner: true },
+      { label: t('roadmap.shortcuts.deleteStep'), chords: [[key('⌫')]], owner: true },
+      { label: t('roadmap.shortcuts.switchView'), graph: true, chords: [[key('G')]] },
     ],
   },
   {
-    title: 'Edit',
+    id: 'edit',
+    title: t('roadmap.shortcuts.edit'),
     rows: [
-      { label: 'Ask AI', chords: [[key('⌘'), key('K')]] },
-      { label: 'Paste a plan', chords: [[key('⌘'), key('V')]] },
+      { label: t('roadmap.shortcuts.askAI'), chords: [[key('⌘'), key('K')]] },
+      { label: t('roadmap.shortcuts.pastePlan'), chords: [[key('⌘'), key('V')]] },
     ],
   },
   HISTORY_GROUP,
   {
-    title: 'View',
-    rows: [{ label: 'Keyboard shortcuts', chords: [[key('?')]] }],
+    id: 'view',
+    title: t('roadmap.shortcuts.view'),
+    rows: [{ label: t('roadmap.shortcuts.keyboardShortcuts'), chords: [[key('?')]] }],
   },
 ];
 
 // Authored Mac-style; Windows swaps only these keys.
-const WINDOWS_KEYS = { '⌘': 'Ctrl', '⌥': 'Alt', '⌫': 'Delete', '⏎': 'Enter' };
+const WINDOWS_KEYS = { '⌘': t('roadmap.shortcuts.keyCtrl'), '⌥': t('roadmap.shortcuts.keyAlt'), '⌫': t('roadmap.shortcuts.keyDelete'), '⏎': t('roadmap.shortcuts.keyEnter') };
 
 export function keyLabel(label, platform) {
   if (platform !== 'windows') return label;
@@ -100,9 +110,9 @@ export function visibleGroups(readOnly, view = 'graph', owner = !readOnly, graph
   const available = view === 'board' ? BOARD_SHORTCUT_GROUPS : GRAPH_SHORTCUT_GROUPS;
   const groups = graphAvailable ? available : available.map((group) => ({ ...group, rows: group.rows.filter((row) => !row.graph) }));
   if (!readOnly) return groups;
-  const reading = view === 'board' ? 'Board' : 'Navigate';
+  const reading = view === 'board' ? 'board' : 'navigate';
   return groups
-    .filter((group) => group.title === reading || group.title === 'View')
+    .filter((group) => group.id === reading || group.id === 'view')
     .map((group) => ({ ...group, rows: group.rows.filter((row) => owner || !row.owner) }));
 }
 

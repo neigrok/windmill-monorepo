@@ -5,6 +5,7 @@ import { Icon } from '../../../../design-system/Icon.jsx';
 import { KIND_CSS, NODE_COLOR_NAMES } from '../../theme.js';
 import { RECOLOR } from '../../copy.js';
 import { hueName, kindName } from '../../model/Legend.js';
+import { t } from '../../i18n/index.js';
 
 
 export function KindLegend({
@@ -121,7 +122,7 @@ export function KindLegend({
       <button
         type="button"
         onClick={() => toggleOpen(true)}
-        aria-label="Show colour legend"
+        aria-label={t('roadmap.legend.show')}
         style={{
           ...card,
           display: 'inline-flex',
@@ -154,8 +155,8 @@ export function KindLegend({
         <button
           type="button"
           onClick={() => toggleOpen(false)}
-          aria-label="Collapse legend"
-          title="Collapse"
+          aria-label={t('roadmap.legend.collapse')}
+          title={t('roadmap.legend.collapseShort')}
           style={{
             position: 'absolute',
             top: 6,
@@ -241,7 +242,7 @@ export function KindLegend({
                         key={hue}
                         type="button"
                         disabled={disabled}
-                        title={disabled ? `${hueName(hue)} — in use` : hueName(hue)}
+                        title={disabled ? t('roadmap.legend.hueInUse', { hue: hueName(hue) }) : hueName(hue)}
                         onClick={(e) => { e.stopPropagation(); pickHue(k, hue); }}
                         style={{
                           width: 18,
@@ -297,7 +298,7 @@ export function KindLegend({
                     ref={descRef}
                     value={descDraft}
                     maxLength={80}
-                    placeholder="What belongs here?"
+                    placeholder={t('roadmap.legend.describePlaceholder')}
                     onChange={(e) => setDescDraft(e.target.value)}
                     onBlur={commitDesc}
                     onKeyDown={(e) => {
@@ -344,7 +345,7 @@ export function KindLegend({
               ) : onRemove ? (
                 <button
                   type="button"
-                  aria-label={`Remove ${kindName(k)}`}
+                  aria-label={t('roadmap.legend.remove', { kind: kindName(k) })}
                   onClick={(e) => { e.stopPropagation(); onRemove(k.id); }}
                   style={{
                     flexShrink: 0,
@@ -390,7 +391,7 @@ export function KindLegend({
           onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
         >
           <Icon name="plus" size={13} />
-          Add a kind
+          {t('roadmap.legend.add')}
         </button>
       )}
     </div>

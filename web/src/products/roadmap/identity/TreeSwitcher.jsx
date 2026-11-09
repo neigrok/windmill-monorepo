@@ -7,6 +7,8 @@ import { reportUnexpectedFailure } from '../reportFailure.js';
 import { track } from '../../../telemetry/beacon.js';
 import { hueOf } from '../theme.js';
 import { dismissOverlayOutside } from '../board/BoardControls.jsx';
+import { ROADMAP_SHEET } from '../copy.js';
+import { t } from '../i18n/index.js';
 
 // Unclaimed device rows edit the local seams and must never see the server.
 function seamOf(tree) {
@@ -16,7 +18,7 @@ function seamOf(tree) {
 
 function tagOf(tree) {
   if (!tree.origin) return null;
-  return tree.origin === 'device' && !tree.claimed ? 'on this device' : 'synced';
+  return tree.origin === 'device' && !tree.claimed ? t('roadmap.switcher.onDevice') : t('roadmap.switcher.synced');
 }
 
 function agoFrom(updatedAt) {
@@ -24,13 +26,13 @@ function agoFrom(updatedAt) {
   const then = typeof updatedAt === 'number' ? updatedAt : Date.parse(updatedAt);
   if (Number.isNaN(then)) return null;
   const secs = Math.max(0, Math.round((Date.now() - then) / 1000));
-  if (secs < 60) return 'just now';
+  if (secs < 60) return t('roadmap.ago.justNow');
   const mins = Math.round(secs / 60);
-  if (mins < 60) return `${mins}m ago`;
+  if (mins < 60) return t('roadmap.ago.minutesShort', { count: mins });
   const hrs = Math.round(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
+  if (hrs < 24) return t('roadmap.ago.hoursShort', { count: hrs });
   const days = Math.round(hrs / 24);
-  return days < 7 ? `${days}d ago` : `${Math.round(days / 7)}w ago`;
+  return days < 7 ? t('roadmap.ago.daysShort', { count: days }) : t('roadmap.ago.weeksShort', { count: Math.round(days / 7) });
 }
 
 export function TreeSwitcher({ current, listTrees, onNew, onRename, onPreviewTitle, onDelete }) {
@@ -127,11 +129,11 @@ export function TreeSwitcher({ current, listTrees, onNew, onRename, onPreviewTit
     window.location.hash = `#/app/${id}`;
   };
 
-  const startEdit = (t) => {
+  const startEdit = (tree) => {
     clearTimeout(goTimerRef.current); // the click that preceded the pencil/double-click must not still navigate
     setConfirmId(null);
-    setDraft(t.title ?? '');
-    setEditingId(t.id);
+    setDraft(tree.title ?? '');
+    setEditingId(tree.id);
   };
 
   const commitEdit = () => {
@@ -169,25 +171,25 @@ export function TreeSwitcher({ current, listTrees, onNew, onRename, onPreviewTit
     onPreviewTitle?.(id, rows.find((r) => r.id === id)?.title ?? '');
   };
 
-  const confirmDelete = async (t) => {
+  const confirmDelete = async (tree) => {
     setConfirmId(null);
     try {
-      await onDelete?.(t.id, { local: seamOf(t) === 'local' });
+      await onDelete?.(tree.id, { local: seamOf(tree) === 'local' });
     } catch (error) {
       reportUnexpectedFailure('roadmap-switcher-delete', error);
       track('roadmap_sheet', { step: 'delete', door: 'switcher', outcome: 'failed' });
       return; // a refusal leaves the row standing
     }
     track('roadmap_sheet', { step: 'delete', door: 'switcher' });
-    const remaining = (Array.isArray(trees) ? trees : []).filter((r) => r.id !== t.id);
+    const remaining = (Array.isArray(trees) ? trees : []).filter((r) => r.id !== tree.id);
     setTrees(remaining);
-    if (t.id !== current?.id) return;
+    if (tree.id !== current?.id) return;
     setOpen(false); // land on the newest remaining, or hand bare #/app to the resolver
     window.location.hash = remaining.length ? `#/app/${remaining[0].id}` : '#/app';
   };
 
   const liveDraft = editingId != null && editingId === current?.id;
-  const name = (liveDraft ? draft : current?.title)?.trim() || 'Untitled roadmap';
+  const name = (liveDraft ? draft : current?.title)?.trim() || t('roadmap.untitled');
 
   return (
     <div ref={rootRef} style={{ position: 'relative', display: 'inline-flex', maxWidth: '100%' }}>
@@ -218,48 +220,48 @@ export function TreeSwitcher({ current, listTrees, onNew, onRename, onPreviewTit
 
       {open && (
         <div role="menu" style={menu}>
-          <div style={groupLabel}>YOURS</div>
-          {rows.map((t) => {
-            const isCurrent = t.id === current?.id;
-            const editable = seamOf(t) !== null;
-            const editing = editingId === t.id;
-            const confirming = confirmId === t.id;
-            const rowTitle = t.title?.trim() || 'Untitled roadmap';
+          <div style={groupLabel}>{t('roadmap.switcher.yours')}</div>
+          {rows.map((tree) => {
+            const isCurrent = tree.id === current?.id;
+            const editable = seamOf(tree) !== null;
+            const editing = editingId === tree.id;
+            const confirming = confirmId === tree.id;
+            const rowTitle = tree.title?.trim() || t('roadmap.untitled');
             return (
-              <div key={t.id} role="menuitem" tabIndex={0}
-                className={flashId === t.id ? 'st-switcher-flash' : undefined}
+              <div key={tree.id} role="menuitem" tabIndex={0}
+                className={flashId === tree.id ? 'st-switcher-flash' : undefined}
                 onClick={(e) => {
                   const swallow = swallowRef.current;
-                  if (swallow?.rowId === t.id && Date.now() - swallow.at < 350) {
+                  if (swallow?.rowId === tree.id && Date.now() - swallow.at < 350) {
                     swallowRef.current = null; // this click blurred the editor into a commit — it never switches trees
                     return;
                   }
                   if (editing || confirming) return;
-                  if (!editable) return void go(t.id); // no editor behind this row — navigate instantly
+                  if (!editable) return void go(tree.id); // no editor behind this row — navigate instantly
                   if (e.detail > 1) return void clearTimeout(goTimerRef.current); // second click of a double-click
                   clearTimeout(goTimerRef.current);
-                  goTimerRef.current = setTimeout(() => go(t.id), 220); // a beat of patience keeps the double-click door open
+                  goTimerRef.current = setTimeout(() => go(tree.id), 220); // a beat of patience keeps the double-click door open
                 }}
-                onDoubleClick={() => { if (editable && !editing && !confirming) startEdit(t); }}
+                onDoubleClick={() => { if (editable && !editing && !confirming) startEdit(tree); }}
                 onKeyDown={(e) => {
                   if (e.target !== e.currentTarget) return;
-                  if ((e.key === 'Enter' || e.key === ' ') && !editing && !confirming) { e.preventDefault(); go(t.id); }
+                  if ((e.key === 'Enter' || e.key === ' ') && !editing && !confirming) { e.preventDefault(); go(tree.id); }
                 }}
-                onMouseEnter={() => setHoverId(t.id)}
-                onMouseLeave={() => setHoverId((h) => (h === t.id ? null : h))}
+                onMouseEnter={() => setHoverId(tree.id)}
+                onMouseLeave={() => setHoverId((h) => (h === tree.id ? null : h))}
                 style={{
                   ...row,
                   cursor: editing || confirming ? 'default' : 'pointer',
                   background: isCurrent ? 'var(--color-brand-soft)'
-                    : hoverId === t.id && !confirming ? 'var(--surface-hover)' : 'transparent',
+                    : hoverId === tree.id && !confirming ? 'var(--surface-hover)' : 'transparent',
                   boxShadow: editing ? 'inset 0 0 0 1.5px var(--accent-terracotta-400)' : undefined,
                 }}
               >
-                <Ring done={t.done} total={t.total} kind={t.dominantKind} />
+                <Ring done={tree.done} total={tree.total} kind={tree.dominantKind} />
                 {editing ? (
-                  <input ref={inputRef} value={draft} aria-label="Tree name" maxLength={200}
-                    onChange={(e) => { setDraft(e.target.value); onPreviewTitle?.(t.id, e.target.value); }}
-                    onBlur={() => { swallowRef.current = { rowId: t.id, at: Date.now() }; commitEdit(); }}
+                  <input ref={inputRef} value={draft} aria-label={t('roadmap.switcher.nameLabel')} maxLength={200}
+                    onChange={(e) => { setDraft(e.target.value); onPreviewTitle?.(tree.id, e.target.value); }}
+                    onBlur={() => { swallowRef.current = { rowId: tree.id, at: Date.now() }; commitEdit(); }}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') { e.preventDefault(); commitEdit(); }
                       if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); cancelEdit(); }
@@ -270,33 +272,33 @@ export function TreeSwitcher({ current, listTrees, onNew, onRename, onPreviewTit
                   />
                 ) : confirming ? (
                   <span style={rowText}>
-                    <span style={confirmCopy}>Delete {rowTitle}? This can’t be undone</span>
+                    <span style={confirmCopy}>{t('roadmap.switcher.deleteConfirm', { title: rowTitle })}</span>
                     <span style={{ display: 'flex', gap: 8, marginTop: 3 }}>
-                      <button type="button" onClick={(e) => { e.stopPropagation(); confirmDelete(t); }} style={confirmDeleteBtn}>Delete</button>
-                      <button type="button" onClick={(e) => { e.stopPropagation(); setConfirmId(null); }} style={confirmKeepBtn}>Keep</button>
+                      <button type="button" onClick={(e) => { e.stopPropagation(); confirmDelete(tree); }} style={confirmDeleteBtn}>{t('roadmap.switcher.delete')}</button>
+                      <button type="button" onClick={(e) => { e.stopPropagation(); setConfirmId(null); }} style={confirmKeepBtn}>{t('roadmap.switcher.keep')}</button>
                     </span>
                   </span>
                 ) : (
                   <span style={rowText}>
-                    <span style={rowName} title={t.title?.trim() || undefined}>{rowTitle}</span>
-                    <RowMeta tree={t} />
+                    <span style={rowName} title={tree.title?.trim() || undefined}>{rowTitle}</span>
+                    <RowMeta tree={tree} />
                   </span>
                 )}
                 {editable && !editing && !confirming && (
                   <span style={{
                     display: 'inline-flex', gap: 2, flex: 'none',
-                    opacity: hoverId === t.id ? 1 : 0,
-                    pointerEvents: hoverId === t.id ? 'auto' : 'none',
+                    opacity: hoverId === tree.id ? 1 : 0,
+                    pointerEvents: hoverId === tree.id ? 'auto' : 'none',
                     transition: 'opacity var(--duration-fast) var(--ease-standard)',
                   }}>
-                    <button type="button" aria-label={`Rename ${rowTitle}`} style={action}
-                      onClick={(e) => { e.stopPropagation(); startEdit(t); }}
+                    <button type="button" aria-label={t('roadmap.switcher.rename', { title: rowTitle })} style={action}
+                      onClick={(e) => { e.stopPropagation(); startEdit(tree); }}
                       onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--color-brand-soft)'; e.currentTarget.style.color = 'var(--accent-terracotta-600)'; }}
                       onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--text-tertiary)'; }}>
                       <Icon name="pencil" size={12} />
                     </button>
-                    <button type="button" aria-label={`Delete ${rowTitle}`} style={action}
-                      onClick={(e) => { e.stopPropagation(); setConfirmId(t.id); }}
+                    <button type="button" aria-label={t('roadmap.switcher.deleteTree', { title: rowTitle })} style={action}
+                      onClick={(e) => { e.stopPropagation(); setConfirmId(tree.id); }}
                       onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--color-danger-bg)'; e.currentTarget.style.color = 'var(--accent-brick-500)'; }}
                       onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--text-tertiary)'; }}>
                       <Icon name="trash-2" size={12} />
@@ -315,16 +317,16 @@ export function TreeSwitcher({ current, listTrees, onNew, onRename, onPreviewTit
             onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
             style={{ ...row, fontWeight: 800 }}>
             <span style={bud} />
-            New tree
+            {t('roadmap.switcher.newTree')}
           </button>
 
-          <button type="button" role="menuitem" aria-label="Browse trees planted in public"
+          <button type="button" role="menuitem" aria-label={t('roadmap.switcher.browse')}
             onClick={() => { setOpen(false); track('roadmap_sheet', { step: 'browse', door: 'switcher' }); window.location.hash = '#/browse'; }}
             onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--surface-hover)'; }}
             onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
             style={row}>
             <span style={publicGlyph} aria-hidden><Icon name="compass" size={14} /></span>
-            <span style={{ flex: 1, fontWeight: 700 }}>Planted in public</span>
+            <span style={{ flex: 1, fontWeight: 700 }}>{ROADMAP_SHEET.plantedInPublic}</span>
             <span style={{ display: 'inline-flex', flex: 'none', color: 'var(--text-tertiary)' }} aria-hidden><Icon name="arrow-right" size={13} /></span>
           </button>
         </div>
@@ -338,13 +340,13 @@ export default TreeSwitcher;
 function mergeCurrent(trees, current) {
   const list = Array.isArray(trees) ? trees : [];
   if (!current) return list;
-  if (list.some((t) => t.id === current.id)) return list;
+  if (list.some((tree) => tree.id === current.id)) return list;
   return [{ id: current.id, title: current.title, done: current.done, total: current.total, dominantKind: current.dominantKind }, ...list];
 }
 
-function readout(t) {
-  const ago = agoFrom(t.updatedAt);
-  const count = t.total != null ? `${t.done ?? 0} of ${t.total}` : null;
+function readout(tree) {
+  const ago = agoFrom(tree.updatedAt);
+  const count = tree.total != null ? t('roadmap.switcher.progress', { done: tree.done ?? 0, total: tree.total }) : null;
   return [count, ago].filter(Boolean).join(' · ');
 }
 

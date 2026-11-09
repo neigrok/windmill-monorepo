@@ -1,9 +1,11 @@
+import { t } from '../i18n/index.js';
+
 export const CHIPS_AT = 24;
 export const SEARCH_AT = 100;
 
 export function galleryHeader(count) {
   return {
-    line: count === 0 ? '' : `${count} ${count === 1 ? 'tree' : 'trees'} planted in public`,
+    line: count === 0 ? '' : t('roadmap.browse.count', { count }),
     chips: count >= CHIPS_AT,
     search: count >= SEARCH_AT,
   };
@@ -57,8 +59,8 @@ export class GalleryIndex {
 }
 
 export function cardMark(entry) {
-  if (entry.mine) return { badge: 'Listed by you', fork: 'none', href: `#/app/${entry.id}` };
-  if (entry.copyId) return { badge: 'Forked', fork: 'copy', href: `#/t/${entry.id}` };
-  if (entry.forked) return { badge: 'Forked', fork: 'done', href: `#/t/${entry.id}` };
+  if (entry.mine) return { badge: t('roadmap.browse.listedByYou'), fork: 'none', href: `#/app/${entry.id}` };
+  if (entry.copyId) return { badge: t('roadmap.browse.forkedBadge'), fork: 'copy', href: `#/t/${entry.id}` };
+  if (entry.forked) return { badge: t('roadmap.browse.forkedBadge'), fork: 'done', href: `#/t/${entry.id}` };
   return { badge: '', fork: 'offer', href: `#/t/${entry.id}` };
 }

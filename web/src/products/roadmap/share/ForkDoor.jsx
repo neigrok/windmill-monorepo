@@ -10,6 +10,7 @@ import { reportUnexpectedFailure } from '../reportFailure.js';
 import { noteForked } from '../persistence/ViewPrefs.js';
 import { prefersReducedMotion } from '../theme.js';
 import { track } from '../../../telemetry/beacon.js';
+import { t } from '../i18n/index.js';
 import './fork-door.css';
 
 const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -115,7 +116,7 @@ export function ForkDoor({ open, presentation = 'sheet', treeId, signedIn = fals
     setTypo(false);
   }
 
-  const stepsPhrase = stepCount ? `all ${stepCount} steps` : 'every step';
+  const plantsCopy = stepCount ? t('roadmap.fork.plantsAll', { count: stepCount }) : t('roadmap.fork.plantsEvery');
   const instantFork = signedIn && forkError !== 'unauthenticated';
   const centered = !dialog && instantFork;
   const titleStyle = centered ? { ...TITLE_STYLE, fontSize: 22, textAlign: 'center' } : TITLE_STYLE;
@@ -155,62 +156,62 @@ export function ForkDoor({ open, presentation = 'sheet', treeId, signedIn = fals
           <path d="M3.5 7 L12 13 L20.5 7" />
         </svg>
       </div>
-      <h2 id={titleId} style={{ ...TITLE_STYLE, marginTop: 14 }}>Check your email</h2>
+      <h2 id={titleId} style={{ ...TITLE_STYLE, marginTop: 14 }}>{t('roadmap.fork.sentTitle')}</h2>
       <p style={{ ...COPY_STYLE, textAlign: 'center' }}>
-        We sent a link to {email.trim()}. It works once, lasts 15 minutes, and finishes the fork — the copy lands in your trees.
+        {t('roadmap.fork.sentBody', { email: email.trim() })}
       </p>
       <div style={{ display: 'grid', justifyContent: 'center', marginTop: 14 }}>
-        <Button variant="ghost" size="sm" onClick={backToForm}>Use a different email</Button>
+        <Button variant="ghost" size="sm" onClick={backToForm}>{t('roadmap.fork.differentEmail')}</Button>
       </div>
     </div>
   ) : phase === 'rate_limited' ? (
     <div>
-      <h2 id={titleId} style={TITLE_STYLE}>That's a few links in a row</h2>
+      <h2 id={titleId} style={TITLE_STYLE}>{t('roadmap.fork.rateLimitedTitle')}</h2>
       <p style={COPY_STYLE}>
-        Check your spam folder first — or try again in 10 minutes. Only the newest link carries this fork.
+        {t('roadmap.fork.rateLimitedBody')}
       </p>
       <div style={{ display: 'grid', marginTop: 14 }}>
-        <Button variant="ghost" size="sm" onClick={backToForm}>Use a different email</Button>
+        <Button variant="ghost" size="sm" onClick={backToForm}>{t('roadmap.fork.differentEmail')}</Button>
       </div>
     </div>
   ) : phase === 'unreachable' ? (
     <div>
-      <h2 id={titleId} style={TITLE_STYLE}>Can't reach windmill.works</h2>
-      <p style={COPY_STYLE}>Nothing was sent — try again in a moment.</p>
+      <h2 id={titleId} style={TITLE_STYLE}>{t('roadmap.fork.unreachableTitle')}</h2>
+      <p style={COPY_STYLE}>{t('roadmap.fork.unreachableBody')}</p>
       <div style={{ display: 'grid', marginTop: 14 }}>
-        <Button variant="ghost" size="sm" onClick={backToForm}>Back</Button>
+        <Button variant="ghost" size="sm" onClick={backToForm}>{t('roadmap.fork.back')}</Button>
       </div>
     </div>
   ) : instantFork ? (
     <div>
-      <h2 id={titleId} style={titleStyle}>Make it yours</h2>
+      <h2 id={titleId} style={titleStyle}>{t('roadmap.fork.title')}</h2>
       <p style={copyStyle}>
-        Forking plants a copy of {stepsPhrase} in your trees — progress cleared, yours to grow.
+        {plantsCopy}
       </p>
       <div style={{ display: 'grid', marginTop: contentGap }}>
         <Button variant="primary" size="lg" onClick={submitFork} disabled={busy}>
-          {busy ? 'Forking…' : 'Fork this tree'}
+          {busy ? t('roadmap.fork.forking') : t('roadmap.fork.submit')}
         </Button>
       </div>
       {forkError === 'failed' && (
-        <p style={FINE_PRINT_STYLE}>Couldn't fork just now — try again in a moment.</p>
+        <p style={FINE_PRINT_STYLE}>{t('roadmap.fork.failed')}</p>
       )}
     </div>
   ) : (
     <form onSubmit={submitEmail}>
-      <h2 id={titleId} style={titleStyle}>Make it yours</h2>
+      <h2 id={titleId} style={titleStyle}>{t('roadmap.fork.title')}</h2>
       <p style={copyStyle}>
-        Forking plants a copy of {stepsPhrase} in your trees — progress cleared, yours to grow.
+        {plantsCopy}
       </p>
       {forkError === 'unauthenticated' && (
         <p style={{ ...FINE_PRINT_STYLE, color: 'var(--text-secondary)' }}>
-          Your session expired — the email door still works.
+          {t('roadmap.fork.sessionExpired')}
         </p>
       )}
       <div style={{ marginTop: contentGap }}>
         <Input
           type="email"
-          placeholder="you@anywhere.com"
+          placeholder={t('roadmap.fork.emailPlaceholder')}
           value={email}
           onChange={(e) => {
             setEmail(e.target.value);
@@ -219,15 +220,15 @@ export function ForkDoor({ open, presentation = 'sheet', treeId, signedIn = fals
         />
       </div>
       {typo && (
-        <p style={FINE_PRINT_STYLE}>That address looks unfinished — check the ending.</p>
+        <p style={FINE_PRINT_STYLE}>{t('roadmap.fork.typo')}</p>
       )}
       <div style={{ display: 'grid', marginTop: 14 }}>
         <Button type="submit" variant="primary" size="lg" disabled={phase === 'sending'}>
-          {phase === 'sending' ? 'Sending…' : 'Email me a link'}
+          {phase === 'sending' ? t('roadmap.fork.sending') : t('roadmap.fork.emailMe')}
         </Button>
       </div>
       <p style={FINE_PRINT_STYLE}>
-        One door — no sign-up, the email decides. The link lands the fork in your trees.
+        {t('roadmap.fork.oneDoor')}
       </p>
     </form>
   );

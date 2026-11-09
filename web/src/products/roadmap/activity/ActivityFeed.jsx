@@ -2,6 +2,7 @@ import { ACTIVITY } from '../copy.js';
 import React from 'react';
 import { Icon, IconButton } from '../../../design-system';
 import { EventRow } from './EventRow.jsx';
+import { t } from '../i18n/index.js';
 
 export function ActivityFeed({ groups, count, nodesById, now, hoveredId, newIds, onClose, onHoverNode, onLeaveNode, onRevealNode }) {
   return (
@@ -9,7 +10,7 @@ export function ActivityFeed({ groups, count, nodesById, now, hoveredId, newIds,
       <div className="st-activity-head">
         <span>{ACTIVITY.heading}</span>
         <span className="st-activity-count">{count}</span>
-        <IconButton icon={<Icon name="x" size={14} />} label="Close activity" size="sm" onClick={onClose} />
+        <IconButton icon={<Icon name="x" size={14} />} label={t('roadmap.activity.close')} size="sm" onClick={onClose} />
       </div>
       <div className="st-activity-list">
         {groups.length === 0 ? (

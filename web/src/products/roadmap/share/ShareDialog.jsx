@@ -3,6 +3,7 @@ import { Dialog, Button } from '../../../design-system';
 import { setVisibility } from '../persistence/TreeRegistry.js';
 import { reportUnexpectedFailure } from '../reportFailure.js';
 import { track } from '../../../telemetry/beacon.js';
+import { t } from '../i18n/index.js';
 
 // A roadmap's public address, or null for one with no id yet; a step's link adds its `?step=` to this.
 export function treeShareUrl(treeId) {
@@ -47,7 +48,7 @@ export function ShareDialog({ open, onClose, treeId, visibility, mine, onStanceC
       track('roadmap_verb', { verb: 'share', step: 'publish', outcome: 'failed' });
       reportUnexpectedFailure('roadmap-share', failure);
       if (!mounted.current) return;
-      setError(`${failure.message || 'Could not publish the roadmap'}. Try again.`);
+      setError(t('roadmap.share.tryAgain', { reason: failure.message || t('roadmap.share.publishFailed') }));
       pending.current = false;
       setBusy(false);
       return;
@@ -56,12 +57,12 @@ export function ShareDialog({ open, onClose, treeId, visibility, mine, onStanceC
       await navigator.clipboard.writeText(shareUrl);
       if (!mounted.current) return;
       track('link_copy', {});
-      setMessage('Link copied.');
+      setMessage(t('roadmap.share.copied'));
     } catch {
       track('roadmap_verb', { verb: 'share', step: 'copy', outcome: 'failed' });
       if (!mounted.current) return;
       urlRef.current?.select();
-      setError('Could not copy the link. Select the link to copy it manually, or try again.');
+      setError(t('roadmap.share.copyFailed'));
     } finally {
       pending.current = false;
       if (mounted.current) setBusy(false);
@@ -79,12 +80,12 @@ export function ShareDialog({ open, onClose, treeId, visibility, mine, onStanceC
       track('roadmap_verb', { verb: 'share', step: 'private', outcome: 'ok' });
       if (!mounted.current) return;
       onStanceChange?.('private');
-      setMessage('Roadmap is private. Only you can view it.');
+      setMessage(t('roadmap.share.madePrivate'));
     } catch (failure) {
       track('roadmap_verb', { verb: 'share', step: 'private', outcome: 'failed' });
       reportUnexpectedFailure('roadmap-share', failure);
       if (!mounted.current) return;
-      setError(`${failure.message || 'Could not make the roadmap private'}. Try again.`);
+      setError(t('roadmap.share.tryAgain', { reason: failure.message || t('roadmap.share.makePrivateFailed') }));
     } finally {
       pending.current = false;
       if (mounted.current) setBusy(false);
@@ -92,15 +93,15 @@ export function ShareDialog({ open, onClose, treeId, visibility, mine, onStanceC
   }
 
   return (
-    <Dialog open={open} onClose={busy ? undefined : onClose} title="Share roadmap" width={640} footer={null} preserveOutsideFocus>
-      {!shareUrl ? <p>This roadmap has no shareable link yet.</p> : (
+    <Dialog open={open} onClose={busy ? undefined : onClose} title={t('roadmap.share.title')} width={640} footer={null} preserveOutsideFocus>
+      {!shareUrl ? <p>{t('roadmap.share.noLink')}</p> : (
         <div>
           <p>
             {publish
-              ? 'Publishing makes this roadmap public. Anyone can view and fork it, and it can appear in the public gallery.'
+              ? t('roadmap.share.publishing')
               : visibility === 'public'
-                ? 'This roadmap is public. Anyone can view and fork it, and it can appear in the public gallery.'
-                : reachable ? 'Anyone with this link can view and fork this roadmap.' : 'This roadmap is private. Only its owner can publish it.'}
+                ? t('roadmap.share.public')
+                : reachable ? t('roadmap.share.unlisted') : t('roadmap.share.private')}
           </p>
           {reachable && (
             <input
@@ -108,7 +109,7 @@ export function ShareDialog({ open, onClose, treeId, visibility, mine, onStanceC
               readOnly
               value={shareUrl}
               onFocus={(event) => event.target.select()}
-              aria-label="Shareable link"
+              aria-label={t('roadmap.share.linkLabel')}
               style={{ width: '100%', boxSizing: 'border-box', padding: '10px 14px', marginBottom: 12,
                 borderRadius: 'var(--radius-lg)', border: '1.5px solid var(--border-default)',
                 background: 'var(--surface-card)', color: 'var(--text-secondary)',
@@ -117,9 +118,9 @@ export function ShareDialog({ open, onClose, treeId, visibility, mine, onStanceC
           )}
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
             <Button variant="secondary" disabled={busy || (!mine && !reachable)} onClick={handleShare}>
-              {busy ? 'Please wait…' : publish ? 'Publish and copy link' : 'Copy link'}
+              {busy ? t('roadmap.share.wait') : publish ? t('roadmap.share.publishAndCopy') : t('roadmap.share.copyLink')}
             </Button>
-            {mine && reachable && <Button variant="ghost" disabled={busy} onClick={handleMakePrivate}>Make private</Button>}
+            {mine && reachable && <Button variant="ghost" disabled={busy} onClick={handleMakePrivate}>{t('roadmap.share.makePrivate')}</Button>}
           </div>
           {message && <p role="status">{message}</p>}
           {error && <p role="alert">{error}</p>}

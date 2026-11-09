@@ -4,6 +4,7 @@ import { Icon } from '../../../design-system';
 import { useDialogFocus } from '../../../design-system/feedback/Dialog.jsx';
 import { coverBeneath, useComposerViewport } from '../step/composerFocus.js';
 import { ASK_AI_PLACEHOLDER, ROADMAP_VERBS } from '../copy.js';
+import { t } from '../i18n/index.js';
 import './tend-bar.css';
 
 export function TendBar({
@@ -70,7 +71,7 @@ export function TendBar({
       <div style={shell}>
         <span style={mark}><Icon name="sparkles" size={17} /></span>
         {working ? (
-          <div style={thinking}><span style={dot} />Updating roadmap…</div>
+          <div style={thinking}><span style={dot} />{t('roadmap.tend.updating')}</div>
         ) : (
           <input
             ref={inputRef}
@@ -79,12 +80,12 @@ export function TendBar({
             placeholder={placeholder}
             maxLength={2000}
             enterKeyHint="send"
-            aria-label="Tell the tree what to change"
+            aria-label={t('roadmap.askAI.fieldLabel')}
             aria-describedby={failure ? failureId : undefined}
             style={field}
           />
         )}
-        <button type="submit" aria-label="Ask AI" disabled={working || !value.trim()} style={{ ...send, opacity: !working && value.trim() ? 1 : 0.35 }}>
+        <button type="submit" aria-label={ROADMAP_VERBS.askAI} disabled={working || !value.trim()} style={{ ...send, opacity: !working && value.trim() ? 1 : 0.35 }}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
             <path d="M12 19V5M5 12l7-7 7 7" />
           </svg>

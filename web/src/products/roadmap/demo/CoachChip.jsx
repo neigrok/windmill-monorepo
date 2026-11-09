@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { COACH_DONE_KEY, DEMO_COPY } from './demoStage.js';
 import { KIND_CSS, DEFAULT_NODE_COLOR, NODE_SIZE, prefersReducedMotion } from '../theme.js';
+import { t } from '../i18n/index.js';
 
 const ARRIVAL_SETTLE_MS = 1200;
 const IDLE_MS = 800;            // pointer-quiet required before mounting
@@ -202,7 +203,7 @@ export function CoachChip({ scene, nodeId, onMarkDone, completionCount = 0, cove
           </p>
           <button
             type="button"
-            aria-label="Dismiss"
+            aria-label={t('roadmap.demo.dismiss')}
             onClick={retire}
             style={{
               flexShrink: 0,
