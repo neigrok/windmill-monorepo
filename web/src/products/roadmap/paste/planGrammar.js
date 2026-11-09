@@ -3,7 +3,7 @@
 // leak in here. Parsing can never fail; the worst case is one root and a pile of ¶ notes, and
 // every liberty taken is visible in the gutter.
 
-import { t } from '../i18n/index.js';
+import { t } from '../i18n/settings/index.js';
 
 const PLAN_HUES = ['terracotta', 'olive', 'gold', 'brick', 'sky', 'plum'];
 const ROOT_LABEL_MAX = 200;

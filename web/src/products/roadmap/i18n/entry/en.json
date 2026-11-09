@@ -64,5 +64,13 @@
   "roadmap.scene.tidesCurrents": "Tides & currents",
   "roadmap.scene.unlockToast": "{step} done · <b>{count} up next</b>",
   "roadmap.scene.weatherWindows": "Weather windows",
-  "roadmap.scene.whippingSplicing": "Whipping & splicing"
+  "roadmap.scene.whippingSplicing": "Whipping & splicing",
+  "roadmap.ago.days": "{count, plural, one {# day ago} other {# days ago}}",
+  "roadmap.ago.hours": "{count, plural, one {# hour ago} other {# hours ago}}",
+  "roadmap.ago.justNow": "just now",
+  "roadmap.ago.minutes": "{count, plural, one {# minute ago} other {# minutes ago}}",
+  "roadmap.ago.weeks": "{count, plural, one {# week ago} other {# weeks ago}}",
+  "roadmap.resume.summary": "{name} · {progress} done",
+  "roadmap.resume.summaryTended": "{name} · {progress} done · last tended {tended}",
+  "roadmap.common.untitled": "Untitled roadmap"
 }

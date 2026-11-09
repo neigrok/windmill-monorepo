@@ -3,7 +3,7 @@ import { Section, styles } from '../../../shell/settings/Section.jsx';
 import { relativeTime, shortDate } from '../../../shell/settings/format.js';
 import { fetchTending } from '../tending/tendingClient.js';
 import { receiptLine, meterPct } from '../tending/receipts.js';
-import { t } from '../i18n/index.js';
+import { t } from '../i18n/settings/index.js';
 
 export function TendingSection() {
   const [data, setData] = React.useState(null);

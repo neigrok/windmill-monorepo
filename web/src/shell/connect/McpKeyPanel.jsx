@@ -4,7 +4,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Button, Input } from '../../design-system';
 import { createMcpKey } from '../auth/McpKeyClient.js';
-import { t } from '../i18n/index.js';
+import { t } from '../i18n/settings/index.js';
 
 const MCP_URL = 'https://windmill.works/mcp';
 

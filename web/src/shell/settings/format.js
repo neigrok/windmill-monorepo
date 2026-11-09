@@ -1,4 +1,4 @@
-import { t } from '../i18n/index.js';
+import { t } from '../i18n/settings/index.js';
 
 // Test order is load-bearing: Edge, Opera and Brave all carry "Chrome", and Chrome carries
 // "Safari", so the more specific token is tested first.

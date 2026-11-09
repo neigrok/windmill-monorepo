@@ -5,7 +5,7 @@ import { Button } from '../../../design-system';
 import { buildExportArchive, reportExportFailure } from './exportArchive.js';
 import { Section, styles } from '../../../shell/settings/Section.jsx';
 import { track } from '../../../telemetry/beacon.js';
-import { t } from '../i18n/index.js';
+import { t } from '../i18n/settings/index.js';
 
 const EXPORT_FAILED = t('roadmap.export.failed');
 

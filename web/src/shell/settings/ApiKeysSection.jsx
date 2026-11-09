@@ -6,7 +6,7 @@ import { listMcpKeys, revokeMcpKey } from '../auth/McpKeyClient.js';
 import { McpKeyPanel } from '../connect/McpKeyPanel.jsx';
 import { Section, styles } from './Section.jsx';
 import { mcpKeyMeta } from './format.js';
-import { t } from '../i18n/index.js';
+import { t } from '../i18n/settings/index.js';
 
 export function ApiKeysSection() {
   const [keys, setKeys] = useState(null); // null while loading

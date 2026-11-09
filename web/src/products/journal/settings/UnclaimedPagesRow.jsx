@@ -6,7 +6,7 @@ import { captureError } from '../../../telemetry/sentry.js';
 import { Button } from '../../../design-system';
 import { styles } from '../../../shell/settings/Section.jsx';
 import { dropUnclaimedPages, restoreUnclaimedPages, unclaimedPages } from '../pages.js';
-import { t } from '../i18n/index.js';
+import { t } from '../i18n/settings/index.js';
 
 function wordCount(body) {
   return body.trim() ? body.trim().split(/\s+/).length : 0;

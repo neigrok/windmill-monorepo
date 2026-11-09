@@ -1,7 +1,7 @@
 // The journal's /app home cell: static copy, no fetches. The auth hint only picks which door line shows.
 
 import React, { useState } from 'react';
-import { t } from './i18n/index.js';
+import { t } from './i18n/app/index.js';
 
 function signedIn() {
   try {

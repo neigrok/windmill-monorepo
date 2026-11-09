@@ -2,7 +2,7 @@
 // is generation priority. Every op returns a new legend. Hue is unique, at most six.
 
 import { NODE_COLOR_NAMES, DEFAULT_NODE_COLOR } from '../theme.js';
-import { t } from '../i18n/index.js';
+import { t } from '../i18n/settings/index.js';
 import { GENESIS_STAMP, DEFAULT_KINDS } from '../../../../../packages/api-contract/genesis.js';
 
 const LABEL_MAX = 24;

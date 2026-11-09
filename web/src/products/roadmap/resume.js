@@ -1,7 +1,7 @@
 // The newest roadmap as the home card and the landing offer it back: its name, a short name for a button, how
 // long ago it was tended, and the sentence that says so around a progress figure each surface draws its own way.
 
-import { t } from './i18n/landing/index.js';
+import { t } from './i18n/entry/index.js';
 
 // How long ago a roadmap was last changed; null when it can't tell.
 function tendedAgo(updatedAt) {

@@ -5,7 +5,7 @@ import { Avatar, Button, Input } from '../../design-system';
 import { useAuth } from '../auth/AuthProvider.jsx';
 import { updateProfile } from '../auth/AccountClient.js';
 import { Section, styles } from './Section.jsx';
-import { t } from '../i18n/index.js';
+import { t } from '../i18n/settings/index.js';
 
 export function ProfileSection() {
   const { user, refresh } = useAuth();

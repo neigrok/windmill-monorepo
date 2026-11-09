@@ -12,7 +12,7 @@ import { ApiKeysSection } from './ApiKeysSection.jsx';
 import { SessionsSection } from './SessionsSection.jsx';
 import { FeedbackSection } from './FeedbackSection.jsx';
 import { CloseAccountSection } from './CloseAccountSection.jsx';
-import { t } from '../i18n/index.js';
+import { t } from '../i18n/settings/index.js';
 
 // `main` sits in the product zone after the account identity; `data` renders last, beside the
 // account's own close.

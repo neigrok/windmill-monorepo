@@ -1,5 +1,5 @@
 import { API_BASE } from '../../../shell/apiBase.js';
-import { t } from '../i18n/index.js';
+import { t } from '../i18n/settings/index.js';
 
 export async function fetchReminders() {
   try {

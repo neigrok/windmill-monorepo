@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { listTrees } from './persistence/TreeRegistry.js';
 import { resumeOf, resumeSummary } from './resume.js';
-import { t } from './i18n/index.js';
+import { t } from './i18n/app/index.js';
 
 const KIND_DOT = {
   terracotta: 'var(--kind-terracotta)',

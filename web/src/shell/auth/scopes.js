@@ -1,7 +1,7 @@
 // The OAuth `scope` string is space-delimited `<product>:<level>`. An empty scope is the
 // account-wide grant; a scope this build cannot read confers nothing.
 
-import { t } from '../i18n/index.js';
+import { t } from '../i18n/settings/index.js';
 
 const PRODUCTS = {
   roadmap: t('shell.scopes.roadmap'),

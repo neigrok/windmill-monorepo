@@ -29,15 +29,20 @@ Copy is read through a translator from catalogs; English is the only locale.
 - An owner keeps a catalog per moment its files load, so a page downloads only the copy it shows.
   `i18n/entry/` holds the copy of the files the brand root loads: what the entry chunk carries (the
   shell's landing chrome and sign-in, each product's route table and landing head, and what they import,
-  such as gym's runtime) and each product's brand-root scenes (`marketing/RootScenes.jsx`). A product's
-  `i18n/landing/` holds the copy of the files its landing page loads beyond those (the module its landing
-  head names, and what it imports). `i18n/` holds the rest and loads with the lazy chunks that render it.
-  Each tier's `t` also reads the tiers before it, so a word a landing and its room share lives once, in the
-  landing's catalog. A file imports `t` from one tier, and its strings live in the `en.json` beside that
+  such as gym's runtime) and each product's brand-root scenes (`marketing/RootScenes.jsx`). `i18n/app/`
+  holds the copy of the app's chrome and home: the shell's `/app` chrome and each product's home card.
+  `i18n/settings/` holds the copy of the settings page: the shell's page, each product's settings sections,
+  and what they import. A product's `i18n/landing/` holds the copy of its landing page (the module its
+  landing head names, and what it imports). `i18n/` holds the rest and loads with the rooms. Every tier's
+  `t` reads `entry/` and its own catalog, `settings/` also reads `app/` because the page sits inside the app's
+  chrome, and the room's reads them all, so a word lives once, in the latest catalog every file that shows
+  it reads: a word a landing and its room share lives in `landing/`, a word the home card and a landing
+  share in `entry/`. A file imports `t` from one tier, and its strings live in the `en.json` beside that
   `index.js`; `test/shell-boundaries.test.mjs` names a file that reads the wrong one. The shell keeps
-  `entry/` and `i18n/`; the design system loads with the entry and keeps one catalog.
+  `entry/`, `app/`, `settings/` and `i18n/`; the design system loads with the entry and keeps one catalog.
 - To add a string, add `"gym.log.emptyTitle": "No workouts yet"` to the `en.json` beside the `index.js`
-  your file imports `t` from (`i18n/index.js` unless the brand root or a landing loads the file) and call
+  your file imports `t` from (`i18n/index.js` unless the brand root, the app's chrome or home, the settings
+  page or a landing loads the file) and call
   `t('gym.log.emptyTitle')`. A key is the owner's namespace plus dotted camelCase segments, at most 80
   characters, written as a string literal at its call site. Map an enum to copy with an object of `t()`
   calls, never a built key, and never pass `t` around or bind another `t`.
@@ -59,7 +64,9 @@ Copy is read through a translator from catalogs; English is the only locale.
   branch) and reports `i18n-missing-message` once per key per page load ([observability](OBSERVABILITY.md)).
 - `test/platform/i18n/catalogs.test.mjs` checks every owner in every locale: each `t()` key is a literal
   the catalog its file reads holds, its arguments match its message, a translation shows the arguments
-  English shows, every message lives in the earliest tier that asks for it, no key sits in two catalogs, keys
+  English shows, every message lives in the latest catalog every file that asks for it reads, each tier's
+  `index.js` exports `catalogs` holding every key of the tiers it reads in every locale and its `t` shows
+  them, no key sits in two catalogs, keys
   carry the namespace, and a file reads its catalog through one static, relative `import { t }`.
   `test/platform/i18n/hardcodedCopy.test.mjs` fails anywhere under `src/` but the showcase on JSX text with
   letters, on literal copy props (`COPY_PROPS` in `copyAudit.mjs`, also inside object and array literals
@@ -74,8 +81,8 @@ Copy is read through a translator from catalogs; English is the only locale.
   documents and read no catalog; a second locale adds a translated copy of each.
 - The showcase (`showcase/`, the unlinked `#/showcase` gallery) is a developer surface: its copy stays
   literal and the copy guard skips it.
-- A second locale is one complete `<locale>.json` beside every `en.json`, imported in its catalog's
-  `index.js`, and one entry in `AVAILABLE_LOCALES`. It holds every key: the translator falls back to no
+- A second locale is one complete `<locale>.json` beside every `en.json`, merged into `catalogs` by every
+  `index.js` that reads that tier, and one entry in `AVAILABLE_LOCALES`. It holds every key: the translator falls back to no
   other locale. The rest of the work a second locale needs is tracked on the dogfood node
   `i18n-second-locale-readiness-20261109`.
 

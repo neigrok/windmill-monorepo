@@ -14,7 +14,7 @@ import { ShellHome } from './ShellHome.jsx';
 import './chrome.css';
 import { navigate } from '../navigation.js';
 import { useRoomStatus } from '../roomStatus.js';
-import { t } from '../i18n/index.js';
+import { t } from '../i18n/app/index.js';
 
 const STATUS_TOOLTIP_HOLD = 4000;
 

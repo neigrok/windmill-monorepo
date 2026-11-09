@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { catalogViolations } from './copyAudit.mjs';
+import { catalogViolations, translatorViolations } from './copyAudit.mjs';
 
 for (const owner of [
   { namespace: 'shell', root: 'src/shell' },
@@ -12,9 +12,12 @@ for (const owner of [
   test(`${owner.root}: every t() call asks for a literal ${owner.namespace}.* key its catalog holds, with the arguments its message shows, in every locale, and every message is asked for where it loads and parses`, () => {
     assert.deepEqual(catalogViolations(owner), []);
   });
+  test(`${owner.root}: each tier's translator holds and shows every key of the tiers it reads, in every locale`, async () => {
+    assert.deepEqual(await translatorViolations(owner), []);
+  });
 }
 
-test('the catalog audit sees every rule fire on its fixture, read in its two locales and three tiers', () => {
+test('the catalog audit sees every rule fire on its fixture, read in its two locales and four tiers', () => {
   assert.deepEqual(catalogViolations({ namespace: 'fixture', root: 'test/fixtures/i18n', locales: ['en', 'xx'] }), [
     'test/fixtures/i18n/i18n/entry holds en.json, index.js, not en.json, index.js, xx.json',
     'Fixture.badShape is not fixture.dotted.camelCase',
@@ -22,8 +25,6 @@ test('the catalog audit sees every rule fire on its fixture, read in its two loc
     'xx fixture.greeting shows {nom} where en shows {name}',
     'fixture.headline is in both test/fixtures/i18n/i18n/entry/en.json and test/fixtures/i18n/i18n/en.json',
     "test/fixtures/i18n/Dynamic.js reads its owner's catalog other than as one static, relative import { t } from '…/i18n/index.js'",
-    'test/fixtures/i18n/Entry.js:4 reads fixture.greeting through test/fixtures/i18n/i18n/entry/index.js, but test/fixtures/i18n/i18n/en.json holds it; a key that file asks for lives in test/fixtures/i18n/i18n/entry/en.json',
-    'test/fixtures/i18n/Landing.js:3 reads fixture.steps through test/fixtures/i18n/i18n/landing/index.js, but test/fixtures/i18n/i18n/en.json holds it; a key that file asks for lives in test/fixtures/i18n/i18n/landing/en.json',
     "test/fixtures/i18n/Relay.js reads its owner's catalog other than as one static, relative import { t } from '…/i18n/index.js'",
     "test/fixtures/i18n/RootAbsolute.jsx reads its owner's catalog other than as one static, relative import { t } from '…/i18n/index.js'",
     "test/fixtures/i18n/SecondBinding.jsx reads its owner's catalog other than as one static, relative import { t } from '…/i18n/index.js'",
@@ -35,8 +36,19 @@ test('the catalog audit sees every rule fire on its fixture, read in its two loc
     'test/fixtures/i18n/Uses.jsx:7 leaves fixture.steps without count',
     'test/fixtures/i18n/Uses.jsx:8 asks for fixture.absent, which test/fixtures/i18n/i18n/en.json does not hold',
     'fixture.headline is in test/fixtures/i18n/i18n/entry/en.json but nothing asks for it',
-    'fixture.roomOnly is asked for only by files that load after test/fixtures/i18n/i18n/entry, so it belongs in test/fixtures/i18n/i18n/en.json',
-    'fixture.landingRoomOnly is asked for only by files that load after test/fixtures/i18n/i18n/landing, so it belongs in test/fixtures/i18n/i18n/en.json',
+    'fixture.roomOnly is in test/fixtures/i18n/i18n/entry/en.json, but the latest catalog every file that asks for it reads is test/fixtures/i18n/i18n/en.json',
+    'fixture.bothFronts is in test/fixtures/i18n/i18n/app/en.json, but the latest catalog every file that asks for it reads is test/fixtures/i18n/i18n/entry/en.json',
+    'fixture.landingRoomOnly is in test/fixtures/i18n/i18n/landing/en.json, but the latest catalog every file that asks for it reads is test/fixtures/i18n/i18n/en.json',
+    'fixture.greeting is in test/fixtures/i18n/i18n/en.json, but the latest catalog every file that asks for it reads is test/fixtures/i18n/i18n/entry/en.json',
+    'fixture.steps is in test/fixtures/i18n/i18n/en.json, but the latest catalog every file that asks for it reads is test/fixtures/i18n/i18n/landing/en.json',
     'fixture.unused is in test/fixtures/i18n/i18n/en.json but nothing asks for it',
+  ]);
+});
+
+test('the translator check sees a tier index that forgets a tier it reads or a locale', async () => {
+  assert.deepEqual(await translatorViolations({ root: 'test/fixtures/i18n-tiers', locales: ['en', 'xx'] }), [
+    'test/fixtures/i18n-tiers/i18n/landing/index.js gives en no tiers.front',
+    'test/fixtures/i18n-tiers/i18n/landing/index.js gives xx no 2 keys, tiers.front first',
+    'test/fixtures/i18n-tiers/i18n/landing/index.js cannot show tiers.front: i18n: "tiers.front" cannot be shown: the en catalog has no "tiers.front"',
   ]);
 });

@@ -3,7 +3,7 @@
 
 import { journalApi } from '../journalApi.js';
 import { isWritten, normalizePage } from '../pages.js';
-import { t } from '../i18n/index.js';
+import { t } from '../i18n/settings/index.js';
 
 export function journalMarkdown(pages) {
   const written = pages.map(normalizePage).filter(isWritten).sort((a, b) => (a.day < b.day ? -1 : 1));

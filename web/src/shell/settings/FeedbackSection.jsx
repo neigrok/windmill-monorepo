@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import { Button } from '../../design-system';
 import { FeedbackDialog } from '../feedback/FeedbackDialog.jsx';
 import { Section, styles } from './Section.jsx';
-import { t } from '../i18n/index.js';
+import { t } from '../i18n/settings/index.js';
 
 export function FeedbackSection() {
   const [open, setOpen] = useState(false);

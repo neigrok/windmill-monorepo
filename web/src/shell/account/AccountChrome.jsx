@@ -4,7 +4,7 @@ import React from 'react';
 import { useAuth } from '../auth/AuthProvider.jsx';
 import { Avatar, BrandWordmark } from '../../design-system';
 import { previousLocation, returnToPreviousLocation } from '../navigation.js';
-import { t } from '../i18n/index.js';
+import { t } from '../i18n/settings/index.js';
 
 // The shell supplies identity chrome; both modes retain the same return action.
 export function AccountChrome({ width = 460, bare = false, children }) {

@@ -30,8 +30,10 @@ point for the component showcase.
 | `marketing/` | Product landing, metadata and self-playing scenes |
 
 Every string a person sees is a `roadmap.*` message: in `i18n/entry/en.json` when a file the brand root loads shows
-it (the route table, the landing head, the brand root's scenes and `marketing/treeScenes.js`), in
-`i18n/landing/en.json` when the landing page or `resume.js` shows it, and in `i18n/en.json` otherwise. A surface's own copy is a `t()` call at
+it (the route table, the landing head, the brand root's scenes, `marketing/treeScenes.js` and `resume.js`, which the
+home card and the landing share), in `i18n/app/en.json` when the home card shows it, in `i18n/settings/en.json`
+when a settings section or a module it imports shows it, in `i18n/landing/en.json` when the landing page shows it,
+and in `i18n/en.json` otherwise. A surface's own copy is a `t()` call at
 its site; a word or a count sentence several surfaces read is a `copy.js` export. Step titles, kind labels,
 server lines, the demo tree and the starter quests' content are data and stay as they arrive.
 

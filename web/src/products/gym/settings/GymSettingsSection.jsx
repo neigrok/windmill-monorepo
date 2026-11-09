@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Section, styles } from '../../../shell/settings/Section.jsx';
 import { useGymApi } from '../gymRuntime.js';
-import { t } from '../i18n/index.js';
+import { t } from '../i18n/settings/index.js';
 import { useSyncRecords } from '../../../platform/sync/react.js';
 import { NOTES_HREF } from '../log.js';
 import { HEAD_LINE, NOTES_TITLE } from '../notes/notes.js';

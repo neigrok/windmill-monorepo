@@ -1,4 +1,4 @@
-import { t } from '../i18n/index.js';
+import { t } from '../i18n/settings/index.js';
 
 export function receiptLine(run) {
   if (run.status === 'running') return t('roadmap.tend.working');

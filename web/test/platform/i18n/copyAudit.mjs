@@ -2,7 +2,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parse } from 'acorn';
 import { transformSync } from 'esbuild';
 import { AVAILABLE_LOCALES } from '../../../src/platform/i18n/index.js';
@@ -161,18 +161,23 @@ function translationCalls(file, indexes) {
   return { index: reads[0], calls, misuse: [...misuse] };
 }
 
-// An owner's catalogs in load order: what the brand root loads, what a product's landing loads, then the rest.
-// Each tier's t reads its own catalog and every earlier one, so a key lives in the earliest tier that asks for it.
-const TIERS = ['entry', 'landing'];
+// An owner's catalogs, one per moment its files load. Every tier reads the brand root's entry/; the app's chrome and
+// home (app/) and a product's landing (landing/) add their own; settings, drawn inside the app's chrome, reads app/
+// too; i18n/ reads them all. A key lives in the latest catalog every file that asks for it reads.
+const TIERS = { entry: ['entry'], app: ['entry', 'app'], settings: ['entry', 'app', 'settings'], landing: ['entry', 'landing'] };
 
 function tiersOf(root) {
   const own = path.join(root, 'i18n');
-  return [...TIERS.map((tier) => path.join(own, tier)).filter((directory) => fs.existsSync(path.join(WEB, directory))), own];
+  const present = Object.keys(TIERS).filter((tier) => fs.existsSync(path.join(WEB, own, tier)));
+  return [
+    ...present.map((tier) => ({ directory: path.join(own, tier), reads: TIERS[tier].map((read) => path.join(own, read)) })),
+    { directory: own, reads: [...present.map((tier) => path.join(own, tier)), own] },
+  ];
 }
 
 function catalogFiles(directory, locales, violations) {
   const expected = ['index.js', ...locales.map((locale) => `${locale}.json`)];
-  for (const tier of TIERS) if (fs.existsSync(path.join(WEB, directory, tier))) expected.push(`${tier}/`);
+  for (const tier of Object.keys(TIERS)) if (fs.existsSync(path.join(WEB, directory, tier))) expected.push(`${tier}/`);
   const held = fs.readdirSync(path.join(WEB, directory), { withFileTypes: true }).map((entry) => (entry.isDirectory() ? `${entry.name}/` : entry.name));
   if (held.sort().join() !== expected.sort().join()) violations.push(`${directory} holds ${held.join(', ')}, not ${expected.join(', ')}`);
   const present = locales.filter((locale) => fs.existsSync(path.join(WEB, directory, `${locale}.json`)));
@@ -207,32 +212,30 @@ function readMessages(directory, catalogs, namespace, violations) {
 export function catalogViolations({ namespace, root, locales = AVAILABLE_LOCALES }) {
   const violations = [];
   const tiers = tiersOf(root);
-  const catalogs = tiers.map((directory) => catalogFiles(directory, locales, violations));
-  const shown = new Map(tiers.flatMap((directory, tier) => [...readMessages(directory, catalogs[tier], namespace, violations)]));
+  const catalogs = new Map(tiers.map(({ directory }) => [directory, catalogFiles(directory, locales, violations)]));
+  const shown = new Map(tiers.flatMap(({ directory }) => [...readMessages(directory, catalogs.get(directory), namespace, violations)]));
   const holder = new Map();
-  tiers.forEach((directory, tier) => {
-    for (const key of Object.keys(catalogs[tier].en)) {
-      if (holder.has(key)) violations.push(`${key} is in both ${tiers[holder.get(key)]}/en.json and ${directory}/en.json`);
-      else holder.set(key, tier);
+  for (const { directory } of tiers) {
+    for (const key of Object.keys(catalogs.get(directory).en)) {
+      if (holder.has(key)) violations.push(`${key} is in both ${holder.get(key)}/en.json and ${directory}/en.json`);
+      else holder.set(key, directory);
     }
-  });
+  }
 
-  const indexes = tiers.map((directory) => path.join(WEB, directory, 'index.js'));
+  const readerOf = new Map(tiers.map((tier) => [path.join(WEB, tier.directory, 'index.js'), tier]));
   const askers = new Map();
-  const own = tiers.at(-1);
+  const own = tiers.at(-1).directory;
   for (const file of sourceFiles(root).filter((source) => !source.startsWith(own + path.sep))) {
-    const { index, calls, misuse } = translationCalls(file, indexes);
+    const { index, calls, misuse } = translationCalls(file, [...readerOf.keys()]);
     violations.push(...misuse);
-    const reader = indexes.indexOf(index);
+    const reader = readerOf.get(index);
     for (const { key, args, at } of calls) {
-      if (!holder.has(key) || holder.get(key) > reader) {
-        violations.push(holder.has(key)
-          ? `${at} reads ${key} through ${tiers[reader]}/index.js, but ${tiers[holder.get(key)]}/en.json holds it; a key that file asks for lives in ${tiers[reader]}/en.json`
-          : `${at} asks for ${key}, which ${tiers[reader]}/en.json does not hold`);
+      if (!holder.has(key)) {
+        violations.push(`${at} asks for ${key}, which ${reader.directory}/en.json does not hold`);
         continue;
       }
-      if (!askers.has(key)) askers.set(key, new Set());
-      askers.get(key).add(reader);
+      if (!askers.has(key)) askers.set(key, []);
+      askers.get(key).push(reader);
       const needed = shown.get(key);
       if (!needed || !args) continue;
       const missing = [...needed].filter((name) => !args.includes(name));
@@ -241,10 +244,46 @@ export function catalogViolations({ namespace, root, locales = AVAILABLE_LOCALES
       if (extra.length) violations.push(`${at} passes ${key} ${extra.join(', ')}, which its message never shows`);
     }
   }
-  for (const [key, tier] of holder) {
-    const earliest = Math.min(...(askers.get(key) ?? []));
-    if (earliest === Infinity) violations.push(`${key} is in ${tiers[tier]}/en.json but nothing asks for it`);
-    else if (earliest > tier) violations.push(`${key} is asked for only by files that load after ${tiers[tier]}, so it belongs in ${tiers[earliest]}/en.json`);
+  for (const [key, directory] of holder) {
+    const readers = askers.get(key);
+    if (!readers) {
+      violations.push(`${key} is in ${directory}/en.json but nothing asks for it`);
+      continue;
+    }
+    const best = tiers.filter((tier) => readers.every((reader) => reader.reads.includes(tier.directory)))
+      .reduce((latest, tier) => (tier.reads.length > latest.reads.length ? tier : latest));
+    if (best.directory !== directory) violations.push(`${key} is in ${directory}/en.json, but the latest catalog every file that asks for it reads is ${best.directory}/en.json`);
+  }
+  return violations;
+}
+
+function argumentsOf(message) {
+  return Object.fromEntries(argumentNames(parseMessage(message)).map((name) => [name, 1]));
+}
+
+// Each tier's index, loaded as the app loads it: its catalogs hold every key of the tiers it reads in every locale,
+// and its t shows every one of them.
+export async function translatorViolations({ root, locales = AVAILABLE_LOCALES }) {
+  const violations = [];
+  for (const tier of tiersOf(root)) {
+    const index = path.join(tier.directory, 'index.js');
+    const { t, catalogs } = await import(pathToFileURL(path.join(WEB, index)).href);
+    if (!catalogs) {
+      violations.push(`${index} exports no catalogs`);
+      continue;
+    }
+    for (const locale of locales) {
+      const read = Object.assign({}, ...tier.reads.map((directory) => {
+        const file = path.join(WEB, directory, `${locale}.json`);
+        return fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : {};
+      }));
+      const missing = Object.keys(read).filter((key) => !Object.hasOwn(catalogs[locale] ?? {}, key));
+      if (missing.length) violations.push(`${index} gives ${locale} no ${missing.length === 1 ? missing[0] : `${missing.length} keys, ${missing[0]} first`}`);
+    }
+    const english = Object.assign({}, ...tier.reads.map((directory) => JSON.parse(fs.readFileSync(path.join(WEB, directory, 'en.json'), 'utf8'))));
+    for (const [key, message] of Object.entries(english)) {
+      try { t(key, argumentsOf(message)); } catch (error) { violations.push(`${index} cannot show ${key}: ${error.message}`); break; }
+    }
   }
   return violations;
 }

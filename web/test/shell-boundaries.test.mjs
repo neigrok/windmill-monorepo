@@ -111,13 +111,35 @@ function productOf(absolutePath) {
 
 // An owner's catalog lives in its i18n/ beside its code and is read only by that owner, through i18n/index.js.
 // An owner whose modules load at different moments keeps a catalog per moment: a module the brand root loads
-// reads i18n/entry/, one a product's landing loads reads i18n/landing/, and every other module reads
-// i18n/index.js, which loads with the room. Each page then downloads only the copy it shows.
+// reads i18n/entry/, one the app's chrome or home loads i18n/app/, one the settings page loads i18n/settings/,
+// one a product's landing loads i18n/landing/, and every other module i18n/index.js, which loads with the room.
+// A module two moments load reads the latest catalog both read. Each page then downloads only the copy it shows.
 const PLATFORM_I18N = path.join(SRC, 'platform', 'i18n') + path.sep;
 const BRAND_ROOT_SCENES = PRODUCTS.map((product) => path.join(PRODUCTS_DIR, product.id, 'marketing', 'RootScenes.jsx'));
 const ENTRY_LOADED = entryLoaded([path.join(SRC, 'main.jsx'), ...BRAND_ROOT_SCENES]);
 const LANDINGS = PRODUCTS.map((product) => path.resolve(SRC, '..', product.landing.head.module));
 const LANDING_LOADED = new Set([...entryLoaded(LANDINGS)].filter((file) => !ENTRY_LOADED.has(file)));
+// The app's chrome and home: the /app chrome App.jsx loads lazily and each product's home card. The settings page:
+// the page App.jsx loads lazily and each product's settings sections. A door names where its route table keeps them.
+const DOORS = {
+  app: [[path.join(SRC, 'shell', 'App.jsx'), /^\.\/chrome\//], ...PRODUCTS.map((product) => [path.join(PRODUCTS_DIR, product.id, 'routes.js'), /^\.\/HomeCard\.jsx$/])],
+  settings: [[path.join(SRC, 'shell', 'App.jsx'), /^\.\/settings\//], ...PRODUCTS.map((product) => [path.join(PRODUCTS_DIR, product.id, 'routes.js'), /^\.\/settings\//])],
+};
+const doorRoots = (doors) => doors.map(([file, door]) => importsOf(file).filter(({ specifier, dynamic }) => dynamic && door.test(specifier)).map(({ specifier }) => targetOf(file, specifier)));
+const DOOR_ROOTS = { app: doorRoots(DOORS.app), settings: doorRoots(DOORS.settings) };
+const MOMENTS = {
+  entry: ENTRY_LOADED,
+  app: entryLoaded(DOOR_ROOTS.app.flat()),
+  settings: entryLoaded(DOOR_ROOTS.settings.flat()),
+  landing: LANDING_LOADED,
+};
+const READS = { entry: ['entry'], app: ['entry', 'app'], settings: ['entry', 'app', 'settings'], landing: ['entry', 'landing'] };
+function momentOf(file) {
+  const loading = Object.keys(MOMENTS).filter((moment) => MOMENTS[moment].has(file));
+  if (!loading.length) return null;
+  return Object.keys(READS).filter((tier) => loading.every((moment) => READS[moment].includes(tier)))
+    .reduce((latest, tier) => (READS[tier].length > READS[latest].length ? tier : latest));
+}
 function catalogOwnerOf(target) {
   const parts = path.relative(SRC, target).split(path.sep);
   const at = parts.indexOf('i18n');
@@ -162,10 +184,10 @@ for (const file of sourceFiles(SRC)) {
     if (catalogOwner && !file.startsWith(path.join(catalogOwner, 'i18n') + path.sep)) {
       const owner = `src/${path.relative(SRC, catalogOwner)}`;
       const indexOf = (tier) => path.join(catalogOwner, 'i18n', ...(tier ? [tier] : []), 'index.js');
-      const doors = [null, 'entry', 'landing'].map(indexOf).filter((index) => fs.existsSync(index));
-      const moment = ENTRY_LOADED.has(file) ? 'entry' : LANDING_LOADED.has(file) ? 'landing' : null;
+      const doors = [null, ...Object.keys(READS)].map(indexOf).filter((index) => fs.existsSync(index));
+      const moment = momentOf(file);
       const expected = moment && fs.existsSync(indexOf(moment)) ? moment : null;
-      const loads = { entry: 'with the brand root', landing: 'with its product\'s landing', null: 'with a lazy chunk' }[expected];
+      const loads = { entry: 'with the brand root, or with both the app and a landing', app: 'with the app\'s chrome or home', settings: 'with the settings page', landing: 'with its product\'s landing', null: 'with a lazy chunk' }[expected];
       const where = `${owner}/i18n${expected ? `/${expected}` : ''}`;
       if (!file.startsWith(catalogOwner + path.sep)) violations.catalogAcrossOwners.push(`src/${relativeFile}:${line} imports ${specifier} — only ${owner} reads its own catalog`);
       else if (!doors.includes(target)) violations.catalogAcrossOwners.push(`src/${relativeFile}:${line} imports ${specifier} — read the catalog through its i18n/index.js`);
@@ -194,8 +216,9 @@ test('every catalog is read only by its owner, through its i18n/index.js', () =>
   assert.deepEqual(violations.catalogAcrossOwners, []);
 });
 
-test('a module reads the catalog of the moment it loads: the brand root\'s, its product\'s landing\'s, or its room\'s', () => {
+test('a module reads the catalog of the moment it loads: the brand root\'s, the app\'s, the settings page\'s, its product\'s landing\'s, or its room\'s', () => {
   assert.deepEqual(BRAND_ROOT_SCENES.filter((scenes) => !fs.existsSync(scenes)).map((scenes) => `${path.relative(SRC, scenes)} is gone; name the brand-root scenes here`), []);
+  assert.deepEqual(Object.entries(DOOR_ROOTS).flatMap(([moment, roots]) => roots.map((found, door) => (found.length ? null : `${path.relative(SRC, DOORS[moment][door][0])} lazily loads no ${moment} module`))).filter(Boolean), []);
   assert.deepEqual(violations.catalogByLoading, []);
 });
 

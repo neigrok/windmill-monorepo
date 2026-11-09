@@ -6,7 +6,7 @@ import { listSessions, revokeSession, signOutEverywhere } from '../auth/AccountC
 import { Button } from '../../design-system';
 import { Section, styles, QuietX } from './Section.jsx';
 import { formatUserAgent, relativeTime } from './format.js';
-import { t } from '../i18n/index.js';
+import { t } from '../i18n/settings/index.js';
 
 export function SessionsSection() {
   const { signOut } = useAuth();

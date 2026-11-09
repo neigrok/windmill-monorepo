@@ -6,7 +6,7 @@ import { Section, styles } from '../../../shell/settings/Section.jsx';
 import {
   browserTimezone, describeSchedule, fetchReminders, reminderPatch, saveReminders,
 } from '../reminders/remindersClient.js';
-import { t } from '../i18n/index.js';
+import { t } from '../i18n/settings/index.js';
 
 export function ReminderSection() {
   const [settings, setSettings] = React.useState(null);

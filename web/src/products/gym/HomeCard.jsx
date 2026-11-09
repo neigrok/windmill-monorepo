@@ -1,6 +1,6 @@
 import React from 'react';
 import { useAuth } from '../../shell/auth/AuthProvider.jsx';
-import { t } from './i18n/index.js';
+import { t } from './i18n/app/index.js';
 
 function cell({ signedIn }) {
   if (signedIn) return { body: t('gym.home.signedInBody'), link: t('gym.home.signedInLink') };

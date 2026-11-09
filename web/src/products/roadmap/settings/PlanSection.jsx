@@ -4,7 +4,7 @@ import React from 'react';
 import { Button } from '../../../design-system';
 import { Section, styles } from '../../../shell/settings/Section.jsx';
 import { beginUpgrade, billingConfigured, fetchSubscription } from '../../../shell/billing/checkout.js';
-import { t } from '../i18n/index.js';
+import { t } from '../i18n/settings/index.js';
 
 const PLAN_COPY = {
   active: { name: t('roadmap.plan.windmillOne'), note: t('roadmap.plan.activeNote') },

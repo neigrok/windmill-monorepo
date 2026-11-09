@@ -6,7 +6,7 @@ import { useAuth } from '../auth/AuthProvider.jsx';
 import { PRODUCTS } from '../products.js';
 import { closingDeal } from './accountClosure.js';
 import { Section, styles } from './Section.jsx';
-import { t } from '../i18n/index.js';
+import { t } from '../i18n/settings/index.js';
 
 const DEAL = closingDeal(PRODUCTS.map((product) => product.label));
 

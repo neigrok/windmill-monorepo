@@ -1,7 +1,7 @@
 import React, { Suspense } from 'react';
 import { joinLabels, PRODUCTS } from '../products.js';
 import { InstallChip } from '../pwa/InstallChip.jsx';
-import { t } from '../i18n/index.js';
+import { t } from '../i18n/app/index.js';
 
 function statusLine(open, preOpen) {
   const openNames = joinLabels(open.map((p) => p.label));

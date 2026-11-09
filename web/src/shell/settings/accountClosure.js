@@ -1,7 +1,7 @@
 // The consent copy for closing an account; product names arrive from the registry.
 
 import { joinLabels } from '../products.js';
-import { t } from '../i18n/index.js';
+import { t } from '../i18n/settings/index.js';
 
 export function closingDeal(productLabels) {
   return [

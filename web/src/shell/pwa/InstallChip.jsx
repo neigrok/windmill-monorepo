@@ -3,7 +3,7 @@
 import React, { useState, useSyncExternalStore } from 'react';
 import { Button, Icon, IconButton } from '../../design-system';
 import { forgetInstallPrompt, installPrompt, watchInstallPrompt } from './installPrompt.js';
-import { t } from '../i18n/index.js';
+import { t } from '../i18n/app/index.js';
 
 const DISMISSED_KEY = 'windmill:install-dismissed';
 

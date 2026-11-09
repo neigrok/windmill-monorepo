@@ -1,5 +1,5 @@
 import { failureReason, isStoreFailure } from '../errors.js';
-import { t } from '../i18n/index.js';
+import { t } from '../i18n/settings/index.js';
 
 export function restLabel(seconds) {
   if (seconds == null) return t('gym.settings.restOff');

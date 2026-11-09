@@ -6,7 +6,7 @@ import { useAuth } from '../../../shell/auth/AuthProvider.jsx';
 import { buildJournalArchive } from './journalExport.js';
 import { UnclaimedPagesRow } from './UnclaimedPagesRow.jsx';
 import { Section, styles } from '../../../shell/settings/Section.jsx';
-import { t } from '../i18n/index.js';
+import { t } from '../i18n/settings/index.js';
 
 export function YourJournalSection() {
   const { account } = useAuth();
