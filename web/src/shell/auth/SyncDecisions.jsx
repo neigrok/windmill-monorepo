@@ -1,9 +1,8 @@
 import React, { useState } from 'react';
 import { Button, Dialog } from '../../design-system';
-import { t } from '../i18n/index.js';
+import { t } from '../i18n/entry/index.js';
 
-// `work` is the asking product's `sync.signedOutWork`: the record type a sign-in question counts, its
-// counted phrase (`counted(3)` is "3 pages") and its plural noun (`many`).
+// `work` is the asking product's `sync.signedOutWork`: its record type, `counted(3)` ("3 pages") and plural noun `many`.
 export function SyncDecisions({ question, work, busy, error, onDecision, onCancel }) {
   const [discarding, setDiscarding] = useState(false);
   if (!question) return null;

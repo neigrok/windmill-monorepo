@@ -1,7 +1,7 @@
 import { Bodyweight } from '../domain/bodyweight.js';
 import { LocalDay } from '../../../platform/domain-kit/time.js';
 import { failureReason, isStoreFailure } from '../errors.js';
-import { t } from '../i18n/index.js';
+import { t } from '../i18n/entry/index.js';
 import { agoLabel, shortDayLabel } from '../log.js';
 import { inDisplayUnit, LB, weightUnit } from '../units.js';
 

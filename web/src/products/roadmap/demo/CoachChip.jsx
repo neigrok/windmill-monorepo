@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { COACH_DONE_KEY, DEMO_COPY } from './demoStage.js';
+import { DEMO_COPY } from '../copy.js';
+import { COACH_DONE_KEY } from './demoStage.js';
 import { KIND_CSS, DEFAULT_NODE_COLOR, NODE_SIZE, prefersReducedMotion } from '../theme.js';
 import { t } from '../i18n/index.js';
 

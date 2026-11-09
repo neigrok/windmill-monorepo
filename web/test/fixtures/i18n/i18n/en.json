@@ -3,5 +3,6 @@
   "fixture.steps": "{count, plural, one {# step} other {# steps}}",
   "fixture.unused": "Nobody asks for this",
   "Fixture.badShape": "Shouted",
-  "fixture.broken": "{count, plural, one {a step}}"
+  "fixture.broken": "{count, plural, one {a step}}",
+  "fixture.headline": "Front page"
 }

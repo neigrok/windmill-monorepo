@@ -29,7 +29,7 @@ import { CorrectedSet, CorrectSession, CorrectSet, DeleteSet, ImportedSet, Impor
 import { GymRefusal, isStoreFailure } from './errors.js';
 import { REFUSALS } from './bodyweight/bodyweight.js';
 import { fixLoadFloorLine } from './fix.js';
-import { t } from './i18n/index.js';
+import { t } from './i18n/entry/index.js';
 import { FULL_LINE } from './notes/notes.js';
 import { loadFloorLine, NAME_IT_TO_SAVE_IT } from './routines.js';
 import { fromDisplayUnit, weightUnit } from './units.js';

@@ -15,6 +15,7 @@ const COPY_PROPS = new Set([
   'ariaLabel', 'title', 'label', 'placeholder', 'alt', 'caption', 'error', 'panePlace',
   'badge', 'failure', 'quiet', 'stamp',
 ]);
+const DIALOGS = new Set(['alert', 'confirm', 'prompt']);
 
 export function sourceFiles(root) {
   const full = path.join(WEB, root);
@@ -44,15 +45,18 @@ function walk(node, visit, parent = null) {
 function lineLocator(text) {
   const lines = text.split('\n');
   const searched = new Map();
-  return (value) => {
-    const needle = value.trim().split('\n')[0].slice(0, 40);
+  const find = (needle) => {
     for (let at = text.indexOf(needle, searched.get(needle) ?? 0); at !== -1; at = text.indexOf(needle, at + 1)) {
       const line = text.slice(0, at).split('\n').length;
       if (/^\s*(\/\/|\/\*|\*)/.test(lines[line - 1])) continue;
       searched.set(needle, at + needle.length);
       return line;
     }
-    return '?';
+    return null;
+  };
+  return (value) => {
+    const words = value.trim().split('\n')[0].slice(0, 40);
+    return find(`'${words}'`) ?? find(`"${words}"`) ?? find(words) ?? '?';
   };
 }
 
@@ -72,6 +76,19 @@ function renderedStrings(node) {
   return [];
 }
 
+function copyPropStrings(name, value) {
+  if (COPY_PROPS.has(name)) return renderedStrings(value).map((text) => [name, text]);
+  if (value?.type === 'ArrayExpression') return value.elements.flatMap((element) => copyPropStrings(null, element));
+  if (value?.type === 'ObjectExpression') return value.properties.flatMap((property) => copyPropStrings(keyName(property), property.value));
+  return [];
+}
+
+function dialogName(callee) {
+  if (callee.type === 'Identifier') return callee.name;
+  if (callee.type === 'MemberExpression' && !callee.computed && callee.object.name === 'window') return callee.property.name;
+  return null;
+}
+
 export function copyHits(file, allowed) {
   const { text, ast } = parseSource(file);
   const lineOf = lineLocator(text);
@@ -80,11 +97,13 @@ export function copyHits(file, allowed) {
     if (/\p{L}/u.test(value) && !allowed.has(value.trim())) hits.push(`${file}:${lineOf(value)} ${where}${JSON.stringify(value)}`);
   };
   walk(ast, (node) => {
-    if (node.type !== 'CallExpression' || node.callee.name !== '$jsx') return;
+    if (node.type !== 'CallExpression') return;
+    const dialog = dialogName(node.callee);
+    if (DIALOGS.has(dialog)) for (const value of renderedStrings(node.arguments[0])) report(`${dialog}() `, value);
+    if (node.callee.name !== '$jsx') return;
     const [, props, ...children] = node.arguments;
     for (const property of props?.type === 'ObjectExpression' ? props.properties : []) {
-      const name = keyName(property);
-      if (COPY_PROPS.has(name)) for (const value of renderedStrings(property.value)) report(`${name}=`, value);
+      for (const [name, value] of copyPropStrings(keyName(property), property.value)) report(`${name}=`, value);
     }
     for (const child of children) for (const value of renderedStrings(child)) report('text ', value);
   });
@@ -98,32 +117,40 @@ function argumentNames(nodes) {
   });
 }
 
-function translationCalls(file, index) {
+function translationCalls(file, indexes) {
   const { text, ast } = parseSource(file);
-  const specifiers = ast.body
-    .filter((node) => node.type === 'ImportDeclaration' && path.resolve(path.dirname(path.join(WEB, file)), node.source.value) === index)
-    .flatMap((node) => node.specifiers);
+  const directory = path.dirname(path.join(WEB, file));
+  const targetOf = (specifier) => (specifier.startsWith('/') ? path.join(WEB, specifier) : path.resolve(directory, specifier));
   const misuse = new Set();
-  if (specifiers.some((specifier) => specifier.type !== 'ImportSpecifier' || specifier.imported.name !== 't')) misuse.add(`${file} imports its owner's i18n other than as { t }`);
-  const local = specifiers.find((specifier) => specifier.type === 'ImportSpecifier' && specifier.imported.name === 't')?.local.name;
-  if (!local) return { calls: [], misuse: [...misuse] };
+  const reads = [];
+  walk(ast, (node) => {
+    const source = node.type === 'ImportExpression' || node.type.startsWith('Import') || node.type.startsWith('Export') ? node.source : null;
+    if (source?.type !== 'Literal' || !indexes.includes(targetOf(source.value))) return;
+    const [specifier, ...others] = node.specifiers ?? [];
+    const canonical = node.type === 'ImportDeclaration' && source.value.startsWith('.') && !others.length
+      && specifier?.type === 'ImportSpecifier' && specifier.imported.name === 't' && specifier.local.name === 't';
+    if (!canonical) misuse.add(`${file} reads its owner's catalog other than as one static, relative import { t } from '…/i18n/index.js'`);
+    reads.push(targetOf(source.value));
+  });
+  if (reads.length > 1) misuse.add(`${file} reads its owner's catalog more than once; import t once, from one index`);
+  if (reads.length !== 1 || misuse.size) return { index: null, calls: [], misuse: [...misuse] };
 
   const lineOf = lineLocator(text);
   const calls = [];
   const seen = new Set();
   walk(ast, (node, parent) => {
-    if (node.type !== 'Identifier' || node.name !== local || seen.has(node.start)) return;
+    if (node.type !== 'Identifier' || node.name !== 't' || seen.has(node.start)) return;
     seen.add(node.start);
     if (parent.type === 'ImportSpecifier') return;
     if (parent.type === 'MemberExpression' && parent.property === node && !parent.computed) return;
     if (['Property', 'MethodDefinition', 'PropertyDefinition'].includes(parent.type) && parent.key === node && !parent.computed && !parent.shorthand) return;
     if (parent.type !== 'CallExpression' || parent.callee !== node) {
-      misuse.add(`${file} passes ${local} around or binds another ${local}; call it only as ${local}('a.literal.key', { args })`);
+      misuse.add(`${file} passes t around or binds another t; call it only as t('a.literal.key', { args })`);
       return;
     }
     const [key, args, ...rest] = parent.arguments;
     if (key?.type !== 'Literal' || typeof key.value !== 'string' || rest.length) {
-      misuse.add(`${file} calls ${local} with a key that is not one string literal, so the catalog test cannot see it`);
+      misuse.add(`${file} calls t with a key that is not one string literal, so the catalog test cannot see it`);
       return;
     }
     const at = `${file}:${lineOf(key.value)}`;
@@ -131,55 +158,70 @@ function translationCalls(file, index) {
     if (!literalArgs) misuse.add(`${at} passes ${key.value} its arguments other than as an object literal of plain keys`);
     calls.push({ key: key.value, args: literalArgs ? (args?.properties ?? []).map(keyName) : null, at });
   });
-  return { calls, misuse: [...misuse] };
+  return { index: reads[0], calls, misuse: [...misuse] };
 }
 
-export function catalogViolations({ namespace, root }) {
-  const directory = path.join(WEB, root, 'i18n');
-  const catalogs = Object.fromEntries(AVAILABLE_LOCALES.map((locale) => [
-    locale, JSON.parse(fs.readFileSync(path.join(directory, `${locale}.json`), 'utf8')),
-  ]));
-  const keys = Object.keys(catalogs.en);
+function catalogFiles(directory, locales, violations) {
+  const expected = ['index.js', ...locales.map((locale) => `${locale}.json`)];
+  if (fs.existsSync(path.join(WEB, directory, 'entry'))) expected.push('entry/');
+  const held = fs.readdirSync(path.join(WEB, directory), { withFileTypes: true }).map((entry) => (entry.isDirectory() ? `${entry.name}/` : entry.name));
+  if (held.sort().join() !== expected.sort().join()) violations.push(`${directory} holds ${held.join(', ')}, not ${expected.join(', ')}`);
+  const present = locales.filter((locale) => fs.existsSync(path.join(WEB, directory, `${locale}.json`)));
+  return { en: {}, ...Object.fromEntries(present.map((locale) => [locale, JSON.parse(fs.readFileSync(path.join(WEB, directory, `${locale}.json`), 'utf8'))])) };
+}
+
+function readMessages(directory, catalogs, namespace, violations) {
   const shape = new RegExp(`^${namespace}(\\.[a-z][A-Za-z0-9]*)+$`);
-  const violations = [];
-
-  const files = fs.readdirSync(directory).sort();
-  const expectedFiles = ['index.js', ...AVAILABLE_LOCALES.map((locale) => `${locale}.json`)].sort();
-  if (files.join() !== expectedFiles.join()) violations.push(`${root}/i18n holds ${files.join(', ')}, not ${expectedFiles.join(', ')}`);
+  const shown = new Map();
   for (const [locale, catalog] of Object.entries(catalogs)) {
-    if (Object.keys(catalog).sort().join() !== [...keys].sort().join()) violations.push(`${root}/i18n/${locale}.json and en.json hold different keys`);
-  }
-
-  const messages = new Map();
-  for (const [locale, catalog] of Object.entries(catalogs)) {
+    if (Object.keys(catalog).sort().join() !== Object.keys(catalogs.en).sort().join()) violations.push(`${directory}/${locale}.json and en.json hold different keys`);
     for (const [key, message] of Object.entries(catalog)) {
-      if (!shape.test(key)) violations.push(`${key} is not ${namespace}.dotted.camelCase`);
-      if (key.length > 80) violations.push(`${key} is longer than 80 characters, so Sentry would drop it as the missing-message tag`);
+      if (locale === 'en' && !shape.test(key)) violations.push(`${key} is not ${namespace}.dotted.camelCase`);
+      if (locale === 'en' && key.length > 80) violations.push(`${key} is longer than 80 characters, so Sentry would drop it as the missing-message tag`);
       if (typeof message !== 'string') {
         violations.push(`${locale} ${key} is not a string`);
         continue;
       }
       try {
         const names = new Set(argumentNames(parseMessage(message)));
-        if (locale === 'en') messages.set(key, names);
+        const listed = [...names].sort().join(', ');
+        if (locale === 'en') shown.set(key, names);
+        else if (shown.has(key) && listed !== [...shown.get(key)].sort().join(', ')) violations.push(`${locale} ${key} shows {${listed}} where en shows {${[...shown.get(key)].sort().join(', ')}}`);
       } catch (error) {
         violations.push(`${locale} ${key}: ${error.message}`);
       }
     }
   }
+  return shown;
+}
 
-  const used = new Set();
-  const sources = sourceFiles(root).filter((file) => !file.startsWith(path.join(root, 'i18n') + path.sep));
-  for (const file of sources) {
-    const { calls, misuse } = translationCalls(file, path.join(directory, 'index.js'));
+export function catalogViolations({ namespace, root, locales = AVAILABLE_LOCALES }) {
+  const violations = [];
+  const own = path.join(root, 'i18n');
+  const entry = path.join(own, 'entry');
+  const withEntry = fs.existsSync(path.join(WEB, entry));
+  const ownCatalogs = catalogFiles(own, locales, violations);
+  const entryCatalogs = withEntry ? catalogFiles(entry, locales, violations) : { en: {} };
+  const shown = new Map([...readMessages(entry, entryCatalogs, namespace, violations), ...readMessages(own, ownCatalogs, namespace, violations)]);
+  for (const key of Object.keys(ownCatalogs.en)) if (Object.hasOwn(entryCatalogs.en, key)) violations.push(`${key} is in both ${entry}/en.json and ${own}/en.json`);
+
+  const ownIndex = path.join(WEB, own, 'index.js');
+  const entryIndex = path.join(WEB, entry, 'index.js');
+  const askedFromEntry = new Set();
+  const asked = new Set();
+  for (const file of sourceFiles(root).filter((source) => !source.startsWith(own + path.sep))) {
+    const { index, calls, misuse } = translationCalls(file, withEntry ? [ownIndex, entryIndex] : [ownIndex]);
     violations.push(...misuse);
     for (const { key, args, at } of calls) {
-      used.add(key);
-      if (!Object.hasOwn(catalogs.en, key)) {
-        violations.push(`${at} asks for ${key}, which ${root}/i18n/en.json does not hold`);
+      const fromEntry = index === entryIndex;
+      if (!Object.hasOwn(entryCatalogs.en, key) && (fromEntry || !Object.hasOwn(ownCatalogs.en, key))) {
+        violations.push(fromEntry && Object.hasOwn(ownCatalogs.en, key)
+          ? `${at} reads ${key} through ${entry}/index.js, but ${own}/en.json holds it; a key the entry asks for lives in ${entry}/en.json`
+          : `${at} asks for ${key}, which ${fromEntry ? entry : own}/en.json does not hold`);
         continue;
       }
-      const needed = messages.get(key);
+      (fromEntry ? askedFromEntry : asked).add(key);
+      const needed = shown.get(key);
       if (!needed || !args) continue;
       const missing = [...needed].filter((name) => !args.includes(name));
       const extra = args.filter((name) => !needed.has(name));
@@ -187,6 +229,12 @@ export function catalogViolations({ namespace, root }) {
       if (extra.length) violations.push(`${at} passes ${key} ${extra.join(', ')}, which its message never shows`);
     }
   }
-  for (const key of keys) if (!used.has(key)) violations.push(`${key} is in ${root}/i18n/en.json but nothing asks for it`);
+  for (const key of Object.keys(entryCatalogs.en)) {
+    if (askedFromEntry.has(key)) continue;
+    violations.push(asked.has(key)
+      ? `${key} is asked for only by modules loaded with the room, so it belongs in ${own}/en.json`
+      : `${key} is in ${entry}/en.json but nothing asks for it`);
+  }
+  for (const key of Object.keys(ownCatalogs.en)) if (!asked.has(key)) violations.push(`${key} is in ${own}/en.json but nothing asks for it`);
   return violations;
 }

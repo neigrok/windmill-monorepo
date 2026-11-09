@@ -1,5 +1,5 @@
 import { SITE_ORIGIN, SHARE_CARD_ALT } from '../../../shell/marketing/siteIdentity.js';
-import { t } from '../i18n/index.js';
+import { t } from '../i18n/entry/index.js';
 
 export const gymLandingHead = {
   path: '/gym',

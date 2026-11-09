@@ -3,7 +3,7 @@
 import React from 'react';
 import { useScene } from '../../../shell/marketing/LandingChrome.jsx';
 import { mountGlimpse, mountSectionTree } from './treeScenes.js';
-import { t } from '../i18n/index.js';
+import { t } from '../i18n/entry/index.js';
 import './roadmapLanding.css';
 
 export function RoadmapGlimpse() {

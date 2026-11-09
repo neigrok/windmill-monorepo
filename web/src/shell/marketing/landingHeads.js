@@ -9,7 +9,7 @@
 
 import { PRODUCTS } from '../products.js';
 import { SITE_ORIGIN, SITE_SCHEMA } from './siteIdentity.js';
-import { t } from '../i18n/index.js';
+import { t } from '../i18n/entry/index.js';
 
 export { SITE_ORIGIN, SITE_SCHEMA };
 

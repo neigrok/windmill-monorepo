@@ -1,7 +1,7 @@
 // The routine editor's text fields, readouts and presentation drafts.
 
 import { SetTarget } from './domain/routines.js';
-import { t } from './i18n/index.js';
+import { t } from './i18n/entry/index.js';
 import { round, snap } from './logger/ladder.js';
 import {
   entryLabel, fmtKg, isNeverTrained, OPEN_TARGET, schemeAgrees,

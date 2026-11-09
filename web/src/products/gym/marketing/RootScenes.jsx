@@ -11,7 +11,7 @@
 
 import React from 'react';
 import { Icon } from '../../../design-system';
-import { t } from '../i18n/index.js';
+import { t } from '../i18n/entry/index.js';
 import './gymRootScenes.css';
 
 const STEPS = ['-10', '-2.5', '+2.5', '+10'];

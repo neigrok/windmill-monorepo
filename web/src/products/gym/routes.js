@@ -5,7 +5,7 @@ import { lazy } from 'react';
 import { gymLandingHead } from './marketing/landingHead.js';
 import { sharedLogTokenOf, sharedTokenOf } from './log.js';
 import { gymLiveHint, gymCommandResult } from './gymRuntime.js';
-import { t } from './i18n/index.js';
+import { t } from './i18n/entry/index.js';
 
 const importGymApp = () => import('./GymApp.jsx').then((m) => ({ default: m.GymApp }));
 const GymApp = lazy(importGymApp);

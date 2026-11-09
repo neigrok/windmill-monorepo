@@ -3,7 +3,7 @@
 import { roadmapRoutes } from '../products/roadmap/routes.js';
 import { journalRoutes } from '../products/journal/routes.js';
 import { gymRoutes } from '../products/gym/routes.js';
-import { t } from './i18n/index.js';
+import { t } from './i18n/entry/index.js';
 
 // In rail order; a product holds itself shut through `shell.status: 'pre-open'` in its route table.
 export const PRODUCTS = [roadmapRoutes, journalRoutes, gymRoutes];

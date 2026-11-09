@@ -14,7 +14,7 @@ import { useAppearance } from '../useAppearance.js';
 import { paintBrowserChrome, restoreBrowserChrome } from '../appearance.js';
 import { LANDING_HEADS, SITE_ORIGIN } from './landingHeads.js';
 import { LEGAL_LINKS, SURFACE_LINKS } from './siteIdentity.js';
-import { t } from '../i18n/index.js';
+import { t } from '../i18n/entry/index.js';
 import './landing.css';
 
 // `anchored` is the brand root's: its product links scroll to that product's section on the same page.

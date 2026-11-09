@@ -1,6 +1,6 @@
 // Pure data with no browser globals, so scripts/build-landing-shells.mjs can read it in Node.
 
-import { t } from '../i18n/index.js';
+import { t } from '../i18n/entry/index.js';
 
 export const SITE_ORIGIN = 'https://windmill.works';
 

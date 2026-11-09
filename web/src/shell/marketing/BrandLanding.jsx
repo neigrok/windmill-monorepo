@@ -9,7 +9,7 @@ import { PRODUCTS, homeHash } from '../products.js';
 import { useAppearance } from '../useAppearance.js';
 import { LandingPage } from './LandingChrome.jsx';
 import { BRAND_PROMISE, START_FREE } from './landingHeads.js';
-import { t } from '../i18n/index.js';
+import { t } from '../i18n/entry/index.js';
 import './landing.css';
 
 function HeroBand({ product, theme }) {

@@ -6,7 +6,7 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
 import { Avatar, SegmentedControl } from '../../design-system';
 import { useAppearance } from '../useAppearance.js';
-import { t } from '../i18n/index.js';
+import { t } from '../i18n/entry/index.js';
 
 const SEAT_CSS = `
   @keyframes wm-seat-wake { 0% { transform: scale(1); } 45% { transform: scale(1.02); } 100% { transform: scale(1); } }

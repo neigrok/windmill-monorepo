@@ -1,7 +1,7 @@
 // The pure rules behind every gym surface: the URL grammar, the labels and the set grouping.
 
 import { round } from './logger/ladder.js';
-import { t } from './i18n/index.js';
+import { t } from './i18n/entry/index.js';
 import { inDisplayUnit, LB, unitSymbol, weightUnit } from './units.js';
 import { inLoggedOrder } from './domain/training.js';
 
@@ -183,8 +183,7 @@ export function screenOf(hash) {
   return 'routines';
 }
 
-// The catalog's words and order, never the system locale's: a reordered locale would make the prefill card and the log row disagree.
-// A missing instant reads `undefined NaN undefined` as it always has, so its names pass through String().
+// The catalog's words and order, never the system locale's; String() keeps a missing instant reading `undefined NaN undefined`.
 export function dayLabel(ms) {
   const day = new Date(ms);
   return t('gym.log.day', { weekday: String(WEEKDAYS[day.getDay()]), date: day.getDate(), month: String(MONTHS[day.getMonth()]) });

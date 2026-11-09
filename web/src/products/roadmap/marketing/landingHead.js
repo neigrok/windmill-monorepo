@@ -1,7 +1,7 @@
 // scripts/build-landing-shells.mjs reads this chain in plain Node: no .jsx imports, no browser globals.
 
 import { SITE_ORIGIN } from '../../../shell/marketing/siteIdentity.js';
-import { t } from '../i18n/index.js';
+import { t } from '../i18n/entry/index.js';
 
 export const roadmapLandingHead = {
   path: '/roadmap',

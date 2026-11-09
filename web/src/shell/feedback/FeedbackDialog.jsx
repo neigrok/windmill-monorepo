@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { Dialog, Input, Button } from '../../design-system';
 import { sendFeedback, isSendableMessage, MESSAGE_MAX } from './FeedbackClient.js';
-import { t } from '../i18n/index.js';
+import { t } from '../i18n/entry/index.js';
 
 export function FeedbackDialog({ open, onClose }) {
   const [message, setMessage] = useState('');

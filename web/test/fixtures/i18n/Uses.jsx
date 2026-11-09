@@ -10,6 +10,7 @@ export function Uses({ name, count, keys }) {
       <p>{t('fixture.broken', { count })}</p>
       <p>{keys.map(t)}</p>
       <p>{t(`fixture.${name}`)}</p>
+      <p>{t('fixture.roomOnly')}</p>
     </section>
   );
 }

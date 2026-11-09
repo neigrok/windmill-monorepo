@@ -1,7 +1,7 @@
 import React from 'react';
 import { BrandWordmark, Dialog, Input, Button, Icon } from '../../design-system';
 import { API_BASE } from '../apiBase.js';
-import { t } from '../i18n/index.js';
+import { t } from '../i18n/entry/index.js';
 
 const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 

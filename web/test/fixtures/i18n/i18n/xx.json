@@ -1,0 +1,8 @@
+{
+  "fixture.greeting": "Hallo, {nom}!",
+  "fixture.steps": "{count, plural, one {# Schritt} other {# Schritte}}",
+  "fixture.unused": "Niemand fragt danach",
+  "Fixture.badShape": "Gerufen",
+  "fixture.broken": "{count, plural, one {ein Schritt} other {Schritte}}",
+  "fixture.headline": "Titelseite"
+}

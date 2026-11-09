@@ -11,7 +11,7 @@ point for the component showcase.
 | Area | Responsibility |
 |---|---|
 | `SkillTreeView.jsx` | The room's composition: it wires the hooks in `room/` and mounts every surface below |
-| `i18n/`, `copy.js`, `reportFailure.js` | The catalog every visible string reads from; the room's shared words and the sentences it builds from counts; the static-name Sentry report |
+| `i18n/`, `copy.js`, `reportFailure.js` | The catalogs every visible string reads from; the words and count sentences several surfaces read; the static-name Sentry report |
 | `room/` | What the room holds: the load, the view, progress, the scene, the open step, the row's verbs, the band and who holds the roadmap |
 | `model/` | Graph validation, trunk selection, unlock rules, legend, workspace and spatial queries. Independent of React and WebGL |
 | `identity/` | The row above both views: title, roadmap sheet and switcher, view switch |
@@ -29,10 +29,11 @@ point for the component showcase.
 | `tending/`, `reminders/`, `settings/` | Ask AI, reminder preferences and account data export |
 | `marketing/` | Product landing, metadata and self-playing scenes |
 
-Every string a person sees is a `roadmap.*` message in `i18n/en.json`. A surface's own copy is a `t()` call at its
-site; a word the Board, Graph and step share, and every sentence chosen from a count, is a `copy.js` export that
-reads the same catalog. Step titles, kind labels, server lines, the demo tree and the starter quests' content
-are data and stay as they arrive.
+Every string a person sees is a `roadmap.*` message: in `i18n/entry/en.json` when a file the brand root loads shows
+it (the route table, the landing head, the brand root's scenes and `marketing/treeScenes.js`), and in `i18n/en.json`
+otherwise. A surface's own copy is a `t()` call at
+its site; a word or a count sentence several surfaces read is a `copy.js` export. Step titles, kind labels,
+server lines, the demo tree and the starter quests' content are data and stay as they arrive.
 
 ## Bands, roles and views
 
@@ -502,7 +503,7 @@ Node bodies, root and selection scale, zoom floors and caption dimensions must a
 and layout. `model/footprint.js` estimates disc-plus-caption bounds from label length, without DOM
 measurement.
 
-`copy.js` holds the room's shared words, and ceremony structure and timing read none of it.
+`copy.js` holds words and count sentences several surfaces read, and ceremony structure and timing read none of it.
 
 ## Layout
 

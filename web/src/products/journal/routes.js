@@ -5,7 +5,7 @@ import { lazy } from 'react';
 import { journalLandingHead } from './marketing/landingHead.js';
 import { migratePages } from './migrate.js';
 import { adoptDeviceRows, isWritten, onSyncResult, pagesOf, pendingClaimWork, recoveredDrafts, watchClaims } from './pages.js';
-import { t } from './i18n/index.js';
+import { t } from './i18n/entry/index.js';
 
 const importJournalApp = () => import('./JournalApp.jsx').then((m) => ({ default: m.JournalApp }));
 const JournalApp = lazy(importJournalApp);

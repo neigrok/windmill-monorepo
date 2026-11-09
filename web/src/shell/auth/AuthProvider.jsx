@@ -10,7 +10,7 @@ import { captureError } from '../../telemetry/sentry.js';
 import { track } from '../../telemetry/beacon.js';
 import { SyncDecisions } from './SyncDecisions.jsx';
 import { useRoomStatus } from '../roomStatus.js';
-import { t } from '../i18n/index.js';
+import { t } from '../i18n/entry/index.js';
 
 const AuthContext = createContext(null);
 const HINT_KEY = 'windmill:auth-hint';

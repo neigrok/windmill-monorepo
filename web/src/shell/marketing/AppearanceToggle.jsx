@@ -7,7 +7,7 @@
 import React from 'react';
 import { SegmentedControl } from '../../design-system';
 import { useAppearance } from '../useAppearance.js';
-import { t } from '../i18n/index.js';
+import { t } from '../i18n/entry/index.js';
 
 const OPTIONS = [
   { value: 'light', label: <span className="landing-appearance-word">{t('shell.appearance.light')}</span>, ariaLabel: t('shell.appearance.light'), icon: 'sun' },

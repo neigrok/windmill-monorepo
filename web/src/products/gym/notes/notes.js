@@ -1,5 +1,5 @@
 import { failureReason } from '../errors.js';
-import { t } from '../i18n/index.js';
+import { t } from '../i18n/entry/index.js';
 import { lengthIn } from '../../../../../packages/api-contract/sync/reference/core/values.js';
 import { NoteRules } from '../domain/notes.js';
 

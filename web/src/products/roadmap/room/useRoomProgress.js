@@ -1,9 +1,9 @@
 import { useRef, useState } from 'react';
 import { track } from '../../../telemetry/beacon.js';
 import { countBucket } from '../board/acts.js';
-import { LABELS, completedStepsToast, completedToast } from '../copy.js';
+import { DEMO_COPY, LABELS, completedStepsToast, completedToast } from '../copy.js';
 import { t } from '../i18n/index.js';
-import { COACHED_NODE_ID, DEMO_COPY } from '../demo/demoStage.js';
+import { COACHED_NODE_ID } from '../demo/demoStage.js';
 import { MilestoneLedger } from '../persistence/MilestoneLedger.js';
 import { ReturnLedger } from '../persistence/ReturnLedger.js';
 import { detectMilestones } from '../model/milestones.js';

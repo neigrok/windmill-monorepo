@@ -1,5 +1,5 @@
 import { failureReason } from './errors.js';
-import { t } from './i18n/index.js';
+import { t } from './i18n/entry/index.js';
 import { fmtKg, setLoadLabel } from './log.js';
 
 // The RPE band a lifter reads a set in: six to ten, by halves. The rungs are COUNTED off the band so

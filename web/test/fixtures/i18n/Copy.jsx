@@ -1,4 +1,4 @@
-export function Copy({ count, done, name }) {
+export function Copy({ count, done, name, onDelete }) {
   return (
     <div title="Card title" className="card" aria-hidden="true">
       <img src="/brand-mark.svg" alt="Windmill" />
@@ -9,6 +9,10 @@ export function Copy({ count, done, name }) {
       <input placeholder="Search" data-kind="label" />
       <span>—</span>
       <span>{name}</span>
+      <Menu items={[{ label: 'Log past', id: 'past' }, { label: 'Delete', tone: 'danger', onSelect: onDelete }]} />
     </div>
   );
 }
+
+export const remove = (lane) => confirm('Delete this card?') && lane.confirm('structure');
+export const saved = () => window.alert('Saved');

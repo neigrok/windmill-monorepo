@@ -79,15 +79,18 @@ and survives routine deletion.
 
 ## Localization
 
-Gym copy lives in `i18n/en.json` under `gym.<area>.*`, one area per screen or module (`gym.log.*`,
-`gym.routines.*`, `gym.coach.*`, `gym.landing.*`, `gym.product.*` for the shell registry's words), and every
-file reads it through `t` from `i18n/index.js`. A shared phrase keeps its exported constant (`COACH_TITLE`,
-`UNDO_LABEL`), whose value is a `t()` call. A weight is a number and a word: the caller formats the number as it
-always has and passes the wire unit, and the message spells it, `{weight} {unit, select, lb {lb} other {kg}}`;
-`unitSymbol` in `units.js` shows the symbol alone. Weekday and month names and the order of a day label come from
-the catalog, never from the system locale. Exercise, routine and note names, Coach answers and server refusals are
-shown as received. The domain's display strings (`Readout` in `domain/trainingReads.js`, `ProposalDiff` in
-`domain/proposalDiff.js`) are pinned by the shared vectors and are not in the catalog.
+Gym copy lives under `gym.<area>.*`, one area per screen or module (`gym.log.*`, `gym.routines.*`, `gym.coach.*`,
+`gym.landing.*`, `gym.product.*` for the shell registry's words). The files the brand root loads — the route table,
+the landing head, the brand root's scenes and the runtime the route table's sync hooks import — read `t` from
+`i18n/entry/index.js`, with their copy in `i18n/entry/en.json`; every other file reads `i18n/index.js` and
+`i18n/en.json`. A shared phrase keeps its exported constant (`COACH_TITLE`, `UNDO_LABEL`), whose value is a `t()`
+call. A weight is a number and a word: the caller formats the number and passes the wire unit, and the message
+spells it, `{weight} {unit, select, lb {lb} other {kg}}`; `unitSymbol` in `units.js` shows the symbol alone. The
+day labels in `log.js` take weekday and month names and their order from the catalog, never from the system
+locale; the date jump and the history filter read month names from `Intl` in English. Exercise, routine and note
+names, Coach answers and server refusals are shown as received. The domain's display strings (`Readout` in
+`domain/trainingReads.js`, `ProposalDiff` in `domain/proposalDiff.js`) are pinned by the shared vectors and are not
+in the catalog.
 
 ## Observability
 

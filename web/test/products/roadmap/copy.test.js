@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  DEMO_COPY,
   GRAPH_UNAVAILABLE,
   STATE_WORDS,
   COLUMN_TITLES,
@@ -74,6 +75,12 @@ import {
   showMore,
   draftLine,
 } from '../../../src/products/roadmap/copy.js';
+
+test('copy — the canon strings the demo speaks verbatim', () => {
+  assert.equal(DEMO_COPY.coachSentence, 'This step is up next — mark it done.');
+  assert.equal(DEMO_COPY.coachButton, 'Mark it done');
+  assert.equal(DEMO_COPY.unlockToast, 'Rig the boat yourself done · 2 up next');
+});
 
 test('copy — compact offline status', () => {
   assert.equal(SYNC_OFFLINE_SHORT, 'Offline');

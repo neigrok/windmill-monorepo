@@ -1,5 +1,6 @@
 // The room's shared words and the sentences it builds from counts, read from the roadmap catalog. Step titles arrive as plain strings.
 
+import { COACHED_CHILDREN } from './demo/demoStage.js';
 import { t } from './i18n/index.js';
 
 export const STATE_WORDS = { locked: t('roadmap.state.locked'), upNext: t('roadmap.state.upNext'), done: t('roadmap.state.done') };
@@ -227,6 +228,12 @@ export function completedToast({ step, unlocked = [], unlockedCount = unlocked.l
   if (unlockedCount === 1 && unlocked.length === 1) return t('roadmap.toast.completedOpening', { step, next: unlocked[0] });
   return t('roadmap.toast.completedOpeningMany', { step, count: formatCount(unlockedCount) });
 }
+
+export const DEMO_COPY = {
+  coachSentence: t('roadmap.demo.coachSentence'),
+  coachButton: t('roadmap.demo.coachButton'),
+  unlockToast: completedToast({ step: 'Rig the boat yourself', unlockedCount: COACHED_CHILDREN.length }),
+};
 
 export function completedStepsToast({ count, unlocked }) {
   if (unlocked > 0) return t('roadmap.toast.completedStepsOpening', { count, shown: formatCount(count), unlocked: formatCount(unlocked) });

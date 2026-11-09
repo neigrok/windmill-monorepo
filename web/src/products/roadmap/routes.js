@@ -5,7 +5,7 @@ import { confirmDeviceOwner } from './persistence/LocalTreeRegistry.js';
 import { DEMO_TREE_ID } from './demo/demoStage.js';
 import { paidPlansOpen } from '../../shell/billing/checkout.js';
 import { roadmapLandingHead } from './marketing/landingHead.js';
-import { t } from './i18n/index.js';
+import { t } from './i18n/entry/index.js';
 
 const importSkillTreeApp = () => import('./index.js').then((m) => ({ default: m.SkillTreeApp }));
 const SkillTreeApp = lazy(importSkillTreeApp);

@@ -7,7 +7,7 @@
 
 import React from 'react';
 import './journalRootScenes.css';
-import { t } from '../i18n/index.js';
+import { t } from '../i18n/entry/index.js';
 
 function PageCard({ stamp, quiet, children }) {
   return (

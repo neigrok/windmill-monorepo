@@ -1,7 +1,7 @@
 // The gym's failures, and the reason a screen gives for each.
 
 import { CommitError } from '../../../../packages/api-contract/sync/reference/client/commit.js';
-import { t } from './i18n/index.js';
+import { t } from './i18n/entry/index.js';
 
 // A REST door's answer that was not a success, in the server's words and code.
 export class GymError extends Error {

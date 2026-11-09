@@ -14,7 +14,7 @@ const AUGUST = (day, hour = 9) => new Date(2026, 7, day, hour, 0).getTime();
 // threads.js without comments, followed by the catalog messages its t() calls ask for.
 const GYM = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../../src/products/gym');
 const threadsVocabulary = () => {
-  const catalog = JSON.parse(fs.readFileSync(path.join(GYM, 'i18n/en.json'), 'utf8'));
+  const catalog = { ...JSON.parse(fs.readFileSync(path.join(GYM, 'i18n/entry/en.json'), 'utf8')), ...JSON.parse(fs.readFileSync(path.join(GYM, 'i18n/en.json'), 'utf8')) };
   const code = fs.readFileSync(path.join(GYM, 'coach/threads.js'), 'utf8').replace(/^[ \t]*\/\/.*$/gm, '');
   return [code, ...[...code.matchAll(/\bt\('([\w.]+)'/g)].map(([, key]) => catalog[key])].join('\n');
 };

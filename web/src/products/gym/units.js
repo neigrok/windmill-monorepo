@@ -1,5 +1,5 @@
 import { GymUnits } from './domain/units.js';
-import { t } from './i18n/index.js';
+import { t } from './i18n/entry/index.js';
 
 // The store holds kilograms and only kilograms; the one field typed in the display unit is a weigh-in.
 
