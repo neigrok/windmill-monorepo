@@ -8,6 +8,8 @@
     <string name="platform_try_again">Try again</string>
     <string name="platform_words_joined">%1$s · %2$s</string>
     <string name="platform_email">Email</string>
+    <!-- The system's label for text a copy puts on the clipboard. -->
+    <string name="platform_clip_label">plain text</string>
 
     <string name="platform_sign_in">Sign in</string>
     <string name="platform_sign_in_check_email">Check your email</string>

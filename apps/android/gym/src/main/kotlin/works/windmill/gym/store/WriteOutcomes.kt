@@ -1,6 +1,7 @@
 package works.windmill.gym.store
 
 import androidx.annotation.StringRes
+import java.io.Serializable
 import works.windmill.gym.R
 import works.windmill.platform.i18n.Words
 import works.windmill.gym.presentation.Blocker
@@ -29,7 +30,7 @@ sealed interface WriteFailure {
     data object UnconfirmedDelete : WriteFailure
 
     // What the screen says. `noAnswer` is that screen's whole sentence for a log that went quiet, read only when the log gave none.
-    fun says(@StringRes noAnswer: Int, vararg args: Any): Words = when (this) {
+    fun says(@StringRes noAnswer: Int, vararg args: Serializable): Words = when (this) {
         is Refused -> words
         NoAnswer -> Words.Message(noAnswer, args.toList())
         UnconfirmedDelete -> Words.Message(R.string.gym_store_delete_unconfirmed)

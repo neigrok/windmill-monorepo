@@ -67,13 +67,15 @@ sealed interface CoachTurnRefusal {
 
     // The words the notice draws: the refusal, when what refused comes back where the server named it, in the phone's zone and clock, and the sign-in a spent allowance offers.
     fun said(anonymous: Boolean, clock24: Boolean, zone: ZoneId = ZoneId.systemDefault()): Words {
-        fun moment(ms: Long, pattern: String) = DateTimeFormatter.ofPattern(pattern, Locale.getDefault()).format(Instant.ofEpochMilli(ms).atZone(zone))
+        val day = DateTimeFormatter.ofPattern("MMM d", Locale.getDefault())
+        val time = DateTimeFormatter.ofPattern(if (clock24) "H:mm" else "h:mm a", Locale.getDefault())
+        fun moment(ms: Long, format: DateTimeFormatter) = format.format(Instant.ofEpochMilli(ms).atZone(zone))
         return when {
-            this is FreeMonthExhausted && resetsAtMs != null -> Words.Message(R.string.gym_coach_notice_comes_back, listOf(words, moment(resetsAtMs, "MMM d")))
+            this is FreeMonthExhausted && resetsAtMs != null -> Words.Message(R.string.gym_coach_notice_comes_back, listOf(words, moment(resetsAtMs, day)))
             this is Allowance && allowance == "free_day_exhausted" && resetsAtMs != null -> Words.Message(R.string.gym_coach_notice_use_again,
-                listOf(words, moment(resetsAtMs, "MMM d"), moment(resetsAtMs, if (clock24) "H:mm" else "h:mm a")))
+                listOf(words, moment(resetsAtMs, day), moment(resetsAtMs, time)))
             this is Allowance && recovery(anonymous) == CoachRecovery.signIn -> Words.Message(R.string.gym_coach_notice_sign_in, listOf(words))
-            this is Allowance && allowance == "subject_exhausted" && resetsAtMs != null -> Words.Message(R.string.gym_coach_notice_comes_back, listOf(words, moment(resetsAtMs, "MMM d")))
+            this is Allowance && allowance == "subject_exhausted" && resetsAtMs != null -> Words.Message(R.string.gym_coach_notice_comes_back, listOf(words, moment(resetsAtMs, day)))
             else -> words
         }
     }

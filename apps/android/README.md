@@ -353,20 +353,26 @@ are `onboarding_<thing>`. Manifest labels point at resources too.
   text that already is what is said (a name, the server's own sentence). A composable spells it with `words.text()`,
   other code with `words.text(context)`. It is `Serializable`, so saved state keeps it and spells it again after a
   configuration change.
-- A count reads `pluralString(R.plurals.x, count, …)` from `platform/i18n/AppLanguage.kt`, never
-  `pluralStringResource` or `getQuantityString`: Android picks a plural's category by the system's first language
-  even when the app does not ship it, so a Russian phone would read "21 set".
+- A count reads `pluralString(R.plurals.x, count, …)` from the same file, never `pluralStringResource` or
+  `getQuantityString`: Android picks a plural's category by the system's first language even when the app does not
+  ship it, so a Russian phone would read "21 set".
 - Placeholders are positional `%1$s`, given a value its own formatter already rendered. `%d` and `%f` format in the
   system's locale and print Arabic-Indic digits on an Arabic phone.
 - A sentence is one message: a value fills a placeholder, never a fragment beside it.
 - User content, server text, test tags, telemetry names and log lines stay in Kotlin.
-- `CopyInResourcesTests` (`:app`) fails on copy written in Kotlin anywhere in `:app`, `:platform` and `:gym` and on a
-  literal manifest label; the app's lint fails on an unused resource.
+- `CopyInResourcesTests` (`:app`) reads the main Kotlin of `:app`, `:platform` and `:gym`, previews aside. It fails on a
+  literal of two words or more anywhere but a check, a require, an error, an exception, a log line, a telemetry
+  failure, a test tag, a pattern, an animation label or a `toString`; on a literal with a letter where a screen or a
+  notification takes its copy, or handed to `Plain`; on `pluralStringResource` or `getQuantityString` outside
+  `Words.kt`; on a literal manifest label; on a resource that formats a number with `%d` or `%f` (`onboarding_page`
+  aside); and on a message given a different number of arguments than its resource takes. Its `allowed` list names
+  the few literals that read like copy and are not. The app's lint fails on an unused resource.
 
 A second language ships as its `values-<language>/` folders, one more entry in `AppLanguage`'s `shipped` list, and
 `generateLocaleConfig` and `localeFilters` in the app's build, all in one change. Neither build setting comes earlier:
 `localeFilters` drops the libraries' own translations, such as Material's date picker, and `generateLocaleConfig`
-adds the app to the system's per-app language setting.
+adds the app to the system's per-app language setting. `AppLanguage` matches a system language by language alone, so
+a language shipped per region or script (`zh-TW` beside `zh-CN`) teaches it to match those too.
 
 ## Writing Kotlin here
 

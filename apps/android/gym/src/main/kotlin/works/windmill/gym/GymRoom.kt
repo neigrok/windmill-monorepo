@@ -2,6 +2,7 @@ package works.windmill.gym
 
 import works.windmill.platform.i18n.Words
 import works.windmill.platform.i18n.text
+import works.windmill.platform.R as PlatformR
 import androidx.compose.material3.MaterialTheme
 import android.app.Activity
 import android.content.ClipData
@@ -590,6 +591,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
             val sharing = remember(origin) { WorkoutShareActions(origin, store.sharing::share, store.sharing::revokeShare) }
             val lookedAtIds = reviewFlow.lookedAtIds
             val clipboard = LocalClipboard.current
+            val clipLabel = stringResource(PlatformR.string.platform_clip_label)
             val logShareScope = key(account.identityRevision, store) { rememberCoroutineScope() }
 
             // The log row's long press. The card inside the session mints the same link and says more about
@@ -609,7 +611,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                     when (minted) {
                         is GymResult.Ok -> {
                             try {
-                                clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("plain text", WorkoutSharing.link(minted.value, origin))))
+                                clipboard.setClipEntry(ClipEntry(ClipData.newPlainText(clipLabel, WorkoutSharing.link(minted.value, origin))))
                             } catch (failure: Exception) {
                                 if (!currentCoroutineContext().isActive) throw failure
                                 telemetry.failure("gym.share", failure)

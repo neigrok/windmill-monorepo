@@ -58,6 +58,7 @@ import kotlinx.coroutines.launch
 import works.windmill.gym.R
 import works.windmill.platform.i18n.Words
 import works.windmill.platform.i18n.text
+import works.windmill.platform.R as PlatformR
 import works.windmill.platform.design.LocalWindmillDark
 import works.windmill.platform.telemetry.LocalTelemetry
 import works.windmill.gym.telemetry.coachAction
@@ -94,6 +95,7 @@ internal fun CoachBubble(
 ) {
     val colors = MaterialTheme.colorScheme
     val clipboard = LocalClipboard.current
+    val clipLabel = stringResource(PlatformR.string.platform_clip_label)
     val telemetry = LocalTelemetry.current
     val scope = rememberCoroutineScope()
     val latestCopy by rememberUpdatedState(copyText)
@@ -112,7 +114,7 @@ internal fun CoachBubble(
         scope.launch(start = CoroutineStart.UNDISPATCHED) {
             try {
                 val text = link ?: latestCopy()
-                clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("plain text", text)))
+                clipboard.setClipEntry(ClipEntry(ClipData.newPlainText(clipLabel, text)))
             }
             catch (failure: Exception) {
                 currentCoroutineContext().ensureActive()

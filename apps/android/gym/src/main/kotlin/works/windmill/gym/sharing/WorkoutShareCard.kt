@@ -1,6 +1,7 @@
 package works.windmill.gym.sharing
 
 import works.windmill.platform.i18n.text
+import works.windmill.platform.R as PlatformR
 import works.windmill.gym.R
 import androidx.compose.ui.res.stringResource
 import android.content.ActivityNotFoundException
@@ -61,6 +62,7 @@ fun WorkoutShareCard(sharing: WorkoutShareActions, sessionId: String) {
     val gymColors = MaterialTheme.gymColors
     val scope = rememberCoroutineScope()
     val clipboard = LocalClipboard.current
+    val clipLabel = stringResource(PlatformR.string.platform_clip_label)
     val context = LocalContext.current
     val telemetry = LocalTelemetry.current
     var state by remember(sessionId) { mutableStateOf<WorkoutSharing.State>(WorkoutSharing.State.Closed()) }
@@ -70,7 +72,7 @@ fun WorkoutShareCard(sharing: WorkoutShareActions, sessionId: String) {
         val live = state as? WorkoutSharing.State.Live ?: return
         scope.launch(start = CoroutineStart.UNDISPATCHED) {
             try {
-                clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("plain text", WorkoutSharing.link(live.share, sharing.origin))))
+                clipboard.setClipEntry(ClipEntry(ClipData.newPlainText(clipLabel, WorkoutSharing.link(live.share, sharing.origin))))
             } catch (failure: Exception) {
                 currentCoroutineContext().ensureActive()
                 telemetry.failure("gym.share", failure)
