@@ -466,7 +466,8 @@ The app and its Live Activity extension read their copy from String Catalogs, wi
 bundle has two: `Resources/Localizable.xcstrings` and `Resources/InfoPlist.xcstrings` for the app,
 `WorkoutActivityWidget/Localizable.xcstrings` and `WorkoutActivityWidget/InfoPlist.xcstrings` for the extension.
 `WorkoutActivityShared/` and `Sources/Theme/` compile into both bundles, so their strings stand in both catalogs. A
-key is its English text; `InfoPlist.xcstrings` keys are the Info.plist keys they name, such as `CFBundleDisplayName`.
+key is its English text. An `InfoPlist.xcstrings` entry is kept by hand under the Info.plist key it localizes: the name
+under the icon, `CFBundleDisplayName`, and any `…UsageDescription` the app adds.
 
 A new string follows these rules:
 
@@ -477,7 +478,9 @@ A new string follows these rules:
   `String(localized: "…")`. User content and what the server sends are shown as they are, never looked up.
 - A message interpolates only a `String` or an `Int`. A `Double`, a `Date` or a measurement is formatted first with the
   formatter the screen already uses, and that `String` is interpolated: an interpolated `Double` renders through
-  `%lf`, *2.500000*.
+  `%lf`, *2.500000*. A message that interpolates an `Int` resolves in `Locale.copy` (`String(localized: …, locale:
+  .copy)`), so its digits read as Swift writes them, *1000*, and English picks its plural form under any system
+  language; the system locale would write *1,000* or *١٠٠٠* and pick Russian's or Arabic's form.
 - A sentence is one message with placeholders, never joined from fragments. A count that changes its words is one
   `%lld` message with a plural variation in the catalog, and English's `one` and `other` must read as the app reads
   for every count it can receive. A `comment:` says what the English alone leaves unclear.
@@ -489,11 +492,13 @@ python3 Tools/generate_project.py
 python3 Tools/string_catalogs.py
 ```
 
-The tool builds the app in Release for the simulator, where `SWIFT_EMIT_LOC_STRINGS` has the compiler record every
-localized string in a `.stringsdata` file, and syncs each bundle's catalogs with `xcstringstool` from its target's
-files: a new string arrives, a string no source names leaves, and plural variations and comments stay. With
-`--derived-data <path>` it reads an existing Release simulator build instead of building; `--check` changes nothing
-and fails when a committed catalog differs, which [CI](../../../.github/workflows/ios.yml) runs on its Release build.
+The tool builds the app in Release for the simulator, in the DerivedData folder Xcode keeps for the project, where
+`SWIFT_EMIT_LOC_STRINGS` has the compiler record every localized string in a `.stringsdata` file. It syncs each
+bundle's `Localizable.xcstrings` with `xcstringstool` from the files of the sources its target compiles: a new string
+arrives, a string no source names leaves, and plural variations and comments stay. It also holds each
+`InfoPlist.xcstrings` to the built bundle's Info.plist. With `--derived-data <path>` it reads an existing Release
+simulator build instead of building; `--check` changes nothing and fails when a catalog differs, which
+[CI](../../../.github/workflows/ios.yml) runs on its Release build.
 
 ## Design captures
 
