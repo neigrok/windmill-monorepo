@@ -291,9 +291,8 @@ struct FinishWorkout: Action {
   // brought back numbers of their own, since.
   @ObservationIgnored private var rackPrefilled = true
   var paging = false { didSet { if oldValue != paging { activityChanged() } } }
-  var message: String? { didSet { messageCause = nil } }
-  // What put `message` up, while it stands; any other message forgets it.
-  @ObservationIgnored private var messageCause: MessageCause?
+  var message: String?
+  private var messageCause: MessageCause? { MessageCause(message) }
   var finishing = false { didSet { if oldValue != finishing { activityChanged() } } }
   var finishQueued = false { didSet { if oldValue != finishQueued { activityChanged() } } }
   var receipt: WorkoutReceiptData?
@@ -343,13 +342,6 @@ struct FinishWorkout: Action {
     }
   }
   static let rackUnchanged = String(localized: "The rack could not be changed. Try again.")
-  // A rack change that did not land says so on the workout and in the room, until a later change lands.
-  func rackFailed() {
-    message = Self.rackUnchanged; messageCause = .rackUnchanged
-    gym.error = message; gym.errorCause = .rackUnchanged
-  }
-  // The room's error said on the workout too, with what put it up.
-  func echoError() { message = gym.error; messageCause = gym.errorCause }
   // One save per burst of taps, reported once; an account change flushes first, so a burst that meets one is refused aloud.
   @discardableResult func flushRack() -> Bool {
     guard let previous = rackBase else { return true }
@@ -359,7 +351,7 @@ struct FinishWorkout: Action {
       self.gym.telemetry.event("gym_workout_adjusted", properties: ["screen": "workout", "field": weightKg != previous.weightKg ? "weight" : "reps", "outcome": outcome])
     }
     guard !gym.accountTransition else {
-      rackFailed()
+      message = Self.rackUnchanged; gym.error = message
       restoreRack(weightKg: previous.weightKg, reps: previous.reps); adjusted("refused"); return false
     }
     var revoke: WorkoutActivityRecord?
@@ -389,7 +381,7 @@ struct FinishWorkout: Action {
           }
         } catch { gym.readFailed = true; gym.report("gym_activity_update", error) }
       } else { gym.readFailed = true }
-      rackFailed()
+      message = Self.rackUnchanged; gym.error = message
       restoreRack(weightKg: previous.weightKg, reps: previous.reps); adjusted("failed")
       return false
     }
@@ -444,7 +436,7 @@ struct FinishWorkout: Action {
       }
     }
     catch {
-      finishQueued = true; message = Self.orderUnread; messageCause = .orderUnread
+      finishQueued = true; message = Self.orderUnread
       gym.failRead(error); return
     }
     if sessionId != open.id { drafts = [:]; receipt = nil; receiptOwed = false; handoff = nil }
@@ -505,7 +497,7 @@ struct FinishWorkout: Action {
   }
   @discardableResult func keep(_ next: WorkoutWalk) -> Bool {
     guard !gym.readFailed, let sessionId, gym.run(KeepWorkoutWalk(sessionId: sessionId, walk: next))?.refusal == nil,
-          gym.error == nil else { echoError(); return false }
+          gym.error == nil else { message = gym.error; return false }
     walk = next; activityChanged(); return true
   }
   func select(_ id: ID<Exercise>) {
@@ -572,8 +564,8 @@ struct FinishWorkout: Action {
       report("refused"); return false
     }
     let revision = ReviseWorkoutPlan(sessionId: session.id, base: base, operations: operations)
-    guard let result = gym.run(ReviseWorkout(revision: revision, walk: next)) else { echoError(); report("failed"); return false }
-    guard result.refusal == nil else { echoError(); report("refused"); return false }
+    guard let result = gym.run(ReviseWorkout(revision: revision, walk: next)) else { message = gym.error; report("failed"); return false }
+    guard result.refusal == nil else { message = gym.error; report("refused"); return false }
     if let next { walk = next }
     report("ok")
     reconcile(); activityChanged()
@@ -593,7 +585,7 @@ struct FinishWorkout: Action {
                             setNumber: SetRules.nextNumber(gym.sets, sessionId: session.id, exerciseId: selected))
     guard let result = gym.run(LogWorkoutSet(value: value, session: session, previousSets: sets, offer: offer)), result.refusal == nil else {
       if case .stale = gym.refusal { message = String(localized: "The workout changed. Check the current set.") }
-      else { echoError() }; return false
+      else { message = gym.error }; return false
     }
     gym.telemetry.event("gym_set_logged", properties: ["screen": "workout", "outcome": "ok"])
     drafts[selected] = nil; message = nil; prefill(); activityChanged()
@@ -631,7 +623,7 @@ struct FinishWorkout: Action {
         // What holds the finish back is named: the update the server requires, else the connection.
         if case .sessionOpen = gym.refusal, gym.runtime?.engine.status.upgradeRequired == true { message = String(localized: "Finish needs the update — keep logging, or hide the workout.") }
         else if case .sessionOpen = gym.refusal { message = String(localized: "Finish needs a connection — keep logging, or hide the workout.") }
-        else { echoError() }
+        else { message = gym.error }
         gym.telemetry.event("gym_session_finished", properties: ["screen": "workout", "outcome": "refused"])
         return
       }
@@ -646,7 +638,7 @@ struct FinishWorkout: Action {
       gym.refresh()
     }
     guard !Task.isCancelled, gym.account == account, sessionId == session.id, !gym.accountTransition else { return }
-    guard let finished = gym.sessions.first(where: { $0.id == session.id }), !finished.isOpen else { echoError(); return }
+    guard let finished = gym.sessions.first(where: { $0.id == session.id }), !finished.isOpen else { message = gym.error; return }
     completeFinish(finished)
   }
   // A successful push may precede its live hint: pull until the sets (before Finish) or the finish (after it) are confirmed.

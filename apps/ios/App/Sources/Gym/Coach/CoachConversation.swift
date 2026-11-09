@@ -14,9 +14,7 @@ import SyncSchema
   let store: CoachDraftStore
   var owner: String?
   var saved = CoachSaved()
-  var error: String? { didSet { saysOffline = false } }
-  // `error` is the offline line `noteOffline` put up, which comes down once Coach is back online.
-  @ObservationIgnored var saysOffline = false
+  var error: String?
   var draftReadable = true
   // A send between its admission and its record, while the composer holds still.
   var sending = false
@@ -142,10 +140,10 @@ import SyncSchema
     return true
   }
   func noteOffline() {
-    if offline, !asking, error == nil { error = CoachCopy.offline; saysOffline = true }
+    if offline, !asking, error == nil { error = CoachCopy.offline }
   }
   func noteOnline() {
-    if saysOffline { error = nil }
+    if MessageCause(error) == .coachOffline { error = nil }
   }
 
   // MARK: - A turn

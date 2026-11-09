@@ -1940,3 +1940,81 @@ extension GymModel {
     return startWorkout(routineId: draft.current.id)
   }
 }
+
+// The rack's and the movement order's lines come down once their cause clears, unless other words replaced them.
+extension WorkoutStateTests {
+  func rackRefused() throws -> (GymModel, WorkoutState) {
+    let (_, gym) = try fixture(), workout = try begin(gym)
+    workout.weightKg = 60; gym.accountChanging = true
+    #expect(!workout.flushRack() && workout.message == "The rack could not be changed. Try again." && gym.error == workout.message)
+    gym.accountChanging = false; workout.weightKg = 62.5
+    return (gym, workout)
+  }
+
+  @Test func aRackChangeThatLandsTakesDownTheWorkoutsAndTheRoomsRackLine() throws {
+    let (gym, workout) = try rackRefused()
+    #expect(workout.flushRack() && workout.message == nil && gym.error == nil)
+  }
+
+  @Test func aRackChangeThatLandsLeavesARoomErrorThatReplacedTheRackLine() throws {
+    let (gym, workout) = try rackRefused()
+    gym.error = "Another line"
+    #expect(workout.flushRack() && workout.message == nil && gym.error == "Another line")
+  }
+
+  @Test func aRackChangeThatLandsLeavesAWorkoutMessageThatReplacedTheRackLineAndTheRoomsLineWithIt() throws {
+    let (gym, workout) = try rackRefused()
+    workout.message = "Another line"
+    #expect(workout.flushRack() && workout.message == "Another line" && gym.error == "The rack could not be changed. Try again.")
+  }
+
+  @Test func aRackChangeThatLandsTakesDownTheWorkoutsLineWhenTheRoomsWasDismissed() throws {
+    let (gym, workout) = try rackRefused()
+    gym.error = nil
+    #expect(workout.flushRack() && workout.message == nil && gym.error == nil)
+  }
+
+  @Test func aRackChangeThatLandsLeavesTheRoomsLineWhenTheWorkoutsMovedIntoASheet() throws {
+    let (gym, workout) = try rackRefused()
+    let failure = workout.message; workout.message = nil
+    #expect(failure == "The rack could not be changed. Try again." && workout.flushRack() && workout.message == nil
+            && gym.error == "The rack could not be changed. Try again.")
+  }
+
+  @Test func aRackRefusedTwiceComesDownWhenAChangeLands() throws {
+    let (gym, workout) = try rackRefused()
+    gym.accountChanging = true
+    #expect(!workout.flushRack())
+    gym.accountChanging = false; workout.weightKg = 65
+    #expect(workout.flushRack() && workout.message == nil && gym.error == nil)
+  }
+
+  func orderUnread() throws -> (GymStoreFault, GymModel) {
+    let (fault, gym, routine) = try GymModelTests().faulted()
+    #expect(gym.startWorkout(routineId: routine.id) != nil)
+    fault.point.withLock { $0 = .read }
+    gym.workout.restore()
+    #expect(gym.workout.message == "The workout is saved. Its movement order could not be read. Try again." && gym.readFailed
+            && gym.error == "Gym could not be read from this phone. Try again.")
+    return (fault, gym)
+  }
+
+  @Test func theUnreadOrderLineComesDownWhenTheOrderReadsAgain() throws {
+    let (fault, gym) = try orderUnread()
+    fault.point.withLock { $0 = nil }; gym.workout.restore()
+    #expect(gym.workout.message == nil && !gym.readFailed && gym.error == nil)
+  }
+
+  @Test func aMessageThatReplacedTheUnreadOrderLineStaysWhenTheOrderReadsAgain() throws {
+    let (fault, gym) = try orderUnread()
+    gym.workout.message = "Another line"
+    fault.point.withLock { $0 = nil }; gym.workout.restore()
+    #expect(gym.workout.message == "Another line" && gym.error == nil)
+  }
+
+  @Test func theUnreadOrderLineComesDownWhenAReconcileReadsTheOrder() throws {
+    let (fault, gym) = try orderUnread()
+    fault.point.withLock { $0 = nil }; gym.workout.reconcile()
+    #expect(gym.workout.message == nil && !gym.readFailed && gym.error == nil)
+  }
+}
