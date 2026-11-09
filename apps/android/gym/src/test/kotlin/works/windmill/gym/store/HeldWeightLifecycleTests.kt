@@ -1,5 +1,6 @@
 package works.windmill.gym.store
 
+import androidx.test.core.app.ApplicationProvider
 import kotlin.coroutines.CoroutineContext
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineStart
@@ -14,9 +15,14 @@ import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import works.windmill.gym.presentation.NoteWrite
 import works.windmill.gym.presentation.RoutineDraft
 import works.windmill.platform.Account
+import works.windmill.platform.i18n.Words
+import works.windmill.platform.i18n.text
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.sync.core.Json
 import works.windmill.sync.engine.Engine
@@ -27,6 +33,8 @@ import works.windmill.sync.engine.signOut
 import works.windmill.sync.engine.start
 import works.windmill.sync.engine.nextPush
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class HeldWeightLifecycleTests {
     @get:Rule val tmp = TemporaryFolder()
 
@@ -399,9 +407,11 @@ class HeldWeightLifecycleTests {
             room.store.refreshEngine()
             assertEquals(original, room.store.bodyweight.drawn)
             assertEquals(emptyList<Any>(), room.engine.undoOffers())
-            assertEquals(listOf("That change could not be saved."), room.store.workout.refusals.map { it.reason })
+            assertEquals(listOf("That change could not be saved."), room.store.workout.refusals.map { it.why.spelled() })
             assertEquals(emptyList<String>(), failures)
         }
     }
 
 }
+
+private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())

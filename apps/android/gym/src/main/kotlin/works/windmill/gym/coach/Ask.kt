@@ -33,12 +33,6 @@ object Ask {
     // The bound of one question, in bytes.
     const val maxQuestionBytes = CoachRules.maxQuestionBytes
 
-    const val couldNotTake = "Coach couldn’t take that one"
-
-    const val accessNeedsSignIn = "Coach needs your workout log. Please sign in."
-
-    const val notHere = "This Windmill does not have Coach. You can still read your log."
-
     // How a turn ended short of a whole answer, under what arrived: an interruption speaks of what arrived only when words did.
     @StringRes
     fun ending(state: MessageState, truncated: Boolean, wordsArrived: Boolean): Int? = when (state) {

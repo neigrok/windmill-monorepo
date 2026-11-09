@@ -1,28 +1,30 @@
 package works.windmill.gym.presentation
 
 import kotlin.math.floor
+import works.windmill.gym.R
+import works.windmill.platform.i18n.Words
 
 object NumberEntry {
     enum class Field { Load, Reps }
 
-    const val onePoint = "One decimal point only."
-    const val notANumber = "That is not a number yet."
-    const val outsideReps = "Whole reps, 1 to ${LoggedSetLimits.maxReps}."
-    const val weightHint = "kg"
-    const val repsHint = "whole reps"
+    private val onePoint: Words = Words.Message(R.string.gym_entry_one_point)
+    private val notANumber: Words = Words.Message(R.string.gym_entry_not_a_number)
+    private val outsideReps: Words = Words.Message(R.string.gym_entry_outside_reps, listOf(LoggedSetLimits.maxReps.toString()))
+    private val weightHint: Words = Words.Message(R.string.gym_entry_weight_hint)
+    private val repsHint: Words = Words.Message(R.string.gym_entry_reps_hint)
 
     // A load moved under the floor refuses as it is typed; the value it keeps stands, and other refusals wait for a commit.
-    data class Reading(val value: Double?, val message: String, val belowFloor: Boolean = false) {
+    data class Reading(val value: Double?, val said: Words, val belowFloor: Boolean = false) {
         val isValid: Boolean get() = value != null
     }
 
-    fun belowFloor(floor: Double, keeping: Double): String =
-        "Enter ${Readout.weight(floor)} or more, or cancel to keep ${Readout.weight(keeping)}"
+    fun underFloor(floor: Double, keeping: Double): Words =
+        Words.Message(R.string.gym_entry_below_floor, listOf(Readout.weight(floor), Readout.weight(keeping)))
 
     fun read(text: String, field: Field, keeping: Double, floor: Double? = null): Reading {
         val raw = text.replace('−', '-').trim()
         if (raw.isEmpty() || raw == "-") {
-            return Reading(null, "Enter a number, or cancel to keep ${Readout.weight(keeping)}")
+            return Reading(null, Words.Message(R.string.gym_entry_empty, listOf(Readout.weight(keeping))))
         }
         val normalised = raw.replace(",", ".")
         if (normalised.count { it == '.' } > 1) return Reading(null, onePoint)
@@ -30,7 +32,7 @@ object NumberEntry {
         if (value == null || !value.isFinite()) return Reading(null, notANumber)
         if (field == Field.Load) {
             val load = Ladder.round(value)
-            if (floor != null && load < floor && load != keeping) return Reading(null, belowFloor(floor, keeping), belowFloor = true)
+            if (floor != null && load < floor && load != keeping) return Reading(null, underFloor(floor, keeping), belowFloor = true)
             return Reading(load, weightHint)
         }
         if (value < 1 || value > LoggedSetLimits.maxReps || value != floor(value)) {

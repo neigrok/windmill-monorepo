@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import works.windmill.platform.i18n.text
 import works.windmill.platform.design.WindmillType
 import androidx.compose.material3.MaterialTheme
 import works.windmill.platform.design.WindmillSheet
@@ -112,6 +113,7 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.ui.draw.shadow
 import androidx.compose.material.icons.filled.Close
+import works.windmill.platform.i18n.Words
 
 // What the routine builder draws: the draft's movements by name, and the routine's workouts for the seat in hand.
 @Stable
@@ -343,7 +345,7 @@ fun RoutineBuilder(
                             val latest = sheet as? BuilderSheet.Target
                             val edited = latest?.movement ?: movement
                             val reading = (latest?.scheme ?: open.scheme).reading((latest ?: open).floor(edited))
-                            val valid = Program.nameProblem(edited.current.name) == null && reading !is TargetEntry.Reading.Refused
+                            val valid = Program.nameRefusal(edited.current.name) == null && reading !is TargetEntry.Reading.Refused
                             telemetry.event("gym_action", mapOf("screen" to "movement_form", "action" to "stage",
                                 "outcome" to if (valid) "ok" else "refused"))
                             if (valid) {
@@ -384,7 +386,7 @@ fun RoutineBuilder(
             }
         })
     if (discarding) DiscardQuestion(stringResource(R.string.gym_builder_discard_routine_title),
-        "${Program.named(draft.name) ?: "This routine"} won’t be saved.",
+        Program.named(draft.name)?.let { stringResource(R.string.gym_builder_named_not_saved, it) } ?: stringResource(R.string.gym_builder_routine_not_saved),
         onKeepEditing = {
             discarding = false
             telemetry.event("gym_action", mapOf("screen" to "routine_editor", "action" to "discard", "outcome" to "cancelled"))
@@ -437,7 +439,7 @@ private fun BuildStep(
     var dragged by remember { mutableStateOf<String?>(null) }
     var dragCenter by remember { mutableFloatStateOf(0f) }
     var viewport by remember { mutableStateOf(Rect.Zero) }
-    var said by remember { mutableStateOf("") }
+    var said by remember { mutableStateOf<Words?>(null) }
     val haptics = rememberGymHaptics()
     val scroll = rememberScrollState()
     val edgeSize = with(LocalDensity.current) { 56.dp.toPx() }
@@ -446,7 +448,7 @@ private fun BuildStep(
         val rows = currentDraft.entries.sortedBy { it.position }
         if (!editable || from !in rows.indices || to !in rows.indices || from == to) return
         changeDraft(currentDraft.moving(from, to))
-        said = "${Readout.movement(rows[from].exerciseId, state.catalog)}, ${to + 1} of ${rows.size}"
+        said = Words.Message(R.string.gym_builder_moved_to, listOf(Readout.movement(rows[from].exerciseId, state.catalog), (to + 1).toString(), rows.size.toString()))
     }
     fun placeDragged() {
         val id = dragged ?: return
@@ -509,10 +511,10 @@ private fun BuildStep(
                 Program.counter(draft.name)?.let { Text(it, style = WindmillType.detailCompact, color = colors.onSurfaceVariant) }
             }
             if (draft.name.isBlank() && (editing || draft.entries.isNotEmpty())) {
-                Text(Program.nameItToSaveIt, style = WindmillType.supporting, color = colors.onSurfaceVariant)
+                Text(stringResource(R.string.gym_program_name_it), style = WindmillType.supporting, color = colors.onSurfaceVariant)
             }
             if (draft.name.isNotBlank() && draft.entries.isEmpty()) {
-                Text(Program.atLeastOneMovement, style = WindmillType.supporting, color = colors.onSurfaceVariant)
+                Text(stringResource(R.string.gym_program_at_least_one_movement), style = WindmillType.supporting, color = colors.onSurfaceVariant)
             }
             Column {
                 Text(stringResource(R.string.gym_builder_movements), style = GymType.headingCompact, color = colors.onSurface,
@@ -548,7 +550,7 @@ private fun BuildStep(
                                 },
                                 headlineContent = { Text(name, style = GymType.movementRow, color = colors.onSurface) },
                                 supportingContent = {
-                                    Text(Readout.targetWithUnit(entry.sets, movement), style = GymType.numeral, color = colors.onSurfaceVariant)
+                                    Text(Readout.scheme(entry.sets, movement).text(), style = GymType.numeral, color = colors.onSurfaceVariant)
                                 },
                                 colors = ListItemDefaults.colors(containerColor = if (lifted) colors.surfaceContainerHighest else colors.surface),
                                 modifier = Modifier.fillMaxWidth()
@@ -591,7 +593,7 @@ private fun BuildStep(
                     }
                 }
             }
-            Text(said, style = WindmillType.detailCompact, color = colors.onSurfaceVariant,
+            Text(said?.text().orEmpty(), style = WindmillType.detailCompact, color = colors.onSurfaceVariant,
                 modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
         }
     }

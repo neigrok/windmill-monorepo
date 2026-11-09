@@ -25,7 +25,7 @@ import androidx.compose.ui.platform.testTag
 import kotlin.math.roundToInt
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import works.windmill.gym.presentation.text
+import works.windmill.platform.i18n.text
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import works.windmill.gym.R

@@ -24,6 +24,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import works.windmill.platform.i18n.Words
 import works.windmill.sync.engine.signIn
 import works.windmill.agent.TurnRefusal
 import works.windmill.domain.kit.ActionContext
@@ -154,7 +155,7 @@ class TrainingStoreTests {
             assertFalse(room.training.anonymous || room.training.firstPullComplete)
             val cold = room.freshStore()
             assertTrue(cold.restoreWorkout(null, true))
-            assertNull(cold.workout.workoutFailure)
+            assertNull(cold.workout.workoutRefusal)
             assertEquals(session.id, cold.workout.session?.id)
             assertEquals("back-squat", cold.workout.exerciseId)
             assertTrue(cold.workout.lastTime!!.isUnread)
@@ -326,8 +327,8 @@ class TrainingStoreTests {
             conversations.watchHistory(true)
             conversations.read()
             assertEquals(listOf(
-                ConversationRow(newer, "Is my squat volume too low?", newerAt, answerPreview = "It is fine."),
-                ConversationRow(older, "Bench has been stuck at 82.5. What do you see?", olderAt, answerPreview = "Hold the load a week."),
+                ConversationRow(newer, Words.Plain("Is my squat volume too low?"), newerAt, answerPreview = "It is fine."),
+                ConversationRow(older, Words.Plain("Bench has been stuck at 82.5. What do you see?"), olderAt, answerPreview = "Hold the load a week."),
             ), room.store.coach.history)
 
             room.now += 3_000
@@ -397,7 +398,7 @@ class TrainingStoreTests {
             val coach = room.store.coach
             assertEquals(emptyList<ConversationRow>(), coach.history)
             val id = coach.freshChat("A phone-only draft")
-            assertEquals(listOf(ConversationRow(id, "A phone-only draft", coach.chat(id)!!.updatedAtMs)), coach.history)
+            assertEquals(listOf(ConversationRow(id, Words.Plain("A phone-only draft"), coach.chat(id)!!.updatedAtMs)), coach.history)
             assertEquals(GymResult.Ok(Unit), coach.deleteThread(id))
             assertEquals(emptyList<ConversationRow>(), coach.history)
             assertEquals(emptyList<String>(), rest.calls)
@@ -519,7 +520,7 @@ class TrainingStoreTests {
             val reopened = room.freshStore()
             reopened.connect(room.account("alice"))
             advanceUntilIdle()
-            assertNull(reopened.workout.workoutFailure)
+            assertNull(reopened.workout.workoutRefusal)
             assertEquals(session, reopened.workout.session?.id)
             assertEquals(setOf("wp000000000000001"), reopened.workoutProposals.held.keys)
             reopened.refreshEngine()
@@ -539,7 +540,7 @@ class TrainingStoreTests {
             val reopened = room.freshStore()
             reopened.connect(room.account("alice"))
             advanceUntilIdle()
-            assertNull(reopened.workout.workoutFailure)
+            assertNull(reopened.workout.workoutRefusal)
             assertEquals(listOf("Push A"), reopened.routines.all.map { it.name })
             assertEquals(emptySet<String>(), reopened.routines.outOfDateProposals)
             reopened.refreshEngine()

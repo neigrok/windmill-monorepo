@@ -1,5 +1,7 @@
 package works.windmill.gym.ui
 
+import android.content.Context
+import androidx.annotation.StringRes
 import android.graphics.Insets
 import android.view.WindowInsets
 import androidx.compose.runtime.getValue
@@ -25,6 +27,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextReplacement
+import androidx.test.core.app.ApplicationProvider
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -39,9 +42,9 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowDialog
+import works.windmill.gym.R
 import works.windmill.gym.presentation.RoutineDraft
 import works.windmill.gym.presentation.SetTarget
-import works.windmill.gym.presentation.TargetEntry
 import works.windmill.gym.store.EngineRoomFixture
 
 // The combined form retains raw targets, inline refusals and native keyboard priority.
@@ -109,18 +112,18 @@ class TargetSheetTests {
             openTheSheet()
 
             compose.onNodeWithContentDescription("Sets").performTextReplacement("0")
-            compose.onNodeWithText(TargetEntry.outsideSets).assertIsDisplayed()
+            compose.onNodeWithText(string(R.string.gym_program_outside_sets)).assertIsDisplayed()
             compose.onNode(hasText("Done") and hasClickAction()).assertIsNotEnabled()
 
             compose.onNodeWithContentDescription("Sets").performTextReplacement("21")
-            compose.onNodeWithText(TargetEntry.outsideSets).assertIsDisplayed()
-            compose.onNodeWithText(TargetEntry.zeroTarget).assertDoesNotExist()
+            compose.onNodeWithText(string(R.string.gym_program_outside_sets)).assertIsDisplayed()
+            compose.onNodeWithText(string(R.string.gym_program_zero_target)).assertDoesNotExist()
 
             compose.onNodeWithContentDescription("Sets").performTextReplacement("2.5")
-            compose.onNodeWithText(TargetEntry.outsideSets).assertIsDisplayed()
+            compose.onNodeWithText(string(R.string.gym_program_outside_sets)).assertIsDisplayed()
 
             compose.onNodeWithContentDescription("Sets").performTextReplacement("3")
-            compose.onNodeWithText(TargetEntry.outsideSets).assertDoesNotExist()
+            compose.onNodeWithText(string(R.string.gym_program_outside_sets)).assertDoesNotExist()
             compose.onNodeWithText("Done").assertIsDisplayed()
         } } finally { scope.cancel() }
     }
@@ -135,8 +138,8 @@ class TargetSheetTests {
             openTheSheet()
 
             compose.onNodeWithContentDescription("Reps").performTextReplacement("101")
-            compose.onAllNodesWithText(TargetEntry.outsideReps).assertCountEquals(1)
-            val said = compose.onNodeWithText(TargetEntry.outsideReps).fetchSemanticsNode().positionInRoot.y
+            compose.onAllNodesWithText(string(R.string.gym_program_outside_reps)).assertCountEquals(1)
+            val said = compose.onNodeWithText(string(R.string.gym_program_outside_reps)).fetchSemanticsNode().positionInRoot.y
             val head = compose.onNodeWithContentDescription("Reps").fetchSemanticsNode().positionInRoot.y
             assertTrue("under the focused head field", said > head)
             compose.onNodeWithContentDescription("Set 1 reps").assertDoesNotExist()
@@ -144,16 +147,16 @@ class TargetSheetTests {
             compose.onNodeWithContentDescription("Reps").performTextReplacement("5")
             compose.onNodeWithContentDescription("Load, kg total").performTextReplacement("82.5.0")
             compose.onNodeWithContentDescription("Load, kg total").assertTextContains("60")
-            compose.onNodeWithText(TargetEntry.onePoint).assertDoesNotExist()
+            compose.onNodeWithText(string(R.string.gym_program_one_point)).assertDoesNotExist()
             compose.onNodeWithContentDescription("Load, kg total").performTextReplacement("1e999")
-            compose.onNodeWithText(TargetEntry.notANumber).assertIsDisplayed()
+            compose.onNodeWithText(string(R.string.gym_program_not_a_number)).assertIsDisplayed()
             compose.onNodeWithContentDescription("Load, kg total").performTextReplacement("eighty")
-            compose.onNodeWithText(TargetEntry.notANumber).assertIsDisplayed()
+            compose.onNodeWithText(string(R.string.gym_program_not_a_number)).assertIsDisplayed()
 
             // With every field readable nothing stands where the refusal was: a comma and a point both
             // read, and no sentence says so.
             compose.onNodeWithContentDescription("Load, kg total").performTextReplacement("100")
-            compose.onNodeWithText(TargetEntry.notANumber).assertDoesNotExist()
+            compose.onNodeWithText(string(R.string.gym_program_not_a_number)).assertDoesNotExist()
             compose.onNodeWithText("comma or point", substring = true).assertDoesNotExist()
             compose.onNodeWithText("Done").assertIsDisplayed()
         } } finally { scope.cancel() }
@@ -171,7 +174,7 @@ class TargetSheetTests {
             compose.onNodeWithContentDescription("Load, kg total").assertIsNotEnabled()
             compose.onNodeWithContentDescription("Movement name").assertExists()
             compose.onNodeWithContentDescription("Equipment").assertExists()
-            compose.onNodeWithText(TargetEntry.openLine).assertDoesNotExist()
+            compose.onNodeWithText("You decide the numbers at the rack.").assertDoesNotExist()
             compose.onNodeWithContentDescription("Sets").performTextReplacement("3")
             assertEquals("3", compose.onNodeWithContentDescription("Sets").fetchSemanticsNode()
                 .config[SemanticsProperties.EditableText].text)
@@ -259,3 +262,5 @@ class TargetSheetTests {
         } } finally { scope.cancel() }
     }
 }
+
+private fun string(@StringRes id: Int, vararg args: Any): String = ApplicationProvider.getApplicationContext<Context>().getString(id, *args)

@@ -1,5 +1,8 @@
 package works.windmill.gym.coach.turn
 
+import android.content.Context
+import androidx.annotation.StringRes
+import androidx.test.core.app.ApplicationProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.awaitCancellation
@@ -19,6 +22,9 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import works.windmill.agent.ToolCall
 import works.windmill.agent.ToolOutcome
 import works.windmill.agent.TurnEnd
@@ -33,7 +39,7 @@ import works.windmill.agent.TurnTransport
 import works.windmill.domain.kit.Catalog
 import works.windmill.domain.kit.Id
 import works.windmill.domain.kit.Outcome
-import works.windmill.gym.coach.Ask
+import works.windmill.gym.R
 import works.windmill.gym.domain.coach.AbilityCall
 import works.windmill.gym.domain.coach.CoachMessage
 import works.windmill.gym.domain.coach.CoachPictureRow
@@ -47,6 +53,8 @@ import works.windmill.gym.domain.sync.Routine
 import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.store.ReplicaPin
 import works.windmill.gym.telemetry.GymEvents
+import works.windmill.platform.i18n.Words
+import works.windmill.platform.i18n.text
 import works.windmill.platform.net.Refusal
 import works.windmill.platform.net.WindmillApiException
 import works.windmill.platform.telemetry.EventSchemas
@@ -68,6 +76,8 @@ import works.windmill.sync.schema.SyncSchema
 
 // The turn around the driver on a real engine: admission and what it keeps, the installation's answers, a process that died at each step of a batch, a seat that changed under a batch, an account in transition, and telemetry that says nothing of what was said.
 @OptIn(ExperimentalCoroutinesApi::class)
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class CoachTurnsTests {
     @get:Rule val folder = TemporaryFolder()
 
@@ -662,7 +672,7 @@ class CoachTurnsTests {
             advanceUntilIdle()
             val refused = phone.turns.refusal.value
             assertEquals(CoachTurnRefusal.SessionLapsed, refused)
-            assertEquals(Ask.accessNeedsSignIn, refused?.sentence)
+            assertEquals(string(R.string.gym_coach_access_needs_sign_in), refused?.words.spelled())
             assertEquals(CoachRecovery.signIn, refused?.recovery(anonymous = false))
             assertFalse(refused!!.capped)
             assertEquals(WithdrawnTurn("Question", null, null), phone.turns.withdrawn.value)
@@ -715,7 +725,7 @@ class CoachTurnsTests {
                 val turn = checkNotNull(phone.turns.send("Private question", null, null, anonymous = true))
                 advanceUntilIdle()
                 assertEquals(refused, phone.turns.refusal.value)
-                assertEquals(words, phone.turns.refusal.value?.notice(anonymous = true, clock24 = false))
+                assertEquals(words, phone.turns.refusal.value?.said(anonymous = true, clock24 = false).spelled())
                 assertEquals(CoachRecovery.signIn, phone.turns.refusal.value?.recovery(anonymous = true))
                 assertNull(phone.turns.withdrawn.value)
                 assertEquals("Private question", checkNotNull(phone.message(turn.lifter)).text)
@@ -890,7 +900,7 @@ class CoachTurnsTests {
             assertEquals(1, server.stops)
             assertEquals(WithdrawnTurn("Question", null, null), phone.turns.withdrawn.value)
             assertEquals(CoachTurnRefusal.Offline, phone.turns.refusal.value)
-            assertEquals("No connection. Your question is kept here.", phone.turns.refusal.value?.sentence)
+            assertEquals("No connection. Your question is kept here.", phone.turns.refusal.value?.words.spelled())
             assertEquals(CoachRecovery.tryAgain, phone.turns.refusal.value?.recovery(anonymous = true))
             assertNull(phone.turns.fault.value)
             assertNull(phone.turns.activity.value)
@@ -1135,3 +1145,7 @@ class CoachTurnsTests {
         }
     }
 }
+
+private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())
+
+private fun string(@StringRes id: Int, vararg args: Any): String = ApplicationProvider.getApplicationContext<Context>().getString(id, *args)

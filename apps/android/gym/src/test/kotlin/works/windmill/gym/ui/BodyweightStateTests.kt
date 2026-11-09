@@ -1,6 +1,8 @@
 package works.windmill.gym.ui
 
+import android.content.Context
 import android.os.Looper
+import androidx.annotation.StringRes
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
@@ -14,6 +16,7 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextReplacement
+import androidx.test.core.app.ApplicationProvider
 import java.time.LocalDate
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -30,10 +33,12 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import works.windmill.gym.R
 import works.windmill.gym.presentation.Bodyweight
 import works.windmill.gym.presentation.WeighIn
 import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.store.TrainingStore
+import works.windmill.platform.i18n.Words
 import works.windmill.sync.modelserver.ModelServer
 
 @RunWith(RobolectricTestRunner::class)
@@ -63,7 +68,7 @@ class BodyweightStateTests {
             room.store.observeEngine()
             compose.setContent { GymMaterial { BodyweightBinding(room.store).let { bodyweight -> BodyweightScreen(bodyweight, bodyweight, "The log", {}, {}) } } }
             compose.onNodeWithText("Reading your weigh-ins…").assertIsDisplayed()
-            compose.onNodeWithText(Bodyweight.nothingYet).assertDoesNotExist()
+            compose.onNodeWithText(string(R.string.gym_bodyweight_nothing_yet)).assertDoesNotExist()
             compose.onNodeWithText("90 days").assertDoesNotExist()
             compose.onNodeWithText("All").assertDoesNotExist()
             compose.runOnIdle { room.pull(server) }
@@ -71,8 +76,8 @@ class BodyweightStateTests {
                 shadowOf(Looper.getMainLooper()).idle()
                 room.store.bodyweight.bodyweightRead
             }
-            compose.onNodeWithText(Bodyweight.nothingYet).assertDoesNotExist()
-            compose.onNodeWithText(Bodyweight.noneInWindow).assertIsDisplayed()
+            compose.onNodeWithText(string(R.string.gym_bodyweight_nothing_yet)).assertDoesNotExist()
+            compose.onNodeWithText(string(R.string.gym_bodyweight_none_in_window)).assertIsDisplayed()
             compose.onNodeWithText("Every weigh-in").assertIsDisplayed()
             compose.onNodeWithText(Bodyweight.listDay(day)).performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("All").performScrollTo().performClick()
@@ -91,11 +96,11 @@ class BodyweightStateTests {
                     { date, weight -> saved += date to weight }, null, draftKey = "u1:new", onClose = {})
             }
         }
-        compose.onNodeWithContentDescription(weightField).performTextReplacement("82,4.5")
-        compose.onNodeWithText(Bodyweight.save).performClick()
+        compose.onNodeWithContentDescription(string(R.string.gym_bodyweight_weight_field)).performTextReplacement("82,4.5")
+        compose.onNodeWithText(string(R.string.gym_bodyweight_save)).performClick()
         restored.emulateSavedInstanceStateRestore()
         compose.onNodeWithText("82,4.5").assertIsDisplayed()
-        compose.onNodeWithText(Bodyweight.onePoint).assertIsDisplayed()
+        compose.onNodeWithText(Bodyweight.extraPoint.spelled()!!).assertIsDisplayed()
         compose.onNodeWithText(Bodyweight.fullDay(day)).assertIsDisplayed()
         compose.onNodeWithText(Bodyweight.fullDay(day)).performClick()
         compose.onNodeWithText("Cancel").performClick()
@@ -127,16 +132,16 @@ class BodyweightStateTests {
                 compose.onAllNodesWithText(Bodyweight.listDay(day)).fetchSemanticsNodes().isNotEmpty()
             }
             compose.onNodeWithText(Bodyweight.listDay(day)).performScrollTo().performClick()
-            compose.onNodeWithContentDescription(weightField).performTextReplacement("82,4.5")
-            compose.onNodeWithText(Bodyweight.save).performClick()
+            compose.onNodeWithContentDescription(string(R.string.gym_bodyweight_weight_field)).performTextReplacement("82,4.5")
+            compose.onNodeWithText(string(R.string.gym_bodyweight_save)).performClick()
             restored.emulateSavedInstanceStateRestore()
             compose.onNodeWithText("82,4.5").assertIsDisplayed()
-            compose.onNodeWithText(Bodyweight.onePoint).assertIsDisplayed()
+            compose.onNodeWithText(Bodyweight.extraPoint.spelled()!!).assertIsDisplayed()
             compose.onNodeWithText(Bodyweight.fullDay(day)).assertIsDisplayed()
-            compose.onNodeWithContentDescription(weightField).performTextReplacement("82,45")
-            compose.onNodeWithText(Bodyweight.save).performClick()
+            compose.onNodeWithContentDescription(string(R.string.gym_bodyweight_weight_field)).performTextReplacement("82,45")
+            compose.onNodeWithText(string(R.string.gym_bodyweight_save)).performClick()
             compose.onNodeWithText("82.45 kg").performScrollTo().assertIsDisplayed()
-            compose.onNodeWithText(Bodyweight.save).assertDoesNotExist()
+            compose.onNodeWithText(string(R.string.gym_bodyweight_save)).assertDoesNotExist()
             compose.runOnIdle {
                 assertEquals(2, instances)
                 assertEquals(listOf(day.toString() to 82.45), current.bodyweight.drawn.map { it.dateLocal to it.weightKg })
@@ -165,7 +170,7 @@ class BodyweightStateTests {
             val restored = StateRestorationTester(compose)
             restored.setContent { GymMaterial { BodyweightBinding(room.store).let { bodyweight -> BodyweightScreen(bodyweight, bodyweight, "The log", {}, {}) } } }
             compose.onNodeWithText(Bodyweight.listDay(day)).performScrollTo().performClick()
-            compose.onNodeWithContentDescription(weightField).performTextReplacement("82,45")
+            compose.onNodeWithContentDescription(string(R.string.gym_bodyweight_weight_field)).performTextReplacement("82,45")
             restored.emulateSavedInstanceStateRestore()
             compose.onNodeWithText("82,45").assertIsDisplayed()
             compose.onNodeWithContentDescription("Date, ${Bodyweight.fullDay(day)}").assertHasNoClickAction()
@@ -174,3 +179,7 @@ class BodyweightStateTests {
     }
 
 }
+
+private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())
+
+private fun string(@StringRes id: Int, vararg args: Any): String = ApplicationProvider.getApplicationContext<Context>().getString(id, *args)

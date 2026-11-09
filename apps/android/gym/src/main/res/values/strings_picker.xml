@@ -9,4 +9,10 @@
     <string name="gym_picker_create_and_add">Create and add</string>
     <string name="gym_picker_was_alias">was “%1$s”</string>
     <string name="gym_picker_add_named">add %1$s</string>
+    <string name="gym_picker_never_logged">never logged</string>
+    <string name="gym_picker_last">last %1$s · %2$s</string>
+    <string name="gym_picker_create_no_answer">the log didn’t answer — check this movement before retrying</string>
+    <string name="gym_picker_add_no_answer">the log didn’t answer — the movement was created; retry adding it to this workout</string>
+    <string name="gym_picker_catalog_unread">The catalog didn’t load. It comes back when you have signal.</string>
+    <string name="gym_picker_no_match">No movement by that name.</string>
 </resources>

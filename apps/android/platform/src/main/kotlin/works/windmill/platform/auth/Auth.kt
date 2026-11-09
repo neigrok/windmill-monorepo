@@ -18,7 +18,9 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
+import works.windmill.platform.R
 import works.windmill.platform.User
+import works.windmill.platform.i18n.Words
 import works.windmill.platform.net.Captured
 import works.windmill.platform.net.Refusal
 import works.windmill.platform.net.WindmillApi
@@ -591,22 +593,24 @@ data class UserResponse(val user: User)
 
 // The emailed link is `{app}/#/auth?token=…`: the token is in the fragment, not the query.
 object MagicLink {
-    val unreadable: WindmillApiException = WindmillApiException.Refused(400,
-        Refusal("That code didn't work", "Check the digits, or send a fresh one."))
+    // A pasted code or link this phone could not read; it never reached the server, so the refusal is the app's own.
+    val unreadable: WindmillApiException = WindmillApiException.Refused(400, Refusal())
 
-    fun refusal(failure: WindmillApiException): String {
+    // The server's message and detail joined as one sentence, as it sent them; the app's own words otherwise.
+    fun refused(failure: WindmillApiException): Words {
+        if (failure === unreadable) return Words.Message(R.string.platform_sign_in_unreadable)
         if (failure is WindmillApiException.Refused) {
-            if (failure.status == 426) return failure.line
+            if (failure.status == 426) return failure.words
             val message = failure.refusal.message?.trim().orEmpty()
             val detail = failure.refusal.detail?.trim().orEmpty()
             if (message.isNotEmpty() && detail.isNotEmpty()) {
                 val punctuation = if (message.last() in ".!?…") "" else "."
-                return "$message$punctuation $detail"
+                return Words.Plain("$message$punctuation $detail")
             }
-            if (message.isNotEmpty()) return message
-            if (detail.isNotEmpty()) return detail
+            if (message.isNotEmpty()) return Words.Plain(message)
+            if (detail.isNotEmpty()) return Words.Plain(detail)
         }
-        return failure.line
+        return failure.words
     }
 
     fun looksLikeLink(entry: String): Boolean = entry.contains("://") || entry.contains("token=")

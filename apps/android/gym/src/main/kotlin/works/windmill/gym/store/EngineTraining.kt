@@ -1,5 +1,8 @@
 package works.windmill.gym.store
 
+import works.windmill.platform.i18n.Words
+import works.windmill.gym.R
+import androidx.annotation.StringRes
 import java.time.Instant as JavaInstant
 import java.time.ZoneId
 import kotlin.coroutines.AbstractCoroutineContextElement
@@ -39,6 +42,7 @@ import works.windmill.gym.presentation.Note
 import works.windmill.gym.presentation.PersonalRecord
 import works.windmill.gym.presentation.PlanSnapshot
 import works.windmill.gym.presentation.Proposal
+import works.windmill.gym.presentation.Stale
 import works.windmill.gym.presentation.ProposalState
 import works.windmill.gym.presentation.Routine
 import works.windmill.gym.presentation.Session
@@ -110,7 +114,7 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
         ZoneId.systemDefault().rules.getOffset(JavaInstant.ofEpochMilli(at.ms)).totalSeconds
     }
     private fun requireWriteAuthority() {
-        if (!writeAuthority()) throw TrainingRefused("account-changed", "The account changed. Open this again.")
+        if (!writeAuthority()) throw TrainingRefused.accountChanged()
     }
     private val writable = object : Replica by engine {
         override fun <T> commit(scope: ScopeRef, body: (CommitContext) -> Pair<Gesture?, T>): Pair<CommitOutcome?, T> =
@@ -121,7 +125,7 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
         }
     }
     private fun requireSeat(pin: ReplicaPin, reader: ScopeReader) {
-        if (engine.activeReplica() != pin.replica || engine.signInAsking() || reader.isAnonymous != pin.anonymous) throw TrainingRefused("account-changed", "The account changed. Open this again.")
+        if (engine.activeReplica() != pin.replica || engine.signInAsking() || reader.isAnonymous != pin.anonymous) throw TrainingRefused.accountChanged()
     }
     // A turn's door: `writable`'s one rule, and the seat the turn opened under alone. Reads hold to it too, or an account's records would leave under the seat before it. A sign-in waiting on its decision closes it, since what the decision counted must hold still.
     private fun pinnedTo(pin: ReplicaPin) = object : Replica by writable {
@@ -225,12 +229,12 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
                 }
             }
         })
-        return accepted?.ui() ?: throw TrainingRefused("account-changed", "The workout changed. Open this again.")
+        return accepted?.ui() ?: throw TrainingRefused("account-changed", Words.Message(R.string.gym_store_workout_changed))
     }
     suspend fun editExercise(exerciseId: String, name: String, equipment: String? = null, loadCount: Int? = null,
         base: Exercise? = null, expectedReplica: String = engine.activeReplica(), expectedAnonymous: Boolean = anonymous): Exercise {
         val opened = base ?: catalogue().firstOrNull { it.id == exerciseId }
-            ?: throw missing("That movement is no longer on the log.")
+            ?: throw missing(R.string.gym_store_movement_gone)
         require(opened.id == exerciseId)
         val value = EngineExercise(Id(exerciseId, EngineExercise), opened.name, opened.pattern, opened.equipment,
             opened.stepKg ?: ExerciseRules.defaultStepKg(opened.equipment), opened.aliases, opened.loadCount)
@@ -251,7 +255,7 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
                 }
             }
         })
-        return accepted?.ui() ?: throw TrainingRefused("account-changed", "The account changed. Open this again.")
+        return accepted?.ui() ?: throw TrainingRefused.accountChanged()
     }
     suspend fun startSession(start: SessionStart, requireRoutine: Boolean = false): Session {
         val action = StartSession(Id(start.id, EngineSession), start.routineId?.let { Id(it, EngineRoutine) }, Instant(start.startedAt))
@@ -279,7 +283,7 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
             })
         } catch (refused: TrainingRefused) {
             if (refused.code != Gym.Codes.sessionOpen) throw refused
-            throw TrainingRefused("session-already-open", "A workout is already open. Finish it first.")
+            throw TrainingRefused("session-already-open", Words.Message(R.string.gym_store_workout_already_open))
         }
         return writtenSession(id.text) ?: error("The engine does not hold the record it just wrote.")
     }
@@ -294,7 +298,7 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
     // A set id names one set: a redelivered append finds it written, and a different set under it is refused.
     private fun alreadyWritten(value: EngineSet): EngineSet? = read { it.repository(EngineSet).find(value.id, ViewMode.drawn) }?.also { existing ->
         if (existing.sessionId != value.sessionId || existing.exerciseId != value.exerciseId || existing.completedAt != value.completedAt)
-            throw TrainingRefused("set-id-taken", "that set id is already used")
+            throw TrainingRefused("set-id-taken", Words.Message(R.string.gym_store_set_id_taken))
     }
     private fun storedSet(id: Id<EngineSet>): TrainingSet =
         read { it.repository(EngineSet).find(id, ViewMode.drawn) }?.ui() ?: error("The engine does not hold the record it just wrote.")
@@ -324,7 +328,7 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
                 }
             }
         })
-        return accepted?.ui() ?: throw TrainingRefused("account-changed", "The account changed. Open this again.")
+        return accepted?.ui() ?: throw TrainingRefused.accountChanged()
     }
     suspend fun deleteSet(sessionId: String, setId: String,
         expectedReplica: String = engine.activeReplica(), expectedAnonymous: Boolean = anonymous) {
@@ -348,7 +352,7 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
         reconcileImports()
         if (imports.hasUnsubmittedSets(sessionId)) throw TrainingUnanswered
         apply(FinishSession(Id(sessionId, EngineSession), finishedAtMs?.let(::Instant)))
-        return writtenSession(sessionId) ?: throw missing("That workout is no longer on the log.")
+        return writtenSession(sessionId) ?: throw missing(R.string.gym_store_workout_gone)
     }
     // The workout a write just recorded, read by its id and its own sets; the history is read only when the log draws no such workout and a retained import may answer for it.
     private fun writtenSession(id: String): Session? = read { reader ->
@@ -464,12 +468,12 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
     // The shared review over the replica. A workout this phone holds that the replica does not draw yet has nothing to say: its record and comparison need the account's history.
     fun review(sessionId: String): Review = read { reader ->
         val review = SessionReview.of(Id(sessionId, EngineSession), TrainingLog(reader))
-        if (review == null && session(sessionId) == null) throw missing("That workout is no longer on the log.")
+        if (review == null && session(sessionId) == null) throw missing(R.string.gym_store_workout_gone)
         review?.ui() ?: Review()
     }
     // The shared read, unread while the account's history is not all here and holds no workout of the movement.
     fun lastTime(exerciseId: String): LastTime = read { reader ->
-        if (catalogue().none { it.id == exerciseId }) throw TrainingRefused("unknown-exercise", "That movement is not in the catalog.")
+        if (catalogue().none { it.id == exerciseId }) throw TrainingRefused("unknown-exercise", Words.Message(R.string.gym_store_movement_not_in_catalog))
         TrainingLog(reader).lastTime(Id(exerciseId, EngineExercise))
     }
     fun lastSets(): List<LastSet> = read { reader ->
@@ -508,9 +512,9 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
     }
     suspend fun replaceRoutine(id: String, write: RoutineWrite): Routine = writing { runner ->
         val old = read { it.repository(EngineRoutine).find(Id(id, EngineRoutine), ViewMode.drawn) }
-        if (old == null) throw missing("That routine is no longer on the log.")
+        if (old == null) throw missing(R.string.gym_store_routine_gone)
         if (write.expectedRevision != null && old.revision != null && write.expectedRevision != old.revision)
-            throw TrainingRefused("stale", "That routine changed. Open it again.")
+            throw TrainingRefused("stale", Words.Message(R.string.gym_store_routine_changed))
         val draft = Draft.opening(old).edit { write.copy(id = id).engine(old) }
         when (val result = runner.save(draft, EngineRoutine, GymRefusal) {}) {
             is SaveResult.Refused -> throw refusal(result.refusal)
@@ -542,8 +546,8 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
                         val openingTargets = draft.original?.entries?.firstOrNull { it.exerciseId == entry.exerciseId }?.sets
                             ?.takeIf { it.isNotEmpty() }?.map { EngineTarget(it.reps, it.weightKg) }
                         if (nextTargets != openingTargets)
-                            throw TrainingRefused("stale", "Reopen this routine to review its movement targets before saving.")
-                        val value = existing ?: throw missing("That movement is no longer on the log.")
+                            throw TrainingRefused("stale", Words.Message(R.string.gym_store_routine_review_targets))
+                        val value = existing ?: throw missing(R.string.gym_store_movement_gone)
                         RoutineMovementChange(value, value)
                     } else RoutineMovementChange(staged.base?.engine(), staged.current.engine())
                 }
@@ -569,7 +573,7 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
                             (next.loadCount == before.loadCount || next.loadCount == stored.loadCount)
                     }
                     if (standing.fields() != normalized.fields() || !sameMovements)
-                        throw TrainingRefused("id-taken", "this save already holds different details — reopen the saved routine to edit it")
+                        throw TrainingRefused("id-taken", Words.Message(R.string.gym_store_routine_save_differs))
                     SaveRoutinePlan(current, current, false, normalizedEdits.map { edit ->
                         if (edit.base == null) edit.copy(base = loaded.loaded.catalogue.find(edit.current.id)) else edit
                     })
@@ -602,7 +606,7 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
                 }
             }
         })
-        return result ?: throw TrainingRefused("account-changed", "The account changed. Open this again.")
+        return result ?: throw TrainingRefused.accountChanged()
     }
 
     private fun Exercise.engine() = EngineExercise(Id(id, EngineExercise), name, pattern, equipment,
@@ -627,8 +631,8 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
     }
     // A proposal is decided against the log, so it asks an account: a phone signed out reads the door it has never used, and a session that lapsed the one it has.
     private fun requireDecidingSeat() {
-        if (anonymous) throw TrainingRefused("sign-in", Proposal.signInToReview)
-        if (engine.status.state.value.authPaused) throw TrainingRefused("sign-in", "Sign in again to decide this proposal.")
+        if (anonymous) throw TrainingRefused("sign-in", Words.Message(R.string.gym_proposal_sign_in_to_review))
+        if (engine.status.state.value.authPaused) throw TrainingRefused("sign-in", Words.Message(R.string.gym_store_proposal_sign_in_again))
     }
     suspend fun applyProposal(id: String) = decideProposal(id, applying = true)
     suspend fun dismissProposal(id: String) = decideProposal(id, applying = false)
@@ -655,7 +659,7 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
         }
         return withTimeoutOrNull(15_000) {
             while (true) {
-                if (engine.activeReplica() != replica) throw TrainingRefused("account-changed", "The account changed. Open this again.")
+                if (engine.activeReplica() != replica) throw TrainingRefused.accountChanged()
                 if (applying) {
                     removalReceipts.refusal(id, replica)?.let { throw refusal(it) }
                     removalReceipts.result(id, replica)?.let { return@withTimeoutOrNull ProposalDecision(it) }
@@ -744,7 +748,7 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
             is Outcome.Committed -> true
             is Outcome.Unchanged -> false
             is Outcome.Refused -> if (outcome.refusal is GymRefusal.Stale)
-                throw TrainingRefused("stale", "The notes changed. Read them again before reordering.")
+                throw TrainingRefused("stale", Words.Message(R.string.gym_store_notes_changed))
                 else throw refusal(outcome.refusal)
         }
     }
@@ -754,7 +758,7 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
     }
     suspend fun putBodyweight(dateLocal: String, weightKg: Double,
         expectedReplica: String = engine.activeReplica(), expectedAnonymous: Boolean = anonymous): WeighIn {
-        val day = LocalDay.parse(dateLocal) ?: throw TrainingRefused("bad-instant", Bodyweight.notAForecast)
+        val day = LocalDay.parse(dateLocal) ?: throw TrainingRefused("bad-instant", Bodyweight.inTheFuture)
         val saved = writing { runner ->
             val blank = EngineWeighIn(day)
             val draft = runner.open(EngineWeighIn, blank.id, blank).edit { it.copy(kg = weightKg) }
@@ -776,7 +780,7 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
                 }
             })
         }
-        if (saved == null) throw TrainingRefused("account-changed", "The account changed. Open this again.")
+        if (saved == null) throw TrainingRefused.accountChanged()
         return WeighIn(dateLocal, saved.values.getValue("kg").num(), saved.values.getValue("recordedAt").long())
     }
     suspend fun deleteBodyweight(dateLocal: String) { apply(deleteWeighIn(Id(dateLocal, EngineWeighIn))) }
@@ -819,7 +823,7 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
                 outcome.receipt
             }
             is Outcome.Unchanged -> {
-                if (!outcome.result) throw TrainingRefused("account-changed", "The account changed. Open this again.")
+                if (!outcome.result) throw TrainingRefused.accountChanged()
                 null
             }
             is Outcome.Refused -> throw refusal(outcome.refusal)
@@ -892,7 +896,7 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
                 val known = state.drawnSets.firstOrNull { it.id == value.id }
                 if (known != null && (known.sessionId != value.sessionId || entry.write == Owed.Append &&
                         (known.exerciseId != value.exerciseId || known.completedAt != value.completedAt)))
-                    throw TrainingRefused("set-id-taken", "that set id is already used")
+                    throw TrainingRefused("set-id-taken", Words.Message(R.string.gym_store_set_id_taken))
                 val decision = when {
                     entry.write == Owed.Delete -> Remove(EngineSet, value.id, GymRefusal).decide(known, ids)
                     known == null -> AppendSet(value).recorded.decide(state, ids)
@@ -920,7 +924,7 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
     }
     fun refusedWrites(): List<RefusedWrite> = engine.notices("gym").notices.value.map { notice ->
         val domain = DomainNotice(notice, engine.registry, GymRefusal)
-        val reason = refusal(domain.refusal).line
+        val reason = refusal(domain.refusal).words
         val subject = domain.subject
         if (subject?.type == EngineSet.type) {
             val values = domain.values(subject)
@@ -931,13 +935,13 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
             val at = subject?.let { domain.values(it)["startedAt"] } ?: notice.content.command?.args?.get("startedAt")
             val startedAt = at?.let { runCatching { it.long() }.getOrNull() }
             RefusedWorkout(notice.id, startedAt, reason)
-        } else RefusedChange(notice.id, subject?.let { (domain.values(it)["name"] as? Json.Str)?.value }, reason)
+        } else RefusedChange(notice.id, subject?.let { (domain.values(it)["name"] as? Json.Str)?.value }?.let(Words::Plain), reason)
     }
     fun refusedNotes(): List<RefusedWrite> = engine.notices("gym").notices.value.mapNotNull { notice ->
         val domain = DomainNotice(notice, engine.registry, GymRefusal)
         val subject = domain.subject?.takeIf { it.type == EngineNote.type } ?: return@mapNotNull null
         val title = domain.values(subject)["title"]?.str().orEmpty()
-        RefusedChange(notice.id, "Note: $title", refusal(domain.refusal).line)
+        RefusedChange(notice.id, Words.Message(R.string.gym_store_refused_note, listOf(title)), refusal(domain.refusal).words)
     }
     fun dismissRefusals() {
         requireWriteAuthority()
@@ -1044,56 +1048,60 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
                 change.before?.let { ProposalTargets(it.sets.orEmpty().map { SetTarget(it.reps, it.weightKg) }) },
                 change.after?.let { ProposalTargets(it.sets.orEmpty().map { SetTarget(it.reps, it.weightKg) }) },
                 if (change.kind == "removed") logged(change.exerciseId) else null,
-                moves[index]?.field?.let { FieldMove(it.label, it.before.orEmpty(), it.after.orEmpty()) })
+                moves[index]?.field?.let { FieldMove(Words.Plain(it.label), Words.Plain(it.before.orEmpty()), Words.Plain(it.after.orEmpty())) })
         }
     }
     // Only a proposal still waiting is read against its workout: one settled or set aside says all it can of itself.
     private fun EngineWorkoutProposal.ui(reader: Reader, workouts: OpenWorkouts): Proposal {
         val standing = if (state == "pending") WorkoutProposalState(reader, id, workouts) else WorkoutProposalState(this, null, reader.moment)
         val workout = standing.workout
-        val line = standing.outOfDate?.let { Proposal.outOfDateLine(it.reason, it.exerciseId?.let { movement -> workout?.catalogue?.find(movement)?.name }) }
+        val stale = standing.outOfDate?.let { Stale(it.reason, it.exerciseId?.let { movement -> workout?.catalogue?.find(movement)?.name }) }
         // The log's own count once it has answered. Until then Apply has already moved this phone's plan, so a decided proposal counts against the plan the log last confirmed, and says the same before and after.
         val counted = changeCount ?: (workout?.session ?: reader.confirmed(EngineSession, sessionId)?.takeIf { it.isVisible }?.let { decoded(EngineSession, it) })?.plan
             ?.let { RoutineChange.count(it.entries, changes) } ?: changes.count { it.kind != "kept" }.coerceAtLeast(1)
         return Proposal(id.text, sessionId.text, state = ProposalState.parse(state), summary = summary,
             changeCount = counted,
             createdAtMs = reader.repository(EngineWorkoutProposal).record(id, ViewMode.drawn)?.let { it.rc ?: it.born?.ms } ?: 0,
-            settledAtMs = settledAt?.ms, source = ProposalSource(door, connection, agent, threadId), baseRevision = baseRevision, baseName = Proposal.workoutWord,
-            changes = changes.ui(workout?.session?.plan?.entries.takeIf { state == "pending" }) { movement -> workout?.sets?.count { it.exerciseId == movement } }, target = ProposalTarget.Workout, outOfDate = line)
+            settledAtMs = settledAt?.ms, source = ProposalSource(door, connection, agent, threadId), baseRevision = baseRevision,
+            changes = changes.ui(workout?.session?.plan?.entries.takeIf { state == "pending" }) { movement -> workout?.sets?.count { it.exerciseId == movement } }, target = ProposalTarget.Workout, stale = stale)
     }
-    private fun missing(message: String) = TrainingRefused("unknown-record", message)
+    private fun missing(@StringRes said: Int) = TrainingRefused("unknown-record", Words.Message(said))
     private fun refusal(refusal: GymRefusal): TrainingRefused {
         val (code, message) = when (refusal) {
             is GymRefusal.Invalid -> "invalid" to when {
-                refusal.violation.rule == NoteRules.title.path && refusal.violation.reason == Violation.Reason.Blank -> "a note needs a title"
-                refusal.violation.rule == NoteRules.title.path && refusal.violation.reason is Violation.Reason.TooLong -> "a title runs to 60 characters"
-                refusal.violation.rule == NoteRules.body.path && refusal.violation.reason is Violation.Reason.TooLong -> "a note runs to 500 bytes"
+                refusal.violation.rule == NoteRules.title.path && refusal.violation.reason == Violation.Reason.Blank -> Words.Message(R.string.gym_store_note_needs_title)
+                refusal.violation.rule == NoteRules.title.path && refusal.violation.reason is Violation.Reason.TooLong -> Words.Message(R.string.gym_store_note_title_too_long)
+                refusal.violation.rule == NoteRules.body.path && refusal.violation.reason is Violation.Reason.TooLong -> Words.Message(R.string.gym_store_note_too_long)
                 refusal.violation.rule == SetRules.loadFloor || refusal.violation.rule == RoutineRules.loadFloor ->
-                    TargetEntry.belowFloor((refusal.violation.reason as? Violation.Reason.Below)?.min ?: 0.0)
-                else -> "Check ${refusal.violation.path.text.substringAfterLast('.')}."
+                    TargetEntry.underFloor((refusal.violation.reason as? Violation.Reason.Below)?.min ?: 0.0)
+                else -> Words.Message(R.string.gym_store_check_field, listOf(refusal.violation.path.text.substringAfterLast('.')))
             }
-            is GymRefusal.Stale -> "stale" to "That changed. Open it again."
-            is GymRefusal.Gone -> "unknown-record" to "That is no longer on the log."
-            is GymRefusal.Taken -> "id-taken" to "That identity is already on the log."
-            is GymRefusal.Full -> "cap" to "The log has reached its limit. Remove an entry first."
-            is GymRefusal.Future -> "bad-instant" to Bodyweight.notAForecast
-            is GymRefusal.SessionFinished -> refusal.refused.code.text to "That workout has finished."
-            is GymRefusal.SessionOpen -> refusal.refused.code.text to "Finish the workout first."
-            is GymRefusal.SessionOverlap -> refusal.refused.code.text to "This workout overlaps another workout. Correct its times and retry."
-            is GymRefusal.PayloadConflict -> refusal.refused.code.text to "The workout already has different data. Review it and retry."
-            is GymRefusal.UnknownExercise -> refusal.refused.code.text to "That movement is no longer on the log."
-            is GymRefusal.BadInstant -> refusal.refused.code.text to "Check the workout times and retry."
-            is GymRefusal.ProposalSettled -> refusal.refused.code.text to "That proposal has already been decided."
-            is GymRefusal.ProposalSuperseded -> refusal.refused.code.text to "That proposal has been replaced."
-            is GymRefusal.PlanLogged -> refusal.refused.code.text to "That movement already has a logged set."
-            is GymRefusal.Other -> refusal.refused.code.text to "That change could not be saved."
+            is GymRefusal.Stale -> "stale" to Words.Message(R.string.gym_store_changed)
+            is GymRefusal.Gone -> "unknown-record" to Words.Message(R.string.gym_store_gone)
+            is GymRefusal.Taken -> "id-taken" to Words.Message(R.string.gym_store_identity_taken)
+            is GymRefusal.Full -> "cap" to Words.Message(R.string.gym_store_log_full)
+            is GymRefusal.Future -> "bad-instant" to Bodyweight.inTheFuture
+            is GymRefusal.SessionFinished -> refusal.refused.code.text to Words.Message(R.string.gym_store_workout_finished)
+            is GymRefusal.SessionOpen -> refusal.refused.code.text to Words.Message(R.string.gym_store_finish_workout_first)
+            is GymRefusal.SessionOverlap -> refusal.refused.code.text to Words.Message(R.string.gym_store_workout_overlaps)
+            is GymRefusal.PayloadConflict -> refusal.refused.code.text to Words.Message(R.string.gym_store_workout_differs)
+            is GymRefusal.UnknownExercise -> refusal.refused.code.text to Words.Message(R.string.gym_store_movement_gone)
+            is GymRefusal.BadInstant -> refusal.refused.code.text to Words.Message(R.string.gym_store_check_times)
+            is GymRefusal.ProposalSettled -> refusal.refused.code.text to Words.Message(R.string.gym_store_proposal_decided)
+            is GymRefusal.ProposalSuperseded -> refusal.refused.code.text to Words.Message(R.string.gym_store_proposal_replaced)
+            is GymRefusal.PlanLogged -> refusal.refused.code.text to Words.Message(R.string.gym_store_movement_logged)
+            is GymRefusal.Other -> refusal.refused.code.text to Words.Message(R.string.gym_store_change_unsaved)
         }
         return TrainingRefused(code, message)
     }
 }
 
 // A write the log's rules refuse, in the words a person reads: an expected answer, never a failure to report.
-class TrainingRefused(val code: String, val line: String) : Exception()
+class TrainingRefused(val code: String, val words: Words) : Exception() {
+    companion object {
+        fun accountChanged() = TrainingRefused("account-changed", TrainingSeat.accountChange)
+    }
+}
 class TrainingDeleteUnconfirmed(cause: Exception) : Exception(cause)
 // A proposal a signed-out phone held that never reached the account.
 class LostWorkoutProposal : Exception()

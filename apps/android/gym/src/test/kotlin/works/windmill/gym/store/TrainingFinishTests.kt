@@ -1,5 +1,6 @@
 package works.windmill.gym.store
 
+import androidx.test.core.app.ApplicationProvider
 import java.io.File
 import java.io.IOException
 import kotlinx.coroutines.Dispatchers
@@ -14,12 +15,19 @@ import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import works.windmill.gym.presentation.*
 import works.windmill.gym.net.FakeGymRest
+import works.windmill.platform.i18n.Words
+import works.windmill.platform.i18n.text
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.sync.engine.*
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class TrainingFinishTests {
     @get:Rule val tmp = TemporaryFolder()
 
@@ -129,14 +137,14 @@ class TrainingFinishTests {
             cold.now = at + 1000
             cold.store.restoreWorkout("alice", true)
             cold.store.connect(cold.account())
-            assertNull(cold.store.workout.workoutFailure)
+            assertNull(cold.store.workout.workoutRefusal)
             assertEquals(sessionId, cold.store.workout.session?.id)
             cold.select("bob")
             assertEquals(emptyList<SessionDetail>(), cold.training.details())
             cold.select("alice")
             cold.pull(server)
             cold.store.refreshEngine()
-            assertNull(cold.store.workout.workoutFailure)
+            assertNull(cold.store.workout.workoutRefusal)
             assertEquals(sessionId, cold.store.workout.session?.id)
             val outcome = cold.store.workout.finish()
             assertTrue(outcome.toString(), outcome is FinishOutcome.Closed)
@@ -344,7 +352,7 @@ class TrainingFinishTests {
             room.now += AutoClose.AFTER_MS + 60_000
             room.training.discardSession(live.id)
 
-            assertEquals(FinishOutcome.Failed(WriteFailure.Refused("That is no longer on the log.")), room.store.workout.finish())
+            assertEquals("That is no longer on the log.", ((room.store.workout.finish() as FinishOutcome.Failed).why as WriteFailure.Refused).words.spelled())
             assertNull(room.training.session(live.id))
             assertEquals(listOf(accepted), WorkoutControls(room.controlsFile).sets(live.id))
             assertEquals(live, room.store.workout.session)
@@ -733,8 +741,8 @@ class TrainingFinishTests {
                 .targeting("bench-press", listOf(SetTarget(8, 60.0)))
             val kept = room.store.routines.saveRoutine(draft.capturingMovements(room.store.routines.catalog)) as GymResult.Ok
             val retry = room.store.routines.saveRoutine(draft.named("Push B").capturingMovements(room.store.routines.catalog))
-            assertEquals(GymResult.Failed(WriteFailure.Refused(
-                "this save already holds different details — reopen the saved routine to edit it")), retry)
+            assertEquals("this save already holds different details — reopen the saved routine to edit it",
+                ((retry as GymResult.Failed).why as WriteFailure.Refused).words.spelled())
             assertEquals(listOf(kept.value), room.training.program())
             assertEquals(listOf(kept.value), room.store.routines.all)
             assertEquals("Push A", kept.value.name)
@@ -897,3 +905,5 @@ class TrainingFinishTests {
     }
 
 }
+
+private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())

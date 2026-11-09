@@ -11,4 +11,20 @@
     <string name="gym_finish_volume_unit">kg</string>
     <string name="gym_finish_only_on_this_phone">Only on this phone · %1$s</string>
     <string name="gym_finish_performed">Performed</string>
+    <string name="gym_finish_record_e1rm">%1$s e1RM %2$s kg — past %3$s from %4$s.</string>
+    <string name="gym_finish_record_heaviest">%1$s %2$s kg × %3$s — past %4$s from %5$s.</string>
+    <string name="gym_finish_record_reps_at_weight">%1$s %2$s reps at %3$s kg — past %4$s from %5$s.</string>
+    <string name="gym_finish_source_plan">Plan</string>
+    <string name="gym_finish_source_last_time">Last time</string>
+    <string name="gym_finish_against_plan">Against plan</string>
+    <string name="gym_finish_against_last">Against last %1$s</string>
+    <string name="gym_finish_against_last_time">Against last time</string>
+    <string name="gym_finish_comparison">Comparison</string>
+    <string name="gym_finish_sourced">%1$s: %2$s</string>
+    <string name="gym_finish_planned_short">planned %1$s — did %2$s</string>
+    <string name="gym_finish_moved">%1$s → %2$s</string>
+    <string name="gym_finish_subhead">%1$s · %2$s</string>
+    <string name="gym_finish_duration">Duration</string>
+    <string name="gym_finish_share_with_coach">Share with Coach</string>
+    <string name="gym_finish_coach_question">Check my last workout.</string>
 </resources>

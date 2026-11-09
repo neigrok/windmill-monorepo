@@ -1,6 +1,8 @@
 package works.windmill.gym.coach
 
+import android.content.Context
 import android.os.Looper
+import androidx.annotation.StringRes
 import androidx.compose.material3.Text
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
@@ -14,6 +16,7 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.test.core.app.ApplicationProvider
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
@@ -30,6 +33,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import works.windmill.agent.TurnRefusal
+import works.windmill.gym.R
 import works.windmill.gym.coach.onboarding.CoachOnboardingSeat
 import works.windmill.gym.coach.turn.CoachRecovery
 import works.windmill.gym.coach.turn.CoachTurnRefusal
@@ -42,6 +46,8 @@ import works.windmill.platform.ClientUpdateDestination
 import works.windmill.platform.LocalClientUpdateDestination
 import works.windmill.platform.ai.AiInstallationApi
 import works.windmill.platform.ai.AiInstallationResponse
+import works.windmill.platform.i18n.Words
+import works.windmill.platform.i18n.text
 import works.windmill.platform.net.Refusal
 import works.windmill.platform.net.WindmillApiException
 import works.windmill.platform.telemetry.LocalTelemetry
@@ -56,7 +62,7 @@ class CoachAccessTests {
     @Test fun noSeatHasCenteredCurrentCopyAndOnlyTheExistingSignInDoor() {
         var signIns = 0
         compose.setContent { CoachAccessStance("•", { signIns++ }) }
-        compose.onNodeWithText(Ask.accessNeedsSignIn).assertIsDisplayed()
+        compose.onNodeWithText(string(R.string.gym_coach_access_needs_sign_in)).assertIsDisplayed()
         compose.onNodeWithContentDescription("History").assertDoesNotExist()
         compose.onNodeWithContentDescription("Question").assertDoesNotExist()
         compose.onNodeWithText("Sign in").performClick()
@@ -77,7 +83,7 @@ class CoachAccessTests {
     @Test fun absentCoachKeepsHistoryAndHasNeitherNotesNorConnectionDoor() {
         var history = 0
         compose.setContent { AskAbsentStance("A", { history++ }) }
-        compose.onNodeWithText(Ask.notHere).assertIsDisplayed()
+        compose.onNodeWithText(string(R.string.gym_coach_not_here)).assertIsDisplayed()
         compose.onNodeWithText("Notes").assertDoesNotExist()
         compose.onNodeWithText("Connected log").assertDoesNotExist()
         compose.onNodeWithContentDescription("Question").assertDoesNotExist()
@@ -136,17 +142,17 @@ class CoachAccessTests {
             Board(CoachTurnRefusal.of("subject_exhausted", 429), true, "Coach’s AI allowance is unavailable right now.\nSign in to continue.", CoachRecovery.signIn),
             Board(CoachTurnRefusal.of("subject_exhausted", 429), false, "Coach’s AI allowance is unavailable right now.", null),
         )) {
-            assertEquals(board.words, board.refusal.notice(board.anonymous, clock24 = false, zone = utc))
+            assertEquals(board.words, board.refusal.said(board.anonymous, clock24 = false, zone = utc).spelled())
             assertEquals(board.words, board.door, board.refusal.recovery(board.anonymous))
         }
         assertEquals("Coach’s shared free AI capacity is unavailable for today. Signing in does not bypass this limit.\nYou can use Coach again on Nov 4 at 3:00.",
-            CoachTurnRefusal.of("free_day_exhausted", 429, dayTurns).notice(anonymous = false, clock24 = true, zone = utc))
+            CoachTurnRefusal.of("free_day_exhausted", 429, dayTurns).said(anonymous = false, clock24 = true, zone = utc).spelled())
         assertEquals("You have used all of your AI allowance. It comes back on Nov 4.",
-            CoachTurnRefusal.of("subject_exhausted", 429, dayTurns, spent = true).notice(anonymous = false, clock24 = true, zone = utc))
+            CoachTurnRefusal.of("subject_exhausted", 429, dayTurns, spent = true).said(anonymous = false, clock24 = true, zone = utc).spelled())
         assertEquals("Coach’s AI allowance is unavailable right now. It comes back on Nov 4.",
-            CoachTurnRefusal.of("subject_exhausted", 429, dayTurns).notice(anonymous = false, clock24 = true, zone = utc))
+            CoachTurnRefusal.of("subject_exhausted", 429, dayTurns).said(anonymous = false, clock24 = true, zone = utc).spelled())
         assertEquals("Coach’s AI allowance is unavailable right now.\nSign in to continue.",
-            CoachTurnRefusal.of("subject_exhausted", 429, dayTurns).notice(anonymous = true, clock24 = true, zone = utc))
+            CoachTurnRefusal.of("subject_exhausted", 429, dayTurns).said(anonymous = true, clock24 = true, zone = utc).spelled())
     }
 
     // A cap's notice goes at the moment the server named, with no tap: the composition waits for that moment on the chats' own clock, and no cap ever held Send.
@@ -158,7 +164,7 @@ class CoachAccessTests {
         try {
             val coach = phone.store.coach
             val chat = coach.freshChat()
-            compose.setContent { coach.refusalOnScreen(chat)?.let { Text(it.sentence) } }
+            compose.setContent { coach.refusalOnScreen(chat)?.let { Text(it.words.text()) } }
             compose.runOnIdle { assertTrue(coach.send(chat, "Question")) }
             compose.waitUntil(10_000) { compose.onAllNodesWithText("Coach is paused for everyone this month.").fetchSemanticsNodes().isNotEmpty() }
             compose.mainClock.autoAdvance = false
@@ -184,15 +190,15 @@ class CoachAccessTests {
             override fun openUri(uri: String) { if (failing) error("No browser"); opened += uri }
         }
         compose.setContent {
-            CompositionLocalProvider(LocalClientUpdateDestination provides ClientUpdateDestination("https://windmill.works/android.apk", "Get the update"),
+            CompositionLocalProvider(LocalClientUpdateDestination provides ClientUpdateDestination("https://windmill.works/android.apk", works.windmill.platform.R.string.platform_update_open_windmill),
                 LocalUriHandler provides handler, LocalTelemetry provides telling) {
                 CoachRefusalNotice(CoachTurnRefusal.UpdateRequired, onConnections = {}, onTryAgain = {})
             }
         }
         compose.onNodeWithText("This version can’t ask Coach any more. Update Windmill to continue.").assertIsDisplayed()
-        compose.onNodeWithText("Get the update").performClick()
+        compose.onNodeWithText("Open Windmill").performClick()
         compose.runOnIdle { assertEquals(listOf("https://windmill.works/android.apk"), opened); failing = true }
-        compose.onNodeWithText("Get the update").performClick()
+        compose.onNodeWithText("Open Windmill").performClick()
         compose.onNodeWithText("The link could not be opened. Try again, or open Windmill’s website in your browser.").assertIsDisplayed()
         assertEquals(listOf(mapOf("action" to "update"), mapOf("action" to "update"), mapOf("action" to "update", "outcome" to "failed")), telling.named("client_update_required"))
         assertEquals(emptyList<Map<String, String>>(), telling.failures)
@@ -257,3 +263,7 @@ class CoachAccessTests {
         assertEquals(listOf("gym.coachAccess" to "The installation could not be read."), reported)
     }
 }
+
+private fun string(@StringRes id: Int, vararg args: Any): String = ApplicationProvider.getApplicationContext<Context>().getString(id, *args)
+
+private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())

@@ -63,6 +63,8 @@ import works.windmill.platform.telemetry.LocalTelemetry
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.ui.graphics.Color
+import works.windmill.platform.i18n.text
+import works.windmill.platform.i18n.Words
 
 // What the log draws: the account's workouts, weigh-ins and progress, and how far back the log is read.
 @Stable
@@ -153,7 +155,7 @@ fun LogScreen(
     var weighingIn by rememberSaveable { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
     var closing by remember { mutableStateOf(false) }
-    var refused by rememberSaveable { mutableStateOf<String?>(null) }
+    var refused by rememberSaveable { mutableStateOf<Words?>(null) }
     val formState = rememberSaveableStateHolder()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true, confirmValueChange = { !saving })
     val listState = rememberLazyListState()
@@ -181,7 +183,7 @@ fun LogScreen(
     }
     val atTop by remember { derivedStateOf { listState.firstVisibleItemIndex == 0 } }
     GymScreen(title = stringResource(R.string.gym_log_title), actions = { YouSeat(seat) }, transient = transient, floatingActionButton = {
-        GymExtendedFab(Bodyweight.chip, onClick = { weighingIn = true }, painterResource(R.drawable.gym_native_monitor_weight),
+        GymExtendedFab(stringResource(R.string.gym_bodyweight_chip), onClick = { weighingIn = true }, painterResource(R.drawable.gym_native_monitor_weight),
             expanded = atTop)
     }) {
         Box(Modifier.fillMaxSize()) {
@@ -194,7 +196,7 @@ fun LogScreen(
                 if (state.progressFailure != null) item("progress-failed") {
                     Column {
                         Text(stringResource(R.string.gym_log_progress_unavailable), style = WindmillType.body, color = colors.onSurface)
-                        Text(state.progressFailure!!.line("Your progress could not be read."), style = WindmillType.supporting, color = colors.onSurfaceVariant)
+                        Text(state.progressFailure!!.says(R.string.gym_log_progress_no_answer).text(), style = WindmillType.supporting, color = colors.onSurfaceVariant)
                         TextButton(onClick = { scope.launch { events.loadProgress(force = true) } }) { Text(stringResource(R.string.gym_action_try_again)) }
                     }
                 } else if (state.progressLoading && state.progress == null) item("progress-reading") {
@@ -208,7 +210,7 @@ fun LogScreen(
                 }
                 days.forEach { day ->
                     item("header:day:${day.date}") {
-                        Text(day.label, style = WindmillType.detailLabel, color = colors.onSurfaceVariant)
+                        Text(day.heading.text(), style = WindmillType.detailLabel, color = colors.onSurfaceVariant)
                     }
                     items(day.entries, key = { "entry:${it.key}" }) { entry ->
                         when (entry) {
@@ -260,7 +262,7 @@ fun LogScreen(
                         scope.launch {
                             try {
                                 val failure = events.weighIn(date, kg)
-                                if (failure != null) refused = failure.line("That weigh-in could not be saved.")
+                                if (failure != null) refused = failure.says(R.string.gym_log_weigh_in_no_answer)
                                 else { saving = false; close() }
                             } finally { saving = false }
                         }
@@ -276,15 +278,15 @@ private fun MomentRow(moment: LogEntry.Moment, readout: LogReadout.Moment, onOpe
     val gymColors = MaterialTheme.gymColors
     if (moment is LogEntry.Moment.Month) {
         Column(Modifier.fillMaxWidth().testTag(moment.key).padding(start = 16.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(readout.title, style = WindmillType.caption, color = colors.onSurfaceVariant)
-            Text(readout.detail, style = WindmillType.caption, color = colors.onSurfaceVariant)
+            Text(readout.named.text(), style = WindmillType.caption, color = colors.onSurfaceVariant)
+            Text(readout.said.text(), style = WindmillType.caption, color = colors.onSurfaceVariant)
         }
         return
     }
     ListItem(
         leadingContent = { Icon(painterResource(R.drawable.gym_new_best), null, tint = gymColors.prInk) },
-        headlineContent = { Text(readout.title, style = WindmillType.kicker, color = colors.onSurface) },
-        supportingContent = { Text(readout.detail, style = WindmillType.detail, color = colors.onSurfaceVariant) },
+        headlineContent = { Text(readout.named.text(), style = WindmillType.kicker, color = colors.onSurface) },
+        supportingContent = { Text(readout.said.text(), style = WindmillType.detail, color = colors.onSurfaceVariant) },
         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
         modifier = Modifier.fillMaxWidth().testTag(moment.key)
             .clickable(role = Role.Button, onClickLabel = stringResource(R.string.gym_log_open_record), onClick = onOpenRecord),
@@ -299,10 +301,10 @@ private fun WeightRow(weight: LogEntry.Weight, readout: LogReadout.Weight, onOpe
         HorizontalDivider(color = colors.outlineVariant)
         ListItem(
             leadingContent = { Icon(painterResource(R.drawable.gym_native_monitor_weight), null, tint = colors.onSurfaceVariant) },
-            headlineContent = { Text(readout.title, style = WindmillType.kicker, color = colors.onSurface) },
-            supportingContent = if (readout.detail == null && !(stacked && readout.time != null)) null else { {
+            headlineContent = { Text(readout.named.text(), style = WindmillType.kicker, color = colors.onSurface) },
+            supportingContent = if (readout.said == null && !(stacked && readout.time != null)) null else { {
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    readout.detail?.let { Text(it, style = WindmillType.detail, color = colors.onSurfaceVariant) }
+                    readout.said?.let { Text(it.text(), style = WindmillType.detail, color = colors.onSurfaceVariant) }
                     if (stacked) readout.time?.let { Text(it, style = WindmillType.detail, color = colors.onSurfaceVariant) }
                 }
             } },
@@ -341,11 +343,11 @@ private fun SessionRow(row: LogReadout.Row, onOpen: () -> Unit, onShare: () -> U
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(row.title, modifier = Modifier.weight(1f, fill = false),
+                    Text(row.named.text(), modifier = Modifier.weight(1f, fill = false),
                         style = GymType.heading, color = colors.onSurface)
                     if (row.record) Box(Modifier.size(8.dp).background(gymColors.prInk, CircleShape))
                 }
-                Text(row.facts, modifier = Modifier.fillMaxWidth(), style = WindmillType.detail, color = colors.onSurfaceVariant)
+                Text(row.said.text(), modifier = Modifier.fillMaxWidth(), style = WindmillType.detail, color = colors.onSurfaceVariant)
                 if (timeBelowTitle) row.time?.let { Text(it, style = WindmillType.detail, color = colors.onSurfaceVariant) }
             }
             if (!timeBelowTitle) row.time?.let { Text(it, style = WindmillType.detail, color = colors.onSurfaceVariant) }
@@ -361,7 +363,7 @@ private fun SessionRow(row: LogReadout.Row, onOpen: () -> Unit, onShare: () -> U
 private fun LogFoot(older: Older, readingShown: Boolean, first: SessionSummary?, onLoad: () -> Unit, onRetry: () -> Unit) {
     val colors = MaterialTheme.colorScheme
     if (older == Older.End) {
-        if (first != null) Text("First workout · ${Readout.date(first.startedAtMs)}", style = WindmillType.supporting, color = colors.onSurfaceVariant)
+        if (first != null) Text(stringResource(R.string.gym_log_first_workout, Readout.date(first.startedAtMs)), style = WindmillType.supporting, color = colors.onSurfaceVariant)
         return
     }
     if (older == Older.Reading) {

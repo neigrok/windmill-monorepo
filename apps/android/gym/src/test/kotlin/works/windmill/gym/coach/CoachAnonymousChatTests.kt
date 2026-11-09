@@ -45,6 +45,8 @@ import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.platform.ai.AiInstallation
 import works.windmill.platform.ai.AiInstallationApi
 import works.windmill.platform.ai.AiInstallationResponse
+import works.windmill.platform.i18n.Words
+import works.windmill.platform.i18n.text
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.sync.core.Json
 import works.windmill.sync.core.ScopeRef
@@ -170,7 +172,7 @@ class CoachAnonymousChatTests {
                 val other = coach.freshChat("Other draft")
                 assertEquals(refusal, coach.refusal(chat))
                 assertEquals(refusal, coach.refusal(other))
-                assertEquals(sentence, coach.refusal(chat)?.sentence)
+                assertEquals(sentence, coach.refusal(chat)?.words.spelled())
                 assertEquals(CoachDraft("Retained input"), coach.draft(chat))
                 assertEquals(emptyList<CoachThread>(), room.threads())
                 assertEquals(emptyList<Map<String, String>>(), telling.failures)
@@ -318,3 +320,5 @@ class CoachAnonymousChatTests {
 }
 
 private fun string(@StringRes id: Int): String = ApplicationProvider.getApplicationContext<Context>().getString(id)
+
+private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())

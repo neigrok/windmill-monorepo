@@ -38,6 +38,8 @@ import works.windmill.gym.presentation.Readout
 import works.windmill.gym.presentation.RoutineMovement
 import works.windmill.gym.presentation.TargetEntry
 import works.windmill.gym.domain.sync.SetTarget as DomainSetTarget
+import works.windmill.platform.i18n.text
+import works.windmill.platform.i18n.pluralString
 
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
@@ -57,7 +59,7 @@ internal fun MovementForm(
     floor: Double? = movement.current.loadFloor,
 ) {
     val colors = MaterialTheme.colorScheme
-    val problem = Program.nameProblem(movement.current.name)
+    val problem = Program.nameRefusal(movement.current.name)?.let { stringResource(it) }
     val valid = problem == null && scheme?.reading(floor) !is TargetEntry.Reading.Refused
     val input = remember {
         PlatformTextInputInterceptor { request, next ->
@@ -121,10 +123,15 @@ private fun RoutineTargets(
         return NumberEditResult.Changed
     }
     val summary = when (reading) {
-        is TargetEntry.Reading.Refused -> "Check ${when (reading.field) { TargetEntry.Field.Sets -> "Sets"; TargetEntry.Field.Reps -> "Reps"; TargetEntry.Field.Weight -> "Load" }}"
-        TargetEntry.Reading.Open -> Readout.openTarget
+        is TargetEntry.Reading.Refused -> stringResource(when (reading.field) {
+            TargetEntry.Field.Sets -> R.string.gym_movement_check_sets
+            TargetEntry.Field.Reps -> R.string.gym_movement_check_reps
+            TargetEntry.Field.Weight -> R.string.gym_movement_check_load
+        })
+        TargetEntry.Reading.Open -> Readout.open.text()
         is TargetEntry.Reading.Scheme -> if (scheme.varyBySet && !DomainSetTarget.straight(reading.sets.map { it.domain }))
-            "${reading.sets.size} sets · varies" else Readout.targetWithUnit(reading.sets, movement.current)
+            pluralString(R.plurals.gym_movement_sets_vary, reading.sets.size, reading.sets.size.toString())
+            else Readout.scheme(reading.sets, movement.current).text()
     }
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -132,20 +139,21 @@ private fun RoutineTargets(
             Text(summary, style = GymType.numeral, color = colors.onSurfaceVariant)
         }
         if (!perSet) {
-            RoutineStepper("Sets", scheme.sets, "sets", TargetEntry.setsPlaceholder,
+            RoutineStepper(stringResource(R.string.gym_movement_stepper_sets), scheme.sets, stringResource(R.string.gym_movement_unit_sets),
+                stringResource(R.string.gym_program_sets_placeholder),
                 headFault?.takeIf { it.field == TargetEntry.Field.Sets }?.let {
-                    if (scheme.sets.trim() == "0") TargetEntry.outsideSets else it.said
-                }, enabled, decimal = false, onTyped = { update(scheme.withCount(it)) },
+                    if (scheme.sets.trim() == "0") TargetEntry.outsideSetsBand else it.why
+                }?.text(), enabled, decimal = false, onTyped = { update(scheme.withCount(it)) },
                 onStep = { stepped(TargetEntry.Field.Sets, it) }, reading = reading)
-            RoutineStepper("Reps", TargetEntry.sharedReps(shown), "reps",
-                if (TargetEntry.repsVary(shown)) TargetEntry.varies else TargetEntry.repsPlaceholder,
-                headFault?.takeIf { it.field == TargetEntry.Field.Reps }?.said,
+            RoutineStepper(stringResource(R.string.gym_movement_stepper_reps), TargetEntry.sharedReps(shown), stringResource(R.string.gym_movement_unit_reps),
+                stringResource(if (TargetEntry.repsVary(shown)) R.string.gym_program_varies else R.string.gym_program_reps_placeholder),
+                headFault?.takeIf { it.field == TargetEntry.Field.Reps }?.why?.text(),
                 enabled && scheme.sets.isNotBlank(), decimal = false,
                 onTyped = { update(scheme.copy(rows = TargetEntry.withReps(scheme.rows, it))) },
                 onStep = { stepped(TargetEntry.Field.Reps, it) }, reading = reading)
-            RoutineStepper("Load", TargetEntry.sharedWeight(shown), unit,
-                if (TargetEntry.weightVaries(shown)) TargetEntry.varies else "—",
-                headFault?.takeIf { it.field == TargetEntry.Field.Weight }?.said,
+            RoutineStepper(stringResource(R.string.gym_movement_stepper_load), TargetEntry.sharedWeight(shown), unit,
+                if (TargetEntry.weightVaries(shown)) stringResource(R.string.gym_program_varies) else "—",
+                headFault?.takeIf { it.field == TargetEntry.Field.Weight }?.why?.text(),
                 enabled && scheme.sets.isNotBlank(), decimal = true,
                 onTyped = { update(scheme.copy(rows = TargetEntry.withWeight(scheme.rows, it))) },
                 onStep = { stepped(TargetEntry.Field.Weight, it) }, reading = reading)
@@ -156,7 +164,7 @@ private fun RoutineTargets(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 SuggestionChip(onClick = { update(scheme.copy(
                     rows = TargetEntry.rampUp(shown) + scheme.rows.drop(shown.size), varyBySet = true)) },
-                    label = { Text(TargetEntry.rampUp, style = WindmillType.supporting) },
+                    label = { Text(stringResource(R.string.gym_program_ramp_up), style = WindmillType.supporting) },
                     enabled = enabled && TargetEntry.canRamp(shown), modifier = Modifier.heightIn(min = 48.dp))
                 FilterChip(selected = scheme.varyBySet, onClick = { update(scheme.copy(varyBySet = !scheme.varyBySet)) },
                     label = { Text(stringResource(R.string.gym_movement_vary_by_set), style = if (scheme.varyBySet) GymType.groupLabel else WindmillType.supporting) },
@@ -165,15 +173,15 @@ private fun RoutineTargets(
         }
         if (perSet) {
             Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(TargetEntry.setBySet, style = WindmillType.label, color = colors.onSurface, modifier = Modifier.weight(1f))
+                Text(stringResource(R.string.gym_program_set_by_set), style = WindmillType.label, color = colors.onSurface, modifier = Modifier.weight(1f))
                 Box {
                     TextButton(onClick = { fill = true }, enabled = enabled, modifier = Modifier.heightIn(min = 48.dp)) {
-                        Text(TargetEntry.fill, style = GymType.groupLabel)
+                        Text(stringResource(R.string.gym_program_fill), style = GymType.groupLabel)
                     }
                     DropdownMenu(expanded = fill && enabled, onDismissRequest = { fill = false }) {
-                        DropdownMenuItem(text = { Text(TargetEntry.rampUp) }, enabled = TargetEntry.canRamp(shown),
+                        DropdownMenuItem(text = { Text(stringResource(R.string.gym_program_ramp_up)) }, enabled = TargetEntry.canRamp(shown),
                             onClick = { filled(TargetEntry.rampUp(shown)); fill = false })
-                        DropdownMenuItem(text = { Text(TargetEntry.matchSetOne) },
+                        DropdownMenuItem(text = { Text(stringResource(R.string.gym_program_match_set_one)) },
                             onClick = { filled(TargetEntry.matchFirst(shown)); fill = false })
                     }
                 }
@@ -185,7 +193,7 @@ private fun RoutineTargets(
             }
             shown.forEachIndexed { index, row -> key(removals, index) {
                 val fault = refused?.takeIf { it.row == index && headFault == null }
-                DeleteSwipeRow(actionLabel = TargetEntry.delete, enabled = enabled, onDelete = {
+                DeleteSwipeRow(actionLabel = stringResource(R.string.gym_program_delete), enabled = enabled, onDelete = {
                     update(scheme.copy(rows = scheme.rows.filterIndexed { at, _ -> at != index },
                         sets = (shown.size - 1).takeIf { it > 0 }?.toString().orEmpty()))
                     removals += 1
@@ -194,12 +202,12 @@ private fun RoutineTargets(
                     Row(Modifier.fillMaxWidth().background(colors.surfaceContainer), horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically) {
                         Text("${index + 1}", style = GymType.numeral, color = colors.onSurfaceVariant, modifier = Modifier.width(32.dp))
-                        RoutineTargetField(row.reps, TargetEntry.repsPlaceholder, "Set ${index + 1} reps", false,
-                            fault?.takeIf { it.field == TargetEntry.Field.Reps }?.said, enabled, Modifier.weight(1f)) {
+                        RoutineTargetField(row.reps, stringResource(R.string.gym_program_reps_placeholder), stringResource(R.string.gym_movement_set_reps, (index + 1).toString()), false,
+                            fault?.takeIf { it.field == TargetEntry.Field.Reps }?.why?.text(), enabled, Modifier.weight(1f)) {
                             update(scheme.copy(rows = scheme.rows.mapIndexed { at, value -> if (at == index) value.copy(reps = it) else value }))
                         }
                         RoutineTargetField(row.weight, "—", stringResource(R.string.gym_movement_set_load, (index + 1).toString()), true,
-                            fault?.takeIf { it.field == TargetEntry.Field.Weight }?.said, enabled, Modifier.weight(1f)) {
+                            fault?.takeIf { it.field == TargetEntry.Field.Weight }?.why?.text(), enabled, Modifier.weight(1f)) {
                             update(scheme.copy(rows = scheme.rows.mapIndexed { at, value -> if (at == index) value.copy(weight = it) else value }))
                         }
                     }
@@ -211,9 +219,9 @@ private fun RoutineTargets(
             }, enabled = enabled, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
                 Icon(painterResource(R.drawable.gym_native_add), null, Modifier.size(24.dp))
                 Spacer(Modifier.width(8.dp))
-                Text(TargetEntry.addSet)
+                Text(stringResource(R.string.gym_program_add_set))
             }
-            if (ceiling) Text(TargetEntry.outsideSets, color = colors.error, style = WindmillType.supporting)
+            if (ceiling) Text(TargetEntry.outsideSetsBand.text(), color = colors.error, style = WindmillType.supporting)
         }
     }
 }

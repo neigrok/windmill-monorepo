@@ -11,7 +11,6 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.autofill.ContentType
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.*
@@ -25,6 +24,8 @@ import works.windmill.platform.User
 import works.windmill.platform.R
 import works.windmill.platform.design.LocalWindmillPalette
 import works.windmill.platform.net.WindmillApiException
+import works.windmill.platform.i18n.Words
+import works.windmill.platform.i18n.text
 
 @Composable
 fun SignInDoor(
@@ -36,7 +37,8 @@ fun SignInDoor(
     var email by rememberSaveable { mutableStateOf("") }
     var typed by rememberSaveable { mutableStateOf("") }
     var sentTo by rememberSaveable { mutableStateOf<String?>(null) }
-    var refusal by rememberSaveable { mutableStateOf<String?>(null) }
+    var said by rememberSaveable { mutableStateOf<Words?>(null) }
+    val refusal = said?.text()
     var resendAt by rememberSaveable { mutableLongStateOf(0L) }
     var pending by remember(auth) { mutableStateOf<Int?>(null) }
     var completed by rememberSaveable(auth) { mutableStateOf(false) }
@@ -49,7 +51,6 @@ fun SignInDoor(
     DisposableEffect(identity) { onDispose { active = false; onBusy(false) } }
     val scope = rememberCoroutineScope()
     val palette = LocalWindmillPalette.current
-    val context = LocalContext.current
     var tick by remember { mutableLongStateOf(now()) }
     LaunchedEffect(resendAt) {
         tick = now()
@@ -73,10 +74,10 @@ fun SignInDoor(
         } catch (interrupted: CancellationException) { throw interrupted }
         catch (refused: WindmillApiException) {
             if (active && currentIdentity === identity && auth.handoffRevision == revision)
-                refusal = MagicLink.refusal(refused)
+                said = MagicLink.refused(refused)
         } catch (failed: AuthHandoffFailure) {
             if (active && currentIdentity === identity && auth.handoffRevision == revision)
-                refusal = context.getString(R.string.platform_sign_in_failed)
+                said = Words.Message(R.string.platform_sign_in_failed)
         } finally {
             if (active && currentIdentity === identity && auth.handoffRevision == revision) { pending = null; busyCallback(false) }
         }
@@ -85,7 +86,7 @@ fun SignInDoor(
         if (pending != null || auth.handoffPending || completed || email.isBlank() || (sentTo != null && seconds > 0)) return
         pending = R.string.platform_sign_in_sending
         busyCallback(true)
-        refusal = null
+        said = null
         val address = email
         scope.launch {
             try {
@@ -95,7 +96,7 @@ fun SignInDoor(
                     resendAt = now() + 30_000
                 }
             } catch (refused: WindmillApiException) {
-                if (active && currentIdentity === identity) refusal = refused.line
+                if (active && currentIdentity === identity) said = refused.words
             } finally {
                 if (active && currentIdentity === identity) { pending = null; busyCallback(false) }
             }
@@ -107,7 +108,7 @@ fun SignInDoor(
         pending = R.string.platform_sign_in_signing_in
         attachedHandoff = auth.handoffRevision + 1
         busyCallback(true)
-        refusal = null
+        said = null
         val entry = typed.trim()
         scope.launch {
             try {
@@ -134,10 +135,10 @@ fun SignInDoor(
             } catch (interrupted: CancellationException) {
                 throw interrupted
             } catch (refused: WindmillApiException) {
-                if (active && currentIdentity === identity) refusal = MagicLink.refusal(refused)
+                if (active && currentIdentity === identity) said = MagicLink.refused(refused)
             } catch (failed: Exception) {
                 if (failed !is AuthHandoffFailure) auth.telemetry.failure("auth_sign_in", failed)
-                if (active && currentIdentity === identity) refusal = context.getString(R.string.platform_sign_in_failed)
+                if (active && currentIdentity === identity) said = Words.Message(R.string.platform_sign_in_failed)
             } finally {
                 if (active && currentIdentity === identity) { pending = null; busyCallback(false) }
             }
@@ -151,11 +152,11 @@ fun SignInDoor(
                 style = WindmillType.doorTitle, color = palette.ink)
             if (sentTo == null) {
                 Text(stringResource(R.string.platform_sign_in_new_here), style = WindmillType.paragraph, color = palette.inkDim)
-                DoorField(stringResource(R.string.platform_email), stringResource(R.string.platform_sign_in_email_placeholder), email, KeyboardType.Email, ContentType.EmailAddress, pending == null && !auth.handoffPending && !completed, refusal) { email = it; refusal = null }
+                DoorField(stringResource(R.string.platform_email), stringResource(R.string.platform_sign_in_email_placeholder), email, KeyboardType.Email, ContentType.EmailAddress, pending == null && !auth.handoffPending && !completed, refusal) { email = it; said = null }
             } else {
                 Text(stringResource(R.string.platform_sign_in_code_sent, sentTo.orEmpty()), style = WindmillType.paragraph, color = palette.ink)
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    DoorField(stringResource(R.string.platform_sign_in_code), stringResource(R.string.platform_sign_in_code_placeholder), typed, KeyboardType.NumberPassword, OneTimeCode, pending == null && !auth.handoffPending && !completed, refusal) { typed = it; refusal = null }
+                    DoorField(stringResource(R.string.platform_sign_in_code), stringResource(R.string.platform_sign_in_code_placeholder), typed, KeyboardType.NumberPassword, OneTimeCode, pending == null && !auth.handoffPending && !completed, refusal) { typed = it; said = null }
                     Text(refusal ?: stringResource(R.string.platform_sign_in_code_lifetime),
                         style = WindmillType.supportingParagraph,
                         color = if (refusal == null) palette.inkDim else MaterialTheme.colorScheme.error,
@@ -178,7 +179,7 @@ fun SignInDoor(
                 colors = ButtonDefaults.buttonColors(containerColor = palette.accent, contentColor = palette.onAccent)) {
                 Text(stringResource(pending ?: if (auth.handoffPending) R.string.platform_sign_in_signing_in else if (sentTo == null) R.string.platform_sign_in_send_code else R.string.platform_sign_in), style = WindmillType.label)
             }
-            if (sentTo != null) TextButton(onClick = { attachedHandoff = 0L; sentTo = null; typed = ""; refusal = null; resendAt = 0L },
+            if (sentTo != null) TextButton(onClick = { attachedHandoff = 0L; sentTo = null; typed = ""; said = null; resendAt = 0L },
                 enabled = pending == null && !auth.handoffPending && !completed, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
                 Text(stringResource(R.string.platform_sign_in_change_email), style = WindmillType.label, color = palette.ink)
             }

@@ -1,5 +1,6 @@
 package works.windmill.gym.coach
 
+import works.windmill.platform.i18n.text
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -60,15 +61,15 @@ internal fun AnswerProposals(
     ) {
         // A change to this workout the phone does not hold yet: Coach can answer on another phone before its proposal reaches this one, and a miss settles by `AnsweredProposals`' rule.
         answer.workoutProposals.filter { it !in state.workoutProposals }.forEach {
-            Text(if (gone(it)) ProposalRead.Gone.line else stringResource(R.string.gym_coach_reading_proposal), style = WindmillType.supporting, color = colors.onSurfaceVariant)
+            Text(if (gone(it)) ProposalRead.Gone.words.text() else stringResource(R.string.gym_coach_reading_proposal), style = WindmillType.supporting, color = colors.onSurfaceVariant)
         }
         (workouts + minted).forEach { proposal ->
             key(proposal.id) {
-                ProposalCard(proposal, proposal.routineName, nowMs, stillWaiting = proposal.id in lookedAt, nextTime = state.workoutOpen) { onReview(proposal) }
-                proposal.receipt?.let { ReceiptLine(it) }
+                ProposalCard(proposal, proposal.routineNamed, nowMs, stillWaiting = proposal.id in lookedAt, nextTime = state.workoutOpen) { onReview(proposal) }
+                proposal.settledReceipt?.let { ReceiptLine(it) }
             }
         }
-        if ((workouts + minted).any { it.isPending && it.outOfDate == null }) Text(stringResource(R.string.gym_coach_promise), style = GymType.coachSourceLine, color = colors.onSurfaceVariant)
+        if ((workouts + minted).any { it.isPending && it.stale == null }) Text(stringResource(R.string.gym_coach_promise), style = GymType.coachSourceLine, color = colors.onSurfaceVariant)
     }
 }
 
@@ -87,7 +88,7 @@ internal fun CoachProposalCard(kicker: String, summary: String, count: String, r
         Box(
             contentAlignment = Alignment.Center,
             modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).clickable(role = Role.Button, onClick = onReview).padding(12.dp),
-        ) { Text(Proposal.review, style = GymType.button, color = colors.onSurface) }
+        ) { Text(stringResource(R.string.gym_proposal_review), style = GymType.button, color = colors.onSurface) }
     }
 }
 

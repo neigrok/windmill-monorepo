@@ -25,6 +25,8 @@ import works.windmill.gym.presentation.Readout
 import works.windmill.gym.presentation.WorkoutKey
 import works.windmill.gym.store.WorkoutCommands
 import works.windmill.platform.telemetry.Telemetry
+import works.windmill.platform.i18n.Words
+import works.windmill.platform.i18n.text
 
 interface WorkoutTileHost {
     val workoutTile: WorkoutTile
@@ -42,7 +44,7 @@ class WorkoutTile(
             commands.restoreLocal()
             commands.notification.collectLatest { current ->
                 do {
-                    val subtitle = current?.let { context.getString(R.string.gym_notification_tile_running, it.title, Readout.clock(nowMs() - it.sinceSetAtMs)) }
+                    val subtitle = current?.let { Words.Message(R.string.gym_notification_tile_running, listOf(it.heading, Readout.clock(nowMs() - it.sinceSetAtMs))).text(context) }
                         ?: context.getString(R.string.gym_notification_tile_off)
                     tile.label = context.getString(R.string.gym_notification_tile_label)
                     tile.icon = Icon.createWithResource(activity.packageName, R.drawable.gym_workout_notification)

@@ -1,5 +1,6 @@
 package works.windmill.gym
 
+import works.windmill.platform.i18n.text
 import androidx.activity.BackEventCompat
 import androidx.annotation.StringRes
 import androidx.activity.compose.PredictiveBackHandler
@@ -53,11 +54,8 @@ import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import works.windmill.gym.presentation.Bodyweight
-import works.windmill.gym.presentation.ConnectedLog
 import works.windmill.gym.presentation.Exercise
 import works.windmill.gym.presentation.Note
-import works.windmill.gym.presentation.Notes
 import works.windmill.gym.presentation.Readout
 import works.windmill.gym.presentation.SessionDetail
 import works.windmill.gym.presentation.SessionSummary
@@ -136,15 +134,15 @@ internal val Away.screen: String
 
 @Composable
 internal fun Away.wayBack(catalog: List<Exercise>): String = when (this) {
-    is Away.Session -> summary.plan?.routine ?: Readout.noRoutine
+    is Away.Session -> summary.plan?.routine ?: Readout.freeWorkout.text()
     is Away.Movement -> Readout.movement(exerciseId, catalog)
     is Away.Coach -> stringResource(R.string.gym_coach_title)
     Away.Threads -> stringResource(R.string.gym_coach_history)
     // The noun, not the thread's title: a title is the lifter's first message verbatim.
     is Away.Thread -> stringResource(R.string.gym_coach_conversation)
-    Away.Connections -> ConnectedLog.title
-    Away.Notes, is Away.NoteEditor -> Notes.title
-    Away.Bodyweight -> Bodyweight.title
+    Away.Connections -> stringResource(R.string.gym_connected_title)
+    Away.Notes, is Away.NoteEditor -> stringResource(R.string.gym_notes_title)
+    Away.Bodyweight -> stringResource(R.string.gym_bodyweight_title)
     Away.OnThisPhone, is Away.InspectWorkout -> stringResource(R.string.gym_room_on_this_phone)
 }
 

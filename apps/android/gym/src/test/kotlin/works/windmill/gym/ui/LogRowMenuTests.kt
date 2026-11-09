@@ -15,6 +15,7 @@ import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
+import androidx.test.core.app.ApplicationProvider
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -30,6 +31,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import works.windmill.gym.presentation.Readout
 import works.windmill.gym.store.EngineRoomFixture
+import works.windmill.platform.i18n.Words
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
@@ -77,7 +79,7 @@ class LogRowMenuTests {
     }
 
     // The row's title is the one node carrying both the session's name and a click action.
-    private fun row() = compose.onAllNodes(hasText(Readout.noRoutine) and hasClickAction()).onFirst()
+    private fun row() = compose.onAllNodes(hasText(Readout.freeWorkout.spelled()!!) and hasClickAction()).onFirst()
 
     @Test
     fun theLongPressHoldsExactlyTwoItemsAndTheRowDrawsNoOverflowAtAll() {
@@ -92,7 +94,7 @@ class LogRowMenuTests {
                 compose.onAllNodes(hasContentDescription("More", substring = true), useUnmergedTree = true)
                     .fetchSemanticsNodes().size)
             assertEquals("and the row holds no control of its own at all — the long press is the door", 0,
-                compose.onAllNodes(hasAnyAncestor(hasText(Readout.noRoutine) and hasClickAction())
+                compose.onAllNodes(hasAnyAncestor(hasText(Readout.freeWorkout.spelled()!!) and hasClickAction())
                     and hasClickAction()).fetchSemanticsNodes().size)
 
             row().performTouchInput { longClick() }
@@ -183,3 +185,5 @@ class LogRowMenuTests {
         } } finally { scope.cancel() }
     }
 }
+
+private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())

@@ -153,6 +153,9 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.platform.LocalContext
+import works.windmill.platform.i18n.Words
+import works.windmill.platform.i18n.text
 
 // What the workout draws: the open session, its walk and sets, the rack, and the catalogue and log the picker reads.
 @Stable
@@ -173,7 +176,7 @@ interface LoggerState {
     val strandedBy: Blocker?
     val refusals: List<RefusedWrite>
     val isFinishing: Boolean
-    val workoutFailure: String?
+    val workoutRefusal: Words?
     val canFinish: Boolean
     val catalog: List<Exercise>
     val allSessions: List<SessionSummary>
@@ -227,7 +230,7 @@ class LoggerBinding(
     override val strandedBy: Blocker? get() = workout.strandedBy
     override val refusals: List<RefusedWrite> get() = workout.refusals
     override val isFinishing: Boolean get() = workout.isFinishing
-    override val workoutFailure: String? get() = workout.workoutFailure
+    override val workoutRefusal: Words? get() = workout.workoutRefusal
     override val canFinish: Boolean get() = workout.canFinish
     override val catalog: List<Exercise> get() = routines.catalog
     override val allSessions: List<SessionSummary> get() = history.allSessions
@@ -291,9 +294,8 @@ fun LoggerScreen(
     val notification = state.notification.collectAsState().value
     val scope = rememberCoroutineScope()
     val telemetry = LocalTelemetry.current
-    val workoutChangedReopen = stringResource(R.string.gym_logger_workout_changed_reopen)
+    val context = LocalContext.current
     val checkBeforeLogging = stringResource(R.string.gym_logger_check_before_logging)
-    val workoutClosed = stringResource(R.string.gym_logger_workout_closed)
     val weightKg = state.rack?.weightKg ?: state.prefill.weightKg
     val reps = state.rack?.reps ?: state.prefill.reps
     val pickerState = rememberMovementPickerState(state.accountKey, state.session?.id)
@@ -330,7 +332,7 @@ fun LoggerScreen(
         var result: WorkoutChange? = null
         try {
             result = events.choose(destination.movement)
-            if (result is WorkoutChange.Unavailable) say(result.reason)
+            if (result is WorkoutChange.Unavailable) say(result.why.text(context))
         }
         finally {
             if (state.accountKey == rackOwner && state.session?.id == rackSession && goingTo == destination) {
@@ -380,7 +382,7 @@ fun LoggerScreen(
     val ready = !pager.isScrollInProgress && pager.currentPageOffsetFraction == 0f && !dragCancelled &&
         order.getOrNull(pager.settledPage) == movement && goingTo == null
     val fling = PagerDefaults.flingBehavior(state = pager)
-    val finishing = state.isFinishing || state.workoutFailure != null
+    val finishing = state.isFinishing || state.workoutRefusal != null
     val rackExercise = state.catalog.firstOrNull { it.id == movement }
     val rackKey = "$rackOwner:$rackSession:$movement"
     val entry = RackEntry(
@@ -466,7 +468,7 @@ fun LoggerScreen(
         }
     }
 
-    val title = state.session?.plan?.routine ?: Readout.noRoutine
+    val title = state.session?.plan?.routine ?: Readout.freeWorkout.text()
     GymScreen(
         title = title,
         titleAlignment = TextAlign.Center,
@@ -516,12 +518,12 @@ fun LoggerScreen(
                     subtitle = if (state.session?.plan == null) null else stringResource(R.string.gym_logger_picker_plan_walked),
                     onPick = { picked -> scope.launch {
                         val result = events.choose(picked)
-                        if (result is WorkoutChange.Unavailable) say(result.reason)
+                        if (result is WorkoutChange.Unavailable) say(result.why.text(context))
                     } },
                     onCreate = { write ->
                         val result = events.createForWorkout(write, rackSession.orEmpty(), rackOwner, state.replica)
                         if (state.accountKey == rackOwner && state.session?.id == rackSession) result
-                        else MovementCreateOutcome.Failed(WriteFailure.Refused(workoutChangedReopen))
+                        else MovementCreateOutcome.Failed(WriteFailure.Refused(Words.Message(R.string.gym_logger_workout_changed_reopen)))
                     },
                     state = pickerState,
                     modifier = Modifier.weight(1f),
@@ -599,7 +601,7 @@ fun LoggerScreen(
             },
             exercise = rackExercise,
             finishing = finishing,
-            failure = state.workoutFailure,
+            refusal = state.workoutRefusal,
             enabled = ready,
             onEdit = { active ->
                 if (state.accountKey == rackOwner && state.session?.id == rackSession && state.exerciseId == rackMovement &&
@@ -610,10 +612,10 @@ fun LoggerScreen(
             },
             onLog = {
                 val offer = state.notification.value?.offer
-                if (offer == null) say(state.workoutFailure ?: checkBeforeLogging)
+                if (offer == null) say(state.workoutRefusal?.text(context) ?: checkBeforeLogging)
                 else when (val accepted = events.acceptSet(LogSetCommand(offer.key, offer.id))) {
-                    is LogSetAcceptance.Unavailable -> say(accepted.reason)
-                    LogSetAcceptance.Stale -> say("The workout changed. Check the current set.")
+                    is LogSetAcceptance.Unavailable -> say(accepted.why.text(context))
+                    LogSetAcceptance.Stale -> say(context.getString(R.string.gym_logger_workout_changed_check))
                     is LogSetAcceptance.Accepted -> say(null)
                 }
             },
@@ -645,7 +647,7 @@ fun LoggerScreen(
                         val result = events.reorder(from, to)
                         if (result != WorkoutChange.Stale) telemetry.event("gym_action", mapOf("screen" to "workout", "action" to "reorder",
                             "outcome" to if (result == WorkoutChange.Saved) "ok" else "failed"))
-                        if (result is WorkoutChange.Unavailable) { sheet = null; say(result.reason) }
+                        if (result is WorkoutChange.Unavailable) { sheet = null; say(result.why.text(context)) }
                     },
                     onDrop = {
                         val result = events.drop(it)
@@ -654,17 +656,17 @@ fun LoggerScreen(
                             WorkoutChange.Stale -> "refused"
                             is WorkoutChange.Unavailable -> "failed"
                         }))
-                        if (result is WorkoutChange.Unavailable) { sheet = null; say(result.reason) }
+                        if (result is WorkoutChange.Unavailable) { sheet = null; say(result.why.text(context)) }
                         result == WorkoutChange.Saved
                     },
                     onHide = ::hide,
                     notificationOff = notification?.hidden == true,
                     onShowNotification = {
                         val result = notification?.key?.let { events.showWorkout(it, false) }
-                            ?: WorkoutChange.Unavailable(state.workoutFailure ?: "The workout is not ready.")
+                            ?: WorkoutChange.Unavailable(state.workoutRefusal ?: Words.Message(R.string.gym_store_workout_not_ready))
                         telemetry.event("gym_action", mapOf("screen" to "workout", "action" to "show_notification",
                             "outcome" to if (result == WorkoutChange.Saved) "ok" else "refused"))
-                        if (result is WorkoutChange.Unavailable) { sheet = null; say(result.reason) }
+                        if (result is WorkoutChange.Unavailable) { sheet = null; say(result.why.text(context)) }
                     },
                     onAdd = {
                         sheet = LoggerSheet.Picker
@@ -683,7 +685,7 @@ fun LoggerScreen(
                         val previous = state.exerciseId
                         val result = events.createForWorkout(write, rackSession.orEmpty(), rackOwner, state.replica)
                         if (state.accountKey != rackOwner || state.session?.id != rackSession)
-                            MovementCreateOutcome.Failed(WriteFailure.Refused(workoutChangedReopen))
+                            MovementCreateOutcome.Failed(WriteFailure.Refused(Words.Message(R.string.gym_logger_workout_changed_reopen)))
                         else {
                             if (result is MovementCreateOutcome.Added && previous != result.movement.id)
                                 telemetry.event("gym_action", mapOf("screen" to "workout", "action" to "movement_switch", "outcome" to "ok"))
@@ -714,7 +716,7 @@ fun LoggerScreen(
                         onSave = { fix ->
                             if (sessionId == null) {
                                 telemetry.event("gym_action", mapOf("screen" to "workout", "action" to "fix", "outcome" to "refused"))
-                                FixOutcome.Gone(workoutClosed)
+                                FixOutcome.Gone(Words.Message(R.string.gym_logger_workout_closed))
                             }
                             else events.fixSet(sessionId, set.id, fix, FixOrigin.Workout)
                         },
@@ -726,7 +728,7 @@ fun LoggerScreen(
                         onDelete = {
                             close()
                             say(null)
-                            if (sessionId != null) scope.launch { say(events.delete(Deletion.Set(sessionId, set))?.line("that set is still on the log")) }
+                            if (sessionId != null) scope.launch { say(events.delete(Deletion.Set(sessionId, set))?.says(R.string.gym_session_set_delete_no_answer)?.text(context)) }
                         },
                     )
                 }
@@ -744,7 +746,7 @@ internal fun WorkoutClockRow(clocks: WorkoutClocks) {
         verticalArrangement = Arrangement.spacedBy(8.dp)) {
         listOf(
             Triple(stringResource(R.string.gym_logger_workout_time), R.drawable.gym_clock, clocks.workoutMs),
-            Triple(clocks.sinceSetName, R.drawable.gym_stopwatch, clocks.sinceSetMs),
+            Triple(stringResource(clocks.sinceSetLabel), R.drawable.gym_stopwatch, clocks.sinceSetMs),
         ).forEach { (name, icon, duration) ->
             val value = Readout.clock(duration)
             val spoken = stringResource(R.string.gym_logger_clock_spoken, name, value)
@@ -771,11 +773,12 @@ private fun MovementHead(
     val colors = MaterialTheme.colorScheme
     val previousMovement = stringResource(R.string.gym_logger_previous_movement)
     val nextMovement = stringResource(R.string.gym_logger_next_movement)
+    val placeSaid = place?.said?.text()
     Column(
         Modifier.fillMaxWidth().heightIn(min = GymTap.minimum)
             .clickable(enabled = enabled, role = Role.Button, onClickLabel = stringResource(R.string.gym_logger_open_this_workout), onClick = onOpenSession)
             .semantics(mergeDescendants = true) {
-                place?.let { contentDescription = it.spoken }
+                placeSaid?.let { contentDescription = it }
                 customActions = if (!enabled) emptyList() else buildList {
                     previous?.let { add(CustomAccessibilityAction(previousMovement) { onMove(it); true }) }
                     next?.let { add(CustomAccessibilityAction(nextMovement) { onMove(it); true }) }
@@ -806,7 +809,7 @@ private fun MovementHead(
 private fun StrandedBand(count: Int, by: Blocker?) {
     val colors = MaterialTheme.colorScheme
     val gymColors = MaterialTheme.gymColors
-    val line = LiveLines.onThisDeviceLine(count, by) ?: return
+    val line = LiveLines.onThisDevice(count, by)?.text() ?: return
     Row(
         Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
@@ -873,13 +876,14 @@ private fun Ledger(
         items(slots, key = { it.key }) { slot ->
             val active = slot is LiveLines.Slot.Current
             val row = (slot as? LiveLines.Slot.Landed)?.row
+            val said = slot.said.text()
             ListItem(
                 leadingContent = {
                     Text(slot.number, style = if (active) GymType.nativeRowTitle else GymType.numeralLarge,
                         color = if (active) colors.primary else colors.onSurface, modifier = Modifier.widthIn(min = numberWidth))
                 },
                 headlineContent = {
-                    slot.line?.let { Text(it, style = GymType.numeralLarge, color = if (active) colors.onSurfaceVariant else colors.onSurface) }
+                    slot.shown?.let { Text(it.text(), style = GymType.numeralLarge, color = if (active) colors.onSurfaceVariant else colors.onSurface) }
                 },
                 trailingContent = row?.let { landed -> {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -891,7 +895,7 @@ private fun Ledger(
                 modifier = Modifier.fillMaxWidth().onSizeChanged { heights[slot.key] = it.height }
                     .clip(MaterialTheme.shapes.medium)
                     .then(if (row != null) Modifier.clickable(enabled = enabled, role = Role.Button, onClickLabel = stringResource(R.string.gym_logger_fix_this_set)) { onFix(row.id) } else Modifier)
-                    .semantics(mergeDescendants = true) { contentDescription = slot.spoken },
+                    .semantics(mergeDescendants = true) { contentDescription = said },
             )
         }
     }
@@ -917,8 +921,8 @@ private class RackEntry(
                 val repsChanged = count.accept(repsValue.toDouble()) == NumberEditResult.Changed
                 if (loadChanged || repsChanged) NumberEditResult.Changed else NumberEditResult.Unchanged
             }
-            WorkoutChange.Stale -> field.refuse("The workout changed. Check the current set.")
-            is WorkoutChange.Unavailable -> field.refuse(result.reason)
+            WorkoutChange.Stale -> field.refuse(Words.Message(R.string.gym_logger_workout_changed_check))
+            is WorkoutChange.Unavailable -> field.refuse(result.why)
         }
     }
 
@@ -954,7 +958,7 @@ private fun Rack(
     entry: RackEntry,
     exercise: Exercise?,
     finishing: Boolean,
-    failure: String?,
+    refusal: Words?,
     enabled: Boolean,
     onEdit: (Boolean) -> Unit,
     onLog: () -> Unit,
@@ -983,7 +987,7 @@ private fun Rack(
                     Column(Modifier.padding(horizontal = GymLayout.gutter).padding(top = 16.dp, bottom = 12.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         SetNumbers(load, count, unit, stepLoad = entry::stepLoad, stepReps = entry::stepReps, commit = entry::commit,
-                            enabled = enabled && !finishing, loadRefusal = load.shownRefusal ?: failure,
+                            enabled = enabled && !finishing, loadRefused = load.shownRefused ?: refusal,
                             onFocusChange = { onEdit(load.focused || count.focused) })
                     }
                 }
@@ -1053,7 +1057,7 @@ private data class LoggerPreviewState(
     override val strandedCount: Int get() = 0
     override val strandedBy: Blocker? get() = null
     override val refusals: List<RefusedWrite> get() = emptyList()
-    override val workoutFailure: String? get() = null
+    override val workoutRefusal: Words? get() = null
     override val canFinish: Boolean get() = session != null && !isFinishing
     override val deletedSets: Set<String> get() = emptySet()
     override fun lastTimeOf(movement: String): LastTime = LastTime(Id(movement, DomainExercise))
@@ -1071,7 +1075,7 @@ private object LoggerPreviewEvents : LoggerEvents {
     override suspend fun createForWorkout(write: ExerciseWrite, workoutId: String, expectedAccountKey: String,
         expectedReplica: String?): MovementCreateOutcome = MovementCreateOutcome.Failed(WriteFailure.NoAnswer)
     override suspend fun fixSet(sessionId: String, setId: String, fix: SetFix, origin: FixOrigin): FixOutcome =
-        FixOutcome.Gone("that workout is no longer open")
+        FixOutcome.Gone(Words.Message(R.string.gym_logger_workout_closed))
     override suspend fun delete(deletion: Deletion): WriteFailure? = null
     override fun clearRefusals() = Unit
 }

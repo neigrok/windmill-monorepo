@@ -1,5 +1,6 @@
 package works.windmill.gym.store
 
+import androidx.test.core.app.ApplicationProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.TestScope
@@ -13,10 +14,17 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import works.windmill.gym.presentation.TrainingSet
+import works.windmill.platform.i18n.Words
+import works.windmill.platform.i18n.text
 import works.windmill.sync.core.Json
 import works.windmill.sync.modelserver.ModelServer
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class DeletionsStoreTests {
     @get:Rule
     val tmp = TemporaryFolder()
@@ -130,7 +138,7 @@ class DeletionsStoreTests {
             server.refuse(code = "invalid")
             room.sync(server); noticed(room); room.store.refreshEngine()
 
-            assertEquals(listOf(taken.id to "That change could not be saved."), room.store.workout.refusals.map { it.id to it.reason })
+            assertEquals(listOf(taken.id to "That change could not be saved."), room.store.workout.refusals.map { it.id to it.why.spelled() })
             assertEquals(listOf(emptyMap<String, Json>()), room.engine.notices("gym").notices.value.map {
                 it.content.deltas.single().lattice.fields.mapValues { field -> field.value.value }
             })
@@ -150,3 +158,5 @@ class DeletionsStoreTests {
         }
     }
 }
+
+private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())

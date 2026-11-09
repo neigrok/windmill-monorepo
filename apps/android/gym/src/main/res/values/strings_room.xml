@@ -4,11 +4,17 @@
     <string name="gym_room_tab_log">The log</string>
     <string name="gym_room_tab_coach">Coach</string>
     <string name="gym_room_on_this_phone">On this phone</string>
-    <string name="gym_room_workout_not_ready">The workout is not ready.</string>
     <string name="gym_room_you_notes">Notes</string>
     <string name="gym_room_you_connected_log">Connected log</string>
     <string name="gym_room_link_not_copied">The link could not be copied. Try Share this workout again.</string>
     <string name="gym_room_link_copied">Link copied — anyone who has it can read this workout</string>
     <string name="gym_room_ask_about_change">What would this change to %1$s do?</string>
     <string name="gym_room_delete_unconfirmed">This workout couldn’t be deleted on this phone. It is still saved.</string>
+    <string name="gym_room_undo">Undo</string>
+    <string name="gym_room_undo_closed">The Undo window closed.</string>
+    <string name="gym_room_routine_delete_no_answer">the log didn’t answer — %1$s is still in your program</string>
+    <string name="gym_room_start_no_answer">the log didn’t answer — nothing started</string>
+    <string name="gym_room_finish_no_answer">the log didn’t answer — the session is still open</string>
+    <string name="gym_room_routine_save_no_answer">the log didn’t answer — %1$s wasn’t saved</string>
+    <string name="gym_room_discard_no_answer">the log didn’t answer — the workout is still saved</string>
 </resources>

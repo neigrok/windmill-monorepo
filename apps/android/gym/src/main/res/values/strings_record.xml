@@ -13,4 +13,22 @@
     <string name="gym_record_earlier_workout">Earlier workout</string>
     <string name="gym_record_later_workout">Later workout</string>
     <string name="gym_record_no_data_range">No data · %1$s – %2$s</string>
+    <string name="gym_record_tile_best">Best e1RM</string>
+    <string name="gym_record_tile_heaviest">Heaviest</string>
+    <string name="gym_record_tile_most_reps">Most reps</string>
+    <string name="gym_record_tile_kg_on">kg · %1$s</string>
+    <string name="gym_record_tile_no_added_load">reps · no added load</string>
+    <string name="gym_record_equipment_dumbbells">Dumbbells</string>
+    <string name="gym_record_equipment_barbell">Barbell</string>
+    <string name="gym_record_equipment_machine">Machine</string>
+    <string name="gym_record_equipment_bodyweight">Bodyweight</string>
+    <string name="gym_record_equipment_other">Other</string>
+    <string name="gym_record_untrained">Nothing logged for this movement yet. The first set you log lands here.</string>
+    <string name="gym_record_no_estimate">No eligible estimate yet. Estimates use 1–10 reps at effort 7 or higher, or unrated sets.</string>
+    <string name="gym_record_progress_point">%1$s kg est · %2$s · %3$s</string>
+    <string name="gym_record_point_standing_best">%1$s, standing best</string>
+    <string name="gym_record_no_workout_range">No workout · %1$s – %2$s</string>
+    <string name="gym_record_read_no_answer">the log didn’t answer — Your record could not be read.</string>
+    <string name="gym_record_edit_no_answer">the log didn’t answer — that movement was not changed.</string>
+    <string name="gym_record_last_twelve_weeks">Last 12 weeks</string>
 </resources>

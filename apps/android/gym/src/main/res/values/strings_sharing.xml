@@ -16,4 +16,6 @@
     <string name="gym_sharing_revoke">Revoke the link</string>
     <string name="gym_sharing_dead_title">The link is dead</string>
     <string name="gym_sharing_dead_body">Anyone still holding it gets nothing. You can make a new one whenever you like.</string>
+    <string name="gym_sharing_mint_no_answer">the log didn’t answer — the link wasn’t made</string>
+    <string name="gym_sharing_revoke_no_answer">the log didn’t answer — the link is still live</string>
 </resources>

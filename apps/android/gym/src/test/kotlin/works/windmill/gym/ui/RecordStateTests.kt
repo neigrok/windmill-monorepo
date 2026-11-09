@@ -15,6 +15,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextReplacement
+import androidx.test.core.app.ApplicationProvider
 import java.time.Instant
 import java.time.ZoneOffset
 import kotlinx.coroutines.CoroutineScope
@@ -44,6 +45,7 @@ import works.windmill.gym.store.FixOrigin
 import works.windmill.gym.store.FixOutcome
 import works.windmill.gym.store.TrainingSeat
 import works.windmill.gym.store.TrainingStore
+import works.windmill.platform.i18n.Words
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
@@ -69,7 +71,7 @@ class RecordStateTests {
             } }
             compose.onNodeWithText("Reading your log…").assertExists()
             compose.onNodeWithText("Record unavailable").assertDoesNotExist()
-            compose.onNodeWithText(TrainingSeat.accountChanged).assertDoesNotExist()
+            compose.onNodeWithText(TrainingSeat.accountChange.spelled()!!).assertDoesNotExist()
             compose.runOnIdle {
                 room.store.seat.isLoading = false
             }
@@ -84,7 +86,7 @@ class RecordStateTests {
             compose.onNodeWithText("96.3").assertExists()
             compose.onNodeWithText("82.5").assertExists()
             compose.onNodeWithText("Record unavailable").assertDoesNotExist()
-            compose.onNodeWithText(TrainingSeat.accountChanged).assertDoesNotExist()
+            compose.onNodeWithText(TrainingSeat.accountChange.spelled()!!).assertDoesNotExist()
             compose.onNodeWithText("Reading your log…").assertDoesNotExist()
         } } finally { scope.cancel() }
     }
@@ -246,3 +248,5 @@ class RecordStateTests {
         } } finally { scope.cancel() }
     }
 }
+
+private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())

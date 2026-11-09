@@ -1,5 +1,8 @@
 package works.windmill.gym.ui
 
+import works.windmill.platform.i18n.text
+import works.windmill.platform.i18n.Words
+import androidx.compose.ui.platform.LocalContext
 import works.windmill.platform.design.WindmillType
 import androidx.compose.material3.MaterialTheme
 import works.windmill.platform.design.WindmillSheet
@@ -75,6 +78,7 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.DockedSearchBar
 import androidx.compose.material3.SearchBarDefaults
+import androidx.annotation.StringRes
 
 // A movement is a stable identity and never a typed string, so the only way to lift something the
 // catalog has never heard of is to MINT it here. The last-done read is SPARSE, so `never logged` is
@@ -91,15 +95,12 @@ object PickerOptions {
     // further back does not rank differently from one that has not.
     const val trainedWindow = 50
 
-    // The bytes web says for the same silence.
-    const val catalogUnread = "The catalog didn’t load. It comes back when you have signal."
-
     // `never logged` is only ever said where an ANSWER carried no row for that movement.
     // `alias` is the word the MATCH came from and is drawn on no other row.
     data class Row(
         val id: String,
         val name: String,
-        val meta: String?,
+        val lastTime: Words?,
         val alias: String? = null,
         val equipment: String = "barbell",
         val selected: Boolean = false,
@@ -111,9 +112,9 @@ object PickerOptions {
             equipment = movement.equipment,
             alias = alias,
             // A map that has not landed says nothing at all, never `never logged`.
-            meta = lastSets?.let { answered ->
-                val last = answered[movement.id] ?: return@let "never logged"
-                "last ${Readout.effort(last.weightKg, last.reps)} · ${Readout.ago(last.atMs, nowMs)}"
+            lastTime = lastSets?.let { answered ->
+                val last = answered[movement.id] ?: return@let Words.Message(R.string.gym_picker_never_logged)
+                Words.Message(R.string.gym_picker_last, listOf(Readout.effort(last.weightKg, last.reps), Readout.daysAgo(last.atMs, nowMs)))
             },
         )
     }
@@ -121,8 +122,8 @@ object PickerOptions {
     data class Result(
         val six: List<Row>,
         val matches: List<Row>,
-        val unread: String?,
-        val empty: String?,
+        @StringRes val catalogUnread: Int?,
+        @StringRes val noMatch: Int?,
     ) {
         val hasRows: Boolean get() = six.isNotEmpty() || matches.isNotEmpty()
     }
@@ -177,11 +178,11 @@ object PickerOptions {
             }
         val matches = if (term.isEmpty()) rest else rest.take(shown)
 
-        val unread = if (catalog.isNotEmpty()) null else PickerOptions.catalogUnread
+        val unread = if (catalog.isNotEmpty()) null else R.string.gym_picker_catalog_unread
         val result = Result(six.map { it.copy(selected = it.id in taken) },
-            matches.map { it.copy(selected = it.id in taken) }, unread, empty = null)
+            matches.map { it.copy(selected = it.id in taken) }, unread, noMatch = null)
         if (result.hasRows || unread != null) return result
-        return result.copy(empty = "No movement by that name.")
+        return result.copy(noMatch = R.string.gym_picker_no_match)
     }
 }
 
@@ -258,6 +259,7 @@ fun MovementPicker(
     onAdded: () -> Unit = {},
 ) {
     val colors = MaterialTheme.colorScheme
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
@@ -313,7 +315,7 @@ fun MovementPicker(
             modifier = inset.fillMaxWidth(),
         ) {}
         Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState())) {
-            options.unread?.let { Text(it, style = WindmillType.supportingParagraph, color = colors.onSurfaceVariant, modifier = inset) }
+            options.catalogUnread?.let { Text(stringResource(it), style = WindmillType.supportingParagraph, color = colors.onSurfaceVariant, modifier = inset) }
             if (options.six.isNotEmpty()) {
                 Text(stringResource(R.string.gym_picker_the_six), style = GymType.groupLabel, color = colors.onSurfaceVariant,
                     modifier = inset.padding(bottom = 8.dp))
@@ -324,7 +326,7 @@ fun MovementPicker(
                     modifier = inset.padding(top = 20.dp, bottom = 8.dp))
             }
             options.matches.forEach { MovementRow(it, onPick) }
-            options.empty?.let { Text(it, style = WindmillType.supportingParagraph, color = colors.onSurfaceVariant, modifier = inset) }
+            options.noMatch?.let { Text(stringResource(it), style = WindmillType.supportingParagraph, color = colors.onSurfaceVariant, modifier = inset) }
         }
         TextButton(
             onClick = {
@@ -398,8 +400,8 @@ fun MovementPicker(
                                     is MovementCreateOutcome.Failed -> {
                                         state.created = result.created
                                         if (result.created == null && result.why is WriteFailure.Refused) state.submitted = null
-                                        state.refusal = result.why.line(if (result.created == null)
-                                            "check this movement before retrying" else "the movement was created; retry adding it to this workout")
+                                        state.refusal = result.why.says(if (result.created == null) R.string.gym_picker_create_no_answer
+                                            else R.string.gym_picker_add_no_answer).text(context)
                                     }
                                 }
                             } finally { state.busy = false }
@@ -419,7 +421,7 @@ private fun MovementRow(row: PickerOptions.Row, onPick: (String) -> Unit) {
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(row.equipment.replaceFirstChar { it.uppercase() }, style = WindmillType.detailCompact, color = colors.onSurfaceVariant)
                 row.alias?.let { Text(stringResource(R.string.gym_picker_was_alias, it), style = WindmillType.detailCompact, color = colors.onSurfaceVariant) }
-                row.meta?.let { Text(it, style = WindmillType.detailCompact, color = colors.onSurfaceVariant) }
+                row.lastTime?.let { Text(it.text(), style = WindmillType.detailCompact, color = colors.onSurfaceVariant) }
             }
         },
         trailingContent = { Icon(if (row.selected) Icons.Filled.Check else Icons.Filled.Add, null, tint = colors.onSurfaceVariant) },

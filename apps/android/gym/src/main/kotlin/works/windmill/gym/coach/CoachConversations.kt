@@ -45,8 +45,8 @@ import works.windmill.gym.domain.sync.RoutineChange
 import works.windmill.gym.domain.sync.Session
 import works.windmill.gym.domain.sync.WorkoutProposal
 import works.windmill.gym.R
-import works.windmill.gym.presentation.Words
-import works.windmill.gym.presentation.joined
+import works.windmill.platform.i18n.Words
+import works.windmill.platform.i18n.joined
 import works.windmill.gym.store.EngineTraining
 import works.windmill.gym.store.TrainingSeat
 import works.windmill.platform.telemetry.Telemetry
@@ -136,7 +136,7 @@ data class CoachReply(
 }
 
 // An answer earlier versions kept on this phone: the line it ended on, and the drafts it holds until they are saved.
-data class RetainedAnswer(val requestId: String, val line: String?, val accountRequired: Boolean, val drafts: List<CoachRoutineDraft>)
+data class RetainedAnswer(val requestId: String, val words: Words?, val accountRequired: Boolean, val drafts: List<CoachRoutineDraft>)
 
 // One turn of a conversation as the room draws it: what the lifter said and how Coach answered. `id` is stable across every read of it; `sending` is a question on its way to its record, drawn before it has one.
 data class CoachExchange(
@@ -152,7 +152,7 @@ data class CoachExchange(
 }
 
 // A conversation's row in History. `answering` is a running message on any device; `answerPreview` the newest completed answer's opening.
-data class ConversationRow(val id: String, val title: String, val askedAtMs: Long, val answering: Boolean = false, val answerPreview: String = "") {
+data class ConversationRow(val id: String, val named: Words, val askedAtMs: Long, val answering: Boolean = false, val answerPreview: String = "") {
     fun day(nowMs: Long): Words? {
         if (askedAtMs <= 0) return null
         val zone = ZoneId.systemDefault()
@@ -456,7 +456,7 @@ private val lineOrder = compareBy<MessageLine>({ it.at }, { it.coach }, { it.id 
 private fun ConversationRow(thread: CoachThread, messages: List<MessageLine>): ConversationRow {
     val newest = messages.maxWithOrNull(lineOrder)
     val answer = messages.filter { it.coach && it.state == MessageState.completed && it.text.isNotBlank() }.maxWithOrNull(lineOrder)?.text.orEmpty()
-    return ConversationRow(checkNotNull(thread.id.record.string) { "a thread's id is a string" }, thread.title, newest?.at?.ms ?: 0,
+    return ConversationRow(checkNotNull(thread.id.record.string) { "a thread's id is a string" }, Words.Plain(thread.title), newest?.at?.ms ?: 0,
         answering = newest?.coach == true && newest.state == MessageState.running,
         answerPreview = answer.substring(0, answer.offsetByCodePoints(0, minOf(previewCodePoints, answer.codePointCount(0, answer.length)))))
 }
@@ -469,17 +469,17 @@ private fun CoachExchange(record: CoachOnboardingRecord, saved: CoachImportRecei
     val routines = if (saved == null) emptyList() else saved.routines.zip(response?.routines.orEmpty()).mapNotNull { (id, routine) ->
         id.record.string?.let { CreatedRoutine(it, routine.name, routine.entries.size) }
     }
-    val line = when {
+    val words = when {
         answered || code == "account_required" -> null
-        code == "subject_exhausted" -> CoachTurnRefusal.of(code, spent = response?.spent == true).sentence
+        code == "subject_exhausted" -> CoachTurnRefusal.of(code, spent = response?.spent == true).words
         code in setOf("free_day_exhausted", "free_month_exhausted", "concurrency_exhausted", "funding_required") ->
-            response?.message?.takeIf { it.isNotBlank() } ?: record.refusalMessage ?: Ask.couldNotTake
-        else -> Ask.couldNotTake
+            (response?.message?.takeIf { it.isNotBlank() } ?: record.refusalMessage)?.let(Words::Plain) ?: Words.Message(R.string.gym_coach_could_not_take)
+        else -> Words.Message(R.string.gym_coach_could_not_take)
     }
     val drafts = if (saved != null || !answered) emptyList() else response?.routines.orEmpty().mapIndexed { index, routine -> CoachRoutineDraft("${record.requestId}-$index", routine) }
     val reply = response?.takeIf { answered }?.let {
         CoachReply(record.requestId, it.message, MessageState.completed, truncated = false, onThisPhone = true, calls = emptyList(), receipt = CoachReceipt(emptyList()), routines = routines)
     }
     return CoachExchange(record.requestId, record.question, record.createdAtMs, listOfNotNull(record.attachment?.let { SentPicture(it, true) }), reply,
-        retained = RetainedAnswer(record.requestId, line, code == "account_required", drafts))
+        retained = RetainedAnswer(record.requestId, words, code == "account_required", drafts))
 }

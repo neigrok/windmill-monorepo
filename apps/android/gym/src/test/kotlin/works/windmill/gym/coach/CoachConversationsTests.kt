@@ -1,8 +1,8 @@
 package works.windmill.gym.coach
 
 import works.windmill.gym.R
-import works.windmill.gym.presentation.text
-import works.windmill.gym.presentation.Words
+import works.windmill.platform.i18n.text
+import works.windmill.platform.i18n.Words
 import androidx.test.core.app.ApplicationProvider
 import java.io.File
 import java.time.Instant
@@ -303,7 +303,7 @@ class CoachConversationsTests {
             )))
             room.store.conversations.watchHistory(true)
             room.store.conversations.read()
-            assertEquals(listOf(ConversationRow("thread-one", "First question", 4_000, answering = true, answerPreview = "The first answer")), room.store.conversations.rows)
+            assertEquals(listOf(ConversationRow("thread-one", Words.Plain("First question"), 4_000, answering = true, answerPreview = "The first answer")), room.store.conversations.rows)
             assertEquals(emptyList<Map<String, String>>(), telling.failures)
         }
     }
@@ -516,7 +516,7 @@ class CoachConversationsTests {
             assertEquals(listOf(MadeMovement("ex_00000001", "Incline Dumbbell Press", Words.Message(R.string.gym_coach_equipment_dumbbells), 2.5)), reply.madeMovements)
             assertEquals("Dumbbells", reply.madeMovements.single().equipment.spelled())
             assertEquals("Read 1 workout · 1 week", reply.readLine.spelled())
-            assertEquals("a proposal this phone minted names its routine before the server does", "Push A", room.training.proposal("pr_00000001")?.routineName)
+            assertEquals("a proposal this phone minted names its routine before the server does", "Push A", room.training.proposal("pr_00000001")?.routineNamed.spelled())
         }
     }
 }

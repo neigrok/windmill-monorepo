@@ -36,13 +36,15 @@ import works.windmill.gym.presentation.NumberEntry
 import works.windmill.gym.presentation.Readout
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import works.windmill.platform.i18n.Words
+import works.windmill.platform.i18n.text
 
 internal class NumberDraft(val field: NumberEntry.Field, initial: Double, initialFloor: Double? = null) {
     var committed by mutableDoubleStateOf(initial)
         private set
     var text by mutableStateOf(Readout.weight(initial))
         private set
-    var refusal by mutableStateOf<String?>(null)
+    var refused by mutableStateOf<Words?>(null)
         private set
     var focused by mutableStateOf(false)
         private set
@@ -50,7 +52,7 @@ internal class NumberDraft(val field: NumberEntry.Field, initial: Double, initia
 
     val reading: NumberEntry.Reading get() = NumberEntry.read(text, this.field, committed, floor)
 
-    val shownRefusal: String? get() = refusal ?: reading.message.takeIf { reading.belowFloor }
+    val shownRefused: Words? get() = refused ?: reading.said.takeIf { reading.belowFloor }
 
     val isEdited: Boolean get() = text != Readout.weight(committed)
 
@@ -58,13 +60,13 @@ internal class NumberDraft(val field: NumberEntry.Field, initial: Double, initia
 
     fun edit(raw: String) {
         text = raw
-        refusal = null
+        refused = null
     }
 
     // Leaving commits what was typed, as Done does; a refusal keeps the committed value, shown again when unexplained.
     fun focus(active: Boolean, commit: () -> NumberEditResult) {
         focused = active
-        if (!active && isEdited && commit() == NumberEditResult.Refused && refusal == null) cancel()
+        if (!active && isEdited && commit() == NumberEditResult.Refused && refused == null) cancel()
     }
 
     // The value this field stands for while another field commits: its reading, else what it last committed.
@@ -72,7 +74,7 @@ internal class NumberDraft(val field: NumberEntry.Field, initial: Double, initia
 
     fun read(): Double? {
         val result = reading
-        refusal = result.message.takeUnless { result.isValid }
+        refused = result.said.takeUnless { result.isValid }
         return result.value
     }
 
@@ -85,24 +87,24 @@ internal class NumberDraft(val field: NumberEntry.Field, initial: Double, initia
         return if (changed) NumberEditResult.Changed else NumberEditResult.Unchanged
     }
 
-    fun refuse(message: String): NumberEditResult {
-        refusal = message
+    fun refuse(why: Words): NumberEditResult {
+        refused = why
         return NumberEditResult.Refused
     }
 
     fun cancel() {
         text = Readout.weight(committed)
-        refusal = null
+        refused = null
     }
 }
 
 @Composable
 internal fun rememberNumberDraft(key: String, field: NumberEntry.Field, value: Double, floor: Double? = null): NumberDraft {
     val draft = rememberSaveable(key, field, saver = listSaver(
-        save = { listOf(it.committed, it.text, it.refusal.orEmpty()) },
+        save = { listOf(it.committed, it.text, it.refused) },
         restore = { NumberDraft(field, it[0] as Double, floor).apply {
             edit(it[1] as String)
-            (it[2] as String).takeIf(String::isNotEmpty)?.let(::refuse)
+            (it[2] as Words?)?.let(::refuse)
         } },
     )) { NumberDraft(field, value, floor) }
     SideEffect {
@@ -123,19 +125,19 @@ internal fun SetNumbers(
     stepReps: (NumberStep) -> NumberEditResult,
     commit: (NumberDraft) -> NumberEditResult,
     enabled: Boolean,
-    loadRefusal: String? = load.shownRefusal,
+    loadRefused: Words? = load.shownRefused,
     onFocusChange: () -> Unit = {},
 ) {
     val loadFeedback = rememberNumberStepperFeedback()
     NumberStepper(load.text, load::edit, stringResource(R.string.gym_logger_load), unit,
         onStep = { stepLoad(it, false) }, onCommit = { commit(load) },
         size = NumberStepperSize.Display, input = NumberStepperInput.SignedDecimal,
-        refusal = loadRefusal, enabled = enabled, decreaseEnabled = load.canDecrease, feedback = loadFeedback,
+        refusal = loadRefused?.text(), enabled = enabled, decreaseEnabled = load.canDecrease, feedback = loadFeedback,
         onFocusChange = { load.focus(it) { commit(load) }; onFocusChange() })
     LadderRow(load.reading.value ?: load.committed, onDial = { step, big -> loadFeedback.accept(stepLoad(step, big), step) },
         enabled = enabled, decreaseEnabled = load.canDecrease)
     NumberStepper(count.text, count::edit, stringResource(R.string.gym_logger_reps), stringResource(R.string.gym_logger_reps_unit),
-        onStep = stepReps, onCommit = { commit(count) }, refusal = count.refusal, enabled = enabled,
+        onStep = stepReps, onCommit = { commit(count) }, refusal = count.refused?.text(), enabled = enabled,
         decreaseEnabled = count.reading.value != 1.0, increaseEnabled = count.reading.value != LoggedSetLimits.maxReps.toDouble(),
         onFocusChange = { count.focus(it) { commit(count) }; onFocusChange() })
 }

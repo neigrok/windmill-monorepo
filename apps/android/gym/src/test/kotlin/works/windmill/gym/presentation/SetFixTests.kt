@@ -1,10 +1,18 @@
 package works.windmill.gym.presentation
 
+import android.content.Context
+import androidx.annotation.StringRes
+import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import works.windmill.gym.R
+import works.windmill.platform.i18n.Words
 
 // A fix names ONLY what it changes, because a set has no concurrency guard: a sheet that wrote its
 // whole state would silently clobber a note another device wrote while it stood open.
@@ -16,6 +24,8 @@ import org.junit.Test
 // The effort fields' own bytes are pinned here beside it — the bound, the counter, and the seat that
 // means nothing was said. Every one of those is a byte assertion and not a shape assertion, because
 // a rewording is the drift they exist to fail the build over.
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class SetFixTests {
     private val stored = TrainingSet(
         id = "set_1",
@@ -111,13 +121,13 @@ class SetFixTests {
 
     @Test
     fun whatTheSessionRowPrintsIsWhatTheLogCarriesAndNothingWhereItCarriesNeither() {
-        assertEquals("RPE 8 · felt heavy", SetEffort.line(8.0, "felt heavy"))
-        assertEquals("RPE 8.5", SetEffort.line(8.5, ""))
-        assertEquals("felt heavy", SetEffort.line(null, "felt heavy"))
-        assertNull(SetEffort.line(null, ""))
-        assertNull("a note of nothing but spaces is not a note", SetEffort.line(null, "   "))
-        assertEquals("nine and a half is 9.5, never 9.50", "RPE 9.5", SetEffort.rpeReading(9.5))
-        assertEquals("RPE 10", SetEffort.rpeReading(10.0))
+        assertEquals("RPE 8 · felt heavy", SetEffort.effortWords(8.0, "felt heavy").spelled())
+        assertEquals("RPE 8.5", SetEffort.effortWords(8.5, "").spelled())
+        assertEquals("felt heavy", SetEffort.effortWords(null, "felt heavy").spelled())
+        assertNull(SetEffort.effortWords(null, ""))
+        assertNull("a note of nothing but spaces is not a note", SetEffort.effortWords(null, "   "))
+        assertEquals("nine and a half is 9.5, never 9.50", "RPE 9.5", SetEffort.rpe(9.5).spelled())
+        assertEquals("RPE 10", SetEffort.rpe(10.0).spelled())
     }
 
     @Test
@@ -132,9 +142,9 @@ class SetFixTests {
     // complaint about what was typed. It states the rule, so a lifter knows what to type instead.
     @Test
     fun anOverlongSetNoteIsRefusedWithTheRuleAndNotWithAComplaint() {
-        assertEquals("A set note runs to 4000 bytes.", SetEffort.noteTooLong)
+        assertEquals("A set note runs to 4000 bytes.", string(R.string.gym_effort_note_too_long))
         assertEquals(4000, SetEffort.noteMaxBytes)
-        assertFalse("it never scolds", SetEffort.noteTooLong.contains("too long"))
+        assertFalse("it never scolds", string(R.string.gym_effort_note_too_long).contains("too long"))
         assertTrue("and the bound it names is the bound it keeps",
             SetEffort.noteOverlong("a".repeat(SetEffort.noteMaxBytes + 1)))
         assertFalse(SetEffort.noteOverlong("a".repeat(SetEffort.noteMaxBytes)))
@@ -145,23 +155,23 @@ class SetFixTests {
     // for one shape.
     @Test
     fun theSetNoteCounterIsTheNoteEditorsCounterOneScreenAway() {
-        assertNull("chrome only in the last fifth", SetEffort.noteCounter("a".repeat(3_199)))
-        assertEquals("3200 of 4000 bytes", SetEffort.noteCounter("a".repeat(3_200)))
-        assertEquals("4000 of 4000 bytes", SetEffort.noteCounter("a".repeat(4_000)))
-        assertEquals("4001 of 4000 bytes", SetEffort.noteCounter("a".repeat(4_001)))
+        assertNull("chrome only in the last fifth", SetEffort.noteBytesCounter("a".repeat(3_199)))
+        assertEquals("3200 of 4000 bytes", SetEffort.noteBytesCounter("a".repeat(3_200)).spelled())
+        assertEquals("4000 of 4000 bytes", SetEffort.noteBytesCounter("a".repeat(4_000)).spelled())
+        assertEquals("4001 of 4000 bytes", SetEffort.noteBytesCounter("a".repeat(4_001)).spelled())
 
         assertEquals("the threshold is the last fifth of the bound, as the editor's is",
             SetEffort.noteMaxBytes * 4 / 5, SetEffort.noteCounterFrom)
         assertEquals("the editor's own counter, past its own bound", "501 of 500 bytes",
-            Notes.counter("b".repeat(501)))
+            Notes.bytesCounter("b".repeat(501)).spelled())
         assertEquals("and the same words one screen away", "4001 of 4000 bytes",
-            SetEffort.noteCounter("b".repeat(4_001)))
+            SetEffort.noteBytesCounter("b".repeat(4_001)).spelled())
 
         assertEquals("counted in bytes and not in characters — one emoji is four",
-            "3200 of 4000 bytes", SetEffort.noteCounter("🏋".repeat(800)))
+            "3200 of 4000 bytes", SetEffort.noteBytesCounter("🏋".repeat(800)).spelled())
         assertTrue("and the counter and the refusal flip on the SAME byte",
             (3_995..4_005).all {
-                (SetEffort.noteCounter("a".repeat(it))!!.startsWith("${it} of") &&
+                (SetEffort.noteBytesCounter("a".repeat(it)).spelled()!!.startsWith("${it} of") &&
                     SetEffort.noteOverlong("a".repeat(it)) == (it > SetEffort.noteMaxBytes))
             })
     }
@@ -170,11 +180,15 @@ class SetFixTests {
     // said" would be the one seat on the band with no label.
     @Test
     fun theUnratedSeatIsLabelledInWordsAndNeverWithABareDash() {
-        assertEquals("Not rated", SetEffort.rpeUnrated)
+        assertEquals("Not rated", string(R.string.gym_effort_rpe_unrated))
         assertFalse("no dash of any width stands in for a label",
-            SetEffort.rpeUnrated.any { it == '—' || it == '–' || it == '-' })
+            string(R.string.gym_effort_rpe_unrated).any { it == '—' || it == '–' || it == '-' })
         assertEquals("and it is not one of the nine numerals",
             listOf(6.0, 6.5, 7.0, 7.5, 8.0, 8.5, 9.0, 9.5, 10.0), SetEffort.rpeBand)
-        assertTrue(SetEffort.rpeBand.map { SetEffort.rpeNumeral(it) }.none { it == SetEffort.rpeUnrated })
+        assertTrue(SetEffort.rpeBand.map { SetEffort.rpeNumeral(it) }.none { it == string(R.string.gym_effort_rpe_unrated) })
     }
 }
+
+private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())
+
+private fun string(@StringRes id: Int, vararg args: Any): String = ApplicationProvider.getApplicationContext<Context>().getString(id, *args)

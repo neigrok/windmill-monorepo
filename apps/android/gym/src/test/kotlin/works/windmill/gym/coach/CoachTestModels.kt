@@ -1,6 +1,6 @@
 package works.windmill.gym.coach
 
-import works.windmill.gym.presentation.Words
+import works.windmill.platform.i18n.Words
 import works.windmill.domain.kit.AbilityClass
 import works.windmill.domain.kit.ActionContext
 import works.windmill.domain.kit.ActionRunner

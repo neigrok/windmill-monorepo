@@ -20,6 +20,8 @@ import works.windmill.gym.R
 import works.windmill.gym.presentation.Exercise
 import works.windmill.gym.presentation.Program
 import works.windmill.gym.domain.sync.ExerciseRules
+import works.windmill.platform.i18n.Words
+import works.windmill.platform.i18n.text
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -28,7 +30,7 @@ fun EditMovementSheet(
     name: String,
     equipment: String,
     loadCount: Int,
-    refused: String?,
+    refusal: Words?,
     onName: (String) -> Unit,
     onEquipment: (String) -> Unit,
     onSave: () -> Unit,
@@ -36,7 +38,7 @@ fun EditMovementSheet(
     saving: Boolean = false,
 ) {
     val colors = MaterialTheme.colorScheme
-    val problem = Program.nameProblem(name)
+    val problem = Program.nameRefusal(name)?.let { stringResource(it) }
     val changed = Program.renamed(base.name, name) != null || equipment != base.equipment ||
         equipment == "dumbbell" && loadCount != base.loadCount
     Column(Modifier.fillMaxWidth().imePadding()) {
@@ -45,7 +47,7 @@ fun EditMovementSheet(
             .padding(horizontal = GymLayout.gutter).padding(top = 8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)) {
             MovementFields(name, equipment, loadCount, onName, onEquipment, enabled = !saving, problem = problem)
-            (refused ?: problem)?.let { sentence ->
+            (refusal?.text() ?: problem)?.let { sentence ->
                 Text(sentence, style = WindmillType.detail, color = colors.error,
                     modifier = Modifier.semantics { error(sentence) })
             }

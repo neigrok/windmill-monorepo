@@ -36,10 +36,11 @@ import works.windmill.platform.LocalClientUpdateDestination
 import works.windmill.platform.ai.AiInstallation
 import works.windmill.platform.ai.AiInstallationStorageFailure
 import works.windmill.platform.net.WindmillApiException
-import works.windmill.platform.open
+import works.windmill.platform.opening
 import works.windmill.platform.telemetry.LocalTelemetry
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.gym.telemetry.coachAction
+import works.windmill.platform.i18n.text
 
 // The head of the Coach tab: the door to History, and the seat.
 @Composable
@@ -64,7 +65,7 @@ fun CoachAccessStance(seat: String, onSignIn: () -> Unit, onThreads: (() -> Unit
                 }
             } else {
                 Spacer(Modifier.weight(1f))
-                Text(Ask.accessNeedsSignIn, style = GymType.coachAccessNote, color = colors.onSurfaceVariant,
+                Text(stringResource(R.string.gym_coach_access_needs_sign_in), style = GymType.coachAccessNote, color = colors.onSurfaceVariant,
                     textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
                 Spacer(Modifier.weight(1f))
             }
@@ -80,7 +81,7 @@ fun AskAbsentStance(seat: String, onThreads: (() -> Unit)? = null) {
         Column(Modifier.fillMaxSize().padding(horizontal = 40.dp, vertical = 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically)) {
             Icon(painterResource(R.drawable.gym_coach_error), null, tint = colors.onSurfaceVariant, modifier = Modifier.size(32.dp))
-            Text(Ask.notHere, style = GymType.coachElsewhere, color = colors.onSurfaceVariant, textAlign = TextAlign.Center)
+            Text(stringResource(R.string.gym_coach_not_here), style = GymType.coachElsewhere, color = colors.onSurfaceVariant, textAlign = TextAlign.Center)
         }
     }
 }
@@ -106,13 +107,13 @@ internal fun CoachRefusalNotice(refusal: CoachTurnRefusal, anonymous: Boolean = 
     val telemetry = LocalTelemetry.current
     val update = LocalClientUpdateDestination.current
     val uri = LocalUriHandler.current
-    var updateFailure by rememberSaveable(refusal) { mutableStateOf<String?>(null) }
+    var updateFailure by rememberSaveable(refusal) { mutableStateOf<Int?>(null) }
     if (refusal is CoachTurnRefusal.TooLong) LaunchedEffect(Unit) {
         telemetry.coachAction("too_long", "shown")
     }
     Column(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(refusal.notice(anonymous, DateFormat.is24HourFormat(LocalContext.current)), style = GymType.coachSupporting, color = colors.onSurfaceVariant,
+        Text(refusal.said(anonymous, DateFormat.is24HourFormat(LocalContext.current)).text(), style = GymType.coachSupporting, color = colors.onSurfaceVariant,
             textAlign = TextAlign.Center, modifier = Modifier.widthIn(max = 300.dp))
         when (refusal.recovery(anonymous)) {
             CoachRecovery.signIn -> if (onSignIn != null) {
@@ -125,10 +126,10 @@ internal fun CoachRefusalNotice(refusal: CoachTurnRefusal, anonymous: Boolean = 
             }
             CoachRecovery.ownAgent -> NoticeDoor(stringResource(R.string.gym_coach_own_agent), onConnections)
             CoachRecovery.tryAgain -> NoticeDoor(stringResource(R.string.gym_coach_try_again), onTryAgain)
-            CoachRecovery.update -> NoticeDoor(update.label) { updateFailure = update.open(uri::openUri, telemetry) }
+            CoachRecovery.update -> NoticeDoor(stringResource(update.named)) { updateFailure = update.opening(uri::openUri, telemetry) }
             null -> Unit
         }
-        updateFailure?.let { Text(it, style = GymType.coachSupporting, color = colors.error, textAlign = TextAlign.Center, modifier = Modifier.widthIn(max = 300.dp)) }
+        updateFailure?.let { Text(stringResource(it), style = GymType.coachSupporting, color = colors.error, textAlign = TextAlign.Center, modifier = Modifier.widthIn(max = 300.dp)) }
     }
 }
 
@@ -144,7 +145,7 @@ private fun NoticeDoor(title: String, onClick: () -> Unit) {
 internal fun CoachAccountChanging(alone: Boolean, modifier: Modifier = Modifier) {
     val telemetry = LocalTelemetry.current
     LaunchedEffect(Unit) { telemetry.coachAction("account_changing", "shown") }
-    Text(CoachTurnFault.accountChanging.sentence, style = if (alone) GymType.coachAccessNote else GymType.coachSupporting, color = MaterialTheme.colorScheme.onSurfaceVariant,
+    Text(stringResource(CoachTurnFault.accountChanging.said), style = if (alone) GymType.coachAccessNote else GymType.coachSupporting, color = MaterialTheme.colorScheme.onSurfaceVariant,
         textAlign = TextAlign.Center, modifier = modifier.fillMaxWidth().padding(horizontal = if (alone) 32.dp else 0.dp, vertical = 8.dp))
 }
 
@@ -157,7 +158,7 @@ internal fun AnswerInProgress(pending: ConversationRow, onOpenChat: ((String) ->
     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text(stringResource(R.string.gym_coach_answer_in_progress), style = GymType.coachTitle, color = colors.onSurface)
-            Text(pending.title, style = GymType.coachSupporting, color = colors.onSurfaceVariant)
+            Text(pending.named.text(), style = GymType.coachSupporting, color = colors.onSurfaceVariant)
         }
         onOpenChat?.let { open -> NoticeDoor(stringResource(R.string.gym_coach_view_chat)) { open(pending.id) } }
     }

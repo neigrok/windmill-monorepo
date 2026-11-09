@@ -1,7 +1,6 @@
 package works.windmill.gym.sharing
 
-import works.windmill.gym.presentation.text
-import works.windmill.gym.presentation.Words
+import works.windmill.platform.i18n.text
 import works.windmill.gym.R
 import androidx.compose.ui.res.stringResource
 import android.content.ActivityNotFoundException
@@ -109,7 +108,7 @@ fun WorkoutShareCard(sharing: WorkoutShareActions, sessionId: String) {
             when (val minted = sharing.mint(sessionId)) {
                 is GymResult.Ok -> state = state.after(WorkoutSharing.Event.Minted(minted.value))
                 is GymResult.Failed ->
-                    state = state.after(WorkoutSharing.Event.MintFailed(Words.Plain(minted.why.line("the link wasn’t made"))))
+                    state = state.after(WorkoutSharing.Event.MintFailed(minted.why.says(R.string.gym_sharing_mint_no_answer)))
             }
         }
     }
@@ -125,7 +124,7 @@ fun WorkoutShareCard(sharing: WorkoutShareActions, sessionId: String) {
                 state = state.after(WorkoutSharing.Event.Revoked)
                 return@launch
             }
-            state = live.after(WorkoutSharing.Event.RevokeFailed(Words.Plain(why.line("the link is still live"))))
+            state = live.after(WorkoutSharing.Event.RevokeFailed(why.says(R.string.gym_sharing_revoke_no_answer)))
         }
     }
 

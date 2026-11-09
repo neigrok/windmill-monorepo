@@ -1,16 +1,24 @@
 package works.windmill.gym.store
 
+import androidx.test.core.app.ApplicationProvider
 import java.io.IOException
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import works.windmill.gym.presentation.WorkoutChange
+import works.windmill.platform.i18n.Words
+import works.windmill.platform.i18n.text
 import works.windmill.platform.storage.AtomicDocument
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.sync.engine.signOut
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class LoggerVisibilityTests {
     @get:Rule val tmp = TemporaryFolder()
 
@@ -108,8 +116,10 @@ class LoggerVisibilityTests {
             restored.connect(phone.account())
             assertTrue("A locally accepted Hide must remain hidden after restart", restored.workout.loggerHidden)
             assertEquals(listOf("gym.workout_controls"), failures)
-            assertEquals("The workout could not be saved safely. Restart the app to recover it.", restored.workout.workoutFailure)
+            assertEquals("The workout could not be saved safely. Restart the app to recover it.", restored.workout.workoutRefusal.spelled())
         }
     }
 
 }
+
+private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())

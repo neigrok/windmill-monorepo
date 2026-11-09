@@ -3,6 +3,7 @@ package works.windmill.gym.ui
 import androidx.compose.runtime.*
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.test.core.app.ApplicationProvider
 import kotlinx.coroutines.*
 import org.junit.Assert.*
 import org.junit.Rule
@@ -15,6 +16,7 @@ import works.windmill.gym.presentation.*
 import works.windmill.gym.store.*
 import works.windmill.platform.design.WindmillMaterial
 import works.windmill.platform.Account
+import works.windmill.platform.i18n.Words
 import works.windmill.platform.telemetry.LocalTelemetry
 import works.windmill.platform.telemetry.Telemetry
 
@@ -152,7 +154,7 @@ class OnThisPhoneScreenTests {
     @Test fun listSeparatesWaitingAndAddingAndCountsOnlyTheWorkoutsNeedingYou() {
         val copy = SavedWorkout(Session("session01", 1_000, 91_000, plan = PlanSnapshot("Push A", emptyList())),
             listOf(TrainingSet("set00001", "bench-press", weightKg = 80.0, reps = 5, completedAtMs = 2_000)))
-        val waiting = ImportRecovery("session01", copy, listOf(ImportRefusal("session01", copy.session, copy.sets, emptyList(), "session-overlap", "unused")), emptyList())
+        val waiting = ImportRecovery("session01", copy, listOf(ImportRefusal("session01", copy.session, copy.sets, emptyList(), "session-overlap", Words.Plain("unused"))), emptyList())
         val adding = ImportRecovery("session02", copy.copy(session = copy.session.copy(id = "session02", plan = PlanSnapshot("Legs", emptyList()))), emptyList(), emptyList())
         val read = RecoveryRead("https://test.invalid", "A", 1, "replica", listOf(waiting, adding))
         val opened = mutableListOf<String>()
@@ -165,7 +167,7 @@ class OnThisPhoneScreenTests {
     }
 
     @Test fun unsupportedAndStrandedCopiesNeverAcquireADiscardCountOrGenericRetry() {
-        val opaque = ImportRecovery("opaque", null, listOf(ImportRefusal("opaque", null, emptyList(), emptyList(), "source-unreadable", "Update the app.")), emptyList())
+        val opaque = ImportRecovery("opaque", null, listOf(ImportRefusal("opaque", null, emptyList(), emptyList(), "source-unreadable", Words.Plain("Update the app."))), emptyList())
         val spent = opaque.copy(refusals = listOf(opaque.refusals.single().copy(code = "id-spent")))
         assertFalse(PhoneRecovery.canDiscard(opaque)); assertNull(PhoneRecovery.primary(opaque))
         assertFalse(PhoneRecovery.canFix(spent)); assertNull(PhoneRecovery.primary(spent))
@@ -195,7 +197,7 @@ class OnThisPhoneScreenTests {
     @Test fun opaqueOperationInspectHasOnlyTheExistingUpdateDestinationAndNoInventedFacts() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
-            val row = ImportRecovery("opaque", null, listOf(ImportRefusal("opaque", null, emptyList(), emptyList(), "source-unreadable", WorkoutImports.reason("source-unreadable"), kind = "operation")), emptyList())
+            val row = ImportRecovery("opaque", null, listOf(ImportRefusal("opaque", null, emptyList(), emptyList(), "source-unreadable", WorkoutImports.reasonFor("source-unreadable"), kind = "operation")), emptyList())
             val read = RecoveryRead("https://test.invalid", "A", 0, "replica", listOf(row))
             val recovery = RecoveryBinding(room.store)
             compose.setContent { WindmillMaterial { GymMaterial { WorkoutInspectScreen(recovery, recovery, read, row, {}, { true }) } } }
@@ -228,13 +230,13 @@ class OnThisPhoneScreenTests {
     }
 
     private fun opaqueOperation(id: String) = ImportRecovery(id, null,
-        listOf(ImportRefusal(id, null, emptyList(), emptyList(), "source-unreadable", WorkoutImports.reason("source-unreadable"), kind = "operation")),
+        listOf(ImportRefusal(id, null, emptyList(), emptyList(), "source-unreadable", WorkoutImports.reasonFor("source-unreadable"), kind = "operation")),
         listOf(ImportOpening(id, "replica", false, mapOf(id to "{\"source\":{\"sessionId\":null}}"))))
 
     @Test fun aggregateOmitsTheWorkoutCountForHealthyAndOpaqueRowsWithoutHidingEither() {
         val copy = SavedWorkout(Session("session01", 1_000, 91_000, plan = PlanSnapshot("Push A", emptyList())),
             listOf(TrainingSet("set00001", "bench-press", weightKg = 80.0, reps = 5, completedAtMs = 2_000)))
-        val healthy = ImportRecovery(copy.session.id, copy, listOf(ImportRefusal(copy.session.id, copy.session, copy.sets, emptyList(), "session-overlap", "unused")), emptyList())
+        val healthy = ImportRecovery(copy.session.id, copy, listOf(ImportRefusal(copy.session.id, copy.session, copy.sets, emptyList(), "session-overlap", Words.Plain("unused"))), emptyList())
         val opaque = opaqueOperation("opaque01")
         val read = RecoveryRead("https://test.invalid", "A", 0, "replica", listOf(healthy, opaque))
         var list by mutableStateOf(false)
@@ -274,24 +276,26 @@ class OnThisPhoneScreenTests {
     }
 
     @Test fun signInCountsNameOnlyTheApprovedKindsInOrder() {
-        val copy = PhoneSignInCopy(mapOf("gym" to mapOf("session" to 2, "set" to 99, "routine" to 1, "weighin" to 1,
+        val copy = PhoneSignInWords(mapOf("gym" to mapOf("session" to 2, "set" to 99, "routine" to 1, "weighin" to 1,
             "prefs" to 1, "exerciseName" to 2, "pending" to 8)))
-        assertEquals("2 workouts, 1 routine and 1 weigh-in", copy.phrase)
-        assertEquals("Discard all of it?", copy.discardTitle)
-        assertEquals("2 workouts, 1 routine and 1 weigh-in are deleted from this phone. You can’t undo this.", copy.discardBody)
-        val one = PhoneSignInCopy(mapOf("gym" to mapOf("session" to 1, "set" to 20)))
-        assertEquals("This phone has 1 workout from before you signed in. Your account already has training. Add it, or discard it from this phone.", one.question)
-        assertEquals("It is deleted from this phone. You can’t undo this.", one.discardBody)
+        assertEquals("2 workouts, 1 routine and 1 weigh-in", copy.phrase.spelled())
+        assertEquals("Discard all of it?", copy.discardTitle.spelled())
+        assertEquals("2 workouts, 1 routine and 1 weigh-in are deleted from this phone. You can’t undo this.", copy.discardBody.spelled())
+        val one = PhoneSignInWords(mapOf("gym" to mapOf("session" to 1, "set" to 20)))
+        assertEquals("This phone has 1 workout from before you signed in. Your account already has training. Add it, or discard it from this phone.", one.question.spelled())
+        assertEquals("It is deleted from this phone. You can’t undo this.", one.discardBody.spelled())
     }
 
     @Test fun aSignInHoldingOnlyConversationsNamesThemAndNotTheirMessages() {
-        val two = PhoneSignInCopy(mapOf("gym" to mapOf("thread" to 2, "message" to 6)))
-        assertEquals("This phone has 2 conversations from before you signed in. Your account already has training. Add them, or discard them from this phone.", two.question)
-        assertEquals("Discard 2 conversations?", two.discardTitle)
-        assertEquals("They are deleted from this phone. You can’t undo this.", two.discardBody)
-        val one = PhoneSignInCopy(mapOf("gym" to mapOf("thread" to 1, "message" to 2)))
-        assertEquals("This phone has 1 conversation from before you signed in. Your account already has training. Add it, or discard it from this phone.", one.question)
-        assertEquals("Discard 1 conversation?", one.discardTitle)
-        assertEquals("It is deleted from this phone. You can’t undo this.", one.discardBody)
+        val two = PhoneSignInWords(mapOf("gym" to mapOf("thread" to 2, "message" to 6)))
+        assertEquals("This phone has 2 conversations from before you signed in. Your account already has training. Add them, or discard them from this phone.", two.question.spelled())
+        assertEquals("Discard 2 conversations?", two.discardTitle.spelled())
+        assertEquals("They are deleted from this phone. You can’t undo this.", two.discardBody.spelled())
+        val one = PhoneSignInWords(mapOf("gym" to mapOf("thread" to 1, "message" to 2)))
+        assertEquals("This phone has 1 conversation from before you signed in. Your account already has training. Add it, or discard it from this phone.", one.question.spelled())
+        assertEquals("Discard 1 conversation?", one.discardTitle.spelled())
+        assertEquals("It is deleted from this phone. You can’t undo this.", one.discardBody.spelled())
     }
 }
+
+private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())

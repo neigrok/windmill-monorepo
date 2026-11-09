@@ -1,14 +1,22 @@
 package works.windmill.gym.store
 
+import androidx.test.core.app.ApplicationProvider
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import works.windmill.gym.presentation.*
+import works.windmill.platform.i18n.Words
+import works.windmill.platform.i18n.text
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class PlanningWritesTests {
     @get:Rule val tmp = TemporaryFolder()
 
@@ -32,8 +40,8 @@ class PlanningWritesTests {
                 assertEquals("Push elsewhere", advanced.name)
                 assertFalse(draft.changed)
                 val changed = draft.named("My push")
-                assertEquals(GymResult.Failed(WriteFailure.Refused("That changed. Open it again.")),
-                    room.store.routines.saveRoutine(changed))
+                assertEquals("That changed. Open it again.",
+                    ((room.store.routines.saveRoutine(changed) as GymResult.Failed).why as WriteFailure.Refused).words.spelled())
                 assertEquals("nothing went out", emptyList<works.windmill.sync.core.Json>(), room.outbox())
                 assertEquals(listOf(advanced), room.training.program())
                 assertEquals(RoutineDraft.of(original).named("My push"), changed)
@@ -51,8 +59,8 @@ class PlanningWritesTests {
             room.sync(server); room.store.refreshEngine()
             val draft = Json.decodeFromString<RoutineDraft>("""{"id":"routine_a","name":"Edited","entries":[{"exerciseId":"bench-press"}]}""")
             val before = room.training.program()
-            assertEquals(GymResult.Failed(WriteFailure.Refused("reopen this routine before saving — its original revision is missing")),
-                room.store.routines.saveRoutine(draft))
+            assertEquals("reopen this routine before saving — its original revision is missing",
+                ((room.store.routines.saveRoutine(draft) as GymResult.Failed).why as WriteFailure.Refused).words.spelled())
             assertEquals(before, room.training.program())
             assertEquals(emptyList<works.windmill.sync.core.Json>(), room.outbox())
         }
@@ -96,8 +104,8 @@ class PlanningWritesTests {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("a")
             assertEquals(GymResult.Ok(expected), room.store.routines.create("Zercher", "barbell", "ex_once"))
-            assertEquals(GymResult.Failed(WriteFailure.Refused("already saved as Zercher (barbell) — choose it from the movement list")),
-                room.store.routines.create("Zercher carry", "dumbbell", "ex_once"))
+            assertEquals("already saved as Zercher (barbell) — choose it from the movement list",
+                ((room.store.routines.create("Zercher carry", "dumbbell", "ex_once") as GymResult.Failed).why as WriteFailure.Refused).words.spelled())
             assertEquals(GymResult.Ok(expected), room.store.routines.create("Zercher", "barbell", "ex_once"))
             assertEquals(listOf(expected), room.store.routines.catalog.filter { it.id == "ex_once" })
             room.sync(server)
@@ -151,3 +159,5 @@ class PlanningWritesTests {
         }
     }
 }
+
+private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())

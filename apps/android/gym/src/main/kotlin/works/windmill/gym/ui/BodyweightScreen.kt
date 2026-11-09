@@ -82,6 +82,8 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.onClick
+import works.windmill.platform.i18n.Words
+import works.windmill.platform.i18n.text
 
 // What the bodyweight page draws: the drawn series, the series a held delete still stands on, and whether it is read.
 @Stable
@@ -116,7 +118,7 @@ fun WeighInSheet(
     fixedDate: LocalDate?,
     nowMs: Long,
     saving: Boolean,
-    refused: String?,
+    refusal: Words?,
     onSave: (String, Double) -> Unit,
     onDelete: (() -> Unit)?,
     onClose: () -> Unit,
@@ -132,9 +134,11 @@ fun WeighInSheet(
     var submitted by remember(draftKey) { mutableStateOf(false) }
     val date = fixedDate ?: LocalDate.parse(dateLocal)
     val parsed = Bodyweight.parse(typed)
-    val weightFailure = (parsed as? ParsedWeight.Refused)?.said?.takeIf { edited }
-    val dateFailure = Bodyweight.dated(date, today)
-    val otherFailure = if (weightFailure == null) dateFailure ?: refused else null
+    val weightFailure = (parsed as? ParsedWeight.Refused)?.why?.takeIf { edited }?.text()
+    val dateFailure = Bodyweight.dateRefusal(date, today)?.text()
+    val dateDescribed = stringResource(R.string.gym_bodyweight_date_described, Bodyweight.fullDay(date))
+    val weightField = stringResource(R.string.gym_bodyweight_weight_field)
+    val otherFailure = if (weightFailure == null) dateFailure ?: refusal?.text() else null
     val busy = saving || submitted
     val correction = fixedDate != null
     val gap = if (correction) 10.dp else 8.dp
@@ -142,7 +146,7 @@ fun WeighInSheet(
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
     BackHandler(enabled = busy) {}
-    LaunchedEffect(submitted, saving, refused) { if (!saving && refused != null) submitted = false }
+    LaunchedEffect(submitted, saving, refusal) { if (!saving && refusal != null) submitted = false }
     LaunchedEffect(draftKey) {
         if (!pickingDate) {
             focus.requestFocus()
@@ -173,7 +177,7 @@ fun WeighInSheet(
             },
         )
         val staged = picker.selectedDateMillis?.let { LocalDate.ofEpochDay(Math.floorDiv(it, 86_400_000)) }
-        val usable = staged != null && Bodyweight.dated(staged, today) == null
+        val usable = staged != null && Bodyweight.dateRefusal(staged, today) == null
         DatePickerDialog(onDismissRequest = ::cancelDate,
             confirmButton = {
                 TextButton(onClick = {
@@ -200,7 +204,7 @@ fun WeighInSheet(
     // Both modes head the sheet with Close and its title and commit from the bottom, in thumb reach. A new weigh-in labels
     // its two fields; a correction keeps its field captions, its fixed day and Delete under the commit.
     Column(Modifier.fillMaxWidth().testTag("weigh-in-form").background(colors.surfaceContainer).imePadding().navigationBarsPadding()) {
-        GymSheetBar(Bodyweight.chip, onClose = onClose, closeEnabled = !busy)
+        GymSheetBar(stringResource(R.string.gym_bodyweight_chip), onClose = onClose, closeEnabled = !busy)
         Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp).padding(top = gap, bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(gap)) {
@@ -209,7 +213,7 @@ fun WeighInSheet(
                 singleLine = true, enabled = !busy, isError = weightFailure != null,
                 textStyle = GymType.weighInInput,
                 label = if (correction) null else { { Text(stringResource(R.string.gym_bodyweight_weight)) } },
-                suffix = { Text(Bodyweight.unit, style = WindmillType.paragraphLoose, color = colors.onSurfaceVariant) },
+                suffix = { Text(stringResource(R.string.gym_bodyweight_unit), style = WindmillType.paragraphLoose, color = colors.onSurfaceVariant) },
                 supportingText = weightFailure?.let { line -> { Text(line, modifier = Modifier.padding(bottom = 6.dp).semantics { liveRegion = LiveRegionMode.Polite }) } },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, autoCorrectEnabled = false, imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = { save() }),
@@ -221,7 +225,7 @@ fun WeighInSheet(
                 Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).clip(MaterialTheme.shapes.medium)
                     .background(colors.surface)
                     .semantics(mergeDescendants = true) {
-                        contentDescription = "Date, ${Bodyweight.fullDay(date)}"
+                        contentDescription = dateDescribed
                         dateFailure?.let { error(it) }
                     }.padding(horizontal = 16.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically) {
@@ -244,27 +248,25 @@ fun WeighInSheet(
                     supportingText = dateFailure?.let { line -> { Text(line, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }) } },
                     interactionSource = press,
                     modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).semantics {
-                        contentDescription = "Date, ${Bodyweight.fullDay(date)}"
+                        contentDescription = dateDescribed
                         role = Role.Button
                         onClick(label = chooseDate) { openCalendar(); true }
                         dateFailure?.let { error(it) }
                     },
                 )
             }
-            (if (correction) otherFailure else refused.takeIf { weightFailure == null })?.let {
+            (if (correction) otherFailure else refusal?.text().takeIf { weightFailure == null })?.let {
                 Text(it, style = GymType.smallParagraph, color = MaterialTheme.colorScheme.error,
                     modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
             }
         }
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = if (correction) 10.dp else 16.dp),
             verticalArrangement = Arrangement.spacedBy(gap)) {
-            GymSheetCommit(Bodyweight.save, enabled = savable, onClick = ::save, busy = busy)
-            onDelete?.let { GymErrorTextButton(Bodyweight.deleteRow, it, Modifier.fillMaxWidth(), enabled = !busy) }
+            GymSheetCommit(stringResource(R.string.gym_bodyweight_save), enabled = savable, onClick = ::save, busy = busy)
+            onDelete?.let { GymErrorTextButton(stringResource(R.string.gym_bodyweight_delete), it, Modifier.fillMaxWidth(), enabled = !busy) }
         }
     }
 }
-
-const val weightField = "weight in kilograms"
 
 private val weighInSaver = listSaver<WeighIn?, Any?>(
     save = { it?.let { entry -> listOf(entry.dateLocal, entry.weightKg, entry.recordedAt) } ?: emptyList() },
@@ -288,7 +290,7 @@ fun BodyweightScreen(state: BodyweightState, events: BodyweightEvents, backTo: S
     }
     var saving by remember { mutableStateOf(false) }
     var closing by remember { mutableStateOf(false) }
-    var refused by rememberSaveable { mutableStateOf<String?>(null) }
+    var refused by rememberSaveable { mutableStateOf<Words?>(null) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true, confirmValueChange = { !saving })
     val sheetStates = rememberSaveableStateHolder()
     val rows = Bodyweight.windowed(state.weighIns, ChartWindow.All, today)
@@ -309,7 +311,7 @@ fun BodyweightScreen(state: BodyweightState, events: BodyweightEvents, backTo: S
         }
     }
 
-    GymScreen(title = Bodyweight.title, onBack = onBack, backTo = backTo) {
+    GymScreen(title = stringResource(R.string.gym_bodyweight_title), onBack = onBack, backTo = backTo) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
             if (!state.bodyweightRead) {
@@ -317,7 +319,7 @@ fun BodyweightScreen(state: BodyweightState, events: BodyweightEvents, backTo: S
             }
             if (standing.isEmpty()) {
                 if (state.bodyweightRead) {
-                    Text(Bodyweight.nothingYet, style = WindmillType.body, color = colors.onSurfaceVariant)
+                    Text(stringResource(R.string.gym_bodyweight_nothing_yet), style = WindmillType.body, color = colors.onSurfaceVariant)
                 }
             } else {
                 if (state.bodyweightRead) {
@@ -328,7 +330,7 @@ fun BodyweightScreen(state: BodyweightState, events: BodyweightEvents, backTo: S
                                 SegmentedButton(selected = window == option, onClick = { window = option },
                                     modifier = Modifier.heightIn(min = 48.dp),
                                     shape = SegmentedButtonDefaults.itemShape(index, ChartWindow.entries.size),
-                                    label = { Text(option.label, style = GymType.windowOption) })
+                                    label = { Text(stringResource(option.named), style = GymType.windowOption) })
                             }
                         }
                         if (shown.isNotEmpty()) {
@@ -336,21 +338,21 @@ fun BodyweightScreen(state: BodyweightState, events: BodyweightEvents, backTo: S
                             val from = if (window == ChartWindow.Ninety) today.minusDays(89) else shown.first().date
                             val series = DatedSeries(shown.map { entry ->
                                 DatedPoint(entry.dateLocal, entry.date.atStartOfDay(zone).toInstant().toEpochMilli(), entry.weightKg,
-                                    "${Bodyweight.kilograms(entry.weightKg)} kg · ${Bodyweight.listDay(entry.date)}")
+                                    Words.Message(R.string.gym_bodyweight_entry, listOf(Bodyweight.kilograms(entry.weightKg), Bodyweight.listDay(entry.date))))
                             }, from.atStartOfDay(zone).toInstant().toEpochMilli(), today.atStartOfDay(zone).toInstant().toEpochMilli(),
                                 zone, Bodyweight.maxGapDays)
                             DatedPlot(series, interaction = PlotInteraction.Select, valueLabel = Bodyweight::kilograms,
-                                gapLabel = { before, after ->
+                                gapWords = { before, after ->
                                     val first = LocalDate.parse(before.id)
                                     val last = LocalDate.parse(after.id)
-                                    if (first.year == last.year) "no weigh-in · ${Bodyweight.shortDay(first)} – ${Bodyweight.shortDay(last)}"
-                                    else "no weigh-in · ${Bodyweight.listDay(first)} – ${Bodyweight.listDay(last)}"
+                                    if (first.year == last.year) Words.Message(R.string.gym_bodyweight_gap, listOf(Bodyweight.shortDay(first), Bodyweight.shortDay(last)))
+                                    else Words.Message(R.string.gym_bodyweight_gap, listOf(Bodyweight.listDay(first), Bodyweight.listDay(last)))
                                 },
                                 onSelect = { point -> repairing = rows.firstOrNull { it.dateLocal == point.id } })
                         } else if (window == ChartWindow.Ninety && Bodyweight.windowed(standing, window, today).isEmpty()) {
-                            Text(Bodyweight.noneInWindow, style = WindmillType.body, color = colors.onSurfaceVariant)
+                            Text(stringResource(R.string.gym_bodyweight_none_in_window), style = WindmillType.body, color = colors.onSurfaceVariant)
                         }
-                        Text(Bodyweight.windowLine(window, shown.size), style = WindmillType.supportingParagraph, color = colors.onSurfaceVariant)
+                        Text(Bodyweight.windowWords(window, shown.size).text(), style = WindmillType.supportingParagraph, color = colors.onSurfaceVariant)
                     }
                 }
                 if (rows.isNotEmpty()) {
@@ -358,13 +360,13 @@ fun BodyweightScreen(state: BodyweightState, events: BodyweightEvents, backTo: S
                     Column {
                         rows.asReversed().forEach { entry ->
                             key(entry.dateLocal) {
-                                DeleteSwipeRow(Bodyweight.deleteRow, onDelete = {
+                                DeleteSwipeRow(stringResource(R.string.gym_bodyweight_delete), onDelete = {
                                     say(null)
                                     events.withhold(Deletion.Bodyweight(entry.dateLocal))
                                     false
                                 }) {
                                     ListItem(
-                                        headlineContent = { Text("${Bodyweight.kilograms(entry.weightKg)} kg", style = WindmillType.labelParagraph, color = colors.onSurface) },
+                                        headlineContent = { Text(stringResource(R.string.gym_bodyweight_kilograms, Bodyweight.kilograms(entry.weightKg)), style = WindmillType.labelParagraph, color = colors.onSurface) },
                                         supportingContent = { Text(Bodyweight.listDay(entry.date), style = WindmillType.supportingParagraph, color = colors.onSurfaceVariant) },
                                         modifier = Modifier.fillMaxWidth()
                                             .clickable(role = Role.Button, onClickLabel = stringResource(R.string.gym_bodyweight_correct_weigh_in)) { repairing = entry },
@@ -384,7 +386,7 @@ fun BodyweightScreen(state: BodyweightState, events: BodyweightEvents, backTo: S
             contentWindowInsets = { WindowInsets(0, 0, 0, 0) }) {
             sheetStates.SaveableStateProvider(open.dateLocal) {
                 WeighInSheet(initial = open, fixedDate = open.date, nowMs = nowMs,
-                    saving = saving || closing, refused = refused, draftKey = open.dateLocal,
+                    saving = saving || closing, refusal = refused, draftKey = open.dateLocal,
                     onSave = { dateLocal, weightKg ->
                         if (!saving && !closing) {
                             saving = true
@@ -392,7 +394,7 @@ fun BodyweightScreen(state: BodyweightState, events: BodyweightEvents, backTo: S
                             scope.launch {
                                 try {
                                     val failed = events.weighIn(dateLocal, weightKg)
-                                    if (failed != null) refused = failed.line("that weigh-in wasn’t saved")
+                                    if (failed != null) refused = failed.says(R.string.gym_bodyweight_correct_no_answer)
                                     saving = false
                                     if (failed == null) close()
                                 } finally { saving = false }

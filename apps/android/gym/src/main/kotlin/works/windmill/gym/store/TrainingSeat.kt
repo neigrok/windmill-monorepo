@@ -1,5 +1,7 @@
 package works.windmill.gym.store
 
+import works.windmill.gym.R
+import works.windmill.platform.i18n.Words
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -89,6 +91,6 @@ class TrainingSeat(
     }
 
     internal companion object {
-        const val accountChanged = "The account changed. Open this again."
+        val accountChange: Words = Words.Message(R.string.gym_store_account_changed)
     }
 }

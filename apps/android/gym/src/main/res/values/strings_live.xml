@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="gym_live_target">%1$s × %2$s</string>
+    <string name="gym_live_target_spoken">%1$s, %2$s</string>
+    <string name="gym_live_no_load_yet">no load yet</string>
+    <string name="gym_live_max_reps">max reps</string>
+    <string name="gym_live_logged_spoken">Set %1$s, logged, %2$s, %3$s</string>
+    <string name="gym_live_logged_here_spoken">Set %1$s, logged, %2$s, %3$s, on this device</string>
+    <string name="gym_live_set_n">set %1$s</string>
+    <string name="gym_live_set_n_of">set %1$s of %2$s</string>
+    <string name="gym_live_current_spoken">Set %1$s, current, %2$s</string>
+    <string name="gym_live_current_open_spoken">Set %1$s, current</string>
+    <string name="gym_live_planned_spoken">Set %1$s, planned, %2$s</string>
+    <string name="gym_live_exercise_of">Exercise %1$s of %2$s</string>
+    <string name="gym_live_just_added">just added</string>
+    <string name="gym_live_done_of_planned">%1$s of %2$s sets</string>
+    <string name="gym_live_no_sets_yet">no sets yet — logging one starts it</string>
+    <string name="gym_live_progress_effort">%1$s · %2$s</string>
+    <string name="gym_live_up_next">Up next</string>
+    <string name="gym_live_up_next_scheme">Up next · %1$s</string>
+    <string name="gym_live_no_sets">No sets yet</string>
+    <plurals name="gym_live_held_offline">
+        <item quantity="one">%1$s set is saved on this device only. They’ll sync when you’re online.</item>
+        <item quantity="other">%1$s sets are saved on this device only. They’ll sync when you’re online.</item>
+    </plurals>
+    <plurals name="gym_live_held_no_answer">
+        <item quantity="one">%1$s set is saved on this device only. The log didn’t answer. They’ll sync when it’s available.</item>
+        <item quantity="other">%1$s sets are saved on this device only. The log didn’t answer. They’ll sync when it’s available.</item>
+    </plurals>
+    <plurals name="gym_live_held_sign_in">
+        <item quantity="one">%1$s set is saved on this device only. Sign in again to sync these sets.</item>
+        <item quantity="other">%1$s sets are saved on this device only. Sign in again to sync these sets.</item>
+    </plurals>
+    <plurals name="gym_live_held_waiting">
+        <item quantity="one">%1$s set is saved on this device only. They’re waiting to sync.</item>
+        <item quantity="other">%1$s sets are saved on this device only. They’re waiting to sync.</item>
+    </plurals>
+    <string name="gym_live_since_start">Since start</string>
+    <string name="gym_live_since_last_set">Since last set</string>
+</resources>

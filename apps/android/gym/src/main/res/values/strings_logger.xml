@@ -47,4 +47,9 @@
         <item quantity="one">This deletes the workout and its %1$s set. You can’t undo this.</item>
         <item quantity="other">This deletes the workout and its %1$s sets. You can’t undo this.</item>
     </plurals>
+    <string name="gym_logger_workout_changed_check">The workout changed. Check the current set.</string>
+    <plurals name="gym_logger_assembly_logged">
+        <item quantity="one">%1$s set logged · %2$s</item>
+        <item quantity="other">%1$s sets logged · %2$s</item>
+    </plurals>
 </resources>

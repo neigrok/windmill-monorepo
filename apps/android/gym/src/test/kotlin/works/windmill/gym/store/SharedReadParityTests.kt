@@ -1,11 +1,15 @@
 package works.windmill.gym.store
 
+import androidx.test.core.app.ApplicationProvider
 import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import works.windmill.domain.kit.ActionContext
 import works.windmill.domain.kit.ActionRunner
 import works.windmill.domain.kit.FixedZone
@@ -24,6 +28,8 @@ import works.windmill.gym.presentation.Review
 import works.windmill.gym.domain.sync.GymEstimate
 import works.windmill.gym.domain.sync.TrainingHistory
 import works.windmill.gym.domain.sync.Session as EngineSession
+import works.windmill.platform.i18n.Words
+import works.windmill.platform.i18n.text
 import works.windmill.sync.api.Change
 import works.windmill.sync.api.CommitOutcome
 import works.windmill.sync.api.Gesture
@@ -40,6 +46,8 @@ import works.windmill.sync.schema.SyncSchema
 
 // The receipt's record and the record page's tiles are the shared reads, projected: every shared `review` and `record`
 // case answers the same through `EngineTraining`, and a phone that has not read its account asserts neither.
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class SharedReadParityTests {
     @Test fun everySharedReviewCaseIsTheReceiptsReview() {
         val cases = sharedCases("review")
@@ -90,9 +98,10 @@ class SharedReadParityTests {
         assertEquals(2, movement.estimates.size)
         val bench = Exercise("bench-press", "Bench Press", "press", "barbell", 2.5)
         val page = Record.page(MovementRead(MovementRecord.of(bench, training.details(), 1_800_000_000_000), movement, 1_800_000_000_000), 1_800_000_000_000)
-        assertEquals(Record.Page("Bench Press", "Barbell", emptyList(), emptyList(),
-            listOf(Record.Day("10 Jan", "110 × 5 · 110 × 5 · 110 × 5 · 110 × 5"), Record.Day("4 Jan", "100 × 5 · 100 × 5 · 100 × 5 · 100 × 5")),
-            null, null, false), page)
+        assertEquals(Record.Page("Bench Press", Words.Plain("Barbell"), emptyList(), emptyList(),
+            listOf(Record.Day(Words.Plain("10 Jan"), "110 × 5 · 110 × 5 · 110 × 5 · 110 × 5"), Record.Day(Words.Plain("4 Jan"), "100 × 5 · 100 × 5 · 100 × 5 · 100 × 5")),
+            null, null, false),
+            page.copy(equipment = Words.Plain(page.equipment.spelled()!!), days = page.days.map { it.copy(on = Words.Plain(it.on.spelled()!!)) }))
     }
 
     @Test fun theReceiptCountsEverySetOfTheComparisonAndItsBoundsBesideTheSharedTopSet() = withEngine(signedIn = false) { engine ->
@@ -193,3 +202,5 @@ class SharedReadParityTests {
             "weightKg" to Json.of(fact.weightKg), "reps" to Json.of(fact.reps), GymEstimate.value(fact.weightKg, fact.reps, fact.rpe)?.let { "e1rm" to Json.of(it) })) }
         } ?: Json.Null))
 }
+
+private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())

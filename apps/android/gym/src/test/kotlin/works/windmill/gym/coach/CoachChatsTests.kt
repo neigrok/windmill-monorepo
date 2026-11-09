@@ -1,7 +1,7 @@
 package works.windmill.gym.coach
 
-import works.windmill.gym.presentation.text
-import works.windmill.gym.presentation.Words
+import works.windmill.platform.i18n.text
+import works.windmill.platform.i18n.Words
 import androidx.test.core.app.ApplicationProvider
 import works.windmill.gym.R
 import android.graphics.Bitmap
@@ -380,7 +380,7 @@ class CoachChatsTests {
             assertNull(coach.fault(second))
             assertFalse(coach.accountChanging)
             assertFalse(coach.sendHeld)
-            assertNull(coach.failure(second))
+            assertNull(coach.failed(second))
         }
     }
 
@@ -453,14 +453,14 @@ class CoachChatsTests {
             coach.selectChat(first)
             assertTrue(coach.send(first, "With a picture that is gone", CoachAttachment("photo0001", "image/jpeg", 2, 2, 3)))
             advanceUntilIdle()
-            assertEquals(CoachTurnFault.pictureUnavailable.sentence, coach.failure(first))
-            assertNull(coach.failure(second))
+            assertEquals(CoachTurnFault.pictureUnavailable.said, coach.failed(first))
+            assertNull(coach.failed(second))
 
             coach.selectChat(second)
             advanceUntilIdle()
-            assertNull(coach.failure(second))
+            assertNull(coach.failed(second))
             coach.selectChat(first)
-            assertEquals(CoachTurnFault.pictureUnavailable.sentence, coach.failure(first))
+            assertEquals(CoachTurnFault.pictureUnavailable.said, coach.failed(first))
         }
     }
 
@@ -507,7 +507,7 @@ class CoachChatsTests {
             assertNull(coach.refusal(second))
             assertTrue(coach.send(second, "Another", CoachAttachment("attachment-missing", "image/jpeg", 8, 8, 3)))
             advanceUntilIdle()
-            assertEquals(CoachTurnFault.pictureUnavailable.sentence, coach.failure(second))
+            assertEquals(CoachTurnFault.pictureUnavailable.said, coach.failed(second))
             assertNull(coach.refusal(second))
             assertEquals(said, coach.refusal(first))
 
@@ -610,7 +610,7 @@ class CoachChatsTests {
             val third = coach.freshChat()
             assertTrue(coach.send(third, "Third", photo))
             advanceUntilIdle()
-            assertEquals(CoachTurnFault.pictureUnavailable.sentence, coach.failure(third))
+            assertEquals(CoachTurnFault.pictureUnavailable.said, coach.failed(third))
             assertEquals(listOf(mapOf("screen" to "coach", "outcome" to "refused"), mapOf("screen" to "coach", "outcome" to "failed")), telling.named("gym_ask_outcome"))
         }
     }
@@ -694,8 +694,8 @@ class CoachChatsTests {
             conversations.watchHistory(true)
             conversations.read()
             assertEquals(listOf(
-                ConversationRow(drafted, "Half a thought", coach.chat(drafted)!!.updatedAtMs),
-                ConversationRow(asked, "Am I overtraining?", room.messages().maxOf { it.at.ms }, answerPreview = "Rest more"),
+                ConversationRow(drafted, Words.Plain("Half a thought"), coach.chat(drafted)!!.updatedAtMs),
+                ConversationRow(asked, Words.Plain("Am I overtraining?"), room.messages().maxOf { it.at.ms }, answerPreview = "Rest more"),
             ).sortedByDescending { it.askedAtMs }, coach.history)
             assertTrue(coach.hasConversations)
 
@@ -729,9 +729,10 @@ class CoachChatsTests {
             }
 
             val (photo, _) = room.withDraftPhoto(spaces, " ")
-            assertEquals(listOf(ConversationRow(spaces, "Photo", coach.chat(spaces)!!.updatedAtMs)), coach.history)
+            assertEquals(listOf(ConversationRow(spaces, Words.Plain("Photo"), coach.chat(spaces)!!.updatedAtMs)),
+                coach.history.map { it.copy(named = Words.Plain(it.named.spelled()!!)) })
             coach.saveDraft(spaces, CoachDraft(" ", photo))
-            assertEquals("Photo", coach.history.single().title)
+            assertEquals("Photo", coach.history.single().named.spelled())
             coach.saveDraft(spaces, CoachDraft())
 
             val asked = coach.freshChat()
@@ -741,9 +742,9 @@ class CoachChatsTests {
             val saidAt = room.messages().maxOf { it.at.ms }
             room.now += 60_000
             coach.saveDraft(asked, CoachDraft(" "))
-            assertEquals(listOf(ConversationRow(asked, "Am I overtraining?", saidAt, answerPreview = "Rest more")), coach.history)
+            assertEquals(listOf(ConversationRow(asked, Words.Plain("Am I overtraining?"), saidAt, answerPreview = "Rest more")), coach.history)
             coach.saveDraft(asked, CoachDraft("A real thought"))
-            assertEquals(listOf(ConversationRow(asked, "Am I overtraining?", coach.chat(asked)!!.updatedAtMs, answerPreview = "Rest more")), coach.history)
+            assertEquals(listOf(ConversationRow(asked, Words.Plain("Am I overtraining?"), coach.chat(asked)!!.updatedAtMs, answerPreview = "Rest more")), coach.history)
         }
     }
 
@@ -757,9 +758,10 @@ class CoachChatsTests {
             room.store.conversations.read()
             assertEquals(listOf(true), coach.history.map { it.answering })
             val other = coach.freshChat()
-            assertEquals(ConversationRow(chat, "Question", 0, answering = true), coach.pendingChat(other))
+            assertEquals(ConversationRow(chat, Words.Plain("Question"), 0, answering = true), coach.pendingChat(other))
             assertNull(coach.pendingChat(chat))
-            assertEquals(works.windmill.gym.store.GymResult.Failed(works.windmill.gym.store.WriteFailure.Refused("Coach is answering another message. Try again when it finishes.")), coach.deleteThread(chat))
+            assertEquals("Coach is answering another message. Try again when it finishes.",
+                ((coach.deleteThread(chat) as works.windmill.gym.store.GymResult.Failed).why as works.windmill.gym.store.WriteFailure.Refused).words.spelled())
             assertEquals(1, room.threads().size)
             coach.stop()
             advanceUntilIdle()
@@ -985,13 +987,13 @@ class CoachChatsTests {
                 val coach = room.store.coach
                 assertEquals("c", coach.selectedChatId)
                 room.store.conversations.read()
-                assertEquals(allowance, said, coach.exchanges("c").single().retained?.line)
+                assertEquals(allowance, said, coach.exchanges("c").single().retained?.words.spelled())
             }
             LocalCoach(file).settle()
             room(answers("Hi"), file).use { room ->
                 assertEquals("c", room.store.coach.selectedChatId)
                 room.store.conversations.read()
-                assertEquals(allowance, said, room.store.coach.exchanges("c").single().retained?.line)
+                assertEquals(allowance, said, room.store.coach.exchanges("c").single().retained?.words.spelled())
             }
         }
     }
@@ -1013,7 +1015,7 @@ class CoachChatsTests {
             assertEquals("answered-chat", coach.selectedChatId)
             advanceUntilIdle()
             room.store.conversations.read()
-            assertEquals(listOf(ConversationRow("answered-chat", "Plan me", coach.chat("answered-chat")!!.updatedAtMs, answerPreview = "Here is a plan")), coach.history)
+            assertEquals(listOf(ConversationRow("answered-chat", Words.Plain("Plan me"), coach.chat("answered-chat")!!.updatedAtMs, answerPreview = "Here is a plan")), coach.history)
             assertEquals(listOf("Plan me"), coach.exchanges("answered-chat").map { it.question })
             assertEquals(listOf(mapOf("operation" to "gym.restoreConversation")), telling.failures)
         }
@@ -1041,14 +1043,14 @@ class CoachChatsTests {
             advanceUntilIdle()
             room.store.conversations.read()
             val thread = coach.history.single().id
-            assertEquals(listOf("Question"), coach.history.map { it.title })
+            assertEquals(listOf("Question"), coach.history.map { it.named.spelled() })
 
             coach.selectChat(thread)
             room.store.conversations.read()
             assertEquals(LocalChat(thread, checkNotNull(coach.chat(thread)).createdAtMs, conversation = thread), coach.chat(thread))
             assertEquals(thread, coach.selectedChatId)
             assertEquals(listOf("Question"), coach.exchanges(thread).map { it.question })
-            assertNull(coach.failure(thread))
+            assertNull(coach.failed(thread))
 
             assertEquals(GymResult.Ok(Unit), coach.deleteThread(thread))
             advanceUntilIdle()
@@ -1070,7 +1072,7 @@ class CoachChatsTests {
             advanceUntilIdle()
             val chat = checkNotNull(coach.selectedChatId)
             writes = false
-            assertEquals(GymResult.Failed(WriteFailure.Refused(TrainingSeat.accountChanged)), coach.deleteThread(chat))
+            assertEquals(GymResult.Failed(WriteFailure.Refused(TrainingSeat.accountChange)), coach.deleteThread(chat))
             advanceUntilIdle()
             assertEquals(listOf(mapOf("screen" to "threads", "action" to "delete", "outcome" to "refused")), telling.named("gym_action").filter { it["action"] == "delete" })
             assertEquals(emptyList<Map<String, String>>(), telling.failures)
@@ -1091,7 +1093,7 @@ class CoachChatsTests {
             room.store.conversations.watchHistory(true)
             room.store.conversations.read()
             val chat = checkNotNull(coach.chat("kept-chat"))
-            assertEquals(listOf(ConversationRow("kept-chat", "Kept too", chat.updatedAtMs)), coach.history)
+            assertEquals(listOf(ConversationRow("kept-chat", Words.Plain("Kept too"), chat.updatedAtMs)), coach.history)
             coach.selectChat("kept-chat")
             assertEquals(listOf(KeptCoachDraft("kept-1", CoachDraft("Kept too"))), coach.keptDrafts("kept-chat"))
             assertEquals("kept-chat", coach.selectedChatId)

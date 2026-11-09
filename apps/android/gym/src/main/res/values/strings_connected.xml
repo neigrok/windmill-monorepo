@@ -1,4 +1,33 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="gym_connected_reading">Reading your connections…</string>
+    <string name="gym_connected_title">Connected log</string>
+    <string name="gym_connected_head">Your log, read by ChatGPT or Claude.</string>
+    <string name="gym_connected_caption">A routine change waits for your Apply; the rest lands at once.</string>
+    <string name="gym_connected_action">Connect a tool</string>
+    <string name="gym_connected_action_signed_out">Sign in first</string>
+    <string name="gym_connected_opens_in_browser">opens in your browser</string>
+    <string name="gym_connected_disclosure">How this works</string>
+    <string name="gym_connected_how_url">One URL pasted into your tool. Your browser opens once to approve.</string>
+    <string name="gym_connected_how_share">A shared workout is public for 30 days, until you end it.</string>
+    <string name="gym_connected_how_no_apply">No tool can apply a proposal or edit a logged set.</string>
+    <string name="gym_connected_how_delete">Delete is approved on its own, and a discard is permanent.</string>
+    <string name="gym_connected_how_end">End a connection under Settings → Connected tools; a key under API keys.</string>
+    <string name="gym_connected_connected_head">Connected</string>
+    <string name="gym_connected_unnamed_grant">A connected tool</string>
+    <string name="gym_connected_unnamed_key">A static key</string>
+    <string name="gym_connected_unread">Couldn’t read your connections.</string>
+    <string name="gym_connected_offline">Connect to the internet to read your connections.</string>
+    <string name="gym_connected_whole_account">whole account</string>
+    <string name="gym_connected_api_key">API key</string>
+    <string name="gym_connected_since">since %1$s</string>
+    <string name="gym_connected_level_read">Read</string>
+    <string name="gym_connected_level_read_meta">sets, workouts, routines, records, notes, weigh-ins</string>
+    <string name="gym_connected_level_read_held">read</string>
+    <string name="gym_connected_level_write">Write</string>
+    <string name="gym_connected_level_write_meta">logs sets · saves notes · adds routines · shares workouts · proposes changes</string>
+    <string name="gym_connected_level_write_held">write</string>
+    <string name="gym_connected_level_delete">Delete</string>
+    <string name="gym_connected_level_delete_meta">discards a workout · ends a share</string>
+    <string name="gym_connected_level_delete_held">delete</string>
 </resources>

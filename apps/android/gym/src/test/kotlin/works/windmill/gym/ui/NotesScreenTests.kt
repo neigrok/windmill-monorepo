@@ -1,7 +1,12 @@
 package works.windmill.gym.ui
 
+import android.content.Context
 import android.os.Looper
+import androidx.annotation.StringRes
+import androidx.test.core.app.ApplicationProvider
 import java.io.IOException
+import works.windmill.gym.R
+import works.windmill.platform.i18n.Words
 import works.windmill.sync.engine.Engine
 import works.windmill.sync.engine.EngineClock
 import works.windmill.sync.schema.SyncSchema
@@ -116,10 +121,10 @@ class NotesScreenTests {
                 ) }
             }
 
-            compose.onNodeWithText(Notes.honesty).assertIsDisplayed()
+            compose.onNodeWithText(string(R.string.gym_notes_honesty)).assertIsDisplayed()
             compose.onNodeWithText("what you write for Coach").assertDoesNotExist()
             compose.onNodeWithText("What I am training for").performClick()
-            compose.onNodeWithContentDescription(Notes.add).assertIsDisplayed()
+            compose.onNodeWithContentDescription(string(R.string.gym_notes_add)).assertIsDisplayed()
 
             compose.runOnIdle {
                 assertEquals("the editor receives a title hint, and nothing was written",
@@ -152,10 +157,10 @@ class NotesScreenTests {
             compose.onNodeWithText("note 0").assertIsDisplayed()
             compose.onNodeWithText("line 0").assertIsDisplayed()
             assertTrue("a handle before the title: x=${titleX("note 0")}", titleX("note 0") >= pastTheRail)
-            compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText(Notes.full))
+            compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText(string(R.string.gym_notes_full)))
             compose.onNodeWithText("Top note wins.").assertDoesNotExist()
             compose.onNodeWithText("10 of 10 notes. Delete one to add another.").assertIsDisplayed()
-            compose.onNodeWithContentDescription(Notes.add).assertDoesNotExist()
+            compose.onNodeWithContentDescription(string(R.string.gym_notes_add)).assertDoesNotExist()
         } } finally { scope.cancel() }
     }
 
@@ -178,8 +183,8 @@ class NotesScreenTests {
             runBlocking { deletingNote.await() }
 
             compose.onNodeWithText("note 3").assertDoesNotExist()
-            compose.onNodeWithText(Notes.full).assertDoesNotExist()
-            compose.onNodeWithContentDescription(Notes.add).assertIsDisplayed()
+            compose.onNodeWithText(string(R.string.gym_notes_full)).assertDoesNotExist()
+            compose.onNodeWithContentDescription(string(R.string.gym_notes_add)).assertIsDisplayed()
             compose.runOnIdle {
                 assertEquals((0..9).filter { it != 3 }.map { "note_00$it" }, room.training.notes().map { it.id })
                 assertEquals(listOf("ready"), room.outbox().map { it.member("state").str() })
@@ -207,8 +212,8 @@ class NotesScreenTests {
             runBlocking { deletingNote.await() }
 
             compose.onNodeWithText("note 3").assertDoesNotExist()
-            compose.onNodeWithContentDescription(Notes.add).assertIsDisplayed()
-            compose.onNodeWithText(Notes.full).assertDoesNotExist()
+            compose.onNodeWithContentDescription(string(R.string.gym_notes_add)).assertIsDisplayed()
+            compose.onNodeWithText(string(R.string.gym_notes_full)).assertDoesNotExist()
             compose.runOnIdle { room.sync(server) }
             assertEquals("the log holds nine", (0..9).filter { it != 3 }.map { "note_00$it" }, onTheLog(room, server))
         } } finally { scope.cancel() }
@@ -229,13 +234,13 @@ class NotesScreenTests {
                 )
             }
 
-            compose.onNodeWithText(Notes.delete).performScrollTo().performClick()
+            compose.onNodeWithText(string(R.string.gym_notes_delete)).performScrollTo().performClick()
             compose.runOnIdle {
                 assertEquals("the editor leaves on the tap", 1, done)
                 assertEquals(emptyList<String>(), store.held.withheld.map { it.subjectId })
                 assertEquals(emptyList<String>(), room.training.notes().map { it.id })
                 assertEquals(listOf("ready"), room.outbox().map { it.member("state").str() })
-                assertNull(Withheld.line(store.held.withheld))
+                assertNull(Withheld.words(store.held.withheld))
             }
         } } finally { scope.cancel() }
     }
@@ -294,11 +299,11 @@ class NotesScreenTests {
                 ) }
             }
 
-            compose.onNodeWithText(Notes.honesty).assertIsDisplayed()
-            compose.onAllNodesWithText(Notes.honesty).assertCountEquals(1)
+            compose.onNodeWithText(string(R.string.gym_notes_honesty)).assertIsDisplayed()
+            compose.onAllNodesWithText(string(R.string.gym_notes_honesty)).assertCountEquals(1)
             compose.onNodeWithText("what you write for Coach").assertDoesNotExist()
-            compose.onNodeWithText(Notes.signedOut).assertIsDisplayed()
-            compose.onNodeWithContentDescription(Notes.add).assertDoesNotExist()
+            compose.onNodeWithText(string(R.string.gym_notes_signed_out)).assertIsDisplayed()
+            compose.onNodeWithContentDescription(string(R.string.gym_notes_add)).assertDoesNotExist()
             compose.onNodeWithText("Sign in").performClick()
             compose.runOnIdle {
                 assertEquals(listOf("signIn"), doors)
@@ -381,7 +386,7 @@ class NotesScreenTests {
                 assertEquals(listOf("note_000", "note_001", "note_002"), serverNotes)
                 assertEquals(listOf("note_000", "note_001", "note_002"), runBlocking { room.training.notes() }.map { it.id })
                 assertEquals("the refusal reaches the room", listOf("That changed. Open it again."),
-                    room.store.notes.noteRefusals.map { it.reason })
+                    room.store.notes.noteRefusals.map { it.why.spelled() })
             }
             compose.onNodeWithText("That changed. Open it again.", substring = true).assertIsDisplayed()
             assertEquals("the list says what the log holds, not the order it refused",
@@ -640,9 +645,9 @@ class NotesScreenTests {
             var done = 0
             compose.setContent { GymMaterial { NoteEditorScreen(NotesBinding(room.store),
                 Note("note_001", title = "Private title", body = "Private body"), "", {}, { done++ }) } }
-            compose.onNodeWithText(Notes.save).assertIsNotEnabled()
+            compose.onNodeWithText(string(R.string.gym_notes_save)).assertIsNotEnabled()
             compose.runOnIdle { telemetry.events.clear(); room.engine.failNextCommit() }
-            compose.onNodeWithText(Notes.delete).performScrollTo().performClick()
+            compose.onNodeWithText(string(R.string.gym_notes_delete)).performScrollTo().performClick()
             compose.onNodeWithText("the log didn’t answer — that note is still here").assertIsDisplayed()
             compose.runOnIdle {
                 assertEquals(0, done)
@@ -650,7 +655,7 @@ class NotesScreenTests {
                 assertEquals(listOf("gym_action" to mapOf("screen" to "note_editor", "action" to "delete", "outcome" to "failed")), telemetry.events)
                 assertEquals(listOf("gym.deleteNote"), telemetry.failures)
             }
-            compose.onNodeWithText(Notes.delete).performClick()
+            compose.onNodeWithText(string(R.string.gym_notes_delete)).performClick()
             compose.runOnIdle {
                 assertEquals(1, done)
                 assertEquals(emptyList<Note>(), room.training.notes())
@@ -688,3 +693,7 @@ class NotesScreenTests {
     }
 
 }
+
+private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())
+
+private fun string(@StringRes id: Int, vararg args: Any): String = ApplicationProvider.getApplicationContext<Context>().getString(id, *args)

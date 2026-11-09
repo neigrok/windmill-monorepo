@@ -1,5 +1,6 @@
 package works.windmill.gym.store
 
+import androidx.test.core.app.ApplicationProvider
 import java.io.IOException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
@@ -14,8 +15,13 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import works.windmill.gym.presentation.Note
 import works.windmill.gym.presentation.NoteWrite
+import works.windmill.platform.i18n.Words
+import works.windmill.platform.i18n.text
 import works.windmill.sync.engine.Engine
 import works.windmill.sync.engine.EngineClock
 import works.windmill.sync.engine.nextPush
@@ -23,6 +29,8 @@ import works.windmill.sync.schema.SyncSchema
 import works.windmill.platform.telemetry.Telemetry
 
 @OptIn(ExperimentalCoroutinesApi::class)
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class NotesStoreTests {
     @get:Rule
     val tmp = TemporaryFolder()
@@ -161,8 +169,8 @@ class NotesStoreTests {
                 Note("note_a", 1, "How I want to be talked to", "Blunt, no cheering.", 0),
             )), reordered)
             assertEquals("an order naming a note outside the notebook is refused before anything is written",
-                GymResult.Failed(WriteFailure.Refused("The notes changed. Read them again before reordering.")),
-                room.store.notes.reorderNotes("note_gone", listOf("note_gone")))
+                "The notes changed. Read them again before reordering.",
+                ((room.store.notes.reorderNotes("note_gone", listOf("note_gone")) as GymResult.Failed).why as WriteFailure.Refused).words.spelled())
 
             assertNull(room.store.notes.deleteNote("note_b"))
             assertNull("a note already gone is gone", room.store.notes.deleteNote("note_b"))
@@ -184,13 +192,13 @@ class NotesStoreTests {
             val before = room.engine.snapshot()
             assertTrue(room.store.notes.reorderNotes("note_002", listOf("note_000", "note_002")) is GymResult.Ok)
             assertEquals(before, room.engine.snapshot())
-            val refused = GymResult.Failed(WriteFailure.Refused("The notes changed. Read them again before reordering."))
+            val refused = "The notes changed. Read them again before reordering."
             for ((moved, order) in listOf(
                 "note_001" to listOf("note_000", "note_002"),
                 "note_000" to listOf("note_000", "note_000"),
                 "note_000" to listOf("note_002"),
                 "note_000" to listOf("note_002", "note_missing"),
-            )) assertEquals(refused, room.store.notes.reorderNotes(moved, order))
+            )) assertEquals(refused, ((room.store.notes.reorderNotes(moved, order) as GymResult.Failed).why as WriteFailure.Refused).words.spelled())
             assertEquals(before, room.engine.snapshot())
 
             assertTrue(room.store.notes.reorderNotes("note_000", listOf("note_002", "note_000")) is GymResult.Ok)
@@ -201,11 +209,11 @@ class NotesStoreTests {
             assertEquals(listOf("note_002", "note_000"), room.store.notes.all.map { it.id })
 
             val moved = room.engine.snapshot()
-            assertEquals(refused, room.store.notes.reorderNotes("note_000", listOf("note_000", "note_002", "note_001")))
+            assertEquals(refused, ((room.store.notes.reorderNotes("note_000", listOf("note_000", "note_002", "note_001")) as GymResult.Failed).why as WriteFailure.Refused).words.spelled())
             assertEquals(moved, room.engine.snapshot())
             room.training.writeNote("note_003", NoteWrite("New arrival", ""))
             val arrived = room.engine.snapshot()
-            assertEquals(refused, room.store.notes.reorderNotes("note_000", listOf("note_000", "note_001", "note_002")))
+            assertEquals(refused, ((room.store.notes.reorderNotes("note_000", listOf("note_000", "note_001", "note_002")) as GymResult.Failed).why as WriteFailure.Refused).words.spelled())
             assertEquals(arrived, room.engine.snapshot())
         }
     }
@@ -247,16 +255,18 @@ class NotesStoreTests {
             room.select("alice"); room.pull(EngineRoomFixture.server())
             repeat(10) { room.store.notes.saveNote("note_$it", NoteWrite("note $it", "")) }
 
-            assertEquals(GymResult.Failed(WriteFailure.Refused("The log has reached its limit. Remove an entry first.")),
-                room.store.notes.saveNote("note_more", NoteWrite("eleven", "")))
-            assertEquals(GymResult.Failed(WriteFailure.Refused("a note runs to 500 bytes")),
-                room.store.notes.saveNote("note_0", NoteWrite("note 0", "x".repeat(501))))
-            assertEquals(GymResult.Failed(WriteFailure.Refused("a title runs to 60 characters")),
-                room.store.notes.saveNote("note_0", NoteWrite("t".repeat(61), "")))
+            assertEquals("The log has reached its limit. Remove an entry first.",
+                ((room.store.notes.saveNote("note_more", NoteWrite("eleven", "")) as GymResult.Failed).why as WriteFailure.Refused).words.spelled())
+            assertEquals("a note runs to 500 bytes",
+                ((room.store.notes.saveNote("note_0", NoteWrite("note 0", "x".repeat(501))) as GymResult.Failed).why as WriteFailure.Refused).words.spelled())
+            assertEquals("a title runs to 60 characters",
+                ((room.store.notes.saveNote("note_0", NoteWrite("t".repeat(61), "")) as GymResult.Failed).why as WriteFailure.Refused).words.spelled())
             // A stale drop is refused before anything is written.
-            assertEquals(GymResult.Failed(WriteFailure.Refused("The notes changed. Read them again before reordering.")),
-                room.store.notes.reorderNotes("note_gone", listOf("note_gone")))
+            assertEquals("The notes changed. Read them again before reordering.",
+                ((room.store.notes.reorderNotes("note_gone", listOf("note_gone")) as GymResult.Failed).why as WriteFailure.Refused).words.spelled())
             runCurrent()
         }
     }
 }
+
+private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())

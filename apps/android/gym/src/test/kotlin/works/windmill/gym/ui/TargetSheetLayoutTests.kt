@@ -1,5 +1,7 @@
 package works.windmill.gym.ui
 
+import android.content.Context
+import androidx.annotation.StringRes
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -12,6 +14,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.test.core.app.ApplicationProvider
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -24,9 +27,9 @@ import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import works.windmill.gym.R
 import works.windmill.gym.presentation.RoutineDraft
 import works.windmill.gym.presentation.SetTarget
-import works.windmill.gym.presentation.TargetEntry
 import works.windmill.gym.store.EngineRoomFixture
 
 @RunWith(RobolectricTestRunner::class)
@@ -55,7 +58,7 @@ class TargetSheetLayoutTests {
             }
             compose.onNodeWithText("Back Squat").performClick()
 
-            val addSet = compose.onNodeWithText(TargetEntry.addSet).performScrollTo().assertIsDisplayed().fetchSemanticsNode()
+            val addSet = compose.onNodeWithText(string(R.string.gym_program_add_set)).performScrollTo().assertIsDisplayed().fetchSemanticsNode()
             val commit = compose.onNodeWithText("Done").assertIsDisplayed().fetchSemanticsNode()
             val fifthRow = compose.onNodeWithContentDescription("Set 5 load").assertIsDisplayed().fetchSemanticsNode()
             val window = addSet.root!!.semanticsOwner.rootSemanticsNode.size.height.toFloat()
@@ -72,3 +75,5 @@ class TargetSheetLayoutTests {
         } } finally { scope.cancel() }
     }
 }
+
+private fun string(@StringRes id: Int, vararg args: Any): String = ApplicationProvider.getApplicationContext<Context>().getString(id, *args)

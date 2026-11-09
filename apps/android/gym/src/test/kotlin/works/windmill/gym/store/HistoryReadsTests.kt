@@ -1,5 +1,6 @@
 package works.windmill.gym.store
 
+import androidx.test.core.app.ApplicationProvider
 import java.io.IOException
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
@@ -26,6 +27,9 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import works.windmill.domain.kit.ActionContext
 import works.windmill.domain.kit.ActionRunner
 import works.windmill.domain.kit.FixedZone
@@ -42,6 +46,8 @@ import works.windmill.gym.presentation.Review
 import works.windmill.gym.presentation.SessionStart
 import works.windmill.gym.presentation.SetFix
 import works.windmill.gym.presentation.SetWrite
+import works.windmill.platform.i18n.Words
+import works.windmill.platform.i18n.text
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.sync.api.DeviceWrite
 import works.windmill.sync.api.Gesture
@@ -57,6 +63,8 @@ import works.windmill.sync.modelserver.ModelServer
 import works.windmill.sync.schema.SyncSchema
 
 @OptIn(ExperimentalCoroutinesApi::class)
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class HistoryReadsTests {
     @get:Rule
     val tmp = TemporaryFolder()
@@ -271,7 +279,7 @@ class HistoryReadsTests {
                 assertTrue(room.engine.signOut("keep").member("complete").bool())
                 assertTrue(room.engine.signIn("bob", mapOf("gym" to false)).member("complete").bool())
                 reads.release()
-                assertEquals(RecordRead.Failed(WriteFailure.Refused(TrainingSeat.accountChanged)), withTimeout(5_000) { pending.await() })
+                assertEquals(RecordRead.Failed(WriteFailure.Refused(TrainingSeat.accountChange)), withTimeout(5_000) { pending.await() })
                 assertEquals(emptyList<String>(), failures)
             } finally {
                 reads.release()
@@ -419,14 +427,14 @@ class HistoryReadsTests {
             assertTrue(room.engine.signOut("keep").member("complete").bool())
             assertTrue(room.engine.signIn("bob", mapOf("gym" to true)).member("complete").bool())
             val beforeConnect = room.engine.snapshot()
-            assertEquals(GymResult.Failed(WriteFailure.Refused("The account changed. Open this again.")),
-                room.store.history.edit(opened.id, "ALICE_PRIVATE_NAME", "dumbbell", 2, opened, account, replica))
+            assertEquals("The account changed. Open this again.",
+                ((room.store.history.edit(opened.id, "ALICE_PRIVATE_NAME", "dumbbell", 2, opened, account, replica) as GymResult.Failed).why as WriteFailure.Refused).words.spelled())
             assertEquals(beforeConnect, room.engine.snapshot())
             room.selected = "bob"
             room.store.connect(room.account())
             val afterConnect = room.engine.snapshot()
-            assertEquals(GymResult.Failed(WriteFailure.Refused("The account changed. Open this again.")),
-                room.store.history.edit(opened.id, "ALICE_PRIVATE_NAME", "dumbbell", 2, opened, account, replica))
+            assertEquals("The account changed. Open this again.",
+                ((room.store.history.edit(opened.id, "ALICE_PRIVATE_NAME", "dumbbell", 2, opened, account, replica) as GymResult.Failed).why as WriteFailure.Refused).words.spelled())
             assertEquals(afterConnect, room.engine.snapshot())
             assertEquals(opened, room.training.catalogue().first { it.id == opened.id })
         }
@@ -442,8 +450,8 @@ class HistoryReadsTests {
             assertTrue(room.engine.signIn("alice", mapOf("gym" to false)).member("complete").bool())
             assertEquals(replica, room.engine.activeReplica())
             val before = room.engine.snapshot()
-            assertEquals(GymResult.Failed(WriteFailure.Refused("The account changed. Open this again.")),
-                room.store.history.edit(opened.id, "ANONYMOUS_PRIVATE_NAME", "dumbbell", 2, opened, account, replica))
+            assertEquals("The account changed. Open this again.",
+                ((room.store.history.edit(opened.id, "ANONYMOUS_PRIVATE_NAME", "dumbbell", 2, opened, account, replica) as GymResult.Failed).why as WriteFailure.Refused).words.spelled())
             assertEquals(before, room.engine.snapshot())
             assertEquals(opened, room.training.catalogue().first { it.id == opened.id })
         }
@@ -516,7 +524,7 @@ class HistoryReadsTests {
             assertTrue(room.store.history.edit(base.id, "PRIVATE_MOVEMENT", "dumbbell", 2, base) is GymResult.Ok)
             room.store.refreshEngine()
             assertEquals("PRIVATE_MOVEMENT", room.store.routines.catalog.first { it.id == base.id }.name)
-            assertEquals(GymResult.Failed(WriteFailure.Refused("Name it to save it.")), room.store.history.edit(base.id, " "))
+            assertEquals("Name it to save it.", ((room.store.history.edit(base.id, " ") as GymResult.Failed).why as WriteFailure.Refused).words.spelled())
             val before = room.engine.snapshot()
             room.engine.failNextCommit()
             assertEquals(GymResult.Failed(WriteFailure.NoAnswer), room.store.history.edit(base.id, "PRIVATE_FAILED_MOVEMENT"))
@@ -584,7 +592,7 @@ class HistoryReadsTests {
             assertEquals("the history is whole — the id never moved", 1, record.recentDays.size)
 
             assertEquals("Name it to save it.",
-                ((room.store.history.edit(movement.id, "   ") as GymResult.Failed).why as WriteFailure.Refused).said)
+                ((room.store.history.edit(movement.id, "   ") as GymResult.Failed).why as WriteFailure.Refused).words.spelled())
             assertEquals("a catalog movement is renamed on the phone signed out too",
                 "Squat", (room.store.history.edit("back-squat", "Squat") as GymResult.Ok).value.name)
             runCurrent()
@@ -625,8 +633,8 @@ class HistoryReadsTests {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("alice"); room.pull(EngineRoomFixture.server())
 
-            assertEquals(RecordRead.Failed(WriteFailure.Refused("that movement is no longer on the log")),
-                room.store.history.record("ex_gone"))
+            assertEquals("that movement is no longer on the log",
+                ((room.store.history.record("ex_gone") as RecordRead.Failed).why as WriteFailure.Refused).words.spelled())
             runCurrent()
         }
     }
@@ -749,3 +757,5 @@ class HistoryReadsTests {
         }
     }
 }
+
+private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())

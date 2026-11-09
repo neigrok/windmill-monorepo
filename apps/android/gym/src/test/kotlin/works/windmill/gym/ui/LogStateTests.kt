@@ -1,5 +1,7 @@
 package works.windmill.gym.ui
 
+import android.content.Context
+import androidx.annotation.StringRes
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
@@ -25,6 +27,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.test.core.app.ApplicationProvider
 import java.time.LocalDate
 import java.time.ZoneId
 import kotlinx.coroutines.CoroutineScope
@@ -45,6 +48,7 @@ import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import works.windmill.gym.R
 import works.windmill.gym.presentation.Bodyweight
 import works.windmill.gym.presentation.Readout
 import works.windmill.gym.presentation.SessionStart
@@ -53,6 +57,7 @@ import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.store.HistoryReads
 import works.windmill.gym.store.Older
 import works.windmill.gym.store.TrainingStore
+import works.windmill.platform.i18n.Words
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.sync.engine.Pulls
 
@@ -86,24 +91,24 @@ class LogStateTests {
                 GymMaterial { LogBinding(store).let { log -> LogScreen(log, log, "A", {}, {}, {}, {}, now = { room.now }) } }
             }
             compose.runOnIdle { room.now = day.plusDays(1).atTime(0, 1).atZone(zone).toInstant().toEpochMilli() }
-            compose.onNodeWithContentDescription(Bodyweight.chip).performClick()
+            compose.onNodeWithContentDescription(string(R.string.gym_bodyweight_chip)).performClick()
             compose.onNodeWithText(Bodyweight.fullDay(day.plusDays(1))).assertIsDisplayed()
-            compose.onNodeWithContentDescription(weightField).performTextReplacement("82,4.5")
-            compose.onNodeWithText(Bodyweight.save).performClick()
-            compose.onNodeWithText(Bodyweight.onePoint).assertIsDisplayed()
+            compose.onNodeWithContentDescription(string(R.string.gym_bodyweight_weight_field)).performTextReplacement("82,4.5")
+            compose.onNodeWithText(string(R.string.gym_bodyweight_save)).performClick()
+            compose.onNodeWithText(Bodyweight.extraPoint.spelled()!!).assertIsDisplayed()
             compose.runOnIdle { room.now = day.plusDays(2).atTime(0, 1).atZone(zone).toInstant().toEpochMilli() }
             restored.emulateSavedInstanceStateRestore()
             compose.onNodeWithText(Bodyweight.fullDay(day.plusDays(1))).assertIsDisplayed()
             compose.onNodeWithText("82,4.5").assertIsDisplayed()
-            compose.onNodeWithText(Bodyweight.onePoint).assertIsDisplayed()
+            compose.onNodeWithText(Bodyweight.extraPoint.spelled()!!).assertIsDisplayed()
             compose.onNodeWithText(Bodyweight.fullDay(day.plusDays(1))).performClick()
             compose.onNodeWithText("Tuesday, September 15, 2026").assertIsEnabled().performClick()
             compose.onNodeWithText("Use date").performClick()
             compose.onNodeWithText(Bodyweight.fullDay(day.plusDays(2))).assertIsDisplayed()
-            compose.onNodeWithContentDescription(weightField).performTextReplacement("82.45")
+            compose.onNodeWithContentDescription(string(R.string.gym_bodyweight_weight_field)).performTextReplacement("82.45")
             val saving = compose.runOnIdle { room.now }
-            compose.onNodeWithText(Bodyweight.save).performClick()
-            compose.onNodeWithText(Bodyweight.save).assertDoesNotExist()
+            compose.onNodeWithText(string(R.string.gym_bodyweight_save)).performClick()
+            compose.onNodeWithText(string(R.string.gym_bodyweight_save)).assertDoesNotExist()
             compose.runOnIdle {
                 assertEquals(2, instances)
                 assertEquals(listOf(day.plusDays(2).toString() to 82.45), current.bodyweight.drawn.map { it.dateLocal to it.weightKg })
@@ -427,3 +432,7 @@ class LogStateTests {
         } } finally { scope.cancel() }
     }
 }
+
+private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())
+
+private fun string(@StringRes id: Int, vararg args: Any): String = ApplicationProvider.getApplicationContext<Context>().getString(id, *args)

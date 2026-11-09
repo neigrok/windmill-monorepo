@@ -410,12 +410,12 @@ class CoachOverWorkoutTests {
         waitFor("Proposal · This workout")
         compose.onNodeWithText("Review").performClick()
 
-        waitFor(Proposal.signInToReview)
+        waitFor(string(R.string.gym_proposal_sign_in_to_review))
         compose.onNodeWithText("Sign in").assertIsDisplayed().assertIsEnabled()
         compose.onNodeWithText("Remove Incline Dumbbell Press").assertIsDisplayed()
         compose.onNodeWithText("Apply all 2").assertDoesNotExist()
         compose.onNodeWithText("All two or none. Nothing is applied until you tap.").assertDoesNotExist()
-        compose.onNodeWithText(Proposal.applyHint).assertDoesNotExist()
+        compose.onNodeWithText(string(R.string.gym_proposal_apply_hint)).assertDoesNotExist()
         compose.onNodeWithText("Turn this down").assertDoesNotExist()
         compose.runOnIdle { assertEquals(0, signInsOpened) }
         events.clear()
@@ -423,7 +423,7 @@ class CoachOverWorkoutTests {
         compose.onNodeWithText("Sign in").performClick()
 
         compose.waitUntil(5_000) { compose.runOnIdle { signInsOpened > 0 } }
-        compose.onNodeWithText(Proposal.signInToReview).assertDoesNotExist()
+        compose.onNodeWithText(string(R.string.gym_proposal_sign_in_to_review)).assertDoesNotExist()
         compose.onNodeWithText(string(R.string.gym_coach_placeholder)).assertDoesNotExist()
         compose.onNodeWithText("Finish").assertIsDisplayed()
         compose.runOnIdle {
@@ -441,7 +441,7 @@ class CoachOverWorkoutTests {
             waitFor("Proposal · Push A · next time")
             compose.onNodeWithText("Review").performScrollTo().performClick()
 
-            waitFor(Proposal.signInToReview)
+            waitFor(string(R.string.gym_proposal_sign_in_to_review))
             compose.onNodeWithText("Remove Incline Dumbbell Press").assertIsDisplayed()
             compose.onNodeWithText("Sign in").assertIsDisplayed().assertIsEnabled()
             compose.onNodeWithText("Apply all 4").assertDoesNotExist()

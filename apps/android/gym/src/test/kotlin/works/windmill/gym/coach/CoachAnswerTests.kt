@@ -1,7 +1,8 @@
 package works.windmill.gym.coach
 
+import androidx.test.core.app.ApplicationProvider
 import works.windmill.gym.R
-import works.windmill.gym.presentation.Words
+import works.windmill.platform.i18n.Words
 import android.app.Application
 import android.content.Intent
 import android.view.View
@@ -73,6 +74,7 @@ import works.windmill.gym.presentation.RoutineEntry
 import works.windmill.gym.presentation.SetTarget
 import works.windmill.gym.ui.GymMaterial
 import works.windmill.platform.design.LocalWindmillDark
+import works.windmill.platform.i18n.text
 import works.windmill.platform.telemetry.LocalTelemetry
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.sync.core.Json
@@ -367,7 +369,7 @@ class CoachAnswerTests {
         } }
         compose.onNodeWithText("1 × 8 · 24 kg · One dumbbell").assertIsDisplayed()
         compose.onNodeWithText("1 × 5 · 100 kg total · Barbell").assertIsDisplayed()
-        compose.onNodeWithText(Readout.target(listOf(SetTarget(6, -10.0))) + " kg assisted · Bodyweight").assertIsDisplayed()
+        compose.onNodeWithText(Readout.scheme(listOf(SetTarget(6, -10.0))).spelled() + " kg assisted · Bodyweight").assertIsDisplayed()
         compose.onNodeWithText("1 × 10 · 40 kg · Cable").assertIsDisplayed()
     }
 
@@ -523,3 +525,5 @@ class CoachAnswerTests {
         assertTrue("the receipt stands under the door", compose.onNodeWithText("Read nothing from your log", useUnmergedTree = true).getUnclippedBoundsInRoot().top > door.bottom)
     }
 }
+
+private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())

@@ -5,11 +5,12 @@ import java.time.ZoneId
 import java.time.ZoneOffset
 import org.junit.Assert.*
 import org.junit.Test
+import works.windmill.platform.i18n.Words
 
 class DatedPlotTests {
     @Test
     fun irregularDatesAndIdleTimeKeepTheirActualProportions() {
-        val points = listOf(0L, 2L, 10L).map { DatedPoint("$it", it * 86_400_000, 50.0 + it, "$it days") }
+        val points = listOf(0L, 2L, 10L).map { DatedPoint("$it", it * 86_400_000, 50.0 + it, Words.Plain("$it days")) }
         val series = DatedSeries(points, 0, 20 * 86_400_000L, ZoneOffset.UTC, 21)
         val plot = DatedGeometry(series, 200f, 100f)
         assertEquals(listOf(0f, 20f, 100f), plot.points.map { it.x })
@@ -21,7 +22,7 @@ class DatedPlotTests {
 
     @Test
     fun denseHistoryStartsAtTheLatestEndAndPansWithinTheRealTimeBounds() {
-        val points = (0..30).map { DatedPoint("$it", it * 86_400_000L, it.toDouble(), "Day $it") }
+        val points = (0..30).map { DatedPoint("$it", it * 86_400_000L, it.toDouble(), Words.Plain("Day $it")) }
         val series = DatedSeries(points, 0, points.last().atMs, ZoneOffset.UTC, 21)
         val latest = DatedGeometry(series, 240f, 100f, minimumPitch = 24f)
         assertEquals(720f, latest.contentWidth)
@@ -43,7 +44,7 @@ class DatedPlotTests {
     fun sevenCalendarDaysJoinAndEightBreakEvenAcrossDaylightSavingTime() {
         val zone = ZoneId.of("America/New_York")
         val points = listOf("2026-03-01", "2026-03-08", "2026-03-16").map { date ->
-            DatedPoint(date, LocalDate.parse(date).atStartOfDay(zone).toInstant().toEpochMilli(), 82.4, date)
+            DatedPoint(date, LocalDate.parse(date).atStartOfDay(zone).toInstant().toEpochMilli(), 82.4, Words.Plain(date))
         }
         val series = DatedSeries(points, points.first().atMs, points.last().atMs, zone, 7)
         val plot = DatedGeometry(series, 300f, 180f)
@@ -54,7 +55,7 @@ class DatedPlotTests {
 
     @Test
     fun recordGapThresholdIsInclusiveAndClippedPointsDoNotCreateSegments() {
-        val points = listOf(-1L, 0L, 21L, 43L).map { DatedPoint("$it", it * 86_400_000, 60.0, "$it") }
+        val points = listOf(-1L, 0L, 21L, 43L).map { DatedPoint("$it", it * 86_400_000, 60.0, Words.Plain("$it")) }
         val series = DatedSeries(points, 0, points.last().atMs, ZoneOffset.UTC, 21)
         val plot = DatedGeometry(series, 300f, 180f)
         assertEquals(points.drop(1), series.ordered)
@@ -64,8 +65,8 @@ class DatedPlotTests {
 
     @Test
     fun simultaneousFactsShareAnXCoordinateAndTiesUseChronologicalIdentity() {
-        val points = listOf(DatedPoint("b", 0, 50.0, "B"), DatedPoint("a", 0, 50.0, "A"),
-            DatedPoint("c", 100, 60.0, "C"))
+        val points = listOf(DatedPoint("b", 0, 50.0, Words.Plain("B")), DatedPoint("a", 0, 50.0, Words.Plain("A")),
+            DatedPoint("c", 100, 60.0, Words.Plain("C")))
         val plot = DatedGeometry(DatedSeries(points, 0, 100, ZoneOffset.UTC, 21), 100f, 100f, 24f)
         assertEquals(listOf("a", "b", "c"), plot.points.map { it.fact.id })
         assertEquals(listOf(0f, 0f, 100f), plot.points.map { it.x })
@@ -77,7 +78,7 @@ class DatedPlotTests {
 
     @Test
     fun negativeZeroAndEqualValuesRemainFiniteWithoutInventedFacts() {
-        val points = listOf(-20.0, 0.0, 20.0).mapIndexed { i, value -> DatedPoint("$i", i.toLong(), value, "$value") }
+        val points = listOf(-20.0, 0.0, 20.0).mapIndexed { i, value -> DatedPoint("$i", i.toLong(), value, Words.Plain("$value")) }
         val plot = DatedGeometry(DatedSeries(points, 0, 2, ZoneOffset.UTC, 7), 100f, 100f)
         assertEquals(points, plot.points.map { it.fact })
         assertTrue(plot.axis.start < -20)
@@ -100,7 +101,7 @@ class DatedPlotTests {
         for (values in listOf(listOf(1e308), listOf(maximum), listOf(-maximum),
             listOf(Math.nextDown(maximum), maximum), listOf(-maximum, -Math.nextDown(maximum)),
             listOf(8e307, 1e308), listOf(-1e308, -8e307), listOf(-maximum, 0.0, maximum))) {
-            val points = values.mapIndexed { i, value -> DatedPoint("$i", i.toLong(), value, "Load") }
+            val points = values.mapIndexed { i, value -> DatedPoint("$i", i.toLong(), value, Words.Plain("Load")) }
             val plot = DatedGeometry(DatedSeries(points, 0, 2, ZoneOffset.UTC, 7), 200f, 100f)
             assertEquals(points, plot.points.map { it.fact })
             assertTrue(plot.axis.start.isFinite() && plot.axis.endInclusive.isFinite())
@@ -111,7 +112,7 @@ class DatedPlotTests {
             assertTrue(plot.ticks.all { plot.y(it) in 0f..100f })
             assertTrue(values.sorted().zipWithNext().all { (low, high) -> plot.y(low) >= plot.y(high) })
         }
-        val points = listOf(-maximum, 0.0, maximum).mapIndexed { i, value -> DatedPoint("$i", i.toLong(), value, "Load") }
+        val points = listOf(-maximum, 0.0, maximum).mapIndexed { i, value -> DatedPoint("$i", i.toLong(), value, Words.Plain("Load")) }
         val plot = DatedGeometry(DatedSeries(points, 0, 2, ZoneOffset.UTC, 7), 200f, 100f)
         assertEquals(listOf(maximum, 0.0, -maximum), plot.ticks)
         assertEquals(listOf(100f, 50f, 0f), plot.points.map { it.y })

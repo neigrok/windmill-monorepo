@@ -1,5 +1,7 @@
 package works.windmill.gym.ui
 
+import android.content.Context
+import androidx.annotation.StringRes
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -16,6 +18,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextReplacement
+import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Rule
@@ -23,6 +26,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import works.windmill.gym.R
 import works.windmill.gym.presentation.Exercise
 import works.windmill.gym.presentation.SetFix
 import works.windmill.gym.presentation.TrainingSet
@@ -159,11 +163,11 @@ class FixSheetNumberEntryTests {
         compose.onNodeWithContentDescription("Load, kg").performClick().performTextReplacement("1e999")
         compose.onNodeWithContentDescription("Reps").performClick()
         compose.onNodeWithContentDescription("Load, kg").assertTextEquals("1e999")
-        compose.onNodeWithText(works.windmill.gym.presentation.NumberEntry.notANumber).assertExists()
+        compose.onNodeWithText(string(R.string.gym_entry_not_a_number)).assertExists()
         compose.onNodeWithContentDescription("Load, kg").performClick().performTextReplacement("-12.5")
         compose.onNodeWithContentDescription("Reps").performClick()
         compose.onNodeWithContentDescription("Load, kg").assertTextEquals("−12.5")
-        compose.onNodeWithText(works.windmill.gym.presentation.NumberEntry.notANumber).assertDoesNotExist()
+        compose.onNodeWithText(string(R.string.gym_entry_not_a_number)).assertDoesNotExist()
         compose.onNodeWithText("Save fix").performClick()
         compose.runOnIdle {
             assertEquals(listOf(SetFix(weightKg = -12.5)), saved)
@@ -269,3 +273,5 @@ class FixSheetNumberEntryTests {
     }
 
 }
+
+private fun string(@StringRes id: Int, vararg args: Any): String = ApplicationProvider.getApplicationContext<Context>().getString(id, *args)

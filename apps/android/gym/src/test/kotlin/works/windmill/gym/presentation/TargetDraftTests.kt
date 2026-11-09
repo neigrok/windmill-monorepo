@@ -1,9 +1,17 @@
 package works.windmill.gym.presentation
 
+import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import works.windmill.gym.R
+import works.windmill.platform.i18n.Words
 import works.windmill.platform.net.WindmillJson
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class TargetDraftTests {
     @Test
     fun newMovementStartsWithThreeSetsOfTenAndNoLoad() {
@@ -18,7 +26,7 @@ class TargetDraftTests {
     @Test
     fun aFlooredMovementRefusesATargetUnderItAndAnUnflooredOneKeepsItsSign() {
         val draft = TargetEntry.Draft(rows = List(3) { TargetEntry.TypedSet(reps = "8", weight = "−12.5") }, sets = "3")
-        assertEquals(TargetEntry.Reading.Refused(0, TargetEntry.Field.Weight, "Load, 0 or more."), draft.reading(0.0))
+        assertEquals(TargetEntry.Reading.Refused(0, TargetEntry.Field.Weight, Words.Plain("Load, 0 or more.")), draft.reading(0.0).spelled())
         assertEquals(TargetEntry.Reading.Scheme(List(3) { SetTarget(8, -12.5) }), draft.reading(null))
         assertEquals(List(3) { TargetEntry.TypedSet(reps = "8", weight = "0") },
             TargetEntry.Draft(rows = List(3) { TargetEntry.TypedSet(reps = "8", weight = "1") }, sets = "3")
@@ -44,7 +52,7 @@ class TargetDraftTests {
         val restored = WindmillJson.decodeFromString(TargetEntry.Draft.serializer(), saved)
         assertEquals(TargetEntry.Reading.Scheme(listOf(SetTarget(8, 50.0))), restored.reading(null))
         assertEquals(draft.copy(sets = "2"), restored.withCount("2"))
-        assertEquals(TargetEntry.Reading.Refused(1, TargetEntry.Field.Reps, TargetEntry.notANumber),
+        assertEquals(TargetEntry.Reading.Refused(1, TargetEntry.Field.Reps, Words.Message(R.string.gym_program_not_a_number)),
             restored.withCount("2").reading(null))
         assertEquals(TargetEntry.Reading.Open, restored.withCount("").reading(null))
         assertEquals(draft, restored.withCount("").withCount("1"))
@@ -66,3 +74,6 @@ class TargetDraftTests {
         assertEquals(invalid, invalid.stepped(TargetEntry.Field.Sets, 1))
     }
 }
+
+private fun TargetEntry.Reading.spelled(): TargetEntry.Reading =
+    if (this is TargetEntry.Reading.Refused) copy(why = Words.Plain(why.text(ApplicationProvider.getApplicationContext()))) else this

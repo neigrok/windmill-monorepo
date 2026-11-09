@@ -39,6 +39,8 @@ import works.windmill.gym.presentation.WorkoutKey
 import works.windmill.gym.presentation.WorkoutMoment
 import works.windmill.gym.presentation.WorkoutNotification
 import works.windmill.gym.store.WorkoutCommands
+import works.windmill.platform.i18n.Words
+import works.windmill.platform.i18n.text
 
 interface WorkoutNotificationHost {
     val workoutNotifications: WorkoutNotifications
@@ -235,7 +237,7 @@ class WorkoutNotifications(
         val public = NotificationCompat.Builder(context, CHANNEL)
             .setSmallIcon(R.drawable.gym_workout_notification)
             .setColor(accent)
-            .setContentTitle(snapshot.title)
+            .setContentTitle(snapshot.heading.text(context))
             .setWhen(snapshot.sinceSetAtMs)
             .setUsesChronometer(true)
             .setShowWhen(true)
@@ -247,9 +249,9 @@ class WorkoutNotifications(
         val notification = NotificationCompat.Builder(context, CHANNEL)
             .setSmallIcon(R.drawable.gym_workout_notification)
             .setColor(accent)
-            .setContentTitle(snapshot.title)
-            .setContentText(context.getString(R.string.gym_notification_text, snapshot.movement, snapshot.rackLine, snapshot.counter))
-            .setStyle(NotificationCompat.BigTextStyle().bigText(context.getString(R.string.gym_notification_big_text, snapshot.movement, snapshot.rackLine, snapshot.counter)))
+            .setContentTitle(snapshot.heading.text(context))
+            .setContentText(Words.Message(R.string.gym_notification_text, listOf(snapshot.doing, snapshot.racked, snapshot.counted)).text(context))
+            .setStyle(NotificationCompat.BigTextStyle().bigText(Words.Message(R.string.gym_notification_big_text, listOf(snapshot.doing, snapshot.racked, snapshot.counted)).text(context)))
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setSilent(true)

@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="gym_readout_zero">zero</string>
+    <string name="gym_readout_one">one</string>
+    <string name="gym_readout_two">two</string>
+    <string name="gym_readout_three">three</string>
+    <string name="gym_readout_four">four</string>
+    <string name="gym_readout_five">five</string>
+    <string name="gym_readout_six">six</string>
+    <string name="gym_readout_seven">seven</string>
+    <string name="gym_readout_eight">eight</string>
+    <string name="gym_readout_nine">nine</string>
+    <string name="gym_readout_ten">ten</string>
+    <plurals name="gym_readout_reps">
+        <item quantity="one">%1$s rep</item>
+        <item quantity="other">%1$s reps</item>
+    </plurals>
+    <string name="gym_readout_max">max</string>
+    <string name="gym_readout_last">last</string>
+    <string name="gym_readout_open">open</string>
+    <string name="gym_readout_set">%1$s × %2$s</string>
+    <string name="gym_readout_scheme">%1$s × %2$s</string>
+    <string name="gym_readout_scheme_load">%1$s × %2$s · %3$s</string>
+    <string name="gym_readout_scheme_kg">%1$skg</string>
+    <string name="gym_readout_scheme_unit">%1$s %2$s</string>
+    <string name="gym_readout_reps_to_max">%1$s–max</string>
+    <string name="gym_readout_load_to_last">%1$s–last</string>
+    <string name="gym_readout_free_workout">Free workout</string>
+    <string name="gym_readout_e1rm">e1RM %1$s</string>
+    <string name="gym_readout_today_at">today · %1$s</string>
+    <string name="gym_readout_today">today</string>
+    <string name="gym_readout_yesterday">yesterday</string>
+    <plurals name="gym_readout_days_ago">
+        <item quantity="one">%1$s day ago</item>
+        <item quantity="other">%1$s days ago</item>
+    </plurals>
+    <string name="gym_readout_minutes_short">%1$sm</string>
+    <string name="gym_readout_hours_short">%1$sh %2$sm</string>
+    <plurals name="gym_readout_sets">
+        <item quantity="one">%1$s set</item>
+        <item quantity="other">%1$s sets</item>
+    </plurals>
+    <plurals name="gym_readout_workouts">
+        <item quantity="one">%1$s workout</item>
+        <item quantity="other">%1$s workouts</item>
+    </plurals>
+</resources>

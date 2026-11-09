@@ -33,6 +33,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
+import androidx.test.core.app.ApplicationProvider
 import java.time.LocalDate
 import java.time.ZoneOffset
 import org.junit.Assert.*
@@ -44,6 +45,7 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import works.windmill.gym.presentation.DatedPoint
 import works.windmill.gym.presentation.DatedSeries
+import works.windmill.platform.i18n.Words
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w320dp-h640dp-xhdpi")
@@ -53,7 +55,7 @@ class DatedPlotTests {
 
     @Test
     fun previewHasOnlyItsParentNavigationAndNoChartActions() {
-        val points = (0..3).map { DatedPoint("$it", it * 86_400_000L, 60.0 + it, "Point $it") }
+        val points = (0..3).map { DatedPoint("$it", it * 86_400_000L, 60.0 + it, Words.Plain("Point $it")) }
         var navigations = 0
         val actions = mutableListOf<String>()
         compose.setContent {
@@ -74,7 +76,7 @@ class DatedPlotTests {
 
     @Test
     fun aHeldScrubReadsTheNearestActualPointAndReleaseRestoresLatest() {
-        val points = (0..3).map { DatedPoint("$it", it * 7 * 86_400_000L, 60.0 + it, "Point $it") }
+        val points = (0..3).map { DatedPoint("$it", it * 7 * 86_400_000L, 60.0 + it, Words.Plain("Point $it")) }
         val reads = mutableListOf<String?>()
         val ticks = mutableListOf<HapticFeedbackType>()
         val haptic = object : HapticFeedback {
@@ -111,7 +113,7 @@ class DatedPlotTests {
 
     @Test
     fun aPanContinuesAfterReleaseAndAFreshHoldStopsMomentumAtTheSamePoint() {
-        val points = (0..60).map { DatedPoint("$it", it * 86_400_000L, 60.0 + it, "Point $it") }
+        val points = (0..60).map { DatedPoint("$it", it * 86_400_000L, 60.0 + it, Words.Plain("Point $it")) }
         compose.setContent {
             GymMaterial {
                 DatedPlot(DatedSeries(points, 0, points.last().atMs, ZoneOffset.UTC, 21), Modifier.width(280.dp),
@@ -166,7 +168,7 @@ class DatedPlotTests {
 
     @Test
     fun horizontalPanReachesOlderSessionsAndAccessibleStepsPreserveIdentity() {
-        val points = (0..30).map { DatedPoint("$it", it * 86_400_000L, 60.0 + it, "Point $it") }
+        val points = (0..30).map { DatedPoint("$it", it * 86_400_000L, 60.0 + it, Words.Plain("Point $it")) }
         val reads = mutableListOf<String?>()
         compose.setContent {
             GymMaterial {
@@ -189,7 +191,7 @@ class DatedPlotTests {
 
     @Test
     fun verticalMovementYieldsToThePageWithoutSelectingARecordPoint() {
-        val points = (0..3).map { DatedPoint("$it", it * 86_400_000L, 60.0 + it, "Point $it") }
+        val points = (0..3).map { DatedPoint("$it", it * 86_400_000L, 60.0 + it, Words.Plain("Point $it")) }
         val reads = mutableListOf<String?>()
         var offset = 0
         compose.setContent {
@@ -213,7 +215,7 @@ class DatedPlotTests {
     fun selectUsesTheTappedDotsIdentityAndLargeAxisDatesStayInsideThePlot() {
         val from = LocalDate.parse("2025-12-20").atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
         val until = LocalDate.parse("2026-01-10").atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
-        val point = DatedPoint("2025-12-30", (from + until) / 2, 82.4, "30 Dec 2025 · 82.4 kg")
+        val point = DatedPoint("2025-12-30", (from + until) / 2, 82.4, Words.Plain("30 Dec 2025 · 82.4 kg"))
         val selections = mutableListOf<String>()
         compose.setContent {
             CompositionLocalProvider(LocalDensity provides Density(2f, 2f)) {
@@ -245,7 +247,7 @@ class DatedPlotTests {
     }
     @Test
     fun inspectionRingIsPaintedBeyondBothHorizontalEdgeDots() {
-        val points = listOf(DatedPoint("first", 0, 60.0, "First"), DatedPoint("last", 86_400_000, 70.0, "Last"))
+        val points = listOf(DatedPoint("first", 0, 60.0, Words.Plain("First")), DatedPoint("last", 86_400_000, 70.0, Words.Plain("Last")))
         var selected by mutableStateOf("first")
         var accent = Color.Transparent
         lateinit var view: android.view.View
@@ -278,7 +280,7 @@ class DatedPlotTests {
 
     @Test
     fun requestedPointIsSelectedExactlyAndACollapsedWorkoutSelectsNothing() {
-        val points = (0..3).map { DatedPoint("$it", it * 86_400_000L, 60.0 + it, "Point $it") }
+        val points = (0..3).map { DatedPoint("$it", it * 86_400_000L, 60.0 + it, Words.Plain("Point $it")) }
         var requested by mutableStateOf<String?>("1")
         compose.setContent {
             GymMaterial { DatedPlot(DatedSeries(points, 0, points.last().atMs, ZoneOffset.UTC, 21),
@@ -290,8 +292,10 @@ class DatedPlotTests {
             .assert(SemanticsMatcher.expectValue(SemanticsProperties.Selected, true))
         compose.runOnIdle { requested = "collapsed-workout" }
         plot.assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Point 3"))
-        for (point in points) compose.onNodeWithContentDescription(point.label, useUnmergedTree = true)
+        for (point in points) compose.onNodeWithContentDescription(point.said.spelled()!!, useUnmergedTree = true)
             .assert(SemanticsMatcher.expectValue(SemanticsProperties.Selected, false))
     }
 
 }
+
+private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())

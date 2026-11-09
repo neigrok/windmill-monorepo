@@ -46,7 +46,7 @@ import androidx.compose.ui.platform.UriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import works.windmill.gym.presentation.text
+import works.windmill.platform.i18n.text
 import works.windmill.platform.i18n.pluralString
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.AnnotatedString
@@ -137,7 +137,7 @@ internal fun CoachAnswer(
                                 "barbell" -> R.string.gym_coach_draft_kg_total
                                 else -> R.string.gym_coach_draft_kg
                             }
-                            val scheme = if (entry.sets.any { it.weightKg != null }) stringResource(loads, Readout.target(entry.sets)) else Readout.target(entry.sets)
+                            val scheme = if (entry.sets.any { it.weightKg != null }) stringResource(loads, Readout.scheme(entry.sets).text()) else Readout.scheme(entry.sets).text()
                             val line = entry.restSeconds?.let { stringResource(R.string.gym_coach_draft_line_rest, scheme, equipment, it.toString()) }
                                 ?: stringResource(R.string.gym_coach_draft_line, scheme, equipment)
                             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -155,8 +155,8 @@ internal fun CoachAnswer(
                                     try {
                                         when (val saved = onSaveDrafts()) {
                                             DraftOutcome.Saved -> Unit
-                                            is DraftOutcome.Closed -> { note = saved.said; closed = true }
-                                            is DraftOutcome.Failed -> note = saved.said
+                                            is DraftOutcome.Closed -> { note = saved.sentence; closed = true }
+                                            is DraftOutcome.Failed -> note = saved.sentence
                                         }
                                     } finally { busy = false }
                                 }

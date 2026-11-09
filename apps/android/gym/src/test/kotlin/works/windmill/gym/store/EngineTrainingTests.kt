@@ -1,5 +1,6 @@
 package works.windmill.gym.store
 
+import androidx.test.core.app.ApplicationProvider
 import kotlinx.coroutines.*
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.runCurrent
@@ -9,9 +10,14 @@ import org.junit.Assert.*
 import org.junit.Test
 import org.junit.Rule
 import org.junit.rules.TemporaryFolder
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import works.windmill.domain.kit.Outcome
 import works.windmill.gym.domain.coach.OpenTurn
 import works.windmill.gym.presentation.*
+import works.windmill.platform.i18n.Words
+import works.windmill.platform.i18n.text
 import works.windmill.sync.api.*
 import works.windmill.sync.core.Json
 import works.windmill.sync.core.ClockReading
@@ -34,6 +40,8 @@ import works.windmill.sync.schema.Gym
 import works.windmill.sync.schema.SyncSchema
 import works.windmill.platform.telemetry.Telemetry
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class EngineTrainingTests {
     @get:Rule val tmp = TemporaryFolder()
     private val now = 1_800_000_000_000L
@@ -307,7 +315,7 @@ class EngineTrainingTests {
             assertEquals(before, after)
             assertEquals(volume, SessionSummary(after.session, after.sets, renamed.values.toList()).tonnageKg)
             assertEquals(listOf("1 × 8 · 16 kg total", "1 × 8 · 16 kg each", "1 × 8 · 16 kg", "1 × 8 · 16 kg", "1 × 8 · −10 kg added", "1 × 8 · 16 kg", "1 × 8 · 16 kg"),
-                ids.map { id -> Readout.targetWithUnit(after.sets.filter { it.exerciseId == id }.map { SetTarget(it.reps, it.weightKg) }, renamed.getValue(id)) })
+                ids.map { id -> Readout.scheme(after.sets.filter { it.exerciseId == id }.map { SetTarget(it.reps, it.weightKg) }, renamed.getValue(id)).spelled() })
         }
     }
 
@@ -496,7 +504,7 @@ class EngineTrainingTests {
             if (removing) assertNull("the removal result carries no settlement timestamp", receipt.proposal.settledAtMs)
             else assertEquals(room.now, receipt.proposal.settledAtMs)
             assertEquals(if (removing) null else if (applying) "Proposed" else "Original", receipt.routine?.name)
-            assertNotNull(receipt.proposal.receipt)
+            assertNotNull(receipt.proposal.settledReceipt)
             if (removing) {
                 assertNull(room.training.routine("routine1"))
                 assertNull("a cold proposal read does not resurrect the removed record", room.training.proposal("proposal1"))
@@ -630,7 +638,7 @@ class EngineTrainingTests {
                 try { gym.appendSet(session, collision); fail("A set identity cannot acquire another immutable origin.") }
                 catch (failure: TrainingRefused) {
                     assertEquals("set-id-taken", failure.code)
-                    assertEquals("that set id is already used", failure.line)
+                    assertEquals("that set id is already used", failure.words.spelled())
                 }
                 assertEquals(beforeCollision, engine.snapshot())
             }
@@ -651,7 +659,7 @@ class EngineTrainingTests {
             try { gym.startSession(SessionStart("session2", now - 9_000)); fail("A start must refuse an already open workout.") }
             catch (failure: TrainingRefused) {
                 assertEquals("session-already-open", failure.code)
-                assertEquals("A workout is already open. Finish it first.", failure.line)
+                assertEquals("A workout is already open. Finish it first.", failure.words.spelled())
             }
             assertEquals(before, engine.snapshot())
         }
@@ -830,3 +838,5 @@ class EngineTrainingTests {
     }
 
 }
+
+private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())

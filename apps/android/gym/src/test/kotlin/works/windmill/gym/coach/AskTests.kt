@@ -1,7 +1,7 @@
 package works.windmill.gym.coach
 
-import works.windmill.gym.presentation.text
-import works.windmill.gym.presentation.Words
+import works.windmill.platform.i18n.text
+import works.windmill.platform.i18n.Words
 import works.windmill.gym.R
 import androidx.test.core.app.ApplicationProvider
 import androidx.annotation.StringRes
@@ -35,12 +35,12 @@ class AskTests {
     @Test
     fun theRoomIsCalledCoachAndItsTwoStancesAreTheBlessedOnes() {
         assertEquals("Coach", string(R.string.gym_coach_title))
-        assertEquals("Coach needs your workout log. Please sign in.", Ask.accessNeedsSignIn)
-        assertEquals("This Windmill does not have Coach. You can still read your log.", Ask.notHere)
+        assertEquals("Coach needs your workout log. Please sign in.", string(R.string.gym_coach_access_needs_sign_in))
+        assertEquals("This Windmill does not have Coach. You can still read your log.", string(R.string.gym_coach_not_here))
         assertEquals("the apostrophe is the typographic one everywhere",
             emptyList<String>(),
             (listOf(R.string.gym_coach_placeholder, R.string.gym_coach_promise, R.string.gym_coach_stopped, R.string.gym_coach_account_required, R.string.gym_coach_draft_gone,
-                R.string.gym_coach_draft_invalid, R.string.gym_coach_draft_retry).map(::string) + listOf(Ask.couldNotTake, CoachTurnFault.noAnswer.sentence, Ask.notHere))
+                R.string.gym_coach_draft_invalid, R.string.gym_coach_draft_retry, R.string.gym_coach_could_not_take, CoachTurnFault.noAnswer.said, R.string.gym_coach_not_here).map(::string))
                 .filter { it.contains('\'') })
     }
 

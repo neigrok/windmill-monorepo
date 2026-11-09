@@ -5,15 +5,18 @@ import java.time.ZoneId
 import java.time.ZonedDateTime
 import java.time.temporal.ChronoUnit
 import kotlin.math.max
+import works.windmill.gym.R
+import works.windmill.platform.i18n.Words
 
-// Days and months are spelled out rather than localised, exactly as the web spells them.
+// Days and months are spelled out rather than localised, exactly as the web spells them; what a readout says around them is a message.
 
 object Readout {
     private val weekdays = listOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
     private val months = listOf("Jan", "Feb", "Mar", "Apr", "May", "Jun",
                                 "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
-    private val names = listOf("zero", "one", "two", "three", "four", "five",
-                               "six", "seven", "eight", "nine", "ten")
+    private val spelledNumbers = listOf(R.string.gym_readout_zero, R.string.gym_readout_one, R.string.gym_readout_two,
+        R.string.gym_readout_three, R.string.gym_readout_four, R.string.gym_readout_five, R.string.gym_readout_six,
+        R.string.gym_readout_seven, R.string.gym_readout_eight, R.string.gym_readout_nine, R.string.gym_readout_ten)
 
     // Trailing zeros stripped and a real U+2212 minus; the grid is the LADDER's own.
     fun weight(kg: Double): String {
@@ -21,62 +24,60 @@ object Readout {
     }
 
     fun effort(weightKg: Double, reps: Int): String = "${weight(weightKg)} × $reps"
-    fun repCount(reps: Int): String = "$reps ${if (reps == 1) "rep" else "reps"}"
+
+    fun reps(count: Int): Words = Words.Counted(R.plurals.gym_readout_reps, count, listOf(count.toString()))
 
     // A rep target a routine declines to set is `max` — never a zero and never a blank.
-    fun repTarget(reps: Int?): String = reps?.toString() ?: "max"
+    fun repsTarget(reps: Int?): Words = reps?.let { Words.Plain(it.toString()) } ?: Words.Message(R.string.gym_readout_max)
 
-    const val openTarget = "open"
+    val open: Words = Words.Message(R.string.gym_readout_open)
 
     // One set as `{load} × {reps}`, with the nulls as their placeholders:
     // `100 × 5` · `100 × max` · `last × 5`.
-    fun setTarget(set: SetTarget): String =
-        "${set.weightKg?.let(::weight) ?: "last"} × ${repTarget(set.reps)}"
+    fun setScheme(set: SetTarget): Words = Words.Message(R.string.gym_readout_set,
+        listOf(set.weightKg?.let { Words.Plain(weight(it)) } ?: Words.Message(R.string.gym_readout_last), repsTarget(set.reps)))
 
     // A scheme: `{n} × {reps or lo–hi} · {load or lo–hi}`, a one-set scheme included — `1 × 5 · 100`.
     // A column whose sets agree prints its one value; one whose sets disagree prints its range over
     // the named values with the placeholder as the high end — `5–max` when any set is max, `60–last`
     // when any set is last time's — and the load column is left off where no set names a load.
-    fun target(sets: List<SetTarget>): String {
-        if (sets.isEmpty()) return openTarget
-        return "${sets.size} × ${repsColumn(sets)}${loadColumn(sets)}"
+    fun scheme(sets: List<SetTarget>): Words {
+        if (sets.isEmpty()) return open
+        val load = loadColumn(sets) ?: return Words.Message(R.string.gym_readout_scheme, listOf(sets.size.toString(), repsColumn(sets)))
+        return Words.Message(R.string.gym_readout_scheme_load, listOf(sets.size.toString(), repsColumn(sets), load))
     }
 
     // Coach review and the rack use the compact unit line.
-    fun targetWithUnit(sets: List<SetTarget>): String =
-        target(sets) + if (sets.any { it.weightKg != null }) "kg" else ""
+    fun schemeKg(sets: List<SetTarget>): Words =
+        if (sets.any { it.weightKg != null }) Words.Message(R.string.gym_readout_scheme_kg, listOf(scheme(sets))) else scheme(sets)
 
     // The basis a movement's load is read in: `kg total` on a barbell, `kg each` on two dumbbells.
     fun loadUnit(exercise: Exercise?): String =
         works.windmill.gym.domain.sync.Readout.loadUnit(exercise?.equipment, exercise?.loadCount ?: 1)
 
-    fun targetWithUnit(sets: List<SetTarget>, exercise: Exercise?): String {
-        if (sets.none { it.weightKg != null }) return target(sets)
-        val unit = loadUnit(exercise)
-        return "${target(sets)} $unit"
+    fun scheme(sets: List<SetTarget>, exercise: Exercise?): Words {
+        if (sets.none { it.weightKg != null }) return scheme(sets)
+        return Words.Message(R.string.gym_readout_scheme_unit, listOf(scheme(sets), loadUnit(exercise)))
     }
 
-    // The ladder unfolded, one set after another: `60 × 5 · 80 × 5 · 90 × 3 · 100 × 1 · 80 × 5`.
-    fun ladder(sets: List<SetTarget>): String = sets.joinToString(" · ", transform = ::setTarget)
-
-    private fun repsColumn(sets: List<SetTarget>): String {
+    private fun repsColumn(sets: List<SetTarget>): Words {
         val named = sets.mapNotNull { it.reps }
-        if (named.isEmpty()) return repTarget(null)
+        if (named.isEmpty()) return repsTarget(null)
         val low = named.min()
-        if (sets.any { it.reps == null }) return "$low–max"
+        if (sets.any { it.reps == null }) return Words.Message(R.string.gym_readout_reps_to_max, listOf(low.toString()))
         val high = named.max()
-        if (low == high) return low.toString()
-        return "$low–$high"
+        if (low == high) return Words.Plain(low.toString())
+        return Words.Plain("$low–$high")
     }
 
-    private fun loadColumn(sets: List<SetTarget>): String {
+    private fun loadColumn(sets: List<SetTarget>): Words? {
         val named = sets.mapNotNull { it.weightKg }.map(Ladder::round)
-        if (named.isEmpty()) return ""
+        if (named.isEmpty()) return null
         val low = named.min()
-        if (sets.any { it.weightKg == null }) return " · ${weight(low)}–last"
+        if (sets.any { it.weightKg == null }) return Words.Message(R.string.gym_readout_load_to_last, listOf(weight(low)))
         val high = named.max()
-        if (low == high) return " · ${weight(low)}"
-        return " · ${weight(low)}–${weight(high)}"
+        if (low == high) return Words.Plain(weight(low))
+        return Words.Plain("${weight(low)}–${weight(high)}")
     }
 
     // A clock time on the phone's own 24-hour or 12-hour setting.
@@ -91,31 +92,27 @@ object Readout {
         return works.windmill.gym.domain.sync.Readout.tonnes(kg)
     }
 
-    const val noRoutine = "Free workout"
+    val freeWorkout: Words = Words.Message(R.string.gym_readout_free_workout)
 
     // The shared readout states an estimate to a tenth.
     fun estimatedWeight(e1rm: Double): String = works.windmill.gym.domain.sync.Readout.estimatedWeight(e1rm)
 
-    fun estimate(e1rm: Double): String = "e1RM ${estimatedWeight(e1rm)}"
+    fun e1rm(e1rm: Double): Words = Words.Message(R.string.gym_readout_e1rm, listOf(estimatedWeight(e1rm)))
 
-    fun spelled(count: Int): String = names.getOrNull(count) ?: count.toString()
-
-    fun weekOf(ms: Long): String {
-        val at = at(ms)
-        return "week of ${at.dayOfMonth} ${months[at.monthValue - 1]}"
-    }
+    // Up to ten in words, past it in digits.
+    fun spelledOut(count: Int): Words = spelledNumbers.getOrNull(count)?.let { Words.Message(it) } ?: Words.Plain(count.toString())
 
     fun date(ms: Long): String {
         val at = at(ms)
         return "${at.dayOfMonth} ${months[at.monthValue - 1]} ${at.year}"
     }
 
-    fun whenLogged(ms: Long, now: Long): String {
+    fun loggedWhen(ms: Long, now: Long): Words {
         val zone = ZoneId.systemDefault()
         val then = Instant.ofEpochMilli(ms).atZone(zone).toLocalDate()
         val today = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
-        if (then == today) return "today · ${time(ms)}"
-        return day(ms)
+        if (then == today) return Words.Message(R.string.gym_readout_today_at, listOf(time(ms)))
+        return Words.Plain(day(ms))
     }
 
     fun day(ms: Long): String {
@@ -131,38 +128,22 @@ object Readout {
         return "$date ${at.year}"
     }
 
-    fun briefDay(ms: Long, now: Long): String {
+    fun brief(ms: Long, now: Long): Words {
         val zone = ZoneId.systemDefault()
         val then = Instant.ofEpochMilli(ms).atZone(zone).toLocalDate()
-        if (then == Instant.ofEpochMilli(now).atZone(zone).toLocalDate()) return "today"
-        return shortDate(ms, now)
-    }
-
-    fun recentDay(ms: Long, now: Long): String {
-        val zone = ZoneId.systemDefault()
-        val then = Instant.ofEpochMilli(ms).atZone(zone).toLocalDate()
-        val today = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
-        val days = ChronoUnit.DAYS.between(then, today)
-        if (days == 0L) return "today"
-        if (days == 1L) return "yesterday"
-        if (days in 2..6) return weekday(ms)
-        return shortDate(ms, now)
-    }
-
-    fun weekday(ms: Long): String {
-        val names = listOf("Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday")
-        return names[at(ms).dayOfWeek.value % 7]
+        if (then == Instant.ofEpochMilli(now).atZone(zone).toLocalDate()) return Words.Message(R.string.gym_readout_today)
+        return Words.Plain(shortDate(ms, now))
     }
 
     // A claim about the CALENDAR, not elapsed hours: both instants fall to their local date first.
-    fun ago(ms: Long, now: Long): String {
+    fun daysAgo(ms: Long, now: Long): Words {
         val zone = ZoneId.systemDefault()
         val then = Instant.ofEpochMilli(ms).atZone(zone).toLocalDate()
         val today = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
         val days = ChronoUnit.DAYS.between(then, today)
-        if (days <= 0) return "today"
-        if (days == 1L) return "yesterday"
-        return "$days days ago"
+        if (days <= 0) return Words.Message(R.string.gym_readout_today)
+        if (days == 1L) return Words.Message(R.string.gym_readout_yesterday)
+        return Words.Counted(R.plurals.gym_readout_days_ago, days.toInt(), listOf(days.toString()))
     }
 
     fun clock(ms: Long): String {
@@ -174,15 +155,15 @@ object Readout {
         return head + ":" + pad(seconds.toInt())
     }
 
-    fun duration(ms: Long): String {
+    fun lasted(ms: Long): Words {
         val minutes = max(1L, ms / 60_000)
-        if (minutes < 60) return "${minutes}m"
-        return "${minutes / 60}h ${pad((minutes % 60).toInt())}m"
+        if (minutes < 60) return Words.Message(R.string.gym_readout_minutes_short, listOf(minutes.toString()))
+        return Words.Message(R.string.gym_readout_hours_short, listOf((minutes / 60).toString(), pad((minutes % 60).toInt())))
     }
 
-    fun setCount(count: Int): String = if (count == 1) "1 set" else "$count sets"
+    fun sets(count: Int): Words = Words.Counted(R.plurals.gym_readout_sets, count, listOf(count.toString()))
 
-    fun sessionCount(count: Int): String = if (count == 1) "1 workout" else "$count workouts"
+    fun workouts(count: Int): Words = Words.Counted(R.plurals.gym_readout_workouts, count, listOf(count.toString()))
 
     fun movement(exerciseId: String, catalog: List<Exercise>): String =
         catalog.firstOrNull { it.id == exerciseId }?.name ?: exerciseId

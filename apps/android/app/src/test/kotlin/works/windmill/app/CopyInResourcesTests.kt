@@ -11,18 +11,12 @@ class CopyInResourcesTests {
     private val sources = listOf(
         "app/src/main/kotlin",
         "platform/src/main/kotlin",
-        "gym/src/main/kotlin/works/windmill/gym/ui",
+        "gym/src/main/kotlin",
     )
     private val manifests = listOf("app/src/main/AndroidManifest.xml", "gym/src/main/AndroidManifest.xml")
 
-    // Each of these lines builds its sentence around copy from `works.windmill.gym.presentation` and moves with it.
     // "Crown breath" names an animation whose call starts on the line above.
     private val allowed = mapOf(
-        "gym/src/main/kotlin/works/windmill/gym/ui/AssemblySheet.kt" to listOf("} logged · "),
-        "gym/src/main/kotlin/works/windmill/gym/ui/BodyweightScreen.kt" to listOf("\"Date, ", "} kg\""),
-        "gym/src/main/kotlin/works/windmill/gym/ui/LogScreen.kt" to listOf("\"First workout · "),
-        "gym/src/main/kotlin/works/windmill/gym/ui/NotesScreen.kt" to listOf(" field\""),
-        "gym/src/main/kotlin/works/windmill/gym/ui/SessionScreen.kt" to listOf("\"not in the plan\""),
         "gym/src/main/kotlin/works/windmill/gym/ui/onboarding/OnboardingGlimpses.kt" to listOf("label = \"Crown breath\""),
     )
 

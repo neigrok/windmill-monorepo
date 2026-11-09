@@ -1,6 +1,6 @@
 package works.windmill.gym.coach
 
-import works.windmill.gym.presentation.text
+import works.windmill.platform.i18n.text
 import androidx.test.core.app.ApplicationProvider
 import android.app.Application
 import androidx.compose.foundation.layout.Column

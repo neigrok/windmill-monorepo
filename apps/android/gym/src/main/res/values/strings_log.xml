@@ -17,4 +17,20 @@
     <string name="gym_log_loading">Loading</string>
     <string name="gym_log_load_older">Load older</string>
     <string name="gym_log_read_failed">That read failed.</string>
+    <string name="gym_log_day_today">Today</string>
+    <string name="gym_log_day_yesterday">Yesterday</string>
+    <string name="gym_log_day">%1$s · %2$s</string>
+    <string name="gym_log_under_a_minute">&lt;1 min</string>
+    <string name="gym_log_minutes">%1$s min</string>
+    <string name="gym_log_hours">%1$s h %2$s min</string>
+    <string name="gym_log_moment_best">%1$s · new best</string>
+    <string name="gym_log_moment_best_detail">%1$s kg est · up %2$s kg since %3$s</string>
+    <string name="gym_log_full_month">Trained %1$s of %1$s weeks</string>
+    <string name="gym_log_full_month_detail">%1$s · full month</string>
+    <string name="gym_log_weight_up">%1$s kg up since %2$s</string>
+    <string name="gym_log_weight_down">%1$s kg down since %2$s</string>
+    <string name="gym_log_weight">%1$s kg</string>
+    <string name="gym_log_progress_no_answer">the log didn’t answer — Your progress could not be read.</string>
+    <string name="gym_log_weigh_in_no_answer">the log didn’t answer — That weigh-in could not be saved.</string>
+    <string name="gym_log_first_workout">First workout · %1$s</string>
 </resources>

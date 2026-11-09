@@ -9,6 +9,8 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import works.windmill.gym.R
+import works.windmill.platform.i18n.Words
+import works.windmill.platform.i18n.joined
 
 // A phone set to Russian or Arabic counts in the app's English: 21 is "workouts" and 2 is "weeks", never the system's own categories.
 @RunWith(RobolectricTestRunner::class)

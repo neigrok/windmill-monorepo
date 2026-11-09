@@ -29,20 +29,22 @@ import works.windmill.gym.store.RefusedSet
 import works.windmill.gym.store.RefusedWrite
 import works.windmill.gym.store.RefusedWorkout
 import works.windmill.platform.design.WindmillSpace
+import works.windmill.platform.i18n.Words
+import works.windmill.platform.i18n.text
 
-internal fun refusalHeadline(refused: RefusedWrite, catalog: List<Exercise>): String = when (refused) {
-    is RefusedSet ->
-        "${Readout.movement(refused.exerciseId, catalog)} " +
-            "${Readout.effort(refused.weightKg, refused.reps)} never reached the log"
-    is RefusedWorkout -> refused.startedAtMs?.let { "Workout on ${Readout.date(it)} stays on this phone" } ?: "Workout stays on this phone"
-    is RefusedChange -> refused.name?.let { "“$it” stays on this phone" } ?: "That change could not be saved."
+internal fun refusalWords(refused: RefusedWrite, catalog: List<Exercise>): Words = when (refused) {
+    is RefusedSet -> Words.Message(R.string.gym_refusal_set,
+        listOf(Readout.movement(refused.exerciseId, catalog), Readout.effort(refused.weightKg, refused.reps)))
+    is RefusedWorkout -> refused.startedAtMs?.let { Words.Message(R.string.gym_refusal_workout_on, listOf(Readout.date(it))) }
+        ?: Words.Message(R.string.gym_refusal_workout)
+    is RefusedChange -> refused.named?.let { Words.Message(R.string.gym_refusal_change, listOf(it)) } ?: Words.Message(R.string.gym_store_change_unsaved)
 }
 
 @Composable
 internal fun Refusals(refusals: List<RefusedWrite>, catalog: List<Exercise>, onDismiss: () -> Unit) {
     refusals.forEach { refused ->
         key(refused.id) {
-            Refusal(refusalHeadline(refused, catalog), refused.reason, onDismiss)
+            Refusal(refusalWords(refused, catalog).text(), refused.why.text(), onDismiss)
         }
     }
 }

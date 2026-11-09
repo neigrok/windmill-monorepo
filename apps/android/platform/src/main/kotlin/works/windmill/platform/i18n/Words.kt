@@ -1,4 +1,4 @@
-package works.windmill.gym.presentation
+package works.windmill.platform.i18n
 
 import android.content.Context
 import androidx.annotation.PluralsRes
@@ -7,11 +7,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
-import works.windmill.gym.R
-import works.windmill.platform.i18n.pluralString
+import java.io.Serializable
+import works.windmill.platform.R
 
 // What a screen says, decided where no Context stands and spelled where one does: one of the app's own messages, or the one a count picks in the app's language, its arguments spelled first when they are words themselves; or text that is already what is said — a name, the log's own refusal, a date the formatter wrote.
-sealed interface Words {
+// Serializable, so a screen keeps what it said across a configuration change and spells it again in the new one.
+sealed interface Words : Serializable {
     data class Message(@StringRes val id: Int, val args: List<Any> = emptyList()) : Words
     data class Counted(@PluralsRes val id: Int, val count: Int, val args: List<Any> = emptyList()) : Words
     data class Plain(val text: String) : Words
@@ -26,7 +27,7 @@ sealed interface Words {
 }
 
 // Words said one after another on one line, each standing apart: `Read 3 workouts · 2 weeks`.
-fun List<Words>.joined(): Words? = reduceOrNull { said, next -> Words.Message(R.string.gym_words_joined, listOf(said, next)) }
+fun List<Words>.joined(): Words? = reduceOrNull { said, next -> Words.Message(R.string.platform_words_joined, listOf(said, next)) }
 
 @Composable
 fun Words.text(): String {

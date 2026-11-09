@@ -3,8 +3,8 @@ package works.windmill.gym.sharing
 import org.robolectric.annotation.Config
 import org.robolectric.RobolectricTestRunner
 import org.junit.runner.RunWith
-import works.windmill.gym.presentation.text
-import works.windmill.gym.presentation.Words
+import works.windmill.platform.i18n.text
+import works.windmill.platform.i18n.Words
 import works.windmill.gym.R
 import androidx.test.core.app.ApplicationProvider
 import androidx.annotation.StringRes

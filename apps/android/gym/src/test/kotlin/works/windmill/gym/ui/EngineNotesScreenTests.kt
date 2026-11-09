@@ -1,11 +1,14 @@
 package works.windmill.gym.ui
 
+import android.content.Context
 import android.os.Looper
+import androidx.annotation.StringRes
 import androidx.compose.runtime.remember
 import androidx.compose.ui.test.ComposeTimeoutException
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.test.core.app.ApplicationProvider
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -22,6 +25,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import works.windmill.gym.R
 import works.windmill.gym.presentation.NoteWrite
 import works.windmill.gym.presentation.Notes
 import works.windmill.gym.store.EngineRoomFixture
@@ -62,12 +66,12 @@ class EngineNotesScreenTests {
             room.store.observeEngine()
             show(room)
             compose.onNodeWithText("Reading your notes…").assertIsDisplayed()
-            compose.onNodeWithContentDescription(Notes.add).assertDoesNotExist()
+            compose.onNodeWithContentDescription(string(R.string.gym_notes_add)).assertDoesNotExist()
             val server = EngineRoomFixture.server()
             compose.runOnIdle { room.pull(server) }
             waitForNotebook(room) { room.store.notes.notesRead }
-            compose.onNodeWithText(Notes.placeholders.first()).assertIsDisplayed()
-            compose.onNodeWithContentDescription(Notes.add).assertIsDisplayed()
+            compose.onNodeWithText(string(Notes.titleSuggestions.first())).assertIsDisplayed()
+            compose.onNodeWithContentDescription(string(R.string.gym_notes_add)).assertIsDisplayed()
         } } finally { scope.cancel() }
     }
 
@@ -113,3 +117,5 @@ class EngineNotesScreenTests {
         } } finally { scope.cancel() }
     }
 }
+
+private fun string(@StringRes id: Int, vararg args: Any): String = ApplicationProvider.getApplicationContext<Context>().getString(id, *args)

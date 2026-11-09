@@ -7,7 +7,14 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 import works.windmill.platform.net.Refusal
 import works.windmill.platform.net.WindmillApiException
+import works.windmill.platform.i18n.Words
+import org.robolectric.annotation.Config
+import org.robolectric.RuntimeEnvironment
+import org.robolectric.RobolectricTestRunner
+import org.junit.runner.RunWith
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class MagicLinkTest {
     @Test fun onlyLinkSyntaxSelectsTheLinkDoor() {
         for ((entry, expected) in listOf(
@@ -83,7 +90,7 @@ class MagicLinkTest {
             WindmillApiException.Refused(500, Refusal()) to "That didn’t go through",
             MagicLink.unreadable to "That code didn't work. Check the digits, or send a fresh one.",
         )) {
-            val line = MagicLink.refusal(failure)
+            val line = MagicLink.refused(failure).spelled()
             assertEquals(expected, line)
             assertFalse(line.contains("expired"))
         }
@@ -98,12 +105,15 @@ class MagicLinkTest {
             Refusal("  Check the digits.  ") to "Check the digits.",
             Refusal(detail = "  Send a fresh one.  ") to "Send a fresh one.",
         )) {
-            assertEquals(expected, MagicLink.refusal(WindmillApiException.Refused(410, refusal)))
+            assertEquals(expected, MagicLink.refused(WindmillApiException.Refused(410, refusal)).spelled())
         }
-        assertEquals("That link didn't work. Send a fresh one.", MagicLink.refusal(
-            WindmillApiException.Refused(410, Refusal("That link didn't work", "Send a fresh one."))))
-        assertEquals("Update Windmill to keep syncing. Your work is saved on this phone.", MagicLink.refusal(
-            WindmillApiException.Refused(426, Refusal("Do not show this", "Or this"))))
+        assertEquals("That link didn't work. Send a fresh one.", MagicLink.refused(
+            WindmillApiException.Refused(410, Refusal("That link didn't work", "Send a fresh one."))).spelled())
+        assertEquals("Update Windmill to keep syncing. Your work is saved on this phone.", MagicLink.refused(
+            WindmillApiException.Refused(426, Refusal("Do not show this", "Or this"))).spelled())
     }
 
 }
+
+// The words as English spells them.
+private fun Words.spelled(): String = text(RuntimeEnvironment.getApplication())

@@ -1,5 +1,7 @@
 package works.windmill.gym.ui
 
+import android.content.Context
+import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.CompositionLocalProvider
@@ -18,6 +20,7 @@ import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.height
+import androidx.test.core.app.ApplicationProvider
 import java.time.LocalDate
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -28,9 +31,11 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
+import works.windmill.gym.R
 import works.windmill.gym.presentation.Bodyweight
 import works.windmill.gym.presentation.WeighIn
 import works.windmill.platform.design.LocalWindmillDark
+import works.windmill.platform.i18n.Words
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w320dp-h640dp-xhdpi")
@@ -56,12 +61,12 @@ class BodyweightLayoutTests {
                 }
             }
         }
-        compose.onNodeWithContentDescription(weightField).performScrollTo().performTextReplacement("400,01")
-        compose.onNodeWithText(Bodyweight.save).assertIsDisplayed().performClick()
-        compose.onNodeWithText(Bodyweight.outOfRange).performScrollTo().assertIsDisplayed()
-        compose.onNodeWithContentDescription(weightField).performScrollTo().performTextReplacement("82,45")
+        compose.onNodeWithContentDescription(string(R.string.gym_bodyweight_weight_field)).performScrollTo().performTextReplacement("400,01")
+        compose.onNodeWithText(string(R.string.gym_bodyweight_save)).assertIsDisplayed().performClick()
+        compose.onNodeWithText(Bodyweight.outsideRange.spelled()!!).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithContentDescription(string(R.string.gym_bodyweight_weight_field)).performScrollTo().performTextReplacement("82,45")
         compose.onNodeWithText(Bodyweight.fullDay(day)).performScrollTo().assertIsDisplayed()
-        for (label in listOf(Bodyweight.save, Bodyweight.deleteRow)) {
+        for (label in listOf(string(R.string.gym_bodyweight_save), string(R.string.gym_bodyweight_delete))) {
             val button = compose.onNodeWithText(label).assertIsDisplayed()
             assertTrue(button.getBoundsInRoot().height >= 56.dp)
             val layouts = mutableListOf<TextLayoutResult>()
@@ -75,11 +80,15 @@ class BodyweightLayoutTests {
             }
             assertEquals(label.length, layout.getLineEnd(layout.lineCount - 1))
         }
-        compose.onNodeWithText(Bodyweight.deleteRow).performClick()
-        compose.onNodeWithText(Bodyweight.save).performClick()
+        compose.onNodeWithText(string(R.string.gym_bodyweight_delete)).performClick()
+        compose.onNodeWithText(string(R.string.gym_bodyweight_save)).performClick()
         compose.runOnIdle {
             assertEquals(listOf(day.toString() to 82.45), saved)
             assertEquals(1, deletes)
         }
     }
 }
+
+private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())
+
+private fun string(@StringRes id: Int, vararg args: Any): String = ApplicationProvider.getApplicationContext<Context>().getString(id, *args)

@@ -1,13 +1,16 @@
 package works.windmill.gym.coach.turn
 
+import androidx.annotation.StringRes
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import works.windmill.agent.TurnLabel
 import works.windmill.agent.TurnRefusal
+import works.windmill.gym.R
 import works.windmill.gym.coach.Ask
 import works.windmill.gym.coach.asked
+import works.windmill.platform.i18n.Words
 
 // Why a send could not go: the composer's bound, the phone's own admission (Coach §4.1), or the server's refusal by §6.5 code. Each is said once, at the conversation's end, with the one door that exists.
 sealed interface CoachTurnRefusal {
@@ -34,25 +37,25 @@ sealed interface CoachTurnRefusal {
     // Any other refusal the server answered.
     data object Unanswered : CoachTurnRefusal
 
-    val sentence: String get() = when (this) {
-        Offline -> "No connection. Your question is kept here."
-        LogArriving -> "Your log is still arriving on this phone. Ask again in a moment."
-        is TooLong -> "Too long by ${count(overBytes)} ${if (overBytes == 1) "byte" else "bytes"}. The limit is ${count(Ask.maxQuestionBytes)} bytes.\nEnglish letters take 1 byte each. Other letters and emoji take more."
+    val words: Words get() = when (this) {
+        Offline -> Words.Message(R.string.gym_coach_offline)
+        LogArriving -> Words.Message(R.string.gym_coach_log_arriving)
+        is TooLong -> Words.Counted(R.plurals.gym_coach_too_long, overBytes, listOf(count(overBytes), count(Ask.maxQuestionBytes)))
         is Allowance -> when {
-            allowance == "subject_exhausted" && spent -> "You have used all of your AI allowance."
-            allowance == "free_day_exhausted" -> "Coach’s shared free AI capacity is unavailable for today. Signing in does not bypass this limit."
-            allowance == "concurrency_exhausted" -> "Another AI request is still in progress. Try again when it finishes."
-            allowance == "funding_required" -> "Your plan has no funded AI allowance for this period."
-            else -> "Coach’s AI allowance is unavailable right now."
+            allowance == "subject_exhausted" && spent -> Words.Message(R.string.gym_coach_allowance_spent)
+            allowance == "free_day_exhausted" -> Words.Message(R.string.gym_coach_free_day_exhausted)
+            allowance == "concurrency_exhausted" -> Words.Message(R.string.gym_coach_concurrency_exhausted)
+            allowance == "funding_required" -> Words.Message(R.string.gym_coach_funding_required)
+            else -> Words.Message(R.string.gym_coach_allowance_unavailable)
         }
-        is FreeMonthExhausted -> "Coach is paused for everyone this month."
-        RateLimited -> "You can ask again later."
-        UpdateRequired -> "This version can’t ask Coach any more. Update Windmill to continue."
-        Absent -> Ask.notHere
-        is Installation -> if (installation == "invalid_installation") "This phone can’t ask Coach signed out any more. $signInToContinue"
-            else "This phone is linked to an account. Sign in to ask Coach."
-        SessionLapsed, AnonymousUnavailable -> Ask.accessNeedsSignIn
-        Unanswered -> CoachTurnFault.noAnswer.sentence
+        is FreeMonthExhausted -> Words.Message(R.string.gym_coach_free_month_exhausted)
+        RateLimited -> Words.Message(R.string.gym_coach_rate_limited)
+        UpdateRequired -> Words.Message(R.string.gym_coach_update_required)
+        Absent -> Words.Message(R.string.gym_coach_not_here)
+        is Installation -> if (installation == "invalid_installation") Words.Message(R.string.gym_coach_installation_invalid)
+            else Words.Message(R.string.gym_coach_installation_bound)
+        SessionLapsed, AnonymousUnavailable -> Words.Message(R.string.gym_coach_access_needs_sign_in)
+        Unanswered -> Words.Message(CoachTurnFault.noAnswer.said)
     }
 
     // The moment a cap the server named is over.
@@ -62,16 +65,16 @@ sealed interface CoachTurnRefusal {
         else -> null
     }
 
-    // The words the notice draws: the sentence, when what refused comes back where the server named it, in the phone's zone and clock, and the sign-in a spent allowance offers.
-    fun notice(anonymous: Boolean, clock24: Boolean, zone: ZoneId = ZoneId.systemDefault()): String {
+    // The words the notice draws: the refusal, when what refused comes back where the server named it, in the phone's zone and clock, and the sign-in a spent allowance offers.
+    fun said(anonymous: Boolean, clock24: Boolean, zone: ZoneId = ZoneId.systemDefault()): Words {
         fun moment(ms: Long, pattern: String) = DateTimeFormatter.ofPattern(pattern, Locale.getDefault()).format(Instant.ofEpochMilli(ms).atZone(zone))
         return when {
-            this is FreeMonthExhausted && resetsAtMs != null -> "$sentence It comes back on ${moment(resetsAtMs, "MMM d")}."
-            this is Allowance && allowance == "free_day_exhausted" && resetsAtMs != null ->
-                "$sentence\nYou can use Coach again on ${moment(resetsAtMs, "MMM d")} at ${moment(resetsAtMs, if (clock24) "H:mm" else "h:mm a")}."
-            this is Allowance && recovery(anonymous) == CoachRecovery.signIn -> "$sentence\n$signInToContinue"
-            this is Allowance && allowance == "subject_exhausted" && resetsAtMs != null -> "$sentence It comes back on ${moment(resetsAtMs, "MMM d")}."
-            else -> sentence
+            this is FreeMonthExhausted && resetsAtMs != null -> Words.Message(R.string.gym_coach_notice_comes_back, listOf(words, moment(resetsAtMs, "MMM d")))
+            this is Allowance && allowance == "free_day_exhausted" && resetsAtMs != null -> Words.Message(R.string.gym_coach_notice_use_again,
+                listOf(words, moment(resetsAtMs, "MMM d"), moment(resetsAtMs, if (clock24) "H:mm" else "h:mm a")))
+            this is Allowance && recovery(anonymous) == CoachRecovery.signIn -> Words.Message(R.string.gym_coach_notice_sign_in, listOf(words))
+            this is Allowance && allowance == "subject_exhausted" && resetsAtMs != null -> Words.Message(R.string.gym_coach_notice_comes_back, listOf(words, moment(resetsAtMs, "MMM d")))
+            else -> words
         }
     }
 
@@ -103,8 +106,6 @@ sealed interface CoachTurnRefusal {
     }
 
     companion object {
-        const val signInToContinue = "Sign in to continue."
-
         fun of(code: String, status: Int? = null, resetsAtMs: Long? = null, spent: Boolean = false): CoachTurnRefusal = when {
             code == TurnRefusal.unreachable || code == TurnLabel.notAStream -> Offline
             code == TurnRefusal.anonymousUnavailable -> AnonymousUnavailable
@@ -125,14 +126,14 @@ sealed interface CoachTurnRefusal {
 enum class CoachRecovery { tryAgain, signIn, ownAgent, update }
 
 // A fault of this phone's own, said in the band: never a refusal, and the draft stays.
-enum class CoachTurnFault(val sentence: String) {
-    busy("Coach is answering another message. Try again when it finishes."),
-    accountChanging("Your account is changing. Your question is kept here."),
-    noAnswer("Coach didn’t answer. Try again in a moment"),
-    unsaved("Your message couldn’t be saved. Try again."),
-    pictureUnavailable("That photo is unavailable. Remove it and choose it again."),
-    stoppedOffline("Coach is stopped on this phone. Stopping it on the server needs a connection."),
-    stopUnheard("Coach is stopped on this phone.");
+enum class CoachTurnFault(@StringRes val said: Int) {
+    busy(R.string.gym_coach_fault_busy),
+    accountChanging(R.string.gym_coach_fault_account_changing),
+    noAnswer(R.string.gym_coach_fault_no_answer),
+    unsaved(R.string.gym_coach_message_unsaved),
+    pictureUnavailable(R.string.gym_coach_fault_picture_unavailable),
+    stoppedOffline(R.string.gym_coach_fault_stopped_offline),
+    stopUnheard(R.string.gym_coach_fault_stop_unheard);
 
     // The `gym_ask_outcome` a send held back by this fault ends with. A stop's fault belongs to a turn that told its own.
     val askOutcome: String get() = if (this == unsaved || this == pictureUnavailable) "failed" else "refused"

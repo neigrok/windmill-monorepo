@@ -8,6 +8,8 @@ import java.util.concurrent.TimeUnit
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.CancellationException
+import works.windmill.platform.R
+import works.windmill.platform.i18n.Words
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -257,15 +259,14 @@ sealed class WindmillApiException(cause: Throwable? = null) : Exception(cause) {
     val isUnauthorized: Boolean
         get() = this is Refused && status == 401
 
-    // What to show a person — never a status code.
-    val line: String
+    // What to show a person — never a status code; a refusal the server put in words says them as it sent them.
+    val words: Words
         get() = when (this) {
-            is Offline -> "Can’t reach windmill.works"
-            is Timeout -> "That took too long. Try again."
-            is Transport -> "That connection was interrupted. Try again."
-            is Unexpected -> "That didn’t go through"
-            is Refused -> if (status == 426) "Update Windmill to keep syncing. Your work is saved on this phone."
-                else refusal.message?.takeIf { it.isNotBlank() } ?: "That didn’t go through"
-            is Malformed -> "That didn’t go through"
+            is Offline -> Words.Message(R.string.platform_api_offline)
+            is Timeout -> Words.Message(R.string.platform_api_timeout)
+            is Transport -> Words.Message(R.string.platform_api_interrupted)
+            is Unexpected, is Malformed -> Words.Message(R.string.platform_api_failed)
+            is Refused -> if (status == 426) Words.Message(R.string.platform_api_update_required)
+                else refusal.message?.takeIf { it.isNotBlank() }?.let(Words::Plain) ?: Words.Message(R.string.platform_api_failed)
         }
 }

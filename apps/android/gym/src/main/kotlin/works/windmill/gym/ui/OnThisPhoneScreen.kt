@@ -48,10 +48,13 @@ import works.windmill.gym.presentation.TheSix
 import works.windmill.gym.presentation.TrainingSet
 import works.windmill.gym.store.*
 import works.windmill.platform.LocalClientUpdateDestination
-import works.windmill.platform.open
+import works.windmill.platform.opening
 import works.windmill.platform.telemetry.LocalTelemetry
 import android.text.format.DateFormat
 import androidx.compose.ui.platform.LocalContext
+import works.windmill.platform.i18n.Words
+import works.windmill.platform.i18n.text
+import works.windmill.platform.i18n.joined
 
 // What the recovery journal draws: a copy kept on this phone, inspected and fixed.
 @Stable
@@ -87,33 +90,44 @@ class RecoveryBinding(private val recovery: RecoveryStore, private val routines:
         currentOwner: () -> Boolean): RecoveryResult? = recovery.recover(read, row, action, draft, currentOwner)
 }
 
-class PhoneSignInCopy(decisions: Map<String, Map<String, Int>>) {
-    private val items = buildList {
+// What the sign-in decision says about the training this phone holds: each kind counted, the kinds listed as a sentence lists them.
+class PhoneSignInWords(decisions: Map<String, Map<String, Int>>) {
+    private val items = buildList<Pair<Int, Words>> {
         val gym = decisions["gym"].orEmpty()
-        for ((type, noun) in listOf("session" to "workout", "routine" to "routine", "weighin" to "weigh-in", "exercise" to "movement", "note" to "note", "thread" to "conversation")) {
+        for ((type, noun) in listOf("session" to R.plurals.gym_phone_held_workouts, "routine" to R.plurals.gym_phone_held_routines,
+            "weighin" to R.plurals.gym_phone_held_weigh_ins, "exercise" to R.plurals.gym_phone_held_movements,
+            "note" to R.plurals.gym_phone_held_notes, "thread" to R.plurals.gym_phone_held_conversations)) {
             val count = gym[type] ?: 0
-            if (count > 0) add(count to "$count $noun${if (count == 1) "" else "s"}")
+            if (count > 0) add(count to Words.Counted(noun, count, listOf(count.toString())))
         }
         val pages = decisions["journal"]?.get("page") ?: 0
-        if (pages > 0) add(pages to "$pages journal page${if (pages == 1) "" else "s"}")
+        if (pages > 0) add(pages to Words.Counted(R.plurals.gym_phone_held_journal_pages, pages, listOf(pages.toString())))
     }
-    val phrase: String = when (items.size) {
-        0 -> "training"
+    val phrase: Words = when (items.size) {
+        0 -> Words.Message(R.string.gym_phone_held_training)
         1 -> items.single().second
-        2 -> items.joinToString(" and ") { it.second }
-        else -> items.dropLast(1).joinToString(", ") { it.second } + " and " + items.last().second
+        else -> Words.Message(R.string.gym_phone_list_last, listOf(
+            items.dropLast(1).map { it.second }.reduce { listed, next -> Words.Message(R.string.gym_phone_list_next, listOf(listed, next)) },
+            items.last().second))
     }
     private val single = items.sumOf { it.first.toLong() } <= 1
-    val question = "This phone has $phrase from before you signed in. Your account already has training. Add ${if (single) "it" else "them"}, or discard ${if (single) "it" else "them"} from this phone."
-    val discardTitle = if (items.isEmpty()) "Discard this phone’s training?" else if (items.size < 3) "Discard $phrase?" else "Discard all of it?"
-    val discardBody = if (items.size >= 3) "$phrase ${if (single) "is" else "are"} deleted from this phone. You can’t undo this."
-        else "${if (single) "It is" else "They are"} deleted from this phone. You can’t undo this."
+    val question: Words = Words.Message(if (single) R.string.gym_phone_sign_in_question_it else R.string.gym_phone_sign_in_question_them, listOf(phrase))
+    val discardTitle: Words = when {
+        items.isEmpty() -> Words.Message(R.string.gym_phone_discard_training_title)
+        items.size < 3 -> Words.Message(R.string.gym_phone_discard_held_title, listOf(phrase))
+        else -> Words.Message(R.string.gym_phone_discard_all_title)
+    }
+    val discardBody: Words = when {
+        items.size >= 3 -> Words.Message(R.string.gym_phone_discard_held_body, listOf(phrase))
+        single -> Words.Message(R.string.gym_phone_discard_it_body)
+        else -> Words.Message(R.string.gym_phone_discard_them_body)
+    }
 }
 
 object PhoneRecovery {
     fun needsYou(rows: List<ImportRecovery>): Int = rows.count { !it.adding }
-    fun title(row: ImportRecovery): String = row.workout?.session?.plan?.routine
-        ?: if (row.workout != null) Readout.noRoutine else "Saved training"
+    fun named(row: ImportRecovery): Words = row.workout?.session?.plan?.routine?.let(Words::Plain)
+        ?: if (row.workout != null) Readout.freeWorkout else Words.Message(R.string.gym_phone_saved_training)
     fun sets(row: ImportRecovery): List<TrainingSet> = row.workout?.let { copy -> copy.sets.filterNot { it.id in copy.deleted } }
         ?: row.refusals.flatMap { it.sets }.distinctBy { it.id }
     fun canFix(row: ImportRecovery): Boolean = !row.adding && !row.operationsOnly && row.workout != null &&
@@ -143,13 +157,13 @@ object PhoneRecovery {
     }
     @Composable
     fun reason(row: ImportRecovery): String =
-        if (row.adding) stringResource(R.string.gym_phone_adding_progress) else reason(row.refusals.first().code, row.refusals.first().reason)
+        if (row.adding) stringResource(R.string.gym_phone_adding_progress) else reason(row.refusals.first().code, row.refusals.first().why)
     @Composable
-    fun reason(code: String, fallback: String = WorkoutImports.reason(code)): String = when (code) {
+    fun reason(code: String, fallback: Words = WorkoutImports.reasonFor(code)): String = when (code) {
         "session-open", "session-already-open" -> stringResource(R.string.gym_phone_reason_open_workout)
         "session-overlap" -> stringResource(R.string.gym_phone_reason_overlap)
         "bad-instant", "clock-skew" -> stringResource(R.string.gym_phone_reason_bad_time)
-        else -> fallback
+        else -> fallback.text()
     }
 }
 
@@ -214,8 +228,8 @@ private fun RecoveryRow(row: ImportRecovery, onInspect: () -> Unit) {
         .clickable(role = Role.Button, onClick = onInspect).padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            val facts = listOfNotNull(PhoneRecovery.title(row), date, row.workout?.let { Readout.setCount(PhoneRecovery.sets(row).size) })
-            Text(facts.joinToString(" · "), style = WindmillType.rowLabel, color = colors.onSurface)
+            val facts = listOfNotNull(PhoneRecovery.named(row), date?.let(Words::Plain), row.workout?.let { Readout.sets(PhoneRecovery.sets(row).size) })
+            Text(checkNotNull(facts.joined()).text(), style = WindmillType.rowLabel, color = colors.onSurface)
             Text(PhoneRecovery.reason(row), style = WindmillType.detail, color = colors.onSurfaceVariant)
         }
         if (row.adding) CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
@@ -226,14 +240,13 @@ private fun RecoveryRow(row: ImportRecovery, onInspect: () -> Unit) {
 fun WorkoutInspectScreen(state: RecoveryState, events: RecoveryEvents, read: RecoveryRead, row: ImportRecovery,
     onBack: () -> Unit, currentOwner: () -> Boolean) {
     val colors = MaterialTheme.colorScheme
-    val context = LocalContext.current
     val telemetry = LocalTelemetry.current
     val scope = rememberCoroutineScope()
     var submitted by remember(row.sourceKey) { mutableStateOf(false) }
     val busy = state.busy || submitted
     var menu by rememberSaveable(row.id) { mutableStateOf(false) }
     var discardSource by rememberSaveable { mutableStateOf<String?>(null) }
-    var message by rememberSaveable(row.sourceKey) { mutableStateOf<String?>(null) }
+    var message by rememberSaveable(row.sourceKey) { mutableStateOf<Words?>(null) }
     val primary = PhoneRecovery.primary(row)
     fun fix() {
         menu = false
@@ -247,14 +260,14 @@ fun WorkoutInspectScreen(state: RecoveryState, events: RecoveryEvents, read: Rec
         scope.launch {
             try { when (val result = events.recover(read, row, action, draft = null, currentOwner = currentOwner)) {
                 RecoveryResult.Accepted -> { discardSource = null; if (action == RecoveryAction.Discard) onBack() }
-                is RecoveryResult.Refused -> { discardSource = null; message = result.line }
-                RecoveryResult.Failed -> { discardSource = null; message = context.getString(PhoneRecovery.failure(action)) }
+                is RecoveryResult.Refused -> { discardSource = null; message = result.words }
+                RecoveryResult.Failed -> { discardSource = null; message = Words.Message(PhoneRecovery.failure(action)) }
                 null -> Unit
             } } finally { submitted = false }
         }
     }
     LaunchedEffect(row.id) { telemetry.event("gym_import_recovery", mapOf("action" to "inspect", "state" to "opened")) }
-    GymScreen(PhoneRecovery.title(row), onBack = onBack, backTo = stringResource(R.string.gym_phone_title), actions = {
+    GymScreen(PhoneRecovery.named(row).text(), onBack = onBack, backTo = stringResource(R.string.gym_phone_title), actions = {
         if (PhoneRecovery.canDiscard(row) || PhoneRecovery.canFix(row)) Box {
             IconButton(onClick = { menu = true }, enabled = !busy) { Icon(Icons.Default.MoreVert, stringResource(R.string.gym_action_more)) }
             DropdownMenu(menu, onDismissRequest = { menu = false }) {
@@ -267,7 +280,7 @@ fun WorkoutInspectScreen(state: RecoveryState, events: RecoveryEvents, read: Rec
         }
     }, bottomBar = {
         Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            message?.let { RecoveryBand(it, failed = true) }
+            message?.let { RecoveryBand(it.text(), failed = true) }
             if (primary != null) Button(onClick = { act(primary) }, enabled = !busy,
                 modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
                 Text(PhoneRecovery.label(primary), style = GymType.strongAction)
@@ -302,9 +315,9 @@ private fun RecoveryUpdate() {
     val update = LocalClientUpdateDestination.current
     val uri = LocalUriHandler.current
     val telemetry = LocalTelemetry.current
-    var failure by rememberSaveable { mutableStateOf<String?>(null) }
-    TextButton(onClick = { failure = update.open(uri::openUri, telemetry) }) { Text(update.label) }
-    failure?.let { RecoveryBand(it, failed = true) }
+    var failure by rememberSaveable { mutableStateOf<Int?>(null) }
+    TextButton(onClick = { failure = update.opening(uri::openUri, telemetry) }) { Text(stringResource(update.named)) }
+    failure?.let { RecoveryBand(stringResource(it), failed = true) }
 }
 
 @Composable
@@ -313,8 +326,8 @@ private fun RecoveryFacts(row: ImportRecovery, catalog: List<Exercise>) {
     val copy = requireNotNull(row.workout)
     val sets = PhoneRecovery.sets(row)
     val summary = SessionSummary(copy.session, sets, catalog)
-    val duration = if (row.operationsOnly) "—" else copy.session.finishedAtMs?.let { finish -> runCatching { Math.subtractExact(finish, copy.session.startedAtMs) }.getOrNull()?.takeIf { it >= 0 }?.let(Readout::duration) } ?: "—"
-    val volume = summary.tonnageKg?.takeIf { it.isFinite() }?.let { "${Readout.weight(it)} kg" } ?: "—"
+    val duration = if (row.operationsOnly) "—" else copy.session.finishedAtMs?.let { finish -> runCatching { Math.subtractExact(finish, copy.session.startedAtMs) }.getOrNull()?.takeIf { it >= 0 }?.let { Readout.lasted(it).text() } } ?: "—"
+    val volume = summary.tonnageKg?.takeIf { it.isFinite() }?.let { stringResource(R.string.gym_phone_volume_kg, Readout.weight(it)) } ?: "—"
     Row(Modifier.fillMaxWidth().background(colors.surfaceContainer, MaterialTheme.shapes.large).padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         for ((value, caption) in listOf(duration to stringResource(R.string.gym_phone_duration), sets.size.toString() to stringResource(R.string.gym_phone_sets),
             volume to stringResource(R.string.gym_phone_volume))) Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -398,12 +411,11 @@ private fun RecoveryTimes(session: Session, onPick: ((String) -> Unit)? = null, 
 fun WorkoutFixScreen(state: RecoveryState, events: RecoveryEvents, currentOwner: () -> Boolean) {
     val draft = state.fixDraft ?: return
     val colors = MaterialTheme.colorScheme
-    val context = LocalContext.current
     val telemetry = LocalTelemetry.current
     val scope = rememberCoroutineScope()
     var picking by rememberSaveable(draft.row.sourceKey) { mutableStateOf<String?>(null) }
     var editing by rememberSaveable(draft.row.sourceKey) { mutableStateOf<String?>(null) }
-    var failure by rememberSaveable(draft.row.sourceKey) { mutableStateOf<String?>(null) }
+    var failure by rememberSaveable(draft.row.sourceKey) { mutableStateOf<Words?>(null) }
     var held by remember(draft.row.sourceKey) { mutableStateOf<String?>(null) }
     var checking by remember(draft.row.sourceKey) { mutableStateOf(true) }
     var submitted by remember(draft.row.sourceKey) { mutableStateOf(false) }
@@ -437,15 +449,15 @@ fun WorkoutFixScreen(state: RecoveryState, events: RecoveryEvents, currentOwner:
                         try {
                             when (val result = events.recover(draft.read, draft.row, RecoveryAction.Fix, draft, currentOwner)) {
                                 RecoveryResult.Accepted -> Unit
-                                is RecoveryResult.Refused -> failure = result.line
-                                RecoveryResult.Failed -> failure = context.getString(PhoneRecovery.failure(RecoveryAction.Fix))
+                                is RecoveryResult.Refused -> failure = result.words
+                                RecoveryResult.Failed -> failure = Words.Message(PhoneRecovery.failure(RecoveryAction.Fix))
                                 null -> Unit
                             }
                         } finally { submitted = false }
                     }
                 }) { Text(stringResource(R.string.gym_phone_save_and_retry)) }
             }, bottomBar = {
-                val line = failure ?: held?.let { PhoneRecovery.reason(it) }
+                val line = failure?.text() ?: held?.let { PhoneRecovery.reason(it) }
                 if (line != null) Box(Modifier.padding(horizontal = 20.dp).padding(bottom = 16.dp)) { RecoveryBand(line, failed = failure != null) }
             }) {
                 LazyColumn(Modifier.fillMaxSize().testTag("recovery-fix"), contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 20.dp),
@@ -564,7 +576,7 @@ private fun OverlappingWorkoutPreview(fixing: Boolean) {
         ),
     )
     val row = ImportRecovery("import-phone", copy,
-        listOf(ImportRefusal("refusal-phone", copy.session, copy.sets, emptyList(), "session-overlap", "Overlaps another workout.")),
+        listOf(ImportRefusal("refusal-phone", copy.session, copy.sets, emptyList(), "session-overlap", WorkoutImports.reasonFor("session-overlap"))),
         listOf(ImportOpening("import-phone", "replica-phone", anonymous = true, sources = mapOf("session-phone" to "phone"))))
     val read = RecoveryRead("https://windmill.works", "user-preview", 1, "replica-phone", listOf(row))
     val state = PreviewRecoveryState(fixDraft = if (fixing) RecoveryDraft(read, row, copy) else null)

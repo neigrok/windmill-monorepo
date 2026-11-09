@@ -1,5 +1,8 @@
 package works.windmill.gym.store
 
+import android.content.Context
+import androidx.annotation.StringRes
+import androidx.test.core.app.ApplicationProvider
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -11,13 +14,21 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import works.windmill.gym.R
 import works.windmill.gym.presentation.NoteWrite
 import works.windmill.gym.presentation.Routine
 import works.windmill.gym.presentation.RoutineDraft
 import works.windmill.gym.presentation.TrainingSet
 import works.windmill.gym.presentation.WeighIn
+import works.windmill.platform.i18n.Words
+import works.windmill.platform.i18n.text
 import works.windmill.sync.engine.signIn
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class WithheldWindowTests {
     @get:Rule
     val tmp = TemporaryFolder()
@@ -143,11 +154,11 @@ class WithheldWindowTests {
             HeldWeightReceipt("replica", anonymous = false, gestureId = "gesture-$day", localIds = emptyList(), weighIn = WeighIn(day, 80.0)))
         val first = held("2026-09-01")
         val second = held("2026-09-02")
-        assertEquals("Weigh-in deleted.", Withheld.line(listOf(first)))
-        assertEquals("2 deleted.", Withheld.line(listOf(first, second)))
-        assertNull(Withheld.line(emptyList()))
-        assertEquals("The Undo window closed.", Withheld.alreadyGone)
-        assertEquals("Undo", Withheld.undo)
+        assertEquals("Weigh-in deleted.", Withheld.words(listOf(first)).spelled())
+        assertEquals("2 deleted.", Withheld.words(listOf(first, second)).spelled())
+        assertNull(Withheld.words(emptyList()))
+        assertEquals("The Undo window closed.", string(R.string.gym_room_undo_closed))
+        assertEquals("Undo", string(R.string.gym_room_undo))
     }
 
     @Test fun twoWeightHoldsRestoreNewestFirstWithoutReleasingEitherReceipt() = runTest {
@@ -161,9 +172,9 @@ class WithheldWindowTests {
             room.store.deletions.withhold(Deletion.Bodyweight("2026-09-02"))
             runCurrent()
             assertEquals(setOf("2026-09-01", "2026-09-02"), room.store.held.withheldIds)
-            assertEquals("2 deleted.", Withheld.line(room.store.held.withheld))
+            assertEquals("2 deleted.", Withheld.words(room.store.held.withheld).spelled())
             assertEquals(Deletion.Bodyweight("2026-09-02"), room.store.deletions.keepWithheld()?.deletion)
-            assertEquals("Weigh-in deleted.", Withheld.line(room.store.held.withheld))
+            assertEquals("Weigh-in deleted.", Withheld.words(room.store.held.withheld).spelled())
             assertEquals(Deletion.Bodyweight("2026-09-01"), room.store.deletions.keepWithheld()?.deletion)
             assertEquals(original, room.store.bodyweight.drawn)
             assertEquals(emptyList<Any>(), room.outbox())
@@ -171,3 +182,7 @@ class WithheldWindowTests {
     }
 
 }
+
+private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())
+
+private fun string(@StringRes id: Int, vararg args: Any): String = ApplicationProvider.getApplicationContext<Context>().getString(id, *args)

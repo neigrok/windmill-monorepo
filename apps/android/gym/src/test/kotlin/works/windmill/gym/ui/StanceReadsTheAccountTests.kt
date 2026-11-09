@@ -53,6 +53,7 @@ import works.windmill.domain.kit.Id
 import works.windmill.domain.kit.Outcome
 import works.windmill.platform.Account
 import works.windmill.platform.User
+import works.windmill.platform.i18n.Words
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.sync.api.Change
 import works.windmill.sync.api.CommitOutcome
@@ -255,7 +256,7 @@ class StanceReadsTheAccountTests {
         compose.waitUntil(5_000) { compose.onAllNodesWithText("why is my bench stalled?").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("Hold the load.").assertIsDisplayed()
         compose.onNodeWithText(androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>().getString(R.string.gym_coach_threads_none)).assertDoesNotExist()
-        compose.runOnIdle { assertEquals(listOf(ConversationRow(thread, "why is my bench stalled?", store.coach.history.single().askedAtMs, answerPreview = "Hold the load.")), store.coach.history) }
+        compose.runOnIdle { assertEquals(listOf(ConversationRow(thread, Words.Plain("why is my bench stalled?"), store.coach.history.single().askedAtMs, answerPreview = "Hold the load.")), store.coach.history) }
         assertEquals(listOf("gym.readConversation:coach-record-unreadable"), failures)
         scope.cancel()
     }

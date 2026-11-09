@@ -1,5 +1,7 @@
 package works.windmill.gym.ui
 
+import android.content.Context
+import androidx.annotation.StringRes
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.onAllNodesWithText
@@ -10,6 +12,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -18,6 +21,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import works.windmill.gym.R
 import works.windmill.gym.presentation.Against
 import works.windmill.gym.presentation.AgainstMovement
 import works.windmill.gym.presentation.Effort
@@ -32,6 +36,7 @@ import works.windmill.gym.presentation.PlanSnapshot
 import works.windmill.gym.presentation.PlannedLine
 import works.windmill.gym.presentation.SetTarget
 import works.windmill.gym.presentation.TrainingSet
+import works.windmill.platform.i18n.Words
 
 private val catalog = listOf(
     Exercise(id = "back-squat", name = "Back Squat"),
@@ -41,6 +46,8 @@ private val catalog = listOf(
 private fun straight(sets: Int, reps: Int? = null, weightKg: Double? = null): List<SetTarget> =
     List(sets) { SetTarget(reps, weightKg) }
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class FinishTests {
     @Test
     fun comparisonDrawsEverySetAndFiniteRangeWithoutSubtractingEndpoints() {
@@ -59,7 +66,7 @@ class FinishTests {
             val saved = works.windmill.platform.net.WindmillJson.encodeToString(FinishedSession.serializer(), ended)
             val restored = works.windmill.platform.net.WindmillJson.decodeFromString(FinishedSession.serializer(), saved)
             assertEquals(ended, restored)
-            assertEquals(listOf(expected), Finish.comparison(restored.review?.against, catalog)?.rows?.map { it.detail })
+            assertEquals(listOf(expected), Finish.comparison(restored.review?.against, catalog)?.rows?.map { it.said.spelled() })
         }
     }
 
@@ -72,7 +79,7 @@ class FinishTests {
 
     @Test
     fun noRecordDrawsNoLineAtAll() {
-        assertNull(Finish.recordSentence(null, catalog))
+        assertNull(Finish.recordWords(null, catalog).spelled())
     }
 
     @Test
@@ -81,17 +88,17 @@ class FinishTests {
         val e1rm = PersonalRecord(kind = "e1rm", exerciseId = "back-squat", value = 122.5,
                                   weightKg = 105.0, reps = 5, previous = 116.7, previousAtMs = past)
         assertEquals("Back Squat e1RM 122.5 kg — past 116.7 from ${Readout.day(past)}.",
-                     Finish.recordSentence(e1rm, catalog))
+                     Finish.recordWords(e1rm, catalog).spelled())
 
         val heaviest = PersonalRecord(kind = "heaviest", exerciseId = "back-squat", value = 140.0,
                                       weightKg = 140.0, reps = 1, previous = 135.0, previousAtMs = past)
         assertEquals("Back Squat 140 kg × 1 — past 135 from ${Readout.day(past)}.",
-                     Finish.recordSentence(heaviest, catalog))
+                     Finish.recordWords(heaviest, catalog).spelled())
 
         val reps = PersonalRecord(kind = "reps-at-weight", exerciseId = "back-squat", value = 8.0,
                                   weightKg = 100.0, reps = 8, previous = 6.0, previousAtMs = past)
         assertEquals("Back Squat 8 reps at 100 kg — past 6 from ${Readout.day(past)}.",
-                     Finish.recordSentence(reps, catalog))
+                     Finish.recordWords(reps, catalog).spelled())
     }
 
     @Test
@@ -99,7 +106,7 @@ class FinishTests {
         val unheard = PersonalRecord(kind = "volume-at-bodyweight", exerciseId = "back-squat",
                                      value = 9.0, weightKg = 100.0, reps = 9,
                                      previous = 8.0, previousAtMs = 1_750_723_200_000L)
-        assertNull(Finish.recordSentence(unheard, catalog))
+        assertNull(Finish.recordWords(unheard, catalog).spelled())
     }
 
     @Test
@@ -115,10 +122,10 @@ class FinishTests {
                                 before = Effort(sets = 3, reps = 12, weightKg = 135.0)),
             ))
         val comparison = Finish.comparison(against, catalog)
-        assertEquals("Comparison", comparison?.title)
+        assertEquals("Comparison", comparison?.named.spelled())
         assertEquals(listOf("Back Squat", "Leg Press"), comparison?.rows?.map { it.movement })
         assertEquals(listOf("Plan: 5 × 5 · 102.5 → 5 × 5 · 105", "Last time: 3 × 12 · 135 → 3 × 12 · 140"),
-                     comparison?.rows?.map { it.detail })
+                     comparison?.rows?.map { it.said.spelled() })
     }
 
     @Test
@@ -130,7 +137,7 @@ class FinishTests {
                                 planned = PlannedLine(straight(3, 12, 140.0))),
             ))
         assertEquals(listOf("planned 3 × 12 · 140 — did 3 × 10 · 140"),
-                     Finish.comparison(against, catalog)?.rows?.map { it.detail })
+                     Finish.comparison(against, catalog)?.rows?.map { it.said.spelled() })
     }
 
     @Test
@@ -141,7 +148,7 @@ class FinishTests {
                                 now = Effort(sets = 3, reps = 8, weightKg = 0.0),
                                 before = Effort(sets = 3, reps = 7, weightKg = 0.0)),
             ))
-        assertEquals(listOf("3 × 7 → 3 × 8"), Finish.comparison(against, catalog)?.rows?.map { it.detail })
+        assertEquals(listOf("3 × 7 → 3 × 8"), Finish.comparison(against, catalog)?.rows?.map { it.said.spelled() })
     }
 
     @Test
@@ -153,7 +160,7 @@ class FinishTests {
                                 planned = PlannedLine(straight(3))),
             ))
         assertEquals(listOf("3 × max → 3 × 6"),
-                     Finish.comparison(against, catalog)?.rows?.map { it.detail })
+                     Finish.comparison(against, catalog)?.rows?.map { it.said.spelled() })
     }
 
     @Test
@@ -165,7 +172,7 @@ class FinishTests {
                                 planned = PlannedLine(straight(3))),
             ))
         assertEquals(listOf("3 × max → 2 × 4"),
-                     Finish.comparison(against, catalog)?.rows?.map { it.detail })
+                     Finish.comparison(against, catalog)?.rows?.map { it.said.spelled() })
     }
 
     @Test
@@ -178,7 +185,7 @@ class FinishTests {
                                 planned = PlannedLine(straight(5, 5, 100.0))),
             ))
         assertEquals(listOf("5 × 5 · 100 → 3 × 5 · 110"),
-                     Finish.comparison(ramped, catalog)?.rows?.map { it.detail })
+                     Finish.comparison(ramped, catalog)?.rows?.map { it.said.spelled() })
     }
 
     @Test
@@ -190,7 +197,7 @@ class FinishTests {
                                 planned = PlannedLine(straight(3, 12, 140.0))),
             ))
         assertEquals(listOf("3 × 12 · 140 → 5 × 8 · 160"),
-                     Finish.comparison(heavier, catalog)?.rows?.map { it.detail })
+                     Finish.comparison(heavier, catalog)?.rows?.map { it.said.spelled() })
     }
 
     @Test
@@ -202,7 +209,7 @@ class FinishTests {
                                 planned = PlannedLine(straight(3, 12, 140.0))),
             ))
         assertEquals(listOf("planned 3 × 12 · 140 — did 3 × 10 · 140"),
-                     Finish.comparison(heldLoad, catalog)?.rows?.map { it.detail })
+                     Finish.comparison(heldLoad, catalog)?.rows?.map { it.said.spelled() })
 
         val noLoadNamed = Against(sessionId = "ses_0", routine = "Legs", startedAtMs = 1,
             movements = listOf(
@@ -211,7 +218,7 @@ class FinishTests {
                                 planned = PlannedLine(straight(3, 8))),
             ))
         assertEquals(listOf("planned 3 × 8 — did 3 × 6"),
-                     Finish.comparison(noLoadNamed, catalog)?.rows?.map { it.detail })
+                     Finish.comparison(noLoadNamed, catalog)?.rows?.map { it.said.spelled() })
     }
 
     @Test
@@ -224,7 +231,7 @@ class FinishTests {
                                 planned = PlannedLine()),
             ))
         assertEquals(listOf("3 × 10 · 57.5 → 3 × 10 · 60"),
-                     Finish.comparison(open, catalog)?.rows?.map { it.detail })
+                     Finish.comparison(open, catalog)?.rows?.map { it.said.spelled() })
 
         val firstRun = Against(sessionId = "ses_0", routine = "Heavy Thursday", startedAtMs = 1,
             movements = listOf(
@@ -233,7 +240,7 @@ class FinishTests {
                                 planned = PlannedLine()),
             ))
         assertEquals(listOf("3 × 10 · 60"),
-                     Finish.comparison(firstRun, catalog)?.rows?.map { it.detail })
+                     Finish.comparison(firstRun, catalog)?.rows?.map { it.said.spelled() })
     }
 
     @Test
@@ -242,7 +249,7 @@ class FinishTests {
         fun detail(now: Effort, planned: List<SetTarget>) =
             Finish.comparison(Against(sessionId = "ses_0", routine = "Lower A", startedAtMs = 1,
                 movements = listOf(AgainstMovement(exerciseId = "back-squat", now = now, planned = PlannedLine(planned)))),
-                catalog)?.rows?.single()?.detail
+                catalog)?.rows?.single()?.said.spelled()
 
         assertEquals("5 × 1–5 · 60–100 → 1 × 1 · 100", detail(Effort(sets = 1, reps = 1, weightKg = 100.0), ramp))
         assertEquals("5 × 1–5 · 60–100 → 1 × 3 · 90", detail(Effort(sets = 1, reps = 3, weightKg = 90.0), ramp))
@@ -262,19 +269,21 @@ class FinishTests {
     }
 }
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class RecordEstimateFormattingTests {
     private val bench = listOf(Exercise("bench-press", "Bench Press"))
 
     @Test
     fun aRecordKeepsItsApprovedTenthForCurrentAndPriorEstimates() {
         val record = PersonalRecord("e1rm", "bench-press", 80.0 * (1 + 8 / 30.0), 80.0, 8, 70.0 * (1 + 8 / 30.0), 1_000)
-        assertEquals("Bench Press e1RM 101.3 kg — past 88.7 from ${Readout.day(1_000)}.", Finish.recordSentence(record, bench))
+        assertEquals("Bench Press e1RM 101.3 kg — past 88.7 from ${Readout.day(1_000)}.", Finish.recordWords(record, bench).spelled())
     }
 
     @Test
     fun aHugeFiniteEstimateRetainsItsCompleteFiniteSpelling() {
         val record = PersonalRecord("e1rm", "bench-press", Double.MAX_VALUE, Double.MAX_VALUE, 1, Double.MAX_VALUE / 2, 1_000)
-        val text = Finish.recordSentence(record, bench)!!
+        val text = Finish.recordWords(record, bench).spelled()!!
         assertEquals("Bench Press e1RM ${Readout.estimatedWeight(Double.MAX_VALUE)} kg — past ${Readout.estimatedWeight(Double.MAX_VALUE / 2)} from ${Readout.day(1_000)}.", text)
         assertFalse(text.contains("Infinity"))
         assertFalse(text.contains("NaN"))
@@ -400,8 +409,8 @@ class ShareWithCoachTests {
 
     @Test
     fun shareUsesTheApprovedWorkoutQuestion() {
-        assertEquals("Share with Coach", FinishCoach.action)
-        assertEquals("Check my last workout.", FinishCoach.question)
+        assertEquals("Share with Coach", string(R.string.gym_finish_share_with_coach))
+        assertEquals("Check my last workout.", string(R.string.gym_finish_coach_question))
     }
 
     @Test
@@ -409,8 +418,8 @@ class ShareWithCoachTests {
         receipt()
         listOf(ordinary, short).forEachIndexed { taps, finished ->
             show(finished)
-            compose.onAllNodesWithText(FinishCoach.action).assertCountEquals(1)
-            compose.onNodeWithText(FinishCoach.action).assertIsDisplayed().performClick()
+            compose.onAllNodesWithText(string(R.string.gym_finish_share_with_coach)).assertCountEquals(1)
+            compose.onNodeWithText(string(R.string.gym_finish_share_with_coach)).assertIsDisplayed().performClick()
             compose.onNodeWithText("Done").assertIsDisplayed()
             compose.runOnIdle { assertEquals(taps + 1, shared.value) }
             compose.onNodeWithText("Against plan").assertDoesNotExist()
@@ -424,7 +433,7 @@ class ShareWithCoachTests {
         receipt()
         listOf(ordinary, short).forEach { finished ->
             show(finished)
-            compose.onNodeWithText(FinishCoach.action).assertDoesNotExist()
+            compose.onNodeWithText(string(R.string.gym_finish_share_with_coach)).assertDoesNotExist()
             compose.onNodeWithText("Done").assertIsDisplayed()
         }
     }
@@ -470,9 +479,13 @@ class ShareWithCoachTests {
         compose.onNodeWithText("This workout has ended.").assertIsDisplayed()
         compose.onNodeWithText("Done").performClick()
         assertEquals(1, done)
-        for (text in listOf("Duration", "Sets", "Volume", "Ended early.", "Keep it", FinishCoach.action)) {
+        for (text in listOf("Duration", "Sets", "Volume", "Ended early.", "Keep it", string(R.string.gym_finish_share_with_coach))) {
             compose.onNodeWithText(text).assertDoesNotExist()
         }
         compose.onNodeWithContentDescription("More").assertDoesNotExist()
     }
 }
+
+private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())
+
+private fun string(@StringRes id: Int, vararg args: Any): String = ApplicationProvider.getApplicationContext<Context>().getString(id, *args)

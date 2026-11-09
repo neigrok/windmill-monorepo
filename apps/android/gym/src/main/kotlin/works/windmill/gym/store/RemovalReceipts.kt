@@ -19,8 +19,8 @@ internal class RemovalReceipts(private val engine: Engine, private val writeAuth
     fun contains(id: String): Boolean = engine.read(EngineProposal.scope) { it.device(key)?.get(id) != null }
     fun begin(id: String, replica: String, zone: Zone, snapshot: (Reader) -> Proposal?): GymRefusal? {
         val (outcome, refused) = engine.commit(EngineProposal.scope) { context ->
-            if (!writeAuthority()) throw TrainingRefused("account-changed", "The account changed. Open this again.")
-            if (context.replica != replica) throw TrainingRefused("account-changed", "The account changed. Open this again.")
+            if (!writeAuthority()) throw TrainingRefused.accountChanged()
+            if (context.replica != replica) throw TrainingRefused.accountChanged()
             val read = Reader(context, EngineProposal.scope, Moment(Instant(context.now), zone), engine.registry)
             val rows = context.device(key)?.obj().orEmpty()
             val existing = rows[id]
@@ -69,7 +69,7 @@ internal class RemovalReceipts(private val engine: Engine, private val writeAuth
     fun confirmed(): Map<String, Proposal> = proposals().filterValues { !it.isPending }
     fun result(id: String, replica: String): Proposal? = engine.read(EngineProposal.scope) { source ->
         val context = source as CommitContext
-        if (context.replica != replica) throw TrainingRefused("account-changed", "The account changed. Open this again.")
+        if (context.replica != replica) throw TrainingRefused.accountChanged()
         val row = source.device(key)?.get(id)
         if (row?.get("state") == Json.of("accepted") && context.commands().none { it.gestureId == row["gestureId"]?.str() })
             proposal(row).copy(state = ProposalState.Applied, settledAtMs = null)
@@ -92,7 +92,7 @@ internal class RemovalReceipts(private val engine: Engine, private val writeAuth
 
     fun shown(proposal: Proposal, replica: String): Boolean {
         val acknowledged = engine.commit(EngineProposal.scope) { context ->
-            if (!writeAuthority()) throw TrainingRefused("account-changed", "The account changed. Open this again.")
+            if (!writeAuthority()) throw TrainingRefused.accountChanged()
             if (context.replica != replica) return@commit null to false
             val rows = context.device(key)?.obj().orEmpty()
             val row = rows[proposal.id] ?: return@commit null to false
@@ -107,7 +107,7 @@ internal class RemovalReceipts(private val engine: Engine, private val writeAuth
 
     fun dismissRefused(ids: Set<String>) {
         engine.commit(EngineProposal.scope) { context ->
-            if (!writeAuthority()) throw TrainingRefused("account-changed", "The account changed. Open this again.")
+            if (!writeAuthority()) throw TrainingRefused.accountChanged()
             val rows = context.device(key)?.obj().orEmpty()
             val remaining = rows.filterNot { (id, row) -> id in ids && row["state"] == Json.of("refused") }
             if (remaining == rows) return@commit null to Unit

@@ -1,15 +1,22 @@
 package works.windmill.gym.presentation
 
+import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import works.windmill.platform.i18n.Words
 
 // One fixture, two surfaces. The same sixty-character name is pinned here and in
 // `web/test/products/gym/nameCodePoints.test.js`: thirty emoji and thirty accented letters. It reads
 // as sixty characters on both because a character is a CODE POINT — the unit Postgres `char_length` counts — and it weighs 180 bytes, under the
 // store's 240. The three units this one name tells apart: 60 code points · 90 UTF-16 units · 180
 // UTF-8 bytes.
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class NameCodePointTests {
     private val sixty = "😀".repeat(30) + "ü".repeat(30)
     private val sixtyOne = sixty + "ü"
@@ -72,10 +79,12 @@ class NameCodePointTests {
     @Test
     fun testANotesTitleCountsTheSameFixtureTheSameWay() {
         assertEquals(60, Notes.titleLength(sixty))
-        assertEquals("60 of 60 characters", Notes.titleCounter(sixty))
+        assertEquals("60 of 60 characters", Notes.titleCharacters(sixty).spelled())
         assertFalse(Notes.titleOver(sixty))
         assertEquals(61, Notes.titleLength(sixtyOne))
         assertTrue(Notes.titleOver(sixtyOne))
         assertEquals("one cap for a name and a title", Program.maxNameLength, Notes.titleMax)
     }
 }
+
+private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())

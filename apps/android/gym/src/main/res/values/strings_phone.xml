@@ -33,4 +33,44 @@
     <string name="gym_phone_started_time">Started time</string>
     <string name="gym_phone_finished_time">Finished time</string>
     <string name="gym_phone_use_time">Use time</string>
+    <plurals name="gym_phone_held_workouts">
+        <item quantity="one">%1$s workout</item>
+        <item quantity="other">%1$s workouts</item>
+    </plurals>
+    <plurals name="gym_phone_held_routines">
+        <item quantity="one">%1$s routine</item>
+        <item quantity="other">%1$s routines</item>
+    </plurals>
+    <plurals name="gym_phone_held_weigh_ins">
+        <item quantity="one">%1$s weigh-in</item>
+        <item quantity="other">%1$s weigh-ins</item>
+    </plurals>
+    <plurals name="gym_phone_held_movements">
+        <item quantity="one">%1$s movement</item>
+        <item quantity="other">%1$s movements</item>
+    </plurals>
+    <plurals name="gym_phone_held_notes">
+        <item quantity="one">%1$s note</item>
+        <item quantity="other">%1$s notes</item>
+    </plurals>
+    <plurals name="gym_phone_held_conversations">
+        <item quantity="one">%1$s conversation</item>
+        <item quantity="other">%1$s conversations</item>
+    </plurals>
+    <plurals name="gym_phone_held_journal_pages">
+        <item quantity="one">%1$s journal page</item>
+        <item quantity="other">%1$s journal pages</item>
+    </plurals>
+    <string name="gym_phone_held_training">training</string>
+    <string name="gym_phone_list_next">%1$s, %2$s</string>
+    <string name="gym_phone_list_last">%1$s and %2$s</string>
+    <string name="gym_phone_sign_in_question_it">This phone has %1$s from before you signed in. Your account already has training. Add it, or discard it from this phone.</string>
+    <string name="gym_phone_sign_in_question_them">This phone has %1$s from before you signed in. Your account already has training. Add them, or discard them from this phone.</string>
+    <string name="gym_phone_discard_training_title">Discard this phone’s training?</string>
+    <string name="gym_phone_discard_held_title">Discard %1$s?</string>
+    <string name="gym_phone_discard_all_title">Discard all of it?</string>
+    <string name="gym_phone_discard_held_body">%1$s are deleted from this phone. You can’t undo this.</string>
+    <string name="gym_phone_discard_it_body">It is deleted from this phone. You can’t undo this.</string>
+    <string name="gym_phone_discard_them_body">They are deleted from this phone. You can’t undo this.</string>
+    <string name="gym_phone_volume_kg">%1$s kg</string>
 </resources>

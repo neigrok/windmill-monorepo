@@ -1,5 +1,7 @@
 package works.windmill.gym
 
+import works.windmill.platform.i18n.Words
+import works.windmill.platform.i18n.text
 import androidx.compose.material3.MaterialTheme
 import android.app.Activity
 import android.content.ClipData
@@ -118,7 +120,6 @@ import androidx.compose.runtime.setValue
 // Gym's one seam into the superapp.
 class GymModule(private val store: TrainingStore, private val notifications: WorkoutNotifications? = null) : ProductModule {
     override val id = "gym"
-    override val label = "Gym"
 
     @Composable
     override fun Skin(content: @Composable () -> Unit) {
@@ -219,10 +220,10 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
     // Asks of the workout open at the moment of the act.
     fun showLogger(shown: Boolean, screen: String, action: String) {
         val result = store.workout.notification.value?.key?.let { store.workout.setLoggerHidden(it, !shown) }
-            ?: WorkoutChange.Unavailable(store.workout.workoutFailure ?: context.getString(R.string.gym_room_workout_not_ready))
+            ?: WorkoutChange.Unavailable(store.workout.workoutRefusal ?: Words.Message(R.string.gym_store_workout_not_ready))
         telemetry.event("gym_action", mapOf("screen" to screen, "action" to action,
             "outcome" to if (result == WorkoutChange.Saved) "ok" else "refused"))
-        if (result is WorkoutChange.Unavailable) note = result.reason
+        if (result is WorkoutChange.Unavailable) note = result.why.text(context)
     }
     fun hideWorkout() = showLogger(shown = false, screen = "workout", action = "hide")
     val screen = when {
@@ -351,13 +352,13 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
     // or leaves.
     val takeable = store.deletions.holding
     LaunchedEffect(takeable?.subjectId, store.held.withheld.size) {
-        val said = Withheld.line(store.held.withheld) ?: return@LaunchedEffect
+        val said = Withheld.words(store.held.withheld)?.text(context) ?: return@LaunchedEffect
         val left = store.deletions.wayBackLeftMs
         if (left <= 0) return@LaunchedEffect
         val decided = withTimeoutOrNull(left) {
             transient.showSnackbar(
                 message = said,
-                actionLabel = Withheld.undo,
+                actionLabel = context.getString(R.string.gym_room_undo),
                 // No dismiss while a window runs: a transient that could be swept away would be a
                 // way back that vanished without its clock closing.
                 withDismissAction = false,
@@ -366,8 +367,8 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
         }
         if (decided == SnackbarResult.ActionPerformed) {
             // A closed offer cannot promise that Undo restored the row.
-            if (store.deletions.keepWithheld() == null && store.deletions.deleteRefused == null) {
-                transient.showSnackbar(Withheld.alreadyGone, duration = SnackbarDuration.Short)
+            if (store.deletions.keepWithheld() == null && store.deletions.deleteRefusal == null) {
+                transient.showSnackbar(context.getString(R.string.gym_room_undo_closed), duration = SnackbarDuration.Short)
             }
             return@LaunchedEffect
         }
@@ -375,8 +376,8 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
     }
 
     // The existing recovery band reports a failed hold or Undo once.
-    LaunchedEffect(store.deletions.deleteRefused) {
-        val refused = store.deletions.deleteRefused ?: return@LaunchedEffect
+    LaunchedEffect(store.deletions.deleteRefusal) {
+        val refused = store.deletions.deleteRefusal?.text(context) ?: return@LaunchedEffect
         // It takes the transient off whatever is standing there: a way back must never hide a
         // refusal, and another window's Undo is still offered when this one has been read.
         transient.currentSnackbarData?.dismiss()
@@ -427,7 +428,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                 note = null
                 val opened = store.workout.start(routineId)
                 if (opened is GymResult.Failed) {
-                    note = opened.why.line("nothing started")
+                    note = opened.why.says(R.string.gym_room_start_no_answer).text(context)
                     return@launch
                 }
                 navigator.reset()
@@ -461,7 +462,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                     finishFlow.open(ended.detail, anonymous = !currentAccount.isSignedIn)
                 }
                 is FinishOutcome.Failed ->
-                    note = ended.why.line("the session is still open")
+                    note = ended.why.says(R.string.gym_room_finish_no_answer).text(context)
             }
         }
     }
@@ -550,7 +551,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                 val written = store.routines.saveRoutine(prepared, initiatingAccountKey, initiatingReplica)
                 if (!ownsAttempt()) return@launch
                 when (written) {
-                    is GymResult.Failed -> note = written.why.line("${draft.name} wasn’t saved")
+                    is GymResult.Failed -> note = written.why.says(R.string.gym_room_routine_save_no_answer, draft.name).text(context)
                     is GymResult.Ok -> {
                         haptics.saved()
                         building = null
@@ -572,7 +573,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
         val named = store.routines.routine(routineId)?.name ?: return true
         val failure = store.deletions.delete(Deletion.Routine(routineId, named))
         if (failure != null) {
-            note = failure.line("$named is still in your program")
+            note = failure.says(R.string.gym_room_routine_delete_no_answer, named).text(context)
             return false
         }
         note = null
@@ -625,7 +626,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                         is GymResult.Failed -> {
                             telemetry.event("gym_action", mapOf("screen" to "log", "action" to "share",
                                 "outcome" to if (minted.why is WriteFailure.Refused) "refused" else "failed"))
-                            note = minted.why.line("the link wasn’t made")
+                            note = minted.why.says(R.string.gym_sharing_mint_no_answer).text(context)
                         }
                     }
                 }
@@ -674,7 +675,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                                     if (failure != null) {
                                         val line = when (failure) {
                                             WriteFailure.NoAnswer -> context.getString(R.string.gym_room_delete_unconfirmed)
-                                            else -> failure.line("the workout is still saved")
+                                            else -> failure.says(R.string.gym_room_discard_no_answer).text(context)
                                         }
                                         finishFlow.close {
                                             navigator.reset(listOf(Away.Session(prompt.summary, prompt.detail)))
@@ -743,7 +744,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                     conversationId = conversationId,
                     onOpenRoutine = { id -> door { selectedRoutineId = id } },
                     onOpenChat = { id -> door { openCoachChat(id, "reply_open") } },
-                    receipts = reviewFlow.receiptsAt(Reviewing.coach),
+                    receipts = reviewFlow.settledAt(Reviewing.coach),
                     lookedAt = lookedAtIds,
                     asking = store.coach.isAsking(conversationId),
                     refusal = store.coach.refusalOnScreen(conversationId),
@@ -797,7 +798,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
             // What a way back is named after: the screen beneath, else the tab, or the logger when it stands.
             @Composable
             fun wayBackTo(under: Away?, tab: Tab): String = under?.wayBack(store.routines.catalog)
-                ?: if (loggerShown) store.workout.session?.plan?.routine ?: Readout.noRoutine else stringResource(tab.title)
+                ?: if (loggerShown) store.workout.session?.plan?.routine ?: Readout.freeWorkout.text() else stringResource(tab.title)
 
             @Composable
             fun PushedScreen(frame: Frame.Pushed) {
@@ -841,7 +842,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                         onDone = { back() },
                     )
                     is Away.Session -> if (finishFlow.finished?.let { it.session.id == standing.summary.id && it.sets.isEmpty() } == true) {
-                        GymScreen(title = standing.summary.plan?.routine ?: Readout.noRoutine,
+                        GymScreen(title = standing.summary.plan?.routine ?: Readout.freeWorkout.text(),
                             onBack = { back() }, backTo = backTo) { }
                     } else {
                         val sessionPage = remember(store) { SessionBinding(store) }
@@ -896,7 +897,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                             onConnections = { look(Away.Connections) },
                             onOpenRoutine = { selectedRoutineId = it },
                             onOpenChat = { openCoachChat(it, "reply_open") },
-                            receipts = reviewFlow.receiptsAt(Reviewing.thread(standing.threadId)),
+                            receipts = reviewFlow.settledAt(Reviewing.thread(standing.threadId)),
                             lookedAt = lookedAtIds,
                             backTo = backTo,
                             onBack = { back() },

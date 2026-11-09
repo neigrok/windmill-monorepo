@@ -4,7 +4,7 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import works.windmill.gym.R
 import works.windmill.gym.presentation.Readout
-import works.windmill.gym.presentation.Words
+import works.windmill.platform.i18n.Words
 import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.WriteFailure
 

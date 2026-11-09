@@ -1,5 +1,6 @@
 package works.windmill.gym.store
 
+import androidx.test.core.app.ApplicationProvider
 import java.io.File
 import java.io.IOException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -13,6 +14,9 @@ import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import works.windmill.gym.presentation.*
 import works.windmill.gym.presentation.WorkoutChange
 import works.windmill.platform.Account
@@ -21,12 +25,16 @@ import works.windmill.platform.auth.AuthStatus
 import works.windmill.platform.auth.AuthStore
 import works.windmill.platform.auth.LocalSession
 import works.windmill.platform.auth.MemorySessions
+import works.windmill.platform.i18n.Words
+import works.windmill.platform.i18n.text
 import works.windmill.platform.storage.AtomicDocument
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.sync.core.Json
 import works.windmill.sync.engine.signIn
 
 @OptIn(ExperimentalCoroutinesApi::class)
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class GymRuntimeTests {
     @get:Rule val tmp = TemporaryFolder()
 
@@ -98,7 +106,7 @@ class GymRuntimeTests {
             val newest = first.store.workout.sets.last()
             first.store.workout.choose("bench-press")
             assertEquals(105_000L, runtime.notification.value!!.sinceSetAtMs)
-            assertEquals("Bench Press", runtime.notification.value!!.movement)
+            assertEquals("Bench Press", runtime.notification.value!!.doing.spelled())
             assertTrue(first.store.workout.fixSet(first.store.workout.session!!.id, newest.id,
                 SetFix(weightKg = 35.0, reps = 6)) is FixOutcome.Corrected)
             assertEquals(105_000L, runtime.notification.value!!.sinceSetAtMs)
@@ -264,13 +272,13 @@ class GymRuntimeTests {
                 assertEquals("u.A", room.store.seat.accountKey)
                 assertTrue(room.store.workout.acceptSet(LogSetCommand(original.key, original.id)) is LogSetAcceptance.Unavailable)
                 room.store.workout.logSet(30.0, 8)
-                assertEquals(FinishOutcome.Failed(WriteFailure.Refused("The account must be restored first.")), room.store.workout.finish())
+                assertEquals("The account must be restored first.", ((room.store.workout.finish() as FinishOutcome.Failed).why as WriteFailure.Refused).words.spelled())
                 room.store.workout.choose("overhead-press")
                 room.store.workout.reorder(0, 1)
-                assertEquals(WorkoutChange.Unavailable("The workout is not ready."), room.store.workout.drop("overhead-press"))
-                assertEquals(FixOutcome.Failed(WriteFailure.Refused("the account changed while fixing")),
-                    room.store.workout.fixSet(live.id, accepted.id, SetFix(weightKg = 40.0)))
-                assertEquals(WriteFailure.Refused("the account changed while deleting"), room.store.workout.deleteSet(live.id, accepted.id))
+                assertEquals("The workout is not ready.", (room.store.workout.drop("overhead-press") as WorkoutChange.Unavailable).why.spelled())
+                assertEquals("the account changed while fixing",
+                    ((room.store.workout.fixSet(live.id, accepted.id, SetFix(weightKg = 40.0)) as FixOutcome.Failed).why as WriteFailure.Refused).words.spelled())
+                assertEquals("the account changed while deleting", (room.store.workout.deleteSet(live.id, accepted.id) as WriteFailure.Refused).words.spelled())
                 assertFalse(room.store.workout.discard(previous.id))
                 room.store.connect(Account(auth.baseUrl.toString(), ana))
                 assertEquals("u.A", room.store.seat.accountKey)
@@ -371,7 +379,7 @@ class GymRuntimeTests {
             runtime.restoreLocal()
             room.select(null)
             assertFalse(room.store.seat.isLoading)
-            assertEquals("The workout could not be saved safely. Restart the app to recover it.", room.store.workout.workoutFailure)
+            assertEquals("The workout could not be saved safely. Restart the app to recover it.", room.store.workout.workoutRefusal.spelled())
             assertNull(runtime.notification.value)
             assertEquals(raw, file.readText())
             assertTrue(room.store.workout.start("routine") is GymResult.Failed)
@@ -411,3 +419,5 @@ class GymRuntimeTests {
         }
     }
 }
+
+private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())

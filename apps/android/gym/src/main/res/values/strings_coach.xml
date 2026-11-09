@@ -137,4 +137,33 @@
     <string name="gym_coach_draft_kept">Draft kept on this phone</string>
     <string name="gym_coach_continue_draft">Continue saved draft</string>
     <string name="gym_coach_conversation_unsaved">Your conversation couldn’t be saved. Try again.</string>
+    <string name="gym_coach_delete_conversation_no_answer">the log didn’t answer — that conversation is still here</string>
+    <string name="gym_coach_offline">No connection. Your question is kept here.</string>
+    <string name="gym_coach_log_arriving">Your log is still arriving on this phone. Ask again in a moment.</string>
+    <plurals name="gym_coach_too_long">
+        <item quantity="one">Too long by %1$s byte. The limit is %2$s bytes.\nEnglish letters take 1 byte each. Other letters and emoji take more.</item>
+        <item quantity="other">Too long by %1$s bytes. The limit is %2$s bytes.\nEnglish letters take 1 byte each. Other letters and emoji take more.</item>
+    </plurals>
+    <string name="gym_coach_allowance_spent">You have used all of your AI allowance.</string>
+    <string name="gym_coach_free_day_exhausted">Coach’s shared free AI capacity is unavailable for today. Signing in does not bypass this limit.</string>
+    <string name="gym_coach_concurrency_exhausted">Another AI request is still in progress. Try again when it finishes.</string>
+    <string name="gym_coach_funding_required">Your plan has no funded AI allowance for this period.</string>
+    <string name="gym_coach_allowance_unavailable">Coach’s AI allowance is unavailable right now.</string>
+    <string name="gym_coach_free_month_exhausted">Coach is paused for everyone this month.</string>
+    <string name="gym_coach_rate_limited">You can ask again later.</string>
+    <string name="gym_coach_update_required">This version can’t ask Coach any more. Update Windmill to continue.</string>
+    <string name="gym_coach_not_here">This Windmill does not have Coach. You can still read your log.</string>
+    <string name="gym_coach_installation_invalid">This phone can’t ask Coach signed out any more. Sign in to continue.</string>
+    <string name="gym_coach_installation_bound">This phone is linked to an account. Sign in to ask Coach.</string>
+    <string name="gym_coach_access_needs_sign_in">Coach needs your workout log. Please sign in.</string>
+    <string name="gym_coach_notice_comes_back">%1$s It comes back on %2$s.</string>
+    <string name="gym_coach_notice_use_again">%1$s\nYou can use Coach again on %2$s at %3$s.</string>
+    <string name="gym_coach_notice_sign_in">%1$s\nSign in to continue.</string>
+    <string name="gym_coach_fault_busy">Coach is answering another message. Try again when it finishes.</string>
+    <string name="gym_coach_fault_account_changing">Your account is changing. Your question is kept here.</string>
+    <string name="gym_coach_fault_no_answer">Coach didn’t answer. Try again in a moment</string>
+    <string name="gym_coach_fault_picture_unavailable">That photo is unavailable. Remove it and choose it again.</string>
+    <string name="gym_coach_fault_stopped_offline">Coach is stopped on this phone. Stopping it on the server needs a connection.</string>
+    <string name="gym_coach_fault_stop_unheard">Coach is stopped on this phone.</string>
+    <string name="gym_coach_could_not_take">Coach couldn’t take that one</string>
 </resources>

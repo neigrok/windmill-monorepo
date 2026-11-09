@@ -9,7 +9,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import works.windmill.gym.presentation.Note
 import works.windmill.gym.presentation.NoteWrite
-import works.windmill.gym.store.TrainingSeat.Companion.accountChanged
+import works.windmill.gym.store.TrainingSeat.Companion.accountChange
 import works.windmill.platform.telemetry.Telemetry
 
 // The notebook of the seat in hand. The first pull distinguishes an unread notebook from an empty one.
@@ -58,13 +58,13 @@ class NotesStore(
         val owner = seat.owner
         return try {
             notebookWrite.withLock {
-                if (owner != seat.owner) return@withLock GymResult.Failed(WriteFailure.Refused(accountChanged))
+                if (owner != seat.owner) return@withLock GymResult.Failed(WriteFailure.Refused(accountChange))
                 GymResult.Ok(readNotebook())
             }
         } catch (failed: Exception) {
             if (!currentCoroutineContext().isActive) throw failed
             if (failed is TrainingReadChanged) {
-                if (owner != seat.owner) return GymResult.Failed(WriteFailure.Refused(accountChanged))
+                if (owner != seat.owner) return GymResult.Failed(WriteFailure.Refused(accountChange))
                 return GymResult.Failed(WriteFailure.NoAnswer)
             }
             seat.reportFailure("gym.readNotes", failed)
@@ -73,20 +73,20 @@ class NotesStore(
     }
 
     suspend fun saveNote(id: String, write: NoteWrite): GymResult<Note> {
-        if (!seat.workoutAuthorized) return GymResult.Failed(WriteFailure.Refused(accountChanged))
+        if (!seat.workoutAuthorized) return GymResult.Failed(WriteFailure.Refused(accountChange))
         val owner = seat.owner
         val result: GymResult<Note> = notebookWrite.withLock {
-            if (owner != seat.owner) return@withLock GymResult.Failed(WriteFailure.Refused(accountChanged))
+            if (owner != seat.owner) return@withLock GymResult.Failed(WriteFailure.Refused(accountChange))
             try {
                 val written = training.writeNote(id, write)
-                if (owner != seat.owner) return@withLock GymResult.Failed(WriteFailure.Refused(accountChanged))
+                if (owner != seat.owner) return@withLock GymResult.Failed(WriteFailure.Refused(accountChange))
                 notebook = if (notebook.any { it.id == id }) notebook.map { if (it.id == id) written else it }
                     else notebook + written
                 GymResult.Ok(written)
             } catch (refusing: Exception) {
                 if (!currentCoroutineContext().isActive) throw refusing
                 seat.reportFailure("gym.saveNote", refusing)
-                if (owner != seat.owner) return@withLock GymResult.Failed(WriteFailure.Refused(accountChanged))
+                if (owner != seat.owner) return@withLock GymResult.Failed(WriteFailure.Refused(accountChange))
                 GymResult.Failed(WriteFailure(refusing))
             }
         }
@@ -100,19 +100,19 @@ class NotesStore(
 
     // A note already gone answers as success: the row goes either way.
     suspend fun deleteNote(id: String, replica: String? = controls.engineReplica, anonymous: Boolean = seat.owner == null): WriteFailure? {
-        if (!seat.workoutAuthorized) return WriteFailure.Refused(accountChanged)
+        if (!seat.workoutAuthorized) return WriteFailure.Refused(accountChange)
         val owner = seat.owner
         return notebookWrite.withLock {
-            if (owner != seat.owner) return@withLock WriteFailure.Refused(accountChanged)
+            if (owner != seat.owner) return@withLock WriteFailure.Refused(accountChange)
             try {
-                training.deleteNote(id, replica ?: return@withLock WriteFailure.Refused(accountChanged), anonymous)
-                if (owner != seat.owner) return@withLock WriteFailure.Refused(accountChanged)
+                training.deleteNote(id, replica ?: return@withLock WriteFailure.Refused(accountChange), anonymous)
+                if (owner != seat.owner) return@withLock WriteFailure.Refused(accountChange)
                 notebook = notebook.filterNot { it.id == id }
                 null
             } catch (refusing: Exception) {
                 if (!currentCoroutineContext().isActive) throw refusing
                 seat.reportFailure("gym.deleteNote", refusing)
-                if (owner != seat.owner) return@withLock WriteFailure.Refused(accountChanged)
+                if (owner != seat.owner) return@withLock WriteFailure.Refused(accountChange)
                 if (refusing is TrainingDeleteUnconfirmed) seat.tried("gym.readNotes") { readNotebook() }
                 if ((refusing as? TrainingRefused)?.code != "unknown-record") return@withLock WriteFailure(refusing)
                 notebook = notebook.filterNot { it.id == id }
@@ -123,13 +123,13 @@ class NotesStore(
 
     // A drop moves its one note below the drawn neighbor.
     suspend fun reorderNotes(moved: String, drawn: List<String>): GymResult<List<Note>> {
-        if (!seat.workoutAuthorized) return GymResult.Failed(WriteFailure.Refused(accountChanged))
+        if (!seat.workoutAuthorized) return GymResult.Failed(WriteFailure.Refused(accountChange))
         val owner = seat.owner
         return notebookWrite.withLock {
-            if (owner != seat.owner) return@withLock GymResult.Failed(WriteFailure.Refused(accountChanged))
+            if (owner != seat.owner) return@withLock GymResult.Failed(WriteFailure.Refused(accountChange))
             try {
                 val changed = training.moveNote(moved, drawn)
-                if (owner != seat.owner) return@withLock GymResult.Failed(WriteFailure.Refused(accountChanged))
+                if (owner != seat.owner) return@withLock GymResult.Failed(WriteFailure.Refused(accountChange))
                 val written = training.notes()
                 notebook = written
                 if (changed) telemetry.event("gym_note_moved")
@@ -137,7 +137,7 @@ class NotesStore(
             } catch (refusing: Exception) {
                 if (!currentCoroutineContext().isActive) throw refusing
                 seat.reportFailure("gym.reorderNotes", refusing)
-                if (owner != seat.owner) return@withLock GymResult.Failed(WriteFailure.Refused(accountChanged))
+                if (owner != seat.owner) return@withLock GymResult.Failed(WriteFailure.Refused(accountChange))
                 GymResult.Failed(WriteFailure(refusing))
             }
         }

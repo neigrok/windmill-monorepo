@@ -63,6 +63,8 @@ import works.windmill.gym.R
 import works.windmill.gym.presentation.LiveLines
 import works.windmill.gym.presentation.Readout
 import androidx.compose.foundation.shape.CircleShape
+import works.windmill.platform.i18n.Words
+import works.windmill.platform.i18n.text
 
 @Composable
 fun AssemblySheet(
@@ -135,7 +137,7 @@ fun AssemblySheet(
         .padding(bottom = GymLayout.sheetBottom), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(stringResource(R.string.gym_logger_this_workout), style = GymType.sheetHeadline, color = colors.onSurface)
-            Text("${Readout.setCount(rows.sumOf { it.sets.size })} logged · ${routine ?: Readout.noRoutine}",
+            Text(rows.sumOf { it.sets.size }.let { logged -> Words.Counted(R.plurals.gym_logger_assembly_logged, logged, listOf(logged.toString(), routine?.let(Words::Plain) ?: Readout.freeWorkout)) }.text(),
                 style = GymType.subtitle, color = colors.onSurfaceVariant)
         }
         LazyColumn(state = list, modifier = Modifier.weight(1f, fill = false).fillMaxWidth().heightIn(max = 420.dp)) {
@@ -163,7 +165,7 @@ fun AssemblySheet(
                     }) {
                     ListItem(
                         headlineContent = { Text(row.name, style = GymType.movementRow) },
-                        supportingContent = { Text(problem ?: row.metadata, style = WindmillType.supportingParagraph,
+                        supportingContent = { Text(problem ?: row.facts.text(), style = WindmillType.supportingParagraph,
                             color = if (problem == null) colors.onSurfaceVariant else colors.error,
                             modifier = Modifier.semantics { if (problem != null) liveRegion = LiveRegionMode.Polite }) },
                         leadingContent = { GymDragHandle(stringResource(R.string.gym_logger_reorder_named, row.name), modifier = Modifier.pointerInput(row.id, order) {

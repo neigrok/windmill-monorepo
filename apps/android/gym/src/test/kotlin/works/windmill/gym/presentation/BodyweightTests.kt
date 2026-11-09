@@ -1,14 +1,22 @@
 package works.windmill.gym.presentation
 
+import android.content.Context
+import androidx.annotation.StringRes
+import androidx.test.core.app.ApplicationProvider
 import java.time.LocalDate
-import java.time.ZoneId
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import works.windmill.gym.R
+import works.windmill.platform.i18n.Words
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class BodyweightTests {
     private val today: LocalDate = LocalDate.parse("2026-08-26")
-    private val nowMs: Long = today.atStartOfDay(ZoneId.systemDefault()).plusHours(9).toInstant().toEpochMilli()
 
     private fun weighIn(date: String, kg: Double, at: Long = 1_000) = WeighIn(date, kg, at)
 
@@ -18,17 +26,17 @@ class BodyweightTests {
         assertEquals(ParsedWeight.Ok(82.4), Bodyweight.parse("82,4"))
         assertEquals(ParsedWeight.Ok(82.0), Bodyweight.parse(" 82 "))
         assertEquals("two decimals stored, half up", ParsedWeight.Ok(82.46), Bodyweight.parse("82.455"))
-        assertEquals(ParsedWeight.Refused("That is not a number yet."), Bodyweight.parse(""))
-        assertEquals(ParsedWeight.Refused("That is not a number yet."), Bodyweight.parse("abc"))
-        assertEquals(ParsedWeight.Refused("That is not a number yet."), Bodyweight.parse("82.4kg"))
-        assertEquals(ParsedWeight.Refused("That is not a number yet."), Bodyweight.parse("-82"))
-        assertEquals(ParsedWeight.Refused("One decimal point only."), Bodyweight.parse("1.2.3"))
-        assertEquals(ParsedWeight.Refused("One decimal point only."), Bodyweight.parse("82,4.5"))
-        assertEquals(ParsedWeight.Refused("Between 20 and 400 kg — check the number."), Bodyweight.parse("19.99"))
-        assertEquals(ParsedWeight.Refused("Between 20 and 400 kg — check the number."), Bodyweight.parse("400.01"))
-        assertEquals(ParsedWeight.Refused(Bodyweight.outOfRange), Bodyweight.parse("19.999"))
-        assertEquals(ParsedWeight.Refused(Bodyweight.outOfRange), Bodyweight.parse("400.001"))
-        assertEquals(ParsedWeight.Refused(Bodyweight.notANumber), Bodyweight.parse("abc1.2.3"))
+        assertEquals(ParsedWeight.Refused(Words.Plain("That is not a number yet.")), Bodyweight.parse("").spelled())
+        assertEquals(ParsedWeight.Refused(Words.Plain("That is not a number yet.")), Bodyweight.parse("abc").spelled())
+        assertEquals(ParsedWeight.Refused(Words.Plain("That is not a number yet.")), Bodyweight.parse("82.4kg").spelled())
+        assertEquals(ParsedWeight.Refused(Words.Plain("That is not a number yet.")), Bodyweight.parse("-82").spelled())
+        assertEquals(ParsedWeight.Refused(Words.Plain("One decimal point only.")), Bodyweight.parse("1.2.3").spelled())
+        assertEquals(ParsedWeight.Refused(Words.Plain("One decimal point only.")), Bodyweight.parse("82,4.5").spelled())
+        assertEquals(ParsedWeight.Refused(Words.Plain("Between 20 and 400 kg — check the number.")), Bodyweight.parse("19.99").spelled())
+        assertEquals(ParsedWeight.Refused(Words.Plain("Between 20 and 400 kg — check the number.")), Bodyweight.parse("400.01").spelled())
+        assertEquals(ParsedWeight.Refused(Bodyweight.outsideRange), Bodyweight.parse("19.999"))
+        assertEquals(ParsedWeight.Refused(Bodyweight.outsideRange), Bodyweight.parse("400.001"))
+        assertEquals(ParsedWeight.Refused(Bodyweight.unreadable), Bodyweight.parse("abc1.2.3"))
         assertEquals(ParsedWeight.Ok(20.0), Bodyweight.parse("20"))
         assertEquals(ParsedWeight.Ok(400.0), Bodyweight.parse("400"))
     }
@@ -39,14 +47,6 @@ class BodyweightTests {
         assertEquals("82", Bodyweight.kilograms(82.0))
         assertEquals("82.45", Bodyweight.kilograms(82.45))
         assertEquals("100", Bodyweight.kilograms(100.0))
-    }
-
-    @Test
-    fun testTheReadingIsTheLastWeighInAndItsAgeOrNothingAtAll() {
-        assertNull("no weigh-in ever draws nothing — no dash, no zero", Bodyweight.reading(null, nowMs))
-        assertEquals("82.4 kg · today", Bodyweight.reading(weighIn("2026-08-26", 82.4), nowMs))
-        assertEquals("82.4 kg · yesterday", Bodyweight.reading(weighIn("2026-08-25", 82.4), nowMs))
-        assertEquals("83 kg · 3 days ago", Bodyweight.reading(weighIn("2026-08-23", 83.0), nowMs))
     }
 
     @Test
@@ -61,19 +61,19 @@ class BodyweightTests {
         assertEquals(listOf("2026-05-28", "2026-05-29", "2026-08-26"),
             Bodyweight.windowed(series, ChartWindow.All, today).map { it.dateLocal })
         // B11: the window label, byte for byte, on every surface.
-        assertEquals("90 days · 2 weigh-ins", Bodyweight.windowLine(ChartWindow.Ninety, 2))
-        assertEquals("90 days · 1 weigh-in", Bodyweight.windowLine(ChartWindow.Ninety, 1))
-        assertEquals("All · 1 weigh-in", Bodyweight.windowLine(ChartWindow.All, 1))
-        assertEquals("All · 12 weigh-ins", Bodyweight.windowLine(ChartWindow.All, 12))
+        assertEquals("90 days · 2 weigh-ins", Bodyweight.windowWords(ChartWindow.Ninety, 2).spelled())
+        assertEquals("90 days · 1 weigh-in", Bodyweight.windowWords(ChartWindow.Ninety, 1).spelled())
+        assertEquals("All · 1 weigh-in", Bodyweight.windowWords(ChartWindow.All, 1).spelled())
+        assertEquals("All · 12 weigh-ins", Bodyweight.windowWords(ChartWindow.All, 12).spelled())
     }
 
     @Test
     fun testAWeighInIsNeverInTheFuture() {
         val today = LocalDate.parse("2026-08-26")
-        assertEquals(null, Bodyweight.dated(today, today))
-        assertEquals(null, Bodyweight.dated(today.minusDays(40), today))
-        assertEquals("A weigh-in is not a forecast — today or earlier.", Bodyweight.dated(today.plusDays(1), today))
-        assertEquals(Bodyweight.notAForecast, Bodyweight.dated(today.plusYears(1), today))
+        assertEquals(null, Bodyweight.dateRefusal(today, today))
+        assertEquals(null, Bodyweight.dateRefusal(today.minusDays(40), today))
+        assertEquals("A weigh-in is not a forecast — today or earlier.", Bodyweight.dateRefusal(today.plusDays(1), today).spelled())
+        assertEquals(Bodyweight.inTheFuture, Bodyweight.dateRefusal(today.plusYears(1), today))
     }
 
     // B2's client half: the log refuses a date a day later than this phone would, so a served row
@@ -86,7 +86,6 @@ class BodyweightTests {
             weighIn("2026-08-26", 82.4),
         )
         assertEquals("2026-08-26", Bodyweight.latest(series, today)?.dateLocal)
-        assertEquals("82.4 kg · today", Bodyweight.reading(Bodyweight.latest(series, today), nowMs))
         assertEquals(listOf("2026-08-20", "2026-08-26"),
             Bodyweight.windowed(series, ChartWindow.Ninety, today).map { it.dateLocal })
         assertEquals(listOf("2026-08-20", "2026-08-26"),
@@ -100,6 +99,12 @@ class BodyweightTests {
         val date = LocalDate.parse("2025-08-12")
         assertEquals("12 Aug 2025", Bodyweight.listDay(date))
         assertEquals("12 August 2025", Bodyweight.fullDay(date))
-        assertEquals("Save weight", Bodyweight.save)
+        assertEquals("Save weight", string(R.string.gym_bodyweight_save))
     }
 }
+
+private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())
+
+private fun ParsedWeight.spelled(): ParsedWeight = if (this is ParsedWeight.Refused) copy(why = Words.Plain(why.text(ApplicationProvider.getApplicationContext()))) else this
+
+private fun string(@StringRes id: Int, vararg args: Any): String = ApplicationProvider.getApplicationContext<Context>().getString(id, *args)

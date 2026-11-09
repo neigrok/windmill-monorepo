@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="gym_proposal_source_coach">Coach</string>
+    <string name="gym_proposal_source_connected_agent">your connected agent</string>
+    <string name="gym_proposal_source_your_agent">Your agent</string>
+    <string name="gym_proposal_wrote">%1$s wrote:</string>
+    <string name="gym_proposal_removed_from">removed from %1$s</string>
+    <string name="gym_proposal_removed_never_logged">removed from %1$s · never logged</string>
+    <plurals name="gym_proposal_removed_kept">
+        <item quantity="one">removed from %1$s · %2$s logged set kept</item>
+        <item quantity="other">removed from %1$s · %2$s logged sets kept</item>
+    </plurals>
+    <string name="gym_proposal_receipt_removed">Applied · %1$s · routine removed</string>
+    <string name="gym_proposal_receipt_applied">Applied · %1$s · %2$s</string>
+    <string name="gym_proposal_receipt_turned_down">Turned down · nothing changed.</string>
+    <string name="gym_proposal_byline">from %1$s · %2$s</string>
+    <string name="gym_proposal_summary_remove">A proposal to remove %1$s.</string>
+    <string name="gym_proposal_summary_changes">%1$s to %2$s.</string>
+    <string name="gym_proposal_a_removal">a removal</string>
+    <plurals name="gym_proposal_changes">
+        <item quantity="one">%1$s change</item>
+        <item quantity="other">%1$s changes</item>
+    </plurals>
+    <string name="gym_proposal_remove_routine">Remove %1$s</string>
+    <string name="gym_proposal_apply">Apply</string>
+    <string name="gym_proposal_apply_all">Apply all %1$s</string>
+    <string name="gym_proposal_atomic_remove">The routine goes and your logged sets stay. Nothing is removed until you tap.</string>
+    <string name="gym_proposal_atomic_one">Nothing is applied until you tap.</string>
+    <string name="gym_proposal_atomic_all">All %1$s or none. Nothing is applied until you tap.</string>
+    <string name="gym_proposal_settled_applied">Applied to %1$s %2$s at %3$s.</string>
+    <string name="gym_proposal_settled_turned_down">Turned down %1$s at %2$s. Nothing changed.</string>
+    <string name="gym_proposal_settled_superseded">%1$s changed after this was written, so it was set aside %2$s at %3$s. None of it was applied.</string>
+    <string name="gym_proposal_this_routine">this routine</string>
+    <string name="gym_proposal_this_workout">this workout</string>
+    <string name="gym_proposal_this_workout_heading">This workout</string>
+    <string name="gym_proposal_the_routine">the routine</string>
+    <string name="gym_proposal_set_n">set %1$s</string>
+    <string name="gym_proposal_sets">sets</string>
+    <string name="gym_proposal_stale">%1$s Nothing was applied.</string>
+    <string name="gym_proposal_stale_replaced">A newer suggestion replaced this one.</string>
+    <string name="gym_proposal_stale_finished">This workout has finished.</string>
+    <string name="gym_proposal_stale_moved">You logged %1$s since this suggestion.</string>
+    <string name="gym_proposal_stale_a_movement">a movement</string>
+    <string name="gym_proposal_stale_changed">This workout changed after this suggestion.</string>
+    <plurals name="gym_proposal_unchanged">
+        <item quantity="one">and %1$s line unchanged</item>
+        <item quantity="other">and %1$s lines unchanged</item>
+    </plurals>
+    <string name="gym_proposal_review">Review</string>
+    <string name="gym_proposal_apply_hint">Scroll to the end to apply.</string>
+    <string name="gym_proposal_still_waiting">still waiting</string>
+    <string name="gym_proposal_turn_down_verb">Turn this down</string>
+    <string name="gym_proposal_turn_down_ask">Turn this down?</string>
+    <string name="gym_proposal_turn_down_body">Nothing changes.</string>
+    <string name="gym_proposal_turn_down">Turn down</string>
+    <string name="gym_proposal_sign_in_to_review">Sign in to review this proposal.</string>
+    <string name="gym_proposal_next_time">next time</string>
+    <string name="gym_proposal_out_of_date">out of date</string>
+</resources>

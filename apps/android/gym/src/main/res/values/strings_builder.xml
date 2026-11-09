@@ -28,4 +28,7 @@
         <item quantity="one">%1$s movement</item>
         <item quantity="other">%1$s movements</item>
     </plurals>
+    <string name="gym_builder_moved_to">%1$s, %2$s of %3$s</string>
+    <string name="gym_builder_named_not_saved">%1$s won’t be saved.</string>
+    <string name="gym_builder_routine_not_saved">This routine won’t be saved.</string>
 </resources>

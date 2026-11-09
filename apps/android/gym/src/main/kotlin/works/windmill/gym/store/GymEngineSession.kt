@@ -1,5 +1,6 @@
 package works.windmill.gym.store
 
+import works.windmill.gym.R
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -29,7 +30,6 @@ import works.windmill.sync.engine.SignOutSession
 import works.windmill.sync.engine.SyncRuntime
 import works.windmill.sync.engine.anonDrawn
 import works.windmill.sync.engine.discardDormant
-import works.windmill.sync.schema.Gym
 
 class GymEngineSession(
     val engine: Engine,
@@ -46,7 +46,7 @@ class GymEngineSession(
     val decisionKey: String get() = "$decisionIdentity:$decisionRevision"
     var decisionRevision: Long by mutableLongStateOf(0L)
         private set
-    var decisionFailure: String? by mutableStateOf(null)
+    var decisionRefusal: Int? by mutableStateOf(null)
         private set
     var decisionBusy by mutableStateOf(false)
         private set
@@ -71,7 +71,7 @@ class GymEngineSession(
                 decisionRevision += 1
                 decisionCounts = session.decisions.associate { held -> held.product to engine.anonDrawn(held.product) }
                 decision = session
-                decisionFailure = null
+                decisionRefusal = null
                 answer = completion
                 telemetry.event("gym_sign_in_decision", mapOf("state" to "shown"))
                 completion.await()
@@ -114,7 +114,7 @@ class GymEngineSession(
         val session = decision ?: return
         if (decisionBusy || session !== opening) return
         decisionBusy = true
-        decisionFailure = null
+        decisionRefusal = null
         try {
             session.complete(session.decisions.associate { it.product to choice })
             telemetry.event("gym_sign_in_decision", mapOf("action" to choice.name, "outcome" to "completed"))
@@ -124,11 +124,11 @@ class GymEngineSession(
             if (changed.code == EngineError.Code.signInChanged) {
                 telemetry.event("gym_sign_in_decision", mapOf("outcome" to "changed"))
                 answer?.complete(Unit)
-            } else decisionFailure = "The account could not be selected. Try again."
+            } else decisionRefusal = R.string.gym_store_account_selection_failed
         } catch (failure: Exception) {
             if (!currentCoroutineContext().isActive) throw failure
             telemetry.failure("gym_sign_in_decision", failure)
-            decisionFailure = "The account could not be selected. Your work is still on this phone. Try again."
+            decisionRefusal = R.string.gym_store_account_selection_failed_kept
         } finally { decisionBusy = false }
     }
 

@@ -5,6 +5,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.test.core.app.ApplicationProvider
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -26,6 +27,7 @@ import works.windmill.gym.presentation.SetTarget
 import works.windmill.gym.presentation.TrainingSet
 import works.windmill.gym.sharing.WorkoutShareActions
 import works.windmill.gym.store.EngineRoomFixture
+import works.windmill.platform.i18n.Words
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
@@ -92,10 +94,10 @@ class SessionScreenTests {
 
     private fun plan(vararg entries: PlanEntry) = PlanSnapshot(routine = "Push A", entries = entries.toList())
 
-    private fun notes(movement: Performed.Movement) = movement.rows.map { it.note?.text }
+    private fun notes(movement: Performed.Movement) = movement.rows.map { it.note?.said.spelled() }
 
     private fun line(movement: Performed.Movement) =
-        (movement.against as? Performed.Against.Plan)?.line
+        (movement.against as? Performed.Against.Plan)?.said.spelled()
 
     @Test
     fun movementHeadersRetainStoredEquipmentAndItsLoadBasis() {
@@ -302,7 +304,7 @@ class SessionScreenTests {
         assertEquals(listOf(
             "Set 1, 75 kg total, 8 reps, on plan",
             "Set 2, 75 kg total, 6 reps, two short, RPE 9.5, left shoulder",
-        ), movements.single().rows.map { it.spoken })
+        ), movements.single().rows.map { it.said.spelled() })
     }
 
     @Test
@@ -316,3 +318,5 @@ class SessionScreenTests {
         assertEquals("82.5 × 5", movements[0].rows.single().effort)
     }
 }
+
+private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())

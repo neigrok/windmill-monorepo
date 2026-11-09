@@ -59,6 +59,7 @@ import works.windmill.gym.domain.coach.RecordedRead
 import works.windmill.gym.domain.coach.inOrder
 import works.windmill.gym.presentation.ChangeKind
 import works.windmill.gym.presentation.ProposalChange
+import works.windmill.gym.presentation.ProposalReceipt
 import works.windmill.gym.presentation.ProposalTargets
 import works.windmill.gym.presentation.Routine
 import works.windmill.gym.presentation.RoutineDraft
@@ -68,6 +69,8 @@ import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.ProposalOutcome
 import works.windmill.gym.store.ProposalRead
+import works.windmill.platform.i18n.Words
+import works.windmill.platform.i18n.text
 import works.windmill.platform.telemetry.LocalTelemetry
 import works.windmill.sync.api.Change
 import works.windmill.sync.api.CommitOutcome
@@ -507,7 +510,7 @@ class ThreadScreenTests {
         said(room, "thread0001", "Is my week too light?" to "Heavier triples would help.", calls = listOf(proposed("proposal1")))
         room.sync(server)
         room.store.observeEngine()
-        var receipts by mutableStateOf<List<String>>(emptyList())
+        var receipts by mutableStateOf<List<ProposalReceipt>>(emptyList())
         val ask = AskBinding(room.store)
         compose.setContent {
             ThreadScreen(
@@ -521,7 +524,7 @@ class ThreadScreenTests {
             .performScrollTo().assertIsDisplayed()
 
         val settled = applied(room, server)
-        compose.runOnIdle { receipts = listOf(settled.proposal.receipt!!) }
+        compose.runOnIdle { receipts = listOf(settled.proposal.settledReceipt!!) }
 
         compose.onNodeWithText("Applied · Push Day · 1 change").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("1 change").performScrollTo().assertIsDisplayed()
@@ -545,7 +548,7 @@ class ThreadScreenTests {
             ThreadScreen(ask, ask, "thr_removed", emptyList(), emptySet(), "Coach", {}, {}, {})
         }
         read("The original proposal explanation.").assertIsDisplayed()
-        compose.onNodeWithText(ProposalRead.Gone.line).assertDoesNotExist()
+        compose.onNodeWithText(ProposalRead.Gone.words.spelled()!!).assertDoesNotExist()
         compose.onNodeWithText("Review").assertDoesNotExist()
         compose.onNodeWithText("Try again").assertDoesNotExist()
         compose.onNodeWithText("Read-only").assertDoesNotExist()
@@ -580,7 +583,7 @@ class ThreadScreenTests {
         room.sync(server)
         val records = messages(room)
         room.store.observeEngine()
-        var receipts by mutableStateOf<List<String>>(emptyList())
+        var receipts by mutableStateOf<List<ProposalReceipt>>(emptyList())
         var visit by mutableStateOf(0)
         val reviewed = mutableListOf<String>()
         val ask = AskBinding(room.store)
@@ -592,13 +595,13 @@ class ThreadScreenTests {
             .performScrollTo().assertIsDisplayed()
         val settled = applied(room, server)
         compose.runOnIdle {
-            receipts = listOf(requireNotNull(settled.proposal.receipt))
+            receipts = listOf(requireNotNull(settled.proposal.settledReceipt))
             visit++
         }
-        read(requireNotNull(settled.proposal.receipt)).performScrollTo().assertIsDisplayed()
+        read(requireNotNull(settled.proposal.settledReceipt).words.spelled()!!).performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Remove this routine.").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Review").performScrollTo().performClick()
-        compose.onNodeWithText(ProposalRead.Gone.line).assertDoesNotExist()
+        compose.onNodeWithText(ProposalRead.Gone.words.spelled()!!).assertDoesNotExist()
         compose.onNodeWithText(string(R.string.gym_coach_promise)).assertDoesNotExist()
         compose.runOnIdle {
             assertEquals(listOf("proposal1"), reviewed)
@@ -629,7 +632,7 @@ class ThreadScreenTests {
         }
         read("The original answer.").assertIsDisplayed()
         compose.onNodeWithText("Review").assertDoesNotExist()
-        compose.onNodeWithText(ProposalRead.Gone.line).assertDoesNotExist()
+        compose.onNodeWithText(ProposalRead.Gone.words.spelled()!!).assertDoesNotExist()
         compose.onNodeWithText("Try again").assertDoesNotExist()
         compose.runOnIdle { room.pull(server); visit++ }
         read("Heavier triples.").performScrollTo().assertIsDisplayed()
@@ -641,3 +644,5 @@ class ThreadScreenTests {
 }
 
 private fun string(@StringRes id: Int): String = ApplicationProvider.getApplicationContext<Context>().getString(id)
+
+private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())

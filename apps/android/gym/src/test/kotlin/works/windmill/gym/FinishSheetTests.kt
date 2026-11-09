@@ -9,6 +9,8 @@ import android.os.Parcel
 import android.os.Parcelable
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import works.windmill.platform.i18n.Words
+import works.windmill.platform.i18n.text
 import works.windmill.platform.net.WindmillJson
 
 import androidx.compose.ui.semantics.SemanticsActions
@@ -63,7 +65,6 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import works.windmill.agent.TurnRefusal
-import works.windmill.gym.coach.Ask
 import works.windmill.gym.coach.CoachDraft
 import works.windmill.gym.coach.LocalCoach
 import works.windmill.gym.coach.heldThreads
@@ -82,7 +83,6 @@ import works.windmill.gym.net.FakeGymRest
 import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.store.HistoryReads
 import works.windmill.gym.store.TrainingStore
-import works.windmill.gym.ui.FinishCoach
 import works.windmill.gym.ui.GymMaterial
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.sync.core.Json
@@ -177,8 +177,8 @@ class FinishSheetTests {
     }
 
     private fun shareReceipt() {
-        compose.onNodeWithText(FinishCoach.action).performClick()
-        compose.waitUntil(10_000) { compose.onAllNodesWithText(FinishCoach.action).fetchSemanticsNodes().isEmpty() }
+        compose.onNodeWithText(string(R.string.gym_finish_share_with_coach)).performClick()
+        compose.waitUntil(10_000) { compose.onAllNodesWithText(string(R.string.gym_finish_share_with_coach)).fetchSemanticsNodes().isEmpty() }
     }
 
     private fun startAWorkout(room: EngineRoomFixture) {
@@ -219,7 +219,7 @@ class FinishSheetTests {
             finishAWorkout(room)
 
             compose.onNodeWithText("Ended early.").assertIsDisplayed()
-            compose.onNodeWithText(Readout.noRoutine).assertIsDisplayed()
+            compose.onNodeWithText(Readout.freeWorkout.spelled()!!).assertIsDisplayed()
             compose.onNodeWithText("The log").assertDoesNotExist()
         }
     }
@@ -373,7 +373,7 @@ class FinishSheetTests {
                 compose.onAllNodesWithContentDescription("Coach is thinking").fetchSemanticsNodes().isNotEmpty()
             }
 
-            compose.onNodeWithText(FinishCoach.question).assertIsDisplayed()
+            compose.onNodeWithText(string(R.string.gym_finish_coach_question)).assertIsDisplayed()
             compose.onNodeWithContentDescription("Coach is thinking").assertIsDisplayed()
             compose.onAllNodesWithText("What’s stalled?").assertCountEquals(0)
             compose.onAllNodesWithText("nothing has moved in three weeks.").assertCountEquals(0)
@@ -388,7 +388,7 @@ class FinishSheetTests {
             compose.waitUntil(10_000) {
                 compose.onAllNodesWithText(string(R.string.gym_coach_stopped)).fetchSemanticsNodes().isNotEmpty()
             }
-            compose.onAllNodesWithText(FinishCoach.question).assertCountEquals(1)
+            compose.onAllNodesWithText(string(R.string.gym_finish_coach_question)).assertCountEquals(1)
         }
     }
 
@@ -401,7 +401,7 @@ class FinishSheetTests {
             read(room)
             finishAWorkout(room)
 
-            val tap = compose.onNodeWithText(FinishCoach.action)
+            val tap = compose.onNodeWithText(string(R.string.gym_finish_share_with_coach))
                 .fetchSemanticsNode().config[SemanticsActions.OnClick].action!!
             compose.mainClock.autoAdvance = false
             compose.runOnIdle {
@@ -417,8 +417,8 @@ class FinishSheetTests {
             compose.waitUntil(10_000) {
                 compose.onAllNodesWithContentDescription("Coach is thinking").fetchSemanticsNodes().isNotEmpty()
             }
-            compose.onAllNodesWithText(FinishCoach.question).assertCountEquals(1)
-            compose.runOnIdle { assertEquals("one tap, one turn", listOf(FinishCoach.question), server.opened.map { it.question }) }
+            compose.onAllNodesWithText(string(R.string.gym_finish_coach_question)).assertCountEquals(1)
+            compose.runOnIdle { assertEquals("one tap, one turn", listOf(string(R.string.gym_finish_coach_question)), server.opened.map { it.question }) }
 
             compose.onNodeWithContentDescription("Stop response").performClick()
             compose.waitUntil(10_000) {
@@ -444,10 +444,10 @@ class FinishSheetTests {
             }
             compose.runOnIdle {
                 val key = room.store.coach.selectedChatId!!
-                assertEquals("Send admits the follow-up on the original chat", listOf(FinishCoach.question, "And my squat?"), room.store.coach.exchanges(key).map { it.question })
-                assertEquals(listOf(FinishCoach.question, "And my squat?"), server.opened.map { it.question })
+                assertEquals("Send admits the follow-up on the original chat", listOf(string(R.string.gym_finish_coach_question), "And my squat?"), room.store.coach.exchanges(key).map { it.question })
+                assertEquals(listOf(string(R.string.gym_finish_coach_question), "And my squat?"), server.opened.map { it.question })
                 assertEquals("the follow-up continues the conversation the tap opened",
-                             listOf(FinishCoach.question), room.heldThreads().map { it.title })
+                             listOf(string(R.string.gym_finish_coach_question)), room.heldThreads().map { it.title })
             }
         }
     }
@@ -476,7 +476,7 @@ class FinishSheetTests {
                 compose.onAllNodesWithText("Ended early.").fetchSemanticsNodes().isEmpty()
             }
             compose.waitUntil(10_000) {
-                compose.onAllNodesWithText(CoachTurnFault.busy.sentence).fetchSemanticsNodes().isNotEmpty()
+                compose.onAllNodesWithText(string(CoachTurnFault.busy.said)).fetchSemanticsNodes().isNotEmpty()
             }
             val share = compose.runOnIdle { room.store.coach.selectedChatId!! }
             compose.onNodeWithText("Answer in progress").assertIsDisplayed()
@@ -485,7 +485,7 @@ class FinishSheetTests {
             compose.runOnIdle {
                 assertTrue(share != asked)
                 assertTrue(room.store.coach.isAsking(asked))
-                assertEquals(CoachDraft(FinishCoach.question), room.store.coach.draft(share))
+                assertEquals(CoachDraft(string(R.string.gym_finish_coach_question)), room.store.coach.draft(share))
                 assertEquals(null, room.store.coach.chat(share)?.conversation)
                 assertEquals(listOf("What’s stalled?"), server.opened.map { it.question })
                 assertEquals(listOf("What’s stalled?"), room.heldThreads().map { it.title })
@@ -497,8 +497,8 @@ class FinishSheetTests {
                 compose.onAllNodesWithText("Looks strong.").fetchSemanticsNodes().isNotEmpty()
             }
             compose.runOnIdle {
-                assertEquals(listOf("What’s stalled?", FinishCoach.question), server.opened.map { it.question })
-                assertEquals(setOf("What’s stalled?", FinishCoach.question), room.heldThreads().map { it.title }.toSet())
+                assertEquals(listOf("What’s stalled?", string(R.string.gym_finish_coach_question)), server.opened.map { it.question })
+                assertEquals(setOf("What’s stalled?", string(R.string.gym_finish_coach_question)), room.heldThreads().map { it.title }.toSet())
             }
         }
     }
@@ -512,7 +512,7 @@ class FinishSheetTests {
             startAWorkout(room)
             finish(title = "Ended early.")
 
-            compose.onAllNodesWithText(FinishCoach.action).assertCountEquals(1)
+            compose.onAllNodesWithText(string(R.string.gym_finish_share_with_coach)).assertCountEquals(1)
             compose.onNodeWithText("Only on this phone · Keep it").assertIsDisplayed()
             assertEquals("nothing was asked", emptyList<String>(), server.opened.map { it.question })
         }
@@ -528,12 +528,12 @@ class FinishSheetTests {
 
             askAQuestion()
             compose.waitUntil(10_000) {
-                compose.onAllNodesWithText(Ask.notHere).fetchSemanticsNodes().isNotEmpty()
+                compose.onAllNodesWithText(string(R.string.gym_coach_not_here)).fetchSemanticsNodes().isNotEmpty()
             }
             startAWorkout(room)
             finish()
 
-            compose.onAllNodesWithText(FinishCoach.action).assertCountEquals(0)
+            compose.onAllNodesWithText(string(R.string.gym_finish_share_with_coach)).assertCountEquals(0)
             assertEquals("the one ask was the opener", listOf("What’s stalled?"), server.opened.map { it.question })
         }
     }
@@ -593,7 +593,7 @@ class FinishSheetTests {
         inRoom { room ->
             finishAWorkout(room, sets = 0)
             compose.onNodeWithText("No sets logged").assertIsDisplayed()
-            compose.onNodeWithText(FinishCoach.action).assertDoesNotExist()
+            compose.onNodeWithText(string(R.string.gym_finish_share_with_coach)).assertDoesNotExist()
             compose.onNodeWithText("Sets").assertDoesNotExist()
             compose.onNodeWithText("Volume").assertDoesNotExist()
             compose.onNodeWithText("0 kg").assertDoesNotExist()
@@ -630,13 +630,13 @@ class FinishSheetTests {
             compose.runOnIdle { presentedAccount = room.account() }
             compose.waitUntil(10_000) { compose.runOnIdle { server.opened.isNotEmpty() } }
             compose.runOnIdle {
-                assertEquals(listOf(FinishCoach.question), server.opened.map { it.question })
+                assertEquals(listOf(string(R.string.gym_finish_coach_question)), server.opened.map { it.question })
                 assertEquals(request, onceRow(room))
                 assertEquals(null, attempts.result)
             }
             restoration.emulateSavedInstanceStateRestore()
             compose.waitForIdle()
-            compose.runOnIdle { assertEquals(listOf(FinishCoach.question), server.opened.map { it.question }) }
+            compose.runOnIdle { assertEquals(listOf(string(R.string.gym_finish_coach_question)), server.opened.map { it.question }) }
         }
     }
 
@@ -907,7 +907,7 @@ class FinishSheetTests {
             suppliedRegistry = SaveableStateRegistry(null) { true }
             show(room)
             finish()
-            val share = compose.onNodeWithText(FinishCoach.action).fetchSemanticsNode().config[SemanticsActions.OnClick].action!!
+            val share = compose.onNodeWithText(string(R.string.gym_finish_share_with_coach)).fetchSemanticsNode().config[SemanticsActions.OnClick].action!!
             compose.mainClock.autoAdvance = false
             compose.runOnIdle { share(); assertEquals(emptyList<String>(), opened) }
             val duringExit = compose.runOnIdle { saveRoom() }
@@ -928,7 +928,7 @@ class FinishSheetTests {
             compose.waitUntil(10_000) { compose.runOnIdle { server.opened.isNotEmpty() } }
             compose.runOnIdle {
                 assertEquals(listOf(request), opened)
-                assertEquals(listOf(FinishCoach.question), server.opened.map { it.question })
+                assertEquals(listOf(string(R.string.gym_finish_coach_question)), server.opened.map { it.question })
                 assertEquals(request, onceRow(room))
             }
             val afterShare = compose.runOnIdle { saveRoom() }
@@ -936,7 +936,7 @@ class FinishSheetTests {
             compose.waitForIdle()
             compose.runOnIdle { suppliedRegistry = SaveableStateRegistry(afterShare) { true }; showing = true }
             compose.waitForIdle()
-            compose.runOnIdle { assertEquals(listOf(FinishCoach.question), server.opened.map { it.question }); assertEquals(listOf(request), opened) }
+            compose.runOnIdle { assertEquals(listOf(string(R.string.gym_finish_coach_question)), server.opened.map { it.question }); assertEquals(listOf(request), opened) }
         }
     }
 
@@ -955,7 +955,7 @@ class FinishSheetTests {
             read(room)
             suppliedRegistry = SaveableStateRegistry(null) { true }
             finishAWorkout(room)
-            val share = compose.onNodeWithText(FinishCoach.action).fetchSemanticsNode().config[SemanticsActions.OnClick].action!!
+            val share = compose.onNodeWithText(string(R.string.gym_finish_share_with_coach)).fetchSemanticsNode().config[SemanticsActions.OnClick].action!!
             compose.mainClock.autoAdvance = false
             compose.runOnIdle { share() }
             val queued = compose.runOnIdle { saveRoom() }
@@ -973,12 +973,12 @@ class FinishSheetTests {
             restoreRoom(queued)
             compose.waitUntil(10_000) { compose.runOnIdle { restored.coach.selectedChatId == request } }
             compose.runOnIdle {
-                assertEquals(listOf(FinishCoach.question), server.opened.map { it.question })
+                assertEquals(listOf(string(R.string.gym_finish_coach_question)), server.opened.map { it.question })
                 assertEquals(request, onceRow(room))
                 assertEquals(original, restored.coach.chat(request))
                 assertEquals(CoachDraft("Another draft"), restored.coach.draft(other))
                 assertEquals(before, steps)
-                assertEquals(listOf(FinishCoach.question), room.heldThreads().map { it.title })
+                assertEquals(listOf(string(R.string.gym_finish_coach_question)), room.heldThreads().map { it.title })
             }
         }
     }
@@ -991,7 +991,7 @@ class FinishSheetTests {
             read(room)
             suppliedRegistry = SaveableStateRegistry(null) { true }
             finishAWorkout(room)
-            val share = compose.onNodeWithText(FinishCoach.action).fetchSemanticsNode().config[SemanticsActions.OnClick].action!!
+            val share = compose.onNodeWithText(string(R.string.gym_finish_share_with_coach)).fetchSemanticsNode().config[SemanticsActions.OnClick].action!!
             compose.mainClock.autoAdvance = false
             compose.runOnIdle { share() }
             val queued = compose.runOnIdle { saveRoom() }
@@ -1002,17 +1002,17 @@ class FinishSheetTests {
             restoreRoom(queued)
             compose.waitUntil(10_000) { compose.runOnIdle { room.store.coach.selectedChatId == request } }
             compose.runOnIdle {
-                assertEquals(listOf(FinishCoach.question), server.opened.map { it.question })
+                assertEquals(listOf(string(R.string.gym_finish_coach_question)), server.opened.map { it.question })
                 assertTrue(room.store.coach.isAsking(request))
                 assertEquals("the second asking finds its turn and is never told Coach is busy", null, room.store.coach.fault(request))
                 assertEquals(CoachDraft("Keep typing"), room.store.coach.draft(other))
-                assertEquals(listOf(FinishCoach.question), room.store.coach.exchanges(request).map { it.question })
+                assertEquals(listOf(string(R.string.gym_finish_coach_question)), room.store.coach.exchanges(request).map { it.question })
                 room.store.coach.stop()
             }
             compose.waitUntil(10_000) { compose.runOnIdle { !room.store.coach.isAsking(request) } }
             compose.waitUntil(10_000) { compose.runOnIdle { room.store.coach.exchanges(request).singleOrNull()?.answer?.state == MessageState.stopped } }
             compose.runOnIdle {
-                assertEquals(listOf(FinishCoach.question), server.opened.map { it.question })
+                assertEquals(listOf(string(R.string.gym_finish_coach_question)), server.opened.map { it.question })
                 assertEquals("nothing has moved in three weeks.", room.store.coach.exchanges(request).single().answer?.text)
                 assertEquals(request, room.store.coach.selectedChatId)
             }
@@ -1026,7 +1026,7 @@ class FinishSheetTests {
             val document = WindmillJson.parseToJsonElement(text) as JsonObject
             val drafts = (document["drafts"] as? JsonObject)?.get("u1") as? JsonObject
             val shareDraft = drafts?.entries?.singleOrNull {
-                ((it.value as? JsonObject)?.get("text") as? JsonPrimitive)?.content == FinishCoach.question
+                ((it.value as? JsonObject)?.get("text") as? JsonPrimitive)?.content == string(R.string.gym_finish_coach_question)
             }
             if (failedDraftId == null && shareDraft != null) {
                 failedDraftId = shareDraft.key
@@ -1044,7 +1044,7 @@ class FinishSheetTests {
             read(room)
             suppliedRegistry = SaveableStateRegistry(null) { true }
             finishAWorkout(room)
-            val share = compose.onNodeWithText(FinishCoach.action).fetchSemanticsNode().config[SemanticsActions.OnClick].action!!
+            val share = compose.onNodeWithText(string(R.string.gym_finish_share_with_coach)).fetchSemanticsNode().config[SemanticsActions.OnClick].action!!
             compose.mainClock.autoAdvance = false
             compose.runOnIdle { share() }
             val queued = compose.runOnIdle { saveRoom() }
@@ -1066,10 +1066,10 @@ class FinishSheetTests {
             compose.waitUntil(10_000) { compose.runOnIdle { server.opened.size == 1 } }
             compose.waitUntil(10_000) { compose.runOnIdle { restored.coach.chat(request)?.conversation != null } }
             compose.runOnIdle {
-                assertEquals(listOf(FinishCoach.question), server.opened.map { it.question })
+                assertEquals(listOf(string(R.string.gym_finish_coach_question)), server.opened.map { it.question })
                 assertEquals(request, onceRow(room))
                 assertEquals(listOf(request), disk.chats("u1").map { it.id })
-                assertEquals(listOf(FinishCoach.question), room.heldThreads().map { it.title })
+                assertEquals(listOf(string(R.string.gym_finish_coach_question)), room.heldThreads().map { it.title })
             }
         }
     }
@@ -1081,7 +1081,7 @@ class FinishSheetTests {
             read(room)
             suppliedRegistry = SaveableStateRegistry(null) { true }
             finishAWorkout(room)
-            val share = compose.onNodeWithText(FinishCoach.action).fetchSemanticsNode().config[SemanticsActions.OnClick].action!!
+            val share = compose.onNodeWithText(string(R.string.gym_finish_share_with_coach)).fetchSemanticsNode().config[SemanticsActions.OnClick].action!!
             compose.mainClock.autoAdvance = false
             compose.runOnIdle { share() }
             val queued = compose.runOnIdle { saveRoom() }
@@ -1109,3 +1109,5 @@ class FinishSheetTests {
 }
 
 private fun string(@StringRes id: Int): String = ApplicationProvider.getApplicationContext<Context>().getString(id)
+
+private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())

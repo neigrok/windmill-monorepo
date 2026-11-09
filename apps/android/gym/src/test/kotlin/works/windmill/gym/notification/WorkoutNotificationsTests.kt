@@ -52,6 +52,7 @@ import works.windmill.gym.presentation.WorkoutChange
 import works.windmill.gym.presentation.WorkoutKey
 import works.windmill.gym.presentation.WorkoutNotification
 import works.windmill.gym.store.WorkoutCommands
+import works.windmill.platform.i18n.Words
 import works.windmill.platform.telemetry.Telemetry
 
 @RunWith(RobolectricTestRunner::class)
@@ -203,7 +204,7 @@ class WorkoutNotificationsTests {
         assertNull(public.deleteIntent)
         assertNull(public.contentView)
         assertNull(public.bigContentView)
-        f.commands.notification.value = f.commands.notification.value!!.copy(title = "Free workout", sinceSetAtMs = 100_000)
+        f.commands.notification.value = f.commands.notification.value!!.copy(heading = Words.Plain("Free workout"), sinceSetAtMs = 100_000)
         runCurrent()
         assertEquals("Free workout", f.card().extras.getString(Notification.EXTRA_TITLE))
         assertEquals(100_000L, f.card().`when`)
@@ -416,7 +417,7 @@ class WorkoutNotificationsTests {
         val posts = Shadow.extract<Posts>(manager)
         val key = WorkoutKey("seat/α", "session 1")
         val commands = Commands(
-            WorkoutNotification(key, "Push A", "Overhead Press", "30 kg × 8", "Set 1 of 3",
+            WorkoutNotification(key, Words.Plain("Push A"), Words.Plain("Overhead Press"), Words.Plain("30 kg × 8"), Words.Plain("Set 1 of 3"),
                 LogSetOffer(key, "offer/α 1", 4, "overhead-press", 1, 30.0, 8), false, 90_000),
         )
         val events = mutableListOf<Pair<String, Map<String, String>>>()

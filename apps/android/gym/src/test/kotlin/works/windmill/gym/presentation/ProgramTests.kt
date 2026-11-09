@@ -1,19 +1,21 @@
 package works.windmill.gym.presentation
 
-import java.time.ZoneId
-import java.time.ZonedDateTime
+import androidx.test.core.app.ApplicationProvider
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import works.windmill.platform.i18n.Words
 
 private val json = Json { ignoreUnknownKeys = true }
 
-private fun at(year: Int, month: Int, day: Int, hour: Int = 9): Long =
-    ZonedDateTime.of(year, month, day, hour, 0, 0, 0, ZoneId.systemDefault()).toInstant().toEpochMilli()
-
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class ProgramTests {
     @Test
     fun testTheNameCapRefusesTheOverflowAndKeepsEverythingAlreadyTyped() {
@@ -62,12 +64,10 @@ class ProgramTests {
             Program.renamed("Push A", "PUSH A"))
     }
 
-    // The roll-up that named every open row is gone: one sentence, `TargetEntry.openLine`, is drawn
-    // once, on the target sheet, and the row's own target column says WHICH row is open.
+    // The row's own target column says WHICH row is open.
     @Test
-    fun testTheOpenLineIsOneSentenceAndTheRowNamesItselfOpen() {
-        assertEquals("You decide the numbers at the rack.", TargetEntry.openLine)
-        assertEquals("open", Readout.openTarget)
+    fun testAnOpenRowNamesItselfOpen() {
+        assertEquals("open", Readout.open.spelled())
     }
 
     @Test
@@ -155,23 +155,10 @@ class ProgramTests {
     }
 
     @Test
-    fun testARecentDayIsAWeekdayOnlyWhileAWeekdayStillPlacesIt() {
-        val monday = at(2026, 8, 10)
-        assertEquals("today", Readout.recentDay(monday, monday))
-        assertEquals("yesterday", Readout.recentDay(at(2026, 8, 9), monday))
-        assertEquals("Saturday", Readout.recentDay(at(2026, 8, 8), monday))
-        assertEquals("Tuesday", Readout.recentDay(at(2026, 8, 4), monday))
-        assertEquals("8 Aug is seven days back and is a date again",
-            "3 Aug", Readout.recentDay(at(2026, 8, 3), monday))
-        assertEquals("13 Jul 2025", Readout.recentDay(at(2025, 7, 13), monday))
-        assertEquals("11 Aug", Readout.recentDay(at(2026, 8, 11), monday))
-    }
-
-    @Test
     fun testATargetWithNoSetsIsTheWordOpenAndNothingElse() {
-        assertEquals("open", Readout.target(emptyList()))
-        assertEquals("3 × 5 · 140", Readout.target(List(3) { SetTarget(5, 140.0) }))
-        assertEquals("3 × max", Readout.target(List(3) { SetTarget() }))
+        assertEquals("open", Readout.scheme(emptyList()).spelled())
+        assertEquals("3 × 5 · 140", Readout.scheme(List(3) { SetTarget(5, 140.0) }).spelled())
+        assertEquals("3 × max", Readout.scheme(List(3) { SetTarget() }).spelled())
     }
 
     @Test
@@ -183,8 +170,8 @@ class ProgramTests {
         val plan = PlanSnapshot(routine)
 
         assertEquals(PlanEntry(exerciseId = "barbell-row"), plan.entry("barbell-row"))
-        assertEquals("set 3", LiveLines.counter(setsToday = 2, planEntry = plan.entry("barbell-row")))
-        assertEquals("set 3 of 5", LiveLines.counter(setsToday = 2, planEntry = plan.entry("back-squat")))
+        assertEquals("set 3", LiveLines.counted(setsToday = 2, planEntry = plan.entry("barbell-row")).spelled())
+        assertEquals("set 3 of 5", LiveLines.counted(setsToday = 2, planEntry = plan.entry("back-squat")).spelled())
     }
 
     @Test
@@ -195,7 +182,7 @@ class ProgramTests {
 
         assertEquals(1, rows.size)
         assertFalse("a written line was not just added", rows.single().justAdded)
-        assertNull(rows.single().tag)
+        assertNull(rows.single().tagged)
     }
 
     @Test
@@ -232,3 +219,5 @@ class ProgramTests {
     }
 
 }
+
+private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())

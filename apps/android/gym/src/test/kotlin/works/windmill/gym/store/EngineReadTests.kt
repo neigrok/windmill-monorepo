@@ -1,5 +1,6 @@
 package works.windmill.gym.store
 
+import androidx.test.core.app.ApplicationProvider
 import java.io.File
 import java.io.IOException
 import kotlin.coroutines.CoroutineContext
@@ -9,6 +10,11 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.flow.first
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import works.windmill.platform.i18n.Words
+import works.windmill.platform.i18n.text
 import works.windmill.sync.api.Change
 import works.windmill.sync.api.CommitOutcome
 import works.windmill.sync.core.RecordID
@@ -48,6 +54,8 @@ import works.windmill.sync.engine.signOut
 import works.windmill.sync.schema.SyncSchema
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class EngineReadTests {
     @get:Rule val temporary = TemporaryFolder()
 
@@ -85,8 +93,8 @@ class EngineReadTests {
                 }
             }
             runCurrent()
-            assertEquals(GymResult.Failed(WriteFailure.Refused("The account changed. Open this again.")), pending.await())
-            assertEquals(GymResult.Failed(WriteFailure.Refused("The account changed. Open this again.")), store.history.finishedSession("session1"))
+            assertEquals("The account changed. Open this again.", ((pending.await() as GymResult.Failed).why as WriteFailure.Refused).words.spelled())
+            assertEquals("The account changed. Open this again.", ((store.history.finishedSession("session1") as GymResult.Failed).why as WriteFailure.Refused).words.spelled())
             store.connect(Account("http://127.0.0.1:8098", User("other", "other@example.com")))
             assertEquals(GymResult.Failed(WriteFailure.NoAnswer), store.history.finishedSession("session1"))
         }
@@ -137,7 +145,7 @@ class EngineReadTests {
             val replica = room.engine.activeReplica()
             assertTrue(room.engine.signIn("alice", mapOf("gym" to false)).member("complete").bool())
             assertEquals(replica, room.engine.activeReplica())
-            assertEquals(GymResult.Failed(WriteFailure.Refused("The account changed. Open this again.")), room.store.history.finishedSession(session.id))
+            assertEquals("The account changed. Open this again.", ((room.store.history.finishedSession(session.id) as GymResult.Failed).why as WriteFailure.Refused).words.spelled())
             room.selected = "alice"
             room.store.connect(room.account())
             assertEquals(GymResult.Ok(room.training.session(session.id)), room.store.history.finishedSession(session.id))
@@ -592,7 +600,7 @@ class EngineReadTests {
             runCurrent()
             assertEquals(3, changes)
             assertFalse(store.seat.isLoading)
-            assertNull(store.workout.workoutFailure)
+            assertNull(store.workout.workoutRefusal)
             assertEquals(listOf("routine2"), store.routines.all.map { it.id })
             assertTrue(store.workout.start("routine2") is GymResult.Ok)
         }
@@ -642,7 +650,7 @@ class EngineReadTests {
             val runtime = GymRuntime(store, cachedOwner = { null }, authorityAvailable = { true }, dispatcher = delegate)
             runtime.restoreLocal()
             assertEquals(3, changes)
-            assertNull(store.workout.workoutFailure)
+            assertNull(store.workout.workoutRefusal)
             assertTrue(store.workout.start("routine1") is GymResult.Failed)
             runtime.restoreLocal()
             assertTrue(store.workout.start("routine1") is GymResult.Ok)
@@ -682,3 +690,5 @@ class EngineReadTests {
         }
     }
 }
+
+private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())

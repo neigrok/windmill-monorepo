@@ -1,5 +1,9 @@
 package works.windmill.gym.ui
 
+import android.content.Context
+import androidx.annotation.StringRes
+import androidx.test.core.app.ApplicationProvider
+import works.windmill.gym.R
 import works.windmill.gym.coach.AskBinding
 import works.windmill.gym.coach.AskScreen
 import androidx.compose.foundation.layout.Box
@@ -64,6 +68,7 @@ import works.windmill.gym.domain.sync.ProposeRoutine
 import works.windmill.gym.net.FakeGymRest
 import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.store.GymResult
+import works.windmill.platform.i18n.Words
 import works.windmill.sync.core.Json
 import works.windmill.sync.modelserver.ModelServer
 import works.windmill.gym.domain.sync.Exercise as EngineExercise
@@ -157,7 +162,7 @@ class LargestTypeTests {
             val left = with(compose.density) { scroller.size.height.toDp() }
             assertTrue("the thread is $left at fontScale 2.0", left >= floor)
 
-            val sentence = compose.onNodeWithText(refusal.sentence).fetchSemanticsNode()
+            val sentence = compose.onNodeWithText(refusal.words.spelled()!!).fetchSemanticsNode()
             assertTrue("and the sentence is inside it, not pinned on top of it",
                 sentence.positionInRoot.y >= scroller.positionInRoot.y)
         } } finally { scope.cancel() }
@@ -217,7 +222,7 @@ class LargestTypeTests {
             val apply = compose.onNodeWithText("Apply all 8").fetchSemanticsNode()
             val atomic = compose.onNodeWithText("All eight or none. Nothing is applied until you tap.")
                 .fetchSemanticsNode()
-            val turnDown = compose.onNodeWithText(Proposal.turnDownVerb).fetchSemanticsNode()
+            val turnDown = compose.onNodeWithText(string(R.string.gym_proposal_turn_down_verb)).fetchSemanticsNode()
             assertTrue("the whole band stands under the diff and none of it is cut off",
                 apply.positionInRoot.y >= scroller.positionInRoot.y + scroller.size.height &&
                     turnDown.positionInRoot.y + turnDown.size.height <=
@@ -479,3 +484,7 @@ class LargestTypeTests {
         } } finally { scope.cancel() }
     }
 }
+
+private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())
+
+private fun string(@StringRes id: Int, vararg args: Any): String = ApplicationProvider.getApplicationContext<Context>().getString(id, *args)

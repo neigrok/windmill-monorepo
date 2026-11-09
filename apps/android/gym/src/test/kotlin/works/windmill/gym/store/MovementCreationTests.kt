@@ -1,5 +1,6 @@
 package works.windmill.gym.store
 
+import androidx.test.core.app.ApplicationProvider
 import java.io.IOException
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -11,14 +12,21 @@ import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import works.windmill.gym.domain.sync.ExerciseRules
 import works.windmill.gym.presentation.*
+import works.windmill.platform.i18n.Words
+import works.windmill.platform.i18n.text
 import works.windmill.platform.storage.AtomicDocument
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.sync.engine.signIn
 import works.windmill.sync.schema.SyncSchema
 
 @OptIn(ExperimentalCoroutinesApi::class)
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class MovementCreationTests {
     @get:Rule val tmp = TemporaryFolder()
 
@@ -129,7 +137,7 @@ class MovementCreationTests {
             events.clear(); failures.clear(); failInsertion = true
             val failed = room.store.workout.createForWorkout(write, live.id) as MovementCreateOutcome.Failed
             val created = requireNotNull(failed.created)
-            assertEquals(WriteFailure.Refused("The workout could not be saved safely. Restart the app to recover it."), failed.why)
+            assertEquals("The workout could not be saved safely. Restart the app to recover it.", (failed.why as WriteFailure.Refused).words.spelled())
             assertEquals(listOf(created), room.training.catalogue().filter { it.id == write.id })
             assertArrayEquals(controls, room.controlsFile.readBytes())
             val owed = room.outbox()
@@ -190,3 +198,5 @@ class MovementCreationTests {
         }
     }
 }
+
+private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())

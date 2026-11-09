@@ -56,8 +56,8 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.launch
 import works.windmill.gym.R
-import works.windmill.gym.presentation.Words
-import works.windmill.gym.presentation.text
+import works.windmill.platform.i18n.Words
+import works.windmill.platform.i18n.text
 import works.windmill.platform.design.LocalWindmillDark
 import works.windmill.platform.telemetry.LocalTelemetry
 import works.windmill.gym.telemetry.coachAction

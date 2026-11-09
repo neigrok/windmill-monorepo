@@ -1,5 +1,6 @@
 package works.windmill.platform
 
+import androidx.annotation.StringRes
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.getValue
@@ -8,13 +9,13 @@ import works.windmill.platform.you.YouDestination
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.staticCompositionLocalOf
 import kotlinx.serialization.Serializable
+import works.windmill.platform.R
 import works.windmill.platform.telemetry.Telemetry
 
 // Product-neutral: nothing here may name a product.
 
 interface ProductModule {
     val id: String
-    val label: String
 
     // The room's Material theme plus its `LocalWindmillPalette`, so the shell can draw its own
     // sheet in the room's colours over the room.
@@ -90,14 +91,16 @@ class ShellActions(
 
 val LocalShellActions = staticCompositionLocalOf<ShellActions> { ShellActions(openYou = {}) }
 
-data class ClientUpdateDestination(val url: String = "https://windmill.works", val label: String = "Open Windmill")
+data class ClientUpdateDestination(val url: String = "https://windmill.works", @StringRes val named: Int = R.string.platform_update_open_windmill)
 val LocalClientUpdateDestination = staticCompositionLocalOf { ClientUpdateDestination() }
 
-fun ClientUpdateDestination.open(openUri: (String) -> Unit, telemetry: Telemetry): String? {
+// Opens the update; what to say when the link would not open, or null when it did.
+@StringRes
+fun ClientUpdateDestination.opening(openUri: (String) -> Unit, telemetry: Telemetry): Int? {
     telemetry.event("client_update_required", mapOf("action" to "update"))
     return try { openUri(url); null }
     catch (_: Exception) {
         telemetry.event("client_update_required", mapOf("action" to "update", "outcome" to "failed"))
-        "The link could not be opened. Try again, or open Windmill’s website in your browser."
+        R.string.platform_update_unopened
     }
 }

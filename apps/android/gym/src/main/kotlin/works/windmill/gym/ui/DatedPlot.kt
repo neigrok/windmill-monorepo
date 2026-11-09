@@ -67,6 +67,9 @@ import works.windmill.gym.presentation.DatedGeometry
 import works.windmill.gym.presentation.DatedPoint
 import works.windmill.gym.presentation.DatedSeries
 import works.windmill.gym.presentation.Readout
+import androidx.compose.ui.platform.LocalContext
+import works.windmill.platform.i18n.Words
+import works.windmill.platform.i18n.text
 
 enum class PlotInteraction { Preview, Inspect, Select }
 private enum class PlotGesture { Hold, Pan, Yield }
@@ -80,7 +83,7 @@ fun DatedPlot(
     onInspect: (DatedPoint?) -> Unit = {},
     onSelect: (DatedPoint) -> Unit = {},
     valueLabel: (Double) -> String = Readout::weight,
-    gapLabel: ((DatedPoint, DatedPoint) -> String)? = null,
+    gapWords: ((DatedPoint, DatedPoint) -> Words)? = null,
     initialPointId: String? = null,
     minHeight: Dp = 220.dp,
     labelStyle: TextStyle = GymType.captionLoose,
@@ -88,6 +91,7 @@ fun DatedPlot(
     val colors = MaterialTheme.colorScheme
     val gymColors = MaterialTheme.gymColors
     val density = LocalDensity.current
+    val context = LocalContext.current
     val text = rememberTextMeasurer()
     val haptic = rememberGymHaptics()
     val scope = rememberCoroutineScope()
@@ -234,7 +238,7 @@ fun DatedPlot(
                 if (interaction == PlotInteraction.Inspect) Modifier.semantics {
                     isTraversalGroup = true
                     contentDescription = estimatesDescription
-                    stateDescription = (inspected ?: series.ordered.lastOrNull())?.label.orEmpty()
+                    stateDescription = (inspected ?: series.ordered.lastOrNull())?.said?.text(context).orEmpty()
                     liveRegion = LiveRegionMode.Polite
                     customActions = actions
                 } else Modifier,
@@ -281,7 +285,7 @@ fun DatedPlot(
                 if (interaction == PlotInteraction.Inspect) geometry.visible.forEachIndexed { index, point ->
                     Box(Modifier.offset { IntOffset((left + point.x).roundToInt(), (top + point.y).roundToInt()) }
                         .size(1.dp).semantics {
-                            contentDescription = point.fact.label + if (point.fact.id == standingBestId) ", standing best" else ""
+                            contentDescription = if (point.fact.id == standingBestId) context.getString(R.string.gym_record_point_standing_best, point.fact.said.text(context)) else point.fact.said.text(context)
                             traversalIndex = index.toFloat()
                             selected = point.fact.id == inspected?.id
                         })
@@ -289,7 +293,7 @@ fun DatedPlot(
             }
         }
         if (!preview) series.gaps.forEach { (before, after) ->
-            val label = gapLabel?.invoke(before, after) ?: stringResource(R.string.gym_record_no_data_range,
+            val label = gapWords?.invoke(before, after)?.text() ?: stringResource(R.string.gym_record_no_data_range,
                 gapFormat.format(Instant.ofEpochMilli(before.atMs).atZone(series.zone)),
                 gapFormat.format(Instant.ofEpochMilli(after.atMs).atZone(series.zone)))
             Text(label, style = axisStyle, modifier = Modifier.fillMaxWidth())

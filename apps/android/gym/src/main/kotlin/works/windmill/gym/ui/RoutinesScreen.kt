@@ -64,6 +64,8 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
+import works.windmill.platform.i18n.Words
+import works.windmill.platform.i18n.text
 
 // What the routines home and a routine's sheet draw.
 @Stable
@@ -140,7 +142,7 @@ fun RoutinesScreen(
                 }
 
                 items(state.unseenRemovalReceipts.values.toList(), key = { "receipt:${it.id}" }) { receipt ->
-                    ProposalCard(receipt, receipt.routineName, nowMs, false) { onReview(receipt) }
+                    ProposalCard(receipt, receipt.routineNamed, nowMs, false) { onReview(receipt) }
                 }
 
                 // The newest waiting card, one at a time; the others keep their dot on their
@@ -149,7 +151,7 @@ fun RoutinesScreen(
                     item("proposal") {
                         ProposalCard(
                             proposal = waiting,
-                            routineName = state.routine(waiting.routineId)?.name ?: waiting.routineName,
+                            routineNamed = state.routine(waiting.routineId)?.name?.let(Words::Plain) ?: waiting.routineNamed,
                             nowMs = nowMs,
                             stillWaiting = waiting.id in lookedAt,
                             onReview = { onReview(waiting) },
@@ -264,7 +266,7 @@ fun RoutineSheet(
                                     Text(if (yours) stringResource(R.string.gym_routines_movement_yours, name) else name, style = WindmillType.label, color = colors.onSurface)
                                 },
                                 supportingContent = {
-                                    Text(Readout.targetWithUnit(entry.sets, state.catalog.find { it.id == entry.exerciseId }),
+                                    Text(Readout.scheme(entry.sets, state.catalog.find { it.id == entry.exerciseId }).text(),
                                         style = GymType.numeral, color = colors.onSurfaceVariant)
                                 },
                                 colors = ListItemDefaults.colors(containerColor = colors.surfaceContainer),

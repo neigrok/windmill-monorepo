@@ -50,11 +50,13 @@ import works.windmill.gym.presentation.SetFix
 import works.windmill.gym.presentation.TrainingSet
 import works.windmill.gym.store.FixOrigin
 import works.windmill.gym.store.FixOutcome
-import works.windmill.gym.store.WriteFailure
 import works.windmill.platform.telemetry.LocalTelemetry
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.foundation.layout.size
+import androidx.compose.ui.platform.LocalContext
+import works.windmill.platform.i18n.text
+import works.windmill.platform.i18n.Words
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -78,7 +80,10 @@ fun FixSheet(
     val gymColors = MaterialTheme.gymColors
     val scope = rememberCoroutineScope()
     val telemetry = LocalTelemetry.current
-    val noAnswer = stringResource(R.string.gym_fix_no_answer)
+    val context = LocalContext.current
+    val rpeUnrated = stringResource(R.string.gym_effort_rpe_unrated)
+    val noteCaption = stringResource(R.string.gym_effort_note_caption)
+    val noteTooLong = stringResource(R.string.gym_effort_note_too_long)
     val unit = Readout.loadUnit(exercise)
     val fieldColors = TextFieldDefaults.colors(
         focusedContainerColor = colors.surfaceContainerHighest, unfocusedContainerColor = colors.surfaceContainerHighest,
@@ -98,7 +103,7 @@ fun FixSheet(
     val load = rememberNumberDraft(draftKey, NumberEntry.Field.Load, weightKg, exercise?.loadFloor)
     val count = rememberNumberDraft(draftKey, NumberEntry.Field.Reps, reps.toDouble())
     var effortOpen by rememberSaveable(draftKey) { mutableStateOf(false) }
-    var refusal by rememberSaveable(draftKey) { mutableStateOf<String?>(null) }
+    var refusal by rememberSaveable(draftKey) { mutableStateOf<Words?>(null) }
     var busy by remember(draftKey) { mutableStateOf(false) }
     val tooLong = SetEffort.noteOverlong(note)
     val cancelEntry: () -> Unit = remember(load, count, focus, keyboard) { {
@@ -146,12 +151,8 @@ fun FixSheet(
             try {
                 when (val outcome = onSave(fix)) {
                     is FixOutcome.Corrected -> onSaved()
-                    is FixOutcome.Gone -> onGone(outcome.said)
-                    is FixOutcome.Failed -> refusal = when (val why = outcome.why) {
-                        WriteFailure.NoAnswer -> noAnswer
-                        WriteFailure.UnconfirmedDelete -> why.line("")
-                        is WriteFailure.Refused -> why.said
-                    }
+                    is FixOutcome.Gone -> onGone(outcome.words.text(context))
+                    is FixOutcome.Failed -> refusal = outcome.why.says(R.string.gym_fix_no_answer)
                 }
             } finally {
                 busy = false
@@ -191,7 +192,7 @@ fun FixSheet(
                 },
                 enabled = !busy)
             ExposedDropdownMenuBox(expanded = effortOpen, onExpandedChange = { if (!busy) effortOpen = it }) {
-                TextField(value = rpe?.let(SetEffort::rpeReading) ?: SetEffort.rpeUnrated,
+                TextField(value = rpe?.let { SetEffort.rpe(it).text() } ?: rpeUnrated,
                     onValueChange = {}, readOnly = true, enabled = !busy, singleLine = true,
                     modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth(),
                     textStyle = GymType.noteInput,
@@ -199,7 +200,7 @@ fun FixSheet(
                     colors = fieldColors)
                 ExposedDropdownMenu(expanded = effortOpen, onDismissRequest = { effortOpen = false }, containerColor = colors.surfaceContainerHighest) {
                     (listOf<Double?>(null) + SetEffort.rpeBand).forEach { value ->
-                        val label = value?.let(SetEffort::rpeReading) ?: SetEffort.rpeUnrated
+                        val label = value?.let { SetEffort.rpe(it).text() } ?: rpeUnrated
                         DropdownMenuItem(text = { Text(label, style = WindmillType.body, color = colors.onSurface) },
                             onClick = { rpe = value; effortOpen = false },
                             modifier = Modifier.heightIn(min = 48.dp).semantics { selected = rpe == value })
@@ -207,26 +208,26 @@ fun FixSheet(
                 }
             }
             refusal?.let { message ->
-                Text(message, style = GymType.supportingTight, color = gymColors.alarmInk,
+                Text(message.text(), style = GymType.supportingTight, color = gymColors.alarmInk,
                     modifier = Modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite })
             }
-            val noteCounter = SetEffort.noteCounter(note)
+            val noteCounter = SetEffort.noteBytesCounter(note)?.text()
             TextField(
                 value = note, onValueChange = { note = it }, enabled = !busy, maxLines = 6, isError = tooLong,
                 textStyle = GymType.noteInput,
-                label = { Text(SetEffort.noteLabel, style = WindmillType.caption) },
+                label = { Text(stringResource(R.string.gym_effort_note_label), style = WindmillType.caption) },
                 placeholder = { Text(stringResource(R.string.gym_fix_add_note), style = GymType.noteInput) },
                 supportingText = if (!tooLong && noteCounter == null) null else { {
                     Column {
-                        if (tooLong) Text(SetEffort.noteTooLong, style = WindmillType.supporting, color = gymColors.alarmInk,
+                        if (tooLong) Text(noteTooLong, style = WindmillType.supporting, color = gymColors.alarmInk,
                             modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
                         noteCounter?.let { Text(it, style = GymType.numeralSmall, color = if (tooLong) gymColors.alarmInk else colors.onSurfaceVariant) }
                     }
                 } },
                 colors = fieldColors,
                 modifier = Modifier.fillMaxWidth().semantics {
-                    stateDescription = SetEffort.noteCaption
-                    if (tooLong) error(SetEffort.noteTooLong)
+                    stateDescription = noteCaption
+                    if (tooLong) error(noteTooLong)
                 },
             )
             GymErrorTextButton(stringResource(R.string.gym_fix_delete_set), onClick = onDelete, enabled = !busy,

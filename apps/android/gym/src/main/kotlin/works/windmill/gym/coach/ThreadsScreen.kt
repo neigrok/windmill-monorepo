@@ -1,5 +1,7 @@
 package works.windmill.gym.coach
 
+import androidx.compose.ui.platform.LocalContext
+import works.windmill.gym.presentation.ProposalReceipt
 import works.windmill.gym.ui.GymType
 import androidx.compose.material3.MaterialTheme
 import works.windmill.gym.ui.gymColors
@@ -40,7 +42,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import works.windmill.gym.presentation.text
+import works.windmill.platform.i18n.text
 import androidx.compose.foundation.layout.size
 import androidx.lifecycle.compose.LifecycleStartEffect
 import works.windmill.gym.R
@@ -51,6 +53,7 @@ import works.windmill.platform.telemetry.LocalTelemetry
 import works.windmill.gym.presentation.Proposal
 import works.windmill.gym.store.GymResult
 import kotlinx.coroutines.launch
+import works.windmill.platform.i18n.Words
 
 // What the conversation list draws. `reading` holds the empty line back until the first read of the engine has landed.
 @Stable
@@ -95,6 +98,7 @@ fun ThreadsScreen(
     val colors = MaterialTheme.colorScheme
     val gymColors = MaterialTheme.gymColors
     val telemetry = LocalTelemetry.current
+    val context = LocalContext.current
     val nowMs = state.nowMs()
     val scope = rememberCoroutineScope()
     var failure by remember(state.accountKey) { mutableStateOf<String?>(null) }
@@ -138,7 +142,7 @@ fun ThreadsScreen(
                             else -> CoachMarkdown.plain(thread.answerPreview)
                         }
                         ListItem(
-                            headlineContent = { Text(thread.title, style = GymType.coachTitle) },
+                            headlineContent = { Text(thread.named.text(), style = GymType.coachTitle) },
                             supportingContent = preview.takeIf { it.isNotBlank() }?.let { { Text(it, style = GymType.coachSupporting, maxLines = 2) } },
                             trailingContent = { thread.day(nowMs)?.text()?.let { Text(it.replaceFirstChar { c -> c.uppercase() }, style = GymType.coachSupporting) } },
                             colors = ListItemDefaults.colors(containerColor = colors.surface, headlineColor = colors.onSurface,
@@ -171,7 +175,7 @@ fun ThreadsScreen(
                     try {
                         when (val result = events.deleteThread(id)) {
                             is GymResult.Ok -> failure = null
-                            is GymResult.Failed -> failure = result.why.line("that conversation is still here")
+                            is GymResult.Failed -> failure = result.why.says(R.string.gym_coach_delete_conversation_no_answer).text(context)
                         }
                     } finally { deleting = deleting - id }
                 }
@@ -185,7 +189,7 @@ fun ThreadScreen(
     state: AskState,
     events: AskEvents,
     threadId: String,
-    receipts: List<String>,
+    receipts: List<ProposalReceipt>,
     lookedAt: Set<String>,
     backTo: String,
     onBack: () -> Unit,
@@ -256,10 +260,10 @@ private fun ThreadsPreview(threads: List<ConversationRow>) {
 private val previewThreads: List<ConversationRow> get() {
     val now = System.currentTimeMillis()
     return listOf(
-        ConversationRow("preview-1", "Can you add a second leg day to my week?", now - 3_600_000, answering = true),
-        ConversationRow("preview-2", "My left shoulder clicks on overhead press", now - 86_400_000,
+        ConversationRow("preview-1", Words.Plain("Can you add a second leg day to my week?"), now - 3_600_000, answering = true),
+        ConversationRow("preview-2", Words.Plain("My left shoulder clicks on overhead press"), now - 86_400_000,
             answerPreview = "Swap to a landmine press for two weeks and keep the load where it stays pain-free."),
-        ConversationRow("preview-3", "How long should I rest between heavy squat sets?", now - 6 * 86_400_000,
+        ConversationRow("preview-3", Words.Plain("How long should I rest between heavy squat sets?"), now - 6 * 86_400_000,
             answerPreview = "Three to five minutes on your top sets; two is enough on back-off sets."),
     )
 }

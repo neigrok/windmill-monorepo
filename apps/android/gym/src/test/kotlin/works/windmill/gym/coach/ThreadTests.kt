@@ -1,7 +1,7 @@
 package works.windmill.gym.coach
 
-import works.windmill.gym.presentation.text
-import works.windmill.gym.presentation.Words
+import works.windmill.platform.i18n.text
+import works.windmill.platform.i18n.Words
 import works.windmill.gym.R
 import androidx.test.core.app.ApplicationProvider
 import androidx.annotation.StringRes
@@ -58,7 +58,7 @@ class ThreadTests {
             advanceUntilIdle()
             conversations.watchHistory(true)
             conversations.read()
-            assertEquals(listOf(asked), coach.history.map { it.title })
+            assertEquals(listOf(asked), coach.history.map { it.named.spelled() })
             assertEquals(listOf(asked), conversations.threads.map { it.title })
         }
     }
@@ -82,7 +82,7 @@ class ThreadTests {
     @Test
     fun aConversationTheLogGaveNoInstantForIsDrawnWithoutADateRatherThanIn1970() {
         val august = 1_785_844_800_000L
-        val row = { askedAtMs: Long -> ConversationRow("thr_1", "what's stalled?", askedAtMs) }
+        val row = { askedAtMs: Long -> ConversationRow("thr_1", Words.Plain("what's stalled?"), askedAtMs) }
         assertNull(row(0).day(august).spelled())
         assertEquals("Today", row(august).day(august).spelled())
         assertEquals("Yesterday", row(august).day(august + 86_400_000).spelled())
@@ -131,7 +131,7 @@ class ThreadTests {
         assertEquals("thr_1", fromAsk.conversation)
         assertNull(deleted.conversation)
         assertNull("a thread id under another door is not a door this room opens", fromMcp.conversation)
-        assertEquals("Coach", deleted.name)
+        assertEquals("Coach", deleted.named.spelled())
     }
 }
 

@@ -28,10 +28,12 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowDialog
+import works.windmill.gym.R
 import works.windmill.gym.presentation.*
 import works.windmill.gym.store.*
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onLast
+import works.windmill.platform.i18n.Words
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
@@ -222,7 +224,7 @@ class PlanningRestorationTests {
                 onCreate = { write ->
                     calls += write
                     if (calls.size == 1) first.await()
-                    else MovementCreateOutcome.Failed(WriteFailure.Refused("That name needs checking"))
+                    else MovementCreateOutcome.Failed(WriteFailure.Refused(Words.Plain("That name needs checking")))
                 })
         }
         compose.onNode(hasSetTextAction()).performTextReplacement("Zercher")
@@ -332,7 +334,7 @@ class PlanningRestorationTests {
         ))
         assertEquals(expected, builderSheetSaver.restore(saved))
         assertEquals(TargetEntry.Reading.Scheme(listOf(SetTarget(8, -10.0))), expected.scheme.reading(null))
-        assertEquals(TargetEntry.Reading.Refused(1, TargetEntry.Field.Reps, TargetEntry.notANumber),
+        assertEquals(TargetEntry.Reading.Refused(1, TargetEntry.Field.Reps, Words.Message(R.string.gym_program_not_a_number)),
             (builderSheetSaver.restore(saved) as BuilderSheet.Target).scheme.withCount("2").reading(null))
         assertNull(builderSheetSaver.restore("""{"type":"works.windmill.gym.ui.BuilderSheet.Target","exerciseId":"chin-up","rows":42,"sets":"1"}"""))
         assertNull(builderSheetSaver.restore("not json"))

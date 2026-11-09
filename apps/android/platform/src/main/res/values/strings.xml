@@ -6,6 +6,7 @@
     <string name="platform_done">Done</string>
     <string name="platform_keep">Keep</string>
     <string name="platform_try_again">Try again</string>
+    <string name="platform_words_joined">%1$s · %2$s</string>
     <string name="platform_email">Email</string>
 
     <string name="platform_sign_in">Sign in</string>
@@ -70,4 +71,12 @@
     <string name="platform_delete_retry_cleanup">Retry cleanup</string>
     <string name="platform_delete_check_again">Check again</string>
     <string name="platform_back_to_you">Back to You</string>
+    <string name="platform_api_offline">Can’t reach windmill.works</string>
+    <string name="platform_api_timeout">That took too long. Try again.</string>
+    <string name="platform_api_interrupted">That connection was interrupted. Try again.</string>
+    <string name="platform_api_failed">That didn’t go through</string>
+    <string name="platform_api_update_required">Update Windmill to keep syncing. Your work is saved on this phone.</string>
+    <string name="platform_sign_in_unreadable">That code didn\'t work. Check the digits, or send a fresh one.</string>
+    <string name="platform_update_open_windmill">Open Windmill</string>
+    <string name="platform_update_unopened">The link could not be opened. Try again, or open Windmill’s website in your browser.</string>
 </resources>

@@ -1,5 +1,7 @@
 package works.windmill.gym
 
+import android.content.Context
+import androidx.annotation.StringRes
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
@@ -17,6 +19,7 @@ import androidx.compose.ui.unit.DpRect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.test.core.app.ApplicationProvider
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -31,12 +34,12 @@ import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import works.windmill.gym.R
 import works.windmill.gym.presentation.Ladder
 import works.windmill.gym.presentation.TrainingSet
 import works.windmill.gym.store.Deletion
 import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.store.WithheldDelete
-import works.windmill.gym.store.Withheld
 import works.windmill.gym.ui.GymMaterial
 
 // The room's transient over the logger. Log set offers no way back — the set goes to the log at
@@ -83,7 +86,7 @@ class LoggerTransientTests {
 
             compose.onNodeWithText("Log set").performClick()
             compose.waitForIdle()
-            compose.onNodeWithText(Withheld.undo).assertDoesNotExist()
+            compose.onNodeWithText(string(R.string.gym_room_undo)).assertDoesNotExist()
             val logged = compose.runOnIdle { store.workout.sets.single() }
             assertEquals("the set is on the log the moment it is logged",
                 listOf(TrainingSet(id = logged.id, exerciseId = "bench-press", weightKg = 20.0, reps = 5,
@@ -94,7 +97,7 @@ class LoggerTransientTests {
             compose.runOnIdle { store.deletions.withhold(Deletion.Bodyweight("2026-09-01")) }
             val said = "Weigh-in deleted."
             compose.waitUntil(10_000) { compose.onAllNodesWithText(said).fetchSemanticsNodes().isNotEmpty() }
-            compose.onNodeWithText(Withheld.undo).assertIsDisplayed()
+            compose.onNodeWithText(string(R.string.gym_room_undo)).assertIsDisplayed()
 
             // The snackbar's own box — the live region Material declares around it, margin included.
             val transient = compose
@@ -110,7 +113,7 @@ class LoggerTransientTests {
             }
             assertEquals("Log set moved for the transient", logBefore, compose.onNodeWithText("Log set").getBoundsInRoot())
 
-            compose.onNodeWithText(Withheld.undo).performClick()
+            compose.onNodeWithText(string(R.string.gym_room_undo)).performClick()
             compose.runOnIdle {
                 assertEquals(listOf(logged), store.workout.sets)
                 assertEquals(listOf(81.25), store.bodyweight.drawn.map { it.weightKg })
@@ -135,7 +138,7 @@ class LoggerTransientTests {
             compose.waitForIdle()
             compose.runOnIdle { runBlocking { assertNull(store.bodyweight.weighIn("2026-09-01", 81.25)) } }
             compose.runOnIdle { store.deletions.withhold(Deletion.Bodyweight("2026-09-01")) }
-            compose.waitUntil(10_000) { compose.onAllNodesWithText(Withheld.undo).fetchSemanticsNodes().isNotEmpty() }
+            compose.waitUntil(10_000) { compose.onAllNodesWithText(string(R.string.gym_room_undo)).fetchSemanticsNodes().isNotEmpty() }
 
             compose.mainClock.autoAdvance = false
             compose.onNodeWithContentDescription("Hide workout").performClick()
@@ -145,11 +148,11 @@ class LoggerTransientTests {
             }
             compose.onAllNodesWithText("The log").assertCountEquals(1)
             compose.onAllNodesWithText("Log set").assertCountEquals(1)
-            compose.onAllNodesWithText(Withheld.undo).assertCountEquals(1)
+            compose.onAllNodesWithText(string(R.string.gym_room_undo)).assertCountEquals(1)
             compose.mainClock.autoAdvance = true
             compose.waitForIdle()
             compose.onAllNodesWithText("Log set").assertCountEquals(0)
-            compose.onAllNodesWithText(Withheld.undo).assertCountEquals(1)
+            compose.onAllNodesWithText(string(R.string.gym_room_undo)).assertCountEquals(1)
         } finally {
             compose.mainClock.autoAdvance = true
             compose.runOnIdle { showing = false }
@@ -159,3 +162,5 @@ class LoggerTransientTests {
         }
     }
 }
+
+private fun string(@StringRes id: Int, vararg args: Any): String = ApplicationProvider.getApplicationContext<Context>().getString(id, *args)

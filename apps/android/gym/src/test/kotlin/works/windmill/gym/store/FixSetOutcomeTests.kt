@@ -1,11 +1,17 @@
 package works.windmill.gym.store
 
+import androidx.test.core.app.ApplicationProvider
 import java.io.IOException
 import kotlin.coroutines.CoroutineContext
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ThreadContextElement
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import works.windmill.platform.i18n.Words
+import works.windmill.platform.i18n.text
 import works.windmill.sync.core.Json
 import works.windmill.sync.engine.signIn
 import works.windmill.sync.engine.signOut
@@ -22,6 +28,8 @@ import works.windmill.platform.storage.AtomicDocument
 import works.windmill.platform.telemetry.Telemetry
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class FixSetOutcomeTests {
     @get:Rule val temporary = TemporaryFolder()
 
@@ -46,8 +54,8 @@ class FixSetOutcomeTests {
             assertEquals(listOf(fix.corrected(set)), room.store.workout.sets)
             assertEquals(listOf(fix.corrected(set)), room.training.session(session.id)!!.sets)
             val snapshot = room.engine.snapshot()
-            assertEquals(FixOutcome.Gone("that set is no longer on this device"),
-                room.store.workout.fixSet(session.id, "missing", fix, FixOrigin.Workout))
+            assertEquals("that set is no longer on this device",
+                (room.store.workout.fixSet(session.id, "missing", fix, FixOrigin.Workout) as FixOutcome.Gone).words.spelled())
             assertEquals(snapshot, room.engine.snapshot())
             assertEquals(listOf(
                 "gym_action" to mapOf("screen" to "workout", "action" to "fix", "outcome" to "ok"),
@@ -200,7 +208,7 @@ class FixSetOutcomeTests {
             assertEquals(FixOutcome.Corrected(set.copy(reps = 9)),
                 room.store.workout.fixSet(session.id, set.id, SetFix(reps = 9), FixOrigin.Workout))
             assertEquals(listOf(set.copy(reps = 9)), room.training.session(session.id)!!.sets)
-            assertEquals("The workout could not be saved safely. Restart the app to recover it.", room.store.workout.workoutFailure)
+            assertEquals("The workout could not be saved safely. Restart the app to recover it.", room.store.workout.workoutRefusal.spelled())
             assertEquals(listOf("gym.fixSet" to failure), telemetry.failures)
             assertEquals(listOf("gym_action" to mapOf("screen" to "workout", "action" to "fix", "outcome" to "ok")), telemetry.events)
             val note = room.training.writeNote("note_after_fix", works.windmill.gym.presentation.NoteWrite("Recovery", "Unrelated read"))
@@ -209,14 +217,14 @@ class FixSetOutcomeTests {
             runCurrent()
             assertEquals(listOf(note.copy(updatedAtMs = room.now)), room.store.notes.all)
             assertEquals(listOf(set.copy(reps = 9)), room.training.session(session.id)!!.sets)
-            assertEquals("The workout could not be saved safely. Restart the app to recover it.", room.store.workout.workoutFailure)
+            assertEquals("The workout could not be saved safely. Restart the app to recover it.", room.store.workout.workoutRefusal.spelled())
             assertEquals(listOf("gym.fixSet" to failure), telemetry.failures)
             assertEquals(listOf("gym_action" to mapOf("screen" to "workout", "action" to "fix", "outcome" to "ok")), telemetry.events)
             fail = false
             val restored = room.freshStore()
             restored.connect(room.account())
             assertEquals(listOf(set.copy(reps = 9)), restored.workout.sets)
-            assertNull(restored.workout.workoutFailure)
+            assertNull(restored.workout.workoutRefusal)
             assertEquals(listOf("gym.fixSet" to failure), telemetry.failures)
             assertEquals(listOf("gym_action" to mapOf("screen" to "workout", "action" to "fix", "outcome" to "ok")), telemetry.events)
         }
@@ -252,8 +260,8 @@ class FixSetOutcomeTests {
                 val set = room.store.workout.sets.single()
                 telemetry.events.clear()
                 armed = true
-                assertEquals(FixOutcome.Failed(WriteFailure.Refused("The account changed. Open this again.")),
-                    room.store.workout.fixSet(session.id, set.id, SetFix(reps = 9), FixOrigin.Workout))
+                assertEquals("The account changed. Open this again.",
+                    ((room.store.workout.fixSet(session.id, set.id, SetFix(reps = 9), FixOrigin.Workout) as FixOutcome.Failed).why as WriteFailure.Refused).words.spelled())
                 assertNull(hookFailure?.stackTraceToString(), hookFailure)
                 assertNotNull(switched)
                 assertEquals(switched, room.engine.snapshot())
@@ -314,3 +322,5 @@ class FixSetOutcomeTests {
     }
 
 }
+
+private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())

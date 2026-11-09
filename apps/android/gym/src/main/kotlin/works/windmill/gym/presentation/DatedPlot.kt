@@ -1,5 +1,6 @@
 package works.windmill.gym.presentation
 
+import works.windmill.platform.i18n.Words
 import java.time.Instant
 import java.time.ZoneId
 import java.time.temporal.ChronoUnit
@@ -12,7 +13,7 @@ import kotlin.math.max
 import kotlin.math.pow
 import kotlin.math.roundToLong
 
-data class DatedPoint(val id: String, val atMs: Long, val value: Double, val label: String)
+data class DatedPoint(val id: String, val atMs: Long, val value: Double, val said: Words)
 
 data class DatedSeries(
     val points: List<DatedPoint>,

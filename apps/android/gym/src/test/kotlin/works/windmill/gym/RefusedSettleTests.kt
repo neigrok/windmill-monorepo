@@ -79,7 +79,7 @@ class RefusedSettleTests {
             compose.onNodeWithText(said).assertIsDisplayed()
             compose.onNodeWithText("Delete this conversation?").assertDoesNotExist()
             compose.onNodeWithText("Conversation deleted.", substring = true).assertDoesNotExist()
-            compose.onNodeWithText(Withheld.undo).assertDoesNotExist()
+            compose.onNodeWithText(string(R.string.gym_room_undo)).assertDoesNotExist()
             compose.onNodeWithText("why is my bench stalled?").assertIsDisplayed()
             shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(Withheld.windowMs + 1))
             compose.waitForIdle()
