@@ -730,7 +730,7 @@ class CoachChatsTests {
 
             val (photo, _) = room.withDraftPhoto(spaces, " ")
             assertEquals(listOf(ConversationRow(spaces, Words.Plain("Photo"), coach.chat(spaces)!!.updatedAtMs)),
-                coach.history.map { it.copy(named = Words.Plain(it.named.spelled()!!)) })
+                coach.history.map { it.copy(named = Words.Plain(it.named.spelled())) })
             coach.saveDraft(spaces, CoachDraft(" ", photo))
             assertEquals("Photo", coach.history.single().named.spelled())
             coach.saveDraft(spaces, CoachDraft())

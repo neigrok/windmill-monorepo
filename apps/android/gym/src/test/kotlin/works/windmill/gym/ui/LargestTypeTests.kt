@@ -160,7 +160,7 @@ class LargestTypeTests {
             val left = with(compose.density) { scroller.size.height.toDp() }
             assertTrue("the thread is $left at fontScale 2.0", left >= floor)
 
-            val sentence = compose.onNodeWithText(refusal.words.spelled()!!).fetchSemanticsNode()
+            val sentence = compose.onNodeWithText(refusal.words.spelled()).fetchSemanticsNode()
             assertTrue("and the sentence is inside it, not pinned on top of it",
                 sentence.positionInRoot.y >= scroller.positionInRoot.y)
         } } finally { scope.cancel() }

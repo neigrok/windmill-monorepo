@@ -30,6 +30,7 @@ import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import works.windmill.gym.presentation.Readout
 import works.windmill.gym.spelled
 import works.windmill.gym.string
 import works.windmill.gym.R
@@ -109,7 +110,7 @@ class BodyweightScreenTests {
 
             runBlocking { store.bodyweight.weighIn(today.minusDays(3).toString(), 82.4) }
             compose.onNodeWithText("82.4 kg").assertIsDisplayed()
-            compose.onNodeWithText(works.windmill.gym.presentation.LogReadout.dayHeading(today.minusDays(3), System.currentTimeMillis(), java.time.ZoneId.systemDefault()).spelled()!!).assertIsDisplayed()
+            compose.onNodeWithText(works.windmill.gym.presentation.LogReadout.dayHeading(today.minusDays(3), System.currentTimeMillis(), java.time.ZoneId.systemDefault()).spelled()).assertIsDisplayed()
             compose.onNodeWithText("82.4 kg").performClick()
             compose.runOnIdle { assertEquals(listOf("bodyweight"), doors) }
         } } finally { scope.cancel() }
@@ -191,7 +192,7 @@ class BodyweightScreenTests {
                 assertEquals("the anonymous replica holds it", listOf(store.bodyweight.latestWeighIn!!), room.training.weighins())
             }
             compose.onNodeWithText("81 kg").assertIsDisplayed()
-            compose.onNodeWithText(LogReadout.dayHeading(today, System.currentTimeMillis(), java.time.ZoneId.systemDefault()).spelled()!!).assertIsDisplayed()
+            compose.onNodeWithText(LogReadout.dayHeading(today, System.currentTimeMillis(), java.time.ZoneId.systemDefault()).spelled()).assertIsDisplayed()
             compose.onNodeWithText("81 kg").performClick()
             compose.runOnIdle { assertEquals(listOf("bodyweight"), doors) }
         } } finally { scope.cancel() }
@@ -217,7 +218,7 @@ class BodyweightScreenTests {
             compose.onNodeWithText("All").assertIsDisplayed().assertIsNotSelected()
             compose.onNodeWithText("90 days · 4 weigh-ins").assertIsDisplayed()
             compose.onNodeWithText("no line is drawn", substring = true).assertDoesNotExist()
-            val gap = "no weigh-in · ${Bodyweight.shortDay(today.minusDays(16))} – ${Bodyweight.shortDay(today.minusDays(4))}"
+            val gap = "no weigh-in · ${Readout.dayMonth(today.minusDays(16)).spelled()} – ${Readout.dayMonth(today.minusDays(4)).spelled()}"
             compose.onNodeWithText(gap).performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("goal", substring = true).assertDoesNotExist()
             compose.onNodeWithText("BMI", substring = true).assertDoesNotExist()
@@ -271,7 +272,7 @@ class BodyweightScreenTests {
                 BodyweightBinding(store).let { bodyweight -> BodyweightScreen(state = bodyweight, events = bodyweight, backTo = "The log", onBack = {}, say = {}) }
             }
 
-            compose.onNodeWithText(Bodyweight.listDay(day)).performScrollTo().performClick()
+            compose.onNodeWithText(Readout.date(day).spelled()).performScrollTo().performClick()
             compose.onNodeWithText("Weigh in").assertIsDisplayed()
             compose.onNodeWithText(string(R.string.gym_bodyweight_delete)).assertIsDisplayed()
             compose.onNodeWithText(Bodyweight.fullDay(day)).assertIsDisplayed()
@@ -342,7 +343,7 @@ class BodyweightScreenTests {
             compose.onNodeWithText(string(R.string.gym_bodyweight_save)).performClick()
             compose.onNodeWithText("A weigh-in is not a forecast — today or earlier.").assertIsDisplayed()
             compose.onNodeWithContentDescription("Date, ${Bodyweight.fullDay(tomorrow)}")
-                .assert(SemanticsMatcher.expectValue(SemanticsProperties.Error, Bodyweight.inTheFuture.spelled()!!))
+                .assert(SemanticsMatcher.expectValue(SemanticsProperties.Error, Bodyweight.inTheFuture.spelled()))
             compose.runOnIdle { assertEquals(emptyList<String>(), saved) }
 
             // Past the field, the store refuses a forecast in the same words.
@@ -371,7 +372,7 @@ class BodyweightScreenTests {
                 BodyweightBinding(store).let { bodyweight -> BodyweightScreen(state = bodyweight, events = bodyweight, backTo = "The log", onBack = {}, say = {}) }
             }
 
-            compose.onNodeWithText(Bodyweight.listDay(earlier)).performScrollTo().performClick()
+            compose.onNodeWithText(Readout.date(earlier).spelled()).performScrollTo().performClick()
             compose.onNodeWithText(Bodyweight.fullDay(later)).assertDoesNotExist()
             compose.onNodeWithText(Bodyweight.fullDay(earlier)).assertIsDisplayed()
             compose.onNodeWithText("82.9").assertIsDisplayed()
@@ -396,8 +397,8 @@ class BodyweightScreenTests {
                 assertEquals(today.minusDays(3).toString(), store.bodyweight.latestWeighIn?.dateLocal)
             }
             compose.onNodeWithText("90 days · 1 weigh-in").assertIsDisplayed()
-            compose.onNodeWithText(Bodyweight.listDay(today.minusDays(3))).performScrollTo().assertIsDisplayed()
-            compose.onNodeWithText(Bodyweight.listDay(tomorrow)).assertDoesNotExist()
+            compose.onNodeWithText(Readout.date(today.minusDays(3)).spelled()).performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText(Readout.date(tomorrow).spelled()).assertDoesNotExist()
             compose.onNodeWithText("All").performScrollTo().performClick()
             compose.onNodeWithText("All · 1 weigh-in").performScrollTo().assertIsDisplayed()
         } } finally { scope.cancel() }
@@ -418,7 +419,7 @@ class BodyweightScreenTests {
             log(store, doors)
 
             compose.onNodeWithText("82.4 kg").assertIsDisplayed()
-            compose.onNodeWithText(LogReadout.dayHeading(past, System.currentTimeMillis(), java.time.ZoneId.systemDefault()).spelled()!!).assertIsDisplayed()
+            compose.onNodeWithText(LogReadout.dayHeading(past, System.currentTimeMillis(), java.time.ZoneId.systemDefault()).spelled()).assertIsDisplayed()
             compose.onNodeWithText("90 kg").assertDoesNotExist()
             compose.runOnIdle {
                 assertEquals(listOf(pastEntry, futureEntry), store.bodyweight.drawn.sortedBy { it.dateLocal })
@@ -450,11 +451,11 @@ class BodyweightScreenTests {
                 assertEquals(emptyList<String>(), store.bodyweight.drawn.map { it.dateLocal })
             }
             // The rows keep reading the window: the dot is off the chart and the count says so.
-            compose.onNodeWithText(Bodyweight.windowWords(ChartWindow.Ninety, 0).spelled()!!).assertIsDisplayed()
+            compose.onNodeWithText(Bodyweight.windowWords(ChartWindow.Ninety, 0).spelled()).assertIsDisplayed()
             compose.onNodeWithText(string(R.string.gym_bodyweight_none_in_window)).assertDoesNotExist()
 
             compose.runOnIdle { assertNotNull(store.deletions.keepWithheld()) }
-            compose.onNodeWithText(Bodyweight.windowWords(ChartWindow.Ninety, 1).spelled()!!).assertIsDisplayed()
+            compose.onNodeWithText(Bodyweight.windowWords(ChartWindow.Ninety, 1).spelled()).assertIsDisplayed()
         } } finally { scope.cancel() }
     }
 
@@ -482,7 +483,7 @@ class BodyweightScreenTests {
                 BodyweightBinding(store).let { bodyweight -> BodyweightScreen(state = bodyweight, events = bodyweight, backTo = "The log", onBack = {}, say = {}) }
             }
 
-            compose.onNodeWithText(Bodyweight.listDay(day)).performScrollTo().performClick()
+            compose.onNodeWithText(Readout.date(day).spelled()).performScrollTo().performClick()
             val field = compose.onNodeWithContentDescription(string(R.string.gym_bodyweight_weight_field))
             field.performTextClearance()
             field.performTextInput("82")

@@ -26,6 +26,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import works.windmill.gym.spelled
 import works.windmill.gym.GymRoom
 import works.windmill.gym.coach.ConversationRow
 import works.windmill.gym.coach.LocalCoach
@@ -218,8 +219,8 @@ class StanceReadsTheAccountTests {
             LogBinding(store).let { log -> LogScreen(state = log, events = log, seat = "", onOpenSession = {}, onOpenBodyweight = {},
                 onShareSession = {}, onDiscardSession = {}) }
         }
-        compose.onNodeWithText("First workout · ${Readout.date(oldMs)}").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("First workout · ${Readout.date(newMs)}").assertDoesNotExist()
+        compose.onNodeWithText("First workout · ${Readout.date(oldMs).spelled()}").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("First workout · ${Readout.date(newMs).spelled()}").assertDoesNotExist()
 
         // A discard moves it, once, to the day the account actually started on. The re-read is not enough on
         // its own: a row deeper than the page it answers with is folded straight back in, so the discard has
@@ -231,8 +232,8 @@ class StanceReadsTheAccountTests {
             assertEquals("the log let go of it and never drew it again",
                 listOf(new.id), store.history.allSessions.map { it.id })
         }
-        compose.onNodeWithText("First workout · ${Readout.date(newMs)}").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("First workout · ${Readout.date(oldMs)}").assertDoesNotExist()
+        compose.onNodeWithText("First workout · ${Readout.date(newMs).spelled()}").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("First workout · ${Readout.date(oldMs).spelled()}").assertDoesNotExist()
         scope.cancel()
     }
 

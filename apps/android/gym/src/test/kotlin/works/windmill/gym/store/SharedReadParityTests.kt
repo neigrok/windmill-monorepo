@@ -101,7 +101,7 @@ class SharedReadParityTests {
         assertEquals(Record.Page("Bench Press", Words.Plain("Barbell"), emptyList(), emptyList(),
             listOf(Record.Day(Words.Plain("10 Jan"), "110 × 5 · 110 × 5 · 110 × 5 · 110 × 5"), Record.Day(Words.Plain("4 Jan"), "100 × 5 · 100 × 5 · 100 × 5 · 100 × 5")),
             null, null, false),
-            page.copy(equipment = Words.Plain(page.equipment.spelled()!!), days = page.days.map { it.copy(on = Words.Plain(it.on.spelled()!!)) }))
+            page.copy(equipment = Words.Plain(page.equipment.spelled()), days = page.days.map { it.copy(on = Words.Plain(it.on.spelled())) }))
     }
 
     @Test fun theReceiptCountsEverySetOfTheComparisonAndItsBoundsBesideTheSharedTopSet() = withEngine(signedIn = false) { engine ->

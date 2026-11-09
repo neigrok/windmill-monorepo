@@ -19,6 +19,7 @@ import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import works.windmill.gym.presentation.Readout
 import works.windmill.gym.presentation.Bodyweight
 import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.ui.GymMaterial
@@ -63,7 +64,7 @@ class BodyweightCrossScreenTests {
             compose.onNode(hasText("The log") and hasClickAction()).performClick()
             if (fromBodyweight) {
                 compose.onNodeWithTag("weight:$day").performClick()
-                compose.onNode(hasText("82.4 kg") and hasText(Bodyweight.listDay(day)) and hasClickAction())
+                compose.onNode(hasText("82.4 kg") and hasText(Readout.date(day).spelled()) and hasClickAction())
                     .performTouchInput { swipeLeft() }
             } else {
                 if (fail) compose.runOnIdle { room.engine.failNextCommit() }
@@ -88,7 +89,7 @@ class BodyweightCrossScreenTests {
             compose.runOnIdle { assertEquals(held, room.store.held.withheld.single()) }
             compose.onNodeWithText("Undo").assertIsDisplayed().performClick()
             if (fromBodyweight) compose.onNodeWithTag("weight:$day").assertIsDisplayed()
-            else compose.onNode(hasText("82.4 kg") and hasText(Bodyweight.listDay(day)) and hasClickAction()).assertIsDisplayed()
+            else compose.onNode(hasText("82.4 kg") and hasText(Readout.date(day).spelled()) and hasClickAction()).assertIsDisplayed()
             compose.runOnIdle {
                 assertEquals(original, room.store.bodyweight.drawn)
                 assertEquals(emptyList<Any>(), room.engine.undoOffers())

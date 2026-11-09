@@ -569,7 +569,7 @@ private fun SetRow(set: Performed.Row, shape: Shape, onFix: (String) -> Unit, on
 }
 
 private fun headLine(summary: SessionSummary): Words = checkNotNull(listOfNotNull(
-    Words.Plain(Readout.day(summary.startedAtMs)),
+    Readout.day(summary.startedAtMs),
     summary.finishedAtMs?.let { Readout.lasted(it - summary.startedAtMs) },
 ).joined())
 

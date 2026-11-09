@@ -215,7 +215,7 @@ class FinishSheetTests {
             finishAWorkout(room)
 
             compose.onNodeWithText("Ended early.").assertIsDisplayed()
-            compose.onNodeWithText(Readout.freeWorkout.spelled()!!).assertIsDisplayed()
+            compose.onNodeWithText(Readout.freeWorkout.spelled()).assertIsDisplayed()
             compose.onNodeWithText("The log").assertDoesNotExist()
         }
     }

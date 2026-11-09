@@ -82,7 +82,7 @@ class LogShareTests {
             }
             compose.onNode(hasText("The log") and hasClickAction()).performClick()
             fun shareRow() {
-                compose.onNode(hasText(Readout.freeWorkout.spelled()!!) and hasClickAction()).performTouchInput { longClick() }
+                compose.onNode(hasText(Readout.freeWorkout.spelled()) and hasClickAction()).performTouchInput { longClick() }
                 compose.onNodeWithText("Share this workout").performClick()
             }
             shareRow()
@@ -149,7 +149,7 @@ class LogShareTests {
                 }
             }
             compose.onNode(hasText("The log") and hasClickAction()).performClick()
-            compose.onNode(hasText(Readout.freeWorkout.spelled()!!) and hasClickAction()).performTouchInput { longClick() }
+            compose.onNode(hasText(Readout.freeWorkout.spelled()) and hasClickAction()).performTouchInput { longClick() }
             compose.onNodeWithText("Share this workout").performClick()
             compose.runOnIdle { assertEquals(true, started.isCompleted) }
             compose.runOnIdle {

@@ -86,9 +86,9 @@ class FixSheetEffortTests {
         compose.onNodeWithText(string(R.string.gym_effort_rpe_unrated)).performClick()
         compose.onAllNodesWithText(string(R.string.gym_effort_rpe_unrated))[1].assertExists()
         SetEffort.rpeBand.forEach {
-            compose.onNodeWithText(SetEffort.rpe(it).spelled()!!).assertExists()
+            compose.onNodeWithText(SetEffort.rpe(it).spelled()).assertExists()
         }
-        compose.onNodeWithText(SetEffort.rpe(10.0).spelled()!!)
+        compose.onNodeWithText(SetEffort.rpe(10.0).spelled())
             .performScrollTo().assertIsDisplayed()
     }
 
@@ -106,7 +106,7 @@ class FixSheetEffortTests {
         val saved = sheet()
 
         compose.onNodeWithText(string(R.string.gym_effort_rpe_unrated)).performClick()
-        compose.onNodeWithText(SetEffort.rpe(8.5).spelled()!!).performScrollTo().performClick()
+        compose.onNodeWithText(SetEffort.rpe(8.5).spelled()).performScrollTo().performClick()
         compose.onNodeWithText(string(R.string.gym_effort_note_label)).performTextInput("left shoulder")
         compose.onNodeWithText("Save fix").performClick()
 
@@ -125,7 +125,7 @@ class FixSheetEffortTests {
             weightKg = 82.5, reps = 5, completedAtMs = 0, rpe = 9.0, note = "felt heavy"))
 
         compose.onNodeWithText("felt heavy").performTextClearance()
-        compose.onNodeWithText(SetEffort.rpe(9.0).spelled()!!).performClick()
+        compose.onNodeWithText(SetEffort.rpe(9.0).spelled()).performClick()
         compose.onNodeWithText(string(R.string.gym_effort_rpe_unrated)).performClick()
         compose.onNodeWithText("Save fix").performClick()
 

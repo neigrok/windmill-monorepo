@@ -97,7 +97,7 @@ class BodyweightTests {
     @Test
     fun everyWeighInAndItsEditorNameTheActualYearAndDate() {
         val date = LocalDate.parse("2025-08-12")
-        assertEquals("12 Aug 2025", Bodyweight.listDay(date))
+        assertEquals("12 Aug 2025", Readout.date(date).spelled())
         assertEquals("12 August 2025", Bodyweight.fullDay(date))
         assertEquals("Save weight", string(R.string.gym_bodyweight_save))
     }

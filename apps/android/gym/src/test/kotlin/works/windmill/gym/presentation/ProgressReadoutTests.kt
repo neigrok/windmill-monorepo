@@ -20,7 +20,7 @@ class ProgressReadoutTests {
         val point = progress.estimates.single()
         val series = progressSeries(progress, 2000L, ZoneId.of("UTC"), all = true)
         assertEquals(listOf(DatedPoint("ses_exact", 1000L, 80.0 * (1 + 8 / 30.0),
-            Words.Plain("101.3 kg est · today · 80 × 8"))), series.points.map { it.copy(said = Words.Plain(it.said.spelled()!!)) })
+            Words.Plain("101.3 kg est · today · 80 × 8"))), series.points.map { it.copy(said = Words.Plain(it.said.spelled())) })
         assertEquals(1000L, series.fromMs)
         assertEquals(2000L, series.untilMs)
         assertEquals("101.3 kg est · today · 80 × 8", progressWords(point, 2000L).spelled())

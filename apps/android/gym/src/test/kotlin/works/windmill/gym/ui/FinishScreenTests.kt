@@ -85,17 +85,17 @@ class FinishTests {
         val past = 1_750_723_200_000L
         val e1rm = PersonalRecord(kind = "e1rm", exerciseId = "back-squat", value = 122.5,
                                   weightKg = 105.0, reps = 5, previous = 116.7, previousAtMs = past)
-        assertEquals("Back Squat e1RM 122.5 kg — past 116.7 from ${Readout.day(past)}.",
+        assertEquals("Back Squat e1RM 122.5 kg — past 116.7 from ${Readout.day(past).spelled()}.",
                      Finish.recordWords(e1rm, catalog).spelled())
 
         val heaviest = PersonalRecord(kind = "heaviest", exerciseId = "back-squat", value = 140.0,
                                       weightKg = 140.0, reps = 1, previous = 135.0, previousAtMs = past)
-        assertEquals("Back Squat 140 kg × 1 — past 135 from ${Readout.day(past)}.",
+        assertEquals("Back Squat 140 kg × 1 — past 135 from ${Readout.day(past).spelled()}.",
                      Finish.recordWords(heaviest, catalog).spelled())
 
         val reps = PersonalRecord(kind = "reps-at-weight", exerciseId = "back-squat", value = 8.0,
                                   weightKg = 100.0, reps = 8, previous = 6.0, previousAtMs = past)
-        assertEquals("Back Squat 8 reps at 100 kg — past 6 from ${Readout.day(past)}.",
+        assertEquals("Back Squat 8 reps at 100 kg — past 6 from ${Readout.day(past).spelled()}.",
                      Finish.recordWords(reps, catalog).spelled())
     }
 
@@ -275,14 +275,14 @@ class RecordEstimateFormattingTests {
     @Test
     fun aRecordKeepsItsApprovedTenthForCurrentAndPriorEstimates() {
         val record = PersonalRecord("e1rm", "bench-press", 80.0 * (1 + 8 / 30.0), 80.0, 8, 70.0 * (1 + 8 / 30.0), 1_000)
-        assertEquals("Bench Press e1RM 101.3 kg — past 88.7 from ${Readout.day(1_000)}.", Finish.recordWords(record, bench).spelled())
+        assertEquals("Bench Press e1RM 101.3 kg — past 88.7 from ${Readout.day(1_000).spelled()}.", Finish.recordWords(record, bench).spelled())
     }
 
     @Test
     fun aHugeFiniteEstimateRetainsItsCompleteFiniteSpelling() {
         val record = PersonalRecord("e1rm", "bench-press", Double.MAX_VALUE, Double.MAX_VALUE, 1, Double.MAX_VALUE / 2, 1_000)
         val text = Finish.recordWords(record, bench).spelled()!!
-        assertEquals("Bench Press e1RM ${Readout.estimatedWeight(Double.MAX_VALUE)} kg — past ${Readout.estimatedWeight(Double.MAX_VALUE / 2)} from ${Readout.day(1_000)}.", text)
+        assertEquals("Bench Press e1RM ${Readout.estimatedWeight(Double.MAX_VALUE)} kg — past ${Readout.estimatedWeight(Double.MAX_VALUE / 2)} from ${Readout.day(1_000).spelled()}.", text)
         assertFalse(text.contains("Infinity"))
         assertFalse(text.contains("NaN"))
     }

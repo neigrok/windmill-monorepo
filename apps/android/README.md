@@ -359,6 +359,10 @@ are `onboarding_<thing>`. Manifest labels point at resources too.
 - Placeholders are positional `%1$s`, given a value its own formatter already rendered. `%d` and `%f` format in the
   system's locale and print Arabic-Indic digits on an Arabic phone.
 - A sentence is one message: a value fills a placeholder, never a fragment beside it.
+- Dates are spelled three ways: `Readout` names weekdays, months and AM/PM from its own resources and writes the
+  numbers itself; `LogReadout`, `Bodyweight.fullDay` and the finish sheet format with `Locale.ENGLISH`; Coach's
+  timestamps, history days and reset notice, the plot's axis, the routine builder and account deletion's deadline
+  format in the phone's locale. A second language moves every formatter onto the app's language.
 - User content, server text, test tags, telemetry names and log lines stay in Kotlin.
 - `CopyInResourcesTests` (`:app`) reads the main Kotlin of `:app`, `:platform` and `:gym`, previews aside. It fails on a
   literal of two words or more anywhere but a check, a require, an error, an exception, a log line, a telemetry

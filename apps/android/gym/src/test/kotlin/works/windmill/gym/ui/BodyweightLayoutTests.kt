@@ -61,7 +61,7 @@ class BodyweightLayoutTests {
         }
         compose.onNodeWithContentDescription(string(R.string.gym_bodyweight_weight_field)).performScrollTo().performTextReplacement("400,01")
         compose.onNodeWithText(string(R.string.gym_bodyweight_save)).assertIsDisplayed().performClick()
-        compose.onNodeWithText(Bodyweight.outsideRange.spelled()!!).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText(Bodyweight.outsideRange.spelled()).performScrollTo().assertIsDisplayed()
         compose.onNodeWithContentDescription(string(R.string.gym_bodyweight_weight_field)).performScrollTo().performTextReplacement("82,45")
         compose.onNodeWithText(Bodyweight.fullDay(day)).performScrollTo().assertIsDisplayed()
         for (label in listOf(string(R.string.gym_bodyweight_save), string(R.string.gym_bodyweight_delete))) {

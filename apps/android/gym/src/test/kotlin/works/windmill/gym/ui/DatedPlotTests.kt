@@ -292,7 +292,7 @@ class DatedPlotTests {
             .assert(SemanticsMatcher.expectValue(SemanticsProperties.Selected, true))
         compose.runOnIdle { requested = "collapsed-workout" }
         plot.assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Point 3"))
-        for (point in points) compose.onNodeWithContentDescription(point.said.spelled()!!, useUnmergedTree = true)
+        for (point in points) compose.onNodeWithContentDescription(point.said.spelled(), useUnmergedTree = true)
             .assert(SemanticsMatcher.expectValue(SemanticsProperties.Selected, false))
     }
 

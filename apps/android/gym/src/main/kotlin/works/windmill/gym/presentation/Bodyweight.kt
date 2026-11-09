@@ -69,12 +69,6 @@ object Bodyweight {
     fun kilograms(weightKg: Double): String =
         BigDecimal.valueOf(weightKg).setScale(2, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString()
 
-    private val months = listOf("Jan", "Feb", "Mar", "Apr", "May", "Jun",
-                                "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
-    fun shortDay(date: LocalDate): String = "${date.dayOfMonth} ${months[date.monthValue - 1]}"
-
-    fun listDay(date: LocalDate): String = "${shortDay(date)} ${date.year}"
-
     fun fullDay(date: LocalDate): String = date.format(DateTimeFormatter.ofPattern("d MMMM uuuu", Locale.ENGLISH))
 
     // The reading: the newest day that has happened. A served row dated after this device's today is

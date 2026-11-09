@@ -44,4 +44,34 @@
         <item quantity="one">%1$s workout</item>
         <item quantity="other">%1$s workouts</item>
     </plurals>
+    <!-- A weekday's short name, as a day reads: Sun 3 Nov. -->
+    <string name="gym_readout_weekday_sun">Sun</string>
+    <string name="gym_readout_weekday_mon">Mon</string>
+    <string name="gym_readout_weekday_tue">Tue</string>
+    <string name="gym_readout_weekday_wed">Wed</string>
+    <string name="gym_readout_weekday_thu">Thu</string>
+    <string name="gym_readout_weekday_fri">Fri</string>
+    <string name="gym_readout_weekday_sat">Sat</string>
+    <!-- A month's short name, as a date reads: 3 Nov 2026. -->
+    <string name="gym_readout_month_jan">Jan</string>
+    <string name="gym_readout_month_feb">Feb</string>
+    <string name="gym_readout_month_mar">Mar</string>
+    <string name="gym_readout_month_apr">Apr</string>
+    <string name="gym_readout_month_may">May</string>
+    <string name="gym_readout_month_jun">Jun</string>
+    <string name="gym_readout_month_jul">Jul</string>
+    <string name="gym_readout_month_aug">Aug</string>
+    <string name="gym_readout_month_sep">Sep</string>
+    <string name="gym_readout_month_oct">Oct</string>
+    <string name="gym_readout_month_nov">Nov</string>
+    <string name="gym_readout_month_dec">Dec</string>
+    <!-- A day: the weekday, the day of the month and the month: Sun 3 Nov. -->
+    <string name="gym_readout_day">%1$s %2$s %3$s</string>
+    <!-- A date within its year: the day of the month and the month: 3 Nov. -->
+    <string name="gym_readout_day_month">%1$s %2$s</string>
+    <!-- A date: the day of the month, the month and the year: 3 Nov 2026. -->
+    <string name="gym_readout_date">%1$s %2$s %3$s</string>
+    <!-- A clock time on the 12-hour clock, before noon and after: 9:05 AM, 7:30 PM. -->
+    <string name="gym_readout_time_am">%1$s AM</string>
+    <string name="gym_readout_time_pm">%1$s PM</string>
 </resources>

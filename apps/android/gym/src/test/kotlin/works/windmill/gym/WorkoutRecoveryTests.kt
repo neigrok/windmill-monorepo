@@ -322,7 +322,7 @@ class WorkoutRecoveryTests {
         compose.onNodeWithText("Bench Press · 1").assertIsDisplayed()
         compose.onNodeWithText("Set note").performTextInput("controlled tempo")
         compose.onNodeWithText("Not rated").performClick()
-        compose.onNodeWithText(works.windmill.gym.presentation.SetEffort.rpe(9.5).spelled()!!).performScrollTo().performClick()
+        compose.onNodeWithText(works.windmill.gym.presentation.SetEffort.rpe(9.5).spelled()).performScrollTo().performClick()
         compose.onNodeWithContentDescription("Load, kg total").performClick().performTextReplacement("1e999")
         compose.onNodeWithContentDescription("Load, kg total").performImeAction()
         restored.emulateSavedInstanceStateRestore()
@@ -330,7 +330,7 @@ class WorkoutRecoveryTests {
         compose.onNodeWithText("1e999").assertIsDisplayed()
         compose.runOnIdle { (ShadowDialog.getLatestDialog() as ComponentDialog).onBackPressedDispatcher.onBackPressed() }
         compose.onNodeWithText("controlled tempo").assertIsDisplayed()
-        compose.onNodeWithText(works.windmill.gym.presentation.SetEffort.rpe(9.5).spelled()!!).assertIsDisplayed()
+        compose.onNodeWithText(works.windmill.gym.presentation.SetEffort.rpe(9.5).spelled()).assertIsDisplayed()
         compose.onNodeWithText("Bench Press · 1").assertIsDisplayed()
         compose.onNodeWithText("Save fix").performClick()
         compose.runOnIdle { runBlocking {
@@ -550,7 +550,7 @@ class WorkoutRecoveryTests {
             compose.onNode(hasContentDescription("Set 1, logged, 60 kg total, 8 reps")).performScrollTo().performClick()
             compose.onNodeWithText("Set note").performTextInput("Live retained note")
             compose.onNodeWithText("Not rated").performClick()
-            compose.onNodeWithText(works.windmill.gym.presentation.SetEffort.rpe(9.5).spelled()!!).performScrollTo().performClick()
+            compose.onNodeWithText(works.windmill.gym.presentation.SetEffort.rpe(9.5).spelled()).performScrollTo().performClick()
             for (dismissal in listOf("back", "blur then back", "scrim", "drag")) {
                 val modal = compose.onNodeWithText("Fix set").fetchSemanticsNode().root
                 compose.onNode(hasText("60") and SemanticsMatcher("in the Fix dialog") { it.root == modal }).performClick()
@@ -570,7 +570,7 @@ class WorkoutRecoveryTests {
                     }
                 }
                 compose.onNodeWithText("Live retained note").assertIsDisplayed()
-                compose.onNodeWithText(works.windmill.gym.presentation.SetEffort.rpe(9.5).spelled()!!).assertIsDisplayed()
+                compose.onNodeWithText(works.windmill.gym.presentation.SetEffort.rpe(9.5).spelled()).assertIsDisplayed()
                 compose.onNodeWithText("1e999").assertDoesNotExist()
             }
             compose.onNodeWithText("Save fix").performClick()

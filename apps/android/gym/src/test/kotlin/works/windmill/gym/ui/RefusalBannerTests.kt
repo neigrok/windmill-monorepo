@@ -18,7 +18,7 @@ import works.windmill.platform.i18n.Words
 class RefusalBannerTests {
     @Test fun workoutFallbackUsesItsKnownDayAndNeverInventsAnInstant() {
         val at = 0L
-        assertEquals("Workout on ${Readout.date(at)} stays on this phone", refusalWords(RefusedWorkout("notice", at, Words.Plain("Refused")), emptyList()).spelled())
+        assertEquals("Workout on ${Readout.date(at).spelled()} stays on this phone", refusalWords(RefusedWorkout("notice", at, Words.Plain("Refused")), emptyList()).spelled())
         assertEquals("Workout stays on this phone", refusalWords(RefusedWorkout("notice", null, Words.Plain("Refused")), emptyList()).spelled())
     }
 

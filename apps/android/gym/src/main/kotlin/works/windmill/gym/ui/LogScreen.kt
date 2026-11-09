@@ -363,7 +363,7 @@ private fun SessionRow(row: LogReadout.Row, onOpen: () -> Unit, onShare: () -> U
 private fun LogFoot(older: Older, readingShown: Boolean, first: SessionSummary?, onLoad: () -> Unit, onRetry: () -> Unit) {
     val colors = MaterialTheme.colorScheme
     if (older == Older.End) {
-        if (first != null) Text(stringResource(R.string.gym_log_first_workout, Readout.date(first.startedAtMs)), style = WindmillType.supporting, color = colors.onSurfaceVariant)
+        if (first != null) Text(stringResource(R.string.gym_log_first_workout, Readout.date(first.startedAtMs).text()), style = WindmillType.supporting, color = colors.onSurfaceVariant)
         return
     }
     if (older == Older.Reading) {

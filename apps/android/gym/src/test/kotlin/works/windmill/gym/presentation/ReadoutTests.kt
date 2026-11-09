@@ -22,9 +22,9 @@ class ReadoutTests {
     @Test
     fun aClockTimeFollowsThePhonesTwentyFourHourSetting() {
         fun at(hour: Int, minute: Int) = LocalDate.of(2026, 11, 8).atTime(hour, minute).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
-        assertEquals(listOf("00:05", "09:30", "12:00", "18:45"), listOf(at(0, 5), at(9, 30), at(12, 0), at(18, 45)).map { Readout.time(it) })
+        assertEquals(listOf("00:05", "09:30", "12:00", "18:45"), listOf(at(0, 5), at(9, 30), at(12, 0), at(18, 45)).map { Readout.time(it).spelled() })
         assertEquals(listOf("12:05 AM", "9:30 AM", "12:00 PM", "6:45 PM"),
-            listOf(at(0, 5), at(9, 30), at(12, 0), at(18, 45)).map { Readout.time(it, hours24 = false) })
+            listOf(at(0, 5), at(9, 30), at(12, 0), at(18, 45)).map { Readout.time(it, hours24 = false).spelled() })
     }
 
     @Test
@@ -194,10 +194,24 @@ class ReadoutTests {
         assertEquals("11", Readout.spelledOut(11).spelled())
     }
 
+    // The readout names days and months from its own tables, whatever language the phone is set to.
+    @Test @Config(qualifiers = "ru-rRU")
+    fun everyWeekdayAndMonthReadsFromTheReadoutsOwnTables() {
+        val zone = ZoneId.systemDefault()
+        assertEquals(listOf("Sun 1 Nov", "Mon 2 Nov", "Tue 3 Nov", "Wed 4 Nov", "Thu 5 Nov", "Fri 6 Nov", "Sat 7 Nov"),
+            (1..7).map { Readout.day(LocalDate.of(2026, 11, it).atStartOfDay(zone).plusHours(12).toInstant().toEpochMilli()).spelled() })
+        assertEquals(listOf("1 Jan 2026", "1 Feb 2026", "1 Mar 2026", "1 Apr 2026", "1 May 2026", "1 Jun 2026", "1 Jul 2026", "1 Aug 2026",
+            "1 Sep 2026", "1 Oct 2026", "1 Nov 2026", "1 Dec 2026"), (1..12).map { Readout.date(LocalDate.of(2026, it, 1)).spelled() })
+        assertEquals("1 Dec", Readout.dayMonth(LocalDate.of(2026, 12, 1)).spelled())
+        assertEquals(listOf("12:05 AM", "11:59 AM", "12:00 PM", "11:30 PM"), listOf(0 to 5, 11 to 59, 12 to 0, 23 to 30).map { (hour, minute) ->
+            Readout.time(LocalDate.of(2026, 11, 1).atStartOfDay(zone).plusHours(hour.toLong()).plusMinutes(minute.toLong()).toInstant().toEpochMilli(), hours24 = false).spelled()
+        })
+    }
+
     @Test
     fun testTheFirstSessionIsADateWithItsYear() {
         val at = LocalDate.parse("2026-05-06").atStartOfDay(ZoneId.systemDefault())
-        assertEquals("6 May 2026", Readout.date(at.toInstant().toEpochMilli()))
+        assertEquals("6 May 2026", Readout.date(at.toInstant().toEpochMilli()).spelled())
     }
 
     @Test
@@ -212,9 +226,9 @@ class ReadoutTests {
         assertEquals("3 Aug", Readout.brief(august, now).spelled())
         assertEquals("13 Jul 2025", Readout.brief(lastYear, now).spelled())
 
-        assertEquals("an axis end is a date and never a word", "11 Aug", Readout.shortDate(earlier, now))
-        assertEquals("3 Aug", Readout.shortDate(august, now))
-        assertEquals("13 Jul 2025", Readout.shortDate(lastYear, now))
+        assertEquals("an axis end is a date and never a word", "11 Aug", Readout.shortDate(earlier, now).spelled())
+        assertEquals("3 Aug", Readout.shortDate(august, now).spelled())
+        assertEquals("13 Jul 2025", Readout.shortDate(lastYear, now).spelled())
     }
 
     @Test

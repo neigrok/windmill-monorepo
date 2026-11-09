@@ -797,7 +797,7 @@ class ReviewSheetTests {
                 }
             }
         }
-        compose.onNodeWithText(ProposalRead.Gone.words.spelled()!!).assertIsDisplayed()
+        compose.onNodeWithText(ProposalRead.Gone.words.spelled()).assertIsDisplayed()
         compose.onNodeWithText("Exact server prose.").assertDoesNotExist()
         compose.onNodeWithText("Apply").assertDoesNotExist()
         compose.onNodeWithText("Turn this down").assertDoesNotExist()
@@ -876,7 +876,7 @@ class ReviewSheetTests {
         } }
         compose.waitUntil(10_000) { compose.runOnIdle { connectingCold.isCompleted } }
         runBlocking { connectingCold.await() }
-        compose.onNodeWithText(ProposalRead.Gone.words.spelled()!!).assertIsDisplayed()
+        compose.onNodeWithText(ProposalRead.Gone.words.spelled()).assertIsDisplayed()
         compose.onNodeWithText("Try again").assertDoesNotExist()
         compose.onNodeWithText("Coach wrote:").assertDoesNotExist()
         compose.onNodeWithText("Remove Push Day").assertDoesNotExist()

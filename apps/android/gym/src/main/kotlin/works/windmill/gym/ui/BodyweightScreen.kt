@@ -65,6 +65,7 @@ import java.time.ZoneOffset
 import kotlinx.coroutines.launch
 import works.windmill.gym.R
 import works.windmill.gym.presentation.Bodyweight
+import works.windmill.gym.presentation.Readout
 import works.windmill.gym.presentation.ChartWindow
 import works.windmill.gym.presentation.DatedPoint
 import works.windmill.gym.presentation.DatedSeries
@@ -338,15 +339,15 @@ fun BodyweightScreen(state: BodyweightState, events: BodyweightEvents, backTo: S
                             val from = if (window == ChartWindow.Ninety) today.minusDays(89) else shown.first().date
                             val series = DatedSeries(shown.map { entry ->
                                 DatedPoint(entry.dateLocal, entry.date.atStartOfDay(zone).toInstant().toEpochMilli(), entry.weightKg,
-                                    Words.Message(R.string.gym_bodyweight_entry, listOf(Bodyweight.kilograms(entry.weightKg), Bodyweight.listDay(entry.date))))
+                                    Words.Message(R.string.gym_bodyweight_entry, listOf(Bodyweight.kilograms(entry.weightKg), Readout.date(entry.date))))
                             }, from.atStartOfDay(zone).toInstant().toEpochMilli(), today.atStartOfDay(zone).toInstant().toEpochMilli(),
                                 zone, Bodyweight.maxGapDays)
                             DatedPlot(series, interaction = PlotInteraction.Select, valueLabel = Bodyweight::kilograms,
                                 gapWords = { before, after ->
                                     val first = LocalDate.parse(before.id)
                                     val last = LocalDate.parse(after.id)
-                                    if (first.year == last.year) Words.Message(R.string.gym_bodyweight_gap, listOf(Bodyweight.shortDay(first), Bodyweight.shortDay(last)))
-                                    else Words.Message(R.string.gym_bodyweight_gap, listOf(Bodyweight.listDay(first), Bodyweight.listDay(last)))
+                                    if (first.year == last.year) Words.Message(R.string.gym_bodyweight_gap, listOf(Readout.dayMonth(first), Readout.dayMonth(last)))
+                                    else Words.Message(R.string.gym_bodyweight_gap, listOf(Readout.date(first), Readout.date(last)))
                                 },
                                 onSelect = { point -> repairing = rows.firstOrNull { it.dateLocal == point.id } })
                         } else if (window == ChartWindow.Ninety && Bodyweight.windowed(standing, window, today).isEmpty()) {
@@ -367,7 +368,7 @@ fun BodyweightScreen(state: BodyweightState, events: BodyweightEvents, backTo: S
                                 }) {
                                     ListItem(
                                         headlineContent = { Text(stringResource(R.string.gym_bodyweight_kilograms, Bodyweight.kilograms(entry.weightKg)), style = WindmillType.labelParagraph, color = colors.onSurface) },
-                                        supportingContent = { Text(Bodyweight.listDay(entry.date), style = WindmillType.supportingParagraph, color = colors.onSurfaceVariant) },
+                                        supportingContent = { Text(Readout.date(entry.date).text(), style = WindmillType.supportingParagraph, color = colors.onSurfaceVariant) },
                                         modifier = Modifier.fillMaxWidth()
                                             .clickable(role = Role.Button, onClickLabel = stringResource(R.string.gym_bodyweight_correct_weigh_in)) { repairing = entry },
                                     )

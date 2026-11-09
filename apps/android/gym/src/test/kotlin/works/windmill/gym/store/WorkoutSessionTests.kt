@@ -432,7 +432,7 @@ class WorkoutSessionTests {
 
             assertTrue("a set that never landed is not drawn as though it had", room.store.workout.sets.isEmpty())
             assertEquals(listOf<RefusedWrite>(RefusedSet(lost.id, "bench-press", 60.0, 10, Words.Plain("That workout has finished."))),
-                room.store.workout.refusals.map { (it as RefusedSet).copy(why = Words.Plain(it.why.spelled()!!)) })
+                room.store.workout.refusals.map { (it as RefusedSet).copy(why = Words.Plain(it.why.spelled())) })
             assertEquals("That workout has finished.", room.store.workout.saveState.words.spelled())
             assertTrue(room.outbox().isEmpty())
             runCurrent()

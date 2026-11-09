@@ -93,12 +93,12 @@ class LogStateTests {
             compose.onNodeWithText(Bodyweight.fullDay(day.plusDays(1))).assertIsDisplayed()
             compose.onNodeWithContentDescription(string(R.string.gym_bodyweight_weight_field)).performTextReplacement("82,4.5")
             compose.onNodeWithText(string(R.string.gym_bodyweight_save)).performClick()
-            compose.onNodeWithText(Bodyweight.extraPoint.spelled()!!).assertIsDisplayed()
+            compose.onNodeWithText(Bodyweight.extraPoint.spelled()).assertIsDisplayed()
             compose.runOnIdle { room.now = day.plusDays(2).atTime(0, 1).atZone(zone).toInstant().toEpochMilli() }
             restored.emulateSavedInstanceStateRestore()
             compose.onNodeWithText(Bodyweight.fullDay(day.plusDays(1))).assertIsDisplayed()
             compose.onNodeWithText("82,4.5").assertIsDisplayed()
-            compose.onNodeWithText(Bodyweight.extraPoint.spelled()!!).assertIsDisplayed()
+            compose.onNodeWithText(Bodyweight.extraPoint.spelled()).assertIsDisplayed()
             compose.onNodeWithText(Bodyweight.fullDay(day.plusDays(1))).performClick()
             compose.onNodeWithText("Tuesday, September 15, 2026").assertIsEnabled().performClick()
             compose.onNodeWithText("Use date").performClick()
@@ -426,7 +426,7 @@ class LogStateTests {
             compose.onAllNodes(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "New best")).assertCountEquals(1)
             compose.onAllNodesWithText("Bench Press · new best").assertCountEquals(2)
             compose.onNodeWithText("1 kg down since November").assertIsDisplayed()
-            compose.onNodeWithText("First workout · ${Readout.date(at("2026-12-01") + 1)}").assertIsDisplayed()
+            compose.onNodeWithText("First workout · ${Readout.date(at("2026-12-01") + 1).spelled()}").assertIsDisplayed()
         } } finally { scope.cancel() }
     }
 }

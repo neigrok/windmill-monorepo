@@ -1,6 +1,7 @@
 package works.windmill.gym.presentation
 
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
 import java.time.ZonedDateTime
 import java.time.temporal.ChronoUnit
@@ -8,12 +9,14 @@ import kotlin.math.max
 import works.windmill.gym.R
 import works.windmill.platform.i18n.Words
 
-// Days and months are spelled out rather than localised, exactly as the web spells them; what a readout says around them is a message.
-
 object Readout {
-    private val weekdays = listOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
-    private val months = listOf("Jan", "Feb", "Mar", "Apr", "May", "Jun",
-                                "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+    // Days and months are named from the readout's own tables rather than the phone's locale, as the web names them.
+    private val weekdays = listOf(R.string.gym_readout_weekday_sun, R.string.gym_readout_weekday_mon, R.string.gym_readout_weekday_tue,
+        R.string.gym_readout_weekday_wed, R.string.gym_readout_weekday_thu, R.string.gym_readout_weekday_fri, R.string.gym_readout_weekday_sat)
+    private val months = listOf(R.string.gym_readout_month_jan, R.string.gym_readout_month_feb, R.string.gym_readout_month_mar,
+        R.string.gym_readout_month_apr, R.string.gym_readout_month_may, R.string.gym_readout_month_jun, R.string.gym_readout_month_jul,
+        R.string.gym_readout_month_aug, R.string.gym_readout_month_sep, R.string.gym_readout_month_oct, R.string.gym_readout_month_nov,
+        R.string.gym_readout_month_dec)
     private val spelledNumbers = listOf(R.string.gym_readout_zero, R.string.gym_readout_one, R.string.gym_readout_two,
         R.string.gym_readout_three, R.string.gym_readout_four, R.string.gym_readout_five, R.string.gym_readout_six,
         R.string.gym_readout_seven, R.string.gym_readout_eight, R.string.gym_readout_nine, R.string.gym_readout_ten)
@@ -81,10 +84,11 @@ object Readout {
     }
 
     // A clock time on the phone's own 24-hour or 12-hour setting.
-    fun time(ms: Long, hours24: Boolean = true): String {
+    fun time(ms: Long, hours24: Boolean = true): Words {
         val at = at(ms)
-        if (hours24) return pad(at.hour) + ":" + pad(at.minute)
-        return "${(at.hour + 11) % 12 + 1}:${pad(at.minute)} ${if (at.hour < 12) "AM" else "PM"}"
+        if (hours24) return Words.Plain(pad(at.hour) + ":" + pad(at.minute))
+        return Words.Message(if (at.hour < 12) R.string.gym_readout_time_am else R.string.gym_readout_time_pm,
+            listOf("${(at.hour + 11) % 12 + 1}:${pad(at.minute)}"))
     }
 
     // The shared readout omits zero tonnage and spells a positive total without integer narrowing.
@@ -102,37 +106,38 @@ object Readout {
     // Up to ten in words, past it in digits.
     fun spelledOut(count: Int): Words = spelledNumbers.getOrNull(count)?.let { Words.Message(it) } ?: Words.Plain(count.toString())
 
-    fun date(ms: Long): String {
-        val at = at(ms)
-        return "${at.dayOfMonth} ${months[at.monthValue - 1]} ${at.year}"
-    }
+    fun date(ms: Long): Words = date(at(ms).toLocalDate())
+
+    fun date(date: LocalDate): Words =
+        Words.Message(R.string.gym_readout_date, listOf(date.dayOfMonth.toString(), month(date), date.year.toString()))
+
+    // A date with its year left to the reader.
+    fun dayMonth(date: LocalDate): Words = Words.Message(R.string.gym_readout_day_month, listOf(date.dayOfMonth.toString(), month(date)))
 
     fun loggedWhen(ms: Long, now: Long): Words {
         val zone = ZoneId.systemDefault()
         val then = Instant.ofEpochMilli(ms).atZone(zone).toLocalDate()
         val today = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
         if (then == today) return Words.Message(R.string.gym_readout_today_at, listOf(time(ms)))
-        return Words.Plain(day(ms))
+        return day(ms)
     }
 
-    fun day(ms: Long): String {
-        val at = at(ms)
-        return "${weekdays[at.dayOfWeek.value % 7]} ${at.dayOfMonth} ${months[at.monthValue - 1]}"
+    fun day(ms: Long): Words {
+        val at = at(ms).toLocalDate()
+        return Words.Message(R.string.gym_readout_day, listOf(Words.Message(weekdays[at.dayOfWeek.value % 7]), at.dayOfMonth.toString(), month(at)))
     }
 
-    fun shortDate(ms: Long, now: Long): String {
-        val at = at(ms)
-        val here = at(now)
-        val date = "${at.dayOfMonth} ${months[at.monthValue - 1]}"
-        if (at.year == here.year) return date
-        return "$date ${at.year}"
+    fun shortDate(ms: Long, now: Long): Words {
+        val at = at(ms).toLocalDate()
+        if (at.year == at(now).year) return dayMonth(at)
+        return date(at)
     }
 
     fun brief(ms: Long, now: Long): Words {
         val zone = ZoneId.systemDefault()
         val then = Instant.ofEpochMilli(ms).atZone(zone).toLocalDate()
         if (then == Instant.ofEpochMilli(now).atZone(zone).toLocalDate()) return Words.Message(R.string.gym_readout_today)
-        return Words.Plain(shortDate(ms, now))
+        return shortDate(ms, now)
     }
 
     // A claim about the CALENDAR, not elapsed hours: both instants fall to their local date first.
@@ -167,6 +172,8 @@ object Readout {
 
     fun movement(exerciseId: String, catalog: List<Exercise>): String =
         catalog.firstOrNull { it.id == exerciseId }?.name ?: exerciseId
+
+    private fun month(date: LocalDate): Words = Words.Message(months[date.monthValue - 1])
 
     private fun at(ms: Long): ZonedDateTime =
         Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault())

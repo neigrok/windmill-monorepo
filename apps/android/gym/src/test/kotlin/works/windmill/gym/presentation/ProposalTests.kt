@@ -356,7 +356,7 @@ class ProposalTests {
     @Test
     fun testASettledProposalSaysWhatHappenedAndAPendingOneSaysNothing() {
         val settled = threeDaysAgoMs
-        val on = "29 Jul at ${Readout.time(settled)}"
+        val on = "29 Jul at ${Readout.time(settled).spelled()}"
         assertEquals(
             "Applied to Push A $on.",
             proposal(state = ProposalState.Applied, settledAtMs = settled).settled(nowMs).spelled())
@@ -367,7 +367,7 @@ class ProposalTests {
             "Push A changed after this was written, so it was set aside $on. None of it was applied.",
             proposal(state = ProposalState.Superseded, settledAtMs = settled).settled(nowMs).spelled())
         assertTrue(proposal(state = ProposalState.Dismissed, settledAtMs = nowMs)
-            .settled(nowMs).spelled()!!.startsWith("Turned down today at ${Readout.time(nowMs)}."))
+            .settled(nowMs).spelled()!!.startsWith("Turned down today at ${Readout.time(nowMs).spelled()}."))
         assertNull(proposal().settled(nowMs))
         assertNull(proposal(state = ProposalState.Applied).settled(nowMs))
     }

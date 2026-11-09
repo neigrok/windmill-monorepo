@@ -70,7 +70,7 @@ class RecordStateTests {
             } }
             compose.onNodeWithText("Reading your log…").assertExists()
             compose.onNodeWithText("Record unavailable").assertDoesNotExist()
-            compose.onNodeWithText(TrainingSeat.accountChange.spelled()!!).assertDoesNotExist()
+            compose.onNodeWithText(TrainingSeat.accountChange.spelled()).assertDoesNotExist()
             compose.runOnIdle {
                 room.store.seat.isLoading = false
             }
@@ -85,7 +85,7 @@ class RecordStateTests {
             compose.onNodeWithText("96.3").assertExists()
             compose.onNodeWithText("82.5").assertExists()
             compose.onNodeWithText("Record unavailable").assertDoesNotExist()
-            compose.onNodeWithText(TrainingSeat.accountChange.spelled()!!).assertDoesNotExist()
+            compose.onNodeWithText(TrainingSeat.accountChange.spelled()).assertDoesNotExist()
             compose.onNodeWithText("Reading your log…").assertDoesNotExist()
         } } finally { scope.cancel() }
     }

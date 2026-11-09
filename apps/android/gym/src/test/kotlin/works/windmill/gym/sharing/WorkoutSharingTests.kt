@@ -76,7 +76,7 @@ class WorkoutSharingTests {
 
         assertEquals("The link is live", card.title.spelled())
         assertEquals("Anyone who has this link can read this one workout. It stops "
-                     + "working on ${Readout.day(share.expiresAtMs)}, and revoking it kills it immediately.",
+                     + "working on ${Readout.day(share.expiresAtMs).spelled()}, and revoking it kills it immediately.",
                      card.body.spelled())
         assertEquals("https://windmill.works/#/gym/shared/abc123", card.link)
         assertEquals("Copy link", card.action.spelled())

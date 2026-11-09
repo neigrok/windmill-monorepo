@@ -220,15 +220,14 @@ private fun RecoveryHeading(text: String) {
 private fun RecoveryRow(row: ImportRecovery, onInspect: () -> Unit) {
     val colors = MaterialTheme.colorScheme
     val date = row.workout?.session?.startedAtMs?.let { ms ->
-        val today = LocalDate.now()
-        if (Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()).toLocalDate() == today) stringResource(R.string.gym_phone_today)
-        else Readout.date(ms).substringBeforeLast(" ")
+        val day = Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()).toLocalDate()
+        if (day == LocalDate.now()) Words.Message(R.string.gym_phone_today) else Readout.dayMonth(day)
     }
     Row(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.large).background(colors.surfaceContainer)
         .clickable(role = Role.Button, onClick = onInspect).padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            val facts = listOfNotNull(PhoneRecovery.named(row), date?.let(Words::Plain), row.workout?.let { Readout.sets(PhoneRecovery.sets(row).size) })
+            val facts = listOfNotNull(PhoneRecovery.named(row), date, row.workout?.let { Readout.sets(PhoneRecovery.sets(row).size) })
             Text(checkNotNull(facts.joined()).text(), style = WindmillType.rowLabel, color = colors.onSurface)
             Text(PhoneRecovery.reason(row), style = WindmillType.detail, color = colors.onSurfaceVariant)
         }
@@ -290,7 +289,7 @@ fun WorkoutInspectScreen(state: RecoveryState, events: RecoveryEvents, read: Rec
         LazyColumn(Modifier.fillMaxSize().testTag("recovery-inspect"), contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 0.dp, bottom = 20.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)) {
             row.workout?.let { copy ->
-                item("date") { Text(Readout.day(copy.session.startedAtMs), style = WindmillType.detail, color = colors.onSurfaceVariant, modifier = Modifier.padding(horizontal = 4.dp)) }
+                item("date") { Text(Readout.day(copy.session.startedAtMs).text(), style = WindmillType.detail, color = colors.onSurfaceVariant, modifier = Modifier.padding(horizontal = 4.dp)) }
                 item("facts") { RecoveryFacts(row, state.catalog) }
             }
             item("reason") { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -360,7 +359,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.recoveryMovements(set
                         Text(row.savedNumber.toString(), style = GymType.numeralMedium, color = colors.onSurfaceVariant)
                         Column(Modifier.weight(1f)) {
                             Text(row.effort, style = GymType.numeralMedium, color = colors.onSurface)
-                            if (times) Text(Readout.time(row.set.completedAtMs), style = GymType.captionLoose, color = colors.onSurfaceVariant)
+                            if (times) Text(Readout.time(row.set.completedAtMs).text(), style = GymType.captionLoose, color = colors.onSurfaceVariant)
                         }
                     }
                     if (index < movement.rows.lastIndex) HorizontalDivider(color = colors.onSurfaceVariant.copy(alpha = .12f))
@@ -388,11 +387,11 @@ private fun RecoveryTimes(session: Session, onPick: ((String) -> Unit)? = null, 
                 } else if (onPick == null) {
                     val otherDay = Instant.ofEpochMilli(instant).atZone(ZoneId.systemDefault()).toLocalDate() !=
                         Instant.ofEpochMilli(session.startedAtMs).atZone(ZoneId.systemDefault()).toLocalDate()
-                    Text(if (otherDay) "${Readout.date(instant)} · ${Readout.time(instant, hours24)}" else Readout.time(instant, hours24),
+                    Text(if (otherDay) "${Readout.date(instant).text()} · ${Readout.time(instant, hours24).text()}" else Readout.time(instant, hours24).text(),
                         style = WindmillType.supportingParagraph, color = colors.onSurfaceVariant)
                 } else {
-                    AssistChip(onClick = { onPick("${field.first}:date") }, label = { Text(Readout.date(instant)) })
-                    AssistChip(onClick = { onPick("${field.first}:time") }, label = { Text(Readout.time(instant, hours24)) })
+                    AssistChip(onClick = { onPick("${field.first}:date") }, label = { Text(Readout.date(instant).text()) })
+                    AssistChip(onClick = { onPick("${field.first}:time") }, label = { Text(Readout.time(instant, hours24).text()) })
                 }
             }
             if (largeText) Column(Modifier.fillMaxWidth().padding(vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {

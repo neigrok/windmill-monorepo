@@ -546,7 +546,7 @@ class ThreadScreenTests {
             ThreadScreen(ask, ask, "thr_removed", emptyList(), emptySet(), "Coach", {}, {}, {})
         }
         read("The original proposal explanation.").assertIsDisplayed()
-        compose.onNodeWithText(ProposalRead.Gone.words.spelled()!!).assertDoesNotExist()
+        compose.onNodeWithText(ProposalRead.Gone.words.spelled()).assertDoesNotExist()
         compose.onNodeWithText("Review").assertDoesNotExist()
         compose.onNodeWithText("Try again").assertDoesNotExist()
         compose.onNodeWithText("Read-only").assertDoesNotExist()
@@ -596,10 +596,10 @@ class ThreadScreenTests {
             receipts = listOf(requireNotNull(settled.proposal.settledReceipt))
             visit++
         }
-        read(requireNotNull(settled.proposal.settledReceipt).words.spelled()!!).performScrollTo().assertIsDisplayed()
+        read(requireNotNull(settled.proposal.settledReceipt).words.spelled()).performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Remove this routine.").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Review").performScrollTo().performClick()
-        compose.onNodeWithText(ProposalRead.Gone.words.spelled()!!).assertDoesNotExist()
+        compose.onNodeWithText(ProposalRead.Gone.words.spelled()).assertDoesNotExist()
         compose.onNodeWithText(string(R.string.gym_coach_promise)).assertDoesNotExist()
         compose.runOnIdle {
             assertEquals(listOf("proposal1"), reviewed)
@@ -630,7 +630,7 @@ class ThreadScreenTests {
         }
         read("The original answer.").assertIsDisplayed()
         compose.onNodeWithText("Review").assertDoesNotExist()
-        compose.onNodeWithText(ProposalRead.Gone.words.spelled()!!).assertDoesNotExist()
+        compose.onNodeWithText(ProposalRead.Gone.words.spelled()).assertDoesNotExist()
         compose.onNodeWithText("Try again").assertDoesNotExist()
         compose.runOnIdle { room.pull(server); visit++ }
         read("Heavier triples.").performScrollTo().assertIsDisplayed()
