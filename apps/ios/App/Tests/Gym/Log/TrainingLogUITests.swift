@@ -291,8 +291,9 @@ import SyncTesting
   }
 
   @Test func aChartsWindowLineNamesItsSpanThenWhatItHolds() {
-    #expect([ChartWindow.recent.line(recent: "90 days", holding: "6 weigh-ins"), ChartWindow.all.line(recent: "90 days", holding: "14 weigh-ins")]
-            == ["last 90 days · 6 weigh-ins", "the whole series · 14 weigh-ins"])
+    #expect([ChartWindow.recent.line(.bodyweight, holding: "6 weigh-ins"), ChartWindow.recent.line(.strength, holding: "28 workouts"),
+             ChartWindow.all.line(.bodyweight, holding: "14 weigh-ins")]
+            == ["last 90 days · 6 weigh-ins", "last 12 weeks · 28 workouts", "the whole series · 14 weigh-ins"])
   }
 
   @Test func chartAxesSitOnTheSeriesStep() {
