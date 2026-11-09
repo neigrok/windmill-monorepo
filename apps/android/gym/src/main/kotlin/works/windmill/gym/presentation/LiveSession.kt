@@ -109,7 +109,7 @@ object LiveLines {
         val isCurrent: Boolean,
         val justAdded: Boolean,
         val canDrop: Boolean,
-        val facts: Words = Words.Plain(""),
+        val facts: Words? = null,
     )
 
     // "set 3 of 5". An open plan line answers like no line at all — "set 3", never "set 3 of 0".

@@ -15,6 +15,10 @@
     <string name="onboarding_body_journal">Write a line or a page, in your own words. Nothing is graded or shared.</string>
     <string name="onboarding_title_gym">Log the set.</string>
     <string name="onboarding_body_gym">Two taps a set, and next time your numbers are already there.</string>
+    <!-- The small capitals over a page's title, naming the product it shows. -->
+    <string name="onboarding_kicker_roadmap">ROADMAP</string>
+    <string name="onboarding_kicker_journal">JOURNAL</string>
+    <string name="onboarding_kicker_gym">GYM</string>
     <string name="onboarding_roadmap_where">On the web</string>
     <string name="onboarding_journal_where">On the web</string>
     <string name="onboarding_gym_where">In this app</string>

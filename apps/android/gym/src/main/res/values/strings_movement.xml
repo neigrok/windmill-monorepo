@@ -4,9 +4,6 @@
     <string name="gym_movement_field_name">Name</string>
     <string name="gym_movement_field_name_description">Movement name</string>
     <string name="gym_movement_field_equipment">Equipment</string>
-    <string name="gym_movement_equipment_barbell">Barbell</string>
-    <string name="gym_movement_equipment_dumbbells">Dumbbells</string>
-    <string name="gym_movement_equipment_other">Other</string>
     <string name="gym_movement_equipment_selected">Selected</string>
     <string name="gym_movement_target">Target</string>
     <string name="gym_movement_kg_blank">kg blank: pick it at the rack the first time; after that, last time fills it.</string>

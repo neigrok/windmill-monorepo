@@ -188,15 +188,15 @@ class CoachAccessTests {
             override fun openUri(uri: String) { if (failing) error("No browser"); opened += uri }
         }
         compose.setContent {
-            CompositionLocalProvider(LocalClientUpdateDestination provides ClientUpdateDestination("https://windmill.works/android.apk", works.windmill.platform.R.string.platform_update_open_windmill),
+            CompositionLocalProvider(LocalClientUpdateDestination provides ClientUpdateDestination("https://windmill.works/android.apk", works.windmill.platform.R.string.platform_update_get),
                 LocalUriHandler provides handler, LocalTelemetry provides telling) {
                 CoachRefusalNotice(CoachTurnRefusal.UpdateRequired, onConnections = {}, onTryAgain = {})
             }
         }
         compose.onNodeWithText("This version can’t ask Coach any more. Update Windmill to continue.").assertIsDisplayed()
-        compose.onNodeWithText("Open Windmill").performClick()
+        compose.onNodeWithText("Get the update").performClick()
         compose.runOnIdle { assertEquals(listOf("https://windmill.works/android.apk"), opened); failing = true }
-        compose.onNodeWithText("Open Windmill").performClick()
+        compose.onNodeWithText("Get the update").performClick()
         compose.onNodeWithText("The link could not be opened. Try again, or open Windmill’s website in your browser.").assertIsDisplayed()
         assertEquals(listOf(mapOf("action" to "update"), mapOf("action" to "update"), mapOf("action" to "update", "outcome" to "failed")), telling.named("client_update_required"))
         assertEquals(emptyList<Map<String, String>>(), telling.failures)

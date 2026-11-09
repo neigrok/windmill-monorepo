@@ -13,7 +13,6 @@
 
     <string name="app_update_required_title">Update required</string>
     <string name="app_update_required_body">Update Windmill to keep syncing. Your work is saved on this phone.</string>
-    <string name="app_update_get">Get the update</string>
     <string name="app_update_keep_working">Keep working on this phone</string>
 
     <string name="app_sign_in_add_title">Add to your account?</string>

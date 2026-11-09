@@ -80,5 +80,6 @@
     <string name="platform_api_update_required">Update Windmill to keep syncing. Your work is saved on this phone.</string>
     <string name="platform_sign_in_unreadable">That code didn\'t work. Check the digits, or send a fresh one.</string>
     <string name="platform_update_open_windmill">Open Windmill</string>
+    <string name="platform_update_get">Get the update</string>
     <string name="platform_update_unopened">The link could not be opened. Try again, or open Windmill’s website in your browser.</string>
 </resources>

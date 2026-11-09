@@ -165,7 +165,7 @@ fun AssemblySheet(
                     }) {
                     ListItem(
                         headlineContent = { Text(row.name, style = GymType.movementRow) },
-                        supportingContent = { Text(problem ?: row.facts.text(), style = WindmillType.supportingParagraph,
+                        supportingContent = { Text(problem ?: row.facts?.text().orEmpty(), style = WindmillType.supportingParagraph,
                             color = if (problem == null) colors.onSurfaceVariant else colors.error,
                             modifier = Modifier.semantics { if (problem != null) liveRegion = LiveRegionMode.Polite }) },
                         leadingContent = { GymDragHandle(stringResource(R.string.gym_logger_reorder_named, row.name), modifier = Modifier.pointerInput(row.id, order) {

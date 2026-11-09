@@ -50,6 +50,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.launch
 import works.windmill.gym.GymModule
 import works.windmill.platform.Account
+import works.windmill.platform.R as PlatformR
 import works.windmill.platform.LocalShellActions
 import works.windmill.platform.ShellActions
 import works.windmill.platform.auth.AuthStatus
@@ -252,7 +253,7 @@ internal fun Root(runtime: WindmillApplication, introduction: Boolean, onIntrodu
     CompositionLocalProvider(LocalShellActions provides shell, LocalTelemetry provides runtime.telemetry,
         LocalGymEngineSession provides runtime.engineSession,
         LocalClientUpdateDestination provides if (BuildConfig.WM_UPDATE_URL.isBlank()) ClientUpdateDestination()
-            else ClientUpdateDestination(BuildConfig.WM_UPDATE_URL, R.string.app_update_get)) {
+            else ClientUpdateDestination(BuildConfig.WM_UPDATE_URL, PlatformR.string.platform_update_get)) {
         WindmillMaterial {
             gym.Skin {
                 if (introduction) {

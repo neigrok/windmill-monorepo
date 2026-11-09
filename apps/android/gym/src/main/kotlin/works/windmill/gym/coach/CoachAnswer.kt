@@ -122,15 +122,9 @@ internal fun CoachAnswer(
                         Text(draft.name, style = GymType.cardTitle, color = colors.onSurface)
                         draft.entries.forEach { entry ->
                             val exercise = catalog.firstOrNull { it.id == entry.exerciseId }
-                            val equipment = when (exercise?.equipment) {
-                                "bodyweight" -> stringResource(R.string.gym_coach_draft_bodyweight)
-                                "dumbbell" -> stringResource(if (exercise.loadCount == 1) R.string.gym_coach_draft_one_dumbbell else R.string.gym_coach_draft_two_dumbbells)
-                                "barbell" -> stringResource(R.string.gym_coach_draft_barbell)
-                                "machine" -> stringResource(R.string.gym_coach_draft_machine)
-                                "other" -> stringResource(R.string.gym_coach_draft_other)
-                                null -> stringResource(R.string.gym_coach_draft_no_equipment)
-                                else -> exercise.equipment.replaceFirstChar { it.uppercase() }
-                            }
+                            val equipment = exercise?.let {
+                                Readout.equipment(it.equipment, if (it.loadCount == 1) R.string.gym_equipment_one_dumbbell else R.string.gym_equipment_two_dumbbells).text()
+                            } ?: stringResource(R.string.gym_coach_draft_no_equipment)
                             val loads = when (exercise?.equipment) {
                                 "dumbbell" -> if (exercise.loadCount == 1) R.string.gym_coach_draft_kg else R.string.gym_coach_draft_kg_each
                                 "bodyweight" -> if (entry.sets.any { (it.weightKg ?: 0.0) < 0 }) R.string.gym_coach_draft_kg_assisted else R.string.gym_coach_draft_kg_added

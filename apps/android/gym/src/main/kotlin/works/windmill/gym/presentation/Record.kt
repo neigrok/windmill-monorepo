@@ -68,14 +68,7 @@ object Record {
             }
         }
         return Page(record.exercise.name,
-            when (record.exercise.equipment) {
-                "dumbbell" -> Words.Message(R.string.gym_record_equipment_dumbbells)
-                "barbell" -> Words.Message(R.string.gym_record_equipment_barbell)
-                "machine" -> Words.Message(R.string.gym_record_equipment_machine)
-                "bodyweight" -> Words.Message(R.string.gym_record_equipment_bodyweight)
-                "other" -> Words.Message(R.string.gym_record_equipment_other)
-                else -> Words.Plain(record.exercise.equipment.replaceFirstChar { it.titlecase() })
-            }, tiles,
+            Readout.equipment(record.exercise.equipment), tiles,
             progress.earlierRecords.asReversed().map { point ->
                 val fact = point.fact.estimate!!
                 Best(Readout.effort(fact.weightKg, fact.reps), Readout.e1rm(requireNotNull(fact.e1rm)),

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- A movement's equipment in a word, as a picker row, a record page or Coach names it. -->
+    <string name="gym_equipment_barbell">Barbell</string>
+    <!-- The kind of equipment, as a picker row names it. -->
+    <string name="gym_equipment_dumbbell">Dumbbell</string>
+    <string name="gym_equipment_dumbbells">Dumbbells</string>
+    <string name="gym_equipment_one_dumbbell">One dumbbell</string>
+    <string name="gym_equipment_two_dumbbells">Two dumbbells</string>
+    <string name="gym_equipment_machine">Machine</string>
+    <string name="gym_equipment_cable">Cable</string>
+    <string name="gym_equipment_bodyweight">Bodyweight</string>
+    <string name="gym_equipment_kettlebell">Kettlebell</string>
+    <!-- Equipment that is none of the named kinds. -->
+    <string name="gym_equipment_other">Other</string>
+</resources>

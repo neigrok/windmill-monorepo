@@ -419,7 +419,7 @@ private fun MovementRow(row: PickerOptions.Row, onPick: (String) -> Unit) {
         headlineContent = { Text(row.name, style = WindmillType.label, color = colors.onSurface) },
         supportingContent = {
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(row.equipment.replaceFirstChar { it.uppercase() }, style = WindmillType.detailCompact, color = colors.onSurfaceVariant)
+                Text(Readout.equipment(row.equipment, R.string.gym_equipment_dumbbell).text(), style = WindmillType.detailCompact, color = colors.onSurfaceVariant)
                 row.alias?.let { Text(stringResource(R.string.gym_picker_was_alias, it), style = WindmillType.detailCompact, color = colors.onSurfaceVariant) }
                 row.lastTime?.let { Text(it.text(), style = WindmillType.detailCompact, color = colors.onSurfaceVariant) }
             }

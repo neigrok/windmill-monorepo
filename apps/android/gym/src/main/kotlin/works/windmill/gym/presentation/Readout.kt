@@ -1,5 +1,6 @@
 package works.windmill.gym.presentation
 
+import androidx.annotation.StringRes
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -169,6 +170,19 @@ object Readout {
     fun sets(count: Int): Words = Words.Counted(R.plurals.gym_readout_sets, count, listOf(count.toString()))
 
     fun workouts(count: Int): Words = Words.Counted(R.plurals.gym_readout_workouts, count, listOf(count.toString()))
+
+    // A movement's equipment in a word. `dumbbell` is how this place counts dumbbells; a kind this build does not name
+    // reads as the record's own word.
+    fun equipment(equipment: String, @StringRes dumbbell: Int = R.string.gym_equipment_dumbbells): Words = when (equipment) {
+        "barbell" -> Words.Message(R.string.gym_equipment_barbell)
+        "dumbbell" -> Words.Message(dumbbell)
+        "machine" -> Words.Message(R.string.gym_equipment_machine)
+        "cable" -> Words.Message(R.string.gym_equipment_cable)
+        "bodyweight" -> Words.Message(R.string.gym_equipment_bodyweight)
+        "kettlebell" -> Words.Message(R.string.gym_equipment_kettlebell)
+        "other" -> Words.Message(R.string.gym_equipment_other)
+        else -> Words.Plain(equipment.replaceFirstChar { it.titlecase() })
+    }
 
     fun movement(exerciseId: String, catalog: List<Exercise>): String =
         catalog.firstOrNull { it.id == exerciseId }?.name ?: exerciseId

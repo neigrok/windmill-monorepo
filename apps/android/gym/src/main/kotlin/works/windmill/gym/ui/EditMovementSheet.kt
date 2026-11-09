@@ -19,6 +19,7 @@ import androidx.compose.ui.unit.dp
 import works.windmill.gym.R
 import works.windmill.gym.presentation.Exercise
 import works.windmill.gym.presentation.Program
+import works.windmill.gym.presentation.Readout
 import works.windmill.gym.domain.sync.ExerciseRules
 import works.windmill.platform.i18n.Words
 import works.windmill.platform.i18n.text
@@ -71,8 +72,6 @@ internal fun MovementFields(
     val colors = MaterialTheme.colorScheme
     var menu by remember { mutableStateOf(false) }
     val choice = ExerciseRules.loadingChoice(equipment, loadCount)
-    val labels = mapOf("barbell" to stringResource(R.string.gym_movement_equipment_barbell),
-        "dumbbell" to stringResource(R.string.gym_movement_equipment_dumbbells), "other" to stringResource(R.string.gym_movement_equipment_other))
     val nameDescription = stringResource(R.string.gym_movement_field_name_description)
     val equipmentLabel = stringResource(R.string.gym_movement_field_equipment)
     NativeFieldType {
@@ -81,15 +80,15 @@ internal fun MovementFields(
             keyboardOptions = KeyboardOptions(autoCorrectEnabled = false),
             modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).semantics { contentDescription = nameDescription })
         ExposedDropdownMenuBox(expanded = menu && enabled, onExpandedChange = { if (enabled) menu = it }) {
-            OutlinedTextField(labels.getValue(choice), onValueChange = {}, enabled = enabled, readOnly = true,
+            OutlinedTextField(Readout.equipment(choice).text(), onValueChange = {}, enabled = enabled, readOnly = true,
                 label = { Text(equipmentLabel, Modifier.clearAndSetSemantics {}) },
                 leadingIcon = if (choice == "other") null else { { EquipmentIcon(choice, Modifier.size(24.dp)) } },
                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = menu) },
                 modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth()
                     .heightIn(min = 56.dp).semantics { contentDescription = equipmentLabel })
             ExposedDropdownMenu(expanded = menu && enabled, onDismissRequest = { menu = false }, containerColor = colors.surfaceContainer) {
-                labels.keys.forEach { value ->
-                    DropdownMenuItem(text = { Text(labels.getValue(value), style = WindmillType.supporting) },
+                listOf("barbell", "dumbbell", "other").forEach { value ->
+                    DropdownMenuItem(text = { Text(Readout.equipment(value).text(), style = WindmillType.supporting) },
                         leadingIcon = { Box(Modifier.size(20.dp)) { EquipmentIcon(value, Modifier.size(20.dp)) } },
                         trailingIcon = if (choice == value) {
                             { Icon(painterResource(R.drawable.gym_equipment_selected), contentDescription = stringResource(R.string.gym_movement_equipment_selected), modifier = Modifier.size(20.dp)) }

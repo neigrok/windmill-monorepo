@@ -871,9 +871,9 @@ class AskScreenTests {
         scope.cancel()
     }
 
-    // The card is a skim: its rows draw the compact readout only — one set moved, or both schemes in the readout formula — never the ladder the review sheet unfolds to.
+    // The card is a skim: it names the routine and counts the changes; the movements and each change's readout — one set moved, or both schemes — wait in the review sheet.
     @Test
-    fun theCardDrawsTheCompactReadoutAndNeverTheLadder() {
+    fun theCardCountsTheChangesAndLeavesEachReadoutToTheReview() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val server = EngineRoomFixture.server()
         val room = signedIn(scope)
@@ -893,6 +893,8 @@ class AskScreenTests {
         compose.onNodeWithText("Review").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Back Squat").assertDoesNotExist()
         compose.onNodeWithText("Deadlift").assertDoesNotExist()
+        compose.onNodeWithText("set 4 · 100 × 1 → 102.5 × 1").assertDoesNotExist()
+        compose.onNodeWithText("sets · 5 × 5 · 80 → 5 × 1–5 · 60–100").assertDoesNotExist()
         scope.cancel()
     }
 

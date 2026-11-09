@@ -513,7 +513,7 @@ class CoachConversationsTests {
             ), conversations.withDetails(reply.id, reply.readRows).map { it.title.spelled() to it.detail.spelled() })
             assertEquals(listOf(CreatedRoutine("rt_00000001", "Push A", movements = 2)), reply.routines)
             assertEquals(listOf(SavedNote("note00000001", "Left shoulder hurts on wide-grip bench.")), reply.savedNotes)
-            assertEquals(listOf(MadeMovement("ex_00000001", "Incline Dumbbell Press", Words.Message(R.string.gym_coach_equipment_dumbbells), 2.5)), reply.madeMovements)
+            assertEquals(listOf(MadeMovement("ex_00000001", "Incline Dumbbell Press", Words.Message(R.string.gym_equipment_dumbbells), 2.5)), reply.madeMovements)
             assertEquals("Dumbbells", reply.madeMovements.single().equipment.spelled())
             assertEquals("Read 1 workout · 1 week", reply.readLine.spelled())
             assertEquals("a proposal this phone minted names its routine before the server does", "Push A", room.training.proposal("pr_00000001")?.routineNamed.spelled())

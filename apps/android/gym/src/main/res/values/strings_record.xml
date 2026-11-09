@@ -18,11 +18,6 @@
     <string name="gym_record_tile_most_reps">Most reps</string>
     <string name="gym_record_tile_kg_on">kg · %1$s</string>
     <string name="gym_record_tile_no_added_load">reps · no added load</string>
-    <string name="gym_record_equipment_dumbbells">Dumbbells</string>
-    <string name="gym_record_equipment_barbell">Barbell</string>
-    <string name="gym_record_equipment_machine">Machine</string>
-    <string name="gym_record_equipment_bodyweight">Bodyweight</string>
-    <string name="gym_record_equipment_other">Other</string>
     <string name="gym_record_untrained">Nothing logged for this movement yet. The first set you log lands here.</string>
     <string name="gym_record_no_estimate">No eligible estimate yet. Estimates use 1–10 reps at effort 7 or higher, or unrated sets.</string>
     <string name="gym_record_progress_point">%1$s kg est · %2$s · %3$s</string>

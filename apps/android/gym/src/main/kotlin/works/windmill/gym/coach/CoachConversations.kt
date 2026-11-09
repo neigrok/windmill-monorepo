@@ -45,6 +45,7 @@ import works.windmill.gym.domain.sync.RoutineChange
 import works.windmill.gym.domain.sync.Session
 import works.windmill.gym.domain.sync.WorkoutProposal
 import works.windmill.gym.R
+import works.windmill.gym.presentation.Readout
 import works.windmill.platform.i18n.Words
 import works.windmill.platform.i18n.joined
 import works.windmill.gym.store.EngineTraining
@@ -312,7 +313,8 @@ class CoachConversations(
         val receipt = CoachReceipt(message.calls)
         val routines = receipt.created.mapNotNull { ref -> named.held(Routine, ref)?.let { CreatedRoutine(checkNotNull(ref.id.string), it.name, it.entries.size) } }
         val notes = receipt.created.mapNotNull { ref -> named.held(Note, ref)?.let { SavedNote(checkNotNull(ref.id.string), it.body.ifBlank { it.title }) } }
-        val movements = receipt.created.mapNotNull { ref -> named.held(Exercise, ref)?.let { MadeMovement(checkNotNull(ref.id.string), it.name, equipment(it.equipment, it.loadCount), it.stepKg) } }
+        val movements = receipt.created.mapNotNull { ref -> named.held(Exercise, ref)?.let { MadeMovement(checkNotNull(ref.id.string), it.name,
+            Readout.equipment(it.equipment, if (it.loadCount == 1) R.string.gym_equipment_one_dumbbell else R.string.gym_equipment_dumbbells), it.stepKg) } }
         val calls = message.calls.map { call -> CoachCall(call.name, phrase(call.name), call.outcome, call.read, reads(call.name), call.callId) }
         return CoachReply(id, message.text, message.state, message.truncated, message.replica == replica, calls, receipt, routines, notes, movements,
             named.logStood(born, message.calls.flatMap { it.created }))
@@ -425,16 +427,6 @@ internal class CoachRecordUnreadable : Exception("coach-record-unreadable")
 private const val previewCodePoints = 240
 
 private fun dayLabel(ms: Long): String = DateTimeFormatter.ofPattern("MMM d").format(Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()))
-
-// A movement's equipment as its record names it: a pair of dumbbells, or one as itself, and a kind this build does not name in the record's own word.
-private fun equipment(equipment: String, loadCount: Int): Words = when (equipment) {
-    "dumbbell" -> Words.Message(if (loadCount == 1) R.string.gym_coach_equipment_one_dumbbell else R.string.gym_coach_equipment_dumbbells)
-    "barbell" -> Words.Message(R.string.gym_coach_equipment_barbell)
-    "machine" -> Words.Message(R.string.gym_coach_equipment_machine)
-    "bodyweight" -> Words.Message(R.string.gym_coach_equipment_bodyweight)
-    "other" -> Words.Message(R.string.gym_coach_equipment_other)
-    else -> Words.Plain(equipment.replaceFirstChar { it.titlecase() })
-}
 
 // What a History row says of a message, off its record: a message's calls, receipt and pictures stay undecoded, since History reads every message on every revision.
 private class MessageLine(f: Fields) {
