@@ -4,7 +4,8 @@ import { NodeWorkspace, LinkRow, SAFE_URL } from './tree/NodeWorkspace.jsx';
 import { EventRow } from '../activity/EventRow.jsx';
 import { KIND_CSS, DEFAULT_NODE_COLOR } from '../theme.js';
 import { KindChoice } from '../board/BoardControls.jsx';
-import { COLUMN_TITLES, COMPOSER, LABELS, unlocksWhen } from '../copy.js';
+import { COLUMN_TITLES, COMPOSER, LABELS, STEP_DETAIL, unlocksWhen } from '../copy.js';
+import { t } from '../i18n/index.js';
 import { kindChoices } from '../model/Legend.js';
 
 const EMPTY_WORKSPACE = { subtasks: [], note: '', links: [] };
@@ -15,13 +16,13 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 // Never seconds, never ticking.
 function relativeTime(at, now) {
   const seconds = Math.max(0, Math.round((now - at) / 1000));
-  if (seconds < 60) return 'just now';
+  if (seconds < 60) return t('roadmap.tended.justNow');
   const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
+  if (minutes < 60) return t('roadmap.step.agoMinutes', { count: minutes });
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
+  if (hours < 24) return t('roadmap.step.agoHours', { count: hours });
   const days = Math.floor(hours / 24);
-  if (days < 7) return `${days}d ago`;
+  if (days < 7) return t('roadmap.step.agoDays', { count: days });
   const date = new Date(at);
   const sameYear = date.getFullYear() === new Date(now).getFullYear();
   const stamp = `${MONTHS[date.getMonth()]} ${date.getDate()}`;
@@ -58,13 +59,13 @@ export function NodeAnnotation({ description, links = [] }) {
   return (
     <div className="st-step-annotation">
       <div>
-        <div className="st-step-heading">About</div>
+        <div className="st-step-heading">{t('roadmap.step.about')}</div>
         {description && (
           <div ref={bodyRef} className={`st-annotation-body${expanded ? '' : ' st-annotation-body--clamped'}`}>{description}</div>
         )}
         {(overflows || expanded) && (
           <button type="button" className="st-annotation-more" onClick={() => setExpanded((open) => !open)}>
-            {expanded ? 'Show less' : 'Show more'}
+            {expanded ? t('roadmap.step.showLess') : t('roadmap.step.showMore')}
           </button>
         )}
       </div>
@@ -129,7 +130,7 @@ function EditorStep({ node, state, prerequisites, completedAt, history = [], wor
                 ref={inputRef}
                 className="st-step-name-input"
                 value={draft}
-                placeholder="Name this step"
+                placeholder={COMPOSER.namePlaceholder}
                 onChange={(event) => setDraft(event.target.value)}
                 onBlur={commitOrRevertName}
                 onKeyDown={(event) => {
@@ -144,12 +145,12 @@ function EditorStep({ node, state, prerequisites, completedAt, history = [], wor
                 className={`st-step-name ${node.label ? '' : 'st-step-name--empty'}`}
                 onClick={() => { setDraft(node.label); setEditingName(true); }}
               >
-                {node.label || 'Unnamed step'}
+                {node.label || STEP_DETAIL.unnamed}
               </button>
             )}
           </div>
         </div>
-        <IconButton icon={<Icon name="x" />} label="Close" size="sm" onClick={onClose} />
+        <IconButton icon={<Icon name="x" />} label={LABELS.close} size="sm" onClick={onClose} />
       </div>
 
       <div className="st-step-state">
@@ -157,7 +158,7 @@ function EditorStep({ node, state, prerequisites, completedAt, history = [], wor
           <>
             <span className="st-state-chip">
               <span className="st-state-dot st-state-dot--locked"><Icon name="lock" size={11} /></span>
-              Locked
+              {COLUMN_TITLES.locked}
             </span>
             {lockedBy && (
               <div className="st-state-lockedline">{unlocksWhen({ step: lockedBy })}</div>
@@ -174,11 +175,11 @@ function EditorStep({ node, state, prerequisites, completedAt, history = [], wor
               onClick={state === 'complete' ? () => onReset(node.id) : onMarkComplete}
               icon={<Icon name={state === 'complete' ? 'rotate-ccw' : 'check'} />}
             >
-              {state === 'complete' ? 'Reset' : 'Complete'}
+              {state === 'complete' ? STEP_DETAIL.reset : STEP_DETAIL.complete}
             </Button>
             {state === 'complete' && completedAt && (
-              <div className="st-state-time" title={`Completed ${absoluteTime(completedAt)}`}>
-                Completed {relativeTime(completedAt, now)}
+              <div className="st-state-time" title={t('roadmap.step.completedWhen', { when: absoluteTime(completedAt) })}>
+                {t('roadmap.step.completedWhen', { when: relativeTime(completedAt, now) })}
               </div>
             )}
           </>
@@ -204,7 +205,7 @@ function EditorStep({ node, state, prerequisites, completedAt, history = [], wor
 
       {prerequisites.length > 0 && (
         <div>
-          <div className="st-step-heading">Prerequisites</div>
+          <div className="st-step-heading">{STEP_DETAIL.prerequisites}</div>
           <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
             {prerequisites.map((prerequisite) => (
               <li
@@ -232,7 +233,7 @@ function EditorStep({ node, state, prerequisites, completedAt, history = [], wor
 
       {history.length > 0 && (
         <div>
-          <div className="st-step-heading">History</div>
+          <div className="st-step-heading">{STEP_DETAIL.sections.history}</div>
           <div className="st-step-history">
             {history.map((event) => (
               <EventRow key={event.id} event={event} node={node} now={Date.now()} onReveal={onReveal} />
@@ -267,7 +268,7 @@ function EditorStep({ node, state, prerequisites, completedAt, history = [], wor
             onClick={() => { onClearDeleteCost(); onDelete(node.id); }}
           >
             <Icon name="trash-2" size={16} />
-            Delete step
+            {STEP_DETAIL.deleteStep}
           </button>
         </div>
       )}
@@ -291,15 +292,15 @@ function ReadOnlyStep({ node, state, prerequisites = [], unlocks = [], completed
       <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', minHeight: 34 }}>
         <SheetStateFruit state={state} hue={hue} />
         <span style={{ flex: 1, minWidth: 0, fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 'var(--text-lg)', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {node.label || 'Unnamed step'}
+          {node.label || STEP_DETAIL.unnamed}
         </span>
         {showChip && <ReadOnlyStateChip state={state} hue={hue} completedAt={completedAt} />}
         {onMarkComplete && state === 'available' && (
           <Button variant="primary" size="sm" onClick={() => onMarkComplete(node.id)} icon={<Icon name="check" />}>
-            Mark it done
+            {t('roadmap.step.markItDone')}
           </Button>
         )}
-        <IconButton icon={<Icon name="x" />} label="Close" size="sm" onClick={onClose} />
+        <IconButton icon={<Icon name="x" />} label={LABELS.close} size="sm" onClick={onClose} />
       </div>
       </div>
 
@@ -309,12 +310,12 @@ function ReadOnlyStep({ node, state, prerequisites = [], unlocks = [], completed
       {state === 'locked' && blocker && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', padding: 'var(--space-3)', borderRadius: 'var(--radius-md)', background: 'var(--surface-sunken)', fontSize: 'var(--text-sm)', color: 'var(--text-tertiary)' }}>
           <Icon name="lock" size={13} color="var(--text-tertiary)" />
-          <span>Finish <strong style={{ color: 'var(--text-secondary)' }}>{blocker}</strong> to unlock</span>
+          <span>{t('roadmap.step.finishToUnlock', { step: <strong style={{ color: 'var(--text-secondary)' }}>{blocker}</strong> })}</span>
         </div>
       )}
 
-      <SheetRelations title="Needs" items={prerequisites} onJump={onJump} />
-      <SheetRelations title="Unlocks" items={unlocks} onJump={onJump} />
+      <SheetRelations title={t('roadmap.step.needs')} items={prerequisites} onJump={onJump} />
+      <SheetRelations title={STEP_DETAIL.unlocks} items={unlocks} onJump={onJump} />
       </div>
     </Card>
   );
@@ -326,7 +327,7 @@ export function ReadOnlyStateChip({ state, hue, completedAt }) {
     return (
       <span style={{ ...base, background: hue.base, border: `1px solid ${hue.ring}`, color: 'var(--text-on-accent)' }}>
         <Icon name="check" size={13} color="#fff" />
-        {completedAt ? `Done · ${shortDate(completedAt)}` : 'Done'}
+        {completedAt ? t('roadmap.step.doneOn', { date: shortDate(completedAt) }) : COLUMN_TITLES.done}
       </span>
     );
   }
@@ -334,7 +335,7 @@ export function ReadOnlyStateChip({ state, hue, completedAt }) {
     return (
       <span style={{ ...base, background: 'var(--surface-sunken)', border: '1px solid var(--border-subtle)', color: 'var(--text-tertiary)' }}>
         <Icon name="lock" size={12} color="var(--text-tertiary)" />
-        Locked
+        {COLUMN_TITLES.locked}
       </span>
     );
   }
@@ -389,7 +390,7 @@ export function SheetRelations({ title, items, onJump }) {
           return (
             <button key={item.id} type="button" style={SHEET_CHIP} onClick={() => onJump?.(item.id)}>
               <span style={stateDotStyle(state, hue)} aria-hidden />
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.label || 'Untitled step'}</span>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.label || t('roadmap.step.untitled')}</span>
             </button>
           );
         })}

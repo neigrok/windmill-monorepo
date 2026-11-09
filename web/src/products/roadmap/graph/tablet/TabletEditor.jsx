@@ -3,7 +3,8 @@ import { Icon, Card } from '../../../../design-system';
 import { NodeAnnotation, ReadOnlyStateChip, SheetStateFruit, SheetRelations } from '../StepPanel.jsx';
 import { KindChoice } from '../../board/BoardControls.jsx';
 import { KIND_CSS, DEFAULT_NODE_COLOR } from '../../theme.js';
-import { COMPOSER, deleteCostLine } from '../../copy.js';
+import { COMPOSER, STEP_DETAIL, deleteCostLine } from '../../copy.js';
+import { t } from '../../i18n/index.js';
 import { kindChoices } from '../../model/Legend.js';
 
 const verbBase = {
@@ -78,7 +79,7 @@ export function TabletEditor({ node, state, prerequisites = [], unlocks = [], co
             ref={inputRef}
             className="st-step-name-input"
             value={draft}
-            placeholder="Name this step"
+            placeholder={COMPOSER.namePlaceholder}
             style={{ flex: 1, minWidth: 0, minHeight: 34 }}
             onChange={(event) => setDraft(event.target.value)}
             onBlur={commitOrRevertName}
@@ -96,7 +97,7 @@ export function TabletEditor({ node, state, prerequisites = [], unlocks = [], co
               style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flex: 1, minWidth: 0, minHeight: 34 }}
               onClick={() => { setDraft(node.label); setEditingName(true); }}
             >
-              <span style={{ flex: 1, textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{node.label || 'Name this step'}</span>
+              <span style={{ flex: 1, textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{node.label || COMPOSER.namePlaceholder}</span>
               <Icon name="pencil" size={15} />
             </button>
             {showChip && <ReadOnlyStateChip state={state} hue={hue} completedAt={completedAt} />}
@@ -109,7 +110,7 @@ export function TabletEditor({ node, state, prerequisites = [], unlocks = [], co
       {blocker && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', padding: 'var(--space-3)', borderRadius: 'var(--radius-md)', background: 'var(--surface-sunken)', fontSize: 'var(--text-sm)', color: 'var(--text-tertiary)' }}>
           <Icon name="lock" size={13} color="var(--text-tertiary)" />
-          <span>Finish <strong style={{ color: 'var(--text-secondary)' }}>{blocker}</strong> to unlock</span>
+          <span>{t('roadmap.step.finishToUnlock', { step: <strong style={{ color: 'var(--text-secondary)' }}>{blocker}</strong> })}</span>
         </div>
       )}
 
@@ -124,16 +125,16 @@ export function TabletEditor({ node, state, prerequisites = [], unlocks = [], co
             }}
           >
             <Icon name={progress === 'complete' ? 'check' : 'rotate-ccw'} size={16} color={progress === 'complete' ? '#fff' : undefined} />
-            {progress === 'complete' ? 'Mark done' : 'Mark not done'}
+            {progress === 'complete' ? t('roadmap.tablet.markDone') : t('roadmap.tablet.markNotDone')}
           </button>
         )}
         <button type="button" style={barkVerb} onClick={() => onAddStep(node.id)}>
           <Icon name="plus" size={16} />
-          Add step
+          {t('roadmap.tablet.addStep')}
         </button>
         <button type="button" style={barkVerb} onClick={() => onConnect(node.id)}>
           <Icon name="git-branch-plus" size={16} />
-          Connect
+          {t('roadmap.tablet.connect')}
         </button>
       </div>
 
@@ -159,8 +160,8 @@ export function TabletEditor({ node, state, prerequisites = [], unlocks = [], co
       )}
 
       {hasDag && <div style={{ height: 1, background: 'var(--border-subtle)', margin: 'var(--space-1) 0' }} />}
-      <SheetRelations title="Needs" items={prerequisites} onJump={onJump} />
-      <SheetRelations title="Unlocks" items={unlocks} onJump={onJump} />
+      <SheetRelations title={t('roadmap.step.needs')} items={prerequisites} onJump={onJump} />
+      <SheetRelations title={STEP_DETAIL.unlocks} items={unlocks} onJump={onJump} />
     </div>
     </Card>
   );

@@ -7,6 +7,7 @@ import { DOCK_WIDTH, TABLET_PANEL_WIDTH } from './viewport.js';
 import { useCoveredLayer } from '../step/composerFocus.js';
 import { DeviceLine } from '../sync/SyncNotices.jsx';
 import { COLUMN_TITLES, FORK_OFFER, OPEN_STEP, RECOLOR } from '../copy.js';
+import { t } from '../i18n/index.js';
 
 const SAFE_BOTTOM = 'env(safe-area-inset-bottom, 0px)';
 // The reader's Fork this tree pill, above the bottom safe area; whatever must clear it reads its geometry here.
@@ -123,7 +124,7 @@ export function GraphChrome({
         }}
       >
         <Icon name="git-branch-plus" size={18} />
-        Fork this tree
+        {FORK_OFFER}
       </button>
       )}
 
@@ -156,7 +157,7 @@ export function GraphChrome({
           className="st-view-actions"
           ref={cameraRef}
           role="group"
-          aria-label="Camera"
+          aria-label={t('roadmap.camera.label')}
           style={{
             position: 'absolute',
             top: phoneCameraTop,
@@ -173,22 +174,22 @@ export function GraphChrome({
             animation: appear,
           }}
         >
-          <button type="button" className="st-view-action" onClick={onFocus}>Focus</button>
-          <button type="button" className="st-view-action" onClick={onShowAll}>All steps</button>
+          <button type="button" className="st-view-action" onClick={onFocus}>{t('roadmap.camera.focus')}</button>
+          <button type="button" className="st-view-action" onClick={onShowAll}>{t('roadmap.camera.allSteps')}</button>
         </div>
       )}
 
       {canvasView && !phone && (
-        <div className="st-graph-camera" role="group" aria-label="Camera"
+        <div className="st-graph-camera" role="group" aria-label={t('roadmap.camera.label')}
           style={{ right: cameraRight, bottom: cameraBottom }}>
-          <button type="button" className="st-graph-camera-zoom" aria-label="Zoom out" title="Zoom out" onClick={onZoomOut}>
+          <button type="button" className="st-graph-camera-zoom" aria-label={t('roadmap.camera.zoomOut')} title={t('roadmap.camera.zoomOut')} onClick={onZoomOut}>
             <Icon name="zoom-out" size={20} />
           </button>
-          <button type="button" className="st-graph-camera-zoom" aria-label="Zoom in" title="Zoom in" onClick={onZoomIn}>
+          <button type="button" className="st-graph-camera-zoom" aria-label={t('roadmap.camera.zoomIn')} title={t('roadmap.camera.zoomIn')} onClick={onZoomIn}>
             <Icon name="zoom-in" size={20} />
           </button>
-          <button type="button" className="st-graph-camera-action" onClick={onFocus}>Focus</button>
-          <button type="button" className="st-graph-camera-action" onClick={onShowAll}>All steps</button>
+          <button type="button" className="st-graph-camera-action" onClick={onFocus}>{t('roadmap.camera.focus')}</button>
+          <button type="button" className="st-graph-camera-action" onClick={onShowAll}>{t('roadmap.camera.allSteps')}</button>
         </div>
       )}
 
@@ -211,7 +212,7 @@ export function GraphDock({ open, top, tablet = false, tenant, children }) {
 export function GraphSelectionBar({ stepCount, linkCount, choice, onPreviewKind, onRestoreKind, onRecolor, onMarkDone, onPreviewDelete, onClearDelete, onDelete }) {
   return (
     <div className="st-selection-bar" role="status">
-      <span className="st-selection-count">{stepCount + linkCount} selected</span>
+      <span className="st-selection-count">{t('roadmap.bulk.selected', { count: stepCount + linkCount })}</span>
       {stepCount > 0 && (
         <div className="st-step-kinds" role="group" aria-label={RECOLOR.steps}>
           {choice.kinds.map((kind) => (
@@ -230,11 +231,11 @@ export function GraphSelectionBar({ stepCount, linkCount, choice, onPreviewKind,
         </div>
       )}
       {stepCount > 0 && (
-        <button type="button" className="st-selection-done" onClick={onMarkDone}>Mark all done</button>
+        <button type="button" className="st-selection-done" onClick={onMarkDone}>{t('roadmap.graph.markAllDone')}</button>
       )}
       {onDelete && (
         <span className="st-selection-delete" onPointerEnter={onPreviewDelete} onPointerLeave={onClearDelete}>
-          <Button variant="danger" size="sm" onClick={onDelete}>Delete</Button>
+          <Button variant="danger" size="sm" onClick={onDelete}>{t('roadmap.graph.delete')}</Button>
         </span>
       )}
     </div>
@@ -246,10 +247,10 @@ export function EmptyGraphCard({ onAddFirstStep }) {
   return (
     <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 15, pointerEvents: 'none' }}>
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'var(--space-4)', padding: 'var(--space-6) var(--space-7)', background: 'var(--surface-card)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-md)', pointerEvents: 'auto', textAlign: 'center' }}>
-        <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 'var(--text-lg)', color: 'var(--text-primary)' }}>This tree is empty</div>
-        <p style={{ margin: 0, fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>Add a first step to start growing it.</p>
-        <Button onClick={onAddFirstStep}>Add your first step</Button>
-        <p style={{ margin: 0, fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}>or paste a plan — ⌘V</p>
+        <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 'var(--text-lg)', color: 'var(--text-primary)' }}>{t('roadmap.graph.emptyTitle')}</div>
+        <p style={{ margin: 0, fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>{t('roadmap.graph.emptyBody')}</p>
+        <Button onClick={onAddFirstStep}>{t('roadmap.graph.emptyAction')}</Button>
+        <p style={{ margin: 0, fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}>{t('roadmap.graph.emptyPaste')}</p>
       </div>
     </div>
   );

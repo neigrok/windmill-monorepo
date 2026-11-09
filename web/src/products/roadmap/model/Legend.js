@@ -2,6 +2,7 @@
 // is generation priority. Every op returns a new legend. Hue is unique, at most six.
 
 import { NODE_COLOR_NAMES, DEFAULT_NODE_COLOR } from '../theme.js';
+import { t } from '../i18n/index.js';
 import { GENESIS_STAMP, DEFAULT_KINDS } from '../../../../../packages/api-contract/genesis.js';
 
 const LABEL_MAX = 24;
@@ -41,8 +42,18 @@ export function inUseCount(legend, nodes) {
   return withCounts(legend, nodes).filter((kind) => kind.count > 0).length;
 }
 
+const HUE_NAMES = {
+  terracotta: t('roadmap.hue.terracotta'),
+  olive: t('roadmap.hue.olive'),
+  gold: t('roadmap.hue.gold'),
+  brick: t('roadmap.hue.brick'),
+  sky: t('roadmap.hue.sky'),
+  plum: t('roadmap.hue.plum'),
+};
+
+// An unnamed kind is called by its hue; a hue outside the palette shows its own id.
 export function hueName(hue) {
-  return `${hue[0].toUpperCase()}${hue.slice(1)}`;
+  return HUE_NAMES[hue] ?? `${hue[0].toUpperCase()}${hue.slice(1)}`;
 }
 
 export function kindName(kind) {
