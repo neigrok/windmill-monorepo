@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Button, Input } from '../../design-system/index.js';
 import { Back } from './Back.jsx';
-
+import { t } from './i18n/index.js';
 import { cappedName, isNameOverCap, nameCountLabel, recordHref, ROUTINES_HREF, showsNameCount } from './log.js';
 import { MovementPicker } from './logger/MovementPicker.jsx';
 import { backOf, NEVER_LOGGED, NEVER_LOGGED_LINE, RENAME_PROOF, recordView, renameProofOf } from './record.js';
@@ -19,7 +19,7 @@ export function MovementRecord({ id, from, log }) {
 
 function MovementChooser({ log }) {
   const [query, setQuery] = useState('');
-  if (log.phase === 'loading') return <p className="gym-quiet">Opening your movements…</p>;
+  if (log.phase === 'loading') return <p className="gym-quiet">{t('gym.record.openingMovements')}</p>;
   return (
     <MovementPicker
       catalog={log.catalog}
@@ -28,7 +28,7 @@ function MovementChooser({ log }) {
       onQuery={setQuery}
       onPick={(exerciseId) => { window.location.hash = recordHref(exerciseId); }}
       onClose={() => { window.location.hash = ROUTINES_HREF; }}
-      title="Movements"
+      title={t('gym.record.movementsTitle')}
     />
   );
 }
@@ -46,12 +46,12 @@ function OneMovement({ id, from, log }) {
   );
   const [renaming, setRenaming] = useState(false);
 
-  if (view.phase === 'loading') return <p className="gym-quiet">Opening the movement…</p>;
+  if (view.phase === 'loading') return <p className="gym-quiet">{t('gym.record.opening')}</p>;
   if (view.phase === 'absent') {
     return (
       <>
         <BackTo from={from} />
-        <p className="gym-quiet">This movement isn’t in your catalog.</p>
+        <p className="gym-quiet">{t('gym.record.absent')}</p>
       </>
     );
   }
@@ -60,25 +60,28 @@ function OneMovement({ id, from, log }) {
       <>
         <BackTo from={from} />
         <p className="gym-read-failed">
-          The movement didn’t load.
-          <Button variant="secondary" size="sm" onClick={view.retry}>Retry</Button>
+          {t('gym.record.failed')}
+          <Button variant="secondary" size="sm" onClick={view.retry}>{t('gym.log.retry')}</Button>
         </p>
       </>
     );
   }
 
   const model = recordView({ ...view.data.record, ...recordProgress(log.progress?.data, id, view.data.record.exercise.equipment) });
+  const { equipment } = view.data.record.exercise;
   return (
     <section className="gym-record-screen">
       <BackTo from={from} session={view.data.session} />
       <header className="gym-record-head">
         <h1 className="gym-record-name">{model.name}</h1>
-        <button type="button" className="gym-record-rename" onClick={() => setRenaming(true)}>Rename</button>
+        <button type="button" className="gym-record-rename" onClick={() => setRenaming(true)}>{t('gym.record.rename')}</button>
       </header>
-      <p className="gym-record-sub">{view.data.record.exercise.equipment ? `${view.data.record.exercise.equipment[0].toUpperCase()}${view.data.record.exercise.equipment.slice(1)} · ` : ''}Movement record</p>
+      <p className="gym-record-sub">{equipment
+        ? t('gym.record.subtitle', { equipment, shown: `${equipment[0].toUpperCase()}${equipment.slice(1)}` })
+        : t('gym.record.subtitleBare')}</p>
       {model.logged && <MovementChart id={id} log={log} equipment={view.data.record.exercise.equipment} />}
 
-      {!model.logged && !complete && <p className="gym-quiet">Opening this movement’s history…</p>}
+      {!model.logged && !complete && <p className="gym-quiet">{t('gym.record.openingHistory')}</p>}
       {!model.logged && complete && (
         <>
           <p className="gym-quiet">{NEVER_LOGGED}</p>
@@ -86,7 +89,7 @@ function OneMovement({ id, from, log }) {
         </>
       )}
 
-      <details className="gym-record-more"><summary>More movement facts</summary>
+      <details className="gym-record-more"><summary>{t('gym.record.moreFacts')}</summary>
       {model.tiles.length > 0 && (
         <ul className="gym-record-tiles">
           {model.tiles.map((tile) => (
@@ -102,7 +105,7 @@ function OneMovement({ id, from, log }) {
 
       {model.records.length > 0 && (
         <section className="gym-record-block">
-          <h2 className="gym-record-block-title">Personal records</h2>
+          <h2 className="gym-record-block-title">{t('gym.record.personalRecords')}</h2>
           <ul className="gym-record-marks">
             {model.records.map((mark, index) => (
               <li
@@ -120,7 +123,7 @@ function OneMovement({ id, from, log }) {
 
       {model.days.length > 0 && (
         <section className="gym-record-block">
-          <h2 className="gym-record-block-title">Recent sets</h2>
+          <h2 className="gym-record-block-title">{t('gym.record.recentSets')}</h2>
           <ul className="gym-record-days">
             {model.days.map((day) => (
               <li className="gym-record-day" key={day.sessionId}>
@@ -164,13 +167,13 @@ function RenameSheet({ name, record, onClose, onSave }) {
 
   return (
     <div className="gym-sheet-catch" role="presentation" onClick={onClose}>
-      <div className="gym-sheet" role="dialog" aria-label="Rename movement" onClick={(event) => event.stopPropagation()}>
+      <div className="gym-sheet" role="dialog" aria-label={t('gym.record.renameLabel')} onClick={(event) => event.stopPropagation()}>
         <div className="gym-sheet-head">
-          <span className="gym-sheet-title">Rename this movement</span>
+          <span className="gym-sheet-title">{t('gym.record.renameTitle')}</span>
         </div>
         <Input
           value={typed}
-          ariaLabel="Movement name"
+          ariaLabel={t('gym.record.movementName')}
           onChange={(event) => setTyped(cappedName(event.target.value))}
           autoFocus
           trailing={showsNameCount(typed) && (
@@ -202,9 +205,9 @@ function RenameSheet({ name, record, onClose, onSave }) {
             setSaving(false);
           }}
         >
-          Rename
+          {t('gym.record.rename')}
         </Button>
-        <button type="button" className="gym-name-cancel" onClick={onClose}>Cancel</button>
+        <button type="button" className="gym-name-cancel" onClick={onClose}>{t('gym.record.cancel')}</button>
       </div>
     </div>
   );

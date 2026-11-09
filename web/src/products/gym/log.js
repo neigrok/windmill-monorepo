@@ -1,7 +1,8 @@
 // The pure rules behind every gym surface: the URL grammar, the labels and the set grouping.
 
 import { round } from './logger/ladder.js';
-import { inDisplayUnit, LB, weightUnit } from './units.js';
+import { t } from './i18n/index.js';
+import { inDisplayUnit, LB, unitSymbol, weightUnit } from './units.js';
 import { inLoggedOrder } from './domain/training.js';
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -208,31 +209,33 @@ export function arrivedLabel(ms, now = Date.now()) {
 export function sessionMetaLabel(session, setCount) {
   const day = dayLabel(session.startedAt);
   const started = timeLabel(session.startedAt);
-  if (!isFinished(session)) return `${day}   ·   ${started}   ·   in progress   ·   ${setCountLabel(setCount)}`;
+  if (!isFinished(session)) return t('gym.log.sessionMetaOpen', { day, started, sets: setCountLabel(setCount) });
   const length = durLabel(session.finishedAt - session.startedAt);
-  return `${day}   ·   ${started}–${timeLabel(session.finishedAt)}   ·   ${length}   ·   ${setCountLabel(setCount)}`;
+  return t('gym.log.sessionMetaFinished', { day, started, finished: timeLabel(session.finishedAt), length, sets: setCountLabel(setCount) });
 }
 
 // Today by its clock, anything older by its day; the calendar-day rule is agoLabel's.
 export function logWhenLabel(session, now = Date.now()) {
-  const when = agoLabel(session.startedAt, now) === 'today'
-    ? `today · ${timeLabel(session.startedAt)}`
+  const when = daysAgo(session.startedAt, now) <= 0
+    ? t('gym.log.todayAt', { time: timeLabel(session.startedAt) })
     : dayLabel(session.startedAt);
-  if (!isFinished(session)) return `${when} · in progress`;
+  if (!isFinished(session)) return t('gym.log.whenInProgress', { when });
   return when;
 }
 
 // Calendar days, not elapsed hours: both instants fall back to their own local midnight first.
-export function agoLabel(ms, now = Date.now()) {
+export function daysAgo(ms, now = Date.now()) {
   const midnight = (at) => {
     const day = new Date(at);
     day.setHours(0, 0, 0, 0);
     return day.getTime();
   };
-  const days = Math.round((midnight(now) - midnight(ms)) / 86400000);
-  if (days <= 0) return 'today';
-  if (days === 1) return 'yesterday';
-  return `${days} days ago`;
+  return Math.round((midnight(now) - midnight(ms)) / 86400000);
+}
+
+// `today` and `yesterday` by name, then a count of days.
+export function agoLabel(ms, now = Date.now()) {
+  return t('gym.log.ago', { days: Math.max(0, daysAgo(ms, now)) });
 }
 
 // Hand it an elapsed span computed from an instant, never a counter.
@@ -249,21 +252,27 @@ export function workoutClocks(session, sets, now) {
   const end = session.finishedAt ?? now;
   const latest = sets.length ? Math.max(...sets.map((set) => set.completedAt)) : session.startedAt;
   return [
-    { label: 'Workout time', anchor: session.startedAt },
-    { label: sets.length ? 'Since last set' : 'Since start', anchor: latest },
+    { label: t('gym.mirror.workoutTime'), anchor: session.startedAt },
+    { label: sets.length ? t('gym.mirror.sinceLastSet') : t('gym.mirror.sinceStart'), anchor: latest },
   ].map(({ label, anchor }) => {
     const elapsed = Math.max(0, end - anchor);
     const total = Math.floor(elapsed / 1000);
-    const parts = [[Math.floor(total / 3600), 'hour'], [Math.floor(total % 3600 / 60), 'minute'], [total % 60, 'second']];
-    const spoken = parts.filter(([count]) => count > 0).map(([count, unit]) => `${count} ${unit}${count === 1 ? '' : 's'}`).join(' ') || '0 seconds';
+    const hours = Math.floor(total / 3600);
+    const minutes = Math.floor(total % 3600 / 60);
+    const seconds = total % 60;
+    const spoken = [
+      hours > 0 ? t('gym.mirror.hours', { count: hours }) : null,
+      minutes > 0 ? t('gym.mirror.minutes', { count: minutes }) : null,
+      seconds > 0 ? t('gym.mirror.seconds', { count: seconds }) : null,
+    ].filter(Boolean).join(' ') || t('gym.mirror.seconds', { count: 0 });
     return { label, elapsed, spoken };
   });
 }
 
 export function durLabel(ms) {
   const minutes = Math.max(1, Math.floor(ms / 60000));
-  if (minutes < 60) return `${minutes}m`;
-  return `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, '0')}m`;
+  if (minutes < 60) return t('gym.log.durationMinutes', { minutes });
+  return t('gym.log.durationHours', { hours: Math.floor(minutes / 60), minutes: String(minutes % 60).padStart(2, '0') });
 }
 
 // Every printed weight in gym comes through here: display units (units.js), the ladder's rounding
@@ -283,17 +292,17 @@ export function fmtKg(weightKg) {
 // Reconciles a kg field with its pound reading on the same screen. Null in kilograms.
 export function alsoReadsLabel(weightKg) {
   if (weightKg == null || weightUnit() !== LB) return null;
-  return `reads ${fmt(weightKg)} ${LB} in your log`;
+  return t('gym.log.alsoReads', { weight: fmt(weightKg) });
 }
 
 export function setCountLabel(count) {
-  return count === 1 ? '1 set' : `${count} sets`;
+  return t('gym.log.setCount', { count });
 }
 
 // The domain supplies `topE1rm`; this label only spells the current unit.
 export function e1rmLabel(topE1rm) {
   if (topE1rm == null) return null;
-  return `e1RM ${fmt(topE1rm)}`;
+  return t('gym.log.e1rm', { value: fmt(topE1rm) });
 }
 
 // A tonnage is a bare number in the account's unit, grouped by thousands — `1,380`. The unit is
@@ -313,15 +322,14 @@ export function tonnageTotalLabel(kg, unit = weightUnit()) {
 }
 
 // `lastTrainedAt` is the store's aggregate over the log; its absence IS this state.
-export const NEVER_TRAINED_ALONE = 'Never trained';
+export const NEVER_TRAINED_ALONE = t('gym.log.neverTrained');
 
 export function isNeverTrained(routine) {
   return routine?.lastTrainedAt == null;
 }
 
 function movementsLabel(routine) {
-  const count = routine.entries?.length ?? 0;
-  return count === 1 ? '1 movement' : `${count} movements`;
+  return t('gym.log.movementCount', { count: routine.entries?.length ?? 0 });
 }
 
 // `4 movements · 10 sets`, the sets the routine names; an open entry names none.
@@ -345,7 +353,7 @@ export function targetLoadOf(weightKg) {
 
 // An entry with no `sets` is open. The absence is the whole state — no flag and no zero — and an
 // empty list is refused by the store like a zero target.
-export const OPEN_TARGET = 'open';
+export const OPEN_TARGET = t('gym.log.openTarget');
 
 const roundedLoad = (set) => (set.weightKg == null ? null : round(set.weightKg));
 
@@ -364,7 +372,7 @@ export function schemeAgrees(sets) {
 // their placeholders: `100 × max`, `last × 5`.
 export function setReading(set) {
   const load = targetLoadOf(set.weightKg);
-  return `${load == null ? 'last' : fmt(load)} × ${set.reps ?? 'max'}`;
+  return `${load == null ? t('gym.log.lastLoad') : fmt(load)} × ${set.reps ?? t('gym.log.maxReps')}`;
 }
 
 // A scheme's vocabulary, whatever its size: `{n} × {reps} · {load}`, a column whose sets disagree
@@ -379,14 +387,14 @@ export function entryLabel(entry, format = fmt) {
   const reps = sets.map((set) => set.reps ?? null);
   const named = reps.filter((each) => each != null);
   const repsColumn = reps.every((each) => each === reps[0])
-    ? String(reps[0] ?? 'max')
-    : `${Math.min(...named)}–${named.length < reps.length ? 'max' : Math.max(...named)}`;
+    ? String(reps[0] ?? t('gym.log.maxReps'))
+    : `${Math.min(...named)}–${named.length < reps.length ? t('gym.log.maxReps') : Math.max(...named)}`;
   const loads = sets.map((set) => targetLoadOf(set.weightKg));
   const known = loads.filter((each) => each != null);
   if (known.length === 0) return `${sets.length} × ${repsColumn}`;
   const loadColumn = loads.every((each) => each === loads[0])
     ? format(loads[0])
-    : `${format(Math.min(...known))}–${known.length < loads.length ? 'last' : format(Math.max(...known))}`;
+    : `${format(Math.min(...known))}–${known.length < loads.length ? t('gym.log.lastLoad') : format(Math.max(...known))}`;
   return `${sets.length} × ${repsColumn} · ${loadColumn}`;
 }
 
@@ -460,7 +468,7 @@ export function isFirstSession(sessions, id) {
 
 // The four-hour close stamps the end at the last set, or at the start when there was none; a Finish
 // is stamped after the set it follows. A listed session carries the domain read's `closedItself`.
-export const CLOSED_ITSELF_NOTE = 'closed on its own — no set for four hours';
+export const CLOSED_ITSELF_NOTE = t('gym.log.closedItself');
 
 export function closedOnItsOwn(session, sets = null) {
   if (typeof session?.closedItself === 'boolean') return session.closedItself;
@@ -481,10 +489,10 @@ export function planOf(session) {
 // The instant is the session's start, which is when the plan was frozen.
 export function planFrozenLabel(session) {
   if (!planOf(session)) return null;
-  return `plan snapshot · frozen ${timeLabel(session.startedAt)}`;
+  return t('gym.log.planFrozen', { time: timeLabel(session.startedAt) });
 }
 
-export const NOT_IN_PLAN = 'not in the plan';
+export const NOT_IN_PLAN = t('gym.log.notInPlan');
 
 // Read off the frozen snapshot, never off today's routine; a snapshot entry is the routine entry's
 // own shape, `sets` per set, so the reading is the entry itself.
@@ -499,14 +507,12 @@ export function planReadingOf(session, exerciseId) {
   if (entries.length === 0) return { kind: 'added', line: NOT_IN_PLAN, entry: null };
   if (entries.length > 1) return { kind: 'ambiguous', line: null, entry: null };
   const entry = entries[0];
-  return { kind: 'planned', line: `plan ${entryLabel(entry)}`, entry };
+  return { kind: 'planned', line: t('gym.log.planReading', { scheme: entryLabel(entry) }), entry };
 }
 
 // Spelled out to ten; past ten the numeral is what is left.
-const NUMBER_WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'];
-
 export function numberWord(count) {
-  return NUMBER_WORDS[count] ?? String(count);
+  return t('gym.log.numberWord', { count });
 }
 
 // The slot strip as rows, for one movement: what was lifted, in order, then the slots still to
@@ -517,7 +523,7 @@ export function slotRows(sets, entry) {
   }));
   const coming = (entry?.sets ?? []).slice(lifted.length).map((slot, index) => {
     const n = lifted.length + index + 1;
-    return { key: `slot-${n}`, kind: 'target', label: setReading(slot), spoken: `set ${n}, target ${setReading(slot)}` };
+    return { key: `slot-${n}`, kind: 'target', label: setReading(slot), spoken: t('gym.log.slotSpoken', { position: n, reading: setReading(slot) }) };
   });
   return [...lifted, ...coming];
 }
@@ -526,20 +532,21 @@ export function slotRows(sets, entry) {
 // below zero), or the whole bar. One dumbbell, other equipment and a movement the log does not know read the unit.
 export function loadBasisLabel(exercise, weightKg = 0, unit = weightUnit()) {
   switch (exercise?.equipment) {
-    case 'dumbbell': return exercise.loadCount === 1 ? unit : `${unit} each`;
-    case 'bodyweight': return `${unit} ${weightKg < 0 ? 'assisted' : 'added'}`;
-    case 'barbell': return `${unit} total`;
-    default: return unit;
+    case 'dumbbell': return exercise.loadCount === 1 ? unitSymbol(unit) : t('gym.log.basisEach', { unit });
+    case 'bodyweight': return weightKg < 0 ? t('gym.log.basisAssisted', { unit }) : t('gym.log.basisAdded', { unit });
+    case 'barbell': return t('gym.log.basisTotal', { unit });
+    default: return unitSymbol(unit);
   }
 }
 
 // At zero added load the effort reads as bodyweight. A band-assisted −20 prints itself.
 export function setLoadLabel(set, unit = weightUnit(), basis = null) {
-  if (set.weightKg === 0) return `bodyweight × ${set.reps}`;
-  return `${fmt(set.weightKg, unit)}${basis ? ` ${basis}` : ''} × ${set.reps}`;
+  if (set.weightKg === 0) return t('gym.log.bodyweightSet', { reps: String(set.reps) });
+  if (basis) return t('gym.log.setLoadWithBasis', { load: fmt(set.weightKg, unit), basis, reps: String(set.reps) });
+  return `${fmt(set.weightKg, unit)} × ${set.reps}`;
 }
 
-export const NO_ROUTINE = 'Free session';
+export const NO_ROUTINE = t('gym.log.noRoutine');
 
 export function routineNameOf(session) {
   if (typeof session?.routineName === 'string') return session.routineName || null;

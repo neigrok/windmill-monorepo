@@ -1,4 +1,5 @@
 import { failureReason } from './errors.js';
+import { t } from './i18n/index.js';
 import { fmtKg, setLoadLabel } from './log.js';
 
 // The RPE band a lifter reads a set in: six to ten, by halves. The rungs are COUNTED off the band so
@@ -12,12 +13,12 @@ export const RPE_RUNGS = Array.from(
   { length: (RPE_MAX - RPE_MIN) * RUNGS_PER_POINT + 1 },
   (_, rung) => RPE_MIN + rung / RUNGS_PER_POINT,
 );
-export const NO_RPE_LABEL = 'Not rated';
+export const NO_RPE_LABEL = t('gym.fix.notRated');
 
 // A SET NOTE is a record of what a set felt like, and the prompt reads it as data. A note (the Notes
 // screen) is directive text Coach follows. The field description keeps the two apart.
-export const SET_NOTE_LABEL = 'Set note';
-export const SET_NOTE_CAPTION = 'A record for you — not an instruction to Coach.';
+export const SET_NOTE_LABEL = t('gym.fix.setNote');
+export const SET_NOTE_CAPTION = t('gym.fix.setNoteCaption');
 
 // The store holds a set note in 4000 UTF-8 BYTES and refuses a longer one with the generic
 // `fix-unreadable` — the domain's own sentence never reaches a lifter — so THIS surface is where an
@@ -37,7 +38,7 @@ export function showsSetNoteCount(note) {
 }
 
 export function setNoteCountLabel(note) {
-  return `${setNoteBytes(note)} of ${SET_NOTE_BYTES} bytes`;
+  return t('gym.fix.noteBytes', { bytes: setNoteBytes(note), max: SET_NOTE_BYTES });
 }
 
 // Over the bound is a STATE and not a keystroke: a note arrives from the store already written, and
@@ -49,7 +50,7 @@ export function isSetNoteOverCap(note) {
 
 export function setNoteRefusal(note) {
   if (!isSetNoteOverCap(note)) return null;
-  return `A set note runs to ${SET_NOTE_BYTES} bytes.`;
+  return t('gym.fix.noteTooLong', { max: SET_NOTE_BYTES });
 }
 
 // The web's withheld window (gesture law 2, `docs/design/guidelines/system-architecture.md` §3).
@@ -68,26 +69,26 @@ export function fixOf(set, draft) {
 
 export function fixSubtitle(movement, set) {
   if (set.setNumber == null) return movement;
-  return `${movement} · set ${set.setNumber}`;
+  return t('gym.fix.subtitle', { movement, position: set.setNumber });
 }
 
 export function deletedLine(set) {
-  return `${setLoadLabel(set)} is out of the log.`;
+  return t('gym.fix.deleted', { set: setLoadLabel(set) });
 }
 
 // A fix under the movement's load floor keeps the stored load; the sentence names both.
 export function fixLoadFloorLine(floor, kept) {
-  return `Enter ${fmtKg(floor)} or more, or cancel to keep ${fmtKg(kept)}`;
+  return t('gym.fix.loadFloor', { floor: fmtKg(floor), kept: fmtKg(kept) });
 }
 
 export function fixFailure(error) {
   if (error?.code === 'load-floor') return error.sentence;
-  if (['unknown-record', 'record-dead'].includes(error?.code)) return 'That set isn’t in this workout any more.';
-  return `That fix didn’t land — ${failureReason(error)}.`;
+  if (['unknown-record', 'record-dead'].includes(error?.code)) return t('gym.fix.setGone');
+  return t('gym.fix.didntLand', { reason: failureReason(error) });
 }
 
 export function deleteFailure(error) {
-  return `That set is still in the log — ${failureReason(error)}.`;
+  return t('gym.fix.stillInLog', { reason: failureReason(error) });
 }
 
 // `moves` maps set id → the stored set, for a set corrected in place. A set DELETED is not here in

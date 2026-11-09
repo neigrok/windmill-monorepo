@@ -1,27 +1,26 @@
+import { t } from './i18n/index.js';
 import {
-  agoLabel, e1rmLabel, fmt, NO_ROUTINE, routineNameOf, ROUTINES_HREF, sessionHref, setLoadLabel, shortDayLabel,
+  agoLabel, daysAgo, e1rmLabel, fmt, NO_ROUTINE, routineNameOf, ROUTINES_HREF, sessionHref, setLoadLabel, shortDayLabel,
 } from './log.js';
 import { weightUnit } from './units.js';
 
-const countLabel = (count, one, many) => `${count} ${count === 1 ? one : many}`;
-
-export const NEVER_LOGGED = 'You haven’t worked this movement yet.';
-export const NEVER_LOGGED_LINE = 'The first set you log against it lands here.';
+export const NEVER_LOGGED = t('gym.record.neverLogged');
+export const NEVER_LOGGED_LINE = t('gym.record.neverLoggedLine');
 
 // 'today' and 'yesterday' by name, every other day by its date.
 export function whenOf(ms, now) {
-  const ago = agoLabel(ms, now);
-  if (ago === 'today' || ago === 'yesterday') return ago;
+  if (daysAgo(ms, now) <= 1) return agoLabel(ms, now);
   return shortDayLabel(ms);
 }
 
 export function subheadOf(record) {
+  const equipment = t('gym.record.equipment', { equipment: String(record.exercise.equipment) });
   const routines = record.routineCount === 0
-    ? 'in no routine'
-    : `in ${countLabel(record.routineCount, 'routine', 'routines')}`;
+    ? t('gym.record.inNoRoutine')
+    : t('gym.record.inRoutines', { count: record.routineCount });
   // 'never logged' rather than '0 sessions'.
-  const sessions = record.sessionCount > 0 ? countLabel(record.sessionCount, 'session', 'sessions') : 'never logged';
-  return `${record.exercise.equipment} · ${routines} · ${sessions}`;
+  const sessions = record.sessionCount > 0 ? t('gym.log.sessionCount', { count: record.sessionCount }) : t('gym.record.neverLoggedShort');
+  return `${equipment} · ${routines} · ${sessions}`;
 }
 
 // Either tile may be absent.
@@ -29,7 +28,7 @@ export function tilesOf(record, now) {
   const tiles = [];
   if (record.bestE1rm) {
     tiles.push({
-      label: 'best e1RM',
+      label: t('gym.record.bestE1rm'),
       value: fmt(record.bestE1rm.e1rm),
       sub: `${whenOf(record.bestE1rm.at, now)} · ${setLoadLabel(record.bestE1rm)}`,
       standing: true,
@@ -39,8 +38,8 @@ export function tilesOf(record, now) {
     // At zero added load, the bodyweight movement's comparison reads its reps.
     const { weightKg, reps } = record.heaviest;
     tiles.push(weightKg === 0
-      ? { label: 'heaviest', value: String(reps), sub: 'reps · bodyweight', standing: false }
-      : { label: 'heaviest', value: fmt(weightKg), sub: `${weightUnit()} · for ${reps}`, standing: false });
+      ? { label: t('gym.record.heaviest'), value: String(reps), sub: t('gym.record.repsBodyweight'), standing: false }
+      : { label: t('gym.record.heaviest'), value: fmt(weightKg), sub: t('gym.record.forReps', { unit: weightUnit(), reps: String(reps) }), standing: false });
   }
   return tiles;
 }
@@ -70,32 +69,34 @@ export function daysOf(record, now) {
 // by its routine, which only the session's own read knows: without that read, or when it found no
 // session, the link says `The workout`.
 export function backOf(from, session = null) {
-  if (from.screen === 'log') return { href: from.href ?? '#/gym/log', label: 'The log' };
-  if (from.screen !== 'session') return { href: ROUTINES_HREF, label: 'Routines' };
-  if (session === null) return { href: from.href ?? sessionHref(from.id), label: 'The workout' };
+  if (from.screen === 'log') return { href: from.href ?? '#/gym/log', label: t('gym.log.title') };
+  if (from.screen !== 'session') return { href: ROUTINES_HREF, label: t('gym.record.routines') };
+  if (session === null) return { href: from.href ?? sessionHref(from.id), label: t('gym.record.theWorkout') };
   return { href: from.href ?? sessionHref(from.id), label: routineNameOf(session) ?? NO_ROUTINE };
 }
 
 // A name is a label on a stable id, so renaming never forks a record. A row with nothing to prove is
 // omitted; the alias row always stands.
-export const RENAME_PROOF = 'Everything follows the name';
+export const RENAME_PROOF = t('gym.record.renameProof');
 
 export function renameProofOf(record) {
   const rows = [];
   if (record.sessionCount > 0) {
-    rows.push({ label: 'sessions', value: `${record.sessionCount} · unchanged` });
+    rows.push({ label: t('gym.record.proofSessions'), value: t('gym.record.sessionsUnchanged', { count: record.sessionCount }) });
   }
   const marks = (record.records ?? []).length;
   if (marks > 0) {
     // `records` and `bestE1rm` are absent together on the wire.
-    const best = record.bestE1rm ? ` · ${e1rmLabel(record.bestE1rm.e1rm)} kept` : '';
-    rows.push({ label: 'records', value: `${countLabel(marks, 'PR', 'PRs')}${best}` });
+    const value = record.bestE1rm
+      ? t('gym.record.prCountKept', { count: marks, e1rm: e1rmLabel(record.bestE1rm.e1rm) })
+      : t('gym.record.prCount', { count: marks });
+    rows.push({ label: t('gym.record.proofRecords'), value });
   }
   // The names rather than the count.
   if ((record.routines ?? []).length > 0) {
-    rows.push({ label: 'routines', value: record.routines.join(' · ') });
+    rows.push({ label: t('gym.record.proofRoutines'), value: record.routines.join(' · ') });
   }
-  rows.push({ label: 'old name', value: 'searchable as an alias' });
+  rows.push({ label: t('gym.record.proofOldName'), value: t('gym.record.alias') });
   return rows;
 }
 

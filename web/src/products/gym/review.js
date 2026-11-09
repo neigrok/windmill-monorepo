@@ -1,12 +1,13 @@
+import { t } from './i18n/index.js';
 import { dayLabel, durLabel, entryLabel, fmt, nameOfMovement, NO_ROUTINE, timeLabel } from './log.js';
 import { weightUnit } from './units.js';
 
-export const RECORD_TITLE = 'Personal record';
+export const RECORD_TITLE = t('gym.review.recordTitle');
 
 export function finishHead({ startedAt, finishedAt, routine = null, slight = false, first = false }) {
   return {
-    title: slight ? 'Ended early' : 'Session finished',
-    subtitle: routine ?? (first ? 'Your first session' : NO_ROUTINE),
+    title: slight ? t('gym.review.endedEarly') : t('gym.review.finished'),
+    subtitle: routine ?? (first ? t('gym.review.firstSession') : NO_ROUTINE),
     when: `${dayLabel(startedAt)} · ${timeLabel(startedAt)} – ${timeLabel(finishedAt)}`,
   };
 }
@@ -14,9 +15,9 @@ export function finishHead({ startedAt, finishedAt, routine = null, slight = fal
 // No top e1RM is a dash, never a zero.
 export function statTiles(stats) {
   return [
-    { value: durLabel(stats.durationMs), label: 'Duration' },
-    { value: String(stats.workingSets), label: 'Sets' },
-    { value: stats.topE1rm == null ? '—' : fmt(stats.topE1rm), label: 'Top e1RM' },
+    { value: durLabel(stats.durationMs), label: t('gym.review.duration') },
+    { value: String(stats.workingSets), label: t('gym.review.sets') },
+    { value: stats.topE1rm == null ? '—' : fmt(stats.topE1rm), label: t('gym.review.topE1rm') },
   ];
 }
 
@@ -25,10 +26,16 @@ export function recordSentence(record, catalog) {
   if (!record) return null;
   const movement = nameOfMovement(catalog, record.exerciseId);
   const unit = weightUnit();
-  const pastFrom = (mark) => `past ${mark} from ${dayLabel(record.previousAt)}`;
-  if (record.kind === 'e1rm') return `${movement} e1RM ${fmt(record.value)} ${unit} — ${pastFrom(fmt(record.previous))}.`;
-  if (record.kind === 'heaviest') return `${movement} ${fmt(record.value)} ${unit} × ${record.reps} — ${pastFrom(fmt(record.previous))}.`;
-  if (record.kind === 'reps-at-weight') return `${movement} ${record.reps} reps at ${fmt(record.weightKg)} ${unit} — ${pastFrom(String(record.previous))}.`;
+  const day = dayLabel(record.previousAt);
+  if (record.kind === 'e1rm') {
+    return t('gym.review.recordE1rm', { movement, value: fmt(record.value), unit, previous: fmt(record.previous), day });
+  }
+  if (record.kind === 'heaviest') {
+    return t('gym.review.recordHeaviest', { movement, value: fmt(record.value), unit, reps: String(record.reps), previous: fmt(record.previous), day });
+  }
+  if (record.kind === 'reps-at-weight') {
+    return t('gym.review.recordRepsAtWeight', { movement, reps: String(record.reps), weight: fmt(record.weightKg), unit, previous: String(record.previous), day });
+  }
   return null;
 }
 
@@ -56,7 +63,7 @@ function detailOf({ now, before, planned }) {
   if (scheme.length > 0) {
     const top = topSetOf(scheme);
     const short = top.reps != null && now.reps < top.reps && (top.weightKg == null || now.weightKg <= top.weightKg);
-    if (short) return `planned ${entryLabel(planned)} — did ${effortLabel(now)}`;
+    if (short) return t('gym.review.plannedShort', { plan: entryLabel(planned), effort: effortLabel(now) });
     return `${entryLabel(planned)} → ${effortLabel(now)}`;
   }
   if (before) return `${effortLabel(before)} → ${effortLabel(now)}`;
@@ -66,7 +73,7 @@ function detailOf({ now, before, planned }) {
 export function comparison(against, catalog) {
   if (!against) return null;
   return {
-    title: against.routine ? `Against last ${against.routine}` : 'Against last time',
+    title: against.routine ? t('gym.review.againstRoutine', { routine: against.routine }) : t('gym.review.againstLastTime'),
     rows: against.movements.map((movement) => ({
       exerciseId: movement.exerciseId,
       movement: nameOfMovement(catalog, movement.exerciseId),
@@ -77,4 +84,4 @@ export function comparison(against, catalog) {
 
 // Discarding deletes the session and its sets, held like every other delete in this room, so the
 // transient's sentence is all there is: a confirmation on an act with an undo is ceremony.
-export const SESSION_DELETED = 'Session deleted.';
+export const SESSION_DELETED = t('gym.review.sessionDeleted');
