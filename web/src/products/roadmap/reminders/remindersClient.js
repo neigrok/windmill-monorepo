@@ -46,7 +46,8 @@ export function reminderPatch(enabled, timezone) {
 
 // slotDow is 1=Mon..7=Sun and slotMinute is minutes past local midnight; out of range falls back to the standing slot.
 export function describeSchedule({ slotDow, slotMinute }) {
-  const day = Number.isInteger(slotDow) && slotDow >= 1 && slotDow <= 7 ? slotDow : 2;
+  const dow = Number(slotDow);
+  const day = Number.isInteger(dow) && dow >= 1 && dow <= 7 ? dow : 2;
   const minutes = Number.isInteger(slotMinute) && slotMinute >= 0 && slotMinute < 1440 ? slotMinute : 540;
   const hour = Math.floor(minutes / 60);
   const minute = minutes % 60;

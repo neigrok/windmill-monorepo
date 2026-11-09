@@ -66,6 +66,11 @@ test('describeSchedule — the hour reads in twelves, and a whole hour drops its
   assert.equal(describeSchedule({ slotDow: 2, slotMinute: 1439 }), 'Tuesdays around 11:59pm');
 });
 
+test('describeSchedule — a day off the wire reads as the number it spells', () => {
+  assert.deepEqual(['3', ' 7 ', '1.0', 2.5, '', null].map((slotDow) => describeSchedule({ slotDow, slotMinute: 540 })),
+    ['Wednesdays around 9am', 'Sundays around 9am', 'Mondays around 9am', 'Tuesdays around 9am', 'Tuesdays around 9am', 'Tuesdays around 9am']);
+});
+
 test('describeSchedule — a slot off the wire that makes no sense falls back to the standing one', () => {
   assert.equal(describeSchedule({ slotDow: 0, slotMinute: 540 }), 'Tuesdays around 9am');
   assert.equal(describeSchedule({ slotDow: 8, slotMinute: 540 }), 'Tuesdays around 9am');
