@@ -479,8 +479,8 @@ A new string follows these rules:
 - A message interpolates only a `String` or an `Int`. A `Double`, a `Date` or a measurement is formatted first with the
   formatter the screen already uses, and that `String` is interpolated: an interpolated `Double` renders through
   `%lf`, *2.500000*. A message that interpolates an `Int` resolves in `Locale.copy` (`String(localized: …, locale:
-  .copy)`), so its digits read as Swift writes them, *1000*, and English picks its plural form under any system
-  language; the system locale would write *1,000* or *١٠٠٠* and pick Russian's or Arabic's form.
+  .copy)`), so its digits read as Swift writes them, *1000*, under any region; the current locale would group them by
+  the phone's region, *1,000* or *1.000*.
 - A sentence is one message with placeholders, never joined from fragments. A count that changes its words is one
   `%lld` message with a plural variation in the catalog, and English's `one` and `other` must read as the app reads
   for every count it can receive. A `comment:` says what the English alone leaves unclear.
