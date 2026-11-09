@@ -496,8 +496,9 @@ A new string follows these rules:
   picker's title, an App Intent's parameter — the comment is written in the catalog, where the sync keeps it. A word
   with two senses gets an explicit key for one of them, its English as the default value:
   `String(localized: "connected-tool.write", defaultValue: "Write", comment: …)` stands beside the verb `Write`.
-- A key that holds only placeholders, digits and marks, `%@ %@` or `•`, is marked `"shouldTranslate" : false` in the
-  catalog by hand; the sync keeps it.
+- A key that holds no word is not for translators, and the catalog tool marks it `"shouldTranslate" : false`: a
+  placeholder, digits or a mark alone, and joins by space, middle dot, dash, bullet, slash or ×. Joins by comma or colon
+  are translatable, since their punctuation varies by language.
 - A counted thing of the gym, *3 sets* or *1 routine*, is `GymCount.of(_:_:)` in
   `Sources/Gym/Components/GymFormat.swift`, one plural message per noun. The sign-in question writes its counts out
   itself, with the same messages, so the catalog holds each once.
@@ -512,24 +513,28 @@ python3 Tools/string_catalogs.py
 The tool builds the app in Release for the simulator, in the DerivedData folder Xcode keeps for the project, where
 `SWIFT_EMIT_LOC_STRINGS` has the compiler record every localized string in a `.stringsdata` file. It syncs each
 bundle's `Localizable.xcstrings` with `xcstringstool` from the files of the sources its target compiles: a new string
-arrives, a string no source names leaves, and plural variations, comments and `shouldTranslate` stay. It holds the
-English kept by hand to its key: every value and plural form takes its key's placeholders, a substitution counts one of
-the key's `%lld`, a plural has its `one` and `other` forms, and each form shows its number. It also holds each
-`InfoPlist.xcstrings` to the built bundle's Info.plist. With `--derived-data <path>` it reads an existing Release
-simulator build instead of building; `--check` changes nothing and fails when a catalog differs or breaks one of those
-rules, which [CI](../../../.github/workflows/ios.yml) runs on its Release build.
+arrives, a string no source names leaves, plural variations and comments stay, and a key without a word is marked as
+above. Before it builds, it holds the English kept by hand to its key: a value, and a plural's `other` form, reads as
+its key once its positions, numbered in order, are dropped and each substitution reads as its `other` form; every other
+form takes the key's placeholders; a substitution counts one of the key's `%lld`; and every plural has its `one` and
+`other` forms, each showing its number. An explicit key's value is its English and answers to no key. It fails when
+`xcstringstool` skips a file it could not read, and holds each `InfoPlist.xcstrings` to the built bundle's Info.plist.
+With `--derived-data <path>` it reads an existing Release simulator build instead of building; `--check` changes
+nothing and fails when a catalog differs, which [CI](../../../.github/workflows/ios.yml) runs on its Release build.
 
 `python3 Tools/check_copy_literals.py` fails on a literal a person could read that is no key of its bundle's catalog,
 matched with each interpolation as a placeholder, in `Sources/`, `WorkoutActivityShared/` and `WorkoutActivityWidget/`;
 the launch fixtures, `Verification.swift`, `JournalModelTransport.swift` and the lines inside `#if DEBUG` or
 `#if targetEnvironment(simulator)` stay out. It reads a literal as a name, not copy, when it is one lowercase word, an
-identifier, a path, a URL or a file, when it is handed to a call or a label that names — an identifier, a symbol, a
-telemetry event or property, a log line, a key, a format — or set to such a property, and when it is a dictionary key,
-a subscript, a side of a comparison or a `case` pattern. It also fails on a `String(localized:)` that interpolates an
-`Int` outside `Locale.copy`. Its allowlist names each remaining line and why, the check prints every allowed line with
-its reason, and an entry that no longer matches fails the check. Both targets run it before they build, except the
-build `string_catalogs.py` makes, so a new string can reach its catalog; `python3 -m unittest discover -s Tools/tests -v`
-includes its cases and runs it over the shipped sources.
+identifier, a path, a URL or a file; when it is handed to a call or a label that names — an identifier, a symbol, a
+telemetry event or property, a log line (`print`, `NSLog`, `os_log`, a `logger`'s calls), a key, a font's name, a date
+format or template, a URL's query item, a keychain attribute — or set to such a property; and when it is a dictionary
+key, a subscript, a side of a comparison, a `switch` pattern or an enum's one-word raw value. A raw value with spaces
+between its words is copy. It also fails on a `String(localized:)` whose shape matches a key that counts an `Int`, even
+when a `%@` twin of that shape exists, outside `Locale.copy`. Its allowlist names each remaining literal by its text and
+why, the check prints every allowed literal with its reason, and an entry that no longer matches fails the check. Both
+targets run it before they build, except the build `string_catalogs.py` makes, so a new string can reach its catalog;
+`python3 -m unittest discover -s Tools/tests -v` includes its cases and runs it over the shipped sources.
 
 ## Design captures
 
