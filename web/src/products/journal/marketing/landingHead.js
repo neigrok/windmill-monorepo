@@ -1,40 +1,41 @@
-// Head copy, structured data, and the words a visitor without JavaScript is served. Pure data, no
-// browser globals: the build script reads it in plain Node.
+// Head copy, structured data, and the words a visitor without JavaScript is served. No browser globals
+// and no .jsx import: the build script reads it in plain Node.
 
 import { SITE_ORIGIN, SHARE_CARD_ALT } from '../../../shell/marketing/siteIdentity.js';
+import { t } from '../i18n/index.js';
 
 export const journalLandingHead = {
   path: '/journal',
   module: 'src/products/journal/marketing/JournalLanding.jsx',
-  title: 'Windmill Journal — a daily journal for noticing what happened',
-  description: 'A place to notice what happened. One continuous canvas — oldest at the top, tonight at the bottom, the cursor already waiting. Write to understand yourself, not to score yourself.',
-  ogTitle: 'Windmill Journal — a place to notice what happened',
-  ogDescription: 'One continuous canvas — oldest at the top, tonight at the bottom, the cursor already waiting. Write to understand yourself, not to score yourself.',
-  twitterTitle: 'Windmill Journal — a place to notice what happened',
-  twitterDescription: 'One continuous canvas — oldest at the top, tonight at the bottom, the cursor already waiting. Write to understand yourself, not to score yourself.',
+  title: t('journal.landingHead.title'),
+  description: t('journal.landingHead.description'),
+  ogTitle: t('journal.landingHead.shareTitle'),
+  ogDescription: t('journal.landingHead.shareDescription'),
+  twitterTitle: t('journal.landingHead.shareTitle'),
+  twitterDescription: t('journal.landingHead.shareDescription'),
   imageAlt: SHARE_CARD_ALT,
   fallback: {
     accent: '#C29A4E',
-    badge: 'Now open',
-    h1: 'A place to notice what happened.',
-    sub: 'One continuous canvas — oldest at the top, tonight at the bottom, the cursor already waiting. Write to understand yourself, not to score yourself.',
+    badge: t('journal.landing.hero.badge'),
+    h1: t('journal.landing.hero.title'),
+    sub: t('journal.landing.hero.sub'),
     actions: [
-      { href: '#/journal', label: 'Start writing' },
-      { href: '#how', label: 'See how it works' },
+      { href: '#/journal', label: t('journal.landing.startWriting') },
+      { href: '#how', label: t('journal.landing.seeHow') },
     ],
-    trust: 'And there is no share button — not switched off, just not there.',
+    trust: t('journal.landing.hero.trust'),
     notes: [
-      'How it works: Write → Look back → Hear it back.',
-      'Search by meaning without your pages leaving your device.',
+      t('journal.landingHead.howItWorks'),
+      t('journal.landingHead.searchOnDevice'),
     ],
   },
   schema: [
     {
       '@type': 'SoftwareApplication',
       '@id': `${SITE_ORIGIN}/journal#app`,
-      'name': 'Windmill Journal',
+      'name': t('journal.landingHead.appName'),
       'url': `${SITE_ORIGIN}/journal`,
-      'description': 'A place to notice what happened. One continuous canvas — oldest at the top, tonight at the bottom, the cursor already waiting. Write to understand yourself, not to score yourself.',
+      'description': t('journal.landingHead.description'),
       'applicationCategory': 'LifestyleApplication',
       'operatingSystem': 'Web browser',
       'image': `${SITE_ORIGIN}/og-image.png`,

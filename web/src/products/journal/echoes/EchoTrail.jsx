@@ -2,12 +2,13 @@
 
 import React from 'react';
 import { distanceTrail, stampPlain } from './echoDates.js';
+import { t } from '../i18n/index.js';
 
 export function EchoTrail({ echoes, current }) {
   if (!echoes.hops.length) return null;
   return (
-    <nav className="je-trail" aria-label="How you got here">
-      <p className="je-trail-label">HOW YOU GOT HERE</p>
+    <nav className="je-trail" aria-label={t('journal.echoes.trail')}>
+      <p className="je-trail-label">{t('journal.echoes.trailLabel')}</p>
       <div className="je-trail-chips">
         {echoes.hops.map((day, index) => (
           <React.Fragment key={day}>
@@ -24,7 +25,7 @@ export function EchoTrail({ echoes, current }) {
               onClick={() => echoes.standOn(day)}
               aria-current={day === current ? 'page' : undefined}
             >
-              {day === echoes.today ? 'TONIGHT' : stampPlain(day)}
+              {day === echoes.today ? t('journal.echoes.tonight') : stampPlain(day)}
             </button>
           </React.Fragment>
         ))}
@@ -40,7 +41,7 @@ export function BackToTonight({ echoes }) {
       <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
         <path d="M12 5v14M5 12l7 7 7-7" />
       </svg>
-      Back to tonight
+      {t('journal.echoes.backToTonight')}
     </button>
   );
 }

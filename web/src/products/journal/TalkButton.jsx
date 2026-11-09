@@ -8,8 +8,7 @@ import { journalApi } from './journalApi.js';
 import { useAuth } from '../../shell/auth/AuthProvider.jsx';
 import { useEntitlements } from '../../shell/billing/EntitlementsProvider.jsx';
 import { beginUpgrade, paidPlansOpen } from '../../shell/billing/checkout.js';
-
-const DISCARD_PROMISE = 'The recording is transcribed and thrown away. No audio is kept anywhere.';
+import { t } from './i18n/index.js';
 
 function pickMime() {
   const candidates = ['audio/webm', 'audio/mp4', 'audio/ogg'];
@@ -58,7 +57,7 @@ export function TalkButton({ onTranscript, onNeedSignIn }) {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch {
       setPhase('idle');
-      flash('No microphone');
+      flash(t('journal.talk.noMicrophone'));
       return;
     }
     streamRef.current = stream;
@@ -77,7 +76,7 @@ export function TalkButton({ onTranscript, onNeedSignIn }) {
         setOpen(false);
       } catch (error) {
         // A session or subscription that lapsed between the check and the send: re-sync so the mic re-locks.
-        if (error.status === 403) { setPhase('idle'); refresh(); flash('Talk is part of Windmill One'); }
+        if (error.status === 403) { setPhase('idle'); refresh(); flash(t('journal.talk.locked')); }
         else if (error.status === 401) { setPhase('idle'); setOpen(false); onNeedSignIn?.(); }
         else { setPhase('hidden'); setOpen(false); }   // 503 (no vendor) or worse — retire it quietly
       }
@@ -110,14 +109,14 @@ export function TalkButton({ onTranscript, onNeedSignIn }) {
         className={'journal-tool journal-talk-tool is-' + phase}
         onClick={press}
         disabled={checking || phase === 'starting'}
-        aria-label={phase === 'recording' ? 'Stop and write it down' : 'Talk instead of typing'}
-        title={phase === 'recording' ? 'Stop and write it down' : 'Talk instead of typing'}
+        aria-label={phase === 'recording' ? t('journal.talk.stop') : t('journal.talk.start')}
+        title={phase === 'recording' ? t('journal.talk.stop') : t('journal.talk.start')}
         aria-expanded={open}
       >
         <Mic size={18} strokeWidth={1.9} aria-hidden="true" />
       </button>
       {open && (
-        <div className="journal-talk-sheet" role="dialog" aria-label="Talk">
+        <div className="journal-talk-sheet" role="dialog" aria-label={t('journal.talk.title')}>
           {entitled ? (
             <TalkSheet phase={phase} onStop={stop} onClose={close} />
           ) : (
@@ -132,19 +131,19 @@ export function TalkButton({ onTranscript, onNeedSignIn }) {
 
 // While the browser is still asking for the microphone there is nothing yet to stop, so no control.
 const TALK_STATES = {
-  starting: 'Waiting for the microphone…',
-  recording: 'Listening',
-  working: 'Writing it down…',
+  starting: t('journal.talk.waiting'),
+  recording: t('journal.talk.listening'),
+  working: t('journal.talk.writing'),
 };
 
 function TalkSheet({ phase, onStop, onClose }) {
   return (
     <>
-      <p className="journal-talk-state">{TALK_STATES[phase] ?? 'Talk'}</p>
-      <p className="journal-talk-promise">{DISCARD_PROMISE}</p>
+      <p className="journal-talk-state">{TALK_STATES[phase] ?? t('journal.talk.title')}</p>
+      <p className="journal-talk-promise">{t('journal.talk.promise')}</p>
       {phase !== 'starting' && (
         <button type="button" className="journal-talk-act" onClick={phase === 'recording' ? onStop : onClose}>
-          {phase === 'recording' ? 'Stop and write it down' : 'Close'}
+          {phase === 'recording' ? t('journal.talk.stop') : t('journal.talk.close')}
         </button>
       )}
     </>
@@ -157,18 +156,18 @@ function LockedSheet({ onClose, onFlash, onRefresh }) {
   const openDoor = async () => {
     // The webhook that flips the subscription live can trail checkout.completed, so re-read twice.
     const opened = await beginUpgrade({ onCompleted: () => { onRefresh(); setTimeout(onRefresh, 2500); } });
-    if (!opened) onFlash('Couldn’t open checkout');
+    if (!opened) onFlash(t('journal.talk.checkoutFailed'));
   };
   return (
     <>
-      <p className="journal-talk-state">Talk is part of Windmill One</p>
+      <p className="journal-talk-state">{t('journal.talk.locked')}</p>
       <p className="journal-talk-promise">
-        {DISCARD_PROMISE}
-        {!paidPlansOpen() && ' Windmill One isn’t on sale yet — Talk opens when it is.'}
+        {t('journal.talk.promise')}
+        {!paidPlansOpen() && ` ${t('journal.talk.notOnSale')}`}
       </p>
       {paidPlansOpen()
-        ? <button type="button" className="journal-talk-act" onClick={openDoor}>See Windmill One</button>
-        : <button type="button" className="journal-talk-act" onClick={onClose}>Close</button>}
+        ? <button type="button" className="journal-talk-act" onClick={openDoor}>{t('journal.talk.seeOffer')}</button>
+        : <button type="button" className="journal-talk-act" onClick={onClose}>{t('journal.talk.close')}</button>}
     </>
   );
 }

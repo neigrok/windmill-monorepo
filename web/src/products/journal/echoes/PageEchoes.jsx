@@ -4,19 +4,13 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { InkRow } from './Ink.jsx';
 import { KINDLE_MS, resumedOnMount } from './arrival.js';
+import { t } from '../i18n/index.js';
 
 // Nothing is dimmed past legibility, so the ladder stops at half.
 const LADDER = [1, 0.82, 0.64, 0.5];
 // Half the kindle: the glyph swaps at the ramp's midpoint, under the numeral's own cross-fade, so the
 // digit is never seen changing at full weight.
 const SWAP_MS = KINDLE_MS / 2;
-
-// What is behind the tab, said at EVERY width. It is the only place a reader who cannot see the face
-// learns how much a page holds, and it is also the whole of what an arrival announces: one
-// vocabulary, not two, and never a word that would make the light a notification.
-function passagesBehind(count) {
-  return `${count} ${count === 1 ? 'passage' : 'passages'} you wrote before`;
-}
 
 // What the tab IS, given whether the margin has room (`marginOpen`, decided once in useEchoes.js).
 // With the margin open the ink has nowhere to appear — the panel IS the page's ink and it is already
@@ -27,23 +21,26 @@ function passagesBehind(count) {
 //
 // Pure and exported because a control that announces a state it does not have is otherwise only
 // visible by opening a browser at two widths.
+//
+// What is behind the tab is said at EVERY width. It is the only place a reader who cannot see the face
+// learns how much a page holds, and it is also the whole of what an arrival announces: one
+// vocabulary, not two, and never a word that would make the light a notification. The act the tab
+// performs is the second half of that sentence, not a replacement for the first.
 export function edgeTabProps({ marginOpen, open, standing, held, addressed, count }) {
-  // The act the tab performs is the second half of the sentence, not a replacement for the first.
-  const behind = passagesBehind(count);
   if (marginOpen) {
-    if (held) return { state: 'held', face: 'count', label: `${behind} — follow the scroll again` };
+    if (held) return { state: 'held', face: 'count', label: t('journal.echoes.followScrollAgain', { count }) };
     return {
       state: addressed ? 'addressed' : 'aged',
       face: 'count',
-      label: `${behind} — hold panel on this page`,
+      label: t('journal.echoes.holdPanel', { count }),
     };
   }
-  if (open) return { state: 'open', face: 'close', expanded: true, label: 'Close what you wrote before' };
+  if (open) return { state: 'open', face: 'close', expanded: true, label: t('journal.echoes.closeInk') };
   return {
     state: standing ? 'current' : 'aged',
     face: 'count',
     expanded: false,
-    label: behind,
+    label: t('journal.echoes.passagesBehind', { count }),
   };
 }
 
@@ -199,7 +196,7 @@ export function EchoLive({ arrival }) {
     // Cleared first: a reader whose second arrival holds the same count would otherwise be told
     // nothing at all, because the region's text never changed.
     setSaid('');
-    const speak = setTimeout(() => setSaid(passagesBehind(arrival.count)), 60);
+    const speak = setTimeout(() => setSaid(t('journal.echoes.passagesBehind', { count: arrival.count })), 60);
     return () => clearTimeout(speak);
   }, [arrival]);
   return <p className="je-live" aria-live="polite">{said}</p>;
@@ -242,10 +239,8 @@ function FirstEcho({ echoes, page }) {
   const [nearest] = page.matches;
   return (
     <div className="je-first">
-      <p className="je-first-lead">Something you wrote before is close to tonight.</p>
-      <p className="je-first-note">
-        This is the first time that’s happened. From now on it’s the tab on the edge.
-      </p>
+      <p className="je-first-lead">{t('journal.echoes.firstLead')}</p>
+      <p className="je-first-note">{t('journal.echoes.firstNote')}</p>
       <InkRow match={nearest} triggerDay={page.day} onOpen={() => echoes.walkTo(page.day, nearest)} />
     </div>
   );

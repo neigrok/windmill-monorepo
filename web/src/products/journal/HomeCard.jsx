@@ -1,6 +1,7 @@
 // The journal's /app home cell: static copy, no fetches. The auth hint only picks which door line shows.
 
 import React, { useState } from 'react';
+import { t } from './i18n/index.js';
 
 function signedIn() {
   try {
@@ -18,10 +19,10 @@ export function HomeCard() {
       <a className="wm-jhc" href="#/journal">
         <span className="wm-jhc-head">
           <span className="wm-jhc-dot" aria-hidden="true" />
-          Journal
+          {t('journal.product.label')}
         </span>
-        <span className="wm-jhc-body">{writer ? 'The cursor is already waiting.' : 'Tonight’s page can be three lines.'}</span>
-        <span className="wm-jhc-link">{writer ? 'Open journal →' : 'Start writing →'}</span>
+        <span className="wm-jhc-body">{writer ? t('journal.home.writerBody') : t('journal.home.newBody')}</span>
+        <span className="wm-jhc-link">{writer ? t('journal.home.writerLink') : t('journal.home.newLink')}</span>
       </a>
     </>
   );

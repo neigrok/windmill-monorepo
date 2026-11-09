@@ -5,6 +5,7 @@ import { lazy } from 'react';
 import { journalLandingHead } from './marketing/landingHead.js';
 import { migratePages } from './migrate.js';
 import { adoptDeviceRows, isWritten, onSyncResult, pagesOf, pendingClaimWork, recoveredDrafts, watchClaims } from './pages.js';
+import { t } from './i18n/index.js';
 
 const importJournalApp = () => import('./JournalApp.jsx').then((m) => ({ default: m.JournalApp }));
 const JournalApp = lazy(importJournalApp);
@@ -35,7 +36,7 @@ function render({ hash }) {
 
 export const journalRoutes = {
   id: 'journal',
-  label: 'Journal',
+  label: t('journal.product.label'),
   switchHash: '#/journal',
   home,
   landingAfterSignIn,
@@ -50,7 +51,11 @@ export const journalRoutes = {
     adoptionAnswer: (engine) => [...pagesOf(engine), ...recoveredDrafts(engine)].some(isWritten) ? null : 'add',
     adoptionCount: (engine) => new Set([...pagesOf(engine), ...recoveredDrafts(engine)].filter(isWritten).map((page) => page.day)).size,
     // The work a sign-in question counts from before sign-in: the journal's pages.
-    signedOutWork: { type: 'page', one: 'page', many: 'pages' },
+    signedOutWork: {
+      type: 'page',
+      counted: (count) => t('journal.signedOutWork.counted', { count }),
+      many: t('journal.signedOutWork.many'),
+    },
   },
   settingsSections: {
     data: [YourJournalSection],
@@ -60,26 +65,26 @@ export const journalRoutes = {
     href: '/journal',
     Component: JournalLanding,
     preload: importJournalLanding,
-    tagline: 'Notice what happened',
+    tagline: t('journal.product.tagline'),
     root: {
-      platforms: 'Web',
+      platforms: t('journal.product.platforms'),
       // A card of prose, so its height steps with where the text wraps rather than scaling with the
       // frame: it settles at these once the words stop rewrapping, and stands taller on a phone.
       // Holding the settled height is strictly better than holding nothing at every width.
       reserve: { band: '170px', section: '322px' },
       band: {
-        title: 'One page a night, in your own words.',
-        sub: 'Yesterday sits one line above. Search finds the feeling, not just the word.',
+        title: t('journal.product.band.title'),
+        sub: t('journal.product.band.sub'),
       },
       section: {
-        title: 'A page a night, kept only for you.',
-        sub: 'Free-form writing on a quiet canvas. Yesterday sits one line above, and search finds the feeling, not just the word.',
-        trust: 'Your pages stay yours. No scores, no streaks.',
-        cta: { href: '#/journal', label: 'Write tonight' },
+        title: t('journal.product.section.title'),
+        sub: t('journal.product.section.sub'),
+        trust: t('journal.product.section.trust'),
+        cta: { href: '#/journal', label: t('journal.product.section.cta') },
         proof: [
-          { title: 'One page a night', copy: 'Open it, write, close it. Yesterday waits one line up.' },
-          { title: 'Search by meaning', copy: 'Ask for the mood and find the night you felt it.' },
-          { title: 'Only you', copy: 'Private by default. Nothing is graded or shared.' },
+          { title: t('journal.product.proof.pageTitle'), copy: t('journal.product.proof.pageCopy') },
+          { title: t('journal.product.proof.searchTitle'), copy: t('journal.product.proof.searchCopy') },
+          { title: t('journal.product.proof.privateTitle'), copy: t('journal.product.proof.privateCopy') },
         ],
       },
       Glimpse: lazy(() => import('./marketing/RootScenes.jsx').then((m) => ({ default: m.JournalGlimpse }))),

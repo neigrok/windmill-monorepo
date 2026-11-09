@@ -3,19 +3,20 @@
 
 import { journalApi } from '../journalApi.js';
 import { isWritten, normalizePage } from '../pages.js';
+import { t } from '../i18n/index.js';
 
 export function journalMarkdown(pages) {
   const written = pages.map(normalizePage).filter(isWritten).sort((a, b) => (a.day < b.day ? -1 : 1));
   const blocks = written.map((page) => {
     const scales = [];
-    if (page.mood != null) scales.push(`mood ${page.mood}/10`);
-    if (page.energy != null) scales.push(`energy ${page.energy}/10`);
+    if (page.mood != null) scales.push(t('journal.export.mood', { value: page.mood }));
+    if (page.energy != null) scales.push(t('journal.export.energy', { value: page.energy }));
     const lines = [`## ${page.day}`];
     if (scales.length) lines.push(`_${scales.join(' · ')}_`);
     if (page.body.trim()) lines.push(page.body.trim());
     return `${lines.join('\n\n')}\n`;
   });
-  return `# Windmill journal\n\n${blocks.join('\n')}`;
+  return `# ${t('journal.export.title')}\n\n${blocks.join('\n')}`;
 }
 
 export async function buildJournalArchive() {

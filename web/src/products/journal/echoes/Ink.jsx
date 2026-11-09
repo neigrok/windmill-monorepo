@@ -3,6 +3,7 @@
 
 import React, { useCallback, useEffect, useState } from 'react';
 import { distanceStamp, stampCompact, stampStacked } from './echoDates.js';
+import { t } from '../i18n/index.js';
 
 // One older passage. `dim` is worn by the date and the words, never by the row, so the answer below reads
 // the same on the ninth passage as on the first. `data-je-match` stays on the row: the footer counts it.
@@ -37,10 +38,10 @@ function Verdict({ match, onUseful, onNotUseful }) {
         aria-pressed={Boolean(match.useful)}
         onClick={onUseful}
       >
-        Useful
+        {t('journal.echoes.useful')}
       </button>
       <button type="button" className="je-verdict-mark" onClick={onNotUseful}>
-        Not useful
+        {t('journal.echoes.notUseful')}
       </button>
     </span>
   );
@@ -48,8 +49,8 @@ function Verdict({ match, onUseful, onNotUseful }) {
 
 // A passage that isn't the writer's own says so.
 function Provenance({ match }) {
-  if (match.isSelf === false) return <span className="je-ink-note">something you copied down</span>;
-  if (match.source === 'spoken') return <span className="je-ink-note">from your voice note</span>;
+  if (match.isSelf === false) return <span className="je-ink-note">{t('journal.echoes.copied')}</span>;
+  if (match.source === 'spoken') return <span className="je-ink-note">{t('journal.echoes.spoken')}</span>;
   return null;
 }
 
@@ -60,7 +61,7 @@ export function InkDates({ matches, onOpen, size = 'page' }) {
     <div className={`je-ink-row je-ink-${size}`}>
       <span className="je-ink-margin je-ink-margin-quiet">
         <span>{matches.length}</span>
-        <span>MORE</span>
+        <span>{t('journal.echoes.more')}</span>
       </span>
       <span className="je-ink-run">
         {matches.map((match, index) => (
@@ -102,9 +103,9 @@ export function InkFooter({ echoes, page }) {
 
   return (
     <div className="je-ink-foot">
-      <span className="je-ink-more">{unread > 0 ? `SCROLL FOR ${unread} MORE` : ''}</span>
+      <span className="je-ink-more">{unread > 0 ? t('journal.echoes.scrollForMore', { count: unread }) : ''}</span>
       <button type="button" className="je-not-useful" onClick={() => echoes.retireEcho(page.day)}>
-        Not useful
+        {t('journal.echoes.notUseful')}
       </button>
     </div>
   );

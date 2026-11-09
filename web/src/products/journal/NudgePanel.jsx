@@ -2,11 +2,12 @@
 // the engine is armed (JournalApp gates it); a dead mailbox gets the notice below instead of the switch.
 
 import React from 'react';
+import { t } from './i18n/index.js';
 
 function hourLabel(ms) {
   const hour = new Date(ms).getHours();
-  const period = hour < 12 ? 'am' : 'pm';
-  return `${hour % 12 || 12}${period}`;
+  if (hour < 12) return t('journal.nudge.hourAm', { hour: hour % 12 || 12 });
+  return t('journal.nudge.hourPm', { hour: hour % 12 || 12 });
 }
 
 export function NudgePanel({ nudge, onClose }) {
@@ -18,11 +19,11 @@ export function NudgePanel({ nudge, onClose }) {
     <div
       className="journal-nudge"
       role="dialog"
-      aria-label="Nudges"
+      aria-label={t('journal.nudge.title')}
       onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}
     >
       <div className="journal-nudge-panel">
-        <p className="journal-nudge-lead">Nudges</p>
+        <p className="journal-nudge-lead">{t('journal.nudge.title')}</p>
 
         {suppressed ? <SuppressedNotice enable={enable} /> : (
           <NudgeControls enabled={enabled} channel={channel} settings={settings}
@@ -30,9 +31,7 @@ export function NudgePanel({ nudge, onClose }) {
                          snooze={snooze} onClose={onClose} />
         )}
 
-        <p className="journal-nudge-foot">
-          The rhythm is learned on this device and never leaves it. Only the next moment is sent.
-        </p>
+        <p className="journal-nudge-foot">{t('journal.nudge.foot')}</p>
       </div>
     </div>
   );
@@ -44,21 +43,12 @@ export function NudgePanel({ nudge, onClose }) {
 function SuppressedNotice({ enable }) {
   return (
     <div className="journal-nudge-suppressed">
-      <p className="journal-nudge-when">We can't reach your email address.</p>
-      <p className="journal-nudge-note">
-        Mail we sent came back permanently undeliverable, or was reported as spam. Either way we
-        stopped writing to an address that can't receive it, rather than keep trying.
-      </p>
-      <p className="journal-nudge-note">
-        Sign-in email is unaffected — magic links still go to this address, so you can always get
-        back in.
-      </p>
-      <p className="journal-nudge-note">
-        We won't retry on our own. If the address works again, turn nudges back on and we'll write
-        to it — and stop again if that mail comes back too.
-      </p>
+      <p className="journal-nudge-when">{t('journal.nudge.unreachable')}</p>
+      <p className="journal-nudge-note">{t('journal.nudge.bounced')}</p>
+      <p className="journal-nudge-note">{t('journal.nudge.signInUnaffected')}</p>
+      <p className="journal-nudge-note">{t('journal.nudge.noRetry')}</p>
       <button type="button" className="journal-nudge-resume" onClick={() => enable()}>
-        Turn nudges back on
+        {t('journal.nudge.resume')}
       </button>
     </div>
   );
@@ -76,18 +66,16 @@ function NudgeControls({ enabled, channel, settings, enable, disable, setChannel
         >
           <span className="journal-nudge-knob" aria-hidden="true" />
           <span className="journal-nudge-toggle-label">
-            {enabled ? 'Nudging you to write' : 'Nudge me to write'}
+            {enabled ? t('journal.nudge.on') : t('journal.nudge.off')}
           </span>
         </button>
 
         {enabled && settings?.nextDueAt && (
-          <p className="journal-nudge-when">
-            around {hourLabel(settings.nextDueAt)} · the hour you tend to write
-          </p>
+          <p className="journal-nudge-when">{t('journal.nudge.when', { hour: hourLabel(settings.nextDueAt) })}</p>
         )}
 
         {enabled && (
-          <div className="journal-nudge-channel" role="radiogroup" aria-label="How to reach you">
+          <div className="journal-nudge-channel" role="radiogroup" aria-label={t('journal.nudge.channel')}>
             {['email', 'inapp'].map((option) => (
               <button
                 key={option}
@@ -97,7 +85,7 @@ function NudgeControls({ enabled, channel, settings, enable, disable, setChannel
                 className={'journal-nudge-chip' + (channel === option ? ' is-on' : '')}
                 onClick={() => setChannel(option)}
               >
-                {option === 'email' ? 'By email' : 'In the app'}
+                {option === 'email' ? t('journal.nudge.byEmail') : t('journal.nudge.inApp')}
               </button>
             ))}
           </div>
@@ -105,7 +93,7 @@ function NudgeControls({ enabled, channel, settings, enable, disable, setChannel
 
         {enabled && (
           <button type="button" className="journal-nudge-snooze" onClick={() => { snooze(); onClose(); }}>
-            Pause for a week
+            {t('journal.nudge.snooze')}
           </button>
         )}
     </>

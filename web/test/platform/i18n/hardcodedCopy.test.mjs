@@ -6,6 +6,7 @@ test('a migrated root renders no JSX text or copy prop that skips its catalog', 
   const migratedRoots = [
     'src/design-system',
     'src/main.jsx',
+    'src/products/journal',
     'src/shell',
   ];
   const allowedCopy = new Set(['Windmill']);
