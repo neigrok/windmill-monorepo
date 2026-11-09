@@ -46,7 +46,6 @@ import works.windmill.gym.presentation.Review
 import works.windmill.gym.presentation.SessionStart
 import works.windmill.gym.presentation.SetFix
 import works.windmill.gym.presentation.SetWrite
-import works.windmill.platform.i18n.text
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.sync.api.DeviceWrite
 import works.windmill.sync.api.Gesture

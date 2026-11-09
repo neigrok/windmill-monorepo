@@ -12,7 +12,6 @@ import works.windmill.gym.R
 import works.windmill.gym.presentation.Blocker
 import works.windmill.gym.presentation.TrainingSet
 import works.windmill.platform.i18n.Words
-import works.windmill.platform.i18n.text
 import works.windmill.platform.net.Refusal
 import works.windmill.platform.net.WindmillApiException
 

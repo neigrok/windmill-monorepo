@@ -55,7 +55,6 @@ import org.robolectric.annotation.GraphicsMode
 import works.windmill.gym.coach.CoachExchange
 import works.windmill.gym.coach.turn.CoachTurnRefusal
 import works.windmill.gym.presentation.Ladder
-import works.windmill.gym.presentation.Proposal
 import works.windmill.gym.presentation.RoutineDraft
 import works.windmill.gym.presentation.SetTarget
 import works.windmill.domain.kit.ActionContext

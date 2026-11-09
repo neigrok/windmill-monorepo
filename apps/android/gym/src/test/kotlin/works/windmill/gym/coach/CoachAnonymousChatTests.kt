@@ -2,7 +2,6 @@ package works.windmill.gym.coach
 
 import works.windmill.gym.spelled
 import works.windmill.gym.string
-import works.windmill.gym.R
 import org.robolectric.annotation.Config
 import org.robolectric.RobolectricTestRunner
 import org.junit.runner.RunWith

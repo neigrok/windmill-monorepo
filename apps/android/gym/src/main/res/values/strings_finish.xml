@@ -8,7 +8,6 @@
     <string name="gym_finish_well_done">Well done.</string>
     <string name="gym_finish_sets">Sets</string>
     <string name="gym_finish_volume">Volume</string>
-    <string name="gym_finish_volume_unit" translatable="false">kg</string>
     <string name="gym_finish_only_on_this_phone">Only on this phone · %1$s</string>
     <string name="gym_finish_performed">Performed</string>
     <string name="gym_finish_record_e1rm">%1$s e1RM %2$s kg — past %3$s from %4$s.</string>
@@ -23,7 +22,6 @@
     <string name="gym_finish_sourced">%1$s: %2$s</string>
     <string name="gym_finish_planned_short">planned %1$s — did %2$s</string>
     <string name="gym_finish_moved">%1$s → %2$s</string>
-    <string name="gym_finish_subhead" translatable="false">%1$s · %2$s</string>
     <string name="gym_finish_duration">Duration</string>
     <string name="gym_finish_share_with_coach">Share with Coach</string>
     <string name="gym_finish_coach_question">Check my last workout.</string>

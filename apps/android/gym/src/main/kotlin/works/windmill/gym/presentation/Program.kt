@@ -41,8 +41,7 @@ object Program {
 
     fun named(name: String): String? = name.trim().takeIf { it.isNotEmpty() }
 
-    // What the two Save refusals say, one at a time and never concatenated: there is no screen before
-    // the editor to have asked for a name, so the name is the first thing missing.
+    // What a name's Save refusal says; there is no screen before the editor to ask for a name, so the name is missing first.
     @StringRes
     fun nameRefusal(name: String): Int? {
         val named = named(name) ?: return R.string.gym_program_name_it
@@ -53,14 +52,6 @@ object Program {
     // A no-op rename is refused: a whole-document write would supersede every proposal on that day.
     // The TRIMMED name is compared, since that is what writes.
     fun renamed(from: String, typed: String): String? = named(typed)?.takeIf { it != from }
-
-    // One at a time and in this order; null once the draft is savable.
-    @StringRes
-    fun missingRefusal(draft: RoutineDraft): Int? {
-        if (named(draft.name) == null) return R.string.gym_program_name_it
-        if (draft.entries.isEmpty()) return R.string.gym_program_at_least_one_movement
-        return null
-    }
 }
 
 // The target sheet's two zooms — the head, which speaks about every set at once, and the ladder,
@@ -76,8 +67,8 @@ object TargetEntry {
     val setsBand = 1..Program.maxSets
     val repsBand = 1..Program.maxReps
 
-    private val onePoint: Words = Words.Message(R.string.gym_program_one_point)
-    private val notANumber: Words = Words.Message(R.string.gym_program_not_a_number)
+    private val onePoint: Words = Words.Message(R.string.gym_entry_one_point)
+    private val notANumber: Words = Words.Message(R.string.gym_entry_not_a_number)
     private val outsideReps: Words = Words.Message(R.string.gym_program_outside_reps)
     val outsideSetsBand: Words = Words.Message(R.string.gym_program_outside_sets)
     private val zeroTarget: Words = Words.Message(R.string.gym_program_zero_target)
@@ -226,20 +217,6 @@ object TargetEntry {
         if (!canRamp(rows)) return rows
         return Scheme.rampUp(rows.map { set(it) ?: SetTarget() }).map(::TypedSet)
     }
-
-    // The commit button's tail, in the words the row itself will print: `open` · `5 × 5 · 80` on a
-    // straight scheme · `5 sets` where the sets disagree · none while something is refused, when the
-    // button reads `Set` alone and is disabled.
-    fun committed(reading: Reading): Words? = when (reading) {
-        Reading.Open -> Readout.open
-        is Reading.Refused -> null
-        is Reading.Scheme ->
-            if (DomainSetTarget.straight(reading.sets.map { it.domain })) Readout.scheme(reading.sets)
-            else Readout.sets(reading.sets.size)
-    }
-
-    fun commitWords(reading: Reading): Words =
-        committed(reading)?.let { Words.Message(R.string.gym_program_commit_scheme, listOf(it)) } ?: Words.Message(R.string.gym_program_commit)
 
     private fun shared(typed: List<String>): String = typed.map { it.trim() }.distinct().singleOrNull() ?: ""
 

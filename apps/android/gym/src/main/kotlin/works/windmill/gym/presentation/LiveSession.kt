@@ -1,6 +1,7 @@
 package works.windmill.gym.presentation
 
 import androidx.annotation.StringRes
+import works.windmill.platform.R as PlatformR
 import works.windmill.gym.R
 import works.windmill.platform.i18n.Words
 import works.windmill.gym.domain.sync.LastTime
@@ -235,7 +236,7 @@ object LiveLines {
                         val effort = values.singleOrNull()?.let(Words::Plain) ?: Readout.scheme(performed.map { SetTarget(it.reps, it.weightKg) }, exercise)
                         val progress = if (planned != null) Words.Message(R.string.gym_live_done_of_planned, listOf(done.toString(), planned.toString()))
                             else Readout.sets(performed.size)
-                        Words.Message(R.string.gym_live_progress_effort, listOf(progress, effort))
+                        Words.Message(PlatformR.string.platform_words_joined, listOf(progress, effort))
                     }
                     exerciseId == next -> entry?.sets?.takeIf { it.isNotEmpty() }?.let { Words.Message(R.string.gym_live_up_next_scheme, listOf(Readout.scheme(it, exercise))) }
                         ?: Words.Message(R.string.gym_live_up_next)

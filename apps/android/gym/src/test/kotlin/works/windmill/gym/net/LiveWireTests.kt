@@ -35,7 +35,6 @@ import works.windmill.gym.store.TrainingRefused
 import works.windmill.gym.store.EngineTraining
 import works.windmill.gym.store.WorkoutImports
 import works.windmill.gym.presentation.Session
-import works.windmill.platform.i18n.text
 import works.windmill.sync.engine.*
 import works.windmill.sync.schema.SyncSchema
 import works.windmill.sync.schema.Gym

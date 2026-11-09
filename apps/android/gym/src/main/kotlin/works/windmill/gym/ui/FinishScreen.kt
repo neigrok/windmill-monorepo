@@ -289,7 +289,7 @@ fun FinishScreen(
                             }
                         }
                     }
-                    Text(Words.Message(R.string.gym_finish_subhead, listOf(finished.routine?.let(Words::Plain) ?: Readout.freeWorkout, Finish.day(finished.session.startedAtMs))).text(),
+                    Text(Words.Message(PlatformR.string.platform_words_joined, listOf(finished.routine?.let(Words::Plain) ?: Readout.freeWorkout, Finish.day(finished.session.startedAtMs))).text(),
                         style = GymType.finishSubhead, color = colors.onSurfaceVariant)
                 }
                 val summary = SessionSummary(finished.session, finished.sets, catalog)
@@ -300,7 +300,7 @@ fun FinishScreen(
                         ReceiptFact(Readout.lasted(duration).text(), stringResource(R.string.gym_finish_duration), modifier)
                         ReceiptFact(summary.setCount.toString(), stringResource(R.string.gym_finish_sets), modifier)
                         val volume = Finish.volume(summary.tonnageKg)
-                        ReceiptFact(volume, stringResource(R.string.gym_finish_volume), modifier, stringResource(R.string.gym_finish_volume_unit).takeUnless { volume == "—" })
+                        ReceiptFact(volume, stringResource(R.string.gym_finish_volume), modifier, stringResource(R.string.gym_readout_kg).takeUnless { volume == "—" })
                     }
                     val tiles = Modifier.fillMaxWidth().background(colors.surfaceContainerHighest, MaterialTheme.shapes.large)
                     if (largeText || maxWidth < 270.dp) {

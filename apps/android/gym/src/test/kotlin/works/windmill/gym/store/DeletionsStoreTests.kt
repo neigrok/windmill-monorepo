@@ -18,7 +18,6 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import works.windmill.gym.spelled
 import works.windmill.gym.presentation.TrainingSet
-import works.windmill.platform.i18n.text
 import works.windmill.sync.core.Json
 import works.windmill.sync.modelserver.ModelServer
 

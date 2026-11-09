@@ -1,6 +1,5 @@
 package works.windmill.gym
 
-import works.windmill.gym.R
 import android.content.Context
 import java.util.UUID
 import android.provider.Settings

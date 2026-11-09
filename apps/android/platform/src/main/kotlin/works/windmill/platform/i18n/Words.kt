@@ -14,8 +14,7 @@ import java.io.Serializable
 import java.util.Locale
 import works.windmill.platform.R
 
-// What a screen says, decided where no Context stands and spelled where one does. Serializable, so saved state keeps it
-// and spells it again after a configuration change.
+// What a screen says, decided where no Context stands and spelled where one does; Serializable, so saved state keeps it.
 sealed interface Words : Serializable {
     // One of the app's own messages; an argument that is Words itself is spelled first.
     data class Message(@StringRes val id: Int, val args: List<Serializable> = emptyList()) : Words

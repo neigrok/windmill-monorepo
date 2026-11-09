@@ -18,7 +18,6 @@ import org.robolectric.annotation.GraphicsMode
 import works.windmill.gym.string
 import works.windmill.gym.R
 import works.windmill.gym.presentation.WeighIn
-import works.windmill.gym.presentation.Bodyweight
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w360dp-h800dp-xhdpi")

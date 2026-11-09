@@ -20,6 +20,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import works.windmill.platform.R as PlatformR
 import works.windmill.gym.R
 import works.windmill.gym.presentation.Readout
 import works.windmill.gym.presentation.WorkoutKey
@@ -44,7 +45,7 @@ class WorkoutTile(
             commands.restoreLocal()
             commands.notification.collectLatest { current ->
                 do {
-                    val subtitle = current?.let { Words.Message(R.string.gym_notification_tile_running, listOf(it.heading, Readout.clock(nowMs() - it.sinceSetAtMs))).text(context) }
+                    val subtitle = current?.let { Words.Message(PlatformR.string.platform_words_joined, listOf(it.heading, Readout.clock(nowMs() - it.sinceSetAtMs))).text(context) }
                         ?: context.getString(R.string.gym_notification_tile_off)
                     tile.label = context.getString(R.string.gym_notification_tile_label)
                     tile.icon = Icon.createWithResource(activity.packageName, R.drawable.gym_workout_notification)

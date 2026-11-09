@@ -171,8 +171,7 @@ object Readout {
 
     fun workouts(count: Int): Words = Words.Counted(R.plurals.gym_readout_workouts, count, listOf(count.toString()))
 
-    // A movement's equipment in a word. `dumbbell` is how this place counts dumbbells; a kind this build does not name
-    // reads as the record's own word.
+    // A movement's equipment in a word, `dumbbell` how this place counts dumbbells; a kind this build does not name reads as its own word.
     fun equipment(equipment: String, @StringRes dumbbell: Int = R.string.gym_equipment_dumbbells): Words = when (equipment) {
         "barbell" -> Words.Message(R.string.gym_equipment_barbell)
         "dumbbell" -> Words.Message(dumbbell)

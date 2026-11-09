@@ -215,7 +215,7 @@ fun WeighInSheet(
                 singleLine = true, enabled = !busy, isError = weightFailure != null,
                 textStyle = GymType.weighInInput,
                 label = if (correction) null else { { Text(stringResource(R.string.gym_bodyweight_weight)) } },
-                suffix = { Text(stringResource(R.string.gym_bodyweight_unit), style = WindmillType.paragraphLoose, color = colors.onSurfaceVariant) },
+                suffix = { Text(stringResource(R.string.gym_readout_kg), style = WindmillType.paragraphLoose, color = colors.onSurfaceVariant) },
                 supportingText = weightFailure?.let { line -> { Text(line, modifier = Modifier.padding(bottom = 6.dp).semantics { liveRegion = LiveRegionMode.Polite }) } },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, autoCorrectEnabled = false, imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = { save() }),
@@ -368,7 +368,7 @@ fun BodyweightScreen(state: BodyweightState, events: BodyweightEvents, backTo: S
                                     false
                                 }) {
                                     ListItem(
-                                        headlineContent = { Text(stringResource(R.string.gym_bodyweight_kilograms, Bodyweight.kilograms(entry.weightKg)), style = WindmillType.labelParagraph, color = colors.onSurface) },
+                                        headlineContent = { Text(stringResource(R.string.gym_readout_kilograms, Bodyweight.kilograms(entry.weightKg)), style = WindmillType.labelParagraph, color = colors.onSurface) },
                                         supportingContent = { Text(Readout.date(entry.date).text(), style = WindmillType.supportingParagraph, color = colors.onSurfaceVariant) },
                                         modifier = Modifier.fillMaxWidth()
                                             .clickable(role = Role.Button, onClickLabel = stringResource(R.string.gym_bodyweight_correct_weigh_in)) { repairing = entry },

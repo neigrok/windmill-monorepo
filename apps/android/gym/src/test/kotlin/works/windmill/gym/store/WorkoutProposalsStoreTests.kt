@@ -36,7 +36,6 @@ import works.windmill.gym.presentation.Routine
 import works.windmill.gym.presentation.RoutineDraft
 import works.windmill.gym.presentation.SetTarget
 import works.windmill.gym.presentation.SetWrite
-import works.windmill.platform.i18n.text
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.sync.engine.Engine
 import works.windmill.sync.engine.EngineClock

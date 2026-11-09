@@ -33,7 +33,6 @@ import works.windmill.gym.presentation.RoutineDraft
 import works.windmill.gym.presentation.RoutineEntry
 import works.windmill.gym.presentation.SetTarget
 import works.windmill.gym.domain.sync.ProposeRoutine
-import works.windmill.platform.i18n.text
 import works.windmill.sync.core.Json
 import works.windmill.sync.engine.*
 import works.windmill.sync.modelserver.ModelServer

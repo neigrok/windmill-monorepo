@@ -24,7 +24,6 @@ import works.windmill.gym.telemetry.GymEvents
 import works.windmill.gym.ui.PhoneSignInWords
 import works.windmill.platform.User
 import works.windmill.platform.auth.AuthSignOutChoice
-import works.windmill.platform.i18n.text
 import works.windmill.platform.net.WindmillApiException
 import works.windmill.platform.net.WindmillJson
 import works.windmill.platform.telemetry.AndroidTelemetry

@@ -14,7 +14,6 @@ import works.windmill.gym.presentation.Session
 import works.windmill.gym.presentation.TrainingSet
 import works.windmill.platform.Account
 import works.windmill.platform.User
-import works.windmill.platform.i18n.text
 import works.windmill.platform.telemetry.Telemetry
 
 @OptIn(ExperimentalCoroutinesApi::class)

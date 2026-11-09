@@ -5,7 +5,6 @@ import org.robolectric.RobolectricTestRunner
 import org.junit.runner.RunWith
 import works.windmill.gym.spelled
 import works.windmill.gym.string
-import works.windmill.platform.i18n.text
 import works.windmill.platform.i18n.Words
 import works.windmill.gym.R
 import works.windmill.gym.presentation.Readout

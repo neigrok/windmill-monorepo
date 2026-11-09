@@ -21,7 +21,6 @@
     <string name="gym_review_head_addressed">Proposal · %1$s</string>
     <string name="gym_review_lands_after">after %1$s</string>
     <string name="gym_review_lands_first">first in %1$s</string>
-    <string name="gym_review_added_line" translatable="false">%1$s · %2$s</string>
     <string name="gym_review_no_targets">No targets</string>
     <string name="gym_review_move">%1$s → %2$s</string>
     <string name="gym_review_move_labelled">%1$s · %2$s → %3$s</string>

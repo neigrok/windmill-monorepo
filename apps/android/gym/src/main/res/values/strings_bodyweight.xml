@@ -10,9 +10,6 @@
     <string name="gym_bodyweight_title">Bodyweight</string>
     <string name="gym_bodyweight_chip">Weigh in</string>
     <string name="gym_bodyweight_save">Save weight</string>
-    <string name="gym_bodyweight_unit" translatable="false">kg</string>
-    <string name="gym_bodyweight_not_a_number">That is not a number yet.</string>
-    <string name="gym_bodyweight_one_point">One decimal point only.</string>
     <string name="gym_bodyweight_out_of_range">Between 20 and 400 kg — check the number.</string>
     <string name="gym_bodyweight_not_a_forecast">A weigh-in is not a forecast — today or earlier.</string>
     <string name="gym_bodyweight_delete">Delete weigh-in</string>
@@ -33,6 +30,5 @@
     <string name="gym_bodyweight_entry">%1$s kg · %2$s</string>
     <string name="gym_bodyweight_gap">no weigh-in · %1$s – %2$s</string>
     <string name="gym_bodyweight_correct_no_answer">the log didn’t answer — that weigh-in wasn’t saved</string>
-    <string name="gym_bodyweight_kilograms">%1$s kg</string>
     <string name="gym_bodyweight_weight_field">weight in kilograms</string>
 </resources>

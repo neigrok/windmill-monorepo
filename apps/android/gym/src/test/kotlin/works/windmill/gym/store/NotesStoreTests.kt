@@ -20,7 +20,6 @@ import org.robolectric.annotation.Config
 import works.windmill.gym.spelled
 import works.windmill.gym.presentation.Note
 import works.windmill.gym.presentation.NoteWrite
-import works.windmill.platform.i18n.text
 import works.windmill.sync.engine.Engine
 import works.windmill.sync.engine.EngineClock
 import works.windmill.sync.engine.nextPush

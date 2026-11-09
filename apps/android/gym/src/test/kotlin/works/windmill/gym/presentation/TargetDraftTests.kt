@@ -52,7 +52,7 @@ class TargetDraftTests {
         val restored = WindmillJson.decodeFromString(TargetEntry.Draft.serializer(), saved)
         assertEquals(TargetEntry.Reading.Scheme(listOf(SetTarget(8, 50.0))), restored.reading(null))
         assertEquals(draft.copy(sets = "2"), restored.withCount("2"))
-        assertEquals(TargetEntry.Reading.Refused(1, TargetEntry.Field.Reps, Words.Message(R.string.gym_program_not_a_number)),
+        assertEquals(TargetEntry.Reading.Refused(1, TargetEntry.Field.Reps, Words.Message(R.string.gym_entry_not_a_number)),
             restored.withCount("2").reading(null))
         assertEquals(TargetEntry.Reading.Open, restored.withCount("").reading(null))
         assertEquals(draft, restored.withCount("").withCount("1"))

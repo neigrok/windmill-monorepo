@@ -17,7 +17,6 @@ import org.robolectric.annotation.Config
 import works.windmill.gym.spelled
 import works.windmill.gym.domain.sync.ExerciseRules
 import works.windmill.gym.presentation.*
-import works.windmill.platform.i18n.text
 import works.windmill.platform.storage.AtomicDocument
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.sync.engine.signIn

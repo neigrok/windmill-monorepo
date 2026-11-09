@@ -20,7 +20,6 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import works.windmill.gym.presentation.Readout
-import works.windmill.gym.presentation.Bodyweight
 import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.ui.GymMaterial
 import works.windmill.platform.telemetry.LocalTelemetry

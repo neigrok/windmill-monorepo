@@ -3,8 +3,6 @@
     <string name="gym_program_name_it">Name it to save it.</string>
     <string name="gym_program_name_too_long">Use 60 characters or fewer.</string>
     <string name="gym_program_at_least_one_movement">A routine is at least one movement.</string>
-    <string name="gym_program_one_point">One decimal point only.</string>
-    <string name="gym_program_not_a_number">That is not a number yet.</string>
     <string name="gym_program_outside_reps">Whole reps, 1 to 100.</string>
     <string name="gym_program_outside_sets">Sets, 1 to 20.</string>
     <string name="gym_program_zero_target">A zero target is no target — clear the field instead.</string>
@@ -19,7 +17,4 @@
     <string name="gym_program_fill">Fill</string>
     <string name="gym_program_ramp_up">Ramp up</string>
     <string name="gym_program_match_set_one">Match set 1</string>
-    <!-- A verb: the button that sets a movement's targets. -->
-    <string name="gym_program_commit">Set</string>
-    <string name="gym_program_commit_scheme">Set · %1$s</string>
 </resources>

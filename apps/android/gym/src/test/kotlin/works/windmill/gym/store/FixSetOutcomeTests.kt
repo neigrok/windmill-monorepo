@@ -10,7 +10,6 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import works.windmill.gym.spelled
-import works.windmill.platform.i18n.text
 import works.windmill.sync.core.Json
 import works.windmill.sync.engine.signIn
 import works.windmill.sync.engine.signOut

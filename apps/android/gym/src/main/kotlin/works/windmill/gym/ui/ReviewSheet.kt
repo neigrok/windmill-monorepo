@@ -433,7 +433,7 @@ private fun ChangeRow(proposal: Proposal, change: ProposalChange, catalog: List<
                 } ?: Readout.open
                 val lands = proposal.landsAfter(change)?.let { Words.Message(R.string.gym_review_lands_after, listOf(Readout.movement(it, catalog))) }
                     ?: Words.Message(R.string.gym_review_lands_first, listOf(proposal.landsIn))
-                Text(Words.Message(R.string.gym_review_added_line, listOf(target, lands)).text(), style = type.rowLine, color = colors.onSurfaceVariant)
+                Text(Words.Message(PlatformR.string.platform_words_joined, listOf(target, lands)).text(), style = type.rowLine, color = colors.onSurfaceVariant)
             }
             ChangeKind.Removed -> Text(change.removed(proposal.landsIn).text(), style = type.rowLine, color = colors.onSurfaceVariant)
             ChangeKind.Kept -> Unit

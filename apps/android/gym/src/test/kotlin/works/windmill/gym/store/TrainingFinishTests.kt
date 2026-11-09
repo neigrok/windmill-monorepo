@@ -20,7 +20,6 @@ import org.robolectric.annotation.Config
 import works.windmill.gym.spelled
 import works.windmill.gym.presentation.*
 import works.windmill.gym.net.FakeGymRest
-import works.windmill.platform.i18n.text
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.sync.engine.*
 

@@ -3,7 +3,6 @@
     <string name="gym_entry_one_point">One decimal point only.</string>
     <string name="gym_entry_not_a_number">That is not a number yet.</string>
     <string name="gym_entry_outside_reps">Whole reps, 1 to %1$s.</string>
-    <string name="gym_entry_weight_hint" translatable="false">kg</string>
     <string name="gym_entry_reps_hint">whole reps</string>
     <string name="gym_entry_below_floor">Enter %1$s or more, or cancel to keep %2$s</string>
     <string name="gym_entry_empty">Enter a number, or cancel to keep %1$s</string>

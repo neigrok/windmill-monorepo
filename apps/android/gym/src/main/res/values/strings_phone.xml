@@ -72,5 +72,4 @@
     <string name="gym_phone_discard_held_body">%1$s are deleted from this phone. You can’t undo this.</string>
     <string name="gym_phone_discard_it_body">It is deleted from this phone. You can’t undo this.</string>
     <string name="gym_phone_discard_them_body">They are deleted from this phone. You can’t undo this.</string>
-    <string name="gym_phone_volume_kg">%1$s kg</string>
 </resources>

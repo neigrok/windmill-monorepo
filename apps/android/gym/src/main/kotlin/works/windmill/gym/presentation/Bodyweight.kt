@@ -31,8 +31,8 @@ enum class ChartWindow(@StringRes val named: Int) {
 
 object Bodyweight {
     // The refusals, one at a time, in the order the field is read.
-    val unreadable: Words = Words.Message(R.string.gym_bodyweight_not_a_number)
-    val extraPoint: Words = Words.Message(R.string.gym_bodyweight_one_point)
+    val unreadable: Words = Words.Message(R.string.gym_entry_not_a_number)
+    val extraPoint: Words = Words.Message(R.string.gym_entry_one_point)
     val outsideRange: Words = Words.Message(R.string.gym_bodyweight_out_of_range)
     val inTheFuture: Words = Words.Message(R.string.gym_bodyweight_not_a_forecast)
 

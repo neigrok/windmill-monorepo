@@ -5,6 +5,7 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import works.windmill.platform.R as PlatformR
 import works.windmill.gym.R
 import works.windmill.platform.i18n.Words
 import works.windmill.platform.i18n.joined
@@ -26,7 +27,7 @@ object LogReadout {
             else -> Words.Plain(date.format(DateTimeFormatter.ofPattern("EEEE", Locale.ENGLISH)))
         }
         val calendar = date.format(DateTimeFormatter.ofPattern(if (date.year == today.year) "d MMM" else "d MMM uuuu", Locale.ENGLISH))
-        return Words.Message(R.string.gym_log_day, listOf(name, calendar))
+        return Words.Message(PlatformR.string.platform_words_joined, listOf(name, calendar))
     }
 
     fun row(summary: SessionSummary, progress: StatsProgress?, nowMs: Long, zone: ZoneId, selectedMarker: Boolean = false): Row {
@@ -66,6 +67,6 @@ object LogReadout {
                 listOf(Bodyweight.kilograms(kotlin.math.abs(difference)), it.date.format(DateTimeFormatter.ofPattern("MMMM", Locale.ENGLISH))))
         }
         val time = weight.atMs?.let { Instant.ofEpochMilli(it).atZone(zone).format(DateTimeFormatter.ofPattern("HH:mm", Locale.ENGLISH)) }
-        return Weight(Words.Message(R.string.gym_log_weight, listOf(Bodyweight.kilograms(weight.entry.weightKg))), change, time)
+        return Weight(Words.Message(R.string.gym_readout_kilograms, listOf(Bodyweight.kilograms(weight.entry.weightKg))), change, time)
     }
 }

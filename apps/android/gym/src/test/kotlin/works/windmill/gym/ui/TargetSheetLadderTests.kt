@@ -407,7 +407,7 @@ class TargetSheetLadderTests {
 
             headField("Load, kg total").performTextReplacement("1e999")
             headField("Reps").performTextReplacement("8")
-            val load = compose.onNodeWithText(string(R.string.gym_program_not_a_number)).assertIsDisplayed().fetchSemanticsNode().positionInRoot.y
+            val load = compose.onNodeWithText(string(R.string.gym_entry_not_a_number)).assertIsDisplayed().fetchSemanticsNode().positionInRoot.y
             assertTrue(load > yOf("Load, kg total"))
             headField("Load, kg total").assert(SemanticsMatcher.keyIsDefined(SemanticsProperties.Error))
         } } finally { scope.cancel() }
@@ -468,9 +468,9 @@ class TargetSheetLadderTests {
             // Topmost first: a second fault lower down waits its turn.
             compose.onNodeWithContentDescription("Set 5 load").performTextReplacement("1e999")
             compose.onAllNodesWithText(string(R.string.gym_program_zero_target)).assertCountEquals(1)
-            compose.onNodeWithText(string(R.string.gym_program_not_a_number)).assertDoesNotExist()
+            compose.onNodeWithText(string(R.string.gym_entry_not_a_number)).assertDoesNotExist()
             compose.onNodeWithContentDescription("Set 3 reps").performTextReplacement("3")
-            compose.onNodeWithText(string(R.string.gym_program_not_a_number)).assertIsDisplayed()
+            compose.onNodeWithText(string(R.string.gym_entry_not_a_number)).assertIsDisplayed()
         } } finally { scope.cancel() }
     }
 

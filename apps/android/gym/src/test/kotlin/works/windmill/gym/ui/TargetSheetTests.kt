@@ -145,16 +145,16 @@ class TargetSheetTests {
             compose.onNodeWithContentDescription("Reps").performTextReplacement("5")
             compose.onNodeWithContentDescription("Load, kg total").performTextReplacement("82.5.0")
             compose.onNodeWithContentDescription("Load, kg total").assertTextContains("60")
-            compose.onNodeWithText(string(R.string.gym_program_one_point)).assertDoesNotExist()
+            compose.onNodeWithText(string(R.string.gym_entry_one_point)).assertDoesNotExist()
             compose.onNodeWithContentDescription("Load, kg total").performTextReplacement("1e999")
-            compose.onNodeWithText(string(R.string.gym_program_not_a_number)).assertIsDisplayed()
+            compose.onNodeWithText(string(R.string.gym_entry_not_a_number)).assertIsDisplayed()
             compose.onNodeWithContentDescription("Load, kg total").performTextReplacement("eighty")
-            compose.onNodeWithText(string(R.string.gym_program_not_a_number)).assertIsDisplayed()
+            compose.onNodeWithText(string(R.string.gym_entry_not_a_number)).assertIsDisplayed()
 
             // With every field readable nothing stands where the refusal was: a comma and a point both
             // read, and no sentence says so.
             compose.onNodeWithContentDescription("Load, kg total").performTextReplacement("100")
-            compose.onNodeWithText(string(R.string.gym_program_not_a_number)).assertDoesNotExist()
+            compose.onNodeWithText(string(R.string.gym_entry_not_a_number)).assertDoesNotExist()
             compose.onNodeWithText("comma or point", substring = true).assertDoesNotExist()
             compose.onNodeWithText("Done").assertIsDisplayed()
         } } finally { scope.cancel() }

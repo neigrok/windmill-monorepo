@@ -27,7 +27,6 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import works.windmill.gym.spelled
-import works.windmill.gym.GymRoom
 import works.windmill.gym.coach.ConversationRow
 import works.windmill.gym.coach.LocalCoach
 import works.windmill.gym.R

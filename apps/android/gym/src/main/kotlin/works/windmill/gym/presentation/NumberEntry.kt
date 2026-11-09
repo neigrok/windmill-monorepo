@@ -10,7 +10,7 @@ object NumberEntry {
     private val onePoint: Words = Words.Message(R.string.gym_entry_one_point)
     private val notANumber: Words = Words.Message(R.string.gym_entry_not_a_number)
     private val outsideReps: Words = Words.Message(R.string.gym_entry_outside_reps, listOf(LoggedSetLimits.maxReps.toString()))
-    private val weightHint: Words = Words.Message(R.string.gym_entry_weight_hint)
+    private val weightHint: Words = Words.Message(R.string.gym_readout_kg)
     private val repsHint: Words = Words.Message(R.string.gym_entry_reps_hint)
 
     // A load moved under the floor refuses as it is typed; the value it keeps stands, and other refusals wait for a commit.

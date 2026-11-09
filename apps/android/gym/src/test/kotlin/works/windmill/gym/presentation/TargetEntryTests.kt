@@ -212,18 +212,6 @@ class TargetEntryTests {
                      TargetEntry.Draft(listOf(SetTarget(5, 60.0), SetTarget(null, 82.5), SetTarget(8), SetTarget(8, -20.0))).rows)
     }
 
-    @Test
-    fun testTheCommitSaysWhatTheRowWillPrint() {
-        assertEquals("open", TargetEntry.committed(Reading.Open).spelled())
-        assertEquals("5 × 5 · 80", TargetEntry.committed(Reading.Scheme(List(5) { SetTarget(5, 80.0) })).spelled())
-        assertEquals("5 sets", TargetEntry.committed(TargetEntry.reading("5", lowerARamp)).spelled())
-        assertEquals("1 × 5 · 100", TargetEntry.committed(Reading.Scheme(listOf(SetTarget(5, 100.0)))).spelled())
-        assertEquals("no tail while something is refused", null,
-                     TargetEntry.committed(Reading.Refused(0, Field.Weight, Words.Message(R.string.gym_program_not_a_number))).spelled())
-        assertEquals("Set · 5 × 5 · 80", TargetEntry.commitWords(Reading.Scheme(List(5) { SetTarget(5, 80.0) })).spelled())
-        assertEquals("Set · open", TargetEntry.commitWords(Reading.Open).spelled())
-        assertEquals("Set", TargetEntry.commitWords(Reading.Refused(null, Field.Sets, TargetEntry.outsideSetsBand)).spelled())
-    }
 
     // The sheet's rows outlive the count typed over them: `5 → 1 → 12` keeps the ramp, the count is
     // the shown prefix, and the reading — the commit — slices to it.

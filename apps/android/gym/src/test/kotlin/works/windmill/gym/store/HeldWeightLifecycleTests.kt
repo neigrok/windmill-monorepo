@@ -21,7 +21,6 @@ import works.windmill.gym.spelled
 import works.windmill.gym.presentation.NoteWrite
 import works.windmill.gym.presentation.RoutineDraft
 import works.windmill.platform.Account
-import works.windmill.platform.i18n.text
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.sync.core.Json
 import works.windmill.sync.engine.Engine

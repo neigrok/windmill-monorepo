@@ -16,7 +16,6 @@ import works.windmill.gym.spelled
 import works.windmill.domain.kit.Outcome
 import works.windmill.gym.domain.coach.OpenTurn
 import works.windmill.gym.presentation.*
-import works.windmill.platform.i18n.text
 import works.windmill.sync.api.*
 import works.windmill.sync.core.Json
 import works.windmill.sync.core.ClockReading

@@ -29,7 +29,6 @@ import works.windmill.gym.domain.sync.GymEstimate
 import works.windmill.gym.domain.sync.TrainingHistory
 import works.windmill.gym.domain.sync.Session as EngineSession
 import works.windmill.platform.i18n.Words
-import works.windmill.platform.i18n.text
 import works.windmill.sync.api.Change
 import works.windmill.sync.api.CommitOutcome
 import works.windmill.sync.api.Gesture

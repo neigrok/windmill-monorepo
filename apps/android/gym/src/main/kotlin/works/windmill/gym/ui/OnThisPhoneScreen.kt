@@ -327,7 +327,7 @@ private fun RecoveryFacts(row: ImportRecovery, catalog: List<Exercise>) {
     val sets = PhoneRecovery.sets(row)
     val summary = SessionSummary(copy.session, sets, catalog)
     val duration = if (row.operationsOnly) "—" else copy.session.finishedAtMs?.let { finish -> runCatching { Math.subtractExact(finish, copy.session.startedAtMs) }.getOrNull()?.takeIf { it >= 0 }?.let { Readout.lasted(it).text() } } ?: "—"
-    val volume = summary.tonnageKg?.takeIf { it.isFinite() }?.let { stringResource(R.string.gym_phone_volume_kg, Readout.weight(it)) } ?: "—"
+    val volume = summary.tonnageKg?.takeIf { it.isFinite() }?.let { stringResource(R.string.gym_readout_kilograms, Readout.weight(it)) } ?: "—"
     Row(Modifier.fillMaxWidth().background(colors.surfaceContainer, MaterialTheme.shapes.large).padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         for ((value, caption) in listOf(duration to stringResource(R.string.gym_phone_duration), sets.size.toString() to stringResource(R.string.gym_phone_sets),
             volume to stringResource(R.string.gym_phone_volume))) Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {

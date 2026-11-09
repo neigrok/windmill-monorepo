@@ -334,7 +334,7 @@ class PlanningRestorationTests {
         ))
         assertEquals(expected, builderSheetSaver.restore(saved))
         assertEquals(TargetEntry.Reading.Scheme(listOf(SetTarget(8, -10.0))), expected.scheme.reading(null))
-        assertEquals(TargetEntry.Reading.Refused(1, TargetEntry.Field.Reps, Words.Message(R.string.gym_program_not_a_number)),
+        assertEquals(TargetEntry.Reading.Refused(1, TargetEntry.Field.Reps, Words.Message(R.string.gym_entry_not_a_number)),
             (builderSheetSaver.restore(saved) as BuilderSheet.Target).scheme.withCount("2").reading(null))
         assertNull(builderSheetSaver.restore("""{"type":"works.windmill.gym.ui.BuilderSheet.Target","exerciseId":"chin-up","rows":42,"sets":"1"}"""))
         assertNull(builderSheetSaver.restore("not json"))

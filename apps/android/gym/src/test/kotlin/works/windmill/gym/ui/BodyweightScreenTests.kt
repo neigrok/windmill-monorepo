@@ -128,7 +128,7 @@ class BodyweightScreenTests {
             compose.onNodeWithText("comma or point", substring = true).assertDoesNotExist()
             compose.onNodeWithText(Bodyweight.fullDay(today)).assertIsDisplayed()
             compose.onNodeWithContentDescription(string(R.string.gym_bodyweight_weight_field)).performTextInput("82,4")
-            compose.onNodeWithText(string(R.string.gym_bodyweight_unit)).assertIsDisplayed()
+            compose.onNodeWithText(string(R.string.gym_readout_kg)).assertIsDisplayed()
             compose.onNodeWithText(string(R.string.gym_bodyweight_save)).performClick()
 
             compose.runOnIdle {

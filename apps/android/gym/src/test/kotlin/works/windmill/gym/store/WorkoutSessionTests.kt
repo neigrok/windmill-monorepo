@@ -43,7 +43,6 @@ import works.windmill.gym.presentation.SetTarget
 import works.windmill.gym.presentation.TrainingSet
 import works.windmill.gym.presentation.WorkoutChange
 import works.windmill.platform.i18n.Words
-import works.windmill.platform.i18n.text
 import works.windmill.platform.storage.AtomicDocument
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.sync.core.ClockReading

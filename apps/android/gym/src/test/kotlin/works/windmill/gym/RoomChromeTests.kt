@@ -1,6 +1,5 @@
 package works.windmill.gym
 
-import works.windmill.gym.R
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue

@@ -18,8 +18,6 @@
     <string name="gym_session_on_plan">on plan</string>
     <string name="gym_session_set_delete_no_answer">the log didn’t answer — that set is still on the log</string>
     <string name="gym_session_sets_no_answer">the log didn’t answer — the saved sets are shown</string>
-    <string name="gym_session_volume_kg">%1$s kg</string>
-    <string name="gym_session_counts" translatable="false">%1$s · %2$s</string>
     <plurals name="gym_session_movements">
         <item quantity="one">%1$s movement</item>
         <item quantity="other">%1$s movements</item>

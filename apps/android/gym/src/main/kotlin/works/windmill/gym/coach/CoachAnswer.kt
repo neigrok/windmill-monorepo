@@ -127,14 +127,14 @@ internal fun CoachAnswer(
                                 Readout.equipment(it.equipment, if (it.loadCount == 1) R.string.gym_equipment_one_dumbbell else R.string.gym_equipment_two_dumbbells).text()
                             } ?: stringResource(R.string.gym_coach_draft_no_equipment)
                             val loads = when (exercise?.equipment) {
-                                "dumbbell" -> if (exercise.loadCount == 1) R.string.gym_coach_draft_kg else R.string.gym_coach_draft_kg_each
+                                "dumbbell" -> if (exercise.loadCount == 1) R.string.gym_readout_kilograms else R.string.gym_coach_draft_kg_each
                                 "bodyweight" -> if (entry.sets.any { (it.weightKg ?: 0.0) < 0 }) R.string.gym_coach_draft_kg_assisted else R.string.gym_coach_draft_kg_added
                                 "barbell" -> R.string.gym_coach_draft_kg_total
-                                else -> R.string.gym_coach_draft_kg
+                                else -> R.string.gym_readout_kilograms
                             }
                             val scheme = if (entry.sets.any { it.weightKg != null }) stringResource(loads, Readout.scheme(entry.sets).text()) else Readout.scheme(entry.sets).text()
                             val line = entry.restSeconds?.let { stringResource(R.string.gym_coach_draft_line_rest, scheme, equipment, it.toString()) }
-                                ?: stringResource(R.string.gym_coach_draft_line, scheme, equipment)
+                                ?: stringResource(PlatformR.string.platform_words_joined, scheme, equipment)
                             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Text(Readout.movement(entry.exerciseId, catalog), style = WindmillType.label, color = colors.onSurface)
                                 Text(line, style = WindmillType.supporting, color = colors.onSurfaceVariant)
@@ -269,7 +269,7 @@ private fun MadeMovementCard(movement: MadeMovement) {
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             MadeField(stringResource(R.string.gym_coach_movement_name), movement.name)
             MadeField(stringResource(R.string.gym_coach_movement_equipment), movement.equipment.text())
-            MadeField(stringResource(R.string.gym_coach_movement_step), stringResource(R.string.gym_coach_movement_step_kg, Readout.weight(movement.stepKg)))
+            MadeField(stringResource(R.string.gym_coach_movement_step), stringResource(R.string.gym_readout_kilograms, Readout.weight(movement.stepKg)))
         }
     }
 }

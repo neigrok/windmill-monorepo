@@ -31,7 +31,6 @@ import org.robolectric.annotation.SQLiteMode
 import works.windmill.domain.kit.Fields
 import works.windmill.domain.kit.Id
 import works.windmill.gym.coach.AnonymousCoachAccess
-import works.windmill.gym.coach.Ask
 import works.windmill.gym.coach.CoachChats
 import works.windmill.gym.coach.DraftOutcome
 import works.windmill.gym.coach.LocalCoach

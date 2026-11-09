@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import works.windmill.platform.R as PlatformR
 import works.windmill.platform.design.WindmillType
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -168,7 +169,7 @@ fun FixSheet(
             title = stringResource(R.string.gym_fix_title),
             onClose = onClose,
             closeEnabled = !busy,
-            subtitle = stringResource(R.string.gym_fix_subtitle, movement, position.toString()),
+            subtitle = stringResource(PlatformR.string.platform_words_joined, movement, position.toString()),
             subtitleSpoken = stringResource(R.string.gym_fix_subtitle_spoken, movement, position.toString()),
             subtitleIcon = exercise?.let { { EquipmentIcon(it.equipment, Modifier.size(16.dp), tint = colors.onSurfaceVariant) } },
         )

@@ -587,7 +587,7 @@ private fun BuildStep(
                             val sets = pluralString(R.plurals.gym_builder_history_sets, workout.setCount, workout.setCount.toString())
                             val movements = pluralString(R.plurals.gym_builder_history_movements, workout.exercises.size,
                                 workout.exercises.size.toString())
-                            Text(stringResource(R.string.gym_builder_history_counts, sets, movements),
+                            Text(stringResource(PlatformR.string.platform_words_joined, sets, movements),
                                 style = GymType.numeralDetail, color = colors.onSurfaceVariant)
                         }
                         if (index != history.lastIndex) HorizontalDivider(color = colors.outlineVariant)

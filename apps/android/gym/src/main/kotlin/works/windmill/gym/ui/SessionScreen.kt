@@ -464,9 +464,9 @@ private fun SessionHead(summary: SessionSummary) {
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Text(headLine(summary).text(), style = WindmillType.detail, color = colors.onSurfaceVariant)
         Text(stringResource(R.string.gym_session_volume), style = WindmillType.caption, color = colors.onSurfaceVariant)
-        Text(summary.tonnageKg?.let { stringResource(R.string.gym_session_volume_kg, Readout.weight(it)) } ?: "—",
+        Text(summary.tonnageKg?.let { stringResource(R.string.gym_readout_kilograms, Readout.weight(it)) } ?: "—",
             style = GymType.sessionVolume, color = colors.onSurface)
-        Text(Words.Message(R.string.gym_session_counts, listOf(Readout.sets(summary.workingSetCount ?: summary.setCount),
+        Text(Words.Message(PlatformR.string.platform_words_joined, listOf(Readout.sets(summary.workingSetCount ?: summary.setCount),
             Words.Counted(R.plurals.gym_session_movements, summary.exercises.size, listOf(summary.exercises.size.toString())))).text(), style = WindmillType.detail, color = colors.onSurfaceVariant)
         if (summary.plan != null) Text(stringResource(R.string.gym_session_plan_saved), style = WindmillType.caption, color = gymColors.inkFaint)
         if (summary.closedItself) Text(stringResource(R.string.gym_session_closed_itself), style = WindmillType.detailCompact, color = colors.onSurfaceVariant)

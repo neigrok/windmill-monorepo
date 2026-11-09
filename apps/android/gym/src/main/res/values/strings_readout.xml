@@ -77,4 +77,6 @@
     <!-- A clock time on the 12-hour clock, before noon and after: 9:05 AM, 7:30 PM. -->
     <string name="gym_readout_time_am">%1$s AM</string>
     <string name="gym_readout_time_pm">%1$s PM</string>
+    <string name="gym_readout_kg" translatable="false">kg</string>
+    <string name="gym_readout_kilograms" translatable="false">%1$s kg</string>
 </resources>

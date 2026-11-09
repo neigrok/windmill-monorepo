@@ -42,7 +42,6 @@ import works.windmill.platform.LocalShellActions
 import works.windmill.platform.ShellActions
 import works.windmill.gym.presentation.Note
 import works.windmill.gym.presentation.NoteWrite
-import works.windmill.gym.presentation.Notes
 import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.WithheldDelete

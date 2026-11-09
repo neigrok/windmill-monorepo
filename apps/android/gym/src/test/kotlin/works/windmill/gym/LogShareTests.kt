@@ -33,7 +33,6 @@ import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.store.TrainingRefused
 import works.windmill.gym.ui.GymMaterial
 import works.windmill.platform.i18n.Words
-import works.windmill.platform.i18n.text
 import works.windmill.platform.telemetry.LocalTelemetry
 import works.windmill.platform.telemetry.Telemetry
 

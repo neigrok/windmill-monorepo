@@ -3,7 +3,6 @@ package works.windmill.gym.coach
 import works.windmill.gym.spelled
 import works.windmill.gym.string
 import works.windmill.gym.R
-import works.windmill.gym.coach.turn.CoachTurnFault
 import works.windmill.gym.presentation.ProposalReceipt
 import works.windmill.gym.ui.*
 import androidx.compose.runtime.getValue

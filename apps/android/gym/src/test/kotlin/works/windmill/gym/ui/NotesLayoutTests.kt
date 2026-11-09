@@ -24,7 +24,6 @@ import org.robolectric.annotation.GraphicsMode
 import works.windmill.platform.R as PlatformR
 import works.windmill.gym.string
 import works.windmill.gym.R
-import works.windmill.gym.presentation.Notes
 import works.windmill.gym.store.*
 import works.windmill.platform.design.LocalWindmillDark
 

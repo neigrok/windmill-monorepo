@@ -360,7 +360,9 @@ resources too.
   ship it, so a Russian phone would read "21 set".
 - Placeholders are positional `%1$s`, given a value its own formatter already rendered. `%d` and `%f` format in the
   system's locale and print Arabic-Indic digits on an Arabic phone.
-- A sentence is one message: a value fills a placeholder, never a fragment beside it.
+- A sentence is one message: a value fills a placeholder, never a fragment beside it. Words said one after another
+  join through `platform_words_joined` ("%1$s · %2$s"); that join and the kg unit are `translatable="false"`. A word
+  that could read two ways ("Set", "max", "All") carries a translator note above it.
 - Dates are spelled three ways: `Readout` names weekdays, months and AM/PM from its own resources and writes the
   numbers itself; `LogReadout`, `Bodyweight.fullDay` and the finish sheet format with `Locale.ENGLISH`; Coach's
   timestamps, history days and reset notice, the plot's axis, the routine builder and account deletion's deadline
@@ -371,8 +373,9 @@ resources too.
   failure, a test tag, a pattern, an animation label or a `toString`; on a literal with a letter where a screen or a
   notification takes its copy, or handed to `Plain`; on `pluralStringResource` or `getQuantityString` outside
   `Words.kt`; on a literal manifest label; on a resource that formats a number with `%d` or `%f` (`onboarding_page`
-  aside); and on a message given a different number of arguments than its resource takes. Its `allowed` list names
-  the few literals that read like copy and are not. The app's lint fails on an unused resource.
+  aside); and on a call that names its resource but gives a different number of arguments than the resource takes.
+  Its `allowed` list names the few literals that read like copy and are not. The app's lint fails on an unused
+  resource.
 
 A second language ships as its `values-<language>/` folders, one more entry in `AppLanguage`'s `shipped` list, and
 `generateLocaleConfig` and `localeFilters` in the app's build, all in one change. Neither build setting comes earlier:

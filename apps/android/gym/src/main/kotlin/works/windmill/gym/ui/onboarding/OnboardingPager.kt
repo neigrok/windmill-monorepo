@@ -185,14 +185,15 @@ fun OnboardingPager(replay: Boolean, onExit: () -> Unit, reducedMotion: Boolean?
                 }
                 Spacer(Modifier.height(28.dp))
                 Column(Modifier.fillMaxWidth().semantics { isTraversalGroup = false }, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    kickers[page]?.let { kicker -> Row(Modifier.semantics(mergeDescendants = true) { traversalIndex = 1f },
-                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Box(Modifier.size(7.dp).background(when (page) {
-                            1 -> glimpse.clay; 2 -> glimpse.lamp; else -> accent
-                        }, CircleShape))
-                        Text(stringResource(kicker), color = colors.onSurfaceVariant,
-                            style = GymType.onboardingKicker)
-                    } }
+                    kickers[page]?.let { kicker ->
+                        Row(Modifier.semantics(mergeDescendants = true) { traversalIndex = 1f },
+                            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Box(Modifier.size(7.dp).background(when (page) {
+                                1 -> glimpse.clay; 2 -> glimpse.lamp; else -> accent
+                            }, CircleShape))
+                            Text(stringResource(kicker), color = colors.onSurfaceVariant, style = GymType.onboardingKicker)
+                        }
+                    }
                     Text(stringResource(titles[page]), color = colors.onSurface,
                         style = GymType.onboardingTitle,
                         modifier = Modifier.semantics { heading(); traversalIndex = 2f })

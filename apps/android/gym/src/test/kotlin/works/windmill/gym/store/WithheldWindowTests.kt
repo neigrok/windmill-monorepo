@@ -5,7 +5,6 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -22,7 +21,6 @@ import works.windmill.gym.presentation.Routine
 import works.windmill.gym.presentation.RoutineDraft
 import works.windmill.gym.presentation.TrainingSet
 import works.windmill.gym.presentation.WeighIn
-import works.windmill.platform.i18n.text
 import works.windmill.sync.engine.signIn
 
 @RunWith(RobolectricTestRunner::class)
