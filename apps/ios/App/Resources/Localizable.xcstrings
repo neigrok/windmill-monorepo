@@ -11,7 +11,8 @@
 
     },
     "%@" : {
-
+      "comment" : "Siri's words, already in the phone's language",
+      "shouldTranslate" : false
     },
     "%@ %@" : {
       "localizations" : {
@@ -19,6 +20,36 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "%1$@ %2$@"
+          }
+        }
+      }
+    },
+    "%@ %@ kg × %lld — %@." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ %2$@ kg × %3$lld — %4$@."
+          }
+        }
+      }
+    },
+    "%@ %lld reps at %@ kg — %@." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ %2$lld reps at %3$@ kg — %4$@."
+          }
+        }
+      }
+    },
+    "%@ It comes back on %@." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ It comes back on %2$@."
           }
         }
       }
@@ -37,13 +68,107 @@
     "%@ are deleted from this phone. You can’t undo this." : {
       "comment" : "2 workouts, 1 routine and 3 journal pages are deleted…"
     },
+    "%@ changed after this suggestion. Not applied." : {
+
+    },
+    "%@ changed after this suggestion. Nothing was applied." : {
+
+    },
     "%@ changed since you started." : {
 
     },
     "%@ doesn't open a Windmill account. Try the address you signed up with, or create one with Apple." : {
 
     },
+    "%@ e1RM %@ kg — %@." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ e1RM %2$@ kg — %3$@."
+          }
+        }
+      }
+    },
+    "%@ has a logged set now. Nothing changed." : {
+
+    },
+    "%@ is no longer in your program. Not applied." : {
+
+    },
+    "%@ kg" : {
+
+    },
     "%@ kg est" : {
+
+    },
+    "%@ kg est · %@ · %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ kg est · %2$@ · %3$@"
+          }
+        }
+      }
+    },
+    "%@ kg · %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ kg · %2$@"
+          }
+        }
+      }
+    },
+    "%@ kilograms" : {
+
+    },
+    "%@ kilograms, %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ kilograms, %2$@"
+          }
+        }
+      }
+    },
+    "%@ not sent. %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ not sent. %2$@"
+          }
+        }
+      }
+    },
+    "%@ not sent. Room for %lld sets — remove one." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ not sent. Room for %2$lld sets — remove one."
+          }
+        }
+      }
+    },
+    "%@ suggested this. Your past %@ workouts stay in the log." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ suggested this. Your past %2$@ workouts stay in the log."
+          }
+        }
+      }
+    },
+    "%@ under plan" : {
+
+    },
+    "%@ wasn’t changed. Try again." : {
 
     },
     "%@ · %@" : {
@@ -56,6 +181,9 @@
           }
         }
       }
+    },
+    "%@ · this workout" : {
+
     },
     "%@ – %@" : {
       "localizations" : {
@@ -78,11 +206,54 @@
         }
       }
     },
+    "%@, %@ to %@" : {
+      "comment" : "A field read aloud: Load, 82.5 kg to 90 kg",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@, %2$@ to %3$@"
+          }
+        }
+      }
+    },
+    "%@, %@, removed" : {
+      "comment" : "A field read aloud: Load, 82.5 kg, removed",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@, %2$@, removed"
+          }
+        }
+      }
+    },
     "%@, in progress" : {
 
     },
     "%@, read only" : {
       "comment" : "An earlier journal page, spoken: August 4, 2026, read only"
+    },
+    "%@, target %@" : {
+      "comment" : "Time since the last set, then the rest target",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@, target %2$@"
+          }
+        }
+      }
+    },
+    "%@: %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@: %2$@"
+          }
+        }
+      }
     },
     "%lld" : {
 
@@ -97,7 +268,6 @@
       "comment" : "How long before a passage was written, in years: 2 YR"
     },
     "%lld changes" : {
-      "comment" : "What a room holds when it holds nothing the sign-in question names",
       "localizations" : {
         "en" : {
           "variations" : {
@@ -360,6 +530,16 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "%lld of %lld bytes" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld of %2$lld bytes"
           }
         }
       }
@@ -631,6 +811,12 @@
         }
       }
     },
+    "%lld sets missed their workout — retry puts them back." : {
+
+    },
+    "%lld short" : {
+      "comment" : "A set that many reps short of its plan"
+    },
     "%lld suggested changes" : {
       "localizations" : {
         "en" : {
@@ -719,11 +905,11 @@
         }
       }
     },
-    "00" : {
+    "+%@ over plan" : {
 
     },
-    "1 new routine" : {
-
+    ", then " : {
+      "comment" : "Between two sets of a varied scheme read aloud"
     },
     "10 of 10 notes. Delete one to add another." : {
 
@@ -731,7 +917,28 @@
     "100" : {
 
     },
+    "12 weeks" : {
+
+    },
     "6-digit code" : {
+
+    },
+    "90 days" : {
+
+    },
+    "A connected tool" : {
+
+    },
+    "A movement is missing — fix its sets, then retry." : {
+
+    },
+    "A movement with a logged set stays in this workout." : {
+
+    },
+    "A newer suggestion replaced this one. Not applied." : {
+
+    },
+    "A newer suggestion replaced this one. Nothing was applied." : {
 
     },
     "A page a night." : {
@@ -740,7 +947,31 @@
     "A routine change waits for your Apply; the rest lands at once." : {
 
     },
+    "A routine is at least one movement." : {
+
+    },
+    "A set missed its workout — retry puts it back." : {
+
+    },
+    "A set note runs to %lld bytes." : {
+
+    },
+    "A shared workout is public for 30 days, until you end it." : {
+
+    },
+    "A static key" : {
+
+    },
+    "A weigh-in is not a forecast — today or earlier." : {
+
+    },
     "A workout read twice counts once." : {
+
+    },
+    "A zero target is no target." : {
+
+    },
+    "API key" : {
 
     },
     "APR" : {
@@ -750,6 +981,9 @@
       "comment" : "August in an echo's date stamp"
     },
     "About Windmill" : {
+
+    },
+    "Account" : {
 
     },
     "Add" : {
@@ -764,10 +998,40 @@
     "Add photo" : {
 
     },
+    "Add screenshot" : {
+
+    },
     "Add set" : {
 
     },
     "Add to your account?" : {
+
+    },
+    "Added" : {
+
+    },
+    "Adding" : {
+
+    },
+    "Adding %@ to your log." : {
+
+    },
+    "Adding it needs a connection." : {
+
+    },
+    "Adding…" : {
+
+    },
+    "Against last %@" : {
+
+    },
+    "Against last time" : {
+
+    },
+    "Against plan" : {
+
+    },
+    "All" : {
 
     },
     "All movements" : {
@@ -776,16 +1040,34 @@
     "Already added" : {
 
     },
+    "Already added once — discard this copy." : {
+
+    },
     "Already on Windmill?" : {
 
     },
+    "Another AI request is still in progress. Try again when it finishes." : {
+
+    },
     "Answer in progress" : {
+
+    },
+    "Answering" : {
 
     },
     "Answering on another device" : {
 
     },
     "Any agent you connect can read these too." : {
+
+    },
+    "Anyone still holding it gets nothing. You can make a new one whenever you like." : {
+
+    },
+    "Anyone who has this link can read this one workout. It stops working on %@, and revoking it kills it immediately." : {
+
+    },
+    "Anyone with the link can read this workout.\nIncludes set notes and effort.\nLinks last 30 days. End sharing anytime." : {
 
     },
     "Appearance" : {
@@ -809,7 +1091,22 @@
     "Apple's sign-in lasts 15 minutes, and this one ran out. Nothing was created." : {
 
     },
+    "Applied" : {
+
+    },
+    "Applied · %@" : {
+
+    },
+    "Applied · %@ · routine removed" : {
+
+    },
+    "Applied · this workout" : {
+
+    },
     "Apply" : {
+
+    },
+    "Applying…" : {
 
     },
     "Ask Coach" : {
@@ -833,6 +1130,12 @@
     "Backup is not connected in this build. Your work stays on this phone." : {
 
     },
+    "Barbell" : {
+
+    },
+    "Best e1RM" : {
+
+    },
     "Best in 12 weeks: %@, from %@." : {
       "localizations" : {
         "en" : {
@@ -843,13 +1146,28 @@
         }
       }
     },
+    "Between 20 and 400 kg" : {
+
+    },
     "Bodyweight" : {
+
+    },
+    "Bodyweight chart" : {
 
     },
     "Bringing it back" : {
 
     },
+    "Build" : {
+
+    },
+    "Build my own" : {
+
+    },
     "Build my routine" : {
+
+    },
+    "Cable" : {
 
     },
     "Can't complete sign-in right now. Your writing is still on this phone." : {
@@ -867,10 +1185,46 @@
     "Change" : {
 
     },
+    "Changed" : {
+
+    },
+    "Changes" : {
+
+    },
     "Changes you kept will return when you sign in to the same account." : {
 
     },
+    "Check my last workout." : {
+
+    },
+    "Check the values and try again." : {
+
+    },
+    "Check the weight and reps before logging." : {
+
+    },
+    "Check the workout's start and finish times." : {
+
+    },
+    "Check this target." : {
+
+    },
     "Check your email" : {
+
+    },
+    "Check your message or choose a different photo, then send again." : {
+
+    },
+    "Choose a supported photo." : {
+
+    },
+    "Choose equipment." : {
+
+    },
+    "Choose one or two dumbbells." : {
+
+    },
+    "Choose today or an earlier day." : {
 
     },
     "Choose your first movement" : {
@@ -885,6 +1239,9 @@
     "Closed" : {
 
     },
+    "Closed after four hours without a set" : {
+
+    },
     "Closes this set." : {
 
     },
@@ -894,16 +1251,70 @@
     "Coach can read your weigh-ins but cannot change them." : {
 
     },
+    "Coach can’t plan with that equipment yet. Your draft is kept." : {
+
+    },
+    "Coach couldn’t answer that. Your draft is kept." : {
+
+    },
+    "Coach couldn’t finish. Ask again." : {
+
+    },
+    "Coach couldn’t help with that request. Edit your message and try again." : {
+
+    },
+    "Coach couldn’t make complete routines. Your draft is kept." : {
+
+    },
     "Coach couldn’t read this phone’s AI access. Try again after unlocking your phone." : {
 
     },
     "Coach couldn’t save this phone’s AI access. Try again." : {
 
     },
+    "Coach declined to answer this." : {
+
+    },
+    "Coach didn’t answer. Try again in a moment" : {
+
+    },
+    "Coach is answering another message. Try again when it finishes." : {
+
+    },
+    "Coach is paused for everyone this month." : {
+
+    },
+    "Coach is stopped on this phone. Stopping it on the server needs a connection." : {
+
+    },
     "Coach is thinking" : {
 
     },
     "Coach is unavailable" : {
+
+    },
+    "Coach needs a clearer program. Add the movements and sets, or a clearer photo." : {
+
+    },
+    "Coach needs a connection." : {
+
+    },
+    "Coach setup is unavailable right now. Your draft is kept." : {
+
+    },
+    "Coach’s AI allowance is unavailable right now." : {
+
+    },
+    "Coach’s shared free AI capacity is unavailable for this month. Signing in does not bypass this limit." : {
+
+    },
+    "Coach’s shared free AI capacity is unavailable for today. Signing in does not bypass this limit." : {
+
+    },
+    "Comparison" : {
+
+    },
+    "Connect a tool" : {
 
     },
     "Connect to the internet to read your connections." : {
@@ -927,7 +1338,16 @@
     "Continue with email" : {
 
     },
+    "Conversation" : {
+
+    },
+    "Copied" : {
+
+    },
     "Copy answer" : {
+
+    },
+    "Copy link" : {
 
     },
     "Copy question" : {
@@ -987,6 +1407,9 @@
     "Couldn’t read your connections." : {
 
     },
+    "Couldn’t save the routine. Try again." : {
+
+    },
     "Create account" : {
 
     },
@@ -1018,6 +1441,9 @@
         }
       }
     },
+    "Cut short. Ask Coach to go on." : {
+
+    },
     "DEC" : {
       "comment" : "December in an echo's date stamp"
     },
@@ -1030,10 +1456,16 @@
     "Default" : {
 
     },
+    "Delete" : {
+
+    },
     "Delete account" : {
 
     },
     "Delete conversation" : {
+
+    },
+    "Delete is approved on its own, and a discard is permanent." : {
 
     },
     "Delete note" : {
@@ -1043,6 +1475,9 @@
 
     },
     "Delete set" : {
+
+    },
+    "Delete this conversation?" : {
 
     },
     "Delete weigh-in" : {
@@ -1091,16 +1526,25 @@
     "Discard routine changes?" : {
 
     },
+    "Discard this workout?" : {
+
+    },
     "Discard workout" : {
 
     },
     "Dismiss" : {
 
     },
+    "Dismiss message" : {
+
+    },
     "Done" : {
 
     },
     "Done writing" : {
+
+    },
+    "Draft" : {
 
     },
     "Draft kept on this phone" : {
@@ -1112,13 +1556,19 @@
     "Dumbbells lifted" : {
 
     },
+    "Duration" : {
+
+    },
     "EXAMPLE" : {
 
     },
-    "Earlier %@" : {
+    "Earlier records" : {
 
     },
-    "Earlier records" : {
+    "Earlier weigh-in" : {
+
+    },
+    "Earlier workout" : {
 
     },
     "Edit" : {
@@ -1145,16 +1595,43 @@
     "Email address" : {
 
     },
+    "End a connection under Settings → Connected tools; a key under API keys." : {
+
+    },
+    "Ended early." : {
+
+    },
     "Energy" : {
 
     },
     "Enlarge photo" : {
 
     },
+    "Enter 0 or more, or cancel to keep %@" : {
+
+    },
+    "Enter the added weight, or a negative number for help from a band. 0 means bodyweight only. Volume counts only the added weight." : {
+
+    },
+    "Enter the dumbbell’s weight. Volume counts one dumbbell." : {
+
+    },
+    "Enter the external weight you lift." : {
+
+    },
+    "Enter the total weight, including the bar." : {
+
+    },
+    "Enter the weight of one dumbbell. Volume counts both." : {
+
+    },
     "Equipment" : {
 
     },
     "Estimated strength" : {
+
+    },
+    "Estimated strength chart" : {
 
     },
     "Every device signs out, and connected tools lose access, right away." : {
@@ -1184,7 +1661,19 @@
     "Finish" : {
 
     },
+    "Finish is saved on this phone. It will be confirmed when a connection is available." : {
+
+    },
+    "Finish needs a connection — keep logging, or hide the workout." : {
+
+    },
+    "Finish needs the update — keep logging, or hide the workout." : {
+
+    },
     "Finish signing in" : {
+
+    },
+    "Finish the open workout first." : {
 
     },
     "Finished" : {
@@ -1208,7 +1697,13 @@
     "For 30 days, you can sign in again to bring it all back. After that, it is deleted for good." : {
 
     },
+    "From %@" : {
+      "comment" : "Who proposed a change: From Coach"
+    },
     "From your journal" : {
+
+    },
+    "Get a link" : {
 
     },
     "Get started" : {
@@ -1217,16 +1712,49 @@
     "Get the update" : {
 
     },
+    "Goals" : {
+
+    },
     "Got it" : {
 
     },
     "Gym" : {
 
     },
+    "Gym could not accept this change. Try again." : {
+
+    },
+    "Gym could not be read from this phone. Try again." : {
+
+    },
+    "Gym could not complete this request. Try again." : {
+
+    },
+    "Gym could not dismiss this message. Try again." : {
+
+    },
+    "Gym could not keep pending changes. Try again." : {
+
+    },
+    "Gym could not open this request." : {
+
+    },
+    "Gym could not restore this workout. Try again." : {
+
+    },
+    "Gym could not save this change. Try again." : {
+
+    },
     "Have a written program? An agent can build it — sign in first." : {
 
     },
     "Have a written program? Ask Coach to build it into a routine." : {
+
+    },
+    "Heaviest" : {
+
+    },
+    "Help me turn my written program into a routine." : {
 
     },
     "Hi, I’m Coach. I can help you with:" : {
@@ -1241,13 +1769,25 @@
     "History" : {
 
     },
+    "How I want to be talked to" : {
+
+    },
     "How this works" : {
 
     },
     "How you sign in" : {
 
     },
+    "I save important facts, like an old injury." : {
+
+    },
     "In this app" : {
+
+    },
+    "Interrupted" : {
+
+    },
+    "Interrupted. What arrived is kept." : {
 
     },
     "It is deleted from this phone. You can’t undo this." : {
@@ -1260,6 +1800,9 @@
 
     },
     "It works once and lasts 15 minutes." : {
+
+    },
+    "Its times don’t line up — fix the times." : {
 
     },
     "JAN" : {
@@ -1289,6 +1832,9 @@
     "Keep a training log" : {
 
     },
+    "Keep as finished" : {
+
+    },
     "Keep editing" : {
 
     },
@@ -1307,10 +1853,22 @@
     "Keep your routines" : {
 
     },
+    "Kettlebell" : {
+
+    },
     "Knots & lines" : {
 
     },
-    "Later %@" : {
+    "Last done" : {
+
+    },
+    "Last time" : {
+
+    },
+    "Later weigh-in" : {
+
+    },
+    "Later workout" : {
 
     },
     "Learn to sail" : {
@@ -1326,6 +1884,9 @@
 
     },
     "Load, %@" : {
+
+    },
+    "Load, 0 or more." : {
 
     },
     "Log %@" : {
@@ -1371,6 +1932,26 @@
     },
     "Log today’s sets" : {
 
+    },
+    "Logged %@ kg × %lld · %@." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Logged %1$@ kg × %2$lld · %3$@."
+          }
+        }
+      }
+    },
+    "Logged %@ kg × %lld." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Logged %1$@ kg × %2$lld."
+          }
+        }
+      }
     },
     "Logged %@ kilograms, %lld reps, %@." : {
       "localizations" : {
@@ -1442,6 +2023,9 @@
     "MAY" : {
       "comment" : "May in an echo's date stamp"
     },
+    "Machine" : {
+
+    },
     "Made a movement" : {
 
     },
@@ -1455,6 +2039,12 @@
 
     },
     "Matches" : {
+
+    },
+    "Max" : {
+
+    },
+    "Max reps" : {
 
     },
     "Missing movement" : {
@@ -1475,10 +2065,16 @@
     "Move up" : {
 
     },
+    "Moved" : {
+
+    },
     "Movement" : {
 
     },
     "Movement options" : {
+
+    },
+    "Movement unavailable" : {
 
     },
     "Movements" : {
@@ -1491,6 +2087,12 @@
 
     },
     "Name and equipment apply everywhere. Targets stay in this routine." : {
+
+    },
+    "Name it to save it." : {
+
+    },
+    "Needs you" : {
 
     },
     "New best" : {
@@ -1512,6 +2114,9 @@
 
     },
     "Next" : {
+
+    },
+    "Next movement" : {
 
     },
     "No account at this email" : {
@@ -1542,19 +2147,58 @@
         }
       }
     },
+    "No connection. Not applied." : {
+
+    },
+    "No connection. Your question is kept here." : {
+
+    },
+    "No conversations yet.\nWhat you ask Coach on this phone is listed here." : {
+
+    },
     "No eligible estimate in this window." : {
+
+    },
+    "No finished workouts yet" : {
 
     },
     "No movement by that name." : {
 
     },
+    "No points" : {
+
+    },
     "No routines yet" : {
+
+    },
+    "No sets in this workout." : {
+
+    },
+    "No tool can apply a proposal or edit a logged set." : {
 
     },
     "No weigh-ins yet" : {
 
     },
+    "No workout is open." : {
+
+    },
+    "No workouts yet" : {
+
+    },
+    "Not applied" : {
+
+    },
+    "Not applied." : {
+
+    },
     "Not backed up yet" : {
+
+    },
+    "Not finished" : {
+
+    },
+    "Not on your log yet — retry to add it." : {
 
     },
     "Not rated" : {
@@ -1575,7 +2219,13 @@
     "Notes" : {
 
     },
+    "Notes live with your account, so they need you signed in." : {
+
+    },
     "Nothing logged yet" : {
+
+    },
+    "Nothing logged. Opening Windmill." : {
 
     },
     "Notice what happened" : {
@@ -1596,16 +2246,28 @@
     "On this phone" : {
 
     },
+    "On this phone, not yet on your account." : {
+
+    },
     "One" : {
+
+    },
+    "One URL pasted into your tool. Your browser opens once to approve." : {
 
     },
     "One account keeps them together. You can start without one." : {
 
     },
+    "One decimal point only." : {
+
+    },
+    "One dumbbell" : {
+
+    },
     "Only on this phone" : {
 
     },
-    "Only on this phone · " : {
+    "Only on this phone · %@" : {
 
     },
     "Only on this phone · Keep it" : {
@@ -1615,9 +2277,15 @@
 
     },
     "Open" : {
-
+      "comment" : "A target of no sets: an open plan"
     },
     "Open plan" : {
+
+    },
+    "Open routine · %@" : {
+
+    },
+    "Open since %@" : {
 
     },
     "Open workout" : {
@@ -1650,6 +2318,21 @@
     "Opens this set." : {
 
     },
+    "Other" : {
+
+    },
+    "Out of date" : {
+
+    },
+    "Over 200 sets · remove %lld." : {
+
+    },
+    "Over 200 sets — remove some, then retry." : {
+
+    },
+    "Overlaps another workout — fix its times." : {
+
+    },
     "Owner" : {
 
     },
@@ -1668,10 +2351,16 @@
     "Photo" : {
 
     },
+    "Photo conversation" : {
+
+    },
     "Photo unavailable" : {
 
     },
     "Pick up where you left off" : {
+
+    },
+    "Plan" : {
 
     },
     "Plan changes" : {
@@ -1683,7 +2372,13 @@
     "Preparing photo" : {
 
     },
+    "Proposal" : {
+
+    },
     "RPE %@" : {
+
+    },
+    "Read" : {
 
     },
     "Read %lld workouts" : {
@@ -1714,10 +2409,19 @@
     "Read the wind" : {
 
     },
+    "Read your movement history" : {
+
+    },
+    "Reconnecting…" : {
+
+    },
     "Reefing" : {
 
     },
     "Refresh" : {
+
+    },
+    "Refused by the log — fix the workout, then retry." : {
 
     },
     "Reject" : {
@@ -1726,13 +2430,22 @@
     "Rejected" : {
 
     },
+    "Rejected · %@" : {
+
+    },
     "Remove" : {
+
+    },
+    "Remove %@?" : {
 
     },
     "Remove Apple" : {
 
     },
     "Remove Apple?" : {
+
+    },
+    "Remove a routine" : {
 
     },
     "Remove from workout" : {
@@ -1742,6 +2455,18 @@
 
     },
     "Remove photo" : {
+
+    },
+    "Remove routine" : {
+
+    },
+    "Removed" : {
+
+    },
+    "Removing…" : {
+
+    },
+    "Renamed" : {
 
     },
     "Repetitions" : {
@@ -1762,6 +2487,9 @@
     "Rest" : {
 
     },
+    "Retry" : {
+
+    },
     "Revoke the link" : {
 
     },
@@ -1772,6 +2500,12 @@
 
     },
     "Room" : {
+
+    },
+    "Routine" : {
+
+    },
+    "Routine created" : {
 
     },
     "Routine name" : {
@@ -1792,10 +2526,19 @@
     "SIGNED IN WITH EMAIL" : {
 
     },
+    "Save" : {
+
+    },
+    "Save and retry" : {
+
+    },
     "Save to %@" : {
 
     },
     "Save your work before signing in. Try again." : {
+
+    },
+    "Saved a note" : {
 
     },
     "Saves as you go." : {
@@ -1810,11 +2553,27 @@
     "Send code" : {
 
     },
+    "Sending…" : {
+
+    },
     "Sent to %@" : {
 
     },
     "Set" : {
-
+      "comment" : "A tile's label under a count of one set"
+    },
+    "Set %@" : {
+      "comment" : "A set by its place: Set 3"
+    },
+    "Set %@, current, %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Set %1$@, current, %2$@"
+          }
+        }
+      }
     },
     "Set %@, logged, %@ kilograms, %lld reps" : {
       "localizations" : {
@@ -1880,6 +2639,16 @@
         }
       }
     },
+    "Set %@, planned, %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Set %1$@, planned, %2$@"
+          }
+        }
+      }
+    },
     "Set %lld" : {
       "comment" : "The set's place past the plan, or without one: Set 5"
     },
@@ -1907,6 +2676,9 @@
     "Set note" : {
 
     },
+    "Sets" : {
+      "comment" : "A tile's label under any other count of sets"
+    },
     "Sets: %@" : {
 
     },
@@ -1919,7 +2691,22 @@
     "Share with Coach" : {
 
     },
+    "Sharing needs a connection. The link is still live." : {
+
+    },
+    "Sharing needs a connection. The link wasn’t made." : {
+
+    },
+    "Sharing needs your account. Sign in first." : {
+
+    },
+    "Show less" : {
+
+    },
     "Sign in" : {
+
+    },
+    "Sign in again to add it." : {
 
     },
     "Sign in again to delete your account." : {
@@ -1928,13 +2715,28 @@
     "Sign in before %@ to bring it back." : {
       "comment" : "The account's last day back: Sign in before Dec 8 to bring it back."
     },
+    "Sign in first" : {
+
+    },
     "Sign in to continue" : {
+
+    },
+    "Sign in to continue." : {
+
+    },
+    "Sign in to review this proposal." : {
+
+    },
+    "Sign in to share" : {
 
     },
     "Sign in to the same account to resume backup. Your pages stay with this account." : {
 
     },
     "Sign in to the same account. Your writing stays on this phone." : {
+
+    },
+    "Sign in to use this part of Gym." : {
 
     },
     "Sign in with email" : {
@@ -1979,6 +2781,9 @@
     "Squat" : {
 
     },
+    "Start" : {
+
+    },
     "Start %@" : {
       "comment" : "A Home Screen quick action: Start Push day"
     },
@@ -1991,10 +2796,25 @@
     "Started" : {
 
     },
+    "Started %@" : {
+
+    },
+    "Step" : {
+      "comment" : "A movement's load step"
+    },
     "Still syncing" : {
 
     },
     "Stop response" : {
+
+    },
+    "Stopped" : {
+
+    },
+    "Stopped." : {
+
+    },
+    "Swap %@" : {
 
     },
     "Swap movement" : {
@@ -2018,25 +2838,118 @@
     "That code didn't work. Check the digits, or send a fresh one." : {
 
     },
+    "That is not a number yet." : {
+
+    },
+    "That movement already has a logged set." : {
+
+    },
+    "That movement changed. Review its name." : {
+
+    },
+    "That photo is unavailable. Remove it and choose it again." : {
+
+    },
     "That proposal is gone." : {
+
+    },
+    "That routine can’t be found. No workout was started." : {
 
     },
     "That routine is no longer in your program." : {
 
     },
+    "That set is no longer here." : {
+
+    },
+    "That weigh-in could not be deleted. Try again." : {
+
+    },
+    "That weigh-in could not be read. Try again." : {
+
+    },
+    "That weigh-in could not be saved." : {
+
+    },
+    "That weigh-in could not be saved. Try again." : {
+
+    },
+    "The account changed while editing. Open the routine again." : {
+
+    },
+    "The account changed while renaming." : {
+
+    },
+    "The account changed. Open this again." : {
+
+    },
     "The account changed. Open this note again." : {
+
+    },
+    "The browser couldn’t be opened. Try again." : {
+
+    },
+    "The catalog didn’t load. It comes back when you have signal." : {
 
     },
     "The first set you log lands here." : {
 
     },
+    "The link is dead" : {
+
+    },
+    "The link is live" : {
+
+    },
     "The log" : {
+
+    },
+    "The log didn’t answer — that set wasn’t changed." : {
+
+    },
+    "The log didn’t answer. The workout is saved." : {
+
+    },
+    "The movement wasn’t created. Try again." : {
+
+    },
+    "The rack could not be changed. Try again." : {
+
+    },
+    "The rest of your AI allowance is held by a request still in progress." : {
+
+    },
+    "The routine" : {
 
     },
     "The six" : {
 
     },
+    "The stop request didn’t reach Coach. Try again." : {
+
+    },
     "The work changed. Choose again for the current counts." : {
+
+    },
+    "The workout changed. Check the current set" : {
+
+    },
+    "The workout changed. Check the current set." : {
+
+    },
+    "The workout could not be read. Check the current set." : {
+
+    },
+    "The workout could not be read. Try Finish again." : {
+
+    },
+    "The workout is saved. Its movement order could not be read. Try again." : {
+
+    },
+    "There is room for %lld. Remove one before adding another." : {
+
+    },
+    "These routines couldn’t be saved. Your response is kept; try again." : {
 
     },
     "They are deleted from this phone. You can’t undo this." : {
@@ -2046,6 +2959,15 @@
 
     },
     "This Apple ID doesn't open a Windmill account yet. If you have one, confirm its email and Apple will open it too." : {
+
+    },
+    "This Windmill does not have Coach. You can still read your log." : {
+
+    },
+    "This change already exists." : {
+
+    },
+    "This changed elsewhere. Review the latest version." : {
 
     },
     "This deletes the workout and its %lld sets. You can’t undo this." : {
@@ -2070,13 +2992,31 @@
         }
       }
     },
+    "This deletes the workout. You can’t undo this." : {
+
+    },
     "This deletes your Windmill account and its copy in the cloud: your roadmaps, journal pages and gym log." : {
+
+    },
+    "This draft is no longer available." : {
+
+    },
+    "This is no longer available." : {
+
+    },
+    "This movement is no longer available." : {
 
     },
     "This note runs past 500 bytes. Shorten it to save." : {
 
     },
     "This page couldn't be saved. Your writing stays in the editor." : {
+
+    },
+    "This permanently removes the copy saved on this phone." : {
+
+    },
+    "This phone can’t ask Coach signed out any more. Sign in to continue." : {
 
     },
     "This phone has %@ from before you signed in. Your account already has %@. Add it, or discard it from this phone." : {
@@ -2101,13 +3041,64 @@
         }
       }
     },
+    "This phone is linked to an account. Sign in to ask Coach." : {
+
+    },
+    "This phone’s AI access belongs to an account." : {
+
+    },
+    "This phone’s AI access couldn’t be verified. Your draft is kept." : {
+
+    },
+    "This proposal has already been answered." : {
+
+    },
+    "This request needs more AI capacity than your remaining allowance." : {
+
+    },
+    "This response has expired. Your draft is still on this phone." : {
+
+    },
+    "This routine could not be deleted. Try again." : {
+
+    },
+    "This routine could not be saved. Try again." : {
+
+    },
+    "This suggestion is out of date. Not applied." : {
+
+    },
+    "This suggestion is out of date. Nothing was applied." : {
+
+    },
+    "This suggestion was already answered. Not applied." : {
+
+    },
+    "This version can’t ask Coach any more. Update Windmill to continue." : {
+
+    },
     "This workout" : {
+
+    },
+    "This workout changed after this suggestion. Nothing was applied." : {
+
+    },
+    "This workout changed elsewhere. Review the latest version." : {
+
+    },
+    "This workout has already finished." : {
+
+    },
+    "This workout has finished. Nothing was applied." : {
 
     },
     "This workout is no longer here" : {
 
     },
     "This workout is no longer open" : {
+
+    },
+    "This workout overlaps another workout." : {
 
     },
     "Three ways to grow." : {
@@ -2122,6 +3113,9 @@
     "To keep a copy, export it first at windmill.works." : {
 
     },
+    "Today" : {
+
+    },
     "Today's page" : {
 
     },
@@ -2131,10 +3125,29 @@
     "Tonight" : {
 
     },
+    "Too long by %@ characters. The limit is %@." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Too long by %1$@ characters. The limit is %2$@."
+          }
+        }
+      }
+    },
+    "Too many requests from this connection. Your draft is kept; try again later." : {
+
+    },
+    "Trained every week of %@" : {
+
+    },
     "Try again" : {
 
     },
     "Try another email" : {
+
+    },
+    "Turn this program into routines." : {
 
     },
     "Two" : {
@@ -2146,7 +3159,13 @@
     "Type your email to confirm" : {
 
     },
+    "Update" : {
+
+    },
     "Update Windmill to keep syncing. Your work is saved on this phone." : {
+
+    },
+    "Update Windmill to keep using Gym." : {
 
     },
     "Update Windmill to sign in. Your work is saved on this phone." : {
@@ -2155,13 +3174,25 @@
     "Update required" : {
 
     },
+    "Use %lld characters or fewer." : {
+
+    },
+    "Use %lld movements or fewer." : {
+
+    },
     "Use a sign-in link" : {
+
+    },
+    "Use date" : {
 
     },
     "Use email instead" : {
 
     },
     "Use my account" : {
+
+    },
+    "Use your own AI agent" : {
 
     },
     "Useful" : {
@@ -2176,7 +3207,13 @@
     "Visible dates" : {
 
     },
+    "Volume" : {
+
+    },
     "WINDMILL" : {
+
+    },
+    "Wait for the account change to finish." : {
 
     },
     "Walked before work. Slept better than the week before." : {
@@ -2191,6 +3228,9 @@
     "Weigh in from the log." : {
 
     },
+    "Weigh-in" : {
+
+    },
     "Weigh-in, %@" : {
 
     },
@@ -2198,6 +3238,19 @@
 
     },
     "Weight in kilograms" : {
+
+    },
+    "Weight, %@ %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Weight, %1$@ %2$@"
+          }
+        }
+      }
+    },
+    "Well done." : {
 
     },
     "We’ll send a code to confirm it’s yours." : {
@@ -2209,13 +3262,35 @@
     "What Coach used, in order" : {
 
     },
+    "What I am training for" : {
+
+    },
     "Where to start?" : {
 
+    },
+    "Whole reps, %lld–%lld." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Whole reps, %1$lld–%2$lld."
+          }
+        }
+      }
     },
     "Windmill" : {
 
     },
+    "Window" : {
+
+    },
     "Workout" : {
+
+    },
+    "Workout is unavailable." : {
+
+    },
+    "Workout options" : {
 
     },
     "Workout time" : {
@@ -2242,10 +3317,16 @@
     "YESTERDAY" : {
 
     },
+    "Yesterday" : {
+
+    },
     "You" : {
 
     },
     "You and settings" : {
+
+    },
+    "You can ask again in a minute." : {
 
     },
     "You can ask again in about %lld hours." : {
@@ -2292,6 +3373,31 @@
         }
       }
     },
+    "You can ask again later." : {
+
+    },
+    "You can use Coach again on %@ at %@." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "You can use Coach again on %1$@ at %2$@."
+          }
+        }
+      }
+    },
+    "You can’t undo this." : {
+
+    },
+    "You have used all of your AI allowance." : {
+
+    },
+    "You logged %@ since this suggestion. Nothing was applied." : {
+
+    },
+    "You logged a movement since this suggestion. Nothing was applied." : {
+
+    },
     "You'll sign in with %@ instead. Apple won't open this account." : {
 
     },
@@ -2301,13 +3407,43 @@
     "Your Windmill email" : {
 
     },
+    "Your account has an open workout — keep this one as finished." : {
+
+    },
+    "Your account is changing. Your question is kept here." : {
+
+    },
     "Your account is deleted" : {
+
+    },
+    "Your choice couldn’t be saved. Try again." : {
 
     },
     "Your choices are kept. Try Add again to finish signing in." : {
 
     },
+    "Your conversation couldn’t be kept. Try again." : {
+
+    },
+    "Your conversation couldn’t be opened. Try again." : {
+
+    },
+    "Your deleted conversation couldn’t be cleared. Try again." : {
+
+    },
+    "Your draft couldn’t be opened. Try again." : {
+
+    },
+    "Your draft couldn’t be read." : {
+
+    },
+    "Your draft couldn’t be saved. Try again." : {
+
+    },
     "Your draft is kept on this phone. Shorten this page before it can be backed up." : {
+
+    },
+    "Your full training history needs a connection to finish syncing." : {
 
     },
     "Your full training record needs a connection to finish syncing." : {
@@ -2322,10 +3458,19 @@
     "Your journal and training, no account needed." : {
 
     },
+    "Your log is still arriving on this phone. Ask again in a moment." : {
+
+    },
     "Your log may still be syncing, or this routine may have been removed. Refresh to check." : {
 
     },
     "Your log, read by ChatGPT or Claude." : {
+
+    },
+    "Your message couldn’t be saved. Try again." : {
+
+    },
+    "Your new conversation couldn’t be opened. Try again." : {
 
     },
     "Your pages and log come back to this phone." : {
@@ -2334,7 +3479,22 @@
     "Your pages and log stay in your account and leave this phone." : {
 
     },
+    "Your plan has no funded AI allowance for this period." : {
+
+    },
+    "Your routines are saved. Check the response to restore their links." : {
+
+    },
+    "Your routines could not be read. Try again." : {
+
+    },
+    "Your routines couldn’t be saved. The response is kept on this phone; try again." : {
+
+    },
     "Your routines live only on this phone. Sign in to back them up and open them on the web. This Coach conversation and photo stay on this phone." : {
+
+    },
+    "Your setup choice couldn’t be saved. Try again." : {
 
     },
     "Your sign-in finishes once Windmill is updated." : {
@@ -2343,17 +3503,53 @@
     "Your sign-in link" : {
 
     },
+    "Your signed-out sets are kept on this phone. %@" : {
+
+    },
+    "Your signed-out workout is kept on this phone. %@" : {
+
+    },
     "Your workout could not be read." : {
 
     },
     "Your writing is still on this phone. This page hasn't been backed up." : {
 
     },
+    "a connected tool" : {
+
+    },
+    "a program from a screenshot or your own words." : {
+
+    },
+    "a removal" : {
+
+    },
+    "ask me, and I suggest changes to your routines." : {
+
+    },
+    "bodyweight" : {
+      "comment" : "A bodyweight movement's load with nothing added"
+    },
+    "check the movement name and equipment" : {
+
+    },
     "collapsed" : {
+
+    },
+    "delete" : {
+      "comment" : "A connected tool may delete from the log"
+    },
+    "discards a workout · ends a share" : {
 
     },
     "expanded" : {
 
+    },
+    "five short" : {
+      "comment" : "A set five reps short of its plan"
+    },
+    "four short" : {
+      "comment" : "A set four reps short of its plan"
     },
     "from your voice note" : {
       "comment" : "Where an echoed passage came from"
@@ -2362,41 +3558,171 @@
       "comment" : "What the account already has, in the sign-in question"
     },
     "kg" : {
-
+      "comment" : "The kilogram unit"
     },
     "kg × 5" : {
 
     },
-    "no %@ · %@ – %@" : {
+    "last %@ · %@" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "no %1$@ · %2$@ – %3$@"
+            "value" : "last %1$@ · %2$@"
           }
         }
       }
     },
+    "logs sets · saves notes · adds routines · shares workouts · proposes changes" : {
+
+    },
+    "max reps" : {
+
+    },
+    "never trained" : {
+
+    },
+    "next time" : {
+
+    },
+    "no load yet" : {
+
+    },
     "no weigh-in in the last 90 days" : {
+
+    },
+    "no weigh-in · %@ – %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "no weigh-in · %1$@ – %2$@"
+          }
+        }
+      }
+    },
+    "no workout · %@ – %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "no workout · %1$@ – %2$@"
+          }
+        }
+      }
+    },
+    "not in plan" : {
+
+    },
+    "not started" : {
+
+    },
+    "now" : {
+      "comment" : "A change for the workout under way"
+    },
+    "one short" : {
+      "comment" : "A set one rep short of its plan"
+    },
+    "open target" : {
 
     },
     "opens in your browser" : {
 
     },
+    "past %@ from %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "past %1$@ from %2$@"
+          }
+        }
+      }
+    },
+    "plan %@" : {
+      "comment" : "What a movement's plan holds: plan 3 × 5, or plan open"
+    },
+    "planned %@ — did %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "planned %1$@ — did %2$@"
+          }
+        }
+      }
+    },
+    "read" : {
+      "comment" : "A connected tool may read the log"
+    },
     "reps" : {
+
+    },
+    "rest %@" : {
 
     },
     "saved" : {
 
     },
+    "sets, workouts, routines, records, notes, weigh-ins" : {
+
+    },
+    "sign in, and I can also save notes and suggest changes to your routines." : {
+
+    },
+    "since %@" : {
+
+    },
     "something you copied down" : {
       "comment" : "Where an echoed passage came from"
+    },
+    "tell me your goals, and I will plan for them." : {
+
+    },
+    "the account changed while creating" : {
+
+    },
+    "the log didn’t answer — the link is still live" : {
+
+    },
+    "the log didn’t answer — the link wasn’t made" : {
+
+    },
+    "the whole series · %@" : {
+
+    },
+    "this workout" : {
+
+    },
+    "three short" : {
+      "comment" : "A set three reps short of its plan"
+    },
+    "today" : {
+      "comment" : "A day inside a sentence"
+    },
+    "trained %@" : {
+
     },
     "training" : {
       "comment" : "What the account already has, in the sign-in question"
     },
     "training and journal pages" : {
       "comment" : "What the account already has, in the sign-in question"
+    },
+    "two short" : {
+      "comment" : "A set two reps short of its plan"
+    },
+    "was “%@”" : {
+      "comment" : "A movement's former name"
+    },
+    "whole account" : {
+
+    },
+    "write" : {
+      "comment" : "A connected tool may write to the log"
+    },
+    "yesterday" : {
+      "comment" : "A day inside a sentence"
     },
     "•" : {
 
