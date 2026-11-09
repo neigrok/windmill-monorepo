@@ -83,6 +83,9 @@ targets:
       - name: Check theme colour literals
         basedOnDependencyAnalysis: false
         script: python3 "$SRCROOT/Tools/check_theme_literals.py"
+      - name: Check copy literals
+        basedOnDependencyAnalysis: false
+        script: python3 "$SRCROOT/Tools/check_copy_literals.py"
       - name: Prepare build metadata and capabilities
         basedOnDependencyAnalysis: false
         script: python3 "$SRCROOT/Tools/prepare_build.py"
@@ -129,6 +132,9 @@ targets:
       - name: Check theme colour literals
         basedOnDependencyAnalysis: false
         script: python3 "$SRCROOT/Tools/check_theme_literals.py"
+      - name: Check copy literals
+        basedOnDependencyAnalysis: false
+        script: python3 "$SRCROOT/Tools/check_copy_literals.py"
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: works.windmill.app.workout-activity

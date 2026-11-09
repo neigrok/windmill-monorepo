@@ -10,6 +10,8 @@ import re
 import subprocess
 from tempfile import TemporaryDirectory
 
+from check_copy_literals import SYNC
+
 APP = Path(__file__).resolve().parents[1]
 # Each bundle's catalogs, by the target whose compiled sources fill its Localizable and the bundle whose Info.plist its
 # InfoPlist names.
@@ -18,10 +20,11 @@ TARGETS = {
     "WindmillWorkoutActivity": ("WorkoutActivityWidget", "Windmill.app/PlugIns/WindmillWorkoutActivity.appex"),
 }
 # The catalogs hold what ships: the Release build's strings, never a Debug fixture's. The build never ships, so it carries
-# CI's nonproduction collector.
+# CI's nonproduction collector, and it skips the copy check, which a string new to its catalog would fail.
 CONFIGURATION = "Release-iphonesimulator"
 RELEASE = ["-project", str(APP / "Windmill.xcodeproj"), "-scheme", "Windmill", "-configuration", "Release",
-           "-destination", "generic/platform=iOS Simulator", "ARCHS=arm64", "IOS_SENTRY_DSN=https://nonproduction@example.invalid/1"]
+           "-destination", "generic/platform=iOS Simulator", "ARCHS=arm64", "IOS_SENTRY_DSN=https://nonproduction@example.invalid/1",
+           f"{SYNC}=YES"]
 EMPTY = {"sourceLanguage": "en", "strings": {}, "version": "1.0"}
 # A placeholder: its position when it names one, then `%%`, a substitution `%#@name@`, or a conversion with its length, *lld* or *@*.
 PLACEHOLDER = re.compile(r"%(?:(\d+)\$)?(%|#@(\w+)@|[-+ 0#']*\d*(?:\.\d+)?((?:hh|h|ll|l|q|z|t|j)?[@dDiuUxXoOfFeEgGcCsSp]))")
