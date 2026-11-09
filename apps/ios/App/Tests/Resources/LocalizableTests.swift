@@ -5,12 +5,18 @@ import GymDomain
 import JournalDomain
 @testable import Windmill
 
-// Each message the catalog varies by count reads, for every count it can receive, as the English the app spells, and
-// whatever language the phone is set to: English is the one localization, so its plural rule and its digits stand.
+// Each message the catalog varies by count reads, for every count it can receive, as the English the app spells, its
+// digits as Swift writes them.
 @Suite @MainActor struct LocalizableTests {
   static let counts = [0, 1, 2, 3, 4, 5, 11, 12, 21, 22, 25, 101, 111, 1000, 1001]
 
   func many(_ count: Int, _ one: String, _ other: String) -> String { "\(count) \(count == 1 ? one : other)" }
+
+  @Test func theCopyLocaleKeepsDigitsPlainWhereARegionGroupsThem() {
+    #expect(String(localized: "\(1234) sets", locale: Locale(identifier: "de_DE")) == "1.234 sets")
+    #expect(String(localized: "\(1234) sets", locale: Locale(identifier: "en_US")) == "1,234 sets")
+    #expect(String(localized: "\(1234) sets", locale: .copy) == "1234 sets")
+  }
 
   @Test func signOutAndDeleteAccountCountTheUnconfirmedChanges() {
     for count in Self.counts.dropFirst() {

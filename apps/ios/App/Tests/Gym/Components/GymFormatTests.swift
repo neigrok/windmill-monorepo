@@ -52,7 +52,7 @@ import DomainKit
     #expect(east.span(Instant(ms: 1_791_848_580_000), Instant(ms: 1_791_850_800_000)) == "Tue, Oct 13 · 9:43\u{2009}–\u{2009}10:20\u{202F}AM")
   }
 
-  @Test @MainActor func aCountTakesEnglishPluralsAndPlainDigitsInEveryRegion() {
+  @Test @MainActor func aCountTakesEnglishPluralsAndPlainDigits() {
     #expect([0, 1, 2, 21, 1234].map { GymCount.of($0, .set) } == ["0 sets", "1 set", "2 sets", "21 sets", "1234 sets"])
     #expect([1, 5].map { GymCount.of($0, .weighIn) } == ["1 weigh-in", "5 weigh-ins"])
     #expect([0, 1, 3].map { WorkoutClocks.spoken(Int64($0) * 3_661_000) } == ["0 seconds", "1 hour 1 minute 1 second", "3 hours 3 minutes 3 seconds"])
