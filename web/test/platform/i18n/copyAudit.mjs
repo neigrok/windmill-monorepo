@@ -161,9 +161,9 @@ function translationCalls(file, indexes) {
   return { index: reads[0], calls, misuse: [...misuse] };
 }
 
-// An owner's catalogs, one per moment its files load. Every tier reads the brand root's entry/; the app's chrome and
-// home (app/) and a product's landing (landing/) add their own; settings, drawn inside the app's chrome, reads app/
-// too; i18n/ reads them all. A key lives in the latest catalog every file that asks for it reads.
+// An owner's catalogs, one per moment its files load. Every tier reads the brand root's entry/ and its own: the app's
+// chrome and home (app/), the settings page (settings/, which reads app/ too, since it sits in the chrome), a product's
+// landing (landing/) and the rooms (i18n/). A key lives in the latest catalog every file that asks for it reads.
 const TIERS = { entry: ['entry'], app: ['entry', 'app'], settings: ['entry', 'app', 'settings'], landing: ['entry', 'landing'] };
 
 function tiersOf(root) {
@@ -171,7 +171,7 @@ function tiersOf(root) {
   const present = Object.keys(TIERS).filter((tier) => fs.existsSync(path.join(WEB, own, tier)));
   return [
     ...present.map((tier) => ({ directory: path.join(own, tier), reads: TIERS[tier].map((read) => path.join(own, read)) })),
-    { directory: own, reads: [...present.map((tier) => path.join(own, tier)), own] },
+    { directory: own, reads: [...(present.includes('entry') ? [path.join(own, 'entry')] : []), own] },
   ];
 }
 
@@ -250,8 +250,8 @@ export function catalogViolations({ namespace, root, locales = AVAILABLE_LOCALES
       violations.push(`${key} is in ${directory}/en.json but nothing asks for it`);
       continue;
     }
-    const best = tiers.filter((tier) => readers.every((reader) => reader.reads.includes(tier.directory)))
-      .reduce((latest, tier) => (tier.reads.length > latest.reads.length ? tier : latest));
+    const shared = tiers.filter((tier) => readers.every((reader) => reader.reads.includes(tier.directory)));
+    const best = shared.find((tier) => shared.every((other) => tier.reads.includes(other.directory)));
     if (best.directory !== directory) violations.push(`${key} is in ${directory}/en.json, but the latest catalog every file that asks for it reads is ${best.directory}/en.json`);
   }
   return violations;

@@ -61,7 +61,6 @@
   "roadmap.tend.rateLimited": "That’s a lot of AI requests quickly. Your tree is exactly as you left it.",
   "roadmap.tend.untouched": "Nothing changed — the tree is untouched.",
   "roadmap.tend.untouchedSentenceKept": "Nothing changed — the tree is untouched and your sentence is still here.",
-  "roadmap.tend.updating": "Updating roadmap…",
   "roadmap.tend.working": "Working…",
   "roadmap.tending.left": "{remaining} of {limit} AI requests left this month",
   "roadmap.tending.none": "No AI requests yet this month.",

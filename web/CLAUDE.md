@@ -34,10 +34,10 @@ Copy is read through a translator from catalogs; English is the only locale.
   `i18n/settings/` holds the copy of the settings page: the shell's page, each product's settings sections,
   and what they import. A product's `i18n/landing/` holds the copy of its landing page (the module its
   landing head names, and what it imports). `i18n/` holds the rest and loads with the rooms. Every tier's
-  `t` reads `entry/` and its own catalog, `settings/` also reads `app/` because the page sits inside the app's
-  chrome, and the room's reads them all, so a word lives once, in the latest catalog every file that shows
-  it reads: a word a landing and its room share lives in `landing/`, a word the home card and a landing
-  share in `entry/`. A file imports `t` from one tier, and its strings live in the `en.json` beside that
+  `t` reads `entry/` and its own catalog, and `settings/` also reads `app/` because the page sits inside the
+  app's chrome, so a word lives once, in the latest catalog every file that shows it reads: a word the
+  settings page and the chrome share lives in `app/`, and a word two other moments share, such as a landing
+  and its room, in `entry/`. A file imports `t` from one tier, and its strings live in the `en.json` beside that
   `index.js`; `test/shell-boundaries.test.mjs` names a file that reads the wrong one. The shell keeps
   `entry/`, `app/`, `settings/` and `i18n/`; the design system loads with the entry and keeps one catalog.
 - To add a string, add `"gym.log.emptyTitle": "No workouts yet"` to the `en.json` beside the `index.js`

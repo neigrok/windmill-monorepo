@@ -1,11 +1,4 @@
 {
-  "journal.date.weekdayInitial.fri": "F",
-  "journal.date.weekdayInitial.mon": "M",
-  "journal.date.weekdayInitial.sat": "S",
-  "journal.date.weekdayInitial.sun": "S",
-  "journal.date.weekdayInitial.thu": "T",
-  "journal.date.weekdayInitial.tue": "T",
-  "journal.date.weekdayInitial.wed": "W",
   "journal.landing.echoes.body": "When tonight rhymes with something you wrote months ago, Journal says it back — the older line itself, its date, and how far back it was: “07 JAN 2026 · seven months ago”. It never interprets. It just remembers with you.",
   "journal.landing.echoes.eyebrow": "Automatic and free",
   "journal.landing.echoes.free": "Echoes are automatic and free. Every passage is available in full, with or without Windmill One, and echoes never use your AI allowance. Talk is separate: you start a recording when you want a transcript, and it requires One. One is not on sale yet.",

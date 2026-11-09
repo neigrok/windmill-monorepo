@@ -39,5 +39,12 @@
   "journal.rootScenes.shortcut": "⌘K",
   "journal.rootScenes.tonight": "Tonight",
   "journal.signedOutWork.counted": "{count, plural, one {# page} other {# pages}}",
-  "journal.signedOutWork.many": "pages"
+  "journal.signedOutWork.many": "pages",
+  "journal.date.weekdayInitial.fri": "F",
+  "journal.date.weekdayInitial.mon": "M",
+  "journal.date.weekdayInitial.sat": "S",
+  "journal.date.weekdayInitial.sun": "S",
+  "journal.date.weekdayInitial.thu": "T",
+  "journal.date.weekdayInitial.tue": "T",
+  "journal.date.weekdayInitial.wed": "W"
 }

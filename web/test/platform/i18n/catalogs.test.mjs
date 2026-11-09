@@ -40,7 +40,7 @@ test('the catalog audit sees every rule fire on its fixture, read in its two loc
     'fixture.bothFronts is in test/fixtures/i18n/i18n/app/en.json, but the latest catalog every file that asks for it reads is test/fixtures/i18n/i18n/entry/en.json',
     'fixture.landingRoomOnly is in test/fixtures/i18n/i18n/landing/en.json, but the latest catalog every file that asks for it reads is test/fixtures/i18n/i18n/en.json',
     'fixture.greeting is in test/fixtures/i18n/i18n/en.json, but the latest catalog every file that asks for it reads is test/fixtures/i18n/i18n/entry/en.json',
-    'fixture.steps is in test/fixtures/i18n/i18n/en.json, but the latest catalog every file that asks for it reads is test/fixtures/i18n/i18n/landing/en.json',
+    'fixture.steps is in test/fixtures/i18n/i18n/en.json, but the latest catalog every file that asks for it reads is test/fixtures/i18n/i18n/entry/en.json',
     'fixture.unused is in test/fixtures/i18n/i18n/en.json but nothing asks for it',
   ]);
 });

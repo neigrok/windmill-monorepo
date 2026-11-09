@@ -72,5 +72,6 @@
   "roadmap.ago.weeks": "{count, plural, one {# week ago} other {# weeks ago}}",
   "roadmap.resume.summary": "{name} · {progress} done",
   "roadmap.resume.summaryTended": "{name} · {progress} done · last tended {tended}",
-  "roadmap.common.untitled": "Untitled roadmap"
+  "roadmap.common.untitled": "Untitled roadmap",
+  "roadmap.tend.updating": "Updating roadmap…"
 }
