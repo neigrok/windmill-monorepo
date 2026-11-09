@@ -546,7 +546,9 @@ TEST_RUNNER_WM_DESIGN_CAPTURE=1 xcodebuild test -project Windmill.xcodeproj -sch
 python3 Tools/export_design_captures.py --result "$RESULT" --output "$CAPTURES"
 ```
 
-Repeat `-only-testing:` for more tests, or name `WindmillUITests/RoutinesCaptures` for an area. The exporter writes
+Repeat `-only-testing:` for more tests, or name `WindmillUITests/RoutinesCaptures` for an area.
+`TEST_RUNNER_WM_CAPTURE_ARGUMENTS` adds launch arguments to every capture the app launches itself, such as
+`-AppleLanguages (ar) -AppleLocale ar_SA` to capture the app under another system language. The exporter writes
 one PNG per capture named by the capture, `$CAPTURES/02L.1-routines-dark.png`, replacing that capture's PNG from an
 earlier export, and a `capture-manifest.json` linking each PNG to its test and result bundle. Two captures with one
 name in a result fail the export.
