@@ -18,6 +18,7 @@ import { StepDetail } from './step/StepDetail.jsx';
 import { RefusedSync } from './sync/SyncNotices.jsx';
 import { deletable, takesEveryRoot } from './board/acts.js';
 import { ASK_AI_PLACEHOLDER, GRAPH_LOAD, GRAPH_UNAVAILABLE, LOAD_ERROR, forkedToast } from './copy.js';
+import { t } from './i18n/index.js';
 import { hashWithStep, useStepAddress } from './step/stepAddress.js';
 import { BoardComposer, useBoardActs } from './board/useBoardActs.js';
 import { CoachChip } from './demo/CoachChip.jsx';
@@ -512,7 +513,7 @@ export function SkillTreeView({ treeId, demo = false }) {
           onChange={setTendDraft}
           failure={tendFailure}
           placeholder={tree?.nodes.length > 0 ? (phone ? ASK_AI_PLACEHOLDER.phone : ASK_AI_PLACEHOLDER.wide) : ASK_AI_PLACEHOLDER.empty}
-          examples={tree?.nodes.length > 0 ? ['Is this realistic?', 'What am I missing?'] : []}
+          examples={tree?.nodes.length > 0 ? [t('roadmap.askAI.exampleRealistic'), t('roadmap.askAI.exampleMissing')] : []}
           onSubmit={submitTend}
           onDismiss={() => setTendOpen(false)}
           portalTarget={rootRef.current?.closest('.wm-shell') ?? document.body}
@@ -591,9 +592,7 @@ export function SkillTreeView({ treeId, demo = false }) {
       {demotion && !demotion.cardOpen && (
         <div style={{ position: 'absolute', top: 'calc(max(env(safe-area-inset-top, 0px), 44px) + 8px)', left: '50%', transform: 'translateX(-50%)', zIndex: 21 }}>
           <StatusChip>
-            {demotion.edits > 0
-              ? `Read-only · ${demotion.edits} change${demotion.edits === 1 ? '' : 's'} kept here`
-              : 'Read-only'}
+            {demotion.edits > 0 ? t('roadmap.demotion.readOnlyKept', { count: demotion.edits }) : t('roadmap.demotion.readOnly')}
           </StatusChip>
         </div>
       )}

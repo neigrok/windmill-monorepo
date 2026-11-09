@@ -1,3 +1,5 @@
+import { t } from '../i18n/index.js';
+
 export class ActivityEvent {
   constructor({ id, actor, verb, nodeId, label, kind, at, summary }) {
     this.id = id;
@@ -68,7 +70,7 @@ export class ActivityLog {
       const node = tree.nodesById.get(id);
       return new ActivityEvent({
         id: `seed-${id}`,
-        actor: 'You',
+        actor: t('roadmap.activity.you'),
         verb: 'completed',
         nodeId: id,
         label: node.label,
@@ -80,14 +82,14 @@ export class ActivityLog {
 }
 
 function dayLabel(at, now) {
-  if (at == null) return 'Earlier';
+  if (at == null) return t('roadmap.activity.earlier');
   const startOfDay = (ms) => {
     const date = new Date(ms);
     date.setHours(0, 0, 0, 0);
     return date.getTime();
   };
   const days = Math.round((startOfDay(now) - startOfDay(at)) / DAY_MS);
-  if (days <= 0) return 'Today';
-  if (days === 1) return 'Yesterday';
+  if (days <= 0) return t('roadmap.activity.today');
+  if (days === 1) return t('roadmap.activity.yesterday');
   return new Date(at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }

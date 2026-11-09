@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { Button } from '../../../design-system';
 import { prefersReducedMotion } from '../theme.js';
+import { t } from '../i18n/index.js';
 
 const enterAnimation = () =>
   prefersReducedMotion()
@@ -73,17 +74,16 @@ export function VisitorNotice({ edits = 0, author = null, onFork, onDismiss, onS
           color: 'var(--text-primary)',
         }}
       >
-        {author ? `This tree belongs to ${author}.` : 'This tree belongs to someone else.'}
+        {author ? t('roadmap.honesty.belongsTo', { author }) : t('roadmap.honesty.belongsToSomeone')}
       </p>
       {edits > 0 && (
         <p style={{ margin: '8px 0 0', fontSize: 'var(--text-sm)', lineHeight: 1.5, color: 'var(--text-secondary)' }}>
-          Your <strong>{edits} change{edits === 1 ? '' : 's'}</strong> {edits === 1 ? 'is' : 'are'} safe
-          on this device.
+          {t('roadmap.honesty.safe', { count: edits, changes: <strong>{t('roadmap.honesty.changes', { count: edits })}</strong> })}
         </p>
       )}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 16 }}>
-        <Button variant="primary" size="md" onClick={onFork}>Fork this tree</Button>
-        <Button variant="ghost" size="md" onClick={onDismiss}>Maybe later</Button>
+        <Button variant="primary" size="md" onClick={onFork}>{t('roadmap.honesty.fork')}</Button>
+        <Button variant="ghost" size="md" onClick={onDismiss}>{t('roadmap.honesty.later')}</Button>
       </div>
       {onSignIn && (
         <button
@@ -102,7 +102,7 @@ export function VisitorNotice({ edits = 0, author = null, onFork, onDismiss, onS
             cursor: 'pointer',
           }}
         >
-          This yours? Sign in
+          {t('roadmap.honesty.signIn')}
         </button>
       )}
     </div>

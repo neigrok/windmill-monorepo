@@ -1,6 +1,7 @@
 import React from 'react';
 import { SHARE_PALETTE } from './palette.js';
 import { treePortraitSvg } from './TreePortrait.js';
+import { t } from '../i18n/index.js';
 
 // One tree, drawn the same way on every surface that exhibits trees. All colour comes from
 // SHARE_PALETTE[theme]. The thumb is either a live RenderModel (`model`) or the tree's own uploaded
@@ -93,7 +94,7 @@ export function GalleryCard({
               <span style={{ fontSize: 11, fontWeight: 600, color: textSecondary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {author}
               </span>
-              <span style={{ marginLeft: 'auto', fontSize: 10, color: textTertiary, flexShrink: 0 }}>updated {updatedAgo}</span>
+              <span style={{ marginLeft: 'auto', fontSize: 10, color: textTertiary, flexShrink: 0 }}>{t('roadmap.gallery.updated', { ago: updatedAgo })}</span>
             </>
           )}
           {!loading && !author && children}
