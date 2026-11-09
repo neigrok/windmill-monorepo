@@ -19,6 +19,10 @@ const PRODUCT_SHELF = [
   ...SURFACE_LINKS.map((link) => [link.href, link.label]),
 ];
 
+// Catalog text is escaped for where it lands; an & that cannot open a character reference stays itself.
+const htmlText = (value) => String(value).replace(/&(?=[#A-Za-z0-9])/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const htmlAttribute = (value) => htmlText(value).replace(/"/g, '&quot;');
+
 function swapOnce(text, from, to, where) {
   const first = text.indexOf(from);
   if (first === -1) throw new Error(`build-landing-shells: ${where} no longer holds the brand-root string landingHeads.js declares:\n  ${from}\nweb/index.html and src/shell/marketing/landingHeads.js are edited together.`);
@@ -47,7 +51,7 @@ function renderSchema(head) {
     'inLanguage': 'en',
   };
   const graph = { '@context': 'https://schema.org', '@graph': [...SITE_SCHEMA, page, ...head.schema] };
-  const json = JSON.stringify(graph, null, 2).split('\n').map((line) => `      ${line}`).join('\n');
+  const json = JSON.stringify(graph, null, 2).replace(/</g, '\\u003c').split('\n').map((line) => `      ${line}`).join('\n');
   return `<script type="application/ld+json">\n${json}\n    </script>`;
 }
 
@@ -57,25 +61,25 @@ function renderFallback(head) {
   const missing = ['accent', 'badge', 'h1', 'sub', 'actions', 'trust', 'notes'].filter((field) => !page?.[field]);
   if (missing.length) throw new Error(`build-landing-shells: the ${head.path} row is missing its fallback ${missing.join(', ')} — a shell without a body of its own says the brand root's words to the one visitor who never runs the page`);
   const actions = page.actions.map((action, index) => (index === 0
-    ? `<a href="${action.href}" style="display: inline-block; background: ${page.accent}; color: #F9F5EB; font-weight: 700; padding: 12px 22px; border-radius: 12px; text-decoration: none;">${action.label}</a>`
-    : `<a href="${action.href}" style="display: inline-block; color: #211B13; font-weight: 700; padding: 12px 22px; text-decoration: none;">${action.label}</a>`));
-  const notes = page.notes.map((note) => `        <p style="font-size: 15px; color: #4A4034; line-height: 1.6; margin: 0 0 20px;">${note}</p>`);
-  const shelf = (rows) => rows.map(([href, label]) => `<a href="${href}" style="color: #6B5D4A; margin: 0 10px;">${label}</a>`).join('\n          ');
+    ? `<a href="${htmlAttribute(action.href)}" style="display: inline-block; background: ${htmlAttribute(page.accent)}; color: #F9F5EB; font-weight: 700; padding: 12px 22px; border-radius: 12px; text-decoration: none;">${htmlText(action.label)}</a>`
+    : `<a href="${htmlAttribute(action.href)}" style="display: inline-block; color: #211B13; font-weight: 700; padding: 12px 22px; text-decoration: none;">${htmlText(action.label)}</a>`));
+  const notes = page.notes.map((note) => `        <p style="font-size: 15px; color: #4A4034; line-height: 1.6; margin: 0 0 20px;">${htmlText(note)}</p>`);
+  const shelf = (rows) => rows.map(([href, label]) => `<a href="${htmlAttribute(href)}" style="color: #6B5D4A; margin: 0 10px;">${htmlText(label)}</a>`).join('\n          ');
 
   return `<div id="root">
       <main style="max-width: 720px; margin: 0 auto; padding: 72px 24px; text-align: center; font-family: system-ui, -apple-system, 'Nunito', sans-serif; color: #211B13;">
-        <p style="font-size: 12.5px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: #6B5D4A; margin: 0 0 14px;">${page.badge}</p>
-        <h1 style="font-family: 'Baloo 2', system-ui, sans-serif; font-weight: 700; font-size: 44px; line-height: 1.07; margin: 0 0 16px;">${page.h1}</h1>
-        <p style="font-size: 19px; line-height: 1.5; color: #4A4034; margin: 0 auto 28px; max-width: 560px;">${page.sub}</p>
+        <p style="font-size: 12.5px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: #6B5D4A; margin: 0 0 14px;">${htmlText(page.badge)}</p>
+        <h1 style="font-family: 'Baloo 2', system-ui, sans-serif; font-weight: 700; font-size: 44px; line-height: 1.07; margin: 0 0 16px;">${htmlText(page.h1)}</h1>
+        <p style="font-size: 19px; line-height: 1.5; color: #4A4034; margin: 0 auto 28px; max-width: 560px;">${htmlText(page.sub)}</p>
         <p style="margin: 0 0 28px;">
           ${actions.join('\n          &nbsp;\n          ')}
         </p>
-        <p style="font-size: 14px; color: #6B5D4A; margin: 0 0 28px;">${page.trust}</p>
+        <p style="font-size: 14px; color: #6B5D4A; margin: 0 0 28px;">${htmlText(page.trust)}</p>
 ${notes.join('\n')}
-        <nav aria-label="${LEGAL_SHELF_LABEL}" style="font-size: 14px; color: #6B5D4A;">
+        <nav aria-label="${htmlAttribute(LEGAL_SHELF_LABEL)}" style="font-size: 14px; color: #6B5D4A;">
           ${shelf(LEGAL_SHELF)}
         </nav>
-        <nav aria-label="${PRODUCT_SHELF_LABEL}" style="font-size: 14px; color: #6B5D4A; margin-top: 8px;">
+        <nav aria-label="${htmlAttribute(PRODUCT_SHELF_LABEL)}" style="font-size: 14px; color: #6B5D4A; margin-top: 8px;">
           ${shelf(PRODUCT_SHELF)}
         </nav>
       </main>
@@ -103,16 +107,16 @@ for (const head of LANDING_HEADS) {
   if (head.path === '/') continue;
 
   const canonical = `${SITE_ORIGIN}${head.path}`;
-  let html = swapOnce(built, `<title>${root.title}</title>`, `<title>${head.title}</title>`, 'dist/index.html');
-  html = swapInTag(html, 'name="description"', root.description, head.description);
-  html = swapInTag(html, 'rel="canonical"', `${SITE_ORIGIN}/`, canonical);
-  html = swapInTag(html, 'property="og:url"', `${SITE_ORIGIN}/`, canonical);
-  html = swapInTag(html, 'property="og:title"', root.ogTitle, head.ogTitle);
-  html = swapInTag(html, 'property="og:description"', root.ogDescription, head.ogDescription);
-  html = swapInTag(html, 'property="og:image:alt"', root.imageAlt, head.imageAlt);
-  html = swapInTag(html, 'name="twitter:title"', root.twitterTitle, head.twitterTitle);
-  html = swapInTag(html, 'name="twitter:description"', root.twitterDescription, head.twitterDescription);
-  html = swapInTag(html, 'name="twitter:image:alt"', root.imageAlt, head.imageAlt);
+  let html = swapOnce(built, `<title>${htmlText(root.title)}</title>`, `<title>${htmlText(head.title)}</title>`, 'dist/index.html');
+  html = swapInTag(html, 'name="description"', htmlAttribute(root.description), htmlAttribute(head.description));
+  html = swapInTag(html, 'rel="canonical"', htmlAttribute(`${SITE_ORIGIN}/`), htmlAttribute(canonical));
+  html = swapInTag(html, 'property="og:url"', htmlAttribute(`${SITE_ORIGIN}/`), htmlAttribute(canonical));
+  html = swapInTag(html, 'property="og:title"', htmlAttribute(root.ogTitle), htmlAttribute(head.ogTitle));
+  html = swapInTag(html, 'property="og:description"', htmlAttribute(root.ogDescription), htmlAttribute(head.ogDescription));
+  html = swapInTag(html, 'property="og:image:alt"', htmlAttribute(root.imageAlt), htmlAttribute(head.imageAlt));
+  html = swapInTag(html, 'name="twitter:title"', htmlAttribute(root.twitterTitle), htmlAttribute(head.twitterTitle));
+  html = swapInTag(html, 'name="twitter:description"', htmlAttribute(root.twitterDescription), htmlAttribute(head.twitterDescription));
+  html = swapInTag(html, 'name="twitter:image:alt"', htmlAttribute(root.imageAlt), htmlAttribute(head.imageAlt));
   html = swapOnce(html, rootSchema, renderSchema(head), 'dist/index.html at the JSON-LD block');
   html = swapOnce(html, rootFallback, renderFallback(head), 'dist/index.html at the no-JS fallback body');
   html = swapOnce(html, '</head>', preloadTags(head), 'dist/index.html at </head>');
