@@ -22,14 +22,14 @@ const VERB_STYLE = {
 export function relativeTime(at, now) {
   if (at == null) return '';
   const seconds = Math.max(0, Math.round((now - at) / 1000));
-  if (seconds < 45) return t('roadmap.activity.agoNow');
+  if (seconds < 45) return t('roadmap.ago.now');
   const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return t('roadmap.activity.agoMinutes', { count: minutes });
+  if (minutes < 60) return t('roadmap.ago.minutesCompact', { count: minutes });
   const hours = Math.round(minutes / 60);
-  if (hours < 24) return t('roadmap.activity.agoHours', { count: hours });
+  if (hours < 24) return t('roadmap.ago.hoursCompact', { count: hours });
   const days = Math.round(hours / 24);
-  if (days < 7) return t('roadmap.activity.agoDays', { count: days });
-  return t('roadmap.activity.agoWeeks', { count: Math.round(days / 7) });
+  if (days < 7) return t('roadmap.ago.daysCompact', { count: days });
+  return t('roadmap.ago.weeksCompact', { count: Math.round(days / 7) });
 }
 
 function VerbBadge({ verb, size = 13 }) {

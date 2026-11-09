@@ -151,12 +151,12 @@ export function tendedAgo(updatedAt) {
   if (Number.isNaN(then)) return null;
   const mins = Math.max(0, Math.round((Date.now() - then) / 60000));
   if (mins < 1) return t('roadmap.ago.justNow');
-  if (mins < 60) return t('roadmap.tended.minutes', { count: mins });
+  if (mins < 60) return t('roadmap.ago.minutes', { count: mins });
   const hrs = Math.round(mins / 60);
-  if (hrs < 24) return t('roadmap.tended.hours', { count: hrs });
+  if (hrs < 24) return t('roadmap.ago.hours', { count: hrs });
   const days = Math.round(hrs / 24);
-  if (days < 7) return t('roadmap.tended.days', { count: days });
-  return t('roadmap.tended.weeks', { count: Math.round(days / 7) });
+  if (days < 7) return t('roadmap.ago.days', { count: days });
+  return t('roadmap.ago.weeks', { count: Math.round(days / 7) });
 }
 
 export function nextChip({ count }) {
