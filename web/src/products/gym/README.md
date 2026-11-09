@@ -77,6 +77,18 @@ Editors never write them. Note positions are zero-based; a move writes the moved
 right after the row drawn above it. The independent `routineCreation.snapshot` record is read-only
 and survives routine deletion.
 
+## Localization
+
+Gym copy lives in `i18n/en.json` under `gym.<area>.*`, one area per screen or module (`gym.log.*`,
+`gym.routines.*`, `gym.coach.*`, `gym.landing.*`, `gym.product.*` for the shell registry's words), and every
+file reads it through `t` from `i18n/index.js`. A shared phrase keeps its exported constant (`COACH_TITLE`,
+`UNDO_LABEL`), whose value is a `t()` call. A weight is a number and a word: the caller formats the number as it
+always has and passes the wire unit, and the message spells it, `{weight} {unit, select, lb {lb} other {kg}}`;
+`unitSymbol` in `units.js` shows the symbol alone. Weekday and month names and the order of a day label come from
+the catalog, never from the system locale. Exercise, routine and note names, Coach answers and server refusals are
+shown as received. The domain's display strings (`Readout` in `domain/trainingReads.js`, `ProposalDiff` in
+`domain/proposalDiff.js`) are pinned by the shared vectors and are not in the catalog.
+
 ## Observability
 
 `gymRuntime.js` owns the gym telemetry boundary. Engine-backed writes emit first-party `gym_action` events with allowlisted `operation` and
