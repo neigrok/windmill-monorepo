@@ -7,7 +7,12 @@ import { fileURLToPath } from 'node:url';
 const GYM = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../src/products/gym');
 const read = (file) => fs.readFileSync(path.join(GYM, file), 'utf8');
 
-const spoken = (source) => source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+// A file's words: its code without comments, followed by the catalog messages its t() calls ask for.
+const spoken = (source) => {
+  const catalog = JSON.parse(read('i18n/en.json'));
+  const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+  return [code, ...[...code.matchAll(/\bt\('([\w.]+)'/g)].map(([, key]) => catalog[key])].join('\n');
+};
 const speech = (file) => spoken(read(file));
 
 test('the routine editor is keyed on the routine it edits, so a hash move remounts it', () => {

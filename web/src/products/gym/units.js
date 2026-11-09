@@ -1,4 +1,5 @@
 import { GymUnits } from './domain/units.js';
+import { t } from './i18n/index.js';
 
 // The store holds kilograms and only kilograms; the one field typed in the display unit is a weigh-in.
 
@@ -14,6 +15,10 @@ export function spellWeightsIn(units) {
 
 export function weightUnit() {
   return spelling;
+}
+
+export function unitSymbol(unit = spelling) {
+  return t('gym.units.symbol', { unit });
 }
 
 // Pounds land on a tenth, half away from zero so negative (band-assisted) loads mirror.
