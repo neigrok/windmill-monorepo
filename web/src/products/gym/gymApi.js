@@ -1,7 +1,7 @@
 import { API_BASE } from '../../shell/apiBase.js';
 import { registry } from '../../platform/sync/schema.js';
 import { readCoachStream } from './coach/stream.js';
-import { GymError, RESPONSE_INTERRUPTED } from './errors.js';
+import { GymError } from './errors.js';
 import { t } from './i18n/index.js';
 
 const base = `${API_BASE}/v1/gym`;
@@ -70,9 +70,9 @@ export const gymApi = {
       return { ...reply, pending: response.status === 202 };
     }
     return readCoachStream(response, (snapshot) => {
-      if (snapshot.thread !== thread || snapshot.generation.requestId !== requestId) throw new Error(RESPONSE_INTERRUPTED);
+      if (snapshot.thread !== thread || snapshot.generation.requestId !== requestId) throw new Error('Response interrupted.');
       onSnapshot(snapshot);
-    }, (body) => new GymError(body.status ?? 500, body.error ?? RESPONSE_INTERRUPTED, body.code ?? '', body));
+    }, (body) => new GymError(body.status ?? 500, body.error ?? '', body.code ?? '', body));
   },
 
   async stopCoach(thread, requestId) {

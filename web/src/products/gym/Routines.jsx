@@ -7,9 +7,9 @@ import { failureReason } from './errors.js';
 import { t } from './i18n/index.js';
 import { routineDocument, useGymApi } from './gymRuntime.js';
 import {
-  agoLabel, backfillHref, cappedName, entryLabel, FROM_ROUTINE_MENU, isNameOverCap, MOVEMENTS_HREF,
+  agoLabel, backfillHref, cappedName, FROM_ROUTINE_MENU, isNameOverCap, MOVEMENTS_HREF,
   movementOf, nameCountLabel, nameOfMovement, NEW_ROUTINE_ID, routineHref,
-  ROUTINES_HREF, showsNameCount,
+  ROUTINES_HREF, schemeParts, showsNameCount,
 } from './log.js';
 import { LiveMirror } from './Mirror.jsx';
 import { mintId } from './mint.js';
@@ -199,12 +199,7 @@ export function RoutineEditor({ id, log }) {
     <header className="gym-plan-version-heading"><p className="gym-plan-kicker">{view.data.name}</p><h1 className="gym-title">{t('gym.routines.twoVersions')}</h1>
     <p className="gym-plan-version-intro">{t('gym.routines.versionsIntro')}</p></header>
     <section className="gym-plan-differences"><h2>{t('gym.routines.whatDiffers')}</h2>
-      {routineConflictRows(view.data, draft, conflict).map((row, index) => {
-        const before = row.exerciseId && row.before.match(/^(\d+ × [^·]+) · (.+)$/);
-        const after = row.exerciseId && row.after.match(/^(\d+ × [^·]+) · (.+)$/);
-        const sameScheme = before && after && before[1] === after[1];
-        return <div key={index}><span>{row.label ?? nameOfMovement(log.catalog, row.exerciseId)}</span><span className="gym-plan-change-values">{sameScheme ? before[2] : row.before} → <strong>{sameScheme ? after[2] : row.after}</strong></span><small>{row.source}</small></div>;
-      })}
+      {routineConflictRows(view.data, draft, conflict).map((row, index) => <div key={index}><span>{row.label ?? nameOfMovement(log.catalog, row.exerciseId)}</span><span className="gym-plan-change-values">{row.before} → <strong>{row.after}</strong></span><small>{row.source}</small></div>)}
     </section>
     <div className="gym-plan-version-columns">{[[t('gym.routines.yourDraft'), draft], [t('gym.routines.savedRoutine'), conflict]].map(([label, routine]) => <section key={label}>
       <h2>{label}</h2>{routine.entries.map((entry, index) => <div className="gym-plan-version-entry" key={index}><p>{nameOfMovement(log.catalog, entry.exerciseId)}</p><SchemeReadout entry={entry} compareTo={view.data.entries[index]?.exerciseId === entry.exerciseId ? view.data.entries[index] : null} /></div>)}
@@ -395,11 +390,7 @@ function EntryList({ entries, catalog, selected, onMove, onTarget, onRemove }) {
 }
 
 function SchemeReadout({ entry, compareTo = null }) {
-  const reading = (target) => (target.sets?.length && target.sets.every((set) => set.weightKg == null)
-    ? t('gym.routines.schemeFromLast', { scheme: entryLabel(target) })
-    : entryLabel(target));
-  const readout = (target) => reading(target).split(/(\s[×·]\s|–)/);
-  const parts = readout(entry);
-  const original = compareTo ? readout(compareTo) : null;
-  return <span className="gym-plan-scheme">{parts.map((part, index) => <span key={index} className={index % 2 ? 'is-separator' : original && part !== original[index] ? 'is-changed' : undefined}>{part}</span>)}</span>;
+  const parts = schemeParts(entry, undefined, { unloadedFromLast: true });
+  const original = compareTo ? schemeParts(compareTo, undefined, { unloadedFromLast: true }) : null;
+  return <span className="gym-plan-scheme">{parts.map((part, index) => <span key={index} className={index % 2 ? 'is-separator' : original && part.value !== original[index]?.value ? 'is-changed' : undefined}>{part.text}</span>)}</span>;
 }

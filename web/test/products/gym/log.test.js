@@ -11,7 +11,7 @@ import {
   logWhenLabel, NEVER_TRAINED_ALONE,
   FROM_ROUTINES, fromSession, MOVEMENTS_HREF, recordFromOf,
   movementIdOf, movementOf, NAME_COUNT_FROM, NAME_MAX, nameCountLabel, NOTES_HREF,
-  nameOfMovement, NEW_ROUTINE_ID, NO_ROUTINE, NOT_IN_PLAN, numberWord, OPEN_TARGET,
+  nameOfMovement, NEW_ROUTINE_ID, NO_ROUTINE, NOT_IN_PLAN, OPEN_TARGET,
   planFrozenLabel,
   BODYWEIGHT_HREF, planOf, planReadingOf, proposalHref, proposalIdOf,
   recordHref, routineHref, routineIdOf, routineNameOf, routineSizeLabel, ROUTINES_HREF, screenOf, showsNameCount,
@@ -562,14 +562,6 @@ test('arrivedLabel — the weekday and the hour, until a weekday stops naming on
   assert.equal(arrivedLabel(sunday, sunday + 6 * 86_400_000), 'Sun 2 Aug · 21:14');
   assert.equal(arrivedLabel(sunday, sunday + 30 * 86_400_000), 'Sun 2 Aug · 21:14');
   assert.equal(whenLabel(sunday), 'Sun 2 Aug · 21:14');
-});
-
-test('numberWord — a small count spelled, and a large one left as a numeral', () => {
-  assert.equal(numberWord(1), 'one');
-  assert.equal(numberWord(4), 'four');
-  assert.equal(numberWord(10), 'ten');
-  assert.equal(numberWord(11), '11');
-  assert.equal(numberWord(0), 'zero');
 });
 
 test('shortDayLabel — a day named by its date alone, in the zone the session happened in', () => {

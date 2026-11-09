@@ -5,8 +5,8 @@ import {
   ADD_SET, commitLabel, draftFrom,
   ENTRY_REPS_MAX, ENTRY_REPS_MIN, ENTRY_SETS_MAX, ENTRY_SETS_MIN, entryPlaceLabel, EVERY_SET, FILL, headOf,
   isOpenEntry, LAST_TIME_PLACEHOLDER, MATCH_SET_ONE, MAX_PLACEHOLDER, ONE_DECIMAL,
-  OPEN_LINE, OPEN_PLACEHOLDER, NOT_A_NUMBER, RAMP_UP, rampDisabled, refusalOf, reorderEntries,
-  REPS_BAND, saysNeverLogged, SET_BY_SET, SETS_BAND, SHEET_CHROME,
+  OPEN_LINE, NOT_A_NUMBER, RAMP_UP, rampDisabled, refusalOf, reorderEntries,
+  REPS_BAND, saysNeverLogged, SET_BY_SET, SETS_BAND,
   targetEntryOf, targetFieldsOf, targetRefusal, VARIES_PLACEHOLDER, withEntryAdded, withEntryRemoved,
   withEntrySet, withHead, withMatchedToFirst, withRampUp, withRow, withRowAdded, withRowRemoved, withSets,
   ladderOf,
@@ -267,7 +267,7 @@ test('the sheet opens on what the row holds — the count and one row per set �
   assert.deepEqual(targetFieldsOf({ exerciseId: 'back-squat', sets: RAMP }), fields({
     sets: '5', rows: [row('5', '60'), row('5', '80'), row('3', '90'), row('1', '100'), row('5', '80')],
   }));
-  assert.deepEqual([OPEN_PLACEHOLDER, MAX_PLACEHOLDER, LAST_TIME_PLACEHOLDER, VARIES_PLACEHOLDER], ['open', 'max', 'last time', 'varies']);
+  assert.deepEqual([MAX_PLACEHOLDER, LAST_TIME_PLACEHOLDER, VARIES_PLACEHOLDER], ['max', 'last time', 'varies']);
 });
 
 test('headOf — the head speaks for every row: the shared value, or `varies` where the rows disagree', () => {
@@ -490,12 +490,8 @@ test('commitLabel — the scheme’s own readout while every set agrees, the cou
   assert.equal(commitLabel({ exerciseId: 'chin-up', restSeconds: 120 }), 'Set · open');
 });
 
-test('the sheet’s chrome is the pinned fourteen words', () => {
+test('the sheet’s chrome reads its pinned words', () => {
   assert.deepEqual([EVERY_SET, SET_BY_SET, FILL, RAMP_UP, MATCH_SET_ONE, ADD_SET], ['Every set', 'Set by set', 'Fill', 'Ramp up', 'Match set 1', 'Add set']);
-  assert.deepEqual(SHEET_CHROME, ['Every set', 'Sets', 'Reps', 'Weight', 'Set by set', 'Fill', 'Add set']);
-  const words = [...SHEET_CHROME, commitLabel({ exerciseId: 'back-squat', sets: RAMP })]
-    .flatMap((line) => line.split(' ').filter((word) => word !== '·'));
-  assert.equal(words.length, 14);
 });
 
 test('RoutineValue.fromSession — a session too big to ask for is clamped to what a routine may ask for', () => {

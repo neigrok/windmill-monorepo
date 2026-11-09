@@ -116,8 +116,6 @@ test('what the delete leaves behind is said at the moment of the act, in the pho
   // detail are two lines from 327px up and three at 326px and under, against text-budget's toast cap
   // and thumb-reach's reach-band paragraph. The bytes above are the pin; a character count is not,
   // because the rule it would stand for is a wrap and no count can see one.
-  // Why the rule exists is not the transient's to carry: `settledLine` already stands permanently on
-  // the routine's own history row.
   assert.equal(THREAD_DELETE_DETAIL.includes('fact about your program'), false);
 
   // One measurement, one number. The bound lives in the stylesheet that causes the wrap and in the

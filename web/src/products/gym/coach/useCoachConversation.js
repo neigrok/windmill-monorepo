@@ -12,6 +12,9 @@ import {
 import { coachPhotos } from './photos.js';
 import { THREAD_ABSENT } from './threads.js';
 
+// The note an answer's interruption leaves; a failed turn says the same, so the room shows only one of them.
+const INTERRUPTED = { note: RESPONSE_INTERRUPTED, interrupted: true };
+
 export function coachDraftKey(accountId, threadId = 'current') {
   return `windmill.gym.coach.${encodeURIComponent(accountId)}.${threadId}`;
 }
@@ -56,7 +59,7 @@ export function useCoachConversation({ accountId, initialThread, workoutInProgre
       photo: complete ? null : stored?.photo ? { ...stored.photo, status: 'draft' } : null,
       request, nextCursor: initialThread?.nextCursor ?? null,
       phase: !initialThread && stored ? 'loading' : 'ready',
-      busy: false, pending: false, attempt: 0, stopRequested: false, note: '', closed: '', confirmBusy: null, confirmNote: null,
+      busy: false, pending: false, attempt: 0, stopRequested: false, note: '', interrupted: false, closed: '', confirmBusy: null, confirmNote: null,
     };
   });
   const current = useRef(state);
@@ -68,7 +71,7 @@ export function useCoachConversation({ accountId, initialThread, workoutInProgre
   const upload = useRef(null);
 
   const change = (patch, { durable = false } = {}) => {
-    const next = { ...current.current, ...patch };
+    const next = { ...current.current, ...('note' in patch ? { interrupted: false } : {}), ...patch };
     if (accountId) {
       try {
         const stored = JSON.stringify({ thread: next.thread, turns: next.turns.slice(-50), draft: next.draft,
@@ -77,7 +80,7 @@ export function useCoachConversation({ accountId, initialThread, workoutInProgre
         if (!initialThread) window.localStorage.setItem(coachDraftKey(accountId), stored);
       } catch {
         if (durable) {
-          const refused = { ...current.current, note: t('gym.coach.storageQuestion') };
+          const refused = { ...current.current, note: t('gym.coach.storageQuestion'), interrupted: false };
           current.current = refused;
           if (mounted.current) setState(refused);
           return false;
@@ -98,7 +101,7 @@ export function useCoachConversation({ accountId, initialThread, workoutInProgre
     change({ turns: mergeTurns(current.current.turns, generationTurns(generation)),
       request: terminal ? null : { ...(current.current.request ?? requestFromGeneration(current.current.thread, generation)), accepted: true },
       ...(terminal ? { draft: '', photo: null, attempt: 0, pending: false, stopRequested: false } : {}),
-      ...(generation.status === 'failed' ? { note: RESPONSE_INTERRUPTED, pending: false, stopRequested: false } : {}),
+      ...(generation.status === 'failed' ? { ...INTERRUPTED, pending: false, stopRequested: false } : {}),
       ...(generation.status === 'stopped' ? { note: '' } : {}),
       ...(generation.status === 'completed' ? { note: '' } : {}),
       ...(generation.status === 'running' && generation.stopRequested ? { stopRequested: true } : {}),
@@ -227,7 +230,7 @@ export function useCoachConversation({ accountId, initialThread, workoutInProgre
       const missingPhoto = error.code === 'ask-attachment-invalid' && request.attachmentIds?.includes(photo?.id);
       const known = retry || current.current.request?.accepted || current.current.turns.length || initialThread;
       const unavailable = failure.fresh && known;
-      change({ note: error.detail ? failure.note : RESPONSE_INTERRUPTED, closed: unavailable ? 'thread' : failure.gone ? 'account' : '', pending: Boolean(current.current.stopRequested),
+      change({ ...(error.detail ? { note: failure.note } : INTERRUPTED), closed: unavailable ? 'thread' : failure.gone ? 'account' : '', pending: Boolean(current.current.stopRequested),
         ...(current.current.stopRequested ? { attempt: current.current.attempt + 1 } : {}),
         ...(missingPhoto ? { photo: { ...photo, status: 'failed', progress: 0, note: t('gym.coach.photo.uploadGone') }, note: '' } : {}),
         ...(failure.refused && !missingPhoto && !retry && !error.generation && !current.current.request?.accepted ? { request: null } : {}),

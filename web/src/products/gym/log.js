@@ -386,27 +386,48 @@ export function setReading(set) {
   return `${load == null ? t('gym.log.lastLoad') : fmt(load)} × ${set.reps ?? t('gym.log.maxReps')}`;
 }
 
+// A reading's notation as parts, `3`, ` × `, `5`, ` · `, `100`. A value part keeps what it stands for in
+// `value`, so two readings compare by what they say, whatever words spell them; separators carry text alone.
+export const NOTATION = { times: { text: ' × ' }, and: { text: ' · ' }, to: { text: '–' } };
+export const MAX_REPS_PART = { text: t('gym.log.maxReps'), value: 'max' };
+export const LAST_LOAD_PART = { text: t('gym.log.lastLoad'), value: 'last' };
+
+export function spelled(parts) {
+  return parts.map((part) => part.text).join('');
+}
+
+export function sameReading(left, right) {
+  return left.length === right.length && left.every((part, index) => (part.value ?? part.text) === (right[index].value ?? right[index].text));
+}
+
 // A scheme's vocabulary, whatever its size: `{n} × {reps} · {load}`, a column whose sets disagree
 // printing its range `lo–hi` — a placeholder standing as the top: `max` of a reps column, `last` of a
 // load column —
-// and a load column no set names printing nothing. One set inside a strip or a ladder is read by
-// setReading; a scheme of one set is still a scheme, `1 × 5 · 100`. `format` spells a load: the
-// account's unit by default, `fmtKg` on a form that is written in kilograms.
-export function entryLabel(entry, format = fmt) {
-  if (entry.sets == null) return OPEN_TARGET;
+// and a load column no set names printing nothing, or `last` when `unloadedFromLast` asks. One set inside a
+// strip or a ladder is read by setReading; a scheme of one set is still a scheme, `1 × 5 · 100`. `format`
+// spells a load: the account's unit by default, `fmtKg` on a form that is written in kilograms.
+export function schemeParts(entry, format = fmt, { unloadedFromLast = false } = {}) {
+  if (entry.sets == null) return [{ text: OPEN_TARGET, value: 'open' }];
   const { sets } = entry;
+  const count = (value) => ({ text: String(value), value: String(value) });
+  const load = (value) => ({ text: format(value), value: format(value) });
   const reps = sets.map((set) => set.reps ?? null);
   const named = reps.filter((each) => each != null);
   const repsColumn = reps.every((each) => each === reps[0])
-    ? String(reps[0] ?? t('gym.log.maxReps'))
-    : `${Math.min(...named)}–${named.length < reps.length ? t('gym.log.maxReps') : Math.max(...named)}`;
+    ? [reps[0] == null ? MAX_REPS_PART : count(reps[0])]
+    : [count(Math.min(...named)), NOTATION.to, named.length < reps.length ? MAX_REPS_PART : count(Math.max(...named))];
+  const head = [count(sets.length), NOTATION.times, ...repsColumn];
   const loads = sets.map((set) => targetLoadOf(set.weightKg));
   const known = loads.filter((each) => each != null);
-  if (known.length === 0) return `${sets.length} × ${repsColumn}`;
+  if (known.length === 0) return unloadedFromLast && sets.length ? [...head, NOTATION.and, LAST_LOAD_PART] : head;
   const loadColumn = loads.every((each) => each === loads[0])
-    ? format(loads[0])
-    : `${format(Math.min(...known))}–${known.length < loads.length ? t('gym.log.lastLoad') : format(Math.max(...known))}`;
-  return `${sets.length} × ${repsColumn} · ${loadColumn}`;
+    ? [load(loads[0])]
+    : [load(Math.min(...known)), NOTATION.to, known.length < loads.length ? LAST_LOAD_PART : load(Math.max(...known))];
+  return [...head, NOTATION.and, ...loadColumn];
+}
+
+export function entryLabel(entry, format = fmt) {
+  return spelled(schemeParts(entry, format));
 }
 
 // The heaviest set, ties going to more reps at the same load. A listed session carries the
@@ -519,11 +540,6 @@ export function planReadingOf(session, exerciseId) {
   if (entries.length > 1) return { kind: 'ambiguous', line: null, entry: null };
   const entry = entries[0];
   return { kind: 'planned', line: t('gym.log.planReading', { scheme: entryLabel(entry) }), entry };
-}
-
-// Spelled out to ten; past ten the numeral is what is left.
-export function numberWord(count) {
-  return t('gym.log.numberWord', { count });
 }
 
 // The slot strip as rows, for one movement: what was lifted, in order, then the slots still to

@@ -172,14 +172,14 @@ test('Coach answer receipts come from the server, separately from the live worko
   for (const file of ['coach/coach.js', 'coach/CoachRoom.jsx']) {
     assert.equal(/read:\s*\{/.test(read(file)), false, file);
   }
-  assert.equal(read('coach/CoachRoom.jsx').includes('const read = readLine(receipt.read);'), true);
+  assert.equal(read('coach/CoachRoom.jsx').includes('const read = readLine(receipt.read, (count) => <span className="gym-coach-figure">{count}</span>);'), true);
 });
 
 test('the receipt is always visible and the step list collapses behind it', () => {
   const room = read('coach/CoachRoom.jsx');
-  assert.equal(room.includes('<summary className="gym-coach-read"><span>{readText}</span>'), true);
+  assert.equal(room.includes('<summary className="gym-coach-read"><span>{read}</span>'), true);
   assert.equal(room.includes('<span className="gym-coach-step-count">'), true);
-  assert.equal(room.includes('<p className="gym-coach-read">{readText}</p>'), true, 'a list of nothing readable still draws the receipt');
+  assert.equal(room.includes('<p className="gym-coach-read">{read}</p>'), true, 'a list of nothing readable still draws the receipt');
   assert.equal(room.includes('<details className="gym-coach-trace">'), true);
   assert.equal(room.includes('<p className="gym-coach-steps">{steps}</p>'), true);
   assert.equal(room.includes('<details open'), false, 'the trace opens on a tap, never by default');
@@ -739,7 +739,7 @@ test('the Notes screen is its own room off #/gym/notes, titled as a room with th
   assert.equal(notes.includes('{showsByteCount(body) && ('), true);
   // A sixty-first character is taken and counted, then refused by the store in its own words.
   assert.equal(notes.includes('{showsTitleCount(title) && ('), true);
-  assert.equal(notes.includes('{countReadout(titleCountLabel(title))}'), true);
+  assert.equal(notes.includes('{titleCountLabel(title, figure)}'), true);
   assert.equal(/className="gym-note-title-input"[^/]*maxLength/.test(notes), false, 'no silent maxLength on the title');
   assert.equal(notes.includes('<Back href={NOTES_HREF} onClick={(event) => { event.preventDefault(); onClose(); }}>{NOTES_TITLE}</Back>'), true, 'the editor draws its back through Back.jsx');
   assert.equal(notes.includes("if (error?.code === 'cap') onStale();"), true, 'a full account re-reads the list behind the editor');

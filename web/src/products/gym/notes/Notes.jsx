@@ -20,9 +20,7 @@ import {
   titleCountLabel,
 } from './notes.js';
 
-function countReadout(label) {
-  return label.split(/(\d+)/).map((part, index) => index % 2 ? <span key={index}>{part}</span> : part);
-}
+const figure = (value) => <span>{value}</span>;
 
 // Pending deletes leave the screen before persistence; the kit counts them through the delete window.
 export function Notes({ log }) {
@@ -261,7 +259,7 @@ export function NoteEditor({ note, noteCount = null, onClose, onSaved, onDelete,
             autoFocus
           />
           {showsTitleCount(title) && (
-            <p className={lengthIn(NoteRules.title.unit, title) > NoteRules.title.max ? 'gym-note-count is-over' : 'gym-note-count'}>{countReadout(titleCountLabel(title))}</p>
+            <p className={lengthIn(NoteRules.title.unit, title) > NoteRules.title.max ? 'gym-note-count is-over' : 'gym-note-count'}>{titleCountLabel(title, figure)}</p>
           )}
         </div>
         <div className="gym-note-field">
@@ -276,7 +274,7 @@ export function NoteEditor({ note, noteCount = null, onClose, onSaved, onDelete,
             onChange={(event) => setBody(event.target.value)}
           />
           {showsByteCount(body) && (
-            <p className={lengthIn(NoteRules.body.unit, body) > NoteRules.body.max ? 'gym-note-count is-over' : 'gym-note-count'}>{countReadout(byteCountLabel(body))}</p>
+            <p className={lengthIn(NoteRules.body.unit, body) > NoteRules.body.max ? 'gym-note-count is-over' : 'gym-note-count'}>{byteCountLabel(body, figure)}</p>
           )}
         </div>
       </div>

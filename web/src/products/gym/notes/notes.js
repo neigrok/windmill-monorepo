@@ -12,16 +12,17 @@ export function showsTitleCount(title) {
   return lengthIn(NoteRules.title.unit, title ?? '') >= TITLE_COUNT_FROM;
 }
 
-export function titleCountLabel(title) {
-  return t('gym.notes.titleCount', { count: lengthIn(NoteRules.title.unit, title ?? ''), max: NoteRules.title.max });
+// `figure` dresses each number, so a screen can set the figures apart without reading them back out of the words.
+export function titleCountLabel(title, figure = (value) => value) {
+  return t('gym.notes.titleCount', { count: figure(lengthIn(NoteRules.title.unit, title ?? '')), max: figure(NoteRules.title.max) });
 }
 
 export function showsByteCount(body) {
   return lengthIn(NoteRules.body.unit, body ?? '') >= BODY_COUNT_FROM;
 }
 
-export function byteCountLabel(body) {
-  return t('gym.notes.byteCount', { count: lengthIn(NoteRules.body.unit, body ?? ''), max: NoteRules.body.max });
+export function byteCountLabel(body, figure = (value) => value) {
+  return t('gym.notes.byteCount', { count: figure(lengthIn(NoteRules.body.unit, body ?? '')), max: figure(NoteRules.body.max) });
 }
 
 // The room's title and what these are, in the lifter's own direction; then the one surprising fact,

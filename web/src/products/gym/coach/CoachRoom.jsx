@@ -90,7 +90,7 @@ export function CoachRoom({ log, accountId, initialThread, onDelete }) {
 
 export function CoachBody({ log, accountId, conversation, onNewChat }) {
   const picker = useRef(null);
-  const { phase, request, busy, pending, note, closed, draft, setDraft, send, stop, photo, photoBusy,
+  const { phase, request, busy, pending, note, interrupted, closed, draft, setDraft, send, stop, photo, photoBusy,
     stopRequested, stopBusy, thread, selectPhoto, removePhoto, uploadPhoto, cancelUpload } = conversation;
   const generating = busy || pending;
   const photoUpload = photo?.status === 'uploading';
@@ -98,7 +98,7 @@ export function CoachBody({ log, accountId, conversation, onNewChat }) {
   if (log.session) return <WorkoutInProgress log={log} />;
 
   return <>
-    {note && !(note === RESPONSE_INTERRUPTED && conversation.turns.at(-1)?.status === 'failed') && <p className="gym-coach-note" role="status">{note}</p>}
+    {note && !(interrupted && conversation.turns.at(-1)?.status === 'failed') && <p className="gym-coach-note" role="status">{note}</p>}
     {stopRequested && <p className="gym-coach-note" role="status">{t('gym.coach.stopping')}</p>}
     {closed === 'thread' && <button type="button" className="gym-coach-retry" onClick={onNewChat}>{t('gym.coach.newChat')}</button>}
     {closed === 'account' && <a className="gym-coach-proposal-door" href="#/settings">{t('gym.coach.openAccount')}</a>}
@@ -206,15 +206,14 @@ export function CoachMessage({ turn, log, accountId, thread, onRetry, onConfirm,
     }
   };
   const receipt = turn.receipt ?? turn;
-  const read = readLine(receipt.read);
+  const read = readLine(receipt.read, (count) => <span className="gym-coach-figure">{count}</span>);
   const figureText = (value) => value?.split(/([+-]?\d+(?:\.\d+)?)/).map((part, index) => index % 2 ? <span className="gym-coach-figure" key={index}>{part}</span> : part);
-  const readText = figureText(read);
   const steps = stepsLine(receipt.steps, { drafted: Boolean(turn.routineDrafts?.length) });
   return <li ref={box} className={`gym-coach-turn ${turn.from === 'lifter' ? 'is-lifter' : 'is-coach'}${open ? ' is-menu-open' : ''}`}>
     {(turn.attachments ?? []).map((photo) => <CoachPhoto key={photo.id} accountId={accountId} thread={thread} photo={photo} />)}
     {turn.from !== 'lifter' && read && (steps ? <details className="gym-coach-trace">
-      <summary className="gym-coach-read"><span>{readText}</span>{' '}<span className="gym-coach-step-count">{t('gym.coach.stepCount', { count: receipt.steps?.length ?? 0, figure: <span className="gym-coach-figure">{receipt.steps?.length ?? 0}</span> })} <span aria-hidden="true">›</span></span></summary><p className="gym-coach-steps">{steps}</p>
-    </details> : <p className="gym-coach-read">{readText}</p>)}
+      <summary className="gym-coach-read"><span>{read}</span>{' '}<span className="gym-coach-step-count">{t('gym.coach.stepCount', { count: receipt.steps?.length ?? 0, figure: <span className="gym-coach-figure">{receipt.steps?.length ?? 0}</span> })} <span aria-hidden="true">›</span></span></summary><p className="gym-coach-steps">{steps}</p>
+    </details> : <p className="gym-coach-read">{read}</p>)}
     {text && <>
       <p className="gym-coach-text" tabIndex={0}
         onContextMenu={(event) => { event.preventDefault(); setOpen(true); }}

@@ -68,13 +68,13 @@ export function stepsLine(steps, { drafted = false } = {}) {
   return t('gym.coach.steps', { steps: seen.reduce((done, next) => t('gym.coach.stepsThen', { done, next })) });
 }
 
-// Null for a missing or malformed read; a real zero across all three gets words.
-export function readLine(read) {
+// Null for a missing or malformed read; a real zero across all three gets words. `figure` dresses each count.
+export function readLine(read, figure = (value) => value) {
   if (!read) return null;
   const { sets, sessions, weeks } = read;
   if (typeof sets !== 'number' || typeof sessions !== 'number' || typeof weeks !== 'number') return null;
   if (sets === 0 && sessions === 0 && weeks === 0) return t('gym.coach.readNothing');
-  return t('gym.coach.read', { sets, weeks, sessions });
+  return t('gym.coach.read', { sets, weeks, sessions, setsShown: figure(sets), weeksShown: figure(weeks), sessionsShown: figure(sessions) });
 }
 
 // `from: 'ask'` is the wire's enum for the room's turn and is a machine token, not the room's name.
