@@ -4,6 +4,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Button, Input } from '../../design-system';
 import { createMcpKey } from '../auth/McpKeyClient.js';
+import { t } from '../i18n/settings/index.js';
 
 const MCP_URL = 'https://windmill.works/mcp';
 
@@ -29,10 +30,10 @@ export function McpKeyPanel({ signedIn, onRequireSignIn, onMinted, compact = fal
     } catch (e) {
       if (e?.status === 401) {
         if (onRequireSignIn) onRequireSignIn();
-        else setError('Your session expired — refresh and sign in to create a key.');
+        else setError(t('shell.mcpKey.sessionExpired'));
         return;
       }
-      setError("Couldn't generate a key just now — try again.");
+      setError(t('shell.mcpKey.generateFailed'));
     } finally {
       setBusy(false);
     }
@@ -63,22 +64,22 @@ export function McpKeyPanel({ signedIn, onRequireSignIn, onMinted, compact = fal
   if (minted) {
     return (
       <div style={{ marginTop: compact ? 0 : 10 }}>
-        <p style={honesty}>This is shown once. Treat it like a password — store it now, you won't see it again.</p>
+        <p style={honesty}>{t('shell.mcpKey.shownOnce')}</p>
 
         <div style={well}>
           <div style={wellHead}>
-            <span style={wellLang}>{minted.name ? `AUTHORIZATION HEADER · ${minted.name}` : 'AUTHORIZATION HEADER'}</span>
+            <span style={wellLang}>{minted.name ? t('shell.mcpKey.headerNamed', { name: minted.name }) : t('shell.mcpKey.header')}</span>
             <button type="button" style={copied ? copyBtnOk : copyBtn} onClick={copy}>
-              {copied ? 'Copied' : copyFailed ? 'Press ⌘C' : 'Copy'}
+              {copied ? t('shell.connect.copied') : copyFailed ? t('shell.mcpKey.pressCopy') : t('shell.connect.copy')}
             </button>
           </div>
           <pre style={wellPre}>{header}</pre>
         </div>
 
-        <p style={usage}>Point your client at {MCP_URL} and send this header — no browser round-trip.</p>
+        <p style={usage}>{t('shell.mcpKey.usage', { url: MCP_URL })}</p>
 
         <div style={{ marginTop: 10 }}>
-          <Button variant="ghost" size="sm" onClick={done}>Done</Button>
+          <Button variant="ghost" size="sm" onClick={done}>{t('shell.common.done')}</Button>
         </div>
       </div>
     );
@@ -88,15 +89,15 @@ export function McpKeyPanel({ signedIn, onRequireSignIn, onMinted, compact = fal
     <div style={{ marginTop: compact ? 0 : 10 }}>
       <div style={{ maxWidth: 320 }}>
         <Input
-          label="Name this key"
-          placeholder="Codex on my laptop"
+          label={t('shell.mcpKey.nameLabel')}
+          placeholder={t('shell.mcpKey.namePlaceholder')}
           value={name}
           onChange={(e) => { setName(e.target.value); if (error) setError(null); }}
         />
       </div>
       <div style={{ marginTop: 10 }}>
         <Button variant="secondary" size="sm" disabled={busy} onClick={generate}>
-          {busy ? 'Generating…' : 'Generate key'}
+          {busy ? t('shell.mcpKey.generating') : t('shell.mcpKey.generate')}
         </Button>
       </div>
       {error && <p style={errorLine}>{error}</p>}

@@ -9,33 +9,34 @@
 
 import { PRODUCTS } from '../products.js';
 import { SITE_ORIGIN, SITE_SCHEMA } from './siteIdentity.js';
+import { t } from '../i18n/entry/index.js';
 
 export { SITE_ORIGIN, SITE_SCHEMA };
 
 // The root draws a band and a section for the open products alone, so the shell says exactly those.
 const open = PRODUCTS.filter((product) => product.shell.status === 'open');
 
-export const BRAND_PROMISE = 'Three tools. One account.';
+export const BRAND_PROMISE = t('shell.landingHead.promise');
 export const START_FREE = open.length > 0
-  ? { href: open[0].landing.root.section.cta.href, label: 'Start free' }
+  ? { href: open[0].landing.root.section.cta.href, label: t('shell.landingHead.startFree') }
   : null;
 
 const BRAND_ROOT = {
   path: '/',
-  title: 'Windmill — Roadmap, Journal & Gym for self-growth',
-  description: 'Three quiet tools for looking after yourself — a roadmap for what you’re learning, a journal for what you’re noticing, a log for how you’re training. One account, one subscription.',
-  ogTitle: `Windmill — ${BRAND_PROMISE}`,
-  ogDescription: 'Three quiet tools for looking after yourself — a roadmap for what you’re learning, a journal for what you’re noticing, a log for how you’re training. One account, one subscription.',
-  twitterTitle: `Windmill — ${BRAND_PROMISE}`,
-  twitterDescription: 'Three quiet tools for looking after yourself — a roadmap for what you’re learning, a journal for what you’re noticing, a log for how you’re training. One account, one subscription.',
-  imageAlt: 'A hand-drawn RPG skill tree on a cream background with terracotta, gold, and sky nodes, the Windmill wordmark, and the tagline “Any goal, as a skill tree.”',
+  title: t('shell.landingHead.title'),
+  description: t('shell.landingHead.description'),
+  ogTitle: t('shell.landingHead.socialTitle', { promise: BRAND_PROMISE }),
+  ogDescription: t('shell.landingHead.description'),
+  twitterTitle: t('shell.landingHead.socialTitle', { promise: BRAND_PROMISE }),
+  twitterDescription: t('shell.landingHead.description'),
+  imageAlt: t('shell.landingHead.imageAlt'),
   fallback: {
     accent: '#BC6C42',
-    badge: 'Roadmap · Journal · Gym',
+    badge: t('shell.landingHead.badge'),
     h1: BRAND_PROMISE,
-    sub: 'Three quiet tools for looking after yourself — a roadmap for what you’re learning, a journal for what you’re noticing, a log for how you’re training. One account, one subscription.',
+    sub: t('shell.landingHead.description'),
     actions: START_FREE ? [START_FREE] : [],
-    trust: 'Free to use by hand, all of it. The paid layer is the AI doing the work for you — and it is not on sale yet.',
+    trust: t('shell.landingHead.trust'),
     // The hero bands' promises, read off the bands the page really draws.
     notes: open.map((product) => product.landing.root.band.title),
   },
@@ -48,50 +49,50 @@ const BRAND_ROOT = {
       'mainEntity': [
         {
           '@type': 'Question',
-          'name': 'Do I need an account to use Windmill?',
+          'name': t('shell.landingHead.faq.accountQuestion'),
           'acceptedAnswer': {
             '@type': 'Answer',
-            'text': 'No. No account is needed to start — your first tree lives right in your browser. Sign in only when you want your trees to sync across devices.',
+            'text': t('shell.landingHead.faq.accountAnswer'),
           },
         },
         {
           '@type': 'Question',
-          'name': 'How much does Windmill cost?',
+          'name': t('shell.landingHead.faq.costQuestion'),
           'acceptedAnswer': {
             '@type': 'Answer',
-            'text': 'Windmill is free — building, sharing, exporting, and keeping a tree private cost nothing, and no account is needed to start. Automatic Journal echoes are free in full and never use your AI allowance. Windmill One is planned for active AI use at $12 a month. It is not on sale today, and no card is asked for anywhere. In Gym, the log and the connected log are free, and Coach includes a free allowance; a plan only raises the AI ceiling behind Coach. Roadmap AI assistance is being redesigned; its allowance is not announced yet.',
+            'text': t('shell.landingHead.faq.costAnswer'),
           },
         },
         {
           '@type': 'Question',
-          'name': 'Does Windmill work on my phone and my computer?',
+          'name': t('shell.landingHead.faq.devicesQuestion'),
           'acceptedAnswer': {
             '@type': 'Answer',
-            'text': 'Yes. Sign in once and your trees follow you — check a step off on your phone and edit the branches at your desk.',
+            'text': t('shell.landingHead.faq.devicesAnswer'),
           },
         },
         {
           '@type': 'Question',
-          'name': 'Can Claude, Cursor, or other AI agents build trees for me?',
+          'name': t('shell.landingHead.faq.agentsQuestion'),
           'acceptedAnswer': {
             '@type': 'Answer',
-            'text': 'Yes. Windmill speaks MCP (Model Context Protocol), so Claude, Cursor, or any compatible agent can create and update a tree alongside you.',
+            'text': t('shell.landingHead.faq.agentsAnswer'),
           },
         },
         {
           '@type': 'Question',
-          'name': 'Can I share a tree with other people?',
+          'name': t('shell.landingHead.faq.sharingQuestion'),
           'acceptedAnswer': {
             '@type': 'Answer',
-            'text': 'Trees start private. Share one and it becomes a page anyone holding the link can open — and anyone who opens it can fork a copy to grow their own version.',
+            'text': t('shell.landingHead.faq.sharingAnswer'),
           },
         },
         {
           '@type': 'Question',
-          'name': 'Are there ready-made learning paths for developers?',
+          'name': t('shell.landingHead.faq.pathsQuestion'),
           'acceptedAnswer': {
             '@type': 'Answer',
-            'text': 'Yes. Windmill ships nine starter quests with real prerequisite logic. Three of the developer paths — Frontend path, Rust from zero and ML foundations — are adapted from the roadmap.sh community maps (CC BY-SA); the rest, including Ship v1, are Windmill’s own.',
+            'text': t('shell.landingHead.faq.pathsAnswer'),
           },
         },
       ],

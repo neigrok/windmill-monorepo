@@ -12,6 +12,7 @@ import { ApiKeysSection } from './ApiKeysSection.jsx';
 import { SessionsSection } from './SessionsSection.jsx';
 import { FeedbackSection } from './FeedbackSection.jsx';
 import { CloseAccountSection } from './CloseAccountSection.jsx';
+import { t } from '../i18n/settings/index.js';
 
 // `main` sits in the product zone after the account identity; `data` renders last, beside the
 // account's own close.
@@ -26,7 +27,7 @@ export function SettingsPage({ inShell = false }) {
   return (
     <>
       <AccountChrome width={540} bare={inShell}>
-        <h1 style={title}>Account settings</h1>
+        <h1 style={title}>{t('shell.settings.title')}</h1>
 
         {status === 'loading' ? null : signedIn ? (
           <>
@@ -45,8 +46,8 @@ export function SettingsPage({ inShell = false }) {
           </>
         ) : (
           <div style={{ marginTop: 6 }}>
-            <p style={gate}>Sign in to view your settings — they belong to an account, and there isn't one signed in here yet.</p>
-            <Button variant="primary" size="sm" onClick={openSignInDoor}>Sign in</Button>
+            <p style={gate}>{t('shell.settings.signedOut')}</p>
+            <Button variant="primary" size="sm" onClick={openSignInDoor}>{t('shell.auth.signIn')}</Button>
           </div>
         )}
       </AccountChrome>

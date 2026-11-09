@@ -1,7 +1,9 @@
 package works.windmill.gym.presentation
 
 import kotlinx.serialization.Serializable
+import works.windmill.gym.R
 import works.windmill.gym.domain.sync.Prefill
+import works.windmill.platform.i18n.Words
 
 @Serializable
 data class WorkoutMoment(val wallMs: Long, val elapsedMs: Long, val bootId: String) {
@@ -41,21 +43,23 @@ data class LogSetOffer(
     val reps: Int,
 )
 
+// The card's words: the routine's own name or the app's for a workout without one, the movement in hand, what the rack holds, and where the count stands.
 data class WorkoutNotification(
     val key: WorkoutKey,
-    val title: String,
-    val movement: String,
-    val rackLine: String,
-    val counter: String,
+    val heading: Words,
+    val doing: Words,
+    val racked: Words,
+    val counted: Words,
     val offer: LogSetOffer?,
     val hidden: Boolean,
     val sinceSetAtMs: Long,
 ) {
-    constructor(key: WorkoutKey, session: Session, movement: String, sets: List<TrainingSet>,
+    constructor(key: WorkoutKey, session: Session, movement: Words, sets: List<TrainingSet>,
         state: WorkoutState, ready: Boolean) : this(
-        key, session.plan?.routine ?: Readout.noRoutine, movement,
-        state.rack?.let { "${Readout.weight(it.weightKg)} kg × ${it.reps}" } ?: "Open workout",
-        LiveLines.counter(LiveLines.setCount(sets.filter { it.exerciseId == state.rack?.exerciseId }),
+        key, session.plan?.routine?.let(Words::Plain) ?: Readout.freeWorkout, movement,
+        state.rack?.let { Words.Message(R.string.gym_notification_rack, listOf(Readout.weight(it.weightKg), it.reps.toString())) }
+            ?: Words.Message(R.string.gym_notification_rack_open),
+        LiveLines.counted(LiveLines.setCount(sets.filter { it.exerciseId == state.rack?.exerciseId }),
             state.rack?.exerciseId?.let { session.plan?.entry(it) }),
         state.offer.takeIf { ready }, state.hidden,
         sets.maxOfOrNull { it.completedAtMs } ?: session.startedAtMs,
@@ -67,13 +71,13 @@ data class LogSetCommand(val key: WorkoutKey, val offerId: String)
 sealed interface LogSetAcceptance {
     data class Accepted(val setId: String) : LogSetAcceptance
     data object Stale : LogSetAcceptance
-    data class Unavailable(val reason: String) : LogSetAcceptance
+    data class Unavailable(val why: Words) : LogSetAcceptance
 }
 
 sealed interface WorkoutChange {
     data object Saved : WorkoutChange
     data object Stale : WorkoutChange
-    data class Unavailable(val reason: String) : WorkoutChange
+    data class Unavailable(val why: Words) : WorkoutChange
 }
 
 @Serializable

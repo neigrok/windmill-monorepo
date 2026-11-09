@@ -7,6 +7,7 @@ import { BodyweightReading, useBodyweight, WeighInSheet } from './bodyweight/Bod
 import { WEIGH_IN_VERB } from './bodyweight/bodyweight.js';
 import { deleteFailure, fixFailure, setsAfter } from './fix.js';
 import { FixSheet } from './FixSheet.jsx';
+import { t } from './i18n/index.js';
 import {
   BACKFILL_HREF, CLOSED_ITSELF_NOTE, closedOnItsOwn, dayLabel, finishHref, fixSetHref, fromSession,
   groupByExercise, isFinished, logWhenLabel, NO_ROUTINE, planFrozenLabel, recordHref,
@@ -110,50 +111,55 @@ export function LogList({ log, hash = '#/gym/log', sessionId = null, fixSetId = 
   return (
     <section className={`gym-log-screen${sessionId ? ' has-session' : ''}${focusedHistory ? ' has-history-focus' : ''}`}>
       <header className="gym-head gym-log-head">
-        <h1 className="gym-title">The log</h1>
+        <h1 className="gym-title">{t('gym.log.title')}</h1>
         <div className="gym-history-actions">
-          <a className="gym-history-share" href="#/gym/share-log" aria-label="Share log" title="Share log"><Icon name="share" size={20} /></a>
+          <a className="gym-history-share" href="#/gym/share-log" aria-label={t('gym.log.shareLog')} title={t('gym.log.shareLog')}><Icon name="share" size={20} /></a>
           <button type="button" className="gym-history-weigh" onClick={() => setWeighing(true)}>{WEIGH_IN_VERB}</button>
-          <a className="gym-door-past" href={BACKFILL_HREF}>Add past workout</a>
+          <a className="gym-door-past" href={BACKFILL_HREF}>{t('gym.log.addPastWorkout')}</a>
         </div>
       </header>
       <div className="gym-history-filters">
         <DateJump year={filters.year} month={filters.month} months={dates.months} onChange={moveFilter} failure={dates.failure} onRetry={dates.retry} />
-        <HistoryFilter label="Movement" value={filters.exercise} onChange={(exercise) => moveFilter({ exercise })} options={exerciseOptions} />
-        <HistoryFilter label="Routine" value={filters.routine} onChange={(routine) => moveFilter({ routine })} options={routineOptions} />
+        <HistoryFilter kind="exercise" value={filters.exercise} onChange={(exercise) => moveFilter({ exercise })} options={exerciseOptions} />
+        <HistoryFilter kind="routine" value={filters.routine} onChange={(routine) => moveFilter({ routine })} options={routineOptions} />
       </div>
       {history.data?.summary && <p className="gym-log-count">{historyTotals(withoutRows(history.data.summary, (history.data.sessions ?? []).filter((session) => hidden.has(session.id))))}</p>}
-      {history.phase === 'loading' && !history.data && <p className="gym-quiet">Opening the log…</p>}
-      {history.failure && <p className="gym-read-failed">The log didn’t load. <Button size="sm" variant="secondary" onClick={history.retry}>Retry</Button></p>}
-      {empty && !noMatches && <p className="gym-quiet">No sessions yet.</p>}
-      {noMatches && <section className="gym-history-empty"><p>{emptyHistoryLine(filters, log.catalog, routineOptions)}</p><Button onClick={() => moveFilter({ year: null, month: null, exercise: '', routine: '' })}>Clear filters</Button></section>}
+      {history.phase === 'loading' && !history.data && <p className="gym-quiet">{t('gym.log.opening')}</p>}
+      {history.failure && <p className="gym-read-failed">{t('gym.log.readFailed')} <Button size="sm" variant="secondary" onClick={history.retry}>{t('gym.common.retry')}</Button></p>}
+      {empty && !noMatches && <p className="gym-quiet">{t('gym.log.noSessions')}</p>}
+      {noMatches && <section className="gym-history-empty"><p>{emptyHistoryLine(filters, log.catalog, routineOptions)}</p><Button onClick={() => moveFilter({ year: null, month: null, exercise: '', routine: '' })}>{t('gym.log.clearFilters')}</Button></section>}
       {!noMatches && <div className="gym-history-workspace">
-        <aside ref={index} onScroll={(event) => { if (!indexPosition.current.pending) indexPositions.set(indexKey, event.currentTarget.scrollTop); }} className={`gym-history-index is-${filters.density}${dense ? ' is-dense' : ''}`} aria-label="Workout history">
+        <aside ref={index} onScroll={(event) => { if (!indexPosition.current.pending) indexPositions.set(indexKey, event.currentTarget.scrollTop); }} className={`gym-history-index is-${filters.density}${dense ? ' is-dense' : ''}`} aria-label={t('gym.log.historyLabel')}>
           <HistoryIndex sessions={sessions} selected={selected} filters={filters} dense={dense} />
-          {!history.data?.next && complete && history.phase === 'ready' && sessions.length > 0 && <p className="gym-history-end">End of history</p>}
-          {history.data?.next && <button type="button" className="gym-older" aria-busy={history.more === 'loading'} onClick={history.load}>{history.more === 'loading' ? 'Loading…' : history.more === 'failed' ? 'That read failed · retry' : 'Load older'}</button>}
+          {!history.data?.next && complete && history.phase === 'ready' && sessions.length > 0 && <p className="gym-history-end">{t('gym.log.historyEnd')}</p>}
+          {history.data?.next && <button type="button" className="gym-older" aria-busy={history.more === 'loading'} onClick={history.load}>{history.more === 'loading' ? t('gym.log.loadingOlder') : history.more === 'failed' ? t('gym.log.olderFailed') : t('gym.log.loadOlder')}</button>}
         </aside>
         <div className="gym-history-detail">
-          {selectedOutside && <p className="gym-quiet">This workout is outside these filters. <a href={historyHref(filters, { selected: null })}>Back to results</a></p>}
+          {selectedOutside && <p className="gym-quiet">{t('gym.log.outsideFilters')} <a href={historyHref(filters, { selected: null })}>{t('gym.log.backToResults')}</a></p>}
           {selected && <>
-            <nav className="gym-reader-nav" aria-label="Workout navigation"><a className="gym-reader-top-back" href={historyHref(filters, { selected: null })}>← The log</a><button type="button" disabled={selectedIndex < 0 || (selectedIndex === sessions.length - 1 && !history.data?.next) || history.more === 'loading'} onClick={() => adjacent(1)}>Previous</button><button type="button" disabled={selectedIndex <= 0} onClick={() => adjacent(-1)}>Next</button><a className="gym-reader-edit" href={`${sessionHref(selected)}/edit?from=${encodeURIComponent(from)}`}>Edit workout</a></nav>
+            <nav className="gym-reader-nav" aria-label={t('gym.log.readerNavLabel')}><a className="gym-reader-top-back" href={historyHref(filters, { selected: null })}>{t('gym.log.backToLog')}</a><button type="button" disabled={selectedIndex < 0 || (selectedIndex === sessions.length - 1 && !history.data?.next) || history.more === 'loading'} onClick={() => adjacent(1)}>{t('gym.log.previous')}</button><button type="button" disabled={selectedIndex <= 0} onClick={() => adjacent(-1)}>{t('gym.log.next')}</button><a className="gym-reader-edit" href={`${sessionHref(selected)}/edit?from=${encodeURIComponent(from)}`}>{t('gym.log.editWorkout')}</a></nav>
             <div className="gym-history-reader"><SessionDetail key={selected} id={selected} log={log} embedded from={from} /></div>
           </>}
-          {!selected && <><div className="gym-progress-head"><h2 className="gym-section-title">Progress</h2>{consistency && <p className="gym-consistency">{consistency}</p>}</div>
+          {!selected && <><div className="gym-progress-head"><h2 className="gym-section-title">{t('gym.log.progressTitle')}</h2>{consistency && <p className="gym-consistency">{consistency}</p>}</div>
           <ProgressCards log={log} from={{ screen: 'log', href: from }} /></>}
         </div>
       </div>}
-      {!noMatches && <><details className="gym-log-options"><summary>Log options</summary><BodyweightReading latest={weights.latest} unit={weights.unit} /><button type="button" className="gym-clear-filters" aria-pressed={filters.density === 'compact'} onClick={() => { window.location.hash = historyHref(filters, { density: filters.density === 'compact' ? 'comfortable' : 'compact' }); }}>{filters.density === 'compact' ? 'Comfortable rows' : 'Compact rows'}</button></details>
+      {!noMatches && <><details className="gym-log-options"><summary>{t('gym.log.options')}</summary><BodyweightReading latest={weights.latest} unit={weights.unit} /><button type="button" className="gym-clear-filters" aria-pressed={filters.density === 'compact'} onClick={() => { window.location.hash = historyHref(filters, { density: filters.density === 'compact' ? 'comfortable' : 'compact' }); }}>{filters.density === 'compact' ? t('gym.log.comfortableRows') : t('gym.log.compactRows')}</button></details>
       <footer className="gym-log-footer">
         <button type="button" className="gym-history-weigh" onClick={() => setWeighing(true)}>{WEIGH_IN_VERB}</button>
-        <a className="gym-door-past" href={BACKFILL_HREF}>Add past workout</a>
+        <a className="gym-door-past" href={BACKFILL_HREF}>{t('gym.log.addPastWorkout')}</a>
       </footer></>}
       {weighing && <WeighInSheet unit={weights.unit} onSave={async (write) => { const refused = await weights.save(write); if (!refused) setWeighing(false); return refused; }} onClose={() => setWeighing(false)} />}
     </section>
   );
 }
 
-export function HistoryFilter({ label, value, options, onChange }) {
+// `kind` names the filter by the history query's own key, `exercise` or `routine`.
+export function HistoryFilter({ kind, value, options, onChange }) {
+  const { label, clearLabel } = {
+    exercise: { label: t('gym.log.filterMovement'), clearLabel: t('gym.log.clearMovement') },
+    routine: { label: t('gym.log.filterRoutine'), clearLabel: t('gym.log.clearRoutine') },
+  }[kind];
   const values = options.some((option) => String(option.id) === String(value)) || !value ? options : [{ id: value, name: value }, ...options];
   return <span className="gym-history-filter">
     <span className="gym-history-select">
@@ -163,7 +169,7 @@ export function HistoryFilter({ label, value, options, onChange }) {
         {values.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}
       </select>
     </span>
-    {value && <button type="button" aria-label={`Clear ${label.toLowerCase()}`} onClick={() => onChange('')}>×</button>}
+    {value && <button type="button" aria-label={clearLabel} onClick={() => onChange('')}>×</button>}
   </span>;
 }
 
@@ -177,7 +183,7 @@ export function HistoryIndex({ sessions, selected, filters = {}, hrefOf = null, 
 }
 
 function SessionRow({ summary, selected, href, unit }) {
-  const facts = [typeof summary.workingSetCount === 'number' ? `${summary.workingSetCount} sets` : null, tonnageLabel(summary.tonnageKg, unit)].filter(Boolean);
+  const facts = [typeof summary.workingSetCount === 'number' ? t('gym.log.rowSets', { count: summary.workingSetCount }) : null, tonnageLabel(summary.tonnageKg, unit)].filter(Boolean);
   return <li><a className={`gym-row${selected ? ' is-selected' : ''}`} href={href} aria-current={selected ? 'page' : undefined}>
     <div className="gym-row-head"><span className="gym-row-title">{summary.routineName || routineNameOf(summary) || NO_ROUTINE}</span><span className="gym-row-when">{isFinished(summary) ? shortDayLabel(summary.startedAt) : logWhenLabel(summary)}</span></div>
     {facts.length > 0 && <div className="gym-row-facts">{facts.map((fact) => <span key={fact}>{fact}</span>)}</div>}
@@ -220,7 +226,7 @@ export function SessionDetail({ id, log, embedded = false, from = '#/gym/log', e
     holdDelete({
       kind: 'session',
       id,
-      refused: (error) => say(`That session wasn’t discarded — ${failureReason(error)}.`),
+      refused: (error) => say(t('gym.log.sessionNotDiscarded', { reason: failureReason(error) })),
     });
     window.location.hash = '#/gym/log';
   };
@@ -242,23 +248,23 @@ export function SessionDetail({ id, log, embedded = false, from = '#/gym/log', e
     }
   };
 
-  if (view.phase === 'loading') return <p className="gym-quiet">Opening the session…</p>;
+  if (view.phase === 'loading') return <p className="gym-quiet">{t('gym.log.openingSession')}</p>;
   // A session its delete window holds is gone from its own screen, as its row is from the log.
   if (view.phase === 'absent' || (!correction && log.hidden('session').has(id))) {
     return (
       <>
-        {!embedded && <Back href={from}>The log</Back>}
-        <p className="gym-quiet">This session isn’t in your log.</p>
+        {!embedded && <Back href={from}>{t('gym.log.title')}</Back>}
+        <p className="gym-quiet">{t('gym.log.sessionAbsent')}</p>
       </>
     );
   }
   if (view.phase === 'failed') {
     return (
       <>
-        {!embedded && <Back href={from}>The log</Back>}
+        {!embedded && <Back href={from}>{t('gym.log.title')}</Back>}
         <p className="gym-read-failed">
-          The session didn’t load.
-          <Button variant="secondary" size="sm" onClick={reread}>Retry</Button>
+          {t('gym.log.sessionFailed')}
+          <Button variant="secondary" size="sm" onClick={reread}>{t('gym.common.retry')}</Button>
         </p>
       </>
     );
@@ -275,17 +281,17 @@ export function SessionDetail({ id, log, embedded = false, from = '#/gym/log', e
   if (edit && isFinished(session)) return <WorkoutEditor session={session} sets={sets} catalog={view.data.catalog} log={log} from={from} onDelete={discard} />;
   const focusedSet = fixSetId ? sets.find((set) => set.id === fixSetId) : fixing;
   if (focusedSet) return <FixSheet key={focusedSet.id} set={focusedSet} sets={sets} movement={movements.get(focusedSet.exerciseId)?.name ?? focusedSet.exerciseId} exercise={movements.get(focusedSet.exerciseId) ?? null} session={session} onSave={(fix) => saveFix(focusedSet, fix)} onDelete={() => dropSet(focusedSet)} onClose={closeFix} />;
-  if (fixSetId) return <><Back href={`${sessionHref(id)}?from=${encodeURIComponent(from)}`}>{routineNameOf(session) ?? NO_ROUTINE}</Back><p className="gym-quiet">That set isn’t in this workout any more.</p></>;
+  if (fixSetId) return <><Back href={`${sessionHref(id)}?from=${encodeURIComponent(from)}`}>{routineNameOf(session) ?? NO_ROUTINE}</Back><p className="gym-quiet">{t('gym.fix.setGone')}</p></>;
   return (
     <>
       <header className="gym-detail-head">
-        {!embedded && <Back href={from}>The log</Back>}
+        {!embedded && <Back href={from}>{t('gym.log.title')}</Back>}
         <h1 className="gym-title">{routineNameOf(session) ?? NO_ROUTINE}</h1>
         <p className="gym-detail-when">{dayLabel(session.startedAt)} {new Date(session.startedAt).getFullYear()} · {timeLabel(session.startedAt)}{session.finishedAt != null ? `–${timeLabel(session.finishedAt)}` : ''}</p>
         {closedOnItsOwn(session, logged) && <p className="gym-detail-closed">{CLOSED_ITSELF_NOTE}</p>}
-        <dl className="gym-reader-totals">{[[totals.sets, 'sets'], [totals.reps, 'reps'], [tonnageTotalLabel(totals.tonnageKg), `${weightUnit()} external`]].map(([value, label]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
+        <dl className="gym-reader-totals">{[[totals.sets, t('gym.log.totalSets')], [totals.reps, t('gym.log.totalReps')], [tonnageTotalLabel(totals.tonnageKg), t('gym.log.totalExternal', { unit: weightUnit() })]].map(([value, label]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
       </header>
-      {logged.length === 0 && <p className="gym-quiet">No sets in this session.</p>}
+      {logged.length === 0 && <p className="gym-quiet">{t('gym.log.noSets')}</p>}
       {groupByExercise(sets).map(([exerciseId, group]) => {
         const movementTotals = workoutTotals(group, view.data.catalog);
         const scheme = collapsedScheme(group);
@@ -296,12 +302,14 @@ export function SessionDetail({ id, log, embedded = false, from = '#/gym/log', e
               <h2 className="gym-exercise-name">
                 <a className="gym-movement-door" href={recordHref(exerciseId, fromSession(id, `${sessionHref(id)}?from=${encodeURIComponent(from)}`))}>{movements.get(exerciseId)?.name ?? exerciseId}</a>
               </h2>
-              {scheme && <button type="button" className="gym-movement-expand" aria-label={`${collapsed ? 'Expand' : 'Collapse'} ${movements.get(exerciseId)?.name ?? exerciseId}`} aria-expanded={!collapsed} onClick={() => setExpanded((current) => { const next = new Set(current); if (next.has(exerciseId)) next.delete(exerciseId); else next.add(exerciseId); return next; })}><img src={collapsed ? new URL('./logbook/assets/expand.svg', import.meta.url).href : new URL('./logbook/assets/collapse.svg', import.meta.url).href} width="12" height="12" alt="" /></button>}
+              {scheme && <button type="button" className="gym-movement-expand" aria-label={collapsed ? t('gym.log.expandMovement', { name: movements.get(exerciseId)?.name ?? exerciseId }) : t('gym.log.collapseMovement', { name: movements.get(exerciseId)?.name ?? exerciseId })} aria-expanded={!collapsed} onClick={() => setExpanded((current) => { const next = new Set(current); if (next.has(exerciseId)) next.delete(exerciseId); else next.add(exerciseId); return next; })}><img src={collapsed ? new URL('./logbook/assets/expand.svg', import.meta.url).href : new URL('./logbook/assets/collapse.svg', import.meta.url).href} width="12" height="12" alt="" /></button>}
               {!scheme && <span className="gym-movement-state" aria-hidden="true"><img src={new URL('./logbook/assets/collapse.svg', import.meta.url).href} width="12" height="12" alt="" /></span>}
-              <span className="gym-movement-totals">{movementTotals.reps} reps · {group.every((set) => set.weightKg === 0) ? 'bodyweight' : `${tonnageTotalLabel(movementTotals.tonnageKg)} ${weightUnit()}`}</span>
+              <span className="gym-movement-totals">{group.every((set) => set.weightKg === 0)
+                ? t('gym.log.movementTotalsBodyweight', { reps: movementTotals.reps })
+                : t('gym.log.movementTotals', { reps: movementTotals.reps, tonnage: tonnageTotalLabel(movementTotals.tonnageKg), unit: weightUnit() })}</span>
             </div>
             {collapsed && <button type="button" className="gym-scheme-row" aria-expanded="false" onClick={() => setExpanded((current) => new Set(current).add(exerciseId))}>
-              <span className="gym-set-rail" aria-label={`${group.length} recorded sets`}>{group.map((set) => <i key={set.id} />)}</span>
+              <span className="gym-set-rail" aria-label={t('gym.log.recordedSets', { count: group.length })}>{group.map((set) => <i key={set.id} />)}</span>
               <span>{scheme}</span>
             </button>}
             {!collapsed && <ul className="gym-sets">
@@ -315,9 +323,9 @@ export function SessionDetail({ id, log, embedded = false, from = '#/gym/log', e
                     >
                       <span className="gym-set-rail" aria-hidden="true"><i /></span>
                       <span className="gym-set-load">{setLoadLabel(set, weightUnit(), loadBasisLabel(movements.get(exerciseId), set.weightKg))}</span>
-                      {set.rpe != null && <span className="gym-set-rpe">rpe {set.rpe}</span>}
+                      {set.rpe != null && <span className="gym-set-rpe">{t('gym.log.rpe', { rpe: set.rpe })}</span>}
                       <span className="gym-set-tail">
-                        <span className="gym-set-fix">Fix set</span>
+                        <span className="gym-set-fix">{t('gym.log.fixSet')}</span>
                       </span>
                       {set.note && <span className="gym-set-note">{set.note}</span>}
                     </button>
@@ -329,12 +337,12 @@ export function SessionDetail({ id, log, embedded = false, from = '#/gym/log', e
           </section>
         );
       })}
-      {embedded && isFinished(session) && <a className="gym-reader-edit-narrow" href={`${sessionHref(id)}/edit?from=${encodeURIComponent(from)}`}>Edit workout</a>}
-      <details className="gym-workout-more"><summary>Workout options</summary>
+      {embedded && isFinished(session) && <a className="gym-reader-edit-narrow" href={`${sessionHref(id)}/edit?from=${encodeURIComponent(from)}`}>{t('gym.log.editWorkout')}</a>}
+      <details className="gym-workout-more"><summary>{t('gym.log.workoutOptions')}</summary>
         {frozen && <p className="gym-detail-plan">{frozen}</p>}
-        {isFinished(session) && <a className="gym-detail-review" href={finishHref(session.id)}>Session review ›</a>}
+        {isFinished(session) && <a className="gym-detail-review" href={finishHref(session.id)}>{t('gym.log.sessionReview')}</a>}
         <ShareWorkout sessionId={id} />
-        {isFinished(session) && <div className="gym-detail-discard"><button type="button" className="gym-short-discard" onClick={discard}>Discard session</button></div>}
+        {isFinished(session) && <div className="gym-detail-discard"><button type="button" className="gym-short-discard" onClick={discard}>{t('gym.log.discardSession')}</button></div>}
       </details>
     </>
   );

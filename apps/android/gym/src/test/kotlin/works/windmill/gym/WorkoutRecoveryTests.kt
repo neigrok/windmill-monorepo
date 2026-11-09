@@ -50,6 +50,7 @@ import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import works.windmill.gym.R
 import works.windmill.gym.presentation.RoutineDraft
 import works.windmill.gym.presentation.SessionStart
 import works.windmill.gym.presentation.SetWrite
@@ -57,8 +58,8 @@ import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.TrainingStore
 import works.windmill.gym.ui.GymMaterial
-import works.windmill.gym.presentation.NumberEntry
 import works.windmill.platform.Account
+import works.windmill.platform.i18n.text
 import works.windmill.sync.engine.signIn
 import works.windmill.sync.engine.signOut
 
@@ -132,7 +133,7 @@ class WorkoutRecoveryTests {
             restored.emulateSavedInstanceStateRestore()
             awaitText("1e999")
             compose.onNodeWithText("1e999").assertIsDisplayed()
-            compose.onNodeWithText(NumberEntry.notANumber).assertIsDisplayed()
+            compose.onNodeWithText(string(R.string.gym_entry_not_a_number)).assertIsDisplayed()
             compose.runOnIdle { assertEquals(40.0, historical.weightKg, 0.0) }
             compose.runOnIdle { (ShadowDialog.getLatestDialog() as ComponentDialog).onBackPressedDispatcher.onBackPressed() }
             compose.onNodeWithText("controlled tempo").assertIsDisplayed()
@@ -203,7 +204,7 @@ class WorkoutRecoveryTests {
             compose.onNodeWithText("Set note").performTextInput("controlled tempo")
             compose.onNode(load).performClick().performTextReplacement("1e999")
             compose.onNode(load).performImeAction()
-            compose.onNodeWithText(NumberEntry.notANumber).assertExists()
+            compose.onNodeWithText(string(R.string.gym_entry_not_a_number)).assertExists()
             compose.runOnIdle { holdReads = true }
             restored.emulateSavedInstanceStateRestore()
             compose.waitUntil(10_000) { compose.runOnIdle { waiting.isNotEmpty() } }
@@ -215,7 +216,7 @@ class WorkoutRecoveryTests {
             }
             awaitText("Fix set")
             compose.onNodeWithText("1e999").assertIsDisplayed()
-            compose.onNodeWithText(NumberEntry.notANumber).assertIsDisplayed()
+            compose.onNodeWithText(string(R.string.gym_entry_not_a_number)).assertIsDisplayed()
             compose.onNodeWithText("controlled tempo").assertExists()
             compose.runOnIdle { assertEquals(listOf(original), room.training.session(live.id)!!.sets) }
             compose.onNode(load).performClick().performTextReplacement("61")
@@ -321,7 +322,7 @@ class WorkoutRecoveryTests {
         compose.onNodeWithText("Bench Press · 1").assertIsDisplayed()
         compose.onNodeWithText("Set note").performTextInput("controlled tempo")
         compose.onNodeWithText("Not rated").performClick()
-        compose.onNodeWithText(works.windmill.gym.presentation.SetEffort.rpeReading(9.5)).performScrollTo().performClick()
+        compose.onNodeWithText(works.windmill.gym.presentation.SetEffort.rpe(9.5).spelled()).performScrollTo().performClick()
         compose.onNodeWithContentDescription("Load, kg total").performClick().performTextReplacement("1e999")
         compose.onNodeWithContentDescription("Load, kg total").performImeAction()
         restored.emulateSavedInstanceStateRestore()
@@ -329,7 +330,7 @@ class WorkoutRecoveryTests {
         compose.onNodeWithText("1e999").assertIsDisplayed()
         compose.runOnIdle { (ShadowDialog.getLatestDialog() as ComponentDialog).onBackPressedDispatcher.onBackPressed() }
         compose.onNodeWithText("controlled tempo").assertIsDisplayed()
-        compose.onNodeWithText(works.windmill.gym.presentation.SetEffort.rpeReading(9.5)).assertIsDisplayed()
+        compose.onNodeWithText(works.windmill.gym.presentation.SetEffort.rpe(9.5).spelled()).assertIsDisplayed()
         compose.onNodeWithText("Bench Press · 1").assertIsDisplayed()
         compose.onNodeWithText("Save fix").performClick()
         compose.runOnIdle { runBlocking {
@@ -549,7 +550,7 @@ class WorkoutRecoveryTests {
             compose.onNode(hasContentDescription("Set 1, logged, 60 kg total, 8 reps")).performScrollTo().performClick()
             compose.onNodeWithText("Set note").performTextInput("Live retained note")
             compose.onNodeWithText("Not rated").performClick()
-            compose.onNodeWithText(works.windmill.gym.presentation.SetEffort.rpeReading(9.5)).performScrollTo().performClick()
+            compose.onNodeWithText(works.windmill.gym.presentation.SetEffort.rpe(9.5).spelled()).performScrollTo().performClick()
             for (dismissal in listOf("back", "blur then back", "scrim", "drag")) {
                 val modal = compose.onNodeWithText("Fix set").fetchSemanticsNode().root
                 compose.onNode(hasText("60") and SemanticsMatcher("in the Fix dialog") { it.root == modal }).performClick()
@@ -569,7 +570,7 @@ class WorkoutRecoveryTests {
                     }
                 }
                 compose.onNodeWithText("Live retained note").assertIsDisplayed()
-                compose.onNodeWithText(works.windmill.gym.presentation.SetEffort.rpeReading(9.5)).assertIsDisplayed()
+                compose.onNodeWithText(works.windmill.gym.presentation.SetEffort.rpe(9.5).spelled()).assertIsDisplayed()
                 compose.onNodeWithText("1e999").assertDoesNotExist()
             }
             compose.onNodeWithText("Save fix").performClick()

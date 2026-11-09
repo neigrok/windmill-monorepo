@@ -26,10 +26,10 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
-import works.windmill.gym.GymRoom
+import works.windmill.gym.spelled
 import works.windmill.gym.coach.ConversationRow
 import works.windmill.gym.coach.LocalCoach
-import works.windmill.gym.coach.Threads
+import works.windmill.gym.R
 import works.windmill.gym.coach.ThreadsBinding
 import works.windmill.gym.coach.ThreadsScreen
 import works.windmill.gym.coach.heldConversation
@@ -53,6 +53,7 @@ import works.windmill.domain.kit.Id
 import works.windmill.domain.kit.Outcome
 import works.windmill.platform.Account
 import works.windmill.platform.User
+import works.windmill.platform.i18n.Words
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.sync.api.Change
 import works.windmill.sync.api.CommitOutcome
@@ -195,7 +196,7 @@ class StanceReadsTheAccountTests {
             assertEquals(emptyList<CoachThread>(), room.heldThreads())
             assertEquals(emptyList<Any>(), store.held.withheld)
         }
-        compose.onNodeWithText(Threads.none).assertIsDisplayed()
+        compose.onNodeWithText(androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>().getString(R.string.gym_coach_threads_none)).assertIsDisplayed()
         compose.onNodeWithText("why is my bench stalled?").assertDoesNotExist()
         scope.cancel()
     }
@@ -217,8 +218,8 @@ class StanceReadsTheAccountTests {
             LogBinding(store).let { log -> LogScreen(state = log, events = log, seat = "", onOpenSession = {}, onOpenBodyweight = {},
                 onShareSession = {}, onDiscardSession = {}) }
         }
-        compose.onNodeWithText("First workout · ${Readout.date(oldMs)}").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("First workout · ${Readout.date(newMs)}").assertDoesNotExist()
+        compose.onNodeWithText("First workout · ${Readout.date(oldMs).spelled()}").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("First workout · ${Readout.date(newMs).spelled()}").assertDoesNotExist()
 
         // A discard moves it, once, to the day the account actually started on. The re-read is not enough on
         // its own: a row deeper than the page it answers with is folded straight back in, so the discard has
@@ -230,8 +231,8 @@ class StanceReadsTheAccountTests {
             assertEquals("the log let go of it and never drew it again",
                 listOf(new.id), store.history.allSessions.map { it.id })
         }
-        compose.onNodeWithText("First workout · ${Readout.date(newMs)}").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("First workout · ${Readout.date(oldMs)}").assertDoesNotExist()
+        compose.onNodeWithText("First workout · ${Readout.date(newMs).spelled()}").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("First workout · ${Readout.date(oldMs).spelled()}").assertDoesNotExist()
         scope.cancel()
     }
 
@@ -254,8 +255,8 @@ class StanceReadsTheAccountTests {
         compose.setContent { ThreadsScreen(state = threads, events = threads, backTo = "Coach", onBack = {}, onOpen = {}, onAskNew = {}) }
         compose.waitUntil(5_000) { compose.onAllNodesWithText("why is my bench stalled?").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("Hold the load.").assertIsDisplayed()
-        compose.onNodeWithText(Threads.none).assertDoesNotExist()
-        compose.runOnIdle { assertEquals(listOf(ConversationRow(thread, "why is my bench stalled?", store.coach.history.single().askedAtMs, answerPreview = "Hold the load.")), store.coach.history) }
+        compose.onNodeWithText(androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>().getString(R.string.gym_coach_threads_none)).assertDoesNotExist()
+        compose.runOnIdle { assertEquals(listOf(ConversationRow(thread, Words.Plain("why is my bench stalled?"), store.coach.history.single().askedAtMs, answerPreview = "Hold the load.")), store.coach.history) }
         assertEquals(listOf("gym.readConversation:coach-record-unreadable"), failures)
         scope.cancel()
     }

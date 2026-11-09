@@ -11,17 +11,17 @@ struct MovementEquipment {
   // The Equipment menu's choices, in its order; Other is not one.
   static let choices = [Equipment.barbell, .dumbbell, .machine, .cable, .kettlebell, .bodyweight].map(\.rawValue)
   var kind: Equipment? { Equipment(value) }
-  var title: String { kind == .dumbbell && loadCount == 1 ? "One dumbbell" : choice }
+  var title: String { kind == .dumbbell && loadCount == 1 ? String(localized: "One dumbbell") : choice }
   // Its name in the Equipment menu, whatever the dumbbell count.
   var choice: String {
     switch kind {
-    case .barbell: "Barbell"
-    case .dumbbell: "Dumbbells"
-    case .machine: "Machine"
-    case .cable: "Cable"
-    case .bodyweight: "Bodyweight"
-    case .kettlebell: "Kettlebell"
-    case .other: "Other"
+    case .barbell: String(localized: "Barbell")
+    case .dumbbell: String(localized: "Dumbbells")
+    case .machine: String(localized: "Machine")
+    case .cable: String(localized: "Cable")
+    case .bodyweight: String(localized: "Bodyweight")
+    case .kettlebell: String(localized: "Kettlebell")
+    case .other: String(localized: "Other")
     case nil: value.capitalized
     }
   }
@@ -46,10 +46,11 @@ struct MovementEquipment {
   var unit: String { Readout.loadUnit(equipment: value, loadCount: loadCount) }
   var help: String {
     switch kind {
-    case .dumbbell: loadCount == 1 ? "Enter the dumbbell’s weight. Volume counts one dumbbell." : "Enter the weight of one dumbbell. Volume counts both."
-    case .bodyweight: "Enter the added weight, or a negative number for help from a band. 0 means bodyweight only. Volume counts only the added weight."
-    case .barbell: "Enter the total weight, including the bar."
-    case .machine, .cable, .kettlebell, .other, nil: "Enter the external weight you lift."
+    case .dumbbell: loadCount == 1 ? String(localized: "Enter the dumbbell’s weight. Volume counts one dumbbell.")
+      : String(localized: "Enter the weight of one dumbbell. Volume counts both.")
+    case .bodyweight: String(localized: "Enter the added weight, or a negative number for help from a band. 0 means bodyweight only. Volume counts only the added weight.")
+    case .barbell: String(localized: "Enter the total weight, including the bar.")
+    case .machine, .cable, .kettlebell, .other, nil: String(localized: "Enter the external weight you lift.")
     }
   }
 }
@@ -78,14 +79,14 @@ struct MovementEquipmentPicker: View {
       switch count {
       case .menu:
         Picker("Dumbbells", selection: $loadCount) {
-          Text("One").tag(1)
-          Text("Two").tag(2)
+          Text("One", comment: "How many dumbbells a set lifts: one").tag(1)
+          Text("Two", comment: "How many dumbbells a set lifts: two").tag(2)
         }.pickerStyle(.menu).foregroundStyle(GymPalette.ink).accessibilityIdentifier("\(identifier)-count")
       case .segmented:
         LabeledContent("Dumbbells lifted") {
           Picker("Dumbbells lifted", selection: $loadCount) {
-            Text("One").tag(1)
-            Text("Two").tag(2)
+            Text("One", comment: "How many dumbbells a set lifts: one").tag(1)
+            Text("Two", comment: "How many dumbbells a set lifts: two").tag(2)
           }.pickerStyle(.segmented).fixedSize().accessibilityIdentifier("\(identifier)-count")
         }.foregroundStyle(GymPalette.ink)
       }

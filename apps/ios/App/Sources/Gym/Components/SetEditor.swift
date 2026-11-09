@@ -71,7 +71,7 @@ struct LoadField: View {
     case logged, planned
     var clearable: Bool { self == .planned }
     var well: Bool { self == .logged }
-    var placeholder: String { self == .planned ? "Last time" : "Load" }
+    var placeholder: String { self == .planned ? String(localized: "Last time") : String(localized: "Load", comment: "The weight a set lifts") }
   }
 
   @Binding var load: Double?
@@ -143,7 +143,7 @@ struct RepsWheel: View {
         HStack(spacing: RoomSpace.related) {
           Text("\(count)").monospacedDigit().frame(maxWidth: .infinity, alignment: .trailing)
           Text("reps").hidden().frame(maxWidth: .infinity, alignment: .leading)
-        }.accessibilityElement(children: .ignore).accessibilityLabel(GymCount.of(count, "rep"))
+        }.accessibilityElement(children: .ignore).accessibilityLabel(GymCount.of(count, .rep))
       }
     }.pickerStyle(.wheel)
       .overlay {
@@ -195,7 +195,7 @@ struct RestPicker: View {
 
   var body: some View {
     Picker("Rest", selection: $selection) {
-      Text("Default").tag(Int?.none)
+      Text("Default", comment: "A rest choice: the rest the app sets by default").tag(Int?.none)
       ForEach(choices + (selection.map { choices.contains($0) ? [] : [$0] } ?? []), id: \.self) { seconds in
         Text(WorkoutClocks.reading(Int64(seconds) * 1_000)).tag(Int?.some(seconds))
       }
@@ -222,11 +222,15 @@ struct RestPicker: View {
   }
 
   var noteBytes: Int { SetRules.note.measure(note) }
-  var noteCounter: String? { noteBytes >= SetRules.note.max * 4 / 5 ? "\(noteBytes) of \(SetRules.note.max) bytes" : nil }
+  var noteCounter: String? {
+    noteBytes >= SetRules.note.max * 4 / 5 ? String(localized: "\(noteBytes) of \(SetRules.note.max) bytes", locale: .copy) : nil
+  }
   var problem: String? {
-    guard weightKg.isFinite else { return "That is not a number yet." }
-    guard SetRules.loggedReps.contains(reps) else { return "Whole reps, \(SetRules.loggedReps.lowerBound)–\(SetRules.loggedReps.upperBound)." }
-    guard noteBytes <= SetRules.note.max else { return "A set note runs to \(SetRules.note.max) bytes." }
+    guard weightKg.isFinite else { return String(localized: "That is not a number yet.") }
+    guard SetRules.loggedReps.contains(reps) else {
+      return String(localized: "Whole reps, \(SetRules.loggedReps.lowerBound)–\(SetRules.loggedReps.upperBound).", locale: .copy)
+    }
+    guard noteBytes <= SetRules.note.max else { return String(localized: "A set note runs to \(SetRules.note.max) bytes.", locale: .copy) }
     return nil
   }
   var value: TrainingSet {
@@ -238,7 +242,7 @@ struct RestPicker: View {
   @MainActor func ready(_ gym: GymModel) -> Bool {
     gym.refresh()
     guard gym.account == account, !gym.accountTransition, !gym.readFailed else {
-      failure = "The workout changed. Check the current set"; return false
+      failure = String(localized: "The workout changed. Check the current set"); return false
     }
     return true
   }
@@ -246,14 +250,14 @@ struct RestPicker: View {
   // True when the editor should close: the fix landed, or the set is already gone.
   @MainActor @discardableResult func save(_ gym: GymModel) -> Bool {
     guard !busy, problem == nil, ready(gym) else { return false }
-    guard gym.sets.contains(where: { $0.id == original.id }) else { gym.error = "That set is no longer here."; return true }
+    guard gym.sets.contains(where: { $0.id == original.id }) else { gym.error = String(localized: "That set is no longer here."); return true }
     busy = true; defer { busy = false }
     guard let outcome = gym.run(CorrectSet(value, original: original)) else {
-      failure = "The log didn’t answer — that set wasn’t changed."; return false
+      failure = String(localized: "The log didn’t answer — that set wasn’t changed."); return false
     }
     if case .gone = outcome.refusal { return true }
     if case .invalid(let violation) = outcome.refusal, violation.rule == SetRules.loadFloor {
-      failure = "Enter 0 or more, or cancel to keep \(Readout.weight(original.weightKg))"; return false
+      failure = String(localized: "Enter 0 or more, or cancel to keep \(Readout.weight(original.weightKg))"); return false
     }
     guard outcome.refusal == nil else { failure = gym.error; return false }
     original = gym.sets.first { $0.id == original.id } ?? value
@@ -297,13 +301,15 @@ struct SetEditor: View {
   }
 
   var logged: Bool { if case .log = landing { true } else { false } }
-  var movement: String { gym.catalogue.find(draft.exerciseId)?.name ?? (logged ? "Movement" : "Missing movement") }
+  var movement: String { gym.catalogue.find(draft.exerciseId)?.name ?? (logged ? String(localized: "Movement") : String(localized: "Missing movement")) }
   // The set's place among its movement's sets in its workout, as the ledger numbers it; a saved workout's copy keeps the
   // number it was logged under.
   var place: String {
     let siblings = (gym.log?.sets(session: draft.original.sessionId) ?? []).filter { $0.exerciseId == draft.original.exerciseId }
-    if siblings.contains(where: { $0.id == draft.original.id }) { return "Set " + SetRow.marker(draft.original, in: siblings) }
-    return draft.original.setNumber.map { "Set \($0)" } ?? "Fix set"
+    if siblings.contains(where: { $0.id == draft.original.id }) {
+      return String(localized: "Set \(SetRow.marker(draft.original, in: siblings))", locale: .copy, comment: "A set by its place: Set 3")
+    }
+    return draft.original.setNumber.map { String(localized: "Set \(String($0))", locale: .copy, comment: "A set by its place: Set 3") } ?? String(localized: "Fix set")
   }
 
   var body: some View {

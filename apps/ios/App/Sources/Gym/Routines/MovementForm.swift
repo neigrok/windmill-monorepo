@@ -77,8 +77,8 @@ struct MovementFormDraft: Equatable, Identifiable {
   var isDirty: Bool { exercise != opening || planned != openingPlan }
   var problem: String? {
     if let problem = NameField.movement.problem(name) { return problem }
-    if !MovementEquipment.choices.contains(equipment) && !(Equipment(base?.equipment) == .other && Equipment(equipment) == .other) { return "Choose equipment." }
-    if Equipment(equipment) == .dumbbell && ![1, 2].contains(loadCount) { return "Choose one or two dumbbells." }
+    if !MovementEquipment.choices.contains(equipment) && !(Equipment(base?.equipment) == .other && Equipment(equipment) == .other) { return String(localized: "Choose equipment.") }
+    if Equipment(equipment) == .dumbbell && ![1, 2].contains(loadCount) { return String(localized: "Choose one or two dumbbells.") }
     return nil
   }
 }
@@ -96,7 +96,7 @@ struct MovementForm: View {
   @State private var discardChanges = false
   @FocusState private var nameFocused: Bool
 
-  var title: String { draft.base == nil ? "New movement" : draft.adding ? "Add movement" : "Edit movement" }
+  var title: LocalizedStringResource { draft.base == nil ? "New movement" : draft.adding ? "Add movement" : "Edit movement" }
 
   var body: some View {
     NavigationStack {
@@ -112,7 +112,7 @@ struct MovementForm: View {
             if draft.base != nil { Text("Name and equipment apply everywhere. Targets stay in this routine.") }
           }
           Section {
-            Stepper("Sets: \(draft.targets.isOpen ? "Open" : String(draft.targets.count))",
+            Stepper("Sets: \(draft.targets.isOpen ? String(localized: "Open", comment: "A target of no sets: an open plan") : String(draft.targets.count))",
                     value: Binding(get: { draft.targets.count }, set: { draft.targets.setCount($0) }), in: 0...TargetsDraft.maxSets)
               .accessibilityIdentifier("gym-target-sets")
             if !draft.targets.isOpen {
@@ -157,7 +157,7 @@ struct MovementForm: View {
 
   // Reps on the stock stepper, to the rule's most; stepped below 1 the target is Max, the plan's open reps.
   func repsStepper(_ reps: Int?, identifier: String, set: @escaping (Int?) -> Void) -> some View {
-    Stepper("Reps: \(reps.map(String.init) ?? "Max")", value: Binding(get: { reps ?? 0 }, set: { set($0 == 0 ? nil : $0) }), in: 0...TargetsDraft.maxReps)
+    Stepper("Reps: \(reps.map(String.init) ?? String(localized: "Max", comment: "A rep target with no fixed number: as many reps as the set allows"))", value: Binding(get: { reps ?? 0 }, set: { set($0 == 0 ? nil : $0) }), in: 0...TargetsDraft.maxReps)
       .accessibilityIdentifier(identifier)
   }
 

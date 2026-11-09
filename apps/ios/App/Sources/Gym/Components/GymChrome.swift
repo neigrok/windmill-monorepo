@@ -18,10 +18,10 @@ struct GymPage: ViewModifier {
 // 02L.5). Nothing stands at the sheet's foot; its destructive act is the form's last row.
 struct SheetCommit: ViewModifier {
   enum Commit { case checkmark, plainCheckmark, word }
-  let title: String
+  let title: LocalizedStringResource
   let identifier: String
-  var dismissal = "Cancel"
-  var dismissalIdentifier: String?
+  var dismissal: LocalizedStringResource = "Cancel"
+  var dismissalIdentifier = "sheet-cancel"
   var disabled = false
   var busy = false
   var style = Commit.checkmark
@@ -31,7 +31,7 @@ struct SheetCommit: ViewModifier {
   func body(content: Content) -> some View {
     content.toolbar {
       ToolbarItem(placement: .cancellationAction) {
-        Button(dismissal, action: dismiss).disabled(busy).accessibilityIdentifier(dismissalIdentifier ?? dismissal)
+        Button(dismissal, action: dismiss).disabled(busy).accessibilityIdentifier(dismissalIdentifier)
       }
       if style == .plainCheckmark {
         ToolbarItem(placement: .topBarTrailing) {
@@ -51,7 +51,7 @@ struct SheetCommit: ViewModifier {
     else if #available(iOS 26.0, *) {
       Button(role: .confirm, action: commit) {
         Image(systemName: "checkmark").fontWeight(.semibold).foregroundStyle(disabled || busy ? GymPalette.inkFaint : GymPalette.onAccent)
-      }.buttonStyle(.glassProminent).accessibilityLabel(title)
+      }.buttonStyle(.glassProminent).accessibilityLabel(Text(title))
     } else { Button(action: commit) { Text(title).bold() } }
   }
 }
@@ -108,7 +108,7 @@ extension View {
   func gymTabBar(hidden: Bool = true) -> some View {
     toolbar(hidden ? .hidden : .automatic, for: .tabBar).preference(key: TabBarHidden.self, value: hidden)
   }
-  func sheetCommit(_ title: String, identifier: String, dismissal: String = "Cancel", dismissalIdentifier: String? = nil,
+  func sheetCommit(_ title: LocalizedStringResource, identifier: String, dismissal: LocalizedStringResource = "Cancel", dismissalIdentifier: String = "sheet-cancel",
                    disabled: Bool = false, busy: Bool = false, style: SheetCommit.Commit = .checkmark,
                    dismiss: @escaping () -> Void, commit: @escaping () -> Void) -> some View {
     modifier(SheetCommit(title: title, identifier: identifier, dismissal: dismissal, dismissalIdentifier: dismissalIdentifier,
@@ -137,7 +137,7 @@ struct FieldWell: ViewModifier {
 // bare symbol is a 60 pt circle named for VoiceOver by the act; a labelled act is a 52 pt capsule. Before iOS 26 the
 // glass is the regular material.
 struct FloatingAction: View {
-  let title: String
+  let title: LocalizedStringResource
   let symbol: String
   var labelled = false
   let identifier: String
@@ -149,7 +149,7 @@ struct FloatingAction: View {
         if labelled {
           Label(title, systemImage: symbol).padding(.leading, 18).padding(.trailing, 22).frame(minHeight: RoomSpace.controlHeight)
         } else {
-          Image(systemName: symbol).font(.title).frame(width: 60, height: 60).accessibilityLabel(title)
+          Image(systemName: symbol).font(.title).frame(width: 60, height: 60).accessibilityLabel(Text(title))
         }
       }.font(.headline).foregroundStyle(GymPalette.accent).roomGlass(in: Capsule(), interactive: true, floating: true).contentShape(Capsule())
     }.buttonStyle(.plain).accessibilityIdentifier(identifier)

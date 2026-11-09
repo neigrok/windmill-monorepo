@@ -1,6 +1,9 @@
 package works.windmill.gym.coach
 
-import works.windmill.gym.coach.turn.CoachTurnFault
+import works.windmill.gym.spelled
+import works.windmill.gym.string
+import works.windmill.gym.R
+import works.windmill.gym.presentation.ProposalReceipt
 import works.windmill.gym.ui.*
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -91,6 +94,7 @@ import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.ProposalOutcome
 import works.windmill.gym.store.ProposalRead
 import works.windmill.gym.store.TrainingStore
+import works.windmill.platform.i18n.text
 import works.windmill.platform.telemetry.LocalTelemetry
 import works.windmill.domain.kit.Id
 import works.windmill.sync.api.RecordRef
@@ -369,7 +373,7 @@ class AskScreenTests {
         compose.onNodeWithText("First words, then more.").assertIsDisplayed()
         compose.onNodeWithContentDescription("Stop response").performClick()
         compose.onNodeWithText("First words, then more.").assertIsDisplayed()
-        compose.onNodeWithText(Ask.stopped).assertIsDisplayed()
+        compose.onNodeWithText(string(R.string.gym_coach_stopped)).assertIsDisplayed()
         compose.onNodeWithText("Try again").assertDoesNotExist()
         compose.onNodeWithContentDescription("Send").assertDoesNotExist()
         scope.cancel()
@@ -475,10 +479,10 @@ class AskScreenTests {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         room(signedIn(scope).store, thread = emptyList(), refusal = null, doors = mutableListOf())
 
-        compose.onNodeWithText(Ask.title).assertIsDisplayed()
+        compose.onNodeWithText(string(R.string.gym_coach_title)).assertIsDisplayed()
         compose.onNodeWithText("reads your log · helps with your routines").assertDoesNotExist()
         compose.onNodeWithText("Ten questions a day, three back to back.").assertDoesNotExist()
-        compose.onNodeWithText(Ask.placeholder).assertIsDisplayed()
+        compose.onNodeWithText(string(R.string.gym_coach_placeholder)).assertIsDisplayed()
         compose.onNodeWithText("There is nothing to buy here.", substring = true).assertDoesNotExist()
         scope.cancel()
     }
@@ -599,8 +603,8 @@ class AskScreenTests {
             }
         }
         compose.runOnIdle { assertTrue(coach.send(chat, "Question")) }
-        waitForText(Ask.reconnecting)
-        compose.onNodeWithText(Ask.reconnecting).assertIsDisplayed()
+        waitForText(string(R.string.gym_coach_reconnecting))
+        compose.onNodeWithText(string(R.string.gym_coach_reconnecting)).assertIsDisplayed()
         compose.onNodeWithText("Reading").assertIsDisplayed()
         compose.onNodeWithContentDescription("Close").assertDoesNotExist()
         val band = compose.onNodeWithTag("coach-band", useUnmergedTree = true).getUnclippedBoundsInRoot()
@@ -703,7 +707,7 @@ class AskScreenTests {
         val picture = SentPicture(CoachAttachment("picture-a", "image/jpeg", 0, 0, 0), onThisPhone = false)
         val exchange = CoachExchange("request-a", "Is this program balanced?", 0, listOf(picture), answer = coachReply("It is balanced."))
         room(signedIn(scope).store, thread = listOf(exchange), refusal = null, doors = mutableListOf())
-        val place = compose.onNodeWithText(Ask.pictureElsewhere).assertIsDisplayed().getUnclippedBoundsInRoot()
+        val place = compose.onNodeWithText(string(R.string.gym_coach_picture_elsewhere)).assertIsDisplayed().getUnclippedBoundsInRoot()
         val question = compose.onNodeWithText("Is this program balanced?").assertIsDisplayed().getUnclippedBoundsInRoot()
         assertTrue("the place stands over the words", place.bottom < question.top)
         compose.onNodeWithContentDescription("Attached photo").assertDoesNotExist()
@@ -785,12 +789,12 @@ class AskScreenTests {
         store.coach.saveDraft("new", CoachDraft("is my week too light?"))
         val doors = mutableListOf<String>()
         room(store, thread = emptyList(), refusal = CoachTurnRefusal.RateLimited, doors = doors)
-        compose.onNodeWithText(CoachTurnRefusal.RateLimited.sentence).assertIsDisplayed()
+        compose.onNodeWithText(CoachTurnRefusal.RateLimited.words.spelled()).assertIsDisplayed()
         compose.onAllNodesWithText("is my week too light?").assertCountEquals(1)
         compose.onNode(hasText("is my week too light?") and hasSetTextAction()).assertIsDisplayed()
         compose.onNodeWithContentDescription("Question").assertIsDisplayed()
         compose.onNodeWithContentDescription("Send").assertIsDisplayed()
-        compose.onNodeWithText(Threads.open).assertDoesNotExist()
+        compose.onNodeWithText(string(R.string.gym_coach_new_chat)).assertDoesNotExist()
         compose.onNodeWithText("Use your own AI agent").performClick()
         compose.runOnIdle { assertEquals(listOf("connections"), doors) }
         compose.onNodeWithContentDescription("Send").performClick()
@@ -815,11 +819,11 @@ class AskScreenTests {
         val doors = mutableListOf<String>()
         room(signedIn(scope).store, emptyList(), CoachTurnRefusal.FreeMonthExhausted(null), doors)
         compose.onNodeWithText("Coach is paused for everyone this month.").assertIsDisplayed()
-        compose.onNodeWithText(CoachTurnRefusal.RateLimited.sentence).assertDoesNotExist()
+        compose.onNodeWithText(CoachTurnRefusal.RateLimited.words.spelled()).assertDoesNotExist()
         compose.onNodeWithContentDescription("Question").assertIsDisplayed()
         compose.onNodeWithText("Use your own AI agent").performClick()
         compose.runOnIdle { assertEquals(listOf("connections"), doors) }
-        compose.onNodeWithText(Threads.open).assertDoesNotExist()
+        compose.onNodeWithText(string(R.string.gym_coach_new_chat)).assertDoesNotExist()
         scope.cancel()
     }
 
@@ -836,7 +840,7 @@ class AskScreenTests {
         val doors = mutableListOf<String>()
         room(fixture.store, coach.exchanges("retained-chat"), null, doors)
         compose.onNodeWithText("Make Push A harder").assertIsDisplayed()
-        compose.onNodeWithText(Ask.accountRequired).assertIsDisplayed()
+        compose.onNodeWithText(string(R.string.gym_coach_account_required)).assertIsDisplayed()
         compose.onNodeWithText("Private model prose").assertDoesNotExist()
         compose.onNodeWithText("Sign in").performClick()
         compose.runOnIdle { assertEquals(listOf("signIn"), doors) }
@@ -866,9 +870,9 @@ class AskScreenTests {
         scope.cancel()
     }
 
-    // The card is a skim: its rows draw the compact readout only — one set moved, or both schemes in the readout formula — never the ladder the review sheet unfolds to.
+    // The card is a skim: it names the routine and counts the changes; the movements and each change's readout — one set moved, or both schemes — wait in the review sheet.
     @Test
-    fun theCardDrawsTheCompactReadoutAndNeverTheLadder() {
+    fun theCardCountsTheChangesAndLeavesEachReadoutToTheReview() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val server = EngineRoomFixture.server()
         val room = signedIn(scope)
@@ -888,8 +892,8 @@ class AskScreenTests {
         compose.onNodeWithText("Review").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Back Squat").assertDoesNotExist()
         compose.onNodeWithText("Deadlift").assertDoesNotExist()
-        compose.onNodeWithText(setFourMoved.compactLine).assertDoesNotExist()
-        compose.onNodeWithText(reshaped.compactLine).assertDoesNotExist()
+        compose.onNodeWithText("set 4 · 100 × 1 → 102.5 × 1").assertDoesNotExist()
+        compose.onNodeWithText("sets · 5 × 5 · 80 → 5 × 1–5 · 60–100").assertDoesNotExist()
         scope.cancel()
     }
 
@@ -903,7 +907,7 @@ class AskScreenTests {
         propose(room, server, "proposal1", routine, listOf(ProposalChange(position = 1, kind = ChangeKind.Retargeted,
             exerciseId = "bench-press", before = ProposalTargets(List(3) { SetTarget(5) }),
             after = ProposalTargets(List(5) { SetTarget(3) }))), "Heavier triples.")
-        var receipts by mutableStateOf<List<String>>(emptyList())
+        var receipts by mutableStateOf<List<ProposalReceipt>>(emptyList())
         val ask = AskBinding(room.store)
         compose.setContent {
             AskScreen(
@@ -915,7 +919,7 @@ class AskScreenTests {
         compose.onNodeWithText("1 change").performScrollTo().assertIsDisplayed()
 
         val settled = applied(room, server, "proposal1")
-        compose.runOnIdle { receipts = listOf(settled.proposal.receipt!!) }
+        compose.runOnIdle { receipts = listOf(settled.proposal.settledReceipt!!) }
 
         compose.onNodeWithText("Applied · Push Day · 1 change").performScrollTo().assertIsDisplayed()
         compose.onAllNodes(hasText("Applied · Push Day · 1 change")).assertCountEquals(1)
@@ -932,7 +936,7 @@ class AskScreenTests {
         propose(room, server, "proposal1", routine, listOf(ProposalChange(position = 1, kind = ChangeKind.Retargeted,
             exerciseId = "bench-press", before = ProposalTargets(List(3) { SetTarget(5) }),
             after = ProposalTargets(List(5) { SetTarget(3) }))), "Heavier triples.")
-        var receipts by mutableStateOf<List<String>>(emptyList())
+        var receipts by mutableStateOf<List<ProposalReceipt>>(emptyList())
         val ask = AskBinding(room.store)
         compose.setContent {
             AskScreen(
@@ -945,10 +949,10 @@ class AskScreenTests {
             .performScrollTo().assertIsDisplayed()
 
         val settled = applied(room, server, "proposal1")
-        compose.runOnIdle { receipts = listOf(settled.proposal.receipt!!) }
+        compose.runOnIdle { receipts = listOf(settled.proposal.settledReceipt!!) }
 
         compose.onNodeWithText("Applied · Push Day · 1 change").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText(Ask.promise).assertDoesNotExist()
+        compose.onNodeWithText(string(R.string.gym_coach_promise)).assertDoesNotExist()
         scope.cancel()
     }
 
@@ -1074,7 +1078,7 @@ class AskScreenTests {
         }
         compose.onNodeWithText("The original answer.").assertIsDisplayed()
         compose.mainClock.advanceTimeBy(AnsweredProposals.settleMs + 1_000)
-        compose.onNodeWithText(ProposalRead.Gone.line).assertDoesNotExist()
+        compose.onNodeWithText(ProposalRead.Gone.words.spelled()).assertDoesNotExist()
         compose.onNodeWithText("Try again").assertDoesNotExist()
         compose.onNodeWithText("Review").assertDoesNotExist()
         compose.onNodeWithText("Reading proposal…").assertDoesNotExist()
@@ -1138,7 +1142,7 @@ class AskScreenTests {
         compose.waitForIdle()
         compose.mainClock.advanceTimeByFrame()
         assertEquals(whole, shown())
-        compose.onNodeWithText(Ask.stopped).assertIsDisplayed()
+        compose.onNodeWithText(string(R.string.gym_coach_stopped)).assertIsDisplayed()
         scope.cancel()
     }
 
@@ -1188,7 +1192,7 @@ class AskScreenTests {
         propose(room, server, "proposal1", routine, listOf(ProposalChange(position = 1, kind = ChangeKind.Removed,
             exerciseId = "bench-press", before = ProposalTargets(List(3) { SetTarget(5) }), loggedSets = 0)),
             "Remove this routine.", intent = ProposalIntent.Remove)
-        var receipts by mutableStateOf<List<String>>(emptyList())
+        var receipts by mutableStateOf<List<ProposalReceipt>>(emptyList())
         val ask = AskBinding(room.store)
         compose.setContent {
             AskScreen(ask, ask, listOf(answered("Remove this routine?", "You can remove it.", proposals = listOf("proposal1"))), receipts, emptySet(), false, null, { _, _ -> },
@@ -1196,11 +1200,11 @@ class AskScreenTests {
         }
         compose.onNodeWithText("Nothing changes until you confirm the proposal. Your logged sets are never part of a proposal.")
             .performScrollTo().assertIsDisplayed()
-        assertEquals(20.dp, compose.onNodeWithText(Ask.promise).getUnclippedBoundsInRoot().left)
+        assertEquals(20.dp, compose.onNodeWithText(string(R.string.gym_coach_promise)).getUnclippedBoundsInRoot().left)
         val settled = applied(room, server, "proposal1")
-        compose.runOnIdle { receipts = listOf(requireNotNull(settled.proposal.receipt)) }
-        compose.onNodeWithText(requireNotNull(settled.proposal.receipt)).performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText(Ask.promise).assertDoesNotExist()
+        compose.runOnIdle { receipts = listOf(requireNotNull(settled.proposal.settledReceipt)) }
+        compose.onNodeWithText(requireNotNull(settled.proposal.settledReceipt).words.spelled()).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText(string(R.string.gym_coach_promise)).assertDoesNotExist()
         compose.runOnIdle { assertEquals(emptyList<String>(), room.store.routines.all.map { it.id }) }
         scope.cancel()
     }
@@ -1221,13 +1225,13 @@ class AskScreenTests {
         roomTelling(room.store, telling) { thread }
         compose.runOnIdle { thread = listOf(answered("What next?", "The answer stays readable.", "request1", listOf("proposal1"))) }
         compose.onNodeWithText("The answer stays readable.").assertIsDisplayed()
-        compose.onNodeWithText(ProposalRead.Gone.line).assertDoesNotExist()
+        compose.onNodeWithText(ProposalRead.Gone.words.spelled()).assertDoesNotExist()
         compose.onNodeWithText("Review").assertDoesNotExist()
         compose.runOnIdle { room.pull(server) }
         compose.waitUntil(5_000) { compose.onAllNodesWithText("Proposal · Push A").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("Proposal · Push A").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Review").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText(ProposalRead.Gone.line).assertDoesNotExist()
+        compose.onNodeWithText(ProposalRead.Gone.words.spelled()).assertDoesNotExist()
         compose.onNodeWithText("Try again").assertDoesNotExist()
         compose.mainClock.advanceTimeBy(AnsweredProposals.settleMs + 1_000)
         compose.runOnIdle { assertEquals(emptyList<Map<String, String>>(), telling.named("gym_proposal_missing")) }
@@ -1247,11 +1251,11 @@ class AskScreenTests {
         roomTelling(room.store, telling) { thread }
         compose.runOnIdle { thread = listOf(answered("What next?", "The answer stays readable.", "request1", listOf("proposal1"))) }
         compose.onNodeWithText("The answer stays readable.").assertIsDisplayed()
-        compose.onNodeWithText(ProposalRead.Gone.line).assertDoesNotExist()
+        compose.onNodeWithText(ProposalRead.Gone.words.spelled()).assertDoesNotExist()
         val before = compose.runOnIdle { room.store.routines.caughtUpTo }
         compose.mainClock.advanceTimeBy(AnsweredProposals.settleMs + 1_000)
         compose.runOnIdle { assertEquals("not reported before the phone reads past the miss", emptyList<Map<String, String>>(), telling.named("gym_proposal_missing")) }
-        compose.onNodeWithText(ProposalRead.Gone.line).assertDoesNotExist()
+        compose.onNodeWithText(ProposalRead.Gone.words.spelled()).assertDoesNotExist()
         saved(room, server, RoutineDraft(name = "Pull").adding("bench-press", List(3) { SetTarget(5) }))
         compose.waitUntil(5_000) { compose.runOnIdle { telling.named("gym_proposal_missing").isNotEmpty() } }
         saved(room, server, RoutineDraft(name = "Legs").adding("back-squat", List(3) { SetTarget(5) }))
@@ -1260,7 +1264,7 @@ class AskScreenTests {
             assertTrue(room.store.routines.caughtUpTo!! > before!!)
             assertEquals(listOf(emptyMap<String, String>()), telling.named("gym_proposal_missing"))
         }
-        compose.onNodeWithText(ProposalRead.Gone.line).assertIsDisplayed()
+        compose.onNodeWithText(ProposalRead.Gone.words.spelled()).assertIsDisplayed()
         scope.cancel()
     }
 
@@ -1280,12 +1284,12 @@ class AskScreenTests {
         compose.onNodeWithText("Reading proposal…").assertIsDisplayed()
         compose.mainClock.advanceTimeBy(AnsweredProposals.settleMs + 1_000)
         compose.onNodeWithText("Reading proposal…").assertIsDisplayed()
-        compose.onNodeWithText(ProposalRead.Gone.line).assertDoesNotExist()
+        compose.onNodeWithText(ProposalRead.Gone.words.spelled()).assertDoesNotExist()
         compose.runOnIdle { assertEquals(emptyList<Map<String, String>>(), telling.named("gym_proposal_missing")) }
 
         saved(room, server, RoutineDraft(name = "Pull").adding("bench-press", List(3) { SetTarget(5) }))
         compose.waitUntil(60_000) { compose.runOnIdle { telling.named("gym_proposal_missing").isNotEmpty() } }
-        compose.onNodeWithText(ProposalRead.Gone.line).assertIsDisplayed()
+        compose.onNodeWithText(ProposalRead.Gone.words.spelled()).assertIsDisplayed()
         compose.onNodeWithText("Reading proposal…").assertDoesNotExist()
         compose.runOnIdle { assertEquals(listOf(emptyMap<String, String>()), telling.named("gym_proposal_missing")) }
         scope.cancel()
@@ -1310,10 +1314,10 @@ class AskScreenTests {
         compose.waitUntil(5_000) { compose.runOnIdle { room.store.routines.all.size == 1 } }
         compose.mainClock.advanceTimeBy(1_000)
         compose.runOnIdle { assertEquals("a pull that only brings the phone level reports nothing", emptyList<Map<String, String>>(), telling.named("gym_proposal_missing")) }
-        compose.onNodeWithText(ProposalRead.Gone.line).assertDoesNotExist()
+        compose.onNodeWithText(ProposalRead.Gone.words.spelled()).assertDoesNotExist()
         saved(room, server, RoutineDraft(name = "Pull").adding("bench-press", List(3) { SetTarget(5) }))
         compose.waitUntil(5_000) { compose.runOnIdle { telling.named("gym_proposal_missing").isNotEmpty() } }
-        compose.onNodeWithText(ProposalRead.Gone.line).assertIsDisplayed()
+        compose.onNodeWithText(ProposalRead.Gone.words.spelled()).assertIsDisplayed()
         scope.cancel()
     }
 
@@ -1340,11 +1344,11 @@ class AskScreenTests {
         compose.runOnIdle { thread = listOf(answered("What next?", "The answer stays readable.", "request1", listOf("proposal1"))) }
         compose.onNodeWithText("The answer stays readable.").assertIsDisplayed()
         compose.mainClock.advanceTimeBy(AnsweredProposals.settleMs - 1_000)
-        compose.onNodeWithText(ProposalRead.Gone.line).assertDoesNotExist()
+        compose.onNodeWithText(ProposalRead.Gone.words.spelled()).assertDoesNotExist()
         compose.runOnIdle { assertEquals(0, asked) }
         compose.mainClock.advanceTimeBy(2_000)
-        compose.waitUntil(5_000) { compose.onAllNodesWithText(ProposalRead.Gone.line).fetchSemanticsNodes().size == 1 }
-        compose.onNodeWithText(ProposalRead.Gone.line).assertIsDisplayed()
+        compose.waitUntil(5_000) { compose.onAllNodesWithText(ProposalRead.Gone.words.spelled()).fetchSemanticsNodes().size == 1 }
+        compose.onNodeWithText(ProposalRead.Gone.words.spelled()).assertIsDisplayed()
         compose.runOnIdle { pulls.value = pulls.value.sending(room.engine.activeReplica()).let { it.ending(room.engine.activeReplica(), it.sent, landed = true, caughtUp = true) } }
         compose.mainClock.advanceTimeBy(AnsweredProposals.settleMs + 1_000)
         compose.runOnIdle {
@@ -1382,7 +1386,7 @@ class AskScreenTests {
         compose.mainClock.advanceTimeBy(AnsweredProposals.settleMs + 1_000)
         compose.waitUntil(5_000) { compose.onAllNodesWithText("Proposal · Push A").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("Proposal · Push A").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText(ProposalRead.Gone.line).assertDoesNotExist()
+        compose.onNodeWithText(ProposalRead.Gone.words.spelled()).assertDoesNotExist()
         compose.runOnIdle {
             assertEquals(1, asked)
             assertEquals(emptyList<Map<String, String>>(), telling.named("gym_proposal_missing"))
@@ -1416,15 +1420,15 @@ class AskScreenTests {
             pulls.value = pulls.value.ending(replica, 1, landed = true, caughtUp = true)
         }
         compose.mainClock.advanceTimeBy(1_000)
-        compose.onNodeWithText(ProposalRead.Gone.line).assertDoesNotExist()
+        compose.onNodeWithText(ProposalRead.Gone.words.spelled()).assertDoesNotExist()
         compose.runOnIdle { pulls.value = pulls.value.sending(replica).let { it.ending(replica, it.sent, landed = true, caughtUp = false) } }
         compose.mainClock.advanceTimeBy(1_000)
-        compose.onNodeWithText(ProposalRead.Gone.line).assertDoesNotExist()
+        compose.onNodeWithText(ProposalRead.Gone.words.spelled()).assertDoesNotExist()
         compose.runOnIdle {
             assertEquals(emptyList<Map<String, String>>(), telling.named("gym_proposal_missing"))
             pulls.value = pulls.value.sending(replica).let { it.ending(replica, it.sent, landed = true, caughtUp = true) }
         }
-        compose.waitUntil(5_000) { compose.onAllNodesWithText(ProposalRead.Gone.line).fetchSemanticsNodes().size == 1 }
+        compose.waitUntil(5_000) { compose.onAllNodesWithText(ProposalRead.Gone.words.spelled()).fetchSemanticsNodes().size == 1 }
         compose.runOnIdle {
             assertEquals(1, asked)
             assertEquals(listOf(emptyMap<String, String>()), telling.named("gym_proposal_missing"))

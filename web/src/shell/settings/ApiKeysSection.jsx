@@ -6,6 +6,7 @@ import { listMcpKeys, revokeMcpKey } from '../auth/McpKeyClient.js';
 import { McpKeyPanel } from '../connect/McpKeyPanel.jsx';
 import { Section, styles } from './Section.jsx';
 import { mcpKeyMeta } from './format.js';
+import { t } from '../i18n/settings/index.js';
 
 export function ApiKeysSection() {
   const [keys, setKeys] = useState(null); // null while loading
@@ -34,45 +35,41 @@ export function ApiKeysSection() {
 
   const revoke = async (key) => {
     setConfirming(null);
-    const label = key.name ? `"${key.name}"` : 'Key';
     try {
       await revokeMcpKey(key.id);
       setKeys((rows) => rows.filter((row) => row.id !== key.id));
-      setToast(`${label} revoked.`);
+      setToast(key.name ? t('shell.apiKeys.revokedNamed', { name: key.name }) : t('shell.apiKeys.revoked'));
     } catch {
-      setToast(`Couldn't revoke ${key.name ? `"${key.name}"` : 'that key'} just now.`);
+      setToast(key.name ? t('shell.apiKeys.revokeFailedNamed', { name: key.name }) : t('shell.apiKeys.revokeFailed'));
     }
   };
 
   return (
-    <Section title="API keys">
-      {keys === null && <p style={styles.calmLine}>Loading your API keys…</p>}
+    <Section title={t('shell.apiKeys.title')}>
+      {keys === null && <p style={styles.calmLine}>{t('shell.apiKeys.loading')}</p>}
 
       {keys !== null && keys.length === 0 && (
         <p style={styles.calmLine}>
-          {failed ? (
-            <>
-              Couldn't load your API keys just now.{' '}
-              <button type="button" onClick={retry} style={retryButton}>Try again</button>
-            </>
-          ) : 'No API keys yet.'}
+          {failed
+            ? t('shell.apiKeys.loadFailed', { retry: <button type="button" onClick={retry} style={retryButton}>{t('shell.common.tryAgain')}</button> })
+            : t('shell.apiKeys.empty')}
         </p>
       )}
 
       {keys?.map((key) => (
         <div key={key.id} style={styles.row}>
           <div style={styles.rowMain}>
-            <div style={styles.primaryText}>{key.name || 'Unnamed key'}</div>
+            <div style={styles.primaryText}>{key.name || t('shell.apiKeys.unnamed')}</div>
             <div style={styles.metaText}>{mcpKeyMeta(key)}</div>
           </div>
           {confirming === key.id ? (
             <div style={confirm}>
-              <span style={confirmCopy}>This key will stop working now.</span>
-              <Button variant="secondary" size="sm" onClick={() => revoke(key)}>Revoke</Button>
-              <Button variant="ghost" size="sm" onClick={() => setConfirming(null)}>Cancel</Button>
+              <span style={confirmCopy}>{t('shell.apiKeys.revokeWarning')}</span>
+              <Button variant="secondary" size="sm" onClick={() => revoke(key)}>{t('shell.apiKeys.revoke')}</Button>
+              <Button variant="ghost" size="sm" onClick={() => setConfirming(null)}>{t('shell.common.cancel')}</Button>
             </div>
           ) : (
-            <Button variant="ghost" size="sm" onClick={() => setConfirming(key.id)}>Revoke</Button>
+            <Button variant="ghost" size="sm" onClick={() => setConfirming(key.id)}>{t('shell.apiKeys.revoke')}</Button>
           )}
         </div>
       ))}
@@ -81,11 +78,11 @@ export function ApiKeysSection() {
         <div style={{ marginTop: 12 }}>
           <McpKeyPanel signedIn onRequireSignIn={() => window.location.reload()} onMinted={reload} compact />
           <div style={{ marginTop: 10 }}>
-            <Button variant="ghost" size="sm" onClick={() => setCreating(false)}>Close</Button>
+            <Button variant="ghost" size="sm" onClick={() => setCreating(false)}>{t('shell.common.close')}</Button>
           </div>
         </div>
       ) : (
-        <button type="button" style={styles.dashedRow} onClick={() => setCreating(true)}>+ Create a key</button>
+        <button type="button" style={styles.dashedRow} onClick={() => setCreating(true)}>{t('shell.apiKeys.create')}</button>
       )}
 
       {toast && (

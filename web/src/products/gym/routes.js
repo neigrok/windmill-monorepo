@@ -5,6 +5,7 @@ import { lazy } from 'react';
 import { gymLandingHead } from './marketing/landingHead.js';
 import { sharedLogTokenOf, sharedTokenOf } from './log.js';
 import { gymLiveHint, gymCommandResult } from './gymRuntime.js';
+import { t } from './i18n/entry/index.js';
 
 const importGymApp = () => import('./GymApp.jsx').then((m) => ({ default: m.GymApp }));
 const GymApp = lazy(importGymApp);
@@ -41,7 +42,7 @@ function render({ hash, pathname }) {
 
 export const gymRoutes = {
   id: 'gym',
-  label: 'Gym',
+  label: t('gym.product.name'),
   switchHash: '#/gym',
   home,
   landingAfterSignIn,
@@ -59,27 +60,27 @@ export const gymRoutes = {
     href: '/gym',
     Component: GymLanding,
     preload: importGymLanding,
-    tagline: 'Keep a training log',
+    tagline: t('gym.product.tagline'),
     // The words and the two still scenes the brand root composes gym's band and section from.
     root: {
-      platforms: 'Web · Android',
+      platforms: t('gym.product.platforms'),
       // Cards of prose, so the height steps with where the text wraps rather than scaling with the
       // frame: these are where it settles once the logger and the proposal sit side by side, and
       // the pair stands taller stacked. Holding the settled height beats holding nothing.
       reserve: { band: '220px', section: '412px' },
       band: {
-        title: 'Log the set. The rest is remembered.',
-        sub: 'Two taps between sets, and the next session opens with last time’s numbers.',
+        title: t('gym.product.band.title'),
+        sub: t('gym.product.band.sub'),
       },
       section: {
-        title: 'It remembers what you lifted.',
-        sub: 'A training log for barbell programs. Two taps between sets, and the next session opens with last time’s numbers already in the field.',
-        trust: 'Free to use by hand. Your log stays on your Windmill account.',
-        cta: { href: home(), label: 'Open the log' },
+        title: t('gym.product.section.title'),
+        sub: t('gym.product.section.sub'),
+        trust: t('gym.product.section.trust'),
+        cta: { href: home(), label: t('gym.product.section.cta') },
         proof: [
-          { title: 'Two taps a set', copy: 'Load and reps are prefilled from last time. Tap to log, tap to rest.' },
-          { title: 'It remembers', copy: 'Every session opens with your last loads for that movement.' },
-          { title: 'Your AI tools, your log', copy: 'Connect Claude, Cursor or any MCP client to read and write your log.' },
+          { title: t('gym.product.proof.tapsTitle'), copy: t('gym.product.proof.tapsCopy') },
+          { title: t('gym.product.proof.remembersTitle'), copy: t('gym.product.proof.remembersCopy') },
+          { title: t('gym.product.proof.toolsTitle'), copy: t('gym.product.proof.toolsCopy') },
         ],
       },
       Glimpse: lazy(() => import('./marketing/RootScenes.jsx').then((m) => ({ default: m.GymGlimpse }))),

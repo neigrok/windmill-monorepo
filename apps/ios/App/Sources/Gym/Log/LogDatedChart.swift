@@ -19,8 +19,18 @@ struct LogDatedChart: View {
     case strength, bodyweight
     var gapDays: Int { self == .strength ? MovementProgress.gapDays : Bodyweight.gapDays }
     var axisStep: Double { self == .strength ? 5 : 0.1 }
-    var point: String { self == .strength ? "workout" : "weigh-in" }
-    var title: String { self == .strength ? "Estimated strength chart" : "Bodyweight chart" }
+    var title: String { self == .strength ? String(localized: "Estimated strength chart") : String(localized: "Bodyweight chart") }
+    var earlier: String { self == .strength ? String(localized: "Earlier workout") : String(localized: "Earlier weigh-in") }
+    var later: String { self == .strength ? String(localized: "Later workout") : String(localized: "Later weigh-in") }
+    // The recent stretch its window picker offers beside All.
+    var recent: String {
+      self == .strength ? String(localized: "12 weeks", comment: "A chart's window: its last 12 weeks, beside All")
+        : String(localized: "90 days", comment: "A chart's window: its last 90 days, beside All")
+    }
+    // A stretch of the chart with no dot in it, *no workout · Sep 2 – Sep 30*.
+    func gap(_ from: String, _ to: String) -> String {
+      self == .strength ? String(localized: "no workout · \(from) – \(to)") : String(localized: "no weigh-in · \(from) – \(to)")
+    }
   }
   static let plotHeight: CGFloat = 176
   let points: [LogPlotPoint]
@@ -146,7 +156,7 @@ struct LogDatedChart: View {
           .accessibilityValue("\(first) – \(last)").accessibilityIdentifier("gym-chart-dates")
       }
       ForEach(Array(gaps.enumerated()), id: \.offset) { _, gap in
-        Text("no \(series.point) · \(day(gap.0.date)) – \(day(gap.1.date))")
+        Text(series.gap(day(gap.0.date), day(gap.1.date)))
           .font(.caption.monospacedDigit()).foregroundStyle(GymPalette.inkDim)
       }
       if let point = ordered.first(where: { $0.id == inspected }) {
@@ -158,9 +168,9 @@ struct LogDatedChart: View {
       }
     }.contentShape(Rectangle()).clipped().accessibilityElement(children: .contain)
       .accessibilityLabel(series.title)
-      .accessibilityValue((ordered.first { $0.id == marked } ?? ordered.last)?.label ?? "No points")
-      .accessibilityAction(named: "Earlier \(series.point)") { step(-1) }
-      .accessibilityAction(named: "Later \(series.point)") { step(1) }
+      .accessibilityValue((ordered.first { $0.id == marked } ?? ordered.last)?.label ?? String(localized: "No points"))
+      .accessibilityAction(named: Text(series.earlier)) { step(-1) }
+      .accessibilityAction(named: Text(series.later)) { step(1) }
       .sensoryFeedback(.selection, trigger: inspected)
       .onDisappear { clearing?.cancel() }
       .onChange(of: points) { _, _ in clearing?.cancel(); inspected = nil }
@@ -229,19 +239,25 @@ struct LogDatedChart: View {
 enum ChartWindow: Hashable {
   case recent, all
 
-  func line(recent: String, holding count: String) -> String { "\(self == .recent ? "last \(recent)" : "the whole series") · \(count)" }
+  func line(_ series: LogDatedChart.Series, holding count: String) -> String {
+    switch (self, series) {
+    case (.recent, .strength): String(localized: "last 12 weeks · \(count)", comment: "A chart's window line: last 12 weeks · 28 workouts")
+    case (.recent, .bodyweight): String(localized: "last 90 days · \(count)", comment: "A chart's window line: last 90 days · 14 weigh-ins")
+    case (.all, _): String(localized: "the whole series · \(count)", comment: "A chart's window line: the whole series · 14 weigh-ins")
+    }
+  }
 }
 
 struct ChartWindowPicker: UIViewRepresentable {
-  let recent: String
+  let series: LogDatedChart.Series
   let identifier: String
   @Binding var window: ChartWindow
   func makeCoordinator() -> Coordinator { Coordinator(window: $window) }
   func makeUIView(context: Context) -> UISegmentedControl {
-    let control = UISegmentedControl(items: [recent, "All"])
+    let control = UISegmentedControl(items: [series.recent, String(localized: "All", comment: "A chart's window: everything logged")])
     control.setTitleTextAttributes([.font: UIFont.preferredFont(forTextStyle: .subheadline)], for: .normal)
     control.accessibilityIdentifier = identifier
-    control.accessibilityLabel = "Window"
+    control.accessibilityLabel = String(localized: "Window", comment: "The chart's window picker, read by VoiceOver: the stretch of time the chart shows")
     control.addTarget(context.coordinator, action: #selector(Coordinator.changed), for: .valueChanged)
     return control
   }
@@ -266,7 +282,7 @@ extension MovementProgress {
     estimates.compactMap { point in
       guard let fact = point.fact.estimate, let value = fact.e1rm else { return nil }
       return LogPlotPoint(id: point.id.description, date: point.startedAt.date, value: value,
-        label: "\(Readout.estimatedWeight(value)) kg est · \(dates.day(point.startedAt)) · \(Readout.effort(weightKg: fact.weightKg, reps: fact.reps))")
+        label: String(localized: "\(Readout.estimatedWeight(value)) kg est · \(dates.day(point.startedAt)) · \(Readout.effort(weightKg: fact.weightKg, reps: fact.reps))"))
     }
   }
 }

@@ -56,7 +56,10 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import works.windmill.gym.spelled
+import works.windmill.gym.string
 import works.windmill.domain.kit.Id
+import works.windmill.gym.R
 import works.windmill.gym.domain.sync.Exercise as SyncExercise
 import works.windmill.gym.domain.sync.ProposalRules
 import works.windmill.gym.domain.sync.RoutineEntry as SyncEntry
@@ -70,7 +73,6 @@ import works.windmill.gym.presentation.ProposalChange
 import works.windmill.gym.presentation.ProposalIntent
 import works.windmill.gym.presentation.ProposalState
 import works.windmill.gym.presentation.ProposalTargets
-import works.windmill.gym.presentation.Readout
 import works.windmill.gym.presentation.Routine
 import works.windmill.gym.presentation.RoutineDraft
 import works.windmill.gym.presentation.SetTarget
@@ -80,6 +82,7 @@ import works.windmill.gym.store.FinishOutcome
 import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.ProposalRead
 import works.windmill.gym.store.TrainingStore
+import works.windmill.platform.i18n.Words
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.sync.core.Json
 import works.windmill.sync.modelserver.ModelServer
@@ -246,7 +249,7 @@ class ReviewSheetTests {
         compose.runOnIdle {
             assertEquals(ProposalState.Dismissed, runBlocking { room.training.proposal("proposal1") }?.state)
             assertEquals("the receipt is the server's reply", listOf("Turned down · nothing changed."),
-                decided.map { it.receipt })
+                decided.map { it.settledReceipt?.words.spelled() })
         }
         scope.cancel()
     }
@@ -274,7 +277,7 @@ class ReviewSheetTests {
 
         compose.runOnIdle { assertEquals(listOf("gym.applyProposal"), decisions(room)) }
         receipt(room, server, decided)
-        compose.runOnIdle { assertEquals(listOf("Applied · Push Day · 12 changes"), decided.map { it.receipt }) }
+        compose.runOnIdle { assertEquals(listOf("Applied · Push Day · 12 changes"), decided.map { it.settledReceipt?.words.spelled() }) }
         scope.cancel()
     }
 
@@ -414,7 +417,7 @@ class ReviewSheetTests {
         val room = signedIn(scope)
         val routine = routineFor(room, server, "Push Day", listOf("bench-press", "cable-fly", "overhead-press", "back-squat", "triceps-pushdown").mapIndexed { at, id -> kept(id, at + 1) })
         propose(room, server, routine, summary = "", changes = listOf(
-            kept("overhead-press", 1).copy(order = FieldMove("Order", "3rd", "1st")),
+            kept("overhead-press", 1).copy(order = FieldMove(Words.Plain("Order"), Words.Plain("3rd"), Words.Plain("1st"))),
             kept("bench-press", 2), kept("cable-fly", 3), kept("back-squat", 4), kept("triceps-pushdown", 5)))
         val decided = mutableListOf<Proposal>()
         sheet(room.store, decided)
@@ -428,7 +431,7 @@ class ReviewSheetTests {
 
         compose.onNodeWithText("Apply").performClick()
         compose.runOnIdle {
-            assertEquals("an Apply on its way reads against the routine the log confirmed", FieldMove("Order", "3rd", "1st"),
+            assertEquals("an Apply on its way reads against the routine the log confirmed", FieldMove(Words.Plain("Order"), Words.Plain("3rd"), Words.Plain("1st")),
                 runBlocking { room.training.proposal("proposal1") }!!.changes.first().order)
         }
         receipt(room, server, decided)
@@ -445,8 +448,8 @@ class ReviewSheetTests {
         val room = signedIn(scope)
         val routine = routineFor(room, server, "Push Day", listOf("bench-press", "back-squat", "overhead-press", "cable-fly", "triceps-pushdown").mapIndexed { at, id -> kept(id, at + 1) })
         propose(room, server, routine, summary = "", changes = listOf(
-            kept("cable-fly", 1).copy(order = FieldMove("Order", "4th", "1st")),
-            kept("overhead-press", 2).copy(order = FieldMove("Order", "3rd", "2nd")),
+            kept("cable-fly", 1).copy(order = FieldMove(Words.Plain("Order"), Words.Plain("4th"), Words.Plain("1st"))),
+            kept("overhead-press", 2).copy(order = FieldMove(Words.Plain("Order"), Words.Plain("3rd"), Words.Plain("2nd"))),
             kept("bench-press", 3), kept("back-squat", 4), kept("triceps-pushdown", 5)))
         sheet(room.store, mutableListOf())
 
@@ -467,7 +470,7 @@ class ReviewSheetTests {
         val room = signedIn(scope)
         val routine = routineFor(room, server, "Push Day", listOf(kept("bench-press", 1), kept("cable-fly", 2), retarget("overhead-press", 3)))
         propose(room, server, routine, summary = "", changes = listOf(
-            retarget("overhead-press", 1).copy(order = FieldMove("Order", "3rd", "1st")), kept("bench-press", 2), kept("cable-fly", 3)))
+            retarget("overhead-press", 1).copy(order = FieldMove(Words.Plain("Order"), Words.Plain("3rd"), Words.Plain("1st"))), kept("bench-press", 2), kept("cable-fly", 3)))
         sheet(room.store, mutableListOf())
 
         compose.onNodeWithText("Overhead Press").assertIsDisplayed()
@@ -543,7 +546,7 @@ class ReviewSheetTests {
         sheet(room.store, mutableListOf(), heightDp = 360)
 
         val shut = compose.onNode(hasText("Apply") or hasText("Apply all", substring = true)).getUnclippedBoundsInRoot()
-        compose.onNode(hasText("Apply") or hasText("Apply all", substring = true)).assert(hasStateDescription(Proposal.applyHint))
+        compose.onNode(hasText("Apply") or hasText("Apply all", substring = true)).assert(hasStateDescription(string(R.string.gym_proposal_apply_hint)))
 
         compose.onNode(hasScrollAction()).performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, 100_000f) }
         compose.onNode(hasText("Apply") or hasText("Apply all", substring = true)).assertIsEnabled()
@@ -554,7 +557,7 @@ class ReviewSheetTests {
         // And it comes BACK: what grew has not been seen, so the reason returns with the gate.
         compose.onNodeWithText("and 6 lines unchanged").performScrollTo().performClick()
         compose.onNode(hasText("Apply") or hasText("Apply all", substring = true)).assertIsNotEnabled()
-        compose.onNode(hasText("Apply") or hasText("Apply all", substring = true)).assert(hasStateDescription(Proposal.applyHint))
+        compose.onNode(hasText("Apply") or hasText("Apply all", substring = true)).assert(hasStateDescription(string(R.string.gym_proposal_apply_hint)))
         assertEquals("and the slot is held in that direction too",
             shut, compose.onNode(hasText("Apply") or hasText("Apply all", substring = true)).getUnclippedBoundsInRoot())
         scope.cancel()
@@ -575,7 +578,7 @@ class ReviewSheetTests {
         sheet(room.store, mutableListOf(), heightDp = 360)
 
         compose.onNode(hasText("Apply") or hasText("Apply all", substring = true)).assertIsNotEnabled()
-        val saying = compose.onAllNodes(saying(Proposal.applyHint)).fetchSemanticsNodes()
+        val saying = compose.onAllNodes(saying(string(R.string.gym_proposal_apply_hint))).fetchSemanticsNodes()
         assertEquals("the shut band's merged tree:\n${compose.onRoot().printToString()}",
             1, saying.size)
         assertEquals("and the one node is the control that is refusing",
@@ -584,7 +587,7 @@ class ReviewSheetTests {
         // Open, nothing says it at all: the reason is gone from the state as well as from the row.
         compose.onNode(hasScrollAction()).performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, 100_000f) }
         compose.onNode(hasText("Apply") or hasText("Apply all", substring = true)).assertIsEnabled()
-        assertEquals(0, compose.onAllNodes(saying(Proposal.applyHint)).fetchSemanticsNodes().size)
+        assertEquals(0, compose.onAllNodes(saying(string(R.string.gym_proposal_apply_hint))).fetchSemanticsNodes().size)
         scope.cancel()
     }
 
@@ -610,7 +613,7 @@ class ReviewSheetTests {
         compose.onNode(hasText("Apply") or hasText("Apply all", substring = true)).assert(SemanticsMatcher.keyNotDefined(SemanticsProperties.StateDescription))
 
         receipt(room, server, decided)
-        compose.runOnIdle { assertEquals(listOf("Applied · Push Day · 12 changes"), decided.map { it.receipt }) }
+        compose.runOnIdle { assertEquals(listOf("Applied · Push Day · 12 changes"), decided.map { it.settledReceipt?.words.spelled() }) }
         scope.cancel()
     }
 
@@ -629,7 +632,7 @@ class ReviewSheetTests {
         compose.onNodeWithText(promise).assertIsDisplayed()
         val apply = compose.onNode(hasText("Apply") or hasText("Apply all", substring = true)).getUnclippedBoundsInRoot()
         val line = compose.onNodeWithText(promise).getUnclippedBoundsInRoot()
-        val turnDown = compose.onNodeWithText(Proposal.turnDownVerb).getUnclippedBoundsInRoot()
+        val turnDown = compose.onNodeWithText(string(R.string.gym_proposal_turn_down_verb)).getUnclippedBoundsInRoot()
         assertTrue("under Apply", apply.bottom <= line.top)
         assertTrue("and above turning down", line.bottom <= turnDown.top)
         scope.cancel()
@@ -675,7 +678,7 @@ class ReviewSheetTests {
         assertEquals(listOf("set 4 · 100 × 1 → 102.5 × 1"), rowSaying("set 4"))
         compose.onNode(hasText("set 4 · 100 × 1 → 102.5 × 1")).assertHasNoClickAction()
         compose.onAllNodes(hasText("sets")).assertCountEquals(0)
-        compose.onAllNodes(hasText(Readout.ladder(setFourMoved().after!!.sets))).assertCountEquals(0)
+        compose.onAllNodes(hasText("60 × 5 · 80 × 5 · 90 × 3 · 102.5 × 1 · 80 × 5")).assertCountEquals(0)
         scope.cancel()
     }
 
@@ -740,7 +743,7 @@ class ReviewSheetTests {
         val waiting = propose(room, server, routine, changes)!!
         val doors = mutableListOf<String>()
         compose.setContent {
-            ProposalCard(waiting, "Push Day", nowMs = 2_000, stillWaiting = true, onReview = { doors += "review" })
+            ProposalCard(waiting, Words.Plain("Push Day"), nowMs = 2_000, stillWaiting = true, onReview = { doors += "review" })
         }
 
         compose.onNodeWithText("Later").assertDoesNotExist()
@@ -766,7 +769,7 @@ class ReviewSheetTests {
         val opened = mutableListOf<String>()
         compose.setContent {
             Box(Modifier.width(320.dp)) {
-                ProposalCard(waiting, long, nowMs = 2_000, stillWaiting = true, onReview = { opened += waiting.id })
+                ProposalCard(waiting, Words.Plain(long), nowMs = 2_000, stillWaiting = true, onReview = { opened += waiting.id })
             }
         }
         compose.onNodeWithText("Proposal · $long").assertIsDisplayed()
@@ -794,7 +797,7 @@ class ReviewSheetTests {
                 }
             }
         }
-        compose.onNodeWithText(ProposalRead.Gone.line).assertIsDisplayed()
+        compose.onNodeWithText(ProposalRead.Gone.words.spelled()).assertIsDisplayed()
         compose.onNodeWithText("Exact server prose.").assertDoesNotExist()
         compose.onNodeWithText("Apply").assertDoesNotExist()
         compose.onNodeWithText("Turn this down").assertDoesNotExist()
@@ -863,7 +866,7 @@ class ReviewSheetTests {
         runBlocking { readingRetained.await() }
         compose.onNode(hasText("Remove Push Day") and hasClickAction()).assertDoesNotExist()
         compose.onNodeWithText("Turn this down").assertDoesNotExist()
-        compose.onNodeWithText(requireNotNull(decided.single().receipt)).assertIsDisplayed()
+        compose.onNodeWithText(requireNotNull(decided.single().settledReceipt?.words.spelled())).assertIsDisplayed()
         val cold = EngineRoomFixture(room.directory, scope, room.engine.snapshot(), rest = FakeGymRest()).also { rooms += it }
         val connectingCold = compose.runOnIdle { scope.async {
             cold.selected = "u1"
@@ -873,11 +876,11 @@ class ReviewSheetTests {
         } }
         compose.waitUntil(10_000) { compose.runOnIdle { connectingCold.isCompleted } }
         runBlocking { connectingCold.await() }
-        compose.onNodeWithText(ProposalRead.Gone.line).assertIsDisplayed()
+        compose.onNodeWithText(ProposalRead.Gone.words.spelled()).assertIsDisplayed()
         compose.onNodeWithText("Try again").assertDoesNotExist()
         compose.onNodeWithText("Coach wrote:").assertDoesNotExist()
         compose.onNodeWithText("Remove Push Day").assertDoesNotExist()
-        compose.onNodeWithText(requireNotNull(decided.single().receipt)).assertDoesNotExist()
+        compose.onNodeWithText(requireNotNull(decided.single().settledReceipt?.words.spelled())).assertDoesNotExist()
         compose.runOnIdle {
             assertEquals(history, cold.training.details())
             assertEquals(logged, cold.store.history.logged)
@@ -925,18 +928,18 @@ class ReviewSheetTests {
         runBlocking { refreshed.await() }
         val settled = pending.copy(state = ProposalState.Applied)
         compose.onNodeWithText(waiting).assertDoesNotExist()
-        compose.onNodeWithText(requireNotNull(settled.receipt)).assertIsNotDisplayed()
+        compose.onNodeWithText(requireNotNull(settled.settledReceipt?.words.spelled())).assertIsNotDisplayed()
         compose.runOnIdle {
             assertEquals(mapOf(pending.id to settled), room.store.routines.unseenRemovalReceipts)
             offscreen.value = false
         }
-        compose.onNodeWithText(requireNotNull(settled.receipt)).assertIsDisplayed()
+        compose.onNodeWithText(requireNotNull(settled.settledReceipt?.words.spelled())).assertIsDisplayed()
         compose.runOnIdle {
             assertEquals(mapOf(pending.id to settled), room.store.routines.unseenRemovalReceipts)
             owner.lifecycle.currentState = Lifecycle.State.RESUMED
         }
         compose.waitUntil(5_000) { compose.runOnIdle { room.store.routines.unseenRemovalReceipts.isEmpty() } }
-        compose.onNodeWithText(requireNotNull(settled.receipt)).assertIsDisplayed()
+        compose.onNodeWithText(requireNotNull(settled.settledReceipt?.words.spelled())).assertIsDisplayed()
         compose.runOnIdle { runBlocking { assertEquals(ProposalRead.Found(settled), room.store.routines.proposal(pending.id)) } }
         scope.cancel()
     }

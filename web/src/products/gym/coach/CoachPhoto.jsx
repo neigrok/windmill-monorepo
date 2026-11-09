@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { gymApi } from '../gymApi.js';
+import { t } from '../i18n/index.js';
 import { coachPhotos } from './photos.js';
 
 export function CoachPhoto({ accountId, thread, photo, draft = false }) {
@@ -27,12 +28,12 @@ export function CoachPhoto({ accountId, thread, photo, draft = false }) {
   }, [accountId, thread, photo.id, draft, attempt]);
 
   if (view.phase === 'failed') return <div className="gym-coach-photo-note">
-    <span>Photo couldn’t load.</span>
-    <button type="button" className="gym-coach-retry" onClick={() => setAttempt((value) => value + 1)}>Retry photo</button>
+    <span>{t('gym.coach.photo.loadFailed')}</span>
+    <button type="button" className="gym-coach-retry" onClick={() => setAttempt((value) => value + 1)}>{t('gym.coach.photo.retry')}</button>
   </div>;
-  if (view.phase === 'loading') return <div className="gym-coach-photo-placeholder" role="status">Opening photo…</div>;
+  if (view.phase === 'loading') return <div className="gym-coach-photo-placeholder" role="status">{t('gym.coach.photo.opening')}</div>;
   const image = <img className="gym-coach-photo" src={view.url} width={photo.width} height={photo.height}
-    alt={draft ? 'Photo ready to send' : 'Photo you shared'} />;
+    alt={draft ? t('gym.coach.photo.readyAlt') : t('gym.coach.photo.sharedAlt')} />;
   if (draft) return image;
-  return <a className="gym-coach-photo-open" href={view.url} target="_blank" rel="noreferrer" aria-label="Open shared photo">{image}</a>;
+  return <a className="gym-coach-photo-open" href={view.url} target="_blank" rel="noreferrer" aria-label={t('gym.coach.photo.open')}>{image}</a>;
 }

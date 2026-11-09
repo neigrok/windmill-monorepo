@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  DEMO_COPY,
   GRAPH_UNAVAILABLE,
   STATE_WORDS,
   COLUMN_TITLES,
@@ -29,7 +30,6 @@ import {
   LAPSED_SESSION,
   FORK_OFFER,
   formatCount,
-  stepCount,
   lockedStatus,
   columnHeadingLabel,
   progressFigure,
@@ -76,6 +76,12 @@ import {
   draftLine,
 } from '../../../src/products/roadmap/copy.js';
 
+test('copy — the canon strings the demo speaks verbatim', () => {
+  assert.equal(DEMO_COPY.coachSentence, 'This step is up next — mark it done.');
+  assert.equal(DEMO_COPY.coachButton, 'Mark it done');
+  assert.equal(DEMO_COPY.unlockToast, 'Rig the boat yourself done · 2 up next');
+});
+
 test('copy — compact offline status', () => {
   assert.equal(SYNC_OFFLINE_SHORT, 'Offline');
 });
@@ -117,7 +123,6 @@ test('copy — counts are full with separators, and compact from 1,000 only when
   assert.deepEqual([999, 1000, 1770, 1800, 3200, 12345, 999_949, 999_950, 1_250_000].map((count) => formatCount(count, { compact: true })), [
     '999', '1k', '1.8k', '1.8k', '3.2k', '12.3k', '999.9k', '1m', '1.3m',
   ]);
-  assert.deepEqual([0, 1, 2, 3200].map(stepCount), ['0 steps', '1 step', '2 steps', '3,200 steps']);
 });
 
 test('copy — card reasons and the locked status read the structured reasons', () => {

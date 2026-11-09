@@ -7,9 +7,14 @@ import { ScaleStrip } from './ScaleStrip.jsx';
 import { PageEchoes } from './echoes/PageEchoes.jsx';
 import { writerTookTheScroll } from './openingGesture.js';
 import { proseRuns } from './links.js';
+import { t } from './i18n/index.js';
 
-const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December'];
+const MONTHS = [
+  t('journal.canvas.month.january'), t('journal.canvas.month.february'), t('journal.canvas.month.march'),
+  t('journal.canvas.month.april'), t('journal.canvas.month.may'), t('journal.canvas.month.june'),
+  t('journal.canvas.month.july'), t('journal.canvas.month.august'), t('journal.canvas.month.september'),
+  t('journal.canvas.month.october'), t('journal.canvas.month.november'), t('journal.canvas.month.december'),
+];
 
 const SETTLE_FRAMES = 6;   // how long a flight keeps correcting while the canvas grows under it
 
@@ -21,7 +26,7 @@ function wordCount(body) {
   return trimmed ? trimmed.split(/\s+/).length : 0;
 }
 
-const WHY_LINE = 'Mood is what you see when you zoom out to the year. Zero is a real answer; leaving it blank is too.';
+const WHY_LINE = t('journal.canvas.scalesWhy');
 const WHY_READ_MS = 2500;
 
 export function Canvas({ focusDate = null, flyTo = null, echoes = null, holdWriter = null }) {
@@ -214,25 +219,28 @@ export function Canvas({ focusDate = null, flyTo = null, echoes = null, holdWrit
   return (
     <div className="journal-scroll" ref={scrollRef}>
       <div className="journal-column" ref={columnRef}>
-        {showStart && <p className="journal-floor-end">That’s the start of your journal.</p>}
+        {showStart && <p className="journal-floor-end">{t('journal.canvas.start')}</p>}
         {rendered}
 
         {readState === 'failed' && (
-          <p className="journal-unread">
-            Couldn’t reach your journal just now — this is only what’s on this device.
-            Anything you write is kept here until the rest can be read.
-          </p>
+          <p className="journal-unread">{t('journal.canvas.unread')}</p>
         )}
 
         {!loading && recoveries.length > 0 && (
           <details className="journal-recoveries">
-            <summary>Recovered drafts ({recoveries.length})</summary>
-            <p>These drafts are kept on this device. Copy any writing you want to keep into today’s page.</p>
+            <summary>{t('journal.canvas.recovered', { count: recoveries.length })}</summary>
+            <p>{t('journal.canvas.recoveredNote')}</p>
             {recoveries.map((draft, index) => (
               <details key={draft.key}>
-                <summary>{draft.day} · draft {index + 1}</summary>
-                <textarea aria-label={`Recovered draft ${index + 1} from ${draft.day}`} readOnly value={draft.body} rows={6} />
-                <p>Mood: {draft.mood ?? 'not answered'} · Energy: {draft.energy ?? 'not answered'} · {draft.source}</p>
+                <summary>{t('journal.canvas.recoveredDraft', { day: draft.day, number: index + 1 })}</summary>
+                <textarea aria-label={t('journal.canvas.recoveredDraftLabel', { number: index + 1, day: draft.day })} readOnly value={draft.body} rows={6} />
+                <p>
+                  {t('journal.canvas.recoveredScales', {
+                    mood: draft.mood ?? t('journal.canvas.notAnswered'),
+                    energy: draft.energy ?? t('journal.canvas.notAnswered'),
+                    source: draft.source,
+                  })}
+                </p>
               </details>
             ))}
           </details>
@@ -256,8 +264,8 @@ export function Canvas({ focusDate = null, flyTo = null, echoes = null, holdWrit
                 readOnly={loading}
                 aria-busy={loading}
                 onChange={(event) => setBody(event.target.value)}
-                placeholder={firstRun ? 'Start anywhere. Nothing here is graded.' : ''}
-                aria-label="Write today"
+                placeholder={firstRun ? t('journal.canvas.placeholder') : ''}
+                aria-label={t('journal.canvas.writeToday')}
                 spellCheck
               />
               {/* The field's own glyphs are transparent; these are the ones you read. Same font, same
@@ -267,7 +275,7 @@ export function Canvas({ focusDate = null, flyTo = null, echoes = null, holdWrit
             {echoes && <PageEchoes echoes={echoes} day={today} standing={today === standingOn} />}
           </div>
           <ScaleStrip day={today} mood={mood} energy={energy} onMood={setMood} onEnergy={setEnergy} why={why} />
-          {firstRun && <p className="journal-privacy">Only you. No prompts, no fields, nothing to fill in — write a line or a page.</p>}
+          {firstRun && <p className="journal-privacy">{t('journal.canvas.privacy')}</p>}
         </article>
       </div>
     </div>
@@ -276,7 +284,7 @@ export function Canvas({ focusDate = null, flyTo = null, echoes = null, holdWrit
 
 function MonthDivider({ iso }) {
   const [year, month] = iso.split('-').map(Number);
-  return <div className="journal-month">{MONTHS[month - 1]} {year}</div>;
+  return <div className="journal-month">{t('journal.canvas.monthHeading', { month: MONTHS[month - 1], year })}</div>;
 }
 
 // The writing and its echoes share one positioning context, .journal-page.
@@ -317,12 +325,12 @@ function Prose({ text, highlight = null, inert = false }) {
 
 // One line per write, naming where the words actually are.
 const SAVE_NOTES = {
-  saved: 'saved',
-  device: 'saved on this device',
-  offline: 'offline · saved here',
-  unsaved: 'not saved — no room on this device',
+  saved: t('journal.canvas.saved'),
+  device: t('journal.canvas.savedOnDevice'),
+  offline: t('journal.canvas.offline'),
+  unsaved: t('journal.canvas.unsaved'),
   // Settled on any refusal the server will repeat, not only on a page that is too long.
-  refused: 'kept here · not synced',
+  refused: t('journal.canvas.refused'),
 };
 
 function SavedNote({ state, tick }) {
@@ -335,5 +343,5 @@ function SavedNote({ state, tick }) {
     const timer = setTimeout(() => setVisible(false), 2200);
     return () => clearTimeout(timer);
   }, [tick, state]);
-  return <span className={'journal-saved' + (visible ? ' is-on' : '')}> · {SAVE_NOTES[state] ?? 'saved'}</span>;
+  return <span className={'journal-saved' + (visible ? ' is-on' : '')}> · {SAVE_NOTES[state] ?? SAVE_NOTES.saved}</span>;
 }

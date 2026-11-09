@@ -1,0 +1,14 @@
+{
+  "shell.chrome.home": "Home",
+  "shell.chrome.homeMark": "Windmill — home",
+  "shell.chrome.rooms": "Rooms",
+  "shell.home.notOpen": "not open yet",
+  "shell.home.preOpenBody": "{tagline} — no room in here yet, and its landing says where it stands.",
+  "shell.home.readAbout": "Read about it →",
+  "shell.home.statusBoth": "{open} {openCount, plural, one {is} other {are}} open today; {preOpen} {preOpenCount, plural, one {joins when it opens} other {join when they open}}.",
+  "shell.home.statusOpen": "{products} {count, plural, one {is} other {are}} open today.",
+  "shell.home.statusPreOpen": "{products} {count, plural, one {joins when it opens} other {join when they open}}.",
+  "shell.install.copy": "Windmill can live on your home screen — it opens even offline.",
+  "shell.install.install": "Install",
+  "shell.install.notNow": "Not now"
+}

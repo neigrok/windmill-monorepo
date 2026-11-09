@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <string name="gym_bodyweight_use_date">Use date</string>
+    <string name="gym_bodyweight_weight">Weight</string>
+    <string name="gym_bodyweight_date">Date</string>
+    <string name="gym_bodyweight_choose_date">Choose date</string>
+    <string name="gym_bodyweight_reading">Reading your weigh-ins…</string>
+    <string name="gym_bodyweight_every_weigh_in">Every weigh-in</string>
+    <string name="gym_bodyweight_correct_weigh_in">Correct weigh-in</string>
+    <string name="gym_bodyweight_title">Bodyweight</string>
+    <string name="gym_bodyweight_chip">Weigh in</string>
+    <string name="gym_bodyweight_save">Save weight</string>
+    <string name="gym_bodyweight_out_of_range">Between 20 and 400 kg — check the number.</string>
+    <string name="gym_bodyweight_not_a_forecast">A weigh-in is not a forecast — today or earlier.</string>
+    <string name="gym_bodyweight_delete">Delete weigh-in</string>
+    <string name="gym_bodyweight_nothing_yet">No weigh-ins yet. Weigh in from the log.</string>
+    <string name="gym_bodyweight_none_in_window" tools:ignore="Typos">no weigh-in in the last 90 days</string>
+    <string name="gym_bodyweight_window_ninety">90 days</string>
+    <!-- The chart window that shows every weigh-in. -->
+    <string name="gym_bodyweight_window_all">All</string>
+    <plurals name="gym_bodyweight_window_ninety_count">
+        <item quantity="one">90 days · %1$s weigh-in</item>
+        <item quantity="other">90 days · %1$s weigh-ins</item>
+    </plurals>
+    <plurals name="gym_bodyweight_window_all_count">
+        <item quantity="one">All · %1$s weigh-in</item>
+        <item quantity="other">All · %1$s weigh-ins</item>
+    </plurals>
+    <string name="gym_bodyweight_date_described">Date, %1$s</string>
+    <string name="gym_bodyweight_entry">%1$s kg · %2$s</string>
+    <string name="gym_bodyweight_gap">no weigh-in · %1$s – %2$s</string>
+    <string name="gym_bodyweight_correct_no_answer">the log didn’t answer — that weigh-in wasn’t saved</string>
+    <string name="gym_bodyweight_weight_field">weight in kilograms</string>
+</resources>

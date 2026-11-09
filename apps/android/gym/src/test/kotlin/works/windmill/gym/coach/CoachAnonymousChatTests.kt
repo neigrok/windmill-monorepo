@@ -1,5 +1,10 @@
 package works.windmill.gym.coach
 
+import works.windmill.gym.spelled
+import works.windmill.gym.string
+import org.robolectric.annotation.Config
+import org.robolectric.RobolectricTestRunner
+import org.junit.runner.RunWith
 import java.io.File
 import kotlin.coroutines.ContinuationInterceptor
 import kotlinx.coroutines.CompletableDeferred
@@ -38,6 +43,7 @@ import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.platform.ai.AiInstallation
 import works.windmill.platform.ai.AiInstallationApi
 import works.windmill.platform.ai.AiInstallationResponse
+import works.windmill.platform.i18n.text
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.sync.core.Json
 import works.windmill.sync.core.ScopeRef
@@ -45,6 +51,8 @@ import works.windmill.sync.schema.Gym
 
 // A signed-out phone's chats on the one path every seat takes: its refusals keep the question, its bound installation keeps its chats, and a dead process never asks again.
 @OptIn(ExperimentalCoroutinesApi::class)
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class CoachAnonymousChatTests {
     @get:Rule val temporary = TemporaryFolder()
 
@@ -161,7 +169,7 @@ class CoachAnonymousChatTests {
                 val other = coach.freshChat("Other draft")
                 assertEquals(refusal, coach.refusal(chat))
                 assertEquals(refusal, coach.refusal(other))
-                assertEquals(sentence, coach.refusal(chat)?.sentence)
+                assertEquals(sentence, coach.refusal(chat)?.words.spelled())
                 assertEquals(CoachDraft("Retained input"), coach.draft(chat))
                 assertEquals(emptyList<CoachThread>(), room.threads())
                 assertEquals(emptyList<Map<String, String>>(), telling.failures)
@@ -222,7 +230,7 @@ class CoachAnonymousChatTests {
             advanceUntilIdle()
             room.store.conversations.read()
             assertEquals(MessageState.failed, coach.exchanges(chat).single().answer?.state)
-            assertEquals("Coach couldn’t finish. Ask again.", Ask.ending(MessageState.failed, truncated = false, wordsArrived = false))
+            assertEquals("Coach couldn’t finish. Ask again.", Ask.ending(MessageState.failed, truncated = false, wordsArrived = false)?.let(::string))
             coach.saveDraft(chat, CoachDraft("Second question"))
             assertTrue(coach.send(chat, "Second question"))
             advanceUntilIdle()

@@ -45,6 +45,10 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.UriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
+import works.windmill.platform.R as PlatformR
+import works.windmill.platform.i18n.text
+import works.windmill.platform.i18n.pluralString
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.LinkAnnotation
@@ -103,44 +107,42 @@ internal fun CoachAnswer(
             CoachText(text, reply.text, copyMenu)
             if (reply.elsewhere) AnsweringElsewhere()
             else if (!ended) reply.stepLine?.let { CoachLine(it, "coach-step-line") }
-            readUnderWords?.let { CoachReadSources(it, reply.readRows, withDetails, onSourcesTop) }
+            readUnderWords?.let { CoachReadSources(it.text(), reply.readRows, withDetails, onSourcesTop) }
         }
-        seatDoor?.let { CoachAction("Sign in", it, primary = true) }
+        seatDoor?.let { CoachAction(stringResource(PlatformR.string.platform_sign_in), it, primary = true) }
         if (routineDrafts.isNotEmpty()) Column(verticalArrangement = Arrangement.spacedBy(24.dp), modifier = Modifier.padding(top = 12.dp).fillMaxWidth()) {
             routineDrafts.forEachIndexed { index, draft ->
                 key(draft.operationId) {
                     val scope = rememberCoroutineScope()
                     var busy by remember { mutableStateOf(false) }
-                    var note by remember { mutableStateOf<String?>(null) }
+                    var note by remember { mutableStateOf<Int?>(null) }
                     var closed by remember { mutableStateOf(false) }
                     Column(verticalArrangement = Arrangement.spacedBy(12.dp),
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp).background(colors.surfaceContainer, MaterialTheme.shapes.large).padding(16.dp)) {
-                        Text("Review routine", style = WindmillType.supporting, color = colors.onSurfaceVariant)
+                        Text(stringResource(R.string.gym_coach_review_routine), style = WindmillType.supporting, color = colors.onSurfaceVariant)
                         Text(draft.name, style = GymType.cardTitle, color = colors.onSurface)
                         draft.entries.forEach { entry ->
                             val exercise = catalog.firstOrNull { it.id == entry.exerciseId }
-                            val equipment = when (exercise?.equipment) {
-                                "bodyweight" -> "Bodyweight"
-                                "dumbbell" -> if (exercise.loadCount == 1) "One dumbbell" else "Two dumbbells"
-                                null -> "Equipment not available"
-                                else -> exercise.equipment.replaceFirstChar { it.uppercase() }
+                            val equipment = exercise?.let {
+                                Readout.equipment(it.equipment, if (it.loadCount == 1) R.string.gym_equipment_one_dumbbell else R.string.gym_equipment_two_dumbbells).text()
+                            } ?: stringResource(R.string.gym_coach_draft_no_equipment)
+                            val loads = when (exercise?.equipment) {
+                                "dumbbell" -> if (exercise.loadCount == 1) R.string.gym_readout_kilograms else R.string.gym_coach_draft_kg_each
+                                "bodyweight" -> if (entry.sets.any { (it.weightKg ?: 0.0) < 0 }) R.string.gym_coach_draft_kg_assisted else R.string.gym_coach_draft_kg_added
+                                "barbell" -> R.string.gym_coach_draft_kg_total
+                                else -> R.string.gym_readout_kilograms
                             }
-                            val basis = when (exercise?.equipment) {
-                                "dumbbell" -> if (exercise.loadCount == 1) "" else " each"
-                                "bodyweight" -> if (entry.sets.any { (it.weightKg ?: 0.0) < 0 }) " assisted" else " added"
-                                "barbell" -> " total"
-                                else -> ""
-                            }
-                            val scheme = Readout.target(entry.sets) + if (entry.sets.any { it.weightKg != null }) " kg$basis" else ""
-                            val rest = entry.restSeconds?.let { " · ${it}s rest" }.orEmpty()
+                            val scheme = if (entry.sets.any { it.weightKg != null }) stringResource(loads, Readout.scheme(entry.sets).text()) else Readout.scheme(entry.sets).text()
+                            val line = entry.restSeconds?.let { stringResource(R.string.gym_coach_draft_line_rest, scheme, equipment, it.toString()) }
+                                ?: stringResource(PlatformR.string.platform_words_joined, scheme, equipment)
                             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Text(Readout.movement(entry.exerciseId, catalog), style = WindmillType.label, color = colors.onSurface)
-                                Text("$scheme · $equipment$rest", style = WindmillType.supporting, color = colors.onSurfaceVariant)
+                                Text(line, style = WindmillType.supporting, color = colors.onSurfaceVariant)
                             }
                         }
-                        note?.let { Text(it, style = WindmillType.supporting, color = colors.onSurfaceVariant) }
+                        note?.let { Text(stringResource(it), style = WindmillType.supporting, color = colors.onSurfaceVariant) }
                         // One answer's drafts are one save: the door stands under the last of them.
-                        if (!closed && index == routineDrafts.lastIndex) CoachAction(if (busy) "Saving…" else "Save routine", primary = true, enabled = !busy && onSaveDrafts != null, onClick = {
+                        if (!closed && index == routineDrafts.lastIndex) CoachAction(stringResource(if (busy) R.string.gym_coach_saving else R.string.gym_coach_save_routine), primary = true, enabled = !busy && onSaveDrafts != null, onClick = {
                             if (!busy && onSaveDrafts != null) {
                                 busy = true
                                 note = null
@@ -148,8 +150,8 @@ internal fun CoachAnswer(
                                     try {
                                         when (val saved = onSaveDrafts()) {
                                             DraftOutcome.Saved -> Unit
-                                            is DraftOutcome.Closed -> { note = saved.said; closed = true }
-                                            is DraftOutcome.Failed -> note = saved.said
+                                            is DraftOutcome.Closed -> { note = saved.sentence; closed = true }
+                                            is DraftOutcome.Failed -> note = saved.sentence
                                         }
                                     } finally { busy = false }
                                 }
@@ -166,8 +168,8 @@ internal fun CoachAnswer(
         reply.savedNotes.forEach { note -> key(note.id) { SavedNoteCard(note) } }
         reply.madeMovements.forEach { movement -> key(movement.id) { MadeMovementCard(movement) } }
         if (readUnderWords == null && (ending != null || readLine != null)) Column(Modifier.fillMaxWidth()) {
-            ending?.let { CoachLine(it, "coach-ending") }
-            readLine?.let { CoachReadSources(it, reply.readRows, withDetails, onSourcesTop) }
+            ending?.let { CoachLine(stringResource(it), "coach-ending") }
+            readLine?.let { CoachReadSources(it.text(), reply.readRows, withDetails, onSourcesTop) }
         }
     }
 }
@@ -186,7 +188,7 @@ private fun AnsweringElsewhere() {
     LaunchedEffect(Unit) { telemetry.coachAction("answering_elsewhere") }
     Row(Modifier.fillMaxWidth().testTag("coach-answering-elsewhere"), horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically) {
         Icon(painterResource(R.drawable.gym_coach_phone), null, Modifier.size(18.dp), tint = colors.onSurfaceVariant)
-        Text(Ask.answeringElsewhere, style = GymType.coachSourceLine, color = colors.onSurfaceVariant)
+        Text(stringResource(R.string.gym_coach_answering_elsewhere), style = GymType.coachSourceLine, color = colors.onSurfaceVariant)
     }
 }
 
@@ -199,13 +201,13 @@ private fun CreatedRoutines(routines: List<CreatedRoutine>, onOpen: ((String) ->
             key(routine.id) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
                     modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)
-                        .clickable(enabled = onOpen != null, role = Role.Button, onClickLabel = "Open routine") { onOpen?.invoke(routine.id) }
+                        .clickable(enabled = onOpen != null, role = Role.Button, onClickLabel = stringResource(R.string.gym_coach_open_routine)) { onOpen?.invoke(routine.id) }
                         .padding(horizontal = 16.dp, vertical = 10.dp),
                 ) {
                     Icon(painterResource(R.drawable.gym_coach_check), null, Modifier.size(20.dp), tint = colors.primary)
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Text(routine.name, style = GymType.coachReceiptTitle, color = colors.onSurface)
-                        Text("Routine created · ${Readout.movementCount(routine.movements)}", style = GymType.coachDetail, color = colors.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(pluralString(R.plurals.gym_coach_routine_created, routine.movements, routine.movements.toString()), style = GymType.coachDetail, color = colors.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                     Icon(painterResource(R.drawable.gym_coach_source_chevron), null, Modifier.size(20.dp), tint = colors.onSurfaceVariant)
                 }
@@ -218,9 +220,9 @@ private fun CreatedRoutines(routines: List<CreatedRoutine>, onOpen: ((String) ->
 private fun KeepRoutines(onKeep: () -> Unit) {
     val colors = MaterialTheme.colorScheme
     Row(Modifier.padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(Ask.onlyOnThisPhone, style = GymType.coachSupporting, color = colors.onSurfaceVariant)
+        Text(stringResource(R.string.gym_coach_only_on_this_phone), style = GymType.coachSupporting, color = colors.onSurfaceVariant)
         TextButton(onClick = onKeep, modifier = Modifier.heightIn(min = 48.dp), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)) {
-            Text(Ask.keepIt, style = GymType.coachAction, color = colors.primary)
+            Text(stringResource(PlatformR.string.platform_keep_it), style = GymType.coachAction, color = colors.primary)
         }
     }
 }
@@ -252,8 +254,8 @@ private fun WriteBadge(icon: Int, said: String) {
 
 @Composable
 private fun SavedNoteCard(note: SavedNote) {
-    WriteCard("Saved a note", outlined = false) {
-        WriteBadge(R.drawable.gym_coach_note, "Note")
+    WriteCard(stringResource(R.string.gym_coach_saved_note), outlined = false) {
+        WriteBadge(R.drawable.gym_coach_note, stringResource(R.string.gym_coach_note))
         Text(note.text, style = GymType.coachParagraph, color = MaterialTheme.colorScheme.onSurface)
     }
 }
@@ -261,13 +263,13 @@ private fun SavedNoteCard(note: SavedNote) {
 // A movement Coach made: the movement as one Added change, every value new.
 @Composable
 private fun MadeMovementCard(movement: MadeMovement) {
-    WriteCard("Made a movement", outlined = true) {
-        WriteBadge(R.drawable.gym_native_add, "Added")
+    WriteCard(stringResource(R.string.gym_coach_made_movement), outlined = true) {
+        WriteBadge(R.drawable.gym_native_add, stringResource(R.string.gym_coach_added))
         Text(movement.name, style = GymType.coachHeading, color = MaterialTheme.colorScheme.onSurface)
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            MadeField("Name", movement.name)
-            MadeField("Equipment", movement.equipment)
-            MadeField("Step", "${Readout.weight(movement.stepKg)} kg")
+            MadeField(stringResource(R.string.gym_coach_movement_name), movement.name)
+            MadeField(stringResource(R.string.gym_coach_movement_equipment), movement.equipment.text())
+            MadeField(stringResource(R.string.gym_coach_movement_step), stringResource(R.string.gym_readout_kilograms, Readout.weight(movement.stepKg)))
         }
     }
 }

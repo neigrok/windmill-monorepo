@@ -1,5 +1,6 @@
 package works.windmill.gym
 
+import works.windmill.gym.R
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -27,7 +28,6 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
-import works.windmill.gym.coach.Threads
 import works.windmill.gym.coach.heldConversation
 import works.windmill.gym.coach.heldThreads
 import works.windmill.gym.coach.turn.ScriptedTurns
@@ -61,7 +61,7 @@ class RefusedSettleTests {
             compose.setContent { if (showing) GymMaterial { GymRoom(room.account(), store) } }
             compose.waitForIdle()
             compose.onNodeWithText("Coach").performClick()
-            compose.onNodeWithContentDescription(Threads.title).performClick()
+            compose.onNodeWithContentDescription(string(R.string.gym_coach_history)).performClick()
             compose.waitUntil(10_000) {
                 compose.onAllNodesWithText("why is my bench stalled?").fetchSemanticsNodes().isNotEmpty()
             }
@@ -76,7 +76,7 @@ class RefusedSettleTests {
             compose.onNodeWithText(said).assertIsDisplayed()
             compose.onNodeWithText("Delete this conversation?").assertDoesNotExist()
             compose.onNodeWithText("Conversation deleted.", substring = true).assertDoesNotExist()
-            compose.onNodeWithText(Withheld.undo).assertDoesNotExist()
+            compose.onNodeWithText(string(R.string.gym_room_undo)).assertDoesNotExist()
             compose.onNodeWithText("why is my bench stalled?").assertIsDisplayed()
             shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(Withheld.windowMs + 1))
             compose.waitForIdle()

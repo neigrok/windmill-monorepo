@@ -1,3 +1,5 @@
+import { t } from '../i18n/landing/index.js';
+
 const PRM = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const NOOP = () => {};
 
@@ -41,9 +43,9 @@ export function mountMoat(root) {
   };
 
   const reset = () => {
-    session.textContent = 'Tuesday · week 6';
+    session.textContent = t('gym.landing.moat.session');
     weight.textContent = '97.5';
-    note.textContent = 'last week · 97.5 × 5';
+    note.textContent = t('gym.landing.moat.lastWeek');
     reps.textContent = '—';
     pr.style.display = 'none';
     row4.style.display = 'none';
@@ -71,9 +73,9 @@ export function mountMoat(root) {
     go(3600, () => { row4.style.display = 'flex'; });
     go(5200, () => { live.style.opacity = '0'; });
     go(5500, () => {
-      session.textContent = 'Next session · Tuesday · week 7';
+      session.textContent = t('gym.landing.moat.nextSession');
       weight.textContent = '100';
-      note.textContent = 'last session · 100 × 5 — already in the field';
+      note.textContent = t('gym.landing.moat.lastSession');
       reps.textContent = '5';
       row4.style.display = 'none';
       live.style.opacity = '1';

@@ -3,6 +3,7 @@ import { navigate } from '../../../shell/navigation.js';
 import { track } from '../../../telemetry/beacon.js';
 import { Board } from '../board/Board.js';
 import { LINK_COPIED } from '../copy.js';
+import { t } from '../i18n/index.js';
 import { deleteTree, listAllTrees, renameTree } from '../persistence/TreeRegistry.js';
 import { reportRoadmapFailure } from '../reportFailure.js';
 import { buildRoadmapExport, downloadExport } from '../settings/exportArchive.js';
@@ -27,7 +28,7 @@ export function useRowVerbs({ treeId, tree, boardTree, shownStats, who, view, bo
 
   const pageTitle = tree?.title?.trim();
   useEffect(() => {
-    document.title = pageTitle ? `${pageTitle} — Windmill` : 'Windmill';
+    document.title = pageTitle ? t('roadmap.room.pageTitle', { title: pageTitle }) : 'Windmill';
     return () => { document.title = 'Windmill'; };
   }, [pageTitle]);
 
@@ -127,7 +128,7 @@ export function useRowVerbs({ treeId, tree, boardTree, shownStats, who, view, bo
     listTrees: listAllTrees,
     onNew: newRoadmap,
     onPreviewTitle: (id, title) => {
-      if (id === treeId) document.title = `${title.trim() || 'Untitled roadmap'} — Windmill`;
+      if (id === treeId) document.title = t('roadmap.room.pageTitle', { title: title.trim() || t('roadmap.common.untitled') });
     },
     // A local row renames the blob and device index; a server row goes through the registry.
     onRename: (id, title, { local = false } = {}) => {

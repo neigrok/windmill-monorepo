@@ -1,5 +1,5 @@
-// The magic-link API. Every failure throws an AuthError whose `code` maps to copy; fetchMe answers
-// null only for a real 401 and undefined for a blip.
+// The magic-link API. Every failure throws an AuthError whose `code` maps to copy and whose `said` is the
+// server's own sentence, shown as received; fetchMe answers null only for a real 401 and undefined for a blip.
 
 import { API_BASE } from '../apiBase.js';
 
@@ -7,12 +7,13 @@ const LINK_SENT_KEY = 'windmill:link-sent';
 const LINK_SENT_TTL_MS = 15 * 60 * 1000;
 
 export class AuthError extends Error {
-  constructor(message, { code, detail, status }) {
+  constructor(message, { code, detail, status, said }) {
     super(message);
     this.name = 'AuthError';
     this.code = code;
     this.detail = detail;
     this.status = status;
+    this.said = said;
   }
 }
 

@@ -4,10 +4,16 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import works.windmill.gym.string
 import works.windmill.gym.presentation.Exercise
 import works.windmill.gym.presentation.SessionSummary
 import works.windmill.gym.presentation.TheSix
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class PickerSixRankingTests {
     private val openers = TheSix.movements
     private val extras = (1..12).map { Exercise(id = "ex_$it", name = "Movement $it") }
@@ -110,7 +116,7 @@ class PickerSixRankingTests {
     fun testTheCatalogueThatDidNotLoadSaysWhatTheOtherSurfacesSay() {
         val options = PickerOptions.matching(query = "bench", catalog = emptyList(), taken = emptyList())
 
-        assertEquals("The catalog didn’t load. It comes back when you have signal.", options.unread)
-        assertNull("one silence, one sentence", options.empty)
+        assertEquals("The catalog didn’t load. It comes back when you have signal.", options.catalogUnread?.let { string(it) })
+        assertNull("one silence, one sentence", options.noMatch)
     }
 }

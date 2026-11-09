@@ -5,6 +5,7 @@ import { Session, TrainingSet } from '../domain/training.js';
 import { EstimatedFact, MovementProgress, MovementSessionFact, PerformedFact, ProgressSession, Readout, StatsProgress } from '../domain/trainingReads.js';
 import { GymUnits } from '../domain/units.js';
 import { deviceZone } from '../gymRuntime.js';
+import { t } from '../i18n/index.js';
 import { agoLabel, fmt, setLoadLabel, shortDayLabel } from '../log.js';
 import { inDisplayUnit, weightUnit } from '../units.js';
 
@@ -51,7 +52,7 @@ export function progressDateLabel(at, withYear = false) {
 
 export function consistencyLine(snapshot, now = Date.now()) {
   const count = progressSnapshot(snapshot, now).consistency(new Instant(now), deviceZone);
-  return count === null ? null : `Trained ${count} of the last 4 weeks`;
+  return count === null ? null : t('gym.progress.consistency', { count });
 }
 
 export function movementProgress(snapshot, exerciseId, { window = '12', now = Date.now(), equipment, unit = weightUnit() } = {}) {
@@ -75,23 +76,27 @@ export function movementProgress(snapshot, exerciseId, { window = '12', now = Da
     value: inDisplayUnit(point.fact.estimate.e1rm, unit),
     color: standing && point.id.equals(standing.id) ? 'var(--pr-ink)' : 'var(--color-brand)',
     gapAfter: gaps.get(point.id.record) ?? null,
-    label: `${estimateValue(point.fact.estimate.e1rm, unit)} ${unit} est · ${dateLabel(point.startedAt.ms)} · ${setLoadLabel(point.fact.estimate, unit)}`,
+    label: t('gym.progress.pointLabel', {
+      estimate: estimateValue(point.fact.estimate.e1rm, unit), unit, date: dateLabel(point.startedAt.ms), set: setLoadLabel(point.fact.estimate, unit),
+    }),
   }));
   const count = visible.length;
-  const windowLabel = `${window === 'all' ? 'the whole series' : 'last 12 weeks'} · ${points.length} ${points.length === 1 ? 'session' : 'sessions'}`;
-  const sparseLine = `${count} ${count === 1 ? 'session' : 'sessions'}${count ? ` · since ${dateLabel(visible[0].at)}` : ''}`;
+  const windowLabel = t('gym.progress.window', { window, count: points.length });
+  const sparseLine = count ? t('gym.progress.sessionsSince', { count, date: dateLabel(visible[0].at) }) : t('gym.log.sessionCount', { count });
   const start = LocalDay.in(new Instant(now), deviceZone).adding(-84);
   return {
     exerciseId, sessions: visible, points, latest, best, heaviest, windowLabel, sparseLine, assisted, showYears,
     estimateAbsenceKnown: read.isComplete && read.estimatesComplete && points.length === read.estimates.length,
-    mostRepsLine: bodyweight ? `most reps ${bodyweight.fact.bodyweightReps.reps} · bodyweight · ${dateLabel(bodyweight.startedAt.ms)}` : null,
-    signedLoadLine: heaviest && heaviest.heaviest.weightKg !== 0 ? `heaviest ${heaviest.heaviest.weightKg > 0 ? 'added +' : 'assisted −'}${fmt(Math.abs(heaviest.heaviest.weightKg), unit)} · ${dateLabel(heaviest.at)}` : null,
+    mostRepsLine: bodyweight ? t('gym.progress.mostReps', { reps: String(bodyweight.fact.bodyweightReps.reps), date: dateLabel(bodyweight.startedAt.ms) }) : null,
+    signedLoadLine: heaviest && heaviest.heaviest.weightKg !== 0 ? t('gym.progress.heaviestSigned', {
+      direction: heaviest.heaviest.weightKg > 0 ? 'added' : 'assisted', load: fmt(Math.abs(heaviest.heaviest.weightKg), unit), date: dateLabel(heaviest.at),
+    }) : null,
     domain: { from: window === 'all' ? all.sessions[0]?.startedAt.ms ?? now : new Date(start.year, start.month - 1, start.day).getTime(), to: now },
     chartReady: plotted.hasChart(deviceZone),
-    latestLine: latest ? `e1RM ${estimateValue(latest.estimate.e1rm, unit)} · ${agoLabel(latest.at, now)}` : null,
-    bestLine: best ? `best e1RM ${estimateValue(best.estimate.e1rm, unit)} · ${dateLabel(best.at)}` : null,
-    sparseBest: best ? `Best so far: e1RM ${estimateValue(best.estimate.e1rm, unit)}, from ${setLoadLabel(best.estimate, unit)} on ${dateLabel(best.at)}.` : null,
-    heaviestLine: heaviest ? `heaviest ${setLoadLabel(heaviest.heaviest, unit)} · ${dateLabel(heaviest.at)}` : null,
+    latestLine: latest ? t('gym.progress.latest', { estimate: estimateValue(latest.estimate.e1rm, unit), ago: agoLabel(latest.at, now) }) : null,
+    bestLine: best ? t('gym.progress.best', { estimate: estimateValue(best.estimate.e1rm, unit), date: dateLabel(best.at) }) : null,
+    sparseBest: best ? t('gym.progress.sparseBest', { estimate: estimateValue(best.estimate.e1rm, unit), set: setLoadLabel(best.estimate, unit), date: dateLabel(best.at) }) : null,
+    heaviestLine: heaviest ? t('gym.progress.heaviest', { set: setLoadLabel(heaviest.heaviest, unit), date: dateLabel(heaviest.at) }) : null,
   };
 }
 
@@ -109,7 +114,7 @@ export function joinsSessions(from, to) {
 }
 
 export function sessionGapLabel(from, to, withYear = new Date(from.at).getFullYear() !== new Date(to.at).getFullYear()) {
-  return `no session · ${progressDateLabel(from.at, withYear)} – ${progressDateLabel(to.at, withYear)}`;
+  return t('gym.progress.gap', { from: progressDateLabel(from.at, withYear), to: progressDateLabel(to.at, withYear) });
 }
 
 export function recordProgress(snapshot, exerciseId, equipment) {

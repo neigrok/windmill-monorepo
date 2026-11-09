@@ -5,8 +5,9 @@ import { Button } from '../../../design-system';
 import { buildExportArchive, reportExportFailure } from './exportArchive.js';
 import { Section, styles } from '../../../shell/settings/Section.jsx';
 import { track } from '../../../telemetry/beacon.js';
+import { t } from '../i18n/settings/index.js';
 
-const EXPORT_FAILED = "Couldn't build your export just now — try again.";
+const EXPORT_FAILED = t('roadmap.export.failed');
 
 function exportOutcome(count, total) {
   if (count === total) return 'done';
@@ -14,9 +15,9 @@ function exportOutcome(count, total) {
 }
 
 function exportedLine(count, total) {
-  if (total === 0) return 'No roadmaps to export yet.';
-  if (count < total) return `Exported ${count} of ${total} roadmaps.`;
-  return `Exported ${count} roadmap${count === 1 ? '' : 's'}.`;
+  if (total === 0) return t('roadmap.export.nothing');
+  if (count < total) return t('roadmap.export.partial', { count, total });
+  return t('roadmap.export.done', { count });
 }
 
 export function YourDataSection() {
@@ -41,12 +42,12 @@ export function YourDataSection() {
   };
 
   return (
-    <Section title="Your roadmaps">
+    <Section title={t('roadmap.export.title')}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
         <Button variant="secondary" size="sm" disabled={exportPhase === 'working'} onClick={runExport}>
-          {exportPhase === 'working' ? 'Preparing…' : 'Export my trees'}
+          {exportPhase === 'working' ? t('roadmap.export.preparing') : t('roadmap.export.action')}
         </Button>
-        <span style={styles.calmLine}>A .zip of Markdown — one file per tree. Paste any of them back to replant it.</span>
+        <span style={styles.calmLine}>{t('roadmap.export.detail')}</span>
       </div>
       {exportNote && (
         <p style={{ ...styles.metaText, color: exportPhase === 'error' ? 'var(--color-danger)' : 'var(--accent-olive-600)', marginTop: 6 }}>

@@ -30,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
@@ -138,6 +139,6 @@ fun GymDragHandle(label: String, modifier: Modifier = Modifier, enabled: Boolean
 @Composable
 fun GymSheetCommit(label: String, enabled: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier, busy: Boolean = false) {
     Button(onClick, modifier.fillMaxWidth().heightIn(min = GymTap.primary), enabled = enabled) {
-        Text(if (busy) "Saving…" else label)
+        Text(if (busy) stringResource(R.string.gym_logger_saving) else label)
     }
 }

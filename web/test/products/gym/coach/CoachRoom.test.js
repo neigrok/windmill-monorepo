@@ -537,6 +537,25 @@ test('a disconnect after accepted Stop reconnects to the same request until stop
   assert.equal(room.tree.pending, false);
 });
 
+test('an interruption note stands aside for the failed turn that already says it, and a refusal note always shows', async (t) => {
+  const { CoachBody } = await loadScreen('products/gym/coach/CoachRoom.jsx');
+  const roomNotes = async (failure) => {
+    browserWith();
+    const api = { askStream: (thread, question, requestId, { onSnapshot }) => {
+      onSnapshot({ thread, generation: { id: 'gen_1', requestId, question, at: 10, revision: 1, status: 'failed', answer: 'Push is', results: [] } });
+      return Promise.reject(failure);
+    } };
+    const room = renderHook(t, () => useCoachConversation({ accountId: 'alice', api }));
+    room.tree.setDraft('Create Push.');
+    await room.tree.send();
+    const drawn = renderHook(t, () => CoachBody({ log: roomLog(), accountId: 'alice', conversation: room.tree, onNewChat() {} })).tree;
+    return [room.tree.turns.at(-1).status, room.tree.note, findByClass(drawn, 'gym-coach-note').map(textOf)];
+  };
+  assert.deepEqual(await roomNotes(new Error('connection closed')), ['failed', 'Response interrupted.', []]);
+  assert.deepEqual(await roomNotes(new GymError(502, '', '', {})), ['failed', 'Response interrupted.', []]);
+  assert.deepEqual(await roomNotes(new GymError(429, 'Try tomorrow.', 'ask-daily-limit')), ['failed', 'Try tomorrow.', ['Try tomorrow.']]);
+});
+
 test('a delayed Stop response never retries a generation that failed while Stop was in flight', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   for (const responseStatus of ['failed', 'running']) {

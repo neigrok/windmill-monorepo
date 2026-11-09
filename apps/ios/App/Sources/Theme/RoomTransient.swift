@@ -29,12 +29,12 @@ struct RoomTransient: View {
         Button { withAnimation(motion, action) } label: {
           Group {
             if let actionSymbol {
-              Image(systemName: actionSymbol).foregroundStyle(room.inkDim).accessibilityLabel(actionTitle ?? "Dismiss")
-            } else { Text(actionTitle ?? "Dismiss").foregroundStyle(room.accent) }
+              Image(systemName: actionSymbol).foregroundStyle(room.inkDim).accessibilityLabel(actionTitle ?? String(localized: "Dismiss"))
+            } else { Text(actionTitle ?? String(localized: "Dismiss")).foregroundStyle(room.accent) }
           }.frame(minWidth: RoomSpace.minimumTarget, minHeight: RoomSpace.minimumTarget)
             .contentShape(Rectangle())
         }.buttonStyle(.plain)
-          .accessibilityIdentifier(actionIdentifier ?? actionTitle ?? "transient-action")
+          .accessibilityIdentifier(actionIdentifier ?? "transient-action")
       }
     }.font(.footnote)
       .padding(.horizontal, RoomSpace.inset).padding(.vertical, RoomSpace.small)

@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { Dialog, Input, Button } from '../../design-system';
 import { sendFeedback, isSendableMessage, MESSAGE_MAX } from './FeedbackClient.js';
+import { t } from '../i18n/entry/index.js';
 
 export function FeedbackDialog({ open, onClose }) {
   const [message, setMessage] = useState('');
@@ -31,29 +32,29 @@ export function FeedbackDialog({ open, onClose }) {
       setPhase('done');
     } catch {
       setPhase('form');
-      setError("Couldn't send just now — your note is still here. Try again.");
+      setError(t('shell.feedback.sendFailed'));
     }
   }
 
   return (
-    <Dialog open={open} onClose={onClose} title="Send feedback" width={460}>
+    <Dialog open={open} onClose={onClose} title={t('shell.feedback.title')} width={460}>
       {phase === 'done' ? (
         <div style={column}>
-          <p style={thanks}>Thanks — we read every one.</p>
+          <p style={thanks}>{t('shell.feedback.thanks')}</p>
           <div style={actions}>
-            <Button variant="primary" onClick={onClose}>Done</Button>
+            <Button variant="primary" onClick={onClose}>{t('shell.common.done')}</Button>
           </div>
         </div>
       ) : (
         <div style={column}>
-          <p style={lede}>Tell us what's working or what's broken — it goes straight to the team.</p>
+          <p style={lede}>{t('shell.feedback.lede')}</p>
 
           <div>
             <textarea
               value={message}
               autoFocus
               maxLength={MESSAGE_MAX}
-              placeholder="What's on your mind?"
+              placeholder={t('shell.feedback.messagePlaceholder')}
               onChange={(e) => { setMessage(e.target.value); if (error) setError(null); }}
               onFocus={() => setFocused(true)}
               onBlur={() => setFocused(false)}
@@ -66,7 +67,7 @@ export function FeedbackDialog({ open, onClose }) {
 
           <Input
             type="email"
-            placeholder="Email, if you'd like a reply"
+            placeholder={t('shell.feedback.emailPlaceholder')}
             value={email}
             onChange={(e) => setEmail(e.target.value)}
           />
@@ -75,7 +76,7 @@ export function FeedbackDialog({ open, onClose }) {
 
           <div style={actions}>
             <Button variant="primary" disabled={!sendable || phase === 'sending'} onClick={submit}>
-              {phase === 'sending' ? 'Sending…' : 'Send'}
+              {phase === 'sending' ? t('shell.common.sending') : t('shell.feedback.send')}
             </Button>
           </div>
         </div>

@@ -35,6 +35,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import works.windmill.gym.presentation.LiveLines
+import works.windmill.platform.i18n.Words
 
 // The walk's swipe-to-drop. `confirmValueChange` is a VETO the framework may ask more than once per
 // gesture, so the drop itself may not live there: a `drop` that is not idempotent would double-apply.
@@ -47,8 +48,8 @@ class AssemblySwipeTests {
     private fun row(id: String, canDrop: Boolean) = LiveLines.MovementRow(
         id = id,
         name = id,
-        tag = null,
-        line = null,
+        tagged = null,
+        prompt = null,
         sets = emptyList(),
         isCurrent = false,
         justAdded = false,
@@ -58,7 +59,7 @@ class AssemblySwipeTests {
     @Test
     @Config(sdk = [35], qualifiers = "w320dp-h640dp-xhdpi")
     fun doubleTextKeepsTheTitleAddActionAndLastRowReachable() {
-        val rows = List(12) { row("Long movement name $it", canDrop = true).copy(metadata = "Up next · 3 × 10 · 24 kg each") }
+        val rows = List(12) { row("Long movement name $it", canDrop = true).copy(facts = Words.Plain("Up next · 3 × 10 · 24 kg each")) }
         compose.setContent {
             val density = LocalDensity.current
             CompositionLocalProvider(LocalDensity provides Density(density.density, 2f)) {

@@ -99,7 +99,7 @@ struct CoachTab: View {
         if running == nil, let handoff, coach.begin(handoff) { self.handoff = nil; composing = !handoff.send }
       }
       .onChange(of: coach.offline) { _, offline in
-        if offline { coach.noteOffline() } else if coach.error == CoachCopy.offline { coach.error = nil }
+        if offline { coach.noteOffline() } else { coach.noteOnline() }
         if !offline, coach.refusal == .offline { coach.driver?.refusal = nil }
       }
       .photosPicker(isPresented: $choosePhoto, selection: $photo, matching: .images)
@@ -111,10 +111,10 @@ struct CoachTab: View {
         Task {
           defer { preparing = false; photo = nil }
           do {
-            guard let data = try await value.loadTransferable(type: Data.self) else { throw AppFailure(message: "Choose a supported photo.") }
+            guard let data = try await value.loadTransferable(type: Data.self) else { throw AppFailure(message: String(localized: "Choose a supported photo.")) }
             guard owner == gym.account, conversation.allowed, conversation.saved.threadId == thread else { return }
             try conversation.addPhoto(data)
-          } catch { if conversation.allowed { conversation.error = "Choose a supported photo." } }
+          } catch { if conversation.allowed { conversation.error = String(localized: "Choose a supported photo.") } }
         }
       }
       .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "coach"]) }
@@ -155,7 +155,7 @@ struct CoachTab: View {
                   next.text = draft.text; next.photo = draft.photo; next.photoData = draft.photoData; next.setupChoice = draft.setupChoice
                   next.phoneDrafts?.remove(at: index)
                   if !previous.text.isEmpty || previous.photo != nil { next.phoneDrafts?.append(previous) }
-                  _ = coach.keep(next, failure: "Your draft couldn’t be opened. Try again.")
+                  _ = coach.keep(next, failure: String(localized: "Your draft couldn’t be opened. Try again."))
                 }
               }
             }
@@ -243,7 +243,7 @@ struct CoachTab: View {
   // The band keeps this phone's own faults and the stream's reconnects; every refusal is a notice in the conversation,
   // which says the missing connection once a send met it.
   var band: some View {
-    let message = coach.refusal == .absent || coach.refusal == .offline ? nil : coach.reconnecting ? "Reconnecting…" : coach.error
+    let message = coach.refusal == .absent || coach.refusal == .offline ? nil : coach.reconnecting ? String(localized: "Reconnecting…") : coach.error
     let retry: (() -> Void)? = coach.draftReadable ? nil : { coach.reloadDraft() }
     return VStack(alignment: .leading, spacing: RoomSpace.small) {
       if coach.answeringElsewhere {
@@ -266,7 +266,8 @@ struct CoachTab: View {
   // a question past its bound as it is typed, else the last refused send.
   var notice: CoachNotice? {
     if coach.tooLongBy > 0 {
-      return CoachNotice(lines: ["Too long by \(coach.tooLongBy.formatted()) characters. The limit is \(coach.textLimit.formatted())."], identifier: "coach-too-long")
+      return CoachNotice(lines: [String(localized: "Too long by \(coach.tooLongBy.formatted()) characters. The limit is \(coach.textLimit.formatted()).")],
+                         identifier: "coach-too-long")
     }
     guard let refusal = coach.refusal, refusal != .absent else { return nil }
     return CoachNotice(refusal, anonymous: coach.anonymous, dates: gym.dates)
@@ -361,10 +362,10 @@ struct CoachTab: View {
             } label: {
               HStack(spacing: 12) {
                 Image(systemName: "checkmark.circle").font(.title3).foregroundStyle(GymPalette.ink)
-                GymRow(title: result.routineName, meta: "Routine created" + (result.movementCount.map { " · " + GymCount.of($0, "movement") } ?? ""))
+                GymRow(title: result.routineName, meta: ([String(localized: "Routine created")] + (result.movementCount.map { [GymCount.of($0, .movement)] } ?? [])).joined(separator: " · "))
                 Image(systemName: "arrow.up.right").font(.caption).foregroundStyle(GymPalette.inkFaint)
               }.padding(.vertical, 10).contentShape(Rectangle())
-            }.buttonStyle(.plain).accessibilityLabel("Open routine · " + result.routineName)
+            }.buttonStyle(.plain).accessibilityLabel(String(localized: "Open routine · \(result.routineName)"))
               .accessibilityIdentifier("coach-created-" + result.operationId)
           }
         }.modifier(ChangeCard())
@@ -433,10 +434,10 @@ struct CoachNotice: Equatable {
     var lines = [refusal.sentence]
     if case .freeMonthExhausted(let reset?) = refusal {
       let day = dates.draw(LocalDay(Instant(ms: reset), in: dates.moment.zone), .dateTime.day().month(.abbreviated))
-      lines = ["\(refusal.sentence) It comes back on \(day)."]
+      lines = [String(localized: "\(refusal.sentence) It comes back on \(day).")]
     }
     if let detail { lines.append(detail) }
-    if case .allowance = refusal, recovery == .signIn { lines.append("Sign in to continue.") }
+    if case .allowance = refusal, recovery == .signIn { lines.append(String(localized: "Sign in to continue.")) }
     self.lines = lines
     identifier = switch refusal {
     case .rateLimited: "coach-daily-cap"

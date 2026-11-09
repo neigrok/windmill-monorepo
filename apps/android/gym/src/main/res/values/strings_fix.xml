@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="gym_fix_no_answer">The log didn’t answer — that set wasn’t changed.</string>
+    <string name="gym_fix_title">Fix set</string>
+    <string name="gym_fix_subtitle_spoken">%1$s, set %2$s</string>
+    <string name="gym_fix_effort">Effort</string>
+    <string name="gym_fix_add_note">Add a note</string>
+    <string name="gym_fix_delete_set">Delete set</string>
+    <string name="gym_fix_routine_keeps_targets">%1$s keeps its planned targets.</string>
+    <string name="gym_fix_save">Save fix</string>
+</resources>

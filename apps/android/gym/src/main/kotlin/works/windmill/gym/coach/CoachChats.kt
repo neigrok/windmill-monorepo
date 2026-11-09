@@ -1,5 +1,6 @@
 package works.windmill.gym.coach
 
+import androidx.annotation.StringRes
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
@@ -16,6 +17,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import works.windmill.domain.kit.Id
+import works.windmill.gym.R
 import works.windmill.gym.coach.onboarding.CoachImportOutcome
 import works.windmill.gym.coach.onboarding.CoachOnboardingRecord
 import works.windmill.gym.coach.onboarding.CoachRoutineImports
@@ -35,6 +37,7 @@ import works.windmill.gym.store.unexpected
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.gym.telemetry.coachAction
 import works.windmill.gym.telemetry.coachSetupStep
+import works.windmill.platform.i18n.Words
 
 // The chats of the seat in hand: which one is on screen, what its composer holds, and the send that turns a draft into a turn. Messages are read from `conversations`; a turn runs in `turns`, which outlives every screen; this holds what the composer needs and what the seat's chats keep on this phone.
 class CoachChats internal constructor(
@@ -54,7 +57,7 @@ class CoachChats internal constructor(
 ) {
     private class Sending(val chat: String, val owner: String, val question: String, val photo: CoachAttachment?, val atMs: Long)
     private class Sent(val chat: String, val authority: LocalCoach.Authority?)
-    private class StoreFailure(val chat: String?, val said: String)
+    private class StoreFailure(val chat: String?, @StringRes val sentence: Int)
 
     private val owner: String? get() = accountOwner()
     private val anonymousOwner by lazy {
@@ -128,7 +131,7 @@ class CoachChats internal constructor(
     }
 
     // A failure of this phone's own store, said in the room's line of the chat that met it. A draft that could not follow the account met no chat, and stands on each.
-    fun failure(chat: String): String? = storeFailure?.takeIf { it.chat == null || it.chat == chat }?.said
+    @StringRes fun failed(chat: String): Int? = storeFailure?.takeIf { it.chat == null || it.chat == chat }?.sentence
 
     private fun failureOver(chat: String) {
         storeFailure = storeFailure?.takeUnless { it.chat == null || it.chat == chat }
@@ -294,7 +297,7 @@ class CoachChats internal constructor(
 
     private fun conversationNotSaved(chat: String, failure: Exception) {
         telemetry.unexpected("gym.saveConversation", failure)
-        storeFailure = StoreFailure(chat, "Your conversation couldn’t be saved. Try again.")
+        storeFailure = StoreFailure(chat, R.string.gym_coach_conversation_unsaved)
     }
 
     fun keepPosition(id: String, scroll: Int, followEnd: Boolean) {
@@ -317,7 +320,7 @@ class CoachChats internal constructor(
         if (chats[archiveOwner to except]?.conversation == thread) return null
         val held = conversations?.threads.orEmpty().firstOrNull { it.id.record.string == thread } ?: return null
         val chat = chats.filterKeys { it.first == archiveOwner }.values.firstOrNull { it.conversation == thread }?.id ?: thread
-        return ConversationRow(chat, held.title, 0, answering = true)
+        return ConversationRow(chat, Words.Plain(held.title), 0, answering = true)
     }
 
     // Coach §4.1 through `turns`: the draft stays until the turn is recorded. `once` keys a question one gesture may ask twice, so it opens one turn however often it comes back.
@@ -340,7 +343,7 @@ class CoachChats internal constructor(
                 val bytes = try { photo?.let { withContext(storageDispatcher) { localCoach?.photoFile(seat, it.id)?.readBytes() } } }
                     catch (_: IOException) { null }
                 if (photo != null && bytes == null) {
-                    storeFailure = StoreFailure(id, CoachTurnFault.pictureUnavailable.sentence)
+                    storeFailure = StoreFailure(id, CoachTurnFault.pictureUnavailable.said)
                     live.heldBack(CoachTurnFault.pictureUnavailable)
                     return@launch
                 }
@@ -440,8 +443,8 @@ class CoachChats internal constructor(
         val listed = rows.map { it.id }.toSet()
         val local = mine.filter { it.id !in listed }.mapNotNull { chat ->
             val kept = beside(seat, chat.id) ?: return@mapNotNull null
-            val title = listOfNotNull(kept.answers.firstOrNull()?.question, kept.draft.text, kept.drafts.firstOrNull()?.draft?.text).firstOrNull { it.isNotBlank() } ?: "Photo"
-            ConversationRow(chat.id, title, chat.updatedAtMs, answerPreview = kept.answers.lastOrNull { it.response?.status == "completed" }?.response?.message.orEmpty())
+            val title = listOfNotNull(kept.answers.firstOrNull()?.question, kept.draft.text, kept.drafts.firstOrNull()?.draft?.text).firstOrNull { it.isNotBlank() }
+            ConversationRow(chat.id, title?.let(Words::Plain) ?: Words.Message(R.string.gym_coach_photo), chat.updatedAtMs, answerPreview = kept.answers.lastOrNull { it.response?.status == "completed" }?.response?.message.orEmpty())
         }
         return (rows + local).sortedByDescending { it.askedAtMs }
     }
@@ -528,7 +531,7 @@ class CoachChats internal constructor(
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (failure: Exception) {
             telemetry.unexpected("gym.adoptCoachDraft", failure)
-            if (owner == account) storeFailure = StoreFailure(null, "Your draft couldn’t be saved. Try again.")
+            if (owner == account) storeFailure = StoreFailure(null, R.string.gym_coach_draft_unsaved)
         } finally { adoptingDraft = false }
     }
 
@@ -536,7 +539,7 @@ class CoachChats internal constructor(
         val seat = archiveOwner
         if (localCoach?.writable(seat) == false) return false
         val recovered = try { localCoach?.reconcileDraftChange(seat, key) }
-        catch (_: Exception) { storeFailure = StoreFailure(key, "Your draft couldn’t be saved. Try again."); return false }
+        catch (_: Exception) { storeFailure = StoreFailure(key, R.string.gym_coach_draft_unsaved); return false }
         if (recovered == null) return true
         publishRecovery(recovered)
         return false
@@ -634,8 +637,8 @@ class CoachChats internal constructor(
         val seat = archiveOwner
         // Its drafts are the answer's own, so a question this build cannot read does not cost them.
         val record = try { localCoach?.retained(seat, chat)?.firstOrNull { it.requestId == requestId } }
-            catch (failure: Exception) { archiveFailed(failure); null } ?: return DraftOutcome.Closed(Ask.draftGone)
-        val saving = imports ?: return DraftOutcome.Closed(Ask.draftInvalid)
+            catch (failure: Exception) { archiveFailed(failure); null } ?: return DraftOutcome.Closed(R.string.gym_coach_draft_gone)
+        val saving = imports ?: return DraftOutcome.Closed(R.string.gym_coach_draft_invalid)
         return scope.async {
             when (withContext(storageDispatcher) { saving.apply(record) }) {
                 is CoachImportOutcome.Committed, is CoachImportOutcome.Replayed -> {
@@ -643,8 +646,8 @@ class CoachChats internal constructor(
                     conversations?.read()
                     DraftOutcome.Saved
                 }
-                CoachImportOutcome.Refused -> DraftOutcome.Closed(Ask.draftInvalid)
-                CoachImportOutcome.Failed -> DraftOutcome.Failed(Ask.draftRetry)
+                CoachImportOutcome.Refused -> DraftOutcome.Closed(R.string.gym_coach_draft_invalid)
+                CoachImportOutcome.Failed -> DraftOutcome.Failed(R.string.gym_coach_draft_retry)
             }
         }.await()
     }
@@ -668,10 +671,10 @@ class CoachChats internal constructor(
     private suspend fun deleted(id: String, seat: String, archive: LocalCoach?, admission: Result<LocalCoach.Authority?>, thread: String?): GymResult<Unit> {
         val authority = admission.getOrElse { refusal ->
             if (refusal !is CancellationException) telemetry.unexpected("gym.deleteThread", refusal as Exception)
-            return GymResult.Failed(WriteFailure.Refused(TrainingSeat.accountChanged))
+            return GymResult.Failed(WriteFailure.Refused(TrainingSeat.accountChange))
         }
-        if ((authority != null && archive?.current(authority) != true) || seat != archiveOwner) return GymResult.Failed(WriteFailure.Refused(TrainingSeat.accountChanged))
-        if (thread != null && thread == runningThread) return GymResult.Failed(WriteFailure.Refused(CoachTurnFault.busy.sentence))
+        if ((authority != null && archive?.current(authority) != true) || seat != archiveOwner) return GymResult.Failed(WriteFailure.Refused(TrainingSeat.accountChange))
+        if (thread != null && thread == runningThread) return GymResult.Failed(WriteFailure.Refused(Words.Message(CoachTurnFault.busy.said)))
         return try {
             if (thread != null && turns?.deleteConversation(Id(thread, CoachThread)) == false) return GymResult.Failed(WriteFailure.NoAnswer)
             // Once the thread has gone the conversation has: what this phone kept beside it is reported, and its row does not come back as "still here".
@@ -713,6 +716,6 @@ internal fun asked(typed: String): String {
 // A retained draft's Save: `Saved` also for a draft an earlier tap saved. `Closed` is a draft no retry can save, so the card takes Save away; `Failed` keeps Save for another tap.
 sealed interface DraftOutcome {
     data object Saved : DraftOutcome
-    data class Closed(val said: String) : DraftOutcome
-    data class Failed(val said: String) : DraftOutcome
+    data class Closed(@StringRes val sentence: Int) : DraftOutcome
+    data class Failed(@StringRes val sentence: Int) : DraftOutcome
 }

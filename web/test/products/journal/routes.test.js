@@ -26,7 +26,9 @@ test('journal hands the engine its claim hooks, and a sign-in question counts it
   };
   assert.deepEqual(sync.pendingDeviceWork('journal', rows), [EditorDraft.key, 'pendingClaim:c1']);
   assert.deepEqual(sync.pendingDeviceWork('gym', rows), []);
-  assert.deepEqual(sync.signedOutWork, { type: 'page', one: 'page', many: 'pages' });
+  const { counted, ...nouns } = sync.signedOutWork;
+  assert.deepEqual(nouns, { type: 'page', many: 'pages' });
+  assert.deepEqual([counted(0), counted(1), counted(3)], ['0 pages', '1 page', '3 pages']);
 });
 
 test('only unwritten journal work is adopted without a personal-data question', () => {

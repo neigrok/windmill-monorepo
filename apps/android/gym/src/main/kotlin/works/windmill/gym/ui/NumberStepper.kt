@@ -54,6 +54,7 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.PlatformTextInputInterceptor
 import androidx.compose.ui.platform.PlatformTextInputMethodRequest
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -151,6 +152,9 @@ fun NumberStepper(
     var flash by remember { mutableStateOf(false) }
     val motion = remember { Animatable(1f) }
     var restingLayout by remember { mutableStateOf<NumberFieldLayout?>(null) }
+    val labelWithUnit = stringResource(R.string.gym_logger_stepper_spoken, label, unit)
+    val decreaseAction = stringResource(R.string.gym_logger_decrease)
+    val increaseAction = stringResource(R.string.gym_logger_increase)
     SideEffect {
         if (editor.text != value) editor = editor.copy(text = value,
             selection = TextRange(editor.selection.start.coerceAtMost(value.length), editor.selection.end.coerceAtMost(value.length)))
@@ -267,11 +271,11 @@ fun NumberStepper(
                     }, Modifier.semantics {
                         // The label once and the unit only when it adds to it: "Sets", "Load, kg total". TalkBack
                         // reads the typed value from the field itself, so the drawn label and unit stay silent.
-                        contentDescription = if (unit.equals(label, ignoreCase = true)) label else "$label, $unit"
+                        contentDescription = if (unit.equals(label, ignoreCase = true)) label else labelWithUnit
                         refusal?.let { error(it) }
                         customActions = listOf(
-                            CustomAccessibilityAction("Decrease") { step(NumberStep.Decrease) },
-                            CustomAccessibilityAction("Increase") { step(NumberStep.Increase) },
+                            CustomAccessibilityAction(decreaseAction) { step(NumberStep.Decrease) },
+                            CustomAccessibilityAction(increaseAction) { step(NumberStep.Increase) },
                         )
                     }, enabled = enabled, singleLine = true, textStyle = valueStyle,
                         interactionSource = interaction, cursorBrush = SolidColor(colors.primary),
@@ -364,7 +368,8 @@ private fun StepperButton(step: NumberStep, label: String, enabled: Boolean, onC
         IconButton(onClick, modifier = Modifier.size(48.dp), enabled = enabled,
             colors = IconButtonDefaults.iconButtonColors(contentColor = MaterialTheme.colorScheme.onSurface)) {
             Icon(painterResource(if (step == NumberStep.Decrease) R.drawable.gym_native_remove else R.drawable.gym_native_add),
-                "${if (step == NumberStep.Decrease) "Decrease" else "Increase"} $label", Modifier.size(24.dp))
+                stringResource(if (step == NumberStep.Decrease) R.string.gym_logger_decrease_named else R.string.gym_logger_increase_named, label),
+                Modifier.size(24.dp))
         }
     }
 }

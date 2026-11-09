@@ -2,6 +2,7 @@
 // reps. The ROUTINE TARGET's band is 1–100 and lives in routines.js, which enforces it for the
 // target sheet.
 
+import { t } from '../i18n/index.js';
 import { fmtKg } from '../log.js';
 import { round } from './ladder.js';
 
@@ -10,20 +11,20 @@ export const LOGGER_REPS_MAX = 99;
 
 // The line under a valid weight is the unit and nothing else: both separators are accepted, so there
 // is nothing to explain.
-export const WEIGHT_UNIT = 'kg';
-export const REPS_HINT = 'whole reps';
+export const WEIGHT_UNIT = t('gym.logger.weightUnit');
+export const REPS_HINT = t('gym.logger.repsHint');
 
 // In the same words the target sheet uses, with this screen's
 // own rep band in the one sentence that names a band.
-export const ONE_DECIMAL = 'One decimal point only.';
-export const NOT_A_NUMBER = 'That is not a number yet.';
-export const REPS_BAND = 'Whole reps, 1 to 99.';
+export const ONE_DECIMAL = t('gym.planning.oneDecimal');
+export const NOT_A_NUMBER = t('gym.planning.notANumber');
+export const REPS_BAND = t('gym.logger.repsBand');
 
 export function parseEntry(pad, mode, current) {
   const raw = pad.text.trim();
   const normalised = raw.replace(/,/g, '.');
   if (raw === '' || raw === '-') {
-    return { valid: false, value: null, message: `Enter a number, or cancel to keep ${fmtKg(current)}` };
+    return { valid: false, value: null, message: t('gym.logger.enterNumber', { weight: fmtKg(current) }) };
   }
   if ((normalised.match(/\./g) || []).length > 1) {
     return { valid: false, value: null, message: ONE_DECIMAL };

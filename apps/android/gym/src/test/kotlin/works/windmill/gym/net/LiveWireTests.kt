@@ -13,7 +13,11 @@ import org.junit.Before
 import org.junit.AfterClass
 import org.junit.FixMethodOrder
 import org.junit.Test
+import org.junit.runner.RunWith
 import org.junit.runners.MethodSorters
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import works.windmill.gym.spelled
 import works.windmill.gym.presentation.Exercise
 import works.windmill.gym.presentation.NoteWrite
 import works.windmill.gym.presentation.PlanEntry
@@ -49,6 +53,8 @@ import works.windmill.platform.net.WindmillApi
 import works.windmill.platform.net.WindmillApiException
 
 @FixMethodOrder(MethodSorters.NAME_ASCENDING)
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class LiveWireTests {
     companion object {
         private val bearer: String? = System.getenv("WM_WIRE_BEARER")
@@ -265,7 +271,7 @@ class LiveWireTests {
             fail("a fresh set into a finished session must refuse")
         } catch (refused: TrainingRefused) {
             assertEquals("session-finished", refused.code)
-            assertEquals("That workout has finished.", refused.line)
+            assertEquals("That workout has finished.", refused.words.spelled())
         }
 
         val review = adapter.review(sessionAId)
@@ -310,7 +316,7 @@ class LiveWireTests {
             fail("an id spent in another session must refuse")
         } catch (refused: TrainingRefused) {
             assertEquals("set-id-taken", refused.code)
-            assertEquals("that set id is already used", refused.line)
+            assertEquals("that set id is already used", refused.words.spelled())
         }
 
         try {

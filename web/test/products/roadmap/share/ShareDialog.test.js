@@ -152,3 +152,15 @@ test('leaving the tree during publication never updates the next tree or copies 
   await pending;
   assert.deepEqual(view.calls, [['patch', { visibility: 'public' }]]);
 });
+
+test('a refusal reads as the server said it, whatever its code, or as the dialog says a failed change when the server said no sentence', async (t) => {
+  const bodies = [{ error: 'no such tree' }, {}, { error: '' }, { error: 'Session expired', code: 'unauthenticated' }, { error: { message: 'x' } }];
+  const view = await shareRoom(t, { visibility: 'public', request: () => ({ ok: false, status: 403, json: async () => bodies.shift() }) });
+  const said = [];
+  for (let refusal = 0; refusal < 5; refusal++) {
+    await elementsOf(view.room.tree).find((item) => item.type?.name === 'Button' && item.props.children === 'Make private').props.onClick();
+    said.push(...view.messages('alert'));
+  }
+  assert.deepEqual(said, ['no such tree. Try again.', 'Could not change visibility. Try again.', 'Could not make the roadmap private. Try again.',
+    'Session expired. Try again.', 'Could not change visibility. Try again.']);
+});

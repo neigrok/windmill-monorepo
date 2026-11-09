@@ -30,6 +30,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import works.windmill.gym.presentation.*
 import works.windmill.gym.store.*
+import works.windmill.platform.i18n.Words
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
@@ -235,7 +236,7 @@ class CreateMovementTargetTests {
         compose.onNodeWithText("Creating…").assertIsNotEnabled()
         assertEquals(listOf(ExerciseWrite(exercise.id, exercise.name, Exercise.unclassified, "barbell", loadCount = 1)), calls)
         assertEquals(emptyList<String>(), picked)
-        compose.runOnIdle { pending.complete(MovementCreateOutcome.Failed(WriteFailure.Refused("Try again"))) }
+        compose.runOnIdle { pending.complete(MovementCreateOutcome.Failed(WriteFailure.Refused(Words.Plain("Try again")))) }
         compose.onNodeWithText("Try again").assertIsDisplayed()
         compose.onNodeWithText("Create and add").assertIsEnabled().performClick()
         compose.waitForIdle()
@@ -255,7 +256,7 @@ class CreateMovementTargetTests {
             MovementPicker(TheSix.movements, emptyList(), null, 0, "Add movement", onPick = { picked += it },
                 onCreate = { write ->
                     calls += write
-                    if (calls.size == 1) MovementCreateOutcome.Failed(WriteFailure.Refused("Retry adding"), created)
+                    if (calls.size == 1) MovementCreateOutcome.Failed(WriteFailure.Refused(Words.Plain("Retry adding")), created)
                     else MovementCreateOutcome.Added(created)
                 }, state = rememberSaveable(saver = MovementPickerState.saver) {
                     MovementPickerState(createName = created.name, requestId = created.id, equipment = "dumbbell")

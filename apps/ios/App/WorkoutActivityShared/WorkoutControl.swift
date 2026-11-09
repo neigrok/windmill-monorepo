@@ -22,16 +22,16 @@ nonisolated enum WorkoutControlState: Codable, Hashable, Sendable {
   }
   var title: String {
     switch self {
-    case .logSet: "Log set"
-    case .openWorkout: "Open workout"
-    case .startWorkout: "Start workout"
+    case .logSet: String(localized: "Log set")
+    case .openWorkout: String(localized: "Open workout")
+    case .startWorkout: String(localized: "Start workout")
     }
   }
   var offer: WorkoutControlOffer? {
     guard case .logSet(let offer, _) = self else { return nil }
     return offer
   }
-  var actionHint: String { offer.map { "Log \($0.value)" } ?? title }
+  var actionHint: String { offer.map { String(localized: "Log \($0.value)", comment: "The workout control's action, spoken: Log 100 × 5") } ?? title }
 }
 
 // The rack's set as the control offers it: the offer it logs, and its numbers as the rack draws them.

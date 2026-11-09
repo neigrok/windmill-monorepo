@@ -34,12 +34,14 @@ import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import works.windmill.platform.R as PlatformR
+import works.windmill.gym.string
 import works.windmill.gym.GymRoom
+import works.windmill.gym.R
 import works.windmill.platform.LocalShellActions
 import works.windmill.platform.ShellActions
 import works.windmill.gym.presentation.Note
 import works.windmill.gym.presentation.NoteWrite
-import works.windmill.gym.presentation.Notes
 import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.WithheldDelete
@@ -73,7 +75,7 @@ class NotesStateTests {
                 GymMaterial { NoteEditorScreen(NotesBinding(store), Note("note_tone", title = "Tone"), "", { backs++ }, { done++ }) }
             }
             compose.onNodeWithContentDescription("Note field").performScrollTo().performTextReplacement("  Be precise.  ")
-            compose.onNodeWithText(Notes.save).performClick()
+            compose.onNodeWithText(string(PlatformR.string.platform_save)).performClick()
             compose.runOnIdle {
                 assertEquals(0, backs)
                 assertEquals(1, done)
@@ -99,20 +101,20 @@ class NotesStateTests {
                 }
             }
             compose.runOnIdle { shell.destinations.single { it.id == "notes" }.onOpen() }
-            compose.onNodeWithContentDescription(Notes.add).performClick()
+            compose.onNodeWithContentDescription(string(R.string.gym_notes_add)).performClick()
             compose.onNodeWithContentDescription("Title field").performTextReplacement("A")
             compose.onNodeWithContentDescription("Note field").performTextReplacement("First body")
             restored.emulateSavedInstanceStateRestore()
             compose.onNodeWithContentDescription("Title field").assertTextEquals("Title", "A")
             compose.onNodeWithContentDescription("Note field").assertTextEquals("Note", "First body")
-            compose.onNodeWithText(Notes.save).performClick()
+            compose.onNodeWithText(string(PlatformR.string.platform_save)).performClick()
             val first = compose.runOnIdle { runBlocking { room.training.notes() }.single() }
-            compose.onNodeWithContentDescription(Notes.add).performClick()
+            compose.onNodeWithContentDescription(string(R.string.gym_notes_add)).performClick()
             compose.onNodeWithContentDescription("Title field").assertTextEquals("Title", "")
             compose.onNodeWithContentDescription("Note field").assertTextEquals("Note", "")
             compose.onNodeWithContentDescription("Title field").performTextReplacement("B")
             compose.onNodeWithContentDescription("Note field").performTextReplacement("Second body")
-            compose.onNodeWithText(Notes.save).performClick()
+            compose.onNodeWithText(string(PlatformR.string.platform_save)).performClick()
             compose.runOnIdle {
                 val saved = runBlocking { room.training.notes() }
                 assertEquals(2, saved.size)
@@ -151,22 +153,22 @@ class NotesStateTests {
             restored.setContent { GymMaterial { NoteEditorScreen(NotesBinding(room.store), null, "What I am training for", {}, { done++ }) } }
             compose.onNodeWithContentDescription("Title field").performClick()
             compose.onNodeWithText("What I am training for").assertIsDisplayed()
-            compose.onNodeWithText(Notes.save).assertIsNotEnabled()
+            compose.onNodeWithText(string(PlatformR.string.platform_save)).assertIsNotEnabled()
             val title = "  " + "🏋".repeat(61) + "  "
             val body = "\n" + "é".repeat(251) + "\n"
             compose.onNodeWithContentDescription("Title field").performTextReplacement(title)
             compose.onNodeWithContentDescription("Note field").performScrollTo().performTextReplacement(body)
-            compose.onNodeWithText(Notes.save).assertIsEnabled().performClick()
+            compose.onNodeWithText(string(PlatformR.string.platform_save)).assertIsEnabled().performClick()
             compose.onNodeWithText("a title runs to 60 characters").performScrollTo().assertIsDisplayed()
             restored.emulateSavedInstanceStateRestore()
             compose.onNodeWithContentDescription("Title field").assertTextEquals("Title", title)
             compose.onNodeWithContentDescription("Note field").assertTextEquals("Note", body)
             compose.onNodeWithText("a title runs to 60 characters").performScrollTo().assertIsDisplayed()
             compose.onNodeWithContentDescription("Title field").performScrollTo().performTextReplacement("🏋".repeat(60))
-            compose.onNodeWithText(Notes.save).performClick()
+            compose.onNodeWithText(string(PlatformR.string.platform_save)).performClick()
             compose.onNodeWithText("a note runs to 500 bytes").performScrollTo().assertIsDisplayed()
             compose.onNodeWithContentDescription("Note field").performScrollTo().performTextReplacement("é".repeat(250))
-            compose.onNodeWithText(Notes.save).performClick()
+            compose.onNodeWithText(string(PlatformR.string.platform_save)).performClick()
             compose.runOnIdle {
                 assertEquals(1, done)
                 val saved = runBlocking { room.training.notes() }.single()

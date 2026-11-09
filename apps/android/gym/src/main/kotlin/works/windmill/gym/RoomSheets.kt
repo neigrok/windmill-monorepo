@@ -1,5 +1,6 @@
 package works.windmill.gym
 
+import works.windmill.gym.presentation.ProposalReceipt
 import androidx.compose.material3.MaterialTheme
 import android.content.Context
 import androidx.activity.compose.BackHandler
@@ -38,7 +39,6 @@ import works.windmill.gym.presentation.SessionDetail
 import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.Seat
 import works.windmill.gym.store.TrainingStore
-import works.windmill.gym.ui.FinishCoach
 import works.windmill.gym.ui.FinishScreen
 import works.windmill.gym.ui.FinishedSession
 import works.windmill.gym.ui.ProposalReview
@@ -69,7 +69,7 @@ internal class ReviewFlow(
     reviewingState: MutableState<Reviewing?>,
     busyState: MutableState<Boolean>,
     lookedAtState: MutableState<String>,
-    receiptsState: MutableState<Map<String, List<String>>>,
+    receiptsState: MutableState<Map<String, List<ProposalReceipt>>>,
 ) {
     var reviewing by reviewingState
         private set
@@ -81,7 +81,7 @@ internal class ReviewFlow(
 
     val lookedAtIds: Set<String> get() = lookedAt.split(' ').filter { it.isNotEmpty() }.toSet()
 
-    fun receiptsAt(door: String): List<String> = receipts[door].orEmpty()
+    fun settledAt(door: String): List<ProposalReceipt> = receipts[door].orEmpty()
 
     // Opened over whatever is standing; the door is where the receipt will land.
     fun open(proposal: Proposal, door: String) {
@@ -117,6 +117,7 @@ internal class ReviewFlow(
     // decides nothing: the proposal stays pending and its card reads `still waiting`.
     @Composable
     fun Sheet(store: TrainingStore, onAsk: ((about: String) -> Unit)?, onSignIn: () -> Unit, say: (String) -> Unit) {
+        val context = LocalContext.current
         val colors = MaterialTheme.colorScheme
         reviewing?.let { open -> key(open) {
             val workout = open.target == ProposalTarget.Workout
@@ -148,9 +149,9 @@ internal class ReviewFlow(
                         if (settled.intent != ProposalIntent.Remove || settled.state != ProposalState.Applied) {
                             // The server's reply, never the model's prose. From the routines home there is no
                             // thread to land in, so the room's own line carries it until the next move.
-                            settled.receipt?.takeUnless { workout }?.let { line ->
-                                if (open.door == Reviewing.routines) say(line)
-                                else receipts = receipts + (open.door to receipts[open.door].orEmpty() + line)
+                            settled.settledReceipt?.takeUnless { workout }?.let { receipt ->
+                                if (open.door == Reviewing.routines) say(receipt.words.text(context))
+                                else receipts = receipts + (open.door to receipts[open.door].orEmpty() + receipt)
                             }
                             close()
                         }
@@ -174,7 +175,7 @@ internal fun rememberReviewFlow(): ReviewFlow {
     // string it is, ids joined by a space.
     val lookedAt = rememberSaveable { mutableStateOf("") }
     // The room keeps shown receipts with their doors; unseen removal receipts live in the replica.
-    val receipts = remember { mutableStateOf<Map<String, List<String>>>(emptyMap()) }
+    val receipts = remember { mutableStateOf<Map<String, List<ProposalReceipt>>>(emptyMap()) }
     return remember(scope) { ReviewFlow(scope, reviewing, busy, lookedAt, receipts) }
 }
 
@@ -364,11 +365,11 @@ internal class FinishFlow(
             if (owner == null || account.user?.id != owner || store.seat.accountKey != Seat.of(owner)) return@LaunchedEffect
             queuedShareOwner = owner
             try {
-                val chat = store.coach.freshChat(FinishCoach.question, id = request)
+                val chat = store.coach.freshChat(context.getString(R.string.gym_finish_coach_question), id = request)
                 onCoach()
-                if (!store.coach.send(chat, FinishCoach.question, once = request)) say("Your message couldn’t be saved. Try again.")
+                if (!store.coach.send(chat, context.getString(R.string.gym_finish_coach_question), once = request)) say(context.getString(R.string.gym_coach_message_unsaved))
             } catch (_: Exception) {
-                say("Your message couldn’t be saved. Try again.")
+                say(context.getString(R.string.gym_coach_message_unsaved))
             }
             queuedShare = null
             queuedShareOwner = null

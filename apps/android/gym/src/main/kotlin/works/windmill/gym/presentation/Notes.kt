@@ -1,5 +1,7 @@
 package works.windmill.gym.presentation
 
+import works.windmill.gym.R
+import works.windmill.platform.i18n.Words
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -22,8 +24,6 @@ data class Note(
 data class NoteWrite(val title: String, val body: String)
 
 object Notes {
-    const val title = "Notes"
-
     // The same three numbers the server checks; the server's sentence is what a refusal shows.
     const val maxNotes = 10
     const val titleMax = 60
@@ -32,29 +32,16 @@ object Notes {
     const val counterFrom = 400
     const val titleCounterFrom = 48
 
-    // The head, and nothing else in it.
-    const val honesty = "Any agent you connect can read these too."
-    const val add = "Add a note"
-    const val full = "10 of 10 notes. Delete one to add another."
-
     // Suggestions remain hints until the lifter types a title.
-    val placeholders = listOf("How I want to be talked to", "What I am training for")
-
-    const val signedOut = "Notes live with your account, so they need you signed in."
-
-    const val titlePlaceholder = "How I want to be talked to"
-    const val bodyPlaceholder = "Write a note for Coach"
-    const val save = "Save"
-    // The settled delete queues immediately without Undo.
-    const val delete = "Delete note"
+    val titleSuggestions = listOf(R.string.gym_notes_placeholder_talk, R.string.gym_notes_placeholder_training)
 
     fun bytes(body: String): Int = body.toByteArray(Charsets.UTF_8).size
 
     // Null below the threshold: nothing is drawn.
-    fun counter(body: String): String? {
+    fun bytesCounter(body: String): Words? {
         val used = bytes(body.trim())
         if (used < counterFrom) return null
-        return "$used of $bodyMaxBytes bytes"
+        return Words.Message(R.string.gym_notes_bytes_counter, listOf(used.toString(), bodyMaxBytes.toString()))
     }
 
     // Past the bound the counter goes alarm; Save stays tappable and the log's sentence refuses in place.
@@ -63,10 +50,10 @@ object Notes {
     // Code points, not UTF-16 units: `char_length` is what the column checks.
     fun titleLength(title: String): Int = title.trim().let { it.codePointCount(0, it.length) }
 
-    fun titleCounter(title: String): String? {
+    fun titleCharacters(title: String): Words? {
         val used = titleLength(title)
         if (used < titleCounterFrom) return null
-        return "$used of $titleMax characters"
+        return Words.Message(R.string.gym_notes_title_counter, listOf(used.toString(), titleMax.toString()))
     }
 
     fun titleOver(title: String): Boolean = titleLength(title) > titleMax

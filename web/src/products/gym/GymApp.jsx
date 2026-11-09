@@ -11,6 +11,7 @@ import { BodyweightScreen } from './bodyweight/Bodyweight.jsx';
 import { CoachRoom } from './coach/CoachRoom.jsx';
 import { ThreadDetail, ThreadsList } from './coach/Threads.jsx';
 import { FinishScreen } from './Finish.jsx';
+import { t } from './i18n/index.js';
 import { LogList } from './Log.jsx';
 import { Notes } from './notes/Notes.jsx';
 import { MovementRecord } from './Record.jsx';
@@ -60,7 +61,7 @@ export function GymApp({ hash, inShell = false }) {
 
   return (
     <div className="gym-root gym-skin" ref={lendDoorSkin} data-chrome={inShell ? 'shell' : 'own'} data-theme={theme} data-brand="gym">
-      {status === 'loading' && <main className="gym-column"><p className="gym-quiet">Opening the log…</p></main>}
+      {status === 'loading' && <main className="gym-column"><p className="gym-quiet">{t('gym.app.opening')}</p></main>}
       {status === 'ghost' && (
         <>
           <Chrome inShell={inShell} user={user} status={status} onSignIn={openSignInDoor} onSignOut={signOut} />
@@ -99,9 +100,9 @@ function Chrome({ inShell, user, status, onSignIn, onSignOut }) {
 function SignInPitch({ onSignIn }) {
   return (
     <section className="gym-door">
-      <h1 className="gym-title">Training log</h1>
-      <p className="gym-door-line">Sign in to open your training log.</p>
-      <Button onClick={onSignIn}>Sign in</Button>
+      <h1 className="gym-title">{t('gym.app.doorTitle')}</h1>
+      <p className="gym-door-line">{t('gym.app.doorLine')}</p>
+      <Button onClick={onSignIn}>{t('gym.app.signIn')}</Button>
     </section>
   );
 }
@@ -171,11 +172,11 @@ export function Transient({ transient }) {
 }
 
 function TabBar({ screen }) {
-  return <nav className="gym-tabs" aria-label="Gym">
+  return <nav className="gym-tabs" aria-label={t('gym.app.tabs')}>
     {[
-      { label: 'Routines', href: ROUTINES_HREF, screen: 'routines' },
-      { label: 'The log', href: '#/gym/log', screen: 'log' },
-      { label: 'Coach', href: COACH_HREF, screen: 'coach' },
+      { label: t('gym.app.tabRoutines'), href: ROUTINES_HREF, screen: 'routines' },
+      { label: t('gym.app.tabLog'), href: '#/gym/log', screen: 'log' },
+      { label: t('gym.app.tabCoach'), href: COACH_HREF, screen: 'coach' },
     ].map((tab) => <a key={tab.screen} href={tab.href} aria-current={screen === tab.screen ? 'page' : undefined}>{tab.label}</a>)}
   </nav>;
 }

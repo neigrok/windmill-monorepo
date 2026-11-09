@@ -6,10 +6,10 @@ import { captureError } from '../../../telemetry/sentry.js';
 import { Button } from '../../../design-system';
 import { styles } from '../../../shell/settings/Section.jsx';
 import { dropUnclaimedPages, restoreUnclaimedPages, unclaimedPages } from '../pages.js';
+import { t } from '../i18n/settings/index.js';
 
-function words(body) {
-  const count = body.trim() ? body.trim().split(/\s+/).length : 0;
-  return `${count} word${count === 1 ? '' : 's'}`;
+function wordCount(body) {
+  return body.trim() ? body.trim().split(/\s+/).length : 0;
 }
 
 export function UnclaimedPagesRow({ account }) {
@@ -25,12 +25,11 @@ export function UnclaimedPagesRow({ account }) {
       const taken = await restoreUnclaimedPages(account);
       setWaiting([]);
       setPhase('done');
-      setNote(taken ? `Restored ${taken} page${taken === 1 ? '' : 's'} into your journal.`
-        : 'These pages are no longer waiting to be restored. Another tab may have restored or discarded them.');
+      setNote(taken ? t('journal.settings.restored', { count: taken }) : t('journal.settings.noLongerWaiting'));
     } catch {
       captureError('journal', 'journal-restore', '', '/journal');
       setPhase('error');
-      setNote('The pages could not be restored just now. Try again.');
+      setNote(t('journal.settings.restoreFailed'));
     }
   };
 
@@ -40,36 +39,33 @@ export function UnclaimedPagesRow({ account }) {
       await dropUnclaimedPages();
       setWaiting([]);
       setPhase('done');
-      setNote('Deleted from this browser.');
+      setNote(t('journal.settings.discarded'));
     } catch {
       captureError('journal', 'journal-discard', '', '/journal');
       setPhase('error');
-      setNote('This browser could not delete them just now — they are still here, try again.');
+      setNote(t('journal.settings.discardFailed'));
     }
   };
 
   return (
     <div style={{ marginTop: 14 }}>
       {waiting.length > 0 && <>
-        <p style={{ ...styles.fieldLabel, margin: '0 0 5px' }}>Unsent pages from before this update</p>
-        <p style={styles.calmLine}>
-          {waiting.length === 1 ? 'One page was' : `${waiting.length} pages were`} written on this browser
-          before Windmill kept pages per account, and never reached a journal. We cannot tell whose they
-          are, so nothing has been added to yours. Restore them only if they are your writing — they will
-          be joined onto your own pages for those days, never written over them.
-        </p>
+        <p style={{ ...styles.fieldLabel, margin: '0 0 5px' }}>{t('journal.settings.unsentTitle')}</p>
+        <p style={styles.calmLine}>{t('journal.settings.unsentBody', { count: waiting.length })}</p>
         <ul style={{ listStyle: 'none', padding: 0, margin: '8px 0 0' }}>
           {waiting.map((page) => (
-            <li key={page.day} style={{ ...styles.metaText, marginTop: 2 }}>{page.day} · {words(page.body)}</li>
+            <li key={page.day} style={{ ...styles.metaText, marginTop: 2 }}>
+              {t('journal.settings.unsentPage', { day: page.day, count: wordCount(page.body) })}
+            </li>
           ))}
         </ul>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginTop: 10 }}>
           <Button variant="secondary" size="sm" disabled={!account || phase === 'working'} onClick={restore}>
-            {phase === 'working' ? 'Restoring…' : 'These are mine — restore them'}
+            {phase === 'working' ? t('journal.settings.restoring') : t('journal.settings.restore')}
           </Button>
-          <Button variant="ghost" size="sm" disabled={phase === 'working'} onClick={discard}>Discard them</Button>
+          <Button variant="ghost" size="sm" disabled={phase === 'working'} onClick={discard}>{t('journal.settings.discard')}</Button>
         </div>
-        {!account && <p style={{ ...styles.metaText, marginTop: 6 }}>Sign in to restore them.</p>}
+        {!account && <p style={{ ...styles.metaText, marginTop: 6 }}>{t('journal.settings.signInToRestore')}</p>}
       </>}
       {note && (
         <p style={{ ...styles.metaText, color: phase === 'error' ? 'var(--color-danger)' : 'var(--accent-olive-600)', marginTop: 6 }}>

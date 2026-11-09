@@ -103,7 +103,7 @@ class TrainingStore(
         catch (cancelled: CancellationException) { throw cancelled }
         catch (error: Exception) {
             seat.reportFailure("gym.restoreWorkout", error)
-            workout.refuseWorkout()
+            workout.workoutRefused()
             return false
         }
         return true
@@ -210,7 +210,7 @@ class TrainingStore(
             if (seat.account == account) {
                 seat.pendingConnection = null
                 workout.authorizeWorkout(false)
-                workout.refuseWorkout()
+                workout.workoutRefused()
                 seat.isLoading = false
             }
         } finally {

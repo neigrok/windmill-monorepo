@@ -2,6 +2,7 @@ import { API_BASE } from '../../shell/apiBase.js';
 import { registry } from '../../platform/sync/schema.js';
 import { readCoachStream } from './coach/stream.js';
 import { GymError } from './errors.js';
+import { t } from './i18n/index.js';
 
 const base = `${API_BASE}/v1/gym`;
 
@@ -71,7 +72,7 @@ export const gymApi = {
     return readCoachStream(response, (snapshot) => {
       if (snapshot.thread !== thread || snapshot.generation.requestId !== requestId) throw new Error('Response interrupted.');
       onSnapshot(snapshot);
-    }, (body) => new GymError(body.status ?? 500, body.error ?? 'Response interrupted.', body.code ?? '', body));
+    }, (body) => new GymError(body.status ?? 500, body.error ?? '', body.code ?? '', body));
   },
 
   async stopCoach(thread, requestId) {
@@ -96,15 +97,15 @@ export const gymApi = {
       upload.upload.onprogress = (event) => { if (event.lengthComputable) onProgress?.(event.loaded / event.total); };
       upload.onload = () => finish(() => {
         let body;
-        try { body = JSON.parse(upload.responseText); } catch { reject(new Error('Photo didn’t upload.')); return; }
+        try { body = JSON.parse(upload.responseText); } catch { reject(new Error(t('gym.errors.photoNotUploaded'))); return; }
         if (upload.status >= 200 && upload.status < 300) {
-          if (body.attachment?.id !== id) { reject(new Error('Photo didn’t upload.')); return; }
+          if (body.attachment?.id !== id) { reject(new Error(t('gym.errors.photoNotUploaded'))); return; }
           resolve(body.attachment);
           return;
         }
-        reject(new GymError(upload.status, body.error ?? 'Photo didn’t upload.', body.code ?? '', body));
+        reject(new GymError(upload.status, body.error ?? t('gym.errors.photoNotUploaded'), body.code ?? '', body));
       });
-      upload.onerror = () => finish(() => reject(new Error('Photo didn’t upload.')));
+      upload.onerror = () => finish(() => reject(new Error(t('gym.errors.photoNotUploaded'))));
       upload.onabort = () => finish(() => reject(new DOMException('Upload canceled.', 'AbortError')));
       signal?.addEventListener('abort', abort, { once: true });
       if (signal?.aborted) { finish(() => reject(new DOMException('Upload canceled.', 'AbortError'))); return; }

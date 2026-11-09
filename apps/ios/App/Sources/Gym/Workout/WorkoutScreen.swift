@@ -55,7 +55,7 @@ struct WorkoutScreen: View {
         old == nil && new != nil
       }
       .roomTitle(workout.session?.name ?? Readout.noRoutine,
-                 subtitle: workout.session.flatMap { session in session.isOpen ? "Started " + dates.time(session.startedAt) : nil })
+                 subtitle: workout.session.flatMap { session in session.isOpen ? String(localized: "Started \(dates.time(session.startedAt))") : nil })
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
         if workout.session?.isOpen == true {
@@ -97,7 +97,8 @@ struct WorkoutScreen: View {
         if let exercise = gym.catalogue.find(id) { RenameMovementSheet(gym: gym, exercise: exercise) }
       case .wheel:
         let movement = workout.selected.flatMap { gym.catalogue.find($0) }
-        RepsWheelSheet(title: "Set \(workout.currentSets.count + 1)", movement: movement?.name ?? "Movement",
+        RepsWheelSheet(title: String(localized: "Set \(String(workout.currentSets.count + 1))", locale: .copy, comment: "A set by its place: Set 3"),
+                       movement: movement?.name ?? String(localized: "Movement"),
                        reps: workout.reps) { reps in workout.adjustRack(weightKg: workout.weightKg, reps: reps) }
       case .coach:
         NavigationStack { coachRoom }.presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
@@ -309,12 +310,12 @@ struct WorkoutLedger: View {
         if let symbol = MovementEquipment(movement).symbol {
           Image(systemName: symbol).font(.title3).accessibilityHidden(true)
         }
-        Text(movement?.name ?? "Movement").font(.title2.weight(.bold)).multilineTextAlignment(.center)
+        Text(movement?.name ?? String(localized: "Movement")).font(.title2.weight(.bold)).multilineTextAlignment(.center)
           .fixedSize(horizontal: false, vertical: true)
         Image(systemName: "chevron.down").font(.subheadline.weight(.semibold)).foregroundStyle(GymPalette.inkDim).accessibilityHidden(true)
       }.frame(maxWidth: .infinity)
     }.buttonStyle(.plain).foregroundStyle(GymPalette.ink).tint(GymPalette.ink).disabled(!enabled)
-      .accessibilityLabel("Movement options").accessibilityValue(movement?.name ?? "Movement")
+      .accessibilityLabel("Movement options").accessibilityValue(movement?.name ?? String(localized: "Movement"))
       .accessibilityIdentifier("workout-movement-menu")
   }
 
@@ -390,7 +391,7 @@ struct WorkoutPageControl: UIViewRepresentable {
     control.pageIndicatorTintColor = GymPalette.uiInkFaint
     control.backgroundStyle = .minimal
     control.addTarget(context.coordinator, action: #selector(Coordinator.select(_:)), for: .valueChanged)
-    control.accessibilityLabel = "Movements"
+    control.accessibilityLabel = String(localized: "Movements")
     control.accessibilityIdentifier = "workout-pages"
     return control
   }
@@ -447,7 +448,7 @@ struct WorkoutLedgerRow: View {
     if let reps = row.reps {
       HStack(alignment: .firstTextBaseline, spacing: 0) {
         if let load = row.load { Text(load).contentTransition(RoomMotion.numeral(reduceMotion: reduceMotion)) }
-        else { Text("00").redacted(reason: .placeholder) }
+        else { Text(verbatim: "00").redacted(reason: .placeholder) }
         Text(Readout.times + reps).contentTransition(RoomMotion.numeral(reduceMotion: reduceMotion))
       }
     } else {
@@ -458,20 +459,23 @@ struct WorkoutLedgerRow: View {
   var spoken: String {
     switch row.place {
     case .logged(let set):
-      return "Set \(row.marker), logged, \(Readout.weight(set.weightKg)) kilograms, \(GymCount.of(set.reps, "rep"))\(unsent ? ", on this phone" : "")"
-    case .current: return "Set \(row.marker), current, \(row.target.map { Self.expected(row.load, by: $0) } ?? "open target")"
-    case .planned: return "Set \(row.marker), planned, \(row.target.map { Self.expected(row.load, by: $0) } ?? "open target")"
+      let load = Readout.weight(set.weightKg)
+      if unsent { return String(localized: "Set \(row.marker), logged, \(load) kilograms, \(set.reps) reps, on this phone", locale: .copy) }
+      return String(localized: "Set \(row.marker), logged, \(load) kilograms, \(set.reps) reps", locale: .copy)
+    case .current: return String(localized: "Set \(row.marker), current, \(row.target.map { Self.expected(row.load, by: $0) } ?? String(localized: "open target"))")
+    case .planned: return String(localized: "Set \(row.marker), planned, \(row.target.map { Self.expected(row.load, by: $0) } ?? String(localized: "open target"))",
+                                 locale: .copy)
     }
   }
 
   // A row still to lift in words: the load the plan expects, and the plan's reps.
   static func expected(_ load: String?, by target: SetTarget) -> String {
-    "\(load.map { "\($0) kilograms" } ?? "no load yet"), \(target.reps.map { GymCount.of($0, "rep") } ?? "max reps")"
+    "\(load.map { String(localized: "\($0) kilograms") } ?? String(localized: "no load yet")), \(target.reps.map { GymCount.of($0, .rep) } ?? String(localized: "max reps"))"
   }
 
   // The numbers the plan asks for, in words: the load, the reps, or both; nil when it asks for neither.
   static func asked(_ target: SetTarget?) -> String? {
-    let numbers = [target?.weightKg.map { "\(Readout.weight($0)) kilograms" }, target?.reps.map { GymCount.of($0, "rep") }].compactMap { $0 }
+    let numbers = [target?.weightKg.map { String(localized: "\(Readout.weight($0)) kilograms") }, target?.reps.map { GymCount.of($0, .rep) }].compactMap { $0 }
     return numbers.isEmpty ? nil : numbers.joined(separator: ", ")
   }
 }
@@ -484,7 +488,9 @@ struct WorkoutFacts: View {
   let exerciseId: ID<Exercise>
   @Environment(\.dynamicTypeSize) var typeSize
   static func spokenRest(sinceMs: Int64, target: RestTarget?) -> String {
-    WorkoutClocks.spoken(sinceMs) + (target.map { ", target " + WorkoutClocks.spoken(Int64($0.seconds) * 1_000) } ?? "")
+    let since = WorkoutClocks.spoken(sinceMs)
+    guard let target else { return since }
+    return String(localized: "\(since), target \(WorkoutClocks.spoken(Int64(target.seconds) * 1_000))", comment: "Time since the last set, then the rest target")
   }
   var body: some View {
     TimelineView(.periodic(from: .now, by: 1)) { _ in
@@ -546,8 +552,10 @@ struct WorkoutRack: View {
     return width > room ? max(full / 2, full * room / width) : full
   }
   // VoiceOver hears the numeral in its load basis, *Weight, 100 kg total*, and Log set with the set it logs.
-  static func spokenWeight(_ weightKg: Double, basis: MovementEquipment) -> String { "Weight, \(Readout.weight(weightKg)) \(basis.unit)" }
-  static func spokenLog(_ weightKg: Double, reps: Int) -> String { "Log set, \(Readout.weight(weightKg)) kilograms, \(GymCount.of(reps, "rep"))" }
+  static func spokenWeight(_ weightKg: Double, basis: MovementEquipment) -> String { String(localized: "Weight, \(Readout.weight(weightKg)) \(basis.unit)") }
+  static func spokenLog(_ weightKg: Double, reps: Int) -> String {
+    String(localized: "Log set, \(Readout.weight(weightKg)) kilograms, \(reps) reps", locale: .copy)
+  }
   var body: some View {
     let basis = MovementEquipment(workout.selected.flatMap { workout.gym.catalogue.find($0) })
     let numeral = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(spacing: RoomSpace.small))
@@ -597,7 +605,7 @@ struct WorkoutRack: View {
         Image(systemName: "minus").frame(width: 56, height: 56).contentShape(Rectangle())
       }.accessibilityLabel("Fewer reps").accessibilityIdentifier("workout-reps-minus").disabled(workout.reps <= SetRules.loggedReps.lowerBound)
       Button(action: editReps) {
-        Text(GymCount.of(workout.reps, "rep")).font(.title3.monospacedDigit())
+        Text(GymCount.of(workout.reps, .rep)).font(.title3.monospacedDigit())
           .contentTransition(RoomMotion.numeral(reduceMotion: reduceMotion, value: Double(workout.reps)))
           .roomMotion(workout.reps).frame(maxWidth: .infinity, minHeight: 56).contentShape(Rectangle())
       }.buttonStyle(.plain).foregroundStyle(GymPalette.ink).accessibilityHint("Opens the reps wheel.")

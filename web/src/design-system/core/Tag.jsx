@@ -1,4 +1,5 @@
 import React from 'react';
+import { t } from '../i18n/index.js';
 
 // `sm` is the dense row's tag: the same pill at the size a meta line can carry. The selected edge is
 // `--chip-selected-edge`, a role a room may answer for itself; every other colour here is a shared
@@ -34,7 +35,7 @@ export function Tag({ children, onRemove, selected = false, size = 'md' }) {
       {onRemove && (
         <button
           onClick={onRemove}
-          aria-label="Remove"
+          aria-label={t('ds.tag.remove')}
           style={{
             border: 'none',
             background: 'none',

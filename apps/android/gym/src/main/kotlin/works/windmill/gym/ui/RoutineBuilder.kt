@@ -1,5 +1,7 @@
 package works.windmill.gym.ui
 
+import works.windmill.platform.R as PlatformR
+import works.windmill.platform.i18n.text
 import works.windmill.platform.design.WindmillType
 import androidx.compose.material3.MaterialTheme
 import works.windmill.platform.design.WindmillSheet
@@ -63,6 +65,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
@@ -83,6 +86,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import works.windmill.gym.R
 import works.windmill.gym.presentation.Exercise
 import works.windmill.gym.presentation.SessionSummary
 import works.windmill.gym.presentation.SetTarget
@@ -98,6 +102,7 @@ import works.windmill.gym.store.HistoryReads
 import works.windmill.gym.store.RoutinesStore
 import works.windmill.gym.store.TrainingSeat
 import works.windmill.gym.store.TrainingStore
+import works.windmill.platform.i18n.pluralString
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.platform.telemetry.LocalTelemetry
 import works.windmill.platform.net.WindmillJson
@@ -109,6 +114,7 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.ui.draw.shadow
 import androidx.compose.material.icons.filled.Close
+import works.windmill.platform.i18n.Words
 
 // What the routine builder draws: the draft's movements by name, and the routine's workouts for the seat in hand.
 @Stable
@@ -229,6 +235,7 @@ fun RoutineBuilder(
     })
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
+    val movementGone = stringResource(R.string.gym_builder_movement_gone)
 
     fun close() {
         closing = true
@@ -302,7 +309,7 @@ fun RoutineBuilder(
         onDraft = { if (!saving) onDraft(it) },
         onOpenTarget = { id ->
             val movement = draft.movement(id, state.catalog)
-            if (movement == null) say("That movement is no longer on the log.")
+            if (movement == null) say(movementGone)
             else sheet = BuilderSheet.Target(id, TargetEntry.Draft(draft.entry(id)?.sets.orEmpty()), movement)
         },
         onRemove = { onDraft(draft.removing(it)) }, onAdd = { sheet = BuilderSheet.Picker },
@@ -320,8 +327,12 @@ fun RoutineBuilder(
                 is BuilderSheet.Target -> {
                     val movement = open.movement ?: draft.movement(open.exerciseId, state.catalog)
                     if (movement != null) MovementForm(movement, open.scheme,
-                        title = when { open.creating -> "Create movement"; open.adding -> "Add movement"; else -> "Edit movement" },
-                        commitLabel = if (open.adding) "Add" else "Done",
+                        title = stringResource(when {
+                            open.creating -> R.string.gym_builder_title_create_movement
+                            open.adding -> R.string.gym_builder_title_add_movement
+                            else -> R.string.gym_builder_title_edit_movement
+                        }),
+                        commitLabel = stringResource(if (open.adding) PlatformR.string.platform_add else PlatformR.string.platform_done),
                         onMovement = { changed ->
                             val latest = sheet as? BuilderSheet.Target
                             if (latest != null) sheet = latest.copy(movement = changed, opening = latest.opening ?: movement)
@@ -335,7 +346,7 @@ fun RoutineBuilder(
                             val latest = sheet as? BuilderSheet.Target
                             val edited = latest?.movement ?: movement
                             val reading = (latest?.scheme ?: open.scheme).reading((latest ?: open).floor(edited))
-                            val valid = Program.nameProblem(edited.current.name) == null && reading !is TargetEntry.Reading.Refused
+                            val valid = Program.nameRefusal(edited.current.name) == null && reading !is TargetEntry.Reading.Refused
                             telemetry.event("gym_action", mapOf("screen" to "movement_form", "action" to "stage",
                                 "outcome" to if (valid) "ok" else "refused"))
                             if (valid) {
@@ -347,10 +358,10 @@ fun RoutineBuilder(
                 }
                 BuilderSheet.Picker -> MovementPicker(
                     catalog = state.catalog, taken = draft.entries.map { it.exerciseId }, lastSets = null,
-                    nowMs = 0, sessions = state.allSessions, title = "Add movement",
+                    nowMs = 0, sessions = state.allSessions, title = stringResource(R.string.gym_builder_title_add_movement),
                     onPick = { id ->
                         val movement = draft.movement(id, state.catalog)
-                        if (movement == null) say("That movement is no longer on the log.")
+                        if (movement == null) say(movementGone)
                         else sheet = BuilderSheet.Target(id, TargetEntry.Draft(emptyList<works.windmill.gym.presentation.SetTarget>()), movement, adding = true)
                     }, onCreate = null,
                     onCreateDraft = { exercise, scheme ->
@@ -363,7 +374,8 @@ fun RoutineBuilder(
         }
     }
     val form = open as? BuilderSheet.Target
-    if (form?.discarding == true) DiscardQuestion("Discard changes?", "Changes to this movement won’t be kept.",
+    if (form?.discarding == true) DiscardQuestion(stringResource(R.string.gym_builder_discard_movement_title),
+        stringResource(R.string.gym_builder_discard_movement_text),
         onKeepEditing = {
             sheet = form.copy(discarding = false)
             telemetry.event("gym_action", mapOf("screen" to "movement_form", "action" to "discard", "outcome" to "cancelled"))
@@ -374,8 +386,8 @@ fun RoutineBuilder(
                 leaveForm()
             }
         })
-    if (discarding) DiscardQuestion("Discard routine changes?",
-        "${Program.named(draft.name) ?: "This routine"} won’t be saved.",
+    if (discarding) DiscardQuestion(stringResource(R.string.gym_builder_discard_routine_title),
+        Program.named(draft.name)?.let { stringResource(R.string.gym_builder_named_not_saved, it) } ?: stringResource(R.string.gym_builder_routine_not_saved),
         onKeepEditing = {
             discarding = false
             telemetry.event("gym_action", mapOf("screen" to "routine_editor", "action" to "discard", "outcome" to "cancelled"))
@@ -398,8 +410,8 @@ private fun DiscardQuestion(title: String, text: String, onKeepEditing: () -> Un
     AlertDialog(onDismissRequest = onKeepEditing,
         title = { Text(title, style = GymType.discardRoutineTitle.overContainer(), color = colors.onSurface) },
         text = { Text(text, style = GymType.discardText.overContainer(), color = colors.onSurfaceVariant) },
-        confirmButton = { Action("Discard", colors.error, onDiscard) },
-        dismissButton = { Action("Keep editing", colors.primary, onKeepEditing) },
+        confirmButton = { Action(stringResource(PlatformR.string.platform_discard), colors.error, onDiscard) },
+        dismissButton = { Action(stringResource(R.string.gym_builder_keep_editing), colors.primary, onKeepEditing) },
         containerColor = colors.surfaceContainer)
 }
 
@@ -428,7 +440,7 @@ private fun BuildStep(
     var dragged by remember { mutableStateOf<String?>(null) }
     var dragCenter by remember { mutableFloatStateOf(0f) }
     var viewport by remember { mutableStateOf(Rect.Zero) }
-    var said by remember { mutableStateOf("") }
+    var said by remember { mutableStateOf<Words?>(null) }
     val haptics = rememberGymHaptics()
     val scroll = rememberScrollState()
     val edgeSize = with(LocalDensity.current) { 56.dp.toPx() }
@@ -437,7 +449,7 @@ private fun BuildStep(
         val rows = currentDraft.entries.sortedBy { it.position }
         if (!editable || from !in rows.indices || to !in rows.indices || from == to) return
         changeDraft(currentDraft.moving(from, to))
-        said = "${Readout.movement(rows[from].exerciseId, state.catalog)}, ${to + 1} of ${rows.size}"
+        said = Words.Message(R.string.gym_builder_moved_to, listOf(Readout.movement(rows[from].exerciseId, state.catalog), (to + 1).toString(), rows.size.toString()))
     }
     fun placeDragged() {
         val id = dragged ?: return
@@ -467,15 +479,15 @@ private fun BuildStep(
     }
     LaunchedEffect(editable) { if (!editable) dragged = null }
     GymScreen(
-        title = if (editing) "Edit routine" else "New routine",
+        title = stringResource(if (editing) R.string.gym_builder_title_edit_routine else R.string.gym_builder_title_new_routine),
         navigation = {
             IconButton(onClick = onCancel, enabled = editable) {
-                Icon(Icons.Filled.Close, "Close", tint = if (editable) colors.onSurface else colors.onSurfaceVariant)
+                Icon(Icons.Filled.Close, stringResource(PlatformR.string.platform_close), tint = if (editable) colors.onSurface else colors.onSurfaceVariant)
             }
         },
         // The commit stays where the thumb is, a pill pinned above the keyboard under the scrolling body.
         bottomBar = {
-            GymSheetCommit("Save", enabled = savable, onClick = onSave, busy = !editable,
+            GymSheetCommit(stringResource(PlatformR.string.platform_save), enabled = savable, onClick = onSave, busy = !editable,
                 modifier = Modifier.imePadding().padding(horizontal = GymLayout.gutter, vertical = 16.dp))
         },
     ) {
@@ -487,38 +499,41 @@ private fun BuildStep(
             .testTag("routine-editor-body").verticalScroll(scroll).padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(24.dp)) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                val nameDescription = stringResource(R.string.gym_builder_routine_name)
                 NativeFieldType {
                     OutlinedTextField(draft.name, onValueChange = { onDraft(draft.named(it)) }, enabled = editable,
-                        label = { Text("Name", Modifier.clearAndSetSemantics {}) }, singleLine = true,
+                        label = { Text(stringResource(R.string.gym_builder_name), Modifier.clearAndSetSemantics {}) }, singleLine = true,
                         keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words,
                             autoCorrectEnabled = false, imeAction = ImeAction.Done),
                         keyboardActions = KeyboardActions(onDone = { keyboard?.hide() }),
                         modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).focusRequester(focus)
-                            .semantics { contentDescription = "Routine name" })
+                            .semantics { contentDescription = nameDescription })
                 }
                 Program.counter(draft.name)?.let { Text(it, style = WindmillType.detailCompact, color = colors.onSurfaceVariant) }
             }
             if (draft.name.isBlank() && (editing || draft.entries.isNotEmpty())) {
-                Text(Program.nameItToSaveIt, style = WindmillType.supporting, color = colors.onSurfaceVariant)
+                Text(stringResource(R.string.gym_program_name_it), style = WindmillType.supporting, color = colors.onSurfaceVariant)
             }
             if (draft.name.isNotBlank() && draft.entries.isEmpty()) {
-                Text(Program.atLeastOneMovement, style = WindmillType.supporting, color = colors.onSurfaceVariant)
+                Text(stringResource(R.string.gym_program_at_least_one_movement), style = WindmillType.supporting, color = colors.onSurfaceVariant)
             }
             Column {
-                Text("Movements", style = GymType.headingCompact, color = colors.onSurface,
+                Text(stringResource(R.string.gym_builder_movements), style = GymType.headingCompact, color = colors.onSurface,
                     modifier = Modifier.semantics { heading() }.padding(bottom = 8.dp))
+                val moveUp = stringResource(PlatformR.string.platform_move_up)
+                val moveDown = stringResource(PlatformR.string.platform_move_down)
                 ordered.forEachIndexed { index, entry ->
                     key(entry.exerciseId) {
                         val movement = draft.movement(entry.exerciseId, state.catalog)?.current
                         val name = movement?.name ?: Readout.movement(entry.exerciseId, state.catalog)
                         val lifted = dragged == entry.exerciseId
-                        DeleteSwipeRow(actionLabel = "Remove movement", enabled = editable,
+                        DeleteSwipeRow(actionLabel = stringResource(R.string.gym_builder_remove_movement), enabled = editable,
                             onDelete = { onRemove(entry.exerciseId); true }, shape = MaterialTheme.shapes.medium,
                             // The lifted row's shadow stands outside the row's own clip.
                             modifier = Modifier.shadow(if (lifted) 6.dp else 0.dp, MaterialTheme.shapes.medium, clip = false)) {
                             ListItem(
                                 leadingContent = {
-                                    GymDragHandle("Move $name, ${index + 1} of ${ordered.size}", enabled = editable, modifier = Modifier.pointerInput(entry.exerciseId, editable) {
+                                    GymDragHandle(stringResource(R.string.gym_builder_move_named, name, (index + 1).toString(), ordered.size.toString()), enabled = editable, modifier = Modifier.pointerInput(entry.exerciseId, editable) {
                                         if (editable) detectDragGesturesAfterLongPress(
                                             onDragStart = {
                                                 dragged = entry.exerciseId
@@ -536,16 +551,16 @@ private fun BuildStep(
                                 },
                                 headlineContent = { Text(name, style = GymType.movementRow, color = colors.onSurface) },
                                 supportingContent = {
-                                    Text(Readout.targetWithUnit(entry.sets, movement), style = GymType.numeral, color = colors.onSurfaceVariant)
+                                    Text(Readout.scheme(entry.sets, movement).text(), style = GymType.numeral, color = colors.onSurfaceVariant)
                                 },
                                 colors = ListItemDefaults.colors(containerColor = if (lifted) colors.surfaceContainerHighest else colors.surface),
                                 modifier = Modifier.fillMaxWidth()
                                     .onGloballyPositioned { positions[entry.exerciseId] = it.positionInRoot().y + it.size.height / 2f + scroll.value }
                                     .clip(MaterialTheme.shapes.medium)
-                                    .clickable(enabled = editable, role = Role.Button, onClickLabel = "edit this movement") { onOpenTarget(entry.exerciseId) }
+                                    .clickable(enabled = editable, role = Role.Button, onClickLabel = stringResource(R.string.gym_builder_edit_this_movement)) { onOpenTarget(entry.exerciseId) }
                                     .semantics { customActions = if (!editable) emptyList() else buildList {
-                                        if (index > 0) add(CustomAccessibilityAction("Move up") { move(index, index - 1); true })
-                                        if (index < ordered.lastIndex) add(CustomAccessibilityAction("Move down") { move(index, index + 1); true })
+                                        if (index > 0) add(CustomAccessibilityAction(moveUp) { move(index, index - 1); true })
+                                        if (index < ordered.lastIndex) add(CustomAccessibilityAction(moveDown) { move(index, index + 1); true })
                                     } },
                             )
                         }
@@ -555,12 +570,12 @@ private fun BuildStep(
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp).heightIn(min = GymTap.minimum)) {
                     Icon(Icons.Filled.Add, null, Modifier.size(ButtonDefaults.IconSize))
                     Spacer(Modifier.width(ButtonDefaults.IconSpacing))
-                    Text("Add movement", style = WindmillType.label)
+                    Text(stringResource(R.string.gym_builder_add_movement), style = WindmillType.label)
                 }
             }
             if (history.isNotEmpty()) Column(Modifier.fillMaxWidth().testTag("routine-history"),
                 verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("History", style = GymType.historyTitle, color = colors.onSurface,
+                Text(stringResource(R.string.gym_builder_history), style = GymType.historyTitle, color = colors.onSurface,
                     modifier = Modifier.semantics { heading() })
                 Column(Modifier.fillMaxWidth()) {
                     val dates = java.time.format.DateTimeFormatter.ofPattern("EEE, MMM d", java.util.Locale.getDefault())
@@ -569,16 +584,17 @@ private fun BuildStep(
                             verticalArrangement = Arrangement.spacedBy(2.dp)) {
                             Text(dates.format(java.time.Instant.ofEpochMilli(workout.startedAtMs).atZone(java.time.ZoneId.systemDefault())),
                                 style = GymType.historyTitle, color = colors.onSurface)
-                            val sets = if (workout.setCount == 1) "set" else "sets"
-                            val movements = if (workout.exercises.size == 1) "movement" else "movements"
-                            Text("${workout.setCount} $sets · ${workout.exercises.size} $movements",
+                            val sets = pluralString(R.plurals.gym_builder_history_sets, workout.setCount, workout.setCount.toString())
+                            val movements = pluralString(R.plurals.gym_builder_history_movements, workout.exercises.size,
+                                workout.exercises.size.toString())
+                            Text(stringResource(PlatformR.string.platform_words_joined, sets, movements),
                                 style = GymType.numeralDetail, color = colors.onSurfaceVariant)
                         }
                         if (index != history.lastIndex) HorizontalDivider(color = colors.outlineVariant)
                     }
                 }
             }
-            Text(said, style = WindmillType.detailCompact, color = colors.onSurfaceVariant,
+            Text(said?.text().orEmpty(), style = WindmillType.detailCompact, color = colors.onSurfaceVariant,
                 modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
         }
     }

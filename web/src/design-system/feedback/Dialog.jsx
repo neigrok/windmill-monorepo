@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { t } from '../i18n/index.js';
 import { wrapTab } from './dialogFocus.js';
 
 // The gate's one rule: the end of the body has been reached when what is left below the fold is
@@ -132,7 +133,7 @@ export function Dialog({ open, onClose, title, labelledBy, children, footer, wid
         {onClose && (
           <button
             type="button"
-            aria-label="Close"
+            aria-label={t('ds.dialog.close')}
             onClick={onClose}
             onMouseEnter={() => setCloseHover(true)}
             onMouseLeave={() => setCloseHover(false)}

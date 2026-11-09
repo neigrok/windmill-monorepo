@@ -178,7 +178,7 @@ import SyncTesting
     #expect(gym.error == "Gym could not be read from this phone. Try again.")
     #expect(telemetry.entries.withLock { entries in entries.allSatisfy { !$0.properties.values.contains(where: { $0.contains("private") || $0.contains("Private") }) } })
     fault.point.withLock { $0 = nil }; gym.refresh()
-    #expect(!gym.readFailed && gym.notes.map(\.id) == [id])
+    #expect(!gym.readFailed && gym.notes.map(\.id) == [id] && gym.error == nil)
   }
 
   @Test func observesGymChangesFromTheSharedRuntime() async throws {
@@ -376,5 +376,61 @@ nonisolated final class GymLifecycleTransport: SyncTransport {
   func openLive(token: SessionToken) async -> Reply<any LiveConnection> {
     opens.withLock { $0 += 1 }
     return .answered(.ok(socket))
+  }
+}
+
+// The room's unreadable line comes down once the read recovers, whoever put those words up, unless other words replaced it.
+extension GymModelTests {
+  func faulted() throws -> (GymStoreFault, GymModel, Routine) {
+    let fault = GymStoreFault(), runtime = try runtime(failing: fault)
+    let gym = GymModel(runner: runtime.runner, runtime: runtime)
+    let exercise = Exercise(id: ID("cause-squat"), name: "Cause squat", pattern: "squat", equipment: "barbell", stepKg: 2.5)
+    #expect(try runtime.runner.run(CreateExercise(exercise)).receipt != nil)
+    gym.refresh()
+    var draft = Draft(new: Routine(id: gym.runner.mint(Routine.self), name: "Cause A", entries: [RoutineEntry(exerciseId: exercise.id)]))
+    #expect(gym.saveRoutine(&draft))
+    return (fault, gym, draft.current)
+  }
+
+  @Test func theUnreadableLineComesDownWhenTheReadRecovers() throws {
+    let (fault, gym, _) = try faulted()
+    fault.point.withLock { $0 = .read }; gym.refresh()
+    #expect(gym.readFailed && gym.error == "Gym could not be read from this phone. Try again.")
+    fault.point.withLock { $0 = nil }; gym.refresh()
+    #expect(!gym.readFailed && gym.error == nil)
+  }
+
+  @Test func anotherErrorThatReplacedTheUnreadableLineStaysWhenTheReadRecovers() throws {
+    let (fault, gym, _) = try faulted()
+    fault.point.withLock { $0 = .read }; gym.refresh()
+    gym.error = "Another line"
+    fault.point.withLock { $0 = nil }; gym.refresh()
+    #expect(!gym.readFailed && gym.error == "Another line")
+  }
+
+  @Test func aDismissedUnreadableLineStaysDownWhenTheReadRecovers() throws {
+    let (fault, gym, _) = try faulted()
+    fault.point.withLock { $0 = .read }; gym.refresh()
+    gym.error = nil
+    fault.point.withLock { $0 = nil }; gym.refresh()
+    #expect(!gym.readFailed && gym.error == nil)
+  }
+
+  @Test func aRefusedStartThatCouldNotReadPutsBackTheUnreadableLineWhichComesDownWhenTheReadRecovers() throws {
+    let (fault, gym, routine) = try faulted()
+    #expect(gym.startWorkout(routineId: routine.id) != nil && gym.openSession != nil)
+    fault.point.withLock { $0 = .read }
+    _ = gym.startWorkout(routineId: routine.id)
+    #expect(gym.readFailed && gym.refusal != nil && gym.error == "Gym could not be read from this phone. Try again.")
+    fault.point.withLock { $0 = nil }; gym.refresh()
+    #expect(!gym.readFailed && gym.error == nil)
+  }
+
+  @Test func theUnreadableWordsComeDownWhenTheReadRecoversWhoeverPutThemUp() throws {
+    let (fault, gym, _) = try faulted()
+    fault.point.withLock { $0 = .read }; gym.refresh()
+    gym.error = GymModel.unreadable
+    fault.point.withLock { $0 = nil }; gym.refresh()
+    #expect(gym.error == nil)
   }
 }

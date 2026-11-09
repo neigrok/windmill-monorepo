@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="gym_phone_title">On this phone</string>
+    <string name="gym_phone_workouts_count">%1$s workouts</string>
+    <string name="gym_phone_saved_training">Saved training</string>
+    <string name="gym_phone_adding_progress">Adding…</string>
+    <string name="gym_phone_need_you_count">%1$s need you</string>
+    <string name="gym_phone_needs_you_status">Needs you</string>
+    <string name="gym_phone_needs_you_heading">Needs you</string>
+    <string name="gym_phone_adding_heading">Adding</string>
+    <string name="gym_phone_today">Today</string>
+    <string name="gym_phone_keep_as_finished">Keep as finished</string>
+    <string name="gym_phone_fix_workout">Fix workout</string>
+    <string name="gym_phone_discard_workout">Discard workout</string>
+    <string name="gym_phone_keep_failed">The original workout is still saved on this phone. Keep as finished could not be completed.</string>
+    <string name="gym_phone_retry_failed">The original workout is still saved on this phone. Retry could not be completed.</string>
+    <string name="gym_phone_fix_failed">The original workout is still saved on this phone. Fix workout could not be completed.</string>
+    <string name="gym_phone_discard_failed">The original workout is still saved on this phone. Discard workout could not be completed.</string>
+    <string name="gym_phone_reason_open_workout">Your account has an open workout — keep this one as finished.</string>
+    <string name="gym_phone_reason_overlap">Overlaps another workout — fix its times.</string>
+    <string name="gym_phone_reason_bad_time">A time is invalid — fix its times.</string>
+    <string name="gym_phone_duration">Duration</string>
+    <string name="gym_phone_sets">Sets</string>
+    <string name="gym_phone_volume">Volume</string>
+    <string name="gym_phone_started">Started</string>
+    <string name="gym_phone_finished">Finished</string>
+    <string name="gym_phone_not_finished">Not finished</string>
+    <string name="gym_phone_mark_finished">Mark finished</string>
+    <string name="gym_phone_save_and_retry">Save and retry</string>
+    <string name="gym_phone_times">Times</string>
+    <string name="gym_phone_linked_to">Linked to %1$s</string>
+    <string name="gym_phone_use_date">Use date</string>
+    <string name="gym_phone_started_time">Started time</string>
+    <string name="gym_phone_finished_time">Finished time</string>
+    <string name="gym_phone_use_time">Use time</string>
+    <plurals name="gym_phone_held_workouts">
+        <item quantity="one">%1$s workout</item>
+        <item quantity="other">%1$s workouts</item>
+    </plurals>
+    <plurals name="gym_phone_held_routines">
+        <item quantity="one">%1$s routine</item>
+        <item quantity="other">%1$s routines</item>
+    </plurals>
+    <plurals name="gym_phone_held_weigh_ins">
+        <item quantity="one">%1$s weigh-in</item>
+        <item quantity="other">%1$s weigh-ins</item>
+    </plurals>
+    <plurals name="gym_phone_held_movements">
+        <item quantity="one">%1$s movement</item>
+        <item quantity="other">%1$s movements</item>
+    </plurals>
+    <plurals name="gym_phone_held_notes">
+        <item quantity="one">%1$s note</item>
+        <item quantity="other">%1$s notes</item>
+    </plurals>
+    <plurals name="gym_phone_held_conversations">
+        <item quantity="one">%1$s conversation</item>
+        <item quantity="other">%1$s conversations</item>
+    </plurals>
+    <plurals name="gym_phone_held_journal_pages">
+        <item quantity="one">%1$s journal page</item>
+        <item quantity="other">%1$s journal pages</item>
+    </plurals>
+    <string name="gym_phone_held_training">training</string>
+    <string name="gym_phone_list_next">%1$s, %2$s</string>
+    <string name="gym_phone_list_last">%1$s and %2$s</string>
+    <string name="gym_phone_sign_in_question_it">This phone has %1$s from before you signed in. Your account already has training. Add it, or discard it from this phone.</string>
+    <string name="gym_phone_sign_in_question_them">This phone has %1$s from before you signed in. Your account already has training. Add them, or discard them from this phone.</string>
+    <string name="gym_phone_discard_training_title">Discard this phone’s training?</string>
+    <string name="gym_phone_discard_held_title">Discard %1$s?</string>
+    <string name="gym_phone_discard_all_title">Discard all of it?</string>
+    <string name="gym_phone_discard_held_body">%1$s are deleted from this phone. You can’t undo this.</string>
+    <string name="gym_phone_discard_it_body">It is deleted from this phone. You can’t undo this.</string>
+    <string name="gym_phone_discard_them_body">They are deleted from this phone. You can’t undo this.</string>
+</resources>

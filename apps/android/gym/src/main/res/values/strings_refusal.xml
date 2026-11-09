@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="gym_refusal_set">%1$s %2$s never reached the log</string>
+    <string name="gym_refusal_workout_on">Workout on %1$s stays on this phone</string>
+    <string name="gym_refusal_workout">Workout stays on this phone</string>
+    <string name="gym_refusal_change">“%1$s” stays on this phone</string>
+</resources>

@@ -3,6 +3,7 @@ import { Button } from '../../design-system/index.js';
 import { Back } from './Back.jsx';
 import { failureReason } from './errors.js';
 import { routineFromWorkout, useGymApi } from './gymRuntime.js';
+import { t } from './i18n/index.js';
 import { Session, SessionRules, TrainingSet } from './domain/training.js';
 import { sessionDocument } from './domain/trainingHistory.js';
 import {
@@ -33,23 +34,23 @@ export function FinishScreen({ id, log }) {
     { sync: true, ready: Boolean(api?.ready) },
   );
 
-  if (view.phase === 'loading') return <p className="gym-quiet">Opening the review…</p>;
+  if (view.phase === 'loading') return <p className="gym-quiet">{t('gym.finish.opening')}</p>;
   // A session its delete window holds is gone from its review, as its row is from the log.
   if (view.phase === 'absent' || log.hidden('session').has(id)) {
     return (
       <>
-        <Back href="#/gym/log">The log</Back>
-        <p className="gym-quiet">That session isn’t in your log.</p>
+        <Back href="#/gym/log">{t('gym.log.title')}</Back>
+        <p className="gym-quiet">{t('gym.finish.sessionAbsent')}</p>
       </>
     );
   }
   if (view.phase === 'failed') {
     return (
       <>
-        <Back href={sessionHref(id)}>Session detail</Back>
+        <Back href={sessionHref(id)}>{t('gym.finish.sessionDetail')}</Back>
         <p className="gym-read-failed">
-          The session is saved, but this didn’t load.
-          <Button variant="secondary" size="sm" onClick={view.retry}>Retry</Button>
+          {t('gym.finish.readFailed')}
+          <Button variant="secondary" size="sm" onClick={view.retry}>{t('gym.common.retry')}</Button>
         </p>
       </>
     );
@@ -69,7 +70,7 @@ export function FinishScreen({ id, log }) {
 
   return (
     <section className="gym-finish-screen">
-      <Back href={sessionHref(id)}>Session detail</Back>
+      <Back href={sessionHref(id)}>{t('gym.finish.sessionDetail')}</Back>
       <h1 className="gym-title">{head.title}</h1>
       <p className="gym-finish-subtitle">{head.subtitle}</p>
       <p className="gym-finish-when">{head.when}</p>
@@ -124,18 +125,18 @@ function ShortSession({ id, log }) {
     log.holdDelete({
       kind: 'session',
       id,
-      refused: (error) => log.say(`That session wasn’t discarded — ${failureReason(error)}.`),
+      refused: (error) => log.say(t('gym.log.sessionNotDiscarded', { reason: failureReason(error) })),
     });
     window.location.hash = '#/gym';
   };
 
   return (
     <section className="gym-short">
-      <p className="gym-short-line">Keep it in the log, or drop it?</p>
+      <p className="gym-short-line">{t('gym.finish.shortLine')}</p>
       <div className="gym-finish-foot">
-        <a className="gym-short-keep" href="#/gym">Keep it</a>
+        <a className="gym-short-keep" href="#/gym">{t('gym.finish.keepIt')}</a>
         <button type="button" className="gym-short-discard" onClick={discard}>
-          Discard session
+          {t('gym.log.discardSession')}
         </button>
       </div>
     </section>
@@ -155,7 +156,7 @@ function KeepAsRoutine({ session, sets, catalog, log }) {
 
   return (
     <section className="gym-keep">
-      <h2 className="gym-keep-title">Keep this as a routine</h2>
+      <h2 className="gym-keep-title">{t('gym.finish.keepTitle')}</h2>
       {/* The room's cap, counted the room's way: 60 CODE POINTS through `cappedName`, and never in
           the UTF-16 units a length attribute counts, which would cut an emoji in half. No counter
           beside it, and that is deliberate — the editor draws one because the editor is the surface
@@ -163,7 +164,7 @@ function KeepAsRoutine({ session, sets, catalog, log }) {
       <input
         className="gym-keep-input"
         value={name}
-        aria-label="Routine name"
+        aria-label={t('gym.finish.routineName')}
         onChange={(event) => setName(cappedName(event.target.value))}
       />
       <ul className="gym-keep-entries">
@@ -174,7 +175,7 @@ function KeepAsRoutine({ session, sets, catalog, log }) {
           </li>
         ))}
       </ul>
-      <p className="gym-keep-line">Today’s weights become next week’s targets.</p>
+      <p className="gym-keep-line">{t('gym.finish.keepLine')}</p>
       <div className="gym-finish-foot">
         <button
           type="button"
@@ -185,17 +186,17 @@ function KeepAsRoutine({ session, sets, catalog, log }) {
             try {
               await api.createRoutine(composed);
               setOffered(false);
-              log.say(`${name.trim()} is in your routines.`);
+              log.say(t('gym.finish.routineSaved', { name: name.trim() }));
             } catch (error) {
               setSaving(false);
-              log.say(`That routine wasn’t saved — ${failureReason(error)}.`);
+              log.say(t('gym.finish.routineNotSaved', { reason: failureReason(error) }));
             }
           }}
         >
-          Save routine
+          {t('gym.finish.saveRoutine')}
         </button>
         <button type="button" className="gym-keep-decline" onClick={() => setOffered(false)}>
-          Just keep the session
+          {t('gym.finish.justKeep')}
         </button>
       </div>
       {/* The empty name only. Save is inert while the write is in flight too, and there the sentence

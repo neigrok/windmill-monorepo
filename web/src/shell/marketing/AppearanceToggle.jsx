@@ -7,17 +7,18 @@
 import React from 'react';
 import { SegmentedControl } from '../../design-system';
 import { useAppearance } from '../useAppearance.js';
+import { t } from '../i18n/entry/index.js';
 
 const OPTIONS = [
-  { value: 'light', label: <span className="landing-appearance-word">Light</span>, ariaLabel: 'Light', icon: 'sun' },
-  { value: 'dark', label: <span className="landing-appearance-word">Dark</span>, ariaLabel: 'Dark', icon: 'moon' },
+  { value: 'light', label: <span className="landing-appearance-word">{t('shell.appearance.light')}</span>, ariaLabel: t('shell.appearance.light'), icon: 'sun' },
+  { value: 'dark', label: <span className="landing-appearance-word">{t('shell.appearance.dark')}</span>, ariaLabel: t('shell.appearance.dark'), icon: 'moon' },
 ];
 
 export function AppearanceToggle() {
   const { resolved, set } = useAppearance();
   return (
     <div className="landing-appearance">
-      <SegmentedControl label="Appearance" options={OPTIONS} value={resolved} onChange={set} />
+      <SegmentedControl label={t('shell.appearance.label')} options={OPTIONS} value={resolved} onChange={set} />
     </div>
   );
 }

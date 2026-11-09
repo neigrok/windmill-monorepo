@@ -52,6 +52,15 @@ import DomainKit
     #expect(east.span(Instant(ms: 1_791_848_580_000), Instant(ms: 1_791_850_800_000)) == "Tue, Oct 13 · 9:43\u{2009}–\u{2009}10:20\u{202F}AM")
   }
 
+  @Test @MainActor func aCountTakesEnglishPluralsAndPlainDigits() {
+    #expect([0, 1, 2, 21, 1234].map { GymCount.of($0, .set) } == ["0 sets", "1 set", "2 sets", "21 sets", "1234 sets"])
+    #expect([1, 5].map { GymCount.of($0, .weighIn) } == ["1 weigh-in", "5 weigh-ins"])
+    #expect([0, 1, 3].map { WorkoutClocks.spoken(Int64($0) * 3_661_000) } == ["0 seconds", "1 hour 1 minute 1 second", "3 hours 3 minutes 3 seconds"])
+    #expect([1, 21].map { WorkoutRack.spokenLog(82.5, reps: $0) } == ["Log set, 82.5 kilograms, 1 rep", "Log set, 82.5 kilograms, 21 reps"])
+    #expect([1, 1234].map { DestructiveQuestion.workoutMessage(sets: $0) }
+            == ["This deletes the workout and its 1 set. You can’t undo this.", "This deletes the workout and its 1234 sets. You can’t undo this."])
+  }
+
   @Test func theFormsFollowThePersonsLocale() {
     let british = formatter(locale: "en_GB"), german = formatter(locale: "de_DE")
     #expect([british.rowDay(LocalDay("2026-09-23")!), british.day(LocalDay("2026-09-23")!), british.subtitle(LocalDay("2025-09-23")!),

@@ -22,6 +22,10 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import works.windmill.gym.spelled
 import works.windmill.gym.domain.sync.Prefill
 import works.windmill.gym.presentation.AutoClose
 import works.windmill.gym.presentation.Blocker
@@ -38,6 +42,7 @@ import works.windmill.gym.presentation.SetFix
 import works.windmill.gym.presentation.SetTarget
 import works.windmill.gym.presentation.TrainingSet
 import works.windmill.gym.presentation.WorkoutChange
+import works.windmill.platform.i18n.Words
 import works.windmill.platform.storage.AtomicDocument
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.sync.core.ClockReading
@@ -49,6 +54,8 @@ import works.windmill.sync.modelserver.Credential
 import works.windmill.sync.modelserver.ModelServer
 
 @OptIn(ExperimentalCoroutinesApi::class)
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class WorkoutSessionTests {
     @get:Rule
     val tmp = TemporaryFolder()
@@ -69,9 +76,9 @@ class WorkoutSessionTests {
             room.training.createRoutine(RoutineWrite("routine1", "Push", 0, listOf(RoutineEntryWrite("bench-press"))))
             broken = true
             val reason = "The workout could not be saved safely. Restart the app to recover it."
-            assertEquals(GymResult.Failed(WriteFailure.Refused(reason)), room.store.workout.start("routine1"))
+            assertEquals(reason, ((room.store.workout.start("routine1") as GymResult.Failed).why as WriteFailure.Refused).words.spelled())
             assertTrue(requireNotNull(room.training.openWorkout()).session.isOpen)
-            assertEquals(reason, room.store.workout.workoutFailure)
+            assertEquals(reason, room.store.workout.workoutRefusal.spelled())
             assertEquals(listOf("gym.start"), failures)
         }
     }
@@ -98,9 +105,9 @@ class WorkoutSessionTests {
             room.store.workout.logSet(60.0, 8)
             failClosed = true
             val reason = "The workout could not be saved safely. Restart the app to recover it."
-            assertEquals(FinishOutcome.Failed(WriteFailure.Refused(reason)), room.store.workout.finish())
+            assertEquals(reason, ((room.store.workout.finish() as FinishOutcome.Failed).why as WriteFailure.Refused).words.spelled())
             assertFalse(requireNotNull(room.training.session(requireNotNull(workoutId))).session.isOpen)
-            assertEquals(reason, room.store.workout.workoutFailure)
+            assertEquals(reason, room.store.workout.workoutRefusal.spelled())
             assertEquals(listOf("gym.finish"), failures)
         }
     }
@@ -117,7 +124,7 @@ class WorkoutSessionTests {
             assertTrue(room.store.workout.acceptSet(LogSetCommand(offer.key, offer.id)) is LogSetAcceptance.Unavailable)
             room.now += AutoClose.AFTER_MS + 60_000
             assertNull(room.store.workout.discardWorkout(live.id))
-            assertNull(room.store.workout.workoutFailure)
+            assertNull(room.store.workout.workoutRefusal)
             val started = room.store.workout.start("routine1")
             assertTrue(started.toString(), started is GymResult.Ok)
             val next = (started as GymResult.Ok).value
@@ -137,7 +144,7 @@ class WorkoutSessionTests {
             val offer = requireNotNull(room.store.workout.notification.value?.offer)
             room.engine.failNextCommit()
             assertTrue(room.store.workout.acceptSet(LogSetCommand(offer.key, offer.id)) is LogSetAcceptance.Unavailable)
-            val reason = room.store.workout.refuseWorkout()
+            val reason = room.store.workout.workoutRefused()
             val before = room.engine.snapshot()
             val controlsBefore = room.controlsFile.readBytes()
             assertEquals(FinishOutcome.Failed(WriteFailure.Refused(reason)), room.store.workout.finish())
@@ -154,7 +161,7 @@ class WorkoutSessionTests {
             room.store.workout.choose("bench-press")
             room.store.workout.logSet(60.0, 8)
             val set = room.store.workout.sets.single()
-            val reason = room.store.workout.refuseWorkout()
+            val reason = room.store.workout.workoutRefused()
             val before = room.engine.snapshot()
             assertEquals(WriteFailure.Refused(reason), room.store.workout.deleteSet(live.id, set.id))
             assertEquals(before, room.engine.snapshot())
@@ -176,9 +183,9 @@ class WorkoutSessionTests {
             room.store.workout.choose("bench-press")
             room.engine.failNextCommit()
             val reason = "The workout could not be saved safely. Restart the app to recover it."
-            assertEquals(WorkoutChange.Unavailable(reason), room.store.workout.choose("barbell-row"))
+            assertEquals(reason, (room.store.workout.choose("barbell-row") as WorkoutChange.Unavailable).why.spelled())
             val before = room.controlsFile.readBytes()
-            assertEquals(WorkoutChange.Unavailable(reason), room.store.workout.choose("cable-fly"))
+            assertEquals(reason, (room.store.workout.choose("cable-fly") as WorkoutChange.Unavailable).why.spelled())
             assertArrayEquals(before, room.controlsFile.readBytes())
             assertEquals(listOf("gym.workout_controls"), failures)
             assertNull(room.store.workout.notification.value?.offer)
@@ -200,8 +207,8 @@ class WorkoutSessionTests {
             room.select(null)
             room.training.createRoutine(RoutineWrite("routine1", "Push", 0, listOf(RoutineEntryWrite("bench-press"))))
             broken = true
-            assertEquals(GymResult.Failed(WriteFailure.Refused("The workout could not be saved safely. Restart and retry.")),
-                room.store.workout.start("routine1"))
+            assertEquals("The workout could not be saved safely. Restart and retry.",
+                ((room.store.workout.start("routine1") as GymResult.Failed).why as WriteFailure.Refused).words.spelled())
             assertEquals(listOf("gym.start"), failures)
         }
     }
@@ -222,7 +229,7 @@ class WorkoutSessionTests {
             follow.cancel()
             follow.join()
             assertEquals(emptyList<String>(), failures)
-            assertNull(room.store.workout.workoutFailure)
+            assertNull(room.store.workout.workoutRefusal)
             assertArrayEquals(before, room.controlsFile.readBytes())
         }
     }
@@ -275,14 +282,14 @@ class WorkoutSessionTests {
                     "gym.dropMovement" -> workout.drop("barbell-row")
                     else -> workout.choose("cable-fly")
                 }
-                assertEquals(WorkoutChange.Unavailable(reason), first)
-                assertEquals(WorkoutChange.Unavailable(reason), workout.reorder(0, 1))
-                assertEquals(WorkoutChange.Unavailable(reason), workout.drop("barbell-row"))
-                assertEquals(WorkoutChange.Unavailable(reason), workout.choose("cable-fly"))
+                assertEquals(reason, (first as WorkoutChange.Unavailable).why.spelled())
+                assertEquals(reason, (workout.reorder(0, 1) as WorkoutChange.Unavailable).why.spelled())
+                assertEquals(reason, (workout.drop("barbell-row") as WorkoutChange.Unavailable).why.spelled())
+                assertEquals(reason, (workout.choose("cable-fly") as WorkoutChange.Unavailable).why.spelled())
                 assertEquals(order, workout.order)
                 assertEquals(movement, workout.exerciseId)
                 assertArrayEquals(bytes, room.controlsFile.readBytes())
-                assertEquals(reason, workout.workoutFailure)
+                assertEquals(reason, workout.workoutRefusal.spelled())
                 assertNull(workout.notification.value?.offer)
                 assertEquals(listOf(operation), failures)
             }
@@ -311,10 +318,10 @@ class WorkoutSessionTests {
                 val set = workout.sets.single()
                 val bytes = room.controlsFile.readBytes()
                 broken = true
-                if (delete) assertEquals(WriteFailure.Refused("The workout could not be saved safely. Restart the app to recover it."), workout.deleteSet(live.id, set.id))
+                if (delete) assertEquals("The workout could not be saved safely. Restart the app to recover it.", (workout.deleteSet(live.id, set.id) as WriteFailure.Refused).words.spelled())
                 else workout.follow(null)
                 assertArrayEquals(bytes, room.controlsFile.readBytes())
-                assertEquals("The workout could not be saved safely. Restart the app to recover it.", workout.workoutFailure)
+                assertEquals("The workout could not be saved safely. Restart the app to recover it.", workout.workoutRefusal.spelled())
                 assertEquals(listOf(if (delete) "gym.deleteSet" else "gym.loadLog"), failures)
                 assertNull(workout.notification.value?.offer)
             }
@@ -340,8 +347,8 @@ class WorkoutSessionTests {
             room.startExternalWorkout()
             room.store.workout.choose("bench-press")
             remaining = 2
-            assertEquals(WorkoutChange.Unavailable("The workout could not be saved safely. Restart the app to recover it."),
-                room.store.workout.choose("barbell-row"))
+            assertEquals("The workout could not be saved safely. Restart the app to recover it.",
+                (room.store.workout.choose("barbell-row") as WorkoutChange.Unavailable).why.spelled())
             assertEquals(listOf("gym.refreshWorkout"), failures)
             assertNull(room.store.workout.notification.value?.offer)
         }
@@ -383,7 +390,7 @@ class WorkoutSessionTests {
             room.store.refreshEngine()
 
             assertEquals(SaveState.Blocked(Blocker.Offline), room.store.workout.saveState)
-            assertEquals("offline · saved here", room.store.workout.saveState.line)
+            assertEquals("offline · saved here", room.store.workout.saveState.words.spelled())
             assertEquals("the row is on screen — the device is holding it",
                 listOf(82.5), room.store.workout.sets.map { it.weightKg })
             assertEquals(listOf("gym.start", "set ${room.store.workout.sets.single().id}"), owed(room))
@@ -423,9 +430,9 @@ class WorkoutSessionTests {
             room.sync(server); noticed(room); room.store.refreshEngine()
 
             assertTrue("a set that never landed is not drawn as though it had", room.store.workout.sets.isEmpty())
-            assertEquals(listOf<RefusedWrite>(RefusedSet(lost.id, "bench-press", 60.0, 10, "That workout has finished.")),
-                room.store.workout.refusals)
-            assertEquals("That workout has finished.", room.store.workout.saveState.line)
+            assertEquals(listOf<RefusedWrite>(RefusedSet(lost.id, "bench-press", 60.0, 10, Words.Plain("That workout has finished."))),
+                room.store.workout.refusals.map { (it as RefusedSet).copy(why = Words.Plain(it.why.spelled())) })
+            assertEquals("That workout has finished.", room.store.workout.saveState.words.spelled())
             assertTrue(room.outbox().isEmpty())
             runCurrent()
         }
@@ -476,7 +483,7 @@ class WorkoutSessionTests {
             assertTrue("the server failing is not the set being refused", room.store.workout.refusals.isEmpty())
             assertEquals("and a log that answered 500 is not a missing signal — the note names the log",
                 SaveState.Blocked(Blocker.LogFailed), room.store.workout.saveState)
-            assertEquals("the log didn’t answer · saved here", room.store.workout.saveState.line)
+            assertEquals("the log didn’t answer · saved here", room.store.workout.saveState.words.spelled())
             assertEquals(Blocker.LogFailed, room.store.workout.strandedBy)
             assertEquals("the row stays on screen — the device is holding it", 1, room.store.workout.sets.size)
             runCurrent()
@@ -509,7 +516,7 @@ class WorkoutSessionTests {
             assertTrue("a start while a workout is open is a refusal, never a silent join: $refused",
                 refused is GymResult.Failed)
             assertEquals("A workout is already open. Finish it first.",
-                ((refused as GymResult.Failed).why as WriteFailure.Refused).said)
+                ((refused as GymResult.Failed).why as WriteFailure.Refused).words.spelled())
             assertTrue("the refused start wrote nothing", room.outbox().isEmpty())
             assertEquals("the refresh adopted the open workout, with its own snapshot", live.id, room.store.workout.session?.id)
             assertEquals("Push A", room.store.workout.session?.plan?.routine)
@@ -553,7 +560,7 @@ class WorkoutSessionTests {
             room.store.workout.logSet(weightKg = 82.5, reps = 5)
 
             assertEquals(listOf(82.5), room.store.workout.sets.map { it.weightKg })
-            assertEquals("saved on this device", room.store.workout.saveState.line)
+            assertEquals("saved on this device", room.store.workout.saveState.words.spelled())
 
             room.now += 60_000
             val ended = (room.store.workout.finish() as FinishOutcome.Closed).session
@@ -707,8 +714,8 @@ class WorkoutSessionTests {
                 listOf(270.0), room.store.history.allSessions.map { it.tonnageKg })
             val before = owed(room)
             assertEquals("a row this workout does not hold is not one a fix can reach",
-                FixOutcome.Gone("that set is no longer on the log"),
-                room.store.workout.fixSet(ended.id, "set_gone", SetFix(weightKg = 90.0, reps = 3)))
+                "that set is no longer on the log",
+                (room.store.workout.fixSet(ended.id, "set_gone", SetFix(weightKg = 90.0, reps = 3)) as FixOutcome.Gone).words.spelled())
             assertNull(room.store.workout.deleteSet(ended.id, "set_gone"))
             assertEquals("nothing is written for an id this phone has never held", before, owed(room))
             runCurrent()
@@ -900,8 +907,8 @@ class WorkoutSessionTests {
             room.select(null)
             val before = owed(room)
 
-            assertEquals(FixOutcome.Gone("that set is no longer on the log"),
-                room.store.workout.fixSet(opened.id, held.id, SetFix(weightKg = 90.0, reps = 3)))
+            assertEquals("that set is no longer on the log",
+                (room.store.workout.fixSet(opened.id, held.id, SetFix(weightKg = 90.0, reps = 3)) as FixOutcome.Gone).words.spelled())
             assertNull(room.store.workout.deleteSet(opened.id, held.id))
             assertEquals("nothing was written", before, owed(room))
 
@@ -1134,7 +1141,7 @@ class WorkoutSessionTests {
             room.store.refreshEngine()
 
             assertEquals(SaveState.Blocked(Blocker.SignInLapsed), room.store.workout.saveState)
-            assertEquals("sign in again · saved here", room.store.workout.saveState.line)
+            assertEquals("sign in again · saved here", room.store.workout.saveState.words.spelled())
             assertEquals(Blocker.SignInLapsed, room.store.workout.strandedBy)
             assertEquals(1, room.store.workout.strandedCount)
             assertTrue("still owed, never dropped", room.store.workout.refusals.isEmpty())
@@ -1149,8 +1156,8 @@ class WorkoutSessionTests {
             room.select("alice"); room.pull(server)
             val before = room.engine.snapshot()
 
-            assertEquals(GymResult.Failed(WriteFailure.Refused("That is no longer on the log.")),
-                room.store.workout.start("rt_deleted_elsewhere"))
+            assertEquals("That is no longer on the log.",
+                ((room.store.workout.start("rt_deleted_elsewhere") as GymResult.Failed).why as WriteFailure.Refused).words.spelled())
 
             assertEquals(before, room.engine.snapshot())
             assertNull(room.store.workout.session)
@@ -1181,7 +1188,7 @@ class WorkoutSessionTests {
             room.sync(server); noticed(room); room.store.refreshEngine()
 
             assertEquals(emptyList<TrainingSet>(), room.store.workout.sets)
-            assertEquals(listOf(fixed.id to "That is no longer on the log."), room.store.workout.refusals.map { it.id to it.reason })
+            assertEquals(listOf(fixed.id to "That is no longer on the log."), room.store.workout.refusals.map { it.id to it.why.spelled() })
             assertEquals(listOf(mapOf("reps" to Json.of(4))), room.engine.notices("gym").notices.value.map {
                 it.content.deltas.single().lattice.fields.mapValues { field -> field.value.value }
             })
@@ -1211,7 +1218,7 @@ class WorkoutSessionTests {
             room.sync(server); noticed(room); room.store.refreshEngine()
 
             assertEquals("the log's numbers replace the refused ones", listOf(logged), room.store.workout.sets)
-            assertEquals(listOf(fixed.id to "That change could not be saved."), room.store.workout.refusals.map { it.id to it.reason })
+            assertEquals(listOf(fixed.id to "That change could not be saved."), room.store.workout.refusals.map { it.id to it.why.spelled() })
             assertEquals(listOf(mapOf("reps" to Json.of(4))), room.engine.notices("gym").notices.value.map {
                 it.content.deltas.single().lattice.fields.mapValues { field -> field.value.value }
             })

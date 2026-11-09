@@ -1,5 +1,6 @@
 package works.windmill.gym.coach
 
+import works.windmill.platform.i18n.text
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -26,6 +27,7 @@ import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -59,15 +61,15 @@ internal fun AnswerProposals(
     ) {
         // A change to this workout the phone does not hold yet: Coach can answer on another phone before its proposal reaches this one, and a miss settles by `AnsweredProposals`' rule.
         answer.workoutProposals.filter { it !in state.workoutProposals }.forEach {
-            Text(if (gone(it)) ProposalRead.Gone.line else "Reading proposal…", style = WindmillType.supporting, color = colors.onSurfaceVariant)
+            Text(if (gone(it)) ProposalRead.Gone.words.text() else stringResource(R.string.gym_coach_reading_proposal), style = WindmillType.supporting, color = colors.onSurfaceVariant)
         }
         (workouts + minted).forEach { proposal ->
             key(proposal.id) {
-                ProposalCard(proposal, proposal.routineName, nowMs, stillWaiting = proposal.id in lookedAt, nextTime = state.workoutOpen) { onReview(proposal) }
-                proposal.receipt?.let { ReceiptLine(it) }
+                ProposalCard(proposal, proposal.routineNamed, nowMs, stillWaiting = proposal.id in lookedAt, nextTime = state.workoutOpen) { onReview(proposal) }
+                proposal.settledReceipt?.let { ReceiptLine(it) }
             }
         }
-        if ((workouts + minted).any { it.isPending && it.outOfDate == null }) Text(Ask.promise, style = GymType.coachSourceLine, color = colors.onSurfaceVariant)
+        if ((workouts + minted).any { it.isPending && it.stale == null }) Text(stringResource(R.string.gym_coach_promise), style = GymType.coachSourceLine, color = colors.onSurfaceVariant)
     }
 }
 
@@ -86,7 +88,7 @@ internal fun CoachProposalCard(kicker: String, summary: String, count: String, r
         Box(
             contentAlignment = Alignment.Center,
             modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).clickable(role = Role.Button, onClick = onReview).padding(12.dp),
-        ) { Text(Proposal.review, style = GymType.button, color = colors.onSurface) }
+        ) { Text(stringResource(R.string.gym_proposal_review), style = GymType.button, color = colors.onSurface) }
     }
 }
 
@@ -108,9 +110,9 @@ internal fun CoachSheetFrame(fresh: Boolean, onThreads: () -> Unit, content: @Co
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.fillMaxWidth().height(36.dp).padding(start = 20.dp, end = 8.dp),
         ) {
-            Text(Ask.title, style = GymType.coachSheetTitle, color = colors.onSurface, modifier = Modifier.weight(1f).semantics { heading() })
+            Text(stringResource(R.string.gym_coach_title), style = GymType.coachSheetTitle, color = colors.onSurface, modifier = Modifier.weight(1f).semantics { heading() })
             IconButton(onClick = onThreads, modifier = Modifier.requiredSize(48.dp)) {
-                Icon(painterResource(R.drawable.gym_coach_history), "History", tint = colors.onSurface, modifier = Modifier.size(24.dp))
+                Icon(painterResource(R.drawable.gym_coach_history), stringResource(R.string.gym_coach_history), tint = colors.onSurface, modifier = Modifier.size(24.dp))
             }
         }
         Box(Modifier.weight(1f).fillMaxWidth(), content = content)

@@ -11,6 +11,14 @@ import {
 
 const AUGUST = (day, hour = 9) => new Date(2026, 7, day, hour, 0).getTime();
 
+// threads.js without comments, followed by the catalog messages its t() calls ask for.
+const GYM = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../../src/products/gym');
+const threadsVocabulary = () => {
+  const catalog = { ...JSON.parse(fs.readFileSync(path.join(GYM, 'i18n/entry/en.json'), 'utf8')), ...JSON.parse(fs.readFileSync(path.join(GYM, 'i18n/landing/en.json'), 'utf8')), ...JSON.parse(fs.readFileSync(path.join(GYM, 'i18n/en.json'), 'utf8')) };
+  const code = fs.readFileSync(path.join(GYM, 'coach/threads.js'), 'utf8').replace(/^[ \t]*\/\/.*$/gm, '');
+  return [code, ...[...code.matchAll(/\bt\('([\w.]+)'/g)].map(([, key]) => catalog[key])].join('\n');
+};
+
 test('history identifies retained conversations', () => { assert.equal(THREADS_TITLE, 'History'); });
 
 test('an applied row names how much moved and where it moved', () => {
@@ -35,10 +43,7 @@ test('a turned-down row says what was turned down — never “dismissed”, nev
     'no changes proposed', '4 changes → Push A', '4 changes waiting', '4 changes turned down',
     '4 changes superseded',
   ]);
-  const spoken = fs.readFileSync(
-    path.join(path.dirname(fileURLToPath(import.meta.url)), '../../../../src/products/gym/coach/threads.js'),
-    'utf8',
-  ).replace(/^[ \t]*\/\/.*$/gm, '');
+  const spoken = threadsVocabulary();
   for (const motive of ['instead', 'myself', 'you decided', 'preferred', 'didn’t want']) {
     assert.equal(spoken.includes(motive), false, motive);
   }
@@ -97,10 +102,7 @@ test('the right of a row is today by its word and every older day by its date', 
 });
 
 test('nothing in the threads vocabulary is an unread count, a badge or a notification', () => {
-  const rules = fs.readFileSync(
-    path.join(path.dirname(fileURLToPath(import.meta.url)), '../../../../src/products/gym/coach/threads.js'),
-    'utf8',
-  ).replace(/^[ \t]*\/\/.*$/gm, '');
+  const rules = threadsVocabulary();
   for (const inbox of ['unread', 'badge', 'notif', 'new message', 'waiting for you', 'pinned', 'search']) {
     assert.equal(rules.toLowerCase().includes(inbox), false, inbox);
   }
@@ -114,14 +116,11 @@ test('what the delete leaves behind is said at the moment of the act, in the pho
   // detail are two lines from 327px up and three at 326px and under, against text-budget's toast cap
   // and thumb-reach's reach-band paragraph. The bytes above are the pin; a character count is not,
   // because the rule it would stand for is a wrap and no count can see one.
-  // Why the rule exists is not the transient's to carry: `settledLine` already stands permanently on
-  // the routine's own history row.
   assert.equal(THREAD_DELETE_DETAIL.includes('fact about your program'), false);
 
   // One measurement, one number. The bound lives in the stylesheet that causes the wrap and in the
   // module a re-wording of the detail is read against; the two saying it differently is how a
   // shortened sentence gets measured against a bound nobody took.
-  const GYM = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../../src/products/gym');
   const boundsIn = (file) => [...fs.readFileSync(path.join(GYM, file), 'utf8').matchAll(/(\d+)px up/g)].map((each) => each[1]);
   assert.deepEqual(boundsIn('coach/threads.js'), ['327']);
   assert.deepEqual(boundsIn('gym.css'), ['327']);

@@ -1,5 +1,7 @@
 package works.windmill.gym.store
 
+import works.windmill.platform.i18n.Words
+import works.windmill.gym.R
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -8,7 +10,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
 import works.windmill.gym.presentation.Proposal
 import works.windmill.gym.presentation.ProposalState
-import works.windmill.gym.store.TrainingSeat.Companion.accountChanged
+import works.windmill.gym.store.TrainingSeat.Companion.accountChange
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.sync.schema.Gym
 
@@ -54,7 +56,7 @@ class WorkoutProposalsStore(
     }
 
     private suspend fun deciding(id: String, applying: Boolean): ProposalOutcome {
-        if (!seat.workoutAuthorized) return ProposalOutcome.Failed(WriteFailure.Refused(accountChanged))
+        if (!seat.workoutAuthorized) return ProposalOutcome.Failed(WriteFailure.Refused(accountChange))
         val owner = seat.owner
         try {
             withContext(storage) { training.decideWorkoutProposal(id, applying) }
@@ -62,13 +64,13 @@ class WorkoutProposalsStore(
             throw interrupted
         } catch (refusing: Exception) {
             seat.reportFailure(if (applying) "gym.applyWorkoutProposal" else "gym.dismissWorkoutProposal", refusing)
-            if (owner != seat.owner) return ProposalOutcome.Failed(WriteFailure.Refused(accountChanged))
+            if (owner != seat.owner) return ProposalOutcome.Failed(WriteFailure.Refused(accountChange))
             return refused(id, refusing)
         }
-        if (owner != seat.owner) return ProposalOutcome.Failed(WriteFailure.Refused(accountChanged))
+        if (owner != seat.owner) return ProposalOutcome.Failed(WriteFailure.Refused(accountChange))
         // The decision stands whatever this read meets: a failed read costs the room its picture until the next one, and never says the decision failed.
         seat.tried("gym.refreshWorkout") { refresh() }
-        return held[id]?.let { ProposalOutcome.Decided(it) } ?: ProposalOutcome.Gone("that proposal is no longer on the log")
+        return held[id]?.let { ProposalOutcome.Decided(it) } ?: ProposalOutcome.Gone(Words.Message(R.string.gym_store_proposal_no_longer_on_log))
     }
 
     // A refusal means this room's picture is stale, so the proposals are read again before the sentence is said, and a proposal out of date says why in its own words.
@@ -77,10 +79,10 @@ class WorkoutProposalsStore(
         if (refusal == null || refusal.code == "sign-in") return ProposalOutcome.Failed(WriteFailure(error))
         if (seat.tried("gym.refreshWorkout") { read(); true } != true) return ProposalOutcome.Failed(WriteFailure.NoAnswer)
         return when (refusal.code) {
-            Gym.Codes.proposalSuperseded -> ProposalOutcome.Moved(held[id]?.outOfDate ?: refusal.line)
-            "unknown-record" -> ProposalOutcome.Gone("that proposal is no longer on the log")
-            Gym.Codes.proposalSettled -> ProposalOutcome.Settled(refusal.line)
-            else -> ProposalOutcome.Refused(refusal.line)
+            Gym.Codes.proposalSuperseded -> ProposalOutcome.Moved(held[id]?.staleWhy ?: refusal.words)
+            "unknown-record" -> ProposalOutcome.Gone(Words.Message(R.string.gym_store_proposal_no_longer_on_log))
+            Gym.Codes.proposalSettled -> ProposalOutcome.Settled(refusal.words)
+            else -> ProposalOutcome.Refused(refusal.words)
         }
     }
 

@@ -5,7 +5,6 @@ import {
   DEMO_STAGED_COMPLETED,
   COACHED_NODE_ID,
   COACHED_CHILDREN,
-  DEMO_COPY,
   coachEligible,
 } from '../../../../src/products/roadmap/demo/demoStage.js';
 
@@ -20,12 +19,6 @@ test('staged set — six done, coached node ready, both children asleep', () => 
   assert.deepEqual(COACHED_CHILDREN, ['jibing', 'tacking']);
   assert.equal(DEMO_STAGED_COMPLETED.includes(COACHED_NODE_ID), false);
   for (const child of COACHED_CHILDREN) assert.equal(DEMO_STAGED_COMPLETED.includes(child), false);
-});
-
-test('copy — the canon strings the demo speaks verbatim', () => {
-  assert.equal(DEMO_COPY.coachSentence, 'This step is up next — mark it done.');
-  assert.equal(DEMO_COPY.coachButton, 'Mark it done');
-  assert.equal(DEMO_COPY.unlockToast, 'Rig the boat yourself done · 2 up next');
 });
 
 test('coachEligible — a stranger is eligible, a returning or tree-owning visitor is not', () => {

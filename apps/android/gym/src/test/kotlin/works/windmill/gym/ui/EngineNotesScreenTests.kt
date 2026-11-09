@@ -22,6 +22,8 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import works.windmill.gym.string
+import works.windmill.gym.R
 import works.windmill.gym.presentation.NoteWrite
 import works.windmill.gym.presentation.Notes
 import works.windmill.gym.store.EngineRoomFixture
@@ -62,12 +64,12 @@ class EngineNotesScreenTests {
             room.store.observeEngine()
             show(room)
             compose.onNodeWithText("Reading your notes…").assertIsDisplayed()
-            compose.onNodeWithContentDescription(Notes.add).assertDoesNotExist()
+            compose.onNodeWithContentDescription(string(R.string.gym_notes_add)).assertDoesNotExist()
             val server = EngineRoomFixture.server()
             compose.runOnIdle { room.pull(server) }
             waitForNotebook(room) { room.store.notes.notesRead }
-            compose.onNodeWithText(Notes.placeholders.first()).assertIsDisplayed()
-            compose.onNodeWithContentDescription(Notes.add).assertIsDisplayed()
+            compose.onNodeWithText(string(Notes.titleSuggestions.first())).assertIsDisplayed()
+            compose.onNodeWithContentDescription(string(R.string.gym_notes_add)).assertIsDisplayed()
         } } finally { scope.cancel() }
     }
 

@@ -1,5 +1,7 @@
 package works.windmill.gym.store
 
+import works.windmill.platform.i18n.Words
+import works.windmill.gym.R
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
@@ -76,7 +78,7 @@ enum class Owed {
 }
 
 data class ImportRefusal(val id: String, val session: Session?, val sets: List<TrainingSet>,
-    val deletedSetIds: List<String>, val code: String, val reason: String,
+    val deletedSetIds: List<String>, val code: String, val why: Words,
     val kind: String = "finished", val workoutId: String? = session?.id)
 
 data class ImportOpening(val id: String, val replica: String, val anonymous: Boolean, val sources: Map<String, String>)
@@ -144,7 +146,7 @@ class WorkoutImports(private val engine: Engine, private val writeAuthority: () 
             val kind = item.member("kind").str()
             val unreadable = source(item) == Source.Unreadable
             val failures = if (unreadable)
-                listOf(ImportRefusal(id, null, emptyList(), emptyList(), "source-unreadable", reason("source-unreadable"), kind))
+                listOf(ImportRefusal(id, null, emptyList(), emptyList(), "source-unreadable", reasonFor("source-unreadable"), kind))
                 else emptyList()
             val index = rows.indexOfFirst { it.id == id }
             if (index >= 0) {
@@ -159,7 +161,7 @@ class WorkoutImports(private val engine: Engine, private val writeAuthority: () 
     fun opening(id: String): ImportOpening {
         val replica = engine.activeReplica()
         return engine.read(scope) { reader ->
-            if (engine.activeReplica() != replica) throw TrainingRefused("account-changed", "The account changed. Open this again.")
+            if (engine.activeReplica() != replica) throw TrainingRefused.accountChanged()
             ImportOpening(id, replica, reader.isAnonymous, openingSources(reader, id))
         }
     }
@@ -183,16 +185,16 @@ class WorkoutImports(private val engine: Engine, private val writeAuthority: () 
 
     private fun requireOpening(context: CommitContext, opening: ImportOpening?, allowed: () -> Boolean) {
         if (!allowed() || opening != null && (context.replica != opening.replica || context.isAnonymous != opening.anonymous))
-            throw TrainingRefused("account-changed", "The account changed. Open this again.")
+            throw TrainingRefused.accountChanged()
         if (opening != null && (opening.sources.isEmpty() || openingSources(context, opening.id) != opening.sources))
-            throw TrainingRefused("saved-workout-changed", "This saved workout changed. Open it again.")
+            throw TrainingRefused("saved-workout-changed", Words.Message(R.string.gym_store_saved_workout_changed))
     }
 
     fun preview(opening: ImportOpening, corrected: SavedWorkout, markFinished: Boolean, now: Long): String? = engine.read(scope) { reader ->
         if (engine.activeReplica() != opening.replica || reader.isAnonymous != opening.anonymous)
-            throw TrainingRefused("account-changed", "The account changed. Open this again.")
+            throw TrainingRefused.accountChanged()
         if (openingSources(reader, opening.id) != opening.sources)
-            throw TrainingRefused("saved-workout-changed", "This saved workout changed. Open it again.")
+            throw TrainingRefused("saved-workout-changed", Words.Message(R.string.gym_store_saved_workout_changed))
         val item = reader.devices(journalPrefix).values.flatMap { it["items"]?.obj().orEmpty().values }
             .firstOrNull { it["id"] == Json.of(opening.id) && it["state"] == Json.of("refused") }
             ?: return@read "saved-workout-changed"
@@ -272,7 +274,7 @@ class WorkoutImports(private val engine: Engine, private val writeAuthority: () 
     private fun retain(row: SavedWorkout, finished: Boolean, deferUnexpected: Boolean = false): Exception? {
         var deferredFailure: Exception? = null
         val result = engine.commitWithPrerequisites(scope) { context ->
-            if (!writeAuthority()) throw TrainingRefused("account-changed", "The account changed. Open this again.")
+            if (!writeAuthority()) throw TrainingRefused.accountChanged()
             check(context.isAnonymous) { "Only training saved on this phone can be prepared for an account." }
             val key = key("engine:${context.replica}")
             val journal = journal(context, key)
@@ -402,7 +404,7 @@ class WorkoutImports(private val engine: Engine, private val writeAuthority: () 
         }
         for (key in keys) try {
             val result = engine.commitWithPrerequisites(scope) { context ->
-                if (!writeAuthority()) throw TrainingRefused("account-changed", "The account changed. Open this again.")
+                if (!writeAuthority()) throw TrainingRefused.accountChanged()
                 val deferred = context.device(key) ?: return@commitWithPrerequisites null to null
                 val saved = deferred.member("item")
                 val id = saved.member("id").str()
@@ -433,7 +435,7 @@ class WorkoutImports(private val engine: Engine, private val writeAuthority: () 
         val rejected = result.first as? CommitOutcome.Refused ?: return
         val prepared = result.second ?: return
         engine.commitWithPrerequisites(scope) { context ->
-            if (!writeAuthority()) throw TrainingRefused("account-changed", "The account changed. Open this again.")
+            if (!writeAuthority()) throw TrainingRefused.accountChanged()
             requireOpening(context, opening, allowed)
             val (key, token, originalGesture) = prepared
             val writes = originalGesture.local.map { write ->
@@ -579,7 +581,7 @@ class WorkoutImports(private val engine: Engine, private val writeAuthority: () 
             .filter { it["kind"] == Json.of("proposal") && it["state"] == Json.of("refused") }.map { it["code"]?.str() ?: "unknown" } }
         if (lost.isEmpty()) return lost
         engine.commit(scope) { context ->
-            if (!writeAuthority()) throw TrainingRefused("account-changed", "The account changed. Open this again.")
+            if (!writeAuthority()) throw TrainingRefused.accountChanged()
             val writes = context.devices(journalPrefix).mapNotNull { (key, journal) ->
                 val before = journal["items"]?.obj().orEmpty()
                 val items = before.mapValues { (_, item) -> if (item["kind"] == Json.of("proposal") && item["state"] == Json.of("refused")) item.changed("state" to Json.of("resolved")) else item }
@@ -640,13 +642,13 @@ class WorkoutImports(private val engine: Engine, private val writeAuthority: () 
             ?.let { (token, item) ->
                 val entry = (source(item) as? Source.Operation)?.entry ?: return@let null
                 ImportOperation(token, item["targetSessionId"]?.str() ?: entry.sessionId, entry)
-            } } ?: throw TrainingRefused("saved-workout-changed", reason("saved-workout-changed"))
-        if (!recoverFinishedOperation(operation, opening, allowed)) throw TrainingRefused("recovery-unavailable", reason("recovery-unavailable"))
+            } } ?: throw TrainingRefused("saved-workout-changed", reasonFor("saved-workout-changed"))
+        if (!recoverFinishedOperation(operation, opening, allowed)) throw TrainingRefused("recovery-unavailable", reasonFor("recovery-unavailable"))
     }
 
     fun recoverFinishedOperation(operation: ImportOperation, opening: ImportOpening? = null, allowed: () -> Boolean = { true }): Boolean {
         val result = engine.commit(scope) { context ->
-            if (!writeAuthority()) throw TrainingRefused("account-changed", "The account changed. Open this again.")
+            if (!writeAuthority()) throw TrainingRefused.accountChanged()
             requireOpening(context, opening, allowed)
             if (context.device(deferredKey(operation.entry.sessionId)) != null) return@commit null to true
             val saved = context.devices(journalPrefix).entries.firstOrNull { operation.token in it.value["items"]?.obj().orEmpty() }
@@ -758,7 +760,7 @@ class WorkoutImports(private val engine: Engine, private val writeAuthority: () 
     }
 
     fun refuseOperation(operation: ImportOperation, code: String, opening: ImportOpening? = null, allowed: () -> Boolean = { true }) { engine.commit(scope) { context ->
-        if (!writeAuthority()) throw TrainingRefused("account-changed", "The account changed. Open this again.")
+        if (!writeAuthority()) throw TrainingRefused.accountChanged()
         requireOpening(context, opening, allowed)
         val saved = context.devices(journalPrefix).entries.firstOrNull { operation.token in it.value["items"]?.obj().orEmpty() }
             ?: return@commit null to Unit
@@ -778,7 +780,7 @@ class WorkoutImports(private val engine: Engine, private val writeAuthority: () 
     }
 
     fun resolveDeletion(token: String) { engine.commit(scope) { context ->
-        if (!writeAuthority()) throw TrainingRefused("account-changed", "The account changed. Open this again.")
+        if (!writeAuthority()) throw TrainingRefused.accountChanged()
         val itemToken = token.substringBefore(':')
         val id = token.substringAfter(':')
         val saved = context.devices(journalPrefix).entries.firstOrNull { itemToken in it.value["items"]?.obj().orEmpty() }
@@ -796,7 +798,7 @@ class WorkoutImports(private val engine: Engine, private val writeAuthority: () 
             it["cacheConsumed"] != Json.of(true) }.mapNotNull { item -> if (source(item) !is Source.Start) null else (source(item, effectiveSource(item)) as? Source.Start)?.workout } } }
 
     fun retireStartSources() { engine.commit(scope) { context ->
-        if (!writeAuthority()) throw TrainingRefused("account-changed", "The account changed. Open this again.")
+        if (!writeAuthority()) throw TrainingRefused.accountChanged()
         val writes = context.devices(journalPrefix).mapNotNull { (key, journal) ->
             val before = journal["items"]?.obj().orEmpty()
             val items = before.mapValues { (_, item) ->
@@ -829,16 +831,16 @@ class WorkoutImports(private val engine: Engine, private val writeAuthority: () 
         if (source == null) {
             if (opening == null) return
             engine.commit<Unit>(scope) { context ->
-                if (!writeAuthority()) throw TrainingRefused("account-changed", "The account changed. Open this again.")
+                if (!writeAuthority()) throw TrainingRefused.accountChanged()
                 requireOpening(context, opening, allowed)
-                throw TrainingRefused("saved-workout-changed", reason("saved-workout-changed"))
+                throw TrainingRefused("saved-workout-changed", reasonFor("saved-workout-changed"))
             }
             return
         }
         if (source.session.isOpen) {
             val finish = corrected?.session?.finishedAtMs ?: checkNotNull(WorkoutFix(source.signedOut()).markFinished().finishedAt).ms
             val result = engine.commitWithPrerequisites(scope) { context ->
-                if (!writeAuthority()) throw TrainingRefused("account-changed", "The account changed. Open this again.")
+                if (!writeAuthority()) throw TrainingRefused.accountChanged()
                 requireOpening(context, opening, allowed)
                 val saved = context.devices(journalPrefix).entries.firstOrNull { (_, journal) -> journal["items"]?.obj().orEmpty().values.any { it["id"] == Json.of(id) && it["kind"] == Json.of("start") && it["state"] == Json.of("refused") } }
                     ?: return@commitWithPrerequisites null to null
@@ -869,7 +871,7 @@ class WorkoutImports(private val engine: Engine, private val writeAuthority: () 
     fun reconcileConfirmed(): Exception? {
         val deferredFailure = retryDeferred()
         engine.commitWithPrerequisites(scope) { context ->
-            if (!writeAuthority()) throw TrainingRefused("account-changed", "The account changed. Open this again.")
+            if (!writeAuthority()) throw TrainingRefused.accountChanged()
             if (context.isAnonymous || !context.firstPullComplete() || context.checkpoint().cleanSeq == null) return@commitWithPrerequisites null to Unit
             val legacyRefusals = engine.refusedDeltas(context, scope, Gym.Codes.sessionFinished)
             val writes = context.devices(journalPrefix).mapNotNull { (key, journal) ->
@@ -929,7 +931,7 @@ class WorkoutImports(private val engine: Engine, private val writeAuthority: () 
                 else emptyList()
             }.toSet() }
         engine.notices("gym").notices.value.filter { !it.isDismissed && it.id in gestures.map { gesture -> "notice:$gesture/0" } }.forEach {
-            if (!writeAuthority()) throw TrainingRefused("account-changed", "The account changed. Open this again.")
+            if (!writeAuthority()) throw TrainingRefused.accountChanged()
             engine.dismissNotice(it.id)
         }
     }
@@ -941,7 +943,7 @@ class WorkoutImports(private val engine: Engine, private val writeAuthority: () 
             val start = source as? Source.Start
             val operation = (source as? Source.Operation)?.entry
             val code = if (source == Source.Unreadable) "source-unreadable" else item["code"]?.str() ?: "source-unreadable"
-            val description = if (item["kind"] == Json.of("finished") && code in setOf("record-dead", "unknown-record")) reason("routine-missing") else reason(code)
+            val description = if (item["kind"] == Json.of("finished") && code in setOf("record-dead", "unknown-record")) reasonFor("routine-missing") else reasonFor(code)
             ImportRefusal(item.member("id").str(), row?.session ?: start?.session,
                 row?.sets ?: start?.entries?.map { it.set } ?: listOfNotNull(operation?.set), row?.deleted.orEmpty(), code, description,
                 item["kind"]?.str().orEmpty(), row?.session?.id ?: start?.session?.id ?: operation?.sessionId)
@@ -963,7 +965,7 @@ class WorkoutImports(private val engine: Engine, private val writeAuthority: () 
         markFinished: Boolean = false, expectedReplica: String? = null, expectedAnonymous: Boolean? = null,
         opening: ImportOpening? = null, allowed: () -> Boolean = { true }) {
         val admitted = engine.commitWithPrerequisites(scope) { context ->
-            if (!writeAuthority()) throw TrainingRefused("account-changed", "The account changed. Open this again.")
+            if (!writeAuthority()) throw TrainingRefused.accountChanged()
             requireOpening(context, opening, allowed)
             if (expectedReplica != null && (context.replica != expectedReplica || context.isAnonymous != expectedAnonymous))
                 return@commitWithPrerequisites null to false
@@ -981,7 +983,7 @@ class WorkoutImports(private val engine: Engine, private val writeAuthority: () 
             if (item["state"] != Json.of("refused") && !(item["state"] == Json.of("pending") && item["code"] == Json.of("waiting-for-firstpull"))) return@commitWithPrerequisites null to true
             val deferredRemoval = if (context.device(deferredKey(id)) == null) emptyList() else listOf(DeviceWrite(deferredKey(id), null))
             val before = item.member("source")
-            if (corrected != null && unknownFinishedFields(before)) throw IllegalStateException(reason("source-needs-update"))
+            if (corrected != null && unknownFinishedFields(before)) throw IllegalStateException("source-needs-update")
             var source = corrected?.let { editedFinished(before, decode(it, SavedWorkout.serializer()), markFinished) } ?: correctedOpen?.let { editedStart(before, it) } ?: before
             if (corrected != null && !markFinished) {
                 val closure = before["session"]?.obj().orEmpty().filterKeys { it in setOf("closedItself", "closedBy") }
@@ -1026,7 +1028,7 @@ class WorkoutImports(private val engine: Engine, private val writeAuthority: () 
             gesture.local += childWrites + deferredRemoval + DeviceWrite(key, withItems(journal, items))
             gesture to true
         }.second
-        if (!admitted) throw TrainingRefused("account-changed", "The account changed. Open this again.")
+        if (!admitted) throw TrainingRefused.accountChanged()
         if (opening == null || engine.activeReplica() == opening.replica && allowed()) dismissResolvedNotices()
     }
 
@@ -1037,7 +1039,7 @@ class WorkoutImports(private val engine: Engine, private val writeAuthority: () 
     }
 
     fun discardRefusal(id: String, opening: ImportOpening? = null, allowed: () -> Boolean = { true }) { engine.commit(scope) { context ->
-        if (!writeAuthority()) throw TrainingRefused("account-changed", "The account changed. Open this again.")
+        if (!writeAuthority()) throw TrainingRefused.accountChanged()
         requireOpening(context, opening, allowed)
         val deferred = context.device(deferredKey(id)) != null
         val writes = context.devices(journalPrefix).mapNotNull { (key, journal) ->
@@ -1272,28 +1274,28 @@ class WorkoutImports(private val engine: Engine, private val writeAuthority: () 
                 else -> value
             }
         }
-        fun reason(code: String): String = when (code) {
-            "account-changed" -> "The account changed. Open this again."
-            "saved-workout-changed" -> "This saved workout changed. Open it again."
-            "recovery-unavailable" -> "The original workout is still saved on this phone. Recovery could not be completed."
-            "session-open" -> "Another workout is open on the account. Inspect this saved workout, then choose Keep to save it as a finished workout at its last set."
-            "session-overlap" -> "This workout overlaps another workout. Correct its dates or times, then retry."
-            "session-id-taken", "id-taken", "id-spent" -> "A workout with this identity is already on the log. Review that workout before retrying; this original stays on this phone."
-            "bad-instant", "clock-skew" -> "The workout has a future or invalid time. Correct its dates or times, then retry."
-            "too-many-sets", "too-large" -> "This workout exceeds the import limit. Edit the workout explicitly, then retry."
-            "frozen-plan-changed", "routine-missing", "stale" -> "The linked routine differs from this workout’s saved plan. Restore that routine or explicitly remove the link, then retry."
-            "source-numbering" -> "This workout’s saved set numbers cannot be imported unchanged. The original stays on this phone."
-            "source-auto-closed" -> "This workout closed automatically. Explicitly mark it finished before retrying."
-            "source-needs-update" -> "This saved workout includes fields this build cannot preserve. Keep it on this phone and update the app."
-            "source-unreadable" -> "This saved training cannot be read by this build. Keep it on this phone and update the app."
-            "unknown-exercise" -> "A movement is missing. Restore the movement, then retry."
-            "invalid-set" -> "A saved set holds a value the log does not accept. Correct the set, then retry."
-            "parent-dead" -> "A linked movement or routine was refused. Restore it, then retry this workout."
-            "session-finished" -> "This set is saved on this phone. Retry restores it to the account, in a separate workout when needed."
-            "recovery-session-open" -> "Finish the account’s open workout, then retry saving this set as a separate workout."
-            "recovery-stale" -> "This workout changed while its saved set was being restored. Retry uses the latest workout."
-            "recovery-retry" -> "This set is still saved on this phone. Retry saving it to the account."
-            else -> "This workout was refused ($code). Correct the saved workout, then retry."
+        fun reasonFor(code: String): Words = when (code) {
+            "account-changed" -> Words.Message(R.string.gym_store_account_changed)
+            "saved-workout-changed" -> Words.Message(R.string.gym_store_saved_workout_changed)
+            "recovery-unavailable" -> Words.Message(R.string.gym_store_import_recovery_unavailable)
+            "session-open" -> Words.Message(R.string.gym_store_import_session_open)
+            "session-overlap" -> Words.Message(R.string.gym_store_import_session_overlap)
+            "session-id-taken", "id-taken", "id-spent" -> Words.Message(R.string.gym_store_import_identity_taken)
+            "bad-instant", "clock-skew" -> Words.Message(R.string.gym_store_import_bad_time)
+            "too-many-sets", "too-large" -> Words.Message(R.string.gym_store_import_too_large)
+            "frozen-plan-changed", "routine-missing", "stale" -> Words.Message(R.string.gym_store_import_routine_differs)
+            "source-numbering" -> Words.Message(R.string.gym_store_import_numbering)
+            "source-auto-closed" -> Words.Message(R.string.gym_store_import_auto_closed)
+            "source-needs-update" -> Words.Message(R.string.gym_store_import_needs_update)
+            "source-unreadable" -> Words.Message(R.string.gym_store_import_unreadable)
+            "unknown-exercise" -> Words.Message(R.string.gym_store_import_movement_missing)
+            "invalid-set" -> Words.Message(R.string.gym_store_import_invalid_set)
+            "parent-dead" -> Words.Message(R.string.gym_store_import_parent_refused)
+            "session-finished" -> Words.Message(R.string.gym_store_import_set_saved_here)
+            "recovery-session-open" -> Words.Message(R.string.gym_store_import_finish_open_workout)
+            "recovery-stale" -> Words.Message(R.string.gym_store_import_workout_changed)
+            "recovery-retry" -> Words.Message(R.string.gym_store_import_retry_set)
+            else -> Words.Message(R.string.gym_store_import_refused, listOf(code))
         }
     }
 }

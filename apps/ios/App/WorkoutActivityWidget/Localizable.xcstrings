@@ -1,0 +1,94 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "" : {
+      "shouldTranslate" : false
+    },
+    "%@ × %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ × %2$lld"
+          }
+        }
+      },
+      "shouldTranslate" : false
+    },
+    "/ %@" : {
+      "shouldTranslate" : false
+    },
+    "Dismiss" : {
+
+    },
+    "Load" : {
+
+    },
+    "Log %@" : {
+      "comment" : "The workout control's action, spoken: Log 100 × 5"
+    },
+    "Log set" : {
+
+    },
+    "Log set  ·  %@" : {
+
+    },
+    "Movement" : {
+
+    },
+    "Open workout" : {
+
+    },
+    "Open workout to continue" : {
+
+    },
+    "Owner" : {
+
+    },
+    "Pick a movement in the app." : {
+
+    },
+    "Repetitions" : {
+
+    },
+    "Rest target" : {
+
+    },
+    "Set" : {
+      "comment" : "An App Intent's parameter: the set to log"
+    },
+    "Set %lld" : {
+      "comment" : "The set's place past the plan, or without one: Set 5"
+    },
+    "Set %lld of %lld" : {
+      "comment" : "The set's place in the plan: Set 2 of 4",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Set %1$lld of %2$lld"
+          }
+        }
+      }
+    },
+    "Since last set" : {
+
+    },
+    "Start a workout, or log the set on the rack." : {
+
+    },
+    "Start workout" : {
+
+    },
+    "Workout" : {
+
+    },
+    "Workout in progress" : {
+
+    },
+    "Workout time" : {
+
+    }
+  },
+  "version" : "1.0"
+}

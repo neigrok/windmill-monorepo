@@ -80,7 +80,7 @@ struct OnboardingGlimpse: View {
     Text("EXAMPLE").font(OnboardingSpecimenType.caption).tracking(1.2).foregroundStyle(ink)
       .frame(width: 80, alignment: .trailing).offset(x: 258, y: 14)
   }
-  func text(_ value: String, _ font: Font, _ color: Color, x: CGFloat, y: CGFloat, width: CGFloat = 306) -> some View {
+  func text(_ value: LocalizedStringResource, _ font: Font, _ color: Color, x: CGFloat, y: CGFloat, width: CGFloat = 306) -> some View {
     Text(value).font(font).foregroundStyle(color).frame(width: width, alignment: .leading).fixedSize(horizontal: false, vertical: true).offset(x: x, y: y)
   }
 

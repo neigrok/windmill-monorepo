@@ -25,8 +25,8 @@ struct WorkoutClocks: Equatable {
   // A clock in words, its empty parts left out: *2 minutes 14 seconds*.
   static func spoken(_ ms: Int64) -> String {
     let seconds = Int(max(0, ms / 1_000))
-    let parts = [(seconds / 3_600, "hour"), (seconds / 60 % 60, "minute"), (seconds % 60, "second")].filter { $0.0 > 0 }
-    return parts.isEmpty ? "0 seconds" : parts.map { GymCount.of($0.0, $0.1) }.joined(separator: " ")
+    let parts: [(Int, GymCount.Noun)] = [(seconds / 3_600, .hour), (seconds / 60 % 60, .minute), (seconds % 60, .second)].filter { $0.0 > 0 }
+    return parts.isEmpty ? GymCount.of(0, .second) : parts.map { GymCount.of($0.0, $0.1) }.joined(separator: " ")
   }
 }
 
@@ -73,9 +73,9 @@ nonisolated struct MovementLedger: Equatable {
                reps: target.map { Readout.repTarget($0.reps) }, target: target, place: place)
   }
   // Planned rows state the plan, so the line under the name speaks only for a planned movement that holds no targets.
-  var planLine: String? { plan != nil && targets.isEmpty ? "plan \(Readout.openTarget)" : nil }
+  var planLine: String? { plan != nil && targets.isEmpty ? String(localized: "plan \(Readout.openTarget)", comment: "What a movement's plan holds: plan 3 × 5, or plan open") : nil }
   // This workout's count: the sets against the plan's, or alone where the movement has no targets.
-  var tally: String { targets.isEmpty ? GymCount.of(performed, "set") : "\(performed) of \(GymCount.of(targets.count, "set"))" }
+  var tally: String { targets.isEmpty ? GymCount.of(performed, .set) : String(localized: "\(performed) of \(targets.count) sets", locale: .copy) }
   var complete: Bool { !targets.isEmpty && performed >= targets.count }
 }
 
@@ -292,6 +292,7 @@ struct FinishWorkout: Action {
   @ObservationIgnored private var rackPrefilled = true
   var paging = false { didSet { if oldValue != paging { activityChanged() } } }
   var message: String?
+  private var messageCause: MessageCause? { MessageCause(message) }
   var finishing = false { didSet { if oldValue != finishing { activityChanged() } } }
   var finishQueued = false { didSet { if oldValue != finishQueued { activityChanged() } } }
   var receipt: WorkoutReceiptData?
@@ -340,7 +341,7 @@ struct FinishWorkout: Action {
       gym?.workout.flushRack()
     }
   }
-  static let rackUnchanged = "The rack could not be changed. Try again."
+  static let rackUnchanged = String(localized: "The rack could not be changed. Try again.")
   // One save per burst of taps, reported once; an account change flushes first, so a burst that meets one is refused aloud.
   @discardableResult func flushRack() -> Bool {
     guard let previous = rackBase else { return true }
@@ -385,9 +386,9 @@ struct FinishWorkout: Action {
       return false
     }
     restoreRack(weightKg: weightKg, reps: reps); adjusted("ok")
-    if message == Self.rackUnchanged {
+    if messageCause == .rackUnchanged {
       message = nil
-      if gym.error == Self.rackUnchanged { gym.error = nil }
+      if gym.errorCause == .rackUnchanged { gym.error = nil }
     }
     return true
   }
@@ -440,7 +441,7 @@ struct FinishWorkout: Action {
     }
     if sessionId != open.id { drafts = [:]; receipt = nil; receiptOwed = false; handoff = nil }
     sessionId = open.id; (walk, finishQueued) = restored
-    if message == Self.orderUnread { message = nil }
+    if messageCause == .orderUnread { message = nil }
     walk.merge(session: open, sets: sets)
     prefill(); restoreActivityDraft()
   }
@@ -457,7 +458,7 @@ struct FinishWorkout: Action {
     } catch {
       finishQueued = true; gym.failRead(error); return
     }
-    if message == Self.orderUnread { message = nil }
+    if messageCause == .orderUnread { message = nil }
     walk.merge(session: session, sets: sets)
     if previousSelected != selected { prefill(); restoreActivityDraft() }
     else if let previous = offerSession, previous.plan != session.plan, LogWorkoutSet.matchesOfferedSets(sets, offerSets),
@@ -526,7 +527,7 @@ struct FinishWorkout: Action {
   func canRemove(_ id: ID<Exercise>) -> Bool { !sets.contains { $0.exerciseId == id } }
   func remove(_ id: ID<Exercise>) {
     guard flushRack() else { return }
-    guard canRemove(id) else { message = "A movement with a logged set stays in this workout."; return }
+    guard canRemove(id) else { message = String(localized: "A movement with a logged set stays in this workout."); return }
     var next = walk; next.order.removeAll { $0 == id }
     let leaving = selected == id
     if leaving { next.selected = next.order.first }
@@ -572,18 +573,18 @@ struct FinishWorkout: Action {
   }
   @discardableResult func logSet(offered: WorkoutActivityOffer? = nil) -> Bool {
     guard flushRack() else { return false }
-    guard canLog, let selected, let session else { message = "Check the weight and reps before logging."; return false }
-    guard session.holdsRack(of: offerSession) && LogWorkoutSet.matchesOfferedSets(sets, offerSets) else { message = "The workout changed. Check the current set."; prefill(); return false }
-    guard weightKg.isFinite, SetRules.loggedReps.contains(reps) else { message = "Check the weight and reps before logging."; return false }
+    guard canLog, let selected, let session else { message = String(localized: "Check the weight and reps before logging."); return false }
+    guard session.holdsRack(of: offerSession) && LogWorkoutSet.matchesOfferedSets(sets, offerSets) else { message = String(localized: "The workout changed. Check the current set."); prefill(); return false }
+    guard weightKg.isFinite, SetRules.loggedReps.contains(reps) else { message = String(localized: "Check the weight and reps before logging."); return false }
     let offer = offered ?? activityOffer()
     let now: Instant
     do { now = try gym.runner.moment().now }
-    catch { message = "The workout could not be read. Check the current set."; gym.report("gym_read", error); return false }
+    catch { message = String(localized: "The workout could not be read. Check the current set."); gym.report("gym_read", error); return false }
     let value = TrainingSet(id: offer.map { ID<TrainingSet>(RecordID($0.setID)) } ?? gym.runner.mint(TrainingSet.self), sessionId: session.id, exerciseId: selected,
                             weightKg: weightKg, reps: reps, completedAt: LogWorkoutSet.completedAt(now, after: sets),
                             setNumber: SetRules.nextNumber(gym.sets, sessionId: session.id, exerciseId: selected))
     guard let result = gym.run(LogWorkoutSet(value: value, session: session, previousSets: sets, offer: offer)), result.refusal == nil else {
-      if case .stale = gym.refusal { message = "The workout changed. Check the current set." }
+      if case .stale = gym.refusal { message = String(localized: "The workout changed. Check the current set.") }
       else { message = gym.error }; return false
     }
     gym.telemetry.event("gym_set_logged", properties: ["screen": "workout", "outcome": "ok"])
@@ -591,10 +592,10 @@ struct FinishWorkout: Action {
     return true
   }
 
-  static let orderUnread = "The workout is saved. Its movement order could not be read. Try again."
-  static let finishUnconfirmed = "Finish is saved on this phone. It will be confirmed when a connection is available."
+  static let orderUnread = String(localized: "The workout is saved. Its movement order could not be read. Try again.")
+  static let finishUnconfirmed = String(localized: "Finish is saved on this phone. It will be confirmed when a connection is available.")
   // What a plan editor says as it closes under a set the movement just took.
-  static func loggedNow(_ movement: String) -> String { "\(movement) has a logged set now. Nothing changed." }
+  static func loggedNow(_ movement: String) -> String { String(localized: "\(movement) has a logged set now. Nothing changed.") }
 
   // A tapped Finish always ends in a queued finish or a refusal, even when its task is cancelled while it waits.
   func finish() async {
@@ -616,12 +617,12 @@ struct FinishWorkout: Action {
       pending = try gym.runner.read(Gym.scope) { read in
         try read.commands().contains { $0.command.name == Gym.Commands.finish && $0.command.args["sessionId"] == session.id.json }
       }
-    } catch { message = "The workout could not be read. Try Finish again."; gym.report("gym_read", error); return }
+    } catch { message = String(localized: "The workout could not be read. Try Finish again."); gym.report("gym_read", error); return }
     if !pending {
       guard let result = gym.run(FinishWorkout(id: session.id)), result.refusal == nil else {
         // What holds the finish back is named: the update the server requires, else the connection.
-        if case .sessionOpen = gym.refusal, gym.runtime?.engine.status.upgradeRequired == true { message = "Finish needs the update — keep logging, or hide the workout." }
-        else if case .sessionOpen = gym.refusal { message = "Finish needs a connection — keep logging, or hide the workout." }
+        if case .sessionOpen = gym.refusal, gym.runtime?.engine.status.upgradeRequired == true { message = String(localized: "Finish needs the update — keep logging, or hide the workout.") }
+        else if case .sessionOpen = gym.refusal { message = String(localized: "Finish needs a connection — keep logging, or hide the workout.") }
         else { message = gym.error }
         gym.telemetry.event("gym_session_finished", properties: ["screen": "workout", "outcome": "refused"])
         return
@@ -720,7 +721,7 @@ enum WorkoutHandoff: Equatable {
   case you
   case routine(ID<Routine>)
   case buildRoutine
-  static let coachQuestion = "Check my last workout."
+  static let coachQuestion = String(localized: "Check my last workout.")
 }
 
 extension GymModel {
@@ -738,9 +739,9 @@ extension GymModel {
     let state = WorkoutState(gym: self); Self.workoutStates.setObject(state, forKey: self); return state
   }
   @discardableResult func startWorkout(routineId: ID<Routine>) -> ID<Session>? {
-    guard !readFailed else { error = "Your routines could not be read. Try again."; return nil }
+    guard !readFailed else { error = String(localized: "Your routines could not be read. Try again."); return nil }
     guard routines.contains(where: { $0.id == routineId }) else {
-      error = "That routine can’t be found. No workout was started."; return nil
+      error = String(localized: "That routine can’t be found. No workout was started."); return nil
     }
     let id = runner.mint(Session.self)
     guard let result = run(StartWorkout(id: id, routineId: routineId)), result.refusal == nil else {
@@ -767,7 +768,7 @@ extension GymModel {
     workout.handoff = handoff
     return true
   }
-  static let restoreFailed = "Gym could not restore this workout. Try again."
+  static let restoreFailed = String(localized: "Gym could not restore this workout. Try again.")
   // The lifter's way back to a hidden workout: the tab bar's accessory on iOS 26, The log's Hidden row on iOS 18.
   @discardableResult func openHiddenWorkout(from door: HiddenWorkoutDoor) -> Bool {
     guard restoreWorkout() else { error = Self.restoreFailed; return false }
@@ -792,8 +793,8 @@ extension GymModel {
     let fields = notice.values(of: subject)
     guard let exercise = try? fields["exerciseId"]?.asString(), let weight = try? fields["weightKg"]?.asDouble(),
           let reps = try? fields["reps"]?.asInteger() else { return reason }
-    let set = "\(catalogue.find(ID(RecordID(exercise)))?.name ?? "Movement") \(Readout.effort(weightKg: weight, reps: Int(reps)))"
-    if case .full(_, let cap, _) = notice.refusal { return "\(set) not sent. Room for \(cap) sets — remove one." }
-    return "\(set) not sent. \(reason)"
+    let set = "\(catalogue.find(ID(RecordID(exercise)))?.name ?? String(localized: "Movement")) \(Readout.effort(weightKg: weight, reps: Int(reps)))"
+    if case .full(_, let cap, _) = notice.refusal { return String(localized: "\(set) not sent. Room for \(cap) sets — remove one.", locale: .copy) }
+    return String(localized: "\(set) not sent. \(reason)")
   }
 }

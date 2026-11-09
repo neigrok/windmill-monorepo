@@ -3,6 +3,7 @@
 
 import React from 'react';
 import { reportError } from '../../telemetry/beacon.js';
+import { t } from '../i18n/index.js';
 
 export class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -30,8 +31,8 @@ function CrashFallback() {
   return (
     <div style={wrap} role="alert">
       <div style={mark}>Windmill</div>
-      <p style={line}>Something went wrong on this screen.</p>
-      <button type="button" style={button} onClick={() => window.location.reload()}>Reload</button>
+      <p style={line}>{t('ds.crash.message')}</p>
+      <button type="button" style={button} onClick={() => window.location.reload()}>{t('ds.crash.reload')}</button>
     </div>
   );
 }

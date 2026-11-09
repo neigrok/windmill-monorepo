@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import { t } from './i18n/index.js';
 
 // The reorder handle of both drag lists, and the three paths it answers on. The drag is one of them
 // and never the only one: WCAG 2.2 SC 2.5.7 asks that what a drag reaches be reachable by a SINGLE
@@ -7,8 +8,6 @@ import { useRef, useState } from 'react';
 // the same handle again puts it down where it stands, and Escape puts it back. A real `<button>`
 // turns click, Enter, Space and a screen reader's double tap all into the one `click` this reads,
 // so the keyboard costs nothing extra.
-const PICKED_UP = 'picked up';
-const PUT_BACK = 'put back';
 
 export function useRail({ count, nameOf, placeOf, move }) {
   const [picked, setPicked] = useState(null);
@@ -24,9 +23,9 @@ export function useRail({ count, nameOf, placeOf, move }) {
   // What the handle does next, said in its own name: the row it holds, or the place it would put
   // the held row, or the ordinary move.
   const nameFor = (index) => {
-    if (picked === index) return `Move ${nameOf(index)}, ${placeOf(index)} — ${PICKED_UP}`;
-    if (picked !== null) return `Place ${nameOf(picked)} at ${placeOf(index)}`;
-    return `Move ${nameOf(index)}, ${placeOf(index)}`;
+    if (picked === index) return t('gym.rail.movePickedUp', { name: nameOf(index), place: placeOf(index) });
+    if (picked !== null) return t('gym.rail.place', { name: nameOf(picked), place: placeOf(index) });
+    return t('gym.rail.move', { name: nameOf(index), place: placeOf(index) });
   };
 
   // The pick-up outlives a blur on purpose. On a touch screen reader the second activation lands on
@@ -41,15 +40,15 @@ export function useRail({ count, nameOf, placeOf, move }) {
     }
     if (picked === null) {
       setPicked(index);
-      setSaid(`${nameOf(index)}, ${placeOf(index)} — ${PICKED_UP}`);
+      setSaid(t('gym.rail.pickedUp', { name: nameOf(index), place: placeOf(index) }));
       return;
     }
     setPicked(null);
     if (picked === index) {
-      setSaid(`${nameOf(index)}, ${placeOf(index)} — ${PUT_BACK}`);
+      setSaid(t('gym.rail.putBack', { name: nameOf(index), place: placeOf(index) }));
       return;
     }
-    setSaid(`${nameOf(picked)}, ${placeOf(index)}`);
+    setSaid(t('gym.rail.moved', { name: nameOf(picked), place: placeOf(index) }));
     move(picked, index);
   };
 
@@ -60,7 +59,7 @@ export function useRail({ count, nameOf, placeOf, move }) {
     const from = picked ?? index;
     const to = from + by;
     if (to < 0 || to >= count) return false;
-    setSaid(`${nameOf(from)}, ${placeOf(to)}`);
+    setSaid(t('gym.rail.moved', { name: nameOf(from), place: placeOf(to) }));
     if (picked !== null) setPicked(to);
     move(from, to);
     return true;
@@ -69,7 +68,7 @@ export function useRail({ count, nameOf, placeOf, move }) {
   const keyDown = (index, event) => {
     if (event.key === 'Escape') {
       if (picked === null) return;
-      setSaid(`${nameOf(picked)}, ${placeOf(picked)} — ${PUT_BACK}`);
+      setSaid(t('gym.rail.putBack', { name: nameOf(picked), place: placeOf(picked) }));
       setPicked(null);
       event.preventDefault();
       return;
@@ -88,7 +87,7 @@ export function useRail({ count, nameOf, placeOf, move }) {
     if (to === from) return;
     dragged.current = true;
     setPicked(null);
-    setSaid(`${nameOf(from)}, ${placeOf(to)}`);
+    setSaid(t('gym.rail.moved', { name: nameOf(from), place: placeOf(to) }));
     move(from, to);
   };
 

@@ -7,6 +7,7 @@
 
 import React from 'react';
 import './journalRootScenes.css';
+import { t } from '../i18n/entry/index.js';
 
 function PageCard({ stamp, quiet, children }) {
   return (
@@ -26,12 +27,12 @@ export function JournalGlimpse() {
   return (
     <figure className="jn-root-scene">
       <div className="jn-root-stage" aria-hidden="true">
-        <PageCard stamp="Tonight" quiet="Yesterday — walked before work. Slept better than the week before.">
-          Finished the chapter I kept avoiding. Lighter than expected
+        <PageCard stamp={t('journal.rootScenes.tonight')} quiet={t('journal.rootScenes.glimpseYesterday')}>
+          {t('journal.rootScenes.glimpsePage')}
           <span className="jn-root-caret" />
         </PageCard>
       </div>
-      <figcaption className="composed">Composed page</figcaption>
+      <figcaption className="composed">{t('journal.rootScenes.composed')}</figcaption>
     </figure>
   );
 }
@@ -47,19 +48,19 @@ export function JournalIllustration() {
               <path d="M21 21l-4.3-4.3" />
             </svg>
           </span>
-          <span className="jn-root-query">the night I felt lighter</span>
-          <kbd className="jn-root-key">⌘K</kbd>
+          <span className="jn-root-query">{t('journal.rootScenes.query')}</span>
+          <kbd className="jn-root-key">{t('journal.rootScenes.shortcut')}</kbd>
         </div>
         <div className="jn-root-echo">
           <span className="jn-root-dot" />
-          <b>Found by meaning · 14 March</b>
-          <span className="jn-root-echo-hit">“…lighter than expected.”</span>
+          <b>{t('journal.rootScenes.foundByMeaning', { day: t('journal.rootScenes.day') })}</b>
+          <span className="jn-root-echo-hit">{t('journal.rootScenes.hit')}</span>
         </div>
-        <PageCard stamp="14 March" quiet="Yesterday — walked before work, skipped the second coffee.">
-          Finished the chapter I kept avoiding. It was shorter than the dread of it. Lighter than expected, and I want to remember that the next time something sits unread for a month.
+        <PageCard stamp={t('journal.rootScenes.day')} quiet={t('journal.rootScenes.illustrationYesterday')}>
+          {t('journal.rootScenes.illustrationPage')}
         </PageCard>
       </div>
-      <figcaption className="composed">Composed page</figcaption>
+      <figcaption className="composed">{t('journal.rootScenes.composed')}</figcaption>
     </figure>
   );
 }

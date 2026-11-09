@@ -1,16 +1,18 @@
+import { t } from '../i18n/index.js';
+
 export function logShareRequest(draft, id) {
   const common = { id, mode: draft.mode, scope: draft.scope };
-  if (!['snapshot', 'live'].includes(draft.mode)) return { error: 'Choose snapshot or live updates.' };
+  if (!['snapshot', 'live'].includes(draft.mode)) return { error: t('gym.share.chooseMode') };
   if (draft.scope === 'all') return { value: common };
-  if (draft.scope !== 'range') return { error: 'Choose the history to share.' };
+  if (draft.scope !== 'range') return { error: t('gym.share.chooseHistory') };
   if (!/^\d{4}-\d{2}-\d{2}$/.test(draft.from) || !/^\d{4}-\d{2}-\d{2}$/.test(draft.until)) {
-    return { error: 'Choose both dates for the shared range.' };
+    return { error: t('gym.share.chooseDates') };
   }
   const from = new Date(`${draft.from}T00:00:00`);
   const until = new Date(`${draft.until}T00:00:00`);
   const dateOf = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
   if (!Number.isFinite(from.getTime()) || !Number.isFinite(until.getTime()) || dateOf(from) !== draft.from || dateOf(until) !== draft.until || from > until) {
-    return { error: 'The end date must be on or after the start date.' };
+    return { error: t('gym.share.endBeforeStart') };
   }
   until.setDate(until.getDate() + 1);
   return { value: { ...common, from: from.getTime(), until: until.getTime() } };
@@ -23,9 +25,8 @@ export function shareHistoryScope(share, filters = {}) {
 }
 
 export function logShareDescription(share) {
-  const mode = share.mode === 'live' ? 'Live updates' : 'Snapshot';
-  if (share.scope !== 'range') return `${mode} · entire history`;
-  return `${mode} · ${shareDateLabel(share.from)} – ${shareDateLabel(share.until - 1)}`;
+  if (share.scope !== 'range') return t('gym.share.describeAll', { mode: share.mode });
+  return t('gym.share.describeRange', { mode: share.mode, from: shareDateLabel(share.from), until: shareDateLabel(share.until - 1) });
 }
 
 export function shareDateLabel(at) {
@@ -47,5 +48,6 @@ export function sharedSetScheme(sets) {
   if (sets.length < 2) return null;
   const first = sets[0];
   if (!sets.every((set) => set.weightKg === first.weightKg && set.reps === first.reps && set.rpe === first.rpe)) return null;
-  return `${sets.length} × ${first.reps} · ${first.weightKg === 0 ? 'bodyweight' : new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(first.weightKg)}`;
+  if (first.weightKg === 0) return t('gym.logbook.schemeBodyweight', { sets: sets.length, reps: first.reps });
+  return t('gym.logbook.scheme', { sets: sets.length, reps: first.reps, load: new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(first.weightKg) });
 }

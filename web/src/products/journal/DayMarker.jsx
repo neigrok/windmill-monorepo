@@ -5,6 +5,7 @@
 import React from 'react';
 import { energyBars, moodBand } from './scaleBands.js';
 import { stampWeekday } from './echoes/echoDates.js';
+import { t } from './i18n/index.js';
 
 // `addressed` is the echo margin describing THIS page: the date lifts from --journal-ink-dim to lamp
 // and nothing else moves. No weight change and no box of its own — a sticky row that reflowed would
@@ -17,7 +18,7 @@ export function DayMarker({
     <header className={'journal-marker' + (addressed ? ' is-addressed' : '')}>
       <span className="journal-meta">
         {stampWeekday(date)}
-        {wordCount > 0 && ` · ${wordCount} ${wordCount === 1 ? 'WORD' : 'WORDS'}`}
+        {wordCount > 0 && ` · ${t('journal.canvas.wordCount', { count: wordCount })}`}
         {trailing}
       </span>
       {!isToday && (

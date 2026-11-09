@@ -92,7 +92,10 @@ struct WindmillApp: App {
         WorkoutActivityIntentHandler.present(created)
         QuickActionHandler.present(created)
         model = created
-      } catch { failure = "Couldn't open the journal on this phone. \(error.localizedDescription)" }
+      } catch {
+        failure = String(localized: "Couldn't open the journal on this phone. \(error.localizedDescription)",
+                         comment: "The app could not start; the system's description of the error follows")
+      }
     }
   }
 }
@@ -155,9 +158,9 @@ enum UpdateRequiredAlert {
       }
       return
     }
-    let alert = UIAlertController(title: "Update required", message: model.updateMessage, preferredStyle: .alert)
-    alert.addAction(UIAlertAction(title: "Keep working on this phone", style: .cancel) { _ in model.keepWorkingWithoutUpdate() })
-    let update = UIAlertAction(title: "Get the update", style: .default) { _ in
+    let alert = UIAlertController(title: String(localized: "Update required"), message: model.updateMessage, preferredStyle: .alert)
+    alert.addAction(UIAlertAction(title: String(localized: "Keep working on this phone"), style: .cancel) { _ in model.keepWorkingWithoutUpdate() })
+    let update = UIAlertAction(title: String(localized: "Get the update"), style: .default) { _ in
       model.getUpdate()
       UIApplication.shared.open(AppSettings.updateDestination) { model.updateOpened($0) }
     }
@@ -264,7 +267,7 @@ extension RootScreen {
 
 struct RoomDoor: View {
   let room: AppModel.Room
-  let line: String
+  let line: LocalizedStringResource
   let open: () -> Void
   var body: some View {
     let journal = room == .journal
@@ -292,7 +295,7 @@ struct RoomDoor: View {
 struct UpdateFailure: View {
   let model: AppModel
   var body: some View {
-    RoomTransient(message: "Couldn't open the update. Try again.", room: .shell, actionTitle: "Dismiss", actionSymbol: "xmark",
+    RoomTransient(message: String(localized: "Couldn't open the update. Try again."), room: .shell, actionTitle: String(localized: "Dismiss"), actionSymbol: "xmark",
                   actionIdentifier: "update-failure-dismiss", action: model.dismissUpdateFailure, dismiss: model.dismissUpdateFailure)
       .accessibilityIdentifier("update-failure")
   }

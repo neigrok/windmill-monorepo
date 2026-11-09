@@ -16,7 +16,7 @@ struct OnThisPhoneSection: View {
           OnThisPhoneSection.door(row, gym: gym)
         } else {
           NavigationLink { OnThisPhoneList(gym: gym) } label: {
-            GymRow(title: GymCount.of(rows.count, "workout"), meta: OnThisPhoneSection.summary(rows))
+            GymRow(title: GymCount.of(rows.count, .workout), meta: OnThisPhoneSection.summary(rows))
           }.accessibilityIdentifier("recovery-summary")
         }
       }.listRowBackground(GymPalette.card)
@@ -26,13 +26,13 @@ struct OnThisPhoneSection: View {
   // How many need the lifter, or Adding… while every one is on its way.
   static func summary(_ rows: [WaitingRow]) -> String {
     let count = rows.filter { $0.reason != nil }.count
-    return count == 0 ? "Adding…" : "\(count) \(GymCount.noun(count, "needs", plural: "need")) you"
+    return count == 0 ? String(localized: "Adding…") : String(localized: "\(count) need you", locale: .copy, comment: "How many saved workouts need the lifter")
   }
 
   // A saved workout's door to Inspect: its reason, or Adding… with work on its way.
   static func door(_ row: WaitingRow, gym: GymModel) -> some View {
     NavigationLink { WorkoutInspectScreen(gym: gym, id: row.id) } label: {
-      GymRow(title: row.title, meta: row.reason ?? "Adding…", trailing: row.reason == nil ? .progress : nil)
+      GymRow(title: row.title, meta: row.reason ?? String(localized: "Adding…"), trailing: row.reason == nil ? .progress : nil)
     }.accessibilityIdentifier("recovery-row-\(row.id)")
   }
 }
@@ -60,7 +60,7 @@ struct OnThisPhoneList: View {
 
   // Needs you first, then Adding; a section with no row is left out.
   static func sections(_ rows: [WaitingRow]) -> [(title: String, rows: [WaitingRow])] {
-    [("Needs you", rows.filter { $0.reason != nil }), ("Adding", rows.filter { $0.reason == nil })].filter { !$0.rows.isEmpty }
+    [(String(localized: "Needs you"), rows.filter { $0.reason != nil }), (String(localized: "Adding"), rows.filter { $0.reason == nil })].filter { !$0.rows.isEmpty }
   }
 }
 
@@ -78,9 +78,9 @@ extension WorkoutRecovery {
     case keep, retry, fix
     var title: String {
       switch self {
-      case .keep: "Keep as finished"
-      case .retry: "Retry"
-      case .fix: "Fix workout"
+      case .keep: String(localized: "Keep as finished")
+      case .retry: String(localized: "Retry")
+      case .fix: String(localized: "Fix workout")
       }
     }
   }
@@ -89,10 +89,12 @@ extension WorkoutRecovery {
   var primary: Primary? { reason.primary }
 
   // What Discard drops: the whole copy, or the sets of a landed workout it still holds.
-  var discardTitle: String { retry == .restoreSets ? "Discard \(GymCount.of(strandedSets.count, "set"))" : "Discard workout" }
+  var discardTitle: String {
+    retry == .restoreSets ? String(localized: "Discard \(strandedSets.count) sets", locale: .copy) : String(localized: "Discard workout")
+  }
   func title(_ dates: GymDate) -> String {
     guard retry == .restoreSets else { return workout.title(dates) }
-    return "\(GymCount.of(strandedSets.count, "set")) from \(workout.name) · \(dates.day(workout.session.startedAt))"
+    return "\(String(localized: "\(strandedSets.count) sets from \(workout.name)", locale: .copy)) · \(dates.day(workout.session.startedAt))"
   }
 
   // The refusal's own code, beside the date on Inspect, when the line is the catch-all.
@@ -118,16 +120,16 @@ extension WorkoutRecovery.Reason {
   }
   func line(stranded: Int) -> String {
     switch self {
-    case .accountWorkoutOpen: "Your account has an open workout — keep this one as finished."
-    case .overlap: "Overlaps another workout — fix its times."
-    case .identityTaken: "Already added once — discard this copy."
-    case .badTime: "Its times don’t line up — fix the times."
-    case .tooManySets: "Over 200 sets — remove some, then retry."
-    case .unknownMovement: "A movement is missing — fix its sets, then retry."
-    case .strandedSets: stranded == 1 ? "A set missed its workout — retry puts it back."
-      : "\(GymCount.of(stranded, "set")) missed their workout — retry puts them back."
-    case .unsent: "Not on your log yet — retry to add it."
-    case .invalidSet, .other: "Refused by the log — fix the workout, then retry."
+    case .accountWorkoutOpen: String(localized: "Your account has an open workout — keep this one as finished.")
+    case .overlap: String(localized: "Overlaps another workout — fix its times.")
+    case .identityTaken: String(localized: "Already added once — discard this copy.")
+    case .badTime: String(localized: "Its times don’t line up — fix the times.")
+    case .tooManySets: String(localized: "Over 200 sets — remove some, then retry.")
+    case .unknownMovement: String(localized: "A movement is missing — fix its sets, then retry.")
+    case .strandedSets: stranded == 1 ? String(localized: "A set missed its workout — retry puts it back.")
+      : String(localized: "\(stranded) sets missed their workout — retry puts them back.", locale: .copy)
+    case .unsent: String(localized: "Not on your log yet — retry to add it.")
+    case .invalidSet, .other: String(localized: "Refused by the log — fix the workout, then retry.")
     }
   }
 }
@@ -144,13 +146,13 @@ extension GymModel {
 
   // Why Keep, Retry and Save and retry wait, as the line under their band.
   var recoveryWait: String? {
-    if authPaused { return "Sign in again to add it." }
-    return log?.firstPullComplete == true ? nil : "Adding it needs a connection."
+    if authPaused { return String(localized: "Sign in again to add it.") }
+    return log?.firstPullComplete == true ? nil : String(localized: "Adding it needs a connection.")
   }
 }
 
 extension SignedOutWorkout {
   var name: String { session.name ?? Readout.noRoutine }
 
-  func title(_ dates: GymDate) -> String { "\(name) · \(dates.day(session.startedAt)) · \(GymCount.of(sets.count, "set"))" }
+  func title(_ dates: GymDate) -> String { "\(name) · \(dates.day(session.startedAt)) · \(GymCount.of(sets.count, .set))" }
 }

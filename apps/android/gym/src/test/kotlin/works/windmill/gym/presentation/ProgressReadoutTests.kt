@@ -3,8 +3,14 @@ package works.windmill.gym.presentation
 import java.time.ZoneId
 import org.junit.Assert.*
 import org.junit.Test
-import works.windmill.gym.presentation.*
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import works.windmill.gym.spelled
+import works.windmill.platform.i18n.Words
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class ProgressReadoutTests {
     @Test
     fun recordAndCardUseSameExactPointIdentityAndAbovePlotReading() {
@@ -14,9 +20,9 @@ class ProgressReadoutTests {
         val point = progress.estimates.single()
         val series = progressSeries(progress, 2000L, ZoneId.of("UTC"), all = true)
         assertEquals(listOf(DatedPoint("ses_exact", 1000L, 80.0 * (1 + 8 / 30.0),
-            "101.3 kg est · today · 80 × 8")), series.points)
+            Words.Plain("101.3 kg est · today · 80 × 8"))), series.points.map { it.copy(said = Words.Plain(it.said.spelled())) })
         assertEquals(1000L, series.fromMs)
         assertEquals(2000L, series.untilMs)
-        assertEquals("101.3 kg est · today · 80 × 8", progressReading(point, 2000L))
+        assertEquals("101.3 kg est · today · 80 × 8", progressWords(point, 2000L).spelled())
     }
 }

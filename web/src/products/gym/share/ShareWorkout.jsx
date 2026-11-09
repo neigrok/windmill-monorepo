@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { failureReason } from '../errors.js';
 import { gymApi } from '../gymApi.js';
+import { t } from '../i18n/index.js';
 import { expiryLine, SHARE_OFFER, SHARE_OFFER_LINE, SHARE_TERMS, shareLink } from './share.js';
 
 export function ShareWorkout({ sessionId }) {
@@ -16,7 +17,7 @@ export function ShareWorkout({ sessionId }) {
     try {
       setShare(await gymApi.shareSession(sessionId));
     } catch (error) {
-      setNote(`That link wasn’t made — ${failureReason(error)}.`);
+      setNote(t('gym.share.notMade', { reason: failureReason(error) }));
     }
     setBusy(false);
   };
@@ -30,9 +31,9 @@ export function ShareWorkout({ sessionId }) {
       await gymApi.revokeShare(sessionId);
       setShare(null);
       setCopied(false);
-      setNote('That link is revoked. Anyone holding it now gets nothing.');
+      setNote(t('gym.share.revoked'));
     } catch (error) {
-      setNote(`That link wasn’t revoked — ${failureReason(error)}. It is still live.`);
+      setNote(t('gym.share.notRevoked', { reason: failureReason(error) }));
     }
     setBusy(false);
   };
@@ -43,7 +44,7 @@ export function ShareWorkout({ sessionId }) {
         <h2 className="gym-share-title">{SHARE_OFFER}</h2>
         <p className="gym-share-line">{SHARE_OFFER_LINE}</p>
         <button type="button" className="gym-share-make" onClick={mint} aria-busy={busy}>
-          {busy ? 'Making a link…' : 'Make a link'}
+          {busy ? t('gym.share.making') : t('gym.share.make')}
         </button>
         {note && <p className="gym-share-note">{note}</p>}
       </section>
@@ -58,7 +59,7 @@ export function ShareWorkout({ sessionId }) {
         className="gym-share-link"
         value={link}
         readOnly
-        aria-label="Link to this workout"
+        aria-label={t('gym.share.linkLabel')}
         onFocus={(event) => event.target.select()}
       />
       <div className="gym-share-actions">
@@ -67,10 +68,10 @@ export function ShareWorkout({ sessionId }) {
           className="gym-share-copy"
           onClick={async () => setCopied(await copyText(link))}
         >
-          {copied ? 'Copied' : 'Copy link'}
+          {copied ? t('gym.share.copied') : t('gym.share.copy')}
         </button>
         <button type="button" className="gym-share-revoke" onClick={revoke} aria-busy={busy}>
-          {busy ? 'Revoking…' : 'Revoke'}
+          {busy ? t('gym.share.revoking') : t('gym.share.revoke')}
         </button>
       </div>
       <ul className="gym-share-terms">

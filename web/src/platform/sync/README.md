@@ -101,8 +101,8 @@ the browser engine separately and rejects Node builtins. The app shell caches th
 `useSyncRecords(scope)` (stable drawn/stored records, notices and first-pull state through
 `useSyncExternalStore`). Records can observe the anonymous replica; only the session owner opens
 and starts the engine. Each product's route table carries a `sync` group — `prepare(engine)`,
-`onPushResult`, `pendingDeviceWork`, `adoptDeviceRows`, `liveHint(engine, replica)` and `signedOutWork`, the record type a
-sign-in question counts — and the session owner composes every group into the engine options;
+`onPushResult`, `pendingDeviceWork`, `adoptDeviceRows`, `liveHint(engine, replica)` and `signedOutWork` — the record type a
+sign-in question counts, with the product's own words for it (`counted(n)`, `many`) — and the session owner composes every group into the engine options;
 `prepare` runs before the first network request.
 
 `pendingDeviceWork(product, rows)` identifies durable work for both sign-in and sign-out decisions.

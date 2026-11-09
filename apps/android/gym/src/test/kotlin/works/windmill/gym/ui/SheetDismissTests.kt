@@ -91,7 +91,7 @@ class SheetDismissTests {
     }
 
     private fun row(id: String) = LiveLines.MovementRow(
-        id = id, name = id, tag = null, line = null, sets = emptyList(),
+        id = id, name = id, tagged = null, prompt = null, sets = emptyList(),
         isCurrent = false, justAdded = false, canDrop = false,
     )
 
@@ -151,7 +151,7 @@ class SheetDismissTests {
         val renamed = mutableListOf<String>()
         raised(dismissed) {
             EditMovementSheet(Exercise("bench-press", "Bench Press"), "Bench Pres", "barbell", 1,
-                refused = null, onName = {}, onEquipment = {}, onSave = { renamed += "saved" }, onClose = {})
+                refusal = null, onName = {}, onEquipment = {}, onSave = { renamed += "saved" }, onClose = {})
         }
 
         closesWithoutACancel(crosses = 1)
@@ -165,7 +165,7 @@ class SheetDismissTests {
         val dismissed = mutableListOf<String>()
         raised(dismissed) {
             EditMovementSheet(Exercise("bench-press", "Bench Press"), "Bench Press", "barbell", 1,
-                refused = null, onName = {}, onEquipment = {}, onSave = {}, onClose = {})
+                refusal = null, onName = {}, onEquipment = {}, onSave = {}, onClose = {})
         }
         dismissFromTheScrim(dismissed)
     }

@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import works.windmill.platform.R as PlatformR
 import works.windmill.platform.design.WindmillType
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.foundation.layout.*
@@ -10,6 +11,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.error
@@ -18,7 +20,10 @@ import androidx.compose.ui.unit.dp
 import works.windmill.gym.R
 import works.windmill.gym.presentation.Exercise
 import works.windmill.gym.presentation.Program
+import works.windmill.gym.presentation.Readout
 import works.windmill.gym.domain.sync.ExerciseRules
+import works.windmill.platform.i18n.Words
+import works.windmill.platform.i18n.text
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -27,7 +32,7 @@ fun EditMovementSheet(
     name: String,
     equipment: String,
     loadCount: Int,
-    refused: String?,
+    refusal: Words?,
     onName: (String) -> Unit,
     onEquipment: (String) -> Unit,
     onSave: () -> Unit,
@@ -35,21 +40,21 @@ fun EditMovementSheet(
     saving: Boolean = false,
 ) {
     val colors = MaterialTheme.colorScheme
-    val problem = Program.nameProblem(name)
+    val problem = Program.nameRefusal(name)?.let { stringResource(it) }
     val changed = Program.renamed(base.name, name) != null || equipment != base.equipment ||
         equipment == "dumbbell" && loadCount != base.loadCount
     Column(Modifier.fillMaxWidth().imePadding()) {
-        GymSheetBar("Edit movement", onClose = onClose, closeEnabled = !saving)
+        GymSheetBar(stringResource(R.string.gym_movement_title_edit_movement), onClose = onClose, closeEnabled = !saving)
         Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())
             .padding(horizontal = GymLayout.gutter).padding(top = 8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)) {
             MovementFields(name, equipment, loadCount, onName, onEquipment, enabled = !saving, problem = problem)
-            (refused ?: problem)?.let { sentence ->
+            (refusal?.text() ?: problem)?.let { sentence ->
                 Text(sentence, style = WindmillType.detail, color = colors.error,
                     modifier = Modifier.semantics { error(sentence) })
             }
         }
-        GymSheetCommit("Save", enabled = changed && problem == null && !saving, onClick = onSave, busy = saving,
+        GymSheetCommit(stringResource(PlatformR.string.platform_save), enabled = changed && problem == null && !saving, onClick = onSave, busy = saving,
             modifier = Modifier.padding(horizontal = GymLayout.gutter).padding(top = 16.dp, bottom = 16.dp))
     }
 }
@@ -68,25 +73,26 @@ internal fun MovementFields(
     val colors = MaterialTheme.colorScheme
     var menu by remember { mutableStateOf(false) }
     val choice = ExerciseRules.loadingChoice(equipment, loadCount)
-    val labels = mapOf("barbell" to "Barbell", "dumbbell" to "Dumbbells", "other" to "Other")
+    val nameDescription = stringResource(R.string.gym_movement_field_name_description)
+    val equipmentLabel = stringResource(R.string.gym_movement_field_equipment)
     NativeFieldType {
-        OutlinedTextField(name, onValueChange = onName, enabled = enabled, label = { Text("Name", Modifier.clearAndSetSemantics {}) },
+        OutlinedTextField(name, onValueChange = onName, enabled = enabled, label = { Text(stringResource(R.string.gym_movement_field_name), Modifier.clearAndSetSemantics {}) },
             singleLine = true, isError = problem != null,
             keyboardOptions = KeyboardOptions(autoCorrectEnabled = false),
-            modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).semantics { contentDescription = "Movement name" })
+            modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).semantics { contentDescription = nameDescription })
         ExposedDropdownMenuBox(expanded = menu && enabled, onExpandedChange = { if (enabled) menu = it }) {
-            OutlinedTextField(labels.getValue(choice), onValueChange = {}, enabled = enabled, readOnly = true,
-                label = { Text("Equipment", Modifier.clearAndSetSemantics {}) },
+            OutlinedTextField(Readout.equipment(choice).text(), onValueChange = {}, enabled = enabled, readOnly = true,
+                label = { Text(equipmentLabel, Modifier.clearAndSetSemantics {}) },
                 leadingIcon = if (choice == "other") null else { { EquipmentIcon(choice, Modifier.size(24.dp)) } },
                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = menu) },
                 modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth()
-                    .heightIn(min = 56.dp).semantics { contentDescription = "Equipment" })
+                    .heightIn(min = 56.dp).semantics { contentDescription = equipmentLabel })
             ExposedDropdownMenu(expanded = menu && enabled, onDismissRequest = { menu = false }, containerColor = colors.surfaceContainer) {
-                labels.keys.forEach { value ->
-                    DropdownMenuItem(text = { Text(labels.getValue(value), style = WindmillType.supporting) },
+                listOf("barbell", "dumbbell", "other").forEach { value ->
+                    DropdownMenuItem(text = { Text(Readout.equipment(value).text(), style = WindmillType.supporting) },
                         leadingIcon = { Box(Modifier.size(20.dp)) { EquipmentIcon(value, Modifier.size(20.dp)) } },
                         trailingIcon = if (choice == value) {
-                            { Icon(painterResource(R.drawable.gym_equipment_selected), contentDescription = "Selected", modifier = Modifier.size(20.dp)) }
+                            { Icon(painterResource(R.drawable.gym_equipment_selected), contentDescription = stringResource(R.string.gym_movement_equipment_selected), modifier = Modifier.size(20.dp)) }
                         } else null,
                         onClick = { menu = false; onEquipment(value) }, modifier = Modifier.heightIn(min = 48.dp))
                 }

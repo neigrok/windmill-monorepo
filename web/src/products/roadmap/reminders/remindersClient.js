@@ -1,4 +1,5 @@
 import { API_BASE } from '../../../shell/apiBase.js';
+import { t } from '../i18n/settings/index.js';
 
 export async function fetchReminders() {
   try {
@@ -43,16 +44,17 @@ export function reminderPatch(enabled, timezone) {
   return { enabled: true, timezone: zone };
 }
 
-const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-
 // slotDow is 1=Mon..7=Sun and slotMinute is minutes past local midnight; out of range falls back to the standing slot.
 export function describeSchedule({ slotDow, slotMinute }) {
-  const day = DAY_NAMES[slotDow - 1] ?? 'Tuesday';
+  const dow = Number(slotDow);
+  const day = Number.isInteger(dow) && dow >= 1 && dow <= 7 ? dow : 2;
   const minutes = Number.isInteger(slotMinute) && slotMinute >= 0 && slotMinute < 1440 ? slotMinute : 540;
   const hour = Math.floor(minutes / 60);
   const minute = minutes % 60;
-  const suffix = hour < 12 ? 'am' : 'pm';
+  const meridiem = hour < 12 ? t('roadmap.reminders.am') : t('roadmap.reminders.pm');
   const twelve = hour % 12 === 0 ? 12 : hour % 12;
-  const clock = minute === 0 ? `${twelve}${suffix}` : `${twelve}:${String(minute).padStart(2, '0')}${suffix}`;
-  return `${day}s around ${clock}`;
+  const clock = minute === 0
+    ? t('roadmap.reminders.clockHour', { hour: twelve, meridiem })
+    : t('roadmap.reminders.clockMinute', { hour: twelve, minute: String(minute).padStart(2, '0'), meridiem });
+  return t('roadmap.reminders.schedule', { day, clock });
 }

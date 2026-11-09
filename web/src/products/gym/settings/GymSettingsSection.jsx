@@ -1,10 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Section, styles } from '../../../shell/settings/Section.jsx';
 import { useGymApi } from '../gymRuntime.js';
+import { t } from '../i18n/settings/index.js';
 import { useSyncRecords } from '../../../platform/sync/react.js';
 import { NOTES_HREF } from '../log.js';
-import { HEAD_LINE } from '../notes/notes.js';
-import { LB, spellWeightsIn, UNITS } from '../units.js';
+import { HEAD_LINE, NOTES_TITLE } from '../notes/notes.js';
+import { LB, spellWeightsIn, UNITS, unitSymbol } from '../units.js';
 import { preferenceRefusal } from './preferences.js';
 
 export function GymSettingsSection() {
@@ -53,26 +54,26 @@ export function GymSettingsSection() {
   };
 
   return (
-    <Section title="Your training log">
+    <Section title={t('gym.settings.title')}>
       <div style={look.row}>
         <div style={look.head}>
-          <span style={styles.primaryText}>Units</span>
-          <span style={look.choices} role="group" aria-label="Weight units">
+          <span style={styles.primaryText}>{t('gym.settings.units')}</span>
+          <span style={look.choices} role="group" aria-label={t('gym.settings.unitsLabel')}>
             {UNITS.map((unit) => (
               <button key={unit} type="button" aria-pressed={unit === preferences.units}
                 onClick={() => changeUnits(unit)}
                 style={unit === preferences.units ? { ...look.choice, ...look.choiceOn } : look.choice}>
-                {unit}
+                {unitSymbol(unit)}
               </button>
             ))}
           </span>
         </div>
-        {preferences.units === LB && <p style={{ ...styles.calmLine, marginTop: 8 }}>A backfill, a correction, a routine target — typed in kg.</p>}
+        {preferences.units === LB && <p style={{ ...styles.calmLine, marginTop: 8 }}>{t('gym.settings.typedInKg')}</p>}
       </div>
 
       <a href={NOTES_HREF} style={look.door}>
         <span style={look.doorMain}>
-          <span style={styles.primaryText}>Notes</span>
+          <span style={styles.primaryText}>{NOTES_TITLE}</span>
           <span style={styles.metaText}>{HEAD_LINE}</span>
         </span>
         <span aria-hidden="true" style={look.chevron}>›</span>

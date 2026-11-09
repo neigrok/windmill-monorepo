@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { gymApi } from '../gymApi.js';
+import { RESPONSE_INTERRUPTED } from '../errors.js';
+import { t } from '../i18n/index.js';
 import { track } from '../../../telemetry/beacon.js';
 import { captureError } from '../../../telemetry/sentry.js';
 import { mintId } from '../mint.js';
@@ -8,6 +10,10 @@ import {
   requestFromGeneration, THREAD_PREFIX, TOO_LONG_NOTE,
 } from './coach.js';
 import { coachPhotos } from './photos.js';
+import { THREAD_ABSENT } from './threads.js';
+
+// The note an answer's interruption leaves; a failed turn says the same, so the room shows only one of them.
+const INTERRUPTED = { note: RESPONSE_INTERRUPTED, interrupted: true };
 
 export function coachDraftKey(accountId, threadId = 'current') {
   return `windmill.gym.coach.${encodeURIComponent(accountId)}.${threadId}`;
@@ -53,7 +59,7 @@ export function useCoachConversation({ accountId, initialThread, workoutInProgre
       photo: complete ? null : stored?.photo ? { ...stored.photo, status: 'draft' } : null,
       request, nextCursor: initialThread?.nextCursor ?? null,
       phase: !initialThread && stored ? 'loading' : 'ready',
-      busy: false, pending: false, attempt: 0, stopRequested: false, note: '', closed: '', confirmBusy: null, confirmNote: null,
+      busy: false, pending: false, attempt: 0, stopRequested: false, note: '', interrupted: false, closed: '', confirmBusy: null, confirmNote: null,
     };
   });
   const current = useRef(state);
@@ -65,7 +71,7 @@ export function useCoachConversation({ accountId, initialThread, workoutInProgre
   const upload = useRef(null);
 
   const change = (patch, { durable = false } = {}) => {
-    const next = { ...current.current, ...patch };
+    const next = { ...current.current, ...('note' in patch ? { interrupted: false } : {}), ...patch };
     if (accountId) {
       try {
         const stored = JSON.stringify({ thread: next.thread, turns: next.turns.slice(-50), draft: next.draft,
@@ -74,7 +80,7 @@ export function useCoachConversation({ accountId, initialThread, workoutInProgre
         if (!initialThread) window.localStorage.setItem(coachDraftKey(accountId), stored);
       } catch {
         if (durable) {
-          const refused = { ...current.current, note: 'Your browser couldn’t save this question. Allow local storage and try again.' };
+          const refused = { ...current.current, note: t('gym.coach.storageQuestion'), interrupted: false };
           current.current = refused;
           if (mounted.current) setState(refused);
           return false;
@@ -95,7 +101,7 @@ export function useCoachConversation({ accountId, initialThread, workoutInProgre
     change({ turns: mergeTurns(current.current.turns, generationTurns(generation)),
       request: terminal ? null : { ...(current.current.request ?? requestFromGeneration(current.current.thread, generation)), accepted: true },
       ...(terminal ? { draft: '', photo: null, attempt: 0, pending: false, stopRequested: false } : {}),
-      ...(generation.status === 'failed' ? { note: 'Response interrupted.', pending: false, stopRequested: false } : {}),
+      ...(generation.status === 'failed' ? { ...INTERRUPTED, pending: false, stopRequested: false } : {}),
       ...(generation.status === 'stopped' ? { note: '' } : {}),
       ...(generation.status === 'completed' ? { note: '' } : {}),
       ...(generation.status === 'running' && generation.stopRequested ? { stopRequested: true } : {}),
@@ -116,7 +122,7 @@ export function useCoachConversation({ accountId, initialThread, workoutInProgre
         change({ photo: { ...photo, status: 'draft', progress: 0, note: '' } });
         return false;
       }
-      if (!blob) throw new Error('Choose the photo again to upload it.');
+      if (!blob) throw new Error(t('gym.coach.photo.chooseAgain'));
       const metadata = await api.uploadCoachPhoto(thread, photo.id, blob, {
         signal: controller.signal,
         onProgress: (progress) => {
@@ -129,7 +135,7 @@ export function useCoachConversation({ accountId, initialThread, workoutInProgre
     } catch (error) {
       if (mounted.current && current.current.photo?.id === photo.id) {
         change({ photo: { ...photo, status: 'failed', progress: 0,
-          note: error.name === 'AbortError' ? 'Upload canceled.' : error.detail || error.message || 'Photo didn’t upload.' } });
+          note: error.name === 'AbortError' ? t('gym.coach.photo.uploadCanceled') : error.detail || error.message || t('gym.coach.photo.uploadFailed') } });
       }
       return false;
     } finally {
@@ -159,7 +165,7 @@ export function useCoachConversation({ accountId, initialThread, workoutInProgre
       if (workout.current) return;
       await uploadPhoto(photo);
     } catch (error) {
-      if (mounted.current) change({ note: id ? 'Your browser couldn’t save this photo. Allow local storage and try again.' : error.message });
+      if (mounted.current) change({ note: id ? t('gym.coach.storagePhoto') : error.message });
     } finally {
       if (mounted.current) change({ photoBusy: false });
     }
@@ -167,12 +173,12 @@ export function useCoachConversation({ accountId, initialThread, workoutInProgre
 
   const send = async (retryTurn) => {
     if (workout.current || active.current || current.current.phase !== 'ready' || current.current.closed) return;
-    if (!accountId) { change({ note: 'Confirming your account. Try again in a moment.' }); return; }
+    if (!accountId) { change({ note: t('gym.coach.confirmingAccount') }); return; }
     let request = current.current.request;
     const retry = Boolean(request || retryTurn);
     if (retryTurn) {
       if (request && request.requestId !== retryTurn.requestId) {
-        change({ note: 'Retry your saved question before retrying another response.' });
+        change({ note: t('gym.coach.retrySavedFirst') });
         return;
       }
       const question = current.current.turns.find((turn) => turn.from === 'lifter' && turn.requestId === retryTurn.requestId);
@@ -224,9 +230,9 @@ export function useCoachConversation({ accountId, initialThread, workoutInProgre
       const missingPhoto = error.code === 'ask-attachment-invalid' && request.attachmentIds?.includes(photo?.id);
       const known = retry || current.current.request?.accepted || current.current.turns.length || initialThread;
       const unavailable = failure.fresh && known;
-      change({ note: error.detail ? failure.note : 'Response interrupted.', closed: unavailable ? 'thread' : failure.gone ? 'account' : '', pending: Boolean(current.current.stopRequested),
+      change({ ...(error.detail ? { note: failure.note } : INTERRUPTED), closed: unavailable ? 'thread' : failure.gone ? 'account' : '', pending: Boolean(current.current.stopRequested),
         ...(current.current.stopRequested ? { attempt: current.current.attempt + 1 } : {}),
-        ...(missingPhoto ? { photo: { ...photo, status: 'failed', progress: 0, note: 'The saved upload is no longer available.' }, note: '' } : {}),
+        ...(missingPhoto ? { photo: { ...photo, status: 'failed', progress: 0, note: t('gym.coach.photo.uploadGone') }, note: '' } : {}),
         ...(failure.refused && !missingPhoto && !retry && !error.generation && !current.current.request?.accepted ? { request: null } : {}),
         ...(failure.fresh && !known ? { thread: mintId(THREAD_PREFIX), turns: [] } : {}),
       });
@@ -253,7 +259,7 @@ export function useCoachConversation({ accountId, initialThread, workoutInProgre
         stream.current?.abort();
       } else change({ stopRequested: true, pending: !active.current });
     } catch {
-      if (mounted.current) change({ note: 'Stop didn’t reach Coach. Try again.', stopRequested: false });
+      if (mounted.current) change({ note: t('gym.coach.stopFailed'), stopRequested: false });
     } finally {
       if (mounted.current) change({ stopBusy: false });
     }
@@ -267,7 +273,7 @@ export function useCoachConversation({ accountId, initialThread, workoutInProgre
         if (!thread) {
           if (current.current.turns.length) {
             forgetCoachDraft(accountId, current.current.thread);
-            change({ phase: 'ready', turns: [], request: null, photo: null, draft: '', closed: 'thread', note: 'That conversation isn’t here any more.' });
+            change({ phase: 'ready', turns: [], request: null, photo: null, draft: '', closed: 'thread', note: THREAD_ABSENT });
             return;
           }
           change({ phase: 'ready' });
@@ -281,7 +287,7 @@ export function useCoachConversation({ accountId, initialThread, workoutInProgre
             ...(!request ? { photo: null } : {}), pending: generation.status === 'running' });
         }
       }).catch(() => {
-        if (mounted.current) change({ phase: 'ready', note: 'The conversation didn’t refresh. Your question is saved; retry when connected.' });
+        if (mounted.current) change({ phase: 'ready', note: t('gym.coach.refreshFailed') });
       });
     } else if (initialThread?.generation?.status === 'running') {
       change({ pending: true });
@@ -341,7 +347,7 @@ export function useCoachConversation({ accountId, initialThread, workoutInProgre
       if (!page) throw new Error();
       change({ turns: mergeTurns(current.current.turns, page.turns), nextCursor: page.nextCursor ?? null });
     } catch {
-      if (mounted.current) change({ olderNote: 'Earlier messages didn’t load. Try again.' });
+      if (mounted.current) change({ olderNote: t('gym.coach.olderFailed') });
     } finally {
       if (mounted.current) change({ olderBusy: false });
     }

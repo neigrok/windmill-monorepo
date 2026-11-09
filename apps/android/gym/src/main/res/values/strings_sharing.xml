@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="gym_sharing_chooser_title">Share workout link</string>
+    <string name="gym_sharing_unavailable">Sharing isn\'t available here. Copy the link instead.</string>
+    <string name="gym_sharing_copied_announcement">Link copied</string>
+    <string name="gym_sharing_offer_title">Share this workout</string>
+    <string name="gym_sharing_offer">Anyone with the link can read this workout.\nIncludes set notes and effort.\nLinks last 30 days. End sharing anytime.</string>
+    <string name="gym_sharing_get_link">Get a link</string>
+    <string name="gym_sharing_working">…</string>
+    <string name="gym_sharing_live_title">The link is live</string>
+    <string name="gym_sharing_live_body">Anyone who has this link can read this one workout. It stops working on %1$s, and revoking it kills it immediately.</string>
+    <string name="gym_sharing_copied">Copied</string>
+    <string name="gym_sharing_copy_link">Copy link</string>
+    <string name="gym_sharing_share">Share</string>
+    <string name="gym_sharing_revoke">Revoke the link</string>
+    <string name="gym_sharing_dead_title">The link is dead</string>
+    <string name="gym_sharing_dead_body">Anyone still holding it gets nothing. You can make a new one whenever you like.</string>
+    <string name="gym_sharing_mint_no_answer">the log didn’t answer — the link wasn’t made</string>
+    <string name="gym_sharing_revoke_no_answer">the log didn’t answer — the link is still live</string>
+</resources>

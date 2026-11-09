@@ -6,6 +6,7 @@ import { useAuth } from '../../../shell/auth/AuthProvider.jsx';
 import { buildJournalArchive } from './journalExport.js';
 import { UnclaimedPagesRow } from './UnclaimedPagesRow.jsx';
 import { Section, styles } from '../../../shell/settings/Section.jsx';
+import { t } from '../i18n/settings/index.js';
 
 export function YourJournalSection() {
   const { account } = useAuth();
@@ -18,20 +19,20 @@ export function YourJournalSection() {
     try {
       const { count } = await buildJournalArchive();
       setPhase('done');
-      setNote(count === 0 ? 'No pages to export yet.' : `Exported ${count} page${count === 1 ? '' : 's'}.`);
+      setNote(t('journal.settings.exported', { count }));
     } catch {
       setPhase('error');
-      setNote("Couldn't build your export just now — try again.");
+      setNote(t('journal.settings.exportFailed'));
     }
   };
 
   return (
-    <Section title="Your journal">
+    <Section title={t('journal.settings.title')}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
         <Button variant="secondary" size="sm" disabled={phase === 'working'} onClick={runExport}>
-          {phase === 'working' ? 'Preparing…' : 'Export my pages'}
+          {phase === 'working' ? t('journal.settings.preparing') : t('journal.settings.export')}
         </Button>
-        <span style={styles.calmLine}>One Markdown file — every page you have written, oldest first.</span>
+        <span style={styles.calmLine}>{t('journal.settings.exportNote')}</span>
       </div>
       {note && (
         <p style={{ ...styles.metaText, color: phase === 'error' ? 'var(--color-danger)' : 'var(--accent-olive-600)', marginTop: 6 }}>

@@ -7,6 +7,7 @@ import { useAuth } from './AuthProvider.jsx';
 import { useSignInDoor } from './SignInDoor.jsx';
 import { fetchConsentClient, postDecision } from './OAuthClient.js';
 import { consentSummary } from './scopes.js';
+import { t } from '../i18n/index.js';
 
 // The OAuth params out of the hash's query; code_challenge, resource, state and scope are echoed
 // back untouched.
@@ -126,30 +127,30 @@ function ConsentCard({ user, client, scope, redirectHost, onAllow, onCancel, onN
   return (
     <Card>
       <BrandWordmark size={24} style={mark} />
-      <h1 style={title}>Connect {client.client_name}</h1>
-      <p style={{ ...cant, marginTop: 8 }}>Review the access this tool is requesting.</p>
+      <h1 style={title}>{t('shell.oauth.title', { client: client.client_name })}</h1>
+      <p style={{ ...cant, marginTop: 8 }}>{t('shell.oauth.review')}</p>
 
       <div style={acct}>
         <Avatar name={name} size={20} />
         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.email}</span>
-        <button type="button" onClick={onNotYou} style={notYou}>Not you?</button>
+        <button type="button" onClick={onNotYou} style={notYou}>{t('shell.oauth.notYou')}</button>
       </div>
 
       <div style={permissions}>
         {reach === 'everything' ? (
           <p style={permissionLine}>
             <span className="wm-oc-dot wm-oc-dot--delete" aria-hidden="true" />
-            Everything in your account — every product, including deleting
+            {t('shell.oauth.everything')}
           </p>
         ) : reach === 'nothing' ? (
           <p style={permissionLine}>
             <span className="wm-oc-dot" aria-hidden="true" />
-            Nothing — this request names no part of your account
+            {t('shell.oauth.nothing')}
           </p>
         ) : (
           groups.map((group) => (
-            <section key={group.product} aria-label={`Your ${group.label}`}>
-              <h2 style={groupHead}>Your {group.label}</h2>
+            <section key={group.product} aria-label={t('shell.oauth.group', { product: group.label })}>
+              <h2 style={groupHead}>{t('shell.oauth.group', { product: group.label })}</h2>
               <ul style={permissionList}>
                 {group.lines.map((line) => (
                   <li key={line.level} style={permissionLine}>
@@ -165,16 +166,16 @@ function ConsentCard({ user, client, scope, redirectHost, onAllow, onCancel, onN
 
       <p style={cant}>
         {canDelete
-          ? 'Deleting is permanent — this tool can remove things you made. It can’t see your chats or read anything you didn’t grant above.'
-          : 'It can only do what’s listed above. It can’t see your chats, and nothing else in your account is reachable.'}
+          ? t('shell.oauth.canDelete')
+          : t('shell.oauth.cannotDelete')}
       </p>
 
       <div style={btnRow}>
-        <button type="button" className="wm-oc-btn" onClick={onCancel}>Cancel</button>
-        <button type="button" className="wm-oc-btn wm-oc-btn--allow" onClick={onAllow}>Allow</button>
+        <button type="button" className="wm-oc-btn" onClick={onCancel}>{t('shell.common.cancel')}</button>
+        <button type="button" className="wm-oc-btn wm-oc-btn--allow" onClick={onAllow}>{t('shell.oauth.allow')}</button>
       </div>
 
-      {redirectHost && <p style={foot}>Allowing sends you back to {redirectHost}. Only grant access to tools you trust — disconnect anytime in account settings.</p>}
+      {redirectHost && <p style={foot}>{t('shell.oauth.redirectNote', { host: redirectHost })}</p>}
     </Card>
   );
 }
@@ -187,8 +188,8 @@ function ApprovedBloom({ clientName }) {
           <Icon name="check" size={20} color="var(--color-success)" strokeWidth={2} />
         </span>
       </div>
-      <h1 style={{ ...title, textAlign: 'center' }}>Connected</h1>
-      <p style={{ ...cant, textAlign: 'center', marginTop: 4 }}>Returning to {clientName}…</p>
+      <h1 style={{ ...title, textAlign: 'center' }}>{t('shell.oauth.connected')}</h1>
+      <p style={{ ...cant, textAlign: 'center', marginTop: 4 }}>{t('shell.oauth.returning', { client: clientName })}</p>
     </Card>
   );
 }
@@ -196,8 +197,8 @@ function ApprovedBloom({ clientName }) {
 function QuietReturn() {
   return (
     <Card>
-      <h1 style={{ ...title, textAlign: 'center', marginTop: 8 }}>No changes made</h1>
-      <p style={{ ...cant, textAlign: 'center', marginTop: 4 }}>Taking you back…</p>
+      <h1 style={{ ...title, textAlign: 'center', marginTop: 8 }}>{t('shell.oauth.noChanges')}</h1>
+      <p style={{ ...cant, textAlign: 'center', marginTop: 4 }}>{t('shell.oauth.takingBack')}</p>
     </Card>
   );
 }
@@ -206,10 +207,10 @@ function GateCard({ onSignIn }) {
   return (
     <Card>
       <BrandWordmark size={24} style={mark} />
-      <h1 style={title}>Connect your tool</h1>
-      <p style={{ ...cant, marginTop: 6 }}>Sign in to review the access your tool is requesting.</p>
+      <h1 style={title}>{t('shell.oauth.gateTitle')}</h1>
+      <p style={{ ...cant, marginTop: 6 }}>{t('shell.oauth.gateBody')}</p>
       <div style={btnRow}>
-        <button type="button" className="wm-oc-btn wm-oc-btn--allow" onClick={onSignIn} style={{ flex: 1 }}>Sign in</button>
+        <button type="button" className="wm-oc-btn wm-oc-btn--allow" onClick={onSignIn} style={{ flex: 1 }}>{t('shell.auth.signIn')}</button>
       </div>
     </Card>
   );
@@ -217,24 +218,24 @@ function GateCard({ onSignIn }) {
 
 const FAILURES = {
   malformed: {
-    title: 'This request is incomplete',
-    body: 'The authorization link is missing something. Start again from your MCP client — it will send you back here with a fresh one.',
+    title: t('shell.oauth.malformedTitle'),
+    body: t('shell.oauth.malformedBody'),
   },
   unknown_client: {
-    title: 'We don’t recognize this app',
-    body: 'This link is for an application Windmill hasn’t seen register. Start again from your MCP client.',
+    title: t('shell.oauth.unknownClientTitle'),
+    body: t('shell.oauth.unknownClientBody'),
   },
   bad_redirect: {
-    title: 'This link doesn’t add up',
-    body: 'Where it wants to send you back doesn’t match what this app registered. For your safety, we won’t continue — start again from your MCP client.',
+    title: t('shell.oauth.badRedirectTitle'),
+    body: t('shell.oauth.badRedirectBody'),
   },
   expired: {
-    title: 'This sign-in request expired',
-    body: 'These links last about ten minutes. Start again from your MCP client and you’ll come right back.',
+    title: t('shell.oauth.expiredTitle'),
+    body: t('shell.oauth.expiredBody'),
   },
   unreachable: {
-    title: 'Can’t reach windmill.works',
-    body: 'Check your connection and try again — nothing was authorized.',
+    title: t('shell.oauth.unreachableTitle'),
+    body: t('shell.oauth.unreachableBody'),
     brick: true,
   },
 };
@@ -250,8 +251,8 @@ function FailureCard({ kind, onRetry }) {
       </div>
       <p style={{ ...cant, marginTop: 8 }}>{f.body}</p>
       <div style={btnRow}>
-        {onRetry && <button type="button" className="wm-oc-btn wm-oc-btn--allow" onClick={onRetry} style={{ flex: 1 }}>Try again</button>}
-        {!onRetry && <a href="#/" className="wm-oc-btn" style={{ flex: 1, textDecoration: 'none' }}>Back to Windmill</a>}
+        {onRetry && <button type="button" className="wm-oc-btn wm-oc-btn--allow" onClick={onRetry} style={{ flex: 1 }}>{t('shell.common.tryAgain')}</button>}
+        {!onRetry && <a href="#/" className="wm-oc-btn" style={{ flex: 1, textDecoration: 'none' }}>{t('shell.oauth.backToWindmill')}</a>}
       </div>
     </Card>
   );
@@ -261,7 +262,7 @@ function Loader() {
   return (
     <Card>
       <BrandWordmark size={24} style={mark} />
-      <p role="status" style={cant}>Preparing your connection…</p>
+      <p role="status" style={cant}>{t('shell.oauth.preparing')}</p>
     </Card>
   );
 }

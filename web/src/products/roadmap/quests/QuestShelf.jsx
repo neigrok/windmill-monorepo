@@ -10,6 +10,7 @@ import { track } from '../../../telemetry/beacon.js';
 import { KIND_CSS, DEFAULT_NODE_COLOR, prefersReducedMotion } from '../theme.js';
 import { QuestThumb } from './QuestThumb.jsx';
 import { ROSTER } from './roster/index.js';
+import { t } from '../i18n/index.js';
 
 const SEED_EASE_MS = 600;
 const CROSSFADE_MS = 280;   // the reduced-motion beat
@@ -100,7 +101,7 @@ export function QuestShelf() {
         type="button"
         className={`quest-card${picked ? ' quest-card--picked' : ''}`}
         onClick={() => plant(quest)}
-        aria-label={`Plant ${quest.title}`}
+        aria-label={t('roadmap.quests.plant', { title: quest.title })}
       >
         <span className="quest-card-chrome quest-card-rule" style={{ background: rule }} />
         <span
@@ -111,7 +112,7 @@ export function QuestShelf() {
           <QuestThumb quest={quest} />
         </span>
         <span className="quest-card-chrome quest-card-title">{quest.title}</span>
-        <span className="quest-card-chrome quest-card-readout">{quest.nodes.length} steps · {quest.estimate}</span>
+        <span className="quest-card-chrome quest-card-readout">{t('roadmap.quests.readout', { count: quest.nodes.length, estimate: quest.estimate })}</span>
         <span className="quest-card-chrome quest-card-dots" aria-hidden="true">
           {quest.kinds.map((kind) => (
             <span key={kind.id} style={{ background: (KIND_CSS[kind.hue] ?? KIND_CSS[DEFAULT_NODE_COLOR]).base }} />
@@ -125,11 +126,11 @@ export function QuestShelf() {
     <div className="quest-card quest-card--ghost">
       <span className="quest-ghost-bud" aria-hidden="true" />
       {breakpoint === 'phone' && !ghostSplit ? (
-        <button type="button" className="quest-ghost-door" onClick={() => setGhostSplit(true)}>Start your own</button>
+        <button type="button" className="quest-ghost-door" onClick={() => setGhostSplit(true)}>{t('roadmap.quests.startOwn')}</button>
       ) : (
         <>
-          <button type="button" className="quest-ghost-door" onClick={() => { window.location.hash = '#/app/new'; }}>Blank tree</button>
-          <button type="button" className="quest-ghost-door" onClick={() => { window.location.hash = '#/app/new?compose'; }}>Paste a plan</button>
+          <button type="button" className="quest-ghost-door" onClick={() => { window.location.hash = '#/app/new'; }}>{t('roadmap.quests.blank')}</button>
+          <button type="button" className="quest-ghost-door" onClick={() => { window.location.hash = '#/app/new?compose'; }}>{t('roadmap.paste.title')}</button>
         </>
       )}
     </div>
@@ -139,7 +140,7 @@ export function QuestShelf() {
     <div className={shelfClass}>
       <style>{CSS}</style>
 
-      <a className="quest-shelf-plaque" href="#/app" title="Your trees">
+      <a className="quest-shelf-plaque" href="#/app" title={t('roadmap.browse.home')}>
         <span className="quest-shelf-glyph">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M12 20v-8" /><path d="M12 12c0-3 2-5 6-5 0 3-2 5-6 5z" /><path d="M12 14c0-2.5-1.7-4-5-4 0 2.5 1.7 4 5 4z" /></svg>
         </span>
@@ -147,22 +148,22 @@ export function QuestShelf() {
       </a>
 
       <main className="quest-shelf-main">
-        <h1 className="quest-shelf-title">Start a quest</h1>
-        <p className="quest-shelf-sub">Pick a tree to plant — or bring your own plan.</p>
-        {failed && <p className="quest-shelf-error">Couldn’t plant it just now</p>}
+        <h1 className="quest-shelf-title">{t('roadmap.quests.title')}</h1>
+        <p className="quest-shelf-sub">{t('roadmap.quests.sub')}</p>
+        {failed && <p className="quest-shelf-error">{t('roadmap.birth.failedTitle')}</p>}
 
         <section className="quest-row">
-          <div className="quest-row-label">For developers</div>
+          <div className="quest-row-label">{t('roadmap.quests.developers')}</div>
           <div className="quest-grid">{dev.map(card)}</div>
         </section>
 
         <section className="quest-row">
-          <div className="quest-row-label">For everything else</div>
+          <div className="quest-row-label">{t('roadmap.quests.everythingElse')}</div>
           <div className="quest-grid">{life.map(card)}{ghost}</div>
         </section>
 
         <footer className="quest-shelf-credit">
-          Three of the dev paths adapted from the roadmap.sh community maps (CC BY-SA).
+          {t('roadmap.quests.attribution')}
         </footer>
       </main>
     </div>

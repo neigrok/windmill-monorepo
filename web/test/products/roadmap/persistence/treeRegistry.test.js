@@ -58,7 +58,7 @@ test('setVisibility — a rejecting body surfaces its own error and code', async
     assert.ok(err instanceof AuthError);
     assert.equal(err.status, 400);
     assert.equal(err.code, 'bad-value');
-    assert.equal(err.message, 'unknown visibility');
+    assert.equal(err.said, 'unknown visibility');
     return true;
   });
 });
@@ -88,7 +88,7 @@ test('setVisibility — a 402 carries the code AND the detail through to the dia
     assert.ok(err instanceof AuthError);
     assert.equal(err.code, 'pro_required');
     assert.equal(err.status, 402);
-    assert.equal(err.message, 'Private trees are part of Windmill One');
+    assert.equal(err.said, 'Private trees are part of Windmill One');
     assert.equal(err.detail, 'Unlisted keeps this tree reachable only by its link, and stays free.');
     return true;
   });

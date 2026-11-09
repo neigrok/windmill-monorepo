@@ -1,29 +1,30 @@
 import { SITE_ORIGIN, SHARE_CARD_ALT } from '../../../shell/marketing/siteIdentity.js';
+import { t } from '../i18n/entry/index.js';
 
 export const gymLandingHead = {
   path: '/gym',
   module: 'src/products/gym/marketing/GymLanding.jsx',
-  title: 'Windmill Gym — a training log that remembers what you lifted',
-  description: 'A training log for barbell programs — squat, bench, deadlift, press, rows, chins. Two taps between sets, and the next session opens with last time’s numbers already in the field. e1RM per lift over time, and a link that shares one workout.',
-  ogTitle: 'Windmill Gym — it remembers what you lifted',
-  ogDescription: 'A training log for barbell programs — squat, bench, deadlift, press, rows, chins. Two taps between sets, and the next session opens with last time’s numbers already in the field.',
-  twitterTitle: 'Windmill Gym — it remembers what you lifted',
-  twitterDescription: 'A training log for barbell programs — squat, bench, deadlift, press, rows, chins. Two taps between sets, and the next session opens with last time’s numbers already in the field.',
+  title: t('gym.landingHead.title'),
+  description: t('gym.landingHead.description'),
+  ogTitle: t('gym.landingHead.shareTitle'),
+  ogDescription: t('gym.landingHead.shareDescription'),
+  twitterTitle: t('gym.landingHead.shareTitle'),
+  twitterDescription: t('gym.landingHead.shareDescription'),
   imageAlt: SHARE_CARD_ALT,
   fallback: {
     // --accent-iris-600 in styles/tokens/palettes.css.
     accent: '#4C4374',
-    badge: 'Barbell training log',
-    h1: 'It remembers what you lifted.',
-    sub: 'A training log for barbell programs — squat, bench, deadlift, press, rows, chins. Two taps between sets, a small jump when it’s time, and the next session opens with last time’s numbers already in the field.',
+    badge: t('gym.landing.hero.badge'),
+    h1: t('gym.landing.hero.title'),
+    sub: t('gym.landing.hero.sub'),
     actions: [
-      { href: '#/gym', label: 'Open your training log →' },
-      { href: '#how', label: 'See how it works' },
+      { href: '#/gym', label: t('gym.landing.openLog') },
+      { href: '#how', label: t('gym.landing.seeHow') },
     ],
-    trust: 'Your log lives on your Windmill account — one account across Roadmap, Journal and Gym.',
+    trust: t('gym.landing.accountLine'),
     notes: [
-      'How it works: Log the set → It remembers → See the line.',
-      'e1RM per lift over time, and a link that shares one workout.',
+      t('gym.landingHead.notesHow'),
+      t('gym.landingHead.notesLine'),
     ],
   },
   schema: [
@@ -32,9 +33,9 @@ export const gymLandingHead = {
       '@id': `${SITE_ORIGIN}/gym#app`,
       'name': 'Windmill Gym',
       'url': `${SITE_ORIGIN}/gym`,
-      'description': 'A training log for barbell programs. Log a set in two taps, and the next session opens with last time’s numbers already in the field. e1RM per lift over time, sets and sessions per week, and a revocable link that shares one workout.',
+      'description': t('gym.landingHead.schemaDescription'),
       'applicationCategory': 'HealthApplication',
-      'operatingSystem': 'Web browser',
+      'operatingSystem': t('gym.landingHead.operatingSystem'),
       'image': `${SITE_ORIGIN}/og-image.png`,
       'isAccessibleForFree': true,
       'publisher': { '@id': `${SITE_ORIGIN}/#organization` },

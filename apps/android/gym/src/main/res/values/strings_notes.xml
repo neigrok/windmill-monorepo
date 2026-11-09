@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="gym_notes_unavailable">Notes unavailable</string>
+    <string name="gym_notes_reading">Reading your notes…</string>
+    <string name="gym_notes_write_note">Write a note</string>
+    <string name="gym_notes_reorder_named">Reorder %1$s</string>
+    <string name="gym_notes_empty_row">empty · tap to write</string>
+    <!-- A verb: opens a note to read or edit it. -->
+    <string name="gym_notes_open_note">Open note</string>
+    <string name="gym_notes_editor_title">Note</string>
+    <string name="gym_notes_title">Notes</string>
+    <string name="gym_notes_honesty">Any agent you connect can read these too.</string>
+    <string name="gym_notes_add">Add a note</string>
+    <string name="gym_notes_full">10 of 10 notes. Delete one to add another.</string>
+    <string name="gym_notes_placeholder_talk">How I want to be talked to</string>
+    <string name="gym_notes_placeholder_training">What I am training for</string>
+    <string name="gym_notes_signed_out">Notes live with your account, so they need you signed in.</string>
+    <string name="gym_notes_body_placeholder">Write a note for Coach</string>
+    <string name="gym_notes_delete">Delete note</string>
+    <string name="gym_notes_bytes_counter">%1$s of %2$s bytes</string>
+    <string name="gym_notes_title_counter">%1$s of %2$s characters</string>
+    <string name="gym_notes_field_title">Title</string>
+    <!-- A noun: the body of a note. -->
+    <string name="gym_notes_field_note">Note</string>
+    <string name="gym_notes_read_no_answer">the log didn’t answer — Your notes could not be read.</string>
+    <string name="gym_notes_order_no_answer">the log didn’t answer — The order stayed as it was.</string>
+    <string name="gym_notes_delete_no_answer">the log didn’t answer — that note is still here</string>
+    <string name="gym_notes_save_no_answer">the log didn’t answer — The note stayed as it was.</string>
+    <string name="gym_notes_field_described">%1$s field</string>
+</resources>

@@ -6,8 +6,13 @@ import { fileURLToPath } from 'node:url';
 
 const GYM = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../src/products/gym');
 const read = (file) => fs.readFileSync(path.join(GYM, file), 'utf8');
+const catalog = { ...JSON.parse(read('i18n/entry/en.json')), ...JSON.parse(read('i18n/landing/en.json')), ...JSON.parse(read('i18n/en.json')) };
 
-const spoken = (source) => source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+// A file's words: its code without comments, followed by the catalog messages its t() calls ask for.
+const spoken = (source) => {
+  const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+  return [code, ...[...code.matchAll(/\bt\('([\w.]+)'/g)].map(([, key]) => catalog[key])].join('\n');
+};
 const speech = (file) => spoken(read(file));
 
 test('the routine editor is keyed on the routine it edits, so a hash move remounts it', () => {
@@ -18,9 +23,10 @@ test('the routine editor is keyed on the routine it edits, so a hash move remoun
 test('the routine row’s overflow is Log past above Delete, and no surface offers a copy of a routine', () => {
   const source = spoken(read('Routines.jsx'));
   assert.equal(source.includes(`items={[
-                  { label: 'Log past', run: () => { window.location.hash = backfillHref(routine.id, FROM_ROUTINE_MENU); } },
-                  { label: 'Delete', run: () => remove(routine) },
+                  { label: t('gym.routines.logPast'), run: () => { window.location.hash = backfillHref(routine.id, FROM_ROUTINE_MENU); } },
+                  { label: t('gym.routines.delete'), run: () => remove(routine) },
                 ]}`), true);
+  assert.equal(source.includes('Log past\nDelete'), true, 'the catalog says Log past, then Delete');
   assert.equal(/duplicat/i.test(source), false, 'the room has no duplicate act');
   assert.equal(/duplicat/i.test(spoken(read('routines.js'))), false);
   // The editor's head keeps no menu of its own: the row's is the one menu in the room.
@@ -49,7 +55,8 @@ test('gym navigation stays below the scrollable content on pushed pages', () => 
   const content = app.search(/<main[^>]*className=\{`gym-column/);
   assert.ok(content >= 0 && app.indexOf('<TabBar screen={tabOf(screen)} />') > app.indexOf('</main>', content));
   assert.equal(app.includes('<div ref={content} className="gym-scroll">'), true);
-  assert.equal(app.includes('<nav className="gym-tabs" aria-label="Gym">'), true);
+  assert.equal(app.includes(`<nav className="gym-tabs" aria-label={t('gym.app.tabs')}>`), true);
+  assert.equal(catalog['gym.app.tabs'], 'Gym');
   assert.equal(app.includes("aria-current={screen === tab.screen ? 'page' : undefined}"), true);
   assert.equal(app.includes('TabRail'), false);
   assert.equal(/\.gym-tabs \{[^}]*height: var\(--gym-bottom-panel-height\);[^}]*justify-content: center;/.test(read('gym.css')), true);
@@ -58,7 +65,7 @@ test('gym navigation stays below the scrollable content on pushed pages', () => 
 test('the three tabs preserve their order and every pushed destination maps to a room', () => {
   const app = read('GymApp.jsx');
   const bar = app.slice(app.indexOf('function TabBar'));
-  assert.deepEqual([...bar.matchAll(/label: '([^']+)'/g)].map((match) => match[1]), ['Routines', 'The log', 'Coach']);
+  assert.deepEqual([...bar.matchAll(/label: t\('([\w.]+)'\)/g)].map((match) => catalog[match[1]]), ['Routines', 'The log', 'Coach']);
   assert.equal(app.includes("['coach', 'thread', 'threads', 'notes'].includes(screen)"), true);
   assert.equal(app.includes("['log', 'session', 'finish', 'backfill', 'bodyweight', 'record', 'share-log'].includes(screen)"), true);
   assert.equal(read('log.js').includes("export const ROUTINES_HREF = '#/gym';"), true);
@@ -104,7 +111,8 @@ test('every exercise name a lifter can see is a link to that movement’s record
   // The record page and Rename keep a drawn door: `MOVEMENTS_HREF` beside `New` on the routines
   // home. It is the only route to the record of a movement that sits in a routine and has never
   // been logged, and before this it was reachable by typing a URL.
-  assert.equal(editor.includes('<a className="gym-door-past" href={MOVEMENTS_HREF}>Movements</a>'), true);
+  assert.equal(editor.includes("<a className=\"gym-door-past\" href={MOVEMENTS_HREF}>{t('gym.routines.movementsDoor')}</a>"), true);
+  assert.equal(catalog['gym.routines.movementsDoor'], 'Movements');
   assert.equal(read('Record.jsx').includes('return <MovementChooser log={log} />;'), true);
 
   // The name still ellipsises: the box the deleted door scoped that rule onto is now the name's own.
@@ -141,17 +149,18 @@ test('the chat is one room in the frame, and no session screen carries one', () 
 test('Coach is a tab root: a column in the rail, no back link, its threads and notes pushed under it', () => {
   const app = read('GymApp.jsx');
   assert.equal(app.includes("['coach', 'thread', 'threads', 'notes'].includes(screen)"), true);
-  assert.equal((app.match(/label: '[^']+', href: [^,]+, screen:/g) ?? []).length, 3);
+  assert.equal((app.match(/label: t\('[\w.]+'\), href: [^,]+, screen:/g) ?? []).length, 3);
   const room = read('coach/CoachRoom.jsx');
   assert.equal(room.includes('gym-back'), false, 'a tab root keeps no back link');
-  assert.equal(room.includes('<a className="gym-coach-threads-door" href={THREADS_HREF}>History</a>'), true);
+  assert.equal(room.includes('<a className="gym-coach-threads-door" href={THREADS_HREF}>{THREADS_TITLE}</a>'), true);
   // History is visible; secondary destinations stay in More.
   const head = room.slice(room.indexOf('<header className="gym-coach-head">'), room.indexOf('</header>'));
-  assert.equal(head.includes("label: 'Notes'"), true);
-  assert.equal(head.includes('<a className="gym-coach-threads-door" href={THREADS_HREF}>History</a>'), true);
-  assert.equal((head.match(/label: 'Notes'/g) ?? []).length, 1);
+  assert.equal(head.includes("label: t('gym.coach.notes')"), true);
+  assert.equal(catalog['gym.coach.notes'], 'Notes');
+  assert.equal(head.includes('<a className="gym-coach-threads-door" href={THREADS_HREF}>{THREADS_TITLE}</a>'), true);
+  assert.equal((head.match(/label: t\('gym\.coach\.notes'\)/g) ?? []).length, 1);
   assert.equal(/gym-coach-notes-verb|gym-coach-notes-go/.test(read('gym.css')), false);
-  assert.equal(room.includes('Your workout is on your phone. This room is here when it is over.'), true);
+  assert.equal(speech('coach/CoachRoom.jsx').includes('Your workout is on your phone. This room is here when it is over.'), true);
   const threads = read('coach/Threads.jsx');
   assert.equal(threads.includes('<Back href={COACH_HREF}>{COACH_TITLE}</Back>'), true);
   assert.equal(threads.includes('<Back href={THREADS_HREF}>{THREADS_TITLE}</Back>'), true);
@@ -163,14 +172,14 @@ test('Coach answer receipts come from the server, separately from the live worko
   for (const file of ['coach/coach.js', 'coach/CoachRoom.jsx']) {
     assert.equal(/read:\s*\{/.test(read(file)), false, file);
   }
-  assert.equal(read('coach/CoachRoom.jsx').includes('const read = readLine(receipt.read);'), true);
+  assert.equal(read('coach/CoachRoom.jsx').includes('const read = readLine(receipt.read, (count) => <span className="gym-coach-figure">{count}</span>);'), true);
 });
 
 test('the receipt is always visible and the step list collapses behind it', () => {
   const room = read('coach/CoachRoom.jsx');
-  assert.equal(room.includes('<summary className="gym-coach-read"><span>{readText}</span>'), true);
+  assert.equal(room.includes('<summary className="gym-coach-read"><span>{read}</span>'), true);
   assert.equal(room.includes('<span className="gym-coach-step-count">'), true);
-  assert.equal(room.includes('<p className="gym-coach-read">{readText}</p>'), true, 'a list of nothing readable still draws the receipt');
+  assert.equal(room.includes('<p className="gym-coach-read">{read}</p>'), true, 'a list of nothing readable still draws the receipt');
   assert.equal(room.includes('<details className="gym-coach-trace">'), true);
   assert.equal(room.includes('<p className="gym-coach-steps">{steps}</p>'), true);
   assert.equal(room.includes('<details open'), false, 'the trace opens on a tap, never by default');
@@ -180,7 +189,8 @@ test('the word coach names exactly one thing — the room — and the share neve
   for (const file of ['share/share.js', 'share/ShareWorkout.jsx', 'share/SharedSession.jsx', 'marketing/landingHead.js']) {
     assert.equal(speech(file).toLowerCase().includes('coach'), false, file);
   }
-  assert.equal(read('share/share.js').includes("SHARE_OFFER = 'Share this workout'"), true);
+  assert.equal(read('share/share.js').includes("SHARE_OFFER = t('gym.share.offer')"), true);
+  assert.equal(speech('share/share.js').includes('Share this workout'), true);
   assert.equal(fs.existsSync(path.join(GYM, 'share', 'CoachShare.jsx')), false);
   for (const file of gymFiles()) {
     const said = spoken(fs.readFileSync(file, 'utf8'));
@@ -243,7 +253,7 @@ test('nothing about the threads screens is an unread count, a badge or a notific
     }
   }
   assert.equal(speech('coach/Threads.jsx').includes('Dot'), false);
-  assert.equal(read('coach/CoachRoom.jsx').includes('<a className="gym-coach-threads-door" href={THREADS_HREF}>History</a>'), true);
+  assert.equal(read('coach/CoachRoom.jsx').includes('<a className="gym-coach-threads-door" href={THREADS_HREF}>{THREADS_TITLE}</a>'), true);
 });
 
 test('deleting a conversation says what it leaves behind on the act, is withheld, and is neither armed nor confirmed', () => {
@@ -280,7 +290,8 @@ test('deleting a conversation says what it leaves behind on the act, is withheld
   assert.equal((threads.match(/gymApi\.deleteThread/g) ?? []).length, 1);
   assert.equal(threads.includes("kind: 'thread',"), true);
   assert.ok(threads.indexOf('log.withhold({') < threads.indexOf('gymApi.deleteThread'));
-  assert.equal(read('coach/threads.js').includes("export const THREAD_DELETED = 'Conversation deleted.';"), true);
+  assert.equal(read('coach/threads.js').includes("export const THREAD_DELETED = t('gym.threads.deleted');"), true);
+  assert.equal(catalog['gym.threads.deleted'], 'Conversation deleted.');
 });
 
 test('changes stay in Coach, and proposal cards link back only outside their conversation', () => {
@@ -331,10 +342,19 @@ test('the account seat and the switcher are drawn in one place, and only outside
   assert.equal(read('gym.css').includes('.gym-own-header {'), true);
 });
 
+test('every history filter names its kind, and the filter spells its own label and clear button', () => {
+  const mounts = gymFiles().filter((file) => /\.jsx$/.test(file))
+    .flatMap((file) => [...fs.readFileSync(file, 'utf8').matchAll(/<HistoryFilter\s+([\w-]+=(?:"[^"]*"|\{[^}]*\}))/g)].map((match) => `${path.basename(file)} ${match[1]}`));
+  assert.deepEqual(mounts.sort(), [
+    'Log.jsx kind="exercise"', 'Log.jsx kind="routine"', 'LogShare.jsx kind="exercise"', 'LogShare.jsx kind="routine"',
+  ]);
+});
+
 test('every set in a session read whole is a door onto the fix, and says so', () => {
   const source = read('Log.jsx');
   assert.equal(source.includes('window.location.hash = fixSetHref(id, set.id, from)'), true);
-  assert.equal(source.includes('<span className="gym-set-fix">Fix set</span>'), true);
+  assert.equal(source.includes("<span className=\"gym-set-fix\">{t('gym.log.fixSet')}</span>"), true);
+  assert.equal(catalog['gym.log.fixSet'], 'Fix set');
   assert.equal(source.includes('className="gym-set-fix" aria-hidden'), false);
   const css = read('gym.css');
   assert.equal(css.includes('button.gym-set:hover .gym-set-fix,'), true);
@@ -418,7 +438,8 @@ test('every re-read of the session lets go of the corrections this screen was ho
   const source = read('Log.jsx');
   assert.equal(source.includes('const reread = () => {\n    setMoves(new Map());\n    view.retry();\n  };'), true);
   assert.equal(source.includes("if (['unknown-record', 'record-dead'].includes(error.code)) { closeFix(); reread();"), true);
-  assert.equal(source.includes('<Button variant="secondary" size="sm" onClick={reread}>Retry</Button>'), true);
+  assert.equal(source.includes("<Button variant=\"secondary\" size=\"sm\" onClick={reread}>{t('gym.common.retry')}</Button>"), true);
+  assert.equal(catalog['gym.common.retry'], 'Retry');
   assert.equal((source.match(/view\.retry/g) ?? []).length, 1);
 });
 
@@ -456,7 +477,7 @@ test('the CSV export is out of the product: no door, no string, no href, and no 
   }
   const settings = read('settings/GymSettingsSection.jsx');
   assert.equal(/hasLog|hasNotes|hasWeighIns|api\.sessions|api\.notes|api\.bodyweight/.test(settings), false);
-  assert.equal(read('coach/Threads.jsx').includes('Export conversations'), false);
+  assert.equal(speech('coach/Threads.jsx').includes('Export conversations'), false);
   const pricing = fs.readFileSync(path.join(GYM, '../../../public/pricing.html'), 'utf8');
   assert.equal(pricing.includes('CSV out'), false);
   assert.equal(pricing.includes('<b>The gym log — all of it</b>Sets, sessions, routines, e1RM.'), true);
@@ -481,12 +502,14 @@ test('a picker row says it has no last time, only once the read behind it has an
   );
   assert.equal(speech('logger/MovementPicker.jsx').includes('never logged'), false);
   assert.equal(speech('logger/movements.js').includes('never logged'), false);
-  assert.equal(speech('logger/movements.js').includes("NO_LAST_TIME_META = 'no last time'"), true);
+  assert.equal(speech('logger/movements.js').includes("NO_LAST_TIME_META = t('gym.picker.noLastTime')"), true);
+  assert.equal(speech('logger/movements.js').includes('no last time'), true);
 });
 
 test('the empty routines home offers to build one, and this surface still starts nothing', () => {
   const source = read('Routines.jsx');
-  assert.equal(source.includes('<Button href={routineHref(NEW_ROUTINE_ID)}>New routine</Button>'), true);
+  assert.equal(source.includes("<Button href={routineHref(NEW_ROUTINE_ID)}>{t('gym.routines.newRoutine')}</Button>"), true);
+  assert.equal(speech('Routines.jsx').includes('New routine'), true);
   // Over the ACCOUNT's program and never the drawn rows: the offer is an act, and an act may not be
   // offered over a store the window has only taken a routine off the screen of (`docs/design/guidelines/system-architecture.md` §3).
   assert.equal(source.includes("view.phase === 'ready' && complete && !hasProgram"), true);
@@ -594,7 +617,7 @@ test('the reserved slot is what keeps Apply still, and its height is a declarati
 });
 
 test('no gym copy claims an agent changes a routine of yours directly, or that it writes nothing', () => {
-  const landing = read('marketing/GymLanding.jsx');
+  const landing = speech('marketing/GymLanding.jsx');
   for (const claim of [
     'writes directly',
     'exactly as it would if you had typed it yourself',
@@ -611,7 +634,7 @@ test('no gym copy claims an agent changes a routine of yours directly, or that i
   assert.equal(said.includes('it never rewrites a day you already have'), true);
   assert.equal(said.includes('adds lands right away: it takes nothing away'), true);
   assert.equal(said.includes('Propose next week’s routine — you read the diff and tap Apply.'), true);
-  const levels = read('marketing/GymLanding.jsx');
+  const levels = speech('marketing/GymLanding.jsx');
   assert.equal(levels.includes('Record what happened · add a new day or a new movement · propose changes to the days you have'), true);
   assert.equal(levels.includes('Discard a workout · end a share link · propose a removal'), true);
   assert.equal(said.includes('LEVEL_LINES.write'), true);
@@ -636,7 +659,7 @@ test('every pushed screen draws its back link through one component, and none po
   // The record's back link is the one that varies: it names where the record was opened.
   assert.equal(read('Record.jsx').includes('const back = backOf(from, session);'), true);
   assert.equal(read('Record.jsx').includes('<Back href={back.href}>{back.label}</Back>'), true);
-  assert.equal(read('Finish.jsx').includes('<Back href="#/gym/log">The log</Back>'), true);
+  assert.equal(read('Finish.jsx').includes("<Back href=\"#/gym/log\">{t('gym.log.title')}</Back>"), true);
 });
 
 test('the finish screen has one way out, at the head of the ready state and of the failed read, and its offer says why Save is inert', () => {
@@ -645,7 +668,8 @@ test('the finish screen has one way out, at the head of the ready state and of t
   // way back is the room's own, through the component, above the title. Its POSITION is the pin —
   // the failed read carried these same bytes before this screen had a head back at all, so the
   // substring alone proves nothing about the state that lost its foot.
-  const back = '<Back href={sessionHref(id)}>Session detail</Back>';
+  const back = "<Back href={sessionHref(id)}>{t('gym.finish.sessionDetail')}</Back>";
+  assert.equal(catalog['gym.finish.sessionDetail'], 'Session detail');
   assert.equal((source.match(new RegExp(back.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) ?? []).length, 2);
   const ready = source.slice(source.indexOf('<section className="gym-finish-screen">'));
   assert.equal(ready.startsWith(`<section className="gym-finish-screen">\n      ${back}\n      <h1`), true, 'the ready state');
@@ -657,10 +681,12 @@ test('the finish screen has one way out, at the head of the ready state and of t
     assert.equal(read('gym.css').includes(gone), false, gone);
   }
   // The field is named by its label, and says it is a field with its border, ground and focus edge.
-  assert.equal(source.includes('aria-label="Routine name"'), true);
+  assert.equal(source.includes("aria-label={t('gym.finish.routineName')}"), true);
+  assert.equal(catalog['gym.finish.routineName'], 'Routine name');
   // One source for the sentence, read by the editor's gate and by the offer, and drawn on the empty
   // name alone — Save is inert while the write is in flight too, where the sentence would be a lie.
-  assert.equal(speech('routines.js').includes("export const NAME_IT_TO_SAVE_IT = 'Name it to save it.';"), true);
+  assert.equal(speech('routines.js').includes("export const NAME_IT_TO_SAVE_IT = t('gym.routines.nameItToSaveIt');"), true);
+  assert.equal(speech('routines.js').includes('Name it to save it.'), true);
   assert.equal(source.includes('{name.trim() === \'\' && <p className="gym-keep-missing">{NAME_IT_TO_SAVE_IT}</p>}'), true);
   for (const file of ['Finish.jsx', 'Routines.jsx']) {
     assert.equal(read(file).includes("'Name it to save it.'"), false, `${file} keeps a copy of the sentence`);
@@ -676,11 +702,12 @@ test('discarding a session is withheld and undoable, so it is not confirmed and 
   assert.equal(finish.includes("log.holdDelete({\n      kind: 'session',\n      id,"), true);
   assert.equal((finish.match(/log\.holdDelete\(/g) ?? []).length, 1);
   assert.equal(finish.includes('<button type="button" className="gym-short-discard" onClick={discard}>'), true);
-  assert.equal(read('review.js').includes("export const SESSION_DELETED = 'Session deleted.';"), true);
+  assert.equal(read('review.js').includes("export const SESSION_DELETED = t('gym.review.sessionDeleted');"), true);
+  assert.equal(catalog['gym.review.sessionDeleted'], 'Session deleted.');
   // The sentence became false the day the delete gained a way back, so it is nowhere in the room.
   for (const file of gymFiles()) {
     if (!/\.(jsx?|css)$/.test(file)) continue;
-    assert.equal(fs.readFileSync(file, 'utf8').includes('There is no undoing it'), false, file);
+    assert.equal(spoken(fs.readFileSync(file, 'utf8')).includes('There is no undoing it'), false, file);
   }
 });
 
@@ -712,7 +739,7 @@ test('the Notes screen is its own room off #/gym/notes, titled as a room with th
   assert.equal(notes.includes('{showsByteCount(body) && ('), true);
   // A sixty-first character is taken and counted, then refused by the store in its own words.
   assert.equal(notes.includes('{showsTitleCount(title) && ('), true);
-  assert.equal(notes.includes('{countReadout(titleCountLabel(title))}'), true);
+  assert.equal(notes.includes('{titleCountLabel(title, figure)}'), true);
   assert.equal(/className="gym-note-title-input"[^/]*maxLength/.test(notes), false, 'no silent maxLength on the title');
   assert.equal(notes.includes('<Back href={NOTES_HREF} onClick={(event) => { event.preventDefault(); onClose(); }}>{NOTES_TITLE}</Back>'), true, 'the editor draws its back through Back.jsx');
   assert.equal(notes.includes("if (error?.code === 'cap') onStale();"), true, 'a full account re-reads the list behind the editor');
@@ -800,7 +827,8 @@ test('the picker opens on the six it counted, then the catalogue, and says which
   }
   // The head names the shortcut in the bytes both phones draw, and asserts no ranking over a log
   // this page has not read.
-  assert.equal(rules.includes("export const FEATURED_HEAD = 'The six';"), true);
+  assert.equal(rules.includes("export const FEATURED_HEAD = t('gym.picker.featuredHead');"), true);
+  assert.equal(rules.includes('The six'), true);
   // The count is over a fixed depth, so tapping Older on the Log tab cannot reshuffle the six.
   assert.equal(rules.includes('export const TRAINED_WINDOW = 50;'), true);
   assert.equal(rules.includes('for (const session of sessions.slice(0, TRAINED_WINDOW))'), true);
@@ -844,7 +872,7 @@ test('the exchange and the precondition are on the landing and on the crawlable 
 
 test('no gym landing copy sells a subscription, on the page or in the crawlable shell', () => {
   const landing = speech('marketing/GymLanding.jsx');
-  const head = fs.readFileSync(path.join(GYM, 'marketing', 'landingHead.js'), 'utf8');
+  const head = speech('marketing/landingHead.js');
   for (const source of [landing, head]) {
     assert.equal(/one subscription|One subscription/.test(source), false);
   }
@@ -887,8 +915,8 @@ test('the create door asks how a movement is loaded, and mints nothing before it
   const picker = read('logger/MovementPicker.jsx');
   assert.equal(picker.includes('onClick={() => setMinting({ name: query.trim(), equipment: DEFAULT_EQUIPMENT })}'), true);
   assert.equal(picker.includes('function NewMovement({ draft, onChange, onCancel, onCreate }) {'), true);
-  assert.equal(picker.includes('Create and add'), true);
-  assert.equal(picker.includes('How is it loaded?'), true);
+  assert.equal(speech('logger/MovementPicker.jsx').includes('Create and add'), true);
+  assert.equal(speech('logger/MovementPicker.jsx').includes('How is it loaded?'), true);
   // One sheet draws one kind of label: the caption over the chooser is the design system's field
   // label, the same treatment the Input above it draws for `Name`.
   const label = read('gym.css').match(/\.gym-name-label \{([^}]*)\}/)[1];
@@ -900,14 +928,16 @@ test('the create door asks how a movement is loaded, and mints nothing before it
   assert.equal(/'(cable|kettlebell)'/.test(picker), false);
   assert.equal(picker.includes('onCreate({ name: draft.name.trim(), equipment: draft.equipment })'), true);
   assert.equal(read('useTrainingLog.js').includes('id: mintId(\'ex_\'), name, equipment, pattern: CREATED_PATTERN'), true);
-  assert.equal(picker.includes('<button type="button" className="gym-sheet-cancel" onClick={onCancel}>Cancel</button>'), true);
+  assert.equal(picker.includes("<button type=\"button\" className=\"gym-sheet-cancel\" onClick={onCancel}>{t('gym.common.cancel')}</button>"), true);
+  assert.equal(catalog['gym.common.cancel'], 'Cancel');
   const sheet = picker.slice(picker.indexOf('function NewMovement'));
   assert.equal(sheet.includes('gym-sheet-close'), false);
 });
 
 test('a movement this account minted is tagged `yours`, in the picker and in a routine', () => {
-  assert.equal(read('logger/MovementPicker.jsx').includes('<span className="gym-picker-tag">yours</span>'), true);
-  assert.equal(read('Routines.jsx').includes('<span className="gym-entry-yours">yours</span>'), true);
+  assert.equal(read('logger/MovementPicker.jsx').includes("<span className=\"gym-picker-tag\">{t('gym.picker.yours')}</span>"), true);
+  assert.equal(read('Routines.jsx').includes("<span className=\"gym-entry-yours\">{t('gym.picker.yours')}</span>"), true);
+  assert.equal(catalog['gym.picker.yours'], 'yours');
   assert.equal(read('Routines.jsx').includes('>mine</span>'), false);
 });
 
@@ -919,7 +949,8 @@ test('the rename sheet’s proof is the page’s own read, and no number on it i
   assert.equal(source.includes('api.record'), true);
   const sheet = source.slice(source.indexOf('function RenameSheet'));
   assert.equal(/\d+ sessions|\d+ PRs|unchanged|kept/.test(spoken(sheet)), false);
-  assert.equal(sheet.includes('<button type="button" className="gym-name-cancel" onClick={onClose}>Cancel</button>'), true);
+  assert.equal(sheet.includes("<button type=\"button\" className=\"gym-name-cancel\" onClick={onClose}>{t('gym.common.cancel')}</button>"), true);
+  assert.equal(catalog['gym.common.cancel'], 'Cancel');
   assert.equal(sheet.indexOf('gym-name-save') < sheet.indexOf('gym-name-cancel'), true);
   assert.equal(sheet.includes('gym-sheet-close'), false);
 });
@@ -984,13 +1015,15 @@ test('bodyweight: the log actions open one sheet, the reading stays in options, 
       assert.equal(said.includes(banned), false, `${file} — ${banned}`);
     }
   }
-  assert.equal(speech('coach/coach.js').includes("list_bodyweight: 'read your bodyweight'"), true);
+  assert.equal(speech('coach/coach.js').includes("list_bodyweight: t('gym.coach.tools.listBodyweight'),"), true);
+  assert.equal(speech('coach/coach.js').includes('read your bodyweight'), true);
 });
 
 test('the finished session’s detail has the discard door, through the same window as every other delete; the live mirror has none', () => {
   const log = read('Log.jsx');
   assert.equal(log.includes('{isFinished(session) && <div className="gym-detail-discard">'), true);
-  assert.equal(log.includes('<button type="button" className="gym-short-discard" onClick={discard}>Discard session</button>'), true);
+  assert.equal(log.includes("<button type=\"button\" className=\"gym-short-discard\" onClick={discard}>{t('gym.log.discardSession')}</button>"), true);
+  assert.equal(catalog['gym.log.discardSession'], 'Discard session');
   assert.equal(log.includes("holdDelete({\n      kind: 'session',\n      id,"), true);
   assert.equal(read('withheld.js').includes('session: SESSION_DELETED'), true, 'the room names every discard with the review’s sentence');
   assert.equal(log.includes("window.location.hash = '#/gym/log';"), true);
@@ -1050,7 +1083,8 @@ test('at the narrow width the past workout’s Save band pins to the bottom on t
 
 test('the routine editor and the note editor carry their back link on its own line, above the head', () => {
   const routine = read('Routines.jsx');
-  assert.equal(routine.indexOf('<Back href={ROUTINES_HREF}>Routines</Back>', routine.indexOf('className={`gym-plan-editor')) < routine.indexOf('<header className={`gym-editor-head'), true);
+  assert.equal(routine.indexOf("<Back href={ROUTINES_HREF}>{t('gym.routines.back')}</Back>", routine.indexOf('className={`gym-plan-editor')) < routine.indexOf('<header className={`gym-editor-head'), true);
+  assert.equal(catalog['gym.routines.back'], 'Routines');
   assert.equal(read('notes/Notes.jsx').includes(`      <Back href={NOTES_HREF} onClick={(event) => { event.preventDefault(); onClose(); }}>{NOTES_TITLE}</Back>
       <header className="gym-notes-heading">`), true);
 });

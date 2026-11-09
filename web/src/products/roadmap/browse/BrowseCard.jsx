@@ -2,6 +2,7 @@ import React from 'react';
 import { GalleryCard } from '../share/GalleryCard.jsx';
 import { cardMark } from './galleryIndex.js';
 import { portraitUrl } from './GalleryClient.js';
+import { t } from '../i18n/index.js';
 
 export function BrowseCard({ entry, forking, failed, onFork }) {
   const mark = cardMark(entry);
@@ -17,14 +18,14 @@ export function BrowseCard({ entry, forking, failed, onFork }) {
       href={mark.href}
       badge={mark.badge}
     >
-      <span className="wm-br-lineage">{failed ? "Couldn't fork just now" : lineageOf(entry)}</span>
+      <span className="wm-br-lineage">{failed ? t('roadmap.browse.forkFailed') : lineageOf(entry)}</span>
       <span className="wm-br-fork">
         {mark.fork === 'offer' && (
           <button type="button" className="wm-br-forkbtn" onClick={() => onFork(entry)} disabled={forking}>
-            {forking ? 'Forking…' : 'Fork'}
+            {forking ? t('roadmap.browse.forking') : t('roadmap.browse.fork')}
           </button>
         )}
-        {mark.fork === 'copy' && <a className="wm-br-open" href={`#/app/${entry.copyId}`}>Open your copy</a>}
+        {mark.fork === 'copy' && <a className="wm-br-open" href={`#/app/${entry.copyId}`}>{t('roadmap.browse.openCopy')}</a>}
       </span>
     </GalleryCard>
   );
@@ -32,8 +33,8 @@ export function BrowseCard({ entry, forking, failed, onFork }) {
 
 function lineageOf(entry) {
   const phrases = [];
-  if (entry.forks > 0) phrases.push(`forked ${entry.forks} ${entry.forks === 1 ? 'time' : 'times'}`);
-  if (entry.sourceTitle) phrases.push(`A fork of “${entry.sourceTitle}”`);
+  if (entry.forks > 0) phrases.push(t('roadmap.browse.forkedTimes', { count: entry.forks }));
+  if (entry.sourceTitle) phrases.push(t('roadmap.browse.forkOf', { title: entry.sourceTitle }));
   return phrases.join(' · ');
 }
 

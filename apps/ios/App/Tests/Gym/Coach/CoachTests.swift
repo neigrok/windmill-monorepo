@@ -1220,6 +1220,60 @@ actor RemovalDeliveryGate {
   }
 }
 
+// Coach's offline line, as CoachTab notes the connection going and coming back: it comes down only while it still stands.
+extension CoachTests {
+  func connected() async throws -> (CoachConversation, SwitchedConnectivity) {
+    let connectivity = SwitchedConnectivity(), runtime = try GymModelTests().runtime(connectivity: connectivity)
+    let coach = CoachConversation(gym: GymModel(runner: runtime.runner, runtime: runtime), store: store())
+    await coach.activate()
+    return (coach, connectivity)
+  }
+  func connection(_ online: Bool, _ coach: CoachConversation, _ connectivity: SwitchedConnectivity) async throws {
+    connectivity.set(online: online)
+    for _ in 0..<500 where coach.offline == online { try await Task.sleep(for: .milliseconds(10)) }
+    #expect(coach.offline == !online)
+  }
+
+  @Test func theOfflineLineComesDownWhenCoachIsBackOnline() async throws {
+    let (coach, connectivity) = try await connected()
+    try await connection(false, coach, connectivity); coach.noteOffline()
+    #expect(coach.error == "Coach needs a connection.")
+    try await connection(true, coach, connectivity); coach.noteOnline()
+    #expect(coach.error == nil)
+  }
+
+  @Test func anErrorThatReplacedTheOfflineLineStaysWhenCoachIsBackOnline() async throws {
+    let (coach, connectivity) = try await connected()
+    try await connection(false, coach, connectivity); coach.noteOffline(); coach.error = "Your draft couldn’t be saved. Try again."
+    try await connection(true, coach, connectivity); coach.noteOnline()
+    #expect(coach.error == "Your draft couldn’t be saved. Try again.")
+  }
+
+  @Test func anErrorThatStoodBeforeTheConnectionWentStays() async throws {
+    let (coach, connectivity) = try await connected()
+    coach.error = "Choose a supported photo."
+    try await connection(false, coach, connectivity); coach.noteOffline()
+    #expect(coach.error == "Choose a supported photo.")
+    try await connection(true, coach, connectivity); coach.noteOnline()
+    #expect(coach.error == "Choose a supported photo.")
+  }
+
+  @Test func aDismissedOfflineLineReturnsWhileOfflineAndComesDownOnline() async throws {
+    let (coach, connectivity) = try await connected()
+    try await connection(false, coach, connectivity); coach.noteOffline(); coach.error = nil; coach.noteOffline()
+    #expect(coach.error == "Coach needs a connection.")
+    try await connection(true, coach, connectivity); coach.noteOnline()
+    #expect(coach.error == nil)
+  }
+
+  @Test func anOfflineLineNotedTwiceComesDownOnce() async throws {
+    let (coach, connectivity) = try await connected()
+    try await connection(false, coach, connectivity); coach.noteOffline(); coach.noteOffline()
+    try await connection(true, coach, connectivity); coach.noteOnline()
+    #expect(coach.error == nil)
+  }
+}
+
 @MainActor final class RemovalReceiptHost<Content: View>: UIHostingController<Content> {
   var appeared = false
   override func viewDidAppear(_ animated: Bool) { super.viewDidAppear(animated); appeared = true }

@@ -55,16 +55,16 @@ class RoomChromeTests {
         }
         fun lines(): List<List<String>> {
             val rail = compose.onNodeWithTag("Rail").fetchSemanticsNode().boundsInRoot
-            val labels = Tab.entries.map { tab ->
-                val node = compose.onNodeWithText(tab.title, useUnmergedTree = true).fetchSemanticsNode()
+            val labels = Tab.entries.map { string(it.title) }.map { title ->
+                val node = compose.onNodeWithText(title, useUnmergedTree = true).fetchSemanticsNode()
                 val layouts = mutableListOf<TextLayoutResult>()
                 node.config[SemanticsActions.GetTextLayoutResult].action!!(layouts)
                 val layout = layouts.single()
-                assertTrue("${tab.title} is never cut", !layout.hasVisualOverflow)
+                assertTrue("$title is never cut", !layout.hasVisualOverflow)
                 val lineIndices = 0 until layout.lineCount
                 val ink = Rect(node.boundsInRoot.left + lineIndices.minOf(layout::getLineLeft), node.boundsInRoot.top,
                     node.boundsInRoot.left + lineIndices.maxOf(layout::getLineRight), node.boundsInRoot.top + layout.size.height)
-                assertTrue("${tab.title} at $ink leaves the rail at $rail",
+                assertTrue("$title at $ink leaves the rail at $rail",
                     ink.left >= rail.left && ink.right <= rail.right && ink.top >= rail.top && ink.bottom <= rail.bottom)
                 ink to lineIndices.map { layout.layoutInput.text.text.substring(layout.getLineStart(it), layout.getLineEnd(it)) }
             }

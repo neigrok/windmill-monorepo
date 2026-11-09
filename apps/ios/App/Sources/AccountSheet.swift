@@ -31,7 +31,7 @@ struct AccountSheet: View {
   var brand: Color { ShellPalette.brand }
   var offline: Bool { model.runtime?.engine.status.online == false }
   // Only the email door says it also creates an account; the address Apple asks for opens one that exists.
-  var addressNote: String? { model.sheet == .appleAddress ? nil : "New here? This also creates your account." }
+  var addressNote: LocalizedStringResource? { model.sheet == .appleAddress ? nil : "New here? This also creates your account." }
   var body: some View {
     NavigationStack(path: $settingsPath) {
       Group {
@@ -140,12 +140,12 @@ struct AccountSheet: View {
     openURL(AppSettings.updateDestination) { model.updateOpened($0) }
   }
 
-  var sheetTitle: String {
+  var sheetTitle: Text {
     switch model.sheet {
-    case .you: "You"
-    case .keep: ""
-    case .appleQuestion, .appleAdded, .appleNoAccount, .appleExpired: "Apple"
-    default: "Sign in"
+    case .you: Text("You")
+    case .keep: Text(verbatim: "")
+    case .appleQuestion, .appleAdded, .appleNoAccount, .appleExpired: Text("Apple")
+    default: Text("Sign in")
     }
   }
 
@@ -238,7 +238,7 @@ struct AccountSheet: View {
     } else { head("checkmark.circle") }
   }
 
-  func equalButton(_ label: String, action: @escaping () -> Void) -> some View {
+  func equalButton(_ label: LocalizedStringResource, action: @escaping () -> Void) -> some View {
     Button(action: action) { Text(label).font(ShellType.secondaryAction).foregroundStyle(brand).frame(maxWidth: .infinity, minHeight: 27) }
       .buttonStyle(RoomSecondaryStyle()).controlSize(.large).buttonBorderShape(.capsule).tint(brand)
   }
@@ -282,7 +282,7 @@ struct AccountSheet: View {
         if model.runtime?.settings.modelServer == true {
           Button {
             model.performAuthentication {
-              guard let auth = model.runtime?.auth else { model.error = "Sign-in is unavailable."; return }
+              guard let auth = model.runtime?.auth else { model.error = String(localized: "Sign-in is unavailable."); return }
               await model.authenticateApple { token in
                 return try auth.authorizeFakeApple(token: token)
               }
@@ -308,7 +308,7 @@ struct AccountSheet: View {
                 let cancelled = (error as? ASAuthorizationError)?.code == .canceled
                 model.telemetry.event("auth_signed_in", properties: ["method": "apple", "outcome": cancelled ? "cancelled" : "failed"])
                 if !cancelled { model.telemetry.failure("auth_apple", kind: "unexpected") }
-                if !cancelled { model.error = "Couldn't continue with Apple. Try again, or use email instead." }
+                if !cancelled { model.error = String(localized: "Couldn't continue with Apple. Try again, or use email instead.") }
               }
             }
           }.signInWithAppleButtonStyle(colorScheme == .dark ? .white : .black).frame(height: 52).clipShape(Capsule())
@@ -375,7 +375,7 @@ struct AccountSheet: View {
   // You's sign-in doors: signed out, or a paused account signing in again, with no sign-in already finishing.
   var youDoors: Bool { model.canSignIn && !model.signInPending && (model.account == nil || model.authPaused) }
   // What the doors' section says under them: why they wait offline, or that a paused account signs in to itself.
-  var youFooter: String? {
+  var youFooter: LocalizedStringResource? {
     guard youDoors else { return nil }
     if offline { return "Sign-in needs a connection." }
     return model.account != nil ? "Sign in to the same account. Your writing stays on this phone." : nil
@@ -410,10 +410,10 @@ struct AccountSheet: View {
         }
       } else if !model.authPaused {
         Section {
-          factRow("Email", model.emailMethodValue, symbol: "envelope")
+          factRow(String(localized: "Email"), model.emailMethodValue, symbol: "envelope")
           if let apple {
             Button { model.askToRemoveApple() } label: {
-              factRow("Apple", apple.relay ? "Hide My Email" : apple.email, symbol: "apple.logo").contentShape(Rectangle())
+              factRow(String(localized: "Apple"), apple.relay ? String(localized: "Hide My Email") : apple.email, symbol: "apple.logo").contentShape(Rectangle())
             }.buttonStyle(.plain).accessibilityIdentifier("apple-method")
               .confirmationDialog("Remove Apple?", isPresented: Binding(get: { model.removingApple }, set: { if !$0 { model.cancelAppleRemoval() } }),
                                   titleVisibility: .visible) {

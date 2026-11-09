@@ -1,3 +1,4 @@
+import { t } from '../i18n/index.js';
 import { dayLabel, groupByExercise, sharedHref } from '../log.js';
 
 export function shareLink(token, origin = '') {
@@ -5,30 +6,30 @@ export function shareLink(token, origin = '') {
 }
 
 export function expiryLine(expiresAtMs) {
-  return `Expires ${dayLabel(expiresAtMs)}.`;
+  return t('gym.share.expires', { day: dayLabel(expiresAtMs) });
 }
 
 // The link a lifter hands to a person. It never carries the word coach — that names the room.
-export const SHARE_OFFER = 'Share this workout';
-export const SHARE_OFFER_LINE = 'A link to this one workout. It expires, you can revoke it here, and sharing again hands back the same link rather than a second one.';
+export const SHARE_OFFER = t('gym.share.offer');
+export const SHARE_OFFER_LINE = t('gym.share.offerLine');
 
 export const SHARE_TERMS = [
-  'Anyone holding this link can read this one workout.',
-  'It opens nothing else — no other session, no account, no name.',
-  'You can revoke it here at any time, and the link stops working.',
+  t('gym.share.termsReadOne'),
+  t('gym.share.termsOpensNothing'),
+  t('gym.share.termsRevoke'),
 ];
 
 export const SHARED_TERMS = [
-  'One workout, shared by the person who trained it.',
-  'The link expires, and they can revoke it at any time.',
-  'It carries no name and opens nothing else in their log.',
-  'Weights are in kilograms.',
+  t('gym.share.sharedBy'),
+  t('gym.share.sharedExpires'),
+  t('gym.share.sharedNoName'),
+  t('gym.share.sharedKilograms'),
 ];
 
 // Revoked, expired and never-minted answer identically; never guess which.
 export const SHARED_ABSENT = {
-  title: 'This link doesn’t open a workout.',
-  body: 'It may have expired, been revoked, or never existed. The log answers all three the same way, so there is nothing more to tell you.',
+  title: t('gym.share.absentTitle'),
+  body: t('gym.share.absentBody'),
 };
 
 // The shared wire spells a movement as its display name, not a catalog id.

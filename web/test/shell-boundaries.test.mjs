@@ -55,25 +55,53 @@ function sourceFiles(dir) {
 
 // Static `from '…'` (import and re-export), bare side-effect imports, and dynamic import(…).
 const IMPORT_SHAPES = [
-  /\bfrom\s+['"]([^'"]+)['"]/g,
-  /\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g,
-  /^\s*import\s+['"]([^'"]+)['"]/g,
+  { shape: /\bfrom\s+['"]([^'"]+)['"]/g, dynamic: false },
+  { shape: /\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g, dynamic: true },
+  { shape: /^\s*import\s+['"]([^'"]+)['"]/g, dynamic: false },
   // CSS: `@import 'x'` and `@import url('x')`, with or without a media query after it.
-  /@import\s+(?:url\(\s*)?['"]([^'"]+)['"]/g,
+  { shape: /@import\s+(?:url\(\s*)?['"]([^'"]+)['"]/g, dynamic: false },
 ];
 
 function importsOf(file) {
   const found = [];
   const lines = fs.readFileSync(file, 'utf8').split('\n');
   lines.forEach((text, index) => {
-    for (const shape of IMPORT_SHAPES) {
+    for (const { shape, dynamic } of IMPORT_SHAPES) {
       shape.lastIndex = 0;
       for (let match = shape.exec(text); match; match = shape.exec(text)) {
-        found.push({ specifier: match[1], line: index + 1 });
+        found.push({ specifier: match[1], line: index + 1, dynamic });
       }
     }
   });
   return found;
+}
+
+// Two in-repo specifier shapes: relative, and Vite-root-absolute ('/src/…') — the second would
+// otherwise slip every rule.
+function targetOf(file, specifier) {
+  if (specifier.startsWith('/src/')) return path.resolve(SRC, '..', specifier.slice(1));
+  return specifier.startsWith('.') ? path.resolve(path.dirname(file), specifier) : null;
+}
+
+// What the brand root loads before any room or product page: main.jsx and each product's brand-root scenes
+// (marketing/RootScenes.jsx, mounted on the brand root through the registry's landing.root), with every module
+// their static imports reach.
+function entryLoaded(starts) {
+  const loaded = new Set(starts);
+  const queue = [...loaded];
+  while (queue.length) {
+    const file = queue.shift();
+    for (const { specifier, dynamic } of importsOf(file)) {
+      const target = !dynamic && targetOf(file, specifier);
+      if (!target) continue;
+      const module = [target, `${target}.js`, `${target}.jsx`, path.join(target, 'index.js'), path.join(target, 'index.jsx')]
+        .find((candidate) => /\.(js|jsx|mjs)$/.test(candidate) && fs.existsSync(candidate) && fs.statSync(candidate).isFile());
+      if (!module || loaded.has(module)) continue;
+      loaded.add(module);
+      queue.push(module);
+    }
+  }
+  return loaded;
 }
 
 function productOf(absolutePath) {
@@ -81,7 +109,53 @@ function productOf(absolutePath) {
   return absolutePath.slice(PRODUCTS_DIR.length).split(path.sep)[0];
 }
 
-const violations = { shellIntoProducts: [], productIntoProduct: [], productIntoAppChrome: [] };
+// An owner's catalog lives in its i18n/ beside its code and is read only by that owner, through i18n/index.js.
+// An owner whose modules load at different moments keeps a catalog per moment: a module the brand root loads
+// reads i18n/entry/, one the app's chrome or home loads i18n/app/, one the settings page loads i18n/settings/,
+// one a product's landing loads i18n/landing/, and every other module i18n/index.js, which loads with the room.
+// A module two moments load reads the latest catalog both read. Each page then downloads only the copy it shows.
+const PLATFORM_I18N = path.join(SRC, 'platform', 'i18n') + path.sep;
+const BRAND_ROOT_SCENES = PRODUCTS.map((product) => path.join(PRODUCTS_DIR, product.id, 'marketing', 'RootScenes.jsx'));
+const ENTRY_LOADED = entryLoaded([path.join(SRC, 'main.jsx'), ...BRAND_ROOT_SCENES]);
+const LANDINGS = PRODUCTS.map((product) => path.resolve(SRC, '..', product.landing.head.module));
+const LANDING_LOADED = new Set([...entryLoaded(LANDINGS)].filter((file) => !ENTRY_LOADED.has(file)));
+// The app's chrome and home: the /app chrome App.jsx loads lazily and each product's home card. The settings page:
+// the page App.jsx loads lazily and each product's settings sections. A door names where its route table keeps them.
+const DOORS = {
+  app: [[path.join(SRC, 'shell', 'App.jsx'), /^\.\/chrome\//], ...PRODUCTS.map((product) => [path.join(PRODUCTS_DIR, product.id, 'routes.js'), /^\.\/HomeCard\.jsx$/])],
+  settings: [[path.join(SRC, 'shell', 'App.jsx'), /^\.\/settings\//], ...PRODUCTS.map((product) => [path.join(PRODUCTS_DIR, product.id, 'routes.js'), /^\.\/settings\//])],
+};
+const doorRoots = (doors) => doors.map(([file, door]) => importsOf(file).filter(({ specifier, dynamic }) => dynamic && door.test(specifier)).map(({ specifier }) => targetOf(file, specifier)));
+const DOOR_ROOTS = { app: doorRoots(DOORS.app), settings: doorRoots(DOORS.settings) };
+const MOMENTS = {
+  entry: ENTRY_LOADED,
+  app: entryLoaded(DOOR_ROOTS.app.flat()),
+  settings: entryLoaded(DOOR_ROOTS.settings.flat()),
+  landing: LANDING_LOADED,
+};
+const READS = { entry: ['entry'], app: ['entry', 'app'], settings: ['entry', 'app', 'settings'], landing: ['entry', 'landing'] };
+function momentOf(file) {
+  const loading = Object.keys(MOMENTS).filter((moment) => MOMENTS[moment].has(file));
+  if (!loading.length) return null;
+  return Object.keys(READS).filter((tier) => loading.every((moment) => READS[moment].includes(tier)))
+    .reduce((latest, tier) => (READS[tier].length > READS[latest].length ? tier : latest));
+}
+function catalogOwnerOf(target) {
+  const parts = path.relative(SRC, target).split(path.sep);
+  const at = parts.indexOf('i18n');
+  if (at < 1 || (target + path.sep).startsWith(PLATFORM_I18N)) return null;
+  return path.join(SRC, ...parts.slice(0, at));
+}
+
+const violations = { shellIntoProducts: [], productIntoProduct: [], productIntoAppChrome: [], catalogAcrossOwners: [], catalogByLoading: [], computedImports: [] };
+
+// A dynamic import whose module is not a string literal leads somewhere no rule here can see.
+const COMPUTED_IMPORT = /\bimport\s*\(\s*(?:[^'"\s]|$)/;
+for (const file of sourceFiles(SRC)) {
+  fs.readFileSync(file, 'utf8').split('\n').forEach((text, index) => {
+    if (COMPUTED_IMPORT.test(text)) violations.computedImports.push(`src/${path.relative(SRC, file)}:${index + 1} imports a module it computes; name it as a string literal`);
+  });
+}
 
 for (const file of sourceFiles(SRC)) {
   const fromProduct = productOf(file);
@@ -90,12 +164,8 @@ for (const file of sourceFiles(SRC)) {
 
   const relativeFile = path.relative(SRC, file);
   for (const { specifier, line } of importsOf(file)) {
-    // Two in-repo specifier shapes: relative, and Vite-root-absolute ('/src/…') — the second
-    // would otherwise slip every rule.
-    if (!specifier.startsWith('.') && !specifier.startsWith('/src/')) continue;
-    const target = specifier.startsWith('/src/')
-      ? path.resolve(SRC, '..', specifier.slice(1))
-      : path.resolve(path.dirname(file), specifier);
+    const target = targetOf(file, specifier);
+    if (!target) continue;
     const targetProduct = productOf(target);
 
     if (fromShell && targetProduct && !(fromShowcase && target === specimensOf(targetProduct))) {
@@ -110,6 +180,19 @@ for (const file of sourceFiles(SRC)) {
     if (fromProduct && (target + path.sep).startsWith(APP_CHROME_DIR)) {
       violations.productIntoAppChrome.push(`src/${relativeFile}:${line} imports ${specifier} — products must never import from the /app chrome`);
     }
+    const catalogOwner = catalogOwnerOf(target);
+    if (catalogOwner && !file.startsWith(path.join(catalogOwner, 'i18n') + path.sep)) {
+      const owner = `src/${path.relative(SRC, catalogOwner)}`;
+      const indexOf = (tier) => path.join(catalogOwner, 'i18n', ...(tier ? [tier] : []), 'index.js');
+      const doors = [null, ...Object.keys(READS)].map(indexOf).filter((index) => fs.existsSync(index));
+      const moment = momentOf(file);
+      const expected = moment && fs.existsSync(indexOf(moment)) ? moment : null;
+      const loads = { entry: 'with the brand root, or with both the app and a landing', app: 'with the app\'s chrome or home', settings: 'with the settings page', landing: 'with its product\'s landing', null: 'with a lazy chunk' }[expected];
+      const where = `${owner}/i18n${expected ? `/${expected}` : ''}`;
+      if (!file.startsWith(catalogOwner + path.sep)) violations.catalogAcrossOwners.push(`src/${relativeFile}:${line} imports ${specifier} — only ${owner} reads its own catalog`);
+      else if (!doors.includes(target)) violations.catalogAcrossOwners.push(`src/${relativeFile}:${line} imports ${specifier} — read the catalog through its i18n/index.js`);
+      else if (target !== indexOf(expected)) violations.catalogByLoading.push(`src/${relativeFile}:${line} loads ${loads}, so it reads ${where}/index.js and its copy lives in ${where}/en.json`);
+    }
   }
 }
 
@@ -121,8 +204,22 @@ test('no product imports from another product', () => {
   assert.deepEqual(violations.productIntoProduct, []);
 });
 
+test('every dynamic import names its module as a string literal', () => {
+  assert.deepEqual(violations.computedImports, []);
+});
+
 test('no product imports from the /app chrome', () => {
   assert.deepEqual(violations.productIntoAppChrome, []);
+});
+
+test('every catalog is read only by its owner, through its i18n/index.js', () => {
+  assert.deepEqual(violations.catalogAcrossOwners, []);
+});
+
+test('a module reads the catalog of the moment it loads: the brand root\'s, the app\'s, the settings page\'s, its product\'s landing\'s, or its room\'s', () => {
+  assert.deepEqual(BRAND_ROOT_SCENES.filter((scenes) => !fs.existsSync(scenes)).map((scenes) => `${path.relative(SRC, scenes)} is gone; name the brand-root scenes here`), []);
+  assert.deepEqual(Object.entries(DOOR_ROOTS).flatMap(([moment, roots]) => roots.map((found, door) => (found.length ? null : `${path.relative(SRC, DOORS[moment][door][0])} lazily loads no ${moment} module`))).filter(Boolean), []);
+  assert.deepEqual(violations.catalogByLoading, []);
 });
 
 // The landing seam. Since the shell stopped hard-coding /roadmap, the router mounts a landing by

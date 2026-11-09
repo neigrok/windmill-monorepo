@@ -3,6 +3,7 @@
 import React, { useState, useSyncExternalStore } from 'react';
 import { Button, Icon, IconButton } from '../../design-system';
 import { forgetInstallPrompt, installPrompt, watchInstallPrompt } from './installPrompt.js';
+import { t } from '../i18n/app/index.js';
 
 const DISMISSED_KEY = 'windmill:install-dismissed';
 
@@ -60,9 +61,9 @@ export function InstallChip() {
   return (
     <div className="wm-install-chip">
       <style>{CSS}</style>
-      <span className="wm-install-chip-copy">Windmill can live on your home screen — it opens even offline.</span>
-      <Button variant="secondary" size="sm" onClick={accept}>Install</Button>
-      <IconButton icon={<Icon name="x" size={16} />} label="Not now" size="sm" onClick={dismiss} />
+      <span className="wm-install-chip-copy">{t('shell.install.copy')}</span>
+      <Button variant="secondary" size="sm" onClick={accept}>{t('shell.install.install')}</Button>
+      <IconButton icon={<Icon name="x" size={16} />} label={t('shell.install.notNow')} size="sm" onClick={dismiss} />
     </div>
   );
 }

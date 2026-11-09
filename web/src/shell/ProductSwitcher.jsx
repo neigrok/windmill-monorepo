@@ -1,11 +1,12 @@
 import React from 'react';
 import { PRODUCTS } from './products.js';
+import { t } from './i18n/index.js';
 
 export function ProductSwitcher({ current }) {
   const { pathname } = window.location;
   if (pathname === '/app' || pathname.startsWith('/app/')) return null;
   return (
-    <nav style={row} aria-label="Products">
+    <nav style={row} aria-label={t('shell.switcher.label')}>
       {PRODUCTS.map((p) => (
         <a key={p.id} href={p.switchHash} aria-current={p.id === current ? 'page' : undefined}
           style={{ ...pill, ...(p.id === current ? pillOn : null) }}>

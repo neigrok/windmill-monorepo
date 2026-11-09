@@ -1,5 +1,7 @@
 package works.windmill.gym.coach
 
+import works.windmill.gym.string
+import works.windmill.gym.R
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -102,7 +104,7 @@ class CoachHistoryTests {
         compose.onNodeWithContentDescription("Stop response").assertIsEnabled().performClick()
         waitUntil { !coach.isAsking(chat) && fixture.messages().any { it.state == MessageState.stopped } }
         compose.onNodeWithText("A retained question").assertIsDisplayed()
-        compose.onNodeWithText(Ask.stopped).assertIsDisplayed()
+        compose.onNodeWithText(string(R.string.gym_coach_stopped)).assertIsDisplayed()
         assertEquals(1, server.stops)
         assertEquals(1, server.opened.size)
         assertEquals(emptyList<String>(), failures.toList())
@@ -129,7 +131,7 @@ class CoachHistoryTests {
             ThreadsScreen(threads, threads, "Coach", {}, {}, {})
         } } }
         compose.onNodeWithText("Private first question").assertIsDisplayed()
-        compose.onNodeWithContentDescription(Threads.open).assertIsDisplayed()
+        compose.onNodeWithContentDescription(string(R.string.gym_coach_new_chat)).assertIsDisplayed()
         events.clear()
         failures.clear()
     }
@@ -244,10 +246,10 @@ class CoachHistoryTests {
         val threads = ThreadsBinding(fixture.store.coach)
         compose.setContent { GymMaterial { ThreadsScreen(threads, threads, "Coach", {}, {}, {}) } }
         waitUntil { fixture.store.coach.conversations?.rows != null }
-        compose.onNodeWithText(Threads.none).assertIsDisplayed()
+        compose.onNodeWithText(string(R.string.gym_coach_threads_none)).assertIsDisplayed()
         runBlocking { fixture.store.connect(fixture.account()) }
         waitUntil { fixture.store.coach.conversations?.rows != null }
-        compose.onNodeWithText(Threads.none).assertIsDisplayed()
+        compose.onNodeWithText(string(R.string.gym_coach_threads_none)).assertIsDisplayed()
     }
 
     @Test fun confirmationDeletesImmediatelyWithOneResultAndNoUndo() {
@@ -256,7 +258,7 @@ class CoachHistoryTests {
         requestDelete()
         compose.onNodeWithText("Delete").performClick()
         waitUntil { fixture.threads().isEmpty() && fixture.store.coach.history.isEmpty() && events.any { it.second["outcome"] == "ok" } }
-        compose.onNodeWithText(Threads.none).assertIsDisplayed()
+        compose.onNodeWithText(string(R.string.gym_coach_threads_none)).assertIsDisplayed()
         compose.onNodeWithText("Undo").assertDoesNotExist()
         assertEquals(emptyList<CoachMessage>(), fixture.messages())
         assertEquals(emptyList<Any>(), fixture.store.held.withheld)

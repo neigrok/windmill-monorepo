@@ -1,12 +1,14 @@
 package works.windmill.gym.presentation
 
+import androidx.annotation.StringRes
+import works.windmill.gym.R
+import works.windmill.platform.i18n.Words
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
-import java.time.temporal.ChronoUnit
 import java.util.Locale
 import kotlinx.serialization.Serializable
 
@@ -20,34 +22,23 @@ data class WeighIn(val dateLocal: String, val weightKg: Double, val recordedAt: 
 // What the field said, or the one refusal it met first.
 sealed interface ParsedWeight {
     data class Ok(val weightKg: Double) : ParsedWeight
-    data class Refused(val said: String) : ParsedWeight
+    data class Refused(val why: Words) : ParsedWeight
 }
 
-enum class ChartWindow(val label: String) {
-    Ninety("90 days"), All("All");
+enum class ChartWindow(@StringRes val named: Int) {
+    Ninety(R.string.gym_bodyweight_window_ninety), All(R.string.gym_bodyweight_window_all);
 }
 
 object Bodyweight {
-    const val title = "Bodyweight"
-    const val chip = "Weigh in"
-    const val save = "Save weight"
-    const val unit = "kg"
-
     // The refusals, one at a time, in the order the field is read.
-    const val notANumber = "That is not a number yet."
-    const val onePoint = "One decimal point only."
-    const val outOfRange = "Between 20 and 400 kg — check the number."
-    const val notAForecast = "A weigh-in is not a forecast — today or earlier."
-
-    // One tap. The sheet comes down and the window holds the day, with Undo on the room's transient.
-    const val deleteRow = "Delete weigh-in"
+    val unreadable: Words = Words.Message(R.string.gym_entry_not_a_number)
+    val extraPoint: Words = Words.Message(R.string.gym_entry_one_point)
+    val outsideRange: Words = Words.Message(R.string.gym_bodyweight_out_of_range)
+    val inTheFuture: Words = Words.Message(R.string.gym_bodyweight_not_a_forecast)
 
     // A segment is a connection and not data: none is drawn across a gap longer than this, and the
     // gap reads as a gap with no legend.
     const val maxGapDays = 7L
-
-    const val nothingYet = "No weigh-ins yet. Weigh in from the log."
-    const val noneInWindow = "no weigh-in in the last 90 days"
 
     const val minKg = 20.0
     const val maxKg = 400.0
@@ -59,43 +50,24 @@ object Bodyweight {
     fun parse(typed: String): ParsedWeight {
         val raw = typed.trim()
         if (raw.isEmpty() || raw.none { it in '0'..'9' } || raw.any { it !in '0'..'9' && it != '.' && it != ',' }) {
-            return ParsedWeight.Refused(notANumber)
+            return ParsedWeight.Refused(unreadable)
         }
-        if (raw.count { it == '.' || it == ',' } > 1) return ParsedWeight.Refused(onePoint)
+        if (raw.count { it == '.' || it == ',' } > 1) return ParsedWeight.Refused(extraPoint)
         val normalised = raw.replace(',', '.')
-        val value = normalised.toBigDecimalOrNull() ?: return ParsedWeight.Refused(notANumber)
-        if (value < BigDecimal.valueOf(minKg) || value > BigDecimal.valueOf(maxKg)) return ParsedWeight.Refused(outOfRange)
+        val value = normalised.toBigDecimalOrNull() ?: return ParsedWeight.Refused(unreadable)
+        if (value < BigDecimal.valueOf(minKg) || value > BigDecimal.valueOf(maxKg)) return ParsedWeight.Refused(outsideRange)
         val rounded = value.setScale(2, RoundingMode.HALF_UP).toDouble()
         return ParsedWeight.Ok(rounded)
     }
 
     // A date past this device's local today is refused at the field; the log refuses one more than a
     // day past its own UTC today in the same words.
-    fun dated(date: LocalDate, today: LocalDate): String? =
-        if (date.isAfter(today)) notAForecast else null
+    fun dateRefusal(date: LocalDate, today: LocalDate): Words? =
+        if (date.isAfter(today)) inTheFuture else null
 
     // Two decimals stored; trailing zeros are not drawn: 82.40 reads 82.4, 82.00 reads 82.
     fun kilograms(weightKg: Double): String =
         BigDecimal.valueOf(weightKg).setScale(2, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString()
-
-    // `82.4 kg · 3 days ago`. A calendar claim: both ends are local dates.
-    fun reading(latest: WeighIn?, nowMs: Long): String? {
-        val held = latest ?: return null
-        return "${kilograms(held.weightKg)} $unit · ${age(held.date, today(nowMs))}"
-    }
-
-    fun age(date: LocalDate, today: LocalDate): String {
-        val days = ChronoUnit.DAYS.between(date, today)
-        if (days <= 0) return "today"
-        if (days == 1L) return "yesterday"
-        return "$days days ago"
-    }
-
-    private val months = listOf("Jan", "Feb", "Mar", "Apr", "May", "Jun",
-                                "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
-    fun shortDay(date: LocalDate): String = "${date.dayOfMonth} ${months[date.monthValue - 1]}"
-
-    fun listDay(date: LocalDate): String = "${shortDay(date)} ${date.year}"
 
     fun fullDay(date: LocalDate): String = date.format(DateTimeFormatter.ofPattern("d MMMM uuuu", Locale.ENGLISH))
 
@@ -113,12 +85,9 @@ object Bodyweight {
     }
 
     // The caption names the selected window and its measured points.
-    fun windowLine(window: ChartWindow, shown: Int): String {
-        val counted = if (shown == 1) "1 weigh-in" else "$shown weigh-ins"
-        return when (window) {
-            ChartWindow.Ninety -> "90 days · $counted"
-            ChartWindow.All -> "All · $counted"
-        }
+    fun windowWords(window: ChartWindow, shown: Int): Words = when (window) {
+        ChartWindow.Ninety -> Words.Counted(R.plurals.gym_bodyweight_window_ninety_count, shown, listOf(shown.toString()))
+        ChartWindow.All -> Words.Counted(R.plurals.gym_bodyweight_window_all_count, shown, listOf(shown.toString()))
     }
 
 }

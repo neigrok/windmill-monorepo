@@ -4,6 +4,7 @@ import { Back } from '../Back.jsx';
 import { gymApi } from '../gymApi.js';
 import { COACH_HREF, THREADS_HREF, threadHref } from '../log.js';
 import { ProposalPanel } from '../Proposals.jsx';
+import { t } from '../i18n/index.js';
 import { useGymRead } from '../useGymRead.js';
 import { COACH_TITLE } from './coach.js';
 import { CoachRoom } from './CoachRoom.jsx';
@@ -27,7 +28,7 @@ export function ThreadsList({ log, accountId }) {
       setPages((held) => [...held, page]);
       setMore({ busy: false, note: '' });
     } catch {
-      setMore({ busy: false, note: 'Earlier conversations didn’t load. Try again.' });
+      setMore({ busy: false, note: t('gym.threads.earlierFailed') });
     }
   };
 
@@ -40,14 +41,14 @@ export function ThreadsList({ log, accountId }) {
   const settled = log.gone('thread');
   const withheld = log.hidden('thread');
 
-  if (view.phase === 'loading') return <p className="gym-quiet">Opening your conversations…</p>;
+  if (view.phase === 'loading') return <p className="gym-quiet">{t('gym.threads.opening')}</p>;
   if (view.phase === 'failed') {
     return (
       <>
         <Back href={COACH_HREF}>{COACH_TITLE}</Back>
         <p className="gym-read-failed">
           {THREADS_FAILED}
-          <Button variant="secondary" size="sm" onClick={view.retry}>Retry</Button>
+          <Button variant="secondary" size="sm" onClick={view.retry}>{t('gym.common.retry')}</Button>
         </p>
       </>
     );
@@ -80,7 +81,7 @@ export function ThreadsList({ log, accountId }) {
 
       {more.note && <p className="gym-coach-note" role="status">{more.note}</p>}
       {nextCursor && <button type="button" className="gym-coach-older" disabled={more.busy} onClick={loadMore}>
-        {more.busy ? 'Loading…' : 'Earlier conversations'}
+        {more.busy ? t('gym.coach.loading') : t('gym.threads.earlier')}
       </button>}
       <a className="gym-threads-new" href={COACH_HREF} onClick={() => forgetCoachDraft(accountId)}>{NEW_THREAD_VERB}</a>
     </section>
@@ -116,7 +117,7 @@ export function ThreadDetail({ id, log, accountId }) {
       </>
     );
   }
-  if (view.phase === 'loading') return <p className="gym-quiet">Opening the conversation…</p>;
+  if (view.phase === 'loading') return <p className="gym-quiet">{t('gym.coach.openingConversation')}</p>;
   if (view.phase === 'absent') {
     return (
       <>
@@ -131,7 +132,7 @@ export function ThreadDetail({ id, log, accountId }) {
         <Back href={THREADS_HREF}>{THREADS_TITLE}</Back>
         <p className="gym-read-failed">
           {THREAD_FAILED}
-          <Button variant="secondary" size="sm" onClick={view.retry}>Retry</Button>
+          <Button variant="secondary" size="sm" onClick={view.retry}>{t('gym.common.retry')}</Button>
         </p>
       </>
     );
@@ -157,7 +158,7 @@ export function ThreadDetail({ id, log, accountId }) {
 
       {thread.proposals?.length > 0 && !thread.turns?.some((turn) => turn.receipt?.proposals?.length) && (
         <section className="gym-thread-proposals">
-          <h2 className="gym-history-head">What it proposed</h2>
+          <h2 className="gym-history-head">{t('gym.threads.proposed')}</h2>
           {thread.proposals.map((head) => <ProposalPanel key={head.id} id={head.id} log={log} onChanged={view.refresh} />)}
         </section>
       )}

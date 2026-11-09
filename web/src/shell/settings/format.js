@@ -1,13 +1,15 @@
+import { t } from '../i18n/settings/index.js';
+
 // Test order is load-bearing: Edge, Opera and Brave all carry "Chrome", and Chrome carries
 // "Safari", so the more specific token is tested first.
 export function formatUserAgent(userAgent) {
   const ua = String(userAgent ?? '');
   const browser = browserOf(ua);
   const os = osOf(ua);
-  if (browser && os) return `${browser} on ${os}`;
+  if (browser && os) return t('shell.device.browserOnOs', { browser, os });
   if (os) return os;
   if (browser) return browser;
-  return 'Unknown device';
+  return t('shell.device.unknown');
 }
 
 function browserOf(ua) {
@@ -33,13 +35,13 @@ function osOf(ua) {
 export function relativeTime(ms) {
   if (!ms) return '';
   const seconds = Math.max(0, Math.round((Date.now() - ms) / 1000));
-  if (seconds < 45) return 'just now';
+  if (seconds < 45) return t('shell.time.justNow');
   const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
+  if (minutes < 60) return t('shell.time.minutesAgo', { minutes });
   const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
+  if (hours < 24) return t('shell.time.hoursAgo', { hours });
   const days = Math.round(hours / 24);
-  if (days < 7) return `${days}d ago`;
+  if (days < 7) return t('shell.time.daysAgo', { days });
   return shortDate(ms);
 }
 
@@ -49,6 +51,6 @@ export function shortDate(ms) {
 }
 
 export function mcpKeyMeta(key) {
-  const used = key.lastUsedMs ? `Last used ${relativeTime(key.lastUsedMs)}` : 'never used';
-  return `Created ${shortDate(key.createdMs)} · ${used}`;
+  if (!key.lastUsedMs) return t('shell.keys.metaNeverUsed', { created: shortDate(key.createdMs) });
+  return t('shell.keys.metaUsed', { created: shortDate(key.createdMs), used: relativeTime(key.lastUsedMs) });
 }

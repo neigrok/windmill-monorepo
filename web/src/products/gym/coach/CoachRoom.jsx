@@ -3,11 +3,13 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Button, Menu } from '../../../design-system/index.js';
 import { ImagePlus, Square } from 'lucide-react';
 import { CoachPhoto } from './CoachPhoto.jsx';
+import { t } from '../i18n/index.js';
 import { COACH_HREF, NOTES_HREF, routineHref, THREADS_HREF } from '../log.js';
 import { ProposalPanel } from '../Proposals.jsx';
 import './coach.css';
-import { DELETE_VERB } from './threads.js';
+import { DELETE_VERB, THREADS_TITLE } from './threads.js';
 import { coachWorkout, COACH_PLACEHOLDER, COACH_TITLE, draftEntryLine, readLine, stepsLine } from './coach.js';
+import { RESPONSE_INTERRUPTED } from '../errors.js';
 import { forgetCoachDraft, useCoachConversation } from './useCoachConversation.js';
 
 export function CoachRoom({ log, accountId, initialThread, onDelete }) {
@@ -23,11 +25,11 @@ export function CoachRoom({ log, accountId, initialThread, onDelete }) {
 
   const newChat = () => {
     if (conversation.confirmBusy) {
-      log.say('Wait for the routine to finish saving before starting a new chat.');
+      log.say(t('gym.coach.waitForSave'));
       return;
     }
     if (conversation.busy || conversation.pending || conversation.photoBusy || conversation.photo?.status === 'uploading') {
-      log.say('Stop the current response or cancel the upload before starting a new chat.');
+      log.say(t('gym.coach.stopBeforeNewChat'));
       return;
     }
     if (initialThread) {
@@ -40,18 +42,18 @@ export function CoachRoom({ log, accountId, initialThread, onDelete }) {
     <section className={`gym-coach${workoutOnly ? ' is-workout' : ''}`}>
       <header className="gym-coach-head">
         <h1 className="gym-title">{COACH_TITLE}</h1>
-        <nav className="gym-coach-doors" aria-label="Coach">
-          <a className="gym-coach-threads-door" href={THREADS_HREF}>History</a>
-          <Menu label="More Coach options" items={[
-            { label: 'Notes', run: () => { window.location.hash = NOTES_HREF; } },
-            { label: 'Connected log', run: () => { window.location.href = '/app/connect'; } },
-            { label: 'Account', run: () => { window.location.hash = '#/settings'; } },
+        <nav className="gym-coach-doors" aria-label={t('gym.coach.doors')}>
+          <a className="gym-coach-threads-door" href={THREADS_HREF}>{THREADS_TITLE}</a>
+          <Menu label={t('gym.coach.moreOptions')} items={[
+            { label: t('gym.coach.notes'), run: () => { window.location.hash = NOTES_HREF; } },
+            { label: t('gym.coach.connectedLog'), run: () => { window.location.href = '/app/connect'; } },
+            { label: t('gym.coach.account'), run: () => { window.location.hash = '#/settings'; } },
             ...(onDelete ? [{ label: DELETE_VERB, run: onDelete }] : []),
-            ...(conversation.turns.length || initialThread || conversation.closed ? [{ label: 'New chat', run: newChat }] : []),
+            ...(conversation.turns.length || initialThread || conversation.closed ? [{ label: t('gym.coach.newChat'), run: newChat }] : []),
           ]} />
         </nav>
       </header>
-      <p className="gym-coach-subtitle">Reads your log · helps plan training</p>
+      <p className="gym-coach-subtitle">{t('gym.coach.subtitle')}</p>
       <CoachNavigation narrow />
       {workoutOnly ? <WorkoutInProgress log={log} /> : <>
       <div className="gym-coach-reading" ref={reading} onScroll={() => {
@@ -67,7 +69,7 @@ export function CoachRoom({ log, accountId, initialThread, onDelete }) {
             follow.current = false;
             await conversation.older();
             requestAnimationFrame(() => { if (element) element.scrollTop += element.scrollHeight - height; });
-          }}>{conversation.olderBusy ? 'Loading…' : 'Earlier messages'}</button>}
+          }}>{conversation.olderBusy ? t('gym.coach.loading') : t('gym.coach.earlierMessages')}</button>}
         {conversation.olderNote && <p className="gym-coach-note" role="status">{conversation.olderNote}</p>}
         <ol className="gym-coach-thread">
           {conversation.turns.map((turn, index) => <CoachMessage key={`${turn.position ?? turn.requestId ?? index}-${turn.from}`}
@@ -77,7 +79,7 @@ export function CoachRoom({ log, accountId, initialThread, onDelete }) {
       {latest && <button type="button" className="gym-coach-latest" onClick={() => {
         follow.current = true; setLatest(false);
         if (reading.current) reading.current.scrollTop = reading.current.scrollHeight;
-      }}>Jump to latest</button>}
+      }}>{t('gym.coach.jumpToLatest')}</button>}
       <div className="gym-coach-bottom">
         <CoachBody log={log} accountId={accountId} conversation={conversation} onNewChat={newChat} />
       </div>
@@ -88,43 +90,43 @@ export function CoachRoom({ log, accountId, initialThread, onDelete }) {
 
 export function CoachBody({ log, accountId, conversation, onNewChat }) {
   const picker = useRef(null);
-  const { phase, request, busy, pending, note, closed, draft, setDraft, send, stop, photo, photoBusy,
+  const { phase, request, busy, pending, note, interrupted, closed, draft, setDraft, send, stop, photo, photoBusy,
     stopRequested, stopBusy, thread, selectPhoto, removePhoto, uploadPhoto, cancelUpload } = conversation;
   const generating = busy || pending;
   const photoUpload = photo?.status === 'uploading';
-  if (log.phase === 'loading' || phase === 'loading') return <p className="gym-quiet">Opening the conversation…</p>;
+  if (log.phase === 'loading' || phase === 'loading') return <p className="gym-quiet">{t('gym.coach.openingConversation')}</p>;
   if (log.session) return <WorkoutInProgress log={log} />;
 
   return <>
-    {note && !(note === 'Response interrupted.' && conversation.turns.at(-1)?.status === 'failed') && <p className="gym-coach-note" role="status">{note}</p>}
-    {stopRequested && <p className="gym-coach-note" role="status">Stopping…</p>}
-    {closed === 'thread' && <button type="button" className="gym-coach-retry" onClick={onNewChat}>New chat</button>}
-    {closed === 'account' && <a className="gym-coach-proposal-door" href="#/settings">Open account</a>}
+    {note && !(interrupted && conversation.turns.at(-1)?.status === 'failed') && <p className="gym-coach-note" role="status">{note}</p>}
+    {stopRequested && <p className="gym-coach-note" role="status">{t('gym.coach.stopping')}</p>}
+    {closed === 'thread' && <button type="button" className="gym-coach-retry" onClick={onNewChat}>{t('gym.coach.newChat')}</button>}
+    {closed === 'account' && <a className="gym-coach-proposal-door" href="#/settings">{t('gym.coach.openAccount')}</a>}
     {!closed && <>
-      {photoBusy && <p className="gym-coach-note" role="status">Preparing photo…</p>}
+      {photoBusy && <p className="gym-coach-note" role="status">{t('gym.coach.photo.preparing')}</p>}
       {photo && <div className="gym-coach-photo-draft">
         <CoachPhoto accountId={accountId} thread={thread} photo={photo} draft />
         <div className="gym-coach-photo-actions">
           {photoUpload ? <>
-            <progress aria-label="Photo upload" value={photo.progress ?? 0} max={1} />
-            <button type="button" className="gym-coach-retry" onClick={cancelUpload}>Cancel upload</button>
+            <progress aria-label={t('gym.coach.photo.upload')} value={photo.progress ?? 0} max={1} />
+            <button type="button" className="gym-coach-retry" onClick={cancelUpload}>{t('gym.coach.photo.cancelUpload')}</button>
           </> : <>
             {photo.status === 'failed' && <>
-              <p className="gym-coach-note" role="status">Photo didn’t upload. {photo.note}</p>
-              <button type="button" className="gym-coach-retry" onClick={() => uploadPhoto()}>Retry upload</button>
+              <p className="gym-coach-note" role="status">{t('gym.coach.photo.failed', { note: photo.note ?? '' })}</p>
+              <button type="button" className="gym-coach-retry" onClick={() => uploadPhoto()}>{t('gym.coach.photo.retryUpload')}</button>
             </>}
-            {!request && <button type="button" className="gym-coach-retry" onClick={removePhoto}>Remove photo</button>}
+            {!request && <button type="button" className="gym-coach-retry" onClick={removePhoto}>{t('gym.coach.photo.remove')}</button>}
           </>}
         </div>
       </div>}
       <div className="gym-coach-compose">
         <input ref={picker} className="gym-visually-hidden" type="file" accept="image/*" tabIndex={-1}
-          aria-label="Choose a photo" onChange={(event) => {
+          aria-label={t('gym.coach.photo.choose')} onChange={(event) => {
             const file = event.target.files?.[0];
             event.target.value = '';
             if (file) selectPhoto(file);
           }} />
-        <button type="button" className="gym-coach-add-photo" aria-label="Add photo"
+        <button type="button" className="gym-coach-add-photo" aria-label={t('gym.coach.photo.add')}
           disabled={Boolean(request || photo || photoBusy)} onClick={() => picker.current?.click()}><ImagePlus size={20} aria-hidden="true" /></button>
         <textarea className="gym-coach-input" value={draft} rows={2} maxLength={1000}
           placeholder={COACH_PLACEHOLDER} aria-label={COACH_PLACEHOLDER}
@@ -137,8 +139,8 @@ export function CoachBody({ log, accountId, conversation, onNewChat }) {
           }} />
         <button type="button" className="gym-coach-send"
           disabled={generating ? Boolean(stopBusy || stopRequested) : Boolean((!draft.trim() && !photo && !request) || photoUpload || photoBusy)}
-          onClick={() => generating ? stop() : send()} aria-label={generating ? 'Stop response' : request ? 'Retry' : 'Send'}>
-          {generating ? <Square size={18} aria-hidden="true" /> : request ? 'Retry' : 'Send'}
+          onClick={() => generating ? stop() : send()} aria-label={generating ? t('gym.coach.stopResponse') : request ? t('gym.common.retry') : t('gym.coach.send')}>
+          {generating ? <Square size={18} aria-hidden="true" /> : request ? t('gym.common.retry') : t('gym.coach.send')}
         </button>
       </div>
     </>}
@@ -154,22 +156,22 @@ export function WorkoutInProgress({ log }) {
     requestAnimationFrame(() => { mirror.current?.scrollIntoView({ block: 'start' }); mirror.current?.focus({ preventScroll: true }); });
   };
   return <div className={`gym-coach-workout${showWorkout ? ' is-expanded' : ''}`}>
-    <section className="gym-coach-workout-card" aria-label="Workout in progress">
-      <p className="gym-coach-workout-kicker">Workout in progress</p>
-      <p>Your workout is on your phone. This room is here when it is over.</p>
-      <p className="gym-coach-workout-meta">{workout.name} · started <span>{workout.started}</span> · {workout.count}</p>
-      <div className="gym-coach-workout-doors"><button type="button" onClick={viewWorkout}>View workout</button><a href={NOTES_HREF}>Notes ›</a></div>
-      <p className="gym-coach-workout-meta">Notes are yours to write while you train. Nothing here reads a log that is still being written.</p>
+    <section className="gym-coach-workout-card" aria-label={t('gym.coach.workoutInProgress')}>
+      <p className="gym-coach-workout-kicker">{t('gym.coach.workoutInProgress')}</p>
+      <p>{t('gym.coach.workoutOnPhone')}</p>
+      <p className="gym-coach-workout-meta">{t('gym.coach.workoutMeta', { name: workout.name, started: <span>{workout.started}</span>, count: workout.count })}</p>
+      <div className="gym-coach-workout-doors"><button type="button" onClick={viewWorkout}>{t('gym.coach.viewWorkout')}</button><a href={NOTES_HREF}>{t('gym.coach.notesDoor')}</a></div>
+      <p className="gym-coach-workout-meta">{t('gym.coach.notesWhileTraining')}</p>
     </section>
-    <section className="gym-coach-workout-mirror" ref={mirror} tabIndex={-1} aria-label="Live workout, read only">
-      <header><span>{workout.name} · in progress</span><span>{workout.progress}</span></header>
+    <section className="gym-coach-workout-mirror" ref={mirror} tabIndex={-1} aria-label={t('gym.coach.liveWorkout')}>
+      <header><span>{t('gym.coach.workoutHead', { name: workout.name })}</span><span>{workout.progress}</span></header>
       {workout.groups.map((group) => <div className="gym-coach-mirror-movement" key={group.id}>
         <div className="gym-coach-mirror-heading"><div><h2>{group.name}</h2>{group.scheme && <p>{group.scheme}</p>}</div>
-          {group.id !== workout.active && <span className="gym-coach-mirror-rail" aria-label={`${group.rows.length} sets`}>{group.rows.map((row) => <i key={row.key} className={`is-${row.kind}`} />)}</span>}
+          {group.id !== workout.active && <span className="gym-coach-mirror-rail" aria-label={t('gym.coach.mirrorSets', { count: group.rows.length })}>{group.rows.map((row) => <i key={row.key} className={`is-${row.kind}`} />)}</span>}
         </div>
         {group.id === workout.active && <ul>{group.rows.map((row, index) => <li key={row.key} aria-label={row.spoken} className={`is-${row.kind}${row.kind === 'target' && group.rows[index - 1]?.kind !== 'target' ? ' is-next' : ''}`}><i aria-hidden="true" /><span>{row.label}</span></li>)}</ul>}
       </div>)}
-      <p className="gym-coach-workout-meta">A mirror of your phone. Nothing here logs a set.</p>
+      <p className="gym-coach-workout-meta">{t('gym.coach.mirrorNote')}</p>
     </section>
   </div>;
 }
@@ -196,23 +198,22 @@ export function CoachMessage({ turn, log, accountId, thread, onRetry, onConfirm,
     try {
       await navigator.clipboard.writeText(text);
       if (noticeTimer.current !== null) clearTimeout(noticeTimer.current);
-      setNotice('Message copied.');
+      setNotice(t('gym.coach.messageCopied'));
       noticeTimer.current = setTimeout(() => { noticeTimer.current = null; setNotice(''); }, 2000);
       setOpen(false);
     } catch {
-      setNotice('Couldn’t copy. Select the message text and copy it.');
+      setNotice(t('gym.coach.copyFailed'));
     }
   };
   const receipt = turn.receipt ?? turn;
-  const read = readLine(receipt.read);
+  const read = readLine(receipt.read, (count) => <span className="gym-coach-figure">{count}</span>);
   const figureText = (value) => value?.split(/([+-]?\d+(?:\.\d+)?)/).map((part, index) => index % 2 ? <span className="gym-coach-figure" key={index}>{part}</span> : part);
-  const readText = figureText(read);
   const steps = stepsLine(receipt.steps, { drafted: Boolean(turn.routineDrafts?.length) });
   return <li ref={box} className={`gym-coach-turn ${turn.from === 'lifter' ? 'is-lifter' : 'is-coach'}${open ? ' is-menu-open' : ''}`}>
     {(turn.attachments ?? []).map((photo) => <CoachPhoto key={photo.id} accountId={accountId} thread={thread} photo={photo} />)}
     {turn.from !== 'lifter' && read && (steps ? <details className="gym-coach-trace">
-      <summary className="gym-coach-read"><span>{readText}</span>{' '}<span className="gym-coach-step-count"><span className="gym-coach-figure">{receipt.steps?.length ?? 0}</span> {receipt.steps?.length === 1 ? 'step' : 'steps'} <span aria-hidden="true">›</span></span></summary><p className="gym-coach-steps">{steps}</p>
-    </details> : <p className="gym-coach-read">{readText}</p>)}
+      <summary className="gym-coach-read"><span>{read}</span>{' '}<span className="gym-coach-step-count">{t('gym.coach.stepCount', { count: receipt.steps?.length ?? 0, figure: <span className="gym-coach-figure">{receipt.steps?.length ?? 0}</span> })} <span aria-hidden="true">›</span></span></summary><p className="gym-coach-steps">{steps}</p>
+    </details> : <p className="gym-coach-read">{read}</p>)}
     {text && <>
       <p className="gym-coach-text" tabIndex={0}
         onContextMenu={(event) => { event.preventDefault(); setOpen(true); }}
@@ -232,16 +233,16 @@ export function CoachMessage({ turn, log, accountId, thread, onRetry, onConfirm,
           if (event.key === 'Escape') setOpen(false);
         }}>{figureText(text)}</p>
       <button ref={copyButton} type="button" className="gym-coach-copy"
-        aria-label={`Copy ${turn.from === 'lifter' ? 'your' : 'Coach'} message`} onClick={copy}
-        onKeyDown={(event) => { if (event.key === 'Escape') { setOpen(false); box.current?.querySelector('.gym-coach-text')?.focus(); } }}>Copy</button>
+        aria-label={t('gym.coach.copyMessage', { from: turn.from === 'lifter' ? 'lifter' : 'coach' })} onClick={copy}
+        onKeyDown={(event) => { if (event.key === 'Escape') { setOpen(false); box.current?.querySelector('.gym-coach-text')?.focus(); } }}>{t('gym.coach.copy')}</button>
     </>}
     {turn.from !== 'lifter' && <>
       {(receipt.proposals ?? []).map((id) => <ProposalPanel key={id} id={id} log={log} inConversation />)}
       {(turn.routineDrafts ?? []).filter((draft) => draft.state === 'pending').map((draft) => {
         const key = `${turn.requestId}:${draft.operationId}`;
         const note = confirmNote?.key === key ? confirmNote : null;
-        return <section key={draft.operationId} className="gym-coach-result gym-coach-routine-draft" aria-label={`Review ${draft.name}`}>
-          <p>Review routine</p>
+        return <section key={draft.operationId} className="gym-coach-result gym-coach-routine-draft" aria-label={t('gym.coach.reviewDraft', { name: draft.name })}>
+          <p>{t('gym.coach.reviewRoutine')}</p>
           <h2>{draft.name}</h2>
           <ul>{draft.entries.map((entry, index) => {
             const line = draftEntryLine(entry, log.catalog);
@@ -249,18 +250,18 @@ export function CoachMessage({ turn, log, accountId, thread, onRetry, onConfirm,
           })}</ul>
           {note && <p className="gym-coach-note" role="status">{note.text}</p>}
           {!note?.closed && <Button variant="secondary" disabled={Boolean(busy || confirmBusy || !turn.requestId)}
-            onClick={() => onConfirm?.(turn, draft)}>{confirmBusy === key ? 'Saving…' : 'Save routine'}</Button>}
+            onClick={() => onConfirm?.(turn, draft)}>{confirmBusy === key ? t('gym.coach.saving') : t('gym.coach.saveRoutine')}</Button>}
         </section>;
       })}
       {(turn.results ?? []).filter((result) => result.kind === 'routine-created').map((result) =>
         <div key={result.operationId} className="gym-coach-result">
-          <span>Routine created · {result.routineName}</span>
-          <a href={routineHref(result.routineId)}>Open routine</a>
+          <span>{t('gym.coach.routineCreated', { name: result.routineName ?? '' })}</span>
+          <a href={routineHref(result.routineId)}>{t('gym.coach.openRoutine')}</a>
         </div>)}
 
-      {turn.status === 'stopped' && <p className="gym-coach-note">Response stopped.</p>}
-      {turn.status === 'failed' && <p className="gym-coach-note">Response interrupted.
-        {turn.requestId && <button type="button" className="gym-coach-retry" disabled={busy} onClick={() => onRetry(turn)}>Retry</button>}
+      {turn.status === 'stopped' && <p className="gym-coach-note">{t('gym.coach.responseStopped')}</p>}
+      {turn.status === 'failed' && <p className="gym-coach-note">{RESPONSE_INTERRUPTED}
+        {turn.requestId && <button type="button" className="gym-coach-retry" disabled={busy} onClick={() => onRetry(turn)}>{t('gym.common.retry')}</button>}
       </p>}
     </>}
     <span className="gym-coach-copy-notice" role="status">{notice}</span>

@@ -11,9 +11,10 @@ import { mintId } from '../mint.js';
 import { useGymRead } from '../useGymRead.js';
 import { useDomainRead } from '../useDomainRead.js';
 import { useGymApi } from '../gymRuntime.js';
+import { t } from '../i18n/index.js';
 import { Session, SessionRules, TrainingSet } from '../domain/training.js';
 import { sessionDocument } from '../domain/trainingHistory.js';
-import { KG } from '../units.js';
+import { KG, unitSymbol } from '../units.js';
 import { UNDO_LABEL } from '../withheld.js';
 import {
   collapses, draftFromRoutine, freeDraft, importOf, inTheLogLine, isOverLimit,
@@ -26,14 +27,14 @@ import {
   DURATION_CHIPS, refusalOf, slotNote, TIME_NEEDED, todayOf, yesterdayOf,
 } from './slot.js';
 
-const LOG_BACK = { href: '#/gym/log', label: 'The log' };
-const PICK_BACK = { href: BACKFILL_HREF, label: 'Past workout' };
-const ROUTINES_BACK = { href: ROUTINES_HREF, label: 'Routines' };
+const LOG_BACK = { href: '#/gym/log', label: t('gym.backfill.backLog') };
+const PICK_BACK = { href: BACKFILL_HREF, label: t('gym.backfill.backPick') };
+const ROUTINES_BACK = { href: ROUTINES_HREF, label: t('gym.backfill.backRoutines') };
 
 // A row's two numbers: the cell each is typed into, the set field it writes, and its name read with the movement's load basis.
 const CELLS = [
-  { field: 'load', key: 'weightKg', spoken: (basis) => `load in ${basis}` },
-  { field: 'reps', key: 'reps', spoken: () => 'reps' },
+  { field: 'load', key: 'weightKg', label: (name, position, basis) => t('gym.backfill.loadCell', { name, position, basis }) },
+  { field: 'reps', key: 'reps', label: (name, position) => t('gym.backfill.repsCell', { name, position }) },
 ];
 
 // The beats: `Saved` stands before the session opens, a removed row collapses, carried numerals lift in turn.
@@ -61,8 +62,8 @@ function RoutinePick({ log }) {
   const view = useGymRead(() => api.routines(), [], { sync: true, ready: Boolean(api?.ready) });
   const hidden = log.hidden('routine');
 
-  if (view.phase === 'loading') return <ScreenNote back={LOG_BACK}>Opening your routines…</ScreenNote>;
-  if (view.phase === 'failed') return <ReadFailed back={LOG_BACK} onRetry={view.retry}>The routines didn’t load.</ReadFailed>;
+  if (view.phase === 'loading') return <ScreenNote back={LOG_BACK}>{t('gym.backfill.openingRoutines')}</ScreenNote>;
+  if (view.phase === 'failed') return <ReadFailed back={LOG_BACK} onRetry={view.retry}>{t('gym.backfill.routinesFailed')}</ReadFailed>;
 
   const program = view.data
     .filter((routine) => !hidden.has(routine.id))
@@ -72,7 +73,7 @@ function RoutinePick({ log }) {
     <section className="gym-routine-pick">
       <header className="gym-past-top">
         <Back href={LOG_BACK.href}>{LOG_BACK.label}</Back>
-        <h1 className="gym-title">Add a past workout</h1>
+        <h1 className="gym-title">{t('gym.backfill.pickTitle')}</h1>
       </header>
       <ul className="gym-index">
         {program.map((routine) => (
@@ -87,7 +88,7 @@ function RoutinePick({ log }) {
           </li>
         ))}
       </ul>
-      <a className="gym-index-free" href={backfillHref(FREE_SESSION)}>+ Free session</a>
+      <a className="gym-index-free" href={backfillHref(FREE_SESSION)}>{t('gym.backfill.freeSession')}</a>
     </section>
   );
 }
@@ -107,9 +108,9 @@ function RoutineWorkout({ id, back, log }) {
     return draftFromRoutine(routine, new Map(movements.map((exerciseId, at) => [exerciseId, replies[at]])));
   }, [id], { sync: true, ready: Boolean(api?.ready) });
 
-  if (view.phase === 'loading') return <ScreenNote back={back}>Opening the routine…</ScreenNote>;
-  if (view.phase === 'absent') return <ScreenNote back={back}>This routine isn’t in your program.</ScreenNote>;
-  if (view.phase === 'failed') return <ReadFailed back={back} onRetry={view.retry}>The routine didn’t load.</ReadFailed>;
+  if (view.phase === 'loading') return <ScreenNote back={back}>{t('gym.backfill.openingRoutine')}</ScreenNote>;
+  if (view.phase === 'absent') return <ScreenNote back={back}>{t('gym.backfill.routineAbsent')}</ScreenNote>;
+  if (view.phase === 'failed') return <ReadFailed back={back} onRetry={view.retry}>{t('gym.backfill.routineFailed')}</ReadFailed>;
   return <PastWorkout opening={view.data} back={back} log={log} />;
 }
 
@@ -128,7 +129,7 @@ function ReadFailed({ back, onRetry, children }) {
       <Back href={back.href}>{back.label}</Back>
       <p className="gym-read-failed">
         {children}
-        <Button variant="secondary" size="sm" onClick={onRetry}>Retry</Button>
+        <Button variant="secondary" size="sm" onClick={onRetry}>{t('gym.common.retry')}</Button>
       </p>
     </>
   );
@@ -193,8 +194,8 @@ function PastWorkout({ opening, back, log, noRoutines = false }) {
   const slot = landed ?? (opened ? chosen : fallback);
   const refusal = raced
     ? Number.isFinite(raced.startedAt) ? crossedRefusal(raced, now) : {
-      title: 'These times cross a workout already in the log.',
-      body: 'Change the time, or open that workout to review it.', session: raced,
+      title: t('gym.backfill.crossedTitle'),
+      body: t('gym.backfill.crossedBody'), session: raced,
     }
     : !landed && !pending && chosen && refusalOf({ slot: chosen, busy: busySpans({ sessions, open: running, now }), now });
   const inert = !isReady(draft) || !slot || Boolean(refusal) || locked || adding || leaving.size > 0;
@@ -291,7 +292,7 @@ function PastWorkout({ opening, back, log, noRoutines = false }) {
     log.holdDelete({
       kind: 'session',
       id,
-      refused: (error) => log.say(`That session wasn’t discarded — ${failureReason(error)}.`),
+      refused: (error) => log.say(t('gym.backfill.notDiscarded', { reason: failureReason(error) })),
     });
     window.location.hash = '#/gym/log';
   };
@@ -305,7 +306,7 @@ function PastWorkout({ opening, back, log, noRoutines = false }) {
     if (ownReceipt.status === 'refused') {
       const error = ownReceipt.error;
       if (error?.overlapping) setRaced(error.overlapping);
-      else setFailure(error?.sentence || `That workout didn’t reach the log — ${failureReason(error)}.`);
+      else setFailure(error?.sentence || t('gym.backfill.notSaved', { reason: failureReason(error) }));
       setSaving(false);
       return;
     }
@@ -334,7 +335,7 @@ function PastWorkout({ opening, back, log, noRoutines = false }) {
     } catch (error) {
       if (error.overlapping) setRaced(error.overlapping);
       else {
-        const reason = error.sentence || `That workout didn’t reach the log — ${failureReason(error)}.`;
+        const reason = error.sentence || t('gym.backfill.notSaved', { reason: failureReason(error) });
         setFailure(reason);
         log.say(reason);
       }
@@ -381,7 +382,7 @@ function PastWorkout({ opening, back, log, noRoutines = false }) {
                 className="gym-past-day-field"
                 type="date"
                 tabIndex={-1}
-                aria-label="Other day"
+                aria-label={t('gym.backfill.dayField')}
                 value={day}
                 max={todayOf(now)}
                 onChange={(event) => {
@@ -389,7 +390,7 @@ function PastWorkout({ opening, back, log, noRoutines = false }) {
                   if (picked !== '' && picked <= todayOf(now)) changeDay(picked);
                 }}
               />
-              {!opened && <button type="button" className="gym-past-link" onClick={openClock}>Change time</button>}
+              {!opened && <button type="button" className="gym-past-link" onClick={openClock}>{t('gym.backfill.changeTime')}</button>}
             </div>
             {opened && (
               <div className="gym-past-clock">
@@ -398,7 +399,7 @@ function PastWorkout({ opening, back, log, noRoutines = false }) {
                     ref={startField}
                     className="gym-past-start"
                     type="time"
-                    aria-label="Start time"
+                    aria-label={t('gym.backfill.startTime')}
                     autoFocus={!clock}
                     value={clockValue}
                     onChange={(event) => {
@@ -408,8 +409,8 @@ function PastWorkout({ opening, back, log, noRoutines = false }) {
                   />
                   <span className="gym-past-time-value" aria-hidden="true">{clockValue}</span>
                 </span>
-                <span className="gym-past-for">for</span>
-                <span className="gym-past-duration" role="group" aria-label="Duration">{DURATION_CHIPS.map((chip) => (
+                <span className="gym-past-for">{t('gym.backfill.clockFor')}</span>
+                <span className="gym-past-duration" role="group" aria-label={t('gym.backfill.duration')}>{DURATION_CHIPS.map((chip) => (
                   <button
                     key={chip.minutes}
                     type="button"
@@ -425,7 +426,7 @@ function PastWorkout({ opening, back, log, noRoutines = false }) {
           </div>
 
           {draft.movements.length > 0 && (
-            <p className="gym-past-units" aria-hidden="true">kg <span className="gym-past-times">×</span> reps</p>
+            <p className="gym-past-units" aria-hidden="true">{t('gym.backfill.columns', { times: <span className="gym-past-times">×</span> })}</p>
           )}
           {draft.movements.map((movement) => (
             <Movement
@@ -457,7 +458,7 @@ function PastWorkout({ opening, back, log, noRoutines = false }) {
             className={draft.routineId ? 'gym-past-add is-movement' : 'gym-past-add is-movement is-bar'}
             onClick={() => { setQuery(''); setPicking(true); }}
           >
-            + Add movement
+            {t('gym.backfill.addMovement')}
           </button>
 
           {refusal && (
@@ -466,9 +467,9 @@ function PastWorkout({ opening, back, log, noRoutines = false }) {
               <p className="gym-past-refusal-body">{refusal.body}</p>
               <div className="gym-past-refusal-acts">
                 {refusal.session && (
-                  <a className="gym-past-refusal-open" href={sessionHref(refusal.session.id)}>Open that session ›</a>
+                  <a className="gym-past-refusal-open" href={sessionHref(refusal.session.id)}>{t('gym.backfill.openSession')}</a>
                 )}
-                <button type="button" className="gym-past-refusal-fix" onClick={openClock}>Change time</button>
+                <button type="button" className="gym-past-refusal-fix" onClick={openClock}>{t('gym.backfill.changeTime')}</button>
               </div>
             </section>
           )}
@@ -483,7 +484,7 @@ function PastWorkout({ opening, back, log, noRoutines = false }) {
               aria-disabled={inert}
               onClick={save}
             >
-              {pending ? 'Waiting for the log…' : landed ? savedLabel(draft) : saveLabel(draft)}
+              {pending ? t('gym.backfill.waiting') : landed ? savedLabel(draft) : saveLabel(draft)}
             </button>
           </div>
           {isOverLimit(draft) && <p className="gym-past-limit">{SET_LIMIT_LINE}</p>}
@@ -492,9 +493,9 @@ function PastWorkout({ opening, back, log, noRoutines = false }) {
         <aside className="gym-past-side">
           {noRoutines && (
             <section className="gym-past-card">
-              <h2 className="gym-past-card-title">No routines yet</h2>
-              <p className="gym-past-card-line">Build one and this form arrives filled in.</p>
-              <Button variant="secondary" href={routineHref(NEW_ROUTINE_ID)}>Build a routine</Button>
+              <h2 className="gym-past-card-title">{t('gym.backfill.noRoutinesTitle')}</h2>
+              <p className="gym-past-card-line">{t('gym.backfill.noRoutinesLine')}</p>
+              <Button variant="secondary" href={routineHref(NEW_ROUTINE_ID)}>{t('gym.backfill.buildRoutine')}</Button>
             </section>
           )}
           {focused && (
@@ -516,7 +517,7 @@ function PastWorkout({ opening, back, log, noRoutines = false }) {
           onPick={addMovement}
           onCreate={log.createMovement}
           onClose={() => setPicking(false)}
-          title="Add movement"
+          title={t('gym.backfill.pickerTitle')}
         />
       )}
     </>
@@ -529,14 +530,14 @@ function Movement({ movement, name, basis, stepKg, focused, open, lift, leaving,
       <div className="gym-past-line">
         <button type="button" className="gym-past-name" aria-expanded={open} onClick={onOpen}>
           <span className="gym-past-movement-name">{name}</span>
-          <span className="gym-past-scheme">{movementLine(movement)}{basis !== KG && ` · ${basis}`}</span>
+          <span className="gym-past-scheme">{movementLine(movement)}{basis !== unitSymbol(KG) && ` · ${basis}`}</span>
         </button>
         {!open && (
           <span className="gym-past-rail" aria-hidden="true">
             {movement.sets.map((set) => <span key={set.key} className="gym-past-rail-tick" />)}
           </span>
         )}
-        <button type="button" className="gym-past-drop" aria-label={`Skip ${name}`} onClick={onSkip}>×</button>
+        <button type="button" className="gym-past-drop" aria-label={t('gym.backfill.skip', { name })} onClick={onSkip}>×</button>
       </div>
       {open && (
         <>
@@ -550,7 +551,7 @@ function Movement({ movement, name, basis, stepKg, focused, open, lift, leaving,
                     <EditableNumber
                       value={set[cell.key]}
                       field={cell.field}
-                      label={`${name}, set ${index + 1}, ${cell.spoken(basis)}`}
+                      label={cell.label(name, index + 1, basis)}
                       stepKg={stepKg}
                       lift={lift?.field === cell.key && lift.carried.includes(set.key)
                         ? { stamp: lift.stamp, delay: lift.carried.indexOf(set.key) * LIFT_STAGGER_MS }
@@ -563,7 +564,7 @@ function Movement({ movement, name, basis, stepKg, focused, open, lift, leaving,
                 <button
                   type="button"
                   className="gym-past-set-drop"
-                  aria-label={`Remove set ${index + 1} of ${name}`}
+                  aria-label={t('gym.backfill.removeSet', { position: index + 1, name })}
                   onClick={() => onRemoveSet(set.key)}
                 >
                   ×
@@ -571,7 +572,7 @@ function Movement({ movement, name, basis, stepKg, focused, open, lift, leaving,
               </li>
             ))}
           </ul>
-          <button type="button" className="gym-past-add" onClick={onAddSet}>+ Add set</button>
+          <button type="button" className="gym-past-add" onClick={onAddSet}>{t('gym.backfill.addSet')}</button>
         </>
       )}
     </section>
@@ -585,13 +586,13 @@ function Source({ movement, name, edited }) {
       <h2 className="gym-past-card-title">{name}</h2>
       {movement.target && (
         <p className="gym-past-target">
-          <span>Target</span>
+          <span>{t('gym.backfill.target')}</span>
           <span className="gym-past-mono">{targetLine(movement)}</span>
         </p>
       )}
       {movement.lastTime && (
         <>
-          <p className="gym-past-last">{`Last time · ${shortDayLabel(movement.lastTime.at)}`}</p>
+          <p className="gym-past-last">{t('gym.backfill.lastTime', { day: shortDayLabel(movement.lastTime.at) })}</p>
           <ul className="gym-past-lifted">
             {movement.lastTime.sets.map((set, index) => (
               <li key={index}>

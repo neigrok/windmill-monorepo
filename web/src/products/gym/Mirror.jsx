@@ -4,6 +4,7 @@ import {
   clockOf, fmt, nameOfMovement, planReadingOf, recordHref, routineNameOf, slotRows, workoutClocks,
 } from './log.js';
 import { inLoggedOrder } from './domain/training.js';
+import { t } from './i18n/index.js';
 
 // The mirror's charter (ledger 0t): it never offers a Finish, it says "Not training now." in words
 // rather than as a greyed control, and every clock on it counts up. Nothing here can drive the
@@ -13,8 +14,8 @@ export function LiveMirror({ log }) {
   if (!log.session) {
     return (
       <section className="gym-mirror-idle">
-        <p className="gym-mirror-idle-line">Not training now.</p>
-        <p className="gym-quiet">Workouts start on your phone.</p>
+        <p className="gym-mirror-idle-line">{t('gym.mirror.idle')}</p>
+        <p className="gym-quiet">{t('gym.mirror.idleLine')}</p>
       </section>
     );
   }
@@ -54,22 +55,27 @@ function TrainingNow({ session, sets, catalog }) {
     <section className="gym-mirror">
       <p className="gym-mirror-head">
         <span className="gym-live-dot" aria-hidden="true" />
-        {`Training now${routine ? ` · ${routine}` : ''}`}
+        {routine ? t('gym.mirror.trainingNowRoutine', { routine }) : t('gym.mirror.trainingNow')}
       </p>
       {newest && (
         <>
           <p className="gym-mirror-line">
-            <a className="gym-movement-door" href={recordHref(newest.exerciseId)}>
-              {nameOfMovement(catalog, newest.exerciseId)}
-            </a>
-            {` — set ${newest.setNumber}`
-              + `  ·  ${fmt(newest.weightKg)} × ${newest.reps}`}
+            {t('gym.mirror.newestSet', {
+              movement: (
+                <a className="gym-movement-door" href={recordHref(newest.exerciseId)}>
+                  {nameOfMovement(catalog, newest.exerciseId)}
+                </a>
+              ),
+              position: String(newest.setNumber),
+              load: fmt(newest.weightKg),
+              reps: String(newest.reps),
+            })}
           </p>
         </>
       )}
       <div className="gym-workout-clocks" aria-live="off">
         {clocks.map((clock, index) => <span className="gym-workout-clock" key={clock.label}
-          role="group" tabIndex={0} aria-label={`${clock.label}: ${clock.spoken}`}>
+          role="group" tabIndex={0} aria-label={t('gym.mirror.clockLabel', { label: clock.label, duration: clock.spoken })}>
           {index === 0 ? <Clock3 size={16} aria-hidden="true" /> : <Timer size={16} aria-hidden="true" />}
           <span aria-hidden="true">{clockOf(clock.elapsed)}</span>
         </span>)}

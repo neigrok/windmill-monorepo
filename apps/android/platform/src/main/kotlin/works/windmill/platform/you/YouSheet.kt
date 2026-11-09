@@ -19,6 +19,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import works.windmill.platform.R
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.semantics.Role
@@ -31,6 +32,7 @@ import works.windmill.platform.auth.AuthStore
 import works.windmill.platform.auth.SignInDoor
 import works.windmill.platform.design.LocalWindmillPalette
 import works.windmill.platform.design.WindmillSheet
+import works.windmill.platform.i18n.pluralString
 
 data class YouDestination(val id: String, val label: String, val onOpen: () -> Unit)
 
@@ -78,8 +80,9 @@ fun YouSheet(
         shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp), containerColor = palette.surface,
         scrimColor = MaterialTheme.colorScheme.scrim,
         dragHandle = {
+            val handle = stringResource(R.string.platform_you_drag_handle)
             if (form) BottomSheetDefaults.DragHandle(color = palette.inkDim)
-            else Box(Modifier.fillMaxWidth().height(24.dp).semantics { contentDescription = "Drag handle" },
+            else Box(Modifier.fillMaxWidth().height(24.dp).semantics { contentDescription = handle },
                 contentAlignment = Alignment.Center) {
                 Box(Modifier.size(width = 32.dp, height = 4.dp).testTag("you-sheet-handle")
                     .background(palette.inkDim, RoundedCornerShape(2.dp)))
@@ -94,16 +97,16 @@ fun YouSheet(
                 .padding(start = 20.dp, end = 20.dp, top = 4.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Column(Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("You", style = WindmillType.sheetTitle, color = palette.ink)
-                    if (deletionPending) Text("Deletion unconfirmed", style = WindmillType.paragraphLoose, color = palette.inkDim)
+                    Text(stringResource(R.string.platform_you_title), style = WindmillType.sheetTitle, color = palette.ink)
+                    if (deletionPending) Text(stringResource(R.string.platform_you_deletion_unconfirmed), style = WindmillType.paragraphLoose, color = palette.inkDim)
                     else auth.status.user?.let { Text(it.email, style = WindmillType.paragraphLoose, color = palette.ink) }
                 }
-                auth.signOutFailure?.let { Text(it, style = WindmillType.supporting, color = palette.noticeInk) }
+                if (auth.signOutFailed) Text(stringResource(R.string.platform_sign_out_failed), style = WindmillType.supporting, color = palette.noticeInk)
                 val rows = destinations + if (deletion != null && (deletionPending || auth.status is AuthStatus.SignedIn))
                     listOf(YouDestination("account_deletion", when {
-                        !deletionPending -> "Delete account"
-                        deletion.closureConfirmed -> "Finish deletion"
-                        else -> "Check deletion"
+                        !deletionPending -> stringResource(R.string.platform_delete_account)
+                        deletion.closureConfirmed -> stringResource(R.string.platform_you_finish_deletion)
+                        else -> stringResource(R.string.platform_you_check_deletion)
                     }, deletion::open)) else emptyList()
                 rows.forEach { destination ->
                     key(destination.id) {
@@ -130,7 +133,7 @@ fun YouSheet(
             }, enabled = !busy && !auth.signOutBusy && !closing,
                 modifier = Modifier.align(Alignment.CenterHorizontally)
                     .padding(top = 20.dp, bottom = 16.dp).heightIn(min = 48.dp)) {
-                Text(if (auth.signOutBusy) "Signing out…" else if (auth.status is AuthStatus.SignedIn) "Sign out" else "Sign in",
+                Text(stringResource(if (auth.signOutBusy) R.string.platform_you_signing_out else if (auth.status is AuthStatus.SignedIn) R.string.platform_sign_out else R.string.platform_sign_in),
                     style = MaterialTheme.typography.labelLarge, color = palette.ink)
             }
         }
@@ -155,23 +158,22 @@ fun YouSheet(
                         Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())
                             .padding(start = 24.dp, end = 24.dp, top = 24.dp),
                             verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                            Text("Sign out?", style = MaterialTheme.typography.headlineSmall, color = scheme.onSurface)
-                            val copy = if (question.unsent == 0) "Your log stays in your account and leaves this phone."
-                                else "${question.unsent} " + (if (question.unsent == 1) "change hasn’t" else "changes haven’t") +
-                                    " been confirmed by your account yet. Keep them on this phone until you sign in again, or discard them from this phone."
+                            Text(stringResource(R.string.platform_sign_out_question), style = MaterialTheme.typography.headlineSmall, color = scheme.onSurface)
+                            val copy = if (question.unsent == 0) stringResource(R.string.platform_sign_out_nothing_unconfirmed)
+                                else pluralString(R.plurals.platform_sign_out_unconfirmed_changes, question.unsent, question.unsent.toString())
                             Text(copy, style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
                         }
                         FlowRow(Modifier.fillMaxWidth().padding(start = 8.dp, end = 24.dp, top = 20.dp, bottom = 20.dp),
                             horizontalArrangement = Arrangement.End) {
-                            TextButton(onClick = ::cancel, enabled = !auth.signOutBusy, modifier = Modifier.heightIn(min = 48.dp)) { Text("Cancel") }
+                            TextButton(onClick = ::cancel, enabled = !auth.signOutBusy, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.platform_cancel)) }
                             if (question.unsent > 0) {
                                 TextButton(onClick = { finish(AuthSignOutChoice.Discard) }, enabled = !auth.signOutBusy,
-                                    modifier = Modifier.heightIn(min = 48.dp), colors = ButtonDefaults.textButtonColors(contentColor = scheme.error)) { Text("Discard") }
+                                    modifier = Modifier.heightIn(min = 48.dp), colors = ButtonDefaults.textButtonColors(contentColor = scheme.error)) { Text(stringResource(R.string.platform_discard)) }
                             } else Spacer(Modifier.width(8.dp))
                             TextButton(onClick = { finish(AuthSignOutChoice.Keep) }, enabled = !auth.signOutBusy,
                                 modifier = Modifier.heightIn(min = 48.dp), colors = ButtonDefaults.textButtonColors(
                                     contentColor = if (question.unsent == 0) scheme.error else scheme.primary)) {
-                                Text(if (question.unsent == 0) "Sign out" else "Keep")
+                                Text(stringResource(if (question.unsent == 0) R.string.platform_sign_out else R.string.platform_keep))
                             }
                         }
                     }

@@ -126,7 +126,7 @@ class AuthSignOutTests {
             auth.prepareSignOut()
             values.fail = point; values.after = after
             auth.confirmSignOut(AuthSignOutChoice.Discard)
-            assertNotNull(auth.signOutFailure)
+            assertTrue(auth.signOutFailed)
             assertTrue(auth.transitionPending)
             server.enqueue(MockResponse().setBody("{}"))
             auth.prepareSignOut()

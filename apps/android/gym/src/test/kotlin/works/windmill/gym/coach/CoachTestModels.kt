@@ -1,5 +1,6 @@
 package works.windmill.gym.coach
 
+import works.windmill.platform.i18n.Words
 import works.windmill.domain.kit.AbilityClass
 import works.windmill.domain.kit.ActionContext
 import works.windmill.domain.kit.ActionRunner
@@ -28,7 +29,7 @@ internal fun coachReply(text: String = "", state: MessageState = MessageState.co
 
 internal fun coachCall(name: String, phrase: String? = name, outcome: AbilityCall.Outcome = AbilityCall.Outcome.Ok,
     read: RecordedRead = RecordedRead.Ids(ReadServed.none), detail: String? = null) =
-    CoachCall(name, phrase, outcome, read, TurnPhone.catalog().ability(name)?.kind == AbilityClass.read, name, detail)
+    CoachCall(name, phrase, outcome, read, TurnPhone.catalog().ability(name)?.kind == AbilityClass.read, name, detail?.let(Words::Plain))
 
 // A conversation the engine holds, as a turn that ended whole left it: its thread's id.
 internal fun EngineRoomFixture.heldConversation(question: String, answer: String = "An answer"): String {

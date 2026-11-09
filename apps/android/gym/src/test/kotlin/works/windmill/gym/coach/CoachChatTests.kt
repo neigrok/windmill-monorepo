@@ -27,6 +27,11 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import works.windmill.gym.spelled
+import works.windmill.gym.string
 import works.windmill.agent.TurnEvent
 import works.windmill.agent.TurnOpen
 import works.windmill.agent.TurnRefusal
@@ -40,6 +45,8 @@ import works.windmill.gym.domain.coach.MessageState
 import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.WriteFailure
+import works.windmill.platform.i18n.Words
+import works.windmill.platform.i18n.text
 import works.windmill.platform.storage.AtomicDocument
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.sync.core.Json
@@ -48,6 +55,8 @@ import works.windmill.sync.schema.Gym
 
 // The chats a phone keeps beside the engine's records: each belongs to its owner, keeps its draft and place across a restart, and a turn's words reach only the seat that asked.
 @OptIn(ExperimentalCoroutinesApi::class)
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class CoachChatTests {
     @get:Rule val tmp = TemporaryFolder()
 
@@ -158,7 +167,7 @@ class CoachChatTests {
             assertEquals(listOf("First question"), server.opened.map { it.question })
             val second = coach.freshChat()
             coach.saveDraft(second, CoachDraft("Second draft"))
-            assertEquals(ConversationRow(first, "First question", 0, answering = true), coach.pendingChat(second))
+            assertEquals(ConversationRow(first, Words.Plain("First question"), 0, answering = true), coach.pendingChat(second))
             assertTrue(coach.isAsking(first))
             release.complete(Unit)
             advanceUntilIdle()
@@ -209,7 +218,7 @@ class CoachChatTests {
             coach.saveDraft(chat, CoachDraft("Still typing"))
             room.store.conversations.watchHistory(true)
             room.store.conversations.read()
-            assertEquals(listOf(ConversationRow(chat, "Am I overtraining?", coach.chat(chat)!!.updatedAtMs, answerPreview = "Rest more")), coach.history)
+            assertEquals(listOf(ConversationRow(chat, Words.Plain("Am I overtraining?"), coach.chat(chat)!!.updatedAtMs, answerPreview = "Rest more")), coach.history)
             assertEquals(CoachDraft("Still typing"), coach.draft(chat))
         }
     }
@@ -228,7 +237,7 @@ class CoachChatTests {
             advanceUntilIdle()
             conversations.watchHistory(true)
             conversations.read()
-            val row = ConversationRow(chat, "First question", room.messages().maxOf { it.at.ms }, answerPreview = "Completed answer")
+            val row = ConversationRow(chat, Words.Plain("First question"), room.messages().maxOf { it.at.ms }, answerPreview = "Completed answer")
             assertEquals(listOf(row), coach.history)
             room.select("bob")
             room.sync(log)
@@ -344,7 +353,7 @@ class CoachChatTests {
         val retained = store.freshChat("Alice draft")
         val deletion = async(start = CoroutineStart.UNDISPATCHED) { store.deleteThread(retained) }
         owner = "bob"
-        assertEquals(GymResult.Failed(WriteFailure.Refused("The account changed. Open this again.")), deletion.await())
+        assertEquals("The account changed. Open this again.", ((deletion.await() as GymResult.Failed).why as WriteFailure.Refused).words.spelled())
         assertNull(store.chat(retained))
         owner = "alice"
         assertEquals(CoachDraft("Alice draft"), store.draft(retained))
@@ -473,7 +482,7 @@ class CoachChatTests {
             assertEquals(room.threads().single().id.record.string, coach.chat(chat)?.conversation)
             assertEquals(listOf("Question" to "Final answer"), coach.exchanges(chat).map { it.question to it.answer?.text })
             assertEquals(CoachDraft(), coach.draft(chat))
-            assertEquals("Your conversation couldn’t be saved. Try again.", coach.failure(chat))
+            assertEquals("Your conversation couldn’t be saved. Try again.", coach.failed(chat)?.let { string(it) })
             assertEquals(listOf(mapOf("operation" to "gym.saveConversation")), telling.failures)
             assertEquals(listOf(mapOf("screen" to "coach", "outcome" to "answered")), telling.named("gym_ask_outcome").map { it - "duration_ms" })
         }

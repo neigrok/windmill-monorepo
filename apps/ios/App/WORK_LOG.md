@@ -400,3 +400,9 @@ its text view holds the keyboard resigned it inside SwiftUI's update, and the re
 the attribute graph (a sample shows `AG::Graph::print_cycle` under `JournalBodyText.updateUIView`), hanging the app
 once in a few Done taps; Done now resigns through UIKit and the switch waits for the deferred resign. Observation:
 `JournalModelTransport` serves both rooms and its name predates the gym.
+
+Copy reaches the String Catalogs through `Tools/check_copy_literals.py`, which reads Swift with the theme check's lexer.
+It cannot tell a lone lowercase word (*training*, *saved*, *read*) from a wire value, so such copy rests on review: on
+the base commit those were the eleven catalog keys it did not call copy. The gym's message slots, `GymModel.error`,
+`WorkoutState.message` and `CoachConversation.error`, are Strings with the cause that put them up recorded beside them;
+a typed message per room would carry both and let the band read its words from the type.

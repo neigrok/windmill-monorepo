@@ -3,15 +3,8 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { useSearch } from './useSearch.js';
-
-const WEEKDAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
-const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
-
-function dateLabel(iso) {
-  const [y, m, d] = iso.split('-').map(Number);
-  const weekday = WEEKDAYS[new Date(y, m - 1, d).getDay()];
-  return `${weekday} ${String(d).padStart(2, '0')} ${MONTHS[m - 1]}`;
-}
+import { stampWeekday } from '../echoes/echoDates.js';
+import { t } from '../i18n/index.js';
 
 export function SearchOverlay({ open, onClose, onSelect, account = null }) {
   const { ready, indexing, sharpening, mode, version, source, search } = useSearch(open, account);
@@ -36,7 +29,7 @@ export function SearchOverlay({ open, onClose, onSelect, account = null }) {
     <div
       className="journal-search"
       role="dialog"
-      aria-label="Search"
+      aria-label={t('journal.search.title')}
       onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}
     >
       <div className="journal-search-panel">
@@ -46,28 +39,26 @@ export function SearchOverlay({ open, onClose, onSelect, account = null }) {
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           onKeyDown={(event) => { if (event.key === 'Escape') onClose(); }}
-          placeholder="Search a feeling"
-          aria-label="Search a feeling"
+          placeholder={t('journal.search.placeholder')}
+          aria-label={t('journal.search.placeholder')}
         />
         <div className="journal-search-results">
           {query.trim() && ready && results.length === 0 && (
-            <p className="journal-search-empty">Nothing close to that yet.</p>
+            <p className="journal-search-empty">{t('journal.search.empty')}</p>
           )}
           {results.map((hit) => (
             <button key={hit.day} type="button" className="journal-search-hit" onClick={() => onSelect(hit)}>
-              <span className="journal-search-quote">“{hit.text}”</span>
+              <span className="journal-search-quote">{t('journal.search.quote', { text: hit.text })}</span>
               <span className="journal-search-line">
                 <span className="journal-search-why">{hit.why}</span>
-                <span className="journal-search-date">{dateLabel(hit.day)}</span>
+                <span className="journal-search-date">{stampWeekday(hit.day)}</span>
               </span>
             </button>
           ))}
         </div>
         {/* Said above the foot rather than instead of it: "nothing leaves the device" is true either way. */}
         {source === 'failed' && (
-          <p className="journal-search-unread">
-            Couldn’t reach your journal — this searches only what’s on this device.
-          </p>
+          <p className="journal-search-unread">{t('journal.search.unread')}</p>
         )}
         <p className={'journal-search-foot' + (sharpening ? ' is-sharpening' : '')}>
           {footNote(indexing, sharpening, mode)}
@@ -78,8 +69,8 @@ export function SearchOverlay({ open, onClose, onSelect, account = null }) {
 }
 
 function footNote(indexing, sharpening, mode) {
-  if (indexing) return 'reading your pages · one time';
-  if (sharpening) return 'sharpening · matching by meaning now';
-  if (mode === 'neural') return 'Matched by meaning, on your device. Nothing you wrote is sent anywhere to search.';
-  return 'Matched on your device. Nothing you wrote is sent anywhere to search.';
+  if (indexing) return t('journal.search.indexing');
+  if (sharpening) return t('journal.search.sharpening');
+  if (mode === 'neural') return t('journal.search.neural');
+  return t('journal.search.lexical');
 }

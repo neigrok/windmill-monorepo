@@ -2,19 +2,15 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  applyLabel, atomicLine, CARD_ROW_CAP, changeLabel, collapseKept, countedLabel, diffRows, documentLine,
-  historyLabel, intentLine, isPending, moreRowsLabel,
-  agentNameOf, conversationOf, CONVERSATION_VERB, keptRunLabel, MID_WORKOUT_CAVEAT, receiptLine, STILL_WAITING,
-  logKeptLabel, REVIEW_VERB, settledLine, sourceLabel, stateChip, summaryLine, TURN_DOWN_CONFIRM, TURN_DOWN_VERB,
-  UNNAMED_AGENT, wroteKicker,
+  atomicLine, CARD_ROW_CAP, changeLabel, collapseKept, countedLabel, diffRows, isPending,
+  agentNameOf, conversationOf, CONVERSATION_VERB, keptRunLabel, MID_WORKOUT_CAVEAT, receiptLine,
+  logKeptLabel, REVIEW_VERB, sourceLabel, stateChip, summaryLine, TURN_DOWN_VERB, UNNAMED_AGENT,
 } from '../../../src/products/gym/proposals.js';
 import { KG, LB, spellWeightsIn } from '../../../src/products/gym/units.js';
 
 spellWeightsIn(KG);
 
 const CREATED_AT = new Date(2026, 7, 2, 21, 14).getTime();
-const SETTLED_AT = new Date(2026, 7, 3, 7, 12).getTime();
-const READ_AT = new Date(2026, 7, 3, 9, 41).getTime();
 
 const straight = (count, reps, weightKg) => Array.from({ length: count }, () => ({ reps, weightKg }));
 const RAMP = [
@@ -104,18 +100,20 @@ test('diffRows — every line the routine would run, in order, with the four cha
     { kind: 'kept', exerciseId: 'barbell-row', targets: '4 × 8 · 70' },
     { kind: 'removed', exerciseId: 'cable-fly', kept: '41 logged sets kept' },
   ]);
-  assert.equal(
-    documentLine(proposal()),
-    'The whole routine, top to bottom — the marked lines change.',
-  );
 });
 
 test('diffRows — the marked rows are exactly what the store counted under Apply', () => {
   const document = proposal();
   const marked = diffRows(document).filter((row) => row.kind !== 'kept');
   assert.equal(marked.length, document.changeCount);
-  assert.equal(applyLabel(document), 'Apply all 4');
   assert.equal(atomicLine(document), 'All four or none. Nothing is applied until you tap.');
+  assert.deepEqual([1, 4, 10, 11, 0].map((changeCount) => atomicLine({ changeCount })), [
+    'All one or none. Nothing is applied until you tap.',
+    'All four or none. Nothing is applied until you tap.',
+    'All ten or none. Nothing is applied until you tap.',
+    'All 11 or none. Nothing is applied until you tap.',
+    'All zero or none. Nothing is applied until you tap.',
+  ]);
 });
 
 test('diffRows — a movement that only changed position is still on the screen, in its new place', () => {
@@ -147,7 +145,6 @@ test('diffRows — a movement that only changed position is still on the screen,
     },
   ]);
   assert.equal(rows.filter((row) => row.kind !== 'kept').length, reordered.changeCount);
-  assert.equal(applyLabel(reordered), 'Apply');
 });
 
 test('diffRows — a reorder the store counted is a row of its own, so the count under Apply is honest', () => {
@@ -180,7 +177,6 @@ test('diffRows — a reorder the store counted is a row of its own, so the count
     },
   ]);
   assert.equal(rows.filter((row) => row.kind !== 'kept').length, swapped.changeCount);
-  assert.equal(applyLabel(swapped), 'Apply all 2');
 
   const both = proposal({ name: 'Push B', changeCount: 3, changes: swapped.changes });
   const bothRows = diffRows(both);
@@ -298,7 +294,6 @@ test('diffRows — a shape that held and one set that moved prints that set alon
     { kind: 'retargeted', exerciseId: 'back-squat', moves: [{ field: 'set 4', from: '100 × 1', to: '102.5 × 1' }] },
     { kind: 'kept', exerciseId: 'face-pull', targets: 'open' },
   ]);
-  assert.equal(applyLabel(review), 'Apply');
 
   // The shape changed: the scheme in the formula, and the ladder behind it, en dash and all.
   const reshaped = diffRows(proposal({
@@ -370,39 +365,7 @@ test('stateChip — every state the wire has says its own word', () => {
 });
 
 test('one word for one act: a lifter reads turned down, never the wire’s dismissed', () => {
-  assert.deepEqual(TURN_DOWN_CONFIRM, {
-    title: 'Turn this down?',
-    body: 'Nothing changes, and it stays in the routine’s history as a record.',
-    confirm: 'Turn down',
-    keep: 'Keep it',
-  });
-  const read = [
-    stateChip(proposal({ state: 'dismissed' })),
-    historyLabel(proposal({ state: 'dismissed', settledAt: SETTLED_AT })),
-    settledLine(proposal({ state: 'dismissed', settledAt: SETTLED_AT }), READ_AT),
-    ...Object.values(TURN_DOWN_CONFIRM),
-  ];
-  for (const line of read) assert.doesNotMatch(line, /dismiss/i, line);
-});
-
-test('settledLine — applied, dismissed and superseded each say what happened and that it stays', () => {
-  assert.equal(
-    settledLine(proposal({ state: 'applied', settledAt: SETTLED_AT }), READ_AT),
-    'Applied to Push A today at 07:12. Kept on the routine as a dated record — the program’s history, not a toast that disappears.',
-  );
-  assert.equal(
-    settledLine(proposal({ state: 'dismissed', settledAt: SETTLED_AT }), READ_AT),
-    'Turned down today at 07:12. Nothing changed, and it stays in the routine’s history as a record.',
-  );
-  assert.equal(
-    settledLine(proposal({ state: 'superseded', settledAt: SETTLED_AT }), READ_AT),
-    'Push A changed today at 07:12, after this was written. Nothing from it was applied, and it stays in the routine’s history.',
-  );
-  assert.equal(
-    settledLine(proposal({ state: 'applied', settledAt: SETTLED_AT }), READ_AT + 5 * 86_400_000),
-    'Applied to Push A 5 days ago at 07:12. Kept on the routine as a dated record — the program’s history, not a toast that disappears.',
-  );
-  assert.equal(settledLine(proposal(), READ_AT), null);
+  for (const line of [stateChip(proposal({ state: 'dismissed' })), TURN_DOWN_VERB]) assert.doesNotMatch(line, /dismiss/i, line);
 });
 
 test('sourceLabel — who wrote it, and never a blank where a name should be', () => {
@@ -442,12 +405,8 @@ test('summaryLine and the review door — the card says what is waiting, and its
 
 test('a removal names itself on the card, whatever its summary says', () => {
   const removal = proposal({ intent: 'remove', summary: 'Tidying up your program a little.', changeCount: 1 });
-  assert.equal(intentLine(removal, 'Push A'), 'Removes Push A from your routines.');
-  assert.equal(intentLine(proposal(), 'Push A'), null);
   assert.equal(summaryLine(removal, 'Push A'), 'Tidying up your program a little.');
   assert.equal(summaryLine(proposal({ intent: 'remove', summary: '' }), 'Push A'), 'A proposal to remove Push A.');
-  assert.equal(applyLabel(removal), 'Remove Push A');
-  assert.equal(documentLine(removal), null);
   assert.equal(
     atomicLine(removal),
     'Removes the routine from your program · every logged set stays.',
@@ -463,16 +422,10 @@ test('countedLabel — a removal is never a count, and every line that says how 
   assert.equal(countedLabel(proposal({ changeCount: 4 })), '4 changes');
   assert.equal(countedLabel(proposal({ changeCount: 1 })), '1 change');
   assert.equal(countedLabel(proposal({ changeCount: 1 })), changeLabel(1));
-  // One source, so the card's line and the history row cannot drift apart.
-  for (const head of [proposal(), proposal({ intent: 'remove', changeCount: 4 }), proposal({ changeCount: 1 })]) {
-    assert.equal(historyLabel(head).includes(countedLabel(head)), true);
-  }
 });
 
-test('CARD_ROW_CAP and moreRowsLabel — the card’s vocabulary for a skim, and what a wide routine leaves it to count', () => {
+test('CARD_ROW_CAP — the card’s vocabulary for a skim, and what a wide routine leaves it to count', () => {
   assert.equal(CARD_ROW_CAP, 3);
-  assert.equal(moreRowsLabel(1), '+ 1 more');
-  assert.equal(moreRowsLabel(9), '+ 9 more');
   // The card draws what moved and never what stood still, so a fifty-line routine with two changes
   // is two rows and no `+ N more` at all.
   const wide = proposal({
@@ -495,30 +448,6 @@ test('CARD_ROW_CAP and moreRowsLabel — the card’s vocabulary for a skim, and
   });
   const drawn = diffRows(many).filter((row) => row.kind !== 'kept');
   assert.equal(drawn.length, 5);
-  assert.equal(moreRowsLabel(drawn.length - CARD_ROW_CAP), '+ 2 more');
-});
-
-test('historyLabel — one dated row per proposal, whatever became of it', () => {
-  assert.equal(
-    historyLabel(proposal({ state: 'applied', settledAt: SETTLED_AT, changeCount: 3 })),
-    '3 Aug · applied 3 changes from your connected agent',
-  );
-  assert.equal(
-    historyLabel(proposal({ state: 'dismissed', settledAt: SETTLED_AT, source: { door: 'mcp', agent: 'Claude Code' } })),
-    '3 Aug · turned down 4 changes from Claude Code',
-  );
-  assert.equal(
-    historyLabel(proposal({ state: 'superseded', settledAt: SETTLED_AT })),
-    '3 Aug · superseded 4 changes from your connected agent',
-  );
-  assert.equal(
-    historyLabel(proposal()),
-    '2 Aug · 4 changes from your connected agent · waiting for you',
-  );
-  assert.equal(
-    historyLabel(proposal({ intent: 'remove', state: 'dismissed', settledAt: SETTLED_AT, changeCount: 1 })),
-    '3 Aug · turned down a removal from your connected agent',
-  );
 });
 
 test('collapseKept — a run of kept rows folds to one counted item at its own position, and unfolds there', () => {
@@ -570,23 +499,11 @@ test('missing frozen names and change counts leave only the authoritative propos
     { field: 'set 1', from: '60 × 5', to: '65 × 5' },
   ] }]);
   assert.equal(countedLabel(incomplete), 'changes');
-  assert.equal(applyLabel(incomplete), 'Apply');
   assert.equal(atomicLine(incomplete), 'Nothing is applied until you tap.');
-  assert.equal(applyLabel({ ...incomplete, intent: 'remove' }), 'Remove routine');
   assert.equal(receiptLine({ verb: 'apply', proposal: { intent: 'remove' } }), 'Applied · routine · routine removed');
-  assert.equal(settledLine({ state: 'applied', settledAt: SETTLED_AT }, READ_AT).includes('undefined'), false);
-  assert.equal(settledLine({ state: 'superseded', settledAt: SETTLED_AT }, READ_AT).includes('undefined'), false);
 });
 
-test('the review’s words are pinned: the kicker, the caveat, the waiting card, the text row', () => {
-  assert.equal(wroteKicker({ door: 'ask' }), 'Coach wrote:');
-  assert.equal(wroteKicker({ door: 'mcp', agent: 'Claude' }), 'Claude wrote:');
-  assert.equal(wroteKicker({ door: 'mcp', connection: 'Claude Desktop' }), 'Claude Desktop wrote:', 'a connection’s name counts as the agent’s, as on the byline');
-  assert.equal(wroteKicker({ door: 'mcp', agent: 'Claude', connection: 'Claude Desktop' }), 'Claude wrote:');
-  assert.equal(wroteKicker({ door: 'mcp' }), 'Your agent wrote:', 'an unnamed agent is never given Coach’s name');
-  assert.equal(wroteKicker({ door: 'mcp', agent: '', connection: '' }), 'Your agent wrote:');
-  assert.equal(wroteKicker(undefined), 'Your agent wrote:');
+test('the review’s words are pinned: the caveat and the turn-down verb', () => {
   assert.equal(MID_WORKOUT_CAVEAT, 'You are mid-workout. Applying changes next time, not this session.');
-  assert.equal(STILL_WAITING, 'still waiting');
   assert.equal(TURN_DOWN_VERB, 'Turn this down');
 });

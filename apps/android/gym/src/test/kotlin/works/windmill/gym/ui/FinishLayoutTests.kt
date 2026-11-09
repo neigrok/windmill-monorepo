@@ -35,6 +35,8 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
+import works.windmill.gym.string
+import works.windmill.gym.R
 import works.windmill.gym.presentation.*
 
 @RunWith(RobolectricTestRunner::class)
@@ -109,12 +111,12 @@ class FinishLayoutTests {
         }
         compose.onNodeWithText("Against plan").assertDoesNotExist()
         compose.onNodeWithText("Done").assertIsDisplayed()
-        compose.onNodeWithText(FinishCoach.action).assertIsDisplayed()
+        compose.onNodeWithText(string(R.string.gym_finish_share_with_coach)).assertIsDisplayed()
         val target = compose.onAllNodesWithText("3 × 8 · 60 kg total").onLast().performScrollTo().assertIsDisplayed()
         val movement = compose.onAllNodesWithText(name).onFirst().fetchSemanticsNode().boundsInRoot
         assertTrue(target.fetchSemanticsNode().boundsInRoot.top >= movement.bottom)
         compose.onNodeWithText("Save routine").assertDoesNotExist()
-        compose.onNodeWithText(FinishCoach.action).assertIsDisplayed()
+        compose.onNodeWithText(string(R.string.gym_finish_share_with_coach)).assertIsDisplayed()
     }
 
     @Test
@@ -149,7 +151,7 @@ class FinishLayoutTests {
         assertEquals(1, layouts.single().lineCount)
         assertFalse(layouts.single().hasVisualOverflow)
 
-        val band = compose.onNodeWithText(FinishCoach.action).fetchSemanticsNode().boundsInRoot.top
+        val band = compose.onNodeWithText(string(R.string.gym_finish_share_with_coach)).fetchSemanticsNode().boundsInRoot.top
         for (text in listOf("Performed", "Bench Press", "5 × 6 · 80 kg total")) {
             val node = compose.onNodeWithText(text).performScrollTo().assertIsDisplayed().fetchSemanticsNode().boundsInRoot
             assertTrue("$text ends at ${node.bottom}, under the band at $band", node.bottom <= band + 0.5f)
@@ -178,7 +180,7 @@ class FinishLayoutTests {
         for (sets in listOf(full, slight)) {
             compose.runOnIdle { workout.value = sets }
             compose.onNodeWithText(if (sets == full) "Well done." else "Ended early.").assertIsDisplayed()
-            val band = compose.onNodeWithText(FinishCoach.action).fetchSemanticsNode().boundsInRoot.top
+            val band = compose.onNodeWithText(string(R.string.gym_finish_share_with_coach)).fetchSemanticsNode().boundsInRoot.top
             for (text in listOf("Duration", "Sets", "Volume", "Only on this phone · Keep it", "Performed", "Bench Press", "Overhead Press",
                                 "Incline Dumbbell Press", "1 × 10 · 24 kg each")) {
                 val node = compose.onNodeWithText(text).assertIsDisplayed().fetchSemanticsNode().boundsInRoot
@@ -216,7 +218,7 @@ class FinishLayoutTests {
                 FinishScreen(finished, listOf(Exercise("bench-press", "Bench Press", "press", "barbell")), onShareWithCoach = {})
             }
         }
-        for (label in listOf(FinishCoach.action, "Done")) {
+        for (label in listOf(string(R.string.gym_finish_share_with_coach), "Done")) {
             val button = compose.onNode(hasText(label) and hasClickAction()).assertIsDisplayed()
                 .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button)).fetchSemanticsNode().boundsInRoot
             val text = compose.onNode(hasText(label), useUnmergedTree = true).fetchSemanticsNode()

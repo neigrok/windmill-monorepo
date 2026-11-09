@@ -4,14 +4,15 @@ import React from 'react';
 import { Button } from '../../../design-system';
 import { Section, styles } from '../../../shell/settings/Section.jsx';
 import { beginUpgrade, billingConfigured, fetchSubscription } from '../../../shell/billing/checkout.js';
+import { t } from '../i18n/settings/index.js';
 
 const PLAN_COPY = {
-  active: { name: 'Windmill One', note: 'Thanks for backing the work.' },
-  trialing: { name: 'Windmill One', note: 'You’re on a trial.' },
-  past_due: { name: 'Windmill One', note: 'The last payment didn’t go through — Paddle is retrying. Nothing is switched off.' },
-  paused: { name: 'Paused', note: 'Billing is paused, so Windmill One is off for now.' },
-  canceled: { name: 'Free', note: 'Your Windmill One subscription has ended.' },
-  none: { name: 'Free', note: 'Everything you do by hand is free. Automatic Journal echoes are free too. Windmill One is planned for active AI use.' },
+  active: { name: t('roadmap.plan.windmillOne'), note: t('roadmap.plan.activeNote') },
+  trialing: { name: t('roadmap.plan.windmillOne'), note: t('roadmap.plan.trialingNote') },
+  past_due: { name: t('roadmap.plan.windmillOne'), note: t('roadmap.plan.pastDueNote') },
+  paused: { name: t('roadmap.plan.paused'), note: t('roadmap.plan.pausedNote') },
+  canceled: { name: t('roadmap.plan.free'), note: t('roadmap.plan.canceledNote') },
+  none: { name: t('roadmap.plan.free'), note: t('roadmap.plan.noneNote') },
 };
 
 const asDate = (iso) => {
@@ -48,26 +49,26 @@ export function PlanSection() {
   const ending = subscription?.scheduledChangeAt ? asDate(subscription.scheduledChangeAt) : '';
 
   return (
-    <Section title="Plan">
+    <Section title={t('roadmap.plan.title')}>
       <div style={styles.row}>
         <div style={styles.rowMain}>
-          <div style={styles.primaryText}>{loading ? 'Checking…' : copy.name}</div>
+          <div style={styles.primaryText}>{loading ? t('roadmap.plan.checking') : copy.name}</div>
           {!loading && (
             <div style={styles.metaText}>
-              {ending ? `Windmill One until ${ending}, then Free.` : copy.note}
+              {ending ? t('roadmap.plan.ending', { date: ending }) : copy.note}
             </div>
           )}
         </div>
-        {!loading && subscription?.active && !ending && <span style={styles.tag}>ACTIVE</span>}
+        {!loading && subscription?.active && !ending && <span style={styles.tag}>{t('roadmap.plan.activeTag')}</span>}
         {!loading && !subscription?.active && (
           <Button size="sm" onClick={upgrade} disabled={opening}>
-            {opening ? 'Opening…' : 'Upgrade'}
+            {opening ? t('roadmap.plan.opening') : t('roadmap.plan.upgrade')}
           </Button>
         )}
       </div>
       {failed && (
         <p style={{ ...styles.calmLine, marginTop: 8 }}>
-          Couldn’t open checkout just now. Try again in a moment.
+          {t('roadmap.plan.checkoutFailed')}
         </p>
       )}
     </Section>

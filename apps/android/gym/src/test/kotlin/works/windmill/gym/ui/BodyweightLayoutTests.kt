@@ -28,6 +28,9 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
+import works.windmill.gym.spelled
+import works.windmill.gym.string
+import works.windmill.gym.R
 import works.windmill.gym.presentation.Bodyweight
 import works.windmill.gym.presentation.WeighIn
 import works.windmill.platform.design.LocalWindmillDark
@@ -56,12 +59,12 @@ class BodyweightLayoutTests {
                 }
             }
         }
-        compose.onNodeWithContentDescription(weightField).performScrollTo().performTextReplacement("400,01")
-        compose.onNodeWithText(Bodyweight.save).assertIsDisplayed().performClick()
-        compose.onNodeWithText(Bodyweight.outOfRange).performScrollTo().assertIsDisplayed()
-        compose.onNodeWithContentDescription(weightField).performScrollTo().performTextReplacement("82,45")
+        compose.onNodeWithContentDescription(string(R.string.gym_bodyweight_weight_field)).performScrollTo().performTextReplacement("400,01")
+        compose.onNodeWithText(string(R.string.gym_bodyweight_save)).assertIsDisplayed().performClick()
+        compose.onNodeWithText(Bodyweight.outsideRange.spelled()).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithContentDescription(string(R.string.gym_bodyweight_weight_field)).performScrollTo().performTextReplacement("82,45")
         compose.onNodeWithText(Bodyweight.fullDay(day)).performScrollTo().assertIsDisplayed()
-        for (label in listOf(Bodyweight.save, Bodyweight.deleteRow)) {
+        for (label in listOf(string(R.string.gym_bodyweight_save), string(R.string.gym_bodyweight_delete))) {
             val button = compose.onNodeWithText(label).assertIsDisplayed()
             assertTrue(button.getBoundsInRoot().height >= 56.dp)
             val layouts = mutableListOf<TextLayoutResult>()
@@ -75,8 +78,8 @@ class BodyweightLayoutTests {
             }
             assertEquals(label.length, layout.getLineEnd(layout.lineCount - 1))
         }
-        compose.onNodeWithText(Bodyweight.deleteRow).performClick()
-        compose.onNodeWithText(Bodyweight.save).performClick()
+        compose.onNodeWithText(string(R.string.gym_bodyweight_delete)).performClick()
+        compose.onNodeWithText(string(R.string.gym_bodyweight_save)).performClick()
         compose.runOnIdle {
             assertEquals(listOf(day.toString() to 82.45), saved)
             assertEquals(1, deletes)

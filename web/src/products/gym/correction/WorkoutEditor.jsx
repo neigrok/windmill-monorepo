@@ -3,6 +3,7 @@ import { Button } from '../../../design-system/index.js';
 import { Back } from '../Back.jsx';
 import { failureReason } from '../errors.js';
 import { useGymApi } from '../gymRuntime.js';
+import { t } from '../i18n/index.js';
 import { dayLabel, fmtKg, groupByExercise, loadBasisLabel, movementOf, NO_ROUTINE, routineNameOf, sessionHref, shortDayLabel } from '../log.js';
 import { KG } from '../units.js';
 import { mintId } from '../mint.js';
@@ -41,7 +42,7 @@ export function WorkoutEditor({ session, sets, catalog, log, from, onDelete }) {
     handled.current = signature;
     if (ownReceipt.status === 'refused') {
       const error = ownReceipt.error;
-      setFailure({ reason: error?.sentence || `Those changes didn’t land — ${failureReason(error)}.`, overlapping: error?.overlapping });
+      setFailure({ reason: error?.sentence || t('gym.correction.notSaved', { reason: failureReason(error) }), overlapping: error?.overlapping });
       setSaving(false);
       return;
     }
@@ -84,7 +85,7 @@ export function WorkoutEditor({ session, sets, catalog, log, from, onDelete }) {
         draftKey, draft: { session: original, sets: originalSets, draft, selected, request: request.current },
       });
     } catch (error) {
-      setFailure({ reason: error.sentence || `Those changes didn’t land — ${failureReason(error)}.`, overlapping: error.overlapping });
+      setFailure({ reason: error.sentence || t('gym.correction.notSaved', { reason: failureReason(error) }), overlapping: error.overlapping });
     } finally {
       setSaving(false);
     }
@@ -92,50 +93,50 @@ export function WorkoutEditor({ session, sets, catalog, log, from, onDelete }) {
   return <section className="gym-workout-editor">
     <Back href={back}>{name}</Back>
     <header>
-      <h1 className="gym-title">Edit workout</h1>
+      <h1 className="gym-title">{t('gym.correction.title')}</h1>
       <p className="gym-workout-note">{name} · {dayLabel(original.startedAt)}</p>
     </header>
     <div className="gym-workout-desk">
       <form ref={form} onSubmit={save} className="gym-correction-form">
         <fieldset disabled={busy}>
           <div className="gym-workout-fields">
-            <label>Routine<input name="routineName" value={draft.routineName} onChange={(event) => setDraft({ ...draft, routineName: event.target.value })} /></label>
-            <label className="gym-workout-local">Date<input name="date" type="date" value={draft.date} onChange={(event) => setDraft({ ...draft, date: event.target.value })} /><span className="gym-workout-local-value" aria-hidden="true">{date && <>{shortDayLabel(date)}<span className="gym-workout-date-year"> {date.getFullYear()}</span></>}</span></label>
-            <label className="gym-workout-local">Start<input name="time" type="time" value={draft.time} onChange={(event) => setDraft({ ...draft, time: event.target.value })} /><span className="gym-workout-local-value" aria-hidden="true">{draft.time}</span></label>
+            <label>{t('gym.correction.routine')}<input name="routineName" value={draft.routineName} onChange={(event) => setDraft({ ...draft, routineName: event.target.value })} /></label>
+            <label className="gym-workout-local">{t('gym.correction.date')}<input name="date" type="date" value={draft.date} onChange={(event) => setDraft({ ...draft, date: event.target.value })} /><span className="gym-workout-local-value" aria-hidden="true">{date && <>{shortDayLabel(date)}<span className="gym-workout-date-year"> {date.getFullYear()}</span></>}</span></label>
+            <label className="gym-workout-local">{t('gym.correction.start')}<input name="time" type="time" value={draft.time} onChange={(event) => setDraft({ ...draft, time: event.target.value })} /><span className="gym-workout-local-value" aria-hidden="true">{draft.time}</span></label>
           </div>
           <div className="gym-workout-sets">
-            <p className="gym-workout-unit">{loadBasisLabel(movementOf(catalog, selected), 0, KG)} × reps</p>
+            <p className="gym-workout-unit">{t('gym.correction.columns', { basis: loadBasisLabel(movementOf(catalog, selected), 0, KG) })}</p>
             <div className="gym-workout-movements">
               {groupByExercise(draft.sets).map(([exerciseId, group]) => <section className="gym-workout-movement" key={exerciseId}>
                 <button type="button" className="gym-workout-movement-head" aria-expanded={selected === exerciseId} onClick={() => setSelected(selected === exerciseId ? null : exerciseId)}>
                   <span><strong>{names.get(exerciseId) ?? exerciseId}</strong><span className="gym-workout-scheme">{correctionScheme(group)}</span></span>
-                  {selected !== exerciseId && <span className="gym-set-rail" aria-label={`${group.length} recorded sets`}>{group.map((set) => <i key={set.id} />)}</span>}
+                  {selected !== exerciseId && <span className="gym-set-rail" aria-label={t('gym.correction.recordedSets', { count: group.length })}>{group.map((set) => <i key={set.id} />)}</span>}
                 </button>
                 {selected === exerciseId && group.map((set, index) => <div key={set.id} className="gym-workout-set" data-set={set.id}>
                   <div className="gym-correction-row">
-                    <span className="gym-set-rail" aria-label={`Set ${index + 1} of ${group.length}`}><i /></span>
-                    <input className="gym-num" style={{ '--gym-number-chars': Math.max(2, set.fields.weightKg.length) }} name="weightKg" inputMode="decimal" aria-label={`${names.get(exerciseId)} set ${index + 1} load in ${loadBasisLabel(movementOf(catalog, exerciseId), 0, KG)}`} value={set.fields.weightKg} aria-invalid={failure?.setId === set.id && failure.field === 'weightKg'} onChange={(event) => updateSet(set.id, 'weightKg', event.target.value)} />
+                    <span className="gym-set-rail" aria-label={t('gym.correction.setOf', { position: index + 1, count: group.length })}><i /></span>
+                    <input className="gym-num" style={{ '--gym-number-chars': Math.max(2, set.fields.weightKg.length) }} name="weightKg" inputMode="decimal" aria-label={t('gym.correction.loadField', { name: String(names.get(exerciseId)), position: index + 1, basis: loadBasisLabel(movementOf(catalog, exerciseId), 0, KG) })} value={set.fields.weightKg} aria-invalid={failure?.setId === set.id && failure.field === 'weightKg'} onChange={(event) => updateSet(set.id, 'weightKg', event.target.value)} />
                     <span className="gym-number-times">×</span>
-                    <input className="gym-num" style={{ '--gym-number-chars': Math.max(2, set.fields.reps.length) }} name="reps" inputMode="numeric" aria-label={`${names.get(exerciseId)} set ${index + 1} reps`} value={set.fields.reps} aria-invalid={failure?.setId === set.id && failure.field === 'reps'} onChange={(event) => updateSet(set.id, 'reps', event.target.value)} />
-                    <button type="button" className="gym-workout-remove" aria-label={`Delete ${names.get(exerciseId)} set ${index + 1}`} onClick={() => setDraft({ ...draft, sets: draft.sets.filter((row) => row.id !== set.id) })}>×</button>
+                    <input className="gym-num" style={{ '--gym-number-chars': Math.max(2, set.fields.reps.length) }} name="reps" inputMode="numeric" aria-label={t('gym.correction.repsField', { name: String(names.get(exerciseId)), position: index + 1 })} value={set.fields.reps} aria-invalid={failure?.setId === set.id && failure.field === 'reps'} onChange={(event) => updateSet(set.id, 'reps', event.target.value)} />
+                    <button type="button" className="gym-workout-remove" aria-label={t('gym.correction.deleteSet', { name: String(names.get(exerciseId)), position: index + 1 })} onClick={() => setDraft({ ...draft, sets: draft.sets.filter((row) => row.id !== set.id) })}>×</button>
                   </div>
-                  {(set.fields.note || set.fields.rpe) && <p className="gym-workout-set-note">{[set.fields.rpe && `RPE ${set.fields.rpe}`, set.fields.note].filter(Boolean).join(' · ')}</p>}
+                  {(set.fields.note || set.fields.rpe) && <p className="gym-workout-set-note">{[set.fields.rpe && t('gym.correction.rpe', { rpe: set.fields.rpe }), set.fields.note].filter(Boolean).join(' · ')}</p>}
                 </div>)}
-                {selected === exerciseId && <button type="button" className="gym-workout-add" onClick={() => addSet(exerciseId)}>+ Add set</button>}
+                {selected === exerciseId && <button type="button" className="gym-workout-add" onClick={() => addSet(exerciseId)}>{t('gym.correction.addSet')}</button>}
               </section>)}
             </div>
           </div>
-          <button type="button" className="gym-workout-add" onClick={() => setPick(!pick)}>+ Add movement</button>
-          {pick && <label className="gym-workout-picker">Movement<select value="" onChange={(event) => { if (event.target.value) addSet(event.target.value); }}><option value="">Choose a movement</option>{catalog.map((exercise) => <option key={exercise.id} value={exercise.id}>{exercise.name}</option>)}</select></label>}
+          <button type="button" className="gym-workout-add" onClick={() => setPick(!pick)}>{t('gym.correction.addMovement')}</button>
+          {pick && <label className="gym-workout-picker">{t('gym.correction.movement')}<select value="" onChange={(event) => { if (event.target.value) addSet(event.target.value); }}><option value="">{t('gym.correction.chooseMovement')}</option>{catalog.map((exercise) => <option key={exercise.id} value={exercise.id}>{exercise.name}</option>)}</select></label>}
         </fieldset>
-        {failure && <p className="gym-read-failed" role="alert">{failure.reason}{failure.overlapping && <> <a href={sessionHref(failure.overlapping.id)}>Open that session</a></>}</p>}
-        <div className="gym-correction-actions"><a className="gym-workout-cancel" href={back}>{pending ? 'Back to workout' : 'Cancel'}</a><Button type="submit" disabled={busy}>{pending ? 'Waiting for the log…' : saving ? 'Saving…' : 'Save changes'}</Button></div>
+        {failure && <p className="gym-read-failed" role="alert">{failure.reason}{failure.overlapping && <> <a href={sessionHref(failure.overlapping.id)}>{t('gym.correction.openSession')}</a></>}</p>}
+        <div className="gym-correction-actions"><a className="gym-workout-cancel" href={back}>{pending ? t('gym.correction.backToWorkout') : t('gym.common.cancel')}</a><Button type="submit" disabled={busy}>{pending ? t('gym.correction.waiting') : saving ? t('gym.correction.saving') : t('gym.correction.saveChanges')}</Button></div>
       </form>
       <aside className="gym-workout-totals">
-        <p className="gym-workout-unit">SAVED · {dayLabel(original.startedAt).toUpperCase()}</p>
-        <dl>{[[totals.sets, 'sets'], [totals.reps, 'reps'], [totals.tonnageKg === null ? '—' : totals.tonnageKg.toLocaleString('en'), 'kg external']].map(([value, label]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
-        <p>These are this workout’s own numbers.</p>
-        <button type="button" className="gym-short-discard" disabled={busy} onClick={onDelete}>Delete workout</button>
+        <p className="gym-workout-unit">{t('gym.correction.savedOn', { day: dayLabel(original.startedAt).toUpperCase() })}</p>
+        <dl>{[[totals.sets, t('gym.correction.totalSets')], [totals.reps, t('gym.correction.totalReps')], [totals.tonnageKg === null ? '—' : totals.tonnageKg.toLocaleString('en'), t('gym.correction.totalLoad')]].map(([value, label]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
+        <p>{t('gym.correction.ownNumbers')}</p>
+        <button type="button" className="gym-short-discard" disabled={busy} onClick={onDelete}>{t('gym.correction.deleteWorkout')}</button>
       </aside>
     </div>
   </section>;

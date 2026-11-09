@@ -1,5 +1,9 @@
 package works.windmill.gym.store
 
+import androidx.annotation.StringRes
+import java.io.Serializable
+import works.windmill.gym.R
+import works.windmill.platform.i18n.Words
 import works.windmill.gym.presentation.Blocker
 import works.windmill.gym.presentation.Exercise
 import works.windmill.gym.presentation.Proposal
@@ -21,22 +25,22 @@ sealed interface GymResult<out T> {
 // A log that answered with a REASON is not a log that went quiet: the lifter can act on the first and
 // can only wait out the second.
 sealed interface WriteFailure {
-    data class Refused(val said: String) : WriteFailure   // the log answered, in its own words
+    data class Refused(val words: Words) : WriteFailure   // the log answered: the server's own sentence, or the app's for a rule it applies itself
     data object NoAnswer : WriteFailure                   // no reply, or one this build couldn't read
     data object UnconfirmedDelete : WriteFailure
 
-    // `subject` is read only when there is no sentence from the log to say instead.
-    fun line(subject: String): String = when (this) {
-        is Refused -> said
-        NoAnswer -> "the log didn’t answer — $subject"
-        UnconfirmedDelete -> "The delete could not be confirmed. Reopen this screen to check."
+    // What the screen says. `noAnswer` is that screen's whole sentence for a log that went quiet, read only when the log gave none.
+    fun says(@StringRes noAnswer: Int, vararg args: Serializable): Words = when (this) {
+        is Refused -> words
+        NoAnswer -> Words.Message(noAnswer, args.toList())
+        UnconfirmedDelete -> Words.Message(R.string.gym_store_delete_unconfirmed)
     }
 }
 
 fun WriteFailure(refusing: Throwable): WriteFailure = when (refusing) {
     is TrainingDeleteUnconfirmed -> WriteFailure.UnconfirmedDelete
-    is TrainingRefused -> WriteFailure.Refused(refusing.line)
-    is WindmillApiException.Refused -> WriteFailure.Refused(refusing.line)
+    is TrainingRefused -> WriteFailure.Refused(refusing.words)
+    is WindmillApiException.Refused -> WriteFailure.Refused(refusing.words)
     else -> WriteFailure.NoAnswer
 }
 
@@ -46,7 +50,7 @@ enum class FixOrigin(val screen: String) { Workout("workout"), Session("session"
 // where a `Failed` leaves it standing with the sentence beside it.
 sealed interface FixOutcome {
     data class Corrected(val set: TrainingSet) : FixOutcome
-    data class Gone(val said: String) : FixOutcome
+    data class Gone(val words: Words) : FixOutcome
     data class Failed(val why: WriteFailure) : FixOutcome
 }
 
@@ -56,10 +60,10 @@ sealed interface FixOutcome {
 // leaves nothing to draw. Only `Failed` is worth another tap.
 sealed interface ProposalOutcome {
     data class Decided(val proposal: Proposal) : ProposalOutcome
-    data class Moved(val said: String) : ProposalOutcome
-    data class Settled(val said: String) : ProposalOutcome
-    data class Refused(val said: String) : ProposalOutcome
-    data class Gone(val said: String) : ProposalOutcome
+    data class Moved(val words: Words) : ProposalOutcome
+    data class Settled(val words: Words) : ProposalOutcome
+    data class Refused(val words: Words) : ProposalOutcome
+    data class Gone(val words: Words) : ProposalOutcome
     data class Failed(val why: WriteFailure) : ProposalOutcome
 
     // The event's bounded word for it.
@@ -76,7 +80,7 @@ sealed interface ProposalOutcome {
 sealed interface ProposalRead {
     data class Found(val proposal: Proposal) : ProposalRead
     data object Gone : ProposalRead {
-        const val line = "This proposal is no longer available."
+        val words: Words = Words.Message(R.string.gym_store_proposal_gone)
     }
 }
 
@@ -94,7 +98,7 @@ sealed interface RefusedWrite {
     // The id of the thing that was refused, so a list can key by it: a row keyed by its POSITION
     // hands the next row its predecessor's swipe state, and a dismissed one never comes back.
     val id: String
-    val reason: String
+    val why: Words
 }
 
 // The last copy of the set, so the movement and numbers travel with the reason.
@@ -103,17 +107,17 @@ data class RefusedSet(
     val exerciseId: String,
     val weightKg: Double,
     val reps: Int,
-    override val reason: String,
+    override val why: Words,
 ) : RefusedWrite {
-    constructor(set: TrainingSet, reason: String) :
-        this(set.id, set.exerciseId, set.weightKg, set.reps, reason)
+    constructor(set: TrainingSet, why: Words) :
+        this(set.id, set.exerciseId, set.weightKg, set.reps, why)
 }
 
 // Any other refused write, named for the banner. The id is the engine notice's, so a dismissal
 // sticks and two passes over the same refusal are one loss on the banner.
-data class RefusedWorkout(override val id: String, val startedAtMs: Long?, override val reason: String) : RefusedWrite
+data class RefusedWorkout(override val id: String, val startedAtMs: Long?, override val why: Words) : RefusedWrite
 
-data class RefusedChange(override val id: String, val name: String?, override val reason: String) : RefusedWrite
+data class RefusedChange(override val id: String, val named: Words?, override val why: Words) : RefusedWrite
 
 // How a write reports itself. Silence is a state: a room that has just opened says nothing.
 sealed class SaveState {
@@ -121,19 +125,19 @@ sealed class SaveState {
     data object OnTheLog : SaveState()          // the account has it
     data object OnThisDevice : SaveState()      // held on purpose: nobody signed in, or the account has not confirmed it yet
     data class Blocked(val by: Blocker) : SaveState()   // signed in, and this is what stops it landing
-    data class Refused(val reason: String) : SaveState()
+    data class Refused(val why: Words) : SaveState()
 
     // "offline" is said only when the transport failed; a 500 and a lapsed session get their own words.
-    val line: String?
+    val words: Words?
         get() = when (this) {
             Idle -> null
-            OnTheLog -> "on the log"
-            OnThisDevice -> "saved on this device"
+            OnTheLog -> Words.Message(R.string.gym_store_save_on_the_log)
+            OnThisDevice -> Words.Message(R.string.gym_store_save_on_this_device)
             is Blocked -> when (by) {
-                Blocker.Offline -> "offline · saved here"
-                Blocker.LogFailed -> "the log didn’t answer · saved here"
-                Blocker.SignInLapsed -> "sign in again · saved here"
+                Blocker.Offline -> Words.Message(R.string.gym_store_save_offline)
+                Blocker.LogFailed -> Words.Message(R.string.gym_store_save_no_answer)
+                Blocker.SignInLapsed -> Words.Message(R.string.gym_store_save_sign_in)
             }
-            is Refused -> reason
+            is Refused -> why
         }
 }

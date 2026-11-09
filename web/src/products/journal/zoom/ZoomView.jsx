@@ -9,9 +9,14 @@ import { useToday } from '../usePages.js';
 import { buildYear } from './yearGrid.js';
 import { weekReadout } from './weekReadout.js';
 import { energyBars, moodBand } from '../scaleBands.js';
+import { SHORT_MONTHS } from '../echoes/echoDates.js';
+import { t } from '../i18n/index.js';
 
-const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
-const WEEKDAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+const WEEKDAYS = [
+  t('journal.date.weekdayInitial.sun'), t('journal.date.weekdayInitial.mon'), t('journal.date.weekdayInitial.tue'),
+  t('journal.date.weekdayInitial.wed'), t('journal.date.weekdayInitial.thu'), t('journal.date.weekdayInitial.fri'),
+  t('journal.date.weekdayInitial.sat'),
+];
 
 // Eleven hues in a 15px cell is not a design, it is a hope: the grid reads the five bands.
 function cellColor(day) {
@@ -41,16 +46,16 @@ export function ZoomView({ onClose, onPick, account = null }) {
   const week = useMemo(() => weekReadout(pages, today), [pages, today]);
 
   return (
-    <div className="journal-zoom" role="dialog" aria-label="Zoom out">
+    <div className="journal-zoom" role="dialog" aria-label={t('journal.zoom.title')}>
       <div className="journal-zoom-head">
-        <span className="journal-zoom-title">Your months</span>
-        <button type="button" className="journal-zoom-close" onClick={onClose} aria-label="Back to today">Back to today</button>
+        <span className="journal-zoom-title">{t('journal.zoom.heading')}</span>
+        <button type="button" className="journal-zoom-close" onClick={onClose} aria-label={t('journal.zoom.back')}>{t('journal.zoom.back')}</button>
       </div>
 
       {week && (
-        <section className="journal-week" aria-label="This week">
+        <section className="journal-week" aria-label={t('journal.zoom.week')}>
           <div className="journal-week-count">
-            <strong>{week.written}</strong> of 7 days · {week.totalWords} {week.totalWords === 1 ? 'word' : 'words'}
+            {t('journal.zoom.weekCount', { written: <strong>{week.written}</strong>, count: week.totalWords })}
           </div>
           <div className="journal-week-arc">
             {week.days.map((day) => (
@@ -69,15 +74,17 @@ export function ZoomView({ onClose, onPick, account = null }) {
       )}
 
       {read.source === 'failed' && (
-        <p className="journal-zoom-unread">
-          Couldn’t reach your journal — these are only the days on this device.
-        </p>
+        <p className="journal-zoom-unread">{t('journal.zoom.unread')}</p>
       )}
 
       <div className="journal-zoom-grid">
         {months.map((month) => (
           <div key={month.key} className="journal-zoom-month">
-            <span className="journal-zoom-mlabel">{MONTHS[month.month - 1]}{month.month === 1 ? ` ’${String(month.year).slice(2)}` : ''}</span>
+            <span className="journal-zoom-mlabel">
+              {month.month === 1
+                ? t('journal.zoom.monthWithYear', { month: SHORT_MONTHS[0], year: String(month.year).slice(2) })
+                : SHORT_MONTHS[month.month - 1]}
+            </span>
             <div className="journal-zoom-days">
               {month.days.map((day) => (
                 <button
@@ -86,7 +93,7 @@ export function ZoomView({ onClose, onPick, account = null }) {
                   className={'journal-zoom-cell' + (day.written ? ' is-written' : '') + (day.date === today ? ' is-today' : '')}
                   style={{ background: cellColor(day) }}
                   onClick={() => onPick(day.date)}
-                  aria-label={day.date + (day.written ? '' : ' — nothing written')}
+                  aria-label={day.written ? day.date : t('journal.zoom.nothingWritten', { day: day.date })}
                   title={day.date}
                 />
               ))}

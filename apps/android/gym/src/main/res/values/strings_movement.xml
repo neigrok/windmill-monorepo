@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="gym_movement_title_edit_movement">Edit movement</string>
+    <string name="gym_movement_field_name">Name</string>
+    <string name="gym_movement_field_name_description">Movement name</string>
+    <string name="gym_movement_field_equipment">Equipment</string>
+    <string name="gym_movement_equipment_selected">Selected</string>
+    <string name="gym_movement_target">Target</string>
+    <string name="gym_movement_kg_blank">kg blank: pick it at the rack the first time; after that, last time fills it.</string>
+    <string name="gym_movement_vary_by_set">Vary by set</string>
+    <!-- A noun: the column that numbers a movement's sets. -->
+    <string name="gym_movement_column_set">Set</string>
+    <string name="gym_movement_column_reps">Reps</string>
+    <string name="gym_movement_set_load">Set %1$s load</string>
+    <string name="gym_movement_check_sets">Check Sets</string>
+    <string name="gym_movement_check_reps">Check Reps</string>
+    <string name="gym_movement_check_load">Check Load</string>
+    <plurals name="gym_movement_sets_vary">
+        <item quantity="one">%1$s set · varies</item>
+        <item quantity="other">%1$s sets · varies</item>
+    </plurals>
+    <string name="gym_movement_stepper_sets">Sets</string>
+    <string name="gym_movement_stepper_reps">Reps</string>
+    <string name="gym_movement_stepper_load">Load</string>
+    <string name="gym_movement_unit_sets">sets</string>
+    <string name="gym_movement_unit_reps">reps</string>
+    <string name="gym_movement_set_reps">Set %1$s reps</string>
+</resources>

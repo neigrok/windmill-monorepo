@@ -121,7 +121,7 @@ class GymNavigatorTests {
         }
         assertEquals(listOf(Tab.Routines, Tab.Routines, Tab.Routines, Tab.Routines, Tab.Routines),
             listOf("Today", "Ask", "", 42, null).map(::restoredTab))
-        assertEquals(listOf("Routines", "The log", "Coach"), Tab.entries.map { it.title })
+        assertEquals(listOf("Routines", "The log", "Coach"), Tab.entries.map { string(it.title) })
     }
 
     @Test

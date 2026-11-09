@@ -26,15 +26,21 @@ import org.junit.Assert.fail
 import org.junit.Before
 import org.junit.Test
 import java.util.concurrent.TimeUnit
+import works.windmill.platform.spelled
 import works.windmill.platform.telemetry.Telemetry
 import okhttp3.Call
 import okhttp3.EventListener
 import okhttp3.Response
 import java.util.concurrent.ConcurrentHashMap
+import org.robolectric.annotation.Config
+import org.robolectric.RobolectricTestRunner
+import org.junit.runner.RunWith
 
 @Serializable
 private data class Wire(val value: String)
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class WindmillApiTest {
     private val server = MockWebServer()
 
@@ -75,9 +81,9 @@ class WindmillApiTest {
 
     @Test fun onlyTheSyncUpgradeRefusalAsksForAnUpdate() {
         assertEquals("Update Windmill to keep syncing. Your work is saved on this phone.",
-            WindmillApiException.Refused(426, Refusal(code = "client-update-required")).line)
+            WindmillApiException.Refused(426, Refusal(code = "client-update-required")).words.spelled())
         assertEquals("That link has expired.",
-            WindmillApiException.Refused(410, Refusal(message = "That link has expired.", code = "expired")).line)
+            WindmillApiException.Refused(410, Refusal(message = "That link has expired.", code = "expired")).words.spelled())
     }
 
     @Before
@@ -193,7 +199,7 @@ class WindmillApiTest {
         val api = WindmillApi(server.url("/"), { null }, telemetry = telemetry)
         val failure = runCatching { api.get<Wire>("/v1/example") }.exceptionOrNull()
         assertTrue(failure is WindmillApiException.Transport)
-        assertEquals("That connection was interrupted. Try again.", (failure as WindmillApiException.Transport).line)
+        assertEquals("That connection was interrupted. Try again.", (failure as WindmillApiException.Transport).words.spelled())
         assertEquals(emptyList<Throwable>(), failures)
         assertEquals(listOf("api_request_failed" to mapOf("method" to "GET", "route" to "/v1/example",
             "failure_kind" to "transport", "operation" to "http_request", "network_phase" to "response_body")),
@@ -297,7 +303,7 @@ class WindmillApiTest {
         } catch (refused: WindmillApiException.Refused) {
             assertEquals(429, refused.status)
             assertEquals(Refusal("slow down", "try later", "rate_limited"), refused.refusal)
-            assertEquals("slow down", refused.line)
+            assertEquals("slow down", refused.words.spelled())
             assertFalse(refused.isUnauthorized)
         }
     }
@@ -310,7 +316,7 @@ class WindmillApiTest {
             fail("expected a refusal")
         } catch (refused: WindmillApiException.Refused) {
             assertTrue(refused.isUnauthorized)
-            assertEquals("sign in to continue", refused.line)
+            assertEquals("sign in to continue", refused.words.spelled())
         }
     }
 
@@ -323,13 +329,13 @@ class WindmillApiTest {
         } catch (refused: WindmillApiException.Refused) {
             assertEquals(500, refused.status)
             assertEquals(Refusal(null, null, null), refused.refusal)
-            assertEquals("That didn’t go through", refused.line)
+            assertEquals("That didn’t go through", refused.words.spelled())
         }
     }
 
     @Test
     fun aBlankRefusalMessageUsesTheExistingFallback() {
-        assertEquals("That didn’t go through", WindmillApiException.Refused(410, Refusal("  ", "\n")).line)
+        assertEquals("That didn’t go through", WindmillApiException.Refused(410, Refusal("  ", "\n")).words.spelled())
     }
 
     @Test
@@ -342,7 +348,7 @@ class WindmillApiTest {
             WindmillApi(base, { null }).get<Wire>("/v1/anything")
             fail("expected offline")
         } catch (offline: WindmillApiException.Offline) {
-            assertEquals("Can’t reach windmill.works", offline.line)
+            assertEquals("Can’t reach windmill.works", offline.words.spelled())
         }
     }
 
@@ -353,7 +359,7 @@ class WindmillApiTest {
             api().get<Wire>("/v1/echo")
             fail("expected malformed")
         } catch (broken: WindmillApiException.Malformed) {
-            assertEquals("That didn’t go through", broken.line)
+            assertEquals("That didn’t go through", broken.words.spelled())
         }
     }
 
@@ -429,3 +435,5 @@ class WindmillApiTest {
         }
     }
 }
+
+// The words as English spells them.

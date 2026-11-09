@@ -11,6 +11,7 @@
 // on transforms, so a commit and a drag both reflow zero times.
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { t } from './i18n/index.js';
 
 const STOPS = 10;
 const KEY_SETTLE = 260;      // keyboard commits every keystroke; the bloom waits for the traffic to stop
@@ -21,13 +22,10 @@ const PLAYED_MIN = 50;       // ms — a timeline shorter than this did not play
 // clearFx cancels its overlay. Cascade order, not recency, decides which of two live classes paints.
 const HEAD_EVENTS = ['is-blooming', 'is-ticking', 'is-surging', 'is-setting-down', 'is-holding'];
 
-const TRACK_TITLE = {
-  mood: 'Mood — tap or drag, 0 to 10. Optional.',
-  energy: 'Energy — tap or drag, 0 to 10. Optional.',
-};
-const LABEL = { mood: 'MOOD', energy: 'ENERGY' };
-const NAME = { mood: 'Mood', energy: 'Energy' };
-const CLEAR_LABEL = { mood: 'Clear mood', energy: 'Clear energy' };
+const TRACK_TITLE = { mood: t('journal.scale.moodTitle'), energy: t('journal.scale.energyTitle') };
+const LABEL = { mood: t('journal.scale.moodLabel'), energy: t('journal.scale.energyLabel') };
+const NAME = { mood: t('journal.scale.mood'), energy: t('journal.scale.energy') };
+const CLEAR_LABEL = { mood: t('journal.scale.clearMood'), energy: t('journal.scale.clearEnergy') };
 
 const PAIR_KEY = (day) => `journal.pair.${day}`;
 
@@ -104,7 +102,7 @@ export function ScaleStrip({ day = null, mood = null, energy = null, onMood, onE
 
   return (
     <>
-      <div className="journal-controls" role="group" aria-label="How the day felt">
+      <div className="journal-controls" role="group" aria-label={t('journal.scale.group')}>
         <span className="journal-strip-fx" aria-hidden="true" ref={bloomRef} />
         <ScaleRow field="mood" value={mood} onChange={onMood} onCommit={onCommit} bloomRef={bloomRef} />
         <ScaleRow field="energy" value={energy} onChange={onEnergy} onCommit={onCommit} bloomRef={bloomRef} />
@@ -284,7 +282,7 @@ function ScaleRow({ field, value, onChange, onCommit, bloomRef }) {
         aria-valuemin={0}
         aria-valuemax={10}
         {...(display == null ? {} : { 'aria-valuenow': display })}
-        aria-valuetext={display == null ? 'not set' : `${display} of 10`}
+        aria-valuetext={display == null ? t('journal.scale.notSet') : t('journal.scale.value', { value: display })}
         aria-orientation="horizontal"
         title={TRACK_TITLE[field]}
         onPointerDown={onPointerDown}
@@ -316,7 +314,7 @@ function ScaleRow({ field, value, onChange, onCommit, bloomRef }) {
             type="button"
             ref={numeralRef}
             className="journal-numeral"
-            title="clear"
+            title={t('journal.scale.clear')}
             aria-label={CLEAR_LABEL[field]}
             onClick={clear}
           >
@@ -509,11 +507,11 @@ function polyline(stroke, pass) {
 function arcPoints(x0, x1, y, amplitude, segments) {
   const points = [];
   for (let i = 0; i <= segments; i++) {
-    const t = i / segments;
-    const env = Math.sin(Math.PI * t);
+    const along = i / segments;
+    const env = Math.sin(Math.PI * along);
     const sign = i % 2 === 0 ? 1 : -1;
     const mag = 0.55 + 0.45 * Math.random();
-    points.push([x0 + (x1 - x0) * t, y + sign * mag * amplitude * env]);
+    points.push([x0 + (x1 - x0) * along, y + sign * mag * amplitude * env]);
   }
   return points;
 }

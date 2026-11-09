@@ -3,24 +3,27 @@
 
 import { msOfDateLocal } from '../bodyweight/bodyweight.js';
 import { gymMoment } from '../gymRuntime.js';
-import { agoLabel, dayLabel, durLabel, isFinished, NO_ROUTINE, routineNameOf, shortDayLabel, timeLabel } from '../log.js';
+import { t } from '../i18n/index.js';
+import { agoLabel, dayLabel, daysAgo, durLabel, isFinished, NO_ROUTINE, routineNameOf, shortDayLabel, timeLabel } from '../log.js';
 
 const MINUTE_MS = 60_000;
 const HOUR_MS = 60 * MINUTE_MS;
 
 export const DURATION_CHIPS = [
-  { minutes: 45, label: '45 min' },
-  { minutes: 60, label: '1 h' },
-  { minutes: 90, label: '1 h 30' },
+  { minutes: 45, label: t('gym.backfill.minutesChip', { minutes: 45 }) },
+  { minutes: 60, label: t('gym.backfill.hoursChip', { hours: 1 }) },
+  { minutes: 90, label: t('gym.backfill.hoursMinutesChip', { hours: 1, minutes: 30 }) },
 ];
 
 export const DEFAULT_MINUTES = 60;
 
-export const DAY_CHIPS = { today: 'Today', yesterday: 'Yesterday', other: 'Other day' };
+export const DAY_CHIPS = {
+  today: t('gym.backfill.dayToday'),
+  yesterday: t('gym.backfill.dayYesterday'),
+  other: t('gym.backfill.dayOther'),
+};
 
-const OVERLAP_TITLE = 'These times cross a session already in the log.';
-const AHEAD_TITLE = 'These times run past now.';
-export const TIME_NEEDED = 'Set a start time for this workout.';
+export const TIME_NEEDED = t('gym.backfill.timeNeeded');
 
 export function todayOf(now) {
   return gymMoment(now).today.text;
@@ -147,19 +150,22 @@ export function slotNote(slot, now) {
 }
 
 function daySaid(ms, now) {
-  const ago = agoLabel(ms, now);
-  if (ago === 'today' || ago === 'yesterday') return ago;
+  if (daysAgo(ms, now) <= 1) return agoLabel(ms, now);
   return dayLabel(ms);
 }
 
 export function crossedRefusal(session, now) {
-  const until = isFinished(session) ? timeLabel(session.finishedAt) : 'now';
+  const finished = isFinished(session);
   return {
     session,
-    title: OVERLAP_TITLE,
-    body: `${routineNameOf(session) ?? NO_ROUTINE} · ${daySaid(session.startedAt, now)} · `
-      + `${timeLabel(session.startedAt)} – ${until} is already in the log. `
-      + 'One visit is one session — if sets are missing from it, add them there instead.',
+    title: t('gym.backfill.overlapTitle'),
+    body: t('gym.backfill.overlapBody', {
+      name: routineNameOf(session) ?? NO_ROUTINE,
+      day: daySaid(session.startedAt, now),
+      start: timeLabel(session.startedAt),
+      finished,
+      end: finished ? timeLabel(session.finishedAt) : '',
+    }),
   };
 }
 
@@ -167,9 +173,12 @@ function endsAhead(slot, now) {
   if (slot.finishedAt <= latestEndOf(now)) return null;
   return {
     session: null,
-    title: AHEAD_TITLE,
-    body: `${dayLabel(slot.startedAt)} · ${timeLabel(slot.startedAt)} for ${durLabel(slot.finishedAt - slot.startedAt)} `
-      + 'ends after now. Shorten it, or start it earlier.',
+    title: t('gym.backfill.aheadTitle'),
+    body: t('gym.backfill.aheadBody', {
+      day: dayLabel(slot.startedAt),
+      start: timeLabel(slot.startedAt),
+      duration: durLabel(slot.finishedAt - slot.startedAt),
+    }),
   };
 }
 

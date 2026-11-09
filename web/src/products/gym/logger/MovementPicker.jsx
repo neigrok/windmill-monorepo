@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { Button, Icon, Input } from '../../../design-system/index.js';
 
+import { t } from '../i18n/index.js';
 import { cappedName, isNameOverCap, nameCountLabel, showsNameCount } from '../log.js';
 import { useGymRead } from '../useGymRead.js';
 import { useGymApi } from '../gymRuntime.js';
@@ -18,7 +19,7 @@ import {
 // behind it keeps moving — sync receives a finished session, Older appends a page — and
 // the six may not reshuffle under a finger that is already reaching for one of them.
 export function MovementPicker({
-  catalog, order = [], sessions = [], query, onQuery, onPick, onCreate, onClose, title = 'Movements', pane = false,
+  catalog, order = [], sessions = [], query, onQuery, onPick, onCreate, onClose, title = t('gym.picker.title'), pane = false,
 }) {
   const api = useGymApi();
   const held = useRef([]);
@@ -33,8 +34,8 @@ export function MovementPicker({
       <button type="button" className="gym-picker-row" onClick={() => onPick(each.id)}>
         <span className="gym-picker-named">
           {each.name}
-          {!pane && each.custom && <span className="gym-picker-tag">yours</span>}
-          {!pane && each.alias && <span className="gym-picker-alias">{`was “${each.alias}”`}</span>}
+          {!pane && each.custom && <span className="gym-picker-tag">{t('gym.picker.yours')}</span>}
+          {!pane && each.alias && <span className="gym-picker-alias">{t('gym.picker.alias', { alias: each.alias })}</span>}
         </span>
         {!pane && meta && <span className="gym-picker-meta">{lastSetLabel(meta.get(each.id))}</span>}
         {pane && <span className="gym-picker-plus" aria-hidden="true">+</span>}
@@ -46,15 +47,15 @@ export function MovementPicker({
     <div className={pane ? "gym-picker is-pane" : "gym-picker"} role={pane ? "region" : "dialog"} aria-label={title}>
       <div className="gym-picker-head">
         <span className="gym-picker-title">{title}</span>
-        <button type="button" className="gym-sheet-close" onClick={onClose} aria-label="Close">
+        <button type="button" className="gym-sheet-close" onClick={onClose} aria-label={t('gym.common.close')}>
           <Icon name="x" size={15} />
         </button>
       </div>
       <Input
         type="search"
         value={query}
-        placeholder={catalog.length > 0 ? `Search ${catalog.length} movements` : 'Search movements'}
-        ariaLabel="Search movements"
+        placeholder={catalog.length > 0 ? t('gym.picker.searchCount', { count: catalog.length }) : t('gym.picker.search')}
+        ariaLabel={t('gym.picker.search')}
         onChange={(event) => onQuery(event.target.value)}
         autoFocus
       />
@@ -68,7 +69,7 @@ export function MovementPicker({
       {empty && <p className="gym-picker-empty">{empty}</p>}
       {onCreate && (pane || create) && (
         pane ? <button type="button" className="gym-picker-new"
-          onClick={() => setMinting({ name: query.trim(), equipment: DEFAULT_EQUIPMENT })}>New movement</button>
+          onClick={() => setMinting({ name: query.trim(), equipment: DEFAULT_EQUIPMENT })}>{t('gym.picker.newMovement')}</button>
           : <Button full variant="secondary"
             onClick={() => setMinting({ name: query.trim(), equipment: DEFAULT_EQUIPMENT })}>{create}</Button>
       )}
@@ -90,20 +91,27 @@ export function MovementPicker({
   );
 }
 
+const EQUIPMENT_LABELS = {
+  barbell: t('gym.picker.equipmentBarbell'),
+  dumbbell: t('gym.picker.equipmentDumbbell'),
+  machine: t('gym.picker.equipmentMachine'),
+  bodyweight: t('gym.picker.equipmentBodyweight'),
+};
+
 function NewMovement({ draft, onChange, onCancel, onCreate }) {
   const [creating, setCreating] = useState(false);
   const ready = draft.name.trim() !== '' && !creating;
 
   return (
     <div className="gym-sheet-catch" role="presentation" onClick={onCancel}>
-      <div className="gym-sheet" role="dialog" aria-label="Create a movement" onClick={(event) => event.stopPropagation()}>
+      <div className="gym-sheet" role="dialog" aria-label={t('gym.picker.createTitle')} onClick={(event) => event.stopPropagation()}>
         <div className="gym-sheet-head">
-          <span className="gym-sheet-title">not in the library</span>
-          <button type="button" className="gym-sheet-cancel" onClick={onCancel}>Cancel</button>
+          <span className="gym-sheet-title">{t('gym.picker.notInLibrary')}</span>
+          <button type="button" className="gym-sheet-cancel" onClick={onCancel}>{t('gym.common.cancel')}</button>
         </div>
 
         <Input
-          label="Name"
+          label={t('gym.picker.name')}
           id="gym-new-movement"
           value={draft.name}
           onChange={(event) => onChange({ ...draft, name: cappedName(event.target.value) })}
@@ -115,7 +123,7 @@ function NewMovement({ draft, onChange, onCancel, onCreate }) {
           )}
         />
 
-        <p className="gym-name-label">How is it loaded?</p>
+        <p className="gym-name-label">{t('gym.picker.howLoaded')}</p>
         <div className="gym-equipment">
           {EQUIPMENT_CHOICES.map((choice) => (
             <button
@@ -124,7 +132,7 @@ function NewMovement({ draft, onChange, onCancel, onCreate }) {
               className={draft.equipment === choice ? 'gym-equipment-choice is-on' : 'gym-equipment-choice'}
               onClick={() => onChange({ ...draft, equipment: choice })}
             >
-              {choice}
+              {EQUIPMENT_LABELS[choice]}
             </button>
           ))}
         </div>
@@ -138,7 +146,7 @@ function NewMovement({ draft, onChange, onCancel, onCreate }) {
             setCreating(false);
           }}
         >
-          {creating ? 'Creating…' : 'Create and add'}
+          {creating ? t('gym.picker.creating') : t('gym.picker.createAndAdd')}
         </Button>
       </div>
     </div>

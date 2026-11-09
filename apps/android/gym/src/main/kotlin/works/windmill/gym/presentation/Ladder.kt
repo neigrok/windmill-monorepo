@@ -53,22 +53,6 @@ object Ladder {
         return listOf("−${text(down.large)}", "−${text(down.small)}", "+${text(up.small)}", "+${text(up.large)}")
     }
 
-    // The band is read the way a lift reads it (`<`): where the weight stands, not what the down key does.
-    fun tier(weight: Double): String {
-        val magnitude = abs(weight)
-        val index = bands.indices.first { at ->
-            val under = bands[at].under ?: return@first true
-            magnitude < under
-        }
-        val band = bands[index]
-        val where = when (index) {
-            0 -> "under ${text(band.under ?: 0.0)} kg"
-            bands.size - 1 -> "over ${text(bands[index - 1].under ?: 0.0)} kg"
-            else -> "${text(bands[index - 1].under ?: 0.0)}–${text(band.under ?: 0.0)} kg"
-        }
-        return "$where · fine ${text(band.small)} · plate ${text(band.large)}"
-    }
-
     // Steps print bare: "−5" and "+10", never "−5.0". The minus is U+2212, the plus ASCII.
     internal fun text(step: Double): String {
         if (step == floor(step)) return step.toInt().toString()

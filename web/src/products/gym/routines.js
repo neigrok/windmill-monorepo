@@ -1,9 +1,11 @@
 // The routine editor's text fields, readouts and presentation drafts.
 
 import { SetTarget } from './domain/routines.js';
+import { t } from './i18n/entry/index.js';
 import { round, snap } from './logger/ladder.js';
 import {
-  entryLabel, fmtKg, isNeverTrained, OPEN_TARGET, schemeAgrees,
+  entryLabel, fmtKg, isNeverTrained, LAST_LOAD_PART, MAX_REPS_PART, NOTATION, OPEN_TARGET, sameReading, schemeAgrees,
+  schemeParts, spelled,
 } from './log.js';
 
 // THE ROUTINE TARGET'S BANDS, and nothing else's. A set may ask for 1–100 reps (Routine.cpp:23) and a
@@ -39,11 +41,11 @@ export function withEntryAt(entries, index, entry) {
 // Deleting a routine takes the proposals anchored to it with it, so the transient names WHICH
 // routine left rather than saying that one did.
 export function routineDeletedLine(name) {
-  return `${name} deleted.`;
+  return t('gym.routines.deleted', { name });
 }
 
 export function entryDroppedLine(movement) {
-  return `${movement} is out of the routine.`;
+  return t('gym.routines.entryDropped', { movement });
 }
 
 // Both conditions: the routine never trained — the store's `lastTrainedAt` absent — AND the row still open.
@@ -59,13 +61,13 @@ export function withEntrySet(entries, index, entry) {
 
 // Save is inert until the routine has a name, in the editor and on the finish card's offer alike,
 // and this is the sentence that says why. Two sites, one string; each phone holds its own copy.
-export const NAME_IT_TO_SAVE_IT = 'Name it to save it.';
+export const NAME_IT_TO_SAVE_IT = t('gym.routines.nameItToSaveIt');
 
 // The open row names itself `open` in its own target column — that word says WHICH row. The sentence
 // says what the word means and is drawn ONCE, on the target sheet while the line being edited is the
 // open one: the moment a lifter leaves one open. Never on the list, never per row. The same sentence
 // on every surface.
-export const OPEN_LINE = 'You decide the numbers at the rack.';
+export const OPEN_LINE = t('gym.planning.openLine');
 
 export function isOpenEntry(entry) {
   return entry.sets == null;
@@ -74,9 +76,9 @@ export function isOpenEntry(entry) {
 // The one button is the sheet's own readout: the scheme's reading while every set agrees, and the
 // count alone once they do not — the ladder above it has already said the rest.
 export function commitLabel(entry) {
-  if (isOpenEntry(entry)) return `Set · ${OPEN_TARGET}`;
-  if (schemeAgrees(entry.sets)) return `Set · ${entryLabel(entry)}`;
-  return `Set · ${entry.sets.length} sets`;
+  if (isOpenEntry(entry)) return t('gym.planning.commitScheme', { scheme: OPEN_TARGET });
+  if (schemeAgrees(entry.sets)) return t('gym.planning.commitScheme', { scheme: entryLabel(entry) });
+  return t('gym.planning.commitSets', { count: entry.sets.length });
 }
 
 // ── The sheet's fields ──────────────────────────────────────────────────────────────────────────
@@ -84,33 +86,30 @@ export function commitLabel(entry) {
 // what the lifter put in it so they can see the thing being refused. Emptying a field IS how it is
 // cleared, and the placeholder says what empty means. `sets` is the head's count; `rows` is the
 // ladder, one row per set, and it outlives an emptied count — hidden, not thrown away.
-export const OPEN_PLACEHOLDER = 'open';
-export const MAX_PLACEHOLDER = 'max';
-export const LAST_TIME_PLACEHOLDER = 'last time';
+export const MAX_PLACEHOLDER = t('gym.planning.placeholderMax');
+export const LAST_TIME_PLACEHOLDER = t('gym.planning.placeholderLastTime');
 // The head's one new word: a column whose rows disagree.
-export const VARIES_PLACEHOLDER = 'varies';
+export const VARIES_PLACEHOLDER = t('gym.planning.placeholderVaries');
 
-// The sheet's chrome: with the commit `Set · 5 sets` it is
-// fourteen words at first paint.
-export const EVERY_SET = 'Every set';
-export const SET_BY_SET = 'Set by set';
-export const FILL = 'Fill';
-export const RAMP_UP = 'Ramp up';
-export const MATCH_SET_ONE = 'Match set 1';
-export const ADD_SET = 'Add set';
-export const SHEET_CHROME = [EVERY_SET, 'Sets', 'Reps', 'Weight', SET_BY_SET, FILL, ADD_SET];
+// The sheet's chrome.
+export const EVERY_SET = t('gym.planning.everySet');
+export const SET_BY_SET = t('gym.planning.setBySet');
+export const FILL = t('gym.planning.fill');
+export const RAMP_UP = t('gym.planning.rampUp');
+export const MATCH_SET_ONE = t('gym.planning.matchSetOne');
+export const ADD_SET = t('gym.planning.addSet');
 
 // The reps band here is the ROUTINE TARGET's 1–100; the live
 // logger's 1–99 sentence is logger/entry.js's. Each is drawn under the row that carries the fault.
-export const ONE_DECIMAL = 'One decimal point only.';
-export const NOT_A_NUMBER = 'That is not a number yet.';
-export const REPS_BAND = 'Whole reps, 1 to 100.';
-export const SETS_BAND = 'Sets, 1 to 20.';
-export const ZERO_TARGET = 'A zero target is no target — clear the field instead.';
+export const ONE_DECIMAL = t('gym.planning.oneDecimal');
+export const NOT_A_NUMBER = t('gym.planning.notANumber');
+export const REPS_BAND = t('gym.planning.repsBand');
+export const SETS_BAND = t('gym.planning.setsBand');
+export const ZERO_TARGET = t('gym.planning.zeroTarget');
 
 // A barbell or a pair of dumbbells carries no load below its floor; the domain's `loadFloor` names it.
 export function loadFloorLine(floor) {
-  return `Load, ${fmtKg(floor)} or more.`;
+  return t('gym.planning.loadFloor', { floor: fmtKg(floor) });
 }
 
 const BLANK_ROW = { reps: '', weight: '' };
@@ -342,8 +341,8 @@ export function reorderEntries(entries, from, to) {
 // The routine's name is dropped rather than printed empty for a routine still being named.
 export function entryPlaceLabel(index, count, routineName) {
   const named = (routineName ?? '').trim();
-  if (named === '') return `${index + 1} of ${count}`;
-  return `${index + 1} of ${count} · ${named}`;
+  if (named === '') return t('gym.routines.entryPlace', { position: index + 1, total: count });
+  return t('gym.routines.entryPlaceNamed', { position: index + 1, total: count, routine: named });
 }
 
 export function routineConflictRows(base, draft, saved) {
@@ -356,20 +355,39 @@ export function routineConflictRows(base, draft, saved) {
     }));
   };
   const original = entriesByPlace(base.entries);
+  const said = (text, value) => [{ text, value }];
   const reading = (entry) => {
-    const sets = entry.sets && !schemeAgrees(entry.sets) ? entry.sets.map((set) => `${set.weightKg ?? 'last'} × ${set.reps ?? 'max'}`).join(' · ') : entryLabel(entry);
-    return `${sets}${entry.restSeconds == null ? '' : ` · rest ${entry.restSeconds}s`}`;
+    const sets = entry.sets && !schemeAgrees(entry.sets)
+      ? entry.sets.flatMap((set, index) => [...(index ? [NOTATION.and] : []),
+        set.weightKg == null ? LAST_LOAD_PART : { text: String(set.weightKg), value: String(set.weightKg) },
+        NOTATION.times, set.reps == null ? MAX_REPS_PART : { text: String(set.reps), value: String(set.reps) }])
+      : schemeParts(entry);
+    if (entry.restSeconds == null) return sets;
+    return [...sets, NOTATION.and, { text: t('gym.routines.conflictRest', { seconds: entry.restSeconds }), value: `rest ${entry.restSeconds}` }];
   };
-  return [['Yours', draft], ['Saved', saved]].flatMap(([source, version]) => {
+  // A change that keeps its sets and reps shows only what moved: a reading whose first part is a whole
+  // number heads with everything before its first ` · `, and two equal heads leave the rest to compare.
+  const head = (parts) => {
+    const split = parts.indexOf(NOTATION.and);
+    return /^\d+$/.test(parts[0].value ?? '') && parts[1] === NOTATION.times && split > 0 ? split : -1;
+  };
+  const changed = (source, exerciseId, before, after) => {
+    const [from, to] = [head(before), head(after)];
+    const sameHead = from > 0 && to > 0 && sameReading(before.slice(0, from), after.slice(0, to));
+    return { source, exerciseId, before: spelled(sameHead ? before.slice(from + 1) : before), after: spelled(sameHead ? after.slice(to + 1) : after) };
+  };
+  return [[t('gym.routines.conflictYours'), draft], [t('gym.routines.conflictSaved'), saved]].flatMap(([source, version]) => {
     const rows = [];
-    if (base.name !== version.name) rows.push({ source, label: 'Name', before: base.name, after: version.name });
+    if (base.name !== version.name) rows.push({ source, label: t('gym.routines.conflictName'), before: base.name, after: version.name });
     const next = entriesByPlace(version.entries);
     const sameMovements = original.size === next.size && [...original.keys()].every((key) => next.has(key));
-    if (sameMovements && [...original.keys()].join('|') !== [...next.keys()].join('|')) rows.push({ source, label: 'Order', before: 'Original order', after: 'Reordered' });
+    if (sameMovements && [...original.keys()].join('|') !== [...next.keys()].join('|')) rows.push({ source, label: t('gym.routines.conflictOrder'), before: t('gym.routines.conflictOriginalOrder'), after: t('gym.routines.conflictReordered') });
     for (const key of new Set([...original.keys(), ...next.keys()])) {
       const before = original.get(key), after = next.get(key);
-      if (before && after && reading(before) === reading(after)) continue;
-      rows.push({ source, exerciseId: after?.exerciseId ?? before.exerciseId, before: before ? reading(before) : 'Not in routine', after: after ? reading(after) : 'Removed' });
+      if (before && after && sameReading(reading(before), reading(after))) continue;
+      rows.push(changed(source, after?.exerciseId ?? before.exerciseId,
+        before ? reading(before) : said(t('gym.routines.conflictNotInRoutine'), 'not in routine'),
+        after ? reading(after) : said(t('gym.routines.conflictRemoved'), 'removed')));
     }
     return rows;
   });

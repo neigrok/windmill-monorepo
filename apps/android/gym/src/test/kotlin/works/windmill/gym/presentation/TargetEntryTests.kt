@@ -1,13 +1,24 @@
 package works.windmill.gym.presentation
 
+import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import works.windmill.platform.R as PlatformR
+import works.windmill.gym.spelled
+import works.windmill.gym.string
+import works.windmill.gym.R
 import works.windmill.gym.presentation.TargetEntry.Field
 import works.windmill.gym.presentation.TargetEntry.Reading
 import works.windmill.gym.presentation.TargetEntry.TypedSet
+import works.windmill.platform.i18n.Words
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class TargetEntryTests {
     // A straight ladder typed off the head: every row the same reps and weight.
     private fun straight(sets: String, reps: String = "", weight: String = ""): Reading =
@@ -68,34 +79,34 @@ class TargetEntryTests {
 
     @Test
     fun testTheSixRefusalsAreSaidInTheirOwnWordsUnderTheRowThatCarriesThem() {
-        assertEquals(Reading.Refused(0, Field.Weight, "One decimal point only."), straight("3", "5", "82.5.0"))
-        assertEquals(Reading.Refused(0, Field.Weight, "That is not a number yet."), straight("3", "5", "eighty"))
-        assertEquals(Reading.Refused(0, Field.Weight, "That is not a number yet."), straight("3", "5", "1e999"))
-        assertEquals(Reading.Refused(0, Field.Reps, "Whole reps, 1 to 100."), straight("3", "101"))
-        assertEquals("the count's refusals stand under the head", Reading.Refused(null, Field.Sets, "Sets, 1 to 20."), straight("21"))
-        assertEquals(Reading.Refused(null, Field.Sets, "A zero target is no target — clear the field instead."), straight("0"))
+        assertEquals(Reading.Refused(0, Field.Weight, Words.Plain("One decimal point only.")), straight("3", "5", "82.5.0").spelled())
+        assertEquals(Reading.Refused(0, Field.Weight, Words.Plain("That is not a number yet.")), straight("3", "5", "eighty").spelled())
+        assertEquals(Reading.Refused(0, Field.Weight, Words.Plain("That is not a number yet.")), straight("3", "5", "1e999").spelled())
+        assertEquals(Reading.Refused(0, Field.Reps, Words.Plain("Whole reps, 1 to 100.")), straight("3", "101").spelled())
+        assertEquals("the count's refusals stand under the head", Reading.Refused(null, Field.Sets, Words.Plain("Sets, 1 to 20.")), straight("21").spelled())
+        assertEquals(Reading.Refused(null, Field.Sets, Words.Plain("A zero target is no target — clear the field instead.")), straight("0").spelled())
         assertEquals("a typed zero count is refused",
-                     Reading.Refused(0, Field.Reps, "A zero target is no target — clear the field instead."), straight("3", "0"))
+                     Reading.Refused(0, Field.Reps, Words.Plain("A zero target is no target — clear the field instead.")), straight("3", "0").spelled())
         assertEquals(Reading.Scheme(List(3) { SetTarget(5, 0.0) }), straight("3", "5", "0"))
     }
 
     @Test
     fun testOneRefusalAtATimeTopmostFirstAndRepsBeforeLoadWithinARow() {
         assertEquals("the count outranks every row",
-                     Reading.Refused(null, Field.Sets, "Sets, 1 to 20."),
-                     TargetEntry.reading("21", listOf(TypedSet("101", "1e999"))))
+                     Reading.Refused(null, Field.Sets, Words.Plain("Sets, 1 to 20.")),
+                     TargetEntry.reading("21", listOf(TypedSet("101", "1e999"))).spelled())
         assertEquals("a row's reps before its load",
-                     Reading.Refused(0, Field.Reps, "Whole reps, 1 to 100."),
-                     TargetEntry.reading("1", listOf(TypedSet("101", "1e999"))))
-        assertEquals(Reading.Refused(0, Field.Weight, "That is not a number yet."),
-                     TargetEntry.reading("1", listOf(TypedSet("5", "1e999"))))
+                     Reading.Refused(0, Field.Reps, Words.Plain("Whole reps, 1 to 100.")),
+                     TargetEntry.reading("1", listOf(TypedSet("101", "1e999"))).spelled())
+        assertEquals(Reading.Refused(0, Field.Weight, Words.Plain("That is not a number yet.")),
+                     TargetEntry.reading("1", listOf(TypedSet("5", "1e999"))).spelled())
         assertEquals("row 3's fault is said under row 3, and row 4's waits its turn",
-                     Reading.Refused(2, Field.Weight, "That is not a number yet."),
+                     Reading.Refused(2, Field.Weight, Words.Plain("That is not a number yet.")),
                      TargetEntry.reading("4", listOf(TypedSet("5", "60"), TypedSet("5", "80"),
-                                                     TypedSet("3", "1e999"), TypedSet("abc", "100"))))
-        assertEquals(Reading.Refused(3, Field.Reps, "That is not a number yet."),
+                                                     TypedSet("3", "1e999"), TypedSet("abc", "100"))).spelled())
+        assertEquals(Reading.Refused(3, Field.Reps, Words.Plain("That is not a number yet.")),
                      TargetEntry.reading("4", listOf(TypedSet("5", "60"), TypedSet("5", "80"),
-                                                     TypedSet("3", "90"), TypedSet("abc", "100"))))
+                                                     TypedSet("3", "90"), TypedSet("abc", "100"))).spelled())
     }
 
     @Test
@@ -103,8 +114,8 @@ class TargetEntryTests {
         assertEquals(1..20, TargetEntry.setsBand)
         assertEquals("a plan may name a hundred reps; a logged set may not", 1..100, TargetEntry.repsBand)
         assertEquals(Reading.Scheme(List(20) { SetTarget(100) }), straight("20", "100"))
-        assertEquals(Reading.Refused(null, Field.Sets, "Sets, 1 to 20."), straight("-1"))
-        assertEquals(Reading.Refused(0, Field.Reps, "Whole reps, 1 to 100."), straight("3", "-2"))
+        assertEquals(Reading.Refused(null, Field.Sets, Words.Plain("Sets, 1 to 20.")), straight("-1").spelled())
+        assertEquals(Reading.Refused(0, Field.Reps, Words.Plain("Whole reps, 1 to 100.")), straight("3", "-2").spelled())
     }
 
     @Test
@@ -136,7 +147,7 @@ class TargetEntryTests {
         assertEquals("", TargetEntry.sharedReps(List(3) { TypedSet("", "60") }))
         assertFalse(TargetEntry.weightVaries(emptyList()))
         assertEquals("whitespace is not a disagreement", "5", TargetEntry.sharedReps(listOf(TypedSet("5 "), TypedSet(" 5"))))
-        assertEquals("varies", TargetEntry.varies)
+        assertEquals("varies", string(R.string.gym_program_varies))
     }
 
     @Test
@@ -201,18 +212,6 @@ class TargetEntryTests {
                      TargetEntry.Draft(listOf(SetTarget(5, 60.0), SetTarget(null, 82.5), SetTarget(8), SetTarget(8, -20.0))).rows)
     }
 
-    @Test
-    fun testTheCommitSaysWhatTheRowWillPrint() {
-        assertEquals("open", TargetEntry.commit(Reading.Open))
-        assertEquals("5 × 5 · 80", TargetEntry.commit(Reading.Scheme(List(5) { SetTarget(5, 80.0) })))
-        assertEquals("5 sets", TargetEntry.commit(TargetEntry.reading("5", lowerARamp)))
-        assertEquals("1 × 5 · 100", TargetEntry.commit(Reading.Scheme(listOf(SetTarget(5, 100.0)))))
-        assertEquals("no tail while something is refused", null,
-                     TargetEntry.commit(Reading.Refused(0, Field.Weight, TargetEntry.notANumber)))
-        assertEquals("Set · 5 × 5 · 80", TargetEntry.commitLabel(Reading.Scheme(List(5) { SetTarget(5, 80.0) })))
-        assertEquals("Set · open", TargetEntry.commitLabel(Reading.Open))
-        assertEquals("Set", TargetEntry.commitLabel(Reading.Refused(null, Field.Sets, TargetEntry.outsideSets)))
-    }
 
     // The sheet's rows outlive the count typed over them: `5 → 1 → 12` keeps the ramp, the count is
     // the shown prefix, and the reading — the commit — slices to it.
@@ -240,31 +239,31 @@ class TargetEntryTests {
     fun testARefusalIsTheHeadsWhenEveryShownRowCarriesIt() {
         val headTyped = TargetEntry.withReps(lowerARamp, "101")
         val refused = TargetEntry.reading("5", headTyped) as Reading.Refused
-        assertEquals(Reading.Refused(0, Field.Reps, TargetEntry.outsideReps), refused)
+        assertEquals(Reading.Refused(0, Field.Reps, Words.Message(R.string.gym_program_outside_reps)), refused)
         assertTrue(TargetEntry.inTheHead(refused, headTyped))
 
         val rowTyped = lowerARamp.mapIndexed { at, row -> if (at == 0) row.copy(reps = "101") else row }
         val rowRefused = TargetEntry.reading("5", rowTyped) as Reading.Refused
-        assertEquals(Reading.Refused(0, Field.Reps, TargetEntry.outsideReps), rowRefused)
+        assertEquals(Reading.Refused(0, Field.Reps, Words.Message(R.string.gym_program_outside_reps)), rowRefused)
         assertFalse(TargetEntry.inTheHead(rowRefused, rowTyped))
 
         assertTrue("the count's is always the head's",
-                   TargetEntry.inTheHead(Reading.Refused(null, Field.Sets, TargetEntry.outsideSets), lowerARamp))
+                   TargetEntry.inTheHead(Reading.Refused(null, Field.Sets, TargetEntry.outsideSetsBand), lowerARamp))
         val loadTyped = TargetEntry.withWeight(lowerARamp, "1e999")
         assertTrue(TargetEntry.inTheHead(TargetEntry.reading("5", loadTyped) as Reading.Refused, loadTyped))
     }
 
     @Test
     fun testTheWordsArePinned() {
-        assertEquals("open", TargetEntry.setsPlaceholder)
-        assertEquals("max", TargetEntry.repsPlaceholder)
-        assertEquals("last time", TargetEntry.weightPlaceholder)
-        assertEquals("Each set", TargetEntry.setBySet)
-        assertEquals("Add set", TargetEntry.addSet)
-        assertEquals("Fill", TargetEntry.fill)
-        assertEquals("Ramp up", TargetEntry.rampUp)
-        assertEquals("Match set 1", TargetEntry.matchSetOne)
-        assertEquals("Delete", TargetEntry.delete)
-        assertEquals("You decide the numbers at the rack.", TargetEntry.openLine)
+        assertEquals("open", string(R.string.gym_program_sets_placeholder))
+        assertEquals("max", string(R.string.gym_program_reps_placeholder))
+        assertEquals("Each set", string(R.string.gym_program_set_by_set))
+        assertEquals("Add set", string(R.string.gym_program_add_set))
+        assertEquals("Fill", string(R.string.gym_program_fill))
+        assertEquals("Ramp up", string(R.string.gym_program_ramp_up))
+        assertEquals("Match set 1", string(R.string.gym_program_match_set_one))
+        assertEquals("Delete", string(PlatformR.string.platform_delete))
     }
 }
+
+private fun Reading.spelled(): Reading = if (this is Reading.Refused) copy(why = Words.Plain(why.text(ApplicationProvider.getApplicationContext()))) else this

@@ -1,0 +1,23 @@
+{
+  "journal.export.energy": "energy {value}/10",
+  "journal.export.mood": "mood {value}/10",
+  "journal.export.title": "Windmill journal",
+  "journal.settings.discard": "Discard them",
+  "journal.settings.discardFailed": "This browser could not delete them just now — they are still here, try again.",
+  "journal.settings.discarded": "Deleted from this browser.",
+  "journal.settings.export": "Export my pages",
+  "journal.settings.exportFailed": "Couldn't build your export just now — try again.",
+  "journal.settings.exportNote": "One Markdown file — every page you have written, oldest first.",
+  "journal.settings.exported": "{count, plural, =0 {No pages to export yet.} one {Exported # page.} other {Exported # pages.}}",
+  "journal.settings.noLongerWaiting": "These pages are no longer waiting to be restored. Another tab may have restored or discarded them.",
+  "journal.settings.preparing": "Preparing…",
+  "journal.settings.restore": "These are mine — restore them",
+  "journal.settings.restoreFailed": "The pages could not be restored just now. Try again.",
+  "journal.settings.restored": "{count, plural, one {Restored # page into your journal.} other {Restored # pages into your journal.}}",
+  "journal.settings.restoring": "Restoring…",
+  "journal.settings.signInToRestore": "Sign in to restore them.",
+  "journal.settings.title": "Your journal",
+  "journal.settings.unsentBody": "{count, plural, one {One page was written on this browser before Windmill kept pages per account, and never reached a journal.} other {# pages were written on this browser before Windmill kept pages per account, and never reached a journal.}} We cannot tell whose they are, so nothing has been added to yours. Restore them only if they are your writing — they will be joined onto your own pages for those days, never written over them.",
+  "journal.settings.unsentPage": "{day} · {count, plural, one {# word} other {# words}}",
+  "journal.settings.unsentTitle": "Unsent pages from before this update"
+}

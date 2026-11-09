@@ -14,6 +14,78 @@ One Vite/React superapp for roadmap, journal and gym. Brand rules are in the roo
 `test/shell-boundaries.test.mjs` checks imports, product landing registrations and public entry
 points. Tests mirror `src/` under `test/`.
 
+## Localization
+
+Copy is read through a translator from catalogs; English is the only locale.
+
+- `platform/i18n/message.js` parses and formats the ICU MessageFormat subset. `platform/i18n/index.js`
+  resolves the app locale (`navigator.languages` against `AVAILABLE_LOCALES`, else the first of them; in
+  Node, where there is no document, always the first) and exports `createTranslator`, which needs a
+  catalog for every available locale.
+- Each owner keeps its copy in its own `i18n/`: `shell/i18n` (`shell.*`), `design-system/i18n` (`ds.*`)
+  and `products/<product>/i18n` (`roadmap.*`, `journal.*`, `gym.*`). A catalog is a folder holding
+  `index.js`, which exports `t`, and one `<locale>.json` per locale, a flat object of key to message. A file
+  reads only its own owner's catalogs.
+- An owner keeps a catalog per moment its files load, so a page downloads only the copy it shows.
+  `i18n/entry/` holds the copy of the files the brand root loads: what the entry chunk carries (the
+  shell's landing chrome and sign-in, each product's route table and landing head, and what they import,
+  such as gym's runtime) and each product's brand-root scenes (`marketing/RootScenes.jsx`). `i18n/app/`
+  holds the copy of the app's chrome and home: the shell's `/app` chrome and each product's home card.
+  `i18n/settings/` holds the copy of the settings page: the shell's page, each product's settings sections,
+  and what they import. A product's `i18n/landing/` holds the copy of its landing page (the module its
+  landing head names, and what it imports). `i18n/` holds the rest and loads with the rooms. Every tier's
+  `t` reads `entry/` and its own catalog, and `settings/` also reads `app/` because the page sits inside the
+  app's chrome, so a word lives once, in the latest catalog every file that shows it reads: a word the
+  settings page and the chrome share lives in `app/`, and a word two other moments share, such as a landing
+  and its room, in `entry/`. A file imports `t` from one tier, and its strings live in the `en.json` beside that
+  `index.js`; `test/shell-boundaries.test.mjs` names a file that reads the wrong one. The shell keeps
+  `entry/`, `app/`, `settings/` and `i18n/`; the design system loads with the entry and keeps one catalog.
+- To add a string, add `"gym.log.emptyTitle": "No workouts yet"` to the `en.json` beside the `index.js`
+  your file imports `t` from (`i18n/index.js` unless the brand root, the app's chrome or home, the settings
+  page or a landing loads the file) and call
+  `t('gym.log.emptyTitle')`. A key is the owner's namespace plus dotted camelCase segments, at most 80
+  characters, written as a string literal at its call site. Map an enum to copy with an object of `t()`
+  calls, never a built key, and never pass `t` around or bind another `t`.
+- The first segment after the namespace names an area. A word an owner's surfaces share in one meaning —
+  Cancel, Retry, Close, Save, Undo, Untitled roadmap — lives once under `<ns>.common.*`; a word that only
+  looks the same (Board's Done column, the shortcut legend's Delete key) keeps its own key. Every owner
+  names its landing head's words `<ns>.landingHead.*`.
+- A message is one whole sentence with arguments, never assembled from fragments: `Hello, {name}`,
+  `{count, plural, =0 {No sets} one {# set} other {# sets}}`, `{kind, select, rest {Rest day} other {Day}}`.
+  `''` is an apostrophe and `'{'` a literal brace; a lone `'` and `’` are themselves. The plural category
+  comes from `Intl.PluralRules` of the app locale, never the system's.
+- Formatting stays out of the translator: an argument and `#` render as `String(value)`, so the caller
+  formats a number or date and passes the result. To show a formatted count, select on the number and
+  show the string: `{count, plural, one {{shown} set} other {{shown} sets}}`.
+- `t` returns a string, or a fragment when an argument is an element (`{ when: <strong>{day}</strong> }`).
+  An argument passed as `null`, `undefined` or a boolean shows nothing, as `{x}` does in JSX.
+- Outside a production build a missing key, an absent argument, a message that does not parse and a
+  plural count that is not a number throw. A production build renders the key (for a count, the `other`
+  branch) and reports `i18n-missing-message` once per key per page load ([observability](OBSERVABILITY.md)).
+- `test/platform/i18n/catalogs.test.mjs` checks every owner in every locale: each `t()` key is a literal
+  the catalog its file reads holds, its arguments match its message, a translation shows the arguments
+  English shows, every message lives in the latest catalog every file that asks for it reads, each tier's
+  `index.js` exports `catalogs` holding every key of the tiers it reads in every locale and its `t` shows
+  them, no key sits in two catalogs, keys
+  carry the namespace, and a file reads its catalog through one static, relative `import { t }`.
+  `test/platform/i18n/hardcodedCopy.test.mjs` fails anywhere under `src/` but the showcase on JSX text with
+  letters, on literal copy props (`COPY_PROPS` in `copyAudit.mjs`, also inside object and array literals
+  such as a menu's `items`) and on literal `alert`, `confirm` and `prompt` sentences; its allowlist holds
+  brand marks only. It reads JSX and those dialogs, not strings held in plain modules.
+- A sentence one owner renders around another owner's words takes them as an argument: the shell's sync
+  question shows a product's `sync.signedOutWork.counted(n)` ("3 pages"), and each owner keeps its nouns.
+- Landing heads, their no-JS bodies and the legal shelf are read from catalogs at build time and escaped
+  for the HTML text, attribute or JSON-LD they land in. `index.html` carries the brand root's English head
+  and no-JS body, which the build pins to `shell/marketing/landingHeads.js` byte for byte.
+- Static documents in `public/` (the shelf pages, the 404 and the pause page) are whole per-locale
+  documents and read no catalog; a second locale adds a translated copy of each.
+- The showcase (`showcase/`, the unlinked `#/showcase` gallery) is a developer surface: its copy stays
+  literal and the copy guard skips it.
+- A second locale is one complete `<locale>.json` beside every `en.json`, merged into `catalogs` by every
+  `index.js` that reads that tier, and one entry in `AVAILABLE_LOCALES`. It holds every key: the translator falls back to no
+  other locale. The rest of the work a second locale needs is tracked on the dogfood node
+  `i18n-second-locale-readiness-20261109`.
+
 ## Run and build
 
 ```sh

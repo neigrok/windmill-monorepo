@@ -14,7 +14,6 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.FlowRow
@@ -51,6 +50,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.launch
 import works.windmill.gym.GymModule
 import works.windmill.platform.Account
+import works.windmill.platform.R as PlatformR
 import works.windmill.platform.LocalShellActions
 import works.windmill.platform.ShellActions
 import works.windmill.platform.auth.AuthStatus
@@ -64,10 +64,11 @@ import works.windmill.platform.you.YouDestination
 import works.windmill.platform.auth.LocalSession
 import works.windmill.platform.ClientUpdateDestination
 import works.windmill.platform.LocalClientUpdateDestination
-import works.windmill.platform.open
+import works.windmill.platform.opening
 import works.windmill.gym.store.LocalGymEngineSession
 import works.windmill.sync.engine.LineageAnswer
 import java.util.UUID
+import works.windmill.platform.i18n.text
 
 class MainActivity : ComponentActivity() {
     private var introduction by mutableStateOf(false)
@@ -252,7 +253,7 @@ internal fun Root(runtime: WindmillApplication, introduction: Boolean, onIntrodu
     CompositionLocalProvider(LocalShellActions provides shell, LocalTelemetry provides runtime.telemetry,
         LocalGymEngineSession provides runtime.engineSession,
         LocalClientUpdateDestination provides if (BuildConfig.WM_UPDATE_URL.isBlank()) ClientUpdateDestination()
-            else ClientUpdateDestination(BuildConfig.WM_UPDATE_URL, "Get the update")) {
+            else ClientUpdateDestination(BuildConfig.WM_UPDATE_URL, PlatformR.string.platform_update_get)) {
         WindmillMaterial {
             gym.Skin {
                 if (introduction) {
@@ -269,11 +270,11 @@ internal fun Root(runtime: WindmillApplication, introduction: Boolean, onIntrodu
                                 Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(24.dp),
                                 verticalArrangement = Arrangement.Center,
                             ) {
-                                Text("Account unavailable", style = MaterialTheme.typography.headlineSmall)
-                                Text("This device’s account could not be restored. Try again, or sign in.",
+                                Text(stringResource(R.string.app_account_unavailable_title), style = MaterialTheme.typography.headlineSmall)
+                                Text(stringResource(R.string.app_account_unavailable_body),
                                     Modifier.padding(vertical = 16.dp), style = MaterialTheme.typography.bodyLarge)
-                                TextButton(onClick = { scope.launch { auth.restore() } }) { Text("Try again") }
-                                TextButton(onClick = shell.openSignIn) { Text("Sign in") }
+                                TextButton(onClick = { scope.launch { auth.restore() } }) { Text(stringResource(PlatformR.string.platform_try_again)) }
+                                TextButton(onClick = shell.openSignIn) { Text(stringResource(PlatformR.string.platform_sign_in)) }
                             }
                         }
                         if (about) OnboardingPager(replay = true, onExit = { about = false; youUp = true },
@@ -305,24 +306,24 @@ internal fun EngineAccountDecision(session: works.windmill.gym.store.GymEngineSe
     }
     if (sync.upgradeRequired) {
         var shown by remember { mutableStateOf(true) }
-        var updateFailure by remember { mutableStateOf<String?>(null) }
+        var updateFailure by remember { mutableStateOf<Int?>(null) }
         if (shown) AlertDialog(onDismissRequest = {
             telemetry.event("client_update_required", mapOf("action" to "dismiss")); shown = false
-        }, title = { Text("Update required") },
+        }, title = { Text(stringResource(R.string.app_update_required_title)) },
             text = { Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Update Windmill to keep syncing. Your work is saved on this phone.")
-                updateFailure?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                Text(stringResource(PlatformR.string.platform_api_update_required))
+                updateFailure?.let { Text(stringResource(it), color = MaterialTheme.colorScheme.error) }
             } },
             confirmButton = { TextButton(onClick = {
-                updateFailure = update.open(uri::openUri, telemetry)
-            }) { Text(update.label) } },
+                updateFailure = update.opening(uri::openUri, telemetry)
+            }) { Text(stringResource(update.named)) } },
             dismissButton = { TextButton(onClick = {
                 telemetry.event("client_update_required", mapOf("action" to "keep")); shown = false
-            }) { Text("Keep working on this phone") } })
+            }) { Text(stringResource(R.string.app_update_keep_working)) } })
     }
     session.decision?.let { decision ->
         var discardDecision by rememberSaveable { mutableStateOf<String?>(null) }
-        val copy = works.windmill.gym.ui.PhoneSignInCopy(session.decisionCounts)
+        val said = works.windmill.gym.ui.PhoneSignInWords(session.decisionCounts)
         fun cancelDiscard() {
             if (session.decisionBusy) return
             telemetry.event("gym_sign_in_decision", mapOf("action" to "cancel", "state" to "discard_confirmation"))
@@ -341,23 +342,23 @@ internal fun EngineAccountDecision(session: works.windmill.gym.store.GymEngineSe
             }
         }
         if (discardDecision == session.decisionKey) AlertDialog(onDismissRequest = ::cancelDiscard,
-            title = { Text(copy.discardTitle) },
-            text = { Text(copy.discardBody) },
-            confirmButton = { TextButton(enabled = !session.decisionBusy, colors = androidx.compose.material3.ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error), onClick = { scope.launch { session.decide(LineageAnswer.discard, decision) } }) { Text("Discard") } },
-            dismissButton = { TextButton(enabled = !session.decisionBusy, onClick = ::cancelDiscard) { Text("Cancel") } })
-        else AlertDialog(onDismissRequest = ::cancelSignIn, title = { Text("Add to your account?") },
+            title = { Text(said.discardTitle.text()) },
+            text = { Text(said.discardBody.text()) },
+            confirmButton = { TextButton(enabled = !session.decisionBusy, colors = androidx.compose.material3.ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error), onClick = { scope.launch { session.decide(LineageAnswer.discard, decision) } }) { Text(stringResource(PlatformR.string.platform_discard)) } },
+            dismissButton = { TextButton(enabled = !session.decisionBusy, onClick = ::cancelDiscard) { Text(stringResource(PlatformR.string.platform_cancel)) } })
+        else AlertDialog(onDismissRequest = ::cancelSignIn, title = { Text(stringResource(R.string.app_sign_in_add_title)) },
             text = { Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(copy.question)
-                session.decisionFailure?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                Text(said.question.text())
+                session.decisionRefusal?.let { Text(stringResource(it), color = MaterialTheme.colorScheme.error) }
             } },
             confirmButton = { FlowRow(horizontalArrangement = Arrangement.End) {
                 val padding = PaddingValues(horizontal = 8.dp, vertical = 8.dp)
-                TextButton(enabled = !session.decisionBusy, contentPadding = padding, onClick = ::cancelSignIn) { Text("Cancel sign-in") }
+                TextButton(enabled = !session.decisionBusy, contentPadding = padding, onClick = ::cancelSignIn) { Text(stringResource(R.string.app_sign_in_cancel)) }
                 TextButton(enabled = !session.decisionBusy, contentPadding = padding, colors = androidx.compose.material3.ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error), onClick = {
                     telemetry.event("gym_sign_in_decision", mapOf("action" to "discard", "state" to "discard_confirmation"))
                     discardDecision = session.decisionKey
-                }) { Text("Discard") }
-                TextButton(enabled = !session.decisionBusy, contentPadding = padding, onClick = { scope.launch { session.decide(LineageAnswer.add, decision) } }) { Text("Add") }
+                }) { Text(stringResource(PlatformR.string.platform_discard)) }
+                TextButton(enabled = !session.decisionBusy, contentPadding = padding, onClick = { scope.launch { session.decide(LineageAnswer.add, decision) } }) { Text(stringResource(PlatformR.string.platform_add)) }
             } })
     }
 }

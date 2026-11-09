@@ -39,16 +39,16 @@ import SyncCore
     }
     var saved = current; saved.entries = plan.entries
     guard let outcome = gym.run(SaveRoutinePlan(base: current, current: saved, isNew: false, movements: [])) else {
-      gym.error = "\(routine) wasn’t changed. Try again."; report("failed"); return false
+      gym.error = String(localized: "\(routine) wasn’t changed. Try again."); report("failed"); return false
     }
     switch outcome.refusal {
     case nil: planSaved = true; report("ok"); return true
     case .stale?: gym.refusal = nil; gym.error = nil; routineMoved = true; report("refused"); return false
-    case _?: gym.error = "\(routine) wasn’t changed. Try again."; report("refused"); return false
+    case _?: gym.error = String(localized: "\(routine) wasn’t changed. Try again."); report("refused"); return false
     }
   }
   var slight: Bool { sets.count < 4 }
-  var title: String { slight ? "Ended early." : "Well done." }
+  var title: String { slight ? String(localized: "Ended early.") : String(localized: "Well done.") }
   func subtitle(_ dates: GymDate) -> String { "\(session.name ?? Readout.noRoutine) · \(dates.subtitle(session.startedAt))" }
   // Each movement once, in the order its first set was logged, with its sets; then each planned movement never begun.
   var performed: [(exerciseId: ID<Exercise>, reading: String)] {
@@ -56,7 +56,7 @@ import SyncCore
     let begun = logged.map { id in
       (exerciseId: id, reading: Readout.target(sets.filter { $0.exerciseId == id }.map { SetTarget(reps: $0.reps, weightKg: $0.weightKg) }))
     }
-    let unbegun = (session.plan?.entries ?? []).map(\.exerciseId).filter { !logged.contains($0) }.map { (exerciseId: $0, reading: "not started") }
+    let unbegun = (session.plan?.entries ?? []).map(\.exerciseId).filter { !logged.contains($0) }.map { (exerciseId: $0, reading: String(localized: "not started")) }
     return begun + unbegun
   }
   @MainActor func loadReview(_ gym: GymModel) async {
@@ -86,12 +86,13 @@ nonisolated struct WorkoutReview: Decodable, Sendable {
     let previousAt: Int64?
     func sentence(_ catalogue: Catalogue, dates: GymDate) -> String? {
       guard let previous, let previousAt, value.isFinite, previous.isFinite, weightKg.isFinite else { return nil }
-      let name = catalogue.find(ID(RecordID(exerciseId)))?.name ?? "Movement"
-      let past = "past \(Readout.weight(previous)) from \(dates.day(Instant(ms: previousAt), inSentence: true))"
+      let name = catalogue.find(ID(RecordID(exerciseId)))?.name ?? String(localized: "Movement")
+      let past = String(localized: "past \(Readout.weight(previous)) from \(dates.day(Instant(ms: previousAt), inSentence: true))",
+                        comment: "The record a set beat: past 100 from Sep 23, or past 100 from yesterday")
       switch kind {
-      case "e1rm": return "\(name) e1RM \(Readout.weight(value)) kg — \(past)."
-      case "heaviest": return "\(name) \(Readout.weight(value)) kg × \(reps) — \(past)."
-      case "reps-at-weight": return "\(name) \(reps) reps at \(Readout.weight(weightKg)) kg — \(past)."
+      case "e1rm": return String(localized: "\(name) e1RM \(Readout.weight(value)) kg — \(past).")
+      case "heaviest": return String(localized: "\(name) \(Readout.weight(value)) kg × \(reps) — \(past).", locale: .copy)
+      case "reps-at-weight": return String(localized: "\(name) \(reps) reps at \(Readout.weight(weightKg)) kg — \(past).", locale: .copy)
       default: return nil
       }
     }
@@ -118,11 +119,20 @@ nonisolated struct WorkoutReview: Decodable, Sendable {
     let now: Effort
     let before: Effort?
     let planned: Planned?
-    var source: String { planned?.top != nil ? "Plan" : before != nil ? "Last time" : "Performed" }
+    enum Basis { case plan, lastTime, performed }
+    var basis: Basis { planned?.top != nil ? .plan : before != nil ? .lastTime : .performed }
+    var source: String {
+      switch basis {
+      case .plan: String(localized: "Plan", comment: "What the finish receipt compares a set against: the routine's plan")
+      case .lastTime: String(localized: "Last time")
+      case .performed: String(localized: "receipt-basis.performed", defaultValue: "Performed",
+                              comment: "What the finish receipt compares a set against: nothing, only what was lifted")
+      }
+    }
     var detail: String {
       if let planned, let top = planned.top {
         let short = top.reps.map { now.reps < $0 } == true && (top.weightKg.map { now.weightKg <= $0 } ?? true)
-        return short ? "planned \(Readout.target(planned.scheme)) — did \(now.reading)" : "\(Readout.target(planned.scheme)) → \(now.reading)"
+        return short ? String(localized: "planned \(Readout.target(planned.scheme)) — did \(now.reading)") : "\(Readout.target(planned.scheme)) → \(now.reading)"
       }
       if let before { return "\(before.reading) → \(now.reading)" }
       return now.reading
@@ -132,11 +142,11 @@ nonisolated struct WorkoutReview: Decodable, Sendable {
     let routine: String?
     let movements: [Movement]
     var title: String {
-      let sources = Set(movements.map(\.source))
-      if sources == ["Plan"] { return "Against plan" }
-      if sources == ["Last time"] { return "Against last \(routine ?? "time")" }
-      if sources == ["Performed"] { return "Performed" }
-      return "Comparison"
+      let bases = Set(movements.map(\.basis))
+      if bases == [.plan] { return String(localized: "Against plan") }
+      if bases == [.lastTime] { return routine.map { String(localized: "Against last \($0)") } ?? String(localized: "Against last time") }
+      if bases == [.performed] { return String(localized: "Performed", comment: "A section of the finish receipt: the movements as performed") }
+      return String(localized: "Comparison")
     }
   }
   let record: Record?
@@ -198,7 +208,7 @@ struct WorkoutReceipt: View {
               } label: {
                 HStack(spacing: RoomSpace.related) {
                   Image(systemName: "iphone").accessibilityHidden(true)
-                  Text("Only on this phone · ") + Text("Keep it").foregroundStyle(GymPalette.accent)
+                  Text("Only on this phone · \(Text("Keep it").foregroundStyle(GymPalette.accent))")
                 }.font(.footnote).foregroundStyle(GymPalette.inkDim).frame(minHeight: RoomSpace.minimumTarget)
               }.buttonStyle(.plain).accessibilityIdentifier("workout-keep")
                 .listRowInsets(EdgeInsets(top: 0, leading: RoomSpace.inset, bottom: 0, trailing: 0)).listRowBackground(Color.clear)
@@ -217,21 +227,21 @@ struct WorkoutReceipt: View {
           }
           Section("Performed") {
             ForEach(receipt.performed, id: \.exerciseId) { movement in
-              GymRow(title: gym.catalogue.find(movement.exerciseId)?.name ?? "Movement", trailing: .fact(movement.reading))
+              GymRow(title: gym.catalogue.find(movement.exerciseId)?.name ?? String(localized: "Movement"), trailing: .fact(movement.reading))
             }
           }
           if let against = receipt.review?.against {
             Section(against.title) {
               ForEach(Array(against.movements.enumerated()), id: \.offset) { _, movement in
-                GymRow(title: gym.catalogue.find(ID(RecordID(movement.exerciseId)))?.name ?? "Movement",
-                            meta: (Set(against.movements.map(\.source)).count > 1 ? "\(movement.source): " : "") + movement.detail)
+                GymRow(title: gym.catalogue.find(ID(RecordID(movement.exerciseId)))?.name ?? String(localized: "Movement"),
+                            meta: Set(against.movements.map(\.basis)).count > 1 ? String(localized: "\(movement.source): \(movement.detail)") : movement.detail)
               }
             }
           }
           if receipt.readingReview { Section { ProgressView().frame(maxWidth: .infinity) } }
           if receipt.reviewFailed {
             Section {
-              RoomTransient(message: "The log didn’t answer. The workout is saved.", room: .gym, actionTitle: "Try again",
+              RoomTransient(message: String(localized: "The log didn’t answer. The workout is saved."), room: .gym, actionTitle: String(localized: "Try again"),
                             actionIdentifier: "workout-review-retry") {
                 gym.telemetry.event("gym_action", properties: ["screen": "receipt", "action": "retry"])
                 Task { await receipt.loadReview(gym) }
@@ -291,11 +301,11 @@ struct WorkoutReceipt: View {
       HStack(alignment: .firstTextBaseline) {
         Text("Plan changes").font(.footnote.weight(.semibold)).textCase(.uppercase).foregroundStyle(GymPalette.accent)
         Spacer()
-        Text(GymCount.of(receipt.changes.changeCount, "change")).font(.subheadline).foregroundStyle(GymPalette.inkDim)
+        Text(GymCount.of(receipt.changes.changeCount, .change)).font(.subheadline).foregroundStyle(GymPalette.inkDim)
       }.accessibilityElement(children: .combine).accessibilityAddTraits(.isHeader).accessibilityIdentifier("workout-receipt-plan-changes")
       ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
         Divider().overlay(GymPalette.line)
-        ChangeBlock(kind: block.kind, title: gym.catalogue.find(block.change.exerciseId)?.name ?? "Movement",
+        ChangeBlock(kind: block.kind, title: gym.catalogue.find(block.change.exerciseId)?.name ?? String(localized: "Movement"),
                     fields: ProposalDiff.fields(before: block.change.before, after: block.change.after,
                                                 each: MovementEquipment(gym.catalogue.find(block.change.exerciseId)).each))
           .padding(.vertical, 4)
@@ -366,10 +376,10 @@ struct WorkoutReceiptMenu: UIViewRepresentable {
     configuration.contentInsets = .zero
     button.configuration = configuration
     button.showsMenuAsPrimaryAction = true
-    button.accessibilityLabel = "Workout options"
+    button.accessibilityLabel = String(localized: "Workout options")
     button.accessibilityIdentifier = "workout-receipt-options"
     button.menu = UIMenu(children: [
-      UIAction(title: "Discard workout", image: UIImage(systemName: "trash"), identifier: UIAction.Identifier("workout-discard-receipt"), attributes: .destructive) { [weak coordinator = context.coordinator] _ in
+      UIAction(title: String(localized: "Discard workout"), image: UIImage(systemName: "trash"), identifier: UIAction.Identifier("workout-discard-receipt"), attributes: .destructive) { [weak coordinator = context.coordinator] _ in
         coordinator?.requestDiscard()
       },
     ])

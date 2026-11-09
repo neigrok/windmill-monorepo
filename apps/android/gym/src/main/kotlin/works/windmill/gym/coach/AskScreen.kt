@@ -1,5 +1,8 @@
 package works.windmill.gym.coach
 
+import works.windmill.platform.R as PlatformR
+import works.windmill.platform.i18n.text
+import works.windmill.gym.presentation.ProposalReceipt
 import works.windmill.platform.design.WindmillType
 import works.windmill.gym.ui.GymType
 import androidx.compose.material3.MaterialTheme
@@ -49,6 +52,7 @@ import androidx.compose.ui.layout.positionOnScreen
 import kotlin.math.roundToInt
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
@@ -128,7 +132,7 @@ fun AskScreen(
     events: AskEvents,
     thread: List<CoachExchange>,
     // Ephemeral lines derived from the server's apply reply; they die with the conversation.
-    receipts: List<String>,
+    receipts: List<ProposalReceipt>,
     // Reviews opened and closed with nothing decided: those cards read `still waiting`.
     lookedAt: Set<String>,
     asking: Boolean,
@@ -187,7 +191,7 @@ fun AskScreen(
         if (greeting && !greetingCounted) telemetry.coachSetupStep("shown")
         greetingCounted = greeting
     }
-    var draftFailure by remember { mutableStateOf<String?>(null) }
+    var draftFailure by remember { mutableStateOf<Int?>(null) }
     val reconnecting = asking && coach.conversations?.reconnecting == true
     val fault = coach.fault(conversationId)
     val stopNotice = fault?.takeIf { it in stopFaults }
@@ -243,7 +247,7 @@ fun AskScreen(
                         telemetry.coachSetupStep("build_manually")
                         onBuildRoutine?.invoke()
                     })
-                (draftFailure ?: coach.failure(draftKey) ?: fault?.takeUnless { it in stopFaults }?.sentence)?.let { Text(it, style = WindmillType.supporting, color = colors.onSurfaceVariant) }
+                (draftFailure ?: coach.failed(draftKey) ?: fault?.takeUnless { it in stopFaults }?.said)?.let { Text(stringResource(it), style = WindmillType.supporting, color = colors.onSurfaceVariant) }
                 thread.forEachIndexed { index, exchange ->
                     key(messageKeys[index]) {
                         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -254,23 +258,24 @@ fun AskScreen(
                                 Answer(answer, exchange.retained, minted + state.settledProposals, proposals::gone, state, nowMs, lookedAt, onReview, openRoutine, conversationId, !asking,
                                     onSignIn = signInForCall.takeIf { coach.anonymous && index == thread.lastIndex }, onKeep = keepRoutines.takeIf { coach.anonymous }, overWorkout = overWorkout) { sourcesTop = it }
                                 answer.proposals.filter { it !in minted && it !in state.settledProposals }.forEach { id ->
-                                    if (proposals.gone(id)) Trouble(ProposalRead.Gone.line)
-                                    else if (id !in proposals.missing) Text("Reading proposal…", style = WindmillType.supporting, color = colors.onSurfaceVariant, modifier = Modifier.padding(horizontal = 4.dp))
+                                    if (proposals.gone(id)) Trouble(ProposalRead.Gone.words.text())
+                                    else if (id !in proposals.missing) Text(stringResource(R.string.gym_coach_reading_proposal), style = WindmillType.supporting, color = colors.onSurfaceVariant, modifier = Modifier.padding(horizontal = 4.dp))
                                 }
                             }
                             exchange.retained?.let { held ->
                                 if (held.accountRequired) {
-                                    CoachBubble(copyText = { Ask.accountRequired }) {
-                                        Text(Ask.accountRequired, style = GymType.coachParagraph, color = colors.onSurface)
+                                    val accountRequired = stringResource(R.string.gym_coach_account_required)
+                                    CoachBubble(copyText = { accountRequired }) {
+                                        Text(accountRequired, style = GymType.coachParagraph, color = colors.onSurface)
                                     }
-                                    onSignIn?.let { CoachAction("Sign in", it, primary = true) }
+                                    onSignIn?.let { CoachAction(stringResource(PlatformR.string.platform_sign_in), it, primary = true) }
                                 }
-                                held.line?.let { Trouble(it) }
+                                held.words?.let { Trouble(it.text()) }
                             }
                         }
                     }
                 }
-                val shown = (minted + state.settledProposals).values.mapNotNull { it.receipt }.toSet()
+                val shown = (minted + state.settledProposals).values.mapNotNull { it.settledReceipt }.toSet()
                 receipts.filterNot { it in shown }.forEach { receipt ->
                     Box(Modifier.fillMaxWidth().padding(horizontal = 4.dp)) { ReceiptLine(receipt) }
                 }
@@ -278,7 +283,7 @@ fun AskScreen(
                     key(kept.id) { CoachKeptDraft(kept.draft, composerVisible && composerEnabled && !asking && syncDraft != null) {
                         if (coach.accountKey == account && coach.draftChangeReady(conversationId) && syncDraft?.invoke() == true) {
                             try { coach.continueDraft(conversationId, kept.id); draftFailure = null }
-                            catch (_: Exception) { draftFailure = "Your draft couldn’t be saved. Try again." }
+                            catch (_: Exception) { draftFailure = R.string.gym_coach_draft_unsaved }
                         }
                     } }
                 }
@@ -303,11 +308,11 @@ fun AskScreen(
                 colors = ButtonDefaults.elevatedButtonColors(containerColor = colors.surfaceContainer, contentColor = colors.primary),
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)) {
                 Icon(painterResource(R.drawable.gym_coach_down), null, Modifier.size(20.dp))
-                Text("Jump to latest", style = GymType.coachStrong, modifier = Modifier.padding(start = 8.dp))
+                Text(stringResource(R.string.gym_coach_jump_latest), style = GymType.coachStrong, modifier = Modifier.padding(start = 8.dp))
             }
         }
-        if (reconnecting) Band(Ask.reconnecting)
-        else if (stopNotice != null) Band(stopNotice.sentence, onClose = {
+        if (reconnecting) Band(stringResource(R.string.gym_coach_reconnecting))
+        else if (stopNotice != null) Band(stringResource(stopNotice.said), onClose = {
             coach.closeFault(stopNotice)
             telemetry.coachAction("stop_notice_closed")
         })
@@ -339,7 +344,7 @@ private fun Band(said: String, onClose: (() -> Unit)? = null) {
         contentColor = colors.onSurface,
         dismissAction = onClose?.let { close -> {
             IconButton(onClick = close, modifier = Modifier.size(48.dp)) {
-                Icon(painterResource(R.drawable.gym_coach_close), "Close", Modifier.size(24.dp), tint = colors.onSurfaceVariant)
+                Icon(painterResource(R.drawable.gym_coach_close), stringResource(PlatformR.string.platform_close), Modifier.size(24.dp), tint = colors.onSurfaceVariant)
             }
         } },
     ) { Text(said, style = GymType.coachDetail) }
@@ -371,7 +376,7 @@ private fun AskFrame(overWorkout: Boolean, fresh: Boolean, seat: String?, onThre
         CoachSheetFrame(fresh, onThreads, content)
         return
     }
-    GymScreen(title = Ask.title, actions = { CoachHead(seat, onThreads) }, content = content)
+    GymScreen(title = stringResource(R.string.gym_coach_title), actions = { CoachHead(seat, onThreads) }, content = content)
 }
 
 // An answer as it stands this moment. It reads the running words itself, so only this answer draws again at every delta. Drawn from the LOG's own copy and never from what the model said about it, its proposals follow what it read.
@@ -407,10 +412,10 @@ private fun Answer(
 
 // What the server said it did, the moment it said so. Not stored: reopening the thread does not draw it again, and nothing here pretends otherwise.
 @Composable
-fun ReceiptLine(line: String) {
+fun ReceiptLine(receipt: ProposalReceipt) {
     val colors = MaterialTheme.colorScheme
-    val applied = line.startsWith("Applied")
-    Text(line, style = GymType.button,
+    val applied = receipt.applied
+    Text(receipt.words.text(), style = GymType.button,
         color = if (applied) colors.primary else colors.onSurface,
         modifier = Modifier.fillMaxWidth().then(if (applied) Modifier.background(colors.surfaceContainer, MaterialTheme.shapes.large).padding(16.dp) else Modifier.padding(vertical = 8.dp)))
 }

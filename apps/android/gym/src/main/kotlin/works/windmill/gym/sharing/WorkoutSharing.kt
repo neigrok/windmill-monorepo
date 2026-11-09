@@ -2,7 +2,10 @@ package works.windmill.gym.sharing
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import works.windmill.platform.R as PlatformR
+import works.windmill.gym.R
 import works.windmill.gym.presentation.Readout
+import works.windmill.platform.i18n.Words
 import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.WriteFailure
 
@@ -20,25 +23,22 @@ class WorkoutShareActions(
 )
 
 object WorkoutSharing {
-    const val chooserTitle = "Share workout link"
-    const val shareFailureNote = "Sharing isn't available here. Copy the link instead."
-    const val copiedAnnouncement = "Link copied"
-    const val offer = "Anyone with the link can read this workout.\nIncludes set notes and effort.\nLinks last 30 days. End sharing anytime."
+    val shareFailureNote = Words.Message(R.string.gym_sharing_unavailable)
 
     data class Card(
-        val title: String,
-        val body: String,
+        val title: Words,
+        val body: Words,
         val link: String?,
-        val action: String,
-        val share: String?,
-        val revoke: String?,
-        val note: String?,
+        val action: Words,
+        val share: Words?,
+        val revoke: Words?,
+        val note: Words?,
     )
 
     sealed class State {
-        data class Closed(val note: String? = null) : State()
+        data class Closed(val note: Words? = null) : State()
         data object Working : State()
-        data class Live(val share: SessionShare, val copied: Boolean = false, val note: String? = null) : State()
+        data class Live(val share: SessionShare, val copied: Boolean = false, val note: Words? = null) : State()
         data object Revoked : State()
 
         fun after(event: Event): State = when (event) {
@@ -56,12 +56,12 @@ object WorkoutSharing {
     sealed class Event {
         data object Asked : Event()
         data class Minted(val share: SessionShare) : Event()
-        data class MintFailed(val why: String) : Event()
+        data class MintFailed(val why: Words) : Event()
         data object Copied : Event()
-        data class ShareFailed(val why: String) : Event()
+        data class ShareFailed(val why: Words) : Event()
         data object Shared : Event()
         data object Revoked : Event()
-        data class RevokeFailed(val why: String) : Event()
+        data class RevokeFailed(val why: Words) : Event()
     }
 
     fun link(share: SessionShare, base: String): String {
@@ -72,24 +72,23 @@ object WorkoutSharing {
 
     fun card(state: State, base: String): Card = when (state) {
         is State.Closed ->
-            Card(title = "Share this workout", body = offer, link = null,
-                 action = if (state.note == null) "Get a link" else "Try again", share = null, revoke = null, note = state.note)
+            Card(title = Words.Message(R.string.gym_sharing_offer_title), body = Words.Message(R.string.gym_sharing_offer), link = null,
+                 action = Words.Message(if (state.note == null) R.string.gym_sharing_get_link else PlatformR.string.platform_try_again), share = null, revoke = null, note = state.note)
         State.Working ->
-            Card(title = "Share this workout", body = offer, link = null,
-                 action = "…", share = null, revoke = null, note = null)
+            Card(title = Words.Message(R.string.gym_sharing_offer_title), body = Words.Message(R.string.gym_sharing_offer), link = null,
+                 action = Words.Message(R.string.gym_sharing_working), share = null, revoke = null, note = null)
         is State.Live ->
             Card(
-                title = "The link is live",
-                body = "Anyone who has this link can read this one workout. It stops working on " +
-                    "${Readout.day(state.share.expiresAtMs)}, and revoking it kills it immediately.",
+                title = Words.Message(R.string.gym_sharing_live_title),
+                body = Words.Message(R.string.gym_sharing_live_body, listOf(Readout.day(state.share.expiresAtMs))),
                 link = link(state.share, base),
-                action = if (state.copied) "Copied" else "Copy link",
-                share = "Share",
-                revoke = "Revoke the link",
+                action = Words.Message(if (state.copied) R.string.gym_sharing_copied else R.string.gym_sharing_copy_link),
+                share = Words.Message(R.string.gym_sharing_share),
+                revoke = Words.Message(R.string.gym_sharing_revoke),
                 note = state.note)
         State.Revoked ->
-            Card(title = "The link is dead",
-                 body = "Anyone still holding it gets nothing. You can make a new one whenever you like.",
-                 link = null, action = "Get a link", share = null, revoke = null, note = null)
+            Card(title = Words.Message(R.string.gym_sharing_dead_title),
+                 body = Words.Message(R.string.gym_sharing_dead_body),
+                 link = null, action = Words.Message(R.string.gym_sharing_get_link), share = null, revoke = null, note = null)
     }
 }

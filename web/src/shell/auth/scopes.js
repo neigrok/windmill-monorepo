@@ -1,16 +1,18 @@
 // The OAuth `scope` string is space-delimited `<product>:<level>`. An empty scope is the
 // account-wide grant; a scope this build cannot read confers nothing.
 
+import { t } from '../i18n/settings/index.js';
+
 const PRODUCTS = {
-  roadmap: 'roadmaps',
-  journal: 'journal',
-  gym: 'training log',
+  roadmap: t('shell.scopes.roadmap'),
+  journal: t('shell.scopes.journal'),
+  gym: t('shell.scopes.gym'),
 };
 
 const LEVELS = {
-  read: { glyph: 'dim', verb: 'See' },
-  write: { glyph: 'bud', verb: 'Add to and change' },
-  delete: { glyph: 'gone', verb: 'Delete from' },
+  read: { glyph: 'dim', word: t('shell.scopes.read'), line: (product) => t('shell.scopes.readLine', { product }) },
+  write: { glyph: 'bud', word: t('shell.scopes.write'), line: (product) => t('shell.scopes.writeLine', { product }) },
+  delete: { glyph: 'gone', word: t('shell.scopes.delete'), line: (product) => t('shell.scopes.deleteLine', { product }) },
 };
 
 const LEVEL_ORDER = ['read', 'write', 'delete'];
@@ -52,7 +54,7 @@ export function capabilityGroups(scope) {
     lines: group.levels.map((level) => ({
       level,
       glyph: LEVELS[level].glyph,
-      label: `${LEVELS[level].verb} your ${group.label}`,
+      label: LEVELS[level].line(group.label),
     })),
   }));
 }
@@ -72,7 +74,7 @@ export function consentSummary(scope) {
 
 export function summarizeScope(scope) {
   const { accountWide, products } = readScope(scope);
-  if (accountWide) return 'Everything in your account';
-  if (products.length === 0) return 'Nothing — this grant reaches no product';
-  return products.map((group) => `${group.label}: ${group.levels.join(', ')}`).join(' · ');
+  if (accountWide) return t('shell.scopes.everything');
+  if (products.length === 0) return t('shell.scopes.nothing');
+  return products.map((group) => t('shell.scopes.summary', { product: group.label, levels: group.levels.map((level) => LEVELS[level].word).join(', ') })).join(' · ');
 }

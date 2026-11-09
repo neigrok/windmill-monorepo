@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="gym_program_name_it">Name it to save it.</string>
+    <string name="gym_program_name_too_long">Use 60 characters or fewer.</string>
+    <string name="gym_program_at_least_one_movement">A routine is at least one movement.</string>
+    <string name="gym_program_outside_reps">Whole reps, 1 to 100.</string>
+    <string name="gym_program_outside_sets">Sets, 1 to 20.</string>
+    <string name="gym_program_zero_target">A zero target is no target — clear the field instead.</string>
+    <string name="gym_program_below_floor">Load, %1$s or more.</string>
+    <!-- The sets field before a count is typed: the count is left open. -->
+    <string name="gym_program_sets_placeholder">open</string>
+    <!-- The reps field before a count is typed: as many reps as the lifter can. -->
+    <string name="gym_program_reps_placeholder">max</string>
+    <string name="gym_program_varies">varies</string>
+    <string name="gym_program_set_by_set">Each set</string>
+    <string name="gym_program_add_set">Add set</string>
+    <string name="gym_program_fill">Fill</string>
+    <string name="gym_program_ramp_up">Ramp up</string>
+    <string name="gym_program_match_set_one">Match set 1</string>
+</resources>

@@ -1,8 +1,9 @@
 import { useRef, useState } from 'react';
 import { track } from '../../../telemetry/beacon.js';
 import { countBucket } from '../board/acts.js';
-import { LABELS, completedStepsToast, completedToast } from '../copy.js';
-import { COACHED_NODE_ID, DEMO_COPY } from '../demo/demoStage.js';
+import { DEMO_COPY, LABELS, completedStepsToast, completedToast } from '../copy.js';
+import { t } from '../i18n/index.js';
+import { COACHED_NODE_ID } from '../demo/demoStage.js';
 import { MilestoneLedger } from '../persistence/MilestoneLedger.js';
 import { ReturnLedger } from '../persistence/ReturnLedger.js';
 import { detectMilestones } from '../model/milestones.js';
@@ -93,7 +94,7 @@ export class RoomProgress {
     const nodes = c.treeRef.current?.nodesById;
     const summary = c.demo && id === COACHED_NODE_ID
       ? DEMO_COPY.unlockToast
-      : completedToast({ step: nodes?.get(id)?.label?.trim() || 'Step', unlocked: changes.unlocked.map((otherId) => nodes?.get(otherId)?.label || 'Step') });
+      : completedToast({ step: nodes?.get(id)?.label?.trim() || t('roadmap.step.fallbackName'), unlocked: changes.unlocked.map((otherId) => nodes?.get(otherId)?.label || t('roadmap.step.fallbackName')) });
     c.showToast(summary, {
       surface: 'graph', act: 'complete', holdMs: 6000, focusTarget: document.activeElement,
       action: { label: LABELS.undo, run: () => {
@@ -148,8 +149,8 @@ export class RoomProgress {
     if (changes.completed.length === 0) return null;
     if (changes.completed.length > 1) return completedStepsToast({ count: changes.completed.length, unlocked: changes.unlocked.length });
     return completedToast({
-      step: tree.nodesById.get(changes.completed[0])?.label?.trim() || 'Step',
-      unlocked: changes.unlocked.map((id) => tree.nodesById.get(id)?.label || 'Step'),
+      step: tree.nodesById.get(changes.completed[0])?.label?.trim() || t('roadmap.step.fallbackName'),
+      unlocked: changes.unlocked.map((id) => tree.nodesById.get(id)?.label || t('roadmap.step.fallbackName')),
     });
   }
 }

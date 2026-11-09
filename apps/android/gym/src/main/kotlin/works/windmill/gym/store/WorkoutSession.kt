@@ -1,5 +1,7 @@
 package works.windmill.gym.store
 
+import works.windmill.platform.i18n.Words
+import works.windmill.gym.R
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
@@ -31,7 +33,6 @@ import works.windmill.gym.presentation.PlanEntry
 import works.windmill.gym.presentation.PlanSnapshot
 import works.windmill.gym.presentation.Readout
 import works.windmill.gym.presentation.Session
-import works.windmill.gym.presentation.SessionDetail
 import works.windmill.gym.presentation.SessionStart
 import works.windmill.gym.presentation.SetFix
 import works.windmill.gym.presentation.TrainingSet
@@ -40,7 +41,7 @@ import works.windmill.gym.presentation.WorkoutClock
 import works.windmill.gym.presentation.WorkoutKey
 import works.windmill.gym.presentation.WorkoutNotification
 import works.windmill.gym.presentation.WorkoutRack
-import works.windmill.gym.store.TrainingSeat.Companion.accountChanged
+import works.windmill.gym.store.TrainingSeat.Companion.accountChange
 import works.windmill.platform.telemetry.Telemetry
 
 // The workout in hand: its rack, the sets logged into it, the movement walk, and how it finishes. A set or workout already on the log is corrected here too, because the live workout's controls must follow every change to it.
@@ -66,12 +67,12 @@ class WorkoutSession(
         private set
     private var hiddenLogger by mutableStateOf(false)
     val loggerHidden: Boolean get() = seat.workoutAuthorized && hiddenLogger
-    var workoutFailure: String? by mutableStateOf(null)
+    var workoutRefusal: Words? by mutableStateOf(null)
         private set
     private data class AcceptedSetRecovery(val replica: String?, val workoutId: String)
     private var acceptedSetRecovery: AcceptedSetRecovery? = null
     private val acceptedSetRecoveryPending: Boolean get() = acceptedSetRecovery != null
-    private val lastingFailure: String? get() = workoutFailure?.takeUnless { acceptedSetRecoveryPending && controls.writable }
+    private val lastingRefusal: Words? get() = workoutRefusal?.takeUnless { acceptedSetRecoveryPending && controls.writable }
     var workoutOpenRequest by mutableLongStateOf(0L)
         private set
     var workoutOpenKey: WorkoutKey? by mutableStateOf(null)
@@ -94,7 +95,7 @@ class WorkoutSession(
             if (controls.session != null && controls.writable) controls.control(controls.workout.invalidate())
         } catch (error: Exception) {
             seat.reportFailure("gym.revokeWorkoutAuthority", error)
-            refuseWorkout()
+            workoutRefused()
         }
         workoutFacts.value = null
     }
@@ -105,7 +106,7 @@ class WorkoutSession(
     internal fun forgetSeat() {
         if (acceptedSetRecoveryPending) {
             acceptedSetRecovery = null
-            workoutFailure = null
+            workoutRefusal = null
         }
         workoutFacts.value = null
         session = null
@@ -122,7 +123,7 @@ class WorkoutSession(
     // A deleted account's workout leaves the room with it.
     internal fun erase() {
         acceptedSetRecovery = null
-        workoutFailure = null
+        workoutRefusal = null
         workoutFacts.value = null
         session = null
         rack = null
@@ -160,7 +161,7 @@ class WorkoutSession(
                     drawFromControls()
                 } catch (error: Exception) {
                     seat.reportFailure("gym.reconcileWorkoutTime", error)
-                    refuseWorkout()
+                    workoutRefused()
                     return
                 }
                 return
@@ -170,7 +171,7 @@ class WorkoutSession(
     }
 
     fun editRack(weightKg: Double, reps: Int): WorkoutChange {
-        if (isFinishing || !seat.workoutAuthorized) return WorkoutChange.Unavailable(workoutFailure ?: "The workout is not ready.")
+        if (isFinishing || !seat.workoutAuthorized) return WorkoutChange.Unavailable(workoutRefusal ?: Words.Message(R.string.gym_store_workout_not_ready))
         if (session == null || rack == null) return WorkoutChange.Stale
         return writeControls("gym.editRack") {
             controls.control(controls.workout.edit(weightKg, reps))
@@ -180,7 +181,7 @@ class WorkoutSession(
     }
 
     fun editWorkout(open: Boolean): WorkoutChange {
-        if (!seat.workoutAuthorized) return WorkoutChange.Unavailable(workoutFailure ?: "The account must be restored first.")
+        if (!seat.workoutAuthorized) return WorkoutChange.Unavailable(workoutRefusal ?: Words.Message(R.string.gym_store_account_restore_first))
         return writeControls("gym.editWorkout") {
             controls.control(controls.workout.editor(open))
             refreshWorkout()
@@ -191,8 +192,8 @@ class WorkoutSession(
     // Persist the set and consumed offer before the engine commit, retaining both if that commit fails.
     fun acceptSet(command: LogSetCommand): LogSetAcceptance {
         reconcileWorkoutTime()
-        if (!seat.workoutAuthorized || isFinishing || !controls.writable || workoutFailure != null) {
-            return LogSetAcceptance.Unavailable(workoutFailure ?: "The workout is not ready.")
+        if (!seat.workoutAuthorized || isFinishing || !controls.writable || workoutRefusal != null) {
+            return LogSetAcceptance.Unavailable(workoutRefusal ?: Words.Message(R.string.gym_store_workout_not_ready))
         }
         return try {
             val accepted = controls.accept(command, workoutClock.now(), ::lastTimeOf, mintSet)
@@ -202,7 +203,7 @@ class WorkoutSession(
                     training.commitAccepted(controls, entry.set, entry.sessionId)
                 } catch (failure: Exception) {
                     seat.reportFailure("gym.acceptSet", failure)
-                    val reason = refuseWorkout()
+                    val reason = workoutRefused()
                     acceptedSetRecovery = AcceptedSetRecovery(controls.engineReplica, entry.sessionId)
                     return LogSetAcceptance.Unavailable(reason)
                 }
@@ -213,12 +214,12 @@ class WorkoutSession(
             accepted
         } catch (error: Exception) {
             seat.reportFailure("gym.acceptSet", error)
-            LogSetAcceptance.Unavailable(refuseWorkout())
+            LogSetAcceptance.Unavailable(workoutRefused())
         }
     }
 
     fun showWorkout(key: WorkoutKey, hidden: Boolean): WorkoutChange {
-        if (!seat.workoutAuthorized || isFinishing) return WorkoutChange.Unavailable("The workout is not ready.")
+        if (!seat.workoutAuthorized || isFinishing) return WorkoutChange.Unavailable(Words.Message(R.string.gym_store_workout_not_ready))
         if (key.ownerKey != seat.accountKey || controls.ownerKey != seat.accountKey || controls.session?.id != key.sessionId ||
             workoutFacts.value?.key != key) return WorkoutChange.Stale
         return writeControls("gym.showWorkout") {
@@ -229,7 +230,7 @@ class WorkoutSession(
     }
 
     fun setLoggerHidden(key: WorkoutKey, hidden: Boolean): WorkoutChange {
-        if (!seat.workoutAuthorized || isFinishing) return WorkoutChange.Unavailable("The workout is not ready.")
+        if (!seat.workoutAuthorized || isFinishing) return WorkoutChange.Unavailable(Words.Message(R.string.gym_store_workout_not_ready))
         if (key.ownerKey != seat.accountKey || controls.ownerKey != seat.accountKey || controls.session?.id != key.sessionId ||
             workoutFacts.value?.key != key) return WorkoutChange.Stale
         return writeControls("gym.logger_visibility") {
@@ -240,7 +241,7 @@ class WorkoutSession(
     }
 
     internal fun refreshWorkout() {
-        if (!seat.workoutReady || workoutFailure != null) return
+        if (!seat.workoutReady || workoutRefusal != null) return
         hiddenLogger = controls.loggerHidden
         if (!seat.workoutAuthorized) { workoutFacts.value = null; return }
         val live = controls.session
@@ -254,16 +255,16 @@ class WorkoutSession(
             if (controls.writable && seat.workoutAuthorized) controls.prepare(::lastTimeOf, workoutClock.now(), ready, mintSet) else controls.workout
         } catch (error: Exception) {
             seat.reportFailure("gym.refreshWorkout", error)
-            refuseWorkout()
+            workoutRefused()
             return
         }
         try { training.persistControls(controls) }
-        catch (failure: Exception) { seat.reportFailure("gym.workout_controls", failure); refuseWorkout(); return }
+        catch (failure: Exception) { seat.reportFailure("gym.workout_controls", failure); workoutRefused(); return }
         rack = state.rack
         val movement = controls.chosenMovement
         val rows = controls.sets.filterNot { it.id in held.deletedSets }
         workoutFacts.value = WorkoutNotification(WorkoutKey(seat.accountKey, live.id), live,
-            movement?.let { Readout.movement(it, routines.catalog) } ?: "Choose a movement", rows, state, ready)
+            movement?.let { Words.Plain(Readout.movement(it, routines.catalog)) } ?: Words.Message(R.string.gym_notification_choose_movement), rows, state, ready)
     }
 
     internal suspend fun projectEngineReplica(force: Boolean = false) {
@@ -283,14 +284,14 @@ class WorkoutSession(
         training.recoverAcceptedSets(controls)
         if (pending != null && recoveringHere && controls.writable) {
             acceptedSetRecovery = null
-            workoutFailure = null
+            workoutRefusal = null
         }
     }
 
-    internal fun refuseWorkout(): String {
+    internal fun workoutRefused(): Words {
         acceptedSetRecovery = null
-        val reason = "The workout could not be saved safely. Restart the app to recover it."
-        workoutFailure = reason
+        val reason = Words.Message(R.string.gym_store_workout_unsafe_restart)
+        workoutRefusal = reason
         workoutFacts.value = workoutFacts.value?.copy(offer = null)
         return reason
     }
@@ -360,18 +361,18 @@ class WorkoutSession(
 
     // The domain action freezes the routine into the session as it starts.
     suspend fun start(routineId: String): GymResult<Session> {
-        lastingFailure?.let { return GymResult.Failed(WriteFailure.Refused(it)) }
-        if (!seat.workoutAuthorized || !controls.writable) return GymResult.Failed(WriteFailure.Refused(workoutFailure ?: "The account must be restored first."))
+        lastingRefusal?.let { return GymResult.Failed(WriteFailure.Refused(it)) }
+        if (!seat.workoutAuthorized || !controls.writable) return GymResult.Failed(WriteFailure.Refused(workoutRefusal ?: Words.Message(R.string.gym_store_account_restore_first)))
         val owner = seat.owner
         return try {
             recoverAcceptedSets()
-            workoutFailure?.let { return GymResult.Failed(WriteFailure.Refused(it)) }
+            workoutRefusal?.let { return GymResult.Failed(WriteFailure.Refused(it)) }
             val opened = training.startSession(SessionStart(id = mintSession(), startedAt = now(), routineId = routineId), requireRoutine = true)
-            if (!seat.workoutAuthorized || owner != seat.owner) return GymResult.Failed(WriteFailure.Refused("the account changed while starting"))
+            if (!seat.workoutAuthorized || owner != seat.owner) return GymResult.Failed(WriteFailure.Refused(Words.Message(R.string.gym_store_account_changed_starting)))
             val adopted = adopt(opened, joined = false, operation = "gym.start")
-            if (adopted is WorkoutChange.Unavailable) return GymResult.Failed(WriteFailure.Refused(adopted.reason))
-            if (!seat.workoutAuthorized || owner != seat.owner) return GymResult.Failed(WriteFailure.Refused("the account changed while starting"))
-            val live = session ?: return GymResult.Failed(WriteFailure.Refused("The workout is not ready."))
+            if (adopted is WorkoutChange.Unavailable) return GymResult.Failed(WriteFailure.Refused(adopted.why))
+            if (!seat.workoutAuthorized || owner != seat.owner) return GymResult.Failed(WriteFailure.Refused(Words.Message(R.string.gym_store_account_changed_starting)))
+            val live = session ?: return GymResult.Failed(WriteFailure.Refused(Words.Message(R.string.gym_store_workout_not_ready)))
             telemetry.event("gym_session_started")
             GymResult.Ok(live)
         } catch (failure: Exception) {
@@ -385,13 +386,13 @@ class WorkoutSession(
                 return GymResult.Failed(WriteFailure(failure))
             }
             seat.reportFailure("gym.start", failure)
-            GymResult.Failed(WriteFailure.Refused("The workout could not be saved safely. Restart and retry."))
+            GymResult.Failed(WriteFailure.Refused(Words.Message(R.string.gym_store_workout_unsafe_retry)))
         }
     }
 
     // The answer is kept for the life of the session: a last time is a FINISHED session, so none of these answers can change mid-workout.
     suspend fun choose(movement: String): WorkoutChange {
-        if (!seat.workoutAuthorized) return WorkoutChange.Unavailable("The workout is not ready.")
+        if (!seat.workoutAuthorized) return WorkoutChange.Unavailable(Words.Message(R.string.gym_store_workout_not_ready))
         val result = writeControls("gym.choose") {
             controls.choose(movement)
             controls.flush()
@@ -402,7 +403,7 @@ class WorkoutSession(
         if (result != WorkoutChange.Saved) return result
         redial()
         readLastTime()
-        return workoutFailure?.let { WorkoutChange.Unavailable(it) } ?: if (!controls.writable) WorkoutChange.Unavailable(refuseWorkout()) else result
+        return workoutRefusal?.let { WorkoutChange.Unavailable(it) } ?: if (!controls.writable) WorkoutChange.Unavailable(workoutRefused()) else result
     }
 
     internal suspend fun readLastTime() {
@@ -426,7 +427,7 @@ class WorkoutSession(
 
     // Sets are keyed by movement and never by position, so only the walk order moves.
     fun reorder(from: Int, to: Int): WorkoutChange {
-        if (!seat.workoutAuthorized) return WorkoutChange.Unavailable("The workout is not ready.")
+        if (!seat.workoutAuthorized) return WorkoutChange.Unavailable(Words.Message(R.string.gym_store_workout_not_ready))
         return writeControls("gym.reorderMovements") {
             val walked = LiveOrder.moved(order, from, to)
             if (walked == order) return@writeControls WorkoutChange.Stale
@@ -438,7 +439,7 @@ class WorkoutSession(
     }
 
     fun drop(exerciseId: String): WorkoutChange {
-        if (!seat.workoutAuthorized) return WorkoutChange.Unavailable("The workout is not ready.")
+        if (!seat.workoutAuthorized) return WorkoutChange.Unavailable(Words.Message(R.string.gym_store_workout_not_ready))
         return writeControls("gym.dropMovement") {
             if (!LiveOrder.droppable(exerciseId, sets, session?.plan)) return@writeControls WorkoutChange.Stale
             val walked = order.filterNot { it == exerciseId }
@@ -455,14 +456,14 @@ class WorkoutSession(
     }
 
     private fun writeControls(operation: String, write: () -> WorkoutChange): WorkoutChange {
-        workoutFailure?.let { return WorkoutChange.Unavailable(it) }
-        if (!controls.writable) return WorkoutChange.Unavailable(workoutFailure ?: "The workout is not ready.")
+        workoutRefusal?.let { return WorkoutChange.Unavailable(it) }
+        if (!controls.writable) return WorkoutChange.Unavailable(workoutRefusal ?: Words.Message(R.string.gym_store_workout_not_ready))
         return try {
             val result = write()
-            workoutFailure?.let { WorkoutChange.Unavailable(it) } ?: if (!controls.writable) WorkoutChange.Unavailable(refuseWorkout()) else result
+            workoutRefusal?.let { WorkoutChange.Unavailable(it) } ?: if (!controls.writable) WorkoutChange.Unavailable(workoutRefused()) else result
         } catch (failure: Exception) {
             seat.reportFailure(operation, failure)
-            WorkoutChange.Unavailable(refuseWorkout())
+            WorkoutChange.Unavailable(workoutRefused())
         }
     }
 
@@ -482,17 +483,17 @@ class WorkoutSession(
 
     // Finishing closes the workout in the replica, which carries the close to the account behind every set this session holds.
     suspend fun finish(): FinishOutcome {
-        if (!seat.workoutAuthorized) return FinishOutcome.Failed(WriteFailure.Refused("The account must be restored first."))
-        lastingFailure?.let { return FinishOutcome.Failed(WriteFailure.Refused(it)) }
-        if (isFinishing) return FinishOutcome.Failed(WriteFailure.Refused("this workout is already finishing"))
-        val live = session ?: return FinishOutcome.Failed(WriteFailure.Refused("The workout is not ready."))
+        if (!seat.workoutAuthorized) return FinishOutcome.Failed(WriteFailure.Refused(Words.Message(R.string.gym_store_account_restore_first)))
+        lastingRefusal?.let { return FinishOutcome.Failed(WriteFailure.Refused(it)) }
+        if (isFinishing) return FinishOutcome.Failed(WriteFailure.Refused(Words.Message(R.string.gym_store_workout_already_finishing)))
+        val live = session ?: return FinishOutcome.Failed(WriteFailure.Refused(Words.Message(R.string.gym_store_workout_not_ready)))
         val owner = seat.owner
         isFinishing = true
         var accepted = false
         try {
             recoverAcceptedSets()
             refreshWorkout()
-            workoutFailure?.let { return FinishOutcome.Failed(WriteFailure.Refused(it)) }
+            workoutRefusal?.let { return FinishOutcome.Failed(WriteFailure.Refused(it)) }
             val detail = try {
                 training.finishSession(live.id)
                 accepted = true
@@ -502,7 +503,7 @@ class WorkoutSession(
                 if (failure !is TrainingRefused || failure.code != "unknown-record") throw failure
                 null
             }
-            if (!seat.workoutAuthorized || owner != seat.owner) return FinishOutcome.Failed(WriteFailure.Refused("the account changed while finishing"))
+            if (!seat.workoutAuthorized || owner != seat.owner) return FinishOutcome.Failed(WriteFailure.Refused(Words.Message(R.string.gym_store_account_changed_finishing)))
             if (detail != null) history.retainClosed(detail)
             val saved = writeControls("gym.finish") {
                 controls.close(live.id)
@@ -512,11 +513,11 @@ class WorkoutSession(
                 drawFromControls()
                 WorkoutChange.Saved
             }
-            if (saved is WorkoutChange.Unavailable) return FinishOutcome.Failed(WriteFailure.Refused(saved.reason))
+            if (saved is WorkoutChange.Unavailable) return FinishOutcome.Failed(WriteFailure.Refused(saved.why))
             if (detail == null) {
                 history.loadLog()
-                if (!seat.workoutAuthorized || owner != seat.owner) return FinishOutcome.Failed(WriteFailure.Refused("the account changed while finishing"))
-                return FinishOutcome.Failed(WriteFailure.Refused("that workout is no longer on the log"))
+                if (!seat.workoutAuthorized || owner != seat.owner) return FinishOutcome.Failed(WriteFailure.Refused(Words.Message(R.string.gym_store_account_changed_finishing)))
+                return FinishOutcome.Failed(WriteFailure.Refused(Words.Message(R.string.gym_store_workout_no_longer_on_log)))
             }
             scope.launch {
                 if (seat.workoutAuthorized && owner == seat.owner) seat.tried("gym.loadLog") { history.loadLog() }
@@ -527,8 +528,8 @@ class WorkoutSession(
         } catch (error: Exception) {
             if (!currentCoroutineContext().isActive) throw error
             seat.reportFailure("gym.finish", error)
-            if (!seat.workoutAuthorized || owner != seat.owner) return FinishOutcome.Failed(WriteFailure.Refused("the account changed while finishing"))
-            return FinishOutcome.Failed(if (accepted) WriteFailure.Refused(refuseWorkout()) else WriteFailure(error))
+            if (!seat.workoutAuthorized || owner != seat.owner) return FinishOutcome.Failed(WriteFailure.Refused(Words.Message(R.string.gym_store_account_changed_finishing)))
+            return FinishOutcome.Failed(if (accepted) WriteFailure.Refused(workoutRefused()) else WriteFailure(error))
         } finally {
             isFinishing = false
             refreshWorkout()
@@ -551,13 +552,13 @@ class WorkoutSession(
             var accepted = false
             val failure = try {
                 run write@{
-                    if (!seat.workoutAuthorized || owner != seat.owner || replica == null || replica != controls.engineReplica || expectedAnonymous != (seat.owner == null)) return@write WriteFailure.Refused(accountChanged)
+                    if (!seat.workoutAuthorized || owner != seat.owner || replica == null || replica != controls.engineReplica || expectedAnonymous != (seat.owner == null)) return@write WriteFailure.Refused(accountChange)
                     if (history.shelfDetail(sessionId) != null) {
                         training.imports.discardRefusal(sessionId)
                         accepted = true
                         if (acceptedSetRecovery?.let { it.replica == replica && it.workoutId == sessionId } == true) {
                             acceptedSetRecovery = null
-                            workoutFailure = null
+                            workoutRefusal = null
                         }
                         history.discarded(sessionId)
                         history.invalidateProgress()
@@ -573,7 +574,7 @@ class WorkoutSession(
                     accepted = true
                     if (acceptedSetRecovery?.let { it.replica == replica && it.workoutId == sessionId } == true) {
                         acceptedSetRecovery = null
-                        workoutFailure = null
+                        workoutRefusal = null
                     }
                     if (owner != seat.owner) return@write null
                     history.invalidateProgress()
@@ -598,7 +599,7 @@ class WorkoutSession(
                 exerciseId = null
                 rack = null
                 workoutFacts.value = null
-                if (!controls.writable) refuseWorkout()
+                if (!controls.writable) workoutRefused()
             }
             telemetry.event("gym_action", mapOf("screen" to screen, "action" to "discard", "outcome" to when (failure) {
                 null -> "ok"
@@ -620,7 +621,7 @@ class WorkoutSession(
         expectedAccountKey: String = seat.accountKey, expectedReplica: String? = controls.engineReplica): MovementCreateOutcome {
         val key = MovementCreationKey(expectedAccountKey, expectedReplica, workoutId, write.id)
         movementCreations[key]?.let { (submitted, pending) ->
-            if (submitted != write) return MovementCreateOutcome.Failed(WriteFailure.Refused("Creation is already in progress."))
+            if (submitted != write) return MovementCreateOutcome.Failed(WriteFailure.Refused(Words.Message(R.string.gym_store_creation_in_progress)))
             return pending.await()
         }
         val owner = seat.owner
@@ -633,7 +634,7 @@ class WorkoutSession(
             if (!current()) {
                 telemetry.event("gym_action", mapOf("screen" to "movement_form", "action" to if (known) "add" else "create",
                     "outcome" to "refused"))
-                return@async MovementCreateOutcome.Failed(WriteFailure.Refused(accountChanged))
+                return@async MovementCreateOutcome.Failed(WriteFailure.Refused(accountChange))
             }
             val created = routines.create(write.name, write.equipment, write.id, write.loadCount, expectedReplica, workoutId)
             if (!known) telemetry.event("gym_action", mapOf("screen" to "movement_form", "action" to "create",
@@ -645,19 +646,19 @@ class WorkoutSession(
             val movement = (created as GymResult.Ok).value
             var choice: WorkoutChange? = null
             val result = try {
-                if (!current()) MovementCreateOutcome.Failed(WriteFailure.Refused(accountChanged), movement)
+                if (!current()) MovementCreateOutcome.Failed(WriteFailure.Refused(accountChange), movement)
                 else {
                     val chosen = choose(movement.id)
                     choice = chosen
                     when (chosen) {
-                        is WorkoutChange.Unavailable -> MovementCreateOutcome.Failed(WriteFailure.Refused(chosen.reason), movement)
+                        is WorkoutChange.Unavailable -> MovementCreateOutcome.Failed(WriteFailure.Refused(chosen.why), movement)
                         else -> MovementCreateOutcome.Added(movement)
                     }
                 }
             } catch (failure: Exception) {
                 if (!currentCoroutineContext().isActive) throw failure
                 seat.reportFailure("gym.choose", failure)
-                val reason = workoutFailure ?: refuseWorkout()
+                val reason = workoutRefusal ?: workoutRefused()
                 choice = WorkoutChange.Unavailable(reason)
                 MovementCreateOutcome.Failed(WriteFailure.Refused(reason), movement)
             }
@@ -681,12 +682,12 @@ class WorkoutSession(
             var fromShelf = false
             val outcome = try { run correction@ {
                 if (!seat.workoutAuthorized || owner != seat.owner || replica == null || replica != controls.engineReplica || liveId != session?.id)
-                    return@correction FixOutcome.Failed(WriteFailure.Refused("the account changed while fixing"))
+                    return@correction FixOutcome.Failed(WriteFailure.Refused(Words.Message(R.string.gym_store_account_changed_fixing)))
                 if (liveId == sessionId && sets.none { it.id == setId })
-                    return@correction FixOutcome.Gone("that set is no longer on this device")
+                    return@correction FixOutcome.Gone(Words.Message(R.string.gym_store_set_gone_here))
                 if (liveId != sessionId) history.shelfDetail(sessionId)?.let { detail ->
                     val corrected = detail.sets.firstOrNull { it.id == setId }?.let(fix::corrected)
-                        ?: return@correction FixOutcome.Gone("that set is no longer on this device")
+                        ?: return@correction FixOutcome.Gone(Words.Message(R.string.gym_store_set_gone_here))
                     val deleted = training.imports.refusals().firstOrNull { it.id == sessionId }?.deletedSetIds
                         ?: training.imports.pendingFinished().firstOrNull { it.session.id == sessionId }?.deleted.orEmpty()
                     training.imports.replaceAndRetry(sessionId, SavedWorkout(detail.session,
@@ -699,7 +700,7 @@ class WorkoutSession(
             } } catch (failure: Exception) {
                 if (!currentCoroutineContext().isActive) throw failure
                 seat.reportFailure("gym.fixSet", failure)
-                if ((failure as? TrainingRefused)?.code == "unknown-record") FixOutcome.Gone("that set is no longer on the log")
+                if ((failure as? TrainingRefused)?.code == "unknown-record") FixOutcome.Gone(Words.Message(R.string.gym_store_set_gone))
                 else FixOutcome.Failed(WriteFailure(failure))
             }
             origin?.let {
@@ -721,7 +722,7 @@ class WorkoutSession(
                 } catch (failure: Exception) {
                     if (!currentCoroutineContext().isActive) throw failure
                     seat.reportFailure("gym.fixSet", failure)
-                    if (!controls.writable) refuseWorkout()
+                    if (!controls.writable) workoutRefused()
                 }
             }
             outcome
@@ -730,15 +731,15 @@ class WorkoutSession(
 
     // A settled delete updates the replica and every retained read of this set.
     suspend fun deleteSet(sessionId: String, setId: String, replica: String? = controls.engineReplica, anonymous: Boolean = seat.owner == null): WriteFailure? {
-        if (!seat.workoutAuthorized) return WriteFailure.Refused("the account changed while deleting")
+        if (!seat.workoutAuthorized) return WriteFailure.Refused(Words.Message(R.string.gym_store_account_changed_deleting))
         val live = session?.takeIf { it.id == sessionId }
-        if (live != null && (!controls.writable || workoutFailure != null)) return WriteFailure.Refused(workoutFailure ?: "The workout is not ready.")
+        if (live != null && (!controls.writable || workoutRefusal != null)) return WriteFailure.Refused(workoutRefusal ?: Words.Message(R.string.gym_store_workout_not_ready))
         if (live == null) history.shelfDetail(sessionId)?.let { detail ->
             val deleted = training.imports.refusals().firstOrNull { it.id == sessionId }?.deletedSetIds
                 ?: training.imports.pendingFinished().firstOrNull { it.session.id == sessionId }?.deleted.orEmpty()
             training.imports.replaceAndRetry(sessionId, SavedWorkout(detail.session,
                 detail.sets.filterNot { it.id == setId }, (deleted + setId).distinct()),
-                expectedReplica = replica ?: return WriteFailure.Refused(accountChanged), expectedAnonymous = anonymous)
+                expectedReplica = replica ?: return WriteFailure.Refused(accountChange), expectedAnonymous = anonymous)
             if (detail.sets.any { it.id == setId }) {
                 held.deletedSets = held.deletedSets + setId
                 history.shelved = history.refusedImports()
@@ -748,14 +749,14 @@ class WorkoutSession(
         }
         val owner = seat.owner
         try {
-            training.deleteSet(sessionId, setId, replica ?: return WriteFailure.Refused(accountChanged), anonymous)
+            training.deleteSet(sessionId, setId, replica ?: return WriteFailure.Refused(accountChange), anonymous)
         } catch (refusing: Exception) {
             if (!currentCoroutineContext().isActive) throw refusing
             seat.reportFailure("gym.deleteSet", refusing)
             if (refusing is TrainingDeleteUnconfirmed && owner == seat.owner) refresh()
             return WriteFailure(refusing)
         }
-        if (!seat.workoutAuthorized || owner != seat.owner) return WriteFailure.Refused("the account changed while deleting")
+        if (!seat.workoutAuthorized || owner != seat.owner) return WriteFailure.Refused(Words.Message(R.string.gym_store_account_changed_deleting))
         held.deletedSets = held.deletedSets + setId
         changedSet(sessionId, setId, null)
         if (live != null) {
@@ -764,7 +765,7 @@ class WorkoutSession(
                 drawFromControls()
                 WorkoutChange.Saved
             }
-            if (result is WorkoutChange.Unavailable) return WriteFailure.Refused(result.reason)
+            if (result is WorkoutChange.Unavailable) return WriteFailure.Refused(result.why)
         } else history.rereadRow(sessionId)
         return null
     }
@@ -790,7 +791,7 @@ class WorkoutSession(
     }
 
     private suspend fun adopt(opened: Session, joined: Boolean, operation: String): WorkoutChange {
-        if (!seat.workoutAuthorized) return WorkoutChange.Unavailable("The workout is not ready.")
+        if (!seat.workoutAuthorized) return WorkoutChange.Unavailable(Words.Message(R.string.gym_store_workout_not_ready))
         val owner = seat.owner
         val live = controls.session?.id
         val detail = if (joined) seat.tried(operation) { seat.readTraining { training.session(opened.id) } } else null
@@ -850,7 +851,7 @@ class WorkoutSession(
         val state = when {
             waiting && !training.anonymous && blocker != null -> SaveState.Blocked(blocker)
             waiting -> SaveState.OnThisDevice
-            refusals.isNotEmpty() -> SaveState.Refused(refusals.first().reason)
+            refusals.isNotEmpty() -> SaveState.Refused(refusals.first().why)
             training.anonymous -> SaveState.Idle
             else -> SaveState.OnTheLog
         }

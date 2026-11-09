@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { Button } from '../../design-system/index.js';
 import { failureReason } from './errors.js';
+import { t } from './i18n/index.js';
 import { arrivedLabel, nameOfMovement, proposalHref, recordHref, threadHref } from './log.js';
 import {
   atomicLine, collapseKept, conversationOf, CONVERSATION_VERB, countedLabel, diffRows,
   isPending, keptRunLabel, MID_WORKOUT_CAVEAT, OUT_OF_DATE_LINE, receiptLine,
-  sourceLabel, stateChip, summaryLine, TURN_DOWN_VERB,
+  REVIEW_VERB, sourceLabel, stateChip, summaryLine, TURN_DOWN_VERB,
 } from './proposals.js';
 import { useGymRead } from './useGymRead.js';
 import { useGymApi } from './gymRuntime.js';
@@ -16,10 +17,10 @@ export function ProposalPreview({ routine, onExpand, log }) {
   const id = routine.pendingProposal.id;
   const view = useGymRead(() => api.proposal(id), [id], { sync: true, ready: Boolean(api?.ready) });
   const changed = view.data ? diffRows(view.data).filter((row) => row.kind !== 'kept') : [];
-  return <section className="gym-routine-review" aria-label={`Pending change to ${routine.name}`}>
-    <header><span className="gym-proposal-name">{countedLabel(routine.pendingProposal)}</span><a className="gym-proposal-review" href={proposalHref(id)} onClick={(event) => { event.preventDefault(); onExpand(id); }}>Review</a></header>
+  return <section className="gym-routine-review" aria-label={t('gym.proposals.pendingChangeTo', { name: routine.name })}>
+    <header><span className="gym-proposal-name">{countedLabel(routine.pendingProposal)}</span><a className="gym-proposal-review" href={proposalHref(id)} onClick={(event) => { event.preventDefault(); onExpand(id); }}>{REVIEW_VERB}</a></header>
     {changed.length ? <ul className="gym-diff">{changed.slice(0, 3).map((row, index) => <li className={`gym-diff-row is-${row.kind}`} key={index}><DiffRow row={row} catalog={log.catalog} /></li>)}</ul> : <p className="gym-proposal-line">{summaryLine(routine.pendingProposal, routine.name)}</p>}
-    {changed.length > 3 && <p className="gym-share-meta">{changed.length - 3} more changes</p>}
+    {changed.length > 3 && <p className="gym-share-meta">{t('gym.proposals.moreChanges', { count: changed.length - 3 })}</p>}
   </section>;
 }
 
@@ -69,34 +70,34 @@ export function ProposalPanel({ id, log, onChanged = null, onSettled = null, inC
         view.refresh();
         onChanged?.();
       }
-      setRefusal(error.sentence || `That wasn’t ${verb === 'apply' ? 'applied' : 'turned down'} — ${failureReason(error)}.`);
+      setRefusal(error.sentence || t('gym.proposals.notDecided', { verb, reason: failureReason(error) }));
     } finally {
       setBusy(false);
     }
   };
 
   if (!proposal) return <article className="gym-coach-proposal">
-    <p>{view.phase === 'loading' ? 'Opening the proposal…' : view.phase === 'absent' ? 'That proposal isn’t in your program.' : 'The proposal didn’t load.'}</p>
-    {view.phase === 'failed' && <Button variant="secondary" onClick={view.retry}>Retry</Button>}
+    <p>{view.phase === 'loading' ? t('gym.proposals.opening') : view.phase === 'absent' ? t('gym.proposals.absent') : t('gym.proposals.loadFailed')}</p>
+    {view.phase === 'failed' && <Button variant="secondary" onClick={view.retry}>{t('gym.common.retry')}</Button>}
     {refusal && <p role="alert">{refusal}</p>}
   </article>;
 
   return <article className={`gym-coach-proposal gym-proposal-inline is-${proposal.state}`}>
     <p className="gym-proposal-kicker">{proposal.baseName && <span className="gym-proposal-name">{proposal.baseName}</span>}<span>{`${proposal.baseName ? ' · ' : ''}${countedLabel(proposal)}`}</span></p>
-    {proposal.source?.door !== 'ask' && <p className="gym-proposal-from">{`from ${sourceLabel(proposal.source)} · ${arrivedLabel(proposal.createdAt)}`}</p>}
+    {proposal.source?.door !== 'ask' && <p className="gym-proposal-from">{t('gym.proposals.fromSource', { source: sourceLabel(proposal.source), arrived: arrivedLabel(proposal.createdAt) })}</p>}
     {!inConversation && conversationOf(proposal.source) && <a className="gym-proposal-thread" href={threadHref(conversationOf(proposal.source))}>{CONVERSATION_VERB}</a>}
     {log.session && decidable && <p className="gym-proposal-caveat">{MID_WORKOUT_CAVEAT}</p>}
     <ul className="gym-diff">{rows.map((row, index) => row.kind === 'kept-run'
       ? <li className="gym-diff-row is-kept-run" key={`run-${row.at}`}><button className="gym-diff-unfold" type="button" onClick={() => setExpanded((held) => new Set([...held, row.at]))}>{keptRunLabel(row.rows.length)} ›</button></li>
       : <li className={`gym-diff-row is-${row.kind}`} key={`${index}-${row.exerciseId ?? row.kind}`}><DiffRow row={row} catalog={log.catalog} unfold /></li>)}</ul>
-    {waitingRemoval ? <p className="gym-coach-receipt" role="status">Removal waiting to sync.</p> : decidable ? <div className="gym-proposal-band">
-      <Button disabled={busy} onClick={() => decide('apply')}>{busy ? 'Saving…' : 'Apply'}</Button>
-      <p className="gym-proposal-atomic">{proposal.intent === 'revise' ? 'Logged sets stay unchanged.' : atomicLine(proposal)}</p>
+    {waitingRemoval ? <p className="gym-coach-receipt" role="status">{t('gym.proposals.removalWaiting')}</p> : decidable ? <div className="gym-proposal-band">
+      <Button disabled={busy} onClick={() => decide('apply')}>{busy ? t('gym.proposals.saving') : t('gym.common.apply')}</Button>
+      <p className="gym-proposal-atomic">{proposal.intent === 'revise' ? t('gym.proposals.loggedSetsUnchanged') : atomicLine(proposal)}</p>
       <button type="button" className="gym-proposal-turn-down" disabled={busy} onClick={() => decide('dismiss')}>{TURN_DOWN_VERB}</button>
     </div> : pending ? <p className="gym-coach-receipt" role="status">{OUT_OF_DATE_LINE}</p>
       : <p className="gym-coach-receipt" role="status" ref={setReceiptNode}>{proposal.state === 'applied'
       ? receiptLine({ verb: 'apply', proposal }) : proposal.state === 'dismissed'
-        ? receiptLine({ verb: 'dismiss', proposal }) : `${stateChip(proposal)} · nothing applied.`}</p>}
+        ? receiptLine({ verb: 'dismiss', proposal }) : t('gym.proposals.stateNothingApplied', { state: stateChip(proposal) })}</p>}
     {(refusal || proposal.removalRefusal) && <p className="gym-proposal-refusal" role="alert"
       ref={proposal.removalOutcome === 'refused' ? setReceiptNode : null}>{refusal || proposal.removalRefusal}</p>}
   </article>;
@@ -106,7 +107,7 @@ export function DiffRow({ row, catalog, unfold = false }) {
   if (row.kind === 'renamed') {
     return (
       <>
-        <span className="gym-diff-name">Name</span>
+        <span className="gym-diff-name">{t('gym.proposals.diffName')}</span>
         <span className="gym-diff-moves">
           <Move from={row.from} to={row.to} />
         </span>
@@ -117,8 +118,8 @@ export function DiffRow({ row, catalog, unfold = false }) {
   if (row.kind === 'reordered') {
     return (
       <>
-        <span className="gym-diff-name">Order</span>
-        <span className="gym-diff-note">the lines run in the order below</span>
+        <span className="gym-diff-name">{t('gym.proposals.diffOrder')}</span>
+        <span className="gym-diff-note">{t('gym.proposals.reorderedNote')}</span>
       </>
     );
   }
@@ -144,7 +145,9 @@ export function DiffRow({ row, catalog, unfold = false }) {
         <span className="gym-diff-mark" aria-hidden="true">+</span>
         {name}
         <span className="gym-diff-note">
-          {`added · ${row.targets}${row.rest ? ` · rest ${row.rest}` : ''} · ${row.follows ? `after ${nameOfMovement(catalog, row.follows)}` : 'first in the routine'}`}
+          {row.rest
+            ? t('gym.proposals.addedWithRest', { targets: row.targets, rest: row.rest, place: row.follows ? 'after' : 'first', movement: row.follows ? nameOfMovement(catalog, row.follows) : '' })
+            : t('gym.proposals.added', { targets: row.targets, place: row.follows ? 'after' : 'first', movement: row.follows ? nameOfMovement(catalog, row.follows) : '' })}
         </span>
       </>
     );
@@ -156,7 +159,7 @@ export function DiffRow({ row, catalog, unfold = false }) {
         <span className="gym-diff-mark" aria-hidden="true">−</span>
         {name}
         <span className="gym-diff-note">
-          {`removed from the routine${row.kept ? ` · ${row.kept}` : ''}`}
+          {row.kept ? t('gym.proposals.removedKept', { kept: row.kept }) : t('gym.proposals.removed')}
         </span>
       </>
     );
@@ -180,7 +183,7 @@ export function DiffRow({ row, catalog, unfold = false }) {
   );
 }
 
-export const UNFOLD_LADDER = 'set by set';
+export const UNFOLD_LADDER = t('gym.proposals.unfoldLadder');
 
 function SchemeUnfold({ ladder }) {
   const [unfolded, setUnfolded] = useState(false);

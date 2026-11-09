@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="gym_builder_title_new_routine">New routine</string>
+    <string name="gym_builder_title_edit_routine">Edit routine</string>
+    <string name="gym_builder_title_create_movement">Create movement</string>
+    <string name="gym_builder_title_add_movement">Add movement</string>
+    <string name="gym_builder_title_edit_movement">Edit movement</string>
+    <string name="gym_builder_movement_gone">That movement is no longer on the log.</string>
+    <string name="gym_builder_discard_movement_title">Discard changes?</string>
+    <string name="gym_builder_discard_movement_text">Changes to this movement won’t be kept.</string>
+    <string name="gym_builder_discard_routine_title">Discard routine changes?</string>
+    <string name="gym_builder_keep_editing">Keep editing</string>
+    <string name="gym_builder_name">Name</string>
+    <string name="gym_builder_routine_name">Routine name</string>
+    <string name="gym_builder_movements">Movements</string>
+    <string name="gym_builder_remove_movement">Remove movement</string>
+    <string name="gym_builder_move_named">Move %1$s, %2$s of %3$s</string>
+    <string name="gym_builder_edit_this_movement">edit this movement</string>
+    <string name="gym_builder_add_movement">Add movement</string>
+    <string name="gym_builder_history">History</string>
+    <plurals name="gym_builder_history_sets">
+        <item quantity="one">%1$s set</item>
+        <item quantity="other">%1$s sets</item>
+    </plurals>
+    <plurals name="gym_builder_history_movements">
+        <item quantity="one">%1$s movement</item>
+        <item quantity="other">%1$s movements</item>
+    </plurals>
+    <string name="gym_builder_moved_to">%1$s, %2$s of %3$s</string>
+    <string name="gym_builder_named_not_saved">%1$s won’t be saved.</string>
+    <string name="gym_builder_routine_not_saved">This routine won’t be saved.</string>
+</resources>

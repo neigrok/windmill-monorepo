@@ -40,12 +40,13 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.GraphicsMode
 import org.robolectric.annotation.Config
+import works.windmill.gym.string
 import works.windmill.domain.kit.ActionContext
 import works.windmill.domain.kit.ActionRunner
 import works.windmill.domain.kit.FixedZone
 import works.windmill.domain.kit.Id
 import works.windmill.domain.kit.Outcome
-import works.windmill.gym.presentation.ConnectedLog
+import works.windmill.gym.R
 import works.windmill.gym.presentation.RoutineDraft
 import works.windmill.gym.presentation.RoutineEntry
 import works.windmill.gym.presentation.SetTarget
@@ -115,7 +116,7 @@ class RoutinesScreenTests {
             newRoutine.assertIsDisplayed().assert(!hasAnyAncestor(hasScrollAction()))
             newRoutine.performClick()
             compose.runOnIdle { assertEquals(listOf(RoutineDraft(position = 1)), drafts) }
-            compose.onNodeWithText(ConnectedLog.action).assertDoesNotExist()
+            compose.onNodeWithText(string(R.string.gym_connected_action)).assertDoesNotExist()
             compose.onNodeWithText("Gym settings").assertDoesNotExist()
 
             compose.runOnIdle { assertEquals(emptyList<String>(), doors) }

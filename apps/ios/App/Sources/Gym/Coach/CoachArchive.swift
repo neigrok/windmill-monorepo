@@ -49,14 +49,24 @@ nonisolated struct CoachArchive: Codable {
     var id: String { saved.threadId }
     var headline: String {
       let text = saved.onboarding?.first?.request.question ?? saved.text
-      return text.isEmpty ? "Photo conversation" : String(text.prefix(160))
+      return text.isEmpty ? String(localized: "Photo conversation") : String(text.prefix(160))
     }
-    // What the row says of a conversation held on this phone alone: a draft, or what its signed-out answers created.
-    var state: String {
-      if let record = saved.onboarding?.last, !record.finished { return "Interrupted" }
-      if !saved.text.isEmpty || saved.photo != nil { return "Draft" }
+    // Where a conversation held on this phone alone stands: an answer cut short, a draft, or what its signed-out answers created.
+    enum Stance: Equatable { case interrupted, draft, created(routines: Int), conversation }
+    var stance: Stance {
+      if let record = saved.onboarding?.last, !record.finished { return .interrupted }
+      if !saved.text.isEmpty || saved.photo != nil { return .draft }
       let routines = (saved.onboarding ?? []).flatMap(\.results).filter { $0.kind == "routine-created" }.count
-      return routines > 0 ? "Created \(routines) \(routines == 1 ? "routine" : "routines")" : "Conversation"
+      return routines > 0 ? .created(routines: routines) : .conversation
+    }
+    // What the row says of it.
+    var state: String {
+      switch stance {
+      case .interrupted: String(localized: "Interrupted")
+      case .draft: String(localized: "Draft")
+      case .created(let routines): String(localized: "Created \(routines) routines", locale: .copy)
+      case .conversation: String(localized: "Conversation")
+      }
     }
   }
   var version = 1

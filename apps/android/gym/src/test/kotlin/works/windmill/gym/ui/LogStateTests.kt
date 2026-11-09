@@ -45,6 +45,9 @@ import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import works.windmill.gym.spelled
+import works.windmill.gym.string
+import works.windmill.gym.R
 import works.windmill.gym.presentation.Bodyweight
 import works.windmill.gym.presentation.Readout
 import works.windmill.gym.presentation.SessionStart
@@ -86,24 +89,24 @@ class LogStateTests {
                 GymMaterial { LogBinding(store).let { log -> LogScreen(log, log, "A", {}, {}, {}, {}, now = { room.now }) } }
             }
             compose.runOnIdle { room.now = day.plusDays(1).atTime(0, 1).atZone(zone).toInstant().toEpochMilli() }
-            compose.onNodeWithContentDescription(Bodyweight.chip).performClick()
+            compose.onNodeWithContentDescription(string(R.string.gym_bodyweight_chip)).performClick()
             compose.onNodeWithText(Bodyweight.fullDay(day.plusDays(1))).assertIsDisplayed()
-            compose.onNodeWithContentDescription(weightField).performTextReplacement("82,4.5")
-            compose.onNodeWithText(Bodyweight.save).performClick()
-            compose.onNodeWithText(Bodyweight.onePoint).assertIsDisplayed()
+            compose.onNodeWithContentDescription(string(R.string.gym_bodyweight_weight_field)).performTextReplacement("82,4.5")
+            compose.onNodeWithText(string(R.string.gym_bodyweight_save)).performClick()
+            compose.onNodeWithText(Bodyweight.extraPoint.spelled()).assertIsDisplayed()
             compose.runOnIdle { room.now = day.plusDays(2).atTime(0, 1).atZone(zone).toInstant().toEpochMilli() }
             restored.emulateSavedInstanceStateRestore()
             compose.onNodeWithText(Bodyweight.fullDay(day.plusDays(1))).assertIsDisplayed()
             compose.onNodeWithText("82,4.5").assertIsDisplayed()
-            compose.onNodeWithText(Bodyweight.onePoint).assertIsDisplayed()
+            compose.onNodeWithText(Bodyweight.extraPoint.spelled()).assertIsDisplayed()
             compose.onNodeWithText(Bodyweight.fullDay(day.plusDays(1))).performClick()
             compose.onNodeWithText("Tuesday, September 15, 2026").assertIsEnabled().performClick()
             compose.onNodeWithText("Use date").performClick()
             compose.onNodeWithText(Bodyweight.fullDay(day.plusDays(2))).assertIsDisplayed()
-            compose.onNodeWithContentDescription(weightField).performTextReplacement("82.45")
+            compose.onNodeWithContentDescription(string(R.string.gym_bodyweight_weight_field)).performTextReplacement("82.45")
             val saving = compose.runOnIdle { room.now }
-            compose.onNodeWithText(Bodyweight.save).performClick()
-            compose.onNodeWithText(Bodyweight.save).assertDoesNotExist()
+            compose.onNodeWithText(string(R.string.gym_bodyweight_save)).performClick()
+            compose.onNodeWithText(string(R.string.gym_bodyweight_save)).assertDoesNotExist()
             compose.runOnIdle {
                 assertEquals(2, instances)
                 assertEquals(listOf(day.plusDays(2).toString() to 82.45), current.bodyweight.drawn.map { it.dateLocal to it.weightKg })
@@ -423,7 +426,7 @@ class LogStateTests {
             compose.onAllNodes(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "New best")).assertCountEquals(1)
             compose.onAllNodesWithText("Bench Press · new best").assertCountEquals(2)
             compose.onNodeWithText("1 kg down since November").assertIsDisplayed()
-            compose.onNodeWithText("First workout · ${Readout.date(at("2026-12-01") + 1)}").assertIsDisplayed()
+            compose.onNodeWithText("First workout · ${Readout.date(at("2026-12-01") + 1).spelled()}").assertIsDisplayed()
         } } finally { scope.cancel() }
     }
 }

@@ -4,6 +4,7 @@ import React from 'react';
 import { useAuth } from '../auth/AuthProvider.jsx';
 import { Avatar, BrandWordmark } from '../../design-system';
 import { previousLocation, returnToPreviousLocation } from '../navigation.js';
+import { t } from '../i18n/settings/index.js';
 
 // The shell supplies identity chrome; both modes retain the same return action.
 export function AccountChrome({ width = 460, bare = false, children }) {
@@ -26,20 +27,14 @@ export function AccountChrome({ width = 460, bare = false, children }) {
 
   const content = (
     <div style={{ ...card, width }}>
-      <style>{`
-        .wm-account-back { display:inline-flex; align-items:center; gap:8px; min-height:44px;
-          color:var(--text-link); font-size:var(--text-xs); font-weight:700; text-decoration:none; }
-        .wm-account-back:focus-visible { outline:2px solid var(--text-link); outline-offset:3px; border-radius:var(--radius-sm); }
-        .wm-account-escape { color:var(--text-tertiary); font-size:10px; font-weight:400; }
-        @media (pointer:coarse) { .wm-account-escape { display:none; } }
-      `}</style>
+      <style>{CSS}</style>
       <div style={head}>
-        <a className="wm-account-back" href={previousLocation() ?? '/app'} title="Back (Esc)" onClick={(event) => {
+        <a className="wm-account-back" href={previousLocation() ?? '/app'} title={t('shell.account.backTitle')} onClick={(event) => {
           if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
           event.preventDefault();
           returnToPreviousLocation();
         }}>
-          <span aria-hidden="true">←</span> Back <span className="wm-account-escape" aria-hidden="true">Esc</span>
+          <span aria-hidden="true">←</span>{' '}{t('shell.account.back')}{' '}<span className="wm-account-escape" aria-hidden="true">{t('shell.account.escapeKey')}</span>
         </a>
         {!bare && <>
           <BrandWordmark size={22} style={mark} />
@@ -54,6 +49,14 @@ export function AccountChrome({ width = 460, bare = false, children }) {
 }
 
 export default AccountChrome;
+
+const CSS = `
+  .wm-account-back { display:inline-flex; align-items:center; gap:8px; min-height:44px;
+    color:var(--text-link); font-size:var(--text-xs); font-weight:700; text-decoration:none; }
+  .wm-account-back:focus-visible { outline:2px solid var(--text-link); outline-offset:3px; border-radius:var(--radius-sm); }
+  .wm-account-escape { color:var(--text-tertiary); font-size:10px; font-weight:400; }
+  @media (pointer:coarse) { .wm-account-escape { display:none; } }
+`;
 
 const shell = {
   position: 'fixed', inset: 0, display: 'flex', justifyContent: 'center', overflow: 'auto',

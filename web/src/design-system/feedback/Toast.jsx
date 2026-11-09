@@ -1,4 +1,5 @@
 import React from 'react';
+import { t } from '../i18n/index.js';
 
 // The tone is one edge and nothing else — the body stays the card, so a transient floating over a
 // page is never see-through.
@@ -59,8 +60,8 @@ export function Toast({ children, tone = 'success', onClose, action = null }) {
         <button
           type="button"
           onClick={onClose}
-          aria-label="Dismiss"
-          title="Dismiss"
+          aria-label={t('ds.toast.dismiss')}
+          title={t('ds.toast.dismiss')}
           style={{
             flex: 'none',
             width: 34,

@@ -1,4 +1,5 @@
 import { UnlockRules } from './UnlockRules.js';
+import { t } from '../i18n/index.js';
 
 // `now` is handed in so one bulk mark carries one moment.
 export function advanceProgress(progress, ids, target, now) {
@@ -38,7 +39,7 @@ export function milestoneAnnouncement(fresh) {
   const best = fresh.find((milestone) => milestone.kind === 'crown')
     ?? fresh.reduce((a, b) => (b.done > a.done ? b : a));
   if (best.kind === 'crown') {
-    return { summary: `Tree complete — ${best.total}/${best.total} steps.`, label: 'Share it' };
+    return { summary: t('roadmap.milestone.tree', { done: best.total, total: best.total }), label: t('roadmap.milestone.treeShare') };
   }
-  return { summary: `Branch complete: ${best.label} · ${best.done}/${best.total} steps`, label: 'Share the moment' };
+  return { summary: t('roadmap.milestone.branch', { branch: best.label, done: best.done, total: best.total }), label: t('roadmap.milestone.branchShare') };
 }

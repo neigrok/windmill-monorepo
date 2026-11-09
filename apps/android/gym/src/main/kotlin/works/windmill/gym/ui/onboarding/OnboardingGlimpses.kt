@@ -35,6 +35,8 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.drawscope.translate
+import android.content.res.Resources
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -112,6 +114,7 @@ fun OnboardingGlimpse(page: Int, active: Boolean, reducedMotion: Boolean, modifi
     // The picture owns its type size; accessibility scale applies to the surrounding words.
     CompositionLocalProvider(LocalDensity provides Density(1f, 1f)) {
         val textMeasurer = rememberTextMeasurer(cacheSize = 48)
+        val resources = LocalContext.current.resources
         val workoutClock = painterResource(R.drawable.gym_clock)
         val sinceSetClock = painterResource(R.drawable.gym_stopwatch)
         Canvas(modifier.clearAndSetSemantics { }) {
@@ -119,7 +122,7 @@ fun OnboardingGlimpse(page: Int, active: Boolean, reducedMotion: Boolean, modifi
             val fit = minOf(size.width / 354f, size.height / naturalHeight)
             translate((size.width - 354f * fit) / 2f, (size.height - naturalHeight * fit) / 2f) {
                 scale(fit, fit, Offset.Zero) {
-                    val painter = GlimpsePainter(this, textMeasurer, dark, gym, workoutClock, sinceSetClock)
+                    val painter = GlimpsePainter(this, textMeasurer, dark, gym, workoutClock, sinceSetClock, resources)
                     when (page) {
                         0 -> painter.rooms(beat.value, reducedMotion)
                         1 -> painter.roadmap(beat.value, breath, reducedMotion)
@@ -181,6 +184,7 @@ private class GlimpsePainter(
     gymGlimpse: GymGlimpse,
     val workoutClock: Painter,
     val sinceSetClock: Painter,
+    val resources: Resources,
 ) {
     private val hues = GlimpsePalette(dark)
     val roadmap = hues.roadmap
@@ -259,7 +263,7 @@ private class GlimpsePainter(
     }
 
     fun caption(color: Color) {
-        text("EXAMPLE", 338f, 14f, 10, color, GymFonts.jetBrainsMono, FontWeight.Medium, tracking = 1.2f, right = true)
+        text(resources.getString(R.string.onboarding_glimpse_example), 338f, 14f, 10, color, GymFonts.jetBrainsMono, FontWeight.Medium, tracking = 1.2f, right = true)
     }
 
     fun roadmap(progress: Float, breath: Float, reduced: Boolean) {
@@ -292,12 +296,12 @@ private class GlimpsePainter(
             listOf(terracotta, sky, gold).zip(locked).forEach { (kind, center) ->
                 node(center, 11f, kind.copy(alpha = 0.22f).compositeOver(roadmap.canvas), kind.copy(alpha = 0.35f), 1.5f)
             }
-            text("Learn to sail", 72f, 192f, 12, roadmap.ink, weight = FontWeight.SemiBold, centered = true, lineHeight = 16)
-            listOf("Knots & lines", "Rig the mast", "Points of sail").forEachIndexed { index, label ->
-                text(label, 176f, 106f + index * 84f, 12, roadmap.ink, weight = FontWeight.Medium, centered = true, lineHeight = 16)
+            text(resources.getString(R.string.onboarding_glimpse_learn_to_sail), 72f, 192f, 12, roadmap.ink, weight = FontWeight.SemiBold, centered = true, lineHeight = 16)
+            listOf(R.string.onboarding_glimpse_knots, R.string.onboarding_glimpse_rig_the_mast, R.string.onboarding_glimpse_points_of_sail).forEachIndexed { index, label ->
+                text(resources.getString(label), 176f, 106f + index * 84f, 12, roadmap.ink, weight = FontWeight.Medium, centered = true, lineHeight = 16)
             }
-            listOf("Capsize drill", "Reefing", "Read the wind").forEachIndexed { index, label ->
-                text(label, 282f, 80f + index * 84f, 12, roadmap.faint, weight = FontWeight.Medium, centered = true, lineHeight = 16)
+            listOf(R.string.onboarding_glimpse_capsize_drill, R.string.onboarding_glimpse_reefing, R.string.onboarding_glimpse_read_the_wind).forEachIndexed { index, label ->
+                text(resources.getString(label), 282f, 80f + index * 84f, 12, roadmap.faint, weight = FontWeight.Medium, centered = true, lineHeight = 16)
             }
             caption(roadmap.faint)
         }
@@ -307,22 +311,22 @@ private class GlimpsePainter(
         card(340f, journal.canvas, journal.line) {
             glow(Offset(177f, 371f), 220f, (if (dark) 0.18f else 0.12f) *
                 if (reduced) progress else easeGlow.transform(progress))
-            text("YESTERDAY", 24f, 22f, 10, journal.faint, GymFonts.jetBrainsMono, FontWeight.Medium, tracking = 1.2f)
-            text("Walked before work. Slept better than the week before.", 24f, 43f,
+            text(resources.getString(R.string.onboarding_glimpse_yesterday), 24f, 22f, 10, journal.faint, GymFonts.jetBrainsMono, FontWeight.Medium, tracking = 1.2f)
+            text(resources.getString(R.string.onboarding_glimpse_yesterday_page), 24f, 43f,
                 15, journal.dim, width = 306, lineHeight = 22)
             draw.drawCircle(lamp, 3f, Offset(27f, 125f))
-            text("Tonight", 38f, 117f, 14, journal.ink, GymFonts.nunito, FontWeight.ExtraBold, lineHeight = 18)
-            text("Finished the chapter I kept avoiding.\nLighter than expected", 24f, 144f,
+            text(resources.getString(R.string.onboarding_glimpse_tonight), 38f, 117f, 14, journal.ink, GymFonts.nunito, FontWeight.ExtraBold, lineHeight = 18)
+            text(resources.getString(R.string.onboarding_glimpse_tonight_page), 24f, 144f,
                 17, journal.ink, width = 306, lineHeight = 25)
             if (caret) draw.drawRoundRect(lamp, Offset(203f, 169f), Size(2f, 22f), CornerRadius(1f))
-            listOf("Mood" to 7, "Energy" to 5).forEachIndexed { index, (label, count) ->
-                text(label, 24f, 236f + index * 24f, 11, journal.faint.copy(alpha = 0.55f), lineHeight = 14)
+            listOf(R.string.onboarding_glimpse_mood to 7, R.string.onboarding_glimpse_energy to 5).forEachIndexed { index, (label, count) ->
+                text(resources.getString(label), 24f, 236f + index * 24f, 11, journal.faint.copy(alpha = 0.55f), lineHeight = 14)
                 repeat(count) { dot ->
                     draw.drawCircle(journal.faint.copy(alpha = 0.55f), 4.5f,
                         Offset(85f + dot * 18f, 243f + index * 24f), style = Stroke(0.8f))
                 }
             }
-            text("saved", 338f, 310f, 10, journal.faint, GymFonts.jetBrainsMono, tracking = 0.6f, right = true)
+            text(resources.getString(R.string.onboarding_glimpse_saved), 338f, 310f, 10, journal.faint, GymFonts.jetBrainsMono, tracking = 0.6f, right = true)
             caption(journal.faint)
         }
     }
@@ -331,7 +335,7 @@ private class GlimpsePainter(
         val elapsed = progress * 870f
         val done = if (reduced) 1f else easeStandard.transform(((elapsed - 150f) / 320f).coerceIn(0f, 1f))
         card(340f, gym.canvas, gym.line) {
-            text("Squat", 20f, 18f, 22, gym.ink, GymFonts.nunito, FontWeight.ExtraBold, lineHeight = 28)
+            text(resources.getString(R.string.onboarding_glimpse_squat), 20f, 18f, 22, gym.ink, GymFonts.nunito, FontWeight.ExtraBold, lineHeight = 28)
             listOf(workoutClock, sinceSetClock).forEachIndexed { index, icon ->
                 val left = 105f + index * 72f
                 draw.translate(left, 51f) {
@@ -346,22 +350,22 @@ private class GlimpsePainter(
                     draw.drawRoundRect(accentSoft, Offset(20f, top), Size(314f, 26f), CornerRadius(8f))
                     draw.drawRoundRect(accent, Offset(20f, top), Size(3f, 26f), CornerRadius(2f))
                 }
-                text(if (current) "Set 3" else "${index + 1}", 32f, top + 5f, 12,
+                text(if (current) resources.getString(R.string.onboarding_glimpse_set_3) else "${index + 1}", 32f, top + 5f, 12,
                     if (current) accent else gym.dim,
                     if (current) GymFonts.nunito else GymFonts.jetBrainsMono,
                     if (current) FontWeight.Bold else FontWeight.Normal, lineHeight = 16)
-                text("100 kg total × 5", 90f, top + 5f, 12, gym.dim, GymFonts.jetBrainsMono, lineHeight = 16)
+                text(resources.getString(R.string.onboarding_glimpse_set_line), 90f, top + 5f, 12, gym.dim, GymFonts.jetBrainsMono, lineHeight = 16)
                 check(Offset(318f, top + 13f), setDone,
                     progress = if (current) done else 1f, alpha = if (current) done else 1f)
             }
             text("100", 20f, 164f, 64, gym.ink, GymFonts.nunito, FontWeight.ExtraBold, lineHeight = 72, tracking = -1f)
-            text("kg total", 142f, 204f, 16, gym.dim, GymFonts.nunito, lineHeight = 22)
-            text("5 reps", 20f, 242f, 15, gym.ink, weight = FontWeight.Medium, lineHeight = 20)
+            text(resources.getString(R.string.onboarding_glimpse_kg_total), 142f, 204f, 16, gym.dim, GymFonts.nunito, lineHeight = 22)
+            text(resources.getString(R.string.onboarding_glimpse_five_reps), 20f, 242f, 15, gym.ink, weight = FontWeight.Medium, lineHeight = 20)
             val press = if (reduced || elapsed >= 150f) 1f else 1f - 0.03f *
                 (1f - kotlin.math.abs(elapsed - 75f) / 75f)
             draw.scale(press, press, Offset(177f, 298f)) {
                 draw.drawRoundRect(accent, Offset(20f, 276f), Size(314f, 44f), CornerRadius(16f))
-                text("Log set", 177f, 288f, 15, onAccent, GymFonts.nunito, FontWeight.ExtraBold,
+                text(resources.getString(R.string.onboarding_glimpse_log_set), 177f, 288f, 15, onAccent, GymFonts.nunito, FontWeight.ExtraBold,
                     centered = true, lineHeight = 20)
             }
             caption(gym.faint)
@@ -389,9 +393,9 @@ private class GlimpsePainter(
                 card(100f, palette.canvas, palette.line, 20f) {
                     val dot = when (index) { 0 -> terracotta; 1 -> lamp; else -> accent }
                     draw.drawCircle(dot, 3.5f, Offset(24f, 33f))
-                    text(listOf("Roadmap", "Journal", "Gym")[index], 36f, 22f, 18, palette.ink,
+                    text(resources.getString(listOf(R.string.onboarding_glimpse_roadmap, R.string.onboarding_glimpse_journal, R.string.onboarding_glimpse_gym)[index]), 36f, 22f, 18, palette.ink,
                         GymFonts.nunito, FontWeight.ExtraBold, lineHeight = 22)
-                    text(listOf("Map what you're learning", "Notice what happened", "Keep a training log")[index],
+                    text(resources.getString(listOf(R.string.onboarding_glimpse_roadmap_line, R.string.onboarding_glimpse_journal_line, R.string.onboarding_glimpse_gym_line)[index]),
                         36f, 50f, 13, palette.dim, lineHeight = 18)
                     when (index) {
                         0 -> {
@@ -420,7 +424,7 @@ private class GlimpsePainter(
                         2 -> {
                             text("100", 240f, 26f, 30, gym.ink, GymFonts.jetBrainsMono, FontWeight.Medium,
                                 lineHeight = 34, tracking = -1f)
-                            text("kg × 5", 240f, 62f, 11, gym.dim, GymFonts.jetBrainsMono)
+                            text(resources.getString(R.string.onboarding_glimpse_kg_by_five), 240f, 62f, 11, gym.dim, GymFonts.jetBrainsMono)
                             draw.drawCircle(accent, 11f, Offset(327f, 50f))
                             check(Offset(327f, 50f), onAccent)
                         }

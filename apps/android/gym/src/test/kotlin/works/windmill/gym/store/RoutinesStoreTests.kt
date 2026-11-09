@@ -17,6 +17,10 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import works.windmill.gym.spelled
 import works.windmill.domain.kit.ActionContext
 import works.windmill.domain.kit.ActionRunner
 import works.windmill.domain.kit.FixedZone
@@ -38,6 +42,8 @@ import works.windmill.gym.domain.sync.Routine as EngineRoutine
 import works.windmill.gym.domain.sync.RoutineEntry as EngineEntry
 import works.windmill.gym.domain.sync.SetTarget as EngineTarget
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class RoutinesStoreTests {
     @get:Rule
     val tmp = TemporaryFolder()
@@ -140,7 +146,7 @@ class RoutinesStoreTests {
 
             val why = (room.store.routines.create("Zercher Squat", "barbell", id = "ex_taken") as? GymResult.Failed)?.why
             assertEquals("a refused create is not a movement",
-                WriteFailure.Refused("already saved as Sled Push (machine) — choose it from the movement list"), why)
+                "already saved as Sled Push (machine) — choose it from the movement list", (why as WriteFailure.Refused).words.spelled())
             assertFalse(room.store.routines.catalog.any { it.name == "Zercher Squat" })
 
             val made = (room.store.routines.create("Zercher Squat", "barbell") as? GymResult.Ok)?.value
@@ -157,7 +163,7 @@ class RoutinesStoreTests {
             val pushA = pushAWaitingOnADiff(room, server)
 
             assertEquals(listOf("proposal1"), room.store.routines.pendingProposals.map { it.id })
-            assertEquals("Coach", room.store.routines.pendingProposals.single().source.name)
+            assertEquals("Coach", room.store.routines.pendingProposals.single().source.named.spelled())
             assertEquals("proposal1", room.store.routines.routine(pushA.id)?.pendingProposal?.id)
             runCurrent()
         }
@@ -177,8 +183,8 @@ class RoutinesStoreTests {
             assertTrue(room.store.routines.pendingProposals.isEmpty())
             val before = owed(room)
 
-            assertEquals(ProposalOutcome.Failed(WriteFailure.Refused("Sign in to review this proposal.")),
-                room.store.routines.applyProposal("proposal1"))
+            assertEquals("Sign in to review this proposal.",
+                ((room.store.routines.applyProposal("proposal1") as ProposalOutcome.Failed).why as WriteFailure.Refused).words.spelled())
             assertEquals("nothing was written", before, owed(room))
             runCurrent()
         }
@@ -219,7 +225,7 @@ class RoutinesStoreTests {
 
             val refused = deciding(room, server) { room.store.routines.dismissProposal("proposal1") }
 
-            assertEquals(ProposalOutcome.Settled("That proposal has already been decided."), refused)
+            assertEquals("That proposal has already been decided.", (refused as ProposalOutcome.Settled).words.spelled())
             assertTrue("the card goes with the decision it was waiting for", room.store.routines.pendingProposals.isEmpty())
             assertEquals("and the routine is the one the log now holds", "Push A — heavy",
                 room.store.routines.routine(pushA.id)?.name)
@@ -245,7 +251,7 @@ class RoutinesStoreTests {
             val refused = deciding(room, server) { room.store.routines.applyProposal("proposal1") }
 
             assertEquals("the log's own sentence, as sent",
-                ProposalOutcome.Moved("That proposal has been replaced."), refused)
+                "That proposal has been replaced.", (refused as ProposalOutcome.Moved).words.spelled())
             assertEquals("the routine was re-read, not argued with", 2, room.store.routines.routine(pushA.id)?.revision)
             assertTrue(room.store.routines.pendingProposals.isEmpty())
             assertEquals("the lifter's own 87.5 stands, and the triples the diff wanted never landed",
@@ -323,7 +329,7 @@ class RoutinesStoreTests {
 
             val refused = deciding(room, server) { room.store.routines.applyProposal("proposal1") }
 
-            assertEquals(ProposalOutcome.Refused("Load, 0 or more."), refused)
+            assertEquals("Load, 0 or more.", (refused as ProposalOutcome.Refused).words.spelled())
             assertEquals(listOf("gym_proposal_outcome" to mapOf("action" to "apply", "outcome" to "refused")),
                 events.filter { it.first == "gym_proposal_outcome" })
             assertEquals(ProposalState.Pending, room.training.proposal("proposal1")?.state)
@@ -338,8 +344,8 @@ class RoutinesStoreTests {
             pushAWaitingOnADiff(room, server)
             assertTrue(deciding(room, server) { room.store.routines.dismissProposal("proposal1") } is ProposalOutcome.Decided)
 
-            assertEquals(ProposalOutcome.Settled("That proposal has already been decided."),
-                deciding(room, server) { room.store.routines.applyProposal("proposal1") })
+            assertEquals("That proposal has already been decided.",
+                (deciding(room, server) { room.store.routines.applyProposal("proposal1") } as ProposalOutcome.Settled).words.spelled())
             assertTrue(deciding(room, server) { room.store.routines.dismissProposal("proposal1") } is ProposalOutcome.Decided)
             runCurrent()
         }
@@ -393,8 +399,8 @@ class RoutinesStoreTests {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("alice"); room.pull(EngineRoomFixture.server())
 
-            assertEquals(ProposalOutcome.Gone("that proposal is no longer on the log"),
-                room.store.routines.applyProposal("proposal_gone"))
+            assertEquals("that proposal is no longer on the log",
+                (room.store.routines.applyProposal("proposal_gone") as ProposalOutcome.Gone).words.spelled())
             assertEquals(ProposalRead.Gone, room.store.routines.proposal("proposal_gone"))
             runCurrent()
         }
@@ -449,10 +455,10 @@ class RoutinesStoreTests {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("alice")
 
-            assertEquals(GymResult.Failed(WriteFailure.Refused("a routine needs a name")),
-                room.store.routines.saveRoutine(RoutineDraft(name = "   ").adding("back-squat")))
-            assertEquals(GymResult.Failed(WriteFailure.Refused("a routine needs at least one movement")),
-                room.store.routines.saveRoutine(RoutineDraft(name = "Heavy Thursday")))
+            assertEquals("a routine needs a name",
+                ((room.store.routines.saveRoutine(RoutineDraft(name = "   ").adding("back-squat")) as GymResult.Failed).why as WriteFailure.Refused).words.spelled())
+            assertEquals("a routine needs at least one movement",
+                ((room.store.routines.saveRoutine(RoutineDraft(name = "Heavy Thursday")) as GymResult.Failed).why as WriteFailure.Refused).words.spelled())
             assertTrue("nothing written", room.outbox().isEmpty())
             runCurrent()
         }

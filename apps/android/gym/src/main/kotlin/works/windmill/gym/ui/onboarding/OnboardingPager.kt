@@ -1,5 +1,6 @@
 package works.windmill.gym.ui.onboarding
 
+import works.windmill.platform.R as PlatformR
 import works.windmill.gym.ui.overContainer
 import works.windmill.gym.ui.GymType
 import android.database.ContentObserver
@@ -44,6 +45,7 @@ private val titles = listOf(R.string.onboarding_title_windmill, R.string.onboard
     R.string.onboarding_title_journal, R.string.onboarding_title_gym)
 private val bodies = listOf(R.string.onboarding_body_windmill, R.string.onboarding_body_roadmap,
     R.string.onboarding_body_journal, R.string.onboarding_body_gym)
+private val kickers = listOf(null, R.string.onboarding_kicker_roadmap, R.string.onboarding_kicker_journal, R.string.onboarding_kicker_gym)
 private val locations = listOf(null, R.string.onboarding_roadmap_where,
     R.string.onboarding_journal_where, R.string.onboarding_gym_where)
 private val examples = listOf(R.string.onboarding_example_windmill, R.string.onboarding_example_roadmap,
@@ -149,7 +151,7 @@ fun OnboardingPager(replay: Boolean, onExit: () -> Unit, reducedMotion: Boolean?
             navigationIcon = {
                 if (replay) TextButton(onClick = { exit("closed") }, modifier = Modifier.semantics { traversalIndex = -2f }) {
                     Text("‹", color = accent, style = GymType.onboardingBackGlyph.overContainer(), modifier = Modifier.clearAndSetSemantics { })
-                    Text(stringResource(R.string.onboarding_back), color = accent,
+                    Text(stringResource(PlatformR.string.platform_back), color = accent,
                         style = GymType.actionLabel)
                 }
             },
@@ -183,13 +185,14 @@ fun OnboardingPager(replay: Boolean, onExit: () -> Unit, reducedMotion: Boolean?
                 }
                 Spacer(Modifier.height(28.dp))
                 Column(Modifier.fillMaxWidth().semantics { isTraversalGroup = false }, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    if (page > 0) Row(Modifier.semantics(mergeDescendants = true) { traversalIndex = 1f },
-                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Box(Modifier.size(7.dp).background(when (page) {
-                            1 -> glimpse.clay; 2 -> glimpse.lamp; else -> accent
-                        }, CircleShape))
-                        Text(screens[page].uppercase(), color = colors.onSurfaceVariant,
-                            style = GymType.onboardingKicker)
+                    kickers[page]?.let { kicker ->
+                        Row(Modifier.semantics(mergeDescendants = true) { traversalIndex = 1f },
+                            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Box(Modifier.size(7.dp).background(when (page) {
+                                1 -> glimpse.clay; 2 -> glimpse.lamp; else -> accent
+                            }, CircleShape))
+                            Text(stringResource(kicker), color = colors.onSurfaceVariant, style = GymType.onboardingKicker)
+                        }
                     }
                     Text(stringResource(titles[page]), color = colors.onSurface,
                         style = GymType.onboardingTitle,
@@ -231,7 +234,7 @@ fun OnboardingPager(replay: Boolean, onExit: () -> Unit, reducedMotion: Boolean?
                 .heightIn(min = 56.dp).semantics { traversalIndex = 7f },
             contentPadding = PaddingValues(horizontal = 24.dp, vertical = 16.dp),
             colors = ButtonDefaults.buttonColors(containerColor = accent, contentColor = colors.onPrimary)) {
-            Text(stringResource(if (pager.currentPage < 3) R.string.onboarding_next else if (replay) R.string.onboarding_done else R.string.onboarding_start),
+            Text(stringResource(if (pager.currentPage < 3) R.string.onboarding_next else if (replay) PlatformR.string.platform_done else R.string.onboarding_start),
                 style = GymType.actionLabel)
         }
     }

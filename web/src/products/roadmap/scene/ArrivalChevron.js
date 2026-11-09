@@ -1,5 +1,7 @@
 // Edge pill pointing at off-screen new arrivals; clicking it asks the scene to glide there.
 
+import { t } from '../i18n/index.js';
+
 const EDGE_INSET = 20; // screen px
 const LINGER_MS = 4200; // quiet ms before an unclicked chevron fades
 
@@ -39,7 +41,7 @@ export class ArrivalChevron {
     for (const node of nodes) { x += node.x; y += node.y; }
     const count = (this.target?.count ?? 0) + nodes.length;
     this.target = { x: x / nodes.length, y: y / nodes.length, count };
-    this.count.textContent = count === 1 ? 'new step' : `${count} new steps`;
+    this.count.textContent = t('roadmap.scene.arrivedSteps', { count });
     this.pill.style.opacity = '1';
     this.pill.style.pointerEvents = 'auto';
     clearTimeout(this.fadeTimer);
@@ -69,8 +71,8 @@ export class ArrivalChevron {
     const dy = sy - h / 2;
     const tx = dx !== 0 ? (dx > 0 ? w - EDGE_INSET - w / 2 : EDGE_INSET - w / 2) / dx : Infinity;
     const ty = dy !== 0 ? (dy > 0 ? h - EDGE_INSET - h / 2 : EDGE_INSET - h / 2) / dy : Infinity;
-    const t = Math.min(tx, ty);
-    this.pill.style.transform = `translate(${w / 2 + dx * t}px, ${h / 2 + dy * t}px) translate(-50%, -50%)`;
+    const reach = Math.min(tx, ty);
+    this.pill.style.transform = `translate(${w / 2 + dx * reach}px, ${h / 2 + dy * reach}px) translate(-50%, -50%)`;
     this.arrow.style.transform = `rotate(${Math.atan2(dy, dx)}rad)`;
   }
 

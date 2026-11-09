@@ -11,29 +11,31 @@ import { readComposeStream, shapeFailureLabels } from './composeStream.js';
 import { graftedStepCount } from './graftPlan.js';
 import { reportError } from '../../../telemetry/beacon.js';
 import { kindName } from '../model/Legend.js';
+import { LABELS } from '../copy.js';
+import { t } from '../i18n/index.js';
 
-const PLACEHOLDER = 'Paste anything — a to-do list, an outline, markdown checkboxes.';
+const PLACEHOLDER = t('roadmap.paste.placeholder');
 const AI_RESET_MS = 5000;
 const SHAPE_TIMEOUT_MS = 90000;  // the server's stream deadline; the abort tears the reader down
 const COMPOSE_TEXT_MAX_BYTES = 24576; // the server's cap — over it the handle never offers
 const AI_COPY = {
-  handle: 'Looks like notes — shape it into a plan',
-  handleAny: 'Shape this into a plan',
-  shape: 'Shape',
-  honesty: 'Sends your text to an AI model to draft the steps — only when you tap.',
-  more: 'What’s sent?',
-  less: 'Hide',
-  detail: 'Shaping sends the text in this box to a third-party AI model to draft a plan. It runs only when you tap Shape. Windmill doesn’t store the text or the result.',
-  shaping: 'Shaping your plan…',
-  cancel: 'Cancel',
-  kept: 'Your text — kept',
-  undo: 'Shaped into a plan · undo to go back',
-  stopped: 'Couldn’t finish shaping — here’s what arrived. Your text is safe, one undo away.',
-  rate: 'That’s a few in a row. Give it a minute and the shape offer comes back — your text is right here, untouched.',
-  fail: 'Couldn’t reach the model just now. Your text is exactly as you left it.',
-  long: 'Too long to shape',
-  retry: 'Try again',
-  undoDoor: 'Undo',
+  handle: t('roadmap.paste.shapeHandle'),
+  handleAny: t('roadmap.paste.shapeHandleAny'),
+  shape: t('roadmap.paste.shape'),
+  honesty: t('roadmap.paste.shapeHonesty'),
+  more: t('roadmap.paste.shapeMore'),
+  less: t('roadmap.paste.shapeLess'),
+  detail: t('roadmap.paste.shapeDetail'),
+  shaping: t('roadmap.paste.shaping'),
+  cancel: t('roadmap.common.cancel'),
+  kept: t('roadmap.paste.shapeKept'),
+  undo: t('roadmap.paste.shapeUndone'),
+  stopped: t('roadmap.paste.shapeStopped'),
+  rate: t('roadmap.paste.shapeRate'),
+  fail: t('roadmap.paste.shapeFail'),
+  long: t('roadmap.paste.shapeLong'),
+  retry: t('roadmap.common.tryAgain'),
+  undoDoor: t('roadmap.common.undo'),
 };
 
 // A 503 compose-unavailable hides the handle for the whole session, without a message.
@@ -308,22 +310,22 @@ export function PasteComposer({ text, onTextChange, kinds, onKindsChange, parse,
   };
 
   const steps = append ? graftedStepCount(parse) : parse.readout.steps;
-  const readout = [`${steps} step${steps === 1 ? '' : 's'}`];
-  if (parse.readout.branches > 0) readout.push(`${parse.readout.branches} branch${parse.readout.branches === 1 ? '' : 'es'}`);
-  if (parse.readout.done > 0) readout.push(`${parse.readout.done} already done`);
+  const readout = [t('roadmap.paste.steps', { count: steps })];
+  if (parse.readout.branches > 0) readout.push(t('roadmap.paste.branches', { count: parse.readout.branches }));
+  if (parse.readout.done > 0) readout.push(t('roadmap.paste.alreadyDone', { count: parse.readout.done }));
 
   const notes = parse.imperfections.filter((entry) => entry.type === 'note').length;
   const clamps = parse.imperfections.filter((entry) => entry.type === 'clamp').length;
   const renames = parse.imperfections.filter((entry) => entry.type === 'rename').length;
   const chip = [];
-  if (notes > 0) chip.push(`${notes} line${notes === 1 ? '' : 's'} → note${notes === 1 ? '' : 's'}`);
-  if (clamps > 0) chip.push(`${clamps} clamped`);
-  if (renames > 0) chip.push(`${renames} renamed`);
+  if (notes > 0) chip.push(t('roadmap.paste.notes', { count: notes }));
+  if (clamps > 0) chip.push(t('roadmap.paste.clamped', { count: clamps }));
+  if (renames > 0) chip.push(t('roadmap.paste.renamed', { count: renames }));
 
   const head = (
     <header className="pc-head">
-      <h2 className="pc-title">{append ? 'Add to this tree' : 'Paste a plan'}</h2>
-      <button type="button" className="pc-close" onClick={onClose} aria-label="Close">
+      <h2 className="pc-title">{append ? t('roadmap.paste.titleAppend') : t('roadmap.paste.title')}</h2>
+      <button type="button" className="pc-close" onClick={onClose} aria-label={LABELS.close}>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
       </button>
     </header>
@@ -356,7 +358,7 @@ export function PasteComposer({ text, onTextChange, kinds, onKindsChange, parse,
           placeholder={PLACEHOLDER}
           readOnly={planting || ai.phase === 'shaping'}
           spellCheck={false}
-          aria-label="Paste a plan"
+          aria-label={t('roadmap.paste.title')}
         />
       </div>
     </div>
@@ -364,8 +366,8 @@ export function PasteComposer({ text, onTextChange, kinds, onKindsChange, parse,
 
   const nameField = !append && parse.missingRoot && hasText && (
     <label className="pc-name">
-      <span>Give it a name to plant</span>
-      <input ref={nameRef} value={name} onChange={(event) => setName(event.target.value)} aria-label="Give it a name to plant" />
+      <span>{t('roadmap.paste.nameToPlant')}</span>
+      <input ref={nameRef} value={name} onChange={(event) => setName(event.target.value)} aria-label={t('roadmap.paste.nameToPlant')} />
     </label>
   );
 
@@ -380,7 +382,7 @@ export function PasteComposer({ text, onTextChange, kinds, onKindsChange, parse,
             </span>
           ))}
         </div>
-        <button type="button" className="pc-quiet" onClick={() => setLegendOpen((open) => !open)}>Edit legend</button>
+        <button type="button" className="pc-quiet" onClick={() => setLegendOpen((open) => !open)}>{t('roadmap.paste.editLegend')}</button>
       </div>
       {legendOpen && (
         <div className="pc-legend-editor">
@@ -468,7 +470,7 @@ export function PasteComposer({ text, onTextChange, kinds, onKindsChange, parse,
       )}
       {shapeZone}
       <button type="button" className="birth-plant pc-plant" disabled={!hasText || planting} onClick={plant}>
-        {planting ? (append ? 'Adding…' : 'Planting…') : (append ? 'Add to tree' : 'Plant')}
+        {planting ? (append ? t('roadmap.paste.adding') : t('roadmap.paste.planting')) : (append ? t('roadmap.paste.add') : t('roadmap.paste.plant'))}
         {!planting && <kbd className="pc-kbd">⌘↵</kbd>}
       </button>
     </footer>

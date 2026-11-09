@@ -1,5 +1,7 @@
 package works.windmill.gym.store
 
+import works.windmill.platform.i18n.Words
+import works.windmill.gym.R
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -23,7 +25,7 @@ import works.windmill.gym.presentation.SessionDetail
 import works.windmill.gym.presentation.SessionSummary
 import works.windmill.gym.presentation.StatsProgress
 import works.windmill.gym.presentation.TrainingSet
-import works.windmill.gym.store.TrainingSeat.Companion.accountChanged
+import works.windmill.gym.store.TrainingSeat.Companion.accountChange
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.sync.engine.Pulls
 
@@ -150,9 +152,9 @@ class HistoryReads(
         val owner = seat.owner
         val replica = controls.engineReplica
         if (!seat.accountReady || replica == null || replica != training.engine.activeReplica() || (owner == null) != training.anonymous)
-            return GymResult.Failed(WriteFailure.Refused(accountChanged))
+            return GymResult.Failed(WriteFailure.Refused(accountChange))
         val detail = try { seat.readTraining { shelfDetail(sessionId) ?: training.restoredSession(sessionId) } }
-        catch (_: TrainingReadChanged) { return GymResult.Failed(WriteFailure.Refused(accountChanged)) }
+        catch (_: TrainingReadChanged) { return GymResult.Failed(WriteFailure.Refused(accountChange)) }
         catch (cancelled: CancellationException) {
             if (!currentCoroutineContext().isActive) throw cancelled
             seat.reportFailure("gym.loadLog", cancelled)
@@ -162,7 +164,7 @@ class HistoryReads(
             return GymResult.Failed(WriteFailure.NoAnswer)
         }
         if (!seat.accountReady || owner != seat.owner || replica != controls.engineReplica || replica != training.engine.activeReplica() ||
-            (owner == null) != training.anonymous) return GymResult.Failed(WriteFailure.Refused(accountChanged))
+            (owner == null) != training.anonymous) return GymResult.Failed(WriteFailure.Refused(accountChange))
         if (detail == null) {
             if (closedDetails[sessionId] is Retained.Held) closedDetails = closedDetails + (sessionId to Retained.Gone)
         } else if (!detail.session.isOpen) retainClosed(detail)
@@ -230,7 +232,7 @@ class HistoryReads(
         progressWanted = true
         val owner = seat.owner
         return progressRead.withLock {
-            if (owner != seat.owner) return@withLock GymResult.Failed(WriteFailure.Refused("The account changed while reading."))
+            if (owner != seat.owner) return@withLock GymResult.Failed(WriteFailure.Refused(Words.Message(R.string.gym_store_account_changed_reading)))
             if (!force) progressCache?.let { return@withLock GymResult.Ok(it) }
             progressLoading = true
             progressFailure = null
@@ -238,7 +240,7 @@ class HistoryReads(
                 repeat(3) {
                     val revision = progressRevision
                     val read = seat.readTraining { training.progress() }
-                    if (owner != seat.owner) return@withLock GymResult.Failed(WriteFailure.Refused("The account changed while reading."))
+                    if (owner != seat.owner) return@withLock GymResult.Failed(WriteFailure.Refused(Words.Message(R.string.gym_store_account_changed_reading)))
                     if (revision == progressRevision) {
                         progressCache = read
                         return@withLock GymResult.Ok(read)
@@ -296,7 +298,7 @@ class HistoryReads(
         }
         if (detail == null) {
             if (closedDetails[sessionId] is Retained.Held) closedDetails = closedDetails + (sessionId to Retained.Gone)
-            return GymResult.Failed(WriteFailure.Refused("that session is no longer on the log"))
+            return GymResult.Failed(WriteFailure.Refused(Words.Message(R.string.gym_store_session_no_longer_on_log)))
         }
         val current = closedDetails[sessionId]
         if (current != before && current is Retained.Held) return GymResult.Ok(current.detail)
@@ -366,11 +368,11 @@ class HistoryReads(
     }
 
     suspend fun routineHistory(routineId: String): GymResult<List<SessionSummary>> {
-        if (!seat.accountReady) return GymResult.Failed(WriteFailure.Refused(accountChanged))
+        if (!seat.accountReady) return GymResult.Failed(WriteFailure.Refused(accountChange))
         return try {
             GymResult.Ok(seat.readTraining { training.routineHistory(routineId) })
         } catch (_: TrainingReadChanged) {
-            GymResult.Failed(WriteFailure.Refused(accountChanged))
+            GymResult.Failed(WriteFailure.Refused(accountChange))
         } catch (cancelled: CancellationException) {
             if (!currentCoroutineContext().isActive) throw cancelled
             seat.reportFailure("gym.routineHistory", cancelled)
@@ -390,7 +392,7 @@ class HistoryReads(
         return try {
             if (!seat.accountReady) return RecordRead.Superseded
             if (replica != training.engine.activeReplica() || (owner == null) != training.anonymous)
-                return RecordRead.Failed(WriteFailure.Refused(accountChanged))
+                return RecordRead.Failed(WriteFailure.Refused(accountChange))
             val read = try {
                 seat.readTraining {
                     training.record(exerciseId)?.let { record ->
@@ -400,9 +402,9 @@ class HistoryReads(
                 }
             } catch (_: TrainingReadChanged) {
                 if (owner != seat.owner || replica != seat.replica || replica != training.engine.activeReplica() ||
-                    (owner == null) != training.anonymous) return RecordRead.Failed(WriteFailure.Refused(accountChanged))
+                    (owner == null) != training.anonymous) return RecordRead.Failed(WriteFailure.Refused(accountChange))
                 return RecordRead.Superseded
-            } ?: return RecordRead.Failed(WriteFailure.Refused("that movement is no longer on the log"))
+            } ?: return RecordRead.Failed(WriteFailure.Refused(Words.Message(R.string.gym_store_movement_no_longer_on_log)))
             RecordRead.Ready(read)
         } catch (cancelled: CancellationException) {
             if (!currentCoroutineContext().isActive) throw cancelled
@@ -419,8 +421,8 @@ class HistoryReads(
         val owner = seat.owner
         val result = try {
             if (!seat.workoutAuthorized || expectedAccountKey != seat.accountKey || expectedReplica == null)
-                throw TrainingRefused("account-changed", accountChanged)
-            Program.nameProblem(name)?.let { throw TrainingRefused("invalid", it) }
+                throw TrainingRefused.accountChanged()
+            Program.nameRefusal(name)?.let { throw TrainingRefused("invalid", Words.Message(it)) }
             val edited = training.editExercise(exerciseId, name, equipment, loadCount, base, expectedReplica, owner == null)
             if (owner == seat.owner) invalidateProgress()
             GymResult.Ok(edited)

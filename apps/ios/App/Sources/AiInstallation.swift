@@ -82,7 +82,7 @@ struct KeychainInstallationError: Error {}
       if let credential = try credentials.read() { return credential }
     } catch {
       telemetry.failure("keychain_read", kind: "keychain")
-      throw AppFailure(message: "Coach couldn’t read this phone’s AI access. Try again after unlocking your phone.")
+      throw AppFailure(message: String(localized: "Coach couldn’t read this phone’s AI access. Try again after unlocking your phone."))
     }
     if let issue { return try await issue.value }
     resolvedAccount = nil
@@ -125,7 +125,7 @@ struct KeychainInstallationError: Error {}
     do { try credentials.write(credential); pendingCredential = nil; resolvedAccount = nil }
     catch {
       telemetry.failure("keychain_save", kind: "keychain")
-      throw AppFailure(message: "Coach couldn’t save this phone’s AI access. Try again.")
+      throw AppFailure(message: String(localized: "Coach couldn’t save this phone’s AI access. Try again."))
     }
   }
 
