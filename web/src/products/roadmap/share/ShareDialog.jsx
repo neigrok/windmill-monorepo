@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Dialog, Button } from '../../../design-system';
+import { AuthError } from '../../../shell/auth/AuthClient.js';
 import { setVisibility } from '../persistence/TreeRegistry.js';
 import { reportUnexpectedFailure } from '../reportFailure.js';
 import { track } from '../../../telemetry/beacon.js';
@@ -8,6 +9,14 @@ import { t } from '../i18n/index.js';
 // A roadmap's public address, or null for one with no id yet; a step's link adds its `?step=` to this.
 export function treeShareUrl(treeId) {
   return treeId && treeId !== 'new' ? `${window.location.origin}/t/${treeId}` : null;
+}
+
+// Why a visibility change failed, in the dialog's words for what it knows, else in the server's own.
+function refusalReason(failure, act) {
+  if (failure?.code === 'unreachable') return t('roadmap.share.unreachable');
+  if (failure?.code === 'unauthenticated') return t('roadmap.share.signInToChangeVisibility');
+  if (failure instanceof AuthError) return (failure.said ?? t('roadmap.share.visibilityFailed')) || act;
+  return failure?.message || act;
 }
 
 export function ShareDialog({ open, onClose, treeId, visibility, mine, onStanceChange }) {
@@ -48,7 +57,7 @@ export function ShareDialog({ open, onClose, treeId, visibility, mine, onStanceC
       track('roadmap_verb', { verb: 'share', step: 'publish', outcome: 'failed' });
       reportUnexpectedFailure('roadmap-share', failure);
       if (!mounted.current) return;
-      setError(t('roadmap.share.tryAgain', { reason: failure.message || t('roadmap.share.publishFailed') }));
+      setError(t('roadmap.share.tryAgain', { reason: refusalReason(failure, t('roadmap.share.publishFailed')) }));
       pending.current = false;
       setBusy(false);
       return;
@@ -85,7 +94,7 @@ export function ShareDialog({ open, onClose, treeId, visibility, mine, onStanceC
       track('roadmap_verb', { verb: 'share', step: 'private', outcome: 'failed' });
       reportUnexpectedFailure('roadmap-share', failure);
       if (!mounted.current) return;
-      setError(t('roadmap.share.tryAgain', { reason: failure.message || t('roadmap.share.makePrivateFailed') }));
+      setError(t('roadmap.share.tryAgain', { reason: refusalReason(failure, t('roadmap.share.makePrivateFailed')) }));
     } finally {
       pending.current = false;
       if (mounted.current) setBusy(false);

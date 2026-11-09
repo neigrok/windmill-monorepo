@@ -4,7 +4,6 @@
 import { AuthError } from '../../../shell/auth/AuthClient.js';
 import { API_BASE } from '../../../shell/apiBase.js';
 import { LocalTreeRegistry, resolveDeviceOwner } from './LocalTreeRegistry.js';
-import { t } from '../i18n/index.js';
 
 // One row per owned roadmap: { id, title, done, total, updatedAt }.
 export async function listTrees() {
@@ -72,12 +71,12 @@ export async function createTree(request) {
       credentials: 'include',
     });
   } catch {
-    throw new AuthError(t('roadmap.registry.unreachable'), { code: 'unreachable', status: 0 });
+    throw new AuthError('Network request failed', { code: 'unreachable', status: 0 });
   }
   if (response.ok) return response.json();
-  if (response.status === 401) throw new AuthError(t('roadmap.registry.signInToPlant'), { code: 'unauthenticated', status: 401 });
+  if (response.status === 401) throw new AuthError('Sign in to plant a roadmap', { code: 'unauthenticated', status: 401 });
   const body = await response.json().catch(() => ({}));
-  throw new AuthError(body.error ?? t('roadmap.registry.plantFailed'), { code: body.code, status: response.status });
+  throw new AuthError('Could not plant the roadmap', { code: body.code, said: body.error, status: response.status });
 }
 
 // Retitle a roadmap (PATCH /v1/trees/:id, 204). The server trims and refuses a blank.
@@ -91,12 +90,12 @@ export async function renameTree(treeId, title) {
       credentials: 'include',
     });
   } catch {
-    throw new AuthError(t('roadmap.registry.unreachable'), { code: 'unreachable', status: 0 });
+    throw new AuthError('Network request failed', { code: 'unreachable', status: 0 });
   }
   if (response.ok) return;
-  if (response.status === 401) throw new AuthError(t('roadmap.registry.signInToRename'), { code: 'unauthenticated', status: 401 });
+  if (response.status === 401) throw new AuthError('Sign in to rename a roadmap', { code: 'unauthenticated', status: 401 });
   const body = await response.json().catch(() => ({}));
-  throw new AuthError(body.error ?? t('roadmap.registry.renameFailed'), { code: body.code, status: response.status });
+  throw new AuthError('Could not rename the roadmap', { code: body.code, said: body.error, status: response.status });
 }
 
 // Set a roadmap's visibility (PATCH /v1/trees/:id, 204). 'private' ⇒ owner-only reads;
@@ -111,13 +110,12 @@ export async function setVisibility(treeId, visibility) {
       credentials: 'include',
     });
   } catch {
-    throw new AuthError(t('roadmap.registry.unreachable'), { code: 'unreachable', status: 0 });
+    throw new AuthError('Network request failed', { code: 'unreachable', status: 0 });
   }
   if (response.ok) return;
-  if (response.status === 401) throw new AuthError(t('roadmap.registry.signInToChangeVisibility'), { code: 'unauthenticated', status: 401 });
+  if (response.status === 401) throw new AuthError('Sign in to change visibility', { code: 'unauthenticated', status: 401 });
   const body = await response.json().catch(() => ({}));
-  // `detail` carries the server's second line to the dialog.
-  throw new AuthError(body.error ?? t('roadmap.registry.visibilityFailed'), { code: body.code, detail: body.detail, status: response.status });
+  throw new AuthError('Could not change visibility', { code: body.code, said: body.error, detail: body.detail, status: response.status });
 }
 
 // Retire a roadmap (DELETE /v1/trees/:id, 204 — a soft delete; it leaves every list).
@@ -129,12 +127,12 @@ export async function deleteTree(treeId) {
       credentials: 'include',
     });
   } catch {
-    throw new AuthError(t('roadmap.registry.unreachable'), { code: 'unreachable', status: 0 });
+    throw new AuthError('Network request failed', { code: 'unreachable', status: 0 });
   }
   if (response.ok) return;
-  if (response.status === 401) throw new AuthError(t('roadmap.registry.signInToDelete'), { code: 'unauthenticated', status: 401 });
+  if (response.status === 401) throw new AuthError('Sign in to delete a roadmap', { code: 'unauthenticated', status: 401 });
   const body = await response.json().catch(() => ({}));
-  throw new AuthError(body.error ?? t('roadmap.registry.deleteFailed'), { code: body.code, status: response.status });
+  throw new AuthError('Could not delete the roadmap', { code: body.code, said: body.error, status: response.status });
 }
 
 // Forks a shared roadmap → { treeId }. The server mints the id; progress starts cleared.
@@ -148,13 +146,13 @@ export async function forkTree(sourceId) {
       credentials: 'include',
     });
   } catch {
-    throw new AuthError(t('roadmap.registry.unreachable'), { code: 'unreachable', status: 0 });
+    throw new AuthError('Network request failed', { code: 'unreachable', status: 0 });
   }
   if (response.ok) {
     const body = await response.json();
     return { treeId: body.data.id };
   }
-  if (response.status === 401) throw new AuthError(t('roadmap.registry.signInToFork'), { code: 'unauthenticated', status: 401 });
+  if (response.status === 401) throw new AuthError('Sign in to fork', { code: 'unauthenticated', status: 401 });
   const body = await response.json().catch(() => ({}));
-  throw new AuthError(body.error ?? t('roadmap.registry.forkFailed'), { code: body.code, status: response.status });
+  throw new AuthError('Could not fork the roadmap', { code: body.code, said: body.error, status: response.status });
 }
