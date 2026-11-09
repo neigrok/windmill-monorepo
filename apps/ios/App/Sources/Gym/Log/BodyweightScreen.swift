@@ -6,10 +6,10 @@ import GymDomain
 import SyncCore
 
 enum BodyweightLogInput {
-  static let notANumber = "That is not a number yet."
-  static let onePoint = "One decimal point only."
-  static let outOfRange = "Between 20 and 400 kg"
-  static let notAForecast = "A weigh-in is not a forecast — today or earlier."
+  static let notANumber = String(localized: "That is not a number yet.")
+  static let onePoint = String(localized: "One decimal point only.")
+  static let outOfRange = String(localized: "Between 20 and 400 kg")
+  static let notAForecast = String(localized: "A weigh-in is not a forecast — today or earlier.")
 
   enum Parsed: Equatable {
     case weight(Double)
@@ -67,10 +67,10 @@ extension GymModel {
           return violation.reason == .notANumber ? BodyweightLogInput.notANumber : BodyweightLogInput.outOfRange
         }
       }
-      return error ?? "That weigh-in could not be saved."
+      return error ?? String(localized: "That weigh-in could not be saved.")
     case .failed:
       telemetry.event("gym_action", properties: ["screen": "weigh_in", "action": action, "outcome": "failed"])
-      return accountTransition ? "Wait for the account change to finish." : "That weigh-in could not be saved. Try again."
+      return accountTransition ? String(localized: "Wait for the account change to finish.") : String(localized: "That weigh-in could not be saved. Try again.")
     }
   }
 
@@ -96,7 +96,7 @@ struct BodyweightScreen: View {
   @State private var correcting: Selection?
   // A weigh-in row reads its weight first, then its day: *82.5 kilograms, Sep 23*.
   static func spoken(_ entry: Bodyweight.Entry, dates: GymDate) -> String {
-    "\(BodyweightLogInput.kilograms(entry.kg)) kilograms, \(dates.day(entry.day))"
+    String(localized: "\(BodyweightLogInput.kilograms(entry.kg)) kilograms, \(dates.day(entry.day))")
   }
 
   var body: some View {
@@ -113,13 +113,13 @@ struct BodyweightScreen: View {
         } else if weight.stance == .holding {
           Section {
             VStack(alignment: .leading, spacing: 12) {
-              ChartWindowPicker(recent: "90 days", identifier: "gym-bodyweight-window", window: $window)
+              ChartWindowPicker(series: .bodyweight, identifier: "gym-bodyweight-window", window: $window)
               let chart = weight.chart(window == .recent ? .recent : .all)
-              let caption = window.line(recent: "90 days", holding: GymCount.of(chart.dots.count, "weigh-in"))
+              let caption = window.line(.bodyweight, holding: GymCount.of(chart.dots.count, .weighIn))
               if !chart.dots.isEmpty {
                 LogDatedChart(points: chart.dots.map { entry in
                   LogPlotPoint(id: entry.day.text, date: LogPresentation.date(entry.day), value: entry.kg,
-                               label: "\(BodyweightLogInput.kilograms(entry.kg)) kg · \(dates.day(entry.day))")
+                               label: String(localized: "\(BodyweightLogInput.kilograms(entry.kg)) kg · \(dates.day(entry.day))"))
                 }, from: LogPresentation.date(window == .recent ? weight.today.adding(days: -89) : chart.dots[0].day),
                 through: LogPresentation.date(weight.today), series: .bodyweight, dates: dates, caption: caption)
                 .accessibilityIdentifier("gym-bodyweight-chart")
@@ -139,7 +139,7 @@ struct BodyweightScreen: View {
               Button {
                 correcting = Selection(entry: entry)
               } label: {
-                GymRow(title: "\(BodyweightLogInput.kilograms(entry.kg)) kg", trailing: .fact(dates.day(entry.day), door: true))
+                GymRow(title: String(localized: "\(BodyweightLogInput.kilograms(entry.kg)) kg"), trailing: .fact(dates.day(entry.day), door: true))
               }
               .accessibilityLabel(Self.spoken(entry, dates: dates))
               .accessibilityHint("Correct this weigh-in")
@@ -278,7 +278,7 @@ struct WeighInSheet: View {
       Section {
         Button("Delete weigh-in", role: .destructive) {
           if gym.logDeleteWeighIn(day: entry.day) { dismiss() }
-          else { refusal = gym.error ?? "That weigh-in could not be deleted. Try again." }
+          else { refusal = gym.error ?? String(localized: "That weigh-in could not be deleted. Try again.") }
         }.accessibilityIdentifier("gym-weigh-in-delete")
       }
     }
@@ -342,7 +342,7 @@ struct WeighInSheet: View {
       if refusal == nil { saved = true; dismiss() }
     } catch {
       gym.report("gym_read", error)
-      refusal = "That weigh-in could not be read. Try again."
+      refusal = String(localized: "That weigh-in could not be read. Try again.")
     }
   }
 }

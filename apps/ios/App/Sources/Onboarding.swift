@@ -5,15 +5,16 @@ import SyncEngine
 nonisolated enum OnboardingPage: Int, CaseIterable {
   case windmill, roadmap, journal, gym
   var name: String { ["windmill", "roadmap", "journal", "gym"][rawValue] }
-  var title: String { ["Three ways to grow.", "Map what you're learning.", "A page a night.", "Log the set."][rawValue] }
-  var message: String {
+  var eyebrow: LocalizedStringResource? { [nil, "Roadmap", "Journal", "Gym"][rawValue] }
+  var title: LocalizedStringResource { ["Three ways to grow.", "Map what you're learning.", "A page a night.", "Log the set."][rawValue] }
+  var message: LocalizedStringResource {
     ["One account keeps them together. You can start without one.",
      "Your goal as a skill tree. Each step opens the next, and you watch it grow.",
      "Write a line or a page, in your own words. Nothing is graded or shared.",
      "Two taps a set, and next time your numbers are already there."][rawValue]
   }
-  var location: String? { [nil, "On the web", "In this app", "In this app"][rawValue] }
-  var example: String {
+  var location: LocalizedStringResource? { [nil, "On the web", "In this app", "In this app"][rawValue] }
+  var example: LocalizedStringResource {
     ["Example of three rooms: Roadmap, Journal, Gym",
      "Example of a skill tree: Learn to sail, three steps open, three locked",
      "Example of a journal page: yesterday above, tonight below, mood and energy unasked",
@@ -118,10 +119,10 @@ struct OnboardingScreen: View {
                 VStack(alignment: .leading, spacing: OnboardingPage.gap) {
                   if !typeSize.isAccessibilitySize { glimpse(item, height: layout.glimpse) }
                   VStack(alignment: .leading, spacing: 10) {
-                    if item != .windmill {
+                    if let eyebrow = item.eyebrow {
                       HStack(spacing: 8) {
                         Circle().fill(item == .roadmap ? OnboardingSpecimen.clayKind : item == .journal ? JournalPalette.lamp : GymPalette.accent).frame(width: 7, height: 7).accessibilityHidden(true)
-                        Text(item.name.uppercased()).font(ShellType.caption).foregroundStyle(ShellPalette.inkDim)
+                        Text(String(localized: eyebrow).uppercased()).font(ShellType.caption).foregroundStyle(ShellPalette.inkDim)
                           .accessibilityIdentifier("onboarding-eyebrow").accessibilitySortPriority(70)
                       }
                     }
@@ -208,7 +209,7 @@ struct OnboardingPageControl: UIViewRepresentable {
     control.currentPage = page.rawValue
     control.currentPageIndicatorTintColor = UIColor(ShellPalette.ink)
     control.pageIndicatorTintColor = UIColor(ShellPalette.inkResting)
-    control.accessibilityLabel = "Page \(page.rawValue + 1) of 4"
+    control.accessibilityLabel = String(localized: "Page \(page.rawValue + 1) of 4", locale: .copy, comment: "The introduction's page control: Page 2 of 4")
     context.coordinator.change = change
   }
   func makeCoordinator() -> Coordinator { Coordinator(change: change) }

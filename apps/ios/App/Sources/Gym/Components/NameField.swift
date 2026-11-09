@@ -37,8 +37,8 @@ struct NameField {
       return nil
     } catch {
       switch error.reason {
-      case .blank, .tooShort: return "Name it to save it."
-      case .tooLong(let max, _, _): return "Use \(max) characters or fewer."
+      case .blank, .tooShort: return String(localized: "Name it to save it.")
+      case .tooLong(let max, _, _): return String(localized: "Use \(max) characters or fewer.", locale: .copy)
       default: return nil
       }
     }

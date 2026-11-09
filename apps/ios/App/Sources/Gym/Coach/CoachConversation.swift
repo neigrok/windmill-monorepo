@@ -121,26 +121,29 @@ import SyncSchema
   func edit(_ text: String) {
     guard text != saved.text else { return }
     var next = saved; next.text = text
-    if !keep(next, failure: "Your draft couldn’t be saved. Try again.") { saved.text = text }
+    if !keep(next, failure: String(localized: "Your draft couldn’t be saved. Try again.")) { saved.text = text }
   }
   func addPhoto(_ data: Data) throws {
     let (attachment, bytes) = try CoachPhotoPreparation.prepare(data)
     var next = saved; next.photo = attachment; next.photoData = bytes
-    if keep(next, failure: "Your draft couldn’t be saved. Try again.") { gym.telemetry.event("gym_setup_step", properties: ["screen": "coach", "action": "photo_selected"]) }
+    if keep(next, failure: String(localized: "Your draft couldn’t be saved. Try again.")) { gym.telemetry.event("gym_setup_step", properties: ["screen": "coach", "action": "photo_selected"]) }
   }
   func removePhoto() {
     var next = saved; next.photo = nil; next.photoData = nil
-    if keep(next, failure: "Your draft couldn’t be saved. Try again.") { gym.telemetry.event("gym_setup_step", properties: ["screen": "coach", "action": "photo_removed"]) }
+    if keep(next, failure: String(localized: "Your draft couldn’t be saved. Try again.")) { gym.telemetry.event("gym_setup_step", properties: ["screen": "coach", "action": "photo_removed"]) }
   }
   @discardableResult func chooseSetup(_ choice: CoachSetupChoice) -> Bool {
     guard allowed, draftReadable, !asking else { return false }
     var next = saved; next.setupChoice = choice
-    guard keep(next, failure: "Your setup choice couldn’t be saved. Try again.") else { return false }
+    guard keep(next, failure: String(localized: "Your setup choice couldn’t be saved. Try again.")) else { return false }
     gym.telemetry.event("gym_setup_step", properties: ["screen": "coach", "action": choice.rawValue])
     return true
   }
   func noteOffline() {
     if offline, !asking, error == nil { error = CoachCopy.offline }
+  }
+  func noteOnline() {
+    if MessageCause(error) == .coachOffline { error = nil }
   }
 
   // MARK: - A turn
@@ -154,7 +157,7 @@ import SyncSchema
     let photo = saved.photo.flatMap { attachment in saved.photoData.map { (attachment, $0) } }
     let picture: CoachPictureRow?
     do { picture = try saved.photo.flatMap { photo in try saved.photoData.map { try CoachPhotoPreparation.modelCopy(of: $0, attachment: photo) } } }
-    catch { self.error = (error as? AppFailure)?.message ?? "That photo is unavailable. Remove it and choose it again."; return }
+    catch { self.error = (error as? AppFailure)?.message ?? String(localized: "That photo is unavailable. Remove it and choose it again."); return }
     let owner = owner, before = saved.threadId
     sending = true; error = nil
     Task {
@@ -183,7 +186,7 @@ import SyncSchema
       next.conversation = nil; next.threadId = UUID().uuidString
       try? store.remove(saved.threadId, account: owner)
     }
-    keep(next, failure: "Your message couldn’t be saved. Try again.")
+    keep(next, failure: String(localized: "Your message couldn’t be saved. Try again."))
     observe()
   }
 
@@ -194,7 +197,7 @@ import SyncSchema
     next.conversation = turn.thread.description; next.threadId = turn.thread.description
     next.text = ""; next.photo = nil; next.photoData = nil; next.acceptedFirstMessage = true
     if previous != next.threadId { try? store.remove(previous, account: owner) }
-    keep(next, failure: "Your message couldn’t be saved. Try again.")
+    keep(next, failure: String(localized: "Your message couldn’t be saved. Try again."))
     observe()
   }
 
@@ -208,7 +211,7 @@ import SyncSchema
   @discardableResult func preserveCurrent() -> Bool {
     guard allowed, draftReadable else { return false }
     guard saved.hasContent else { return true }
-    return keep(saved, failure: "Your conversation couldn’t be kept. Try again.")
+    return keep(saved, failure: String(localized: "Your conversation couldn’t be kept. Try again."))
   }
 
   // A fresh canvas: the conversation on screen stays in the archive, and the next one starts with the owner's marks alone.
@@ -219,7 +222,7 @@ import SyncSchema
     }
     var next = saved.carried; next.text = seed
     do { try store.deselect(account: owner) } catch {
-      self.error = "Your new conversation couldn’t be opened. Try again."
+      self.error = String(localized: "Your new conversation couldn’t be opened. Try again.")
       gym.report("gym_action", error)
       gym.telemetry.event("gym_action", properties: ["screen": "coach", "action": "new_chat", "door": door, "outcome": "failed"])
       return false
@@ -251,7 +254,7 @@ import SyncSchema
       gym.telemetry.event("gym_action", properties: ["screen": "history", "action": "open_conversation", "outcome": "ok"])
       return true
     } catch {
-      self.error = "Your conversation couldn’t be opened. Try again."
+      self.error = String(localized: "Your conversation couldn’t be opened. Try again.")
       gym.report("gym_read", error)
       gym.telemetry.event("gym_action", properties: ["screen": "history", "action": "open_conversation", "outcome": "failed"])
       return false
@@ -290,7 +293,7 @@ import SyncSchema
         observe()
       } else { try store.remove(id, account: owner) }
     } catch {
-      self.error = "Your deleted conversation couldn’t be cleared. Try again."
+      self.error = String(localized: "Your deleted conversation couldn’t be cleared. Try again.")
       gym.report("gym_action", error)
       gym.telemetry.event("gym_action", properties: ["screen": "history", "action": "delete_conversation", "outcome": "failed"])
       return false

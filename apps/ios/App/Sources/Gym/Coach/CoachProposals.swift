@@ -47,7 +47,7 @@ extension Proposal {
   // Who proposed it, said on the Routines row and under its sheet's title: Coach, the tool's name, or *a connected tool*.
   nonisolated var sourceName: String {
     if case .ask = provenance { return "Coach" }
-    return toolName ?? "a connected tool"
+    return toolName ?? String(localized: "a connected tool")
   }
   // The symbol beside that name on its Routines row and its sheet: Coach's bubbles, a connected tool's link (02L.1P).
   nonisolated var sourceSymbol: String {
@@ -107,8 +107,8 @@ extension GymModel {
     case "workout-moved": moved.map { .workoutMoved($0.exerciseId) } ?? .workoutChanged
     default: nil
     }
-    guard let reason else { return "This suggestion is out of date. Nothing was applied." }
-    return CoachCopy.outOfDateReason(reason, routine: routine.flatMap { $0.baseName ?? coachRoutine($0)?.name } ?? "The routine", catalogue: catalogue)
+    guard let reason else { return String(localized: "This suggestion is out of date. Nothing was applied.") }
+    return CoachCopy.outOfDateReason(reason, routine: routine.flatMap { $0.baseName ?? coachRoutine($0)?.name } ?? String(localized: "The routine"), catalogue: catalogue)
   }
   func updateCoachProposals(_ read: CoachProposalsRead) {
     if proposalReadReplica != read.replica || isAnonymous {
@@ -188,7 +188,7 @@ extension GymModel {
     } catch { report("gym_action", error) }
   }
   func coachDecideProposal(_ proposal: Proposal, apply: Bool) -> Bool {
-    guard coachAccountAvailable, !authPaused else { error = "Sign in to review this proposal."; return false }
+    guard coachAccountAvailable, !authPaused else { error = String(localized: "Sign in to review this proposal."); return false }
     start()
     stalledCoachDecisions.remove(proposal.id); refusedCoachApplies.remove(proposal.id)
     let decision: CoachQueuedDecision = apply ? .apply : .reject
@@ -208,7 +208,7 @@ extension GymModel {
   func coachRoutine(_ proposal: Proposal) -> Routine? { routines.first { $0.id == proposal.routineId } }
   // A change block's title on either card: its movement's name, none for a rename.
   func coachTitle(_ block: ProposalDiff.Block) -> String? {
-    block.exerciseId.map { catalogue.find($0)?.name ?? "Movement unavailable" }
+    block.exerciseId.map { catalogue.find($0)?.name ?? String(localized: "Movement unavailable") }
   }
   // Out of date, it can no longer be applied: the domain's own Apply rule says so (readCoachProposals).
   func coachProposalOutOfDate(_ proposal: Proposal) -> Bool { outOfDateProposals[proposal.id] != nil }
@@ -255,7 +255,7 @@ extension GymModel {
     }
     let receipt = coachRemovalReceipts.contains { $0.proposal.id == proposal.id && $0.outcome == .refused }
     guard notice != nil || receipt || refusedCoachApplies.contains(proposal.id) else { return nil }
-    return CoachCopy.notApplied(notice?.refusal, routine: proposal.baseName ?? coachRoutine(proposal)?.name ?? "The routine")
+    return CoachCopy.notApplied(notice?.refusal, routine: proposal.baseName ?? coachRoutine(proposal)?.name ?? String(localized: "The routine"))
   }
   // Whether the engine says a decision could not reach the log: no network, or a push that got no answer. A wait alone
   // never says so.
@@ -287,7 +287,7 @@ extension GymModel {
   // Apply rewrites the running plan at once and the log confirms it; Reject sets the change aside. Neither touches a
   // routine. Its event waits for the log's answer while the decision is queued.
   func coachDecideWorkoutProposal(_ proposal: WorkoutProposal, apply: Bool) -> Bool {
-    guard coachAccountAvailable, !authPaused else { error = "Sign in to review this proposal."; return false }
+    guard coachAccountAvailable, !authPaused else { error = String(localized: "Sign in to review this proposal."); return false }
     start()
     let decision: CoachQueuedDecision = apply ? .apply : .reject
     let outcome = apply ? run(ApplyWorkoutProposal(proposal.id)) : run(DismissWorkoutProposal(proposal.id))

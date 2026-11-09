@@ -15,16 +15,16 @@ nonisolated enum LogPresentation {
     LocalDay(Instant(date), offsetSeconds: TimeZone.current.secondsFromGMT(for: date))
   }
   // A month moment's line, its own month: *Trained every week of February*.
-  static func trainedEvery(_ month: LocalDay, dates: GymDate) -> String { "Trained every week of \(dates.month(month))" }
+  static func trainedEvery(_ month: LocalDay, dates: GymDate) -> String { String(localized: "Trained every week of \(dates.month(month))") }
   static func sessionFacts(_ readout: SessionReadout) -> String {
-    [GymCount.of(readout.workingSetCount, "set"), readout.durationMs.map(Readout.duration)].compactMap { $0 }.joined(separator: " · ")
+    [GymCount.of(readout.workingSetCount, .set), readout.durationMs.map(Readout.duration)].compactMap { $0 }.joined(separator: " · ")
   }
   // A movement's line under its name on a finished session: what the plan held for it, or that the plan did not.
   static func planLine(_ exercise: ID<Exercise>, plan: SessionPlan?) -> String? {
     guard let plan else { return nil }
     let entries = plan.entries.filter { $0.exerciseId == exercise }
-    if entries.isEmpty { return "not in plan" }
-    return entries.count == 1 ? "plan \(Readout.target(entries[0].sets))" : nil
+    if entries.isEmpty { return String(localized: "not in plan") }
+    return entries.count == 1 ? String(localized: "plan \(Readout.target(entries[0].sets))", comment: "What a movement's plan holds: plan 3 × 5, or plan open") : nil
   }
   // A set against its slot in the plan, said only when it is off plan.
   static func comparison(_ set: TrainingSet, preceding: [TrainingSet], plan: SessionPlan?) -> String? {
@@ -36,13 +36,18 @@ nonisolated enum LogPresentation {
     let target = targets[slot]
     if let kg = target.weightKg, kg != 0 {
       let delta = WeightLadder.round(set.weightKg - kg)
-      if delta > 0 { return "+\(Readout.weight(delta)) over plan" }
-      if delta < 0 { return "\(Readout.weight(-delta)) under plan" }
+      if delta > 0 { return String(localized: "+\(Readout.weight(delta)) over plan") }
+      if delta < 0 { return String(localized: "\(Readout.weight(-delta)) under plan") }
     }
     if let reps = target.reps, set.reps < reps {
-      let difference = reps - set.reps
-      let words = [1: "one", 2: "two", 3: "three", 4: "four", 5: "five"]
-      return "\(words[difference] ?? String(difference)) short"
+      switch reps - set.reps {
+      case 1: return String(localized: "one short", comment: "A set one rep short of its plan")
+      case 2: return String(localized: "two short", comment: "A set two reps short of its plan")
+      case 3: return String(localized: "three short", comment: "A set three reps short of its plan")
+      case 4: return String(localized: "four short", comment: "A set four reps short of its plan")
+      case 5: return String(localized: "five short", comment: "A set five reps short of its plan")
+      case let difference: return String(localized: "\(difference) short", locale: .copy, comment: "A set that many reps short of its plan")
+      }
     }
     return nil
   }

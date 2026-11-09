@@ -1,7 +1,8 @@
 import argparse
-from dataclasses import dataclass
 from pathlib import Path
 import re
+
+from swift_tokens import tokens
 
 
 SOURCE_ROOTS = ("Sources", "WorkoutActivityWidget", "WorkoutActivityShared")
@@ -9,7 +10,6 @@ THEME = "Sources/Theme"
 PALETTES = "Sources/Theme/Palettes.swift"
 COLOUR_TYPES = {"Color", "UIColor", "NSColor", "CGColor", "CIColor"}
 COMPONENTS = {"red", "displayP3Red", "green", "blue", "white", "gray", "hue", "saturation", "brightness", "components"}
-TOKEN = re.compile(r"0[xX][0-9a-fA-F_]+|0[bB][01_]+|0[oO][0-7_]+|(?:[0-9][0-9_]*(?:\.[0-9_]+)?|\.[0-9]+)(?:[eE][+-]?[0-9_]+)?|[A-Za-z_][\w]*|\$[0-9]+|\S")
 COLOUR_NAME = re.compile(r"color|colour|palette|ramp|tint|accent|canvas|ink|lamp|rgb|hex|brand", re.IGNORECASE)
 NAMED_COLOURS = {"red", "orange", "yellow", "green", "mint", "teal", "cyan", "blue", "indigo", "purple", "pink",
                  "brown", "gray", "grey", "black", "white", "darkGray", "lightGray", "magenta"}
@@ -68,65 +68,6 @@ ALLOWED = [
     ("Sources/OnboardingGlimpses.swift", "static let unasked = JournalPalette.inkFaint.opacity(0.55)",
      "a specimen role, private to the glimpse: the mood and energy scales nobody has answered"),
 ]
-
-
-@dataclass(frozen=True)
-class Token:
-    value: str
-    line: int
-
-
-def tokens(source):
-    result = []
-    index = 0
-    line = 1
-    while index < len(source):
-        if source.startswith("//", index):
-            end = source.find("\n", index)
-            index = len(source) if end == -1 else end
-            continue
-        if source.startswith("/*", index):
-            depth = 1
-            index += 2
-            while depth and index < len(source):
-                if source.startswith("/*", index):
-                    depth += 1
-                    index += 2
-                elif source.startswith("*/", index):
-                    depth -= 1
-                    index += 2
-                else:
-                    line += source[index] == "\n"
-                    index += 1
-            continue
-        literal = re.match(r'(#+)?("""|")', source[index:])
-        if literal:
-            hashes = literal.group(1) or ""
-            quote = literal.group(2)
-            end_marker = quote + hashes
-            index += len(literal.group())
-            while index < len(source):
-                if source.startswith("\\" + hashes, index):
-                    escaped = len(hashes) + 2
-                    line += source[index:index + escaped].count("\n")
-                    index += escaped
-                elif source.startswith(end_marker, index):
-                    index += len(end_marker)
-                    break
-                else:
-                    line += source[index] == "\n"
-                    index += 1
-            result.append(Token('"string"', line))
-            continue
-        if source[index].isspace():
-            line += source[index] == "\n"
-            index += 1
-            continue
-        match = TOKEN.match(source, index)
-        value = match.group()
-        result.append(Token(value, line))
-        index = match.end()
-    return result
 
 
 def expressions(items):

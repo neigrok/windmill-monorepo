@@ -1,20 +1,21 @@
 import Foundation
+import SwiftUI
 import Testing
 @testable import Windmill
 
 extension CoachTests {
   @Test func theGreetingOffersOnlyWhatCoachDoes() {
-    let lines = { (signedIn: Bool) in CoachSetupView(signedIn: signedIn, choose: { _ in }).capabilities.map { "\($0.0) — \($0.1)" } }
+    let lines = { (signedIn: Bool) in CoachSetupView(signedIn: signedIn, choose: { _ in }).capabilities.map(\.line) }
     #expect(lines(true) == [
-      "Build — a program from a screenshot or your own words.",
-      "Goals — tell me your goals, and I will plan for them.",
-      "Notes — I save important facts, like an old injury.",
-      "Changes — ask me, and I suggest changes to your routines.",
+      Text("\(Text("Build").fontWeight(.semibold)) — a program from a screenshot or your own words."),
+      Text("\(Text("Goals").fontWeight(.semibold)) — tell me your goals, and I will plan for them."),
+      Text("\(Text("Notes").fontWeight(.semibold)) — I save important facts, like an old injury."),
+      Text("\(Text("Changes").fontWeight(.semibold)) — ask me, and I suggest changes to your routines."),
     ])
     #expect(lines(false) == [
-      "Build — a program from a screenshot or your own words.",
-      "Goals — tell me your goals, and I will plan for them.",
-      "Account — sign in, and I can also save notes and suggest changes to your routines.",
+      Text("\(Text("Build").fontWeight(.semibold)) — a program from a screenshot or your own words."),
+      Text("\(Text("Goals").fontWeight(.semibold)) — tell me your goals, and I will plan for them."),
+      Text("\(Text("Account").fontWeight(.semibold)) — sign in, and I can also save notes and suggest changes to your routines."),
     ])
     #expect(CoachSetupView.choices.map { "coach-setup-\($0.choice.rawValue) \($0.title)" }
             == ["coach-setup-screenshot Add screenshot", "coach-setup-build_manually Build my own"])

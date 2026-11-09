@@ -33,14 +33,14 @@ enum QuickAction: Equatable {
   var shortcut: UIApplicationShortcutItem {
     switch self {
     case .write:
-      UIApplicationShortcutItem(type: Self.prefix + item, localizedTitle: "Write tonight", localizedSubtitle: nil,
+      UIApplicationShortcutItem(type: Self.prefix + item, localizedTitle: String(localized: "Write tonight"), localizedSubtitle: nil,
                                 icon: UIApplicationShortcutIcon(systemImageName: "square.and.pencil"))
     case .start(let id, let name):
-      UIApplicationShortcutItem(type: Self.prefix + item, localizedTitle: "Start \(name)", localizedSubtitle: nil,
+      UIApplicationShortcutItem(type: Self.prefix + item, localizedTitle: String(localized: "Start \(name)", comment: "A Home Screen quick action: Start Push day"), localizedSubtitle: nil,
                                 icon: UIApplicationShortcutIcon(systemImageName: "dumbbell"),
                                 userInfo: ["routine": id.description as NSString, "name": name as NSString])
     case .openWorkout:
-      UIApplicationShortcutItem(type: Self.prefix + item, localizedTitle: "Open workout", localizedSubtitle: nil,
+      UIApplicationShortcutItem(type: Self.prefix + item, localizedTitle: String(localized: "Open workout"), localizedSubtitle: nil,
                                 icon: UIApplicationShortcutIcon(systemImageName: "dumbbell"))
     }
   }

@@ -18,8 +18,8 @@ struct MovementPlanLine: Equatable {
     self.restSeconds = restSeconds
     guard let sets, let first = sets.first else { facts = []; sequence = []; return }
     if SetTarget.straight(sets) {
-      facts = [Fact(symbol: "repeat", text: GymCount.of(sets.count, "set")),
-               Fact(symbol: "number", text: first.reps.map { GymCount.of($0, "rep") } ?? "Max reps"),
+      facts = [Fact(symbol: "repeat", text: GymCount.of(sets.count, .set)),
+               Fact(symbol: "number", text: first.reps.map { GymCount.of($0, .rep) } ?? String(localized: "Max reps")),
                Self.load(first.weightKg, equipment: equipment).map { Fact(symbol: "scalemass", text: $0) }].compactMap { $0 }
       sequence = []
     } else {
@@ -30,7 +30,7 @@ struct MovementPlanLine: Equatable {
 
   static func load(_ weightKg: Double?, equipment: MovementEquipment) -> String? {
     guard let weightKg else { return nil }
-    if equipment.kind == .bodyweight, weightKg == 0 { return "bodyweight" }
+    if equipment.kind == .bodyweight, weightKg == 0 { return String(localized: "bodyweight", comment: "A bodyweight movement's load with nothing added") }
     return "\(Readout.weight(weightKg)) \(equipment.unit)"
   }
 
@@ -39,8 +39,8 @@ struct MovementPlanLine: Equatable {
 
   // The line in one breath for VoiceOver: *3 sets, 8 reps, 60 kg total, rest 2 minutes*.
   var spoken: String {
-    let plan = isOpen ? ["Open plan"] : facts.isEmpty ? [sequence.joined(separator: ", then ")] : facts.map(\.text)
-    return (plan + [restSeconds.map { "rest \(WorkoutClocks.spoken(Int64($0) * 1_000))" }].compactMap { $0 }).joined(separator: ", ")
+    let plan = isOpen ? [String(localized: "Open plan")] : facts.isEmpty ? [sequence.joined(separator: String(localized: ", then ", comment: "Between two sets of a varied scheme read aloud"))] : facts.map(\.text)
+    return (plan + [restSeconds.map { String(localized: "rest \(WorkoutClocks.spoken(Int64($0) * 1_000))", comment: "A planned rest, read aloud: rest 2 minutes") }].compactMap { $0 }).joined(separator: ", ")
   }
 }
 
@@ -51,7 +51,7 @@ struct MovementRow: View {
   let entry: RoutineEntry
   var ordinal: Int?
 
-  var name: String { exercise?.name ?? "Movement unavailable" }
+  var name: String { exercise?.name ?? String(localized: "Movement unavailable") }
   var equipment: MovementEquipment { MovementEquipment(exercise) }
   var line: MovementPlanLine { MovementPlanLine(entry.sets, restSeconds: entry.restSeconds, equipment: equipment) }
 

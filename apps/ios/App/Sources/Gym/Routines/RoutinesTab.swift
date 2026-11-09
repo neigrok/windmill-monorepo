@@ -145,7 +145,7 @@ struct RoutineDetail: View {
                                description: Text("Everything you logged against it is still in the log."))
       }
     }.modifier(GymPage())
-      .navigationTitle(routine?.name ?? "Routine")
+      .navigationTitle(routine?.name ?? String(localized: "Routine"))
       .accessibilityIdentifier("routine-detail")
       .toolbar {
         ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() }.accessibilityIdentifier("routine-close") }
@@ -161,7 +161,7 @@ struct RoutineDetail: View {
         VStack(spacing: 0) {
           GymTransient(gym: gym)
           if let routine {
-            ActionBand(title: "Start", room: .gym, disabled: routine.entries.isEmpty || gym.accountTransition || gym.readFailed,
+            ActionBand(title: String(localized: "Start"), room: .gym, disabled: routine.entries.isEmpty || gym.accountTransition || gym.readFailed,
                        actionIdentifier: "routine-start", action: start)
           }
         }
@@ -199,21 +199,22 @@ struct RoutineSummarySheet: View {
 // What a routine, a waiting proposal and a past workout say on their rows.
 enum RoutineLines {
   static func routine(_ routine: Routine, lastTrained: Instant?, historyKnown: Bool, moment: Moment?) -> String {
-    let movements = GymCount.of(routine.entries.count, "movement")
-    if let lastTrained, let moment { return "\(movements) · trained \(Readout.ago(lastTrained, now: moment.now, zone: moment.zone))" }
-    return historyKnown ? "\(movements) · never trained" : movements
+    let movements = GymCount.of(routine.entries.count, .movement)
+    if let lastTrained, let moment { return "\(movements) · \(String(localized: "trained \(Readout.ago(lastTrained, now: moment.now, zone: moment.zone))", comment: "When a routine was last trained: trained 3 days ago"))" }
+    return historyKnown ? "\(movements) · \(String(localized: "never trained"))" : movements
   }
 
   // Who proposed it, then when the server stamped it: the time today, the day before that.
   static func proposal(_ proposal: Proposal, createdAt: Instant?, dates: GymDate?) -> String {
     let source = proposal.sourceName
-    guard let createdAt, let dates else { return "From \(source)" }
+    let from = String(localized: "From \(source)", comment: "Who proposed a change: From Coach")
+    guard let createdAt, let dates else { return from }
     let moment = dates.moment
-    return "From \(source) · \(LocalDay(createdAt, in: moment.zone) == moment.today ? dates.time(createdAt) : dates.day(createdAt))"
+    return "\(from) · \(LocalDay(createdAt, in: moment.zone) == moment.today ? dates.time(createdAt) : dates.day(createdAt))"
   }
 
   static func session(_ readout: SessionReadout) -> String {
-    "\(GymCount.of(readout.workingSetCount, "set")) · \(GymCount.of(readout.movementCount, "movement"))"
+    "\(GymCount.of(readout.workingSetCount, .set)) · \(GymCount.of(readout.movementCount, .movement))"
   }
 }
 

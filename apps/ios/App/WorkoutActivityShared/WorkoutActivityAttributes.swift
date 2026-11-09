@@ -35,7 +35,8 @@ nonisolated struct WorkoutActivityAttributes: ActivityAttributes, Sendable {
     var place: String? {
       guard !movement.isEmpty else { return nil }
       let planned = plannedWorkingSetCount.flatMap { $0 >= workingSetOrdinal ? $0 : nil }
-      return planned.map { "Set \(workingSetOrdinal) of \($0)" } ?? "Set \(workingSetOrdinal)"
+      return planned.map { String(localized: "Set \(workingSetOrdinal) of \($0)", locale: .copy, comment: "The set's place in the plan: Set 2 of 4") }
+        ?? String(localized: "Set \(workingSetOrdinal)", locale: .copy, comment: "The set's place past the plan, or without one: Set 5")
     }
 
     // The rest target as the app's facts row writes it, *2:00*; none without one.

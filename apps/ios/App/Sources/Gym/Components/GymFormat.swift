@@ -1,15 +1,28 @@
 import SwiftUI
 import DomainKit
 
-// The one place a count's noun agrees with its number.
+// The room's counted things, each a plural message in the String Catalog: *1 set*, *3 sets*.
 nonisolated enum GymCount {
-  static func of(_ count: Int, _ singular: String, plural: String? = nil) -> String {
-    "\(count) \(noun(count, singular, plural: plural))"
-  }
+  enum Noun { case set, rep, movement, workout, week, routine, note, weighIn, customMovement, change, suggestedChange, moreChange, hour, minute, second }
 
-  // The noun alone, for a label that stands beside its value: *1 · Set*.
-  static func noun(_ count: Int, _ singular: String, plural: String? = nil) -> String {
-    count == 1 ? singular : plural ?? singular + "s"
+  static func of(_ count: Int, _ noun: Noun) -> String {
+    switch noun {
+    case .set: String(localized: "\(count) sets", locale: .copy)
+    case .rep: String(localized: "\(count) reps", locale: .copy)
+    case .movement: String(localized: "\(count) movements", locale: .copy)
+    case .workout: String(localized: "\(count) workouts", locale: .copy)
+    case .week: String(localized: "\(count) weeks", locale: .copy)
+    case .routine: String(localized: "\(count) routines", locale: .copy)
+    case .note: String(localized: "\(count) notes", locale: .copy)
+    case .weighIn: String(localized: "\(count) weigh-ins", locale: .copy)
+    case .customMovement: String(localized: "\(count) custom movements", locale: .copy)
+    case .change: String(localized: "\(count) changes", locale: .copy)
+    case .suggestedChange: String(localized: "\(count) suggested changes", locale: .copy)
+    case .moreChange: String(localized: "\(count) more changes", locale: .copy)
+    case .hour: String(localized: "\(count) hours", locale: .copy)
+    case .minute: String(localized: "\(count) minutes", locale: .copy)
+    case .second: String(localized: "\(count) seconds", locale: .copy)
+    }
   }
 }
 
@@ -33,8 +46,10 @@ nonisolated struct GymDate {
 
   // *Sep 23*, the year only when it is not this one; *Today* and *Yesterday* as a value, lowercase inside a sentence.
   func day(_ day: LocalDay, inSentence: Bool = false) -> String {
-    let relative = day == moment.today ? "Today" : day == moment.today.adding(days: -1) ? "Yesterday" : nil
-    if let relative { return inSentence ? relative.lowercased() : relative }
+    if day == moment.today { return inSentence ? String(localized: "today", comment: "A day inside a sentence") : String(localized: "Today") }
+    if day == moment.today.adding(days: -1) {
+      return inSentence ? String(localized: "yesterday", comment: "A day inside a sentence") : String(localized: "Yesterday")
+    }
     return draw(day, dated(day, .dateTime.day().month(.abbreviated)))
   }
 

@@ -46,9 +46,9 @@ struct WorkoutInspectScreen: View {
         if gym.discardWorkout(id) { dismiss() }
       }
       // A landed workout's stranded sets are not drawn yet: they keep their own question.
-      .destructiveQuestion(gym, screen: "on_this_phone", title: "Discard this workout?",
-                           message: "This permanently removes the copy saved on this phone.",
-                           act: recovery?.discardTitle ?? "Discard workout", dialog: true, isPresented: $discardSets) {
+      .destructiveQuestion(gym, screen: "on_this_phone", title: String(localized: "Discard this workout?"),
+                           message: String(localized: "This permanently removes the copy saved on this phone."),
+                           act: recovery?.discardTitle ?? String(localized: "Discard workout"), dialog: true, isPresented: $discardSets) {
         if gym.discardWorkout(id) { dismiss() }
       }
       .reachBand { band(recovery) }
@@ -78,11 +78,11 @@ struct WorkoutInspectScreen: View {
         LabeledContent("Started", value: dates.time(start))
         LabeledContent("Finished", value: workout.session.finishedAt.map { end in
           LocalDay(end, in: dates.moment.zone) == LocalDay(start, in: dates.moment.zone) ? dates.time(end) : dates.dayAndTime(end)
-        } ?? "Not finished")
+        } ?? String(localized: "Not finished"))
       }.monospacedDigit()
     }
     ForEach(SetRow.movements(sets), id: \.self) { exercise in
-      Section(recovery?.movementNames[exercise] ?? gym.catalogue.find(exercise)?.name ?? "Missing movement") {
+      Section(recovery?.movementNames[exercise] ?? gym.catalogue.find(exercise)?.name ?? String(localized: "Missing movement")) {
         let performed = sets.filter { $0.exerciseId == exercise }
         ForEach(performed, id: \.id) { set in SetRow(marker: SetRow.marker(set, in: performed), set: set) }
       }

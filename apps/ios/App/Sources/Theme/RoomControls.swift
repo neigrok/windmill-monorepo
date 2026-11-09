@@ -65,7 +65,7 @@ struct ActionBand: View {
   let room: RoomColors
   var disabled = false
   var busy = false
-  var actionIdentifier: String?
+  let actionIdentifier: String
   var footer: String?
   var symbol: String?
   var role: ButtonRole?
@@ -81,7 +81,7 @@ struct ActionBand: View {
         }.frame(maxWidth: .infinity)
       }.buttonStyle(RoomPrimaryStyle(room: room))
         .disabled(disabled || busy)
-        .accessibilityIdentifier(actionIdentifier ?? title)
+        .accessibilityIdentifier(actionIdentifier)
       if let footer {
         Text(footer).font(.footnote).foregroundStyle(room.inkDim).multilineTextAlignment(.center)
           .fixedSize(horizontal: false, vertical: true)

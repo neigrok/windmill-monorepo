@@ -96,12 +96,18 @@ final class AppModel {
 
   enum Room: String, CaseIterable {
     case journal, gym
-    var title: String { self == .journal ? "Journal" : "Gym" }
+    var title: String { self == .journal ? String(localized: "Journal") : String(localized: "Gym") }
     var symbol: String { self == .journal ? "book.closed" : "dumbbell" }
   }
   enum Appearance: String, CaseIterable {
     case light, dark, system
-    var title: String { rawValue.capitalized }
+    var title: LocalizedStringResource {
+      switch self {
+      case .light: LocalizedStringResource("Light", comment: "An appearance the app can take: the light look")
+      case .dark: LocalizedStringResource("Dark", comment: "An appearance the app can take: the dark look")
+      case .system: "System"
+      }
+    }
     init(preferences: UserDefaults) { self = Appearance(rawValue: preferences.string(forKey: "appearance") ?? "") ?? .system }
   }
   enum Sheet: String, Identifiable {
@@ -183,7 +189,8 @@ final class AppModel {
   var updateTrigger: String { updateRequiredAtSignIn ? "sign_in" : "sync" }
   // Signed out nothing syncs: the update unlocks the sign-in.
   var updateMessage: String {
-    account == nil ? "Update Windmill to sign in. Your work is saved on this phone." : "Update Windmill to keep syncing. Your work is saved on this phone."
+    account == nil ? String(localized: "Update Windmill to sign in. Your work is saved on this phone.")
+      : String(localized: "Update Windmill to keep syncing. Your work is saved on this phone.")
   }
 
   // Once per launch while the flag holds; a sign-in refused for it asks again, as that attempt's answer.
@@ -229,13 +236,13 @@ final class AppModel {
   func openYou() { journal.done(); sheet = .you }
 
   // You's identity: the name, or the email when no name is set, and the account's one status.
-  var identityTitle: String { account == nil ? "Not signed in" : accountName.nilIfEmpty ?? accountEmail }
+  var identityTitle: String { account == nil ? String(localized: "Not signed in") : accountName.nilIfEmpty ?? accountEmail }
   var identityStatus: String? {
-    if updateRequired, account != nil || signInPending { return "Syncing paused · update Windmill" }
+    if updateRequired, account != nil || signInPending { return String(localized: "Syncing paused · update Windmill") }
     guard account != nil else { return nil }
-    if authPaused { return "Syncing paused · sign in again" }
+    if authPaused { return String(localized: "Syncing paused · sign in again") }
     let unsent = (runtime?.engine.status.ready ?? 0) + (runtime?.engine.status.sent ?? 0)
-    return unsent == 0 ? "Backed up" : "Not backed up yet"
+    return unsent == 0 ? String(localized: "Backed up") : String(localized: "Not backed up yet")
   }
   // The address is said once: How you sign in's Email row carries it only while the identity shows a name.
   var emailMethodValue: String? { accountName.isEmpty ? nil : accountEmail }
@@ -243,7 +250,7 @@ final class AppModel {
   // What each room keeps on this phone while signed out, one line for each room that holds something.
   var phoneHoldings: [(room: Room, summary: String)] {
     let pages = journal.room?.days.filter { $0.document.isWritten }.count ?? 0
-    let journalSummary = pages == 0 ? nil : "\(pages) \(pages == 1 ? "page" : "pages")"
+    let journalSummary = pages == 0 ? nil : String(localized: "\(pages) pages", locale: .copy, comment: "The written journal pages this phone holds, in You")
     return [(Room.journal, journalSummary), (Room.gym, gym.phoneSummary)].compactMap { room, summary in summary.map { (room, $0) } }
   }
   func openRoom(_ room: Room) {
@@ -321,7 +328,7 @@ final class AppModel {
       }
     } catch {
       polledThrough = nil
-      reportBoundary("auth_restore", error: error); self.error = "Couldn't read the account. Your work stays on this phone. Try again."
+      reportBoundary("auth_restore", error: error); self.error = String(localized: "Couldn't read the account. Your work stays on this phone. Try again.")
     }
   }
 
@@ -518,7 +525,7 @@ final class AppModel {
 
   func createAppleAccount() async {
     guard !working, pendingSignIn == nil, !expireAppleTicket(), let ticket = appleTicket, let auth = runtime?.auth else { return }
-    guard account == nil else { error = "Sign in to the same account to resume backup. Your pages stay with this account."; return }
+    guard account == nil else { error = Self.sameAccountRequired; return }
     choose("create_account", screen: sheet == .appleNoAccount ? "apple_no_account" : "23a"); authSelection += 1
     let generation = authGeneration
     working = true; accountTransition = true; error = nil
@@ -566,7 +573,7 @@ final class AppModel {
     guard !working, pendingSignIn == nil, let auth = runtime?.auth else { return }
     if expireAppleTicket() { return }
     if appleTicket != nil, account != nil, !accountEmail.isEmpty, email.lowercased() != accountEmail.lowercased() {
-      error = "Sign in to the same account to resume backup. Your pages stay with this account."; return
+      error = Self.sameAccountRequired; return
     }
     if sheet == .code, let sent = codeSentAt, Date().timeIntervalSince(sent) < 30 { return }
     if sheet == .code { choose("resend", screen: "code") }
@@ -586,7 +593,7 @@ final class AppModel {
     guard !working, pendingSignIn == nil, code.count == 6, let auth = runtime?.auth else { return }
     if expireAppleTicket() { return }
     if appleTicket != nil, account != nil, !accountEmail.isEmpty, email.lowercased() != accountEmail.lowercased() {
-      error = "Sign in to the same account to resume backup. Your pages stay with this account."; return
+      error = Self.sameAccountRequired; return
     }
     let generation = authGeneration
     working = true; error = nil
@@ -613,7 +620,7 @@ final class AppModel {
     try Task.checkCancellation()
     if let current = account, !current.utf8.elementsEqual(identity.account.utf8) {
       try? await runtime?.auth.logout(token: identity.token)
-      throw AppFailure(message: "Sign in to the same account to resume backup. Your pages stay with this account.")
+      throw AppFailure(message: Self.sameAccountRequired)
     }
     pendingSignIn = PendingSignIn(identity: identity, method: method, linked: identity.appleAttached || attachApple, needsAppleAttachment: attachApple, receiptPending: identity.appleAttached || attachApple)
     preferences.set(method, forKey: "pendingAuthMethod")
@@ -694,7 +701,7 @@ final class AppModel {
     do {
       if let account { _ = try runtime.prepareRevocation(account: account) }
       try runtime.engine.cancelSignIn()
-    } catch { reportBoundary("auth_sign_in", error: error); self.error = "Couldn't cancel the sign-in. Try again."; return }
+    } catch { reportBoundary("auth_sign_in", error: error); self.error = String(localized: "Couldn't cancel the sign-in. Try again."); return }
     pendingSignIn = nil; signInSession = nil; appleAuthorization = nil
     preferences.removeObject(forKey: "coachAdoptionSource"); preferences.removeObject(forKey: "coachAdoptionAccount"); preferences.removeObject(forKey: "coachAdoptionDiscard")
     restoringSignIn = false; signInDeferred = false; updateRequiredAtSignIn = false; error = nil
@@ -710,10 +717,10 @@ final class AppModel {
     let generation = authGeneration
     accountTransition = true; journal.editing = false
     defer { if authGeneration == generation { accountTransition = false } }
-    if !flushRooms() { throw AppFailure(message: "Save your work before signing in. Try again.") }
+    if !flushRooms() { throw AppFailure(message: String(localized: "Save your work before signing in. Try again.")) }
     if let current = account, !current.utf8.elementsEqual(identity.account.utf8) {
       try? await runtime.auth.logout(token: identity.token)
-      throw AppFailure(message: "Sign in to the same account to resume backup. Your pages stay with this account.")
+      throw AppFailure(message: Self.sameAccountRequired)
     }
     if gym.isAnonymous, let source = try? runtime.runner.read(Gym.scope, { "anonymous:" + $0.replica }) {
       if preferences.string(forKey: "coachAdoptionSource") != source || preferences.string(forKey: "coachAdoptionAccount") != identity.account {
@@ -776,7 +783,7 @@ final class AppModel {
     guard !accountTransition, var session = signOutSession, let runtime else { return }
     accountTransition = true; signingOut = true; journal.editing = false
     defer { accountTransition = false; signingOut = false }
-    let changed = "Something changed while you chose. Sign out again."
+    let changed = String(localized: "Something changed while you chose. Sign out again.")
     var revocation: String?
     do {
       if journal.dirty {
@@ -859,14 +866,17 @@ final class AppModel {
   }
 
   // Why Sign out did nothing when the phone itself failed it; a room that cannot save says so in its own words instead.
-  static let signOutFailed = "Couldn't sign out. Try again."
+  static let signOutFailed = String(localized: "Couldn't sign out. Try again.")
+  // Why a sign-in another account answered does not go on; the phone's work waits for its own account.
+  static let sameAccountRequired = String(localized: "Sign in to the same account to resume backup. Your pages stay with this account.")
+  // Why the sign-in question asks again: what the phone holds moved while it was open.
+  static let workChanged = String(localized: "The work changed. Choose again for the current counts.")
 
   // Sign out asks one question, and when the account has not confirmed some changes it says how many (16c, 16e).
   static func signOutMessage(unsent count: Int) -> String {
-    if count == 0 { return "Your pages and log stay in your account and leave this phone." }
-    let changes = count == 1 ? "1 change hasn’t" : "\(count) changes haven’t"
-    let them = count == 1 ? "it" : "them"
-    return "\(changes) been confirmed by your account yet. Keep \(them) on this phone until you sign in again, or discard \(them) from this phone."
+    if count == 0 { return String(localized: "Your pages and log stay in your account and leave this phone.") }
+    return String(localized: "\(count) changes haven’t been confirmed by your account yet. Keep them on this phone until you sign in again, or discard them from this phone.",
+                  locale: .copy, comment: "Sign out's question when the account has not confirmed some changes")
   }
 
   struct SavedAdoption: Codable {
@@ -894,12 +904,12 @@ final class AppModel {
   var adoptionQuestion: AdoptionQuestion { AdoptionQuestion(counts: adoptionCounts) }
 
   var adoptionAlertTitle: String {
-    if identityTaken { return "Apple ID already in use" }
+    if identityTaken { return String(localized: "Apple ID already in use") }
     return sheet == .discardAdoption ? adoptionQuestion.discardTitle : adoptionQuestion.title
   }
   var adoptionAlertMessage: String {
     if identityTaken { return AuthRefusal.identityTaken.message }
-    if pendingAdoptions.isEmpty { return "Your choices are kept. Try Add again to finish signing in." }
+    if pendingAdoptions.isEmpty { return String(localized: "Your choices are kept. Try Add again to finish signing in.") }
     return sheet == .discardAdoption ? adoptionQuestion.discardMessage : adoptionQuestion.message
   }
 
@@ -909,11 +919,11 @@ final class AppModel {
     case ok, add, discard, cancelSignIn, cancelDiscard, confirmDiscard
     var title: String {
       switch self {
-      case .ok: "OK"
-      case .add: "Add"
-      case .discard, .confirmDiscard: "Discard"
-      case .cancelSignIn: "Cancel sign-in"
-      case .cancelDiscard: "Cancel"
+      case .ok: String(localized: "OK")
+      case .add: String(localized: "Add")
+      case .discard, .confirmDiscard: String(localized: "Discard")
+      case .cancelSignIn: String(localized: "Cancel sign-in")
+      case .cancelDiscard: String(localized: "Cancel")
       }
     }
     var destructive: Bool { self == .discard || self == .confirmDiscard }
@@ -1009,7 +1019,7 @@ final class AppModel {
       guard flushRooms() else { return }
       do { try await completeAdoption(session) }
       catch EngineError.signInChanged { await recountAdoption() }
-      catch { if !Task.isCancelled { reportBoundary("auth_adopt", error: error); self.error = "Couldn't finish adding your work. Try again." } }
+      catch { if !Task.isCancelled { reportBoundary("auth_adopt", error: error); self.error = String(localized: "Couldn't finish adding your work. Try again.") } }
       return
     }
     let pending = asked
@@ -1023,9 +1033,9 @@ final class AppModel {
           session = recounted; setSignInSession(recounted)
         }
         if !session.isComplete, pendingAdoptions.isEmpty { try await completeAdoption(session); return }
-        if answer == .discard { sheet = .adoption; error = "The work changed. Choose again for the current counts."; return }
+        if answer == .discard { sheet = .adoption; error = Self.workChanged; return }
       }
-      guard pendingAdoptions == pending else { sheet = .adoption; error = "The work changed. Choose again for the current counts."; return }
+      guard pendingAdoptions == pending else { sheet = .adoption; error = Self.workChanged; return }
       var answers = adoptionAnswers
       for decision in pending { answers[decision.product] = answer }
       try saveAdoptionAnswers(answers, session: session)
@@ -1035,7 +1045,7 @@ final class AppModel {
       try await completeAdoption(session)
     } catch EngineError.signInChanged {
       await recountAdoption()
-    } catch { if !Task.isCancelled { reportBoundary("auth_adopt", error: error); self.error = "Couldn't finish adding your work. Your choices are kept; try again." } }
+    } catch { if !Task.isCancelled { reportBoundary("auth_adopt", error: error); self.error = String(localized: "Couldn't finish adding your work. Your choices are kept; try again.") } }
   }
 
   func recountAdoption() async {
@@ -1044,12 +1054,12 @@ final class AppModel {
       try Task.checkCancellation()
       if let resumed { setSignInSession(resumed) }
       if let resumed, !resumed.isComplete, pendingAdoptions.isEmpty { try await completeAdoption(resumed); return }
-      sheet = .adoption; error = "The work changed. Choose again for the current counts."
+      sheet = .adoption; error = Self.workChanged
     } catch {
       guard !Task.isCancelled else { return }
       reportBoundary("auth_adopt", error: error)
       sheet = .you
-      self.error = (error as? EngineError) == .unreachable ? nil : "Couldn't refresh your choices. Your work stays on this phone."
+      self.error = (error as? EngineError) == .unreachable ? nil : String(localized: "Couldn't refresh your choices. Your work stays on this phone.")
     }
   }
 }

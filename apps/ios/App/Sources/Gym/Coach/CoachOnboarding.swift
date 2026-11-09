@@ -20,7 +20,7 @@ nonisolated struct CoachOnboardingIn: Codable, Equatable, Sendable {
   struct Context: Codable, Equatable, Sendable { let role: String; let text: String }
   var text: String?
   var context: [Context]?
-  var question: String { text ?? goal ?? program ?? note ?? "Turn this program into routines." }
+  var question: String { text ?? goal ?? program ?? note ?? String(localized: "Turn this program into routines.") }
 }
 
 nonisolated struct CoachOnboardingOut: Codable, Equatable, Sendable {
@@ -76,7 +76,7 @@ extension CoachConversation {
   // Apply on an archived answer's drafts: one gesture, replayed by the result identity so a retry makes no new routines.
   func importOnboarding(_ record: CoachOnboardingRecord, owner: String) throws {
     guard self.owner == owner, allowed, let response = record.response, response.status == "completed" else { throw CancellationError() }
-    let refused = AppFailure(message: "These routines couldn’t be saved. Your response is kept; try again.")
+    let refused = AppFailure(message: String(localized: "These routines couldn’t be saved. Your response is kept; try again."))
     let result: Outcome<CoachImportReceipt, GymRefusal>
     do {
       let replica = try gym.runner.read(Gym.scope) { $0.replica }
@@ -89,7 +89,7 @@ extension CoachConversation {
     } catch {
       gym.report("gym_action", error)
       gym.telemetry.event("gym_action", properties: ["screen": "coach", "outcome": "failed"])
-      throw AppFailure(message: "Your routines couldn’t be saved. The response is kept on this phone; try again.")
+      throw AppFailure(message: String(localized: "Your routines couldn’t be saved. The response is kept on this phone; try again."))
     }
     guard let ids = result.value?.routines else { throw refused }
     guard ids.count == response.routines.count else { throw URLError(.badServerResponse) }
@@ -99,7 +99,7 @@ extension CoachConversation {
         routineName: item.1.name, movementCount: item.1.entries.count)
     }
     var next = saved; if let index = next.onboarding?.firstIndex(where: { $0.id == record.id }) { next.onboarding?[index] = completed }
-    guard keep(next, failure: "Your routines are saved. Check the response to restore their links.") else { throw AppFailure(message: "Your routines are saved. Check the response to restore their links.") }
+    guard keep(next, failure: String(localized: "Your routines are saved. Check the response to restore their links.")) else { throw AppFailure(message: String(localized: "Your routines are saved. Check the response to restore their links.")) }
     gym.refresh()
     gym.telemetry.event("gym_setup_step", properties: ["screen": "coach", "action": "routines_saved"])
   }

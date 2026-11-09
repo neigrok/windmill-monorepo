@@ -24,18 +24,18 @@ nonisolated enum SessionShareState: Equatable, Sendable {
 
   var title: String {
     switch self {
-    case .closed, .working: "Share this workout"
-    case .live: "The link is live"
-    case .revoked: "The link is dead"
+    case .closed, .working: String(localized: "Share this workout")
+    case .live: String(localized: "The link is live")
+    case .revoked: String(localized: "The link is dead")
     }
   }
 
   var action: String {
     switch self {
-    case .closed(let note): note == nil ? "Get a link" : "Try again"
+    case .closed(let note): note == nil ? String(localized: "Get a link") : String(localized: "Try again")
     case .working: "…"
-    case .live(_, let copied, _): copied ? "Copied" : "Copy link"
-    case .revoked: "Get a link"
+    case .live(_, let copied, _): copied ? String(localized: "Copied") : String(localized: "Copy link")
+    case .revoked: String(localized: "Get a link")
     }
   }
 
@@ -50,11 +50,11 @@ nonisolated enum SessionShareState: Equatable, Sendable {
   func body(expiry: String = "") -> String {
     switch self {
     case .closed, .working:
-      "Anyone with the link can read this workout.\nIncludes set notes and effort.\nLinks last 30 days. End sharing anytime."
+      String(localized: "Anyone with the link can read this workout.\nIncludes set notes and effort.\nLinks last 30 days. End sharing anytime.")
     case .live:
-      "Anyone who has this link can read this one workout. It stops working on \(expiry), and revoking it kills it immediately."
+      String(localized: "Anyone who has this link can read this one workout. It stops working on \(expiry), and revoking it kills it immediately.")
     case .revoked:
-      "Anyone still holding it gets nothing. You can make a new one whenever you like."
+      String(localized: "Anyone still holding it gets nothing. You can make a new one whenever you like.")
     }
   }
 }
@@ -132,11 +132,11 @@ nonisolated enum SessionShareState: Equatable, Sendable {
 
   static func message(_ error: any Error, revoking: Bool) -> String {
     if GymRESTClient.needsConnection(error) {
-      return "Sharing needs a connection. \(revoking ? "The link is still live." : "The link wasn’t made.")"
+      return revoking ? String(localized: "Sharing needs a connection. The link is still live.") : String(localized: "Sharing needs a connection. The link wasn’t made.")
     }
     if let error = error as? GymRESTFailure { return error.message }
     if let error = error as? AppFailure { return error.message }
-    return "the log didn’t answer — \(revoking ? "the link is still live" : "the link wasn’t made")"
+    return revoking ? String(localized: "the log didn’t answer — the link is still live") : String(localized: "the log didn’t answer — the link wasn’t made")
   }
 }
 
@@ -157,8 +157,8 @@ extension GymModel {
 
   func mintSessionShare(_ id: ID<Session>) async throws -> SessionPublicLink {
     do {
-      guard !accountTransition else { throw AppFailure(message: "Wait for the account change to finish.") }
-      guard !sharingNeedsSignIn, let owner = account else { throw AppFailure(message: "Sharing needs your account. Sign in first.") }
+      guard !accountTransition else { throw AppFailure(message: String(localized: "Wait for the account change to finish.")) }
+      guard !sharingNeedsSignIn, let owner = account else { throw AppFailure(message: String(localized: "Sharing needs your account. Sign in first.")) }
       let data = try await rest.request("/v1/gym/sessions/\(id)/share", method: "POST")
       try Task.checkCancellation()
       guard account == owner, !accountTransition, !authPaused else { throw CancellationError() }
@@ -181,8 +181,8 @@ extension GymModel {
 
   func revokeSessionShare(_ id: ID<Session>) async throws {
     do {
-      guard !accountTransition else { throw AppFailure(message: "Wait for the account change to finish.") }
-      guard !sharingNeedsSignIn, let owner = account else { throw AppFailure(message: "Sharing needs your account. Sign in first.") }
+      guard !accountTransition else { throw AppFailure(message: String(localized: "Wait for the account change to finish.")) }
+      guard !sharingNeedsSignIn, let owner = account else { throw AppFailure(message: String(localized: "Sharing needs your account. Sign in first.")) }
       _ = try await rest.request("/v1/gym/sessions/\(id)/share", method: "DELETE")
       try Task.checkCancellation()
       guard account == owner, !accountTransition, !authPaused else { throw CancellationError() }
@@ -238,7 +238,7 @@ struct SessionShareSheet: View {
             RoomTransient(message: note, room: .gym).accessibilityIdentifier("gym-share-error")
           }
           if gym.sharingNeedsSignIn {
-            ActionBand(title: "Sign in to share", room: .gym, actionIdentifier: "gym-share-sign-in") { signIn(); dismiss() }
+            ActionBand(title: String(localized: "Sign in to share"), room: .gym, actionIdentifier: "gym-share-sign-in") { signIn(); dismiss() }
           } else {
             ActionBand(title: sharing.state.action, room: .gym,
                        busy: sharing.state == .working, actionIdentifier: "gym-share-primary") {

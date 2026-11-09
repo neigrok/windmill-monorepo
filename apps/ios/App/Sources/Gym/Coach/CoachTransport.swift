@@ -11,11 +11,11 @@ extension GymRESTClient {
     }
     guard !blocked, let runtime, let baseURL = runtime.settings.baseURL,
           let owner = try runtime.account(), !runtime.engine.status.authPaused,
-          let token = runtime.tokens.token(for: owner) else { throw AppFailure(message: "Sign in to use this part of Gym.") }
+          let token = runtime.tokens.token(for: owner) else { throw AppFailure(message: String(localized: "Sign in to use this part of Gym.")) }
     guard (path == "/v1/oauth/grants" || path == "/v1/mcp-keys"), !path.contains(".."),
           let url = URL(string: path, relativeTo: baseURL)?.absoluteURL,
           url.host == baseURL.host, url.scheme == baseURL.scheme, url.port == baseURL.port else {
-      throw AppFailure(message: "Gym could not open this request.")
+      throw AppFailure(message: String(localized: "Gym could not open this request."))
     }
     var request = URLRequest(url: url)
     request.httpMethod = method; request.httpBody = body
@@ -63,18 +63,18 @@ nonisolated enum CoachPhotoPreparation {
   static let maxBytes = 5 * 1024 * 1024
   static let maxEdge = 4096
   static func prepare(_ data: Data, maxBytes: Int = maxBytes) throws -> (CoachAttachment, Data) {
-    guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { throw AppFailure(message: "Choose a supported photo.") }
+    guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { throw AppFailure(message: String(localized: "Choose a supported photo.")) }
     let options: [CFString: Any] = [kCGImageSourceCreateThumbnailFromImageAlways: true,
       kCGImageSourceCreateThumbnailWithTransform: true, kCGImageSourceThumbnailMaxPixelSize: maxEdge,
       kCGImageSourceShouldCacheImmediately: true]
     guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
-      throw AppFailure(message: "Choose a supported photo.")
+      throw AppFailure(message: String(localized: "Choose a supported photo."))
     }
     let png = (CGImageSourceGetType(source) as String?) == "public.png"
     var current = UIImage(cgImage: image)
     while true {
       guard let encoded = png ? current.pngData() : current.jpegData(compressionQuality: 0.88) else {
-        throw AppFailure(message: "Choose a supported photo.")
+        throw AppFailure(message: String(localized: "Choose a supported photo."))
       }
       if encoded.count <= maxBytes {
         let attachment = CoachAttachment(id: UUID().uuidString, mediaType: png ? "image/png" : "image/jpeg",
@@ -88,12 +88,12 @@ nonisolated enum CoachPhotoPreparation {
   // Coach §9.3: the model copy of a prepared photo, a JPEG within the model's edge and byte bounds, kept beside the original.
   static func modelCopy(of original: Data, attachment: CoachAttachment, maxEdge: Int = CoachTurnBounds.modelPictureEdge,
                         maxBytes: Int = CoachTurnBounds.modelPictureBytes) throws -> CoachPictureRow {
-    guard var current = UIImage(data: original) else { throw AppFailure(message: "That photo is unavailable. Remove it and choose it again.") }
+    guard var current = UIImage(data: original) else { throw AppFailure(message: String(localized: "That photo is unavailable. Remove it and choose it again.")) }
     let longest = max(current.size.width, current.size.height)
     if longest > CGFloat(maxEdge) { current = scaled(current, by: CGFloat(maxEdge) / longest, png: false) }
     var quality: CGFloat = 0.85
     while true {
-      guard let encoded = current.jpegData(compressionQuality: quality) else { throw AppFailure(message: "That photo is unavailable. Remove it and choose it again.") }
+      guard let encoded = current.jpegData(compressionQuality: quality) else { throw AppFailure(message: String(localized: "That photo is unavailable. Remove it and choose it again.")) }
       if encoded.count <= maxBytes {
         return CoachPictureRow(id: attachment.id, mediaType: attachment.mediaType, width: attachment.width, height: attachment.height,
                                original: original, model: encoded)

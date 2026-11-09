@@ -14,13 +14,14 @@ enum AccountDeletion: Equatable {
   // 27f: the changes the account has not confirmed go with it.
   static func unconfirmedLine(_ count: Int) -> String? {
     if count == 0 { return nil }
-    if count == 1 { return "1 change on this phone hasn’t been confirmed by your account. It is deleted too." }
-    return "\(count) changes on this phone haven’t been confirmed by your account. They are deleted too."
+    return String(localized: "\(count) changes on this phone haven’t been confirmed by your account. They are deleted too.",
+                  locale: .copy, comment: "Delete account's line for the changes the account has not confirmed")
   }
 
   // 27d: the last day a sign-in brings the account back, in the person's locale.
   static func returnLine(_ closingOn: Date, locale: Locale = .autoupdatingCurrent) -> String {
-    "Sign in before \(closingOn.formatted(Date.FormatStyle(locale: locale).month(.abbreviated).day())) to bring it back."
+    let day = closingOn.formatted(Date.FormatStyle(locale: locale).month(.abbreviated).day())
+    return String(localized: "Sign in before \(day) to bring it back.", comment: "The account's last day back: Sign in before Dec 8 to bring it back.")
   }
 }
 
@@ -152,11 +153,11 @@ struct DeleteAccountScreen: View {
   var confirmation: some View {
     Form {
       Section {
-        fact("trash", "This deletes your Windmill account and its copy in the cloud: your roadmaps, journal pages and gym log.")
-        fact("iphone", "Every device signs out, and connected tools lose access, right away.")
-        fact("clock.arrow.circlepath", "For 30 days, you can sign in again to bring it all back. After that, it is deleted for good.")
-        fact("square.and.arrow.up", "To keep a copy, export it first at windmill.works.")
-        if let unconfirmed = AccountDeletion.unconfirmedLine(model.unsentChanges) { fact("icloud.slash", unconfirmed) }
+        fact("trash", Text("This deletes your Windmill account and its copy in the cloud: your roadmaps, journal pages and gym log."))
+        fact("iphone", Text("Every device signs out, and connected tools lose access, right away."))
+        fact("clock.arrow.circlepath", Text("For 30 days, you can sign in again to bring it all back. After that, it is deleted for good."))
+        fact("square.and.arrow.up", Text("To keep a copy, export it first at windmill.works."))
+        if let unconfirmed = AccountDeletion.unconfirmedLine(model.unsentChanges) { fact("icloud.slash", Text(unconfirmed)) }
       } header: {
         Text("Delete your account?").font(.title.weight(.bold)).foregroundStyle(ShellPalette.ink).textCase(nil)
           .padding(.leading, -RoomSpace.inset).padding(.bottom, 8)
@@ -192,8 +193,8 @@ struct DeleteAccountScreen: View {
     }
   }
 
-  func fact(_ symbol: String, _ line: String) -> some View {
-    Label { Text(line).font(ShellType.subheadline).foregroundStyle(ShellPalette.ink) } icon: { Image(systemName: symbol).font(ShellType.subheadline).foregroundStyle(ShellPalette.ink) }
+  func fact(_ symbol: String, _ line: Text) -> some View {
+    Label { line.font(ShellType.subheadline).foregroundStyle(ShellPalette.ink) } icon: { Image(systemName: symbol).font(ShellType.subheadline).foregroundStyle(ShellPalette.ink) }
       .listRowBackground(ShellPalette.card)
   }
 

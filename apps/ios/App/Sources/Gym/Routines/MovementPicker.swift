@@ -3,7 +3,7 @@ import DomainKit
 import GymDomain
 
 enum MovementPickerOptions {
-  static let catalogueUnread = "The catalog didn’t load. It comes back when you have signal."
+  static let catalogueUnread = String(localized: "The catalog didn’t load. It comes back when you have signal.")
   static let openers: [ID<Exercise>] = [ID("back-squat"), ID("bench-press"), ID("deadlift"),
                                       ID("overhead-press"), ID("barbell-row"), ID("chin-up")]
 
@@ -13,7 +13,9 @@ enum MovementPickerOptions {
     let alias: String?
     let selected: Bool
     var id: ID<Exercise> { exercise.id }
-    var line: String { [MovementEquipment(exercise).title, alias.map { "was “\($0)”" }, meta].compactMap { $0 }.joined(separator: " · ") }
+    var line: String {
+      [MovementEquipment(exercise).title, alias.map { String(localized: "was “\($0)”", comment: "A movement's former name") }, meta].compactMap { $0 }.joined(separator: " · ")
+    }
   }
 
   // `create` is the query as a new movement's name, offered while no movement or former name is exactly it.
@@ -51,7 +53,7 @@ enum MovementPickerOptions {
     let makeRow = { (exercise: Exercise, alias: String?) -> Row in
       var meta: String?
       if let log, case let last = log.lastTime(for: exercise.id), let set = last.sets.last, let session = last.session {
-        let effort = Equipment(exercise.equipment) == .bodyweight && set.weightKg == 0 ? GymCount.of(set.reps, "rep") : Readout.effort(weightKg: set.weightKg, reps: set.reps)
+        let effort = Equipment(exercise.equipment) == .bodyweight && set.weightKg == 0 ? GymCount.of(set.reps, .rep) : Readout.effort(weightKg: set.weightKg, reps: set.reps)
         meta = "\(effort) · \(Readout.ago(session.startedAt, now: log.moment.now, zone: log.moment.zone))"
       }
       return Row(exercise: exercise, meta: meta, alias: alias, selected: selected.contains(exercise.id))
@@ -95,7 +97,7 @@ struct MovementCreationDraft: Identifiable {
 
   var problem: String? {
     if let problem = NameField.movement.problem(name) { return problem }
-    if !MovementEquipment.choices.contains(equipment) { return "check the movement name and equipment" }
+    if !MovementEquipment.choices.contains(equipment) { return String(localized: "check the movement name and equipment") }
     return nil
   }
 
@@ -109,7 +111,7 @@ extension GymModel {
   func createMovement(_ draft: inout MovementCreationDraft) -> RoutineEntry? {
     if let problem = draft.problem { draft.refusal = problem; return nil }
     guard let outcome = run(CreateExercise(draft.exercise)), outcome.refusal == nil else {
-      draft.refusal = error ?? "The movement wasn’t created. Try again."
+      draft.refusal = error ?? String(localized: "The movement wasn’t created. Try again.")
       return nil
     }
     draft.refusal = nil
@@ -125,9 +127,9 @@ struct MovementPicker: View {
 
     var title: String {
       switch self {
-      case .routine: "Add movement"
-      case .workout: "Next movement"
-      case .swap(let movement): "Swap \(movement)"
+      case .routine: String(localized: "Add movement")
+      case .workout: String(localized: "Next movement")
+      case .swap(let movement): String(localized: "Swap \(movement)")
       }
     }
     var screen: String { self == .routine ? "routine_movement" : "movement" }
@@ -295,14 +297,14 @@ struct CreateMovementSheet: View {
 
   func add() {
     guard creatingAccount == gym.account, creatingAnonymous == gym.isAnonymous else {
-      draft.refusal = "the account changed while creating"; return
+      draft.refusal = String(localized: "the account changed while creating"); return
     }
     busy = true; nameFocused = false
     let account = gym.account, anonymous = gym.isAnonymous
     Task { @MainActor in
       await Task.yield()
       guard account == gym.account && anonymous == gym.isAnonymous else {
-        draft.refusal = "the account changed while creating"; busy = false; return
+        draft.refusal = String(localized: "the account changed while creating"); busy = false; return
       }
       let entry = gym.createMovement(&draft)
       busy = false

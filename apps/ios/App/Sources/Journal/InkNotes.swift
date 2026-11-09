@@ -4,6 +4,12 @@ import CoreText
 
 
 struct InkNotes: View {
+  // Each note is measured where it might stand before it is drawn, so its words are read once for both.
+  static let yourJournal = String(localized: "Your journal")
+  static let youAndSettings = String(localized: "You, and settings")
+  static let todaysPage = String(localized: "Today’s page")
+  static let savesAsYouGo = String(localized: "Saves as you go.")
+  static let tapToWrite = String(localized: "Tap to write")
   let frames: [String: CGRect]
   let visible: Bool
   @Environment(\.dynamicTypeSize) var typeSize
@@ -20,18 +26,18 @@ struct InkNotes: View {
         let fontSize = min(40, handSize)
         let dateLabel = CGPoint(x: geo.size.width * (large ? 0.5 : 0.64), y: max(compact && !large ? 160 : 200, date.minY - (large ? 235 : compact ? 190 : 242)))
         let typingLabel = CGPoint(x: 30, y: max(compact && !large ? 210 : 190, caret.minY - (large ? 185 : compact ? 105 : 145)))
-        let typingText = large ? "Just start\ntyping" : "Just start typing"
+        let typingText = large ? String(localized: "Just start\ntyping", comment: "The first-run note over the caret at the largest text sizes, broken over two lines") : String(localized: "Just start typing")
         let typingFrame = labelFrame(typingText, at: typingLabel, size: fontSize, in: geo.size)
-        let dateFrame = labelFrame("Today’s page", at: CGPoint(x: dateLabel.x - 45, y: dateLabel.y), size: fontSize, in: geo.size)
+        let dateFrame = labelFrame(Self.todaysPage, at: CGPoint(x: dateLabel.x - 45, y: dateLabel.y), size: fontSize, in: geo.size)
         let title = frames["title"] ?? .zero
         let titleLabel = CGPoint(x: geo.size.width * 0.38, y: title.maxY + 40)
-        let titleFrame = labelFrame("Your journal", at: titleLabel, size: fontSize, in: geo.size)
+        let titleFrame = labelFrame(Self.yourJournal, at: titleLabel, size: fontSize, in: geo.size)
         let you = frames["you"] ?? .zero
-        let youSize = labelFrame("You, and settings", at: CGPoint(x: geo.size.width * 0.50, y: 0), size: fontSize, in: geo.size).size
+        let youSize = labelFrame(Self.youAndSettings, at: CGPoint(x: geo.size.width * 0.50, y: 0), size: fontSize, in: geo.size).size
         let youLabel = CGPoint(x: geo.size.width * 0.50, y: max(you.maxY + 16, min(you.maxY + (compact ? 76 : 113), dateFrame.minY - youSize.height - 12)))
         let youFrame = CGRect(origin: youLabel, size: youSize)
         let write = frames["write"] ?? .zero
-        let writeSize = labelFrame("Tap to write", at: CGPoint(x: 24, y: 0), size: fontSize, in: geo.size).size
+        let writeSize = labelFrame(Self.tapToWrite, at: CGPoint(x: 24, y: 0), size: fontSize, in: geo.size).size
         let writeLabel = CGPoint(x: min(geo.size.width - 16 - writeSize.width, write.maxX - writeSize.width), y: write.minY - writeSize.height - 40)
         let writeFrame = CGRect(origin: writeLabel, size: writeSize)
         // No note reaches under the bottom bar, where Write stands.
@@ -44,12 +50,12 @@ struct InkNotes: View {
         let showTitle = showYou && frames["title"] != nil && fits(titleFrame, in: bounds, avoiding: primaryFrames + [youFrame] + written)
         let savingSize = min(40, fontSize * 5 / 6)
         let savingLabel = CGPoint(x: dateLabel.x - 40, y: dateFrame.maxY + 6)
-        let savingFrame = labelFrame("Saves as you go.", at: savingLabel, size: savingSize, in: geo.size)
+        let savingFrame = labelFrame(Self.savesAsYouGo, at: savingLabel, size: savingSize, in: geo.size)
         let showSaving = !large && !compact && fits(savingFrame, in: bounds, avoiding: [dateFrame, typingFrame, titleFrame, youFrame] + written)
         if !dateFrame.isEmpty && fits(typingFrame, in: bounds, avoiding: [dateFrame]) && typingFrame.maxY < caret.minY {
         ZStack(alignment: .topLeading) {
           if showTitle {
-            note("Your journal", at: titleLabel, size: fontSize, index: 0, in: geo.size)
+            note(Self.yourJournal, at: titleLabel, size: fontSize, index: 0, in: geo.size)
             stroke(index: 0) { p in
               let tip = CGPoint(x: title.midX, y: title.maxY + 10)
               p.move(to: CGPoint(x: geo.size.width * 0.37, y: title.maxY + 59))
@@ -60,7 +66,7 @@ struct InkNotes: View {
             }
           }
           if showYou {
-            note("You, and settings", at: youLabel, size: fontSize, index: 1, in: geo.size)
+            note(Self.youAndSettings, at: youLabel, size: fontSize, index: 1, in: geo.size)
             stroke(index: 1) { p in
               let tip = CGPoint(x: you.midX, y: you.maxY + 10)
               p.move(to: CGPoint(x: geo.size.width * 0.75, y: youLabel.y - 3))
@@ -68,8 +74,8 @@ struct InkNotes: View {
               arrow(&p, tip, dx: 0, dy: -1)
             }
           }
-          note("Today’s page", at: dateFrame.origin, size: fontSize, index: 2, in: geo.size)
-          if showSaving { note("Saves as you go.", at: savingLabel, size: savingSize, index: 2, in: geo.size, dim: true) }
+          note(Self.todaysPage, at: dateFrame.origin, size: fontSize, index: 2, in: geo.size)
+          if showSaving { note(Self.savesAsYouGo, at: savingLabel, size: savingSize, index: 2, in: geo.size, dim: true) }
           stroke(index: 2) { p in
             let start = CGPoint(x: dateLabel.x, y: (showSaving ? savingFrame.maxY : dateFrame.maxY) + 4)
             let tip = CGPoint(x: date.maxX + 10, y: date.midY)
@@ -91,7 +97,7 @@ struct InkNotes: View {
             }
           }
           if showWrite {
-            note("Tap to write", at: writeLabel, size: fontSize, index: 5, in: geo.size)
+            note(Self.tapToWrite, at: writeLabel, size: fontSize, index: 5, in: geo.size)
             stroke(index: 5) { p in
               let tip = CGPoint(x: write.midX, y: write.minY - 6)
               p.move(to: CGPoint(x: writeFrame.midX + 10, y: writeFrame.maxY + 2))

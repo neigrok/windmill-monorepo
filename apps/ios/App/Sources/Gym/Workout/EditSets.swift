@@ -14,7 +14,7 @@ import SyncCore
     var target: SetTarget
   }
   static let maxSets = RoutineRules.targets.max
-  static let zeroTarget = "A zero target is no target."
+  static let zeroTarget = String(localized: "A zero target is no target.")
   // The rests a movement may take, 15 s to 15 min; nil is the lifter's rest preference.
   static let rests = [15, 30, 45, 60, 75, 90, 105, 120, 150, 180, 210, 240, 300, 360, 420, 480, 540, 600, 720, 900]
 
@@ -70,7 +70,7 @@ import SyncCore
   var problem: (row: Int, message: String)? {
     for row in rows {
       do throws(Violation) { _ = try row.target.validated(at: "sets") } catch {
-        return (row.id, error.rule == "routine.zeroTarget" ? Self.zeroTarget : "Check this target.")
+        return (row.id, error.rule == "routine.zeroTarget" ? Self.zeroTarget : String(localized: "Check this target."))
       }
     }
     return nil
@@ -119,7 +119,7 @@ struct EditSetsSheet: View {
   }
 
   var movement: Exercise? { gym.catalogue.find(draft.exerciseId) }
-  var name: String { movement?.name ?? "Movement" }
+  var name: String { movement?.name ?? String(localized: "Movement") }
   var basis: MovementEquipment { MovementEquipment(movement) }
   // A set the plan leaves open starts its field where the rack would: the movement's last load and reps.
   var opening: Prefill { Prefill.of(todaySets: [], planEntry: nil, lastTime: gym.log?.lastTime(for: draft.exerciseId)) }
@@ -152,7 +152,7 @@ struct EditSetsSheet: View {
         }.listRowBackground(GymPalette.card)
       }.listSectionSpacing(.compact).contentMargins(.top, RoomSpace.related, for: .scrollContent)
         .modifier(GymPage()).disabled(gym.accountTransition)
-        .roomTitle("Edit sets", subtitle: "\(name) · this workout")
+        .roomTitle(String(localized: "Edit sets"), subtitle: String(localized: "\(name) · this workout"))
         .navigationBarTitleDisplayMode(.inline)
         .sheetCommit("Save", identifier: "edit-sets-save", dismissalIdentifier: "edit-sets-cancel", disabled: gym.accountTransition || draft.busy,
                      busy: draft.busy, dismiss: { dismiss() }, commit: commit)
@@ -191,7 +191,7 @@ struct EditSetsSheet: View {
           else if !opened { Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(GymPalette.inkFaint) }
         }.frame(minHeight: RoomSpace.minimumTarget).contentShape(Rectangle())
       }.buttonStyle(.plain)
-        .accessibilityLabel("Set \(place + 1), planned, \(WorkoutLedgerRow.asked(row.target) ?? "open target")")
+        .accessibilityLabel("Set \(place + 1), planned, \(WorkoutLedgerRow.asked(row.target) ?? String(localized: "open target"))")
         .accessibilityHint(opened ? "Closes this set." : "Opens this set.")
         .accessibilityIdentifier("edit-sets-set-\(place + 1)")
       if opened { editor(row) }

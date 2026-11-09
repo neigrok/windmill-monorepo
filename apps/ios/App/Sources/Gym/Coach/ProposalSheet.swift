@@ -21,7 +21,7 @@ struct ProposalSheet: View {
 extension ProposalCard {
   @ViewBuilder var sheet: some View {
     let proposal = self.proposal
-    let name = proposal.flatMap(gym.coachRoutine)?.name ?? proposal?.baseName ?? "Proposal"
+    let name = proposal.flatMap(gym.coachRoutine)?.name ?? proposal?.baseName ?? String(localized: "Proposal")
     Form {
       Group {
         if let proposal { sections(proposal) }
@@ -64,7 +64,7 @@ extension ProposalCard {
         } header: {
           if index == 0, let changesHeader { Text(changesHeader) }
         } footer: {
-          if index == listed.blocks.count - 1, listed.unchanged > 0 { Text("No change: " + GymCount.of(listed.unchanged, "movement")) }
+          if index == listed.blocks.count - 1, listed.unchanged > 0 { Text(String(localized: "No change: \(listed.unchanged) movements", locale: .copy)) }
         }
       }
       // Why the Apply did not land stands with the decisions, whatever the sheet lists.
@@ -90,7 +90,7 @@ extension ProposalCard {
         let question = removalQuestion
         Button("Remove", role: .destructive) { if question == nil { decide(proposal) } else { confirmingRemoval = true } }
           .fontWeight(.semibold).tint(GymPalette.destructive)
-          .destructiveQuestion(gym, screen: "review", title: question?.title ?? "", message: question?.message ?? "", act: "Remove routine",
+          .destructiveQuestion(gym, screen: "review", title: question?.title ?? "", message: question?.message ?? "", act: String(localized: "Remove routine"),
                                dialog: true, isPresented: $confirmingRemoval) { decide(proposal) }
       } else if #available(iOS 26.0, *) {
         Button(role: .confirm) { decide(proposal) } label: {
@@ -104,8 +104,8 @@ extension ProposalCard {
   // the routine's next workout, as the card's subtitle says (08.56P).
   var changesHeader: String? {
     guard let proposal else { return nil }
-    if removal { return "Remove a routine" }
-    return GymCount.of(gym.coachChangeCount(proposal), "change") + (stance == .open && nextTime ? " · next time" : "")
+    if removal { return String(localized: "Remove a routine") }
+    return ([GymCount.of(gym.coachChangeCount(proposal), .change)] + (stance == .open && nextTime ? [String(localized: "next time")] : [])).joined(separator: " · ")
   }
 
   // What a connected tool's removal asks before it applies, in the name the tool gave, as it gave it, else *A connected
@@ -113,8 +113,8 @@ extension ProposalCard {
   var removalQuestion: (title: String, message: String)? {
     guard let proposal, removal else { return nil }
     if case .ask = proposal.provenance { return nil }
-    let source = proposal.toolName ?? "A connected tool"
-    return ("Remove \(routineName)?", "\(source) suggested this. Your past \(routineName) workouts stay in the log.")
+    let source = proposal.toolName ?? String(localized: "A connected tool")
+    return (String(localized: "Remove \(routineName)?"), String(localized: "\(source) suggested this. Your past \(routineName) workouts stay in the log."))
   }
 
   // Who proposed it, then when the server stamped it, by its symbol: Coach's bubbles or a connected tool's link.
