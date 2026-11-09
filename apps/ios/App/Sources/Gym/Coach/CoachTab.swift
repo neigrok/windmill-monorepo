@@ -99,7 +99,7 @@ struct CoachTab: View {
         if running == nil, let handoff, coach.begin(handoff) { self.handoff = nil; composing = !handoff.send }
       }
       .onChange(of: coach.offline) { _, offline in
-        if offline { coach.noteOffline() } else if coach.error == CoachCopy.offline { coach.error = nil }
+        if offline { coach.noteOffline() } else { coach.noteOnline() }
         if !offline, coach.refusal == .offline { coach.driver?.refusal = nil }
       }
       .photosPicker(isPresented: $choosePhoto, selection: $photo, matching: .images)

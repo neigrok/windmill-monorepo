@@ -167,6 +167,8 @@ import SyncTesting
     #expect(!workout.flushRack())
     #expect(workout.weightKg == 57.5 && workout.reps == 8 && workout.message == "The rack could not be changed. Try again.")
     #expect(try workout.activityRecord()?.offer == offer)
+    gym.accountChanging = false; workout.weightKg = 60
+    #expect(workout.flushRack() && workout.message == nil && gym.error == nil)
   }
 
   @Test func seatChangeAndBackgroundFlushTheRackFirstAndEachFlushReportsOnce() async throws {

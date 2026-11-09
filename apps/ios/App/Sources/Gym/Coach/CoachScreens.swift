@@ -119,7 +119,9 @@ struct NotesScreen: View {
           let ids = offsets.map { gym.notes[$0].id }; for id in ids { _ = gym.run(DeleteNote(id)) }
         }
         if gym.coachNoteCount == 0 {
-          ForEach([String(localized: "How I want to be talked to"), String(localized: "What I am training for")], id: \.self) { hint in
+          let hints = [String(localized: "How I want to be talked to"), String(localized: "What I am training for")]
+          ForEach(hints.indices, id: \.self) { index in
+            let hint = hints[index]
             Button(hint) { editor = NoteEditorIdentity(note: Note(id: gym.runner.mint(Note.self)), hint: hint, isNew: true) }
               .foregroundStyle(GymPalette.inkDim)
           }

@@ -178,7 +178,7 @@ import SyncTesting
     #expect(gym.error == "Gym could not be read from this phone. Try again.")
     #expect(telemetry.entries.withLock { entries in entries.allSatisfy { !$0.properties.values.contains(where: { $0.contains("private") || $0.contains("Private") }) } })
     fault.point.withLock { $0 = nil }; gym.refresh()
-    #expect(!gym.readFailed && gym.notes.map(\.id) == [id])
+    #expect(!gym.readFailed && gym.notes.map(\.id) == [id] && gym.error == nil)
   }
 
   @Test func observesGymChangesFromTheSharedRuntime() async throws {

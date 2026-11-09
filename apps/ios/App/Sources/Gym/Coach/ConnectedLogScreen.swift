@@ -168,11 +168,12 @@ struct ConnectedLogGuide: View {
     List {
       Group {
         Section {
-          ForEach([String(localized: "One URL pasted into your tool. Your browser opens once to approve."),
-                   String(localized: "A shared workout is public for 30 days, until you end it."),
-                   String(localized: "No tool can apply a proposal or edit a logged set."),
-                   String(localized: "Delete is approved on its own, and a discard is permanent."),
-                   String(localized: "End a connection under Settings → Connected tools; a key under API keys.")], id: \.self) { Text($0) }
+          let lines = [String(localized: "One URL pasted into your tool. Your browser opens once to approve."),
+                       String(localized: "A shared workout is public for 30 days, until you end it."),
+                       String(localized: "No tool can apply a proposal or edit a logged set."),
+                       String(localized: "Delete is approved on its own, and a discard is permanent."),
+                       String(localized: "End a connection under Settings → Connected tools; a key under API keys.")]
+          ForEach(lines.indices, id: \.self) { Text(lines[$0]) }
         }
         if capabilities { ConnectedLogCapabilities { EmptyView() } }
       }.listRowBackground(GymPalette.card)

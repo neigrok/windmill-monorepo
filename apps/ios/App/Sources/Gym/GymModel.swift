@@ -21,6 +21,10 @@ nonisolated struct GymWaits {
   var coachBeat = Duration.seconds(1)
 }
 
+// What put up a message that comes down once its cause clears: a read of the room that failed, a rack change that did not land, a
+// movement order that could not be read. The message is taken down by its cause, never by its words.
+enum MessageCause { case unreadable, rackUnchanged, orderUnread }
+
 // The room's engine-backed model. An extension one track reads lives in that track's folder; a rule several read lives here.
 @Observable @MainActor
 final class GymModel {
@@ -53,7 +57,9 @@ final class GymModel {
   var accountChanging = false { didSet { accountTransitionChanged() } }
   var replicaChanging = false { didSet { accountTransitionChanged() } }
   var refusal: GymRefusal?
-  var error: String?
+  var error: String? { didSet { errorCause = nil } }
+  // What put `error` up, while it stands; any other error forgets it.
+  @ObservationIgnored var errorCause: MessageCause?
   var readFailed = false
   // The room's refusals: undismissed, and none a saved workout owns, since that one is its row's on The log.
   var notices: [DomainNotice<GymRefusal>] = []
@@ -269,7 +275,7 @@ final class GymModel {
       recordAnsweredRecoveries()
       if previousAccount != account || previousAnonymous != isAnonymous { publish(\.coachUnavailable, false) }
       publish(\.readFailed, false)
-      if wasReadFailed, error == Self.unreadable { error = nil }
+      if wasReadFailed, errorCause == .unreadable { error = nil }
     } catch {
       readThrough = nil; failRead(error)
     }
@@ -359,7 +365,7 @@ final class GymModel {
 
   // The room stops on a read it could not make: the band says so and offers only a retry.
   func failRead(_ failure: any Error) {
-    readFailed = true; error = Self.unreadable
+    readFailed = true; error = Self.unreadable; errorCause = .unreadable
     report("gym_read", failure)
   }
 
