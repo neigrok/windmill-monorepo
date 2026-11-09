@@ -27,6 +27,7 @@
     <string name="gym_connected_level_write">Write</string>
     <string name="gym_connected_level_write_meta">logs sets · saves notes · adds routines · shares workouts · proposes changes</string>
     <string name="gym_connected_level_write_held">write</string>
+    <!-- A noun: the name of the access level that lets a connected tool delete. -->
     <string name="gym_connected_level_delete">Delete</string>
     <string name="gym_connected_level_delete_meta">discards a workout · ends a share</string>
     <string name="gym_connected_level_delete_held">delete</string>

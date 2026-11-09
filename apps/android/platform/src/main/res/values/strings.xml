@@ -3,6 +3,7 @@
     <!-- Verbs a button or an action says anywhere in the app. -->
     <string name="platform_back">Back</string>
     <string name="platform_cancel">Cancel</string>
+    <string name="platform_add">Add</string>
     <string name="platform_discard">Discard</string>
     <string name="platform_done">Done</string>
     <string name="platform_keep">Keep</string>

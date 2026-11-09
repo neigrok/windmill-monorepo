@@ -21,27 +21,36 @@ class CopyInResourcesTests {
     // TalkBack's page label formats its own digit, by the owner's call.
     private val formatsItsNumber = listOf("onboarding_page")
 
-    private val literal = """"(?:[^"\\\n]|\\.)*[A-Za-z](?:[^"\\\n]|\\.)*""""
-    private val rules = mapOf(
-        "Text" to Regex("""\bText\(\s*(?:text\s*=\s*)?$literal"""),
-        "Text branch" to Regex("""\bText\(\s*if\s*\([^"\n]*\)\s*$literal"""),
-        "Text fallback" to Regex("""\bText\([^"()\n]*\?:\s*$literal"""),
-        "contentDescription" to Regex("""\bcontentDescription\s*=\s*$literal"""),
-        "Icon description" to Regex("""\bIcon\((?:[^,()"\n]|\([^()\n]*\))+,\s*$literal"""),
-        "copy argument" to Regex("""\b(?:label|title|placeholder|description|stateDescription|\w+Label)\s*=\s*$literal"""),
-        "accessibility action" to Regex("""\bCustomAccessibilityAction\(\s*$literal"""),
-        "toast" to Regex("""\bToast\.makeText\([^,\n]+,\s*$literal"""),
-        "notification" to Regex("""\.set(?:ContentTitle|ContentText|SubText|Ticker)\(\s*$literal"""),
-        "notification channel" to Regex("""\bNotificationChannel\([^,\n]+,\s*$literal"""),
-        "Plain" to Regex("""\bPlain\(\s*$literal"""),
-        "plural" to Regex("""\b(?:pluralStringResource|getQuantityString)\("""),
+    // Where a screen, a notification, a shortcut or a share sheet takes its copy: a call and the argument it reads, or a property.
+    private val sites = listOf(
+        Site("Text", Regex("""\bText\("""), 0, "text"),
+        Site("Icon description", Regex("""\bIcon\("""), 1),
+        Site("accessibility action", Regex("""\bCustomAccessibilityAction\("""), 0, "label"),
+        Site("toast", Regex("""\bToast\.makeText\("""), 1, "text"),
+        Site("notification", Regex("""\.set(?:ContentTitle|ContentText|SubText|Ticker)\("""), 0),
+        Site("notification channel", Regex("""\bNotificationChannel\("""), 1, "name"),
+        Site("shortcut", Regex("""\.set(?:ShortLabel|LongLabel)\("""), 0),
+        Site("snackbar", Regex("""\bshowSnackbar\("""), 0, "message"),
+        Site("drawText", Regex("""\bdrawText\("""), 1, "text"),
+        Site("share sheet", Regex("""\bIntent\.createChooser\("""), 1, "title"),
+        Site("share sheet", Regex("""\bputExtra\((?=\s*Intent\.EXTRA_(?:TEXT|SUBJECT|TITLE)\b)"""), 1),
+        Site("Plain", Regex("""\bPlain\("""), 0, "text"),
+        Site("contentDescription", Regex("""\bcontentDescription\s*=(?!=)|\bContentDescription\s+to\b""")),
+        Site("copy argument", Regex("""\b(?:label|title|subtitle|placeholder|description|stateDescription|\w+Label)\s*=(?!=)""")),
     )
+    // A call or a property where copy goes, and for a call the argument that carries it.
+    private class Site(val rule: String, val at: Regex, val position: Int? = null, val named: String? = null)
+    private val plural = Regex("""\b(?:pluralStringResource|getQuantityString)\(""")
+    // The lists, sets and maps a table of words is written in.
+    private val collection = Regex("""^(?:listOf|listOfNotNull|mutableListOf|setOf|arrayOf|mapOf)$""")
     private val string = Regex(""""(?:[^"\\\n]|\\.)*"""")
     private val sentence = Regex("""\p{L}+[^\p{L}]*\s[^\p{L}]*\p{L}""")
+    // A capitalised word, as a table of words writes it: "Sun", "Mon".
+    private val word = Regex(""""\p{Lu}\p{Ll}+"""")
     // An animation's label names it in the layout inspector; nobody reads it on screen.
     private val animation = Regex("""^(?:rememberInfiniteTransition|updateTransition|animate\w*|Crossfade|AnimatedContent)$""")
-    // A literal handed to one of these, or a `toString`, is read by a developer, a test or a parser, never by the person holding the phone.
-    private val unread = Regex("""^(?:check|checkNotNull|require|requireNotNull|error|testTag|Regex|ofPattern|failure|toString|Log\.\w+|\w*Exception|\w*Error)$""")
+    // A literal handed to one of these is read by a developer, a test or a parser, never by the person holding the phone.
+    private val unread = Regex("""^(?:check|checkNotNull|require|requireNotNull|error|testTag|Regex|ofPattern|toString|Log\.\w+|\w*Exception)$""")
     // A file's previews, their state and their data close it, from its first private declaration named for a preview.
     private val previews = Regex("""^private (?:data )?(?:class|object|val|fun) \w*[Pp]review""", RegexOption.MULTILINE)
     private val messageCall = Regex("""\b(Words\.Message|Words\.Counted|stringResource|pluralString|getString|says)\(""")
@@ -54,20 +63,78 @@ class CopyInResourcesTests {
 
         fun line(at: Int) = text.substring(0, at).count { it == '\n' } + 1
 
-        // The call a position stands in, past a lambda's arguments; `toString` for what a `toString` returns.
-        fun caller(at: Int): String {
-            if (Regex("""\bfun toString\(\)""").containsMatchIn(text.substring(text.lastIndexOf('\n', at - 1) + 1, at))) return "toString"
+        // The call a position stands in, past a lambda's arguments, and where its name starts; `toString` for what a `toString` returns.
+        fun caller(at: Int): Pair<String, Int> {
+            val line = text.lastIndexOf('\n', at - 1) + 1
+            if (Regex("""\bfun toString\(\)""").containsMatchIn(text.substring(line, at))) return "toString" to line
             var open = opener(at - 1)
-            if (open < 0) return ""
+            if (open < 0) return "" to 0
             if (skeleton[open] == '{') {
                 val before = skeleton.substring(0, open).trimEnd()
                 open = if (before.endsWith(')')) opener(before.length - 2) else before.length
-                if (open < 0) return ""
+                if (open < 0) return "" to 0
             }
-            return Regex("""[\w.]+$""").find(skeleton.substring(maxOf(0, open - 120), open).trimEnd())?.value?.removePrefix(".").orEmpty()
+            return name(open)
         }
 
-        fun calledBy(at: Int, names: Regex) = caller(at).let { names.matches(it.substringAfterLast('.')) || names.matches(it) }
+        fun calledBy(at: Int, names: Regex) = caller(at).first.let { names.matches(it.substringAfterLast('.')) || names.matches(it) }
+
+        // Read, not shown: handed to an `unread` call, thrown, a `toString` printing its class, a date pattern quoting no words.
+        fun unread(at: Int, literal: String): Boolean {
+            val (name, start) = caller(at)
+            val last = name.substringAfterLast('.')
+            if (Regex("""\bthrow\s+$""").containsMatchIn(skeleton.substring(maxOf(0, start - 16), start))) return true
+            if (last == "toString") return Regex("""^"[A-Z]\w*\(""").containsMatchIn(literal)
+            if (last == "ofPattern") return !Regex("""'[^']*\p{L}[^']*'""").containsMatchIn(literal)
+            return unread.matches(last) || unread.matches(name)
+        }
+
+        // Where a site's copy goes: the argument its call reads, or the value its property is set to, to the end of the statement.
+        fun extents(site: Site, at: MatchResult): List<IntRange> {
+            if (site.position == null) return listOf(at.range.last + 1 until statementEnd(at.range.last + 1))
+            val named = Regex("""^\s*(\w+)\s*=(?!=)""")
+            return arguments(at.range.last).withIndex().mapNotNull { (index, range) ->
+                val name = named.find(text.substring(range))
+                when {
+                    name == null -> range.takeIf { index == site.position }
+                    name.groupValues[1] == site.named -> range.first + name.range.last + 1..range.last
+                    else -> null
+                }
+            }
+        }
+
+        // The literals with a letter standing as the value in `range`, through braces, bare brackets and tables, never another call.
+        fun values(range: IntRange): List<MatchResult> = string.findAll(text, range.first).takeWhile { it.range.first <= range.last }.filter { literal ->
+            Regex("""\p{L}""").containsMatchIn(literal.value) &&
+                generateSequence(opener(literal.range.first - 1)) { opener(it - 1) }.takeWhile { it >= range.first }.all { open ->
+                    skeleton[open] == '{' || skeleton[open] == '(' && name(open).first.let { it.isEmpty() || collection.matches(it) }
+                }
+        }.toList()
+
+        // A literal written straight into a list, a set or a map.
+        fun tabled(at: Int): Boolean = opener(at - 1).let { open -> open >= 0 && skeleton[open] == '(' && collection.matches(name(open).first) }
+
+        // The name before the bracket at `open` and where it starts; "" for a bare bracket.
+        private fun name(open: Int): Pair<String, Int> {
+            val window = maxOf(0, open - 120)
+            val found = Regex("""[\w.]+$""").find(skeleton.substring(window, open).trimEnd()) ?: return "" to open
+            return found.value.removePrefix(".") to window + found.range.first
+        }
+
+        private fun statementEnd(from: Int): Int {
+            var depth = 0
+            var index = from
+            while (index < skeleton.length && skeleton[index].isWhitespace()) index++
+            while (index < skeleton.length) {
+                when (skeleton[index]) {
+                    '(', '[', '{' -> depth++
+                    ')', ']', '}' -> if (depth == 0) return index else depth--
+                    '\n', ',', ';' -> if (depth == 0) return index
+                }
+                index++
+            }
+            return index
+        }
 
         // The ranges of the arguments inside the bracket that opens at `open`.
         fun arguments(open: Int): List<IntRange> {
@@ -160,17 +227,18 @@ class CopyInResourcesTests {
     private fun offences(path: String, source: String): List<Pair<Int, String>> {
         val code = Code(source)
         val previewsFrom = previews.find(code.text)?.range?.first ?: code.text.length
-        val shaped = rules.flatMap { (name, rule) ->
-            rule.findAll(code.text).filter { match ->
-                match.range.first < previewsFrom && !(name == "copy argument" && code.calledBy(match.range.first, animation)) && !(name == "plural" && path == words)
-            }.map { code.line(it.range.first) to name }.toList()
+        val allowedHere = allowed[path].orEmpty().map { "\"$it\"" }
+        val copied = sites.flatMap { site ->
+            site.at.findAll(code.text).filter { it.range.first < previewsFrom && !(site.rule == "copy argument" && code.calledBy(it.range.first, animation)) }
+                .flatMap { at -> code.extents(site, at).flatMap(code::values) }
+                .filter { it.value !in allowedHere }.map { code.line(it.range.first) to site.rule }.toList()
         }
-        val said = string.findAll(code.text).filter { match ->
-            val text = match.value.substring(1, match.value.length - 1)
-            match.range.first < previewsFrom && sentence.containsMatchIn(text) && text !in allowed[path].orEmpty() &&
-                !code.calledBy(match.range.first, unread) && !code.calledBy(match.range.first, animation)
-        }.map { code.line(it.range.first) to "sentence" }.toList()
-        return (shaped + said).distinct().sortedBy { it.first }
+        val literals = string.findAll(code.text).filter { it.range.first < previewsFrom && it.value !in allowedHere }.toList()
+        val tables = literals.filter { word.matches(it.value) && code.tabled(it.range.first) }.map { code.line(it.range.first) to "word table" }
+        val said = literals.filter { sentence.containsMatchIn(it.value) && !code.unread(it.range.first, it.value) && !code.calledBy(it.range.first, animation) }
+            .map { code.line(it.range.first) to "sentence" }
+        val plurals = if (path == words) emptyList() else plural.findAll(code.text).filter { it.range.first < previewsFrom }.map { code.line(it.range.first) to "plural" }.toList()
+        return (copied + tables + said + plurals).distinct().sortedBy { it.first }
     }
 
     private fun sources() = modules.flatMap { module -> File(android, "$module/src/main/kotlin").walk().filter { it.extension == "kt" }.toList() }.sorted()
@@ -265,12 +333,11 @@ class CopyInResourcesTests {
     }
 
     @Test fun theRulesTellCopyFromCode() {
-
         val copy = listOf(
             "Text(\"Start workout\")" to listOf("Text", "sentence"),
             "Text(\"\${count} sets\")" to listOf("Text"),
-            "Text(if (busy) \"Saving…\" else \"Save\")" to listOf("Text branch"),
-            "Text(pending ?: \"Send code\", style = type)" to listOf("Text fallback", "sentence"),
+            "Text(if (busy) \"Saving…\" else \"Save\")" to listOf("Text"),
+            "Text(pending ?: \"Send code\", style = type)" to listOf("Text", "sentence"),
             "Text(\n    \"Start workout\",\n)" to listOf("Text", "sentence"),
             "Icon(Icons.Filled.Close, contentDescription = \"Close\")" to listOf("contentDescription"),
             "Icon(painterResource(R.drawable.back), \"Back\", Modifier.size(24.dp))" to listOf("Icon description"),
@@ -285,9 +352,68 @@ class CopyInResourcesTests {
             "resources.getQuantityString(R.plurals.gym_readout_sets, count)" to listOf("plural"),
             "const val full = \"10 of 10 notes\"" to listOf("sentence"),
             "\"replaced\" -> \"A newer suggestion took its place\"" to listOf("sentence"),
-            "transient.showSnackbar(message = \"Saved to your log\")" to listOf("sentence"),
+            "transient.showSnackbar(message = \"Saved to your log\")" to listOf("snackbar", "sentence"),
             "ClipData.newPlainText(\"plain text\", link)" to listOf("sentence"),
             "check(ready) { if (late) \"The clock ran out\" else \"Not ready\" }.also { Text(\"Two words\") }" to listOf("Text", "sentence"),
+            "val label = \"Saved to log\"" to listOf("copy argument", "sentence"),
+            "const val title = \"Saved\"" to listOf("copy argument"),
+            "fun pick(x: Int) = when (x) { 1 -> \"Done\"; else -> \"Not yet\" }" to listOf("sentence"),
+            "val e = showError(\"Could not save your workout\")" to listOf("sentence"),
+            "Text(fieldError(\"Too long for a name\"))" to listOf("sentence"),
+            "override fun toString() = \"Your workout\"" to listOf("sentence"),
+            "override fun toString(): String {\n    return \"Your workout\"\n}" to listOf("sentence"),
+            "val heading = DateTimeFormatter.ofPattern(\"'Today at' HH:mm\")" to listOf("sentence"),
+            "Text(stringResource(R.string.x) + \" more words\")" to listOf("Text", "sentence"),
+            "Text(if (busy) stringResource(R.string.x) else \"Saving\")" to listOf("Text"),
+            "Text(if (busy) \"Saving\" else stringResource(R.string.x))" to listOf("Text"),
+            "Text(text = \"Saving\")" to listOf("Text"),
+            "Text(\"Saving\")" to listOf("Text"),
+            "Text(\"Saving\", style = s)" to listOf("Text"),
+            "Text(\n    if (busy) \"Saving\" else \"Saved\"\n)" to listOf("Text"),
+            "Words.Plain(\"Saving\")" to listOf("Plain"),
+            "Plain(\"Saving\")" to listOf("Plain"),
+            "Text(name.ifBlank { \"Untitled\" })" to listOf("Text"),
+            "Text(name.ifEmpty { \"Untitled workout\" })" to listOf("Text", "sentence"),
+            "val t = rememberInfiniteTransition(label = \"Workout timer\"); Text(\"Rest is over\")" to listOf("Text", "sentence"),
+            "Button(onClick = {}) { Text(\"Start\") }" to listOf("Text"),
+            "Text(\"\"\"Start workout\"\"\")" to listOf("Text", "sentence"),
+            "Text(\"\"\"\n    Start workout\n\"\"\".trimIndent())" to listOf("Text", "sentence"),
+            "AlertDialog(title = { Text(\"Delete?\") })" to listOf("Text"),
+            "snackbar.showSnackbar(\"Saved\")" to listOf("snackbar"),
+            "snackbar.showSnackbar(\"Set saved\")" to listOf("snackbar", "sentence"),
+            "SemanticsProperties.ContentDescription to listOf(\"Close\")" to listOf("contentDescription", "word table"),
+            "Modifier.semantics { contentDescription = \"Close\" }" to listOf("contentDescription"),
+            "Modifier.semantics { stateDescription = \"Selected\" }" to listOf("copy argument"),
+            "Modifier.semantics { onClick(label = \"Open\") { true } }" to listOf("copy argument"),
+            "Modifier.clickable(onClickLabel = \"Open\") {}" to listOf("copy argument"),
+            "Modifier.clearAndSetSemantics { contentDescription = \"Set 1 of 3\" }" to listOf("contentDescription", "sentence"),
+            "drawText(measurer, \"Sun\")" to listOf("drawText"),
+            "drawText(measurer, \"Sun 3 Nov\")" to listOf("drawText", "sentence"),
+            "val days = listOf(\"Sun\", \"Mon\")" to listOf("word table"),
+            "telemetry.failure(\"op\", IOException(\"x\")); Text(\"Two words\")" to listOf("Text", "sentence"),
+            "failure(\"Could not save your workout\")" to listOf("sentence"),
+            "Text(error ?: \"Could not save\")" to listOf("Text", "sentence"),
+            "Text(problem?.text() ?: \"Could not save\")" to listOf("Text", "sentence"),
+            "Text(\"\${name} saved\")" to listOf("Text"),
+            "Text(\"\$name saved\")" to listOf("Text"),
+            "Text(\"Saved \$name\")" to listOf("Text"),
+            "Icon(Icons.Default.Close, null); Text(\"Close it\")" to listOf("Text", "sentence"),
+            "Icon(Icons.Default.Close, if (x) \"Close\" else \"Back\")" to listOf("Icon description"),
+            "IconButton(onClick = {}) { Icon(Icons.Default.Close, contentDescription = if (open) \"Close\" else \"Open\") }" to listOf("contentDescription"),
+            "ListItem(headlineContent = { Text(\"Workout\") })" to listOf("Text"),
+            "TextField(value, {}, placeholder = { Text(\"Name it\") })" to listOf("Text", "sentence"),
+            "TextField(value, {}, label = { Text(\"Name\") })" to listOf("Text"),
+            "Tab(text = { Text(\"Log\") })" to listOf("Text"),
+            "NotificationCompat.Builder(c, id).setContentTitle(if (x) \"Workout\" else \"Rest\")" to listOf("notification"),
+            "AppWidgetText(\"Workout running\")" to listOf("sentence"),
+            "tile.label = \"Workout\"" to listOf("copy argument"),
+            "tile.subtitle = \"Running\"" to listOf("copy argument"),
+            "shortcut.setShortLabel(\"Start\")" to listOf("shortcut"),
+            "ShortcutInfo.Builder(c, id).setShortLabel(\"Start workout\")" to listOf("shortcut", "sentence"),
+            "Intent.createChooser(intent, \"Share workout\")" to listOf("share sheet", "sentence"),
+            "Intent.createChooser(intent, \"Share\")" to listOf("share sheet"),
+            "putExtra(Intent.EXTRA_TEXT, \"Look at my workout\")" to listOf("share sheet", "sentence"),
+            "putExtra(Intent.EXTRA_SUBJECT, \"Workout\")" to listOf("share sheet"),
         )
         val code = listOf(
             "Text(stringResource(R.string.gym_routines_start))",
@@ -307,10 +433,13 @@ class CopyInResourcesTests {
             "Text(it, style = type) // Text(\"Start workout\")",
             "val quote = '\"'; Text(stringResource(R.string.gym_quote))",
             "private data class LogPreviewState(val name: String = \"Push Day\")",
+            // An exception's message is a diagnostic, built or thrown; it never reaches a screen.
+            "val failed = IllegalStateException(\"Could not save\")",
+            "throw DecodeError(type, \"role\", \"not a role\")",
+            "override fun toString() = \"StatsProgress(asOf=\$asOf, sessions=\$sessions)\"",
+            "val choices = listOf(\"barbell\", \"dumbbell\", \"other\")",
+            "contentDescription = if (title == \"close\") closing else opening",
         )
-        assertEquals(
-            copy.map { it.second } + code.map { emptyList<String>() },
-            (copy.map { it.first } + code).map { snippet -> offences("snippet.kt", snippet).map { it.second } },
-        )
+        assertEquals(copy.map { it.second } + code.map { emptyList<String>() }, (copy.map { it.first } + code).map { snippet -> offences("snippet.kt", snippet).map { it.second } })
     }
 }

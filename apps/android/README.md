@@ -345,7 +345,7 @@ English is the only language. Copy a person reads is a string resource in the mo
 `gym/src/main/res/values/strings_<area>.xml`, one file per area (the welcome carousel keeps `onboarding.xml`),
 `platform/src/main/res/values/strings.xml` and `app/src/main/res/values/strings.xml`. Names carry their module and
 area, `gym_<area>_<thing>`, `platform_<thing>` and `app_<thing>`, so merged resources cannot collide; the carousel's
-are `onboarding_<thing>`. A verb a button says anywhere — Cancel, Close, Save, Try again — is one `platform_<verb>`
+are `onboarding_<thing>`. A verb more than one module says — Add, Cancel, Done, Try again — is one `platform_<verb>`
 that `:gym` and `:app` read as `PlatformR`; a module's own strings carry its sentences. Manifest labels point at
 resources too.
 
@@ -361,19 +361,27 @@ resources too.
 - Placeholders are positional `%1$s`, given a value its own formatter already rendered. `%d` and `%f` format in the
   system's locale and print Arabic-Indic digits on an Arabic phone.
 - A sentence is one message: a value fills a placeholder, never a fragment beside it. Words said one after another
-  join through `platform_words_joined` ("%1$s · %2$s"); that join and the kg unit are `translatable="false"`. A word
-  that could read two ways ("Set", "max", "All") carries a translator note above it.
+  join through `platform_words_joined` ("%1$s · %2$s"), which is `translatable="false"`. A word that could read two
+  ways ("Set", "max", "All") carries a translator note above it.
 - Dates are spelled three ways: `Readout` names weekdays, months and AM/PM from its own resources and writes the
   numbers itself; `LogReadout`, `Bodyweight.fullDay` and the finish sheet format with `Locale.ENGLISH`; Coach's
   timestamps, history days and reset notice, the plot's axis, the routine builder and account deletion's deadline
   format in the phone's locale. A second language moves every formatter onto the app's language.
 - User content, server text, test tags, telemetry names and log lines stay in Kotlin.
-- `CopyInResourcesTests` (`:app`) reads the main Kotlin of `:app`, `:platform` and `:gym`, previews aside. It fails on a
-  literal of two words or more anywhere but a check, a require, an error, an exception, a log line, a telemetry
-  failure, a test tag, a pattern, an animation label or a `toString`; on a literal with a letter where a screen or a
-  notification takes its copy, or handed to `Plain`; on `pluralStringResource` or `getQuantityString` outside
-  `Words.kt`; on a literal manifest label; on a resource that formats a number with `%d` or `%f` (`onboarding_page`
-  aside); and on a call that names its resource but gives a different number of arguments than the resource takes.
+- `CopyInResourcesTests` (`:app`) reads the main Kotlin of `:app`, `:platform` and `:gym`, previews aside, and fails on:
+  - a literal of two words or more, unless it is handed to `check`, `checkNotNull`, `require`, `requireNotNull`,
+    Kotlin's `error`, an `…Exception` constructor, a `Log` call, `testTag`, `Regex` or an animation's `label`, is what
+    a `throw` throws, is a `toString` that prints its class, or is a date pattern that quotes no words;
+  - a literal with a letter that stands as the copy of a `Text`, an `Icon`'s description, a `contentDescription`, a
+    `label`, `title`, `subtitle`, `placeholder`, `description`, `stateDescription` or `…Label`, an accessibility
+    action, a toast, a snackbar, `drawText`, a notification or its channel, a shortcut label, a share sheet's title or
+    text, or `Plain` — through an `if`, a `when`, an elvis or a lambda such as `ifBlank { … }`, never inside another
+    call;
+  - a capitalised word written straight into a list, a set or a map;
+  - `pluralStringResource` or `getQuantityString` outside `Words.kt`, and a literal manifest label;
+  - a resource that formats a number with `%d` or `%f` (`onboarding_page` aside);
+  - a call that names its resource but gives a different number of arguments than the resource takes.
+
   Its `allowed` list names the few literals that read like copy and are not. The app's lint fails on an unused
   resource.
 

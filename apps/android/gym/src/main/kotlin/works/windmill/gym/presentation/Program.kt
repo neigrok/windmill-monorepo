@@ -41,7 +41,7 @@ object Program {
 
     fun named(name: String): String? = name.trim().takeIf { it.isNotEmpty() }
 
-    // What a name's Save refusal says; there is no screen before the editor to ask for a name, so the name is missing first.
+    // Why a routine's or a movement's name cannot be saved: it is blank, or longer than the cap; null once it can.
     @StringRes
     fun nameRefusal(name: String): Int? {
         val named = named(name) ?: return R.string.gym_program_name_it

@@ -64,20 +64,20 @@ class WordsTests {
     }
 
     @Test fun wordsInsideAMessageAreSpelledFirstAndPlainTextStandsAsWritten() {
-        assertEquals("Push A · Cancel · 2 changes on this phone haven’t been confirmed by your account. They are deleted too.",
-            listOf(Words.Plain("Push A"), Words.Message(R.string.platform_cancel), counted(2)).joined().spelled())
-        assertEquals("Push A", listOf(Words.Plain("Push A")).joined().spelled())
+        assertEquals("Ada Lovelace · Cancel · 2 changes on this phone haven’t been confirmed by your account. They are deleted too.",
+            listOf(Words.Plain("Ada Lovelace"), Words.Message(R.string.platform_cancel), counted(2)).joined().spelled())
+        assertEquals("Ada Lovelace", listOf(Words.Plain("Ada Lovelace")).joined().spelled())
         assertNull(emptyList<Words>().joined())
-        assertEquals("50% of 1RM", Words.Plain("50% of 1RM").spelled())
+        assertEquals("100% synced", Words.Plain("100% synced").spelled())
     }
 
     // Saved state carries Words through a Bundle and a Parcel; what comes back is equal and says the same.
     @Test fun wordsComeBackFromSavedStateAsTheyWent() {
         val said = listOf(
-            Words.Plain("Push A"),
+            Words.Plain("Ada Lovelace"),
             Words.Message(R.string.platform_cancel),
             counted(21),
-            Words.Message(R.string.platform_words_joined, listOf(Words.Plain("Push A"), Words.Message(R.string.platform_words_joined, listOf(counted(1), "kept")))),
+            Words.Message(R.string.platform_words_joined, listOf(Words.Plain("Ada Lovelace"), Words.Message(R.string.platform_words_joined, listOf(counted(1), "kept")))),
         )
         for (words in said) {
             val parcel = Parcel.obtain()

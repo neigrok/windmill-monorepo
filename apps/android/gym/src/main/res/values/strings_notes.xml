@@ -5,6 +5,7 @@
     <string name="gym_notes_write_note">Write a note</string>
     <string name="gym_notes_reorder_named">Reorder %1$s</string>
     <string name="gym_notes_empty_row">empty · tap to write</string>
+    <!-- A verb: opens a note to read or edit it. -->
     <string name="gym_notes_open_note">Open note</string>
     <string name="gym_notes_editor_title">Note</string>
     <string name="gym_notes_title">Notes</string>
@@ -19,6 +20,7 @@
     <string name="gym_notes_bytes_counter">%1$s of %2$s bytes</string>
     <string name="gym_notes_title_counter">%1$s of %2$s characters</string>
     <string name="gym_notes_field_title">Title</string>
+    <!-- A noun: the body of a note. -->
     <string name="gym_notes_field_note">Note</string>
     <string name="gym_notes_read_no_answer">the log didn’t answer — Your notes could not be read.</string>
     <string name="gym_notes_order_no_answer">the log didn’t answer — The order stayed as it was.</string>

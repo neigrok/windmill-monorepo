@@ -4,6 +4,7 @@
     <string name="gym_notification_text">%1$s · %2$s · %3$s</string>
     <string name="gym_notification_big_text">%1$s · %2$s\n%3$s</string>
     <string name="gym_notification_open_workout">Open workout</string>
+    <!-- A verb: records the set in hand. -->
     <string name="gym_notification_log_set">Log set</string>
     <string name="gym_notification_tile_label">Workout</string>
     <string name="gym_notification_tile_off">Off</string>

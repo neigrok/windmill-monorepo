@@ -28,6 +28,7 @@
     <string name="gym_logger_notification_off">Notification off</string>
     <string name="gym_logger_show">Show</string>
 
+    <!-- A noun: the weight a set is lifted at. -->
     <string name="gym_logger_load">Load</string>
     <string name="gym_logger_reps">Reps</string>
     <string name="gym_logger_reps_unit">reps</string>

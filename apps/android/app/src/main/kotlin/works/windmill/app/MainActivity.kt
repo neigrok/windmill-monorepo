@@ -358,7 +358,7 @@ internal fun EngineAccountDecision(session: works.windmill.gym.store.GymEngineSe
                     telemetry.event("gym_sign_in_decision", mapOf("action" to "discard", "state" to "discard_confirmation"))
                     discardDecision = session.decisionKey
                 }) { Text(stringResource(PlatformR.string.platform_discard)) }
-                TextButton(enabled = !session.decisionBusy, contentPadding = padding, onClick = { scope.launch { session.decide(LineageAnswer.add, decision) } }) { Text(stringResource(R.string.app_sign_in_add)) }
+                TextButton(enabled = !session.decisionBusy, contentPadding = padding, onClick = { scope.launch { session.decide(LineageAnswer.add, decision) } }) { Text(stringResource(PlatformR.string.platform_add)) }
             } })
     }
 }

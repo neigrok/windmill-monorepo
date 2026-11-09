@@ -332,7 +332,7 @@ fun RoutineBuilder(
                             open.adding -> R.string.gym_builder_title_add_movement
                             else -> R.string.gym_builder_title_edit_movement
                         }),
-                        commitLabel = stringResource(if (open.adding) R.string.gym_builder_add else PlatformR.string.platform_done),
+                        commitLabel = stringResource(if (open.adding) PlatformR.string.platform_add else PlatformR.string.platform_done),
                         onMovement = { changed ->
                             val latest = sheet as? BuilderSheet.Target
                             if (latest != null) sheet = latest.copy(movement = changed, opening = latest.opening ?: movement)
