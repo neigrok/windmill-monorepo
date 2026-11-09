@@ -689,6 +689,40 @@ class Device:
         self.run("shell", "wm", "density", str(density))
         self.run("shell", "settings", "put", "system", "font_scale", str(font_scale))
 
+    def boot(self, process, timeout=600, poll_seconds=1):
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if process.poll() is not None:
+                raise RuntimeError("The isolated emulator failed to boot; see emulator.log.")
+            if self.run("shell", "getprop", "sys.boot_completed", check=False).strip() == b"1":
+                return
+            time.sleep(poll_seconds)
+        raise RuntimeError("The isolated emulator did not finish booting.")
+
+    # A system language is a persisted property read at boot, so a rooted emulator sets it and boots again.
+    def system_locale(self, process, locale, timeout=600, poll_seconds=1):
+        if self.run("shell", "getprop", "ro.debuggable").strip() != b"1":
+            raise RuntimeError("A system language needs a rootable google_apis emulator; pass one with --shared-avd.")
+        self.run("root")
+        deadline = time.monotonic() + timeout
+        while self.run("shell", "whoami", check=False).strip() != b"root":
+            if time.monotonic() >= deadline:
+                raise RuntimeError("The emulator's adb did not restart as root.")
+            time.sleep(poll_seconds)
+        self.run("shell", "setprop", "persist.sys.locale", locale)
+        self.run("reboot")
+        deadline = time.monotonic() + timeout
+        while self.run("shell", "getprop", "sys.boot_completed", check=False).strip() == b"1":
+            if time.monotonic() >= deadline:
+                raise RuntimeError("The emulator did not restart for its system language.")
+            time.sleep(poll_seconds)
+        self.boot(process, timeout, poll_seconds)
+        qualifier = re.escape(locale.replace("-", "-r"))
+        configuration = self.run("shell", "cmd", "activity", "get-config").decode()
+        if self.run("shell", "getprop", "persist.sys.locale").strip().decode() != locale or \
+                not re.search(rf"(?<![A-Za-z]){qualifier}(?![A-Za-z])", configuration):
+            raise RuntimeError("The emulator did not take its system language.")
+
     # The system's "time to take action", set before the app launches, which reads it on resume.
     def accessibility_timeout(self, ms=None):
         if ms is None:
@@ -830,7 +864,7 @@ class Device:
                 raise ValueError("Unknown capture step.")
 
 
-def start_emulator(sdk, output, port, stack, auth_code=None, shared_avd=None):
+def start_emulator(sdk, output, port, stack, auth_code=None, shared_avd=None, system_locale=None):
     serial = f"emulator-{port}"
     if serial in command([sdk / "platform-tools/adb", "devices"]).decode().split():
         raise RuntimeError("The selected emulator port already belongs to a device; refusing install.")
@@ -858,19 +892,15 @@ def start_emulator(sdk, output, port, stack, auth_code=None, shared_avd=None):
     stack.callback(stop, process)
     device = Device(sdk, port, auth_code)
     device.output = output
-    deadline = time.monotonic() + 600
-    while time.monotonic() < deadline:
-        if process.poll() is not None:
-            raise RuntimeError("The isolated emulator failed to boot; see emulator.log.")
-        if device.run("shell", "getprop", "sys.boot_completed", check=False).strip() == b"1":
-            if not shared_avd and int(device.run("shell", "getprop", "ro.build.version.sdk").strip()) < 36:
-                raise RuntimeError("Capture emulator must be API 36 or later.")
-            device.run("shell", "input", "keyevent", "KEYCODE_WAKEUP")
-            device.run("shell", "wm", "dismiss-keyguard")
-            device.run("shell", "settings", "put", "global", "hide_error_dialogs", "1", check=False)
-            return device
-        time.sleep(1)
-    raise RuntimeError("The isolated emulator did not finish booting.")
+    device.boot(process)
+    if not shared_avd and int(device.run("shell", "getprop", "ro.build.version.sdk").strip()) < 36:
+        raise RuntimeError("Capture emulator must be API 36 or later.")
+    if system_locale:
+        device.system_locale(process, system_locale)
+    device.run("shell", "input", "keyevent", "KEYCODE_WAKEUP")
+    device.run("shell", "wm", "dismiss-keyguard")
+    device.run("shell", "settings", "put", "global", "hide_error_dialogs", "1", check=False)
+    return device
 
 
 def stop(process):
@@ -902,11 +932,14 @@ def main():
     parser.add_argument("--shared-avd", help="Boot this existing AVD read-only instead of a fresh one, for a host short of disk.")
     parser.add_argument("--patience", type=int, default=1, help="Multiplies every wait for a state, for a loaded host.")
     parser.add_argument("--appearance", choices=("dark", "light"), help="Capture one appearance instead of both.")
+    parser.add_argument("--system-locale", help="Boot the emulator in this system language, such as ar-EG; needs a rootable image.")
     parser.add_argument("--acceptance-pause-seconds", type=int, default=0,
                         help="Keep the isolated stack and emulator available after captures, up to 600 seconds.")
     args = parser.parse_args()
     if not 0 <= args.acceptance_pause_seconds <= 600 or not 1 <= args.profile_seconds <= 60:
         parser.error("Acceptance pause must be 0–600 seconds and the profile 1–60 seconds.")
+    if args.system_locale and not re.fullmatch(r"[a-z]{2,3}(?:-[A-Z]{2})?", args.system_locale):
+        parser.error("A system language is a language code with an optional region, such as ar-EG.")
     if args.sentry_dsn:
         dsn = urllib.parse.urlsplit(args.sentry_dsn)
         if dsn.scheme not in ("http", "https") or dsn.hostname not in ("10.0.2.2", "127.0.0.1", "localhost") or \
@@ -937,7 +970,8 @@ def main():
         parser.error(str(error))
     manifest = {"apiOrigin": app_origin, "source": command(["git", "rev-parse", "HEAD"], cwd=ROOT).decode().strip(),
                 "sourceDirty": bool(command(["git", "status", "--porcelain"], cwd=ROOT)),
-                "baseline": args.baseline, "captureOnly": args.capture_only, "captures": [], "failures": [], "authCompletions": 0}
+                "baseline": args.baseline, "captureOnly": args.capture_only, "systemLocale": args.system_locale,
+                "captures": [], "failures": [], "authCompletions": 0}
     manifest_path = args.output / "capture-manifest.json"
     def save_manifest(kind, value, traceback):
         if kind is not None:
@@ -1002,7 +1036,8 @@ def main():
         manifest["apkSha256"] = hashlib.sha256(apk.read_bytes()).hexdigest()
         manifest["step"] = "emulator"
         manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
-        device = start_emulator(args.sdk, args.output, args.emulator_port, stack, auth_code=lambda: mail.code, shared_avd=args.shared_avd)
+        device = start_emulator(args.sdk, args.output, args.emulator_port, stack, auth_code=lambda: mail.code,
+                                shared_avd=args.shared_avd, system_locale=args.system_locale)
         device.patience = args.patience
         if any(scenario.get("notification_clock") for scenario in scenarios):
             device.prepare_notification_capture()
