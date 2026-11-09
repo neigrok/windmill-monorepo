@@ -3,6 +3,7 @@ import { Section, styles } from '../../../shell/settings/Section.jsx';
 import { relativeTime, shortDate } from '../../../shell/settings/format.js';
 import { fetchTending } from '../tending/tendingClient.js';
 import { receiptLine, meterPct } from '../tending/receipts.js';
+import { t } from '../i18n/index.js';
 
 export function TendingSection() {
   const [data, setData] = React.useState(null);
@@ -25,15 +26,15 @@ export function TendingSection() {
   const pct = meterPct(used, limit);
 
   return (
-    <Section title="AI assistance">
+    <Section title={t('roadmap.tending.title')}>
       <div style={{ padding: '2px 0 4px' }}>
         <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 }}>
-          <span style={styles.primaryText}>{remaining} of {limit} AI requests left this month</span>
-          {plan === 'pro' && <span style={styles.tag}>PRO</span>}
+          <span style={styles.primaryText}>{t('roadmap.tending.left', { remaining: remaining ?? '', limit: limit ?? '' })}</span>
+          {plan === 'pro' && <span style={styles.tag}>{t('roadmap.tending.proTag')}</span>}
         </div>
         <div style={bar}><span style={{ ...barFill, width: `${pct}%` }} /></div>
         <div style={{ ...styles.metaText, marginTop: 6 }}>
-          {used} used · resets {shortDate(resetAtMs)}. Hand editing is always free.
+          {t('roadmap.tending.used', { used: used ?? '', resets: shortDate(resetAtMs) })}
         </div>
       </div>
 
@@ -50,7 +51,7 @@ export function TendingSection() {
           ))}
         </div>
       ) : (
-        <p style={{ ...styles.calmLine, marginTop: 10 }}>No AI requests yet this month.</p>
+        <p style={{ ...styles.calmLine, marginTop: 10 }}>{t('roadmap.tending.none')}</p>
       )}
     </Section>
   );

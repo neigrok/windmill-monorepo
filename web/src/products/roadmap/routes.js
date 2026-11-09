@@ -5,6 +5,7 @@ import { confirmDeviceOwner } from './persistence/LocalTreeRegistry.js';
 import { DEMO_TREE_ID } from './demo/demoStage.js';
 import { paidPlansOpen } from '../../shell/billing/checkout.js';
 import { roadmapLandingHead } from './marketing/landingHead.js';
+import { t } from './i18n/index.js';
 
 const importSkillTreeApp = () => import('./index.js').then((m) => ({ default: m.SkillTreeApp }));
 const SkillTreeApp = lazy(importSkillTreeApp);
@@ -79,7 +80,7 @@ async function forgetDevice({ next }) {
 
 export const roadmapRoutes = {
   id: 'roadmap',
-  label: 'Roadmap',
+  label: t('roadmap.product.label'),
   switchHash: '#/app',
   home,
   landingAfterSignIn,
@@ -95,9 +96,9 @@ export const roadmapRoutes = {
     href: '/roadmap',
     Component: RoadmapLanding,
     preload: importRoadmapLanding,
-    tagline: 'Map what you’re learning',
+    tagline: t('roadmap.product.tagline'),
     root: {
-      platforms: 'Web',
+      platforms: t('roadmap.product.platforms'),
       // Both scenes arrive in this product's chunk, so their own sheet cannot hold the space they
       // are about to take on the brand root — the shell's does, from the first paint, out of these.
       // Each is a world zoom-fitted to the frame the shell hands it (--rootScene-frame) with the
@@ -108,18 +109,18 @@ export const roadmapRoutes = {
         section: 'calc(0.8 * var(--rootScene-frame) + 31px)',
       },
       band: {
-        title: 'Map what you’re learning as a skill tree.',
-        sub: 'Real prerequisites, one checked-off node at a time. No account needed to begin.',
+        title: t('roadmap.root.bandTitle'),
+        sub: t('roadmap.root.bandSub'),
       },
       section: {
-        title: 'Your learning, drawn as a skill tree.',
-        sub: 'Author a path with real prerequisites. Each node unlocks when the ones before it are done, and the tree animates as you grow.',
-        trust: 'No account needed. Your first tree lives in the browser.',
-        cta: { href: '#/app/start', label: 'Start your tree' },
+        title: t('roadmap.root.sectionTitle'),
+        sub: t('roadmap.root.sectionSub'),
+        trust: t('roadmap.root.sectionTrust'),
+        cta: { href: '#/app/start', label: t('roadmap.landing.start') },
         proof: [
-          { title: 'Real prerequisites', copy: 'A step opens only when the steps before it are done.' },
-          { title: 'Begins without sign-up', copy: 'The first tree is yours in the browser. An account keeps it.' },
-          { title: 'Share one link', copy: 'Anyone can read it. Forks keep their own progress.' },
+          { title: t('roadmap.root.proofPrerequisitesTitle'), copy: t('roadmap.root.proofPrerequisitesCopy') },
+          { title: t('roadmap.root.proofNoSignUpTitle'), copy: t('roadmap.root.proofNoSignUpCopy') },
+          { title: t('roadmap.root.proofShareTitle'), copy: t('roadmap.root.proofShareCopy') },
         ],
       },
       Glimpse: lazy(() => import('./marketing/RootScenes.jsx').then((m) => ({ default: m.RoadmapGlimpse }))),

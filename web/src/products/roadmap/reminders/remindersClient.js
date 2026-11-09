@@ -1,4 +1,5 @@
 import { API_BASE } from '../../../shell/apiBase.js';
+import { t } from '../i18n/index.js';
 
 export async function fetchReminders() {
   try {
@@ -43,16 +44,14 @@ export function reminderPatch(enabled, timezone) {
   return { enabled: true, timezone: zone };
 }
 
-const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-
 // slotDow is 1=Mon..7=Sun and slotMinute is minutes past local midnight; out of range falls back to the standing slot.
 export function describeSchedule({ slotDow, slotMinute }) {
-  const day = DAY_NAMES[slotDow - 1] ?? 'Tuesday';
+  const day = Number.isInteger(slotDow) && slotDow >= 1 && slotDow <= 7 ? slotDow : 2;
   const minutes = Number.isInteger(slotMinute) && slotMinute >= 0 && slotMinute < 1440 ? slotMinute : 540;
   const hour = Math.floor(minutes / 60);
   const minute = minutes % 60;
   const suffix = hour < 12 ? 'am' : 'pm';
   const twelve = hour % 12 === 0 ? 12 : hour % 12;
   const clock = minute === 0 ? `${twelve}${suffix}` : `${twelve}:${String(minute).padStart(2, '0')}${suffix}`;
-  return `${day}s around ${clock}`;
+  return t('roadmap.reminders.schedule', { day, clock });
 }

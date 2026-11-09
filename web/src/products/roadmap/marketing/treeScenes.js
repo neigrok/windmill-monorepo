@@ -4,7 +4,7 @@
 // docs/design/consistency.md, and owed a redraw from the boards.
 
 import { KIND_CSS, isNightFor, sceneTheme } from '../theme.js';
-import { completedToast, upNextCount } from '../copy.js';
+import { t } from '../i18n/index.js';
 
 const PRM = matchMedia('(prefers-reduced-motion: reduce)').matches;
 // A node carries its kind as --kind-* tokens and follows the room by itself. An edge is an SVG stroke
@@ -54,7 +54,7 @@ function sv(tag, attrs, parent) {
   for (const k in attrs) e.setAttribute(k, attrs[k]);
   parent.appendChild(e); return e;
 }
-const smooth = t => t * t * (3 - 2 * t);
+const smooth = (x) => x * x * (3 - 2 * x);
 function mkKit() {
   const K = { timers: [], rafs: [],
     T(ms, fn) { K.timers.push(setTimeout(fn, ms)); },
@@ -64,23 +64,23 @@ function mkKit() {
 
 // ---------- the sail tree (world 780×940) ----------
 const ND = {
-  r:  { name: 'Learn to sail',       k: 'terracotta', x: 390, y: 490, ring: 0, crown: true },
-  a:  { name: 'Knots & lines',       k: 'olive',      x: 282, y: 375, ring: 1 },
-  b:  { name: 'Rig the mast',        k: 'terracotta', x: 502, y: 382, ring: 1 },
-  c:  { name: 'Read the wind',       k: 'sky',        x: 238, y: 562, ring: 1 },
-  d:  { name: 'Docking',             k: 'gold',       x: 540, y: 575, ring: 1 },
-  e:  { name: 'Capsize drill',       k: 'brick',      x: 392, y: 665, ring: 1 },
-  a1: { name: 'Whipping & splicing', k: 'olive',      x: 196, y: 268, ring: 2 },
-  a2: { name: 'Cleats & hitches',    k: 'olive',      x: 332, y: 238, ring: 2 },
-  b1: { name: 'Sail trim',           k: 'terracotta', x: 612, y: 286, ring: 2 },
-  b2: { name: 'Points of sail',      k: 'terracotta', x: 486, y: 228, ring: 2 },
-  c1: { name: 'Weather windows',     k: 'sky',        x: 112, y: 478, ring: 2 },
-  d1: { name: 'Night docking',       k: 'gold',       x: 664, y: 660, ring: 2 },
-  e1: { name: 'Man overboard drill', k: 'brick',      x: 298, y: 782, ring: 2 },
-  b3: { name: 'Reefing',             k: 'terracotta', x: 680, y: 428, ring: 3 },
-  c2: { name: 'Tides & currents',    k: 'sky',        x: 122, y: 648, ring: 3 },
-  e2: { name: 'First aid afloat',    k: 'brick',      x: 478, y: 788, ring: 3 },
-  m1: { name: 'First solo sail',     k: 'plum',       x: 706, y: 182, ring: 3 },
+  r:  { name: t('roadmap.scene.learnToSail'),       k: 'terracotta', x: 390, y: 490, ring: 0, crown: true },
+  a:  { name: t('roadmap.scene.knotsLines'),       k: 'olive',      x: 282, y: 375, ring: 1 },
+  b:  { name: t('roadmap.scene.rigMast'),        k: 'terracotta', x: 502, y: 382, ring: 1 },
+  c:  { name: t('roadmap.scene.readWind'),       k: 'sky',        x: 238, y: 562, ring: 1 },
+  d:  { name: t('roadmap.scene.docking'),             k: 'gold',       x: 540, y: 575, ring: 1 },
+  e:  { name: t('roadmap.scene.capsizeDrill'),       k: 'brick',      x: 392, y: 665, ring: 1 },
+  a1: { name: t('roadmap.scene.whippingSplicing'), k: 'olive',      x: 196, y: 268, ring: 2 },
+  a2: { name: t('roadmap.scene.cleatsHitches'),    k: 'olive',      x: 332, y: 238, ring: 2 },
+  b1: { name: t('roadmap.scene.sailTrim'),           k: 'terracotta', x: 612, y: 286, ring: 2 },
+  b2: { name: t('roadmap.scene.pointsOfSail'),      k: 'terracotta', x: 486, y: 228, ring: 2 },
+  c1: { name: t('roadmap.scene.weatherWindows'),     k: 'sky',        x: 112, y: 478, ring: 2 },
+  d1: { name: t('roadmap.scene.nightDocking'),       k: 'gold',       x: 664, y: 660, ring: 2 },
+  e1: { name: t('roadmap.scene.manOverboard'), k: 'brick',      x: 298, y: 782, ring: 2 },
+  b3: { name: t('roadmap.scene.reefing'),             k: 'terracotta', x: 680, y: 428, ring: 3 },
+  c2: { name: t('roadmap.scene.tidesCurrents'),    k: 'sky',        x: 122, y: 648, ring: 3 },
+  e2: { name: t('roadmap.scene.firstAidAfloat'),    k: 'brick',      x: 478, y: 788, ring: 3 },
+  m1: { name: t('roadmap.scene.firstSoloSail'),     k: 'plum',       x: 706, y: 182, ring: 3 },
 };
 const ED = [['r','a'],['r','b'],['r','c'],['r','d'],['r','e'],['a','a1'],['a','a2'],['b','b1'],['b','b2'],
             ['b1','b3'],['b2','b3'],['b1','m1'],['c','c1'],['c1','c2'],['d','d1'],['e','e1'],['e1','e2']];
@@ -150,13 +150,13 @@ function travel(K, E, dur, onArrive) {
   head.style.stroke = k.base;
   const t0 = performance.now(); let fired = false;
   const step = now => {
-    const t = Math.min(1, (now - t0) / dur), p = smooth(t);
+    const along = Math.min(1, (now - t0) / dur), p = smooth(along);
     lit.style.strokeDashoffset = len * (1 - p);
     const pt = lit.getPointAtLength(len * p);
     glow.setAttribute('cx', pt.x); glow.setAttribute('cy', pt.y);
     head.setAttribute('cx', pt.x); head.setAttribute('cy', pt.y);
     if (!fired && p >= .85) { fired = true; onArrive && onArrive(); }
-    if (t < 1) K.rafs.push(requestAnimationFrame(step));
+    if (along < 1) K.rafs.push(requestAnimationFrame(step));
     else { glow.remove(); head.remove(); paintEdge(E, true); lit.remove(); }
   };
   K.rafs.push(requestAnimationFrame(step));
@@ -178,12 +178,12 @@ export function mountHero(wrap) {
   // unscaled chrome
   el('div', 'scrim-t', wrap); el('div', 'scrim-b', wrap);
   const plq = el('div', 'plq', wrap,
-    '<span class="kdot"></span><span><div class="tn">Learn to sail</div><div class="by"><b>Windmill demo</b> · <span class="ct">6</span>/17 done</div></span>');
+    `<span class="kdot"></span><span><div class="tn">${ND.r.name}</div><div class="by"><b>${t('roadmap.scene.byline')}</b> · ${t('roadmap.scene.progress', { done: '<span class="ct">6</span>', total: 17 })}</div></span>`);
   el('div', 'wmk', wrap, 'Windmill');
-  const fcta = el('a', 'fcta', wrap, FORK_IC + '<span>Fork this tree</span>');
+  const fcta = el('a', 'fcta', wrap, `${FORK_IC}<span>${t('roadmap.scene.fork')}</span>`);
   fcta.href = '#/demo';
   fcta.tabIndex = -1;   // hero is aria-hidden; keep this link out of the tab order
-  const toast = el('div', 'toastp', wrap, `${completedToast({ step: 'Rig the mast', unlocked: [] })} · <b>${upNextCount({ count: 2 })}</b>`);
+  const toast = el('div', 'toastp', wrap, t('roadmap.scene.unlockToast', { step: ND.b.name, count: 2 }));
   const ct = plq.querySelector('.ct');
 
   // scale-to-fit: world only; labels hide below 0.8×
@@ -320,9 +320,9 @@ const beatDefs = {
   },
   finish: { // the bloom: one step ripens
     nodes: {
-      p: { name: 'Prime the walls', k: 'olive', x: 66,  y: 74,  ring: 0 },
-      q: { name: 'Paint',           k: 'terracotta', x: 168, y: 96, ring: 1 },
-      t: { name: 'Hang the shelf',  k: 'gold',  x: 268, y: 66,  ring: 2 },
+      p: { name: t('roadmap.scene.primeWalls'), k: 'olive', x: 66,  y: 74,  ring: 0 },
+      q: { name: t('roadmap.scene.paint'),           k: 'terracotta', x: 168, y: 96, ring: 1 },
+      t: { name: t('roadmap.scene.hangShelf'),  k: 'gold',  x: 268, y: 66,  ring: 2 },
     },
     edges: [['p','q'],['q','t']],
     rest: { p: 'done', q: 'avail', t: 'dim' },
@@ -336,9 +336,9 @@ const beatDefs = {
   },
   unlock: { // the travel: light runs the branch, the frontier wakes
     nodes: {
-      p:  { name: 'Rig the mast',   k: 'terracotta', x: 84, y: 98, ring: 0 },
-      c1: { name: 'Sail trim',      k: 'terracotta', x: 236, y: 46,  ring: 1 },
-      c2: { name: 'Points of sail', k: 'terracotta', x: 248, y: 148, ring: 1 },
+      p:  { name: t('roadmap.scene.rigMast'),   k: 'terracotta', x: 84, y: 98, ring: 0 },
+      c1: { name: t('roadmap.scene.sailTrim'),      k: 'terracotta', x: 236, y: 46,  ring: 1 },
+      c2: { name: t('roadmap.scene.pointsOfSail'), k: 'terracotta', x: 248, y: 148, ring: 1 },
     },
     edges: [['p','c1'],['p','c2']],
     rest: { p: 'avail', c1: 'dim', c2: 'dim' },

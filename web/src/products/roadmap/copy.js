@@ -1,129 +1,135 @@
-// Every string in the roadmap room, phone and desktop alike. Step titles arrive as plain strings; reasonLine reads them off a card.
+// The room's shared words and the sentences it builds from counts, read from the roadmap catalog. Step titles arrive as plain strings.
 
-export const STATE_WORDS = { locked: 'locked', upNext: 'up next', done: 'done' };
-export const COLUMN_TITLES = { locked: 'Locked', upNext: 'Up next', done: 'Done' };
-export const SORT_LABELS = { roadmap: 'Roadmap order', newest: 'Created · newest', oldest: 'Created · oldest' };
-export const SHORTCUTS_TITLE = 'Keyboard shortcuts · Board';
+import { t } from './i18n/index.js';
+
+export const STATE_WORDS = { locked: t('roadmap.state.locked'), upNext: t('roadmap.state.upNext'), done: t('roadmap.state.done') };
+export const COLUMN_TITLES = { locked: t('roadmap.column.locked'), upNext: t('roadmap.column.upNext'), done: t('roadmap.column.done') };
+export const SORT_LABELS = { roadmap: t('roadmap.sortLabel.roadmap'), newest: t('roadmap.sortLabel.newest'), oldest: t('roadmap.sortLabel.oldest') };
+export const SHORTCUTS_TITLE = t('roadmap.shortcuts.boardTitle');
 export const SORT_MENU = {
-  title: 'Sort',
-  created: 'Created',
-  options: { roadmap: 'Roadmap order', newest: 'Newest first', oldest: 'Oldest first' },
-  roadmapDetail: 'Closest to start, then most unlocks',
+  title: t('roadmap.sortMenu.title'),
+  created: t('roadmap.sortMenu.created'),
+  options: { roadmap: t('roadmap.sortMenu.roadmap'), newest: t('roadmap.sortMenu.newest'), oldest: t('roadmap.sortMenu.oldest') },
+  roadmapDetail: t('roadmap.sortMenu.roadmapDetail'),
 };
 
 export const LABELS = {
-  columns: 'Columns',
-  findStep: 'Find a step',
-  filterByKind: 'Filter by kind',
-  manageKinds: 'Manage kinds',
-  allKinds: 'All',
-  newStep: 'New step',
-  recolor: 'Recolor',
-  undo: 'Undo',
-  show: 'Show',
-  sort: 'Sort',
-  branch: 'Branch',
-  clearBranch: 'Clear branch',
-  clearSearch: 'Clear search',
-  close: 'Close',
+  columns: t('roadmap.label.columns'),
+  findStep: t('roadmap.label.findStep'),
+  filterByKind: t('roadmap.label.filterByKind'),
+  manageKinds: t('roadmap.label.manageKinds'),
+  allKinds: t('roadmap.label.allKinds'),
+  newStep: t('roadmap.label.newStep'),
+  recolor: t('roadmap.label.recolor'),
+  undo: t('roadmap.label.undo'),
+  show: t('roadmap.label.show'),
+  sort: t('roadmap.label.sort'),
+  branch: t('roadmap.label.branch'),
+  clearBranch: t('roadmap.label.clearBranch'),
+  clearSearch: t('roadmap.label.clearSearch'),
+  close: t('roadmap.label.close'),
 };
 
-export const VIEW_SWITCH = { group: 'View', board: 'Board', graph: 'Graph' };
+export const VIEW_SWITCH = { group: t('roadmap.viewSwitch.group'), board: t('roadmap.viewSwitch.board'), graph: t('roadmap.viewSwitch.graph') };
 export const ROADMAP_VERBS = {
-  askAI: 'Ask AI',
-  share: 'Share',
-  shareRoadmap: 'Share roadmap',
-  more: 'More',
-  export: 'Export',
-  settings: 'Settings',
-  keyboardShortcuts: 'Keyboard shortcuts',
-  fork: 'Fork',
-  activity: 'Activity',
+  askAI: t('roadmap.verb.askAI'),
+  share: t('roadmap.verb.share'),
+  shareRoadmap: t('roadmap.verb.shareRoadmap'),
+  more: t('roadmap.verb.more'),
+  export: t('roadmap.verb.export'),
+  settings: t('roadmap.verb.settings'),
+  keyboardShortcuts: t('roadmap.verb.keyboardShortcuts'),
+  fork: t('roadmap.verb.fork'),
+  activity: t('roadmap.verb.activity'),
 };
 export const ROADMAP_SHEET = {
-  title: 'Roadmap',
-  yourRoadmaps: 'Your roadmaps',
-  newRoadmap: 'New roadmap',
-  plantedInPublic: 'Planted in public',
-  findRoadmap: 'Find a roadmap',
+  title: t('roadmap.sheet.title'),
+  yourRoadmaps: t('roadmap.sheet.yourRoadmaps'),
+  newRoadmap: t('roadmap.sheet.newRoadmap'),
+  plantedInPublic: t('roadmap.sheet.plantedInPublic'),
+  findRoadmap: t('roadmap.sheet.findRoadmap'),
 };
 
-export const LINK_COPIED = 'Link copied';
-export const EMPTY_ROADMAP = { title: 'Your first step', body: 'Give your roadmap a place to start.', action: 'New step' };
+export const LINK_COPIED = t('roadmap.linkCopied');
+export const EMPTY_ROADMAP = { title: t('roadmap.emptyRoadmap.title'), body: t('roadmap.emptyRoadmap.body'), action: t('roadmap.emptyRoadmap.action') };
 export const LOAD_ERROR = {
-  title: 'Couldn’t load this roadmap',
-  body: 'It may have moved, or the server is unreachable.',
-  action: 'Try again',
+  title: t('roadmap.loadError.title'),
+  body: t('roadmap.loadError.body'),
+  action: t('roadmap.loadError.action'),
 };
-export const GRAPH_LOAD = { planting: 'Planting the tree…', home: 'Your trees' };
-export const SAVE_FAILURE = { body: 'Couldn’t save. Your draft is kept.', retry: 'Retry', keepEditing: 'Keep editing' };
-export const DISCARD_DRAFT = { title: 'Discard draft?', body: 'Your changes will be lost.', keepEditing: 'Keep editing', discard: 'Discard' };
-export const FILTERED_EMPTY = { title: 'No steps match', action: 'Clear filters' };
-const CLEAR_BOTH = 'Clear both';
-export const SYNC_STATUS = { saving: 'Saving…', saved: 'Saved', offline: 'Offline · changes will sync' };
-export const SYNC_OFFLINE_SHORT = 'Offline';
-export const REFUSED_SYNC = { body: 'Couldn’t sync this change.', retry: 'Retry', discard: 'Discard change' };
-export const ANONYMOUS_OWNER = 'Saved on this device — sign in to keep it';
-export const LAPSED_SESSION = 'Signed out — saved on this device';
-export const DEVICE_REFUSED = { title: 'Couldn’t open this device’s saved work', body: 'Reload to try again.' };
-export const FORK_OFFER = 'Fork this tree';
-export const DELETE_CONFIRM = { cancel: 'Cancel', delete: 'Delete' };
+export const GRAPH_LOAD = { planting: t('roadmap.graphLoad.planting'), home: t('roadmap.graphLoad.home') };
+export const SAVE_FAILURE = { body: t('roadmap.saveFailure.body'), retry: t('roadmap.saveFailure.retry'), keepEditing: t('roadmap.saveFailure.keepEditing') };
+export const DISCARD_DRAFT = {
+  title: t('roadmap.discardDraft.title'),
+  body: t('roadmap.discardDraft.body'),
+  keepEditing: t('roadmap.discardDraft.keepEditing'),
+  discard: t('roadmap.discardDraft.discard'),
+};
+export const FILTERED_EMPTY = { title: t('roadmap.filteredEmpty.title'), action: t('roadmap.filteredEmpty.action') };
+export const SYNC_STATUS = { saving: t('roadmap.sync.saving'), saved: t('roadmap.sync.saved'), offline: t('roadmap.sync.offline') };
+export const SYNC_OFFLINE_SHORT = t('roadmap.sync.offlineShort');
+export const REFUSED_SYNC = { body: t('roadmap.refusedSync.body'), retry: t('roadmap.refusedSync.retry'), discard: t('roadmap.refusedSync.discard') };
+export const ANONYMOUS_OWNER = t('roadmap.anonymousOwner');
+export const LAPSED_SESSION = t('roadmap.lapsedSession');
+export const DEVICE_REFUSED = { title: t('roadmap.deviceRefused.title'), body: t('roadmap.deviceRefused.body') };
+export const FORK_OFFER = t('roadmap.forkOffer');
+export const DELETE_CONFIRM = { cancel: t('roadmap.deleteConfirm.cancel'), delete: t('roadmap.deleteConfirm.delete') };
 export const COMPOSER = {
-  title: 'New step',
-  cancel: 'Cancel',
-  name: 'Name',
-  namePlaceholder: 'Name this step',
-  nameRequired: 'Enter a name for this step.',
-  description: 'Description · optional',
-  descriptionPlaceholder: 'What does this step cover?',
-  kind: 'Kind',
-  prerequisites: 'Prerequisites',
-  none: 'None',
-  create: 'Create step',
+  title: t('roadmap.composer.title'),
+  cancel: t('roadmap.composer.cancel'),
+  name: t('roadmap.composer.name'),
+  namePlaceholder: t('roadmap.composer.namePlaceholder'),
+  nameRequired: t('roadmap.composer.nameRequired'),
+  description: t('roadmap.composer.description'),
+  descriptionPlaceholder: t('roadmap.composer.descriptionPlaceholder'),
+  kind: t('roadmap.composer.kind'),
+  prerequisites: t('roadmap.composer.prerequisites'),
+  none: t('roadmap.composer.none'),
+  create: t('roadmap.composer.create'),
 };
-export const EDIT_STEP = { title: 'Edit step', save: 'Save' };
+export const EDIT_STEP = { title: t('roadmap.editStep.title'), save: t('roadmap.editStep.save') };
 export const PICKER = {
-  title: 'Prerequisites',
-  allSteps: 'All steps',
-  cantBe: 'Can’t be prerequisites',
-  apply: 'Apply',
-  cancel: 'Cancel',
-  selectionKept: 'Your selection is kept.',
-  clearSearch: 'Clear search',
-  startingStep: 'a starting step',
-  thisStep: 'This step',
-  comesAfter: 'Comes after this step',
-  nowComesAfter: 'Now comes after this step',
+  title: t('roadmap.picker.title'),
+  allSteps: t('roadmap.picker.allSteps'),
+  cantBe: t('roadmap.picker.cantBe'),
+  apply: t('roadmap.picker.apply'),
+  cancel: t('roadmap.picker.cancel'),
+  selectionKept: t('roadmap.picker.selectionKept'),
+  clearSearch: t('roadmap.picker.clearSearch'),
+  startingStep: t('roadmap.picker.startingStep'),
+  thisStep: t('roadmap.picker.thisStep'),
+  comesAfter: t('roadmap.picker.comesAfter'),
+  nowComesAfter: t('roadmap.picker.nowComesAfter'),
 };
 export const WORKSPACE = {
-  subtask: 'Subtask',
-  subtasks: 'Subtasks',
-  addSubtask: 'Add subtask',
-  note: 'Note',
-  edit: 'Edit',
-  personalLinks: 'Personal links',
-  addLink: 'Add link',
-  removeLink: 'Remove link',
-  removeSubtask: 'Remove subtask',
+  subtask: t('roadmap.workspace.subtask'),
+  subtasks: t('roadmap.workspace.subtasks'),
+  addSubtask: t('roadmap.workspace.addSubtask'),
+  note: t('roadmap.workspace.note'),
+  edit: t('roadmap.workspace.edit'),
+  personalLinks: t('roadmap.workspace.personalLinks'),
+  addLink: t('roadmap.workspace.addLink'),
+  removeLink: t('roadmap.workspace.removeLink'),
+  removeSubtask: t('roadmap.workspace.removeSubtask'),
 };
 export const NOTE_EDITOR = {
-  title: 'Edit note',
-  cancel: 'Cancel',
-  save: 'Save',
-  bold: 'Bold',
-  italic: 'Italic',
-  link: 'Link',
-  list: 'List',
-  text: 'Text',
-  url: 'URL',
-  urlPlaceholder: 'Paste or type URL',
-  apply: 'Apply',
+  title: t('roadmap.noteEditor.title'),
+  cancel: t('roadmap.noteEditor.cancel'),
+  save: t('roadmap.noteEditor.save'),
+  bold: t('roadmap.noteEditor.bold'),
+  italic: t('roadmap.noteEditor.italic'),
+  link: t('roadmap.noteEditor.link'),
+  list: t('roadmap.noteEditor.list'),
+  text: t('roadmap.noteEditor.text'),
+  url: t('roadmap.noteEditor.url'),
+  urlPlaceholder: t('roadmap.noteEditor.urlPlaceholder'),
+  apply: t('roadmap.noteEditor.apply'),
 };
-export const BULK = { region: 'Selection', done: 'Done', recolor: LABELS.recolor };
+export const BULK = { region: t('roadmap.bulk.region'), done: t('roadmap.bulk.done'), recolor: LABELS.recolor };
 export const RECOLOR = {
-  steps: `${LABELS.recolor} selected steps`,
-  kind: (name) => `${LABELS.recolor} ${name}`,
-  selection: (name) => `${LABELS.recolor} selection to ${name}`,
+  steps: t('roadmap.recolor.steps'),
+  kind: (name) => t('roadmap.recolor.kind', { name }),
+  selection: (name) => t('roadmap.recolor.selection', { name }),
 };
 
 export const COMPACT_COUNT_THRESHOLD = 1000;
@@ -138,43 +144,58 @@ export function formatCount(count, { compact = false } = {}) {
   return `${Number((count / MILLION).toFixed(COMPACT_DECIMALS))}m`;
 }
 
-export function stepCount(count) {
-  return `${formatCount(count)} ${count === 1 ? 'step' : 'steps'}`;
+// How long ago a roadmap was last changed, in the words its resume line uses; null when it can't tell.
+export function tendedAgo(updatedAt) {
+  if (updatedAt == null) return null;
+  const then = typeof updatedAt === 'number' ? updatedAt : Date.parse(updatedAt);
+  if (Number.isNaN(then)) return null;
+  const mins = Math.max(0, Math.round((Date.now() - then) / 60000));
+  if (mins < 1) return t('roadmap.tended.justNow');
+  if (mins < 60) return t('roadmap.tended.minutes', { count: mins });
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return t('roadmap.tended.hours', { count: hrs });
+  const days = Math.round(hrs / 24);
+  if (days < 7) return t('roadmap.tended.days', { count: days });
+  return t('roadmap.tended.weeks', { count: Math.round(days / 7) });
 }
 
 export function nextChip({ count }) {
-  return `Next · ${formatCount(count)}`;
+  return t('roadmap.board.nextChip', { count: formatCount(count) });
 }
 
 export function upNextCount({ count }) {
-  return `${formatCount(count)} up next`;
+  return t('roadmap.board.upNextCount', { count: formatCount(count) });
 }
 
 export function unlocksWhen({ step }) {
-  return `Unlocks when ‘${step}’ is done.`;
+  return t('roadmap.step.unlocksWhen', { step });
 }
 
 export function selectingAnnouncement({ count }) {
-  return `Selecting. ${selectedCount({ count })}.`;
+  return t('roadmap.bulk.selecting', { count: formatCount(count) });
 }
 
 export function selectedCount({ count }) {
-  return `${formatCount(count)} selected`;
+  return t('roadmap.bulk.selected', { count: formatCount(count) });
 }
 
 // A Locked card names what it needs, an Up next card what it opens; Done and a card that opens nothing say neither.
 export function reasonLine({ needs, unlocks }) {
-  if (needs) return `Needs ${needs.need.label}${needs.extra > 0 ? ` +${formatCount(needs.extra)}` : ''} · ${formatCount(needs.toGo)} to go`;
-  if (unlocks) return `Unlocks ${unlocks.first.label}${unlocks.extra > 0 ? ` +${formatCount(unlocks.extra)}` : ''}`;
+  if (needs && needs.extra > 0) {
+    return t('roadmap.card.needsMore', { step: needs.need.label, extra: formatCount(needs.extra), toGo: formatCount(needs.toGo) });
+  }
+  if (needs) return t('roadmap.card.needs', { step: needs.need.label, toGo: formatCount(needs.toGo) });
+  if (unlocks && unlocks.extra > 0) return t('roadmap.card.unlocksMore', { step: unlocks.first.label, extra: formatCount(unlocks.extra) });
+  if (unlocks) return t('roadmap.card.unlocks', { step: unlocks.first.label });
   return null;
 }
 
 export function lockedStatus({ toGo }) {
-  return `Locked · ${formatCount(toGo)} to go`;
+  return t('roadmap.card.lockedStatus', { toGo: formatCount(toGo) });
 }
 
 export function columnHeadingLabel({ column, count }) {
-  return `${COLUMN_TITLES[column]}, ${stepCount(count)}`;
+  return t('roadmap.board.columnHeading', { column: COLUMN_TITLES[column], count, shown: formatCount(count) });
 }
 
 export function progressFigure({ done, total, compact = false }) {
@@ -182,142 +203,146 @@ export function progressFigure({ done, total, compact = false }) {
 }
 
 export function progressLabel({ done, total }) {
-  return `${formatCount(done)} of ${stepCount(total)} done`;
+  return t('roadmap.progress.label', { done: formatCount(done), total, totalShown: formatCount(total) });
 }
 
 export function exactProgress({ done, upNext, locked }) {
-  return `${formatCount(done)} done · ${formatCount(upNext)} up next · ${formatCount(locked)} locked`;
+  return t('roadmap.progress.exact', { done: formatCount(done), upNext: formatCount(upNext), locked: formatCount(locked) });
 }
 
 export function showColumn({ column }) {
-  return `${LABELS.show} ${COLUMN_TITLES[column]}`;
+  return t('roadmap.board.showColumn', { column });
 }
 
 export function showAllDone({ total }) {
-  return `Show all ${formatCount(total)}`;
+  return t('roadmap.board.showAllDone', { total: formatCount(total) });
 }
 
 export function branchChip({ step }) {
-  return `Branch · ${step}`;
+  return t('roadmap.board.branchChip', { step });
 }
 
 export function completedToast({ step, unlocked = [], unlockedCount = unlocked.length }) {
-  if (unlockedCount === 0) return `${step} done`;
-  if (unlockedCount === 1 && unlocked.length === 1) return `${step} done · ${unlocked[0]} up next`;
-  return `${step} done · ${formatCount(unlockedCount)} up next`;
+  if (unlockedCount === 0) return t('roadmap.toast.completed', { step });
+  if (unlockedCount === 1 && unlocked.length === 1) return t('roadmap.toast.completedOpening', { step, next: unlocked[0] });
+  return t('roadmap.toast.completedOpeningMany', { step, count: formatCount(unlockedCount) });
 }
 
 export function completedStepsToast({ count, unlocked }) {
-  if (unlocked > 0) return `${stepCount(count)} done · ${formatCount(unlocked)} up next`;
-  return `${stepCount(count)} done`;
+  if (unlocked > 0) return t('roadmap.toast.completedStepsOpening', { count, shown: formatCount(count), unlocked: formatCount(unlocked) });
+  return t('roadmap.toast.completedSteps', { count, shown: formatCount(count) });
 }
 
 export function completedOutcome({ unlocked }) {
   if (unlocked.length === 0) return null;
-  if (unlocked.length === 1) return `${unlocked[0]} is up next`;
-  return `${stepCount(unlocked.length)} up next`;
+  if (unlocked.length === 1) return t('roadmap.step.completedOutcome', { next: unlocked[0] });
+  return t('roadmap.step.completedOutcomeMany', { count: unlocked.length, shown: formatCount(unlocked.length) });
 }
 
 export function resetOutcome({ relocked }) {
   if (relocked === 0) return null;
-  return `${stepCount(relocked)} locked again`;
+  return t('roadmap.step.resetOutcome', { count: relocked, shown: formatCount(relocked) });
 }
 
 export function resetPreview({ relocked }) {
   if (relocked === 0) return null;
-  return `Reset returns ${stepCount(relocked)} to Locked`;
+  return t('roadmap.step.resetPreview', { count: relocked, shown: formatCount(relocked) });
 }
 
 export function createdToast({ step, column, filterCleared = false }) {
-  if (filterCleared) return `${step} added · filter cleared`;
-  return `${step} added · ${COLUMN_TITLES[column]}`;
+  if (filterCleared) return t('roadmap.toast.createdFilterCleared', { step });
+  return t('roadmap.toast.created', { step, column: COLUMN_TITLES[column] });
 }
 
 // A fresh plant's arrival ends on this line; a quest names itself.
 export function plantedToast({ quest = false, count, done = 0 }) {
-  return `${quest ? 'Quest' : 'Roadmap'} planted · ${stepCount(count)}${done > 0 ? ` · ${formatCount(done)} already done` : ''}`;
+  const planted = quest ? 'quest' : 'roadmap';
+  if (done > 0) return t('roadmap.toast.plantedSomeDone', { planted, count, shown: formatCount(count), done: formatCount(done) });
+  return t('roadmap.toast.planted', { planted, count, shown: formatCount(count) });
 }
 
 export function welcomeBackToast({ count }) {
-  return `Welcome back · ${stepCount(count)} done since your last visit`;
+  return t('roadmap.toast.welcomeBack', { count, shown: formatCount(count) });
 }
 
 export function forkedToast({ count }) {
-  return `Forked — ${stepCount(count)} planted`;
+  return t('roadmap.toast.forked', { count, shown: formatCount(count) });
 }
 
 export function deletedToast({ step }) {
-  return `${step} deleted`;
+  return t('roadmap.toast.deleted', { step });
 }
 
 export function deleteFailedToast({ step, count = 1 }) {
-  return `Couldn’t delete ${count > 1 ? stepCount(count) : step || STEP_DETAIL.unnamed}`;
+  if (count > 1) return t('roadmap.toast.deleteFailedSteps', { count, shown: formatCount(count) });
+  return t('roadmap.toast.deleteFailed', { step: step || STEP_DETAIL.unnamed });
 }
 
 export function recoloredToast({ count }) {
-  return `${stepCount(count)} recolored`;
+  return t('roadmap.toast.recolored', { count, shown: formatCount(count) });
 }
 
 export function deletedStepsToast({ count }) {
-  return `${stepCount(count)} deleted`;
+  return t('roadmap.toast.deletedSteps', { count, shown: formatCount(count) });
 }
 
 export const GRAPH_TOAST = {
-  stepDeleted: 'Step deleted',
-  stepAdded: 'Step added',
-  renamed: 'Renamed',
-  recolored: 'Recolored',
-  linked: 'Linked',
-  linkRemoved: 'Link removed',
-  restore: 'Restore',
-  undrawnEdit: 'That edit could not be drawn — the picture is one step behind',
+  stepDeleted: t('roadmap.graphToast.stepDeleted'),
+  stepAdded: t('roadmap.graphToast.stepAdded'),
+  renamed: t('roadmap.graphToast.renamed'),
+  recolored: t('roadmap.graphToast.recolored'),
+  linked: t('roadmap.graphToast.linked'),
+  linkRemoved: t('roadmap.graphToast.linkRemoved'),
+  restore: t('roadmap.graphToast.restore'),
+  undrawnEdit: t('roadmap.graphToast.undrawnEdit'),
 };
 
-export const TEND_TOAST = { why: 'Why?', hide: 'Hide', reverted: 'AI changes reverted' };
+export const TEND_TOAST = { why: t('roadmap.tendToast.why'), hide: t('roadmap.tendToast.hide'), reverted: t('roadmap.tendToast.reverted') };
 
 export function deletedSelectionToast({ steps, links }) {
-  const parts = [];
-  if (steps > 0) parts.push(stepCount(steps));
-  if (links > 0) parts.push(`${formatCount(links)} ${links === 1 ? 'link' : 'links'}`);
-  return `${parts.join(' and ')} deleted`;
+  if (steps > 0 && links > 0) {
+    return t('roadmap.toast.deletedStepsAndLinks', { steps, stepsShown: formatCount(steps), links, linksShown: formatCount(links) });
+  }
+  if (steps > 0) return t('roadmap.toast.deletedSteps', { count: steps, shown: formatCount(steps) });
+  return t('roadmap.toast.deletedLinks', { count: links, shown: formatCount(links) });
 }
 
 export function graftedToast({ count, under = null }) {
-  return `Added ${stepCount(count)}${under ? ` under “${under}”` : ''}`;
+  if (under) return t('roadmap.toast.graftedUnder', { count, shown: formatCount(count), under });
+  return t('roadmap.toast.grafted', { count, shown: formatCount(count) });
 }
 
 export function keptStepsToast({ count }) {
-  return `${stepCount(count)} kept under a deleted node`;
+  return t('roadmap.toast.keptSteps', { count, shown: formatCount(count) });
 }
 
 export function cycleToast({ ring }) {
-  return `Cycle: ${ring.join(' → ')} — remove a link to fix it`;
+  return t('roadmap.toast.cycle', { ring: ring.join(' → ') });
 }
 
 export function deleteStepsAction({ count }) {
-  return `Delete ${stepCount(count)}`;
+  return t('roadmap.bulk.deleteSteps', { count, shown: formatCount(count) });
 }
 
 export function deleteCostLine(childCount) {
-  if (childCount <= 0) return 'Removes this step';
-  if (childCount === 1) return 'Removes this step · 1 branch resplices';
-  return `Removes this step · ${childCount} branches resplice`;
+  if (childCount <= 0) return t('roadmap.step.deleteCost');
+  return t('roadmap.step.deleteCostResplice', { count: childCount });
 }
 
 export function deleteConfirm({ step }) {
-  return `Delete ${step}?`;
+  return t('roadmap.deleteConfirm.question', { step });
 }
 
 export function completeStepAction({ step }) {
-  return `Complete ${step}`;
+  return t('roadmap.step.completeAction', { step });
 }
 
 export function placementPreview({ prerequisites, unmet }) {
-  if (prerequisites.length === 0) return { column: 'upNext', body: 'No prerequisites: lands in Up next.' };
-  if (unmet.length === 0) return { column: 'upNext', body: 'Prerequisites done: lands in Up next.' };
-  if (unmet.length === 1) return { column: 'locked', body: `${unmet[0]} isn’t done` };
-  if (unmet.length === 2) return { column: 'locked', body: `${unmet[0]} and ${unmet[1]} aren’t done` };
-  return { column: 'locked', body: `${unmet[0]} and ${formatCount(unmet.length - 1)} more aren’t done` };
+  if (prerequisites.length === 0) return { column: 'upNext', body: t('roadmap.composer.placementFree') };
+  if (unmet.length === 0) return { column: 'upNext', body: t('roadmap.composer.placementMet') };
+  if (unmet.length === 1) return { column: 'locked', body: t('roadmap.composer.placementUnmetOne', { step: unmet[0] }) };
+  if (unmet.length === 2) return { column: 'locked', body: t('roadmap.composer.placementUnmetTwo', { first: unmet[0], second: unmet[1] }) };
+  return { column: 'locked', body: t('roadmap.composer.placementUnmetMany', { first: unmet[0], more: formatCount(unmet.length - 1) }) };
 }
 
 export function prerequisiteNames(labels) {
@@ -327,81 +352,84 @@ export function prerequisiteNames(labels) {
 export function pickerFor({ step, total }) {
   const name = step.trim();
   if (!name) return null;
-  if (total == null) return `For ${name}`;
-  return `For ${name} · ${stepCount(total)}`;
+  if (total == null) return t('roadmap.picker.for', { step: name });
+  return t('roadmap.picker.forInRoadmap', { step: name, total, totalShown: formatCount(total) });
 }
 
 export function matchCount({ shown, count, total, band }) {
-  const matches = `${formatCount(count)} ${count === 1 ? 'match' : 'matches'}`;
-  const paged = shown < count ? `${formatCount(shown)} of ${matches}` : matches;
-  if (band === 'desktop' && total != null) return `${paged} in ${stepCount(total)}`;
-  return paged;
+  const inRoadmap = band === 'desktop' && total != null;
+  if (shown < count && inRoadmap) {
+    return t('roadmap.picker.pagedMatchesIn', { visible: formatCount(shown), count, shown: formatCount(count), total, totalShown: formatCount(total) });
+  }
+  if (shown < count) return t('roadmap.picker.pagedMatches', { visible: formatCount(shown), count, shown: formatCount(count) });
+  if (inRoadmap) return t('roadmap.picker.matchesIn', { count, shown: formatCount(count), total, totalShown: formatCount(total) });
+  return t('roadmap.picker.matches', { count, shown: formatCount(count) });
 }
 
 export function afterStep({ step }) {
-  return `after ${step}`;
+  return t('roadmap.picker.afterStep', { step });
 }
 
 export function leftSelection({ step }) {
-  return `${step} now comes after this step, so it left your selection.`;
+  return t('roadmap.picker.leftSelection', { step });
 }
 
 export function noStepsMatch({ query }) {
-  return `No steps match “${query.trim()}”`;
+  return t('roadmap.noStepsMatch', { query: query.trim() });
 }
 
 export function showMore({ count }) {
-  return `Show ${formatCount(count)} more`;
+  return t('roadmap.picker.showMore', { count: formatCount(count) });
 }
 
 export function checkedToast({ item }) {
-  return `${item} checked`;
+  return t('roadmap.toast.checked', { item });
 }
 
 export function roadmapComplete({ total }) {
   return {
-    title: total === 1 ? '1 step done' : `All ${stepCount(total)} done`,
-    body: 'Add a step whenever you’re ready.',
-    share: 'Share it',
+    title: t('roadmap.complete.title', { total, totalShown: formatCount(total) }),
+    body: t('roadmap.complete.body'),
+    share: t('roadmap.complete.share'),
   };
 }
 
 // What an emptied column says, by the way out it names: the search, the kinds or both.
 export function emptyColumn({ recovery, search }) {
   if (recovery === 'kinds') return { title: FILTERED_EMPTY.title, action: FILTERED_EMPTY.action };
-  return { title: noStepsMatch({ query: search }), action: recovery === 'both' ? CLEAR_BOTH : LABELS.clearSearch };
+  return { title: noStepsMatch({ query: search }), action: recovery === 'both' ? t('roadmap.clearBoth') : LABELS.clearSearch };
 }
 
 export function removeChip({ label }) {
-  return `Remove ${label}`;
+  return t('roadmap.board.removeChip', { label });
 }
 
 export function sortButtonLabel({ sort }) {
-  return `${SORT_MENU.title}: ${SORT_MENU.options[sort]}`;
+  return t('roadmap.sortMenu.button', { sort: SORT_MENU.options[sort] });
 }
 
 // The step page and modal.
 export const STEP_DETAIL = {
-  select: 'Select',
-  sections: { overview: 'Overview', workspace: 'Workspace', history: 'History' },
-  stepLinks: 'Step links',
-  prerequisites: 'Prerequisites',
-  unlocks: 'Unlocks',
-  complete: 'Complete',
-  reset: 'Reset',
-  close: 'Close',
-  more: 'More',
-  back: 'Back',
-  copyLink: 'Copy link',
-  openInGraph: 'Open in Graph',
-  deleteStep: 'Delete step',
-  editStep: 'Edit step',
-  editNote: 'Edit note',
-  viewBranch: 'View branch',
-  subtasks: 'Subtasks',
-  addSubtask: 'Add subtask',
-  subtaskOffer: { body: 'All subtasks done', action: 'Complete step' },
-  unnamed: 'Unnamed step',
+  select: t('roadmap.step.select'),
+  sections: { overview: t('roadmap.step.overview'), workspace: t('roadmap.step.workspace'), history: t('roadmap.step.history') },
+  stepLinks: t('roadmap.step.stepLinks'),
+  prerequisites: t('roadmap.step.prerequisites'),
+  unlocks: t('roadmap.step.unlocks'),
+  complete: t('roadmap.step.complete'),
+  reset: t('roadmap.step.reset'),
+  close: t('roadmap.step.close'),
+  more: t('roadmap.step.more'),
+  back: t('roadmap.step.back'),
+  copyLink: t('roadmap.step.copyLink'),
+  openInGraph: t('roadmap.step.openInGraph'),
+  deleteStep: t('roadmap.step.deleteStep'),
+  editStep: t('roadmap.step.editStep'),
+  editNote: t('roadmap.step.editNote'),
+  viewBranch: t('roadmap.step.viewBranch'),
+  subtasks: t('roadmap.step.subtasks'),
+  addSubtask: t('roadmap.step.addSubtask'),
+  subtaskOffer: { body: t('roadmap.step.subtaskOfferBody'), action: t('roadmap.step.subtaskOfferAction') },
+  unnamed: t('roadmap.step.unnamed'),
 };
 
 export function prerequisitesTally({ done, total }) {
@@ -409,51 +437,51 @@ export function prerequisitesTally({ done, total }) {
 }
 
 export function subtaskTally({ done, total }) {
-  return `${done} of ${total}`;
+  return t('roadmap.step.subtaskTally', { done, total });
 }
 
 export function backTo({ screen }) {
-  return `${STEP_DETAIL.back} to ${screen}`;
+  return t('roadmap.step.backTo', { screen });
 }
 
 export function draftLine({ step }) {
-  return `for ${step}`;
+  return t('roadmap.composer.draftLine', { step });
 }
 
-export const WORKSPACE_EMPTY = { body: 'Add something for this step.', addNote: 'Add note' };
-export const NEW_LINK = { title: 'New link' };
-export const HISTORY_EMPTY = 'No changes yet';
+export const WORKSPACE_EMPTY = { body: t('roadmap.workspace.emptyBody'), addNote: t('roadmap.workspace.addNote') };
+export const NEW_LINK = { title: t('roadmap.workspace.newLink') };
+export const HISTORY_EMPTY = t('roadmap.step.historyEmpty');
 
-export const REFUSED_CAPACITY = { title: 'This roadmap is at its limit.', body: 'This change can’t sync.' };
+export const REFUSED_CAPACITY = { title: t('roadmap.refusedCapacity.title'), body: t('roadmap.refusedCapacity.body') };
 
 export function refusedSyncBody({ count }) {
-  if (count > 1) return `Couldn’t sync ${formatCount(count)} changes.`;
+  if (count > 1) return t('roadmap.refusedSync.bodyMany', { count: formatCount(count) });
   return REFUSED_SYNC.body;
 }
 
 export function discardChanges({ count }) {
-  if (count > 1) return `Discard ${formatCount(count)} changes`;
+  if (count > 1) return t('roadmap.refusedSync.discardMany', { count: formatCount(count) });
   return REFUSED_SYNC.discard;
 }
 
 export function roadmapsHeading({ count }) {
-  return `${ROADMAP_SHEET.yourRoadmaps} · ${formatCount(count)}`;
+  return t('roadmap.sheet.yourRoadmapsCount', { count: formatCount(count) });
 }
 
 export function roadmapMatches({ shown, total }) {
-  return `${formatCount(shown)} of ${formatCount(total)} roadmaps`;
+  return t('roadmap.sheet.matches', { shown: formatCount(shown), total: formatCount(total) });
 }
 
-export const DEMO_BYLINE = { wide: 'Windmill sample', phone: 'Sample' };
+export const DEMO_BYLINE = { wide: t('roadmap.demo.bylineWide'), phone: t('roadmap.demo.bylinePhone') };
 export const ASK_AI_PLACEHOLDER = {
-  phone: 'What should change?',
-  wide: 'Tell the tree what to change…',
-  empty: 'What do you want to learn or build?',
+  phone: t('roadmap.askAI.placeholderPhone'),
+  wide: t('roadmap.askAI.placeholderWide'),
+  empty: t('roadmap.askAI.placeholderEmpty'),
 };
-export const OPEN_STEP = 'Open step';
+export const OPEN_STEP = t('roadmap.graph.openStep');
 export const ACTIVITY = {
-  heading: 'Activity',
-  empty: 'No activity yet — changes you make will appear here.',
+  heading: t('roadmap.activity.heading'),
+  empty: t('roadmap.activity.empty'),
 };
 
-export const GRAPH_UNAVAILABLE = 'Graph needs WebGL2, which this browser doesn’t support.';
+export const GRAPH_UNAVAILABLE = t('roadmap.viewSwitch.graphUnavailable');
