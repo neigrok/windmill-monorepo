@@ -4,12 +4,12 @@ import { t } from '../i18n/entry/index.js';
 export const gymLandingHead = {
   path: '/gym',
   module: 'src/products/gym/marketing/GymLanding.jsx',
-  title: t('gym.landing.head.title'),
-  description: t('gym.landing.head.description'),
-  ogTitle: t('gym.landing.head.shareTitle'),
-  ogDescription: t('gym.landing.head.shareDescription'),
-  twitterTitle: t('gym.landing.head.shareTitle'),
-  twitterDescription: t('gym.landing.head.shareDescription'),
+  title: t('gym.landingHead.title'),
+  description: t('gym.landingHead.description'),
+  ogTitle: t('gym.landingHead.shareTitle'),
+  ogDescription: t('gym.landingHead.shareDescription'),
+  twitterTitle: t('gym.landingHead.shareTitle'),
+  twitterDescription: t('gym.landingHead.shareDescription'),
   imageAlt: SHARE_CARD_ALT,
   fallback: {
     // --accent-iris-600 in styles/tokens/palettes.css.
@@ -23,8 +23,8 @@ export const gymLandingHead = {
     ],
     trust: t('gym.landing.accountLine'),
     notes: [
-      t('gym.landing.head.notesHow'),
-      t('gym.landing.head.notesLine'),
+      t('gym.landingHead.notesHow'),
+      t('gym.landingHead.notesLine'),
     ],
   },
   schema: [
@@ -33,9 +33,9 @@ export const gymLandingHead = {
       '@id': `${SITE_ORIGIN}/gym#app`,
       'name': 'Windmill Gym',
       'url': `${SITE_ORIGIN}/gym`,
-      'description': t('gym.landing.head.schemaDescription'),
+      'description': t('gym.landingHead.schemaDescription'),
       'applicationCategory': 'HealthApplication',
-      'operatingSystem': t('gym.landing.head.operatingSystem'),
+      'operatingSystem': t('gym.landingHead.operatingSystem'),
       'image': `${SITE_ORIGIN}/og-image.png`,
       'isAccessibleForFree': true,
       'publisher': { '@id': `${SITE_ORIGIN}/#organization` },

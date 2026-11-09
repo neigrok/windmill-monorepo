@@ -113,7 +113,7 @@ function RemoveLinkBar({ onRemove, onCancel }) {
         onClick={onCancel}
         style={{ ...pill, border: '1.5px solid var(--border-default)', background: 'var(--surface-card)', color: 'var(--color-bark)' }}
       >
-        {t('roadmap.tablet.cancel')}
+        {t('roadmap.common.cancel')}
       </button>
       <button
         type="button"

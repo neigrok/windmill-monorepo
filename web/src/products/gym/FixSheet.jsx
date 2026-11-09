@@ -36,7 +36,7 @@ export function FixSheet({ set, sets = [set], movement, exercise, session, onSav
   return <section className="gym-fix-page" aria-label={t('gym.fix.title')}>
     <header className="gym-fix-head">
       <div><h1 className="gym-title">{t('gym.fix.title')}</h1><p className="gym-fix-sub">{fixSubtitle(movement, set)}{session.startedAt != null ? ` · ${dayLabel(session.startedAt)}` : ''}</p></div>
-      <button type="button" className="gym-fix-cancel" onClick={onClose} disabled={busy}>{t('gym.fix.cancel')}</button>
+      <button type="button" className="gym-fix-cancel" onClick={onClose} disabled={busy}>{t('gym.common.cancel')}</button>
     </header>
     <form ref={form} className="gym-fix-form" onSubmit={save}>
       <fieldset disabled={busy}>

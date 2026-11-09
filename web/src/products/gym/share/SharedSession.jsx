@@ -31,7 +31,7 @@ export function SharedSession({ token }) {
       <main className="gym-column gym-shared">
         <p className="gym-read-failed">
           {t('gym.share.notLoaded')}
-          <Button variant="secondary" size="sm" onClick={view.retry}>{t('gym.share.retry')}</Button>
+          <Button variant="secondary" size="sm" onClick={view.retry}>{t('gym.common.retry')}</Button>
         </p>
       </main>
     );

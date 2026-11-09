@@ -179,7 +179,7 @@ export function ForkDoor({ open, presentation = 'sheet', treeId, signedIn = fals
       <h2 id={titleId} style={TITLE_STYLE}>{t('roadmap.fork.unreachableTitle')}</h2>
       <p style={COPY_STYLE}>{t('roadmap.fork.unreachableBody')}</p>
       <div style={{ display: 'grid', marginTop: 14 }}>
-        <Button variant="ghost" size="sm" onClick={backToForm}>{t('roadmap.fork.back')}</Button>
+        <Button variant="ghost" size="sm" onClick={backToForm}>{t('roadmap.common.back')}</Button>
       </div>
     </div>
   ) : instantFork ? (

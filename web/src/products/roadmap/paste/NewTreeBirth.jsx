@@ -164,7 +164,7 @@ export function NewTreeBirth() {
 
   const planting = phase === 'planting';
   const composing = composerOpen && !deviceRefused;
-  const plaqueName = name.trim() || t('roadmap.untitled');
+  const plaqueName = name.trim() || t('roadmap.common.untitled');
   const pasteDoor = <button type="button" className="birth-paste-door" onClick={() => setComposerOpen(true)}>{t('roadmap.birth.pasteDoor')}</button>;
 
   const composer = composing && parse && (
@@ -208,7 +208,7 @@ export function NewTreeBirth() {
           <>
             <div style={title}>{t('roadmap.birth.failedTitle')}</div>
             <p style={sub}>{t('roadmap.birth.failedBody')}</p>
-            <button type="button" className="birth-plant" onClick={() => setPhase('naming')}>{t('roadmap.birth.retry')}</button>
+            <button type="button" className="birth-plant" onClick={() => setPhase('naming')}>{t('roadmap.common.tryAgain')}</button>
           </>
         ) : (
           <>

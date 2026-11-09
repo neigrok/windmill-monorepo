@@ -61,7 +61,7 @@ function OneMovement({ id, from, log }) {
         <BackTo from={from} />
         <p className="gym-read-failed">
           {t('gym.record.failed')}
-          <Button variant="secondary" size="sm" onClick={view.retry}>{t('gym.log.retry')}</Button>
+          <Button variant="secondary" size="sm" onClick={view.retry}>{t('gym.common.retry')}</Button>
         </p>
       </>
     );
@@ -207,7 +207,7 @@ function RenameSheet({ name, record, onClose, onSave }) {
         >
           {t('gym.record.rename')}
         </Button>
-        <button type="button" className="gym-name-cancel" onClick={onClose}>{t('gym.record.cancel')}</button>
+        <button type="button" className="gym-name-cancel" onClick={onClose}>{t('gym.common.cancel')}</button>
       </div>
     </div>
   );

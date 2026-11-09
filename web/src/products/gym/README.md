@@ -80,7 +80,8 @@ and survives routine deletion.
 ## Localization
 
 Gym copy lives under `gym.<area>.*`, one area per screen or module (`gym.log.*`, `gym.routines.*`, `gym.coach.*`,
-`gym.landing.*`, `gym.product.*` for the shell registry's words). The files the brand root loads — the route table,
+`gym.landing.*`, `gym.landingHead.*`, `gym.product.*` for the shell registry's words, `gym.common.*` for a word
+several screens share). The files the brand root loads — the route table,
 the landing head, the brand root's scenes and the runtime the route table's sync hooks import — read `t` from
 `i18n/entry/index.js`, with their copy in `i18n/entry/en.json`; every other file reads `i18n/index.js` and
 `i18n/en.json`. A shared phrase keeps its exported constant (`COACH_TITLE`, `UNDO_LABEL`), whose value is a `t()`

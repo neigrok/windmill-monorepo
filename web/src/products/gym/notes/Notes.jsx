@@ -108,7 +108,7 @@ export function Notes({ log }) {
       {phase === 'failed' && (
         <p className="gym-read-failed">
           {NOTES_FAILED}
-          <Button variant="secondary" size="sm" onClick={view.retry}>{t('gym.notes.retry')}</Button>
+          <Button variant="secondary" size="sm" onClick={view.retry}>{t('gym.common.retry')}</Button>
         </p>
       )}
 
@@ -286,7 +286,7 @@ export function NoteEditor({ note, noteCount = null, onClose, onSaved, onDelete,
         <button type="button" className="gym-note-delete" onClick={() => onDelete(note)}>{DELETE_VERB}</button>
       )}
       <div className="gym-note-actions">
-        <button type="button" onClick={onClose}>{t('gym.notes.cancel')}</button>
+        <button type="button" onClick={onClose}>{t('gym.common.cancel')}</button>
         <Button disabled={!ready} ariaBusy={saving} onClick={save}>{saving ? t('gym.notes.saving') : t('gym.notes.save')}</Button>
       </div>
     </section>

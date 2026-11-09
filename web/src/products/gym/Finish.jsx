@@ -50,7 +50,7 @@ export function FinishScreen({ id, log }) {
         <Back href={sessionHref(id)}>{t('gym.finish.sessionDetail')}</Back>
         <p className="gym-read-failed">
           {t('gym.finish.readFailed')}
-          <Button variant="secondary" size="sm" onClick={view.retry}>{t('gym.log.retry')}</Button>
+          <Button variant="secondary" size="sm" onClick={view.retry}>{t('gym.common.retry')}</Button>
         </p>
       </>
     );

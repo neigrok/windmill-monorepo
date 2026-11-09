@@ -51,7 +51,7 @@ export function TargetEditor({ movement, place, panePlace = place, entry, exerci
         <div className="gym-sheet-head">
           <span className="gym-target-movement">{movement}</span>
           <span className="gym-target-place"><span className="gym-target-sheet-place">{place}</span>{pane && <span className="gym-target-pane-place">{panePlace}</span>}</span>
-          <button type="button" className="gym-sheet-close" onClick={onClose} aria-label={t('gym.planning.close')}>
+          <button type="button" className="gym-sheet-close" onClick={onClose} aria-label={t('gym.common.close')}>
             <Icon name="x" size={12} />
           </button>
         </div>

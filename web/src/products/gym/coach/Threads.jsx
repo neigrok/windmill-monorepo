@@ -48,7 +48,7 @@ export function ThreadsList({ log, accountId }) {
         <Back href={COACH_HREF}>{COACH_TITLE}</Back>
         <p className="gym-read-failed">
           {THREADS_FAILED}
-          <Button variant="secondary" size="sm" onClick={view.retry}>{t('gym.coach.retry')}</Button>
+          <Button variant="secondary" size="sm" onClick={view.retry}>{t('gym.common.retry')}</Button>
         </p>
       </>
     );
@@ -132,7 +132,7 @@ export function ThreadDetail({ id, log, accountId }) {
         <Back href={THREADS_HREF}>{THREADS_TITLE}</Back>
         <p className="gym-read-failed">
           {THREAD_FAILED}
-          <Button variant="secondary" size="sm" onClick={view.retry}>{t('gym.coach.retry')}</Button>
+          <Button variant="secondary" size="sm" onClick={view.retry}>{t('gym.common.retry')}</Button>
         </p>
       </>
     );

@@ -82,7 +82,7 @@ export function GymIllustration() {
           </div>
           <p className="gyRoot-why">{t('gym.landing.scenes.why')}</p>
           <div className="gyRoot-acts">
-            <span className="gyRoot-button">{t('gym.landing.scenes.apply')}</span>
+            <span className="gyRoot-button">{t('gym.common.apply')}</span>
             <span className="gyRoot-turn-down">{t('gym.landing.scenes.turnDown')}</span>
           </div>
         </div>

@@ -130,7 +130,7 @@ export function WorkoutEditor({ session, sets, catalog, log, from, onDelete }) {
           {pick && <label className="gym-workout-picker">{t('gym.correction.movement')}<select value="" onChange={(event) => { if (event.target.value) addSet(event.target.value); }}><option value="">{t('gym.correction.chooseMovement')}</option>{catalog.map((exercise) => <option key={exercise.id} value={exercise.id}>{exercise.name}</option>)}</select></label>}
         </fieldset>
         {failure && <p className="gym-read-failed" role="alert">{failure.reason}{failure.overlapping && <> <a href={sessionHref(failure.overlapping.id)}>{t('gym.correction.openSession')}</a></>}</p>}
-        <div className="gym-correction-actions"><a className="gym-workout-cancel" href={back}>{pending ? t('gym.correction.backToWorkout') : t('gym.correction.cancel')}</a><Button type="submit" disabled={busy}>{pending ? t('gym.correction.waiting') : saving ? t('gym.correction.saving') : t('gym.correction.saveChanges')}</Button></div>
+        <div className="gym-correction-actions"><a className="gym-workout-cancel" href={back}>{pending ? t('gym.correction.backToWorkout') : t('gym.common.cancel')}</a><Button type="submit" disabled={busy}>{pending ? t('gym.correction.waiting') : saving ? t('gym.correction.saving') : t('gym.correction.saveChanges')}</Button></div>
       </form>
       <aside className="gym-workout-totals">
         <p className="gym-workout-unit">{t('gym.correction.savedOn', { day: dayLabel(original.startedAt).toUpperCase() })}</p>

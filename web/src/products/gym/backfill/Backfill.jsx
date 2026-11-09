@@ -129,7 +129,7 @@ function ReadFailed({ back, onRetry, children }) {
       <Back href={back.href}>{back.label}</Back>
       <p className="gym-read-failed">
         {children}
-        <Button variant="secondary" size="sm" onClick={onRetry}>{t('gym.backfill.retry')}</Button>
+        <Button variant="secondary" size="sm" onClick={onRetry}>{t('gym.common.retry')}</Button>
       </p>
     </>
   );

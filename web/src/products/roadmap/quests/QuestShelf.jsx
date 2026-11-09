@@ -163,7 +163,7 @@ export function QuestShelf() {
         </section>
 
         <footer className="quest-shelf-credit">
-          {t('roadmap.questsAttribution')}
+          {t('roadmap.quests.attribution')}
         </footer>
       </main>
     </div>

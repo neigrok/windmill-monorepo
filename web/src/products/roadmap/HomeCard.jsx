@@ -32,7 +32,7 @@ export function HomeCard() {
   }, []);
 
   const newest = trees?.length ? trees[0] : null;
-  const name = newest ? (newest.title?.trim() || t('roadmap.untitled')) : null;
+  const name = newest ? (newest.title?.trim() || t('roadmap.common.untitled')) : null;
   const chars = name ? Array.from(name) : []; // cut by code points — an emoji never splits
   const shortName = chars.length > 18 ? `${chars.slice(0, 17).join('').trimEnd()}…` : name;
   const tended = newest ? tendedAgo(newest.updatedAt) : null;
@@ -44,14 +44,14 @@ export function HomeCard() {
       <a className="wm-rhc" href={newest ? `#/app/${newest.id}` : '#/app/start'}>
         <span className="wm-rhc-head">
           <span className="wm-rhc-dot" style={{ background: KIND_DOT[newest?.dominantKind] ?? KIND_DOT.terracotta }} aria-hidden="true" />
-          {t('roadmap.home.title')}
+          {t('roadmap.product.name')}
         </span>
         {newest ? (
           <span className="wm-rhc-body">
             {tended ? t('roadmap.resume.summaryTended', { name, progress, tended }) : t('roadmap.resume.summary', { name, progress })}
           </span>
         ) : (
-          <span className="wm-rhc-body">{t('roadmap.firstTreeInBrowser')}</span>
+          <span className="wm-rhc-body">{t('roadmap.landing.firstTreeInBrowser')}</span>
         )}
         <span className="wm-rhc-link">{newest ? t('roadmap.home.resume', { name: shortName }) : t('roadmap.home.start')}</span>
       </a>

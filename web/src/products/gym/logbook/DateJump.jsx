@@ -30,7 +30,7 @@ export function DateJump({ year, month, months, onChange, failure = false, onRet
   }}>
     <span className="gym-history-filter"><button type="button" className="gym-date-trigger" aria-expanded={open} onClick={() => setOpen(!open)}>{label}</button>{year && <button type="button" aria-label={t('gym.logbook.clearDate')} onClick={() => onChange({ year: null, month: null })}>×</button>}</span>
     {open && <dialog ref={layer} className="gym-date-layer" aria-label={t('gym.logbook.jumpToDate')} onCancel={(event) => { event.preventDefault(); setOpen(false); }}><button type="button" className="gym-date-scrim" aria-label={t('gym.logbook.closeDateJump')} tabIndex={-1} onClick={() => setOpen(false)} /><div ref={popup} className="gym-date-popover">
-      <span className="gym-date-handle" aria-hidden="true" /><h2>{t('gym.logbook.jumpToDate')}</h2>{failure && <p>{t('gym.logbook.datesFailed', { retry: <button type="button" onClick={onRetry}>{t('gym.logbook.retry')}</button> })}</p>}
+      <span className="gym-date-handle" aria-hidden="true" /><h2>{t('gym.logbook.jumpToDate')}</h2>{failure && <p>{t('gym.logbook.datesFailed', { retry: <button type="button" onClick={onRetry}>{t('gym.common.retry')}</button> })}</p>}
       <div className="gym-date-choices">{available.map((value) => <button key={value} type="button" aria-pressed={shownYear === value} onClick={() => onChange({ year: value, month: null })}>{value}</button>)}</div>
       {shownYear && <p>{t('gym.logbook.yearWorkouts', { year: shownYear, count: shownMonths.reduce((total, entry) => total + entry.sessions, 0) })}</p>}
       <div className="gym-date-choices">{shownMonths.map((entry) => {

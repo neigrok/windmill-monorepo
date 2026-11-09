@@ -235,7 +235,7 @@ export function GraphSelectionBar({ stepCount, linkCount, choice, onPreviewKind,
       )}
       {onDelete && (
         <span className="st-selection-delete" onPointerEnter={onPreviewDelete} onPointerLeave={onClearDelete}>
-          <Button variant="danger" size="sm" onClick={onDelete}>{t('roadmap.graph.delete')}</Button>
+          <Button variant="danger" size="sm" onClick={onDelete}>{t('roadmap.common.delete')}</Button>
         </span>
       )}
     </div>

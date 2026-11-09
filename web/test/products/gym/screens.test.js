@@ -438,8 +438,8 @@ test('every re-read of the session lets go of the corrections this screen was ho
   const source = read('Log.jsx');
   assert.equal(source.includes('const reread = () => {\n    setMoves(new Map());\n    view.retry();\n  };'), true);
   assert.equal(source.includes("if (['unknown-record', 'record-dead'].includes(error.code)) { closeFix(); reread();"), true);
-  assert.equal(source.includes("<Button variant=\"secondary\" size=\"sm\" onClick={reread}>{t('gym.log.retry')}</Button>"), true);
-  assert.equal(catalog['gym.log.retry'], 'Retry');
+  assert.equal(source.includes("<Button variant=\"secondary\" size=\"sm\" onClick={reread}>{t('gym.common.retry')}</Button>"), true);
+  assert.equal(catalog['gym.common.retry'], 'Retry');
   assert.equal((source.match(/view\.retry/g) ?? []).length, 1);
 });
 
@@ -928,8 +928,8 @@ test('the create door asks how a movement is loaded, and mints nothing before it
   assert.equal(/'(cable|kettlebell)'/.test(picker), false);
   assert.equal(picker.includes('onCreate({ name: draft.name.trim(), equipment: draft.equipment })'), true);
   assert.equal(read('useTrainingLog.js').includes('id: mintId(\'ex_\'), name, equipment, pattern: CREATED_PATTERN'), true);
-  assert.equal(picker.includes("<button type=\"button\" className=\"gym-sheet-cancel\" onClick={onCancel}>{t('gym.picker.cancel')}</button>"), true);
-  assert.equal(catalog['gym.picker.cancel'], 'Cancel');
+  assert.equal(picker.includes("<button type=\"button\" className=\"gym-sheet-cancel\" onClick={onCancel}>{t('gym.common.cancel')}</button>"), true);
+  assert.equal(catalog['gym.common.cancel'], 'Cancel');
   const sheet = picker.slice(picker.indexOf('function NewMovement'));
   assert.equal(sheet.includes('gym-sheet-close'), false);
 });
@@ -949,8 +949,8 @@ test('the rename sheet’s proof is the page’s own read, and no number on it i
   assert.equal(source.includes('api.record'), true);
   const sheet = source.slice(source.indexOf('function RenameSheet'));
   assert.equal(/\d+ sessions|\d+ PRs|unchanged|kept/.test(spoken(sheet)), false);
-  assert.equal(sheet.includes("<button type=\"button\" className=\"gym-name-cancel\" onClick={onClose}>{t('gym.record.cancel')}</button>"), true);
-  assert.equal(catalog['gym.record.cancel'], 'Cancel');
+  assert.equal(sheet.includes("<button type=\"button\" className=\"gym-name-cancel\" onClick={onClose}>{t('gym.common.cancel')}</button>"), true);
+  assert.equal(catalog['gym.common.cancel'], 'Cancel');
   assert.equal(sheet.indexOf('gym-name-save') < sheet.indexOf('gym-name-cancel'), true);
   assert.equal(sheet.includes('gym-sheet-close'), false);
 });

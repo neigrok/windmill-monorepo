@@ -125,7 +125,7 @@ export function LogList({ log, hash = '#/gym/log', sessionId = null, fixSetId = 
       </div>
       {history.data?.summary && <p className="gym-log-count">{historyTotals(withoutRows(history.data.summary, (history.data.sessions ?? []).filter((session) => hidden.has(session.id))))}</p>}
       {history.phase === 'loading' && !history.data && <p className="gym-quiet">{t('gym.log.opening')}</p>}
-      {history.failure && <p className="gym-read-failed">{t('gym.log.readFailed')} <Button size="sm" variant="secondary" onClick={history.retry}>{t('gym.log.retry')}</Button></p>}
+      {history.failure && <p className="gym-read-failed">{t('gym.log.readFailed')} <Button size="sm" variant="secondary" onClick={history.retry}>{t('gym.common.retry')}</Button></p>}
       {empty && !noMatches && <p className="gym-quiet">{t('gym.log.noSessions')}</p>}
       {noMatches && <section className="gym-history-empty"><p>{emptyHistoryLine(filters, log.catalog, routineOptions)}</p><Button onClick={() => moveFilter({ year: null, month: null, exercise: '', routine: '' })}>{t('gym.log.clearFilters')}</Button></section>}
       {!noMatches && <div className="gym-history-workspace">
@@ -264,7 +264,7 @@ export function SessionDetail({ id, log, embedded = false, from = '#/gym/log', e
         {!embedded && <Back href={from}>{t('gym.log.title')}</Back>}
         <p className="gym-read-failed">
           {t('gym.log.sessionFailed')}
-          <Button variant="secondary" size="sm" onClick={reread}>{t('gym.log.retry')}</Button>
+          <Button variant="secondary" size="sm" onClick={reread}>{t('gym.common.retry')}</Button>
         </p>
       </>
     );

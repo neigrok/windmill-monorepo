@@ -188,7 +188,7 @@ export function ReadOnlyLog({ token = null, preview = null, hash = '', onReady =
       else setOlderFor(null);
     }
   }, [filters.selected, selected, history.phase, history.more, history.data, olderFor]);
-  if (history.failure) return <div className="gym-share-unavailable"><h1 className="gym-title">{t('gym.share.logUnavailable')}</h1><p>{t('gym.share.logUnavailableBody')}</p><Button variant="secondary" onClick={history.retry}>{t('gym.share.retry')}</Button></div>;
+  if (history.failure) return <div className="gym-share-unavailable"><h1 className="gym-title">{t('gym.share.logUnavailable')}</h1><p>{t('gym.share.logUnavailableBody')}</p><Button variant="secondary" onClick={history.retry}>{t('gym.common.retry')}</Button></div>;
   const consistency = consistencyLine(history.data?.progress);
   const progressLog = { progress: { phase: 'ready', data: history.data?.progress }, catalog: history.data?.exercises ?? [] };
   return <div className={`gym-read-only-log${selected ? ' has-session' : ''}`}>

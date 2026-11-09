@@ -139,8 +139,8 @@ export function CoachBody({ log, accountId, conversation, onNewChat }) {
           }} />
         <button type="button" className="gym-coach-send"
           disabled={generating ? Boolean(stopBusy || stopRequested) : Boolean((!draft.trim() && !photo && !request) || photoUpload || photoBusy)}
-          onClick={() => generating ? stop() : send()} aria-label={generating ? t('gym.coach.stopResponse') : request ? t('gym.coach.retry') : t('gym.coach.send')}>
-          {generating ? <Square size={18} aria-hidden="true" /> : request ? t('gym.coach.retry') : t('gym.coach.send')}
+          onClick={() => generating ? stop() : send()} aria-label={generating ? t('gym.coach.stopResponse') : request ? t('gym.common.retry') : t('gym.coach.send')}>
+          {generating ? <Square size={18} aria-hidden="true" /> : request ? t('gym.common.retry') : t('gym.coach.send')}
         </button>
       </div>
     </>}
@@ -261,7 +261,7 @@ export function CoachMessage({ turn, log, accountId, thread, onRetry, onConfirm,
 
       {turn.status === 'stopped' && <p className="gym-coach-note">{t('gym.coach.responseStopped')}</p>}
       {turn.status === 'failed' && <p className="gym-coach-note">{RESPONSE_INTERRUPTED}
-        {turn.requestId && <button type="button" className="gym-coach-retry" disabled={busy} onClick={() => onRetry(turn)}>{t('gym.coach.retry')}</button>}
+        {turn.requestId && <button type="button" className="gym-coach-retry" disabled={busy} onClick={() => onRetry(turn)}>{t('gym.common.retry')}</button>}
       </p>}
     </>}
     <span className="gym-coach-copy-notice" role="status">{notice}</span>

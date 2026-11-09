@@ -41,7 +41,7 @@ function HeroBand() {
 }
 
 function Hero({ resume }) {
-  const name = resume ? (resume.title?.trim() || t('roadmap.untitled')) : null;
+  const name = resume ? (resume.title?.trim() || t('roadmap.common.untitled')) : null;
   // Cut by code points so an emoji never splits.
   const chars = name ? Array.from(name) : [];
   const shortName = chars.length > 18 ? `${chars.slice(0, 17).join('').trimEnd()}…` : name;
@@ -77,7 +77,7 @@ function Hero({ resume }) {
               <a href="#/demo"><Button variant="secondary" size="lg">{t('roadmap.landing.tryDemo')}</Button></a>
             </div>
             <div style={{ fontFamily: 'var(--font-body)', fontSize: 13.5, color: 'var(--text-tertiary)', marginTop: 14 }}>
-              {t('roadmap.firstTreeInBrowser')}
+              {t('roadmap.landing.firstTreeInBrowser')}
             </div>
           </>
         )}
@@ -158,7 +158,7 @@ function Paths() {
           {t('roadmap.landing.browseQuests')}
         </a>
         <div style={{ fontFamily: 'var(--font-body)', fontSize: 12.5, color: 'var(--text-tertiary)' }}>
-          {t('roadmap.questsAttribution')}
+          {t('roadmap.quests.attribution')}
         </div>
       </div>
     </section>

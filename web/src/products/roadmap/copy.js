@@ -22,13 +22,13 @@ export const LABELS = {
   allKinds: t('roadmap.label.allKinds'),
   newStep: t('roadmap.label.newStep'),
   recolor: t('roadmap.label.recolor'),
-  undo: t('roadmap.label.undo'),
+  undo: t('roadmap.common.undo'),
   show: t('roadmap.label.show'),
   sort: t('roadmap.label.sort'),
   branch: t('roadmap.label.branch'),
   clearBranch: t('roadmap.label.clearBranch'),
   clearSearch: t('roadmap.label.clearSearch'),
-  close: t('roadmap.label.close'),
+  close: t('roadmap.common.close'),
 };
 
 export const VIEW_SWITCH = { group: t('roadmap.viewSwitch.group'), board: t('roadmap.viewSwitch.board'), graph: t('roadmap.viewSwitch.graph') };
@@ -36,7 +36,7 @@ export const ROADMAP_VERBS = {
   askAI: t('roadmap.verb.askAI'),
   share: t('roadmap.verb.share'),
   shareRoadmap: t('roadmap.verb.shareRoadmap'),
-  more: t('roadmap.verb.more'),
+  more: t('roadmap.common.more'),
   export: t('roadmap.verb.export'),
   settings: t('roadmap.verb.settings'),
   keyboardShortcuts: t('roadmap.verb.keyboardShortcuts'),
@@ -51,15 +51,15 @@ export const ROADMAP_SHEET = {
   findRoadmap: t('roadmap.sheet.findRoadmap'),
 };
 
-export const LINK_COPIED = t('roadmap.linkCopied');
+export const LINK_COPIED = t('roadmap.share.linkCopied');
 export const EMPTY_ROADMAP = { title: t('roadmap.emptyRoadmap.title'), body: t('roadmap.emptyRoadmap.body'), action: t('roadmap.emptyRoadmap.action') };
 export const LOAD_ERROR = {
   title: t('roadmap.loadError.title'),
   body: t('roadmap.loadError.body'),
-  action: t('roadmap.loadError.action'),
+  action: t('roadmap.common.tryAgain'),
 };
 export const GRAPH_LOAD = { planting: t('roadmap.graphLoad.planting'), home: t('roadmap.graphLoad.home') };
-export const SAVE_FAILURE = { body: t('roadmap.saveFailure.body'), retry: t('roadmap.saveFailure.retry'), keepEditing: t('roadmap.saveFailure.keepEditing') };
+export const SAVE_FAILURE = { body: t('roadmap.saveFailure.body'), retry: t('roadmap.common.retry'), keepEditing: t('roadmap.saveFailure.keepEditing') };
 export const DISCARD_DRAFT = {
   title: t('roadmap.discardDraft.title'),
   body: t('roadmap.discardDraft.body'),
@@ -69,15 +69,15 @@ export const DISCARD_DRAFT = {
 export const FILTERED_EMPTY = { title: t('roadmap.filteredEmpty.title'), action: t('roadmap.filteredEmpty.action') };
 export const SYNC_STATUS = { saving: t('roadmap.sync.saving'), saved: t('roadmap.sync.saved'), offline: t('roadmap.sync.offline') };
 export const SYNC_OFFLINE_SHORT = t('roadmap.sync.offlineShort');
-export const REFUSED_SYNC = { body: t('roadmap.refusedSync.body'), retry: t('roadmap.refusedSync.retry'), discard: t('roadmap.refusedSync.discard') };
-export const ANONYMOUS_OWNER = t('roadmap.anonymousOwner');
-export const LAPSED_SESSION = t('roadmap.lapsedSession');
+export const REFUSED_SYNC = { body: t('roadmap.refusedSync.body'), retry: t('roadmap.common.retry'), discard: t('roadmap.refusedSync.discard') };
+export const ANONYMOUS_OWNER = t('roadmap.sync.anonymousOwner');
+export const LAPSED_SESSION = t('roadmap.sync.lapsedSession');
 export const DEVICE_REFUSED = { title: t('roadmap.deviceRefused.title'), body: t('roadmap.deviceRefused.body') };
-export const FORK_OFFER = t('roadmap.forkOffer');
-export const DELETE_CONFIRM = { cancel: t('roadmap.deleteConfirm.cancel'), delete: t('roadmap.deleteConfirm.delete') };
+export const FORK_OFFER = t('roadmap.fork.offer');
+export const DELETE_CONFIRM = { cancel: t('roadmap.common.cancel'), delete: t('roadmap.common.delete') };
 export const COMPOSER = {
   title: t('roadmap.composer.title'),
-  cancel: t('roadmap.composer.cancel'),
+  cancel: t('roadmap.common.cancel'),
   name: t('roadmap.composer.name'),
   namePlaceholder: t('roadmap.composer.namePlaceholder'),
   nameRequired: t('roadmap.composer.nameRequired'),
@@ -88,13 +88,13 @@ export const COMPOSER = {
   none: t('roadmap.composer.none'),
   create: t('roadmap.composer.create'),
 };
-export const EDIT_STEP = { title: t('roadmap.editStep.title'), save: t('roadmap.editStep.save') };
+export const EDIT_STEP = { title: t('roadmap.editStep.title'), save: t('roadmap.common.save') };
 export const PICKER = {
   title: t('roadmap.picker.title'),
   allSteps: t('roadmap.picker.allSteps'),
   cantBe: t('roadmap.picker.cantBe'),
-  apply: t('roadmap.picker.apply'),
-  cancel: t('roadmap.picker.cancel'),
+  apply: t('roadmap.common.apply'),
+  cancel: t('roadmap.common.cancel'),
   selectionKept: t('roadmap.picker.selectionKept'),
   clearSearch: t('roadmap.picker.clearSearch'),
   startingStep: t('roadmap.picker.startingStep'),
@@ -115,8 +115,8 @@ export const WORKSPACE = {
 };
 export const NOTE_EDITOR = {
   title: t('roadmap.noteEditor.title'),
-  cancel: t('roadmap.noteEditor.cancel'),
-  save: t('roadmap.noteEditor.save'),
+  cancel: t('roadmap.common.cancel'),
+  save: t('roadmap.common.save'),
   bold: t('roadmap.noteEditor.bold'),
   italic: t('roadmap.noteEditor.italic'),
   link: t('roadmap.noteEditor.link'),
@@ -124,7 +124,7 @@ export const NOTE_EDITOR = {
   text: t('roadmap.noteEditor.text'),
   url: t('roadmap.noteEditor.url'),
   urlPlaceholder: t('roadmap.noteEditor.urlPlaceholder'),
-  apply: t('roadmap.noteEditor.apply'),
+  apply: t('roadmap.common.apply'),
 };
 export const BULK = { region: t('roadmap.bulk.region'), done: t('roadmap.bulk.done'), recolor: LABELS.recolor };
 export const RECOLOR = {
@@ -382,7 +382,7 @@ export function leftSelection({ step }) {
 }
 
 export function noStepsMatch({ query }) {
-  return t('roadmap.noStepsMatch', { query: query.trim() });
+  return t('roadmap.filteredEmpty.noStepsMatch', { query: query.trim() });
 }
 
 export function showMore({ count }) {
@@ -404,7 +404,7 @@ export function roadmapComplete({ total }) {
 // What an emptied column says, by the way out it names: the search, the kinds or both.
 export function emptyColumn({ recovery, search }) {
   if (recovery === 'kinds') return { title: FILTERED_EMPTY.title, action: FILTERED_EMPTY.action };
-  return { title: noStepsMatch({ query: search }), action: recovery === 'both' ? t('roadmap.clearBoth') : LABELS.clearSearch };
+  return { title: noStepsMatch({ query: search }), action: recovery === 'both' ? t('roadmap.filteredEmpty.clearBoth') : LABELS.clearSearch };
 }
 
 export function removeChip({ label }) {
@@ -424,9 +424,9 @@ export const STEP_DETAIL = {
   unlocks: t('roadmap.step.unlocks'),
   complete: t('roadmap.step.complete'),
   reset: t('roadmap.step.reset'),
-  close: t('roadmap.step.close'),
-  more: t('roadmap.step.more'),
-  back: t('roadmap.step.back'),
+  close: t('roadmap.common.close'),
+  more: t('roadmap.common.more'),
+  back: t('roadmap.common.back'),
   copyLink: t('roadmap.step.copyLink'),
   openInGraph: t('roadmap.step.openInGraph'),
   deleteStep: t('roadmap.step.deleteStep'),

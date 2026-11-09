@@ -80,7 +80,7 @@ export function WeighInSheet({ entry = null, fixedDate = null, onSave, onDelete 
       <div className="gym-sheet gym-weigh" role="dialog" aria-label={WEIGH_IN_VERB} onClick={(event) => event.stopPropagation()}>
         <div className="gym-sheet-head">
           <span className="gym-sheet-title">{WEIGH_IN_VERB}</span>
-          <button type="button" className="gym-sheet-close" onClick={onClose} aria-label={t('gym.bodyweight.close')}>×</button>
+          <button type="button" className="gym-sheet-close" onClick={onClose} aria-label={t('gym.common.close')}>×</button>
         </div>
 
         <div className="gym-weigh-field">
@@ -158,7 +158,7 @@ export function BodyweightScreen({ log }) {
       {weights.phase === 'failed' && (
         <p className="gym-read-failed">
           {FAILED}
-          <Button variant="secondary" size="sm" onClick={weights.retry}>{t('gym.bodyweight.retry')}</Button>
+          <Button variant="secondary" size="sm" onClick={weights.retry}>{t('gym.common.retry')}</Button>
         </p>
       )}
 

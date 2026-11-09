@@ -47,7 +47,7 @@ export function MovementPicker({
     <div className={pane ? "gym-picker is-pane" : "gym-picker"} role={pane ? "region" : "dialog"} aria-label={title}>
       <div className="gym-picker-head">
         <span className="gym-picker-title">{title}</span>
-        <button type="button" className="gym-sheet-close" onClick={onClose} aria-label={t('gym.picker.close')}>
+        <button type="button" className="gym-sheet-close" onClick={onClose} aria-label={t('gym.common.close')}>
           <Icon name="x" size={15} />
         </button>
       </div>
@@ -107,7 +107,7 @@ function NewMovement({ draft, onChange, onCancel, onCreate }) {
       <div className="gym-sheet" role="dialog" aria-label={t('gym.picker.createTitle')} onClick={(event) => event.stopPropagation()}>
         <div className="gym-sheet-head">
           <span className="gym-sheet-title">{t('gym.picker.notInLibrary')}</span>
-          <button type="button" className="gym-sheet-cancel" onClick={onCancel}>{t('gym.picker.cancel')}</button>
+          <button type="button" className="gym-sheet-cancel" onClick={onCancel}>{t('gym.common.cancel')}</button>
         </div>
 
         <Input

@@ -189,7 +189,7 @@ export function TreeSwitcher({ current, listTrees, onNew, onRename, onPreviewTit
   };
 
   const liveDraft = editingId != null && editingId === current?.id;
-  const name = (liveDraft ? draft : current?.title)?.trim() || t('roadmap.untitled');
+  const name = (liveDraft ? draft : current?.title)?.trim() || t('roadmap.common.untitled');
 
   return (
     <div ref={rootRef} style={{ position: 'relative', display: 'inline-flex', maxWidth: '100%' }}>
@@ -226,7 +226,7 @@ export function TreeSwitcher({ current, listTrees, onNew, onRename, onPreviewTit
             const editable = seamOf(tree) !== null;
             const editing = editingId === tree.id;
             const confirming = confirmId === tree.id;
-            const rowTitle = tree.title?.trim() || t('roadmap.untitled');
+            const rowTitle = tree.title?.trim() || t('roadmap.common.untitled');
             return (
               <div key={tree.id} role="menuitem" tabIndex={0}
                 className={flashId === tree.id ? 'st-switcher-flash' : undefined}
@@ -274,7 +274,7 @@ export function TreeSwitcher({ current, listTrees, onNew, onRename, onPreviewTit
                   <span style={rowText}>
                     <span style={confirmCopy}>{t('roadmap.switcher.deleteConfirm', { title: rowTitle })}</span>
                     <span style={{ display: 'flex', gap: 8, marginTop: 3 }}>
-                      <button type="button" onClick={(e) => { e.stopPropagation(); confirmDelete(tree); }} style={confirmDeleteBtn}>{t('roadmap.switcher.delete')}</button>
+                      <button type="button" onClick={(e) => { e.stopPropagation(); confirmDelete(tree); }} style={confirmDeleteBtn}>{t('roadmap.common.delete')}</button>
                       <button type="button" onClick={(e) => { e.stopPropagation(); setConfirmId(null); }} style={confirmKeepBtn}>{t('roadmap.switcher.keep')}</button>
                     </span>
                   </span>

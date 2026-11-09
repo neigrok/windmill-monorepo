@@ -27,15 +27,15 @@ const AI_COPY = {
   less: t('roadmap.paste.shapeLess'),
   detail: t('roadmap.paste.shapeDetail'),
   shaping: t('roadmap.paste.shaping'),
-  cancel: t('roadmap.paste.shapeCancel'),
+  cancel: t('roadmap.common.cancel'),
   kept: t('roadmap.paste.shapeKept'),
   undo: t('roadmap.paste.shapeUndone'),
   stopped: t('roadmap.paste.shapeStopped'),
   rate: t('roadmap.paste.shapeRate'),
   fail: t('roadmap.paste.shapeFail'),
   long: t('roadmap.paste.shapeLong'),
-  retry: t('roadmap.paste.shapeRetry'),
-  undoDoor: t('roadmap.paste.shapeUndoDoor'),
+  retry: t('roadmap.common.tryAgain'),
+  undoDoor: t('roadmap.common.undo'),
 };
 
 // A 503 compose-unavailable hides the handle for the whole session, without a message.

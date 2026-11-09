@@ -40,6 +40,10 @@ Copy is read through a translator from catalogs; English is the only locale.
   dotted camelCase segments, at most 80 characters, written as a string literal at its call site. Map an
   enum to copy with an object of `t()` calls, never a built key, and never pass `t` around or bind another
   `t`.
+- The first segment after the namespace names an area. A word an owner's surfaces share in one meaning —
+  Cancel, Retry, Close, Save, Undo, Untitled roadmap — lives once under `<ns>.common.*`; a word that only
+  looks the same (Board's Done column, the shortcut legend's Delete key) keeps its own key. Every owner
+  names its landing head's words `<ns>.landingHead.*`.
 - A message is one whole sentence with arguments, never assembled from fragments: `Hello, {name}`,
   `{count, plural, =0 {No sets} one {# set} other {# sets}}`, `{kind, select, rest {Rest day} other {Day}}`.
   `''` is an apostrophe and `'{'` a literal brace; a lone `'` and `’` are themselves. The plural category

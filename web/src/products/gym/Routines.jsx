@@ -69,7 +69,7 @@ export function RoutinesList({ log, reviewing = null }) {
       {view.phase === 'failed' && (
         <p className="gym-read-failed">
           {t('gym.routines.loadFailed')}
-          <Button variant="secondary" size="sm" onClick={view.retry}>{t('gym.routines.retry')}</Button>
+          <Button variant="secondary" size="sm" onClick={view.retry}>{t('gym.common.retry')}</Button>
         </p>
       )}
 
@@ -149,7 +149,7 @@ export function RoutineEditor({ id, log }) {
         <Back href={ROUTINES_HREF}>{t('gym.routines.back')}</Back>
         <p className="gym-read-failed">
           {t('gym.routines.routineLoadFailed')}
-          <Button variant="secondary" size="sm" onClick={view.retry}>{t('gym.routines.retry')}</Button>
+          <Button variant="secondary" size="sm" onClick={view.retry}>{t('gym.common.retry')}</Button>
         </p>
       </>
     );
@@ -296,7 +296,7 @@ export function RoutineEditor({ id, log }) {
       </div>
       <div className="gym-plan-commit">
         <div className="gym-plan-actions">
-          <a href={ROUTINES_HREF}>{t('gym.routines.cancel')}</a>
+          <a href={ROUTINES_HREF}>{t('gym.common.cancel')}</a>
           <Button disabled={Boolean(missing) || saving || Boolean(conflict)}
             onClick={async () => { if (await commit()) window.location.hash = ROUTINES_HREF; }}>
             {saving ? t('gym.routines.saving') : t('gym.routines.saveRoutine')}

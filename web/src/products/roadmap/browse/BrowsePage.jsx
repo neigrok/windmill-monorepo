@@ -149,7 +149,7 @@ export function BrowsePage() {
         {index.status === 'failed' ? (
           <div className="wm-br-quiet">
             <p>{t('roadmap.browse.unreachable')}</p>
-            <button type="button" className="wm-br-more" onClick={retry}>{t('roadmap.browse.retry')}</button>
+            <button type="button" className="wm-br-more" onClick={retry}>{t('roadmap.common.tryAgain')}</button>
           </div>
         ) : index.hasMore ? (
           <div className="wm-br-quiet">

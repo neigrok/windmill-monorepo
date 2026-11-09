@@ -78,7 +78,7 @@ export function ProposalPanel({ id, log, onChanged = null, onSettled = null, inC
 
   if (!proposal) return <article className="gym-coach-proposal">
     <p>{view.phase === 'loading' ? t('gym.proposals.opening') : view.phase === 'absent' ? t('gym.proposals.absent') : t('gym.proposals.loadFailed')}</p>
-    {view.phase === 'failed' && <Button variant="secondary" onClick={view.retry}>{t('gym.proposals.retry')}</Button>}
+    {view.phase === 'failed' && <Button variant="secondary" onClick={view.retry}>{t('gym.common.retry')}</Button>}
     {refusal && <p role="alert">{refusal}</p>}
   </article>;
 
@@ -91,7 +91,7 @@ export function ProposalPanel({ id, log, onChanged = null, onSettled = null, inC
       ? <li className="gym-diff-row is-kept-run" key={`run-${row.at}`}><button className="gym-diff-unfold" type="button" onClick={() => setExpanded((held) => new Set([...held, row.at]))}>{keptRunLabel(row.rows.length)} ›</button></li>
       : <li className={`gym-diff-row is-${row.kind}`} key={`${index}-${row.exerciseId ?? row.kind}`}><DiffRow row={row} catalog={log.catalog} unfold /></li>)}</ul>
     {waitingRemoval ? <p className="gym-coach-receipt" role="status">{t('gym.proposals.removalWaiting')}</p> : decidable ? <div className="gym-proposal-band">
-      <Button disabled={busy} onClick={() => decide('apply')}>{busy ? t('gym.proposals.saving') : t('gym.proposals.apply')}</Button>
+      <Button disabled={busy} onClick={() => decide('apply')}>{busy ? t('gym.proposals.saving') : t('gym.common.apply')}</Button>
       <p className="gym-proposal-atomic">{proposal.intent === 'revise' ? t('gym.proposals.loggedSetsUnchanged') : atomicLine(proposal)}</p>
       <button type="button" className="gym-proposal-turn-down" disabled={busy} onClick={() => decide('dismiss')}>{TURN_DOWN_VERB}</button>
     </div> : pending ? <p className="gym-coach-receipt" role="status">{OUT_OF_DATE_LINE}</p>
