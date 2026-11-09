@@ -1,4 +1,5 @@
-import { STATE_WORDS, completedToast } from '../copy.js';
+import { completedToast } from '../copy.js';
+import { t } from '../i18n/index.js';
 
 export const DEMO_TREE_ID = 't_9e407a96b5330ebe';
 
@@ -18,8 +19,8 @@ export const COACHED_CHILDREN = ['jibing', 'tacking']; // the two paths its comp
 export const COACH_DONE_KEY = 'wm-coach-done';   // once ever, per human
 
 export const DEMO_COPY = {
-  coachSentence: `This step is ${STATE_WORDS.upNext} — mark it done.`,
-  coachButton: 'Mark it done',
+  coachSentence: t('roadmap.demo.coachSentence'),
+  coachButton: t('roadmap.demo.coachButton'),
   unlockToast: completedToast({ step: 'Rig the boat yourself', unlockedCount: COACHED_CHILDREN.length }),
 };
 

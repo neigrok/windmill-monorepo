@@ -701,5 +701,21 @@
   "roadmap.shortcuts.keyCtrl": "Ctrl",
   "roadmap.shortcuts.keyAlt": "Alt",
   "roadmap.shortcuts.keyDelete": "Delete",
-  "roadmap.shortcuts.keyEnter": "Enter"
+  "roadmap.shortcuts.keyEnter": "Enter",
+  "roadmap.askAI.fieldLabel": "Tell the tree what to change",
+  "roadmap.demo.dismiss": "Dismiss",
+  "roadmap.demo.coachSentence": "This step is up next — mark it done.",
+  "roadmap.demo.coachButton": "Mark it done",
+  "roadmap.scene.arrivedSteps": "{count, plural, one {new step} other {# new steps}}",
+  "roadmap.connect.loop": "This would create a loop",
+  "roadmap.connect.implied": "Already implied",
+  "roadmap.connect.acrossAreas": "Links across areas",
+  "roadmap.milestone.tree": "Tree complete — {done}/{total} steps.",
+  "roadmap.milestone.treeShare": "Share it",
+  "roadmap.milestone.branch": "Branch complete: {branch} · {done}/{total} steps",
+  "roadmap.milestone.branchShare": "Share the moment",
+  "roadmap.pageTitle": "{title} — Windmill",
+  "roadmap.step.fallbackName": "Step",
+  "roadmap.toast.graftedUnderTree": "the tree",
+  "roadmap.presence.guest": "Guest"
 }

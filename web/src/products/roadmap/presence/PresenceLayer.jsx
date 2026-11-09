@@ -1,6 +1,7 @@
 // Remote peers' cursors as a DOM layer above the GPU canvas, projected on its own rAF loop.
 
 import React, { useEffect, useRef } from 'react';
+import { t } from '../i18n/index.js';
 
 export function PresenceLayer({ peersRef, scene, canvasRef, sessionRef, selection }) {
   const containerRef = useRef(null);
@@ -77,5 +78,5 @@ function makeCursor() {
 function paintCursor(el, peer) {
   el.style.setProperty('--c', peer.color || '#5b6ee1');
   const label = el.querySelector('span');
-  if (label.textContent !== peer.name) label.textContent = peer.name || 'Guest';
+  if (label.textContent !== peer.name) label.textContent = peer.name || t('roadmap.presence.guest');
 }

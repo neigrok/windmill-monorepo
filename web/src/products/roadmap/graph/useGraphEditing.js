@@ -5,6 +5,7 @@ import { parsePlan } from '../paste/planGrammar.js';
 import { parseEdgeKey } from '../scene/edgeKey.js';
 import { countBucket, receiptUndo, takesEveryRoot } from '../board/acts.js';
 import { GRAPH_TOAST, deletedSelectionToast, graftedToast, recoloredToast } from '../copy.js';
+import { t } from '../i18n/index.js';
 import { reportRoadmapFailure } from '../reportFailure.js';
 import { track } from '../../../telemetry/beacon.js';
 
@@ -192,7 +193,7 @@ export function useGraphEditing({ room, legendRef, desktopEditorRef, selection, 
       emit({ verb: 'added', nodeId: grafted.id, label: grafted.label, kind: grafted.color }, { silent: true });
       sceneRef.current?.pulseNode(grafted.id);
     }
-    const under = targetId ? (nodes.find((node) => node.id === targetId)?.label || 'the tree') : null;
+    const under = targetId ? (nodes.find((node) => node.id === targetId)?.label || t('roadmap.toast.graftedUnderTree')) : null;
     const message = graftedToast({ count: graft.nodes.length, under });
     if (view === 'board') showToast(message, { surface: 'board', act: 'graft', action: undoOf(written, () => track('roadmap_board_undo', { act: 'graft' })) });
     else announce(written, 'graft', message);
