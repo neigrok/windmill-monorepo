@@ -1,8 +1,7 @@
 import SwiftUI
 import DomainKit
 
-// The room's counted things, each a plural in the String Catalog: *1 set*, *3 sets*. A sentence that holds a count is a
-// plural message of its own, so it reads whole.
+// The room's counted things, each a plural message in the String Catalog: *1 set*, *3 sets*.
 nonisolated enum GymCount {
   enum Noun { case set, rep, movement, workout, week, routine, note, weighIn, customMovement, change, suggestedChange, moreChange, hour, minute, second }
 

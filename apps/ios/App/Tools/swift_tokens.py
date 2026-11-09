@@ -9,8 +9,7 @@ ESCAPES = {"0": "\0", "\\": "\\", "t": "\t", "n": "\n", "r": "\r", '"': '"', "'"
 PLACEHOLDER = "\x00"
 
 
-# A Swift token. A string literal's value is `"string"`; its text holds the literal as written out, each interpolation a
-# placeholder, and `inside` the tokens of each interpolation, in order.
+# A Swift token; a string literal's text holds each interpolation as a placeholder, and `inside` holds their tokens.
 @dataclass(frozen=True)
 class Token:
     value: str
@@ -55,8 +54,7 @@ def literal(source, index, line, hashes, quote):
     return Token('"string"', start, written, tuple(inside)), index, line
 
 
-# The tokens of `source` from `index`, comments dropped. With `closing`, the tokens of an interpolation: up to the parenthesis
-# that closes it, answered with the index and line after it.
+# The tokens of `source`, comments dropped; with `closing`, an interpolation's, up to the parenthesis that closes it.
 def tokens(source, index=0, line=1, closing=False):
     result, depth = [], 0
     while index < len(source):

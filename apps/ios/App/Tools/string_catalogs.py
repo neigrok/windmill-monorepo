@@ -13,14 +13,12 @@ from tempfile import TemporaryDirectory
 from check_copy_literals import SYNC
 
 APP = Path(__file__).resolve().parents[1]
-# Each bundle's catalogs, by the target whose compiled sources fill its Localizable and the bundle whose Info.plist its
-# InfoPlist names.
+# Each target, by the folder of the catalogs its sources fill and the bundle whose Info.plist they name.
 TARGETS = {
     "Windmill": ("Resources", "Windmill.app"),
     "WindmillWorkoutActivity": ("WorkoutActivityWidget", "Windmill.app/PlugIns/WindmillWorkoutActivity.appex"),
 }
-# The catalogs hold what ships: the Release build's strings, never a Debug fixture's. The build never ships, so it carries
-# CI's nonproduction collector, and it skips the copy check, which a string new to its catalog would fail.
+# The Release build the catalogs come from, what ships: CI's nonproduction collector, and no copy check to stop a new string.
 CONFIGURATION = "Release-iphonesimulator"
 RELEASE = ["-project", str(APP / "Windmill.xcodeproj"), "-scheme", "Windmill", "-configuration", "Release",
            "-destination", "generic/platform=iOS Simulator", "ARCHS=arm64", "IOS_SENTRY_DSN=https://nonproduction@example.invalid/1",
@@ -37,8 +35,7 @@ def parsed(path):
         raise SystemExit(f"error: {path} is not valid JSON: {error}")
 
 
-# Builds Release for the simulator where the project's builds already live, sharing their package checkouts, and answers
-# that DerivedData folder.
+# Builds Release for the simulator where Xcode keeps the project's builds, and answers that DerivedData folder.
 def build(run=subprocess.run):
     run(["xcodebuild", "build", *RELEASE], check=True)
     settings = json.loads(run(["xcodebuild", "-showBuildSettings", "-json", *RELEASE], check=True, capture_output=True, text=True).stdout)
@@ -48,8 +45,7 @@ def build(run=subprocess.run):
     return Path(root).parents[1]
 
 
-# The .stringsdata the compiler wrote for each source the target compiles now, so a source deleted since an earlier
-# build adds nothing.
+# The .stringsdata of each source the target compiles now, so a source deleted since an earlier build adds nothing.
 def stringsdata(derived_data, target):
     objects = derived_data / "Build/Intermediates.noindex/Windmill.build" / CONFIGURATION / f"{target}.build/Objects-normal"
     compiled = {Path(line.strip()).stem for lists in objects.glob("*/*.SwiftFileList") for line in lists.read_text().splitlines()}
@@ -70,8 +66,7 @@ def xcode_json(value, depth=0):
     return "{\n" + ",\n".join(members) + "\n" + indent + "}"
 
 
-# Drops what no compiled source names any more, so a deleted string leaves rather than standing stale; a hand-kept
-# string stays.
+# Drops what no compiled source names any more; a hand-kept string stays.
 def pruned(catalog, extracted):
     return {**catalog, "strings": {key: entry for key, entry in catalog["strings"].items()
                                    if key in extracted or entry.get("extractionState") == "manual"}}
@@ -81,8 +76,7 @@ def sync(path, files):
     subprocess.run(["xcrun", "xcstringstool", "sync", str(path), "--stringsdata", *map(str, files)], check=True)
 
 
-# The Info.plist strings people read, the name under the icon and each reason a permission is asked for, as the built
-# bundle holds them; its InfoPlist catalog keeps each by hand.
+# The Info.plist strings people read: the name under the icon and each reason a permission is asked for.
 def shown(info):
     return {key: value for key, value in info.items() if key == "CFBundleDisplayName" or key.endswith("UsageDescription")}
 
@@ -94,8 +88,7 @@ def info_plist_findings(path, catalog, info):
         + [f"{path}: {key} names no string the built Info.plist shows" for key in kept.keys() - shown(info).keys()]
 
 
-# Each Localizable catalog as the build's sources say it should read: synced from a fresh one for the strings they
-# name, then the committed one pruned to those and synced in `directory`.
+# Each Localizable catalog as its sources say it reads: the committed one pruned to what they name, then synced.
 def regenerated(derived_data, directory, app=APP):
     written = {}
     for target, (folder, _) in TARGETS.items():
@@ -123,9 +116,7 @@ def placeholders(text, substitutions=None):
     return taken
 
 
-# The English a catalog keeps by hand, each value, plural form and substitution, held to its key: the key's placeholders
-# in every value and form, a substitution counting one of the key's %lld, a plural with its one and other forms, and each
-# form showing its number.
+# The hand-kept English held to its key: its placeholders, a counted %lld, one and other forms, each form showing its number.
 def malformed(catalog):
     findings = []
     for key, entry in sorted(catalog["strings"].items()):

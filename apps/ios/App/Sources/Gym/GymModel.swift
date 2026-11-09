@@ -21,8 +21,7 @@ nonisolated struct GymWaits {
   var coachBeat = Duration.seconds(1)
 }
 
-// What put up a message that comes down once its cause clears: a read of the room that failed, a rack change that did not land, a
-// movement order that could not be read. The message is taken down by its cause, never by its words.
+// What put up a message that comes down once its cause clears, so it is taken down by its cause, never by its words.
 enum MessageCause { case unreadable, rackUnchanged, orderUnread }
 
 // The room's engine-backed model. An extension one track reads lives in that track's folder; a rule several read lives here.

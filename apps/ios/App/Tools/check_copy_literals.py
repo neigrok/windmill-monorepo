@@ -15,14 +15,12 @@ CATALOGS = {
 SOURCE_ROOTS = ("Sources", "WorkoutActivityShared", "WorkoutActivityWidget")
 # The build setting string_catalogs.py builds with, so a string not yet in its catalog can reach the catalog.
 SYNC = "WM_STRING_CATALOG_SYNC"
-# Files that serve the simulator, never a person: launch fixtures seed what a person would type, Verification holds the
-# launch boards and scenarios, JournalModelTransport talks to the local model server.
+# Files that serve the simulator, never a person: launch fixtures, launch boards and scenarios, the model server's transport.
 DEV_FILES = re.compile(r"Fixtures?\.swift$|^Sources/Verification\.swift$|^Sources/JournalModelTransport\.swift$")
 SPECIFIER = re.compile(r"%(?:\d+\$)?(?:#@\w+@|[-+ 0#']*\d*(?:\.\d+)?(?:hh|h|ll|l|q|z|t|j)?[@dDiuUxXoOfFeEgGcCsSp])")
 INTEGER = re.compile(r"%(?:\d+\$)?(?:ll|l|q)?[dDiuU]")
 WORD = re.compile(r"[^\W\d_]{2}")
-# Text that names rather than says: one lowercase word or a joined identifier, a constant, a camelCase or dotted name, a
-# path, a URL, a file or a font.
+# Text that names rather than says: a lowercase word, an identifier, a constant, a path, a URL, a file or a font.
 IDENTIFIER = re.compile(r"^[a-z0-9]+(?:[-_.:/@+][a-zA-Z0-9]+)*[-_.:/]?$|^[A-Z0-9]*[0-9_][A-Z0-9_]*$|^\S*[a-z][A-Z]\S*$"
                         r"|^[A-Z][A-Za-z0-9]*(?:\.[A-Za-z0-9]+)+$|^[A-Z][a-z]+-[A-Z]\S*$|^\S+/\S+$|^[/.]|://"
                         r"|^[\w-]+\.(?:swift|json|png|jpg|ttf|plist|xcstrings)$")
@@ -114,9 +112,7 @@ def handed_to_a_name(items, opener, label):
     return opener is not None and (callee(items, opener) in NOT_COPY_CALLS or label in NOT_COPY_LABELS)
 
 
-# Whether the literal at `index` names rather than says: it is handed to a call or a label that names, directly or inside
-# a collection, it is a key of a dictionary or a subscript, a side of a comparison, a `case` pattern or raw value, or a
-# value set to a property that names.
+# Whether the literal at `index` names rather than says, by the call, label, collection, comparison or pattern it stands in.
 def names(items, index):
     opener, label = enclosing(items, index)
     if handed_to_a_name(items, opener, label):
@@ -143,8 +139,7 @@ def names(items, index):
     return False
 
 
-# Each literal a person could read that is no key of `keys`, and each String(localized:) that interpolates an Int outside
-# `Locale.copy`: (line, problem).
+# Each literal a person could read that is no key, and each String(localized:) counting an Int outside Locale.copy.
 def violations(source, keys, integer_keys, skip=frozenset()):
     found = []
 

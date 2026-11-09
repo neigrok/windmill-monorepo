@@ -5,8 +5,7 @@ import GymDomain
 import JournalDomain
 @testable import Windmill
 
-// Each message the catalog varies by count reads, for every count it can receive, as the English the app spells, its
-// digits as Swift writes them.
+// Each message the catalog varies by count reads, for every count it can receive, as the English the app spells.
 @Suite @MainActor struct LocalizableTests {
   static let counts = [0, 1, 2, 3, 4, 5, 11, 12, 21, 22, 25, 101, 111, 1000, 1001]
 
