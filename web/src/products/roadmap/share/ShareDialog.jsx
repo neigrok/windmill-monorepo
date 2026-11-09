@@ -11,12 +11,12 @@ export function treeShareUrl(treeId) {
   return treeId && treeId !== 'new' ? `${window.location.origin}/t/${treeId}` : null;
 }
 
-// Why a visibility change failed, in the dialog's words for what it knows, else in the server's own.
+// Why a visibility change failed: the dialog's words for no answer or no session, else the server's own sentence.
 function refusalReason(failure, act) {
-  if (failure?.code === 'unreachable') return t('roadmap.share.unreachable');
-  if (failure?.code === 'unauthenticated') return t('roadmap.share.signInToChangeVisibility');
-  if (failure instanceof AuthError) return (failure.said ?? t('roadmap.share.visibilityFailed')) || act;
-  return failure?.message || act;
+  if (!(failure instanceof AuthError)) return failure?.message || act;
+  if (failure.status === 0) return t('roadmap.share.unreachable');
+  if (failure.status === 401) return t('roadmap.share.signInToChangeVisibility');
+  return (failure.said ?? t('roadmap.share.visibilityFailed')) || act;
 }
 
 export function ShareDialog({ open, onClose, treeId, visibility, mine, onStanceChange }) {

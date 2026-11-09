@@ -3,7 +3,8 @@
 
 import { t } from './i18n/landing/index.js';
 
-export function tendedAgo(updatedAt) {
+// How long ago a roadmap was last changed; null when it can't tell.
+function tendedAgo(updatedAt) {
   if (updatedAt == null) return null;
   const then = typeof updatedAt === 'number' ? updatedAt : Date.parse(updatedAt);
   if (Number.isNaN(then)) return null;

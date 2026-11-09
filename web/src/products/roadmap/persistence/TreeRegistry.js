@@ -76,7 +76,7 @@ export async function createTree(request) {
   if (response.ok) return response.json();
   if (response.status === 401) throw new AuthError('Sign in to plant a roadmap', { code: 'unauthenticated', status: 401 });
   const body = await response.json().catch(() => ({}));
-  throw new AuthError('Could not plant the roadmap', { code: body.code, said: body.error, status: response.status });
+  throw new AuthError('Could not plant the roadmap', { code: body.code, said: typeof body.error === 'string' ? body.error : undefined, status: response.status });
 }
 
 // Retitle a roadmap (PATCH /v1/trees/:id, 204). The server trims and refuses a blank.
@@ -95,7 +95,7 @@ export async function renameTree(treeId, title) {
   if (response.ok) return;
   if (response.status === 401) throw new AuthError('Sign in to rename a roadmap', { code: 'unauthenticated', status: 401 });
   const body = await response.json().catch(() => ({}));
-  throw new AuthError('Could not rename the roadmap', { code: body.code, said: body.error, status: response.status });
+  throw new AuthError('Could not rename the roadmap', { code: body.code, said: typeof body.error === 'string' ? body.error : undefined, status: response.status });
 }
 
 // Set a roadmap's visibility (PATCH /v1/trees/:id, 204). 'private' ⇒ owner-only reads;
@@ -115,7 +115,7 @@ export async function setVisibility(treeId, visibility) {
   if (response.ok) return;
   if (response.status === 401) throw new AuthError('Sign in to change visibility', { code: 'unauthenticated', status: 401 });
   const body = await response.json().catch(() => ({}));
-  throw new AuthError('Could not change visibility', { code: body.code, said: body.error, detail: body.detail, status: response.status });
+  throw new AuthError('Could not change visibility', { code: body.code, said: typeof body.error === 'string' ? body.error : undefined, detail: body.detail, status: response.status });
 }
 
 // Retire a roadmap (DELETE /v1/trees/:id, 204 — a soft delete; it leaves every list).
@@ -132,7 +132,7 @@ export async function deleteTree(treeId) {
   if (response.ok) return;
   if (response.status === 401) throw new AuthError('Sign in to delete a roadmap', { code: 'unauthenticated', status: 401 });
   const body = await response.json().catch(() => ({}));
-  throw new AuthError('Could not delete the roadmap', { code: body.code, said: body.error, status: response.status });
+  throw new AuthError('Could not delete the roadmap', { code: body.code, said: typeof body.error === 'string' ? body.error : undefined, status: response.status });
 }
 
 // Forks a shared roadmap → { treeId }. The server mints the id; progress starts cleared.
@@ -154,5 +154,5 @@ export async function forkTree(sourceId) {
   }
   if (response.status === 401) throw new AuthError('Sign in to fork', { code: 'unauthenticated', status: 401 });
   const body = await response.json().catch(() => ({}));
-  throw new AuthError('Could not fork the roadmap', { code: body.code, said: body.error, status: response.status });
+  throw new AuthError('Could not fork the roadmap', { code: body.code, said: typeof body.error === 'string' ? body.error : undefined, status: response.status });
 }

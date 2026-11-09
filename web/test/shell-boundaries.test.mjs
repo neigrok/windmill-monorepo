@@ -125,7 +125,15 @@ function catalogOwnerOf(target) {
   return path.join(SRC, ...parts.slice(0, at));
 }
 
-const violations = { shellIntoProducts: [], productIntoProduct: [], productIntoAppChrome: [], catalogAcrossOwners: [], catalogByLoading: [] };
+const violations = { shellIntoProducts: [], productIntoProduct: [], productIntoAppChrome: [], catalogAcrossOwners: [], catalogByLoading: [], computedImports: [] };
+
+// A dynamic import whose module is not a string literal leads somewhere no rule here can see.
+const COMPUTED_IMPORT = /\bimport\s*\(\s*(?:[^'"\s]|$)/;
+for (const file of sourceFiles(SRC)) {
+  fs.readFileSync(file, 'utf8').split('\n').forEach((text, index) => {
+    if (COMPUTED_IMPORT.test(text)) violations.computedImports.push(`src/${path.relative(SRC, file)}:${index + 1} imports a module it computes; name it as a string literal`);
+  });
+}
 
 for (const file of sourceFiles(SRC)) {
   const fromProduct = productOf(file);
@@ -172,6 +180,10 @@ test('nothing product-neutral imports from src/products/ — the registry is the
 
 test('no product imports from another product', () => {
   assert.deepEqual(violations.productIntoProduct, []);
+});
+
+test('every dynamic import names its module as a string literal', () => {
+  assert.deepEqual(violations.computedImports, []);
 });
 
 test('no product imports from the /app chrome', () => {

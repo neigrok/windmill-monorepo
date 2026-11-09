@@ -145,7 +145,6 @@ export function formatCount(count, { compact = false } = {}) {
   return `${Number((count / MILLION).toFixed(COMPACT_DECIMALS))}m`;
 }
 
-// How long ago a roadmap was last changed, in the words its resume line uses; null when it can't tell.
 export function nextChip({ count }) {
   return t('roadmap.board.nextChip', { count: formatCount(count) });
 }
