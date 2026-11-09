@@ -110,7 +110,7 @@ export function SignInDialog({ open, onClose, onSend, resume = null }) {
           {phase === 'sending' && showSending ? (
             <div style={sending}>
               <span style={goldDot} />
-              <span>{t('shell.signIn.sending')}</span>
+              <span>{t('shell.common.sending')}</span>
             </div>
           ) : (
             <Button type="submit">{t('shell.signIn.send')}</Button>

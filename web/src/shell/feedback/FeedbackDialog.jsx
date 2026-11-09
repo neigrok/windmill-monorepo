@@ -76,7 +76,7 @@ export function FeedbackDialog({ open, onClose }) {
 
           <div style={actions}>
             <Button variant="primary" disabled={!sendable || phase === 'sending'} onClick={submit}>
-              {phase === 'sending' ? t('shell.feedback.sending') : t('shell.feedback.send')}
+              {phase === 'sending' ? t('shell.common.sending') : t('shell.feedback.send')}
             </Button>
           </div>
         </div>
