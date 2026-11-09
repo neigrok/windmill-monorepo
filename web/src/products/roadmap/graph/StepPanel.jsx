@@ -16,13 +16,13 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 // Never seconds, never ticking.
 function relativeTime(at, now) {
   const seconds = Math.max(0, Math.round((now - at) / 1000));
-  if (seconds < 60) return t('roadmap.tended.justNow');
+  if (seconds < 60) return t('roadmap.ago.justNow');
   const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return t('roadmap.step.agoMinutes', { count: minutes });
+  if (minutes < 60) return t('roadmap.ago.minutesShort', { count: minutes });
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return t('roadmap.step.agoHours', { count: hours });
+  if (hours < 24) return t('roadmap.ago.hoursShort', { count: hours });
   const days = Math.floor(hours / 24);
-  if (days < 7) return t('roadmap.step.agoDays', { count: days });
+  if (days < 7) return t('roadmap.ago.daysShort', { count: days });
   const date = new Date(at);
   const sameYear = date.getFullYear() === new Date(now).getFullYear();
   const stamp = `${MONTHS[date.getMonth()]} ${date.getDate()}`;

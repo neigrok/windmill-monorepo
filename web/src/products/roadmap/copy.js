@@ -150,7 +150,7 @@ export function tendedAgo(updatedAt) {
   const then = typeof updatedAt === 'number' ? updatedAt : Date.parse(updatedAt);
   if (Number.isNaN(then)) return null;
   const mins = Math.max(0, Math.round((Date.now() - then) / 60000));
-  if (mins < 1) return t('roadmap.tended.justNow');
+  if (mins < 1) return t('roadmap.ago.justNow');
   if (mins < 60) return t('roadmap.tended.minutes', { count: mins });
   const hrs = Math.round(mins / 60);
   if (hrs < 24) return t('roadmap.tended.hours', { count: hrs });
