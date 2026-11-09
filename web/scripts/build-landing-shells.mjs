@@ -4,7 +4,7 @@ import { readFileSync, writeFileSync, mkdirSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { LANDING_HEADS, SITE_ORIGIN, SITE_SCHEMA } from '../src/shell/marketing/landingHeads.js';
-import { LEGAL_LINKS, SURFACE_LINKS } from '../src/shell/marketing/siteIdentity.js';
+import { LEGAL_LINKS, LEGAL_SHELF_LABEL, PRODUCT_SHELF_LABEL, SURFACE_LINKS } from '../src/shell/marketing/siteIdentity.js';
 import { PRODUCTS } from '../src/shell/products.js';
 
 const dist = join(dirname(fileURLToPath(import.meta.url)), '..', 'dist');
@@ -72,10 +72,10 @@ function renderFallback(head) {
         </p>
         <p style="font-size: 14px; color: #6B5D4A; margin: 0 0 28px;">${page.trust}</p>
 ${notes.join('\n')}
-        <nav aria-label="Legal and pricing" style="font-size: 14px; color: #6B5D4A;">
+        <nav aria-label="${LEGAL_SHELF_LABEL}" style="font-size: 14px; color: #6B5D4A;">
           ${shelf(LEGAL_SHELF)}
         </nav>
-        <nav aria-label="Windmill products" style="font-size: 14px; color: #6B5D4A; margin-top: 8px;">
+        <nav aria-label="${PRODUCT_SHELF_LABEL}" style="font-size: 14px; color: #6B5D4A; margin-top: 8px;">
           ${shelf(PRODUCT_SHELF)}
         </nav>
       </main>

@@ -3,47 +3,48 @@ import { useAuth } from '../auth/AuthProvider.jsx';
 import { useSignInDoor } from '../auth/SignInDoor.jsx';
 import { AccountChrome } from '../account/AccountChrome.jsx';
 import { McpKeyPanel } from './McpKeyPanel.jsx';
+import { t } from '../i18n/index.js';
 
 const MCP_URL = 'https://windmill.works/mcp';
 const JSON_TEXT = `{\n  "mcpServers": {\n    "windmill": { "url": "${MCP_URL}" }\n  }\n}`;
 const CLIENTS = [
   {
     id: 'chatgpt', name: 'ChatGPT', guide: 'https://developers.openai.com/plugins/deploy/connect-chatgpt',
-    guideLabel: 'OpenAI setup guide', note: 'Availability depends on your ChatGPT account and workspace settings.', title: 'ChatGPT · OpenAI', label: 'Server URL', copy: MCP_URL,
+    guideLabel: t('shell.connect.chatgpt.guide'), note: t('shell.connect.chatgpt.note'), title: 'ChatGPT · OpenAI', label: t('shell.connect.chatgpt.label'), copy: MCP_URL,
     steps: [
-      'In ChatGPT, open Settings → Security and login and enable Developer mode.',
-      'Open Plugins and use the plus button to create a connection. Enter the settings above and a description, such as “Use Windmill from ChatGPT”.',
-      'Choose OAuth, then approve access to Windmill when prompted.',
-      'In a conversation, open the + menu → Developer mode and select Windmill.',
+      t('shell.connect.chatgpt.stepDeveloperMode'),
+      t('shell.connect.chatgpt.stepCreate'),
+      t('shell.connect.chatgpt.stepOAuth'),
+      t('shell.connect.chatgpt.stepSelect'),
     ],
   },
   {
-    id: 'desktop', name: 'Claude Desktop', label: 'Connector URL', copy: MCP_URL,
-    steps: ['Open Settings → Connectors.', 'Add a custom connector named Windmill and paste the URL.', 'Approve access in the browser when prompted.'],
+    id: 'desktop', name: 'Claude Desktop', label: t('shell.connect.desktop.label'), copy: MCP_URL,
+    steps: [t('shell.connect.desktop.stepOpen'), t('shell.connect.desktop.stepAdd'), t('shell.connect.desktop.stepApprove')],
   },
   {
-    id: 'code', name: 'Claude Code', label: 'Terminal',
+    id: 'code', name: 'Claude Code', label: t('shell.connect.code.label'),
     copy: `claude mcp add --transport http windmill ${MCP_URL}`,
-    steps: ['Run this command in your terminal.', 'Approve access in the browser on first use.'],
+    steps: [t('shell.connect.code.stepRun'), t('shell.connect.code.stepApprove')],
   },
   {
     id: 'cursor', name: 'Cursor', label: '~/.cursor/mcp.json', copy: JSON_TEXT,
-    steps: ['Save this configuration, then enable Windmill under Cursor settings → MCP.', 'Approve access in the browser tab Cursor opens.'],
+    steps: [t('shell.connect.cursor.stepSave'), t('shell.connect.cursor.stepApprove')],
   },
   {
     id: 'codex', name: 'Codex', label: '~/.codex/config.toml',
     copy: `[mcp_servers.windmill]\nurl = "${MCP_URL}"`,
     steps: [
-      'Add this configuration to ~/.codex/config.toml. Codex desktop, CLI, and IDE share these settings.',
-      'Run codex mcp login windmill, or choose Authenticate in Codex’s MCP settings. Approve access in your browser.',
-      'Restart Codex to load the configuration. In the CLI, use /mcp to check the server connection.',
+      t('shell.connect.codex.stepAdd'),
+      t('shell.connect.codex.stepLogin'),
+      t('shell.connect.codex.stepRestart'),
     ],
-    guide: 'https://learn.chatgpt.com/docs/extend/mcp', guideLabel: 'Codex MCP guide',
+    guide: 'https://learn.chatgpt.com/docs/extend/mcp', guideLabel: t('shell.connect.codex.guide'),
   },
   {
-    id: 'any', name: 'Any client', label: 'mcpServers JSON', copy: JSON_TEXT,
-    steps: ['Use a client that supports Streamable HTTP and OAuth 2.1.', 'Add this server configuration and approve access when prompted.'],
-    note: 'The endpoint uses Streamable HTTP, not SSE. A GET request returns 405.',
+    id: 'any', name: t('shell.connect.any.name'), label: 'mcpServers JSON', copy: JSON_TEXT,
+    steps: [t('shell.connect.any.stepClient'), t('shell.connect.any.stepAdd')],
+    note: t('shell.connect.any.note'),
   },
 ];
 
@@ -84,11 +85,11 @@ export function ConnectPage({ inShell = false }) {
     <AccountChrome width={560} bare={inShell}>
       <style>{CSS}</style>
       <div className="wm-cn">
-        <h1>Connect your LLM tools</h1>
-        <p className="wm-cn-intro">Use your AI tools with Windmill.</p>
+        <h1>{t('shell.connect.title')}</h1>
+        <p className="wm-cn-intro">{t('shell.connect.intro')}</p>
 
         <fieldset className="wm-cn-tools">
-          <legend>Choose tool</legend>
+          <legend>{t('shell.connect.chooseTool')}</legend>
           <div className="wm-cn-options">
             {CLIENTS.map((item) => (
               <label key={item.id} className="wm-cn-option">
@@ -104,25 +105,25 @@ export function ConnectPage({ inShell = false }) {
           <h2 id={`${id}-setup`}>{client.title || client.name}</h2>
           {isChatGPT && (
             <dl className="wm-cn-settings">
-              <div><dt>Name</dt><dd>Windmill</dd></div>
-              <div><dt>Authentication</dt><dd>OAuth</dd></div>
+              <div><dt>{t('shell.connect.settingName')}</dt><dd>Windmill</dd></div>
+              <div><dt>{t('shell.connect.settingAuthentication')}</dt><dd>{t('shell.connect.oauth')}</dd></div>
             </dl>
           )}
           <div className="wm-cn-well">
             <div className="wm-cn-wellhead">
               <span className="wm-cn-lang">{client.label}</span>
               <button type="button" className="wm-cn-copy" disabled={copyStatus === 'pending'} onClick={onCopy}>
-                {copyStatus === 'copied' ? 'Copied' : copyStatus === 'pending' ? 'Copying…' : isUrl ? 'Copy URL' : 'Copy'}
+                {copyStatus === 'copied' ? t('shell.connect.copied') : copyStatus === 'pending' ? t('shell.connect.copying') : isUrl ? t('shell.connect.copyUrl') : t('shell.connect.copy')}
               </button>
             </div>
             <pre className="wm-cn-pre"><code>{client.copy}</code></pre>
           </div>
           <p className="wm-cn-feedback" role="status" aria-live="polite">
-            {copyStatus === 'copied' ? 'Copied to clipboard.' : copyStatus === 'failed' ? 'Couldn’t copy. Select the text above and copy it manually.' : ''}
+            {copyStatus === 'copied' ? t('shell.connect.copiedNote') : copyStatus === 'failed' ? t('shell.connect.copyFailed') : ''}
           </p>
           <ol className="wm-cn-steps">{client.steps.map((step) => <li key={step}>{step}</li>)}</ol>
           <p className="wm-cn-note">
-            {client.note || 'OAuth opens your browser to approve access. No API key to paste.'}
+            {client.note || t('shell.connect.oauthNote')}
             {client.guide && <> <a href={client.guide} target="_blank" rel="noreferrer">{client.guideLabel} ↗</a></>}
           </p>
         </section>
@@ -130,14 +131,14 @@ export function ConnectPage({ inShell = false }) {
         <div className="wm-cn-advanced">
           <button type="button" className="wm-cn-summary" aria-expanded={advOpen} aria-controls={`${id}-keys`}
             onClick={() => setAdvOpen((open) => !open)}>
-            <span aria-hidden="true">{advOpen ? '−' : '+'}</span> API keys
-            <span className="wm-cn-fallback">For clients without OAuth</span>
+            <span aria-hidden="true">{advOpen ? '−' : '+'}</span>{' '}{t('shell.apiKeys.title')}
+            <span className="wm-cn-fallback">{t('shell.connect.fallback')}</span>
           </button>
           <div id={`${id}-keys`} hidden={!advOpen}>
             {advOpen && <>
-              <p className="wm-cn-note">Use a Windmill API key only if your client cannot use OAuth. Keep it private, like a password.</p>
+              <p className="wm-cn-note">{t('shell.connect.keyNote')}</p>
               <McpKeyPanel signedIn={signedIn} onRequireSignIn={openSignInDoor} />
-              <a className="wm-cn-manage" href="#/settings">Manage keys in Settings → API keys</a>
+              <a className="wm-cn-manage" href="#/settings">{t('shell.connect.manageKeys')}</a>
             </>}
           </div>
         </div>

@@ -34,7 +34,7 @@ function Fixture(props) {
   } });
   else if (props.kind === 'feedback') dialog = e(FeedbackDialog, common);
   else if (props.kind === 'sync') dialog = open ? e(SyncDecisions, { question: { kind: 'signed-out', count: { page: 1 } },
-    work: { type: 'page', one: 'page', many: 'pages' }, onCancel: close, onDecision: close }) : null;
+    work: { type: 'page', counted: (count) => count + (count === 1 ? ' page' : ' pages'), many: 'pages' }, onCancel: close, onDecision: close }) : null;
   else dialog = e(Dialog, { ...common, title: props.custom ? undefined : props.title ?? 'Shared dialog',
     labelledBy: props.custom ? 'custom-title' : undefined, onClose: props.empty ? undefined : close,
     footer: props.long ? e('button', { id: 'footer' }, 'Continue') : undefined },

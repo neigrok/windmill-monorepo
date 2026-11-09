@@ -10,6 +10,7 @@ import { captureError } from '../../telemetry/sentry.js';
 import { track } from '../../telemetry/beacon.js';
 import { SyncDecisions } from './SyncDecisions.jsx';
 import { useRoomStatus } from '../roomStatus.js';
+import { t } from '../i18n/index.js';
 
 const AuthContext = createContext(null);
 const HINT_KEY = 'windmill:auth-hint';
@@ -387,16 +388,16 @@ export default function AuthProvider({ children }) {
         position: 'fixed', left: 16, bottom: 62, zIndex: 80, padding: '8px 12px',
         background: 'var(--surface-card)', color: 'var(--text-secondary)', borderRadius: 8, fontSize: 13,
       }}>
-        Offline. Coach, echoes, nudges, voice and export need a connection.
+        {t('shell.auth.offline')}
       </div>
     )}
-    {session.error && !deviceLineHolders && <div role="alert">Couldn’t open this device’s saved work. Reload to try again.</div>}
+    {session.error && !deviceLineHolders && <div role="alert">{t('shell.auth.deviceOpenFailed')}</div>}
     {upgradeRequired && <div role="alert" style={{ position: 'fixed', left: 16, bottom: 16, zIndex: 90, padding: '12px 16px', background: 'var(--surface-card)', color: 'var(--text-primary)', borderRadius: 8 }}>
-      <p>Update required. Reload Windmill to reconnect your account. Your pending work stays on this device.</p>
-      <button type="button" onClick={reloadLatest} disabled={updating}>{updating ? 'Fetching update…' : 'Reload latest version'}</button>
-      {updateError && <p>Couldn’t fetch the update. Your work is still here. Try again when connected.</p>}
+      <p>{t('shell.auth.updateRequired')}</p>
+      <button type="button" onClick={reloadLatest} disabled={updating}>{updating ? t('shell.auth.fetchingUpdate') : t('shell.auth.reloadLatest')}</button>
+      {updateError && <p>{t('shell.auth.updateFailed')}</p>}
     </div>}
-    {error && !question && !upgradeRequired && <div role="alert">Couldn’t finish updating your account on this device. Try again.</div>}
+    {error && !question && !upgradeRequired && <div role="alert">{t('shell.auth.accountChangeFailed')}</div>}
     <SyncDecisions key={`${question?.product ?? 'signout'}:${question?.counted?.join('|') ?? ''}`} question={upgradeRequired ? null : question}
       work={PRODUCTS.find((product) => product.id === question?.product)?.sync?.signedOutWork} busy={busy} error={error} onDecision={decide}
       onCancel={async () => {

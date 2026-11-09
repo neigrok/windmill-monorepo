@@ -6,6 +6,7 @@ import { listGrants, revokeGrant } from '../auth/OAuthClient.js';
 import { summarizeScope } from '../auth/scopes.js';
 import { Section, styles } from './Section.jsx';
 import { relativeTime, shortDate } from './format.js';
+import { t } from '../i18n/index.js';
 
 export function ConnectedToolsSection() {
   const [grants, setGrants] = useState(null); // null while loading
@@ -35,24 +36,21 @@ export function ConnectedToolsSection() {
     try {
       await revokeGrant(grant.clientId);
       setGrants((rows) => rows.filter((row) => row.clientId !== grant.clientId));
-      setToast(`${grant.name} disconnected.`);
+      setToast(t('shell.connectedTools.disconnected', { name: grant.name }));
     } catch {
-      setToast(`Couldn't disconnect ${grant.name} just now.`);
+      setToast(t('shell.connectedTools.disconnectFailed', { name: grant.name }));
     }
   };
 
   return (
-    <Section title="Connected tools">
-      {grants === null && <p style={styles.calmLine}>Loading your connections…</p>}
+    <Section title={t('shell.connectedTools.title')}>
+      {grants === null && <p style={styles.calmLine}>{t('shell.connectedTools.loading')}</p>}
 
       {grants !== null && grants.length === 0 && (
         <p style={styles.calmLine}>
-          {failed ? (
-            <>
-              Couldn't load your connections just now.{' '}
-              <button type="button" onClick={retry} style={retryButton}>Try again</button>
-            </>
-          ) : 'No tools connected yet.'}
+          {failed
+            ? t('shell.connectedTools.loadFailed', { retry: <button type="button" onClick={retry} style={retryButton}>{t('shell.common.tryAgain')}</button> })
+            : t('shell.connectedTools.empty')}
         </p>
       )}
 
@@ -63,23 +61,24 @@ export function ConnectedToolsSection() {
             <div style={styles.primaryText}>{grant.name}</div>
             <div style={styles.metaText}>{summarizeScope(grant.scope)}</div>
             <div style={styles.metaText}>
-              Granted {shortDate(grant.grantedMs)}
-              {grant.lastUsedMs ? ` · Last active ${relativeTime(grant.lastUsedMs)}` : ''}
+              {grant.lastUsedMs
+                ? t('shell.connectedTools.grantedActive', { granted: shortDate(grant.grantedMs), active: relativeTime(grant.lastUsedMs) })
+                : t('shell.connectedTools.granted', { granted: shortDate(grant.grantedMs) })}
             </div>
           </div>
           {confirming === grant.clientId ? (
             <div style={confirm}>
-              <span style={confirmCopy}>{grant.name} will lose access now.</span>
-              <Button variant="secondary" size="sm" onClick={() => disconnect(grant)}>Disconnect</Button>
-              <Button variant="ghost" size="sm" onClick={() => setConfirming(null)}>Cancel</Button>
+              <span style={confirmCopy}>{t('shell.connectedTools.disconnectWarning', { name: grant.name })}</span>
+              <Button variant="secondary" size="sm" onClick={() => disconnect(grant)}>{t('shell.connectedTools.disconnect')}</Button>
+              <Button variant="ghost" size="sm" onClick={() => setConfirming(null)}>{t('shell.common.cancel')}</Button>
             </div>
           ) : (
-            <Button variant="ghost" size="sm" onClick={() => setConfirming(grant.clientId)}>Disconnect</Button>
+            <Button variant="ghost" size="sm" onClick={() => setConfirming(grant.clientId)}>{t('shell.connectedTools.disconnect')}</Button>
           )}
         </div>
       ))}
 
-      <a href="#/connect" style={styles.dashedRow}>+ Connect another tool</a>
+      <a href="#/connect" style={styles.dashedRow}>{t('shell.connectedTools.connectAnother')}</a>
 
       {toast && (
         <div style={toastDock}>

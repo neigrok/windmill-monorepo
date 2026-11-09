@@ -3,7 +3,11 @@ import assert from 'node:assert/strict';
 import { copyHits, sourceFiles } from './copyAudit.mjs';
 
 test('a migrated root renders no JSX text or copy prop that skips its catalog', () => {
-  const migratedRoots = [];
+  const migratedRoots = [
+    'src/design-system',
+    'src/main.jsx',
+    'src/shell',
+  ];
   const allowedCopy = new Set(['Windmill']);
   assert.deepEqual(migratedRoots.flatMap((root) => sourceFiles(root)).flatMap((file) => copyHits(file, allowedCopy)), []);
 });

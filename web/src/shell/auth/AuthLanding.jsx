@@ -1,6 +1,7 @@
 import React from 'react';
 import { Button } from '../../design-system';
 import { track } from '../../telemetry/beacon.js';
+import { t } from '../i18n/index.js';
 
 // The token rides in the fragment's query part (location.hash), never location.search.
 function readTokenFromHash() {
@@ -47,10 +48,10 @@ export function AuthLanding({ onVerify, onSignedIn, onExpired, onOpenDoor }) {
     return (
       <div style={stage}>
         <div style={column}>
-          <h1 style={heading}>Can't reach windmill.works</h1>
-          <p style={subtext}>The link is still good — check your connection and try again.</p>
+          <h1 style={heading}>{t('shell.auth.unreachable')}</h1>
+          <p style={subtext}>{t('shell.authLanding.unreachableBody')}</p>
           <div style={{ marginTop: 'var(--space-2)' }}>
-            <Button size="lg" onClick={retry}>Try again</Button>
+            <Button size="lg" onClick={retry}>{t('shell.common.tryAgain')}</Button>
           </div>
         </div>
       </div>
@@ -61,10 +62,10 @@ export function AuthLanding({ onVerify, onSignedIn, onExpired, onOpenDoor }) {
     return (
       <div style={stage}>
         <div style={column}>
-          <h1 style={heading}>That link has expired</h1>
-          <p style={subtext}>Links work once and last 15 minutes.</p>
+          <h1 style={heading}>{t('shell.authLanding.expiredTitle')}</h1>
+          <p style={subtext}>{t('shell.authLanding.expiredBody')}</p>
           <div style={{ marginTop: 'var(--space-2)' }}>
-            <Button size="lg" onClick={onOpenDoor}>Email me a fresh one</Button>
+            <Button size="lg" onClick={onOpenDoor}>{t('shell.authLanding.freshLink')}</Button>
           </div>
         </div>
       </div>
@@ -75,7 +76,7 @@ export function AuthLanding({ onVerify, onSignedIn, onExpired, onOpenDoor }) {
     <div style={stage}>
       <div style={{ ...column, gap: 'var(--space-5)' }}>
         <span style={goldDot} />
-        <p style={signingText}>Signing you in…</p>
+        <p style={signingText}>{t('shell.authLanding.signingIn')}</p>
       </div>
     </div>
   );

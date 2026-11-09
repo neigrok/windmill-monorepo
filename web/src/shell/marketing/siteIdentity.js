@@ -1,8 +1,10 @@
-// Pure data with no imports of its own, so scripts/build-landing-shells.mjs can read it in Node.
+// Pure data with no browser globals, so scripts/build-landing-shells.mjs can read it in Node.
+
+import { t } from '../i18n/index.js';
 
 export const SITE_ORIGIN = 'https://windmill.works';
 
-export const SHARE_CARD_ALT = 'The Windmill share card — a hand-drawn skill tree on a cream background with terracotta, gold, and sky nodes, and the Windmill wordmark.';
+export const SHARE_CARD_ALT = t('shell.site.shareCardAlt');
 
 export const SITE_SCHEMA = [
   {
@@ -10,7 +12,7 @@ export const SITE_SCHEMA = [
     '@id': `${SITE_ORIGIN}/#website`,
     'url': `${SITE_ORIGIN}/`,
     'name': 'Windmill',
-    'description': 'Three self-growth tools on one account — Roadmap turns any goal into a living RPG skill tree, Journal is free-form daily writing that finds the feeling rather than the word, and Gym is a quiet training log.',
+    'description': t('shell.site.description'),
     'inLanguage': 'en',
     'publisher': { '@id': `${SITE_ORIGIN}/#organization` },
   },
@@ -29,15 +31,19 @@ export const SITE_SCHEMA = [
   },
 ];
 
+export const LEGAL_SHELF_LABEL = t('shell.site.legalShelf');
+
 export const LEGAL_LINKS = [
-  { href: '/pricing.html', label: 'Pricing' },
-  { href: '/privacy.html', label: 'Privacy' },
-  { href: '/terms.html', label: 'Terms' },
-  { href: '/refunds.html', label: 'Refunds' },
-  { href: '/changelog.html', label: 'Changelog' },
+  { href: '/pricing.html', label: t('shell.site.pricing') },
+  { href: '/privacy.html', label: t('shell.site.privacy') },
+  { href: '/terms.html', label: t('shell.site.terms') },
+  { href: '/refunds.html', label: t('shell.site.refunds') },
+  { href: '/changelog.html', label: t('shell.site.changelog') },
 ];
 
+export const PRODUCT_SHELF_LABEL = t('shell.site.productShelf');
+
 export const SURFACE_LINKS = [
-  { href: '/gallery', label: 'Gallery' },
-  { href: '/connect.html', label: 'Connect' },
+  { href: '/gallery', label: t('shell.site.gallery') },
+  { href: '/connect.html', label: t('shell.site.connect') },
 ];
