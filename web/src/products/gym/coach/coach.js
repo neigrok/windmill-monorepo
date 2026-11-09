@@ -120,7 +120,6 @@ export const THREAD_TAKEN_NOTE = t('gym.coach.threadTaken');
 export const BRAKE_NOTE = t('gym.coach.brake');
 export const UNREADABLE_NOTE = t('gym.coach.unreadable');
 
-export const RESPONSE_INTERRUPTED = t('gym.coach.responseInterrupted');
 
 export function askFailure(error) {
   const said = typeof error?.detail === 'string' && error.detail !== '' ? error.detail : null;

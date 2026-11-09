@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { gymApi } from '../gymApi.js';
+import { RESPONSE_INTERRUPTED } from '../errors.js';
 import { t } from '../i18n/index.js';
 import { track } from '../../../telemetry/beacon.js';
 import { captureError } from '../../../telemetry/sentry.js';
 import { mintId } from '../mint.js';
 import {
   answerTurn, askFailure, confirmFailure, generationTurns, mergeTurns, NO_ANSWER_NOTE, questionTooLong,
-  requestFromGeneration, RESPONSE_INTERRUPTED, THREAD_PREFIX, TOO_LONG_NOTE,
+  requestFromGeneration, THREAD_PREFIX, TOO_LONG_NOTE,
 } from './coach.js';
 import { coachPhotos } from './photos.js';
 import { THREAD_ABSENT } from './threads.js';

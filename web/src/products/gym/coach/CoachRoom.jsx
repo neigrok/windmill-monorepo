@@ -8,7 +8,8 @@ import { COACH_HREF, NOTES_HREF, routineHref, THREADS_HREF } from '../log.js';
 import { ProposalPanel } from '../Proposals.jsx';
 import './coach.css';
 import { DELETE_VERB, THREADS_TITLE } from './threads.js';
-import { coachWorkout, COACH_PLACEHOLDER, COACH_TITLE, draftEntryLine, readLine, RESPONSE_INTERRUPTED, stepsLine } from './coach.js';
+import { coachWorkout, COACH_PLACEHOLDER, COACH_TITLE, draftEntryLine, readLine, stepsLine } from './coach.js';
+import { RESPONSE_INTERRUPTED } from '../errors.js';
 import { forgetCoachDraft, useCoachConversation } from './useCoachConversation.js';
 
 export function CoachRoom({ log, accountId, initialThread, onDelete }) {

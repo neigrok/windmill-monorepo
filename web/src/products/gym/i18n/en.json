@@ -726,7 +726,6 @@
   "gym.coach.equipment.twoDumbbells": "Two dumbbells",
   "gym.coach.schemeWithBasis": "{scheme} {basis}",
   "gym.coach.restSeconds": "{seconds}s rest",
-  "gym.coach.responseInterrupted": "Response interrupted.",
   "gym.coach.responseStopped": "Response stopped.",
   "gym.coach.waitForSave": "Wait for the routine to finish saving before starting a new chat.",
   "gym.coach.stopBeforeNewChat": "Stop the current response or cancel the upload before starting a new chat.",

@@ -32,6 +32,9 @@ export function isStoreFailure(error) {
   return error instanceof CommitError && error.kind === 'store';
 }
 
+// A Coach answer that stopped before it finished, whether the server said so or the stream broke off.
+export const RESPONSE_INTERRUPTED = t('gym.errors.responseInterrupted');
+
 export function failureReason(error) {
   if (error instanceof GymRefusal) {
     return error.code === 'not-writable' ? t('gym.errors.reasonSignedOut') : t('gym.errors.reasonNotTaken');
