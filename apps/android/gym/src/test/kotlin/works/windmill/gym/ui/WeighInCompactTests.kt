@@ -1,7 +1,5 @@
 package works.windmill.gym.ui
 
-import android.content.Context
-import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Column
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -9,7 +7,6 @@ import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.height
-import androidx.test.core.app.ApplicationProvider
 import java.time.LocalDate
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -18,6 +15,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
+import works.windmill.gym.string
 import works.windmill.gym.R
 import works.windmill.gym.presentation.WeighIn
 import works.windmill.gym.presentation.Bodyweight
@@ -45,5 +43,3 @@ class WeighInCompactTests {
         compose.onNodeWithText(string(R.string.gym_bodyweight_save)).assertIsDisplayed().assertIsNotEnabled()
     }
 }
-
-private fun string(@StringRes id: Int, vararg args: Any): String = ApplicationProvider.getApplicationContext<Context>().getString(id, *args)

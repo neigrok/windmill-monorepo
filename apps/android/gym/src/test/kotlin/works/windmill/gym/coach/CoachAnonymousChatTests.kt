@@ -1,9 +1,8 @@
 package works.windmill.gym.coach
 
+import works.windmill.gym.spelled
+import works.windmill.gym.string
 import works.windmill.gym.R
-import androidx.test.core.app.ApplicationProvider
-import androidx.annotation.StringRes
-import android.content.Context
 import org.robolectric.annotation.Config
 import org.robolectric.RobolectricTestRunner
 import org.junit.runner.RunWith
@@ -45,7 +44,6 @@ import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.platform.ai.AiInstallation
 import works.windmill.platform.ai.AiInstallationApi
 import works.windmill.platform.ai.AiInstallationResponse
-import works.windmill.platform.i18n.Words
 import works.windmill.platform.i18n.text
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.sync.core.Json
@@ -318,7 +316,3 @@ class CoachAnonymousChatTests {
         }
     }
 }
-
-private fun string(@StringRes id: Int): String = ApplicationProvider.getApplicationContext<Context>().getString(id)
-
-private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())

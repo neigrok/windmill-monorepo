@@ -1,6 +1,5 @@
 package works.windmill.gym.store
 
-import androidx.test.core.app.ApplicationProvider
 import java.io.IOException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
@@ -26,6 +25,7 @@ import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import works.windmill.gym.spelled
 import works.windmill.gym.domain.sync.Prefill
 import works.windmill.gym.presentation.AutoClose
 import works.windmill.gym.presentation.Blocker
@@ -1269,5 +1269,3 @@ class WorkoutSessionTests {
         }
     }
 }
-
-private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())

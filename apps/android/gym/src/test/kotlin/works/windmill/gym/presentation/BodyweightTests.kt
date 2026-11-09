@@ -1,8 +1,5 @@
 package works.windmill.gym.presentation
 
-import android.content.Context
-import androidx.annotation.StringRes
-import androidx.test.core.app.ApplicationProvider
 import java.time.LocalDate
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -10,6 +7,9 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import works.windmill.gym.plain
+import works.windmill.gym.spelled
+import works.windmill.gym.string
 import works.windmill.gym.R
 import works.windmill.platform.i18n.Words
 
@@ -103,8 +103,4 @@ class BodyweightTests {
     }
 }
 
-private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())
-
-private fun ParsedWeight.spelled(): ParsedWeight = if (this is ParsedWeight.Refused) copy(why = Words.Plain(why.text(ApplicationProvider.getApplicationContext()))) else this
-
-private fun string(@StringRes id: Int, vararg args: Any): String = ApplicationProvider.getApplicationContext<Context>().getString(id, *args)
+private fun ParsedWeight.spelled(): ParsedWeight = if (this is ParsedWeight.Refused) copy(why = why.plain()) else this

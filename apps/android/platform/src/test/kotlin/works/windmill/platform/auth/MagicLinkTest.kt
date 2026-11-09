@@ -5,11 +5,10 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
+import works.windmill.platform.spelled
 import works.windmill.platform.net.Refusal
 import works.windmill.platform.net.WindmillApiException
-import works.windmill.platform.i18n.Words
 import org.robolectric.annotation.Config
-import org.robolectric.RuntimeEnvironment
 import org.robolectric.RobolectricTestRunner
 import org.junit.runner.RunWith
 
@@ -92,7 +91,7 @@ class MagicLinkTest {
         )) {
             val line = MagicLink.refused(failure).spelled()
             assertEquals(expected, line)
-            assertFalse(line.contains("expired"))
+            assertFalse(line!!.contains("expired"))
         }
     }
 
@@ -116,4 +115,3 @@ class MagicLinkTest {
 }
 
 // The words as English spells them.
-private fun Words.spelled(): String = text(RuntimeEnvironment.getApplication())

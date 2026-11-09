@@ -1,8 +1,5 @@
 package works.windmill.gym.coach
 
-import android.content.Context
-import androidx.annotation.StringRes
-import androidx.test.core.app.ApplicationProvider
 import java.io.File
 import java.io.IOException
 import kotlin.coroutines.ContinuationInterceptor
@@ -33,6 +30,8 @@ import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import works.windmill.gym.spelled
+import works.windmill.gym.string
 import works.windmill.agent.TurnEvent
 import works.windmill.agent.TurnOpen
 import works.windmill.agent.TurnRefusal
@@ -489,7 +488,3 @@ class CoachChatTests {
         }
     }
 }
-
-private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())
-
-private fun string(@StringRes id: Int, vararg args: Any): String = ApplicationProvider.getApplicationContext<Context>().getString(id, *args)

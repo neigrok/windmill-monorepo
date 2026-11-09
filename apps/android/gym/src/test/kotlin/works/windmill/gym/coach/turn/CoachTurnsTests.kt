@@ -1,8 +1,5 @@
 package works.windmill.gym.coach.turn
 
-import android.content.Context
-import androidx.annotation.StringRes
-import androidx.test.core.app.ApplicationProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.awaitCancellation
@@ -25,6 +22,8 @@ import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import works.windmill.gym.spelled
+import works.windmill.gym.string
 import works.windmill.agent.ToolCall
 import works.windmill.agent.ToolOutcome
 import works.windmill.agent.TurnEnd
@@ -53,7 +52,6 @@ import works.windmill.gym.domain.sync.Routine
 import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.store.ReplicaPin
 import works.windmill.gym.telemetry.GymEvents
-import works.windmill.platform.i18n.Words
 import works.windmill.platform.i18n.text
 import works.windmill.platform.net.Refusal
 import works.windmill.platform.net.WindmillApiException
@@ -1145,7 +1143,3 @@ class CoachTurnsTests {
         }
     }
 }
-
-private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())
-
-private fun string(@StringRes id: Int, vararg args: Any): String = ApplicationProvider.getApplicationContext<Context>().getString(id, *args)

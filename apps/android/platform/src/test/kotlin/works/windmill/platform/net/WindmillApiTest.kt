@@ -26,14 +26,13 @@ import org.junit.Assert.fail
 import org.junit.Before
 import org.junit.Test
 import java.util.concurrent.TimeUnit
+import works.windmill.platform.spelled
 import works.windmill.platform.telemetry.Telemetry
 import okhttp3.Call
 import okhttp3.EventListener
 import okhttp3.Response
 import java.util.concurrent.ConcurrentHashMap
-import works.windmill.platform.i18n.Words
 import org.robolectric.annotation.Config
-import org.robolectric.RuntimeEnvironment
 import org.robolectric.RobolectricTestRunner
 import org.junit.runner.RunWith
 
@@ -438,4 +437,3 @@ class WindmillApiTest {
 }
 
 // The words as English spells them.
-private fun Words.spelled(): String = text(RuntimeEnvironment.getApplication())

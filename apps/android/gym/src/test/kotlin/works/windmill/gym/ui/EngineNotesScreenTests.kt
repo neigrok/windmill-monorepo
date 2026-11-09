@@ -1,14 +1,11 @@
 package works.windmill.gym.ui
 
-import android.content.Context
 import android.os.Looper
-import androidx.annotation.StringRes
 import androidx.compose.runtime.remember
 import androidx.compose.ui.test.ComposeTimeoutException
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
-import androidx.test.core.app.ApplicationProvider
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -25,6 +22,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import works.windmill.gym.string
 import works.windmill.gym.R
 import works.windmill.gym.presentation.NoteWrite
 import works.windmill.gym.presentation.Notes
@@ -117,5 +115,3 @@ class EngineNotesScreenTests {
         } } finally { scope.cancel() }
     }
 }
-
-private fun string(@StringRes id: Int, vararg args: Any): String = ApplicationProvider.getApplicationContext<Context>().getString(id, *args)

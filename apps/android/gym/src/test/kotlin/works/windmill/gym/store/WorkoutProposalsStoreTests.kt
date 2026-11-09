@@ -1,6 +1,5 @@
 package works.windmill.gym.store
 
-import androidx.test.core.app.ApplicationProvider
 import kotlin.coroutines.CoroutineContext
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Runnable
@@ -18,6 +17,7 @@ import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import works.windmill.gym.spelled
 import works.windmill.domain.kit.ActionContext
 import works.windmill.domain.kit.ActionRunner
 import works.windmill.domain.kit.FixedZone
@@ -36,7 +36,6 @@ import works.windmill.gym.presentation.Routine
 import works.windmill.gym.presentation.RoutineDraft
 import works.windmill.gym.presentation.SetTarget
 import works.windmill.gym.presentation.SetWrite
-import works.windmill.platform.i18n.Words
 import works.windmill.platform.i18n.text
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.sync.engine.Engine
@@ -443,5 +442,3 @@ class WorkoutProposalsStoreTests {
         }
     }
 }
-
-private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())

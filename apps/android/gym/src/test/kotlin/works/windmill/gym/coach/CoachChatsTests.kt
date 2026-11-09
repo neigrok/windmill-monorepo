@@ -1,8 +1,8 @@
 package works.windmill.gym.coach
 
+import works.windmill.gym.spelled
 import works.windmill.platform.i18n.text
 import works.windmill.platform.i18n.Words
-import androidx.test.core.app.ApplicationProvider
 import works.windmill.gym.R
 import android.graphics.Bitmap
 import android.os.Looper
@@ -1160,5 +1160,3 @@ class CoachChatsTests {
         }
     }
 }
-
-private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())

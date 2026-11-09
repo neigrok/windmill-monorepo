@@ -1,6 +1,5 @@
 package works.windmill.gym.coach
 
-import androidx.test.core.app.ApplicationProvider
 import java.io.File
 import java.io.IOException
 import kotlin.coroutines.ContinuationInterceptor
@@ -30,6 +29,7 @@ import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import works.windmill.gym.spelled
 import works.windmill.agent.TurnOpen
 import works.windmill.agent.TurnRefusal
 import works.windmill.gym.coach.onboarding.CoachOnboardingRecord
@@ -38,7 +38,6 @@ import works.windmill.gym.coach.turn.TellingRecorder
 import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.WriteFailure
-import works.windmill.platform.i18n.Words
 import works.windmill.platform.i18n.text
 import works.windmill.platform.net.WindmillJson
 import works.windmill.platform.storage.AtomicDocument
@@ -374,5 +373,3 @@ class CoachDeletionTests {
         }
     }
 }
-
-private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())

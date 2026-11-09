@@ -1,11 +1,11 @@
 package works.windmill.gym.presentation
 
-import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import works.windmill.gym.plain
 import works.windmill.gym.presentation.TargetEntry.Field
 import works.windmill.gym.presentation.TargetEntry.Reading
 import works.windmill.gym.presentation.TargetEntry.TypedSet
@@ -64,4 +64,4 @@ class TargetEntryWholeShapeTests {
     }
 }
 
-private fun Reading.spelled(): Reading = if (this is Reading.Refused) copy(why = Words.Plain(why.text(ApplicationProvider.getApplicationContext()))) else this
+private fun Reading.spelled(): Reading = if (this is Reading.Refused) copy(why = why.plain()) else this

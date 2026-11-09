@@ -1,7 +1,5 @@
 package works.windmill.gym.ui
 
-import android.content.Context
-import androidx.annotation.StringRes
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalDensity
@@ -12,7 +10,6 @@ import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.height
-import androidx.test.core.app.ApplicationProvider
 import kotlinx.coroutines.*
 import org.junit.*
 import org.junit.Assert.*
@@ -21,6 +18,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import org.junit.rules.TemporaryFolder
+import works.windmill.gym.string
 import works.windmill.gym.R
 import works.windmill.gym.presentation.ConnectedLog
 import works.windmill.gym.presentation.LogLevel
@@ -74,5 +72,3 @@ class ConnectedLogLayoutTests {
         scope.cancel()
     }
 }
-
-private fun string(@StringRes id: Int, vararg args: Any): String = ApplicationProvider.getApplicationContext<Context>().getString(id, *args)

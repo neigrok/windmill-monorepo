@@ -1,6 +1,5 @@
 package works.windmill.gym.store
 
-import androidx.test.core.app.ApplicationProvider
 import java.io.File
 import java.io.IOException
 import kotlin.coroutines.CoroutineContext
@@ -13,7 +12,7 @@ import kotlinx.coroutines.flow.first
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import works.windmill.platform.i18n.Words
+import works.windmill.gym.spelled
 import works.windmill.platform.i18n.text
 import works.windmill.sync.api.Change
 import works.windmill.sync.api.CommitOutcome
@@ -690,5 +689,3 @@ class EngineReadTests {
         }
     }
 }
-
-private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())

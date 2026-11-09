@@ -3,7 +3,6 @@ package works.windmill.gym.ui
 import androidx.compose.runtime.*
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
-import androidx.test.core.app.ApplicationProvider
 import kotlinx.coroutines.*
 import org.junit.Assert.*
 import org.junit.Rule
@@ -12,6 +11,7 @@ import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import works.windmill.gym.spelled
 import works.windmill.gym.presentation.*
 import works.windmill.gym.store.*
 import works.windmill.platform.design.WindmillMaterial
@@ -297,5 +297,3 @@ class OnThisPhoneScreenTests {
         assertEquals("It is deleted from this phone. You can’t undo this.", one.discardBody.spelled())
     }
 }
-
-private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())

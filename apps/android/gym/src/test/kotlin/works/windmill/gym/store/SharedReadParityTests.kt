@@ -1,6 +1,5 @@
 package works.windmill.gym.store
 
-import androidx.test.core.app.ApplicationProvider
 import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -10,6 +9,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import works.windmill.gym.spelled
 import works.windmill.domain.kit.ActionContext
 import works.windmill.domain.kit.ActionRunner
 import works.windmill.domain.kit.FixedZone
@@ -202,5 +202,3 @@ class SharedReadParityTests {
             "weightKg" to Json.of(fact.weightKg), "reps" to Json.of(fact.reps), GymEstimate.value(fact.weightKg, fact.reps, fact.rpe)?.let { "e1rm" to Json.of(it) })) }
         } ?: Json.Null))
 }
-
-private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())

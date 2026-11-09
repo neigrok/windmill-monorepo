@@ -1,20 +1,18 @@
 package works.windmill.gym.presentation
 
-import android.content.Context
-import androidx.annotation.StringRes
-import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import works.windmill.gym.spelled
+import works.windmill.gym.string
 import works.windmill.domain.kit.Id
 import works.windmill.domain.kit.Instant as DomainInstant
 import works.windmill.gym.domain.sync.Exercise as DomainExercise
 import works.windmill.gym.domain.sync.LastTime
 import works.windmill.gym.domain.sync.Session as DomainSession
-import works.windmill.platform.i18n.Words
 
 private fun aSet(exerciseId: String, weightKg: Double, reps: Int,
                  at: Long, id: String = ""): TrainingSet =
@@ -448,7 +446,3 @@ class LiveLinesTests {
                      LiveLines.onThisDevice(1, null).spelled())
     }
 }
-
-private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())
-
-private fun string(@StringRes id: Int, vararg args: Any): String = ApplicationProvider.getApplicationContext<Context>().getString(id, *args)

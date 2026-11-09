@@ -5,7 +5,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.junit4.createComposeRule
-import androidx.test.core.app.ApplicationProvider
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -19,6 +18,7 @@ import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import works.windmill.gym.spelled
 import works.windmill.gym.LocalFrameStands
 import works.windmill.gym.presentation.Exercise
 import works.windmill.gym.presentation.PlanEntry
@@ -27,7 +27,6 @@ import works.windmill.gym.presentation.SetTarget
 import works.windmill.gym.presentation.TrainingSet
 import works.windmill.gym.sharing.WorkoutShareActions
 import works.windmill.gym.store.EngineRoomFixture
-import works.windmill.platform.i18n.Words
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
@@ -318,5 +317,3 @@ class SessionScreenTests {
         assertEquals("82.5 × 5", movements[0].rows.single().effort)
     }
 }
-
-private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())

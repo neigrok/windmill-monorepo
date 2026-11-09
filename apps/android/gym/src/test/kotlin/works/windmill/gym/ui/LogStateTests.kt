@@ -1,7 +1,5 @@
 package works.windmill.gym.ui
 
-import android.content.Context
-import androidx.annotation.StringRes
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
@@ -27,7 +25,6 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createComposeRule
-import androidx.test.core.app.ApplicationProvider
 import java.time.LocalDate
 import java.time.ZoneId
 import kotlinx.coroutines.CoroutineScope
@@ -48,6 +45,8 @@ import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import works.windmill.gym.spelled
+import works.windmill.gym.string
 import works.windmill.gym.R
 import works.windmill.gym.presentation.Bodyweight
 import works.windmill.gym.presentation.Readout
@@ -57,7 +56,6 @@ import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.store.HistoryReads
 import works.windmill.gym.store.Older
 import works.windmill.gym.store.TrainingStore
-import works.windmill.platform.i18n.Words
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.sync.engine.Pulls
 
@@ -432,7 +430,3 @@ class LogStateTests {
         } } finally { scope.cancel() }
     }
 }
-
-private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())
-
-private fun string(@StringRes id: Int, vararg args: Any): String = ApplicationProvider.getApplicationContext<Context>().getString(id, *args)

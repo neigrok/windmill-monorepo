@@ -1,8 +1,6 @@
 package works.windmill.gym.coach
 
-import android.content.Context
 import android.os.Looper
-import androidx.annotation.StringRes
 import androidx.compose.material3.Text
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
@@ -16,7 +14,6 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import androidx.test.core.app.ApplicationProvider
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
@@ -32,6 +29,8 @@ import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import works.windmill.gym.spelled
+import works.windmill.gym.string
 import works.windmill.agent.TurnRefusal
 import works.windmill.gym.R
 import works.windmill.gym.coach.onboarding.CoachOnboardingSeat
@@ -46,7 +45,6 @@ import works.windmill.platform.ClientUpdateDestination
 import works.windmill.platform.LocalClientUpdateDestination
 import works.windmill.platform.ai.AiInstallationApi
 import works.windmill.platform.ai.AiInstallationResponse
-import works.windmill.platform.i18n.Words
 import works.windmill.platform.i18n.text
 import works.windmill.platform.net.Refusal
 import works.windmill.platform.net.WindmillApiException
@@ -263,7 +261,3 @@ class CoachAccessTests {
         assertEquals(listOf("gym.coachAccess" to "The installation could not be read."), reported)
     }
 }
-
-private fun string(@StringRes id: Int, vararg args: Any): String = ApplicationProvider.getApplicationContext<Context>().getString(id, *args)
-
-private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())

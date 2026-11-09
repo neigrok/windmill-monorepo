@@ -1,8 +1,5 @@
 package works.windmill.gym.ui
 
-import android.content.Context
-import androidx.annotation.StringRes
-import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -10,6 +7,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import works.windmill.gym.string
 import works.windmill.gym.presentation.Exercise
 import works.windmill.gym.presentation.SessionSummary
 import works.windmill.gym.presentation.TheSix
@@ -122,5 +120,3 @@ class PickerSixRankingTests {
         assertNull("one silence, one sentence", options.noMatch)
     }
 }
-
-private fun string(@StringRes id: Int, vararg args: Any): String = ApplicationProvider.getApplicationContext<Context>().getString(id, *args)

@@ -1,6 +1,5 @@
 package works.windmill.gym.presentation
 
-import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -8,7 +7,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import works.windmill.platform.i18n.Words
+import works.windmill.gym.spelled
 
 // One fixture, two surfaces. The same sixty-character name is pinned here and in
 // `web/test/products/gym/nameCodePoints.test.js`: thirty emoji and thirty accented letters. It reads
@@ -86,5 +85,3 @@ class NameCodePointTests {
         assertEquals("one cap for a name and a title", Program.maxNameLength, Notes.titleMax)
     }
 }
-
-private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())

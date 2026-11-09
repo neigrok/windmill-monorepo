@@ -1,8 +1,7 @@
 package works.windmill.gym.ui
 
-import android.content.Context
-import androidx.annotation.StringRes
-import androidx.test.core.app.ApplicationProvider
+import works.windmill.gym.spelled
+import works.windmill.gym.string
 import works.windmill.gym.R
 import works.windmill.gym.coach.AskBinding
 import works.windmill.gym.coach.AskScreen
@@ -68,7 +67,6 @@ import works.windmill.gym.domain.sync.ProposeRoutine
 import works.windmill.gym.net.FakeGymRest
 import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.store.GymResult
-import works.windmill.platform.i18n.Words
 import works.windmill.sync.core.Json
 import works.windmill.sync.modelserver.ModelServer
 import works.windmill.gym.domain.sync.Exercise as EngineExercise
@@ -484,7 +482,3 @@ class LargestTypeTests {
         } } finally { scope.cancel() }
     }
 }
-
-private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())
-
-private fun string(@StringRes id: Int, vararg args: Any): String = ApplicationProvider.getApplicationContext<Context>().getString(id, *args)

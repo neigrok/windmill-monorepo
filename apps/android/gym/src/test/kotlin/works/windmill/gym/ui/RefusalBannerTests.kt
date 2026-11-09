@@ -1,11 +1,11 @@
 package works.windmill.gym.ui
 
-import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import works.windmill.gym.spelled
 import works.windmill.gym.presentation.Exercise
 import works.windmill.gym.store.RefusedChange
 import works.windmill.gym.store.RefusedSet
@@ -37,5 +37,3 @@ class RefusalBannerTests {
             refusalWords(RefusedChange(id = "notice", named = null, why = Words.Plain("That changed. Open it again.")), catalog).spelled())
     }
 }
-
-private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())

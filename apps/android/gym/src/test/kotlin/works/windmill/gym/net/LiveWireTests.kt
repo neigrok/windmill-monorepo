@@ -1,6 +1,5 @@
 package works.windmill.gym.net
 
-import androidx.test.core.app.ApplicationProvider
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.delay
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -18,6 +17,7 @@ import org.junit.runner.RunWith
 import org.junit.runners.MethodSorters
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import works.windmill.gym.spelled
 import works.windmill.gym.presentation.Exercise
 import works.windmill.gym.presentation.NoteWrite
 import works.windmill.gym.presentation.PlanEntry
@@ -35,7 +35,6 @@ import works.windmill.gym.store.TrainingRefused
 import works.windmill.gym.store.EngineTraining
 import works.windmill.gym.store.WorkoutImports
 import works.windmill.gym.presentation.Session
-import works.windmill.platform.i18n.Words
 import works.windmill.platform.i18n.text
 import works.windmill.sync.engine.*
 import works.windmill.sync.schema.SyncSchema
@@ -672,5 +671,3 @@ class LiveWireTests {
         assertEquals(user, me)
     }
 }
-
-private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())

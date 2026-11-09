@@ -1,12 +1,12 @@
 package works.windmill.gym.presentation
 
-import androidx.test.core.app.ApplicationProvider
 import java.time.ZoneId
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import works.windmill.gym.spelled
 import works.windmill.platform.i18n.Words
 
 @RunWith(RobolectricTestRunner::class)
@@ -26,5 +26,3 @@ class ProgressReadoutTests {
         assertEquals("101.3 kg est · today · 80 × 8", progressWords(point, 2000L).spelled())
     }
 }
-
-private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())

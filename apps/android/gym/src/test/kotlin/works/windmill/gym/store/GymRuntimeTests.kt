@@ -1,6 +1,5 @@
 package works.windmill.gym.store
 
-import androidx.test.core.app.ApplicationProvider
 import java.io.File
 import java.io.IOException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -17,6 +16,7 @@ import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import works.windmill.gym.spelled
 import works.windmill.gym.presentation.*
 import works.windmill.gym.presentation.WorkoutChange
 import works.windmill.platform.Account
@@ -25,7 +25,6 @@ import works.windmill.platform.auth.AuthStatus
 import works.windmill.platform.auth.AuthStore
 import works.windmill.platform.auth.LocalSession
 import works.windmill.platform.auth.MemorySessions
-import works.windmill.platform.i18n.Words
 import works.windmill.platform.i18n.text
 import works.windmill.platform.storage.AtomicDocument
 import works.windmill.platform.telemetry.Telemetry
@@ -419,5 +418,3 @@ class GymRuntimeTests {
         }
     }
 }
-
-private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())

@@ -1,9 +1,7 @@
 package works.windmill.gym.coach
 
+import works.windmill.gym.string
 import works.windmill.gym.R
-import androidx.test.core.app.ApplicationProvider
-import androidx.annotation.StringRes
-import android.content.Context
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -318,5 +316,3 @@ class CoachHistoryTests {
         assertEquals(emptyList<String>(), failures.toList())
     }
 }
-
-private fun string(@StringRes id: Int): String = ApplicationProvider.getApplicationContext<Context>().getString(id)

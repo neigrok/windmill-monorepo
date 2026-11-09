@@ -1,11 +1,10 @@
 package works.windmill.gym.coach
 
+import works.windmill.gym.spelled
+import works.windmill.gym.string
 import works.windmill.platform.i18n.text
 import works.windmill.platform.i18n.Words
 import works.windmill.gym.R
-import androidx.test.core.app.ApplicationProvider
-import androidx.annotation.StringRes
-import android.content.Context
 import org.robolectric.annotation.Config
 import org.robolectric.RobolectricTestRunner
 import org.junit.runner.RunWith
@@ -134,7 +133,3 @@ class ThreadTests {
         assertEquals("Coach", deleted.named.spelled())
     }
 }
-
-private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())
-
-private fun string(@StringRes id: Int): String = ApplicationProvider.getApplicationContext<Context>().getString(id)

@@ -1,7 +1,5 @@
 package works.windmill.gym.ui
 
-import android.content.Context
-import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.CompositionLocalProvider
@@ -14,7 +12,6 @@ import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.height
-import androidx.test.core.app.ApplicationProvider
 import kotlinx.coroutines.*
 import org.junit.Assert.*
 import org.junit.Rule
@@ -24,6 +21,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
+import works.windmill.gym.string
 import works.windmill.gym.R
 import works.windmill.gym.presentation.Notes
 import works.windmill.gym.store.*
@@ -80,5 +78,3 @@ class NotesLayoutTests {
         } } finally { scope.cancel() }
     }
 }
-
-private fun string(@StringRes id: Int, vararg args: Any): String = ApplicationProvider.getApplicationContext<Context>().getString(id, *args)

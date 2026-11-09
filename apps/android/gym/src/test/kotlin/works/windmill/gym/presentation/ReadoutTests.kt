@@ -1,6 +1,5 @@
 package works.windmill.gym.presentation
 
-import androidx.test.core.app.ApplicationProvider
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -10,7 +9,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import works.windmill.platform.i18n.Words
+import works.windmill.gym.spelled
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
@@ -233,5 +232,3 @@ class ReadoutTests {
         assertEquals("bench-press", Readout.movement("bench-press", emptyList()))
     }
 }
-
-private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())

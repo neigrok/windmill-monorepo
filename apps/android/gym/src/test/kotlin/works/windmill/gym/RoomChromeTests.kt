@@ -1,9 +1,6 @@
 package works.windmill.gym
 
 import works.windmill.gym.R
-import androidx.test.core.app.ApplicationProvider
-import androidx.annotation.StringRes
-import android.content.Context
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
@@ -96,5 +93,3 @@ class RoomChromeTests {
             RailLabels.widths(pitch = 100f, edge = 70f, gap = 8f, line = listOf(120f, 120f), word = listOf(120f, 120f)))
     }
 }
-
-private fun string(@StringRes id: Int): String = ApplicationProvider.getApplicationContext<Context>().getString(id)

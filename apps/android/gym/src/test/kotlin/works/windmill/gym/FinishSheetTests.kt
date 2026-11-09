@@ -1,15 +1,11 @@
 package works.windmill.gym
 
 import works.windmill.gym.R
-import androidx.test.core.app.ApplicationProvider
-import androidx.annotation.StringRes
-import android.content.Context
 import android.os.Bundle
 import android.os.Parcel
 import android.os.Parcelable
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import works.windmill.platform.i18n.Words
 import works.windmill.platform.i18n.text
 import works.windmill.platform.net.WindmillJson
 
@@ -1107,7 +1103,3 @@ class FinishSheetTests {
     }
 
 }
-
-private fun string(@StringRes id: Int): String = ApplicationProvider.getApplicationContext<Context>().getString(id)
-
-private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())

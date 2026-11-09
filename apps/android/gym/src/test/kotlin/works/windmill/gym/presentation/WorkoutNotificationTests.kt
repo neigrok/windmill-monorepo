@@ -1,11 +1,11 @@
 package works.windmill.gym.presentation
 
-import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import works.windmill.gym.plain
 import works.windmill.gym.domain.sync.Prefill
 import works.windmill.platform.i18n.Words
 
@@ -53,7 +53,5 @@ class WorkoutNotificationTests {
             null, false, 12_000), WorkoutNotification(key, session, Words.Plain("Bench Press"), emptyList(), state, true).spelled())
     }
 }
-
-private fun Words.plain(): Words = Words.Plain(text(ApplicationProvider.getApplicationContext()))
 
 private fun WorkoutNotification.spelled() = copy(heading = heading.plain(), doing = doing.plain(), racked = racked.plain(), counted = counted.plain())

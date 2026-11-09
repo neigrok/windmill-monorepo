@@ -1,9 +1,6 @@
 package works.windmill.gym
 
 import works.windmill.gym.R
-import androidx.test.core.app.ApplicationProvider
-import androidx.annotation.StringRes
-import android.content.Context
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.MotionDurationScale
 import androidx.compose.ui.test.ExperimentalTestApi
@@ -500,5 +497,3 @@ class CoachOverWorkoutTests {
         compose.onNodeWithContentDescription("Coach").assertDoesNotExist()
     }
 }
-
-private fun string(@StringRes id: Int): String = ApplicationProvider.getApplicationContext<Context>().getString(id)

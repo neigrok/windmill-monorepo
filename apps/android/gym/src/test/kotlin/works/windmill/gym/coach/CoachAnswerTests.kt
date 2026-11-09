@@ -1,6 +1,6 @@
 package works.windmill.gym.coach
 
-import androidx.test.core.app.ApplicationProvider
+import works.windmill.gym.spelled
 import works.windmill.gym.R
 import works.windmill.platform.i18n.Words
 import android.app.Application
@@ -525,5 +525,3 @@ class CoachAnswerTests {
         assertTrue("the receipt stands under the door", compose.onNodeWithText("Read nothing from your log", useUnmergedTree = true).getUnclippedBoundsInRoot().top > door.bottom)
     }
 }
-
-private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())

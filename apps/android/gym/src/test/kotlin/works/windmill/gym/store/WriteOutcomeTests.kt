@@ -1,6 +1,5 @@
 package works.windmill.gym.store
 
-import androidx.test.core.app.ApplicationProvider
 import java.io.IOException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -8,6 +7,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import works.windmill.gym.spelled
 import works.windmill.gym.R
 import works.windmill.gym.presentation.Blocker
 import works.windmill.gym.presentation.TrainingSet
@@ -56,5 +56,3 @@ class WriteOutcomeTests {
             RefusedSet(set, Words.Plain("the session closed before this set reached it")))
     }
 }
-
-private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())

@@ -1,7 +1,6 @@
 package works.windmill.gym
 
 import works.windmill.gym.R
-import androidx.annotation.StringRes
 import android.content.Context
 import java.util.UUID
 import android.provider.Settings
@@ -535,5 +534,3 @@ private fun SavedNavigationField(holder: SaveableStateHolder, stateKey: String) 
         TextField(value, { value = it })
     }
 }
-
-private fun string(@StringRes id: Int): String = ApplicationProvider.getApplicationContext<Context>().getString(id)

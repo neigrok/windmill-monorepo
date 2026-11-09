@@ -1,12 +1,10 @@
 package works.windmill.gym.ui
 
-import android.content.Context
 import android.os.Looper
-import androidx.annotation.StringRes
-import androidx.test.core.app.ApplicationProvider
 import java.io.IOException
+import works.windmill.gym.spelled
+import works.windmill.gym.string
 import works.windmill.gym.R
-import works.windmill.platform.i18n.Words
 import works.windmill.sync.engine.Engine
 import works.windmill.sync.engine.EngineClock
 import works.windmill.sync.schema.SyncSchema
@@ -693,7 +691,3 @@ class NotesScreenTests {
     }
 
 }
-
-private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())
-
-private fun string(@StringRes id: Int, vararg args: Any): String = ApplicationProvider.getApplicationContext<Context>().getString(id, *args)

@@ -1,7 +1,5 @@
 package works.windmill.gym.presentation
 
-import android.content.Context
-import androidx.annotation.StringRes
 import androidx.test.core.app.ApplicationProvider
 import java.time.LocalDate
 import java.time.ZoneId
@@ -10,6 +8,8 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import works.windmill.gym.spelled
+import works.windmill.gym.string
 import works.windmill.gym.R
 import works.windmill.platform.i18n.Words
 
@@ -158,9 +158,5 @@ class ConnectedLogTests {
     }
 }
 
-private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())
-
 private fun ConnectedLogState.spelled(): ConnectedLogState = if (this !is ConnectedLogState.Connected) this
     else ConnectedLogState.Connected(tools.map { it.copy(named = Words.Plain(it.named.text(ApplicationProvider.getApplicationContext()))) })
-
-private fun string(@StringRes id: Int, vararg args: Any): String = ApplicationProvider.getApplicationContext<Context>().getString(id, *args)

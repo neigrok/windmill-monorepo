@@ -1,6 +1,5 @@
 package works.windmill.gym.presentation
 
-import androidx.test.core.app.ApplicationProvider
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -10,7 +9,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import works.windmill.platform.i18n.Words
+import works.windmill.gym.spelled
 
 private val json = Json { ignoreUnknownKeys = true }
 
@@ -219,5 +218,3 @@ class ProgramTests {
     }
 
 }
-
-private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())

@@ -3,7 +3,6 @@ package works.windmill.gym
 import android.content.Context
 import android.view.accessibility.AccessibilityManager
 import androidx.activity.ComponentDialog
-import androidx.annotation.StringRes
 import androidx.test.core.app.ApplicationProvider
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.platform.LocalDensity
@@ -150,5 +149,3 @@ class LogTransientTests {
         }
     }
 }
-
-private fun string(@StringRes id: Int, vararg args: Any): String = ApplicationProvider.getApplicationContext<Context>().getString(id, *args)

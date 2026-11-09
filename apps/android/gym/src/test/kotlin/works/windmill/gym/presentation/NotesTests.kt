@@ -1,8 +1,5 @@
 package works.windmill.gym.presentation
 
-import android.content.Context
-import androidx.annotation.StringRes
-import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -11,8 +8,9 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import works.windmill.gym.spelled
+import works.windmill.gym.string
 import works.windmill.gym.R
-import works.windmill.platform.i18n.Words
 import works.windmill.platform.net.WindmillJson
 
 @RunWith(RobolectricTestRunner::class)
@@ -108,7 +106,3 @@ class NotesTests {
         assertTrue(id, Regex("note_[0-9a-f]{16}").matches(id))
     }
 }
-
-private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())
-
-private fun string(@StringRes id: Int, vararg args: Any): String = ApplicationProvider.getApplicationContext<Context>().getString(id, *args)

@@ -1,7 +1,5 @@
 package works.windmill.gym.ui
 
-import android.content.Context
-import androidx.annotation.StringRes
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.onAllNodesWithText
@@ -12,7 +10,6 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -21,6 +18,8 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import works.windmill.gym.spelled
+import works.windmill.gym.string
 import works.windmill.gym.R
 import works.windmill.gym.presentation.Against
 import works.windmill.gym.presentation.AgainstMovement
@@ -36,7 +35,6 @@ import works.windmill.gym.presentation.PlanSnapshot
 import works.windmill.gym.presentation.PlannedLine
 import works.windmill.gym.presentation.SetTarget
 import works.windmill.gym.presentation.TrainingSet
-import works.windmill.platform.i18n.Words
 
 private val catalog = listOf(
     Exercise(id = "back-squat", name = "Back Squat"),
@@ -485,7 +483,3 @@ class ShareWithCoachTests {
         compose.onNodeWithContentDescription("More").assertDoesNotExist()
     }
 }
-
-private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())
-
-private fun string(@StringRes id: Int, vararg args: Any): String = ApplicationProvider.getApplicationContext<Context>().getString(id, *args)

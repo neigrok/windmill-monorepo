@@ -1,9 +1,8 @@
 package works.windmill.gym.coach
 
+import works.windmill.gym.spelled
+import works.windmill.gym.string
 import works.windmill.gym.R
-import androidx.test.core.app.ApplicationProvider
-import androidx.annotation.StringRes
-import android.content.Context
 import works.windmill.gym.coach.turn.CoachTurnFault
 import works.windmill.gym.presentation.ProposalReceipt
 import works.windmill.gym.ui.*
@@ -96,7 +95,6 @@ import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.ProposalOutcome
 import works.windmill.gym.store.ProposalRead
 import works.windmill.gym.store.TrainingStore
-import works.windmill.platform.i18n.Words
 import works.windmill.platform.i18n.text
 import works.windmill.platform.telemetry.LocalTelemetry
 import works.windmill.domain.kit.Id
@@ -1460,7 +1458,3 @@ class AskScreenTests {
         scope.cancel()
     }
 }
-
-private fun string(@StringRes id: Int): String = ApplicationProvider.getApplicationContext<Context>().getString(id)
-
-private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())

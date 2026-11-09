@@ -16,6 +16,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Before
 import org.junit.Test
+import works.windmill.platform.spelled
 import works.windmill.platform.User
 import works.windmill.platform.net.WindmillApiException
 import works.windmill.platform.net.Refusal
@@ -23,9 +24,7 @@ import works.windmill.platform.telemetry.Telemetry
 import java.io.IOException
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
-import works.windmill.platform.i18n.Words
 import org.robolectric.annotation.Config
-import org.robolectric.RuntimeEnvironment
 import org.robolectric.RobolectricTestRunner
 import org.junit.runner.RunWith
 
@@ -831,4 +830,3 @@ class AuthStoreTest {
 }
 
 // The words as English spells them.
-private fun Words.spelled(): String = text(RuntimeEnvironment.getApplication())

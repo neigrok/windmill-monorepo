@@ -1,7 +1,5 @@
 package works.windmill.gym.presentation
 
-import android.content.Context
-import androidx.annotation.StringRes
 import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -10,6 +8,8 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import works.windmill.gym.spelled
+import works.windmill.gym.string
 import works.windmill.gym.R
 import works.windmill.gym.presentation.TargetEntry.Field
 import works.windmill.gym.presentation.TargetEntry.Reading
@@ -277,8 +277,4 @@ class TargetEntryTests {
     }
 }
 
-private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())
-
 private fun Reading.spelled(): Reading = if (this is Reading.Refused) copy(why = Words.Plain(why.text(ApplicationProvider.getApplicationContext()))) else this
-
-private fun string(@StringRes id: Int, vararg args: Any): String = ApplicationProvider.getApplicationContext<Context>().getString(id, *args)

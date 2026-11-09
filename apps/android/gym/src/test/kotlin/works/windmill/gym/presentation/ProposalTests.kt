@@ -1,8 +1,5 @@
 package works.windmill.gym.presentation
 
-import android.content.Context
-import androidx.annotation.StringRes
-import androidx.test.core.app.ApplicationProvider
 import java.time.LocalDate
 import java.time.ZoneId
 import org.junit.Assert.assertEquals
@@ -14,6 +11,9 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import works.windmill.gym.plain
+import works.windmill.gym.spelled
+import works.windmill.gym.string
 import works.windmill.domain.kit.Id
 import works.windmill.gym.R
 import works.windmill.gym.domain.sync.Exercise as DomainExercise
@@ -500,12 +500,6 @@ class ProposalTests {
     }
 }
 
-private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())
-
-private fun Words.plain(): Words = Words.Plain(text(ApplicationProvider.getApplicationContext()))
-
 private fun FieldMove.spelled() = copy(field = field.plain(), was = was.plain(), becomes = becomes.plain())
 
 private fun ProposalReceipt?.spelled() = this?.copy(words = words.plain())
-
-private fun string(@StringRes id: Int, vararg args: Any): String = ApplicationProvider.getApplicationContext<Context>().getString(id, *args)

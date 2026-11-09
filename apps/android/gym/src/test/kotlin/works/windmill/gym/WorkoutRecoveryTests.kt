@@ -1,12 +1,9 @@
 package works.windmill.gym
 
-import android.content.Context
-import androidx.annotation.StringRes
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onLast
 
 import androidx.activity.ComponentDialog
-import androidx.test.core.app.ApplicationProvider
 import org.robolectric.shadows.ShadowDialog
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.mutableStateOf
@@ -62,7 +59,6 @@ import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.TrainingStore
 import works.windmill.gym.ui.GymMaterial
 import works.windmill.platform.Account
-import works.windmill.platform.i18n.Words
 import works.windmill.platform.i18n.text
 import works.windmill.sync.engine.signIn
 import works.windmill.sync.engine.signOut
@@ -592,7 +588,3 @@ class WorkoutRecoveryTests {
         }
     }
 }
-
-private fun string(@StringRes id: Int, vararg args: Any): String = ApplicationProvider.getApplicationContext<Context>().getString(id, *args)
-
-private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())

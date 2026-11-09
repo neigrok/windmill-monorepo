@@ -1,6 +1,5 @@
 package works.windmill.gym.store
 
-import androidx.test.core.app.ApplicationProvider
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.first
@@ -19,12 +18,12 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
+import works.windmill.gym.spelled
 import works.windmill.gym.presentation.*
 import works.windmill.gym.telemetry.GymEvents
 import works.windmill.gym.ui.PhoneSignInWords
 import works.windmill.platform.User
 import works.windmill.platform.auth.AuthSignOutChoice
-import works.windmill.platform.i18n.Words
 import works.windmill.platform.i18n.text
 import works.windmill.platform.net.WindmillApiException
 import works.windmill.platform.net.WindmillJson
@@ -723,5 +722,3 @@ class GymEngineSessionTests {
         } finally { session.close() }
     }
 }
-
-private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())

@@ -1,6 +1,5 @@
 package works.windmill.gym.presentation
 
-import androidx.test.core.app.ApplicationProvider
 import java.time.Instant
 import java.time.LocalDate
 import java.time.YearMonth
@@ -10,6 +9,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import works.windmill.gym.plain
 import works.windmill.platform.i18n.Words
 
 @RunWith(RobolectricTestRunner::class)
@@ -196,7 +196,5 @@ class LogTimelineTests {
         assertEquals(LogReadout.Weight(Words.Plain("82.3 kg"), null, "23:59"), LogReadout.weight(LogEntry.Weight(before, -60_000), listOf(before), zone, complete = true).spelled())
     }
 }
-
-private fun Words.plain(): Words = Words.Plain(text(ApplicationProvider.getApplicationContext()))
 
 private fun LogReadout.Weight.spelled() = copy(named = named.plain(), said = said?.plain())

@@ -2,7 +2,6 @@ package works.windmill.gym.ui
 
 import android.content.Context
 import android.provider.Settings
-import androidx.annotation.StringRes
 import androidx.test.core.app.ApplicationProvider
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
@@ -35,6 +34,7 @@ import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import works.windmill.gym.string
 import works.windmill.gym.GymRoom
 import works.windmill.gym.R
 import works.windmill.platform.LocalShellActions
@@ -178,5 +178,3 @@ class NotesStateTests {
         } } finally { scope.cancel() }
     }
 }
-
-private fun string(@StringRes id: Int, vararg args: Any): String = ApplicationProvider.getApplicationContext<Context>().getString(id, *args)

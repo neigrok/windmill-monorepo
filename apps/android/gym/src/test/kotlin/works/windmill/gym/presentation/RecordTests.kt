@@ -1,8 +1,5 @@
 package works.windmill.gym.presentation
 
-import android.content.Context
-import androidx.annotation.StringRes
-import androidx.test.core.app.ApplicationProvider
 import java.time.ZoneId
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -11,6 +8,9 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import works.windmill.gym.plain
+import works.windmill.gym.spelled
+import works.windmill.gym.string
 import works.windmill.gym.R
 import works.windmill.gym.domain.sync.RecentDay
 import works.windmill.platform.i18n.Words
@@ -159,15 +159,9 @@ class RecordTests {
 
 }
 
-private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())
-
-private fun Words.plain(): Words = Words.Plain(text(ApplicationProvider.getApplicationContext()))
-
 private fun Record.Tile.spelled() = copy(said = said.plain())
 
 private fun Record.Best.spelled() = copy(estimated = estimated.plain(), on = on.plain())
 
 private fun Record.Page.spelled() = copy(equipment = equipment.plain(), tiles = tiles.map { it.spelled() }, records = records.map { it.spelled() },
     days = days.map { it.copy(on = it.on.plain()) }, untrained = untrained?.plain(), noEstimateYet = noEstimateYet?.plain())
-
-private fun string(@StringRes id: Int, vararg args: Any): String = ApplicationProvider.getApplicationContext<Context>().getString(id, *args)

@@ -1,8 +1,5 @@
 package works.windmill.gym.presentation
 
-import android.content.Context
-import androidx.annotation.StringRes
-import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -11,8 +8,9 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import works.windmill.gym.spelled
+import works.windmill.gym.string
 import works.windmill.gym.R
-import works.windmill.platform.i18n.Words
 
 // A fix names ONLY what it changes, because a set has no concurrency guard: a sheet that wrote its
 // whole state would silently clobber a note another device wrote while it stood open.
@@ -188,7 +186,3 @@ class SetFixTests {
         assertTrue(SetEffort.rpeBand.map { SetEffort.rpeNumeral(it) }.none { it == string(R.string.gym_effort_rpe_unrated) })
     }
 }
-
-private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())
-
-private fun string(@StringRes id: Int, vararg args: Any): String = ApplicationProvider.getApplicationContext<Context>().getString(id, *args)

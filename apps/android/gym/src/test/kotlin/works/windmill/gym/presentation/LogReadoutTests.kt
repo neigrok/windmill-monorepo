@@ -1,6 +1,5 @@
 package works.windmill.gym.presentation
 
-import androidx.test.core.app.ApplicationProvider
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -9,6 +8,8 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import works.windmill.gym.plain
+import works.windmill.gym.spelled
 import works.windmill.platform.i18n.Words
 
 @RunWith(RobolectricTestRunner::class)
@@ -75,10 +76,6 @@ class LogReadoutTests {
             LogReadout.weight(LogEntry.Weight(entry, at), listOf(entry, WeighIn("2026-08-30", 82.9, previousAt)), zone, complete = false).spelled())
     }
 }
-
-private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())
-
-private fun Words.plain(): Words = Words.Plain(text(ApplicationProvider.getApplicationContext()))
 
 private fun LogReadout.Row.spelled() = copy(named = named.plain(), said = said.plain())
 
