@@ -39,6 +39,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
+import works.windmill.gym.presentation.text
 import androidx.compose.foundation.layout.size
 import androidx.lifecycle.compose.LifecycleStartEffect
 import works.windmill.gym.R
@@ -49,13 +51,6 @@ import works.windmill.platform.telemetry.LocalTelemetry
 import works.windmill.gym.presentation.Proposal
 import works.windmill.gym.store.GymResult
 import kotlinx.coroutines.launch
-
-object Threads {
-    const val title = "History"
-    const val open = "New chat"
-    const val conversation = "Conversation"
-    const val none = "No conversations yet.\nWhat you ask Coach on this phone is listed here."
-}
 
 // What the conversation list draws. `reading` holds the empty line back until the first read of the engine has landed.
 @Stable
@@ -122,52 +117,53 @@ fun ThreadsScreen(
         telemetry.event("gym_action", mapOf("screen" to "threads", "action" to "delete", "outcome" to "cancelled"))
     }
 
-    GymScreen(title = Threads.title, onBack = onBack, backTo = backTo) {
+    GymScreen(title = stringResource(R.string.gym_coach_history), onBack = onBack, backTo = backTo) {
         Box(Modifier.fillMaxSize()) {
             val held = state.threads.filterNot { it.id in deleting }
             if (!state.reading && held.isEmpty() && failure == null) Column(Modifier.fillMaxSize().padding(horizontal = 32.dp, vertical = 8.dp),
                 horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically)) {
                 LaunchedEffect(Unit) { telemetry.event("gym_action", mapOf("screen" to "threads", "action" to "empty", "outcome" to "shown")) }
                 Icon(painterResource(R.drawable.gym_coach_forum), null, Modifier.size(40.dp), tint = colors.onSurfaceVariant)
-                Text(Threads.none, style = GymType.coachAccessNote, color = colors.onSurfaceVariant, textAlign = TextAlign.Center)
+                Text(stringResource(R.string.gym_coach_threads_none), style = GymType.coachAccessNote, color = colors.onSurfaceVariant, textAlign = TextAlign.Center)
             } else LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(top = 8.dp, bottom = 88.dp)) {
                 failure?.let { line -> item("failure") {
                     Text(line, style = GymType.coachLine, color = colors.onSurfaceVariant, modifier = Modifier.padding(16.dp))
                 } }
                 items(held, key = { it.id }) { thread ->
-                    DeleteSwipeRow(actionLabel = "Delete conversation", onDelete = { requestDelete(thread.id); false }) {
+                    DeleteSwipeRow(actionLabel = stringResource(R.string.gym_coach_delete_conversation), onDelete = { requestDelete(thread.id); false }) {
                         val draft = state.draft(thread.id)
                         val preview = when {
-                            thread.answering || state.isAsking(thread.id) -> "Answering…"
-                            draft.text.isNotBlank() || draft.photo != null -> if (state.draftSaved(thread.id)) "Draft · saved on this device" else "Draft"
+                            thread.answering || state.isAsking(thread.id) -> stringResource(R.string.gym_coach_answering)
+                            draft.text.isNotBlank() || draft.photo != null -> stringResource(if (state.draftSaved(thread.id)) R.string.gym_coach_draft_saved_here else R.string.gym_coach_draft)
                             else -> CoachMarkdown.plain(thread.answerPreview)
                         }
                         ListItem(
                             headlineContent = { Text(thread.title, style = GymType.coachTitle) },
                             supportingContent = preview.takeIf { it.isNotBlank() }?.let { { Text(it, style = GymType.coachSupporting, maxLines = 2) } },
-                            trailingContent = { thread.day(nowMs)?.let { Text(it.replaceFirstChar { c -> c.uppercase() }, style = GymType.coachSupporting) } },
+                            trailingContent = { thread.day(nowMs)?.text()?.let { Text(it.replaceFirstChar { c -> c.uppercase() }, style = GymType.coachSupporting) } },
                             colors = ListItemDefaults.colors(containerColor = colors.surface, headlineColor = colors.onSurface,
                                 supportingColor = colors.onSurfaceVariant, trailingIconColor = colors.onSurfaceVariant),
-                            modifier = Modifier.clickable(role = Role.Button, onClickLabel = "Open conversation") { onOpen(thread.id) },
+                            modifier = Modifier.clickable(role = Role.Button, onClickLabel = stringResource(R.string.gym_coach_open_conversation)) { onOpen(thread.id) },
                         )
                     }
                 }
             }
+            val newChat = stringResource(R.string.gym_coach_new_chat)
             ExtendedFloatingActionButton(
                 onClick = onAskNew, icon = { Icon(painterResource(R.drawable.gym_coach_new_chat), null, Modifier.size(24.dp)) },
-                text = { Text(Threads.open, style = GymType.coachTitle) },
+                text = { Text(newChat, style = GymType.coachTitle) },
                 containerColor = colors.surfaceContainer, contentColor = colors.primary,
-                modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp).semantics { contentDescription = Threads.open },
+                modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp).semantics { contentDescription = newChat },
             )
         }
     }
     confirming?.let { id ->
         AlertDialog(
             onDismissRequest = ::cancelDelete,
-            title = { Text("Delete this conversation?", style = GymType.coachDeleteTitle) },
-            text = { Text("You can’t undo this.", style = GymType.coachSupporting) },
+            title = { Text(stringResource(R.string.gym_coach_delete_conversation_ask), style = GymType.coachDeleteTitle) },
+            text = { Text(stringResource(R.string.gym_coach_delete_conversation_body), style = GymType.coachSupporting) },
             containerColor = colors.surfaceContainer, titleContentColor = colors.onSurface, textContentColor = colors.onSurfaceVariant,
-            dismissButton = { TextButton(onClick = ::cancelDelete) { Text("Cancel", style = GymType.coachAction) } },
+            dismissButton = { TextButton(onClick = ::cancelDelete) { Text(stringResource(R.string.gym_coach_cancel), style = GymType.coachAction) } },
             confirmButton = { TextButton(colors = ButtonDefaults.textButtonColors(contentColor = gymColors.alarmInk), onClick = {
                 confirming = null
                 deleting = deleting + id
@@ -179,7 +175,7 @@ fun ThreadsScreen(
                         }
                     } finally { deleting = deleting - id }
                 }
-            }) { Text("Delete", style = GymType.coachAction) } },
+            }) { Text(stringResource(R.string.gym_coach_delete), style = GymType.coachAction) } },
         )
     }
 }
@@ -212,17 +208,18 @@ fun ThreadScreen(
     }
 
     if (chat == null) {
-        GymScreen(title = Threads.conversation, onBack = onBack, backTo = backTo) {
+        GymScreen(title = stringResource(R.string.gym_coach_conversation), onBack = onBack, backTo = backTo) {
             Column(Modifier.padding(GymLayout.gutter)) {
-                Text("Reading conversation…", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(stringResource(R.string.gym_coach_reading_conversation), color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
         return
     }
+    val unsaved = stringResource(R.string.gym_coach_message_unsaved)
     AskScreen(
         state = state, events = events, thread = coach.exchanges(threadId), conversationId = threadId,
         receipts = receipts, lookedAt = lookedAt, asking = coach.isAsking(threadId), refusal = coach.refusalOnScreen(threadId),
-        onAsk = { question, photo -> if (!coach.send(threadId, question, photo)) say("Your message couldn’t be saved. Try again.") },
+        onAsk = { question, photo -> if (!coach.send(threadId, question, photo)) say(unsaved) },
         onStop = { coach.stop() }, seat = seat, composerEnabled = composerEnabled,
         composerVisible = !coach.anonymous || coach.anonymousAccess == AnonymousCoachAccess.Available,
         onSignIn = onSignIn,

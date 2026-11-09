@@ -3,6 +3,7 @@ package works.windmill.gym.notification
 import android.app.PendingIntent
 import android.content.ActivityNotFoundException
 import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.drawable.Icon
@@ -36,16 +37,17 @@ class WorkoutTile(
     private val telemetry: Telemetry = Telemetry.None,
     private val nowMs: () -> Long = System::currentTimeMillis,
 ) {
-    suspend fun listen(tile: Tile) {
+    suspend fun listen(tile: Tile, context: Context) {
         try {
             commands.restoreLocal()
             commands.notification.collectLatest { current ->
                 do {
-                    val subtitle = current?.let { "${it.title} · ${Readout.clock(nowMs() - it.sinceSetAtMs)}" } ?: "Off"
-                    tile.label = "Workout"
+                    val subtitle = current?.let { context.getString(R.string.gym_notification_tile_running, it.title, Readout.clock(nowMs() - it.sinceSetAtMs)) }
+                        ?: context.getString(R.string.gym_notification_tile_off)
+                    tile.label = context.getString(R.string.gym_notification_tile_label)
                     tile.icon = Icon.createWithResource(activity.packageName, R.drawable.gym_workout_notification)
                     tile.state = if (current == null) Tile.STATE_INACTIVE else Tile.STATE_ACTIVE
-                    tile.contentDescription = "Workout, $subtitle"
+                    tile.contentDescription = context.getString(R.string.gym_notification_tile_description, subtitle)
                     if (Build.VERSION.SDK_INT >= 29) tile.subtitle = subtitle
                     if (Build.VERSION.SDK_INT >= 30) tile.stateDescription = subtitle
                     tile.updateTile()
@@ -122,7 +124,7 @@ class WorkoutTileService : TileService() {
         super.onStartListening()
         listener?.cancel()
         val tile = qsTile ?: return
-        listener = scope.launch { adapter.listen(tile) }
+        listener = scope.launch { adapter.listen(tile, this@WorkoutTileService) }
     }
 
     override fun onStopListening() {

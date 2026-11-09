@@ -41,6 +41,7 @@ import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
@@ -55,6 +56,8 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.launch
 import works.windmill.gym.R
+import works.windmill.gym.presentation.Words
+import works.windmill.gym.presentation.text
 import works.windmill.platform.design.LocalWindmillDark
 import works.windmill.platform.telemetry.LocalTelemetry
 import works.windmill.gym.telemetry.coachAction
@@ -100,7 +103,8 @@ internal fun CoachBubble(
     val changeMenu: (Boolean) -> Unit = { open ->
         if (copyMenu == null) ownMenu.value = open else copyMenu.selected = if (open) copyIndex else null
     }
-    val label = if (fromLifter) "Copy question" else "Copy answer"
+    val label = stringResource(if (fromLifter) R.string.gym_coach_copy_question else R.string.gym_coach_copy_answer)
+    val copyLinkLabel = stringResource(R.string.gym_coach_copy_link)
     // The platform clipboard answers without suspending, so the undispatched copy has finished when this returns.
     val copy: (String?) -> Boolean = { link ->
         val action = if (link == null) "copy" else "copy_link"
@@ -141,7 +145,7 @@ internal fun CoachBubble(
             .semantics(mergeDescendants = true) {
                 customActions = buildList {
                     add(CustomAccessibilityAction(label) { copy(null) })
-                    if (latestLink != null) add(CustomAccessibilityAction("Copy link") { copy(latestLink) })
+                    if (latestLink != null) add(CustomAccessibilityAction(copyLinkLabel) { copy(latestLink) })
                 }
             }
             .padding(horizontal = 16.dp, vertical = if (fullWidth) 16.dp else 8.dp),
@@ -151,7 +155,7 @@ internal fun CoachBubble(
         ) {
             DropdownMenuItem(text = { Text(label, style = GymType.coachSupporting, color = colors.onSurface) }, onClick = { copy(null) })
             if (latestLink != null) DropdownMenuItem(
-                text = { Text("Copy link", style = GymType.coachSupporting, color = colors.onSurface) },
+                text = { Text(copyLinkLabel, style = GymType.coachSupporting, color = colors.onSurface) },
                 onClick = { copy(latestLink) },
             )
         }
@@ -177,32 +181,32 @@ internal fun CoachPictureElsewhere(group: CoachGroup) {
         modifier = Modifier.size(200.dp, 180.dp).clip(group.shape(fromLifter = true)).background(colors.surfaceContainerHighest).padding(horizontal = 16.dp),
     ) {
         Icon(painterResource(R.drawable.gym_coach_image_held), null, Modifier.size(24.dp), tint = colors.onSurfaceVariant)
-        Text(Ask.pictureElsewhere, style = GymType.coachSourceLine, color = colors.onSurfaceVariant, textAlign = TextAlign.Center)
+        Text(stringResource(R.string.gym_coach_picture_elsewhere), style = GymType.coachSourceLine, color = colors.onSurfaceVariant, textAlign = TextAlign.Center)
     }
 }
 
 @Composable
 internal fun CoachTyping() {
     val drawable = if (LocalWindmillDark.current) R.drawable.gym_coach_typing_dark else R.drawable.gym_coach_typing_light
-    Image(painterResource(drawable), "Coach is thinking", Modifier.width(64.dp).height(40.dp))
+    Image(painterResource(drawable), stringResource(R.string.gym_coach_thinking), Modifier.width(64.dp).height(40.dp))
 }
 
-internal fun coachTimestamp(atMs: Long, nowMs: Long, clock24: Boolean, zone: ZoneId = ZoneId.systemDefault()): String? {
+internal fun coachTimestamp(atMs: Long, nowMs: Long, clock24: Boolean, zone: ZoneId = ZoneId.systemDefault()): Words? {
     if (atMs <= 0) return null
     val at = Instant.ofEpochMilli(atMs).atZone(zone)
     val today = Instant.ofEpochMilli(nowMs).atZone(zone).toLocalDate()
     val day = when (at.toLocalDate()) {
-        today -> "Today"
-        today.minusDays(1) -> "Yesterday"
-        else -> DateTimeFormatter.ofPattern("MMM d", Locale.getDefault()).format(at)
+        today -> Words.Message(R.string.gym_coach_today)
+        today.minusDays(1) -> Words.Message(R.string.gym_coach_yesterday)
+        else -> Words.Plain(DateTimeFormatter.ofPattern("MMM d", Locale.getDefault()).format(at))
     }
     val time = DateTimeFormatter.ofPattern(if (clock24) "H:mm" else "h:mm a", Locale.getDefault()).format(at)
-    return "$day $time"
+    return Words.Message(R.string.gym_coach_timestamp, listOf(day, time))
 }
 
 @Composable
 internal fun ChatTimestamp(atMs: Long, nowMs: Long) {
-    val label = coachTimestamp(atMs, nowMs, DateFormat.is24HourFormat(LocalContext.current)) ?: return
+    val label = coachTimestamp(atMs, nowMs, DateFormat.is24HourFormat(LocalContext.current))?.text() ?: return
     Box(Modifier.fillMaxWidth().padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
         Text(label, style = GymType.coachBubbleLabel, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }

@@ -38,6 +38,7 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -102,7 +103,7 @@ internal fun CoachComposer(store: CoachChats, key: String, asking: Boolean,
                 if (targetChat == key && targetOwner == store.accountKey) editor.trouble = null
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (_: Exception) {
-                if (targetChat == key && targetOwner == store.accountKey) editor.trouble = "Choose a supported photo."
+                if (targetChat == key && targetOwner == store.accountKey) editor.trouble = R.string.gym_coach_photo_unsupported
             } finally { preparing = false }
         }
     }
@@ -122,18 +123,18 @@ internal fun CoachComposer(store: CoachChats, key: String, asking: Boolean,
                     FilledIconButton(onClick = { if (editor.sync(hidden)) editor.removePhoto() },
                         enabled = enabled && !preparing, modifier = Modifier.size(32.dp),
                         colors = IconButtonDefaults.filledIconButtonColors(containerColor = colors.surfaceContainerHighest, contentColor = colors.onSurfaceVariant)) {
-                        Icon(painterResource(R.drawable.gym_coach_close), "Remove photo", Modifier.size(20.dp))
+                        Icon(painterResource(R.drawable.gym_coach_close), stringResource(R.string.gym_coach_photo_remove), Modifier.size(20.dp))
                     }
                 }
             }
         }
-        if (preparing) Text("Preparing photo…", style = WindmillType.captionCompact, color = colors.onSurfaceVariant)
-        editor.trouble?.let { Text(it, style = WindmillType.detailCompact, color = colors.onSurfaceVariant) }
+        if (preparing) Text(stringResource(R.string.gym_coach_photo_preparing), style = WindmillType.captionCompact, color = colors.onSurfaceVariant)
+        editor.trouble?.let { Text(stringResource(it), style = WindmillType.detailCompact, color = colors.onSurfaceVariant) }
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.fillMaxWidth().padding(start = 4.dp, end = 12.dp, top = 8.dp, bottom = 8.dp)) {
             IconButton(onClick = ::pickPhoto,
                 enabled = enabled && !asking && !preparing, modifier = Modifier.size(48.dp)) {
-                Icon(painterResource(R.drawable.gym_coach_image), "Add photo", tint = if (enabled) colors.onSurfaceVariant else colors.onSurface.copy(alpha = 0.38f), modifier = Modifier.size(24.dp))
+                Icon(painterResource(R.drawable.gym_coach_image), stringResource(R.string.gym_coach_photo_add), tint = if (enabled) colors.onSurfaceVariant else colors.onSurface.copy(alpha = 0.38f), modifier = Modifier.size(24.dp))
             }
             val inputEnabled = enabled && !asking && !preparing
             val interaction = remember(editor) { MutableInteractionSource() }
@@ -143,6 +144,7 @@ internal fun CoachComposer(store: CoachChats, key: String, asking: Boolean,
                     focusedPlaceholderColor = colors.onSurfaceVariant, unfocusedPlaceholderColor = colors.onSurfaceVariant, disabledPlaceholderColor = if (enabled) colors.onSurfaceVariant else colors.onSurface.copy(alpha = 0.38f),
                     focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent, disabledIndicatorColor = Color.Transparent,
                     cursorColor = colors.primary)
+            val question = stringResource(R.string.gym_coach_question)
             BasicTextField(state = editor.field,
                 textStyle = GymType.coachComposer.copy(
                     color = if (enabled) colors.onSurface else colors.onSurface.copy(alpha = 0.38f)),
@@ -151,8 +153,8 @@ internal fun CoachComposer(store: CoachChats, key: String, asking: Boolean,
                     TextFieldDefaults.DecorationBox(value = editor.field.text.toString(), innerTextField = input,
                         enabled = inputEnabled, singleLine = false, visualTransformation = VisualTransformation.None,
                         interactionSource = interaction, shape = MaterialTheme.shapes.extraLarge, colors = fieldColors,
-                        placeholder = { Text(Ask.placeholder, style = GymType.coachComposer) })
-                }, modifier = Modifier.weight(1f).heightIn(min = 56.dp, max = 160.dp).semantics { contentDescription = "Question" })
+                        placeholder = { Text(stringResource(R.string.gym_coach_placeholder), style = GymType.coachComposer) })
+                }, modifier = Modifier.weight(1f).heightIn(min = 56.dp, max = 160.dp).semantics { contentDescription = question })
             val ready = enabled && !asking && !preparing && !holdSend && canSend(editor.draft.copy(text = editor.field.text.toString()))
             if (asking || editor.field.text.isNotEmpty() || editor.draft.photo != null) {
                 Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
@@ -172,7 +174,7 @@ internal fun CoachComposer(store: CoachChats, key: String, asking: Boolean,
                             }
                         }) {
                         Icon(painterResource(if (asking) R.drawable.gym_coach_stop else R.drawable.gym_coach_send),
-                            if (asking) "Stop response" else "Send", Modifier.size(24.dp))
+                            stringResource(if (asking) R.string.gym_coach_stop_response else R.string.gym_coach_send), Modifier.size(24.dp))
                     }
                 }
             }
@@ -185,7 +187,7 @@ private class CoachDraftEditor(private val store: CoachChats, private val key: S
     var draft by mutableStateOf(store.draft(key))
         private set
     val field = TextFieldState(if (hidden) "" else draft.text)
-    var trouble by mutableStateOf<String?>(null)
+    var trouble by mutableStateOf<Int?>(null)
 
     fun sync(hidden: Boolean, retry: Boolean = false): Boolean {
         if (store.accountKey != account) return false
@@ -218,7 +220,7 @@ private class CoachDraftEditor(private val store: CoachChats, private val key: S
             store.removePhoto(key)
             draft = store.draft(key)
             trouble = null
-        } catch (_: Exception) { trouble = "Your draft couldn’t be saved. Try again." }
+        } catch (_: Exception) { trouble = R.string.gym_coach_draft_unsaved }
     }
 
     fun keep(next: CoachDraft): Boolean {
@@ -231,7 +233,7 @@ private class CoachDraftEditor(private val store: CoachChats, private val key: S
             trouble = null
             return true
         } catch (_: Exception) {
-            trouble = "Your draft couldn’t be saved. Try again."
+            trouble = R.string.gym_coach_draft_unsaved
             return false
         }
     }
@@ -257,18 +259,19 @@ internal fun CoachPhoto(store: CoachChats, photo: CoachAttachment, modifier: Mod
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (_: Exception) { failure = true }
     }
+    val described = stringResource(if (failure) R.string.gym_coach_photo_unavailable else R.string.gym_coach_photo_attached)
     Box(modifier.clip(shape).background(colors.surfaceContainer)
-        .clickable(role = Role.Button, onClickLabel = if (failure) "Retry photo" else "View photo") {
+        .clickable(role = Role.Button, onClickLabel = stringResource(if (failure) R.string.gym_coach_photo_retry else R.string.gym_coach_photo_view)) {
             if (failure) attempt++ else expanded = true
-        }.semantics { contentDescription = if (failure) "Photo unavailable. Retry photo" else "Attached photo" }, contentAlignment = Alignment.Center) {
+        }.semantics { contentDescription = described }, contentAlignment = Alignment.Center) {
         val image = bitmap
         if (image != null) Image(image.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-        else Text(if (failure) "Retry photo" else "Photo", style = WindmillType.captionCompact, color = colors.onSurfaceVariant)
+        else Text(stringResource(if (failure) R.string.gym_coach_photo_retry else R.string.gym_coach_photo), style = WindmillType.captionCompact, color = colors.onSurfaceVariant)
     }
     if (expanded && bitmap != null) Dialog(onDismissRequest = { expanded = false }) {
         Column(Modifier.background(colors.surfaceContainer, MaterialTheme.shapes.large).padding(12.dp)) {
-            Image(requireNotNull(bitmap).asImageBitmap(), "Attached photo", Modifier.fillMaxWidth().heightIn(min = 160.dp, max = 520.dp).aspectRatio(photo.width.toFloat() / photo.height), contentScale = ContentScale.Fit)
-            CoachAction("Close", { expanded = false })
+            Image(requireNotNull(bitmap).asImageBitmap(), stringResource(R.string.gym_coach_photo_attached), Modifier.fillMaxWidth().heightIn(min = 160.dp, max = 520.dp).aspectRatio(photo.width.toFloat() / photo.height), contentScale = ContentScale.Fit)
+            CoachAction(stringResource(R.string.gym_coach_close), { expanded = false })
         }
     }
 }

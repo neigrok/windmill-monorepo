@@ -1,6 +1,7 @@
 package works.windmill.gym
 
 import androidx.activity.BackEventCompat
+import androidx.annotation.StringRes
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.ContentTransform
@@ -38,6 +39,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.lerp
 import java.util.UUID
@@ -51,8 +53,6 @@ import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import works.windmill.gym.coach.Ask
-import works.windmill.gym.coach.Threads
 import works.windmill.gym.presentation.Bodyweight
 import works.windmill.gym.presentation.ConnectedLog
 import works.windmill.gym.presentation.Exercise
@@ -69,10 +69,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 
 // `hostsTransient`: the tab's screen has a floating button and hosts the room's transient above it (05.17).
-internal enum class Tab(val title: String, val hostsTransient: Boolean) {
-    Routines("Routines", hostsTransient = true),
-    Log("The log", hostsTransient = true),
-    Coach("Coach", hostsTransient = false),
+internal enum class Tab(@StringRes val title: Int, val hostsTransient: Boolean) {
+    Routines(R.string.gym_room_tab_routines, hostsTransient = true),
+    Log(R.string.gym_room_tab_log, hostsTransient = true),
+    Coach(R.string.gym_room_tab_coach, hostsTransient = false),
 }
 
 // Saved as its NAME: a Bundle holding an entry this build does not have must land on home, not
@@ -134,17 +134,18 @@ internal val Away.screen: String
         is Away.InspectWorkout -> "workout_inspect"
     }
 
+@Composable
 internal fun Away.wayBack(catalog: List<Exercise>): String = when (this) {
     is Away.Session -> summary.plan?.routine ?: Readout.noRoutine
     is Away.Movement -> Readout.movement(exerciseId, catalog)
-    is Away.Coach -> Ask.title
-    Away.Threads -> Threads.title
+    is Away.Coach -> stringResource(R.string.gym_coach_title)
+    Away.Threads -> stringResource(R.string.gym_coach_history)
     // The noun, not the thread's title: a title is the lifter's first message verbatim.
-    is Away.Thread -> Threads.conversation
+    is Away.Thread -> stringResource(R.string.gym_coach_conversation)
     Away.Connections -> ConnectedLog.title
     Away.Notes, is Away.NoteEditor -> Notes.title
     Away.Bodyweight -> Bodyweight.title
-    Away.OnThisPhone, is Away.InspectWorkout -> "On this phone"
+    Away.OnThisPhone, is Away.InspectWorkout -> stringResource(R.string.gym_room_on_this_phone)
 }
 
 internal fun awaySaver(telemetry: Telemetry) = Saver<List<Entry>, String>(

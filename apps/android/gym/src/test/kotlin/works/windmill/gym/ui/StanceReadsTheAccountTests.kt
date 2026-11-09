@@ -29,7 +29,7 @@ import org.robolectric.annotation.Config
 import works.windmill.gym.GymRoom
 import works.windmill.gym.coach.ConversationRow
 import works.windmill.gym.coach.LocalCoach
-import works.windmill.gym.coach.Threads
+import works.windmill.gym.R
 import works.windmill.gym.coach.ThreadsBinding
 import works.windmill.gym.coach.ThreadsScreen
 import works.windmill.gym.coach.heldConversation
@@ -195,7 +195,7 @@ class StanceReadsTheAccountTests {
             assertEquals(emptyList<CoachThread>(), room.heldThreads())
             assertEquals(emptyList<Any>(), store.held.withheld)
         }
-        compose.onNodeWithText(Threads.none).assertIsDisplayed()
+        compose.onNodeWithText(androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>().getString(R.string.gym_coach_threads_none)).assertIsDisplayed()
         compose.onNodeWithText("why is my bench stalled?").assertDoesNotExist()
         scope.cancel()
     }
@@ -254,7 +254,7 @@ class StanceReadsTheAccountTests {
         compose.setContent { ThreadsScreen(state = threads, events = threads, backTo = "Coach", onBack = {}, onOpen = {}, onAskNew = {}) }
         compose.waitUntil(5_000) { compose.onAllNodesWithText("why is my bench stalled?").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("Hold the load.").assertIsDisplayed()
-        compose.onNodeWithText(Threads.none).assertDoesNotExist()
+        compose.onNodeWithText(androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>().getString(R.string.gym_coach_threads_none)).assertDoesNotExist()
         compose.runOnIdle { assertEquals(listOf(ConversationRow(thread, "why is my bench stalled?", store.coach.history.single().askedAtMs, answerPreview = "Hold the load.")), store.coach.history) }
         assertEquals(listOf("gym.readConversation:coach-record-unreadable"), failures)
         scope.cancel()

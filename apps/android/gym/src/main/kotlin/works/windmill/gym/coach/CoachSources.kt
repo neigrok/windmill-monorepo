@@ -24,6 +24,8 @@ import androidx.compose.ui.layout.positionOnScreen
 import androidx.compose.ui.platform.testTag
 import kotlin.math.roundToInt
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
+import works.windmill.gym.presentation.text
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import works.windmill.gym.R
@@ -36,6 +38,7 @@ import androidx.compose.material3.BottomSheetDefaults
 @Composable
 internal fun CoachReadSources(line: String, rows: List<CoachCall>, withDetails: suspend (List<CoachCall>) -> List<CoachCall>, onSheetTop: (Int?) -> Unit) {
     val colors = MaterialTheme.colorScheme
+    val sourcesTitle = stringResource(R.string.gym_coach_sources_title)
     val telemetry = LocalTelemetry.current
     if (rows.isEmpty()) {
         Text(line, style = GymType.coachSourceLine, color = colors.onSurfaceVariant, modifier = Modifier.testTag("coach-read-sources").padding(start = 12.dp, top = 4.dp))
@@ -51,7 +54,7 @@ internal fun CoachReadSources(line: String, rows: List<CoachCall>, withDetails: 
             val placeable = measurable.measure(constraints.copy(minHeight = height, maxHeight = height))
             layout(placeable.width, touch - 8.dp.roundToPx()) { placeable.place(0, touch - height) }
         }.testTag("coach-read-sources")
-        .clickable(pressing, indication = null, role = Role.Button, onClickLabel = Ask.sourcesTitle) {
+        .clickable(pressing, indication = null, role = Role.Button, onClickLabel = sourcesTitle) {
             expanded = true
             telemetry.coachAction("read_sources")
         }.padding(bottom = 8.dp), contentAlignment = Alignment.BottomStart,
@@ -78,19 +81,19 @@ internal fun CoachReadSources(line: String, rows: List<CoachCall>, withDetails: 
             .verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(top = 12.dp, bottom = bottom),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text(Ask.sourcesTitle, style = GymType.coachSourcesTitle, color = colors.onSurface)
-            Text(Ask.sourcesLead, style = GymType.coachSourceLine, color = colors.onSurfaceVariant)
+            Text(sourcesTitle, style = GymType.coachSourcesTitle, color = colors.onSurface)
+            Text(stringResource(R.string.gym_coach_sources_lead), style = GymType.coachSourceLine, color = colors.onSurfaceVariant)
             Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 shown.forEach { row ->
                     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Text(row.title.orEmpty(), style = GymType.coachSourceTitle, color = colors.onSurface)
-                        row.detail?.let { Text(it, style = GymType.coachSourceLine, color = colors.onSurfaceVariant) }
+                        Text(row.title?.text().orEmpty(), style = GymType.coachSourceTitle, color = colors.onSurface)
+                        row.detail?.let { Text(it.text(), style = GymType.coachSourceLine, color = colors.onSurfaceVariant) }
                     }
                 }
             }
-            Text(Ask.sourcesFoot, style = GymType.coachSourceLine, color = colors.onSurfaceVariant)
+            Text(stringResource(R.string.gym_coach_sources_foot), style = GymType.coachSourceLine, color = colors.onSurfaceVariant)
             TextButton(onClick = { expanded = false }, modifier = Modifier.padding(top = 8.dp).fillMaxWidth().heightIn(min = 56.dp)) {
-                Text("Close", style = GymType.button, color = colors.primary)
+                Text(stringResource(R.string.gym_coach_close), style = GymType.button, color = colors.primary)
             }
         }
     }

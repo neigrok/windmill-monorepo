@@ -1,5 +1,14 @@
 package works.windmill.gym.coach
 
+import works.windmill.gym.presentation.text
+import works.windmill.gym.presentation.Words
+import works.windmill.gym.R
+import androidx.test.core.app.ApplicationProvider
+import androidx.annotation.StringRes
+import android.content.Context
+import org.robolectric.annotation.Config
+import org.robolectric.RobolectricTestRunner
+import org.junit.runner.RunWith
 import works.windmill.gym.coach.turn.contextCallPrefix
 import works.windmill.gym.coach.turn.CoachTurnFault
 import org.junit.Assert.assertEquals
@@ -20,15 +29,18 @@ import works.windmill.sync.core.Json
 import works.windmill.sync.core.RecordID
 import works.windmill.sync.schema.Gym
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class AskTests {
     @Test
     fun theRoomIsCalledCoachAndItsTwoStancesAreTheBlessedOnes() {
-        assertEquals("Coach", Ask.title)
+        assertEquals("Coach", string(R.string.gym_coach_title))
         assertEquals("Coach needs your workout log. Please sign in.", Ask.accessNeedsSignIn)
         assertEquals("This Windmill does not have Coach. You can still read your log.", Ask.notHere)
         assertEquals("the apostrophe is the typographic one everywhere",
             emptyList<String>(),
-            (listOf(Ask.placeholder, Ask.promise, Ask.stopped, Ask.couldNotTake, CoachTurnFault.noAnswer.sentence, Ask.notHere, Ask.accountRequired, Ask.draftGone, Ask.draftInvalid, Ask.draftRetry))
+            (listOf(R.string.gym_coach_placeholder, R.string.gym_coach_promise, R.string.gym_coach_stopped, R.string.gym_coach_account_required, R.string.gym_coach_draft_gone,
+                R.string.gym_coach_draft_invalid, R.string.gym_coach_draft_retry).map(::string) + listOf(Ask.couldNotTake, CoachTurnFault.noAnswer.sentence, Ask.notHere))
                 .filter { it.contains('\'') })
     }
 
@@ -45,25 +57,25 @@ class AskTests {
 
     @Test
     fun theReceiptSaysTheWorkoutsItReadThenItsMovementHistoryThenNothingOverAnEmptyLogThenItsOtherReads() {
-        assertEquals("Read 18 workouts · 6 weeks", coachReply(read = ReadTally(sets = 214, sessions = 18, weeks = 6)).readLine)
-        assertEquals("Read 1 workout · 1 week", coachReply(read = ReadTally(sets = 1, sessions = 1, weeks = 1)).readLine)
-        assertEquals("Read nothing from your log", coachReply().readLine)
-        assertEquals("Read your movement history", coachReply(read = ReadTally(sets = 9, weeks = 2), calls = listOf(said("get_stats"))).readLine)
-        assertEquals("Read 1 workout · 1 week", coachReply(read = ReadTally(sets = 1, sessions = 1, weeks = 1), calls = listOf(said("get_stats"), said("list_notes"))).readLine)
-        assertEquals("Read your movement history", coachReply(read = ReadTally(sets = 9, weeks = 2), calls = listOf(said("list_notes"), said("get_stats"))).readLine)
-        assertEquals("Read your notes · read your program", coachReply(calls = listOf(said("list_notes"), said("list_routines"))).readLine)
+        assertEquals("Read 18 workouts · 6 weeks", coachReply(read = ReadTally(sets = 214, sessions = 18, weeks = 6)).readLine.spelled())
+        assertEquals("Read 1 workout · 1 week", coachReply(read = ReadTally(sets = 1, sessions = 1, weeks = 1)).readLine.spelled())
+        assertEquals("Read nothing from your log", coachReply().readLine.spelled())
+        assertEquals("Read your movement history", coachReply(read = ReadTally(sets = 9, weeks = 2), calls = listOf(said("get_stats"))).readLine.spelled())
+        assertEquals("Read 1 workout · 1 week", coachReply(read = ReadTally(sets = 1, sessions = 1, weeks = 1), calls = listOf(said("get_stats"), said("list_notes"))).readLine.spelled())
+        assertEquals("Read your movement history", coachReply(read = ReadTally(sets = 9, weeks = 2), calls = listOf(said("list_notes"), said("get_stats"))).readLine.spelled())
+        assertEquals("Read your notes · read your program", coachReply(calls = listOf(said("list_notes"), said("list_routines"))).readLine.spelled())
         val phoneReads = listOf("list_sessions", "list_notes", "list_exercises", "list_routines").map { said(it).copy(callId = contextCallPrefix + it) }
         val theyAll = "Read your recent workouts · read your notes · read your movement list · read your program"
-        assertEquals("Read nothing from your log", coachReply(calls = phoneReads, logStood = false).readLine)
-        assertEquals(theyAll, coachReply(calls = phoneReads, logStood = true).readLine)
-        assertEquals("a read Coach chose says its phrase over an empty log", "$theyAll · read your bodyweight", coachReply(calls = phoneReads + said("list_bodyweight"), logStood = false).readLine)
-        assertEquals("Read your notes", coachReply(calls = listOf(said("list_notes")), logStood = false).readLine)
-        assertEquals("Read your movement history", coachReply(calls = phoneReads + said("get_stats"), logStood = false).readLine)
-        assertEquals("Read 1 workout · 1 week", coachReply(read = ReadTally(sets = 1, sessions = 1, weeks = 1), calls = phoneReads, logStood = false).readLine)
-        assertEquals("a write is no read", "Read nothing from your log", coachReply(calls = listOf(said("create_routine"))).readLine)
+        assertEquals("Read nothing from your log", coachReply(calls = phoneReads, logStood = false).readLine.spelled())
+        assertEquals(theyAll, coachReply(calls = phoneReads, logStood = true).readLine.spelled())
+        assertEquals("a read Coach chose says its phrase over an empty log", "$theyAll · read your bodyweight", coachReply(calls = phoneReads + said("list_bodyweight"), logStood = false).readLine.spelled())
+        assertEquals("Read your notes", coachReply(calls = listOf(said("list_notes")), logStood = false).readLine.spelled())
+        assertEquals("Read your movement history", coachReply(calls = phoneReads + said("get_stats"), logStood = false).readLine.spelled())
+        assertEquals("Read 1 workout · 1 week", coachReply(read = ReadTally(sets = 1, sessions = 1, weeks = 1), calls = phoneReads, logStood = false).readLine.spelled())
+        assertEquals("a write is no read", "Read nothing from your log", coachReply(calls = listOf(said("create_routine"))).readLine.spelled())
         assertEquals("a read that was refused did not run", "Read nothing from your log",
-            coachReply(calls = listOf(said("list_notes", AbilityCall.Outcome.Refused(AbilityRefusal.refused)))).readLine)
-        assertEquals("a read no phrase can say leaves no line", null, coachReply(calls = listOf(coachCall("list_notes", phrase = null))).readLine)
+            coachReply(calls = listOf(said("list_notes", AbilityCall.Outcome.Refused(AbilityRefusal.refused)))).readLine.spelled())
+        assertEquals("a read no phrase can say leaves no line", null, coachReply(calls = listOf(coachCall("list_notes", phrase = null))).readLine.spelled())
     }
 
     @Test
@@ -75,8 +87,8 @@ class AskTests {
             MessageState.declined to "Coach declined to answer this.",
             MessageState.failed to "Coach couldn’t finish. Ask again.",
             MessageState.interrupted to "Interrupted. What arrived is kept.",
-        ), MessageState.entries.associateWith { Ask.ending(it, truncated = false, wordsArrived = true) })
-        assertEquals("Cut short. Ask Coach to go on.", Ask.ending(MessageState.completed, truncated = true, wordsArrived = true))
+        ), MessageState.entries.associateWith { Ask.ending(it, truncated = false, wordsArrived = true)?.let(::string) })
+        assertEquals("Cut short. Ask Coach to go on.", Ask.ending(MessageState.completed, truncated = true, wordsArrived = true)?.let(::string))
     }
 
     @Test
@@ -88,7 +100,7 @@ class AskTests {
             MessageState.declined to "Coach declined to answer this.",
             MessageState.failed to "Coach couldn’t finish. Ask again.",
             MessageState.interrupted to "Interrupted.",
-        ), MessageState.entries.associateWith { Ask.ending(it, truncated = false, wordsArrived = false) })
+        ), MessageState.entries.associateWith { Ask.ending(it, truncated = false, wordsArrived = false)?.let(::string) })
     }
 
     private fun said(name: String, outcome: AbilityCall.Outcome = AbilityCall.Outcome.Ok): CoachCall {
@@ -114,10 +126,10 @@ class AskTests {
     @Test
     fun aRowOfWhatCoachReadCountsTheWorkoutsItServedAndElseSaysItsPhrase() {
         val served = ReadServed.decode(Json.objectOf("sessions" to Json.Arr(listOf(Json.of("session01"), Json.of("session02"))), "sets" to Json.Arr(emptyList()), "weeks" to Json.Arr(listOf(Json.of(1_785_000_000_000L)))))
-        assertEquals("Read 2 workouts", coachCall("list_sessions", "read your recent workouts", read = RecordedRead.Ids(served)).title)
-        assertEquals("Read 3 workouts", coachCall("list_sessions", "read your recent workouts", read = RecordedRead.Counts(ReadTally(sessions = 3))).title)
-        assertEquals("Read your recent workouts", coachCall("list_sessions", "read your recent workouts").title)
-        assertEquals(null, coachCall("summon_lightning", phrase = null).title)
+        assertEquals("Read 2 workouts", coachCall("list_sessions", "read your recent workouts", read = RecordedRead.Ids(served)).title.spelled())
+        assertEquals("Read 3 workouts", coachCall("list_sessions", "read your recent workouts", read = RecordedRead.Counts(ReadTally(sessions = 3))).title.spelled())
+        assertEquals("Read your recent workouts", coachCall("list_sessions", "read your recent workouts").title.spelled())
+        assertEquals(null, coachCall("summon_lightning", phrase = null).title.spelled())
         assertEquals(listOf("list_routines"), coachReply(calls = listOf(said("list_routines"), said("summon_lightning"), said("get_stats", AbilityCall.Outcome.Refused(AbilityRefusal.refused)))).readRows.map { it.name })
     }
 
@@ -166,3 +178,7 @@ class AskTests {
             Ask.handedOver("", standing = "u1", known = false))
     }
 }
+
+private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())
+
+private fun string(@StringRes id: Int): String = ApplicationProvider.getApplicationContext<Context>().getString(id)

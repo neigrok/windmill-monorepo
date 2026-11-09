@@ -1,5 +1,9 @@
 package works.windmill.gym.coach
 
+import works.windmill.gym.R
+import androidx.test.core.app.ApplicationProvider
+import androidx.annotation.StringRes
+import android.content.Context
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -235,7 +239,7 @@ class ThreadScreenTests {
         compose.onNodeWithContentDescription("Coach is thinking").assertDoesNotExist()
         compose.mainClock.advanceTimeBy(1_000)
         compose.onNodeWithContentDescription("Stop response").performClick()
-        read(Ask.stopped).performScrollTo().assertIsDisplayed()
+        read(string(R.string.gym_coach_stopped)).performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Reading your week").performScrollTo().assertIsDisplayed()
         compose.onNodeWithContentDescription("Stop response").assertDoesNotExist()
         compose.runOnIdle {
@@ -523,7 +527,7 @@ class ThreadScreenTests {
         compose.onNodeWithText("1 change").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Proposal · Push Day").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("waiting", substring = true).assertDoesNotExist()
-        compose.onNodeWithText(Ask.promise).assertDoesNotExist()
+        compose.onNodeWithText(string(R.string.gym_coach_promise)).assertDoesNotExist()
         scope.cancel()
     }
 
@@ -595,7 +599,7 @@ class ThreadScreenTests {
         compose.onNodeWithText("Remove this routine.").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Review").performScrollTo().performClick()
         compose.onNodeWithText(ProposalRead.Gone.line).assertDoesNotExist()
-        compose.onNodeWithText(Ask.promise).assertDoesNotExist()
+        compose.onNodeWithText(string(R.string.gym_coach_promise)).assertDoesNotExist()
         compose.runOnIdle {
             assertEquals(listOf("proposal1"), reviewed)
             assertEquals(ProposalRead.Found(settled.proposal), runBlocking { room.store.routines.proposal("proposal1") })
@@ -635,3 +639,5 @@ class ThreadScreenTests {
         scope.cancel()
     }
 }
+
+private fun string(@StringRes id: Int): String = ApplicationProvider.getApplicationContext<Context>().getString(id)

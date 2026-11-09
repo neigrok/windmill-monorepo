@@ -1,5 +1,9 @@
 package works.windmill.gym.coach
 
+import works.windmill.gym.R
+import works.windmill.gym.presentation.text
+import works.windmill.gym.presentation.Words
+import androidx.test.core.app.ApplicationProvider
 import java.io.File
 import java.time.Instant
 import java.time.ZoneId
@@ -338,7 +342,7 @@ class CoachConversationsTests {
         conversations.watch("chat", checkNotNull(turn.thread.record.string), emptyList())
         conversations.read()
         val reply = checkNotNull(conversations.exchanges("chat").first().answer)
-        return conversations.withDetails(reply.id, reply.readRows).map { it.title to it.detail }
+        return conversations.withDetails(reply.id, reply.readRows).map { it.title.spelled() to it.detail.spelled() }
     }
 
     // A turn over the program and the notes read something: the line says what, and the sheet it opens does not contradict it.
@@ -353,8 +357,8 @@ class CoachConversationsTests {
             conversations.watch("chat", checkNotNull(asked.thread.record.string), emptyList())
             conversations.read()
             val reply = checkNotNull(conversations.exchanges("chat").last().answer)
-            assertEquals("Read your recent workouts · read your notes · read your movement list · read your program", reply.readLine)
-            assertEquals(listOf("Read your recent workouts", "Read your notes", "Read your movement list", "Read your program"), reply.readRows.map { it.title })
+            assertEquals("Read your recent workouts · read your notes · read your movement list · read your program", reply.readLine.spelled())
+            assertEquals(listOf("Read your recent workouts", "Read your notes", "Read your movement list", "Read your program"), reply.readRows.map { it.title.spelled() })
         }
     }
 
@@ -368,12 +372,12 @@ class CoachConversationsTests {
             conversations.watch("chat", checkNotNull(made.thread.record.string), emptyList())
             conversations.read()
             val reply = checkNotNull(conversations.exchanges("chat").single().answer)
-            assertEquals("Read nothing from your log", reply.readLine)
+            assertEquals("Read nothing from your log", reply.readLine.spelled())
             assertEquals(listOf(CreatedRoutine("rt_00000001", "Day 1", 1), CreatedRoutine("rt_00000002", "Day 2", 1), CreatedRoutine("rt_00000003", "Day 3", 1)), reply.routines)
             room.now += 60_000
             room.turn(made.thread, phoneReads = CoachTurnBounds.contextReads)
             conversations.read()
-            assertEquals(listOf("Read nothing from your log", "Read your recent workouts · read your notes · read your movement list · read your program"), conversations.exchanges("chat").map { it.answer?.readLine })
+            assertEquals(listOf("Read nothing from your log", "Read your recent workouts · read your notes · read your movement list · read your program"), conversations.exchanges("chat").map { it.answer?.readLine.spelled() })
         }
     }
 
@@ -389,7 +393,7 @@ class CoachConversationsTests {
             val conversations = room.store.conversations
             conversations.watch("chat", checkNotNull(first.thread.record.string), emptyList())
             conversations.read()
-            assertEquals(listOf("Read nothing from your log", "Read nothing from your log", "Read your movement list"), conversations.exchanges("chat").map { it.answer?.readLine })
+            assertEquals(listOf("Read nothing from your log", "Read nothing from your log", "Read your movement list"), conversations.exchanges("chat").map { it.answer?.readLine.spelled() })
         }
     }
 
@@ -406,7 +410,7 @@ class CoachConversationsTests {
             conversations.watch("chat", checkNotNull(first.thread.record.string), emptyList())
             conversations.read()
             assertEquals(listOf("Read nothing from your log", "Read your recent workouts · read your notes · read your movement list · read your program · read your bodyweight"),
-                conversations.exchanges("chat").map { it.answer?.readLine })
+                conversations.exchanges("chat").map { it.answer?.readLine.spelled() })
         }
     }
 
@@ -445,8 +449,8 @@ class CoachConversationsTests {
             conversations.watch("chat", checkNotNull(turn.thread.record.string), emptyList())
             conversations.read()
             val reply = checkNotNull(conversations.exchanges("chat").single().answer)
-            assertEquals(listOf("Saved a note" to null), reply.readRows.map { it.title to it.detail })
-            assertEquals(listOf("Saved a note" to "Shoulder"), conversations.withDetails(reply.id, reply.readRows).map { it.title to it.detail })
+            assertEquals(listOf("Saved a note" to null), reply.readRows.map { it.title.spelled() to it.detail.spelled() })
+            assertEquals(listOf("Saved a note" to "Shoulder"), conversations.withDetails(reply.id, reply.readRows).map { it.title.spelled() to it.detail.spelled() })
             conversations.read()
             assertEquals("an unchanged answer reads equal, so nothing draws again", reply, conversations.exchanges("chat").single().answer)
         }
@@ -506,12 +510,15 @@ class CoachConversationsTests {
                 "Wrote a proposal for one of your routines" to "Push A · 2 changes",
                 "Read your notes" to "1 note",
                 "Read your program" to "Push A",
-            ), conversations.withDetails(reply.id, reply.readRows).map { it.title to it.detail })
+            ), conversations.withDetails(reply.id, reply.readRows).map { it.title.spelled() to it.detail.spelled() })
             assertEquals(listOf(CreatedRoutine("rt_00000001", "Push A", movements = 2)), reply.routines)
             assertEquals(listOf(SavedNote("note00000001", "Left shoulder hurts on wide-grip bench.")), reply.savedNotes)
-            assertEquals(listOf(MadeMovement("ex_00000001", "Incline Dumbbell Press", "Dumbbells", 2.5)), reply.madeMovements)
-            assertEquals("Read 1 workout · 1 week", reply.readLine)
+            assertEquals(listOf(MadeMovement("ex_00000001", "Incline Dumbbell Press", Words.Message(R.string.gym_coach_equipment_dumbbells), 2.5)), reply.madeMovements)
+            assertEquals("Dumbbells", reply.madeMovements.single().equipment.spelled())
+            assertEquals("Read 1 workout · 1 week", reply.readLine.spelled())
             assertEquals("a proposal this phone minted names its routine before the server does", "Push A", room.training.proposal("pr_00000001")?.routineName)
         }
     }
 }
+
+private fun Words?.spelled(): String? = this?.text(ApplicationProvider.getApplicationContext())

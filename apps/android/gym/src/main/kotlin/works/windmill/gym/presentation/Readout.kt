@@ -182,21 +182,7 @@ object Readout {
 
     fun setCount(count: Int): String = if (count == 1) "1 set" else "$count sets"
 
-    fun routineCount(count: Int): String = if (count == 1) "1 routine" else "$count routines"
-    fun movementCount(count: Int): String = if (count == 1) "1 movement" else "$count movements"
-    fun noteCount(count: Int): String = if (count == 1) "1 note" else "$count notes"
-    fun changeCount(count: Int): String = if (count == 1) "1 change" else "$count changes"
-
     fun sessionCount(count: Int): String = if (count == 1) "1 workout" else "$count workouts"
-
-    // A movement's equipment as its record names it: a pair of dumbbells, or one as itself.
-    fun equipment(equipment: String, loadCount: Int): String = when {
-        equipment == "dumbbell" -> if (loadCount == 1) "One dumbbell" else "Dumbbells"
-        else -> equipment.replaceFirstChar { it.titlecase() }
-    }
-
-    // A week is the server's Monday-UTC bucket (`date_trunc('week')`); this only spells the count.
-    fun weekCount(count: Int): String = if (count == 1) "1 week" else "$count weeks"
 
     fun movement(exerciseId: String, catalog: List<Exercise>): String =
         catalog.firstOrNull { it.id == exerciseId }?.name ?: exerciseId

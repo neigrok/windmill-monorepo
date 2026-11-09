@@ -1,5 +1,9 @@
 package works.windmill.gym.sharing
 
+import works.windmill.gym.presentation.text
+import works.windmill.gym.presentation.Words
+import works.windmill.gym.R
+import androidx.compose.ui.res.stringResource
 import android.content.ActivityNotFoundException
 import android.content.ClipData
 import android.content.Intent
@@ -84,7 +88,7 @@ fun WorkoutShareCard(sharing: WorkoutShareActions, sessionId: String) {
         val send = Intent(Intent.ACTION_SEND).setType("text/plain")
             .putExtra(Intent.EXTRA_TEXT, WorkoutSharing.link(live.share, sharing.origin))
         try {
-            context.startActivity(Intent.createChooser(send, WorkoutSharing.chooserTitle))
+            context.startActivity(Intent.createChooser(send, context.getString(R.string.gym_sharing_chooser_title)))
         } catch (_: ActivityNotFoundException) {
             state = state.after(WorkoutSharing.Event.ShareFailed(WorkoutSharing.shareFailureNote))
             telemetry.event("gym_action", mapOf("screen" to "session", "action" to "share_link", "outcome" to "unavailable"))
@@ -105,7 +109,7 @@ fun WorkoutShareCard(sharing: WorkoutShareActions, sessionId: String) {
             when (val minted = sharing.mint(sessionId)) {
                 is GymResult.Ok -> state = state.after(WorkoutSharing.Event.Minted(minted.value))
                 is GymResult.Failed ->
-                    state = state.after(WorkoutSharing.Event.MintFailed(minted.why.line("the link wasn’t made")))
+                    state = state.after(WorkoutSharing.Event.MintFailed(Words.Plain(minted.why.line("the link wasn’t made"))))
             }
         }
     }
@@ -121,7 +125,7 @@ fun WorkoutShareCard(sharing: WorkoutShareActions, sessionId: String) {
                 state = state.after(WorkoutSharing.Event.Revoked)
                 return@launch
             }
-            state = live.after(WorkoutSharing.Event.RevokeFailed(why.line("the link is still live")))
+            state = live.after(WorkoutSharing.Event.RevokeFailed(Words.Plain(why.line("the link is still live"))))
         }
     }
 
@@ -132,10 +136,10 @@ fun WorkoutShareCard(sharing: WorkoutShareActions, sessionId: String) {
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp).padding(bottom = 20.dp),
     ) {
-        Text(card.title, style = GymType.shareTitle, color = colors.onSurface)
+        Text(card.title.text(), style = GymType.shareTitle, color = colors.onSurface)
 
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            card.body.split('\n').forEach { paragraph ->
+            card.body.text().split('\n').forEach { paragraph ->
                 Text(paragraph, style = GymType.subtitle, color = colors.onSurfaceVariant)
             }
         }
@@ -158,13 +162,14 @@ fun WorkoutShareCard(sharing: WorkoutShareActions, sessionId: String) {
 
         card.note?.let { note ->
             Text(
-                note,
+                note.text(),
                 style = GymType.subtitle,
                 color = gymColors.alarmInk,
             )
         }
 
-        val shareLabel = card.share
+        val shareLabel = card.share?.text()
+        val copiedAnnouncement = stringResource(R.string.gym_sharing_copied_announcement)
         if (shareLabel != null) {
             Row(
                 modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
@@ -175,7 +180,7 @@ fun WorkoutShareCard(sharing: WorkoutShareActions, sessionId: String) {
                     modifier = Modifier.weight(1f).fillMaxHeight().heightIn(min = GymTap.primary).semantics {
                         liveRegion = LiveRegionMode.Polite
                         if ((state as? WorkoutSharing.State.Live)?.copied == true) {
-                            stateDescription = WorkoutSharing.copiedAnnouncement
+                            stateDescription = copiedAnnouncement
                         }
                     },
                     colors = ButtonDefaults.filledTonalButtonColors(
@@ -184,7 +189,7 @@ fun WorkoutShareCard(sharing: WorkoutShareActions, sessionId: String) {
                     ),
                     contentPadding = PaddingValues(horizontal = WindmillSpace.x6),
                 ) {
-                    Text(card.action, modifier = Modifier.fillMaxWidth(), style = WindmillType.labelParagraph, textAlign = TextAlign.Center)
+                    Text(card.action.text(), modifier = Modifier.fillMaxWidth(), style = WindmillType.labelParagraph, textAlign = TextAlign.Center)
                 }
                 Button(
                     onClick = ::shareLink,
@@ -207,7 +212,7 @@ fun WorkoutShareCard(sharing: WorkoutShareActions, sessionId: String) {
                     disabledContentColor = colors.onPrimary.copy(alpha = .38f),
                 ),
             ) {
-                Text(card.action, style = WindmillType.label)
+                Text(card.action.text(), style = WindmillType.label)
             }
         }
 
@@ -217,7 +222,7 @@ fun WorkoutShareCard(sharing: WorkoutShareActions, sessionId: String) {
                 modifier = Modifier.fillMaxWidth().heightIn(min = GymTap.minimum),
                 colors = ButtonDefaults.textButtonColors(contentColor = colors.primary),
             ) {
-                Text(revoke, style = GymType.quietAction)
+                Text(revoke.text(), style = GymType.quietAction)
             }
         }
     }

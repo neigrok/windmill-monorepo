@@ -27,9 +27,11 @@ import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.EmptyCoroutineContext
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.collectAsState
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -196,7 +198,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
         note = null
         if (at is Away.Coach) {
             try { store.coach.freshChat(at.seed) }
-            catch (_: Exception) { note = "Your draft couldn’t be saved. Try again."; return }
+            catch (_: Exception) { note = context.getString(R.string.gym_coach_draft_unsaved); return }
         }
         navigator.push(at)
         reviewFlow.pruneReceipts(navigator.away.lastOrNull())
@@ -217,7 +219,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
     // Asks of the workout open at the moment of the act.
     fun showLogger(shown: Boolean, screen: String, action: String) {
         val result = store.workout.notification.value?.key?.let { store.workout.setLoggerHidden(it, !shown) }
-            ?: WorkoutChange.Unavailable(store.workout.workoutFailure ?: "The workout is not ready.")
+            ?: WorkoutChange.Unavailable(store.workout.workoutFailure ?: context.getString(R.string.gym_room_workout_not_ready))
         telemetry.event("gym_action", mapOf("screen" to screen, "action" to action,
             "outcome" to if (result == WorkoutChange.Saved) "ok" else "refused"))
         if (result is WorkoutChange.Unavailable) note = result.reason
@@ -253,9 +255,9 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
     // stale open session at its last activity, and past four hours from that close an owed set is
     // refused for good.
     val openDestination by rememberUpdatedState<(Away) -> Unit> { look(it) }
-    val destinations = remember(shell, store) {
-        listOf(YouDestination("notes", "Notes") { openDestination(Away.Notes) },
-            YouDestination("connections", "Connected log") { openDestination(Away.Connections) })
+    val destinations = remember(shell, store, LocalConfiguration.current) {
+        listOf(YouDestination("notes", context.getString(R.string.gym_room_you_notes)) { openDestination(Away.Notes) },
+            YouDestination("connections", context.getString(R.string.gym_room_you_connected_log)) { openDestination(Away.Connections) })
     }
     SideEffect { shell.present(destinations) }
 
@@ -321,7 +323,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
             try { store.coach.freshChat(setup = empty) }
             catch (failure: Exception) {
                 if (!currentCoroutineContext().isActive) throw failure
-                note = "Your conversation couldn’t be saved. Try again."
+                note = context.getString(R.string.gym_coach_conversation_unsaved)
             }
         }
         if (initialTabChosen) return@LaunchedEffect
@@ -339,7 +341,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
             navigator.choose(Tab.Coach)
         } catch (failure: Exception) {
             if (!currentCoroutineContext().isActive) throw failure
-            note = "Your conversation couldn’t be saved. Try again."
+            note = context.getString(R.string.gym_coach_conversation_unsaved)
         }
     }
 
@@ -497,8 +499,8 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                 store.coach.saveDraft(fresh, CoachDraft(question, photo))
                 store.coach.saveDraft("new", CoachDraft())
             }
-        } catch (_: Exception) { note = "Your message couldn’t be saved. Try again."; return }
-        if (!store.coach.send(id, question, photo)) note = "Your message couldn’t be saved. Try again."
+        } catch (_: Exception) { note = context.getString(R.string.gym_coach_message_unsaved); return }
+        if (!store.coach.send(id, question, photo)) note = context.getString(R.string.gym_coach_message_unsaved)
     }
 
     fun enterCoach() {
@@ -509,7 +511,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
 
     fun askSomethingNew(draft: String = "") {
         try { store.coach.freshChat(draft) }
-        catch (_: Exception) { note = "Your draft couldn’t be saved. Try again."; return }
+        catch (_: Exception) { note = context.getString(R.string.gym_coach_draft_unsaved); return }
         enterCoach()
         // The logger stands over the tabs, so a new question it was opened over takes the sheet.
         if (loggerShown) coachSheet.show()
@@ -518,7 +520,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
     // A deliberate entry, so it opens on a fresh chat; closing it leaves the rack as it was.
     fun coachOverWorkout() {
         try { store.coach.freshChat() }
-        catch (_: Exception) { note = "Your draft couldn’t be saved. Try again."; return }
+        catch (_: Exception) { note = context.getString(R.string.gym_coach_draft_unsaved); return }
         telemetry.event("gym_action", mapOf("screen" to "workout", "action" to "open_coach", "outcome" to "ok"))
         coachSheet.show()
     }
@@ -611,12 +613,12 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                                 if (!currentCoroutineContext().isActive) throw failure
                                 telemetry.failure("gym.share", failure)
                                 telemetry.event("gym_action", mapOf("screen" to "log", "action" to "share", "outcome" to "failed"))
-                                note = "The link could not be copied. Try Share this workout again."
+                                note = context.getString(R.string.gym_room_link_not_copied)
                                 return@launch
                             }
                             telemetry.event("gym_action", mapOf("screen" to "log", "action" to "share", "outcome" to "ok"))
                             transient.showSnackbar(
-                                "Link copied — anyone who has it can read this workout",
+                                context.getString(R.string.gym_room_link_copied),
                                 duration = SnackbarDuration.Long,
                             )
                         }
@@ -632,7 +634,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
             reviewFlow.Sheet(store,
                 // Offered only where Coach itself is: an account, and a deployment that has one; over the workout's Coach the door would lead back to it.
                 onAsk = if (account.isSignedIn && !askAbsent && !coachSheet.open) {
-                    { about -> look(Away.Coach("What would this change to $about do?")) }
+                    { about -> look(Away.Coach(context.getString(R.string.gym_room_ask_about_change, about))) }
                 } else {
                     null
                 },
@@ -671,7 +673,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                                     discardPrompt = null
                                     if (failure != null) {
                                         val line = when (failure) {
-                                            WriteFailure.NoAnswer -> "This workout couldn’t be deleted on this phone. It is still saved."
+                                            WriteFailure.NoAnswer -> context.getString(R.string.gym_room_delete_unconfirmed)
                                             else -> failure.line("the workout is still saved")
                                         }
                                         finishFlow.close {
@@ -793,8 +795,9 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
             }
 
             // What a way back is named after: the screen beneath, else the tab, or the logger when it stands.
+            @Composable
             fun wayBackTo(under: Away?, tab: Tab): String = under?.wayBack(store.routines.catalog)
-                ?: if (loggerShown) store.workout.session?.plan?.routine ?: Readout.noRoutine else tab.title
+                ?: if (loggerShown) store.workout.session?.plan?.routine ?: Readout.noRoutine else stringResource(tab.title)
 
             @Composable
             fun PushedScreen(frame: Frame.Pushed) {

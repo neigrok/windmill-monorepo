@@ -19,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import java.io.IOException
@@ -44,7 +45,7 @@ import works.windmill.gym.telemetry.coachAction
 @Composable
 internal fun CoachHead(seat: String?, onThreads: (() -> Unit)?) {
     onThreads?.let { history -> IconButton(onClick = history, modifier = Modifier.size(48.dp)) {
-        Icon(painterResource(R.drawable.gym_coach_history), "History", tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(24.dp))
+        Icon(painterResource(R.drawable.gym_coach_history), stringResource(R.string.gym_coach_history), tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(24.dp))
     } }
     seat?.let { YouSeat(it) }
 }
@@ -52,14 +53,14 @@ internal fun CoachHead(seat: String?, onThreads: (() -> Unit)?) {
 @Composable
 fun CoachAccessStance(seat: String, onSignIn: () -> Unit, onThreads: (() -> Unit)? = null, bound: Boolean = false) {
     val colors = MaterialTheme.colorScheme
-    GymScreen(title = Ask.title, actions = { CoachHead(seat, onThreads) }) {
+    GymScreen(title = stringResource(R.string.gym_coach_title), actions = { CoachHead(seat, onThreads) }) {
         Column(Modifier.fillMaxSize().padding(horizontal = 16.dp).padding(vertical = if (bound) 20.dp else 8.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
             if (bound) {
                 Spacer(Modifier.weight(1f))
                 Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("Sign in to ask Coach.", style = GymType.coachAccessTitle, color = colors.onSurface)
-                    Text("Your earlier chats stay on this phone.", style = GymType.coachAccessLine, color = colors.onSurfaceVariant)
+                    Text(stringResource(R.string.gym_coach_bound_sign_in), style = GymType.coachAccessTitle, color = colors.onSurface)
+                    Text(stringResource(R.string.gym_coach_bound_chats_stay), style = GymType.coachAccessLine, color = colors.onSurfaceVariant)
                 }
             } else {
                 Spacer(Modifier.weight(1f))
@@ -67,7 +68,7 @@ fun CoachAccessStance(seat: String, onSignIn: () -> Unit, onThreads: (() -> Unit
                     textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
                 Spacer(Modifier.weight(1f))
             }
-            CoachAction("Sign in", onSignIn, primary = true)
+            CoachAction(stringResource(R.string.gym_coach_sign_in), onSignIn, primary = true)
         }
     }
 }
@@ -75,7 +76,7 @@ fun CoachAccessStance(seat: String, onSignIn: () -> Unit, onThreads: (() -> Unit
 @Composable
 fun AskAbsentStance(seat: String, onThreads: (() -> Unit)? = null) {
     val colors = MaterialTheme.colorScheme
-    GymScreen(title = Ask.title, actions = { CoachHead(seat, onThreads) }) {
+    GymScreen(title = stringResource(R.string.gym_coach_title), actions = { CoachHead(seat, onThreads) }) {
         Column(Modifier.fillMaxSize().padding(horizontal = 40.dp, vertical = 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically)) {
             Icon(painterResource(R.drawable.gym_coach_error), null, tint = colors.onSurfaceVariant, modifier = Modifier.size(32.dp))
@@ -115,15 +116,15 @@ internal fun CoachRefusalNotice(refusal: CoachTurnRefusal, anonymous: Boolean = 
             textAlign = TextAlign.Center, modifier = Modifier.widthIn(max = 300.dp))
         when (refusal.recovery(anonymous)) {
             CoachRecovery.signIn -> if (onSignIn != null) {
-                if (refusal is CoachTurnRefusal.Installation) NoticeDoor("Sign in", onSignIn)
+                if (refusal is CoachTurnRefusal.Installation) NoticeDoor(stringResource(R.string.gym_coach_sign_in), onSignIn)
                 else FilledTonalButton(onClick = onSignIn,
                     colors = ButtonDefaults.filledTonalButtonColors(containerColor = colors.surfaceContainerHighest, contentColor = colors.onSurface),
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)) {
-                    Text("Sign in", style = GymType.coachAction)
+                    Text(stringResource(R.string.gym_coach_sign_in), style = GymType.coachAction)
                 }
             }
-            CoachRecovery.ownAgent -> NoticeDoor("Use your own AI agent", onConnections)
-            CoachRecovery.tryAgain -> NoticeDoor("Try again", onTryAgain)
+            CoachRecovery.ownAgent -> NoticeDoor(stringResource(R.string.gym_coach_own_agent), onConnections)
+            CoachRecovery.tryAgain -> NoticeDoor(stringResource(R.string.gym_coach_try_again), onTryAgain)
             CoachRecovery.update -> NoticeDoor(update.label) { updateFailure = update.open(uri::openUri, telemetry) }
             null -> Unit
         }
@@ -155,10 +156,10 @@ internal fun AnswerInProgress(pending: ConversationRow, onOpenChat: ((String) ->
     LaunchedEffect(Unit) { telemetry.coachAction("answer_in_progress", "shown") }
     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
-            Text("Answer in progress", style = GymType.coachTitle, color = colors.onSurface)
+            Text(stringResource(R.string.gym_coach_answer_in_progress), style = GymType.coachTitle, color = colors.onSurface)
             Text(pending.title, style = GymType.coachSupporting, color = colors.onSurfaceVariant)
         }
-        onOpenChat?.let { open -> NoticeDoor("View chat") { open(pending.id) } }
+        onOpenChat?.let { open -> NoticeDoor(stringResource(R.string.gym_coach_view_chat)) { open(pending.id) } }
     }
 }
 

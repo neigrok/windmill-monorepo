@@ -1,5 +1,6 @@
 package works.windmill.gym.coach
 
+import androidx.annotation.StringRes
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
@@ -16,6 +17,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import works.windmill.domain.kit.Id
+import works.windmill.gym.R
 import works.windmill.gym.coach.onboarding.CoachImportOutcome
 import works.windmill.gym.coach.onboarding.CoachOnboardingRecord
 import works.windmill.gym.coach.onboarding.CoachRoutineImports
@@ -634,8 +636,8 @@ class CoachChats internal constructor(
         val seat = archiveOwner
         // Its drafts are the answer's own, so a question this build cannot read does not cost them.
         val record = try { localCoach?.retained(seat, chat)?.firstOrNull { it.requestId == requestId } }
-            catch (failure: Exception) { archiveFailed(failure); null } ?: return DraftOutcome.Closed(Ask.draftGone)
-        val saving = imports ?: return DraftOutcome.Closed(Ask.draftInvalid)
+            catch (failure: Exception) { archiveFailed(failure); null } ?: return DraftOutcome.Closed(R.string.gym_coach_draft_gone)
+        val saving = imports ?: return DraftOutcome.Closed(R.string.gym_coach_draft_invalid)
         return scope.async {
             when (withContext(storageDispatcher) { saving.apply(record) }) {
                 is CoachImportOutcome.Committed, is CoachImportOutcome.Replayed -> {
@@ -643,8 +645,8 @@ class CoachChats internal constructor(
                     conversations?.read()
                     DraftOutcome.Saved
                 }
-                CoachImportOutcome.Refused -> DraftOutcome.Closed(Ask.draftInvalid)
-                CoachImportOutcome.Failed -> DraftOutcome.Failed(Ask.draftRetry)
+                CoachImportOutcome.Refused -> DraftOutcome.Closed(R.string.gym_coach_draft_invalid)
+                CoachImportOutcome.Failed -> DraftOutcome.Failed(R.string.gym_coach_draft_retry)
             }
         }.await()
     }
@@ -713,6 +715,6 @@ internal fun asked(typed: String): String {
 // A retained draft's Save: `Saved` also for a draft an earlier tap saved. `Closed` is a draft no retry can save, so the card takes Save away; `Failed` keeps Save for another tap.
 sealed interface DraftOutcome {
     data object Saved : DraftOutcome
-    data class Closed(val said: String) : DraftOutcome
-    data class Failed(val said: String) : DraftOutcome
+    data class Closed(@StringRes val said: Int) : DraftOutcome
+    data class Failed(@StringRes val said: Int) : DraftOutcome
 }

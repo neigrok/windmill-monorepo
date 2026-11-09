@@ -1,5 +1,9 @@
 package works.windmill.gym
 
+import works.windmill.gym.R
+import androidx.test.core.app.ApplicationProvider
+import androidx.annotation.StringRes
+import android.content.Context
 import android.os.Bundle
 import android.os.Parcel
 import android.os.Parcelable
@@ -382,7 +386,7 @@ class FinishSheetTests {
 
             compose.onNodeWithContentDescription("Stop response").performClick()
             compose.waitUntil(10_000) {
-                compose.onAllNodesWithText(Ask.stopped).fetchSemanticsNodes().isNotEmpty()
+                compose.onAllNodesWithText(string(R.string.gym_coach_stopped)).fetchSemanticsNodes().isNotEmpty()
             }
             compose.onAllNodesWithText(FinishCoach.question).assertCountEquals(1)
         }
@@ -418,7 +422,7 @@ class FinishSheetTests {
 
             compose.onNodeWithContentDescription("Stop response").performClick()
             compose.waitUntil(10_000) {
-                compose.onAllNodesWithText(Ask.stopped).fetchSemanticsNodes().isNotEmpty()
+                compose.onAllNodesWithText(string(R.string.gym_coach_stopped)).fetchSemanticsNodes().isNotEmpty()
             }
             compose.waitUntil(10_000) { compose.runOnIdle {
                 val id = room.store.coach.selectedChatId.orEmpty()
@@ -1103,3 +1107,5 @@ class FinishSheetTests {
     }
 
 }
+
+private fun string(@StringRes id: Int): String = ApplicationProvider.getApplicationContext<Context>().getString(id)
