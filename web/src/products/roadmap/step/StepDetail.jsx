@@ -20,6 +20,7 @@ import {
   COLUMN_TITLES, LABELS, deleteCostLine, LINK_COPIED, STATE_WORDS, STEP_DETAIL, WORKSPACE_EMPTY, checkedToast,
   DELETE_CONFIRM, deleteConfirm, backTo, completedOutcome, lockedStatus, prerequisitesTally, resetOutcome, resetPreview,
 } from '../copy.js';
+import { t } from '../i18n/index.js';
 
 const UNDO_HOLD_MS = 6000;
 const ROW_GLYPHS = { done: StepIcons.rowDone, upNext: StepIcons.rowUpNext, locked: StepIcons.rowLocked };
@@ -477,7 +478,7 @@ function RelationRow({ related, need = false, onOpen }) {
     <button
       type="button"
       className={`st-board-step-row${need ? ' st-board-step-row--need' : ''}`}
-      aria-label={`${titleOf(related.step)}, ${STATE_WORDS[related.column]}`}
+      aria-label={t('roadmap.step.relatedLabel', { step: titleOf(related.step), state: STATE_WORDS[related.column] })}
       onClick={() => onOpen(related.id)}
     >
       <span className={`st-board-step-row-glyph st-board-step-row-glyph--${related.column}`}><Glyph /></span>

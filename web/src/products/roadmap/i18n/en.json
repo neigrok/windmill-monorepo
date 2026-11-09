@@ -717,5 +717,6 @@
   "roadmap.pageTitle": "{title} — Windmill",
   "roadmap.step.fallbackName": "Step",
   "roadmap.toast.graftedUnderTree": "the tree",
-  "roadmap.presence.guest": "Guest"
+  "roadmap.presence.guest": "Guest",
+  "roadmap.step.relatedLabel": "{step}, {state}"
 }
