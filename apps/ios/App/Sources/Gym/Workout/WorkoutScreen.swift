@@ -97,7 +97,7 @@ struct WorkoutScreen: View {
         if let exercise = gym.catalogue.find(id) { RenameMovementSheet(gym: gym, exercise: exercise) }
       case .wheel:
         let movement = workout.selected.flatMap { gym.catalogue.find($0) }
-        RepsWheelSheet(title: String(localized: "Set \(String(workout.currentSets.count + 1))", comment: "A set by its place: Set 3"),
+        RepsWheelSheet(title: String(localized: "Set \(String(workout.currentSets.count + 1))", locale: .copy, comment: "A set by its place: Set 3"),
                        movement: movement?.name ?? String(localized: "Movement"),
                        reps: workout.reps) { reps in workout.adjustRack(weightKg: workout.weightKg, reps: reps) }
       case .coach:
@@ -463,7 +463,8 @@ struct WorkoutLedgerRow: View {
       if unsent { return String(localized: "Set \(row.marker), logged, \(load) kilograms, \(set.reps) reps, on this phone", locale: .copy) }
       return String(localized: "Set \(row.marker), logged, \(load) kilograms, \(set.reps) reps", locale: .copy)
     case .current: return String(localized: "Set \(row.marker), current, \(row.target.map { Self.expected(row.load, by: $0) } ?? String(localized: "open target"))")
-    case .planned: return String(localized: "Set \(row.marker), planned, \(row.target.map { Self.expected(row.load, by: $0) } ?? String(localized: "open target"))")
+    case .planned: return String(localized: "Set \(row.marker), planned, \(row.target.map { Self.expected(row.load, by: $0) } ?? String(localized: "open target"))",
+                                 locale: .copy)
     }
   }
 

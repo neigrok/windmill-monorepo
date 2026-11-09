@@ -20,6 +20,10 @@ DEV_FILES = re.compile(r"Fixtures?\.swift$|^Sources/Verification\.swift$|^Source
 SPECIFIER = re.compile(r"%(?:\d+\$)?(?:#@\w+@|[-+ 0#']*\d*(?:\.\d+)?(?:hh|h|ll|l|q|z|t|j)?[@dDiuUxXoOfFeEgGcCsSp])")
 INTEGER = re.compile(r"%(?:\d+\$)?(?:ll|l|q)?[dDiuU]")
 WORD = re.compile(r"[^\W\d_]{2}")
+# Words with a space between them: a raw value that reads like this is copy, not a wire value.
+WORDS = re.compile(r"[^\W\d_]\s+[^\W\d_]")
+# A receiver whose calls log: `logger.error(…)`, `Self.log.debug(…)`.
+LOGGER = re.compile(r"(?i)^(logger|log)$")
 # Text that names rather than says: a lowercase word, an identifier, a constant, a path, a URL, a file or a font.
 IDENTIFIER = re.compile(r"^[a-z0-9]+(?:[-_.:/@+][a-zA-Z0-9]+)*[-_.:/]?$|^[A-Z0-9]*[0-9_][A-Z0-9_]*$|^\S*[a-z][A-Z]\S*$"
                         r"|^[A-Z][A-Za-z0-9]*(?:\.[A-Za-z0-9]+)+$|^[A-Z][a-z]+-[A-Z]\S*$|^\S+/\S+$|^[/.]|://"
@@ -34,6 +38,7 @@ NOT_COPY_CALLS = {
     "LocalDay", "Decimal", "DateFormatter", "member", "value", "setValue", "object", "string", "bool", "integer", "double",
     "data", "removeObject", "set", "SessionToken", "AnyHashable", "JSONSerialization", "BGAppRefreshTaskRequest", "Data",
     "CharacterSet", "Regex", "NSRegularExpression", "Selector", "setenv", "getenv", "TimeZone", "Locale", "Calendar",
+    "NSLog", "os_log", "UIFont", "URLQueryItem", "dateFormat",
 }
 # Argument labels, dictionary and property names whose strings no person reads.
 NOT_COPY_LABELS = {
@@ -41,21 +46,23 @@ NOT_COPY_LABELS = {
     "outcome", "door", "operation", "code", "type", "table", "bundle", "comment", "defaultValue", "path", "method",
     "httpMethod", "scheme", "host", "subsystem", "category", "mediaType", "key", "id", "format", "dateFormat", "extension",
     "prefix", "suiteName", "forHTTPHeaderField", "withExtension", "forResource", "ofType", "room", "reason", "field", "source",
-    "mode", "debugDescription", "forInfoDictionaryKey",
+    "mode", "debugDescription", "forInfoDictionaryKey", "fromTemplate",
 }
 # Tokens after which a `[` opens an array or dictionary, not a subscript.
 OPENS_LITERAL = {"=", "(", ",", ":", "[", "{", "?", "??", "return", "in", "case", "else", "+", "&&", "||", "throw"}
 # Tokens that close the statement a `case` pattern could stand in.
 STATEMENT_ENDS = {":", "{", "}", ";", "return", "let", "var", "func", "in", "else", "guard", "if"}
 
-# Each entry is a source path, a line fragment and why that line may keep English that no catalog holds.
+SHORTCUT = "an App Shortcut phrase, which localizes through an AppShortcuts catalog that comes with a second language"
+# Each entry is a source path, a literal as the check writes it, and why it may stay English no catalog holds.
 ALLOWED = [
-    ("WorkoutActivityShared/WorkoutIntents.swift", '"Log a set in \\(.applicationName)"',
-     "App Shortcut phrases localize through an AppShortcuts catalog, which comes with a second language"),
-    ("WorkoutActivityShared/WorkoutIntents.swift", '"Start a workout in \\(.applicationName)"',
-     "App Shortcut phrases localize through an AppShortcuts catalog, which comes with a second language"),
-    ("Sources/AppRuntime.swift", '"Simulator Apple sign-in requires the local model server."',
-     "the simulator's Apple sign-in, which no person meets"),
+    ("WorkoutActivityShared/WorkoutIntents.swift", "Log a set in %@", SHORTCUT),
+    ("WorkoutActivityShared/WorkoutIntents.swift", "Log my set in %@", SHORTCUT),
+    ("WorkoutActivityShared/WorkoutIntents.swift", "%@ log set", SHORTCUT),
+    ("WorkoutActivityShared/WorkoutIntents.swift", "Start a workout in %@", SHORTCUT),
+    ("WorkoutActivityShared/WorkoutIntents.swift", "Start my workout in %@", SHORTCUT),
+    ("WorkoutActivityShared/WorkoutIntents.swift", "%@ start workout", SHORTCUT),
+    ("Sources/AppRuntime.swift", "Simulator Apple sign-in requires the local model server.", "the simulator's Apple sign-in, which no person meets"),
 ]
 
 
@@ -97,7 +104,8 @@ def enclosing(items, index):
             depth -= 1
         elif value in ("(", "[", "{"):
             start = back + 1 if start is None else start
-            labelled = start < index and items[start + 1].value == ":"
+            following = [item.value for item in items[start + 1:min(index, start + 4)]]
+            labelled = following[:1] == [":"] or (following[:1] == ["as"] and following[2:3] == [":"])
             return back, (items[start].text or items[start].value) if labelled else None
         elif value == "," and depth == 0 and start is None:
             start = back + 1
@@ -109,10 +117,14 @@ def callee(items, opener):
 
 
 def handed_to_a_name(items, opener, label):
-    return opener is not None and (callee(items, opener) in NOT_COPY_CALLS or label in NOT_COPY_LABELS)
+    if opener is None:
+        return False
+    logged = items[opener].value == "(" and opener > 2 and items[opener - 2].value == "." and LOGGER.match(items[opener - 3].value)
+    return bool(logged) or callee(items, opener) in NOT_COPY_CALLS or label in NOT_COPY_LABELS or (label or "").startswith(("kSec", "kCF"))
 
 
-# Whether the literal at `index` names rather than says, by the call, label, collection, comparison or pattern it stands in.
+# Whether the literal at `index` names rather than says, by the call, label, collection, comparison or pattern it stands in;
+# an enum's raw value names unless its words have spaces between them.
 def names(items, index):
     opener, label = enclosing(items, index)
     if handed_to_a_name(items, opener, label):
@@ -135,11 +147,12 @@ def names(items, index):
         if depth < 0 or (depth == 0 and value in STATEMENT_ENDS):
             return False
         if depth == 0 and value == "case":
-            return True
+            return not (before[-1:] == ["="] and WORDS.search(items[index].text))
     return False
 
 
-# Each literal a person could read that is no key, and each String(localized:) counting an Int outside Locale.copy.
+# Each literal a person could read that is no key, and each String(localized:) whose key counts an Int, alone or beside a
+# twin of the same shape, outside Locale.copy: (line, the literal as written, problem).
 def violations(source, keys, integer_keys, skip=frozenset()):
     found = []
 
@@ -151,8 +164,8 @@ def violations(source, keys, integer_keys, skip=frozenset()):
                 continue
             written = shape(item.text).replace(PLACEHOLDER, "%@")
             if shape(item.text) not in keys:
-                found.append((item.line, f"{written!r} is no key of its bundle's String Catalog; localize it and run "
-                                         f"python3 Tools/string_catalogs.py"))
+                found.append((item.line, written, f"{written!r} is no key of its bundle's String Catalog; localize it and run "
+                                                  f"python3 Tools/string_catalogs.py"))
                 continue
             opener, label = enclosing(items, index)
             if label == "localized" and callee(items, opener) == "String" and shape(item.text) in integer_keys:
@@ -163,7 +176,7 @@ def violations(source, keys, integer_keys, skip=frozenset()):
                     if depth == 0:
                         break
                 if not any(arguments[at:at + 4] == ["locale", ":", ".", "copy"] for at in range(len(arguments))):
-                    found.append((item.line, f"{written!r} interpolates an Int: resolve it with locale: .copy"))
+                    found.append((item.line, written, f"{written!r} interpolates an Int: resolve it with locale: .copy"))
 
     scan(tokens(source))
     return found
@@ -182,20 +195,18 @@ def check(app):
                 continue
             bundles = [catalogs[catalog] for catalog, folders in CATALOGS.items() if any(relative.startswith(folder + "/") for folder in folders)]
             keys = set.intersection(*({shape(key) for key in strings} for strings in bundles))
-            written = [key for strings in bundles for key in strings]
-            integer_keys = {shape(key) for key in written if INTEGER.search(key)} - {shape(key) for key in written if not INTEGER.search(key)}
+            integer_keys = {shape(key) for strings in bundles for key in strings if INTEGER.search(key)}
             text = path.read_text()
-            lines = text.split("\n")
-            for line, problem in violations(text, keys, integer_keys, frozenset(dev_lines(text))):
-                allowance = next((entry for entry in ALLOWED if relative == entry[0] and entry[1] in lines[line - 1]), None)
+            for line, written, problem in violations(text, keys, integer_keys, frozenset(dev_lines(text))):
+                allowance = next((entry for entry in ALLOWED if relative == entry[0] and written == entry[1]), None)
                 if allowance:
                     used.add(allowance)
-                    allowed.append(f"{relative}:{line}: allowed: {allowance[2]}")
+                    allowed.append(f"{relative}:{line}: allowed {written!r}: {allowance[2]}")
                     continue
                 failures.append(f"{path}:{line}: error: {problem}")
     for entry in ALLOWED:
         if entry not in used and (app / entry[0]).is_file():
-            failures.append(f"{app / entry[0]}: error: allowlisted English no longer appears: {entry[1]}")
+            failures.append(f"{app / entry[0]}: error: allowlisted English no longer appears: {entry[1]!r}")
     if failures:
         raise ValueError("\n".join(failures))
     return list(dict.fromkeys(allowed))

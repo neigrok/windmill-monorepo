@@ -307,9 +307,9 @@ struct SetEditor: View {
   var place: String {
     let siblings = (gym.log?.sets(session: draft.original.sessionId) ?? []).filter { $0.exerciseId == draft.original.exerciseId }
     if siblings.contains(where: { $0.id == draft.original.id }) {
-      return String(localized: "Set \(SetRow.marker(draft.original, in: siblings))", comment: "A set by its place: Set 3")
+      return String(localized: "Set \(SetRow.marker(draft.original, in: siblings))", locale: .copy, comment: "A set by its place: Set 3")
     }
-    return draft.original.setNumber.map { String(localized: "Set \(String($0))", comment: "A set by its place: Set 3") } ?? String(localized: "Fix set")
+    return draft.original.setNumber.map { String(localized: "Set \(String($0))", locale: .copy, comment: "A set by its place: Set 3") } ?? String(localized: "Fix set")
   }
 
   var body: some View {
