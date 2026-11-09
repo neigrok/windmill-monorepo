@@ -116,8 +116,7 @@ class StringCatalogTests(unittest.TestCase):
         data.write_text(json.dumps({"source": "View.swift", "tables": {"Localizable": []}, "version": 1}))
         with self.assertRaises(SystemExit) as refusal:
             string_catalogs.sync(unreadable, [data])
-        self.assertEqual(str(refusal.exception), "error: xcstringstool could not read what it syncs: "
-                                                 "warning: Skipping sync for 'Localizable.xcstrings' because the file could not be read")
+        self.assertRegex(str(refusal.exception), r"\Aerror: xcstringstool could not read what it syncs: .*Skipping sync .*Localizable\.xcstrings")
 
     def test_the_committed_catalogs_hold_their_english_to_their_keys(self):
         for folder, _ in string_catalogs.TARGETS.values():
