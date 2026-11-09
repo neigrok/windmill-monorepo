@@ -11,7 +11,14 @@ import { kindChoices } from '../model/Legend.js';
 const EMPTY_WORKSPACE = { subtasks: [], note: '', links: [] };
 const noop = () => {};
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const MONTHS = [
+  t('roadmap.time.months.jan'), t('roadmap.time.months.feb'), t('roadmap.time.months.mar'), t('roadmap.time.months.apr'),
+  t('roadmap.time.months.may'), t('roadmap.time.months.jun'), t('roadmap.time.months.jul'), t('roadmap.time.months.aug'),
+  t('roadmap.time.months.sep'), t('roadmap.time.months.oct'), t('roadmap.time.months.nov'), t('roadmap.time.months.dec'),
+];
+const MERIDIEMS = { am: t('roadmap.time.am'), pm: t('roadmap.time.pm') };
+// String() keeps a missing instant reading `undefined NaN`.
+const monthOf = (date) => String(MONTHS[date.getMonth()]);
 
 // Never seconds, never ticking.
 function relativeTime(at, now) {
@@ -24,22 +31,20 @@ function relativeTime(at, now) {
   const days = Math.floor(hours / 24);
   if (days < 7) return t('roadmap.ago.daysShort', { count: days });
   const date = new Date(at);
-  const sameYear = date.getFullYear() === new Date(now).getFullYear();
-  const stamp = `${MONTHS[date.getMonth()]} ${date.getDate()}`;
-  return sameYear ? stamp : `${stamp}, ${date.getFullYear()}`;
+  if (date.getFullYear() === new Date(now).getFullYear()) return t('roadmap.time.monthDay', { month: monthOf(date), date: date.getDate() });
+  return t('roadmap.time.monthDayYear', { month: monthOf(date), date: date.getDate(), year: date.getFullYear() });
 }
 
 function absoluteTime(at) {
   const date = new Date(at);
-  const meridiem = date.getHours() < 12 ? 'AM' : 'PM';
+  const meridiem = date.getHours() < 12 ? MERIDIEMS.am : MERIDIEMS.pm;
   const hour = date.getHours() % 12 || 12;
   const minute = String(date.getMinutes()).padStart(2, '0');
-  return `${MONTHS[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()} · ${hour}:${minute} ${meridiem}`;
+  return t('roadmap.time.at', { month: monthOf(date), date: date.getDate(), year: date.getFullYear(), hour, minute, meridiem });
 }
 
 function shortDate(at) {
-  const date = new Date(at);
-  return `${MONTHS[date.getMonth()]} ${date.getDate()}`;
+  return t('roadmap.time.monthDay', { month: monthOf(new Date(at)), date: new Date(at).getDate() });
 }
 
 // Authored intent that travels with the tree, distinct from the per-user workspace.

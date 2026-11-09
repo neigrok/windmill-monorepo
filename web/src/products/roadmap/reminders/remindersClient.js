@@ -51,8 +51,10 @@ export function describeSchedule({ slotDow, slotMinute }) {
   const minutes = Number.isInteger(slotMinute) && slotMinute >= 0 && slotMinute < 1440 ? slotMinute : 540;
   const hour = Math.floor(minutes / 60);
   const minute = minutes % 60;
-  const suffix = hour < 12 ? 'am' : 'pm';
+  const meridiem = hour < 12 ? t('roadmap.reminders.am') : t('roadmap.reminders.pm');
   const twelve = hour % 12 === 0 ? 12 : hour % 12;
-  const clock = minute === 0 ? `${twelve}${suffix}` : `${twelve}:${String(minute).padStart(2, '0')}${suffix}`;
+  const clock = minute === 0
+    ? t('roadmap.reminders.clockHour', { hour: twelve, meridiem })
+    : t('roadmap.reminders.clockMinute', { hour: twelve, minute: String(minute).padStart(2, '0'), meridiem });
   return t('roadmap.reminders.schedule', { day, clock });
 }
