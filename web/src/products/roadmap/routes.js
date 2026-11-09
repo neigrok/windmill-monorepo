@@ -80,7 +80,7 @@ async function forgetDevice({ next }) {
 
 export const roadmapRoutes = {
   id: 'roadmap',
-  label: t('roadmap.product.label'),
+  label: t('roadmap.product.name'),
   switchHash: '#/app',
   home,
   landingAfterSignIn,
@@ -109,18 +109,18 @@ export const roadmapRoutes = {
         section: 'calc(0.8 * var(--rootScene-frame) + 31px)',
       },
       band: {
-        title: t('roadmap.root.bandTitle'),
-        sub: t('roadmap.root.bandSub'),
+        title: t('roadmap.product.band.title'),
+        sub: t('roadmap.product.band.sub'),
       },
       section: {
-        title: t('roadmap.root.sectionTitle'),
-        sub: t('roadmap.root.sectionSub'),
-        trust: t('roadmap.root.sectionTrust'),
-        cta: { href: '#/app/start', label: t('roadmap.landing.start') },
+        title: t('roadmap.product.section.title'),
+        sub: t('roadmap.product.section.sub'),
+        trust: t('roadmap.product.section.trust'),
+        cta: { href: '#/app/start', label: t('roadmap.product.section.cta') },
         proof: [
-          { title: t('roadmap.root.proofPrerequisitesTitle'), copy: t('roadmap.root.proofPrerequisitesCopy') },
-          { title: t('roadmap.root.proofNoSignUpTitle'), copy: t('roadmap.root.proofNoSignUpCopy') },
-          { title: t('roadmap.root.proofShareTitle'), copy: t('roadmap.root.proofShareCopy') },
+          { title: t('roadmap.product.proof.prerequisitesTitle'), copy: t('roadmap.product.proof.prerequisitesCopy') },
+          { title: t('roadmap.product.proof.noSignUpTitle'), copy: t('roadmap.product.proof.noSignUpCopy') },
+          { title: t('roadmap.product.proof.shareTitle'), copy: t('roadmap.product.proof.shareCopy') },
         ],
       },
       Glimpse: lazy(() => import('./marketing/RootScenes.jsx').then((m) => ({ default: m.RoadmapGlimpse }))),
