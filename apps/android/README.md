@@ -348,6 +348,11 @@ area, `gym_<area>_<thing>`, `platform_<thing>` and `app_<thing>`, so merged reso
 are `onboarding_<thing>`. Manifest labels point at resources too.
 
 - A composable reads `stringResource(R.string.x, …)`; code outside composition reads `context.getString(…)`.
+- Copy decided where no Context stands — a readout in `gym/presentation`, a store's refusal, Coach's models, a
+  platform API failure — is a `Words` value (`platform/i18n/Words.kt`): a `Message`, a `Counted` message, or `Plain`
+  text that already is what is said (a name, the server's own sentence). A composable spells it with `words.text()`,
+  other code with `words.text(context)`. It is `Serializable`, so saved state keeps it and spells it again after a
+  configuration change.
 - A count reads `pluralString(R.plurals.x, count, …)` from `platform/i18n/AppLanguage.kt`, never
   `pluralStringResource` or `getQuantityString`: Android picks a plural's category by the system's first language
   even when the app does not ship it, so a Russian phone would read "21 set".
@@ -355,8 +360,8 @@ are `onboarding_<thing>`. Manifest labels point at resources too.
   system's locale and print Arabic-Indic digits on an Arabic phone.
 - A sentence is one message: a value fills a placeholder, never a fragment beside it.
 - User content, server text, test tags, telemetry names and log lines stay in Kotlin.
-- `CopyInResourcesTests` (`:app`) fails on copy written in Kotlin under the source roots it lists and on a literal
-  manifest label; the app's lint fails on an unused resource.
+- `CopyInResourcesTests` (`:app`) fails on copy written in Kotlin anywhere in `:app`, `:platform` and `:gym` and on a
+  literal manifest label; the app's lint fails on an unused resource.
 
 A second language ships as its `values-<language>/` folders, one more entry in `AppLanguage`'s `shipped` list, and
 `generateLocaleConfig` and `localeFilters` in the app's build, all in one change. Neither build setting comes earlier:
