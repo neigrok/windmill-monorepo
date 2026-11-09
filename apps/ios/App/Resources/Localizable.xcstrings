@@ -2358,7 +2358,7 @@
 
     },
     "Performed" : {
-      "comment" : "What the finish receipt compares a set against: nothing, only what was lifted"
+      "comment" : "A section of the finish receipt: the movements as performed"
     },
     "Personal record" : {
 
@@ -3715,8 +3715,32 @@
         }
       }
     },
+    "proposal-state.removed" : {
+      "comment" : "How a removal proposal settled: its routine was removed",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Removed"
+          }
+        }
+      }
+    },
     "read" : {
       "comment" : "A connected tool may read the log"
+    },
+    "receipt-basis.performed" : {
+      "comment" : "What the finish receipt compares a set against: nothing, only what was lifted",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Performed"
+          }
+        }
+      }
     },
     "reps" : {
 

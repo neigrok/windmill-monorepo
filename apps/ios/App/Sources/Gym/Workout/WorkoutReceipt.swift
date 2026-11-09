@@ -125,7 +125,8 @@ nonisolated struct WorkoutReview: Decodable, Sendable {
       switch basis {
       case .plan: String(localized: "Plan", comment: "What the finish receipt compares a set against: the routine's plan")
       case .lastTime: String(localized: "Last time")
-      case .performed: String(localized: "Performed", comment: "What the finish receipt compares a set against: nothing, only what was lifted")
+      case .performed: String(localized: "receipt-basis.performed", defaultValue: "Performed",
+                              comment: "What the finish receipt compares a set against: nothing, only what was lifted")
       }
     }
     var detail: String {
@@ -144,7 +145,7 @@ nonisolated struct WorkoutReview: Decodable, Sendable {
       let bases = Set(movements.map(\.basis))
       if bases == [.plan] { return String(localized: "Against plan") }
       if bases == [.lastTime] { return routine.map { String(localized: "Against last \($0)") } ?? String(localized: "Against last time") }
-      if bases == [.performed] { return String(localized: "Performed") }
+      if bases == [.performed] { return String(localized: "Performed", comment: "A section of the finish receipt: the movements as performed") }
       return String(localized: "Comparison")
     }
   }

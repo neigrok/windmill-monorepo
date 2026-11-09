@@ -84,7 +84,8 @@ nonisolated enum CoachCopy {
   // *dismissed* for a rejected proposal.
   static func settled(_ state: String, removal: Bool) -> String? {
     switch state {
-    case "applied": removal ? String(localized: "Removed") : String(localized: "Applied")
+    case "applied": removal ? String(localized: "proposal-state.removed", defaultValue: "Removed", comment: "How a removal proposal settled: its routine was removed")
+      : String(localized: "Applied")
     case "dismissed": String(localized: "Rejected")
     case "superseded": outOfDate
     default: nil
