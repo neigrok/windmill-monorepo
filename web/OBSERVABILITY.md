@@ -83,13 +83,14 @@ frames. A failed paste shape adds the Sentry tags `reason` (`unavailable`, `unre
 status or count. Sentry collapses a repeat of one kind, operation, route, tags and crashing frame
 within ten seconds.
 
-A message the translator cannot show reports to Sentry once per key per page load under the static
-operation `i18n-missing-message`, with `i18n` as its type and `kind` tag, the route family as its request
-URL and two more tags: `key` (a code identifier such as `gym.log.emptyTitle`) and `reason`, what broke —
-`key` (its owner's catalog lacks the key), `argument` (the call did not pass an argument the message
-shows), `syntax` (the message does not parse) or `count` (a plural's count is not a number). A production
-build renders the key for the first three and, for `count`, the message's `other` branch with the value as
-given. No message text or argument value is reported. Outside production the translator throws instead.
+A message the translator cannot show reports its first failure to Sentry, once per key per page load
+whichever catalog tier reads it, under the static operation `i18n-missing-message`, with `i18n` as its
+type and `kind` tag, the route family as its request URL and two more tags: `key` (a code identifier such
+as `gym.log.emptyTitle`) and `reason`, what broke — `key` (its owner's catalog lacks the key), `argument`
+(the call did not pass an argument the message shows), `syntax` (the message does not parse) or `count`
+(a plural's count is not a number). A production build renders the key for the first three and, for
+`count`, the message's `other` branch with the value as given. No message text or argument value is
+reported. Outside production the translator throws instead.
 
 Journal reports migration, durable save, pending-claim reconciliation, invitation retirement and
 REST transport failures using static `journal-*` Sentry operation names. Migration and recovery

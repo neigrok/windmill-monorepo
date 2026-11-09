@@ -21,7 +21,11 @@ export const APP_LOCALE = typeof document === 'undefined'
   ? AVAILABLE_LOCALES[0]
   : resolveLocale(globalThis.navigator?.languages ?? []);
 
+const reportedThisPageLoad = new Set();
+
 function reportMissingMessage(key, reason) {
+  if (reportedThisPageLoad.has(key)) return;
+  reportedThisPageLoad.add(key);
   const route = typeof window === 'undefined' ? '' : routeFamily(window.location);
   captureError('i18n', 'i18n-missing-message', '', route, { key, reason });
 }
@@ -34,7 +38,6 @@ export function createTranslator(catalogs, {
   const catalog = catalogs[locale];
   const pluralRules = new Intl.PluralRules(locale);
   const parsed = new Map();
-  const reported = new Set();
 
   const messageOf = (key) => {
     if (!parsed.has(key)) {
@@ -43,20 +46,15 @@ export function createTranslator(catalogs, {
     }
     return parsed.get(key);
   };
-  const report = (key, reason) => {
-    if (reported.has(key)) return;
-    reported.add(key);
-    onMissing(key, reason);
-  };
 
   return function t(key, args = {}) {
     try {
-      const parts = formatMessage(messageOf(key), args, pluralRules, strict ? undefined : () => report(key, 'count'));
+      const parts = formatMessage(messageOf(key), args, pluralRules, strict ? undefined : () => onMissing(key, 'count'));
       if (parts.every((part) => typeof part === 'string')) return parts.join('');
       return createElement(Fragment, null, ...parts);
     } catch (error) {
       if (strict) throw new Error(`i18n: "${key}" cannot be shown: ${error.message}`, { cause: error });
-      report(key, error instanceof SyntaxError ? 'syntax' : error.reason);
+      onMissing(key, error instanceof SyntaxError ? 'syntax' : error.reason);
       return key;
     }
   };

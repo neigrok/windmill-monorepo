@@ -57,13 +57,13 @@ test('outside production a missing key or argument throws, naming the key', () =
   ]);
 });
 
-test('in production a missing key, argument or message renders the key, and reports it once per key with what broke', () => {
+test('in production a missing key, argument or message renders the key and tells onMissing what broke at every call', () => {
   const reported = [];
   const t = createTranslator({ en: { 'x.hi': 'Hi, {name}', 'x.ok': 'Fine', 'x.broken': '{n, plural, one {x}}', 'x.sets': '{n, plural, one {# set} other {# sets}}' } },
     { strict: false, onMissing: (key, reason) => reported.push(`${key} ${reason}`) });
   const shown = [t('x.nope'), t('x.nope'), t('x.hi'), t('x.hi', {}), t('x.hi', { name: null }), t('x.ok'), t('x.broken', { n: 1 }), t('x.sets', { n: '3' }), t('x.sets', { n: 1 })];
   assert.deepEqual(shown, ['x.nope', 'x.nope', 'x.hi', 'x.hi', 'Hi, ', 'Fine', 'x.broken', '3 sets', '1 set']);
-  assert.deepEqual(reported, ['x.nope key', 'x.hi argument', 'x.broken syntax', 'x.sets count']);
+  assert.deepEqual(reported, ['x.nope key', 'x.nope key', 'x.hi argument', 'x.hi argument', 'x.broken syntax', 'x.sets count']);
 });
 
 test('the production build reports a missing message to Sentry under i18n-missing-message, tagged with the key and what broke', async () => {
@@ -86,4 +86,30 @@ test('the production build reports a missing message to Sentry under i18n-missin
     { tags: { key: 'gym.nope', reason: 'key', kind: 'i18n' }, request: { url: '/app/gym' }, type: 'i18n', value: 'i18n-missing-message', frames: [] },
   ]);
   assert.deepEqual(sent.map(({ url }) => url), ['https://errors.example/api/42/envelope/']);
+});
+
+test('the production build reports a key once per page load whichever translator reads it, for what broke first', async () => {
+  const { outputFiles } = await build({
+    entryPoints: [fileURLToPath(new URL('../../../src/platform/i18n/index.js', import.meta.url))],
+    bundle: true, write: false, format: 'iife', globalName: 'i18n', logLevel: 'silent',
+    define: { 'import.meta.env': JSON.stringify({ PROD: true, VITE_SENTRY_DSN: 'https://abc@errors.example/42' }), 'process.env.NODE_ENV': '"production"' },
+  });
+  const sent = [];
+  const location = { hostname: 'windmill.works', hash: '', pathname: '/' };
+  const { createTranslator: productionTranslator } = runInNewContext(`${outputFiles[0].text}\ni18n`, {
+    window: { location, addEventListener() {} },
+    navigator: { languages: ['en'] },
+    crypto: { randomUUID: () => '00000000-0000-0000-0000-000000000001' },
+    fetch: (url, request) => { sent.push({ url, body: request.body }); return Promise.resolve(); },
+  });
+  const landing = productionTranslator({ en: { 'shell.landing.title': 'Windmill' } });
+  const chrome = productionTranslator({ en: { 'shell.auth.signIn': 'Sign in as {name}' } });
+  const shown = [landing('shell.auth.signIn')];
+  location.pathname = '/app/roadmap';
+  shown.push(chrome('shell.auth.signIn'), landing('shell.auth.signIn'));
+  assert.deepEqual(shown, ['shell.auth.signIn', 'shell.auth.signIn', 'shell.auth.signIn']);
+  const events = sent.map(({ body }) => JSON.parse(body.split('\n')[2]));
+  assert.deepEqual(events.map(({ tags, request }) => ({ tags, request })), [
+    { tags: { key: 'shell.auth.signIn', reason: 'key', kind: 'i18n' }, request: { url: '/' } },
+  ]);
 });
