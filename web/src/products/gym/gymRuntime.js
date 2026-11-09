@@ -29,6 +29,7 @@ import { CorrectedSet, CorrectSession, CorrectSet, DeleteSet, ImportedSet, Impor
 import { GymRefusal, isStoreFailure } from './errors.js';
 import { REFUSALS } from './bodyweight/bodyweight.js';
 import { fixLoadFloorLine } from './fix.js';
+import { t } from './i18n/index.js';
 import { FULL_LINE } from './notes/notes.js';
 import { loadFloorLine, NAME_IT_TO_SAVE_IT } from './routines.js';
 import { fromDisplayUnit, weightUnit } from './units.js';
@@ -110,28 +111,28 @@ export function gymRefusalError(refused, { kept = null } = {}) {
     }
     if (violation.rule === RoutineRules.loadFloor) return new GymRefusal('load-floor', { sentence: loadFloorLine(violation.reason.min) });
     let sentence;
-    if (violation.rule === 'weighin.day') sentence = violation.reason.custom === 'future' ? REFUSALS.future : 'could not read that date';
+    if (violation.rule === 'weighin.day') sentence = violation.reason.custom === 'future' ? REFUSALS.future : t('gym.runtime.unreadableDate');
     if (violation.rule === 'weighin.kg') sentence = violation.reason.kind === 'notANumber' ? REFUSALS.notNumber : REFUSALS.bounds;
-    if (violation.rule === 'note.title' && violation.reason.kind === 'blank') sentence = 'a note needs a title';
-    if (violation.rule === 'note.title' && violation.reason.kind === 'tooLong') sentence = `a title runs to ${NoteRules.title.max} characters`;
-    if (violation.rule === 'note.body' && violation.reason.kind === 'tooLong') sentence = `a note runs to ${NoteRules.body.max} bytes`;
+    if (violation.rule === 'note.title' && violation.reason.kind === 'blank') sentence = t('gym.runtime.noteNeedsTitle');
+    if (violation.rule === 'note.title' && violation.reason.kind === 'tooLong') sentence = t('gym.runtime.noteTitleTooLong', { max: NoteRules.title.max });
+    if (violation.rule === 'note.body' && violation.reason.kind === 'tooLong') sentence = t('gym.runtime.noteBodyTooLong', { max: NoteRules.body.max });
     if (['exercise.name', 'exerciseName.name', 'routine.name'].includes(violation.rule)) {
-      if (['blank', 'tooShort'].includes(violation.reason.kind)) sentence = violation.rule === 'routine.name' ? NAME_IT_TO_SAVE_IT : 'A movement needs a name.';
-      if (violation.reason.kind === 'tooLong') sentence = 'A name runs to 60 characters.';
+      if (['blank', 'tooShort'].includes(violation.reason.kind)) sentence = violation.rule === 'routine.name' ? NAME_IT_TO_SAVE_IT : t('gym.runtime.movementNeedsName');
+      if (violation.reason.kind === 'tooLong') sentence = t('gym.runtime.nameTooLong');
     }
     return new GymRefusal('invalid', { sentence });
   }
   if (refused.kind === 'future') return new GymRefusal('bad-instant', { sentence: REFUSALS.future });
-  if (refused.kind === 'badInstant') return new GymRefusal('bad-instant', { sentence: 'These times run outside the workout.' });
-  if (refused.kind === 'sessionOpen') return new GymRefusal('session-open', { sentence: 'that session is still running' });
+  if (refused.kind === 'badInstant') return new GymRefusal('bad-instant', { sentence: t('gym.runtime.outsideWorkout') });
+  if (refused.kind === 'sessionOpen') return new GymRefusal('session-open', { sentence: t('gym.runtime.sessionRunning') });
   if (refused.kind === 'sessionOverlap') return new GymRefusal('session-overlap', {
-    sentence: 'these times cross a session already in the log', overlapping: refused.refused.detail?.session ?? null,
+    sentence: t('gym.runtime.sessionOverlap'), overlapping: refused.refused.detail?.session ?? null,
   });
   if (refused.kind === 'full' && refused.type === 'note') return new GymRefusal('cap', { sentence: FULL_LINE });
-  if (refused.kind === 'proposalSuperseded') return new GymRefusal('proposal-superseded', { sentence: 'That proposal has been superseded.' });
-  if (refused.kind === 'proposalSettled') return new GymRefusal('proposal-settled', { sentence: 'That proposal has already been settled.' });
+  if (refused.kind === 'proposalSuperseded') return new GymRefusal('proposal-superseded', { sentence: t('gym.runtime.proposalSuperseded') });
+  if (refused.kind === 'proposalSettled') return new GymRefusal('proposal-settled', { sentence: t('gym.runtime.proposalSettled') });
   const code = refused.refused?.code ?? ({ gone: 'record-dead', taken: 'id-taken', full: 'cap' }[refused.kind] ?? refused.kind);
-  return new GymRefusal(code, code === 'stale' ? { sentence: 'This changed on another device. Read it again before saving.' } : {});
+  return new GymRefusal(code, code === 'stale' ? { sentence: t('gym.runtime.stale') } : {});
 }
 
 export function routineValue(document) {
@@ -231,7 +232,7 @@ export function createGymApi(engine, { event = gymStep, failure = gymFailure, zo
   const checkedPlans = new WeakSet();
   const port = new EngineReplica(engine);
   const checkOwner = (replica = engine.activeReplica()) => {
-    if (replica !== owner) throw new GymRefusal('not-writable', { sentence: 'Sign in to save to your training log.' });
+    if (replica !== owner) throw new GymRefusal('not-writable', { sentence: t('gym.runtime.signInToSave') });
   };
   const runner = new ActionRunner({
     commit: (scope, body) => port.commit(scope, (views) => {
@@ -249,7 +250,7 @@ export function createGymApi(engine, { event = gymStep, failure = gymFailure, zo
     try { return await body(); }
     catch (thrown) {
       const error = thrown instanceof CommitError && thrown.kind === 'not-writable'
-        ? new GymRefusal('not-writable', { sentence: 'Sign in to save to your training log.' }) : thrown;
+        ? new GymRefusal('not-writable', { sentence: t('gym.runtime.signInToSave') }) : thrown;
       event(operation, error instanceof GymRefusal ? 'refused' : 'failed');
       if (!(error instanceof GymRefusal) && !isStoreFailure(error)) failure(operation);
       throw error;
@@ -274,8 +275,8 @@ export function createGymApi(engine, { event = gymStep, failure = gymFailure, zo
     if (result.code === 'session-overlap' && result.detail?.sessionId) {
       error.overlapping = new TrainingHistory(reader).session(result.detail.sessionId)?.session ?? { id: result.detail.sessionId };
     }
-    if (result.code === 'invalid' || result.code === 'bad-instant') error.sentence = 'The log couldn’t accept this workout. Check its date, times and sets, then try again.';
-    if (['unknown-record', 'record-dead'].includes(result.code)) error.sentence = 'This workout is no longer in the log. Your edits are still here.';
+    if (result.code === 'invalid' || result.code === 'bad-instant') error.sentence = t('gym.runtime.workoutInvalid');
+    if (['unknown-record', 'record-dead'].includes(result.code)) error.sentence = t('gym.runtime.workoutGone');
     return { ...result, error };
   });
   // A form checks the transaction's current log and keeps its exact draft beside the queued command.
@@ -292,18 +293,18 @@ export function createGymApi(engine, { event = gymStep, failure = gymFailure, zo
       const previous = draftKey ? receipts[draftKey] : null;
       if (previous?.status === 'pending' && commands.some((entry) => sameWorkoutCommand(entry.command, previous.command))) {
         if (sameJson(previous.command, decided.plan.command)) return Decision.unchanged(decided.result);
-        throw new GymRefusal('save-pending', { sentence: 'A workout from this form is still waiting for the log. Wait for it before saving again.' });
+        throw new GymRefusal('save-pending', { sentence: t('gym.runtime.savePending') });
       }
       if (record) {
         const current = visible.find((session) => session.id.record === record);
-        if (!current) throw new GymRefusal('unknown-record', { sentence: 'This workout is no longer in the log. Your edits are still here.' });
-        if (current.isOpen) throw new GymRefusal('session-open', { sentence: 'That workout is still running. Finish it before editing it.' });
+        if (!current) throw new GymRefusal('unknown-record', { sentence: t('gym.runtime.workoutGone') });
+        if (current.isOpen) throw new GymRefusal('session-open', { sentence: t('gym.runtime.workoutRunning') });
       }
-      if (input.finishedAt > now) throw new GymRefusal('bad-instant', { sentence: 'These times run past now.' });
+      if (input.finishedAt > now) throw new GymRefusal('bad-instant', { sentence: t('gym.runtime.pastNow') });
       const overlapping = sessions.find((session) => session.id.record !== (record ?? input.id)
         && input.startedAt < Math.max(session.finishedAt?.ms ?? now, session.startedAt.ms + 1)
         && session.startedAt.ms < Math.max(input.finishedAt, input.startedAt + 1));
-      if (overlapping) throw new GymRefusal('session-overlap', { sentence: 'These times cross a workout already in the log.',
+      if (overlapping) throw new GymRefusal('session-overlap', { sentence: t('gym.runtime.workoutOverlap'),
         overlapping: sessionDocument(overlapping) });
       if (draftKey) decided.plan.device(WORKOUT_DRAFTS, { ...receipts, [draftKey]: { status: 'pending',
         sessionId: record ?? input.id, command: decided.plan.command, draft: structuredClone(draft) } });

@@ -1,3 +1,4 @@
+import { t } from '../i18n/index.js';
 import { agoLabel, setLoadLabel } from '../log.js';
 
 // Typed searches return seven matches. Empty queries return the six shortcuts and the remaining
@@ -8,10 +9,10 @@ export const PICKER_FEATURED = 6;
 // The eyebrow over the six — the bytes both phones already draw over theirs. It names the shortcut
 // and counts it; it asserts no ranking over a log this page has not read. The catalogue follows it
 // under no label of its own, set apart by the gap the stylesheet gives a second list.
-export const FEATURED_HEAD = 'The six';
+export const FEATURED_HEAD = t('gym.picker.featuredHead');
 
 // `lastSets` is sparse: a missing movement is an absence, never a zero.
-export const NO_LAST_TIME_META = 'no last time';
+export const NO_LAST_TIME_META = t('gym.picker.noLastTime');
 
 export function lastSetsById(movements) {
   return new Map(movements.map((each) => [each.exerciseId, each]));
@@ -19,7 +20,7 @@ export function lastSetsById(movements) {
 
 export function lastSetLabel(last, now = Date.now()) {
   if (!last) return NO_LAST_TIME_META;
-  return `last ${setLoadLabel(last)} · ${agoLabel(last.at, now)}`;
+  return t('gym.picker.lastSet', { load: setLoadLabel(last), ago: agoLabel(last.at, now) });
 }
 
 // The catch-all bucket: pattern is not asked for at creation.
@@ -97,10 +98,10 @@ export function movementOptions({ catalog = [], order = [], query = '', sessions
   const six = featured.map((each) => rowOf(each, term));
   if (rows.length > 0 || six.length > 0) return { featured: six, matches: rows, empty: null, create: null };
   if (available.length === 0) {
-    return { featured: six, matches: rows, empty: 'Every movement in the catalog is already in this session.', create: null };
+    return { featured: six, matches: rows, empty: t('gym.picker.allInSession'), create: null };
   }
   if (catalog.some((each) => matchesQuery(each, term))) {
-    return { featured: six, matches: rows, empty: 'That movement is already in this session.', create: null };
+    return { featured: six, matches: rows, empty: t('gym.picker.alreadyInSession'), create: null };
   }
-  return { featured: six, matches: rows, empty: 'No movement by that name.', create: `Create “${query.trim()}”` };
+  return { featured: six, matches: rows, empty: t('gym.picker.noMatch'), create: t('gym.picker.createNamed', { name: query.trim() }) };
 }

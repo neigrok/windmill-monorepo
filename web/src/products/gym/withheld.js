@@ -3,6 +3,7 @@
 
 import { WEIGH_IN_DELETED } from './bodyweight/bodyweight.js';
 import { deletedLine } from './fix.js';
+import { t } from './i18n/index.js';
 import { NOTE_DELETED } from './notes/notes.js';
 import { SESSION_DELETED } from './review.js';
 import { routineDeletedLine } from './routines.js';
@@ -39,7 +40,7 @@ export function goneIds(settled, kind) {
   return new Set(settled.filter((each) => each.kind === kind).map((each) => each.id));
 }
 
-const countLine = (count) => `${count} deleted.`;
+const countLine = (count) => t('gym.held.count', { count });
 
 export function heldLine(open) {
   if (open.length === 0) return null;
@@ -80,8 +81,8 @@ export function transientOf(said, held) {
   return window;
 }
 
-export const UNDO_LABEL = 'Undo';
+export const UNDO_LABEL = t('gym.held.undo');
 
 // Pressed in the seam between the clock firing and the transient retiring. The alternative is a
 // button that answers nothing, which would be the transient lying about a window it no longer holds.
-export const WINDOW_CLOSED = 'The window closed — that delete already went.';
+export const WINDOW_CLOSED = t('gym.held.windowClosed');

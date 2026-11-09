@@ -3,6 +3,7 @@
 
 import { entryLabel, loadBasisLabel, movementOf, nameOfMovement, planOf, planReadingOf, routineNameOf, slotRows, targetLoadOf, timeLabel } from '../log.js';
 import { inLoggedOrder } from '../domain/training.js';
+import { t } from '../i18n/index.js';
 
 export function coachWorkout(session, sets = [], catalog = []) {
   const plan = planOf(session);
@@ -15,39 +16,39 @@ export function coachWorkout(session, sets = [], catalog = []) {
     const bodyweight = catalog.find((movement) => movement.id === id)?.equipment === 'bodyweight'
       && entry?.sets?.every((set) => set.weightKg == null || set.weightKg === 0);
     return { id, name: nameOfMovement(catalog, id),
-      scheme: entry ? `${entryLabel(entry)}${bodyweight ? ' · bodyweight' : ''}` : null,
+      scheme: !entry ? null : bodyweight ? t('gym.coach.schemeBodyweight', { scheme: entryLabel(entry) }) : entryLabel(entry),
       rows: slotRows(logged, entry), targets: entry?.sets?.length ?? null };
   });
   const active = latest ?? groups.find((group) => group.rows.some((row) => row.kind === 'target'))?.id;
   const total = groups.length && groups.every((group) => group.targets !== null)
     ? groups.reduce((count, group) => count + group.targets, 0) : null;
   const remaining = groups.reduce((count, group) => count + group.rows.filter((row) => row.kind === 'target').length, 0);
-  const count = `${sets.length} ${sets.length === 1 ? 'set' : 'sets'} logged`;
-  return { name: routineNameOf(session) ?? 'Free session', started: timeLabel(session.startedAt), count,
-    progress: total && remaining ? `set ${total - remaining + 1} of ${total}` : count,
+  const count = t('gym.coach.setsLogged', { count: sets.length });
+  return { name: routineNameOf(session) ?? t('gym.coach.freeSession'), started: timeLabel(session.startedAt), count,
+    progress: total && remaining ? t('gym.coach.setOfTotal', { position: total - remaining + 1, total }) : count,
     groups, active };
 }
 
 export const TOOL_PHRASE = {
-  list_sessions: 'read your recent workouts',
-  get_session: 'read one workout',
-  last_time: 'read the last time you trained a movement',
-  list_exercises: 'read your movement list',
-  list_routines: 'read your program',
-  get_stats: 'read your movement history',
-  list_notes: 'read your notes',
-  save_note: 'saved a note',
-  list_bodyweight: 'read your bodyweight',
-  create_routine: 'created a routine',
-  update_exercise: 'updated a movement',
-  propose_routine_change: 'wrote a proposal for one of your routines',
-  propose_routine_removal: 'wrote a proposal to remove a routine',
+  list_sessions: t('gym.coach.tools.listSessions'),
+  get_session: t('gym.coach.tools.getSession'),
+  last_time: t('gym.coach.tools.lastTime'),
+  list_exercises: t('gym.coach.tools.listExercises'),
+  list_routines: t('gym.coach.tools.listRoutines'),
+  get_stats: t('gym.coach.tools.getStats'),
+  list_notes: t('gym.coach.tools.listNotes'),
+  save_note: t('gym.coach.tools.saveNote'),
+  list_bodyweight: t('gym.coach.tools.listBodyweight'),
+  create_routine: t('gym.coach.tools.createRoutine'),
+  update_exercise: t('gym.coach.tools.updateExercise'),
+  propose_routine_change: t('gym.coach.tools.proposeRoutineChange'),
+  propose_routine_removal: t('gym.coach.tools.proposeRoutineRemoval'),
 };
 
 // A turn that carries routine drafts asked the lifter to save each one; an older turn's create_routine saved it itself.
-export const DRAFTED_ROUTINE_PHRASE = 'drafted a routine for your review';
+export const DRAFTED_ROUTINE_PHRASE = t('gym.coach.tools.draftedRoutine');
 
-export const NO_STEPS = 'Answered from your recent workouts alone.';
+export const NO_STEPS = t('gym.coach.noSteps');
 
 // A tool with no phrase prints nothing — a raw tool name is developer output on a lifter's screen.
 // The receipt beside this line is what the honesty claim rests on, so a step list that empties out
@@ -59,16 +60,12 @@ export function stepsLine(steps, { drafted = false } = {}) {
     const phrase = step.tool === 'create_routine' && drafted ? DRAFTED_ROUTINE_PHRASE : TOOL_PHRASE[step.tool];
     if (!phrase) continue;
     const said = step.tool === 'save_note' && step.failed
-      ? 'could not confirm a note save'
-      : phrase + (step.failed ? ' (nothing came back)' : '');
+      ? t('gym.coach.tools.noteSaveUnconfirmed')
+      : step.failed ? t('gym.coach.tools.nothingCameBack', { phrase }) : phrase;
     if (!seen.includes(said)) seen.push(said);
   }
   if (seen.length === 0) return null;
-  return `It ${seen.join(', then ')}.`;
-}
-
-function rowCount(count, noun) {
-  return count === 1 ? `1 ${noun}` : `${count} ${noun}s`;
+  return t('gym.coach.steps', { steps: seen.reduce((done, next) => t('gym.coach.stepsThen', { done, next })) });
 }
 
 // Null for a missing or malformed read; a real zero across all three gets words.
@@ -76,8 +73,8 @@ export function readLine(read) {
   if (!read) return null;
   const { sets, sessions, weeks } = read;
   if (typeof sets !== 'number' || typeof sessions !== 'number' || typeof weeks !== 'number') return null;
-  if (sets === 0 && sessions === 0 && weeks === 0) return 'read nothing from your log';
-  return `read ${rowCount(sets, 'set')} · ${rowCount(weeks, 'week')} · ${rowCount(sessions, 'session')}`;
+  if (sets === 0 && sessions === 0 && weeks === 0) return t('gym.coach.readNothing');
+  return t('gym.coach.read', { sets, weeks, sessions });
 }
 
 // `from: 'ask'` is the wire's enum for the room's turn and is a machine token, not the room's name.
@@ -96,9 +93,9 @@ export function answerTurn(reply) {
   };
 }
 
-export const COACH_TITLE = 'Coach';
-export const COACH_PLACEHOLDER = 'Ask about your training';
-export const CAP_REACHED_NOTE = 'The next question frees up in a couple of hours.';
+export const COACH_TITLE = t('gym.coach.title');
+export const COACH_PLACEHOLDER = t('gym.coach.placeholder');
+export const CAP_REACHED_NOTE = t('gym.coach.capReached');
 
 // The cap is bytes, not characters.
 export const QUESTION_BYTES = 1000;
@@ -107,23 +104,23 @@ export function questionTooLong(question) {
   return new TextEncoder().encode(question).length > QUESTION_BYTES;
 }
 
-export const TOO_LONG_NOTE = 'That question is too long to send. Shorten it and ask again.';
+export const TOO_LONG_NOTE = t('gym.coach.tooLong');
 
-export const SIGNED_OUT_NOTE = 'Coach reads your log, so it needs you signed in.';
+export const SIGNED_OUT_NOTE = t('gym.coach.signedOut');
 
-export const COACH_ABSENT_NOTE = 'Coach isn’t part of this Windmill. Your log is still yours to read.';
+export const COACH_ABSENT_NOTE = t('gym.coach.absent');
 
-export const MID_SESSION_NOTE = 'Finish your workout first — Coach reads a log that has stopped moving.';
+export const MID_SESSION_NOTE = t('gym.coach.midSession');
 
-export const NO_ANSWER_NOTE = 'Coach didn’t answer. Try again in a moment.';
+export const NO_ANSWER_NOTE = t('gym.coach.noAnswer');
 
-export const OUT_OF_BUDGET_NOTE =
-  'This account has reached its AI ceiling for the last 30 days. Coach will answer again as that '
-  + 'window rolls on.';
+export const OUT_OF_BUDGET_NOTE = t('gym.coach.outOfBudget');
 
-export const THREAD_TAKEN_NOTE = 'That conversation id was already taken. Ask again — it opens a new one.';
-export const BRAKE_NOTE = 'That’s a lot of questions at once. Try again shortly.';
-export const UNREADABLE_NOTE = 'Coach couldn’t read that. Start a new question and send it on its own.';
+export const THREAD_TAKEN_NOTE = t('gym.coach.threadTaken');
+export const BRAKE_NOTE = t('gym.coach.brake');
+export const UNREADABLE_NOTE = t('gym.coach.unreadable');
+
+export const RESPONSE_INTERRUPTED = t('gym.coach.responseInterrupted');
 
 export function askFailure(error) {
   const said = typeof error?.detail === 'string' && error.detail !== '' ? error.detail : null;
@@ -136,14 +133,14 @@ export function askFailure(error) {
   if (error?.status === 429 && error?.code === 'ask-out-of-budget') return { note: note(OUT_OF_BUDGET_NOTE), capped: true, ceiling: true, refused: true };
   if (error?.status === 429) return { note: note(BRAKE_NOTE), refused: true };
   if (error?.status === 400) return { note: note(UNREADABLE_NOTE), refused: true };
-  if (error?.code === 'ask-generation-active') return { note: note('Coach is answering another question in this conversation. Try again shortly.'), refused: true };
-  if (error?.code === 'ask-request-conflict') return { note: note('That request belongs to another question. Open the conversation again.'), gone: true };
+  if (error?.code === 'ask-generation-active') return { note: note(t('gym.coach.generationActive')), refused: true };
+  if (error?.code === 'ask-request-conflict') return { note: note(t('gym.coach.requestConflict')), gone: true };
   return { note: note(NO_ANSWER_NOTE) };
 }
 
-export const CONFIRM_RETRY_NOTE = 'Couldn’t save the routine. Try again.';
-export const DRAFT_GONE_NOTE = 'This draft is no longer available.';
-export const DRAFT_UNSAVABLE_NOTE = 'This draft can’t be saved. Ask Coach for a new one.';
+export const CONFIRM_RETRY_NOTE = t('gym.coach.confirmRetry');
+export const DRAFT_GONE_NOTE = t('gym.coach.draftGone');
+export const DRAFT_UNSAVABLE_NOTE = t('gym.coach.draftUnsavable');
 
 // A Save routine that did not come back saved: what the draft card says, whether Save stays offered, and the
 // funnel outcome. A lost reply asserts nothing about the routine; only a refusal the server answered closes the draft.
@@ -156,19 +153,28 @@ export function confirmFailure(error) {
   return { outcome: 'refused', note: CONFIRM_RETRY_NOTE, closed: false };
 }
 
-export const NEW_MOVEMENT = 'New movement';
-const EQUIPMENT_LABEL = { barbell: 'Barbell', bodyweight: 'Bodyweight', machine: 'Machine', cable: 'Cable', kettlebell: 'Kettlebell' };
+export const NEW_MOVEMENT = t('gym.coach.newMovement');
+const EQUIPMENT_LABEL = {
+  barbell: t('gym.coach.equipment.barbell'),
+  bodyweight: t('gym.coach.equipment.bodyweight'),
+  machine: t('gym.coach.equipment.machine'),
+  cable: t('gym.coach.equipment.cable'),
+  kettlebell: t('gym.coach.equipment.kettlebell'),
+};
 
 // One movement of a routine draft as the log knows it: targets in the lifter's unit with what a load counts, then
 // equipment and rest. A movement the log has not synced yet is named neutrally and asserts no basis or equipment.
 export function draftEntryLine(entry, catalog) {
   const exercise = movementOf(catalog, entry.exerciseId);
   const load = entry.sets?.map((set) => targetLoadOf(set.weightKg)).find((value) => value != null) ?? null;
-  const equipment = exercise?.equipment === 'dumbbell' ? (exercise.loadCount === 1 ? 'One dumbbell' : 'Two dumbbells')
+  const equipment = exercise?.equipment === 'dumbbell'
+    ? (exercise.loadCount === 1 ? t('gym.coach.equipment.oneDumbbell') : t('gym.coach.equipment.twoDumbbells'))
     : EQUIPMENT_LABEL[exercise?.equipment] ?? null;
-  const scheme = load === null || !exercise ? entryLabel(entry) : `${entryLabel(entry)} ${loadBasisLabel(exercise, load)}`;
-  return { name: exercise?.name ?? NEW_MOVEMENT,
-    detail: [scheme, equipment, entry.restSeconds ? `${entry.restSeconds}s rest` : null].filter(Boolean).join(' · ') };
+  const scheme = load === null || !exercise
+    ? entryLabel(entry)
+    : t('gym.coach.schemeWithBasis', { scheme: entryLabel(entry), basis: loadBasisLabel(exercise, load) });
+  const rest = entry.restSeconds ? t('gym.coach.restSeconds', { seconds: entry.restSeconds }) : null;
+  return { name: exercise?.name ?? NEW_MOVEMENT, detail: [scheme, equipment, rest].filter(Boolean).join(' · ') };
 }
 
 export const THREAD_PREFIX = 'thr_';

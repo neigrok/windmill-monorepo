@@ -1,6 +1,7 @@
 import React from 'react';
 import { Button } from '../../../design-system/index.js';
 import { gymApi } from '../gymApi.js';
+import { t } from '../i18n/index.js';
 import {
   CLOSED_ITSELF_NOTE, closedOnItsOwn, fmt, NO_ROUTINE, sessionMetaLabel, timeLabel,
   topSetLabel, topSetOf,
@@ -14,7 +15,7 @@ export function SharedSession({ token }) {
   spellWeightsIn(KG);
   const view = useGymRead(() => gymApi.sharedSession(token), [token]);
 
-  if (view.phase === 'loading') return <main className="gym-column"><p className="gym-quiet">Opening the workout…</p></main>;
+  if (view.phase === 'loading') return <main className="gym-column"><p className="gym-quiet">{t('gym.share.opening')}</p></main>;
 
   if (view.phase === 'absent') {
     return (
@@ -29,8 +30,8 @@ export function SharedSession({ token }) {
     return (
       <main className="gym-column gym-shared">
         <p className="gym-read-failed">
-          This didn’t load.
-          <Button variant="secondary" size="sm" onClick={view.retry}>Retry</Button>
+          {t('gym.share.notLoaded')}
+          <Button variant="secondary" size="sm" onClick={view.retry}>{t('gym.share.retry')}</Button>
         </p>
       </main>
     );
@@ -41,15 +42,15 @@ export function SharedSession({ token }) {
   const top = topSetOf(shared, sets);
   return (
     <main className="gym-column gym-shared">
-      <p className="gym-shared-kicker">A shared workout</p>
+      <p className="gym-shared-kicker">{t('gym.share.kicker')}</p>
       <header className="gym-detail-head">
         <h1 className="gym-title">{shared.routine ?? NO_ROUTINE}</h1>
         <p className="gym-detail-when">{sessionMetaLabel(shared, sets.length)}</p>
-        {top && <p className="gym-detail-top">{`top set  ·  ${topSetLabel(top)}`}</p>}
+        {top && <p className="gym-detail-top">{t('gym.share.topSet', { set: topSetLabel(top) })}</p>}
         {closedOnItsOwn(shared, sets) && <p className="gym-detail-closed">{CLOSED_ITSELF_NOTE}</p>}
       </header>
 
-      {sets.length === 0 && <p className="gym-quiet">No sets in this session.</p>}
+      {sets.length === 0 && <p className="gym-quiet">{t('gym.share.noSets')}</p>}
       {sharedGroups(sets).map(([exercise, group]) => (
         <section className="gym-exercise" key={exercise}>
           <h2 className="gym-exercise-name">{exercise}</h2>
@@ -59,7 +60,7 @@ export function SharedSession({ token }) {
               <li key={`${set.setNumber}-${index}`} className="gym-set">
                 <span className="gym-set-number">{set.setNumber}</span>
                 <span className="gym-set-load">{`${fmt(set.weightKg)} × ${set.reps}`}</span>
-                {set.rpe != null && <span className="gym-set-rpe">rpe {set.rpe}</span>}
+                {set.rpe != null && <span className="gym-set-rpe">{t('gym.share.rpe', { rpe: set.rpe })}</span>}
                 <span className="gym-set-time">{timeLabel(set.completedAt)}</span>
                 {set.note && <span className="gym-set-note">{set.note}</span>}
               </li>

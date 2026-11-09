@@ -1,35 +1,36 @@
 import { Bodyweight } from '../domain/bodyweight.js';
 import { LocalDay } from '../../../platform/domain-kit/time.js';
 import { failureReason, isStoreFailure } from '../errors.js';
+import { t } from '../i18n/index.js';
 import { agoLabel, shortDayLabel } from '../log.js';
 import { inDisplayUnit, LB, weightUnit } from '../units.js';
 
-export const BODYWEIGHT_TITLE = 'Bodyweight';
-export const WEIGH_IN_VERB = 'Weigh in';
-export const DATE_LABEL = 'Date';
-export const SAVE_VERB = 'Save';
-export const NO_WEIGH_INS = 'No weigh-ins yet.';
-export const NO_WEIGH_INS_LINE = 'Weigh in from the log and the number lands here.';
-export const NO_WEIGH_INS_IN_WINDOW = 'No weigh-in in the last 90 days.';
-export const OPENING = 'Opening your weigh-ins…';
-export const FAILED = 'Your weigh-ins didn’t load.';
+export const BODYWEIGHT_TITLE = t('gym.bodyweight.title');
+export const WEIGH_IN_VERB = t('gym.bodyweight.weighIn');
+export const DATE_LABEL = t('gym.bodyweight.date');
+export const SAVE_VERB = t('gym.bodyweight.save');
+export const NO_WEIGH_INS = t('gym.bodyweight.empty');
+export const NO_WEIGH_INS_LINE = t('gym.bodyweight.emptyLine');
+export const NO_WEIGH_INS_IN_WINDOW = t('gym.bodyweight.emptyWindow');
+export const OPENING = t('gym.bodyweight.opening');
+export const FAILED = t('gym.bodyweight.failed');
 
-export const DELETE_VERB = 'Delete weigh-in';
+export const DELETE_VERB = t('gym.bodyweight.delete');
 
 // One press, and the way back is the window's Undo rather than a question in front of the act.
-export const WEIGH_IN_DELETED = 'Weigh-in deleted.';
+export const WEIGH_IN_DELETED = t('gym.bodyweight.deleted');
 
 export const REFUSALS = {
-  notNumber: 'That is not a number yet.',
-  decimals: 'One decimal point only.',
-  bounds: 'Between 20 and 400 kg — check the number.',
-  future: 'A weigh-in is not a forecast — today or earlier.',
+  notNumber: t('gym.bodyweight.notNumber'),
+  decimals: t('gym.bodyweight.decimals'),
+  bounds: t('gym.bodyweight.bounds'),
+  future: t('gym.bodyweight.future'),
 };
 
-// `label` is the control's word; `stated` is how the chart prints the window it shows.
+// `label` is the control's word; `chartCaption` states the window it shows.
 export const WINDOWS = [
-  { id: '90', label: '90 days', stated: 'last 90 days' },
-  { id: 'all', label: 'All', stated: 'the whole series' },
+  { id: '90', label: t('gym.bodyweight.window90') },
+  { id: 'all', label: t('gym.bodyweight.windowAll') },
 ];
 export const DEFAULT_WINDOW = '90';
 
@@ -56,15 +57,11 @@ export function readingLine(latest, now = Date.now(), unit = weightUnit()) {
   if (!latest) return null;
   const at = msOfDateLocal(latest.dateLocal);
   if (at == null) return null;
-  return `${weightReading(latest.weightKg, unit)} ${unit} · ${agoLabel(at, now)}`;
+  return t('gym.bodyweight.reading', { weight: weightReading(latest.weightKg, unit), unit, ago: agoLabel(at, now) });
 }
 
 export function fieldValueOf(weightKg, unit = weightUnit()) {
   return weightReading(weightKg, unit);
-}
-
-export function windowById(id) {
-  return WINDOWS.find((window) => window.id === id) ?? WINDOWS[0];
 }
 
 export function chartDomainOf(weights, windowId) {
@@ -78,25 +75,24 @@ export function chartPointsOf(entries, unit = weightUnit()) {
     key: entry.dateLocal,
     at: msOfDateLocal(entry.dateLocal),
     value: inDisplayUnit(entry.weightKg, unit),
-    label: `${weightReading(entry.weightKg, unit)} ${unit} · ${shortDayLabel(msOfDateLocal(entry.dateLocal))}`,
+    label: t('gym.bodyweight.point', { weight: weightReading(entry.weightKg, unit), unit, day: shortDayLabel(msOfDateLocal(entry.dateLocal)) }),
     dateLocal: entry.dateLocal,
   })).filter((point) => point.at != null);
 }
 
 // `no weigh-in · 7 Jul – 4 Aug`: the last dot before the gap and the first after it.
 export function gapLabel(from, to) {
-  return `no weigh-in · ${shortDayLabel(from.at)} – ${shortDayLabel(to.at)}`;
+  return t('gym.bodyweight.gap', { from: shortDayLabel(from.at), to: shortDayLabel(to.at) });
 }
 
 // `last 90 days · 3 weigh-ins`: the window the chart shows and how many dots are in it.
 export function chartCaption(windowId, count) {
-  const counted = count === 1 ? '1 weigh-in' : `${count} weigh-ins`;
-  return `${windowById(windowId).stated} · ${counted}`;
+  return t('gym.bodyweight.caption', { window: windowId, count });
 }
 
 // The unit lives on the axis, in the display unit the dots are in.
 export function axisValue(value, unit = weightUnit()) {
-  return `${Math.round(value * 10) / 10} ${unit}`;
+  return t('gym.bodyweight.axisValue', { value: Math.round(value * 10) / 10, unit });
 }
 
 export function axisDate(ms) {
@@ -106,13 +102,13 @@ export function axisDate(ms) {
 // Save was refused: the store's sentence where it sent one, the failure's reason otherwise.
 export function saveRefusal(error) {
   if (error?.sentence) return error.sentence;
-  return `That weigh-in wasn’t saved — ${failureReason(error)}.`;
+  return t('gym.bodyweight.notSaved', { reason: failureReason(error) });
 }
 
-export const DELETE_FAILED = 'That weigh-in wasn’t deleted. Try again in a moment.';
+export const DELETE_FAILED = t('gym.bodyweight.deleteFailed');
 
 // A delete this device could not store says so; any other failure is the brief's sentence.
 export function deleteRefusal(error) {
-  if (isStoreFailure(error)) return `That weigh-in wasn’t deleted — ${failureReason(error)}.`;
+  if (isStoreFailure(error)) return t('gym.bodyweight.notDeleted', { reason: failureReason(error) });
   return DELETE_FAILED;
 }

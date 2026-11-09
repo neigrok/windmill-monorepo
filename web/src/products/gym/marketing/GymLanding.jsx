@@ -1,39 +1,36 @@
 import React from 'react';
 import { Badge, Button } from '../../../design-system';
 import { LandingPage, useScene } from '../../../shell/marketing/LandingChrome.jsx';
+import { t } from '../i18n/index.js';
+import { KG, unitSymbol } from '../units.js';
 import { mountMoat, mountSetLogger, mountRemembered, mountE1rmLine } from './gymScenes.js';
 import './gymLanding.css';
 
 const EXCHANGE = {
-  askedLabel: 'Sunday, in your own tool',
-  asked:
-    '“Look at my last twelve weeks of bench. Write me a four-week block — heavier triples, and '
-    + 'swap the flies for incline work.”',
-  landedLabel: 'Monday, in gym',
-  landed: 'A proposal on Push A. You read the diff, you tap Apply, you train.',
+  askedLabel: t('gym.landing.exchange.askedLabel'),
+  asked: t('gym.landing.exchange.asked'),
+  landedLabel: t('gym.landing.exchange.landedLabel'),
+  landed: t('gym.landing.exchange.landed'),
 };
 
-const PRECONDITION =
-  'Needs an AI tool of your own that speaks MCP — Claude Desktop, Claude Code, Cursor, Codex, or any '
-  + 'other MCP client. If you haven’t got one, this one is not for you yet, and the log stays free '
-  + 'regardless.';
+const PRECONDITION = t('gym.landing.connected.precondition');
 
 const LEVEL_LINES = {
-  read: 'Read your log — sets, workouts, routines, records and notes',
-  write: 'Record what happened · add a new day or a new movement · propose changes to the days you have · share one workout by link · anybody holding that link reads it without signing in, for 30 days unless you end it sooner',
-  delete: 'Discard a workout · end a share link · propose a removal',
+  read: t('gym.landing.connected.levelRead'),
+  write: t('gym.landing.connected.levelWrite'),
+  delete: t('gym.landing.connected.levelDelete'),
 };
 
 const SECTION_LINKS = [
-  { href: '#how', label: 'How it works' },
-  { href: '#proof', label: 'For the barbell' },
-  { href: '/changelog.html', label: 'Changelog' },
+  { href: '#how', label: t('gym.landing.links.how') },
+  { href: '#proof', label: t('gym.landing.links.barbell') },
+  { href: '/changelog.html', label: t('gym.landing.links.changelog') },
 ];
 
 const LOG_HREF = '#/gym';
-const OPEN_LOG = 'Open your training log →';
-const RESUME = { href: LOG_HREF, label: 'Open your log' };
-const ACCOUNT_LINE = 'Your log lives on your Windmill account — one account across Roadmap, Journal and Gym.';
+const OPEN_LOG = t('gym.landing.openLog');
+const RESUME = { href: LOG_HREF, label: t('gym.landing.resume') };
+const ACCOUNT_LINE = t('gym.landing.accountLine');
 
 const PANEL_LABEL = {
   fontSize: 11, fontWeight: 800, letterSpacing: '.09em',
@@ -41,20 +38,20 @@ const PANEL_LABEL = {
 };
 
 const LIFTS = [
-  { name: 'Squat', value: '140', unit: 'e1RM', d: 'M4,38 L20,36 L36,32 L52,33 L68,28 L84,25 L100,26 L116,21 L132,18 L148,19 L164,13 L176,10', cy: 10 },
-  { name: 'Bench', value: '100', unit: 'e1RM', d: 'M4,37 L20,35 L36,34 L52,30 L68,29 L84,25 L100,26 L116,22 L132,20 L148,17 L164,15 L176,12', cy: 12 },
-  { name: 'Deadlift', value: '170', unit: 'e1RM', d: 'M4,39 L20,35 L36,34 L52,29 L68,27 L84,27 L100,22 L116,20 L132,16 L148,15 L164,11 L176,8', cy: 8 },
-  { name: 'Press', value: '62.5', unit: 'e1RM', d: 'M4,36 L20,35 L36,35 L52,31 L68,31 L84,28 L100,28 L116,24 L132,24 L148,21 L164,20 L176,17', cy: 17 },
-  { name: 'Rows', value: '90', unit: 'e1RM', d: 'M4,37 L20,34 L36,33 L52,30 L68,29 L84,26 L100,25 L116,22 L132,21 L148,18 L164,16 L176,14', cy: 14 },
-  { name: 'Chins', value: '11', unit: 'top set', d: 'M4,38 L20,37 L36,33 L52,32 L68,30 L84,26 L100,27 L116,23 L132,22 L148,19 L164,17 L176,15', cy: 15 },
+  { name: t('gym.landing.lift.squat'), value: '140', unit: t('gym.landing.lift.e1rm'), d: 'M4,38 L20,36 L36,32 L52,33 L68,28 L84,25 L100,26 L116,21 L132,18 L148,19 L164,13 L176,10', cy: 10 },
+  { name: t('gym.landing.lift.bench'), value: '100', unit: t('gym.landing.lift.e1rm'), d: 'M4,37 L20,35 L36,34 L52,30 L68,29 L84,25 L100,26 L116,22 L132,20 L148,17 L164,15 L176,12', cy: 12 },
+  { name: t('gym.landing.lift.deadlift'), value: '170', unit: t('gym.landing.lift.e1rm'), d: 'M4,39 L20,35 L36,34 L52,29 L68,27 L84,27 L100,22 L116,20 L132,16 L148,15 L164,11 L176,8', cy: 8 },
+  { name: t('gym.landing.lift.press'), value: '62.5', unit: t('gym.landing.lift.e1rm'), d: 'M4,36 L20,35 L36,35 L52,31 L68,31 L84,28 L100,28 L116,24 L132,24 L148,21 L164,20 L176,17', cy: 17 },
+  { name: t('gym.landing.lift.rows'), value: '90', unit: t('gym.landing.lift.e1rm'), d: 'M4,37 L20,34 L36,33 L52,30 L68,29 L84,26 L100,25 L116,22 L132,21 L148,18 L164,16 L176,14', cy: 14 },
+  { name: t('gym.landing.lift.chins'), value: '11', unit: t('gym.landing.lift.topSet'), d: 'M4,38 L20,37 L36,33 L52,32 L68,30 L84,26 L100,27 L116,23 L132,22 L148,19 L164,17 L176,15', cy: 15 },
 ];
 
-const MCP_CLIENTS = ['Claude Desktop', 'Claude Code', 'Cursor', 'Codex', 'any MCP client'];
+const MCP_CLIENTS = ['Claude Desktop', 'Claude Code', 'Cursor', 'Codex', t('gym.landing.connected.anyClient')];
 
 const AGENT_CAN = [
-  'Read your last twelve weeks of squats.',
-  'Draft next block’s progression.',
-  'Propose next week’s routine — you read the diff and tap Apply.',
+  t('gym.landing.connected.canRead'),
+  t('gym.landing.connected.canDraft'),
+  t('gym.landing.connected.canPropose'),
 ];
 
 const GRANT_LEVELS = [
@@ -65,13 +62,13 @@ const GRANT_LEVELS = [
 
 const BRAND_DUO = [
   {
-    title: 'One account, three rooms',
-    copy: 'Roadmap, Journal and Gym — one account, one history.',
+    title: t('gym.landing.windmill.accountTitle'),
+    copy: t('gym.landing.windmill.accountCopy'),
     glyph: <><circle cx="12" cy="8" r="5" /><path d="M20 21a8 8 0 0 0-16 0" /></>,
   },
   {
-    title: 'Everywhere you are',
-    copy: 'The phone in the gym, the desk between blocks. Same log.',
+    title: t('gym.landing.windmill.everywhereTitle'),
+    copy: t('gym.landing.windmill.everywhereCopy'),
     glyph: (
       <>
         <path d="M18 8V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h8" />
@@ -110,7 +107,7 @@ function Moat() {
 
         <div data-gy="still" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(260px,1fr))', gap: 20 }}>
           <div>
-            <div className="gyLabel">Tuesday · week 6</div>
+            <div className="gyLabel">{t('gym.landing.moat.session')}</div>
             <div className="gyWell" style={{ marginTop: 12, padding: '6px 14px' }}>
               <SetRow n="1" reps="60 × 8" done style={{ borderBottom: '1px solid var(--gym-line)', color: 'var(--gym-ink-dim)' }} />
               <SetRow n="2" reps="90 × 5" done style={{ borderBottom: '1px solid var(--gym-line)', color: 'var(--gym-ink-dim)' }} />
@@ -119,29 +116,29 @@ function Moat() {
             </div>
           </div>
           <div>
-            <div className="gyLabel">Next session · Tuesday · week 7</div>
+            <div className="gyLabel">{t('gym.landing.moat.nextSession')}</div>
             <div style={{ marginTop: 12 }}>
-              <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 17, color: 'var(--gym-ink)' }}>Squat</div>
+              <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 17, color: 'var(--gym-ink)' }}>{t('gym.landing.lift.squat')}</div>
               <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 500, fontSize: 56, lineHeight: .95, color: 'var(--weight-ink)', marginTop: 8 }}>
-                100<span className="gyCaption" style={{ fontSize: 16, marginLeft: 5 }}>kg</span>
+                100<span className="gyCaption" style={{ fontSize: 16, marginLeft: 5 }}>{unitSymbol(KG)}</span>
               </div>
-              <div style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--target-ink)', marginTop: 8 }}>last session · 100 × 5 — already in the field</div>
+              <div style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--target-ink)', marginTop: 8 }}>{t('gym.landing.moat.lastSession')}</div>
             </div>
           </div>
         </div>
 
         <div data-gy="live" style={{ display: 'none', transition: 'opacity 280ms var(--ease-standard)' }}>
           <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
-            <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 19, color: 'var(--gym-ink)' }}>Squat</div>
-            <div data-gy="session" className="gyCaption" style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>Tuesday · week 6</div>
+            <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 19, color: 'var(--gym-ink)' }}>{t('gym.landing.lift.squat')}</div>
+            <div data-gy="session" className="gyCaption" style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>{t('gym.landing.moat.session')}</div>
           </div>
           <div style={{ display: 'flex', alignItems: 'flex-end', gap: 18, marginTop: 14, flexWrap: 'wrap' }}>
             <div>
               <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 500, fontSize: 'clamp(48px,8vw,72px)', lineHeight: .92, color: 'var(--weight-ink)' }}>
-                <span data-gy="weight">97.5</span><span className="gyCaption" style={{ fontSize: 19, marginLeft: 6 }}>kg</span>
+                <span data-gy="weight">97.5</span><span className="gyCaption" style={{ fontSize: 19, marginLeft: 6 }}>{unitSymbol(KG)}</span>
               </div>
-              <div data-gy="note" style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--target-ink)', marginTop: 9 }}>last week · 97.5 × 5</div>
-              <div data-gy="pr" className="gyFade" style={{ display: 'none', fontFamily: 'var(--font-body)', fontSize: 13, color: 'var(--gym-ink-dim)', marginTop: 7 }}>100 × 5 — best yet.</div>
+              <div data-gy="note" style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--target-ink)', marginTop: 9 }}>{t('gym.landing.moat.lastWeek')}</div>
+              <div data-gy="pr" className="gyFade" style={{ display: 'none', fontFamily: 'var(--font-body)', fontSize: 13, color: 'var(--gym-ink-dim)', marginTop: 7 }}>{t('gym.landing.moat.bestYet')}</div>
             </div>
             <div style={{ marginLeft: 'auto', display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'flex-end' }}>
               <div style={{ display: 'flex', gap: 8 }}>
@@ -155,7 +152,7 @@ function Moat() {
                 <span data-gy="reps" style={{ fontFamily: 'var(--font-mono)', fontSize: 26, color: 'var(--gym-ink)', minWidth: 30, textAlign: 'center' }}>—</span>
                 <span className="gyrep">+</span>
               </div>
-              <span data-gy="log" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', height: 44, padding: '0 22px', borderRadius: 'var(--radius-lg)', background: 'var(--color-brand)', color: 'var(--gym-on-accent)', fontFamily: 'var(--font-body)', fontWeight: 700, fontSize: 14.5, transition: 'opacity 150ms var(--ease-standard)' }}>Log set</span>
+              <span data-gy="log" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', height: 44, padding: '0 22px', borderRadius: 'var(--radius-lg)', background: 'var(--color-brand)', color: 'var(--gym-on-accent)', fontFamily: 'var(--font-body)', fontWeight: 700, fontSize: 14.5, transition: 'opacity 150ms var(--ease-standard)' }}>{t('gym.landing.logSet')}</span>
             </div>
           </div>
           <div className="gyWell" style={{ marginTop: 18, padding: '6px 14px' }}>
@@ -175,16 +172,16 @@ function Hero() {
   return (
     <section>
       <div className="wrap" style={{ paddingTop: 40, textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-        <Badge tone="neutral">Barbell training log</Badge>
+        <Badge tone="neutral">{t('gym.landing.hero.badge')}</Badge>
         <h1 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 'clamp(36px, 5.2vw, 60px)', lineHeight: 1.07, color: 'var(--text-primary)', margin: '20px 0 16px', maxWidth: 820, textWrap: 'pretty' }}>
-          It remembers what you lifted.
+          {t('gym.landing.hero.title')}
         </h1>
         <p style={{ fontFamily: 'var(--font-body)', fontSize: 'clamp(16px, 2vw, 20px)', lineHeight: 1.5, color: 'var(--text-secondary)', maxWidth: 640, margin: 0, textWrap: 'pretty' }}>
-          A training log for barbell programs — squat, bench, deadlift, press, rows, chins. Two taps between sets, a small jump when it’s time, and the next session opens with last time’s numbers already in the field.
+          {t('gym.landing.hero.sub')}
         </p>
         <div style={{ display: 'flex', gap: 12, marginTop: 32, flexWrap: 'wrap', justifyContent: 'center' }}>
           <a href={LOG_HREF}><Button variant="primary" size="lg">{OPEN_LOG}</Button></a>
-          <a href="#how"><Button variant="secondary" size="lg">See how it works</Button></a>
+          <a href="#how"><Button variant="secondary" size="lg">{t('gym.landing.seeHow')}</Button></a>
         </div>
         <div style={{ fontFamily: 'var(--font-body)', fontSize: 13.5, color: 'var(--text-tertiary)', marginTop: 14 }}>
           {ACCOUNT_LINE}
@@ -198,7 +195,7 @@ function Hero() {
 function LadderStage() {
   const ref = useScene(mountSetLogger);
   return (
-    <div ref={ref} className="gyw gym-skin gyStage" data-theme="dark" data-brand="gym" title="Click to replay" aria-hidden="true"
+    <div ref={ref} className="gyw gym-skin gyStage" data-theme="dark" data-brand="gym" title={t('gym.landing.replay')} aria-hidden="true"
       style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 14 }}>
       <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
         <span className="gychip gychip--sm">−10</span>
@@ -208,12 +205,12 @@ function LadderStage() {
       </div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16 }}>
         <span style={{ fontFamily: 'var(--font-mono)', fontSize: 34, color: 'var(--weight-ink)' }}>
-          <span data-gy="s1w">100</span><span className="gyCaption" style={{ fontSize: 13, marginLeft: 4 }}>kg</span>
+          <span data-gy="s1w">100</span><span className="gyCaption" style={{ fontSize: 13, marginLeft: 4 }}>{unitSymbol(KG)}</span>
         </span>
         <span style={{ fontFamily: 'var(--font-mono)', fontSize: 15, color: 'var(--gym-ink-dim)' }}>× <span data-gy="s1r">5</span></span>
       </div>
       <div className="gyCaption" style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, textAlign: 'center' }}>
-        the small step is your program step · the big one is a plate change
+        {t('gym.landing.how.ladderCaption')}
       </div>
     </div>
   );
@@ -222,17 +219,17 @@ function LadderStage() {
 function RememberedStage() {
   const ref = useScene(mountRemembered);
   return (
-    <div ref={ref} className="gyw gym-skin gyStage" data-theme="dark" data-brand="gym" title="Click to replay" aria-hidden="true"
+    <div ref={ref} className="gyw gym-skin gyStage" data-theme="dark" data-brand="gym" title={t('gym.landing.replay')} aria-hidden="true"
       style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <div data-gy="s2card" className="gyRise gyInnerCard" style={{ width: '100%', maxWidth: 240 }}>
         <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
-          <span style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 15, color: 'var(--gym-ink)' }}>Squat</span>
-          <span className="gyCaption" style={{ fontFamily: 'var(--font-mono)', fontSize: 10 }}>Tue · week 7</span>
+          <span style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 15, color: 'var(--gym-ink)' }}>{t('gym.landing.lift.squat')}</span>
+          <span className="gyCaption" style={{ fontFamily: 'var(--font-mono)', fontSize: 10 }}>{t('gym.landing.how.rememberedDay')}</span>
         </div>
         <div style={{ fontFamily: 'var(--font-mono)', fontSize: 34, color: 'var(--weight-ink)', marginTop: 8 }}>
-          100<span className="gyCaption" style={{ fontSize: 13, marginLeft: 4 }}>kg</span>
+          100<span className="gyCaption" style={{ fontSize: 13, marginLeft: 4 }}>{unitSymbol(KG)}</span>
         </div>
-        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, color: 'var(--target-ink)', marginTop: 6 }}>already in the field</div>
+        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, color: 'var(--target-ink)', marginTop: 6 }}>{t('gym.landing.how.rememberedNote')}</div>
       </div>
     </div>
   );
@@ -241,18 +238,18 @@ function RememberedStage() {
 function LineStage() {
   const ref = useScene(mountE1rmLine);
   return (
-    <div ref={ref} className="gyw gym-skin gyStage" data-theme="dark" data-brand="gym" title="Click to replay" aria-hidden="true"
+    <div ref={ref} className="gyw gym-skin gyStage" data-theme="dark" data-brand="gym" title={t('gym.landing.replay')} aria-hidden="true"
       style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 10 }}>
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
-        <span className="gyCaption" style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, letterSpacing: '.06em', textTransform: 'uppercase' }}>Squat · e1RM</span>
-        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--gym-ink-dim)' }}>12 weeks</span>
+        <span className="gyCaption" style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, letterSpacing: '.06em', textTransform: 'uppercase' }}>{t('gym.landing.how.lineLift')}</span>
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--gym-ink-dim)' }}>{t('gym.landing.how.lineWindow')}</span>
       </div>
       <svg viewBox="0 0 240 90" width="100%" height="90" style={{ display: 'block' }}>
         <path data-gy="s3line" d="M8,74 L28,71 L48,66 L68,67 L88,60 L108,55 L128,56 L148,48 L168,43 L188,44 L208,36 L232,28"
           fill="none" stroke="var(--color-brand)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
         <circle data-gy="s3dot" cx="232" cy="28" r="3.4" fill="var(--color-brand)" />
       </svg>
-      <div data-gy="s3cap" className="gyCaption" style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5 }}>137.5 → 140 · one quiet line for a PR</div>
+      <div data-gy="s3cap" className="gyCaption" style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5 }}>{t('gym.landing.how.lineCaption')}</div>
     </div>
   );
 }
@@ -260,32 +257,32 @@ function LineStage() {
 function HowItWorks() {
   return (
     <section id="how" className="wrap" style={{ paddingTop: 96 }}>
-      <div className="eyebrow">How it works</div>
-      <h2 className="sectionTitle">Log the set. The rest is remembered.</h2>
-      <p className="sectionSub">Three beats, in the order they happen at the rack.</p>
+      <div className="eyebrow">{t('gym.landing.how.eyebrow')}</div>
+      <h2 className="sectionTitle">{t('gym.landing.how.title')}</h2>
+      <p className="sectionSub">{t('gym.landing.how.sub')}</p>
       <div className="beats">
         <div className="beat">
           <LadderStage />
           <div>
             <div className="beatNum">01</div>
-            <h3 className="beatTitle">Log the set</h3>
-            <p className="beatCopy">Two taps between sets. Big targets for one thumb and chalked hands — the small step is the 2.5 kg your program is written in, the big one is a plate change.</p>
+            <h3 className="beatTitle">{t('gym.landing.how.logTitle')}</h3>
+            <p className="beatCopy">{t('gym.landing.how.logCopy')}</p>
           </div>
         </div>
         <div className="beat">
           <RememberedStage />
           <div>
             <div className="beatNum">02</div>
-            <h3 className="beatTitle">It remembers</h3>
-            <p className="beatCopy">Next session opens with last time’s numbers already in the field. You never scroll back to find what you lifted.</p>
+            <h3 className="beatTitle">{t('gym.landing.how.rememberTitle')}</h3>
+            <p className="beatCopy">{t('gym.landing.how.rememberCopy')}</p>
           </div>
         </div>
         <div className="beat">
           <LineStage />
           <div>
             <div className="beatNum">03</div>
-            <h3 className="beatTitle">See the line</h3>
-            <p className="beatCopy">e1RM per lift, week over week — the long line of showing up. A PR gets one line.</p>
+            <h3 className="beatTitle">{t('gym.landing.how.lineTitle')}</h3>
+            <p className="beatCopy">{t('gym.landing.how.lineCopy')}</p>
           </div>
         </div>
       </div>
@@ -296,10 +293,10 @@ function HowItWorks() {
 function ForTheBarbell() {
   return (
     <section id="proof" className="wrap" style={{ paddingTop: 96 }}>
-      <div className="eyebrow">For lifters</div>
-      <h2 className="sectionTitle">Built for the barbell</h2>
+      <div className="eyebrow">{t('gym.landing.barbell.eyebrow')}</div>
+      <h2 className="sectionTitle">{t('gym.landing.barbell.title')}</h2>
       <p className="sectionSub" style={{ maxWidth: 600 }}>
-        Squat, bench, deadlift, press, rows — e1RM per lift, week over week. e1RM is estimated one-rep max (Epley: weight × (1 + reps/30)).
+        {t('gym.landing.barbell.sub')}
       </p>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))', gap: 20, marginTop: 40 }}>
         {LIFTS.map((lift) => (
@@ -318,7 +315,7 @@ function ForTheBarbell() {
         ))}
       </div>
       <div style={{ fontFamily: 'var(--font-body)', fontSize: 12.5, color: 'var(--text-tertiary)', marginTop: 16 }}>
-        Example: twelve weeks of a linear cycle. Chins here carry no added load, so Epley has no answer for them — they are drawn on the reps of the top set instead, and no estimate is invented over a bodyweight the log does not hold.
+        {t('gym.landing.barbell.example')}
       </div>
     </section>
   );
@@ -327,19 +324,19 @@ function ForTheBarbell() {
 function ConnectedLog() {
   return (
     <section className="wrap" style={{ paddingTop: 96 }}>
-      <div className="eyebrow">The connected log</div>
-      <h2 className="sectionTitle">Your log is an endpoint your own AI tools can use.</h2>
-      <p className="sectionSub">The log is free — all of it, and so are these tools. So is Coach, the room in the app for a lifter who hasn’t got an agent of their own — ten questions a day, and nothing in Gym is on sale.</p>
+      <div className="eyebrow">{t('gym.landing.connected.eyebrow')}</div>
+      <h2 className="sectionTitle">{t('gym.landing.connected.title')}</h2>
+      <p className="sectionSub">{t('gym.landing.connected.sub')}</p>
       <Exchange />
       <div style={{ background: 'var(--surface-card)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-2xl)', boxShadow: 'var(--shadow-sm)', padding: 'clamp(24px,3vw,36px)', marginTop: 40, display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(300px,1fr))', gap: 'clamp(24px,3vw,40px)' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16, alignItems: 'flex-start' }}>
-          <div style={PANEL_LABEL}>Works with</div>
+          <div style={PANEL_LABEL}>{t('gym.landing.connected.worksWith')}</div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
             {MCP_CLIENTS.map((client) => (
               <span key={client} style={{ border: '1px solid var(--border-subtle)', borderRadius: 999, padding: '7px 14px', fontSize: 13.5, fontWeight: 700, color: 'var(--text-secondary)', background: 'var(--surface-canvas)' }}>{client}</span>
             ))}
           </div>
-          <div style={{ ...PANEL_LABEL, marginTop: 6 }}>It can</div>
+          <div style={{ ...PANEL_LABEL, marginTop: 6 }}>{t('gym.landing.connected.itCan')}</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {AGENT_CAN.map((line) => (
               <div key={line} style={{ display: 'flex', gap: 11, alignItems: 'flex-start' }}>
@@ -349,27 +346,21 @@ function ConnectedLog() {
             ))}
           </div>
           <p style={{ fontSize: 15, lineHeight: 1.55, fontWeight: 700, color: 'var(--text-primary)', margin: '6px 0 0' }}>
-            It reads, it proposes, and it never rewrites a day you already have. That routine changes when
-            you tap Apply on the diff — all of it or none — and never a moment before. A brand-new day it
-            adds lands right away: it takes nothing away, and the day is yours to edit in Routines.
+            {t('gym.landing.connected.never')}
           </p>
           <p style={{ fontSize: 14.5, lineHeight: 1.55, color: 'var(--text-secondary)', margin: 0 }}>
-            You decide what a connection may do — read, write, delete — and it can only see the tools for the
-            levels you approved. Delete is never implied by write.
+            {t('gym.landing.connected.levels')}
           </p>
           <p style={{ fontSize: 14.5, lineHeight: 1.55, color: 'var(--text-secondary)', margin: 0 }}>
-            No agent of your own? Coach is a room in the app, over the same tools and the same rules — it reads
-            your whole log and it proposes, and a change it writes is the same diff you tap Apply on. Every
-            answer says what it read: which tools it called, and how many of your rows they served. It can’t
-            log a set, correct one you lifted, or delete anything.
+            {t('gym.landing.connected.coach')}
           </p>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div style={PANEL_LABEL}>You approve each level</div>
+          <div style={PANEL_LABEL}>{t('gym.landing.connected.approve')}</div>
           <div className="gyw gym-skin gycard" data-theme="dark" data-brand="gym">
             <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
-              <span className="gyCaption" style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}>connect · Claude Code</span>
-              <span className="gyCaption" style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}>gym</span>
+              <span className="gyCaption" style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}>{t('gym.landing.connected.cardTitle')}</span>
+              <span className="gyCaption" style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}>{t('gym.landing.connected.cardProduct')}</span>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 9, marginTop: 12 }}>
               {GRANT_LEVELS.map((level) => (
@@ -383,8 +374,7 @@ function ConnectedLog() {
               ))}
             </div>
             <div className="gyCaption" style={{ fontFamily: 'var(--font-body)', fontSize: 12, lineHeight: 1.5, marginTop: 14 }}>
-              This connection was never granted delete, so it cannot see the three tools that discard a workout,
-              end a share link, or ask to remove a routine.
+              {t('gym.landing.connected.neverGranted')}
             </div>
           </div>
         </div>
@@ -418,8 +408,8 @@ function Exchange() {
 function PartOfWindmill() {
   return (
     <section className="wrap" style={{ paddingTop: 96 }}>
-      <div className="eyebrow">Why Windmill</div>
-      <h2 className="sectionTitle">Part of Windmill</h2>
+      <div className="eyebrow">{t('gym.landing.windmill.eyebrow')}</div>
+      <h2 className="sectionTitle">{t('gym.landing.windmill.title')}</h2>
       <div className="trio" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(280px,1fr))', maxWidth: 900 }}>
         {BRAND_DUO.map((item) => (
           <div key={item.title} className="trioItem">
@@ -441,7 +431,7 @@ function CtaBand() {
   return (
     <section className="wrap" style={{ paddingTop: 96 }}>
       <div className="ctaBand">
-        <h2 className="sectionTitle" style={{ margin: 0 }}>Log the next one</h2>
+        <h2 className="sectionTitle" style={{ margin: 0 }}>{t('gym.landing.cta.title')}</h2>
         <p className="sectionSub" style={{ maxWidth: 480 }}>{ACCOUNT_LINE}</p>
         <div style={{ display: 'flex', gap: 12, marginTop: 20, flexWrap: 'wrap', justifyContent: 'center' }}>
           <a href={LOG_HREF}><Button variant="primary" size="lg">{OPEN_LOG}</Button></a>

@@ -7,29 +7,25 @@
 // no history; a set is `{ key, weightKg, reps, touched }`, an empty value null. Every key is minted
 // off the draft's own counter, so a row is addressed by what it is and never by where it stands.
 
-import { entryLabel, fmtKg, OPEN_TARGET, schemeAgrees, setCountLabel } from '../log.js';
+import { t } from '../i18n/index.js';
+import { entryLabel, fmtKg, OPEN_TARGET, schemeAgrees } from '../log.js';
 import { MAX_SESSION_SETS } from '../domain/trainingActions.js';
 import { SetRules } from '../domain/training.js';
 import { LOGGER_REPS_MIN, LOGGER_REPS_MAX, parseEntry } from '../logger/entry.js';
 import { round } from '../logger/ladder.js';
 import { NO_LAST_TIME_META } from '../logger/movements.js';
 
-const FILLED_FROM_TARGET = 'Filled from the target. A blank load or rep count takes last time’s set.';
-const ARRIVES_WITH_LAST_TIME = 'A movement you add arrives with last time’s sets.';
-const CARRIES_DOWN = 'An edit carries down to the sets below it you have not touched.';
+export const SET_LIMIT_LINE = t('gym.backfill.setLimit', { max: MAX_SESSION_SETS });
 
-export const SET_LIMIT_LINE = `A workout holds up to ${MAX_SESSION_SETS} sets.`;
-
-const BODYWEIGHT = 'bodyweight';
 const DEFAULT_STEP_KG = 2.5;
 const NUMERAL = /^-?\d*[.,]?\d*$/;
 
 export function movementSkippedLine(movement) {
-  return `${movement} is out of this workout.`;
+  return t('gym.backfill.movementSkipped', { movement });
 }
 
 export function inTheLogLine(name) {
-  return `${name} is in the log.`;
+  return t('gym.backfill.inTheLog', { name });
 }
 
 // A `lastTime` answer: `session` is what says there is history.
@@ -178,7 +174,7 @@ export function movementLine(movement) {
 // A number as the row draws it. Zero load is the movement at bodyweight.
 export function valueLabel(value, field) {
   if (value == null) return '';
-  if (field === 'load' && value === 0) return BODYWEIGHT;
+  if (field === 'load' && value === 0) return t('gym.backfill.bodyweight');
   return field === 'load' ? fmtKg(value) : String(value);
 }
 
@@ -213,19 +209,18 @@ export function isReady(draft) {
 }
 
 export function saveLabel(draft) {
-  const count = setCountOf(draft);
-  return count === 0 ? 'Save' : `Save · ${setCountLabel(count)}`;
+  return t('gym.backfill.save', { count: setCountOf(draft) });
 }
 
 export function savedLabel(draft) {
-  return `Saved · ${setCountLabel(setCountOf(draft))}`;
+  return t('gym.backfill.saved', { count: setCountOf(draft) });
 }
 
 // What the side column says about where a movement's numbers came from.
 export function sourceCaption(movement, edited) {
-  if (edited) return CARRIES_DOWN;
-  if (movement.target) return FILLED_FROM_TARGET;
-  return ARRIVES_WITH_LAST_TIME;
+  if (edited) return t('gym.backfill.carriesDown');
+  if (movement.target) return t('gym.backfill.filledFromTarget');
+  return t('gym.backfill.arrivesWithLastTime');
 }
 
 // The ImportSession input: stable set identities and approximate instants chosen by the draft.

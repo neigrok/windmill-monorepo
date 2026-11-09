@@ -1,9 +1,10 @@
 import React from 'react';
 import { useAuth } from '../../shell/auth/AuthProvider.jsx';
+import { t } from './i18n/index.js';
 
 function cell({ signedIn }) {
-  if (signedIn) return { body: 'Workouts start on your phone and land here — the log, the routines, the long line of showing up.', link: 'Open the log →' };
-  return { body: 'Sets, weights, and what you lifted last time — kept on your account.', link: 'Sign in to open your log →' };
+  if (signedIn) return { body: t('gym.home.signedInBody'), link: t('gym.home.signedInLink') };
+  return { body: t('gym.home.signedOutBody'), link: t('gym.home.signedOutLink') };
 }
 
 export function HomeCard() {
@@ -16,7 +17,7 @@ export function HomeCard() {
       <a className="wm-ghc" href="#/gym">
         <span className="wm-ghc-head">
           <span className="wm-ghc-dot" aria-hidden="true" />
-          Gym
+          {t('gym.product.name')}
         </span>
         <span className="wm-ghc-body">{body}</span>
         <span className="wm-ghc-link">{link}</span>

@@ -107,16 +107,23 @@ test('every field a lifter types into spells the kilogram, not the reading', () 
 
 test('every kilogram field on a screen carries the word kg', () => {
   // The past workout names it once, in the column head over every row, and in each cell's name.
-  assert.equal(read('backfill/Backfill.jsx').includes('kg <span className="gym-past-times">×</span> reps'), true);
-  assert.equal(read('backfill/Backfill.jsx').includes("{ field: 'load', key: 'weightKg', spoken: (basis) => `load in ${basis}` },"), true);
+  const catalog = JSON.parse(read('i18n/en.json'));
+  assert.equal(read('backfill/Backfill.jsx').includes(`t('gym.backfill.columns', { times: <span className="gym-past-times">×</span> })`), true);
+  assert.equal(catalog['gym.backfill.columns'], 'kg {times} reps');
+  assert.equal(read('backfill/Backfill.jsx').includes("{ field: 'load', key: 'weightKg', label: (name, position, basis) => t('gym.backfill.loadCell', { name, position, basis }) },"), true);
+  assert.equal(catalog['gym.backfill.loadCell'], '{name}, set {position}, load in {basis}');
   assert.equal(read('backfill/Backfill.jsx').includes('basis={loadBasisLabel(movementOf(log.catalog, movement.exerciseId), 0, KG)}'), true);
   // A typed load names its basis in kilograms: kg each, kg, kg added or kg total.
   assert.equal(read('FixSheet.jsx').includes('const basis = loadBasisLabel(exercise, 0, KG);'), true);
-  assert.equal(read('FixSheet.jsx').includes('aria-label={`Load in ${basis}`}'), true);
-  assert.equal(read('correction/WorkoutEditor.jsx').includes('load in ${loadBasisLabel(movementOf(catalog, exerciseId), 0, KG)}'), true);
+  assert.equal(read('FixSheet.jsx').includes("aria-label={t('gym.fix.loadIn', { basis })}"), true);
+  assert.equal(catalog['gym.fix.loadIn'], 'Load in {basis}');
+  assert.equal(read('correction/WorkoutEditor.jsx').includes("t('gym.correction.loadField', { name: String(names.get(exerciseId)), position: index + 1, basis: loadBasisLabel(movementOf(catalog, exerciseId), 0, KG) })"), true);
+  assert.equal(catalog['gym.correction.loadField'], '{name} set {position} load in {basis}');
   // The unit rides in the field beside the sign control, and neither is part of the field's name.
-  assert.equal(read('planning/TargetEditor.jsx').includes('label="Weight · kg"'), true);
-  assert.equal(read('logger/entry.js').includes("WEIGHT_UNIT = 'kg'"), true);
+  assert.equal(read('planning/TargetEditor.jsx').includes("label={t('gym.planning.weightKg')}"), true);
+  assert.equal(catalog['gym.planning.weightKg'], 'Weight · kg');
+  assert.equal(read('logger/entry.js').includes("WEIGHT_UNIT = t('gym.logger.weightUnit')"), true);
+  assert.equal(catalog['gym.logger.weightUnit'], 'kg');
 });
 
 test('the two sheets that stand over a converted reading say what the other numeral is', () => {

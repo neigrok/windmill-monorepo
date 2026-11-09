@@ -1,6 +1,7 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
 import { Button, Icon } from '../../../design-system/index.js';
 import { loadFloor } from '../domain/catalogue.js';
+import { t } from '../i18n/index.js';
 import { alsoReadsLabel, schemeAgrees } from '../log.js';
 import {
   ADD_SET, commitLabel, EVERY_SET, FILL, headOf, isOpenFields, ladderOf, LAST_TIME_PLACEHOLDER,
@@ -39,22 +40,22 @@ export function TargetEditor({ movement, place, panePlace = place, entry, exerci
     globalThis.document?.getElementById?.(rowId(index + 1, field))?.focus();
   };
   const sign = (flip) => (
-    <button type="button" className="gym-target-sign" aria-label="Flip the sign — band-assisted" onClick={flip}>
+    <button type="button" className="gym-target-sign" aria-label={t('gym.planning.flipSign')} onClick={flip}>
       ±
     </button>
   );
 
   return (
     <div className={pane ? "gym-target-pane" : "gym-sheet-catch"} role="presentation" onClick={pane ? undefined : onClose}>
-      <div className={pane ? "gym-target" : "gym-sheet gym-target"} role={pane ? "region" : "dialog"} aria-label={`Target · ${movement}`} onClick={(event) => event.stopPropagation()}>
+      <div className={pane ? "gym-target" : "gym-sheet gym-target"} role={pane ? "region" : "dialog"} aria-label={t('gym.planning.targetOf', { movement })} onClick={(event) => event.stopPropagation()}>
         <div className="gym-sheet-head">
           <span className="gym-target-movement">{movement}</span>
           <span className="gym-target-place"><span className="gym-target-sheet-place">{place}</span>{pane && <span className="gym-target-pane-place">{panePlace}</span>}</span>
-          <button type="button" className="gym-sheet-close" onClick={onClose} aria-label="Close">
+          <button type="button" className="gym-sheet-close" onClick={onClose} aria-label={t('gym.planning.close')}>
             <Icon name="x" size={12} />
           </button>
         </div>
-        {neverLogged && <p className="gym-target-never">Never logged — these are your numbers.</p>}
+        {neverLogged && <p className="gym-target-never">{t('gym.planning.neverLogged')}</p>}
 
         {!refusal && isOpenFields(fields) && <p className="gym-open-line">{OPEN_LINE}</p>}
 
@@ -65,14 +66,14 @@ export function TargetEditor({ movement, place, panePlace = place, entry, exerci
           <div className="gym-target-fields">
             <fieldset className="gym-target-head" disabled={open}>
               <EditableNumber
-                label="Reps"
+                label={t('gym.planning.reps')}
                 value={head.reps.value}
                 placeholder={head.reps.placeholder}
                 inputMode="numeric"
                 onChange={(event) => change(withHead(fields, 'reps', event.target.value))}
               />
               <EditableNumber
-                label="Weight · kg"
+                label={t('gym.planning.weightKg')}
                 value={head.weight.value}
                 placeholder={head.weight.placeholder}
                 inputMode="decimal"
@@ -88,8 +89,8 @@ export function TargetEditor({ movement, place, panePlace = place, entry, exerci
               <h3 className="gym-sheet-section-title">{SET_BY_SET}</h3>
               <FillMenu
                 items={[
-                  { label: RAMP_UP, description: 'Interpolate set 1 to set n', disabled: rampDisabled(fields), run: () => change(withRampUp(fields)) },
-                  { label: MATCH_SET_ONE, description: 'Write set 1 into every row', disabled: false, run: () => change(withMatchedToFirst(fields)) },
+                  { label: RAMP_UP, description: t('gym.planning.rampUpDescription'), disabled: rampDisabled(fields), run: () => change(withRampUp(fields)) },
+                  { label: MATCH_SET_ONE, description: t('gym.planning.matchSetOneDescription'), disabled: false, run: () => change(withMatchedToFirst(fields)) },
                 ]}
               />
             </div>
@@ -101,7 +102,7 @@ export function TargetEditor({ movement, place, panePlace = place, entry, exerci
                   <span className="gym-ladder-field" onKeyDown={nextDown(index, 'reps')}>
                     <EditableNumber
                       id={rowId(index, 'reps')}
-                      ariaLabel={`Set ${index + 1} reps`}
+                      ariaLabel={t('gym.planning.setReps', { position: index + 1 })}
                       value={row.reps}
                       changed={row.reps !== originalRows[index]?.reps || Boolean(head.reps.value && head.reps.value !== originalHead.reps.value)}
                       placeholder={MAX_PLACEHOLDER}
@@ -113,7 +114,7 @@ export function TargetEditor({ movement, place, panePlace = place, entry, exerci
                   <span className="gym-ladder-field is-load" onKeyDown={nextDown(index, 'weight')}>
                     <EditableNumber
                       id={rowId(index, 'weight')}
-                      ariaLabel={`Set ${index + 1} load`}
+                      ariaLabel={t('gym.planning.setLoad', { position: index + 1 })}
                       value={row.weight}
                       changed={row.weight !== originalRows[index]?.weight || Boolean(head.weight.value && head.weight.value !== originalHead.weight.value)}
                       placeholder={LAST_TIME_PLACEHOLDER}
@@ -126,7 +127,7 @@ export function TargetEditor({ movement, place, panePlace = place, entry, exerci
                   <button
                     type="button"
                     className="gym-ladder-drop"
-                    aria-label={`Delete set ${index + 1}`}
+                    aria-label={t('gym.planning.deleteSet', { position: index + 1 })}
                     onClick={() => change(withRowRemoved(fields, index))}
                   >
                     <Icon name="x" size={12} />
@@ -146,7 +147,7 @@ export function TargetEditor({ movement, place, panePlace = place, entry, exerci
         {alsoReads && <p className="gym-target-reads">{alsoReads}</p>}
 
         <div className="gym-target-done"><Button full disabled={held == null} onClick={() => onSet(held)}>
-          {held == null ? 'Set' : commitLabel(held)}
+          {held == null ? t('gym.planning.commit') : commitLabel(held)}
         </Button></div>
       </div>
     </div>

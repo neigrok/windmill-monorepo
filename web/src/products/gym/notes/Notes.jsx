@@ -7,6 +7,7 @@ import { Back } from '../Back.jsx';
 
 import { COACH_HREF, NOTES_HREF } from '../log.js';
 import { CoachNavigation } from '../coach/CoachNavigation.jsx';
+import { t } from '../i18n/index.js';
 import { COACH_TITLE } from '../coach/coach.js';
 import { useRail } from '../rail.js';
 import { useDomainRead } from '../useDomainRead.js';
@@ -105,11 +106,11 @@ export function Notes({ log }) {
         <p className="gym-notes-disclosure">{HONESTY_LINE}</p>
       </header>
 
-      {phase === 'loading' && <p className="gym-quiet">Opening your notes…</p>}
+      {phase === 'loading' && <p className="gym-quiet">{t('gym.notes.opening')}</p>}
       {phase === 'failed' && (
         <p className="gym-read-failed">
           {NOTES_FAILED}
-          <Button variant="secondary" size="sm" onClick={view.retry}>Retry</Button>
+          <Button variant="secondary" size="sm" onClick={view.retry}>{t('gym.notes.retry')}</Button>
         </p>
       )}
 
@@ -151,7 +152,7 @@ function NoteList({ notes, onOpen, onMove }) {
   const rail = useRail({
     count: notes.length,
     nameOf: (index) => notes[index].title,
-    placeOf: (index) => `${index + 1} of ${notes.length}`,
+    placeOf: (index) => t('gym.notes.place', { position: index + 1, count: notes.length }),
     move: async (from, to) => { if (!await onMove(from, to)) rail.reset(); },
   });
 
@@ -244,18 +245,18 @@ export function NoteEditor({ note, noteCount = null, onClose, onSaved, onDelete,
       <CoachNavigation active="notes" noteCount={noteCount} />
       <Back href={NOTES_HREF} onClick={(event) => { event.preventDefault(); onClose(); }}>{NOTES_TITLE}</Back>
       <header className="gym-notes-heading">
-        <h1 className="gym-title">{note.fresh ? 'New note' : 'Edit note'}</h1>
+        <h1 className="gym-title">{note.fresh ? t('gym.notes.newTitle') : t('gym.notes.editTitle')}</h1>
         <p className="gym-notes-disclosure">{HONESTY_LINE}</p>
       </header>
       <div className="gym-note-fields">
         <div className="gym-note-field">
-          <label className="gym-note-label" htmlFor="gym-note-title">Title</label>
+          <label className="gym-note-label" htmlFor="gym-note-title">{t('gym.notes.titleLabel')}</label>
           <input
             id="gym-note-title"
             className="gym-note-title-input"
             value={title}
-            placeholder="Give this note a title"
-            aria-label="Note title"
+            placeholder={t('gym.notes.titlePlaceholder')}
+            aria-label={t('gym.notes.titleField')}
             onChange={(event) => setTitle(event.target.value)}
             autoFocus
           />
@@ -264,14 +265,14 @@ export function NoteEditor({ note, noteCount = null, onClose, onSaved, onDelete,
           )}
         </div>
         <div className="gym-note-field">
-          <label className="gym-note-label" htmlFor="gym-note-body">What Coach should know</label>
+          <label className="gym-note-label" htmlFor="gym-note-body">{t('gym.notes.bodyLabel')}</label>
           <textarea
             id="gym-note-body"
             className="gym-note-body"
             value={body}
             rows={8}
-            placeholder="Write a note for Coach"
-            aria-label="Note body"
+            placeholder={t('gym.notes.bodyPlaceholder')}
+            aria-label={t('gym.notes.bodyField')}
             onChange={(event) => setBody(event.target.value)}
           />
           {showsByteCount(body) && (
@@ -287,8 +288,8 @@ export function NoteEditor({ note, noteCount = null, onClose, onSaved, onDelete,
         <button type="button" className="gym-note-delete" onClick={() => onDelete(note)}>{DELETE_VERB}</button>
       )}
       <div className="gym-note-actions">
-        <button type="button" onClick={onClose}>Cancel</button>
-        <Button disabled={!ready} ariaBusy={saving} onClick={save}>{saving ? 'Saving…' : 'Save note'}</Button>
+        <button type="button" onClick={onClose}>{t('gym.notes.cancel')}</button>
+        <Button disabled={!ready} ariaBusy={saving} onClick={save}>{saving ? t('gym.notes.saving') : t('gym.notes.save')}</Button>
       </div>
     </section>
   );

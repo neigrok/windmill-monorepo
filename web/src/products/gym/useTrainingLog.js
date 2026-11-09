@@ -3,6 +3,7 @@ import { useSyncRecords } from '../../platform/sync/react.js';
 import { UNDO_MS } from './fix.js';
 import { failureReason } from './errors.js';
 import { useGymApi, gymStep, gymReadView, preferencesDocument } from './gymRuntime.js';
+import { t } from './i18n/index.js';
 import { mintId } from './mint.js';
 import { backfillHref, FREE_SESSION, sessionHref } from './log.js';
 import { CREATED_PATTERN } from './logger/movements.js';
@@ -79,8 +80,8 @@ export function useTrainingLog() {
     const holding = [];
     for (const offer of offers.current) {
       if (offer.releaseAt <= now) continue;
-      for (const { t, id } of offer.records) {
-        const kind = HELD_KINDS[t];
+      for (const { t: type, id } of offer.records) {
+        const kind = HELD_KINDS[type];
         const key = withheldKey(kind, id);
         if (!kind || asking.current.some((each) => each.key === key)) continue;
         if (!spokeAt.current.has(offer.id)) spokeAt.current.set(offer.id, (spoke.current += 1));
@@ -148,7 +149,7 @@ export function useTrainingLog() {
       if (!gestureId) return;
       try {
         if (!await api.undoDeath(gestureId)) say(WINDOW_CLOSED);
-      } catch (error) { say(`That delete could not be taken back — ${failureReason(error)}.`); }
+      } catch (error) { say(t('gym.held.undoFailed', { reason: failureReason(error) })); }
       return;
     }
     clearTimeout(clocks.current.get(newest.key));
@@ -200,11 +201,11 @@ export function useTrainingLog() {
 
   const createMovement = useCallback(async ({ name, equipment }) => {
     try { return await api.createExercise({ id: mintId('ex_'), name, equipment, pattern: CREATED_PATTERN }); }
-    catch (error) { say(error.sentence || `That movement wasn’t created — ${failureReason(error)}.`); return null; }
+    catch (error) { say(error.sentence || t('gym.app.movementNotCreated', { reason: failureReason(error) })); return null; }
   }, [api, say]);
   const renameMovement = useCallback(async (id, name) => {
     try { return await api.renameExercise(id, name); }
-    catch (error) { say(error.sentence || `That name wasn’t saved — ${failureReason(error)}.`); return null; }
+    catch (error) { say(error.sentence || t('gym.app.nameNotSaved', { reason: failureReason(error) })); return null; }
   }, [api, say]);
   const seen = useRef(new Map());
   useEffect(() => {
@@ -220,8 +221,8 @@ export function useTrainingLog() {
       if (workout) {
         const href = workout.command.name === 'gym.importSession'
           ? backfillHref(workout.command.args.routineId ?? FREE_SESSION) : `${sessionHref(workout.sessionId)}/edit`;
-        say(`${workout.error.sentence} Your draft is here.`, { action: { label: 'Review workout', run: () => { window.location.hash = href; } } });
-      } else say('A change could not be saved to the log. Your other changes are still here.');
+        say(t('gym.app.workoutRefused', { sentence: workout.error.sentence }), { action: { label: t('gym.app.reviewWorkout'), run: () => { window.location.hash = href; } } });
+      } else say(t('gym.app.changeRefused'));
       gymStep('refusal', 'refused');
     }
   }, [records.notices, say, api]);

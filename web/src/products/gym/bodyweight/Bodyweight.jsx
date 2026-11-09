@@ -3,8 +3,9 @@ import { Button, DotChart, Tabs } from '../../../design-system/index.js';
 import { Reader, Views } from '../../../platform/domain-kit/reading.js';
 import { Back } from '../Back.jsx';
 
+import { t } from '../i18n/index.js';
 import { BODYWEIGHT_HREF, dayLabel } from '../log.js';
-import { weightUnit } from '../units.js';
+import { unitSymbol, weightUnit } from '../units.js';
 import { useDomainRead } from '../useDomainRead.js';
 import { Bodyweight } from '../domain/bodyweight.js';
 import { bodyweightDocument, gymMoment, gymStep, preferencesDocument, weighInInput, weighInKilograms, useGymApi } from '../gymRuntime.js';
@@ -79,7 +80,7 @@ export function WeighInSheet({ entry = null, fixedDate = null, onSave, onDelete 
       <div className="gym-sheet gym-weigh" role="dialog" aria-label={WEIGH_IN_VERB} onClick={(event) => event.stopPropagation()}>
         <div className="gym-sheet-head">
           <span className="gym-sheet-title">{WEIGH_IN_VERB}</span>
-          <button type="button" className="gym-sheet-close" onClick={onClose} aria-label="Close">×</button>
+          <button type="button" className="gym-sheet-close" onClick={onClose} aria-label={t('gym.bodyweight.close')}>×</button>
         </div>
 
         <div className="gym-weigh-field">
@@ -89,12 +90,12 @@ export function WeighInSheet({ entry = null, fixedDate = null, onSave, onDelete 
             inputMode="decimal"
             autoComplete="off"
             value={text}
-            aria-label={`${BODYWEIGHT_TITLE} in ${unit}`}
+            aria-label={t('gym.bodyweight.field', { unit })}
             onChange={(event) => { setField({ text: event.target.value, unit }); setRefusal(''); }}
             onKeyDown={(event) => { if (event.key === 'Enter') save(); }}
             autoFocus
           />
-          <span className="gym-weigh-unit">{unit}</span>
+          <span className="gym-weigh-unit">{unitSymbol(unit)}</span>
         </div>
 
         {fixedDate ? (
@@ -143,7 +144,7 @@ export function BodyweightScreen({ log }) {
 
   return (
     <section className="gym-bodyweight">
-      <Back href="#/gym/log">The log</Back>
+      <Back href="#/gym/log">{t('gym.bodyweight.back')}</Back>
       <header className="gym-bodyweight-head">
         <h1 className="gym-title">{BODYWEIGHT_TITLE}</h1>
         <Tabs
@@ -157,7 +158,7 @@ export function BodyweightScreen({ log }) {
       {weights.phase === 'failed' && (
         <p className="gym-read-failed">
           {FAILED}
-          <Button variant="secondary" size="sm" onClick={weights.retry}>Retry</Button>
+          <Button variant="secondary" size="sm" onClick={weights.retry}>{t('gym.bodyweight.retry')}</Button>
         </p>
       )}
 

@@ -1,3 +1,4 @@
+import { t } from '../i18n/index.js';
 import { fmt } from '../log.js';
 import { weightUnit } from '../units.js';
 import { GymVolume, VolumePart } from '../domain/training.js';
@@ -40,15 +41,19 @@ export function withoutRows(summary, sessions) {
 
 export function historyTotals(summary, unit = weightUnit()) {
   if (!summary) return null;
-  return `${summary.sessions} ${summary.sessions === 1 ? 'workout' : 'workouts'} · ${summary.sets} sets · ${summary.reps} reps · loads in ${unit}`;
+  return t('gym.logbook.totals', { sessions: summary.sessions, sets: summary.sets, reps: summary.reps, unit });
 }
 
 export function emptyHistoryLine(filters, exercises = [], routines = []) {
   const movement = exercises.find((entry) => entry.id === filters.exercise)?.name;
   const routine = routines.find((entry) => entry.id === filters.routine)?.name;
   const date = filters.year ? (filters.month ? new Date(filters.year, filters.month - 1, 1).toLocaleDateString('en', { month: 'long', year: 'numeric' }) : String(filters.year)) : null;
-  if ((filters.exercise && !movement) || (filters.routine && !routine)) return 'No workouts match these filters.';
-  return `No ${movement ? `${movement} sessions` : 'workouts'}${routine ? ` from ${routine}` : ''}${date ? ` in ${date}` : ''}.`;
+  if ((filters.exercise && !movement) || (filters.routine && !routine)) return t('gym.logbook.noMatches');
+  return t('gym.logbook.emptyFiltered', {
+    byMovement: movement ? 'yes' : 'no', movement: movement ?? '',
+    byRoutine: routine ? 'yes' : 'no', routine: routine ?? '',
+    byDate: date ? 'yes' : 'no', date: date ?? '',
+  });
 }
 
 export function yearsOf(sessions, byMonth = false) {
@@ -66,7 +71,8 @@ export function collapsedScheme(sets) {
   if (sets.length < 2) return null;
   const first = sets[0];
   if (!sets.every((set) => set.weightKg === first.weightKg && set.reps === first.reps && set.rpe === first.rpe && !set.note)) return null;
-  return `${sets.length} × ${first.reps} · ${first.weightKg === 0 ? 'bodyweight' : fmt(first.weightKg)}`;
+  if (first.weightKg === 0) return t('gym.logbook.schemeBodyweight', { sets: sets.length, reps: first.reps });
+  return t('gym.logbook.scheme', { sets: sets.length, reps: first.reps, load: fmt(first.weightKg) });
 }
 
 export function workoutTotals(sets, catalog) {
