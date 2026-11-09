@@ -73,7 +73,7 @@ struct CoachHistoryScreen: View {
         }
       }
       .destructiveQuestion(gym, screen: "history", title: String(localized: "Delete this conversation?"), message: String(localized: "You can’t undo this."),
-                           act: String(localized: "Delete"),
+                           act: String(localized: "Delete", comment: "A button that deletes a conversation"),
                            isPresented: Binding(get: { deletion != nil }, set: { if !$0 { deletion = nil } })) {
         if let row = deletion, coach.allowed { _ = coach.delete(row.id) }
       }

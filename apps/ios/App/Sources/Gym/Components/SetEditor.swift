@@ -71,7 +71,7 @@ struct LoadField: View {
     case logged, planned
     var clearable: Bool { self == .planned }
     var well: Bool { self == .logged }
-    var placeholder: String { self == .planned ? String(localized: "Last time") : String(localized: "Load") }
+    var placeholder: String { self == .planned ? String(localized: "Last time") : String(localized: "Load", comment: "The weight a set lifts") }
   }
 
   @Binding var load: Double?
@@ -195,7 +195,7 @@ struct RestPicker: View {
 
   var body: some View {
     Picker("Rest", selection: $selection) {
-      Text("Default").tag(Int?.none)
+      Text("Default", comment: "A rest choice: the rest the app sets by default").tag(Int?.none)
       ForEach(choices + (selection.map { choices.contains($0) ? [] : [$0] } ?? []), id: \.self) { seconds in
         Text(WorkoutClocks.reading(Int64(seconds) * 1_000)).tag(Int?.some(seconds))
       }

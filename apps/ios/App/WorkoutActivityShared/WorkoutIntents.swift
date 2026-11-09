@@ -46,8 +46,8 @@ struct WorkoutLogSetIntent: LiveActivityIntent {
     #else
     let answer = await WorkoutActivityIntentHandler.logSet(offer: offer, surface: surface)
     let words = answer.dialog(surface)
-    let dialog = IntentDialog(full: LocalizedStringResource("\(words.spoken)", comment: "Siri's words, already in the phone's language"),
-                              supporting: LocalizedStringResource("\(words.shown)", comment: "Siri's words, already in the phone's language"))
+    let dialog = IntentDialog(full: LocalizedStringResource("\(words.spoken)", comment: "Siri's words, already in the app's language"),
+                              supporting: LocalizedStringResource("\(words.shown)", comment: "Siri's words, already in the app's language"))
     guard answer == .opened else { return .result(dialog: dialog) }
     return await WorkoutOpenIntent.bringForward(saying: dialog)
     #endif

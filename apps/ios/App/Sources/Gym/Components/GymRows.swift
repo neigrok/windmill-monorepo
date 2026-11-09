@@ -289,7 +289,7 @@ extension FactTiles {
   init(_ readout: SessionReadout, ground: Ground = .shared) {
     self.init(facts: [
       readout.durationMs.map { Fact(value: Readout.duration($0), label: String(localized: "Duration")) },
-      Fact(value: "\(readout.workingSetCount)", label: readout.workingSetCount == 1 ? String(localized: "Set", comment: "A tile's label under a count of one set")
+      Fact(value: "\(readout.workingSetCount)", label: readout.workingSetCount == 1 ? String(localized: "fact-tile.set", defaultValue: "Set", comment: "A tile's label under a count of one set")
                                                         : String(localized: "Sets", comment: "A tile's label under any other count of sets")),
       Fact(value: readout.volumeKg.map { String(localized: "\(Readout.weight($0)) kg") } ?? "—", label: String(localized: "Volume")),
     ].compactMap { $0 }, ground: ground)

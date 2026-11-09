@@ -78,7 +78,7 @@ struct MovementRecordScreen: View {
   // The chart says its window in its line, *last 12 weeks · 28 workouts*, which its readout takes over while scrubbing.
   func strength(_ progress: MovementProgress, log: TrainingLog, dates: GymDate) -> some View {
     let display = all ? progress : progress.window(now: log.moment.now, zone: log.moment.zone)
-    let caption = window.line(recent: String(localized: "12 weeks"), holding: GymCount.of(display.sessions.count, .workout))
+    let caption = window.line(.strength, holding: GymCount.of(display.sessions.count, .workout))
     let points = display.logPlotPoints(dates)
     return Section {
       VStack(alignment: .leading, spacing: 12) {
@@ -102,7 +102,7 @@ struct MovementRecordScreen: View {
       HStack {
         Text("Estimated strength").font(.body.weight(.semibold)).foregroundStyle(GymPalette.ink)
         Spacer(minLength: RoomSpace.related)
-        ChartWindowPicker(recent: String(localized: "12 weeks"), identifier: "gym-record-window", window: $window).frame(maxWidth: 160)
+        ChartWindowPicker(series: .strength, identifier: "gym-record-window", window: $window).frame(maxWidth: 160)
       }.textCase(nil).listRowInsets(EdgeInsets())
     }.listRowBackground(Color.clear).listRowInsets(EdgeInsets(top: 12, leading: 0, bottom: 14, trailing: 0))
   }

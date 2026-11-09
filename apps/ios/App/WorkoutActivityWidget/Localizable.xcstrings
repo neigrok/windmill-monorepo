@@ -2,7 +2,7 @@
   "sourceLanguage" : "en",
   "strings" : {
     "" : {
-
+      "shouldTranslate" : false
     },
     "%@ × %lld" : {
       "localizations" : {
@@ -12,10 +12,11 @@
             "value" : "%1$@ × %2$lld"
           }
         }
-      }
+      },
+      "shouldTranslate" : false
     },
     "/ %@" : {
-
+      "shouldTranslate" : false
     },
     "Dismiss" : {
 
@@ -54,7 +55,7 @@
 
     },
     "Set" : {
-
+      "comment" : "An App Intent's parameter: the set to log"
     },
     "Set %lld" : {
       "comment" : "The set's place past the plan, or without one: Set 5"

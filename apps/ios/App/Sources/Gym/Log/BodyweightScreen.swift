@@ -113,9 +113,9 @@ struct BodyweightScreen: View {
         } else if weight.stance == .holding {
           Section {
             VStack(alignment: .leading, spacing: 12) {
-              ChartWindowPicker(recent: String(localized: "90 days"), identifier: "gym-bodyweight-window", window: $window)
+              ChartWindowPicker(series: .bodyweight, identifier: "gym-bodyweight-window", window: $window)
               let chart = weight.chart(window == .recent ? .recent : .all)
-              let caption = window.line(recent: String(localized: "90 days"), holding: GymCount.of(chart.dots.count, .weighIn))
+              let caption = window.line(.bodyweight, holding: GymCount.of(chart.dots.count, .weighIn))
               if !chart.dots.isEmpty {
                 LogDatedChart(points: chart.dots.map { entry in
                   LogPlotPoint(id: entry.day.text, date: LogPresentation.date(entry.day), value: entry.kg,

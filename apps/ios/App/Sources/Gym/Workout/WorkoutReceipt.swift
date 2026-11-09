@@ -87,7 +87,8 @@ nonisolated struct WorkoutReview: Decodable, Sendable {
     func sentence(_ catalogue: Catalogue, dates: GymDate) -> String? {
       guard let previous, let previousAt, value.isFinite, previous.isFinite, weightKg.isFinite else { return nil }
       let name = catalogue.find(ID(RecordID(exerciseId)))?.name ?? String(localized: "Movement")
-      let past = String(localized: "past \(Readout.weight(previous)) from \(dates.day(Instant(ms: previousAt), inSentence: true))")
+      let past = String(localized: "past \(Readout.weight(previous)) from \(dates.day(Instant(ms: previousAt), inSentence: true))",
+                        comment: "The record a set beat: past 100 from Sep 23, or past 100 from yesterday")
       switch kind {
       case "e1rm": return String(localized: "\(name) e1RM \(Readout.weight(value)) kg — \(past).")
       case "heaviest": return String(localized: "\(name) \(Readout.weight(value)) kg × \(reps) — \(past).", locale: .copy)
@@ -122,9 +123,9 @@ nonisolated struct WorkoutReview: Decodable, Sendable {
     var basis: Basis { planned?.top != nil ? .plan : before != nil ? .lastTime : .performed }
     var source: String {
       switch basis {
-      case .plan: String(localized: "Plan")
+      case .plan: String(localized: "Plan", comment: "What the finish receipt compares a set against: the routine's plan")
       case .lastTime: String(localized: "Last time")
-      case .performed: String(localized: "Performed")
+      case .performed: String(localized: "Performed", comment: "What the finish receipt compares a set against: nothing, only what was lifted")
       }
     }
     var detail: String {

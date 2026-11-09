@@ -8,11 +8,11 @@ import GymDomain
 extension ProposalDiff.Kind {
   var word: String {
     switch self {
-    case .renamed: String(localized: "Renamed")
-    case .moved: String(localized: "Moved")
-    case .changed: String(localized: "Changed")
-    case .removed: String(localized: "Removed")
-    case .added: String(localized: "Added")
+    case .renamed: String(localized: "Renamed", comment: "What a proposed change does to a movement or routine")
+    case .moved: String(localized: "Moved", comment: "What a proposed change does to a movement or routine")
+    case .changed: String(localized: "Changed", comment: "What a proposed change does to a movement or routine")
+    case .removed: String(localized: "Removed", comment: "What a proposed change does to a movement or routine")
+    case .added: String(localized: "Added", comment: "What a proposed change does to a movement or routine")
     }
   }
   var symbol: String {

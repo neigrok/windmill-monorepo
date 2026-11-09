@@ -79,14 +79,14 @@ struct MovementEquipmentPicker: View {
       switch count {
       case .menu:
         Picker("Dumbbells", selection: $loadCount) {
-          Text("One").tag(1)
-          Text("Two").tag(2)
+          Text("One", comment: "How many dumbbells a set lifts: one").tag(1)
+          Text("Two", comment: "How many dumbbells a set lifts: two").tag(2)
         }.pickerStyle(.menu).foregroundStyle(GymPalette.ink).accessibilityIdentifier("\(identifier)-count")
       case .segmented:
         LabeledContent("Dumbbells lifted") {
           Picker("Dumbbells lifted", selection: $loadCount) {
-            Text("One").tag(1)
-            Text("Two").tag(2)
+            Text("One", comment: "How many dumbbells a set lifts: one").tag(1)
+            Text("Two", comment: "How many dumbbells a set lifts: two").tag(2)
           }.pickerStyle(.segmented).fixedSize().accessibilityIdentifier("\(identifier)-count")
         }.foregroundStyle(GymPalette.ink)
       }

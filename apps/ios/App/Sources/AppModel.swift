@@ -103,8 +103,8 @@ final class AppModel {
     case light, dark, system
     var title: LocalizedStringResource {
       switch self {
-      case .light: "Light"
-      case .dark: "Dark"
+      case .light: LocalizedStringResource("Light", comment: "An appearance the app can take: the light look")
+      case .dark: LocalizedStringResource("Dark", comment: "An appearance the app can take: the dark look")
       case .system: "System"
       }
     }

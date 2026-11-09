@@ -2,16 +2,16 @@
   "sourceLanguage" : "en",
   "strings" : {
     "" : {
-
+      "shouldTranslate" : false
     },
     "  " : {
-
+      "shouldTranslate" : false
     },
     " · %@" : {
-
+      "shouldTranslate" : false
     },
     "%@" : {
-      "comment" : "Siri's words, already in the phone's language",
+      "comment" : "Siri's words, already in the app's language",
       "shouldTranslate" : false
     },
     "%@ %@" : {
@@ -22,7 +22,8 @@
             "value" : "%1$@ %2$@"
           }
         }
-      }
+      },
+      "shouldTranslate" : false
     },
     "%@ %@ kg × %lld — %@." : {
       "localizations" : {
@@ -193,7 +194,23 @@
             "value" : "%1$@ – %2$@"
           }
         }
-      }
+      },
+      "shouldTranslate" : false
+    },
+    "%@ — I save important facts, like an old injury." : {
+      "comment" : "Coach's greeting; the placeholder is the term Notes"
+    },
+    "%@ — a program from a screenshot or your own words." : {
+      "comment" : "Coach's greeting; the placeholder is the term Build"
+    },
+    "%@ — ask me, and I suggest changes to your routines." : {
+      "comment" : "Coach's greeting; the placeholder is the term Changes"
+    },
+    "%@ — sign in, and I can also save notes and suggest changes to your routines." : {
+      "comment" : "Coach's greeting; the placeholder is the term Account"
+    },
+    "%@ — tell me your goals, and I will plan for them." : {
+      "comment" : "Coach's greeting; the placeholder is the term Goals"
     },
     "%@, %@" : {
       "comment" : "Joins a list's items before its last: 2 workouts, 1 routine",
@@ -253,10 +270,11 @@
             "value" : "%1$@: %2$@"
           }
         }
-      }
+      },
+      "shouldTranslate" : false
     },
     "%lld" : {
-
+      "shouldTranslate" : false
     },
     "%lld MO" : {
       "comment" : "How long before a passage was written, in months: 4 MO"
@@ -915,16 +933,16 @@
 
     },
     "100" : {
-
+      "shouldTranslate" : false
     },
     "12 weeks" : {
-
+      "comment" : "A chart's window: its last 12 weeks, beside All"
     },
     "6-digit code" : {
 
     },
     "90 days" : {
-
+      "comment" : "A chart's window: its last 90 days, beside All"
     },
     "A connected tool" : {
 
@@ -984,7 +1002,7 @@
 
     },
     "Account" : {
-
+      "comment" : "A term in Coach's greeting: the person's Windmill account"
     },
     "Add" : {
 
@@ -1008,7 +1026,7 @@
 
     },
     "Added" : {
-
+      "comment" : "What a proposed change does to a movement or routine"
     },
     "Adding" : {
 
@@ -1032,7 +1050,7 @@
 
     },
     "All" : {
-
+      "comment" : "A chart's window: everything logged"
     },
     "All movements" : {
 
@@ -1159,7 +1177,7 @@
 
     },
     "Build" : {
-
+      "comment" : "A term in Coach's greeting: building a program"
     },
     "Build my own" : {
 
@@ -1183,13 +1201,13 @@
 
     },
     "Change" : {
-
+      "comment" : "A button that changes the email address"
     },
     "Changed" : {
-
+      "comment" : "What a proposed change does to a movement or routine"
     },
     "Changes" : {
-
+      "comment" : "A term in Coach's greeting: the changes Coach suggests to routines"
     },
     "Changes you kept will return when you sign in to the same account." : {
 
@@ -1237,7 +1255,7 @@
 
     },
     "Closed" : {
-
+      "comment" : "The state of a day's echoes: their sheet is closed"
     },
     "Closed after four hours without a set" : {
 
@@ -1448,16 +1466,16 @@
       "comment" : "December in an echo's date stamp"
     },
     "Dark" : {
-
+      "comment" : "An appearance the app can take: the dark look"
     },
     "Date" : {
 
     },
     "Default" : {
-
+      "comment" : "A rest choice: the rest the app sets by default"
     },
     "Delete" : {
-
+      "comment" : "A button that deletes a conversation"
     },
     "Delete account" : {
 
@@ -1677,7 +1695,7 @@
 
     },
     "Finished" : {
-
+      "comment" : "When a workout finished"
     },
     "Finished the chapter I kept avoiding.\nLighter than expected" : {
 
@@ -1713,7 +1731,7 @@
 
     },
     "Goals" : {
-
+      "comment" : "A term in Coach's greeting: the person's goals"
     },
     "Got it" : {
 
@@ -1776,9 +1794,6 @@
 
     },
     "How you sign in" : {
-
-    },
-    "I save important facts, like an old injury." : {
 
     },
     "In this app" : {
@@ -1875,13 +1890,13 @@
 
     },
     "Light" : {
-
+      "comment" : "An appearance the app can take: the light look"
     },
     "Linked to %@" : {
 
     },
     "Load" : {
-
+      "comment" : "The weight a set lifts"
     },
     "Load, %@" : {
 
@@ -2042,7 +2057,7 @@
 
     },
     "Max" : {
-
+      "comment" : "A rep target with no fixed number: as many reps as the set allows"
     },
     "Max reps" : {
 
@@ -2066,7 +2081,7 @@
 
     },
     "Moved" : {
-
+      "comment" : "What a proposed change does to a movement or routine"
     },
     "Movement" : {
 
@@ -2205,7 +2220,7 @@
 
     },
     "Not selected" : {
-
+      "comment" : "The state of an echo's Useful answer"
     },
     "Not signed in" : {
 
@@ -2214,10 +2229,10 @@
 
     },
     "Note" : {
-
+      "comment" : "A note: one Coach keeps, or one written on a set"
     },
     "Notes" : {
-
+      "comment" : "The notes Coach keeps: a term in Coach's greeting, a settings row and its screen's title"
     },
     "Notes live with your account, so they need you signed in." : {
 
@@ -2250,7 +2265,7 @@
 
     },
     "One" : {
-
+      "comment" : "How many dumbbells a set lifts: one"
     },
     "One URL pasted into your tool. Your browser opens once to approve." : {
 
@@ -2286,7 +2301,7 @@
 
     },
     "Open since %@" : {
-
+      "comment" : "A hidden workout's row: Open since 9:41, or Open since yesterday at 9:41"
     },
     "Open workout" : {
 
@@ -2343,7 +2358,7 @@
 
     },
     "Performed" : {
-
+      "comment" : "What the finish receipt compares a set against: nothing, only what was lifted"
     },
     "Personal record" : {
 
@@ -2361,7 +2376,7 @@
 
     },
     "Plan" : {
-
+      "comment" : "What the finish receipt compares a set against: the routine's plan"
     },
     "Plan changes" : {
 
@@ -2376,9 +2391,6 @@
 
     },
     "RPE %@" : {
-
-    },
-    "Read" : {
 
     },
     "Read %lld workouts" : {
@@ -2461,13 +2473,13 @@
 
     },
     "Removed" : {
-
+      "comment" : "What a proposed change does to a movement or routine"
     },
     "Removing…" : {
 
     },
     "Renamed" : {
-
+      "comment" : "What a proposed change does to a movement or routine"
     },
     "Repetitions" : {
 
@@ -2485,7 +2497,7 @@
 
     },
     "Rest" : {
-
+      "comment" : "The rest between sets"
     },
     "Retry" : {
 
@@ -2548,7 +2560,7 @@
 
     },
     "Selected" : {
-
+      "comment" : "The state of an echo's Useful answer"
     },
     "Send code" : {
 
@@ -2560,7 +2572,7 @@
 
     },
     "Set" : {
-      "comment" : "A tile's label under a count of one set"
+      "comment" : "An App Intent's parameter: the set to log"
     },
     "Set %@" : {
       "comment" : "A set by its place: Set 3"
@@ -2794,7 +2806,7 @@
 
     },
     "Started" : {
-
+      "comment" : "When a workout started"
     },
     "Started %@" : {
 
@@ -3105,10 +3117,10 @@
 
     },
     "Time" : {
-
+      "comment" : "When a set was logged"
     },
     "Times" : {
-
+      "comment" : "When a workout started and finished"
     },
     "To keep a copy, export it first at windmill.works." : {
 
@@ -3151,7 +3163,7 @@
 
     },
     "Two" : {
-
+      "comment" : "How many dumbbells a set lifts: two"
     },
     "Two taps a set, and next time your numbers are already there." : {
 
@@ -3282,7 +3294,7 @@
 
     },
     "Window" : {
-
+      "comment" : "The chart's window picker, read by VoiceOver: the stretch of time the chart shows"
     },
     "Workout" : {
 
@@ -3303,7 +3315,7 @@
 
     },
     "Write" : {
-
+      "comment" : "A button that opens the keyboard on today's page"
     },
     "Write a line or a page, in your own words. Nothing is graded or shared." : {
 
@@ -3518,13 +3530,7 @@
     "a connected tool" : {
 
     },
-    "a program from a screenshot or your own words." : {
-
-    },
     "a removal" : {
-
-    },
-    "ask me, and I suggest changes to your routines." : {
 
     },
     "bodyweight" : {
@@ -3536,14 +3542,74 @@
     "collapsed" : {
 
     },
+    "connected-tool.delete" : {
+      "comment" : "What a connected tool may do with the log: delete from it",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Delete"
+          }
+        }
+      }
+    },
+    "connected-tool.read" : {
+      "comment" : "What a connected tool may do with the log: read it",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Read"
+          }
+        }
+      }
+    },
+    "connected-tool.write" : {
+      "comment" : "What a connected tool may do with the log: write to it",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Write"
+          }
+        }
+      }
+    },
     "delete" : {
       "comment" : "A connected tool may delete from the log"
     },
     "discards a workout · ends a share" : {
 
     },
+    "echo-day.open" : {
+      "comment" : "The state of a day's echoes: their sheet is open",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Open"
+          }
+        }
+      }
+    },
     "expanded" : {
 
+    },
+    "fact-tile.set" : {
+      "comment" : "A tile's label under a count of one set",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Set"
+          }
+        }
+      }
     },
     "five short" : {
       "comment" : "A set five reps short of its plan"
@@ -3563,15 +3629,11 @@
     "kg × 5" : {
 
     },
-    "last %@ · %@" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "last %1$@ · %2$@"
-          }
-        }
-      }
+    "last 12 weeks · %@" : {
+      "comment" : "A chart's window line: last 12 weeks · 28 workouts"
+    },
+    "last 90 days · %@" : {
+      "comment" : "A chart's window line: last 90 days · 14 weigh-ins"
     },
     "logs sets · saves notes · adds routines · shares workouts · proposes changes" : {
 
@@ -3630,6 +3692,7 @@
 
     },
     "past %@ from %@" : {
+      "comment" : "The record a set beat: past 100 from Sep 23, or past 100 from yesterday",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -3659,7 +3722,7 @@
 
     },
     "rest %@" : {
-
+      "comment" : "A planned rest, read aloud: rest 2 minutes"
     },
     "saved" : {
 
@@ -3667,17 +3730,11 @@
     "sets, workouts, routines, records, notes, weigh-ins" : {
 
     },
-    "sign in, and I can also save notes and suggest changes to your routines." : {
-
-    },
     "since %@" : {
-
+      "comment" : "When a tool was connected: since Sep 23, or since yesterday"
     },
     "something you copied down" : {
       "comment" : "Where an echoed passage came from"
-    },
-    "tell me your goals, and I will plan for them." : {
-
     },
     "the account changed while creating" : {
 
@@ -3689,7 +3746,7 @@
 
     },
     "the whole series · %@" : {
-
+      "comment" : "A chart's window line: the whole series · 14 weigh-ins"
     },
     "this workout" : {
 
@@ -3701,7 +3758,7 @@
       "comment" : "A day inside a sentence"
     },
     "trained %@" : {
-
+      "comment" : "When a routine was last trained: trained 3 days ago"
     },
     "training" : {
       "comment" : "What the account already has, in the sign-in question"
@@ -3725,10 +3782,10 @@
       "comment" : "A day inside a sentence"
     },
     "•" : {
-
+      "shouldTranslate" : false
     },
     "✓" : {
-
+      "shouldTranslate" : false
     },
     "👑 Share with Coach" : {
 

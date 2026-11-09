@@ -19,20 +19,38 @@ struct CoachSetupView: View {
   let signedIn: Bool
   let choose: (CoachSetupChoice) -> Void
   @Environment(\.dynamicTypeSize) var typeSize
-  // Each line a term and what it offers, the term set semibold before the dash.
-  var capabilities: [(String, String)] {
-    [(String(localized: "Build"), String(localized: "a program from a screenshot or your own words.")),
-     (String(localized: "Goals"), String(localized: "tell me your goals, and I will plan for them."))]
-      + (signedIn ? [(String(localized: "Notes"), String(localized: "I save important facts, like an old injury.")),
-                     (String(localized: "Changes"), String(localized: "ask me, and I suggest changes to your routines."))]
-         : [(String(localized: "Account"), String(localized: "sign in, and I can also save notes and suggest changes to your routines."))])
+  // What Coach offers, a line each: its term set semibold, a dash, and what the term means.
+  enum Capability {
+    case build, goals, notes, changes, account
+
+    var term: Text {
+      switch self {
+      case .build: Text("Build", comment: "A term in Coach's greeting: building a program")
+      case .goals: Text("Goals", comment: "A term in Coach's greeting: the person's goals")
+      case .notes: Text("Notes", comment: "The notes Coach keeps: a term in Coach's greeting, a settings row and its screen's title")
+      case .changes: Text("Changes", comment: "A term in Coach's greeting: the changes Coach suggests to routines")
+      case .account: Text("Account", comment: "A term in Coach's greeting: the person's Windmill account")
+      }
+    }
+    var line: Text {
+      let term = self.term.fontWeight(.semibold)
+      return switch self {
+      case .build: Text("\(term) — a program from a screenshot or your own words.", comment: "Coach's greeting; the placeholder is the term Build")
+      case .goals: Text("\(term) — tell me your goals, and I will plan for them.", comment: "Coach's greeting; the placeholder is the term Goals")
+      case .notes: Text("\(term) — I save important facts, like an old injury.", comment: "Coach's greeting; the placeholder is the term Notes")
+      case .changes: Text("\(term) — ask me, and I suggest changes to your routines.", comment: "Coach's greeting; the placeholder is the term Changes")
+      case .account: Text("\(term) — sign in, and I can also save notes and suggest changes to your routines.",
+                          comment: "Coach's greeting; the placeholder is the term Account")
+      }
+    }
   }
+  var capabilities: [Capability] { [.build, .goals] + (signedIn ? [.notes, .changes] : [.account]) }
   var body: some View {
     VStack(alignment: .leading, spacing: RoomSpace.small) {
       CoachBubble(speaker: .coach, tail: false) { Text("Hi, I’m Coach. I can help you with:").accessibilityIdentifier("coach-greeting") }
       CoachBubble(speaker: .coach) {
         VStack(alignment: .leading, spacing: 2) {
-          ForEach(capabilities, id: \.0) { anchor, line in Text(anchor).fontWeight(.semibold) + Text(" — " + line) }
+          ForEach(capabilities, id: \.self) { $0.line }
         }
       }.accessibilityElement(children: .combine).accessibilityIdentifier("coach-capabilities")
       Group {

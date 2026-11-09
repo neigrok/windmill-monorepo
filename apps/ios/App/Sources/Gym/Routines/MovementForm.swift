@@ -157,7 +157,7 @@ struct MovementForm: View {
 
   // Reps on the stock stepper, to the rule's most; stepped below 1 the target is Max, the plan's open reps.
   func repsStepper(_ reps: Int?, identifier: String, set: @escaping (Int?) -> Void) -> some View {
-    Stepper("Reps: \(reps.map(String.init) ?? String(localized: "Max"))", value: Binding(get: { reps ?? 0 }, set: { set($0 == 0 ? nil : $0) }), in: 0...TargetsDraft.maxReps)
+    Stepper("Reps: \(reps.map(String.init) ?? String(localized: "Max", comment: "A rep target with no fixed number: as many reps as the set allows"))", value: Binding(get: { reps ?? 0 }, set: { set($0 == 0 ? nil : $0) }), in: 0...TargetsDraft.maxReps)
       .accessibilityIdentifier(identifier)
   }
 

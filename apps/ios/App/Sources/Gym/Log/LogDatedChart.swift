@@ -22,6 +22,11 @@ struct LogDatedChart: View {
     var title: String { self == .strength ? String(localized: "Estimated strength chart") : String(localized: "Bodyweight chart") }
     var earlier: String { self == .strength ? String(localized: "Earlier workout") : String(localized: "Earlier weigh-in") }
     var later: String { self == .strength ? String(localized: "Later workout") : String(localized: "Later weigh-in") }
+    // The recent stretch its window picker offers beside All.
+    var recent: String {
+      self == .strength ? String(localized: "12 weeks", comment: "A chart's window: its last 12 weeks, beside All")
+        : String(localized: "90 days", comment: "A chart's window: its last 90 days, beside All")
+    }
     // A stretch of the chart with no dot in it, *no workout · Sep 2 – Sep 30*.
     func gap(_ from: String, _ to: String) -> String {
       self == .strength ? String(localized: "no workout · \(from) – \(to)") : String(localized: "no weigh-in · \(from) – \(to)")
@@ -234,21 +239,25 @@ struct LogDatedChart: View {
 enum ChartWindow: Hashable {
   case recent, all
 
-  func line(recent: String, holding count: String) -> String {
-    self == .recent ? String(localized: "last \(recent) · \(count)") : String(localized: "the whole series · \(count)")
+  func line(_ series: LogDatedChart.Series, holding count: String) -> String {
+    switch (self, series) {
+    case (.recent, .strength): String(localized: "last 12 weeks · \(count)", comment: "A chart's window line: last 12 weeks · 28 workouts")
+    case (.recent, .bodyweight): String(localized: "last 90 days · \(count)", comment: "A chart's window line: last 90 days · 14 weigh-ins")
+    case (.all, _): String(localized: "the whole series · \(count)", comment: "A chart's window line: the whole series · 14 weigh-ins")
+    }
   }
 }
 
 struct ChartWindowPicker: UIViewRepresentable {
-  let recent: String
+  let series: LogDatedChart.Series
   let identifier: String
   @Binding var window: ChartWindow
   func makeCoordinator() -> Coordinator { Coordinator(window: $window) }
   func makeUIView(context: Context) -> UISegmentedControl {
-    let control = UISegmentedControl(items: [recent, String(localized: "All")])
+    let control = UISegmentedControl(items: [series.recent, String(localized: "All", comment: "A chart's window: everything logged")])
     control.setTitleTextAttributes([.font: UIFont.preferredFont(forTextStyle: .subheadline)], for: .normal)
     control.accessibilityIdentifier = identifier
-    control.accessibilityLabel = String(localized: "Window")
+    control.accessibilityLabel = String(localized: "Window", comment: "The chart's window picker, read by VoiceOver: the stretch of time the chart shows")
     control.addTarget(context.coordinator, action: #selector(Coordinator.changed), for: .valueChanged)
     return control
   }

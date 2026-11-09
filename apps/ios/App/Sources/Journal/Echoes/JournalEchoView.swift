@@ -26,7 +26,8 @@ struct JournalEchoTab: View {
           .frame(minWidth: RoomSpace.minimumTarget, minHeight: RoomSpace.minimumTarget).contentShape(Rectangle())
       }.buttonStyle(.plain)
         .accessibilityLabel(Self.label(page.matches.count))
-        .accessibilityValue(echoes.sheetDay == day ? "Open" : "Closed")
+        .accessibilityValue(echoes.sheetDay == day ? String(localized: "echo-day.open", defaultValue: "Open", comment: "The state of a day's echoes: their sheet is open")
+                              : String(localized: "Closed", comment: "The state of a day's echoes: their sheet is closed"))
         .accessibilityIdentifier("journal-echo-\(day)")
         .onScrollVisibilityChange { visible = $0 }
         .task(id: visible && !writing && kindled) {
@@ -122,7 +123,8 @@ struct JournalEchoSheet: View {
       Button { Task { await echoes.answer(.useful, day: day) } } label: {
         Label("Useful", systemImage: "hand.thumbsup").symbolVariant(useful ? .fill : .none).frame(minHeight: RoomSpace.minimumTarget)
       }.tint(useful ? JournalPalette.lamp : JournalPalette.inkDim).disabled(pending)
-        .accessibilityValue(useful ? "Selected" : "Not selected").accessibilityIdentifier("echo-useful-page")
+        .accessibilityValue(useful ? Text("Selected", comment: "The state of an echo's Useful answer") : Text("Not selected", comment: "The state of an echo's Useful answer"))
+        .accessibilityIdentifier("echo-useful-page")
       Button { Task { await echoes.answer(.dismiss, day: day) } } label: {
         Label("Not useful", systemImage: "hand.thumbsdown").frame(minHeight: RoomSpace.minimumTarget)
       }

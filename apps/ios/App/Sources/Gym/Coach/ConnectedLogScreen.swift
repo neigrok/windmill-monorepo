@@ -9,7 +9,7 @@ nonisolated struct CoachConnection: Identifiable, Equatable {
   let levels: String
   let key: Bool
   func meta(_ dates: GymDate) -> String {
-    [key ? String(localized: "API key") : nil, levels, String(localized: "since \(dates.day(Instant(ms: created), inSentence: true))")]
+    [key ? String(localized: "API key") : nil, levels, String(localized: "since \(dates.day(Instant(ms: created), inSentence: true))", comment: "When a tool was connected: since Sep 23, or since yesterday")]
       .compactMap { $0 }.joined(separator: " · ")
   }
   // What a grant's scope lets a tool do, in the words its row says them.
@@ -153,9 +153,9 @@ struct ConnectedLogCapabilities<Header: View>: View {
   @ViewBuilder let header: () -> Header
   var body: some View {
     Section {
-      GymRow(title: String(localized: "Read"), meta: String(localized: "sets, workouts, routines, records, notes, weigh-ins"))
-      GymRow(title: String(localized: "Write"), meta: String(localized: "logs sets · saves notes · adds routines · shares workouts · proposes changes"))
-      GymRow(title: String(localized: "Delete"), meta: String(localized: "discards a workout · ends a share"))
+      GymRow(title: String(localized: "connected-tool.read", defaultValue: "Read", comment: "What a connected tool may do with the log: read it"), meta: String(localized: "sets, workouts, routines, records, notes, weigh-ins"))
+      GymRow(title: String(localized: "connected-tool.write", defaultValue: "Write", comment: "What a connected tool may do with the log: write to it"), meta: String(localized: "logs sets · saves notes · adds routines · shares workouts · proposes changes"))
+      GymRow(title: String(localized: "connected-tool.delete", defaultValue: "Delete", comment: "What a connected tool may do with the log: delete from it"), meta: String(localized: "discards a workout · ends a share"))
     } header: { header() } footer: { Text("A routine change waits for your Apply; the rest lands at once.") }
   }
 }

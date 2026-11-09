@@ -40,7 +40,7 @@ struct MovementPlanLine: Equatable {
   // The line in one breath for VoiceOver: *3 sets, 8 reps, 60 kg total, rest 2 minutes*.
   var spoken: String {
     let plan = isOpen ? [String(localized: "Open plan")] : facts.isEmpty ? [sequence.joined(separator: String(localized: ", then ", comment: "Between two sets of a varied scheme read aloud"))] : facts.map(\.text)
-    return (plan + [restSeconds.map { String(localized: "rest \(WorkoutClocks.spoken(Int64($0) * 1_000))") }].compactMap { $0 }).joined(separator: ", ")
+    return (plan + [restSeconds.map { String(localized: "rest \(WorkoutClocks.spoken(Int64($0) * 1_000))", comment: "A planned rest, read aloud: rest 2 minutes") }].compactMap { $0 }).joined(separator: ", ")
   }
 }
 

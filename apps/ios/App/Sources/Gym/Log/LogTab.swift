@@ -125,7 +125,7 @@ struct LogTab: View {
     guard !tabBarAccessory, gym.workoutHidden, let open = gym.openSession else { return nil }
     let dates = gym.dates, start = open.startedAt
     let since = LocalDay(start, in: dates.moment.zone) == dates.moment.today ? dates.time(start) : dates.dayAndTime(start, inSentence: true)
-    return GymRow(title: open.name ?? Readout.noRoutine, meta: String(localized: "Open since \(since)"), trailing: .door)
+    return GymRow(title: open.name ?? Readout.noRoutine, meta: String(localized: "Open since \(since)", comment: "A hidden workout's row: Open since 9:41, or Open since yesterday at 9:41"), trailing: .door)
   }
   // The row is iOS 18's door back, the one return iOS 26's accessory makes, recorded as door: row.
   func openHiddenWorkout() { gym.openHiddenWorkout(from: .row) }

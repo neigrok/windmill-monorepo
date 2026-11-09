@@ -200,7 +200,7 @@ struct RoutineSummarySheet: View {
 enum RoutineLines {
   static func routine(_ routine: Routine, lastTrained: Instant?, historyKnown: Bool, moment: Moment?) -> String {
     let movements = GymCount.of(routine.entries.count, .movement)
-    if let lastTrained, let moment { return "\(movements) · \(String(localized: "trained \(Readout.ago(lastTrained, now: moment.now, zone: moment.zone))"))" }
+    if let lastTrained, let moment { return "\(movements) · \(String(localized: "trained \(Readout.ago(lastTrained, now: moment.now, zone: moment.zone))", comment: "When a routine was last trained: trained 3 days ago"))" }
     return historyKnown ? "\(movements) · \(String(localized: "never trained"))" : movements
   }
 
