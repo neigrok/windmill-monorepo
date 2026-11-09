@@ -486,6 +486,19 @@ class DesignCaptureTests(unittest.TestCase):
             ("shell", "settings", "delete", "secure", "accessibility_interactive_ui_timeout_ms"),
         ], calls)
 
+    def test_only_the_apps_own_crash_or_anr_fails_the_run(self):
+        def fatal(process):
+            return ("E/AndroidRuntime( 1326): FATAL EXCEPTION: main\n"
+                    f"E/AndroidRuntime( 1326): Process: {process}, PID: 1326\n"
+                    "E/AndroidRuntime( 1326): java.lang.IllegalStateException: boom\n")
+        launcher = fatal("com.google.android.apps.nexuslauncher")
+        self.assertFalse(capture.app_failed(""))
+        self.assertFalse(capture.app_failed(launcher))
+        self.assertFalse(capture.app_failed("I/ActivityManager(  632): ANR in com.android.systemui\n"))
+        self.assertTrue(capture.app_failed(launcher + fatal("works.windmill.app")))
+        self.assertTrue(capture.app_failed(fatal("works.windmill.app:sync")))
+        self.assertTrue(capture.app_failed("E/ActivityManager(  632): ANR in works.windmill.app (works.windmill.app/.MainActivity)\n"))
+
     def test_system_language_boots_a_rooted_emulator_again_and_checks_the_framework_took_it(self):
         class LocaleDevice(capture.Device):
             def __init__(self, replies):

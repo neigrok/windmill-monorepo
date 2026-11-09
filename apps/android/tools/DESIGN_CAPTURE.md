@@ -294,7 +294,8 @@ assert its actual backend receipt as well as its UI result.
 The cold-start probe records process-start and rendered-ready-frame times on the device, after
 the fixture routines are loaded. The rig separately verifies `Push A` through accessibility
 and records that slower host-side selector time. The default run fails at 3000ms or longer, or on
-an ANR/fatal exception. `--baseline` records an over-budget baseline without claiming performance
+an ANR or fatal exception in the app's process; another process's crash, such as the launcher's under a
+viewport change, stays in the saved log. `--baseline` records an over-budget baseline without claiming performance
 acceptance. Keep baseline and final APKs, use identical emulator configuration and fixtures, and
 reserve a quiet host window for both measurements.
 

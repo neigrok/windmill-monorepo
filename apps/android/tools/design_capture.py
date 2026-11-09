@@ -40,6 +40,12 @@ SCENARIOS = [
 ]
 
 
+# Another process's crash, such as the launcher's under a viewport change, stays in the saved log without failing the app.
+def app_failed(logcat):
+    fatal = re.search(r"FATAL EXCEPTION: [^\n]*\n[^\n]*Process: " + re.escape(PACKAGE) + r"[,:]", logcat)
+    return "ANR in " + PACKAGE in logcat or fatal is not None
+
+
 def local_origin(value, emulator=False):
     parsed = urllib.parse.urlsplit(value)
     hosts = {"127.0.0.1", "localhost", "10.0.2.2"} if emulator else {"127.0.0.1", "localhost"}
@@ -1133,7 +1139,7 @@ def main():
             manifest["performanceAccepted"] = None
             logcat = device.run("logcat", "-d", "-v", "brief", "ActivityManager:I", "AndroidRuntime:E", "*:S").decode(errors="replace")
             (args.output / "android-runtime.log").write_text(logcat)
-            manifest["anr"] = "ANR in " + PACKAGE in logcat or "FATAL EXCEPTION" in logcat
+            manifest["anr"] = app_failed(logcat)
         else:
             manifest["step"] = "cold-start"
             device.tap("Routines")
@@ -1174,7 +1180,7 @@ def main():
             (args.output / "workout-cpu.txt").write_bytes(device.run("shell", "dumpsys", "cpuinfo"))
             logcat = device.run("logcat", "-d", "-v", "brief", "ActivityManager:I", "AndroidRuntime:E", "*:S").decode(errors="replace")
             (args.output / "android-runtime.log").write_text(logcat)
-            manifest["anr"] = "ANR in " + PACKAGE in logcat or "FATAL EXCEPTION" in logcat
+            manifest["anr"] = app_failed(logcat)
             (args.output / "capture-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
             manifest["performanceAccepted"] = manifest["coldStartToRoutinesMs"] < 3000
             manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
