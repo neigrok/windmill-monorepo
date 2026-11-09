@@ -198,8 +198,8 @@ export function ReadOnlyLog({ token = null, preview = null, hash = '', onReady =
     <h1 className="gym-title">{t('gym.share.trainingLog')}</h1>
     <div className="gym-history-filters">
       <DateJump year={filters.year} month={filters.month} months={dates.months} failure={dates.failure} onRetry={dates.retry} onChange={(change) => move({ ...change, selected: null })} />
-      <HistoryFilter label={t('gym.share.filterMovement')} value={filters.exercise} options={history.data?.exercises ?? []} onChange={(exercise) => move({ exercise, selected: null })} />
-      <HistoryFilter label={t('gym.share.filterRoutine')} value={filters.routine} options={history.data?.routines ?? []} onChange={(routine) => move({ routine, selected: null })} />
+      <HistoryFilter kind="exercise" value={filters.exercise} options={history.data?.exercises ?? []} onChange={(exercise) => move({ exercise, selected: null })} />
+      <HistoryFilter kind="routine" value={filters.routine} options={history.data?.routines ?? []} onChange={(routine) => move({ routine, selected: null })} />
     </div>
     <p className="gym-log-count">{historyTotals(history.data?.summary, 'kg')}</p>
     {history.phase === 'loading' && !history.data && <p className="gym-quiet">{t('gym.share.openingLog')}</p>}

@@ -4,7 +4,7 @@
 import { msOfDateLocal } from '../bodyweight/bodyweight.js';
 import { gymMoment } from '../gymRuntime.js';
 import { t } from '../i18n/index.js';
-import { agoLabel, dayLabel, durLabel, isFinished, NO_ROUTINE, routineNameOf, shortDayLabel, timeLabel } from '../log.js';
+import { agoLabel, dayLabel, daysAgo, durLabel, isFinished, NO_ROUTINE, routineNameOf, shortDayLabel, timeLabel } from '../log.js';
 
 const MINUTE_MS = 60_000;
 const HOUR_MS = 60 * MINUTE_MS;
@@ -150,8 +150,7 @@ export function slotNote(slot, now) {
 }
 
 function daySaid(ms, now) {
-  const ago = agoLabel(ms, now);
-  if (ago === 'today' || ago === 'yesterday') return ago;
+  if (daysAgo(ms, now) <= 1) return agoLabel(ms, now);
   return dayLabel(ms);
 }
 

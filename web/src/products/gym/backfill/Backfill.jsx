@@ -14,7 +14,7 @@ import { useGymApi } from '../gymRuntime.js';
 import { t } from '../i18n/index.js';
 import { Session, SessionRules, TrainingSet } from '../domain/training.js';
 import { sessionDocument } from '../domain/trainingHistory.js';
-import { KG } from '../units.js';
+import { KG, unitSymbol } from '../units.js';
 import { UNDO_LABEL } from '../withheld.js';
 import {
   collapses, draftFromRoutine, freeDraft, importOf, inTheLogLine, isOverLimit,
@@ -530,7 +530,7 @@ function Movement({ movement, name, basis, stepKg, focused, open, lift, leaving,
       <div className="gym-past-line">
         <button type="button" className="gym-past-name" aria-expanded={open} onClick={onOpen}>
           <span className="gym-past-movement-name">{name}</span>
-          <span className="gym-past-scheme">{movementLine(movement)}{basis !== KG && ` · ${basis}`}</span>
+          <span className="gym-past-scheme">{movementLine(movement)}{basis !== unitSymbol(KG) && ` · ${basis}`}</span>
         </button>
         {!open && (
           <span className="gym-past-rail" aria-hidden="true">

@@ -5,9 +5,20 @@ import { t } from './i18n/index.js';
 import { inDisplayUnit, LB, unitSymbol, weightUnit } from './units.js';
 import { inLoggedOrder } from './domain/training.js';
 
-const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const WEEKDAYS = [
+  t('gym.log.weekdays.sun'), t('gym.log.weekdays.mon'), t('gym.log.weekdays.tue'), t('gym.log.weekdays.wed'),
+  t('gym.log.weekdays.thu'), t('gym.log.weekdays.fri'), t('gym.log.weekdays.sat'),
+];
+const WEEKDAY_NAMES = [
+  t('gym.log.weekdayNames.sunday'), t('gym.log.weekdayNames.monday'), t('gym.log.weekdayNames.tuesday'),
+  t('gym.log.weekdayNames.wednesday'), t('gym.log.weekdayNames.thursday'), t('gym.log.weekdayNames.friday'),
+  t('gym.log.weekdayNames.saturday'),
+];
+const MONTHS = [
+  t('gym.log.months.jan'), t('gym.log.months.feb'), t('gym.log.months.mar'), t('gym.log.months.apr'),
+  t('gym.log.months.may'), t('gym.log.months.jun'), t('gym.log.months.jul'), t('gym.log.months.aug'),
+  t('gym.log.months.sep'), t('gym.log.months.oct'), t('gym.log.months.nov'), t('gym.log.months.dec'),
+];
 
 export function sessionIdOf(hash) {
   const match = /^#\/gym\/session\/([A-Za-z0-9_-]+)/.exec(hash || '');
@@ -172,16 +183,17 @@ export function screenOf(hash) {
   return 'routines';
 }
 
-// Never localised: a reordered locale would make the prefill card and the log row disagree.
+// The catalog's words and order, never the system locale's: a reordered locale would make the prefill card and the log row disagree.
+// A missing instant reads `undefined NaN undefined` as it always has, so its names pass through String().
 export function dayLabel(ms) {
   const day = new Date(ms);
-  return `${WEEKDAYS[day.getDay()]} ${day.getDate()} ${MONTHS[day.getMonth()]}`;
+  return t('gym.log.day', { weekday: String(WEEKDAYS[day.getDay()]), date: day.getDate(), month: String(MONTHS[day.getMonth()]) });
 }
 
 // `27 Jul`. Local, like every instant in this product.
 export function shortDayLabel(ms) {
   const day = new Date(ms);
-  return `${day.getDate()} ${MONTHS[day.getMonth()]}`;
+  return t('gym.log.shortDay', { date: day.getDate(), month: String(MONTHS[day.getMonth()]) });
 }
 
 export function weekdayName(ms) {
@@ -202,7 +214,7 @@ const WEEKDAY_MS = 6 * 86400000;
 
 export function arrivedLabel(ms, now = Date.now()) {
   if (now - ms >= WEEKDAY_MS) return whenLabel(ms);
-  return `${WEEKDAYS[new Date(ms).getDay()]} ${timeLabel(ms)}`;
+  return t('gym.log.weekdayAt', { weekday: String(WEEKDAYS[new Date(ms).getDay()]), time: timeLabel(ms) });
 }
 
 // The routine is the title above this line, so the day leads it.

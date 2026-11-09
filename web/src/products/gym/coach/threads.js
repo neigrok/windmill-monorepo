@@ -1,6 +1,6 @@
 import { failureReason } from '../errors.js';
 import { t } from '../i18n/index.js';
-import { agoLabel, shortDayLabel } from '../log.js';
+import { agoLabel, daysAgo, shortDayLabel } from '../log.js';
 
 const MONTH_NAMES = [
   t('gym.threads.months.january'), t('gym.threads.months.february'), t('gym.threads.months.march'),
@@ -39,8 +39,8 @@ export function outcomeLine(outcome) {
 
 // Today is named by the word agoLabel gives today; every older day by its date.
 export function askedLabel(ms, now = Date.now()) {
-  const today = agoLabel(now, now);
-  return agoLabel(ms, now) === today ? today : shortDayLabel(ms);
+  if (daysAgo(ms, now) <= 0) return agoLabel(ms, now);
+  return shortDayLabel(ms);
 }
 
 // Folds the wire's order, newest first; nothing is re-sorted here.
