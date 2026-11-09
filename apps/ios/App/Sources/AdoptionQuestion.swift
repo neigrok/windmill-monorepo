@@ -6,11 +6,11 @@ import GymDomain
 struct AdoptionQuestion: Equatable {
   // The kinds the question names, in the order it names them, each counted in its own words.
   static let named: [(type: String, counted: (Int) -> String)] = [
-    (Session.type, { GymCount.of($0, .workout) }),
-    (Routine.type, { GymCount.of($0, .routine) }),
-    (WeighIn.type, { GymCount.of($0, .weighIn) }),
-    (Exercise.type, { GymCount.of($0, .movement) }),
-    (Note.type, { GymCount.of($0, .note) }),
+    (Session.type, { String(localized: "\($0) workouts", locale: .copy) }),
+    (Routine.type, { String(localized: "\($0) routines", locale: .copy) }),
+    (WeighIn.type, { String(localized: "\($0) weigh-ins", locale: .copy) }),
+    (Exercise.type, { String(localized: "\($0) movements", locale: .copy) }),
+    (Note.type, { String(localized: "\($0) notes", locale: .copy) }),
     (Page.type, { String(localized: "\($0) journal pages", locale: .copy) }),
   ]
   let phrase: String
@@ -23,7 +23,7 @@ struct AdoptionQuestion: Equatable {
     let parts = [AppModel.Room.gym, .journal].compactMap { counts[$0] }.flatMap { room in
       let held = Self.named.compactMap { type, counted in room[type].flatMap { $0 > 0 ? ($0, counted($0)) : nil } }
       let changes = room.filter { $0.key != JournalState.type }.values.reduce(0, +)
-      return held.isEmpty ? [(changes, GymCount.of(changes, .change))] : held
+      return held.isEmpty ? [(changes, String(localized: "\(changes) changes", locale: .copy))] : held
     }
     phrase = Self.joined(parts.map(\.1))
     kinds = parts.count

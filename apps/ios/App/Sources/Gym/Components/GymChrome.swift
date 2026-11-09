@@ -21,7 +21,7 @@ struct SheetCommit: ViewModifier {
   let title: LocalizedStringResource
   let identifier: String
   var dismissal: LocalizedStringResource = "Cancel"
-  var dismissalIdentifier: String?
+  var dismissalIdentifier = "sheet-cancel"
   var disabled = false
   var busy = false
   var style = Commit.checkmark
@@ -31,7 +31,7 @@ struct SheetCommit: ViewModifier {
   func body(content: Content) -> some View {
     content.toolbar {
       ToolbarItem(placement: .cancellationAction) {
-        Button(dismissal, action: dismiss).disabled(busy).accessibilityIdentifier(dismissalIdentifier ?? dismissal.key)
+        Button(dismissal, action: dismiss).disabled(busy).accessibilityIdentifier(dismissalIdentifier)
       }
       if style == .plainCheckmark {
         ToolbarItem(placement: .topBarTrailing) {
@@ -108,7 +108,7 @@ extension View {
   func gymTabBar(hidden: Bool = true) -> some View {
     toolbar(hidden ? .hidden : .automatic, for: .tabBar).preference(key: TabBarHidden.self, value: hidden)
   }
-  func sheetCommit(_ title: LocalizedStringResource, identifier: String, dismissal: LocalizedStringResource = "Cancel", dismissalIdentifier: String? = nil,
+  func sheetCommit(_ title: LocalizedStringResource, identifier: String, dismissal: LocalizedStringResource = "Cancel", dismissalIdentifier: String = "sheet-cancel",
                    disabled: Bool = false, busy: Bool = false, style: SheetCommit.Commit = .checkmark,
                    dismiss: @escaping () -> Void, commit: @escaping () -> Void) -> some View {
     modifier(SheetCommit(title: title, identifier: identifier, dismissal: dismissal, dismissalIdentifier: dismissalIdentifier,

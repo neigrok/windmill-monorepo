@@ -15,6 +15,7 @@ struct GymTransient: View {
 
       var title: String { self == .retry ? String(localized: "Try again") : String(localized: "Dismiss message") }
       var symbol: String? { self == .dismiss ? "xmark" : nil }
+      var identifier: String { self == .retry ? "transient-retry" : "transient-dismiss" }
     }
 
     init?(readFailed: Bool, error: String?, notices: [(id: String, text: String)], local: String?, retries: Bool, dismisses: Bool, noticeText: String?) {
@@ -84,7 +85,7 @@ struct GymTransient: View {
     VStack(spacing: 0) {
       if let shown {
         RoomTransient(message: shown.text, room: .gym, actionTitle: shown.control?.title, actionSymbol: shown.control?.symbol,
-                      action: action(shown), dismiss: dismissal(shown))
+                      actionIdentifier: shown.control?.identifier, action: action(shown), dismiss: dismissal(shown))
           .accessibilityIdentifier(errorIdentifier)
       }
     }.roomMotion(shown)
