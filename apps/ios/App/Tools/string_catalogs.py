@@ -72,8 +72,25 @@ def pruned(catalog, extracted):
                                    if key in extracted or entry.get("extractionState") == "manual"}}
 
 
+# xcstringstool answers 0 when it cannot read a catalog or a .stringsdata and skips it, so its warning fails the sync.
 def sync(path, files):
-    subprocess.run(["xcrun", "xcstringstool", "sync", str(path), "--stringsdata", *map(str, files)], check=True)
+    result = subprocess.run(["xcrun", "xcstringstool", "sync", str(path), "--stringsdata", *map(str, files)],
+                            check=True, capture_output=True, text=True)
+    skipped = [line for line in (result.stdout + result.stderr).splitlines() if "Skipping sync" in line or "Couldn't read" in line]
+    if skipped:
+        raise SystemExit(f"error: xcstringstool could not read what it syncs: {skipped[0]}")
+
+
+# A key that holds no word is not for translators, unless it joins by comma or colon, whose marks vary by language.
+def translatable(key):
+    bare = PLACEHOLDER.sub("", key)
+    return any(character.isalpha() for character in bare) or "," in bare or ":" in bare
+
+
+def marked(catalog):
+    return {**catalog, "strings": {key: {**{field: value for field, value in entry.items() if field != "shouldTranslate"},
+                                         **({} if translatable(key) else {"shouldTranslate": False})}
+                                   for key, entry in catalog["strings"].items()}}
 
 
 # The Info.plist strings people read: the name under the icon and each reason a permission is asked for.
@@ -98,8 +115,9 @@ def regenerated(derived_data, directory, app=APP):
         fresh.write_text(xcode_json(EMPTY))
         sync(fresh, files)
         committed = parsed(app / folder / "Localizable.xcstrings")
-        current.write_text(xcode_json(pruned(committed, set(parsed(fresh)["strings"]))))
+        current.write_text(xcode_json(marked(pruned(committed, set(parsed(fresh)["strings"])))))
         sync(current, files)
+        current.write_text(xcode_json(marked(parsed(current))))
         written[f"{folder}/Localizable.xcstrings"] = current
     return written
 
@@ -116,28 +134,53 @@ def placeholders(text, substitutions=None):
     return taken
 
 
-# The hand-kept English held to its key: its placeholders, a counted %lld, one and other forms, each form showing its number.
+# A value as its key would read it: positions, numbered in order, dropped, and each substitution read as its other form.
+# None when the positions are out of order.
+def as_key(value, substitutions):
+    places = [int(place) for place, whole, _, _ in PLACEHOLDER.findall(value) if place and whole != "%"]
+    if places != list(range(1, len(places) + 1)):
+        return None
+    def written(match):
+        place, whole, name, conversion = match.groups()
+        if not name:
+            return "%" + whole
+        other = substitutions.get(name, {}).get("variations", {}).get("plural", {}).get("other", {}).get("stringUnit", {}).get("value", "")
+        return other.replace("%arg", "%" + substitutions.get(name, {}).get("formatSpecifier", ""))
+    return PLACEHOLDER.sub(written, value)
+
+
+# The hand-kept English held to its key: its value and plural other form read as the key, every other form takes its
+# placeholders, a substitution counts one of its %lld, and every plural has a one and an other form showing its number.
+# An explicit key's value is its English, so it answers to no key.
 def malformed(catalog):
     findings = []
     for key, entry in sorted(catalog["strings"].items()):
+        if entry.get("extractionState") == "extracted_with_value":
+            continue
         english = entry.get("localizations", {}).get("en", {})
-        expected = placeholders(key)
         substitutions = english.get("substitutions", {})
-        values = [("its value", english["stringUnit"]["value"])] if "stringUnit" in english else []
-        plurals = [("its plural", english["variations"]["plural"])] if "plural" in english.get("variations", {}) else []
-        values += [(f"its {form} form", form_entry["stringUnit"]["value"]) for _, plural in plurals for form, form_entry in plural.items()]
-        for where, value in values:
-            if placeholders(value, substitutions) != expected:
+        plurals = {"its plural": english["variations"]["plural"]} if "plural" in english.get("variations", {}) else {}
+        plurals.update({f"its substitution {name!r}": substitution.get("variations", {}).get("plural", {})
+                        for name, substitution in sorted(substitutions.items())})
+        units = {"its value": english["stringUnit"]} if "stringUnit" in english else {}
+        units.update({f"{where} {form} form": form_entry.get("stringUnit", {}) for where, plural in plurals.items() for form, form_entry in plural.items()})
+        for where, unit in units.items():
+            value = unit.get("value")
+            if value is None:
+                findings.append(f"{key!r}: {where} has no value")
+            elif where.startswith("its substitution"):
+                findings += [f"{key!r}: {where} {value!r} does not show its number"] if "%arg" not in value else []
+            elif where in ("its value", "its plural other form") and as_key(value, substitutions) is None:
+                findings.append(f"{key!r}: {where} {value!r} numbers its placeholders out of order")
+            elif where in ("its value", "its plural other form") and as_key(value, substitutions) != key:
+                findings.append(f"{key!r}: {where} {value!r} does not read as its key")
+            elif placeholders(value, substitutions) != placeholders(key):
                 findings.append(f"{key!r}: {where} {value!r} takes other placeholders than its key")
         for name, substitution in sorted(substitutions.items()):
             argument, conversion = substitution.get("argNum"), substitution.get("formatSpecifier")
-            if conversion != "lld" or expected.get(argument) != "lld":
+            if conversion != "lld" or placeholders(key).get(argument) != "lld":
                 findings.append(f"{key!r}: its substitution {name!r} counts argument {argument} as %{conversion}, no %lld of its key")
-            plural = substitution.get("variations", {}).get("plural", {})
-            plurals.append((f"its substitution {name!r}", plural))
-            findings += [f"{key!r}: its substitution {name!r} {form} form {form_entry['stringUnit']['value']!r} does not show its number"
-                         for form, form_entry in plural.items() if "%arg" not in form_entry["stringUnit"]["value"]]
-        findings += [f"{key!r}: {where} lacks its {form} form" for where, plural in plurals for form in ("one", "other") if form not in plural]
+        findings += [f"{key!r}: {where} lacks its {form} form" for where, plural in plurals.items() for form in ("one", "other") if form not in plural]
     return findings
 
 
@@ -153,6 +196,10 @@ def main():
     parser.add_argument("--derived-data", type=Path, help="An existing Release simulator build to read instead of building.")
     parser.add_argument("--check", action="store_true", help="Change nothing; exit 1 when a catalog is not current.")
     arguments = parser.parse_args()
+    malformations = [f"{folder}/Localizable.xcstrings: {line}" for folder, _ in TARGETS.values()
+                     for line in malformed(parsed(APP / folder / "Localizable.xcstrings"))]
+    if malformations:
+        raise SystemExit("\n".join(f"error: {line}" for line in malformations))
     derived_data = arguments.derived_data or build()
     products = derived_data / "Build/Products" / CONFIGURATION
     findings = []
@@ -163,13 +210,12 @@ def main():
         findings += info_plist_findings(path, parsed(APP / path), info)
     with TemporaryDirectory(prefix="windmill-catalogs-") as directory:
         written = regenerated(derived_data, directory)
-        findings += [f"{path}: {line}" for path, file in written.items() for line in malformed(parsed(file))]
         changes = {path: differences(APP / path, file) for path, file in written.items()}
         if arguments.check:
             findings += [f"{path} is not current: {change}" for path, lines in changes.items() for change in lines]
             if findings:
                 print(*findings, sep="\n")
-                raise SystemExit("error: run `python3 Tools/string_catalogs.py`, mend what it names, and commit the catalogs it writes.")
+                raise SystemExit("error: run `python3 Tools/string_catalogs.py` and commit the catalogs it writes.")
             print("The String Catalogs are current.")
             return
         for path, file in written.items():
@@ -177,8 +223,7 @@ def main():
             print(f"{path}: {len(parsed(file)['strings'])} strings, {len(changes[path])} changed")
     if findings:
         print(*findings, sep="\n")
-        raise SystemExit("error: mend in the catalogs what the lines above name: an InfoPlist string as the built Info.plist shows it, "
-                         "an English value, form or substitution as its key takes it.")
+        raise SystemExit("error: keep each InfoPlist catalog's strings as the built Info.plist shows them.")
 
 
 if __name__ == "__main__":

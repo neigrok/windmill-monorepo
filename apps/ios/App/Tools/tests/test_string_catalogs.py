@@ -67,30 +67,57 @@ class StringCatalogTests(unittest.TestCase):
         self.assertIn("build Release for the simulator first", str(refusal.exception))
 
     def test_hand_kept_english_is_held_to_its_key(self):
+        def unit(value):
+            return {"stringUnit": {"state": "translated", "value": value}}
         def plural(one, other):
-            return {"plural": {form: {"stringUnit": {"state": "translated", "value": value}} for form, value in (("one", one), ("other", other)) if value}}
+            return {"plural": {form: unit(value) for form, value in (("one", one), ("other", other)) if value}}
         def counted(argument, conversion, one, other):
             return {"sets": {"argNum": argument, "formatSpecifier": conversion, "variations": plural(one, other)}}
         catalog = {"strings": {
             "%lld sets": {"localizations": {"en": {"variations": plural("%@ set", "%lld sets")}}},
             "%lld reps": {"localizations": {"en": {"variations": plural(None, "%lld reps")}}},
+            "%lld notes": {"localizations": {"en": {"variations": plural("%lld note", "%lld note")}}},
             "Set %lld of %lld": {"localizations": {"en": {"stringUnit": {"state": "new", "value": "Set %1$lld"}}}},
             "%@ %@": {"localizations": {"en": {"stringUnit": {"state": "new", "value": "%2$@ %1$@"}}}},
+            "%@ – %@": {"localizations": {"en": {"stringUnit": {"state": "new", "value": "%1$@ and %2$@"}}}},
+            "%@: %@": {"localizations": {"en": {"stringUnit": {"state": "new"}}}},
             "%@ from %lld sets": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "%1$@ from %2$#@sets@"},
                                                           "substitutions": counted(1, "lld", "%arg set", "%arg sets")}}},
-            "%lld of %lld sets": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "%1$lld of %2$#@sets@"},
+            "%lld of %lld sets": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "%2$lld of %1$#@sets@"},
                                                           "substitutions": counted(2, "lld", "one set", "%arg sets")}}},
+            "%lld of %lld pages": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "%1$lld of %2$#@sets@"},
+                                                           "substitutions": counted(2, "lld", "%arg page", "%arg pages")}}},
             "Kept": {"comment": "No English of its own"},
+            "echo-day.open": {"extractionState": "extracted_with_value", "localizations": {"en": unit("Open")}},
             "100%% of %lld sets": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "100%% of %1$#@sets@"},
                                                            "substitutions": counted(1, "lld", "%arg set", "%arg sets")}}},
         }}
         self.assertEqual(string_catalogs.malformed(catalog), [
+            "'%@ %@': its value '%2$@ %1$@' numbers its placeholders out of order",
             "'%@ from %lld sets': its substitution 'sets' counts argument 1 as %lld, no %lld of its key",
+            "'%@ – %@': its value '%1$@ and %2$@' does not read as its key",
+            "'%@: %@': its value has no value",
+            "'%lld notes': its plural other form '%lld note' does not read as its key",
+            "'%lld of %lld sets': its value '%2$lld of %1$#@sets@' numbers its placeholders out of order",
             "'%lld of %lld sets': its substitution 'sets' one form 'one set' does not show its number",
             "'%lld reps': its plural lacks its one form",
-            "'%lld sets': its one form '%@ set' takes other placeholders than its key",
-            "'Set %lld of %lld': its value 'Set %1$lld' takes other placeholders than its key",
+            "'%lld sets': its plural one form '%@ set' takes other placeholders than its key",
+            "'Set %lld of %lld': its value 'Set %1$lld' does not read as its key",
         ])
+
+    def test_a_key_without_a_word_is_not_for_translators_unless_it_joins_by_comma_or_colon(self):
+        keys = ["", "  ", "%@", "%lld", "100", "•", "✓", " · %@", "%@ %@", "%@ · %@", "%@ – %@", "/ %@", "%@ × %lld", "%@, %@", "%@: %@", "Set %lld", "kg"]
+        self.assertEqual([key for key in keys if string_catalogs.translatable(key)], ["%@, %@", "%@: %@", "Set %lld", "kg"])
+
+    def test_a_sync_xcstringstool_skips_fails(self):
+        unreadable = self.root / "Localizable.xcstrings"
+        unreadable.write_text(json.dumps({"sourceLanguage": "en", "version": "1.0", "strings": {"A": {"localizations": {"en": {"stringUnit": {"state": "new"}}}}}}))
+        data = self.root / "View.stringsdata"
+        data.write_text(json.dumps({"source": "View.swift", "tables": {"Localizable": []}, "version": 1}))
+        with self.assertRaises(SystemExit) as refusal:
+            string_catalogs.sync(unreadable, [data])
+        self.assertEqual(str(refusal.exception), "error: xcstringstool could not read what it syncs: "
+                                                 "warning: Skipping sync for 'Localizable.xcstrings' because the file could not be read")
 
     def test_the_committed_catalogs_hold_their_english_to_their_keys(self):
         for folder, _ in string_catalogs.TARGETS.values():
@@ -111,9 +138,9 @@ class StringCatalogTests(unittest.TestCase):
             string_catalogs.build(run=lambda *_, **__: Answer())
         self.assertEqual(str(refusal.exception), "error: xcodebuild -showBuildSettings names no BUILD_ROOT for the Release simulator build.")
 
-    def test_a_regenerated_catalog_takes_the_new_drops_the_gone_and_keeps_what_is_kept_by_hand(self):
+    def test_a_regenerated_catalog_takes_the_new_drops_the_gone_keeps_what_is_kept_by_hand_and_marks_what_has_no_word(self):
         derived_data, app = self.root / "DerivedData", self.root / "App"
-        sources = {"Windmill": ["Hello", "%lld sets", "%@ %@", ("echo-day.open", "Open")], "WindmillWorkoutActivity": ["Set %lld of %lld"]}
+        sources = {"Windmill": ["Hello", "%lld sets", "%@ %@", "%@, %@", "%@: %@", ("echo-day.open", "Open")], "WindmillWorkoutActivity": ["Set %lld of %lld"]}
         for target, keys in sources.items():
             objects = derived_data / f"Build/Intermediates.noindex/Windmill.build/Release-iphonesimulator/{target}.build/Objects-normal/arm64"
             objects.mkdir(parents=True)
@@ -124,7 +151,7 @@ class StringCatalogTests(unittest.TestCase):
             (objects / "View.stringsdata").write_text(json.dumps({"source": f"/repo/{target}/View.swift", "tables": {"Localizable": strings}, "version": 1}))
         plural = {"en": {"variations": {"plural": {"one": {"stringUnit": {"state": "translated", "value": "%lld set"}},
                                                    "other": {"stringUnit": {"state": "translated", "value": "%lld sets"}}}}}}
-        committed = {"Resources": {"%lld sets": {"localizations": plural}, "%@ %@": {"shouldTranslate": False},
+        committed = {"Resources": {"%lld sets": {"localizations": plural}, "%@ %@": {}, "%@: %@": {"shouldTranslate": False},
                                    "Hello": {"comment": "A greeting"}, "Gone": {}},
                      "WorkoutActivityWidget": {}}
         for folder, strings in committed.items():
@@ -134,6 +161,8 @@ class StringCatalogTests(unittest.TestCase):
         self.assertEqual({path: string_catalogs.parsed(file)["strings"] for path, file in written.items()}, {
             "Resources/Localizable.xcstrings": {
                 "%@ %@": {"shouldTranslate": False}, "%lld sets": {"localizations": plural}, "Hello": {"comment": "A greeting"},
+                "%@, %@": {"localizations": {"en": {"stringUnit": {"state": "new", "value": "%1$@, %2$@"}}}},
+                "%@: %@": {},
                 "echo-day.open": {"comment": "An echo's state", "extractionState": "extracted_with_value",
                                   "localizations": {"en": {"stringUnit": {"state": "new", "value": "Open"}}}},
             },
