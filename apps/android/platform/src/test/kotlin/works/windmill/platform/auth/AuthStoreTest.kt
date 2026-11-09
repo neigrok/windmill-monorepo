@@ -16,6 +16,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Before
 import org.junit.Test
+import works.windmill.platform.spelled
 import works.windmill.platform.User
 import works.windmill.platform.net.WindmillApiException
 import works.windmill.platform.net.Refusal
@@ -23,7 +24,12 @@ import works.windmill.platform.telemetry.Telemetry
 import java.io.IOException
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import org.robolectric.annotation.Config
+import org.robolectric.RobolectricTestRunner
+import org.junit.runner.RunWith
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class AuthStoreTest {
     private val server = MockWebServer()
 
@@ -56,7 +62,7 @@ class AuthStoreTest {
         assertEquals(WindmillApiException.Refused(410,
             Refusal("That code didn't work", "Check the digits, or send a fresh one.", "expired")), failure)
         assertEquals("That code didn't work. Check the digits, or send a fresh one.",
-            MagicLink.refusal(failure as WindmillApiException))
+            MagicLink.refused(failure as WindmillApiException).spelled())
         assertEquals(AuthStatus.SignedOut, auth.status)
         assertEquals(LocalSession.Absent, sessions.localSession)
         assertNull(sessions.proposed)
@@ -822,3 +828,5 @@ class AuthStoreTest {
     }
 
 }
+
+// The words as English spells them.

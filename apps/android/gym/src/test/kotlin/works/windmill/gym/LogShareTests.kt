@@ -32,6 +32,7 @@ import works.windmill.gym.net.FakeGymRest
 import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.store.TrainingRefused
 import works.windmill.gym.ui.GymMaterial
+import works.windmill.platform.i18n.Words
 import works.windmill.platform.telemetry.LocalTelemetry
 import works.windmill.platform.telemetry.Telemetry
 
@@ -55,7 +56,7 @@ class LogShareTests {
             }
             override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { failures += operation }
         }
-        val rest = FakeGymRest().apply { if (refuseMint) refuseShare = TrainingRefused("not-allowed", "Sharing unavailable.") }
+        val rest = FakeGymRest().apply { if (refuseMint) refuseShare = TrainingRefused("not-allowed", Words.Plain("Sharing unavailable.")) }
         val room = EngineRoomFixture(tmp.newFolder(), scope, rest = rest, telemetry = telemetry)
         var failClipboard = !refuseMint
         var copies = 0
@@ -80,7 +81,7 @@ class LogShareTests {
             }
             compose.onNode(hasText("The log") and hasClickAction()).performClick()
             fun shareRow() {
-                compose.onNode(hasText(Readout.noRoutine) and hasClickAction()).performTouchInput { longClick() }
+                compose.onNode(hasText(Readout.freeWorkout.spelled()) and hasClickAction()).performTouchInput { longClick() }
                 compose.onNodeWithText("Share this workout").performClick()
             }
             shareRow()
@@ -147,7 +148,7 @@ class LogShareTests {
                 }
             }
             compose.onNode(hasText("The log") and hasClickAction()).performClick()
-            compose.onNode(hasText(Readout.noRoutine) and hasClickAction()).performTouchInput { longClick() }
+            compose.onNode(hasText(Readout.freeWorkout.spelled()) and hasClickAction()).performTouchInput { longClick() }
             compose.onNodeWithText("Share this workout").performClick()
             compose.runOnIdle { assertEquals(true, started.isCompleted) }
             compose.runOnIdle {

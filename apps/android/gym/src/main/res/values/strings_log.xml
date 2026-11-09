@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="gym_log_title">The log</string>
+    <string name="gym_log_progress_unavailable">Progress unavailable</string>
+    <string name="gym_log_reading_progress">Reading progress…</string>
+    <string name="gym_log_empty_title">No workouts yet</string>
+    <string name="gym_log_empty_detail">Your training will land here.</string>
+    <string name="gym_log_discard_workout">Discard workout</string>
+    <string name="gym_log_delete_weigh_in">Delete weigh-in</string>
+    <string name="gym_log_open_record">Open record</string>
+    <string name="gym_log_open_bodyweight">Open bodyweight</string>
+    <string name="gym_log_open_workout">Open workout</string>
+    <string name="gym_log_workout_actions">Workout actions</string>
+    <string name="gym_log_new_best">New best</string>
+    <string name="gym_log_share_workout">Share this workout</string>
+    <string name="gym_log_reading_log">Reading your log…</string>
+    <string name="gym_log_loading">Loading</string>
+    <string name="gym_log_load_older">Load older</string>
+    <string name="gym_log_read_failed">That read failed.</string>
+    <string name="gym_log_day_today">Today</string>
+    <string name="gym_log_day_yesterday">Yesterday</string>
+    <string name="gym_log_under_a_minute">&lt;1 min</string>
+    <string name="gym_log_minutes">%1$s min</string>
+    <string name="gym_log_hours">%1$s h %2$s min</string>
+    <string name="gym_log_moment_best">%1$s · new best</string>
+    <string name="gym_log_moment_best_detail">%1$s kg est · up %2$s kg since %3$s</string>
+    <string name="gym_log_full_month">Trained %1$s of %1$s weeks</string>
+    <string name="gym_log_full_month_detail">%1$s · full month</string>
+    <string name="gym_log_weight_up">%1$s kg up since %2$s</string>
+    <string name="gym_log_weight_down">%1$s kg down since %2$s</string>
+    <string name="gym_log_progress_no_answer">the log didn’t answer — Your progress could not be read.</string>
+    <string name="gym_log_weigh_in_no_answer">the log didn’t answer — That weigh-in could not be saved.</string>
+    <string name="gym_log_first_workout">First workout · %1$s</string>
+</resources>

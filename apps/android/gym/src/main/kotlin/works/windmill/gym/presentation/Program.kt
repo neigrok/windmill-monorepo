@@ -1,6 +1,9 @@
 package works.windmill.gym.presentation
 
+import androidx.annotation.StringRes
 import kotlinx.serialization.Serializable
+import works.windmill.gym.R
+import works.windmill.platform.i18n.Words
 import works.windmill.gym.domain.sync.SetTarget as DomainSetTarget
 
 // A routine is savable while incomplete: a row with no set target is `open` and asks at the rack.
@@ -14,12 +17,6 @@ object Program {
     // fifth as the note editor's byte counter (`Notes.counterFrom`), because a lifter should not have
     // to learn two rules for the same idea.
     const val counterFrom = 48
-
-    // What the two Save refusals say, one at a time and never concatenated: there is no screen before
-    // the editor to have asked for a name, so the name is the first thing missing.
-    const val nameItToSaveIt = "Name it to save it."
-    const val nameTooLong = "Use 60 characters or fewer."
-    const val atLeastOneMovement = "A routine is at least one movement."
 
     // The server's own bounds. These are the PLAN's bands, which `TargetEntry` enforces; a set that
     // was performed is bounded separately by `LoggedSetLimits.maxReps`.
@@ -44,22 +41,17 @@ object Program {
 
     fun named(name: String): String? = name.trim().takeIf { it.isNotEmpty() }
 
-    fun nameProblem(name: String): String? {
-        val named = named(name) ?: return nameItToSaveIt
-        if (length(named) > maxNameLength) return nameTooLong
+    // Why a routine's or a movement's name cannot be saved: it is blank, or longer than the cap; null once it can.
+    @StringRes
+    fun nameRefusal(name: String): Int? {
+        val named = named(name) ?: return R.string.gym_program_name_it
+        if (length(named) > maxNameLength) return R.string.gym_program_name_too_long
         return null
     }
 
     // A no-op rename is refused: a whole-document write would supersede every proposal on that day.
     // The TRIMMED name is compared, since that is what writes.
     fun renamed(from: String, typed: String): String? = named(typed)?.takeIf { it != from }
-
-    // One at a time and in this order; null once the draft is savable.
-    fun missing(draft: RoutineDraft): String? {
-        if (named(draft.name) == null) return nameItToSaveIt
-        if (draft.entries.isEmpty()) return atLeastOneMovement
-        return null
-    }
 }
 
 // The target sheet's two zooms — the head, which speaks about every set at once, and the ladder,
@@ -75,30 +67,12 @@ object TargetEntry {
     val setsBand = 1..Program.maxSets
     val repsBand = 1..Program.maxReps
 
-    const val onePoint = "One decimal point only."
-    const val notANumber = "That is not a number yet."
-    const val outsideReps = "Whole reps, 1 to 100."
-    const val outsideSets = "Sets, 1 to 20."
-    const val zeroTarget = "A zero target is no target — clear the field instead."
-    fun belowFloor(floor: Double): String = "Load, ${Readout.weight(floor)} or more."
-
-    const val setsPlaceholder = "open"
-    const val repsPlaceholder = "max"
-    const val weightPlaceholder = "last time"
-    // The head's placeholder while the rows disagree; typing over it writes every row again.
-    const val varies = "varies"
-
-    // What the open line MEANS, said once, on the target sheet, where the lifter is deciding it.
-    // `Readout.openTarget` is the compact token a row prints; this is the sentence, and it is the
-    // same one on every surface.
-    const val openLine = "You decide the numbers at the rack."
-
-    const val setBySet = "Each set"
-    const val addSet = "Add set"
-    const val fill = "Fill"
-    const val rampUp = "Ramp up"
-    const val matchSetOne = "Match set 1"
-    const val delete = "Delete"
+    private val onePoint: Words = Words.Message(R.string.gym_entry_one_point)
+    private val notANumber: Words = Words.Message(R.string.gym_entry_not_a_number)
+    private val outsideReps: Words = Words.Message(R.string.gym_program_outside_reps)
+    val outsideSetsBand: Words = Words.Message(R.string.gym_program_outside_sets)
+    private val zeroTarget: Words = Words.Message(R.string.gym_program_zero_target)
+    fun underFloor(floor: Double): Words = Words.Message(R.string.gym_program_below_floor, listOf(Readout.weight(floor)))
 
     enum class Field { Sets, Reps, Weight }
 
@@ -125,7 +99,7 @@ object TargetEntry {
         fun reading(floor: Double?): Reading = reading(sets, rows, floor)
 
         fun withCount(typed: String): Draft {
-            val count = whole(typed, setsBand, outsideSets).whole
+            val count = whole(typed, setsBand, outsideSetsBand).whole
             return copy(sets = typed, rows = count?.let { grown(rows, it) } ?: rows)
         }
 
@@ -157,7 +131,7 @@ object TargetEntry {
     sealed interface Reading {
         // One refusal at a time. `row` is null under the head's Sets field, else the 0-based ladder
         // row carrying the fault.
-        data class Refused(val row: Int?, val field: Field, val said: String) : Reading
+        data class Refused(val row: Int?, val field: Field, val why: Words) : Reading
 
         // The head's Sets is empty: the line is open, whatever the hidden rows still hold.
         data object Open : Reading
@@ -171,14 +145,14 @@ object TargetEntry {
     // count are hidden the same way: the reading is the count's prefix, `resized` up to it.
     fun reading(sets: String, rows: List<TypedSet>, floor: Double? = null): Reading {
         if (sets.isBlank()) return Reading.Open
-        val counted = whole(sets, setsBand, outsideSets)
-        counted.said?.let { return Reading.Refused(null, Field.Sets, it) }
+        val counted = whole(sets, setsBand, outsideSetsBand)
+        counted.why?.let { return Reading.Refused(null, Field.Sets, it) }
         val ladder = resized(rows, counted.whole!!)
         val scheme = ladder.mapIndexed { index, row ->
             val repeated = whole(row.reps, repsBand, outsideReps)
-            repeated.said?.let { return Reading.Refused(index, Field.Reps, it) }
+            repeated.why?.let { return Reading.Refused(index, Field.Reps, it) }
             val loaded = load(row.weight, floor)
-            loaded.said?.let { return Reading.Refused(index, Field.Weight, it) }
+            loaded.why?.let { return Reading.Refused(index, Field.Weight, it) }
             SetTarget(reps = repeated.whole, weightKg = loaded.kg)
         }
         return Reading.Scheme(scheme)
@@ -214,7 +188,7 @@ object TargetEntry {
 
     // The rows the sheet draws: the count's prefix while the count reads as one, else every row.
     fun shown(rows: List<TypedSet>, sets: String): List<TypedSet> {
-        val count = whole(sets, setsBand, outsideSets).whole ?: return rows
+        val count = whole(sets, setsBand, outsideSetsBand).whole ?: return rows
         return rows.take(count)
     }
 
@@ -244,44 +218,31 @@ object TargetEntry {
         return Scheme.rampUp(rows.map { set(it) ?: SetTarget() }).map(::TypedSet)
     }
 
-    // The commit button's tail, in the words the row itself will print: `open` · `5 × 5 · 80` on a
-    // straight scheme · `5 sets` where the sets disagree · none while something is refused, when the
-    // button reads `Set` alone and is disabled.
-    fun commit(reading: Reading): String? = when (reading) {
-        Reading.Open -> Readout.openTarget
-        is Reading.Refused -> null
-        is Reading.Scheme ->
-            if (DomainSetTarget.straight(reading.sets.map { it.domain })) Readout.target(reading.sets)
-            else "${reading.sets.size} sets"
-    }
-
-    fun commitLabel(reading: Reading): String = listOfNotNull("Set", commit(reading)).joinToString(" · ")
-
     private fun shared(typed: List<String>): String = typed.map { it.trim() }.distinct().singleOrNull() ?: ""
 
     // A row read on its own: null where either field refuses.
     private fun set(row: TypedSet): SetTarget? {
         val repeated = whole(row.reps, repsBand, outsideReps)
-        if (repeated.said != null) return null
+        if (repeated.why != null) return null
         val loaded = load(row.weight)
-        if (loaded.said != null) return null
+        if (loaded.why != null) return null
         return SetTarget(repeated.whole, loaded.kg)
     }
 
-    private data class Read(val whole: Int? = null, val kg: Double? = null, val said: String? = null)
+    private data class Read(val whole: Int? = null, val kg: Double? = null, val why: Words? = null)
 
     // Sets and reps require a positive whole count within their own band.
-    private fun whole(typed: String, band: IntRange, outside: String): Read {
+    private fun whole(typed: String, band: IntRange, outside: Words): Read {
         val raw = typed.trim().replace("−", "-")
         if (raw.isEmpty()) return Read()
         val normalised = raw.replace(",", ".")
-        if (normalised.count { it == '.' } > 1) return Read(said = onePoint)
+        if (normalised.count { it == '.' } > 1) return Read(why = onePoint)
         val value = normalised.toDoubleOrNull()
-        if (value == null || !value.isFinite()) return Read(said = notANumber)
-        if (value == 0.0) return Read(said = zeroTarget)
-        if (value != kotlin.math.floor(value)) return Read(said = outside)
+        if (value == null || !value.isFinite()) return Read(why = notANumber)
+        if (value == 0.0) return Read(why = zeroTarget)
+        if (value != kotlin.math.floor(value)) return Read(why = outside)
         val counted = value.toInt()
-        if (counted !in band) return Read(said = outside)
+        if (counted !in band) return Read(why = outside)
         return Read(whole = counted)
     }
 
@@ -289,12 +250,12 @@ object TargetEntry {
         val raw = typed.trim().replace("−", "-")
         if (raw.isEmpty()) return Read()
         val normalised = raw.replace(",", ".")
-        if (normalised.count { it == '.' } > 1) return Read(said = onePoint)
+        if (normalised.count { it == '.' } > 1) return Read(why = onePoint)
         val value = normalised.toDoubleOrNull()
-        if (value == null || !value.isFinite()) return Read(said = notANumber)
+        if (value == null || !value.isFinite()) return Read(why = notANumber)
         val rounded = Ladder.round(value)
-        if (value != 0.0 && rounded == 0.0) return Read(said = notANumber)
-        if (floor != null && rounded < floor) return Read(said = belowFloor(floor))
+        if (value != 0.0 && rounded == 0.0) return Read(why = notANumber)
+        if (floor != null && rounded < floor) return Read(why = underFloor(floor))
         return Read(kg = rounded)
     }
 }

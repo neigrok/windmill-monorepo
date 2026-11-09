@@ -1,5 +1,6 @@
 package works.windmill.gym.coach.onboarding
 
+import works.windmill.gym.R
 import android.database.sqlite.SQLiteDatabase
 import java.io.File
 import java.util.concurrent.CountDownLatch
@@ -30,7 +31,6 @@ import org.robolectric.annotation.SQLiteMode
 import works.windmill.domain.kit.Fields
 import works.windmill.domain.kit.Id
 import works.windmill.gym.coach.AnonymousCoachAccess
-import works.windmill.gym.coach.Ask
 import works.windmill.gym.coach.CoachChats
 import works.windmill.gym.coach.DraftOutcome
 import works.windmill.gym.coach.LocalCoach
@@ -279,18 +279,18 @@ class CoachRoutineImportsTests {
                 { AnonymousCoachAccess.Unavailable }, Telemetry.None, backgroundScope)
             val requestId = "11111111-1111-4111-8111-111111111111"
             val before = engine.snapshot()
-            assertEquals(DraftOutcome.Closed(Ask.draftInvalid), chats.saveRetainedDrafts("original-chat", requestId))
+            assertEquals(DraftOutcome.Closed(R.string.gym_coach_draft_invalid), chats.saveRetainedDrafts("original-chat", requestId))
             assertEquals(before, engine.snapshot())
             seat = origin
             engine.failNextCommit()
-            assertEquals(DraftOutcome.Failed(Ask.draftRetry), chats.saveRetainedDrafts("original-chat", requestId))
+            assertEquals(DraftOutcome.Failed(R.string.gym_coach_draft_retry), chats.saveRetainedDrafts("original-chat", requestId))
             assertEquals(before, engine.snapshot())
             assertEquals(0, refreshes)
             assertEquals(DraftOutcome.Saved, chats.saveRetainedDrafts("original-chat", requestId))
             assertEquals(DraftOutcome.Saved, chats.saveRetainedDrafts("original-chat", requestId))
             assertEquals(2, refreshes)
             assertEquals(1, engine.read(Routine.scope) { it.drawn(Routine.type).size })
-            assertEquals(DraftOutcome.Closed(Ask.draftGone), chats.saveRetainedDrafts("original-chat", "gone"))
+            assertEquals(DraftOutcome.Closed(R.string.gym_coach_draft_gone), chats.saveRetainedDrafts("original-chat", "gone"))
         }
     }
 

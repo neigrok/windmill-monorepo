@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Windmill</string>
+    <string name="app_workout_tile">Workout</string>
+
+    <string name="app_account_unavailable_title">Account unavailable</string>
+    <string name="app_account_unavailable_body">This device’s account could not be restored. Try again, or sign in.</string>
+
+    <string name="app_update_required_title">Update required</string>
+    <string name="app_update_keep_working">Keep working on this phone</string>
+
+    <string name="app_sign_in_add_title">Add to your account?</string>
+    <string name="app_sign_in_cancel">Cancel sign-in</string>
+</resources>

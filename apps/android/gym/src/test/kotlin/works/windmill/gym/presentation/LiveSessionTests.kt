@@ -3,6 +3,11 @@ package works.windmill.gym.presentation
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import works.windmill.gym.spelled
+import works.windmill.gym.string
 import works.windmill.domain.kit.Id
 import works.windmill.domain.kit.Instant as DomainInstant
 import works.windmill.gym.domain.sync.Exercise as DomainExercise
@@ -26,6 +31,8 @@ private val pushA = PlanSnapshot(routine = "Push A", entries = listOf(
     PlanEntry(exerciseId = "overhead-press", sets = List(3) { SetTarget(8, 45.0) }),
 ))
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class LiveOrderTests {
     @Test
     fun workoutClocksUseEveryAcceptedSetAndRecomputeAfterDeleteUndoAndEdits() {
@@ -34,10 +41,10 @@ class LiveOrderTests {
         val latest = TrainingSet("latest", "row", weightKg = 20.0, reps = 8, completedAtMs = 40_000)
         val before = WorkoutClocks(session, emptyList(), 70_000)
         assertEquals(listOf(60_000L, 60_000L), listOf(before.workoutMs, before.sinceSetMs))
-        assertEquals("Since start", before.sinceSetName)
+        assertEquals("Since start", string(before.sinceSetLabel))
         val accepted = WorkoutClocks(session, listOf(latest, first), 70_000)
         assertEquals(listOf(60_000L, 30_000L), listOf(accepted.workoutMs, accepted.sinceSetMs))
-        assertEquals("Since last set", accepted.sinceSetName)
+        assertEquals("Since last set", string(accepted.sinceSetLabel))
         assertEquals(45_000L, WorkoutClocks(session, listOf(first), 70_000).sinceSetMs)
         assertEquals(30_000L, WorkoutClocks(session, listOf(first, latest.copy(weightKg = 22.5, reps = 9)), 70_000).sinceSetMs)
         assertEquals(60_000L, WorkoutClocks(session, listOf(first, latest), 100_000).sinceSetMs)
@@ -145,6 +152,8 @@ class LiveOrderTests {
     }
 }
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class LiveLinesTests {
     @Test
     fun decorativeMarkersWindowTheExactSpokenPositionWithoutBecomingTargets() {
@@ -158,7 +167,7 @@ class LiveLinesTests {
         assertEquals(listOf(current, ordinary, ordinary, ordinary, ordinary, ordinary, continuation), LiveLines.Place(1, 12).markers)
         assertEquals(listOf(continuation, ordinary, ordinary, current, ordinary, ordinary, continuation), LiveLines.Place(6, 12).markers)
         assertEquals(listOf(continuation, ordinary, ordinary, ordinary, ordinary, ordinary, current), LiveLines.Place(12, 12).markers)
-        assertEquals("Exercise 6 of 12", LiveLines.Place(6, 12).spoken)
+        assertEquals("Exercise 6 of 12", LiveLines.Place(6, 12).said.spelled())
     }
 
     @Test
@@ -166,29 +175,29 @@ class LiveLinesTests {
         for (unit in listOf("kg each", "kg added", "kg total", "kg")) {
             val rows = LiveLines.slots(listOf(aSet("lift", -12.5, 8, 1)), "workout",
                 PlanEntry("lift", listOf(SetTarget(8, -12.5), SetTarget(10, 24.0), SetTarget())), firstTimeOf("lift"), emptySet(), unit)
-            assertEquals(listOf("−12.5 $unit × 8", "24 $unit × 10", "20 $unit × max"), rows.map { it.line })
+            assertEquals(listOf("−12.5 $unit × 8", "24 $unit × 10", "20 $unit × max"), rows.map { it.shown.spelled() })
             assertEquals(listOf("Set 1, logged, −12.5 $unit, 8 reps", "Set 2, current, 24 $unit, 10 reps",
-                "Set 3, planned, 20 $unit, max reps"), rows.map { it.spoken })
+                "Set 3, planned, 20 $unit, max reps"), rows.map { it.said.spelled() })
         }
     }
 
     @Test
     fun testTheCounterKeepsCountingPastThePlansSetCount() {
         val entry = PlanEntry(exerciseId = "bench-press", sets = List(3) { SetTarget(5, 82.5) })
-        assertEquals("set 4 of 3", LiveLines.counter(setsToday = 3, planEntry = entry))
+        assertEquals("set 4 of 3", LiveLines.counted(setsToday = 3, planEntry = entry).spelled())
     }
 
     @Test
     fun testAMovementWithNoPlanCountsWithoutBorrowingATarget() {
-        assertEquals("set 1", LiveLines.counter(setsToday = 0, planEntry = null))
+        assertEquals("set 1", LiveLines.counted(setsToday = 0, planEntry = null).spelled())
     }
 
     @Test
     fun testAnOpenPlanLineCountsLikeNoLineAtAll() {
         val entry = PlanEntry(exerciseId = "chin-up")
-        assertEquals("set 2", LiveLines.counter(setsToday = 1, planEntry = entry))
+        assertEquals("set 2", LiveLines.counted(setsToday = 1, planEntry = entry).spelled())
         assertEquals("set 3 of 3",
-                     LiveLines.counter(setsToday = 2, planEntry = entry.copy(sets = List(3) { SetTarget(8, 10.0) })))
+                     LiveLines.counted(setsToday = 2, planEntry = entry.copy(sets = List(3) { SetTarget(8, 10.0) })).spelled())
     }
 
     @Test
@@ -217,8 +226,8 @@ class LiveLinesTests {
                 "Set 4, planned, 100 kg, 1 rep",
                 "Set 5, planned, 80 kg, 5 reps",
             ),
-            slots.map { it.spoken })
-        assertEquals(listOf("60 kg × 5", "80 kg × 5", "90 kg × 3", "100 kg × 1", "80 kg × 5"), slots.map { it.line })
+            slots.map { it.said.spelled() })
+        assertEquals(listOf("60 kg × 5", "80 kg × 5", "90 kg × 3", "100 kg × 1", "80 kg × 5"), slots.map { it.shown.spelled() })
     }
 
     @Test
@@ -229,30 +238,30 @@ class LiveLinesTests {
 
         val afterOne = LiveLines.slots(listOf(first), "workout", bench, lastTime, stalled = emptySet(), unit = "kg total")
         assertEquals("a logged set leaves the rows after it as the plan states them",
-            listOf("22.5 kg total × 5", "60 kg total × max", "60 kg total × max"), afterOne.map { it.line })
+            listOf("22.5 kg total × 5", "60 kg total × max", "60 kg total × max"), afterOne.map { it.shown.spelled() })
 
         val opening = LiveLines.slots(emptyList(), "workout", bench, lastTime, stalled = emptySet(), unit = "kg total")
         assertEquals("before any set, last time's load", listOf("60 kg total × max", "60 kg total × max", "60 kg total × max"),
-            opening.map { it.line })
+            opening.map { it.shown.spelled() })
 
         val firstTime = LiveLines.slots(emptyList(), "workout", bench, firstTimeOf("bench-press"), stalled = emptySet(), unit = "kg total")
-        assertEquals("the empty bar", listOf("20 kg total × max", "20 kg total × max", "20 kg total × max"), firstTime.map { it.line })
+        assertEquals("the empty bar", listOf("20 kg total × max", "20 kg total × max", "20 kg total × max"), firstTime.map { it.shown.spelled() })
 
         val unread = LiveLines.slots(emptyList(), "workout", bench, unreadOf("bench-press"), stalled = emptySet(), unit = "kg total")
-        assertEquals("nothing to offer before last time is read", listOf("— × max", "— × max", "— × max"), unread.map { it.line })
+        assertEquals("nothing to offer before last time is read", listOf("— × max", "— × max", "— × max"), unread.map { it.shown.spelled() })
         assertEquals(listOf("Set 1, current, no load yet, max reps", "Set 2, planned, no load yet, max reps",
-            "Set 3, planned, no load yet, max reps"), unread.map { it.spoken })
+            "Set 3, planned, no load yet, max reps"), unread.map { it.said.spelled() })
 
         val unreadAfterOne = LiveLines.slots(listOf(first), "workout", bench, unreadOf("bench-press"), stalled = emptySet(), unit = "kg total")
         assertEquals("today's last set is not the plan's", listOf("22.5 kg total × 5", "— × max", "— × max"),
-            unreadAfterOne.map { it.line })
+            unreadAfterOne.map { it.shown.spelled() })
 
         val ladder = PlanEntry(exerciseId = "bench-press", sets = listOf(SetTarget(8, 60.0), SetTarget(), SetTarget(3, 110.0)))
         val unreadLadder = LiveLines.slots(emptyList(), "workout", ladder, unreadOf("bench-press"), stalled = emptySet(), unit = "kg total")
         assertEquals("the plan's own loads need no history", listOf("60 kg total × 8", "— × max", "110 kg total × 3"),
-            unreadLadder.map { it.line })
+            unreadLadder.map { it.shown.spelled() })
 
-        val lines = listOf(afterOne, opening, firstTime, unread, unreadAfterOne, unreadLadder).flatten().mapNotNull { it.line }
+        val lines = listOf(afterOne, opening, firstTime, unread, unreadAfterOne, unreadLadder).flatten().mapNotNull { it.shown.spelled() }
         assertEquals(emptyList<String>(), lines.filter { "last" in it })
     }
 
@@ -286,13 +295,13 @@ class LiveLinesTests {
                 "Set 1, logged, 0 kg, 5 reps",
                 "Set 2, current, 20 kg, max reps",
             ),
-            opening.map { it.spoken })
-        assertEquals("a first time expects the empty bar, whatever was lifted today", "20 kg × max", (opening[1] as LiveLines.Slot.Current).line)
+            opening.map { it.said.spelled() })
+        assertEquals("a first time expects the empty bar, whatever was lifted today", "20 kg × max", (opening[1] as LiveLines.Slot.Current).shown.spelled())
 
         val free = LiveLines.slots(emptyList(), "workout", null, firstTimeOf("chin-up"), stalled = emptySet())
         assertEquals("no plan: only the set in hand", listOf(LiveLines.Slot.Current(index = 1, target = null, expectedKg = null)), free)
-        assertEquals(listOf("Set 1, current"), free.map { it.spoken })
-        assertNull((free.single() as LiveLines.Slot.Current).line)
+        assertEquals(listOf("Set 1, current"), free.map { it.said.spelled() })
+        assertNull((free.single() as LiveLines.Slot.Current).shown)
     }
 
     @Test
@@ -300,7 +309,7 @@ class LiveLinesTests {
         val order = listOf("bench-press", "overhead-press", "cable-fly")
 
         assertEquals(LiveLines.Place(1, 3), LiveLines.place(order, "bench-press"))
-        assertEquals("Exercise 3 of 3", LiveLines.place(order, "cable-fly")?.spoken)
+        assertEquals("Exercise 3 of 3", LiveLines.place(order, "cable-fly")?.said.spelled())
         assertEquals("an appended movement counts the moment it joins the walk",
                      LiveLines.Place(3, 3), LiveLines.place(order, order.last()))
         assertNull("a movement the walk does not hold has no place",
@@ -323,13 +332,13 @@ class LiveLinesTests {
         assertEquals(5, LiveLines.setCount(sets))
         assertEquals(0, LiveLines.setCount(sets, of = "cable-fly"))
         assertEquals("set 6 of 5",
-                     LiveLines.counter(setsToday = LiveLines.setCount(sets),
-                                       planEntry = pushA.entry("bench-press")))
+                     LiveLines.counted(setsToday = LiveLines.setCount(sets),
+                                       planEntry = pushA.entry("bench-press")).spelled())
 
         val rows = LiveLines.assemblyRows(order = listOf("bench-press"), sets = sets, plan = pushA,
                                           catalog = listOf(Exercise(id = "bench-press", name = "Bench Press")),
                                           current = "bench-press")
-        assertEquals(listOf("5 of 5 sets"), rows.map { it.tag })
+        assertEquals(listOf("5 of 5 sets"), rows.map { it.tagged.spelled() })
         assertEquals("the card draws every set that was performed",
                      listOf(5), rows.map { it.sets.size })
 
@@ -350,11 +359,11 @@ class LiveLinesTests {
         )
         assertEquals(listOf("Bench Press", "overhead-press", "cable-fly"), rows.map { it.name })
         assertEquals("a plan line nobody has reached yet was not just added — it is not started",
-                     listOf("2 of 5 sets", null, "just added"), rows.map { it.tag })
+                     listOf("2 of 5 sets", null, "just added"), rows.map { it.tagged.spelled() })
         assertEquals("only a movement with no sets says what would start it",
                      listOf(null, "no sets yet — logging one starts it",
                             "no sets yet — logging one starts it"),
-                     rows.map { it.line })
+                     rows.map { it.prompt.spelled() })
         assertEquals(listOf(true, false, false), rows.map { it.isCurrent })
         assertEquals(listOf(false, false, true), rows.map { it.justAdded })
         assertEquals("the plan's own line does not leave on a swipe, and the appended one does",
@@ -372,14 +381,14 @@ class LiveLinesTests {
         val performed = catalog.map { aSet(it.id, -12.5, 8, 1_000, it.id) }
         val units = listOf("kg total", "kg each", "kg", "kg added", "kg")
         val logged = LiveLines.assemblyRows(catalog.map { it.id }, performed, plan, catalog, "pair")
-        assertEquals(units.map { "1 of 3 sets · −12.5 $it × 8" }, logged.map { it.metadata })
+        assertEquals(units.map { "1 of 3 sets · −12.5 $it × 8" }, logged.map { it.facts.spelled() })
         assertEquals(units, logged.map { it.sets.single().unit })
         val planned = LiveLines.assemblyRows(catalog.map { it.id }, emptyList(), plan, catalog, "bar")
         assertEquals(listOf("Up next · 3 × 10 · 24 kg total", "3 × 10 · 24 kg each", "3 × 10 · 24 kg",
-            "3 × 10 · 24 kg added", "3 × 10 · 24 kg"), planned.map { it.metadata })
+            "3 × 10 · 24 kg added", "3 × 10 · 24 kg"), planned.map { it.facts.spelled() })
         val varied = LiveLines.assemblyRows(listOf("pair"), listOf(aSet("pair", 22.0, 8, 1_000),
             aSet("pair", 24.0, 10, 2_000)), plan, catalog, "pair")
-        assertEquals("2 of 3 sets · 2 × 8–10 · 22–24 kg each", varied.single().metadata)
+        assertEquals("2 of 3 sets · 2 × 8–10 · 22–24 kg each", varied.single().facts.spelled())
     }
 
     @Test
@@ -420,20 +429,20 @@ class LiveLinesTests {
 
     @Test
     fun testTheOfflineStripCountsSetsAndSaysNothingWhenThereAreNone() {
-        assertNull(LiveLines.onThisDeviceLine(0, Blocker.Offline))
+        assertNull(LiveLines.onThisDevice(0, Blocker.Offline))
         assertEquals("1 set is saved on this device only. They’ll sync when you’re online.",
-                     LiveLines.onThisDeviceLine(1, Blocker.Offline))
+                     LiveLines.onThisDevice(1, Blocker.Offline).spelled())
         assertEquals("3 sets are saved on this device only. They’ll sync when you’re online.",
-                     LiveLines.onThisDeviceLine(3, Blocker.Offline))
+                     LiveLines.onThisDevice(3, Blocker.Offline).spelled())
     }
 
     @Test
     fun testTheStripNamesWhatBlockedTheSetsRatherThanAssertingNoSignal() {
         assertEquals("2 sets are saved on this device only. The log didn’t answer. They’ll sync when it’s available.",
-                     LiveLines.onThisDeviceLine(2, Blocker.LogFailed))
+                     LiveLines.onThisDevice(2, Blocker.LogFailed).spelled())
         assertEquals("1 set is saved on this device only. Sign in again to sync these sets.",
-                     LiveLines.onThisDeviceLine(1, Blocker.SignInLapsed))
+                     LiveLines.onThisDevice(1, Blocker.SignInLapsed).spelled())
         assertEquals("1 set is saved on this device only. They’re waiting to sync.",
-                     LiveLines.onThisDeviceLine(1, null))
+                     LiveLines.onThisDevice(1, null).spelled())
     }
 }

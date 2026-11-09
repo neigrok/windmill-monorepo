@@ -1,5 +1,8 @@
 package works.windmill.gym.presentation
 
+import works.windmill.gym.R
+import works.windmill.platform.i18n.Words
+import works.windmill.platform.i18n.joined
 import java.security.SecureRandom
 import kotlin.math.floor
 import kotlinx.serialization.SerialName
@@ -342,30 +345,19 @@ data class SetFix(
 // back to Coach.
 object SetEffort {
     val rpeBand: List<Double> = generateSequence(6.0) { it + 0.5 }.takeWhile { it <= 10.0 }.toList()
-    // The seat that means nothing was said, and it says so in words: a bare `—` is read out as
-    // nothing at all, so a lifter on TalkBack would hear an unlabelled seat where the way back is.
-    const val rpeUnrated = "Not rated"
-
-    const val noteLabel = "Set note"
-    const val noteCaption = "A record for you — not an instruction to Coach."
     const val noteMaxBytes = 4000
     // Chrome only in the last fifth, exactly as the note editor draws its own: one room may not
     // draw two rules for one shape.
     const val noteCounterFrom = 3200
-    // The log refuses an overlong note with one generic sentence about the whole fix, so this is the
-    // only reason a lifter will ever read. It is said at the field, before anything is sent, and in
-    // the shape the notes bound already ships — the rule, not the complaint.
-    const val noteTooLong = "A set note runs to 4000 bytes."
-
     // ONE count behind both readouts, so the counter and the refusal can never flip on different
     // bytes. Untrimmed, because what is counted is what would ride the wire.
     fun noteBytes(note: String): Int = note.toByteArray(Charsets.UTF_8).size
 
     // Null below the threshold: nothing is drawn.
-    fun noteCounter(note: String): String? {
+    fun noteBytesCounter(note: String): Words? {
         val used = noteBytes(note)
         if (used < noteCounterFrom) return null
-        return "$used of $noteMaxBytes bytes"
+        return Words.Message(R.string.gym_effort_note_counter, listOf(used.toString(), noteMaxBytes.toString()))
     }
 
     // Past the bound the counter goes alarm, wherever a byte counter is drawn in this room.
@@ -375,13 +367,11 @@ object SetEffort {
     fun rpeNumeral(rpe: Double): String =
         if (rpe == floor(rpe)) rpe.toInt().toString() else rpe.toString()
 
-    fun rpeReading(rpe: Double): String = "RPE ${rpeNumeral(rpe)}"
+    fun rpe(rpe: Double): Words = Words.Message(R.string.gym_effort_rpe, listOf(rpeNumeral(rpe)))
 
     // Printed on the session row where the log carries either: `RPE 8 · felt heavy`.
-    fun line(rpe: Double?, note: String): String? {
-        val said = listOfNotNull(rpe?.let(::rpeReading), note.trim().takeIf { it.isNotEmpty() })
-        return said.takeIf { it.isNotEmpty() }?.joinToString(" · ")
-    }
+    fun effortWords(rpe: Double?, note: String): Words? =
+        listOfNotNull(rpe?.let(::rpe), note.trim().takeIf { it.isNotEmpty() }?.let(Words::Plain)).joined()
 }
 
 data class SessionStart(

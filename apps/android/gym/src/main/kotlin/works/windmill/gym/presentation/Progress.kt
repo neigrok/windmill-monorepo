@@ -1,5 +1,7 @@
 package works.windmill.gym.presentation
 
+import works.windmill.gym.R
+import works.windmill.platform.i18n.Words
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -126,9 +128,10 @@ class MovementProgress(private val read: DomainMovementProgress, val earlierReco
 
 private val ZoneId.domain: Zone get() = Zone { at -> rules.getOffset(Instant.ofEpochMilli(at.ms)).totalSeconds }
 
-fun progressReading(point: MovementProgress.Point, nowMs: Long): String {
+fun progressWords(point: MovementProgress.Point, nowMs: Long): Words {
     val fact = point.fact.estimate!!
-    return "${Readout.estimatedWeight(requireNotNull(fact.e1rm))} kg est · ${Readout.briefDay(point.startedAt, nowMs)} · ${Readout.effort(fact.weightKg, fact.reps)}"
+    return Words.Message(R.string.gym_record_progress_point,
+        listOf(Readout.estimatedWeight(requireNotNull(fact.e1rm)), Readout.brief(point.startedAt, nowMs), Readout.effort(fact.weightKg, fact.reps)))
 }
 
 fun progressSeries(progress: MovementProgress, nowMs: Long, zone: ZoneId, all: Boolean = false): DatedSeries {
@@ -136,7 +139,7 @@ fun progressSeries(progress: MovementProgress, nowMs: Long, zone: ZoneId, all: B
         .values.map { day -> day.sortedWith(compareByDescending<MovementProgress.Point> { it.fact.estimate!!.score }
             .thenBy { it.startedAt }.thenBy { it.id }).first() }
         .sortedWith(compareBy({ it.startedAt }, { it.id }))
-        .map { DatedPoint(it.id, it.startedAt, requireNotNull(it.fact.estimate!!.e1rm), progressReading(it, nowMs)) }
+        .map { DatedPoint(it.id, it.startedAt, requireNotNull(it.fact.estimate!!.e1rm), progressWords(it, nowMs)) }
     val from = if (all) points.firstOrNull()?.atMs ?: nowMs else LocalDate.parse(DomainMovementProgress.windowStart(DomainInstant(nowMs), zone.domain).text)
         .atStartOfDay(zone).toInstant().toEpochMilli()
     return DatedSeries(points, from, nowMs, zone, DomainMovementProgress.gapDays.toLong())

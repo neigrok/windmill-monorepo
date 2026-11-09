@@ -39,6 +39,7 @@ import works.windmill.gym.presentation.WorkoutChange
 import works.windmill.gym.presentation.WorkoutKey
 import works.windmill.gym.presentation.WorkoutNotification
 import works.windmill.gym.store.WorkoutCommands
+import works.windmill.platform.i18n.Words
 import works.windmill.platform.telemetry.Telemetry
 
 @RunWith(RobolectricTestRunner::class)
@@ -234,8 +235,8 @@ class WorkoutTileServiceTests {
         val app = RuntimeEnvironment.getApplication() as App
         val activity = ComponentName(app.packageName, "works.windmill.MainActivity")
         val commands = Commands()
-        val workout = WorkoutNotification(WorkoutKey("seat/α", "workout 1"), "Push A", "Bench Press", "30 kg × 8",
-            "Set 2 of 3", null, false, 90_000)
+        val workout = WorkoutNotification(WorkoutKey("seat/α", "workout 1"), Words.Plain("Push A"), Words.Plain("Bench Press"), Words.Plain("30 kg × 8"),
+            Words.Plain("Set 2 of 3"), null, false, 90_000)
         var now = 221_000L
         var routines = 0
         val events = mutableListOf<Pair<String, Map<String, String>>>()

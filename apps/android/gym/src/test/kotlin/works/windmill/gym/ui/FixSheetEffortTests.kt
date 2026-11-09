@@ -21,6 +21,9 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import works.windmill.gym.spelled
+import works.windmill.gym.string
+import works.windmill.gym.R
 import works.windmill.gym.presentation.SetEffort
 import works.windmill.gym.presentation.SetFix
 import works.windmill.gym.presentation.TrainingSet
@@ -66,7 +69,7 @@ class FixSheetEffortTests {
             }
         })
 
-        compose.onNodeWithText(SetEffort.noteLabel).performTextInput("left shoulder")
+        compose.onNodeWithText(string(R.string.gym_effort_note_label)).performTextInput("left shoulder")
         compose.onNodeWithText("Save fix").performClick()
 
         compose.runOnIdle {
@@ -80,12 +83,12 @@ class FixSheetEffortTests {
         sheet()
 
         compose.onNodeWithText("Effort").assertIsDisplayed()
-        compose.onNodeWithText(SetEffort.rpeUnrated).performClick()
-        compose.onAllNodesWithText(SetEffort.rpeUnrated)[1].assertExists()
+        compose.onNodeWithText(string(R.string.gym_effort_rpe_unrated)).performClick()
+        compose.onAllNodesWithText(string(R.string.gym_effort_rpe_unrated))[1].assertExists()
         SetEffort.rpeBand.forEach {
-            compose.onNodeWithText(SetEffort.rpeReading(it)).assertExists()
+            compose.onNodeWithText(SetEffort.rpe(it).spelled()).assertExists()
         }
-        compose.onNodeWithText(SetEffort.rpeReading(10.0))
+        compose.onNodeWithText(SetEffort.rpe(10.0).spelled())
             .performScrollTo().assertIsDisplayed()
     }
 
@@ -93,18 +96,18 @@ class FixSheetEffortTests {
     fun theNoteIsLabelledAndSaysWhoItIsForRatherThanPretendingCoachReadsIt() {
         sheet()
 
-        compose.onNodeWithText(SetEffort.noteLabel).assertIsDisplayed()
-        compose.onNodeWithText(SetEffort.noteLabel).assert(SemanticsMatcher.expectValue(
-            SemanticsProperties.StateDescription, SetEffort.noteCaption))
+        compose.onNodeWithText(string(R.string.gym_effort_note_label)).assertIsDisplayed()
+        compose.onNodeWithText(string(R.string.gym_effort_note_label)).assert(SemanticsMatcher.expectValue(
+            SemanticsProperties.StateDescription, string(R.string.gym_effort_note_caption)))
     }
 
     @Test
     fun pickingAnRpeAndTypingANoteSendsThoseTwoFieldsAndNothingElse() {
         val saved = sheet()
 
-        compose.onNodeWithText(SetEffort.rpeUnrated).performClick()
-        compose.onNodeWithText(SetEffort.rpeReading(8.5)).performScrollTo().performClick()
-        compose.onNodeWithText(SetEffort.noteLabel).performTextInput("left shoulder")
+        compose.onNodeWithText(string(R.string.gym_effort_rpe_unrated)).performClick()
+        compose.onNodeWithText(SetEffort.rpe(8.5).spelled()).performScrollTo().performClick()
+        compose.onNodeWithText(string(R.string.gym_effort_note_label)).performTextInput("left shoulder")
         compose.onNodeWithText("Save fix").performClick()
 
         compose.runOnIdle {
@@ -122,8 +125,8 @@ class FixSheetEffortTests {
             weightKg = 82.5, reps = 5, completedAtMs = 0, rpe = 9.0, note = "felt heavy"))
 
         compose.onNodeWithText("felt heavy").performTextClearance()
-        compose.onNodeWithText(SetEffort.rpeReading(9.0)).performClick()
-        compose.onNodeWithText(SetEffort.rpeUnrated).performClick()
+        compose.onNodeWithText(SetEffort.rpe(9.0).spelled()).performClick()
+        compose.onNodeWithText(string(R.string.gym_effort_rpe_unrated)).performClick()
         compose.onNodeWithText("Save fix").performClick()
 
         compose.runOnIdle {
@@ -152,22 +155,22 @@ class FixSheetEffortTests {
 
         compose.onNodeWithText("bytes", substring = true).assertDoesNotExist()
 
-        compose.onNodeWithText(SetEffort.noteLabel).performTextInput("a".repeat(3_200))
+        compose.onNodeWithText(string(R.string.gym_effort_note_label)).performTextInput("a".repeat(3_200))
         compose.onNodeWithText("3200 of 4000 bytes").assertExists()
 
-        compose.onNodeWithText(SetEffort.noteLabel).performTextInput("b".repeat(801))
+        compose.onNodeWithText(string(R.string.gym_effort_note_label)).performTextInput("b".repeat(801))
         compose.onNodeWithText("4001 of 4000 bytes").assertExists()
-        compose.onNodeWithText(SetEffort.noteTooLong).assertExists()
+        compose.onNodeWithText(string(R.string.gym_effort_note_too_long)).assertExists()
     }
 
     @Test
     fun anOverlongNoteIsRefusedAtTheFieldAndTheSaveIsHeld() {
         val saved = sheet()
 
-        compose.onNodeWithText(SetEffort.noteLabel)
+        compose.onNodeWithText(string(R.string.gym_effort_note_label))
             .performTextInput("🏋".repeat(1_001))
 
-        compose.onNodeWithText(SetEffort.noteTooLong).assertIsDisplayed()
+        compose.onNodeWithText(string(R.string.gym_effort_note_too_long)).assertIsDisplayed()
         compose.onNodeWithText("Save fix").assertIsNotEnabled()
         compose.onNodeWithText("Save fix").performClick()
         compose.runOnIdle { assertNull("and nothing was sent", saved()) }
@@ -191,7 +194,7 @@ class FixSheetEffortTests {
         compose.onNodeWithText(raw).assertExists()
         compose.onNodeWithText("RPE 8.5").assertExists()
         compose.onNodeWithText("Set note").assert(SemanticsMatcher.expectValue(
-            SemanticsProperties.StateDescription, SetEffort.noteCaption))
+            SemanticsProperties.StateDescription, string(R.string.gym_effort_note_caption)))
         compose.onNodeWithText("Save fix").performClick()
         compose.runOnIdle { assertEquals(listOf(SetFix(note = raw, rpe = 8.5, rpeNamed = true)), notes) }
     }

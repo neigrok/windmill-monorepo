@@ -31,6 +31,7 @@ import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import works.windmill.gym.spelled
 import works.windmill.gym.presentation.Exercise
 import works.windmill.gym.presentation.Session
 import works.windmill.gym.presentation.SessionDetail
@@ -69,7 +70,7 @@ class RecordStateTests {
             } }
             compose.onNodeWithText("Reading your log…").assertExists()
             compose.onNodeWithText("Record unavailable").assertDoesNotExist()
-            compose.onNodeWithText(TrainingSeat.accountChanged).assertDoesNotExist()
+            compose.onNodeWithText(TrainingSeat.accountChange.spelled()).assertDoesNotExist()
             compose.runOnIdle {
                 room.store.seat.isLoading = false
             }
@@ -84,7 +85,7 @@ class RecordStateTests {
             compose.onNodeWithText("96.3").assertExists()
             compose.onNodeWithText("82.5").assertExists()
             compose.onNodeWithText("Record unavailable").assertDoesNotExist()
-            compose.onNodeWithText(TrainingSeat.accountChanged).assertDoesNotExist()
+            compose.onNodeWithText(TrainingSeat.accountChange.spelled()).assertDoesNotExist()
             compose.onNodeWithText("Reading your log…").assertDoesNotExist()
         } } finally { scope.cancel() }
     }

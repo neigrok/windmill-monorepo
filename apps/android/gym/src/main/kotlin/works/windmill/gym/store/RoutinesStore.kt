@@ -1,5 +1,7 @@
 package works.windmill.gym.store
 
+import works.windmill.platform.i18n.Words
+import works.windmill.gym.R
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -18,7 +20,7 @@ import works.windmill.gym.presentation.ProposalIntent
 import works.windmill.gym.presentation.ProposalState
 import works.windmill.gym.presentation.Routine
 import works.windmill.gym.presentation.RoutineDraft
-import works.windmill.gym.store.TrainingSeat.Companion.accountChanged
+import works.windmill.gym.store.TrainingSeat.Companion.accountChange
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.sync.schema.Gym
 
@@ -89,14 +91,14 @@ class RoutinesStore(
         val replica = expectedReplica
         return scope.async(start = CoroutineStart.UNDISPATCHED) {
             val result = try {
-                if (!seat.workoutAuthorized) throw TrainingRefused("account-changed", accountChanged)
-                if (Program.nameProblem(draft.name) == Program.nameTooLong) throw TrainingRefused("invalid", Program.nameTooLong)
-                if (Program.named(draft.name) == null) throw TrainingRefused("invalid", "a routine needs a name")
-                if (draft.entries.isEmpty()) throw TrainingRefused("invalid", "a routine needs at least one movement")
+                if (!seat.workoutAuthorized) throw TrainingRefused.accountChanged()
+                if (Program.nameRefusal(draft.name) == R.string.gym_program_name_too_long) throw TrainingRefused("invalid", Words.Message(R.string.gym_program_name_too_long))
+                if (Program.named(draft.name) == null) throw TrainingRefused("invalid", Words.Message(R.string.gym_store_routine_needs_name))
+                if (draft.entries.isEmpty()) throw TrainingRefused("invalid", Words.Message(R.string.gym_store_routine_needs_movement))
                 if (draft.id != null && draft.original?.expectedRevision == null)
-                    throw TrainingRefused("stale", "reopen this routine before saving — its original revision is missing")
+                    throw TrainingRefused("stale", Words.Message(R.string.gym_store_routine_revision_missing))
                 if (expectedAccountKey != seat.accountKey || owner != seat.owner || replica == null || replica != controls.engineReplica)
-                    throw TrainingRefused("account-changed", accountChanged)
+                    throw TrainingRefused.accountChanged()
                 val prepared = if (draft.id == null && draft.creationId == null) draft.copy(creationId = mintRoutine()) else draft
                 GymResult.Ok(training.saveRoutinePlan(prepared, replica, owner == null))
             } catch (interrupted: CancellationException) {
@@ -130,18 +132,18 @@ class RoutinesStore(
     // The sessions that named it keep every set and their frozen plan: a snapshot is a copy, not a
     // reference. A routine already gone is a deletion that succeeded.
     suspend fun dropRoutine(id: String, replica: String? = controls.engineReplica, anonymous: Boolean = seat.owner == null): WriteFailure? {
-        if (!seat.workoutAuthorized) return WriteFailure.Refused(accountChanged)
+        if (!seat.workoutAuthorized) return WriteFailure.Refused(accountChange)
         val owner = seat.owner
         return try {
-            training.deleteRoutine(id, replica ?: return WriteFailure.Refused(accountChanged), anonymous)
-            if (owner != seat.owner) return WriteFailure.Refused(accountChanged)
+            training.deleteRoutine(id, replica ?: return WriteFailure.Refused(accountChange), anonymous)
+            if (owner != seat.owner) return WriteFailure.Refused(accountChange)
             program = program.filterNot { it.id == id }
             null
         } catch (interrupted: CancellationException) {
             throw interrupted
         } catch (refusing: Exception) {
             seat.reportFailure("gym.dropRoutine", refusing)
-            if (owner != seat.owner) return WriteFailure.Refused(accountChanged)
+            if (owner != seat.owner) return WriteFailure.Refused(accountChange)
             if (refusing is TrainingDeleteUnconfirmed) seat.tried("gym.readProgram") { readProgram() }
             if ((refusing as? TrainingRefused)?.code == "unknown-record") {
                 program = program.filterNot { it.id == id }
@@ -182,19 +184,19 @@ class RoutinesStore(
     suspend fun dismissProposal(id: String): ProposalOutcome = decide(id, applying = false)
 
     private suspend fun decide(id: String, applying: Boolean): ProposalOutcome {
-        if (!seat.workoutAuthorized) return ProposalOutcome.Failed(WriteFailure.Refused(accountChanged))
+        if (!seat.workoutAuthorized) return ProposalOutcome.Failed(WriteFailure.Refused(accountChange))
         val owner = seat.owner
         return proposalWrite.withLock {
-            if (owner != seat.owner) return@withLock ProposalOutcome.Failed(WriteFailure.Refused(accountChanged))
+            if (owner != seat.owner) return@withLock ProposalOutcome.Failed(WriteFailure.Refused(accountChange))
             try {
                 val decision = if (applying) training.applyProposal(id) else training.dismissProposal(id)
-                if (owner != seat.owner) return@withLock ProposalOutcome.Failed(WriteFailure.Refused(accountChanged))
+                if (owner != seat.owner) return@withLock ProposalOutcome.Failed(WriteFailure.Refused(accountChange))
                 decided(decision)
             } catch (interrupted: CancellationException) {
                 throw interrupted
             } catch (refusing: Exception) {
                 seat.reportFailure(if (applying) "gym.applyProposal" else "gym.dismissProposal", refusing)
-                if (owner != seat.owner) return@withLock ProposalOutcome.Failed(WriteFailure.Refused(accountChanged))
+                if (owner != seat.owner) return@withLock ProposalOutcome.Failed(WriteFailure.Refused(accountChange))
                 refused(refusing)
             }
         }.also { telemetry.event("gym_proposal_outcome", mapOf("action" to if (applying) "apply" else "dismiss", "outcome" to it.label)) }
@@ -227,10 +229,10 @@ class RoutinesStore(
         if (refusal == null || refusal.code == "sign-in") return ProposalOutcome.Failed(WriteFailure(error))
         if (seat.tried("gym.refreshWorkout") { readProgram(); true } != true) return ProposalOutcome.Failed(WriteFailure.NoAnswer)
         return when (refusal.code) {
-            Gym.Codes.proposalSuperseded -> ProposalOutcome.Moved(refusal.line)
-            "unknown-record" -> ProposalOutcome.Gone("that proposal is no longer on the log")
-            Gym.Codes.proposalSettled -> ProposalOutcome.Settled(refusal.line)
-            else -> ProposalOutcome.Refused(refusal.line)
+            Gym.Codes.proposalSuperseded -> ProposalOutcome.Moved(refusal.words)
+            "unknown-record" -> ProposalOutcome.Gone(Words.Message(R.string.gym_store_proposal_no_longer_on_log))
+            Gym.Codes.proposalSettled -> ProposalOutcome.Settled(refusal.words)
+            else -> ProposalOutcome.Refused(refusal.words)
         }
     }
 
@@ -239,30 +241,30 @@ class RoutinesStore(
     // of the load.
     suspend fun create(name: String, equipment: String, id: String = mintExercise(), loadCount: Int? = null,
         expectedReplica: String? = controls.engineReplica, expectedSession: String? = null): GymResult<Exercise> {
-        if (!seat.workoutAuthorized) return GymResult.Failed(WriteFailure.Refused(accountChanged))
+        if (!seat.workoutAuthorized) return GymResult.Failed(WriteFailure.Refused(accountChange))
         val named = Program.named(name)
-            ?: return GymResult.Failed(WriteFailure.Refused("a movement needs a name"))
+            ?: return GymResult.Failed(WriteFailure.Refused(Words.Message(R.string.gym_store_movement_needs_name)))
         if (Program.length(named) > Program.maxNameLength || equipment !in Exercise.loadings + "other" ||
             loadCount != null && (loadCount !in 1..2 || equipment != "dumbbell" && loadCount != 1)) {
-            return GymResult.Failed(WriteFailure.Refused("check the movement name and equipment"))
+            return GymResult.Failed(WriteFailure.Refused(Words.Message(R.string.gym_store_movement_check)))
         }
         val write = ExerciseWrite(id, named, Exercise.unclassified, equipment, loadCount = loadCount)
         val owner = seat.owner
         return try {
-            val made = training.createExercise(write, expectedReplica ?: return GymResult.Failed(WriteFailure.Refused(accountChanged)),
+            val made = training.createExercise(write, expectedReplica ?: return GymResult.Failed(WriteFailure.Refused(accountChange)),
                 owner == null, expectedSession)
-            if (owner != seat.owner || expectedReplica != controls.engineReplica || expectedReplica != training.engine.activeReplica()) return GymResult.Failed(WriteFailure.Refused("the account changed while creating"))
+            if (owner != seat.owner || expectedReplica != controls.engineReplica || expectedReplica != training.engine.activeReplica()) return GymResult.Failed(WriteFailure.Refused(Words.Message(R.string.gym_store_account_changed_creating)))
             catalog = catalog.filterNot { it.id == made.id } + made
             if (made.id != write.id || made.name != works.windmill.gym.domain.sync.ExerciseRules.name.apply(write.name, works.windmill.domain.kit.Path("name")) || made.equipment != write.equipment || made.pattern != write.pattern ||
                 write.loadCount != null && made.loadCount != write.loadCount) {
-                return GymResult.Failed(WriteFailure.Refused("already saved as ${made.name} (${made.equipment}) — choose it from the movement list"))
+                return GymResult.Failed(WriteFailure.Refused(Words.Message(R.string.gym_store_movement_already_saved, listOf(made.name, made.equipment))))
             }
             GymResult.Ok(made)
         } catch (interrupted: CancellationException) {
             throw interrupted
         } catch (refusing: Exception) {
             seat.reportFailure("gym.create", refusing)
-            if (owner != seat.owner) return GymResult.Failed(WriteFailure.Refused("the account changed while creating"))
+            if (owner != seat.owner) return GymResult.Failed(WriteFailure.Refused(Words.Message(R.string.gym_store_account_changed_creating)))
             GymResult.Failed(WriteFailure(refusing))
         }
     }

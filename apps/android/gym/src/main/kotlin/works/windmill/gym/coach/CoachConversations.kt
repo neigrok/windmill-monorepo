@@ -44,7 +44,10 @@ import works.windmill.gym.domain.sync.Routine
 import works.windmill.gym.domain.sync.RoutineChange
 import works.windmill.gym.domain.sync.Session
 import works.windmill.gym.domain.sync.WorkoutProposal
+import works.windmill.gym.R
 import works.windmill.gym.presentation.Readout
+import works.windmill.platform.i18n.Words
+import works.windmill.platform.i18n.joined
 import works.windmill.gym.store.EngineTraining
 import works.windmill.gym.store.TrainingSeat
 import works.windmill.platform.telemetry.Telemetry
@@ -62,19 +65,19 @@ data class SentPicture(val photo: CoachAttachment, val onThisPhone: Boolean)
 
 // One ability call as the room says it: `phrase` is the catalog's, absent for a name this build's catalog does not hold, and `reads` says the catalog holds it as a read. `detail` is what the call served or wrote: a transcript's calls hold none, and What Coach read's rows take theirs from `CoachConversations.withDetails`.
 data class CoachCall(val name: String, val phrase: String?, val outcome: AbilityCall.Outcome, val read: RecordedRead,
-    val reads: Boolean = false, val callId: String = name, val detail: String? = null) {
+    val reads: Boolean = false, val callId: String = name, val detail: Words? = null) {
     val ran: Boolean get() = outcome == AbilityCall.Outcome.Ok
     // One of the reads the phone runs as a turn opens, which Coach did not choose.
     val phoneRead: Boolean get() = callId.startsWith(contextCallPrefix)
     val seatRefused: Boolean get() = (outcome as? AbilityCall.Outcome.Refused)?.code == AbilityRefusal.seatRequired
     // Its row in What Coach read: a read that served workouts says how many, every other call its phrase.
-    val title: String? get() {
+    val title: Words? get() {
         val workouts = when (read) {
             is RecordedRead.Ids -> read.served.sessions.size
             is RecordedRead.Counts -> read.tally.sessions
         }
-        if (workouts > 0) return "Read ${Readout.sessionCount(workouts)}"
-        return phrase?.replaceFirstChar { it.uppercase() }
+        if (workouts > 0) return Words.Counted(R.plurals.gym_coach_read_workouts, workouts, listOf(workouts.toString()))
+        return phrase?.replaceFirstChar { it.uppercase() }?.let(Words::Plain)
     }
 }
 
@@ -92,7 +95,7 @@ data class CreatedRoutine(val id: String, val name: String, val movements: Int)
 data class SavedNote(val id: String, val text: String)
 
 // A movement a turn made, as its record holds it.
-data class MadeMovement(val id: String, val name: String, val equipment: String, val stepKg: Double)
+data class MadeMovement(val id: String, val name: String, val equipment: Words, val stepKg: Double)
 
 // Coach's answer as its message holds it. `onThisPhone` says the replica writing it is this phone's. `routines`, `savedNotes` and `madeMovements` are what the turn created and the replica still holds, read now. `logStood` says a note or a routine of the person's stood by this message's moment, past what the turn itself made.
 data class CoachReply(
@@ -116,13 +119,16 @@ data class CoachReply(
     // The rows of What Coach read.
     val readRows: List<CoachCall> get() = calls.filter { it.ran && it.title != null }
     // The receipt under an ended answer, by the first that holds: the workouts it read by identity; its movement history; that it read nothing, when no read ran, or only the phone's own reads ran and no log stood for them to read; the catalog's phrases of the reads it ran.
-    val readLine: String? get() {
+    val readLine: Words? get() {
         val reads = calls.filter { it.ran && it.reads }
+        val sessions = receipt.read.sessions
+        val weeks = receipt.read.weeks
         return when {
-            receipt.read.sessions > 0 -> "Read ${Readout.sessionCount(receipt.read.sessions)} · ${Readout.weekCount(receipt.read.weeks)}"
-            reads.any { it.name == "get_stats" } -> Ask.readMovementHistory
-            reads.all { it.phoneRead } && (reads.isEmpty() || !logStood) -> Ask.readNothing
-            else -> reads.mapNotNull { it.phrase }.joinToString(" · ").ifEmpty { null }?.replaceFirstChar { it.uppercase() }
+            sessions > 0 -> listOf(Words.Counted(R.plurals.gym_coach_read_workouts, sessions, listOf(sessions.toString())),
+                Words.Counted(R.plurals.gym_coach_weeks, weeks, listOf(weeks.toString()))).joined()
+            reads.any { it.name == "get_stats" } -> Words.Message(R.string.gym_coach_read_movement_history)
+            reads.all { it.phoneRead } && (reads.isEmpty() || !logStood) -> Words.Message(R.string.gym_coach_read_nothing)
+            else -> reads.mapNotNull { it.phrase }.joinToString(" · ").ifEmpty { null }?.replaceFirstChar { it.uppercase() }?.let(Words::Plain)
         }
     }
     // The routine proposals this answer minted, in the order it minted them.
@@ -131,7 +137,7 @@ data class CoachReply(
 }
 
 // An answer earlier versions kept on this phone: the line it ended on, and the drafts it holds until they are saved.
-data class RetainedAnswer(val requestId: String, val line: String?, val accountRequired: Boolean, val drafts: List<CoachRoutineDraft>)
+data class RetainedAnswer(val requestId: String, val words: Words?, val accountRequired: Boolean, val drafts: List<CoachRoutineDraft>)
 
 // One turn of a conversation as the room draws it: what the lifter said and how Coach answered. `id` is stable across every read of it; `sending` is a question on its way to its record, drawn before it has one.
 data class CoachExchange(
@@ -147,15 +153,15 @@ data class CoachExchange(
 }
 
 // A conversation's row in History. `answering` is a running message on any device; `answerPreview` the newest completed answer's opening.
-data class ConversationRow(val id: String, val title: String, val askedAtMs: Long, val answering: Boolean = false, val answerPreview: String = "") {
-    fun day(nowMs: Long): String? {
+data class ConversationRow(val id: String, val named: Words, val askedAtMs: Long, val answering: Boolean = false, val answerPreview: String = "") {
+    fun day(nowMs: Long): Words? {
         if (askedAtMs <= 0) return null
         val zone = ZoneId.systemDefault()
         val day = Instant.ofEpochMilli(askedAtMs).atZone(zone).toLocalDate()
         val today = Instant.ofEpochMilli(nowMs).atZone(zone).toLocalDate()
-        if (day == today) return "Today"
-        if (day == today.minusDays(1)) return "Yesterday"
-        return dayLabel(askedAtMs)
+        if (day == today) return Words.Message(R.string.gym_coach_today)
+        if (day == today.minusDays(1)) return Words.Message(R.string.gym_coach_yesterday)
+        return Words.Plain(dayLabel(askedAtMs))
     }
 }
 
@@ -307,7 +313,8 @@ class CoachConversations(
         val receipt = CoachReceipt(message.calls)
         val routines = receipt.created.mapNotNull { ref -> named.held(Routine, ref)?.let { CreatedRoutine(checkNotNull(ref.id.string), it.name, it.entries.size) } }
         val notes = receipt.created.mapNotNull { ref -> named.held(Note, ref)?.let { SavedNote(checkNotNull(ref.id.string), it.body.ifBlank { it.title }) } }
-        val movements = receipt.created.mapNotNull { ref -> named.held(Exercise, ref)?.let { MadeMovement(checkNotNull(ref.id.string), it.name, Readout.equipment(it.equipment, it.loadCount), it.stepKg) } }
+        val movements = receipt.created.mapNotNull { ref -> named.held(Exercise, ref)?.let { MadeMovement(checkNotNull(ref.id.string), it.name,
+            Readout.equipment(it.equipment, if (it.loadCount == 1) R.string.gym_equipment_one_dumbbell else R.string.gym_equipment_dumbbells), it.stepKg) } }
         val calls = message.calls.map { call -> CoachCall(call.name, phrase(call.name), call.outcome, call.read, reads(call.name), call.callId) }
         return CoachReply(id, message.text, message.state, message.truncated, message.replica == replica, calls, receipt, routines, notes, movements,
             named.logStood(born, message.calls.flatMap { it.created }))
@@ -331,7 +338,7 @@ class CoachConversations(
         }
 
         // What each call of this answer says, by its id; absent when the records hold no such answer.
-        fun details(answer: String): Map<String, String>? {
+        fun details(answer: String): Map<String, Words>? {
             val message = held(CoachMessage, RecordRef(CoachMessage.type, RecordID(answer))) ?: return null
             val born = reader.source.drawn(CoachMessage.type, message.id.record)?.born
             return message.calls.withIndex().mapNotNull { (at, call) ->
@@ -340,20 +347,21 @@ class CoachConversations(
         }
 
         // A read that served workouts says over which weeks and days, and the weeks are that call's own: §9.2 records a later call less what earlier calls hold. Every other call says what the records it read or wrote hold now.
-        private fun detail(call: AbilityCall, born: Stamp?, madeBefore: List<RecordRef>): String? {
+        private fun detail(call: AbilityCall, born: Stamp?, madeBefore: List<RecordRef>): Words? {
             val served = (call.read as? RecordedRead.Ids)?.served
             val counted = (call.read as? RecordedRead.Counts)?.tally
             if ((served?.sessions?.size ?: counted?.sessions ?: 0) > 0) {
                 val sessions = served?.sessions.orEmpty().mapNotNull { held(Session, RecordRef(Session.type, it.record)) }
                 val days = sessions.map { it.startedAt.ms }.sorted().map(::dayLabel)
-                val span = if (days.firstOrNull() != days.lastOrNull()) listOf("${days.first()} – ${days.last()}") else days.take(1)
+                val span = if (days.firstOrNull() != days.lastOrNull()) Words.Message(R.string.gym_coach_day_span, listOf(days.first(), days.last()))
+                    else days.firstOrNull()?.let(Words::Plain)
                 val weeks = if (sessions.isEmpty()) served?.weeks?.size ?: counted?.weeks ?: 0 else sessions.map { ReadServed.week(it.startedAt) }.toSet().size
-                return (listOfNotNull(weeks.takeIf { it > 0 }?.let(Readout::weekCount)) + span).joinToString(" · ").ifEmpty { null }
+                return listOfNotNull(weeks.takeIf { it > 0 }?.let { Words.Counted(R.plurals.gym_coach_weeks, it, listOf(it.toString())) }, span).joined()
             }
             return when (call.name) {
-                "list_notes" -> listed(Note, born, madeBefore).size.takeIf { it > 0 }?.let(Readout::noteCount)
-                "list_routines" -> Routine.ordered(listed(Routine, born, madeBefore)).takeIf { it.isNotEmpty() }?.joinToString(" · ") { it.name }
-                else -> call.created.mapNotNull(::named).filter { it.isNotBlank() }.takeIf { it.isNotEmpty() }?.joinToString(" · ")
+                "list_notes" -> listed(Note, born, madeBefore).size.takeIf { it > 0 }?.let { Words.Counted(R.plurals.gym_coach_notes, it, listOf(it.toString())) }
+                "list_routines" -> Routine.ordered(listed(Routine, born, madeBefore)).takeIf { it.isNotEmpty() }?.joinToString(" · ") { it.name }?.let(Words::Plain)
+                else -> call.created.mapNotNull(::named).filterNot { it is Words.Plain && it.text.isBlank() }.joined()
             }
         }
 
@@ -365,24 +373,26 @@ class CoachConversations(
             stoodBy(record, born) || RecordRef(type.type, record.id) in madeBefore
         })
 
-        private fun named(ref: RecordRef): String? = when (ref.type) {
-            Routine.type -> held(Routine, ref)?.name
-            Note.type -> held(Note, ref)?.title
-            Exercise.type -> held(Exercise, ref)?.name
+        private fun named(ref: RecordRef): Words? = when (ref.type) {
+            Routine.type -> held(Routine, ref)?.name?.let(Words::Plain)
+            Note.type -> held(Note, ref)?.title?.let(Words::Plain)
+            Exercise.type -> held(Exercise, ref)?.name?.let(Words::Plain)
             Proposal.type -> held(Proposal, ref)?.let(::proposalTitle)
             WorkoutProposal.type -> held(WorkoutProposal, ref)?.let(::workoutProposalTitle)
             else -> null
         }
 
-        private fun workoutProposalTitle(proposal: WorkoutProposal): String {
+        private fun workoutProposalTitle(proposal: WorkoutProposal): Words {
             val plan = held(Session, RecordRef(Session.type, proposal.sessionId.record))?.plan
-            return "This workout · ${Readout.changeCount(proposal.changeCount ?: plan?.let { RoutineChange.count(it.entries, proposal.changes) } ?: proposal.changes.count { it.kind != "kept" })}"
+            val changes = proposal.changeCount ?: plan?.let { RoutineChange.count(it.entries, proposal.changes) } ?: proposal.changes.count { it.kind != "kept" }
+            return Words.Counted(R.plurals.gym_coach_this_workout_changes, changes, listOf(changes.toString()))
         }
 
-        private fun proposalTitle(proposal: Proposal): String {
+        private fun proposalTitle(proposal: Proposal): Words {
             val routine = held(Routine, RecordRef(Routine.type, proposal.routineId.record))
-            val what = if (proposal.intent == "remove") "a removal" else Readout.changeCount(routine?.let { proposal.changeCount(it) } ?: proposal.changeCount ?: proposal.changes.count { it.kind != "kept" })
-            return listOfNotNull(proposal.baseName ?: routine?.name, what).joinToString(" · ")
+            val changes = routine?.let { proposal.changeCount(it) } ?: proposal.changeCount ?: proposal.changes.count { it.kind != "kept" }
+            val what = if (proposal.intent == "remove") Words.Message(R.string.gym_coach_a_removal) else Words.Counted(R.plurals.gym_coach_changes, changes, listOf(changes.toString()))
+            return checkNotNull(listOfNotNull((proposal.baseName ?: routine?.name)?.let(Words::Plain), what).joined())
         }
     }
 
@@ -438,7 +448,7 @@ private val lineOrder = compareBy<MessageLine>({ it.at }, { it.coach }, { it.id 
 private fun ConversationRow(thread: CoachThread, messages: List<MessageLine>): ConversationRow {
     val newest = messages.maxWithOrNull(lineOrder)
     val answer = messages.filter { it.coach && it.state == MessageState.completed && it.text.isNotBlank() }.maxWithOrNull(lineOrder)?.text.orEmpty()
-    return ConversationRow(checkNotNull(thread.id.record.string) { "a thread's id is a string" }, thread.title, newest?.at?.ms ?: 0,
+    return ConversationRow(checkNotNull(thread.id.record.string) { "a thread's id is a string" }, Words.Plain(thread.title), newest?.at?.ms ?: 0,
         answering = newest?.coach == true && newest.state == MessageState.running,
         answerPreview = answer.substring(0, answer.offsetByCodePoints(0, minOf(previewCodePoints, answer.codePointCount(0, answer.length)))))
 }
@@ -451,17 +461,17 @@ private fun CoachExchange(record: CoachOnboardingRecord, saved: CoachImportRecei
     val routines = if (saved == null) emptyList() else saved.routines.zip(response?.routines.orEmpty()).mapNotNull { (id, routine) ->
         id.record.string?.let { CreatedRoutine(it, routine.name, routine.entries.size) }
     }
-    val line = when {
+    val words = when {
         answered || code == "account_required" -> null
-        code == "subject_exhausted" -> CoachTurnRefusal.of(code, spent = response?.spent == true).sentence
+        code == "subject_exhausted" -> CoachTurnRefusal.of(code, spent = response?.spent == true).words
         code in setOf("free_day_exhausted", "free_month_exhausted", "concurrency_exhausted", "funding_required") ->
-            response?.message?.takeIf { it.isNotBlank() } ?: record.refusalMessage ?: Ask.couldNotTake
-        else -> Ask.couldNotTake
+            (response?.message?.takeIf { it.isNotBlank() } ?: record.refusalMessage)?.let(Words::Plain) ?: Words.Message(R.string.gym_coach_could_not_take)
+        else -> Words.Message(R.string.gym_coach_could_not_take)
     }
     val drafts = if (saved != null || !answered) emptyList() else response?.routines.orEmpty().mapIndexed { index, routine -> CoachRoutineDraft("${record.requestId}-$index", routine) }
     val reply = response?.takeIf { answered }?.let {
         CoachReply(record.requestId, it.message, MessageState.completed, truncated = false, onThisPhone = true, calls = emptyList(), receipt = CoachReceipt(emptyList()), routines = routines)
     }
     return CoachExchange(record.requestId, record.question, record.createdAtMs, listOfNotNull(record.attachment?.let { SentPicture(it, true) }), reply,
-        retained = RetainedAnswer(record.requestId, line, code == "account_required", drafts))
+        retained = RetainedAnswer(record.requestId, words, code == "account_required", drafts))
 }

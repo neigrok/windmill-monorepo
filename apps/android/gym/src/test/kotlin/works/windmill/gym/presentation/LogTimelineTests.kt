@@ -6,7 +6,14 @@ import java.time.YearMonth
 import java.time.ZoneId
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import works.windmill.gym.plain
+import works.windmill.platform.i18n.Words
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class LogTimelineTests {
     @Test
     fun aFirstWorkoutSetsNoBestAndANewBestKeepsItsEventDayWhilePlateausAndOpenSessionsStayQuiet() {
@@ -185,7 +192,9 @@ class LogTimelineTests {
         val before = WeighIn("1969-12-31", 82.3, -60_000)
         assertEquals(listOf(LogEntry.Weight(epoch, 0), LogEntry.Weight(before, -60_000)),
             logTimeline(emptyList(), null, listOf(before, epoch), 86_400_000, zone))
-        assertEquals(LogReadout.Weight("82.4 kg", null, "00:00"), LogReadout.weight(LogEntry.Weight(epoch, 0), listOf(epoch), zone, complete = true))
-        assertEquals(LogReadout.Weight("82.3 kg", null, "23:59"), LogReadout.weight(LogEntry.Weight(before, -60_000), listOf(before), zone, complete = true))
+        assertEquals(LogReadout.Weight(Words.Plain("82.4 kg"), null, "00:00"), LogReadout.weight(LogEntry.Weight(epoch, 0), listOf(epoch), zone, complete = true).spelled())
+        assertEquals(LogReadout.Weight(Words.Plain("82.3 kg"), null, "23:59"), LogReadout.weight(LogEntry.Weight(before, -60_000), listOf(before), zone, complete = true).spelled())
     }
 }
+
+private fun LogReadout.Weight.spelled() = copy(named = named.plain(), said = said?.plain())

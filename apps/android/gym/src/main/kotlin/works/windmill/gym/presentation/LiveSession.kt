@@ -1,5 +1,9 @@
 package works.windmill.gym.presentation
 
+import androidx.annotation.StringRes
+import works.windmill.platform.R as PlatformR
+import works.windmill.gym.R
+import works.windmill.platform.i18n.Words
 import works.windmill.gym.domain.sync.LastTime
 import works.windmill.gym.domain.sync.Prefill
 
@@ -73,16 +77,15 @@ object AutoClose {
 enum class Blocker { Offline, LogFailed, SignInLapsed }
 
 // A set still to lift: the load the plan expects, `—` while there is none to name, and the plan's reps.
-private fun SetTarget.line(expectedKg: Double?, unit: String): String =
-    "${expectedKg?.let { "${Readout.weight(it)} $unit" } ?: "—"} × ${Readout.repTarget(reps)}"
+private fun SetTarget.shown(expectedKg: Double?, unit: String): Words = Words.Message(R.string.gym_live_target,
+    listOf(expectedKg?.let { "${Readout.weight(it)} $unit" } ?: "—", Readout.repsTarget(reps)))
 
 // The same set as TalkBack says it, the placeholders spelled out.
-private fun SetTarget.spoken(expectedKg: Double?, unit: String): String =
-    (expectedKg?.let { "${Readout.weight(it)} $unit" } ?: "no load yet") + ", " + (reps?.let(Readout::repCount) ?: "max reps")
+private fun SetTarget.said(expectedKg: Double?, unit: String): Words = Words.Message(R.string.gym_live_target_spoken, listOf(
+    expectedKg?.let { Words.Plain("${Readout.weight(it)} $unit") } ?: Words.Message(R.string.gym_live_no_load_yet),
+    reps?.let(Readout::reps) ?: Words.Message(R.string.gym_live_max_reps)))
 
 object LiveLines {
-    const val onThisDevice = "on this device"
-
     // One set that landed, numbered in performed order.
     data class Row(
         val id: String,
@@ -93,56 +96,57 @@ object LiveLines {
         val unit: String = "kg",
     ) {
         val line: String get() = "$weight $unit × $reps"
-        val spoken: String
-            get() = listOfNotNull("Set $index", "logged", "$weight $unit",
-                Readout.repCount(reps), onThisDevice.takeIf { isOnThisDevice }).joinToString(", ")
+        val said: Words
+            get() = Words.Message(if (isOnThisDevice) R.string.gym_live_logged_here_spoken else R.string.gym_live_logged_spoken,
+                listOf(index, "$weight $unit", Readout.reps(reps)))
     }
 
     data class MovementRow(
         val id: String,
         val name: String,
-        val tag: String?,          // "3 sets" · "3 of 5 sets" · "just added" · nothing yet
-        val line: String?,         // said only where there are no sets to say it instead
+        val tagged: Words?,        // "3 sets" · "3 of 5 sets" · "just added" · nothing yet
+        val prompt: Words?,        // said only where there are no sets to say it instead
         val sets: List<Row>,
         val isCurrent: Boolean,
         val justAdded: Boolean,
         val canDrop: Boolean,
-        val metadata: String = "",
+        val facts: Words? = null,
     )
 
     // "set 3 of 5". An open plan line answers like no line at all — "set 3", never "set 3 of 0".
-    fun counter(setsToday: Int, planEntry: PlanEntry?): String {
-        val sets = planEntry?.sets?.size?.takeIf { it > 0 } ?: return "set ${setsToday + 1}"
-        return "set ${setsToday + 1} of $sets"
+    fun counted(setsToday: Int, planEntry: PlanEntry?): Words {
+        val sets = planEntry?.sets?.size?.takeIf { it > 0 } ?: return Words.Message(R.string.gym_live_set_n, listOf((setsToday + 1).toString()))
+        return Words.Message(R.string.gym_live_set_n_of, listOf((setsToday + 1).toString(), sets.toString()))
     }
 
     // One row of the logger's ledger. State is never printed as a word: a row's look carries it on
-    // screen and `spoken` carries it to TalkBack.
+    // screen and `said` carries it to TalkBack.
     sealed interface Slot {
-        val spoken: String
-        val line: String?
+        val said: Words
+        val shown: Words?
         val number: String
         val key: String
 
         data class Landed(val row: Row) : Slot {
-            override val spoken: String get() = row.spoken
-            override val line: String get() = row.line
+            override val said: Words get() = row.said
+            override val shown: Words get() = Words.Plain(row.line)
             override val number: String get() = row.index
             override val key: String get() = row.id
         }
 
         // The set about to be lifted. The rack is its editor; past the plan the row names nothing.
         data class Current(val index: Int, val target: SetTarget?, val expectedKg: Double?, val unit: String = "kg") : Slot {
-            override val line: String? get() = target?.line(expectedKg, unit)
-            override val spoken: String
-                get() = listOfNotNull("Set $index", "current", target?.spoken(expectedKg, unit)).joinToString(", ")
+            override val shown: Words? get() = target?.shown(expectedKg, unit)
+            override val said: Words
+                get() = target?.let { Words.Message(R.string.gym_live_current_spoken, listOf(index.toString(), it.said(expectedKg, unit))) }
+                    ?: Words.Message(R.string.gym_live_current_open_spoken, listOf(index.toString()))
             override val number: String get() = index.toString()
             override val key: String get() = "current"
         }
 
         data class Planned(val index: Int, val target: SetTarget, val expectedKg: Double?, val unit: String = "kg") : Slot {
-            override val line: String get() = target.line(expectedKg, unit)
-            override val spoken: String get() = "Set $index, planned, ${target.spoken(expectedKg, unit)}"
+            override val shown: Words get() = target.shown(expectedKg, unit)
+            override val said: Words get() = Words.Message(R.string.gym_live_planned_spoken, listOf(index.toString(), target.said(expectedKg, unit)))
             override val number: String get() = index.toString()
             override val key: String get() = "planned $index"
         }
@@ -164,7 +168,7 @@ object LiveLines {
     }
 
     data class Place(val at: Int, val of: Int) {
-        val spoken: String get() = "Exercise $at of $of"
+        val said: Words get() = Words.Message(R.string.gym_live_exercise_of, listOf(at.toString(), of.toString()))
         val markers: List<Marker>
             get() {
                 if (of < 2) return emptyList()
@@ -215,27 +219,29 @@ object LiveLines {
             MovementRow(
                 id = exerciseId,
                 name = Readout.movement(exerciseId, catalog),
-                tag = when {
-                    justAdded -> "just added"
+                tagged = when {
+                    justAdded -> Words.Message(R.string.gym_live_just_added)
                     performed.isEmpty() -> null
-                    planned == null -> Readout.setCount(done)
-                    else -> "$done of $planned sets"
+                    planned == null -> Readout.sets(done)
+                    else -> Words.Message(R.string.gym_live_done_of_planned, listOf(done.toString(), planned.toString()))
                 },
-                line = if (performed.isEmpty()) "no sets yet — logging one starts it" else null,
+                prompt = if (performed.isEmpty()) Words.Message(R.string.gym_live_no_sets_yet) else null,
                 sets = rows(performed, stalled, unit),
                 isCurrent = exerciseId == current,
                 justAdded = justAdded,
                 canDrop = LiveOrder.droppable(exerciseId, sets, plan),
-                metadata = when {
+                facts = when {
                     performed.isNotEmpty() -> {
                         val values = performed.map { "${Readout.weight(it.weightKg)} $unit × ${it.reps}" }.distinct()
-                        val effort = values.singleOrNull() ?: Readout.targetWithUnit(performed.map { SetTarget(it.reps, it.weightKg) }, exercise)
-                        val progress = if (planned != null) "$done of $planned sets" else Readout.setCount(performed.size)
-                        "$progress · $effort"
+                        val effort = values.singleOrNull()?.let(Words::Plain) ?: Readout.scheme(performed.map { SetTarget(it.reps, it.weightKg) }, exercise)
+                        val progress = if (planned != null) Words.Message(R.string.gym_live_done_of_planned, listOf(done.toString(), planned.toString()))
+                            else Readout.sets(performed.size)
+                        Words.Message(PlatformR.string.platform_words_joined, listOf(progress, effort))
                     }
-                    exerciseId == next -> "Up next" + (entry?.sets?.takeIf { it.isNotEmpty() }?.let { " · ${Readout.targetWithUnit(it, exercise)}" } ?: "")
-                    entry?.sets?.isNotEmpty() == true -> Readout.targetWithUnit(entry.sets, exercise)
-                    else -> "No sets yet"
+                    exerciseId == next -> entry?.sets?.takeIf { it.isNotEmpty() }?.let { Words.Message(R.string.gym_live_up_next_scheme, listOf(Readout.scheme(it, exercise))) }
+                        ?: Words.Message(R.string.gym_live_up_next)
+                    entry?.sets?.isNotEmpty() == true -> Readout.scheme(entry.sets, exercise)
+                    else -> Words.Message(R.string.gym_live_no_sets)
                 },
             )
         }
@@ -243,16 +249,15 @@ object LiveLines {
 
     // The count is `WorkoutSession.strandedCount` — drawn sets whose append or correction a walk could
     // not land — never every queued set.
-    fun onThisDeviceLine(count: Int, by: Blocker?): String? {
+    fun onThisDevice(count: Int, by: Blocker?): Words? {
         if (count <= 0) return null
-        val subject = if (count == 1) "1 set is" else "$count sets are"
-        val why = when (by) {
-            Blocker.Offline -> "They’ll sync when you’re online."
-            Blocker.LogFailed -> "The log didn’t answer. They’ll sync when it’s available."
-            Blocker.SignInLapsed -> "Sign in again to sync these sets."
-            null -> "They’re waiting to sync."
+        val said = when (by) {
+            Blocker.Offline -> R.plurals.gym_live_held_offline
+            Blocker.LogFailed -> R.plurals.gym_live_held_no_answer
+            Blocker.SignInLapsed -> R.plurals.gym_live_held_sign_in
+            null -> R.plurals.gym_live_held_waiting
         }
-        return "$subject saved on this device only. $why"
+        return Words.Counted(said, count, listOf(count.toString()))
     }
 }
 
@@ -260,5 +265,5 @@ class WorkoutClocks(session: Session, sets: List<TrainingSet>, nowMs: Long) {
     val latestSetAtMs: Long? = sets.maxOfOrNull { it.completedAtMs }
     val workoutMs: Long = ((session.finishedAtMs ?: nowMs) - session.startedAtMs).coerceAtLeast(0)
     val sinceSetMs: Long = ((session.finishedAtMs ?: nowMs) - (latestSetAtMs ?: session.startedAtMs)).coerceAtLeast(0)
-    val sinceSetName: String = if (latestSetAtMs == null) "Since start" else "Since last set"
+    @StringRes val sinceSetLabel: Int = if (latestSetAtMs == null) R.string.gym_live_since_start else R.string.gym_live_since_last_set
 }

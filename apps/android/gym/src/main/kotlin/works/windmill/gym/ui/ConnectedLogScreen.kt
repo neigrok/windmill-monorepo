@@ -15,12 +15,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
+import works.windmill.platform.R as PlatformR
 import works.windmill.gym.R
 import works.windmill.gym.presentation.ConnectedLog
 import works.windmill.gym.presentation.ConnectedLogState
@@ -31,6 +33,8 @@ import works.windmill.gym.store.SharingStore
 import works.windmill.gym.store.TrainingSeat
 import works.windmill.gym.store.TrainingStore
 import works.windmill.platform.telemetry.LocalTelemetry
+import works.windmill.platform.i18n.Words
+import works.windmill.platform.i18n.text
 
 // What the connected-log page draws: the seat's answer about the tools that read the training log.
 @Stable
@@ -100,13 +104,13 @@ fun ConnectedLogScreen(
     val connected = log as? ConnectedLogState.Connected
     BackHandler(enabled = how != null) { how = null }
     if (how != null) {
-        GymScreen(title = ConnectedLog.disclosure, onBack = { how = null }, backTo = ConnectedLog.title) {
+        GymScreen(title = stringResource(R.string.gym_connected_disclosure), onBack = { how = null }, backTo = stringResource(R.string.gym_connected_title)) {
             LazyColumn(Modifier.fillMaxSize(), state = howScroll,
                 contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 20.dp)) {
                 item("how") {
                     Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 16.dp),
                         verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                        ConnectedLog.how.forEach { Text(it, style = GymType.nativeBody, color = colors.onSurface) }
+                        ConnectedLog.howItWorks.forEach { Text(stringResource(it), style = GymType.nativeBody, color = colors.onSurface) }
                     }
                 }
                 if (how == true) item("levels") {
@@ -117,13 +121,13 @@ fun ConnectedLogScreen(
         }
         return
     }
-    GymScreen(title = ConnectedLog.title, onBack = onBack, backTo = backTo,
+    GymScreen(title = stringResource(R.string.gym_connected_title), onBack = onBack, backTo = backTo,
         bottomBar = {
             Box(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 16.dp)) {
                 Button(onClick = { if (isSignedIn) browse(ConnectedLog.setupUrl(origin)) else onSignIn() },
                     modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = colors.primary, contentColor = colors.onPrimary)) {
-                    Text(if (isSignedIn) ConnectedLog.action else ConnectedLog.actionSignedOut,
+                    Text(stringResource(if (isSignedIn) R.string.gym_connected_action else R.string.gym_connected_action_signed_out),
                         style = GymType.button, textAlign = TextAlign.Center)
                 }
             }
@@ -133,24 +137,24 @@ fun ConnectedLogScreen(
                 contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 20.dp)) {
                 when (log) {
                     is ConnectedLogState.Connected -> {
-                        item("head") { ConnectionHeading(ConnectedLog.connectedHead, FontWeight.Bold) }
+                        item("head") { ConnectionHeading(stringResource(R.string.gym_connected_connected_head), FontWeight.Bold) }
                         items(log.tools, key = { "tool:${it.credential}:${it.id}" }) { tool ->
-                            ConnectionRow(tool.name, tool.meta(now)) { browse(ConnectedLog.connectionsUrl(origin)) }
+                            ConnectionRow(tool.named.text(), tool.described(now).text()) { browse(ConnectedLog.connectionsUrl(origin)) }
                         }
                     }
                     ConnectedLogState.None -> {
-                        item("head") { ConnectionHeading(ConnectedLog.head) }
+                        item("head") { ConnectionHeading(stringResource(R.string.gym_connected_head)) }
                         item("levels") { ConnectionLevels() }
                     }
                     ConnectedLogState.Unknown -> item("reading") {
-                        Text("Reading your connections…", style = GymType.nativeBody, color = colors.onSurfaceVariant,
+                        Text(stringResource(R.string.gym_connected_reading), style = GymType.nativeBody, color = colors.onSurfaceVariant,
                             modifier = Modifier.padding(16.dp))
                     }
                     ConnectedLogState.Refused, ConnectedLogState.Offline -> item("failure") {
                         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(if (log == ConnectedLogState.Offline) ConnectedLog.offline else ConnectedLog.unread,
+                            Text(stringResource(if (log == ConnectedLogState.Offline) R.string.gym_connected_offline else R.string.gym_connected_unread),
                                 style = GymType.nativeBody, color = colors.onSurfaceVariant)
-                            TextButton(onClick = ::refresh, enabled = !refreshing, modifier = Modifier.heightIn(min = 48.dp)) { Text("Try again") }
+                            TextButton(onClick = ::refresh, enabled = !refreshing, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(PlatformR.string.platform_try_again)) }
                         }
                     }
                 }
@@ -159,7 +163,7 @@ fun ConnectedLogScreen(
                     Row(Modifier.fillMaxWidth().heightIn(min = 52.dp).clickable(role = Role.Button) { how = connected != null }
                         .padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Text(ConnectedLog.disclosure, style = GymType.connectionRow,
+                        Text(stringResource(R.string.gym_connected_disclosure), style = GymType.connectionRow,
                             color = colors.onSurface, modifier = Modifier.weight(1f))
                         Icon(painterResource(R.drawable.gym_note_chevron), null, Modifier.size(20.dp), tint = colors.onSurfaceVariant)
                     }
@@ -178,8 +182,8 @@ private fun ConnectionHeading(text: String, weight: FontWeight = FontWeight.Norm
 @Composable
 private fun ConnectionLevels() {
     Column {
-        LogLevel.entries.forEach { ConnectionRow(it.label, it.meta) }
-        Text(ConnectedLog.caption, style = GymType.nativeSupporting, color = MaterialTheme.colorScheme.onSurfaceVariant,
+        LogLevel.entries.forEach { ConnectionRow(stringResource(it.named), stringResource(it.reaches)) }
+        Text(stringResource(R.string.gym_connected_caption), style = GymType.nativeSupporting, color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 16.dp))
     }
 }
@@ -187,8 +191,9 @@ private fun ConnectionLevels() {
 @Composable
 private fun ConnectionRow(title: String, detail: String, onOpen: (() -> Unit)? = null) {
     val colors = MaterialTheme.colorScheme
+    val opensInBrowser = stringResource(R.string.gym_connected_opens_in_browser)
     Row(Modifier.fillMaxWidth().heightIn(min = 64.dp).semantics(mergeDescendants = true) {}
-        .then(if (onOpen == null) Modifier else Modifier.clickable(role = Role.Button, onClickLabel = ConnectedLog.opensInBrowser, onClick = onOpen))
+        .then(if (onOpen == null) Modifier else Modifier.clickable(role = Role.Button, onClickLabel = opensInBrowser, onClick = onOpen))
         .padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Column(Modifier.weight(1f)) {
@@ -223,8 +228,8 @@ private fun ConnectionsPreview(log: ConnectedLogState) {
 private fun ConnectionsAnsweredPreview() {
     val since = System.currentTimeMillis() - 12L * 86_400_000
     ConnectionsPreview(ConnectedLogState.Connected(listOf(
-        ConnectedTool("claude", "Claude", since, LogReach("gym:read gym:write"), ConnectedTool.Credential.Approved),
-        ConnectedTool("key-1", "Training notebook", since, LogReach(""), ConnectedTool.Credential.Pasted),
+        ConnectedTool("claude", Words.Plain("Claude"), since, LogReach("gym:read gym:write"), ConnectedTool.Credential.Approved),
+        ConnectedTool("key-1", Words.Plain("Training notebook"), since, LogReach(""), ConnectedTool.Credential.Pasted),
     )))
 }
 

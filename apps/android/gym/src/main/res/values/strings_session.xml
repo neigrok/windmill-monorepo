@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="gym_session_no_longer_on_log">That workout is no longer on the log.</string>
+    <string name="gym_session_volume">Volume</string>
+    <string name="gym_session_plan_saved">Plan saved at start</string>
+    <string name="gym_session_closed_itself">Closed after four hours without a set</string>
+    <string name="gym_session_share">Share this workout</string>
+    <string name="gym_session_discard">Discard workout</string>
+    <string name="gym_session_open_this_movement">open this movement</string>
+    <string name="gym_session_fix_this_set">fix this set</string>
+    <string name="gym_session_set_position">Set %1$s</string>
+    <string name="gym_session_spoken_next">%1$s, %2$s</string>
+    <string name="gym_session_plan">Plan %1$s</string>
+    <string name="gym_session_added_today">added today</string>
+    <string name="gym_session_over_plan">+%1$s over plan</string>
+    <string name="gym_session_under_plan">%1$s under plan</string>
+    <string name="gym_session_short">%1$s short</string>
+    <string name="gym_session_on_plan">on plan</string>
+    <string name="gym_session_set_delete_no_answer">the log didn’t answer — that set is still on the log</string>
+    <string name="gym_session_sets_no_answer">the log didn’t answer — the saved sets are shown</string>
+    <plurals name="gym_session_movements">
+        <item quantity="one">%1$s movement</item>
+        <item quantity="other">%1$s movements</item>
+    </plurals>
+    <string name="gym_session_not_in_plan">not in the plan</string>
+</resources>

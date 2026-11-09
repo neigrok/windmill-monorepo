@@ -11,6 +11,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import works.windmill.gym.presentation.Exercise
+import works.windmill.platform.i18n.Words
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
@@ -47,7 +48,7 @@ class EditMovementSheetTests {
         compose.setContent {
             GymMaterial {
                 Column {
-                    EditMovementSheet(Exercise("custom", "Press"), " ", "other", 1, refusal,
+                    EditMovementSheet(Exercise("custom", "Press"), " ", "other", 1, Words.Plain(refusal),
                         onName = {}, onEquipment = {}, onSave = { writes += "saved" }, onClose = {})
                 }
             }

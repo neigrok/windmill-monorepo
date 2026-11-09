@@ -26,6 +26,10 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import works.windmill.gym.spelled
 import works.windmill.agent.TurnOpen
 import works.windmill.agent.TurnRefusal
 import works.windmill.gym.coach.onboarding.CoachOnboardingRecord
@@ -34,12 +38,15 @@ import works.windmill.gym.coach.turn.TellingRecorder
 import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.WriteFailure
+import works.windmill.platform.i18n.text
 import works.windmill.platform.net.WindmillJson
 import works.windmill.platform.storage.AtomicDocument
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.sync.core.Json
 
 @OptIn(ExperimentalCoroutinesApi::class)
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class CoachDeletionTests {
     @get:Rule val tmp = TemporaryFolder()
 
@@ -359,7 +366,7 @@ class CoachDeletionTests {
             if (deleting) { store.eraseOwner("alice"); disk.reopenVerifiedOwner("alice") }
             else { owner = "bob"; store.forgetSeat() }
             val before = file.readText()
-            assertEquals(GymResult.Failed(WriteFailure.Refused("The account changed. Open this again.")), deletion.await())
+            assertEquals("The account changed. Open this again.", ((deletion.await() as GymResult.Failed).why as WriteFailure.Refused).words.spelled())
             assertEquals(before, file.readText())
             assertEquals(listOf("bob-chat"), LocalCoach(file).chats("bob").map { it.id })
             assertEquals(if (deleting) emptyList() else listOf("chat-a"), LocalCoach(file).chats("alice").map { it.id })

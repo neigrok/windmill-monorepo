@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="gym_effort_rpe_unrated">Not rated</string>
+    <string name="gym_effort_note_label">Set note</string>
+    <string name="gym_effort_note_caption">A record for you — not an instruction to Coach.</string>
+    <string name="gym_effort_note_too_long">A set note runs to 4000 bytes.</string>
+    <string name="gym_effort_note_counter">%1$s of %2$s bytes</string>
+    <string name="gym_effort_rpe">RPE %1$s</string>
+</resources>

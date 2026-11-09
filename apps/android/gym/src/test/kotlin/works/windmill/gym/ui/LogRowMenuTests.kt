@@ -28,6 +28,7 @@ import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import works.windmill.gym.spelled
 import works.windmill.gym.presentation.Readout
 import works.windmill.gym.store.EngineRoomFixture
 
@@ -77,7 +78,7 @@ class LogRowMenuTests {
     }
 
     // The row's title is the one node carrying both the session's name and a click action.
-    private fun row() = compose.onAllNodes(hasText(Readout.noRoutine) and hasClickAction()).onFirst()
+    private fun row() = compose.onAllNodes(hasText(Readout.freeWorkout.spelled()) and hasClickAction()).onFirst()
 
     @Test
     fun theLongPressHoldsExactlyTwoItemsAndTheRowDrawsNoOverflowAtAll() {
@@ -92,7 +93,7 @@ class LogRowMenuTests {
                 compose.onAllNodes(hasContentDescription("More", substring = true), useUnmergedTree = true)
                     .fetchSemanticsNodes().size)
             assertEquals("and the row holds no control of its own at all — the long press is the door", 0,
-                compose.onAllNodes(hasAnyAncestor(hasText(Readout.noRoutine) and hasClickAction())
+                compose.onAllNodes(hasAnyAncestor(hasText(Readout.freeWorkout.spelled()) and hasClickAction())
                     and hasClickAction()).fetchSemanticsNodes().size)
 
             row().performTouchInput { longClick() }

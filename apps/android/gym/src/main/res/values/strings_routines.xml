@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="gym_routines_title">Routines</string>
+    <string name="gym_routines_new_routine">New routine</string>
+    <string name="gym_routines_empty">No routines yet.</string>
+    <string name="gym_routines_delete_named">Delete %1$s</string>
+    <string name="gym_routines_more_named">More for %1$s</string>
+    <string name="gym_routines_open_named">open %1$s</string>
+    <string name="gym_routines_gone">That routine is no longer in your program. Everything you logged against it is still in the log.</string>
+    <string name="gym_routines_movement_yours">%1$s · yours</string>
+    <string name="gym_routines_start_workout">Start workout</string>
+    <string name="gym_routines_edit_routine">Edit routine</string>
+</resources>

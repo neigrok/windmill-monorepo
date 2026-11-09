@@ -2,7 +2,14 @@ package works.windmill.gym.presentation
 
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import works.windmill.gym.plain
+import works.windmill.platform.i18n.Words
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class NumberEntryTests {
     @Test fun signedLoadsAndCommaDecimalsKeepTheirEnteredValue() {
         val cases = mapOf(
@@ -18,22 +25,22 @@ class NumberEntryTests {
             "1e1" to 10.0,
         )
         for ((text, expected) in cases) {
-            assertEquals(text, NumberEntry.Reading(expected, "kg"),
-                NumberEntry.read(text, NumberEntry.Field.Load, keeping = 82.5))
+            assertEquals(text, NumberEntry.Reading(expected, Words.Plain("kg")),
+                NumberEntry.read(text, NumberEntry.Field.Load, keeping = 82.5).spelled())
         }
     }
 
     @Test fun aFloorRefusesALoadUnderItAsTypedAndNamesTheKeptValue() {
-        assertEquals(NumberEntry.Reading(null, "Enter 0 or more, or cancel to keep 75", belowFloor = true),
-            NumberEntry.read("−12.5", NumberEntry.Field.Load, keeping = 75.0, floor = 0.0))
-        assertEquals(NumberEntry.Reading(null, "Enter 0 or more, or cancel to keep 75", belowFloor = true),
-            NumberEntry.read("-0.01", NumberEntry.Field.Load, keeping = 75.0, floor = 0.0))
-        assertEquals(NumberEntry.Reading(0.0, "kg"), NumberEntry.read("-0.004", NumberEntry.Field.Load, keeping = 75.0, floor = 0.0))
-        assertEquals(NumberEntry.Reading(0.0, "kg"), NumberEntry.read("0", NumberEntry.Field.Load, keeping = 75.0, floor = 0.0))
-        assertEquals(NumberEntry.Reading(-12.5, "kg"), NumberEntry.read("−12.5", NumberEntry.Field.Load, keeping = 75.0, floor = null))
-        assertEquals(NumberEntry.Reading(-10.0, "kg"), NumberEntry.read("−10", NumberEntry.Field.Load, keeping = -10.0, floor = 0.0))
-        assertEquals(NumberEntry.Reading(null, "Enter 0 or more, or cancel to keep −10", belowFloor = true),
-            NumberEntry.read("−7.5", NumberEntry.Field.Load, keeping = -10.0, floor = 0.0))
+        assertEquals(NumberEntry.Reading(null, Words.Plain("Enter 0 or more, or cancel to keep 75"), belowFloor = true),
+            NumberEntry.read("−12.5", NumberEntry.Field.Load, keeping = 75.0, floor = 0.0).spelled())
+        assertEquals(NumberEntry.Reading(null, Words.Plain("Enter 0 or more, or cancel to keep 75"), belowFloor = true),
+            NumberEntry.read("-0.01", NumberEntry.Field.Load, keeping = 75.0, floor = 0.0).spelled())
+        assertEquals(NumberEntry.Reading(0.0, Words.Plain("kg")), NumberEntry.read("-0.004", NumberEntry.Field.Load, keeping = 75.0, floor = 0.0).spelled())
+        assertEquals(NumberEntry.Reading(0.0, Words.Plain("kg")), NumberEntry.read("0", NumberEntry.Field.Load, keeping = 75.0, floor = 0.0).spelled())
+        assertEquals(NumberEntry.Reading(-12.5, Words.Plain("kg")), NumberEntry.read("−12.5", NumberEntry.Field.Load, keeping = 75.0, floor = null).spelled())
+        assertEquals(NumberEntry.Reading(-10.0, Words.Plain("kg")), NumberEntry.read("−10", NumberEntry.Field.Load, keeping = -10.0, floor = 0.0).spelled())
+        assertEquals(NumberEntry.Reading(null, Words.Plain("Enter 0 or more, or cancel to keep −10"), belowFloor = true),
+            NumberEntry.read("−7.5", NumberEntry.Field.Load, keeping = -10.0, floor = 0.0).spelled())
     }
 
     @Test fun aStepStopsAtTheFloorAndAnUnflooredStepKeepsItsSign() {
@@ -60,32 +67,32 @@ class NumberEntryTests {
             "21.25" to 21.25,
         )
         for ((text, expected) in cases) {
-            assertEquals(text, NumberEntry.Reading(expected, "kg"),
-                NumberEntry.read(text, NumberEntry.Field.Load, keeping = 0.0))
+            assertEquals(text, NumberEntry.Reading(expected, Words.Plain("kg")),
+                NumberEntry.read(text, NumberEntry.Field.Load, keeping = 0.0).spelled())
         }
     }
 
     @Test fun finiteLoadsHaveNoPolicyCapAndCanonicalReadoutsRoundTrip() {
         for (value in listOf(-5000.0, 5000.0, 35333333333333.34, Double.MAX_VALUE, -Double.MAX_VALUE)) {
-            assertEquals(NumberEntry.Reading(value, "kg"),
-                NumberEntry.read(Readout.weight(value), NumberEntry.Field.Load, keeping = 0.0))
+            assertEquals(NumberEntry.Reading(value, Words.Plain("kg")),
+                NumberEntry.read(Readout.weight(value), NumberEntry.Field.Load, keeping = 0.0).spelled())
         }
     }
 
     @Test fun emptyAndIncompleteSignNameTheUnchangedPriorValue() {
         for (text in listOf("", "  ", "-", " - ", "−")) {
-            assertEquals(text, NumberEntry.Reading(null, "Enter a number, or cancel to keep −102.5"),
-                NumberEntry.read(text, NumberEntry.Field.Load, keeping = -102.5))
-            assertEquals(text, NumberEntry.Reading(null, "Enter a number, or cancel to keep 8"),
-                NumberEntry.read(text, NumberEntry.Field.Reps, keeping = 8.0))
+            assertEquals(text, NumberEntry.Reading(null, Words.Plain("Enter a number, or cancel to keep −102.5")),
+                NumberEntry.read(text, NumberEntry.Field.Load, keeping = -102.5).spelled())
+            assertEquals(text, NumberEntry.Reading(null, Words.Plain("Enter a number, or cancel to keep 8")),
+                NumberEntry.read(text, NumberEntry.Field.Reps, keeping = 8.0).spelled())
         }
     }
 
     @Test fun repeatedSeparatorsAreRefusedBeforeParsingOrBounds() {
         for (text in listOf("10,2,5", "10.2.5", "10,2.5", "500..1", "bad..")) {
             for (field in NumberEntry.Field.entries) {
-                assertEquals("$field: $text", NumberEntry.Reading(null, "One decimal point only."),
-                    NumberEntry.read(text, field, keeping = 5.0))
+                assertEquals("$field: $text", NumberEntry.Reading(null, Words.Plain("One decimal point only.")),
+                    NumberEntry.read(text, field, keeping = 5.0).spelled())
             }
         }
     }
@@ -93,33 +100,35 @@ class NumberEntryTests {
     @Test fun malformedAndNonFiniteValuesCannotCommit() {
         for (text in listOf(".", ",", "+", "--", "7-2", "NaN", "Infinity", "-Infinity", "1e999")) {
             for (field in NumberEntry.Field.entries) {
-                assertEquals("$field: $text", NumberEntry.Reading(null, "That is not a number yet."),
-                    NumberEntry.read(text, field, keeping = 5.0))
+                assertEquals("$field: $text", NumberEntry.Reading(null, Words.Plain("That is not a number yet.")),
+                    NumberEntry.read(text, field, keeping = 5.0).spelled())
             }
         }
     }
 
     @Test fun performedRepsAcceptWholeValuesWithinOneToNinetyNine() {
         for ((text, value) in mapOf("1" to 1.0, "99" to 99.0, "8.0" to 8.0, " 8,0 " to 8.0, "1e1" to 10.0)) {
-            assertEquals(text, NumberEntry.Reading(value, "whole reps"),
-                NumberEntry.read(text, NumberEntry.Field.Reps, keeping = 5.0))
+            assertEquals(text, NumberEntry.Reading(value, Words.Plain("whole reps")),
+                NumberEntry.read(text, NumberEntry.Field.Reps, keeping = 5.0).spelled())
         }
         for (text in listOf("0", "-1", "100", "1.5", "99.01", "7,5")) {
-            assertEquals(text, NumberEntry.Reading(null, "Whole reps, 1 to 99."),
-                NumberEntry.read(text, NumberEntry.Field.Reps, keeping = 5.0))
+            assertEquals(text, NumberEntry.Reading(null, Words.Plain("Whole reps, 1 to 99.")),
+                NumberEntry.read(text, NumberEntry.Field.Reps, keeping = 5.0).spelled())
         }
     }
 
     @Test fun incompleteAndRepairedInputRetainsItsValidationState() {
         val edits = listOf("-", "-1", "-12", "-12,", "-12,5", "-12,5,", "-12,5")
         assertEquals(listOf(
-            NumberEntry.Reading(null, "Enter a number, or cancel to keep 82.5"),
-            NumberEntry.Reading(-1.0, "kg"),
-            NumberEntry.Reading(-12.0, "kg"),
-            NumberEntry.Reading(-12.0, "kg"),
-            NumberEntry.Reading(-12.5, "kg"),
-            NumberEntry.Reading(null, "One decimal point only."),
-            NumberEntry.Reading(-12.5, "kg"),
-        ), edits.map { NumberEntry.read(it, NumberEntry.Field.Load, keeping = 82.5) })
+            NumberEntry.Reading(null, Words.Plain("Enter a number, or cancel to keep 82.5")),
+            NumberEntry.Reading(-1.0, Words.Plain("kg")),
+            NumberEntry.Reading(-12.0, Words.Plain("kg")),
+            NumberEntry.Reading(-12.0, Words.Plain("kg")),
+            NumberEntry.Reading(-12.5, Words.Plain("kg")),
+            NumberEntry.Reading(null, Words.Plain("One decimal point only.")),
+            NumberEntry.Reading(-12.5, Words.Plain("kg")),
+        ), edits.map { NumberEntry.read(it, NumberEntry.Field.Load, keeping = 82.5).spelled() })
     }
 }
+
+private fun NumberEntry.Reading.spelled() = copy(said = said.plain())

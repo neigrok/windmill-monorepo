@@ -14,6 +14,10 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import works.windmill.gym.spelled
 import works.windmill.domain.kit.ActionContext
 import works.windmill.domain.kit.ActionRunner
 import works.windmill.domain.kit.FixedZone
@@ -43,6 +47,8 @@ import works.windmill.gym.domain.sync.RoutineEntry as EngineEntry
 import works.windmill.gym.domain.sync.Session as EngineSession
 import works.windmill.gym.domain.sync.SetTarget as EngineTarget
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class WorkoutProposalsStoreTests {
     @get:Rule
     val tmp = TemporaryFolder()
@@ -98,7 +104,7 @@ class WorkoutProposalsStoreTests {
             assertEquals(mapOf("wp000000000000001" to Proposal(
                 id = "wp000000000000001", routineId = room.store.workout.session!!.id, changeCount = 2,
                 createdAtMs = room.store.workoutProposals.held.getValue("wp000000000000001").createdAtMs,
-                source = ProposalSource(door = "ask", connection = "", agent = ""), baseName = "this workout",
+                source = ProposalSource(door = "ask", connection = "", agent = ""),
                 changes = listOf(
                     ProposalChange(1, ChangeKind.Kept, "bench-press", eight, eight),
                     ProposalChange(2, ChangeKind.Kept, "overhead-press", eight, eight),
@@ -109,6 +115,7 @@ class WorkoutProposalsStoreTests {
                 ),
                 target = ProposalTarget.Workout,
             )), room.store.workoutProposals.held)
+            assertEquals("this workout", room.store.workoutProposals.held.getValue("wp000000000000001").routineNamed.spelled())
             assertEquals(emptyList<Map<String, String>>(), telling.outcomes())
             finishing()
         }
@@ -166,7 +173,7 @@ class WorkoutProposalsStoreTests {
             val decided = room.store.workoutProposals.apply("wp000000000000001")
 
             assertEquals(ProposalState.Applied, (decided as ProposalOutcome.Decided).proposal.state)
-            assertEquals("Applied · this workout · 2 changes", decided.proposal.receipt)
+            assertEquals("Applied · this workout · 2 changes", decided.proposal.settledReceipt?.words.spelled())
             assertEquals(listOf("bench-press", "overhead-press", "dumbbell-bench-press", "cable-fly", "triceps-pushdown"),
                 room.store.workout.session!!.plan!!.entries.map { it.exerciseId })
             assertEquals(listOf("bench-press", "overhead-press", "dumbbell-bench-press", "cable-fly", "triceps-pushdown"), room.store.workout.order)
@@ -233,7 +240,7 @@ class WorkoutProposalsStoreTests {
             val decided = room.store.workoutProposals.dismiss("wp000000000000001")
 
             assertEquals(ProposalState.Dismissed, (decided as ProposalOutcome.Decided).proposal.state)
-            assertEquals("Turned down · nothing changed.", decided.proposal.receipt)
+            assertEquals("Turned down · nothing changed.", decided.proposal.settledReceipt?.words.spelled())
             assertEquals(pushA, room.store.workout.session!!.plan!!.entries.map { it.exerciseId })
             assertEquals(pushA, room.store.workout.order)
             room.sync(server); room.store.refreshEngine()
@@ -251,7 +258,7 @@ class WorkoutProposalsStoreTests {
             open(room, server)
             coachProposes(room, swapped)
             room.store.refreshEngine()
-            assertNull(room.store.workoutProposals.held.getValue("wp000000000000001").outOfDate)
+            assertNull(room.store.workoutProposals.held.getValue("wp000000000000001").stale)
 
             room.store.workout.choose("incline-dumbbell-press")
             room.store.workout.logSet(20.0, 8)
@@ -259,11 +266,11 @@ class WorkoutProposalsStoreTests {
 
             val line = "You logged Incline Dumbbell Press since this suggestion. Nothing was applied."
             val standing = room.store.workoutProposals.held.getValue("wp000000000000001")
-            assertEquals(line, standing.outOfDate)
+            assertEquals(line, standing.staleWhy.spelled())
             assertEquals(ProposalState.Pending, standing.state)
             assertEquals(1, standing.changes.single { it.kind == ChangeKind.Removed }.loggedSets)
 
-            assertEquals(ProposalOutcome.Moved(line), room.store.workoutProposals.apply("wp000000000000001"))
+            assertEquals(line, (room.store.workoutProposals.apply("wp000000000000001") as ProposalOutcome.Moved).words.spelled())
 
             assertEquals(pushA, room.store.workout.session!!.plan!!.entries.map { it.exerciseId })
             assertEquals(listOf(mapOf("target" to "workout", "action" to "apply", "outcome" to "moved")), telling.outcomes())
@@ -297,7 +304,7 @@ class WorkoutProposalsStoreTests {
             assertEquals(pushA, room.store.workout.session!!.plan!!.entries.map { it.exerciseId })
             assertEquals(pushA, room.store.workout.order)
             assertEquals("You logged Incline Dumbbell Press since this suggestion. Nothing was applied.",
-                room.store.workoutProposals.held.getValue("wp000000000000001").outOfDate)
+                room.store.workoutProposals.held.getValue("wp000000000000001").staleWhy.spelled())
             assertEquals(listOf(mapOf("target" to "workout", "action" to "apply", "outcome" to "failed")), telling.outcomes())
             assertEquals(emptyList<String>(), telling.failures)
             finishing()
@@ -314,7 +321,7 @@ class WorkoutProposalsStoreTests {
             room.store.workout.finish()
             room.store.refreshEngine()
 
-            assertEquals("This workout has finished. Nothing was applied.", room.store.workoutProposals.held.getValue("wp000000000000001").outOfDate)
+            assertEquals("This workout has finished. Nothing was applied.", room.store.workoutProposals.held.getValue("wp000000000000001").staleWhy.spelled())
             finishing()
         }
     }
@@ -327,7 +334,7 @@ class WorkoutProposalsStoreTests {
             open(room, server)
 
             assertEquals(ProposalRead.Gone, room.store.workoutProposals.proposal("wp000000000000009"))
-            assertEquals(ProposalOutcome.Gone("that proposal is no longer on the log"), room.store.workoutProposals.apply("wp000000000000009"))
+            assertEquals("that proposal is no longer on the log", (room.store.workoutProposals.apply("wp000000000000009") as ProposalOutcome.Gone).words.spelled())
             assertEquals(listOf(mapOf("target" to "workout", "action" to "apply", "outcome" to "gone")), telling.outcomes())
             finishing()
         }
@@ -345,7 +352,8 @@ class WorkoutProposalsStoreTests {
             coachProposes(room, swapped)
             room.store.refreshEngine()
 
-            assertEquals(ProposalOutcome.Failed(WriteFailure.Refused("Sign in to review this proposal.")), room.store.workoutProposals.apply("wp000000000000001"))
+            assertEquals("Sign in to review this proposal.",
+                ((room.store.workoutProposals.apply("wp000000000000001") as ProposalOutcome.Failed).why as WriteFailure.Refused).words.spelled())
 
             assertEquals(pushA, room.store.workout.session!!.plan!!.entries.map { it.exerciseId })
             assertEquals(ProposalState.Pending, room.store.workoutProposals.held.getValue("wp000000000000001").state)
@@ -366,7 +374,8 @@ class WorkoutProposalsStoreTests {
             room.push(Reply.Answer(SyncResponse(401, null)))
             assertTrue(room.engine.status.state.value.authPaused)
 
-            assertEquals(ProposalOutcome.Failed(WriteFailure.Refused("Sign in again to decide this proposal.")), room.store.workoutProposals.apply("wp000000000000001"))
+            assertEquals("Sign in again to decide this proposal.",
+                ((room.store.workoutProposals.apply("wp000000000000001") as ProposalOutcome.Failed).why as WriteFailure.Refused).words.spelled())
             assertEquals(pushA, room.store.workout.session!!.plan!!.entries.map { it.exerciseId })
             finishing()
         }
@@ -381,16 +390,16 @@ class WorkoutProposalsStoreTests {
             coachProposes(room, listOf(entry("cable-fly"), entry("bench-press"), entry("overhead-press"), entry("incline-dumbbell-press"), entry("triceps-pushdown")))
             room.store.refreshEngine()
             val pending = room.store.workoutProposals.held.getValue("wp000000000000001")
-            assertEquals("1 change", pending.counted)
-            assertEquals("Apply", pending.applyLabel)
+            assertEquals("1 change", pending.counting.spelled())
+            assertEquals("Apply", pending.applying.spelled())
 
             val decided = room.store.workoutProposals.apply("wp000000000000001") as ProposalOutcome.Decided
             assertEquals(listOf("cable-fly", "bench-press", "overhead-press", "incline-dumbbell-press", "triceps-pushdown"), room.store.workout.session!!.plan!!.entries.map { it.exerciseId })
-            assertEquals("Applied · this workout · 1 change", decided.proposal.receipt)
+            assertEquals("Applied · this workout · 1 change", decided.proposal.settledReceipt?.words.spelled())
 
             room.sync(server)
             room.store.refreshEngine()
-            assertEquals("Applied · this workout · 1 change", room.store.workoutProposals.held.getValue("wp000000000000001").receipt)
+            assertEquals("Applied · this workout · 1 change", room.store.workoutProposals.held.getValue("wp000000000000001").settledReceipt?.words.spelled())
             finishing()
         }
     }
@@ -410,8 +419,8 @@ class WorkoutProposalsStoreTests {
 
             val gone = room.store.workoutProposals.held.getValue("wp000000000000001")
             assertEquals(ProposalState.Pending, gone.state)
-            assertEquals("This workout changed after this suggestion. Nothing was applied.", gone.outOfDate)
-            assertEquals(ProposalOutcome.Gone("that proposal is no longer on the log"), room.store.workoutProposals.apply("wp000000000000001"))
+            assertEquals("This workout changed after this suggestion. Nothing was applied.", gone.staleWhy.spelled())
+            assertEquals("that proposal is no longer on the log", (room.store.workoutProposals.apply("wp000000000000001") as ProposalOutcome.Gone).words.spelled())
             finishing()
         }
     }

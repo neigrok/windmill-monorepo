@@ -9,12 +9,18 @@ import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import works.windmill.gym.spelled
 import works.windmill.gym.presentation.*
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.sync.engine.signIn
 import works.windmill.sync.schema.SyncSchema
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class RoutineHistoryTests {
     @get:Rule val tmp = TemporaryFolder()
 
@@ -65,7 +71,7 @@ class RoutineHistoryTests {
             assertFalse(pending.isCompleted)
             assertTrue(room.engine.signIn("a", mapOf("gym" to false), serverSchema = SyncSchema.registry.version).member("complete").bool())
             runCurrent()
-            assertEquals(GymResult.Failed(WriteFailure.Refused("The account changed. Open this again.")), pending.await())
+            assertEquals("The account changed. Open this again.", ((pending.await() as GymResult.Failed).why as WriteFailure.Refused).words.spelled())
         }
     }
 }

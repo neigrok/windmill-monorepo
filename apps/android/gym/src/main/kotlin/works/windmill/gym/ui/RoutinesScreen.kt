@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import works.windmill.platform.R as PlatformR
 import works.windmill.platform.design.WindmillType
 import androidx.compose.material3.MaterialTheme
 import works.windmill.platform.design.WindmillSheet
@@ -38,6 +39,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.liveRegion
@@ -63,6 +65,8 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
+import works.windmill.platform.i18n.Words
+import works.windmill.platform.i18n.text
 
 // What the routines home and a routine's sheet draw.
 @Stable
@@ -118,10 +122,10 @@ fun RoutinesScreen(
     val refusals = state.refusals.filterNot { it is RefusedWorkout }
 
     GymScreen(
-        title = "Routines",
+        title = stringResource(R.string.gym_routines_title),
         actions = { YouSeat(seat) },
         transient = transient,
-        floatingActionButton = { GymFab("New routine", onClick = { onBuild(RoutineDraft(position = state.all.size)) }) },
+        floatingActionButton = { GymFab(stringResource(R.string.gym_routines_new_routine), onClick = { onBuild(RoutineDraft(position = state.all.size)) }) },
     ) {
         Box(Modifier.fillMaxSize()) {
             LazyColumn(
@@ -139,7 +143,7 @@ fun RoutinesScreen(
                 }
 
                 items(state.unseenRemovalReceipts.values.toList(), key = { "receipt:${it.id}" }) { receipt ->
-                    ProposalCard(receipt, receipt.routineName, nowMs, false) { onReview(receipt) }
+                    ProposalCard(receipt, receipt.routineNamed, nowMs, false) { onReview(receipt) }
                 }
 
                 // The newest waiting card, one at a time; the others keep their dot on their
@@ -148,7 +152,7 @@ fun RoutinesScreen(
                     item("proposal") {
                         ProposalCard(
                             proposal = waiting,
-                            routineName = state.routine(waiting.routineId)?.name ?: waiting.routineName,
+                            routineNamed = state.routine(waiting.routineId)?.name?.let(Words::Plain) ?: waiting.routineNamed,
                             nowMs = nowMs,
                             stillWaiting = waiting.id in lookedAt,
                             onReview = { onReview(waiting) },
@@ -158,12 +162,12 @@ fun RoutinesScreen(
 
                 if (empty) {
                     item("empty") {
-                        Text("No routines yet.", style = GymType.emptyRoutinesTitle, color = colors.onSurface)
+                        Text(stringResource(R.string.gym_routines_empty), style = GymType.emptyRoutinesTitle, color = colors.onSurface)
                     }
                 } else {
                     items(routines, key = { it.id }) { routine ->
                         val delete: suspend () -> Boolean = { onDeleteRoutine(routine.id) }
-                        DeleteSwipeRow(actionLabel = "Delete ${routine.name}", onDelete = delete) {
+                        DeleteSwipeRow(actionLabel = stringResource(R.string.gym_routines_delete_named, routine.name), onDelete = delete) {
                             RoutineRow(routine, standing?.id, state.catalog, onOpenRoutine, delete, onReview)
                         }
                     }
@@ -200,16 +204,16 @@ private fun RoutineRow(
         trailingContent = {
             Box {
                 IconButton(onClick = { menu = true }) {
-                    Icon(Icons.Filled.MoreVert, "More for ${routine.name}", tint = colors.onSurfaceVariant)
+                    Icon(Icons.Filled.MoreVert, stringResource(R.string.gym_routines_more_named, routine.name), tint = colors.onSurfaceVariant)
                 }
                 GymMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                    GymMenuItem("Delete", painterResource(R.drawable.gym_native_delete), destructive = true,
+                    GymMenuItem(stringResource(PlatformR.string.platform_delete), painterResource(R.drawable.gym_native_delete), destructive = true,
                         onClick = { menu = false; scope.launch { onDelete() } })
                 }
             }
         },
         modifier = Modifier.fillMaxWidth()
-            .clickable(role = Role.Button, onClickLabel = "open ${routine.name}") { onOpenRoutine(routine.id) },
+            .clickable(role = Role.Button, onClickLabel = stringResource(R.string.gym_routines_open_named, routine.name)) { onOpenRoutine(routine.id) },
     )
 }
 
@@ -243,7 +247,7 @@ fun RoutineSheet(
             ) {
                 if (routine == null) {
                     Text(
-                        "That routine is no longer in your program. Everything you logged against it is still in the log.",
+                        stringResource(R.string.gym_routines_gone),
                         style = WindmillType.paragraphLoose,
                         color = colors.onSurfaceVariant,
                     )
@@ -260,10 +264,10 @@ fun RoutineSheet(
                                     }
                                 },
                                 headlineContent = {
-                                    Text(if (yours) "$name · yours" else name, style = WindmillType.label, color = colors.onSurface)
+                                    Text(if (yours) stringResource(R.string.gym_routines_movement_yours, name) else name, style = WindmillType.label, color = colors.onSurface)
                                 },
                                 supportingContent = {
-                                    Text(Readout.targetWithUnit(entry.sets, state.catalog.find { it.id == entry.exerciseId }),
+                                    Text(Readout.scheme(entry.sets, state.catalog.find { it.id == entry.exerciseId }).text(),
                                         style = GymType.numeral, color = colors.onSurfaceVariant)
                                 },
                                 colors = ListItemDefaults.colors(containerColor = colors.surfaceContainer),
@@ -280,11 +284,11 @@ fun RoutineSheet(
                         modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }) }
                     Button(onClick = { onStart(routine.id) }, enabled = !starting,
                         modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
-                        Text("Start workout", style = WindmillType.label)
+                        Text(stringResource(R.string.gym_routines_start_workout), style = WindmillType.label)
                     }
                     TextButton(onClick = { onBuild(RoutineDraft.of(routine, state.catalog)) }, enabled = !starting,
                         modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
-                        Text("Edit routine", style = WindmillType.label)
+                        Text(stringResource(R.string.gym_routines_edit_routine), style = WindmillType.label)
                     }
                 }
             }

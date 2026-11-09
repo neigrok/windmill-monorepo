@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="gym_screen_back_to">Back to %1$s</string>
+    <string name="gym_screen_open_account">open your account</string>
+    <string name="gym_screen_your_account">Your account</string>
+</resources>

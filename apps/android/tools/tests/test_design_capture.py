@@ -486,6 +486,51 @@ class DesignCaptureTests(unittest.TestCase):
             ("shell", "settings", "delete", "secure", "accessibility_interactive_ui_timeout_ms"),
         ], calls)
 
+    def test_only_the_apps_own_crash_or_anr_fails_the_run(self):
+        def fatal(process):
+            return ("E/AndroidRuntime( 1326): FATAL EXCEPTION: main\n"
+                    f"E/AndroidRuntime( 1326): Process: {process}, PID: 1326\n"
+                    "E/AndroidRuntime( 1326): java.lang.IllegalStateException: boom\n")
+        launcher = fatal("com.google.android.apps.nexuslauncher")
+        self.assertFalse(capture.app_failed(""))
+        self.assertFalse(capture.app_failed(launcher))
+        self.assertFalse(capture.app_failed("I/ActivityManager(  632): ANR in com.android.systemui\n"))
+        self.assertTrue(capture.app_failed(launcher + fatal("works.windmill.app")))
+        self.assertTrue(capture.app_failed(fatal("works.windmill.app:sync")))
+        self.assertTrue(capture.app_failed("E/ActivityManager(  632): ANR in works.windmill.app (works.windmill.app/.MainActivity)\n"))
+
+    def test_system_language_boots_a_rooted_emulator_again_and_checks_the_framework_took_it(self):
+        class LocaleDevice(capture.Device):
+            def __init__(self, replies):
+                self.replies = replies
+                self.calls = []
+            def run(self, *arguments, **kwargs):
+                self.calls.append(arguments)
+                queue = self.replies[arguments]
+                return queue.pop(0) if len(queue) > 1 else queue[0]
+        def replies(debuggable=b"1\n", configuration=b"config: ar-rEG-ldrtl-sw411dp-w411dp-h914dp\n"):
+            return {("shell", "getprop", "ro.debuggable"): [debuggable], ("root",): [b"restarting adbd as root\n"],
+                    ("shell", "whoami"): [b"", b"root\n"], ("shell", "setprop", "persist.sys.locale", "ar-EG"): [b""],
+                    ("reboot",): [b""], ("shell", "getprop", "sys.boot_completed"): [b"1\n", b"\n", b"1\n"],
+                    ("shell", "cmd", "activity", "get-config"): [configuration],
+                    ("shell", "getprop", "persist.sys.locale"): [b"ar-EG\n"]}
+        running = type("Emulator", (), {"poll": lambda self: None})()
+        device = LocaleDevice(replies())
+        device.system_locale(running, "ar-EG", timeout=1, poll_seconds=0)
+        self.assertEqual([
+            ("shell", "getprop", "ro.debuggable"), ("root",), ("shell", "whoami"), ("shell", "whoami"),
+            ("shell", "setprop", "persist.sys.locale", "ar-EG"), ("reboot",),
+            ("shell", "getprop", "sys.boot_completed"), ("shell", "getprop", "sys.boot_completed"),
+            ("shell", "getprop", "sys.boot_completed"),
+            ("shell", "cmd", "activity", "get-config"), ("shell", "getprop", "persist.sys.locale"),
+        ], device.calls)
+        production = LocaleDevice(replies(debuggable=b"0\n"))
+        with self.assertRaisesRegex(RuntimeError, "rootable google_apis emulator"):
+            production.system_locale(running, "ar-EG", timeout=1, poll_seconds=0)
+        self.assertEqual([("shell", "getprop", "ro.debuggable")], production.calls)
+        with self.assertRaisesRegex(RuntimeError, "did not take its system language"):
+            LocaleDevice(replies(configuration=b"config: en-rUS-ldltr-sw411dp\n")).system_locale(running, "ar-EG", timeout=1, poll_seconds=0)
+
     def test_recipes_accept_canonical_board_ids_and_reject_unsafe_output_names(self):
         for board in ("02.7", "08.21", "08.58b", "02.1N", "03.3Nk", "15a", "15b", "15c", "27a", "27g", "A4"):
             capture.validate_scenarios([{"board": board, "name": "signed-in", "account": "fixture"}])

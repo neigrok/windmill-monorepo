@@ -18,9 +18,10 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
+import works.windmill.gym.spelled
 import works.windmill.gym.presentation.*
 import works.windmill.gym.telemetry.GymEvents
-import works.windmill.gym.ui.PhoneSignInCopy
+import works.windmill.gym.ui.PhoneSignInWords
 import works.windmill.platform.User
 import works.windmill.platform.auth.AuthSignOutChoice
 import works.windmill.platform.net.WindmillApiException
@@ -116,10 +117,10 @@ class GymEngineSessionTests {
             val signingIn = async { session.signedIn(User("A", "a@example.com"), "token-A", false) }
             assertEquals(mapOf("routine" to 2, "note" to 1, "thread" to 1), decision(session).decisions.single().count)
             assertEquals(mapOf("gym" to mapOf("routine" to 1)), session.decisionCounts)
-            val copy = PhoneSignInCopy(session.decisionCounts)
-            assertEquals("This phone has 1 routine from before you signed in. Your account already has training. Add it, or discard it from this phone.", copy.question)
-            assertEquals("Discard 1 routine?", copy.discardTitle)
-            assertEquals("It is deleted from this phone. You can’t undo this.", copy.discardBody)
+            val copy = PhoneSignInWords(session.decisionCounts)
+            assertEquals("This phone has 1 routine from before you signed in. Your account already has training. Add it, or discard it from this phone.", copy.question.spelled())
+            assertEquals("Discard 1 routine?", copy.discardTitle.spelled())
+            assertEquals("It is deleted from this phone. You can’t undo this.", copy.discardBody.spelled())
             session.cancel()
             assertThrows(CancellationException::class.java) { runBlocking { signingIn.await() } }
         }
@@ -141,10 +142,10 @@ class GymEngineSessionTests {
             val asked = decision(session)
             assertEquals(mapOf("thread" to 1), asked.decisions.single().count)
             assertEquals(mapOf("gym" to emptyMap<String, Int>()), session.decisionCounts)
-            val copy = PhoneSignInCopy(session.decisionCounts)
-            assertEquals("This phone has training from before you signed in. Your account already has training. Add it, or discard it from this phone.", copy.question)
-            assertEquals("Discard this phone’s training?", copy.discardTitle)
-            assertEquals("It is deleted from this phone. You can’t undo this.", copy.discardBody)
+            val copy = PhoneSignInWords(session.decisionCounts)
+            assertEquals("This phone has training from before you signed in. Your account already has training. Add it, or discard it from this phone.", copy.question.spelled())
+            assertEquals("Discard this phone’s training?", copy.discardTitle.spelled())
+            assertEquals("It is deleted from this phone. You can’t undo this.", copy.discardBody.spelled())
             assertEquals("anon", active(engine).member("meta").member("state").str())
             assertEquals(listOf("gym_sign_in_decision" to mapOf("state" to "shown")), events.filter { it.first == "gym_sign_in_decision" })
             session.decide(LineageAnswer.discard)
@@ -173,7 +174,7 @@ class GymEngineSessionTests {
             assertEquals(mapOf("thread" to 3), decision.decisions.single().count)
             assertEquals(mapOf("gym" to mapOf("thread" to 2)), session.decisionCounts)
             assertEquals("This phone has 2 conversations from before you signed in. Your account already has training. Add them, or discard them from this phone.",
-                PhoneSignInCopy(session.decisionCounts).question)
+                PhoneSignInWords(session.decisionCounts).question.spelled())
             session.cancel()
             assertThrows(CancellationException::class.java) { runBlocking { signingIn.await() } }
         }

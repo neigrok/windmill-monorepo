@@ -12,6 +12,11 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.ContinuationInterceptor
 import kotlin.coroutines.CoroutineContext
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import works.windmill.gym.spelled
+import works.windmill.platform.i18n.text
 import works.windmill.sync.api.Change
 import works.windmill.sync.api.CommitOutcome
 import works.windmill.sync.api.Gesture
@@ -49,6 +54,8 @@ import works.windmill.gym.presentation.Session
 import works.windmill.platform.telemetry.Telemetry
 
 @OptIn(ExperimentalCoroutinesApi::class)
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class TelemetryTests {
     @get:Rule val tmp = TemporaryFolder()
 
@@ -215,7 +222,7 @@ class TelemetryTests {
                 .adding("bench-press")) as GymResult.Ok).value
             telemetry.events.clear()
             val beforeMissing = room.engine.snapshot()
-            assertEquals(GymResult.Failed(WriteFailure.Refused("That is no longer on the log.")), store.workout.start("missing-routine"))
+            assertEquals("That is no longer on the log.", ((store.workout.start("missing-routine") as GymResult.Failed).why as WriteFailure.Refused).words.spelled())
             assertEquals(beforeMissing, room.engine.snapshot())
             assertNull(store.workout.session)
             assertEquals(emptyList<Pair<String, Map<String, String>>>(), telemetry.events)
@@ -264,7 +271,7 @@ class TelemetryTests {
 
             assertNull(deletionFailure?.stackTraceToString(), deletionFailure)
             assertNotNull("the selected routine was removed before the action decision", afterDelete)
-            assertEquals(GymResult.Failed(WriteFailure.Refused("That is no longer on the log.")), result)
+            assertEquals("That is no longer on the log.", ((result as GymResult.Failed).why as WriteFailure.Refused).words.spelled())
             assertEquals(afterDelete, room.engine.snapshot())
             assertNull(room.store.workout.session)
             assertTrue(room.training.details().isEmpty())
@@ -303,7 +310,7 @@ class TelemetryTests {
 
             assertNull(externalStartFailure?.stackTraceToString(), externalStartFailure)
             assertNotNull("the external workout opened before the action decision", afterExternalStart)
-            assertEquals(GymResult.Failed(WriteFailure.Refused("A workout is already open. Finish it first.")), result)
+            assertEquals("A workout is already open. Finish it first.", ((result as GymResult.Failed).why as WriteFailure.Refused).words.spelled())
             assertEquals(afterExternalStart, room.outbox())
             assertEquals("external1", room.store.workout.session?.id)
             assertNull(room.store.workout.session?.routineId)

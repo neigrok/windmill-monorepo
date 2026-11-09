@@ -1,5 +1,7 @@
 package works.windmill.gym.store
 
+import works.windmill.platform.i18n.Words
+import works.windmill.gym.R
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -21,7 +23,7 @@ data class RecoveryDraft(val read: RecoveryRead, val row: ImportRecovery, val co
 enum class RecoveryAction(val wire: String) { Keep("keep"), Retry("retry"), Fix("fix"), Discard("discard") }
 sealed interface RecoveryResult {
     data object Accepted : RecoveryResult
-    data class Refused(val line: String) : RecoveryResult
+    data class Refused(val words: Words) : RecoveryResult
     data object Failed : RecoveryResult
 }
 
@@ -93,7 +95,7 @@ class RecoveryStore(
     suspend fun recover(read: RecoveryRead, row: ImportRecovery, action: RecoveryAction,
         draft: RecoveryDraft? = null, currentOwner: () -> Boolean = { true }): RecoveryResult? {
         if (busy || row.adding) return null
-        if (action == RecoveryAction.Discard && (row.operationsOnly || row.workout == null || row.refusals.any { it.code in setOf("source-unreadable", "source-needs-update") })) return RecoveryResult.Refused("This copy cannot be discarded here.")
+        if (action == RecoveryAction.Discard && (row.operationsOnly || row.workout == null || row.refusals.any { it.code in setOf("source-unreadable", "source-needs-update") })) return RecoveryResult.Refused(Words.Message(R.string.gym_store_recovery_cannot_discard))
         val version = ownerVersion
         fun owns(): Boolean = ownerVersion == version && currentOwner() && seatHolds(read)
         fun allowed(): Boolean = owns() && seat.authorityFor(seat.owner)
@@ -114,7 +116,7 @@ class RecoveryStore(
                             check(fixed.read == read && fixed.row == row)
                             val opening = row.openings.single()
                             val refused = training.imports.preview(opening, fixed.copy, fixed.markFinished, now())
-                            if (refused != null) throw TrainingRefused(refused, WorkoutImports.reason(refused))
+                            if (refused != null) throw TrainingRefused(refused, WorkoutImports.reasonFor(refused))
                             if (row.workout?.session?.isOpen == true) {
                                 if (fixed.copy.session.isOpen) training.imports.replaceOpenAndRetry(row.id, fixed.copy, opening, ::allowed)
                                 else training.imports.keepWorkout(row.id, opening, ::allowed, fixed.copy)
@@ -123,7 +125,7 @@ class RecoveryStore(
                     }
                     if (action != RecoveryAction.Discard) training.imports.refusals().firstOrNull { failure ->
                         row.openings.any { it.id == failure.id }
-                    }?.let { throw TrainingRefused(it.code, it.reason) }
+                    }?.let { throw TrainingRefused(it.code, it.why) }
                 }
                 if (!owns()) return@async null
                 telemetry.event("gym_import_recovery", mapOf("action" to action.wire, "outcome" to if (action == RecoveryAction.Discard) "ok" else "completed"))
@@ -135,7 +137,7 @@ class RecoveryStore(
             catch (refused: TrainingRefused) {
                 if (!owns()) return@async null
                 telemetry.event("gym_import_recovery", mapOf("action" to action.wire, "outcome" to "refused"))
-                RecoveryResult.Refused(refused.line)
+                RecoveryResult.Refused(refused.words)
             } catch (failure: Exception) {
                 seat.reportFailure("gym_import_${action.wire}", failure)
                 if (!owns()) return@async null

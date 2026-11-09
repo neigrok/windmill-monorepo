@@ -12,6 +12,10 @@ import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import works.windmill.gym.spelled
 import works.windmill.gym.presentation.*
 import works.windmill.platform.net.WindmillJson
 import works.windmill.platform.telemetry.Telemetry
@@ -23,6 +27,8 @@ import works.windmill.sync.engine.signOut
 import works.windmill.sync.schema.Gym
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class RoutinePlanRaceTests {
     @get:Rule val tmp = TemporaryFolder()
     private class Recorder : Telemetry {
@@ -62,7 +68,7 @@ class RoutinePlanRaceTests {
                 val draft = RoutineDraft(name = "Only first", creationId = "routine_first").adding("bench-press")
                 telemetry.events.clear()
                 armed = true
-                assertEquals(GymResult.Failed(WriteFailure.Refused("The account changed. Open this again.")), room.store.routines.saveRoutine(draft))
+                assertEquals("The account changed. Open this again.", ((room.store.routines.saveRoutine(draft) as GymResult.Failed).why as WriteFailure.Refused).words.spelled())
                 assertNull(hookFailure?.stackTraceToString(), hookFailure)
                 assertNotNull(switched)
                 assertEquals(switched, room.engine.snapshot())
@@ -170,8 +176,8 @@ class RoutinePlanRaceTests {
             val base = room.training.catalogue().single { it.id == "bench-press" }
             room.training.editExercise(base.id, base.name, "dumbbell", 2, base)
             val before = room.engine.snapshot()
-            assertEquals(GymResult.Failed(WriteFailure.Refused("Reopen this routine to review its movement targets before saving.")),
-                room.store.routines.saveRoutine(restored))
+            assertEquals("Reopen this routine to review its movement targets before saving.",
+                ((room.store.routines.saveRoutine(restored) as GymResult.Failed).why as WriteFailure.Refused).words.spelled())
             assertEquals(before, room.engine.snapshot())
             assertEquals(listOf(opened), room.training.program())
             assertEquals(listOf(RoutineEntry(1, "bench-press", listOf(SetTarget(5, 80.0)))), restored.entries)

@@ -15,7 +15,10 @@ SDK with an API 36+ arm64 system image, and a backend binary rebuilt from the cu
 The default ports are backend 8098, model 8099, mail 8101 and emulator 5580/5581; occupied ports are refused.
 On a loaded host, `--patience N` multiplies every wait for a state. On a host short of disk, `--shared-avd NAME`
 boots an existing AVD read-only instead of a fresh API 36+ one, at that AVD's API level. `--appearance dark` or `light`
-captures one appearance instead of both.
+captures one appearance instead of both. `--system-locale ar-EG` runs on a phone set to that system language:
+the emulator must be a rootable `google_apis` image (a Play image is refused, so pair it with `--shared-avd`); the rig
+sets the language as root, boots again and checks the framework's configuration carries it before installing, and the
+manifest records it. Recipes keep their English selectors, since the app ships English only.
 Run from the monorepo root:
 
 ```sh
@@ -291,7 +294,8 @@ assert its actual backend receipt as well as its UI result.
 The cold-start probe records process-start and rendered-ready-frame times on the device, after
 the fixture routines are loaded. The rig separately verifies `Push A` through accessibility
 and records that slower host-side selector time. The default run fails at 3000ms or longer, or on
-an ANR/fatal exception. `--baseline` records an over-budget baseline without claiming performance
+an ANR or fatal exception in the app's process; another process's crash, such as the launcher's under a
+viewport change, stays in the saved log. `--baseline` records an over-budget baseline without claiming performance
 acceptance. Keep baseline and final APKs, use identical emulator configuration and fixtures, and
 reserve a quiet host window for both measurements.
 

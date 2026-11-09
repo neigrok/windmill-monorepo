@@ -5,6 +5,10 @@ import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import works.windmill.gym.spelled
 import works.windmill.domain.kit.FixedZone
 import works.windmill.domain.kit.Id
 import works.windmill.domain.kit.Instant
@@ -19,6 +23,7 @@ import works.windmill.gym.domain.sync.Session as DomainSession
 import works.windmill.gym.domain.sync.SetTarget as DomainTarget
 import works.windmill.gym.domain.sync.WorkoutProposal
 import works.windmill.gym.presentation.*
+import works.windmill.platform.i18n.text
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.sync.api.Change
 import works.windmill.sync.api.CommitFailure
@@ -34,6 +39,8 @@ import works.windmill.sync.engine.*
 import works.windmill.sync.modelserver.*
 import works.windmill.sync.schema.SyncSchema
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class WorkoutImportsTests {
     @get:Rule val tmp = TemporaryFolder()
     private val scope = WorkoutImports.scope
@@ -173,7 +180,7 @@ class WorkoutImportsTests {
             val row = finished(start = -1)
             imports.prepare(row)
             assertEquals(listOf(ImportRefusal(row.session.id, row.session, row.sets, row.deleted,
-                "bad-instant", WorkoutImports.reason("bad-instant"))), imports.refusals())
+                "bad-instant", WorkoutImports.reasonFor("bad-instant"))), imports.refusals())
             assertEquals(listOf("refused"), sources(local).map { it.member("state").str() })
             assertEquals(row, diskJson.decodeFromString(SavedWorkout.serializer(), sources(local).single().member("source").jcs))
             assertEquals(emptyList<Json>(), outbox(local))
@@ -186,7 +193,7 @@ class WorkoutImportsTests {
             val row = finished().let { it.copy(sets = listOf(it.sets.single().copy(weightKg = 60.001))) }
             imports.prepare(row)
             assertEquals(listOf(ImportRefusal(row.session.id, row.session, row.sets, row.deleted,
-                "source-needs-correction", WorkoutImports.reason("source-needs-correction"))), imports.refusals())
+                "source-needs-correction", WorkoutImports.reasonFor("source-needs-correction"))), imports.refusals())
             assertEquals(listOf("refused"), sources(local).map { it.member("state").str() })
             assertEquals(row, diskJson.decodeFromString(SavedWorkout.serializer(), sources(local).single().member("source").jcs))
             assertEquals(emptyList<Json>(), outbox(local))
@@ -219,7 +226,7 @@ class WorkoutImportsTests {
             val before = local.snapshot()
             val raw = sources(local).single { it["kind"] == Json.of("start") }.member("source").jcs
             val failure = ImportRefusal(row.session.id, null, emptyList(), emptyList(), "source-unreadable",
-                WorkoutImports.reason("source-unreadable"), "start")
+                WorkoutImports.reasonFor("source-unreadable"), "start")
             assertEquals(if (state == "refused") listOf(failure) else emptyList<ImportRefusal>(), imports.refusals())
             assertEquals(emptyList<SavedWorkout>(), imports.retainedWorkouts())
             assertEquals(emptyList<SavedWorkout>(), imports.startSources())
@@ -265,12 +272,12 @@ class WorkoutImportsTests {
             assertEquals(broken, sources(local).single { it["kind"] == Json.of("start") }.jcs)
             assertEquals(operationSource, sources(local).single { it["kind"] == Json.of("operation") }.member("source").jcs)
             assertEquals(listOf(ImportRefusal("set00001", null, saved.sets, emptyList(), "recovery-retry",
-                WorkoutImports.reason("recovery-retry"), "operation", "broken001")), imports.refusals())
+                WorkoutImports.reasonFor("recovery-retry"), "operation", "broken001")), imports.refusals())
             val review = imports.reviewWorkouts().single { it.id == "broken001" }
             assertFalse(review.adding)
             assertNull(review.workout)
             assertEquals(imports.refusals() + ImportRefusal("broken001", null, emptyList(), emptyList(), "source-unreadable",
-                WorkoutImports.reason("source-unreadable"), "start"), review.refusals)
+                WorkoutImports.reasonFor("source-unreadable"), "start"), review.refusals)
         }
     }
 
@@ -293,7 +300,7 @@ class WorkoutImportsTests {
                 assertEquals(emptyList<ImportOperation>(), imports.operations())
                 assertEquals("set00001", imports.opening("set00001").id)
                 if (state != "resolved") assertEquals(listOf(ImportRefusal("set00001", null, emptyList(), emptyList(),
-                    "source-unreadable", WorkoutImports.reason("source-unreadable"), "operation")),
+                    "source-unreadable", WorkoutImports.reasonFor("source-unreadable"), "operation")),
                     imports.reviewWorkouts().single { it.id == "set00001" }.refusals)
                 EngineTraining(local).startSession(SessionStart("other001", 5_000))
                 push(local, server)
@@ -1207,7 +1214,7 @@ class WorkoutImportsTests {
             assertEquals(emptyList<Pair<String, Map<String, String>>>(), telling.failures)
             val standing = gym.workoutProposals().single()
             assertEquals(ProposalState.Pending, standing.state)
-            assertEquals(null, standing.outOfDate)
+            assertEquals(null, standing.stale)
             assertEquals(2, standing.changeCount)
             assertEquals(listOf("wp000000000000001"), gym.workoutProposals().map { it.id })
             assertTrue(accountHolds(server, "thread", "thread0000000001"))
@@ -1226,7 +1233,7 @@ class WorkoutImportsTests {
             val gym = EngineTraining(local, telemetry = telling)
             proposalOverWorkout(local, gym)
             gym.appendSet("session01", SetWrite("set00002", "incline-dumbbell-press", 40.0, 8, 100_200))
-            assertEquals("You logged Incline Dumbbell Press since this suggestion. Nothing was applied.", gym.workoutProposals().single().outOfDate)
+            assertEquals("You logged Incline Dumbbell Press since this suggestion. Nothing was applied.", gym.workoutProposals().single().staleWhy.spelled())
             gym.prepareAdoption()
             gym.reconcileImports()
             assertEquals(listOf("gym.start"), outbox(local).mapNotNull { it.member("intent")["cmd"]?.member("name")?.str() })
@@ -1235,7 +1242,7 @@ class WorkoutImportsTests {
             gym.reconcileImports(); push(local, server)
             assertEquals(emptyList<String>(), local.notices("gym").notices.value.map { it.code.text })
             assertEquals(emptyList<Pair<String, Map<String, String>>>(), telling.failures)
-            assertEquals("You logged Incline Dumbbell Press since this suggestion. Nothing was applied.", gym.workoutProposals().single().outOfDate)
+            assertEquals("You logged Incline Dumbbell Press since this suggestion. Nothing was applied.", gym.workoutProposals().single().staleWhy.spelled())
         }
     }
 
@@ -1431,7 +1438,7 @@ class WorkoutImportsTests {
             imports.prepare(row)
             assertEquals(emptyList<Json>(), outbox(engine))
             assertEquals(listOf(ImportRefusal(row.session.id, row.session, row.sets, row.deleted, "bad-instant",
-                WorkoutImports.reason("bad-instant"))), imports.refusals())
+                WorkoutImports.reasonFor("bad-instant"))), imports.refusals())
             val retained = sources(engine).single().member("source")
             imports.retry(row.session.id)
             assertEquals(retained, sources(engine).single().member("source"))
@@ -1451,7 +1458,7 @@ class WorkoutImportsTests {
             imports.prepare(row)
             assertEquals(emptyList<Json>(), outbox(engine))
             assertEquals(listOf(ImportRefusal(row.session.id, row.session, row.sets, row.deleted, "unknown-exercise",
-                WorkoutImports.reason("unknown-exercise"))), imports.refusals())
+                WorkoutImports.reasonFor("unknown-exercise"))), imports.refusals())
             imports.replaceAndRetry(row.session.id, finished())
             assertEquals(1, outbox(engine).size)
             assertEquals(emptyList<ImportRefusal>(), imports.refusals())

@@ -5,10 +5,18 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import works.windmill.gym.spelled
+import works.windmill.gym.string
+import works.windmill.gym.R
 import works.windmill.gym.presentation.Exercise
 import works.windmill.gym.presentation.LastSet
 import works.windmill.gym.presentation.TheSix
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class PickerOptionsTests {
     private val catalog = listOf(
         Exercise(id = "bench-press", name = "Bench Press"),
@@ -24,7 +32,7 @@ class PickerOptionsTests {
     fun testTypingFiltersOnTheNameAndIsBlindToCase() {
         val options = PickerOptions.matching(query = "  bench ", catalog = catalog, taken = emptyList())
         assertEquals(listOf("bench-press", "close-grip-bench-press"), options.matches.map { it.id })
-        assertNull(options.empty)
+        assertNull(options.noMatch)
     }
 
     @Test
@@ -34,7 +42,7 @@ class PickerOptionsTests {
             lastSets = mapOf("back-squat" to LastSet("back-squat", 82.5, 5, atMs = twoDaysBack)),
             nowMs = nowMs,
         )
-        assertEquals(listOf("last 82.5 × 5 · 2 days ago", "never logged"), options.matches.map { it.meta })
+        assertEquals(listOf("last 82.5 × 5 · 2 days ago", "never logged"), options.matches.map { it.lastTime.spelled() })
     }
 
     @Test
@@ -44,7 +52,7 @@ class PickerOptionsTests {
             lastSets = mapOf("back-squat" to LastSet("back-squat", 0.0, 12, atMs = nowMs)),
             nowMs = nowMs,
         )
-        assertEquals(listOf("last 0 × 12 · today"), options.matches.map { it.meta })
+        assertEquals(listOf("last 0 × 12 · today"), options.matches.map { it.lastTime.spelled() })
     }
 
     @Test
@@ -55,8 +63,8 @@ class PickerOptionsTests {
                             "Chin Up"),
                      untouched.six.map { it.name })
         assertTrue("nothing is listed twice", untouched.matches.isEmpty())
-        assertEquals(List(6) { "never logged" }, untouched.six.map { it.meta })
-        assertNull("there is plenty to pick", untouched.empty)
+        assertEquals(List(6) { "never logged" }, untouched.six.map { it.lastTime.spelled() })
+        assertNull("there is plenty to pick", untouched.noMatch)
 
         val typed = PickerOptions.matching(query = "dead", catalog = TheSix.movements, taken = emptyList())
         assertTrue(typed.six.isEmpty())
@@ -73,27 +81,27 @@ class PickerOptionsTests {
     @Test
     fun testOnlyACatalogThatDidNotLoadBlamesTheNetwork() {
         val options = PickerOptions.matching(query = "bench", catalog = emptyList(), taken = emptyList())
-        assertEquals(PickerOptions.catalogUnread, options.unread)
-        assertNull("one silence, one sentence", options.empty)
+        assertEquals(R.string.gym_picker_catalog_unread, options.catalogUnread)
+        assertNull("one silence, one sentence", options.noMatch)
     }
 
     @Test
     fun testAMetaLineIsSaidOnlyByAnAnswerAndNeverByAMissingRead() {
         val unread = PickerOptions.matching(query = "", catalog = TheSix.movements, taken = emptyList(),
                                             lastSets = null)
-        assertEquals(List(6) { null }, unread.six.map { it.meta })
+        assertEquals(List(6) { null }, unread.six.map { it.lastTime.spelled() })
 
         val answered = PickerOptions.matching(query = "", catalog = TheSix.movements, taken = emptyList(),
                                               lastSets = emptyMap())
         assertEquals("an answer with no rows in it is what `never logged` is said by",
-                     List(6) { "never logged" }, answered.six.map { it.meta })
+                     List(6) { "never logged" }, answered.six.map { it.lastTime.spelled() })
     }
 
     @Test
     fun testASelectedCatalogKeepsItsRowsInsteadOfClaimingItIsEmpty() {
         val taken = catalog.map { it.id }
         val options = PickerOptions.matching(query = "", catalog = catalog, taken = taken)
-        assertNull(options.empty)
+        assertNull(options.noMatch)
         assertTrue((options.six + options.matches).all { it.selected })
     }
 
@@ -101,19 +109,19 @@ class PickerOptionsTests {
     fun testAnUnknownNameHasAnEmptyResultEvenWhenTheKnownCatalogIsSelected() {
         val options = PickerOptions.matching(query = "Sled Push", catalog = TheSix.movements,
                                              taken = TheSix.movements.map { it.id })
-        assertEquals("No movement by that name.", options.empty)
+        assertEquals("No movement by that name.", options.noMatch?.let { string(it) })
     }
 
     @Test
     fun testAQueryThatMatchesNothingSaysOnlyThat() {
         val options = PickerOptions.matching(query = " zottman ", catalog = catalog, taken = emptyList())
-        assertEquals("No movement by that name.", options.empty)
+        assertEquals("No movement by that name.", options.noMatch?.let { string(it) })
     }
 
     @Test
     fun testTheSentenceDoesNotRepeatWhatTheButtonAlreadySays() {
         val options = PickerOptions.matching(query = "zottman", catalog = catalog, taken = emptyList())
-        assertFalse(options.empty?.contains("zottman") ?: true)
+        assertFalse(options.noMatch?.let { string(it) }?.contains("zottman") ?: true)
     }
 
     @Test

@@ -24,6 +24,10 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import works.windmill.gym.spelled
 import works.windmill.domain.kit.ActionContext
 import works.windmill.domain.kit.ActionRunner
 import works.windmill.domain.kit.FixedZone
@@ -44,6 +48,7 @@ import works.windmill.gym.presentation.SetTarget
 import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.WriteFailure
+import works.windmill.platform.i18n.text
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.sync.core.Json
 import works.windmill.gym.domain.sync.Exercise as SyncExercise
@@ -53,6 +58,8 @@ import works.windmill.gym.domain.sync.RoutineEntry as SyncEntry
 import works.windmill.gym.domain.sync.SetTarget as SyncTarget
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class CoachOwnershipTests {
     @get:Rule val tmp = TemporaryFolder()
 
@@ -186,7 +193,7 @@ class CoachOwnershipTests {
                 assertEquals(listOf(code), room.notices().map { it.member("code").str() })
                 room.select("b")
                 advanceTimeBy(25); runCurrent()
-                assertEquals(ProposalOutcome.Failed(WriteFailure.Refused("The account changed. Open this again.")), result.await())
+                assertEquals("The account changed. Open this again.", ((result.await() as ProposalOutcome.Failed).why as WriteFailure.Refused).words.spelled())
                 assertEquals(emptyMap<String, Proposal>(), room.store.routines.settledProposals)
                 assertEquals(emptyList<Routine>(), room.store.routines.all)
             }

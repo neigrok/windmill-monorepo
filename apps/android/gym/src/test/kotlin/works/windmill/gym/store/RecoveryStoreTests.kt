@@ -6,6 +6,10 @@ import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import works.windmill.gym.spelled
 import works.windmill.gym.presentation.Session
 import works.windmill.gym.presentation.TrainingSet
 import works.windmill.platform.Account
@@ -13,6 +17,8 @@ import works.windmill.platform.User
 import works.windmill.platform.telemetry.Telemetry
 
 @OptIn(ExperimentalCoroutinesApi::class)
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class RecoveryStoreTests {
     @get:Rule val tmp = TemporaryFolder()
     private val events = mutableListOf<Map<String, String>>()
@@ -79,7 +85,7 @@ class RecoveryStoreTests {
             val changed = source.copy(sets = source.sets.map { it.copy(note = "A newer edit") })
             room.training.imports.replaceAndRetry(row.id, changed)
             val before = room.engine.snapshot()
-            assertEquals(RecoveryResult.Refused("This saved workout changed. Open it again."), room.store.recovery.recover(read, row, RecoveryAction.Discard))
+            assertEquals("This saved workout changed. Open it again.", (room.store.recovery.recover(read, row, RecoveryAction.Discard) as RecoveryResult.Refused).words.spelled())
             assertEquals(before, room.engine.snapshot())
             room.store.refreshEngine()
             val fresh = requireNotNull(room.store.recovery.latest)
@@ -98,7 +104,7 @@ class RecoveryStoreTests {
             val row = read.workouts.single()
             room.training.imports.discardRefusal(row.id, row.openings.single())
             val discarded = room.engine.snapshot()
-            assertEquals(RecoveryResult.Refused("This saved workout changed. Open it again."), room.store.recovery.recover(read, row, RecoveryAction.Keep))
+            assertEquals("This saved workout changed. Open it again.", (room.store.recovery.recover(read, row, RecoveryAction.Keep) as RecoveryResult.Refused).words.spelled())
             assertEquals(discarded, room.engine.snapshot()); assertTrue(room.outbox().isEmpty())
             assertEquals(listOf(mapOf("action" to "keep", "outcome" to "refused")), events)
             assertTrue(failures.isEmpty()); assertFalse(room.store.recovery.busy)

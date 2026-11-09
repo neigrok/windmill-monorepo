@@ -1,35 +1,18 @@
 package works.windmill.gym.presentation
 
+import androidx.annotation.StringRes
 import kotlinx.serialization.Serializable
+import works.windmill.gym.R
+import works.windmill.platform.i18n.Words
+import works.windmill.platform.i18n.joined
 
 // The screen where a lifter hands their log to their own AI, its strings pinned byte for byte by
 // `ConnectedLogTests`. Every level row is a claim about backend/products/gym/adapters/mcp/GymToolCatalog.cpp
 // and nothing else — the enumeration is the disclosure.
 object ConnectedLog {
-    const val title = "Connected log"
-    const val head = "Your log, read by ChatGPT or Claude."
-    const val caption = "A routine change waits for your Apply; the rest lands at once."
-    const val action = "Connect a tool"
-    const val actionSignedOut = "Sign in first"
-    const val opensInBrowser = "opens in your browser"
-    const val disclosure = "How this works"
-
     // The whole of the long form: two levels of disclosure, and this is the second.
-    val how = listOf(
-        "One URL pasted into your tool. Your browser opens once to approve.",
-        "A shared workout is public for 30 days, until you end it.",
-        "No tool can apply a proposal or edit a logged set.",
-        "Delete is approved on its own, and a discard is permanent.",
-        "End a connection under Settings → Connected tools; a key under API keys.",
-    )
-
-    const val connectedHead = "Connected"
-    const val unnamedGrant = "A connected tool"
-    const val unnamedKey = "A static key"
-    const val unread = "Couldn’t read your connections."
-    const val offline = "Connect to the internet to read your connections."
-    const val accountWide = "whole account"
-    const val apiKey = "API key"
+    val howItWorks = listOf(R.string.gym_connected_how_url, R.string.gym_connected_how_share, R.string.gym_connected_how_no_apply,
+        R.string.gym_connected_how_delete, R.string.gym_connected_how_end)
 
     // Spelled off the API origin: against a split dev stack these open the API host.
     fun setupUrl(origin: String): String = "${origin.removeSuffix("/")}/#/connect"
@@ -47,14 +30,11 @@ object ConnectedLog {
     }
 }
 
-// One row per level, in the ladder's order. `wire` is the level's spelling in a scope token and in
-// a connected row's meta.
-enum class LogLevel(val label: String, val meta: String) {
-    Read("Read", "sets, workouts, routines, records, notes, weigh-ins"),
-    Write("Write", "logs sets · saves notes · adds routines · shares workouts · proposes changes"),
-    Delete("Delete", "discards a workout · ends a share");
-
-    val wire: String get() = label.lowercase()
+// One row per level, in the ladder's order. `wire` is the level's spelling in a scope token; `held` is how a connected row's description names it.
+enum class LogLevel(val wire: String, @StringRes val named: Int, @StringRes val reaches: Int, @StringRes val held: Int) {
+    Read("read", R.string.gym_connected_level_read, R.string.gym_connected_level_read_meta, R.string.gym_connected_level_read_held),
+    Write("write", R.string.gym_connected_level_write, R.string.gym_connected_level_write_meta, R.string.gym_connected_level_write_held),
+    Delete("delete", R.string.gym_connected_level_delete, R.string.gym_connected_level_delete_meta, R.string.gym_connected_level_delete_held),
 }
 
 // What one grant reaches in gym, read from the OAuth scope string. The empty scope is the
@@ -70,9 +50,9 @@ data class LogReach(val levels: Set<LogLevel>, val accountWide: Boolean) {
     val reachesTheLog: Boolean get() = accountWide || levels.isNotEmpty()
 
     // The levels held, joined in the ladder's order rather than a Set's; account-wide reads as one.
-    val line: String
-        get() = if (accountWide) ConnectedLog.accountWide
-        else LogLevel.entries.filter(levels::contains).joinToString(" · ") { it.wire }
+    val words: Words?
+        get() = if (accountWide) Words.Message(R.string.gym_connected_whole_account)
+        else LogLevel.entries.filter(levels::contains).map { Words.Message(it.held) }.joined()
 }
 
 // One credential that reaches the training log. `sinceMs` is the day it came into being — for a
@@ -80,7 +60,7 @@ data class LogReach(val levels: Set<LogLevel>, val accountWide: Boolean) {
 // last-used, and a row would read it as a last-read.
 data class ConnectedTool(
     val id: String,
-    val name: String,
+    val named: Words,
     val sinceMs: Long,
     val reach: LogReach,
     val credential: Credential,
@@ -89,7 +69,7 @@ data class ConnectedTool(
 
     constructor(grant: OAuthGrant) : this(
         id = grant.clientId,
-        name = grant.name.trim().ifEmpty { ConnectedLog.unnamedGrant },
+        named = grant.name.trim().takeIf { it.isNotEmpty() }?.let(Words::Plain) ?: Words.Message(R.string.gym_connected_unnamed_grant),
         sinceMs = grant.grantedMs,
         reach = LogReach(grant.scope),
         credential = Credential.Approved,
@@ -99,17 +79,17 @@ data class ConnectedTool(
     // is stated here rather than decoded.
     constructor(key: McpKey) : this(
         id = key.id,
-        name = key.name.trim().ifEmpty { ConnectedLog.unnamedKey },
+        named = key.name.trim().takeIf { it.isNotEmpty() }?.let(Words::Plain) ?: Words.Message(R.string.gym_connected_unnamed_key),
         sinceMs = key.createdMs,
         reach = LogReach(""),
         credential = Credential.Pasted,
     )
 
     // The levels it holds, then when it was made — never a last read.
-    fun meta(now: Long): String {
-        val since = "since ${Readout.shortDate(sinceMs, now)}"
-        if (credential == Credential.Pasted) return "${ConnectedLog.apiKey} · ${reach.line} · $since"
-        return "${reach.line} · $since"
+    fun described(now: Long): Words {
+        val since = Words.Message(R.string.gym_connected_since, listOf(Readout.shortDate(sinceMs, now)))
+        val key = Words.Message(R.string.gym_connected_api_key).takeIf { credential == Credential.Pasted }
+        return checkNotNull(listOfNotNull(key, reach.words, since).joined())
     }
 }
 

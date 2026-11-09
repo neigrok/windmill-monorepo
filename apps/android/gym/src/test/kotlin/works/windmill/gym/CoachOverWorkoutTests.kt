@@ -1,5 +1,6 @@
 package works.windmill.gym
 
+import works.windmill.gym.R
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.MotionDurationScale
 import androidx.compose.ui.test.ExperimentalTestApi
@@ -37,8 +38,6 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import works.windmill.gym.coach.AnonymousCoachAccess
-import works.windmill.gym.coach.Ask
-import works.windmill.gym.coach.Threads
 import works.windmill.gym.coach.turn.ScriptedTurns
 import works.windmill.gym.presentation.Proposal
 import works.windmill.gym.presentation.Routine
@@ -149,8 +148,8 @@ class CoachOverWorkoutTests {
         compose.onNodeWithContentDescription("Coach").performClick()
 
         compose.onNodeWithContentDescription("History").assertIsDisplayed()
-        compose.onNodeWithText(Ask.placeholder).assertIsDisplayed()
-        compose.onNodeWithText(Ask.title).assertIsDisplayed()
+        compose.onNodeWithText(string(R.string.gym_coach_placeholder)).assertIsDisplayed()
+        compose.onNodeWithText(string(R.string.gym_coach_title)).assertIsDisplayed()
         compose.onNodeWithContentDescription("Your account").assertDoesNotExist()
         compose.runOnIdle { assertNotEquals(before, phone.store.coach.selectedChatId) }
         compose.runOnIdle { assertEquals(listOf(mapOf("screen" to "coach", "action" to "fresh_entry", "outcome" to "ok"), mapOf("screen" to "workout", "action" to "open_coach", "outcome" to "ok")),
@@ -158,7 +157,7 @@ class CoachOverWorkoutTests {
         compose.waitUntil(5_000) { compose.runOnIdle { "coach" in screens() } }
 
         compose.onNode(hasContentDescription("Close sheet")).performSemanticsAction(SemanticsActions.OnClick)
-        compose.waitUntil(5_000) { compose.onAllNodesWithText(Ask.placeholder).fetchSemanticsNodes().isEmpty() }
+        compose.waitUntil(5_000) { compose.onAllNodesWithText(string(R.string.gym_coach_placeholder)).fetchSemanticsNodes().isEmpty() }
         compose.onNodeWithText("Finish").assertIsDisplayed()
         compose.runOnIdle {
             assertEquals(rack, phone.store.workout.rack)
@@ -182,7 +181,7 @@ class CoachOverWorkoutTests {
         compose.runOnIdle { assertEquals(listOf("thread-one"), conversations.threads.map { it.title }) }
 
         compose.onNode(hasContentDescription("Close sheet")).performSemanticsAction(SemanticsActions.OnClick)
-        compose.waitUntil(60_000) { compose.onAllNodesWithText(Ask.placeholder).fetchSemanticsNodes().isEmpty() }
+        compose.waitUntil(60_000) { compose.onAllNodesWithText(string(R.string.gym_coach_placeholder)).fetchSemanticsNodes().isEmpty() }
         plant("thread-two")
         compose.waitForIdle()
         org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
@@ -200,8 +199,8 @@ class CoachOverWorkoutTests {
         waitFor("Proposal · This workout")
         compose.onNodeWithText("2 changes to this workout.").assertIsDisplayed()
         compose.onNodeWithText("2 changes").assertIsDisplayed()
-        compose.onNodeWithText(Ask.promise).assertIsDisplayed()
-        assertEquals("over the workout the card and its promise stand on the thread's own edge", 16.dp, compose.onNodeWithText(Ask.promise).getUnclippedBoundsInRoot().left)
+        compose.onNodeWithText(string(R.string.gym_coach_promise)).assertIsDisplayed()
+        assertEquals("over the workout the card and its promise stand on the thread's own edge", 16.dp, compose.onNodeWithText(string(R.string.gym_coach_promise)).getUnclippedBoundsInRoot().left)
         compose.onNodeWithText("Applied · this workout · 2 changes").assertDoesNotExist()
 
         compose.onNodeWithText("Review").performClick()
@@ -222,7 +221,7 @@ class CoachOverWorkoutTests {
 
         waitFor("Applied · this workout · 2 changes")
         compose.waitUntil(5_000) { compose.onAllNodesWithText("Apply all 2").fetchSemanticsNodes().isEmpty() }
-        compose.onNodeWithText(Ask.promise).assertDoesNotExist()
+        compose.onNodeWithText(string(R.string.gym_coach_promise)).assertDoesNotExist()
         compose.onNodeWithText("Proposal · This workout").assertIsDisplayed()
         compose.runOnIdle {
             assertEquals(listOf("bench-press", "overhead-press", "dumbbell-bench-press", "cable-fly", "triceps-pushdown"),
@@ -312,7 +311,7 @@ class CoachOverWorkoutTests {
             waitFor("Proposal · Push A · next time")
             compose.onNodeWithText("Proposal · Push A · next time").performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("4 changes to Push A.").performScrollTo().assertIsDisplayed()
-            assertEquals("the promise stands once, under them", 1, compose.onAllNodesWithText(Ask.promise).fetchSemanticsNodes().size)
+            assertEquals("the promise stands once, under them", 1, compose.onAllNodesWithText(string(R.string.gym_coach_promise)).fetchSemanticsNodes().size)
 
             assertEquals(2, compose.onAllNodesWithText("Review").fetchSemanticsNodes().size)
             compose.onAllNodesWithText("Review")[1].performScrollTo().performClick()
@@ -326,7 +325,7 @@ class CoachOverWorkoutTests {
 
             compose.onAllNodes(hasContentDescription("Close sheet")).onLast().performSemanticsAction(SemanticsActions.OnClick)
             compose.waitUntil(5_000) { compose.onAllNodesWithText("Apply all 4").fetchSemanticsNodes().isEmpty() }
-            compose.onNodeWithText(Ask.placeholder).assertIsDisplayed()
+            compose.onNodeWithText(string(R.string.gym_coach_placeholder)).assertIsDisplayed()
             compose.onNodeWithText("Finish").assertExists()
             compose.runOnIdle { assertEquals(rack, phone.store.workout.rack) }
         }
@@ -352,7 +351,7 @@ class CoachOverWorkoutTests {
                 org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
                 compose.onAllNodesWithText("Applied · Push A · 1 change").fetchSemanticsNodes().isNotEmpty()
             }
-            compose.onNodeWithText(Ask.placeholder).assertIsDisplayed()
+            compose.onNodeWithText(string(R.string.gym_coach_placeholder)).assertIsDisplayed()
             compose.runOnIdle {
                 assertEquals(listOf("bench-press", "overhead-press", "cable-fly", "triceps-pushdown"), phone.store.routines.routine(routineId)!!.entries.map { it.exerciseId })
                 assertEquals("the running plan stands", plan, phone.store.workout.session!!.plan)
@@ -408,12 +407,12 @@ class CoachOverWorkoutTests {
         waitFor("Proposal · This workout")
         compose.onNodeWithText("Review").performClick()
 
-        waitFor(Proposal.signInToReview)
+        waitFor(string(R.string.gym_proposal_sign_in_to_review))
         compose.onNodeWithText("Sign in").assertIsDisplayed().assertIsEnabled()
         compose.onNodeWithText("Remove Incline Dumbbell Press").assertIsDisplayed()
         compose.onNodeWithText("Apply all 2").assertDoesNotExist()
         compose.onNodeWithText("All two or none. Nothing is applied until you tap.").assertDoesNotExist()
-        compose.onNodeWithText(Proposal.applyHint).assertDoesNotExist()
+        compose.onNodeWithText(string(R.string.gym_proposal_apply_hint)).assertDoesNotExist()
         compose.onNodeWithText("Turn this down").assertDoesNotExist()
         compose.runOnIdle { assertEquals(0, signInsOpened) }
         events.clear()
@@ -421,8 +420,8 @@ class CoachOverWorkoutTests {
         compose.onNodeWithText("Sign in").performClick()
 
         compose.waitUntil(5_000) { compose.runOnIdle { signInsOpened > 0 } }
-        compose.onNodeWithText(Proposal.signInToReview).assertDoesNotExist()
-        compose.onNodeWithText(Ask.placeholder).assertDoesNotExist()
+        compose.onNodeWithText(string(R.string.gym_proposal_sign_in_to_review)).assertDoesNotExist()
+        compose.onNodeWithText(string(R.string.gym_coach_placeholder)).assertDoesNotExist()
         compose.onNodeWithText("Finish").assertIsDisplayed()
         compose.runOnIdle {
             assertEquals(1, signInsOpened)
@@ -439,7 +438,7 @@ class CoachOverWorkoutTests {
             waitFor("Proposal · Push A · next time")
             compose.onNodeWithText("Review").performScrollTo().performClick()
 
-            waitFor(Proposal.signInToReview)
+            waitFor(string(R.string.gym_proposal_sign_in_to_review))
             compose.onNodeWithText("Remove Incline Dumbbell Press").assertIsDisplayed()
             compose.onNodeWithText("Sign in").assertIsDisplayed().assertIsEnabled()
             compose.onNodeWithText("Apply all 4").assertDoesNotExist()
@@ -461,7 +460,7 @@ class CoachOverWorkoutTests {
 
         waitFor("Proposal · This workout · out of date")
         compose.onNodeWithText(line).assertIsDisplayed()
-        compose.onNodeWithText(Ask.promise).assertDoesNotExist()
+        compose.onNodeWithText(string(R.string.gym_coach_promise)).assertDoesNotExist()
 
         compose.onNodeWithText("Review").performClick()
 
@@ -476,25 +475,25 @@ class CoachOverWorkoutTests {
         compose.onNodeWithContentDescription("Coach").performClick()
         compose.onNodeWithContentDescription("History").performClick()
 
-        compose.waitUntil(5_000) { compose.onAllNodesWithText(Ask.placeholder).fetchSemanticsNodes().isEmpty() }
+        compose.waitUntil(5_000) { compose.onAllNodesWithText(string(R.string.gym_coach_placeholder)).fetchSemanticsNodes().isEmpty() }
         waitFor("History")
         compose.waitUntil(5_000) { compose.runOnIdle { "threads" in screens() } }
 
         val before = compose.runOnIdle { phone.store.coach.selectedChatId }
-        compose.onNodeWithContentDescription(Threads.open).performClick()
+        compose.onNodeWithContentDescription(string(R.string.gym_coach_new_chat)).performClick()
 
-        waitFor(Ask.placeholder)
+        waitFor(string(R.string.gym_coach_placeholder))
         compose.onNodeWithText("Finish").assertExists()
         compose.runOnIdle { assertNotEquals(before, phone.store.coach.selectedChatId) }
     }
 
     @Test fun theSheetGoesWithTheWorkout() = workoutRoom { phone, _ ->
         compose.onNodeWithContentDescription("Coach").performClick()
-        compose.onNodeWithText(Ask.placeholder).assertIsDisplayed()
+        compose.onNodeWithText(string(R.string.gym_coach_placeholder)).assertIsDisplayed()
 
         runBlocking { assertTrue(phone.store.workout.finish() is FinishOutcome.Closed) }
 
-        compose.waitUntil(5_000) { compose.onAllNodesWithText(Ask.placeholder).fetchSemanticsNodes().isEmpty() }
+        compose.waitUntil(5_000) { compose.onAllNodesWithText(string(R.string.gym_coach_placeholder)).fetchSemanticsNodes().isEmpty() }
         compose.onNodeWithContentDescription("Coach").assertDoesNotExist()
     }
 }

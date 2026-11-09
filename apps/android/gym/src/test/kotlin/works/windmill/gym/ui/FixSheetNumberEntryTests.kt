@@ -23,6 +23,8 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import works.windmill.gym.string
+import works.windmill.gym.R
 import works.windmill.gym.presentation.Exercise
 import works.windmill.gym.presentation.SetFix
 import works.windmill.gym.presentation.TrainingSet
@@ -159,11 +161,11 @@ class FixSheetNumberEntryTests {
         compose.onNodeWithContentDescription("Load, kg").performClick().performTextReplacement("1e999")
         compose.onNodeWithContentDescription("Reps").performClick()
         compose.onNodeWithContentDescription("Load, kg").assertTextEquals("1e999")
-        compose.onNodeWithText(works.windmill.gym.presentation.NumberEntry.notANumber).assertExists()
+        compose.onNodeWithText(string(R.string.gym_entry_not_a_number)).assertExists()
         compose.onNodeWithContentDescription("Load, kg").performClick().performTextReplacement("-12.5")
         compose.onNodeWithContentDescription("Reps").performClick()
         compose.onNodeWithContentDescription("Load, kg").assertTextEquals("−12.5")
-        compose.onNodeWithText(works.windmill.gym.presentation.NumberEntry.notANumber).assertDoesNotExist()
+        compose.onNodeWithText(string(R.string.gym_entry_not_a_number)).assertDoesNotExist()
         compose.onNodeWithText("Save fix").performClick()
         compose.runOnIdle {
             assertEquals(listOf(SetFix(weightKg = -12.5)), saved)

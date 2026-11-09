@@ -1,5 +1,8 @@
 package works.windmill.gym.coach
 
+import works.windmill.gym.spelled
+import works.windmill.gym.R
+import works.windmill.platform.i18n.Words
 import android.app.Application
 import android.content.Intent
 import android.view.View
@@ -71,6 +74,7 @@ import works.windmill.gym.presentation.RoutineEntry
 import works.windmill.gym.presentation.SetTarget
 import works.windmill.gym.ui.GymMaterial
 import works.windmill.platform.design.LocalWindmillDark
+import works.windmill.platform.i18n.text
 import works.windmill.platform.telemetry.LocalTelemetry
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.sync.core.Json
@@ -284,7 +288,7 @@ class CoachAnswerTests {
         compose.setContent { GymMaterial { CoachAnswer(reply.value.text, reply.value, emptyList(), withDetails = { rows ->
             reads++
             landing.await()
-            rows.map { row -> if (row.name == "list_notes") row.copy(detail = "2 notes") else row }
+            rows.map { row -> if (row.name == "list_notes") row.copy(detail = Words.Plain("2 notes")) else row }
         }) } }
         fun gaps() = listOf("What Coach read", "What Coach used, in order", "Read your notes", "Read your program", "A workout read twice counts once.", "Close")
             .map { compose.onNodeWithText(it).getUnclippedBoundsInRoot().top.value }.zipWithNext { above, below -> below - above }
@@ -332,7 +336,7 @@ class CoachAnswerTests {
             CoachAnswer("Review this plan", coachReply("Review this plan"), listOf(Exercise("dumbbell-bench-press", "Flat press", equipment = "dumbbell")),
                 routineDrafts = listOf(draft), onSaveDrafts = {
                     saves++
-                    if (saves == 1) DraftOutcome.Failed(Ask.draftRetry) else DraftOutcome.Closed(Ask.draftGone)
+                    if (saves == 1) DraftOutcome.Failed(R.string.gym_coach_draft_retry) else DraftOutcome.Closed(R.string.gym_coach_draft_gone)
                 })
         } }
         compose.onNodeWithText("Review routine").assertIsDisplayed()
@@ -361,11 +365,11 @@ class CoachAnswerTests {
                 Exercise("back-squat", "Back Squat", equipment = "barbell"),
                 Exercise("pull-up", "Pull Up", equipment = "bodyweight"),
                 Exercise("cable-row", "Cable Row", equipment = "cable")),
-                routineDrafts = listOf(draft), onSaveDrafts = { DraftOutcome.Closed(Ask.draftGone) })
+                routineDrafts = listOf(draft), onSaveDrafts = { DraftOutcome.Closed(R.string.gym_coach_draft_gone) })
         } }
         compose.onNodeWithText("1 × 8 · 24 kg · One dumbbell").assertIsDisplayed()
         compose.onNodeWithText("1 × 5 · 100 kg total · Barbell").assertIsDisplayed()
-        compose.onNodeWithText(Readout.target(listOf(SetTarget(6, -10.0))) + " kg assisted · Bodyweight").assertIsDisplayed()
+        compose.onNodeWithText(Readout.scheme(listOf(SetTarget(6, -10.0))).spelled() + " kg assisted · Bodyweight").assertIsDisplayed()
         compose.onNodeWithText("1 × 10 · 40 kg · Cable").assertIsDisplayed()
     }
 
@@ -496,7 +500,7 @@ class CoachAnswerTests {
     }
 
     @Test fun aMovementCoachMadeReadsAsOneAddedChange() {
-        val reply = coachReply("Done.", madeMovements = listOf(MadeMovement("movement-a", "Incline Dumbbell Press", "Dumbbells", 2.5)), calls = listOf(coachCall("create_exercise", "created a movement")))
+        val reply = coachReply("Done.", madeMovements = listOf(MadeMovement("movement-a", "Incline Dumbbell Press", Words.Plain("Dumbbells"), 2.5)), calls = listOf(coachCall("create_exercise", "created a movement")))
         compose.setContent { GymMaterial { Column(Modifier.fillMaxSize()) { CoachAnswer("Done.", reply, emptyList()) } } }
         listOf("Made a movement", "Added", "Name", "Equipment", "Dumbbells", "Step", "2.5 kg").forEach { compose.onNodeWithText(it).assertIsDisplayed() }
         compose.onAllNodesWithText("Incline Dumbbell Press").assertCountEquals(2)

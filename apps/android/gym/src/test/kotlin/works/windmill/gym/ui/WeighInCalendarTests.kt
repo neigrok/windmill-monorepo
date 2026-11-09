@@ -21,8 +21,11 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowDialog
+import works.windmill.gym.string
+import works.windmill.gym.R
 import works.windmill.gym.presentation.Bodyweight
 import works.windmill.gym.presentation.WeighIn
+import works.windmill.platform.i18n.Words
 import works.windmill.platform.telemetry.LocalTelemetry
 import works.windmill.platform.telemetry.Telemetry
 import androidx.compose.ui.semantics.Role
@@ -50,7 +53,7 @@ class WeighInCalendarTests {
             }
         }
         if (restoration == null) compose.setContent(content) else restoration.setContent(content)
-        compose.onNodeWithContentDescription(weightField).performTextReplacement("82,45")
+        compose.onNodeWithContentDescription(string(R.string.gym_bodyweight_weight_field)).performTextReplacement("82,45")
         compose.onNodeWithContentDescription("Date, ${Bodyweight.fullDay(day)}").performClick()
     }
 
@@ -144,9 +147,9 @@ class WeighInCalendarTests {
         val closed = mutableListOf<String>()
         compose.setContent { GymMaterial { WeighInSheet(null, null, now, false, null,
             onSave = { date, kg -> saved += date to kg }, onDelete = null, onClose = { closed += "closed" }) } }
-        compose.onNodeWithText(Bodyweight.chip).assertIsDisplayed()
-        compose.onNodeWithContentDescription(weightField).performTextReplacement("82.4")
-        compose.onNodeWithText(Bodyweight.save).assertIsEnabled()
+        compose.onNodeWithText(string(R.string.gym_bodyweight_chip)).assertIsDisplayed()
+        compose.onNodeWithContentDescription(string(R.string.gym_bodyweight_weight_field)).performTextReplacement("82.4")
+        compose.onNodeWithText(string(R.string.gym_bodyweight_save)).assertIsEnabled()
         compose.onNodeWithContentDescription("Close").performClick()
         assertEquals(listOf("closed"), closed)
         assertEquals(emptyList<Pair<String, Double>>(), saved)
@@ -155,36 +158,36 @@ class WeighInCalendarTests {
     @Test fun invalidInputCannotSaveThroughButtonOrImeAndAValidGestureSubmitsOnce() {
         compose.setContent { GymMaterial { WeighInSheet(null, null, now, false, null,
             onSave = { date, kg -> saved += date to kg }, onDelete = null, onClose = {}) } }
-        compose.onNodeWithText(Bodyweight.save).assertIsNotEnabled()
+        compose.onNodeWithText(string(R.string.gym_bodyweight_save)).assertIsNotEnabled()
         for (raw in listOf("", "abc", "19.99", "400.01", "82,4.5")) {
-            compose.onNodeWithContentDescription(weightField).performTextReplacement(raw)
-            compose.onNodeWithContentDescription(weightField).performImeAction()
-            compose.onNodeWithText(Bodyweight.save).assertIsNotEnabled()
+            compose.onNodeWithContentDescription(string(R.string.gym_bodyweight_weight_field)).performTextReplacement(raw)
+            compose.onNodeWithContentDescription(string(R.string.gym_bodyweight_weight_field)).performImeAction()
+            compose.onNodeWithText(string(R.string.gym_bodyweight_save)).assertIsNotEnabled()
             assertEquals(emptyList<Pair<String, Double>>(), saved)
         }
-        compose.onNodeWithContentDescription(weightField).performTextReplacement("82.45")
-        compose.onNodeWithContentDescription(weightField).performImeAction()
-        compose.onNodeWithContentDescription(weightField).assertIsNotEnabled()
+        compose.onNodeWithContentDescription(string(R.string.gym_bodyweight_weight_field)).performTextReplacement("82.45")
+        compose.onNodeWithContentDescription(string(R.string.gym_bodyweight_weight_field)).performImeAction()
+        compose.onNodeWithContentDescription(string(R.string.gym_bodyweight_weight_field)).assertIsNotEnabled()
         compose.onNodeWithText("Saving…").assertIsNotEnabled()
         assertEquals(listOf(day.toString() to 82.45), saved)
     }
     @Test fun repeatedIdenticalSaveRefusalsLeaveTheDraftAvailableForAnotherAttempt() {
-        var refusal by mutableStateOf<String?>(null)
+        var refusal by mutableStateOf<Words?>(null)
         var saving by mutableStateOf(false)
         var calls = 0
         compose.setContent { GymMaterial { WeighInSheet(null, null, now, saving, refusal,
             onSave = { date, kg ->
                 saved += date to kg
                 calls++
-                if (calls < 3) refusal = "That weigh-in could not be saved." else { refusal = null; saving = true }
+                if (calls < 3) refusal = Words.Plain("That weigh-in could not be saved.") else { refusal = null; saving = true }
             }, onDelete = null, onClose = {}) } }
-        compose.onNodeWithContentDescription(weightField).performTextReplacement("82,45")
+        compose.onNodeWithContentDescription(string(R.string.gym_bodyweight_weight_field)).performTextReplacement("82,45")
         repeat(2) {
-            compose.onNodeWithText(Bodyweight.save).assertIsEnabled().performClick()
+            compose.onNodeWithText(string(R.string.gym_bodyweight_save)).assertIsEnabled().performClick()
             compose.onNodeWithText("That weigh-in could not be saved.").assertIsDisplayed()
             compose.onNodeWithText("82,45").assertIsDisplayed()
         }
-        compose.onNodeWithText(Bodyweight.save).assertIsEnabled().performClick()
+        compose.onNodeWithText(string(R.string.gym_bodyweight_save)).assertIsEnabled().performClick()
         compose.onNodeWithText("Saving…").assertIsNotEnabled()
         assertEquals(List(3) { day.toString() to 82.45 }, saved)
     }

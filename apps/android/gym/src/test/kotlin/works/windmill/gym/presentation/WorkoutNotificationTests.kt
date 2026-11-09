@@ -2,8 +2,15 @@ package works.windmill.gym.presentation
 
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import works.windmill.gym.plain
 import works.windmill.gym.domain.sync.Prefill
+import works.windmill.platform.i18n.Words
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class WorkoutNotificationTests {
     @Test fun theClockSpansTheWorkoutWhileTheCounterBelongsToTheSelectedMovement() {
         val key = WorkoutKey("owner", "session")
@@ -13,16 +20,16 @@ class WorkoutNotificationTests {
         val state = WorkoutState(rack = WorkoutRack("bench-press", 60.0, 8, 0, false, 1))
         val first = TrainingSet("first", "bench-press", weightKg = 60.0, reps = 8, completedAtMs = 20_000)
         val latest = TrainingSet("latest", "barbell-row", weightKg = 30.0, reps = 8, completedAtMs = 40_000)
-        val empty = WorkoutNotification(key, session, "Bench Press", emptyList(), state, true)
-        assertEquals(WorkoutNotification(key, "Push A", "Bench Press", "60 kg × 8", "set 1 of 3",
+        val empty = WorkoutNotification(key, session, Words.Plain("Bench Press"), emptyList(), state, true).spelled()
+        assertEquals(WorkoutNotification(key, Words.Plain("Push A"), Words.Plain("Bench Press"), Words.Plain("60 kg × 8"), Words.Plain("set 1 of 3"),
             null, false, 10_000), empty)
-        val expected = empty.copy(counter = "set 2 of 3", sinceSetAtMs = 40_000)
-        assertEquals(expected, WorkoutNotification(key, session, "Bench Press", listOf(latest, first), state, true))
-        assertEquals(expected, WorkoutNotification(key, session, "Bench Press",
-            listOf(first, latest.copy(weightKg = 35.0, reps = 6)), state, true))
+        val expected = empty.copy(counted = Words.Plain("set 2 of 3"), sinceSetAtMs = 40_000)
+        assertEquals(expected, WorkoutNotification(key, session, Words.Plain("Bench Press"), listOf(latest, first), state, true).spelled())
+        assertEquals(expected, WorkoutNotification(key, session, Words.Plain("Bench Press"),
+            listOf(first, latest.copy(weightKg = 35.0, reps = 6)), state, true).spelled())
         assertEquals(expected.copy(sinceSetAtMs = 20_000),
-            WorkoutNotification(key, session, "Bench Press", listOf(first), state, true))
-        assertEquals(empty, WorkoutNotification(key, session, "Bench Press", emptyList(), state, true))
+            WorkoutNotification(key, session, Words.Plain("Bench Press"), listOf(first), state, true).spelled())
+        assertEquals(empty, WorkoutNotification(key, session, Words.Plain("Bench Press"), emptyList(), state, true).spelled())
     }
 
     @Test fun oldLocalControlsRestoreAnEditedRackAndChangedSetCountsRetireOnlyThatDraft() {
@@ -42,7 +49,9 @@ class WorkoutNotificationTests {
         val key = WorkoutKey("owner", "external")
         val session = Session("external", 12_000)
         val state = WorkoutState(rack = WorkoutRack("bench-press", 60.0, 8, 0, false, 1))
-        assertEquals(WorkoutNotification(key, Readout.noRoutine, "Bench Press", "60 kg × 8", "set 1",
-            null, false, 12_000), WorkoutNotification(key, session, "Bench Press", emptyList(), state, true))
+        assertEquals(WorkoutNotification(key, Readout.freeWorkout.plain(), Words.Plain("Bench Press"), Words.Plain("60 kg × 8"), Words.Plain("set 1"),
+            null, false, 12_000), WorkoutNotification(key, session, Words.Plain("Bench Press"), emptyList(), state, true).spelled())
     }
 }
+
+private fun WorkoutNotification.spelled() = copy(heading = heading.plain(), doing = doing.plain(), racked = racked.plain(), counted = counted.plain())

@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import works.windmill.platform.R as PlatformR
 import works.windmill.platform.design.WindmillType
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -50,6 +51,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.rememberTextMeasurer
@@ -81,6 +83,8 @@ import works.windmill.gym.presentation.Session
 import works.windmill.gym.domain.sync.SessionReview
 import works.windmill.gym.presentation.TrainingSet
 import works.windmill.platform.design.WindmillSpace
+import works.windmill.platform.i18n.Words
+import works.windmill.platform.i18n.text
 
 // Receipt totals come from committed sets; optional review adds the personal record.
 object Finish {
@@ -94,20 +98,20 @@ object Finish {
         return DecimalFormat("#,##0.##", DecimalFormatSymbols(Locale.ENGLISH)).format(value)
     }
 
-    data class Row(val id: String, val movement: String, val detail: String)
+    data class Row(val id: String, val movement: String, val said: Words)
 
-    data class Comparison(val title: String, val rows: List<Row>)
+    data class Comparison(val named: Words, val rows: List<Row>)
 
     // A kind this build has never heard of draws NOTHING; the slot is allowed to be empty.
-    fun recordSentence(record: PersonalRecord?, catalog: List<Exercise>): String? {
+    fun recordWords(record: PersonalRecord?, catalog: List<Exercise>): Words? {
         if (record == null) return null
         val movement = Readout.movement(record.exerciseId, catalog)
         val priorValue = if (record.kind == "e1rm") Readout.estimatedWeight(record.previous) else Readout.weight(record.previous)
-        val past = "past $priorValue from ${Readout.day(record.previousAtMs)}"
+        val past = Readout.day(record.previousAtMs)
         return when (record.kind) {
-            "e1rm" -> "$movement e1RM ${Readout.estimatedWeight(record.value)} kg — $past."
-            "heaviest" -> "$movement ${Readout.weight(record.value)} kg × ${record.reps} — $past."
-            "reps-at-weight" -> "$movement ${record.reps} reps at ${Readout.weight(record.weightKg)} kg — $past."
+            "e1rm" -> Words.Message(R.string.gym_finish_record_e1rm, listOf(movement, Readout.estimatedWeight(record.value), priorValue, past))
+            "heaviest" -> Words.Message(R.string.gym_finish_record_heaviest, listOf(movement, Readout.weight(record.value), record.reps.toString(), priorValue, past))
+            "reps-at-weight" -> Words.Message(R.string.gym_finish_record_reps_at_weight, listOf(movement, record.reps.toString(), Readout.weight(record.weightKg), priorValue, past))
             else -> null
         }
     }
@@ -116,42 +120,43 @@ object Finish {
         if (against == null) return null
         val sources = against.movements.map { movement ->
             when {
-                movement.planned?.top != null -> "Plan"
-                movement.before != null -> "Last time"
-                else -> "Performed"
+                movement.planned?.top != null -> R.string.gym_finish_source_plan
+                movement.before != null -> R.string.gym_finish_source_last_time
+                else -> R.string.gym_finish_performed
             }
         }
         val mixed = sources.distinct().size > 1
-        val title = when (sources.distinct().singleOrNull()) {
-            "Plan" -> "Against plan"
-            "Last time" -> "Against last ${against.routine ?: "time"}"
-            "Performed" -> "Performed"
-            else -> "Comparison"
+        val named = when (sources.distinct().singleOrNull()) {
+            R.string.gym_finish_source_plan -> Words.Message(R.string.gym_finish_against_plan)
+            R.string.gym_finish_source_last_time -> against.routine?.let { Words.Message(R.string.gym_finish_against_last, listOf(it)) }
+                ?: Words.Message(R.string.gym_finish_against_last_time)
+            R.string.gym_finish_performed -> Words.Message(R.string.gym_finish_performed)
+            else -> Words.Message(R.string.gym_finish_comparison)
         }
         return Comparison(
-            title = title,
+            named = named,
             rows = against.movements.mapIndexed { index, movement ->
                 Row(
                     id = movement.exerciseId,
                     movement = Readout.movement(movement.exerciseId, catalog),
-                    detail = (if (mixed) "${sources[index]}: " else "") + detail(movement),
+                    said = if (mixed) Words.Message(R.string.gym_finish_sourced, listOf(Words.Message(sources[index]), compared(movement))) else compared(movement),
                 )
             },
         )
     }
 
     // The top set determines the comparison; the performed summary includes every set.
-    private fun detail(movement: AgainstMovement): String {
+    private fun compared(movement: AgainstMovement): Words {
         val planned = movement.planned
         val top = planned?.top
         if (planned != null && top != null) {
             val short = top.reps != null && movement.now.reps < top.reps &&
                 (top.weightKg == null || movement.now.weightKg <= top.weightKg)
-            if (short) return "planned ${Readout.target(planned.sets)} — did ${effort(movement.now)}"
-            return "${Readout.target(planned.sets)} → ${effort(movement.now)}"
+            if (short) return Words.Message(R.string.gym_finish_planned_short, listOf(Readout.scheme(planned.sets), effort(movement.now)))
+            return Words.Message(R.string.gym_finish_moved, listOf(Readout.scheme(planned.sets), effort(movement.now)))
         }
-        val before = movement.before ?: return effort(movement.now)
-        return "${effort(before)} → ${effort(movement.now)}"
+        val before = movement.before ?: return Words.Plain(effort(movement.now))
+        return Words.Message(R.string.gym_finish_moved, listOf(effort(before), effort(movement.now)))
     }
 
     // `{sets} × {reps} · {load}`: zero added load reads as bodyweight; a band-assisted −20 keeps its load.
@@ -163,11 +168,6 @@ object Finish {
             else "${Readout.weight(effort.minWeightKg)}–${Readout.weight(effort.weightKg)}"
         return "$count · $load"
     }
-}
-
-object FinishCoach {
-    const val action = "Share with Coach"
-    const val question = "Check my last workout."
 }
 
 // The sets travel with it because the log has let go of them by now.
@@ -192,13 +192,13 @@ fun ReviewRemarks(review: Review?, catalog: List<Exercise>) {
     ) {
         if (review == null) {
             Text(
-                "the log didn’t answer — the session is saved",
+                stringResource(R.string.gym_finish_review_no_answer),
                 style = GymType.numeral,
                 color = colors.onSurfaceVariant,
             )
             return@Column
         }
-        Finish.recordSentence(review.record, catalog)?.let { RecordLine(it) }
+        Finish.recordWords(review.record, catalog)?.let { RecordLine(it.text()) }
         Finish.comparison(review.against, catalog)?.let { AgainstBlock(it) }
     }
 }
@@ -215,7 +215,7 @@ private fun RecordLine(sentence: String) {
             .border(1.dp, gymColors.prInk.copy(alpha = 0.35f), MaterialTheme.shapes.large)
             .padding(horizontal = 16.dp, vertical = 14.dp),
     ) {
-        Text("Personal record", style = GymType.numeralDetail, color = gymColors.prInk)
+        Text(stringResource(R.string.gym_finish_personal_record), style = GymType.numeralDetail, color = gymColors.prInk)
         Text(
             sentence,
             style = GymType.finishSentence,
@@ -231,9 +231,9 @@ private fun AgainstBlock(comparison: Finish.Comparison) {
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Text(comparison.title, style = GymType.numeralTiny, color = colors.onSurfaceVariant)
+        Text(comparison.named.text(), style = GymType.numeralTiny, color = colors.onSurfaceVariant)
         comparison.rows.forEach { row ->
-            ReceiptLine(row.movement, row.detail)
+            ReceiptLine(row.movement, row.said.text())
         }
     }
 }
@@ -255,10 +255,10 @@ fun FinishScreen(
             .padding(start = 20.dp, end = 20.dp, top = 24.dp, bottom = bottomPadding),
             verticalArrangement = Arrangement.SpaceBetween) {
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                Text("No sets logged", style = WindmillType.outcomeTitle, color = colors.onSurface)
-                Text("This workout has ended.", style = GymType.emptyFinishLine, color = colors.onSurfaceVariant)
+                Text(stringResource(R.string.gym_finish_no_sets), style = WindmillType.outcomeTitle, color = colors.onSurface)
+                Text(stringResource(R.string.gym_finish_ended), style = GymType.emptyFinishLine, color = colors.onSurfaceVariant)
             }
-            ReceiptAction("Done", onDone)
+            ReceiptAction(stringResource(PlatformR.string.platform_done), onDone)
         }
         return
     }
@@ -274,22 +274,22 @@ fun FinishScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text(if (finished.slight) "Ended early." else "Well done.",
+                        Text(stringResource(if (finished.slight) R.string.gym_finish_ended_early else R.string.gym_finish_well_done),
                             style = GymType.finishHeadline,
                             color = colors.onSurface, modifier = Modifier.weight(1f))
                         onDiscard?.let { discard ->
                             var expanded by rememberSaveable { mutableStateOf(false) }
                             Box {
                                 IconButton(onClick = { expanded = true }, modifier = Modifier.size(48.dp)) {
-                                    Icon(painterResource(R.drawable.gym_more), contentDescription = "More", tint = colors.onSurface)
+                                    Icon(painterResource(R.drawable.gym_more), contentDescription = stringResource(PlatformR.string.platform_more), tint = colors.onSurface)
                                 }
                                 DropdownMenu(expanded, onDismissRequest = { expanded = false }) {
-                                    DropdownMenuItem(text = { Text("Discard") }, onClick = { expanded = false; discard() })
+                                    DropdownMenuItem(text = { Text(stringResource(PlatformR.string.platform_discard)) }, onClick = { expanded = false; discard() })
                                 }
                             }
                         }
                     }
-                    Text("${finished.routine ?: Readout.noRoutine} · ${Finish.day(finished.session.startedAtMs)}",
+                    Text(Words.Message(PlatformR.string.platform_words_joined, listOf(finished.routine?.let(Words::Plain) ?: Readout.freeWorkout, Finish.day(finished.session.startedAtMs))).text(),
                         style = GymType.finishSubhead, color = colors.onSurfaceVariant)
                 }
                 val summary = SessionSummary(finished.session, finished.sets, catalog)
@@ -297,10 +297,10 @@ fun FinishScreen(
                 // The three facts share one row, or wrap two to a row where large text or a narrow sheet leaves no room.
                 BoxWithConstraints(Modifier.fillMaxWidth()) {
                     val facts: @Composable (Modifier) -> Unit = { modifier ->
-                        ReceiptFact(Readout.duration(duration), "Duration", modifier)
-                        ReceiptFact(summary.setCount.toString(), "Sets", modifier)
+                        ReceiptFact(Readout.lasted(duration).text(), stringResource(R.string.gym_finish_duration), modifier)
+                        ReceiptFact(summary.setCount.toString(), stringResource(R.string.gym_finish_sets), modifier)
                         val volume = Finish.volume(summary.tonnageKg)
-                        ReceiptFact(volume, "Volume", modifier, "kg".takeUnless { volume == "—" })
+                        ReceiptFact(volume, stringResource(R.string.gym_finish_volume), modifier, stringResource(R.string.gym_readout_kg).takeUnless { volume == "—" })
                     }
                     val tiles = Modifier.fillMaxWidth().background(colors.surfaceContainerHighest, MaterialTheme.shapes.large)
                     if (largeText || maxWidth < 270.dp) {
@@ -313,16 +313,19 @@ fun FinishScreen(
                     }
                 }
                 onKeep?.let { keep ->
+                    val keepIt = stringResource(PlatformR.string.platform_keep_it)
+                    val onlyHere = stringResource(R.string.gym_finish_only_on_this_phone, keepIt)
                     Text(buildAnnotatedString {
-                        append("Only on this phone · ")
-                        withStyle(SpanStyle(color = colors.primary, fontWeight = FontWeight.Bold)) { append("Keep it") }
+                        append(onlyHere)
+                        val at = onlyHere.lastIndexOf(keepIt)
+                        if (at >= 0) addStyle(SpanStyle(color = colors.primary, fontWeight = FontWeight.Bold), at, at + keepIt.length)
                     }, style = WindmillType.paragraphSmall, color = colors.onSurfaceVariant,
                         modifier = Modifier.heightIn(min = 48.dp).fillMaxWidth().clickable(role = Role.Button, onClick = keep))
                 }
                 if (onKeep == null && finished.reviewRead) {
-                    Finish.recordSentence(finished.review?.record, catalog)?.let { RecordLine(it) }
+                    Finish.recordWords(finished.review?.record, catalog)?.let { RecordLine(it.text()) }
                 }
-                Text("Performed", style = GymType.numeralDetail, color = colors.onSurfaceVariant,
+                Text(stringResource(R.string.gym_finish_performed), style = GymType.numeralDetail, color = colors.onSurfaceVariant,
                     modifier = Modifier.semantics { heading() })
                 summary.exercises.forEach { id ->
                     val sets = finished.sets.filter { it.exerciseId == id }
@@ -331,7 +334,7 @@ fun FinishScreen(
                         Icon(Icons.Filled.Check, contentDescription = null, tint = colors.tertiary, modifier = Modifier.size(24.dp))
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text(Readout.movement(id, catalog), style = GymType.heading, color = colors.onSurface)
-                            Text(Readout.targetWithUnit(sets.map { SetTarget(it.reps, it.weightKg) }, catalog.find { it.id == id }),
+                            Text(Readout.scheme(sets.map { SetTarget(it.reps, it.weightKg) }, catalog.find { it.id == id }).text(),
                                 style = GymType.numeralReadout, color = colors.onSurfaceVariant)
                         }
                     }
@@ -339,8 +342,8 @@ fun FinishScreen(
             }
             Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                onShareWithCoach?.let { ReceiptAction(FinishCoach.action, it, tonal = true, crown = true) }
-                ReceiptAction("Done", onDone)
+                onShareWithCoach?.let { ReceiptAction(stringResource(R.string.gym_finish_share_with_coach), it, tonal = true, crown = true) }
+                ReceiptAction(stringResource(PlatformR.string.platform_done), onDone)
             }
         }
     }

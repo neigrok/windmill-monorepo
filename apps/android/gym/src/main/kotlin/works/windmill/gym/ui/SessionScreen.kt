@@ -1,5 +1,10 @@
 package works.windmill.gym.ui
 
+import works.windmill.platform.R as PlatformR
+import works.windmill.platform.i18n.joined
+import works.windmill.platform.i18n.text
+import works.windmill.platform.i18n.Words
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -42,6 +47,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -53,6 +59,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.launch
 import works.windmill.gym.LocalFrameStands
+import works.windmill.gym.R
 import works.windmill.gym.presentation.Exercise
 import works.windmill.gym.presentation.Ladder
 import works.windmill.gym.presentation.PlanEntry
@@ -131,10 +138,10 @@ class SessionBinding(
 
 // The frozen plan beside these rows is a snapshot and is the ONLY source for what the plan said.
 object Performed {
-    data class Note(val text: String, val short: Boolean = false)
+    data class Note(val said: Words, val short: Boolean = false)
 
     sealed interface Against {
-        data class Plan(val entry: PlanEntry, val line: String) : Against
+        data class Plan(val entry: PlanEntry, val said: Words) : Against
         data object Unplanned : Against
         data object Silent : Against
     }
@@ -149,9 +156,10 @@ object Performed {
         val savedNumber: Int get() = set.setNumber ?: position
 
         // The quiet digit is drawn bare; TalkBack hears it named, with the load's unit and the reps spelled out.
-        val spoken: String
-            get() = listOfNotNull("Set $position", "${Readout.weight(set.weightKg)} $unit", Readout.repCount(set.reps),
-                note?.text, set.rpe?.let(SetEffort::rpeReading), set.note.trim().takeIf { it.isNotEmpty() }).joinToString(", ")
+        val said: Words
+            get() = listOfNotNull(Words.Message(R.string.gym_session_set_position, listOf(position.toString())), Words.Plain("${Readout.weight(set.weightKg)} $unit"),
+                Readout.reps(set.reps), note?.said, set.rpe?.let(SetEffort::rpe), set.note.trim().takeIf { it.isNotEmpty() }?.let(Words::Plain))
+                .reduce { said, next -> Words.Message(R.string.gym_session_spoken_next, listOf(said, next)) }
     }
 
     data class Movement(
@@ -202,27 +210,27 @@ object Performed {
         if (named.size > 1) return Against.Silent
         val entry = named.single()
         if (entry.isOpen) return Against.Silent
-        return Against.Plan(entry, "Plan ${Readout.targetWithUnit(entry.sets, exercise)}")
+        return Against.Plan(entry, Words.Message(R.string.gym_session_plan, listOf(Readout.scheme(entry.sets, exercise))))
     }
 
     // Read against the slot this set filled — the Nth set against the plan's Nth
     // set — fail-fast in the order the facts outrank each other: the load the plan named, then the
     // reps. A set logged past the plan has no slot and is read against nothing.
     private fun note(set: TrainingSet, against: Against, opening: Boolean, slot: Int): Note? {
-        if (against is Against.Unplanned) return if (opening) Note("added today") else null
+        if (against is Against.Unplanned) return if (opening) Note(Words.Message(R.string.gym_session_added_today)) else null
         if (against !is Against.Plan) return null
         val planned = Scheme.slot(against.entry.sets, slot) ?: return null
         val target = planned.weightKg
         if (target != null && target != 0.0) {
             // Rounded on the LADDER's grid before it is compared to zero.
             val delta = Ladder.round(set.weightKg - target)
-            if (delta > 0) return Note("+${Readout.weight(delta)} over plan")
+            if (delta > 0) return Note(Words.Message(R.string.gym_session_over_plan, listOf(Readout.weight(delta))))
             // THE MAGNITUDE, never the signed difference: the word already carries the direction.
-            if (delta < 0) return Note("${Readout.weight(-delta)} under plan")
+            if (delta < 0) return Note(Words.Message(R.string.gym_session_under_plan, listOf(Readout.weight(-delta))))
         }
         val reps = planned.reps
-        if (reps != null && set.reps < reps) return Note(Readout.spelled(reps - set.reps) + " short", short = true)
-        return Note("on plan")
+        if (reps != null && set.reps < reps) return Note(Words.Message(R.string.gym_session_short, listOf(Readout.spelledOut(reps - set.reps))), short = true)
+        return Note(Words.Message(R.string.gym_session_on_plan))
     }
 
 }
@@ -251,8 +259,10 @@ fun SessionScreen(
     onDraftOpen: (Boolean) -> Unit = {},
 ) {
     val colors = MaterialTheme.colorScheme
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val telemetry = LocalTelemetry.current
+    val noLongerOnLog = stringResource(R.string.gym_session_no_longer_on_log)
     var detail by rememberSaveable(summary.id, stateSaver = remember(telemetry) { sessionDetailSaver(telemetry) }) { mutableStateOf<SessionDetail?>(seed) }
     var setsFailure by remember(summary.id) { mutableStateOf<WriteFailure?>(null) }
     var review by remember(summary.id) { mutableStateOf<Review?>(null) }
@@ -290,7 +300,7 @@ fun SessionScreen(
         if (gone && frameStands && !leftGone) {
             leftGone = true
             onBack()
-            say("That workout is no longer on the log.")
+            say(noLongerOnLog)
         }
     }
     val visibleSets = currentDetail?.sets?.filterNot { it.id in state.deletedSets }
@@ -331,7 +341,7 @@ fun SessionScreen(
     }
 
     GymScreen(
-        title = standing.plan?.routine ?: Readout.noRoutine,
+        title = standing.plan?.routine ?: Readout.freeWorkout.text(),
         onBack = onBack,
         backTo = backTo,
     ) {
@@ -355,7 +365,7 @@ fun SessionScreen(
                         onFix = { fixing = it },
                         onDelete = { row ->
                             val failure = events.delete(Deletion.Set(readId, row))
-                            say(failure?.line("that set is still on the log"))
+                            say(failure?.says(R.string.gym_session_set_delete_no_answer)?.text(context))
                             failure == null
                         },
                     )
@@ -364,13 +374,13 @@ fun SessionScreen(
             setsFailure?.let { failure ->
                 item("failure") {
                     Text(
-                        failure.line("the saved sets are shown"),
+                        failure.says(R.string.gym_session_sets_no_answer).text(),
                         style = GymType.numeral,
                         color = colors.onSurfaceVariant,
                     )
                 }
             }
-            if (read && (review == null || Finish.recordSentence(review?.record, state.catalog) != null ||
+            if (read && (review == null || Finish.recordWords(review?.record, state.catalog) != null ||
                     Finish.comparison(review?.against, state.catalog) != null)) {
                 item("review") { ReviewRemarks(review, state.catalog) }
             }
@@ -378,9 +388,9 @@ fun SessionScreen(
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Box(Modifier.fillMaxWidth().heightIn(min = 56.dp).clip(CircleShape).background(colors.surfaceContainerHighest)
                         .clickable(role = Role.Button) { shareOpen = true }, contentAlignment = Alignment.Center) {
-                        Text("Share this workout", style = WindmillType.label, color = colors.onSurface)
+                        Text(stringResource(R.string.gym_session_share), style = WindmillType.label, color = colors.onSurface)
                     }
-                    GymErrorTextButton("Discard workout", onClick = { onDiscard(readId) },
+                    GymErrorTextButton(stringResource(R.string.gym_session_discard), onClick = { onDiscard(readId) },
                         modifier = Modifier.fillMaxWidth())
                 }
             }
@@ -433,7 +443,7 @@ fun SessionScreen(
                 onDelete = {
                     close()
                     say(null)
-                    scope.launch { say(events.delete(Deletion.Set(readId, row.set))?.line("that set is still on the log")) }
+                    scope.launch { say(events.delete(Deletion.Set(readId, row.set))?.says(R.string.gym_session_set_delete_no_answer)?.text(context)) }
                 },
             )
             }
@@ -452,14 +462,14 @@ private fun SessionHead(summary: SessionSummary) {
     val colors = MaterialTheme.colorScheme
     val gymColors = MaterialTheme.gymColors
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Text(headLine(summary), style = WindmillType.detail, color = colors.onSurfaceVariant)
-        Text("Volume", style = WindmillType.caption, color = colors.onSurfaceVariant)
-        Text(summary.tonnageKg?.let { "${Readout.weight(it)} kg" } ?: "—",
+        Text(headLine(summary).text(), style = WindmillType.detail, color = colors.onSurfaceVariant)
+        Text(stringResource(R.string.gym_session_volume), style = WindmillType.caption, color = colors.onSurfaceVariant)
+        Text(summary.tonnageKg?.let { stringResource(R.string.gym_readout_kilograms, Readout.weight(it)) } ?: "—",
             style = GymType.sessionVolume, color = colors.onSurface)
-        val count = Readout.setCount(summary.workingSetCount ?: summary.setCount)
-        Text("$count · ${summary.exercises.size} ${if (summary.exercises.size == 1) "movement" else "movements"}", style = WindmillType.detail, color = colors.onSurfaceVariant)
-        if (summary.plan != null) Text("Plan saved at start", style = WindmillType.caption, color = gymColors.inkFaint)
-        if (summary.closedItself) Text("Closed after four hours without a set", style = WindmillType.detailCompact, color = colors.onSurfaceVariant)
+        Text(Words.Message(PlatformR.string.platform_words_joined, listOf(Readout.sets(summary.workingSetCount ?: summary.setCount),
+            Words.Counted(R.plurals.gym_session_movements, summary.exercises.size, listOf(summary.exercises.size.toString())))).text(), style = WindmillType.detail, color = colors.onSurfaceVariant)
+        if (summary.plan != null) Text(stringResource(R.string.gym_session_plan_saved), style = WindmillType.caption, color = gymColors.inkFaint)
+        if (summary.closedItself) Text(stringResource(R.string.gym_session_closed_itself), style = WindmillType.detailCompact, color = colors.onSurfaceVariant)
     }
 }
 
@@ -478,7 +488,7 @@ private fun MovementCard(
         Column(
             verticalArrangement = Arrangement.spacedBy(6.dp),
             modifier = Modifier.fillMaxWidth().heightIn(min = GymTap.minimum)
-                .clickable(role = Role.Button, onClickLabel = "open this movement") { onOpenMovement(movement.id) },
+                .clickable(role = Role.Button, onClickLabel = stringResource(R.string.gym_session_open_this_movement)) { onOpenMovement(movement.id) },
         ) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 movement.equipment?.let { EquipmentIcon(it, Modifier.size(20.dp), tint = colors.onSurfaceVariant) }
@@ -486,8 +496,8 @@ private fun MovementCard(
                     color = colors.onSurface, modifier = Modifier.weight(1f))
             }
             when (val against = movement.against) {
-                is Performed.Against.Plan -> Text(against.line, style = WindmillType.caption, color = colors.onSurfaceVariant)
-                Performed.Against.Unplanned -> Text("not in the plan", style = WindmillType.caption, color = colors.onSurfaceVariant)
+                is Performed.Against.Plan -> Text(against.said.text(), style = WindmillType.caption, color = colors.onSurfaceVariant)
+                Performed.Against.Unplanned -> Text(stringResource(R.string.gym_session_not_in_plan), style = WindmillType.caption, color = colors.onSurfaceVariant)
                 Performed.Against.Silent -> Unit
             }
         }
@@ -497,7 +507,7 @@ private fun MovementCard(
             movement.rows.forEachIndexed { index, performed ->
                 key(performed.id) {
                     val shape = GymSegment.shape(index, movement.rows.size)
-                    DeleteSwipeRow(actionLabel = "Delete", onDelete = { onDelete(performed.set) }, shape = shape, declaresAction = false) {
+                    DeleteSwipeRow(actionLabel = stringResource(PlatformR.string.platform_delete), onDelete = { onDelete(performed.set) }, shape = shape, declaresAction = false) {
                         SetRow(performed, shape, onFix, onDelete)
                     }
                 }
@@ -513,7 +523,7 @@ private fun MovementCard(
 // action is declared again BY HAND on the row. This row carries no overflow to inherit it from, and it
 // is its own TalkBack stop, so the action sits on it rather than on the swipe around it.
 //
-// The row says itself once, as `Performed.Row.spoken`. The count sits on the load's baseline in a column at
+// The row says itself once, as `Performed.Row.said`. The count sits on the load's baseline in a column at
 // least 24 dp wide, so the load starts 40 dp in on every row and a second line starts under it; a count too
 // wide for the column, two digits at 200 % text, widens its own row's column rather than clipping.
 @Composable
@@ -525,14 +535,17 @@ private fun SetRow(set: Performed.Row, shape: Shape, onFix: (String) -> Unit, on
     val pressed by pressing.collectIsPressedAsState()
     val largeText = GymTextScale.large
     val underLoad = Modifier.padding(start = 24.dp)
+    val fixThisSet = stringResource(R.string.gym_session_fix_this_set)
+    val spoken = set.said.text()
+    val deleteAction = stringResource(PlatformR.string.platform_delete)
     Column(Modifier.fillMaxWidth().heightIn(min = GymTap.minimum).clip(shape)
         .background(if (pressed) colors.surfaceContainerHighest else colors.surfaceContainer)
         .clickable(interactionSource = pressing, indication = null) { onFix(set.id) }
         .clearAndSetSemantics {
-            contentDescription = set.spoken
+            contentDescription = spoken
             role = Role.Button
-            onClick("fix this set") { onFix(set.id); true }
-            customActions = listOf(CustomAccessibilityAction("Delete") { scope.launch { onDelete(set.set) }; true })
+            onClick(fixThisSet) { onFix(set.id); true }
+            customActions = listOf(CustomAccessibilityAction(deleteAction) { scope.launch { onDelete(set.set) }; true })
         }
         .padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -545,21 +558,21 @@ private fun SetRow(set: Performed.Row, shape: Shape, onFix: (String) -> Unit, on
                     style = GymType.setLoad.copy(color = colors.onSurface),
                     modifier = Modifier.weight(1f).alignByBaseline())
             }
-            if (!largeText) set.note?.let { Text(it.text, style = WindmillType.caption, color = colors.onSurfaceVariant) }
+            if (!largeText) set.note?.let { Text(it.said.text(), style = WindmillType.caption, color = colors.onSurfaceVariant) }
         }
         if (largeText) set.note?.let {
-            Text(it.text, style = WindmillType.caption, color = colors.onSurfaceVariant, modifier = underLoad)
+            Text(it.said.text(), style = WindmillType.caption, color = colors.onSurfaceVariant, modifier = underLoad)
         }
-        SetEffort.line(set.set.rpe, set.set.note)?.let {
-            Text(it, style = WindmillType.detailCompact, color = colors.onSurfaceVariant, modifier = underLoad)
+        SetEffort.effortWords(set.set.rpe, set.set.note)?.let {
+            Text(it.text(), style = WindmillType.detailCompact, color = colors.onSurfaceVariant, modifier = underLoad)
         }
     }
 }
 
-private fun headLine(summary: SessionSummary): String = listOfNotNull(
+private fun headLine(summary: SessionSummary): Words = checkNotNull(listOfNotNull(
     Readout.day(summary.startedAtMs),
-    summary.finishedAtMs?.let { Readout.duration(it - summary.startedAtMs) },
-).joinToString(" · ")
+    summary.finishedAtMs?.let { Readout.lasted(it - summary.startedAtMs) },
+).joined())
 
 private data class PreviewSessionState(
     override val catalog: List<Exercise> = TheSix.movements,

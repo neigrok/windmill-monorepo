@@ -129,32 +129,7 @@ class LadderTests {
     }
 
     @Test
-    fun testTheTierCaptionIsReadOffTheBandTable() {
-        assertEquals("under 20 kg · fine 1 · plate 2.5", Ladder.tier(0.0))
-        assertEquals("under 20 kg · fine 1 · plate 2.5", Ladder.tier(19.99))
-        assertEquals("20–50 kg · fine 2.5 · plate 5", Ladder.tier(20.0))
-        assertEquals("20–50 kg · fine 2.5 · plate 5", Ladder.tier(49.99))
-        assertEquals("over 50 kg · fine 2.5 · plate 10", Ladder.tier(50.0))
-        assertEquals("over 50 kg · fine 2.5 · plate 10", Ladder.tier(105.0))
-        assertEquals("under 20 kg · fine 1 · plate 2.5", Ladder.tier(-19.0))
-        assertEquals("over 50 kg · fine 2.5 · plate 10", Ladder.tier(-102.5))
-    }
-
-    @Test
-    fun testTheCaptionNamesTheBandTheLifterIsStandingIn() {
-        for (expected in golden.weightCases) {
-            val caption = Ladder.tier(expected.weight)
-            val standing = Ladder.steps(abs(expected.weight), lightening = false)
-            val tail = "· fine ${Ladder.text(standing.small)} · plate ${Ladder.text(standing.large)}"
-            assertTrue(
-                "caption at ${expected.weight} kg reads \"$caption\", which does not end \"$tail\"",
-                caption.endsWith(tail),
-            )
-        }
-    }
-
-    @Test
-    fun testTheCaptionNamesTheUpKeysOfALoadedWeight() {
+    fun testALoadedWeightsUpKeysAreTheStepsOfTheBandItStandsIn() {
         for (expected in golden.weightCases.filter { it.weight > 0 }) {
             val labels = Ladder.labels(expected.weight)
             val standing = Ladder.steps(expected.weight, lightening = false)
@@ -165,14 +140,9 @@ class LadderTests {
     }
 
     @Test
-    fun testAtABandEdgeTheKeysComeOutOfTwoBandsAndTheCaptionNamesOne() {
-        assertEquals("20–50 kg · fine 2.5 · plate 5", Ladder.tier(20.0))
+    fun testAtABandEdgeTheKeysComeOutOfTwoBands() {
         assertEquals(listOf("−2.5", "−1", "+2.5", "+5"), Ladder.labels(20.0))
-
-        assertEquals("over 50 kg · fine 2.5 · plate 10", Ladder.tier(50.0))
         assertEquals(listOf("−5", "−2.5", "+2.5", "+10"), Ladder.labels(50.0))
-
-        assertEquals("20–50 kg · fine 2.5 · plate 5", Ladder.tier(-20.0))
         assertEquals("the mirror: the assisted side lightens upward",
                      listOf("−5", "−2.5", "+1", "+2.5"), Ladder.labels(-20.0))
     }

@@ -24,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -35,11 +36,13 @@ import kotlinx.coroutines.delay
 import works.windmill.gym.R
 import works.windmill.gym.presentation.Readout
 import works.windmill.gym.presentation.Session
+import works.windmill.platform.i18n.text
 
 @Composable
 fun WorkoutBar(session: Session, onOpen: () -> Unit) {
     val colors = MaterialTheme.colorScheme
-    val routine = session.plan?.routine ?: Readout.noRoutine
+    val routine = session.plan?.routine ?: Readout.freeWorkout.text()
+    val spoken = stringResource(R.string.gym_logger_workout_in_progress, routine)
     var nowMs by remember(session.id) { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(session.id) {
         while (true) {
@@ -50,7 +53,7 @@ fun WorkoutBar(session: Session, onOpen: () -> Unit) {
     Surface(onClick = onOpen, color = colors.surfaceContainer, modifier = Modifier.fillMaxWidth()
         .drawWithContent { drawContent(); drawLine(colors.outlineVariant, Offset(0f, 0.5.dp.toPx()), Offset(size.width, 0.5.dp.toPx()), 1.dp.toPx()) }
         .clearAndSetSemantics {
-            contentDescription = "$routine, in progress"
+            contentDescription = spoken
             role = Role.Button
             onClick { onOpen(); true }
         }) {

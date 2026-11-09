@@ -1,5 +1,8 @@
 package works.windmill.gym.ui
 
+import works.windmill.gym.spelled
+import works.windmill.gym.string
+import works.windmill.gym.R
 import works.windmill.gym.coach.AskBinding
 import works.windmill.gym.coach.AskScreen
 import androidx.compose.foundation.layout.Box
@@ -52,7 +55,6 @@ import org.robolectric.annotation.GraphicsMode
 import works.windmill.gym.coach.CoachExchange
 import works.windmill.gym.coach.turn.CoachTurnRefusal
 import works.windmill.gym.presentation.Ladder
-import works.windmill.gym.presentation.Proposal
 import works.windmill.gym.presentation.RoutineDraft
 import works.windmill.gym.presentation.SetTarget
 import works.windmill.domain.kit.ActionContext
@@ -157,7 +159,7 @@ class LargestTypeTests {
             val left = with(compose.density) { scroller.size.height.toDp() }
             assertTrue("the thread is $left at fontScale 2.0", left >= floor)
 
-            val sentence = compose.onNodeWithText(refusal.sentence).fetchSemanticsNode()
+            val sentence = compose.onNodeWithText(refusal.words.spelled()).fetchSemanticsNode()
             assertTrue("and the sentence is inside it, not pinned on top of it",
                 sentence.positionInRoot.y >= scroller.positionInRoot.y)
         } } finally { scope.cancel() }
@@ -217,7 +219,7 @@ class LargestTypeTests {
             val apply = compose.onNodeWithText("Apply all 8").fetchSemanticsNode()
             val atomic = compose.onNodeWithText("All eight or none. Nothing is applied until you tap.")
                 .fetchSemanticsNode()
-            val turnDown = compose.onNodeWithText(Proposal.turnDownVerb).fetchSemanticsNode()
+            val turnDown = compose.onNodeWithText(string(R.string.gym_proposal_turn_down_verb)).fetchSemanticsNode()
             assertTrue("the whole band stands under the diff and none of it is cut off",
                 apply.positionInRoot.y >= scroller.positionInRoot.y + scroller.size.height &&
                     turnDown.positionInRoot.y + turnDown.size.height <=

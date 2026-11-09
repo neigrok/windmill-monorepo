@@ -38,6 +38,7 @@ import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.ui.GymMaterial
 import works.windmill.platform.LocalShellActions
 import works.windmill.platform.ShellActions
+import works.windmill.platform.i18n.text
 import works.windmill.platform.telemetry.LocalTelemetry
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.sync.core.Json
@@ -84,7 +85,7 @@ class HiddenWorkoutTests {
     }
 
     @Test fun hideAndBackReturnToTheOriginatingTabAndTheSameRack() = room { phone, restoration, events ->
-        val bar = "${Readout.noRoutine}, in progress"
+        val bar = "${Readout.freeWorkout.spelled()}, in progress"
         val session = phone.store.workout.session
         compose.onNodeWithContentDescription("Hide workout").performClick()
         compose.onNodeWithContentDescription(bar).assertIsDisplayed()
@@ -120,7 +121,7 @@ class HiddenWorkoutTests {
     }
 
     @Test fun managementHideAndNotificationShowHaveSeparateEffectsAndAConsumedOpenDoesNotReplay() = room { phone, restoration, events ->
-        val bar = "${Readout.noRoutine}, in progress"
+        val bar = "${Readout.freeWorkout.spelled()}, in progress"
         compose.runOnIdle { assertEquals(WorkoutChange.Saved, phone.store.workout.showWorkout(phone.store.workout.notification.value!!.key, true)) }
         compose.onNodeWithText("Bench Press").performClick()
         compose.onNodeWithText("Notification off").assertIsDisplayed()
@@ -145,7 +146,7 @@ class HiddenWorkoutTests {
     @Test fun hidingTheLoggerRetainsItsIncompleteSignedBuffer() = room { phone, _, _ ->
         compose.onNodeWithContentDescription("Load, kg total").performClick().performTextReplacement("-")
         compose.onNodeWithContentDescription("Hide workout").performClick()
-        compose.onNodeWithContentDescription("${Readout.noRoutine}, in progress").performClick()
+        compose.onNodeWithContentDescription("${Readout.freeWorkout.spelled()}, in progress").performClick()
         compose.onNodeWithContentDescription("Load, kg total").assertTextEquals("−")
         compose.runOnIdle {
             assertEquals(92.5, phone.store.workout.rack!!.weightKg, 0.0)

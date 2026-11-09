@@ -8,6 +8,8 @@ import kotlinx.serialization.descriptors.PrimitiveKind
 import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
+import works.windmill.gym.R
+import works.windmill.platform.i18n.Words
 
 // A proposal does nothing until the lifter taps Apply.
 
@@ -57,15 +59,17 @@ data class ProposalSource(
 ) {
     val conversation: String? get() = thread?.takeIf { it.isNotBlank() && door == askDoor }
 
-    val name: String
-        get() = named ?: if (door == askDoor) "Coach" else "your connected agent"
+    val named: Words
+        get() = self?.let(Words::Plain)
+            ?: Words.Message(if (door == askDoor) R.string.gym_proposal_source_coach else R.string.gym_proposal_source_connected_agent)
 
     // The prose is attributed by who wrote it: the agent by name, Coach for the room's own door, and
     // an agent that did not name itself is still the lifter's own. The same three on every surface.
-    val kicker: String
-        get() = "${named ?: if (door == askDoor) "Coach" else "Your agent"} wrote:"
+    val wrote: Words
+        get() = Words.Message(R.string.gym_proposal_wrote, listOf(self?.let(Words::Plain)
+            ?: Words.Message(if (door == askDoor) R.string.gym_proposal_source_coach else R.string.gym_proposal_source_your_agent)))
 
-    private val named: String?
+    private val self: String?
         get() = agent?.takeIf { it.isNotBlank() } ?: connection?.takeIf { it.isNotBlank() }
 
     companion object {
@@ -112,31 +116,12 @@ data class ProposalChange(
     // Kept where it stood, so a count says it.
     val stands: Boolean get() = kind == ChangeKind.Kept && order == null
 
-    fun addedLine(follows: String?): String {
-        val said = mutableListOf("added")
-        after?.let { said += Proposal.asks(it) }
-        said += follows?.let { "after $it" } ?: "first in the routine"
-        return said.joinToString(" · ")
-    }
-
     // Zero is a real answer and an absent count says neither.
-    fun removedLine(from: String = Proposal.routineWord): String {
-        val kept = loggedSets ?: return "removed from $from"
-        if (kept == 0) return "removed from $from · never logged"
-        val sets = if (kept == 1) "1 logged set" else "$kept logged sets"
-        return "removed from $from · $sets kept"
+    fun removed(from: Words): Words {
+        val kept = loggedSets ?: return Words.Message(R.string.gym_proposal_removed_from, listOf(from))
+        if (kept == 0) return Words.Message(R.string.gym_proposal_removed_never_logged, listOf(from))
+        return Words.Counted(R.plurals.gym_proposal_removed_kept, kept, listOf(from, kept.toString()))
     }
-
-    val compactLine: String
-        get() {
-            if (kind == ChangeKind.Added) return after?.let { "+ added · ${Proposal.asks(it)}" } ?: "+ added"
-            if (kind == ChangeKind.Removed) return "− ${removedLine()}"
-            // A retarget, and any kind this build cannot name: read off whichever side arrived. Each
-            // move carries its label — `set 4 · 100 × 1 → 102.5 × 1` — the review row's own line.
-            val moved = before?.let { was -> after?.let { now -> Proposal.moves(was, now) } }.orEmpty()
-            if (moved.isNotEmpty()) return moved.joinToString(" · ") { "${it.label} · ${it.before} → ${it.after}" }
-            return (after ?: before)?.let { Proposal.asks(it) } ?: "no targets"
-        }
 }
 
 // Two sizes on one type: a HEAD carries everything above `baseRevision` and no diff. `changeCount` is
@@ -157,10 +142,10 @@ data class Proposal(
     val baseName: String = "",
     val name: String = "",
     val changes: List<ProposalChange> = emptyList(),
-    // A workout proposal's `routineId` names its session, and `baseName` is `workoutWord`.
+    // A workout proposal's `routineId` names its session, and it carries no `baseName`.
     val target: ProposalTarget = ProposalTarget.Routine,
     // Why a workout proposal can no longer be applied, read with it so the two never disagree.
-    val outOfDate: String? = null,
+    val stale: Stale? = null,
 ) {
     val isPending: Boolean get() = state == ProposalState.Pending
 
@@ -199,17 +184,15 @@ data class Proposal(
 
     // Derived from the SERVER's reply and never from the model's prose: the name the routine now
     // carries and the server's own count of what changed, or that the routine is gone.
-    val receipt: String?
+    val settledReceipt: ProposalReceipt?
         get() = when (state) {
-            ProposalState.Applied -> {
-                if (intent == ProposalIntent.Remove) "Applied · $routineName · routine removed"
-                else "Applied · ${name.ifBlank { baseName }.ifBlank { "this routine" }} · $counted"
-            }
-            ProposalState.Dismissed -> turnedDownReceipt
+            ProposalState.Applied -> ProposalReceipt(applied = true, words =
+                if (intent == ProposalIntent.Remove) Words.Message(R.string.gym_proposal_receipt_removed, listOf(routineNamed))
+                else Words.Message(R.string.gym_proposal_receipt_applied,
+                    listOf(name.ifBlank { baseName }.takeIf { it.isNotBlank() }?.let(Words::Plain) ?: routineNamed, counting)))
+            ProposalState.Dismissed -> ProposalReceipt(applied = false, words = Words.Message(R.string.gym_proposal_receipt_turned_down))
             else -> null
         }
-
-    val kicker: String get() = source.kicker
 
     val renames: Boolean
         get() = name.isNotBlank() && baseName.isNotBlank() && name != baseName
@@ -221,107 +204,64 @@ data class Proposal(
         return run[at - 1].exerciseId
     }
 
-    fun byline(nowMs: Long): String = "from ${source.name} · ${Readout.whenLogged(createdAtMs, nowMs)}"
+    fun by(nowMs: Long): Words = Words.Message(R.string.gym_proposal_byline, listOf(source.named, Readout.loggedWhen(createdAtMs, nowMs)))
 
-    fun summaryLine(routineName: String): String {
-        if (summary.isNotBlank()) return summary
-        if (intent == ProposalIntent.Remove) return "A proposal to remove $routineName."
-        return "$counted to $routineName."
+    fun summarized(routine: Words): Words {
+        if (summary.isNotBlank()) return Words.Plain(summary)
+        if (intent == ProposalIntent.Remove) return Words.Message(R.string.gym_proposal_summary_remove, listOf(routine))
+        return Words.Message(R.string.gym_proposal_summary_changes, listOf(counting, routine))
     }
 
-    val counted: String
+    val counting: Words
         get() {
-            if (intent == ProposalIntent.Remove) return "a removal"
-            return if (changeCount == 1) "1 change" else "$changeCount changes"
+            if (intent == ProposalIntent.Remove) return Words.Message(R.string.gym_proposal_a_removal)
+            return Words.Counted(R.plurals.gym_proposal_changes, changeCount, listOf(changeCount.toString()))
         }
-
-    // One affordance on a card, and it is Review; the card's counted line says how much.
-    val reviewLabel: String get() = review
-
-    fun cardLine(routineName: String, stillWaiting: Boolean): String {
-        val waiting = if (stillWaiting) Proposal.stillWaiting else "waiting"
-        return "$routineName · $counted · $waiting"
-    }
 
     // The count, which is what the sheet draws; apply is atomic against the document.
-    val applyLabel: String
+    val applying: Words
         get() = when {
-            intent == ProposalIntent.Remove -> "Remove $routineName"
-            changeCount == 1 -> "Apply"
-            else -> "Apply all $changeCount"
+            intent == ProposalIntent.Remove -> Words.Message(R.string.gym_proposal_remove_routine, listOf(routineNamed))
+            changeCount == 1 -> Words.Message(R.string.gym_proposal_apply)
+            else -> Words.Message(R.string.gym_proposal_apply_all, listOf(changeCount.toString()))
         }
 
-    val atomicLine: String
+    val atomic: Words
         get() {
-            if (intent == ProposalIntent.Remove) {
-                return "The routine goes and your logged sets stay. Nothing is removed until you tap."
-            }
-            if (changeCount <= 1) return "Nothing is applied until you tap."
-            return "All ${Readout.spelled(changeCount)} or none. Nothing is applied until you tap."
+            if (intent == ProposalIntent.Remove) return Words.Message(R.string.gym_proposal_atomic_remove)
+            if (changeCount <= 1) return Words.Message(R.string.gym_proposal_atomic_one)
+            return Words.Message(R.string.gym_proposal_atomic_all, listOf(Readout.spelledOut(changeCount)))
         }
 
-    fun settledNote(nowMs: Long): String? {
+    fun settled(nowMs: Long): Words? {
         val at = settledAtMs ?: return null
-        val on = "${Readout.briefDay(at, nowMs)} at ${Readout.time(at)}"
+        val day = Readout.brief(at, nowMs)
+        val time = Readout.time(at)
         return when (state) {
-            ProposalState.Applied ->
-                "Applied to $routineName $on."
-            ProposalState.Dismissed ->
-                "Turned down $on. Nothing changed."
-            ProposalState.Superseded ->
-                "$routineName changed after this was written, so it was set aside $on. None of it was applied."
+            ProposalState.Applied -> Words.Message(R.string.gym_proposal_settled_applied, listOf(routineNamed, day, time))
+            ProposalState.Dismissed -> Words.Message(R.string.gym_proposal_settled_turned_down, listOf(day, time))
+            ProposalState.Superseded -> Words.Message(R.string.gym_proposal_settled_superseded, listOf(routineNamed, day, time))
             ProposalState.Pending -> null
         }
     }
 
-    val routineName: String get() = baseName.ifBlank { "this routine" }
-
-    // What the card and the sheet are addressed by.
-    val subject: String get() = if (target == ProposalTarget.Workout) "This workout" else routineName
-
-    // Where its change lines land.
-    val within: String get() = if (target == ProposalTarget.Workout) workoutWord else routineWord
-
-    companion object {
-        const val routineWord = "the routine"
-        const val workoutWord = "this workout"
-        const val nextTime = "next time"
-        const val outOfDateWord = "out of date"
-
-        // Why a workout proposal can no longer be applied (08.57): one cause, then that nothing was applied.
-        fun outOfDateLine(reason: String, movement: String?): String {
-            val cause = when (reason) {
-                "replaced" -> "A newer suggestion replaced this one."
-                "workout-finished" -> "This workout has finished."
-                "workout-moved" -> "You logged ${movement ?: "a movement"} since this suggestion."
-                else -> "This workout changed after this suggestion."
-            }
-            return "$cause Nothing was applied."
+    val routineNamed: Words
+        get() = when {
+            target == ProposalTarget.Workout -> Words.Message(R.string.gym_proposal_this_workout)
+            baseName.isBlank() -> Words.Message(R.string.gym_proposal_this_routine)
+            else -> Words.Plain(baseName)
         }
 
-        const val review = "Review"
-        const val apply = "Apply"
+    // What the card and the sheet are addressed by.
+    val addressed: Words get() = if (target == ProposalTarget.Workout) Words.Message(R.string.gym_proposal_this_workout_heading) else routineNamed
 
-        // Why Apply is shut, said on the screen and on the semantics channel, and it names the way
-        // out. Read off `seen` ALONE: bound to the disabled predicate it would say this while the
-        // apply request is already on the wire.
-        const val applyHint = "Scroll to the end to apply."
-        const val stillWaiting = "still waiting"
-        const val turnedDownReceipt = "Turned down · nothing changed."
+    // Where its change lines land.
+    val landsIn: Words get() = Words.Message(if (target == ProposalTarget.Workout) R.string.gym_proposal_this_workout else R.string.gym_proposal_the_routine)
 
-        // Turning a proposal down is settled for good — the wire has no path back — so it is confirmed,
-        // in the same words on every surface.
-        const val turnDownVerb = "Turn this down"
-        const val turnDownAsk = "Turn this down?"
-        const val turnDownBody = "Nothing changes."
-        const val turnDown = "Turn down"
+    // Why it can no longer be applied (08.57): one cause, then that nothing was applied.
+    val staleWhy: Words? get() = stale?.why
 
-        // A signed-out phone reads a proposal and cannot decide it.
-        const val signInToReview = "Sign in to review this proposal."
-
-        // The row the review sheet unfolds to the ladder on tap.
-        const val setsLabel = "sets"
-
+    companion object {
         // Loads are compared on the LADDER's grid and never on raw doubles. A scheme whose shape held
         // and whose one set moved prints that set — `set 4 · 100 × 1 → 102.5 × 1`; any other move
         // of the sets prints both schemes in the readout formula.
@@ -331,14 +271,28 @@ data class Proposal(
                 val movedSets = if (before.sets.size != after.sets.size) emptyList()
                     else before.sets.indices.filterNot { Scheme.same(listOf(before.sets[it]), listOf(after.sets[it])) }
                 moved += movedSets.singleOrNull()?.let { at ->
-                    FieldMove("set ${at + 1}", Readout.setTarget(before.sets[at]), Readout.setTarget(after.sets[at]))
-                } ?: FieldMove(setsLabel, Readout.target(before.sets), Readout.target(after.sets))
+                    FieldMove(Words.Message(R.string.gym_proposal_set_n, listOf((at + 1).toString())),
+                        Readout.setScheme(before.sets[at]), Readout.setScheme(after.sets[at]))
+                } ?: FieldMove(Words.Message(R.string.gym_proposal_sets), Readout.scheme(before.sets), Readout.scheme(after.sets), scheme = true)
             }
             return moved
         }
-
-        fun asks(targets: ProposalTargets): String = Readout.target(targets.sets)
     }
+}
+
+// What a settled proposal's receipt says, and whether it says it was applied.
+data class ProposalReceipt(val applied: Boolean, val words: Words)
+
+// Why a workout proposal was set aside: the domain's reason, and the movement a set was logged on.
+@Serializable
+data class Stale(val reason: String, val movement: String? = null) {
+    val why: Words
+        get() = Words.Message(R.string.gym_proposal_stale, listOf(when (reason) {
+            "replaced" -> Words.Message(R.string.gym_proposal_stale_replaced)
+            "workout-finished" -> Words.Message(R.string.gym_proposal_stale_finished)
+            "workout-moved" -> Words.Message(R.string.gym_proposal_stale_moved, listOf(movement?.let(Words::Plain) ?: Words.Message(R.string.gym_proposal_stale_a_movement)))
+            else -> Words.Message(R.string.gym_proposal_stale_changed)
+        }))
 }
 
 // The routine is absent when the intent was to remove it.
@@ -347,9 +301,9 @@ data class ProposalDecision(val proposal: Proposal, val routine: Routine? = null
 sealed interface DocumentRow {
     data class Changed(val change: ProposalChange) : DocumentRow
     data class Unchanged(val kept: List<ProposalChange>) : DocumentRow {
-        val label: String
-            get() = if (kept.size == 1) "and 1 line unchanged" else "and ${kept.size} lines unchanged"
+        val said: Words get() = Words.Counted(R.plurals.gym_proposal_unchanged, kept.size, listOf(kept.size.toString()))
     }
 }
 
-data class FieldMove(val label: String, val before: String, val after: String)
+// One field's move. `scheme` is the whole scheme's, which the review sheet prints without its label.
+data class FieldMove(val field: Words, val was: Words, val becomes: Words, val scheme: Boolean = false)

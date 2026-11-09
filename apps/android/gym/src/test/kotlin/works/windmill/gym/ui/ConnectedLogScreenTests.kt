@@ -37,6 +37,8 @@ import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import works.windmill.gym.string
+import works.windmill.gym.R
 import works.windmill.gym.net.FakeGymRest
 import works.windmill.gym.net.GymRest
 import works.windmill.gym.presentation.ConnectedLog
@@ -59,11 +61,11 @@ class ConnectedLogScreenTests {
     val tmp = TemporaryFolder()
 
     private val firstPaint = listOf(
-        ConnectedLog.title, ConnectedLog.head,
-        LogLevel.Read.label, LogLevel.Read.meta,
-        LogLevel.Write.label, LogLevel.Write.meta,
-        LogLevel.Delete.label, LogLevel.Delete.meta,
-        ConnectedLog.caption, ConnectedLog.action, ConnectedLog.disclosure,
+        string(R.string.gym_connected_title), string(R.string.gym_connected_head),
+        string(LogLevel.Read.named), string(LogLevel.Read.reaches),
+        string(LogLevel.Write.named), string(LogLevel.Write.reaches),
+        string(LogLevel.Delete.named), string(LogLevel.Delete.reaches),
+        string(R.string.gym_connected_caption), string(R.string.gym_connected_action), string(R.string.gym_connected_disclosure),
     )
 
     private fun ms(date: String): Long =
@@ -110,9 +112,9 @@ class ConnectedLogScreenTests {
         screen(room(scope, FakeGymRest(), true).store, true, opened)
         firstPaint.forEach { compose.onNodeWithText(it).assertIsDisplayed() }
         compose.onNodeWithText("Manage connections").assertDoesNotExist()
-        compose.onNodeWithText(ConnectedLog.connectedHead).assertDoesNotExist()
-        ConnectedLog.how.forEach { compose.onNodeWithText(it).assertDoesNotExist() }
-        compose.onNodeWithText(ConnectedLog.action).performClick()
+        compose.onNodeWithText(string(R.string.gym_connected_connected_head)).assertDoesNotExist()
+        ConnectedLog.howItWorks.forEach { compose.onNodeWithText(string(it)).assertDoesNotExist() }
+        compose.onNodeWithText(string(R.string.gym_connected_action)).performClick()
         assertEquals(listOf("https://windmill.works/#/connect"), opened)
         scope.cancel()
     }
@@ -120,12 +122,12 @@ class ConnectedLogScreenTests {
     @Test fun emptyDisclosureIsAPushedPageAndBackReturnsToTheLevels() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         screen(room(scope, FakeGymRest(), true).store, true)
-        compose.onNodeWithText(ConnectedLog.disclosure).performScrollTo().performClick()
-        ConnectedLog.how.forEach { compose.onNodeWithText(it).performScrollTo().assertIsDisplayed() }
-        LogLevel.entries.forEach { compose.onNodeWithText(it.meta).assertDoesNotExist() }
-        compose.onNodeWithText(ConnectedLog.action).assertDoesNotExist()
+        compose.onNodeWithText(string(R.string.gym_connected_disclosure)).performScrollTo().performClick()
+        ConnectedLog.howItWorks.forEach { compose.onNodeWithText(string(it)).performScrollTo().assertIsDisplayed() }
+        LogLevel.entries.forEach { compose.onNodeWithText(string(it.reaches)).assertDoesNotExist() }
+        compose.onNodeWithText(string(R.string.gym_connected_action)).assertDoesNotExist()
         compose.onNodeWithContentDescription("Back to Connected log").performClick()
-        compose.onNodeWithText(ConnectedLog.head).assertIsDisplayed()
+        compose.onNodeWithText(string(R.string.gym_connected_head)).assertIsDisplayed()
         scope.cancel()
     }
 
@@ -136,21 +138,21 @@ class ConnectedLogScreenTests {
         server.keys += McpKey("k1", "", ms("2025-07-04"))
         val opened = mutableListOf<String>()
         screen(room(scope, server, true).store, true, opened)
-        compose.onNodeWithText(ConnectedLog.connectedHead).assertIsDisplayed()
+        compose.onNodeWithText(string(R.string.gym_connected_connected_head)).assertIsDisplayed()
         compose.onNodeWithText("Claude Desktop").assertIsDisplayed()
         compose.onNodeWithText("read · write · since 1 Dec 2025").assertIsDisplayed()
         compose.onNodeWithText("API key · whole account · since 4 Jul 2025").assertIsDisplayed()
-        LogLevel.entries.forEach { compose.onNodeWithText(it.meta).assertDoesNotExist() }
-        compose.onNodeWithText(ConnectedLog.caption).assertDoesNotExist()
-        compose.onNodeWithText(ConnectedLog.head).assertDoesNotExist()
+        LogLevel.entries.forEach { compose.onNodeWithText(string(it.reaches)).assertDoesNotExist() }
+        compose.onNodeWithText(string(R.string.gym_connected_caption)).assertDoesNotExist()
+        compose.onNodeWithText(string(R.string.gym_connected_head)).assertDoesNotExist()
         compose.onNodeWithText("Manage connections").assertDoesNotExist()
         compose.onNodeWithText("Claude Desktop").performClick()
-        compose.onNodeWithText(ConnectedLog.unnamedKey).performClick()
+        compose.onNodeWithText(string(R.string.gym_connected_unnamed_key)).performClick()
         assertEquals(List(2) { "https://windmill.works/#/settings" }, opened)
-        compose.onNodeWithText(ConnectedLog.disclosure).performClick()
-        ConnectedLog.how.forEach { compose.onNodeWithText(it).performScrollTo().assertIsDisplayed() }
-        LogLevel.entries.forEach { compose.onNodeWithText(it.meta).performScrollTo().assertIsDisplayed() }
-        compose.onNodeWithText(ConnectedLog.caption).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText(string(R.string.gym_connected_disclosure)).performClick()
+        ConnectedLog.howItWorks.forEach { compose.onNodeWithText(string(it)).performScrollTo().assertIsDisplayed() }
+        LogLevel.entries.forEach { compose.onNodeWithText(string(it.reaches)).performScrollTo().assertIsDisplayed() }
+        compose.onNodeWithText(string(R.string.gym_connected_caption)).performScrollTo().assertIsDisplayed()
         compose.onNodeWithContentDescription("Back to Connected log").performClick()
         compose.onNodeWithText("Claude Desktop").assertIsDisplayed()
         scope.cancel()
@@ -160,8 +162,8 @@ class ConnectedLogScreenTests {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val opened = mutableListOf<String>(); val signIns = mutableListOf<String>()
         screen(room(scope, FakeGymRest(), false).store, false, opened, signIns)
-        compose.onNodeWithText(ConnectedLog.head).assertIsDisplayed()
-        compose.onNodeWithText(ConnectedLog.actionSignedOut).performClick()
+        compose.onNodeWithText(string(R.string.gym_connected_head)).assertIsDisplayed()
+        compose.onNodeWithText(string(R.string.gym_connected_action_signed_out)).performClick()
         assertEquals(listOf("you"), signIns)
         assertEquals(emptyList<String>(), opened)
         scope.cancel()
@@ -175,16 +177,16 @@ class ConnectedLogScreenTests {
         server.refuseKeys = IllegalStateException("fixture unread")
         val store = room(scope, server, true).store
         screen(store, true)
-        compose.onNodeWithText(ConnectedLog.unread).assertIsDisplayed()
-        compose.onNodeWithText(ConnectedLog.head).assertDoesNotExist()
-        compose.onNodeWithText(ConnectedLog.connectedHead).assertDoesNotExist()
+        compose.onNodeWithText(string(R.string.gym_connected_unread)).assertIsDisplayed()
+        compose.onNodeWithText(string(R.string.gym_connected_head)).assertDoesNotExist()
+        compose.onNodeWithText(string(R.string.gym_connected_connected_head)).assertDoesNotExist()
         compose.onNodeWithText("Scoped").assertDoesNotExist()
-        LogLevel.entries.forEach { compose.onNodeWithText(it.meta).assertDoesNotExist() }
+        LogLevel.entries.forEach { compose.onNodeWithText(string(it.reaches)).assertDoesNotExist() }
         server.refuseKeys = null
         compose.onNodeWithText("Try again").performClick()
         compose.onNodeWithText("Scoped").assertIsDisplayed()
         compose.onNodeWithText("Static").assertIsDisplayed()
-        compose.onNodeWithText(ConnectedLog.unread).assertDoesNotExist()
+        compose.onNodeWithText(string(R.string.gym_connected_unread)).assertDoesNotExist()
         scope.cancel()
     }
 
@@ -192,11 +194,11 @@ class ConnectedLogScreenTests {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val server = FakeGymRest().apply { refuseGrants = WindmillApiException.Offline }
         screen(room(scope, server, true).store, true)
-        compose.onNodeWithText(ConnectedLog.offline).assertIsDisplayed()
-        compose.onNodeWithText(ConnectedLog.unread).assertDoesNotExist()
-        compose.onNodeWithText(ConnectedLog.head).assertDoesNotExist()
-        compose.onNodeWithText(ConnectedLog.disclosure).assertIsDisplayed()
-        compose.onNodeWithText(ConnectedLog.action).assertIsDisplayed()
+        compose.onNodeWithText(string(R.string.gym_connected_offline)).assertIsDisplayed()
+        compose.onNodeWithText(string(R.string.gym_connected_unread)).assertDoesNotExist()
+        compose.onNodeWithText(string(R.string.gym_connected_head)).assertDoesNotExist()
+        compose.onNodeWithText(string(R.string.gym_connected_disclosure)).assertIsDisplayed()
+        compose.onNodeWithText(string(R.string.gym_connected_action)).assertIsDisplayed()
         scope.cancel()
     }
 
@@ -255,9 +257,9 @@ class ConnectedLogScreenTests {
         }
         screen(room(scope, server, true).store, true)
         compose.onNodeWithText("Reading your connections…").assertIsDisplayed()
-        compose.onNodeWithText(ConnectedLog.head).assertDoesNotExist()
-        compose.onNodeWithText(ConnectedLog.connectedHead).assertDoesNotExist()
-        LogLevel.entries.forEach { compose.onNodeWithText(it.meta).assertDoesNotExist() }
+        compose.onNodeWithText(string(R.string.gym_connected_head)).assertDoesNotExist()
+        compose.onNodeWithText(string(R.string.gym_connected_connected_head)).assertDoesNotExist()
+        LogLevel.entries.forEach { compose.onNodeWithText(string(it.reaches)).assertDoesNotExist() }
         compose.runOnIdle { release.complete(Unit) }
         compose.onNodeWithText("Scoped").assertIsDisplayed()
         compose.onNodeWithText("Static").assertIsDisplayed()

@@ -1,5 +1,7 @@
 package works.windmill.gym.store
 
+import works.windmill.platform.i18n.Words
+import works.windmill.gym.R
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -9,7 +11,7 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.withLock
-import works.windmill.gym.store.TrainingSeat.Companion.accountChanged
+import works.windmill.gym.store.TrainingSeat.Companion.accountChange
 import works.windmill.platform.telemetry.Telemetry
 
 // Deletes and their way back. A set, routine or note goes at once; a weigh-in is held by the engine until its Undo
@@ -31,13 +33,13 @@ class DeletionsStore(
     // How long a weigh-in's Undo is offered. The room that shows the Undo sets it to the system's
     // accessibility timeout; the engine stamps each release from its own clock.
     var undoWindowMs: Long = undoWindowMs
-    var deleteRefused: String? by mutableStateOf(null)
+    var deleteRefusal: Words? by mutableStateOf(null)
         private set
 
     // A new seat keeps the weigh-in holds only when it is the same account's replica.
     internal fun forgetSeat(sameWeightSeat: Boolean) {
         if (!sameWeightSeat) held.withheld = emptyList()
-        deleteRefused = null
+        deleteRefusal = null
         held.deletedSets = emptySet()
     }
 
@@ -68,7 +70,7 @@ class DeletionsStore(
         val anonymous = owner == null
         return scope.async(start = CoroutineStart.UNDISPATCHED) {
             val failure = try {
-                if (owner != seat.owner || replica == null) WriteFailure.Refused(accountChanged)
+                if (owner != seat.owner || replica == null) WriteFailure.Refused(accountChange)
                 else when (deletion) {
                     is Deletion.Routine -> routines.dropRoutine(deletion.routineId, replica, anonymous)
                     is Deletion.Set -> workout.deleteSet(deletion.sessionId, deletion.set.id, replica, anonymous)
@@ -121,7 +123,7 @@ class DeletionsStore(
                     seat.reportFailure("gym.deleteWeighIn", failure)
                     if (owner == seat.owner && replica == training.engine.activeReplica()) {
                         weightAction("delete", if (WriteFailure(failure) is WriteFailure.Refused) "refused" else "failed")
-                        deleteRefused = WriteFailure(failure).line("that weigh-in is still on the log")
+                        deleteRefusal = WriteFailure(failure).says(R.string.gym_store_weigh_in_delete_no_answer)
                     }
                 }
             }
@@ -150,7 +152,7 @@ class DeletionsStore(
         } catch (failure: Exception) {
             weightAction("undo", "failed")
             seat.reportFailure("gym.deleteWeighIn", failure)
-            deleteRefused = WriteFailure(failure).line("Undo could not restore that weigh-in")
+            deleteRefusal = WriteFailure(failure).says(R.string.gym_store_weigh_in_undo_no_answer)
             return null
         }
     }
@@ -172,6 +174,6 @@ class DeletionsStore(
     }
 
     fun clearDeleteRefused() {
-        deleteRefused = null
+        deleteRefusal = null
     }
 }

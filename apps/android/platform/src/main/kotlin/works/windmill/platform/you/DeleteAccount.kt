@@ -21,6 +21,7 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
@@ -36,6 +37,7 @@ import kotlinx.coroutines.launch
 import works.windmill.platform.R
 import works.windmill.platform.design.LocalWindmillDark
 import works.windmill.platform.design.LocalWindmillPalette
+import works.windmill.platform.i18n.pluralString
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -62,45 +64,44 @@ fun DeleteAccount(store: AccountDeletionStore, onExit: (Boolean) -> Unit) {
     Column(Modifier.fillMaxSize().background(palette.canvas).statusBarsPadding().navigationBarsPadding().imePadding()
         .testTag("account-deletion-page")) {
         if (page != AccountDeletionPage.Deleted) TopAppBar(
-            title = { Text("Delete account", style = WindmillType.headline, color = palette.ink) },
+            title = { Text(stringResource(R.string.platform_delete_account), style = WindmillType.headline, color = palette.ink) },
             navigationIcon = { IconButton(onClick = ::exit, enabled = !store.busy, modifier = Modifier.size(48.dp)) {
                 Icon(painterResource(if (dark) R.drawable.account_delete_back else R.drawable.account_delete_back_light),
-                    "Back", Modifier.size(24.dp), tint = if (store.busy) palette.ink.copy(alpha = .38f) else palette.ink)
+                    stringResource(R.string.platform_back), Modifier.size(24.dp), tint = if (store.busy) palette.ink.copy(alpha = .38f) else palette.ink)
             } }, expandedHeight = 64.dp, windowInsets = WindowInsets(0, 0, 0, 0),
             colors = TopAppBarDefaults.topAppBarColors(containerColor = palette.canvas))
         if (confirming) Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp).padding(top = 8.dp, bottom = 8.dp)) {
-            Text("Delete your account?", style = WindmillType.sheetTitle, color = palette.ink)
+            Text(stringResource(R.string.platform_delete_question), style = WindmillType.sheetTitle, color = palette.ink)
             Column(Modifier.padding(top = 12.dp, bottom = 8.dp)) {
                 DeletionFact(if (dark) R.drawable.account_delete_delete else R.drawable.account_delete_delete_light,
-                    "This deletes your Windmill account and its copy in the cloud: your roadmaps, journal pages and gym log.")
+                    stringResource(R.string.platform_delete_fact_cloud))
                 DeletionFact(if (dark) R.drawable.account_delete_move_item else R.drawable.account_delete_move_item_light,
-                    "Every device signs out, and connected tools lose access, right away.")
+                    stringResource(R.string.platform_delete_fact_devices))
                 DeletionFact(if (dark) R.drawable.account_delete_schedule else R.drawable.account_delete_schedule_light,
-                    "For 30 days, you can sign in again to bring it all back. After that, it is deleted for good.")
+                    stringResource(R.string.platform_delete_fact_grace))
                 DeletionFact(if (dark) R.drawable.account_delete_download else R.drawable.account_delete_download_light,
-                    "To keep a copy, export it first at windmill.works.")
+                    stringResource(R.string.platform_delete_fact_export))
                 if (store.count > 0) DeletionFact(if (dark) R.drawable.account_delete_cloud_off else R.drawable.account_delete_cloud_off_light,
-                    if (store.count == 1) "1 change on this phone hasn’t been confirmed by your account. It is deleted too."
-                    else "${store.count} changes on this phone haven’t been confirmed by your account. They are deleted too.")
+                    pluralString(R.plurals.platform_delete_unconfirmed_changes, store.count, store.count.toString()))
             }
-            Text("Type your email to confirm", style = WindmillType.detailLabel, color = palette.inkDim)
+            Text(stringResource(R.string.platform_delete_type_email), style = WindmillType.detailLabel, color = palette.inkDim)
             Spacer(Modifier.height(10.dp))
             MaterialTheme(colorScheme = if (dark) darkColorScheme() else lightColorScheme()) {
                 OutlinedTextField(store.email, store::type, modifier = Modifier.fillMaxWidth().testTag("deletion-email"),
-                    label = { Text("Email") }, singleLine = true, enabled = !store.busy,
+                    label = { Text(stringResource(R.string.platform_email)) }, singleLine = true, enabled = !store.busy,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, imeAction = ImeAction.Done),
                     shape = RoundedCornerShape(4.dp))
             }
             val failure = store.failure
-            Text(failure?.sentence.orEmpty(), (if (failure == null) Modifier.height(0.dp) else Modifier.padding(top = 10.dp))
+            Text(failure?.let { stringResource(it.sentence) }.orEmpty(), (if (failure == null) Modifier.height(0.dp) else Modifier.padding(top = 10.dp))
                 .testTag("deletion-failure").semantics { liveRegion = LiveRegionMode.Polite },
                 style = WindmillType.detail, color = scheme.error)
             if (failure == AccountDeletionFailure.Clock) TextButton(
                     onClick = { store.openDateSettings { context.startActivity(Intent(Settings.ACTION_DATE_SETTINGS)) } },
                     enabled = !store.busy, modifier = Modifier.padding(top = 4.dp).heightIn(min = 48.dp),
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
-                    colors = ButtonDefaults.textButtonColors(contentColor = palette.ink)) { Text("Date & time") }
+                    colors = ButtonDefaults.textButtonColors(contentColor = palette.ink)) { Text(stringResource(R.string.platform_delete_date_time)) }
         } else BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
             val height = maxHeight
             if (page == AccountDeletionPage.Deleted) Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
@@ -109,27 +110,27 @@ fun DeleteAccount(store: AccountDeletionStore, onExit: (Boolean) -> Unit) {
                 Icon(painterResource(if (dark) R.drawable.account_delete_check else R.drawable.account_delete_check_light),
                     null, Modifier.size(48.dp), tint = Color.Unspecified)
                 Spacer(Modifier.height(12.dp))
-                Text("Your account is deleted", style = WindmillType.outcomeTitle,
+                Text(stringResource(R.string.platform_delete_done_title), style = WindmillType.outcomeTitle,
                     color = palette.ink, textAlign = TextAlign.Center)
                 Spacer(Modifier.height(12.dp))
                 store.deletedReceipt?.let { receipt ->
                     val deadline = remember(receipt) { DateTimeFormatter.ofPattern("MMM d", Locale.getDefault())
                         .withZone(ZoneId.systemDefault()).format(Instant.ofEpochMilli(receipt.closesMs)) }
-                    Text("Sign in before $deadline to bring it back.", style = WindmillType.paragraphSmall,
+                    Text(stringResource(R.string.platform_delete_sign_in_before, deadline), style = WindmillType.paragraphSmall,
                         color = palette.inkDim, textAlign = TextAlign.Center)
                 }
             } else Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp)
                 .padding(top = 172.dp, bottom = 24.dp).semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite },
                 verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 val message = when (page) {
-                    AccountDeletionPage.TemporarilyUnavailable -> "Can’t check yet" to "Your account may already be closed. Try checking again when your connection is back."
-                    AccountDeletionPage.Unavailable -> "Confirmation unavailable" to "We can’t confirm the result on this phone. Signing in may restore a closing account."
-                    AccountDeletionPage.NotDeleted -> "Your account wasn’t deleted" to "The request didn’t reach Windmill in time, so nothing changed. Your account works as before."
-                    AccountDeletionPage.Cleanup -> "Finishing deletion" to "Your account is closed. This phone still needs to remove its local copy."
-                    else -> "Checking deletion" to "Your account may already be closed. We’re waiting for confirmation."
+                    AccountDeletionPage.TemporarilyUnavailable -> R.string.platform_delete_cant_check_title to R.string.platform_delete_cant_check_body
+                    AccountDeletionPage.Unavailable -> R.string.platform_delete_unavailable_title to R.string.platform_delete_unavailable_body
+                    AccountDeletionPage.NotDeleted -> R.string.platform_delete_not_deleted_title to R.string.platform_delete_not_deleted_body
+                    AccountDeletionPage.Cleanup -> R.string.platform_delete_cleanup_title to R.string.platform_delete_cleanup_body
+                    else -> R.string.platform_delete_checking_title to R.string.platform_delete_checking_body
                 }
-                Text(message.first, style = WindmillType.outcomeTitle, color = palette.ink)
-                Text(message.second, style = WindmillType.paragraphSmall, color = palette.inkDim)
+                Text(stringResource(message.first), style = WindmillType.outcomeTitle, color = palette.ink)
+                Text(stringResource(message.second), style = WindmillType.paragraphSmall, color = palette.inkDim)
             }
         }
         Column(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 8.dp),
@@ -154,19 +155,19 @@ fun DeleteAccount(store: AccountDeletionStore, onExit: (Boolean) -> Unit) {
                     CircularProgressIndicator(Modifier.size(20.dp), color = ink, strokeWidth = 2.dp)
                     Spacer(Modifier.width(12.dp))
                 }
-                Text(when (page) {
-                    AccountDeletionPage.Deleting -> "Deleting…"
-                    AccountDeletionPage.Confirm -> if (store.failure == null) "Delete account" else "Try again"
-                    AccountDeletionPage.NotDeleted -> "Try again"
-                    AccountDeletionPage.Deleted -> "Done"
-                    AccountDeletionPage.Unavailable -> "Back to You"
-                    AccountDeletionPage.Cleanup -> "Retry cleanup"
-                    else -> "Check again"
-                }, style = WindmillType.labelParagraph)
+                Text(stringResource(when (page) {
+                    AccountDeletionPage.Deleting -> R.string.platform_delete_deleting
+                    AccountDeletionPage.Confirm -> if (store.failure == null) R.string.platform_delete_account else R.string.platform_try_again
+                    AccountDeletionPage.NotDeleted -> R.string.platform_try_again
+                    AccountDeletionPage.Deleted -> R.string.platform_done
+                    AccountDeletionPage.Unavailable -> R.string.platform_back_to_you
+                    AccountDeletionPage.Cleanup -> R.string.platform_delete_retry_cleanup
+                    else -> R.string.platform_delete_check_again
+                }), style = WindmillType.labelParagraph)
             }
             if (!single) TextButton(onClick = ::exit, enabled = !store.busy, modifier = Modifier.heightIn(min = 48.dp),
                 colors = ButtonDefaults.textButtonColors(contentColor = palette.ink)) {
-                Text(if (confirming) "Cancel" else "Back to You")
+                Text(stringResource(if (confirming) R.string.platform_cancel else R.string.platform_back_to_you))
             }
         }
     }

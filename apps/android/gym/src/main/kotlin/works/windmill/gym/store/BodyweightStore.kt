@@ -1,5 +1,7 @@
 package works.windmill.gym.store
 
+import works.windmill.platform.i18n.Words
+import works.windmill.gym.R
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -8,7 +10,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import works.windmill.gym.presentation.Bodyweight
 import works.windmill.gym.presentation.WeighIn
-import works.windmill.gym.store.TrainingSeat.Companion.accountChanged
+import works.windmill.gym.store.TrainingSeat.Companion.accountChange
 import works.windmill.platform.telemetry.Telemetry
 
 // The weigh-in series of the seat in hand, and the series as every reader draws it.
@@ -59,20 +61,20 @@ class BodyweightStore(
     }
 
     suspend fun weighIn(dateLocal: String, weightKg: Double): WriteFailure? {
-        if (!seat.workoutAuthorized) return WriteFailure.Refused(accountChanged)
+        if (!seat.workoutAuthorized) return WriteFailure.Refused(accountChange)
         if (!weightKg.isFinite() || weightKg !in Bodyweight.minKg..Bodyweight.maxKg)
-            return WriteFailure.Refused(Bodyweight.outOfRange)
+            return WriteFailure.Refused(Bodyweight.outsideRange)
         val date = runCatching { java.time.LocalDate.parse(dateLocal) }.getOrNull()
-            ?: return WriteFailure.Refused("Choose a date.")
-        Bodyweight.dated(date, Bodyweight.today(now()))?.let { return WriteFailure.Refused(it) }
+            ?: return WriteFailure.Refused(Words.Message(R.string.gym_store_choose_date))
+        Bodyweight.dateRefusal(date, Bodyweight.today(now()))?.let { return WriteFailure.Refused(it) }
         val owner = seat.owner
         val replica = controls.engineReplica
         val anonymous = owner == null
         return bodyweightWrite.withLock {
-            if (!seat.workoutAuthorized || owner != seat.owner || replica == null) return@withLock WriteFailure.Refused(accountChanged)
+            if (!seat.workoutAuthorized || owner != seat.owner || replica == null) return@withLock WriteFailure.Refused(accountChange)
             try {
                 val saved = training.putBodyweight(dateLocal, weightKg, replica, anonymous)
-                if (owner != seat.owner) return@withLock WriteFailure.Refused(accountChanged)
+                if (owner != seat.owner) return@withLock WriteFailure.Refused(accountChange)
                 // A successful whole-record rewrite retires this day's receipt projection.
                 held.release(dateLocal)?.let {
                     telemetry.event("gym_action", mapOf("screen" to "bodyweight", "action" to "cancel", "outcome" to "rewritten"))

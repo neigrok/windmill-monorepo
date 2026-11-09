@@ -1,5 +1,7 @@
 package works.windmill.gym.coach
 
+import works.windmill.platform.i18n.text
+import androidx.test.core.app.ApplicationProvider
 import android.app.Application
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -283,10 +285,10 @@ class CoachBubbleTests {
             val now = Instant.parse("2026-10-28T19:00:00Z").toEpochMilli()
             val today = Instant.parse("2026-10-28T18:40:00Z").toEpochMilli()
             val yesterday = Instant.parse("2026-10-27T19:02:00Z").toEpochMilli()
-            assertEquals("Today 18:40", coachTimestamp(today, now, true, ZoneOffset.UTC))
-            assertEquals("Today 6:40 PM", coachTimestamp(today, now, false, ZoneOffset.UTC))
-            assertEquals("Yesterday 19:02", coachTimestamp(yesterday, now, true, ZoneOffset.UTC))
-            assertNull(coachTimestamp(0, now, true, ZoneOffset.UTC))
+            assertEquals("Today 18:40", coachTimestamp(today, now, true, ZoneOffset.UTC)?.text(ApplicationProvider.getApplicationContext()))
+            assertEquals("Today 6:40 PM", coachTimestamp(today, now, false, ZoneOffset.UTC)?.text(ApplicationProvider.getApplicationContext()))
+            assertEquals("Yesterday 19:02", coachTimestamp(yesterday, now, true, ZoneOffset.UTC)?.text(ApplicationProvider.getApplicationContext()))
+            assertNull(coachTimestamp(0, now, true, ZoneOffset.UTC)?.text(ApplicationProvider.getApplicationContext()))
         } finally { Locale.setDefault(previous) }
     }
 }

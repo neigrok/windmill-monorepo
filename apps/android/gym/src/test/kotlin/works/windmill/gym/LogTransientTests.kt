@@ -32,7 +32,7 @@ import org.robolectric.annotation.GraphicsMode
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.shadows.ShadowDialog
 import java.time.LocalDate
-import works.windmill.gym.presentation.Bodyweight
+import works.windmill.gym.R
 import works.windmill.gym.store.*
 import works.windmill.gym.ui.GymMaterial
 import works.windmill.platform.design.LocalWindmillDark
@@ -71,33 +71,33 @@ class LogTransientTests {
                 }
             }
             compose.onNode(hasText("The log") and hasClickAction()).performClick()
-            val before = compose.onNodeWithContentDescription(Bodyweight.chip).getBoundsInRoot()
+            val before = compose.onNodeWithContentDescription(string(R.string.gym_bodyweight_chip)).getBoundsInRoot()
             compose.runOnIdle { store.deletions.withhold(Deletion.Bodyweight(one)); store.deletions.withhold(Deletion.Bodyweight(two)) }
-            compose.onNodeWithText(Withheld.undo).assertIsDisplayed()
+            compose.onNodeWithText(string(R.string.gym_room_undo)).assertIsDisplayed()
             val snackbar = compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsProperties.LiveRegion) and
                 SemanticsMatcher.keyIsDefined(SemanticsActions.Dismiss), useUnmergedTree = true)
                 .getBoundsInRoot()
-            val action = compose.onNodeWithContentDescription(Bodyweight.chip).assertIsDisplayed().getBoundsInRoot()
+            val action = compose.onNodeWithContentDescription(string(R.string.gym_bodyweight_chip)).assertIsDisplayed().getBoundsInRoot()
             assertEquals("Weigh in never moves for the transient", before, action)
             assertTrue("Undo must rise above Weigh in: $snackbar / $action", snackbar.bottom <= action.top)
             assertTrue(action.height >= 56.dp)
-            compose.onNodeWithContentDescription(Bodyweight.chip).performClick()
-            compose.onNodeWithText(Bodyweight.save).assertIsDisplayed()
+            compose.onNodeWithContentDescription(string(R.string.gym_bodyweight_chip)).performClick()
+            compose.onNodeWithText(string(R.string.gym_bodyweight_save)).assertIsDisplayed()
             compose.runOnIdle { (ShadowDialog.getLatestDialog() as ComponentDialog).onBackPressedDispatcher.onBackPressed() }
-            compose.onNodeWithText(Withheld.undo).performClick()
+            compose.onNodeWithText(string(R.string.gym_room_undo)).performClick()
             compose.runOnIdle {
                 assertEquals(listOf(one), store.held.withheld.map { it.subjectId })
                 assertEquals(listOf(two), store.bodyweight.drawn.map { it.dateLocal })
             }
-            assertEquals(before, compose.onNodeWithContentDescription(Bodyweight.chip).assertIsDisplayed().getBoundsInRoot())
-            compose.onNodeWithText(Withheld.undo).performClick()
+            assertEquals(before, compose.onNodeWithContentDescription(string(R.string.gym_bodyweight_chip)).assertIsDisplayed().getBoundsInRoot())
+            compose.onNodeWithText(string(R.string.gym_room_undo)).performClick()
             compose.waitForIdle()
             compose.runOnIdle {
                 assertEquals(emptyList<WithheldDelete>(), store.held.withheld)
                 assertEquals(weighed, store.bodyweight.drawn)
                 assertEquals(emptyList<Any>(), room.engine.undoOffers())
             }
-            assertEquals(before, compose.onNodeWithContentDescription(Bodyweight.chip).getBoundsInRoot())
+            assertEquals(before, compose.onNodeWithContentDescription(string(R.string.gym_bodyweight_chip)).getBoundsInRoot())
         } finally {
             compose.runOnIdle { showing = false }
             compose.waitForIdle()
@@ -128,19 +128,19 @@ class LogTransientTests {
                 assertEquals(20_000L, store.deletions.undoWindowMs)
                 room.now.also { store.deletions.withhold(Deletion.Bodyweight(day)) }
             }
-            compose.onNodeWithText(Withheld.undo).assertIsDisplayed()
+            compose.onNodeWithText(string(R.string.gym_room_undo)).assertIsDisplayed()
             compose.runOnIdle {
                 assertEquals(listOf(day to at + 20_000), store.held.withheld.map { it.subjectId to it.untilMs })
                 room.now = at + 15_000
             }
-            compose.onNodeWithText(Withheld.undo).performClick()
+            compose.onNodeWithText(string(R.string.gym_room_undo)).performClick()
             compose.waitForIdle()
             compose.runOnIdle {
                 assertEquals(emptyList<WithheldDelete>(), store.held.withheld)
                 assertEquals(weighed, store.bodyweight.drawn)
                 assertEquals(emptyList<Any>(), room.engine.undoOffers())
             }
-            compose.onNodeWithText(Withheld.alreadyGone).assertDoesNotExist()
+            compose.onNodeWithText(string(R.string.gym_room_undo_closed)).assertDoesNotExist()
         } finally {
             compose.runOnIdle { showing = false }
             compose.waitForIdle()

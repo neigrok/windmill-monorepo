@@ -3,42 +3,38 @@ package works.windmill.gym.store
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import works.windmill.gym.R
 import works.windmill.gym.presentation.Readout
+import works.windmill.platform.i18n.Words
 import works.windmill.gym.presentation.TrainingSet
 import works.windmill.gym.presentation.WeighIn
 
 sealed interface Deletion {
     val subjectId: String
 
-    val line: String
-
-    val stillThere: String?
+    val words: Words
 
     data class Set(val sessionId: String, val set: TrainingSet) : Deletion {
         override val subjectId: String get() = set.id
-        override val line: String
-            get() = "${Readout.weight(set.weightKg)} kg × ${set.reps} is out of the log."
-        override val stillThere: String get() = "that set is still on the log"
+        override val words: Words
+            get() = Words.Message(R.string.gym_store_set_deleted, listOf(Readout.weight(set.weightKg), set.reps.toString()))
     }
 
     data class Routine(val routineId: String, val name: String) : Deletion {
         override val subjectId: String get() = routineId
-        override val line: String get() = "$name deleted."
-        override val stillThere: String get() = "$name is still in your program"
+        override val words: Words get() = Words.Message(R.string.gym_store_routine_deleted, listOf(name))
     }
 
     data class Note(val noteId: String, val origin: Origin = Origin.List) : Deletion {
         enum class Origin(val screen: String) { List("notes"), Editor("note_editor") }
 
         override val subjectId: String get() = noteId
-        override val line: String get() = "Note deleted."
-        override val stillThere: String get() = "that note is still here"
+        override val words: Words get() = Words.Message(R.string.gym_store_note_deleted)
     }
 
     data class Bodyweight(val dateLocal: String) : Deletion {
         override val subjectId: String get() = dateLocal
-        override val line: String get() = "Weigh-in deleted."
-        override val stillThere: String? get() = null
+        override val words: Words get() = Words.Message(R.string.gym_store_weigh_in_deleted)
     }
 
 }
@@ -76,13 +72,9 @@ object Withheld {
 
     fun window(recommendedMs: Long): Long = maxOf(windowMs, recommendedMs)
 
-    const val undo = "Undo"
-
-    const val alreadyGone = "The Undo window closed."
-
-    fun line(held: List<WithheldDelete>): String? = when (held.size) {
+    fun words(held: List<WithheldDelete>): Words? = when (held.size) {
         0 -> null
-        1 -> held.single().deletion.line
-        else -> "${held.size} deleted."
+        1 -> held.single().deletion.words
+        else -> Words.Counted(R.plurals.gym_store_deleted, held.size, listOf(held.size.toString()))
     }
 }

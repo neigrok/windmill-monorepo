@@ -1,5 +1,7 @@
 package works.windmill.gym.store
 
+import works.windmill.platform.i18n.Words
+import works.windmill.gym.R
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -79,7 +81,7 @@ class SharingStore(
     // Both answer with what went wrong: a link that was not made and one still live after a failed
     // revoke are both facts a lifter has to be told.
     suspend fun share(sessionId: String): GymResult<SessionShare> {
-        val links = rest() ?: return GymResult.Failed(WriteFailure.Refused(signInFirst))
+        val links = rest() ?: return GymResult.Failed(WriteFailure.Refused(needsSignIn))
         return try {
             GymResult.Ok(links.share(sessionId))
         } catch (interrupted: CancellationException) {
@@ -91,7 +93,7 @@ class SharingStore(
     }
 
     suspend fun revokeShare(sessionId: String): WriteFailure? {
-        val links = rest() ?: return WriteFailure.Refused(signInFirst)
+        val links = rest() ?: return WriteFailure.Refused(needsSignIn)
         return try {
             links.revokeShare(sessionId)
             null
@@ -104,6 +106,6 @@ class SharingStore(
     }
 
     internal companion object {
-        const val signInFirst = "Sign in first."
+        val needsSignIn: Words = Words.Message(R.string.gym_store_sign_in_first)
     }
 }

@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="gym_readout_zero">zero</string>
+    <string name="gym_readout_one">one</string>
+    <string name="gym_readout_two">two</string>
+    <string name="gym_readout_three">three</string>
+    <string name="gym_readout_four">four</string>
+    <string name="gym_readout_five">five</string>
+    <string name="gym_readout_six">six</string>
+    <string name="gym_readout_seven">seven</string>
+    <string name="gym_readout_eight">eight</string>
+    <string name="gym_readout_nine">nine</string>
+    <string name="gym_readout_ten">ten</string>
+    <plurals name="gym_readout_reps">
+        <item quantity="one">%1$s rep</item>
+        <item quantity="other">%1$s reps</item>
+    </plurals>
+    <!-- A rep target left to the lifter, as many as they can: 100 × max. -->
+    <string name="gym_readout_max">max</string>
+    <!-- A load taken from last time's set: last × 5. -->
+    <string name="gym_readout_last">last</string>
+    <!-- A movement's targets before any set is planned. -->
+    <string name="gym_readout_open">open</string>
+    <string name="gym_readout_set">%1$s × %2$s</string>
+    <string name="gym_readout_scheme">%1$s × %2$s</string>
+    <string name="gym_readout_scheme_load">%1$s × %2$s · %3$s</string>
+    <string name="gym_readout_scheme_kg">%1$skg</string>
+    <string name="gym_readout_scheme_unit">%1$s %2$s</string>
+    <string name="gym_readout_reps_to_max">%1$s–max</string>
+    <string name="gym_readout_load_to_last">%1$s–last</string>
+    <string name="gym_readout_free_workout">Free workout</string>
+    <string name="gym_readout_e1rm">e1RM %1$s</string>
+    <string name="gym_readout_today_at">today · %1$s</string>
+    <string name="gym_readout_today">today</string>
+    <string name="gym_readout_yesterday">yesterday</string>
+    <plurals name="gym_readout_days_ago">
+        <item quantity="one">%1$s day ago</item>
+        <item quantity="other">%1$s days ago</item>
+    </plurals>
+    <string name="gym_readout_minutes_short">%1$sm</string>
+    <string name="gym_readout_hours_short">%1$sh %2$sm</string>
+    <plurals name="gym_readout_sets">
+        <item quantity="one">%1$s set</item>
+        <item quantity="other">%1$s sets</item>
+    </plurals>
+    <plurals name="gym_readout_workouts">
+        <item quantity="one">%1$s workout</item>
+        <item quantity="other">%1$s workouts</item>
+    </plurals>
+    <!-- A weekday's short name, as a day reads: Sun 3 Nov. -->
+    <string name="gym_readout_weekday_sun">Sun</string>
+    <string name="gym_readout_weekday_mon">Mon</string>
+    <string name="gym_readout_weekday_tue">Tue</string>
+    <string name="gym_readout_weekday_wed">Wed</string>
+    <string name="gym_readout_weekday_thu">Thu</string>
+    <string name="gym_readout_weekday_fri">Fri</string>
+    <string name="gym_readout_weekday_sat">Sat</string>
+    <!-- A month's short name, as a date reads: 3 Nov 2026. -->
+    <string name="gym_readout_month_jan">Jan</string>
+    <string name="gym_readout_month_feb">Feb</string>
+    <string name="gym_readout_month_mar">Mar</string>
+    <string name="gym_readout_month_apr">Apr</string>
+    <string name="gym_readout_month_may">May</string>
+    <string name="gym_readout_month_jun">Jun</string>
+    <string name="gym_readout_month_jul">Jul</string>
+    <string name="gym_readout_month_aug">Aug</string>
+    <string name="gym_readout_month_sep">Sep</string>
+    <string name="gym_readout_month_oct">Oct</string>
+    <string name="gym_readout_month_nov">Nov</string>
+    <string name="gym_readout_month_dec">Dec</string>
+    <!-- A day: the weekday, the day of the month and the month: Sun 3 Nov. -->
+    <string name="gym_readout_day">%1$s %2$s %3$s</string>
+    <!-- A date within its year: the day of the month and the month: 3 Nov. -->
+    <string name="gym_readout_day_month">%1$s %2$s</string>
+    <!-- A date: the day of the month, the month and the year: 3 Nov 2026. -->
+    <string name="gym_readout_date">%1$s %2$s %3$s</string>
+    <!-- A clock time on the 12-hour clock, before noon and after: 9:05 AM, 7:30 PM. -->
+    <string name="gym_readout_time_am">%1$s AM</string>
+    <string name="gym_readout_time_pm">%1$s PM</string>
+    <string name="gym_readout_kg">kg</string>
+    <string name="gym_readout_kilograms">%1$s kg</string>
+</resources>

@@ -18,6 +18,8 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import org.junit.rules.TemporaryFolder
+import works.windmill.gym.string
+import works.windmill.gym.R
 import works.windmill.gym.presentation.ConnectedLog
 import works.windmill.gym.presentation.LogLevel
 import works.windmill.gym.net.FakeGymRest
@@ -42,16 +44,16 @@ class ConnectedLogLayoutTests {
                     GymMaterial { remember(room.store) { ConnectionsBinding(room.store) }.let { connections -> ConnectedLogScreen(connections, connections, true, "https://windmill.works", "Settings", {}, {}) } }
                 }
             }
-            for (text in LogLevel.entries.map { it.meta } + ConnectedLog.caption) {
+            for (text in LogLevel.entries.map { string(it.reaches) } + string(R.string.gym_connected_caption)) {
                 compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText(text))
                 compose.onNodeWithText(text).performScrollTo().assertIsDisplayed()
             }
-            val action = compose.onNodeWithText(ConnectedLog.action).assertIsDisplayed()
+            val action = compose.onNodeWithText(string(R.string.gym_connected_action)).assertIsDisplayed()
             assertTrue(action.getBoundsInRoot().height >= 56.dp)
-            compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText(ConnectedLog.disclosure))
-            compose.onNodeWithText(ConnectedLog.disclosure).performScrollTo().performClick()
-            compose.onNodeWithText(ConnectedLog.action).assertDoesNotExist()
-            for (text in ConnectedLog.how) {
+            compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText(string(R.string.gym_connected_disclosure)))
+            compose.onNodeWithText(string(R.string.gym_connected_disclosure)).performScrollTo().performClick()
+            compose.onNodeWithText(string(R.string.gym_connected_action)).assertDoesNotExist()
+            for (text in ConnectedLog.howItWorks.map { string(it) }) {
                 compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText(text))
                 val node = compose.onNodeWithText(text).performScrollTo().assertIsDisplayed()
                 val layouts = mutableListOf<TextLayoutResult>()
@@ -65,7 +67,7 @@ class ConnectedLogLayoutTests {
                 }
             }
             compose.onNodeWithContentDescription("Back to Connected log").performClick()
-            compose.onNodeWithText(ConnectedLog.action).assertIsDisplayed()
+            compose.onNodeWithText(string(R.string.gym_connected_action)).assertIsDisplayed()
         }
         scope.cancel()
     }

@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="gym_logger_finish">Finish</string>
+    <string name="gym_logger_coach">Coach</string>
+    <string name="gym_logger_hide_workout">Hide workout</string>
+    <string name="gym_logger_picker_title">What are you lifting?</string>
+    <string name="gym_logger_picker_plan_walked">nothing in this plan is left to walk</string>
+    <string name="gym_logger_workout_changed_reopen">The workout changed. Open this again.</string>
+    <string name="gym_logger_check_before_logging">Check the weight and reps before logging.</string>
+    <string name="gym_logger_add_movement">Add movement</string>
+    <string name="gym_logger_workout_closed">that workout is no longer open</string>
+    <string name="gym_logger_open_this_workout">open this workout</string>
+    <string name="gym_logger_previous_movement">Previous movement</string>
+    <string name="gym_logger_next_movement">Next movement</string>
+    <string name="gym_logger_fix_this_set">fix this set</string>
+    <string name="gym_logger_log_set">Log set</string>
+    <string name="gym_logger_workout_time">Workout time</string>
+    <string name="gym_logger_clock_spoken">%1$s, %2$s</string>
+
+    <string name="gym_logger_this_workout">This workout</string>
+    <string name="gym_logger_remove_movement">Remove movement</string>
+    <string name="gym_logger_movement_not_removed">The movement could not be removed. Check the current workout.</string>
+    <string name="gym_logger_reorder_named">Reorder %1$s</string>
+    <string name="gym_logger_walk_to_named">walk to %1$s</string>
+    <string name="gym_logger_just_added">Just added</string>
+    <string name="gym_logger_current_movement">Current movement</string>
+    <string name="gym_logger_just_added_current">Just added, Current movement</string>
+    <string name="gym_logger_notification_off">Notification off</string>
+    <string name="gym_logger_show">Show</string>
+
+    <!-- A noun: the weight a set is lifted at. -->
+    <string name="gym_logger_load">Load</string>
+    <string name="gym_logger_reps">Reps</string>
+    <string name="gym_logger_reps_unit">reps</string>
+
+    <string name="gym_logger_stepper_spoken">%1$s, %2$s</string>
+    <string name="gym_logger_decrease">Decrease</string>
+    <string name="gym_logger_increase">Increase</string>
+    <string name="gym_logger_decrease_named">Decrease %1$s</string>
+    <string name="gym_logger_increase_named">Increase %1$s</string>
+
+    <string name="gym_logger_workout_in_progress">%1$s, in progress</string>
+
+    <string name="gym_logger_saving">Saving…</string>
+
+    <string name="gym_logger_discard_workout_title">Discard this workout?</string>
+    <plurals name="gym_logger_discard_workout_body">
+        <item quantity="one">This deletes the workout and its %1$s set. You can’t undo this.</item>
+        <item quantity="other">This deletes the workout and its %1$s sets. You can’t undo this.</item>
+    </plurals>
+    <string name="gym_logger_workout_changed_check">The workout changed. Check the current set.</string>
+    <plurals name="gym_logger_assembly_logged">
+        <item quantity="one">%1$s set logged · %2$s</item>
+        <item quantity="other">%1$s sets logged · %2$s</item>
+    </plurals>
+</resources>

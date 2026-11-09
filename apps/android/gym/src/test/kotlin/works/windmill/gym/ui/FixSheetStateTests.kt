@@ -20,6 +20,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
+import works.windmill.gym.string
 import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.store.FixOrigin
 import works.windmill.platform.telemetry.Telemetry
@@ -31,11 +32,13 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import works.windmill.gym.presentation.NumberEntry
+import works.windmill.gym.R
+import works.windmill.gym.presentation.LoggedSetLimits
 import works.windmill.gym.presentation.SetFix
 import works.windmill.gym.presentation.TrainingSet
 import works.windmill.gym.store.FixOutcome
 import works.windmill.gym.store.WriteFailure
+import works.windmill.platform.i18n.Words
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
@@ -92,7 +95,7 @@ class FixSheetStateTests {
         restorer.setContent {
             FixSheet(set, "Bench Press", 3, "Push A", onSave = {
                 attempts += it
-                FixOutcome.Failed(WriteFailure.Refused("This workout belongs to another account."))
+                FixOutcome.Failed(WriteFailure.Refused(Words.Plain("This workout belongs to another account.")))
             }, onDelete = {}, onEntryCancel = { cancel = it }, onClose = {})
         }
         compose.onNodeWithText("Set note").performTextInput("controlled tempo")
@@ -100,7 +103,7 @@ class FixSheetStateTests {
         compose.onNodeWithContentDescription("Load, kg").performImeAction()
         restorer.emulateSavedInstanceStateRestore()
         compose.onNodeWithText("1e999").assertIsDisplayed()
-        compose.onNodeWithText(NumberEntry.notANumber).assertIsDisplayed()
+        compose.onNodeWithText(string(R.string.gym_entry_not_a_number)).assertIsDisplayed()
         compose.onNodeWithContentDescription("Load, kg").performClick()
         compose.onNodeWithContentDescription("Reps").performClick()
         compose.onNodeWithText("1e999").assertIsDisplayed()
@@ -122,7 +125,7 @@ class FixSheetStateTests {
         var saves = 0
         compose.setContent {
             FixSheet(set, "Bench Press", 7, null,
-                onSave = { FixOutcome.Gone("That set is no longer in the log.") },
+                onSave = { FixOutcome.Gone(Words.Plain("That set is no longer in the log.")) },
                 onDelete = {}, onSaved = { saves++ }, onGone = { missing += it }, onClose = {})
         }
         compose.onNodeWithText("Save fix").performClick()
@@ -148,9 +151,9 @@ class FixSheetStateTests {
         compose.onNodeWithContentDescription("Reps").performImeAction()
         compose.runOnIdle { set = set.copy(id = "canonical_set") }
         compose.onNodeWithText("100").assertIsDisplayed()
-        compose.onNodeWithText(NumberEntry.outsideReps).assertIsDisplayed()
+        compose.onNodeWithText(string(R.string.gym_entry_outside_reps, LoggedSetLimits.maxReps.toString())).assertIsDisplayed()
         compose.onNodeWithContentDescription("Load, kg").performClick()
-        compose.onNodeWithText(NumberEntry.outsideReps).assertIsDisplayed()
+        compose.onNodeWithText(string(R.string.gym_entry_outside_reps, LoggedSetLimits.maxReps.toString())).assertIsDisplayed()
         compose.runOnIdle { cancel!!() }
         compose.onNodeWithText("70").assertIsDisplayed()
         compose.onNodeWithText("controlled tempo").assertIsDisplayed()
