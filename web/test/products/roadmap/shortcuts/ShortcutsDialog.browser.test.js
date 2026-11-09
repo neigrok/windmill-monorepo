@@ -28,7 +28,7 @@ const ready = (async () => {
       },
       load(id) {
         if (id === '\0shortcuts-entry') return entry;
-        if (id === '\0shortcut-events') return 'export function track(name, props) { window.events.push({ name, props }); } export function reportError(error) { throw error; }';
+        if (id === '\0shortcut-events') return 'export function track(name, props) { window.events.push({ name, props }); } export function reportError(error) { throw error; } export function routeFamily(route) { return route; }';
       },
       configureServer(server) {
         server.middlewares.use('/shortcuts-test', (_request, response) => {
