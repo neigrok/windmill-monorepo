@@ -63,17 +63,34 @@ test('a malformed message is a SyntaxError naming what it expected', () => {
   ]);
 });
 
-test('a missing argument, or a plural count that is not a number, cannot be formatted', () => {
+test('an argument renders as JSX renders {x}: present but null, undefined or a boolean shows nothing, absent fails', () => {
+  assert.deepEqual([null, undefined, false, true, 0, ''].map((name) => render('[{name}]', { name })), ['[]', '[]', '[]', '[]', '[0]', '[]']);
+  assert.deepEqual(['constructor', 'toString', '__proto__', 'valueOf', 'hasOwnProperty', null, 'a']
+    .map((kind) => render('{kind, select, a {A} other {Other}}', { kind })), ['Other', 'Other', 'Other', 'Other', 'Other', 'Other', 'A']);
+  assert.equal(render('{n, select, constructor {C} other {O}}', { n: 'constructor' }), 'C');
+});
+
+test('an absent argument, or a plural count that is not a number, cannot be formatted, and says which', () => {
   const failures = [
     ['Hello, {name}!', {}],
+    ['Hello, {toString}!', {}],
     ['{count, plural, other {# sets}}', { count: '3' }],
     ['{count, plural, other {# sets}}', { count: Number.NaN }],
-    ['{kind, select, other {x}}', { kind: null }],
-  ].map(([source, args]) => { try { render(source, args); return null; } catch (error) { return error.message; } });
+    ['{kind, select, other {x}}', {}],
+  ].map(([source, args]) => { try { render(source, args); return null; } catch (error) { return `${error.reason}: ${error.message}`; } });
   assert.deepEqual(failures, [
-    'message needs the argument "name"',
-    'plural argument "count" must be a number',
-    'plural argument "count" must be a number',
-    'message needs the argument "kind"',
+    'argument: message needs the argument "name"',
+    'argument: message needs the argument "toString"',
+    'count: plural argument "count" must be a number',
+    'count: plural argument "count" must be a number',
+    'argument: message needs the argument "kind"',
   ]);
+});
+
+test('told to go on, a plural whose count is not a number reads =N or other and shows the value as # did', () => {
+  const uncounted = [];
+  const steps = '{count, plural, =0 {No sets} one {# set} other {# sets}}';
+  const shown = ['0', '1', Number.NaN, null].map((count) => formatMessage(parseMessage(steps), { count }, new Intl.PluralRules('en'), (name) => uncounted.push(name)).join(''));
+  assert.deepEqual(shown, ['0 sets', '1 sets', 'NaN sets', 'null sets']);
+  assert.deepEqual(uncounted, ['count', 'count', 'count', 'count']);
 });

@@ -91,12 +91,12 @@ class MessageParser {
       const key = this.word();
       const valid = style === 'plural' ? PLURAL_KEY : SELECT_KEY;
       if (!valid.test(key)) this.fail(`a ${style} option, got "${key}"`);
-      if (key in options) this.fail(`one ${key} option, got two`);
+      if (Object.hasOwn(options, key)) this.fail(`one ${key} option, got two`);
       if (!this.take('{')) this.fail(`{ after the ${key} option`);
       options[key] = this.message(style === 'plural');
       if (!this.take('}')) this.fail(`} closing the ${key} option`);
     }
-    if (!('other' in options)) this.fail(`an other option in the ${style}`);
+    if (!Object.hasOwn(options, 'other')) this.fail(`an other option in the ${style}`);
     return options;
   }
 
@@ -127,37 +127,55 @@ export function parseMessage(source) {
   return new MessageParser(source).parse();
 }
 
-export function formatMessage(nodes, args, pluralRules, count = null) {
+export class MessageError extends Error {
+  constructor(reason, message) {
+    super(message);
+    this.reason = reason;
+  }
+}
+
+function refuseCount(name) {
+  throw new MessageError('count', `plural argument "${name}" must be a number`);
+}
+
+export function formatMessage(nodes, args, pluralRules, notCounted = refuseCount) {
+  const given = args ?? {};
   const parts = [];
   const push = (part) => {
     if (typeof part === 'string' && typeof parts.at(-1) === 'string') parts[parts.length - 1] += part;
     else parts.push(part);
   };
-  for (const node of nodes) {
-    if (typeof node === 'string') {
-      push(node);
-      continue;
+  const format = (branch, count) => {
+    for (const node of branch) {
+      if (typeof node === 'string') {
+        push(node);
+        continue;
+      }
+      if (node.type === 'count') {
+        push(String(count));
+        continue;
+      }
+      if (!Object.hasOwn(given, node.name)) throw new MessageError('argument', `message needs the argument "${node.name}"`);
+      const value = given[node.name];
+      if (node.type === 'argument') push(shown(value));
+      else if (node.type === 'select') format(Object.hasOwn(node.options, String(value)) ? node.options[String(value)] : node.options.other, count);
+      else format(pluralBranch(node, value, pluralRules, notCounted), value);
     }
-    if (node.type === 'count') {
-      push(String(count));
-      continue;
-    }
-    const value = args[node.name];
-    if (value === undefined || value === null) throw new Error(`message needs the argument "${node.name}"`);
-    if (node.type === 'argument') {
-      push(typeof value === 'object' ? value : String(value));
-      continue;
-    }
-    const branch = node.type === 'plural'
-      ? pluralBranch(node, value, pluralRules)
-      : node.options[String(value)] ?? node.options.other;
-    for (const part of formatMessage(branch, args, pluralRules, node.type === 'plural' ? value : count)) push(part);
-  }
+  };
+  format(nodes, null);
   return parts;
 }
 
-function pluralBranch(node, value, pluralRules) {
-  if (typeof value !== 'number' || Number.isNaN(value)) throw new Error(`plural argument "${node.name}" must be a number`);
+function shown(value) {
+  if (value === null || value === undefined || typeof value === 'boolean') return '';
+  return typeof value === 'object' ? value : String(value);
+}
+
+function pluralBranch(node, value, pluralRules, notCounted) {
+  const counted = typeof value === 'number' && !Number.isNaN(value);
+  if (!counted) notCounted(node.name);
   const exact = Object.keys(node.options).find((key) => key.startsWith('=') && Number(key.slice(1)) === value);
-  return node.options[exact] ?? node.options[pluralRules.select(value)] ?? node.options.other;
+  if (exact) return node.options[exact];
+  if (!counted) return node.options.other;
+  return node.options[pluralRules.select(value)] ?? node.options.other;
 }

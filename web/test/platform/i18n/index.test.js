@@ -8,9 +8,31 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { APP_LOCALE, createTranslator, resolveLocale } from '../../../src/platform/i18n/index.js';
 
 test('the app locale resolves the browser languages against the available set, so it is English under any of them', () => {
-  assert.equal(APP_LOCALE, 'en');
   assert.deepEqual([[], ['de-DE', 'ru'], ['ar'], ['EN-gb'], ['en-US', 'de']].map((requested) => resolveLocale(requested)), ['en', 'en', 'en', 'en', 'en']);
-  assert.deepEqual([['de-AT'], ['pt-BR', 'de'], ['fr']].map((requested) => resolveLocale(requested, ['en', 'de'])), ['de', 'de', 'en']);
+  assert.deepEqual([['de-AT'], ['pt-BR', 'de'], ['fr'], ['de_CH'], ['DE_de'], [42, 'de'], [null]].map((requested) => resolveLocale(requested, ['en', 'de'])),
+    ['de', 'de', 'en', 'de', 'de', 'de', 'en']);
+});
+
+test('without a document the app locale is the first available one, whatever the machine\'s LANG says', async () => {
+  assert.equal(APP_LOCALE, 'en');
+  const { outputFiles } = await build({
+    entryPoints: [fileURLToPath(new URL('../../../src/platform/i18n/index.js', import.meta.url))],
+    bundle: true, write: false, format: 'iife', globalName: 'i18n', logLevel: 'silent', define: { 'import.meta.env': '{}' },
+  });
+  const languagesReadIn = (globals) => {
+    const read = [];
+    const navigator = { get languages() { read.push('languages'); return ['de-DE']; } };
+    return { locale: runInNewContext(`${outputFiles[0].text}\ni18n.APP_LOCALE`, { Intl, navigator, ...globals }), read };
+  };
+  assert.deepEqual([languagesReadIn({}), languagesReadIn({ document: {} })], [{ locale: 'en', read: [] }, { locale: 'en', read: ['languages'] }]);
+});
+
+test('a translator needs a catalog for every available locale, so a forgotten import fails on load in every test', () => {
+  const failures = [
+    () => createTranslator({ en: {} }, { available: ['en', 'de'] }),
+    () => createTranslator({ en: {} }, { locale: 'ar' }),
+  ].map((make) => { try { make(); return null; } catch (error) { return error.message; } });
+  assert.deepEqual(failures, ['i18n: no de catalog', 'i18n: no ar catalog']);
 });
 
 test('t reads a key from the locale catalog and the plural category from that locale', () => {
@@ -35,15 +57,16 @@ test('outside production a missing key or argument throws, naming the key', () =
   ]);
 });
 
-test('in production a missing key or argument renders the key and reports it once per key', () => {
+test('in production a missing key, argument or message renders the key, and reports it once per key with what broke', () => {
   const reported = [];
-  const t = createTranslator({ en: { 'x.hi': 'Hi, {name}', 'x.ok': 'Fine' } }, { strict: false, onMissing: (key) => reported.push(key) });
-  const shown = [t('x.nope'), t('x.nope'), t('x.hi'), t('x.hi', {}), t('x.ok'), t('x.nope')];
-  assert.deepEqual(shown, ['x.nope', 'x.nope', 'x.hi', 'x.hi', 'Fine', 'x.nope']);
-  assert.deepEqual(reported, ['x.nope', 'x.hi']);
+  const t = createTranslator({ en: { 'x.hi': 'Hi, {name}', 'x.ok': 'Fine', 'x.broken': '{n, plural, one {x}}', 'x.sets': '{n, plural, one {# set} other {# sets}}' } },
+    { strict: false, onMissing: (key, reason) => reported.push(`${key} ${reason}`) });
+  const shown = [t('x.nope'), t('x.nope'), t('x.hi'), t('x.hi', {}), t('x.hi', { name: null }), t('x.ok'), t('x.broken', { n: 1 }), t('x.sets', { n: '3' }), t('x.sets', { n: 1 })];
+  assert.deepEqual(shown, ['x.nope', 'x.nope', 'x.hi', 'x.hi', 'Hi, ', 'Fine', 'x.broken', '3 sets', '1 set']);
+  assert.deepEqual(reported, ['x.nope key', 'x.hi argument', 'x.broken syntax', 'x.sets count']);
 });
 
-test('the production build reports a missing message to Sentry under i18n-missing-message, tagged with the key alone', async () => {
+test('the production build reports a missing message to Sentry under i18n-missing-message, tagged with the key and what broke', async () => {
   const { outputFiles } = await build({
     entryPoints: [fileURLToPath(new URL('../../../src/platform/i18n/index.js', import.meta.url))],
     bundle: true, write: false, format: 'iife', globalName: 'i18n', logLevel: 'silent',
@@ -60,7 +83,7 @@ test('the production build reports a missing message to Sentry under i18n-missin
   assert.deepEqual([t('gym.title'), t('gym.nope'), t('gym.nope')], ['Gym', 'gym.nope', 'gym.nope']);
   const events = sent.map(({ body }) => JSON.parse(body.split('\n')[2]));
   assert.deepEqual(events.map(({ tags, request, exception }) => ({ tags, request, type: exception.values[0].type, value: exception.values[0].value, frames: exception.values[0].stacktrace.frames })), [
-    { tags: { key: 'gym.nope', kind: 'i18n' }, request: { url: '/app/gym' }, type: 'i18n', value: 'i18n-missing-message', frames: [] },
+    { tags: { key: 'gym.nope', reason: 'key', kind: 'i18n' }, request: { url: '/app/gym' }, type: 'i18n', value: 'i18n-missing-message', frames: [] },
   ]);
   assert.deepEqual(sent.map(({ url }) => url), ['https://errors.example/api/42/envelope/']);
 });
