@@ -9,6 +9,9 @@ const PLAN_HUES = ['terracotta', 'olive', 'gold', 'brick', 'sky', 'plum'];
 const ROOT_LABEL_MAX = 200;
 const KIND_LABEL_MAX = 24;
 const EXPORT_MARKER = '<!-- windmill:roadmap -->';
+// An export carries the tree's guide as a quote between these two lines; a replant plants steps, so it reads past them.
+const GUIDE_OPEN = '<!-- windmill:guide -->';
+const GUIDE_CLOSE = '<!-- /windmill:guide -->';
 
 // `bindOnly`: a heading matching no existing kind mints a fresh hue instead of relabeling one.
 export function parsePlan(text, existingKinds = [], { bindOnly = false } = {}) {
@@ -19,6 +22,11 @@ export function parsePlan(text, existingKinds = [], { bindOnly = false } = {}) {
   if (root.exported) {
     lines[marker].kind = 'blank';
     if (lines[root.line].kind === 'text' && root.title === '#') root.title = '';
+    const opening = lines.findIndex((line, at) => at > marker && line.kind !== 'blank');
+    const closing = lines.findIndex((line, at) => at > opening && line.content === GUIDE_CLOSE);
+    if (lines[opening]?.content === GUIDE_OPEN && closing !== -1) {
+      for (let at = opening; at <= closing; at += 1) lines[at].kind = 'blank';
+    }
   }
   const grove = growNodes(lines, root, existingKinds, bindOnly);
   return assemble(root, grove, lines);
@@ -298,6 +306,9 @@ export function serializePlan(treeData, kinds, progress) {
   const kindByHue = new Map((kinds ?? []).map((kind) => [kind.hue, kind]));
   const completed = completedNodeIds(treeData, progress);
   const out = [`# ${title}`, EXPORT_MARKER];
+  if (/\S/.test(treeData.guide ?? '')) {
+    out.push(GUIDE_OPEN, ...treeData.guide.split(/\r\n|\r|\n/).map((line) => (line ? `> ${line}` : '>')), GUIDE_CLOSE);
+  }
   const childrenOf = new Map();
   const roots = [];
   for (const node of nodes) {

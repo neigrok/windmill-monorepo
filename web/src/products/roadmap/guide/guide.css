@@ -1,0 +1,363 @@
+/* The guide (17): its chip in the identity row and the modal from 744px; on phones the reader's line and note, the
+   owner's row and page in the roadmap sheet, and the full-screen editor. */
+
+/* ---- The chip: the first line in the row's free space, never narrower than its book, giving way before any verb. ---- */
+.st-roadmap-chip.st-guide-chip {
+  flex: 0 1 auto;
+  justify-content: flex-start;
+  min-width: 44px;
+  max-width: 320px;
+  padding: 0 12px 0 10px;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+.st-roadmap-chip.st-guide-chip:hover,
+.st-roadmap-chip.st-guide-chip[aria-expanded="true"] {
+  background: var(--color-brand-soft);
+  color: var(--text-primary);
+}
+.st-roadmap-chip.st-guide-chip > svg {
+  flex-shrink: 0;
+}
+.st-guide-chip-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.st-roadmap-chip.st-guide-chip--add {
+  flex: none;
+  padding: 0 14px 0 12px;
+  border: 1.5px dashed var(--border-strong);
+}
+.st-roadmap-chip.st-guide-chip--add > svg {
+  color: var(--text-tertiary);
+}
+.st-roadmap-chip.st-guide-chip--icon {
+  flex: none;
+  justify-content: center;
+  width: 44px;
+  padding: 0;
+}
+@media (max-width: 1279px) {
+  .st-roadmap-chip.st-guide-chip {
+    max-width: 200px;
+  }
+}
+
+/* ---- The modal: the step modal without its 760 × 800 cap, the text at one 560px measure at every width. ---- */
+.st-board-step-layer.st-guide-layer {
+  position: fixed;
+}
+.st-guide-layer .st-board-step-scrim {
+  animation: st-guide-scrim var(--duration-base) var(--ease-soft);
+}
+.st-board-step-modal.st-guide-modal {
+  width: 100%;
+  height: 100%;
+  animation: wm-pop-in var(--duration-base) var(--ease-soft);
+}
+@keyframes st-guide-scrim {
+  from { background-color: transparent; }
+}
+.st-guide-modal-header {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+}
+.st-guide-modal-header > svg {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+}
+.st-guide-modal-heading {
+  flex: 1;
+  min-width: 0;
+}
+.st-guide-modal-heading h2 {
+  margin: 0;
+  font: 700 20px/28px var(--font-display);
+  color: var(--text-primary);
+}
+.st-guide-modal-heading p {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 600 12px/16px var(--font-body);
+  color: var(--text-secondary);
+}
+.st-guide-modal-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  min-height: 0;
+  padding-top: 24px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.st-guide-modal-body--writing {
+  overflow: hidden;
+}
+.st-guide-modal-body:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: -2px;
+}
+
+/* The text keeps its place from reading to writing: the same box, its edge transparent until it takes the focus edge. */
+.st-guide-text {
+  flex: none;
+  box-sizing: border-box;
+  width: min(592px, 100%);
+  margin: 0;
+  padding: 12px 16px;
+  border: 1.5px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-primary);
+  font: 400 18px/27px var(--font-body);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  resize: none;
+  outline: none;
+  transition: border-color 120ms var(--ease-standard), background-color 120ms var(--ease-standard);
+}
+.st-guide-text::placeholder {
+  color: var(--text-tertiary);
+}
+.st-guide-text--reading {
+  overflow: hidden;
+  cursor: text;
+}
+.st-guide-text--reading:hover {
+  background: var(--surface-sunken);
+}
+.st-guide-text--reading:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+}
+.st-guide-text--writing {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+  border-color: var(--field-focus-edge);
+  background: var(--surface-card);
+}
+.st-guide-text--over {
+  border-color: var(--color-danger);
+}
+.st-guide-text--note {
+  cursor: default;
+}
+.st-guide-strip {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  box-sizing: border-box;
+  width: min(592px, 100%);
+  min-height: 44px;
+  padding: 4px 4px 4px 16px;
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+  color: var(--text-primary);
+  font: 600 14px/20px var(--font-body);
+}
+.st-guide-strip > span {
+  flex: 1;
+  min-width: 0;
+}
+.st-guide-modal-footer {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 12px;
+  box-sizing: border-box;
+  min-height: 68px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-default);
+  animation: st-guide-crossfade var(--duration-fast) var(--ease-soft);
+}
+@keyframes st-guide-crossfade {
+  from { opacity: 0; }
+}
+.st-guide-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font: 400 14px/20px var(--font-body);
+  color: var(--text-secondary);
+}
+.st-guide-hint > svg {
+  flex-shrink: 0;
+}
+.st-guide-disclosure {
+  flex: 1;
+  min-width: 0;
+  font: 400 14px/20px var(--font-body);
+  color: var(--text-secondary);
+}
+.st-guide-counter {
+  flex-shrink: 0;
+  font: 700 14px/20px var(--font-body);
+  color: var(--text-secondary);
+}
+.st-guide-counter--over {
+  color: var(--color-danger);
+}
+
+/* ---- Phones: the reader's line in the device line's slot, and the note's sheet. ---- */
+.board-device-line.st-guide-line {
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+.board-device-line.st-guide-line > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.board-device-line.st-guide-line.st-switcher-flash {
+  border-radius: var(--radius-md);
+}
+.st-guide-sheet-text {
+  margin: 0;
+  font: 400 15px/22px var(--font-body);
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* ---- The owner's row and page in the roadmap sheet; the sheet grows by the row, and the page keeps its height. ---- */
+.st-roadmap-sheet-link.st-guide-row {
+  align-items: flex-start;
+  padding-top: 12px;
+  padding-bottom: 12px;
+}
+.st-roadmap-sheet-link .st-guide-row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.st-guide-row-text > span {
+  flex: none;
+}
+.st-guide-row-label {
+  font: 700 15px/21px var(--font-body);
+  color: var(--text-primary);
+}
+.st-guide-row-excerpt {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  font: 400 13px/18px var(--font-body);
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+.st-board-sheet.st-roadmap-sheet--guide-written {
+  --st-roadmap-sheet-guide: 95px;
+}
+.st-board-sheet.st-roadmap-sheet--guide-empty {
+  --st-roadmap-sheet-guide: 60px;
+}
+.st-guide-page {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+}
+.st-guide-page-text {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  touch-action: pan-y;
+  cursor: text;
+}
+.st-guide-page-text:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+}
+.st-guide-hint.st-guide-reach {
+  display: flex;
+  flex-shrink: 0;
+  justify-content: center;
+  min-height: 55px;
+}
+
+/* ---- The full-screen editor: the note editor's shell, a plain field, and a bar that rides the keyboard. ---- */
+.st-guide-editor-text {
+  flex: 1;
+  min-height: 0;
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0;
+  padding: 16px;
+  border: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font: 400 16px/24px var(--font-body);
+  overflow-wrap: anywhere;
+  resize: none;
+}
+.st-board-composer-layer .st-guide-editor-text:focus-visible {
+  outline: none;
+}
+.st-guide-editor-text::placeholder {
+  color: var(--text-tertiary);
+}
+.st-guide-editor-bar {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 12px;
+  box-sizing: border-box;
+  min-height: 60px;
+  padding: 8px 16px calc(8px + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--border-default);
+  background: var(--surface-card);
+}
+.st-guide-editor-bar > span {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 16px;
+}
+.st-guide-editor-bar > .st-guide-disclosure {
+  color: var(--text-tertiary);
+}
+.st-guide-editor-bar .st-board-note-save {
+  flex-shrink: 0;
+  min-height: 36px;
+  padding: 8px 14px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: var(--color-brand);
+  color: var(--text-on-accent);
+  box-shadow: var(--shadow-sm);
+  font: 700 14px/20px var(--font-body);
+  cursor: pointer;
+}
+.st-guide-editor-bar .st-board-note-save[aria-disabled="true"] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .st-guide-layer .st-board-step-scrim,
+  .st-board-step-modal.st-guide-modal,
+  .st-guide-modal-footer {
+    animation: none;
+  }
+  .st-guide-text {
+    transition: none;
+  }
+}

@@ -588,6 +588,11 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
 
 ## Roadmap
 
+- **Guide · undrawn states (17).** A guide save the session cannot take, before its lattice loads or while it rebaselines,
+  goes to the device's store or `PATCH /v1/trees/{id}`; when that fails, the modal and the phone editor keep the draft and
+  its Save, with no line saying the save failed (`roadmap-guide-save` reports it). The phone editor has no Changed
+  elsewhere strip, so a guide set elsewhere while a phone owner writes is replaced by their Save unannounced. Draw both,
+  or rule them out ([section 17](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=714-39770)).
 - **Web reconciliation evidence.** All 25 current Roadmap screen/state families are mapped in the
   [evidence log](roadmap-web-reconciliation.md) and linked from the [flow index](../index.md#roadmap--web).
   🚀 marks source/runtime reconciliation; runtime limits are separate. Native graphs and SwiftShader

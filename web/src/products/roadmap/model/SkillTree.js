@@ -16,6 +16,7 @@ export class SkillTree {
   constructor(treeData) {
     this.treeId = treeData.id;
     this.treeTitle = treeData.title;
+    this.treeGuide = treeData.guide ?? '';
     this.treeAuthor = treeData.author ?? null;
     this.allNodes = treeData.nodes;
 
@@ -47,6 +48,7 @@ export class SkillTree {
 
   get id() { return this.treeId; }
   get title() { return this.treeTitle; }
+  get guide() { return this.treeGuide; }
   get author() { return this.treeAuthor; }
   get nodes() { return this.allNodes; }
   get edges() { return this.allEdges; }
@@ -61,7 +63,7 @@ export class SkillTree {
       byChild.get(edge.to).push(edge.from);
     }
     return new SkillTree({
-      id: this.id, title: this.title, author: this.author,
+      id: this.id, title: this.title, guide: this.guide, author: this.author,
       nodes: this.nodes.filter((step) => !doomed.has(step.id)).map((step) => ({
         ...step,
         prerequisites: [...step.prerequisites.filter((id) => !doomed.has(id)), ...(byChild.get(step.id) ?? [])],

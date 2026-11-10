@@ -65,6 +65,7 @@ Outstanding design gaps are tracked in the [consistency ledger](design/consisten
 | Wave 7 sync states | [517:30937](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=517-30937) | [519:15146](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=519-15146) | Couldn't sync on Graph, at its limit, several changes, offline |
 | 🚀 Follow-ups 2026-11-06 | [626:38889](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=626-38889) | [629:19778](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=629-19778) | 16.01–16.02: one Shell head from 744 in every room, signed-out seats unchanged; 16.03 and 26.04: no WebGL2 → Board with the Graph dimmed; 26.01–26.03: step menu Select → keyboard selection and the Selection bar |
 | 💡 Finishing states | [544:53326](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=544-53326) | [539:16665](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=539-16665) | Proposals awaiting the owner; ✅ 15.07 and 25.04, the held delete that fails, are built |
+| 🚀 17 · Tree guide | [714:39770](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=714-39770) 17.01–17.17 | same section, 17.20–17.30 | Guide chip in the row from 744 → a guide modal that fills the window, click the text to edit, bounded at 5,000; phones: the roadmap sheet → Guide page, tap to edit; a reader on the app route sees the author's note, or nothing; the share route shows none. In production |
 
 ## Roadmap · iOS
 

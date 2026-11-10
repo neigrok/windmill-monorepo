@@ -6,6 +6,7 @@ import { track } from '../../../telemetry/beacon.js';
 import { hueOf } from '../theme.js';
 import { FindStep, NewStep, handleMenuKey } from '../board/BoardControls.jsx';
 import { usePopoverDismissal } from '../popoverDismissal.js';
+import { GuideChip } from '../guide/GuideWide.jsx';
 import { RoadmapSheet } from './RoadmapSheet.jsx';
 import { ViewSwitch } from './ViewSwitch.jsx';
 import { countBucket } from '../board/acts.js';
@@ -14,9 +15,10 @@ import './identity.css';
 
 const FULL_DESKTOP_QUERY = '(min-width: 1280px)';
 
+// `guide` is the room's guide where this person sees one: its chip from 744px, its row in the owner's phone sheet.
 export function RoadmapIdentity({
   band, view, role, title, switcher, progress, onSwitchView, graphUnavailable = false, onGraphUnavailable, find, next,
-  onAskAI, onShare, onNewStep, onExport, onSettings, onShortcuts, onFork, sheet, onBottom, onActivity, activityOpen = false,
+  onAskAI, onShare, onNewStep, onExport, onSettings, onShortcuts, onFork, sheet, onBottom, onActivity, activityOpen = false, guide = null,
 }) {
   const bar = useRef(null);
   const titleButton = useRef(null);
@@ -149,6 +151,7 @@ export function RoadmapIdentity({
         </span>
       )}
       {onSwitchView && <ViewSwitch view={view} onSwitch={onSwitchView} phone={phone} graphUnavailable={graphUnavailable} onGraphUnavailable={onGraphUnavailable} />}
+      {!phone && guide && <GuideChip guide={guide} band={band} />}
       {!phone && <>
         <div className="st-roadmap-space" />
         {find && <FindStep {...find} folded={!fullDesktop} tooltip={desktop} onExpand={() => verb('find')} />}
@@ -270,6 +273,7 @@ export function RoadmapIdentity({
       {open === 'sheet' && (
         <RoadmapSheet
           sheet={sheet}
+          guide={guide?.owner ? guide : null}
           view={view}
           band={band}
           onAskAI={onAskAI}

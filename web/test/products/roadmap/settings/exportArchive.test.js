@@ -132,3 +132,40 @@ test('export and Settings zip preserve a distinct root label and its completion 
   assert.equal(archivedText, file.text);
   assert.deepEqual(parsePlan(archivedText), replanted);
 });
+
+test('an export carries the roadmap\'s guide as a quote under its title, and a replant plants the same steps without it', async () => {
+  const { buildRoadmapExport } = await import('../../../../src/products/roadmap/settings/exportArchive.js');
+  const { parsePlan } = await import('../../../../src/products/roadmap/paste/planGrammar.js');
+  const nodes = [
+    { id: 'root', label: 'Choose a course', color: 'terracotta', prerequisites: [] },
+    { id: 'wind', label: 'Read the wind', color: 'terracotta', prerequisites: ['root'] },
+  ];
+  const guide = 'One step a week, on weekend sails with Maya.\n\n- Agents: ask before changing a completed step.\n<!-- /windmill:guide -->';
+  const file = buildRoadmapExport({ id: 't_1234567890', title: 'Learn to sail', guide, kinds: [], nodes }, { completed: new Set(['root']) });
+  assert.equal(file.text, [
+    '# Learn to sail', '<!-- windmill:roadmap -->',
+    '<!-- windmill:guide -->',
+    '> One step a week, on weekend sails with Maya.', '>', '> - Agents: ask before changing a completed step.', '> <!-- /windmill:guide -->',
+    '<!-- /windmill:guide -->',
+    '- [x] Choose a course <!-- windmill:kind terracotta -->', '  - Read the wind',
+  ].join('\n'));
+  const withoutGuide = buildRoadmapExport({ id: 't_1234567890', title: 'Learn to sail', guide: '  \n', kinds: [], nodes }, { completed: new Set(['root']) });
+  assert.equal(withoutGuide.text, '# Learn to sail\n<!-- windmill:roadmap -->\n- [x] Choose a course <!-- windmill:kind terracotta -->\n  - Read the wind');
+  const replanted = parsePlan(file.text);
+  const { gutter, ...planted } = replanted;
+  const { gutter: plainGutter, ...plain } = parsePlan(withoutGuide.text);
+  assert.deepEqual(planted, plain);
+  assert.equal(gutter.length, plainGutter.length + 6);
+  assert.deepEqual(replanted.imperfections, []);
+});
+
+test('a guide whose lines end in CR or CRLF stays in its quote, so a replant plants no step from it', async () => {
+  const { buildRoadmapExport } = await import('../../../../src/products/roadmap/settings/exportArchive.js');
+  const { parsePlan } = await import('../../../../src/products/roadmap/paste/planGrammar.js');
+  const nodes = [{ id: 'root', label: 'Choose a course', color: 'terracotta', prerequisites: [] }];
+  const planted = (guide) => parsePlan(buildRoadmapExport({ id: 't_1234567890', title: 'Sail', guide, kinds: [], nodes }, null).text).nodes.map(({ label }) => label);
+  assert.deepEqual(planted('x\r<!-- /windmill:guide -->\r- A planted fake step'), ['Choose a course']);
+  assert.deepEqual(planted('line one\r\n- line two\r\n<!-- /windmill:guide -->'), ['Choose a course']);
+  assert.equal(buildRoadmapExport({ id: 't_1234567890', title: 'Sail', guide: 'a\rb\r\nc', kinds: [], nodes }, null).text.split('\n').slice(2, 7).join('|'),
+    '<!-- windmill:guide -->|> a|> b|> c|<!-- /windmill:guide -->');
+});

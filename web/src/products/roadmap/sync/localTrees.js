@@ -14,6 +14,15 @@ import { LegendStore } from '../persistence/LegendStore.js';
 import { ReturnLedger } from '../persistence/ReturnLedger.js';
 import { MilestoneLedger } from '../persistence/MilestoneLedger.js';
 import { DEFAULT_KINDS } from '../model/Legend.js';
+import { InadmissibleGuide, admitsGuide } from '../guide/GuideDraft.js';
+
+// A write for a device tree whose record this browser no longer holds: nothing took it.
+export class MissingDeviceTree extends Error {
+  constructor() {
+    super('Device tree record missing');
+    this.name = 'MissingDeviceTree';
+  }
+}
 
 // t_ + 16 lowercase hex — the server's own id shape, so the id survives the claim.
 export function mintTreeId() {
@@ -127,31 +136,37 @@ export async function loadDeviceTree(treeId, { ownerResolved = false } = {}) {
 export async function renameLocalTree(treeId, title) {
   const next = title.trim();
   if (!next) return;
-  const registry = new LocalTreeRegistry();
+  await stampDeviceRegister(treeId, 'title', next);
+  new LocalTreeRegistry().rename(treeId, next);
+}
+
+// The guide lives in the blob alone, and the claim's flush carries its stamped write to the server once the tree exists.
+export async function setLocalGuide(treeId, guide) {
+  if (!admitsGuide(guide)) throw new InadmissibleGuide();
+  if (!await stampDeviceRegister(treeId, 'guide', guide)) throw new MissingDeviceTree();
+}
+
+// One stamped write to a device tree's title or guide, read afresh and retried while another tab's discard moves the
+// record. Answers whether a record took it.
+async function stampDeviceRegister(treeId, name, value) {
   const store = new SyncStore();
   let saved = await store.load(treeId).catch(() => null);
-  if (!saved?.frame) {
-    registry.rename(treeId, next);
-    return;
-  }
+  if (!saved?.frame) return false;
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const lattice = new TreeLattice(treeId);
     lattice.join(saved.frame);
     const clock = new HlcClock(`r_${crypto.randomUUID?.().slice(0, 8) ?? `${Date.now()}`}`);
     lattice.seedClock(clock);
-    lattice.join({ nodes: [], edges: [], kinds: [], title: { v: next, at: hlcText(clock.tick(Date.now())) } });
+    lattice.join({ nodes: [], edges: [], kinds: [], [name]: { v: value, at: hlcText(clock.tick(Date.now())) } });
     const result = await store.save(treeId, { frame: lattice.toFrame(), lastSeq: saved.lastSeq ?? 0, epochs: saved.epochs,
       gestures: {
         structure: pendingGestures(lattice.toFrame(), saved.confirmed?.structure, saved.gestures?.structure),
         progress: saved.gestures?.progress ?? {},
       } });
-    if (result.status === 'saved') {
-      registry.rename(treeId, next);
-      return;
-    }
+    if (result.status === 'saved') return true;
     saved = result.value;
   }
-  throw new Error('local tree changed during rename');
+  throw new Error('local tree changed during a write');
 }
 
 // No server call, ever. The caller must close any live session first, or its pagehide flush

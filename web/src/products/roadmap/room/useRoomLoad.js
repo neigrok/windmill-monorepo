@@ -135,7 +135,7 @@ export function useRoomLoad({ treeId, accountId, demo, shared, demotion, breakpo
       // Only owned trees enter the device index, so a visited share cannot be claimed.
       sessionRef.current?.close();
       peersRef.current.clear();
-      const session = new SyncSession({ treeId: seed.id, title: seed.title, registry: seed.mine && !shared && !demo && !demotion ? deviceTrees : null })
+      const session = new SyncSession({ treeId: seed.id, title: seed.title, guide: seed.guide ?? '', registry: seed.mine && !shared && !demo && !demotion ? deviceTrees : null })
         .onTreeChanged((data) => latest.current.structure.onTreeChanged(data))
         .onPresence((frame) => peersRef.current.set(frame.actor, {
           name: frame.profile?.name, color: frame.profile?.color,

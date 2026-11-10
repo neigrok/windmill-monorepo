@@ -100,6 +100,9 @@ function newKind() {
   };
 }
 
+// The tree's own last-writer-wins text registers, beside its graph and legend: its name, and the guide that says how it is worked.
+export const TREE_REGISTERS = ['title', 'guide'];
+
 const EDGE_SEP = String.fromCharCode(0);
 const edgeKey = (from, to) => `${from}${EDGE_SEP}${to}`;
 
@@ -149,13 +152,20 @@ function emitStamp(entry, key, at) {
 }
 
 export class TreeLattice {
-  constructor(treeId = '', title = '') {
+  // The title and guide a document carries stand unstamped, so any stamped write dominates them.
+  constructor(treeId = '', title = '', guide = '') {
     this.treeId = treeId;
-    this.title = title;
+    this.registers = { title: { v: title, at: { ...UNSET } }, guide: { v: guide, at: { ...UNSET } } };
     this.nodes = new Map();
     this.edges = new Map();  // "from\0to" -> { addedAt, removedAt }
     this.kinds = new Map();
   }
+
+  get title() { return this.registers.title.v; }
+  get guide() { return this.registers.guide.v; }
+
+  // A fresh lattice of the same tree holding only this one's title and guide, unstamped.
+  baseline() { return new TreeLattice(this.treeId, this.title, this.guide); }
 
   nodeRecord(id) {
     let record = this.nodes.get(id);
@@ -185,6 +195,10 @@ export class TreeLattice {
     for (const n of frame.nodes ?? []) if (typeof n?.id !== 'string') throw new Error('malformed node entry');
     for (const e of frame.edges ?? []) if (typeof e?.from !== 'string' || typeof e?.to !== 'string') throw new Error('malformed edge entry');
     for (const k of frame.kinds ?? []) if (typeof k?.id !== 'string') throw new Error('malformed kind entry');
+    for (const name of TREE_REGISTERS) {
+      const written = frame[name];
+      if (written && typeof written === 'object' && typeof written.v !== 'string') throw new Error('malformed tree register');
+    }
 
     const frontier = new VersionVector();
     const fold = (at) => { frontier.observe(at); return at; };
@@ -224,10 +238,9 @@ export class TreeLattice {
       mergeLww(record.description, k.description ?? '', fold(parseHlc(k.descriptionAt)));
       mergeLww(record.rank, k.rank ?? 0, fold(parseHlc(k.rankAt)));
     }
-    if (frame.title && typeof frame.title === 'object') {
-      const at = fold(parseHlc(frame.title.at));
-      this._titleAt = this._titleAt ?? { ...UNSET };
-      if (compareHlc(at, this._titleAt) > 0) { this.title = frame.title.v ?? ''; this._titleAt = at; }
+    for (const name of TREE_REGISTERS) {
+      const written = frame[name];
+      if (written && typeof written === 'object') mergeLww(this.registers[name], written.v, fold(parseHlc(written.at)));
     }
     return frontier;
   }
@@ -243,7 +256,7 @@ export class TreeLattice {
       for (const reg of [record.life.addedAt, record.life.removedAt, record.hue.at, record.label.at,
         record.description.at, record.rank.at]) clock.observe(reg);
     }
-    if (this._titleAt) clock.observe(this._titleAt);
+    for (const name of TREE_REGISTERS) clock.observe(this.registers[name].at);
   }
 
   hasNode(id) {
@@ -330,7 +343,7 @@ export class TreeLattice {
       for (const at of [record.life.addedAt, record.life.removedAt, record.hue.at, record.label.at,
         record.description.at, record.rank.at]) vector.observe(at);
     }
-    if (this._titleAt) vector.observe(this._titleAt);
+    for (const name of TREE_REGISTERS) vector.observe(this.registers[name].at);
     return vector;
   }
 
@@ -371,8 +384,9 @@ export class TreeLattice {
       if (Object.keys(entry).length > 1) kinds.push(entry);
     }
     const frame = { nodes, edges, kinds };
-    if (this._titleAt && hlcIsSet(this._titleAt)) {
-      frame.title = { v: this.title, at: hlcText(this._titleAt) };
+    for (const name of TREE_REGISTERS) {
+      const { v, at } = this.registers[name];
+      if (hlcIsSet(at)) frame[name] = { v, at: hlcText(at) };
     }
     return frame;
   }
@@ -402,6 +416,6 @@ export class TreeLattice {
         links: record.links.v.length ? record.links.v.map((l) => ({ ...l })) : undefined,
       });
     }
-    return { id: this.treeId, title: this.title, nodes, kinds: this.orderedKinds() };
+    return { id: this.treeId, title: this.title, guide: this.guide, nodes, kinds: this.orderedKinds() };
   }
 }

@@ -4,7 +4,7 @@
 
 import { pageWatching, reportInvalidProgressMark, reportRoadmapFailure } from '../reportFailure.js';
 import { socketUrl } from '../../../shell/apiBase.js';
-import { HlcClock, TreeLattice, VersionVector, hlcText, parseHlc } from './lattice.js';
+import { HlcClock, TREE_REGISTERS, TreeLattice, VersionVector, hlcText, parseHlc } from './lattice.js';
 import { ProgressLattice } from './progressLattice.js';
 import { materialize } from './materialize.js';
 import { UNSENDABLE, isOwnershipRefusal, isSessionRefusal, strandsTheBank } from './refusals.js';
@@ -13,6 +13,7 @@ import { frameWrites, outboxStamps, outboxWrites, pendingGestures, pendingRecord
 import { LocalTreeRegistry } from '../persistence/LocalTreeRegistry.js';
 import { ProgressStore } from '../persistence/ProgressStore.js';
 import { GENESIS_STAMP } from '../model/Legend.js';
+import { InadmissibleGuide, admitsGuide } from '../guide/GuideDraft.js';
 
 const DEFAULT_URL = socketUrl();
 const MAX_BACKOFF_MS = 8000;
@@ -35,8 +36,12 @@ function frameFrontier(writes) {
   return new TreeLattice().join(writes);  // join returns the frontier of a frame's stamps
 }
 
+function writesNothing(writes) {
+  return !writes.nodes.length && !writes.edges.length && !writes.kinds.length && TREE_REGISTERS.every((name) => !writes[name]);
+}
+
 export class SyncSession {
-  constructor({ url = DEFAULT_URL, treeId, title = '', registry = new LocalTreeRegistry(), store = new SyncStore(),
+  constructor({ url = DEFAULT_URL, treeId, title = '', guide = '', registry = new LocalTreeRegistry(), store = new SyncStore(),
     reportFailure = reportRoadmapFailure, chunkBytes = FLUSH_CHUNK_BYTES, timers = globalThis } = {}) {
     this.url = url;
     this.chunkBytes = chunkBytes;
@@ -50,10 +55,10 @@ export class SyncSession {
     this.treeId = treeId;
     this.actor = replicaActor();
     this.clock = new HlcClock(this.actor);
-    this.lattice = new TreeLattice(treeId, title);  // the doc title is the stampless baseline; any stamped rename dominates
+    this.lattice = new TreeLattice(treeId, title, guide);  // the doc's title and guide are stampless baselines; any stamped write dominates
     // This account's own marks: same clock and same blob as the structure, never the same frame.
     this.progress = new ProgressLattice();
-    this.confirmedStructure = new TreeLattice(treeId, title);
+    this.confirmedStructure = new TreeLattice(treeId, title, guide);
     this.confirmedProgress = new ProgressLattice();
     this.confirmedKnown = { structure: false, progress: false };
     this.gestures = { structure: {}, progress: {} };
@@ -249,11 +254,11 @@ export class SyncSession {
       this.refusalEpisodes.delete(lane);
       this.confirmedKnown[lane] = value.confirmed[lane] != null;
       if (lane === 'structure') {
-        const title = this.confirmedStructure.title;
-        this.lattice = new TreeLattice(this.treeId, title);
+        const confirmed = this.confirmedStructure;
+        this.lattice = confirmed.baseline();
         this.lattice.join(value.frame);
         if (kept.structure) this.lattice.join(kept.structure);
-        this.confirmedStructure = new TreeLattice(this.treeId, title);
+        this.confirmedStructure = confirmed.baseline();
         if (value.confirmed.structure) this.confirmedStructure.join(value.confirmed.structure);
         this.ackedServerVector = new VersionVector();
         this.inFlight.clear();
@@ -303,7 +308,7 @@ export class SyncSession {
       label: k.label ?? '', labelAt: genesis, description: k.description ?? '', descriptionAt: genesis,
       rank: i, rankAt: genesis,
     }));
-    this.lattice = new TreeLattice(treeData.id, treeData.title);
+    this.lattice = new TreeLattice(treeData.id, treeData.title, treeData.guide ?? '');
     this.lattice.join({ nodes, edges, kinds });
     this.lattice.seedClock(this.clock);
     this.ready = true;
@@ -522,7 +527,7 @@ export class SyncSession {
     try {
       frontier = this.lattice.join(frame);
       coverage = frame.coverage ? VersionVector.fromJSON(frame.coverage) : frontier;
-      if (this.fullGraftPending) this.confirmedStructure = new TreeLattice(this.treeId, this.confirmedStructure.title);
+      if (this.fullGraftPending) this.confirmedStructure = this.confirmedStructure.baseline();
       this.confirmedStructure.join(frame);
       if (this.fullGraftPending) this.gestures.structure = pendingGestures(this.lattice.toFrame(), this.confirmedStructure.toFrame(), this.gestures.structure);
       else this.confirm('structure');
@@ -850,12 +855,17 @@ export class SyncSession {
     return pendingRecordCount(this.unconfirmedWrites('progress'));
   }
 
-  // Unconfirmed registers not already carried by this connection.
+  // Unconfirmed registers not already carried by this connection: the steps first, then each tree register in a frame of
+  // its own, so a refused title or guide strands nothing else and a server answering in order confirms the steps first.
   flush() {
     if (this.rebaselining?.has('structure') || this.discardPending) return;
     const pending = outboxWrites(this.lattice.toFrame(), this.confirmedStructure.toFrame(), this.inFlight.values());
-    if (!pending.nodes.length && !pending.edges.length && !pending.kinds.length && !pending.title) return;
-    for (const chunk of chunkDelta(pending, this.chunkBytes)) this.send(chunk, 'flush');
+    if (writesNothing(pending)) return;
+    const steps = { nodes: pending.nodes, edges: pending.edges, kinds: pending.kinds };
+    if (!writesNothing(steps)) for (const chunk of chunkDelta(steps, this.chunkBytes)) this.send(chunk, 'flush');
+    for (const name of TREE_REGISTERS) {
+      if (pending[name]) this.send({ nodes: [], edges: [], kinds: [], [name]: pending[name] }, 'flush');
+    }
   }
 
   dispatch(gesture) {
@@ -929,9 +939,23 @@ export class SyncSession {
     if (!this.ready) return false;
     const next = title.trim();
     if (!next || next === this.lattice.title) return true;
-    const at = this.clock.tick(Date.now());
-    this.apply({ nodes: [], edges: [], kinds: [], title: { v: next, at: hlcText(at) } });
+    this.writeRegister('title', next);
     return true;
+  }
+
+  // The guide's one stamped write, as a rename is: last writer wins, nothing enters the undo journal, and an empty guide
+  // is none. Returns false before the durable lattice loads, when the caller must take another door. Text the server
+  // would refuse never enters the lattice, where its refusal would stand over the lane until a Discard.
+  setGuide(guide) {
+    if (!admitsGuide(guide)) throw new InadmissibleGuide();
+    if (!this.ready) return false;
+    if (guide !== this.lattice.guide) this.writeRegister('guide', guide);
+    return true;
+  }
+
+  writeRegister(name, value) {
+    const at = this.clock.tick(Date.now());
+    this.apply({ nodes: [], edges: [], kinds: [], [name]: { v: value, at: hlcText(at) } });
   }
 
   undo() {
@@ -996,7 +1020,7 @@ export class SyncSession {
     this.sendWithEpoch('structure', (socket) => {
       if (intent === 'flush') {
         writes = outboxWrites(writes, this.confirmedStructure.toFrame(), this.inFlight.values());
-        if (!writes.nodes.length && !writes.edges.length && !writes.kinds.length && !writes.title) return;
+        if (writesNothing(writes)) return;
       }
       const frameId = crypto.randomUUID?.() ?? `f-${Date.now()}-${Math.random()}`;
       this.sent.add(frameId);
@@ -1004,7 +1028,7 @@ export class SyncSession {
         t: 'subgraph', v: 1, treeId: this.treeId, frameId, actor: this.actor, intent,
         nodes: writes.nodes ?? [], edges: writes.edges ?? [], kinds: writes.kinds ?? [],
       };
-      if (writes.title) frame.title = writes.title;
+      for (const name of TREE_REGISTERS) if (writes[name]) frame[name] = writes[name];
       this.sendFrame('structure', socket, frame, structuredClone(writes));
     });
   }
@@ -1207,8 +1231,7 @@ export class SyncSession {
   }
 }
 
-// Splits an oversized flush by entry count; each chunk is an independently valid subgraph and the
-// title rides the first.
+// Splits an oversized flush of steps by entry count; each chunk is an independently valid subgraph.
 function* chunkDelta(delta, chunkBytes) {
   const size = JSON.stringify(delta).length;
   if (size <= chunkBytes) { yield delta; return; }
@@ -1223,7 +1246,6 @@ function* chunkDelta(delta, chunkBytes) {
   for (let i = 0; i < all.length; i += perChunk) {
     const chunk = { nodes: [], edges: [], kinds: [] };
     for (const [section, entry] of all.slice(i, i + perChunk)) chunk[section].push(entry);
-    if (i === 0 && delta.title) chunk.title = delta.title;
     yield chunk;
   }
 }

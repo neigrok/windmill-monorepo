@@ -79,43 +79,39 @@ export async function createTree(request) {
   throw new AuthError('Could not plant the roadmap', { code: body.code, said: typeof body.error === 'string' ? body.error : undefined, status: response.status });
 }
 
-// Retitle a roadmap (PATCH /v1/trees/:id, 204). The server trims and refuses a blank.
-export async function renameTree(treeId, title) {
+// One register of a roadmap, its owner's alone (PATCH /v1/trees/:id, 204): `refused` names the 401 and `failed`
+// every other refusal, which keeps the server's code, sentence and detail.
+async function patchTree(treeId, change, { refused, failed }) {
   let response;
   try {
     response = await fetch(`${API_BASE}/v1/trees/${treeId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title }),
+      body: JSON.stringify(change),
       credentials: 'include',
     });
   } catch {
     throw new AuthError('Network request failed', { code: 'unreachable', status: 0 });
   }
   if (response.ok) return;
-  if (response.status === 401) throw new AuthError('Sign in to rename a roadmap', { code: 'unauthenticated', status: 401 });
+  if (response.status === 401) throw new AuthError(refused, { code: 'unauthenticated', status: 401 });
   const body = await response.json().catch(() => ({}));
-  throw new AuthError('Could not rename the roadmap', { code: body.code, said: typeof body.error === 'string' ? body.error : undefined, status: response.status });
+  throw new AuthError(failed, { code: body.code, said: typeof body.error === 'string' ? body.error : undefined, detail: body.detail, status: response.status });
 }
 
-// Set a roadmap's visibility (PATCH /v1/trees/:id, 204). 'private' ⇒ owner-only reads;
-// 'unlisted'/'public' ⇒ anyone with the link. A non-owner's call 403s.
-export async function setVisibility(treeId, visibility) {
-  let response;
-  try {
-    response = await fetch(`${API_BASE}/v1/trees/${treeId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ visibility }),
-      credentials: 'include',
-    });
-  } catch {
-    throw new AuthError('Network request failed', { code: 'unreachable', status: 0 });
-  }
-  if (response.ok) return;
-  if (response.status === 401) throw new AuthError('Sign in to change visibility', { code: 'unauthenticated', status: 401 });
-  const body = await response.json().catch(() => ({}));
-  throw new AuthError('Could not change visibility', { code: body.code, said: typeof body.error === 'string' ? body.error : undefined, detail: body.detail, status: response.status });
+// Retitle a roadmap. The server trims and refuses a blank.
+export function renameTree(treeId, title) {
+  return patchTree(treeId, { title }, { refused: 'Sign in to rename a roadmap', failed: 'Could not rename the roadmap' });
+}
+
+// Set a roadmap's visibility. 'private' ⇒ owner-only reads; 'unlisted'/'public' ⇒ anyone with the link.
+export function setVisibility(treeId, visibility) {
+  return patchTree(treeId, { visibility }, { refused: 'Sign in to change visibility', failed: 'Could not change visibility' });
+}
+
+// Set a roadmap's guide; an empty one removes it. The server refuses one past its 5,000 code points with a 400.
+export function setGuide(treeId, guide) {
+  return patchTree(treeId, { guide }, { refused: 'Sign in to write a guide', failed: 'Could not save the guide' });
 }
 
 // Retire a roadmap (DELETE /v1/trees/:id, 204 — a soft delete; it leaves every list).

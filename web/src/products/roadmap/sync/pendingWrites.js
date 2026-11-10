@@ -1,12 +1,12 @@
-import { compareHlc, parseHlc } from './lattice.js';
+import { TREE_REGISTERS, compareHlc, parseHlc } from './lattice.js';
 import { progressStamp } from './progressLattice.js';
 import { GENESIS_STAMP } from '../model/Legend.js';
 
 const SECTIONS = ['nodes', 'edges', 'kinds', 'marks'];
-const TITLE_KEY = JSON.stringify(['title', '', 'at']);
 
 const rowId = (section, row) => (section === 'edges' ? [row.from, row.to] : row.id ?? row.node);
 const stampKey = (section, id, field) => JSON.stringify([section, id, field]);
+const registerKey = (name) => stampKey(name, '', 'at');
 const isStamp = (field, value) => (field.endsWith('At') || field === 'at') && typeof value === 'string';
 
 export function writeStamps(frame = {}) {
@@ -19,7 +19,7 @@ export function writeStamps(frame = {}) {
       }
     }
   }
-  if (frame?.title?.at) stamps[TITLE_KEY] = frame.title.at;
+  for (const name of TREE_REGISTERS) if (frame?.[name]?.at) stamps[registerKey(name)] = frame[name].at;
   return stamps;
 }
 
@@ -46,7 +46,7 @@ export function frameWrites(frame = {}, keeps) {
     if (!frame?.[section]) continue;
     part[section] = frame[section].map((row) => rowWrites(section, row, keeps)).filter(Boolean);
   }
-  if (frame?.title?.at && keeps(TITLE_KEY, frame.title.at)) part.title = frame.title;
+  for (const name of TREE_REGISTERS) if (frame?.[name]?.at && keeps(registerKey(name), frame[name].at)) part[name] = frame[name];
   return part;
 }
 

@@ -50,3 +50,15 @@ test('a transient carries its take-back and its dismissal, and the tone is one e
   const quiet = Toast({ children: 'Saved.' });
   assert.equal(elementsOf(quiet).filter((each) => each.type === 'button').length, 0, 'no action, no close, no buttons');
 });
+
+test('a held button keeps its focus and its colour at 45%, says it is unavailable, and a press does nothing', async (t) => {
+  const { Button } = await loadScreen('design-system/core/Button.jsx');
+  const pressed = [];
+  const held = renderHook(t, () => Button({ onClick: () => pressed.push('save'), held: true, describedBy: 'counter', type: 'submit', children: 'Save' })).tree;
+  assert.deepEqual({ type: held.type, disabled: held.props.disabled, ariaDisabled: held.props['aria-disabled'], describedBy: held.props['aria-describedby'],
+    opacity: held.props.style.opacity, background: held.props.style.background, cursor: held.props.style.cursor },
+  { type: 'button', disabled: false, ariaDisabled: 'true', describedBy: 'counter', opacity: 0.45, background: 'var(--color-brand)', cursor: 'not-allowed' });
+  let prevented = false;
+  held.props.onClick({ preventDefault: () => { prevented = true; } });
+  assert.deepEqual({ pressed, prevented }, { pressed: [], prevented: true });
+});

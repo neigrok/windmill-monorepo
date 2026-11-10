@@ -15,6 +15,7 @@ point for the component showcase.
 | `room/` | What the room holds: the load, the view, progress, the scene, the open step, the row's verbs, the band and who holds the roadmap |
 | `model/` | Graph validation, trunk selection, unlock rules, legend, workspace and spatial queries. Independent of React and WebGL |
 | `identity/` | The row above both views: title, roadmap sheet and switcher, view switch |
+| `guide/` | The tree's guide: its draft and bound, who sees it and where a save goes, its chip and modal from 744px, and its phone line, note, row, page and editor |
 | `board/` | Query and columns, regroup, held actions, the shared toast, card gestures and selection |
 | `step/` | The step page and modal, workspace, composer and picker, and the step's address |
 | `graph/`, `graph/tree/`, `graph/tablet/` | Canvas chrome, docks, writes, selection and what a changed lattice does to the picture; the desktop step panel; the tablet's panel |
@@ -160,6 +161,23 @@ departure, to another control or off the page, preserves its destination. Escape
 and so does an outside press on More or What's next, which also cancels the mousedown WebKit still sends
 after a finger's cancelled pointerdown.
 
+**The guide.** A tree carries one guide, plain text its owner writes on what the tree is and how to work it, which agents
+receive through MCP; people see the same text. `GuideDraft` counts it in code points as the server does: the counter speaks
+from 4,500, and past 5,000 nothing is cut and Save waits. Save writes the text as it shows: a NUL a paste carried goes and a
+lone surrogate becomes the replacement glyph drawn for it, so no door sends text the server refuses, and `admitsGuide`,
+the server's admission, guards the session's and the device's doors. `useRoomGuide` decides who sees it (the owner always, a reader on
+the app route when it holds words, nobody in the shared-reader mode or the demo), holds the one surface open on it and routes a
+save: `SyncSession.setGuide` when the session can take the write, else the device store for a tree that lives only here
+(`setLocalGuide`, which refuses a tree whose record is gone), else `PATCH /v1/trees/{id}`. From 744px `GuideChip` follows the view switch: the first line up to 320px
+(200px below 1280px), the book alone with its tooltip below 1024px, a dashed Add guide for an owner with none. It opens
+`GuideModal`, the step modal's anatomy filling the window with the text at a 560px measure. The owner's text is one
+`<textarea>`, read-only while reading, so a click that is not a drag-selection writes from where it landed; where a browser
+leaves the caret where it was, `caretPositionFromPoint` says where. Enter writes from the end, ⌘↩ saves, an empty Save removes
+the guide and leaving a changed draft asks through `DiscardDraft`. A guide set elsewhere flashes the chip and swaps the text in
+place; mid-edit a strip offers Load latest. On phones the owner's roadmap sheet carries a Guide row and page beside Activity's,
+and a tap on the page's text opens `GuideEditor`, the note editor's full-screen shell, with the caret where the finger landed;
+a reader gets `GuideLine` in the device line's slot and the note in a sheet.
+
 **The roadmap sheet.** `RoadmapSheet` owns title search above eight roadmaps and the keyboard-aware search and
 New roadmap footer; `roadmapSearch.js` owns the threshold, trimmed title match and highlight offsets in the
 original text after Unicode lowercasing. Its current row comes from the host projection, with up next and
@@ -169,8 +187,8 @@ roadmaps come from `listAllTrees`. Readers never receive the owner sheet. `TreeS
 equivalent from 744px and owns rename and delete.
 
 **Export** builds one Markdown file through `serializePlan` and `fileNameFor` in `exportArchive.js`, with a
-`<!-- windmill:roadmap -->` marker: its title is metadata, and every step, including each root, is a list item
-with its own completion mark. Kind changes are inline comments, keeping the nested list uninterrupted in
+`<!-- windmill:roadmap -->` marker: its title is metadata, its guide a quote between `<!-- windmill:guide -->` lines that a
+replant reads past, and every step, including each root, is a list item with its own completion mark. Kind changes are inline comments, keeping the nested list uninterrupted in
 Markdown viewers. Indentation preserves primary prerequisites; additional prerequisites become `needs also`
 notes. Kind descriptions and link labels are outside the paste format. Settings exports all roadmaps as a zip. A roadmap it
 can't read stays out, marks included, and the line says *Exported 1 of 2 roadmaps.*; with none read nothing downloads and the
@@ -189,7 +207,8 @@ from the page top, or 12px below the measured row, Board filter strip or Graph r
 lower. The room mounts it in whichever layer the view shows, so it paints beneath the row's menus and the Board's
 sort menu. Phone owners open
 Activity as a page inside the roadmap sheet: with at most eight roadmaps the entry and the page share a 611px
-footprint capped by the viewport; Back or the first Escape returns to the roadmap page, and a row closes the
+footprint capped by the viewport, grown by the guide's row when the sheet carries one; Back, an edge swipe or the first Escape
+returns to the roadmap page, and a row closes the
 sheet before opening its step. `activity/ActivityRows.jsx` owns the shared rows, removed-step treatment and
 empty state.
 
@@ -597,8 +616,8 @@ unless the device index takes a write and the database opens, and a save that fa
 The new-roadmap door asks `deviceKeepsTrees` first: short of a signed-in account, a browser that will not keep a plan says
 *Couldn't open this device's saved work* and offers no field, and holds that line from the shell's own alert so it is said once.
 
-**Local failures.** Every local structural apply, including dispatch, targeted revert, global Undo and Redo
-and tree rename, contains notification, persistence and transport failures after the lattice join. Applied
+**Local failures.** Every local structural apply, including dispatch, targeted revert, global Undo and Redo,
+tree rename and guide write, contains notification, persistence and transport failures after the lattice join. Applied
 dispatches keep their receipt, and persistence or transport failures mark durability at risk. Pre-apply
 failures still throw. A progress mark's save reports the same way. The receive path stores the lattice and its
 separate confirmed baseline. Socket send failures preserve pending writes and reconnect for a fresh graft.
@@ -611,7 +630,7 @@ clears the count, including a refusal, so a signed-out device tree stays quiet.
 **Status.** `SyncSession.subscribeStatus` delivers immutable snapshots of both lanes' unconfirmed user writes,
 pending gestures, unconfirmed in-flight frames, socket phase, browser connectivity and the current refusal.
 `sync/pendingWrites.js` owns unconfirmed-register comparisons and pending-gesture accounting for the session,
-stored lanes and device-tree renames. Status and transport share the per-register outbox rule against confirmed baselines, independently of
+stored lanes and device-tree renames and guides. Status and transport share the per-register outbox rule against confirmed baselines, independently of
 the subscription's actor coverage; transport excludes identical stamps already in flight. A full structure graft
 replaces its confirmed baseline; a lower room sequence triggers an empty-vector resubscribe for that full state.
 Partial grafts join structure confirmation, and every complete progress graft replaces its confirmed overlay.
@@ -663,6 +682,11 @@ save waiting for the replacement's new epoch. Structure edits stay blocked durin
 progress-lane replacement blocks progress editing, and the composer keeps its draft with saving disabled. An
 unsent held delete stays available.
 
+**Tree registers.** The title and the guide are the tree's own registers beside its graph and legend. A rename or a guide
+write stamps one register outside the undo journal and saves with the structure lane; a flush sends the steps first and
+each register in a frame of its own, so a refused register strands no step edit; a device tree's stamped guide reaches the
+server through the claim's first flush, once the tree exists there, since a planted document never sets one.
+
 **Created time.** Each projected step carries `createdMs`, the wall time of its add stamp: when it joined this
 tree. Create and import stamp it, a fork re-adds every step at the fork, and edits never touch it. A genesis
 seed reads `null`, unknown. A restore re-adds the step with a fresh stamp, so its `createdMs` becomes the time
@@ -687,7 +711,7 @@ replica stamped and the server does not hold, stores them and sends them after i
 that tab showed; it blocks new edits until the graft, as the discarding tab does. Every structure or progress write
 send checks its epoch inside an IndexedDB read transaction, and a read failure keeps the pending bank; a
 delayed epoch notification cannot bypass the check. A closing session's socket waits for sends that have begun. Epoch subscriptions close with the session. Renaming a
-device tree carries the loaded epochs and retries a stale result; moving one keeps its source if the
+device tree or writing its guide carries the loaded epochs and retries a stale result; moving one keeps its source if the
 destination rejects an epoch. Saves are serialized, expose their transaction result to the caller, and keep
 the queue usable after failure. An in-memory edit alone is not confirmed durable.
 

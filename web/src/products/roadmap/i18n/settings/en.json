@@ -1,6 +1,6 @@
 {
   "roadmap.export.action": "Export my trees",
-  "roadmap.export.detail": "A .zip of Markdown — one file per tree. Paste any of them back to replant it.",
+  "roadmap.export.detail": "A .zip of Markdown — one file per tree, its guide included. Paste any of them back to replant its steps.",
   "roadmap.export.done": "{count, plural, one {Exported # roadmap.} other {Exported # roadmaps.}}",
   "roadmap.export.failed": "Couldn't build your export just now — try again.",
   "roadmap.export.nothing": "No roadmaps to export yet.",
