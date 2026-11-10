@@ -143,8 +143,8 @@ Amplitude key intentionally disables forwarding.
 
 The inventory has 93 HTTP write registrations: REST platform 27, roadmap 13, gym 33 (20 of them
 retired paths), journal 11, probe 2; sync 3; MCP transport 4. Excluding the two dev routes and two
-standalone transport duplicates leaves 89 production HTTP operations. MCP has 37 write declarations
-(roadmap 23, gym 14); compatibility aliases share their canonical operation. Coach has 29 operations
+standalone transport duplicates leaves 89 production HTTP operations. MCP has 38 write declarations
+(roadmap 24, gym 14); compatibility aliases share their canonical operation. Coach has 29 operations
 (ask 2, gym abilities 6, scoped roadmap abilities 21). The catalogs have eleven production commands
 (gym 9, journal 2), plus four probe commands. Background coverage includes 23 scheduled/stage
 operations plus sync publication, Amplitude forwarding and the AI usage ledger (26 background
@@ -269,6 +269,7 @@ listed separately because their only server writes are authentication refresh or
 | `POST /v1/sync/pull` (platform; sync) | `sync.pull` | completion; bounded refusal or result | unexpected |
 | `MCP roadmap_create_tree` (and unambiguous `create_tree` alias) | `mcp.roadmap_create_tree` | completion; bounded refusal or result | unexpected |
 | `MCP roadmap_delete_tree` (and unambiguous `delete_tree` alias) | `mcp.roadmap_delete_tree` | completion; bounded refusal or result | unexpected |
+| `MCP roadmap_describe_tree` (and unambiguous `describe_tree` alias) | `mcp.roadmap_describe_tree` | completion; bounded refusal or result | unexpected |
 | `MCP roadmap_create_node` (and unambiguous `create_node` alias) | `mcp.roadmap_create_node` | completion; bounded refusal or result | unexpected |
 | `MCP roadmap_annotate_node` (and unambiguous `annotate_node` alias) | `mcp.roadmap_annotate_node` | completion; bounded refusal or result | unexpected |
 | `MCP roadmap_rename_node` (and unambiguous `rename_node` alias) | `mcp.roadmap_rename_node` | completion; bounded refusal or result | unexpected |

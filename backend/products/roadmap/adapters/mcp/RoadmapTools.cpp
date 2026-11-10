@@ -25,6 +25,7 @@
 #include <stdexcept>
 #include <string>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace wm {
@@ -301,9 +302,15 @@ ToolResult readTree(RoomRegistry& registry, ProgressService& progress, const Tre
     Json::Value kinds(Json::arrayValue);
     for (const Kind& kind : data.kinds) kinds.append(projectKind(kind, *kindFields));
 
+    // Whole on every page, and only here: `yours` says whether the note is the caller's own.
+    Json::Value guide(Json::objectValue);
+    guide["text"] = data.guide;
+    guide["yours"] = canWrite(caller, room.owner());
+
     Json::Value document(Json::objectValue);
     document["id"] = data.id.str();
     document["title"] = data.title;
+    document["guide"] = guide;
     document["nodes"] = std::move(projected.nodes);
     document["kinds"] = kinds;
 
@@ -1272,6 +1279,31 @@ ToolResult removeTree(TreeRegistry& registry, const TreeId& tree, const UserId& 
   return ToolResult::json(out);
 }
 
+// The guide is user content: a refusal names its bound and its type, never its text.
+ToolResult describeTree(TreeRegistry& registry, const TreeId& tree, const Json::Value& args, const UserId& caller) {
+  const Json::Value& guide = args["guide"];
+  if (!guide.isString())
+    return ToolResult::failure(*requireString(guide, "guide") + ". A guide is plain text of at most " +
+                               std::to_string(kMaxGuideChars) + " characters; \"\" clears it.");
+  if (std::optional<std::string> bad = optionalString(guide, "guide", kMaxGuideChars))
+    return ToolResult::failure(*bad);
+
+  const std::variant<Seq, TreeRegistry::GuideRefusal, Admission> outcome =
+      registry.setGuide(tree, caller, guide.asString());
+  if (const Admission* refusal = std::get_if<Admission>(&outcome)) return ToolResult::failure(refusal->reason);
+  if (const TreeRegistry::GuideRefusal* refusal = std::get_if<TreeRegistry::GuideRefusal>(&outcome)) {
+    if (*refusal == TreeRegistry::GuideRefusal::notYours)
+      return ToolResult::failure(writeRefusalSentence(WriteRefusal::notYours));
+    if (*refusal == TreeRegistry::GuideRefusal::nobodysTree)
+      return ToolResult::failure(writeRefusalSentence(WriteRefusal::nobodysTree));
+    return ToolResult::failure("no such tree \"" + tree.str() + "\"");
+  }
+  Json::Value out(Json::objectValue);
+  out["applied"] = true;
+  out["seq"] = static_cast<Json::Int64>(std::get<Seq>(outcome));
+  return ToolResult::json(out);
+}
+
 }  // namespace
 
 RoadmapTools::RoadmapTools(RoomRegistry& registry, ProgressService& progress, Clock& clock,
@@ -1323,6 +1355,7 @@ ToolResult RoadmapTools::dispatch(const std::string& name, const Json::Value& ar
   std::optional<UserId> reader = caller.empty() ? std::nullopt : std::optional<UserId>(caller);
 
   if (name == "delete_tree")     return removeTree(treeRegistry_, tree, caller);
+  if (name == "describe_tree")   return describeTree(treeRegistry_, tree, arguments, caller);
   if (name == "get_tree")        return readTree(registry_, progress_, tree, arguments, reader);
   if (name == "get_nodes")       return readNodes(registry_, progress_, tree, arguments, reader);
   if (name == "get_diagnostics") return readDiagnostics(registry_, tree, reader);

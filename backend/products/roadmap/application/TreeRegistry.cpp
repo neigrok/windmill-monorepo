@@ -118,8 +118,9 @@ TreeRegistry::Renaming TreeRegistry::rename(const TreeId& tree, const UserId& ca
   return Renaming::renamed;
 }
 
-std::variant<TreeRegistry::GuideChange, Admission> TreeRegistry::setGuide(const TreeId& tree, const UserId& caller,
-                                                                        const std::string& guide) {
+std::variant<Seq, TreeRegistry::GuideRefusal, Admission> TreeRegistry::setGuide(const TreeId& tree,
+                                                                              const UserId& caller,
+                                                                              const std::string& guide) {
   if (std::optional<Admission> refusal = admitGuide(guide)) return *refusal;
 
   // The strand serializes the guide against the tree's socket frames, so the gates, the write and
@@ -127,16 +128,16 @@ std::variant<TreeRegistry::GuideChange, Admission> TreeRegistry::setGuide(const 
   // materialized.
   std::lock_guard<std::mutex> strand(rooms_.strandFor(tree));
   const std::optional<TreeAccess> access = rooms_.accessOf(tree);
-  if (!access || !canRead(caller, access->owner, access->visibility)) return GuideChange::notFound;
+  if (!access || !canRead(caller, access->owner, access->visibility)) return GuideRefusal::notFound;
   if (std::optional<WriteRefusal> refusal = writeRefusalFor(caller, access->owner))
-    return *refusal == WriteRefusal::nobodysTree ? GuideChange::nobodysTree : GuideChange::notYours;
+    return *refusal == WriteRefusal::nobodysTree ? GuideRefusal::nobodysTree : GuideRefusal::notYours;
   TreeRoom* room = rooms_.open(tree);
-  if (!room) return GuideChange::notFound;
-  room->setGuide(guide, clock_.nowMs());
-  if (rooms_.persist(tree)) return GuideChange::changed;
+  if (!room) return GuideRefusal::notFound;
+  const Seq seq = room->setGuide(guide, clock_.nowMs());
+  if (rooms_.persist(tree)) return seq;
   // The row went away under its live room: the room goes too, so no reader is served the guide.
   rooms_.retire(tree);
-  return GuideChange::notFound;
+  return GuideRefusal::notFound;
 }
 
 TreeRegistry::VisibilityChange TreeRegistry::setVisibility(const TreeId& tree, const UserId& caller,

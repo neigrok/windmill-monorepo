@@ -10,11 +10,11 @@
 namespace wm {
 
 // Pins a tend's agent to one tree: every tool call's `treeId` is forced to the scope, and tools that
-// reach across trees are dropped from the catalog and refused if named anyway. A name the inner
-// catalog does not declare, and an argument the tool's schema does not declare, are refused here
-// with the sentences the MCP wire gives, because a tend never passes through CompositeToolHost.
-// Retired names are not consulted: a tend's agent reads the catalog it was handed, never an older
-// one.
+// reach across trees or set the tree's guide are dropped from the catalog and refused if named
+// anyway. A name the inner catalog does not declare, and an argument the tool's schema does not
+// declare, are refused here with the sentences the MCP wire gives, because a tend never passes
+// through CompositeToolHost. Retired names are not consulted: a tend's agent reads the catalog it
+// was handed, never an older one.
 class ScopedToolHost : public ToolHost {
 public:
   ScopedToolHost(ToolHost& inner, TreeId scope);

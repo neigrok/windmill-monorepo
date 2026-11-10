@@ -265,9 +265,10 @@ and read as unknown creation time. No client calls this door. Inbound models are
 owner's alone. A body naming more than one is refused `400`, and a body that is not one JSON object
 `400 invalid json body`. A guide past 5000 characters, not valid UTF-8 or carrying a NUL is refused
 `400` with the admission's sentence, and an empty one clears it; a title carrying a NUL is refused
-`400` too. The guide's writes are this and the socket's
-`subgraph` frame; a posted document (`POST`, `PUT`) never sets it. `GET /v1/trees/{id}` carries it as
-`data.guide` beside `data.title`, and a fork copies it. The share page and the gallery do not show it.
+`400` too. The guide's writes are this, the socket's `subgraph` frame and MCP `describe_tree`; a posted
+document (`POST`, `PUT`) never sets it, and a tend is not offered `describe_tree`. `GET /v1/trees/{id}`
+carries it as `data.guide` beside `data.title`, MCP `get_tree` as `tree.guide: {text, yours}` on every
+page and no other MCP read at all, and a fork copies it. The share page and the gallery do not show it.
 
 A tree id is `t_` plus 16 lowercase hex characters (`wellFormedTreeId`); a client-supplied id
 (claim-create, fork) must match byte for byte.
