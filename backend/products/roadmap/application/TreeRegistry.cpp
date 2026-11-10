@@ -122,6 +122,7 @@ std::variant<Seq, TreeRegistry::GuideRefusal, Admission> TreeRegistry::setGuide(
                                                                               const UserId& caller,
                                                                               const std::string& guide) {
   if (std::optional<Admission> refusal = admitGuide(guide)) return *refusal;
+  const std::string kept = isBlankGuide(guide) ? std::string() : guide;
 
   // The strand serializes the guide against the tree's socket frames, so the gates, the write and
   // the persist form one uninterrupted step. Both gates read the stored access row before a room is
@@ -133,7 +134,7 @@ std::variant<Seq, TreeRegistry::GuideRefusal, Admission> TreeRegistry::setGuide(
     return *refusal == WriteRefusal::nobodysTree ? GuideRefusal::nobodysTree : GuideRefusal::notYours;
   TreeRoom* room = rooms_.open(tree);
   if (!room) return GuideRefusal::notFound;
-  const Seq seq = room->setGuide(guide, clock_.nowMs());
+  const Seq seq = room->setGuide(kept, clock_.nowMs());
   if (rooms_.persist(tree)) return seq;
   // The row went away under its live room: the room goes too, so no reader is served the guide.
   rooms_.retire(tree);

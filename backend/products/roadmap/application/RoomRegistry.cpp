@@ -34,8 +34,8 @@ TreeRoom* RoomRegistry::open(const TreeId& id) {
 
   LooseGraph graph(stored->state);  // full CRDT state — lossless
   Legend legend(stored->legend);    // empty for legacy trees; the client derives then
-  auto room = std::make_unique<TreeRoom>(id, stored->title, stored->guide, std::move(graph),
-                                         std::move(legend), stored->head, stored->owner,
+  auto room = std::make_unique<TreeRoom>(id, stored->title, stored->guide, stored->guideInherited,
+                                         std::move(graph), std::move(legend), stored->head, stored->owner,
                                          stored->visibility, stored->createdAt, bus_);
   // The document is a snapshot at stored->head. A row past that head is what an older ordering
   // could leave behind; replaying it reaches the true state and head, so new ops never collide on

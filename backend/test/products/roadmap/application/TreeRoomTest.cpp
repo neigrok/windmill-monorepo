@@ -10,7 +10,7 @@ using namespace wm::fake;
 namespace {
 
 TreeRoom makeRoom(FakeBus& bus) {
-  return TreeRoom(tid(), {"Title", {}}, {}, LooseGraph{}, Legend{}, 0, std::nullopt,
+  return TreeRoom(tid(), {"Title", {}}, {}, false, LooseGraph{}, Legend{}, 0, std::nullopt,
                   Visibility::private_, 0, bus);
 }
 
@@ -59,7 +59,7 @@ TEST(room_next_stamp_dominates_the_loaded_document_state) {
   Hlc old{8000, 2, "old"};
   loaded.createNode(nid("seed"), "S", "i", NodeColor::sky, std::nullopt, old);
   FakeBus bus;
-  TreeRoom room(tid(), {"T", {}}, {}, std::move(loaded), Legend{}, 0, std::nullopt,
+  TreeRoom room(tid(), {"T", {}}, {}, false, std::move(loaded), Legend{}, 0, std::nullopt,
                 Visibility::private_, 0, bus);
 
   Hlc next = room.nextStamp(10);  // wall clock behind the persisted stamp
@@ -433,7 +433,7 @@ TEST(room_replays_a_batch_op_past_the_stored_head_whole) {
   live.landPendingOps(log);
 
   FakeBus quiet;
-  TreeRoom reopened(tid(), {"Title", {}}, {}, persisted, persistedLegend, 3, std::nullopt,
+  TreeRoom reopened(tid(), {"Title", {}}, {}, false, persisted, persistedLegend, 3, std::nullopt,
                     Visibility::private_, 0, quiet);
   CHECK(reopened.hasNode(nid("b")));
   for (const AppliedOp& op : log.since(tid(), 3)) reopened.replay(op);

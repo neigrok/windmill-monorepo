@@ -21,6 +21,7 @@ ForkService::Result ForkService::fork(const TreeId& source, const std::string& r
   LegendState legend;
   std::string title;
   std::string guide;
+  bool guideInherited = false;
   Hlc plantedAt;
   {
     std::lock_guard<std::mutex> lock(registry_.strandFor(source));
@@ -39,6 +40,9 @@ ForkService::Result ForkService::fork(const TreeId& source, const std::string& r
     legend = room->exportLegend();
     title = room->title().value;
     guide = room->guide().value;
+    // The copy is the forker's own words only when they wrote the source's: their own tree, whose
+    // guide is not itself a copy. Anyone else's — an ownerless tree's included — is inherited.
+    guideInherited = !guide.empty() && (access->owner != std::optional<UserId>(owner) || room->guideInherited());
   }
 
   const TreeId newId{requestedId.empty() ? "t_" + tokens_.mint().digest.substr(0, 16) : requestedId};
@@ -49,7 +53,7 @@ ForkService::Result ForkService::fork(const TreeId& source, const std::string& r
     if (trees_.load(newId)) return {Outcome::conflict, {}};
     try {
       trees_.fork(newId, source, state, legend, Lww<std::string>{forkTitle, plantedAt}, Lww<std::string>{guide, plantedAt},
-                  owner);
+                  guideInherited, owner);
     } catch (const DuplicateTree&) {
       return {Outcome::conflict, {}};  // a soft-deleted row still holds the id, invisible to load
     }

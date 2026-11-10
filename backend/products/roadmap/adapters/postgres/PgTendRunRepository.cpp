@@ -52,6 +52,9 @@ TendRefusal tendRefusalFrom(const std::string& name) {
   if (name == "tree-too-large")   return TendRefusal::treeTooLarge;
   if (name == "prompt-empty")     return TendRefusal::promptEmpty;
   if (name == "prompt-too-long")  return TendRefusal::promptTooLong;
+  if (name == "no-such-tree")     return TendRefusal::noSuchTree;
+  if (name == "not-yours")        return TendRefusal::notYours;
+  if (name == "nobodys-tree")     return TendRefusal::nobodysTree;
   return TendRefusal::none;
 }
 

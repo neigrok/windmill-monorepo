@@ -235,7 +235,7 @@ std::optional<StoredTree> PgTreeRepository::load(const TreeId& tree) {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
-      "SELECT title, title_hlc, guide, guide_hlc, head_seq, document::text, owner_id::text, visibility, "
+      "SELECT title, title_hlc, guide, guide_hlc, guide_inherited, head_seq, document::text, owner_id::text, visibility, "
       "(extract(epoch from created_at) * 1000)::bigint AS created_ms "
       "FROM trees WHERE id = $1 AND deleted_at IS NULL",
       tree.str());
@@ -261,7 +261,8 @@ std::optional<StoredTree> PgTreeRepository::load(const TreeId& tree) {
   return StoredTree{std::move(state), std::move(legend), std::move(title),
                     static_cast<Seq>(row["head_seq"].as<long long>()), std::move(owner),
                     parseVisibility(row["visibility"].as<std::string>()),
-                    static_cast<std::uint64_t>(row["created_ms"].as<long long>()), std::move(guide)};
+                    static_cast<std::uint64_t>(row["created_ms"].as<long long>()), std::move(guide),
+                    row["guide_inherited"].as<bool>()};
 }
 
 bool PgTreeRepository::save(const TreeId& tree, const GraphState& state, const LegendState& legend,
@@ -284,7 +285,7 @@ bool PgTreeRepository::save(const TreeId& tree, const GraphState& state, const L
       tree.str(), title.value, toString(title.stamp),
       static_cast<long long>(title.stamp.physicalMs), static_cast<long long>(title.stamp.counter));
   txn.exec_params(
-      "UPDATE trees SET guide = $2, guide_hlc = $3, guide_ms = $4, guide_counter = $5 "
+      "UPDATE trees SET guide = $2, guide_hlc = $3, guide_ms = $4, guide_counter = $5, guide_inherited = false "
       "WHERE id = $1 AND ($4::bigint, $5::bigint, $3::text COLLATE \"C\") "
       "> (guide_ms, guide_counter, guide_hlc COLLATE \"C\")",
       tree.str(), guide.value, toString(guide.stamp),
@@ -433,7 +434,7 @@ void PgTreeRepository::setVisibility(const TreeId& tree, Visibility visibility) 
 
 void PgTreeRepository::fork(const TreeId& newTree, const TreeId& source, const GraphState& state,
                            const LegendState& legend, const Lww<std::string>& title, const Lww<std::string>& guide,
-                           const UserId& owner) {
+                           bool guideInherited, const UserId& owner) {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   if (txn.exec_params("SELECT id FROM users WHERE id=$1::uuid FOR KEY SHARE", owner.str()).empty())
@@ -441,12 +442,12 @@ void PgTreeRepository::fork(const TreeId& newTree, const TreeId& source, const G
   try {
     txn.exec_params(
         "INSERT INTO trees (id, title, title_hlc, title_ms, title_counter, guide, guide_hlc, guide_ms, guide_counter, "
-        "head_seq, forked_from, owner_id) "
-        "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 0, $10, $11::uuid)",
+        "guide_inherited, head_seq, forked_from, owner_id) "
+        "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 0, $11, $12::uuid)",
         newTree.str(), title.value, toString(title.stamp), static_cast<long long>(title.stamp.physicalMs),
         static_cast<long long>(title.stamp.counter), guide.value, toString(guide.stamp),
-        static_cast<long long>(guide.stamp.physicalMs), static_cast<long long>(guide.stamp.counter), source.str(),
-        owner.str());
+        static_cast<long long>(guide.stamp.physicalMs), static_cast<long long>(guide.stamp.counter), guideInherited,
+        source.str(), owner.str());
   } catch (const pqxx::unique_violation&) {
     throw DuplicateTree{};
   }

@@ -56,7 +56,9 @@ enters these observations. OAuth admission races return the existing `login_requ
 each answers 410 `client-update-required` before authentication with nothing behind it and emits one
 WARN completion with outcome `client-update-required`, without an Issue, and the rate limiter skips
 it (`retiredRoute`). MCP's `CompositeToolHost`, Coach's `AskTools` and roadmap's `ScopedToolHost`
-dispatch by their access declarations. Sync admission instruments every intent and catalog command;
+dispatch by their access declarations; `ScopedToolHost` refuses the tools it withholds from a run
+(`create_tree`, `list_trees`, `delete_tree`, `describe_tree`) before it opens any observation, so a run
+emits only the roadmap operations listed below. Sync admission instruments every intent and catalog command;
 it validates labels against its sealed registry, and a product refusal code (gym's `plan-logged` and `session-finished`
 on a workout plan write, `proposal-superseded` on a workout proposal out of date) completes at WARN under that
 code with no Issue; the movement and the reason stay in the result detail, off the log. `Heartbeat` and `MailSweep` cover scheduled work
@@ -192,7 +194,7 @@ listed separately because their only server writes are authentication refresh or
 | `POST /v1/trees/{id}/fork` (roadmap; rest) | `roadmap.POST.v1.trees.id.fork` | completion; bounded refusal or result | unexpected |
 | `PUT /v1/trees/{id}/og-image` (roadmap; rest) | `roadmap.PUT.v1.trees.id.og.image` | completion; bounded refusal or result | unexpected |
 | `PUT /v1/trees/{id}/og-video` (roadmap; rest) | `roadmap.PUT.v1.trees.id.og.video` | completion; bounded refusal or result | unexpected |
-| `POST /v1/trees/{id}/tend` (roadmap; rest) | `roadmap.POST.v1.trees.id.tend` | completion; bounded refusal or result | unexpected |
+| `POST /v1/trees/{id}/tend` (roadmap; rest) | `roadmap.POST.v1.trees.id.tend` | completion; bounded refusal or result. A refused run answers 200 and its line carries the refusal at WARN — `prompt-empty`, `prompt-too-long`, `not-enabled`, `no-such-tree` (absent or private), `not-yours`, `nobodys-tree`, `out-of-allowance`, `out-of-budget` — and starts no `roadmap.tend.run` | unexpected |
 | `PATCH /v1/reminders` (roadmap; rest) | `roadmap.PATCH.v1.reminders` | completion; bounded refusal or result | unexpected |
 | `POST /v1/reminders/pause` (roadmap; rest) | `roadmap.POST.v1.reminders.pause` | completion; bounded refusal or result | unexpected |
 | `POST /v1/reminders/unsubscribe` (roadmap; rest) | `roadmap.POST.v1.reminders.unsubscribe` | completion; bounded refusal or result | unexpected |

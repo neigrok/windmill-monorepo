@@ -162,6 +162,11 @@ std::optional<Admission> admit(const Legend& legend, const LegendState& incoming
 // A tree register's one bound: valid UTF-8 with no NUL, within its cap. Past it is malformed, never truncated.
 std::optional<Admission> admitTitle(const std::string& title);
 std::optional<Admission> admitGuide(const std::string& guide);
+// A guide of only spaces, tabs and line breaks is no guide. A door that stamps the guide itself stores
+// it as ""; a guide that arrives already stamped, in a frame, cannot be stored other than as sent, so
+// admitStampedGuide refuses it beside admitGuide's bounds.
+bool isBlankGuide(const std::string& guide);
+std::optional<Admission> admitStampedGuide(const std::string& guide);
 
 // The single feed-worthy deed a subgraph delta represents, read off which lattice fields the frame
 // sets. Salience order: a node's own life, then legend deeds, then a node's fields, then edges. A

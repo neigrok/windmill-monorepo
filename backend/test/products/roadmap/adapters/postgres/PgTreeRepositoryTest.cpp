@@ -173,6 +173,47 @@ TEST(pg_a_fork_plants_the_title_and_guide_at_its_planting_stamp_for_the_new_owne
   CHECK(trees.load(kFork)->title == (Lww<std::string>{"Eve's voyage", Hlc{1'700'000'000'000, 2, "srv"}}));
 }
 
+// The mark lives on the row, so neither a restart nor a save that carries the copied guide again
+// clears it; only a guide the owner writes does, and that too survives a restart.
+TEST(pg_a_forks_copied_guide_stays_inherited_until_its_owner_writes_one_across_restarts) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  {
+    PgTreeRepository trees{pgTestPool()};
+    PgOpLog log{pgTestPool()};
+    FakeBus bus;
+    RoomRegistry registry(trees, log, bus);
+    trees.create(kTree, LooseGraph().exportState(), LegendState{}, "Sam's tree", kSam);
+    registry.setVisibility(kTree, Visibility::unlisted);
+    registry.open(kTree)->setGuide("Rig first, then sail.", 1'700'000'000'000);
+    REQUIRE(registry.persist(kTree));
+    FakeTokens tokens;
+    FakeClock clock;
+    ForkService forks{registry, trees, tokens, clock};
+    REQUIRE(forks.fork(kTree, kFork.str(), "", kEve).outcome == ForkService::Outcome::forked);
+    REQUIRE(registry.open(kFork)->guideInherited());
+    registry.evict(kFork);  // saves the copied guide back under its own stamp
+    CHECK(trees.load(kTree)->guideInherited == false);
+  }
+  {
+    PgTreeRepository restarted{pgTestPool()};
+    PgOpLog log{pgTestPool()};
+    FakeBus bus;
+    RoomRegistry registry(restarted, log, bus);
+    CHECK(restarted.load(kFork)->guideInherited);
+    TreeRoom& room = *registry.open(kFork);
+    CHECK(room.guideInherited());
+    room.setGuide("Sail first, rig on the way.", 1'700'000'001'000);
+    CHECK_FALSE(room.guideInherited());
+    REQUIRE(registry.persist(kFork));
+  }
+  PgTreeRepository again{pgTestPool()};
+  const std::optional<StoredTree> owned = again.load(kFork);
+  REQUIRE(owned.has_value());
+  CHECK_EQ(owned->guide.value, std::string("Sail first, rig on the way."));
+  CHECK_FALSE(owned->guideInherited);
+}
+
 TEST(pg_a_save_onto_a_soft_deleted_tree_writes_nothing_and_answers_false) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();

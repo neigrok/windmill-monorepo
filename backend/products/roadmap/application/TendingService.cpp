@@ -1,6 +1,7 @@
 #include "products/roadmap/application/TendingService.h"
 
 #include "products/roadmap/application/ScopedToolHost.h"
+#include "products/roadmap/domain/Access.h"
 
 #include <trantor/utils/Logger.h>
 
@@ -21,10 +22,10 @@ bool blank(const std::string& text) {
 }
 }
 
-TendingService::TendingService(TendRunRepository& runs, PlanAgent& agent, ToolHost& tools,
+TendingService::TendingService(TendRunRepository& runs, PlanAgent& agent, ToolHost& tools, RoomRegistry& rooms,
                                Clock& clock, TokenGenerator& tokens, Entitlements& entitlements,
                                bool enabled)
-    : runs_(runs), agent_(agent), tools_(tools), clock_(clock), tokens_(tokens),
+    : runs_(runs), agent_(agent), tools_(tools), rooms_(rooms), clock_(clock), tokens_(tokens),
       entitlements_(entitlements), enabled_(enabled), workers_(kTendWorkers, "tend-workers") {
   workers_.start();
 }
@@ -41,11 +42,19 @@ void TendingService::stop() {
 TendRun TendingService::start(const TreeId& tree, const UserId& caller, const std::string& email,
                               const std::string& prompt) {
   // The pipeline the contract pins, top to bottom: an unusable prompt, then a dark feature, then a
-  // spent allowance — each a persisted refusal, none of them work.
+  // tree the caller cannot write, then a spent allowance — each a persisted refusal, none of them work.
   if (blank(prompt)) return refuse(tree, caller, prompt, TendRefusal::promptEmpty);
   // Over the cap is the "you pasted a document" case — paste-import is the door for that, not this.
   if (prompt.size() > kMaxTendPromptBytes) return refuse(tree, caller, prompt, TendRefusal::promptTooLong);
   if (!enabled_) return refuse(tree, caller, prompt, TendRefusal::notEnabled);
+  // The run writes as its caller, so it takes the gate every structure write takes, off the stored
+  // access row: an absent tree and a private one answer alike.
+  const std::optional<TreeAccess> access = rooms_.accessOf(tree);
+  if (!access || !canRead(caller, access->owner, access->visibility))
+    return refuse(tree, caller, prompt, TendRefusal::noSuchTree);
+  if (std::optional<WriteRefusal> refusal = writeRefusalFor(caller, access->owner))
+    return refuse(tree, caller, prompt,
+                  *refusal == WriteRefusal::nobodysTree ? TendRefusal::nobodysTree : TendRefusal::notYours);
   if (!entitlements_.aiAllowancesEnabled() && !allowanceAt(caller, email, clock_.nowMs()).allows())
     return refuse(tree, caller, prompt, TendRefusal::outOfAllowance);
   // The dollar fuse, last because it is the only rung that reads the ledger. It measures what the

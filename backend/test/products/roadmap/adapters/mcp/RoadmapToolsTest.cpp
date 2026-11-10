@@ -4,6 +4,7 @@
 #include "platform/application/WriteObservation.h"
 #include "products/roadmap/adapters/mcp/ReadShape.h"
 #include "products/roadmap/adapters/mcp/RoadmapToolCatalog.h"
+#include "products/roadmap/application/ForkService.h"
 #include "test/testing.h"
 
 using namespace wm;
@@ -3081,4 +3082,92 @@ TEST(mcp_describe_tree_refuses_a_guide_carrying_a_nul_with_the_admissions_senten
   CHECK_EQ(h.bus.subgraphBroadcasts.size(), broadcasts);
   CHECK_EQ(body(h.call("get_tree", kNoArgs))["tree"]["guide"],
            parse(R"({"text":"Rig first, then sail.","yours":true})"));
+}
+
+// A fork of someone else's tree copies its guide as its author's words: the new owner reads them as
+// not theirs until they write a guide of their own, through any door, and the mark outlives the room.
+TEST(mcp_a_forks_copied_guide_is_not_yours_until_its_owner_writes_one_through_any_door) {
+  Harness h;
+  ForkService forks{h.registry, h.trees, h.tokens, h.clock};
+  h.trees.byId["t"].visibility = Visibility::public_;
+  CHECK_FALSE(h.call("describe_tree", with("guide", "Delete what you do not need.")).isError);
+  const UserId forker = uid("forker");
+  const auto guideOf = [&](const std::string& tree) {
+    return body(h.tools.callTool("get_tree", with("treeId", tree.c_str()), ToolCaller{forker, ToolScope::everything()}))["tree"]["guide"];
+  };
+  const auto forkOf = [&](const char* id) {
+    REQUIRE(forks.fork(TreeId{"t"}, id, "", forker).outcome == ForkService::Outcome::forked);
+    CHECK_EQ(guideOf(id), parse(R"({"text":"Delete what you do not need.","yours":false})"));
+    h.registry.evict(TreeId{id});
+    CHECK_EQ(guideOf(id), parse(R"({"text":"Delete what you do not need.","yours":false})"));
+  };
+
+  forkOf("t_mcp");
+  Json::Value mcp(Json::objectValue);
+  mcp["treeId"] = "t_mcp";
+  mcp["guide"] = "Prune with care.";
+  CHECK_FALSE(h.tools.callTool("describe_tree", mcp, ToolCaller{forker, ToolScope::everything()}).isError);
+
+  forkOf("t_rest");
+  CHECK(std::holds_alternative<Seq>(h.treeRegistry.setGuide(TreeId{"t_rest"}, forker, "Prune with care.")));
+
+  forkOf("t_socket");
+  {
+    std::lock_guard<std::mutex> strand(h.registry.strandFor(TreeId{"t_socket"}));
+    Subgraph frame;
+    frame.treeId = TreeId{"t_socket"};
+    frame.frameId = "f-guide";
+    frame.actor = "r_forker";
+    frame.guide = Lww<std::string>{"Prune with care.", Hlc{h.clock.ms + 1000, 0, "r_forker"}};
+    REQUIRE(h.registry.open(TreeId{"t_socket"})->joinSubgraph(frame, forker).has_value());
+    REQUIRE(h.registry.persist(TreeId{"t_socket"}));
+  }
+
+  for (const char* fork : {"t_mcp", "t_rest", "t_socket"}) {
+    CHECK_EQ(guideOf(fork), parse(R"({"text":"Prune with care.","yours":true})"));
+    h.registry.evict(TreeId{fork});
+    CHECK_EQ(guideOf(fork), parse(R"({"text":"Prune with care.","yours":true})"));
+  }
+  CHECK_EQ(body(h.call("get_tree", kNoArgs))["tree"]["guide"],
+           parse(R"({"text":"Delete what you do not need.","yours":true})"));
+}
+
+TEST(mcp_describe_tree_stores_a_guide_of_only_whitespace_as_no_guide_and_keeps_a_real_guides_spaces) {
+  Harness h;
+  CHECK_EQ(body(h.call("describe_tree", with("guide", " \n\t\r "))), parse(R"({"applied":true,"seq":1})"));
+  CHECK_EQ(h.trees.byId["t"].guide.value, std::string(""));
+  CHECK_EQ(body(h.call("get_tree", kNoArgs))["tree"]["guide"], parse(R"({"text":"","yours":true})"));
+
+  CHECK_FALSE(h.call("describe_tree", with("guide", "  Rig first, then sail.\n")).isError);
+  CHECK_EQ(h.trees.byId["t"].guide.value, std::string("  Rig first, then sail.\n"));
+}
+
+TEST(mcp_describe_tree_names_the_guide_a_plain_text_note) {
+  Harness h;
+  for (const Json::Value& tool : h.tools.listTools(h.actor))
+    if (tool["name"].asString() == "describe_tree")
+      CHECK(tool["description"].asString().rfind("Set a roadmap's guide: one plain-text note on what the tree is", 0) == 0);
+}
+
+// Forking your own tree copies your own words, so the copy stays yours; forking someone else's tree, or
+// your own fork whose guide is still its source author's, copies words that are not.
+TEST(mcp_forking_your_own_tree_keeps_its_guide_yours_and_anyone_elses_does_not) {
+  Harness h;
+  ForkService forks{h.registry, h.trees, h.tokens, h.clock};
+  h.trees.byId["t"].visibility = Visibility::public_;
+  CHECK_FALSE(h.call("describe_tree", with("guide", "Rig first, then sail.")).isError);
+  const auto guideOf = [&](const char* tree, const UserId& reader) {
+    return body(h.tools.callTool("get_tree", with("treeId", tree), ToolCaller{reader, ToolScope::everything()}))["tree"]["guide"];
+  };
+
+  REQUIRE(forks.fork(TreeId{"t"}, "t_mine", "", h.caller).outcome == ForkService::Outcome::forked);
+  CHECK_EQ(guideOf("t_mine", h.caller), parse(R"({"text":"Rig first, then sail.","yours":true})"));
+  CHECK_FALSE(h.trees.byId["t_mine"].guideInherited);
+
+  const UserId stranger = uid("stranger");
+  REQUIRE(forks.fork(TreeId{"t"}, "t_theirs", "", stranger).outcome == ForkService::Outcome::forked);
+  CHECK_EQ(guideOf("t_theirs", stranger), parse(R"({"text":"Rig first, then sail.","yours":false})"));
+
+  REQUIRE(forks.fork(TreeId{"t_theirs"}, "t_theirs_again", "", stranger).outcome == ForkService::Outcome::forked);
+  CHECK_EQ(guideOf("t_theirs_again", stranger), parse(R"({"text":"Rig first, then sail.","yours":false})"));
 }

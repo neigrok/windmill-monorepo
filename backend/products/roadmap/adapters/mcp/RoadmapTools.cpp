@@ -302,10 +302,12 @@ ToolResult readTree(RoomRegistry& registry, ProgressService& progress, const Tre
     Json::Value kinds(Json::arrayValue);
     for (const Kind& kind : data.kinds) kinds.append(projectKind(kind, *kindFields));
 
-    // Whole on every page, and only here: `yours` says whether the note is the caller's own.
+    // Whole on every page, and only here: `yours` says the caller owns the tree and wrote its current
+    // guide — a guide a fork copied from someone else's tree is its author's words until its owner
+    // writes their own.
     Json::Value guide(Json::objectValue);
     guide["text"] = data.guide;
-    guide["yours"] = canWrite(caller, room.owner());
+    guide["yours"] = canWrite(caller, room.owner()) && !room.guideInherited();
 
     Json::Value document(Json::objectValue);
     document["id"] = data.id.str();

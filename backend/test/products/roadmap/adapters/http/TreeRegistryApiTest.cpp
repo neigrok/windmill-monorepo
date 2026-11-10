@@ -253,6 +253,29 @@ TEST(patch_guide_sets_the_owners_guide_to_five_thousand_characters_and_refuses_o
   CHECK_EQ(h.trees.byId["t"].title.value, std::string("Mine"));
 }
 
+TEST(patch_guide_stores_a_guide_of_only_whitespace_as_no_guide_and_keeps_a_real_guides_spaces) {
+  Harness h;
+  UserId me = h.signIn("s-live", "sam@example.com");
+  h.trees.byId["t"] = StoredTree{GraphState{}, LegendState{}, {"Mine", {}}, 0, me};
+
+  CHECK_EQ(sendPatch(h.api, patch(guided("  Rig first.\n"), "s-live"), "t")->getStatusCode(), drogon::k204NoContent);
+  CHECK_EQ(h.trees.byId["t"].guide.value, std::string("  Rig first.\n"));
+  CHECK_EQ(sendPatch(h.api, patch(guided(" \n\t\r "), "s-live"), "t")->getStatusCode(), drogon::k204NoContent);
+  CHECK_EQ(h.trees.byId["t"].guide.value, std::string(""));
+}
+
+TEST(patch_guide_on_a_fork_makes_the_copied_guide_its_owners_own) {
+  Harness h;
+  UserId me = h.signIn("s-live", "sam@example.com");
+  h.trees.byId["t"] = StoredTree{GraphState{}, LegendState{}, {"Forked", {}}, 0, me};
+  h.trees.byId["t"].guide = Lww<std::string>{"Delete what you do not need.", Hlc{500, 0, "srv"}};
+  h.trees.byId["t"].guideInherited = true;
+
+  CHECK_EQ(sendPatch(h.api, patch(guided("Prune with care."), "s-live"), "t")->getStatusCode(), drogon::k204NoContent);
+  CHECK_EQ(h.trees.byId["t"].guide.value, std::string("Prune with care."));
+  CHECK_FALSE(h.trees.byId["t"].guideInherited);
+}
+
 TEST(patch_guide_refuses_a_non_owner_with_403_and_a_guide_that_is_not_a_string_with_400) {
   Harness h;
   h.signIn("s-live", "sam@example.com");

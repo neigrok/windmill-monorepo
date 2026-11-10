@@ -38,7 +38,9 @@ create index if not exists org_members_user on org_members (user_id);
 
 -- title and guide are LWW registers: `<register>_hlc` is its stamp ('' = unset);
 -- `<register>_ms`/`<register>_counter` are that stamp's numeric split, so the guard runs in SQL.
--- guide is the owner's plain-text note on how the tree is worked, at most 5000 characters.
+-- guide is a plain-text note on how the tree is worked, at most 5000 characters.
+-- guide_inherited marks a guide a fork copied from someone else's tree: its author's words, until a
+-- guide of the new owner's lands over it.
 create table if not exists trees (
   id            text primary key,
   org_id        uuid,
@@ -51,6 +53,7 @@ create table if not exists trees (
   guide_hlc     text not null default '',
   guide_ms      bigint not null default 0,
   guide_counter bigint not null default 0,
+  guide_inherited boolean not null default false,
   visibility    text not null default 'private',
   head_seq      bigint not null default 0,
   forked_from   text,
@@ -66,6 +69,7 @@ alter table trees add column if not exists guide text not null default '';
 alter table trees add column if not exists guide_hlc text not null default '';
 alter table trees add column if not exists guide_ms bigint not null default 0;
 alter table trees add column if not exists guide_counter bigint not null default 0;
+alter table trees add column if not exists guide_inherited boolean not null default false;
 -- visibility gates every read: 'private' is owner-only, 'unlisted'/'public' are readable by anyone
 -- holding the id.
 alter table trees add column if not exists visibility text not null default 'private';

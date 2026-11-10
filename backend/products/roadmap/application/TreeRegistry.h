@@ -45,9 +45,9 @@ public:
   Renaming rename(const TreeId& tree, const UserId& caller, const std::string& title);
 
   // admit → read gate → owner check → set the guide through the tree's room, durable before it
-  // answers the seq the guide took. An empty guide clears it. A tree the caller cannot read, or whose
-  // row went away under its live room, answers notFound; a guide past kMaxGuideChars, not valid UTF-8
-  // or carrying a NUL answers its Admission.
+  // answers the seq the guide took. An empty guide clears it, and so does one of only whitespace. A
+  // tree the caller cannot read, or whose row went away under its live room, answers notFound; a
+  // guide past kMaxGuideChars, not valid UTF-8 or carrying a NUL answers its Admission.
   enum class GuideRefusal { notFound, notYours, nobodysTree };
   std::variant<Seq, GuideRefusal, Admission> setGuide(const TreeId& tree, const UserId& caller, const std::string& guide);
 

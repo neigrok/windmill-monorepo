@@ -18,7 +18,7 @@ const std::map<std::string, std::string>& withheldTools() {
       {"create_tree", "tending edits a single tree — create_tree is out of its reach"},
       {"list_trees", "tending edits a single tree — list_trees is out of its reach"},
       {"delete_tree", "tending edits a single tree — delete_tree is out of its reach"},
-      {"describe_tree", "tending reads the tree's guide and never sets it — describe_tree is its owner's alone"}};
+      {"describe_tree", "tending reads the tree's guide but cannot set it — describe_tree is out of its reach"}};
   return refusals;
 }
 }
@@ -37,6 +37,10 @@ std::vector<ToolDeclaration> ScopedToolHost::declareTools() const {
 
 ToolResult ScopedToolHost::callTool(const std::string& name, const Json::Value& arguments,
                                     const ToolCaller& caller) {
+  // Refused before anything is observed: a withheld name is no write of the run's.
+  if (const auto withheld = withheldTools().find(name); withheld != withheldTools().end())
+    return ToolResult::failure(withheld->second);
+
   const auto declaration = byName_.find(name);
   std::unique_ptr<WriteObservation> observation;
   std::unique_ptr<WriteContext> context;
@@ -46,8 +50,6 @@ ToolResult ScopedToolHost::callTool(const std::string& name, const Json::Value& 
   }
   try {
     const ToolResult result = [&]() {
-      if (const auto withheld = withheldTools().find(name); withheld != withheldTools().end())
-        return ToolResult::failure(withheld->second);
       const auto declared = byName_.find(name);
       if (declared == byName_.end()) return ToolResult::failure(name + ": " + noSuchToolSentence());
       // The agent's own arguments are checked, before the forced treeId joins them.

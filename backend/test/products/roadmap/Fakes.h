@@ -137,7 +137,10 @@ struct FakeTreeRepository : TreeRepository {
     }
     // Each register lands only under a dominating stamp, the rule PgTreeRepository enforces in SQL; only Postgres carries the byte-order tiebreak collation.
     if (title.stamp > stored.title.stamp) stored.title = title;
-    if (guide.stamp > stored.guide.stamp) stored.guide = guide;
+    if (guide.stamp > stored.guide.stamp) {
+      stored.guide = guide;
+      stored.guideInherited = false;
+    }
     stored.head = head;
     return true;
   }
@@ -206,10 +209,10 @@ struct FakeTreeRepository : TreeRepository {
   }
   void fork(const TreeId& newTree, const TreeId& source, const GraphState& state,
             const LegendState& legend, const Lww<std::string>& title, const Lww<std::string>& guide,
-            const UserId& owner) override {
+            bool guideInherited, const UserId& owner) override {
     if (byId.count(newTree.str())) throw DuplicateTree{};  // the same unique index as create
     // A fork is born private, like every fresh tree.
-    byId[newTree.str()] = StoredTree{state, legend, title, 0, owner, Visibility::private_, 0, guide};
+    byId[newTree.str()] = StoredTree{state, legend, title, 0, owner, Visibility::private_, 0, guide, guideInherited};
     forkedFrom[newTree.str()] = source.str();
   }
 };
