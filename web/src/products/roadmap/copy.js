@@ -51,6 +51,20 @@ export const ROADMAP_SHEET = {
   findRoadmap: t('roadmap.sheet.findRoadmap'),
 };
 
+// The guide's words the row, the roadmap sheet, the modal and the phone editor all say.
+export const GUIDE = {
+  title: t('roadmap.guide.title'),
+  add: t('roadmap.guide.add'),
+  authorsNote: t('roadmap.guide.authorsNote'),
+  placeholder: t('roadmap.guide.placeholder'),
+  disclosure: t('roadmap.guide.disclosure'),
+  deviceDisclosure: t('roadmap.guide.deviceDisclosure'),
+};
+export const guideLabel = ({ owner, excerpt }) => (owner ? t('roadmap.guide.label', { excerpt }) : t('roadmap.guide.noteLabel', { excerpt }));
+export const guideCounter = (draft) => (draft.over > 0
+  ? t('roadmap.guide.over', { count: formatCount(draft.over) })
+  : t('roadmap.guide.left', { count: formatCount(draft.left) }));
+
 export const LINK_COPIED = t('roadmap.share.linkCopied');
 export const EMPTY_ROADMAP = { title: t('roadmap.emptyRoadmap.title'), body: t('roadmap.emptyRoadmap.body'), action: t('roadmap.emptyRoadmap.action') };
 export const LOAD_ERROR = {

@@ -2,7 +2,8 @@ import React from 'react';
 
 // `href` draws the same button as an anchor — a destination that looks like the action it is — and
 // `full` gives it the width of its column, for the one button a narrow screen puts under the thumb.
-// `ariaBusy` is for the button that stays tappable while the request it fired is in the air.
+// `ariaBusy` is for the button that stays tappable while the request it fired is in the air. `held` is a button that
+// waits on something its form says, such as a bound: it keeps its focus and its look at 45%, and a press does nothing.
 export function Button({
   children,
   variant = 'primary',
@@ -15,6 +16,8 @@ export function Button({
   full = false,
   ariaLabel = null,
   ariaBusy = false,
+  held = false,
+  describedBy = null,
 }) {
   const sizes = {
     sm: { padding: '8px 14px', fontSize: 'var(--text-sm)', gap: '6px', radius: 'var(--radius-md)' },
@@ -61,6 +64,7 @@ export function Button({
   const [active, setActive] = React.useState(false);
   const [focused, setFocused] = React.useState(false);
 
+  const resting = disabled || held;
   const boxShadow = disabled
     ? 'none'
     : focused
@@ -78,7 +82,9 @@ export function Button({
       {...frameProps}
       aria-label={ariaLabel ?? undefined}
       aria-busy={ariaBusy ? 'true' : undefined}
-      onClick={disabled ? undefined : onClick}
+      aria-disabled={held ? 'true' : frameProps['aria-disabled']}
+      aria-describedby={describedBy ?? undefined}
+      onClick={held ? (event) => event.preventDefault() : disabled ? undefined : onClick}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => { setHover(false); setActive(false); }}
       onMouseDown={() => setActive(true)}
@@ -99,12 +105,13 @@ export function Button({
         fontWeight: 700,
         borderRadius: s.radius,
         border: v.border,
-        background: disabled ? 'var(--neutral-200)' : active ? v.activeBg : hover ? v.hoverBg : v.background,
+        background: disabled ? 'var(--neutral-200)' : active && !held ? v.activeBg : hover && !held ? v.hoverBg : v.background,
         color: disabled ? 'var(--text-tertiary)' : v.color,
         boxShadow,
-        cursor: disabled ? 'not-allowed' : 'pointer',
+        opacity: held ? 0.45 : undefined,
+        cursor: resting ? 'not-allowed' : 'pointer',
         transition: `background var(--duration-fast) var(--ease-standard), transform var(--duration-fast) var(--ease-standard), box-shadow var(--duration-fast) var(--ease-standard)`,
-        transform: active && !disabled ? 'scale(0.97)' : 'scale(1)',
+        transform: active && !resting ? 'scale(0.97)' : 'scale(1)',
       }}
     >
       {icon && <span style={{ display: 'inline-flex', width: '1.1em', height: '1.1em' }}>{icon}</span>}

@@ -4,7 +4,7 @@ import { ROADMAP_VERBS, SORT_MENU, nextChip, sortButtonLabel } from '../../../sr
 
 const selectors = {
   more: { trigger: '[data-roadmap-more]', popup: '.st-roadmap-menu', item: '[role="menuitem"]' },
-  next: { trigger: '.st-roadmap-chip[aria-haspopup="dialog"]', popup: '.st-roadmap-next', item: '.st-roadmap-next-card' },
+  next: { trigger: '.st-roadmap-popover-anchor .st-roadmap-chip[aria-haspopup="dialog"]', popup: '.st-roadmap-next', item: '.st-roadmap-next-card' },
   sort: { trigger: '.st-board-sort-button', popup: '.st-board-sort-popover', item: '[role="menuitemradio"]' },
 };
 

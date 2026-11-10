@@ -14,6 +14,7 @@ import { PhoneSegments } from './PhoneSegments.jsx';
 import { BoardSkeleton, EmptyRoadmap, LoadError, RoadmapComplete, UpNextRest, boardFrame } from './BoardStates.jsx';
 import { BoardToast } from './BoardToast.jsx';
 import { DeviceLine, RefusedSync } from '../sync/SyncNotices.jsx';
+import { GuideLine } from '../guide/GuidePhone.jsx';
 import { FORK_OFFER } from '../copy.js';
 import { Button } from '../../../design-system/core/Button.jsx';
 import { track } from '../../../telemetry/beacon.js';
@@ -31,6 +32,7 @@ function BoardView({
   onAnchor = () => {},
   refusal = null,
   deviceLine = null,
+  guideLine = null,
   onFork = null,
   breakpoint,
   active = false,
@@ -76,7 +78,7 @@ function BoardView({
   const consumedSelect = useRef(null);
   const revealFocus = useRef(null);
   const phone = breakpoint === 'phone';
-  const topGap = phone && deviceLine ? '0px' : 'var(--space-3)';
+  const topGap = phone && (deviceLine || guideLine) ? '0px' : 'var(--space-3)';
   const motion = useRegroup(nextBoard, { quiet, phone, root: boardRef });
   const board = motion.board;
   const canSelect = selectionOpen && nextBoard !== null;
@@ -237,6 +239,7 @@ function BoardView({
       style={{ paddingTop: topInset > 0 ? `calc(${topInset}px + ${topGap})` : undefined }}
     >
       {phone && deviceLine && <DeviceLine text={deviceLine.text} onSignIn={deviceLine.onSignIn} />}
+      {phone && !deviceLine && guideLine && <GuideLine guide={guideLine} />}
       {frame !== 'columns' && !phone && refusedNotice}
       {frame === 'loading' && <BoardSkeleton phone={phone} />}
       {frame === 'error' && <LoadError phone={phone} onRetry={retry} />}

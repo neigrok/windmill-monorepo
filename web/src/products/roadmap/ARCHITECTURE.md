@@ -15,6 +15,7 @@ point for the component showcase.
 | `room/` | What the room holds: the load, the view, progress, the scene, the open step, the row's verbs, the band and who holds the roadmap |
 | `model/` | Graph validation, trunk selection, unlock rules, legend, workspace and spatial queries. Independent of React and WebGL |
 | `identity/` | The row above both views: title, roadmap sheet and switcher, view switch |
+| `guide/` | The tree's guide: its draft and bound, who sees it and where a save goes, its chip and modal from 744px, and its phone line, note, row, page and editor |
 | `board/` | Query and columns, regroup, held actions, the shared toast, card gestures and selection |
 | `step/` | The step page and modal, workspace, composer and picker, and the step's address |
 | `graph/`, `graph/tree/`, `graph/tablet/` | Canvas chrome, docks, writes, selection and what a changed lattice does to the picture; the desktop step panel; the tablet's panel |
@@ -160,6 +161,21 @@ departure, to another control or off the page, preserves its destination. Escape
 and so does an outside press on More or What's next, which also cancels the mousedown WebKit still sends
 after a finger's cancelled pointerdown.
 
+**The guide.** A tree carries one guide, plain text its owner writes on what the tree is and how to work it, which agents
+receive through MCP; people see the same text. `GuideDraft` counts it in code points as the server does: the counter speaks
+from 4,500, and past 5,000 nothing is cut and Save waits. `useRoomGuide` decides who sees it (the owner always, a reader on
+the app route when it holds words, nobody in the shared-reader mode or the demo), holds the one surface open on it and routes a
+save: `SyncSession.setGuide` when the session can take the write, else the device store for a tree that lives only here
+(`setLocalGuide`), else `PATCH /v1/trees/{id}`. From 744px `GuideChip` follows the view switch: the first line up to 320px
+(200px below 1280px), the book alone with its tooltip below 1024px, a dashed Add guide for an owner with none. It opens
+`GuideModal`, the step modal's anatomy filling the window with the text at a 560px measure. The owner's text is one
+`<textarea>`, read-only while reading, so a click that is not a drag-selection writes from where it landed; where a browser
+leaves the caret where it was, `caretPositionFromPoint` says where. Enter writes from the end, ⌘↩ saves, an empty Save removes
+the guide and leaving a changed draft asks through `DiscardDraft`. A guide set elsewhere flashes the chip and swaps the text in
+place; mid-edit a strip offers Load latest. On phones the owner's roadmap sheet carries a Guide row and page beside Activity's,
+and a tap on the page's text opens `GuideEditor`, the note editor's full-screen shell, with the caret where the finger landed;
+a reader gets `GuideLine` in the device line's slot and the note in a sheet.
+
 **The roadmap sheet.** `RoadmapSheet` owns title search above eight roadmaps and the keyboard-aware search and
 New roadmap footer; `roadmapSearch.js` owns the threshold, trimmed title match and highlight offsets in the
 original text after Unicode lowercasing. Its current row comes from the host projection, with up next and
@@ -189,7 +205,8 @@ from the page top, or 12px below the measured row, Board filter strip or Graph r
 lower. The room mounts it in whichever layer the view shows, so it paints beneath the row's menus and the Board's
 sort menu. Phone owners open
 Activity as a page inside the roadmap sheet: with at most eight roadmaps the entry and the page share a 611px
-footprint capped by the viewport; Back or the first Escape returns to the roadmap page, and a row closes the
+footprint capped by the viewport, grown by the guide's row when the sheet carries one; Back, an edge swipe or the first Escape
+returns to the roadmap page, and a row closes the
 sheet before opening its step. `activity/ActivityRows.jsx` owns the shared rows, removed-step treatment and
 empty state.
 
@@ -662,6 +679,10 @@ Progress-based completion Undo stays available during a structure-only replaceme
 save waiting for the replacement's new epoch. Structure edits stay blocked during rebaselining, a
 progress-lane replacement blocks progress editing, and the composer keeps its draft with saving disabled. An
 unsent held delete stays available.
+
+**Tree registers.** The title and the guide are the tree's own registers beside its graph and legend. A rename or a guide
+write stamps one register outside the undo journal and saves with the structure lane; a device tree's stamped guide reaches the
+server through the claim's first flush, once the tree exists there, since a planted document never sets one.
 
 **Created time.** Each projected step carries `createdMs`, the wall time of its add stamp: when it joined this
 tree. Create and import stamp it, a fork re-adds every step at the fork, and edits never touch it. A genesis
