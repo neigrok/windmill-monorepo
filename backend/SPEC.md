@@ -27,8 +27,10 @@ rejected for structure. Validity is a read model, not a gate.
   kinds is seeded with three: build · learn · milestone. A PUT omitting kinds on an existing tree
   preserves its legend.
 - `title` and `guide` — the tree's own LWW text registers, beside its graph and legend. The title
-  names the tree. The guide is one plain text the owner writes on what the tree is and how to work
-  it, for agents and for people; an empty guide is no guide. Nodes carry no part of it.
+  names the tree. The guide is one plain-text note the owner writes on what the tree is and how to
+  work it, for agents and for people; an empty guide, or one of only whitespace, is no guide, and a
+  guide a fork copied from someone else's tree stays its author's words until the owner writes one.
+  Nodes carry no part of it.
 
 Derived read models:
 
@@ -211,7 +213,11 @@ Rules:
   a stamp from the source room's clock, one counter tick apart in creation order, so a step's
   creation stamp is when it joined this tree and sibling ties keep their order. The fork's title and
   guide take the first of those stamps, so a fresh subscriber's delta carries them beside the steps,
-  and any later write of the new owner's outranks them.
+  and any later write of the new owner's outranks them. A copied guide with text the forker did not
+  write — the source is someone else's or nobody's, or its own guide is still inherited — is marked
+  inherited (`trees.guide_inherited`): its author's words, which MCP `get_tree` answers `yours: false`,
+  until a guide of the new owner's lands over it through any door. A fork of the forker's own tree
+  keeps its guide theirs. A save carrying the copy's own stamp leaves the mark; a restart reads it back.
 
 ## Authorization
 
@@ -264,10 +270,20 @@ and read as unknown creation time. No client calls this door. Inbound models are
 `PATCH /v1/trees/{id}` sets one register per call — `{visibility}`, `{guide}` or `{title}` — each the
 owner's alone. A body naming more than one is refused `400`, and a body that is not one JSON object
 `400 invalid json body`. A guide past 5000 characters, not valid UTF-8 or carrying a NUL is refused
-`400` with the admission's sentence, and an empty one clears it; a title carrying a NUL is refused
-`400` too. The guide's writes are this and the socket's
-`subgraph` frame; a posted document (`POST`, `PUT`) never sets it. `GET /v1/trees/{id}` carries it as
-`data.guide` beside `data.title`, and a fork copies it. The share page and the gallery do not show it.
+`400` with the admission's sentence, and an empty one clears it, as one of only spaces, tabs and line
+breaks does (stored as `""`); a real guide keeps its leading and trailing spaces. A title carrying a
+NUL is refused `400` too. The guide's writes are this, the socket's `subgraph` frame and MCP
+`describe_tree`; a posted document (`POST`, `PUT`) never sets it, and a tend is not offered
+`describe_tree`. `GET /v1/trees/{id}` carries it as `data.guide` beside `data.title`, MCP `get_tree` as
+`tree.guide: {text, yours}` on every page and no other MCP read at all, `yours` true when the caller
+owns the tree and wrote its current guide. A fork copies it, marked inherited when it is someone
+else's words (Runtime). The share page
+and the gallery do not show it.
+
+`POST /v1/trees/{id}/tend` runs only on a tree its caller can write, since the run writes as its
+caller. A tree it cannot is a persisted refused run, answered `200` like every tend refusal and started
+on no work: `no-such-tree` for an absent tree and a private one alike, `not-yours` or `nobodys-tree`
+for one the caller may read.
 
 A tree id is `t_` plus 16 lowercase hex characters (`wellFormedTreeId`); a client-supplied id
 (claim-create, fork) must match byte for byte.
@@ -319,6 +335,8 @@ Limits and rules:
 - A frame whose text is not one whole JSON value — a break after a complete field, a lone
   surrogate, a second value after the first — is refused whole as `bad-frame`, carrying the
   `treeId` and `frameId` its readable head names; no part of it is applied.
+- A guide register of only spaces, tabs and line breaks is refused as `bad-frame`: its sender
+  stamped that text, so it cannot be stored as `""`, and a client sends `""` for no guide.
 - A `subgraph` frame whose save fails is answered `server-error` with its `frameId`, and one whose
   tree's row went away under the live room `no-such-tree`.
 
@@ -328,7 +346,7 @@ PostgreSQL; `db/schema.sql` is the one file, applied in order and idempotent.
 
 | Table | Holds |
 | --- | --- |
-| `trees` | title and guide (each LWW: `<register>_hlc` plus the `<register>_ms`/`<register>_counter` numeric split), `owner_id`, `visibility`, `head_seq`, `forked_from`, `deleted_at`, `document` jsonb |
+| `trees` | title and guide (each LWW: `<register>_hlc` plus the `<register>_ms`/`<register>_counter` numeric split), `guide_inherited`, `owner_id`, `visibility`, `head_seq`, `forked_from`, `deleted_at`, `document` jsonb |
 | `tree_nodes` | one row per node: `created_hlc`/`deleted_hlc` plus each register and its `_hlc`, and `present` |
 | `tree_edges` | one row per `(from_id, to_id)`: `added_hlc`, `removed_hlc` |
 | `tree_kinds` | one row per legend kind: hue, label, description, cross_branch_exempt, rank, each with its stamp |

@@ -146,23 +146,22 @@ void TreeRegistryApi::patchTree(const drogon::HttpRequestPtr& req, HttpCallback&
       callback(error(drogon::k400BadRequest, "guide must be a string"));
       return;
     }
-    const std::variant<TreeRegistry::GuideChange, Admission> outcome =
+    const std::variant<Seq, TreeRegistry::GuideRefusal, Admission> outcome =
         registry_->setGuide(TreeId{treeId}, *caller, (*json)["guide"].asString());
     if (const Admission* refusal = std::get_if<Admission>(&outcome)) {
       callback(error(drogon::k400BadRequest, refusal->reason));
       return;
     }
-    const TreeRegistry::GuideChange change = std::get<TreeRegistry::GuideChange>(outcome);
-    if (change == TreeRegistry::GuideChange::notFound) {
+    if (const TreeRegistry::GuideRefusal* refusal = std::get_if<TreeRegistry::GuideRefusal>(&outcome)) {
+      if (*refusal == TreeRegistry::GuideRefusal::notYours) {
+        callback(forbidden(WriteRefusal::notYours));
+        return;
+      }
+      if (*refusal == TreeRegistry::GuideRefusal::nobodysTree) {
+        callback(forbidden(WriteRefusal::nobodysTree));
+        return;
+      }
       callback(error(drogon::k404NotFound, "no such tree"));
-      return;
-    }
-    if (change == TreeRegistry::GuideChange::notYours) {
-      callback(forbidden(WriteRefusal::notYours));
-      return;
-    }
-    if (change == TreeRegistry::GuideChange::nobodysTree) {
-      callback(forbidden(WriteRefusal::nobodysTree));
       return;
     }
     auto response = drogon::HttpResponse::newHttpResponse();

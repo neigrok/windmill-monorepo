@@ -1289,6 +1289,56 @@ TEST(ws_a_frame_with_a_guide_past_five_thousand_characters_is_rejected_and_one_a
   CHECK(h.trees.byId["t_priv"].guide == (Lww<std::string>{grins, Hlc{100, 0, "client"}}));
 }
 
+// The sender stamped the text it holds, so a frame's guide of only whitespace cannot be stored as "":
+// it is refused, and a real guide keeps its spaces.
+TEST(ws_a_guide_frame_of_only_whitespace_is_a_bad_frame_and_a_real_guide_keeps_its_spaces) {
+  Harness h;
+  UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.seed("t_priv", owner, Visibility::private_);
+  auto conn = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-owner"), conn);
+
+  h.collab.onMessage(conn, guideFrame("t_priv", "f-blank", " \n\t ", "100:0:client"));
+  REQUIRE_EQ(conn->sent.size(), 1u);
+  CHECK_EQ(rejectCode(conn->sent[0]), std::string("bad-frame"));
+  CHECK_EQ(rejectReason(conn->sent[0]), std::string("the guide is only whitespace — send \"\" for no guide"));
+  CHECK_EQ(parse(conn->sent[0])["frameId"].asString(), std::string("f-blank"));
+  CHECK(h.trees.byId["t_priv"].guide == Lww<std::string>{});
+
+  h.collab.onMessage(conn, guideFrame("t_priv", "f-spaced", "  Rig first.\n", "101:0:client"));
+  REQUIRE_EQ(conn->sent.size(), 2u);
+  CHECK_EQ(frameType(conn->sent[1]), std::string("subgraphAck"));
+  CHECK(h.trees.byId["t_priv"].guide == (Lww<std::string>{"  Rig first.\n", Hlc{101, 0, "client"}}));
+
+  h.collab.onMessage(conn, guideFrame("t_priv", "f-clear", "", "102:0:client"));
+  REQUIRE_EQ(conn->sent.size(), 3u);
+  CHECK_EQ(frameType(conn->sent[2]), std::string("subgraphAck"));
+  CHECK(h.trees.byId["t_priv"].guide == (Lww<std::string>{"", Hlc{102, 0, "client"}}));
+}
+
+TEST(ws_a_guide_frame_from_a_forks_owner_makes_the_copied_guide_their_own_and_a_stale_one_does_not) {
+  Harness h;
+  UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.seed("t_fork", owner, Visibility::private_);
+  h.trees.byId["t_fork"].guide = Lww<std::string>{"Delete what you do not need.", Hlc{500, 0, "srv"}};
+  h.trees.byId["t_fork"].guideInherited = true;
+  auto conn = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-owner"), conn);
+
+  h.collab.onMessage(conn, guideFrame("t_fork", "f-stale", "An older word", "400:0:client"));
+  REQUIRE_EQ(conn->sent.size(), 1u);
+  CHECK_EQ(frameType(conn->sent[0]), std::string("subgraphAck"));
+  CHECK(h.trees.byId["t_fork"].guideInherited);
+  CHECK(h.rooms.open(TreeId{"t_fork"})->guideInherited());
+
+  h.collab.onMessage(conn, guideFrame("t_fork", "f-mine", "Prune with care.", "600:0:client"));
+  REQUIRE_EQ(conn->sent.size(), 2u);
+  CHECK_EQ(frameType(conn->sent[1]), std::string("subgraphAck"));
+  CHECK(h.trees.byId["t_fork"].guide == (Lww<std::string>{"Prune with care.", Hlc{600, 0, "client"}}));
+  CHECK_FALSE(h.trees.byId["t_fork"].guideInherited);
+  CHECK_FALSE(h.rooms.open(TreeId{"t_fork"})->guideInherited());
+}
+
 TEST(ws_a_guide_frame_from_a_non_owner_is_refused_and_one_stamped_past_the_skew_allowance_is_clamped) {
   Harness h;
   UserId owner = h.signIn("s-owner", "owner@example.com");

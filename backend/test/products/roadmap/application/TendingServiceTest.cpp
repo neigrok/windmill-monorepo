@@ -1,7 +1,9 @@
 #include "products/roadmap/application/TendingService.h"
 
 #include "platform/application/Entitlements.h"
+#include "products/roadmap/domain/LooseGraph.h"
 #include "test/platform/Fakes.h"
+#include "test/products/roadmap/Fakes.h"
 #include "test/testing.h"
 
 #include <algorithm>
@@ -101,15 +103,26 @@ struct FakePlanAgent : PlanAgent {
   }
 };
 
+// Tree "t" is u's own, the tree every case tends unless it is about whose tree it is.
 struct Harness {
   FakeTendRunRepository runs;
   FakeToolHost tools;
+  FakeTreeRepository trees;
+  FakeOpLog ops;
+  FakeBus bus;
+  RoomRegistry rooms{trees, ops, bus};
   FakePlanAgent agent;
   FakeClock clock;
   FakeTokens tokens;
   FakeSubscriptionRepository subs;
   FakeAiUsageRepository usage;
   Entitlements entitlements{subs, usage};
+
+  Harness() { plant("t", UserId{"u"}, Visibility::private_); }
+
+  void plant(const std::string& tree, const std::optional<UserId>& owner, Visibility visibility) {
+    trees.byId[tree] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Tree", {}}, 0, owner, visibility};
+  }
 };
 
 TendRun awaitTerminal(FakeTendRunRepository& runs, const std::string& id) {
@@ -147,7 +160,7 @@ void seedDoneRuns(FakeTendRunRepository& runs, const UserId& user, int count, st
 
 TEST(a_refusal_never_starts_work_and_is_persisted) {
   Harness h;
-  TendingService service(h.runs, h.agent, h.tools, h.clock, h.tokens, h.entitlements, /*enabled=*/false);
+  TendingService service(h.runs, h.agent, h.tools, h.rooms, h.clock, h.tokens, h.entitlements, /*enabled=*/false);
 
   TendRun run = service.start(TreeId{"t"}, UserId{"u"}, "u@example.com","add a testing branch under backend");
 
@@ -163,7 +176,7 @@ TEST(a_refusal_never_starts_work_and_is_persisted) {
 
 TEST(an_empty_prompt_refuses_without_work) {
   Harness h;
-  TendingService service(h.runs, h.agent, h.tools, h.clock, h.tokens, h.entitlements, /*enabled=*/true);
+  TendingService service(h.runs, h.agent, h.tools, h.rooms, h.clock, h.tokens, h.entitlements, /*enabled=*/true);
 
   TendRun blank = service.start(TreeId{"t"}, UserId{"u"}, "u@example.com","");
   CHECK_EQ(blank.status, TendStatus::refused);
@@ -178,7 +191,7 @@ TEST(an_empty_prompt_refuses_without_work) {
 
 TEST(an_over_length_prompt_refuses_without_work) {
   Harness h;
-  TendingService service(h.runs, h.agent, h.tools, h.clock, h.tokens, h.entitlements, /*enabled=*/true);
+  TendingService service(h.runs, h.agent, h.tools, h.rooms, h.clock, h.tokens, h.entitlements, /*enabled=*/true);
 
   const std::string tooLong(kMaxTendPromptBytes + 1, 'x');
   TendRun run = service.start(TreeId{"t"}, UserId{"u"}, "u@example.com",tooLong);
@@ -191,7 +204,7 @@ TEST(an_over_length_prompt_refuses_without_work) {
 TEST(a_spent_free_allowance_refuses_without_work) {
   Harness h;
   seedDoneRuns(h.runs, UserId{"u"}, kFreeMonthlyTendings, h.clock.now);
-  TendingService service(h.runs, h.agent, h.tools, h.clock, h.tokens, h.entitlements, /*enabled=*/true);
+  TendingService service(h.runs, h.agent, h.tools, h.rooms, h.clock, h.tokens, h.entitlements, /*enabled=*/true);
 
   TendRun run = service.start(TreeId{"t"}, UserId{"u"}, "u@example.com", "one more please");
 
@@ -205,7 +218,7 @@ TEST(pro_gets_a_larger_allowance_than_free) {
   h.subs.subscribe(UserId{"u"});
   h.agent.outcome = ok("grew it", 1);
   seedDoneRuns(h.runs, UserId{"u"}, kFreeMonthlyTendings, h.clock.now);
-  TendingService service(h.runs, h.agent, h.tools, h.clock, h.tokens, h.entitlements, /*enabled=*/true);
+  TendingService service(h.runs, h.agent, h.tools, h.rooms, h.clock, h.tokens, h.entitlements, /*enabled=*/true);
 
   TendRun allowed = service.start(TreeId{"t"}, UserId{"u"}, "u@example.com", "one more please");
   CHECK_EQ(allowed.status, TendStatus::running);
@@ -226,7 +239,7 @@ TEST(the_summary_reports_the_plan_budget_reset_and_recent_receipts) {
   refused.status = TendStatus::refused;
   refused.startedAtMs = h.clock.now + 100;
   h.runs.save(refused);
-  TendingService service(h.runs, h.agent, h.tools, h.clock, h.tokens, h.entitlements, /*enabled=*/true);
+  TendingService service(h.runs, h.agent, h.tools, h.rooms, h.clock, h.tokens, h.entitlements, /*enabled=*/true);
 
   const TendingSummary free = service.summaryFor(UserId{"u"}, "u@example.com");
   CHECK(free.enabled);
@@ -248,7 +261,7 @@ TEST(the_summary_reports_the_plan_budget_reset_and_recent_receipts) {
 TEST(a_successful_run_persists_done_summary_and_edits) {
   Harness h;
   h.agent.outcome = ok("Added 3 steps under Backend", 3);
-  TendingService service(h.runs, h.agent, h.tools, h.clock, h.tokens, h.entitlements, /*enabled=*/true);
+  TendingService service(h.runs, h.agent, h.tools, h.rooms, h.clock, h.tokens, h.entitlements, /*enabled=*/true);
 
   TendRun started = service.start(TreeId{"t"}, UserId{"u"}, "u@example.com","add a testing branch under backend");
   CHECK_EQ(started.status, TendStatus::running);
@@ -267,7 +280,7 @@ TEST(a_throwing_agent_yields_failed_not_a_crash) {
   Harness h;
   h.agent.shouldThrow = true;
   h.agent.throwWhat = "the model would not settle";
-  TendingService service(h.runs, h.agent, h.tools, h.clock, h.tokens, h.entitlements, /*enabled=*/true);
+  TendingService service(h.runs, h.agent, h.tools, h.rooms, h.clock, h.tokens, h.entitlements, /*enabled=*/true);
 
   TendRun started = service.start(TreeId{"t"}, UserId{"u"}, "u@example.com","reshape the whole thing");
   TendRun failed = awaitTerminal(h.runs, started.id);
@@ -283,7 +296,7 @@ TEST(the_seq_range_is_recorded) {
   h.tools.seq = 10;                                  // the head before the agent writes anything
   h.agent.onRun = [&h] { h.tools.seq = 13; };        // the agent advances the head by three ops
   h.agent.outcome = ok("Grew the tree", 3);
-  TendingService service(h.runs, h.agent, h.tools, h.clock, h.tokens, h.entitlements, /*enabled=*/true);
+  TendingService service(h.runs, h.agent, h.tools, h.rooms, h.clock, h.tokens, h.entitlements, /*enabled=*/true);
 
   TendRun started = service.start(TreeId{"t"}, UserId{"u"}, "u@example.com","grow it");
   TendRun done = awaitTerminal(h.runs, started.id);
@@ -321,12 +334,15 @@ TEST(fail_orphaned_runs_settles_running_rows_and_leaves_finished_ones_alone) {
 TEST(the_worker_pool_completes_more_runs_than_it_has_threads) {
   Harness h;
   h.agent.outcome = ok("grew it", 1);
-  TendingService service(h.runs, h.agent, h.tools, h.clock, h.tokens, h.entitlements, /*enabled=*/true);
+  TendingService service(h.runs, h.agent, h.tools, h.rooms, h.clock, h.tokens, h.entitlements, /*enabled=*/true);
 
   // Eight runs against a four-thread pool: the excess must queue and still finish. Distinct users so the per-account allowance never trips.
   std::vector<std::string> ids;
-  for (int i = 0; i < 8; ++i)
-    ids.push_back(service.start(TreeId{"t"}, UserId{"u" + std::to_string(i)}, "", "grow it").id);
+  for (int i = 0; i < 8; ++i) {
+    const std::string user = "u" + std::to_string(i);
+    h.plant("t_" + user, UserId{user}, Visibility::private_);
+    ids.push_back(service.start(TreeId{"t_" + user}, UserId{user}, "", "grow it").id);
+  }
 
   for (const std::string& id : ids)
     CHECK_EQ(awaitTerminal(h.runs, id).status, TendStatus::done);
@@ -336,7 +352,7 @@ TEST(the_worker_pool_completes_more_runs_than_it_has_threads) {
 TEST(an_account_over_its_ai_budget_refuses_without_work) {
   Harness h;
   h.usage.spentByProduct[""] = kFreeMonthlyAiNanos;  // runs to spare, money gone
-  TendingService service(h.runs, h.agent, h.tools, h.clock, h.tokens, h.entitlements, /*enabled=*/true);
+  TendingService service(h.runs, h.agent, h.tools, h.rooms, h.clock, h.tokens, h.entitlements, /*enabled=*/true);
 
   TendRun run = service.start(TreeId{"t"}, UserId{"u"}, "u@example.com", "grow the tree");
 
@@ -350,7 +366,7 @@ TEST(the_run_allowance_is_still_its_own_ceiling_and_answers_first) {
   Harness h;
   seedDoneRuns(h.runs, UserId{"u"}, kFreeMonthlyTendings, h.clock.now);
   h.usage.spentByProduct[""] = kFreeMonthlyAiNanos;
-  TendingService service(h.runs, h.agent, h.tools, h.clock, h.tokens, h.entitlements, /*enabled=*/true);
+  TendingService service(h.runs, h.agent, h.tools, h.rooms, h.clock, h.tokens, h.entitlements, /*enabled=*/true);
 
   TendRun run = service.start(TreeId{"t"}, UserId{"u"}, "u@example.com", "grow the tree");
 
@@ -362,10 +378,43 @@ TEST(a_budget_under_the_ceiling_lets_the_run_start) {
   Harness h;
   h.agent.outcome = ok("grew it", 1);
   h.usage.spentByProduct[""] = kFreeMonthlyAiNanos - 1;  // one nano left is still room
-  TendingService service(h.runs, h.agent, h.tools, h.clock, h.tokens, h.entitlements, /*enabled=*/true);
+  TendingService service(h.runs, h.agent, h.tools, h.rooms, h.clock, h.tokens, h.entitlements, /*enabled=*/true);
 
   TendRun run = service.start(TreeId{"t"}, UserId{"u"}, "u@example.com", "grow the tree");
 
   CHECK_EQ(run.status, TendStatus::running);
   CHECK_EQ(awaitTerminal(h.runs, run.id).status, TendStatus::done);
+}
+
+// A tend writes as its caller, so a tree the caller cannot write starts no agent, spends no
+// allowance and reads no stranger's guide into a prompt. Each is a persisted refusal; an absent tree
+// and a private one answer alike.
+TEST(a_tend_runs_only_on_a_tree_its_caller_can_write) {
+  Harness h;
+  h.plant("t_public", UserId{"someone"}, Visibility::public_);
+  h.plant("t_unlisted", UserId{"someone"}, Visibility::unlisted);
+  h.plant("t_private", UserId{"someone"}, Visibility::private_);
+  h.plant("t_demo", std::nullopt, Visibility::public_);
+  TendingService service(h.runs, h.agent, h.tools, h.rooms, h.clock, h.tokens, h.entitlements, /*enabled=*/true);
+  std::vector<WriteCompletion> lines;
+  installWriteSink([&](const WriteCompletion& line) { lines.push_back(line); });
+
+  const auto refusalOf = [&](const char* tree) {
+    const TendRun run = service.start(TreeId{tree}, UserId{"u"}, "u@example.com", "Add a step");
+    CHECK_EQ(run.status, TendStatus::refused);
+    CHECK_EQ(h.runs.find(run.id)->refusal, run.refusal);
+    return std::string(tendRefusalName(run.refusal));
+  };
+  CHECK_EQ(refusalOf("t_public"), std::string("not-yours"));
+  CHECK_EQ(refusalOf("t_unlisted"), std::string("not-yours"));
+  CHECK_EQ(refusalOf("t_demo"), std::string("nobodys-tree"));
+  CHECK_EQ(refusalOf("t_private"), std::string("no-such-tree"));
+  CHECK_EQ(refusalOf("t_absent"), std::string("no-such-tree"));
+  service.stop();
+  installWriteSink({});
+
+  CHECK_EQ(h.agent.calls.load(), 0);
+  CHECK(lines.empty());
+  CHECK_EQ(h.runs.countForUser(UserId{"u"}, 0), 0);
+  CHECK_FALSE(h.rooms.isOpen(TreeId{"t_public"}));
 }

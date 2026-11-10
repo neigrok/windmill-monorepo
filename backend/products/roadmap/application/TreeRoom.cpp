@@ -9,12 +9,12 @@ TreeRoom::~TreeRoom() {
   LOG_WARN << "room operation rows not committed count=" << pendingOps_.size();
 }
 
-TreeRoom::TreeRoom(TreeId id, Lww<std::string> title, Lww<std::string> guide, LooseGraph graph, Legend legend,
-                   Seq head, std::optional<UserId> owner, Visibility visibility, std::uint64_t createdAt,
-                   PresenceBus& bus)
-    : id_(std::move(id)), title_(std::move(title)), guide_(std::move(guide)), graph_(std::move(graph)),
-      legend_(std::move(legend)), head_(head), owner_(std::move(owner)), visibility_(visibility),
-      createdAt_(createdAt), bus_(bus), clock_(std::string{kServerActor}) {
+TreeRoom::TreeRoom(TreeId id, Lww<std::string> title, Lww<std::string> guide, bool guideInherited, LooseGraph graph,
+                   Legend legend, Seq head, std::optional<UserId> owner, Visibility visibility,
+                   std::uint64_t createdAt, PresenceBus& bus)
+    : id_(std::move(id)), title_(std::move(title)), guide_(std::move(guide)), guideInherited_(guideInherited),
+      graph_(std::move(graph)), legend_(std::move(legend)), head_(head), owner_(std::move(owner)),
+      visibility_(visibility), createdAt_(createdAt), bus_(bus), clock_(std::string{kServerActor}) {
   // Fold every stamp the loaded document already carries — the graph frontier and the title and guide
   // registers — so a fresh mint after restart is always ahead of anything persisted.
   for (const auto& [actor, mark] : frontier(graph_.exportState(), legend_.exportState()).marks) {
@@ -36,7 +36,10 @@ std::optional<Seq> TreeRoom::joinSubgraph(const Subgraph& incoming, const UserId
     if (stamp < mark) stamp = mark;  // the frame's causal position, for the feed op
   }
   if (incoming.title) title_.merge(incoming.title->value, incoming.title->stamp);
-  if (incoming.guide) guide_.merge(incoming.guide->value, incoming.guide->stamp);
+  if (incoming.guide && incoming.guide->stamp > guide_.stamp) {
+    guide_ = *incoming.guide;
+    guideInherited_ = false;  // the guide that won is a write of this tree's, not its source's
+  }
   graph_.join(incoming.graph);
   legend_.join(incoming.legend);
   markDirty(incoming.graph, incoming.legend);
@@ -117,7 +120,7 @@ std::optional<Admission> TreeRoom::admit(const Subgraph& incoming) const {
     if (std::optional<Admission> refusal = admitTitle(incoming.title->value)) return refusal;
   }
   if (!incoming.guide) return std::nullopt;
-  return admitGuide(incoming.guide->value);
+  return admitStampedGuide(incoming.guide->value);
 }
 
 std::optional<std::string> TreeRoom::validate(const Command& command) const {

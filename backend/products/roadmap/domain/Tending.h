@@ -14,7 +14,7 @@ enum class TendStatus {
   running,   // the loop is working; edits may already be landing
   done,      // finished cleanly, `summary` is the receipt
   failed,    // upstream error, timeout, or a tool that would not settle
-  refused,   // never started: not enabled, rate limited, or over allowance
+  refused,   // never started: not enabled, rate limited, over allowance, or not the caller's tree
 };
 
 inline const char* tendStatusName(TendStatus status) {
@@ -28,8 +28,13 @@ inline const char* tendStatusName(TendStatus status) {
 }
 
 // `none` is the ordinary case where the run did start. `outOfAllowance` is the published monthly
-// runs quota in legacy mode; `outOfBudget` is the shared AI allowance.
-enum class TendRefusal { none, notEnabled, rateLimited, outOfAllowance, outOfBudget, treeTooLarge, promptEmpty, promptTooLong };
+// runs quota in legacy mode; `outOfBudget` is the shared AI allowance. A tend writes as its caller, so
+// it runs only on a tree the caller can write: `noSuchTree` answers an absent tree and a private one
+// alike, `notYours` and `nobodysTree` the two write refusals of a tree the caller may read.
+enum class TendRefusal {
+  none, notEnabled, rateLimited, outOfAllowance, outOfBudget, treeTooLarge, promptEmpty, promptTooLong,
+  noSuchTree, notYours, nobodysTree
+};
 
 inline const char* tendRefusalName(TendRefusal refusal) {
   switch (refusal) {
@@ -41,6 +46,9 @@ inline const char* tendRefusalName(TendRefusal refusal) {
     case TendRefusal::treeTooLarge:   return "tree-too-large";
     case TendRefusal::promptEmpty:    return "prompt-empty";
     case TendRefusal::promptTooLong:  return "prompt-too-long";
+    case TendRefusal::noSuchTree:     return "no-such-tree";
+    case TendRefusal::notYours:       return "not-yours";
+    case TendRefusal::nobodysTree:    return "nobodys-tree";
   }
   return "";
 }

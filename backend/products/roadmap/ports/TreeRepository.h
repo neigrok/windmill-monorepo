@@ -22,7 +22,8 @@ struct DuplicateTree : std::exception {
 };
 
 // An unset title or guide stamp means the create-time baseline, never written since; an empty
-// owner means a legacy row nobody may write.
+// owner means a legacy row nobody may write. `guideInherited` marks a guide a fork copied from someone
+// else's tree: its author's words, until a guide of the owner's lands over it.
 struct StoredTree {
   GraphState state;
   LegendState legend;
@@ -32,6 +33,7 @@ struct StoredTree {
   Visibility visibility = Visibility::private_;
   std::uint64_t createdAt = 0;  // epoch ms
   Lww<std::string> guide;
+  bool guideInherited = false;
   bool operator==(const StoredTree&) const = default;
 };
 
@@ -73,7 +75,8 @@ struct TreeRepository {
   virtual ForkLineage loadForkLineage(const TreeId& tree) = 0;
   // Upsert a slice onto a tree whose row stands: entries given replace their rows, absent ones are
   // untouched, and a save never deletes. A tree with no row, or a soft-deleted one, is left as it is,
-  // and answers false. The title and the guide each land only under a stamp dominating the stored one.
+  // and answers false. The title and the guide each land only under a stamp dominating the stored one;
+  // a guide that lands is the owner's own, so it clears `guideInherited`.
   virtual bool save(const TreeId& tree, const GraphState& state, const LegendState& legend,
                     const Lww<std::string>& title, const Lww<std::string>& guide, Seq head) = 0;
   // Insert a brand-new tree. Throws DuplicateTree on an id collision (never overwrites a tree).
@@ -93,10 +96,11 @@ struct TreeRepository {
   // The owner check is the caller's, not this write's; a soft-deleted tree is left alone.
   virtual void setVisibility(const TreeId& tree, Visibility visibility) = 0;
   // Verbatim copy of `source`'s document; the copy starts a fresh op log at head 0, its title and
-  // guide under the stamps given. Throws DuplicateTree on an id collision.
+  // guide under the stamps given and the guide marked `guideInherited` as the caller rules. Throws
+  // DuplicateTree on an id collision.
   virtual void fork(const TreeId& newTree, const TreeId& source, const GraphState& state,
                     const LegendState& legend, const Lww<std::string>& title, const Lww<std::string>& guide,
-                    const UserId& owner) = 0;
+                    bool guideInherited, const UserId& owner) = 0;
 };
 
 }

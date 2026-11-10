@@ -1,8 +1,8 @@
 #include "products/roadmap/application/ScopedToolHost.h"
 #include "platform/application/WriteObservation.h"
 
+#include <map>
 #include <memory>
-
 #include <optional>
 #include <set>
 #include <utility>
@@ -10,11 +10,16 @@
 namespace wm {
 
 namespace {
-// The cross-tree reach a single-tree tend has no use for. Dropped from the catalog the agent sees,
-// and refused if it names one anyway.
-const std::set<std::string>& crossTreeTools() {
-  static const std::set<std::string> names{"create_tree", "list_trees", "delete_tree"};
-  return names;
+// What a tend is never offered, each with the sentence that refuses it if the agent names it anyway:
+// the cross-tree reach a single-tree tend has no use for, and the guide, which the owner writes for
+// every run to read.
+const std::map<std::string, std::string>& withheldTools() {
+  static const std::map<std::string, std::string> refusals{
+      {"create_tree", "tending edits a single tree — create_tree is out of its reach"},
+      {"list_trees", "tending edits a single tree — list_trees is out of its reach"},
+      {"delete_tree", "tending edits a single tree — delete_tree is out of its reach"},
+      {"describe_tree", "tending reads the tree's guide but cannot set it — describe_tree is out of its reach"}};
+  return refusals;
 }
 }
 
@@ -26,12 +31,16 @@ ScopedToolHost::ScopedToolHost(ToolHost& inner, TreeId scope)
 std::vector<ToolDeclaration> ScopedToolHost::declareTools() const {
   std::vector<ToolDeclaration> scoped;
   for (ToolDeclaration& tool : inner_.declareTools())
-    if (crossTreeTools().find(tool.name()) == crossTreeTools().end()) scoped.push_back(std::move(tool));
+    if (!withheldTools().count(tool.name())) scoped.push_back(std::move(tool));
   return scoped;
 }
 
 ToolResult ScopedToolHost::callTool(const std::string& name, const Json::Value& arguments,
                                     const ToolCaller& caller) {
+  // Refused before anything is observed: a withheld name is no write of the run's.
+  if (const auto withheld = withheldTools().find(name); withheld != withheldTools().end())
+    return ToolResult::failure(withheld->second);
+
   const auto declaration = byName_.find(name);
   std::unique_ptr<WriteObservation> observation;
   std::unique_ptr<WriteContext> context;
@@ -41,8 +50,6 @@ ToolResult ScopedToolHost::callTool(const std::string& name, const Json::Value& 
   }
   try {
     const ToolResult result = [&]() {
-      if (crossTreeTools().find(name) != crossTreeTools().end())
-        return ToolResult::failure("tending edits a single tree — " + name + " is out of its reach");
       const auto declared = byName_.find(name);
       if (declared == byName_.end()) return ToolResult::failure(name + ": " + noSuchToolSentence());
       // The agent's own arguments are checked, before the forced treeId joins them.

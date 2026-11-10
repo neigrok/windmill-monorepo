@@ -56,7 +56,9 @@ enters these observations. OAuth admission races return the existing `login_requ
 each answers 410 `client-update-required` before authentication with nothing behind it and emits one
 WARN completion with outcome `client-update-required`, without an Issue, and the rate limiter skips
 it (`retiredRoute`). MCP's `CompositeToolHost`, Coach's `AskTools` and roadmap's `ScopedToolHost`
-dispatch by their access declarations. Sync admission instruments every intent and catalog command;
+dispatch by their access declarations; `ScopedToolHost` refuses the tools it withholds from a run
+(`create_tree`, `list_trees`, `delete_tree`, `describe_tree`) before it opens any observation, so a run
+emits only the roadmap operations listed below. Sync admission instruments every intent and catalog command;
 it validates labels against its sealed registry, and a product refusal code (gym's `plan-logged` and `session-finished`
 on a workout plan write, `proposal-superseded` on a workout proposal out of date) completes at WARN under that
 code with no Issue; the movement and the reason stay in the result detail, off the log. `Heartbeat` and `MailSweep` cover scheduled work
@@ -143,8 +145,8 @@ Amplitude key intentionally disables forwarding.
 
 The inventory has 93 HTTP write registrations: REST platform 27, roadmap 13, gym 33 (20 of them
 retired paths), journal 11, probe 2; sync 3; MCP transport 4. Excluding the two dev routes and two
-standalone transport duplicates leaves 89 production HTTP operations. MCP has 37 write declarations
-(roadmap 23, gym 14); compatibility aliases share their canonical operation. Coach has 29 operations
+standalone transport duplicates leaves 89 production HTTP operations. MCP has 38 write declarations
+(roadmap 24, gym 14); compatibility aliases share their canonical operation. Coach has 29 operations
 (ask 2, gym abilities 6, scoped roadmap abilities 21). The catalogs have eleven production commands
 (gym 9, journal 2), plus four probe commands. Background coverage includes 23 scheduled/stage
 operations plus sync publication, Amplitude forwarding and the AI usage ledger (26 background
@@ -192,7 +194,7 @@ listed separately because their only server writes are authentication refresh or
 | `POST /v1/trees/{id}/fork` (roadmap; rest) | `roadmap.POST.v1.trees.id.fork` | completion; bounded refusal or result | unexpected |
 | `PUT /v1/trees/{id}/og-image` (roadmap; rest) | `roadmap.PUT.v1.trees.id.og.image` | completion; bounded refusal or result | unexpected |
 | `PUT /v1/trees/{id}/og-video` (roadmap; rest) | `roadmap.PUT.v1.trees.id.og.video` | completion; bounded refusal or result | unexpected |
-| `POST /v1/trees/{id}/tend` (roadmap; rest) | `roadmap.POST.v1.trees.id.tend` | completion; bounded refusal or result | unexpected |
+| `POST /v1/trees/{id}/tend` (roadmap; rest) | `roadmap.POST.v1.trees.id.tend` | completion; bounded refusal or result. A refused run answers 200 and its line carries the refusal at WARN — `prompt-empty`, `prompt-too-long`, `not-enabled`, `no-such-tree` (absent or private), `not-yours`, `nobodys-tree`, `out-of-allowance`, `out-of-budget` — and starts no `roadmap.tend.run` | unexpected |
 | `PATCH /v1/reminders` (roadmap; rest) | `roadmap.PATCH.v1.reminders` | completion; bounded refusal or result | unexpected |
 | `POST /v1/reminders/pause` (roadmap; rest) | `roadmap.POST.v1.reminders.pause` | completion; bounded refusal or result | unexpected |
 | `POST /v1/reminders/unsubscribe` (roadmap; rest) | `roadmap.POST.v1.reminders.unsubscribe` | completion; bounded refusal or result | unexpected |
@@ -269,6 +271,7 @@ listed separately because their only server writes are authentication refresh or
 | `POST /v1/sync/pull` (platform; sync) | `sync.pull` | completion; bounded refusal or result | unexpected |
 | `MCP roadmap_create_tree` (and unambiguous `create_tree` alias) | `mcp.roadmap_create_tree` | completion; bounded refusal or result | unexpected |
 | `MCP roadmap_delete_tree` (and unambiguous `delete_tree` alias) | `mcp.roadmap_delete_tree` | completion; bounded refusal or result | unexpected |
+| `MCP roadmap_describe_tree` (and unambiguous `describe_tree` alias) | `mcp.roadmap_describe_tree` | completion; bounded refusal or result | unexpected |
 | `MCP roadmap_create_node` (and unambiguous `create_node` alias) | `mcp.roadmap_create_node` | completion; bounded refusal or result | unexpected |
 | `MCP roadmap_annotate_node` (and unambiguous `annotate_node` alias) | `mcp.roadmap_annotate_node` | completion; bounded refusal or result | unexpected |
 | `MCP roadmap_rename_node` (and unambiguous `rename_node` alias) | `mcp.roadmap_rename_node` | completion; bounded refusal or result | unexpected |

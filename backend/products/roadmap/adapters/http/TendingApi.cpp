@@ -2,6 +2,7 @@
 
 #include "platform/adapters/http/Caller.h"
 #include "platform/adapters/http/JsonReply.h"
+#include "platform/application/WriteObservation.h"
 #include "products/roadmap/domain/Tending.h"
 
 #include <optional>
@@ -72,7 +73,8 @@ void TendingApi::tend(const drogon::HttpRequestPtr& req, HttpCallback&& callback
   // start() returns the moment the run is durable; the loop is already queued on the worker thread.
   TendRun run = tending_->start(TreeId{treeId}, caller->id, caller->email.value, prompt);
   if (run.status == TendStatus::refused) {
-    // A refusal is not an error: 200 with the body the client renders as-is.
+    // A refusal is not an error: 200 with the body the client renders as-is, and a log line naming it.
+    finishCurrentWriteRefusal(tendRefusalName(run.refusal));
     callback(jsonResponse(toJson(run)));
     return;
   }

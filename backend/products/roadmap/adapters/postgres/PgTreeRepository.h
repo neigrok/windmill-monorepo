@@ -40,7 +40,7 @@ public:
   void setVisibility(const TreeId& tree, Visibility visibility) override;
   void fork(const TreeId& newTree, const TreeId& source, const GraphState& state,
             const LegendState& legend, const Lww<std::string>& title, const Lww<std::string>& guide,
-            const UserId& owner) override;
+            bool guideInherited, const UserId& owner) override;
 
 private:
   // The projection both list queries need: each present node's id and colour, with the document

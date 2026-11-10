@@ -109,8 +109,8 @@ and `set_progress` use.
 
 ## Resources
 
-`resources/list` and `resources/read` serve `windmill://quickstart` (markdown) — edge direction,
-progress, diagnostics, omitted fields and the graph/progress import boundary. Tool schemas carry
+`resources/list` and `resources/read` serve `windmill://quickstart` (markdown) — a tree's guide, edge
+direction, progress, diagnostics, omitted fields and the graph/progress import boundary. Tool schemas carry
 arguments and limits; initialize instructions give concise shared and product guidance.
 
 ## Transports
@@ -180,7 +180,9 @@ from the products actually connected. **An empty scope is the account-wide grant
 
 Tending does not go through the composite: `TendingService` holds roadmap's host directly
 (`ScopedToolHost.h`). The two narrowings stack — `ScopedToolHost` pins a run to one tree, the
-composite pins a credential to its grant.
+composite pins a credential to its grant. A run is not offered `describe_tree` either: it reads the
+tree's guide through `get_tree` and never sets it. A withheld name a run calls anyway is refused before
+any write is observed, and a tend starts only on a tree its caller can write.
 
 Above the auth check both HTTP roots meter by IP, keyed on the forwarded client address:
 `windmill_server`'s general API ceiling (25 req/s per client, burst 50) covers `/mcp`;
@@ -194,7 +196,8 @@ The table uses product-local names; external MCP prefixes each with `roadmap_`.
 | | Tool | Effect |
 | --- | --- | --- |
 | registry | `create_tree` · `list_trees` · `delete_tree` | plant / discover / soft-delete a roadmap you own |
-| read | `get_tree` | title + nodes (label, icon, color, `kind`, position, description, links) + per-node prerequisites + seq; `includeEdges: true` adds every live edge as a flat `edges: [{from, to}]` |
+| registry | `describe_tree` | set the tree's guide — a plain-text note on what the tree is and how to work it, at most 5000 characters; `""` or only whitespace clears it; owner only, answers `{applied, seq}` and leaves no op row |
+| read | `get_tree` | title + `guide: {text, yours}` (the only read that carries it, on every page; `yours` is true when the caller owns the tree and wrote its current guide, false on a guide a fork copied from someone else's tree until its owner writes one) + nodes (label, icon, color, `kind`, position, description, links) + per-node prerequisites + seq; `includeEdges: true` adds every live edge as a flat `edges: [{from, to}]` |
 | read | `get_nodes` | 1–200 exact unique ids in requested order, selected fields, explicit `missingNodeIds`, seq and complete-result byte limit |
 | read | `get_diagnostics` | cycles / dangling / self-edges / smells |
 | read | `get_health` | tidiness metrics + 0–100 score (needs a valid DAG); `crossBranch` skips edges touching a `crossBranchExempt` kind and reports them as `crossBranchExempt` |

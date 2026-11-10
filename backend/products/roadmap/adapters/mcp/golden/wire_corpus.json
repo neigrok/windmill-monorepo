@@ -1,5 +1,5 @@
 {
-  "schemaVersion" : 9,
+  "schemaVersion" : 10,
   "steps" : 
   [
     {
@@ -14,6 +14,11 @@
               "seq" : 0,
               "tree" : 
               {
+                "guide" : 
+                {
+                  "text" : "",
+                  "yours" : true
+                },
                 "id" : "t",
                 "kinds" : [],
                 "nodes" : [],
@@ -38,9 +43,6 @@
             "text" : 
             {
               "applied" : true,
-              "diagnosticsClean" : true,
-              "id" : "infra",
-              "introducedDiagnostics" : [],
               "seq" : 1
             },
             "type" : "text"
@@ -50,6 +52,29 @@
         "structuredContent" : null
       },
       "step" : 1,
+      "tool" : "describe_tree"
+    },
+    {
+      "result" : 
+      {
+        "content" : 
+        [
+          {
+            "text" : 
+            {
+              "applied" : true,
+              "diagnosticsClean" : true,
+              "id" : "infra",
+              "introducedDiagnostics" : [],
+              "seq" : 2
+            },
+            "type" : "text"
+          }
+        ],
+        "isError" : false,
+        "structuredContent" : null
+      },
+      "step" : 2,
       "tool" : "add_kind"
     },
     {
@@ -63,29 +88,6 @@
               "applied" : true,
               "diagnosticsClean" : true,
               "id" : "root",
-              "introducedDiagnostics" : [],
-              "seq" : 2
-            },
-            "type" : "text"
-          }
-        ],
-        "isError" : false,
-        "structuredContent" : null
-      },
-      "step" : 2,
-      "tool" : "create_node"
-    },
-    {
-      "result" : 
-      {
-        "content" : 
-        [
-          {
-            "text" : 
-            {
-              "applied" : true,
-              "diagnosticsClean" : true,
-              "id" : "render",
               "introducedDiagnostics" : [],
               "seq" : 3
             },
@@ -108,7 +110,7 @@
             {
               "applied" : true,
               "diagnosticsClean" : true,
-              "id" : "sync",
+              "id" : "render",
               "introducedDiagnostics" : [],
               "seq" : 4
             },
@@ -131,6 +133,7 @@
             {
               "applied" : true,
               "diagnosticsClean" : true,
+              "id" : "sync",
               "introducedDiagnostics" : [],
               "seq" : 5
             },
@@ -141,6 +144,28 @@
         "structuredContent" : null
       },
       "step" : 5,
+      "tool" : "create_node"
+    },
+    {
+      "result" : 
+      {
+        "content" : 
+        [
+          {
+            "text" : 
+            {
+              "applied" : true,
+              "diagnosticsClean" : true,
+              "introducedDiagnostics" : [],
+              "seq" : 6
+            },
+            "type" : "text"
+          }
+        ],
+        "isError" : false,
+        "structuredContent" : null
+      },
+      "step" : 6,
       "tool" : "connect"
     },
     {
@@ -155,7 +180,7 @@
               "diagnosticsClean" : true,
               "id" : "sync",
               "introducedDiagnostics" : [],
-              "seq" : 6
+              "seq" : 7
             },
             "type" : "text"
           }
@@ -163,7 +188,7 @@
         "isError" : false,
         "structuredContent" : null
       },
-      "step" : 6,
+      "step" : 7,
       "tool" : "set_node_color"
     },
     {
@@ -178,29 +203,6 @@
               "diagnosticsClean" : true,
               "id" : "render",
               "introducedDiagnostics" : [],
-              "seq" : 7
-            },
-            "type" : "text"
-          }
-        ],
-        "isError" : false,
-        "structuredContent" : null
-      },
-      "step" : 7,
-      "tool" : "rename_node"
-    },
-    {
-      "result" : 
-      {
-        "content" : 
-        [
-          {
-            "text" : 
-            {
-              "applied" : true,
-              "diagnosticsClean" : true,
-              "id" : "root",
-              "introducedDiagnostics" : [],
               "seq" : 8
             },
             "type" : "text"
@@ -210,7 +212,7 @@
         "structuredContent" : null
       },
       "step" : 8,
-      "tool" : "move_node"
+      "tool" : "rename_node"
     },
     {
       "result" : 
@@ -233,7 +235,7 @@
         "structuredContent" : null
       },
       "step" : 9,
-      "tool" : "annotate_node"
+      "tool" : "move_node"
     },
     {
       "result" : 
@@ -266,6 +268,29 @@
           {
             "text" : 
             {
+              "applied" : true,
+              "diagnosticsClean" : true,
+              "id" : "root",
+              "introducedDiagnostics" : [],
+              "seq" : 11
+            },
+            "type" : "text"
+          }
+        ],
+        "isError" : false,
+        "structuredContent" : null
+      },
+      "step" : 11,
+      "tool" : "annotate_node"
+    },
+    {
+      "result" : 
+      {
+        "content" : 
+        [
+          {
+            "text" : 
+            {
               "nodeId" : "root",
               "prerequisitesMet" : true,
               "status" : "complete"
@@ -276,7 +301,7 @@
         "isError" : false,
         "structuredContent" : null
       },
-      "step" : 11,
+      "step" : 12,
       "tool" : "set_progress"
     },
     {
@@ -307,7 +332,7 @@
         "isError" : false,
         "structuredContent" : null
       },
-      "step" : 12,
+      "step" : 13,
       "tool" : "set_progress"
     },
     {
@@ -333,7 +358,7 @@
               "nodes" : 2,
               "prerequisiteMode" : "merge",
               "progressApplied" : true,
-              "seq" : 11,
+              "seq" : 12,
               "tombstoned" : 
               {
                 "edges" : 0,
@@ -346,7 +371,7 @@
         "isError" : false,
         "structuredContent" : null
       },
-      "step" : 13,
+      "step" : 14,
       "tool" : "import_subgraph"
     },
     {
@@ -384,7 +409,7 @@
         "isError" : false,
         "structuredContent" : null
       },
-      "step" : 14,
+      "step" : 15,
       "tool" : "import_subgraph"
     },
     {
@@ -423,7 +448,7 @@
               [
                 "ghost"
               ],
-              "seq" : 12,
+              "seq" : 13,
               "tombstoned" : 
               {
                 "edges" : 0,
@@ -436,7 +461,7 @@
         "isError" : false,
         "structuredContent" : null
       },
-      "step" : 15,
+      "step" : 16,
       "tool" : "import_subgraph"
     },
     {
@@ -468,7 +493,7 @@
         "isError" : false,
         "structuredContent" : null
       },
-      "step" : 16,
+      "step" : 17,
       "tool" : "find_nodes"
     },
     {
@@ -500,7 +525,7 @@
         "isError" : false,
         "structuredContent" : null
       },
-      "step" : 17,
+      "step" : 18,
       "tool" : "find_nodes"
     },
     {
@@ -512,9 +537,14 @@
             "text" : 
             {
               "count" : 5,
-              "seq" : 12,
+              "seq" : 13,
               "tree" : 
               {
+                "guide" : 
+                {
+                  "text" : "Ship the root first; render and sync follow it.",
+                  "yours" : true
+                },
                 "id" : "t",
                 "kinds" : 
                 [
@@ -608,7 +638,7 @@
         "isError" : false,
         "structuredContent" : null
       },
-      "step" : 18,
+      "step" : 19,
       "tool" : "get_tree"
     },
     {
@@ -649,7 +679,7 @@
         "isError" : false,
         "structuredContent" : null
       },
-      "step" : 19,
+      "step" : 20,
       "tool" : "get_diagnostics"
     },
     {
@@ -673,7 +703,7 @@
         "isError" : false,
         "structuredContent" : null
       },
-      "step" : 20,
+      "step" : 21,
       "tool" : "get_progress"
     },
     {
@@ -698,7 +728,7 @@
         "isError" : false,
         "structuredContent" : null
       },
-      "step" : 21,
+      "step" : 22,
       "tool" : "get_health"
     },
     {
@@ -714,7 +744,7 @@
         "isError" : true,
         "structuredContent" : null
       },
-      "step" : 22,
+      "step" : 23,
       "tool" : "set_progress"
     },
     {
@@ -730,7 +760,7 @@
         "isError" : true,
         "structuredContent" : null
       },
-      "step" : 23,
+      "step" : 24,
       "tool" : "annotate_node"
     }
   ]

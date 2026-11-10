@@ -631,7 +631,7 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   lifetime.watch(tendingAgent);
   const bool tendingEnabled =
       (tendingEnabledFlag == "true" || tendingEnabledFlag == "1") && tendingAgent->configured();
-  auto tendingService = std::make_shared<TendingService>(*tendRuns, *tendingAgent, *mcpTools,
+  auto tendingService = std::make_shared<TendingService>(*tendRuns, *tendingAgent, *mcpTools, *registry,
                                                          *systemClock, *tokens, *entitlements,
                                                          tendingEnabled);
   lifetime.watch(tendingService, tendRuns, tendingAgent, mcpTools, systemClock, tokens, entitlements,

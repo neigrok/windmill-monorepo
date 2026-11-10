@@ -78,7 +78,9 @@ TEST(fork_plants_the_sources_live_title_and_guide_at_its_planting_stamp_so_a_fre
   const Lww<std::string> guide{"Rig first, sail second, race last.", plantedAt};
   CHECK(h.trees.byId["t_d1"].title == title);
   CHECK(h.trees.byId["t_d1"].guide == guide);
+  CHECK(h.trees.byId["t_d1"].guideInherited);  // the source author's words, not the new owner's
   CHECK(*h.trees.byId["t_d1"].owner == uid("me"));
+  CHECK(h.rooms.open(TreeId{"t_d1"})->guideInherited());
 
   const Subgraph delta = h.rooms.open(TreeId{"t_d1"})->deltaSince(VersionVector{});
   CHECK(delta.title == std::optional<Lww<std::string>>(title));
@@ -95,6 +97,7 @@ TEST(fork_under_a_requested_title_plants_that_title_at_the_planting_stamp) {
   CHECK_EQ(result.data.title, std::string("My own voyage"));
   CHECK(h.trees.byId["t_d1"].title == (Lww<std::string>{"My own voyage", Hlc{h.clock.nowMs(), 0, "srv"}}));
   CHECK(h.trees.byId["t_d1"].guide == (Lww<std::string>{"", Hlc{h.clock.nowMs(), 0, "srv"}}));
+  CHECK_FALSE(h.trees.byId["t_d1"].guideInherited);  // no words were copied
 }
 
 TEST(fork_clears_the_source_status_seeds) {

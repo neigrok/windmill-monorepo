@@ -454,6 +454,16 @@ std::optional<Admission> admitGuide(const std::string& guide) {
   return admitRegister("the guide", guide, kMaxGuideChars);
 }
 
+bool isBlankGuide(const std::string& guide) {
+  return guide.find_first_not_of(" \t\r\n") == std::string::npos;
+}
+
+std::optional<Admission> admitStampedGuide(const std::string& guide) {
+  if (std::optional<Admission> refusal = admitGuide(guide)) return refusal;
+  if (guide.empty() || !isBlankGuide(guide)) return std::nullopt;
+  return Admission{Admission::Verdict::malformed, "the guide is only whitespace — send \"\" for no guide"};
+}
+
 std::optional<Admission> admit(const TreeData& document) {
   if (std::optional<Admission> refusal = admitTitle(document.title)) return refusal;
   // A document's kinds REPLACE the legend rather than joining it, so the count is the list's length.

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "products/roadmap/application/RoomRegistry.h"
 #include "products/roadmap/domain/Ids.h"
 #include "products/roadmap/domain/Tending.h"
 #include "platform/ports/Clock.h"
@@ -25,14 +26,15 @@ namespace wm {
 // never a drogon request loop; an exception escaping a worker becomes a `failed` run.
 class TendingService {
 public:
-  TendingService(TendRunRepository& runs, PlanAgent& agent, ToolHost& tools, Clock& clock,
+  TendingService(TendRunRepository& runs, PlanAgent& agent, ToolHost& tools, RoomRegistry& rooms, Clock& clock,
                  TokenGenerator& tokens, Entitlements& entitlements, bool enabled);
   ~TendingService();
   void stop();
 
   // Validate → persist → hand off → return. A refusal is persisted as a `refused` run and returned
-  // without ever starting work; otherwise a `running` run is persisted and its id returned
-  // immediately. `email` is the second binding the plan lookup reads.
+  // without ever starting work — a tree the caller cannot write among them, since the run writes as
+  // the caller; otherwise a `running` run is persisted and its id returned immediately. `email` is the
+  // second binding the plan lookup reads.
   TendRun start(const TreeId& tree, const UserId& caller, const std::string& email,
                 const std::string& prompt);
 
@@ -53,6 +55,7 @@ private:
   TendRunRepository& runs_;
   PlanAgent& agent_;
   ToolHost& tools_;
+  RoomRegistry& rooms_;
   Clock& clock_;
   TokenGenerator& tokens_;
   Entitlements& entitlements_;

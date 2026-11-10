@@ -29,8 +29,8 @@ public:
   // The HLC actor stamped on every server-minted write; authorship itself lives in AppliedOp.actor.
   static constexpr std::string_view kServerActor{"srv"};
 
-  TreeRoom(TreeId id, Lww<std::string> title, Lww<std::string> guide, LooseGraph graph, Legend legend,
-           Seq head, std::optional<UserId> owner, Visibility visibility, std::uint64_t createdAt,
+  TreeRoom(TreeId id, Lww<std::string> title, Lww<std::string> guide, bool guideInherited, LooseGraph graph,
+           Legend legend, Seq head, std::optional<UserId> owner, Visibility visibility, std::uint64_t createdAt,
            PresenceBus& bus);
 
   // Dedupe on the frame's id, fold its stamps into the clock, join graph + legend + title + guide,
@@ -117,6 +117,9 @@ public:
   // An unset stamp means the create-time baseline, never written since.
   const Lww<std::string>& title() const { return title_; }
   const Lww<std::string>& guide() const { return guide_; }
+  // A guide a fork copied from someone else's tree, until a guide frame wins over it: its author's
+  // words, never the owner's own.
+  bool guideInherited() const { return guideInherited_; }
   Seq head() const { return head_; }
   // epoch ms; immutable.
   std::uint64_t createdAt() const { return createdAt_; }
@@ -132,6 +135,7 @@ private:
   TreeId id_;
   Lww<std::string> title_;
   Lww<std::string> guide_;
+  bool guideInherited_;
   LooseGraph graph_;
   Legend legend_;
   Seq head_;
