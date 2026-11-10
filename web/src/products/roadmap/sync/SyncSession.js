@@ -13,6 +13,7 @@ import { frameWrites, outboxStamps, outboxWrites, pendingGestures, pendingRecord
 import { LocalTreeRegistry } from '../persistence/LocalTreeRegistry.js';
 import { ProgressStore } from '../persistence/ProgressStore.js';
 import { GENESIS_STAMP } from '../model/Legend.js';
+import { InadmissibleGuide, admitsGuide } from '../guide/GuideDraft.js';
 
 const DEFAULT_URL = socketUrl();
 const MAX_BACKOFF_MS = 8000;
@@ -854,12 +855,17 @@ export class SyncSession {
     return pendingRecordCount(this.unconfirmedWrites('progress'));
   }
 
-  // Unconfirmed registers not already carried by this connection.
+  // Unconfirmed registers not already carried by this connection: the steps first, then each tree register in a frame of
+  // its own, so a refused title or guide strands nothing else and a server answering in order confirms the steps first.
   flush() {
     if (this.rebaselining?.has('structure') || this.discardPending) return;
     const pending = outboxWrites(this.lattice.toFrame(), this.confirmedStructure.toFrame(), this.inFlight.values());
     if (writesNothing(pending)) return;
-    for (const chunk of chunkDelta(pending, this.chunkBytes)) this.send(chunk, 'flush');
+    const steps = { nodes: pending.nodes, edges: pending.edges, kinds: pending.kinds };
+    if (!writesNothing(steps)) for (const chunk of chunkDelta(steps, this.chunkBytes)) this.send(chunk, 'flush');
+    for (const name of TREE_REGISTERS) {
+      if (pending[name]) this.send({ nodes: [], edges: [], kinds: [], [name]: pending[name] }, 'flush');
+    }
   }
 
   dispatch(gesture) {
@@ -938,8 +944,10 @@ export class SyncSession {
   }
 
   // The guide's one stamped write, as a rename is: last writer wins, nothing enters the undo journal, and an empty guide
-  // is none. Returns false before the durable lattice loads, when the caller must take another door.
+  // is none. Returns false before the durable lattice loads, when the caller must take another door. Text the server
+  // would refuse never enters the lattice, where its refusal would stand over the lane until a Discard.
   setGuide(guide) {
+    if (!admitsGuide(guide)) throw new InadmissibleGuide();
     if (!this.ready) return false;
     if (guide !== this.lattice.guide) this.writeRegister('guide', guide);
     return true;
@@ -1223,8 +1231,7 @@ export class SyncSession {
   }
 }
 
-// Splits an oversized flush by entry count; each chunk is an independently valid subgraph and the
-// title and guide ride the first.
+// Splits an oversized flush of steps by entry count; each chunk is an independently valid subgraph.
 function* chunkDelta(delta, chunkBytes) {
   const size = JSON.stringify(delta).length;
   if (size <= chunkBytes) { yield delta; return; }
@@ -1239,7 +1246,6 @@ function* chunkDelta(delta, chunkBytes) {
   for (let i = 0; i < all.length; i += perChunk) {
     const chunk = { nodes: [], edges: [], kinds: [] };
     for (const [section, entry] of all.slice(i, i + perChunk)) chunk[section].push(entry);
-    if (i === 0) for (const name of TREE_REGISTERS) if (delta[name]) chunk[name] = delta[name];
     yield chunk;
   }
 }

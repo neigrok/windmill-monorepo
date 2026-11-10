@@ -1875,10 +1875,12 @@ test('a device tree adopted at sign-in carries its stamped guide to the server t
   await session.start();
   session.ws.open();
   session.receiveState({ t: 'subgraph', intent: 'delta', seq: 1, nodes: [], edges: [], kinds: [], title: { v: 'Sail', at: '9:0:srv' }, guide: null });
-  const [flush] = structureFrames(session.ws);
-  assert.equal(flush.intent, 'flush');
-  assert.deepEqual(flush.guide, blob.frame.guide);
-  session.receiveAck({ frameId: flush.frameId });
+  const frames = structureFrames(session.ws);
+  assert.deepEqual(frames.map(({ intent, nodes, guide }) => ({ intent, nodes: nodes.map(({ id }) => id), guide: guide ?? null })), [
+    { intent: 'flush', nodes: ['root'], guide: null },
+    { intent: 'flush', nodes: [], guide: blob.frame.guide },
+  ]);
+  for (const { frameId } of frames) session.receiveAck({ frameId });
   assert.deepEqual({ guide: session.confirmedStructure.guide, pending: session.statusSnapshot().structurePending }, { guide: 'Written signed out.', pending: 0 });
 });
 
@@ -1895,4 +1897,39 @@ test('a refused guide frame stands the structure lane\'s refusal and keeps the g
   session.receiveAck({ frameId: resent.frameId });
   assert.deepEqual({ refused: session.refusals.size, pending: session.statusSnapshot().structurePending, confirmed: session.confirmedStructure.guide },
     { refused: 0, pending: 0, confirmed: 'One step a week.' });
+});
+
+test('setGuide refuses text the server would not admit, before anything is written or sent', (t) => {
+  const { session } = connectedSession(t);
+  session.setGuide('One step a week.');
+  const sent = structureFrames(session.ws).length;
+  for (const refused of ['One\u0000 step', 'One \uD83C', ' \n ', 'a'.repeat(5001)]) {
+    assert.throws(() => session.setGuide(refused), { name: 'InadmissibleGuide' });
+  }
+  assert.deepEqual({ guide: session.lattice.guide, frames: structureFrames(session.ws).length, gestures: session.statusSnapshot().structureGestures },
+    { guide: 'One step a week.', frames: sent, gestures: 1 });
+});
+
+test('a flush sends each tree register in a frame of its own after the steps, so a refused guide strands no step edit', async (t) => {
+  const { session, saves } = connectedSession(t);
+  session.phase = 'offline';
+  session.dispatch({ kind: 'RenameNode', id: 'root', label: 'Renamed offline' });
+  session.renameTree('Sail offline');
+  session.setGuide('Written offline.');
+  session.phase = 'live';
+  session.flush();
+  const frames = structureFrames(session.ws);
+  assert.deepEqual(frames.map(({ nodes, title, guide }) => ({ nodes: nodes.map(({ id }) => id), title: title?.v ?? null, guide: guide?.v ?? null })), [
+    { nodes: ['root'], title: null, guide: null },
+    { nodes: [], title: 'Sail offline', guide: null },
+    { nodes: [], title: null, guide: 'Written offline.' },
+  ]);
+  session.receiveAck({ frameId: frames[0].frameId });
+  session.receiveAck({ frameId: frames[1].frameId });
+  session.receiveReject({ t: 'reject', frameId: frames[2].frameId, code: 'bad-frame' });
+  assert.deepEqual({ refused: session.refusals.get('structure')?.code, pending: session.statusSnapshot().structurePending, gestures: session.statusSnapshot().structureGestures },
+    { refused: 'bad-frame', pending: 1, gestures: 1 });
+  assert.equal(await session.discard(), true);
+  assert.deepEqual({ label: session.lattice.toTreeData().nodes[0].label, title: session.lattice.title, guide: session.lattice.guide, saved: saves.at(-1).frame.guide },
+    { label: 'Renamed offline', title: 'Sail offline', guide: '', saved: undefined });
 });

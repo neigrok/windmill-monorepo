@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { IDBFactory, IDBObjectStore } from 'fake-indexeddb';
 import { SyncStore } from '../../../../src/products/roadmap/sync/SyncStore.js';
-import { bearImportedTree, bearLocalTree, deviceKeepsTrees, loadDeviceTree, renameLocalTree, setLocalGuide, moveLocalTree, deleteLocalTree, forgetDeviceTrees } from '../../../../src/products/roadmap/sync/localTrees.js';
+import { MissingDeviceTree, bearImportedTree, bearLocalTree, deviceKeepsTrees, loadDeviceTree, renameLocalTree, setLocalGuide, moveLocalTree, deleteLocalTree, forgetDeviceTrees } from '../../../../src/products/roadmap/sync/localTrees.js';
 import { LocalTreeRegistry } from '../../../../src/products/roadmap/persistence/LocalTreeRegistry.js';
 
 const frame = { nodes: [{ id: 'root', createdAt: '1:0:server', label: 'Root', labelAt: '1:0:server' }], edges: [], kinds: [] };
@@ -168,4 +168,12 @@ test('a device tree keeps its guide in its blob as one stamped write that the cl
   assert.deepEqual({ title: opened.title, guide: opened.guide }, { title: 'Original', guide: 'Written on this device.' });
   await moveLocalTree('source', 'destination');
   assert.deepEqual((await store.load('destination')).frame.guide, saved.frame.guide);
+});
+
+test('a guide for a device tree whose record is gone is refused, not counted as written; a rename still renames the index', async (t) => {
+  const { store, registry } = device(t);
+  await assert.rejects(setLocalGuide('source', 'Written.'), MissingDeviceTree);
+  assert.equal(await store.load('source'), null);
+  await renameLocalTree('source', 'Renamed');
+  assert.equal(registry.get('source').title, 'Renamed');
 });

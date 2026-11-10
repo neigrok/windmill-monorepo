@@ -84,7 +84,8 @@ The browser joins the response, adopts its coverage and seq, then flushes each r
 is greater than its confirmed baseline's stamp, excluding the same register and stamp already in
 flight. Status counts the same unconfirmed registers. Actor frontiers cannot confirm individual
 registers: a rejected or unanswered frame can leave a gap below an accepted frame's frontier.
-Flushes split above 256 KiB into independent subgraphs, with the title and guide on the first chunk.
+Flushes split their steps above 256 KiB into independent subgraphs, then send the title and the guide each in a frame of
+its own, so a refused register strands no step and a server answering in order confirms the steps first.
 
 The confirmed structure baseline joins grafts, other replicas' live frames and the exact writes retained
 for an acknowledged frame. Own structure echoes join the lattice without confirming: the server broadcasts them

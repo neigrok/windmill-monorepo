@@ -163,10 +163,12 @@ after a finger's cancelled pointerdown.
 
 **The guide.** A tree carries one guide, plain text its owner writes on what the tree is and how to work it, which agents
 receive through MCP; people see the same text. `GuideDraft` counts it in code points as the server does: the counter speaks
-from 4,500, and past 5,000 nothing is cut and Save waits. `useRoomGuide` decides who sees it (the owner always, a reader on
+from 4,500, and past 5,000 nothing is cut and Save waits. Save writes the text as it shows: a NUL a paste carried goes and a
+lone surrogate becomes the replacement glyph drawn for it, so no door sends text the server refuses, and `admitsGuide`,
+the server's admission, guards the session's and the device's doors. `useRoomGuide` decides who sees it (the owner always, a reader on
 the app route when it holds words, nobody in the shared-reader mode or the demo), holds the one surface open on it and routes a
 save: `SyncSession.setGuide` when the session can take the write, else the device store for a tree that lives only here
-(`setLocalGuide`), else `PATCH /v1/trees/{id}`. From 744px `GuideChip` follows the view switch: the first line up to 320px
+(`setLocalGuide`, which refuses a tree whose record is gone), else `PATCH /v1/trees/{id}`. From 744px `GuideChip` follows the view switch: the first line up to 320px
 (200px below 1280px), the book alone with its tooltip below 1024px, a dashed Add guide for an owner with none. It opens
 `GuideModal`, the step modal's anatomy filling the window with the text at a 560px measure. The owner's text is one
 `<textarea>`, read-only while reading, so a click that is not a drag-selection writes from where it landed; where a browser
@@ -681,7 +683,8 @@ progress-lane replacement blocks progress editing, and the composer keeps its dr
 unsent held delete stays available.
 
 **Tree registers.** The title and the guide are the tree's own registers beside its graph and legend. A rename or a guide
-write stamps one register outside the undo journal and saves with the structure lane; a device tree's stamped guide reaches the
+write stamps one register outside the undo journal and saves with the structure lane; a flush sends the steps first and
+each register in a frame of its own, so a refused register strands no step edit; a device tree's stamped guide reaches the
 server through the claim's first flush, once the tree exists there, since a planted document never sets one.
 
 **Created time.** Each projected step carries `createdMs`, the wall time of its add stamp: when it joined this

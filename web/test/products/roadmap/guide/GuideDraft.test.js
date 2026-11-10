@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { GUIDE_BOUND, GuideDraft, guideExcerpt, guideLengthBucket, hasGuide } from '../../../../src/products/roadmap/guide/GuideDraft.js';
+import { GUIDE_BOUND, GuideDraft, admitsGuide, guideExcerpt, guideLengthBucket, hasGuide } from '../../../../src/products/roadmap/guide/GuideDraft.js';
 
 const reading = (draft) => ({ length: draft.length, fits: draft.fits, counted: draft.counted, left: draft.left, over: draft.over });
 
@@ -45,4 +45,19 @@ test('an excerpt is the first line with words, and a guide of blank lines is non
 test('a saved length leaves as one of five bounded labels', () => {
   assert.deepEqual([0, 1, 500, 501, 2000, 2001, 4500, 4501, 5000].map(guideLengthBucket),
     ['0', '1-500', '1-500', '501-2000', '501-2000', '2001-4500', '2001-4500', '4501-5000', '4501-5000']);
+});
+
+test('a paste carrying a NUL or a lone surrogate saves what the person sees: no NUL, the lone half as its replacement glyph', () => {
+  const pasted = new GuideDraft('', 'One\u0000 step \uD83C a week \uDE00.');
+  assert.deepEqual({ saved: pasted.saved, wellFormed: pasted.saved.isWellFormed(), length: pasted.length, admitted: admitsGuide(pasted.saved) },
+    { saved: 'One step \uFFFD a week \uFFFD.', wellFormed: true, length: 20, admitted: true });
+  assert.equal(new GuideDraft('', '\u0000 \n\u0000').saved, '');
+  assert.equal(new GuideDraft('', '\u0000'.repeat(5001)).fits, true);
+  assert.equal(new GuideDraft('', '🌊').saved, '🌊');
+});
+
+test('a guide is admitted as the server admits one: well-formed, no NUL, words or nothing, at most 5,000 code points', () => {
+  const cases = { '': true, 'One step.': true, ' \n ': false, 'One\u0000': false, 'One \uD83C': false, [`${'🌊'.repeat(GUIDE_BOUND)}`]: true, [`${'a'.repeat(GUIDE_BOUND + 1)}`]: false };
+  assert.deepEqual(Object.fromEntries(Object.keys(cases).map((text) => [text, admitsGuide(text)])), cases);
+  assert.equal(admitsGuide(7), false);
 });
