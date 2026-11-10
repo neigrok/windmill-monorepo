@@ -453,14 +453,14 @@ no Sentry upload token, and builds and the release helper perform no mapping upl
 a production Issue: the release Robolectric envelope test and Debug Files listing provide proof.
 
 Minified acceptance runs after review on a freshly wiped `Release_API34` Google APIs emulator,
-using the retained-key candidate with a version code above 309:
+using the retained-key candidate with a version code above 322:
 
 1. Check non-debuggable badging with `aapt2`, the asset UUID against provenance, and record APK
    sizes before and after minification in the release notes.
-2. Install published 0.16.0/code 309. Signed out, create a finished two-set workout, an open
-   workout with a logged set, a bodyweight routine with negative per-set loads, a note and a
-   weigh-in. Update with `adb install -r`; preserve all data and finish the open workout. Check
-   the AOSP keyboard’s minus key for uniform and per-set loads.
+2. Install published 0.17.0/code 322. Signed out, create a finished two-set workout, an open
+   workout with a logged set, a bodyweight routine with negative per-set loads, a set note (Notes
+   need an account) and a weigh-in. Update with `adb install -r`; preserve all data and finish the open workout. Check
+   the image's keyboard (Gboard on `Release_API34`) minus key for uniform and per-set loads.
 3. Check that `adb logcat -b crash` stays empty and logcat contains no `SerializationException`,
    `ClassNotFoundException`, `NoSuchMethodError`, `NoSuchFieldException`,
    `Resources$NotFoundException`, `Crash reporting unavailable` or `Error delivery unavailable`.
@@ -478,26 +478,37 @@ using the retained-key candidate with a version code above 309:
    shows as answering on the other device, and a seat change interrupts it. The web stays on its own conversations
    and shows neither phone's.
 
-The published [0.16.0/code309 release](https://github.com/neigrok/windmill-monorepo/releases/tag/android-v0.16.0)
-uses tag `android-v0.16.0` at `b634b633504f2d0baef5fefd944487c9479bfeb0`,
-[Actions run 42484808380](https://github.com/neigrok/windmill-monorepo/actions/runs/42484808380),
+The published [0.17.0/code322 release](https://github.com/neigrok/windmill-monorepo/releases/tag/android-v0.17.0)
+uses tag `android-v0.17.0` at `62c2a186f1ede8c50ddd554339eb911ac8690759`,
+[Actions run 42850545320](https://github.com/neigrok/windmill-monorepo/actions/runs/42850545320),
 attempt 1, from a tag push. Both jobs passed. Local finalization verified the retained certificate,
-non-debuggable package, unchanged application contents and linked provenance. All three anonymously
-downloaded assets are byte-identical to the accepted files. The APK SHA-256 is
-`abcd3652a74e840c7c202aa9637bc6bb35096fad6b6fe61d133b16584af2217a`, at 8,091,020 bytes (the unsigned CI
-candidate is 8,073,833 bytes). The release workflow supplies
+non-debuggable package, unchanged application contents and linked provenance. All three
+anonymously downloaded assets are byte-identical to the accepted files. The APK SHA-256 is
+`02a4a2c366d3d44201e697f673757341ac8911eb287bc8ac12ac7cc8f5bb19ba`, at 8,492,428 bytes (the unsigned CI
+candidate is 8,472,977 bytes). The release workflow supplies
 `-Pwindmill.updateUrl=https://github.com/neigrok/windmill-monorepo/releases/latest`; the APK contains that
 destination, which resolves to this release. The R8 mapping, bound to the APK by `apk.proguardUuid`
-`2be7ac5f-e208-3acb-9550-b6cfc08892fb`, is not yet uploaded to Sentry: the release machine has no Sentry CLI
-or token, so the upload and the Debug Files check are pending.
+`1188ef80-1e35-3047-9c30-8c724578bb4c`, is not yet uploaded to Sentry: the release machine has no Sentry CLI
+or token, so the upload and the Debug Files check are pending, as they still are for 0.16.0's mapping
+(`2be7ac5f-e208-3acb-9550-b6cfc08892fb`).
 
 Android 14 acceptance ran on a freshly wiped API 34 Google APIs emulator with 4 GB of RAM against the
-production configuration, signed out, on the release-signed APK. The public 0.15.0/code299 APK's routine and
-live workout with one logged set survived `adb install -r` in place; on 0.16.0 a second set logged, Fix set
-opened with its bottom **Save fix**, and the saved fix showed in the ledger. The crash buffer stayed empty and
-none of the listed exceptions appeared in logcat. Not run on the release-signed APK: step 2's finished
-workout, bodyweight routine, note, weigh-in and minus key, 4 (process death), 5 (offline), 6 (sign-in and
-anything behind it), 7 (clean install and TalkBack) and 8 (cross-device).
+production configuration, signed out, on the release-signed APK. The public 0.16.0/code309 APK's finished
+two-set workout, live workout with one logged set and its set note, bodyweight routine with negative per-set
+loads and weigh-in survived `adb install -r` in place, which is the same-key update check; on 0.17.0 the live
+workout logged six more sets and finished. Notes need an account, so the signed-out note is a set note. The
+image carries no AOSP keyboard; its preloaded Gboard 12.4 number pad's minus key entered `−15` as a uniform
+load and `−7.5` as a per-set load. With an eight-set plan the ledger showed six whole rows above the rack,
+rested on the set in hand with the latest logged sets above it, and scrolled to the earlier ones. HOME then
+`am kill` restored a routine draft with Vary by set open, the logger's Assembly, Picker (with its search) and
+Fix (with an unsaved edit) sheets, a pushed movement page, session detail and the Finish sheet. In airplane
+mode a set logged, survived a force-stop and an offline restart, and the workout finished offline. A clean
+install opened the welcome carousel and, after Skip, Coach with an empty Routines tab; with TalkBack 14.2,
+heading navigation (reading control Headings, swipe down through the emulator's touchscreen) reached
+Movements and History in the routine editor and Performed on Finish. The crash buffer stayed empty, the
+system dropbox recorded no app crash or ANR, and none of the listed exceptions appeared in the logcat captured
+from the update through the offline run and over a second clean install. Not run:
+6 (no owner-designated address is recorded, so sign-in and everything behind it) and 8 (cross-device).
 
 Distribution is by sideload. Published APKs through 0.7.1 use different debug certificates and
 cannot update in place with the retained release key. This build reads no device records written
