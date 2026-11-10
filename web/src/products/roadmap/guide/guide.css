@@ -104,6 +104,10 @@
 .st-guide-modal-body--writing {
   overflow: hidden;
 }
+.st-guide-modal-body:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: -2px;
+}
 
 /* The text keeps its place from reading to writing: the same box, its edge transparent until it takes the focus edge. */
 .st-guide-text {

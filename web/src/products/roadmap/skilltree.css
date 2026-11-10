@@ -90,17 +90,18 @@
   from { box-shadow: inset 0 0 0 2px var(--accent-gold-400); }
   to   { box-shadow: inset 0 0 0 2px transparent; }
 }
-@media (prefers-reduced-motion: reduce) {
-  .st-switcher-flash {
-    animation: none;
-  }
-}
 .st-switcher-tag {
   animation: wm-switcher-tag 150ms var(--ease-soft);
 }
 @keyframes wm-switcher-tag {
   from { opacity: 0; }
   to   { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .st-switcher-flash,
+  .st-switcher-tag {
+    animation: none;
+  }
 }
 .st-view-action {
   padding: 0 10px;

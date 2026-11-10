@@ -88,10 +88,10 @@ after(async () => {
   await server?.close();
 });
 
-async function open(options = {}, { engine = chromium, width = 1440, height = 960 } = {}) {
+async function open(options = {}, { engine = chromium, width = 1440, height = 960, reducedMotion = 'no-preference' } = {}) {
   await start();
   if (!browsers.has(engine)) browsers.set(engine, await engine.launch({ headless: true }));
-  const page = await browsers.get(engine).newPage({ viewport: { width, height } });
+  const page = await browsers.get(engine).newPage({ viewport: { width, height }, reducedMotion });
   await withBrowserErrors(page, async () => {
     await page.goto(`${origin}/guide-test`);
     await page.waitForFunction(() => window.entryReady);
@@ -418,6 +418,51 @@ test('Chromium: no guide event carries a word of the guide', async () => {
       await page.getByRole('button', { name: 'Save' }).click();
       const sent = JSON.stringify(await page.evaluate(() => window.events));
       for (const word of WORDS) assert.equal(sent.includes(word), false, word);
+    });
+  } finally { await page.close(); }
+});
+
+for (const engine of [chromium, webkit]) {
+  test(`${engine.name()}: a reader reaches a long author's note from the keyboard and scrolls it with PageDown, the arrows and Space`, async () => {
+    const note = Array.from({ length: 80 }, (_, line) => `Line ${line + 1} of the author's note.`).join('\n');
+    const page = await open({ guide: note, role: 'reader' }, { engine, width: 1024, height: 700 });
+    try {
+      await withBrowserErrors(page, async () => {
+        await page.getByRole('button', { name: 'Author’s note: Line 1 of the author\'s note.' }).click();
+        await page.getByRole('dialog', { name: 'Author’s note' }).waitFor();
+        await settled(page);
+        const body = page.getByRole('region', { name: 'Author’s note' });
+        const stops = [];
+        for (let press = 0; press < 3; press += 1) {
+          await page.keyboard.press('Tab');
+          stops.push(await page.evaluate(() => document.activeElement.getAttribute('aria-label') ?? document.activeElement.className));
+        }
+        assert.deepEqual(stops, ['Close', 'st-guide-modal-body', 'Close']);
+        await page.keyboard.press('Tab');
+        const scrolled = [];
+        for (const key of ['PageDown', 'ArrowDown', 'Space']) {
+          const before = await body.evaluate((element) => element.scrollTop);
+          await page.keyboard.press(key);
+          await page.waitForFunction((top) => document.querySelector('.st-guide-modal-body').scrollTop > top, before);
+          scrolled.push(key);
+        }
+        assert.deepEqual(scrolled, ['PageDown', 'ArrowDown', 'Space']);
+      });
+    } finally { await page.close(); }
+  });
+}
+
+test('Chromium: under reduced motion the excerpt swaps without its crossfade and the chip without its flash', async () => {
+  const page = await open({ guide: GUIDE }, { reducedMotion: 'reduce' });
+  try {
+    await withBrowserErrors(page, async () => {
+      await page.evaluate((text) => window.setElsewhere(text), ELSEWHERE);
+      const chip = page.getByRole('button', { name: 'Guide: Two steps a week until the June trip.' });
+      await chip.waitFor();
+      assert.deepEqual(await chip.evaluate((button) => ({
+        chip: getComputedStyle(button).animationName,
+        excerpt: getComputedStyle(button.querySelector('.st-switcher-tag')).animationName,
+      })), { chip: 'none', excerpt: 'none' });
     });
   } finally { await page.close(); }
 });

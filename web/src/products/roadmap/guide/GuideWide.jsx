@@ -170,7 +170,9 @@ export function GuideModal({ guide }) {
               <StepIcons.close />
             </button>
           </div>
-          <div ref={body} className={`st-guide-modal-body${draft ? ' st-guide-modal-body--writing' : ''}`}>
+          {/* A reader's note has no field to hold focus, so its body takes a stop of its own and scrolls from the keyboard. */}
+          <div ref={body} className={`st-guide-modal-body${draft ? ' st-guide-modal-body--writing' : ''}`}
+            {...(owner ? {} : { tabIndex: 0, role: 'region', 'aria-labelledby': titleId })}>
             {draft?.outdatedBy(guide.text) && (
               <div className="st-guide-strip" role="status">
                 <span>{t('roadmap.guide.changedElsewhere')}</span>
