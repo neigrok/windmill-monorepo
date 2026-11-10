@@ -18,6 +18,11 @@ import SyncTesting
   return view.subviews.flatMap { views($0, type) }
 }
 
+// Every view controller under a controller, the controller itself included.
+@MainActor func controllers(_ controller: UIViewController) -> [UIViewController] {
+  [controller] + controller.children.flatMap(controllers)
+}
+
 // A set of a movement in a session, logged at the epoch unless a time is given.
 func trainingSet(_ id: String, of exercise: ID<Exercise> = ID("back-squat"), in session: ID<Session> = ID("session"),
                  kg: Double, reps: Int, at ms: Int64 = 0) -> TrainingSet {
@@ -95,13 +100,19 @@ func trainingSet(_ id: String, of exercise: ID<Exercise> = ID("back-squat"), in 
     }
   }
 
-  func host<V: View>(_ view: V, appearance: UIUserInterfaceStyle) throws -> UIWindow {
+  // onSE draws the view at an iPhone SE's 375 × 667, set where the suite phone's status bar covers 20 pt of it, as the SE's does.
+  func host<V: View>(_ view: V, appearance: UIUserInterfaceStyle, onSE: Bool = false) throws -> UIWindow {
     let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
     let window = UIWindow(windowScene: scene)
     window.frame = scene.screen.bounds
     window.overrideUserInterfaceStyle = appearance
-    window.rootViewController = UIHostingController(rootView: view.environment(\.scenePhase, .active))
+    let hosted = UIHostingController(rootView: view.environment(\.scenePhase, .active))
+    window.rootViewController = onSE ? UIViewController() : hosted
     window.makeKeyAndVisible()
+    if onSE, let phone = window.rootViewController {
+      phone.addChild(hosted); phone.view.addSubview(hosted.view); hosted.didMove(toParent: phone)
+      hosted.view.frame = CGRect(x: 0, y: phone.view.safeAreaInsets.top - 20, width: 375, height: 667)
+    }
     return window
   }
 
@@ -299,6 +310,64 @@ func trainingSet(_ id: String, of exercise: ID<Exercise> = ID("back-squat"), in 
         try await capture(card, name: board + "-" + name, appearance: appearance)
       }
     }
+  }
+
+  // How the ledger's card stands on its page: as tall as its rows, or as tall as the room down to the page's foot, 8 pt above
+  // the rack, its rows running on under its edge; and whether its last row, the current one, shows whole at its foot.
+  struct CardFit: Equatable {
+    enum Height: Equatable { case rows(CGFloat), room }
+    let height: Height
+    let endsOnTheLastRow: Bool
+  }
+  func ledgerCard(in window: UIWindow) throws -> (fit: CardFit, frame: CGRect) {
+    let pager = try XCTUnwrap(controllers(try XCTUnwrap(window.rootViewController)).lazy.compactMap { $0 as? UIPageViewController }.first)
+    let ledger = try XCTUnwrap(views(pager.view, UICollectionView.self).first)
+    let card = ledger.convert(ledger.bounds, to: window), room = pager.view.convert(pager.view.bounds, to: window).maxY - card.minY
+    let fit = CardFit(height: abs(card.height - room) < 1 ? .room : .rows(card.height.rounded()),
+                      endsOnTheLastRow: abs(ledger.contentOffset.y + card.height - ledger.contentSize.height) < 1)
+    return (fit, card)
+  }
+
+  // The ledger's card is as tall as its rows up to the page's foot, 8 pt above the rack, its current row whole (L.1–L.3).
+  func testTheLedgerCardIsAsTallAsItsRowsUpToTheRack() async throws {
+    var cards: [String: CardFit] = [:]
+    for (name, logged, type, onSE) in [("3 rows", 2, DynamicTypeSize.large, false), ("7 rows", 6, .large, false), ("7 rows on SE", 6, .large, true),
+                                       ("3 rows at xxxLarge", 2, .xxxLarge, false), ("7 rows at xxxLarge", 6, .xxxLarge, false),
+                                       ("3 rows at AX3", 2, .accessibility3, false)] {
+      let (_, gym) = try fixture(planned: false, count: logged)
+      XCTAssertEqual(gym.workout.ledger(ID("back-squat")).rows.count, logged + 1)
+      let window = try host(WorkoutScreen(gym: gym).environment(\.dynamicTypeSize, type), appearance: .dark, onSE: onSE)
+      defer { window.isHidden = true; window.rootViewController = nil }
+      try await Task.sleep(for: .milliseconds(450))
+      window.layoutIfNeeded()
+      cards[name] = try ledgerCard(in: window).fit
+    }
+    XCTAssertEqual(cards, [
+      "3 rows": CardFit(height: .rows(132), endsOnTheLastRow: true),
+      "7 rows": CardFit(height: .room, endsOnTheLastRow: true),
+      "7 rows on SE": CardFit(height: .room, endsOnTheLastRow: true),
+      "3 rows at xxxLarge": CardFit(height: .rows(132), endsOnTheLastRow: true),
+      "7 rows at xxxLarge": CardFit(height: .room, endsOnTheLastRow: true),
+      "3 rows at AX3": CardFit(height: .room, endsOnTheLastRow: true),
+    ])
+  }
+
+  // A band over the rack takes room from the page: a capped card shrinks with it and brings its current row back to its
+  // foot, and grows back as the band goes, the row still whole.
+  func testACappedLedgerKeepsItsCurrentRowWholeAsTheRacksBandComesAndGoes() async throws {
+    let (_, gym) = try fixture(planned: false, count: 6)
+    let window = try host(WorkoutScreen(gym: gym), appearance: .dark)
+    defer { window.isHidden = true; window.rootViewController = nil }
+    var cards: [(fit: CardFit, frame: CGRect)] = []
+    for message in [nil, "The workout changed. Check the current set.", nil] {
+      gym.workout.message = message
+      try await Task.sleep(for: .milliseconds(900))
+      window.layoutIfNeeded()
+      cards.append(try ledgerCard(in: window))
+    }
+    XCTAssertLessThan(cards[1].frame.height, cards[0].frame.height - RoomSpace.minimumTarget / 2, "The band takes room from the card")
+    XCTAssertEqual(cards[2].frame, cards[0].frame)
+    XCTAssertEqual(cards.map(\.fit), Array(repeating: CardFit(height: .room, endsOnTheLastRow: true), count: 3))
   }
 
   // The rack speaks its numeral in the movement's load basis and Log set with the whole set it logs.

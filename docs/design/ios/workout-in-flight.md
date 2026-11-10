@@ -44,8 +44,14 @@ between squat sets (04.6, 04.7).
   light impact plays — once per rest, foreground only, never while a sheet is up, and not when the
   confirmation-haptic preference is off. No sound, banner, countdown or progress ring. VoiceOver reads
   the value as *2 minutes 14 seconds, target 2 minutes* and announces nothing.
-- **Ledger** (03.34a–c). A logged row reads what was lifted, with its check; the current and planned
-  rows read what the plan expects of them — the target's own load, else last time's — and no set
+- **Ledger** (03.34a–c; its height L.1–L.3, `2074:52825`). The card stands under the facts row, as
+  tall as its rows, and takes at most the room down to 8 pt above the rack (`RoomSpace.related`); past
+  that it scrolls inside, its edge cutting the row that does not fit, the current row whole at its foot
+  on appear, as each set lands and as a band over the rack takes room or gives it back, and its scroll
+  indicator flashes once as it appears. At
+  accessibility sizes it takes the page's height, the dots and facts leading its list. With the pad up
+  the rack rides over the card, which keeps its height. A logged row reads what was lifted, with its
+  check; the current and planned rows read what the plan expects of them — the target's own load, else last time's — and no set
   logged today changes them (`Prefill.expectedLoads`). While last time is
   not read yet an open row's load is a placeholder bar that resolves in place. Logged rows open Fix set
   (03.25). A movement with nothing logged opens Edit sets from its current or planned rows. A logged
@@ -58,10 +64,14 @@ between squat sets (04.6, 04.7).
 - **Load is typed** on the system `.decimalPad` (03.23A). The rack's numeral is the field itself, in
   both states: a tap into it raises the keyboard with the text selected, so the first key replaces it,
   and the rack — numeral, ladder, reps, Log set — rides up with the keyboard as one block on the
-  keyboard's own curve. Nothing in it appears, goes, resizes or moves, and no keyboard row appears.
-  The page keeps its head — the movement, its dots and the clock row — while the ledger passes under
-  the rack. Each key edits the rack, so the ladder steps the typed load and Log set logs what the
-  field shows and drops the keyboard in one motion. The load lands as the field lets go: Log set, a
+  keyboard's own curve. Nothing in it appears, goes, resizes or moves. The keyboard row holds one
+  item, trailing: the system's clear glass disc with a ✓ in ink, read *Done* (03.23D, note
+  `2090:22691`); it lands the load and drops the pad without logging a set (03.23D.4). The page stays
+  where it is and the rack passes over it: the ledger and the clock row go under the rack, the
+  movement's name stays in view, and on a 375 × 812 pt phone (03.23D.5) or an iPhone SE the name goes
+  under it too, the rack stopping under the toolbar.
+  Each key edits the rack, so the ladder steps the typed load and Log set logs what the field shows
+  and drops the keyboard in one motion. The load lands as the field lets go: the row's ✓, Log set, a
   tap anywhere outside the rack, a sheet opening or a change of movement keep a valid value; an empty
   or unreadable value restores the previous one. The unit follows the load basis (*kg each*, *kg
   total*, *kg added*, *kg*).

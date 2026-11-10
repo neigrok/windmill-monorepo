@@ -136,7 +136,7 @@ Paths in the first five rows are relative to `apps/ios/App/Sources/Gym`.
 | Coach | `Coach/CoachArchive.swift` owns migration, persistence and adoption; `CoachWorkspace.swift` separates visible and request-owning conversations. `GymRoom.swift` handles deliberate entry and keeps Coach tabs expanded; `CoachTab.swift` owns the composer. |
 | Log | `Log/LogPresentation.swift` orders factual weigh-ins separately from optional highlights; `Log/LogTab.swift` draws day groups, row kinds and the floating action. |
 | Weigh-in | `Log/BodyweightScreen.swift` owns the content-sized sheet, staged graphical calendar and shared save/delete boundary. |
-| Live workout | `Workout/WorkoutScreen.swift` owns one sheet destination and the compact ledger; `Workout/WorkoutSheets.swift` owns the movement picker. |
+| Live workout | `Workout/WorkoutScreen.swift` owns one sheet destination and the ledger's card, as tall as its rows up to the rack; `Workout/WorkoutSheets.swift` owns the movement picker. |
 | Receipt | `Workout/WorkoutReceipt.swift` owns the two actions, native options menu and contextual handoff. |
 | Routines | `Routines/RoutineBuilder.swift` stages the outer plan; `Routines/RoutineMovementEditor.swift` combines metadata and targets. `apps/ios/Domain/Sources/GymDomain/Routines.swift` owns Swift `SaveRoutinePlan`; Kotlin, `web/src/products/gym/domain/routines.js` and shared command contracts carry the same atomic transaction. |
 
@@ -231,7 +231,7 @@ at `/tmp/ios-gym-ui-baseline/workout-pager.xcresult` is baseline evidence, not a
 | Coach | Fresh entry and explicit History return; preserved pending work, cached remote refresh, migration and account isolation; full tabs while scrolling; keyboard/composer in both appearances and large text. |
 | Log | Full ordered workout → weigh-in → workout assertions; newest weight, weight-only history, pagination, day-only records, correction and timezone cases; row destinations and destructive actions. |
 | Weigh-in | From the visible keyboard, open the calendar, choose another day/month, save and reopen that date. Preserve kg, cancellation and failure recovery; inspect compact phone and large text. |
-| Live workout | Picker search/add/log/swipe, repeated open, cancellation and custom creation; compact ledger and current-row visibility with large text. |
+| Live workout | Picker search/add/log/swipe, repeated open, cancellation and custom creation; the ledger's card as tall as its rows up to the rack, and its current row whole with large text and as a band over the rack comes and goes. |
 | Receipt | Options menu, outside dismissal and Discard cancel/confirm retain normal/early/first receipt and actual set count; Done and Coach/sign-in handoff; account transition and unavailable Coach; 52-point default actions with reachable Keep/retry. |
 | Routines | Create/edit existing and custom movements with open/shared/varied targets; outer atomic save and cancel, failed commit, stale metadata, changed owner and persisted reopen. |
 

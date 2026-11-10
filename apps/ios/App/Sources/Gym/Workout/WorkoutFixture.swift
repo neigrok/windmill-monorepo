@@ -52,15 +52,20 @@ enum WorkoutFixture {
     // a rested board (03.21) stands 37 seconds later, its rest at 2:14, past the press's two minutes.
     let now = (try? gym.runner.moment().now) ?? Instant(ms: BoardClock().nowMs())
     let rested: Int64 = board.contains("rested") ? 37_000 : 0
+    // A long board (L.2, L.3) stands at 41:20, six press sets logged, the last 0:52 ago, its seventh row open past the plan.
+    let long = board.hasSuffix("-long")
     let id = gym.runner.mint(Session.self)
-    guard gym.run(StartSession(id: id, routineId: routineId, startedAt: Instant(ms: now.ms - 1_930_000 - rested)))?.refusal == nil,
+    guard gym.run(StartSession(id: id, routineId: routineId, startedAt: Instant(ms: now.ms - (long ? 2_480_000 : 1_930_000) - rested)))?.refusal == nil,
           gym.restoreWorkout() else { return true }
     if !planned { gym.workout.add(ID("back-squat")); gym.workout.add(ID("romanian-deadlift")) }
     if !board.contains("empty") {
-      let logged: [(movement: String, kg: Double, reps: Int, agoMs: Int64)] = upper ? [
-        ("back-squat", 100, 5, 1_800_000), ("back-squat", 100, 5, 1_650_000), ("pull-up", 10, 8, 1_000_000),
-        ("pull-up", 10, 7, 850_000), ("dumbbell-bench-press", 16, 8, 300_000), ("dumbbell-bench-press", 16, 8, 97_000),
-      ] : [("back-squat", 100, 5, 1_210_000), ("back-squat", 100, 5, 97_000)]
+      let press: [(kg: Double, reps: Int, agoMs: Int64)] = long
+        ? [(16, 8, 640_000), (18, 7, 520_000), (18, 7, 400_000), (18, 6, 280_000), (16, 8, 160_000), (16, 8, 52_000)]
+        : [(16, 8, 300_000), (16, 8, 97_000)]
+      let logged: [(movement: String, kg: Double, reps: Int, agoMs: Int64)] = upper
+        ? [("back-squat", 100, 5, 1_800_000), ("back-squat", 100, 5, 1_650_000), ("pull-up", 10, 8, 1_000_000), ("pull-up", 10, 7, 850_000)]
+          + press.map { ("dumbbell-bench-press", $0.kg, $0.reps, $0.agoMs) }
+        : [("back-squat", 100, 5, 1_210_000), ("back-squat", 100, 5, 97_000)]
       for logged in logged {
         let set = TrainingSet(id: gym.runner.mint(TrainingSet.self), sessionId: id, exerciseId: ID(RecordID(logged.movement)),
                               weightKg: other && logged.movement == "pull-up" ? -5 : logged.kg, reps: logged.reps, completedAt: Instant(ms: now.ms - logged.agoMs - rested))

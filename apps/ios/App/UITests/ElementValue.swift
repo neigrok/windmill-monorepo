@@ -42,7 +42,7 @@ extension XCUIApplication {
 
   // Types a load on the decimal pad into a load field, the rack's, Fix set's or Edit sets', focusing it first if it is not;
   // the field's text is cleared before the keys. The keyboard stays up: the load lands as the field lets go, on the rack by
-  // Log set, a tap outside or a sheet opening, in a sheet by its ✓ or its next row.
+  // the keyboard row's ✓, Log set, a tap outside or a sheet opening, in a sheet by its bar's ✓ or its next row.
   func typeLoad(_ load: String, into identifier: String = "workout-load") {
     let field = textFields[identifier]
     XCTAssertTrue(field.waitForExistence(timeout: 5))

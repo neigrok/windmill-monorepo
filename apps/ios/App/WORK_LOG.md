@@ -14,7 +14,7 @@ Routine summaries are sheets with Close, Edit and Start. Starting waits for dism
 opening the workout. Start stands in the sheet's reach band and spans it. The band is on a surface,
 so the movements pass under it on a hard edge over the bar material and no row reads through Start.
 `GymIntegrationFlowTests.testRoutineWorkoutReceiptLogRecordWeightNoteAndEdit` holds Start to at least 85% of the
-window's width. Workout pages use the native pager and page control. The compact ledger
+window's width. Workout pages use the native pager and page control. The ledger
 contains the saved sets and preserves access to earlier rows without a duplicate statistics strip.
 
 Coach history invalidates reads at both the start and completion of deletion, so a concurrent
@@ -406,3 +406,29 @@ It cannot tell a lone lowercase word (*training*, *saved*, *read*) from a wire v
 the base commit those were the eleven catalog keys it did not call copy. The gym's message slots, `GymModel.error`,
 `WorkoutState.message` and `CoachConversation.error`, are Strings with the cause that put them up recorded beside them;
 a typed message per room would carry both and let the band read its words from the type.
+
+The ledger's card takes the height it is given (L.1–L.3): the page offers it the room down to its foot, 8 pt above
+the rack, and the card is as tall as its rows within it. Its rows' height is the list's own content height
+(`onScrollGeometryChange`), floored at the row height each row is held to, since a list reports a zero height before it lays
+out and a zero cap would keep it from ever laying out. Beside a `Spacer(minLength: 0)` in the page's `VStack` the card
+keeps the stack's spacing above the spacer and stops 16 pt above the rack (258 pt of 266 on a 402 pt phone), so the page
+gives the card a top-aligned infinite frame instead, and `testTheLedgerCardIsAsTallAsItsRowsUpToTheRack` holds it there. At xxxLarge every row the list has laid
+out is still 44 pt on a 402 and a 375 pt phone, so the measure guards a row that grows rather than one that does today;
+past the cap the list counts rows it has not laid out at an estimate (316–323 pt for seven), which the cap hides.
+`WorkoutRenderingTests` draws an iPhone SE inside the suite's iPhone 17 by setting a 375 × 667 child where the larger
+status bar covers 20 pt of it; a window moved below the status bar kept the larger phone's 62 pt in its root's safe area.
+A band over the rack takes room from a capped card, and the list keeps its offset, so the card scrolls its current row
+back to its foot as its height changes. `onScrollGeometryChange` reports no container change when the page is resized
+from outside (each page is its own hosting controller under `UIPageViewController`), and a scroll asked for inside a
+geometry callback is dropped, so the card reads its laid-out height with `onGeometryChange` into state and scrolls from
+`onChange`.
+
+The rack's keyboard row holds one glass ✓ (03.23D), declared on `WorkoutRack`, which already stands under the workout's
+`NavigationStack`; a sheet's own row, Fix set's ±, does not take it. iOS 26.5 lays the rack 34 pt short of the row until
+the first key, Log set running 18 pt into it; one `reloadInputViews` dispatched as the field takes focus settles it, and
+`testTheKeyboardRowsCheckLandsTheTypedLoadAndLogsNothing` fails without it. The ✓ lets go of the field as a tap outside
+does, so `gym_workout_load_typed` lands once with no label of its own: Log set, a tap outside, a sheet, a change of
+movement and the ✓ all let go through one focus drop, and naming two of them would leave three unnamed; a `via` label
+would mean recording the cause beside every drop of focus. Observation: the first `GymWorkoutFlowTests` launch after an
+install opened twice on the introduction, which the app decides only for a launch without a board; why a launch with
+a board met it is not explained yet.

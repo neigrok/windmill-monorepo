@@ -210,12 +210,16 @@ import XCTest
     XCTAssertEqual(app.textFields["workout-load"].label, rackWeight)
     XCTAssertEqual(app.descendants(matching: .any)["workout-current-set"].label, rackSet)
     XCTAssertFalse(app.buttons["workout-assembly-add"].exists)
-    // The first set's load is typed through the rack's field, so a typed load's open and land report on the real server.
+    // The first set's load is typed through the rack's field and landed by the keyboard row's ✓, so a typed load's open and
+    // land report on the real server, and the set Log set logs after it carries the landed load to the server.
     app.typeLoad("65")
-    XCTAssertTrue(app.textFields["workout-load"].waitForLabel("Weight, 65 kg total"))
-    app.buttons["workout-log"].tap()
+    app.buttons["workout-load-done"].tap()
     XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+    XCTAssertTrue(app.textFields["workout-load"].waitForLabel("Weight, 65 kg total"))
+    XCTAssertFalse(app.loggedSet(1).exists, "The ✓ logs nothing")
+    app.buttons["workout-log"].tap()
     XCTAssertTrue(app.loggedSet(1).waitForLabel("Set 1, logged, 65 kilograms, 8 reps"))
+    if server != nil { waitForOpenWorkoutSet(weightKg: 65, kind: "signed") }
     logAndFinish(app, count: 3, logged: 1)
     app.buttons["gym-session-movement"].firstMatch.tap()
     XCTAssertTrue(app.descendants(matching: .any)["gym-movement-record"].waitForExistence(timeout: 5))
@@ -576,6 +580,32 @@ import XCTest
     XCTAssertEqual(anonymous.staticTexts.matching(NSPredicate(format: "label == %@", "Check my last workout.")).count, 1)
   }
 
+  // The server's open workout holds a set at this load once the phone's push lands, read over REST.
+  func waitForOpenWorkoutSet(weightKg: Double, kind: String) {
+    let landed = expectation(description: "The server's open workout holds a set at \(weightKg) kg")
+    Task {
+      do { try await openWorkoutHoldsSet(weightKg: weightKg, kind: kind) }
+      catch { XCTFail("Backend read failed: \(error)") }
+      landed.fulfill()
+    }
+    wait(for: [landed], timeout: 30)
+  }
+  func openWorkoutHoldsSet(weightKg: Double, kind: String) async throws {
+    let identity = try XCTUnwrap(identities[kind])
+    func get(_ path: String) async throws -> [String: Any] {
+      let (data, _) = try await URLSession.shared.data(for: try gymRequest(path, identity: identity))
+      return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    }
+    for _ in 0..<100 {
+      let sessions = try await get("sessions")["sessions"] as? [[String: Any]] ?? []
+      if let open = sessions.first(where: { !($0["finishedAt"] is NSNumber) }), let id = open["id"] as? String {
+        let sets = try await get("sessions/" + id)["sets"] as? [[String: Any]] ?? []
+        if sets.contains(where: { ($0["weightKg"] as? Double) == weightKg }) { return }
+      }
+      try await Task.sleep(for: .milliseconds(200))
+    }
+    XCTFail("The server never held a set at \(weightKg) kg")
+  }
   func verifyServer(_ kind: String, edited: Bool) {
     let confirmed = expectation(description: "All UI changes confirmed through backend REST reads")
     Task {
