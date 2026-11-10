@@ -268,9 +268,10 @@ bool PgTreeRepository::save(const TreeId& tree, const GraphState& state, const L
                             const Lww<std::string>& title, const Lww<std::string>& guide, Seq head) {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
-  // Only onto a row that stands: a tree erased under its live room is not written back.
-  if (txn.exec_params("UPDATE trees SET head_seq = $2, updated_at = now() WHERE id = $1 RETURNING id", tree.str(),
-                      static_cast<long long>(head))
+  // Only onto a row that stands: a tree erased or retired under its live room is not written back.
+  if (txn.exec_params("UPDATE trees SET head_seq = $2, updated_at = now() WHERE id = $1 AND deleted_at IS NULL "
+                      "RETURNING id",
+                      tree.str(), static_cast<long long>(head))
           .empty())
     return false;
   // The title and guide registers are LWW at their columns: each lands only under a dominating
@@ -431,7 +432,7 @@ void PgTreeRepository::setVisibility(const TreeId& tree, Visibility visibility) 
 }
 
 void PgTreeRepository::fork(const TreeId& newTree, const TreeId& source, const GraphState& state,
-                           const LegendState& legend, const std::string& title, const std::string& guide,
+                           const LegendState& legend, const Lww<std::string>& title, const Lww<std::string>& guide,
                            const UserId& owner) {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
@@ -439,9 +440,13 @@ void PgTreeRepository::fork(const TreeId& newTree, const TreeId& source, const G
     throw std::runtime_error("account no longer exists");
   try {
     txn.exec_params(
-        "INSERT INTO trees (id, title, guide, head_seq, forked_from, owner_id) "
-        "VALUES ($1, $2, $3, 0, $4, $5::uuid)",
-        newTree.str(), title, guide, source.str(), owner.str());
+        "INSERT INTO trees (id, title, title_hlc, title_ms, title_counter, guide, guide_hlc, guide_ms, guide_counter, "
+        "head_seq, forked_from, owner_id) "
+        "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 0, $10, $11::uuid)",
+        newTree.str(), title.value, toString(title.stamp), static_cast<long long>(title.stamp.physicalMs),
+        static_cast<long long>(title.stamp.counter), guide.value, toString(guide.stamp),
+        static_cast<long long>(guide.stamp.physicalMs), static_cast<long long>(guide.stamp.counter), source.str(),
+        owner.str());
   } catch (const pqxx::unique_violation&) {
     throw DuplicateTree{};
   }

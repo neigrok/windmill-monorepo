@@ -45,10 +45,11 @@ public:
   // Retires, each under its own strand, the rooms of trees whose rows were deleted outside this
   // registry — the trees of an erased account.
   void retireErased(const std::vector<std::string>& trees);
-  // Save a live room's dirty slice without evicting, then land its queued op rows. Returns
-  // normally when the rows fail to land: the save is what a caller's reply attests, and the rows
-  // retry on the next persist. Throws only when the save itself failed.
-  void persist(const TreeId& id);
+  // Save a live room's dirty slice without evicting, then land its queued op rows. False when the
+  // tree's row is gone or retired, so the room's writes hold nothing a caller may attest. Answers
+  // true when the rows fail to land: the save is what a caller's reply attests, and the rows retry on
+  // the next persist. Throws only when the save itself failed.
+  bool persist(const TreeId& id);
   void setVisibility(const TreeId& id, Visibility visibility);  // share seam, durable + in-room
   bool isOpen(const TreeId& id) const;
   std::size_t openRooms() const;
@@ -62,8 +63,9 @@ public:
   void sweep(std::chrono::steady_clock::duration idleFor);
 
   // A live room takes the rename through its lattice; a closed tree's goes straight to the column,
-  // stamped past `persistedStamp` so it dominates the stored title. Caller holds the strand.
-  void rename(const TreeId& id, const std::string& title, std::uint64_t nowMs, const Hlc& persistedStamp);
+  // stamped past `persistedStamp` so it dominates the stored title. False when the live room's row is
+  // gone, and the room is retired. Caller holds the strand.
+  bool rename(const TreeId& id, const std::string& title, std::uint64_t nowMs, const Hlc& persistedStamp);
 
   // One writer per tree: every caller that touches a room holds this. Striped over a fixed lock
   // array so unknown tree ids can't grow it; never hold two strands at once.

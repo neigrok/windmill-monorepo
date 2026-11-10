@@ -72,8 +72,8 @@ struct TreeRepository {
   virtual std::optional<UserId> retiredOwner(const TreeId& tree) = 0;
   virtual ForkLineage loadForkLineage(const TreeId& tree) = 0;
   // Upsert a slice onto a tree whose row stands: entries given replace their rows, absent ones are
-  // untouched, and a save never deletes. A tree with no row is left without one, and answers false.
-  // The title and the guide each land only under a stamp dominating the stored one.
+  // untouched, and a save never deletes. A tree with no row, or a soft-deleted one, is left as it is,
+  // and answers false. The title and the guide each land only under a stamp dominating the stored one.
   virtual bool save(const TreeId& tree, const GraphState& state, const LegendState& legend,
                     const Lww<std::string>& title, const Lww<std::string>& guide, Seq head) = 0;
   // Insert a brand-new tree. Throws DuplicateTree on an id collision (never overwrites a tree).
@@ -93,9 +93,9 @@ struct TreeRepository {
   // The owner check is the caller's, not this write's; a soft-deleted tree is left alone.
   virtual void setVisibility(const TreeId& tree, Visibility visibility) = 0;
   // Verbatim copy of `source`'s document; the copy starts a fresh op log at head 0, its title and
-  // guide unstamped. Throws DuplicateTree on an id collision.
+  // guide under the stamps given. Throws DuplicateTree on an id collision.
   virtual void fork(const TreeId& newTree, const TreeId& source, const GraphState& state,
-                    const LegendState& legend, const std::string& title, const std::string& guide,
+                    const LegendState& legend, const Lww<std::string>& title, const Lww<std::string>& guide,
                     const UserId& owner) = 0;
 };
 

@@ -6,6 +6,8 @@
 #include "products/roadmap/domain/Subgraph.h"
 #include "test/testing.h"
 
+#include <stdexcept>
+
 using namespace wm;
 
 static NodeId nid(const char* s) { return NodeId{std::string(s)}; }
@@ -157,4 +159,53 @@ TEST(parse_tolerates_a_minimal_frame) {
   CHECK_FALSE(subgraph.title.has_value());
   CHECK_FALSE(subgraph.guide.has_value());
   CHECK_FALSE(subgraph.coverage.has_value());
+}
+
+TEST(a_register_is_null_absent_or_a_string_value_with_its_stamp_and_anything_else_is_malformed) {
+  auto read = [](const char* field, const Json::Value& value) {
+    Json::Value frame(Json::objectValue);
+    frame["treeId"] = "t1";
+    frame["frameId"] = "f_1";
+    frame[field] = value;
+    return subgraphFromJson(frame);
+  };
+  auto malformed = [&](const char* field, const Json::Value& value) {
+    try {
+      read(field, value);
+      return false;
+    } catch (const std::invalid_argument&) {
+      return true;
+    }
+  };
+  auto written = [](const Json::Value& v, const Json::Value& at) {
+    Json::Value field(Json::objectValue);
+    if (!v.isNull()) field["v"] = v;
+    if (!at.isNull()) field["at"] = at;
+    return field;
+  };
+
+  for (const char* field : {"title", "guide"}) {
+    CHECK(malformed(field, written(12345, "9:0:u_1#r_a")));
+    CHECK(malformed(field, written(true, "9:0:u_1#r_a")));
+    CHECK(malformed(field, written(Json::Value(Json::objectValue), "9:0:u_1#r_a")));
+    Json::Value nulled(Json::objectValue);
+    nulled["v"] = Json::Value(Json::nullValue);
+    nulled["at"] = "9:0:u_1#r_a";
+    CHECK(malformed(field, nulled));
+    CHECK(malformed(field, written(Json::nullValue, "9:0:u_1#r_a")));
+    CHECK(malformed(field, written("text", Json::nullValue)));
+    CHECK(malformed(field, written("text", "")));
+    CHECK(malformed(field, written("text", "0:0:")));
+    CHECK(malformed(field, written("text", 9)));
+    CHECK(malformed(field, written("text", "nine")));
+    CHECK(malformed(field, Json::Value("a bare string")));
+    CHECK(malformed(field, Json::Value(5)));
+    CHECK(malformed(field, Json::Value(Json::arrayValue)));
+
+    CHECK_FALSE(read(field, Json::Value(Json::nullValue)).title.has_value());
+    CHECK_FALSE(read(field, Json::Value(Json::nullValue)).guide.has_value());
+  }
+  const Subgraph empty = read("guide", written("", "9:0:u_1#r_a"));
+  CHECK(empty.guide == (std::optional<Lww<std::string>>{Lww<std::string>{"", at(9)}}));
+  CHECK_FALSE(empty.title.has_value());
 }

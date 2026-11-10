@@ -143,7 +143,7 @@ TEST(pg_a_guide_survives_a_restart_and_a_stale_save_cannot_revert_it) {
   CHECK_EQ(restarted.load(kTree)->title.value, std::string("Sam's tree"));
 }
 
-TEST(pg_a_fork_copies_the_guide_unstamped_to_the_new_owners_tree) {
+TEST(pg_a_fork_plants_the_title_and_guide_at_its_planting_stamp_for_the_new_owner) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
   PgTreeRepository trees{pgTestPool()};
@@ -163,7 +163,37 @@ TEST(pg_a_fork_copies_the_guide_unstamped_to_the_new_owners_tree) {
   CHECK_EQ(forked.data.guide, std::string("Rig first, then sail."));
   const std::optional<StoredTree> copy = trees.load(kFork);
   REQUIRE(copy.has_value());
-  CHECK(copy->guide == (Lww<std::string>{"Rig first, then sail.", Hlc{}}));
+  const Hlc plantedAt{1'700'000'000'000, 1, "srv"};  // the source room's next stamp after its guide's
+  CHECK(copy->guide == (Lww<std::string>{"Rig first, then sail.", plantedAt}));
+  CHECK(copy->title == (Lww<std::string>{"Sam's tree", plantedAt}));
   CHECK(copy->owner == std::optional<UserId>(kEve));
-  CHECK_EQ(copy->title.value, std::string("Sam's tree"));
+
+  // A later rename of the fork is minted past the planting stamp, so the column takes it.
+  registry.rename(kFork, "Eve's voyage", 1'700'000'000'000, copy->title.stamp);
+  CHECK(trees.load(kFork)->title == (Lww<std::string>{"Eve's voyage", Hlc{1'700'000'000'000, 2, "srv"}}));
+}
+
+TEST(pg_a_save_onto_a_soft_deleted_tree_writes_nothing_and_answers_false) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTreeRepository trees{pgTestPool()};
+  trees.create(kTree, LooseGraph().exportState(), LegendState{}, "Sam's tree", kSam);
+  trees.softDelete(kTree);
+  LooseGraph ghost;
+  ghost.createNode(NodeId{"ghost"}, "Ghost", "", NodeColor::sky, std::nullopt, Hlc{1'700'000'000'000, 0, "r_a"});
+
+  CHECK_FALSE(trees.save(kTree, ghost.exportState(), LegendState{},
+                         Lww<std::string>{"Ghost title", Hlc{1'700'000'000'000, 0, "r_a"}},
+                         Lww<std::string>{"Ghost guide", Hlc{1'700'000'000'000, 0, "r_a"}}, 7));
+
+  PgLease conn{*pgTestPool()};
+  pqxx::work txn{*conn};
+  const pqxx::result row = txn.exec_params(
+      "SELECT title, guide, head_seq, (SELECT count(*) FROM tree_nodes WHERE tree_id = $1) AS nodes "
+      "FROM trees WHERE id = $1", kTree.str());
+  REQUIRE_EQ(row.size(), std::size_t{1});
+  CHECK_EQ(row[0]["title"].as<std::string>(), std::string("Sam's tree"));
+  CHECK_EQ(row[0]["guide"].as<std::string>(), std::string(""));
+  CHECK_EQ(row[0]["head_seq"].as<long long>(), 0LL);
+  CHECK_EQ(row[0]["nodes"].as<long long>(), 0LL);
 }

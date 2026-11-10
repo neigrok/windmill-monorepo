@@ -32,6 +32,10 @@ struct Overages {
       clauses.push_back(field + " is not valid UTF-8");
       return;
     }
+    if (value.find('\0') != std::string::npos) {
+      clauses.push_back(field + " contains a NUL character");
+      return;
+    }
     const std::size_t size = codePointCount(value);
     if (size <= cap) return;
     clauses.push_back(field + " would be " + std::to_string(size) + " characters, " +

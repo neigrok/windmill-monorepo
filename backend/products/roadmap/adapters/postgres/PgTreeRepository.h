@@ -39,7 +39,7 @@ public:
   void rename(const TreeId& tree, const Lww<std::string>& title) override;
   void setVisibility(const TreeId& tree, Visibility visibility) override;
   void fork(const TreeId& newTree, const TreeId& source, const GraphState& state,
-            const LegendState& legend, const std::string& title, const std::string& guide,
+            const LegendState& legend, const Lww<std::string>& title, const Lww<std::string>& guide,
             const UserId& owner) override;
 
 private:

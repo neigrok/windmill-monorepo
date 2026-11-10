@@ -2,6 +2,7 @@
 
 #include "platform/adapters/http/Caller.h"
 #include "platform/adapters/http/JsonReply.h"
+#include "platform/application/WriteObservation.h"
 #include "products/roadmap/adapters/json/SubgraphJson.h"
 #include "products/roadmap/adapters/json/TreeJson.h"
 #include "products/roadmap/application/ActivityFeed.h"
@@ -27,20 +28,23 @@ std::optional<UserId> TreeApi::callerOf(const drogon::HttpRequestPtr& req) const
 }
 
 // An absent tree, one this caller may not read, and an infrastructure failure all answer false,
-// so all three become one 404. `read` runs under the strand.
+// so all three become one 404 and a failure never tells a stranger which ids are real. The failure
+// alone files an Issue, under one static operation. `read` runs under the strand.
 bool TreeApi::readRoom(const std::string& treeId, const std::optional<UserId>& caller,
                        const std::function<void(TreeRoom&)>& read) {
+  WriteObservation observation{"roadmap.tree.read", "roadmap", "rest"};
   std::lock_guard<std::mutex> lock(registry_->strandFor(TreeId{treeId}));
   try {
     // Authorize on the stored row BEFORE materializing a room: open() pins the whole lattice in
     // memory.
     const std::optional<TreeAccess> access = registry_->accessOf(TreeId{treeId});
-    if (!access || !canRead(caller, access->owner, access->visibility)) return false;
-    TreeRoom* room = registry_->open(TreeId{treeId});
-    if (!room) return false;
-    read(*room);
-    return true;
-  } catch (const std::exception&) {
+    TreeRoom* room = access && canRead(caller, access->owner, access->visibility) ? registry_->open(TreeId{treeId})
+                                                                                  : nullptr;
+    if (room) read(*room);
+    observation.skip();  // a read that does not fail leaves no completion line
+    return room != nullptr;
+  } catch (const std::exception& error) {
+    observation.fail(error);
     return false;
   }
 }

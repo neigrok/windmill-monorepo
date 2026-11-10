@@ -7,11 +7,15 @@
 #include "test/products/roadmap/Fakes.h"
 #include "test/testing.h"
 
+#include "platform/application/WriteObservation.h"
+#include "platform/ports/FailureReporter.h"
+
 #include <algorithm>
 #include <memory>
 #include <mutex>
 #include <stdexcept>
 #include <string>
+#include <typeinfo>
 #include <vector>
 
 using namespace wm;
@@ -225,7 +229,7 @@ TEST(fork_answers_with_the_guide_it_copied) {
 
   CHECK_EQ(response->getStatusCode(), drogon::k201Created);
   CHECK_EQ(bodyOf(response)["data"]["guide"].asString(), std::string("Rig first, then sail."));
-  CHECK(h.trees->byId["t_d1"].guide == (Lww<std::string>{"Rig first, then sail.", Hlc{}}));
+  CHECK(h.trees->byId["t_d1"].guide == (Lww<std::string>{"Rig first, then sail.", Hlc{h.clock->nowMs(), 0, "srv"}}));
 }
 
 TEST(fork_without_an_id_still_mints_one) {
@@ -858,4 +862,37 @@ TEST(put_with_a_field_that_is_not_valid_utf8_is_400_naming_the_field_and_creates
   CHECK_EQ(response->getStatusCode(), drogon::k400BadRequest);
   CHECK_EQ(dump(bodyOf(response)), std::string(R"({"error":"the title is not valid UTF-8"})"));
   CHECK_EQ(h.trees->byId.count("t_00000000000000e3"), std::size_t{0});
+}
+
+TEST(a_tree_read_that_fails_still_answers_404_and_files_one_issue_under_a_static_operation_per_request) {
+  struct Failures : FailureReporter {
+    std::vector<std::string> reports;
+    void report(const std::string&, const std::string&, const std::string&) override {}
+    void reportWrite(const std::string& operation, const std::string& product, const std::string& door,
+                     const std::string& outcome, const std::string&, const std::string& exceptionType) override {
+      reports.push_back(operation + " " + product + " " + door + " " + outcome + " " + exceptionType);
+    }
+  };
+  struct ReporterScope {
+    std::shared_ptr<Failures> failures = std::make_shared<Failures>();
+    ReporterScope() { installWriteReporter(failures); }
+    ~ReporterScope() { installWriteReporter(nullptr); }
+  } reporter;
+  Harness h;
+  UserId me = h.signIn("s-me");
+  h.seed("t_mine", "Learn to sail", me, Visibility::private_);
+
+  drogon::HttpResponsePtr absent = sendGetTree(h.api, "s-me", "t_ghost");
+  CHECK(reporter.failures->reports.empty());
+
+  h.trees->latticeLoadsFail = true;
+  drogon::HttpResponsePtr failed = sendGetTree(h.api, "s-me", "t_mine");
+  REQUIRE_EQ(failed->getStatusCode(), drogon::k404NotFound);
+  CHECK_EQ(dump(bodyOf(failed)), dump(bodyOf(absent)));
+  CHECK_EQ(sendGetDiagnostics(h.api, "s-me", "t_mine")->getStatusCode(), drogon::k404NotFound);
+
+  const std::string issue = std::string("roadmap.tree.read roadmap rest failed ") + typeid(std::runtime_error).name();
+  CHECK_EQ(reporter.failures->reports, (std::vector<std::string>{issue, issue}));
+  for (const std::string& report : reporter.failures->reports)
+    CHECK(report.find("connection reset") == std::string::npos);
 }

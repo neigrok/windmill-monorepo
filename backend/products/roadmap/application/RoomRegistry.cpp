@@ -135,7 +135,7 @@ void RoomRegistry::sweep(std::chrono::steady_clock::duration idleFor) {
   if (!closing.empty()) LOG_INFO << "swept " << closing.size() << " rooms, " << openRooms() << " still open";
 }
 
-void RoomRegistry::persist(const TreeId& id) {
+bool RoomRegistry::persist(const TreeId& id) {
   TreeRoom* room = nullptr;
   GraphState state;
   LegendState legend;
@@ -145,7 +145,7 @@ void RoomRegistry::persist(const TreeId& id) {
   {
     std::lock_guard<std::mutex> lock(mutex_);
     auto it = rooms_.find(id);
-    if (it == rooms_.end()) return;
+    if (it == rooms_.end()) return true;  // a closed room holds nothing unsaved
     room = it->second.room.get();
     std::tie(state, legend) = room->dirtyState();  // only what changed since the last save
     title = room->title();
@@ -156,12 +156,13 @@ void RoomRegistry::persist(const TreeId& id) {
   // the export above and the markClean below. The lattice lands first and the op rows after, so a
   // crash between the two leaves a lattice at `head` with no row at `head` — replay is a no-op and
   // the feed misses one deed — never a row the lattice cannot back.
-  if (!repo_.save(id, state, legend, title, guide, head)) return;  // the row is gone; so is what this room would add to it
+  if (!repo_.save(id, state, legend, title, guide, head)) return false;  // the row is gone; so is what this room would add to it
   room->markClean();
   land(id, *room);
+  return true;
 }
 
-void RoomRegistry::rename(const TreeId& id, const std::string& title, std::uint64_t nowMs,
+bool RoomRegistry::rename(const TreeId& id, const std::string& title, std::uint64_t nowMs,
                           const Hlc& persistedStamp) {
   TreeRoom* room = nullptr;
   {
@@ -173,10 +174,12 @@ void RoomRegistry::rename(const TreeId& id, const std::string& title, std::uint6
     HlcClock clock{std::string{TreeRoom::kServerActor}};
     clock.observe(persistedStamp);  // the receive rule: the mint always dominates the row
     repo_.rename(id, Lww<std::string>{title, clock.tick(nowMs)});
-    return;
+    return true;
   }
   room->rename(title, nowMs);  // joins + broadcasts under the caller-held strand
-  persist(id);                 // durable before the response, like the socket's ack
+  if (persist(id)) return true;  // durable before the response, like the socket's ack
+  retire(id);                    // the row went away under its live room, so the room goes too
+  return false;
 }
 
 void RoomRegistry::setVisibility(const TreeId& id, Visibility visibility) {

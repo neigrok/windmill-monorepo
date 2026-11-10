@@ -99,6 +99,8 @@ legend)` folds a full state into one, and `frontier(frame)` every stamp one fram
 and guide included; `deltaBetween(graph, legend, since)` returns the slice a peer at `since` lacks,
 with covered fields masked back to "no information", carrying the sender's full frontier as
 coverage. `TreeRoom::deltaSince(since)` adds the title and guide registers the peer does not cover.
+A frame's `title` or `guide` is null or absent for no information, or `{v, at}` with a string `v` and a
+set stamp `at`; any other shape makes the frame `bad-frame`, so no value is coerced or read as a clear.
 
 `TreeRoom::joinSubgraph` dedupes on `frameId`, folds the frame's stamps into the room clock,
 joins graph + legend + title + guide, assigns the next `seq`, queues a headline deed for the op log,
@@ -150,7 +152,8 @@ names each field over its cap and by how much. Text that is not valid UTF-8 (an 
 surrogate, a code point past U+10FFFF, a lone or missing continuation byte) is refused at the same
 door with `<field> is not valid UTF-8` — `isValidUtf8` runs before any cap is counted, on every
 field including ids and edge endpoints, so a byte sequence Postgres would reject never reaches a
-live room. The MCP surface adds two byte budgets on top: a `get_tree`/`find_nodes` page carrying
+live room. A NUL, which a Postgres text value ends at, is refused the same way with `<field>
+contains a NUL character`, so a room never holds text its row would cut short. The MCP surface adds two byte budgets on top: a `get_tree`/`find_nodes` page carrying
 `description` ends at 4 MB of serialized nodes (the reply says `pageBytes` beside `nextCursor`),
 and one `import_subgraph` call carries at most 6 MB of description text, under the 8 MB HTTP body limit.
 
@@ -191,7 +194,9 @@ Rules:
 - `accessOf(treeId)` answers authorization from the stored row; ask it **before** `open()`, which
   drags the whole lattice off disk and pins it.
 - Persist before acking, so an ack attests durability. Within a persist the lattice is saved
-  before the op rows are appended, so the log never runs ahead of the lattice.
+  before the op rows are appended, so the log never runs ahead of the lattice. A save onto a row
+  that is gone or soft-deleted writes nothing and `persist` answers false; the socket's `subgraph`
+  frame, the guide and a live rename then answer as for an absent tree and retire the room.
 - `open()` loads the stored lattice and then replays the op-log tail past the stored head, so the
   room reaches the true state and head and new writes never collide on `seq`. Under the save-then-
   land ordering that tail is empty; it is read for trees saved before the ordering held.
@@ -202,10 +207,11 @@ Rules:
   flips the room to all-dirty.
 - Tree content reads use the room; the registry list reads persisted rows without opening rooms.
   Forks snapshot the source room's graph, legend and guide, clear authored progress baselines, and
-  start a fresh op log with `forked_from` provenance. The fork's title and guide start unstamped, so
-  they are the new owner's to rewrite. Every present step is added to the fork afresh: a
-  stamp from the source room's clock, one counter tick apart in creation order, so a step's
-  creation stamp is when it joined this tree and sibling ties keep their order.
+  start a fresh op log with `forked_from` provenance. Every present step is added to the fork afresh:
+  a stamp from the source room's clock, one counter tick apart in creation order, so a step's
+  creation stamp is when it joined this tree and sibling ties keep their order. The fork's title and
+  guide take the first of those stamps, so a fresh subscriber's delta carries them beside the steps,
+  and any later write of the new owner's outranks them.
 
 ## Authorization
 
@@ -255,9 +261,11 @@ creation, as `POST /v1/trees` does. A PUT into a standing tree replaces the stor
 and edge it carries with the genesis stamp: those steps take the document's fields over any live edit
 and read as unknown creation time. No client calls this door. Inbound models are suffixed `Request`, outbound `Response`.
 
-`PATCH /v1/trees/{id}` sets one register per call: `{visibility}`, else `{guide}`, else `{title}`,
-each the owner's alone. A guide past 5000 characters or not valid UTF-8 is refused `400` with the
-admission's sentence, and an empty one clears it. The guide's writes are this and the socket's
+`PATCH /v1/trees/{id}` sets one register per call — `{visibility}`, `{guide}` or `{title}` — each the
+owner's alone. A body naming more than one is refused `400`, and a body that is not one JSON object
+`400 invalid json body`. A guide past 5000 characters, not valid UTF-8 or carrying a NUL is refused
+`400` with the admission's sentence, and an empty one clears it; a title carrying a NUL is refused
+`400` too. The guide's writes are this and the socket's
 `subgraph` frame; a posted document (`POST`, `PUT`) never sets it. `GET /v1/trees/{id}` carries it as
 `data.guide` beside `data.title`, and a fork copies it. The share page and the gallery do not show it.
 
@@ -289,7 +297,7 @@ Server → client: `pong` · `subgraph` (intent `delta` carrying `seq` as the su
 the title and guide registers when the vector does not cover their stamps; intent `live` for a
 peer's broadcast) · `progress` (intent `graft` on subscribe, echo otherwise) ·
 `subgraphAck {treeId, frameId, seq?}` · `progressAck` · `skew {treeId, frameId, serverNow}` ·
-`reject {treeId, code, reason}` · `presence` · `peer`.
+`reject {treeId, code, reason, frameId?}` · `presence` · `peer`.
 
 Reject codes are a stable wire contract — branch on `code`, never on `reason`:
 `no-such-tree` · `server-error` · `sign-in-required` · `tree-too-large` · `bad-frame` ·
@@ -308,6 +316,11 @@ Limits and rules:
 - Presence is ephemeral, never persisted, flushed on a 50 ms timer (latest-wins per actor).
 - Drogon does not wrap WS callbacks: an exception escaping the frame handler aborts the process.
   Decode failures are refused by code, never by throw.
+- A frame whose text is not one whole JSON value — a break after a complete field, a lone
+  surrogate, a second value after the first — is refused whole as `bad-frame`, carrying the
+  `treeId` and `frameId` its readable head names; no part of it is applied.
+- A `subgraph` frame whose save fails is answered `server-error` with its `frameId`, and one whose
+  tree's row went away under the live room `no-such-tree`.
 
 ## Persistence
 

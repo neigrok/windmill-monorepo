@@ -2,6 +2,8 @@
 
 #include "products/roadmap/adapters/json/TreeJson.h"
 
+#include <stdexcept>
+
 namespace wm {
 
 namespace {
@@ -31,9 +33,15 @@ Json::Value registerJson(const std::optional<Lww<std::string>>& value) {
   return field;
 }
 
+// Anything else a frame names as a register is malformed: a value that is not a string would be
+// coerced or read as a clear, and an unstamped one could never win.
 std::optional<Lww<std::string>> registerFromJson(const Json::Value& field) {
-  if (!field.isObject()) return std::nullopt;
-  return Lww<std::string>{field.get("v", "").asString(), roadmapStamp(field.get("at", "").asString())};
+  if (field.isNull()) return std::nullopt;
+  if (!field.isObject() || !field["v"].isString() || !field["at"].isString())
+    throw std::invalid_argument("a register is {v, at}: a string value and its stamp");
+  const Hlc stamp = roadmapStamp(field["at"].asString());
+  if (!stamp.isSet()) throw std::invalid_argument("a register's stamp is set");
+  return Lww<std::string>{field["v"].asString(), stamp};
 }
 }
 

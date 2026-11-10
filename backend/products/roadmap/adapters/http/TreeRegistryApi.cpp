@@ -6,6 +6,7 @@
 #include "products/roadmap/domain/Command.h"
 #include "products/roadmap/domain/Access.h"
 
+#include <cstddef>
 #include <optional>
 #include <utility>
 #include <variant>
@@ -101,8 +102,15 @@ void TreeRegistryApi::patchTree(const drogon::HttpRequestPtr& req, HttpCallback&
     return;
   }
   std::shared_ptr<Json::Value> json = req->getJsonObject();
-  if (json && !json->isObject()) {
+  // A body that is there but is not one JSON object is refused, never read as an empty rename.
+  if ((json && !json->isObject()) || (!json && !req->body().empty())) {
     callback(error(drogon::k400BadRequest, "invalid json body"));
+    return;
+  }
+  std::size_t registers = 0;
+  for (const char* field : {"visibility", "guide", "title"}) registers += json && json->isMember(field);
+  if (registers > 1) {
+    callback(error(drogon::k400BadRequest, "a PATCH sets one register per call: send visibility, guide or title alone"));
     return;
   }
 
@@ -171,6 +179,10 @@ void TreeRegistryApi::patchTree(const drogon::HttpRequestPtr& req, HttpCallback&
   }
   if (outcome == TreeRegistry::Renaming::malformedTitle) {
     callback(error(drogon::k400BadRequest, "the title is not valid UTF-8"));
+    return;
+  }
+  if (outcome == TreeRegistry::Renaming::nulInTitle) {
+    callback(error(drogon::k400BadRequest, "the title contains a NUL character"));
     return;
   }
   if (outcome == TreeRegistry::Renaming::notFound) {

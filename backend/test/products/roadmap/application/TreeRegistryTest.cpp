@@ -474,6 +474,48 @@ TEST(rename_refuses_a_title_that_is_not_valid_utf8_and_keeps_the_old_name) {
   CHECK_EQ(s.trees.byId["t"].title.value, std::string("\xE5\xAD\x97 \xF0\x9F\x98\x80"));
 }
 
+TEST(rename_and_set_guide_refuse_a_nul_character_and_keep_what_the_tree_holds) {
+  Setup s;
+  UserId me = uid("me");
+  seed(s.trees, "t", me, 100, {spec("a", NodeColor::sky)});
+  s.rooms.open(tid("t"));
+  const std::string nul("before\0after", 12);
+
+  CHECK(s.registry.rename(tid("t"), me, nul) == TreeRegistry::Renaming::nulInTitle);
+  CHECK(s.registry.rename(tid("t"), me, "  " + nul + "  ") == TreeRegistry::Renaming::nulInTitle);
+  const auto refused = s.registry.setGuide(tid("t"), me, nul);
+  REQUIRE(std::holds_alternative<Admission>(refused));
+  CHECK(std::get<Admission>(refused).verdict == Admission::Verdict::malformed);
+  CHECK_EQ(std::get<Admission>(refused).reason, std::string("the guide contains a NUL character"));
+
+  CHECK_EQ(s.trees.byId["t"].title.value, std::string("t"));
+  CHECK(s.trees.byId["t"].guide == Lww<std::string>{});
+  CHECK(s.rooms.open(tid("t"))->title() == (Lww<std::string>{"t", {}}));
+  CHECK(s.rooms.open(tid("t"))->guide() == Lww<std::string>{});
+  CHECK(s.bus.subgraphBroadcasts.empty());
+}
+
+TEST(set_guide_answers_not_found_when_the_row_went_away_under_a_live_room) {
+  Setup s;
+  UserId me = uid("me");
+  seed(s.trees, "retired", me, 100, {spec("a", NodeColor::sky)});
+  seed(s.trees, "erased", me, 100, {spec("a", NodeColor::sky)});
+  s.rooms.open(tid("retired"));
+  s.rooms.open(tid("erased"));
+  s.trees.deletedIds.insert("retired");  // soft-deleted outside this registry, its row kept
+  s.trees.byId.erase("erased");          // erased outside this registry
+
+  CHECK(std::get<TreeRegistry::GuideChange>(s.registry.setGuide(tid("retired"), me, "A ghost's guide")) ==
+        TreeRegistry::GuideChange::notFound);
+  CHECK(std::get<TreeRegistry::GuideChange>(s.registry.setGuide(tid("erased"), me, "A ghost's guide")) ==
+        TreeRegistry::GuideChange::notFound);
+  CHECK(s.trees.byId["retired"].guide == Lww<std::string>{});
+  CHECK_EQ(s.trees.byId.count("erased"), std::size_t{0});
+  CHECK_FALSE(s.rooms.isOpen(tid("retired")));
+  CHECK_FALSE(s.rooms.isOpen(tid("erased")));
+  CHECK_FALSE(s.rooms.accessOf(tid("retired")).has_value());
+}
+
 TEST(set_guide_writes_an_owned_trees_guide_leaving_no_op_row_and_an_empty_one_clears_it) {
   Setup s;
   UserId me = uid("me");

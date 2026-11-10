@@ -35,12 +35,10 @@ struct FailingTreeRepository : FakeTreeRepository {
 // The two stores share one journal, so a test reads the order the registry called them in.
 struct RecordingTreeRepository : FakeTreeRepository {
   std::vector<std::string>& journal;
-  bool failSave = false;
   explicit RecordingTreeRepository(std::vector<std::string>& j) : journal(j) {}
   bool save(const TreeId& tree, const GraphState& state, const LegendState& legend,
             const Lww<std::string>& title, const Lww<std::string>& guide, Seq head) override {
     journal.push_back("save@" + std::to_string(head));
-    if (failSave) throw std::runtime_error("connection reset before the lattice landed");
     return FakeTreeRepository::save(tree, state, legend, title, guide, head);
   }
 };
@@ -351,6 +349,30 @@ TEST(registry_access_of_stops_speaking_for_a_tree_once_its_room_is_retired) {
   CHECK_EQ(registry.open(tid()), static_cast<TreeRoom*>(nullptr));  // and nothing reloads it
 }
 
+TEST(registry_persist_and_a_live_rename_answer_false_once_the_row_went_away_and_the_rename_retires_the_room) {
+  FakeTreeRepository repo;
+  FakeOpLog log;
+  FakeBus bus;
+  repo.byId["t"] = oneNodeTree();
+  RoomRegistry registry(repo, log, bus);
+  std::vector<std::string> announced;
+  registry.whenAccessChanges([&](const TreeId& id) { announced.push_back(id.str()); });
+
+  registry.open(tid())->applyCommand(createNode("added"), 10, uid());
+  CHECK(registry.persist(tid()));
+  repo.deletedIds.insert("t");  // soft-deleted outside this registry, its row kept
+  registry.open(tid())->applyCommand(createNode("ghost"), 11, uid());
+
+  CHECK_FALSE(registry.persist(tid()));
+  CHECK(registry.isOpen(tid()));
+  CHECK_FALSE(registry.rename(tid(), "Ghost title", 12, Hlc{}));
+  CHECK_FALSE(registry.isOpen(tid()));
+  CHECK_EQ(announced, std::vector<std::string>{"t"});
+  CHECK_EQ(nodeCount(repo.byId["t"].state), 2u);
+  CHECK(repo.byId["t"].title == (Lww<std::string>{"Seeded", {}}));
+  CHECK_EQ(registry.open(tid()), static_cast<TreeRoom*>(nullptr));
+}
+
 // The ordering the op log's honesty rests on: a row at seq N exists only once the lattice is
 // durable at N. persist() saves first and lands the queued rows after, and so does evict().
 TEST(registry_persist_saves_the_lattice_before_it_lands_the_op_rows) {
@@ -444,7 +466,7 @@ TEST(registry_a_failed_save_lands_no_op_row_and_keeps_the_write_queued) {
 
   TreeRoom& room = *registry.open(tid());
   room.applyCommand(createNode("added"), 10, uid());
-  repo.failSave = true;
+  repo.savesFail = true;
   bool threw = false;
   try {
     registry.persist(tid());
@@ -457,7 +479,7 @@ TEST(registry_a_failed_save_lands_no_op_row_and_keeps_the_write_queued) {
   CHECK_EQ(repo.byId["t"].head, static_cast<Seq>(7));
   CHECK_EQ(room.pendingOps().size(), 1u);
 
-  repo.failSave = false;
+  repo.savesFail = false;
   registry.persist(tid());
   CHECK_EQ(journal, (std::vector<std::string>{"save@8", "save@8", "append@8"}));
   CHECK_EQ(repo.byId["t"].head, static_cast<Seq>(8));

@@ -28,6 +28,7 @@
 #include <set>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 using namespace wm;
@@ -166,6 +167,46 @@ std::string guideFrame(const std::string& treeId, const char* frameId, const std
   f["guide"] = written;
   return dump(f);
 }
+
+// What a test's writes leave behind while it is in scope: their completions, the Issues they file
+// (operation and exception type, the only fields a report carries) and every log line.
+struct Observed : FailureReporter {
+  std::mutex mutex;
+  std::vector<WriteCompletion> completions;
+  std::vector<std::string> issues;
+  std::vector<std::string> lines;
+  trantor::Logger::LogLevel level = trantor::Logger::logLevel();
+  Observed() {
+    installWriteSink([this](const WriteCompletion& completion) {
+      std::lock_guard lock(mutex);
+      completions.push_back(completion);
+    });
+    installWriteReporter(std::shared_ptr<FailureReporter>(this, [](FailureReporter*) {}));
+    trantor::Logger::setLogLevel(trantor::Logger::kTrace);
+    trantor::Logger::setOutputFunction(
+        [this](const char* message, std::uint64_t length) {
+          std::lock_guard lock(mutex);
+          lines.emplace_back(message, length);
+        },
+        [] {});
+  }
+  ~Observed() override {
+    installWriteSink({});
+    installWriteReporter({});
+    trantor::Logger::setOutputFunction([](const char* message, std::uint64_t length) { fwrite(message, 1, length, stdout); },
+                                       [] { fflush(stdout); });
+    trantor::Logger::setLogLevel(level);
+  }
+  void report(const std::string&, const std::string& where, const std::string&) override {
+    std::lock_guard lock(mutex);
+    issues.push_back(where);
+  }
+  void reportWrite(const std::string& operation, const std::string&, const std::string&, const std::string&,
+                   const std::string&, const std::string&) override {
+    std::lock_guard lock(mutex);
+    issues.push_back(operation);
+  }
+};
 
 std::string rejectReason(const std::string& text) { return parse(text).get("reason", "").asString(); }
 std::string rejectCode(const std::string& text) { return parse(text).get("code", "").asString(); }
@@ -1273,31 +1314,6 @@ TEST(ws_a_guide_frame_from_a_non_owner_is_refused_and_one_stamped_past_the_skew_
 }
 
 TEST(ws_a_guide_write_logs_its_completion_line_and_no_line_carries_the_guide) {
-  struct Observed {
-    std::mutex mutex;
-    std::vector<WriteCompletion> completions;
-    std::vector<std::string> lines;
-    trantor::Logger::LogLevel level = trantor::Logger::logLevel();
-    Observed() {
-      installWriteSink([this](const WriteCompletion& completion) {
-        std::lock_guard lock(mutex);
-        completions.push_back(completion);
-      });
-      trantor::Logger::setLogLevel(trantor::Logger::kTrace);
-      trantor::Logger::setOutputFunction(
-          [this](const char* message, std::uint64_t length) {
-            std::lock_guard lock(mutex);
-            lines.emplace_back(message, length);
-          },
-          [] {});
-    }
-    ~Observed() {
-      installWriteSink({});
-      trantor::Logger::setOutputFunction([](const char* message, std::uint64_t length) { fwrite(message, 1, length, stdout); },
-                                         [] { fflush(stdout); });
-      trantor::Logger::setLogLevel(level);
-    }
-  };
   Harness h;
   UserId owner = h.signIn("s-owner", "owner@example.com");
   h.seed("t_priv", owner, Visibility::private_);
@@ -1325,4 +1341,187 @@ TEST(ws_a_guide_write_logs_its_completion_line_and_no_line_carries_the_guide) {
     CHECK_EQ(completionLines, std::size_t{2});
   }
   CHECK_EQ(h.trees.byId["t_priv"].guide.value, secret);
+}
+
+TEST(ws_a_frame_that_does_not_parse_whole_is_refused_by_its_frame_id_and_no_part_of_it_lands) {
+  Harness h;
+  UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.addSession("s-tablet", owner);
+  h.seed("t_priv", owner, Visibility::private_);
+  auto laptop = std::make_shared<FakeSocket>();
+  auto tablet = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-owner"), laptop);
+  h.collab.onOpen(h.upgrade("s-tablet"), tablet);
+  h.collab.onMessage(tablet, subscribeFrame("t_priv"));
+  const std::size_t tabletSaw = tablet->sent.size();
+
+  const std::vector<std::pair<std::string, std::string>> unreadable = {
+      // A whole guide register, then the text breaks inside the nodes that follow it.
+      {"f-cut", R"({"t":"subgraph","treeId":"t_priv","frameId":"f-cut",)"
+                R"("guide":{"v":"From a broken frame","at":"100:0:client"},"nodes":[{"id":"after",)"},
+      // A lone high surrogate, which no UTF-8 text can carry.
+      {"f-surrogate", R"({"t":"subgraph","treeId":"t_priv","frameId":"f-surrogate",)"
+                      R"("guide":{"v":"Rig \ud83d first","at":"101:0:client"}})"},
+      // One whole frame and then another: the text is not one JSON value.
+      {"f-twice", R"({"t":"subgraph","treeId":"t_priv","frameId":"f-twice","guide":{"v":"One","at":"102:0:client"}})"
+                  R"({"t":"subgraph","treeId":"t_priv","frameId":"f-second"})"},
+      // A break before the type: the frame is still answered by the id it named.
+      {"f-headless", R"({"frameId":"f-headless","guide":{"v":"Headless","at":"103:0:client"},"t":)"},
+  };
+  for (const auto& [frameId, text] : unreadable) {
+    const std::size_t before = laptop->sent.size();
+    h.collab.onMessage(laptop, text);
+    REQUIRE_EQ(laptop->sent.size(), before + 1);
+    const Json::Value reject = parse(laptop->sent.back());
+    CHECK_EQ(reject["t"].asString(), std::string("reject"));
+    CHECK_EQ(reject["code"].asString(), std::string("bad-frame"));
+    CHECK_EQ(reject["reason"].asString(), std::string("this frame could not be read"));
+    CHECK_EQ(reject["frameId"].asString(), frameId);
+  }
+  CHECK_EQ(parse(laptop->sent[0])["treeId"].asString(), std::string("t_priv"));
+
+  CHECK(h.trees.byId["t_priv"].guide == Lww<std::string>{});
+  CHECK_EQ(h.trees.byId["t_priv"].head, static_cast<Seq>(0));
+  CHECK(h.trees.byId["t_priv"].state.nodes.empty());
+  CHECK_EQ(tablet->sent.size(), tabletSaw);
+
+  // A subscribe that breaks is refused too, and joins nothing.
+  auto late = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-owner"), late);
+  h.collab.onMessage(late, R"({"t":"subscribe","treeId":"t_priv","vector":{"r_a":)");
+  REQUIRE_EQ(late->sent.size(), 1u);
+  CHECK_EQ(rejectCode(late->sent[0]), std::string("bad-frame"));
+  CHECK_EQ(parse(late->sent[0])["treeId"].asString(), std::string("t_priv"));
+  CHECK_EQ(countOfType(*late, "subgraph"), std::size_t{0});
+}
+
+TEST(ws_a_frame_whose_title_or_guide_carries_a_nul_character_is_refused_and_joins_nothing) {
+  Harness h;
+  UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.seed("t_priv", owner, Visibility::private_);
+  auto conn = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-owner"), conn);
+  const std::string nul("before\0after", 12);
+
+  h.collab.onMessage(conn, guideFrame("t_priv", "f-guide", nul, "100:0:client"));
+  REQUIRE_EQ(conn->sent.size(), 1u);
+  CHECK_EQ(rejectCode(conn->sent[0]), std::string("bad-frame"));
+  CHECK_EQ(rejectReason(conn->sent[0]), std::string("the guide contains a NUL character"));
+  CHECK_EQ(parse(conn->sent[0])["frameId"].asString(), std::string("f-guide"));
+
+  Json::Value written(Json::objectValue);
+  written["v"] = nul;
+  written["at"] = "101:0:client";
+  Json::Value titled(Json::objectValue);
+  titled["t"] = "subgraph";
+  titled["treeId"] = "t_priv";
+  titled["frameId"] = "f-title";
+  titled["title"] = written;
+  h.collab.onMessage(conn, dump(titled));
+  REQUIRE_EQ(conn->sent.size(), 2u);
+  CHECK_EQ(rejectCode(conn->sent[1]), std::string("bad-frame"));
+  CHECK_EQ(rejectReason(conn->sent[1]), std::string("the title contains a NUL character"));
+
+  CHECK(h.trees.byId["t_priv"].guide == Lww<std::string>{});
+  CHECK(h.trees.byId["t_priv"].title == (Lww<std::string>{"Tree", {}}));
+  CHECK_EQ(h.trees.byId["t_priv"].head, static_cast<Seq>(0));
+}
+
+TEST(ws_a_register_whose_value_is_not_a_string_is_refused_and_leaves_the_tree_as_it_was) {
+  Harness h;
+  UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.seed("t_priv", owner, Visibility::private_);
+  auto conn = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-owner"), conn);
+  h.collab.onMessage(conn, guideFrame("t_priv", "f-set", "A real guide", "100:0:client"));
+  REQUIRE_EQ(conn->sent.size(), 1u);
+  CHECK_EQ(frameType(conn->sent[0]), std::string("subgraphAck"));
+
+  struct Case { const char* field; const char* frameId; Json::Value value; };
+  Json::Value numeric(Json::objectValue);
+  numeric["v"] = 12345;
+  numeric["at"] = "101:0:client";
+  Json::Value nulled(Json::objectValue);
+  nulled["v"] = Json::Value(Json::nullValue);
+  nulled["at"] = "102:0:client";
+  Json::Value unvalued(Json::objectValue);
+  unvalued["at"] = "103:0:client";
+  Json::Value unstamped(Json::objectValue);
+  unstamped["v"] = "No stamp";
+  const std::vector<Case> cases = {{"guide", "f-numeric", numeric}, {"guide", "f-null", nulled},
+                                   {"guide", "f-missing", unvalued}, {"guide", "f-unstamped", unstamped},
+                                   {"guide", "f-bare", Json::Value("A bare string")},
+                                   {"title", "f-title-numeric", numeric}, {"title", "f-title-null", nulled}};
+  for (const Case& c : cases) {
+    Json::Value frame(Json::objectValue);
+    frame["t"] = "subgraph";
+    frame["treeId"] = "t_priv";
+    frame["frameId"] = c.frameId;
+    frame[c.field] = c.value;
+    const std::size_t before = conn->sent.size();
+    h.collab.onMessage(conn, dump(frame));
+    REQUIRE_EQ(conn->sent.size(), before + 1);
+    CHECK_EQ(rejectCode(conn->sent.back()), std::string("bad-frame"));
+    CHECK_EQ(rejectReason(conn->sent.back()), std::string("this frame could not be read"));
+    CHECK_EQ(parse(conn->sent.back())["frameId"].asString(), std::string(c.frameId));
+  }
+
+  CHECK(h.trees.byId["t_priv"].guide == (Lww<std::string>{"A real guide", Hlc{100, 0, "client"}}));
+  CHECK(h.trees.byId["t_priv"].title == (Lww<std::string>{"Tree", {}}));
+  CHECK_EQ(h.trees.byId["t_priv"].head, static_cast<Seq>(1));
+}
+
+TEST(ws_a_frame_onto_a_tree_whose_row_went_away_under_its_live_room_answers_no_such_tree) {
+  Harness h;
+  UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.seed("t_priv", owner, Visibility::private_);
+  auto conn = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-owner"), conn);
+  h.collab.onMessage(conn, subscribeFrame("t_priv"));
+  h.trees.deletedIds.insert("t_priv");  // soft-deleted outside this process's room registry
+  const std::size_t before = conn->sent.size();
+
+  h.collab.onMessage(conn, nodeFrame("t_priv", "f-ghost", "A ghost's step"));
+
+  REQUIRE(conn->sent.size() > before);
+  const Json::Value reject = lastFrameOfType(*conn, "reject");
+  CHECK_EQ(reject["code"].asString(), std::string("no-such-tree"));
+  CHECK_EQ(reject["frameId"].asString(), std::string("f-ghost"));
+  CHECK_EQ(countOfType(*conn, "subgraphAck"), std::size_t{0});
+  CHECK(h.trees.byId["t_priv"].state.nodes.empty());
+  CHECK_FALSE(h.rooms.isOpen(TreeId{"t_priv"}));
+  h.collab.onMessage(conn, subscribeFrame("t_priv"));
+  CHECK_EQ(rejectCode(conn->sent.back()), std::string("no-such-tree"));
+}
+
+TEST(ws_a_frame_whose_save_throws_answers_its_author_server_error_and_files_one_issue) {
+  Harness h;
+  UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.seed("t_priv", owner, Visibility::private_);
+  auto conn = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-owner"), conn);
+  h.trees.savesFail = true;
+
+  {
+    Observed observed;
+    h.collab.onMessage(conn, guideFrame("t_priv", "f-refused", "Ask Maren before the third branch", "100:0:client"));
+
+    REQUIRE_EQ(conn->sent.size(), 1u);
+    const Json::Value reject = parse(conn->sent[0]);
+    CHECK_EQ(reject["t"].asString(), std::string("reject"));
+    CHECK_EQ(reject["code"].asString(), std::string("server-error"));
+    CHECK_EQ(reject["reason"].asString(), std::string("the server could not save this edit"));
+    CHECK_EQ(reject["frameId"].asString(), std::string("f-refused"));
+    CHECK_EQ(reject["treeId"].asString(), std::string("t_priv"));
+    REQUIRE_EQ(observed.completions.size(), 1u);
+    CHECK_EQ(observed.completions[0].operation, std::string("roadmap.ws.subgraph"));
+    CHECK_EQ(observed.completions[0].outcome, std::string("failed"));
+    CHECK_EQ(observed.issues, std::vector<std::string>{"roadmap.ws.subgraph"});
+    for (const std::string& line : observed.lines) {
+      CHECK(line.find("malformed") == std::string::npos);
+      CHECK(line.find("Ask Maren") == std::string::npos);
+      CHECK(line.find("the write was refused") == std::string::npos);
+    }
+  }
+  CHECK(h.trees.byId["t_priv"].guide == Lww<std::string>{});
 }
