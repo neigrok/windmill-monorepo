@@ -20,6 +20,7 @@ ForkService::Result ForkService::fork(const TreeId& source, const std::string& r
   GraphState state;
   LegendState legend;
   std::string title;
+  std::string guide;
   {
     std::lock_guard<std::mutex> lock(registry_.strandFor(source));
     // Gated on the stored access row BEFORE a room is built. An absent source and one the forker
@@ -35,6 +36,7 @@ ForkService::Result ForkService::fork(const TreeId& source, const std::string& r
     state = LooseGraph(room->exportState()).forkState(plantedAt);
     legend = room->exportLegend();
     title = room->title().value;
+    guide = room->guide().value;
   }
 
   const TreeId newId{requestedId.empty() ? "t_" + tokens_.mint().digest.substr(0, 16) : requestedId};
@@ -44,13 +46,14 @@ ForkService::Result ForkService::fork(const TreeId& source, const std::string& r
     std::lock_guard<std::mutex> lock(registry_.strandFor(newId));
     if (trees_.load(newId)) return {Outcome::conflict, {}};
     try {
-      trees_.fork(newId, source, state, legend, forkTitle, owner);
+      trees_.fork(newId, source, state, legend, forkTitle, guide, owner);
     } catch (const DuplicateTree&) {
       return {Outcome::conflict, {}};  // a soft-deleted row still holds the id, invisible to load
     }
   }
 
   TreeData data = LooseGraph(state).toTreeData(newId, forkTitle);
+  data.guide = guide;
   data.kinds = Legend(legend).kinds();
   return {Outcome::forked, std::move(data)};
 }

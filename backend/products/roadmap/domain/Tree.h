@@ -149,9 +149,11 @@ struct Kind {
   bool crossBranchExempt = false;
 };
 
+// `guide` is the owner's plain-text note on what the tree is and how to work it; empty is no guide.
 struct TreeData {
   TreeId id;
   std::string title;
+  std::string guide;
   std::vector<NodeSpec> nodes;
   std::vector<Kind> kinds;
 };

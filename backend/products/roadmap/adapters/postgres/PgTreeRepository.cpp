@@ -235,7 +235,7 @@ std::optional<StoredTree> PgTreeRepository::load(const TreeId& tree) {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
-      "SELECT title, title_hlc, head_seq, document::text, owner_id::text, visibility, "
+      "SELECT title, title_hlc, guide, guide_hlc, head_seq, document::text, owner_id::text, visibility, "
       "(extract(epoch from created_at) * 1000)::bigint AS created_ms "
       "FROM trees WHERE id = $1 AND deleted_at IS NULL",
       tree.str());
@@ -257,14 +257,15 @@ std::optional<StoredTree> PgTreeRepository::load(const TreeId& tree) {
   std::optional<UserId> owner;
   if (!row["owner_id"].is_null()) owner = UserId{row["owner_id"].as<std::string>()};
   Lww<std::string> title{row["title"].as<std::string>(), roadmapStamp(row["title_hlc"].as<std::string>())};
+  Lww<std::string> guide{row["guide"].as<std::string>(), roadmapStamp(row["guide_hlc"].as<std::string>())};
   return StoredTree{std::move(state), std::move(legend), std::move(title),
                     static_cast<Seq>(row["head_seq"].as<long long>()), std::move(owner),
                     parseVisibility(row["visibility"].as<std::string>()),
-                    static_cast<std::uint64_t>(row["created_ms"].as<long long>())};
+                    static_cast<std::uint64_t>(row["created_ms"].as<long long>()), std::move(guide)};
 }
 
 bool PgTreeRepository::save(const TreeId& tree, const GraphState& state, const LegendState& legend,
-                            const Lww<std::string>& title, Seq head) {
+                            const Lww<std::string>& title, const Lww<std::string>& guide, Seq head) {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   // Only onto a row that stands: a tree erased under its live room is not written back.
@@ -272,14 +273,21 @@ bool PgTreeRepository::save(const TreeId& tree, const GraphState& state, const L
                       static_cast<long long>(head))
           .empty())
     return false;
-  // The title register is LWW at the column: it lands only under a dominating stamp. (ms, counter)
-  // order numerically; a tie falls to byte order (COLLATE "C"), which is the actor tiebreak.
+  // The title and guide registers are LWW at their columns: each lands only under a dominating
+  // stamp. (ms, counter) order numerically; a tie falls to byte order (COLLATE "C"), which is the
+  // actor tiebreak.
   txn.exec_params(
       "UPDATE trees SET title = $2, title_hlc = $3, title_ms = $4, title_counter = $5 "
       "WHERE id = $1 AND ($4::bigint, $5::bigint, $3::text COLLATE \"C\") "
       "> (title_ms, title_counter, title_hlc COLLATE \"C\")",
       tree.str(), title.value, toString(title.stamp),
       static_cast<long long>(title.stamp.physicalMs), static_cast<long long>(title.stamp.counter));
+  txn.exec_params(
+      "UPDATE trees SET guide = $2, guide_hlc = $3, guide_ms = $4, guide_counter = $5 "
+      "WHERE id = $1 AND ($4::bigint, $5::bigint, $3::text COLLATE \"C\") "
+      "> (guide_ms, guide_counter, guide_hlc COLLATE \"C\")",
+      tree.str(), guide.value, toString(guide.stamp),
+      static_cast<long long>(guide.stamp.physicalMs), static_cast<long long>(guide.stamp.counter));
   upsertSlice(txn, tree, state, legend);  // only the dirty slice — never the whole tree
   txn.commit();
   markCurrentWrite();
@@ -423,15 +431,17 @@ void PgTreeRepository::setVisibility(const TreeId& tree, Visibility visibility) 
 }
 
 void PgTreeRepository::fork(const TreeId& newTree, const TreeId& source, const GraphState& state,
-                           const LegendState& legend, const std::string& title, const UserId& owner) {
+                           const LegendState& legend, const std::string& title, const std::string& guide,
+                           const UserId& owner) {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   if (txn.exec_params("SELECT id FROM users WHERE id=$1::uuid FOR KEY SHARE", owner.str()).empty())
     throw std::runtime_error("account no longer exists");
   try {
     txn.exec_params(
-        "INSERT INTO trees (id, title, head_seq, forked_from, owner_id) VALUES ($1, $2, 0, $3, $4::uuid)",
-        newTree.str(), title, source.str(), owner.str());
+        "INSERT INTO trees (id, title, guide, head_seq, forked_from, owner_id) "
+        "VALUES ($1, $2, $3, 0, $4, $5::uuid)",
+        newTree.str(), title, guide, source.str(), owner.str());
   } catch (const pqxx::unique_violation&) {
     throw DuplicateTree{};
   }

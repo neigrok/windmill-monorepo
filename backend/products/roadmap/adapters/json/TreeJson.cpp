@@ -70,6 +70,7 @@ Json::Value toJson(const TreeData& data) {
   Json::Value root(Json::objectValue);
   root["id"] = data.id.str();
   root["title"] = data.title;
+  root["guide"] = data.guide;
 
   Json::Value nodes(Json::arrayValue);
   for (const NodeSpec& node : data.nodes) nodes.append(nodeToJson(node));

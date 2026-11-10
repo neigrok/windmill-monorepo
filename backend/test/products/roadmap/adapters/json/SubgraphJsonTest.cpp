@@ -51,17 +51,22 @@ TEST(live_subgraph_round_trips_exactly) {
   CHECK(roundTrip(subgraph) == subgraph);
 }
 
-TEST(title_round_trips) {
+TEST(title_and_guide_ride_the_wire_as_v_at_registers_and_round_trip) {
   Subgraph subgraph;
   subgraph.treeId = TreeId{"t1"};
   subgraph.frameId = "f_1";
   subgraph.actor = "u_1#r_a";
   subgraph.title = Lww<std::string>{"My Roadmap", at(9)};
+  subgraph.guide = Lww<std::string>{"One branch at a time.", at(11)};
 
-  Subgraph back = roundTrip(subgraph);
-  REQUIRE(back.title.has_value());
-  CHECK_EQ(back.title->value, std::string("My Roadmap"));
-  CHECK(back == subgraph);
+  Json::Value json = toJson(subgraph);
+  CHECK_EQ(dump(json["title"]), std::string(R"({"at":"9:0:u_1#r_a","v":"My Roadmap"})"));
+  CHECK_EQ(dump(json["guide"]), std::string(R"({"at":"11:0:u_1#r_a","v":"One branch at a time."})"));
+  CHECK(roundTrip(subgraph) == subgraph);
+
+  subgraph.guide.reset();
+  CHECK(toJson(subgraph)["guide"].isNull());
+  CHECK(roundTrip(subgraph) == subgraph);
 }
 
 TEST(full_delta_round_trips_with_coverage) {
@@ -150,5 +155,6 @@ TEST(parse_tolerates_a_minimal_frame) {
   CHECK_EQ(subgraph.legend.kinds.size(), 0u);
   CHECK_EQ(subgraph.gestures.size(), 0u);
   CHECK_FALSE(subgraph.title.has_value());
+  CHECK_FALSE(subgraph.guide.has_value());
   CHECK_FALSE(subgraph.coverage.has_value());
 }

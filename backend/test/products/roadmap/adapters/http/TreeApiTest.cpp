@@ -214,6 +214,20 @@ TEST(fork_accepts_a_well_formed_requested_id) {
   CHECK(h.trees->byId["t_0123456789abcdef"].owner == std::optional<UserId>(me));
 }
 
+TEST(fork_answers_with_the_guide_it_copied) {
+  Harness h;
+  h.signIn("s-live");
+  h.seedSource("t_src", "Learn to sail");
+  h.trees->byId["t_src"].guide = Lww<std::string>{"Rig first, then sail.", Hlc{5, 0, "srv"}};
+
+  drogon::HttpResponsePtr response =
+      sendFork(h.api, forkRequest(Json::Value(Json::objectValue), "s-live"), "t_src");
+
+  CHECK_EQ(response->getStatusCode(), drogon::k201Created);
+  CHECK_EQ(bodyOf(response)["data"]["guide"].asString(), std::string("Rig first, then sail."));
+  CHECK(h.trees->byId["t_d1"].guide == (Lww<std::string>{"Rig first, then sail.", Hlc{}}));
+}
+
 TEST(fork_without_an_id_still_mints_one) {
   Harness h;
   h.signIn("s-live");
@@ -243,6 +257,22 @@ TEST(get_tree_owner_reads_a_private_tree_with_mine_true) {
   CHECK(body.isMember("data"));
   CHECK(body.isMember("state"));
   CHECK_EQ(body["seq"].asInt64(), 0);
+}
+
+TEST(get_tree_carries_the_guide_beside_the_title_to_any_reader_and_an_empty_one_when_there_is_none) {
+  Harness h;
+  UserId me = h.signIn("s-me");
+  h.seed("t_guided", "Learn to sail", me, Visibility::unlisted);
+  h.seed("t_plain", "Sourdough", me, Visibility::unlisted);
+  h.trees->byId["t_guided"].guide = Lww<std::string>{"Rig first, then sail.", Hlc{5, 0, "srv"}};
+
+  Json::Value guided = bodyOf(sendGetTree(h.api, "", "t_guided"));
+  Json::Value plain = bodyOf(sendGetTree(h.api, "s-me", "t_plain"));
+
+  CHECK_EQ(guided["data"]["title"].asString(), std::string("Learn to sail"));
+  CHECK_EQ(guided["data"]["guide"].asString(), std::string("Rig first, then sail."));
+  CHECK(plain["data"]["guide"].isString());
+  CHECK_EQ(plain["data"]["guide"].asString(), std::string(""));
 }
 
 TEST(get_tree_serves_the_planting_time_and_zero_when_there_is_none) {
@@ -686,6 +716,22 @@ TEST(put_over_a_live_room_saves_at_the_rooms_head_so_no_op_tail_replays_over_it)
   REQUIRE_EQ(h.ops->byTree["t_00000000000000cc"].size(), 1u);   // the flush landed the row behind the save
   CHECK_EQ(h.ops->byTree["t_00000000000000cc"][0].seq, Seq{1});
   CHECK(h.ops->since(TreeId{"t_00000000000000cc"}, h.trees->byId["t_00000000000000cc"].head).empty());
+}
+
+TEST(put_leaves_the_guide_alone_and_answers_with_the_one_the_tree_holds) {
+  Harness h;
+  UserId me = h.signIn("s-me");
+  h.seed("t_00000000000000cd", "Old name", me, Visibility::unlisted);
+  const Lww<std::string> guide{"Rig first, then sail.", Hlc{5, 0, "srv"}};
+  h.trees->byId["t_00000000000000cd"].guide = guide;
+  Json::Value posted = document("New name", "mast");
+  posted["guide"] = "Overwritten by a document";
+
+  drogon::HttpResponsePtr response = sendPut(h.api, "s-me", "t_00000000000000cd", posted);
+
+  CHECK_EQ(response->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(bodyOf(response)["data"]["guide"].asString(), guide.value);
+  CHECK(h.trees->byId["t_00000000000000cd"].guide == guide);
 }
 
 TEST(put_over_a_live_room_mints_its_title_past_the_rooms_rename_not_the_stale_row) {

@@ -104,6 +104,12 @@ Json::Value shareTo(const char* visibility) {
   return body;
 }
 
+Json::Value guided(const std::string& guide) {
+  Json::Value body(Json::objectValue);
+  body["guide"] = guide;
+  return body;
+}
+
 }
 
 TEST(create_without_an_id_mints_one_and_reports_existed_false) {
@@ -225,6 +231,56 @@ TEST(create_with_an_id_still_requires_a_session) {
   CHECK_EQ(response->getStatusCode(), drogon::k401Unauthorized);
   CHECK_EQ(dump(bodyOf(response)), std::string(R"({"error":"sign in to plant a roadmap"})"));
   CHECK(h.trees.byId.empty());
+}
+
+// ---- PATCH guide ---------------------------------------------------------------------------
+
+TEST(patch_guide_sets_the_owners_guide_to_five_thousand_characters_and_refuses_one_more_with_400) {
+  Harness h;
+  UserId me = h.signIn("s-live", "sam@example.com");
+  h.trees.byId["t"] = StoredTree{GraphState{}, LegendState{}, {"Mine", {}}, 0, me};
+  std::string wide;  // 5000 two-byte characters: 10000 bytes
+  for (std::size_t i = 0; i < kMaxGuideChars; ++i) wide += "\xC3\xA9";
+
+  drogon::HttpResponsePtr accepted = sendPatch(h.api, patch(guided(wide), "s-live"), "t");
+  CHECK_EQ(accepted->getStatusCode(), drogon::k204NoContent);
+  CHECK_EQ(h.trees.byId["t"].guide.value, wide);
+
+  drogon::HttpResponsePtr refused = sendPatch(h.api, patch(guided(wide + "\xC3\xA9"), "s-live"), "t");
+  CHECK_EQ(refused->getStatusCode(), drogon::k400BadRequest);
+  CHECK_EQ(dump(bodyOf(refused)), std::string(R"({"error":"the guide would be 5001 characters, 1 over the 5000 cap"})"));
+  CHECK_EQ(h.trees.byId["t"].guide.value, wide);
+  CHECK_EQ(h.trees.byId["t"].title.value, std::string("Mine"));
+}
+
+TEST(patch_guide_refuses_a_non_owner_with_403_and_a_guide_that_is_not_a_string_with_400) {
+  Harness h;
+  h.signIn("s-live", "sam@example.com");
+  h.trees.byId["t"] = StoredTree{GraphState{}, LegendState{}, {"Theirs", {}}, 0, uid("owner"), Visibility::unlisted};
+
+  drogon::HttpResponsePtr stranger = sendPatch(h.api, patch(guided("Mine now"), "s-live"), "t");
+  CHECK_EQ(stranger->getStatusCode(), drogon::k403Forbidden);
+  CHECK_EQ(dump(bodyOf(stranger)),
+           std::string(R"({"code":"not-yours","error":"this tree belongs to another account"})"));
+
+  Json::Value numeric(Json::objectValue);
+  numeric["guide"] = 42;
+  drogon::HttpResponsePtr typed = sendPatch(h.api, patch(numeric, "s-live"), "t");
+  CHECK_EQ(typed->getStatusCode(), drogon::k400BadRequest);
+  CHECK_EQ(dump(bodyOf(typed)), std::string(R"({"error":"guide must be a string"})"));
+  CHECK(h.trees.byId["t"].guide == Lww<std::string>{});
+}
+
+TEST(patch_guide_on_a_private_tree_of_another_account_is_404) {
+  Harness h;
+  h.signIn("s-live", "sam@example.com");
+  h.trees.byId["t"] = StoredTree{GraphState{}, LegendState{}, {"Theirs", {}}, 0, uid("owner")};
+
+  drogon::HttpResponsePtr response = sendPatch(h.api, patch(guided("Mine now"), "s-live"), "t");
+
+  CHECK_EQ(response->getStatusCode(), drogon::k404NotFound);
+  CHECK_EQ(dump(bodyOf(response)), std::string(R"({"error":"no such tree"})"));
+  CHECK(h.trees.byId["t"].guide == Lww<std::string>{});
 }
 
 // ---- PATCH visibility (the share seam) ---------------------------------------------------

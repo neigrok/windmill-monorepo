@@ -155,9 +155,11 @@ void TreeApi::putTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback
       HlcClock mint{std::string{TreeRoom::kServerActor}};
       mint.observe(existing->title.stamp);
       trees_->save(TreeId{treeId}, state, legend, Lww<std::string>{data->title, mint.tick(0)},
-                   existing->head);
+                   existing->guide, existing->head);
     }
 
+    // A document never sets the guide, so the answer states the one the tree holds.
+    if (existing) data->guide = existing->guide.value;
     data->kinds = Legend(legend).kinds();
     Json::Value body(Json::objectValue);
     body["seq"] = static_cast<Json::Int64>(existing ? existing->head : 0);

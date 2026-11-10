@@ -15,10 +15,14 @@
 #include "test/products/roadmap/Fakes.h"
 #include "test/testing.h"
 
+#include "platform/application/WriteObservation.h"
+
 #include <trantor/net/InetAddress.h>
+#include <trantor/utils/Logger.h>
 
 #include <algorithm>
 #include <chrono>
+#include <cstdio>
 #include <memory>
 #include <mutex>
 #include <set>
@@ -148,6 +152,19 @@ std::string nodeFrame(const std::string& treeId, const char* frameId, const std:
   std::string text = dump(f);
   text.replace(text.find("RAW"), 3, description);
   return text;
+}
+
+// A subgraph frame carrying only the tree's guide register, as a client lattice would send it.
+std::string guideFrame(const std::string& treeId, const char* frameId, const std::string& guide, const std::string& at) {
+  Json::Value written(Json::objectValue);
+  written["v"] = guide;
+  written["at"] = at;
+  Json::Value f(Json::objectValue);
+  f["t"] = "subgraph";
+  f["treeId"] = treeId;
+  f["frameId"] = frameId;
+  f["guide"] = written;
+  return dump(f);
 }
 
 std::string rejectReason(const std::string& text) { return parse(text).get("reason", "").asString(); }
@@ -1171,4 +1188,141 @@ TEST(ws_a_write_whose_op_row_fails_to_land_is_still_acked_and_the_row_lands_next
   REQUIRE_EQ(h.ops.byTree["t_priv"].size(), 2u);
   CHECK_EQ(h.ops.byTree["t_priv"][0].seq, static_cast<Seq>(1));
   CHECK_EQ(h.ops.byTree["t_priv"][1].seq, static_cast<Seq>(2));
+}
+
+TEST(ws_concurrent_guide_frames_converge_on_the_later_stamp_and_a_fresh_subscriber_receives_it) {
+  Harness h;
+  UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.addSession("s-tablet", owner);
+  h.seed("t_priv", owner, Visibility::private_);
+  auto laptop = std::make_shared<FakeSocket>();
+  auto tablet = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-owner"), laptop);
+  h.collab.onOpen(h.upgrade("s-tablet"), tablet);
+
+  h.collab.onMessage(tablet, guideFrame("t_priv", "f-tablet", "Start with the sails.", "2000:0:r_b"));
+  h.collab.onMessage(laptop, guideFrame("t_priv", "f-laptop", "Start with the hull.", "2000:0:r_a"));
+  CHECK_EQ(frameType(laptop->sent.back()), std::string("subgraphAck"));
+  CHECK_EQ(frameType(tablet->sent.back()), std::string("subgraphAck"));
+  const Lww<std::string> winner{"Start with the sails.", Hlc{2000, 0, "r_b"}};
+  CHECK(h.trees.byId["t_priv"].guide == winner);
+  CHECK(h.ops.byTree.empty());
+
+  auto fresh = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-owner"), fresh);
+  h.collab.onMessage(fresh, subscribeFrame("t_priv"));
+  const Json::Value delta = lastFrameOfType(*fresh, "subgraph");
+  CHECK_EQ(dump(delta["guide"]), std::string(R"({"at":"2000:0:r_b","v":"Start with the sails."})"));
+  CHECK_EQ(delta["coverage"]["r_b"].asString(), std::string("2000:0:r_b"));
+  CHECK(delta["title"].isNull());
+
+  Json::Value caughtUp(Json::objectValue);
+  caughtUp["t"] = "subscribe";
+  caughtUp["treeId"] = "t_priv";
+  caughtUp["vector"]["r_b"] = "2000:0:r_b";
+  auto returning = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-owner"), returning);
+  h.collab.onMessage(returning, dump(caughtUp));
+  CHECK(lastFrameOfType(*returning, "subgraph")["guide"].isNull());
+}
+
+TEST(ws_a_frame_with_a_guide_past_five_thousand_characters_is_rejected_and_one_at_the_cap_lands) {
+  Harness h;
+  UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.seed("t_priv", owner, Visibility::private_);
+  auto conn = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-owner"), conn);
+  std::string grins;  // 5000 four-byte code points: 20000 bytes
+  for (std::size_t i = 0; i < kMaxGuideChars; ++i) grins += "\xF0\x9F\x98\x80";
+
+  h.collab.onMessage(conn, guideFrame("t_priv", "f-over", grins + "x", "100:0:client"));
+  REQUIRE_EQ(conn->sent.size(), 1u);
+  CHECK_EQ(rejectCode(conn->sent[0]), std::string("bad-frame"));
+  CHECK_EQ(rejectReason(conn->sent[0]), std::string("the guide would be 5001 characters, 1 over the 5000 cap"));
+  CHECK_EQ(parse(conn->sent[0])["frameId"].asString(), std::string("f-over"));
+  CHECK(h.trees.byId["t_priv"].guide == Lww<std::string>{});
+
+  h.collab.onMessage(conn, guideFrame("t_priv", "f-cap", grins, "100:0:client"));
+  REQUIRE_EQ(conn->sent.size(), 2u);
+  CHECK_EQ(frameType(conn->sent[1]), std::string("subgraphAck"));
+  CHECK(h.trees.byId["t_priv"].guide == (Lww<std::string>{grins, Hlc{100, 0, "client"}}));
+}
+
+TEST(ws_a_guide_frame_from_a_non_owner_is_refused_and_one_stamped_past_the_skew_allowance_is_clamped) {
+  Harness h;
+  UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.signIn("s-other", "other@example.com");
+  h.seed("t_shared", owner, Visibility::unlisted);
+  auto stranger = std::make_shared<FakeSocket>();
+  auto mine = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-other"), stranger);
+  h.collab.onOpen(h.upgrade("s-owner"), mine);
+
+  h.collab.onMessage(stranger, guideFrame("t_shared", "f-theirs", "Mine now", "100:0:r_x"));
+  REQUIRE_EQ(stranger->sent.size(), 1u);
+  CHECK_EQ(rejectCode(stranger->sent[0]), std::string("not-yours"));
+
+  const std::string runaway = std::to_string(h.clock.nowMs() + 6 * 60 * 1000) + ":0:r_a";
+  h.collab.onMessage(mine, guideFrame("t_shared", "f-ahead", "From the future", runaway));
+  REQUIRE_EQ(mine->sent.size(), 1u);
+  Json::Value skew = parse(mine->sent[0]);
+  CHECK_EQ(skew["t"].asString(), std::string("skew"));
+  CHECK_EQ(skew["frameId"].asString(), std::string("f-ahead"));
+  CHECK_EQ(skew["serverNow"].asUInt64(), h.clock.nowMs());
+  CHECK(h.trees.byId["t_shared"].guide == Lww<std::string>{});
+}
+
+TEST(ws_a_guide_write_logs_its_completion_line_and_no_line_carries_the_guide) {
+  struct Observed {
+    std::mutex mutex;
+    std::vector<WriteCompletion> completions;
+    std::vector<std::string> lines;
+    trantor::Logger::LogLevel level = trantor::Logger::logLevel();
+    Observed() {
+      installWriteSink([this](const WriteCompletion& completion) {
+        std::lock_guard lock(mutex);
+        completions.push_back(completion);
+      });
+      trantor::Logger::setLogLevel(trantor::Logger::kTrace);
+      trantor::Logger::setOutputFunction(
+          [this](const char* message, std::uint64_t length) {
+            std::lock_guard lock(mutex);
+            lines.emplace_back(message, length);
+          },
+          [] {});
+    }
+    ~Observed() {
+      installWriteSink({});
+      trantor::Logger::setOutputFunction([](const char* message, std::uint64_t length) { fwrite(message, 1, length, stdout); },
+                                         [] { fflush(stdout); });
+      trantor::Logger::setLogLevel(level);
+    }
+  };
+  Harness h;
+  UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.seed("t_priv", owner, Visibility::private_);
+  auto conn = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-owner"), conn);
+  const std::string secret = "Ask Maren before the third branch";
+
+  {
+    Observed observed;
+    h.collab.onMessage(conn, guideFrame("t_priv", "f-guide", secret, "100:0:client"));
+    h.collab.onMessage(conn, guideFrame("t_priv", "f-long", secret + std::string(kMaxGuideChars, 'x'), "101:0:client"));
+
+    REQUIRE_EQ(observed.completions.size(), 2u);
+    CHECK_EQ(observed.completions[0].operation, std::string("roadmap.ws.subgraph"));
+    CHECK_EQ(observed.completions[0].product, std::string("roadmap"));
+    CHECK_EQ(observed.completions[0].door, std::string("websocket"));
+    CHECK_EQ(observed.completions[0].outcome, std::string("ok"));
+    CHECK_EQ(observed.completions[1].operation, std::string("roadmap.ws.subgraph"));
+    CHECK_EQ(observed.completions[1].outcome, std::string("bad-frame"));
+    std::size_t completionLines = 0;
+    for (const std::string& line : observed.lines) {
+      CHECK(line.find("Ask Maren") == std::string::npos);
+      if (line.find("\"operation\":\"roadmap.ws.subgraph\"") != std::string::npos) ++completionLines;
+    }
+    CHECK_EQ(completionLines, std::size_t{2});
+  }
+  CHECK_EQ(h.trees.byId["t_priv"].guide.value, secret);
 }

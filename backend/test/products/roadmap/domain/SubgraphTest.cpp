@@ -34,6 +34,20 @@ TEST(frontier_folds_every_stamp_a_state_carries) {
   CHECK_FALSE(front.covers(Hlc{8, 0, "b"}));
 }
 
+TEST(a_frames_frontier_folds_its_title_and_guide_beside_its_graph_and_legend) {
+  LooseGraph graph;
+  graph.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(4));
+  Subgraph frame;
+  frame.graph = graph.exportState();
+  frame.legend = Legend::seededDefaults(at(2, "c")).exportState();
+  frame.title = Lww<std::string>{"Sailing", at(6, "b")};
+  frame.guide = Lww<std::string>{"Rig before you sail", at(9)};
+
+  VersionVector expected;
+  expected.marks = {{"a", at(9)}, {"b", at(6, "b")}, {"c", at(2, "c")}};
+  CHECK(frontier(frame) == expected);
+}
+
 TEST(delta_against_empty_reconstructs_the_whole_state) {
   LooseGraph source;
   source.createNode(nid("a"), "A", "x", NodeColor::sky, Vec2{1, 2}, at(1));

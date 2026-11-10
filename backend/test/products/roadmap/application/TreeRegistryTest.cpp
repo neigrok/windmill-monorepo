@@ -8,6 +8,7 @@
 #include "test/testing.h"
 
 #include <string>
+#include <variant>
 #include <vector>
 
 using namespace wm;
@@ -471,4 +472,128 @@ TEST(rename_refuses_a_title_that_is_not_valid_utf8_and_keeps_the_old_name) {
   CHECK_EQ(s.trees.byId["t"].title.value, std::string("t"));
   CHECK(s.registry.rename(tid("t"), me, "\xE5\xAD\x97 \xF0\x9F\x98\x80") == TreeRegistry::Renaming::renamed);
   CHECK_EQ(s.trees.byId["t"].title.value, std::string("\xE5\xAD\x97 \xF0\x9F\x98\x80"));
+}
+
+TEST(set_guide_writes_an_owned_trees_guide_leaving_no_op_row_and_an_empty_one_clears_it) {
+  Setup s;
+  UserId me = uid("me");
+  seed(s.trees, "t", me, 100, {spec("a", NodeColor::sky)});
+
+  const auto written = s.registry.setGuide(tid("t"), me, "Work the trunk first; leaves can wait.");
+  CHECK(std::get<TreeRegistry::GuideChange>(written) == TreeRegistry::GuideChange::changed);
+  CHECK(s.trees.byId["t"].guide ==
+        (Lww<std::string>{"Work the trunk first; leaves can wait.", Hlc{1'700'000'000'000, 0, "srv"}}));
+  CHECK_EQ(s.trees.byId["t"].title.value, std::string("t"));
+  CHECK(s.ops.byTree.empty());
+
+  const auto cleared = s.registry.setGuide(tid("t"), me, "");
+  CHECK(std::get<TreeRegistry::GuideChange>(cleared) == TreeRegistry::GuideChange::changed);
+  CHECK(s.trees.byId["t"].guide == (Lww<std::string>{"", Hlc{1'700'000'000'000, 1, "srv"}}));
+  CHECK(s.ops.byTree.empty());
+}
+
+TEST(set_guide_refuses_a_non_owner_and_reads_a_tree_they_cannot_see_as_absent) {
+  Setup s;
+  seed(s.trees, "t", uid("owner"), 100, {spec("a", NodeColor::sky)});
+  const Lww<std::string> before = s.trees.byId["t"].guide;
+
+  CHECK(std::get<TreeRegistry::GuideChange>(s.registry.setGuide(tid("t"), uid("intruder"), "Mine now")) ==
+        TreeRegistry::GuideChange::notFound);
+  s.trees.byId["t"].visibility = Visibility::unlisted;
+  CHECK(std::get<TreeRegistry::GuideChange>(s.registry.setGuide(tid("t"), uid("intruder"), "Mine now")) ==
+        TreeRegistry::GuideChange::notYours);
+  s.trees.byId["t"].owner = std::nullopt;
+  CHECK(std::get<TreeRegistry::GuideChange>(s.registry.setGuide(tid("t"), uid("intruder"), "Mine now")) ==
+        TreeRegistry::GuideChange::nobodysTree);
+  CHECK(std::get<TreeRegistry::GuideChange>(s.registry.setGuide(tid("ghost"), uid("owner"), "Anything")) ==
+        TreeRegistry::GuideChange::notFound);
+
+  CHECK(s.trees.byId["t"].guide == before);
+  CHECK_FALSE(s.rooms.isOpen(tid("t")));
+  CHECK(s.bus.subgraphBroadcasts.empty());
+}
+
+TEST(set_guide_holds_five_thousand_characters_of_any_width_and_refuses_one_more) {
+  Setup s;
+  UserId me = uid("me");
+  seed(s.trees, "t", me, 100, {spec("a", NodeColor::sky)});
+  std::string wide;  // 5000 three-byte characters: 15000 bytes
+  for (std::size_t i = 0; i < kMaxGuideChars; ++i) wide += "\xE5\xAD\x97";
+
+  CHECK(std::get<TreeRegistry::GuideChange>(s.registry.setGuide(tid("t"), me, wide)) ==
+        TreeRegistry::GuideChange::changed);
+  CHECK_EQ(s.trees.byId["t"].guide.value, wide);
+
+  const auto refused = s.registry.setGuide(tid("t"), me, wide + "x");
+  REQUIRE(std::holds_alternative<Admission>(refused));
+  CHECK(std::get<Admission>(refused).verdict == Admission::Verdict::malformed);
+  CHECK_EQ(std::get<Admission>(refused).reason,
+           std::string("the guide would be 5001 characters, 1 over the 5000 cap"));
+  CHECK_EQ(s.trees.byId["t"].guide.value, wide);
+}
+
+TEST(set_guide_of_a_live_tree_flows_through_the_room_to_subscribers_and_survives_eviction) {
+  Setup s;
+  UserId me = uid("me");
+  seed(s.trees, "t", me, 100, {spec("a", NodeColor::sky)});
+  TreeRoom& room = *s.rooms.open(tid("t"));
+  const Seq before = room.head();
+
+  CHECK(std::get<TreeRegistry::GuideChange>(s.registry.setGuide(tid("t"), me, "One branch a week.")) ==
+        TreeRegistry::GuideChange::changed);
+
+  const Lww<std::string> guide{"One branch a week.", Hlc{1'700'000'000'000, 0, "srv"}};
+  CHECK(room.guide() == guide);
+  CHECK(room.snapshot().guide == guide.value);
+  CHECK(s.trees.byId["t"].guide == guide);
+  CHECK_EQ(room.head(), before + 1);
+  CHECK(room.pendingOps().empty());
+  CHECK(s.ops.byTree.empty());
+  REQUIRE_EQ(s.bus.subgraphBroadcasts.size(), 1u);
+  const Subgraph& broadcast = s.bus.subgraphBroadcasts[0].subgraph;
+  REQUIRE(broadcast.guide.has_value());
+  CHECK(*broadcast.guide == guide);
+  CHECK_FALSE(broadcast.title.has_value());
+  CHECK(broadcast.graph.nodes.empty());
+  CHECK(broadcast.legend.kinds.empty());
+
+  s.rooms.evict(tid("t"));
+  TreeRoom& reloaded = *s.rooms.open(tid("t"));
+  CHECK(reloaded.guide() == guide);
+  CHECK(std::get<TreeRegistry::GuideChange>(s.registry.setGuide(tid("t"), me, "Two branches a week.")) ==
+        TreeRegistry::GuideChange::changed);
+  CHECK(reloaded.guide() == (Lww<std::string>{"Two branches a week.", Hlc{1'700'000'000'000, 1, "srv"}}));
+}
+
+TEST(two_rooms_joining_concurrent_guide_frames_in_opposite_orders_converge_on_one_guide) {
+  Setup first;
+  Setup second;
+  UserId me = uid("me");
+  seed(first.trees, "t", me, 100, {spec("a", NodeColor::sky)});
+  seed(second.trees, "t", me, 100, {spec("a", NodeColor::sky)});
+  TreeRoom& one = *first.rooms.open(tid("t"));
+  TreeRoom& other = *second.rooms.open(tid("t"));
+
+  Subgraph fromA;
+  fromA.treeId = tid("t");
+  fromA.frameId = "f-a";
+  fromA.actor = "r_a";
+  fromA.guide = Lww<std::string>{"Start with the hull.", Hlc{2000, 0, "r_a"}};
+  Subgraph fromB = fromA;
+  fromB.frameId = "f-b";
+  fromB.actor = "r_b";
+  fromB.guide = Lww<std::string>{"Start with the sails.", Hlc{2000, 0, "r_b"}};
+
+  one.joinSubgraph(fromA, me);
+  one.joinSubgraph(fromB, me);
+  other.joinSubgraph(fromB, me);
+  other.joinSubgraph(fromA, me);
+
+  const Lww<std::string> winner{"Start with the sails.", Hlc{2000, 0, "r_b"}};
+  CHECK(one.guide() == winner);
+  CHECK(other.guide() == winner);
+  first.rooms.persist(tid("t"));
+  second.rooms.persist(tid("t"));
+  CHECK(first.trees.byId["t"].guide == winner);
+  CHECK(second.trees.byId["t"].guide == winner);
 }

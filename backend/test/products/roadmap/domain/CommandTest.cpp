@@ -577,6 +577,23 @@ TEST(admit_title_bounds_the_register_a_frame_would_set) {
   CHECK_EQ(refusal->reason, std::string("the title would be 40000 characters, 39800 over the 200 cap"));
 }
 
+TEST(admit_guide_holds_five_thousand_characters_whatever_their_bytes_and_refuses_one_more) {
+  CHECK_FALSE(admitGuide("").has_value());
+  std::string grins;  // 5000 four-byte code points: 20000 bytes, still within the cap
+  for (std::size_t i = 0; i < kMaxGuideChars; ++i) grins += "\xF0\x9F\x98\x80";
+  CHECK_FALSE(admitGuide(grins).has_value());
+
+  std::optional<Admission> over = admitGuide(grins + "\xE5\xAD\x97");
+  REQUIRE(over.has_value());
+  CHECK(over->verdict == Admission::Verdict::malformed);
+  CHECK_EQ(over->reason, std::string("the guide would be 5001 characters, 1 over the 5000 cap"));
+
+  std::optional<Admission> cut = admitGuide("Work it \xE2\x82");
+  REQUIRE(cut.has_value());
+  CHECK(cut->verdict == Admission::Verdict::malformed);
+  CHECK_EQ(cut->reason, std::string("the guide is not valid UTF-8"));
+}
+
 TEST(describe_kind_writes_only_the_registers_it_carries) {
   LooseGraph g;
   Legend legend = Legend::seededDefaults(at(1));

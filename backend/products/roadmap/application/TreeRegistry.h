@@ -1,6 +1,7 @@
 #pragma once
 
 #include "products/roadmap/application/RoomRegistry.h"
+#include "products/roadmap/domain/Command.h"
 #include "products/roadmap/domain/Ids.h"
 #include "products/roadmap/domain/TreeSummary.h"
 #include "platform/ports/Clock.h"
@@ -9,6 +10,7 @@
 #include "products/roadmap/ports/TreeRepository.h"
 
 #include <string>
+#include <variant>
 #include <vector>
 
 namespace wm {
@@ -40,6 +42,12 @@ public:
   // trim → refuse a blank → owner check → apply through RoomRegistry.
   enum class Renaming { renamed, notFound, notYours, nobodysTree, blankTitle, malformedTitle };
   Renaming rename(const TreeId& tree, const UserId& caller, const std::string& title);
+
+  // admit → read gate → owner check → set the guide through the tree's room, durable before it
+  // answers. An empty guide clears it. A tree the caller cannot read answers notFound, and a guide
+  // past kMaxGuideChars or not valid UTF-8 answers its Admission.
+  enum class GuideChange { changed, notFound, notYours, nobodysTree };
+  std::variant<GuideChange, Admission> setGuide(const TreeId& tree, const UserId& caller, const std::string& guide);
 
   // owner check → set read visibility through RoomRegistry: the durable column write plus the live
   // room's cache, so a just-shared tree stops 404-ing at once.

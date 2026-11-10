@@ -34,9 +34,9 @@ TreeRoom* RoomRegistry::open(const TreeId& id) {
 
   LooseGraph graph(stored->state);  // full CRDT state — lossless
   Legend legend(stored->legend);    // empty for legacy trees; the client derives then
-  auto room = std::make_unique<TreeRoom>(id, stored->title, std::move(graph), std::move(legend),
-                                         stored->head, stored->owner, stored->visibility,
-                                         stored->createdAt, bus_);
+  auto room = std::make_unique<TreeRoom>(id, stored->title, stored->guide, std::move(graph),
+                                         std::move(legend), stored->head, stored->owner,
+                                         stored->visibility, stored->createdAt, bus_);
   // The document is a snapshot at stored->head. A row past that head is what an older ordering
   // could leave behind; replaying it reaches the true state and head, so new ops never collide on
   // seq. Under the current ordering (save, then land) the tail is empty.
@@ -65,11 +65,12 @@ void RoomRegistry::evict(const TreeId& id) {
   std::lock_guard<std::mutex> lock(mutex_);
   auto it = rooms_.find(id);
   if (it == rooms_.end()) return;
-  auto [state, legend] = it->second.room->dirtyState();
+  TreeRoom& room = *it->second.room;
+  auto [state, legend] = room.dirtyState();
   // A tree whose row is gone takes its room's edits and op rows with it.
-  if (repo_.save(id, state, legend, it->second.room->title(), it->second.room->head())) {
-    it->second.room->markClean();
-    land(id, *it->second.room);  // the lattice is durable at this head; now the rows may say so
+  if (repo_.save(id, state, legend, room.title(), room.guide(), room.head())) {
+    room.markClean();
+    land(id, room);  // the lattice is durable at this head; now the rows may say so
   }
   rooms_.erase(it);  // a row that did not land is dropped here, and the room's teardown says so
 }
@@ -139,6 +140,7 @@ void RoomRegistry::persist(const TreeId& id) {
   GraphState state;
   LegendState legend;
   Lww<std::string> title;
+  Lww<std::string> guide;
   Seq head = 0;
   {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -147,13 +149,14 @@ void RoomRegistry::persist(const TreeId& id) {
     room = it->second.room.get();
     std::tie(state, legend) = room->dirtyState();  // only what changed since the last save
     title = room->title();
+    guide = room->guide();
     head = room->head();
   }
   // I/O outside the map lock. The caller holds the tree's strand, so no write can slip in between
   // the export above and the markClean below. The lattice lands first and the op rows after, so a
   // crash between the two leaves a lattice at `head` with no row at `head` — replay is a no-op and
   // the feed misses one deed — never a row the lattice cannot back.
-  if (!repo_.save(id, state, legend, title, head)) return;  // the row is gone; so is what this room would add to it
+  if (!repo_.save(id, state, legend, title, guide, head)) return;  // the row is gone; so is what this room would add to it
   room->markClean();
   land(id, *room);
 }

@@ -92,6 +92,13 @@ VersionVector frontier(const GraphState& graph, const LegendState& legend) {
   return vector;
 }
 
+VersionVector frontier(const Subgraph& frame) {
+  VersionVector vector = frontier(frame.graph, frame.legend);
+  if (frame.title) vector.observe(frame.title->stamp);
+  if (frame.guide) vector.observe(frame.guide->stamp);
+  return vector;
+}
+
 Subgraph deltaBetween(const GraphState& graph, const LegendState& legend, const VersionVector& since) {
   Subgraph delta;
   delta.intent = SubgraphIntent::delta;

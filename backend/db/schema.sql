@@ -36,8 +36,9 @@ create index if not exists org_members_user on org_members (user_id);
 
 -- ── Roadmap (products/roadmap) ───────────────────────────────────────────────────────────────
 
--- title is LWW: `title_hlc` is its stamp ('' = unset); `title_ms`/`title_counter` are that stamp's
--- numeric split, so the guard runs in SQL.
+-- title and guide are LWW registers: `<register>_hlc` is its stamp ('' = unset);
+-- `<register>_ms`/`<register>_counter` are that stamp's numeric split, so the guard runs in SQL.
+-- guide is the owner's plain-text note on how the tree is worked, at most 5000 characters.
 create table if not exists trees (
   id            text primary key,
   org_id        uuid,
@@ -46,6 +47,10 @@ create table if not exists trees (
   title_hlc     text not null default '',
   title_ms      bigint not null default 0,
   title_counter bigint not null default 0,
+  guide         text not null default '',
+  guide_hlc     text not null default '',
+  guide_ms      bigint not null default 0,
+  guide_counter bigint not null default 0,
   visibility    text not null default 'private',
   head_seq      bigint not null default 0,
   forked_from   text,
@@ -57,6 +62,10 @@ create table if not exists trees (
 alter table trees add column if not exists title_hlc text not null default '';
 alter table trees add column if not exists title_ms bigint not null default 0;
 alter table trees add column if not exists title_counter bigint not null default 0;
+alter table trees add column if not exists guide text not null default '';
+alter table trees add column if not exists guide_hlc text not null default '';
+alter table trees add column if not exists guide_ms bigint not null default 0;
+alter table trees add column if not exists guide_counter bigint not null default 0;
 -- visibility gates every read: 'private' is owner-only, 'unlisted'/'public' are readable by anyone
 -- holding the id.
 alter table trees add column if not exists visibility text not null default 'private';

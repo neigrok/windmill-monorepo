@@ -8,6 +8,7 @@
 
 #include <optional>
 #include <utility>
+#include <variant>
 
 namespace wm {
 
@@ -105,7 +106,7 @@ void TreeRegistryApi::patchTree(const drogon::HttpRequestPtr& req, HttpCallback&
     return;
   }
 
-  // A {visibility} body reshares the tree, a {title} body renames it.
+  // A {visibility} body reshares the tree, a {guide} body sets its guide, a {title} body renames it.
   if (json && json->isMember("visibility")) {
     const std::string requested = (*json)["visibility"].asString();
     if (requested != "private" && requested != "unlisted" && requested != "public") {
@@ -123,6 +124,36 @@ void TreeRegistryApi::patchTree(const drogon::HttpRequestPtr& req, HttpCallback&
       return;
     }
     if (outcome == TreeRegistry::VisibilityChange::nobodysTree) {
+      callback(forbidden(WriteRefusal::nobodysTree));
+      return;
+    }
+    auto response = drogon::HttpResponse::newHttpResponse();
+    response->setStatusCode(drogon::k204NoContent);
+    callback(response);
+    return;
+  }
+
+  if (json && json->isMember("guide")) {
+    if (!(*json)["guide"].isString()) {
+      callback(error(drogon::k400BadRequest, "guide must be a string"));
+      return;
+    }
+    const std::variant<TreeRegistry::GuideChange, Admission> outcome =
+        registry_->setGuide(TreeId{treeId}, *caller, (*json)["guide"].asString());
+    if (const Admission* refusal = std::get_if<Admission>(&outcome)) {
+      callback(error(drogon::k400BadRequest, refusal->reason));
+      return;
+    }
+    const TreeRegistry::GuideChange change = std::get<TreeRegistry::GuideChange>(outcome);
+    if (change == TreeRegistry::GuideChange::notFound) {
+      callback(error(drogon::k404NotFound, "no such tree"));
+      return;
+    }
+    if (change == TreeRegistry::GuideChange::notYours) {
+      callback(forbidden(WriteRefusal::notYours));
+      return;
+    }
+    if (change == TreeRegistry::GuideChange::nobodysTree) {
       callback(forbidden(WriteRefusal::nobodysTree));
       return;
     }

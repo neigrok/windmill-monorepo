@@ -192,12 +192,9 @@ void Collab::subscribe(const drogon::WebSocketConnectionPtr& conn, const std::st
       bus_.subscribe(TreeId{treeId}, conn, principal.user);
       presence_.join(conn, TreeId{treeId});
 
-      Subgraph delta = deltaBetween(room->exportState(), room->exportLegend(), clientVector);
-      delta.treeId = TreeId{treeId};
+      Subgraph delta = room->deltaSince(clientVector);
       delta.frameId = "delta-" + std::to_string(room->head());
       delta.actor = "srv";
-      if (!clientVector.covers(room->title().stamp)) delta.title = room->title();
-      if (delta.coverage) delta.coverage->observe(room->title().stamp);
       frame = toJson(delta);
       frame["seq"] = static_cast<Json::Int64>(room->head());
     } catch (const std::exception& error) {
@@ -272,11 +269,9 @@ void Collab::subgraphFrame(const drogon::WebSocketConnectionPtr& conn, const std
   }
   incoming.treeId = TreeId{treeId};
 
-  // The skew clamp covers the title register too.
+  // The skew clamp covers every stamp the frame carries, the title and guide registers included.
   std::uint64_t nowMs = clock_.nowMs();
-  VersionVector front = frontier(incoming.graph, incoming.legend);
-  if (incoming.title) front.observe(incoming.title->stamp);
-  for (const auto& [actor, mark] : front.marks) {
+  for (const auto& [actor, mark] : frontier(incoming).marks) {
     if (mark.physicalMs > nowMs + kMaxSkewMs) {
       Json::Value skew(Json::objectValue);
       skew["t"] = "skew";

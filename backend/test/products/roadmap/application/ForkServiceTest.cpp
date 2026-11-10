@@ -63,6 +63,19 @@ TEST(fork_mints_an_id_and_inherits_the_title_when_given_neither) {
   CHECK(*h.trees.byId["t_d1"].owner == uid("me"));
 }
 
+TEST(fork_copies_the_sources_live_guide_unstamped_so_it_is_the_new_owners_to_rewrite) {
+  Harness h;
+  h.seedSource("t_src", "Learn to sail");
+  h.trees.byId["t_src"].guide = Lww<std::string>{"Rig first, then sail.", Hlc{5, 0, "srv"}};
+  h.rooms.open(TreeId{"t_src"})->setGuide("Rig first, sail second, race last.", 10);
+
+  ForkService::Result result = h.service.fork(TreeId{"t_src"}, "", "", uid("me"));
+  CHECK(result.outcome == ForkService::Outcome::forked);
+  CHECK_EQ(result.data.guide, std::string("Rig first, sail second, race last."));
+  CHECK(h.trees.byId["t_d1"].guide == (Lww<std::string>{"Rig first, sail second, race last.", Hlc{}}));
+  CHECK(*h.trees.byId["t_d1"].owner == uid("me"));
+}
+
 TEST(fork_clears_the_source_status_seeds) {
   Harness h;
   h.seedSource("t_src", "Learn to sail");

@@ -111,7 +111,7 @@ struct FakeTreeRepository : TreeRepository {
     return lineage;
   }
   bool save(const TreeId& tree, const GraphState& state, const LegendState& legend,
-            const Lww<std::string>& title, Seq head) override {
+            const Lww<std::string>& title, const Lww<std::string>& guide, Seq head) override {
     savedNodeCounts.push_back(state.nodes.size());
     if (byId.count(tree.str()) == 0) return false;  // a tree with no row is left without one
     StoredTree& stored = byId[tree.str()];  // merge the slice, keep the rest
@@ -133,8 +133,9 @@ struct FakeTreeRepository : TreeRepository {
       if (match != stored.legend.kinds.end()) *match = kind;
       else stored.legend.kinds.push_back(kind);
     }
-    // The title register lands only under a dominating stamp, the rule PgTreeRepository enforces in SQL; only Postgres carries the byte-order tiebreak collation.
+    // Each register lands only under a dominating stamp, the rule PgTreeRepository enforces in SQL; only Postgres carries the byte-order tiebreak collation.
     if (title.stamp > stored.title.stamp) stored.title = title;
+    if (guide.stamp > stored.guide.stamp) stored.guide = guide;
     stored.head = head;
     return true;
   }
@@ -202,10 +203,11 @@ struct FakeTreeRepository : TreeRepository {
     it->second.visibility = visibility;
   }
   void fork(const TreeId& newTree, const TreeId& source, const GraphState& state,
-            const LegendState& legend, const std::string& title, const UserId& owner) override {
+            const LegendState& legend, const std::string& title, const std::string& guide,
+            const UserId& owner) override {
     if (byId.count(newTree.str())) throw DuplicateTree{};  // the same unique index as create
-    // A fork's title starts stampless, and it is born private, like every fresh tree.
-    byId[newTree.str()] = StoredTree{state, legend, {title, {}}, 0, owner};
+    // A fork's title and guide start stampless, and it is born private, like every fresh tree.
+    byId[newTree.str()] = StoredTree{state, legend, {title, {}}, 0, owner, Visibility::private_, 0, {guide, {}}};
     forkedFrom[newTree.str()] = source.str();
   }
 };
