@@ -222,7 +222,9 @@ goes through `countBucket`: `0/1/2-5/6-20/21+`.
 | What's next opened, a card picked, or closed by toggle, outside pointer, genuine focus departure, Escape or context change | `roadmap_whats_next` | `step: open/pick/close`, `count: 0/1/2-5/6-20/21+` |
 | Open the guide from the row's chip, the roadmap sheet's row or a reader's phone line | `roadmap_guide` | `step: open`, `door: row/sheet/line`, `role: owner/reader` |
 | Start writing the guide: a click or a tap on its text, Enter, or Add guide | `roadmap_guide` | `step: edit`, `via: click/tap/key/add` |
-| Save the guide, its length in code points as a bucket | `roadmap_guide` | `step: save`, `outcome: saved/cleared/unchanged/failed`, `length: 0/1-500/501-2000/2001-4500/4501-5000` |
+| Save the guide, its length in code points as a bucket | `roadmap_guide` | `step: save`, `outcome: saved/cleared/unchanged`, `length: 0/1-500/501-2000/2001-4500/4501-5000` |
+| A guide save no door took, and why: no connection, a refusal (the server's 4xx or text it would not admit), the server, or this device's store or session | `roadmap_guide` | `step: save`, `outcome: failed`, `length: 0/1-500/501-2000/2001-4500/4501-5000`, `reason: offline/refused/server/device` |
+| A guide save that replaced a guide changed elsewhere since its writing began | `roadmap_guide` | `step: conflict` |
 | Discard a changed guide draft, or take the guide saved elsewhere | `roadmap_guide` | `step: discard/loadLatest` |
 | Export this roadmap | `roadmap_export` | `outcome: done/failed`, `door: more/sheet` |
 | Settings' Export all | `roadmap_export` | `outcome: done/partial/failed`, `door: settings` |
@@ -243,6 +245,10 @@ goes through `countBucket`: `0/1/2-5/6-20/21+`.
 | A roadmap planted blank or from an import | `birth` | `import?: true`, `steps?: 0/1/2-5/6-20/21+`, `local?: true` |
 | Device roadmaps claimed at sign-in | `claim` | `treeCount: 0/1/2-5/6-20/21+` |
 | Roadmap landing opened | `land` | `signedIn: true/false` |
+
+A guide's `saved` and `cleared` mean the session or this device's store took the write: durability on this device, not the
+server's admission, as a gym save's `saved-local` is. What the server then does with it is the structure lane's to say, through
+the sync events and the refused card.
 
 `demo_open` fires alongside `roadmap_view_open`. `fork_claim` with `mode: email` comes from `shell/auth/AuthLanding.jsx`, once
 the magic link lands.

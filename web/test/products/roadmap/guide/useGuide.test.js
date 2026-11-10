@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { GuideDraft, guideLengthBucket } from '../../../../src/products/roadmap/guide/GuideDraft.js';
+import { GuideDraft, InadmissibleGuide, guideLengthBucket } from '../../../../src/products/roadmap/guide/GuideDraft.js';
+import { MissingDeviceTree } from '../../../../src/products/roadmap/sync/localTrees.js';
 import { closuresIn } from '../sourceClosures.js';
 
 const guide = await closuresIn('guide/useGuide.js');
@@ -12,13 +13,18 @@ function saveWith({ ready = true, sessionTree = 'sail', claimed = true, patch = 
     treeId: 'sail',
     text: 'One step a week.',
     ownWrite: { current: null },
-    sessionRef: { current: { treeId: sessionTree, setGuide: (next) => { calls.push(['session', next]); return ready; } } },
+    sessionRef: { current: { treeId: sessionTree, setGuide: (next) => {
+      calls.push(['session', next]);
+      if (ready instanceof Error) throw ready;
+      return ready;
+    } } },
     LocalTreeRegistry: class { get(id) { return id === 'sail' ? { id, claimed } : null; } },
     setLocalGuide: async (treeId, next) => { calls.push(['device', treeId, next]); await local(); },
     setGuide: async (treeId, next) => { calls.push(['patch', treeId, next]); await patch(); },
     reportUnexpectedFailure: (operation, error) => calls.push(['report', operation, error.status]),
     track: (name, props) => calls.push(['event', name, { ...props }]),
     guideLengthBucket,
+    InadmissibleGuide,
   });
   return { save, calls };
 }
@@ -51,14 +57,32 @@ test('before its lattice loads, a device tree takes the write in its own store a
   assert.deepEqual(elsewhere.calls[0], ['patch', 'sail', 'Written.']);
 });
 
-test('a save no door took keeps the draft and hands the failure to the reporter under its static operation', async () => {
-  for (const status of [403, 0, 503]) {
-    const failure = Object.assign(new Error('private server sentence'), { status });
-    const { save, calls } = saveWith({ ready: false, patch: async () => { throw failure; } });
+test('a save no door took keeps the draft, reports its static operation and says why with a bounded reason', async () => {
+  const failing = (status) => async () => { throw Object.assign(new Error('private server sentence'), { status }); };
+  for (const [options, status, reason] of [
+    [{ ready: false, patch: failing(0) }, 0, 'offline'],
+    [{ ready: false, patch: failing(403) }, 403, 'refused'],
+    [{ ready: false, patch: failing(503) }, 503, 'server'],
+    [{ ready: new InadmissibleGuide() }, undefined, 'refused'],
+    [{ ready: false, claimed: false, local: async () => { throw new MissingDeviceTree(); } }, undefined, 'device'],
+  ]) {
+    const { save, calls } = saveWith(options);
     assert.equal(await save(new GuideDraft('', 'Written.')), false);
-    assert.deepEqual(calls.slice(2), [
+    assert.deepEqual(calls.filter(([kind]) => kind === 'report' || kind === 'event'), [
       ['report', 'roadmap-guide-save', status],
-      ['event', 'roadmap_guide', { step: 'save', outcome: 'failed', length: '1-500' }],
-    ]);
+      ['event', 'roadmap_guide', { step: 'save', outcome: 'failed', length: '1-500', reason }],
+    ], reason);
   }
+});
+
+test('a save over a guide changed elsewhere since writing began leaves a conflict beside its save', async () => {
+  const { save, calls } = saveWith();
+  assert.equal(await save(new GuideDraft('The guide writing began from.', 'Mine.')), true);
+  assert.deepEqual(calls.slice(1), [
+    ['event', 'roadmap_guide', { step: 'save', outcome: 'saved', length: '1-500' }],
+    ['event', 'roadmap_guide', { step: 'conflict' }],
+  ]);
+  const quiet = saveWith();
+  await quiet.save(new GuideDraft('One step a week.', 'Mine.'));
+  assert.deepEqual(quiet.calls.slice(1), [['event', 'roadmap_guide', { step: 'save', outcome: 'saved', length: '1-500' }]]);
 });
