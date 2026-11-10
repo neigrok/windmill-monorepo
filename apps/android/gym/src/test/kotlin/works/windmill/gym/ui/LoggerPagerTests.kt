@@ -1,5 +1,7 @@
 package works.windmill.gym.ui
 
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.CompositionLocalProvider
 import works.windmill.platform.telemetry.LocalTelemetry
 import works.windmill.platform.telemetry.Telemetry
@@ -24,10 +26,13 @@ import androidx.compose.ui.test.swipeDown
 import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.test.swipeRight
 import androidx.compose.ui.test.swipeUp
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.height
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -61,6 +66,7 @@ class LoggerPagerTests {
         telemetry: Telemetry = Telemetry.None,
         benchTarget: SetTarget = SetTarget(5, 82.5),
         rowTarget: SetTarget = SetTarget(8, 60.0),
+        transient: SnackbarHostState? = null,
     ): EngineRoomFixture {
         val room = EngineRoomFixture(tmp.newFolder(), scope, undoWindowMs = 0)
         // On the wall clock, which the screen's own clocks read.
@@ -91,7 +97,7 @@ class LoggerPagerTests {
         room.store.observeEngine()
         compose.setContent {
             CompositionLocalProvider(LocalTelemetry provides telemetry) {
-                LoggerBinding(room.store).let { LoggerScreen(it, it, say = {}, onFinish = {}) }
+                LoggerBinding(room.store).let { LoggerScreen(it, it, say = {}, onFinish = {}, transient = transient) }
             }
         }
         return room
@@ -298,6 +304,32 @@ class LoggerPagerTests {
             compose.runOnIdle { assertEquals("bench-press", room.store.workout.exerciseId) }
             compose.onNode((hasContentDescription("Load, kg total") and hasText("82.5"))).assertIsDisplayed()
             compose.onNode((hasContentDescription("Reps") and hasText("5"))).assertIsDisplayed()
+        } } finally { scope.cancel() }
+    }
+
+    // The bench's eight planned sets make the pager taller than the row's page, yet every page stands at the top: the head
+    // stays where it stood across the swipe, and a transient over the shorter page leaves the set in hand clear.
+    @Test
+    fun aShorterPageStandsAtTheTopBesideATallerNeighbour() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val transient = SnackbarHostState()
+        try { logger(scope, transient = transient).use { room ->
+            val pager = compose.onNodeWithTag("Movement pager").getBoundsInRoot()
+            val bench = compose.onNode(hasContentDescription("Exercise 1 of 2")).getBoundsInRoot()
+
+            compose.onNodeWithText("Bench Press").performTouchInput {
+                swipeLeft(startX = width * 0.9f, endX = width * 0.1f)
+            }
+            compose.runOnIdle { assertEquals("barbell-row", room.store.workout.exerciseId) }
+
+            val row = compose.onNode(hasContentDescription("Exercise 2 of 2")).getBoundsInRoot()
+            assertEquals("the head stands at the pager's top", pager.top, row.top)
+            assertEquals("the head stands still across the swipe", bench, row)
+            scope.launch { transient.showSnackbar("Set deleted", actionLabel = "Undo", duration = SnackbarDuration.Indefinite) }
+            compose.waitForIdle()
+            val bar = compose.onNodeWithTag("Transient").getBoundsInRoot()
+            val current = compose.onNode(hasContentDescription("Set 1, current", substring = true)).getBoundsInRoot()
+            assertTrue("the set in hand $current is clear of the transient $bar", bar.height > 0.dp && current.bottom <= bar.top)
         } } finally { scope.cancel() }
     }
 

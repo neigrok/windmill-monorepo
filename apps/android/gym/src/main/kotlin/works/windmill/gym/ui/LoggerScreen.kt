@@ -57,7 +57,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import works.windmill.gym.R
@@ -80,14 +79,12 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.width
-import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.Constraints
-import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.SubcomposeLayout
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.SideEffect
 import kotlinx.coroutines.delay
@@ -151,7 +148,6 @@ import androidx.compose.foundation.shape.ZeroCornerSize
 import androidx.compose.material3.BottomAppBar
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.platform.LocalContext
 import works.windmill.platform.i18n.Words
@@ -532,18 +528,19 @@ fun LoggerScreen(
             return@Column
         }
 
-        var pageHeight by remember { mutableStateOf(0.dp) }
         Rack(
             entry = entry,
             modifier = Modifier.weight(1f),
             top = { room ->
                 val density = LocalDensity.current
-                Box(Modifier.fillMaxWidth().onSizeChanged { pageHeight = with(density) { it.height.toDp() } }) {
+                Box(Modifier.fillMaxWidth()) {
+                    // Every page stands at the top, however tall the neighbours the pager also measures.
                     HorizontalPager(
                         state = pager,
                         key = { pagerOrder[it] },
                         beyondViewportPageCount = 1,
                         userScrollEnabled = false,
+                        verticalAlignment = Alignment.Top,
                         modifier = Modifier.fillMaxWidth().testTag("Movement pager"),
                     ) { page ->
                         val pageOrder = pagerOrder
@@ -558,41 +555,44 @@ fun LoggerScreen(
                         val unit = Readout.loadUnit(exercise)
                         val slots = LiveLines.slots(today, state.session?.id.orEmpty(), state.session?.plan?.entry(pageMovement), state.lastTimeOf(pageMovement),
                             state.stalled, unit)
-                        var ledgerBottom by remember(pageMovement) { mutableStateOf(0.dp) }
-                        var headHeight by remember(pageMovement) { mutableStateOf(0.dp) }
                         val pageSemantics = if (!visible) Modifier.clearAndSetSemantics {}
                             else Modifier.semantics { if (!active) hideFromAccessibility() }
-                        Column(Modifier.fillMaxWidth().then(pageSemantics)) {
-                            Column(Modifier.fillMaxWidth().onSizeChanged { headHeight = with(density) { it.height.toDp() } }
-                                .padding(horizontal = GymLayout.gutter)) {
-                                MovementHead(
-                                    name = Readout.movement(pageMovement, state.catalog),
-                                    equipment = exercise?.equipment.orEmpty(),
-                                    place = LiveLines.place(pageOrder, pageMovement),
+                        // The head is measured first, and the ledger is composed for the room left under it.
+                        SubcomposeLayout(Modifier.fillMaxWidth().then(pageSemantics)) { limits ->
+                            val head = subcompose("head") {
+                                Column(Modifier.fillMaxWidth().padding(horizontal = GymLayout.gutter)) {
+                                    MovementHead(
+                                        name = Readout.movement(pageMovement, state.catalog),
+                                        equipment = exercise?.equipment.orEmpty(),
+                                        place = LiveLines.place(pageOrder, pageMovement),
+                                        enabled = enabled,
+                                        previous = pageOrder.getOrNull(page - 1),
+                                        next = pageOrder.getOrNull(page + 1),
+                                        onMove = { move(it) },
+                                        onOpenSession = {
+                                            sheet = LoggerSheet.Assembly
+                                            telemetry.event("gym_action", mapOf("screen" to "workout", "action" to "open_workout", "outcome" to "ok"))
+                                        },
+                                    )
+                                    clocks?.let { WorkoutClockRow(it) }
+                                    StrandedBand(state.strandedCount, state.strandedBy)
+                                    Refusals(state.refusals, state.catalog, onDismiss = { events.clearRefusals() })
+                                }
+                            }.single().measure(limits)
+                            val ledger = subcompose("ledger") {
+                                Ledger(
+                                    slots = slots,
+                                    inHand = active,
                                     enabled = enabled,
-                                    previous = pageOrder.getOrNull(page - 1),
-                                    next = pageOrder.getOrNull(page + 1),
-                                    onMove = { move(it) },
-                                    onOpenSession = {
-                                        sheet = LoggerSheet.Assembly
-                                        telemetry.event("gym_action", mapOf("screen" to "workout", "action" to "open_workout", "outcome" to "ok"))
-                                    },
+                                    onFix = { sheet = LoggerSheet.Fix(it) },
+                                    room = room - head.height.toDp(),
+                                    transient = transientHeight,
                                 )
-                                clocks?.let { WorkoutClockRow(it) }
-                                StrandedBand(state.strandedCount, state.strandedBy)
-                                Refusals(state.refusals, state.catalog, onDismiss = { events.clearRefusals() })
+                            }.single().measure(limits)
+                            layout(limits.maxWidth, head.height + ledger.height) {
+                                head.placeRelative(0, 0)
+                                ledger.placeRelative(0, head.height)
                             }
-                            Ledger(
-                                slots = slots,
-                                inHand = active,
-                                enabled = enabled,
-                                onFix = { sheet = LoggerSheet.Fix(it) },
-                                room = room - headHeight,
-                                coveredBelow = (transientHeight - (pageHeight - ledgerBottom)).coerceAtLeast(0.dp),
-                                modifier = Modifier.onPlaced {
-                                    ledgerBottom = with(density) { (it.positionInParent().y + it.size.height).toDp() }
-                                },
-                            )
                         }
                     }
                     transient?.let { GymSnackbarHost(it, Modifier.align(Alignment.BottomCenter).testTag("Transient")
@@ -823,8 +823,20 @@ private fun StrandedBand(count: Int, by: Blocker?) {
 
 private val oneLineRow = 56.dp
 
-// The window holds the whole rows that fit the room above the rack, one at least and three at most, however tall large
-// text makes them; its rows scroll inside it, and the set in hand is brought into view without ever stopping mid-row.
+// The rows a ledger rests on, in drawing order: the row at [anchor], then as many whole rows before it as fit [room], then
+// as many after it; that one row at least.
+private fun restingRows(heights: List<Int>, anchor: Int, room: Int): IntRange {
+    if (heights.isEmpty()) return IntRange.EMPTY
+    var first = anchor
+    var last = anchor
+    while (first > 0 && heights.subList(first - 1, last + 1).sum() <= room) first--
+    while (last < heights.lastIndex && heights.subList(first, last + 2).sum() <= room) last++
+    return first..last
+}
+
+// The window rests on the rows around the set in hand that fit the room, so at rest every row it shows is whole and the
+// rest of the room is canvas. Its rows scroll inside it; a transient over its foot pads the rows' end, and the set in hand
+// is brought back into view above it.
 @Composable
 private fun Ledger(
     slots: List<LiveLines.Slot>,
@@ -832,8 +844,7 @@ private fun Ledger(
     enabled: Boolean,
     onFix: (String) -> Unit,
     room: Dp,
-    coveredBelow: Dp,
-    modifier: Modifier = Modifier,
+    transient: Dp,
 ) {
     val colors = MaterialTheme.colorScheme
     val gymColors = MaterialTheme.gymColors
@@ -848,30 +859,31 @@ private fun Ledger(
     val keys = slots.map { it.key }
     SideEffect { heights.keys.retainAll(keys.toSet()) }
     // A row the window has not drawn yet counts as tall as the tallest one it has; until any is drawn, a one-line row.
-    val roomPx = with(density) { room.roundToPx() }
     val tallest = heights.values.maxOrNull() ?: with(density) { oneLineRow.roundToPx() }
-    val window = keys.map { heights[it] ?: tallest }.sortedDescending().take(3)
-        .runningReduce(Int::plus).let { sums -> sums.lastOrNull { it <= roomPx } ?: sums.firstOrNull() ?: 0 }
+    val sizes = keys.map { heights[it] ?: tallest }
     val current = slots.indexOfFirst { it is LiveLines.Slot.Current }
-    val coveredPx = with(density) { coveredBelow.roundToPx() }
-    LaunchedEffect(slots.size, current, inHand, coveredPx, window) {
+    val anchor = if (current >= 0) current else slots.lastIndex
+    val roomPx = with(density) { room.roundToPx() }
+    val resting = restingRows(sizes, anchor, roomPx)
+    val restingHeight = resting.sumOf { sizes[it] }
+    // Resting rows that end the list may stand over canvas inside the window, which then grows to the tallest row, so a
+    // taller row scrolled into it is read whole too.
+    val window = if (resting.last == slots.lastIndex) maxOf(restingHeight, tallest) else restingHeight
+    // The transient stands at the foot of the page, so it covers only what reaches below the canvas under the window.
+    val coveredPx = (with(density) { transient.roundToPx() } - (roomPx - window).coerceAtLeast(0)).coerceAtLeast(0)
+    // A set landing, a transient or a new room brings the list back to rest: the rows clear of the transient, from the top.
+    val clear = restingRows(sizes, anchor, window - coveredPx)
+    LaunchedEffect(slots.size, current, inHand, coveredPx, window, clear) {
         if (!inHand || current < 0) return@LaunchedEffect
-        withFrameNanos {}
-        val shown = reading.layoutInfo
-        val end = shown.viewportEndOffset - coveredPx
-        val whole = shown.visibleItemsInfo.filter { it.offset >= 0 && it.offset + it.size <= end }
-        when {
-            whole.any { it.index == current } -> Unit
-            whole.isNotEmpty() && current > whole.last().index -> reading.scrollToItem((current - whole.size + 1).coerceAtLeast(0))
-            else -> reading.scrollToItem(current)
-        }
+        if (reading.firstVisibleItemIndex != clear.first || reading.firstVisibleItemScrollOffset != 0) reading.scrollToItem(clear.first)
     }
     LazyColumn(
         state = reading,
-        modifier = modifier.fillMaxWidth()
+        modifier = Modifier.fillMaxWidth()
             .height(with(density) { window.toDp() })
             .testTag("Set ledger"),
-        contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = coveredBelow),
+        contentPadding = PaddingValues(start = 12.dp, end = 12.dp,
+            bottom = with(density) { (window - restingHeight + coveredPx).toDp() }),
     ) {
         items(slots, key = { it.key }) { slot ->
             val active = slot is LiveLines.Slot.Current
@@ -949,10 +961,9 @@ private class RackEntry(
     }
 }
 
-// The page above the rack and the rack's controls scroll as one; Log set stays in a band pinned below them. While
-// everything fits, the page stands still and the rack sits on the band, and the room left above the rack is handed to
-// the page, whose ledger takes the whole rows that fit there. Only the keyboard moves things: it lifts the rack and the
-// band as one, and the page never scrolls by itself.
+// The page and the rack's controls scroll as one above Log set's pinned band. The rack is measured first and the page is
+// composed for the room left above it, which it fills while everything fits; only the keyboard moves things, lifting the
+// rack and the band as one, and the page never scrolls by itself.
 @Composable
 private fun Rack(
     entry: RackEntry,
@@ -968,33 +979,30 @@ private fun Rack(
     val colors = MaterialTheme.colorScheme
     val focus = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
-    val density = LocalDensity.current
     val unit = Readout.loadUnit(exercise)
     val load = entry.load
     val count = entry.count
     val page = rememberScrollState()
-    var rackHeight by remember { mutableIntStateOf(0) }
     DisposableEffect(load) { onDispose { if (load.focused || count.focused) onEdit(false) } }
     Column(modifier.fillMaxWidth()) {
         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
             val viewport = constraints.maxHeight
-            val room = with(density) { (viewport - rackHeight).coerceAtLeast(0).toDp() }
-            Layout(content = {
-                top(room)
-                Surface(color = colors.surfaceContainer,
-                    shape = MaterialTheme.shapes.extraLarge.copy(bottomStart = ZeroCornerSize, bottomEnd = ZeroCornerSize),
-                    modifier = Modifier.fillMaxWidth().onSizeChanged { rackHeight = it.height }.testTag("Numeric rack")) {
-                    Column(Modifier.padding(horizontal = GymLayout.gutter).padding(top = 16.dp, bottom = 12.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        SetNumbers(load, count, unit, stepLoad = entry::stepLoad, stepReps = entry::stepReps, commit = entry::commit,
-                            enabled = enabled && !finishing, loadRefused = load.shownRefused ?: refusal,
-                            onFocusChange = { onEdit(load.focused || count.focused) })
+            SubcomposeLayout(Modifier.fillMaxWidth().testTag("Rack page").verticalScroll(page)) { limits ->
+                val rack = subcompose("rack") {
+                    Surface(color = colors.surfaceContainer,
+                        shape = MaterialTheme.shapes.extraLarge.copy(bottomStart = ZeroCornerSize, bottomEnd = ZeroCornerSize),
+                        modifier = Modifier.fillMaxWidth().testTag("Numeric rack")) {
+                        Column(Modifier.padding(horizontal = GymLayout.gutter).padding(top = 16.dp, bottom = 12.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            SetNumbers(load, count, unit, stepLoad = entry::stepLoad, stepReps = entry::stepReps, commit = entry::commit,
+                                enabled = enabled && !finishing, loadRefused = load.shownRefused ?: refusal,
+                                onFocusChange = { onEdit(load.focused || count.focused) })
+                        }
                     }
-                }
-            }, modifier = Modifier.fillMaxWidth().testTag("Rack page").verticalScroll(page)) { measurables, limits ->
-                val rack = measurables[1].measure(limits.copy(minHeight = 0, maxHeight = Constraints.Infinity))
-                val above = measurables[0].measure(limits.copy(minHeight = (viewport - rack.height).coerceAtLeast(0),
-                    maxHeight = Constraints.Infinity))
+                }.single().measure(limits.copy(minHeight = 0, maxHeight = Constraints.Infinity))
+                val room = (viewport - rack.height).coerceAtLeast(0)
+                val above = subcompose("page") { top(room.toDp()) }.single()
+                    .measure(limits.copy(minHeight = room, maxHeight = Constraints.Infinity))
                 layout(limits.maxWidth, above.height + rack.height) {
                     above.placeRelative(0, 0)
                     rack.placeRelative(0, above.height)
