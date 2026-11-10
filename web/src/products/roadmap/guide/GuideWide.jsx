@@ -6,7 +6,7 @@ import { BookOpen, Pencil, Plus } from 'lucide-react';
 import { Button, Tooltip } from '../../../design-system';
 import { wrapTab } from '../../../design-system/feedback/dialogFocus.js';
 import { track } from '../../../telemetry/beacon.js';
-import { GUIDE, STEP_DETAIL, guideCounter, guideLabel } from '../copy.js';
+import { GUIDE, LABELS, guideCounter, guideLabel } from '../copy.js';
 import { t } from '../i18n/index.js';
 import { DiscardDraft } from '../step/DiscardDraft.jsx';
 import { StepIcons } from '../step/StepIcons.jsx';
@@ -166,7 +166,7 @@ export function GuideModal({ guide }) {
               <h2 id={titleId}>{owner ? GUIDE.title : GUIDE.authorsNote}</h2>
               <p>{guide.roadmapTitle}</p>
             </div>
-            <button type="button" className="st-board-step-icon-button" aria-label={STEP_DETAIL.close} onClick={requestClose}>
+            <button type="button" className="st-board-step-icon-button" aria-label={LABELS.close} onClick={requestClose}>
               <StepIcons.close />
             </button>
           </div>
