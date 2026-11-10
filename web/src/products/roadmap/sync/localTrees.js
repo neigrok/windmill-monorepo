@@ -127,31 +127,35 @@ export async function loadDeviceTree(treeId, { ownerResolved = false } = {}) {
 export async function renameLocalTree(treeId, title) {
   const next = title.trim();
   if (!next) return;
-  const registry = new LocalTreeRegistry();
+  await stampDeviceRegister(treeId, 'title', next);
+  new LocalTreeRegistry().rename(treeId, next);
+}
+
+// The guide lives in the blob alone, and the claim's flush carries its stamped write to the server once the tree exists.
+export async function setLocalGuide(treeId, guide) {
+  await stampDeviceRegister(treeId, 'guide', guide);
+}
+
+// One stamped write to a device tree's title or guide, read afresh and retried while another tab's discard moves the record.
+async function stampDeviceRegister(treeId, name, value) {
   const store = new SyncStore();
   let saved = await store.load(treeId).catch(() => null);
-  if (!saved?.frame) {
-    registry.rename(treeId, next);
-    return;
-  }
+  if (!saved?.frame) return;
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const lattice = new TreeLattice(treeId);
     lattice.join(saved.frame);
     const clock = new HlcClock(`r_${crypto.randomUUID?.().slice(0, 8) ?? `${Date.now()}`}`);
     lattice.seedClock(clock);
-    lattice.join({ nodes: [], edges: [], kinds: [], title: { v: next, at: hlcText(clock.tick(Date.now())) } });
+    lattice.join({ nodes: [], edges: [], kinds: [], [name]: { v: value, at: hlcText(clock.tick(Date.now())) } });
     const result = await store.save(treeId, { frame: lattice.toFrame(), lastSeq: saved.lastSeq ?? 0, epochs: saved.epochs,
       gestures: {
         structure: pendingGestures(lattice.toFrame(), saved.confirmed?.structure, saved.gestures?.structure),
         progress: saved.gestures?.progress ?? {},
       } });
-    if (result.status === 'saved') {
-      registry.rename(treeId, next);
-      return;
-    }
+    if (result.status === 'saved') return;
     saved = result.value;
   }
-  throw new Error('local tree changed during rename');
+  throw new Error('local tree changed during a write');
 }
 
 // No server call, ever. The caller must close any live session first, or its pagehide flush

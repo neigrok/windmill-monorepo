@@ -50,8 +50,8 @@ A subgraph uses the same envelope in a socket frame and the HTTP tree response's
 Node and kind registers use flat value/stamp pairs such as `label`/`labelAt`; life uses
 `createdAt`/`deletedAt`. Edges use `from`, `to`, `addedAt` and `removedAt`. Title and guide are
 `{v, at}`; coverage maps each actor to its greatest stamp. Omitted sections and fields never delete
-data. The server joins, stores and serves the guide; the browser lattice does not read or write it,
-so a browser ignores the field.
+data. The browser lattice joins, stores and writes the guide as it does the title: one stamped register
+in the structure lane, outside the undo journal.
 
 | Intent | Meaning |
 |---|---|
@@ -84,7 +84,7 @@ The browser joins the response, adopts its coverage and seq, then flushes each r
 is greater than its confirmed baseline's stamp, excluding the same register and stamp already in
 flight. Status counts the same unconfirmed registers. Actor frontiers cannot confirm individual
 registers: a rejected or unanswered frame can leave a gap below an accepted frame's frontier.
-Flushes split above 256 KiB into independent subgraphs, with title on the first chunk.
+Flushes split above 256 KiB into independent subgraphs, with the title and guide on the first chunk.
 
 The confirmed structure baseline joins grafts, other replicas' live frames and the exact writes retained
 for an acknowledged frame. Own structure echoes join the lattice without confirming: the server broadcasts them

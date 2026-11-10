@@ -169,8 +169,8 @@ roadmaps come from `listAllTrees`. Readers never receive the owner sheet. `TreeS
 equivalent from 744px and owns rename and delete.
 
 **Export** builds one Markdown file through `serializePlan` and `fileNameFor` in `exportArchive.js`, with a
-`<!-- windmill:roadmap -->` marker: its title is metadata, and every step, including each root, is a list item
-with its own completion mark. Kind changes are inline comments, keeping the nested list uninterrupted in
+`<!-- windmill:roadmap -->` marker: its title is metadata, its guide a quote between `<!-- windmill:guide -->` lines that a
+replant reads past, and every step, including each root, is a list item with its own completion mark. Kind changes are inline comments, keeping the nested list uninterrupted in
 Markdown viewers. Indentation preserves primary prerequisites; additional prerequisites become `needs also`
 notes. Kind descriptions and link labels are outside the paste format. Settings exports all roadmaps as a zip. A roadmap it
 can't read stays out, marks included, and the line says *Exported 1 of 2 roadmaps.*; with none read nothing downloads and the
@@ -597,8 +597,8 @@ unless the device index takes a write and the database opens, and a save that fa
 The new-roadmap door asks `deviceKeepsTrees` first: short of a signed-in account, a browser that will not keep a plan says
 *Couldn't open this device's saved work* and offers no field, and holds that line from the shell's own alert so it is said once.
 
-**Local failures.** Every local structural apply, including dispatch, targeted revert, global Undo and Redo
-and tree rename, contains notification, persistence and transport failures after the lattice join. Applied
+**Local failures.** Every local structural apply, including dispatch, targeted revert, global Undo and Redo,
+tree rename and guide write, contains notification, persistence and transport failures after the lattice join. Applied
 dispatches keep their receipt, and persistence or transport failures mark durability at risk. Pre-apply
 failures still throw. A progress mark's save reports the same way. The receive path stores the lattice and its
 separate confirmed baseline. Socket send failures preserve pending writes and reconnect for a fresh graft.
@@ -611,7 +611,7 @@ clears the count, including a refusal, so a signed-out device tree stays quiet.
 **Status.** `SyncSession.subscribeStatus` delivers immutable snapshots of both lanes' unconfirmed user writes,
 pending gestures, unconfirmed in-flight frames, socket phase, browser connectivity and the current refusal.
 `sync/pendingWrites.js` owns unconfirmed-register comparisons and pending-gesture accounting for the session,
-stored lanes and device-tree renames. Status and transport share the per-register outbox rule against confirmed baselines, independently of
+stored lanes and device-tree renames and guides. Status and transport share the per-register outbox rule against confirmed baselines, independently of
 the subscription's actor coverage; transport excludes identical stamps already in flight. A full structure graft
 replaces its confirmed baseline; a lower room sequence triggers an empty-vector resubscribe for that full state.
 Partial grafts join structure confirmation, and every complete progress graft replaces its confirmed overlay.
@@ -687,7 +687,7 @@ replica stamped and the server does not hold, stores them and sends them after i
 that tab showed; it blocks new edits until the graft, as the discarding tab does. Every structure or progress write
 send checks its epoch inside an IndexedDB read transaction, and a read failure keeps the pending bank; a
 delayed epoch notification cannot bypass the check. A closing session's socket waits for sends that have begun. Epoch subscriptions close with the session. Renaming a
-device tree carries the loaded epochs and retries a stale result; moving one keeps its source if the
+device tree or writing its guide carries the loaded epochs and retries a stale result; moving one keeps its source if the
 destination rejects an epoch. Saves are serialized, expose their transaction result to the caller, and keep
 the queue usable after failure. An in-memory edit alone is not confirmed durable.
 

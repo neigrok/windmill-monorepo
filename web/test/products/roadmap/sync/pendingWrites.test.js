@@ -84,3 +84,12 @@ test('precomputed outbox stamps preserve their inputs and agree with frame deliv
   assert.deepEqual(confirmed, writeStamps(baseline));
   assert.deepEqual(carried, inFlight.map(writeStamps));
 });
+
+test('the guide is its own register: it pends, confirms and discards apart from a title written at the same stamp', () => {
+  const frame = { title: { v: 'Sail', at: '7:0:r' }, guide: { v: 'One step a week.', at: '7:0:r' }, nodes: [] };
+  assert.deepEqual(writeStamps(frame), { [key('title', '', 'at')]: '7:0:r', [key('guide', '', 'at')]: '7:0:r' });
+  assert.equal(pendingRecordCount(writeStamps(frame)), 2);
+  assert.deepEqual(outboxWrites(frame, { title: frame.title }), { guide: frame.guide, nodes: [] });
+  assert.deepEqual(outboxWrites(frame, {}, [{ guide: frame.guide }]), { title: frame.title, nodes: [] });
+  assert.deepEqual(pendingGestures(frame, { guide: frame.guide }), { '7:0:r': { [key('title', '', 'at')]: '7:0:r' } });
+});

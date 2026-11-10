@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { TreeLattice } from '../../../../src/products/roadmap/sync/lattice.js';
+import { HlcClock, TreeLattice } from '../../../../src/products/roadmap/sync/lattice.js';
 
 test('legacy authored progress aliases become none through projection, persistence, and replay', () => {
   const lattice = new TreeLattice('t_1');
@@ -97,4 +97,57 @@ test('presentEdges includes masked endpoints and self-edges while liveEdges keep
     { from: 'root', to: 'dock' }, { from: 'dock', to: 'dock' },
   ]);
   assert.deepEqual(lattice.liveEdges(), [{ from: 'root', to: 'dock' }]);
+});
+
+test('two replicas trading guide writes in opposite orders converge on the later stamp, and a fresh one reads it too', () => {
+  const first = { guide: { v: 'One step a week, on weekend sails with Maya.', at: '1770000000000:0:r_a' } };
+  const later = { guide: { v: 'Two steps a week until the June trip.', at: '1770000000000:1:r_b' } };
+  const rename = { title: { v: 'Learn to sail', at: '1770000000000:2:r_a' } };
+  const a = new TreeLattice('t_1', 'Sail');
+  for (const frame of [first, later, rename]) a.join(frame);
+  const b = new TreeLattice('t_1', 'Sail');
+  for (const frame of [rename, later, first]) b.join(frame);
+  const fresh = new TreeLattice('t_1');
+  fresh.join(a.toFrame());
+
+  const registers = (lattice) => ({ title: lattice.title, guide: lattice.guide, frame: { title: lattice.toFrame().title, guide: lattice.toFrame().guide } });
+  const expected = { title: 'Learn to sail', guide: later.guide.v, frame: { title: rename.title, guide: later.guide } };
+  assert.deepEqual(registers(a), expected);
+  assert.deepEqual(registers(b), expected);
+  assert.deepEqual(registers(fresh), expected);
+  assert.equal(a.toTreeData().guide, later.guide.v);
+});
+
+test('a frame that names no guide, or names it null, never clears it; an empty stamped guide does', () => {
+  const lattice = new TreeLattice('t_1', 'Sail', 'The document guide');
+  assert.deepEqual({ guide: lattice.guide, frame: lattice.toFrame().guide }, { guide: 'The document guide', frame: undefined });
+  lattice.join({ guide: { v: 'Written', at: '5:0:r_a' } });
+  lattice.join({ nodes: [{ id: 'root', createdAt: '6:0:r_a' }] });
+  lattice.join({ title: { v: 'Renamed', at: '7:0:r_a' }, guide: null });
+  assert.equal(lattice.guide, 'Written');
+  lattice.join({ guide: { v: 'Older', at: '4:0:r_b' } });
+  assert.equal(lattice.guide, 'Written');
+  lattice.join({ guide: { v: '', at: '8:0:r_b' } });
+  assert.deepEqual({ guide: lattice.guide, frame: lattice.toFrame().guide, projected: lattice.toTreeData().guide }, { guide: '', frame: { v: '', at: '8:0:r_b' }, projected: '' });
+});
+
+test('the guide stamp joins coverage and the clock, and a baseline keeps its text unstamped', () => {
+  const lattice = new TreeLattice('t_1', 'Sail');
+  const frontier = lattice.join({ guide: { v: 'Written', at: '9:3:r_g' } });
+  assert.deepEqual(frontier.toJSON(), { r_g: '9:3:r_g' });
+  assert.deepEqual(lattice.frontier().toJSON(), { r_g: '9:3:r_g' });
+  const clock = new HlcClock('r_mine');
+  lattice.seedClock(clock);
+  assert.deepEqual(clock.tick(1), { ms: 9, counter: 4, actor: 'r_mine' });
+  const baseline = lattice.baseline();
+  assert.deepEqual({ title: baseline.title, guide: baseline.guide, frame: baseline.toFrame(), frontier: baseline.frontier().toJSON() },
+    { title: 'Sail', guide: 'Written', frame: { nodes: [], edges: [], kinds: [] }, frontier: {} });
+});
+
+test('a register whose text is not a string makes the whole frame malformed and leaves the lattice untouched', () => {
+  const lattice = new TreeLattice('t_1', 'Sail', 'Kept');
+  for (const register of [{ guide: { v: 7, at: '5:0:r_a' } }, { guide: { at: '5:0:r_a' } }, { title: { v: null, at: '5:0:r_a' } }]) {
+    assert.throws(() => lattice.join({ nodes: [{ id: 'root', createdAt: '5:0:r_a' }], ...register }), { message: 'malformed tree register' });
+  }
+  assert.deepEqual({ title: lattice.title, guide: lattice.guide, nodes: lattice.nodes.size }, { title: 'Sail', guide: 'Kept', nodes: 0 });
 });

@@ -113,7 +113,7 @@ test('asynchronous persistence failure retains its real error after dispatch suc
   assert.equal(session.durabilityAtRisk, true);
 });
 
-for (const action of ['dispatch', 'revert', 'undo', 'redo', 'renameTree']) {
+for (const action of ['dispatch', 'revert', 'undo', 'redo', 'renameTree', 'setGuide']) {
   for (const boundary of ['status', 'notify', 'persist', 'save', 'send']) {
     test(`${action} contains ${boundary} failure after applying and retains its undo journal`, async () => {
       const failure = new Error('private boundary failure');
@@ -149,6 +149,7 @@ for (const action of ['dispatch', 'revert', 'undo', 'redo', 'renameTree']) {
         if (action === 'undo') session.undo();
         if (action === 'redo') session.redo();
         if (action === 'renameTree') result = session.renameTree('New title');
+        if (action === 'setGuide') result = session.setGuide('One step a week.');
       });
       await Promise.resolve();
       const operation = boundary === 'status' || boundary === 'notify' ? 'notify' : boundary === 'send' ? 'send' : 'persist';
@@ -156,14 +157,15 @@ for (const action of ['dispatch', 'revert', 'undo', 'redo', 'renameTree']) {
       assert.equal(session.durabilityAtRisk, operation !== 'notify');
       assert.deepEqual(snapshot(session), [{ id: 'root', label: ['dispatch', 'redo'].includes(action) ? 'Renamed' : 'Root', prerequisites: [] }]);
       assert.deepEqual([session.undoStack.length, session.redoStack.length], {
-        dispatch: [1, 0], revert: [0, 0], undo: [0, 1], redo: [1, 0], renameTree: [0, 0],
+        dispatch: [1, 0], revert: [0, 0], undo: [0, 1], redo: [1, 0], renameTree: [0, 0], setGuide: [0, 0],
       }[action]);
       assert.deepEqual({ structure: session.statusSnapshot().structureGestures, progress: session.statusSnapshot().progressGestures }, {
-        structure: { dispatch: 1, revert: 2, undo: 2, redo: 3, renameTree: 1 }[action], progress: 0,
+        structure: { dispatch: 1, revert: 2, undo: 2, redo: 3, renameTree: 1, setGuide: 1 }[action], progress: 0,
       });
       if (action === 'dispatch') assert.equal(Object.isFrozen(result), true);
-      if (action === 'revert' || action === 'renameTree') assert.equal(result, true);
+      if (['revert', 'renameTree', 'setGuide'].includes(action)) assert.equal(result, true);
       if (action === 'renameTree') assert.equal(session.lattice.title, 'New title');
+      if (action === 'setGuide') assert.equal(session.lattice.guide, 'One step a week.');
     });
   }
 }
@@ -1806,4 +1808,76 @@ test('invalid progress rows in repeated grafts and echoes are reported without f
   assert.deepEqual(progressFrames(socket), []);
   assert.deepEqual(reports.map(({ operation, error, tags }) => ({ operation, message: error.message, stack: !!error.stack, tags })),
     Array.from({ length: 3 }, () => ({ operation: 'roadmap-sync-progress-mark', message: 'Roadmap progress mark invalid', stack: true, tags: { lane: 'progress' } })));
+});
+
+test('the guide is set through one stamped register write: none before the lattice loads, none for the same text, and empty is none', (t) => {
+  const waiting = new SyncSession({ treeId: 'tree', guide: 'From the document', registry: null });
+  assert.equal(waiting.setGuide('Too early'), false);
+  assert.equal(waiting.lattice.guide, 'From the document');
+
+  const { session } = connectedSession(t);
+  const shown = [];
+  session.onTreeChanged((data) => shown.push(data.guide));
+  assert.equal(session.setGuide(''), true);
+  assert.deepEqual(structureFrames(session.ws), []);
+  assert.equal(session.setGuide('One step a week, on weekend sails with Maya.'), true);
+  const written = session.lattice.toFrame().guide;
+  assert.deepEqual(structureFrames(session.ws).map(withoutFrameId), [{
+    t: 'subgraph', v: 1, treeId: 'tree', actor: session.actor, intent: 'live', nodes: [], edges: [], kinds: [], guide: written,
+  }]);
+  assert.equal(parseHlc(written.at).actor, session.actor);
+  assert.deepEqual([session.undoStack.length, session.statusSnapshot().structureGestures], [0, 1]);
+  session.receiveAck({ frameId: structureFrames(session.ws)[0].frameId });
+  assert.deepEqual(session.confirmedStructure.toFrame().guide, written);
+  assert.equal(session.setGuide(''), true);
+  assert.deepEqual(structureFrames(session.ws).at(-1).guide, session.lattice.toFrame().guide);
+  assert.deepEqual(shown, ['One step a week, on weekend sails with Maya.', '']);
+});
+
+test('a guide written offline flushes alone when the socket returns, beside nothing else', (t) => {
+  const { session } = connectedSession(t, {}, { chunkBytes: 20 });
+  session.phase = 'offline';
+  session.setGuide('A guide larger than the chunk budget');
+  const guide = session.lattice.toFrame().guide;
+  assert.deepEqual(structureFrames(session.ws), []);
+  session.phase = 'live';
+  session.flush();
+  assert.deepEqual(structureFrames(session.ws).map(withoutFrameId), [flushFrame({ nodes: [], edges: [], kinds: [], guide }, session.actor)]);
+});
+
+test('a guide set elsewhere arrives live and confirms, and a live frame without one keeps it', (t) => {
+  const { session } = connectedSession(t);
+  const shown = [];
+  session.onTreeChanged((data) => shown.push(data.guide));
+  const elsewhere = { v: 'Two steps a week until the June trip.', at: '5:0:srv' };
+  session.receiveLive({ t: 'subgraph', intent: 'live', seq: 2, frameId: 'agent', nodes: [], edges: [], kinds: [], guide: elsewhere });
+  session.receiveLive({ t: 'subgraph', intent: 'live', seq: 3, frameId: 'peer', nodes: [{ id: 'root', label: 'Renamed', labelAt: '6:0:srv' }], edges: [], kinds: [], guide: null });
+  assert.deepEqual(shown, [elsewhere.v, elsewhere.v]);
+  assert.deepEqual({ lattice: session.lattice.toFrame().guide, confirmed: session.confirmedStructure.toFrame().guide, pending: session.statusSnapshot().structurePending },
+    { lattice: elsewhere, confirmed: elsewhere, pending: 0 });
+});
+
+test('a device tree adopted at sign-in carries its stamped guide to the server tree through the first flush', async (t) => {
+  const blob = {
+    frame: { title: { v: 'Sail', at: '3:0:r_device' }, guide: { v: 'Written signed out.', at: '4:0:r_device' },
+      nodes: [{ id: 'root', createdAt: '2:0:r_device', label: 'Sail', labelAt: '2:0:r_device' }], edges: [], kinds: [] },
+    lastSeq: 0, epochs: { structure: 0, progress: 0 }, confirmed: { structure: null, progress: null },
+  };
+  t.mock.method(globalThis, 'setInterval', () => 0);
+  t.mock.method(globalThis, 'clearInterval', () => {});
+  const priorSocket = globalThis.WebSocket;
+  globalThis.WebSocket = TestSocket;
+  t.after(() => { globalThis.WebSocket = priorSocket; });
+  const session = new SyncSession({ treeId: 'tree', title: 'Sail', registry: null, store: {
+    load: async () => structuredClone(blob), save: async () => ({ status: 'saved' }), requestPersistent: async () => true,
+  } });
+  t.after(() => session.close());
+  await session.start();
+  session.ws.open();
+  session.receiveState({ t: 'subgraph', intent: 'delta', seq: 1, nodes: [], edges: [], kinds: [], title: { v: 'Sail', at: '9:0:srv' }, guide: null });
+  const [flush] = structureFrames(session.ws);
+  assert.equal(flush.intent, 'flush');
+  assert.deepEqual(flush.guide, blob.frame.guide);
+  session.receiveAck({ frameId: flush.frameId });
+  assert.deepEqual({ guide: session.confirmedStructure.guide, pending: session.statusSnapshot().structurePending }, { guide: 'Written signed out.', pending: 0 });
 });

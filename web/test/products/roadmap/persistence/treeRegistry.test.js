@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { setVisibility } from '../../../../src/products/roadmap/persistence/TreeRegistry.js';
+import { setGuide, setVisibility } from '../../../../src/products/roadmap/persistence/TreeRegistry.js';
 import { AuthError } from '../../../../src/shell/auth/AuthClient.js';
 
 const BASE = 'http://localhost:8088';
@@ -92,4 +92,20 @@ test('setVisibility — a 402 carries the code AND the detail through to the dia
     assert.equal(err.detail, 'Unlisted keeps this tree reachable only by its link, and stays free.');
     return true;
   });
+});
+
+test('setGuide — PATCHes {guide} credentialed, resolves on 204, and keeps a refusal\'s status and sentence', async () => {
+  const calls = stubFetch(() => ({ ok: true, status: 204 }));
+  assert.equal(await setGuide('t_abc', 'One step a week.'), undefined);
+  assert.deepEqual({ url: calls[0].url, method: calls[0].init.method, credentials: calls[0].init.credentials, body: JSON.parse(calls[0].init.body) },
+    { url: `${BASE}/v1/trees/t_abc`, method: 'PATCH', credentials: 'include', body: { guide: 'One step a week.' } });
+  for (const [status, body] of [[400, { error: 'the guide is 5001 characters; the most is 5000' }], [403, { code: 'not-yours' }], [404, {}]]) {
+    stubFetch(() => ({ ok: false, status, json: async () => body }));
+    await assert.rejects(setGuide('t_abc', 'x'), (err) => {
+      assert.ok(err instanceof AuthError);
+      assert.deepEqual({ status: err.status, code: err.code, said: err.said, message: err.message },
+        { status, code: body.code, said: body.error, message: 'Could not save the guide' });
+      return true;
+    });
+  }
 });

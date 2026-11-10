@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { IDBFactory, IDBObjectStore } from 'fake-indexeddb';
 import { SyncStore } from '../../../../src/products/roadmap/sync/SyncStore.js';
-import { bearImportedTree, bearLocalTree, deviceKeepsTrees, renameLocalTree, moveLocalTree, deleteLocalTree, forgetDeviceTrees } from '../../../../src/products/roadmap/sync/localTrees.js';
+import { bearImportedTree, bearLocalTree, deviceKeepsTrees, loadDeviceTree, renameLocalTree, setLocalGuide, moveLocalTree, deleteLocalTree, forgetDeviceTrees } from '../../../../src/products/roadmap/sync/localTrees.js';
 import { LocalTreeRegistry } from '../../../../src/products/roadmap/persistence/LocalTreeRegistry.js';
 
 const frame = { nodes: [{ id: 'root', createdAt: '1:0:server', label: 'Root', labelAt: '1:0:server' }], edges: [], kinds: [] };
@@ -152,4 +152,20 @@ test('a lattice the store refuses to take leaves no index row behind: the plant 
   t.after(() => { IDBObjectStore.prototype.put = put; });
   await assert.rejects(bearImportedTree(plan), { name: 'SecurityError' });
   assert.deepEqual(Object.keys(registry.entries()), ['source']);
+});
+
+test('a device tree keeps its guide in its blob as one stamped write that the claim will flush, and the index keeps its title', async (t) => {
+  const { store, registry } = device(t);
+  await store.save('source', { frame, confirmed: { structure: frame }, gestures: { structure: {}, progress: {} } });
+  await setLocalGuide('source', 'Written on this device.');
+  const saved = await store.load('source');
+  assert.equal(saved.frame.guide.v, 'Written on this device.');
+  assert.deepEqual(Object.keys(saved.gestures.structure), [saved.frame.guide.at]);
+  assert.deepEqual(saved.frame.nodes, frame.nodes);
+  assert.equal(registry.get('source').title, 'Original');
+  globalThis.window.wmDeviceConfirmation = { owner: null };
+  const opened = await loadDeviceTree('source', { ownerResolved: true });
+  assert.deepEqual({ title: opened.title, guide: opened.guide }, { title: 'Original', guide: 'Written on this device.' });
+  await moveLocalTree('source', 'destination');
+  assert.deepEqual((await store.load('destination')).frame.guide, saved.frame.guide);
 });
