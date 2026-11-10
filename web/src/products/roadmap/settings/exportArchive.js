@@ -1,4 +1,5 @@
-// The export format IS the paste format: a file dropped back into the composer replants.
+// The export format IS the paste format: a file dropped back into the composer replants the tree's steps; its guide rides
+// along as a quote the replant reads past.
 
 import { listAllTrees } from '../persistence/TreeRegistry.js';
 import { HttpTreeRepository } from '../persistence/HttpTreeRepository.js';

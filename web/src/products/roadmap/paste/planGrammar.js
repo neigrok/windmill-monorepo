@@ -307,7 +307,7 @@ export function serializePlan(treeData, kinds, progress) {
   const completed = completedNodeIds(treeData, progress);
   const out = [`# ${title}`, EXPORT_MARKER];
   if (/\S/.test(treeData.guide ?? '')) {
-    out.push(GUIDE_OPEN, ...treeData.guide.split('\n').map((line) => (line ? `> ${line}` : '>')), GUIDE_CLOSE);
+    out.push(GUIDE_OPEN, ...treeData.guide.split(/\r\n|\r|\n/).map((line) => (line ? `> ${line}` : '>')), GUIDE_CLOSE);
   }
   const childrenOf = new Map();
   const roots = [];
