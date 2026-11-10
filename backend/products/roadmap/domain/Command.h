@@ -27,6 +27,7 @@ constexpr std::size_t kMaxLinkUrlLength = 2048;          // a link's url
 constexpr std::size_t kMaxNodes = 10000;                 // present nodes admitted per tree
 constexpr std::size_t kMaxEdges = 20000;                 // present edges admitted per tree
 constexpr std::size_t kMaxTitleChars = 200;              // a roadmap's name (TreeRegistry truncates)
+constexpr std::size_t kMaxGuideChars = 5000;             // a roadmap's guide: what it is, how to work it
 constexpr std::size_t kMaxKinds = 6;                     // legend kinds per tree (one per hue)
 constexpr std::size_t kMaxKindLabelLength = 24;          // a legend kind's label
 constexpr std::size_t kMaxKindDescriptionLength = 80;    // a kind's sorting brief
@@ -37,7 +38,8 @@ constexpr std::size_t kMaxKindDescriptionLength = 80;    // a kind's sorting bri
 // only valid text: every door that holds a cap refuses malformed UTF-8 first (isValidUtf8 — no
 // overlong form, no surrogate, nothing past U+10FFFF, no lone or missing continuation byte), with
 // the clause `<field> is not valid UTF-8`, so a byte sequence Postgres would reject never reaches
-// a live room.
+// a live room. It then refuses a NUL, which a Postgres text value ends at, with the clause
+// `<field> contains a NUL character`, so a room never holds text its row would cut short.
 bool isValidUtf8(const std::string& bytes);
 std::size_t codePointCount(const std::string& utf8);
 std::size_t byteOffsetOfCodePoint(const std::string& utf8, std::size_t index);
@@ -157,7 +159,9 @@ std::optional<Admission> admit(const LooseGraph& graph, const Graft& incoming);
 std::optional<Admission> admit(const LooseGraph& graph, const TreeData& incoming);
 std::optional<Admission> admit(const LooseGraph& graph, const GraphState& incoming);
 std::optional<Admission> admit(const Legend& legend, const LegendState& incoming);
+// A tree register's one bound: valid UTF-8 with no NUL, within its cap. Past it is malformed, never truncated.
 std::optional<Admission> admitTitle(const std::string& title);
+std::optional<Admission> admitGuide(const std::string& guide);
 
 // The single feed-worthy deed a subgraph delta represents, read off which lattice fields the frame
 // sets. Salience order: a node's own life, then legend deeds, then a node's fields, then edges. A

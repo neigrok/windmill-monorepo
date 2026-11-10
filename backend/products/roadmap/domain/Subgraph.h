@@ -38,12 +38,14 @@ struct Gesture {
 
 // The one envelope every sync scenario shares: a partial, stamped slice of a tree's lattice.
 // Absent sections/entries/fields mean "no information". `coverage` is present only on a `delta`.
+// `title` and `guide` are the tree's own registers, beside its graph and legend.
 struct Subgraph {
   TreeId treeId;
   std::string frameId;
   std::string actor;
   SubgraphIntent intent = SubgraphIntent::live;
   std::optional<Lww<std::string>> title;
+  std::optional<Lww<std::string>> guide;
   GraphState graph;
   LegendState legend;
   std::vector<Gesture> gestures;
@@ -53,6 +55,8 @@ struct Subgraph {
 
 // Every stamp a full serialized state carries, folded together; a live room keeps this incrementally.
 VersionVector frontier(const GraphState& graph, const LegendState& legend);
+// Every stamp one frame carries: its graph, its legend and the tree registers it sets.
+VersionVector frontier(const Subgraph& frame);
 
 // The subgraph a peer at `since` is missing: every entry stamped beyond the vector, with
 // already-covered fields masked back to "no information". Its coverage is the sender's full frontier.

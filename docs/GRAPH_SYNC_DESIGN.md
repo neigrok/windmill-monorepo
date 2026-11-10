@@ -6,7 +6,7 @@ contract covers the shared wire format, browser coverage and offline storage.
 
 ## State and clocks
 
-A tree contains independent LWW registers for node fields, legend fields and title, plus add-biased
+A tree contains independent LWW registers for node fields, legend fields, title and guide, plus add-biased
 LWW element sets for node, edge and kind existence. Join is pointwise: absent entries and unset
 stamps contribute no information. Deletion is an explicit tombstone; node fields and incident edges
 survive it, and edges with absent endpoints are masked from the derived graph.
@@ -42,13 +42,16 @@ A subgraph uses the same envelope in a socket frame and the HTTP tree response's
   "kinds": [],
   "gestures": [],
   "title": null,
+  "guide": null,
   "coverage": null
 }
 ```
 
 Node and kind registers use flat value/stamp pairs such as `label`/`labelAt`; life uses
-`createdAt`/`deletedAt`. Edges use `from`, `to`, `addedAt` and `removedAt`. Title is `{v, at}`;
-coverage maps each actor to its greatest stamp. Omitted sections and fields never delete data.
+`createdAt`/`deletedAt`. Edges use `from`, `to`, `addedAt` and `removedAt`. Title and guide are
+`{v, at}`; coverage maps each actor to its greatest stamp. Omitted sections and fields never delete
+data. The server joins, stores and serves the guide; the browser lattice does not read or write it,
+so a browser ignores the field.
 
 | Intent | Meaning |
 |---|---|

@@ -73,6 +73,7 @@ struct FakeTreeRepository : TreeRepository {
   // One entry per save call: how many node rows the slice carried.
   std::vector<std::size_t> savedNodeCounts;
   bool latticeLoadsFail = false;  // load throws, the way a dropped connection does; loadAccess still answers
+  bool savesFail = false;  // save throws, the way a write Postgres refuses does
   std::optional<StoredTree> load(const TreeId& tree) override {
     if (latticeLoadsFail) throw std::runtime_error("connection reset mid-read");
     return row(tree);
@@ -111,9 +112,10 @@ struct FakeTreeRepository : TreeRepository {
     return lineage;
   }
   bool save(const TreeId& tree, const GraphState& state, const LegendState& legend,
-            const Lww<std::string>& title, Seq head) override {
+            const Lww<std::string>& title, const Lww<std::string>& guide, Seq head) override {
+    if (savesFail) throw std::runtime_error("the write was refused");
     savedNodeCounts.push_back(state.nodes.size());
-    if (byId.count(tree.str()) == 0) return false;  // a tree with no row is left without one
+    if (!row(tree)) return false;  // a tree whose row is gone or retired is left as it is
     StoredTree& stored = byId[tree.str()];  // merge the slice, keep the rest
     for (const NodeStateEntry& node : state.nodes) {
       auto match = std::find_if(stored.state.nodes.begin(), stored.state.nodes.end(),
@@ -133,8 +135,9 @@ struct FakeTreeRepository : TreeRepository {
       if (match != stored.legend.kinds.end()) *match = kind;
       else stored.legend.kinds.push_back(kind);
     }
-    // The title register lands only under a dominating stamp, the rule PgTreeRepository enforces in SQL; only Postgres carries the byte-order tiebreak collation.
+    // Each register lands only under a dominating stamp, the rule PgTreeRepository enforces in SQL; only Postgres carries the byte-order tiebreak collation.
     if (title.stamp > stored.title.stamp) stored.title = title;
+    if (guide.stamp > stored.guide.stamp) stored.guide = guide;
     stored.head = head;
     return true;
   }
@@ -202,10 +205,11 @@ struct FakeTreeRepository : TreeRepository {
     it->second.visibility = visibility;
   }
   void fork(const TreeId& newTree, const TreeId& source, const GraphState& state,
-            const LegendState& legend, const std::string& title, const UserId& owner) override {
+            const LegendState& legend, const Lww<std::string>& title, const Lww<std::string>& guide,
+            const UserId& owner) override {
     if (byId.count(newTree.str())) throw DuplicateTree{};  // the same unique index as create
-    // A fork's title starts stampless, and it is born private, like every fresh tree.
-    byId[newTree.str()] = StoredTree{state, legend, {title, {}}, 0, owner};
+    // A fork is born private, like every fresh tree.
+    byId[newTree.str()] = StoredTree{state, legend, title, 0, owner, Visibility::private_, 0, guide};
     forkedFrom[newTree.str()] = source.str();
   }
 };

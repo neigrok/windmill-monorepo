@@ -6,8 +6,10 @@
 #include "products/roadmap/domain/Command.h"
 #include "products/roadmap/domain/Access.h"
 
+#include <cstddef>
 #include <optional>
 #include <utility>
+#include <variant>
 
 namespace wm {
 
@@ -100,12 +102,19 @@ void TreeRegistryApi::patchTree(const drogon::HttpRequestPtr& req, HttpCallback&
     return;
   }
   std::shared_ptr<Json::Value> json = req->getJsonObject();
-  if (json && !json->isObject()) {
+  // A body that is there but is not one JSON object is refused, never read as an empty rename.
+  if ((json && !json->isObject()) || (!json && !req->body().empty())) {
     callback(error(drogon::k400BadRequest, "invalid json body"));
     return;
   }
+  std::size_t registers = 0;
+  for (const char* field : {"visibility", "guide", "title"}) registers += json && json->isMember(field);
+  if (registers > 1) {
+    callback(error(drogon::k400BadRequest, "a PATCH sets one register per call: send visibility, guide or title alone"));
+    return;
+  }
 
-  // A {visibility} body reshares the tree, a {title} body renames it.
+  // A {visibility} body reshares the tree, a {guide} body sets its guide, a {title} body renames it.
   if (json && json->isMember("visibility")) {
     const std::string requested = (*json)["visibility"].asString();
     if (requested != "private" && requested != "unlisted" && requested != "public") {
@@ -132,6 +141,36 @@ void TreeRegistryApi::patchTree(const drogon::HttpRequestPtr& req, HttpCallback&
     return;
   }
 
+  if (json && json->isMember("guide")) {
+    if (!(*json)["guide"].isString()) {
+      callback(error(drogon::k400BadRequest, "guide must be a string"));
+      return;
+    }
+    const std::variant<TreeRegistry::GuideChange, Admission> outcome =
+        registry_->setGuide(TreeId{treeId}, *caller, (*json)["guide"].asString());
+    if (const Admission* refusal = std::get_if<Admission>(&outcome)) {
+      callback(error(drogon::k400BadRequest, refusal->reason));
+      return;
+    }
+    const TreeRegistry::GuideChange change = std::get<TreeRegistry::GuideChange>(outcome);
+    if (change == TreeRegistry::GuideChange::notFound) {
+      callback(error(drogon::k404NotFound, "no such tree"));
+      return;
+    }
+    if (change == TreeRegistry::GuideChange::notYours) {
+      callback(forbidden(WriteRefusal::notYours));
+      return;
+    }
+    if (change == TreeRegistry::GuideChange::nobodysTree) {
+      callback(forbidden(WriteRefusal::nobodysTree));
+      return;
+    }
+    auto response = drogon::HttpResponse::newHttpResponse();
+    response->setStatusCode(drogon::k204NoContent);
+    callback(response);
+    return;
+  }
+
   const std::string title = json ? json->get("title", "").asString() : "";
   TreeRegistry::Renaming outcome = registry_->rename(TreeId{treeId}, *caller, title);
   if (outcome == TreeRegistry::Renaming::blankTitle) {
@@ -140,6 +179,10 @@ void TreeRegistryApi::patchTree(const drogon::HttpRequestPtr& req, HttpCallback&
   }
   if (outcome == TreeRegistry::Renaming::malformedTitle) {
     callback(error(drogon::k400BadRequest, "the title is not valid UTF-8"));
+    return;
+  }
+  if (outcome == TreeRegistry::Renaming::nulInTitle) {
+    callback(error(drogon::k400BadRequest, "the title contains a NUL character"));
     return;
   }
   if (outcome == TreeRegistry::Renaming::notFound) {

@@ -55,6 +55,14 @@ Json::Value rejectFrame(const std::string& treeId, const char* code, const std::
   reject["reason"] = reason;
   return reject;
 }
+
+// A frame whose text is not one whole JSON value is refused whole, answered by whatever its readable
+// head names, so the client can settle the frame it sent.
+void refuseUnreadable(const drogon::WebSocketConnectionPtr& conn, const Json::Value& head) {
+  Json::Value reject = rejectFrame(head.get("treeId", "").asString(), kBadFrame, "this frame could not be read");
+  if (head["frameId"].isString()) reject["frameId"] = head["frameId"];
+  send(conn, reject);
+}
 }
 
 void setCollab(std::shared_ptr<Collab> collab) { g_collab = std::move(collab); }
@@ -138,26 +146,30 @@ void Collab::onMessage(const drogon::WebSocketConnectionPtr& conn, const std::st
   }  // a flooding connection's frames are dropped before parse
   // Drogon does not wrap WS callbacks: an exception escaping here aborts the process.
   try {
-    Json::Value frame = parse(text);
+    // jsoncpp keeps what it read before a break: that head may name the frame a refusal answers, but
+    // no part of a frame that does not parse whole is applied.
+    const std::optional<Json::Value> whole = parseWhole(text);
+    const Json::Value frame = whole ? *whole : parse(text);
     if (!frame.isObject()) return;
     std::string type = frame.get("t", "").asString();
-    if (type == "ping") { Json::Value pong(Json::objectValue); pong["t"] = "pong"; send(conn, pong); return; }
     std::string treeId = frame.get("treeId", "").asString();
-    if (type == "subscribe") return subscribe(conn, treeId, frame);
     if (type == "subgraph" || type == "progress") {
       WriteObservation observation(type == "subgraph" ? "roadmap.ws.subgraph" : "roadmap.ws.progress", "roadmap", "websocket");
       WriteContext context(observation);
       try {
-        if (type == "subgraph") subgraphFrame(conn, treeId, frame);
+        if (!whole) refuseUnreadable(conn, frame);
+        else if (type == "subgraph") subgraphFrame(conn, treeId, frame);
         else progress(conn, treeId, frame);
         observation.finish();
       } catch (const std::exception& error) { observation.fail(error); throw; }
       return;
     }
-
+    if (!whole) return refuseUnreadable(conn, frame);
+    if (type == "ping") { Json::Value pong(Json::objectValue); pong["t"] = "pong"; send(conn, pong); return; }
+    if (type == "subscribe") return subscribe(conn, treeId, frame);
     if (type == "presence") { presence_.update(conn, TreeId{treeId}, frame); return; }
   } catch (const std::exception& error) {
-    LOG_ERROR << "dropped malformed ws frame";
+    LOG_ERROR << "a ws frame failed before it was answered";
   }
 }
 
@@ -192,12 +204,9 @@ void Collab::subscribe(const drogon::WebSocketConnectionPtr& conn, const std::st
       bus_.subscribe(TreeId{treeId}, conn, principal.user);
       presence_.join(conn, TreeId{treeId});
 
-      Subgraph delta = deltaBetween(room->exportState(), room->exportLegend(), clientVector);
-      delta.treeId = TreeId{treeId};
+      Subgraph delta = room->deltaSince(clientVector);
       delta.frameId = "delta-" + std::to_string(room->head());
       delta.actor = "srv";
-      if (!clientVector.covers(room->title().stamp)) delta.title = room->title();
-      if (delta.coverage) delta.coverage->observe(room->title().stamp);
       frame = toJson(delta);
       frame["seq"] = static_cast<Json::Int64>(room->head());
     } catch (const std::exception& error) {
@@ -272,11 +281,9 @@ void Collab::subgraphFrame(const drogon::WebSocketConnectionPtr& conn, const std
   }
   incoming.treeId = TreeId{treeId};
 
-  // The skew clamp covers the title register too.
+  // The skew clamp covers every stamp the frame carries, the title and guide registers included.
   std::uint64_t nowMs = clock_.nowMs();
-  VersionVector front = frontier(incoming.graph, incoming.legend);
-  if (incoming.title) front.observe(incoming.title->stamp);
-  for (const auto& [actor, mark] : front.marks) {
+  for (const auto& [actor, mark] : frontier(incoming).marks) {
     if (mark.physicalMs > nowMs + kMaxSkewMs) {
       Json::Value skew(Json::objectValue);
       skew["t"] = "skew";
@@ -292,24 +299,35 @@ void Collab::subgraphFrame(const drogon::WebSocketConnectionPtr& conn, const std
   std::optional<Json::Value> reject;  // absent while the write is still admissible
   {
     std::lock_guard<std::mutex> lock(registry_.strandFor(TreeId{treeId}));
-    // Both gates decide off the stored access row, before the room is materialized. Read gate first:
-    // a private tree answers "no such tree", byte-identical to an absent one.
-    const std::optional<TreeAccess> access = registry_.accessOf(TreeId{treeId});
-    std::optional<WriteRefusal> refusal =
-        access ? writeRefusalFor(principal.user, access->owner) : std::nullopt;
-    if (!access || !canRead(principal.user, access->owner, access->visibility)) {
-      reject = rejectFrame(treeId, kNoSuchTree, "no such tree \"" + treeId + "\"");
-    } else if (refusal) {
-      reject = rejectFrame(treeId, codeOf(*refusal), sentenceOf(*refusal));
-    } else if (TreeRoom* room = registry_.open(TreeId{treeId}); !room) {
-      reject = rejectFrame(treeId, kNoSuchTree, "no such tree \"" + treeId + "\"");  // deleted between the row and the load
-    } else if (std::optional<Admission> admission = room->admit(incoming)) {
-      // joinSubgraph never refuses: the whole-tree ceilings (domain/Command.h) are enforced here.
-      reject = rejectFrame(treeId, admission->verdict == Admission::Verdict::tooLarge ? kTreeTooLarge : kBadFrame,
-                           admission->reason);
-    } else {
-      seq = room->joinSubgraph(incoming, principal.user);
-      if (seq) registry_.persist(TreeId{treeId});  // persist before the ack, so the ack attests durability
+    try {
+      // Both gates decide off the stored access row, before the room is materialized. Read gate first:
+      // a private tree answers "no such tree", byte-identical to an absent one.
+      const std::optional<TreeAccess> access = registry_.accessOf(TreeId{treeId});
+      std::optional<WriteRefusal> refusal =
+          access ? writeRefusalFor(principal.user, access->owner) : std::nullopt;
+      if (!access || !canRead(principal.user, access->owner, access->visibility)) {
+        reject = rejectFrame(treeId, kNoSuchTree, "no such tree \"" + treeId + "\"");
+      } else if (refusal) {
+        reject = rejectFrame(treeId, codeOf(*refusal), sentenceOf(*refusal));
+      } else if (TreeRoom* room = registry_.open(TreeId{treeId}); !room) {
+        reject = rejectFrame(treeId, kNoSuchTree, "no such tree \"" + treeId + "\"");  // deleted between the row and the load
+      } else if (std::optional<Admission> admission = room->admit(incoming)) {
+        // joinSubgraph never refuses: the whole-tree ceilings (domain/Command.h) are enforced here.
+        reject = rejectFrame(treeId, admission->verdict == Admission::Verdict::tooLarge ? kTreeTooLarge : kBadFrame,
+                             admission->reason);
+      } else {
+        seq = room->joinSubgraph(incoming, principal.user);
+        // Persist before the ack, so the ack attests durability. A row gone under its live room holds
+        // nothing: the room is retired, which drops its readers, and the frame answers as absent.
+        if (seq && !registry_.persist(TreeId{treeId})) {
+          registry_.retire(TreeId{treeId});
+          reject = rejectFrame(treeId, kNoSuchTree, "no such tree \"" + treeId + "\"");
+        }
+      }
+    } catch (const std::exception& error) {
+      // An infrastructure failure is never the socket's to relay, but the frame's author is answered.
+      reportCurrentWriteFailure(error);
+      reject = rejectFrame(treeId, kServerError, "the server could not save this edit");
     }
   }
   if (reject) {

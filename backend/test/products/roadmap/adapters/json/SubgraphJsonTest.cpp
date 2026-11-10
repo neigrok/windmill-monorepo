@@ -6,6 +6,8 @@
 #include "products/roadmap/domain/Subgraph.h"
 #include "test/testing.h"
 
+#include <stdexcept>
+
 using namespace wm;
 
 static NodeId nid(const char* s) { return NodeId{std::string(s)}; }
@@ -51,17 +53,22 @@ TEST(live_subgraph_round_trips_exactly) {
   CHECK(roundTrip(subgraph) == subgraph);
 }
 
-TEST(title_round_trips) {
+TEST(title_and_guide_ride_the_wire_as_v_at_registers_and_round_trip) {
   Subgraph subgraph;
   subgraph.treeId = TreeId{"t1"};
   subgraph.frameId = "f_1";
   subgraph.actor = "u_1#r_a";
   subgraph.title = Lww<std::string>{"My Roadmap", at(9)};
+  subgraph.guide = Lww<std::string>{"One branch at a time.", at(11)};
 
-  Subgraph back = roundTrip(subgraph);
-  REQUIRE(back.title.has_value());
-  CHECK_EQ(back.title->value, std::string("My Roadmap"));
-  CHECK(back == subgraph);
+  Json::Value json = toJson(subgraph);
+  CHECK_EQ(dump(json["title"]), std::string(R"({"at":"9:0:u_1#r_a","v":"My Roadmap"})"));
+  CHECK_EQ(dump(json["guide"]), std::string(R"({"at":"11:0:u_1#r_a","v":"One branch at a time."})"));
+  CHECK(roundTrip(subgraph) == subgraph);
+
+  subgraph.guide.reset();
+  CHECK(toJson(subgraph)["guide"].isNull());
+  CHECK(roundTrip(subgraph) == subgraph);
 }
 
 TEST(full_delta_round_trips_with_coverage) {
@@ -150,5 +157,55 @@ TEST(parse_tolerates_a_minimal_frame) {
   CHECK_EQ(subgraph.legend.kinds.size(), 0u);
   CHECK_EQ(subgraph.gestures.size(), 0u);
   CHECK_FALSE(subgraph.title.has_value());
+  CHECK_FALSE(subgraph.guide.has_value());
   CHECK_FALSE(subgraph.coverage.has_value());
+}
+
+TEST(a_register_is_null_absent_or_a_string_value_with_its_stamp_and_anything_else_is_malformed) {
+  auto read = [](const char* field, const Json::Value& value) {
+    Json::Value frame(Json::objectValue);
+    frame["treeId"] = "t1";
+    frame["frameId"] = "f_1";
+    frame[field] = value;
+    return subgraphFromJson(frame);
+  };
+  auto malformed = [&](const char* field, const Json::Value& value) {
+    try {
+      read(field, value);
+      return false;
+    } catch (const std::invalid_argument&) {
+      return true;
+    }
+  };
+  auto written = [](const Json::Value& v, const Json::Value& at) {
+    Json::Value field(Json::objectValue);
+    if (!v.isNull()) field["v"] = v;
+    if (!at.isNull()) field["at"] = at;
+    return field;
+  };
+
+  for (const char* field : {"title", "guide"}) {
+    CHECK(malformed(field, written(12345, "9:0:u_1#r_a")));
+    CHECK(malformed(field, written(true, "9:0:u_1#r_a")));
+    CHECK(malformed(field, written(Json::Value(Json::objectValue), "9:0:u_1#r_a")));
+    Json::Value nulled(Json::objectValue);
+    nulled["v"] = Json::Value(Json::nullValue);
+    nulled["at"] = "9:0:u_1#r_a";
+    CHECK(malformed(field, nulled));
+    CHECK(malformed(field, written(Json::nullValue, "9:0:u_1#r_a")));
+    CHECK(malformed(field, written("text", Json::nullValue)));
+    CHECK(malformed(field, written("text", "")));
+    CHECK(malformed(field, written("text", "0:0:")));
+    CHECK(malformed(field, written("text", 9)));
+    CHECK(malformed(field, written("text", "nine")));
+    CHECK(malformed(field, Json::Value("a bare string")));
+    CHECK(malformed(field, Json::Value(5)));
+    CHECK(malformed(field, Json::Value(Json::arrayValue)));
+
+    CHECK_FALSE(read(field, Json::Value(Json::nullValue)).title.has_value());
+    CHECK_FALSE(read(field, Json::Value(Json::nullValue)).guide.has_value());
+  }
+  const Subgraph empty = read("guide", written("", "9:0:u_1#r_a"));
+  CHECK(empty.guide == (std::optional<Lww<std::string>>{Lww<std::string>{"", at(9)}}));
+  CHECK_FALSE(empty.title.has_value());
 }

@@ -26,7 +26,8 @@ Json::Value toJson(const GalleryEntry& entry);    // one gallery card (GET /v1/g
 Json::Value toJson(const GraphState& state);    // the persisted graph document
 Json::Value toJson(const LegendState& legend);  // the persisted legend document
 
-// nullopt when the root is not an object, or when a field is present but the wrong type.
+// nullopt when the root is not an object, or when a field is present but the wrong type. A document
+// never sets the guide: it rides out with a tree and is written only through its own doors.
 std::optional<TreeData> treeFromJson(const Json::Value& root, const TreeId& id);
 GraphState graphStateFromJson(const Json::Value& root);
 LegendState legendStateFromJson(const Json::Value& kinds);

@@ -98,7 +98,9 @@ TreeRegistry::Renaming TreeRegistry::rename(const TreeId& tree, const UserId& ca
   const std::size_t start = title.find_first_not_of(" \t\r\n");
   if (start == std::string::npos) return Renaming::blankTitle;
   std::string trimmed = title.substr(start, title.find_last_not_of(" \t\r\n") - start + 1);
-  if (!isValidUtf8(trimmed)) return Renaming::malformedTitle;  // the one thing the row cannot hold
+  // The two things a row cannot hold: a Postgres text value ends at a NUL.
+  if (!isValidUtf8(trimmed)) return Renaming::malformedTitle;
+  if (trimmed.find('\0') != std::string::npos) return Renaming::nulInTitle;
 
   // A name, not a payload. Truncate — never reject — to kMaxTitleChars (domain/Command.h), on the
   // code-point reading every cap shares, so the cut can never split a sequence.
@@ -112,8 +114,29 @@ TreeRegistry::Renaming TreeRegistry::rename(const TreeId& tree, const UserId& ca
   if (!stored) return Renaming::notFound;
   if (std::optional<WriteRefusal> refusal = writeRefusalFor(caller, stored->owner))
     return *refusal == WriteRefusal::nobodysTree ? Renaming::nobodysTree : Renaming::notYours;
-  rooms_.rename(tree, trimmed, clock_.nowMs(), stored->title.stamp);
+  if (!rooms_.rename(tree, trimmed, clock_.nowMs(), stored->title.stamp)) return Renaming::notFound;
   return Renaming::renamed;
+}
+
+std::variant<TreeRegistry::GuideChange, Admission> TreeRegistry::setGuide(const TreeId& tree, const UserId& caller,
+                                                                        const std::string& guide) {
+  if (std::optional<Admission> refusal = admitGuide(guide)) return *refusal;
+
+  // The strand serializes the guide against the tree's socket frames, so the gates, the write and
+  // the persist form one uninterrupted step. Both gates read the stored access row before a room is
+  // materialized.
+  std::lock_guard<std::mutex> strand(rooms_.strandFor(tree));
+  const std::optional<TreeAccess> access = rooms_.accessOf(tree);
+  if (!access || !canRead(caller, access->owner, access->visibility)) return GuideChange::notFound;
+  if (std::optional<WriteRefusal> refusal = writeRefusalFor(caller, access->owner))
+    return *refusal == WriteRefusal::nobodysTree ? GuideChange::nobodysTree : GuideChange::notYours;
+  TreeRoom* room = rooms_.open(tree);
+  if (!room) return GuideChange::notFound;
+  room->setGuide(guide, clock_.nowMs());
+  if (rooms_.persist(tree)) return GuideChange::changed;
+  // The row went away under its live room: the room goes too, so no reader is served the guide.
+  rooms_.retire(tree);
+  return GuideChange::notFound;
 }
 
 TreeRegistry::VisibilityChange TreeRegistry::setVisibility(const TreeId& tree, const UserId& caller,

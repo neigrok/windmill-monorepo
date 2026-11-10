@@ -1,7 +1,5 @@
 #include "products/roadmap/application/TreeRoom.h"
 
-#include "products/roadmap/domain/Subgraph.h"
-
 #include <trantor/utils/Logger.h>
 
 namespace wm {
@@ -11,18 +9,19 @@ TreeRoom::~TreeRoom() {
   LOG_WARN << "room operation rows not committed count=" << pendingOps_.size();
 }
 
-TreeRoom::TreeRoom(TreeId id, Lww<std::string> title, LooseGraph graph, Legend legend, Seq head,
-                   std::optional<UserId> owner, Visibility visibility, std::uint64_t createdAt,
+TreeRoom::TreeRoom(TreeId id, Lww<std::string> title, Lww<std::string> guide, LooseGraph graph, Legend legend,
+                   Seq head, std::optional<UserId> owner, Visibility visibility, std::uint64_t createdAt,
                    PresenceBus& bus)
-    : id_(std::move(id)), title_(std::move(title)), graph_(std::move(graph)), legend_(std::move(legend)),
-      head_(head), owner_(std::move(owner)), visibility_(visibility), createdAt_(createdAt),
-      bus_(bus), clock_(std::string{kServerActor}) {
-  // Fold every stamp the loaded document already carries — the graph frontier and the title register
-  // — so a fresh mint after restart is always ahead of anything persisted.
+    : id_(std::move(id)), title_(std::move(title)), guide_(std::move(guide)), graph_(std::move(graph)),
+      legend_(std::move(legend)), head_(head), owner_(std::move(owner)), visibility_(visibility),
+      createdAt_(createdAt), bus_(bus), clock_(std::string{kServerActor}) {
+  // Fold every stamp the loaded document already carries — the graph frontier and the title and guide
+  // registers — so a fresh mint after restart is always ahead of anything persisted.
   for (const auto& [actor, mark] : frontier(graph_.exportState(), legend_.exportState()).marks) {
     clock_.observe(mark);
   }
   clock_.observe(title_.stamp);
+  clock_.observe(guide_.stamp);
 }
 
 Hlc TreeRoom::nextStamp(std::uint64_t nowMs) {
@@ -31,17 +30,13 @@ Hlc TreeRoom::nextStamp(std::uint64_t nowMs) {
 
 std::optional<Seq> TreeRoom::joinSubgraph(const Subgraph& incoming, const UserId& actor) {
   if (!appliedOpIds_.insert(incoming.frameId).second) return std::nullopt;
-  VersionVector front = frontier(incoming.graph, incoming.legend);
   Hlc stamp;
-  for (const auto& [_, mark] : front.marks) {
+  for (const auto& [_, mark] : frontier(incoming).marks) {
     clock_.observe(mark);
     if (stamp < mark) stamp = mark;  // the frame's causal position, for the feed op
   }
-  if (incoming.title) {
-    clock_.observe(incoming.title->stamp);
-    if (stamp < incoming.title->stamp) stamp = incoming.title->stamp;
-    title_.merge(incoming.title->value, incoming.title->stamp);  // the title joins the lattice
-  }
+  if (incoming.title) title_.merge(incoming.title->value, incoming.title->stamp);
+  if (incoming.guide) guide_.merge(incoming.guide->value, incoming.guide->stamp);
   graph_.join(incoming.graph);
   legend_.join(incoming.legend);
   markDirty(incoming.graph, incoming.legend);
@@ -62,6 +57,17 @@ Seq TreeRoom::rename(const std::string& title, std::uint64_t nowMs) {
   frame.actor = stamp.actor;
   frame.intent = SubgraphIntent::live;
   frame.title = Lww<std::string>{title, stamp};
+  return joinSubgraph(frame, UserId{stamp.actor}).value_or(head_);
+}
+
+Seq TreeRoom::setGuide(const std::string& guide, std::uint64_t nowMs) {
+  Hlc stamp = clock_.tick(nowMs);
+  Subgraph frame;
+  frame.treeId = id_;
+  frame.frameId = "srv-guide-" + toString(stamp);
+  frame.actor = stamp.actor;
+  frame.intent = SubgraphIntent::live;
+  frame.guide = Lww<std::string>{guide, stamp};
   return joinSubgraph(frame, UserId{stamp.actor}).value_or(head_);
 }
 
@@ -107,8 +113,11 @@ Seq TreeRoom::importTree(const Graft& incoming, std::uint64_t nowMs, const UserI
 std::optional<Admission> TreeRoom::admit(const Subgraph& incoming) const {
   if (std::optional<Admission> refusal = wm::admit(graph_, incoming.graph)) return refusal;
   if (std::optional<Admission> refusal = wm::admit(legend_, incoming.legend)) return refusal;
-  if (!incoming.title) return std::nullopt;
-  return admitTitle(incoming.title->value);
+  if (incoming.title) {
+    if (std::optional<Admission> refusal = admitTitle(incoming.title->value)) return refusal;
+  }
+  if (!incoming.guide) return std::nullopt;
+  return admitGuide(incoming.guide->value);
 }
 
 std::optional<std::string> TreeRoom::validate(const Command& command) const {
@@ -162,8 +171,19 @@ TreeDiagnostics TreeRoom::diagnose() const {
 
 TreeData TreeRoom::snapshot() const {
   TreeData data = graph_.toTreeData(id_, title_.value);
+  data.guide = guide_.value;
   data.kinds = legend_.kinds();
   return data;
+}
+
+Subgraph TreeRoom::deltaSince(const VersionVector& since) const {
+  Subgraph delta = deltaBetween(graph_.exportState(), legend_.exportState(), since);
+  delta.treeId = id_;
+  if (!since.covers(title_.stamp)) delta.title = title_;
+  if (!since.covers(guide_.stamp)) delta.guide = guide_;
+  delta.coverage->observe(title_.stamp);
+  delta.coverage->observe(guide_.stamp);
+  return delta;
 }
 
 std::vector<NodeId> TreeRoom::prerequisitesOf(const NodeId& node) const {

@@ -21,8 +21,8 @@ struct DuplicateTree : std::exception {
   const char* what() const noexcept override { return "a tree with that id already exists"; }
 };
 
-// An unset title stamp means the create-time baseline, never renamed; an empty owner means a
-// legacy row nobody may write.
+// An unset title or guide stamp means the create-time baseline, never written since; an empty
+// owner means a legacy row nobody may write.
 struct StoredTree {
   GraphState state;
   LegendState legend;
@@ -31,6 +31,7 @@ struct StoredTree {
   std::optional<UserId> owner;
   Visibility visibility = Visibility::private_;
   std::uint64_t createdAt = 0;  // epoch ms
+  Lww<std::string> guide;
   bool operator==(const StoredTree&) const = default;
 };
 
@@ -71,10 +72,10 @@ struct TreeRepository {
   virtual std::optional<UserId> retiredOwner(const TreeId& tree) = 0;
   virtual ForkLineage loadForkLineage(const TreeId& tree) = 0;
   // Upsert a slice onto a tree whose row stands: entries given replace their rows, absent ones are
-  // untouched, and a save never deletes. A tree with no row is left without one, and answers false.
-  // The title lands only under a stamp dominating the stored one.
+  // untouched, and a save never deletes. A tree with no row, or a soft-deleted one, is left as it is,
+  // and answers false. The title and the guide each land only under a stamp dominating the stored one.
   virtual bool save(const TreeId& tree, const GraphState& state, const LegendState& legend,
-                    const Lww<std::string>& title, Seq head) = 0;
+                    const Lww<std::string>& title, const Lww<std::string>& guide, Seq head) = 0;
   // Insert a brand-new tree. Throws DuplicateTree on an id collision (never overwrites a tree).
   virtual void create(const TreeId& tree, const GraphState& state, const LegendState& legend,
                       const std::string& title, const UserId& owner) = 0;
@@ -91,10 +92,11 @@ struct TreeRepository {
   virtual void rename(const TreeId& tree, const Lww<std::string>& title) = 0;
   // The owner check is the caller's, not this write's; a soft-deleted tree is left alone.
   virtual void setVisibility(const TreeId& tree, Visibility visibility) = 0;
-  // Verbatim copy of `source`'s document; the copy starts a fresh op log at head 0. Throws
-  // DuplicateTree on an id collision.
+  // Verbatim copy of `source`'s document; the copy starts a fresh op log at head 0, its title and
+  // guide under the stamps given. Throws DuplicateTree on an id collision.
   virtual void fork(const TreeId& newTree, const TreeId& source, const GraphState& state,
-                    const LegendState& legend, const std::string& title, const UserId& owner) = 0;
+                    const LegendState& legend, const Lww<std::string>& title, const Lww<std::string>& guide,
+                    const UserId& owner) = 0;
 };
 
 }

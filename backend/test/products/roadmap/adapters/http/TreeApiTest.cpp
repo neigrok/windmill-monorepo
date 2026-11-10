@@ -7,11 +7,15 @@
 #include "test/products/roadmap/Fakes.h"
 #include "test/testing.h"
 
+#include "platform/application/WriteObservation.h"
+#include "platform/ports/FailureReporter.h"
+
 #include <algorithm>
 #include <memory>
 #include <mutex>
 #include <stdexcept>
 #include <string>
+#include <typeinfo>
 #include <vector>
 
 using namespace wm;
@@ -214,6 +218,20 @@ TEST(fork_accepts_a_well_formed_requested_id) {
   CHECK(h.trees->byId["t_0123456789abcdef"].owner == std::optional<UserId>(me));
 }
 
+TEST(fork_answers_with_the_guide_it_copied) {
+  Harness h;
+  h.signIn("s-live");
+  h.seedSource("t_src", "Learn to sail");
+  h.trees->byId["t_src"].guide = Lww<std::string>{"Rig first, then sail.", Hlc{5, 0, "srv"}};
+
+  drogon::HttpResponsePtr response =
+      sendFork(h.api, forkRequest(Json::Value(Json::objectValue), "s-live"), "t_src");
+
+  CHECK_EQ(response->getStatusCode(), drogon::k201Created);
+  CHECK_EQ(bodyOf(response)["data"]["guide"].asString(), std::string("Rig first, then sail."));
+  CHECK(h.trees->byId["t_d1"].guide == (Lww<std::string>{"Rig first, then sail.", Hlc{h.clock->nowMs(), 0, "srv"}}));
+}
+
 TEST(fork_without_an_id_still_mints_one) {
   Harness h;
   h.signIn("s-live");
@@ -243,6 +261,22 @@ TEST(get_tree_owner_reads_a_private_tree_with_mine_true) {
   CHECK(body.isMember("data"));
   CHECK(body.isMember("state"));
   CHECK_EQ(body["seq"].asInt64(), 0);
+}
+
+TEST(get_tree_carries_the_guide_beside_the_title_to_any_reader_and_an_empty_one_when_there_is_none) {
+  Harness h;
+  UserId me = h.signIn("s-me");
+  h.seed("t_guided", "Learn to sail", me, Visibility::unlisted);
+  h.seed("t_plain", "Sourdough", me, Visibility::unlisted);
+  h.trees->byId["t_guided"].guide = Lww<std::string>{"Rig first, then sail.", Hlc{5, 0, "srv"}};
+
+  Json::Value guided = bodyOf(sendGetTree(h.api, "", "t_guided"));
+  Json::Value plain = bodyOf(sendGetTree(h.api, "s-me", "t_plain"));
+
+  CHECK_EQ(guided["data"]["title"].asString(), std::string("Learn to sail"));
+  CHECK_EQ(guided["data"]["guide"].asString(), std::string("Rig first, then sail."));
+  CHECK(plain["data"]["guide"].isString());
+  CHECK_EQ(plain["data"]["guide"].asString(), std::string(""));
 }
 
 TEST(get_tree_serves_the_planting_time_and_zero_when_there_is_none) {
@@ -688,6 +722,22 @@ TEST(put_over_a_live_room_saves_at_the_rooms_head_so_no_op_tail_replays_over_it)
   CHECK(h.ops->since(TreeId{"t_00000000000000cc"}, h.trees->byId["t_00000000000000cc"].head).empty());
 }
 
+TEST(put_leaves_the_guide_alone_and_answers_with_the_one_the_tree_holds) {
+  Harness h;
+  UserId me = h.signIn("s-me");
+  h.seed("t_00000000000000cd", "Old name", me, Visibility::unlisted);
+  const Lww<std::string> guide{"Rig first, then sail.", Hlc{5, 0, "srv"}};
+  h.trees->byId["t_00000000000000cd"].guide = guide;
+  Json::Value posted = document("New name", "mast");
+  posted["guide"] = "Overwritten by a document";
+
+  drogon::HttpResponsePtr response = sendPut(h.api, "s-me", "t_00000000000000cd", posted);
+
+  CHECK_EQ(response->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(bodyOf(response)["data"]["guide"].asString(), guide.value);
+  CHECK(h.trees->byId["t_00000000000000cd"].guide == guide);
+}
+
 TEST(put_over_a_live_room_mints_its_title_past_the_rooms_rename_not_the_stale_row) {
   Harness h;
   UserId me = h.signIn("s-me");
@@ -812,4 +862,37 @@ TEST(put_with_a_field_that_is_not_valid_utf8_is_400_naming_the_field_and_creates
   CHECK_EQ(response->getStatusCode(), drogon::k400BadRequest);
   CHECK_EQ(dump(bodyOf(response)), std::string(R"({"error":"the title is not valid UTF-8"})"));
   CHECK_EQ(h.trees->byId.count("t_00000000000000e3"), std::size_t{0});
+}
+
+TEST(a_tree_read_that_fails_still_answers_404_and_files_one_issue_under_a_static_operation_per_request) {
+  struct Failures : FailureReporter {
+    std::vector<std::string> reports;
+    void report(const std::string&, const std::string&, const std::string&) override {}
+    void reportWrite(const std::string& operation, const std::string& product, const std::string& door,
+                     const std::string& outcome, const std::string&, const std::string& exceptionType) override {
+      reports.push_back(operation + " " + product + " " + door + " " + outcome + " " + exceptionType);
+    }
+  };
+  struct ReporterScope {
+    std::shared_ptr<Failures> failures = std::make_shared<Failures>();
+    ReporterScope() { installWriteReporter(failures); }
+    ~ReporterScope() { installWriteReporter(nullptr); }
+  } reporter;
+  Harness h;
+  UserId me = h.signIn("s-me");
+  h.seed("t_mine", "Learn to sail", me, Visibility::private_);
+
+  drogon::HttpResponsePtr absent = sendGetTree(h.api, "s-me", "t_ghost");
+  CHECK(reporter.failures->reports.empty());
+
+  h.trees->latticeLoadsFail = true;
+  drogon::HttpResponsePtr failed = sendGetTree(h.api, "s-me", "t_mine");
+  REQUIRE_EQ(failed->getStatusCode(), drogon::k404NotFound);
+  CHECK_EQ(dump(bodyOf(failed)), dump(bodyOf(absent)));
+  CHECK_EQ(sendGetDiagnostics(h.api, "s-me", "t_mine")->getStatusCode(), drogon::k404NotFound);
+
+  const std::string issue = std::string("roadmap.tree.read roadmap rest failed ") + typeid(std::runtime_error).name();
+  CHECK_EQ(reporter.failures->reports, (std::vector<std::string>{issue, issue}));
+  for (const std::string& report : reporter.failures->reports)
+    CHECK(report.find("connection reset") == std::string::npos);
 }

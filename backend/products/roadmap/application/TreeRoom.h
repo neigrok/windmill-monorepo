@@ -6,6 +6,7 @@
 #include "products/roadmap/domain/Ids.h"
 #include "products/roadmap/domain/Legend.h"
 #include "products/roadmap/domain/LooseGraph.h"
+#include "products/roadmap/domain/Subgraph.h"
 #include "products/roadmap/domain/Tree.h"
 #include "products/roadmap/domain/TreeDiagnostics.h"
 #include "products/roadmap/ports/OpLog.h"
@@ -28,18 +29,18 @@ public:
   // The HLC actor stamped on every server-minted write; authorship itself lives in AppliedOp.actor.
   static constexpr std::string_view kServerActor{"srv"};
 
-  TreeRoom(TreeId id, Lww<std::string> title, LooseGraph graph, Legend legend, Seq head,
-           std::optional<UserId> owner, Visibility visibility, std::uint64_t createdAt,
+  TreeRoom(TreeId id, Lww<std::string> title, Lww<std::string> guide, LooseGraph graph, Legend legend,
+           Seq head, std::optional<UserId> owner, Visibility visibility, std::uint64_t createdAt,
            PresenceBus& bus);
 
-  // Dedupe on the frame's id, fold its stamps into the clock, join graph + legend + title, assign
-  // the next seq, queue its headline deed under `actor` for the op log, broadcast verbatim. nullopt
-  // means a duplicate frame. Admits nothing on its own — every door that can refuse asks admit()
-  // first.
+  // Dedupe on the frame's id, fold its stamps into the clock, join graph + legend + title + guide,
+  // assign the next seq, queue its headline deed under `actor` for the op log, broadcast verbatim.
+  // nullopt means a duplicate frame. Admits nothing on its own — every door that can refuse asks
+  // admit() first.
   std::optional<Seq> joinSubgraph(const Subgraph& incoming, const UserId& actor);
 
   // Why joining this arrival would breach the tree's caps, or nullopt. Asked against THIS room's
-  // live state, not against the arrival alone. The frame overload asks graph, legend and title.
+  // live state, not against the arrival alone. The frame overload asks graph, legend, title and guide.
   std::optional<Admission> admit(const Subgraph& incoming) const;
   std::optional<Admission> admit(const Graft& incoming) const { return wm::admit(graph_, incoming); }
 
@@ -47,9 +48,10 @@ public:
   // tombstones — read off this room's live state, changing nothing.
   GraftFootprint footprintOf(const Graft& incoming) const { return wm::footprintOf(graph_, incoming); }
 
-  // Stamped from the room clock and joined as one title-only frame, so it broadcasts and LWW-merges
-  // like any other field write.
+  // Each is stamped from the room clock and joined as one frame setting that register alone, so it
+  // broadcasts and LWW-merges like any other field write, and leaves no op row.
   Seq rename(const std::string& title, std::uint64_t nowMs);
+  Seq setGuide(const std::string& guide, std::uint64_t nowMs);
 
   // Server-origin edit: stamped from the room clock, applied, queued for the op log, broadcast as
   // one subgraph. The frameId is minted from the (unique) stamp.
@@ -97,6 +99,9 @@ public:
   TreeData snapshot() const;
   GraphState exportState() const;
   LegendState exportLegend() const;
+  // What a peer at `since` is missing — graph, legend, title and guide — covering the room's whole
+  // frontier.
+  Subgraph deltaSince(const VersionVector& since) const;
 
   // Exports only the entries dirtied since the last markClean(); replay() flips the room all-dirty.
   // The caller holds the strand across export and clean.
@@ -109,8 +114,9 @@ public:
   bool hasEdge(const NodeId& from, const NodeId& to) const;
   // Present edges with either endpoint among `nodes`: what deleting them would leave dangling.
   std::vector<Edge> edgesTouching(const std::vector<NodeId>& nodes) const;
-  // An unset stamp means the create-time baseline, never renamed.
+  // An unset stamp means the create-time baseline, never written since.
   const Lww<std::string>& title() const { return title_; }
+  const Lww<std::string>& guide() const { return guide_; }
   Seq head() const { return head_; }
   // epoch ms; immutable.
   std::uint64_t createdAt() const { return createdAt_; }
@@ -125,6 +131,7 @@ private:
 
   TreeId id_;
   Lww<std::string> title_;
+  Lww<std::string> guide_;
   LooseGraph graph_;
   Legend legend_;
   Seq head_;

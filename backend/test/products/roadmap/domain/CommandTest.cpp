@@ -577,6 +577,23 @@ TEST(admit_title_bounds_the_register_a_frame_would_set) {
   CHECK_EQ(refusal->reason, std::string("the title would be 40000 characters, 39800 over the 200 cap"));
 }
 
+TEST(admit_guide_holds_five_thousand_characters_whatever_their_bytes_and_refuses_one_more) {
+  CHECK_FALSE(admitGuide("").has_value());
+  std::string grins;  // 5000 four-byte code points: 20000 bytes, still within the cap
+  for (std::size_t i = 0; i < kMaxGuideChars; ++i) grins += "\xF0\x9F\x98\x80";
+  CHECK_FALSE(admitGuide(grins).has_value());
+
+  std::optional<Admission> over = admitGuide(grins + "\xE5\xAD\x97");
+  REQUIRE(over.has_value());
+  CHECK(over->verdict == Admission::Verdict::malformed);
+  CHECK_EQ(over->reason, std::string("the guide would be 5001 characters, 1 over the 5000 cap"));
+
+  std::optional<Admission> cut = admitGuide("Work it \xE2\x82");
+  REQUIRE(cut.has_value());
+  CHECK(cut->verdict == Admission::Verdict::malformed);
+  CHECK_EQ(cut->reason, std::string("the guide is not valid UTF-8"));
+}
+
 TEST(describe_kind_writes_only_the_registers_it_carries) {
   LooseGraph g;
   Legend legend = Legend::seededDefaults(at(1));
@@ -835,6 +852,85 @@ TEST(malformed_utf8_is_refused_at_every_door_before_any_cap_is_counted) {
   full.description = grins + "\xF0\x9F\x98\x80";
   CHECK_EQ(validate(g, legend, Command{full}),
            std::optional<std::string>("description would be 16001 characters, 1 over the 16000 cap"));
+}
+
+TEST(a_nul_character_is_refused_in_every_capped_field_because_a_row_keeps_only_the_text_before_it) {
+  const std::string nul("before\0after", 12);
+  const std::optional<Admission> guide = admitGuide(nul);
+  REQUIRE(guide.has_value());
+  CHECK(guide->verdict == Admission::Verdict::malformed);
+  CHECK_EQ(guide->reason, std::string("the guide contains a NUL character"));
+  CHECK_EQ(admitTitle(nul)->reason, std::string("the title contains a NUL character"));
+  CHECK_EQ(admitGuide(std::string(1, '\0'))->reason, std::string("the guide contains a NUL character"));
+
+  LooseGraph g = seeded();
+  Legend empty;
+  Legend defaults = Legend::seededDefaults(at(1));
+  CHECK_EQ(validate(g, empty, Command{CreateNode{NodeId{nul}, "L", ""}}),
+           std::optional<std::string>("node id contains a NUL character"));
+  CHECK_EQ(validate(g, empty, Command{CreateNode{nid("c"), nul, nul}}),
+           std::optional<std::string>("label contains a NUL character; icon contains a NUL character"));
+  CHECK_EQ(validate(g, empty, Command{RenameNode{nid("a"), nul}}),
+           std::optional<std::string>("label contains a NUL character"));
+  AnnotateNode replaced{nid("a")};
+  replaced.description = nul;
+  CHECK_EQ(validate(g, empty, Command{replaced}), std::optional<std::string>("description contains a NUL character"));
+  AnnotateNode appended{nid("a")};
+  appended.appendDescription = nul;
+  CHECK_EQ(validate(g, empty, Command{appended}), std::optional<std::string>("description contains a NUL character"));
+  AnnotateNode linked{nid("a")};
+  linked.links = std::vector<Link>{Link{nul, "https://x/" + nul}};
+  CHECK_EQ(validate(g, empty, Command{linked}),
+           std::optional<std::string>("links[0].url contains a NUL character; links[0].label contains a NUL character"));
+  CHECK_EQ(validate(g, empty, Command{AddEdge{nid("a"), NodeId{nul}}}),
+           std::optional<std::string>("node id contains a NUL character"));
+  CHECK_EQ(validate(g, empty, Command{AddKind{kid("k"), NodeColor::sky, nul, nul}}),
+           std::optional<std::string>("label contains a NUL character; description contains a NUL character"));
+  CHECK_EQ(validate(g, defaults, Command{RenameKind{kid("build"), nul}}),
+           std::optional<std::string>("label contains a NUL character"));
+  CHECK_EQ(validate(g, defaults, Command{DescribeKind{kid("build"), nul, std::nullopt}}),
+           std::optional<std::string>("description contains a NUL character"));
+
+  // The HTTP save door: a posted document.
+  TreeData document;
+  document.title = nul;
+  CHECK_EQ(admit(document)->reason, std::string("the title contains a NUL character"));
+  document.title = "Mine";
+  NodeSpec hull;
+  hull.id = nid("hull");
+  hull.label = nul;
+  document.nodes.push_back(hull);
+  CHECK_EQ(admit(document)->reason, std::string("node \"hull\": label contains a NUL character"));
+  document.nodes[0].label = "hull";
+  document.nodes[0].id = NodeId{nul};
+  CHECK_EQ(admit(document)->reason, std::string("a node id contains a NUL character"));
+  document.nodes.clear();
+  Kind kind;
+  kind.id = KindId{nul};
+  kind.hue = NodeColor::sky;
+  document.kinds.push_back(kind);
+  CHECK_EQ(admit(document)->reason, std::string("a kind id contains a NUL character"));
+  document.kinds[0].id = kid("k");
+  document.kinds[0].label = nul;
+  CHECK_EQ(admit(document)->reason, std::string("kind \"k\": label contains a NUL character"));
+
+  // The socket door: a client lattice frame.
+  LooseGraph client;
+  client.createNode(nid("hull"), "hull", "", NodeColor::sky, std::nullopt, at(100, "client"));
+  client.setDescription(nid("hull"), nul, at(101, "client"));
+  const std::optional<Admission> frame = admit(g, client.exportState());
+  REQUIRE(frame.has_value());
+  CHECK(frame->verdict == Admission::Verdict::malformed);
+  CHECK_EQ(frame->reason, std::string("node \"hull\": description contains a NUL character"));
+  LooseGraph dangling;
+  dangling.addEdge(NodeId{nul}, nid("a"), at(100, "client"));
+  CHECK_EQ(admit(g, dangling.exportState())->reason, std::string("an edge endpoint contains a NUL character"));
+  LegendState legendFrame;
+  KindStateEntry entry;
+  entry.id = kid("k");
+  entry.description = nul;
+  legendFrame.kinds.push_back(entry);
+  CHECK_EQ(admit(empty, legendFrame)->reason, std::string("kind \"k\": description contains a NUL character"));
 }
 
 TEST(a_node_edit_naming_no_present_node_is_refused_before_it_can_plant_a_phantom) {

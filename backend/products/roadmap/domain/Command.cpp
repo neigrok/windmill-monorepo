@@ -32,6 +32,10 @@ struct Overages {
       clauses.push_back(field + " is not valid UTF-8");
       return;
     }
+    if (value.find('\0') != std::string::npos) {
+      clauses.push_back(field + " contains a NUL character");
+      return;
+    }
     const std::size_t size = codePointCount(value);
     if (size <= cap) return;
     clauses.push_back(field + " would be " + std::to_string(size) + " characters, " +
@@ -433,11 +437,21 @@ std::variant<EdgeChangePlan, std::string> planEdgeChanges(
   return plan;
 }
 
-std::optional<Admission> admitTitle(const std::string& title) {
+namespace {
+std::optional<Admission> admitRegister(const std::string& field, const std::string& text, std::size_t cap) {
   Overages over;
-  over.note("the title", title, kMaxTitleChars);
+  over.note(field, text, cap);
   if (std::optional<std::string> bad = over.sentence()) return Admission{Admission::Verdict::malformed, *bad};
   return std::nullopt;
+}
+}
+
+std::optional<Admission> admitTitle(const std::string& title) {
+  return admitRegister("the title", title, kMaxTitleChars);
+}
+
+std::optional<Admission> admitGuide(const std::string& guide) {
+  return admitRegister("the guide", guide, kMaxGuideChars);
 }
 
 std::optional<Admission> admit(const TreeData& document) {

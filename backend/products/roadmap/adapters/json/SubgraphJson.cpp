@@ -2,6 +2,8 @@
 
 #include "products/roadmap/adapters/json/TreeJson.h"
 
+#include <stdexcept>
+
 namespace wm {
 
 namespace {
@@ -20,6 +22,26 @@ SubgraphIntent parseIntent(const std::string& name) {
   if (name == "delta") return SubgraphIntent::delta;
   if (name == "graft") return SubgraphIntent::graft;
   return SubgraphIntent::live;
+}
+
+// A tree register on the wire: `{v, at}`, or null when the frame carries no information about it.
+Json::Value registerJson(const std::optional<Lww<std::string>>& value) {
+  if (!value) return Json::nullValue;
+  Json::Value field(Json::objectValue);
+  field["v"] = value->value;
+  field["at"] = toString(value->stamp);
+  return field;
+}
+
+// Anything else a frame names as a register is malformed: a value that is not a string would be
+// coerced or read as a clear, and an unstamped one could never win.
+std::optional<Lww<std::string>> registerFromJson(const Json::Value& field) {
+  if (field.isNull()) return std::nullopt;
+  if (!field.isObject() || !field["v"].isString() || !field["at"].isString())
+    throw std::invalid_argument("a register is {v, at}: a string value and its stamp");
+  const Hlc stamp = roadmapStamp(field["at"].asString());
+  if (!stamp.isSet()) throw std::invalid_argument("a register's stamp is set");
+  return Lww<std::string>{field["v"].asString(), stamp};
 }
 }
 
@@ -47,14 +69,8 @@ Json::Value toJson(const Subgraph& subgraph) {
   }
   root["gestures"] = gestures;
 
-  if (subgraph.title) {
-    Json::Value title(Json::objectValue);
-    title["v"] = subgraph.title->value;
-    title["at"] = toString(subgraph.title->stamp);
-    root["title"] = title;
-  } else {
-    root["title"] = Json::nullValue;
-  }
+  root["title"] = registerJson(subgraph.title);
+  root["guide"] = registerJson(subgraph.guide);
 
   if (subgraph.coverage) {
     Json::Value coverage(Json::objectValue);
@@ -84,10 +100,8 @@ Subgraph subgraphFromJson(const Json::Value& root) {
     }
   }
 
-  if (root.isMember("title") && root["title"].isObject()) {
-    subgraph.title = Lww<std::string>{root["title"].get("v", "").asString(),
-                                      roadmapStamp(root["title"].get("at", "").asString())};
-  }
+  subgraph.title = registerFromJson(root["title"]);
+  subgraph.guide = registerFromJson(root["guide"]);
 
   if (root.isMember("coverage") && root["coverage"].isObject()) subgraph.coverage = versionVectorFromJson(root["coverage"]);
 

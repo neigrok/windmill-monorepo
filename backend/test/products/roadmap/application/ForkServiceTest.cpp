@@ -63,6 +63,40 @@ TEST(fork_mints_an_id_and_inherits_the_title_when_given_neither) {
   CHECK(*h.trees.byId["t_d1"].owner == uid("me"));
 }
 
+TEST(fork_plants_the_sources_live_title_and_guide_at_its_planting_stamp_so_a_fresh_subscriber_receives_both) {
+  Harness h;
+  h.seedSource("t_src", "Learn to sail");
+  h.trees.byId["t_src"].guide = Lww<std::string>{"Rig first, then sail.", Hlc{5, 0, "srv"}};
+  h.rooms.open(TreeId{"t_src"})->setGuide("Rig first, sail second, race last.", 10);
+
+  ForkService::Result result = h.service.fork(TreeId{"t_src"}, "", "", uid("me"));
+  CHECK(result.outcome == ForkService::Outcome::forked);
+  CHECK_EQ(result.data.title, std::string("Learn to sail"));
+  CHECK_EQ(result.data.guide, std::string("Rig first, sail second, race last."));
+  const Hlc plantedAt{h.clock.nowMs(), 0, "srv"};
+  const Lww<std::string> title{"Learn to sail", plantedAt};
+  const Lww<std::string> guide{"Rig first, sail second, race last.", plantedAt};
+  CHECK(h.trees.byId["t_d1"].title == title);
+  CHECK(h.trees.byId["t_d1"].guide == guide);
+  CHECK(*h.trees.byId["t_d1"].owner == uid("me"));
+
+  const Subgraph delta = h.rooms.open(TreeId{"t_d1"})->deltaSince(VersionVector{});
+  CHECK(delta.title == std::optional<Lww<std::string>>(title));
+  CHECK(delta.guide == std::optional<Lww<std::string>>(guide));
+  CHECK_EQ(delta.graph.nodes.size(), 2u);
+}
+
+TEST(fork_under_a_requested_title_plants_that_title_at_the_planting_stamp) {
+  Harness h;
+  h.seedSource("t_src", "Learn to sail");
+
+  ForkService::Result result = h.service.fork(TreeId{"t_src"}, "", "My own voyage", uid("me"));
+  CHECK(result.outcome == ForkService::Outcome::forked);
+  CHECK_EQ(result.data.title, std::string("My own voyage"));
+  CHECK(h.trees.byId["t_d1"].title == (Lww<std::string>{"My own voyage", Hlc{h.clock.nowMs(), 0, "srv"}}));
+  CHECK(h.trees.byId["t_d1"].guide == (Lww<std::string>{"", Hlc{h.clock.nowMs(), 0, "srv"}}));
+}
+
 TEST(fork_clears_the_source_status_seeds) {
   Harness h;
   h.seedSource("t_src", "Learn to sail");
