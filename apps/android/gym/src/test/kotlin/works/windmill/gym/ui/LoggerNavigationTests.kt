@@ -71,8 +71,10 @@ class LoggerNavigationTests {
             assertTrue(head.getBoundsInRoot().height >= 48.dp)
             compose.onNodeWithText("Exercise 1 / 1").assertDoesNotExist()
             compose.onNodeWithText("Add movement").assertDoesNotExist()
-            compose.onNode(hasContentDescription("Set 1, current", substring = true)).performScrollTo().assertIsDisplayed()
-            assertTrue(compose.onNodeWithTag("Set ledger").getBoundsInRoot().height <= 168.dp)
+            val row = compose.onNode(hasContentDescription("Set 1, current", substring = true)).performScrollTo().assertIsDisplayed()
+                .getBoundsInRoot()
+            val ledger = compose.onNodeWithTag("Set ledger").getBoundsInRoot()
+            assertEquals("the ledger is as tall as its one row", ledger.top to ledger.bottom, row.top to row.bottom)
             compose.onNode(hasContentDescription("Load, kg each")).performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("Log set").assertIsDisplayed().assertIsEnabled()
         } finally { scope.cancel(); room.close() }

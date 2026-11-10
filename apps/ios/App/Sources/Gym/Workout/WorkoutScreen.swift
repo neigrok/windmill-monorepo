@@ -280,7 +280,7 @@ struct WorkoutLedger: View {
         if !typeSize.isAccessibilitySize { details }
         LedgerCard(ledger: ledger, unsent: unsent, editable: editable, open: { open($0, ledger: ledger, editable: editable, fixable: fixable) }) { details }
           .padding(.horizontal, RoomSpace.inset)
-        if !typeSize.isAccessibilitySize { Spacer(minLength: 0) }
+          .frame(maxHeight: .infinity, alignment: .top)
       }.padding(.top, RoomSpace.related)
     }.background(GymPalette.canvas)
   }
@@ -336,8 +336,7 @@ struct WorkoutLedger: View {
   }
 }
 
-// The ledger's card (03.34): its rows at the row height, three deep at the standard sizes and as tall as its page allows
-// at accessibility sizes, where the page's details lead the list; the current row scrolls into view as sets are logged.
+// The ledger's card (03.34, L.1–L.3): as tall as its rows up to the height it is offered, past which it scrolls.
 struct LedgerCard<Details: View>: View {
   let ledger: MovementLedger
   let unsent: Set<ID<TrainingSet>>
@@ -346,9 +345,16 @@ struct LedgerCard<Details: View>: View {
   @ViewBuilder let details: () -> Details
   @Environment(\.dynamicTypeSize) var typeSize
   @Environment(\.accessibilityReduceMotion) var reduceMotion
+  // The height the list lays its rows out at, at the text size in use; nothing until it has laid them out.
+  @State private var laidOutHeight: CGFloat = 0
+  // The rows' height: as laid out, never under the row height each row is held to.
+  var rowsHeight: CGFloat { max(laidOutHeight, CGFloat(ledger.rows.count) * RoomSpace.minimumTarget) }
+  // The height the card shows its rows in; a scroll asked for while it changes is dropped, so it follows the change.
+  @State private var shownHeight: CGFloat = 0
 
   var body: some View {
     ScrollViewReader { scroll in
+      let showCurrent = { withAnimation(reduceMotion ? nil : .spring) { scroll.scrollTo(ledger.performed, anchor: .bottom) } }
       List {
         if typeSize.isAccessibilitySize {
           Section { details().listRowInsets(EdgeInsets()).listRowSeparator(.hidden) }
@@ -370,14 +376,18 @@ struct LedgerCard<Details: View>: View {
       }.listStyle(.plain)
         .environment(\.defaultMinListRowHeight, RoomSpace.minimumTarget)
         .contentMargins(.vertical, 0, for: .scrollContent).modifier(GymPage())
+        .scrollIndicatorsFlash(onAppear: true)
+        .onScrollGeometryChange(for: CGFloat.self) { $0.contentSize.height } action: { laidOutHeight = $1 }
         .accessibilityIdentifier("workout-ledger")
+        // The current row stands whole at the card's foot as it appears, as each set lands and as the card's room changes.
         .onAppear { scroll.scrollTo(ledger.performed, anchor: .bottom) }
-        .onChange(of: ledger.sets.count) { _, _ in
-          withAnimation(reduceMotion ? nil : .spring) { scroll.scrollTo(ledger.performed, anchor: .bottom) }
-        }
-    }.frame(height: typeSize.isAccessibilitySize ? nil : CGFloat(min(ledger.rows.count, 3)) * RoomSpace.minimumTarget)
-      .frame(maxHeight: typeSize.isAccessibilitySize ? .infinity : nil)
-      .background(GymPalette.card).clipShape(.card)
+        .onChange(of: ledger.sets.count) { _, _ in showCurrent() }
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { shownHeight = $0 }
+        .onChange(of: shownHeight) { _, _ in showCurrent() }
+    }
+    // At accessibility sizes the page's details lead the list, and the card takes all it is offered.
+    .frame(maxHeight: typeSize.isAccessibilitySize ? .infinity : rowsHeight)
+    .background(GymPalette.card).clipShape(.card)
   }
 }
 
@@ -521,14 +531,8 @@ struct WorkoutFacts: View {
   }
 }
 
-// The rack drafts the next set (03.23A). Its numeral is the load's field on the decimal pad, sized to its row so a wide
-// load never pushes its unit out, the unit at its baseline or under it at accessibility sizes; a tap into it raises the
-// keyboard and the rack rides up with it as one block, nothing in
-// it appearing, going, resizing or moving. Each key edits the rack, so the ladder steps the typed load and Log set logs what
-// the field shows and drops the keyboard; the typed load lands as the field lets go, by Log set, a tap outside, a sheet
-// opening or a change of movement. The ladder steps by the load's own band, led for bodyweight and Other by ± (03.30), the
-// pad having no minus; the reps value opens one wheel (03.24). Each change the lifter makes to load or reps ticks, a typed
-// load once as it lands, and Log set stays silent.
+// The rack drafts the next set (03.23A): its numeral is the load's field on the decimal pad, and the rack rides the pad as one block.
+// A typed load lands as the field lets go: the pad row's ✓ (03.23D), Log set, a tap outside, a sheet or a change of movement.
 struct WorkoutRack: View {
   @Bindable var workout: WorkoutState
   let loadFocused: FocusState<Bool>.Binding
@@ -583,6 +587,18 @@ struct WorkoutRack: View {
     }.frame(maxWidth: .infinity).dynamicTypeSize(...DynamicTypeSize.accessibility1)
       .disabled(workout.paging || workout.finishing || workout.finishQueued || workout.gym.accountTransition)
       .sensoryFeedback(.selection, trigger: workout.adjustments)
+      .toolbar {
+        ToolbarItemGroup(placement: .keyboard) {
+          Spacer()
+          Button("Done", systemImage: "checkmark") { loadFocused.wrappedValue = false }.labelStyle(.iconOnly)
+            .accessibilityIdentifier("workout-load-done")
+        }
+      }
+      // iOS 26.5 sets the rack 34 pt short of the keyboard row until the first key, unless the input views reload once it is up.
+      .onChange(of: loadFocused.wrappedValue) { _, typing in
+        guard typing else { return }
+        DispatchQueue.main.async { UIApplication.shared.sendAction(#selector(UIResponder.reloadInputViews), to: nil, from: nil, for: nil) }
+      }
   }
 
   // Four keys step the load by its band; a signed basis leads them with a fifth, ±, the same whether the pad is up or not.

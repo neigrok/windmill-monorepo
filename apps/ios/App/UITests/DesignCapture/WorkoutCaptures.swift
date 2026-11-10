@@ -148,7 +148,7 @@ final class WorkoutCaptures: DesignCapture {
       XCTAssertTrue(app.textFields["workout-load"].waitForValue("16"))
       XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
       XCTAssertTrue(app.buttons["workout-log"].isHittable)
-      XCTAssertFalse(app.buttons["workout-load-done"].exists)
+      XCTAssertTrue(app.buttons["workout-load-done"].waitForHittable(timeout: 5))
       return app
     }
     captureBoard("03.24-reps-wheel", settle: 1.5) { look in
@@ -189,6 +189,77 @@ final class WorkoutCaptures: DesignCapture {
       XCTAssertTrue(set.waitForLabel("Set 2, logged, 18 kilograms, 7 reps"))
       XCTAssertTrue(app.descendants(matching: .any)["workout-current-set"].waitForLabel("Set 3, current, 16 kilograms, 8 reps"))
       XCTAssertTrue(app.textFields["workout-load"].waitForLabel("Weight, 18 kg each"))
+      return app
+    }
+  }
+
+  // The pad's row holds one glass ✓ (03.23D): the press typed to 18 (D.1), the pull-up's signed load with ± leading the
+  // ladder (D.3), and the press landed by the ✓, nothing logged (D.4).
+  func testKeyboardRowCheck() {
+    let press = { (look: Look) -> XCUIApplication in
+      let app = self.launch("workout-inflight-logged", look)
+      XCTAssertTrue(app.movementHeader("Dumbbell Bench Press").waitForExistence(timeout: 60))
+      XCTAssertTrue(app.textFields["workout-load"].waitForLabel("Weight, 16 kg each"))
+      return app
+    }
+    let typed = { (look: Look) -> XCUIApplication in
+      let app = press(look)
+      app.typeLoad("18")
+      XCTAssertTrue(app.buttons["workout-load-done"].waitForHittable(timeout: 5))
+      return app
+    }
+    captureBoard("03.23D.1-glass-check", settle: 1.5, opening: typed)
+    captureBoard("03.23D.3-signed-pullup", settle: 1.5) { look in
+      let app = press(look)
+      app.descendants(matching: .any)["workout-current-set"].swipeLeft()
+      XCTAssertTrue(app.textFields["workout-load"].waitForLabel("Weight, 10 kg added"))
+      app.buttons["workout-reps-minus"].tap()
+      XCTAssertTrue(app.buttons["workout-reps"].waitForLabel("7 reps"))
+      app.typeLoad("12.5")
+      XCTAssertTrue(app.buttons["workout-load-sign"].isHittable)
+      XCTAssertTrue(app.buttons["workout-load-done"].waitForHittable(timeout: 5))
+      return app
+    }
+    captureBoard("03.23D.4-landed", settle: 1.5) { look in
+      let app = typed(look)
+      app.buttons["workout-load-done"].tap()
+      XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+      XCTAssertTrue(app.textFields["workout-load"].waitForLabel("Weight, 18 kg each"))
+      XCTAssertFalse(app.loggedSet(3).exists)
+      return app
+    }
+  }
+
+  // The ledger takes the height it is given: three sets (L.1), seven filling it to the rack (L.2; L.3 at 375 pt), the pad up.
+  func testLedgerHeight() {
+    captureBoard("L.1-ledger-three-sets", settle: 1.5) { look in
+      let app = launch("workout-inflight-logged", look)
+      XCTAssertTrue(app.movementHeader("Dumbbell Bench Press").waitForExistence(timeout: 60))
+      let set = app.loggedSet(2)
+      XCTAssertTrue(set.waitForHittable()); set.tap()
+      XCTAssertTrue(app.staticTexts["Set 2"].waitForExistence(timeout: 5))
+      app.typeLoad("18", into: "workout-fix-load")
+      app.pickerWheels.element(boundBy: 0).adjust(toPickerWheelValue: "7 reps")
+      app.buttons["workout-fix-save"].tap()
+      XCTAssertTrue(set.waitForLabel("Set 2, logged, 18 kilograms, 7 reps"))
+      XCTAssertTrue(app.textFields["workout-load"].waitForLabel("Weight, 18 kg each"))
+      return app
+    }
+    let sevenRows = { (look: Look) -> XCUIApplication in
+      let app = self.launch("workout-upper-long", look)
+      XCTAssertTrue(app.textFields["workout-load"].waitForHittable(timeout: 30))
+      XCTAssertTrue(app.descendants(matching: .any)["workout-current-set"].waitForLabel("Set 7, current, open target"))
+      return app
+    }
+    captureBoard("L.2-ledger-seven-rows", settle: 1.5, opening: sevenRows)
+    captureBoard("L.2-ledger-seven-rows-load-typing", settle: 1.5) { look in
+      let app = sevenRows(look)
+      let ledger = app.collectionViews["workout-ledger"], atRest = ledger.frame
+      app.textFields["workout-load"].tap()
+      let log = app.buttons["workout-log"], keyboard = app.keyboards.firstMatch
+      let riding = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in keyboard.exists && log.frame.maxY <= keyboard.frame.minY }, object: nil)
+      XCTAssertEqual(XCTWaiter.wait(for: [riding], timeout: 10), .completed)
+      XCTAssertEqual(ledger.frame, atRest)
       return app
     }
   }

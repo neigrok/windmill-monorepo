@@ -185,9 +185,9 @@ Local drafts and archived answers transfer to the account archive on Add or empt
 are removed on explicit Discard; the conversation records move with the replica. Work from a previous
 account/replica cannot publish into the active seat.
 
-The live workout uses a compact ledger with up to three 44-point rows at default text size;
-accessibility sizes expand it. Movement paging dots and clocks remain, without the duplicate set
-statistics strip. Assembly, the movement menu's Add movement and the picker share one sheet destination. Selecting a
+The live workout's ledger is a card as tall as its rows, up to the room left 8 points above the rack,
+past which it scrolls; at accessibility sizes it takes the page's height. Movement paging dots and clocks
+remain, without the duplicate set statistics strip. Assembly, the movement menu's Add movement and the picker share one sheet destination. Selecting a
 movement returns to its live logger with existing sets and draft intact; cancellation leaves the workout unchanged.
 The movement's name is its native menu: a movement with nothing logged offers Edit sets and Swap movement, every one
 Add movement and Edit movement. A movement with a logged set keeps its plan. Edit sets (`Workout/EditSets.swift`) saves

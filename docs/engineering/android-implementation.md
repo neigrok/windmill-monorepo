@@ -630,9 +630,10 @@ sheet. The spoken position remains exact; decorative markers show at most seven 
 smaller endpoints when more positions continue. A single movement has no markers. Previous/Next
 remain accessibility actions, without visible arrow buttons or a text pager.
 
-The headerless ledger is a lazy list of one-line 56 dp rows combining each load with its equipment
-unit and reps. Its window holds the whole rows that fit above the rack, one to three, keeps the current
-row in view as sets arrive, and scrolls the others.
+The headerless ledger is a lazy list of 56 dp rows, wrapping at large text, combining each load with
+its equipment unit and reps. At rest its window shows the rows around the current one that fit
+between the movement's head and the rack, each whole and one at least; it brings the current row
+back into view as sets arrive and scrolls the others.
 The main Add movement row is removed; the existing management sheet remains its route. The native
 number buffers, signed keyboard, ladder bands, 48 dp controls and silent Log action stay intact.
 Only the part of a snackbar that overlaps the ledger reserves scrolling space.

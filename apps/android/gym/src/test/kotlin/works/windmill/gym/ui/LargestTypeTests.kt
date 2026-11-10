@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performClick
@@ -322,6 +324,110 @@ class LargestTypeTests {
 
     private fun inside(inner: DpRect, outer: DpRect) = inner.top >= outer.top && inner.bottom <= outer.bottom
 
+    private fun ledgerRows() = compose.onAllNodes(SemanticsMatcher("a ledger row") { node ->
+        node.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty().any { Regex("^Set \\d+, .*").matches(it) }
+    }).fetchSemanticsNodes().filter { it.boundsInRoot.height > 0f }.sortedBy { it.boundsInRoot.top }
+
+    // The ledger as drawn: its rows top to bottom, a row its edge cuts marked so, then the canvas between the last row and
+    // the rack, counted in that row's height.
+    private fun drawnLedger(): String {
+        val rows = ledgerRows()
+        val rack = compose.onNodeWithTag("Numeric rack").fetchSemanticsNode().boundsInRoot
+        val said = rows.map { it.config[SemanticsProperties.ContentDescription].first() +
+            if (it.boundsInRoot.height < it.size.height) ", cut" else "" }
+        val last = rows.last()
+        return (said + "canvas: ${((rack.top - last.boundsInRoot.bottom) / last.size.height).toInt()} whole rows")
+            .joinToString("\n")
+    }
+
+    private fun scrolls(tag: String) =
+        compose.onNodeWithTag(tag).fetchSemanticsNode().config.getOrNull(SemanticsProperties.VerticalScrollAxisRange)
+            ?.let { it.maxValue() > 0f } ?: false
+
+    // L.5: a movement planned for three sets on the 412 × 915 phone draws a ledger exactly as tall as its three rows,
+    // which does not scroll; the rest of the room above the rack is canvas.
+    @Test
+    @Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
+    fun threePlannedSetsDrawALedgerAsTallAsItsRows() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val server = EngineRoomFixture.server()
+        try { store(scope, server).use { room ->
+            runBlocking {
+                val pushA = (room.store.routines.saveRoutine(RoutineDraft(name = "Push A").adding("bench-press")
+                    .targeting("bench-press", List(3) { SetTarget(5, 22.5) })
+                    .capturingMovements(room.store.routines.catalog)) as GymResult.Ok).value
+                room.store.workout.start(pushA.id)
+                room.store.workout.choose("bench-press")
+            }
+            compose.setContent {
+                GymMaterial {
+                    CompositionLocalProvider(LocalDensity provides Density(density = 2f, fontScale = 1f)) {
+                        Box(Modifier.padding(top = 24.dp, bottom = 24.dp)) {
+                            LoggerBinding(room.store).let { LoggerScreen(it, it, say = {}, onFinish = {}) }
+                        }
+                    }
+                }
+            }
+            logSets(room, server, 1)
+
+            assertEquals("""
+                Set 1, logged, 22.5 kg total, 5 reps
+                Set 2, current, 22.5 kg total, 5 reps
+                Set 3, planned, 22.5 kg total, 5 reps
+                canvas: 3 whole rows
+            """.trimIndent(), drawnLedger())
+            assertEquals("the ledger scrolls", false, scrolls("Set ledger"))
+            assertEquals("the page scrolls", false, scrolls("Rack page"))
+        } } finally { scope.cancel() }
+    }
+
+    // L.6: seven rows on the 412 × 915 phone fill the room above the rack with every whole row it holds, the set in hand
+    // last; less than a row of canvas stands under it, and the first set waits a scroll up.
+    @Test
+    @Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
+    fun sevenRowsShowEveryWholeRowTheRoomHolds() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val server = EngineRoomFixture.server()
+        try { loggerOnThePhone(scope, server, fontScale = 1f, walk = listOf("bench-press")).use { room ->
+            val logBefore = compose.onNodeWithText("Log set").assertIsDisplayed().getBoundsInRoot()
+
+            logSets(room, server, 6)
+
+            assertEquals("""
+                Set 2, logged, 20 kg total, 5 reps
+                Set 3, logged, 20 kg total, 5 reps
+                Set 4, logged, 20 kg total, 5 reps
+                Set 5, logged, 20 kg total, 5 reps
+                Set 6, logged, 20 kg total, 5 reps
+                Set 7, current
+                canvas: 0 whole rows
+            """.trimIndent(), drawnLedger())
+            assertEquals("the ledger scrolls", true, scrolls("Set ledger"))
+            assertEquals("the page scrolls", false, scrolls("Rack page"))
+            assertEquals("Log set moved", logBefore, compose.onNodeWithText("Log set").getBoundsInRoot())
+        } } finally { scope.cancel() }
+    }
+
+    // L.7: on the 320 × 640 phone the same seven rows leave room for one whole row, the set in hand.
+    @Test
+    @Config(sdk = [35], qualifiers = "w320dp-h640dp-xhdpi")
+    fun sevenRowsOnTheNarrowPhoneShowTheSetInHandWhole() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val server = EngineRoomFixture.server()
+        try { loggerOnThePhone(scope, server, fontScale = 1f, walk = listOf("bench-press")).use { room ->
+            logSets(room, server, 6)
+
+            assertEquals("""
+                Set 7, current
+                canvas: 0 whole rows
+            """.trimIndent(), drawnLedger())
+            assertEquals("the ledger scrolls", true, scrolls("Set ledger"))
+            // This text engine draws the rack about 28 dp taller than the emulator does, so here the head, the row and the
+            // rack overrun the room and the page scrolls; on the emulator they fit, as L.7 draws them.
+            assertEquals("the page scrolls", true, scrolls("Rack page"))
+        } } finally { scope.cancel() }
+    }
+
     // At fontScale 1.0 on the 411 × 731 phone the head, the place and both rows are drawn once a set
     // lands, each row fully INSIDE the ledger rather than clipped by it — while Log set stands
     // exactly where it stood before the set landed.
@@ -442,8 +548,9 @@ class LargestTypeTests {
         } } finally { scope.cancel() }
     }
 
-    // 03.35: at 320 dp and 200 % the page scrolls as one and the ledger window scrolls its five rows; each can be read
-    // whole above the pinned Log set, which never leaves the window.
+    // 03.35: at 320 dp and 200 % the page scrolls as one with the rack, and the ledger rests on the set in hand alone. A
+    // logged row wraps taller than the set in hand, so the window stands that tall with canvas under the set in hand, and
+    // each of the five rows scrolls into it whole above the pinned Log set, which never leaves the window.
     @Test
     @Config(sdk = [35], qualifiers = "w320dp-h640dp-xhdpi")
     fun atTwoHundredPercentOnANarrowPhoneEveryRowScrollsIntoViewAboveAPinnedLogSet() {
@@ -464,6 +571,11 @@ class LargestTypeTests {
                     }
                 }
             }
+            assertEquals("""
+                Set 5, current
+                canvas: 0 whole rows
+            """.trimIndent(), drawnLedger())
+            assertEquals("the page scrolls with the rack", true, scrolls("Rack page"))
             val window = compose.onRoot().getBoundsInRoot()
             val said = (1..4).map { "Set $it, logged" } + "Set 5, current"
             assertTrue("the ledger holds exactly ${said.size} rows",
@@ -472,11 +584,10 @@ class LargestTypeTests {
                 compose.onNodeWithTag("Set ledger").performScrollToIndex(at)
                 val node = compose.onNode(hasContentDescription(label, substring = true)).performScrollTo().assertIsDisplayed()
                 val log = compose.onNodeWithText("Log set").assertIsDisplayed().getBoundsInRoot()
-                val ledger = compose.onNodeWithTag("Set ledger").getBoundsInRoot()
                 val row = node.getBoundsInRoot()
-                assertTrue("row $at at $row inside the ledger $ledger above Log set $log in $window",
-                    row.height > 0.dp && row.top >= ledger.top && row.bottom <= ledger.bottom && row.bottom <= log.top &&
-                        log.bottom <= window.bottom)
+                val laid = node.fetchSemanticsNode()
+                assertTrue("row $at drawn at $row of ${laid.size.height}px, whole above Log set $log in $window",
+                    laid.boundsInRoot.height == laid.size.height.toFloat() && row.bottom <= log.top && log.bottom <= window.bottom)
             }
         } } finally { scope.cancel() }
     }

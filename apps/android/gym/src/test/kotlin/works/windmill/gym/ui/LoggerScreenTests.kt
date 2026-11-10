@@ -549,8 +549,9 @@ class LoggerScreenTests {
             assertEquals("the head did not move", head, place().assertIsDisplayed().getBoundsInRoot())
             assertEquals("the rack did not move", rack, compose.onNodeWithText("Log set").getBoundsInRoot())
             compose.onNodeWithText("Add movement").assertDoesNotExist()
-            assertTrue("three whole rows at most", compose.onNodeWithTag("Set ledger").getBoundsInRoot().height <= 168.dp)
-            assertEquals(3, ledger().count { (said, _) -> "logged" in said })
+            assertEquals(listOf("Set 1, logged, 20 kg total, 5 reps, on this device" to true,
+                "Set 2, logged, 20 kg total, 5 reps, on this device" to true,
+                "Set 3, logged, 20 kg total, 5 reps, on this device" to true, "Set 4, current" to false), ledger())
         } } finally { scope.cancel() }
     }
 

@@ -163,10 +163,14 @@ for the canonical Coach-led flow, indexed in [the flow index](../index.md). Colo
   calendar boundary. All hosted AI, including background Echoes, consumes the individual budget.
   Signing in binds the device and includes its current-month anonymous spend in free usage.
   Server-issued installation credentials are implemented; customer USD screens remain unbuilt.
-- **6w · Keyboard bars on iOS 26.** The app keeps SwiftUI `.keyboard` toolbars to the ± a Load row
-  adds for a signed basis (`LoadRow`: Fix set, Edit sets and the routine's movement form) because their
-  retained layout can reduce later sheets' keyboard avoidance; the rack has no keyboard row at all, its
-  ± leading the ladder (03.30). Coach's *Done* is above its composer; the note editor has none. The
+- **6w · Keyboard bars on iOS 26.** SwiftUI `.keyboard` toolbars carry two things only: the ± a Load row
+  adds for a signed basis (`LoadRow`: Fix set, Edit sets and the routine's movement form), and the rack's
+  single trailing glass ✓ (03.23D, task 72); the rack's own ± leads its ladder (03.30). A retained toolbar
+  layout can reduce later sheets' keyboard avoidance, so no other field takes one; after the rack's ✓ has
+  landed a load, Fix set's load, Coach's composer and Edit sets' load still stand clear of their keyboards
+  (iOS 26.5, `testSheetsAvoidTheirKeyboardAfterTheRacksCheck`). iOS 26.5 sets the rack 34 pt short of its row
+  until the first key, so the rack reloads the input views once its field takes focus; iOS 27 needs no help.
+  Coach's *Done* is above its composer; the note editor has none. The
   movement form (02L.5) has its Name and Load as text fields and no *Next* or *Done* bar; a scroll lets
   the keyboard go.
 
@@ -482,7 +486,7 @@ and Android disagree.
   leaving and the numeral's travel on landing a bug. Direction A, approved 2026-11-07, is drawn as 03.23A
   (`1940:16624` at rest, `1940:16714` typing) with its [note](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1942-17441):
   the numeral is a permanent load field, the rack rides the keyboard as one block, nothing in it appears,
-  goes, resizes or moves, there is no keyboard row, and Log set commits the typed load and lands the keyboard.
+  goes, resizes or moves, and Log set commits the typed load and lands the keyboard.
   The build draws it as [workout-in-flight.md](ios/workout-in-flight.md) states (`WorkoutRack`, `LoadField`);
   the earlier 03.23 (`1708:14353`, its Daylight twin and caption) is marked 🗄 Superseded until the owner deletes it.
 - **The sign key leads the ladder (03.30 🚀 In production 2026-11-07).** The earlier 03.30 drew ± in the
@@ -490,6 +494,36 @@ and Android disagree.
   typing): for bodyweight and Other a fifth key, ±, leads the ladder, present in both states and for no other
   basis, and the build draws it (`WorkoutRack.ladder`). Fix set and Edit sets keep ± in their keyboard row
   until their boards are redrawn; the note says their ± belongs beside the field.
+- **A ✓ on the rack's keyboard row (owner ruling 2026-11-10; 03.23D, built in task 72).**
+  The decimal pad carries the system keyboard row, `ToolbarItemGroup(placement: .keyboard)` on `WorkoutRack`,
+  holding one trailing `Button("Done", systemImage: "checkmark")` with `.labelStyle(.iconOnly)`: a clear glass
+  disc, the ✓ in ink, read *Done*. It lands the typed load as a tap outside does and drops the pad without
+  logging a set (03.23D.1 `2089:22046`, signed basis 03.23D.3 `2089:22300`, landed 03.23D.4 `2089:22433`,
+  [note](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=2090-22691)). The row takes 48 pt from the
+  page: on 402 × 874 pt the rack covers the clock row and cuts the dots on iOS 26.5, while iOS 27.0's shorter pad
+  leaves the dots whole; on 375 × 812 pt (Display Zoom, 13 mini) the rack covers the movement name, which the owner
+  accepted (03.23D.5 `2089:22565`); on 375 × 667 pt (iPhone SE, iOS 26.5 capture) it rises to about 5 pt under the
+  bar's buttons and stays clear of them. Fix set's and Edit sets' keyboard rows stay as they are and take no ✓.
+  The text *Done* (03.23D.2) is ❌.
+- **Fix set's *Delete set* rests under the ± glass (build drift).** With the pad up on a signed basis, Fix set's
+  form rests with *Delete set* under the ± keyboard-row disc, so the red label reads through the control and
+  tints it pink in Daylight (iOS 26.5 capture, 2026-11-10). The form's bottom inset ignores the 48 pt keyboard
+  row, and the input-views reload that settles the rack's row does not lift it (iOS 26.5 probe). Edit sets is
+  unchecked.
+- **03.23A draws the decimal pad 28 pt high (drawing drift).** 03.23A (`1940:16714`) and 03.30 (`1940:17074`)
+  draw the pad with a 44 pt QuickType bar `.decimalPad` does not have, so its top sits at 538 pt where the
+  iPhone 17 Pro capture puts it at 566; the key rows line up. The 03.23D boards draw the captured pad.
+- **The drawn rack is about 20 pt taller than the build (drawing drift).** 03.23A, 03.30 and 03.34a–c draw
+  Log set 52 pt tall and wider gaps between the ladder, reps and Log set; the build (`WorkoutRack`, a VStack at
+  `RoomSpace.inset`, Log set about 61 pt) runs about 20 pt shorter from the numeral to Log set's foot. The
+  03.23D boards follow the captures. The ledger boards L.1–L.3 (`2074:52825`) carry the same drift: on 402 × 874 pt
+  the build's ledger card starts 23 pt lower (237 against 214, its movement head and facts taller than drawn) and
+  its rack 43 pt lower (511 against 468), so seven rows get 266 pt of room against the drawn 246; on the SE the
+  room is 135 pt against 139.
+- **The rack's unit stands apart from a two-digit load (build drift).** 03.23A, 03.23D and the L boards draw the
+  unit at the numeral's baseline right beside it. The build leaves about 75 pt between a two-digit load (16, 18) and
+  *kg each* on 402 × 874 pt, at rest and with the pad up (iOS 26.5 and 27.0 captures, 2026-11-10), while *12.5*
+  stands beside *kg added*. Why the field keeps that width is unchecked.
 - **Planned rows read the plan, never today's set (owner ruling 2026-11-06; 03.34a–c 🚀 In production 2026-11-07).**
   The build before this drew the rows still to lift carrying the load the rack will offer, which after a logged
   set is that set's load; the Android 03.34 rack-height board (`1742:40960`, `1742:41112`, still canon for
@@ -885,9 +919,10 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   03.3 `1253:29581`, 03.10–03.13 (`1252:28389`, `1252:28534`, `1252:28687`, `1252:28829`), 02.6
   `1252:30392`, 02.11. The owner's 2026-10-25 clarification approves the native keyboard's minus
   key for assisted loads; verify signed decimal entry on the target emulator and add no app-level
-  sign control. The Workout's ledger is a list of whole one-line 56 dp Material list rows, at most three
-  and as many as fit above the rack (03.1N, 03.2N), with inline load units and visual position markers instead of
-  visible counts or arrows.
+  sign control. The Workout's ledger is a list of 56 dp Material list rows that wrap at large text. At rest it shows the
+  rows around the set in hand that fit between the movement's head and the rack, each whole, one at least, with the
+  room under the last row left as canvas (03.1N, 03.2N; L.5–L.7 `2074:52825`), and inline load units and visual position
+  markers instead of visible counts or arrows.
   Add movement lives in This workout. Weigh-in uses a native decimal keyboard and date picker;
   task 24 still needs its approved compact sheet, calendar and IME-state implementation.
 - **11e · Equipment, units and Edit movement.** Routine summary, editor, finish receipt and
@@ -1024,7 +1059,7 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   | Movement editor discard wording | Built (task 56): *Keep editing* | 02.17 `1443:19730` · `1443:20852` (*Keep editing*) |
   | Load below zero for Barbell/Dumbbells | Accepted in targets and Fix set; the field shows a hyphen, summaries a minus | 02.21 `1742:39774` · `1742:40098`; 03.33 `1742:40425` · `1742:40717` |
   | Rack height and planned rows | Built (tasks 59 and 58): *22.5 kg total* fits inline and holds the rack's height; planned rows read the load the plan expects, *100 kg total × max*, or *— × max* while last time is unread, never a set logged today (owner ruling 2026-11-06, below) | 03.34 `1742:40960` · `1742:41112` |
-  | Rack at 320dp/200% | Built (task 59): the movement head, the ledger and the rack scroll as one page above the pinned *Log set* band, and rows wrap instead of clipping | 03.35 `1742:41245` · `1742:41402` |
+  | Rack at 320dp/200% | Built (task 59): the movement head, the ledger and the rack scroll as one page above the pinned *Log set* band, and rows wrap instead of clipping. At rest the ledger shows the set in hand whole with no cut row; where a logged row wraps taller than the set in hand, the window stands that tall with canvas under the set in hand, so each logged row scrolls into it whole | 03.35 `1742:41245` · `1742:41402` |
   | Receipt at 320dp/200% | Built (task 60): the receipt opens full height, the facts wrap two to a row and the body scrolls to *Performed* under the pinned actions. A value no size fits on one line stays at the 16 sp floor and drops only its unit to the next line. *Share with Coach* and *Done* are Material filled tonal and filled buttons with one-line labels, which at 200 % run into the 24 dp side padding as the board draws them. The crown is the 24 dp drawable 8 dp before the label, where the board sets an emoji glyph at the label size | 03.36 `1742:41620` · `1742:41702` |
   | Weigh-in Undo | Built (task 61): the snackbar rises above a *Weigh in* that never moves, and the hold lasts the system's accessibility timeout, never less than nine seconds. Material's snackbar is 48 dp tall and Scaffold leaves 12 dp above *Weigh in*; the board draws 56 dp and 8 dp, and *Weigh in* measures 139 dp wide with Material's padding against the board's 132 dp | 05.17 `1742:41789` · `1742:41887` |
 

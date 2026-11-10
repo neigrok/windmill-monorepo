@@ -16,7 +16,7 @@ import XCTest
     XCTAssertFalse(app.descendants(matching: .any)["workout-set-progress"].exists)
     let ledger = app.collectionViews["workout-ledger"]
     XCTAssertTrue(ledger.waitForExistence(timeout: 5))
-    XCTAssertEqual(ledger.frame.height, 132, accuracy: 1)
+    XCTAssertEqual(ledger.frame.height, 176, accuracy: 1)
     let load = app.textFields["workout-load"]
     let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in load.exists && load.isEnabled && load.isHittable }, object: load)
     XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 5), .completed)
@@ -31,6 +31,7 @@ import XCTest
     XCTAssertTrue(app.searchFields.firstMatch.waitForExistence(timeout: 5))
     app.searchFields.firstMatch.tap(); app.searchFields.firstMatch.typeText("Bench")
     XCTAssertTrue(app.buttons["gym-movement-bench-press"].waitForExistence(timeout: 5))
+    XCTAssertFalse(app.buttons["workout-load-done"].exists, "The search's keyboard takes no ✓")
     app.buttons["gym-movement-bench-press"].tap()
     XCTAssertTrue(app.buttons["workout-log"].waitForExistence(timeout: 5))
     XCTAssertTrue(app.movementHeader("Bench Press").waitForExistence(timeout: 5))
@@ -337,8 +338,8 @@ import XCTest
   }
 
   // The rack's load is its field: a tap into it raises the pad with the text selected, so the first key replaces it, and
-  // the rack rides up as one block, the ladder, reps and Log set where they were and the page keeping its head; no keyboard
-  // row appears. Log set logs what the field shows, drops the keyboard and leaves the rack on the plan's next set, a
+  // the rack rides up as one block, the ladder, reps and Log set where they were and the page where it was, the keyboard
+  // row holding the ✓. Log set logs what the field shows, drops the keyboard and leaves the rack on the plan's next set, a
   // heavier triple here, not on the field's text; a tap outside lands the load where it is.
   func testTheRackLoadOpensSelectedAndLandsByLogSetOrATapOutside() {
     let app = XCUIApplication()
@@ -349,12 +350,14 @@ import XCTest
     let rackFrames = { [load, app.buttons["workout-weight-step-0"], app.buttons["workout-reps"], log].map(\.frame) }
     let rack = rackFrames()
     let head = [app.buttons["workout-movement-menu"], app.pageIndicators.firstMatch].map(\.frame)
+    let ledger = app.collectionViews["workout-ledger"], ledgerAtRest = ledger.frame
     load.tap()
     XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
     XCTAssertTrue(load.waitForValue("100"))
-    XCTAssertFalse(app.buttons["workout-load-done"].exists, "No keyboard row")
+    XCTAssertTrue(app.buttons["workout-load-done"].exists, "The keyboard row holds the ✓")
+    XCTAssertEqual(ledger.frame, ledgerAtRest, "The pad leaves the ledger as it was")
     XCTAssertFalse(app.buttons["workout-load-sign"].exists, "A barbell has no sign to flip")
-    XCTAssertEqual([app.buttons["workout-movement-menu"], app.pageIndicators.firstMatch].map(\.frame), head, "The page keeps its head")
+    XCTAssertEqual([app.buttons["workout-movement-menu"], app.pageIndicators.firstMatch].map(\.frame), head, "The page stays where it was")
     let raised = rackFrames()
     XCTAssertTrue(log.isHittable && app.buttons["workout-weight-step-0"].isHittable, "The rack stays above the keyboard")
     XCTAssertEqual(Set(zip(rack, raised).map { ($0.minY - $1.minY).rounded() }).count, 1, "The rack rises as one: \(rack) \(raised)")
@@ -378,6 +381,82 @@ import XCTest
     XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
     app.buttons["workout-weight-step-3"].tap()
     XCTAssertTrue(load.waitForValue("120") && load.waitForLabel("Weight, 120 kg total"))
+  }
+
+  // The keyboard row's ✓, read *Done*, shows only with the pad up, the rack clear of the row from the tap, before any key; it
+  // lands a typed load or gives back the one before an emptied field, logging nothing. Fix set's ± row takes no ✓.
+  func testTheKeyboardRowsCheckLandsTheTypedLoadAndLogsNothing() {
+    let app = XCUIApplication()
+    app.launchArguments = ["-model-server", "-board", "workout-upper-other", "-onboarding-appearance", "dark"]
+    app.launch()
+    let load = app.textFields["workout-load"], log = app.buttons["workout-log"], done = app.buttons["workout-load-done"]
+    XCTAssertTrue(load.waitForLabel("Weight, −5 kg", timeout: 30) && log.waitForExistence(timeout: 5))
+    let rest = log.frame
+    XCTAssertFalse(done.exists, "No ✓ at rest")
+    load.tap()
+    XCTAssertTrue(done.waitForHittable(timeout: 5))
+    XCTAssertEqual(done.label, "Done")
+    let row = app.toolbars.containing(.button, identifier: "workout-load-done").firstMatch
+    XCTAssertLessThanOrEqual(log.frame.maxY, row.frame.minY, "Log set stands clear of the row before the first key: \(log.frame) \(row.frame)")
+    let raised = log.frame
+    load.typeText("12.5")
+    XCTAssertTrue(load.waitForValue("12.5"))
+    XCTAssertEqual(log.frame, raised, "The first key moves nothing")
+    done.tap()
+    XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+    XCTAssertTrue(load.waitForLabel("Weight, 12.5 kg"))
+    XCTAssertFalse(done.exists)
+    XCTAssertEqual(log.frame, rest, "The rack is back at rest")
+    XCTAssertFalse(app.loggedSet(3).exists, "The ✓ logs nothing")
+    load.tap()
+    XCTAssertTrue(done.waitForHittable(timeout: 5))
+    load.typeText(XCUIKeyboardKey.delete.rawValue)
+    XCTAssertTrue(load.waitForValue("Load"), "An empty field reads its placeholder")
+    done.tap()
+    XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+    XCTAssertTrue(load.waitForValue("12.5") && load.waitForLabel("Weight, 12.5 kg"), "An emptied field gives back the load before it")
+    XCTAssertFalse(app.loggedSet(3).exists)
+    let set = app.loggedSet(2)
+    XCTAssertTrue(set.waitForHittable()); set.tap()
+    app.typeLoad("4", into: "workout-fix-load")
+    XCTAssertTrue(app.buttons["workout-fix-load-sign"].waitForHittable(timeout: 5))
+    XCTAssertFalse(done.exists, "Fix set's row keeps its ± and takes no ✓")
+  }
+
+  // The rack's keyboard row leaves no keyboard layout behind it: after a ✓ landing, Fix set's load, Coach's composer and
+  // Edit sets' load each stand clear of their own keyboard.
+  func testSheetsAvoidTheirKeyboardAfterTheRacksCheck() {
+    let app = XCUIApplication()
+    app.launchArguments = ["-model-server", "-board", "workout-upper-other", "-onboarding-appearance", "dark"]
+    app.launch()
+    let keyboard = app.keyboards.firstMatch
+    XCTAssertTrue(app.textFields["workout-load"].waitForLabel("Weight, −5 kg", timeout: 30))
+    let clear = { (field: XCUIElement, name: String) in
+      XCTAssertTrue(keyboard.waitForExistence(timeout: 5))
+      XCTAssertLessThanOrEqual(field.frame.maxY, keyboard.frame.minY, "\(name) stands clear of its keyboard: \(field.frame) \(keyboard.frame)")
+    }
+    app.typeLoad("12.5"); app.buttons["workout-load-done"].tap()
+    XCTAssertTrue(keyboard.waitForNonExistence(timeout: 5))
+    let set = app.loggedSet(2)
+    XCTAssertTrue(set.waitForHittable()); set.tap()
+    app.typeLoad("4", into: "workout-fix-load")
+    clear(app.textFields["workout-fix-load"], "Fix set's load")
+    app.buttons["workout-fix-cancel"].tap()
+    XCTAssertTrue(app.buttons["workout-fix-save"].waitForNonExistence(timeout: 5))
+    app.buttons["workout-coach"].tap()
+    let question = app.descendants(matching: .any)["coach-question"]
+    XCTAssertTrue(question.waitForExistence(timeout: 10)); question.tap(); question.typeText("Hi")
+    clear(question, "Coach's composer")
+    app.buttons["coach-close"].tap()
+    XCTAssertTrue(app.buttons["coach-close"].waitForNonExistence(timeout: 5))
+    app.descendants(matching: .any)["workout-current-set"].swipeLeft()
+    let menu = app.movementHeader("Overhead Press")
+    XCTAssertTrue(menu.waitForExistence(timeout: 5)); menu.tap()
+    XCTAssertTrue(app.buttons["Edit sets"].waitForExistence(timeout: 5)); app.buttons["Edit sets"].tap()
+    XCTAssertTrue(app.buttons["edit-sets-set-1"].waitForExistence(timeout: 5)); app.buttons["edit-sets-set-1"].tap()
+    app.typeLoad("45", into: "edit-sets-load")
+    clear(app.textFields["edit-sets-load"], "Edit sets' load")
+    app.buttons["edit-sets-cancel"].tap()
   }
 
   // Bodyweight and Other lead the ladder with ±, at rest and with the pad up alike; it flips the load the field shows and
