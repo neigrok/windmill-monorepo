@@ -1881,3 +1881,18 @@ test('a device tree adopted at sign-in carries its stamped guide to the server t
   session.receiveAck({ frameId: flush.frameId });
   assert.deepEqual({ guide: session.confirmedStructure.guide, pending: session.statusSnapshot().structurePending }, { guide: 'Written signed out.', pending: 0 });
 });
+
+test('a refused guide frame stands the structure lane\'s refusal and keeps the guide pending until a retry lands it', (t) => {
+  const { session } = connectedSession(t);
+  session.setGuide('One step a week.');
+  const written = session.lattice.toFrame().guide;
+  refuseLast(session, 'structure', 'server-error');
+  assert.deepEqual({ code: session.refusals.get('structure')?.code, pending: session.statusSnapshot().structurePending, guide: session.lattice.guide },
+    { code: 'server-error', pending: 1, guide: 'One step a week.' });
+  const socket = reconnectWith(session, session.confirmedStructure.toFrame(), session.confirmedStructure.frontier().toJSON());
+  const [resent] = structureFrames(socket);
+  assert.deepEqual(resent.guide, written);
+  session.receiveAck({ frameId: resent.frameId });
+  assert.deepEqual({ refused: session.refusals.size, pending: session.statusSnapshot().structurePending, confirmed: session.confirmedStructure.guide },
+    { refused: 0, pending: 0, confirmed: 'One step a week.' });
+});
