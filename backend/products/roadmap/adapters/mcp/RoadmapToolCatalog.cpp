@@ -695,8 +695,9 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     Json::Value p(Json::objectValue);
     p["treeId"] = treeHandle();
     Json::Value nodeFields(Json::objectValue);
-    nodeFields["id"] = cappedStr("The id this node WILL have: one already in the tree is overwritten, "
-                                 "a new one is added.", kMaxIdLength);
+    nodeFields["id"] = cappedStr("The id this node WILL have: one already in the tree keeps every field "
+                                 "you leave out, except its prerequisites, which follow "
+                                 "`prerequisiteMode`; a new one is added.", kMaxIdLength);
     nodeFields["label"] = cappedStr("The node's display label.", kMaxNodeLabelLength);
     nodeFields["icon"] = cappedStr("Optional icon name/emoji.", kMaxIconLength);
     nodeFields["color"] = enumStr("Optional branch color (default terracotta).", kHues);
@@ -751,8 +752,9 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "the prerequisites it already has — an edge you leave out survives, and is listed in the "
         "receipt's keptEdges. `replace` makes your list the whole list: every prerequisite edge into "
         "that node you did not name, live or waiting to revive, is removed in the same batch, and "
-        "the receipt counts them as removedEdges. New nodes and nodes not in the batch are untouched "
-        "either way.",
+        "the receipt counts them as removedEdges. A node sent without `prerequisites` names none, so "
+        "under `replace` it loses every edge into it. New nodes and nodes not in the batch are "
+        "untouched either way.",
         kPrerequisiteModes);
     p["tombstone"] = strArray(
         "Ids to delete in this same batch: each node goes at the same seq as the upserts, every "
@@ -775,9 +777,11 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "against malformed input — a bad field, a repeated id, or a tombstone id that does not exist "
         "changes nothing and names the offending element — but never against a merely untidy result "
         "(a dangling edge lands and is reported in introducedDiagnostics). Upsert by id: an incoming "
-        "id already present is overwritten (reported in nodeCollisions/kindCollisions) — its scalar "
-        "fields are replaced, and its prerequisites are UNIONED with the ones it already has unless "
-        "prerequisiteMode is \"replace\"; a new id is added; the tree's title is not touched. The "
+        "id already present is reported in nodeCollisions/kindCollisions, and its prerequisites are "
+        "UNIONED with the ones it already has unless prerequisiteMode is \"replace\"; a new id is "
+        "added; the tree's title is not touched. Every other field you leave off a node or kind keeps "
+        "the value the tree holds (a new id gets the default), and every field you send replaces it — "
+        "an explicit \"\" or [] clears it. The "
         "only removals are the ones you ask for: `tombstone` ids (which need the roadmap:delete grant), "
         "and under \"replace\" the prerequisite edges your batch does not name. `position` is optional — the web canvas lays "
         "the tree out from its structure. The receipt counts what the batch carried — `nodes`, "

@@ -17,18 +17,21 @@ namespace wm {
 // delete and waiting to revive with the node.
 enum class PrerequisiteMode { merge, replace };
 
-// The kind registers a document may leave out; `hue` is never one of them.
+// The registers a document may leave out of a node or a kind. A node's prerequisites are never one:
+// they meet the node's edges by PrerequisiteMode. A kind's `hue` is never one either.
+enum class NodeRegister { label, icon, color, order, position, status, description, links };
 enum class KindRegister { label, description, crossBranchExempt };
 
 // One bulk arrival: a document upserted by id, and the ids it deletes outright. A tombstoned node
-// loses every present edge touching it, in either direction. `omittedKindRegisters` names, per
-// kind id, the registers the document did not spell out: the graft leaves those alone, so a kind
-// already in the legend keeps its value and a new kind lands with the default. A kind absent from
-// the map carried every register.
+// loses every present edge touching it, in either direction. The two omitted maps name, per id, the
+// registers the document did not spell out: the graft leaves those alone, so a node or kind the tree
+// already holds keeps its value and a new one lands with the default. An id absent from its map
+// carried every register, and a carried register lands even when it is empty.
 struct Graft {
   TreeData document;
   PrerequisiteMode prerequisites = PrerequisiteMode::merge;
   std::vector<NodeId> tombstones;
+  std::map<NodeId, std::set<NodeRegister>> omittedNodeRegisters;
   std::map<KindId, std::set<KindRegister>> omittedKindRegisters;
 };
 
@@ -47,7 +50,8 @@ GraftFootprint footprintOf(const LooseGraph& graph, const Graft& graft);
 
 // The frame that joins: the document stamped `at`, and every removal the footprint names stamped
 // `at` too. One stamp that dominates the graph, so a removal beats the edge's addedAt and a later
-// re-add beats the removal. A document edge touching a tombstoned node is dropped, never added.
+// re-add beats the removal. An omitted node register is stamped unset, which no stored stamp loses
+// to. A document edge touching a tombstoned node is dropped, never added.
 GraphState graftState(const LooseGraph& graph, const Graft& graft, const Hlc& at);
 
 // The legend half of the same frame: every kind the document carries, stamped `at`, save that an

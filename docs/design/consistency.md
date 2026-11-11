@@ -600,6 +600,16 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   (first in its flow, above the filter strip), the reader's card with *Read note*, the compact *Add guide* card, and
   the device tree's footer line. 17.36 draws Save solid on an empty draft while 17.22 *Before typing* draws it off; web
   keeps it off. 17.38 and 17.39 omit the device line that 17.29 draws; web shows it above the row.
+- **Step relations · "Opens", "Unlocks" and "Tree" (18–22, 27, 28).** The approved step editor heads the steps a
+  step unlocks with *Opens*; the Board card says *Unlocks*. Section 28 draws a step that opens a tree and calls that
+  pointer *Tree* (Open tree, Attach, Detach tree) to stay clear of both. The owner rules on the words when approving
+  [28 · A node opens a tree](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=876-48881).
+- **Section 28 · parts outside the library.** The Step card has no slot for the tree pill, so section 28 keeps a
+  `🧩 28 · Parts` frame (Step card · tree, Tree pill, Step / Tree row, Back chip, loop and chevron-left icons). The
+  Figma Skill Node has no form variant though `scene/NodeBatch.js` has, so the tree node is a composed frame. Move
+  the parts into Components when the flow is approved.
+- **Flow index · step editor.** The [flow index](../index.md#roadmap--web) has no rows for the step editor sections
+  (18–22, 27) on Board · Web.
 - **Web reconciliation evidence.** All 25 current Roadmap screen/state families are mapped in the
   [evidence log](roadmap-web-reconciliation.md) and linked from the [flow index](../index.md#roadmap--web).
   🚀 marks source/runtime reconciliation; runtime limits are separate. Native graphs and SwiftShader
