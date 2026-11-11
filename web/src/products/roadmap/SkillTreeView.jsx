@@ -13,8 +13,8 @@ import { BoardQuery } from './board/Board.js';
 import { BoardToast } from './board/BoardToast.jsx';
 import BoardView from './board/BoardView.jsx';
 import { RoadmapIdentity, RoadmapIdentityFallback } from './identity/RoadmapIdentity.jsx';
-import { GuideEditor, GuideNote } from './guide/GuidePhone.jsx';
-import { GuideModal } from './guide/GuideWide.jsx';
+import { GuideEntry } from './guide/GuideEntry.jsx';
+import { GuideNote } from './guide/GuideNote.jsx';
 import { useRoomGuide } from './guide/useGuide.js';
 import { StepComposer } from './step/StepComposer.jsx';
 import { StepDetail } from './step/StepDetail.jsx';
@@ -198,7 +198,12 @@ export function SkillTreeView({ treeId, demo = false }) {
   useEffect(() => { setBoardComposer(null); setBoardOverall(null); setBoardReveal(null); setBoardSelect(null); }, [treeId, load.reloadKey]);
   const { syncSnapshot, deviceLine, refusal } = useRoomSyncNotices({ treeId, syncSession, owner, status, lapsed: sessionLapsed || lapsed, phone, openSignInDoor, setBoardQuiet });
   const guide = useRoomGuide({ treeId, tree, who, deviceLine, sessionRef });
-  const guideLine = phone && guide && !guide.owner ? guide : null;
+  const guideView = boardActive ? 'board' : 'graph';
+  const guideEntry = guide && !boardAwaitsRoadmap ? (
+    <ErrorBoundary fallback={null} onCrash={(error) => reportRoadmapFailure('roadmap-guide', error)}>
+      <GuideEntry guide={guide} band={breakpoint} view={guideView} />
+    </ErrorBoundary>
+  ) : null;
   const revealOnGraph = useCallback((id) => {
     if (selectedIdRef.current !== id) framing.graphRevealRef.current = id;
     else sceneRef.current?.revealNode(id);
@@ -391,7 +396,6 @@ export function SkillTreeView({ treeId, demo = false }) {
             activityOpen={activityOpen}
             onFork={!owner && forkPresent ? openFork : null}
             sheet={phone && owner && boardFacts.loaded ? verbs.identitySheet : null}
-            guide={boardAwaitsRoadmap ? null : guide}
             onBottom={setTopbarBottom}
           />
         </ErrorBoundary>
@@ -411,7 +415,7 @@ export function SkillTreeView({ treeId, demo = false }) {
               onAnchor={setSelectedId}
               refusal={refusal}
               deviceLine={phone ? deviceLine : null}
-              guideLine={guideLine}
+              guide={boardActive ? guideEntry : null}
               onFork={phone && forkPresent ? openFork : null}
               breakpoint={breakpoint}
               topInset={topbarBottom}
@@ -477,17 +481,6 @@ export function SkillTreeView({ treeId, demo = false }) {
         </ErrorBoundary>
       )}
 
-      {guide?.surface && (
-        <ErrorBoundary fallback={null} onCrash={(error) => {
-          reportRoadmapFailure('roadmap-guide', error);
-          guide.close();
-        }}>
-          {guide.surface.kind === 'modal' && !phone && <GuideModal guide={guide} />}
-          {guide.surface.kind === 'note' && phone && <GuideNote guide={guide} />}
-          {guide.surface.kind === 'editor' && phone && guide.owner && <GuideEditor guide={guide} />}
-        </ErrorBoundary>
-      )}
-
       {shownComposer !== null && (
         <ErrorBoundary fallback={null} onCrash={(error) => {
           reportRoadmapFailure('roadmap-board-composer', error);
@@ -514,7 +507,7 @@ export function SkillTreeView({ treeId, demo = false }) {
         onOpenStep={stepPage.openFromGraph}
         onBarBottom={geometry.setGraphBarBottom}
         deviceLine={phone ? deviceLine : null}
-        guideLine={guideLine}
+        guide={canvasView ? guideEntry : null}
         cameraRight={phone || !canvasView ? undefined : insets.blocks.at(-1)?.right}
         cameraBottom={phone || !canvasView ? undefined : insets.blocks.at(-1)?.bottom}
         onZoomIn={() => sceneRef.current?.zoomBy(1.2)}
@@ -522,6 +515,16 @@ export function SkillTreeView({ treeId, demo = false }) {
         onFocus={focusCamera}
         onShowAll={showAllSteps}
         onFork={forkPresent && phoneGraph ? openGraphFork : undefined} />
+
+      {/* After the Graph's chrome, so the entry the note opens over is already in place when it measures it. */}
+      {guide?.opened && (
+        <ErrorBoundary fallback={null} onCrash={(error) => {
+          reportRoadmapFailure('roadmap-guide', error);
+          guide.close();
+        }}>
+          <GuideNote guide={guide} band={breakpoint} view={guideView} />
+        </ErrorBoundary>
+      )}
 
       {canTend && tendOpen && (
         <TendBar

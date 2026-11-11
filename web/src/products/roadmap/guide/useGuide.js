@@ -7,17 +7,20 @@ import { reportUnexpectedFailure } from '../reportFailure.js';
 import { setLocalGuide } from '../sync/localTrees.js';
 import { InadmissibleGuide, guideLengthBucket, hasGuide } from './GuideDraft.js';
 
-// The room's guide: whether this person sees one, the surface open on it, the door a save takes and the beat a guide
-// set elsewhere earns. Null where no guide shows: the shared reader's route and the demo, and a reader's tree without one.
-// A surface is { kind: 'modal' | 'note' | 'editor', writing: null | { via, offset } }.
+// The room's guide: whether this person sees one, whether its note stands open, the door a save takes and the beat a
+// guide set elsewhere earns. Null where no guide shows: the shared reader's route and the demo, and a reader's tree
+// without one. `opened` is null while the guide rests on the tree, else { writing: null | { offset } }: a note opened to
+// read, or to write from that offset. `entry` holds the guide's control on the tree, which the note opens from and
+// hands focus back to.
 export function useRoomGuide({ treeId, tree, who, deviceLine, sessionRef }) {
   const text = tree?.guide ?? '';
-  const [surface, setSurface] = useState(null);
+  const [opened, setOpened] = useState(null);
   const [arrival, setArrival] = useState(0);
+  const entry = useRef(null);
   const seen = useRef(null);
   const ownWrite = useRef(null);
 
-  useEffect(() => setSurface(null), [treeId, who.phone]);
+  useEffect(() => setOpened(null), [treeId, who.phone]);
 
   // A guide set in another tab or by an agent earns one beat; the first read and this room's own save earn none.
   useEffect(() => {
@@ -71,10 +74,10 @@ export function useRoomGuide({ treeId, tree, who, deviceLine, sessionRef }) {
     deviceOnly: Boolean(deviceLine),
     roadmapTitle,
     arrival,
-    surface,
-    open: (kind) => setSurface({ kind, writing: null }),
-    write: (kind, writing) => setSurface({ kind, writing }),
-    close: () => setSurface(null),
+    entry,
+    opened,
+    open: (writing = null) => setOpened({ writing }),
+    close: () => setOpened(null),
     save,
-  } : null), [shown, text, who.owner, deviceLine, roadmapTitle, arrival, surface, save]);
+  } : null), [shown, text, who.owner, deviceLine, roadmapTitle, arrival, opened, save]);
 }

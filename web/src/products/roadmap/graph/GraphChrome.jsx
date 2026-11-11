@@ -6,7 +6,6 @@ import { KIND_CSS } from '../theme.js';
 import { DOCK_WIDTH, TABLET_PANEL_WIDTH } from './viewport.js';
 import { useCoveredLayer } from '../step/composerFocus.js';
 import { DeviceLine } from '../sync/SyncNotices.jsx';
-import { GuideLine } from '../guide/GuidePhone.jsx';
 import { COLUMN_TITLES, FORK_OFFER, OPEN_STEP, RECOLOR } from '../copy.js';
 import { t } from '../i18n/index.js';
 
@@ -18,7 +17,7 @@ export const GRAPH_CAMERA_SIZE = { width: 248, height: 50 };
 export function GraphChrome({
   onFork,
   deviceLine = null,
-  guideLine = null,
+  guide = null,
   ctaEcho = false,
   onFocus,
   onShowAll,
@@ -44,7 +43,7 @@ export function GraphChrome({
   const canvasView = view === 'tree';
   const phone = band === 'phone';
   const phoneGraph = phone && canvasView;
-  const nudge = phoneGraph && Boolean(deviceLine || guideLine);
+  const nudge = phoneGraph && Boolean(deviceLine || guide);
   const phoneCameraTop = rowBottom + 8 + (nudge ? nudgeHeight : 0);
   const showStep = phoneGraph && Boolean(step);
 
@@ -149,9 +148,12 @@ export function GraphChrome({
 
       {nudge && (
         <div ref={nudgeRef} className="st-roadmap-device-nudge" style={{ top: rowBottom }}>
-          {deviceLine ? <DeviceLine {...deviceLine} /> : <GuideLine guide={guideLine} />}
+          {deviceLine && <DeviceLine {...deviceLine} />}
+          {guide}
         </div>
       )}
+
+      {canvasView && !phone && guide && <div className="st-graph-guide" style={{ top: rowBottom }}>{guide}</div>}
 
       {/* The phone camera clears the row and its device notice. */}
       {phoneGraph && (

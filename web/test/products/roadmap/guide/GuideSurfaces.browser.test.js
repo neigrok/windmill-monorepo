@@ -16,9 +16,10 @@ import { flushSync } from 'react-dom';
 import '/src/styles/fonts.js';
 import '/src/styles/global.css';
 import '/src/products/roadmap/skilltree.css';
-import { RoadmapIdentity } from '/src/products/roadmap/identity/RoadmapIdentity.jsx';
-import { GuideModal } from '/src/products/roadmap/guide/GuideWide.jsx';
-import { GuideEditor, GuideLine, GuideNote } from '/src/products/roadmap/guide/GuidePhone.jsx';
+import '/src/products/roadmap/board/board.css';
+import '/src/products/roadmap/sync/sync-notices.css';
+import { GuideEntry } from '/src/products/roadmap/guide/GuideEntry.jsx';
+import { GuideNote } from '/src/products/roadmap/guide/GuideNote.jsx';
 import { useRoomGuide } from '/src/products/roadmap/guide/useGuide.js';
 import { SkillTree } from '/src/products/roadmap/model/SkillTree.js';
 const root = createRoot(document.getElementById('root'));
@@ -38,17 +39,13 @@ window.mount = (options = {}) => {
     const owner = options.role !== 'reader';
     const who = { owner, reader: !owner, shared: Boolean(options.shared), demo: false, phone };
     const guide = useRoomGuide({ treeId: 'sail', tree, who, deviceLine: options.device ? { text: 'device' } : null, sessionRef });
-    const sheet = { current: { id: 'sail', title: 'Learn to sail', done: 3, total: 8, dominantKind: 'sky' },
-      listTrees: () => Promise.resolve([]), onPickTree() {}, onNewRoadmap() {}, onBrowse() {} };
+    const entry = guide && React.createElement(GuideEntry, { guide, band, view: 'graph' });
     return React.createElement('div', { className: 'st-root' },
-      React.createElement('div', { className: 'st-roadmap-identity-host' }, React.createElement(RoadmapIdentity, {
-        band, view: 'board', role: owner ? 'owner' : 'reader', title: 'Learn to sail', progress: { done: 3, total: 8 },
-        onSwitchView: () => {}, sheet: phone && owner ? sheet : null, guide })),
-      phone && guide && !owner && React.createElement('div', { className: 'st-board st-board--phone', style: { position: 'absolute', top: 140, left: 0, right: 0 } },
-        React.createElement(GuideLine, { guide })),
-      guide?.surface?.kind === 'modal' && !phone && React.createElement(GuideModal, { guide }),
-      guide?.surface?.kind === 'note' && phone && React.createElement(GuideNote, { guide }),
-      guide?.surface?.kind === 'editor' && phone && React.createElement(GuideEditor, { guide }));
+      React.createElement('button', { type: 'button', id: 'step', style: { position: 'absolute', right: 24, bottom: 24 } }, 'Read the wind'),
+      phone
+        ? React.createElement('div', { className: 'st-board st-board--phone', style: { paddingTop: 112 } }, entry)
+        : React.createElement('div', { className: 'st-graph-guide', style: { top: 64 } }, entry),
+      guide?.opened && React.createElement(GuideNote, { guide, band, view: 'graph' }));
   }
   flushSync(() => root.render(React.createElement(Room)));
 };
@@ -100,43 +97,62 @@ async function open(options = {}, { engine = chromium, width = 1440, height = 96
   return page;
 }
 
-// The modal opens with wm-pop-in; geometry is read once it stands still.
 const settled = (page) => page.waitForFunction(() => document.getAnimations().every((animation) => animation.playState !== 'running'));
 const events = (page) => page.evaluate(() => (window.events ?? []).filter(({ name }) => name === 'roadmap_guide').map(({ props }) => props));
-const field = (page) => page.locator('.st-guide-text');
-const caretState = (page) => field(page).evaluate((box) => ({ readOnly: box.readOnly, start: box.selectionStart, end: box.selectionEnd, focused: document.activeElement === box }));
+const prose = (page) => page.locator('.st-guide-prose');
+const field = (page) => page.locator('.st-guide-field');
+const caretState = (page) => field(page).evaluate((box) => ({ start: box.selectionStart, end: box.selectionEnd, focused: document.activeElement === box }));
+const focusedName = (page) => page.evaluate(() => document.activeElement.getAttribute('aria-label') ?? document.activeElement.className);
+const stepInert = (page) => page.locator('#step').evaluate((step) => Boolean(step.closest('[inert]')));
 
-// The point inside a line of the 18/27 field: past its 1.5px edge and 12/16 padding.
-async function linePoint(page, line, from = 'start') {
-  const box = await field(page).boundingBox();
-  const y = box.y + 1.5 + 12 + 27 * line + 13;
-  return from === 'start' ? { x: box.x + 1.5 + 16 + 1, y } : { x: box.x + box.width - 24, y };
+// A point inside a line of the prose: `height` is its line height, 32px from 744px and 25px on phones.
+async function linePoint(page, line, from = 'start', height = 32) {
+  const box = await prose(page).boundingBox();
+  const y = box.y + height * line + height / 2;
+  return from === 'start' ? { x: box.x + 1, y } : { x: box.x + box.width - 8, y };
 }
 
 for (const engine of [chromium, webkit]) {
-  test(`${engine.name()}: a click on the owner's guide writes from where it landed, and a drag that selects stays reading`, async () => {
+  test(`${engine.name()}: the card opens the note in place beside a live tree, a drag that selects stays reading, and a click writes from where it landed`, async () => {
     const page = await open({ guide: GUIDE }, { engine });
     try {
       await withBrowserErrors(page, async () => {
-        await page.getByRole('button', { name: 'Guide: One step a week.' }).click();
-        await page.getByRole('dialog', { name: 'Guide' }).waitFor();
+        const card = page.getByRole('button', { name: 'Guide: One step a week.' });
+        assert.equal(await card.textContent(), 'GuideOne step a week.Read guide→');
+        const resting = await card.boundingBox();
+        await card.click();
+        const note = page.getByRole('dialog', { name: 'Guide' });
+        await note.waitFor();
         await settled(page);
+        const opened = await note.boundingBox();
+        assert.deepEqual({
+          modal: await note.getAttribute('aria-modal'),
+          tree: await stepInert(page),
+          cardShown: await page.locator('.st-guide-card').evaluate((button) => getComputedStyle(button).visibility),
+          left: opened.x - resting.x,
+          top: opened.y - resting.y,
+          width: opened.width,
+          focus: await focusedName(page),
+        }, { modal: null, tree: false, cardShown: 'hidden', left: -4, top: -16, width: 642, focus: 'st-guide-prose st-guide-prose--owner' });
+
         const from = await linePoint(page, 0, 'start');
         await page.mouse.move(from.x, from.y);
         await page.mouse.down();
-        await page.mouse.move(from.x + 90, from.y, { steps: 4 });
+        await page.mouse.move(from.x + 120, from.y, { steps: 4 });
         await page.mouse.up();
-        const dragged = await caretState(page);
-        assert.equal(dragged.readOnly, true);
-        assert.ok(dragged.end > dragged.start, 'the drag selected text');
+        assert.equal(await field(page).count(), 0, 'the drag selected text and stayed reading');
 
         const lineStart = await linePoint(page, 2, 'start');
         await page.mouse.click(lineStart.x, lineStart.y);
-        assert.deepEqual(await caretState(page), { readOnly: false, start: GUIDE.indexOf('A step'), end: GUIDE.indexOf('A step'), focused: true });
+        await page.getByRole('dialog', { name: 'Edit guide' }).waitFor();
+        assert.deepEqual(await caretState(page), { start: GUIDE.indexOf('A step'), end: GUIDE.indexOf('A step'), focused: true });
+        assert.equal(await stepInert(page), true);
+        const writing = await page.getByRole('dialog', { name: 'Edit guide' }).boundingBox();
+        assert.deepEqual([writing.x, writing.y], [opened.x, opened.y]);
         await page.keyboard.type('Then ');
         assert.equal(await field(page).inputValue(), GUIDE.replace('A step', 'Then A step'));
         assert.deepEqual(await events(page), [
-          { step: 'open', door: 'row', role: 'owner' },
+          { step: 'open', door: 'card', view: 'graph', role: 'owner' },
           { step: 'edit', via: 'click' },
         ]);
       });
@@ -152,257 +168,396 @@ for (const engine of [chromium, webkit]) {
         const lineEnd = await linePoint(page, 1, 'end');
         await page.mouse.click(lineEnd.x, lineEnd.y);
         const at = GUIDE.indexOf('\nA step');
-        assert.deepEqual(await caretState(page), { readOnly: false, start: at, end: at, focused: true });
+        assert.deepEqual(await caretState(page), { start: at, end: at, focused: true });
       });
     } finally { await page.close(); }
   });
 
-  test(`${engine.name()}: a tap on the phone's Guide page opens the editor with the caret where the finger landed`, async () => {
+  test(`${engine.name()}: a tap on the phone sheet's text writes in the same sheet with the caret where the finger landed`, async () => {
     const page = await open({ guide: GUIDE, band: 'phone' }, { engine, width: 390, height: 844 });
     try {
       await withBrowserErrors(page, async () => {
-        await page.getByRole('button', { name: 'Learn to sail' }).click();
-        await page.getByRole('button', { name: 'Guide: One step a week.' }).click();
-        const text = page.locator('.st-guide-page-text');
-        await text.waitFor();
+        const row = page.getByRole('button', { name: 'Guide: One step a week.' });
+        assert.equal(await row.textContent(), `Guide${GUIDE}`);
+        await row.click();
+        const sheet = page.getByRole('dialog', { name: 'Guide' });
+        await sheet.waitFor();
         await settled(page);
-        assert.equal(await page.locator('.st-guide-reach').textContent(), 'Tap to edit');
-        const box = await text.boundingBox();
-        await page.mouse.click(box.x + 1, box.y + 22 * 2 + 11);
+        assert.deepEqual({
+          modal: await sheet.getAttribute('aria-modal'),
+          tree: await stepInert(page),
+          foot: await sheet.evaluate((element) => window.innerHeight - element.getBoundingClientRect().bottom),
+        }, { modal: 'true', tree: true, foot: 0 });
+        const point = await linePoint(page, 2, 'start', 25);
+        await page.mouse.click(point.x, point.y);
         await page.getByRole('dialog', { name: 'Edit guide' }).waitFor();
-        const editor = page.locator('.st-guide-editor-text');
-        assert.deepEqual(await editor.evaluate((box) => [box.selectionStart, box.selectionEnd, document.activeElement === box]), [GUIDE.indexOf('A step'), GUIDE.indexOf('A step'), true]);
-        assert.equal(await page.locator('.st-guide-editor-bar').textContent(), 'Your agents and anyone you share the tree with read this.Save');
+        assert.deepEqual(await caretState(page), { start: GUIDE.indexOf('A step'), end: GUIDE.indexOf('A step'), focused: true });
+        assert.equal(await page.locator('.st-guide-footer').textContent(), 'Visible to your agents and people you share with.CancelSave');
         await page.keyboard.type('Then ');
-        await page.locator('.st-guide-editor-bar .st-board-note-save').click();
-        await page.getByRole('dialog', { name: 'Edit guide' }).waitFor({ state: 'detached' });
+        await page.getByRole('button', { name: 'Save' }).click();
+        await sheet.waitFor();
         assert.deepEqual(await page.evaluate(() => window.writes), [GUIDE.replace('A step', 'Then A step')]);
-        assert.equal(await text.textContent(), GUIDE.replace('A step', 'Then A step'));
+        assert.equal(await prose(page).textContent(), GUIDE.replace('A step', 'Then A step'));
+        assert.equal(await focusedName(page), 'st-guide-prose st-guide-prose--owner');
         assert.deepEqual(await events(page), [
-          { step: 'open', door: 'sheet', role: 'owner' },
+          { step: 'open', door: 'row', view: 'graph', role: 'owner' },
           { step: 'edit', via: 'tap' },
           { step: 'save', outcome: 'saved', length: '1-500' },
         ]);
       });
     } finally { await page.close(); }
   });
+
+  test(`${engine.name()}: a reader's long author's note takes focus on its text and scrolls with PageDown, the arrows and Space`, async () => {
+    const note = Array.from({ length: 80 }, (_, line) => `Line ${line + 1} of the author's note.`).join('\n');
+    const page = await open({ guide: note, role: 'reader' }, { engine, width: 1024, height: 700 });
+    try {
+      await withBrowserErrors(page, async () => {
+        await page.getByRole('button', { name: 'Author’s note: Line 1 of the author\'s note.' }).click();
+        const dialog = page.getByRole('dialog', { name: 'Author’s note' });
+        await dialog.waitFor();
+        await settled(page);
+        const body = page.getByRole('region', { name: 'Author’s note' });
+        assert.deepEqual({
+          focus: await focusedName(page),
+          pencil: await page.getByRole('button', { name: 'Edit guide' }).count(),
+          inWindow: await dialog.evaluate((element) => element.getBoundingClientRect().bottom <= window.innerHeight - 24),
+          scrolls: await body.evaluate((element) => element.scrollHeight > element.clientHeight),
+        }, { focus: 'st-guide-prose', pencil: 0, inWindow: true, scrolls: true });
+        const scrolled = [];
+        for (const key of ['PageDown', 'ArrowDown', 'Space']) {
+          const before = await body.evaluate((element) => element.scrollTop);
+          await page.keyboard.press(key);
+          await page.waitForFunction((top) => document.querySelector('.st-guide-prose').scrollTop > top, before);
+          scrolled.push(key);
+        }
+        assert.deepEqual(scrolled, ['PageDown', 'ArrowDown', 'Space']);
+        await body.click();
+        assert.equal(await field(page).count(), 0, 'a reader cannot write');
+      });
+    } finally { await page.close(); }
+  });
 }
 
-test('Chromium: the owner reads the guide in a modal that fills the window, and Enter writes from its end', async () => {
+test('Chromium: the pencil writes from the end, Save waits for a change, and the saved note is read before it closes back to its card', async () => {
   const page = await open({ guide: GUIDE });
   try {
     await withBrowserErrors(page, async () => {
-      const chip = page.getByRole('button', { name: 'Guide: One step a week.' });
-      assert.equal(await chip.textContent(), 'One step a week.');
-      assert.equal(await chip.getAttribute('aria-haspopup'), 'dialog');
-      await chip.click();
-      const dialog = page.getByRole('dialog', { name: 'Guide' });
-      await dialog.waitFor();
-      await settled(page);
-      assert.deepEqual(await dialog.boundingBox(), { x: 24, y: 24, width: 1392, height: 912 });
-      assert.equal(await page.locator('.st-guide-modal-heading p').textContent(), 'Learn to sail');
-      assert.deepEqual(await field(page).evaluate((box) => ({ width: box.getBoundingClientRect().width, value: box.value, readOnly: box.readOnly })), { width: 592, value: GUIDE, readOnly: true });
-      assert.equal(await page.locator('.st-guide-modal-footer').textContent(), 'Click to edit');
+      const card = page.getByRole('button', { name: 'Guide: One step a week.' });
+      await card.click();
+      await page.getByRole('button', { name: 'Edit guide' }).click();
+      await page.getByRole('dialog', { name: 'Edit guide' }).waitFor();
+      assert.deepEqual(await caretState(page), { start: GUIDE.length, end: GUIDE.length, focused: true });
+      assert.equal(await page.locator('.st-guide-footer').textContent(), 'Your agents and people you share this tree with can read the guide.CancelSave');
+      const save = page.getByRole('button', { name: 'Save' });
+      assert.deepEqual(await save.evaluate((button) => [button.getAttribute('aria-disabled'), getComputedStyle(button).opacity]), ['true', '0.45']);
+      await save.click({ force: true });
+      await page.keyboard.press('Meta+Enter');
+      assert.deepEqual(await page.evaluate(() => window.writes), []);
       await field(page).focus();
-      await page.keyboard.press('Enter');
-      assert.deepEqual(await caretState(page), { readOnly: false, start: GUIDE.length, end: GUIDE.length, focused: true });
-      assert.equal(await page.locator('.st-guide-modal-footer').textContent(), 'Your agents and anyone you share the tree with read this.CancelSave');
-      await page.keyboard.press('Escape');
-      await dialog.waitFor({ state: 'detached' });
-      await page.waitForFunction(() => document.activeElement?.matches('[data-guide-opener]'));
+      await page.keyboard.type('\nWritten on the dock.');
+      assert.equal(await save.getAttribute('aria-disabled'), null);
+      await save.click();
+      const note = page.getByRole('dialog', { name: 'Guide' });
+      await note.waitFor();
+      assert.deepEqual(await page.evaluate(() => window.writes), [`${GUIDE}\nWritten on the dock.`]);
+      assert.equal(await prose(page).textContent(), `${GUIDE}\nWritten on the dock.`);
+      assert.equal(await stepInert(page), false);
+      await page.getByRole('button', { name: 'Close' }).click();
+      await note.waitFor({ state: 'detached' });
+      await page.waitForFunction(() => document.activeElement.matches('.st-guide-card'));
+      assert.equal(await card.evaluate((button) => getComputedStyle(button).visibility), 'visible');
       assert.deepEqual(await events(page), [
-        { step: 'open', door: 'row', role: 'owner' },
-        { step: 'edit', via: 'key' },
+        { step: 'open', door: 'card', view: 'graph', role: 'owner' },
+        { step: 'edit', via: 'pencil' },
+        { step: 'save', outcome: 'saved', length: '1-500' },
       ]);
     });
   } finally { await page.close(); }
 });
 
-test('Chromium: the counter speaks from 4,500 code points, and a paste over 5,000 is kept whole while Save waits', async () => {
+test('Chromium: the counter speaks from 4,500 code points beside the audience line, and a paste over 5,000 is kept whole while Save waits', async () => {
   const page = await open({ guide: GUIDE });
   try {
     await withBrowserErrors(page, async () => {
       await page.getByRole('button', { name: 'Guide: One step a week.' }).click();
-      await field(page).focus();
-      await page.keyboard.press('Enter');
+      await prose(page).press('Enter');
+      const count = page.locator('.st-guide-count');
       await field(page).fill('🌊'.repeat(4499));
-      assert.equal(await page.locator('.st-guide-counter').textContent(), '');
+      assert.equal(await count.textContent(), '');
       await field(page).fill('🌊'.repeat(4620));
-      assert.equal(await page.locator('.st-guide-counter').textContent(), '380 left');
+      assert.equal(await page.locator('.st-guide-footer').textContent(), 'Your agents and people you share this tree with can read the guide.380 leftCancelSave');
       await field(page).fill('');
       await page.keyboard.insertText(`${'帆'.repeat(5000)}${'🌊'.repeat(312)}`);
-      const over = await field(page).evaluate((box) => ({ points: [...box.value].length, maxLength: box.getAttribute('maxlength'), over: box.classList.contains('st-guide-text--over'), described: box.getAttribute('aria-describedby') === document.querySelector('.st-guide-counter').id }));
-      assert.deepEqual(over, { points: 5312, maxLength: null, over: true, described: true });
-      assert.equal(await page.locator('.st-guide-counter').textContent(), '312 over');
+      assert.deepEqual(await field(page).evaluate((box) => ({
+        points: [...box.value].length,
+        maxLength: box.getAttribute('maxlength'),
+        over: box.classList.contains('st-guide-field--over'),
+        described: box.getAttribute('aria-describedby') === document.querySelector('.st-guide-count').id,
+        inPaper: box.getBoundingClientRect().bottom < box.closest('.st-guide-paper').getBoundingClientRect().bottom,
+        scrolls: box.scrollHeight > box.clientHeight,
+      })), { points: 5312, maxLength: null, over: true, described: true, inPaper: true, scrolls: true });
+      assert.equal(await count.textContent(), '312 over');
       const save = page.getByRole('button', { name: 'Save' });
-      assert.deepEqual(await save.evaluate((button) => ({ disabled: button.disabled, ariaDisabled: button.getAttribute('aria-disabled'), opacity: getComputedStyle(button).opacity })), { disabled: false, ariaDisabled: 'true', opacity: '0.45' });
+      assert.deepEqual(await save.evaluate((button) => [button.disabled, button.getAttribute('aria-disabled')]), [false, 'true']);
       await save.click({ force: true });
       await page.keyboard.press('Meta+Enter');
       assert.deepEqual(await page.evaluate(() => window.writes), []);
       await field(page).fill('帆'.repeat(5000));
-      assert.equal(await page.locator('.st-guide-counter').textContent(), '0 left');
+      assert.equal(await count.textContent(), '0 left');
       await page.keyboard.press('Meta+Enter');
-      await page.getByRole('dialog', { name: 'Guide' }).waitFor({ state: 'detached' });
+      await page.getByRole('dialog', { name: 'Guide' }).waitFor();
       assert.deepEqual(await page.evaluate(() => window.writes.map((written) => [...written].length)), [5000]);
       assert.deepEqual((await events(page)).at(-1), { step: 'save', outcome: 'saved', length: '4501-5000' });
     });
   } finally { await page.close(); }
 });
 
-test('Chromium: leaving a changed draft asks first, and an unchanged one closes at once', async () => {
+test('Chromium: Cancel on an unchanged draft returns to the note at once, and leaving a changed one asks over the note', async () => {
   const page = await open({ guide: GUIDE });
   try {
     await withBrowserErrors(page, async () => {
       await page.getByRole('button', { name: 'Guide: One step a week.' }).click();
-      await field(page).focus();
-      await page.keyboard.press('Enter');
+      await prose(page).press('Enter');
       await page.getByRole('button', { name: 'Cancel' }).click();
-      await page.getByRole('dialog', { name: 'Guide' }).waitFor({ state: 'detached' });
-      await page.getByRole('button', { name: 'Guide: One step a week.' }).click();
-      await field(page).focus();
+      await page.getByRole('dialog', { name: 'Guide' }).waitFor();
+      assert.equal(await focusedName(page), 'st-guide-prose st-guide-prose--owner');
       await page.keyboard.press('Enter');
       await page.keyboard.type(' Written');
       await page.keyboard.press('Escape');
-      await page.getByRole('dialog', { name: 'Discard draft?' }).waitFor();
+      const question = page.getByRole('alertdialog', { name: 'Discard draft?' });
+      await question.waitFor();
+      assert.equal(await question.textContent(), 'Discard draft?Your changes will be lost.Keep editingDiscard');
+      const [asked, paper] = [await question.boundingBox(), await page.locator('.st-guide-paper').boundingBox()];
+      assert.deepEqual({
+        width: asked.width,
+        centred: Math.abs(asked.x + asked.width / 2 - (paper.x + paper.width / 2)) < 1,
+        over: asked.y > paper.y && asked.y + asked.height < paper.y + paper.height,
+        draftHeld: await page.locator('.st-guide-paper').evaluate((element) => element.inert),
+      }, { width: 470, centred: true, over: true, draftHeld: true });
       await page.getByRole('button', { name: 'Keep editing' }).click();
       assert.equal(await field(page).inputValue(), `${GUIDE} Written`);
-      await page.locator('.st-board-step-scrim').click({ position: { x: 8, y: 8 } });
+      assert.equal((await caretState(page)).focused, true);
+      await page.mouse.click(1200, 600);
+      await question.waitFor();
       await page.getByRole('button', { name: 'Discard', exact: true }).click();
-      await page.getByRole('dialog', { name: 'Guide' }).waitFor({ state: 'detached' });
+      await page.getByRole('dialog', { name: 'Guide' }).waitFor();
+      assert.equal(await prose(page).textContent(), GUIDE);
+      assert.equal(await stepInert(page), false);
       assert.deepEqual(await page.evaluate(() => window.writes), []);
       assert.deepEqual((await events(page)).at(-1), { step: 'discard' });
     });
   } finally { await page.close(); }
 });
 
-test('Chromium: a guide set elsewhere flashes the chip while reading, and mid-edit offers Load latest', async () => {
+test('Chromium: a guide set elsewhere replaces the card\'s line and the note\'s text, and mid-edit a status line offers Load latest', async () => {
   const page = await open({ guide: GUIDE });
   try {
     await withBrowserErrors(page, async () => {
       await page.evaluate((text) => window.setElsewhere(text), ELSEWHERE);
-      const chip = page.getByRole('button', { name: 'Guide: Two steps a week until the June trip.' });
-      await chip.waitFor();
-      assert.equal(await chip.evaluate((button) => button.classList.contains('st-switcher-flash')), true);
-      await page.waitForFunction(() => !document.querySelector('.st-switcher-flash'), null, { timeout: 2000 });
-      await chip.click();
-      assert.equal(await field(page).inputValue(), ELSEWHERE);
-      await field(page).focus();
-      await page.keyboard.press('Enter');
+      const card = page.getByRole('button', { name: 'Guide: Two steps a week until the June trip.' });
+      await card.click();
+      assert.equal(await prose(page).textContent(), ELSEWHERE);
+      await page.evaluate((text) => window.setElsewhere(text), GUIDE);
+      await page.waitForFunction((text) => document.querySelector('.st-guide-prose').textContent === text, GUIDE);
+      await page.evaluate((text) => window.setElsewhere(text), ELSEWHERE);
+      await prose(page).press('Enter');
       await page.keyboard.type(' Written');
       await page.evaluate((text) => window.setElsewhere(text), GUIDE);
-      const strip = page.getByRole('status');
-      assert.equal(await strip.textContent(), 'Changed elsewhere. Saving replaces that version.Load latest');
+      const status = page.getByRole('status');
+      assert.equal(await status.textContent(), 'Changed elsewhere. Saving replaces that version.Load latest');
+      assert.equal(await status.evaluate((line) => line.parentElement.className), 'st-guide-footer');
       assert.equal(await field(page).inputValue(), `${ELSEWHERE} Written`);
       await page.getByRole('button', { name: 'Load latest' }).click();
       assert.equal(await field(page).inputValue(), GUIDE);
       assert.equal(await page.getByRole('status').count(), 0);
       assert.deepEqual((await events(page)).at(-1), { step: 'loadLatest' });
+      await page.getByRole('button', { name: 'Cancel' }).click();
+      await page.getByRole('dialog', { name: 'Guide' }).waitFor();
     });
   } finally { await page.close(); }
 });
 
-test('Chromium: an owner with no guide adds one from a dashed pill, saving nothing leaves none, and clearing removes it', async () => {
-  const page = await open({ device: true });
+test('Chromium: an owner with no guide adds one from the card, an untouched Add guide closes at once, and clearing a guide removes it', async () => {
+  const page = await open({});
   try {
     await withBrowserErrors(page, async () => {
-      const add = page.getByRole('button', { name: 'Add guide' });
-      assert.equal(await add.evaluate((button) => getComputedStyle(button).borderTopStyle), 'dashed');
+      const add = page.getByRole('button', { name: 'Add guide', exact: true });
+      assert.equal(await add.textContent(), 'Add guide→');
       await add.click();
-      await page.getByRole('dialog', { name: 'Guide' }).waitFor();
-      assert.deepEqual(await caretState(page), { readOnly: false, start: 0, end: 0, focused: true });
-      assert.equal(await field(page).getAttribute('placeholder'), 'What is this tree for, and how should it be worked?');
-      assert.equal(await page.locator('.st-guide-disclosure').textContent(), 'Agents can read this once you sign in.');
-      await page.getByRole('button', { name: 'Save' }).click();
-      await page.getByRole('dialog', { name: 'Guide' }).waitFor({ state: 'detached' });
+      const adding = page.getByRole('dialog', { name: 'Add guide' });
+      await adding.waitFor();
+      assert.deepEqual(await field(page).evaluate((box) => [box.placeholder, box.value, document.activeElement === box]), ['What are you working toward?', '', true]);
+      await page.getByRole('button', { name: 'Cancel' }).click();
+      await adding.waitFor({ state: 'detached' });
+      await page.waitForFunction(() => document.activeElement.matches('.st-guide-card--add'));
       await add.click();
-      await page.keyboard.type('Written signed out.');
+      await page.keyboard.type('   ');
+      await page.keyboard.press('Meta+Enter');
+      await adding.waitFor({ state: 'detached' });
+      assert.deepEqual(await page.evaluate(() => window.writes), []);
+      await add.click();
+      await page.keyboard.type('Written on the dock.');
       await page.getByRole('button', { name: 'Save' }).click();
-      await page.getByRole('button', { name: 'Guide: Written signed out.' }).click();
-      await field(page).focus();
-      await page.keyboard.press('Enter');
-      await field(page).fill('  \n ');
+      await adding.waitFor({ state: 'detached' });
+      const card = page.getByRole('button', { name: 'Guide: Written on the dock.' });
+      await card.waitFor();
+      await page.waitForFunction(() => document.activeElement.matches('.st-guide-card:not(.st-guide-card--add)'));
+      assert.deepEqual(await page.evaluate(() => window.writes), ['Written on the dock.']);
+      await card.click();
+      await page.getByRole('button', { name: 'Edit guide' }).click();
+      await field(page).fill('');
       await page.getByRole('button', { name: 'Save' }).click();
-      await page.getByRole('button', { name: 'Add guide' }).waitFor();
-      assert.deepEqual(await page.evaluate(() => window.writes), ['Written signed out.', '']);
+      await add.waitFor();
+      assert.equal(await page.getByRole('dialog').count(), 0);
+      assert.deepEqual(await page.evaluate(() => window.writes), ['Written on the dock.', '']);
       assert.deepEqual(await events(page), [
-        { step: 'open', door: 'row', role: 'owner' }, { step: 'edit', via: 'add' }, { step: 'save', outcome: 'unchanged', length: '0' },
-        { step: 'open', door: 'row', role: 'owner' }, { step: 'edit', via: 'add' }, { step: 'save', outcome: 'saved', length: '1-500' },
-        { step: 'open', door: 'row', role: 'owner' }, { step: 'edit', via: 'key' }, { step: 'save', outcome: 'cleared', length: '0' },
+        { step: 'open', door: 'card', view: 'graph', role: 'owner' }, { step: 'edit', via: 'add' },
+        { step: 'open', door: 'card', view: 'graph', role: 'owner' }, { step: 'edit', via: 'add' },
+        { step: 'save', outcome: 'unchanged', length: '0' },
+        { step: 'open', door: 'card', view: 'graph', role: 'owner' }, { step: 'edit', via: 'add' },
+        { step: 'save', outcome: 'saved', length: '1-500' },
+        { step: 'open', door: 'card', view: 'graph', role: 'owner' }, { step: 'edit', via: 'pencil' },
+        { step: 'save', outcome: 'cleared', length: '0' },
       ]);
     });
   } finally { await page.close(); }
 });
 
-test('Chromium: a reader sees the author\'s note read-only, a reader of a tree with none sees nothing, and the share route shows none', async () => {
-  const page = await open({ guide: GUIDE, role: 'reader' });
+test('Chromium: a reader sees the author\'s note on the tree, a reader of a tree with none sees nothing, and the share route shows none', async () => {
+  const reader = await open({ guide: GUIDE, role: 'reader' });
+  try {
+    await withBrowserErrors(reader, async () => {
+      const card = reader.getByRole('button', { name: 'Author’s note: One step a week.' });
+      assert.equal(await card.textContent(), 'Author’s noteOne step a week.Read note→');
+      await card.click();
+      await reader.getByRole('dialog', { name: 'Author’s note' }).waitFor();
+      assert.equal(await prose(reader).textContent(), GUIDE);
+      assert.deepEqual(await events(reader), [{ step: 'open', door: 'card', view: 'graph', role: 'reader' }]);
+      await reader.evaluate(() => window.setElsewhere(''));
+      await reader.getByRole('dialog').waitFor({ state: 'detached' });
+      assert.equal(await reader.locator('.st-guide-card').count(), 0);
+    });
+  } finally { await reader.close(); }
+  for (const options of [{ role: 'reader' }, { guide: GUIDE, role: 'reader', shared: true }, { guide: GUIDE, role: 'reader', shared: true, band: 'phone' }]) {
+    const page = await open(options);
+    try {
+      assert.equal(await page.locator('.st-guide-card, .st-guide-row').count(), 0);
+    } finally { await page.close(); }
+  }
+});
+
+test('Chromium: on a phone Cancel leaves a clean edit for the sheet it began in, a changed one asks from the foot, and the count takes the audience line', async () => {
+  const page = await open({ guide: GUIDE, band: 'phone', device: true }, { width: 390, height: 844 });
+  try {
+    await withBrowserErrors(page, async () => {
+      const row = page.getByRole('button', { name: 'Guide: One step a week.' });
+      await row.click();
+      await page.getByRole('button', { name: 'Edit guide' }).click();
+      const editor = page.getByRole('dialog', { name: 'Edit guide' });
+      await editor.waitFor();
+      assert.equal(await page.locator('.st-guide-footer').textContent(), 'Only on this device until you sign in.CancelSave');
+      const save = page.getByRole('button', { name: 'Save' });
+      assert.deepEqual(await save.evaluate((button) => [button.getAttribute('aria-disabled'), getComputedStyle(button).opacity]), ['true', '0.45']);
+      await page.getByRole('button', { name: 'Cancel' }).click();
+      await page.getByRole('dialog', { name: 'Guide' }).waitFor();
+      await page.getByRole('button', { name: 'Edit guide' }).click();
+      await field(page).fill(`${'帆'.repeat(5000)}${'🌊'.repeat(312)}`);
+      assert.equal(await page.locator('.st-guide-footer').textContent(), '312 overCancelSave');
+      assert.deepEqual(await editor.evaluate((sheet) => {
+        const box = sheet.getBoundingClientRect();
+        const footer = sheet.querySelector('.st-guide-footer').getBoundingClientRect();
+        return { foot: window.innerHeight - box.bottom, footerAtFoot: box.bottom - footer.bottom, belowHead: box.top > 100 };
+      }), { foot: 0, footerAtFoot: 0, belowHead: true });
+      await page.locator('.st-guide-backdrop').click({ position: { x: 20, y: 20 } });
+      const question = page.getByRole('alertdialog', { name: 'Discard draft?' });
+      await question.waitFor();
+      assert.deepEqual(await question.evaluate((sheet) => {
+        const box = sheet.getBoundingClientRect();
+        return [box.left, box.width, window.innerHeight - box.bottom];
+      }), [0, 390, 0]);
+      await page.getByRole('button', { name: 'Discard', exact: true }).click();
+      await page.getByRole('dialog', { name: 'Guide' }).waitFor();
+      assert.equal(await prose(page).textContent(), GUIDE);
+      await page.getByRole('button', { name: 'Close' }).click();
+      await page.waitForFunction(() => document.activeElement.matches('.st-guide-row'));
+      assert.deepEqual(await page.evaluate(() => window.writes), []);
+    });
+  } finally { await page.close(); }
+});
+
+test('Chromium: a phone owner with no guide adds the first from the Add guide row, and the saved row takes focus in place', async () => {
+  const page = await open({ band: 'phone', device: true }, { width: 390, height: 844 });
+  try {
+    await withBrowserErrors(page, async () => {
+      const add = page.getByRole('button', { name: 'Add guide', exact: true });
+      const empty = await add.boundingBox();
+      assert.deepEqual([empty.x, empty.y, empty.width, empty.height], [16, 114, 358, 52]);
+      await add.click();
+      const adding = page.getByRole('dialog', { name: 'Add guide' });
+      await adding.waitFor();
+      assert.deepEqual(await field(page).evaluate((box) => [box.placeholder, document.activeElement === box]), ['What are you working toward?', true]);
+      await page.getByRole('button', { name: 'Cancel' }).click();
+      await adding.waitFor({ state: 'detached' });
+      await page.waitForFunction(() => document.activeElement.matches('.st-guide-row'));
+      await add.click();
+      await page.keyboard.type('Maya and I take the dinghy out on Sundays.');
+      await page.getByRole('button', { name: 'Save' }).click();
+      await adding.waitFor({ state: 'detached' });
+      const row = page.getByRole('button', { name: 'Guide: Maya and I take the dinghy out on Sundays.' });
+      await row.waitFor();
+      await page.waitForFunction(() => document.activeElement.matches('.st-guide-row'));
+      assert.equal(await page.getByRole('dialog').count(), 0);
+      assert.deepEqual(await page.evaluate(() => window.writes), ['Maya and I take the dinghy out on Sundays.']);
+      assert.deepEqual(await events(page), [
+        { step: 'open', door: 'row', view: 'graph', role: 'owner' }, { step: 'edit', via: 'add' },
+        { step: 'open', door: 'row', view: 'graph', role: 'owner' }, { step: 'edit', via: 'add' },
+        { step: 'save', outcome: 'saved', length: '1-500' },
+      ]);
+    });
+  } finally { await page.close(); }
+});
+
+test('Chromium: a phone reader opens the author\'s note from its row, a note set elsewhere crossfades in once, and closing returns to the row', async () => {
+  const page = await open({ guide: GUIDE, band: 'phone', role: 'reader' }, { width: 390, height: 844 });
+  try {
+    await withBrowserErrors(page, async () => {
+      const row = page.getByRole('button', { name: 'Author’s note: One step a week.' });
+      const box = await row.boundingBox();
+      assert.deepEqual([box.x, box.y, box.width], [16, 114, 358]);
+      await row.click();
+      const sheet = page.getByRole('dialog', { name: 'Author’s note' });
+      await sheet.waitFor();
+      assert.equal(await page.getByRole('button', { name: 'Edit guide' }).count(), 0);
+      await settled(page);
+      await page.evaluate(() => { window.shownBefore = document.querySelector('.st-guide-prose > span'); });
+      await page.evaluate((text) => window.setElsewhere(text), ELSEWHERE);
+      await page.waitForFunction((text) => document.querySelector('.st-guide-prose').textContent === text, ELSEWHERE);
+      assert.deepEqual(await page.evaluate(() => {
+        const shown = document.querySelector('.st-guide-prose > span');
+        return { replaced: shown !== window.shownBefore, fade: getComputedStyle(shown).animationName, row: getComputedStyle(document.querySelector('.st-guide-row-excerpt')).animationName };
+      }), { replaced: true, fade: 'wm-switcher-tag', row: 'wm-switcher-tag' });
+      await prose(page).click();
+      assert.equal(await field(page).count(), 0);
+      await page.keyboard.press('Escape');
+      await sheet.waitFor({ state: 'detached' });
+      await page.waitForFunction(() => document.activeElement.matches('.st-guide-row'));
+      assert.deepEqual(await events(page), [{ step: 'open', door: 'row', view: 'graph', role: 'reader' }]);
+    });
+  } finally { await page.close(); }
+});
+
+test('Chromium: under reduced motion a note set elsewhere is replaced at once', async () => {
+  const page = await open({ guide: GUIDE, band: 'phone', role: 'reader' }, { width: 390, height: 844, reducedMotion: 'reduce' });
   try {
     await withBrowserErrors(page, async () => {
       await page.getByRole('button', { name: 'Author’s note: One step a week.' }).click();
-      await page.getByRole('dialog', { name: 'Author’s note' }).waitFor();
-      assert.deepEqual(await page.locator('.st-guide-modal-body').evaluate((body) => ({ text: body.querySelector('p').textContent, fields: body.querySelectorAll('textarea').length })), { text: GUIDE, fields: 0 });
-      assert.equal(await page.locator('.st-guide-modal-footer').count(), 0);
-      await page.locator('.st-guide-text--note').click();
-      assert.equal(await page.locator('textarea').count(), 0);
-      assert.deepEqual(await events(page), [{ step: 'open', door: 'row', role: 'reader' }]);
-      for (const options of [{ guide: '', role: 'reader' }, { guide: GUIDE, role: 'reader', shared: true }, { guide: GUIDE, shared: true }, { guide: '', shared: true }]) {
-        await page.evaluate((mounted) => window.mount(mounted), options);
-        assert.equal(await page.locator('[data-guide-opener]').count(), 0, JSON.stringify(options));
-      }
-    });
-  } finally { await page.close(); }
-});
-
-test('Chromium: from 744 to 1023 the chip is the book alone, and its tooltip names it', async () => {
-  const page = await open({ guide: GUIDE, band: 'tablet' }, { width: 900 });
-  try {
-    await withBrowserErrors(page, async () => {
-      const chip = page.getByRole('button', { name: 'Guide: One step a week.' });
-      assert.deepEqual(await chip.evaluate((button) => ({ text: button.textContent, width: button.getBoundingClientRect().width })), { text: '', width: 44 });
-      await chip.focus();
-      assert.equal(await page.getByRole('tooltip').textContent(), 'Guide');
-    });
-  } finally { await page.close(); }
-});
-
-test('Chromium: a phone reader opens the author\'s note from its line, and closing it returns to the line', async () => {
-  const page = await open({ guide: GUIDE, role: 'reader', band: 'phone' }, { width: 390, height: 844 });
-  try {
-    await withBrowserErrors(page, async () => {
-      const line = page.getByRole('button', { name: 'Author’s note: One step a week.' });
-      assert.equal(await line.textContent(), 'One step a week.');
-      await line.click();
-      const sheet = page.getByRole('dialog', { name: 'Author’s note' });
-      assert.equal(await sheet.locator('.st-guide-sheet-text').textContent(), GUIDE);
-      await page.getByRole('button', { name: 'Close' }).click();
-      await sheet.waitFor({ state: 'detached' });
-      assert.equal(await page.evaluate(() => document.activeElement?.getAttribute('aria-label')), 'Author’s note: One step a week.');
-      assert.deepEqual(await events(page), [{ step: 'open', door: 'line', role: 'reader' }]);
-    });
-  } finally { await page.close(); }
-});
-
-test('Chromium: a phone owner adds a guide from the roadmap sheet in the full-screen editor', async () => {
-  const page = await open({ band: 'phone' }, { width: 390, height: 844 });
-  try {
-    await withBrowserErrors(page, async () => {
-      await page.getByRole('button', { name: 'Learn to sail' }).click();
-      await page.getByRole('button', { name: 'Add guide' }).click();
-      await page.getByRole('dialog', { name: 'Edit guide' }).waitFor();
-      const editor = page.locator('.st-guide-editor-text');
-      assert.equal(await editor.getAttribute('placeholder'), 'What is this tree for, and how should it be worked?');
-      await page.keyboard.insertText('🌊'.repeat(5312));
-      assert.equal(await page.locator('.st-guide-editor-bar .st-guide-counter').textContent(), '312 over');
-      await page.locator('.st-guide-editor-bar .st-board-note-save').click({ force: true });
-      assert.deepEqual(await page.evaluate(() => window.writes), []);
-      await page.getByRole('button', { name: 'Cancel' }).click();
-      await page.getByRole('button', { name: 'Discard', exact: true }).click();
-      await page.getByRole('dialog', { name: 'Edit guide' }).waitFor({ state: 'detached' });
-      await page.getByRole('button', { name: 'Add guide' }).click();
-      await page.keyboard.type('Written on a phone.');
-      await page.locator('.st-guide-editor-bar .st-board-note-save').click();
-      await page.getByRole('button', { name: 'Guide: Written on a phone.' }).waitFor();
-      assert.deepEqual(await page.evaluate(() => window.writes), ['Written on a phone.']);
-      assert.deepEqual((await events(page)).map(({ step }) => step), ['open', 'edit', 'discard', 'open', 'edit', 'save']);
+      await page.evaluate((text) => window.setElsewhere(text), ELSEWHERE);
+      await page.waitForFunction((text) => document.querySelector('.st-guide-prose').textContent === text, ELSEWHERE);
+      assert.deepEqual(await page.evaluate(() => [
+        getComputedStyle(document.querySelector('.st-guide-prose > span')).animationName,
+        getComputedStyle(document.querySelector('.st-guide-row-excerpt')).animationName,
+      ]), ['none', 'none']);
     });
   } finally { await page.close(); }
 });
@@ -412,57 +567,12 @@ test('Chromium: no guide event carries a word of the guide', async () => {
   try {
     await withBrowserErrors(page, async () => {
       await page.getByRole('button', { name: 'Guide: One step a week.' }).click();
-      await field(page).focus();
-      await page.keyboard.press('Enter');
+      await prose(page).press('Enter');
       await page.keyboard.type(' Written');
       await page.getByRole('button', { name: 'Save' }).click();
+      await page.getByRole('dialog', { name: 'Guide' }).waitFor();
       const sent = JSON.stringify(await page.evaluate(() => window.events));
       for (const word of WORDS) assert.equal(sent.includes(word), false, word);
-    });
-  } finally { await page.close(); }
-});
-
-for (const engine of [chromium, webkit]) {
-  test(`${engine.name()}: a reader reaches a long author's note from the keyboard and scrolls it with PageDown, the arrows and Space`, async () => {
-    const note = Array.from({ length: 80 }, (_, line) => `Line ${line + 1} of the author's note.`).join('\n');
-    const page = await open({ guide: note, role: 'reader' }, { engine, width: 1024, height: 700 });
-    try {
-      await withBrowserErrors(page, async () => {
-        await page.getByRole('button', { name: 'Author’s note: Line 1 of the author\'s note.' }).click();
-        await page.getByRole('dialog', { name: 'Author’s note' }).waitFor();
-        await settled(page);
-        const body = page.getByRole('region', { name: 'Author’s note' });
-        const stops = [];
-        for (let press = 0; press < 3; press += 1) {
-          await page.keyboard.press('Tab');
-          stops.push(await page.evaluate(() => document.activeElement.getAttribute('aria-label') ?? document.activeElement.className));
-        }
-        assert.deepEqual(stops, ['Close', 'st-guide-modal-body', 'Close']);
-        await page.keyboard.press('Tab');
-        const scrolled = [];
-        for (const key of ['PageDown', 'ArrowDown', 'Space']) {
-          const before = await body.evaluate((element) => element.scrollTop);
-          await page.keyboard.press(key);
-          await page.waitForFunction((top) => document.querySelector('.st-guide-modal-body').scrollTop > top, before);
-          scrolled.push(key);
-        }
-        assert.deepEqual(scrolled, ['PageDown', 'ArrowDown', 'Space']);
-      });
-    } finally { await page.close(); }
-  });
-}
-
-test('Chromium: under reduced motion the excerpt swaps without its crossfade and the chip without its flash', async () => {
-  const page = await open({ guide: GUIDE }, { reducedMotion: 'reduce' });
-  try {
-    await withBrowserErrors(page, async () => {
-      await page.evaluate((text) => window.setElsewhere(text), ELSEWHERE);
-      const chip = page.getByRole('button', { name: 'Guide: Two steps a week until the June trip.' });
-      await chip.waitFor();
-      assert.deepEqual(await chip.evaluate((button) => ({
-        chip: getComputedStyle(button).animationName,
-        excerpt: getComputedStyle(button.querySelector('.st-switcher-tag')).animationName,
-      })), { chip: 'none', excerpt: 'none' });
     });
   } finally { await page.close(); }
 });

@@ -220,8 +220,8 @@ goes through `countBucket`: `0/1/2-5/6-20/21+`.
 | Tablet and desktop roadmap switcher; a rename or a delete once the request succeeded | `roadmap_sheet` | `step: open/switch/new/browse/rename/delete`, `door: switcher` |
 | The switcher's rename or delete failed | `roadmap_sheet` | `step: rename/delete`, `door: switcher`, `outcome: failed` |
 | What's next opened, a card picked, or closed by toggle, outside pointer, genuine focus departure, Escape or context change | `roadmap_whats_next` | `step: open/pick/close`, `count: 0/1/2-5/6-20/21+` |
-| Open the guide from the row's chip, the roadmap sheet's row or a reader's phone line | `roadmap_guide` | `step: open`, `door: row/sheet/line`, `role: owner/reader` |
-| Start writing the guide: a click or a tap on its text, Enter, or Add guide | `roadmap_guide` | `step: edit`, `via: click/tap/key/add` |
+| Open the guide's note from its entry on the tree: the card from 744px, the row on phones | `roadmap_guide` | `step: open`, `door: card/row`, `view: board/graph`, `role: owner/reader` |
+| Start writing the guide: a click or a tap on its text, Enter, its pencil, or Add guide | `roadmap_guide` | `step: edit`, `via: click/tap/key/pencil/add` |
 | Save the guide, its length in code points as a bucket | `roadmap_guide` | `step: save`, `outcome: saved/cleared/unchanged`, `length: 0/1-500/501-2000/2001-4500/4501-5000` |
 | A guide save no door took, and why: no connection, a refusal (the server's 4xx or text it would not admit), the server, or this device's store or session | `roadmap_guide` | `step: save`, `outcome: failed`, `length: 0/1-500/501-2000/2001-4500/4501-5000`, `reason: offline/refused/server/device` |
 | A guide save that replaced a guide changed elsewhere since its writing began | `roadmap_guide` | `step: conflict` |
@@ -301,7 +301,7 @@ function. A report's `route` is a family (`#/app`, `#/settings`), never an addre
 | `roadmap-share` | Publishing or making private: a server failure, or a request lost while visible and online | The dialog's own error |
 | `roadmap-switcher-rename` | The switcher's rename: a server failure, a request lost while visible and online, or an exception | The old name returns |
 | `roadmap-switcher-delete` | The switcher's delete: a server failure, a request lost while visible and online, or an exception | The row stays |
-| `roadmap-guide` | The guide's modal, note sheet or phone editor's render | The guide closes |
+| `roadmap-guide` | The render of the guide's entry on the tree or of its open note | A failed entry is not drawn; a failed note closes |
 | `roadmap-guide-save` | A guide save the session could not take, written to this device's store or through `PATCH /v1/trees/{id}`: a server failure, a request lost while visible and online, or an exception | The draft stays open with Save; a guide the session takes reports as any structure write does, under `roadmap-sync-*` |
 | `roadmap-plant` | Planting a roadmap, blank, pasted or from a quest: a server failure, a request lost while visible and online, or an exception | The door's own error, or a device roadmap when the server can't be reached |
 | `roadmap-tend` | Ask AI's reads and its send: a server failure, a request lost while visible and online, or a 200 that is not JSON | Ask AI's `failed` answer; the bar reopens with its sentence unless explicitly dismissed during the run, and announces the same failure copy when opened |

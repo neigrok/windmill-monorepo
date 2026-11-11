@@ -25,7 +25,7 @@ export function admitsGuide(text) {
   return text === '' || hasGuide(text);
 }
 
-// The first line with words on it, as the row's chip and the reader's line show it.
+// The first line with words on it, as the guide's card on the tree shows it and its control's name says it.
 export function guideExcerpt(text) {
   return (text ?? '').split('\n').map((line) => line.trim()).find(Boolean) ?? '';
 }
