@@ -17,14 +17,21 @@ rejected for structure. Validity is a read model, not a gate.
   registers: label, icon, color, order, position, status, description, links, opens); edges are an
   `ElementSet` per `(from, to)`.
 - `opens` — a node's pointer at another tree: that tree's id, or empty for none. A document node
-  carries it as `opens` and omits it when empty; a lattice entry carries `opens` and `opensAt`. A
-  write is held to the id length and to nothing about its target, so a pointer may name a tree that
-  is absent, deleted or someone else's. A tree id is the read capability of an unlisted tree, so only
-  a caller who can write the tree receives the pointer: `readerView` (`domain/Subgraph.h`) is what
-  every other reader gets from `GET /v1/trees/{id}` (`data` and `state`), the subscribe delta and a
-  live frame — a document node without `opens`, a lattice entry with `opens` empty and `opensAt`
-  unset, and no entry for a node the frame then says nothing about. No MCP read carries it, and no
-  read model follows it.
+  carries it as `opens` and omits it when empty; a lattice entry carries `opens` and `opensAt`. The
+  room, the socket and `PUT` hold a write to the id length and to nothing about its target, so a
+  pointer may name a tree that is absent, deleted or someone else's. The MCP door is stricter: every
+  non-empty `opens` a `create_node`, `annotate_node`, `patch_nodes` or `import_subgraph` call carries
+  must name a tree that stands and is the caller's (`TreeRepository::titlesOwnedBy`, one read for
+  the whole call), or the call is refused with nothing written, in one sentence for a tree that is
+  not there and for someone else's. A node may open the tree it is in. A tree id is the read
+  capability of an unlisted tree, so only a caller who can write the tree receives the pointer:
+  `readerView` (`domain/Subgraph.h`) is what every other reader gets from `GET /v1/trees/{id}`
+  (`data` and `state`), the subscribe delta and a live frame — a document node without `opens`, a
+  lattice entry with `opens` empty and `opensAt` unset, and no entry for a node the frame then says
+  nothing about. MCP `get_tree`, `get_nodes` and `find_nodes` answer it when `fields` names `opens`,
+  as `opens: {treeId, title}`, to a caller who can write the tree and only while the opened tree
+  stands and is theirs; the key is omitted otherwise. The title is the opened tree's stored one, read
+  once per reply. No read model follows the pointer.
 - `TreeDiagnostics::assess` — a pure report over a loose graph: `cycles`, `dangling`,
   `selfEdges`, `smells`, `maskedWork` (tombstoned parents with present children). `clean()` is
   true when cycles, dangling and self-edges are all empty. Smell kinds: `label-too-long`
@@ -124,6 +131,11 @@ subscriber treat it as a re-baselining graft.
 
 `Command` is the server-and-agent-side write path (MCP, tending, imports); it rides the same op
 log, undo and broadcast machinery, and `TreeRoom::applyCommand` emits its writes as one subgraph.
+`CreateNode` and `AnnotateNode` carry the tree a node `opens` as an optional: unset leaves the
+pointer, set writes it, and `""` clears it. MCP `create_node` always sets it, `""` when the call
+names no tree, so a created node opens the tree its call names and no other, on an id a deleted node
+held too; a stored `CreateNode` row without the field replays as unset. The activity feed projects
+neither the pointer nor `AnnotateNode`.
 `TreeRoom::applyCommands` lands several as one frame under one seq and queues them as one `Batch`
 op, so replaying the log tail reproduces the whole edit; an empty list mints nothing.
 

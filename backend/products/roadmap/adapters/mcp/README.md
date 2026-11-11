@@ -181,8 +181,14 @@ from the products actually connected. **An empty scope is the account-wide grant
 Tending does not go through the composite: `TendingService` holds roadmap's host directly
 (`ScopedToolHost.h`). The two narrowings stack — `ScopedToolHost` pins a run to one tree, the
 composite pins a credential to its grant. A run is not offered `describe_tree` either: it reads the
-tree's guide through `get_tree` and never sets it. A withheld name a run calls anyway is refused before
-any write is observed, and a tend starts only on a tree its caller can write.
+tree's guide through `get_tree` and never sets it. Nor is it offered the tree a node opens: the
+schemas it is handed carry no `opens` argument and no `opens` field, so a run neither reads nor sets
+a pointer, an import through it leaves the pointers the tree holds as they are, and a node it
+creates opens none. One table in
+`ScopedToolHost.cpp` names what a run is not offered, tools by name and words wherever a schema
+carries them. A withheld name a run calls anyway is refused before any write is observed; a withheld
+argument or field is refused in its own sentence with nothing written. A tend starts only on a tree
+its caller can write.
 
 Above the auth check both HTTP roots meter by IP, keyed on the forwarded client address:
 `windmill_server`'s general API ceiling (25 req/s per client, burst 50) covers `/mcp`;
@@ -197,22 +203,22 @@ The table uses product-local names; external MCP prefixes each with `roadmap_`.
 | --- | --- | --- |
 | registry | `create_tree` · `list_trees` · `delete_tree` | plant / discover / soft-delete a roadmap you own |
 | registry | `describe_tree` | set the tree's guide — a plain-text note on what the tree is and how to work it, at most 5000 characters; `""` or only whitespace clears it; owner only, answers `{applied, seq}` and leaves no op row |
-| read | `get_tree` | title + `guide: {text, yours}` (the only read that carries it, on every page; `yours` is true when the caller owns the tree and wrote its current guide, false on a guide a fork copied from someone else's tree until its owner writes one) + nodes (label, icon, color, `kind`, position, description, links) + per-node prerequisites + seq; `includeEdges: true` adds every live edge as a flat `edges: [{from, to}]` |
+| read | `get_tree` | title + `guide: {text, yours}` (the only read that carries it, on every page; `yours` is true when the caller owns the tree and wrote its current guide, false on a guide a fork copied from someone else's tree until its owner writes one) + nodes (label, icon, color, `kind`, position, description, links, `opens`) + per-node prerequisites + seq; `includeEdges: true` adds every live edge as a flat `edges: [{from, to}]` |
 | read | `get_nodes` | 1–200 exact unique ids in requested order, selected fields, explicit `missingNodeIds`, seq and complete-result byte limit |
 | read | `get_diagnostics` | cycles / dangling / self-edges / smells |
 | read | `get_health` | tidiness metrics + 0–100 score (needs a valid DAG); `crossBranch` skips edges touching a `crossBranchExempt` kind and reports them as `crossBranchExempt` |
 | read | `get_progress` | the caller's completed node ids, and `outOfOrder` — the subset of completed whose set_progress carried `outOfOrder: true` |
 | read | `find_nodes` | search by `color`/`kind`, the derived `state`, and/or a `query` substring (id + label + description), best match first — `{state: "available"}` is the frontier |
-| edit | `patch_nodes` | 1–200 existing nodes, replacement fields with omission preservation, full-batch validation, optional `expectedSeq` and `dryRun` |
+| edit | `patch_nodes` | 1–200 existing nodes, replacement fields (`opens` among them) with omission preservation, full-batch validation, optional `expectedSeq` and `dryRun` |
 | edit | `change_edges` | 1–500 combined additions/removals, existing endpoints for additions, absent removals are no-ops, optional `expectedSeq` and `dryRun` |
-| edit | `create_node` | add a node — `prerequisites[]`, `description`, `links` all optional |
-| edit | `annotate_node` | set a node's `description` — or `appendDescription`, which joins onto the existing body after a blank line, the cap held against the result; one of the two — its `icon` (`""` clears it, which is how an `empty-icon` smell is fixed) and/or `links` |
+| edit | `create_node` | add a node — `prerequisites[]`, `description`, `links`, `opens` all optional |
+| edit | `annotate_node` | set a node's `description` — or `appendDescription`, which joins onto the existing body after a blank line, the cap held against the result; one of the two — its `icon` (`""` clears it, which is how an `empty-icon` smell is fixed), its `links` and/or the tree it `opens` (`""` clears it) |
 | edit | `rename_node` · `set_node_color` · `move_node` | content edits |
 | edit | `connect` · `reconnect` | prerequisite-edge edits |
 | edit | `disconnect` | remove edges: one `from`+`to` or `edges: [{from,to}]` (1..500), exactly one form; one op, one seq, all or nothing; `removed` counts the edges that were present |
 | edit | `delete_node` | tombstone nodes: one `nodeId` or `nodeIds` (1..200), exactly one form; a missing id refuses the whole call naming each; one op, one seq. `prune: true` also drops every edge touching a deleted node and clears the caller's marks on it, under the delete grant; receipt carries `ids` and `pruned: {edges, progress}` |
 | edit | `tidy` · `prune` | transitive reduction / GC dangling edges + orphan progress |
-| edit | `import_subgraph` | bulk upsert a whole `get_tree`-shaped slice as one graft frame — a field left off a re-sent node or kind keeps its value, `prerequisiteMode` merge (union) or replace, `tombstone[]` deletes in the same frame and needs the `roadmap:delete` grant |
+| edit | `import_subgraph` | bulk upsert a whole `get_tree`-shaped slice as one graft frame — a field left off a re-sent node or kind keeps its value (`opens` included), `prerequisiteMode` merge (union) or replace, `tombstone[]` deletes in the same frame and needs the `roadmap:delete` grant |
 | legend | `add_kind` (inline label+description+crossBranchExempt) · `rename_kind` · `describe_kind` (description and/or crossBranchExempt) · `remove_kind` · `reorder_kinds` · `recolor_kind` | the legend |
 | write | `set_progress` | per-user overlay: single `nodeId`+`status`, or a bulk `updates[]` (order-safe); `outOfOrder: true` on a completion is kept on the mark and answered as `acknowledged: true` |
 | resource | `windmill://quickstart` | the read-me-first document; no tool slot |
@@ -277,6 +283,32 @@ Apply action for routine proposals; annotations describe each tool's effects.
 - **`kind` is the legend join** — the kind id whose hue equals the node's `color`, omitted from a
   node no kind claims. A `fields` value on `get_tree` and `find_nodes`, never in a default.
 
+## `opens`
+
+A node may point at another tree: `opens` holds that tree's id.
+
+- **Write.** `create_node`, `annotate_node`, a `patch_nodes` row and an `import_subgraph` node take
+  `opens`, a string of at most 128 characters. On `create_node`, absent or `""` opens nothing: the
+  door always writes the pointer, so an id that is present, or that a deleted node held, keeps none
+  of the pointer it had. On the other three, absent leaves the pointer, `""` clears it and a value
+  sets it. `null` is absent, save in a `patch_nodes` row, which refuses it as it refuses a `null`
+  label. `opens` alone is something to set.
+- **The target is checked at this door only.** Every non-empty `opens` in a call must name a tree
+  that stands and is the caller's, asked in one read for the whole call
+  (`TreeRegistry::titlesOwnedBy`), before the room is written and before a `dryRun` answers.
+  Otherwise the whole call is refused naming the argument path and the id — `opens`,
+  `updates[3].opens`, `nodes[2].opens` — in one sentence for a tree that is not there, a deleted one
+  and someone else's, so the refusal confirms no id. Its write line carries the outcome
+  `opens-not-yours`. A node may open the tree it is in.
+- **Read.** `opens` is a `fields` value on `get_tree`, `get_nodes` and `find_nodes`, never in a
+  default. A node answers `opens: {treeId, title}` when the caller can write the tree being read,
+  the pointer is set, and the opened tree stands and is theirs; the key is omitted otherwise, so a
+  reader of someone else's tree and a signed-out caller never receive it. The title is the opened
+  tree's stored title, read once per reply and only when the field is asked for; every write door
+  saves before it answers, so the stored title is the live one unless a save failed.
+- `import_subgraph` takes the id as a string, where `get_tree` answers the object: a copied slice
+  sends `opens.treeId`.
+
 ## Edges and health
 
 - **`get_tree {includeEdges: true}`** answers a top-level `edges: [{from, to}]` of every live edge
@@ -311,7 +343,7 @@ Apply action for routine proposals; annotations describe each tool's effects.
   by a later overlay failure. It is **upsert by id**: an incoming id already present is reported
   in `nodeCollisions`/`kindCollisions`; a new id is added. A re-sent node or kind changes only in
   the registers the batch sends: a node's `label`, `icon`, `color`, `order`, `position`,
-  `seedStatus`, `description` and `links`, and a kind's `label`, `description` and
+  `seedStatus`, `description`, `links` and `opens`, and a kind's `label`, `description` and
   `crossBranchExempt`, left out, keep the value the tree holds, because the graft stamps an
   omitted register unset (`Graft::omittedNodeRegisters` and `graftState`,
   `Graft::omittedKindRegisters` and `graftLegend`) and no stored stamp loses to that. A node

@@ -9,6 +9,8 @@
 #include "platform/ports/TokenGenerator.h"
 #include "products/roadmap/ports/TreeRepository.h"
 
+#include <map>
+#include <set>
 #include <string>
 #include <variant>
 #include <vector>
@@ -33,6 +35,10 @@ public:
   Creation create(const UserId& owner, const TreeId& id, const TreeData& initial);
 
   std::vector<TreeSummary> list(const UserId& owner);
+
+  // The title of each tree among `trees` that stands and is `owner`'s, by id — the trees a node of
+  // theirs may open. Read off the stored rows, as list() is.
+  std::map<TreeId, std::string> titlesOwnedBy(const UserId& owner, const std::set<TreeId>& trees);
 
   // Each outcome names both write refusals of Access.h (an enum cannot hold another), because an
   // unowned tree is nobody's, not somebody else's.

@@ -287,3 +287,146 @@ TEST(every_scoped_roadmap_write_tool_is_instrumented_from_the_catalog) {
   installWriteSink({});
   CHECK(writes > 0);
 }
+
+// The tree a node opens is another tree, and a tend is pinned to one: over the real catalog, no
+// schema a run is handed names `opens` as an argument or as a field, and everything else it is
+// handed is what a plain caller is.
+TEST(scoped_tool_host_offers_a_tend_no_argument_and_no_field_for_the_tree_a_node_opens) {
+  test::Harness h;
+  ScopedToolHost scoped(h.tools, TreeId{"t"});
+  const auto schemas = [](const std::vector<ToolDeclaration>& tools) {
+    std::map<std::string, Json::Value> byName;
+    for (const ToolDeclaration& tool : tools) byName[tool.name()] = tool.descriptor["inputSchema"];
+    return byName;
+  };
+  const std::map<std::string, Json::Value> plain = schemas(h.tools.declareTools());
+  const std::map<std::string, Json::Value> tended = schemas(scoped.declareTools());
+
+  std::vector<std::string> plainlyNaming;
+  for (const auto& [name, schema] : plain)
+    if (dump(schema).find("\"opens\"") != std::string::npos) plainlyNaming.push_back(name);
+  CHECK_EQ(plainlyNaming, (std::vector<std::string>{"annotate_node", "create_node", "find_nodes", "get_nodes",
+                                                    "get_tree", "import_subgraph", "patch_nodes"}));
+  for (const auto& [name, schema] : tended) CHECK_EQ(dump(schema).find("\"opens\""), std::string::npos);
+
+  Json::Value create = plain.at("create_node");
+  create["properties"].removeMember("opens");
+  CHECK_EQ(tended.at("create_node"), create);
+  Json::Value annotate = plain.at("annotate_node");
+  annotate["properties"].removeMember("opens");
+  CHECK_EQ(tended.at("annotate_node"), annotate);
+  Json::Value patch = plain.at("patch_nodes");
+  patch["properties"]["updates"]["items"]["properties"].removeMember("opens");
+  CHECK_EQ(tended.at("patch_nodes"), patch);
+  Json::Value import = plain.at("import_subgraph");
+  import["properties"]["nodes"]["items"]["properties"].removeMember("opens");
+  CHECK_EQ(tended.at("import_subgraph"), import);
+  for (const char* read : {"get_tree", "get_nodes", "find_nodes"}) {
+    Json::Value schema = plain.at(read);
+    schema["properties"]["fields"]["items"]["enum"] =
+        test::list({"id", "label", "icon", "color", "kind", "order", "prerequisites", "position", "status",
+                    "seedStatus", "state", "summary", "description", "links"});
+    CHECK_EQ(tended.at(read), schema);
+  }
+  CHECK_EQ(tended.at("rename_node"), plain.at("rename_node"));
+}
+
+// A run that names the pointer anyway is told why in one sentence, wherever it names it, and the
+// tree, its feed and the registry are left as they were.
+TEST(scoped_tool_host_refuses_the_tree_a_node_opens_wherever_a_tend_names_it_and_writes_nothing) {
+  test::Harness h;
+  h.trees.byId["t_sub"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Deep dive", {}}, 0, h.caller};
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"a","label":"A","opens":"t_sub"})")).isError);
+  ScopedToolHost scoped(h.tools, TreeId{"t"});
+  const StoredTree before = h.trees.byId["t"];
+  const std::size_t broadcasts = h.bus.subgraphBroadcasts.size();
+  const std::size_t ops = h.ops.byTree["t"].size();
+  const std::size_t titleReads = h.trees.titleReads.size();
+  std::vector<WriteCompletion> completions;
+  installWriteSink([&](const WriteCompletion& completion) { completions.push_back(completion); });
+
+  const std::vector<std::pair<const char*, const char*>> calls = {
+      {"create_node", R"({"label":"B","opens":"t_sub"})"},
+      {"create_node", R"({"label":"B","opens":null})"},
+      {"annotate_node", R"({"nodeId":"a","opens":""})"},
+      {"patch_nodes", R"({"updates":[{"nodeId":"a","label":"Renamed","opens":"t_sub"}]})"},
+      {"import_subgraph", R"({"nodes":[{"id":"n","label":"N"},{"id":"a","opens":""}]})"},
+      {"import_subgraph", R"({"nodes":[{"id":"a","opens":"t_sub"}],"dryRun":true})"},
+      {"get_tree", R"({"fields":["id","opens"]})"},
+      {"get_nodes", R"({"nodeIds":["a"],"fields":["opens"]})"},
+      {"find_nodes", R"({"query":"a","fields":["id","label","opens"]})"}};
+  for (const auto& [tool, arguments] : calls) {
+    const ToolResult refused = scoped.callTool(tool, parse(arguments), h.actor);
+    CHECK(refused.isError);
+    CHECK_EQ(message(refused), std::string("tending edits a single tree — the tree a node opens is out of its reach"));
+  }
+  installWriteSink({});
+
+  CHECK(h.trees.byId["t"] == before);
+  CHECK_EQ(h.bus.subgraphBroadcasts.size(), broadcasts);
+  CHECK_EQ(h.ops.byTree["t"].size(), ops);
+  CHECK_EQ(h.trees.titleReads.size(), titleReads);
+  CHECK(scoped.createdNodeIds().empty());
+  std::vector<std::string> observed;
+  for (const WriteCompletion& completion : completions)
+    observed.push_back(completion.operation + " " + completion.door + " " + completion.outcome);
+  CHECK_EQ(observed, (std::vector<std::string>{
+                         "roadmap.create_node Coach refused", "roadmap.create_node Coach refused",
+                         "roadmap.annotate_node Coach refused", "roadmap.patch_nodes Coach refused",
+                         "roadmap.import_subgraph Coach refused", "roadmap.import_subgraph Coach refused"}));
+}
+
+// Only the argument and the field are withheld: the word as a node's id or label is a tend's to use,
+// an import through a tend leaves the pointer a node holds, and a plain caller reads and sets it as before.
+TEST(scoped_tool_host_leaves_a_nodes_pointer_alone_and_a_plain_caller_still_reads_and_sets_it) {
+  test::Harness h;
+  h.trees.byId["t_sub"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Deep dive", {}}, 0, h.caller};
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"a","label":"A","opens":"t_sub"})")).isError);
+  ScopedToolHost scoped(h.tools, TreeId{"t"});
+
+  CHECK_FALSE(scoped.callTool("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"Renamed"}]})"), h.actor).isError);
+  CHECK_FALSE(scoped.callTool("annotate_node", parse(R"({"nodeId":"a","description":"a note"})"), h.actor).isError);
+  CHECK_FALSE(scoped.callTool("create_node", parse(R"({"id":"opens","label":"opens","prerequisites":["a"]})"), h.actor).isError);
+  CHECK_EQ(parse(message(scoped.callTool("get_nodes", parse(R"({"nodeIds":["opens","a"],"fields":["id","label"]})"), h.actor))),
+           parse(R"({"treeId":"t","seq":4,"nodes":[{"id":"opens","label":"opens"},{"id":"a","label":"Renamed"}],"missingNodeIds":[]})"));
+
+  CHECK_EQ(test::body(h.call("get_tree", parse(R"({"fields":["id","label","opens"]})")))["tree"]["nodes"],
+           parse(R"([{"id":"a","label":"Renamed","opens":{"treeId":"t_sub","title":"Deep dive"}},{"id":"opens","label":"opens"}])"));
+  CHECK_FALSE(h.call("annotate_node", parse(R"({"nodeId":"opens","opens":"t_sub"})")).isError);
+  CHECK_FALSE(h.call("patch_nodes", parse(R"({"updates":[{"nodeId":"a","opens":""}]})")).isError);
+  CHECK_EQ(test::body(h.call("get_tree", parse(R"({"fields":["id","opens"]})")))["tree"]["nodes"],
+           parse(R"([{"id":"a"},{"id":"opens","opens":{"treeId":"t_sub","title":"Deep dive"}}])"));
+}
+
+// The argument is withheld from a tend, so the door's own default does the work: a node a run
+// creates on an id a deleted node held opens nothing.
+TEST(scoped_tool_host_a_tend_that_creates_a_node_on_a_deleted_id_plants_no_pointer) {
+  test::Harness h;
+  h.trees.byId["t_sub"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Deep dive", {}}, 0, h.caller};
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"a","label":"A","opens":"t_sub"})")).isError);
+  CHECK_FALSE(h.call("delete_node", parse(R"({"nodeId":"a"})")).isError);
+  ScopedToolHost scoped(h.tools, TreeId{"t"});
+
+  CHECK_FALSE(scoped.callTool("create_node", parse(R"({"id":"a","label":"Tend's node"})"), h.actor).isError);
+
+  CHECK_EQ(scoped.createdNodeIds(), std::vector<std::string>{"a"});
+  CHECK_EQ(test::body(h.call("get_tree", parse(R"({"fields":["id","label","opens"]})")))["tree"]["nodes"],
+           parse(R"([{"id":"a","label":"Tend's node"}])"));
+  REQUIRE_EQ(h.trees.byId["t"].state.nodes.size(), 1u);
+  CHECK_EQ(h.trees.byId["t"].state.nodes[0].opens, TreeId{});
+}
+
+// A misnamed argument is judged against the tool as a tend is offered it, so the keys the refusal
+// lists name no withheld word.
+TEST(scoped_tool_host_names_no_withheld_word_among_the_keys_an_unknown_argument_is_offered) {
+  test::Harness h;
+  ScopedToolHost scoped(h.tools, TreeId{"t"});
+
+  CHECK_EQ(message(scoped.callTool("create_node", parse(R"({"label":"B","open":"t_sub"})"), h.actor)),
+           std::string("create_node: unknown argument \"open\". This tool takes: color, description, icon, id, label, "
+                       "links, parentId, prerequisites, treeId, x, y."));
+  CHECK_EQ(message(scoped.callTool("import_subgraph", parse(R"({"nodes":[{"id":"n","open":"t_sub"}]})"), h.actor)),
+           std::string("import_subgraph: unknown argument \"nodes[0].open\". nodes[0] takes: color, description, icon, "
+                       "id, label, links, order, position, prerequisites, seedStatus."));
+  CHECK_EQ(test::body(h.call("get_tree", test::kNoArgs))["count"].asUInt64(), 0u);
+}

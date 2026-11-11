@@ -9,8 +9,9 @@
 
 namespace wm {
 
-// Pins a tend's agent to one tree: every tool call's `treeId` is forced to the scope, and tools that
-// reach across trees or set the tree's guide are dropped from the catalog and refused if named
+// Pins a tend's agent to one tree: every tool call's `treeId` is forced to the scope, and what
+// reaches across trees or sets the tree's guide — a tool, or an argument or field value any tool
+// carries, such as the tree a node opens — is dropped from the catalog and refused if named
 // anyway. A name the inner catalog does not declare, and an argument the tool's schema does not
 // declare, are refused here with the sentences the MCP wire gives, because a tend never passes
 // through CompositeToolHost. Retired names are not consulted: a tend's agent reads the catalog it

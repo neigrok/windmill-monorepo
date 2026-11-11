@@ -35,6 +35,7 @@ public:
   std::vector<OwnedTree> listOwnedBy(const UserId& owner) override;
   std::vector<ListedTree> listPublic() override;
   std::set<TreeId> listForkedSources(const UserId& owner) override;
+  std::map<TreeId, std::string> titlesOwnedBy(const UserId& owner, const std::set<TreeId>& trees) override;
   void softDelete(const TreeId& tree) override;
   void rename(const TreeId& tree, const Lww<std::string>& title) override;
   void setVisibility(const TreeId& tree, Visibility visibility) override;

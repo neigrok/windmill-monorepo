@@ -42,6 +42,10 @@ Reads use lean projections: an omitted description is not an empty description. 
 for needed detail or `summary` for a short preview. `roadmap_get_nodes` returns exact ids in requested
 order with explicit `missingNodeIds`; use `roadmap_get_tree` for broader context.
 
+A node can point at another of your trees: `opens` on `roadmap_create_node`, `roadmap_annotate_node`,
+a `roadmap_patch_nodes` row or a `roadmap_import_subgraph` node takes that tree's id, and `""` clears
+it. Reads that ask for the `opens` field answer the tree's id and title, on a tree you own.
+
 `roadmap_patch_nodes` preserves omitted fields and replaces supplied values, including descriptions
 and links. `roadmap_annotate_node`'s append form repeats text when retried. `roadmap_change_edges`
 requires existing endpoints for additions; removing an absent edge is a no-op. Both batch edit tools
@@ -68,7 +72,8 @@ std::string roadmapInstructions() {
 
 std::vector<McpResource> roadmapResources() {
   return {{"windmill://quickstart", "quickstart", "Windmill quickstart",
-           "A tree's guide, roadmap edge direction, progress, diagnostics, projections and batch semantics.",
+           "A tree's guide, roadmap edge direction, progress, diagnostics, projections, the tree a node opens "
+           "and batch semantics.",
            "text/markdown", kQuickstart}};
 }
 

@@ -180,6 +180,7 @@ void merge(LooseGraph& graph, Legend& legend, const Command& command, const Hlc&
       graph.createNode(c.id, c.label, c.icon, c.color, c.position, at);
       if (!c.description.empty()) graph.setDescription(c.id, c.description, at);
       if (!c.links.empty()) graph.setLinks(c.id, c.links, at);
+      if (c.opens) graph.setOpens(c.id, *c.opens, at);
       for (const NodeId& prereq : c.prerequisites) graph.addEdge(prereq, c.id, at);
     },
     [&](const AnnotateNode& c) {
@@ -188,6 +189,7 @@ void merge(LooseGraph& graph, Legend& legend, const Command& command, const Hlc&
       if (c.appendDescription)
         graph.setDescription(c.id, appendedTo(graph.descriptionOf(c.id), *c.appendDescription), at);
       if (c.links) graph.setLinks(c.id, *c.links, at);
+      if (c.opens) graph.setOpens(c.id, *c.opens, at);
     },
     [&](const AddEdge& c) { graph.addEdge(c.from, c.to, at); },
     [&](const RemoveEdge& c) { graph.removeEdge(c.from, c.to, at); },
@@ -250,6 +252,7 @@ std::optional<std::string> validate(const LooseGraph& graph, const Legend& legen
       over.note("icon", c.icon, kMaxIconLength);
       over.note("description", c.description, kMaxNodeDescriptionLength);
       over.noteLinks(c.links);
+      if (c.opens) over.note("opens", c.opens->str(), kMaxIdLength);
       if (auto bad = over.sentence()) return bad;
       if (c.position && !(std::isfinite(c.position->x) && std::isfinite(c.position->y)))
         return "position is not finite";
@@ -270,6 +273,7 @@ std::optional<std::string> validate(const LooseGraph& graph, const Legend& legen
         over.note("description", appendedTo(graph.descriptionOf(c.id), *c.appendDescription),
                   kMaxNodeDescriptionLength);
       if (c.links) over.noteLinks(*c.links);
+      if (c.opens) over.note("opens", c.opens->str(), kMaxIdLength);
       if (auto bad = over.sentence()) return bad;
       return present(c.id);
     },
@@ -369,7 +373,8 @@ std::variant<NodePatchPlan, std::string> planNodePatches(
   for (const NodePatch& patch : updates) {
     if (!seen.insert(patch.nodeId).second)
       return "updates repeats nodeId " + quoted(patch.nodeId.str());
-    if (!patch.label && !patch.icon && !patch.description && !patch.color && !patch.position && !patch.links)
+    if (!patch.label && !patch.icon && !patch.description && !patch.color && !patch.position && !patch.links &&
+        !patch.opens)
       return "node " + quoted(patch.nodeId.str()) + ": pass at least one field to patch";
     for (const auto& [field, value] : {std::pair{"label", &patch.label}, {"icon", &patch.icon}, {"description", &patch.description}})
       if (*value && (*value)->find('\0') != std::string::npos)
@@ -378,6 +383,8 @@ std::variant<NodePatchPlan, std::string> planNodePatches(
       for (const Link& link : *patch.links)
         if (link.label.find('\0') != std::string::npos || link.url.find('\0') != std::string::npos)
           return "node " + quoted(patch.nodeId.str()) + ": links cannot contain a NUL character";
+    if (patch.opens && patch.opens->str().find('\0') != std::string::npos)
+      return "node " + quoted(patch.nodeId.str()) + ": opens cannot contain a NUL character";
     const std::optional<NodeSpec> node = graph.nodeView(patch.nodeId);
     if (!node) return "no node in this tree is named " + quoted(patch.nodeId.str());
 
@@ -388,11 +395,13 @@ std::variant<NodePatchPlan, std::string> planNodePatches(
       candidates.push_back({SetNodeColor{patch.nodeId, *patch.color}, node->color != *patch.color});
     if (patch.position)
       candidates.push_back({RepositionNode{patch.nodeId, *patch.position}, node->position != patch.position});
-    if (patch.description || patch.icon || patch.links) {
+    if (patch.description || patch.icon || patch.links || patch.opens) {
       const bool changed = (patch.description && node->description != *patch.description) ||
                            (patch.icon && node->icon != *patch.icon) ||
-                           (patch.links && node->links != *patch.links);
-      candidates.push_back({AnnotateNode{patch.nodeId, patch.description, patch.links, patch.icon}, changed});
+                           (patch.links && node->links != *patch.links) ||
+                           (patch.opens && node->opens != *patch.opens);
+      candidates.push_back(
+          {AnnotateNode{patch.nodeId, patch.description, patch.links, patch.icon, std::nullopt, patch.opens}, changed});
     }
 
     const std::size_t before = plan.batch.commands.size();
