@@ -358,13 +358,15 @@ A node may point at another tree: `opens` holds that tree's id.
   import that arrives after it still removes it, and a hue, label, description or
   `crossBranchExempt` sent as the legend holds it is not stamped again, so a `get_tree` round trip
   that carries the legend back changes nothing in it. Rank is never on the wire, so a colliding
-  kind keeps its place and a new kind lands after the last one, in batch order. The import is one
-  op row, and that row names only the batch's most
-  salient change, in `headline()`'s order (a created node, a removed node, a legend change, a
-  node's label, colour or annotation, an edge): an added edge beside a rename reads `renamed to
-  N2`, two new edges read as the first of them, `linked P → N`, a new node beside a renamed one
-  reads `added Zeta`, and re-sending a node to add an edge reads `linked`, with the legend carried
-  back or not. A re-sent
+  kind keeps its place and a new kind lands after the last one, in batch order. A re-sent kind
+  with a new hue changes the kind alone: the nodes wearing the old hue keep it, where
+  `recolor_kind` repaints them. The import is at most one op row — a batch that changes nothing
+  writes none — and that row names only the batch's most salient change, in `headline()`'s order
+  (a created node, a removed node, a legend change, a node's label, colour or annotation, an
+  edge): an added edge beside a rename reads `renamed to N2`, two new edges read as the first of
+  them by prerequisite then node id, `linked P → N`, a new node beside a renamed one reads
+  `added Zeta`, and re-sending a node to add an edge reads `linked`, with the legend carried back
+  or not. A re-sent
   node's `prerequisites` meet its existing edges by `prerequisiteMode` — `merge` (the default)
   unions them, so an edge the batch leaves out survives and is listed in `keptEdges` (first 50 as
   `{from, to}`, then one `"and N more"` string) with `keptEdgeCount`; `replace` removes every
