@@ -392,8 +392,7 @@ TEST(pg_create_node_on_a_deleted_id_opens_nothing_after_a_restart) {
   restarted.stop();
 }
 
-// The read behind OpenedTrees, against the real tables: only the owner's standing trees are walked,
-// a removed node's pointer leads nowhere, a loop ends, and the counts are the owner's marks alone.
+// The statement behind OpenedTrees: a removed node's pointer leads nowhere, a loop ends, and only the owner's marks count.
 TEST(pg_opened_from_answers_the_owners_standing_trees_within_reach_counted_under_the_owners_marks) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -474,8 +473,7 @@ TEST(pg_opened_from_answers_the_owners_standing_trees_within_reach_counted_under
   clear();
 }
 
-// The whole path over the real repositories: the stored rows and the owner's marks decide a node's
-// state, and the registry list counts what the board shows.
+// The whole path over the real repositories, a second reader's marks included.
 TEST(pg_a_node_follows_the_tree_it_opens_and_the_registry_list_counts_it) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();

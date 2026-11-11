@@ -286,8 +286,7 @@ ToolResult withRoom(RoomRegistry& registry, const TreeId& tree, Fn&& fn) {
   return fn(*room);
 }
 
-// States are derived over the whole tree: a prerequisite may sit off the page.
-// Pointers are followed only for a caller who can write the tree, off the stored rows, once per reply.
+// States are derived over the whole tree, as a prerequisite may sit off the page; only its writer has pointers followed.
 NodeReadContext readContextFor(TreeRegistry& trees, ProgressService& progress, const TreeId& tree,
                                const std::optional<UserId>& caller, const std::optional<UserId>& owner,
                                const TreeData& data, const NodeFields& fields, bool filtersOnState) {

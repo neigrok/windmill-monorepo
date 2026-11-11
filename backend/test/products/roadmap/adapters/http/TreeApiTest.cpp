@@ -338,8 +338,6 @@ TEST(get_tree_gives_the_tree_a_node_opens_to_its_owner_and_to_no_other_reader) {
   CHECK_EQ(mine["state"]["nodes"][0]["opensAt"].asString(), std::string("2000:0:r_a"));
 }
 
-// What each pointer of the tree comes to, computed on the read for the tree's owner: a valid one
-// answers the opened tree's title, state and counts, one that is not valid answers `missing`.
 TEST(get_tree_answers_the_owner_what_each_pointer_comes_to_and_no_other_reader_the_key) {
   Harness h;
   const UserId owner = h.signIn("s-owner", "owner@example.com");
@@ -399,8 +397,7 @@ TEST(get_tree_answers_the_owner_what_each_pointer_comes_to_and_no_other_reader_t
   CHECK_EQ(h.trees->openedReads.size(), 1u);
 }
 
-// Following the pointers is part of the read: when it fails the tree answers as an absent one does,
-// and the failure files one Issue under the read's static operation.
+// Following the pointers is part of the read, so its failure is the read's: the absent answer and one Issue.
 TEST(get_tree_whose_pointers_cannot_be_followed_answers_404_and_files_one_issue) {
   struct Failures : FailureReporter {
     std::vector<std::string> reports;

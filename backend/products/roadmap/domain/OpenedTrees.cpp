@@ -42,11 +42,12 @@ OpenedTrees::OpenedTrees(const TreeData& tree, const std::map<TreeId, OpenedTree
 
   std::set<TreeId> complete;
   const auto doneIn = [&](const OpenedTree& opened) {
-    return opened.marked + static_cast<int>(std::count_if(
-                               opened.openers.begin(), opened.openers.end(), [&](const Opener& opener) {
-                                 if (!standing.count(opener.opens)) return opener.marked;
-                                 return complete.count(opener.opens) > 0;
-                               }));
+    int done = opened.marked;
+    for (const Opener& opener : opened.openers) {
+      const bool valid = standing.count(opener.opens) > 0;
+      if (valid ? complete.count(opener.opens) > 0 : opener.marked) ++done;
+    }
+    return done;
   };
   // Trees only ever join `complete`, so the passes end at the least answer, whatever order they run in.
   for (bool grew = true; grew;) {

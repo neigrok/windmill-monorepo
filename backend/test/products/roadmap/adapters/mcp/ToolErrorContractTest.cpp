@@ -985,8 +985,6 @@ TEST(mcp_opens_is_published_with_the_id_cap_wherever_it_is_taken_and_as_a_field_
   CHECK_EQ(kFindNodesFields.count(NodeField::opens), 0u);
 }
 
-// The copy says what the surface does: such a node follows its tree for the tree's owner, and a mark
-// on it is recorded and decides nothing.
 TEST(mcp_the_tool_descriptions_say_a_node_that_opens_a_tree_follows_it_and_that_its_mark_is_still_recorded) {
   Harness h;
   const Json::Value catalog = h.tools.listTools(h.actor);

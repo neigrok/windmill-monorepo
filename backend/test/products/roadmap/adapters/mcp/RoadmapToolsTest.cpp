@@ -3480,8 +3480,7 @@ TEST(mcp_a_pointer_at_a_tree_the_owner_does_not_own_or_that_was_deleted_reads_ba
            parse(R"({"count":2,"nodes":[{"id":"a"},{"id":"b"}]})"));
 }
 
-// The opened trees are asked after once for a whole call, and a reply follows them only when the
-// field is asked for, in a read of its own.
+// A write asks after the trees it opens once for the whole call; a reply follows them only when asked for the field.
 TEST(mcp_the_trees_a_call_opens_are_read_once_and_a_reply_follows_them_only_when_asked_for_opens) {
   Harness h;
   h.trees.byId["t_sub"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Deep dive", {}}, 0, h.caller};
@@ -3622,8 +3621,7 @@ TEST(mcp_a_pointer_at_a_tree_that_is_not_the_callers_completes_as_opens_not_your
   CHECK_EQ(observed, expected);
 }
 
-// For the owner a node that opens a tree follows it: complete exactly when the tree is, whatever
-// mark it holds, and every state, filter and count reads that one completed set.
+// Every state, filter and count reads one completed set, in which the node follows its tree and not its mark.
 TEST(mcp_a_node_that_opens_a_tree_is_complete_when_the_tree_is_and_the_last_mark_unlocks_its_dependant) {
   Harness h;
   h.trees.byId["t_sub"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Deep dive", {}}, 0, h.caller};
@@ -3710,8 +3708,7 @@ TEST(mcp_a_node_follows_a_tree_that_itself_waits_on_a_tree_it_opens) {
   CHECK(counts() == (std::map<std::string, std::string>{{"t", "1/1"}, {"t_leaf", "1/1"}, {"t_mid", "2/2"}}));
 }
 
-// A reader who cannot write the tree is told nothing of a pointer: the node is an ordinary one whose
-// state follows their own mark, whatever the opened tree has come to, and no read is made for them.
+// Nothing such a reader receives says a node opens a tree, whatever the opened tree has come to, and no read is made for them.
 TEST(mcp_a_reader_who_cannot_write_the_tree_reads_an_ordinary_node_that_follows_their_own_mark) {
   Harness h;
   h.trees.byId["t"].visibility = Visibility::public_;
@@ -3765,9 +3762,7 @@ TEST(mcp_a_reader_who_cannot_write_the_tree_reads_an_ordinary_node_that_follows_
   }
 }
 
-// Following costs one read of the stored rows per reply, and nothing where it cannot change the
-// answer: a tree that holds no pointer, fields that ask for neither state nor opens, a reader who
-// cannot write the tree, and the registry list, which already holds every tree.
+// Nothing is read for a tree with no pointer, for other fields, for a reader who cannot write, or for the registry list.
 TEST(mcp_a_reply_follows_pointers_in_one_read_and_reads_nothing_where_following_changes_nothing) {
   Harness h;
   h.trees.byId["t"].visibility = Visibility::public_;

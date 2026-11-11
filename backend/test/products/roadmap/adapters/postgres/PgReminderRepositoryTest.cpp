@@ -15,8 +15,7 @@
 // Readiness against the real tables: opt-in, runs only when WM_PG_TEST is set.
 using namespace wm;
 
-// The rows readiness loads carry each node's pointer, so a step behind a node that opens a complete
-// tree is ready and the counts are the board's.
+// The rows readiness loads carry each node's pointer.
 TEST(pg_readiness_follows_the_tree_a_node_opens) {
   if (!std::getenv("WM_PG_TEST")) SKIP("WM_PG_TEST unset — needs a live Postgres, see RUNNING.md §7");
   const UserId owner{std::string("5a5a0000-0000-4000-8000-00000000a11d")};
