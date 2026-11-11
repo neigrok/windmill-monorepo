@@ -302,8 +302,9 @@ Apply action for routine proposals; annotations describe each tool's effects.
   overlap. Cycles remain valid. Both use one HLC stamp, structural op and live-room broadcast when
   anything changes. `dryRun` applies nothing; `expectedSeq` refuses a stale edit; an unchanged retry
   does not increment seq. Neither tool supplies append semantics.
-- **`import_subgraph`** takes the JSON `get_tree` returns (`{title?, nodes[], kinds[]}`, plus an
-  optional `progress[]`) and applies the graph in **one** op via the subgraph CRDT graft path.
+- **`import_subgraph`** takes the `nodes[]` and `kinds[]` `get_tree` returns, plus an optional
+  `progress[]`, and applies the graph in **one** op via the subgraph CRDT graft path. A `title` is
+  not an argument: the gate refuses one by name, and the import never touches the tree's title.
   Progress (max 1000 supplied marks) commits in a separate atomic repository batch under the room
   strand. Receipts distinguish `graphApplied` and `progressApplied`, with `progressError` or
   `progressSkipped` when requested progress cannot all be applied; a committed graft is not undone

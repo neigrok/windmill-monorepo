@@ -2205,6 +2205,21 @@ TEST(mcp_import_subgraph_behind_the_gate_refuses_a_nested_key_by_its_path) {
                        "takes: x, y."));
 }
 
+TEST(mcp_import_subgraph_takes_no_title_and_never_touches_the_trees) {
+  Harness h;
+  CompositeToolHost gate(std::vector<ToolModule>{{h.tools, ""}});
+  const Json::Value titled = parse(R"({"treeId":"t","title":"Renamed","nodes":[{"id":"a","label":"A"}]})");
+  CHECK_EQ(message(gate.callTool("import_subgraph", titled, h.actor)),
+           std::string("import_subgraph: unknown argument \"title\". This tool takes: dryRun, kinds, nodes, "
+                       "prerequisiteMode, progress, tombstone, treeId."));
+  CHECK_EQ(body(h.call("get_tree", kNoArgs))["tree"]["nodes"].size(), 0u);
+
+  CHECK_FALSE(h.call("import_subgraph", titled).isError);
+  CHECK_EQ(body(h.call("get_tree", kNoArgs)),
+           parse(R"({"count":1,"seq":1,"tree":{"guide":{"text":"","yours":true},"id":"t","kinds":[],
+             "nodes":[{"id":"a","label":"A","color":"terracotta","prerequisites":[]}],"title":"Test Roadmap"}})"));
+}
+
 namespace {
 Json::Value kindArgs(const char* id, const char* hue) {
   Json::Value k(Json::objectValue);
