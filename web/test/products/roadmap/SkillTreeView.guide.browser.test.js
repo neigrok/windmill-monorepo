@@ -106,3 +106,81 @@ hostTest('Chromium: a reader on the app route sees the author\'s note on the tre
     } finally { await shared.page.close(); }
   }
 });
+
+hostTest('Chromium: the note keeps its draft when the window crosses 744px in the room', async () => {
+  const { page, errors } = await openHost({ width: 1024, height: 800, surface: 'board' });
+  try {
+    await page.evaluate(() => window.session.setGuide('One step a week.'));
+    await page.getByRole('button', { name: 'Guide: One step a week.' }).click();
+    await page.getByRole('button', { name: 'Edit guide' }).click();
+    await page.keyboard.type(' Written');
+    await page.setViewportSize({ width: 700, height: 800 });
+    await page.locator('.st-guide-paper--phone').waitFor();
+    assert.equal(await page.locator('.st-guide-field').inputValue(), 'One step a week. Written');
+    await page.setViewportSize({ width: 1024, height: 800 });
+    await page.locator('.st-guide-paper:not(.st-guide-paper--phone)').waitFor();
+    assert.equal(await page.locator('.st-guide-field').inputValue(), 'One step a week. Written');
+    assert.deepEqual(await guideEvents(page), [{ step: 'open', door: 'card', view: 'board', role: 'owner' }, { step: 'edit', via: 'pencil' }]);
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
+});
+
+hostTest('Chromium: the Graph camera frames the tree to the right of the guide\'s card and of its note read in place, and captions keep clear of both', async () => {
+  const { page, errors } = await openHost({ width: 1440, height: 960 });
+  try {
+    await page.evaluate(() => window.session.setGuide('One step a week.'));
+    await page.getByRole('button', { name: 'Guide: One step a week.' }).waitFor();
+    const row = await box(page, '.st-roadmap-identity');
+    const held = (selector) => page.locator(selector).evaluate((element) => {
+      const room = document.querySelector('.st-root').getBoundingClientRect();
+      const { left, top, width, height } = element.getBoundingClientRect();
+      return { left: left - room.left, top: top - room.top, width, height };
+    });
+    const card = await held('.st-guide-card');
+    await page.waitForFunction(() => window.cameraInsets.left === 466);
+    assert.deepEqual(await page.evaluate(() => ({ left: window.cameraInsets.left, guide: window.cameraInsets.blocks.find((block) => block.top !== undefined), last: Object.keys(window.cameraInsets.blocks.at(-1)).sort() })),
+      { left: 466, guide: card, last: ['bottom', 'height', 'right', 'width'] });
+    assert.equal(card.top, row.bottom + 38);
+    await page.getByRole('button', { name: 'Guide: One step a week.' }).click();
+    await page.waitForFunction(() => window.cameraInsets.left === 690);
+    assert.deepEqual(await page.evaluate(() => window.cameraInsets.blocks.find((block) => block.top !== undefined)), await held('.st-guide-paper'));
+    await page.getByRole('button', { name: 'Close', exact: true }).click();
+    await page.waitForFunction(() => window.cameraInsets.left === 466);
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
+});
+
+hostTest('Chromium: a refusal on the desktop Graph seats the guide\'s card below it, and the open note leaves its message uncovered', async () => {
+  const { page, errors } = await openHost({ width: 1440, height: 960, shell: true });
+  try {
+    await page.evaluate(() => {
+      const session = window.session;
+      session.setGuide('One step a week.');
+      session.dispatch({ kind: 'RenameNode', id: 'wind', label: 'Read gusts' });
+      session.inFlight.set('fixture-refused', session.lattice.toFrame());
+      session.receiveReject({ frameId: 'fixture-refused', code: 'server-error' });
+    });
+    await page.getByRole('alert').waitFor();
+    const refusal = await box(page, '.st-graph-refusal');
+    await page.waitForFunction((bottom) => document.querySelector('.st-guide-card').getBoundingClientRect().top >= bottom, refusal.bottom);
+    assert.equal((await box(page, '.st-guide-card')).top, refusal.bottom + 38);
+    await page.getByRole('button', { name: 'Guide: One step a week.' }).click();
+    assert.equal((await box(page, '.st-guide-paper')).top, refusal.bottom + 22);
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
+});
+
+hostTest('Chromium: at 744px the guide\'s card ends clear of an open step panel', async () => {
+  const { page, errors } = await openHost({ width: 744, height: 1024 });
+  try {
+    await page.evaluate(() => window.session.setGuide('One step a week.'));
+    await page.getByRole('button', { name: 'Guide: One step a week.' }).waitFor();
+    assert.equal((await box(page, '.st-guide-card')).width, 414);
+    await page.evaluate(() => window.scene.select('wind'));
+    await page.locator('.st-detail-panel--open').waitFor();
+    await page.waitForFunction(() => document.querySelector('.st-guide-card').getBoundingClientRect().width < 414);
+    const [card, panel] = [await box(page, '.st-guide-card'), await box(page, '.st-detail-panel--open')];
+    assert.deepEqual({ left: card.left, clear: card.right <= panel.left, width: card.width }, { left: 28, clear: true, width: 744 - 28 - 368 });
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
+});

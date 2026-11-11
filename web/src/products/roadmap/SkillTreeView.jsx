@@ -508,6 +508,9 @@ export function SkillTreeView({ treeId, demo = false }) {
         onBarBottom={geometry.setGraphBarBottom}
         deviceLine={phone ? deviceLine : null}
         guide={canvasView ? guideEntry : null}
+        guideTop={geometry.guideTop}
+        guideRight={insets.right}
+        onGuideBox={geometry.publishGuideCard}
         cameraRight={phone || !canvasView ? undefined : insets.blocks.at(-1)?.right}
         cameraBottom={phone || !canvasView ? undefined : insets.blocks.at(-1)?.bottom}
         onZoomIn={() => sceneRef.current?.zoomBy(1.2)}
@@ -522,7 +525,7 @@ export function SkillTreeView({ treeId, demo = false }) {
           reportRoadmapFailure('roadmap-guide', error);
           guide.close();
         }}>
-          <GuideNote guide={guide} band={breakpoint} view={guideView} />
+          <GuideNote guide={guide} band={breakpoint} view={guideView} onSeat={canvasView ? geometry.publishGuideNote : undefined} />
         </ErrorBoundary>
       )}
 

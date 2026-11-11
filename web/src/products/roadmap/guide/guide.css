@@ -19,6 +19,20 @@
   text-align: left;
   cursor: pointer;
 }
+.st-guide-card,
+.st-guide-row {
+  transition: background-color var(--duration-fast) var(--ease-standard), transform var(--duration-fast) var(--ease-standard);
+}
+.st-guide-card:hover {
+  background: var(--surface-hover);
+}
+.st-guide-row:hover {
+  background: var(--color-brand-soft);
+}
+.st-guide-card:active,
+.st-guide-row:active {
+  transform: scale(0.97);
+}
 .st-guide-card:focus-visible,
 .st-guide-row:focus-visible {
   outline: 2px solid var(--color-brand);
@@ -123,7 +137,6 @@
 .st-graph-guide {
   position: absolute;
   left: 28px;
-  max-width: calc(100% - 56px);
   margin-top: 38px;
   pointer-events: auto;
 }
@@ -240,7 +253,8 @@
 .st-guide-close:hover {
   background: var(--surface-hover);
 }
-.st-guide-paper :is(button, textarea, .st-guide-prose):focus-visible {
+.st-guide-paper :is(button, textarea):focus-visible,
+.st-guide-prose.is-ringed:focus {
   outline: 2px solid var(--color-brand);
   outline-offset: 2px;
 }
@@ -254,6 +268,7 @@
   font: 400 22px/32px var(--font-body);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+  outline: none;
 }
 .st-guide-prose--owner {
   cursor: text;
@@ -270,6 +285,7 @@
   border-radius: 10px;
   background: var(--surface-canvas);
   color: var(--text-primary);
+  caret-color: var(--color-brand);
   font: 400 20px/30px var(--font-body);
   overflow-wrap: anywhere;
   overflow-y: auto;
@@ -378,9 +394,14 @@
 }
 .st-guide-paper--phone > .st-guide-prose {
   max-height: none;
-  padding: 6px 22px 0;
+  margin: 6px 18px 0;
+  padding: 0 4px;
+  border-radius: 5px;
   font-size: 17px;
   line-height: 25px;
+}
+.st-guide-paper--phone > .st-guide-prose.is-ringed:focus {
+  outline-offset: -2px;
 }
 .st-guide-paper--phone > .st-guide-field {
   min-height: 41px;
@@ -519,4 +540,33 @@
 .st-guide-seat--phone .st-guide-discard section > div > button {
   flex: 1;
   white-space: nowrap;
+}
+
+/* ---- Motion: the note dissolves in and its faces dissolve into one another; Discard draft? is quicker. ---- */
+@keyframes st-guide-dissolve {
+  from { opacity: 0; }
+}
+.st-guide-paper.is-entering,
+.st-guide-layer.is-entering > .st-guide-backdrop,
+.st-guide-prose,
+.st-guide-field,
+.st-guide-footer {
+  animation: st-guide-dissolve 160ms ease-out;
+}
+.st-guide-discard {
+  animation: st-guide-dissolve 120ms ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .st-guide-paper.is-entering,
+  .st-guide-layer.is-entering > .st-guide-backdrop,
+  .st-guide-prose,
+  .st-guide-field,
+  .st-guide-footer,
+  .st-guide-discard {
+    animation: none;
+  }
+  .st-guide-card,
+  .st-guide-row {
+    transition: none;
+  }
 }

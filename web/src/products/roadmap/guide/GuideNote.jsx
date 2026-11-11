@@ -5,21 +5,24 @@ import React, { useEffect, useId, useLayoutEffect, useRef, useState } from 'reac
 import { createPortal, flushSync } from 'react-dom';
 import { BookOpen, Pencil, X } from 'lucide-react';
 import { Button } from '../../../design-system';
-import { wrapTab } from '../../../design-system/feedback/dialogFocus.js';
+import { focusableElements } from '../../../design-system/feedback/dialogFocus.js';
 import { track } from '../../../telemetry/beacon.js';
 import { DISCARD_DRAFT, GUIDE, LABELS, guideCounter } from '../copy.js';
 import { t } from '../i18n/index.js';
 import { coverBeneath, useComposerViewport, useCoveredLayer } from '../step/composerFocus.js';
-import { GuideDraft, hasGuide } from './GuideDraft.js';
+import { GuideDraft, hasGuide, withLineFeeds } from './GuideDraft.js';
+import { useArrivalFade } from './useGuide.js';
 import './guide.css';
 
 // Reading from 744px shares the room: the tree beside the note stays live. Writing, and the phone's sheet in either
 // mode, holds the window: everything beneath is inert and a press outside asks to leave. `view` is the view the entry
-// stands on, so the note follows its entry when the view changes.
-export function GuideNote({ guide, band, view }) {
+// stands on, so the note follows its entry when the view changes; `onSeat` hears the box the note holds on the canvas
+// while it reads in place.
+export function GuideNote({ guide, band, view, onSeat }) {
   const phone = band === 'phone';
   const { owner } = guide;
   const opening = guide.opened.writing;
+  const text = withLineFeeds(guide.text);
   // The note stands over its entry, grown 4px to the left and 16px up: measured in the window, and in the room the
   // note shares while it reads.
   const seatOverEntry = () => {
@@ -30,31 +33,55 @@ export function GuideNote({ guide, band, view }) {
   const [draft, setDraft] = useState(() => (opening ? new GuideDraft(guide.text) : null));
   const [caret, setCaret] = useState(() => (opening ? { offset: opening.offset, scroll: 0 } : null));
   const [discarding, setDiscarding] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [ringed, setRinged] = useState(false);
+  const [entering, setEntering] = useState(true);
   const [seat, setSeat] = useState(seatOverEntry);
   const layer = useRef(null);
   const paper = useRef(null);
   const prose = useRef(null);
   const field = useRef(null);
   const confirmation = useRef(null);
-  const saving = useRef(false);
+  const lastPress = useRef(guide.opened.keyboard ? 'key' : 'pointer');
+  const enterDown = useRef(false);
+  const settled = useRef(false);
+  const held = useRef(null);
+  const keys = useRef(null);
   const titleId = useId();
   const countId = useId();
   const discardId = useId();
+  const lossId = useId();
   const viewport = useComposerViewport(phone);
   const writing = draft !== null;
   const modal = phone || writing;
   const savable = writing && draft.changed && draft.fits;
+  held.current = draft;
+  useArrivalFade(prose, guide.arrival);
+
+  // The note dissolves out before it closes; under reduced motion it closes at once.
+  const close = () => {
+    if (settled.current) return;
+    settled.current = true;
+    const frame = layer.current ?? paper.current;
+    if (!frame || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      guide.close();
+      return;
+    }
+    frame.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 160, easing: 'ease-out', fill: 'forwards' }).finished.then(guide.close);
+  };
 
   // Leaving the draft returns to where writing began: the note read, or the tree for a guide begun from Add guide.
   const leave = () => {
     setDiscarding(false);
     if (!writing || opening) {
-      guide.close();
+      close();
       return;
     }
     setDraft(null);
   };
+  // A save in flight holds the frame: nothing leaves until it settles.
   const requestLeave = () => {
+    if (saving) return;
     if (draft?.changed) {
       setDiscarding(true);
       return;
@@ -74,21 +101,79 @@ export function GuideNote({ guide, band, view }) {
   };
 
   const save = async () => {
-    if (!savable || saving.current) return;
-    saving.current = true;
+    if (!savable || saving || discarding) return;
+    setSaving(true);
     const saved = await guide.save(draft);
-    saving.current = false;
+    setSaving(false);
     if (saved) leave();
   };
 
   const loadLatest = () => {
     track('roadmap_guide', { step: 'loadLatest' });
-    setCaret({ offset: guide.text.length, scroll: 0 });
+    setCaret({ offset: text.length, scroll: 0 });
     setDraft(new GuideDraft(guide.text));
   };
 
+  // While the note holds the window its keys work wherever focus stands: Escape leaves, ⌘↩ saves, and Tab walks the
+  // frame's own stops, which WebKit would otherwise leave for the page.
+  keys.current = (event) => {
+    if (event.defaultPrevented) return;
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      if (discarding) setDiscarding(false);
+      else requestLeave();
+      return;
+    }
+    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && writing) {
+      event.preventDefault();
+      save();
+      return;
+    }
+    if (event.key !== 'Tab') return;
+    event.preventDefault();
+    const frame = discarding ? confirmation.current : paper.current;
+    const stops = focusableElements(frame);
+    const at = stops.indexOf(document.activeElement);
+    const next = at < 0 ? stops.at(event.shiftKey ? -1 : 0) : stops[(at + (event.shiftKey ? -1 : 1) + stops.length) % stops.length];
+    (next ?? frame).focus();
+  };
+  useEffect(() => {
+    if (!modal) return undefined;
+    const onKey = (event) => keys.current(event);
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [modal]);
+
+  // The prose wears its focus ring only when a key brought focus to it.
+  useEffect(() => {
+    const key = () => { lastPress.current = 'key'; };
+    const pointer = () => { lastPress.current = 'pointer'; };
+    document.addEventListener('keydown', key, true);
+    document.addEventListener('pointerdown', pointer, true);
+    return () => {
+      document.removeEventListener('keydown', key, true);
+      document.removeEventListener('pointerdown', pointer, true);
+    };
+  }, []);
+
   useLayoutEffect(() => (modal ? coverBeneath(layer.current) : undefined), [modal]);
   useCoveredLayer(paper, discarding);
+
+  const inPlace = !phone && !modal;
+  useLayoutEffect(() => {
+    if (!inPlace || !seat || !onSeat) return undefined;
+    const publish = () => onSeat({
+      left: seat.left - seat.roomLeft, top: seat.top - seat.roomTop, width: paper.current.offsetWidth, height: paper.current.offsetHeight,
+    });
+    publish();
+    const observer = new ResizeObserver(publish);
+    observer.observe(paper.current);
+    return () => {
+      observer.disconnect();
+      onSeat(null);
+    };
+  }, [inPlace, seat, onSeat]);
 
   useLayoutEffect(() => {
     if (phone) return undefined;
@@ -127,15 +212,17 @@ export function GuideNote({ guide, band, view }) {
 
   useLayoutEffect(() => {
     if (!writing) prose.current?.focus({ preventScroll: true });
-  }, [writing]);
+  }, [writing, modal]);
 
   useLayoutEffect(() => {
     if (discarding) confirmation.current.focus({ preventScroll: true });
     else field.current?.focus({ preventScroll: true });
   }, [discarding]);
 
-  // Closing hands focus back to the guide's entry on the tree, unless it already went somewhere else.
+  // Closing hands focus back to the guide's entry on the tree, unless it already went somewhere else. A changed draft
+  // the room closed over, because the tree or the route moved on, is a draft discarded.
   useEffect(() => () => {
+    if (!settled.current && held.current?.changed) track('roadmap_guide', { step: 'discard' });
     requestAnimationFrame(() => {
       if (document.activeElement === document.body) guide.entry.current?.focus({ preventScroll: true });
     });
@@ -148,6 +235,7 @@ export function GuideNote({ guide, band, view }) {
     ? t('roadmap.guide.deviceDisclosure')
     : phone ? t('roadmap.guide.disclosurePhone') : t('roadmap.guide.disclosure');
   const paperClasses = ['st-guide-paper'];
+  if (entering) paperClasses.push('is-entering');
   if (phone) paperClasses.push('st-guide-paper--phone');
   if (writing) paperClasses.push('st-guide-paper--writing');
 
@@ -158,14 +246,12 @@ export function GuideNote({ guide, band, view }) {
       <section ref={paper} className={paperClasses.join(' ')} role="dialog" aria-modal={modal ? 'true' : undefined}
         aria-labelledby={titleId} tabIndex={-1}
         style={seated ? { maxHeight: `calc(100dvh - ${seat.top + 24}px)` } : undefined}
-        onKeyDown={(event) => {
-          if (event.key === 'Escape' && !event.defaultPrevented) {
-            event.preventDefault();
-            event.stopPropagation();
-            requestLeave();
-            return;
-          }
-          if (modal) wrapTab(event, paper.current);
+        onAnimationEnd={() => setEntering(false)}
+        onKeyDown={modal ? undefined : (event) => {
+          if (event.key !== 'Escape' || event.defaultPrevented) return;
+          event.preventDefault();
+          event.stopPropagation();
+          requestLeave();
         }}>
         {phone && <span className="st-guide-grabber" aria-hidden />}
         <header className="st-guide-heading">
@@ -176,21 +262,24 @@ export function GuideNote({ guide, band, view }) {
           </div>
           {!writing && owner && (
             <button type="button" className="st-guide-pencil" aria-label={t('roadmap.guide.edit')}
-              onClick={() => begin('pencil', guide.text.length)}>
+              onClick={() => begin('pencil', text.length)}>
               <Pencil size={18} strokeWidth={1.67} aria-hidden />
             </button>
           )}
           {!writing && (
-            <button type="button" className="st-guide-close" aria-label={LABELS.close} onClick={guide.close}>
+            <button type="button" className="st-guide-close" aria-label={LABELS.close} onClick={close}>
               <X size={18} strokeWidth={1.67} aria-hidden />
             </button>
           )}
         </header>
         {!phone && <span className="st-guide-rule" />}
-        {/* The prose holds the note's focus: a reader scrolls it from the keyboard, and its owner writes from it. */}
+        {/* The prose holds the note's focus: a reader scrolls it from the keyboard, and to its owner it is the guide's
+            field at rest, read-only until a press or Enter writes from it. */}
         {!writing && (
-          <p ref={prose} className={`st-guide-prose${owner ? ' st-guide-prose--owner' : ''}`}
-            tabIndex={0} role={owner ? undefined : 'region'} aria-labelledby={owner ? undefined : titleId}
+          <p ref={prose} className={`st-guide-prose${owner ? ' st-guide-prose--owner' : ''}${ringed ? ' is-ringed' : ''}`}
+            tabIndex={0} role={owner ? 'textbox' : 'region'} aria-labelledby={titleId}
+            aria-readonly={owner ? 'true' : undefined} aria-multiline={owner ? 'true' : undefined}
+            onFocus={() => setRinged(lastPress.current === 'key')}
             onClick={owner ? (event) => {
               const selected = window.getSelection();
               if (selected && !selected.isCollapsed && event.currentTarget.contains(selected.anchorNode)) return;
@@ -199,29 +288,31 @@ export function GuideNote({ guide, band, view }) {
               const range = point ? null : document.caretRangeFromPoint?.(event.clientX, event.clientY);
               const [node, at] = point ? [point.offsetNode, point.offset] : [range?.startContainer, range?.startOffset];
               const landed = node?.nodeType === Node.TEXT_NODE && event.currentTarget.contains(node);
-              begin(phone ? 'tap' : 'click', landed ? at : guide.text.length);
+              begin(phone ? 'tap' : 'click', landed ? at : text.length);
             } : undefined}
             onKeyDown={owner ? (event) => {
               if (event.key !== 'Enter' || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
               event.preventDefault();
-              begin('key', guide.text.length);
+              if (!event.repeat) begin('key', text.length);
             } : undefined}>
-            <span key={guide.arrival} className="st-switcher-tag">{guide.text}</span>
+            {text}
           </p>
         )}
         {writing && <>
           <textarea ref={field} rows={1} className={`st-guide-field${draft.fits ? '' : ' st-guide-field--over'}`}
-            aria-labelledby={titleId} aria-describedby={countId} value={draft.text}
+            aria-labelledby={titleId} aria-describedby={countId} value={draft.text} readOnly={saving}
             placeholder={t('roadmap.guide.placeholder')}
             onChange={(event) => {
               const { value } = event.target;
               setDraft((current) => current.writing(value));
             }}
             onKeyDown={(event) => {
-              if (event.key !== 'Enter' || !(event.metaKey || event.ctrlKey)) return;
-              event.preventDefault();
-              save();
-            }} />
+              if (event.key !== 'Enter') return;
+              // An Enter still held from the press that opened the note types nothing.
+              if (event.repeat && !enterDown.current) event.preventDefault();
+              else enterDown.current = true;
+            }}
+            onKeyUp={(event) => { if (event.key === 'Enter') enterDown.current = false; }} />
           {/* A status line with its one act stands first; then who reads the guide, the count, and Cancel and Save. */}
           <footer className="st-guide-footer">
             {!phone && draft.outdatedBy(guide.text) && (
@@ -238,10 +329,10 @@ export function GuideNote({ guide, band, view }) {
               {phone ? <>
                 <button type="button" className="st-guide-cancel" onClick={requestLeave}>{t('roadmap.common.cancel')}</button>
                 <button type="button" className="st-guide-save" aria-disabled={savable ? undefined : 'true'}
-                  aria-describedby={countId} onClick={save}>{t('roadmap.common.save')}</button>
+                  aria-busy={saving ? 'true' : undefined} aria-describedby={countId} onClick={save}>{t('roadmap.common.save')}</button>
               </> : <>
                 <Button variant="secondary" onClick={requestLeave}>{t('roadmap.common.cancel')}</Button>
-                <Button variant={draft.changed ? 'primary' : 'secondary'} held={!savable} describedBy={countId}
+                <Button variant={draft.changed ? 'primary' : 'secondary'} held={!savable} ariaBusy={saving} describedBy={countId}
                   onClick={save}>{t('roadmap.common.save')}</Button>
               </>}
             </div>
@@ -251,18 +342,10 @@ export function GuideNote({ guide, band, view }) {
       {discarding && (
         <div className="st-guide-discard">
           <div className="st-guide-discard-scrim" aria-hidden onClick={() => setDiscarding(false)} />
-          <section ref={confirmation} role="alertdialog" aria-modal="true" aria-labelledby={discardId} tabIndex={-1}
-            onKeyDown={(event) => {
-              if (event.key === 'Escape') {
-                event.preventDefault();
-                event.stopPropagation();
-                setDiscarding(false);
-                return;
-              }
-              wrapTab(event, confirmation.current);
-            }}>
+          <section ref={confirmation} role="alertdialog" aria-modal="true" aria-labelledby={discardId}
+            aria-describedby={lossId} tabIndex={-1}>
             <h2 id={discardId}>{!phone && <BookOpen size={22} strokeWidth={1.67} aria-hidden />}{DISCARD_DRAFT.title}</h2>
-            <p>{DISCARD_DRAFT.body}</p>
+            <p id={lossId}>{DISCARD_DRAFT.body}</p>
             <div>
               <Button variant="secondary" size={phone ? 'lg' : 'md'} onClick={() => setDiscarding(false)}>{DISCARD_DRAFT.keepEditing}</Button>
               <Button variant="danger" size={phone ? 'lg' : 'md'} onClick={() => {
@@ -278,8 +361,9 @@ export function GuideNote({ guide, band, view }) {
 
   if (!modal) return note;
   return createPortal(
-    <div ref={layer} className={`st-guide-layer${phone ? ' st-guide-layer--phone' : ''}`} style={viewport.style}>
-      <div className="st-guide-backdrop" aria-hidden onClick={requestLeave} />
+    <div ref={layer} className={`st-guide-layer${phone ? ' st-guide-layer--phone' : ''}${entering ? ' is-entering' : ''}`} style={viewport.style}>
+      {/* A double tap's second click belongs to the press that opened the sheet, so it does not close it. */}
+      <div className="st-guide-backdrop" aria-hidden onClick={(event) => { if (event.detail < 2) requestLeave(); }} />
       {note}
     </div>,
     document.body,

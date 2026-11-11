@@ -593,6 +593,13 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   for offline and server failures and *Copy draft* for a refused save. [Three save failures](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=858-75016).
   The shipped phone editor can overwrite a guide changed elsewhere without warning. The approved phone editor keeps
   the draft and offers *Load latest*. [Changed elsewhere](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=856-69852).
+- **Guide · boards against tokens and undrawn desktop states (17).** The [desktop boards](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=856-69888)
+  type `#884321` on Save, the field edge, the Read guide link, focus rings and the caret, and no token holds it. Web
+  builds Save, the field edge, rings and the caret on `--color-brand` and the link on `--text-link`; Save's white label
+  is 3.92:1 where the board's is 7.31:1. Four desktop states are built and not drawn: the card's place on the Board
+  (first in its flow, above the filter strip), the reader's card with *Read note*, the compact *Add guide* card, and
+  the device tree's footer line. 17.36 draws Save solid on an empty draft while 17.22 *Before typing* draws it off; web
+  keeps it off. 17.38 and 17.39 omit the device line that 17.29 draws; web shows it above the row.
 - **Web reconciliation evidence.** All 25 current Roadmap screen/state families are mapped in the
   [evidence log](roadmap-web-reconciliation.md) and linked from the [flow index](../index.md#roadmap--web).
   🚀 marks source/runtime reconciliation; runtime limits are separate. Native graphs and SwiftShader

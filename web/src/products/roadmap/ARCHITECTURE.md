@@ -179,11 +179,17 @@ text. The owner presses the prose or the pencil, or Enter, and writes in the sam
 (`caretPositionFromPoint`, or Safari's `caretRangeFromPoint`); writing holds the window, so everything beneath is inert
 and a press outside asks to leave. The field is as tall as its draft until the note's bound makes it scroll, and on
 phones the footer rides the keyboard. Save waits for a change and a draft that fits, ⌘↩ saves, and an empty Save removes
-the guide. Leaving a draft returns to where writing began (the note read, or the tree for a guide begun from Add guide),
+the guide. While a save is in flight the frame holds: the field is read-only and nothing leaves until it settles. A
+save by someone who is no longer the owner writes through no door and keeps the draft on screen. While the note holds
+the window, Escape, ⌘↩ and Tab work wherever focus stands. The note keeps its draft across a change of band, and closes
+when the tree changes or the guide stops being shown. Leaving a draft returns to where writing began (the note read, or the tree for a guide begun from Add guide),
 at once when nothing changed and through Discard draft? when something did. Closing hands focus back to the entry. The
 footer keeps a status line with one act above who reads the guide: from 744px a guide changed elsewhere mid-edit says so
 there and offers Load latest. A guide set elsewhere replaces the entry's line and the read note's text with one
-crossfade, none under reduced motion.
+crossfade (`useArrivalFade`), none under reduced motion; the note dissolves in and out over 160ms. On the Graph from
+744px the card and the note read in place publish their boxes to `useGraphGeometry`: `viewportInsets` frames the tree
+to their right while 320px of canvas stays, keeps captions out from under them, seats the card below a refusal banner
+and ends it clear of an open dock or panel.
 
 **The roadmap sheet.** `RoadmapSheet` owns title search above eight roadmaps and the keyboard-aware search and
 New roadmap footer; `roadmapSearch.js` owns the threshold, trimmed title match and highlight offsets in the
