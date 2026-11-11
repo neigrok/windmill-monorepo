@@ -48,10 +48,13 @@ A subgraph uses the same envelope in a socket frame and the HTTP tree response's
 ```
 
 Node and kind registers use flat value/stamp pairs such as `label`/`labelAt`; life uses
-`createdAt`/`deletedAt`. Edges use `from`, `to`, `addedAt` and `removedAt`. Title and guide are
+`createdAt`/`deletedAt`. A node's registers are `label`, `icon`, `color`, `order`, `position`,
+`status`, `description`, `links` and `opens`, the id of the tree the node opens or `""` for none.
+Edges use `from`, `to`, `addedAt` and `removedAt`. Title and guide are
 `{v, at}`; coverage maps each actor to its greatest stamp. Omitted sections and fields never delete
 data. The browser lattice joins, stores and writes the guide as it does the title: one stamped register
-in the structure lane, outside the undo journal.
+in the structure lane, outside the undo journal. It does not hold `opens`: it reads past the pair in a
+frame and never sends it, so a stored pointer stays as it is.
 
 | Intent | Meaning |
 |---|---|
@@ -63,7 +66,8 @@ in the structure lane, outside the undo journal.
 The server broadcasts admitted writes with `intent: live` and `seq`. A persisted write receives
 `subgraphAck {treeId, frameId, seq?}`; a duplicate can be acknowledged without a new seq. The room
 tracks seen frame IDs, and the op log enforces `(tree_id, op_id)` uniqueness. The op log contains
-one coarse headline per frame, not the full envelope; position-only frames produce no deed.
+one coarse headline per frame, not the full envelope; position-only and `opens`-only frames produce
+no deed.
 
 `reject {treeId, frameId?, code, reason}` reports a refusal. Clients branch on `code`, preserving
 unacknowledged state. A rejection naming a frame can strand the same delta on every retry; it must
@@ -168,7 +172,7 @@ complete graft and produce one redundant resend per reconnect. Aligning this tie
 
 | Responsibility | Source |
 |---|---|
-| Shared primitives and stamp codec | `backend/platform/domain/Crdt.h`, `Ids.h` |
+| Shared primitives and stamp codec | `backend/products/roadmap/domain/Crdt.h`, `backend/platform/domain/Ids.h` |
 | Server state, vectors and deltas | `backend/products/roadmap/domain/{LooseGraph,Legend,Subgraph}.*` |
 | Server wire codec | `backend/products/roadmap/adapters/json/SubgraphJson.cpp` |
 | Admission, acknowledgement and broadcasts | `backend/products/roadmap/adapters/ws/Collab.cpp`, `WsPresenceBus.cpp` |

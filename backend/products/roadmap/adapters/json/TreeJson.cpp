@@ -63,6 +63,7 @@ Json::Value nodeToJson(const NodeSpec& node) {
   if (node.status) n["status"] = *normalizeSeedStatus(node.status);
   if (!node.description.empty()) n["description"] = node.description;
   if (!node.links.empty()) n["links"] = linksToJson(node.links);
+  if (!node.opens.empty()) n["opens"] = node.opens.str();
   return n;
 }
 
@@ -209,12 +210,13 @@ std::optional<TreeData> treeFromJson(const Json::Value& root, const TreeId& id) 
   for (const Json::Value& n : root["nodes"]) {
     if (!n.isObject()) return std::nullopt;
     NodeSpec node;
-    std::string nodeId, color = "terracotta", status;
+    std::string nodeId, color = "terracotta", opens;
     if (!text(n["id"], nodeId) || !text(n["label"], node.label) || !text(n["icon"], node.icon) ||
         !text(n["color"], color) || !text(n["order"], node.order) ||
-        !text(n["description"], node.description))
+        !text(n["description"], node.description) || !text(n["opens"], opens))
       return std::nullopt;
     node.id = NodeId{nodeId};
+    node.opens = TreeId{opens};
     node.color = parseColor(color).value_or(NodeColor::terracotta);
     if (!list(n["prerequisites"])) return std::nullopt;
     for (const Json::Value& prereq : n["prerequisites"]) {
@@ -283,6 +285,8 @@ Json::Value toJson(const GraphState& state) {
     n["descriptionAt"] = hlcText(node.descriptionAt);
     n["links"] = linksToJson(node.links);
     n["linksAt"] = hlcText(node.linksAt);
+    n["opens"] = node.opens.str();
+    n["opensAt"] = hlcText(node.opensAt);
     nodes.append(n);
   }
   root["nodes"] = nodes;
@@ -326,6 +330,8 @@ GraphState graphStateFromJson(const Json::Value& root) {
     node.descriptionAt = roadmapStamp(n.get("descriptionAt", "").asString());
     if (n.isMember("links")) node.links = linksFromJson(n["links"]);
     node.linksAt = roadmapStamp(n.get("linksAt", "").asString());
+    node.opens = TreeId{n.get("opens", "").asString()};
+    node.opensAt = roadmapStamp(n.get("opensAt", "").asString());
     state.nodes.push_back(std::move(node));
   }
   for (const Json::Value& e : root["edges"]) {

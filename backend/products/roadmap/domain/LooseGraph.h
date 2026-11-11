@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <map>
 #include <optional>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -23,6 +24,7 @@ struct NodeRecord {
   Lww<std::optional<std::string>> status;  // opaque authoring seed, round-tripped
   Lww<std::string> description;            // free annotation body
   Lww<std::vector<Link>> links;            // external references, the list as one register
+  Lww<TreeId> opens;                       // the tree this node opens; an empty id opens none
 };
 
 // The budget counts the redundant-edge pass's work: nodes, edges, and their product. Over budget the
@@ -53,6 +55,7 @@ public:
   void setDescription(const NodeId& id, const std::string& description, const Hlc& at);
   void setLinks(const NodeId& id, const std::vector<Link>& links, const Hlc& at);
   void setOrder(const NodeId& id, const std::string& order, const Hlc& at);
+  void setOpens(const NodeId& id, const TreeId& opens, const Hlc& at);
   void addEdge(const NodeId& from, const NodeId& to, const Hlc& at);
   void removeEdge(const NodeId& from, const NodeId& to, const Hlc& at);
 
@@ -69,6 +72,9 @@ public:
   // blocking removal of a kind whose hue is still worn.
   std::vector<NodeId> nodesWithColor(NodeColor color) const;
   bool hueInUse(NodeColor color) const;
+
+  // Every tree a node of this graph opens, a tombstoned node's included: its record survives it.
+  std::set<TreeId> openedTrees() const;
 
   std::vector<NodeId> presentNodeIds() const;
   std::vector<Edge> presentEdges() const;
@@ -92,9 +98,10 @@ public:
   GraphState exportState() const;
   // The state a fork of this graph starts from. Every present node is added to the fork afresh,
   // `plantedAt` plus one counter tick per node in (creation stamp, id) order, so sibling ties keep
-  // their order; every status seed is cleared. Tombstones and edges keep their stamps.
+  // their order; every status seed is cleared, and so is every `opens` naming a tree outside
+  // `ownedByForker`. Tombstones and edges keep their stamps.
   // `plantedAt` must dominate every stamp the graph holds.
-  GraphState forkState(const Hlc& plantedAt) const;
+  GraphState forkState(const Hlc& plantedAt, const std::set<TreeId>& ownedByForker) const;
   // One entry's full CRDT state, for sparse persistence. nullopt for a never-seen key.
   std::optional<NodeStateEntry> exportNode(const NodeId& id) const;
   std::optional<EdgeStateEntry> exportEdge(const Edge& edge) const;

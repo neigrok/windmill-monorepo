@@ -14,8 +14,12 @@ self-edges and edges to absent nodes. Every write merges into it; graph writes a
 rejected for structure. Validity is a read model, not a gate.
 
 - `LooseGraph` — the authoritative state. Nodes are `NodeRecord`s (an `ElementSet` life plus LWW
-  registers: label, icon, color, order, position, status, description, links); edges are an
+  registers: label, icon, color, order, position, status, description, links, opens); edges are an
   `ElementSet` per `(from, to)`.
+- `opens` — a node's pointer at another tree: that tree's id, or empty for none. A document node
+  carries it as `opens` and omits it when empty; a lattice entry carries `opens` and `opensAt`. A
+  write is held to the id length and to nothing about its target, so a pointer may name a tree that
+  is absent, deleted or someone else's. No read model follows it.
 - `TreeDiagnostics::assess` — a pure report over a loose graph: `cycles`, `dangling`,
   `selfEdges`, `smells`, `maskedWork` (tombstoned parents with present children). `clean()` is
   true when cycles, dangling and self-edges are all empty. Smell kinds: `label-too-long`
@@ -162,6 +166,7 @@ and one `import_subgraph` call carries at most 6 MB of description text, under t
 | Bound | Value |
 | --- | --- |
 | id length | 128 characters |
+| node `opens` | 128 characters (a tree id) |
 | node label | 200 characters |
 | icon token | 64 characters |
 | node description | 16000 characters (an `AnnotateNode` append is held to the joined body) |
@@ -209,7 +214,8 @@ Rules:
   flips the room to all-dirty.
 - Tree content reads use the room; the registry list reads persisted rows without opening rooms.
   Forks snapshot the source room's graph, legend and guide, clear authored progress baselines, and
-  start a fresh op log with `forked_from` provenance. Every present step is added to the fork afresh:
+  start a fresh op log with `forked_from` provenance. A step keeps its `opens` only when the forker
+  owns the tree it names; every other is cleared. Every present step is added to the fork afresh:
   a stamp from the source room's clock, one counter tick apart in creation order, so a step's
   creation stamp is when it joined this tree and sibling ties keep their order. The fork's title and
   guide take the first of those stamps, so a fresh subscriber's delta carries them beside the steps,
@@ -347,7 +353,7 @@ PostgreSQL; `db/schema.sql` is the one file, applied in order and idempotent.
 | Table | Holds |
 | --- | --- |
 | `trees` | title and guide (each LWW: `<register>_hlc` plus the `<register>_ms`/`<register>_counter` numeric split), `guide_inherited`, `owner_id`, `visibility`, `head_seq`, `forked_from`, `deleted_at`, `document` jsonb |
-| `tree_nodes` | one row per node: `created_hlc`/`deleted_hlc` plus each register and its `_hlc`, and `present` |
+| `tree_nodes` | one row per node: `created_hlc`/`deleted_hlc` plus each register and its `_hlc`, and `present`; `tree_nodes_opens_idx` finds the present nodes that open a given tree |
 | `tree_edges` | one row per `(from_id, to_id)`: `added_hlc`, `removed_hlc` |
 | `tree_kinds` | one row per legend kind: hue, label, description, cross_branch_exempt, rank, each with its stamp |
 | `tree_ops` | append-only log — `(tree_id, seq)` pk, `unique (tree_id, op_id)` for idempotency |

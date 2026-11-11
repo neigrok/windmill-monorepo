@@ -127,6 +127,38 @@ TEST(delta_carries_an_order_write_the_peer_has_not_yet_seen) {
   CHECK_EQ(target.exportNode(nid("a"))->order, std::string("a5"));
 }
 
+TEST(delta_carries_opens_to_a_peer_that_has_not_seen_the_write_and_masks_it_once_covered) {
+  LooseGraph source;
+  source.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
+  source.setOpens(nid("a"), TreeId{"t_sailing"}, at(5));
+
+  VersionVector behind;
+  behind.observe(at(3));  // covers the create (t=1), not the pointer (t=5)
+  Subgraph delta = deltaBetween(source.exportState(), Legend{}.exportState(), behind);
+  NodeStateEntry pointerOnly;
+  pointerOnly.id = nid("a");
+  pointerOnly.opens = TreeId{"t_sailing"};
+  pointerOnly.opensAt = at(5);
+  CHECK(delta.graph == (GraphState{{pointerOnly}, {}}));
+  CHECK(delta.coverage->covers(at(5)));  // the frontier folded the pointer's stamp into coverage
+
+  LooseGraph target;  // a peer holding only the create reconciles in one join
+  target.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
+  target.join(delta.graph);
+  CHECK(target.exportState() == source.exportState());
+
+  VersionVector caughtUp;
+  caughtUp.observe(at(5));
+  CHECK(deltaBetween(source.exportState(), Legend{}.exportState(), caughtUp).graph == GraphState{});
+
+  source.setLabel(nid("a"), "A, renamed", at(7));  // a later write to another register
+  NodeStateEntry renameOnly;
+  renameOnly.id = nid("a");
+  renameOnly.label = "A, renamed";
+  renameOnly.labelAt = at(7);
+  CHECK(deltaBetween(source.exportState(), Legend{}.exportState(), caughtUp).graph == (GraphState{{renameOnly}, {}}));
+}
+
 TEST(two_divergent_replicas_reconcile_to_the_full_join_in_one_exchange) {
   LooseGraph baseGraph;
   baseGraph.createNode(nid("root"), "Root", "x", NodeColor::sky, std::nullopt, at(1));

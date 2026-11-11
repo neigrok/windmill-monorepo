@@ -9,9 +9,11 @@
 #include "test/products/roadmap/Fakes.h"
 #include "test/testing.h"
 
+#include <map>
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 using namespace wm;
@@ -116,6 +118,50 @@ TEST(fork_clears_the_source_status_seeds) {
     if (node.status.has_value() && *node.status == "complete") sourceSeedSurvives = true;
   }
   CHECK(sourceSeedSurvives);
+}
+
+TEST(fork_keeps_a_step_opening_the_forkers_own_tree_and_clears_every_step_opening_another) {
+  Harness h;
+  h.seedSource("t_src", "Learn to sail");
+  h.seedSource("t_mine", "My knots", uid("me"), Visibility::private_);
+  h.seedSource("t_theirs", "Their charts", uid("owner"), Visibility::public_);
+  h.seedSource("t_retired", "My old log", uid("me"), Visibility::private_);
+  h.trees.softDelete(TreeId{"t_retired"});
+  const std::vector<std::pair<const char*, const char*>> opened{
+      {"knots", "t_mine"}, {"charts", "t_theirs"}, {"log", "t_retired"}, {"nowhere", "t_absent"}};
+  GraphState pointers;
+  for (const auto& [step, tree] : opened) {
+    NodeStateEntry node;
+    node.id = nid(step);
+    node.label = step;
+    node.createdAt = node.labelAt = Hlc{2, 0, "seed"};
+    node.opens = TreeId{tree};
+    node.opensAt = Hlc{3, 0, "seed"};
+    pointers.nodes.push_back(node);
+  }
+  LooseGraph source(h.trees.byId["t_src"].state);
+  source.join(pointers);
+  h.trees.byId["t_src"].state = source.exportState();
+
+  ForkService::Result result = h.service.fork(TreeId{"t_src"}, "", "", uid("me"));
+  CHECK(result.outcome == ForkService::Outcome::forked);
+
+  std::map<std::string, std::pair<std::string, Hlc>> stored;
+  for (const NodeStateEntry& node : h.trees.byId["t_d1"].state.nodes)
+    stored[node.id.str()] = {node.opens.str(), node.opensAt};
+  const std::map<std::string, std::pair<std::string, Hlc>> kept{
+      {"charts", {"", Hlc{}}}, {"knots", {"t_mine", Hlc{3, 0, "seed"}}}, {"leaf", {"", Hlc{}}},
+      {"log", {"", Hlc{}}},    {"nowhere", {"", Hlc{}}},                 {"root", {"", Hlc{}}}};
+  CHECK(stored == kept);
+  std::map<std::string, std::string> answered;
+  for (const NodeSpec& node : result.data.nodes) answered[node.id.str()] = node.opens.str();
+  CHECK(answered == (std::map<std::string, std::string>{
+                        {"charts", ""}, {"knots", "t_mine"}, {"leaf", ""}, {"log", ""}, {"nowhere", ""}, {"root", ""}}));
+  std::map<std::string, std::string> left;
+  for (const NodeStateEntry& node : h.rooms.open(TreeId{"t_src"})->exportState().nodes)
+    left[node.id.str()] = node.opens.str();
+  CHECK(left == (std::map<std::string, std::string>{{"charts", "t_theirs"}, {"knots", "t_mine"}, {"leaf", ""},
+                                                     {"log", "t_retired"}, {"nowhere", "t_absent"}, {"root", ""}}));
 }
 
 TEST(fork_adds_its_steps_at_the_moment_of_the_fork_and_leaves_the_source_stamps_alone) {

@@ -7,6 +7,7 @@
 
 #include <mutex>
 #include <optional>
+#include <set>
 #include <utility>
 
 namespace wm {
@@ -17,7 +18,7 @@ ForkService::ForkService(RoomRegistry& registry, TreeRepository& trees, TokenGen
 ForkService::Result ForkService::fork(const TreeId& source, const std::string& requestedId,
                                       const std::string& requestedTitle, const UserId& owner) {
   // Copy the source's *current* authoritative state (live edits folded in), not just its last snapshot.
-  GraphState state;
+  GraphState sourceState;
   LegendState legend;
   std::string title;
   std::string guide;
@@ -36,7 +37,7 @@ ForkService::Result ForkService::fork(const TreeId& source, const std::string& r
     // fresh addition outranks any removal its record carries. The fork's title and guide are planted
     // at it too, so a fresh subscriber's delta carries them as it carries the steps.
     plantedAt = room->nextStamp(clock_.nowMs());
-    state = LooseGraph(room->exportState()).forkState(plantedAt);
+    sourceState = room->exportState();
     legend = room->exportLegend();
     title = room->title().value;
     guide = room->guide().value;
@@ -44,6 +45,14 @@ ForkService::Result ForkService::fork(const TreeId& source, const std::string& r
     // guide is not itself a copy. Anyone else's — an ownerless tree's included — is inherited.
     guideInherited = !guide.empty() && (access->owner != std::optional<UserId>(owner) || room->guideInherited());
   }
+
+  const LooseGraph sourceGraph(sourceState);
+  std::set<TreeId> ownedByForker;
+  for (const TreeId& opened : sourceGraph.openedTrees()) {
+    const std::optional<TreeAccess> access = trees_.loadAccess(opened);
+    if (access && access->owner == std::optional<UserId>(owner)) ownedByForker.insert(opened);
+  }
+  const GraphState state = sourceGraph.forkState(plantedAt, ownedByForker);
 
   const TreeId newId{requestedId.empty() ? "t_" + tokens_.mint().digest.substr(0, 16) : requestedId};
   const std::string forkTitle = requestedTitle.empty() ? title : requestedTitle;
