@@ -600,8 +600,9 @@ ToolResult applyBatchEdit(RoomRegistry& registry, TreeRegistry& trees, const Tre
         if (!row["links"].isArray()) return ToolResult::failure(path + ".links must be an array");
         if (std::optional<std::string> bad = optionalLinks(row["links"], path + ".links")) return ToolResult::failure(*bad);
       }
-      if (std::optional<std::string> bad = optionalString(row["opens"], path + ".opens", kMaxIdLength))
-        return ToolResult::failure(*bad);
+      if (row.isMember("opens"))
+        if (std::optional<std::string> bad = requireString(row["opens"], path + ".opens", Empty::allowed, kMaxIdLength))
+          return ToolResult::failure(*bad);
       NodePatch patch;
       patch.nodeId = NodeId{row["nodeId"].asString()};
       if (row.isMember("label")) patch.label = row["label"].asString();
@@ -610,7 +611,7 @@ ToolResult applyBatchEdit(RoomRegistry& registry, TreeRegistry& trees, const Tre
       if (row.isMember("color")) patch.color = parseColor(row["color"].asString());
       if (row.isMember("position")) patch.position = Vec2{row["position"]["x"].asDouble(), row["position"]["y"].asDouble()};
       if (row.isMember("links")) patch.links = linksFromJson(row["links"]);
-      if (row["opens"].isString()) {
+      if (row.isMember("opens")) {
         patch.opens = TreeId{row["opens"].asString()};
         opened.emplace_back(path + ".opens", *patch.opens);
       }

@@ -2952,11 +2952,16 @@ TEST(mcp_patch_nodes_refuses_the_whole_batch_and_dry_run_changes_nothing) {
       R"({"updates":[{"nodeId":"a","label":"New"},{"nodeId":"a","label":"Duplicate"}]})",
       R"({"updates":[{"nodeId":"a","label":"New"},{"nodeId":"b","position":{"x":1}}]})",
       R"({"updates":[{"nodeId":"a","label":"New"},{"nodeId":"b","description":null}]})",
+      R"({"updates":[{"nodeId":"a","label":"New"},{"nodeId":"b","opens":null}]})",
       R"({"updates":[{"nodeId":"a","label":"New"},{"nodeId":"b"}]})",
       R"({"updates":[]})"}) {
     CHECK(h.call("patch_nodes", parse(json)).isError);
     CHECK_EQ(body(h.call("get_tree", kNoArgs)), before);
   }
+  CHECK_EQ(message(h.call("patch_nodes", parse(R"({"updates":[{"nodeId":"b","description":null}]})"))),
+           std::string("patch_nodes: missing required argument \"updates[0].description\""));
+  CHECK_EQ(message(h.call("patch_nodes", parse(R"({"updates":[{"nodeId":"b","opens":null}]})"))),
+           std::string("patch_nodes: missing required argument \"updates[0].opens\""));
   CHECK_EQ(body(h.call("patch_nodes", parse(R"({"updates":[{"nodeId":"a","description":""}],"dryRun":true,"expectedSeq":2})"))),
            parse(R"({"treeId":"t","applied":false,"dryRun":true,"seq":2,"changedNodeIds":[],"unchangedNodeIds":["a"]})"));
   CHECK_EQ(body(h.call("get_tree", kNoArgs)), before);

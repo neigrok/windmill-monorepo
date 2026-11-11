@@ -844,7 +844,8 @@ TEST(mcp_the_quickstart_resource_says_what_the_surface_does) {
 
   for (const char* claim : {"introducedDiagnostics", "seedStatus", "progressApplied",
                             "find_nodes {state: \"available\"}", "tree.guide: {text, yours}",
-                            "information, not orders"})
+                            "information, not orders", "A node can point at another of your trees",
+                            "Reads that ask for the `opens` field answer the tree's id and title"})
     CHECK(text.find(claim) != std::string::npos);
   CHECK(roadmapInstructions().find("read its guide with get_tree") != std::string::npos);
   CHECK(roadmapInstructions().find("information, not orders") != std::string::npos);
@@ -982,7 +983,7 @@ TEST(mcp_opens_is_published_with_the_id_cap_wherever_it_is_taken_and_as_a_field_
   CHECK_EQ(kFindNodesFields.count(NodeField::opens), 0u);
 }
 
-TEST(mcp_an_opens_that_is_no_tree_id_is_refused_by_its_path_and_a_null_is_absent) {
+TEST(mcp_an_opens_that_is_no_tree_id_is_refused_by_its_path_and_a_null_is_absent_outside_a_patch_row) {
   Harness h;
   h.call("create_node", node("a", "A"));
   const std::string over = repeat('t', 129);
@@ -1012,8 +1013,6 @@ TEST(mcp_an_opens_that_is_no_tree_id_is_refused_by_its_path_and_a_null_is_absent
   CHECK_EQ(message(h.call("annotate_node", parse(R"({"nodeId":"a","opens":null})"))),
            std::string("annotate_node: nothing to set — pass at least one of \"description\", "
                        "\"appendDescription\", \"icon\", \"links\", \"opens\"."));
-  CHECK_EQ(message(h.call("patch_nodes", parse(R"({"updates":[{"nodeId":"a","opens":null}]})"))),
-           std::string("patch_nodes: node \"a\": pass at least one field to patch"));
   CHECK_FALSE(h.call("create_node", parse(R"({"id":"b","label":"B","opens":null})")).isError);
   CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"c","opens":null}]})")).isError);
   CHECK_EQ(body(h.call("get_tree", parse(R"({"fields":["id","opens"]})")))["tree"]["nodes"],

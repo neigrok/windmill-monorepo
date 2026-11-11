@@ -240,7 +240,8 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
       row["position"]["required"].append("x");
       row["position"]["required"].append("y");
       row["links"] = linkArray("Replacement links; an empty list clears them.");
-      row["opens"] = cappedStr("Id of a tree you own that this node opens; empty string clears it.", kMaxIdLength);
+      row["opens"] = cappedStr("Id of a tree you own that this node opens; empty string clears it. One naming "
+                               "a tree that is not yours refuses the whole batch.", kMaxIdLength);
       p["updates"] = objArray("1..200 distinct existing nodes, each with at least one field to change.", row, {"nodeId"});
       p["updates"]["minItems"] = 1;
       p["updates"]["maxItems"] = static_cast<Json::UInt64>(kMaxPatchNodes);
@@ -253,7 +254,6 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     }
     ToolDeclaration declaration = tool(name, Access::write,
         patches ? "Patch fields on 1..200 existing nodes atomically. Omitted fields survive; empty strings and links clear their field. "
-                  "`opens` points a node at a tree you own; one naming a tree that is not yours refuses the whole batch. "
                   "All items are validated before one operation, seq and broadcast. Exact retries skip unchanged nodes. "
                   "expectedSeq prevents overwriting intervening edits; dryRun previews changedNodeIds and unchangedNodeIds."
                 : "Add and remove 1..500 prerequisite edges atomically in one operation, seq and broadcast. "
@@ -460,16 +460,16 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     p["description"] = cappedStr("Optional annotation body — notes about the node.",
                                  kMaxNodeDescriptionLength);
     p["links"] = linkArray("Optional external references (docs, PRs, designs).");
-    p["opens"] = cappedStr("Optional id of a tree you own that this node opens. Omit, or pass \"\", for none.",
+    p["opens"] = cappedStr("Optional id of a tree you own that this node opens: the node points at that tree, "
+                           "and get_tree, get_nodes and find_nodes answer its id and title under the `opens` "
+                           "field. A tree that is not yours is refused. Omit, or pass \"\", for none.",
                            kMaxIdLength);
     p["id"] = cappedStr("Optional id to PROPOSE for the new node; minted from the label if omitted. "
                         "(`nodeId` names a node that already exists and is not accepted here.)",
                         kMaxIdLength);
     tools.push_back(tool("create_node", Access::write,
         "Add a node to the roadmap. Only `label` is required; icon, color, position (x,y), a set of "
-        "`prerequisites` (nodes that unlock this one), a `description`, `links`, and `opens` are optional. "
-        "`opens` points the node at a tree you own — get_tree, get_nodes and find_nodes answer that "
-        "tree's id and title under the `opens` field — and a call naming a tree that is not yours is refused. "
+        "`prerequisites` (nodes that unlock this one), a `description`, and `links` are optional. "
         "Returns the node id.",
         p, {"treeId", "label"}));
   }
@@ -486,16 +486,15 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         kMaxNodeDescriptionLength);
     p["icon"] = cappedStr("The node's icon name/emoji; \"\" clears it.", kMaxIconLength);
     p["links"] = linkArray("The node's external references — replaces the existing set (omit to leave unchanged).");
-    p["opens"] = cappedStr("The id of a tree you own that this node opens; \"\" clears it (omit to leave it unchanged).",
+    p["opens"] = cappedStr("The id of a tree you own that this node opens: the node points at that tree, and "
+                           "get_tree, get_nodes and find_nodes answer its id and title under the `opens` field. "
+                           "A tree that is not yours is refused. \"\" clears it; omit to leave it unchanged.",
                            kMaxIdLength);
     tools.push_back(tool("annotate_node", Access::write,
         "Set a node's free annotation: its `description` (or `appendDescription`, which joins onto the "
-        "existing body instead of replacing it — send one of the two), its `icon`, its `links`, and/or "
-        "the tree it `opens`. Each field is optional — an omitted field is left untouched; `links` "
-        "replaces the whole set when given — but at least one must be given. `opens` points the node at "
-        "a tree you own — get_tree, get_nodes and find_nodes answer that tree's id and title under the "
-        "`opens` field — and a call naming a tree that is not yours is refused. This is the verb that sets "
-        "or clears an icon "
+        "existing body instead of replacing it — send one of the two), its `icon`, and/or `links`. "
+        "Each field is optional — an omitted field is left untouched; `links` replaces the whole set "
+        "when given — but at least one must be given. This is the verb that sets or clears an icon "
         "after birth, so it is how an `empty-icon` smell from get_diagnostics is fixed. Every length "
         "cap counts Unicode code points, and a refusal names each field over its cap and by how much.",
         p, {"treeId", "nodeId"}));
@@ -730,7 +729,8 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     nodeFields["description"] = cappedStr("Optional annotation body.", kMaxNodeDescriptionLength);
     nodeFields["links"] = linkArray("Optional external references.");
     nodeFields["opens"] = cappedStr("Optional id of a tree you own that this node opens — the id as a string, "
-                                    "which is the `treeId` inside the `opens` get_tree answers. \"\" clears it.",
+                                    "which is the `treeId` inside the `opens` get_tree answers. \"\" clears it, "
+                                    "and one naming a tree that is not yours refuses the whole import.",
                                     kMaxIdLength);
 
     Json::Value kindFields(Json::objectValue);
@@ -790,11 +790,9 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "Bulk-apply a whole roadmap slice — the shape get_tree returns ({nodes[], kinds[]}, plus an "
         "optional progress[]); to copy a tree faithfully, read it with every field named in `fields` "
         "first, since get_tree answers with a projection — but a node carries `seedStatus`, never "
-        "`status`: that one is your own mark, and travels in progress[]; and it carries `opens` as the "
-        "opened tree's id, a tree you own, where get_tree answers {treeId, title}. The graft is ONE op; a "
+        "`status`: that one is your own mark, and travels in progress[]. The graft is ONE op; a "
         "carried progress[] is applied after it as ordinary overlay writes. The batch is atomic "
-        "against malformed input — a bad field, a repeated id, an `opens` naming a tree that is not "
-        "yours, or a tombstone id that does not exist "
+        "against malformed input — a bad field, a repeated id, or a tombstone id that does not exist "
         "changes nothing and names the offending element — but never against a merely untidy result "
         "(a dangling edge lands and is reported in introducedDiagnostics). Upsert by id: an incoming "
         "id already present is reported in nodeCollisions/kindCollisions, and its prerequisites are "

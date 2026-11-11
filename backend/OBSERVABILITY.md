@@ -58,7 +58,8 @@ WARN completion with outcome `client-update-required`, without an Issue, and the
 it (`retiredRoute`). MCP's `CompositeToolHost`, Coach's `AskTools` and roadmap's `ScopedToolHost`
 dispatch by their access declarations; `ScopedToolHost` refuses the tools it withholds from a run
 (`create_tree`, `list_trees`, `delete_tree`, `describe_tree`) before it opens any observation, so a run
-emits only the roadmap operations listed below. Sync admission instruments every intent and catalog command;
+emits only the roadmap operations listed below; an argument it withholds (`opens`) completes the tool's own
+operation as `refused`. Sync admission instruments every intent and catalog command;
 it validates labels against its sealed registry, and a product refusal code (gym's `plan-logged` and `session-finished`
 on a workout plan write, `proposal-superseded` on a workout proposal out of date) completes at WARN under that
 code with no Issue; the movement and the reason stay in the result detail, off the log. `Heartbeat` and `MailSweep` cover scheduled work

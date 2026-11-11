@@ -19,7 +19,9 @@ Visibility-gated read, owner-only write, per-user progress. The two predicates a
   subscribe delta and every live frame. The MCP reads answer it, as `opens: {treeId, title}`, to that
   same caller alone and only for a tree of theirs that stands; an MCP write that sets one is refused
   unless its target stands and is the caller's, in the same words for an absent tree and someone
-  else's, so the refusal confirms no id.
+  else's, so the refusal confirms no id. A tend neither reads nor sets the pointer: it runs as the
+  owner on labels that may be someone else's words, so `ScopedToolHost` offers it no `opens`
+  argument and no `opens` field, and refuses a call that names either.
 - **Document writes** (`PUT`, WS `subgraph`, structural MCP tools) require
   a session (anonymous → `401`) and gate on `canWrite`, which is ownership and nothing else. **A tree
   is born owned** — the owner is written by the same insert that creates the row (create, fork, `PUT`

@@ -181,8 +181,13 @@ from the products actually connected. **An empty scope is the account-wide grant
 Tending does not go through the composite: `TendingService` holds roadmap's host directly
 (`ScopedToolHost.h`). The two narrowings stack — `ScopedToolHost` pins a run to one tree, the
 composite pins a credential to its grant. A run is not offered `describe_tree` either: it reads the
-tree's guide through `get_tree` and never sets it. A withheld name a run calls anyway is refused before
-any write is observed, and a tend starts only on a tree its caller can write.
+tree's guide through `get_tree` and never sets it. Nor is it offered the tree a node opens: the
+schemas it is handed carry no `opens` argument and no `opens` field, so a run neither reads nor sets
+a pointer, and an import through it leaves the pointers the tree holds as they are. One table in
+`ScopedToolHost.cpp` names what a run is not offered, tools by name and words wherever a schema
+carries them. A withheld name a run calls anyway is refused before any write is observed; a withheld
+argument or field is refused in its own sentence with nothing written. A tend starts only on a tree
+its caller can write.
 
 Above the auth check both HTTP roots meter by IP, keyed on the forwarded client address:
 `windmill_server`'s general API ceiling (25 req/s per client, burst 50) covers `/mcp`;
@@ -283,8 +288,9 @@ A node may point at another tree: `opens` holds that tree's id.
 
 - **Write.** `create_node`, `annotate_node`, a `patch_nodes` row and an `import_subgraph` node take
   `opens`, a string of at most 128 characters. On `create_node`, absent or `""` opens nothing. On
-  the other three, absent leaves the pointer, `""` clears it and a value sets it; `null` is absent.
-  `opens` alone is something to set.
+  the other three, absent leaves the pointer, `""` clears it and a value sets it. `null` is absent,
+  save in a `patch_nodes` row, which refuses it as it refuses a `null` label. `opens` alone is
+  something to set.
 - **The target is checked at this door only.** Every non-empty `opens` in a call must name a tree
   that stands and is the caller's, asked in one read for the whole call
   (`TreeRegistry::titlesOwnedBy`), before the room is written and before a `dryRun` answers.
