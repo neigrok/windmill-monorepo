@@ -131,8 +131,10 @@ subscriber treat it as a re-baselining graft.
 
 `Command` is the server-and-agent-side write path (MCP, tending, imports); it rides the same op
 log, undo and broadcast machinery, and `TreeRoom::applyCommand` emits its writes as one subgraph.
-`CreateNode` and `AnnotateNode` carry the tree a node `opens`: a create with none opens nothing, an
-annotate without the field leaves the pointer and one with `""` clears it. The activity feed projects
+`CreateNode` and `AnnotateNode` carry the tree a node `opens` as an optional: unset leaves the
+pointer, set writes it, and `""` clears it. MCP `create_node` always sets it, `""` when the call
+names no tree, so a created node opens the tree its call names and no other, on an id a deleted node
+held too; a stored `CreateNode` row without the field replays as unset. The activity feed projects
 neither the pointer nor `AnnotateNode`.
 `TreeRoom::applyCommands` lands several as one frame under one seq and queues them as one `Batch`
 op, so replaying the log tail reproduces the whole edit; an empty list mints nothing.

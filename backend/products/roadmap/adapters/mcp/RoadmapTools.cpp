@@ -152,17 +152,21 @@ using OpenedTree = std::pair<std::string, TreeId>;
 // Every tree a call would make a node open must stand and be the caller's, asked of the registry once
 // for the whole call. One sentence serves a tree that is not there and a tree that is someone else's:
 // a tree id is the read capability of an unlisted tree, so telling the two apart would say which ids exist.
-std::optional<std::string> checkOpenedTrees(TreeRegistry& trees, const UserId& caller,
-                                            const std::vector<OpenedTree>& opened) {
+// The refusal carries its own outcome code, so a write line tells a pointer at a tree that is not the
+// caller's from a mistyped argument.
+std::optional<ToolResult> checkOpenedTrees(TreeRegistry& trees, const UserId& caller,
+                                           const std::vector<OpenedTree>& opened) {
   std::set<TreeId> targets;
   for (const auto& [path, target] : opened)
     if (!target.empty()) targets.insert(target);
   const std::map<TreeId, std::string> owned = trees.titlesOwnedBy(caller, targets);
   for (const auto& [path, target] : opened)
     if (!target.empty() && !owned.count(target))
-      return path + " names \"" + target.str() +
-             "\", which is not a tree of yours — a node opens only a tree you own: list_trees lists them, "
-             "and someone else's tree is copied into one of yours first, with create_tree then import_subgraph";
+      return ToolResult::failure(
+          path + " names \"" + target.str() +
+              "\", which is not a tree of yours — a node opens only a tree you own: list_trees lists them, "
+              "and someone else's tree is copied into one of yours first, with create_tree then import_subgraph",
+          "opens-not-yours");
   return std::nullopt;
 }
 
@@ -203,6 +207,9 @@ std::optional<std::string> prepareEdit(const std::string& tool, Json::Value& pay
     if (args["x"].isNull() != args["y"].isNull())
       return "arguments \"x\" and \"y\" go together — a position needs both.";
     if (std::optional<std::string> bad = optionalString(args["opens"], "opens", kMaxIdLength)) return bad;
+    // A created node opens the tree this call names and no other: the pointer is always written, so
+    // an id a deleted node held brings none of that node's pointer back.
+    if (args["opens"].isNull()) payload["opens"] = "";
     return checkAnnotation(args, "");
   }
   if (tool == "annotate_node") {
@@ -546,10 +553,11 @@ ToolResult applyEdit(RoomRegistry& registry, TreeRegistry& trees, const TreeId& 
                                  " could be built from them — that is a server bug, please report it.");
     if (std::optional<std::string> reason = room.validate(*command)) return ToolResult::failure(*reason);
     std::vector<OpenedTree> opened;
-    if (const CreateNode* created = std::get_if<CreateNode>(&*command)) opened.emplace_back("opens", created->opens);
+    if (const CreateNode* created = std::get_if<CreateNode>(&*command); created && created->opens)
+      opened.emplace_back("opens", *created->opens);
     if (const AnnotateNode* annotated = std::get_if<AnnotateNode>(&*command); annotated && annotated->opens)
       opened.emplace_back("opens", *annotated->opens);
-    if (std::optional<std::string> bad = checkOpenedTrees(trees, actor, opened)) return ToolResult::failure(*bad);
+    if (std::optional<ToolResult> refusal = checkOpenedTrees(trees, actor, opened)) return *refusal;
 
     // Bracketed under the strand, so whatever the tree gains between these reads, this gained.
     const TreeDiagnostics before = room.diagnose();
@@ -650,7 +658,7 @@ ToolResult applyBatchEdit(RoomRegistry& registry, TreeRegistry& trees, const Tre
     if (name == "patch_nodes") {
       const auto result = room.planNodePatches(patches);
       if (const auto* error = std::get_if<std::string>(&result)) return ToolResult::failure(*error);
-      if (std::optional<std::string> bad = checkOpenedTrees(trees, actor, opened)) return ToolResult::failure(*bad);
+      if (std::optional<ToolResult> refusal = checkOpenedTrees(trees, actor, opened)) return *refusal;
       const NodePatchPlan& plan = std::get<NodePatchPlan>(result);
       batch = plan.batch;
       out["changedNodeIds"] = Json::Value(Json::arrayValue);
@@ -1001,7 +1009,7 @@ ToolResult importSubgraph(RoomRegistry& registry, TreeRegistry& trees, ProgressS
     std::vector<OpenedTree> opened;
     for (std::size_t i = 0; i < graft.document.nodes.size(); ++i)
       opened.emplace_back("nodes[" + std::to_string(i) + "].opens", graft.document.nodes[i].opens);
-    if (std::optional<std::string> bad = checkOpenedTrees(trees, actor, opened)) return ToolResult::failure(*bad);
+    if (std::optional<ToolResult> refusal = checkOpenedTrees(trees, actor, opened)) return *refusal;
 
     const TreeData& incoming = graft.document;
     TreeData current = room.snapshot();  // collision = an incoming id already present (an upsert overwrites it)

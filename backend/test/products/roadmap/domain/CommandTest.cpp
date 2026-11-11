@@ -1140,3 +1140,26 @@ TEST(headline_is_empty_for_a_frame_that_sets_only_the_tree_a_node_opens) {
   pointed.nodes.push_back(n);
   CHECK_FALSE(headline(pointed, LegendState{}).has_value());
 }
+
+// A tombstoned record keeps its registers, so a create that names no tree writes the empty pointer
+// to open none; one that does not carry the register at all leaves what the record holds.
+TEST(create_node_on_a_deleted_id_clears_the_pointer_it_carries_empty_and_leaves_the_one_it_does_not_carry) {
+  Legend legend;
+  LooseGraph cleared;
+  cleared.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
+  cleared.setOpens(nid("a"), tid("t_sub"), at(2));
+  cleared.deleteNode(nid("a"), at(3));
+  LooseGraph left = cleared;
+
+  CreateNode openingNone{nid("a"), "A again", "x"};
+  openingNone.opens = TreeId{};
+  merge(cleared, legend, Command{openingNone}, at(4));
+  CHECK(cleared.hasNode(nid("a")));
+  CHECK_EQ(cleared.nodeView(nid("a"))->opens, TreeId{});
+  CHECK_EQ(cleared.exportNode(nid("a"))->opensAt, at(4));
+
+  merge(left, legend, Command{CreateNode{nid("a"), "A again", "x"}}, at(4));
+  CHECK(left.hasNode(nid("a")));
+  CHECK_EQ(left.nodeView(nid("a"))->opens, tid("t_sub"));
+  CHECK_EQ(left.exportNode(nid("a"))->opensAt, at(2));
+}

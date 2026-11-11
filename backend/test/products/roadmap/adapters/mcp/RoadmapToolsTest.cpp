@@ -3517,3 +3517,105 @@ TEST(mcp_opens_answers_the_opened_trees_stored_title) {
   CHECK_EQ(body(h.call("get_tree", parse(R"({"fields":["id","opens"]})")))["tree"]["nodes"],
            parse(R"([{"id":"a","opens":{"treeId":"t_sub","title":"Deeper dive"}}])"));
 }
+
+// A created node opens the tree its call names and no other: an id a deleted node held brings back
+// none of that node's pointer, in the reply or in the stored row.
+TEST(mcp_create_node_on_a_deleted_id_opens_nothing_when_opens_is_absent) {
+  Harness h;
+  h.trees.byId["t_sub"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Deep dive", {}}, 0, h.caller};
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"a","label":"A","opens":"t_sub"})")).isError);
+  CHECK_FALSE(h.call("delete_node", parse(R"({"nodeId":"a"})")).isError);
+  CHECK_EQ(body(h.call("get_tree", parse(R"({"fields":["id","opens"]})")))["tree"]["nodes"], parse("[]"));
+
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"a","label":"A again"})")).isError);
+
+  CHECK_EQ(body(h.call("get_tree", parse(R"({"fields":["id","label","opens"]})")))["tree"]["nodes"],
+           parse(R"([{"id":"a","label":"A again"}])"));
+  REQUIRE_EQ(h.trees.byId["t"].state.nodes.size(), 1u);
+  CHECK_EQ(h.trees.byId["t"].state.nodes[0].opens, TreeId{});
+}
+
+TEST(mcp_create_node_on_a_deleted_id_opens_nothing_when_opens_is_the_empty_string) {
+  Harness h;
+  h.trees.byId["t_sub"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Deep dive", {}}, 0, h.caller};
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"a","label":"A","opens":"t_sub"})")).isError);
+  CHECK_FALSE(h.call("delete_node", parse(R"({"nodeId":"a"})")).isError);
+
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"a","label":"A again","opens":""})")).isError);
+
+  CHECK_EQ(body(h.call("get_tree", parse(R"({"fields":["id","label","opens"]})")))["tree"]["nodes"],
+           parse(R"([{"id":"a","label":"A again"}])"));
+  REQUIRE_EQ(h.trees.byId["t"].state.nodes.size(), 1u);
+  CHECK_EQ(h.trees.byId["t"].state.nodes[0].opens, TreeId{});
+}
+
+TEST(mcp_create_node_minting_the_id_of_a_deleted_node_opens_nothing) {
+  Harness h;
+  h.trees.byId["t_sub"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Deep dive", {}}, 0, h.caller};
+  CHECK_FALSE(h.call("create_node", parse(R"({"label":"Renderer Core","opens":"t_sub"})")).isError);
+  CHECK_FALSE(h.call("delete_node", parse(R"({"nodeId":"renderer-core"})")).isError);
+
+  const ToolResult again = h.call("create_node", parse(R"({"label":"Renderer Core"})"));
+
+  CHECK_EQ(body(again)["id"].asString(), std::string("renderer-core"));
+  CHECK_EQ(body(h.call("get_tree", parse(R"({"fields":["id","opens"]})")))["tree"]["nodes"],
+           parse(R"([{"id":"renderer-core"}])"));
+}
+
+TEST(mcp_create_node_on_a_present_id_leaves_it_opening_only_the_tree_the_call_names) {
+  Harness h;
+  h.trees.byId["t_sub"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Deep dive", {}}, 0, h.caller};
+  h.trees.byId["t_other"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Side quest", {}}, 0, h.caller};
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"a","label":"A","opens":"t_sub"})")).isError);
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"b","label":"B","opens":"t_sub"})")).isError);
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"c","label":"C","opens":"t_sub"})")).isError);
+
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"a","label":"A2"})")).isError);
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"b","label":"B2","opens":""})")).isError);
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"c","label":"C2","opens":"t_other"})")).isError);
+
+  CHECK_EQ(body(h.call("get_tree", parse(R"({"fields":["id","label","opens"]})")))["tree"]["nodes"],
+           parse(R"([{"id":"a","label":"A2"},{"id":"b","label":"B2"},
+                     {"id":"c","label":"C2","opens":{"treeId":"t_other","title":"Side quest"}}])"));
+}
+
+// The write line tells a pointer at a tree that is not the caller's from every other refusal, in one
+// code for an absent tree, someone else's and a deleted one.
+TEST(mcp_a_pointer_at_a_tree_that_is_not_the_callers_completes_as_opens_not_yours) {
+  Harness h;
+  h.trees.byId["t_theirs"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Their plans", {}}, 0,
+                                        uid("someone-else"), Visibility::public_};
+  h.trees.byId["t_gone"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Retired", {}}, 0, h.caller};
+  h.trees.softDelete(TreeId{"t_gone"});
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"a","label":"A"})")).isError);
+  CompositeToolHost gate(std::vector<ToolModule>{{h.tools, ""}});
+  std::vector<WriteCompletion> completions;
+  installWriteSink([&](const WriteCompletion& completion) { completions.push_back(completion); });
+
+  std::vector<std::string> expected;
+  for (const std::string target : {"t_absent", "t_theirs", "t_gone"}) {
+    const std::vector<std::pair<const char*, std::string>> calls = {
+        {"roadmap_create_node", R"({"treeId":"t","label":"B","opens":")" + target + R"("})"},
+        {"roadmap_annotate_node", R"({"treeId":"t","nodeId":"a","opens":")" + target + R"("})"},
+        {"roadmap_patch_nodes", R"({"treeId":"t","updates":[{"nodeId":"a","opens":")" + target + R"("}],"dryRun":true})"},
+        {"roadmap_import_subgraph", R"({"treeId":"t","nodes":[{"id":"a","opens":")" + target + R"("}]})"}};
+    for (const auto& [tool, arguments] : calls) {
+      const ToolResult refused = gate.callTool(tool, parse(arguments), h.actor);
+      CHECK(refused.isError);
+      CHECK_EQ(refused.outcomeCode, std::string("opens-not-yours"));
+      expected.push_back(std::string("mcp.") + tool + " opens-not-yours");
+    }
+  }
+  CHECK(gate.callTool("roadmap_annotate_node", parse(R"({"treeId":"t","nodeId":"a","opens":7})"), h.actor).isError);
+  expected.push_back("mcp.roadmap_annotate_node refused");
+  CHECK(gate.callTool("roadmap_annotate_node", parse(R"({"treeId":"t","nodeId":"a","open":"t"})"), h.actor).isError);
+  expected.push_back("mcp.roadmap_annotate_node invalid-arguments");
+  CHECK_FALSE(gate.callTool("roadmap_annotate_node", parse(R"({"treeId":"t","nodeId":"a","opens":"t"})"), h.actor).isError);
+  expected.push_back("mcp.roadmap_annotate_node ok");
+  installWriteSink({});
+
+  std::vector<std::string> observed;
+  for (const WriteCompletion& completion : completions)
+    if (completion.operation.rfind("mcp.", 0) == 0) observed.push_back(completion.operation + " " + completion.outcome);
+  CHECK_EQ(observed, expected);
+}

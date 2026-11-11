@@ -31,7 +31,7 @@ const Withheld& withheld() {
 }
 
 // `schema` as a tend is handed it: no withheld word among its properties or its enums, at any depth.
-Json::Value offered(Json::Value schema) {
+Json::Value offeredSchema(Json::Value schema) {
   if (!schema.isObject()) return schema;
   if (schema.isMember("enum")) {
     Json::Value listed(Json::arrayValue);
@@ -42,10 +42,17 @@ Json::Value offered(Json::Value schema) {
   if (schema.isMember("properties")) {
     for (const auto& [word, sentence] : withheld().words) schema["properties"].removeMember(word);
     for (const std::string& key : schema["properties"].getMemberNames())
-      schema["properties"][key] = offered(schema["properties"][key]);
+      schema["properties"][key] = offeredSchema(schema["properties"][key]);
   }
-  if (schema.isMember("items")) schema["items"] = offered(schema["items"]);
+  if (schema.isMember("items")) schema["items"] = offeredSchema(schema["items"]);
   return schema;
+}
+
+// The tool as a tend is handed it, which is also what its arguments are judged against.
+ToolDeclaration offered(ToolDeclaration tool) {
+  if (tool.descriptor.isMember("inputSchema"))
+    tool.descriptor["inputSchema"] = offeredSchema(tool.descriptor["inputSchema"]);
+  return tool;
 }
 
 // The sentence for a withheld word `value` names where `schema` carries it — a key it declares, or a
@@ -83,10 +90,7 @@ ScopedToolHost::ScopedToolHost(ToolHost& inner, TreeId scope)
 std::vector<ToolDeclaration> ScopedToolHost::declareTools() const {
   std::vector<ToolDeclaration> scoped;
   for (ToolDeclaration& tool : inner_.declareTools()) {
-    if (withheld().tools.count(tool.name())) continue;
-    if (tool.descriptor.isMember("inputSchema"))
-      tool.descriptor["inputSchema"] = offered(tool.descriptor["inputSchema"]);
-    scoped.push_back(std::move(tool));
+    if (!withheld().tools.count(tool.name())) scoped.push_back(offered(std::move(tool)));
   }
   return scoped;
 }
@@ -109,11 +113,11 @@ ToolResult ScopedToolHost::callTool(const std::string& name, const Json::Value& 
       const auto declared = byName_.find(name);
       if (declared == byName_.end()) return ToolResult::failure(name + ": " + noSuchToolSentence());
       // The agent's own arguments are checked, before the forced treeId joins them: a withheld word
-      // first, in the sentence that says why, then a key the tool never declared.
+      // first, in the sentence that says why, then a key the tool as offered does not declare.
       if (std::optional<std::string> refusal =
               withheldWord(std::as_const(declared->second.descriptor)["inputSchema"], arguments))
         return ToolResult::failure(*refusal);
-      if (std::optional<std::string> unknown = undeclaredArgument(declared->second, arguments))
+      if (std::optional<std::string> unknown = undeclaredArgument(offered(declared->second), arguments))
         return ToolResult::failure(name + ": " + *unknown);
       // Force the target: whatever treeId the agent supplied (or was steered to supply) is overwritten,
       // so the edit can only ever land on the tree being tended.

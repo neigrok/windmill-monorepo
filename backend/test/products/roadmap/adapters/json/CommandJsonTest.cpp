@@ -73,6 +73,14 @@ TEST(create_and_annotate_payloads_carry_the_tree_a_node_opens_and_a_replay_lands
   CHECK_EQ(std::get<CreateNode>(*replayedCreate).opens, TreeId{"t_sub"});
   CHECK_EQ(dump(commandPayload(*replayedCreate)), createWire);
 
+  CreateNode openingNone{NodeId{"a"}, "A", "star"};
+  openingNone.opens = TreeId{};
+  const std::string noneWire = "{\"color\":\"terracotta\",\"icon\":\"star\",\"id\":\"a\",\"label\":\"A\",\"opens\":\"\"}";
+  CHECK_EQ(dump(commandPayload(Command{openingNone})), noneWire);
+  const std::optional<Command> replayedNone = commandFromJson("CreateNode", parse(noneWire));
+  REQUIRE(replayedNone.has_value());
+  CHECK_EQ(std::get<CreateNode>(*replayedNone).opens, std::optional<TreeId>(TreeId{}));
+
   AnnotateNode pointed{NodeId{"b"}};
   pointed.opens = TreeId{"t_other"};
   const std::string pointWire = "{\"id\":\"b\",\"opens\":\"t_other\"}";
@@ -105,7 +113,7 @@ TEST(a_stored_create_or_annotate_row_without_opens_still_decodes_and_touches_no_
   const std::string createWire = "{\"color\":\"sky\",\"icon\":\"\",\"id\":\"a\",\"label\":\"A\"}";
   const std::optional<Command> created = commandFromJson("CreateNode", parse(createWire));
   REQUIRE(created.has_value());
-  CHECK_EQ(std::get<CreateNode>(*created).opens, TreeId{});
+  CHECK_FALSE(std::get<CreateNode>(*created).opens.has_value());
   CHECK_EQ(dump(commandPayload(*created)), createWire);
 
   const std::string annotateWire = "{\"description\":\"a note\",\"id\":\"a\"}";
@@ -119,6 +127,7 @@ TEST(a_stored_create_or_annotate_row_without_opens_still_decodes_and_touches_no_
   graph.createNode(NodeId{"a"}, "A", "", NodeColor::sky, std::nullopt, Hlc{1, 0, "srv"});
   graph.setOpens(NodeId{"a"}, TreeId{"t_sub"}, Hlc{2, 0, "srv"});
   merge(graph, legend, *annotated, Hlc{3, 0, "srv"});
+  merge(graph, legend, *created, Hlc{4, 0, "srv"});
   CHECK_EQ(graph.nodeView(NodeId{"a"})->opens, TreeId{"t_sub"});
   CHECK_EQ(graph.exportNode(NodeId{"a"})->opensAt, (Hlc{2, 0, "srv"}));
 }

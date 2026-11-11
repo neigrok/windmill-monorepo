@@ -37,7 +37,7 @@ std::optional<Command> commandFromJson(const std::string& kind, const Json::Valu
     if (payload.isMember("x") && payload.isMember("y")) command.position = Vec2{payload["x"].asDouble(), payload["y"].asDouble()};
     command.description = payload.get("description", "").asString();
     if (payload.isMember("links")) command.links = linksFromJson(payload["links"]);
-    command.opens = TreeId{payload.get("opens", "").asString()};
+    if (payload.isMember("opens") && payload["opens"].isString()) command.opens = TreeId{payload["opens"].asString()};
     return command;
   }
   if (kind == "AnnotateNode") {
@@ -139,7 +139,7 @@ Json::Value commandPayload(const Command& command) {
       if (c.position) { p["x"] = c.position->x; p["y"] = c.position->y; }
       if (!c.description.empty()) p["description"] = c.description;
       if (!c.links.empty()) p["links"] = linksToJson(c.links);
-      if (!c.opens.empty()) p["opens"] = c.opens.str();
+      if (c.opens) p["opens"] = c.opens->str();
     },
     [&](const AnnotateNode& c) {
       p["id"] = c.id.str();

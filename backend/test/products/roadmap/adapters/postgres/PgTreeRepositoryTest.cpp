@@ -9,6 +9,7 @@
 #include "test/PgTestPool.h"
 #include "test/platform/Fakes.h"
 #include "test/products/roadmap/Fakes.h"
+#include "test/products/roadmap/adapters/mcp/ToolsHarness.h"
 #include "test/testing.h"
 
 #include <pqxx/pqxx>
@@ -337,4 +338,55 @@ TEST(pg_titles_owned_by_answers_the_owners_standing_trees_alone_for_every_id_ask
   CHECK_EQ(trees.titlesOwnedBy(kSam, {theirs, nobodys, retired, absent}), (std::map<TreeId, std::string>{}));
   CHECK_EQ(trees.titlesOwnedBy(kSam, {}), (std::map<TreeId, std::string>{}));
   clear();
+}
+
+// A deleted node's row keeps its pointer, so the create that reuses its id writes the empty one: the
+// stored row opens nothing, across a restart.
+TEST(pg_create_node_on_a_deleted_id_opens_nothing_after_a_restart) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTreeRepository trees{pgTestPool()};
+  PgOpLog log{pgTestPool()};
+  FakeBus bus;
+  FakeProgressRepository progressRepo;
+  FakeTokens tokens;
+  test::StepClock clock;
+  ProgressService progress{progressRepo};
+  trees.create(kTree, LooseGraph().exportState(), LegendState{}, "Main", kSam);
+  trees.create(kFork, LooseGraph().exportState(), LegendState{}, "Deep dive", kSam);
+  const auto storedPointer = [] {
+    PgLease conn{*pgTestPool()};
+    pqxx::work txn{*conn};
+    const pqxx::result rows = txn.exec_params(
+        "SELECT node_id || ':' || opens || ':' || present::text AS held FROM tree_nodes WHERE tree_id = $1", kTree.str());
+    std::vector<std::string> held;
+    for (const auto& row : rows) held.push_back(row["held"].as<std::string>());
+    return held;
+  };
+  const ToolCaller sam{kSam, ToolScope::everything()};
+  Json::Value created = parse(R"({"label":"Sail trim"})");
+  created["treeId"] = kTree.str();
+  {
+    RoomRegistry registry(trees, log, bus);
+    TreeRegistry treeRegistry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}, registry, clock};
+    RoadmapTools tools{registry, progress, clock, treeRegistry, bus};
+    Json::Value pointed = created;
+    pointed["opens"] = kFork.str();
+    CHECK_FALSE(tools.callTool("create_node", pointed, sam).isError);
+    Json::Value deleted = parse(R"({"nodeId":"sail-trim"})");
+    deleted["treeId"] = kTree.str();
+    CHECK_FALSE(tools.callTool("delete_node", deleted, sam).isError);
+    registry.stop();
+  }
+  CHECK_EQ(storedPointer(), std::vector<std::string>{"sail-trim:" + kFork.str() + ":false"});
+
+  RoomRegistry restarted(trees, log, bus);
+  TreeRegistry treeRegistry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}, restarted, clock};
+  RoadmapTools tools{restarted, progress, clock, treeRegistry, bus};
+  CHECK_FALSE(tools.callTool("create_node", created, sam).isError);
+  Json::Value read = parse(R"({"fields":["id","opens"]})");
+  read["treeId"] = kTree.str();
+  CHECK_EQ(test::body(tools.callTool("get_tree", read, sam))["tree"]["nodes"], parse(R"([{"id":"sail-trim"}])"));
+  CHECK_EQ(storedPointer(), std::vector<std::string>{"sail-trim::true"});
+  restarted.stop();
 }

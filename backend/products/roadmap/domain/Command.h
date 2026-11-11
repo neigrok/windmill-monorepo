@@ -56,7 +56,9 @@ struct CreateNode {
   std::optional<Vec2> position;
   std::string description;
   std::vector<Link> links;
-  TreeId opens;  // the tree the node opens; an empty id opens none
+  // The tree the node opens. Set, it is written, and an empty id opens none: a create on an id a
+  // deleted node held then keeps nothing of that node's pointer. Unset, the register is left.
+  std::optional<TreeId> opens;
 };
 // Set a node's free annotation. Each field is optional: a nullopt leaves that register untouched.
 // `description` replaces the body; `appendDescription` joins onto it after a blank line (or opens

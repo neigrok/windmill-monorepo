@@ -462,7 +462,8 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     p["links"] = linkArray("Optional external references (docs, PRs, designs).");
     p["opens"] = cappedStr("Optional id of a tree you own that this node opens: the node points at that tree, "
                            "and get_tree, get_nodes and find_nodes answer its id and title under the `opens` "
-                           "field. A tree that is not yours is refused. Omit, or pass \"\", for none.",
+                           "field. A tree that is not yours is refused. Omit, or pass \"\", and the node opens "
+                           "none, whatever a deleted node under the same id opened.",
                            kMaxIdLength);
     p["id"] = cappedStr("Optional id to PROPOSE for the new node; minted from the label if omitted. "
                         "(`nodeId` names a node that already exists and is not accepted here.)",
@@ -492,7 +493,8 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
                            kMaxIdLength);
     tools.push_back(tool("annotate_node", Access::write,
         "Set a node's free annotation: its `description` (or `appendDescription`, which joins onto the "
-        "existing body instead of replacing it — send one of the two), its `icon`, and/or `links`. "
+        "existing body instead of replacing it — send one of the two), its `icon`, its `links`, and/or "
+        "the tree it `opens`. "
         "Each field is optional — an omitted field is left untouched; `links` replaces the whole set "
         "when given — but at least one must be given. This is the verb that sets or clears an icon "
         "after birth, so it is how an `empty-icon` smell from get_diagnostics is fixed. Every length "
@@ -790,7 +792,9 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "Bulk-apply a whole roadmap slice — the shape get_tree returns ({nodes[], kinds[]}, plus an "
         "optional progress[]); to copy a tree faithfully, read it with every field named in `fields` "
         "first, since get_tree answers with a projection — but a node carries `seedStatus`, never "
-        "`status`: that one is your own mark, and travels in progress[]. The graft is ONE op; a "
+        "`status`: that one is your own mark, and travels in progress[]; and a node read with "
+        "`fields: [\"opens\"]` is sent back with `opens` as the id — the read's `opens.treeId` — not "
+        "the {treeId, title} object. The graft is ONE op; a "
         "carried progress[] is applied after it as ordinary overlay writes. The batch is atomic "
         "against malformed input — a bad field, a repeated id, or a tombstone id that does not exist "
         "changes nothing and names the offending element — but never against a merely untidy result "

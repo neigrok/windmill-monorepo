@@ -397,3 +397,36 @@ TEST(scoped_tool_host_leaves_a_nodes_pointer_alone_and_a_plain_caller_still_read
   CHECK_EQ(test::body(h.call("get_tree", parse(R"({"fields":["id","opens"]})")))["tree"]["nodes"],
            parse(R"([{"id":"a"},{"id":"opens","opens":{"treeId":"t_sub","title":"Deep dive"}}])"));
 }
+
+// The argument is withheld from a tend, so the door's own default does the work: a node a run
+// creates on an id a deleted node held opens nothing.
+TEST(scoped_tool_host_a_tend_that_creates_a_node_on_a_deleted_id_plants_no_pointer) {
+  test::Harness h;
+  h.trees.byId["t_sub"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Deep dive", {}}, 0, h.caller};
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"a","label":"A","opens":"t_sub"})")).isError);
+  CHECK_FALSE(h.call("delete_node", parse(R"({"nodeId":"a"})")).isError);
+  ScopedToolHost scoped(h.tools, TreeId{"t"});
+
+  CHECK_FALSE(scoped.callTool("create_node", parse(R"({"id":"a","label":"Tend's node"})"), h.actor).isError);
+
+  CHECK_EQ(scoped.createdNodeIds(), std::vector<std::string>{"a"});
+  CHECK_EQ(test::body(h.call("get_tree", parse(R"({"fields":["id","label","opens"]})")))["tree"]["nodes"],
+           parse(R"([{"id":"a","label":"Tend's node"}])"));
+  REQUIRE_EQ(h.trees.byId["t"].state.nodes.size(), 1u);
+  CHECK_EQ(h.trees.byId["t"].state.nodes[0].opens, TreeId{});
+}
+
+// A misnamed argument is judged against the tool as a tend is offered it, so the keys the refusal
+// lists name no withheld word.
+TEST(scoped_tool_host_names_no_withheld_word_among_the_keys_an_unknown_argument_is_offered) {
+  test::Harness h;
+  ScopedToolHost scoped(h.tools, TreeId{"t"});
+
+  CHECK_EQ(message(scoped.callTool("create_node", parse(R"({"label":"B","open":"t_sub"})"), h.actor)),
+           std::string("create_node: unknown argument \"open\". This tool takes: color, description, icon, id, label, "
+                       "links, parentId, prerequisites, treeId, x, y."));
+  CHECK_EQ(message(scoped.callTool("import_subgraph", parse(R"({"nodes":[{"id":"n","open":"t_sub"}]})"), h.actor)),
+           std::string("import_subgraph: unknown argument \"nodes[0].open\". nodes[0] takes: color, description, icon, "
+                       "id, label, links, order, position, prerequisites, seedStatus."));
+  CHECK_EQ(test::body(h.call("get_tree", test::kNoArgs))["count"].asUInt64(), 0u);
+}

@@ -180,7 +180,7 @@ void merge(LooseGraph& graph, Legend& legend, const Command& command, const Hlc&
       graph.createNode(c.id, c.label, c.icon, c.color, c.position, at);
       if (!c.description.empty()) graph.setDescription(c.id, c.description, at);
       if (!c.links.empty()) graph.setLinks(c.id, c.links, at);
-      if (!c.opens.empty()) graph.setOpens(c.id, c.opens, at);
+      if (c.opens) graph.setOpens(c.id, *c.opens, at);
       for (const NodeId& prereq : c.prerequisites) graph.addEdge(prereq, c.id, at);
     },
     [&](const AnnotateNode& c) {
@@ -252,7 +252,7 @@ std::optional<std::string> validate(const LooseGraph& graph, const Legend& legen
       over.note("icon", c.icon, kMaxIconLength);
       over.note("description", c.description, kMaxNodeDescriptionLength);
       over.noteLinks(c.links);
-      over.note("opens", c.opens.str(), kMaxIdLength);
+      if (c.opens) over.note("opens", c.opens->str(), kMaxIdLength);
       if (auto bad = over.sentence()) return bad;
       if (c.position && !(std::isfinite(c.position->x) && std::isfinite(c.position->y)))
         return "position is not finite";

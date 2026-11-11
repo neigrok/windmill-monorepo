@@ -183,7 +183,8 @@ Tending does not go through the composite: `TendingService` holds roadmap's host
 composite pins a credential to its grant. A run is not offered `describe_tree` either: it reads the
 tree's guide through `get_tree` and never sets it. Nor is it offered the tree a node opens: the
 schemas it is handed carry no `opens` argument and no `opens` field, so a run neither reads nor sets
-a pointer, and an import through it leaves the pointers the tree holds as they are. One table in
+a pointer, an import through it leaves the pointers the tree holds as they are, and a node it
+creates opens none. One table in
 `ScopedToolHost.cpp` names what a run is not offered, tools by name and words wherever a schema
 carries them. A withheld name a run calls anyway is refused before any write is observed; a withheld
 argument or field is refused in its own sentence with nothing written. A tend starts only on a tree
@@ -287,16 +288,18 @@ Apply action for routine proposals; annotations describe each tool's effects.
 A node may point at another tree: `opens` holds that tree's id.
 
 - **Write.** `create_node`, `annotate_node`, a `patch_nodes` row and an `import_subgraph` node take
-  `opens`, a string of at most 128 characters. On `create_node`, absent or `""` opens nothing. On
-  the other three, absent leaves the pointer, `""` clears it and a value sets it. `null` is absent,
-  save in a `patch_nodes` row, which refuses it as it refuses a `null` label. `opens` alone is
-  something to set.
+  `opens`, a string of at most 128 characters. On `create_node`, absent or `""` opens nothing: the
+  door always writes the pointer, so an id that is present, or that a deleted node held, keeps none
+  of the pointer it had. On the other three, absent leaves the pointer, `""` clears it and a value
+  sets it. `null` is absent, save in a `patch_nodes` row, which refuses it as it refuses a `null`
+  label. `opens` alone is something to set.
 - **The target is checked at this door only.** Every non-empty `opens` in a call must name a tree
   that stands and is the caller's, asked in one read for the whole call
   (`TreeRegistry::titlesOwnedBy`), before the room is written and before a `dryRun` answers.
   Otherwise the whole call is refused naming the argument path and the id — `opens`,
   `updates[3].opens`, `nodes[2].opens` — in one sentence for a tree that is not there, a deleted one
-  and someone else's, so the refusal confirms no id. A node may open the tree it is in.
+  and someone else's, so the refusal confirms no id. Its write line carries the outcome
+  `opens-not-yours`. A node may open the tree it is in.
 - **Read.** `opens` is a `fields` value on `get_tree`, `get_nodes` and `find_nodes`, never in a
   default. A node answers `opens: {treeId, title}` when the caller can write the tree being read,
   the pointer is set, and the opened tree stands and is theirs; the key is omitted otherwise, so a
@@ -340,7 +343,7 @@ A node may point at another tree: `opens` holds that tree's id.
   by a later overlay failure. It is **upsert by id**: an incoming id already present is reported
   in `nodeCollisions`/`kindCollisions`; a new id is added. A re-sent node or kind changes only in
   the registers the batch sends: a node's `label`, `icon`, `color`, `order`, `position`,
-  `seedStatus`, `description` and `links`, and a kind's `label`, `description` and
+  `seedStatus`, `description`, `links` and `opens`, and a kind's `label`, `description` and
   `crossBranchExempt`, left out, keep the value the tree holds, because the graft stamps an
   omitted register unset (`Graft::omittedNodeRegisters` and `graftState`,
   `Graft::omittedKindRegisters` and `graftLegend`) and no stored stamp loses to that. A node
