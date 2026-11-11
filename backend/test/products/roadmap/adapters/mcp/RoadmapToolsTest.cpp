@@ -4172,3 +4172,21 @@ TEST(mcp_import_subgraph_re_files_a_node_by_kind_alone_and_keeps_its_other_field
            parse(R"({"treeId":"t","seq":3,"nodes":[{"id":"review","label":"Backend review","icon":"magnifier",
     "color":"gold","kind":"owner"}],"missingNodeIds":[]})"));
 }
+
+// A node's kind and the tree it opens are separate registers, so one write may name both.
+TEST(mcp_a_node_write_may_name_its_kind_and_the_tree_it_opens_together) {
+  Harness h;
+  h.trees.byId["t_sub"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Deep dive", {}}, 0, h.caller};
+  CHECK_FALSE(h.call("add_kind", parse(R"({"id":"owner","hue":"gold"})")).isError);
+  CHECK_EQ(body(h.call("create_node", parse(R"({"id":"a","label":"A","kind":"owner","opens":"t_sub"})"))),
+           parse(R"({"applied":true,"seq":2,"id":"a","kind":"owner","diagnosticsClean":true,"introducedDiagnostics":[]})"));
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"b","label":"B","kind":"owner","opens":"t_sub"}]})"))
+                  .isError);
+  CHECK_FALSE(h.call("add_kind", parse(R"({"id":"crew","hue":"sky"})")).isError);
+  CHECK_EQ(body(h.call("patch_nodes", parse(R"({"updates":[{"nodeId":"a","kind":"crew","opens":""}]})"))),
+           parse(R"({"treeId":"t","applied":true,"dryRun":false,"seq":5,"changedNodeIds":["a"],"unchangedNodeIds":[],
+    "diagnosticsClean":true,"introducedDiagnostics":[]})"));
+  CHECK_EQ(body(h.call("get_tree", parse(R"({"fields":["id","color","kind","opens"]})")))["tree"]["nodes"],
+           parse(R"([{"id":"a","color":"sky","kind":"crew"},
+    {"id":"b","color":"gold","kind":"owner","opens":{"treeId":"t_sub","title":"Deep dive","state":"open"}}])"));
+}
