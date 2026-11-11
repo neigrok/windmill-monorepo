@@ -1,10 +1,35 @@
 #include "products/roadmap/domain/Graft.h"
 
+#include <algorithm>
 #include <map>
 #include <optional>
 #include <set>
 
 namespace wm {
+
+std::variant<Graft, std::string> resolveKinds(const Legend& legend, Graft graft) {
+  if (graft.nodeKinds.empty()) return graft;
+  std::vector<Kind> landed = legend.kinds();
+  for (const Kind& kind : graft.document.kinds) {
+    const auto held = std::find_if(landed.begin(), landed.end(), [&](const Kind& k) { return k.id == kind.id; });
+    if (held == landed.end()) landed.push_back(kind);
+    else held->hue = kind.hue;
+  }
+  for (std::size_t i = 0; i < graft.document.nodes.size(); ++i) {
+    NodeSpec& node = graft.document.nodes[i];
+    const auto named = graft.nodeKinds.find(node.id);
+    if (named == graft.nodeKinds.end()) continue;
+    const auto omitted = graft.omittedNodeRegisters.find(node.id);
+    const bool colorSent = omitted == graft.omittedNodeRegisters.end() || !omitted->second.count(NodeRegister::color);
+    const auto hue = resolveHue(landed, HueChoice{colorSent ? std::optional(node.color) : std::nullopt, named->second},
+                                "nodes[" + std::to_string(i) + "].");
+    if (const auto* refusal = std::get_if<std::string>(&hue)) return *refusal;
+    node.color = *std::get<std::optional<NodeColor>>(hue);
+    if (omitted != graft.omittedNodeRegisters.end()) omitted->second.erase(NodeRegister::color);
+  }
+  graft.nodeKinds.clear();
+  return graft;
+}
 
 LegendState graftLegend(const Legend& current, const Graft& graft, const Hlc& at) {
   using Entry = KindStateEntry;
