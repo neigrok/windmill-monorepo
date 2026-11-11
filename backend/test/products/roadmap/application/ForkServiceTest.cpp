@@ -120,17 +120,13 @@ TEST(fork_clears_the_source_status_seeds) {
   CHECK(sourceSeedSurvives);
 }
 
-TEST(fork_keeps_a_step_opening_the_forkers_own_tree_and_clears_every_step_opening_another) {
+TEST(a_fork_of_someone_elses_tree_opens_nothing_and_a_fork_of_your_own_keeps_every_pointer) {
   Harness h;
-  h.seedSource("t_src", "Learn to sail");
-  h.seedSource("t_mine", "My knots", uid("me"), Visibility::private_);
-  h.seedSource("t_theirs", "Their charts", uid("owner"), Visibility::public_);
-  h.seedSource("t_retired", "My old log", uid("me"), Visibility::private_);
-  h.trees.softDelete(TreeId{"t_retired"});
-  const std::vector<std::pair<const char*, const char*>> opened{
-      {"knots", "t_mine"}, {"charts", "t_theirs"}, {"log", "t_retired"}, {"nowhere", "t_absent"}};
+  h.seedSource("t_sams", "Learn to sail", uid("sam"), Visibility::unlisted);
+  h.seedSource("t_eves", "Eve's knots", uid("eve"), Visibility::private_);
   GraphState pointers;
-  for (const auto& [step, tree] : opened) {
+  for (const auto& [step, tree] : std::vector<std::pair<const char*, const char*>>{
+           {"charts", "t_sams_charts"}, {"knots", "t_eves"}, {"nowhere", "t_missing"}}) {
     NodeStateEntry node;
     node.id = nid(step);
     node.label = step;
@@ -139,29 +135,33 @@ TEST(fork_keeps_a_step_opening_the_forkers_own_tree_and_clears_every_step_openin
     node.opensAt = Hlc{3, 0, "seed"};
     pointers.nodes.push_back(node);
   }
-  LooseGraph source(h.trees.byId["t_src"].state);
+  LooseGraph source(h.trees.byId["t_sams"].state);
   source.join(pointers);
-  h.trees.byId["t_src"].state = source.exportState();
+  h.trees.byId["t_sams"].state = source.exportState();
+  const auto opened = [](const GraphState& state) {
+    std::map<std::string, std::pair<std::string, Hlc>> byStep;
+    for (const NodeStateEntry& node : state.nodes) byStep[node.id.str()] = {node.opens.str(), node.opensAt};
+    return byStep;
+  };
+  const std::map<std::string, std::pair<std::string, Hlc>> asInTheSource{
+      {"charts", {"t_sams_charts", Hlc{3, 0, "seed"}}}, {"knots", {"t_eves", Hlc{3, 0, "seed"}}},
+      {"leaf", {"", Hlc{}}}, {"nowhere", {"t_missing", Hlc{3, 0, "seed"}}}, {"root", {"", Hlc{}}}};
+  const std::map<std::string, std::pair<std::string, Hlc>> nothing{
+      {"charts", {"", Hlc{}}}, {"knots", {"", Hlc{}}}, {"leaf", {"", Hlc{}}}, {"nowhere", {"", Hlc{}}}, {"root", {"", Hlc{}}}};
 
-  ForkService::Result result = h.service.fork(TreeId{"t_src"}, "", "", uid("me"));
-  CHECK(result.outcome == ForkService::Outcome::forked);
+  ForkService::Result eves = h.service.fork(TreeId{"t_sams"}, "t_eves_copy", "", uid("eve"));
+  CHECK(eves.outcome == ForkService::Outcome::forked);
+  CHECK(opened(h.trees.byId["t_eves_copy"].state) == nothing);  // the pointer at Eve's own tree included
+  for (const NodeSpec& node : eves.data.nodes) CHECK_EQ(node.opens, TreeId{});
 
-  std::map<std::string, std::pair<std::string, Hlc>> stored;
-  for (const NodeStateEntry& node : h.trees.byId["t_d1"].state.nodes)
-    stored[node.id.str()] = {node.opens.str(), node.opensAt};
-  const std::map<std::string, std::pair<std::string, Hlc>> kept{
-      {"charts", {"", Hlc{}}}, {"knots", {"t_mine", Hlc{3, 0, "seed"}}}, {"leaf", {"", Hlc{}}},
-      {"log", {"", Hlc{}}},    {"nowhere", {"", Hlc{}}},                 {"root", {"", Hlc{}}}};
-  CHECK(stored == kept);
+  ForkService::Result sams = h.service.fork(TreeId{"t_sams"}, "t_sams_copy", "", uid("sam"));
+  CHECK(sams.outcome == ForkService::Outcome::forked);
+  CHECK(opened(h.trees.byId["t_sams_copy"].state) == asInTheSource);  // the one at a missing tree included
   std::map<std::string, std::string> answered;
-  for (const NodeSpec& node : result.data.nodes) answered[node.id.str()] = node.opens.str();
+  for (const NodeSpec& node : sams.data.nodes) answered[node.id.str()] = node.opens.str();
   CHECK(answered == (std::map<std::string, std::string>{
-                        {"charts", ""}, {"knots", "t_mine"}, {"leaf", ""}, {"log", ""}, {"nowhere", ""}, {"root", ""}}));
-  std::map<std::string, std::string> left;
-  for (const NodeStateEntry& node : h.rooms.open(TreeId{"t_src"})->exportState().nodes)
-    left[node.id.str()] = node.opens.str();
-  CHECK(left == (std::map<std::string, std::string>{{"charts", "t_theirs"}, {"knots", "t_mine"}, {"leaf", ""},
-                                                     {"log", "t_retired"}, {"nowhere", "t_absent"}, {"root", ""}}));
+                        {"charts", "t_sams_charts"}, {"knots", "t_eves"}, {"leaf", ""}, {"nowhere", "t_missing"}, {"root", ""}}));
+  CHECK(opened(h.rooms.open(TreeId{"t_sams"})->exportState()) == asInTheSource);
 }
 
 TEST(fork_adds_its_steps_at_the_moment_of_the_fork_and_leaves_the_source_stamps_alone) {

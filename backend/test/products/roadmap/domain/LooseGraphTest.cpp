@@ -332,7 +332,7 @@ TEST(a_fork_adds_every_present_node_afresh_in_creation_order_and_starts_unlit) {
   g.deleteNode(nid("gone"), at(20));
   g.addEdge(nid("a"), nid("late"), at(40));
 
-  GraphState forked = g.forkState(Hlc{100, 7, "srv"}, {});
+  GraphState forked = g.forkState(Hlc{100, 7, "srv"}, ForkOpens::cleared);
 
   GraphState expected = g.exportState();
   for (NodeStateEntry& node : expected.nodes) {
@@ -423,27 +423,24 @@ TEST(a_document_seed_plants_opens_and_every_projection_carries_it) {
   CHECK_EQ(projected.nodes[1].opens, TreeId{});
 }
 
-TEST(a_fork_keeps_opens_naming_a_tree_the_forker_owns_and_clears_every_other) {
+TEST(a_fork_keeps_every_opens_as_it_stands_or_clears_them_all) {
   LooseGraph g;
-  for (const char* id : {"gone", "mine", "plain", "theirs"})
+  for (const char* id : {"gone", "missing", "plain", "standing"})
     g.createNode(nid(id), id, "x", NodeColor::sky, std::nullopt, at(1));
-  g.setOpens(nid("mine"), TreeId{"t_mine"}, at(2));
-  g.setOpens(nid("theirs"), TreeId{"t_theirs"}, at(3));
-  g.setOpens(nid("gone"), TreeId{"t_theirs"}, at(4));
-  g.deleteNode(nid("gone"), at(5));  // a tombstone's record survives it, so its pointer is judged too
-  CHECK(g.openedTrees() == (std::set<TreeId>{TreeId{"t_mine"}, TreeId{"t_theirs"}}));
+  g.setOpens(nid("standing"), TreeId{"t_standing"}, at(2));
+  g.setOpens(nid("missing"), TreeId{"t_missing"}, at(3));
+  g.setOpens(nid("gone"), TreeId{"t_standing"}, at(4));
+  g.deleteNode(nid("gone"), at(5));  // a tombstone's record survives it, so its pointer is ruled on too
 
-  GraphState forked = g.forkState(Hlc{100, 0, "srv"}, {TreeId{"t_mine"}, TreeId{"t_unopened"}});
+  GraphState planted = g.exportState();
+  planted.nodes[1].createdAt = Hlc{100, 0, "srv"};  // missing
+  planted.nodes[2].createdAt = Hlc{100, 1, "srv"};  // plain
+  planted.nodes[3].createdAt = Hlc{100, 2, "srv"};  // standing
+  CHECK(g.forkState(Hlc{100, 0, "srv"}, ForkOpens::kept) == planted);
 
-  GraphState expected = g.exportState();
-  expected.nodes[0].opens = TreeId{};  // gone
-  expected.nodes[0].opensAt = Hlc{};
-  expected.nodes[1].createdAt = Hlc{100, 0, "srv"};  // mine: the pointer and its stamp ride along
-  expected.nodes[2].createdAt = Hlc{100, 1, "srv"};  // plain
-  expected.nodes[3].createdAt = Hlc{100, 2, "srv"};  // theirs
-  expected.nodes[3].opens = TreeId{};
-  expected.nodes[3].opensAt = Hlc{};
-  CHECK(forked == expected);
-  CHECK_EQ(forked.nodes[1].opens, TreeId{"t_mine"});
-  CHECK_EQ(forked.nodes[1].opensAt, at(2));
+  for (NodeStateEntry& node : planted.nodes) {
+    node.opens = TreeId{};
+    node.opensAt = Hlc{};
+  }
+  CHECK(g.forkState(Hlc{100, 0, "srv"}, ForkOpens::cleared) == planted);
 }

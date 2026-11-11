@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <sstream>
+#include <stdexcept>
 
 namespace wm {
 
@@ -330,7 +331,9 @@ GraphState graphStateFromJson(const Json::Value& root) {
     node.descriptionAt = roadmapStamp(n.get("descriptionAt", "").asString());
     if (n.isMember("links")) node.links = linksFromJson(n["links"]);
     node.linksAt = roadmapStamp(n.get("linksAt", "").asString());
-    node.opens = TreeId{n.get("opens", "").asString()};
+    // Only a string names a tree: a number or a boolean here would be stored as its text.
+    if (!n["opens"].isNull() && !n["opens"].isString()) throw std::invalid_argument("opens is a tree id");
+    node.opens = TreeId{n["opens"].asString()};
     node.opensAt = roadmapStamp(n.get("opensAt", "").asString());
     state.nodes.push_back(std::move(node));
   }

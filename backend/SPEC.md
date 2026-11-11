@@ -19,7 +19,12 @@ rejected for structure. Validity is a read model, not a gate.
 - `opens` — a node's pointer at another tree: that tree's id, or empty for none. A document node
   carries it as `opens` and omits it when empty; a lattice entry carries `opens` and `opensAt`. A
   write is held to the id length and to nothing about its target, so a pointer may name a tree that
-  is absent, deleted or someone else's. No read model follows it.
+  is absent, deleted or someone else's. A tree id is the read capability of an unlisted tree, so only
+  a caller who can write the tree receives the pointer: `readerView` (`domain/Subgraph.h`) is what
+  every other reader gets from `GET /v1/trees/{id}` (`data` and `state`), the subscribe delta and a
+  live frame — a document node without `opens`, a lattice entry with `opens` empty and `opensAt`
+  unset, and no entry for a node the frame then says nothing about. No MCP read carries it, and no
+  read model follows it.
 - `TreeDiagnostics::assess` — a pure report over a loose graph: `cycles`, `dangling`,
   `selfEdges`, `smells`, `maskedWork` (tombstoned parents with present children). `clean()` is
   true when cycles, dangling and self-edges are all empty. Smell kinds: `label-too-long`
@@ -214,8 +219,9 @@ Rules:
   flips the room to all-dirty.
 - Tree content reads use the room; the registry list reads persisted rows without opening rooms.
   Forks snapshot the source room's graph, legend and guide, clear authored progress baselines, and
-  start a fresh op log with `forked_from` provenance. A step keeps its `opens` only when the forker
-  owns the tree it names; every other is cleared. Every present step is added to the fork afresh:
+  start a fresh op log with `forked_from` provenance. A fork of the forker's own tree keeps every
+  `opens` as it stands; a fork of anyone else's, or of nobody's, clears them all. Every present step
+  is added to the fork afresh:
   a stamp from the source room's clock, one counter tick apart in creation order, so a step's
   creation stamp is when it joined this tree and sibling ties keep their order. The fork's title and
   guide take the first of those stamps, so a fresh subscriber's delta carries them beside the steps,
@@ -317,7 +323,8 @@ Client → server: `ping` · `subscribe {treeId, vector}` · `subgraph` (a seria
 
 Server → client: `pong` · `subgraph` (intent `delta` carrying `seq` as the subscribe answer, with
 the title and guide registers when the vector does not cover their stamps; intent `live` for a
-peer's broadcast) · `progress` (intent `graft` on subscribe, echo otherwise) ·
+peer's broadcast; either is the frame's `readerView` for a connection that cannot write the tree) ·
+`progress` (intent `graft` on subscribe, echo otherwise) ·
 `subgraphAck {treeId, frameId, seq?}` · `progressAck` · `skew {treeId, frameId, serverNow}` ·
 `reject {treeId, code, reason, frameId?}` · `presence` · `peer`.
 

@@ -91,6 +91,24 @@ TEST(graph_state_carries_opens_with_its_stamp_and_a_node_without_the_field_clear
   CHECK(*g.exportNode(nid("a")) == expected);
 }
 
+TEST(graph_state_reads_opens_only_from_a_string_and_refuses_any_other_value) {
+  const auto opensOf = [](const char* value) {
+    return graphStateFromJson(parse(std::string(R"({"nodes":[{"id":"a","opens":)") + value +
+                                    R"(,"opensAt":"4:0:u"}]})")).nodes[0].opens;
+  };
+  CHECK_EQ(opensOf(R"("t_9362d9bc883e0a1e")"), TreeId{"t_9362d9bc883e0a1e"});
+  CHECK_EQ(opensOf("null"), TreeId{});
+  for (const char* value : {"7", "true", R"({"id":"t_x"})", R"(["t_x"])"}) {
+    bool refused = false;
+    try {
+      opensOf(value);
+    } catch (const std::exception&) {
+      refused = true;
+    }
+    CHECK(refused);
+  }
+}
+
 TEST(the_document_codec_carries_opens_and_omits_it_from_a_node_that_opens_nothing) {
   TreeData data;
   data.id = TreeId{"t"};

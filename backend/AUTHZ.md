@@ -12,6 +12,11 @@ Visibility-gated read, owner-only write, per-user progress. The two predicates a
   on `canRead`: a `private` tree is its owner's alone, an `unlisted` or `public` one is readable by
   anyone holding the id. A denial is byte-identical to an absent tree, so no id can be probed for
   existence. `GET …/progress` serves the **owner's** overlay to every reader, under the same gate.
+  A read is not the whole tree for everyone: the tree a node `opens` goes only to a caller
+  `canWrite` admits, because a tree id is the read capability of an unlisted tree. Every other
+  reader — a stranger, a signed-out caller, a revoked session — receives `readerView`
+  (`products/roadmap/domain/Subgraph.h`), the nodes without their pointers, from `GET` tree, the WS
+  subscribe delta and every live frame. MCP reads never carry the pointer.
 - **Document writes** (`PUT`, WS `subgraph`, structural MCP tools) require
   a session (anonymous → `401`) and gate on `canWrite`, which is ownership and nothing else. **A tree
   is born owned** — the owner is written by the same insert that creates the row (create, fork, `PUT`
@@ -66,8 +71,9 @@ context.
   the request that opened it, so both writers and readers re-prove the session (throttled to one
   lookup a minute) and a revocation reaches a connection opened before it.
 
-**Read authorization is re-decided, not granted once.** `Collab::mayRead` is the single verdict —
-`canRead` against the tree's *current* access facts — and four things run it: `subscribe`; every
+**Read authorization is re-decided, not granted once.** `Collab::reachOf` is the single verdict —
+`canRead`, then `canWrite`, against the tree's *current* access facts, answering nothing, the
+reader's view or the whole frame — and four things run it: `subscribe`; every
 fan-out on `WsPresenceBus` (a refused connection is dropped from that tree and told "no such tree");
 `RoomRegistry::setVisibility` and `RoomRegistry::retire`, so a share flip and a deletion land on the
 event; and `Collab::reproveReaders`, a 15 s sweep over every open subscription, which is the only
@@ -75,7 +81,7 @@ road for the two revocations no event carries — a session revoked on a tree no
 presence, since `PresenceHub::flush` fans cursors and selections straight to its roster at 20 Hz and
 never touches the bus.
 
-**`mayRead` never goes to the database.** A fan-out runs it under the tree's strand, and re-proving N
+**`reachOf` never goes to the database.** A fan-out runs it under the tree's strand, and re-proving N
 sessions there costs one serial lookup per subscriber per minute with the strand held. The re-proof
 (`stillAuthorized`) therefore runs in exactly two places, both off every strand: on `subscribe`'s own
 thread, and on the sweeper's. `Principal::authenticated` and `checkedAtMs` are `std::atomic` because

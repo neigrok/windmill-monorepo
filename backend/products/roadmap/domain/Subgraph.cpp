@@ -1,5 +1,7 @@
 #include "products/roadmap/domain/Subgraph.h"
 
+#include <vector>
+
 namespace wm {
 
 void VersionVector::observe(const Hlc& stamp) {
@@ -119,6 +121,20 @@ Subgraph deltaBetween(const GraphState& graph, const LegendState& legend, const 
   }
   delta.coverage = frontier(graph, legend);
   return delta;
+}
+
+GraphState readerView(GraphState graph) {
+  for (NodeStateEntry& node : graph.nodes) {
+    node.opens = TreeId{};
+    node.opensAt = Hlc{};
+  }
+  std::erase_if(graph.nodes, [](const NodeStateEntry& node) { return !nodeUncovered(node, VersionVector{}); });
+  return graph;
+}
+
+TreeData readerView(TreeData document) {
+  for (NodeSpec& node : document.nodes) node.opens = TreeId{};
+  return document;
 }
 
 }

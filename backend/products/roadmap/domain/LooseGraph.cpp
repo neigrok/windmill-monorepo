@@ -203,14 +203,6 @@ bool LooseGraph::hueInUse(NodeColor color) const {
   return false;
 }
 
-std::set<TreeId> LooseGraph::openedTrees() const {
-  std::set<TreeId> opened;
-  for (const auto& [id, record] : nodes_) {
-    if (!record.opens.value.empty()) opened.insert(record.opens.value);
-  }
-  return opened;
-}
-
 std::vector<NodeId> LooseGraph::presentNodeIds() const {
   std::vector<NodeId> ids;
   for (const auto& [id, record] : nodes_) {
@@ -346,13 +338,13 @@ GraphState LooseGraph::exportState() const {
   return state;
 }
 
-GraphState LooseGraph::forkState(const Hlc& plantedAt, const std::set<TreeId>& ownedByForker) const {
+GraphState LooseGraph::forkState(const Hlc& plantedAt, ForkOpens opens) const {
   GraphState state = exportState();
   std::vector<NodeStateEntry*> present;
   for (NodeStateEntry& node : state.nodes) {
     node.status = std::nullopt;
     node.statusAt = Hlc{};
-    if (!ownedByForker.count(node.opens)) {
+    if (opens == ForkOpens::cleared) {
       node.opens = TreeId{};
       node.opensAt = Hlc{};
     }

@@ -77,10 +77,11 @@ Collab::Collab(RoomRegistry& registry, OpLog& ops, WsPresenceBus& bus,
       reprove_("ws-readers") {
   // Read authorization can be revoked under an open socket, so the bus asks before every fan-out.
   bus_.setReadGate([this](const TreeId& tree, const drogon::WebSocketConnectionPtr& conn) {
-    if (mayRead(conn, tree)) return true;
+    const Reach reach = reachOf(conn, tree);
+    if (reach != Reach::none) return reach;
     presence_.leave(conn, tree);
     send(conn, rejectFrame(tree.str(), kNoSuchTree, "no such tree \"" + tree.str() + "\""));
-    return false;
+    return Reach::none;
   });
   registry_.whenAccessChanges([this](const TreeId& tree) { bus_.resweep(tree); });
   reprove_.start(kReproveEverySeconds, kReproveEverySeconds, [this] { reproveReaders(); });
@@ -191,7 +192,8 @@ void Collab::subscribe(const drogon::WebSocketConnectionPtr& conn, const std::st
     try {
       // Gate the read before the room is materialized; absent and private-denied answer identically.
       stillAuthorized(conn);
-      if (!mayRead(conn, TreeId{treeId})) {
+      const Reach reach = reachOf(conn, TreeId{treeId});
+      if (reach == Reach::none) {
         send(conn, rejectFrame(treeId, kNoSuchTree, "no such tree \"" + treeId + "\""));
         return;
       }
@@ -205,6 +207,7 @@ void Collab::subscribe(const drogon::WebSocketConnectionPtr& conn, const std::st
       presence_.join(conn, TreeId{treeId});
 
       Subgraph delta = room->deltaSince(clientVector);
+      if (reach == Reach::reader) delta.graph = readerView(std::move(delta.graph));
       delta.frameId = "delta-" + std::to_string(room->head());
       delta.actor = "srv";
       frame = toJson(delta);
@@ -247,15 +250,17 @@ bool Collab::stillAuthorized(const drogon::WebSocketConnectionPtr& conn) {
   return true;
 }
 
-bool Collab::mayRead(const drogon::WebSocketConnectionPtr& conn, const TreeId& tree) {
+Reach Collab::reachOf(const drogon::WebSocketConnectionPtr& conn, const TreeId& tree) {
   const std::shared_ptr<Principal> principal = conn->getContext<Principal>();
-  if (!principal) return false;
-  // A principal stillAuthorized has narrowed is a guest: public and unlisted, never private.
+  if (!principal) return Reach::none;
+  // A principal stillAuthorized has narrowed is a guest: public and unlisted, never private, and
+  // never the tree's writer.
   const std::optional<UserId> caller =
       principal->authenticated ? std::optional<UserId>(principal->user) : std::nullopt;
   // The stored access row, not a materialized room: refusing a reader never loads the lattice.
   const std::optional<TreeAccess> access = registry_.accessOf(tree);
-  return access && canRead(caller, access->owner, access->visibility);
+  if (!access || !canRead(caller, access->owner, access->visibility)) return Reach::none;
+  return canWrite(caller, access->owner) ? Reach::writer : Reach::reader;
 }
 
 void Collab::subgraphFrame(const drogon::WebSocketConnectionPtr& conn, const std::string& treeId, const Json::Value& frame) {

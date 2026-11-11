@@ -14,8 +14,9 @@ namespace wm {
 // Copies the source's live authoritative state (socket edits folded in, not just the last snapshot)
 // into a fresh tree owned by the caller, its guide included. Someone else's guide is marked inherited:
 // its author's words until the new owner writes a guide of their own; the caller's own stays theirs.
-// A step keeps the tree it opens only when the caller owns that tree. The fork starts unlit, and its
-// steps, its title and its guide are planted at one server stamp minted at the moment of the fork.
+// A fork of the caller's own tree keeps the tree each step opens; a fork of anyone else's opens none.
+// The fork starts unlit, and its steps, its title and its guide are planted at one server stamp minted
+// at the moment of the fork.
 class ForkService {
 public:
   ForkService(RoomRegistry& registry, TreeRepository& trees, TokenGenerator& tokens, Clock& clock);

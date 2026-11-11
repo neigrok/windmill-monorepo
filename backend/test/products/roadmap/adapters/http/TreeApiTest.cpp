@@ -294,6 +294,50 @@ TEST(get_tree_serves_the_planting_time_and_zero_when_there_is_none) {
   CHECK_EQ(undated["createdAt"].asInt64(), 0);
 }
 
+TEST(get_tree_gives_the_tree_a_node_opens_to_its_owner_and_to_no_other_reader) {
+  Harness h;
+  UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.signIn("s-stranger", "stranger@example.com");
+  h.seed("t_pub", "Public", owner, Visibility::public_);
+  NodeStateEntry withheld = h.trees->byId["t_pub"].state.nodes[0];
+  NodeStateEntry whole = withheld;
+  whole.opens = TreeId{"t_00000000000000f2"};  // the owner's unlisted tree: its id is its key
+  whole.opensAt = Hlc{2000, 0, "r_a"};
+  {
+    std::lock_guard<std::mutex> lock(h.rooms->strandFor(TreeId{"t_pub"}));
+    Subgraph pointed;
+    pointed.frameId = "f-open";
+    pointed.graph.nodes.emplace_back();
+    pointed.graph.nodes[0].id = whole.id;
+    pointed.graph.nodes[0].opens = whole.opens;
+    pointed.graph.nodes[0].opensAt = whole.opensAt;
+    h.rooms->open(TreeId{"t_pub"})->joinSubgraph(pointed, owner);
+  }
+  NodeSpec document;
+  document.id = whole.id;
+  document.label = "Root";
+
+  for (const char* reader : {"s-stranger", ""}) {
+    const Json::Value read = bodyOf(sendGetTree(h.api, reader, "t_pub"));
+    CHECK_FALSE(read["mine"].asBool());
+    CHECK_EQ(read["data"]["nodes"].size(), 1u);
+    CHECK_EQ(read["data"]["nodes"][0], nodeToJson(document));
+    CHECK_FALSE(read["data"]["nodes"][0].isMember("opens"));
+    CHECK_EQ(read["state"]["nodes"], toJson(GraphState{{withheld}, {}})["nodes"]);
+    CHECK_EQ(read["state"]["nodes"][0]["opens"].asString(), std::string(""));
+    CHECK_EQ(read["state"]["nodes"][0]["opensAt"].asString(), std::string("0:0:"));
+  }
+
+  const Json::Value mine = bodyOf(sendGetTree(h.api, "s-owner", "t_pub"));
+  CHECK(mine["mine"].asBool());
+  document.opens = whole.opens;
+  CHECK_EQ(mine["data"]["nodes"].size(), 1u);
+  CHECK_EQ(mine["data"]["nodes"][0], nodeToJson(document));
+  CHECK_EQ(mine["state"]["nodes"], toJson(GraphState{{whole}, {}})["nodes"]);
+  CHECK_EQ(mine["state"]["nodes"][0]["opens"].asString(), std::string("t_00000000000000f2"));
+  CHECK_EQ(mine["state"]["nodes"][0]["opensAt"].asString(), std::string("2000:0:r_a"));
+}
+
 TEST(get_tree_private_denial_is_404_byte_identical_to_absent) {
   Harness h;
   h.signIn("s-other", "other@example.com");
@@ -621,6 +665,25 @@ TEST(put_with_an_oversized_field_is_400_naming_the_node_and_creates_nothing) {
   CHECK_EQ(dump(bodyOf(response)),
            std::string(R"({"error":"node \"hull\": label would be 201 characters, 1 over the 200 cap"})"));
   CHECK_EQ(h.trees->byId.count("t_00000000000000e2"), std::size_t{0});
+}
+
+TEST(put_with_an_opens_past_the_id_cap_is_400_naming_the_node_and_one_at_the_cap_is_stored) {
+  Harness h;
+  h.signIn("s-me");
+  Json::Value body = document("Mine", "hull");
+  body["nodes"][0]["opens"] = std::string(kMaxIdLength + 1, 't');
+
+  drogon::HttpResponsePtr response = sendPut(h.api, "s-me", "t_00000000000000e4", body);
+
+  CHECK_EQ(response->getStatusCode(), drogon::k400BadRequest);
+  CHECK_EQ(dump(bodyOf(response)),
+           std::string(R"({"error":"node \"hull\": opens would be 129 characters, 1 over the 128 cap"})"));
+  CHECK_EQ(h.trees->byId.count("t_00000000000000e4"), std::size_t{0});
+
+  body["nodes"][0]["opens"] = std::string(kMaxIdLength, 't');
+  CHECK_EQ(sendPut(h.api, "s-me", "t_00000000000000e4", body)->getStatusCode(), drogon::k200OK);
+  REQUIRE_EQ(h.trees->byId["t_00000000000000e4"].state.nodes.size(), 1u);
+  CHECK_EQ(h.trees->byId["t_00000000000000e4"].state.nodes[0].opens, TreeId{std::string(kMaxIdLength, 't')});
 }
 
 TEST(put_over_the_edge_ceiling_is_413_and_creates_nothing) {
