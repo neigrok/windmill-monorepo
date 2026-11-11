@@ -212,7 +212,7 @@ The table uses product-local names; external MCP prefixes each with `roadmap_`.
 | edit | `disconnect` | remove edges: one `from`+`to` or `edges: [{from,to}]` (1..500), exactly one form; one op, one seq, all or nothing; `removed` counts the edges that were present |
 | edit | `delete_node` | tombstone nodes: one `nodeId` or `nodeIds` (1..200), exactly one form; a missing id refuses the whole call naming each; one op, one seq. `prune: true` also drops every edge touching a deleted node and clears the caller's marks on it, under the delete grant; receipt carries `ids` and `pruned: {edges, progress}` |
 | edit | `tidy` · `prune` | transitive reduction / GC dangling edges + orphan progress |
-| edit | `import_subgraph` | bulk upsert a whole `get_tree`-shaped slice as one graft frame — `prerequisiteMode` merge (union) or replace, `tombstone[]` deletes in the same frame and needs the `roadmap:delete` grant |
+| edit | `import_subgraph` | bulk upsert a whole `get_tree`-shaped slice as one graft frame — a field left off a re-sent node or kind keeps its value, `prerequisiteMode` merge (union) or replace, `tombstone[]` deletes in the same frame and needs the `roadmap:delete` grant |
 | legend | `add_kind` (inline label+description+crossBranchExempt) · `rename_kind` · `describe_kind` (description and/or crossBranchExempt) · `remove_kind` · `reorder_kinds` · `recolor_kind` | the legend |
 | write | `set_progress` | per-user overlay: single `nodeId`+`status`, or a bulk `updates[]` (order-safe); `outOfOrder: true` on a completion is kept on the mark and answered as `acknowledged: true` |
 | resource | `windmill://quickstart` | the read-me-first document; no tool slot |
@@ -307,15 +307,18 @@ Apply action for routine proposals; annotations describe each tool's effects.
   Progress (max 1000 supplied marks) commits in a separate atomic repository batch under the room
   strand. Receipts distinguish `graphApplied` and `progressApplied`, with `progressError` or
   `progressSkipped` when requested progress cannot all be applied; a committed graft is not undone
-  by a later overlay failure. It is
-  **upsert by id**: an incoming id already present is overwritten and reported in
-  `nodeCollisions`/`kindCollisions`; a new id is added. A node's scalar fields are LWW-replaced. A
-  colliding kind is replaced only in the registers the batch sends: `label`, `description` and
-  `crossBranchExempt` left out keep the value the legend holds, because the graft stamps an
-  omitted register unset (`Graft::omittedKindRegisters`, `graftLegend`) and no stored stamp loses
-  to that; a new kind's omitted register lands as its default. Legend order is treated the same
-  way — rank is never on the wire, so a colliding kind keeps its place and a new kind lands after
-  the last one, in batch order. A re-sent
+  by a later overlay failure. It is **upsert by id**: an incoming id already present is reported
+  in `nodeCollisions`/`kindCollisions`; a new id is added. A re-sent node or kind changes only in
+  the registers the batch sends: a node's `label`, `icon`, `color`, `order`, `position`,
+  `seedStatus`, `description` and `links`, and a kind's `label`, `description` and
+  `crossBranchExempt`, left out, keep the value the tree holds, because the graft stamps an
+  omitted register unset (`Graft::omittedNodeRegisters` and `graftState`,
+  `Graft::omittedKindRegisters` and `graftLegend`) and no stored stamp loses to that. A node
+  deleted earlier and re-sent revives with the registers it had. A sent register lands at the
+  graft's stamp, `""` and `[]` included, which is how a field is cleared; a new id's omitted
+  register lands as its default. Legend order is treated the same way — rank is never on the
+  wire, so a colliding kind keeps its place and a new kind lands after the last one, in batch
+  order. A re-sent
   node's `prerequisites` meet its existing edges by `prerequisiteMode` — `merge` (the default)
   unions them, so an edge the batch leaves out survives and is listed in `keptEdges` (first 50 as
   `{from, to}`, then one `"and N more"` string) with `keptEdgeCount`; `replace` removes every
@@ -337,8 +340,8 @@ Apply action for routine proposals; annotations describe each tool's effects.
   counted on what the tree would hold AFTER the upsert less what the batch tombstones or replaces.
   The graft path does not run the domain's `validate()`, so this tool's own item checks are the
   only admission standing there. The rule itself lives in `domain/Graft` (`footprintOf`,
-  `graftState`), reached through `TreeRoom::importTree`; the handler only passes the mode and the
-  ids and reads the footprint back for the receipt.
+  `graftState`), reached through `TreeRoom::importTree`; the handler only passes the mode, the ids
+  and the registers each item left out, and reads the footprint back for the receipt.
 - **`set_progress`** accepts 1–1000 `updates[]` committed in one SQL transaction and evaluates the `prerequisitesMet` advisory
   against the committed batch, so a subtree completed out of dependency order still reports
   correctly. The room strand covers node validation, commit and broadcast; delete/prune cannot

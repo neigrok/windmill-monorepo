@@ -109,6 +109,14 @@ Json::Value progressStatusArgument(const Json::Value& value) {
   return progressStatusName(*status);
 }
 
+// Each register an imported node may carry, by its name on this surface: `seedStatus` is the
+// document's `status`.
+constexpr std::pair<const char*, NodeRegister> kImportedNodeRegisters[] = {
+    {"label", NodeRegister::label},       {"icon", NodeRegister::icon},
+    {"color", NodeRegister::color},       {"order", NodeRegister::order},
+    {"position", NodeRegister::position}, {"seedStatus", NodeRegister::status},
+    {"description", NodeRegister::description}, {"links", NodeRegister::links}};
+
 std::optional<std::string> checkImportedNode(const Json::Value& node, const std::string& path) {
   if (!node.isObject()) return path + " must be an object, got " + typeName(node);
   if (std::optional<std::string> bad = requireString(node["id"], path + ".id", Empty::rejected, kMaxIdLength))
@@ -903,8 +911,13 @@ ToolResult importSubgraph(RoomRegistry& registry, ProgressService& progress, Pre
     auto seed = seeds.find(node.id.str());
     if (seed != seeds.end()) node.status = normalizeSeedStatus(seed->second);
   }
-  // A field the batch leaves off a kind is not sent blank: the graft stamps that register unset, so a
-  // kind already in the legend keeps its value and a new one lands with the default.
+  // A field the batch leaves off a node or a kind is not sent blank: the graft stamps that register
+  // unset, so a node or kind the tree already holds keeps its value and a new one lands with the default.
+  for (const Json::Value& node : args["nodes"]) {
+    std::set<NodeRegister>& omitted = graft.omittedNodeRegisters[NodeId{node["id"].asString()}];
+    for (const auto& [field, held] : kImportedNodeRegisters)
+      if (node[field].isNull()) omitted.insert(held);
+  }
   for (const Json::Value& kind : args["kinds"]) {
     std::set<KindRegister>& omitted = graft.omittedKindRegisters[KindId{kind["id"].asString()}];
     if (kind["label"].isNull()) omitted.insert(KindRegister::label);

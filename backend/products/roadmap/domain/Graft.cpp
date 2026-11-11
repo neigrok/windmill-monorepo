@@ -1,6 +1,5 @@
 #include "products/roadmap/domain/Graft.h"
 
-#include <algorithm>
 #include <map>
 #include <set>
 
@@ -54,13 +53,33 @@ GraftFootprint footprintOf(const LooseGraph& graph, const Graft& graft) {
 
 GraphState graftState(const LooseGraph& graph, const Graft& graft, const Hlc& at) {
   const std::set<NodeId> tombstoned(graft.tombstones.begin(), graft.tombstones.end());
-  GraphState state = LooseGraph(graft.document, at).exportState();
-  state.edges.erase(std::remove_if(state.edges.begin(), state.edges.end(),
-                                   [&](const EdgeStateEntry& entry) {
-                                     return tombstoned.count(entry.edge.from) || tombstoned.count(entry.edge.to);
-                                   }),
-                    state.edges.end());
+  std::map<NodeId, NodeStateEntry> upserted;  // by id, so the frame lists each node once, in id order
+  std::set<Edge> added;
+  for (const NodeSpec& node : graft.document.nodes) {
+    const auto omitted = graft.omittedNodeRegisters.find(node.id);
+    const auto carried = [&](NodeRegister held) {
+      return omitted == graft.omittedNodeRegisters.end() || !omitted->second.count(held);
+    };
+    // A carried register lands at the graft's stamp, an empty value included; an omitted one stays unset.
+    NodeStateEntry entry;
+    entry.id = node.id;
+    entry.createdAt = at;
+    if (carried(NodeRegister::label)) { entry.label = node.label; entry.labelAt = at; }
+    if (carried(NodeRegister::icon)) { entry.icon = node.icon; entry.iconAt = at; }
+    if (carried(NodeRegister::color)) { entry.color = node.color; entry.colorAt = at; }
+    if (carried(NodeRegister::order)) { entry.order = node.order; entry.orderAt = at; }
+    if (carried(NodeRegister::position)) { entry.position = node.position; entry.positionAt = at; }
+    if (carried(NodeRegister::status)) { entry.status = normalizeSeedStatus(node.status); entry.statusAt = at; }
+    if (carried(NodeRegister::description)) { entry.description = node.description; entry.descriptionAt = at; }
+    if (carried(NodeRegister::links)) { entry.links = node.links; entry.linksAt = at; }
+    upserted.emplace(node.id, std::move(entry));
+    for (const NodeId& prereq : node.prerequisites)
+      if (!tombstoned.count(prereq) && !tombstoned.count(node.id)) added.insert(Edge{prereq, node.id});
+  }
 
+  GraphState state;
+  for (auto& [id, entry] : upserted) state.nodes.push_back(std::move(entry));
+  for (const Edge& edge : added) state.edges.push_back(EdgeStateEntry{edge, at, {}});
   const GraftFootprint footprint = footprintOf(graph, graft);
   for (const NodeId& id : footprint.tombstonedNodes) {
     NodeStateEntry entry;

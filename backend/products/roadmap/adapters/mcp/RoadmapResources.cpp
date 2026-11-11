@@ -47,7 +47,8 @@ and links. `roadmap_annotate_node`'s append form repeats text when retried. `roa
 requires existing endpoints for additions; removing an absent edge is a no-op. Both batch edit tools
 support `expectedSeq` and `dryRun`.
 
-`roadmap_import_subgraph` upserts a graph slice, replacing node fields. Prerequisites merge by default;
+`roadmap_import_subgraph` upserts a graph slice: fields you send replace, fields you leave out keep
+their values, so `""` or `[]` is how to clear one. Prerequisites merge by default;
 `prerequisiteMode: "replace"` removes omitted incoming edges. The graph commits in one structural
 operation; optional progress commits in a separate atomic phase. Inspect `graphApplied`,
 `progressApplied` and any `progressError`/`progressSkipped`: a graph can be applied even when progress

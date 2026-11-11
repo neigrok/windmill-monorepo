@@ -695,8 +695,8 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     Json::Value p(Json::objectValue);
     p["treeId"] = treeHandle();
     Json::Value nodeFields(Json::objectValue);
-    nodeFields["id"] = cappedStr("The id this node WILL have: one already in the tree is overwritten, "
-                                 "a new one is added.", kMaxIdLength);
+    nodeFields["id"] = cappedStr("The id this node WILL have: one already in the tree changes only in "
+                                 "the fields you send, a new one is added.", kMaxIdLength);
     nodeFields["label"] = cappedStr("The node's display label.", kMaxNodeLabelLength);
     nodeFields["icon"] = cappedStr("Optional icon name/emoji.", kMaxIconLength);
     nodeFields["color"] = enumStr("Optional branch color (default terracotta).", kHues);
@@ -775,9 +775,11 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "against malformed input — a bad field, a repeated id, or a tombstone id that does not exist "
         "changes nothing and names the offending element — but never against a merely untidy result "
         "(a dangling edge lands and is reported in introducedDiagnostics). Upsert by id: an incoming "
-        "id already present is overwritten (reported in nodeCollisions/kindCollisions) — its scalar "
-        "fields are replaced, and its prerequisites are UNIONED with the ones it already has unless "
-        "prerequisiteMode is \"replace\"; a new id is added; the tree's title is not touched. The "
+        "id already present is reported in nodeCollisions/kindCollisions, and its prerequisites are "
+        "UNIONED with the ones it already has unless prerequisiteMode is \"replace\"; a new id is "
+        "added; the tree's title is not touched. Every other field you leave off a node or kind keeps "
+        "the value the tree holds (a new id gets the default), and every field you send replaces it — "
+        "an explicit \"\" or [] clears it. The "
         "only removals are the ones you ask for: `tombstone` ids (which need the roadmap:delete grant), "
         "and under \"replace\" the prerequisite edges your batch does not name. `position` is optional — the web canvas lays "
         "the tree out from its structure. The receipt counts what the batch carried — `nodes`, "
