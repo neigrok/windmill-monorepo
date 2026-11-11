@@ -25,9 +25,9 @@ LegendState graftLegend(const Legend& current, const Graft& graft, const Hlc& at
     }
     // A register lands at the graft's stamp when the batch carried it and it changes what the legend
     // holds, an empty value included; one left out, or sent as the legend already holds it, stays unset.
-    const auto land = [&](bool sent, auto Entry::*value, Hlc Entry::*stamp, const auto& to) {
-      if (!sent || (held && (*held).*value == to)) return;
-      entry.*value = to;
+    const auto land = [&](bool inBatch, auto Entry::*field, Hlc Entry::*stamp, const auto& sent) {
+      if (!inBatch || (held && (*held).*field == sent)) return;
+      entry.*field = sent;
       entry.*stamp = at;
     };
     land(true, &Entry::hue, &Entry::hueAt, kind.hue);
@@ -81,9 +81,9 @@ GraphState graftState(const LooseGraph& graph, const Graft& graft, const Hlc& at
     if (!graph.hasNode(node.id)) entry.createdAt = at;  // new or revived; a present node keeps its creation
     // A register lands at the graft's stamp when the batch carried it and it changes what the graph
     // holds, an empty value included; one left out, or sent as the graph already holds it, stays unset.
-    const auto land = [&](bool sent, auto Entry::*value, Hlc Entry::*stamp, const auto& to) {
-      if (!sent || (held && (*held).*value == to)) return;
-      entry.*value = to;
+    const auto land = [&](bool inBatch, auto Entry::*field, Hlc Entry::*stamp, const auto& sent) {
+      if (!inBatch || (held && (*held).*field == sent)) return;
+      entry.*field = sent;
       entry.*stamp = at;
     };
     land(carried(NodeRegister::label), &Entry::label, &Entry::labelAt, node.label);
