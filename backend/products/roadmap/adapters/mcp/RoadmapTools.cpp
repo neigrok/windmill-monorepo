@@ -286,9 +286,8 @@ ToolResult withRoom(RoomRegistry& registry, const TreeId& tree, Fn&& fn) {
   return fn(*room);
 }
 
-// States are derived over the whole tree: a prerequisite may sit off the page. The trees its nodes
-// open are named to a caller who can write the tree, and only those of theirs that stand, read off
-// the stored rows once per reply.
+// States are derived over the whole tree: a prerequisite may sit off the page.
+// Pointers are followed only for a caller who can write the tree, off the stored rows, once per reply.
 NodeReadContext readContextFor(TreeRegistry& trees, ProgressService& progress, const TreeId& tree,
                                const std::optional<UserId>& caller, const std::optional<UserId>& owner,
                                const TreeData& data, const NodeFields& fields, bool filtersOnState) {
@@ -296,15 +295,16 @@ NodeReadContext readContextFor(TreeRegistry& trees, ProgressService& progress, c
   const bool needsMarks = fields.count(NodeField::status) || needsStates;
   NodeReadContext context;
   if (needsMarks && caller) context.marks = progress.progressOf(tree, *caller);
-  if (needsStates) context.states = UnlockRules::derive(data.nodes, context.marks);
   if (fields.count(NodeField::kind))
     for (const Kind& kind : data.kinds) context.kindByHue[kind.hue] = kind.id;
-  if (fields.count(NodeField::opens) && canWrite(caller, owner)) {
-    std::set<TreeId> opened;
-    for (const NodeSpec& node : data.nodes)
-      if (!node.opens.empty()) opened.insert(node.opens);
-    context.openedTitles = trees.titlesOwnedBy(*caller, opened);
+  const bool follows = (needsStates || fields.count(NodeField::opens)) && canWrite(caller, owner);
+  if (!follows) {
+    if (needsStates) context.states = UnlockRules::derive(data.nodes, context.marks);
+    return context;
   }
+  const OpenedTrees opened(data, trees.openedFrom(*caller, treesOpenedBy(data)));
+  if (needsStates) context.states = UnlockRules::derive(data.nodes, opened.followed(context.marks));
+  if (fields.count(NodeField::opens)) context.openings = opened.openings;
   return context;
 }
 

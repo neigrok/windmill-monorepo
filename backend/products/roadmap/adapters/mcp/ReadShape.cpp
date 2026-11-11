@@ -130,11 +130,12 @@ Json::Value projectNode(const NodeSpec& node, const NodeFields& fields, const No
   if (fields.count(NodeField::description) && !node.description.empty()) n["description"] = node.description;
   if (fields.count(NodeField::links) && !node.links.empty()) n["links"] = linksToJson(node.links);
   if (fields.count(NodeField::opens)) {
-    const auto opened = context.openedTitles.find(node.opens);
-    if (opened != context.openedTitles.end()) {
+    const auto opening = context.openings.find(node.id);
+    if (opening != context.openings.end() && !opening->second.missing) {
       Json::Value opens(Json::objectValue);
-      opens["treeId"] = opened->first.str();
-      opens["title"] = opened->second;
+      opens["treeId"] = opening->second.tree.str();
+      opens["title"] = opening->second.title;
+      opens["state"] = opening->second.complete ? "complete" : "open";
       n["opens"] = opens;
     }
   }

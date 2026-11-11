@@ -222,6 +222,30 @@ TEST(list_orders_owned_trees_newest_first_and_excludes_other_owners) {
   CHECK_EQ(rows[1].stats.dominantKind, NodeColor::olive);
 }
 
+TEST(list_counts_a_node_that_opens_a_tree_as_done_when_that_tree_is_complete) {
+  Setup s;
+  UserId me = uid("me");
+  NodeSpec idea = spec("idea", NodeColor::sky);
+  idea.opens = TreeId{"t_00000000000000b2"};
+  NodeSpec stalled = spec("stalled", NodeColor::sky);
+  stalled.opens = TreeId{"t_00000000000000b3"};
+  CHECK(s.registry.create(me, TreeId{"t_00000000000000b1"}, treeData("Ideas", {idea, stalled, spec("plain", NodeColor::sky)})) ==
+        TreeRegistry::Creation::created);
+  CHECK(s.registry.create(me, TreeId{"t_00000000000000b2"}, treeData("Worked", {spec("w", NodeColor::sky)})) ==
+        TreeRegistry::Creation::created);
+  CHECK(s.registry.create(me, TreeId{"t_00000000000000b3"}, treeData("Waiting", {spec("x", NodeColor::sky)})) ==
+        TreeRegistry::Creation::created);
+  s.progress.setStatus(TreeId{"t_00000000000000b2"}, me, nid("w"), ProgressStatus::complete, false, Hlc{5, 0, "me"}, 5);
+  s.progress.setStatus(TreeId{"t_00000000000000b1"}, me, nid("stalled"), ProgressStatus::complete, false, Hlc{6, 0, "me"}, 6);
+
+  std::map<std::string, std::string> doneOfTotal;
+  for (const TreeSummary& row : s.registry.list(me))
+    doneOfTotal[row.id.str()] = std::to_string(row.stats.done) + "/" + std::to_string(row.stats.total);
+  CHECK(doneOfTotal == (std::map<std::string, std::string>{{"t_00000000000000b1", "1/3"}, {"t_00000000000000b2", "1/1"},
+                                                           {"t_00000000000000b3", "0/1"}}));
+  CHECK(s.trees.openedReads.empty());
+}
+
 TEST(remove_soft_deletes_an_owned_tree_and_it_leaves_the_list) {
   Setup s;
   UserId me = uid("me");

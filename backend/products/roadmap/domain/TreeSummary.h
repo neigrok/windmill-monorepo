@@ -41,6 +41,9 @@ struct LoadedTree {
   std::uint64_t lastMarkedAt = 0;  // the caller's latest progress mark (epoch ms), 0 if none
 };
 
+// Each tree's completed set as its board reads it (OpenedTrees::followed), in the order given: one owner's trees.
+std::vector<Progress> followedProgress(const std::vector<LoadedTree>& loaded);
+
 // Ordered newest-forward-change first, ties broken by id. Each row's updatedAt is the freshest of
 // its two timestamps.
 std::vector<TreeSummary> registrySummaries(const std::vector<LoadedTree>& loaded);

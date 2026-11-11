@@ -1,5 +1,5 @@
 {
-  "schemaVersion" : 11,
+  "schemaVersion" : 12,
   "steps" : 
   [
     {
@@ -586,6 +586,7 @@
                     "label" : "Docs",
                     "opens" : 
                     {
+                      "state" : "open",
                       "title" : "Test Roadmap",
                       "treeId" : "t"
                     },

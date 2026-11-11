@@ -184,7 +184,8 @@ composite pins a credential to its grant. A run is not offered `describe_tree` e
 tree's guide through `get_tree` and never sets it. Nor is it offered the tree a node opens: the
 schemas it is handed carry no `opens` argument and no `opens` field, so a run neither reads nor sets
 a pointer, an import through it leaves the pointers the tree holds as they are, and a node it
-creates opens none. One table in
+creates opens none. The `state` it reads is the owner's: a node that opens a tree is complete when
+that tree is. One table in
 `ScopedToolHost.cpp` names what a run is not offered, tools by name and words wherever a schema
 carries them. A withheld name a run calls anyway is refused before any write is observed; a withheld
 argument or field is refused in its own sentence with nothing written. A tend starts only on a tree
@@ -275,7 +276,8 @@ Apply action for routine proposals; annotations describe each tool's effects.
   locks every member, and a dangling edge locks nothing. An anonymous reader's cascade runs over
   no marks: roots available, the rest locked. `find_nodes` takes `state` as a filter too, ANDed
   with the rest and applied after the ranked selection but before the page, so `count` and the
-  cursor speak of the filtered set.
+  cursor speak of the filtered set. For the tree's owner a node that opens a tree follows that
+  tree, not its mark (see `opens`).
 - **`summary` is a projection of `description`** — its opening 200 characters (Unicode code
   points, so a CJK description is cut at 200 characters, not 200 bytes), never split inside a
   grapheme (a combining mark, a variation selector or a ZWJ emoji sequence backs the cut off),
@@ -301,11 +303,31 @@ A node may point at another tree: `opens` holds that tree's id.
   and someone else's, so the refusal confirms no id. Its write line carries the outcome
   `opens-not-yours`. A node may open the tree it is in.
 - **Read.** `opens` is a `fields` value on `get_tree`, `get_nodes` and `find_nodes`, never in a
-  default. A node answers `opens: {treeId, title}` when the caller can write the tree being read,
-  the pointer is set, and the opened tree stands and is theirs; the key is omitted otherwise, so a
-  reader of someone else's tree and a signed-out caller never receive it. The title is the opened
-  tree's stored title, read once per reply and only when the field is asked for; every write door
-  saves before it answers, so the stored title is the live one unless a save failed.
+  default. A node answers `opens: {treeId, title, state}` when the caller can write the tree being
+  read, the pointer is set, and the opened tree stands and is theirs; the key is omitted otherwise,
+  so a reader of someone else's tree and a signed-out caller never receive it. `state` is
+  `complete` or `open`, and the title is the opened tree's stored one.
+- **The node follows the tree, for its owner.** A pointer is valid when its target stands and
+  belongs to the owner of the tree the node is in. For a caller who can write the tree, a node with
+  a valid pointer is `complete` exactly when the opened tree is complete for them, whatever its own
+  prerequisites, and `locked` or `available` by its prerequisites until then; a mark on it is kept,
+  answered as `status` and by `get_progress`, and decides nothing. A tree is complete when it holds
+  at least one node and every node of it is complete, a node with a valid pointer by its tree and
+  any other by the caller's mark. A tree on a loop of pointers is never complete, nor is one more
+  than 8 pointers from the tree being read by the shortest way (`kOpenedTreeReach`,
+  `domain/OpenedTrees.h`). `state`, the `state` filter of `find_nodes`, `opens.state` and the
+  `done` of `list_trees` all read that one completed set, so a step waiting on such a node unlocks
+  when its tree completes. `set_progress` records a mark on such a node as on any other, and its
+  `prerequisitesMet` reads marks alone.
+- **Every other reader sees an ordinary node.** A reader who cannot write the tree, signed in or
+  not, is answered no `opens`, and the node's `state` follows their own mark and its prerequisites
+  as any node's does. A node whose pointer is not valid is ordinary for its owner too.
+- **Cost.** Following is one read of the stored rows per reply (`TreeRepository::openedFrom`: one
+  statement over `trees`, `tree_nodes` and the caller's `node_progress`), made only for a caller
+  who can write the tree, when `fields` names `state` or `opens` or `find_nodes` filters on
+  `state`, and when the tree holds a pointer. `list_trees` makes none: it already holds every tree
+  of the caller's. Every write door saves before it answers, so the stored rows are the live ones
+  unless a save failed.
 - `import_subgraph` takes the id as a string, where `get_tree` answers the object: a copied slice
   sends `opens.treeId`.
 

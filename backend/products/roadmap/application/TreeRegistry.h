@@ -40,6 +40,9 @@ public:
   // theirs may open. Read off the stored rows, as list() is.
   std::map<TreeId, std::string> titlesOwnedBy(const UserId& owner, const std::set<TreeId>& trees);
 
+  // What following `opened` finds among `owner`'s standing trees (TreeRepository::openedFrom), off the stored rows.
+  std::map<TreeId, OpenedTree> openedFrom(const UserId& owner, const std::set<TreeId>& opened);
+
   // Each outcome names both write refusals of Access.h (an enum cannot hold another), because an
   // unowned tree is nobody's, not somebody else's.
   enum class Removal { deleted, notFound, notYours, nobodysTree };

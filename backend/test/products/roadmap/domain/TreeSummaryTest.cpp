@@ -1,7 +1,9 @@
 #include "products/roadmap/domain/TreeSummary.h"
 #include "test/testing.h"
 
+#include <set>
 #include <string>
+#include <vector>
 
 using namespace wm;
 
@@ -88,4 +90,30 @@ TEST(registry_carries_the_planting_time_untouched_by_recency) {
   CHECK_EQ(summaries[2].id, TreeId{std::string("c")});
   CHECK_EQ(summaries[2].createdAt, 0u);
   CHECK_EQ(summaries[2].updatedAt, 0u);
+}
+
+TEST(registry_counts_a_node_that_opens_a_tree_as_done_when_that_tree_is_complete_whatever_mark_it_holds) {
+  NodeSpec idea = spec("idea", NodeColor::sky, {});
+  idea.opens = TreeId{std::string("sub")};
+  NodeSpec stalled = spec("stalled", NodeColor::sky, {});
+  stalled.opens = TreeId{std::string("open")};
+  NodeSpec stray = spec("stray", NodeColor::sky, {});
+  stray.opens = TreeId{std::string("someone-elses")};
+  Progress onMain;
+  onMain.completed = {nid("stalled"), nid("stray")};
+  Progress onSub;
+  onSub.completed = {nid("s")};
+  std::vector<LoadedTree> loaded;
+  loaded.push_back({tree("main", {idea, stalled, stray, spec("plain", NodeColor::sky, {})}), 0, 0, onMain, 0});
+  loaded.push_back({tree("sub", {spec("s", NodeColor::sky, {})}), 0, 0, onSub, 0});
+  loaded.push_back({tree("open", {spec("o", NodeColor::sky, {})}), 0, 0, Progress{}, 0});
+
+  std::vector<std::set<NodeId>> completed;
+  for (const Progress& followed : followedProgress(loaded)) completed.push_back(followed.completed);
+  CHECK(completed == (std::vector<std::set<NodeId>>{{nid("idea"), nid("stray")}, {nid("s")}, {}}));
+
+  std::vector<std::string> doneOfTotal;
+  for (const TreeSummary& summary : registrySummaries(loaded))
+    doneOfTotal.push_back(summary.id.str() + " " + std::to_string(summary.stats.done) + "/" + std::to_string(summary.stats.total));
+  CHECK_EQ(doneOfTotal, (std::vector<std::string>{"main 2/4", "open 0/1", "sub 1/1"}));
 }

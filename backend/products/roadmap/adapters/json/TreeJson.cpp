@@ -104,6 +104,26 @@ Json::Value toJson(const TreeSummary& summary) {
   return row;
 }
 
+Json::Value toJson(const std::map<NodeId, Opening>& openings) {
+  Json::Value opens(Json::objectValue);
+  for (const auto& [node, opening] : openings) {
+    Json::Value entry(Json::objectValue);
+    entry["treeId"] = opening.tree.str();
+    if (opening.missing) {
+      entry["missing"] = true;
+      opens[node.str()] = entry;
+      continue;
+    }
+    entry["title"] = opening.title;
+    entry["state"] = opening.complete ? "complete" : "open";
+    entry["done"] = opening.done;
+    entry["total"] = opening.total;
+    entry["loop"] = opening.loop;
+    opens[node.str()] = entry;
+  }
+  return opens;
+}
+
 Json::Value toJson(const GalleryEntry& entry) {
   Json::Value row(Json::objectValue);
   row["id"] = entry.id.str();

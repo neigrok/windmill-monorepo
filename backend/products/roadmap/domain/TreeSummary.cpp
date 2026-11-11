@@ -1,8 +1,11 @@
 #include "products/roadmap/domain/TreeSummary.h"
 
+#include "products/roadmap/domain/OpenedTrees.h"
+
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <map>
 
 namespace wm {
 
@@ -36,16 +39,28 @@ std::uint64_t lastActiveAt(std::uint64_t updatedAt, std::uint64_t lastMarkedAt) 
   return std::max(updatedAt, lastMarkedAt);
 }
 
+std::vector<Progress> followedProgress(const std::vector<LoadedTree>& loaded) {
+  std::map<TreeId, OpenedTree> standing;
+  for (const LoadedTree& tree : loaded) standing.emplace(tree.data.id, OpenedTree(tree.data, tree.progress));
+  std::vector<Progress> followed;
+  followed.reserve(loaded.size());
+  for (const LoadedTree& tree : loaded)
+    followed.push_back(OpenedTrees(tree.data, standing).followed(tree.progress));
+  return followed;
+}
+
 std::vector<TreeSummary> registrySummaries(const std::vector<LoadedTree>& loaded) {
+  const std::vector<Progress> followed = followedProgress(loaded);
   std::vector<TreeSummary> summaries;
   summaries.reserve(loaded.size());
-  for (const LoadedTree& tree : loaded) {
+  for (std::size_t i = 0; i < loaded.size(); ++i) {
+    const LoadedTree& tree = loaded[i];
     TreeSummary summary;
     summary.id = tree.data.id;
     summary.title = tree.data.title;
     summary.createdAt = tree.createdAt;  // a birth stamp: never folded with the freshness ones
     summary.updatedAt = lastActiveAt(tree.updatedAt, tree.lastMarkedAt);
-    summary.stats = treeStats(tree.data, tree.progress);
+    summary.stats = treeStats(tree.data, followed[i]);
     summaries.push_back(std::move(summary));
   }
   std::sort(summaries.begin(), summaries.end(), [](const TreeSummary& a, const TreeSummary& b) {

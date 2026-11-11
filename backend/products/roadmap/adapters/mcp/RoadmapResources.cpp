@@ -36,6 +36,13 @@ with unmet prerequisites and returns `prerequisitesMet: false`. Use `outOfOrder:
 `roadmap_find_nodes {state: "available"}` finds the current frontier. Import personal marks through
 `progress[]`, separately from node `seedStatus`.
 
+On a tree you own, a node that opens another of your trees follows that tree: its `state` is
+`complete` exactly when every node of the opened tree is complete for you, whatever mark the node
+holds and whatever its prerequisites, and a step waiting on it unlocks then. A tree with no nodes is
+not complete, and neither is one whose pointers lead back to it or one more than 8 pointers away.
+`roadmap_list_trees` counts such a node the same way. Your mark on it is kept and still answered as
+`status`, and `prerequisitesMet` reads marks alone.
+
 ## Reads and edits
 
 Reads use lean projections: an omitted description is not an empty description. Request `fields`
@@ -44,7 +51,8 @@ order with explicit `missingNodeIds`; use `roadmap_get_tree` for broader context
 
 A node can point at another of your trees: `opens` on `roadmap_create_node`, `roadmap_annotate_node`,
 a `roadmap_patch_nodes` row or a `roadmap_import_subgraph` node takes that tree's id, and `""` clears
-it. Reads that ask for the `opens` field answer the tree's id and title, on a tree you own.
+it. Reads that ask for the `opens` field answer the tree's id, title and `state` (`complete` or
+`open`), on a tree you own.
 
 `roadmap_patch_nodes` preserves omitted fields and replaces supplied values, including descriptions
 and links. `roadmap_annotate_node`'s append form repeats text when retried. `roadmap_change_edges`

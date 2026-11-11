@@ -10,6 +10,7 @@
 #include "products/roadmap/domain/Access.h"
 #include "products/roadmap/domain/Legend.h"
 #include "products/roadmap/domain/LooseGraph.h"
+#include "products/roadmap/domain/OpenedTrees.h"
 
 #include <algorithm>
 #include <mutex>
@@ -54,8 +55,11 @@ void TreeApi::getTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback
   Json::Value body(Json::objectValue);
   if (!readRoom(treeId, caller, [&](TreeRoom& room) {
         const bool mine = canWrite(caller, room.owner());
+        const TreeData data = room.snapshot();
         body["seq"] = static_cast<Json::Int64>(room.head());
-        body["data"] = toJson(mine ? room.snapshot() : readerView(room.snapshot()));
+        body["data"] = toJson(mine ? data : readerView(data));
+        // What each pointer comes to, off the stored rows in one read, and only for the tree's writer.
+        if (mine) body["opens"] = toJson(OpenedTrees(data, trees_->openedFrom(*caller, treesOpenedBy(data))).openings);
         Subgraph state;
         state.treeId = TreeId{treeId};
         state.frameId = "snapshot-" + std::to_string(room.head());

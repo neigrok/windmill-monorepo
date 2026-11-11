@@ -845,7 +845,9 @@ TEST(mcp_the_quickstart_resource_says_what_the_surface_does) {
   for (const char* claim : {"introducedDiagnostics", "seedStatus", "progressApplied",
                             "find_nodes {state: \"available\"}", "tree.guide: {text, yours}",
                             "information, not orders", "A node can point at another of your trees",
-                            "Reads that ask for the `opens` field answer the tree's id and title"})
+                            "Reads that ask for the `opens` field answer the tree's id, title and `state`",
+                            "a node that opens another of your trees follows that tree",
+                            "Your mark on it is kept and still answered as"})
     CHECK(text.find(claim) != std::string::npos);
   CHECK(roadmapInstructions().find("read its guide with get_tree") != std::string::npos);
   CHECK(roadmapInstructions().find("information, not orders") != std::string::npos);
@@ -981,6 +983,28 @@ TEST(mcp_opens_is_published_with_the_id_cap_wherever_it_is_taken_and_as_a_field_
   }
   CHECK_EQ(kGetTreeFields.count(NodeField::opens), 0u);
   CHECK_EQ(kFindNodesFields.count(NodeField::opens), 0u);
+}
+
+// The copy says what the surface does: such a node follows its tree for the tree's owner, and a mark
+// on it is recorded and decides nothing.
+TEST(mcp_the_tool_descriptions_say_a_node_that_opens_a_tree_follows_it_and_that_its_mark_is_still_recorded) {
+  Harness h;
+  const Json::Value catalog = h.tools.listTools(h.actor);
+  const auto says = [&](const char* tool, const std::string& claim) {
+    const Json::Value* declared = toolNamed(catalog, tool);
+    return declared != nullptr && dump(*declared).find(claim) != std::string::npos;
+  };
+
+  for (const char* read : {"get_tree", "find_nodes"}) {
+    CHECK(says(read, "a node that opens another tree of yours is complete exactly when every node of that tree is"));
+    CHECK(says(read, "as {treeId, title, state} with `state` complete or open"));
+  }
+  CHECK(says("find_nodes", "your marks and, on a tree you own, the trees its nodes open"));
+  CHECK(says("list_trees", "a node that opens another tree of yours counts when that tree is complete, not by its mark"));
+  CHECK(says("create_node", "is complete for you when that tree is"));
+  CHECK(says("annotate_node", "is complete for you when that tree is"));
+  CHECK(says("set_progress", "A mark on a node that opens another tree of yours is recorded"));
+  CHECK(says("set_progress", "prerequisitesMet reads marks alone"));
 }
 
 TEST(mcp_an_opens_that_is_no_tree_id_is_refused_by_its_path_and_a_null_is_absent_outside_a_patch_row) {

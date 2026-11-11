@@ -340,7 +340,7 @@ std::vector<OwnedTree> PgTreeRepository::listOwnedBy(const UserId& owner) {
 TreeData PgTreeRepository::projectDocument(pqxx::work& txn, const TreeId& tree, const std::string& title,
                                            const std::string& documentBlob) {
   pqxx::result nodes = txn.exec_params(
-      "SELECT node_id, color FROM tree_nodes WHERE tree_id = $1 AND present", tree.str());
+      "SELECT node_id, color, opens FROM tree_nodes WHERE tree_id = $1 AND present", tree.str());
   TreeData data;
   data.id = tree;
   data.title = title;
@@ -348,6 +348,7 @@ TreeData PgTreeRepository::projectDocument(pqxx::work& txn, const TreeId& tree, 
     NodeSpec spec;
     spec.id = NodeId{n["node_id"].as<std::string>()};
     spec.color = parseColor(n["color"].as<std::string>()).value_or(NodeColor::terracotta);
+    spec.opens = TreeId{n["opens"].as<std::string>()};
     data.nodes.push_back(std::move(spec));
   }
   if (!data.nodes.empty()) return data;
@@ -419,6 +420,54 @@ std::map<TreeId, std::string> PgTreeRepository::titlesOwnedBy(const UserId& owne
   std::map<TreeId, std::string> titles;
   for (const auto& row : rows) titles.emplace(TreeId{row["id"].as<std::string>()}, row["title"].as<std::string>());
   return titles;
+}
+
+std::map<TreeId, OpenedTree> PgTreeRepository::openedFrom(const UserId& owner, const std::set<TreeId>& opened) {
+  if (opened.empty()) return {};
+  Json::Value ids(Json::arrayValue);
+  for (const TreeId& tree : opened) ids.append(tree.str());
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
+  // One statement: the counts and the marks are one snapshot, and no node row leaves the database.
+  pqxx::result rows = txn.exec_params(
+      "WITH RECURSIVE reached(id, depth) AS ("
+      "  SELECT t.id, 0 FROM trees t "
+      "  WHERE t.deleted_at IS NULL AND t.owner_id = $1::uuid "
+      "    AND t.id IN (SELECT jsonb_array_elements_text($2::jsonb)) "
+      // UNION keeps a tree once per depth, which is what ends the walk on a loop.
+      "  UNION "
+      "  SELECT t.id, r.depth + 1 FROM reached r "
+      "  JOIN tree_nodes n ON n.tree_id = r.id AND n.present AND n.opens <> '' "
+      "  JOIN trees t ON t.id = n.opens AND t.deleted_at IS NULL AND t.owner_id = $1::uuid "
+      "  WHERE r.depth < $3"
+      "), counted AS ("
+      "  SELECT r.id, count(n.node_id) AS total, "
+      "         count(*) FILTER (WHERE n.opens = '' AND p.status = 'complete') AS marked "
+      "  FROM (SELECT DISTINCT id FROM reached) r "
+      "  LEFT JOIN tree_nodes n ON n.tree_id = r.id AND n.present "
+      "  LEFT JOIN node_progress p ON p.tree_id = n.tree_id AND p.node_id = n.node_id AND p.user_id = $1::text "
+      "  GROUP BY r.id"
+      ") "
+      // A row is a tree and one of its nodes that hold a pointer, or the tree alone when none does.
+      "SELECT t.id, t.title, c.total, c.marked, o.node_id, o.opens, "
+      "       coalesce(p.status = 'complete', false) AS opener_marked "
+      "FROM counted c JOIN trees t ON t.id = c.id "
+      "LEFT JOIN tree_nodes o ON o.tree_id = c.id AND o.present AND o.opens <> '' "
+      "LEFT JOIN node_progress p ON p.tree_id = o.tree_id AND p.node_id = o.node_id AND p.user_id = $1::text "
+      "ORDER BY o.node_id COLLATE \"C\"",
+      owner.str(), dump(ids), kOpenedTreeReach);
+
+  std::map<TreeId, OpenedTree> trees;
+  for (const auto& row : rows) {
+    OpenedTree& tree = trees[TreeId{row["id"].as<std::string>()}];
+    tree.title = row["title"].as<std::string>();
+    tree.total = row["total"].as<int>();
+    tree.marked = row["marked"].as<int>();
+    if (row["node_id"].is_null()) continue;
+    tree.openers.push_back({NodeId{row["node_id"].as<std::string>()}, TreeId{row["opens"].as<std::string>()},
+                            row["opener_marked"].as<bool>()});
+  }
+  return trees;
 }
 
 void PgTreeRepository::softDelete(const TreeId& tree) {

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "products/roadmap/domain/OpenedTrees.h"
 #include "products/roadmap/domain/Tree.h"
 
 #include <json/json.h>
@@ -21,9 +22,9 @@ namespace wm {
 // what the tree DERIVES — the unlock cascade over the caller's marks. `summary` is the
 // description's first kSummaryChars code points, cut at a word and marked with an ellipsis when
 // cut. `kind` is the legend kind whose hue the node wears, omitted when no kind wears it. `opens` is
-// the tree the node opens, as {treeId, title}: answered only to a caller who can write the tree being
-// read, and only while the opened tree stands and is theirs — a tree id is the read capability of an
-// unlisted tree, and a title is its owner's words.
+// the tree the node opens, as {treeId, title, state}: answered only to a caller who can write the tree
+// being read, and only while the opened tree stands and is theirs — a tree id is the read capability
+// of an unlisted tree, and a title is its owner's words.
 enum class NodeField { id, label, icon, color, kind, order, prerequisites, position, status, seedStatus,
                        state, summary, description, links, opens };
 constexpr std::size_t kSummaryChars = 200;
@@ -111,19 +112,19 @@ const Vocabulary<ProgressField>& progressVocabulary();
 
 // Each part is filled only when a field or a filter asks for it, and stays empty otherwise.
 // The states are derived over EVERY node the tree holds, since a prerequisite may sit off the page;
-// `kindByHue` is the legend's hue -> kind id join, one entry per kind; `openedTitles` holds the title
-// of each tree a node opens that the caller may be told of, and stays empty for a caller who cannot
-// write the tree.
+// `kindByHue` is the legend's hue -> kind id join, one entry per kind; `openings` holds what each
+// node's pointer comes to (domain/OpenedTrees.h), and stays empty for a caller who cannot write the
+// tree.
 struct NodeReadContext {
   Progress marks;
   std::map<NodeId, NodeState> states;
   std::map<NodeColor, KindId> kindByHue;
-  std::map<TreeId, std::string> openedTitles;
+  std::map<NodeId, Opening> openings;
 };
 
 // Field semantics are TreeJson's: empty and absent values are omitted as the document omits
 // them. An unmarked node answers `status: "none"`, `state` is derived for every node, and `opens`
-// is answered only for a tree `openedTitles` names.
+// is answered only for an opening that is not `missing`.
 Json::Value projectNode(const NodeSpec& node, const NodeFields& fields, const NodeReadContext& context);
 Json::Value projectKind(const Kind& kind, const KindFields& fields);
 Json::Value projectProgress(const Progress& progress, const ProgressFields& fields);
