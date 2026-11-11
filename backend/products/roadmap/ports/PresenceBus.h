@@ -11,8 +11,9 @@ namespace wm {
 struct PresenceBus {
   virtual ~PresenceBus() = default;
 
-  // Fanned out verbatim to every subscriber, the sender included: an echo re-joins idempotently and
-  // so surfaces drift rather than hiding it. `seq` is the tree's broadcast order, stamped by the room.
+  // Fanned out to every subscriber, the sender included: an echo re-joins idempotently and so
+  // surfaces drift rather than hiding it. The tree's writer receives it verbatim and every other
+  // subscriber its `readerView`. `seq` is the tree's broadcast order, stamped by the room.
   virtual void broadcastSubgraph(const TreeId& tree, Seq seq, const Subgraph& subgraph) = 0;
 
   // Private to one user: fans out only to that user's own live sessions on the tree, never to

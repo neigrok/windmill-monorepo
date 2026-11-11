@@ -71,6 +71,62 @@ TEST(tree_document_round_trips_the_order_key) {
   CHECK_EQ(back.nodes[0].order, std::string("a7"));
 }
 
+TEST(graph_state_carries_opens_with_its_stamp_and_a_node_without_the_field_clears_nothing) {
+  LooseGraph g;
+  g.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
+  g.setOpens(nid("a"), TreeId{"t_9362d9bc883e0a1e"}, at(4));
+
+  const Json::Value json = toJson(g.exportState());
+  CHECK_EQ(json["nodes"][0]["opens"].asString(), std::string("t_9362d9bc883e0a1e"));
+  CHECK_EQ(json["nodes"][0]["opensAt"].asString(), std::string("4:0:u"));
+  CHECK(graphStateFromJson(parse(dump(json))) == g.exportState());
+
+  // The node a browser that does not know the register sends: neither `opens` nor `opensAt`.
+  const GraphState rename =
+      graphStateFromJson(parse(R"({"nodes":[{"id":"a","label":"A, renamed","labelAt":"9:0:r_web"}]})"));
+  NodeStateEntry expected = *g.exportNode(nid("a"));
+  expected.label = "A, renamed";
+  expected.labelAt = Hlc{9, 0, "r_web"};
+  g.join(rename);
+  CHECK(*g.exportNode(nid("a")) == expected);
+}
+
+TEST(graph_state_reads_opens_only_from_a_string_and_refuses_any_other_value) {
+  const auto opensOf = [](const char* value) {
+    return graphStateFromJson(parse(std::string(R"({"nodes":[{"id":"a","opens":)") + value +
+                                    R"(,"opensAt":"4:0:u"}]})")).nodes[0].opens;
+  };
+  CHECK_EQ(opensOf(R"("t_9362d9bc883e0a1e")"), TreeId{"t_9362d9bc883e0a1e"});
+  CHECK_EQ(opensOf("null"), TreeId{});
+  for (const char* value : {"7", "true", R"({"id":"t_x"})", R"(["t_x"])"}) {
+    bool refused = false;
+    try {
+      opensOf(value);
+    } catch (const std::exception&) {
+      refused = true;
+    }
+    CHECK(refused);
+  }
+}
+
+TEST(the_document_codec_carries_opens_and_omits_it_from_a_node_that_opens_nothing) {
+  TreeData data;
+  data.id = TreeId{"t"};
+  NodeSpec door; door.id = nid("door"); door.label = "Door"; door.opens = TreeId{"t_9362d9bc883e0a1e"};
+  NodeSpec wall; wall.id = nid("wall"); wall.label = "Wall";
+  data.nodes = {door, wall};
+
+  const Json::Value json = toJson(data);
+  CHECK_EQ(json["nodes"][0]["opens"].asString(), std::string("t_9362d9bc883e0a1e"));
+  CHECK_FALSE(json["nodes"][1].isMember("opens"));
+
+  const TreeData back = treeFromJson(parse(dump(json)), TreeId{"t"}).value();
+  REQUIRE_EQ(back.nodes.size(), 2u);
+  CHECK_EQ(back.nodes[0].opens, TreeId{"t_9362d9bc883e0a1e"});
+  CHECK_EQ(back.nodes[1].opens, TreeId{});
+  CHECK_FALSE(treeFromJson(parse(R"({"nodes":[{"id":"door","opens":7}]})"), TreeId{"t"}).has_value());
+}
+
 // A root that parsed but is not an object throws on every keyed read jsoncpp does; the decoder answers the mismatch rather than raising it.
 TEST(tree_from_json_refuses_a_non_object_root) {
   CHECK_FALSE(treeFromJson(parse("[]"), TreeId{"t"}).has_value());

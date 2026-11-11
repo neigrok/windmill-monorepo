@@ -63,7 +63,7 @@ struct Overages {
 // quoted back: echoing it would make the refusal as expensive as the request.
 std::optional<std::string> nodeFieldBounds(const NodeId& id, const std::string& label, const std::string& icon,
                                            const std::string& description, const std::vector<Link>& links,
-                                           const std::optional<Vec2>& position) {
+                                           const TreeId& opens, const std::optional<Vec2>& position) {
   if (id.empty()) return "a node has an empty id";
   Overages idOver;
   idOver.note("a node id", id.str(), kMaxIdLength);
@@ -74,6 +74,7 @@ std::optional<std::string> nodeFieldBounds(const NodeId& id, const std::string& 
   over.note("icon", icon, kMaxIconLength);
   over.note("description", description, kMaxNodeDescriptionLength);
   over.noteLinks(links);
+  over.note("opens", opens.str(), kMaxIdLength);
   if (std::optional<std::string> bad = over.sentence()) return named + *bad;
   if (position && !(std::isfinite(position->x) && std::isfinite(position->y)))
     return named + "position is not finite";
@@ -487,7 +488,7 @@ std::optional<Admission> admit(const LooseGraph& graph, const Graft& incoming) {
   std::set<Edge> arrivingEdges;
   for (const NodeSpec& node : incoming.document.nodes) {
     if (std::optional<std::string> bad =
-            nodeFieldBounds(node.id, node.label, node.icon, node.description, node.links, node.position))
+            nodeFieldBounds(node.id, node.label, node.icon, node.description, node.links, node.opens, node.position))
       return Admission{Admission::Verdict::malformed, *bad};
     if (!graph.hasNode(node.id)) arrivingNodes.insert(node.id);  // a graft upserts: a present id costs nothing
     for (const NodeId& prereq : node.prerequisites)
@@ -511,7 +512,7 @@ std::optional<Admission> admit(const LooseGraph& graph, const GraphState& incomi
   std::map<NodeId, ElementSet> nodeLives;
   for (const NodeStateEntry& node : incoming.nodes) {
     if (std::optional<std::string> bad =
-            nodeFieldBounds(node.id, node.label, node.icon, node.description, node.links, node.position))
+            nodeFieldBounds(node.id, node.label, node.icon, node.description, node.links, node.opens, node.position))
       return Admission{Admission::Verdict::malformed, *bad};
     auto [life, fresh] = nodeLives.try_emplace(node.id);
     if (fresh) life->second = graph.lifeOf(node.id).value_or(ElementSet{});

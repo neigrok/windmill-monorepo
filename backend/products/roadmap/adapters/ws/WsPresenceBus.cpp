@@ -3,6 +3,8 @@
 #include "products/roadmap/adapters/json/SubgraphJson.h"
 #include "products/roadmap/adapters/json/TreeJson.h"
 
+#include <optional>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -29,17 +31,15 @@ std::set<drogon::WebSocketConnectionPtr> WsPresenceBus::subscribersOf(const Tree
   return it->second;
 }
 
-std::vector<drogon::WebSocketConnectionPtr> WsPresenceBus::admitted(const TreeId& tree) {
-  const std::set<drogon::WebSocketConnectionPtr> subscribers = subscribersOf(tree);
-  if (!gate_) return {subscribers.begin(), subscribers.end()};
-
+std::vector<std::pair<drogon::WebSocketConnectionPtr, Reach>> WsPresenceBus::admitted(const TreeId& tree) {
   // The gate is asked with no lock held: it reads the tree's access row, and holding this mutex
   // across that would put the whole bus behind it.
-  std::vector<drogon::WebSocketConnectionPtr> admitted;
+  std::vector<std::pair<drogon::WebSocketConnectionPtr, Reach>> admitted;
   std::vector<drogon::WebSocketConnectionPtr> denied;
-  for (const auto& conn : subscribers) {
-    if (gate_(tree, conn)) admitted.push_back(conn);
-    else denied.push_back(conn);
+  for (const auto& conn : subscribersOf(tree)) {
+    const Reach reach = gate_ ? gate_(tree, conn) : Reach::reader;
+    if (reach == Reach::none) denied.push_back(conn);
+    else admitted.emplace_back(conn, reach);
   }
   if (!denied.empty()) {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -72,14 +72,31 @@ std::vector<drogon::WebSocketConnectionPtr> WsPresenceBus::connections() const {
 }
 
 void WsPresenceBus::broadcastSubgraph(const TreeId& tree, Seq seq, const Subgraph& subgraph) {
-  Json::Value frame = toJson(subgraph);
-  frame["seq"] = static_cast<Json::Int64>(seq);  // the room's broadcast order
-  // A broadcast is a live delta whatever intent the frame arrived with: echoing a client's
-  // 'flush' intent would make every subscriber treat it as a re-baselining graft.
-  frame["intent"] = "live";
-  std::string text = dump(frame);
-  for (const auto& conn : admitted(tree)) {
-    if (conn->connected()) conn->send(text);
+  const auto live = [seq](const Subgraph& form) {
+    Json::Value frame = toJson(form);
+    frame["seq"] = static_cast<Json::Int64>(seq);  // the room's broadcast order
+    // A broadcast is a live delta whatever intent the frame arrived with: echoing a client's
+    // 'flush' intent would make every subscriber treat it as a re-baselining graft.
+    frame["intent"] = "live";
+    return dump(frame);
+  };
+  // Each form is serialized once, and only when a subscriber receives it. A reader's frame goes out
+  // even with nothing left in it: its seq is the next one that reader waits for.
+  std::optional<std::string> whole;
+  std::optional<std::string> readers;
+  for (const auto& [conn, reach] : admitted(tree)) {
+    if (!conn->connected()) continue;
+    if (reach == Reach::writer) {
+      if (!whole) whole = live(subgraph);
+      conn->send(*whole);
+      continue;
+    }
+    if (!readers) {
+      Subgraph view = subgraph;
+      view.graph = readerView(std::move(view.graph));
+      readers = live(view);
+    }
+    conn->send(*readers);
   }
 }
 
@@ -97,9 +114,9 @@ void WsPresenceBus::broadcastProgress(const TreeId& tree, const UserId& user, co
   // a tab whose read was revoked while it sat open.
   std::vector<drogon::WebSocketConnectionPtr> targets;
   {
-    const std::vector<drogon::WebSocketConnectionPtr> readers = admitted(tree);
+    const std::vector<std::pair<drogon::WebSocketConnectionPtr, Reach>> readers = admitted(tree);
     std::lock_guard<std::mutex> lock(mutex_);
-    for (const auto& conn : readers) {
+    for (const auto& [conn, reach] : readers) {
       auto owner = connUser_.find(conn);
       if (owner != connUser_.end() && owner->second == user.str()) targets.push_back(conn);
     }

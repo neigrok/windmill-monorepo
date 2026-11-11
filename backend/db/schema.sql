@@ -106,12 +106,18 @@ create table if not exists tree_nodes (
   description_hlc text not null default '',
   links           jsonb not null default '[]'::jsonb,
   links_hlc       text not null default '',
+  opens           text not null default '',
+  opens_hlc       text not null default '',
   present         boolean not null default false,
   primary key (tree_id, node_id)
 );
 -- `ord` is a fractional-index sort key (opaque text, LWW by `ord_hlc`), scoped to its parent.
 alter table tree_nodes add column if not exists ord text not null default '';
 alter table tree_nodes add column if not exists ord_hlc text not null default '';
+-- `opens` is the id of the tree this node opens ('' = none, LWW by `opens_hlc`); the index finds a tree's openers.
+alter table tree_nodes add column if not exists opens text not null default '';
+alter table tree_nodes add column if not exists opens_hlc text not null default '';
+create index if not exists tree_nodes_opens_idx on tree_nodes (opens) where present and opens <> '';
 
 create table if not exists tree_edges (
   tree_id     text not null,

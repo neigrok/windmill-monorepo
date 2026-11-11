@@ -143,6 +143,66 @@ TEST(pg_a_guide_survives_a_restart_and_a_stale_save_cannot_revert_it) {
   CHECK_EQ(restarted.load(kTree)->title.value, std::string("Sam's tree"));
 }
 
+TEST(pg_opens_survives_a_restart_with_its_stamp_and_only_a_later_write_of_it_changes_the_row) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  NodeStateEntry door;
+  door.id = NodeId{"door"};
+  door.label = "Door";
+  door.createdAt = door.labelAt = Hlc{1'700'000'000'000, 0, "r_a"};
+  door.opens = kFork;
+  door.opensAt = Hlc{1'700'000'000'000, 1, "r_a"};
+  {
+    PgTreeRepository trees{pgTestPool()};
+    PgOpLog log{pgTestPool()};
+    FakeBus bus;
+    RoomRegistry registry(trees, log, bus);
+    trees.create(kTree, LooseGraph().exportState(), LegendState{}, "Sam's tree", kSam);
+    Subgraph planted;
+    planted.frameId = "f-door";
+    planted.graph.nodes = {door};
+    registry.open(kTree)->joinSubgraph(planted, kSam);
+    REQUIRE(registry.persist(kTree));
+  }
+
+  PgTreeRepository restarted{pgTestPool()};
+  PgOpLog log{pgTestPool()};
+  FakeBus bus;
+  RoomRegistry registry(restarted, log, bus);
+  CHECK(restarted.load(kTree)->state == (GraphState{{door}, {}}));
+
+  Subgraph renamed;  // from a browser that does not know the register: neither the value nor its stamp
+  renamed.frameId = "f-rename";
+  renamed.graph.nodes.emplace_back();
+  renamed.graph.nodes[0].id = NodeId{"door"};
+  renamed.graph.nodes[0].label = door.label = "Front door";
+  renamed.graph.nodes[0].labelAt = door.labelAt = Hlc{1'700'000'000'000, 2, "r_b"};
+  registry.open(kTree)->joinSubgraph(renamed, kSam);
+  REQUIRE(registry.persist(kTree));
+  CHECK(restarted.load(kTree)->state == (GraphState{{door}, {}}));
+
+  Subgraph retargeted;
+  retargeted.frameId = "f-retarget";
+  retargeted.graph.nodes.emplace_back();
+  retargeted.graph.nodes[0].id = NodeId{"door"};
+  retargeted.graph.nodes[0].opens = door.opens = kTree;
+  retargeted.graph.nodes[0].opensAt = door.opensAt = Hlc{1'700'000'000'000, 3, "r_b"};
+  registry.open(kTree)->joinSubgraph(retargeted, kSam);
+  REQUIRE(registry.persist(kTree));
+  CHECK(restarted.load(kTree)->state == (GraphState{{door}, {}}));
+
+  PgLease conn{*pgTestPool()};
+  pqxx::work txn{*conn};
+  const pqxx::result openers = txn.exec_params(
+      "SELECT tree_id, node_id, opens, opens_hlc FROM tree_nodes WHERE opens IN ($1, $2) AND present AND opens <> ''",
+      kTree.str(), kFork.str());
+  REQUIRE_EQ(openers.size(), std::size_t{1});
+  CHECK_EQ(openers[0]["tree_id"].as<std::string>(), kTree.str());
+  CHECK_EQ(openers[0]["node_id"].as<std::string>(), std::string("door"));
+  CHECK_EQ(openers[0]["opens"].as<std::string>(), kTree.str());
+  CHECK_EQ(openers[0]["opens_hlc"].as<std::string>(), std::string("1700000000000:3:r_b"));
+}
+
 TEST(pg_a_fork_plants_the_title_and_guide_at_its_planting_stamp_for_the_new_owner) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();

@@ -53,20 +53,21 @@ void TreeApi::getTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback
   std::optional<UserId> caller = callerOf(req);
   Json::Value body(Json::objectValue);
   if (!readRoom(treeId, caller, [&](TreeRoom& room) {
+        const bool mine = canWrite(caller, room.owner());
         body["seq"] = static_cast<Json::Int64>(room.head());
-        body["data"] = toJson(room.snapshot());
+        body["data"] = toJson(mine ? room.snapshot() : readerView(room.snapshot()));
         Subgraph state;
         state.treeId = TreeId{treeId};
         state.frameId = "snapshot-" + std::to_string(room.head());
         state.actor = "srv";
         state.intent = SubgraphIntent::graft;
-        state.graph = room.exportState();
+        state.graph = mine ? room.exportState() : readerView(room.exportState());
         state.legend = room.exportLegend();
         body["state"] = toJson(state);
         // Epoch ms.
         body["createdAt"] = static_cast<Json::Int64>(room.createdAt());
         body["visibility"] = toString(room.visibility());
-        body["mine"] = canWrite(caller, room.owner());
+        body["mine"] = mine;
       })) {
     callback(error(drogon::k404NotFound, "no such tree"));
     return;

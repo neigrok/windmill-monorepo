@@ -23,11 +23,16 @@ struct NodeRecord {
   Lww<std::optional<std::string>> status;  // opaque authoring seed, round-tripped
   Lww<std::string> description;            // free annotation body
   Lww<std::vector<Link>> links;            // external references, the list as one register
+  Lww<TreeId> opens;                       // the tree this node opens; an empty id opens none
 };
 
 // The budget counts the redundant-edge pass's work: nodes, edges, and their product. Over budget the
 // pass is skipped and reports nothing — tidy finds no edge to drop, health reports 0 redundant.
 bool withinReachabilityBudget(std::size_t nodes, std::size_t edges);
+
+// Whether a fork's nodes open the trees its source's do: its source's owner keeps every pointer as it
+// stands, and anyone else starts with none, so no tree plants a pointer in a stranger's fork.
+enum class ForkOpens { kept, cleared };
 
 // The authoritative, possibly-invalid state of one tree. Every command merges into it;
 // nothing is ever rejected. Validity is a separate read model (TreeDiagnostics).
@@ -53,6 +58,7 @@ public:
   void setDescription(const NodeId& id, const std::string& description, const Hlc& at);
   void setLinks(const NodeId& id, const std::vector<Link>& links, const Hlc& at);
   void setOrder(const NodeId& id, const std::string& order, const Hlc& at);
+  void setOpens(const NodeId& id, const TreeId& opens, const Hlc& at);
   void addEdge(const NodeId& from, const NodeId& to, const Hlc& at);
   void removeEdge(const NodeId& from, const NodeId& to, const Hlc& at);
 
@@ -92,9 +98,9 @@ public:
   GraphState exportState() const;
   // The state a fork of this graph starts from. Every present node is added to the fork afresh,
   // `plantedAt` plus one counter tick per node in (creation stamp, id) order, so sibling ties keep
-  // their order; every status seed is cleared. Tombstones and edges keep their stamps.
-  // `plantedAt` must dominate every stamp the graph holds.
-  GraphState forkState(const Hlc& plantedAt) const;
+  // their order; every status seed is cleared, and `opens` says whether each node still opens its
+  // tree. Tombstones and edges keep their stamps. `plantedAt` must dominate every stamp the graph holds.
+  GraphState forkState(const Hlc& plantedAt, ForkOpens opens) const;
   // One entry's full CRDT state, for sparse persistence. nullopt for a never-seen key.
   std::optional<NodeStateEntry> exportNode(const NodeId& id) const;
   std::optional<EdgeStateEntry> exportEdge(const Edge& edge) const;
