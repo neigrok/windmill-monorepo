@@ -56,27 +56,34 @@ GraphState graftState(const LooseGraph& graph, const Graft& graft, const Hlc& at
   std::map<NodeId, NodeStateEntry> upserted;  // by id, so the frame lists each node once, in id order
   std::set<Edge> added;
   for (const NodeSpec& node : graft.document.nodes) {
+    const std::optional<NodeStateEntry> held = graph.exportNode(node.id);  // present, or what a delete left
     const auto omitted = graft.omittedNodeRegisters.find(node.id);
-    const auto carried = [&](NodeRegister held) {
-      return omitted == graft.omittedNodeRegisters.end() || !omitted->second.count(held);
-    };
-    // A carried register lands at the graft's stamp, an empty value included; an omitted one stays unset.
     NodeStateEntry entry;
     entry.id = node.id;
-    entry.createdAt = at;
-    if (carried(NodeRegister::label)) { entry.label = node.label; entry.labelAt = at; }
-    if (carried(NodeRegister::icon)) { entry.icon = node.icon; entry.iconAt = at; }
-    if (carried(NodeRegister::color)) { entry.color = node.color; entry.colorAt = at; }
-    if (carried(NodeRegister::order)) { entry.order = node.order; entry.orderAt = at; }
-    if (carried(NodeRegister::position)) { entry.position = node.position; entry.positionAt = at; }
-    if (carried(NodeRegister::status)) { entry.status = normalizeSeedStatus(node.status); entry.statusAt = at; }
-    if (carried(NodeRegister::description)) { entry.description = node.description; entry.descriptionAt = at; }
-    if (carried(NodeRegister::links)) { entry.links = node.links; entry.linksAt = at; }
-    if (carried(NodeRegister::opens)) { entry.opens = node.opens; entry.opensAt = at; }
-    upserted.emplace(node.id, std::move(entry));
+    if (!graph.hasNode(node.id)) entry.createdAt = at;  // new or revived; a present node keeps its creation
+    // A register lands at the graft's stamp when the batch carried it and it changes what the graph
+    // holds, an empty value included; one left out, or sent as the graph already holds it, stays unset.
+    const auto land = [&](NodeRegister reg, auto NodeStateEntry::*value, Hlc NodeStateEntry::*stamp,
+                          const auto& sent) {
+      const bool carried = omitted == graft.omittedNodeRegisters.end() || !omitted->second.count(reg);
+      if (!carried || (held && (*held).*value == sent)) return;
+      entry.*value = sent;
+      entry.*stamp = at;
+    };
+    land(NodeRegister::label, &NodeStateEntry::label, &NodeStateEntry::labelAt, node.label);
+    land(NodeRegister::icon, &NodeStateEntry::icon, &NodeStateEntry::iconAt, node.icon);
+    land(NodeRegister::color, &NodeStateEntry::color, &NodeStateEntry::colorAt, node.color);
+    land(NodeRegister::order, &NodeStateEntry::order, &NodeStateEntry::orderAt, node.order);
+    land(NodeRegister::position, &NodeStateEntry::position, &NodeStateEntry::positionAt, node.position);
+    land(NodeRegister::status, &NodeStateEntry::status, &NodeStateEntry::statusAt, normalizeSeedStatus(node.status));
+    land(NodeRegister::description, &NodeStateEntry::description, &NodeStateEntry::descriptionAt, node.description);
+    land(NodeRegister::links, &NodeStateEntry::links, &NodeStateEntry::linksAt, node.links);
+    land(NodeRegister::opens, &NodeStateEntry::opens, &NodeStateEntry::opensAt, node.opens);
+    if (entry != NodeStateEntry{.id = node.id}) upserted.emplace(node.id, std::move(entry));  // it lands something
     for (const NodeId& prereq : node.prerequisites) {
       const Edge edge{prereq, node.id};
-      if (!tombstoned.count(edge.from) && !tombstoned.count(edge.to)) added.insert(edge);
+      if (tombstoned.count(edge.from) || tombstoned.count(edge.to) || graph.edgePresent(edge.from, edge.to)) continue;
+      added.insert(edge);
     }
   }
 

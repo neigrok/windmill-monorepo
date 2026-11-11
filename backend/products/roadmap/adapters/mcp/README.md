@@ -346,11 +346,16 @@ A node may point at another tree: `opens` holds that tree's id.
   `seedStatus`, `description`, `links` and `opens`, and a kind's `label`, `description` and
   `crossBranchExempt`, left out, keep the value the tree holds, because the graft stamps an
   omitted register unset (`Graft::omittedNodeRegisters` and `graftState`,
-  `Graft::omittedKindRegisters` and `graftLegend`) and no stored stamp loses to that. A node
-  deleted earlier and re-sent revives with the registers it had. A sent register lands at the
-  graft's stamp, `""` and `[]` included, which is how a text or list field is cleared (`position`
-  and `seedStatus` have no empty value: `null` counts as left out); a new id's omitted
-  register lands as its default. Legend order is treated the same way — rank is never on the
+  `Graft::omittedKindRegisters` and `graftLegend`) and no stored stamp loses to that. A node the
+  tree holds keeps its creation stamp, so it keeps its place among its siblings, and a delete
+  stamped before the import that arrives after it still removes it; a node deleted earlier and
+  re-sent is revived at the graft's stamp with the registers it had. A sent node register lands at
+  the graft's stamp when it changes what the node holds, `""` and `[]` included, which is how a
+  text or list field is cleared (`position` and `seedStatus` have no empty value: `null` counts as
+  left out); one sent as the node already holds it, like a prerequisite edge the tree already
+  holds, is not stamped again, so the op row and the activity feed name what the import changed —
+  re-sending a node to add an edge reads as `linked`. A new id's omitted register lands as its
+  default. Legend order is treated the same way — rank is never on the
   wire, so a colliding kind keeps its place and a new kind lands after the last one, in batch
   order. A re-sent
   node's `prerequisites` meet its existing edges by `prerequisiteMode` — `merge` (the default)

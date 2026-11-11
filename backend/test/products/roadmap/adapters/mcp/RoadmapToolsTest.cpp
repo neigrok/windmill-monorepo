@@ -3,7 +3,9 @@
 #include "platform/adapters/mcp/CompositeToolHost.h"
 #include "platform/application/WriteObservation.h"
 #include "products/roadmap/adapters/mcp/ReadShape.h"
+#include "products/roadmap/adapters/json/CommandJson.h"
 #include "products/roadmap/adapters/mcp/RoadmapToolCatalog.h"
+#include "products/roadmap/application/ActivityFeed.h"
 #include "products/roadmap/application/ForkService.h"
 #include "test/testing.h"
 
@@ -1959,6 +1961,53 @@ TEST(mcp_import_subgraph_dry_run_of_a_field_less_node_previews_the_collision_and
     {"id":"review","label":"Backend review","icon":"magnifier","color":"sky","order":"a0","prerequisites":[],
      "position":{"x":3.0,"y":4.0},"seedStatus":"complete","description":"Read the diff.",
      "links":[{"url":"https://windmill.works/review","label":"guide"}]}],"missingNodeIds":[]})"));
+}
+
+// Re-sending a node the tree holds to add an edge edits it the way connect would: its creation stamp,
+// which orders it among its siblings, stays; the op row is the edge, and the feed says it was linked.
+TEST(mcp_import_subgraph_re_sending_a_held_node_keeps_its_creation_and_the_feed_says_what_changed) {
+  Harness h;
+  for (const char* id : {"root", "x"}) CHECK_FALSE(h.call("create_node", node(id, id)).isError);
+  for (const char* id : {"a", "b"}) {
+    Json::Value child = node(id, id);
+    child["parentId"] = "root";
+    CHECK_FALSE(h.call("create_node", child).isError);
+  }
+  const auto stateOf = [&](const char* id) {
+    for (const NodeStateEntry& entry : h.registry.open(TreeId{"t"})->exportState().nodes)
+      if (entry.id == NodeId{id}) return entry;
+    return NodeStateEntry{};
+  };
+  const NodeStateEntry held = stateOf("a");
+  const Json::Value resend = parse(R"({"nodes":[{"id":"a","label":"a","prerequisites":["root","x"]}]})");
+
+  Json::Value preview = resend;
+  preview["dryRun"] = true;
+  CHECK_EQ(body(h.call("import_subgraph", preview)), parse(R"({"nodes":1,"edges":2,"kinds":0,"nodeCollisions":["a"],
+    "kindCollisions":[],"newNodes":0,"newKinds":0,"prerequisiteMode":"merge","keptEdges":[],"keptEdgeCount":0,
+    "tombstoned":{"nodes":0,"edges":0},"dryRun":true,"tombstone":[]})"));
+  CHECK(stateOf("a") == held);
+
+  CHECK_EQ(body(h.call("import_subgraph", resend)), parse(R"({"nodes":1,"edges":2,"kinds":0,"nodeCollisions":["a"],
+    "kindCollisions":[],"newNodes":0,"newKinds":0,"prerequisiteMode":"merge","keptEdges":[],"keptEdgeCount":0,
+    "tombstoned":{"nodes":0,"edges":0},"graphApplied":true,"progressApplied":true,"imported":true,"seq":5,
+    "diagnosticsClean":true,"introducedDiagnostics":[]})"));
+  CHECK(stateOf("a") == held);
+  CHECK_EQ(strings((*nodeNamed(body(h.call("get_tree", kNoArgs)), "a"))["prerequisites"]),
+           (std::vector<std::string>{"root", "x"}));
+
+  REQUIRE_EQ(h.ops.byTree["t"].size(), 5u);
+  const Command& row = h.ops.byTree["t"].back().command;
+  CHECK_EQ(commandKind(row), std::string("AddEdge"));
+  CHECK_EQ(commandPayload(row), parse(R"({"from":"x","to":"a"})"));
+  const std::vector<ActivityEvent> feed =
+      activityFeed(h.registry.open(TreeId{"t"})->snapshot(), h.ops.byTree["t"], 50);
+  REQUIRE_EQ(feed.size(), 5u);
+  const ActivityEvent& linked = feed.back();
+  CHECK_EQ((std::vector<std::string>{std::to_string(linked.seq), std::to_string(linked.at), linked.actor, linked.verb,
+                                     linked.node.str(), linked.label, linked.kind, linked.summary}),
+           (std::vector<std::string>{"5", "0", "", "linked", "a", "a", "terracotta",
+                                     "linked x → a · cross-branch"}));
 }
 
 TEST(mcp_import_subgraph_tombstone_needs_the_delete_grant_the_way_delete_node_does) {

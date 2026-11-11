@@ -168,6 +168,98 @@ TEST(graft_admission_is_judged_on_what_the_graft_leaves_behind) {
   CHECK_FALSE(admit(g, swaps).has_value());
 }
 
+// A node the graph holds keeps its creation stamp when a batch re-sends it, so it keeps its place among
+// siblings ordered by creation. The frame carries only what the batch changes: an echoed label and a
+// held edge add nothing, the new edge lands at the graft's stamp.
+TEST(graft_state_keeps_a_held_nodes_creation_stamp_and_carries_only_what_the_batch_changes) {
+  LooseGraph g;
+  g.createNode(nid("root"), "Root", "", NodeColor::sky, std::nullopt, at(1000));
+  g.createNode(nid("x"), "X", "", NodeColor::sky, std::nullopt, at(1000));
+  g.createNode(nid("a"), "A", "", NodeColor::sky, std::nullopt, at(1001));
+  g.createNode(nid("b"), "B", "", NodeColor::sky, std::nullopt, at(1002));
+  g.addEdge(nid("root"), nid("a"), at(1001));
+  g.addEdge(nid("root"), nid("b"), at(1002));
+  const NodeStateEntry held = *g.exportNode(nid("a"));
+
+  NodeSpec resent = spec("a", {"root", "x"});
+  resent.label = "A";
+  Graft graft;
+  graft.document.nodes = {resent};
+  graft.omittedNodeRegisters[nid("a")] = {NodeRegister::icon, NodeRegister::color, NodeRegister::order,
+                                          NodeRegister::position, NodeRegister::status, NodeRegister::description,
+                                          NodeRegister::links};
+
+  const GraphState frame = graftState(g, graft, at(1003));
+  CHECK(frame == (GraphState{{}, {EdgeStateEntry{{nid("x"), nid("a")}, at(1003), {}}}}));
+
+  g.join(frame);
+  CHECK(*g.exportNode(nid("a")) == held);
+  CHECK_EQ(g.nodeView(nid("a"))->prerequisites, (std::vector<NodeId>{nid("root"), nid("x")}));
+}
+
+// An import asserts nothing about a node it re-sends: a delete stamped before the import and joined after
+// it still removes the node, as it would after a rename. What the import changed stays on the record the
+// delete leaves and the edge it added dangles, so a later revival brings both back.
+TEST(graft_state_loses_a_re_sent_node_to_a_delete_stamped_before_it_and_joined_after_it) {
+  LooseGraph g;
+  for (const char* id : {"root", "x", "a"}) g.createNode(nid(id), id, "", NodeColor::sky, std::nullopt, at(1));
+  g.addEdge(nid("root"), nid("a"), at(1));
+
+  NodeSpec renamed = spec("a", {"x"});
+  renamed.label = "A2";
+  Graft graft;
+  graft.document.nodes = {renamed};
+  graft.omittedNodeRegisters[nid("a")] = {NodeRegister::icon, NodeRegister::color, NodeRegister::order,
+                                          NodeRegister::position, NodeRegister::status, NodeRegister::description,
+                                          NodeRegister::links};
+  g.join(graftState(g, graft, at(3)));
+  g.join(GraphState{{NodeStateEntry{.id = nid("a"), .deletedAt = at(2)}}, {}});
+
+  CHECK_FALSE(g.hasNode(nid("a")));
+  CHECK(*g.exportNode(nid("a")) == (NodeStateEntry{.id = nid("a"), .createdAt = at(1), .deletedAt = at(2),
+                                                  .label = "A2", .labelAt = at(3), .iconAt = at(1),
+                                                  .color = NodeColor::sky, .colorAt = at(1)}));
+  CHECK_EQ(g.danglingEdges(), (std::vector<Edge>{{nid("root"), nid("a")}, {nid("x"), nid("a")}}));
+
+  Graft revive;
+  revive.document.nodes = {spec("a", {})};
+  revive.omittedNodeRegisters[nid("a")] = {NodeRegister::label, NodeRegister::icon, NodeRegister::color,
+                                           NodeRegister::order, NodeRegister::position, NodeRegister::status,
+                                           NodeRegister::description, NodeRegister::links};
+  g.join(graftState(g, revive, at(4)));
+  CHECK_EQ(g.nodeView(nid("a"))->label, std::string("A2"));
+  CHECK_EQ(g.nodeView(nid("a"))->prerequisites, (std::vector<NodeId>{nid("root"), nid("x")}));
+  CHECK(g.danglingEdges().empty());
+}
+
+// One batch, three kinds of id: a new node is created at the graft's stamp with what it carries, a
+// deleted one re-sent is revived at it, and a present one changes only in what it changes.
+TEST(graft_state_creates_a_new_node_revives_a_deleted_one_and_edits_a_present_one) {
+  LooseGraph g;
+  for (const char* id : {"root", "gone"}) g.createNode(nid(id), id, "", NodeColor::sky, std::nullopt, at(1));
+  g.deleteNode(nid("gone"), at(2));
+
+  NodeSpec fresh = spec("fresh", {"root"});
+  fresh.label = "Fresh";
+  NodeSpec root = spec("root", {});
+  root.label = "Root";
+  Graft graft;
+  graft.document.nodes = {fresh, spec("gone", {}), root};
+  for (const char* id : {"fresh", "root"})
+    graft.omittedNodeRegisters[nid(id)] = {NodeRegister::icon, NodeRegister::color, NodeRegister::order,
+                                           NodeRegister::position, NodeRegister::status,
+                                           NodeRegister::description, NodeRegister::links};
+  graft.omittedNodeRegisters[nid("gone")] = {NodeRegister::label, NodeRegister::icon, NodeRegister::color,
+                                             NodeRegister::order, NodeRegister::position, NodeRegister::status,
+                                             NodeRegister::description, NodeRegister::links};
+
+  CHECK(graftState(g, graft, at(3)) ==
+        (GraphState{{NodeStateEntry{.id = nid("fresh"), .createdAt = at(3), .label = "Fresh", .labelAt = at(3)},
+                     NodeStateEntry{.id = nid("gone"), .createdAt = at(3)},
+                     NodeStateEntry{.id = nid("root"), .label = "Root", .labelAt = at(3)}},
+                    {EdgeStateEntry{{nid("root"), nid("fresh")}, at(3), {}}}}));
+}
+
 // A register the document leaves off a node is stamped unset, so the join keeps what the graph holds;
 // a register it carries lands at the graft's stamp, an empty one included.
 TEST(graft_state_leaves_an_omitted_node_register_alone_and_lands_a_carried_one_even_empty) {
@@ -187,14 +279,13 @@ TEST(graft_state_leaves_an_omitted_node_register_alone_and_lands_a_carried_one_e
                                           NodeRegister::status, NodeRegister::links, NodeRegister::opens};
 
   const GraphState frame = graftState(g, graft, at(2));
-  CHECK(frame == (GraphState{{NodeStateEntry{.id = nid("n"), .createdAt = at(2), .iconAt = at(2),
-                                             .color = NodeColor::plum, .colorAt = at(2),
-                                             .descriptionAt = at(2)}},
+  CHECK(frame == (GraphState{{NodeStateEntry{.id = nid("n"), .iconAt = at(2), .color = NodeColor::plum,
+                                             .colorAt = at(2), .descriptionAt = at(2)}},
                              {}}));
 
   g.join(frame);
   CHECK(*g.exportNode(nid("n")) ==
-        (NodeStateEntry{.id = nid("n"), .createdAt = at(2), .label = "N", .labelAt = at(1), .iconAt = at(2),
+        (NodeStateEntry{.id = nid("n"), .createdAt = at(1), .label = "N", .labelAt = at(1), .iconAt = at(2),
                         .color = NodeColor::plum, .colorAt = at(2), .order = "a0", .orderAt = at(1),
                         .position = Vec2{1, 2}, .positionAt = at(1), .status = "complete", .statusAt = at(1),
                         .descriptionAt = at(2), .links = {Link{"home", "https://windmill.works"}},
@@ -219,8 +310,7 @@ TEST(graft_state_sets_clears_and_leaves_the_tree_a_node_opens) {
   sets.document.nodes = {pointed};
   sets.omittedNodeRegisters[nid("n")] = allButOpens;
   const GraphState setFrame = graftState(g, sets, at(2));
-  CHECK(setFrame ==
-        (GraphState{{NodeStateEntry{.id = nid("n"), .createdAt = at(2), .opens = TreeId{"t_sub"}, .opensAt = at(2)}}, {}}));
+  CHECK(setFrame == (GraphState{{NodeStateEntry{.id = nid("n"), .opens = TreeId{"t_sub"}, .opensAt = at(2)}}, {}}));
   g.join(setFrame);
   CHECK_EQ(g.nodeView(nid("n"))->opens, TreeId{"t_sub"});
 
@@ -230,7 +320,7 @@ TEST(graft_state_sets_clears_and_leaves_the_tree_a_node_opens) {
   leaves.document.nodes = {resent};
   leaves.omittedNodeRegisters[nid("n")] = everyRegister;
   const GraphState leftFrame = graftState(g, leaves, at(3));
-  CHECK(leftFrame == (GraphState{{NodeStateEntry{.id = nid("n"), .createdAt = at(3)}}, {}}));
+  CHECK(leftFrame == GraphState{});
   g.join(leftFrame);
   CHECK_EQ(g.nodeView(nid("n"))->opens, TreeId{"t_sub"});
   CHECK_EQ(g.exportNode(nid("n"))->opensAt, at(2));
