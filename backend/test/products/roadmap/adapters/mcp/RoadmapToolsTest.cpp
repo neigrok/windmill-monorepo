@@ -4072,6 +4072,30 @@ TEST(mcp_set_node_color_takes_a_kind_and_answers_the_kind_the_node_wears) {
            parse(R"({"treeId":"t","seq":5,"nodes":[{"id":"ship","color":"sky"}],"missingNodeIds":[]})"));
 }
 
+// A client frame can land a second kind on a hue a kind already wears. A write that names its kind is
+// answered with that kind, which wears the node's hue by construction; one that names none answers from
+// the hue join the read field `kind` uses.
+TEST(mcp_a_node_write_that_names_a_kind_answers_that_kind_when_two_kinds_share_its_hue) {
+  Harness h;
+  CHECK_FALSE(h.call("add_kind", parse(R"({"id":"backend","hue":"sky"})")).isError);
+  Subgraph frame;
+  frame.treeId = TreeId{"t"};
+  frame.frameId = "client-add-kind";
+  frame.actor = "r_client";
+  frame.intent = SubgraphIntent::live;
+  const Hlc stamp{5000, 0, "r_client"};
+  frame.legend.kinds.push_back(KindStateEntry{.id = KindId{"zinfra"}, .createdAt = stamp, .hue = NodeColor::sky,
+                                              .hueAt = stamp, .rank = 1, .rankAt = stamp});
+  REQUIRE(h.registry.open(TreeId{"t"})->joinSubgraph(frame, h.caller).has_value());
+
+  CHECK_EQ(body(h.call("create_node", parse(R"({"label":"N","kind":"backend"})"))),
+           parse(R"({"applied":true,"seq":3,"id":"n","kind":"backend","diagnosticsClean":true,"introducedDiagnostics":[]})"));
+  CHECK_EQ(body(h.call("set_node_color", parse(R"({"nodeId":"n","kind":"backend"})"))),
+           parse(R"({"applied":true,"seq":4,"id":"n","kind":"backend","diagnosticsClean":true,"introducedDiagnostics":[]})"));
+  CHECK_EQ(body(h.call("set_node_color", parse(R"({"nodeId":"n","color":"sky"})"))),
+           parse(R"({"applied":true,"seq":5,"id":"n","kind":"zinfra","diagnosticsClean":true,"introducedDiagnostics":[]})"));
+}
+
 TEST(mcp_patch_nodes_takes_a_kind_per_row_and_one_bad_row_writes_nothing) {
   Harness h;
   CHECK_FALSE(h.call("add_kind", parse(R"({"id":"owner","hue":"gold"})")).isError);

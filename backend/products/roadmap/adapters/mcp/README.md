@@ -283,8 +283,9 @@ Apply action for routine proposals; annotations describe each tool's effects.
   grapheme (a combining mark, a variation selector or a ZWJ emoji sequence backs the cut off),
   cut at a word and ellipsized when anything was cut.
 - **`kind` is the legend join** — the kind id whose hue equals the node's `color`, omitted from a
-  node no kind claims. A `fields` value on `get_tree` and `find_nodes`, never in a default, and the
-  `kind` that `create_node` and `set_node_color` answer with, from the same join.
+  node no kind claims. A `fields` value on `get_tree` and `find_nodes`, never in a default.
+  `create_node` and `set_node_color` answer `kind` too: the kind the write named, which wears the
+  node's hue, or, for a write that named none, the same join over the hue it landed.
 
 ## A node's hue: `color` or `kind`
 

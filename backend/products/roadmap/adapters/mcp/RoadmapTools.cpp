@@ -301,7 +301,7 @@ ToolResult withRoom(RoomRegistry& registry, const TreeId& tree, Fn&& fn) {
 }
 
 // The legend's hue -> kind id join: a node wears the kind its colour is the hue of, or none. The read
-// field `kind` and the replies of the node writes that set a colour both answer from it.
+// field `kind` answers from it, and so does a colour-setting write that named no kind.
 std::map<NodeColor, KindId> kindByHue(const std::vector<Kind>& kinds) {
   std::map<NodeColor, KindId> join;
   for (const Kind& kind : kinds) join[kind.hue] = kind.id;
@@ -605,11 +605,14 @@ ToolResult applyEdit(RoomRegistry& registry, TreeRegistry& trees, const TreeId& 
     out["seq"] = static_cast<Json::Int64>(seq);
     answerDiagnostics(before, room.diagnose(), out);
     if (payload.isMember("id")) out["id"] = payload["id"];
-    if (setsHue) {
-      const TreeData data = room.snapshot();
-      const std::map<NodeColor, KindId> worn = kindByHue(data.kinds);
-      for (const NodeSpec& node : data.nodes)
-        if (node.id.str() == payload["id"].asString() && worn.count(node.color)) out["kind"] = worn.at(node.color).str();
+    // A write that named its kind wears it, as resolveHue just said; one that named none is answered
+    // from the hue join, for the hue its command landed.
+    if (setsHue && payload.isMember("kind")) out["kind"] = payload["kind"];
+    if (setsHue && !payload.isMember("kind")) {
+      const NodeColor hue = std::holds_alternative<CreateNode>(*command) ? std::get<CreateNode>(*command).color
+                                                                          : std::get<SetNodeColor>(*command).color;
+      const std::map<NodeColor, KindId> worn = kindByHue(room.kinds());
+      if (worn.count(hue)) out["kind"] = worn.at(hue).str();
     }
     return ToolResult::json(out);
   });

@@ -106,6 +106,7 @@ public:
 
   TreeDiagnostics diagnose() const;
   TreeData snapshot() const;
+  std::vector<Kind> kinds() const { return legend_.kinds(); }  // the snapshot's legend, without its nodes
   GraphState exportState() const;
   LegendState exportLegend() const;
   // What a peer at `since` is missing — graph, legend, title and guide — covering the room's whole
