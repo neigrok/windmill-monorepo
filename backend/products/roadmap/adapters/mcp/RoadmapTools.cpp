@@ -109,13 +109,17 @@ Json::Value progressStatusArgument(const Json::Value& value) {
   return progressStatusName(*status);
 }
 
-// Each register an imported node may carry, by its name on this surface: `seedStatus` is the
-// document's `status`.
+// Each register an imported node or kind may leave out, by its name on this surface: a node's
+// `seedStatus` is the document's `status`.
 constexpr std::pair<const char*, NodeRegister> kImportedNodeRegisters[] = {
     {"label", NodeRegister::label},       {"icon", NodeRegister::icon},
     {"color", NodeRegister::color},       {"order", NodeRegister::order},
     {"position", NodeRegister::position}, {"seedStatus", NodeRegister::status},
     {"description", NodeRegister::description}, {"links", NodeRegister::links}};
+constexpr std::pair<const char*, KindRegister> kImportedKindRegisters[] = {
+    {"label", KindRegister::label},
+    {"description", KindRegister::description},
+    {"crossBranchExempt", KindRegister::crossBranchExempt}};
 
 std::optional<std::string> checkImportedNode(const Json::Value& node, const std::string& path) {
   if (!node.isObject()) return path + " must be an object, got " + typeName(node);
@@ -920,9 +924,8 @@ ToolResult importSubgraph(RoomRegistry& registry, ProgressService& progress, Pre
   }
   for (const Json::Value& kind : args["kinds"]) {
     std::set<KindRegister>& omitted = graft.omittedKindRegisters[KindId{kind["id"].asString()}];
-    if (kind["label"].isNull()) omitted.insert(KindRegister::label);
-    if (kind["description"].isNull()) omitted.insert(KindRegister::description);
-    if (kind["crossBranchExempt"].isNull()) omitted.insert(KindRegister::crossBranchExempt);
+    for (const auto& [field, held] : kImportedKindRegisters)
+      if (kind[field].isNull()) omitted.insert(held);
   }
   const bool replace = args["prerequisiteMode"].asString() == "replace";
   graft.prerequisites = replace ? PrerequisiteMode::replace : PrerequisiteMode::merge;

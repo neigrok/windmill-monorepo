@@ -73,8 +73,10 @@ GraphState graftState(const LooseGraph& graph, const Graft& graft, const Hlc& at
     if (carried(NodeRegister::description)) { entry.description = node.description; entry.descriptionAt = at; }
     if (carried(NodeRegister::links)) { entry.links = node.links; entry.linksAt = at; }
     upserted.emplace(node.id, std::move(entry));
-    for (const NodeId& prereq : node.prerequisites)
-      if (!tombstoned.count(prereq) && !tombstoned.count(node.id)) added.insert(Edge{prereq, node.id});
+    for (const NodeId& prereq : node.prerequisites) {
+      const Edge edge{prereq, node.id};
+      if (!tombstoned.count(edge.from) && !tombstoned.count(edge.to)) added.insert(edge);
+    }
   }
 
   GraphState state;

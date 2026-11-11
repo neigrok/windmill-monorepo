@@ -1842,27 +1842,13 @@ TEST(mcp_import_subgraph_replace_on_a_revived_id_removes_the_edges_its_delete_le
   CHECK_EQ(strings((*nodeNamed(got, "n"))["prerequisites"]), (std::vector<std::string>{"b"}));
 }
 
-namespace {
-
-// Two nodes seeded through import_subgraph: `review` carries every field a node has, `ask` only a label.
-void seedReview(Harness& h) {
-  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[
-    {"id":"ask","label":"Ask AI"},
-    {"id":"review","label":"Backend review","icon":"magnifier","color":"sky","order":"a0",
-     "position":{"x":3,"y":4},"seedStatus":"complete","description":"Read the diff.",
-     "links":[{"url":"https://windmill.works/review","label":"guide"}]}]})")).isError);
-}
-
-Json::Value reviewRead() {
-  return parse(R"({"nodeIds":["review"],"fields":["id","label","icon","color","order","prerequisites",
-    "position","seedStatus","description","links"]})");
-}
-
-}
-
 TEST(mcp_import_subgraph_keeps_every_field_a_re_sent_node_leaves_out) {
   Harness h;
-  seedReview(h);
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"ask","label":"Ask AI"},
+    {"id":"review","label":"Backend review","icon":"magnifier","color":"sky","order":"a0","position":{"x":3,"y":4},
+     "seedStatus":"complete","description":"Read the diff.","links":[{"url":"https://windmill.works/review","label":"guide"}]}]})")).isError);
+  const Json::Value read = parse(R"({"nodeIds":["review"],"fields":["id","label","icon","color","order",
+    "prerequisites","position","seedStatus","description","links"]})");
 
   const ToolResult result = h.call("import_subgraph", parse(R"({"nodes":[{"id":"review","prerequisites":["ask"]}]})"));
   CHECK_FALSE(result.isError);
@@ -1870,7 +1856,7 @@ TEST(mcp_import_subgraph_keeps_every_field_a_re_sent_node_leaves_out) {
     "newNodes":0,"newKinds":0,"prerequisiteMode":"merge","keptEdges":[],"keptEdgeCount":0,
     "tombstoned":{"nodes":0,"edges":0},"graphApplied":true,"progressApplied":true,"imported":true,"seq":2,
     "diagnosticsClean":true,"introducedDiagnostics":[]})"));
-  CHECK_EQ(body(h.call("get_nodes", reviewRead())), parse(R"({"treeId":"t","seq":2,"nodes":[
+  CHECK_EQ(body(h.call("get_nodes", read)), parse(R"({"treeId":"t","seq":2,"nodes":[
     {"id":"review","label":"Backend review","icon":"magnifier","color":"sky","order":"a0","prerequisites":["ask"],
      "position":{"x":3.0,"y":4.0},"seedStatus":"complete","description":"Read the diff.",
      "links":[{"url":"https://windmill.works/review","label":"guide"}]}],"missingNodeIds":[]})"));
@@ -1878,7 +1864,11 @@ TEST(mcp_import_subgraph_keeps_every_field_a_re_sent_node_leaves_out) {
 
 TEST(mcp_import_subgraph_applies_every_field_a_re_sent_node_carries_and_an_empty_one_clears_it) {
   Harness h;
-  seedReview(h);
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"ask","label":"Ask AI"},
+    {"id":"review","label":"Backend review","icon":"magnifier","color":"sky","order":"a0","position":{"x":3,"y":4},
+     "seedStatus":"complete","description":"Read the diff.","links":[{"url":"https://windmill.works/review","label":"guide"}]}]})")).isError);
+  const Json::Value read = parse(R"({"nodeIds":["review"],"fields":["id","label","icon","color","order",
+    "prerequisites","position","seedStatus","description","links"]})");
 
   const ToolResult result = h.call("import_subgraph", parse(R"({"nodes":[{"id":"review","label":"Review the backend",
     "icon":"","color":"plum","order":"","position":{"x":9,"y":10},"seedStatus":"none","description":"","links":[]}]})"));
@@ -1887,7 +1877,7 @@ TEST(mcp_import_subgraph_applies_every_field_a_re_sent_node_carries_and_an_empty
     "newNodes":0,"newKinds":0,"prerequisiteMode":"merge","keptEdges":[],"keptEdgeCount":0,
     "tombstoned":{"nodes":0,"edges":0},"graphApplied":true,"progressApplied":true,"imported":true,"seq":2,
     "diagnosticsClean":true,"introducedDiagnostics":[]})"));
-  CHECK_EQ(body(h.call("get_nodes", reviewRead())), parse(R"({"treeId":"t","seq":2,"nodes":[
+  CHECK_EQ(body(h.call("get_nodes", read)), parse(R"({"treeId":"t","seq":2,"nodes":[
     {"id":"review","label":"Review the backend","icon":"","color":"plum","prerequisites":[],
      "position":{"x":9.0,"y":10.0},"seedStatus":"none"}],"missingNodeIds":[]})"));
 }
@@ -1908,7 +1898,11 @@ TEST(mcp_import_subgraph_lands_a_new_node_with_the_defaults_for_what_it_leaves_o
 
 TEST(mcp_import_subgraph_replace_swaps_a_re_sent_nodes_prerequisites_and_keeps_the_fields_it_leaves_out) {
   Harness h;
-  seedReview(h);
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"ask","label":"Ask AI"},
+    {"id":"review","label":"Backend review","icon":"magnifier","color":"sky","order":"a0","position":{"x":3,"y":4},
+     "seedStatus":"complete","description":"Read the diff.","links":[{"url":"https://windmill.works/review","label":"guide"}]}]})")).isError);
+  const Json::Value read = parse(R"({"nodeIds":["review"],"fields":["id","label","icon","color","order",
+    "prerequisites","position","seedStatus","description","links"]})");
   CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"review","prerequisites":["ask"]}]})")).isError);
 
   const ToolResult result = h.call("import_subgraph", parse(R"({"nodes":[{"id":"plan","label":"Plan"},
@@ -1918,7 +1912,7 @@ TEST(mcp_import_subgraph_replace_swaps_a_re_sent_nodes_prerequisites_and_keeps_t
     "newNodes":1,"newKinds":0,"prerequisiteMode":"replace","keptEdges":[],"keptEdgeCount":0,"removedEdges":1,
     "tombstoned":{"nodes":0,"edges":0},"graphApplied":true,"progressApplied":true,"imported":true,"seq":3,
     "diagnosticsClean":true,"introducedDiagnostics":[]})"));
-  CHECK_EQ(body(h.call("get_nodes", reviewRead())), parse(R"({"treeId":"t","seq":3,"nodes":[
+  CHECK_EQ(body(h.call("get_nodes", read)), parse(R"({"treeId":"t","seq":3,"nodes":[
     {"id":"review","label":"Backend review","icon":"magnifier","color":"sky","order":"a0","prerequisites":["plan"],
      "position":{"x":3.0,"y":4.0},"seedStatus":"complete","description":"Read the diff.",
      "links":[{"url":"https://windmill.works/review","label":"guide"}]}],"missingNodeIds":[]})"));
@@ -1926,7 +1920,11 @@ TEST(mcp_import_subgraph_replace_swaps_a_re_sent_nodes_prerequisites_and_keeps_t
 
 TEST(mcp_import_subgraph_revives_a_deleted_node_with_the_fields_it_leaves_out) {
   Harness h;
-  seedReview(h);
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"ask","label":"Ask AI"},
+    {"id":"review","label":"Backend review","icon":"magnifier","color":"sky","order":"a0","position":{"x":3,"y":4},
+     "seedStatus":"complete","description":"Read the diff.","links":[{"url":"https://windmill.works/review","label":"guide"}]}]})")).isError);
+  const Json::Value read = parse(R"({"nodeIds":["review"],"fields":["id","label","icon","color","order",
+    "prerequisites","position","seedStatus","description","links"]})");
   CHECK_FALSE(h.call("delete_node", with("nodeId", "review")).isError);
 
   const ToolResult result = h.call("import_subgraph", parse(R"({"nodes":[{"id":"review"}]})"));
@@ -1935,7 +1933,7 @@ TEST(mcp_import_subgraph_revives_a_deleted_node_with_the_fields_it_leaves_out) {
     "newNodes":1,"newKinds":0,"prerequisiteMode":"merge","keptEdges":[],"keptEdgeCount":0,
     "tombstoned":{"nodes":0,"edges":0},"graphApplied":true,"progressApplied":true,"imported":true,"seq":3,
     "diagnosticsClean":true,"introducedDiagnostics":[]})"));
-  CHECK_EQ(body(h.call("get_nodes", reviewRead())), parse(R"({"treeId":"t","seq":3,"nodes":[
+  CHECK_EQ(body(h.call("get_nodes", read)), parse(R"({"treeId":"t","seq":3,"nodes":[
     {"id":"review","label":"Backend review","icon":"magnifier","color":"sky","order":"a0","prerequisites":[],
      "position":{"x":3.0,"y":4.0},"seedStatus":"complete","description":"Read the diff.",
      "links":[{"url":"https://windmill.works/review","label":"guide"}]}],"missingNodeIds":[]})"));
@@ -1943,7 +1941,11 @@ TEST(mcp_import_subgraph_revives_a_deleted_node_with_the_fields_it_leaves_out) {
 
 TEST(mcp_import_subgraph_dry_run_of_a_field_less_node_previews_the_collision_and_changes_nothing) {
   Harness h;
-  seedReview(h);
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"ask","label":"Ask AI"},
+    {"id":"review","label":"Backend review","icon":"magnifier","color":"sky","order":"a0","position":{"x":3,"y":4},
+     "seedStatus":"complete","description":"Read the diff.","links":[{"url":"https://windmill.works/review","label":"guide"}]}]})")).isError);
+  const Json::Value read = parse(R"({"nodeIds":["review"],"fields":["id","label","icon","color","order",
+    "prerequisites","position","seedStatus","description","links"]})");
 
   const ToolResult result = h.call("import_subgraph", parse(R"({"nodes":[{"id":"review","prerequisites":["ask"]}],
     "dryRun":true})"));
@@ -1951,7 +1953,7 @@ TEST(mcp_import_subgraph_dry_run_of_a_field_less_node_previews_the_collision_and
   CHECK_EQ(body(result), parse(R"({"nodes":1,"edges":1,"kinds":0,"nodeCollisions":["review"],"kindCollisions":[],
     "newNodes":0,"newKinds":0,"prerequisiteMode":"merge","keptEdges":[],"keptEdgeCount":0,
     "tombstoned":{"nodes":0,"edges":0},"dryRun":true,"tombstone":[]})"));
-  CHECK_EQ(body(h.call("get_nodes", reviewRead())), parse(R"({"treeId":"t","seq":1,"nodes":[
+  CHECK_EQ(body(h.call("get_nodes", read)), parse(R"({"treeId":"t","seq":1,"nodes":[
     {"id":"review","label":"Backend review","icon":"magnifier","color":"sky","order":"a0","prerequisites":[],
      "position":{"x":3.0,"y":4.0},"seedStatus":"complete","description":"Read the diff.",
      "links":[{"url":"https://windmill.works/review","label":"guide"}]}],"missingNodeIds":[]})"));
