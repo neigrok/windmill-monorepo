@@ -507,7 +507,7 @@ TEST(mcp_a_silent_no_op_is_refused_by_name) {
   CHECK(nothing.isError);
   CHECK_EQ(message(nothing),
            std::string("annotate_node: nothing to set — pass at least one of \"description\", "
-                       "\"appendDescription\", \"icon\", \"links\"."));
+                       "\"appendDescription\", \"icon\", \"links\", \"opens\"."));
 
   Json::Value halfPosition(Json::objectValue);
   halfPosition["label"] = "Half";
@@ -950,4 +950,73 @@ TEST(mcp_a_node_edit_on_a_missing_or_deleted_node_is_refused_by_name_and_plants_
   CHECK_EQ(body(h.call("get_tree", everything))["tree"]["nodes"].size(), 0u);
   CHECK_EQ(LooseGraph(h.trees.byId["t"].state).presentNodeIds().size(), 0u);
   CHECK_EQ(h.trees.byId["t"].head, static_cast<Seq>(2));  // the create and the delete; no phantom edit
+}
+
+TEST(mcp_opens_is_published_with_the_id_cap_wherever_it_is_taken_and_as_a_field_no_read_defaults_to) {
+  Harness h;
+  const Json::Value catalog = h.tools.listTools(h.actor);
+  const Json::Value* create = toolNamed(catalog, "create_node");
+  const Json::Value* annotate = toolNamed(catalog, "annotate_node");
+  const Json::Value* patch = toolNamed(catalog, "patch_nodes");
+  const Json::Value* import = toolNamed(catalog, "import_subgraph");
+  REQUIRE(create != nullptr);
+  REQUIRE(annotate != nullptr);
+  REQUIRE(patch != nullptr);
+  REQUIRE(import != nullptr);
+  for (const Json::Value& taken : {(*create)["inputSchema"]["properties"]["opens"],
+                                   (*annotate)["inputSchema"]["properties"]["opens"],
+                                   (*patch)["inputSchema"]["properties"]["updates"]["items"]["properties"]["opens"],
+                                   (*import)["inputSchema"]["properties"]["nodes"]["items"]["properties"]["opens"]}) {
+    CHECK_EQ(taken["type"].asString(), std::string("string"));
+    CHECK_EQ(taken["maxLength"].asUInt64(), 128u);
+  }
+
+  const Json::Value fields = list({"id", "label", "icon", "color", "kind", "order", "prerequisites", "position",
+                                   "status", "seedStatus", "state", "summary", "description", "links", "opens"});
+  for (const char* name : {"get_tree", "get_nodes", "find_nodes"}) {
+    const Json::Value* tool = toolNamed(catalog, name);
+    REQUIRE(tool != nullptr);
+    CHECK_EQ((*tool)["inputSchema"]["properties"]["fields"]["items"]["enum"], fields);
+  }
+  CHECK_EQ(kGetTreeFields.count(NodeField::opens), 0u);
+  CHECK_EQ(kFindNodesFields.count(NodeField::opens), 0u);
+}
+
+TEST(mcp_an_opens_that_is_no_tree_id_is_refused_by_its_path_and_a_null_is_absent) {
+  Harness h;
+  h.call("create_node", node("a", "A"));
+  const std::string over = repeat('t', 129);
+
+  CHECK_EQ(message(h.call("create_node", parse(R"({"label":"B","opens":7})"))),
+           std::string("create_node: argument \"opens\" must be a string, got number"));
+  CHECK_EQ(message(h.call("annotate_node", parse(R"({"nodeId":"a","opens":{"treeId":"t","title":"Test Roadmap"}})"))),
+           std::string("annotate_node: argument \"opens\" must be a string, got object"));
+  CHECK_EQ(message(h.call("patch_nodes", parse(R"({"updates":[{"nodeId":"a","opens":true}]})"))),
+           std::string("patch_nodes: argument \"updates[0].opens\" must be a string, got boolean"));
+  CHECK_EQ(message(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a"},{"id":"b","opens":["t"]}]})"))),
+           std::string("import_subgraph: argument \"nodes[1].opens\" must be a string, got array"));
+
+  CHECK_EQ(message(h.call("create_node", parse(R"({"label":"B","opens":")" + over + R"("})"))),
+           std::string("create_node: opens is 129 characters, 1 over the 128 cap"));
+  CHECK_EQ(message(h.call("annotate_node", parse(R"({"nodeId":"a","opens":")" + over + R"("})"))),
+           std::string("annotate_node: opens is 129 characters, 1 over the 128 cap"));
+  CHECK_EQ(message(h.call("patch_nodes", parse(R"({"updates":[{"nodeId":"a","opens":")" + over + R"("}]})"))),
+           std::string("patch_nodes: updates[0].opens is 129 characters, 1 over the 128 cap"));
+  CHECK_EQ(message(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","opens":")" + over + R"("}]})"))),
+           std::string("import_subgraph: nodes[0].opens is 129 characters, 1 over the 128 cap"));
+  Json::Value malformed(Json::objectValue);
+  malformed["nodeId"] = "a";
+  malformed["opens"] = std::string("t_\xC3\x28");
+  CHECK_EQ(message(h.call("annotate_node", malformed)), std::string("annotate_node: opens is not valid UTF-8"));
+
+  CHECK_EQ(message(h.call("annotate_node", parse(R"({"nodeId":"a","opens":null})"))),
+           std::string("annotate_node: nothing to set — pass at least one of \"description\", "
+                       "\"appendDescription\", \"icon\", \"links\", \"opens\"."));
+  CHECK_EQ(message(h.call("patch_nodes", parse(R"({"updates":[{"nodeId":"a","opens":null}]})"))),
+           std::string("patch_nodes: node \"a\": pass at least one field to patch"));
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"b","label":"B","opens":null})")).isError);
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"c","opens":null}]})")).isError);
+  CHECK_EQ(body(h.call("get_tree", parse(R"({"fields":["id","opens"]})")))["tree"]["nodes"],
+           parse(R"([{"id":"a"},{"id":"b"},{"id":"c"}])"));
+  CHECK(h.trees.titleReads.empty());
 }

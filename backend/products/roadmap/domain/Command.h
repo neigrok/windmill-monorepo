@@ -56,17 +56,20 @@ struct CreateNode {
   std::optional<Vec2> position;
   std::string description;
   std::vector<Link> links;
+  TreeId opens;  // the tree the node opens; an empty id opens none
 };
 // Set a node's free annotation. Each field is optional: a nullopt leaves that register untouched.
 // `description` replaces the body; `appendDescription` joins onto it after a blank line (or opens
 // it when it is empty) — a command carries one of the two at most, and the cap is held against the
-// body the node would then have. An empty `icon` clears it.
+// body the node would then have. An empty `icon` clears it, and an empty `opens` leaves the node
+// opening no tree.
 struct AnnotateNode {
   NodeId id;
   std::optional<std::string> description;
   std::optional<std::vector<Link>> links;
   std::optional<std::string> icon;
   std::optional<std::string> appendDescription;
+  std::optional<TreeId> opens;
 };
 struct AddEdge { NodeId from; NodeId to; };
 struct RemoveEdge { NodeId from; NodeId to; };
@@ -110,6 +113,7 @@ struct NodePatch {
   std::optional<NodeColor> color;
   std::optional<Vec2> position;
   std::optional<std::vector<Link>> links;
+  std::optional<TreeId> opens;  // an empty id clears the tree the node opens
 };
 
 struct NodePatchPlan {

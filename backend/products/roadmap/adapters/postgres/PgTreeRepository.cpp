@@ -405,6 +405,22 @@ std::set<TreeId> PgTreeRepository::listForkedSources(const UserId& owner) {
   return sources;
 }
 
+std::map<TreeId, std::string> PgTreeRepository::titlesOwnedBy(const UserId& owner, const std::set<TreeId>& trees) {
+  if (trees.empty()) return {};
+  Json::Value ids(Json::arrayValue);
+  for (const TreeId& tree : trees) ids.append(tree.str());
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
+  pqxx::result rows = txn.exec_params(
+      "SELECT id, title FROM trees WHERE deleted_at IS NULL AND owner_id = $1::uuid "
+      "AND id IN (SELECT jsonb_array_elements_text($2::jsonb))",
+      owner.str(), dump(ids));
+
+  std::map<TreeId, std::string> titles;
+  for (const auto& row : rows) titles.emplace(TreeId{row["id"].as<std::string>()}, row["title"].as<std::string>());
+  return titles;
+}
+
 void PgTreeRepository::softDelete(const TreeId& tree) {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};

@@ -16,7 +16,10 @@ Visibility-gated read, owner-only write, per-user progress. The two predicates a
   `canWrite` admits, because a tree id is the read capability of an unlisted tree. Every other
   reader — a stranger, a signed-out caller, a revoked session — receives `readerView`
   (`products/roadmap/domain/Subgraph.h`), the nodes without their pointers, from `GET` tree, the WS
-  subscribe delta and every live frame. MCP reads never carry the pointer.
+  subscribe delta and every live frame. The MCP reads answer it, as `opens: {treeId, title}`, to that
+  same caller alone and only for a tree of theirs that stands; an MCP write that sets one is refused
+  unless its target stands and is the caller's, in the same words for an absent tree and someone
+  else's, so the refusal confirms no id.
 - **Document writes** (`PUT`, WS `subgraph`, structural MCP tools) require
   a session (anonymous → `401`) and gate on `canWrite`, which is ownership and nothing else. **A tree
   is born owned** — the owner is written by the same insert that creates the row (create, fork, `PUT`

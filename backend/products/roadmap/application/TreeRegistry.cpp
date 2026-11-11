@@ -75,6 +75,10 @@ std::vector<TreeSummary> TreeRegistry::list(const UserId& owner) {
   return registrySummaries(loaded);
 }
 
+std::map<TreeId, std::string> TreeRegistry::titlesOwnedBy(const UserId& owner, const std::set<TreeId>& trees) {
+  return trees_.titlesOwnedBy(owner, trees);
+}
+
 TreeRegistry::Removal TreeRegistry::remove(const TreeId& tree, const UserId& caller) {
   // The strand serializes the retirement against the tree's socket frames, so no concurrent open()
   // can reload the tree between the delete and the drop.

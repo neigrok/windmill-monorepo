@@ -2,6 +2,7 @@
 #include "products/roadmap/domain/Graft.h"
 #include "test/testing.h"
 
+#include <set>
 #include <string>
 #include <vector>
 
@@ -175,6 +176,7 @@ TEST(graft_state_leaves_an_omitted_node_register_alone_and_lands_a_carried_one_e
   g.setOrder(nid("n"), "a0", at(1));
   g.setDescription(nid("n"), "Read it", at(1));
   g.setLinks(nid("n"), {Link{"home", "https://windmill.works"}}, at(1));
+  g.setOpens(nid("n"), TreeId{"t_sub"}, at(1));
 
   NodeSpec carried;
   carried.id = nid("n");
@@ -182,7 +184,7 @@ TEST(graft_state_leaves_an_omitted_node_register_alone_and_lands_a_carried_one_e
   Graft graft;
   graft.document.nodes = {carried};
   graft.omittedNodeRegisters[nid("n")] = {NodeRegister::label, NodeRegister::order, NodeRegister::position,
-                                          NodeRegister::status, NodeRegister::links};
+                                          NodeRegister::status, NodeRegister::links, NodeRegister::opens};
 
   const GraphState frame = graftState(g, graft, at(2));
   CHECK(frame == (GraphState{{NodeStateEntry{.id = nid("n"), .createdAt = at(2), .iconAt = at(2),
@@ -196,7 +198,49 @@ TEST(graft_state_leaves_an_omitted_node_register_alone_and_lands_a_carried_one_e
                         .color = NodeColor::plum, .colorAt = at(2), .order = "a0", .orderAt = at(1),
                         .position = Vec2{1, 2}, .positionAt = at(1), .status = "complete", .statusAt = at(1),
                         .descriptionAt = at(2), .links = {Link{"home", "https://windmill.works"}},
-                        .linksAt = at(1)}));
+                        .linksAt = at(1), .opens = TreeId{"t_sub"}, .opensAt = at(1)}));
+}
+
+// The tree a node opens is a register like the rest: a document that names one sets it, one that
+// carries it empty clears it, and one that leaves it out keeps it.
+TEST(graft_state_sets_clears_and_leaves_the_tree_a_node_opens) {
+  LooseGraph g;
+  g.createNode(nid("n"), "N", "", NodeColor::sky, std::nullopt, at(1));
+  const std::set<NodeRegister> allButOpens = {NodeRegister::label,    NodeRegister::icon,   NodeRegister::color,
+                                              NodeRegister::order,    NodeRegister::position, NodeRegister::status,
+                                              NodeRegister::description, NodeRegister::links};
+  std::set<NodeRegister> everyRegister = allButOpens;
+  everyRegister.insert(NodeRegister::opens);
+
+  NodeSpec pointed;
+  pointed.id = nid("n");
+  pointed.opens = TreeId{"t_sub"};
+  Graft sets;
+  sets.document.nodes = {pointed};
+  sets.omittedNodeRegisters[nid("n")] = allButOpens;
+  const GraphState setFrame = graftState(g, sets, at(2));
+  CHECK(setFrame ==
+        (GraphState{{NodeStateEntry{.id = nid("n"), .createdAt = at(2), .opens = TreeId{"t_sub"}, .opensAt = at(2)}}, {}}));
+  g.join(setFrame);
+  CHECK_EQ(g.nodeView(nid("n"))->opens, TreeId{"t_sub"});
+
+  NodeSpec resent;
+  resent.id = nid("n");
+  Graft leaves;
+  leaves.document.nodes = {resent};
+  leaves.omittedNodeRegisters[nid("n")] = everyRegister;
+  const GraphState leftFrame = graftState(g, leaves, at(3));
+  CHECK(leftFrame == (GraphState{{NodeStateEntry{.id = nid("n"), .createdAt = at(3)}}, {}}));
+  g.join(leftFrame);
+  CHECK_EQ(g.nodeView(nid("n"))->opens, TreeId{"t_sub"});
+  CHECK_EQ(g.exportNode(nid("n"))->opensAt, at(2));
+
+  Graft clears;
+  clears.document.nodes = {resent};
+  clears.omittedNodeRegisters[nid("n")] = allButOpens;
+  g.join(graftState(g, clears, at(4)));
+  CHECK_EQ(g.nodeView(nid("n"))->opens, TreeId{});
+  CHECK_EQ(g.exportNode(nid("n"))->opensAt, at(4));
 }
 
 // A register the document leaves off a kind is stamped unset, so the join keeps what the legend

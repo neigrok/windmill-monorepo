@@ -298,3 +298,43 @@ TEST(pg_a_save_onto_a_soft_deleted_tree_writes_nothing_and_answers_false) {
   CHECK_EQ(row[0]["head_seq"].as<long long>(), 0LL);
   CHECK_EQ(row[0]["nodes"].as<long long>(), 0LL);
 }
+
+// What a node may open and what a read may name: only the owner's trees that stand, whatever the ids
+// asked after, in one read.
+TEST(pg_titles_owned_by_answers_the_owners_standing_trees_alone_for_every_id_asked_in_one_call) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  const TreeId oddlyNamed{std::string("t_pgtest_opens,\"odd\" {id}")};
+  const TreeId retired{std::string("t_pgtest_opens_retired")};
+  const TreeId theirs{std::string("t_pgtest_opens_theirs")};
+  const TreeId nobodys{std::string("t_pgtest_opens_nobodys")};
+  const TreeId absent{std::string("t_pgtest_opens_absent")};
+  const auto clear = [&] {
+    PgLease conn{*pgTestPool()};
+    pqxx::work txn{*conn};
+    for (const TreeId& tree : {oddlyNamed, retired, theirs, nobodys})
+      txn.exec_params("DELETE FROM trees WHERE id = $1", tree.str());
+    txn.commit();
+  };
+  clear();
+  PgTreeRepository trees{pgTestPool()};
+  trees.create(kTree, LooseGraph().exportState(), LegendState{}, "Sam's first", kSam);
+  trees.create(oddlyNamed, LooseGraph().exportState(), LegendState{}, "Sam's \"second\", with commas", kSam);
+  trees.create(retired, LooseGraph().exportState(), LegendState{}, "Sam's retired", kSam);
+  trees.softDelete(retired);
+  trees.create(theirs, LooseGraph().exportState(), LegendState{}, "Eve's", kEve);
+  {
+    PgLease conn{*pgTestPool()};
+    pqxx::work txn{*conn};
+    txn.exec_params("INSERT INTO trees (id, title, head_seq) VALUES ($1, 'Nobody''s', 0)", nobodys.str());
+    txn.commit();
+  }
+  const std::set<TreeId> asked{kTree, oddlyNamed, retired, theirs, nobodys, absent};
+
+  CHECK_EQ(trees.titlesOwnedBy(kSam, asked),
+           (std::map<TreeId, std::string>{{kTree, "Sam's first"}, {oddlyNamed, "Sam's \"second\", with commas"}}));
+  CHECK_EQ(trees.titlesOwnedBy(kEve, asked), (std::map<TreeId, std::string>{{theirs, "Eve's"}}));
+  CHECK_EQ(trees.titlesOwnedBy(kSam, {theirs, nobodys, retired, absent}), (std::map<TreeId, std::string>{}));
+  CHECK_EQ(trees.titlesOwnedBy(kSam, {}), (std::map<TreeId, std::string>{}));
+  clear();
+}

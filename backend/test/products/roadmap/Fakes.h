@@ -72,6 +72,8 @@ struct FakeTreeRepository : TreeRepository {
   std::set<std::string> deletedIds;
   // One entry per save call: how many node rows the slice carried.
   std::vector<std::size_t> savedNodeCounts;
+  // One entry per titlesOwnedBy read: the ids it asked after.
+  std::vector<std::set<TreeId>> titleReads;
   bool latticeLoadsFail = false;  // load throws, the way a dropped connection does; loadAccess still answers
   bool savesFail = false;  // save throws, the way a write Postgres refuses does
   std::optional<StoredTree> load(const TreeId& tree) override {
@@ -195,6 +197,18 @@ struct FakeTreeRepository : TreeRepository {
       sources.insert(TreeId{from});
     }
     return sources;
+  }
+  // The same three rules the real query filters on: the row stands, it has an owner, and the owner is this one.
+  // Asked for no tree it reads nothing, as the real repository sends no query.
+  std::map<TreeId, std::string> titlesOwnedBy(const UserId& owner, const std::set<TreeId>& trees) override {
+    if (trees.empty()) return {};
+    titleReads.push_back(trees);
+    std::map<TreeId, std::string> titles;
+    for (const TreeId& tree : trees) {
+      const std::optional<StoredTree> stored = row(tree);
+      if (stored && stored->owner == std::optional<UserId>(owner)) titles.emplace(tree, stored->title.value);
+    }
+    return titles;
   }
   void softDelete(const TreeId& tree) override { deletedIds.insert(tree.str()); }
   void rename(const TreeId& tree, const Lww<std::string>& title) override {

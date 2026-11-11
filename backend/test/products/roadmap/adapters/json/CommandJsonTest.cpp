@@ -1,6 +1,8 @@
 #include "products/roadmap/adapters/json/CommandJson.h"
 
 #include "platform/adapters/json/JsonText.h"
+#include "products/roadmap/domain/Legend.h"
+#include "products/roadmap/domain/LooseGraph.h"
 #include "test/testing.h"
 
 #include <variant>
@@ -59,4 +61,64 @@ TEST(batch_round_trips_every_member_and_refuses_a_member_it_cannot_decode) {
   CHECK_FALSE(commandFromJson("Batch", parse("{\"commands\":[{\"kind\":\"DeleteNode\",\"payload\":{\"id\":\"a\"}},"
                                              "{\"kind\":\"NoSuchCommand\",\"payload\":{}}]}"))
                   .has_value());
+}
+
+TEST(create_and_annotate_payloads_carry_the_tree_a_node_opens_and_a_replay_lands_what_the_write_did) {
+  CreateNode created{NodeId{"a"}, "A", "star"};
+  created.opens = TreeId{"t_sub"};
+  const std::string createWire = "{\"color\":\"terracotta\",\"icon\":\"star\",\"id\":\"a\",\"label\":\"A\",\"opens\":\"t_sub\"}";
+  CHECK_EQ(dump(commandPayload(Command{created})), createWire);
+  const std::optional<Command> replayedCreate = commandFromJson("CreateNode", parse(createWire));
+  REQUIRE(replayedCreate.has_value());
+  CHECK_EQ(std::get<CreateNode>(*replayedCreate).opens, TreeId{"t_sub"});
+  CHECK_EQ(dump(commandPayload(*replayedCreate)), createWire);
+
+  AnnotateNode pointed{NodeId{"b"}};
+  pointed.opens = TreeId{"t_other"};
+  const std::string pointWire = "{\"id\":\"b\",\"opens\":\"t_other\"}";
+  CHECK_EQ(dump(commandPayload(Command{pointed})), pointWire);
+  AnnotateNode cleared{NodeId{"a"}};
+  cleared.opens = TreeId{};
+  const std::string clearWire = "{\"id\":\"a\",\"opens\":\"\"}";
+  CHECK_EQ(dump(commandPayload(Command{cleared})), clearWire);
+  const std::optional<Command> replayedClear = commandFromJson("AnnotateNode", parse(clearWire));
+  REQUIRE(replayedClear.has_value());
+  CHECK_EQ(std::get<AnnotateNode>(*replayedClear).opens, std::optional<TreeId>(TreeId{}));
+
+  const Command batch = Batch{{Command{created}, Command{CreateNode{NodeId{"b"}, "B", ""}}, Command{pointed}}};
+  const std::optional<Command> replayedBatch = commandFromJson("Batch", commandPayload(batch));
+  REQUIRE(replayedBatch.has_value());
+  Legend legend;
+  LooseGraph written;
+  merge(written, legend, batch, Hlc{7, 0, "srv"});
+  merge(written, legend, Command{cleared}, Hlc{8, 0, "srv"});
+  LooseGraph replayed;
+  merge(replayed, legend, *replayedBatch, Hlc{7, 0, "srv"});
+  merge(replayed, legend, *replayedClear, Hlc{8, 0, "srv"});
+  CHECK(replayed.exportState() == written.exportState());
+  CHECK_EQ(written.nodeView(NodeId{"a"})->opens, TreeId{});
+  CHECK_EQ(written.exportNode(NodeId{"a"})->opensAt, (Hlc{8, 0, "srv"}));
+  CHECK_EQ(written.nodeView(NodeId{"b"})->opens, TreeId{"t_other"});
+}
+
+TEST(a_stored_create_or_annotate_row_without_opens_still_decodes_and_touches_no_pointer) {
+  const std::string createWire = "{\"color\":\"sky\",\"icon\":\"\",\"id\":\"a\",\"label\":\"A\"}";
+  const std::optional<Command> created = commandFromJson("CreateNode", parse(createWire));
+  REQUIRE(created.has_value());
+  CHECK_EQ(std::get<CreateNode>(*created).opens, TreeId{});
+  CHECK_EQ(dump(commandPayload(*created)), createWire);
+
+  const std::string annotateWire = "{\"description\":\"a note\",\"id\":\"a\"}";
+  const std::optional<Command> annotated = commandFromJson("AnnotateNode", parse(annotateWire));
+  REQUIRE(annotated.has_value());
+  CHECK_FALSE(std::get<AnnotateNode>(*annotated).opens.has_value());
+  CHECK_EQ(dump(commandPayload(*annotated)), annotateWire);
+
+  Legend legend;
+  LooseGraph graph;
+  graph.createNode(NodeId{"a"}, "A", "", NodeColor::sky, std::nullopt, Hlc{1, 0, "srv"});
+  graph.setOpens(NodeId{"a"}, TreeId{"t_sub"}, Hlc{2, 0, "srv"});
+  merge(graph, legend, *annotated, Hlc{3, 0, "srv"});
+  CHECK_EQ(graph.nodeView(NodeId{"a"})->opens, TreeId{"t_sub"});
+  CHECK_EQ(graph.exportNode(NodeId{"a"})->opensAt, (Hlc{2, 0, "srv"}));
 }

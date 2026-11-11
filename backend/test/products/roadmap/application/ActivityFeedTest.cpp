@@ -103,3 +103,36 @@ TEST(activity_sums_a_batch_by_verb_under_its_first_members_subject) {
   CHECK_EQ(events[1].summary, std::string("unlinked 1 link"));
   CHECK_EQ(events[1].node, nid("renderer"));
 }
+
+// The feed goes to every reader of a tree, so it never says which tree a node opens.
+TEST(activity_names_no_tree_a_node_opens) {
+  CreateNode created{nid("renderer"), "WebGL2 renderer", "zap", NodeColor::sky, {}, std::nullopt};
+  created.opens = TreeId{"t_private_sub"};
+  AnnotateNode pointed{nid("product")};
+  pointed.opens = TreeId{"t_private_sub"};
+  std::vector<AppliedOp> ops = {
+      op(1, created, "dev", 1000),
+      op(2, pointed, "dev", 2000),
+      op(3, Batch{{Command{pointed}, Command{created}}}, "dev", 3000),
+  };
+
+  std::vector<ActivityEvent> events = activityFeed(currentTree(), ops, 100);
+
+  REQUIRE_EQ(events.size(), 2u);
+  CHECK_EQ(events[0].seq, 1u);
+  CHECK_EQ(events[0].verb, std::string("added"));
+  CHECK_EQ(events[0].node, nid("renderer"));
+  CHECK_EQ(events[0].label, std::string("WebGL2 renderer"));
+  CHECK_EQ(events[0].kind, std::string("sky"));
+  CHECK_EQ(events[0].summary, std::string("added WebGL2 renderer"));
+  CHECK_EQ(events[0].actor, std::string("You"));
+  CHECK_EQ(events[0].at, 1000u);
+  CHECK_EQ(events[1].seq, 3u);
+  CHECK_EQ(events[1].actor, std::string("You"));
+  CHECK_EQ(events[1].at, 3000u);
+  CHECK_EQ(events[1].verb, std::string("added"));
+  CHECK_EQ(events[1].node, nid("renderer"));
+  CHECK_EQ(events[1].label, std::string("WebGL2 renderer"));
+  CHECK_EQ(events[1].kind, std::string("sky"));
+  CHECK_EQ(events[1].summary, std::string("added 1 node"));
+}

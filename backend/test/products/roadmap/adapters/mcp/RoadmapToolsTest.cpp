@@ -15,7 +15,7 @@ namespace {
 
 Json::Value everyNodeField() {
   return list({"id", "label", "icon", "color", "kind", "order", "prerequisites", "position", "status",
-               "seedStatus", "state", "summary", "description", "links"});
+               "seedStatus", "state", "summary", "description", "links", "opens"});
 }
 
 std::vector<std::string> ids(const Json::Value& nodes) {
@@ -873,6 +873,7 @@ TEST(mcp_fields_round_trips_every_field_of_a_node) {
   Json::Value links(Json::arrayValue);
   links.append(link);
   seed["links"] = links;
+  seed["opens"] = "t";
 
   Json::Value nodes(Json::arrayValue);
   nodes.append(node("a", "A"));
@@ -885,8 +886,9 @@ TEST(mcp_fields_round_trips_every_field_of_a_node) {
   args["fields"] = everyNodeField();
   const Json::Value b = body(h.call("get_tree", args))["tree"]["nodes"][1];
   CHECK_EQ(keys(b), (std::vector<std::string>{"color", "description", "icon", "id", "label", "links",
-                                              "order", "position", "prerequisites", "seedStatus",
+                                              "opens", "order", "position", "prerequisites", "seedStatus",
                                               "state", "status", "summary"}));  // no kind wears plum
+  CHECK_EQ(b["opens"], parse(R"({"treeId":"t","title":"Test Roadmap"})"));
   CHECK_EQ(b["id"].asString(), std::string("b"));
   CHECK_EQ(b["label"].asString(), std::string("B"));
   CHECK_EQ(b["icon"].asString(), std::string("anchor"));
@@ -1020,7 +1022,7 @@ TEST(mcp_an_unknown_field_names_it_and_the_legal_set) {
   CHECK(misspelled.isError);
   CHECK_EQ(message(misspelled),
            std::string("find_nodes: fields[1] \"labl\" is not one of {id, label, icon, color, kind, order, "
-                       "prerequisites, position, status, seedStatus, state, summary, description, links}"));
+                       "prerequisites, position, status, seedStatus, state, summary, description, links, opens}"));
 
   Json::Value kindArgs(Json::objectValue);
   kindArgs["kindFields"] = list({"color"});
@@ -2193,7 +2195,7 @@ TEST(mcp_import_subgraph_behind_the_gate_refuses_a_nested_key_by_its_path) {
   CHECK(refused.isError);
   CHECK_EQ(message(refused),
            std::string("import_subgraph: unknown argument \"nodes[1].deleted\". nodes[1] takes: color, "
-                       "description, icon, id, label, links, order, position, prerequisites, seedStatus."));
+                       "description, icon, id, label, links, opens, order, position, prerequisites, seedStatus."));
   CHECK_EQ(body(h.call("get_tree", kNoArgs))["tree"]["nodes"].size(), 0u);
 
   Json::Value deeper = node("x", "X");
@@ -2533,7 +2535,7 @@ TEST(mcp_annotate_node_appends_to_the_description_and_refuses_both_forms_at_once
   nothing["nodeId"] = "a";
   CHECK_EQ(message(h.call("annotate_node", nothing)),
            std::string("annotate_node: nothing to set — pass at least one of \"description\", "
-                       "\"appendDescription\", \"icon\", \"links\"."));
+                       "\"appendDescription\", \"icon\", \"links\", \"opens\"."));
 
   Json::Value tail(Json::objectValue);
   tail["nodeId"] = "a";
@@ -3302,4 +3304,211 @@ TEST(mcp_forking_your_own_tree_keeps_its_guide_yours_and_anyone_elses_does_not) 
 
   REQUIRE(forks.fork(TreeId{"t_theirs"}, "t_theirs_again", "", stranger).outcome == ForkService::Outcome::forked);
   CHECK_EQ(guideOf("t_theirs_again", stranger), parse(R"({"text":"Rig first, then sail.","yours":false})"));
+}
+
+// A node points at another tree of its owner's through any of the four write tools, and the three
+// reads answer that tree's id and title when asked for the field.
+TEST(mcp_a_node_opens_a_tree_through_each_write_tool_and_every_read_answers_its_id_and_title) {
+  Harness h;
+  h.trees.byId["t_sub"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Deep dive", {}}, 0, h.caller};
+
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"a","label":"A","opens":"t_sub"})")).isError);
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"b","label":"B"})")).isError);
+  CHECK_FALSE(h.call("annotate_node", parse(R"({"nodeId":"b","opens":"t_sub"})")).isError);
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"c","label":"C","opens":""})")).isError);
+  CHECK_EQ(body(h.call("patch_nodes", parse(R"({"updates":[{"nodeId":"c","opens":"t_sub"}]})"))),
+           parse(R"({"treeId":"t","applied":true,"dryRun":false,"seq":5,"changedNodeIds":["c"],"unchangedNodeIds":[],"diagnosticsClean":true,"introducedDiagnostics":[]})"));
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"d","label":"D","opens":"t_sub"},{"id":"e","label":"E"}]})")).isError);
+
+  const Json::Value expected = parse(
+      R"([{"id":"a","opens":{"treeId":"t_sub","title":"Deep dive"}},{"id":"b","opens":{"treeId":"t_sub","title":"Deep dive"}},
+          {"id":"c","opens":{"treeId":"t_sub","title":"Deep dive"}},{"id":"d","opens":{"treeId":"t_sub","title":"Deep dive"}},
+          {"id":"e"}])");
+  CHECK_EQ(body(h.call("get_tree", parse(R"({"fields":["id","opens"]})")))["tree"]["nodes"], expected);
+  Json::Value batch = parse(R"({"treeId":"t","seq":6,"missingNodeIds":[]})");
+  batch["nodes"] = expected;
+  CHECK_EQ(body(h.call("get_nodes", parse(R"({"nodeIds":["a","b","c","d","e"],"fields":["id","opens"]})"))), batch);
+  CHECK_EQ(body(h.call("find_nodes", parse(R"({"fields":["id","opens"]})")))["nodes"], expected);
+  CHECK_EQ(body(h.call("get_tree", kNoArgs))["tree"]["nodes"][0],
+           parse(R"({"id":"a","label":"A","color":"terracotta","prerequisites":[]})"));
+  std::map<std::string, std::string> stored;
+  for (const NodeStateEntry& node : h.trees.byId["t"].state.nodes) stored[node.id.str()] = node.opens.str();
+  CHECK_EQ(stored, (std::map<std::string, std::string>{
+                       {"a", "t_sub"}, {"b", "t_sub"}, {"c", "t_sub"}, {"d", "t_sub"}, {"e", ""}}));
+}
+
+TEST(mcp_annotate_node_and_patch_nodes_clear_the_tree_a_node_opens_with_an_empty_string) {
+  Harness h;
+  h.trees.byId["t_sub"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Deep dive", {}}, 0, h.caller};
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"a","label":"A","opens":"t_sub"})")).isError);
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"b","label":"B","opens":"t_sub"})")).isError);
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"c","label":"C","opens":"t_sub"})")).isError);
+
+  CHECK_FALSE(h.call("annotate_node", parse(R"({"nodeId":"a","opens":""})")).isError);
+  CHECK_EQ(body(h.call("patch_nodes", parse(R"({"updates":[{"nodeId":"b","opens":""},{"nodeId":"c","opens":"t_sub"}]})"))),
+           parse(R"({"treeId":"t","applied":true,"dryRun":false,"seq":5,"changedNodeIds":["b"],"unchangedNodeIds":["c"],"diagnosticsClean":true,"introducedDiagnostics":[]})"));
+  CHECK_FALSE(h.call("annotate_node", parse(R"({"nodeId":"c","description":"a note","opens":null})")).isError);
+
+  CHECK_EQ(body(h.call("get_tree", parse(R"({"fields":["id","opens"]})")))["tree"]["nodes"],
+           parse(R"([{"id":"a"},{"id":"b"},{"id":"c","opens":{"treeId":"t_sub","title":"Deep dive"}}])"));
+}
+
+TEST(mcp_an_import_that_re_sends_a_node_without_opens_keeps_its_tree_and_an_empty_one_clears_it) {
+  Harness h;
+  h.trees.byId["t_sub"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Deep dive", {}}, 0, h.caller};
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A","opens":"t_sub"}]})")).isError);
+
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"Renamed"}]})")).isError);
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","opens":null}]})")).isError);
+  CHECK_EQ(body(h.call("get_tree", parse(R"({"fields":["id","label","opens"]})")))["tree"]["nodes"],
+           parse(R"([{"id":"a","label":"Renamed","opens":{"treeId":"t_sub","title":"Deep dive"}}])"));
+
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","opens":""}]})")).isError);
+  CHECK_EQ(body(h.call("get_tree", parse(R"({"fields":["id","label","opens"]})")))["tree"]["nodes"],
+           parse(R"([{"id":"a","label":"Renamed"}])"));
+}
+
+// A tree id is the read capability of an unlisted tree, so a pointer at a tree that is not there and
+// one at somebody else's tree are refused in the same words, and nothing is written.
+TEST(mcp_a_tree_that_is_not_the_callers_cannot_be_opened_and_absent_reads_exactly_as_someone_elses) {
+  Harness h;
+  h.trees.byId["t_sub"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Deep dive", {}}, 0, h.caller};
+  h.trees.byId["t_theirs"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Their plans", {}}, 0,
+                                        uid("someone-else"), Visibility::public_};
+  h.trees.byId["t_nobodys"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Demo", {}}, 0, std::nullopt,
+                                         Visibility::public_};
+  h.trees.byId["t_gone"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Retired", {}}, 0, h.caller};
+  h.trees.softDelete(TreeId{"t_gone"});
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"a","label":"A","opens":"t_sub"})")).isError);
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"b","label":"B"})")).isError);
+  const StoredTree before = h.trees.byId["t"];
+  const Json::Value document = body(h.call("get_tree", parse(R"({"fields":["id","label","opens"]})")));
+
+  const auto refusal = [](const std::string& tool, const std::string& path, const std::string& target) {
+    return tool + ": " + path + " names \"" + target +
+           "\", which is not a tree of yours — a node opens only a tree you own: list_trees lists them, and "
+           "someone else's tree is copied into one of yours first, with create_tree then import_subgraph";
+  };
+  for (const std::string target : {"t_absent", "t_theirs", "t_nobodys", "t_gone"}) {
+    CHECK_EQ(message(h.call("create_node", parse(R"({"id":"c","label":"C","opens":")" + target + R"("})"))),
+             refusal("create_node", "opens", target));
+    CHECK_EQ(message(h.call("annotate_node", parse(R"({"nodeId":"a","description":"kept out","opens":")" + target + R"("})"))),
+             refusal("annotate_node", "opens", target));
+    for (const std::string dryRun : {"false", "true"}) {
+      CHECK_EQ(message(h.call("patch_nodes", parse(R"({"updates":[{"nodeId":"a","label":"Kept out"},{"nodeId":"b","opens":")" +
+                                                   target + R"("}],"dryRun":)" + dryRun + "}"))),
+               refusal("patch_nodes", "updates[1].opens", target));
+      CHECK_EQ(message(h.call("import_subgraph",
+                              parse(R"({"nodes":[{"id":"n0","opens":"t_sub"},{"id":"n1"},{"id":"n2","opens":")" + target +
+                                    R"("}],"dryRun":)" + dryRun + "}"))),
+               refusal("import_subgraph", "nodes[2].opens", target));
+    }
+  }
+
+  CHECK(h.trees.byId["t"] == before);
+  CHECK_EQ(body(h.call("get_tree", parse(R"({"fields":["id","label","opens"]})"))), document);
+  CHECK_EQ(document["seq"].asInt64(), 2);
+  CHECK_EQ(h.bus.subgraphBroadcasts.size(), 2u);
+  CHECK_EQ(h.ops.byTree["t"].size(), 2u);
+}
+
+TEST(mcp_a_node_may_open_the_tree_it_is_in) {
+  Harness h;
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"a","label":"A","opens":"t"})")).isError);
+  CHECK_EQ(body(h.call("get_tree", parse(R"({"fields":["id","opens"]})")))["tree"]["nodes"],
+           parse(R"([{"id":"a","opens":{"treeId":"t","title":"Test Roadmap"}}])"));
+}
+
+// The pointer and the opened tree's title go to the tree's writer alone: a tree id is the read
+// capability of an unlisted tree and a title is its owner's words.
+TEST(mcp_no_read_answers_the_tree_a_node_opens_to_a_caller_who_cannot_write_the_tree) {
+  Harness h;
+  h.trees.byId["t"].visibility = Visibility::public_;
+  h.trees.byId["t_secret_sub"] =
+      StoredTree{LooseGraph().exportState(), LegendState{}, {"Secret plans", {}}, 0, h.caller, Visibility::unlisted};
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"a","label":"A","opens":"t_secret_sub"})")).isError);
+  const std::size_t readsAfterTheWrite = h.trees.titleReads.size();
+
+  for (const UserId& reader : {uid("stranger"), UserId{}}) {
+    const ToolCaller caller{reader, ToolScope::everything()};
+    const ToolResult tree = h.tools.callTool("get_tree", parse(R"({"treeId":"t","fields":["id","opens"]})"), caller);
+    CHECK_EQ(body(tree)["tree"]["nodes"], parse(R"([{"id":"a"}])"));
+    const ToolResult nodes =
+        h.tools.callTool("get_nodes", parse(R"({"treeId":"t","nodeIds":["a"],"fields":["id","opens"]})"), caller);
+    CHECK_EQ(body(nodes), parse(R"({"treeId":"t","seq":1,"nodes":[{"id":"a"}],"missingNodeIds":[]})"));
+    const ToolResult found = h.tools.callTool("find_nodes", parse(R"({"treeId":"t","fields":["id","opens"]})"), caller);
+    CHECK_EQ(body(found), parse(R"({"count":1,"nodes":[{"id":"a"}]})"));
+    for (const ToolResult& reply : {tree, nodes, found}) {
+      CHECK_EQ(message(reply).find("t_secret_sub"), std::string::npos);
+      CHECK_EQ(message(reply).find("Secret plans"), std::string::npos);
+    }
+  }
+  CHECK_EQ(h.trees.titleReads.size(), readsAfterTheWrite);
+
+  CHECK_EQ(body(h.call("get_tree", parse(R"({"fields":["id","opens"]})")))["tree"]["nodes"],
+           parse(R"([{"id":"a","opens":{"treeId":"t_secret_sub","title":"Secret plans"}}])"));
+}
+
+// The room holds a pointer to nothing but its length, so one may name a tree its owner does not own:
+// the read answers it to nobody.
+TEST(mcp_a_pointer_at_a_tree_the_owner_does_not_own_or_that_was_deleted_reads_back_as_no_key) {
+  Harness h;
+  h.trees.byId["t_sub"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Deep dive", {}}, 0, h.caller};
+  h.trees.byId["t_theirs"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Their plans", {}}, 0,
+                                        uid("someone-else"), Visibility::public_};
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"a","label":"A","opens":"t_sub"})")).isError);
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"b","label":"B"})")).isError);
+  AnnotateNode planted{NodeId{"b"}};
+  planted.opens = TreeId{"t_theirs"};
+  h.registry.open(TreeId{"t"})->applyCommand(planted, h.clock.nowMs(), h.caller);
+
+  CHECK_EQ(body(h.call("get_tree", parse(R"({"fields":["id","opens"]})")))["tree"]["nodes"],
+           parse(R"([{"id":"a","opens":{"treeId":"t_sub","title":"Deep dive"}},{"id":"b"}])"));
+
+  h.trees.softDelete(TreeId{"t_sub"});
+  CHECK_EQ(body(h.call("get_tree", parse(R"({"fields":["id","opens"]})")))["tree"]["nodes"],
+           parse(R"([{"id":"a"},{"id":"b"}])"));
+  CHECK_EQ(body(h.call("get_nodes", parse(R"({"nodeIds":["a","b"],"fields":["id","opens"]})"))),
+           parse(R"({"treeId":"t","seq":3,"nodes":[{"id":"a"},{"id":"b"}],"missingNodeIds":[]})"));
+  CHECK_EQ(body(h.call("find_nodes", parse(R"({"fields":["id","opens"]})"))),
+           parse(R"({"count":2,"nodes":[{"id":"a"},{"id":"b"}]})"));
+}
+
+// The opened trees are asked after once for a whole call, and a reply reads their titles only when
+// the field is asked for.
+TEST(mcp_the_trees_a_call_opens_are_read_once_and_a_reply_reads_titles_only_when_asked_for_opens) {
+  Harness h;
+  h.trees.byId["t_sub"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Deep dive", {}}, 0, h.caller};
+  h.trees.byId["t_other"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Side quest", {}}, 0, h.caller};
+
+  CHECK_FALSE(h.call("import_subgraph",
+                     parse(R"({"nodes":[{"id":"a","opens":"t_sub"},{"id":"b","opens":"t_other"},{"id":"c","opens":"t_sub"},{"id":"d"}]})"))
+                  .isError);
+  CHECK_EQ(h.trees.titleReads, (std::vector<std::set<TreeId>>{{TreeId{"t_other"}, TreeId{"t_sub"}}}));
+  CHECK_FALSE(h.call("patch_nodes", parse(R"({"updates":[{"nodeId":"a","opens":"t_other"},{"nodeId":"d","opens":"t_sub"},{"nodeId":"b","label":"B"}]})")).isError);
+  CHECK_EQ(h.trees.titleReads.size(), 2u);
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"e","label":"E"})")).isError);
+  CHECK_FALSE(h.call("annotate_node", parse(R"({"nodeId":"e","opens":""})")).isError);
+  CHECK_EQ(h.trees.titleReads.size(), 2u);
+
+  CHECK_FALSE(h.call("get_tree", kNoArgs).isError);
+  CHECK_FALSE(h.call("find_nodes", kNoArgs).isError);
+  CHECK_FALSE(h.call("get_nodes", parse(R"({"nodeIds":["a"],"fields":["id","label","description"]})")).isError);
+  CHECK_EQ(h.trees.titleReads.size(), 2u);
+  CHECK_FALSE(h.call("get_tree", parse(R"({"fields":["id","opens"]})")).isError);
+  CHECK_EQ(h.trees.titleReads.size(), 3u);
+  CHECK_EQ(h.trees.titleReads.back(), (std::set<TreeId>{TreeId{"t_other"}, TreeId{"t_sub"}}));
+}
+
+// A title is read off the stored row: a rename that reached the row is what the read answers.
+TEST(mcp_opens_answers_the_opened_trees_stored_title) {
+  Harness h;
+  h.trees.byId["t_sub"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Deep dive", {}}, 0, h.caller};
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"a","label":"A","opens":"t_sub"})")).isError);
+  REQUIRE(h.registry.open(TreeId{"t_sub"}) != nullptr);
+
+  CHECK(h.treeRegistry.rename(TreeId{"t_sub"}, h.caller, "Deeper dive") == TreeRegistry::Renaming::renamed);
+
+  CHECK_EQ(body(h.call("get_tree", parse(R"({"fields":["id","opens"]})")))["tree"]["nodes"],
+           parse(R"([{"id":"a","opens":{"treeId":"t_sub","title":"Deeper dive"}}])"));
 }
