@@ -4029,6 +4029,11 @@ TEST(mcp_create_node_refuses_a_kind_the_legend_does_not_hold_or_a_colour_that_di
   CHECK_EQ(message(h.call("create_node", parse(R"({"label":"Ship","kind":"ownr"})"))),
            std::string("create_node: kind \"ownr\" is not a kind of this tree; its legend holds \"developer\", "
                        "\"designer\", \"owner\""));
+  CompositeToolHost gate(std::vector<ToolModule>{{h.tools, ""}});
+  const ToolResult behindTheGate =
+      gate.callTool("create_node", parse(R"({"treeId":"t","label":"Ship","kind":"ownr"})"), h.actor);
+  CHECK_EQ(message(behindTheGate), message(h.call("create_node", parse(R"({"label":"Ship","kind":"ownr"})"))));
+  CHECK_EQ(toolWriteOutcome(behindTheGate), std::string("refused"));
   CHECK_EQ(message(h.call("create_node", parse(R"({"label":"Ship","kind":"owner","color":"sky"})"))),
            std::string("create_node: kind \"owner\" wears gold, but color is \"sky\" — send one of the two, or both "
                        "when they agree"));
