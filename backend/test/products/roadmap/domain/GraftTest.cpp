@@ -32,6 +32,16 @@ NodeSpec spec(const char* id, std::vector<const char*> prerequisites) {
   return s;
 }
 
+// What a batch item that carried only `sent` leaves out.
+std::set<NodeRegister> omittedAllBut(const std::set<NodeRegister>& sent) {
+  std::set<NodeRegister> omitted;
+  for (NodeRegister reg : {NodeRegister::label, NodeRegister::icon, NodeRegister::color, NodeRegister::order,
+                           NodeRegister::position, NodeRegister::status, NodeRegister::description,
+                           NodeRegister::links, NodeRegister::opens})
+    if (!sent.count(reg)) omitted.insert(reg);
+  return omitted;
+}
+
 }
 
 TEST(graft_merge_keeps_the_edge_the_document_left_out_and_names_it) {
@@ -185,9 +195,7 @@ TEST(graft_state_keeps_a_held_nodes_creation_stamp_and_carries_only_what_the_bat
   resent.label = "A";
   Graft graft;
   graft.document.nodes = {resent};
-  graft.omittedNodeRegisters[nid("a")] = {NodeRegister::icon, NodeRegister::color, NodeRegister::order,
-                                          NodeRegister::position, NodeRegister::status, NodeRegister::description,
-                                          NodeRegister::links};
+  graft.omittedNodeRegisters[nid("a")] = omittedAllBut({NodeRegister::label});
 
   const GraphState frame = graftState(g, graft, at(1003));
   CHECK(frame == (GraphState{{}, {EdgeStateEntry{{nid("x"), nid("a")}, at(1003), {}}}}));
@@ -209,9 +217,7 @@ TEST(graft_state_loses_a_re_sent_node_to_a_delete_stamped_before_it_and_joined_a
   renamed.label = "A2";
   Graft graft;
   graft.document.nodes = {renamed};
-  graft.omittedNodeRegisters[nid("a")] = {NodeRegister::icon, NodeRegister::color, NodeRegister::order,
-                                          NodeRegister::position, NodeRegister::status, NodeRegister::description,
-                                          NodeRegister::links};
+  graft.omittedNodeRegisters[nid("a")] = omittedAllBut({NodeRegister::label});
   g.join(graftState(g, graft, at(3)));
   g.join(GraphState{{NodeStateEntry{.id = nid("a"), .deletedAt = at(2)}}, {}});
 
@@ -223,11 +229,11 @@ TEST(graft_state_loses_a_re_sent_node_to_a_delete_stamped_before_it_and_joined_a
 
   Graft revive;
   revive.document.nodes = {spec("a", {})};
-  revive.omittedNodeRegisters[nid("a")] = {NodeRegister::label, NodeRegister::icon, NodeRegister::color,
-                                           NodeRegister::order, NodeRegister::position, NodeRegister::status,
-                                           NodeRegister::description, NodeRegister::links};
+  revive.omittedNodeRegisters[nid("a")] = omittedAllBut({});
   g.join(graftState(g, revive, at(4)));
-  CHECK_EQ(g.nodeView(nid("a"))->label, std::string("A2"));
+  CHECK(*g.exportNode(nid("a")) == (NodeStateEntry{.id = nid("a"), .createdAt = at(4), .deletedAt = at(2),
+                                                  .label = "A2", .labelAt = at(3), .iconAt = at(1),
+                                                  .color = NodeColor::sky, .colorAt = at(1)}));
   CHECK_EQ(g.nodeView(nid("a"))->prerequisites, (std::vector<NodeId>{nid("root"), nid("x")}));
   CHECK(g.danglingEdges().empty());
 }
@@ -245,13 +251,9 @@ TEST(graft_state_creates_a_new_node_revives_a_deleted_one_and_edits_a_present_on
   root.label = "Root";
   Graft graft;
   graft.document.nodes = {fresh, spec("gone", {}), root};
-  for (const char* id : {"fresh", "root"})
-    graft.omittedNodeRegisters[nid(id)] = {NodeRegister::icon, NodeRegister::color, NodeRegister::order,
-                                           NodeRegister::position, NodeRegister::status,
-                                           NodeRegister::description, NodeRegister::links};
-  graft.omittedNodeRegisters[nid("gone")] = {NodeRegister::label, NodeRegister::icon, NodeRegister::color,
-                                             NodeRegister::order, NodeRegister::position, NodeRegister::status,
-                                             NodeRegister::description, NodeRegister::links};
+  graft.omittedNodeRegisters[nid("fresh")] = omittedAllBut({NodeRegister::label});
+  graft.omittedNodeRegisters[nid("gone")] = omittedAllBut({});
+  graft.omittedNodeRegisters[nid("root")] = omittedAllBut({NodeRegister::label});
 
   CHECK(graftState(g, graft, at(3)) ==
         (GraphState{{NodeStateEntry{.id = nid("fresh"), .createdAt = at(3), .label = "Fresh", .labelAt = at(3)},
@@ -275,8 +277,8 @@ TEST(graft_state_leaves_an_omitted_node_register_alone_and_lands_a_carried_one_e
   carried.color = NodeColor::plum;
   Graft graft;
   graft.document.nodes = {carried};
-  graft.omittedNodeRegisters[nid("n")] = {NodeRegister::label, NodeRegister::order, NodeRegister::position,
-                                          NodeRegister::status, NodeRegister::links, NodeRegister::opens};
+  graft.omittedNodeRegisters[nid("n")] =
+      omittedAllBut({NodeRegister::icon, NodeRegister::color, NodeRegister::description});
 
   const GraphState frame = graftState(g, graft, at(2));
   CHECK(frame == (GraphState{{NodeStateEntry{.id = nid("n"), .iconAt = at(2), .color = NodeColor::plum,
