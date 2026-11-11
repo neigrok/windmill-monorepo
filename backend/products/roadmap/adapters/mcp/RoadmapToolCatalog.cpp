@@ -695,8 +695,9 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     Json::Value p(Json::objectValue);
     p["treeId"] = treeHandle();
     Json::Value nodeFields(Json::objectValue);
-    nodeFields["id"] = cappedStr("The id this node WILL have: one already in the tree changes only in "
-                                 "the fields you send, a new one is added.", kMaxIdLength);
+    nodeFields["id"] = cappedStr("The id this node WILL have: one already in the tree keeps every field "
+                                 "you leave out, except its prerequisites, which follow "
+                                 "`prerequisiteMode`; a new one is added.", kMaxIdLength);
     nodeFields["label"] = cappedStr("The node's display label.", kMaxNodeLabelLength);
     nodeFields["icon"] = cappedStr("Optional icon name/emoji.", kMaxIconLength);
     nodeFields["color"] = enumStr("Optional branch color (default terracotta).", kHues);
@@ -751,8 +752,9 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "the prerequisites it already has — an edge you leave out survives, and is listed in the "
         "receipt's keptEdges. `replace` makes your list the whole list: every prerequisite edge into "
         "that node you did not name, live or waiting to revive, is removed in the same batch, and "
-        "the receipt counts them as removedEdges. New nodes and nodes not in the batch are untouched "
-        "either way.",
+        "the receipt counts them as removedEdges. A node sent without `prerequisites` names none, so "
+        "under `replace` it loses every edge into it. New nodes and nodes not in the batch are "
+        "untouched either way.",
         kPrerequisiteModes);
     p["tombstone"] = strArray(
         "Ids to delete in this same batch: each node goes at the same seq as the upserts, every "

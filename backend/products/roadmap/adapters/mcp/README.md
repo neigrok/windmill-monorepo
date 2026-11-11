@@ -316,7 +316,8 @@ Apply action for routine proposals; annotations describe each tool's effects.
   omitted register unset (`Graft::omittedNodeRegisters` and `graftState`,
   `Graft::omittedKindRegisters` and `graftLegend`) and no stored stamp loses to that. A node
   deleted earlier and re-sent revives with the registers it had. A sent register lands at the
-  graft's stamp, `""` and `[]` included, which is how a field is cleared; a new id's omitted
+  graft's stamp, `""` and `[]` included, which is how a text or list field is cleared (`position`
+  and `seedStatus` have no empty value: `null` counts as left out); a new id's omitted
   register lands as its default. Legend order is treated the same way — rank is never on the
   wire, so a colliding kind keeps its place and a new kind lands after the last one, in batch
   order. A re-sent
