@@ -28,9 +28,8 @@ enum class KindRegister { label, description, crossBranchExempt };
 // loses every present edge touching it, in either direction. The two omitted maps name, per id, the
 // registers the document did not spell out: the graft leaves those alone, so a node or kind the tree
 // already holds keeps its value and a new one lands with the default. An id absent from its map
-// carried every register, and an empty value is carried like any other.
-// `nodeKinds` names, per node id, the legend kind the document files that node under, until
-// resolveKinds turns it into the node's colour.
+// carried every register, and an empty value is carried like any other. `nodeKinds` names the legend
+// kind the document files a node under, until resolveKinds turns it into the node's colour.
 struct Graft {
   TreeData document;
   PrerequisiteMode prerequisites = PrerequisiteMode::merge;

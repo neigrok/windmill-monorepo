@@ -608,10 +608,8 @@ ToolResult applyEdit(RoomRegistry& registry, TreeRegistry& trees, const TreeId& 
     if (setsHue) {
       const TreeData data = room.snapshot();
       const std::map<NodeColor, KindId> worn = kindByHue(data.kinds);
-      for (const NodeSpec& node : data.nodes) {
-        if (node.id.str() != payload["id"].asString()) continue;
-        if (const auto kind = worn.find(node.color); kind != worn.end()) out["kind"] = kind->second.str();
-      }
+      for (const NodeSpec& node : data.nodes)
+        if (node.id.str() == payload["id"].asString() && worn.count(node.color)) out["kind"] = worn.at(node.color).str();
     }
     return ToolResult::json(out);
   });

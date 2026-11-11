@@ -1,6 +1,5 @@
 #include "products/roadmap/domain/Command.h"
 
-#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
