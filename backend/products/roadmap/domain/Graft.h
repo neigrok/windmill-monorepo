@@ -55,11 +55,10 @@ GraftFootprint footprintOf(const LooseGraph& graph, const Graft& graft);
 // a node it changes nothing on is left out. A document edge touching a tombstoned node is dropped.
 GraphState graftState(const LooseGraph& graph, const Graft& graft, const Hlc& at);
 
-// The legend half of the same frame: every kind the document carries, stamped `at`, save that an
-// omitted register is stamped unset — which no stored stamp loses to, and which lands the default
-// on a kind the legend never held. Rank is never on the wire, so it is treated as omitted too: a
-// kind `legend` holds keeps its place, and a new kind lands after the last one, in document order,
-// the way addKind would. Empty when the document carries no kinds.
+// The legend half of the same frame, under the same rule: a kind the legend does not hold, new or
+// removed, is created at `at` and lands after the last one, in document order, the way addKind would;
+// a present kind keeps its creation and, rank never being on the wire, its place. A register lands
+// only where the document changes what the legend holds, and a kind it changes nothing on is left out.
 LegendState graftLegend(const Legend& legend, const Graft& graft, const Hlc& at);
 
 }

@@ -378,9 +378,9 @@ TEST(graft_legend_leaves_an_omitted_kind_register_alone_and_defaults_it_on_a_new
   CHECK_FALSE(renamed.crossBranchExempt);
 }
 
-// Rank is never on the wire, so a colliding kind's rank is stamped unset and the legend keeps its
-// order; new kinds land after the last present one, in document order rather than id order — what
-// addKind would do for each in turn.
+// Rank is never on the wire, so a colliding kind keeps its place, and one sent as the legend holds it
+// is left out of the frame; new kinds land after the last present one, in document order rather than
+// id order — what addKind would do for each in turn.
 TEST(graft_legend_keeps_a_colliding_kinds_rank_and_appends_a_new_kind_after_the_last) {
   Legend legend({{KindId{"a"}, NodeColor::terracotta}, {KindId{"b"}, NodeColor::olive}, {KindId{"c"}, NodeColor::gold}},
                 at(1));
@@ -388,16 +388,12 @@ TEST(graft_legend_keeps_a_colliding_kinds_rank_and_appends_a_new_kind_after_the_
   Graft graft;
   graft.document.kinds = {{KindId{"c"}, NodeColor::gold}, {KindId{"y"}, NodeColor::plum}, {KindId{"x"}, NodeColor::sky}};
   const LegendState frame = graftLegend(legend, graft, at(5));
-  REQUIRE_EQ(frame.kinds.size(), 3u);
-  for (const KindStateEntry& kind : frame.kinds) {
-    if (kind.id == KindId{"c"}) {
-      CHECK_FALSE(kind.rankAt.isSet());
-      CHECK_EQ(kind.rank, 0.0);
-    } else {
-      CHECK_EQ(kind.rankAt, at(5));
-      CHECK_EQ(kind.rank, kind.id == KindId{"y"} ? 3.0 : 4.0);
-    }
-  }
+  CHECK(frame == (LegendState{{KindStateEntry{.id = KindId{"x"}, .createdAt = at(5), .hue = NodeColor::sky,
+                                              .hueAt = at(5), .labelAt = at(5), .descriptionAt = at(5),
+                                              .crossBranchExemptAt = at(5), .rank = 4, .rankAt = at(5)},
+                               KindStateEntry{.id = KindId{"y"}, .createdAt = at(5), .hue = NodeColor::plum,
+                                              .hueAt = at(5), .labelAt = at(5), .descriptionAt = at(5),
+                                              .crossBranchExemptAt = at(5), .rank = 3, .rankAt = at(5)}}}));
 
   legend.join(frame);
   CHECK_EQ(legend.orderedIds(),
@@ -410,6 +406,44 @@ TEST(graft_legend_keeps_a_colliding_kinds_rank_and_appends_a_new_kind_after_the_
   legend.join(graftLegend(legend, revived, at(7)));
   CHECK_EQ(legend.orderedIds(),
            (std::vector<KindId>{KindId{"b"}, KindId{"c"}, KindId{"y"}, KindId{"x"}, KindId{"a"}}));
+}
+
+// An import asserts nothing about a kind it re-sends: a remove stamped before the import and joined after
+// it still removes the kind. The label the import changed stays on the record the remove leaves.
+TEST(graft_legend_loses_a_re_sent_kind_to_a_remove_stamped_before_it_and_joined_after_it) {
+  Legend legend({{KindId{"backend"}, NodeColor::sky, "Backend"}}, at(1));
+  Graft graft;
+  graft.document.kinds = {{KindId{"backend"}, NodeColor::sky, "Backend services"}};
+  graft.omittedKindRegisters[KindId{"backend"}] = {KindRegister::description, KindRegister::crossBranchExempt};
+
+  legend.join(graftLegend(legend, graft, at(3)));
+  legend.join(LegendState{{KindStateEntry{.id = KindId{"backend"}, .deletedAt = at(2)}}});
+
+  CHECK_FALSE(legend.has(KindId{"backend"}));
+  CHECK(*legend.exportKind(KindId{"backend"}) ==
+        (KindStateEntry{.id = KindId{"backend"}, .createdAt = at(1), .deletedAt = at(2), .hue = NodeColor::sky,
+                        .hueAt = at(1), .label = "Backend services", .labelAt = at(3), .descriptionAt = at(1),
+                        .crossBranchExemptAt = at(1), .rank = 0, .rankAt = at(1)}));
+}
+
+// A kind sent as the legend holds it, the way a get_tree round trip sends it, lands nothing: the frame
+// leaves it out, so an offline rename and recolour stamped before the import and joined after it stand.
+TEST(graft_legend_leaves_out_a_kind_sent_as_held_so_a_concurrent_rename_stands) {
+  Legend legend({{KindId{"backend"}, NodeColor::sky, "Backend"}}, at(1));
+  Graft graft;
+  graft.document.kinds = {{KindId{"backend"}, NodeColor::sky, "Backend"}};
+  graft.omittedKindRegisters[KindId{"backend"}] = {KindRegister::description, KindRegister::crossBranchExempt};
+
+  const LegendState frame = graftLegend(legend, graft, at(3));
+  CHECK(frame == LegendState{});
+  legend.join(frame);
+  legend.join(LegendState{{KindStateEntry{.id = KindId{"backend"}, .hue = NodeColor::plum, .hueAt = at(2),
+                                          .label = "Services", .labelAt = at(2)}}});
+
+  CHECK(*legend.exportKind(KindId{"backend"}) ==
+        (KindStateEntry{.id = KindId{"backend"}, .createdAt = at(1), .hue = NodeColor::plum, .hueAt = at(2),
+                        .label = "Services", .labelAt = at(2), .descriptionAt = at(1), .crossBranchExemptAt = at(1),
+                        .rank = 0, .rankAt = at(1)}));
 }
 
 TEST(graft_legend_is_empty_when_the_document_carries_no_kinds) {
