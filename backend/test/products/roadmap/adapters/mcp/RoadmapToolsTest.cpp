@@ -3800,3 +3800,27 @@ TEST(mcp_a_reply_follows_pointers_in_one_read_and_reads_nothing_where_following_
   CHECK_FALSE(h.call("find_nodes", parse(R"({"state":"available"})")).isError);
   CHECK_EQ(h.trees.openedReads, (std::vector<std::set<TreeId>>{opened, opened, opened}));
 }
+
+// Following is part of the reply: its failure is the tool's server failure, naming nothing, and only where it is made.
+TEST(mcp_a_reply_whose_pointers_cannot_be_followed_fails_as_the_call_and_other_reads_are_untouched) {
+  Harness h;
+  h.trees.byId["t"].visibility = Visibility::public_;
+  h.trees.byId["t_sub"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Deep dive", {}}, 0, h.caller};
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"a","label":"A","opens":"t_sub"})")).isError);
+  h.trees.openedReadsFail = true;
+
+  const std::vector<std::pair<const char*, const char*>> following = {
+      {"get_tree", R"({"fields":["id","state"]})"},
+      {"get_nodes", R"({"nodeIds":["a"],"fields":["id","opens"]})"},
+      {"find_nodes", R"({"state":"available"})"}};
+  for (const auto& [tool, arguments] : following) {
+    const ToolResult failed = h.call(tool, parse(arguments));
+    CHECK(failed.isError);
+    CHECK_EQ(message(failed), std::string(tool) + ": that call failed inside the server. The outcome may be uncertain; "
+                                                  "read the affected records before retrying. The detail is in the server log.");
+  }
+  CHECK_EQ(body(h.call("get_tree", parse(R"({"fields":["id","status"]})")))["tree"]["nodes"], parse(R"([{"id":"a","status":"none"}])"));
+  CHECK_EQ(body(h.tools.callTool("get_tree", parse(R"({"treeId":"t","fields":["id","state","opens"]})"),
+                                 ToolCaller{uid("stranger"), ToolScope::everything()}))["tree"]["nodes"],
+           parse(R"([{"id":"a","state":"available"}])"));
+}
