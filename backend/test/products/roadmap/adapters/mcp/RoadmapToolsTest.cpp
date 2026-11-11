@@ -2079,6 +2079,30 @@ TEST(mcp_import_subgraph_names_the_most_salient_change_of_its_batch_in_its_one_r
   }
 }
 
+// An import that re-sends the tree a node opens as the node holds it writes nothing; one that changes
+// only that register sends a frame carrying it alone.
+TEST(mcp_import_subgraph_writes_the_tree_a_node_opens_only_when_the_batch_changes_it) {
+  Harness h;
+  h.trees.byId["t_sub"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Deep dive", {}}, 0, h.caller};
+  h.trees.byId["t_two"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Second look", {}}, 0, h.caller};
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A","opens":"t_sub"}]})")).isError);
+  const std::size_t rows = h.ops.byTree["t"].size();
+
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","opens":"t_sub"}]})")).isError);
+  CHECK(h.bus.subgraphBroadcasts.back().subgraph.graph == GraphState{});
+  CHECK_EQ(h.ops.byTree["t"].size(), rows);
+
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","opens":"t_two"}]})")).isError);
+  const GraphState& moved = h.bus.subgraphBroadcasts.back().subgraph.graph;
+  REQUIRE_EQ(moved.nodes.size(), 1u);
+  CHECK(moved.nodes[0].opensAt.isSet());
+  CHECK(moved == (GraphState{{NodeStateEntry{.id = NodeId{"a"}, .opens = TreeId{"t_two"},
+                                             .opensAt = moved.nodes[0].opensAt}},
+                             {}}));
+  CHECK_EQ(body(h.call("get_tree", parse(R"({"fields":["id","label","opens"]})")))["tree"]["nodes"],
+           parse(R"([{"id":"a","label":"A","opens":{"treeId":"t_two","title":"Second look"}}])"));
+}
+
 TEST(mcp_import_subgraph_tombstone_needs_the_delete_grant_the_way_delete_node_does) {
   Harness h;
   seedFan(h);

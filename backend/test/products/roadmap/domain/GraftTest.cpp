@@ -240,6 +240,28 @@ TEST(graft_state_loses_a_re_sent_node_to_a_delete_stamped_before_it_and_joined_a
 
 // One batch, three kinds of id: a new node is created at the graft's stamp with what it carries, a
 // deleted one re-sent is revived at it, and a present one changes only in what it changes.
+// The tree a node opens lands by the same rule as every register: sent as the node holds it, the batch
+// writes nothing; changed alone, the frame carries that register alone.
+TEST(graft_state_lands_the_tree_a_node_opens_only_where_the_batch_changes_it) {
+  LooseGraph g;
+  g.createNode(nid("n"), "N", "", NodeColor::sky, std::nullopt, at(1));
+  g.setOpens(nid("n"), TreeId{"t_sub"}, at(1));
+
+  NodeSpec resent = spec("n", {});
+  resent.opens = TreeId{"t_sub"};
+  Graft echo;
+  echo.document.nodes = {resent};
+  echo.omittedNodeRegisters[nid("n")] = omittedAllBut({NodeRegister::opens});
+  CHECK(graftState(g, echo, at(2)) == GraphState{});
+
+  resent.opens = TreeId{"t_two"};
+  Graft moved;
+  moved.document.nodes = {resent};
+  moved.omittedNodeRegisters[nid("n")] = omittedAllBut({NodeRegister::opens});
+  CHECK(graftState(g, moved, at(3)) ==
+        (GraphState{{NodeStateEntry{.id = nid("n"), .opens = TreeId{"t_two"}, .opensAt = at(3)}}, {}}));
+}
+
 TEST(graft_state_creates_a_new_node_revives_a_deleted_one_and_edits_a_present_one) {
   LooseGraph g;
   for (const char* id : {"root", "gone"}) g.createNode(nid(id), id, "", NodeColor::sky, std::nullopt, at(1));
