@@ -167,6 +167,38 @@ TEST(graft_admission_is_judged_on_what_the_graft_leaves_behind) {
   CHECK_FALSE(admit(g, swaps).has_value());
 }
 
+// A register the document leaves off a node is stamped unset, so the join keeps what the graph holds;
+// a register it carries lands at the graft's stamp, an empty one included.
+TEST(graft_state_leaves_an_omitted_node_register_alone_and_lands_a_carried_one_even_empty) {
+  LooseGraph g;
+  g.createNode(nid("n"), "N", "star", NodeColor::sky, Vec2{1, 2}, at(1), "complete");
+  g.setOrder(nid("n"), "a0", at(1));
+  g.setDescription(nid("n"), "Read it", at(1));
+  g.setLinks(nid("n"), {Link{"home", "https://windmill.works"}}, at(1));
+
+  NodeSpec carried;
+  carried.id = nid("n");
+  carried.color = NodeColor::plum;
+  Graft graft;
+  graft.document.nodes = {carried};
+  graft.omittedNodeRegisters[nid("n")] = {NodeRegister::label, NodeRegister::order, NodeRegister::position,
+                                          NodeRegister::status, NodeRegister::links};
+
+  const GraphState frame = graftState(g, graft, at(2));
+  CHECK(frame == (GraphState{{NodeStateEntry{.id = nid("n"), .createdAt = at(2), .iconAt = at(2),
+                                             .color = NodeColor::plum, .colorAt = at(2),
+                                             .descriptionAt = at(2)}},
+                             {}}));
+
+  g.join(frame);
+  CHECK(*g.exportNode(nid("n")) ==
+        (NodeStateEntry{.id = nid("n"), .createdAt = at(2), .label = "N", .labelAt = at(1), .iconAt = at(2),
+                        .color = NodeColor::plum, .colorAt = at(2), .order = "a0", .orderAt = at(1),
+                        .position = Vec2{1, 2}, .positionAt = at(1), .status = "complete", .statusAt = at(1),
+                        .descriptionAt = at(2), .links = {Link{"home", "https://windmill.works"}},
+                        .linksAt = at(1)}));
+}
+
 // A register the document leaves off a kind is stamped unset, so the join keeps what the legend
 // holds; a new kind's omitted register lands as its default. Hue always lands.
 TEST(graft_legend_leaves_an_omitted_kind_register_alone_and_defaults_it_on_a_new_kind) {
