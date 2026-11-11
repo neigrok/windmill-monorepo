@@ -21,7 +21,6 @@ export function useRoomGuide({ treeId, tree, who, deviceLine, sessionRef }) {
   const seen = useRef(null);
   const ownWrite = useRef(null);
 
-
   // A guide set in another tab or by an agent earns one beat; the first read and this room's own save earn none.
   useEffect(() => {
     if (!tree) return;
