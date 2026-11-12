@@ -453,6 +453,45 @@ TEST(drive_agent_edits_and_marks_a_node_through_update_nodes_and_counts_what_cha
              "links":[{"url":"https://a.example"}],"status":"complete"}])"));
 }
 
+// A dry run writes nothing, so it is no edit of the run, for every tool that takes `dryRun`, though its preview says the
+// tree would change; the same call sent for real is one edit.
+TEST(drive_agent_counts_no_edit_for_a_dry_run) {
+  test::Harness h;
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"},{"id":"b","label":"B"}]})")).isError);
+  ScopedToolHost scoped(h.tools, TreeId{"t"});
+  const auto stepOf = [&](const char* tool, const std::string& input) {
+    Json::Value call = toolUseReply(tool, "toolu_1");
+    call["content"][0]["input"] = parse(input);
+    FakeModel model;
+    model.replies.push_back(call);
+    model.replies.push_back(textReply("end_turn", "Done"));
+    Recorder rec;
+    const AgentOutcome outcome =
+        driveAgent("tend it", TreeId{"t"}, h.caller, scoped, model.asCall(), rec.onStep(), rec.report());
+    return std::to_string(outcome.edits) + " edits, changed " + std::to_string(rec.steps.at(0).changedTree) +
+           ", failed " + std::to_string(rec.steps.at(0).failed);
+  };
+  const auto held = [&] {
+    Json::Value shape(Json::objectValue);
+    shape["fields"] = test::list({"id", "label", "prerequisites", "status"});
+    return test::body(h.call("get_tree", shape))["tree"]["nodes"];
+  };
+  const std::vector<std::pair<const char*, std::string>> writes = {
+      {"update_nodes", R"("updates":[{"nodeId":"a","label":"Alpha","status":"complete"}])"},
+      {"change_edges", R"("add":[{"from":"a","to":"b"}])"},
+      {"import_subgraph", R"("nodes":[{"id":"c","label":"C"}],"progress":[{"nodeId":"b","status":"complete"}])"}};
+  const Json::Value before = held();
+
+  for (const auto& [tool, fields] : writes)
+    CHECK_EQ(stepOf(tool, "{\"dryRun\":true," + fields + "}"), std::string("0 edits, changed 0, failed 0"));
+  CHECK_EQ(held(), before);
+
+  for (const auto& [tool, fields] : writes)
+    CHECK_EQ(stepOf(tool, "{" + fields + "}"), std::string("1 edits, changed 1, failed 0"));
+  CHECK_EQ(held(), parse(R"([{"id":"a","label":"Alpha","prerequisites":[],"status":"complete"},
+    {"id":"b","label":"B","prerequisites":["a"],"status":"complete"},{"id":"c","label":"C","prerequisites":[],"status":"none"}])"));
+}
+
 // Through a tend's scoped host over the real tools, every write that changes nothing answers `unchanged` and is no edit
 // of the run: an update_nodes and an edge batch that change nothing and an echoed import, beside one real rename.
 TEST(drive_agent_counts_one_edit_among_writes_that_changed_nothing) {
@@ -500,6 +539,32 @@ TEST(drive_agent_counts_no_edit_for_a_write_that_changed_nothing) {
   Recorder rec;
   const AgentOutcome outcome =
       driveAgent("tidy the names", kTree, kCaller, host, model.asCall(), rec.onStep(), rec.report());
+
+  CHECK(outcome.ok);
+  CHECK_EQ(outcome.edits, 1);
+  REQUIRE_EQ(rec.steps.size(), 2u);
+  CHECK_EQ(std::vector<bool>({rec.steps[0].failed, rec.steps[0].changedTree, rec.steps[1].failed, rec.steps[1].changedTree}),
+           std::vector<bool>({false, false, false, true}));
+}
+
+// A reply that says it applied nothing wrote nothing, whatever else it answers: no edit of the run.
+TEST(drive_agent_counts_no_edit_for_a_reply_that_applied_nothing) {
+  FakeToolHost host;
+  host.responder = [](const std::string& name, const Json::Value&) -> ToolResult {
+    Json::Value reply(Json::objectValue);
+    reply["applied"] = name != "update_nodes";
+    reply["seq"] = 3;
+    return ToolResult::json(reply);
+  };
+
+  FakeModel model;
+  model.replies.push_back(toolUseReply("update_nodes", "toolu_1"));
+  model.replies.push_back(toolUseReply("change_edges", "toolu_2"));
+  model.replies.push_back(textReply("end_turn", "Linked 1 step"));
+
+  Recorder rec;
+  const AgentOutcome outcome =
+      driveAgent("link them", kTree, kCaller, host, model.asCall(), rec.onStep(), rec.report());
 
   CHECK(outcome.ok);
   CHECK_EQ(outcome.edits, 1);

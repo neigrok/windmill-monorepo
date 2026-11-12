@@ -312,14 +312,17 @@ AgentOutcome driveAgent(const std::string& prompt, const TreeId& tree, const Use
       AgentStep step;
       step.tool = name;
       step.failed = result.isError;
-      // A write changed nothing, and is no edit of the run's, only when its reply says so for every part it answers:
-      // `unchanged` on the reply — an import's speaks for its graft — and on each progress row it lists, which speaks
-      // for its own mark.
-      bool unchanged = result.payload.isObject() && result.payload.get("unchanged", false).asBool();
+      // A write is an edit of the run's only when its reply says it wrote. A dry run (`dryRun: true`, or
+      // `applied: false`) wrote nothing, whatever its preview says would change. A write changed nothing when its
+      // reply says so for every part it answers: `unchanged` on the reply — an import's speaks for its graft — and on
+      // each progress row it lists, which speaks for its own mark.
+      const Json::Value& reply = result.payload;
+      const bool previewed =
+          reply.isObject() && (reply.get("dryRun", false).asBool() || !reply.get("applied", true).asBool());
+      bool unchanged = reply.isObject() && reply.get("unchanged", false).asBool();
       if (unchanged)
-        for (const Json::Value& row : result.payload["progress"])
-          unchanged = unchanged && row.get("unchanged", false).asBool();
-      step.changedTree = mutatesTree(name) && !result.isError && !unchanged;
+        for (const Json::Value& row : reply["progress"]) unchanged = unchanged && row.get("unchanged", false).asBool();
+      step.changedTree = mutatesTree(name) && !result.isError && !previewed && !unchanged;
       step.note = stepNote(name, result);
       if (step.changedTree) ++edits;
       onStep(step);
