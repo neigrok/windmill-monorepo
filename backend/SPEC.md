@@ -29,9 +29,43 @@ rejected for structure. Validity is a read model, not a gate.
   (`data` and `state`), the subscribe delta and a live frame — a document node without `opens`, a
   lattice entry with `opens` empty and `opensAt` unset, and no entry for a node the frame then says
   nothing about. MCP `get_tree`, `get_nodes` and `find_nodes` answer it when `fields` names `opens`,
-  as `opens: {treeId, title}`, to a caller who can write the tree and only while the opened tree
-  stands and is theirs; the key is omitted otherwise. The title is the opened tree's stored one, read
-  once per reply. No read model follows the pointer.
+  as `opens: {treeId, title, state}`, to a caller who can write the tree and only while the opened
+  tree stands and is theirs; the key is omitted otherwise.
+- `OpenedTrees` (`domain/OpenedTrees.h`) — an owner's standing trees under the owner's marks, judged
+  once. A pointer is valid when its target stands and belongs to the owner of the tree the node is
+  in. For a caller who can write the tree, a node with a valid pointer is complete exactly when the
+  opened tree is complete for them, whatever its own prerequisites, as a mark made out of order is;
+  until then it is locked or available by its prerequisites, and a mark stored on it is kept and
+  ignored. A tree is complete for a reader when it holds at least one node and every node is
+  complete: a node with a valid pointer by its tree, any other node by the reader's mark.
+  Completeness is the least answer that satisfies this over all the owner's standing trees, one
+  answer per owner whichever tree is being read: a tree on a loop is never complete, however long
+  the loop, a chain of any length completes, and a tree reached along two ways is judged once. It is
+  computed by one pass that walks each tree-to-tree pointer at most once. `followed` gives a
+  tree's completed set — marks on ordinary nodes, plus the nodes whose opened tree is complete —
+  that `UnlockRules::derive` and `treeStats` are handed, so MCP `state`, the `state` filter, the
+  registry counts (`GET /v1/trees`, `list_trees`) and reminder readiness agree. `openings` says
+  what each pointer of a tree comes to: `missing` for one that is not valid, else the opened tree's
+  title, whether it is complete and `done` of `total` (its present nodes, those complete for the
+  reader); `leadingBackTo` names the trees whose pointers lead to a tree, at any distance. A node
+  whose pointer is not valid is an ordinary node, and so is every node for a reader who cannot write
+  the tree: their state follows their own mark, and nothing they receive says a node opens a tree.
+  The raw mark (`status`, `get_progress`, `GET …/progress`) stays the raw mark, `set_progress`
+  records a mark on such a node and judges `prerequisitesMet` on marks alone, and the gallery counts
+  the owner's stored marks.
+- The domain is fed two ways. A read of one tree (`get_tree`, `get_nodes`, `find_nodes`,
+  `GET /v1/trees/{id}`) takes the tree from its live room and asks
+  `TreeRepository::openedFrom(owner, opened)` for each tree it opens that stands and is the owner's
+  and every such tree their pointers lead to: one statement over `trees`, `tree_nodes` and the
+  owner's `node_progress` that reaches each tree once and answers, per tree and tree it opens, how
+  many present nodes open it and how many of those the owner marked, beside the tree's title and
+  its nodes that open none. Each reached tree's nodes and marks are read through
+  `tree_nodes_pkey` and `node_progress_pkey`, so the cost follows the trees reached and not the
+  size of the tables. It is made once per reply, after the tree's strand is released, and not
+  at all for a caller who cannot write the tree, for fields that ask for neither `state` nor
+  `opens`, or for a tree that holds no pointer. Where every tree of an owner is already loaded with
+  its marks (`TreeRegistry::list`, `PgReminderRepository::readinessFor`), `openedAmong`
+  (`domain/TreeSummary.h`) judges the account once in memory with no further read.
 - `TreeDiagnostics::assess` — a pure report over a loose graph: `cycles`, `dangling`,
   `selfEdges`, `smells`, `maskedWork` (tombstoned parents with present children). `clean()` is
   true when cycles, dangling and self-edges are all empty. Smell kinds: `label-too-long`
@@ -53,7 +87,8 @@ Derived read models:
 - `UnlockRules::derive(nodes|tree, progress) → map<NodeId, NodeState>` where `NodeState ∈
   {locked, available, complete}`. It reads only nodes and prerequisites, so it also runs
   over a graph `SkillTree` would refuse: a prerequisite naming no node locks its dependant, and a
-  cycle locks every member.
+  cycle locks every member. The completed set it is handed is the reader's marks, or for the
+  tree's owner `OpenedTrees::followed`.
 - `TrunkTree` — elects one trunk parent per node (same-kind parents win, then shallowest, then
   smallest id) and derives branch root, trunk depth, leaf weight, and `EdgeKind ∈ {trunk,
   in_branch, cross_branch}`.
@@ -290,6 +325,16 @@ document and joins it as one write. A PUT that creates the tree stamps its steps
 creation, as `POST /v1/trees` does. A PUT into a standing tree replaces the stored row of every step
 and edge it carries with the genesis stamp: those steps take the document's fields over any live edit
 and read as unknown creation time. No client calls this door. Inbound models are suffixed `Request`, outbound `Response`.
+
+`GET /v1/trees/{id}` answers `{seq, data, state, createdAt, visibility, mine}`. When the caller can
+write the tree the body also carries `opens`, an object keyed by node id with one entry per node that
+holds a pointer: `{treeId, title, state, done, total, loop}` for a valid one, `state` being
+`"complete"` or `"open"` and `loop` true when the opened tree leads back to the tree being read, and
+`{treeId, missing: true}` for one that is not valid (`OpenedTrees`, Model). It is computed on the
+read, off the stored rows and after the tree's strand is released, and nothing pushes it; for any
+other caller the key is absent. When the pointers cannot be followed the owner is answered
+`503 opens-unavailable`, not the `404` of an absent tree; every other reader, and a tree that holds
+no pointer, is answered as before.
 
 `PATCH /v1/trees/{id}` sets one register per call — `{visibility}`, `{guide}` or `{title}` — each the
 owner's alone. A body naming more than one is refused `400`, and a body that is not one JSON object

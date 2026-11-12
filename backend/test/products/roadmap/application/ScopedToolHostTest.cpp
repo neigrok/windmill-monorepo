@@ -376,6 +376,24 @@ TEST(scoped_tool_host_refuses_the_tree_a_node_opens_wherever_a_tend_names_it_and
                          "roadmap.import_subgraph Coach refused", "roadmap.import_subgraph Coach refused"}));
 }
 
+// A tend runs as the owner, so the state it reads is the node's true one, and still no pointer.
+TEST(scoped_tool_host_reads_the_state_of_a_node_that_follows_the_tree_it_opens) {
+  test::Harness h;
+  h.trees.byId["t_sub"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Deep dive", {}}, 0, h.caller};
+  CHECK_FALSE(h.tools.callTool("create_node", parse(R"({"treeId":"t_sub","id":"s","label":"S"})"), h.actor).isError);
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"idea","label":"Idea","opens":"t_sub"},
+                                                            {"id":"next","label":"Next","prerequisites":["idea"]}]})")).isError);
+  ScopedToolHost scoped(h.tools, TreeId{"t"});
+
+  CHECK_EQ(test::body(scoped.callTool("get_tree", parse(R"({"fields":["id","state"]})"), h.actor))["tree"]["nodes"],
+           parse(R"([{"id":"idea","state":"available"},{"id":"next","state":"locked"}])"));
+  CHECK_FALSE(h.tools.callTool("set_progress", parse(R"({"treeId":"t_sub","nodeId":"s","status":"complete"})"), h.actor).isError);
+  CHECK_EQ(test::body(scoped.callTool("get_tree", parse(R"({"fields":["id","state"]})"), h.actor))["tree"]["nodes"],
+           parse(R"([{"id":"idea","state":"complete"},{"id":"next","state":"available"}])"));
+  CHECK_EQ(test::body(scoped.callTool("find_nodes", parse(R"({"state":"available","fields":["id"]})"), h.actor)),
+           parse(R"({"count":1,"nodes":[{"id":"next"}]})"));
+}
+
 // Only the argument and the field are withheld: the word as a node's id or label is a tend's to use,
 // an import through a tend leaves the pointer a node holds, and a plain caller reads and sets it as before.
 TEST(scoped_tool_host_leaves_a_nodes_pointer_alone_and_a_plain_caller_still_reads_and_sets_it) {
@@ -391,11 +409,11 @@ TEST(scoped_tool_host_leaves_a_nodes_pointer_alone_and_a_plain_caller_still_read
            parse(R"({"treeId":"t","seq":4,"nodes":[{"id":"opens","label":"opens"},{"id":"a","label":"Renamed"}],"missingNodeIds":[]})"));
 
   CHECK_EQ(test::body(h.call("get_tree", parse(R"({"fields":["id","label","opens"]})")))["tree"]["nodes"],
-           parse(R"([{"id":"a","label":"Renamed","opens":{"treeId":"t_sub","title":"Deep dive"}},{"id":"opens","label":"opens"}])"));
+           parse(R"([{"id":"a","label":"Renamed","opens":{"treeId":"t_sub","title":"Deep dive","state":"open"}},{"id":"opens","label":"opens"}])"));
   CHECK_FALSE(h.call("annotate_node", parse(R"({"nodeId":"opens","opens":"t_sub"})")).isError);
   CHECK_FALSE(h.call("patch_nodes", parse(R"({"updates":[{"nodeId":"a","opens":""}]})")).isError);
   CHECK_EQ(test::body(h.call("get_tree", parse(R"({"fields":["id","opens"]})")))["tree"]["nodes"],
-           parse(R"([{"id":"a"},{"id":"opens","opens":{"treeId":"t_sub","title":"Deep dive"}}])"));
+           parse(R"([{"id":"a"},{"id":"opens","opens":{"treeId":"t_sub","title":"Deep dive","state":"open"}}])"));
 }
 
 // The argument is withheld from a tend, so the door's own default does the work: a node a run

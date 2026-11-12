@@ -300,8 +300,9 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
   }
   {
     tools.push_back(tool("list_trees", Access::read,
-        "List the roadmaps you own — one row each: id, title, total node count, how many you have "
-        "completed, when it was planted (createdAt, epoch ms), when it last moved (updatedAt, epoch "
+        "List the roadmaps you own — one row each: id, title, total node count, how many are complete "
+        "for you (a node that opens another tree of yours counts when that tree is complete, not by "
+        "its mark), when it was planted (createdAt, epoch ms), when it last moved (updatedAt, epoch "
         "ms), and its dominant hue (dominantKind), newest activity first. Takes no arguments. Use it "
         "to discover the treeId the other tools need.",
         Json::Value(Json::objectValue), {}));
@@ -324,11 +325,14 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "is your own mark on each node (complete/none, always answered), `seedStatus` the "
         "document's authored baseline. `state` is what the tree DERIVES for you from prerequisites "
         "and your marks — locked · available · complete — the answer to \"what can I work "
-        "on\"; `status` stays your raw mark. `summary` is the description's opening (200 characters "
+        "on\"; `status` stays your raw mark. On a tree you own, a node that opens another tree of yours "
+        "follows that tree, whatever mark it holds: complete when the tree has at least one node and "
+        "every node of it is complete, which a tree whose pointers lead back to it never is. `summary` "
+        "is the description's opening (200 characters "
         "counted as Unicode code points, cut at a word, ellipsized when cut) — ask for it to skim a "
         "whole tree's notes, and for `description` when you need one node's whole text. `opens` is the "
-        "tree a node points at, as {treeId, title}: answered only on a tree you own, while the tree it "
-        "names stands and is yours, and omitted otherwise.",
+        "tree a node points at, as {treeId, title, state} with `state` complete or open: answered only "
+        "on a tree you own, while the tree it names stands and is yours, and omitted otherwise.",
         nodeVocabulary().names());
     p["kindFields"] = fieldArray(
         "Which fields each legend kind carries. Default {id, hue, label}; `crossBranchExempt` is "
@@ -416,7 +420,8 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
                      "description. Matches come back best first: an exact id, then an id prefix, then "
                      "a label hit, then an id substring, then a description-only hit.");
     p["state"] = enumStr("Optional derived state to match — locked, available or complete, as "
-                         "the tree derives it from prerequisites and your marks.", kNodeStates);
+                         "the tree derives it from prerequisites, your marks and, on a tree you own, the "
+                         "trees its nodes open.", kNodeStates);
     p["fields"] = fieldArray(
         "Which fields each match carries. Default {id, label, color} — an index you pick edit targets "
         "out of. Ask for description, links, prerequisites, position, order or icon when you need them; "
@@ -424,11 +429,14 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "`status` is your own mark on each node (complete/none, always answered), `seedStatus` "
         "the document's authored baseline. `state` is what the tree DERIVES for you from prerequisites "
         "and your marks — locked · available · complete — the answer to \"what can I work "
-        "on\"; `status` stays your raw mark. `summary` is the description's opening (200 characters "
+        "on\"; `status` stays your raw mark. On a tree you own, a node that opens another tree of yours "
+        "follows that tree, whatever mark it holds: complete when the tree has at least one node and "
+        "every node of it is complete, which a tree whose pointers lead back to it never is. `summary` "
+        "is the description's opening (200 characters "
         "counted as Unicode code points, cut at a word, ellipsized when cut) — ask for it to skim a "
         "whole tree's notes, and for `description` when you need one node's whole text. `opens` is the "
-        "tree a node points at, as {treeId, title}: answered only on a tree you own, while the tree it "
-        "names stands and is yours, and omitted otherwise.",
+        "tree a node points at, as {treeId, title, state} with `state` complete or open: answered only "
+        "on a tree you own, while the tree it names stands and is yours, and omitted otherwise.",
         nodeVocabulary().names());
     p["limit"] = boundedInt("Most nodes to return in one page.", 1, kMaxLimit, kDefaultLimit);
     p["cursor"] = str("Resume token from a previous page's `nextCursor`. Omit for the first page.");
@@ -461,9 +469,10 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
                                  kMaxNodeDescriptionLength);
     p["links"] = linkArray("Optional external references (docs, PRs, designs).");
     p["opens"] = cappedStr("Optional id of a tree you own that this node opens: the node points at that tree, "
-                           "and get_tree, get_nodes and find_nodes answer its id and title under the `opens` "
-                           "field. A tree that is not yours is refused. Omit, or pass \"\", and the node opens "
-                           "none, whatever a deleted node under the same id opened.",
+                           "is complete for you when that tree is, and get_tree, get_nodes and find_nodes "
+                           "answer the tree's id, title and state under the `opens` field. A tree that is not "
+                           "yours is refused. Omit, or pass \"\", and the node opens none, whatever a deleted "
+                           "node under the same id opened.",
                            kMaxIdLength);
     p["id"] = cappedStr("Optional id to PROPOSE for the new node; minted from the label if omitted. "
                         "(`nodeId` names a node that already exists and is not accepted here.)",
@@ -487,9 +496,10 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         kMaxNodeDescriptionLength);
     p["icon"] = cappedStr("The node's icon name/emoji; \"\" clears it.", kMaxIconLength);
     p["links"] = linkArray("The node's external references — replaces the existing set (omit to leave unchanged).");
-    p["opens"] = cappedStr("The id of a tree you own that this node opens: the node points at that tree, and "
-                           "get_tree, get_nodes and find_nodes answer its id and title under the `opens` field. "
-                           "A tree that is not yours is refused. \"\" clears it; omit to leave it unchanged.",
+    p["opens"] = cappedStr("The id of a tree you own that this node opens: the node points at that tree, is "
+                           "complete for you when that tree is, and get_tree, get_nodes and find_nodes answer "
+                           "the tree's id, title and state under the `opens` field. A tree that is not yours "
+                           "is refused. \"\" clears it; omit to leave it unchanged.",
                            kMaxIdLength);
     tools.push_back(tool("annotate_node", Access::write,
         "Set a node's free annotation: its `description` (or `appendDescription`, which joins onto the "
@@ -704,7 +714,10 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "carries outOfOrder:true: the word is kept on the mark (get_progress lists it under "
         "outOfOrder, get_tree/find_nodes `status` shows outOfOrder:true beside it) and the receipt "
         "answers acknowledged:true, so prerequisitesMet:false alone always means an inversion nobody "
-        "acknowledged. The next mark on that node, from any surface, replaces the word with its own.",
+        "acknowledged. The next mark on that node, from any surface, replaces the word with its own. "
+        "A mark on a node that opens another tree of yours is recorded, but on a tree you own that "
+        "node's `state` follows the opened tree, not the mark; prerequisitesMet reads marks alone, so "
+        "a prerequisite that is complete only through the tree it opens still reads as unmet.",
         p, {"treeId"}));
   }
   {
@@ -794,7 +807,7 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "first, since get_tree answers with a projection — but a node carries `seedStatus`, never "
         "`status`: that one is your own mark, and travels in progress[]; and a node read with "
         "`fields: [\"opens\"]` is sent back with `opens` as the id — the read's `opens.treeId` — not "
-        "the {treeId, title} object. The graft is ONE op; a "
+        "the {treeId, title, state} object. The graft is ONE op; a "
         "carried progress[] is applied after it as ordinary overlay writes. The batch is atomic "
         "against malformed input — a bad field, a repeated id, or a tombstone id that does not exist "
         "changes nothing and names the offending element — but never against a merely untidy result "

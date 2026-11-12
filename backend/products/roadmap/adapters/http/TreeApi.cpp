@@ -10,6 +10,7 @@
 #include "products/roadmap/domain/Access.h"
 #include "products/roadmap/domain/Legend.h"
 #include "products/roadmap/domain/LooseGraph.h"
+#include "products/roadmap/domain/OpenedTrees.h"
 
 #include <algorithm>
 #include <mutex>
@@ -52,10 +53,13 @@ bool TreeApi::readRoom(const std::string& treeId, const std::optional<UserId>& c
 void TreeApi::getTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId) {
   std::optional<UserId> caller = callerOf(req);
   Json::Value body(Json::objectValue);
+  TreeData data;
+  bool mine = false;
   if (!readRoom(treeId, caller, [&](TreeRoom& room) {
-        const bool mine = canWrite(caller, room.owner());
+        mine = canWrite(caller, room.owner());
+        data = room.snapshot();
         body["seq"] = static_cast<Json::Int64>(room.head());
-        body["data"] = toJson(mine ? room.snapshot() : readerView(room.snapshot()));
+        body["data"] = toJson(mine ? data : readerView(data));
         Subgraph state;
         state.treeId = TreeId{treeId};
         state.frameId = "snapshot-" + std::to_string(room.head());
@@ -70,6 +74,23 @@ void TreeApi::getTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback
         body["mine"] = mine;
       })) {
     callback(error(drogon::k404NotFound, "no such tree"));
+    return;
+  }
+  if (!mine) {
+    callback(jsonResponse(body));
+    return;
+  }
+  // What each pointer comes to, for the tree's writer alone and OUTSIDE the room strand, as getProgress loads.
+  WriteObservation observation{"roadmap.tree.follow", "roadmap", "rest"};
+  try {
+    const OpenedTrees opened(trees_->openedFrom(*caller, treesOpenedBy(data)));
+    body["opens"] = toJson(opened.openings(data), opened.leadingBackTo(data.id));
+    observation.skip();
+  } catch (const std::exception& failure) {
+    // Not an absent tree: a 5xx is what a client reports and retries.
+    observation.fail(failure);
+    callback(error(drogon::k503ServiceUnavailable, "the trees this tree opens could not be read — try again",
+                   "opens-unavailable"));
     return;
   }
   callback(jsonResponse(body));

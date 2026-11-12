@@ -17,8 +17,7 @@ namespace wm {
 // database, so a slot resolves identically on macOS and on CI's Linux. No mktime, timegm,
 // localtime_r or chrono time zone here, ever.
 //
-// `readinessFor` is the one place readiness is computed, and it runs the real UnlockRules::derive
-// over the real graph.
+// `readinessFor` loads every tree the person owns with their marks; the domain derives what is ready.
 class PgReminderRepository : public ReminderRepository {
 public:
   explicit PgReminderRepository(std::shared_ptr<PgPool> pool);

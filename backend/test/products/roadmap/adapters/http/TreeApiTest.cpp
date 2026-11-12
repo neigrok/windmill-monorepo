@@ -15,6 +15,7 @@
 #include <mutex>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <typeinfo>
 #include <vector>
 
@@ -24,8 +25,8 @@ using namespace wm::fake;
 namespace {
 
 struct Harness {
-  std::shared_ptr<FakeTreeRepository> trees = std::make_shared<FakeTreeRepository>();
   std::shared_ptr<FakeProgressRepository> progress = std::make_shared<FakeProgressRepository>();
+  std::shared_ptr<FakeTreeRepository> trees = std::make_shared<FakeTreeRepository>(*progress);
   std::shared_ptr<FakeOpLog> ops = std::make_shared<FakeOpLog>();
   FakeBus bus;
   FakeTokens tokens;
@@ -336,6 +337,128 @@ TEST(get_tree_gives_the_tree_a_node_opens_to_its_owner_and_to_no_other_reader) {
   CHECK_EQ(mine["state"]["nodes"], toJson(GraphState{{whole}, {}})["nodes"]);
   CHECK_EQ(mine["state"]["nodes"][0]["opens"].asString(), std::string("t_00000000000000f2"));
   CHECK_EQ(mine["state"]["nodes"][0]["opensAt"].asString(), std::string("2000:0:r_a"));
+}
+
+TEST(get_tree_answers_the_owner_what_each_pointer_comes_to_and_no_other_reader_the_key) {
+  Harness h;
+  const UserId owner = h.signIn("s-owner", "owner@example.com");
+  const UserId stranger = h.signIn("s-stranger", "stranger@example.com");
+  const auto plant = [&](const char* id, const char* title, const UserId& planter, std::vector<std::pair<const char*, const char*>> nodes) {
+    TreeData data;
+    data.id = TreeId{id};
+    data.title = title;
+    for (const auto& [node, opens] : nodes) {
+      NodeSpec spec;
+      spec.id = NodeId{node};
+      spec.label = node;
+      spec.opens = TreeId{opens};
+      data.nodes.push_back(spec);
+    }
+    h.trees->byId[id] = StoredTree{LooseGraph(data, Hlc{1, 0, "seed"}).exportState(), LegendState{}, {title, {}}, 0, planter,
+                                   Visibility::public_};
+  };
+  const auto mark = [&](const char* tree, const UserId& user, const char* node) {
+    h.progress->setStatus(TreeId{tree}, user, NodeId{node}, ProgressStatus::complete, false, Hlc{2, 0, "seed"}, 0);
+  };
+  plant("t_main", "Main", owner, {{"done-idea", "t_done"}, {"open-idea", "t_open"}, {"round", "t_round"}, {"self", "t_main"},
+                                  {"gone", "t_gone"}, {"theirs", "t_theirs"}, {"plain", ""}});
+  plant("t_done", "Done", owner, {{"d", ""}});
+  plant("t_open", "Open", owner, {{"o1", ""}, {"o2", ""}});
+  plant("t_round", "Round", owner, {{"back", "t_main"}});
+  plant("t_gone", "Gone", owner, {{"g", ""}});
+  plant("t_theirs", "Theirs", stranger, {{"x", ""}});
+  plant("t_plain", "Plain", owner, {{"p", ""}});
+  h.trees->softDelete(TreeId{"t_gone"});
+  mark("t_done", owner, "d");
+  mark("t_open", owner, "o1");
+  mark("t_open", stranger, "o2");
+  mark("t_main", owner, "open-idea");
+  mark("t_main", stranger, "done-idea");
+
+  const Json::Value mine = bodyOf(sendGetTree(h.api, "s-owner", "t_main"));
+  CHECK_EQ(mine["opens"], parse(R"({
+      "done-idea": {"treeId":"t_done","title":"Done","state":"complete","done":1,"total":1,"loop":false},
+      "open-idea": {"treeId":"t_open","title":"Open","state":"open","done":1,"total":2,"loop":false},
+      "round": {"treeId":"t_round","title":"Round","state":"open","done":0,"total":1,"loop":true},
+      "self": {"treeId":"t_main","title":"Main","state":"open","done":1,"total":7,"loop":true},
+      "gone": {"treeId":"t_gone","missing":true},
+      "theirs": {"treeId":"t_theirs","missing":true}})"));
+  CHECK_EQ(h.trees->openedReads, (std::vector<std::set<TreeId>>{{TreeId{"t_done"}, TreeId{"t_gone"}, TreeId{"t_main"},
+                                                                 TreeId{"t_open"}, TreeId{"t_round"}, TreeId{"t_theirs"}}}));
+  CHECK_EQ(bodyOf(sendGetTree(h.api, "s-owner", "t_plain"))["opens"], parse("{}"));
+  CHECK_EQ(h.trees->openedReads.size(), 1u);
+
+  h.trees->openedReadsFail = true;
+  for (const char* reader : {"s-stranger", ""}) {
+    const Json::Value read = bodyOf(sendGetTree(h.api, reader, "t_main"));
+    CHECK_EQ(read.getMemberNames(), (std::vector<std::string>{"createdAt", "data", "mine", "seq", "state", "visibility"}));
+    CHECK_EQ(dump(read).find("t_done"), std::string::npos);
+    CHECK_EQ(dump(read).find("opens\":\"t_"), std::string::npos);
+  }
+  CHECK_EQ(h.trees->openedReads.size(), 1u);
+}
+
+// A failed follow is not an absent tree: the owner is answered a 503 the client reports, under the follow's own name.
+TEST(get_tree_whose_pointers_cannot_be_followed_answers_503_and_files_one_issue_and_other_reads_still_answer) {
+  struct Failures : FailureReporter {
+    std::vector<std::string> reports;
+    void report(const std::string&, const std::string&, const std::string&) override {}
+    void reportWrite(const std::string& operation, const std::string& product, const std::string& door,
+                     const std::string& outcome, const std::string&, const std::string& exceptionType) override {
+      reports.push_back(operation + " " + product + " " + door + " " + outcome + " " + exceptionType);
+    }
+  };
+  struct ReporterScope {
+    std::shared_ptr<Failures> failures = std::make_shared<Failures>();
+    ReporterScope() { installWriteReporter(failures); }
+    ~ReporterScope() { installWriteReporter(nullptr); }
+  } reporter;
+  Harness h;
+  const UserId me = h.signIn("s-me");
+  h.seed("t_sub", "Deep dive", me, Visibility::private_);
+  h.seed("t_mine", "Learn to sail", me, Visibility::public_);
+  h.trees->byId["t_mine"].state.nodes[0].opens = TreeId{"t_sub"};
+  h.trees->byId["t_mine"].state.nodes[0].opensAt = Hlc{2, 0, "seed"};
+
+  h.trees->openedReadsFail = true;
+  const drogon::HttpResponsePtr failed = sendGetTree(h.api, "s-me", "t_mine");
+
+  REQUIRE_EQ(failed->getStatusCode(), drogon::k503ServiceUnavailable);
+  CHECK_EQ(bodyOf(failed),
+           parse(R"({"code":"opens-unavailable","error":"the trees this tree opens could not be read — try again"})"));
+  CHECK_EQ(reporter.failures->reports,
+           (std::vector<std::string>{std::string("roadmap.tree.follow roadmap rest failed ") + typeid(std::runtime_error).name()}));
+  CHECK_EQ(sendGetTree(h.api, "", "t_mine")->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(sendGetTree(h.api, "s-me", "t_sub")->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(reporter.failures->reports.size(), 1u);
+}
+
+// A stranger's read must not wait on the owner's statement: that wait would say the tree holds a pointer.
+TEST(get_tree_follows_pointers_after_it_has_let_go_of_the_trees_strand) {
+  Harness h;
+  const UserId me = h.signIn("s-me");
+  h.seed("t_sub", "Deep dive", me, Visibility::private_);
+  h.seed("t_mine", "Learn to sail", me, Visibility::public_);
+  h.trees->byId["t_mine"].state.nodes[0].opens = TreeId{"t_sub"};
+  h.trees->byId["t_mine"].state.nodes[0].opensAt = Hlc{2, 0, "seed"};
+  bool strandWasFree = false;
+  drogon::HttpStatusCode readMeanwhile = drogon::kUnknown;
+  h.trees->duringOpenedRead = [&] {
+    std::thread other([&] {
+      std::mutex& strand = h.rooms->strandFor(TreeId{"t_mine"});
+      if (!strand.try_lock()) return;
+      strand.unlock();
+      strandWasFree = true;
+      readMeanwhile = sendGetTree(h.api, "", "t_mine")->getStatusCode();
+    });
+    other.join();
+  };
+
+  CHECK_EQ(sendGetTree(h.api, "s-me", "t_mine")->getStatusCode(), drogon::k200OK);
+
+  CHECK_EQ(h.trees->openedReads.size(), 1u);
+  CHECK(strandWasFree);
+  CHECK_EQ(readMeanwhile, drogon::k200OK);
 }
 
 TEST(get_tree_private_denial_is_404_byte_identical_to_absent) {

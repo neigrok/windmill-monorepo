@@ -108,6 +108,7 @@ add_library(windmill_roadmap
   products/roadmap/domain/TrunkTree.cpp
   products/roadmap/domain/UnlockRules.cpp
   products/roadmap/domain/TreeHealth.cpp
+  products/roadmap/domain/OpenedTrees.cpp
   products/roadmap/domain/TreeSummary.cpp
   products/roadmap/domain/Gallery.cpp
   products/roadmap/domain/Tending.cpp
@@ -275,6 +276,7 @@ add_executable(windmill_domain_tests
   test/products/roadmap/domain/TrunkTreeTest.cpp
   test/products/roadmap/domain/UnlockRulesTest.cpp
   test/products/roadmap/domain/TreeHealthTest.cpp
+  test/products/roadmap/domain/OpenedTreesTest.cpp
   test/products/roadmap/domain/TreeSummaryTest.cpp
   test/products/roadmap/domain/GalleryTest.cpp
   test/products/roadmap/domain/TendingTest.cpp
@@ -632,6 +634,7 @@ add_executable(windmill_adapters_tests
   test/products/roadmap/adapters/postgres/PgProgressRepositoryTest.cpp
   test/products/roadmap/adapters/postgres/PgOpLogTest.cpp
   test/products/roadmap/adapters/postgres/PgTreeRepositoryTest.cpp
+  test/products/roadmap/adapters/postgres/PgReminderRepositoryTest.cpp
   test/products/roadmap/adapters/http/ComposeApiTest.cpp
   test/products/roadmap/adapters/http/TreeApiTest.cpp
   test/products/roadmap/adapters/http/SharePageApiTest.cpp

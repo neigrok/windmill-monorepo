@@ -2,6 +2,7 @@
 
 #include "platform/adapters/postgres/PgAuthRepository.h"
 #include "products/roadmap/adapters/postgres/PgOpLog.h"
+#include "products/roadmap/adapters/postgres/PgProgressRepository.h"
 #include "products/roadmap/application/ForkService.h"
 #include "products/roadmap/application/RoomRegistry.h"
 #include "products/roadmap/domain/Command.h"
@@ -389,4 +390,143 @@ TEST(pg_create_node_on_a_deleted_id_opens_nothing_after_a_restart) {
   CHECK_EQ(test::body(tools.callTool("get_tree", read, sam))["tree"]["nodes"], parse(R"([{"id":"sail-trim"}])"));
   CHECK_EQ(storedPointer(), std::vector<std::string>{"sail-trim::true"});
   restarted.stop();
+}
+
+// The statement behind OpenedTrees: a removed node's pointer leads nowhere, a loop ends, and only the owner's marks count.
+TEST(pg_opened_from_answers_every_standing_tree_of_the_owners_the_pointers_lead_to_counted_under_the_owners_marks) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  const auto id = [](const std::string& name) { return TreeId{"t_pgtest_opened_" + name}; };
+  const auto clear = [] {
+    PgLease conn{*pgTestPool()};
+    pqxx::work txn{*conn};
+    for (const char* table : {"tree_nodes", "tree_edges", "tree_kinds", "node_progress"})
+      txn.exec(std::string("DELETE FROM ") + table + " WHERE tree_id LIKE 't\\_pgtest\\_opened\\_%'");
+    txn.exec("DELETE FROM trees WHERE id LIKE 't\\_pgtest\\_opened\\_%'");
+    txn.commit();
+  };
+  clear();
+  PgTreeRepository trees{pgTestPool()};
+  PgProgressRepository progress{pgTestPool()};
+  const auto plant = [&](const std::string& name, const UserId& owner,
+                         const std::vector<std::pair<std::string, std::string>>& nodes, const std::string& tombstoned = "") {
+    TreeData data;
+    data.id = id(name);
+    for (const auto& [node, opens] : nodes) {
+      NodeSpec spec;
+      spec.id = NodeId{node};
+      spec.label = node;
+      if (!opens.empty()) spec.opens = id(opens);
+      data.nodes.push_back(spec);
+    }
+    LooseGraph graph(data, Hlc{1'700'000'000'000, 0, "r_a"});
+    if (!tombstoned.empty()) graph.deleteNode(NodeId{tombstoned}, Hlc{1'700'000'000'001, 0, "r_a"});
+    trees.create(id(name), graph.exportState(), LegendState{}, "Tree " + name, owner);
+  };
+  const auto mark = [&](const std::string& tree, const UserId& user, const std::string& node) {
+    progress.setStatus(id(tree), user, NodeId{node}, ProgressStatus::complete, false, Hlc{1'700'000'000'002, 0, "r_a"},
+                       1'700'000'000'002);
+  };
+  plant("a", kSam, {{"plain-sam", ""}, {"plain-eve", ""}, {"plain", ""}, {"to-b", "b"}, {"to-b-again", "b"},
+                    {"to-b-eve", "b"}, {"to-retired", "retired"}, {"to-theirs", "theirs"}, {"to-absent", "absent"},
+                    {"removed", "hidden"}}, "removed");
+  plant("b", kSam, {{"back", "a"}, {"plain", ""}});
+  plant("empty", kSam, {});
+  plant("hidden", kSam, {{"h", ""}});
+  plant("retired", kSam, {{"r", ""}});
+  trees.softDelete(id("retired"));
+  plant("theirs", kEve, {{"x", ""}});
+  for (int k = 0; k < 12; ++k) plant("ring" + std::to_string(k), kSam, {{"n", "ring" + std::to_string((k + 1) % 12)}});
+  mark("a", kSam, "plain-sam");
+  mark("a", kEve, "plain-eve");
+  mark("a", kSam, "to-b");
+  mark("a", kEve, "to-b-eve");
+  mark("a", kSam, "to-absent");
+  mark("a", kSam, "removed");
+  mark("theirs", kSam, "x");
+
+  OpenedTree a;
+  a.title = "Tree a";
+  a.total = 9;
+  a.marked = 1;
+  a.pointers = {{id("absent"), {1, 1}}, {id("b"), {3, 1}}, {id("retired"), {1, 0}}, {id("theirs"), {1, 0}}};
+  OpenedTree b;
+  b.title = "Tree b";
+  b.total = 2;
+  b.pointers = {{id("a"), {1, 0}}};
+  OpenedTree empty;
+  empty.title = "Tree empty";
+  CHECK(trees.openedFrom(kSam, {id("a"), id("empty"), id("retired"), id("theirs"), id("absent")}) ==
+        (std::map<TreeId, OpenedTree>{{id("a"), a}, {id("b"), b}, {id("empty"), empty}}));
+
+  OpenedTree theirs;
+  theirs.title = "Tree theirs";
+  theirs.total = 1;
+  CHECK(trees.openedFrom(kEve, {id("a"), id("theirs")}) == (std::map<TreeId, OpenedTree>{{id("theirs"), theirs}}));
+  CHECK(trees.openedFrom(kSam, {}) == (std::map<TreeId, OpenedTree>{}));
+
+  OpenedTree link;
+  link.total = 1;
+  std::map<TreeId, OpenedTree> ring;
+  for (int k = 0; k < 12; ++k) {
+    link.title = "Tree ring" + std::to_string(k);
+    link.pointers = {{id("ring" + std::to_string((k + 1) % 12)), {1, 0}}};
+    ring.emplace(id("ring" + std::to_string(k)), link);
+  }
+  CHECK(trees.openedFrom(kSam, {id("ring7")}) == ring);
+  clear();
+}
+
+// The whole path over the real repositories, a second reader's marks included.
+TEST(pg_a_node_follows_the_tree_it_opens_and_the_registry_list_counts_it) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTreeRepository trees{pgTestPool()};
+  PgProgressRepository progressRepo{pgTestPool()};
+  PgOpLog log{pgTestPool()};
+  FakeBus bus;
+  FakeTokens tokens;
+  test::StepClock clock;
+  ProgressService progress{progressRepo};
+  RoomRegistry registry(trees, log, bus);
+  TreeRegistry treeRegistry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}, registry, clock};
+  RoadmapTools tools{registry, progress, clock, treeRegistry, bus};
+  trees.create(kTree, LooseGraph().exportState(), LegendState{}, "Main", kSam);
+  trees.create(kFork, LooseGraph().exportState(), LegendState{}, "Deep dive", kSam);
+  const auto call = [&](const TreeId& tree, const UserId& user, const char* tool, const std::string& arguments) {
+    Json::Value args = parse(arguments);
+    args["treeId"] = tree.str();
+    return tools.callTool(tool, args, ToolCaller{user, ToolScope::everything()});
+  };
+  const auto counts = [&] {
+    std::map<std::string, std::string> doneOfTotal;
+    for (const TreeSummary& row : treeRegistry.list(kSam))
+      doneOfTotal[row.id.str()] = std::to_string(row.stats.done) + "/" + std::to_string(row.stats.total);
+    return doneOfTotal;
+  };
+  CHECK_FALSE(call(kFork, kSam, "create_node", R"({"id":"s","label":"S"})").isError);
+  CHECK_FALSE(call(kTree, kSam, "import_subgraph",
+                   R"({"nodes":[{"id":"idea","label":"Idea","opens":")" + kFork.str() +
+                       R"("},{"id":"next","label":"Next","prerequisites":["idea"]}]})").isError);
+  registry.setVisibility(kTree, Visibility::public_);
+  registry.setVisibility(kFork, Visibility::public_);
+  CHECK_FALSE(call(kFork, kEve, "set_progress", R"({"nodeId":"s","status":"complete"})").isError);
+  CHECK_FALSE(call(kTree, kSam, "set_progress", R"({"nodeId":"idea","status":"complete"})").isError);
+
+  Json::Value open = parse(R"([{"id":"idea","status":"complete","state":"available","opens":{"title":"Deep dive","state":"open"}},
+                               {"id":"next","status":"none","state":"locked"}])");
+  open[0]["opens"]["treeId"] = kFork.str();
+  CHECK_EQ(test::body(call(kTree, kSam, "get_tree", R"({"fields":["id","status","state","opens"]})"))["tree"]["nodes"], open);
+  CHECK(counts() == (std::map<std::string, std::string>{{kTree.str(), "0/2"}, {kFork.str(), "0/1"}}));
+
+  CHECK_FALSE(call(kFork, kSam, "set_progress", R"({"nodeId":"s","status":"complete"})").isError);
+
+  Json::Value complete = parse(R"([{"id":"idea","status":"complete","state":"complete","opens":{"title":"Deep dive","state":"complete"}},
+                                   {"id":"next","status":"none","state":"available"}])");
+  complete[0]["opens"]["treeId"] = kFork.str();
+  CHECK_EQ(test::body(call(kTree, kSam, "get_tree", R"({"fields":["id","status","state","opens"]})"))["tree"]["nodes"], complete);
+  CHECK_EQ(test::body(call(kTree, kEve, "get_tree", R"({"fields":["id","status","state","opens"]})"))["tree"]["nodes"],
+           parse(R"([{"id":"idea","status":"none","state":"available"},{"id":"next","status":"none","state":"locked"}])"));
+  CHECK(counts() == (std::map<std::string, std::string>{{kTree.str(), "1/2"}, {kFork.str(), "1/1"}}));
+  registry.stop();
 }

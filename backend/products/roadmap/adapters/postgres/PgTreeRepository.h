@@ -36,6 +36,7 @@ public:
   std::vector<ListedTree> listPublic() override;
   std::set<TreeId> listForkedSources(const UserId& owner) override;
   std::map<TreeId, std::string> titlesOwnedBy(const UserId& owner, const std::set<TreeId>& trees) override;
+  std::map<TreeId, OpenedTree> openedFrom(const UserId& owner, const std::set<TreeId>& opened) override;
   void softDelete(const TreeId& tree) override;
   void rename(const TreeId& tree, const Lww<std::string>& title) override;
   void setVisibility(const TreeId& tree, Visibility visibility) override;
@@ -44,8 +45,8 @@ public:
             bool guideInherited, const UserId& owner) override;
 
 private:
-  // The projection both list queries need: each present node's id and colour, with the document
-  // blob as the fallback for a tree whose rows were never backfilled.
+  // The projection both list queries need: each present node's id, colour and pointer, with the
+  // document blob as the fallback for a tree whose rows were never backfilled.
   TreeData projectDocument(pqxx::work& txn, const TreeId& tree, const std::string& title,
                            const std::string& documentBlob);
 

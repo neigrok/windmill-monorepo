@@ -1,6 +1,10 @@
 #include "products/roadmap/domain/Reminders.h"
 
+#include "products/roadmap/domain/SkillTree.h"
+#include "products/roadmap/domain/UnlockRules.h"
+
 #include <algorithm>
+#include <utility>
 
 namespace wm {
 
@@ -27,6 +31,37 @@ bool earlier(const TreeReadiness* a, const TreeReadiness* b) {
   return b->id < a->id;
 }
 
+}
+
+std::vector<TreeReadiness> readinessOf(const std::vector<LoadedTree>& trees) {
+  const OpenedTrees opened = openedAmong(trees);
+  std::vector<TreeReadiness> readiness;
+  readiness.reserve(trees.size());
+  for (const LoadedTree& loaded : trees) {
+    const TreeData& data = loaded.data;
+    const Progress followed = opened.followed(data, loaded.progress);
+    const TreeStats stats = treeStats(data, followed);
+
+    TreeReadiness tree;
+    tree.id = data.id;
+    tree.title = data.title;
+    tree.lastActivityAtMs = lastActiveAt(loaded.updatedAt, loaded.lastMarkedAt);
+    tree.total = stats.total;
+    tree.done = stats.done;
+    try {
+      // A tree that cannot be validated has nothing ready: one malformed tree must never abort a sweep.
+      const SkillTree skillTree(data);
+      for (const auto& [node, state] : UnlockRules::derive(skillTree, followed)) {
+        if (state != NodeState::available) continue;
+        const NodeSpec& spec = skillTree.nodeById(node);
+        tree.ready.push_back(ReadyStep{node, spec.label, spec.color});
+      }
+    } catch (const InvalidTree&) {
+      tree.ready.clear();
+    }
+    readiness.push_back(std::move(tree));
+  }
+  return readiness;
 }
 
 ReminderDecision decide(const ReminderCandidate& candidate, std::uint64_t nowMs) {
