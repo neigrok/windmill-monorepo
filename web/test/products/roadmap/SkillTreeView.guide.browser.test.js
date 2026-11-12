@@ -232,7 +232,7 @@ hostTest('Chromium: the Graph camera frames the tree to the right of the guide\'
       return { left: left - room.left, top: top - room.top, width, height };
     });
     const card = await held('.st-guide-card');
-    await page.waitForFunction(() => window.cameraInsets.left === 466);
+    await page.waitForFunction((height) => window.cameraInsets.left === 466 && window.cameraInsets.blocks.find((block) => block.top !== undefined)?.height === height, card.height);
     assert.deepEqual(await page.evaluate(() => ({ left: window.cameraInsets.left, guide: window.cameraInsets.blocks.find((block) => block.top !== undefined), last: Object.keys(window.cameraInsets.blocks.at(-1)).sort() })),
       { left: 466, guide: card, last: ['bottom', 'height', 'right', 'width'] });
     assert.equal(card.top, row.bottom + 38);
