@@ -1,27 +1,25 @@
-# Marketing
+# Running Windmill marketing
 
-The marketing strategy for Windmill and the reports the CEO executes from. Written for a reader
-who runs the company, not for the agents that produced it.
+Start with [the 90-day plan](strategy.md). The first decision is whether builders come back to a skill tree and lifters come back for a second workout. Both can be tested on distribution Windmill has today. The owner has a proposed eight hours a week and zero incremental campaign spend for the first month.
 
-| File | What it is |
+| When you need to… | Open |
 |---|---|
-| [strategy.md](strategy.md) | The agreed strategy: thesis, the wedge and what was rejected, non-negotiables, unit economics, pricing and checkout decisions, calendar, stages and gates, the action list, open questions |
-| [funnels.md](funnels.md) | The paths from first touch to a renewing payer per product and for the superapp, what every step emits, thresholds, and the Monday review |
-| [benchmarks.md](benchmarks.md) | Every external number the strategy relies on, with source, date and a trust label, plus the numbers we looked for and could not find |
-| [reports/](reports/) | One report per action, numbered in priority order: idea, pros, cons, estimates, success metric, failure metric, justification, dependencies and a decision log |
+| Run this week's recruitment, demonstration and follow-up | [Strategy and calendar](strategy.md) |
+| Count a participant, handle a missing observation, or make Monday's decision | [Funnels and scorecard](funnels.md) |
+| Verify a product or market claim before using it in copy | [Evidence and economics](benchmarks.md) |
+| Put the site in search and inspect what an answer engine can read | [Search and AI discovery](reports/06-brand-search-identity.md) |
+| Turn an assistant connection into a useful first task | [MCP, directories and Show HN](reports/12-directories-and-show-hn.md) |
 
-## How to use it
+## Campaign briefs
 
-1. Read strategy.md once. The calendar and the stage gates are the parts to keep in view.
-2. Each Monday, run the thirty-minute review in funnels.md and write any gate decision into the
-   report's decision log the same day.
-3. A report's success and failure lines are the only things that move cash between stages. A number
-   between them is inconclusive and unlocks nothing.
-4. When a report's premise changes (a price, a platform, a shipped feature), fix the report and the
-   strategy in the same change. Nothing here records how things used to be.
+| Work | Briefs | Start condition |
+|---|---|---|
+| Find returning users | [08 · Gym pilot](reports/08-gym-demand-cohort.md), [11 · Roadmap starter](reports/11-roadmap-seed-trees.md), [15 · Community answers](reports/15-community-answering.md) | Recruit for the two free pilots |
+| Make discovery measurable | [02 · Measurement](reports/02-measurement.md), [06 · Search](reports/06-brand-search-identity.md), [12 · Assistants](reports/12-directories-and-show-hn.md) | Establish the baseline this week |
+| Admit native testers | [01 · Check beta access](reports/01-store-readiness.md) | Verify the TestFlight or signed APK route before inviting lifters |
+| Distribute through public stores | [05 · Store listings](reports/05-aso-and-featuring.md) | Owner chooses a store release and has an eligible build |
+| Test a purchase | [03 · Fund demonstrations](reports/03-free-pool.md), [04 · Coach and checkout](reports/04-gym-demo-and-checkout.md) | Returning lifters, cost evidence and a separate owner decision |
+| Expand a working channel | [07 · Sharing](reports/07-sharing-surfaces.md), [09 · Creators](reports/09-creator-campaign.md), [14 · Apple Ads](reports/14-apple-ads-test.md) | Prior cohort evidence and a working destination for the audience |
+| Test another reason to return | [10 · Recap](reports/10-weekly-recap.md), [13 · Journal](reports/13-journal-voice-cohort.md), [16 · Cross-product invitation](reports/16-cross-product-invitation.md) | A free experiment slot and enough eligible users |
 
-## Provenance
-
-Agreed on 2026-11-02 between Claude (Fable 5.1) and Codex (GPT-6 Astra, extra-high effort) in three
-negotiation rounds, grounded by four research sweeps of 2025 to 2026 sources. The dogfood tree node
-`marketing-strategy-2026-11` carries progress.
+Store aggregate outcomes and the next decision on the [marketing node in the dogfood tree](https://windmill.works/#/app/t_9362d9bc883e0a1e). Its ID is `marketing-launch-plan-search-indexing-and-agent-discovery`. Keep participant records, account verification details and private console exports out of this public repository.
