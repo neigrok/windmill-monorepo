@@ -9,7 +9,7 @@ import { reasonLine, showAllDone } from '../copy.js';
 import { prefersReducedMotion } from '../theme.js';
 import { TreeDoor } from '../room/useTreeVisit.js';
 
-const WAKE_MS = 2400; // the Arrived edge settles over two 1200ms pulses
+export const WAKE_MS = 2400; // the Arrived edge settles over two 1200ms pulses
 const OVERSCAN = 10;
 const FIRST_PAINT = { first: 0, last: 15 };
 const FIRST_RUN = { gap: 8, width: 360 };
@@ -90,9 +90,8 @@ export class CardStack {
   }
 }
 
-// One timeline owns the displayed cards, arrival counts, travel and wake across all columns. `wake` is a step the first
-// Board shown wakes where it stands: the one a return from its tree came back through.
-export function useRegroup(board, { quiet = 0, phone = false, root, wake = null } = {}) {
+// One timeline owns the displayed cards, arrival counts, travel and wake across all columns.
+export function useRegroup(board, { quiet = 0, phone = false, root } = {}) {
   const [state, setState] = useState({
     target: board, timeline: board, board, counts: board, quiet,
     arrived: NOTHING_ARRIVED, leaving: NOTHING_ARRIVED, dimmed: NOTHING_ARRIVED,
@@ -114,7 +113,6 @@ export function useRegroup(board, { quiet = 0, phone = false, root, wake = null 
     const dimmed = downward
       ? new Set([...change.arrived, ...change.moved.map(({ id }) => id)])
       : NOTHING_ARRIVED;
-    const woken = board && !state.board && board.states.has(wake) ? new Set([wake]) : change.arrived;
     let phase = 'settled';
     if (downward) phase = 'quiet';
     if (moving) phase = 'leaving';
@@ -123,7 +121,7 @@ export function useRegroup(board, { quiet = 0, phone = false, root, wake = null 
       timeline: continuingQuiet ? state.timeline : board,
       board: moving ? state.board : board,
       counts: moving ? state.counts : board,
-      arrived: downward ? NOTHING_ARRIVED : woken,
+      arrived: downward ? NOTHING_ARRIVED : change.arrived,
       leaving: downward ? NOTHING_ARRIVED : change.leaving,
       moved: continuingQuiet ? state.moved : change.moved,
       dimmed: continuingQuiet ? state.dimmed : dimmed,

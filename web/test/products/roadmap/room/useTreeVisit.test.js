@@ -74,7 +74,7 @@ test('going in names where the person was on the opened tree’s entry, and comi
   assert.equal(here().href, '/#/app/t_year');
   assert.deepEqual(readTreeVisit(), { from: null, through: 'sail', view: 'tree', door: 'back' });
 
-  settleReturn();
+  assert.deepEqual([settleReturn(), settleReturn()], [true, false]);
   assert.deepEqual(readTreeVisit(), { from: null, through: null, view: null, door: null });
 });
 

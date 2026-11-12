@@ -67,9 +67,9 @@
 }
 .st-roadmap-back--phone {
   justify-content: center;
-  width: 44px;
+  width: 36px;
   height: 44px;
-  margin-left: -12px;
+  margin: 0 -4px 0 -10px;
   padding: 0;
   color: var(--text-primary);
 }
@@ -78,10 +78,14 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font: 700 11px/14px var(--font-body);
-  letter-spacing: 0.04em;
+  font: 800 10px/13px var(--font-body);
   text-transform: uppercase;
   color: var(--text-secondary);
+}
+.st-roadmap-title.st-roadmap-title--from {
+  box-sizing: border-box;
+  padding: 3px 0;
+  line-height: 25px;
 }
 
 .st-roadmap-title {

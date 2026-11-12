@@ -569,13 +569,12 @@ function StepSections({ idPrefix, section, onSection }) {
 }
 
 // Up next offers Complete; Done offers Reset, secondary, previewing what it returns to Locked. A step that opens a tree
-// offers neither: where Complete sat it says what completes it, beside the way into the tree.
+// offers neither: where they sat it says what completes it, beside the way into the tree.
 function StepActions({ facts, phone, onComplete, onReset, onOpenTree, editLabel, editRef, onEdit }) {
   const [previewing, setPreviewing] = useState(false);
-  const preview = previewing && facts.column === 'done' ? resetPreview({ relocked: facts.relocks }) : null;
+  const preview = previewing && facts.takesMark && facts.column === 'done' ? resetPreview({ relocked: facts.relocks }) : null;
   const editClass = phone && facts.column !== 'locked' ? ' st-board-step-action--text' : '';
-  if (!facts.takesMark) return <TreeBand facts={facts} onOpenTree={onOpenTree} editClass={editClass} editLabel={editLabel} editRef={editRef} onEdit={onEdit} />;
-  if (!onEdit && facts.column === 'locked') return null;
+  if (!onEdit && facts.takesMark && facts.column === 'locked') return null;
   return (
     <>
       {preview && <p className="st-board-step-preview">{preview}</p>}
@@ -590,12 +589,13 @@ function StepActions({ facts, phone, onComplete, onReset, onOpenTree, editLabel,
             {editLabel}
           </button>
         )}
-        {facts.column === 'upNext' && (
+        {!facts.takesMark && <TreeBand facts={facts} onOpenTree={onOpenTree} />}
+        {facts.takesMark && facts.column === 'upNext' && (
           <button type="button" className="st-board-step-action st-board-step-action--primary" onClick={onComplete}>
             {STEP_DETAIL.complete}
           </button>
         )}
-        {facts.column === 'done' && (
+        {facts.takesMark && facts.column === 'done' && (
           <button
             type="button"
             className="st-board-step-action st-board-step-action--secondary"
@@ -613,32 +613,26 @@ function StepActions({ facts, phone, onComplete, onReset, onOpenTree, editLabel,
   );
 }
 
-// Opening the tree is the next thing to do only while the step is up next and nothing stands in its tree's way.
-function TreeBand({ facts, onOpenTree, editClass, editLabel, editRef, onEdit }) {
+// Going in is primary only while it is the way forward: the step up next, and nothing in its tree's way.
+function TreeBand({ facts, onOpenTree }) {
   const { opening, column, toGo } = facts;
   const words = treeBand(opening, { column, toGo });
-  const next = column === 'upNext' && opening.workable;
-  const Glyph = column === 'locked' && opening.workable ? StepIcons.statusLocked : null;
-  if (!onEdit && !words && !onOpenTree) return null;
+  const forward = opening.workable && column === 'upNext';
+  const waiting = opening.workable && column === 'locked';
   return (
-    <div className="st-board-step-buttons">
-      {onEdit && (
-        <button ref={editRef} type="button" className={`st-board-step-action st-board-step-action--secondary${editClass}`} onClick={onEdit}>
-          {editLabel}
-        </button>
-      )}
+    <>
       {words && (
         <span className={`st-board-step-tree-band st-board-step-tree-band--${opening.face}`}>
-          {Glyph ? <Glyph /> : <OpeningGlyph face={opening.face} size={14} />}
+          {waiting ? <StepIcons.statusLocked /> : <OpeningGlyph face={opening.face} size={14} />}
           {words}
         </span>
       )}
       {onOpenTree && (
-        <button type="button" className={`st-board-step-action st-board-step-action--tree st-board-step-action--${next ? 'primary' : 'secondary'}`} onClick={onOpenTree}>
+        <button type="button" className={`st-board-step-action st-board-step-action--tree st-board-step-action--${forward ? 'primary' : 'secondary'}`} onClick={onOpenTree}>
           {TREE.open}
         </button>
       )}
-    </div>
+    </>
   );
 }
 

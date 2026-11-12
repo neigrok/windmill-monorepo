@@ -126,6 +126,7 @@ export function RoadmapIdentity({
 
   const showSwitcher = title !== undefined && !sheetAvailable && !phone && owner && !!switcher;
   const showHeading = title !== undefined && !sheetAvailable && !showSwitcher;
+  const eyebrow = back && phone ? <span className="st-roadmap-eyebrow" aria-hidden>{back.title}</span> : null;
 
   return (
     <div
@@ -143,15 +144,15 @@ export function RoadmapIdentity({
         </button>
       )}
       <div className="st-roadmap-context">
-        {back && phone && title !== undefined && <span className="st-roadmap-eyebrow" aria-hidden>{back.title}</span>}
         {sheetAvailable && (
-          <button ref={titleButton} className="st-roadmap-title st-roadmap-title-button" type="button"
+          <button ref={titleButton} className={`st-roadmap-title st-roadmap-title-button${eyebrow ? ' st-roadmap-title--from' : ''}`} type="button"
             aria-label={title} aria-haspopup="dialog" aria-expanded={open === 'sheet'} onClick={() => toggle('sheet')}>
+            {eyebrow}
             {title}
           </button>
         )}
         {showSwitcher && <div className="st-roadmap-switcher">{switcher}</div>}
-        {showHeading && <h1 ref={titleButton} tabIndex={-1} className="st-roadmap-title" title={title}>{title}</h1>}
+        {showHeading && <h1 ref={titleButton} tabIndex={-1} className={`st-roadmap-title${eyebrow ? ' st-roadmap-title--from' : ''}`} title={title}>{eyebrow}{title}</h1>}
       </div>
       {role === 'demo' && !phone && <span className="st-roadmap-sample">{DEMO_BYLINE.wide}</span>}
       {title !== undefined && progress && (

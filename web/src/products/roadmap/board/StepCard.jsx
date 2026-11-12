@@ -16,8 +16,8 @@ export const StepCard = React.memo(function StepCard({ card, selected = false, a
   const reason = reasonLine(card);
   const description = card.step.description?.trim() ?? '';
   const kind = hueOf(card.step.color);
-  const tree = card.opening && treeLine(card.opening, card.opening.titleBeside(card.step));
-  const leads = Boolean(tree && openTree) && !card.opening.dangling;
+  const pill = card.opening && treeLine(card.opening, card.opening.titleBeside(card.step));
+  const leads = Boolean(pill && openTree) && !card.opening.dangling;
   const cardButton = (
     <button
       type="button"
@@ -36,10 +36,10 @@ export const StepCard = React.memo(function StepCard({ card, selected = false, a
       <span className="st-board-card-content">
         <span className="st-board-card-title">{card.step.label}</span>
         {reason && <span className="st-board-card-reason">{reason}</span>}
-        {tree && (
+        {pill && (
           <span className={`st-board-tree-pill st-board-tree-pill--${card.opening.face}${leads ? ' st-board-tree-pill--leads' : ''}`}>
             <span className="st-board-tree-pill-glyph"><OpeningGlyph face={card.opening.face} size={14} check /></span>
-            <span className="st-board-tree-pill-label">{tree}</span>
+            <span className="st-board-tree-pill-label">{pill}</span>
             {card.opening.face === 'open' && (
               <span className="st-board-tree-pill-bar" aria-hidden><span style={{ width: `${card.opening.gauge * 100}%` }} /></span>
             )}

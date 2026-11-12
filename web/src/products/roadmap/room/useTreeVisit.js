@@ -31,10 +31,13 @@ export function readTreeVisit(state = window.history.state) {
   return { from: null, through: null, view: null, door: null };
 }
 
-// A return is said once: the step gone through leaves the entry, so a reload of it is an ordinary visit.
+// A return is settled once: the step gone through leaves the entry, so a reload of it is an ordinary visit. Answers
+// whether there was one to settle.
 export function settleReturn() {
   const { [WENT_THROUGH]: through, ...state } = window.history.state ?? {};
-  if (through) window.history.replaceState(state, '');
+  if (!through) return false;
+  window.history.replaceState(state, '');
+  return true;
 }
 
 // The room's side of it: `open` goes into a step's tree from the door that offered it, off the tree and the view the room
@@ -42,9 +45,7 @@ export function settleReturn() {
 export function useTreeVisit({ room, band, track = beacon }) {
   const [visit] = useState(readTreeVisit);
   useEffect(() => {
-    if (visit.door !== 'back') return;
-    settleReturn();
-    track('roadmap_tree_back', { band });
+    if (settleReturn()) track('roadmap_tree_back', { band });
   }, []);
 
   const open = useCallback((stepId, door) => {

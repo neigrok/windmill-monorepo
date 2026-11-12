@@ -477,7 +477,8 @@ export function treeTitle(opening) {
   return opening.dangling ? t('roadmap.tree.state.missingTitle') : opening.title;
 }
 
-// What stands where Complete sat, and on the toast a C on the card raises: null where nothing was read of the tree.
+// What stands where Complete sat, and on the toast a C on the card raises: null where nothing was read of the tree, and
+// for a step its own mark has already completed.
 export function treeBand(opening, { column, toGo = 0 }) {
   const workable = () => (column === 'locked' ? t('roadmap.tree.band.toGo', { toGo: formatCount(toGo) }) : t('roadmap.tree.band.completes'));
   const words = {
@@ -485,7 +486,7 @@ export function treeBand(opening, { column, toGo = 0 }) {
     empty: workable,
     complete: () => t('roadmap.tree.band.completed'),
     loop: () => t('roadmap.tree.band.loop'),
-    missing: () => t('roadmap.tree.band.missing'),
+    missing: () => (column === 'done' ? null : t('roadmap.tree.band.missing')),
     unread: () => null,
   };
   return words[opening.face]();

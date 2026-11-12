@@ -1,7 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
+import { Opening } from '../../../src/products/roadmap/model/Opening.js';
 import {
+  treeBand,
+  treeLine,
+  treeState,
+  treeTitle,
   DEMO_COPY,
   GRAPH_UNAVAILABLE,
   STATE_WORDS,
@@ -525,4 +530,41 @@ test('Board and Graph share the shipped Recolor spelling for every action label'
 
 test('unavailable Graph says its device requirement without an action promise', () => {
   assert.equal(GRAPH_UNAVAILABLE, 'Graph needs WebGL2, which this browser doesn’t support.');
+});
+
+const openedTrees = () => {
+  const read = (state, done, total, loop = false) => Opening.fromWire({ treeId: 't_sail', title: 'Learn to sail', state, done, total, loop });
+  return {
+    open: read('open', 3, 8), complete: read('complete', 12, 12), empty: read('open', 0, 0), loop: read('open', 3, 8, true),
+    missing: Opening.fromWire({ treeId: 't_gone', missing: true }), unread: Opening.unread('t_sail'),
+  };
+};
+const eachTree = (say) => Object.fromEntries(Object.entries(openedTrees()).map(([face, opening]) => [face, say(opening)]));
+
+test('a card’s pill and the phone Graph’s bar say done of total or the one thing in the way, after the tree’s title or the step’s column', () => {
+  assert.deepEqual(eachTree((opening) => treeLine(opening)), {
+    open: '3 of 8', complete: '12 of 12', empty: 'No steps', loop: 'Loops back', missing: 'Not found', unread: null,
+  });
+  assert.deepEqual(eachTree((opening) => treeLine(opening, 'Coast trip')), {
+    open: 'Coast trip · 3 of 8', complete: 'Coast trip · 12 of 12', empty: 'Coast trip · No steps', loop: 'Coast trip · Loops back',
+    missing: 'Coast trip · Not found', unread: null,
+  });
+});
+
+test('the step’s Tree row names the tree and how far it is, a loop by the roadmap it leads back to', () => {
+  assert.deepEqual(eachTree((opening) => [treeTitle(opening), treeState(opening, 'My year')]), {
+    open: ['Learn to sail', '3 of 8 done'], complete: ['Learn to sail', '12 of 12 done'], empty: ['Learn to sail', 'No steps'],
+    loop: ['Learn to sail', '3 of 8 done · opens My year back'], missing: ['Tree not found', 'Nothing at the other end'], unread: ['', null],
+  });
+});
+
+test('where Complete sat: what completes the step, by its column and what its tree has come to', () => {
+  assert.deepEqual(eachTree((opening) => ['upNext', 'locked', 'done'].map((column) => treeBand(opening, { column, toGo: 2 }))), {
+    open: ['Completes with its tree', '2 to go', 'Completes with its tree'],
+    complete: ['Completed by its tree', 'Completed by its tree', 'Completed by its tree'],
+    empty: ['Completes with its tree', '2 to go', 'Completes with its tree'],
+    loop: ['Won’t complete by itself', 'Won’t complete by itself', 'Won’t complete by itself'],
+    missing: ['Can’t complete yet', 'Can’t complete yet', null],
+    unread: [null, null, null],
+  });
 });

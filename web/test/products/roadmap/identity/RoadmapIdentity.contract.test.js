@@ -39,3 +39,30 @@ for (const band of ['phone', 'tablet', 'desktop']) {
     assert.equal(demo, expected);
   });
 }
+
+for (const band of ['phone', 'tablet', 'desktop']) {
+  const act = () => {};
+  const props = {
+    band, role: 'owner', view: 'board', title: 'Learn to sail', progress: { done: 3, total: 8 },
+    onSwitchView: act, onNewStep: act, sheet: {},
+  };
+
+  test(`RoadmapIdentity contract: ${band} the way back adds only itself, named by the tree the person came from, and a direct link shows none`, () => {
+    const direct = renderToStaticMarkup(React.createElement(RoadmapIdentity, props));
+    const through = renderToStaticMarkup(React.createElement(RoadmapIdentity, { ...props, back: { title: 'My year', onBack: act } }));
+    const chevron = (size) => /<svg[^>]*>.*?<\/svg>/.exec(through.slice(through.indexOf('st-roadmap-back')))[0].includes(`width="${size}"`);
+    const back = /<button type="button" class="(st-roadmap-back [^"]*)" aria-label="([^"]*)">(.*?)<\/button>/.exec(through);
+
+    assert.equal(direct.includes('st-roadmap-back'), false);
+    assert.equal(direct.includes('st-roadmap-eyebrow'), false);
+    assert.deepEqual([back[1], back[2], back[3].replace(/<svg.*?<\/svg>/, '')], band === 'phone'
+      ? ['st-roadmap-back st-roadmap-back--phone', 'Back to My year', '']
+      : ['st-roadmap-back st-roadmap-back--wide', 'Back to My year', '<span>My year</span>']);
+    assert.equal(chevron(band === 'phone' ? 20 : 16), true);
+    const withoutBack = through.replace(back[0], '')
+      .replace('<span class="st-roadmap-eyebrow" aria-hidden="true">My year</span>', '')
+      .replace(' st-roadmap-title--from', '');
+    assert.equal(withoutBack, direct);
+    assert.equal(through.includes('<span class="st-roadmap-eyebrow" aria-hidden="true">My year</span>'), band === 'phone');
+  });
+}
