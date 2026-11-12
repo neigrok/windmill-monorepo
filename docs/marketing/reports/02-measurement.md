@@ -1,58 +1,29 @@
-# 02 · Task costs, billing and attribution
+# 02 · Establish the two pilot baselines
 
-Kind: build · Stage: 0 · Window: Nov 2 to Nov 16, 2026 · Cash: $0 to $50 · CEO hours / agent days: 3h / 4d
+**Week 1, November 12–18.** Before invitations, the founder and analyst agree on eligibility, observation
+windows and what counts. Keep one row per cohort in the weekly review. Record the period, eligible people,
+people who tried, matured windows, outcomes, unknowns and founder hours. A missing or immature number stays
+unknown.
 
-## Idea
-Make every later decision measurable before any traffic arrives. Three deliverables: a costed sample
-of at least 100 Coach tasks and 100 Tend requests, a reconciled set of 20 billing scenarios, and the
-attribution join plus Gym and Journal activation views added beside `backend/db/funnel.sql`.
-
-## Pros
-- Grounds the welcome allowance, the free pool and the annual rule in Windmill's own numbers.
-- Catches a charged-but-unentitled purchase before a stranger hits it.
-- Gives the Monday review its six numbers from day one.
-- Separates the onboarding model from the bound-seat model, so the pilot's costs are not misread.
-
-## Cons
-- Early workloads come from us and cohort users, so the cost distribution may not be representative.
-- Creates no demand on its own.
-- Beacon-sourced funnel numbers undercount; server-truth tables stay the denominator.
-- Attribution must survive voluntary account creation without fingerprinting, which limits what links can carry.
-
-## Estimates
-| Item | Estimate |
-|---|---|
-| Cash | $0 to $50 of AI spend for the costed sample (assumption) |
-| Effort | 3 CEO hours running scenarios; 4 agent days for the ledger, views and scenario harness |
-| Outcome | cost per task as mean and P90 for Coach (Sonnet 5 on anonymous seats, Opus 5 on bound seats, retries included) and for Tend; 20 scenarios reconciled across payment, entitlement, AI expense and renewal |
-
-The 20 scenarios: purchase on web and on each store, restore, cross-platform entitlement,
-cancellation, refund, renewal, allowance grant, allowance exhaustion, and the charged-but-unentitled
-case, which must count zero.
-
-## Success metric
-By Nov 16, 2026: at least 99% of AI traffic carries a settled cost, and all 20 billing scenarios
-reconcile.
-
-## Failure metric
-More than 1% of AI traffic without a cost, or any charged-but-unentitled purchase, after seven days
-of pilot use. Paid acquisition (reports 09 and 14) is blocked until this passes.
-
-## Justification
-One is $12, Apple's small-business fee leaves $10.20, and full use of the $7 allowance leaves $3.20
-before any other cost. With margins that thin, revenue-based return on ad spend is misleading and
-only contribution can gate spending (agreed C90 rule in strategy.md). Nobody has measured a Coach
-task's cost yet, and heavy AI users cost 50 to 100 times a light user (vendor analysis, 2026), so
-arithmetic means and P90 are both needed. The existing funnel views cover Roadmap only; Gym
-activation (two sessions of five sets within seven days) and Journal activation need their own views.
-The alternative, instrumenting after launch, would spend the Q5 window learning nothing.
-
-## Dependencies
-- The event intake at `POST /v1/events` with allowlisted labels; no content ever leaves the device.
-- A configured Paddle price id and `AI_ALLOWANCES_ENABLED` on in the pilot environment.
-- Report 04's web pilot to exercise the purchase scenarios on real money.
-
-## Decision log
-
-| Date | Decision | Numbers |
+| Question | What to read | What to do when coverage is missing |
 |---|---|---|
+| Do builders activate? | For the 20 people who personally try the starter, count owned trees with at least three present nodes and the owner's first completion on that tree within 48 hours of its creation. | Confirm the participant's own tree through a consented observation. Keep guest-only attempts in the 20. Label manual evidence. |
+| Do they return? | Read days 7–14 after signup. The SQL window includes day 7 and ends just before day 14. The weekly view requires 14 days of maturity and includes any attributed activity. | Reconcile the pilot cohort separately. Where the claim is a Roadmap return, verify activity on the tree. An unrelated event cannot establish that. |
+| Do lifters return to log? | Of ten qualified native testers, count distinct people who log two distinct sessions with at least five sets each within seven days of their first set. | With permission, ask each tester to check the dates and counts in their own history. Record only eligibility, threshold met, assistance and evidence type. Keep nonstarters in the denominator. |
+
+The shipped SQL covers Roadmap landings, fork intent, completed forks, activation and returns. Run its
+documented aggregate queries for the baseline, then check one internal journey against them. A copied link
+is intent. A fork record establishes a fork. Overall weekly totals include people outside the pilot and must
+not be relabelled as campaign results. The activation view can undercount a completion that was subsequently
+cleared. [Funnel guide](../../../backend/db/FUNNEL.md) · [SQL definitions](../../../backend/db/funnel.sql)
+
+Use agreed participant codes only in the restricted research record. Keep contact and scheduling details
+separately. Use allowlisted labels for product analytics. Exclude emails, account identifiers in campaign
+tags, text, movement or workout names, screenshots, audio and prompts. Preserve the distinction between a
+backend observation, a participant confirmation and unknown evidence. Keep participant confirmations out of
+the product event stream. [Pilot scorecard](../funnels.md)
+
+**Later money measurement.** Before a paid test, verify the checkout, grant and refund lifecycle and
+reconcile net receipts, refunds and AI costs. Allocate settled provider costs and unresolved holds correctly
+to their period and funding source. Pricing enquiries and owner-funded grants do not establish purchases.
+[Billing and usage contract](../../AI_USAGE_REVIEW.md) · [Checkout decision](04-gym-demo-and-checkout.md)

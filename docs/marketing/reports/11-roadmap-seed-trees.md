@@ -1,65 +1,37 @@
-# 11 · Seed Roadmap trees and measure Tend
+# 11 · Can twenty builders make a starter their own and return?
 
-Kind: experiment · Stage: 0 · Window: 20 trees by Dec 15, 2026; read Feb 13, 2027 · Cash: $0 to $100 · CEO hours / agent days: 4h / 5d
+**Free web pilot, weeks 2–4.** Recruit in week 1, November 12–18. Start with Windmill's original **Ship v1**
+starter for builders with an active small project. Its opening steps ask the builder to write a one-sentence
+promise and cut the scope to one core flow. That gives participants something they can finish now and a
+reason to reopen the tree when the project moves.
+[Starter source](../../../web/src/products/roadmap/quests/roster/shipV1.js)
 
-## Idea
+**Prepare one address.** The founder reviews the starter, publishes a sample tree and tests the signed-out
+link and the participant's path to an owned copy. Use an ordinary browser. Link to that exact tree in
+invitations once verified. Keep account creation voluntary and count anyone who stops there.
+[Share path](07-sharing-surfaces.md)
 
-Publish twenty original, reviewed public trees on goals people search for, each with a topic page,
-and expand to fifty only after engagement evidence. The trees are landing inventory for the share
-loop that already exists: unlock-video unfurls, fork attribution, the gallery ranked by forks and the
-week-N progress image. Tend requests are measured separately from trees built by external agents
-through MCP, because only Tend touches the allowance.
+**Recruiting copy**
 
-## Pros
+> I’m building Windmill Roadmap. If you’re shipping a small project, would you try a free starter tree for
+> it? Make a copy, change a step to fit the project, and mark one thing you’ve actually done. I’d like to
+> learn whether you use it again as the work moves on.
 
-- The loop is built and has never been launched; seeding is the missing input.
-- Agents draft trees; the CEO reviews for quality and honesty.
-- Topic pages catch the "<topic> roadmap" demand shape.
-- Every tree is a share asset with a moving unfurl.
+Recruit builders new to Windmill who are already working toward a release, through direct introductions or a
+community that permits feedback requests. Aim to have people try the starter in week 2 so their return
+windows can close by the end of week 4. Track how many were invited, consented and personally tried the
+starter. Lock the trial group at the first 20 who try it, including people who never claim a tree. Exclude
+staff, founder-run demos and trees built on someone's behalf. A participant may use an external assistant
+later. MCP tool access follows per-product, per-level grants for Roadmap and Gym. Normal external tool
+operations incur no Windmill-hosted model charge. [Product boundaries](../../../STRUCTURE.md) ·
+[AI usage](../../AI_USAGE_REVIEW.md)
 
-## Cons
-
-- Forks and MCP-built trees produce discovery, not paid demand.
-- Editorial quality decides everything; a thin tree hurts the brand.
-- Tend's interface is being redesigned, so the paid trigger may be late.
-- Fifty trees of filler is worse than twenty good ones.
-
-## Estimates
-
-| Item | Number | Basis |
-|---|---|---|
-| Cash | $0 to $100 | hosting and image rendering |
-| Effort | 4 CEO hours, 5 agent days | review and build |
-| Visits, forks, buyers | 300 visits, 60 forks, 2 to 6 buyers | assumption |
-| Demand | roadmap.sh draws about 4M visits a month with zero direct monetisation | third-party estimate, 2025 |
-
-## Success metric
-
-At least 20% day-7 return across 100 fork owners, at least 10 returning owners and at least 3
-buyers by Feb 13, 2027.
-
-## Failure metric
-
-Under 10% day-7 return, or fewer than 2 buyers after 300 qualified visits. On failure, halt the
-expansion to fifty, keep the trees that people use, and stop treating Roadmap as a subscriber
-channel.
-
-## Justification
-
-Roadmap is the cheapest discovery Windmill has and the only product with a finished share loop.
-roadmap.sh proves the demand shape with no monetisation; its gap is any goal for any person, and
-editability. Its content is not reusable: the reuse policy restricts redistribution and it sells
-paid plans, so every seed tree is original or explicitly licensed. The paid metric will be noisy,
-so the discovery metric (fork owners returning within seven days) decides expansion and the paid
-metric decides whether Roadmap earns acquisition attention at all.
-
-## Dependencies
-
-- Tree share images and topic page layouts approved in Figma before an agent implements changes.
-- Report 02's Tend cost ledger, with external MCP calls labelled external.
-- CEO reviews each tree before it is published.
-
-## Decision log
-
-| Date | Decision | Numbers |
-|---|---|---|
+**Decision.** Count activated participants whose account owns a copy of the starter with at least three
+present nodes and who make their first completion on that tree within 48 hours of tree creation. Count
+people with verified return in days 7–14 after signup. Keep the denominator at 20 for both readings.
+Guest-only participants cannot meet the account-backed measures. Show immature and unknown outcomes
+separately. Delay a decision if outstanding observations could change it. At **8/20 activated and 4/20
+returning, or better on both**, repeat the starter with a new source. With **fewer than 4 activated or fewer
+than 2 returning** after maturation, pause expansion and interview at the first point of loss. Other
+combinations are inconclusive. Add another original starter only when the first cohort shows a job and an
+audience worth repeating. [Funnel definitions and limitations](02-measurement.md)

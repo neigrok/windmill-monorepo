@@ -1,55 +1,32 @@
-# 08 · The 50-person Gym demand cohort
+# 08 · Can ten lifters use Gym for their next two workouts?
 
-Kind: experiment · Stage: 0 · Window: recruit by Nov 30, 2026; assess through Dec 30, 2026 · Cash: $0 to $100 · CEO hours / agent days: 10h / 1d
+**Free native pilot, weeks 2–4.** Recruit in week 1, November 12–18. The founder looks for people who
+already follow a repeatable program, expect to train twice within seven days and agree to use a supported
+iOS TestFlight build or Android sideload. Start with existing lifting contacts and introductions from a
+coach or training partner who can ask interested people to opt in. The founder handles invitations
+personally. Use [the invitation and demo](04-gym-demo-and-checkout.md).
 
-## Idea
-Find 50 lifters who follow a repeatable program and have a real setup or change task in front of
-them, let the shipped product do the work, and offer them the actual $12 Windmill One. The
-deliverable is the first willingness-to-pay evidence from strangers' money, read against two
-questions: do they buy, and do they come back to Coach for another change.
+1. Verify one install-to-history journey on each offered build. Give each consenting participant the correct
+   route, explain beta access, and note platform plus whether they needed help to install. Lock the roster
+   at ten qualified testers. People who struggle to install stay in the denominator.
+2. Ask them to log the two workouts they already plan to do. Agree on a week-2 start date with each tester
+   and close the first-set intake at the end of that week so nonstarters can be counted. They can enter a
+   routine manually or try Coach where the tested build and allowance permit. Avoid changing the program to
+   meet a measurement threshold. A tester who logs fewer sets still belongs in the cohort.
+3. Record first set, first qualifying session and second qualifying session as milestones. The founder may
+   check with a tester after their observation window. If no cohort query exists, ask them to check dates
+   and set counts in their own history. Record bounded outcomes and evidence type. Scheduling details belong
+   outside the scorecard. [Measurement procedure](02-measurement.md)
+4. Ask returners “What did you use again during the second workout?” Ask others “Where did you stop, and
+   what did you use for your next workout?” Categorize access, setup, logging friction, routine mismatch or
+   unavailable evidence. Record whether the founder helped.
 
-## Pros
-- The strongest early signal on whether Coach is a recurring paid job, not a one-time setup.
-- Costs almost nothing in cash.
-- Produces the first real cost-per-task and repeat-use numbers for reports 02 and 03.
-- Qualifies the product before any channel money is spent on it.
+**Decision.** Count distinct testers who log **two separate sessions of at least five sets each within seven
+days of their first set**. Show nonstarters, still-open windows and unknowns separately. After all ten have
+had an opportunity and the observation windows close, **4/10 or more** earns another free cohort. **0–1/10**
+triggers a rework of the biggest observed obstacle. At **2–3/10**, interview both returners and dropouts,
+change one thing and repeat. If reach or evidence falls short, report the actual count and defer the
+decision. [Gym product definition](../../PRODUCT_LOG.md#gym)
 
-## Cons
-- Selected users and founder help inflate conversion; the result overstates what a cold channel will do.
-- Recruiting 50 qualified people is the one task agents cannot do, and it needs about 10 CEO hours.
-- Ten buyers give direction, not statistical confidence.
-- A program that needs little AI after setup may show good retention and no reason to subscribe.
-
-## Estimates
-| Item | Estimate |
-|---|---|
-| Cash | $0 to $100 of AI spend across 50 people (assumption) |
-| Effort | 10 CEO hours recruiting and observing; 1 agent day for the cohort's tracking |
-| Outcome | 5 to 10 buyers (assumption); benchmark context: freemium download-to-paid median is 2.1% at day 35 and Health & Fitness 2.9% (RevenueCat, 2026), so a hand-picked cohort converting at 10% says nothing about channels |
-
-## Success metric
-At least 5 full-price buyers out of 50 by Dec 30, 2026, and at least 50% of buyers apply another
-Coach proposal in a later week.
-
-## Failure metric
-Fewer than 3 buyers, or under 30% repeat application, by Dec 30, 2026. The creator campaign in
-report 09 stays in preflight and the paid proposition is revisited before any acquisition spend.
-
-## Justification
-The negotiation's central doubt is whether Coach creates recurring paid demand or only setup demand.
-AI apps convert 52% better on trial but their monthly subscribers retain at 6.1% over twelve months
-against 9.5% for non-AI apps (RevenueCat, 2026), so the repeat-use line matters more than the
-purchase line. Stoic's founder went full time only after more than 100 paying subscribers arrived in
-30 days with no marketing (interview, 2023); this cohort is the same test at Windmill's scale. The
-alternative, learning this from paid traffic, costs $105 to $180 per subscriber at benchmark rates.
-This experiment qualifies the product for channel learning; it does not qualify it for scale.
-
-## Dependencies
-- Report 04's checkout and demonstration, passed.
-- Report 02's billing scenarios reconciled.
-- CEO recruits the 50 people; agents prepare the tracking and nothing else.
-
-## Decision log
-
-| Date | Decision | Numbers |
-|---|---|---|
+Record repeat Coach use separately from repeat logging. A pricing conversation can reveal which job someone
+values. Payment, renewal and subscriber acquisition cost remain unmeasured while checkout is closed.
