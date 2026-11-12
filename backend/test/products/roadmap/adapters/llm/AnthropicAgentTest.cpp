@@ -1,5 +1,7 @@
 #include "products/roadmap/adapters/llm/AnthropicAgent.h"
 
+#include "products/roadmap/application/ScopedToolHost.h"
+#include "test/products/roadmap/adapters/mcp/ToolsHarness.h"
 #include "test/testing.h"
 
 #include <optional>
@@ -269,6 +271,27 @@ TEST(drive_agent_counts_only_successful_mutations_as_edits) {
 }
 
 // A write that answers `unchanged` changed nothing: a step of the run that neither failed nor counts as an edit.
+// Through a tend's scoped host over the real tools: an import that re-sends what the tree holds is no edit of the run,
+// and one carrying a mark beside it is, since `unchanged` speaks for the graft and not for the marks it carried.
+TEST(drive_agent_counts_an_echoed_import_as_no_edit_unless_it_carries_progress) {
+  test::Harness h;
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"}]})")).isError);
+  ScopedToolHost scoped(h.tools, TreeId{"t"});
+  const auto editsOf = [&](const char* input) {
+    Json::Value call = toolUseReply("import_subgraph", "toolu_1");
+    call["content"][0]["input"] = parse(input);
+    FakeModel model;
+    model.replies.push_back(call);
+    model.replies.push_back(textReply("end_turn", "Done"));
+    Recorder rec;
+    return driveAgent("tend it", TreeId{"t"}, h.caller, scoped, model.asCall(), rec.onStep(), rec.report()).edits;
+  };
+
+  CHECK_EQ(editsOf(R"({"nodes":[{"id":"a","label":"A"}]})"), 0);
+  CHECK_EQ(editsOf(R"({"nodes":[{"id":"a","label":"A"}],"progress":[{"nodeId":"a","status":"complete"}]})"), 1);
+  CHECK_EQ(editsOf(R"({"nodes":[{"id":"a","label":"B"}]})"), 1);
+}
+
 TEST(drive_agent_counts_no_edit_for_a_write_that_changed_nothing) {
   FakeToolHost host;
   host.responder = [](const std::string& name, const Json::Value&) -> ToolResult {

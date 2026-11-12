@@ -1,5 +1,5 @@
 {
-  "schemaVersion" : 17,
+  "schemaVersion" : 18,
   "steps" : 
   [
     {
@@ -451,12 +451,13 @@
               [
                 "ghost"
               ],
-              "seq" : 13,
+              "seq" : 12,
               "tombstoned" : 
               {
                 "edges" : 0,
                 "nodes" : 0
-              }
+              },
+              "unchanged" : true
             },
             "type" : "text"
           }
@@ -482,7 +483,7 @@
               [
                 "loop of trees from \"docs\" through \"t\""
               ],
-              "seq" : 14
+              "seq" : 13
             },
             "type" : "text"
           }
@@ -566,7 +567,7 @@
             "text" : 
             {
               "count" : 5,
-              "seq" : 14,
+              "seq" : 13,
               "tree" : 
               {
                 "guide" : 

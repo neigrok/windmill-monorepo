@@ -73,4 +73,15 @@ GraphState graftState(const LooseGraph& graph, const Graft& graft, const Hlc& at
 // only where the document changes what the legend holds, and a kind it changes nothing on is left out.
 LegendState graftLegend(const Legend& legend, const Graft& graft, const Hlc& at);
 
+// The whole frame a graft joins: graftState and graftLegend at one stamp `at`. It lands nothing when the
+// document changes no register the tree holds, adds no edge and removes nothing — a frame with no entry.
+struct GraftFrame {
+  GraphState graph;
+  LegendState legend;
+
+  bool landsNothing() const { return graph.nodes.empty() && graph.edges.empty() && legend.kinds.empty(); }
+};
+
+GraftFrame graftFrame(const LooseGraph& graph, const Legend& legend, const Graft& graft, const Hlc& at);
+
 }

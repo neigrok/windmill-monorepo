@@ -911,7 +911,11 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "`edges` (the prerequisites across them), `kinds` — so check `edges` against what you meant "
         "to send; keptEdges/keptEdgeCount name the pre-existing edges into re-sent nodes that "
         "survived a merge, removedEdges counts what a replace dropped, and tombstoned counts the "
-        "nodes and edges the tombstones took. Pass dryRun to preview all of that and change nothing. "
+        "nodes and edges the tombstones took. A graft that changes nothing the tree holds — every "
+        "register sent as held, no new edge, no removal — writes nothing and answers `unchanged: true` "
+        "with the tree's current `seq`; `unchanged` speaks for the graft only, and a carried progress[] "
+        "is still applied and reported by its own keys. Pass dryRun to preview all of that, "
+        "`unchanged` included, and change nothing. "
         "One call carries at most 6 MB of description text across nodes[] (each description is still "
         "capped at 16000 characters on its own); past that the call is refused naming the size, so "
         "split a bigger import. This collapses hundreds of create/connect/delete calls into one.",

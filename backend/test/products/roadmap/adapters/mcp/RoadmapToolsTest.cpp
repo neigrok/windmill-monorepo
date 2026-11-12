@@ -2194,17 +2194,18 @@ TEST(mcp_import_subgraph_names_the_most_salient_change_of_its_batch_in_its_one_r
   }
 }
 
-// An import that re-sends the tree a node opens as the node holds it writes nothing; one that changes
-// only that register sends a frame carrying it alone.
+// An import that re-sends the tree a node opens as the node holds it writes nothing and sends no frame; one
+// that changes only that register sends a frame carrying it alone.
 TEST(mcp_import_subgraph_writes_the_tree_a_node_opens_only_when_the_batch_changes_it) {
   Harness h;
   h.trees.byId["t_sub"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Deep dive", {}}, 0, h.caller};
   h.trees.byId["t_two"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Second look", {}}, 0, h.caller};
   CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A","opens":"t_sub"}]})")).isError);
   const std::size_t rows = h.ops.byTree["t"].size();
+  const std::size_t frames = h.bus.subgraphBroadcasts.size();
 
-  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","opens":"t_sub"}]})")).isError);
-  CHECK(h.bus.subgraphBroadcasts.back().subgraph.graph == GraphState{});
+  CHECK(body(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","opens":"t_sub"}]})")))["unchanged"].asBool());
+  CHECK_EQ(h.bus.subgraphBroadcasts.size(), frames);
   CHECK_EQ(h.ops.byTree["t"].size(), rows);
 
   CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","opens":"t_two"}]})")).isError);
@@ -5411,4 +5412,96 @@ TEST(mcp_a_single_node_edit_that_changes_one_field_it_names_lands_whole) {
   CHECK_EQ(body(h.call("get_nodes", parse(R"({"nodeIds":["a"],"fields":["label","icon","description","links","position"]})")))["nodes"],
            parse(R"([{"label":"B","icon":"flag","description":"Notes\n\nMore","links":[{"url":"https://a.example/1","label":"Spec"}],
              "position":{"x":1.0,"y":2.0}}])"));
+}
+
+// An import re-sending what the tree holds lands nothing: no seq, no op row, no frame and no save. Its receipt is the
+// usual one with `unchanged: true` and the tree's head, its dry run says the same, and each call logs one `ok`.
+TEST(mcp_an_import_that_changes_nothing_keeps_the_seq_and_says_so) {
+  Harness h;
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"kinds":[{"id":"owner","hue":"gold","label":"Owner"}],
+    "nodes":[{"id":"a","label":"A","color":"gold"},{"id":"b","label":"B","prerequisites":["a"]}]})")).isError);
+  const StoredTree stored = h.trees.byId["t"];
+  const std::size_t rows = h.ops.byTree["t"].size();
+  const std::size_t frames = h.bus.subgraphBroadcasts.size();
+  CompositeToolHost gate(std::vector<ToolModule>{{h.tools, ""}});
+  std::vector<WriteCompletion> completions;
+  installWriteSink([&](const WriteCompletion& completion) { completions.push_back(completion); });
+
+  const std::string nodes = R"("nodes":[{"id":"a","label":"A","color":"gold"},{"id":"b","label":"B","prerequisites":["a"]}])";
+  const std::string legend = R"("kinds":[{"id":"owner","hue":"gold","label":"Owner"}])";
+  const std::string sameShape = R"("nodes":2,"edges":1,"nodeCollisions":["a","b"],"newNodes":0,"keptEdges":[],
+    "keptEdgeCount":0,"tombstoned":{"nodes":0,"edges":0},"unchanged":true)";
+  const std::string noKinds = R"("kinds":0,"kindCollisions":[],"newKinds":0)";
+  const std::string oneKind = R"("kinds":1,"kindCollisions":["owner"],"newKinds":0)";
+  const std::string landed = R"("graphApplied":true,"progressApplied":true,"imported":true,"seq":1,
+    "diagnosticsClean":true,"introducedDiagnostics":[])";
+  const std::string previewed = R"("dryRun":true,"tombstone":[])";
+  for (const auto& [arguments, receipt] : std::vector<std::pair<std::string, std::string>>{
+           {"{" + nodes + "}", "{" + sameShape + "," + noKinds + R"(,"prerequisiteMode":"merge",)" + landed + "}"},
+           {"{" + legend + "," + nodes + "}", "{" + sameShape + "," + oneKind + R"(,"prerequisiteMode":"merge",)" + landed + "}"},
+           {R"({"prerequisiteMode":"replace",)" + nodes + "}",
+            "{" + sameShape + "," + noKinds + R"(,"prerequisiteMode":"replace","removedEdges":0,)" + landed + "}"},
+           {R"({"dryRun":true,)" + nodes + "}", "{" + sameShape + "," + noKinds + R"(,"prerequisiteMode":"merge",)" + previewed + "}"},
+           {R"({"dryRun":true,)" + legend + "," + nodes + "}",
+            "{" + sameShape + "," + oneKind + R"(,"prerequisiteMode":"merge",)" + previewed + "}"},
+           {R"({"dryRun":true,"prerequisiteMode":"replace",)" + nodes + "}",
+            "{" + sameShape + "," + noKinds + R"(,"prerequisiteMode":"replace","removedEdges":0,)" + previewed + "}"}}) {
+    Json::Value args = parse(arguments);
+    args["treeId"] = "t";
+    CHECK_EQ(body(gate.callTool("roadmap_import_subgraph", args, h.actor)), parse(receipt));
+  }
+  installWriteSink({});
+
+  CHECK_EQ(h.registry.open(TreeId{"t"})->head(), static_cast<Seq>(1));
+  CHECK_EQ(h.ops.byTree["t"].size(), rows);
+  CHECK_EQ(h.bus.subgraphBroadcasts.size(), frames);
+  CHECK(h.trees.byId["t"] == stored);
+  std::vector<std::string> observed;
+  for (const WriteCompletion& completion : completions) observed.push_back(completion.operation + " " + completion.outcome);
+  CHECK_EQ(observed, std::vector<std::string>(6, "mcp.roadmap_import_subgraph ok"));
+}
+
+// Every kind of change an import makes lands as it always has: a seq, an op row, and no `unchanged`.
+TEST(mcp_an_import_that_changes_anything_lands_with_a_seq_and_no_unchanged) {
+  Harness h;
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"kinds":[{"id":"owner","hue":"gold","label":"Owner"}],
+    "nodes":[{"id":"a","label":"A","color":"gold"},{"id":"b","label":"B","prerequisites":["a"]},{"id":"c","label":"C"}]})"))
+                  .isError);
+
+  int seq = 1;
+  for (const char* change : {
+           R"({"nodes":[{"id":"c","label":"C","prerequisites":["a"]}]})",
+           R"({"nodes":[{"id":"a","label":"A2","color":"gold"}]})",
+           R"({"nodes":[{"id":"a","label":"A2","color":"gold"}],"tombstone":["c"]})",
+           R"({"prerequisiteMode":"replace","nodes":[{"id":"b","label":"B","prerequisites":[]}]})",
+           R"({"kinds":[{"id":"owner","hue":"gold","label":"Captain"}],"nodes":[{"id":"a","label":"A2","color":"gold"}]})",
+           R"({"nodes":[{"id":"c","label":"C"}]})"}) {
+    const Json::Value receipt = body(h.call("import_subgraph", parse(change)));
+    ++seq;
+    CHECK_EQ(receipt["seq"].asInt(), seq);
+    CHECK_FALSE(receipt.isMember("unchanged"));
+    CHECK_EQ(h.ops.byTree["t"].size(), static_cast<std::size_t>(seq));
+  }
+  CHECK_EQ(body(h.call("get_tree", parse(R"({"fields":["id","label","prerequisites"],"includeGuides":false})")))["tree"]
+               ["nodes"],
+           parse(R"([{"id":"a","label":"A2","prerequisites":[]},{"id":"b","label":"B","prerequisites":[]},
+             {"id":"c","label":"C","prerequisites":[]}])"));
+  CHECK_EQ(body(h.call("get_tree", parse(R"({"includeGuides":false})")))["tree"]["kinds"],
+           parse(R"([{"id":"owner","hue":"gold","label":"Captain"}])"));
+}
+
+// `unchanged` speaks for the graft only: progress carried beside an unchanged graft is applied and reported as ever.
+TEST(mcp_an_import_whose_graft_changes_nothing_still_applies_its_progress) {
+  Harness h;
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"},{"id":"b","label":"B",
+    "prerequisites":["a"]}]})")).isError);
+
+  CHECK_EQ(body(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"}],
+    "progress":[{"nodeId":"a","status":"complete"}]})"))),
+           parse(R"({"nodes":1,"edges":0,"kinds":0,"nodeCollisions":["a"],"kindCollisions":[],"newNodes":0,
+             "newKinds":0,"prerequisiteMode":"merge","keptEdges":[],"keptEdgeCount":0,"tombstoned":{"nodes":0,"edges":0},
+             "graphApplied":true,"progressApplied":true,"imported":true,"seq":1,"unchanged":true,
+             "diagnosticsClean":true,"introducedDiagnostics":[],
+             "progress":[{"nodeId":"a","status":"complete","prerequisitesMet":true}]})"));
+  CHECK_EQ(body(h.call("get_progress", Json::Value(Json::objectValue))), parse(R"({"completed":["a"],"outOfOrder":[]})"));
 }
