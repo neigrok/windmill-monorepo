@@ -1,31 +1,70 @@
 #include "products/roadmap/domain/Graft.h"
 
+#include <algorithm>
 #include <map>
+#include <optional>
 #include <set>
 
 namespace wm {
 
-LegendState graftLegend(const Legend& current, const Graft& graft, const Hlc& at) {
-  if (graft.document.kinds.empty()) return {};
-  std::map<KindId, double> appended;  // a new kind's place after the legend's last, in document order
-  const double base = current.nextRank();
-  for (const Kind& kind : graft.document.kinds)
-    if (!current.has(kind.id)) appended.emplace(kind.id, base + static_cast<double>(appended.size()));
-
-  LegendState legend = Legend(graft.document.kinds, at).exportState();
-  for (KindStateEntry& kind : legend.kinds) {
-    const auto place = appended.find(kind.id);
-    kind.rank = place == appended.end() ? 0 : place->second;
-    kind.rankAt = place == appended.end() ? Hlc{} : at;
-    const auto omitted = graft.omittedKindRegisters.find(kind.id);
-    if (omitted == graft.omittedKindRegisters.end()) continue;
-    if (omitted->second.count(KindRegister::label)) { kind.label.clear(); kind.labelAt = Hlc{}; }
-    if (omitted->second.count(KindRegister::description)) { kind.description.clear(); kind.descriptionAt = Hlc{}; }
-    if (omitted->second.count(KindRegister::crossBranchExempt)) {
-      kind.crossBranchExempt = false;
-      kind.crossBranchExemptAt = Hlc{};
-    }
+std::variant<Graft, std::string> resolveKinds(const Legend& legend, Graft graft) {
+  if (graft.nodeKinds.empty()) return graft;
+  std::vector<Kind> landed = legend.kinds();
+  for (const Kind& kind : graft.document.kinds) {
+    const auto held = std::find_if(landed.begin(), landed.end(), [&](const Kind& k) { return k.id == kind.id; });
+    if (held == landed.end()) landed.push_back(kind);
+    else held->hue = kind.hue;
   }
+  for (std::size_t i = 0; i < graft.document.nodes.size(); ++i) {
+    NodeSpec& node = graft.document.nodes[i];
+    const auto named = graft.nodeKinds.find(node.id);
+    if (named == graft.nodeKinds.end()) continue;
+    const auto omitted = graft.omittedNodeRegisters.find(node.id);
+    const bool colorSent = omitted == graft.omittedNodeRegisters.end() || !omitted->second.count(NodeRegister::color);
+    const auto hue = resolveHue(landed, HueChoice{colorSent ? std::optional(node.color) : std::nullopt, named->second},
+                                "nodes[" + std::to_string(i) + "].");
+    if (const auto* refusal = std::get_if<std::string>(&hue)) return *refusal;
+    node.color = *std::get<std::optional<NodeColor>>(hue);
+    if (omitted != graft.omittedNodeRegisters.end()) omitted->second.erase(NodeRegister::color);
+  }
+  graft.nodeKinds.clear();
+  return graft;
+}
+
+LegendState graftLegend(const Legend& current, const Graft& graft, const Hlc& at) {
+  using Entry = KindStateEntry;
+  std::map<KindId, Entry> upserted;  // by id, so the frame lists each kind once, in id order
+  double nextRank = current.nextRank();
+  for (const Kind& kind : graft.document.kinds) {
+    const std::optional<Entry> held = current.exportKind(kind.id);  // present, or what a remove left
+    const auto omitted = graft.omittedKindRegisters.find(kind.id);
+    const auto carried = [&](KindRegister reg) {
+      return omitted == graft.omittedKindRegisters.end() || !omitted->second.count(reg);
+    };
+    Entry entry;
+    entry.id = kind.id;
+    if (!current.has(kind.id)) {  // new or revived, placed after the last kind as addKind would place it
+      entry.createdAt = at;
+      entry.rank = nextRank++;
+      entry.rankAt = at;
+    }
+    // A register lands at the graft's stamp when the batch carried it and it changes what the legend
+    // holds, an empty value included; one left out, or sent as the legend already holds it, stays unset.
+    const auto land = [&](bool inBatch, auto Entry::*field, Hlc Entry::*stamp, const auto& sent) {
+      if (!inBatch || (held && (*held).*field == sent)) return;
+      entry.*field = sent;
+      entry.*stamp = at;
+    };
+    land(true, &Entry::hue, &Entry::hueAt, kind.hue);
+    land(carried(KindRegister::label), &Entry::label, &Entry::labelAt, kind.label);
+    land(carried(KindRegister::description), &Entry::description, &Entry::descriptionAt, kind.description);
+    land(carried(KindRegister::crossBranchExempt), &Entry::crossBranchExempt, &Entry::crossBranchExemptAt,
+         kind.crossBranchExempt);
+    if (entry != Entry{.id = kind.id}) upserted.emplace(kind.id, std::move(entry));  // it lands something
+  }
+
+  LegendState legend;
+  for (auto& [id, entry] : upserted) legend.kinds.push_back(std::move(entry));
   return legend;
 }
 
@@ -52,30 +91,40 @@ GraftFootprint footprintOf(const LooseGraph& graph, const Graft& graft) {
 }
 
 GraphState graftState(const LooseGraph& graph, const Graft& graft, const Hlc& at) {
+  using Entry = NodeStateEntry;
   const std::set<NodeId> tombstoned(graft.tombstones.begin(), graft.tombstones.end());
-  std::map<NodeId, NodeStateEntry> upserted;  // by id, so the frame lists each node once, in id order
+  std::map<NodeId, Entry> upserted;  // by id, so the frame lists each node once, in id order
   std::set<Edge> added;
   for (const NodeSpec& node : graft.document.nodes) {
+    const std::optional<Entry> held = graph.exportNode(node.id);  // present, or what a delete left
     const auto omitted = graft.omittedNodeRegisters.find(node.id);
-    const auto carried = [&](NodeRegister held) {
-      return omitted == graft.omittedNodeRegisters.end() || !omitted->second.count(held);
+    const auto carried = [&](NodeRegister reg) {
+      return omitted == graft.omittedNodeRegisters.end() || !omitted->second.count(reg);
     };
-    // A carried register lands at the graft's stamp, an empty value included; an omitted one stays unset.
-    NodeStateEntry entry;
+    Entry entry;
     entry.id = node.id;
-    entry.createdAt = at;
-    if (carried(NodeRegister::label)) { entry.label = node.label; entry.labelAt = at; }
-    if (carried(NodeRegister::icon)) { entry.icon = node.icon; entry.iconAt = at; }
-    if (carried(NodeRegister::color)) { entry.color = node.color; entry.colorAt = at; }
-    if (carried(NodeRegister::order)) { entry.order = node.order; entry.orderAt = at; }
-    if (carried(NodeRegister::position)) { entry.position = node.position; entry.positionAt = at; }
-    if (carried(NodeRegister::status)) { entry.status = normalizeSeedStatus(node.status); entry.statusAt = at; }
-    if (carried(NodeRegister::description)) { entry.description = node.description; entry.descriptionAt = at; }
-    if (carried(NodeRegister::links)) { entry.links = node.links; entry.linksAt = at; }
-    upserted.emplace(node.id, std::move(entry));
+    if (!graph.hasNode(node.id)) entry.createdAt = at;  // new or revived; a present node keeps its creation
+    // A register lands at the graft's stamp when the batch carried it and it changes what the graph
+    // holds, an empty value included; one left out, or sent as the graph already holds it, stays unset.
+    const auto land = [&](bool inBatch, auto Entry::*field, Hlc Entry::*stamp, const auto& sent) {
+      if (!inBatch || (held && (*held).*field == sent)) return;
+      entry.*field = sent;
+      entry.*stamp = at;
+    };
+    land(carried(NodeRegister::label), &Entry::label, &Entry::labelAt, node.label);
+    land(carried(NodeRegister::icon), &Entry::icon, &Entry::iconAt, node.icon);
+    land(carried(NodeRegister::color), &Entry::color, &Entry::colorAt, node.color);
+    land(carried(NodeRegister::order), &Entry::order, &Entry::orderAt, node.order);
+    land(carried(NodeRegister::position), &Entry::position, &Entry::positionAt, node.position);
+    land(carried(NodeRegister::status), &Entry::status, &Entry::statusAt, normalizeSeedStatus(node.status));
+    land(carried(NodeRegister::description), &Entry::description, &Entry::descriptionAt, node.description);
+    land(carried(NodeRegister::links), &Entry::links, &Entry::linksAt, node.links);
+    land(carried(NodeRegister::opens), &Entry::opens, &Entry::opensAt, node.opens);
+    if (entry != Entry{.id = node.id}) upserted.emplace(node.id, std::move(entry));  // it lands something
     for (const NodeId& prereq : node.prerequisites) {
       const Edge edge{prereq, node.id};
-      if (!tombstoned.count(edge.from) && !tombstoned.count(edge.to)) added.insert(edge);
+      if (tombstoned.count(edge.from) || tombstoned.count(edge.to) || graph.edgePresent(edge.from, edge.to)) continue;
+      added.insert(edge);
     }
   }
 
@@ -83,12 +132,7 @@ GraphState graftState(const LooseGraph& graph, const Graft& graft, const Hlc& at
   for (auto& [id, entry] : upserted) state.nodes.push_back(std::move(entry));
   for (const Edge& edge : added) state.edges.push_back(EdgeStateEntry{edge, at, {}});
   const GraftFootprint footprint = footprintOf(graph, graft);
-  for (const NodeId& id : footprint.tombstonedNodes) {
-    NodeStateEntry entry;
-    entry.id = id;
-    entry.deletedAt = at;
-    state.nodes.push_back(entry);
-  }
+  for (const NodeId& id : footprint.tombstonedNodes) state.nodes.push_back(Entry{.id = id, .deletedAt = at});
   for (const Edge& edge : footprint.replacedEdges) state.edges.push_back(EdgeStateEntry{edge, {}, at});
   for (const Edge& edge : footprint.tombstonedEdges) state.edges.push_back(EdgeStateEntry{edge, {}, at});
   return state;

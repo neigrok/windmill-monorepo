@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <map>
+#include <utility>
 
 namespace wm {
 
@@ -36,7 +38,14 @@ std::uint64_t lastActiveAt(std::uint64_t updatedAt, std::uint64_t lastMarkedAt) 
   return std::max(updatedAt, lastMarkedAt);
 }
 
+OpenedTrees openedAmong(const std::vector<LoadedTree>& loaded) {
+  std::map<TreeId, OpenedTree> standing;
+  for (const LoadedTree& tree : loaded) standing.emplace(tree.data.id, OpenedTree(tree.data, tree.progress));
+  return OpenedTrees(std::move(standing));
+}
+
 std::vector<TreeSummary> registrySummaries(const std::vector<LoadedTree>& loaded) {
+  const OpenedTrees opened = openedAmong(loaded);
   std::vector<TreeSummary> summaries;
   summaries.reserve(loaded.size());
   for (const LoadedTree& tree : loaded) {
@@ -45,7 +54,7 @@ std::vector<TreeSummary> registrySummaries(const std::vector<LoadedTree>& loaded
     summary.title = tree.data.title;
     summary.createdAt = tree.createdAt;  // a birth stamp: never folded with the freshness ones
     summary.updatedAt = lastActiveAt(tree.updatedAt, tree.lastMarkedAt);
-    summary.stats = treeStats(tree.data, tree.progress);
+    summary.stats = treeStats(tree.data, opened.followed(tree.data, tree.progress));
     summaries.push_back(std::move(summary));
   }
   std::sort(summaries.begin(), summaries.end(), [](const TreeSummary& a, const TreeSummary& b) {

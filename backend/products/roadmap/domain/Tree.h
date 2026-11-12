@@ -136,6 +136,7 @@ struct NodeSpec {
   std::optional<std::string> status;
   std::string description;
   std::vector<Link> links;
+  TreeId opens;  // the tree this node opens; an empty id opens none
 };
 
 // A node's `color` field *is* its kind, so there is no node→kind foreign key. The legend names and

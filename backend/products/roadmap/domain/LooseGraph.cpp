@@ -29,6 +29,8 @@ NodeStateEntry entryOf(const NodeId& id, const NodeRecord& record) {
   entry.descriptionAt = record.description.stamp;
   entry.links = record.links.value;
   entry.linksAt = record.links.stamp;
+  entry.opens = record.opens.value;
+  entry.opensAt = record.opens.stamp;
   return entry;
 }
 }
@@ -39,6 +41,7 @@ LooseGraph::LooseGraph(const TreeData& seed, const Hlc& at) {
     if (!node.order.empty()) setOrder(node.id, node.order, at);
     if (!node.description.empty()) setDescription(node.id, node.description, at);
     if (!node.links.empty()) setLinks(node.id, node.links, at);
+    if (!node.opens.empty()) setOpens(node.id, node.opens, at);
   }
   for (const auto& node : seed.nodes) {
     for (const auto& prereq : node.prerequisites) addEdge(prereq, node.id, at);
@@ -58,6 +61,7 @@ LooseGraph::LooseGraph(const GraphState& state) {
     record.status = {normalizeSeedStatus(node.status), node.statusAt};
     record.description = {node.description, node.descriptionAt};
     record.links = {node.links, node.linksAt};
+    record.opens = {node.opens, node.opensAt};
     nodes_[node.id] = std::move(record);
   }
   for (const auto& edge : state.edges) {
@@ -78,6 +82,7 @@ void LooseGraph::join(const GraphState& state) {
     record.status.merge(normalizeSeedStatus(node.status), node.statusAt);
     record.description.merge(node.description, node.descriptionAt);
     record.links.merge(node.links, node.linksAt);
+    record.opens.merge(node.opens, node.opensAt);
   }
   for (const auto& edge : state.edges) {
     ElementSet& element = edges_[edge.edge];
@@ -130,6 +135,10 @@ void LooseGraph::setOrder(const NodeId& id, const std::string& order, const Hlc&
   nodes_[id].order.merge(order, at);
 }
 
+void LooseGraph::setOpens(const NodeId& id, const TreeId& opens, const Hlc& at) {
+  nodes_[id].opens.merge(opens, at);
+}
+
 void LooseGraph::addEdge(const NodeId& from, const NodeId& to, const Hlc& at) {
   edges_[Edge{from, to}].add(at);
 }
@@ -172,6 +181,7 @@ std::optional<NodeSpec> LooseGraph::nodeView(const NodeId& id) const {
   spec.status = record.status.value;
   spec.description = record.description.value;
   spec.links = record.links.value;
+  spec.opens = record.opens.value;
   for (const auto& edge : liveEdges()) {
     if (edge.to == id) spec.prerequisites.push_back(edge.from);
   }
@@ -312,6 +322,7 @@ TreeData LooseGraph::toTreeData(const TreeId& id, const std::string& title) cons
     spec.status = record.status.value;
     spec.description = record.description.value;
     spec.links = record.links.value;
+    spec.opens = record.opens.value;
     if (auto it = parents.find(nodeId); it != parents.end()) spec.prerequisites = it->second;
     data.nodes.push_back(std::move(spec));
   }
@@ -327,12 +338,16 @@ GraphState LooseGraph::exportState() const {
   return state;
 }
 
-GraphState LooseGraph::forkState(const Hlc& plantedAt) const {
+GraphState LooseGraph::forkState(const Hlc& plantedAt, ForkOpens opens) const {
   GraphState state = exportState();
   std::vector<NodeStateEntry*> present;
   for (NodeStateEntry& node : state.nodes) {
     node.status = std::nullopt;
     node.statusAt = Hlc{};
+    if (opens == ForkOpens::cleared) {
+      node.opens = TreeId{};
+      node.opensAt = Hlc{};
+    }
     if (nodes_.at(node.id).life.present()) present.push_back(&node);
   }
   std::sort(present.begin(), present.end(), [](const NodeStateEntry* a, const NodeStateEntry* b) {

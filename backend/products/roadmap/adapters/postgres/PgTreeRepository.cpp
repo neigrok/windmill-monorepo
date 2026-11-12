@@ -39,9 +39,9 @@ void upsertNode(pqxx::work& txn, const TreeId& tree, const NodeStateEntry& node)
   txn.exec_params(
       "INSERT INTO tree_nodes (tree_id, node_id, created_hlc, deleted_hlc, label, label_hlc, "
       "icon, icon_hlc, color, color_hlc, pos_x, pos_y, pos_hlc, status, status_hlc, "
-      "description, description_hlc, links, links_hlc, present, ord, ord_hlc) "
+      "description, description_hlc, links, links_hlc, present, ord, ord_hlc, opens, opens_hlc) "
       "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, "
-      "$18::jsonb, $19, $20, $21, $22) "
+      "$18::jsonb, $19, $20, $21, $22, $23, $24) "
       "ON CONFLICT (tree_id, node_id) DO UPDATE SET "
       "created_hlc = EXCLUDED.created_hlc, deleted_hlc = EXCLUDED.deleted_hlc, "
       "label = EXCLUDED.label, label_hlc = EXCLUDED.label_hlc, "
@@ -51,7 +51,8 @@ void upsertNode(pqxx::work& txn, const TreeId& tree, const NodeStateEntry& node)
       "status = EXCLUDED.status, status_hlc = EXCLUDED.status_hlc, "
       "description = EXCLUDED.description, description_hlc = EXCLUDED.description_hlc, "
       "links = EXCLUDED.links, links_hlc = EXCLUDED.links_hlc, present = EXCLUDED.present, "
-      "ord = EXCLUDED.ord, ord_hlc = EXCLUDED.ord_hlc",
+      "ord = EXCLUDED.ord, ord_hlc = EXCLUDED.ord_hlc, "
+      "opens = EXCLUDED.opens, opens_hlc = EXCLUDED.opens_hlc",
       tree.str(), node.id.str(), toString(node.createdAt), toString(node.deletedAt),
       node.label, toString(node.labelAt), node.icon, toString(node.iconAt),
       std::string(toString(node.color)), toString(node.colorAt),
@@ -59,7 +60,7 @@ void upsertNode(pqxx::work& txn, const TreeId& tree, const NodeStateEntry& node)
       node.description, toString(node.descriptionAt),
       dump(linksToJson(node.links)), toString(node.linksAt),
       entryPresent(node.createdAt, node.deletedAt),
-      node.order, toString(node.orderAt));
+      node.order, toString(node.orderAt), node.opens.str(), toString(node.opensAt));
 }
 
 void upsertEdge(pqxx::work& txn, const TreeId& tree, const EdgeStateEntry& edge) {
@@ -125,6 +126,8 @@ NodeStateEntry nodeFromRow(const auto& row) {
   node.descriptionAt = stamp(row, "description_hlc");
   node.links = linksFromJson(parse(text(row, "links")));
   node.linksAt = stamp(row, "links_hlc");
+  node.opens = TreeId{text(row, "opens")};
+  node.opensAt = stamp(row, "opens_hlc");
   return node;
 }
 
@@ -133,7 +136,7 @@ GraphState graphRows(pqxx::work& txn, const TreeId& tree) {
   pqxx::result nodes = txn.exec_params(
       "SELECT node_id, created_hlc, deleted_hlc, label, label_hlc, icon, icon_hlc, color, "
       "color_hlc, ord, ord_hlc, pos_x, pos_y, pos_hlc, status, status_hlc, description, "
-      "description_hlc, links::text AS links, links_hlc FROM tree_nodes WHERE tree_id = $1",
+      "description_hlc, links::text AS links, links_hlc, opens, opens_hlc FROM tree_nodes WHERE tree_id = $1",
       tree.str());
   for (const auto& row : nodes) state.nodes.push_back(nodeFromRow(row));
 
@@ -337,7 +340,7 @@ std::vector<OwnedTree> PgTreeRepository::listOwnedBy(const UserId& owner) {
 TreeData PgTreeRepository::projectDocument(pqxx::work& txn, const TreeId& tree, const std::string& title,
                                            const std::string& documentBlob) {
   pqxx::result nodes = txn.exec_params(
-      "SELECT node_id, color FROM tree_nodes WHERE tree_id = $1 AND present", tree.str());
+      "SELECT node_id, color, opens FROM tree_nodes WHERE tree_id = $1 AND present", tree.str());
   TreeData data;
   data.id = tree;
   data.title = title;
@@ -345,6 +348,7 @@ TreeData PgTreeRepository::projectDocument(pqxx::work& txn, const TreeId& tree, 
     NodeSpec spec;
     spec.id = NodeId{n["node_id"].as<std::string>()};
     spec.color = parseColor(n["color"].as<std::string>()).value_or(NodeColor::terracotta);
+    spec.opens = TreeId{n["opens"].as<std::string>()};
     data.nodes.push_back(std::move(spec));
   }
   if (!data.nodes.empty()) return data;
@@ -400,6 +404,72 @@ std::set<TreeId> PgTreeRepository::listForkedSources(const UserId& owner) {
   std::set<TreeId> sources;
   for (const auto& row : rows) sources.insert(TreeId{row["forked_from"].as<std::string>()});
   return sources;
+}
+
+std::map<TreeId, std::string> PgTreeRepository::titlesOwnedBy(const UserId& owner, const std::set<TreeId>& trees) {
+  if (trees.empty()) return {};
+  Json::Value ids(Json::arrayValue);
+  for (const TreeId& tree : trees) ids.append(tree.str());
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
+  pqxx::result rows = txn.exec_params(
+      "SELECT id, title FROM trees WHERE deleted_at IS NULL AND owner_id = $1::uuid "
+      "AND id IN (SELECT jsonb_array_elements_text($2::jsonb))",
+      owner.str(), dump(ids));
+
+  std::map<TreeId, std::string> titles;
+  for (const auto& row : rows) titles.emplace(TreeId{row["id"].as<std::string>()}, row["title"].as<std::string>());
+  return titles;
+}
+
+std::map<TreeId, OpenedTree> PgTreeRepository::openedFrom(const UserId& owner, const std::set<TreeId>& opened) {
+  if (opened.empty()) return {};
+  Json::Value ids(Json::arrayValue);
+  for (const TreeId& tree : opened) ids.append(tree.str());
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
+  // One statement: the counts and the marks are one snapshot, and no node row leaves the database.
+  pqxx::result rows = txn.exec_params(
+      "WITH RECURSIVE reached(id, title) AS ("
+      "  SELECT t.id, t.title FROM trees t "
+      "  WHERE t.deleted_at IS NULL AND t.owner_id = $1::uuid "
+      "    AND t.id IN (SELECT jsonb_array_elements_text($2::jsonb)) "
+      // UNION keeps each tree once, which is what ends the walk on a loop.
+      "  UNION "
+      "  SELECT t.id, t.title FROM reached r "
+      // Each LATERAL runs once per row before it, so each table is read by its key whatever the planner expects.
+      "  CROSS JOIN LATERAL (SELECT DISTINCT n.opens FROM tree_nodes n WHERE n.tree_id = r.id AND n.present) o "
+      "  CROSS JOIN LATERAL (SELECT s.id, s.title, s.owner_id, s.deleted_at FROM trees s WHERE s.id = o.opens LIMIT 1) t "
+      "  WHERE t.deleted_at IS NULL AND t.owner_id = $1::uuid"
+      ") "
+      // A row is a tree and one target: '' for its nodes that open none, NULL for a tree with no node.
+      "SELECT r.id, r.title, c.opens, c.nodes, c.marked "
+      "FROM reached r LEFT JOIN LATERAL ("
+      "  SELECT n.opens, count(*) AS nodes, "
+      "         count(*) FILTER (WHERE n.node_id IN ("
+      "           SELECT p.node_id FROM node_progress p "
+      // Only node_progress_pkey can serve the row comparisons, which bound the scan to this tree and reader.
+      "           WHERE p.tree_id = r.id AND (p.tree_id, p.user_id) >= (r.id, $1::text) "
+      "             AND (p.tree_id, p.user_id) <= (r.id, $1::text) AND p.status = 'complete')) AS marked "
+      "  FROM tree_nodes n WHERE n.tree_id = r.id AND n.present GROUP BY n.opens"
+      ") c ON true",
+      owner.str(), dump(ids));
+
+  std::map<TreeId, OpenedTree> trees;
+  for (const auto& row : rows) {
+    OpenedTree& tree = trees[TreeId{row["id"].as<std::string>()}];
+    tree.title = row["title"].as<std::string>();
+    if (row["opens"].is_null()) continue;
+    const Pointers counted{row["nodes"].as<int>(), row["marked"].as<int>()};
+    tree.total += counted.nodes;
+    const TreeId target{row["opens"].as<std::string>()};
+    if (target.empty()) {
+      tree.marked = counted.marked;
+      continue;
+    }
+    tree.pointers.emplace(target, counted);
+  }
+  return trees;
 }
 
 void PgTreeRepository::softDelete(const TreeId& tree) {

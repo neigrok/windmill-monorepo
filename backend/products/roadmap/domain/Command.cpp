@@ -63,7 +63,7 @@ struct Overages {
 // quoted back: echoing it would make the refusal as expensive as the request.
 std::optional<std::string> nodeFieldBounds(const NodeId& id, const std::string& label, const std::string& icon,
                                            const std::string& description, const std::vector<Link>& links,
-                                           const std::optional<Vec2>& position) {
+                                           const TreeId& opens, const std::optional<Vec2>& position) {
   if (id.empty()) return "a node has an empty id";
   Overages idOver;
   idOver.note("a node id", id.str(), kMaxIdLength);
@@ -74,6 +74,7 @@ std::optional<std::string> nodeFieldBounds(const NodeId& id, const std::string& 
   over.note("icon", icon, kMaxIconLength);
   over.note("description", description, kMaxNodeDescriptionLength);
   over.noteLinks(links);
+  over.note("opens", opens.str(), kMaxIdLength);
   if (std::optional<std::string> bad = over.sentence()) return named + *bad;
   if (position && !(std::isfinite(position->x) && std::isfinite(position->y)))
     return named + "position is not finite";
@@ -179,6 +180,7 @@ void merge(LooseGraph& graph, Legend& legend, const Command& command, const Hlc&
       graph.createNode(c.id, c.label, c.icon, c.color, c.position, at);
       if (!c.description.empty()) graph.setDescription(c.id, c.description, at);
       if (!c.links.empty()) graph.setLinks(c.id, c.links, at);
+      if (c.opens) graph.setOpens(c.id, *c.opens, at);
       for (const NodeId& prereq : c.prerequisites) graph.addEdge(prereq, c.id, at);
     },
     [&](const AnnotateNode& c) {
@@ -187,6 +189,7 @@ void merge(LooseGraph& graph, Legend& legend, const Command& command, const Hlc&
       if (c.appendDescription)
         graph.setDescription(c.id, appendedTo(graph.descriptionOf(c.id), *c.appendDescription), at);
       if (c.links) graph.setLinks(c.id, *c.links, at);
+      if (c.opens) graph.setOpens(c.id, *c.opens, at);
     },
     [&](const AddEdge& c) { graph.addEdge(c.from, c.to, at); },
     [&](const RemoveEdge& c) { graph.removeEdge(c.from, c.to, at); },
@@ -249,6 +252,7 @@ std::optional<std::string> validate(const LooseGraph& graph, const Legend& legen
       over.note("icon", c.icon, kMaxIconLength);
       over.note("description", c.description, kMaxNodeDescriptionLength);
       over.noteLinks(c.links);
+      if (c.opens) over.note("opens", c.opens->str(), kMaxIdLength);
       if (auto bad = over.sentence()) return bad;
       if (c.position && !(std::isfinite(c.position->x) && std::isfinite(c.position->y)))
         return "position is not finite";
@@ -269,6 +273,7 @@ std::optional<std::string> validate(const LooseGraph& graph, const Legend& legen
         over.note("description", appendedTo(graph.descriptionOf(c.id), *c.appendDescription),
                   kMaxNodeDescriptionLength);
       if (c.links) over.noteLinks(*c.links);
+      if (c.opens) over.note("opens", c.opens->str(), kMaxIdLength);
       if (auto bad = over.sentence()) return bad;
       return present(c.id);
     },
@@ -363,12 +368,15 @@ std::variant<NodePatchPlan, std::string> planNodePatches(
   if (updates.empty() || updates.size() > kMaxPatchNodes)
     return "updates must contain 1 to " + std::to_string(kMaxPatchNodes) + " node patches";
 
+  const std::vector<Kind> kinds = legend.kinds();
   NodePatchPlan plan;
   std::set<NodeId> seen;
-  for (const NodePatch& patch : updates) {
+  for (std::size_t row = 0; row < updates.size(); ++row) {
+    const NodePatch& patch = updates[row];
     if (!seen.insert(patch.nodeId).second)
       return "updates repeats nodeId " + quoted(patch.nodeId.str());
-    if (!patch.label && !patch.icon && !patch.description && !patch.color && !patch.position && !patch.links)
+    if (!patch.label && !patch.icon && !patch.description && !patch.hue.color && !patch.hue.kind && !patch.position &&
+        !patch.links && !patch.opens)
       return "node " + quoted(patch.nodeId.str()) + ": pass at least one field to patch";
     for (const auto& [field, value] : {std::pair{"label", &patch.label}, {"icon", &patch.icon}, {"description", &patch.description}})
       if (*value && (*value)->find('\0') != std::string::npos)
@@ -377,21 +385,27 @@ std::variant<NodePatchPlan, std::string> planNodePatches(
       for (const Link& link : *patch.links)
         if (link.label.find('\0') != std::string::npos || link.url.find('\0') != std::string::npos)
           return "node " + quoted(patch.nodeId.str()) + ": links cannot contain a NUL character";
+    if (patch.opens && patch.opens->str().find('\0') != std::string::npos)
+      return "node " + quoted(patch.nodeId.str()) + ": opens cannot contain a NUL character";
     const std::optional<NodeSpec> node = graph.nodeView(patch.nodeId);
     if (!node) return "no node in this tree is named " + quoted(patch.nodeId.str());
+    const auto hue = resolveHue(kinds, patch.hue, "updates[" + std::to_string(row) + "].");
+    if (const auto* refusal = std::get_if<std::string>(&hue)) return *refusal;
+    const std::optional<NodeColor> color = std::get<std::optional<NodeColor>>(hue);
 
     std::vector<std::pair<Command, bool>> candidates;
     if (patch.label)
       candidates.push_back({RenameNode{patch.nodeId, *patch.label}, node->label != *patch.label});
-    if (patch.color)
-      candidates.push_back({SetNodeColor{patch.nodeId, *patch.color}, node->color != *patch.color});
+    if (color) candidates.push_back({SetNodeColor{patch.nodeId, *color}, node->color != *color});
     if (patch.position)
       candidates.push_back({RepositionNode{patch.nodeId, *patch.position}, node->position != patch.position});
-    if (patch.description || patch.icon || patch.links) {
+    if (patch.description || patch.icon || patch.links || patch.opens) {
       const bool changed = (patch.description && node->description != *patch.description) ||
                            (patch.icon && node->icon != *patch.icon) ||
-                           (patch.links && node->links != *patch.links);
-      candidates.push_back({AnnotateNode{patch.nodeId, patch.description, patch.links, patch.icon}, changed});
+                           (patch.links && node->links != *patch.links) ||
+                           (patch.opens && node->opens != *patch.opens);
+      candidates.push_back(
+          {AnnotateNode{patch.nodeId, patch.description, patch.links, patch.icon, std::nullopt, patch.opens}, changed});
     }
 
     const std::size_t before = plan.batch.commands.size();
@@ -487,7 +501,7 @@ std::optional<Admission> admit(const LooseGraph& graph, const Graft& incoming) {
   std::set<Edge> arrivingEdges;
   for (const NodeSpec& node : incoming.document.nodes) {
     if (std::optional<std::string> bad =
-            nodeFieldBounds(node.id, node.label, node.icon, node.description, node.links, node.position))
+            nodeFieldBounds(node.id, node.label, node.icon, node.description, node.links, node.opens, node.position))
       return Admission{Admission::Verdict::malformed, *bad};
     if (!graph.hasNode(node.id)) arrivingNodes.insert(node.id);  // a graft upserts: a present id costs nothing
     for (const NodeId& prereq : node.prerequisites)
@@ -511,7 +525,7 @@ std::optional<Admission> admit(const LooseGraph& graph, const GraphState& incomi
   std::map<NodeId, ElementSet> nodeLives;
   for (const NodeStateEntry& node : incoming.nodes) {
     if (std::optional<std::string> bad =
-            nodeFieldBounds(node.id, node.label, node.icon, node.description, node.links, node.position))
+            nodeFieldBounds(node.id, node.label, node.icon, node.description, node.links, node.opens, node.position))
       return Admission{Admission::Verdict::malformed, *bad};
     auto [life, fresh] = nodeLives.try_emplace(node.id);
     if (fresh) life->second = graph.lifeOf(node.id).value_or(ElementSet{});

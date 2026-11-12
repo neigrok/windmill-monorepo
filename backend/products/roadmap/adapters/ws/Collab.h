@@ -52,9 +52,9 @@ private:
   static constexpr std::uint64_t kRevalidateEveryMs = 60000;
 
   bool stillAuthorized(const drogon::WebSocketConnectionPtr& conn);
-  // May this connection still READ this tree? A verdict and never a lookup: a fan-out runs it
-  // under the tree's strand, so it must not touch the database.
-  bool mayRead(const drogon::WebSocketConnectionPtr& conn, const TreeId& tree);
+  // What may this connection still receive of this tree? A verdict and never a lookup: a fan-out
+  // runs it under the tree's strand, so it must not touch the database.
+  Reach reachOf(const drogon::WebSocketConnectionPtr& conn, const TreeId& tree);
   void subgraphFrame(const drogon::WebSocketConnectionPtr& conn, const std::string& treeId, const Json::Value& frame);
   void progress(const drogon::WebSocketConnectionPtr& conn, const std::string& treeId, const Json::Value& frame);
   bool overRate(const drogon::WebSocketConnectionPtr& conn);

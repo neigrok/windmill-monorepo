@@ -277,3 +277,77 @@ TEST(the_other_trees_line_names_its_unit_out_loud) {
   CHECK_EQ(otherTreesPhrase(1), std::string("1 other tree has steps ready"));
   CHECK_EQ(otherTreesPhrase(3), std::string("3 other trees have steps ready"));
 }
+
+// Readiness reads the completed set the board reads: a node that opens a tree follows that tree.
+TEST(a_step_behind_a_node_that_opens_a_complete_tree_is_ready) {
+  const auto node = [](const char* id, NodeColor color, const char* opens, std::vector<NodeId> prerequisites) {
+    NodeSpec spec;
+    spec.id = NodeId{std::string(id)};
+    spec.label = std::string("Label ") + id;
+    spec.color = color;
+    spec.opens = TreeId{std::string(opens)};
+    spec.prerequisites = std::move(prerequisites);
+    return spec;
+  };
+  const auto summary = [](const std::vector<TreeReadiness>& readiness) {
+    std::vector<std::string> lines;
+    for (const TreeReadiness& tree : readiness) {
+      std::string line = tree.id.str() + " \"" + tree.title + "\" active " + std::to_string(tree.lastActivityAtMs) + " " +
+                         std::to_string(tree.done) + "/" + std::to_string(tree.total) + " ready";
+      for (const ReadyStep& ready : tree.ready)
+        line += " " + ready.id.str() + ":" + ready.label + ":" + std::string(toString(ready.color));
+      lines.push_back(line);
+    }
+    return lines;
+  };
+  LoadedTree main;
+  main.data.id = TreeId{"t_main"};
+  main.data.title = "Ideas";
+  main.data.nodes = {node("idea", NodeColor::gold, "t_sub", {}), node("after", NodeColor::olive, "", {NodeId{"idea"}}),
+                     node("later", NodeColor::sky, "", {NodeId{"after"}})};
+  main.updatedAt = 100;
+  main.lastMarkedAt = 50;
+  LoadedTree sub;
+  sub.data.id = TreeId{"t_sub"};
+  sub.data.title = "Worked";
+  sub.data.nodes = {node("s", NodeColor::plum, "", {})};
+  sub.updatedAt = 10;
+  sub.lastMarkedAt = 200;
+
+  main.progress.completed = {NodeId{"idea"}};
+  CHECK_EQ(summary(readinessOf({main, sub})),
+           (std::vector<std::string>{"t_main \"Ideas\" active 100 0/3 ready idea:Label idea:gold",
+                                     "t_sub \"Worked\" active 200 0/1 ready s:Label s:plum"}));
+
+  main.progress.completed = {};
+  sub.progress.completed = {NodeId{"s"}};
+  CHECK_EQ(summary(readinessOf({main, sub})),
+           (std::vector<std::string>{"t_main \"Ideas\" active 100 1/3 ready after:Label after:olive",
+                                     "t_sub \"Worked\" active 200 1/1 ready"}));
+}
+
+TEST(a_tree_that_cannot_be_validated_has_nothing_ready_and_keeps_its_counts) {
+  LoadedTree dangling;
+  dangling.data.id = TreeId{"t_dangling"};
+  dangling.data.title = "Dangling";
+  NodeSpec root;
+  root.id = NodeId{"root"};
+  root.label = "Root";
+  NodeSpec orphan;
+  orphan.id = NodeId{"orphan"};
+  orphan.label = "Orphan";
+  orphan.prerequisites = {NodeId{"nowhere"}};
+  dangling.data.nodes = {root, orphan};
+  dangling.progress.completed = {NodeId{"root"}};
+  dangling.updatedAt = 7;
+
+  const std::vector<TreeReadiness> readiness = readinessOf({dangling});
+
+  REQUIRE_EQ(readiness.size(), 1u);
+  CHECK_EQ(readiness[0].id, TreeId{"t_dangling"});
+  CHECK_EQ(readiness[0].title, std::string("Dangling"));
+  CHECK_EQ(readiness[0].lastActivityAtMs, 7u);
+  CHECK_EQ(readiness[0].total, 2);
+  CHECK_EQ(readiness[0].done, 1);
+  CHECK(readiness[0].ready.empty());
+}

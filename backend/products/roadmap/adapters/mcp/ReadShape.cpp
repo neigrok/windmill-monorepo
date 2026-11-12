@@ -76,7 +76,8 @@ const Vocabulary<NodeField>& nodeVocabulary() {
                                                  {"state", NodeField::state},
                                                  {"summary", NodeField::summary},
                                                  {"description", NodeField::description},
-                                                 {"links", NodeField::links}});
+                                                 {"links", NodeField::links},
+                                                 {"opens", NodeField::opens}});
   return vocabulary;
 }
 
@@ -128,6 +129,16 @@ Json::Value projectNode(const NodeSpec& node, const NodeFields& fields, const No
   if (fields.count(NodeField::summary) && !node.description.empty()) n["summary"] = summaryOf(node.description);
   if (fields.count(NodeField::description) && !node.description.empty()) n["description"] = node.description;
   if (fields.count(NodeField::links) && !node.links.empty()) n["links"] = linksToJson(node.links);
+  if (fields.count(NodeField::opens)) {
+    const auto opening = context.openings.find(node.id);
+    if (opening != context.openings.end() && !opening->second.missing) {
+      Json::Value opens(Json::objectValue);
+      opens["treeId"] = opening->second.tree.str();
+      opens["title"] = opening->second.title;
+      opens["state"] = opening->second.complete ? "complete" : "open";
+      n["opens"] = opens;
+    }
+  }
   return n;
 }
 

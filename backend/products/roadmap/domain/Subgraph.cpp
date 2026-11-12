@@ -1,5 +1,7 @@
 #include "products/roadmap/domain/Subgraph.h"
 
+#include <vector>
+
 namespace wm {
 
 void VersionVector::observe(const Hlc& stamp) {
@@ -32,6 +34,7 @@ NodeStateEntry maskNode(const NodeStateEntry& node, const VersionVector& since) 
   if (!since.covers(node.statusAt))   { masked.status = node.status;     masked.statusAt = node.statusAt; }
   if (!since.covers(node.descriptionAt)) { masked.description = node.description; masked.descriptionAt = node.descriptionAt; }
   if (!since.covers(node.linksAt))       { masked.links = node.links;             masked.linksAt = node.linksAt; }
+  if (!since.covers(node.opensAt))       { masked.opens = node.opens;             masked.opensAt = node.opensAt; }
   return masked;
 }
 
@@ -39,7 +42,7 @@ bool nodeUncovered(const NodeStateEntry& node, const VersionVector& since) {
   return !since.covers(node.createdAt) || !since.covers(node.deletedAt) || !since.covers(node.labelAt)
       || !since.covers(node.iconAt) || !since.covers(node.colorAt) || !since.covers(node.orderAt)
       || !since.covers(node.positionAt) || !since.covers(node.statusAt) || !since.covers(node.descriptionAt)
-      || !since.covers(node.linksAt);
+      || !since.covers(node.linksAt) || !since.covers(node.opensAt);
 }
 
 KindStateEntry maskKind(const KindStateEntry& kind, const VersionVector& since) {
@@ -75,6 +78,7 @@ VersionVector frontier(const GraphState& graph, const LegendState& legend) {
     vector.observe(node.statusAt);
     vector.observe(node.descriptionAt);
     vector.observe(node.linksAt);
+    vector.observe(node.opensAt);
   }
   for (const EdgeStateEntry& edge : graph.edges) {
     vector.observe(edge.addedAt);
@@ -117,6 +121,20 @@ Subgraph deltaBetween(const GraphState& graph, const LegendState& legend, const 
   }
   delta.coverage = frontier(graph, legend);
   return delta;
+}
+
+GraphState readerView(GraphState graph) {
+  for (NodeStateEntry& node : graph.nodes) {
+    node.opens = TreeId{};
+    node.opensAt = Hlc{};
+  }
+  std::erase_if(graph.nodes, [](const NodeStateEntry& node) { return !nodeUncovered(node, VersionVector{}); });
+  return graph;
+}
+
+TreeData readerView(TreeData document) {
+  for (NodeSpec& node : document.nodes) node.opens = TreeId{};
+  return document;
 }
 
 }

@@ -181,8 +181,15 @@ from the products actually connected. **An empty scope is the account-wide grant
 Tending does not go through the composite: `TendingService` holds roadmap's host directly
 (`ScopedToolHost.h`). The two narrowings stack — `ScopedToolHost` pins a run to one tree, the
 composite pins a credential to its grant. A run is not offered `describe_tree` either: it reads the
-tree's guide through `get_tree` and never sets it. A withheld name a run calls anyway is refused before
-any write is observed, and a tend starts only on a tree its caller can write.
+tree's guide through `get_tree` and never sets it. Nor is it offered the tree a node opens: the
+schemas it is handed carry no `opens` argument and no `opens` field, so a run neither reads nor sets
+a pointer, an import through it leaves the pointers the tree holds as they are, and a node it
+creates opens none. The `state` it reads is the owner's: a node that opens a tree is complete when
+that tree is. One table in
+`ScopedToolHost.cpp` names what a run is not offered, tools by name and words wherever a schema
+carries them. A withheld name a run calls anyway is refused before any write is observed; a withheld
+argument or field is refused in its own sentence with nothing written. A tend starts only on a tree
+its caller can write.
 
 Above the auth check both HTTP roots meter by IP, keyed on the forwarded client address:
 `windmill_server`'s general API ceiling (25 req/s per client, burst 50) covers `/mcp`;
@@ -197,22 +204,22 @@ The table uses product-local names; external MCP prefixes each with `roadmap_`.
 | --- | --- | --- |
 | registry | `create_tree` · `list_trees` · `delete_tree` | plant / discover / soft-delete a roadmap you own |
 | registry | `describe_tree` | set the tree's guide — a plain-text note on what the tree is and how to work it, at most 5000 characters; `""` or only whitespace clears it; owner only, answers `{applied, seq}` and leaves no op row |
-| read | `get_tree` | title + `guide: {text, yours}` (the only read that carries it, on every page; `yours` is true when the caller owns the tree and wrote its current guide, false on a guide a fork copied from someone else's tree until its owner writes one) + nodes (label, icon, color, `kind`, position, description, links) + per-node prerequisites + seq; `includeEdges: true` adds every live edge as a flat `edges: [{from, to}]` |
+| read | `get_tree` | title + `guide: {text, yours}` (the only read that carries it, on every page; `yours` is true when the caller owns the tree and wrote its current guide, false on a guide a fork copied from someone else's tree until its owner writes one) + nodes (label, icon, color, `kind`, position, description, links, `opens`) + per-node prerequisites + seq; `includeEdges: true` adds every live edge as a flat `edges: [{from, to}]` |
 | read | `get_nodes` | 1–200 exact unique ids in requested order, selected fields, explicit `missingNodeIds`, seq and complete-result byte limit |
 | read | `get_diagnostics` | cycles / dangling / self-edges / smells |
 | read | `get_health` | tidiness metrics + 0–100 score (needs a valid DAG); `crossBranch` skips edges touching a `crossBranchExempt` kind and reports them as `crossBranchExempt` |
 | read | `get_progress` | the caller's completed node ids, and `outOfOrder` — the subset of completed whose set_progress carried `outOfOrder: true` |
 | read | `find_nodes` | search by `color`/`kind`, the derived `state`, and/or a `query` substring (id + label + description), best match first — `{state: "available"}` is the frontier |
-| edit | `patch_nodes` | 1–200 existing nodes, replacement fields with omission preservation, full-batch validation, optional `expectedSeq` and `dryRun` |
+| edit | `patch_nodes` | 1–200 existing nodes, replacement fields (`opens` among them, and a hue as `color` or legend `kind`) with omission preservation, full-batch validation, optional `expectedSeq` and `dryRun` |
 | edit | `change_edges` | 1–500 combined additions/removals, existing endpoints for additions, absent removals are no-ops, optional `expectedSeq` and `dryRun` |
-| edit | `create_node` | add a node — `prerequisites[]`, `description`, `links` all optional |
-| edit | `annotate_node` | set a node's `description` — or `appendDescription`, which joins onto the existing body after a blank line, the cap held against the result; one of the two — its `icon` (`""` clears it, which is how an `empty-icon` smell is fixed) and/or `links` |
-| edit | `rename_node` · `set_node_color` · `move_node` | content edits |
+| edit | `create_node` | add a node — its hue as `color` or legend `kind`, `prerequisites[]`, `description`, `links`, `opens` all optional; answers `id` and the `kind` it wears |
+| edit | `annotate_node` | set a node's `description` — or `appendDescription`, which joins onto the existing body after a blank line, the cap held against the result; one of the two — its `icon` (`""` clears it, which is how an `empty-icon` smell is fixed), its `links` and/or the tree it `opens` (`""` clears it) |
+| edit | `rename_node` · `set_node_color` · `move_node` | content edits; `set_node_color` takes `color` or legend `kind` and answers the `kind` the node wears |
 | edit | `connect` · `reconnect` | prerequisite-edge edits |
 | edit | `disconnect` | remove edges: one `from`+`to` or `edges: [{from,to}]` (1..500), exactly one form; one op, one seq, all or nothing; `removed` counts the edges that were present |
 | edit | `delete_node` | tombstone nodes: one `nodeId` or `nodeIds` (1..200), exactly one form; a missing id refuses the whole call naming each; one op, one seq. `prune: true` also drops every edge touching a deleted node and clears the caller's marks on it, under the delete grant; receipt carries `ids` and `pruned: {edges, progress}` |
 | edit | `tidy` · `prune` | transitive reduction / GC dangling edges + orphan progress |
-| edit | `import_subgraph` | bulk upsert a whole `get_tree`-shaped slice as one graft frame — a field left off a re-sent node or kind keeps its value, `prerequisiteMode` merge (union) or replace, `tombstone[]` deletes in the same frame and needs the `roadmap:delete` grant |
+| edit | `import_subgraph` | bulk upsert a whole `get_tree`-shaped slice as one graft frame — a field left off a re-sent node or kind keeps its value (`opens` included), `prerequisiteMode` merge (union) or replace, `tombstone[]` deletes in the same frame and needs the `roadmap:delete` grant |
 | legend | `add_kind` (inline label+description+crossBranchExempt) · `rename_kind` · `describe_kind` (description and/or crossBranchExempt) · `remove_kind` · `reorder_kinds` · `recolor_kind` | the legend |
 | write | `set_progress` | per-user overlay: single `nodeId`+`status`, or a bulk `updates[]` (order-safe); `outOfOrder: true` on a completion is kept on the mark and answered as `acknowledged: true` |
 | resource | `windmill://quickstart` | the read-me-first document; no tool slot |
@@ -269,13 +276,80 @@ Apply action for routine proposals; annotations describe each tool's effects.
   locks every member, and a dangling edge locks nothing. An anonymous reader's cascade runs over
   no marks: roots available, the rest locked. `find_nodes` takes `state` as a filter too, ANDed
   with the rest and applied after the ranked selection but before the page, so `count` and the
-  cursor speak of the filtered set.
+  cursor speak of the filtered set. For the tree's owner a node that opens a tree follows that
+  tree, not its mark (see `opens`).
 - **`summary` is a projection of `description`** — its opening 200 characters (Unicode code
   points, so a CJK description is cut at 200 characters, not 200 bytes), never split inside a
   grapheme (a combining mark, a variation selector or a ZWJ emoji sequence backs the cut off),
   cut at a word and ellipsized when anything was cut.
 - **`kind` is the legend join** — the kind id whose hue equals the node's `color`, omitted from a
   node no kind claims. A `fields` value on `get_tree` and `find_nodes`, never in a default.
+  `create_node` and `set_node_color` answer `kind` too: the kind the write named, which wears the
+  node's hue, or, for a write that named none, the same join over the hue it landed.
+
+## A node's hue: `color` or `kind`
+
+`create_node`, `set_node_color`, each `patch_nodes` row and each `import_subgraph` node name the
+node's hue as a `color`, as a legend `kind` id, or as both when they agree. A `kind` lands as the
+hue that kind wears in the node's `color` register: the node stores no kind of its own, so a
+`recolor_kind` repaints it with the rest of the kind. The kind is read off the room's own legend
+under the strand the write then takes — `TreeRoom::resolveHue` for `create_node` and
+`set_node_color`, `planNodePatches` for a patch, `TreeRoom::resolveKinds` for an import, all over
+`resolveHue` in `domain/Legend` — so it is never read off a legend a concurrent `recolor_kind`
+could change before the write lands. An import reads the legend its batch leaves (the tree's,
+with the batch's own `kinds[]` upserted), so one batch can add a kind and file nodes under it,
+and a node that names a kind carries its colour register. A kind the legend does not hold refuses
+the whole call, naming the argument path, the id and every kind id the legend holds (or that it
+holds none, and `roadmap_add_kind`); a `color` beside a `kind` that wears another hue refuses it
+naming both. A node that names neither keeps its colour, and a new one is terracotta.
+
+## `opens`
+
+A node may point at another tree: `opens` holds that tree's id.
+
+- **Write.** `create_node`, `annotate_node`, a `patch_nodes` row and an `import_subgraph` node take
+  `opens`, a string of at most 128 characters. On `create_node`, absent or `""` opens nothing: the
+  door always writes the pointer, so an id that is present, or that a deleted node held, keeps none
+  of the pointer it had. On the other three, absent leaves the pointer, `""` clears it and a value
+  sets it. `null` is absent, save in a `patch_nodes` row, which refuses it as it refuses a `null`
+  label. `opens` alone is something to set.
+- **The target is checked at this door only.** Every non-empty `opens` in a call must name a tree
+  that stands and is the caller's, asked in one read for the whole call
+  (`TreeRegistry::titlesOwnedBy`), before the room is written and before a `dryRun` answers.
+  Otherwise the whole call is refused naming the argument path and the id — `opens`,
+  `updates[3].opens`, `nodes[2].opens` — in one sentence for a tree that is not there, a deleted one
+  and someone else's, so the refusal confirms no id. Its write line carries the outcome
+  `opens-not-yours`. A node may open the tree it is in.
+- **Read.** `opens` is a `fields` value on `get_tree`, `get_nodes` and `find_nodes`, never in a
+  default. A node answers `opens: {treeId, title, state}` when the caller can write the tree being
+  read, the pointer is set, and the opened tree stands and is theirs; the key is omitted otherwise,
+  so a reader of someone else's tree and a signed-out caller never receive it. `state` is
+  `complete` or `open`, and the title is the opened tree's stored one.
+- **The node follows the tree, for its owner.** A pointer is valid when its target stands and
+  belongs to the owner of the tree the node is in. For a caller who can write the tree, a node with
+  a valid pointer is `complete` exactly when the opened tree is complete for them, whatever its own
+  prerequisites, and `locked` or `available` by its prerequisites until then; a mark on it is kept,
+  answered as `status` and by `get_progress`, and decides nothing. A tree is complete when it holds
+  at least one node and every node of it is complete, a node with a valid pointer by its tree and
+  any other by the caller's mark; that is judged once over all the caller's standing trees
+  (`domain/OpenedTrees.h`), so a tree on a loop of pointers is never complete, however long the
+  loop, and a chain of any length completes. `state`, the `state` filter of `find_nodes`,
+  `opens.state` and the `done` of `list_trees` all read that one completed set, so a step waiting
+  on such a node unlocks when its tree completes. `set_progress` records a mark on such a node as on any other, and its
+  `prerequisitesMet` reads marks alone.
+- **Every other reader sees an ordinary node.** A reader who cannot write the tree, signed in or
+  not, is answered no `opens`, and the node's `state` follows their own mark and its prerequisites
+  as any node's does. A node whose pointer is not valid is ordinary for its owner too.
+- **Cost.** Following is one read of the stored rows per reply (`TreeRepository::openedFrom`: one
+  statement over `trees`, `tree_nodes` and the caller's `node_progress`, answering one row per
+  tree and tree it opens), made only for a caller who can write the tree, when `fields` names
+  `state` or `opens` or `find_nodes` filters on `state`, and when the tree holds a pointer.
+  `get_tree`, `get_nodes` and `find_nodes` take what they answer from the room under the tree's
+  strand and read the repositories after letting it go, so no other read of the tree waits on that
+  statement. `list_trees` makes no such read: it already holds every tree of the caller's. Every
+  write door saves before it answers, so the stored rows are the live ones unless a save failed.
+- `import_subgraph` takes the id as a string, where `get_tree` answers the object: a copied slice
+  sends `opens.treeId`.
 
 ## Edges and health
 
@@ -311,16 +385,30 @@ Apply action for routine proposals; annotations describe each tool's effects.
   by a later overlay failure. It is **upsert by id**: an incoming id already present is reported
   in `nodeCollisions`/`kindCollisions`; a new id is added. A re-sent node or kind changes only in
   the registers the batch sends: a node's `label`, `icon`, `color`, `order`, `position`,
-  `seedStatus`, `description` and `links`, and a kind's `label`, `description` and
+  `seedStatus`, `description`, `links` and `opens`, and a kind's `label`, `description` and
   `crossBranchExempt`, left out, keep the value the tree holds, because the graft stamps an
   omitted register unset (`Graft::omittedNodeRegisters` and `graftState`,
-  `Graft::omittedKindRegisters` and `graftLegend`) and no stored stamp loses to that. A node
-  deleted earlier and re-sent revives with the registers it had. A sent register lands at the
-  graft's stamp, `""` and `[]` included, which is how a text or list field is cleared (`position`
-  and `seedStatus` have no empty value: `null` counts as left out); a new id's omitted
-  register lands as its default. Legend order is treated the same way — rank is never on the
-  wire, so a colliding kind keeps its place and a new kind lands after the last one, in batch
-  order. A re-sent
+  `Graft::omittedKindRegisters` and `graftLegend`) and no stored stamp loses to that. A node the
+  tree holds keeps its creation stamp, so it keeps its place among its siblings, and a delete
+  stamped before the import that arrives after it still removes it; a node deleted earlier and
+  re-sent is revived at the graft's stamp with the registers it had. A sent node register lands at
+  the graft's stamp when it changes what the node holds, `""` and `[]` included, which is how a
+  text or list field is cleared (`position` and `seedStatus` have no empty value: `null` counts as
+  left out); one sent as the node already holds it, like a prerequisite edge the tree already
+  holds, is not stamped again. A new id's omitted register lands as its default. A re-sent kind
+  follows the same rule: a kind the legend holds keeps its creation, so a remove stamped before the
+  import that arrives after it still removes it, and a hue, label, description or
+  `crossBranchExempt` sent as the legend holds it is not stamped again, so a `get_tree` round trip
+  that carries the legend back changes nothing in it. Rank is never on the wire, so a colliding
+  kind keeps its place and a new kind lands after the last one, in batch order. A re-sent kind
+  with a new hue changes the kind alone: the nodes wearing the old hue keep it, where
+  `recolor_kind` repaints them. The import is at most one op row — a batch that changes nothing
+  writes none — and that row names only the batch's most salient change, in `headline()`'s order
+  (a created node, a removed node, a legend change, a node's label, colour or annotation, an
+  edge): an added edge beside a rename reads `renamed to N2`, two new edges read as the first of
+  them by prerequisite then node id, `linked P → N`, a new node beside a renamed one reads
+  `added Zeta`, and re-sending a node to add an edge reads `linked`, with the legend carried back
+  or not. A re-sent
   node's `prerequisites` meet its existing edges by `prerequisiteMode` — `merge` (the default)
   unions them, so an edge the batch leaves out survives and is listed in `keptEdges` (first 50 as
   `{from, to}`, then one `"and N more"` string) with `keptEdgeCount`; `replace` removes every

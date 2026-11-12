@@ -127,6 +127,72 @@ TEST(delta_carries_an_order_write_the_peer_has_not_yet_seen) {
   CHECK_EQ(target.exportNode(nid("a"))->order, std::string("a5"));
 }
 
+TEST(delta_carries_opens_to_a_peer_that_has_not_seen_the_write_and_masks_it_once_covered) {
+  LooseGraph source;
+  source.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
+  source.setOpens(nid("a"), TreeId{"t_sailing"}, at(5));
+
+  VersionVector behind;
+  behind.observe(at(3));  // covers the create (t=1), not the pointer (t=5)
+  Subgraph delta = deltaBetween(source.exportState(), Legend{}.exportState(), behind);
+  NodeStateEntry pointerOnly;
+  pointerOnly.id = nid("a");
+  pointerOnly.opens = TreeId{"t_sailing"};
+  pointerOnly.opensAt = at(5);
+  CHECK(delta.graph == (GraphState{{pointerOnly}, {}}));
+  CHECK(delta.coverage->covers(at(5)));  // the frontier folded the pointer's stamp into coverage
+
+  LooseGraph target;  // a peer holding only the create reconciles in one join
+  target.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
+  target.join(delta.graph);
+  CHECK(target.exportState() == source.exportState());
+
+  VersionVector caughtUp;
+  caughtUp.observe(at(5));
+  CHECK(deltaBetween(source.exportState(), Legend{}.exportState(), caughtUp).graph == GraphState{});
+
+  source.setLabel(nid("a"), "A, renamed", at(7));  // a later write to another register
+  NodeStateEntry renameOnly;
+  renameOnly.id = nid("a");
+  renameOnly.label = "A, renamed";
+  renameOnly.labelAt = at(7);
+  CHECK(deltaBetween(source.exportState(), Legend{}.exportState(), caughtUp).graph == (GraphState{{renameOnly}, {}}));
+}
+
+TEST(a_readers_view_says_which_tree_no_node_opens_and_drops_an_entry_left_with_nothing_to_say) {
+  NodeStateEntry door;
+  door.id = nid("door");
+  door.label = "Door";
+  door.createdAt = door.labelAt = at(1);
+  door.opens = TreeId{"t_sailing"};
+  door.opensAt = at(5);
+  NodeStateEntry pointerOnly;  // what a delta or a live frame carries when only the pointer moved
+  pointerOnly.id = nid("gate");
+  pointerOnly.opens = TreeId{"t_rowing"};
+  pointerOnly.opensAt = at(6);
+  const EdgeStateEntry edge{Edge{nid("door"), nid("gate")}, at(2), Hlc{}};
+
+  NodeStateEntry withheld = door;
+  withheld.opens = TreeId{};
+  withheld.opensAt = Hlc{};
+  CHECK(readerView(GraphState{{door, pointerOnly}, {edge}}) == (GraphState{{withheld}, {edge}}));
+
+  TreeData document;
+  document.id = TreeId{"t"};
+  document.title = "T";
+  NodeSpec spec;
+  spec.id = nid("door");
+  spec.label = "Door";
+  spec.opens = TreeId{"t_sailing"};
+  document.nodes = {spec};
+  const TreeData read = readerView(document);
+  REQUIRE_EQ(read.nodes.size(), 1u);
+  CHECK_EQ(read.nodes[0].id, nid("door"));
+  CHECK_EQ(read.nodes[0].label, std::string("Door"));
+  CHECK_EQ(read.nodes[0].opens, TreeId{});
+  CHECK_EQ(read.title, std::string("T"));
+}
+
 TEST(two_divergent_replicas_reconcile_to_the_full_join_in_one_exchange) {
   LooseGraph baseGraph;
   baseGraph.createNode(nid("root"), "Root", "x", NodeColor::sky, std::nullopt, at(1));

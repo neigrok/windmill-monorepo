@@ -4,6 +4,7 @@
 #include "products/roadmap/domain/GraphState.h"
 #include "products/roadmap/domain/Ids.h"
 #include "products/roadmap/domain/Legend.h"
+#include "products/roadmap/domain/OpenedTrees.h"
 #include "products/roadmap/domain/Tree.h"
 #include "products/roadmap/domain/TreeDiagnostics.h"
 #include "products/roadmap/domain/TreeSummary.h"
@@ -12,7 +13,9 @@
 
 #include <json/json.h>
 
+#include <map>
 #include <optional>
+#include <set>
 #include <string>
 
 namespace wm {
@@ -22,6 +25,8 @@ Json::Value toJson(const TreeData& data);
 Json::Value toJson(const Progress& progress);
 Json::Value toJson(const TreeDiagnostics& diagnostics);
 Json::Value toJson(const TreeSummary& summary);   // one registry row (GET /v1/trees)
+// `opens` of GET /v1/trees/{id}, by node id; `loop` marks an opening whose tree is among `leadingBack`.
+Json::Value toJson(const std::map<NodeId, Opening>& openings, const std::set<TreeId>& leadingBack);
 Json::Value toJson(const GalleryEntry& entry);    // one gallery card (GET /v1/gallery)
 Json::Value toJson(const GraphState& state);    // the persisted graph document
 Json::Value toJson(const LegendState& legend);  // the persisted legend document

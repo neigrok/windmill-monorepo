@@ -22,10 +22,10 @@ struct StepClock : Clock {
 };
 
 struct Harness {
-  fake::FakeTreeRepository trees;
+  fake::FakeProgressRepository progressRepo;
+  fake::FakeTreeRepository trees{progressRepo};
   fake::FakeOpLog ops;
   fake::FakeBus bus;
-  fake::FakeProgressRepository progressRepo;
   StepClock clock;
   fake::FakeTokens tokens;
   RoomRegistry registry{trees, ops, bus};

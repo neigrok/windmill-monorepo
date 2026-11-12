@@ -156,3 +156,24 @@ TEST(cross_branch_exempt_is_a_register_of_its_own_under_lww) {
   CHECK(joined.view(kid("build"))->crossBranchExempt);
   CHECK(joined.exportState() == legend.exportState());
 }
+
+TEST(a_kind_resolves_to_the_hue_it_wears_and_a_colour_beside_it_must_agree) {
+  const std::vector<Kind> roles = {{kid("developer"), NodeColor::terracotta},
+                                   {kid("designer"), NodeColor::olive},
+                                   {kid("owner"), NodeColor::gold}};
+  using Resolved = std::variant<std::optional<NodeColor>, std::string>;
+
+  CHECK(resolveHue(roles, HueChoice{std::nullopt, kid("owner")}, "") == Resolved{NodeColor::gold});
+  CHECK(resolveHue(roles, HueChoice{NodeColor::gold, kid("owner")}, "") == Resolved{NodeColor::gold});
+  CHECK(resolveHue(roles, HueChoice{NodeColor::sky, std::nullopt}, "") == Resolved{NodeColor::sky});
+  CHECK(resolveHue(roles, HueChoice{}, "") == Resolved{std::optional<NodeColor>{}});
+  CHECK(resolveHue(roles, HueChoice{NodeColor::sky, kid("owner")}, "updates[0].") ==
+        Resolved{std::string("updates[0].kind \"owner\" wears gold, but updates[0].color is \"sky\" — send one of "
+                             "the two, or both when they agree")});
+  CHECK(resolveHue(roles, HueChoice{std::nullopt, kid("ownr")}, "nodes[2].") ==
+        Resolved{std::string("nodes[2].kind \"ownr\" is not a kind of this tree; its legend holds \"developer\", "
+                             "\"designer\", \"owner\"")});
+  CHECK(resolveHue({}, HueChoice{std::nullopt, kid("owner")}, "") ==
+        Resolved{std::string("kind \"owner\" is not a kind of this tree, whose legend holds none — add one with "
+                             "roadmap_add_kind first")});
+}

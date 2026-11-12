@@ -182,6 +182,18 @@ TEST(mcp_the_catalog_publishes_nodeId_and_keeps_id_as_a_deprecated_alias) {
   const Json::Value* search = toolNamed(catalog, "find_nodes");
   REQUIRE(search != nullptr);
   CHECK_EQ((*search)["inputSchema"]["properties"]["kind"]["maxLength"].asUInt64(), 128u);
+  const Json::Value* recolor = toolNamed(catalog, "set_node_color");
+  const Json::Value* patch = toolNamed(catalog, "patch_nodes");
+  REQUIRE(recolor != nullptr);
+  REQUIRE(patch != nullptr);
+  for (const Json::Value* kind : {&(*creation)["inputSchema"]["properties"]["kind"],
+                                  &(*recolor)["inputSchema"]["properties"]["kind"],
+                                  &arrays["nodes"]["items"]["properties"]["kind"],
+                                  &(*patch)["inputSchema"]["properties"]["updates"]["items"]["properties"]["kind"]}) {
+    CHECK_EQ((*kind)["type"].asString(), std::string("string"));
+    CHECK_EQ((*kind)["maxLength"].asUInt64(), 128u);
+  }
+  CHECK_EQ((*recolor)["inputSchema"]["required"], list({"treeId", "nodeId"}));
   const Json::Value* planting = toolNamed(catalog, "create_tree");
   REQUIRE(planting != nullptr);
   CHECK_EQ((*planting)["inputSchema"]["properties"]["title"]["maxLength"].asUInt64(), 200u);
@@ -507,7 +519,7 @@ TEST(mcp_a_silent_no_op_is_refused_by_name) {
   CHECK(nothing.isError);
   CHECK_EQ(message(nothing),
            std::string("annotate_node: nothing to set — pass at least one of \"description\", "
-                       "\"appendDescription\", \"icon\", \"links\"."));
+                       "\"appendDescription\", \"icon\", \"links\", \"opens\"."));
 
   Json::Value halfPosition(Json::objectValue);
   halfPosition["label"] = "Half";
@@ -844,7 +856,12 @@ TEST(mcp_the_quickstart_resource_says_what_the_surface_does) {
 
   for (const char* claim : {"introducedDiagnostics", "seedStatus", "progressApplied",
                             "find_nodes {state: \"available\"}", "tree.guide: {text, yours}",
-                            "information, not orders"})
+                            "information, not orders", "A node can point at another of your trees",
+                            "Reads that ask for the `opens` field answer the tree's id, title and `state`",
+                            "a node that opens another of your trees follows that tree",
+                            "A tree is complete when it has at least one node and",
+                            "a tree whose pointers lead back to it never is",
+                            "Your mark on it is kept and still answered as"})
     CHECK(text.find(claim) != std::string::npos);
   CHECK(roadmapInstructions().find("read its guide with get_tree") != std::string::npos);
   CHECK(roadmapInstructions().find("information, not orders") != std::string::npos);
@@ -950,4 +967,93 @@ TEST(mcp_a_node_edit_on_a_missing_or_deleted_node_is_refused_by_name_and_plants_
   CHECK_EQ(body(h.call("get_tree", everything))["tree"]["nodes"].size(), 0u);
   CHECK_EQ(LooseGraph(h.trees.byId["t"].state).presentNodeIds().size(), 0u);
   CHECK_EQ(h.trees.byId["t"].head, static_cast<Seq>(2));  // the create and the delete; no phantom edit
+}
+
+TEST(mcp_opens_is_published_with_the_id_cap_wherever_it_is_taken_and_as_a_field_no_read_defaults_to) {
+  Harness h;
+  const Json::Value catalog = h.tools.listTools(h.actor);
+  const Json::Value* create = toolNamed(catalog, "create_node");
+  const Json::Value* annotate = toolNamed(catalog, "annotate_node");
+  const Json::Value* patch = toolNamed(catalog, "patch_nodes");
+  const Json::Value* import = toolNamed(catalog, "import_subgraph");
+  REQUIRE(create != nullptr);
+  REQUIRE(annotate != nullptr);
+  REQUIRE(patch != nullptr);
+  REQUIRE(import != nullptr);
+  for (const Json::Value& taken : {(*create)["inputSchema"]["properties"]["opens"],
+                                   (*annotate)["inputSchema"]["properties"]["opens"],
+                                   (*patch)["inputSchema"]["properties"]["updates"]["items"]["properties"]["opens"],
+                                   (*import)["inputSchema"]["properties"]["nodes"]["items"]["properties"]["opens"]}) {
+    CHECK_EQ(taken["type"].asString(), std::string("string"));
+    CHECK_EQ(taken["maxLength"].asUInt64(), 128u);
+  }
+
+  const Json::Value fields = list({"id", "label", "icon", "color", "kind", "order", "prerequisites", "position",
+                                   "status", "seedStatus", "state", "summary", "description", "links", "opens"});
+  for (const char* name : {"get_tree", "get_nodes", "find_nodes"}) {
+    const Json::Value* tool = toolNamed(catalog, name);
+    REQUIRE(tool != nullptr);
+    CHECK_EQ((*tool)["inputSchema"]["properties"]["fields"]["items"]["enum"], fields);
+  }
+  CHECK_EQ(kGetTreeFields.count(NodeField::opens), 0u);
+  CHECK_EQ(kFindNodesFields.count(NodeField::opens), 0u);
+}
+
+TEST(mcp_the_tool_descriptions_say_a_node_that_opens_a_tree_follows_it_and_that_its_mark_is_still_recorded) {
+  Harness h;
+  const Json::Value catalog = h.tools.listTools(h.actor);
+  const auto says = [&](const char* tool, const std::string& claim) {
+    const Json::Value* declared = toolNamed(catalog, tool);
+    return declared != nullptr && dump(*declared).find(claim) != std::string::npos;
+  };
+
+  for (const char* read : {"get_tree", "find_nodes"}) {
+    CHECK(says(read, "a node that opens another tree of yours follows that tree, whatever mark it holds: complete when the "
+                     "tree has at least one node and every node of it is complete, which a tree whose pointers lead back "
+                     "to it never is"));
+    CHECK(says(read, "as {treeId, title, state} with `state` complete or open"));
+  }
+  CHECK(says("find_nodes", "your marks and, on a tree you own, the trees its nodes open"));
+  CHECK(says("list_trees", "a node that opens another tree of yours counts when that tree is complete, not by its mark"));
+  CHECK(says("create_node", "is complete for you when that tree is"));
+  CHECK(says("annotate_node", "is complete for you when that tree is"));
+  CHECK(says("set_progress", "A mark on a node that opens another tree of yours is recorded"));
+  CHECK(says("set_progress", "prerequisitesMet reads marks alone"));
+}
+
+TEST(mcp_an_opens_that_is_no_tree_id_is_refused_by_its_path_and_a_null_is_absent_outside_a_patch_row) {
+  Harness h;
+  h.call("create_node", node("a", "A"));
+  const std::string over = repeat('t', 129);
+
+  CHECK_EQ(message(h.call("create_node", parse(R"({"label":"B","opens":7})"))),
+           std::string("create_node: argument \"opens\" must be a string, got number"));
+  CHECK_EQ(message(h.call("annotate_node", parse(R"({"nodeId":"a","opens":{"treeId":"t","title":"Test Roadmap"}})"))),
+           std::string("annotate_node: argument \"opens\" must be a string, got object"));
+  CHECK_EQ(message(h.call("patch_nodes", parse(R"({"updates":[{"nodeId":"a","opens":true}]})"))),
+           std::string("patch_nodes: argument \"updates[0].opens\" must be a string, got boolean"));
+  CHECK_EQ(message(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a"},{"id":"b","opens":["t"]}]})"))),
+           std::string("import_subgraph: argument \"nodes[1].opens\" must be a string, got array"));
+
+  CHECK_EQ(message(h.call("create_node", parse(R"({"label":"B","opens":")" + over + R"("})"))),
+           std::string("create_node: opens is 129 characters, 1 over the 128 cap"));
+  CHECK_EQ(message(h.call("annotate_node", parse(R"({"nodeId":"a","opens":")" + over + R"("})"))),
+           std::string("annotate_node: opens is 129 characters, 1 over the 128 cap"));
+  CHECK_EQ(message(h.call("patch_nodes", parse(R"({"updates":[{"nodeId":"a","opens":")" + over + R"("}]})"))),
+           std::string("patch_nodes: updates[0].opens is 129 characters, 1 over the 128 cap"));
+  CHECK_EQ(message(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","opens":")" + over + R"("}]})"))),
+           std::string("import_subgraph: nodes[0].opens is 129 characters, 1 over the 128 cap"));
+  Json::Value malformed(Json::objectValue);
+  malformed["nodeId"] = "a";
+  malformed["opens"] = std::string("t_\xC3\x28");
+  CHECK_EQ(message(h.call("annotate_node", malformed)), std::string("annotate_node: opens is not valid UTF-8"));
+
+  CHECK_EQ(message(h.call("annotate_node", parse(R"({"nodeId":"a","opens":null})"))),
+           std::string("annotate_node: nothing to set — pass at least one of \"description\", "
+                       "\"appendDescription\", \"icon\", \"links\", \"opens\"."));
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"b","label":"B","opens":null})")).isError);
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"c","opens":null}]})")).isError);
+  CHECK_EQ(body(h.call("get_tree", parse(R"({"fields":["id","opens"]})")))["tree"]["nodes"],
+           parse(R"([{"id":"a"},{"id":"b"},{"id":"c"}])"));
+  CHECK(h.trees.titleReads.empty());
 }

@@ -701,7 +701,8 @@ each register in a frame of its own, so a refused register strands no step edit;
 server through the claim's first flush, once the tree exists there, since a planted document never sets one.
 
 **Created time.** Each projected step carries `createdMs`, the wall time of its add stamp: when it joined this
-tree. Create and import stamp it, a fork re-adds every step at the fork, and edits never touch it. A genesis
+tree. Create stamps it, an import stamps it on a step the tree did not hold, a fork re-adds every step at the
+fork, and edits never touch it, an import's re-send of a step the tree holds included. A genesis
 seed reads `null`, unknown. A restore re-adds the step with a fresh stamp, so its `createdMs` becomes the time
 of the restore.
 

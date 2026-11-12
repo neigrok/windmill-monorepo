@@ -155,6 +155,16 @@ std::string nodeFrame(const std::string& treeId, const char* frameId, const std:
   return text;
 }
 
+// A subgraph frame whose one node entry carries exactly the registers given, as a client lattice sends a write.
+std::string registerFrame(const std::string& treeId, const char* frameId, const std::string& node) {
+  Json::Value f(Json::objectValue);
+  f["t"] = "subgraph";
+  f["treeId"] = treeId;
+  f["frameId"] = frameId;
+  f["nodes"].append(parse(node));
+  return dump(f);
+}
+
 // A subgraph frame carrying only the tree's guide register, as a client lattice would send it.
 std::string guideFrame(const std::string& treeId, const char* frameId, const std::string& guide, const std::string& at) {
   Json::Value written(Json::objectValue);
@@ -1574,4 +1584,202 @@ TEST(ws_a_frame_whose_save_throws_answers_its_author_server_error_and_files_one_
     }
   }
   CHECK(h.trees.byId["t_priv"].guide == Lww<std::string>{});
+}
+
+TEST(ws_concurrent_opens_frames_converge_on_the_later_stamp_and_a_frame_without_the_field_clears_nothing) {
+  Harness h;
+  UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.addSession("s-tablet", owner);
+  h.seed("t_priv", owner, Visibility::private_);
+  auto laptop = std::make_shared<FakeSocket>();
+  auto tablet = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-owner"), laptop);
+  h.collab.onOpen(h.upgrade("s-tablet"), tablet);
+  const char* created = R"({"id":"door","createdAt":"1000:0:r_a","label":"Door","labelAt":"1000:0:r_a"})";
+  h.collab.onMessage(laptop, registerFrame("t_priv", "f-create", created));
+
+  const char* fromTablet = R"({"id":"door","opens":"t_00000000000000b2","opensAt":"2000:0:r_b"})";
+  const char* fromLaptop = R"({"id":"door","opens":"t_00000000000000a1","opensAt":"2000:0:r_a"})";
+  h.collab.onMessage(tablet, registerFrame("t_priv", "f-tablet", fromTablet));
+  h.collab.onMessage(laptop, registerFrame("t_priv", "f-laptop", fromLaptop));
+  CHECK_EQ(frameType(laptop->sent.back()), std::string("subgraphAck"));
+  CHECK_EQ(frameType(tablet->sent.back()), std::string("subgraphAck"));
+  NodeStateEntry door;
+  door.id = NodeId{"door"};
+  door.createdAt = door.labelAt = Hlc{1000, 0, "r_a"};
+  door.label = "Door";
+  door.opens = TreeId{"t_00000000000000b2"};
+  door.opensAt = Hlc{2000, 0, "r_b"};
+  CHECK(h.trees.byId["t_priv"].state == (GraphState{{door}, {}}));
+
+  // The frame a browser that does not know the register sends for a rename.
+  const char* renamed = R"({"id":"door","label":"Front door","labelAt":"3000:0:r_a"})";
+  h.collab.onMessage(laptop, registerFrame("t_priv", "f-rename", renamed));
+  CHECK_EQ(frameType(laptop->sent.back()), std::string("subgraphAck"));
+  door.label = "Front door";
+  door.labelAt = Hlc{3000, 0, "r_a"};
+  CHECK(h.trees.byId["t_priv"].state == (GraphState{{door}, {}}));
+  std::vector<Seq> deeds;  // the create and the rename: a frame that only writes `opens` is no deed
+  for (const AppliedOp& op : h.ops.byTree["t_priv"]) deeds.push_back(op.seq);
+  CHECK_EQ(deeds, (std::vector<Seq>{1, 4}));
+
+  auto fresh = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-owner"), fresh);
+  h.collab.onMessage(fresh, subscribeFrame("t_priv"));
+  const Json::Value delta = lastFrameOfType(*fresh, "subgraph");
+  REQUIRE_EQ(delta["nodes"].size(), 1u);
+  CHECK_EQ(delta["nodes"][0]["opens"].asString(), std::string("t_00000000000000b2"));
+  CHECK_EQ(delta["nodes"][0]["opensAt"].asString(), std::string("2000:0:r_b"));
+  CHECK_EQ(delta["coverage"]["r_b"].asString(), std::string("2000:0:r_b"));
+}
+
+TEST(ws_a_frame_whose_opens_is_past_the_id_cap_is_rejected_and_one_at_the_cap_lands) {
+  Harness h;
+  UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.seed("t_priv", owner, Visibility::private_);
+  auto conn = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-owner"), conn);
+  Json::Value node = parse(R"({"id":"door","createdAt":"1000:0:r_a","opensAt":"1000:0:r_a"})");
+
+  node["opens"] = std::string(kMaxIdLength + 1, 't');
+  h.collab.onMessage(conn, registerFrame("t_priv", "f-over", dump(node)));
+  REQUIRE_EQ(conn->sent.size(), 1u);
+  CHECK_EQ(rejectCode(conn->sent[0]), std::string("bad-frame"));
+  CHECK_EQ(rejectReason(conn->sent[0]), std::string("node \"door\": opens would be 129 characters, 1 over the 128 cap"));
+  CHECK_EQ(parse(conn->sent[0])["frameId"].asString(), std::string("f-over"));
+  CHECK(h.trees.byId["t_priv"].state == GraphState{});
+
+  node["opens"] = std::string(kMaxIdLength, 't');
+  h.collab.onMessage(conn, registerFrame("t_priv", "f-cap", dump(node)));
+  REQUIRE_EQ(conn->sent.size(), 2u);
+  CHECK_EQ(frameType(conn->sent[1]), std::string("subgraphAck"));
+  NodeStateEntry door;
+  door.id = NodeId{"door"};
+  door.createdAt = door.opensAt = Hlc{1000, 0, "r_a"};
+  door.opens = TreeId{std::string(kMaxIdLength, 't')};
+  CHECK(h.trees.byId["t_priv"].state == (GraphState{{door}, {}}));
+}
+
+TEST(ws_the_tree_a_node_opens_reaches_its_owners_connections_and_no_other_subscriber_live_or_on_subscribe) {
+  Harness h;
+  UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.addSession("s-tablet", owner);
+  h.signIn("s-stranger", "stranger@example.com");
+  h.seed("t_pub", owner, Visibility::public_);
+  auto laptop = std::make_shared<FakeSocket>();
+  auto tablet = std::make_shared<FakeSocket>();
+  auto stranger = std::make_shared<FakeSocket>();
+  auto signedOut = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-owner"), laptop);
+  h.collab.onOpen(h.upgrade("s-tablet"), tablet);
+  h.collab.onOpen(h.upgrade("s-stranger"), stranger);
+  h.collab.onOpen(h.upgrade(""), signedOut);
+  for (const auto& conn : {tablet, stranger, signedOut}) h.collab.onMessage(conn, subscribeFrame("t_pub"));
+  NodeStateEntry whole;
+  whole.id = NodeId{"door"};
+  whole.label = "Door";
+  whole.createdAt = whole.labelAt = Hlc{1000, 0, "r_a"};
+  whole.opens = TreeId{"t_00000000000000f2"};
+  whole.opensAt = Hlc{1000, 0, "r_a"};
+  NodeStateEntry withheld = whole;
+  withheld.opens = TreeId{};
+  withheld.opensAt = Hlc{};
+  const Json::Value wholeNodes = toJson(GraphState{{whole}, {}})["nodes"];
+  const Json::Value withheldNodes = toJson(GraphState{{withheld}, {}})["nodes"];
+
+  const char* created =
+      R"({"id":"door","createdAt":"1000:0:r_a","label":"Door","labelAt":"1000:0:r_a","opens":"t_00000000000000f2","opensAt":"1000:0:r_a"})";
+  h.collab.onMessage(laptop, registerFrame("t_pub", "f-create", created));
+  CHECK_EQ(frameType(laptop->sent.back()), std::string("subgraphAck"));
+  CHECK_EQ(lastFrameOfType(*tablet, "subgraph")["intent"].asString(), std::string("live"));
+  CHECK_EQ(lastFrameOfType(*tablet, "subgraph")["nodes"], wholeNodes);
+  for (const auto& reader : {stranger, signedOut}) {
+    const Json::Value live = lastFrameOfType(*reader, "subgraph");
+    CHECK_EQ(live["intent"].asString(), std::string("live"));
+    CHECK_EQ(live["seq"].asInt64(), 1);
+    CHECK_EQ(live["nodes"], withheldNodes);
+  }
+
+  // A frame that moves only the pointer still reaches a reader, with its seq and nothing in it.
+  h.collab.onMessage(laptop, registerFrame("t_pub", "f-retarget", R"({"id":"door","opens":"t_00000000000000f3","opensAt":"2000:0:r_a"})"));
+  CHECK_EQ(lastFrameOfType(*tablet, "subgraph")["nodes"][0]["opens"].asString(), std::string("t_00000000000000f3"));
+  for (const auto& reader : {stranger, signedOut}) {
+    const Json::Value live = lastFrameOfType(*reader, "subgraph");
+    CHECK_EQ(live["seq"].asInt64(), 2);
+    CHECK_EQ(live["nodes"], Json::Value(Json::arrayValue));
+  }
+
+  auto strangerAgain = std::make_shared<FakeSocket>();
+  auto ownerAgain = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-stranger"), strangerAgain);
+  h.collab.onOpen(h.upgrade("s-owner"), ownerAgain);
+  h.collab.onMessage(strangerAgain, subscribeFrame("t_pub"));
+  h.collab.onMessage(ownerAgain, subscribeFrame("t_pub"));
+  CHECK_EQ(lastFrameOfType(*strangerAgain, "subgraph")["nodes"], withheldNodes);
+  whole.opens = TreeId{"t_00000000000000f3"};
+  whole.opensAt = Hlc{2000, 0, "r_a"};
+  CHECK_EQ(lastFrameOfType(*ownerAgain, "subgraph")["nodes"], toJson(GraphState{{whole}, {}})["nodes"]);
+
+  // A subscriber whose vector covers everything but the pointer is sent no node at all.
+  Json::Value behind(Json::objectValue);
+  behind["t"] = "subscribe";
+  behind["treeId"] = "t_pub";
+  behind["vector"]["r_a"] = "1000:0:r_a";
+  auto strangerBehind = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-stranger"), strangerBehind);
+  h.collab.onMessage(strangerBehind, dump(behind));
+  CHECK_EQ(lastFrameOfType(*strangerBehind, "subgraph")["nodes"], Json::Value(Json::arrayValue));
+}
+
+TEST(ws_an_owners_connection_whose_session_was_revoked_stops_receiving_the_tree_a_node_opens) {
+  Harness h;
+  UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.addSession("s-tablet", owner);
+  h.seed("t_pub", owner, Visibility::public_);
+  auto laptop = std::make_shared<FakeSocket>();
+  auto tablet = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-owner"), laptop);
+  h.collab.onOpen(h.upgrade("s-tablet"), tablet);
+  h.collab.onMessage(tablet, subscribeFrame("t_pub"));
+  h.collab.onMessage(laptop, registerFrame("t_pub", "f-open", R"({"id":"door","createdAt":"1000:0:r_a","opens":"t_00000000000000f2","opensAt":"1000:0:r_a"})"));
+  CHECK_EQ(lastFrameOfType(*tablet, "subgraph")["nodes"][0]["opens"].asString(), std::string("t_00000000000000f2"));
+
+  h.authRepo.deleteSession(h.tokens.digestOf("s-tablet"));
+  h.clock.now += 61'000;  // past the one-minute re-proof
+  h.collab.reproveReaders();
+  h.collab.onMessage(laptop, registerFrame("t_pub", "f-retarget", R"({"id":"door","opens":"t_00000000000000f3","opensAt":"2000:0:r_a"})"));
+  const Json::Value live = lastFrameOfType(*tablet, "subgraph");
+  CHECK_EQ(live["seq"].asInt64(), 2);
+  CHECK_EQ(live["nodes"], Json::Value(Json::arrayValue));
+
+  auto again = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-tablet"), again);
+  h.collab.onMessage(again, subscribeFrame("t_pub"));
+  NodeStateEntry withheld;
+  withheld.id = NodeId{"door"};
+  withheld.createdAt = Hlc{1000, 0, "r_a"};
+  CHECK_EQ(lastFrameOfType(*again, "subgraph")["nodes"], toJson(GraphState{{withheld}, {}})["nodes"]);
+}
+
+TEST(ws_a_frame_whose_opens_is_not_a_string_is_refused_and_leaves_the_tree_as_it_was) {
+  Harness h;
+  UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.seed("t_priv", owner, Visibility::private_);
+  auto conn = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-owner"), conn);
+  h.collab.onMessage(conn, registerFrame("t_priv", "f-create", R"({"id":"door","createdAt":"1000:0:r_a"})"));
+  REQUIRE_EQ(conn->sent.size(), 1u);
+  const GraphState before = h.trees.byId["t_priv"].state;
+
+  for (const char* value : {"7", "true", R"({"id":"t_x"})", R"(["t_x"])"}) {
+    const std::string node = std::string(R"({"id":"door","opens":)") + value + R"(,"opensAt":"2000:0:r_a"})";
+    const std::size_t answered = conn->sent.size();
+    h.collab.onMessage(conn, registerFrame("t_priv", value, node));
+    REQUIRE_EQ(conn->sent.size(), answered + 1);
+    CHECK_EQ(rejectCode(conn->sent.back()), std::string("bad-frame"));
+    CHECK_EQ(rejectReason(conn->sent.back()), std::string("this frame could not be read"));
+    CHECK_EQ(parse(conn->sent.back())["frameId"].asString(), std::string(value));
+  }
+  CHECK(h.trees.byId["t_priv"].state == before);
+  CHECK_EQ(h.trees.byId["t_priv"].head, static_cast<Seq>(1));
 }

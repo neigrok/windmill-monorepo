@@ -9,6 +9,7 @@ using namespace wm;
 
 static NodeId nid(const char* s) { return NodeId{std::string(s)}; }
 static KindId kid(const char* s) { return KindId{std::string(s)}; }
+static TreeId tid(const char* s) { return TreeId{std::string(s)}; }
 static Hlc at(std::uint64_t ms, const char* actor = "a") { return Hlc{ms, 0, actor}; }
 
 static Command createNodeCommand(const char* id) {
@@ -1028,4 +1029,137 @@ TEST(edge_change_plan_validates_net_capacity_and_all_endpoints_before_apply) {
   CHECK(std::get<EdgeChangePlan>(retry).batch.commands.empty());
   CHECK(std::holds_alternative<std::string>(planEdgeChanges(graph, EdgeChanges{replace.add, replace.add})));
   CHECK(std::holds_alternative<std::string>(planEdgeChanges(graph, EdgeChanges{replace.add, {replace.remove[0], replace.remove[0]}})));
+}
+
+TEST(create_node_opens_the_tree_it_names_and_opens_none_without_one) {
+  LooseGraph g;
+  Legend legend;
+  CreateNode pointed{nid("a"), "A", "x"};
+  pointed.opens = tid("t_sub");
+  merge(g, legend, Command{pointed}, at(1));
+  merge(g, legend, Command{CreateNode{nid("b"), "B", "x"}}, at(1));
+
+  CHECK_EQ(*g.exportNode(nid("a")),
+           (NodeStateEntry{.id = nid("a"), .createdAt = at(1), .label = "A", .labelAt = at(1), .icon = "x",
+                           .iconAt = at(1), .colorAt = at(1), .opens = tid("t_sub"), .opensAt = at(1)}));
+  CHECK_EQ(*g.exportNode(nid("b")),
+           (NodeStateEntry{.id = nid("b"), .createdAt = at(1), .label = "B", .labelAt = at(1), .icon = "x",
+                           .iconAt = at(1), .colorAt = at(1)}));
+}
+
+TEST(annotate_node_sets_leaves_and_clears_the_tree_a_node_opens) {
+  LooseGraph g;
+  Legend legend;
+  g.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
+  AnnotateNode pointed{nid("a")};
+  pointed.opens = tid("t_sub");
+  CHECK_EQ(validate(g, legend, Command{pointed}), std::nullopt);
+  merge(g, legend, Command{pointed}, at(2));
+  CHECK_EQ(g.nodeView(nid("a"))->opens, tid("t_sub"));
+  CHECK_EQ(g.exportNode(nid("a"))->opensAt, at(2));
+
+  merge(g, legend, Command{AnnotateNode{nid("a"), std::string("a note")}}, at(3));
+  CHECK_EQ(g.nodeView(nid("a"))->opens, tid("t_sub"));
+  CHECK_EQ(g.exportNode(nid("a"))->opensAt, at(2));
+
+  AnnotateNode cleared{nid("a")};
+  cleared.opens = TreeId{};
+  merge(g, legend, Command{cleared}, at(4));
+  CHECK_EQ(g.nodeView(nid("a"))->opens, TreeId{});
+  CHECK_EQ(g.exportNode(nid("a"))->opensAt, at(4));
+  CHECK_EQ(g.nodeView(nid("a"))->description, std::string("a note"));
+}
+
+TEST(node_patch_plan_sets_and_clears_the_tree_a_node_opens_and_plans_nothing_for_the_one_it_already_opens) {
+  LooseGraph graph = seeded();
+  Legend legend;
+  NodePatch pointed;
+  pointed.nodeId = nid("a");
+  pointed.opens = tid("t_sub");
+  const auto set = planNodePatches(graph, legend, {pointed});
+  REQUIRE(std::holds_alternative<NodePatchPlan>(set));
+  CHECK_EQ(std::get<NodePatchPlan>(set).changedNodeIds, std::vector<NodeId>{nid("a")});
+  merge(graph, legend, std::get<NodePatchPlan>(set).batch, at(10));
+  CHECK_EQ(graph.nodeView(nid("a"))->opens, tid("t_sub"));
+  CHECK_EQ(graph.nodeView(nid("a"))->label, std::string("A"));
+
+  const auto again = planNodePatches(graph, legend, {pointed});
+  REQUIRE(std::holds_alternative<NodePatchPlan>(again));
+  CHECK(std::get<NodePatchPlan>(again).batch.commands.empty());
+  CHECK(std::get<NodePatchPlan>(again).changedNodeIds.empty());
+
+  NodePatch cleared;
+  cleared.nodeId = nid("a");
+  cleared.opens = TreeId{};
+  const auto clear = planNodePatches(graph, legend, {cleared});
+  REQUIRE(std::holds_alternative<NodePatchPlan>(clear));
+  CHECK_EQ(std::get<NodePatchPlan>(clear).changedNodeIds, std::vector<NodeId>{nid("a")});
+  merge(graph, legend, std::get<NodePatchPlan>(clear).batch, at(11));
+  CHECK_EQ(graph.nodeView(nid("a"))->opens, TreeId{});
+}
+
+TEST(an_opens_past_the_id_cap_is_refused_naming_the_field_and_one_at_the_cap_passes) {
+  LooseGraph g = seeded();
+  Legend legend;
+  const TreeId atCap{std::string(kMaxIdLength, 't')};
+  const TreeId overCap{std::string(kMaxIdLength + 1, 't')};
+  const std::optional<std::string> refusal("opens would be 129 characters, 1 over the 128 cap");
+
+  CreateNode created{nid("c"), "C", ""};
+  created.opens = overCap;
+  CHECK_EQ(validate(g, legend, Command{created}), refusal);
+  created.opens = atCap;
+  CHECK_EQ(validate(g, legend, Command{created}), std::nullopt);
+
+  AnnotateNode annotated{nid("a")};
+  annotated.opens = overCap;
+  CHECK_EQ(validate(g, legend, Command{annotated}), refusal);
+  annotated.opens = atCap;
+  CHECK_EQ(validate(g, legend, Command{annotated}), std::nullopt);
+
+  NodePatch patch;
+  patch.nodeId = nid("a");
+  patch.opens = overCap;
+  const auto plan = planNodePatches(g, legend, {patch});
+  REQUIRE(std::holds_alternative<std::string>(plan));
+  CHECK_EQ(std::get<std::string>(plan), *refusal);
+
+  patch.opens = TreeId{std::string("t\0x", 3)};
+  const auto nul = planNodePatches(g, legend, {patch});
+  REQUIRE(std::holds_alternative<std::string>(nul));
+  CHECK_EQ(std::get<std::string>(nul), std::string("node \"a\": opens cannot contain a NUL character"));
+  annotated.opens = TreeId{std::string("t\0x", 3)};
+  CHECK_EQ(validate(g, legend, Command{annotated}), std::optional<std::string>("opens contains a NUL character"));
+}
+
+TEST(headline_is_empty_for_a_frame_that_sets_only_the_tree_a_node_opens) {
+  GraphState pointed;
+  NodeStateEntry n = nodeWrite("a");
+  n.opens = tid("t_sub");
+  n.opensAt = at(5);
+  pointed.nodes.push_back(n);
+  CHECK_FALSE(headline(pointed, LegendState{}).has_value());
+}
+
+// A tombstoned record keeps its registers, so a create that names no tree writes the empty pointer
+// to open none; one that does not carry the register at all leaves what the record holds.
+TEST(create_node_on_a_deleted_id_clears_the_pointer_it_carries_empty_and_leaves_the_one_it_does_not_carry) {
+  Legend legend;
+  LooseGraph cleared;
+  cleared.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
+  cleared.setOpens(nid("a"), tid("t_sub"), at(2));
+  cleared.deleteNode(nid("a"), at(3));
+  LooseGraph left = cleared;
+
+  CreateNode openingNone{nid("a"), "A again", "x"};
+  openingNone.opens = TreeId{};
+  merge(cleared, legend, Command{openingNone}, at(4));
+  CHECK(cleared.hasNode(nid("a")));
+  CHECK_EQ(cleared.nodeView(nid("a"))->opens, TreeId{});
+  CHECK_EQ(cleared.exportNode(nid("a"))->opensAt, at(4));
+
+  merge(left, legend, Command{CreateNode{nid("a"), "A again", "x"}}, at(4));
+  CHECK(left.hasNode(nid("a")));
+  CHECK_EQ(left.nodeView(nid("a"))->opens, tid("t_sub"));
+  CHECK_EQ(left.exportNode(nid("a"))->opensAt, at(2));
 }

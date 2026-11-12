@@ -15,7 +15,7 @@ using namespace wm::test;
 namespace {
 
 // The corpus schema version, written into the golden. Bump it by convention when the wire changes on purpose; nothing enforces it.
-constexpr int kWireCorpusVersion = 10;
+constexpr int kWireCorpusVersion = 13;
 
 struct Step {
   const char* tool;
@@ -91,17 +91,20 @@ std::vector<Step> plan() {
                                   array.append(mark("ghost", "active"));
                                   return array;
                                 }()}})},
+      // The harness holds one tree, so the tree a node opens is the tree it is in.
+      {"annotate_node", obj({{"nodeId", "docs"}, {"opens", "t"}})},
       {"find_nodes", with("query", "render")},
       {"find_nodes", with("state", "locked")},
       {"get_tree", obj({{"fields", strings({"id", "label", "icon", "color", "order", "prerequisites",
                                             "position", "status", "seedStatus", "state", "summary",
-                                            "description", "links"})}})},
+                                            "description", "links", "opens"})}})},
       {"get_diagnostics", kNoArgs},
       {"get_progress", kNoArgs},
       {"get_health", kNoArgs},
-      // Two deterministic FAILURES, so the error wire is pinned too. Errors mutate nothing, so they ride at the end.
+      // Three deterministic FAILURES, so the error wire is pinned too. Errors mutate nothing, so they ride at the end.
       {"set_progress", obj({{"nodeId", "no-such-node"}, {"status", "active"}})},
       {"annotate_node", with("nodeId", "root")},
+      {"create_node", obj({{"label", "Elsewhere"}, {"opens", "t_0000000000000000"}})},
   };
 }
 

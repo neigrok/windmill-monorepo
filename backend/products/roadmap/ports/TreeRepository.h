@@ -5,10 +5,12 @@
 #include "products/roadmap/domain/GraphState.h"
 #include "products/roadmap/domain/Ids.h"
 #include "products/roadmap/domain/Legend.h"
+#include "products/roadmap/domain/OpenedTrees.h"
 #include "products/roadmap/domain/Tree.h"
 
 #include <cstdint>
 #include <exception>
+#include <map>
 #include <optional>
 #include <set>
 #include <string>
@@ -88,6 +90,11 @@ struct TreeRepository {
   virtual std::vector<ListedTree> listPublic() = 0;
   // The sources this user forked FROM, only while the copy still stands.
   virtual std::set<TreeId> listForkedSources(const UserId& owner) = 0;
+  // The title of each tree among `trees` that stands and is `owner`'s, by id. A soft-deleted tree,
+  // someone else's, nobody's and an id no row holds are left out alike.
+  virtual std::map<TreeId, std::string> titlesOwnedBy(const UserId& owner, const std::set<TreeId>& trees) = 0;
+  // Each of `opened` that stands and is `owner`'s, and every such tree their pointers lead to, under `owner`'s marks.
+  virtual std::map<TreeId, OpenedTree> openedFrom(const UserId& owner, const std::set<TreeId>& opened) = 0;
   // Retire a tree by stamping deleted_at; every read filters it out afterwards.
   virtual void softDelete(const TreeId& tree) = 0;
   // The closed-room seam only — a live room's title reaches the column through save(). Lands only

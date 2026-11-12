@@ -2,6 +2,7 @@
 
 #include "products/roadmap/domain/Ids.h"
 #include "products/roadmap/domain/Tree.h"
+#include "products/roadmap/domain/TreeSummary.h"
 
 #include <cstdint>
 #include <string>
@@ -25,8 +26,7 @@ struct ReadyStep {
   NodeColor color = NodeColor::terracotta;
 };
 
-// `ready` is already DERIVED by UnlockRules::derive, so this file never re-decides what
-// "available" means.
+// `ready` holds the steps UnlockRules::derive answers `available`, in node-id order.
 struct TreeReadiness {
   TreeId id;
   std::string title;
@@ -35,6 +35,9 @@ struct TreeReadiness {
   int done = 0;
   std::vector<ReadyStep> ready;
 };
+
+// One person's trees with their own marks, in the order given; a tree SkillTree refuses has nothing ready.
+std::vector<TreeReadiness> readinessOf(const std::vector<LoadedTree>& trees);
 
 // `slotDate` is the LOCAL date of this week's slot and doubles as the ledger's week key;
 // `slotInstantMs` is that slot as a UTC instant.

@@ -102,6 +102,12 @@ std::optional<std::string> checkAnnotation(const Json::Value& node, const std::s
   return optionalLinks(node["links"], prefix + "links");
 }
 
+// A legend kind id a node write files the node under; which kinds exist is the room's to say.
+std::optional<std::string> optionalKind(const Json::Value& value, const std::string& path) {
+  if (value.isNull()) return std::nullopt;
+  return requireString(value, path, Empty::rejected, kMaxIdLength);
+}
+
 Json::Value progressStatusArgument(const Json::Value& value) {
   if (!value.isString()) return value;
   const auto status = parseProgressStatus(value.asString());
@@ -115,7 +121,8 @@ constexpr std::pair<const char*, NodeRegister> kImportedNodeRegisters[] = {
     {"label", NodeRegister::label},       {"icon", NodeRegister::icon},
     {"color", NodeRegister::color},       {"order", NodeRegister::order},
     {"position", NodeRegister::position}, {"seedStatus", NodeRegister::status},
-    {"description", NodeRegister::description}, {"links", NodeRegister::links}};
+    {"description", NodeRegister::description}, {"links", NodeRegister::links},
+    {"opens", NodeRegister::opens}};
 constexpr std::pair<const char*, KindRegister> kImportedKindRegisters[] = {
     {"label", KindRegister::label},
     {"description", KindRegister::description},
@@ -128,6 +135,7 @@ std::optional<std::string> checkImportedNode(const Json::Value& node, const std:
   if (std::optional<std::string> bad = optionalString(node["label"], path + ".label")) return bad;
   if (std::optional<std::string> bad = optionalString(node["icon"], path + ".icon")) return bad;
   if (std::optional<std::string> bad = optionalOneOf(node["color"], path + ".color", kHues)) return bad;
+  if (std::optional<std::string> bad = optionalKind(node["kind"], path + ".kind")) return bad;
   if (std::optional<std::string> bad = optionalOneOf(progressStatusArgument(node["seedStatus"]), path + ".seedStatus", kStatuses))
     return bad;
   if (!node["status"].isNull()) return path + kSeedStatusMoved;
@@ -141,7 +149,32 @@ std::optional<std::string> checkImportedNode(const Json::Value& node, const std:
     if (std::optional<std::string> bad = optionalNumber(node["position"]["y"], path + ".position.y"))
       return bad;
   }
+  if (std::optional<std::string> bad = optionalString(node["opens"], path + ".opens", kMaxIdLength)) return bad;
   return checkAnnotation(node, path + ".");
+}
+
+// A tree a call would make a node open, by the argument path that names it; an empty id opens none.
+using OpenedTree = std::pair<std::string, TreeId>;
+
+// Every tree a call would make a node open must stand and be the caller's, asked of the registry once
+// for the whole call. One sentence serves a tree that is not there and a tree that is someone else's:
+// a tree id is the read capability of an unlisted tree, so telling the two apart would say which ids exist.
+// The refusal carries its own outcome code, so a write line tells a pointer at a tree that is not the
+// caller's from a mistyped argument.
+std::optional<ToolResult> checkOpenedTrees(TreeRegistry& trees, const UserId& caller,
+                                           const std::vector<OpenedTree>& opened) {
+  std::set<TreeId> targets;
+  for (const auto& [path, target] : opened)
+    if (!target.empty()) targets.insert(target);
+  const std::map<TreeId, std::string> owned = trees.titlesOwnedBy(caller, targets);
+  for (const auto& [path, target] : opened)
+    if (!target.empty() && !owned.count(target))
+      return ToolResult::failure(
+          path + " names \"" + target.str() +
+              "\", which is not a tree of yours — a node opens only a tree you own: list_trees lists them, "
+              "and someone else's tree is copied into one of yours first, with create_tree then import_subgraph",
+          "opens-not-yours");
+  return std::nullopt;
 }
 
 // Both `nodeId` and `id` land on payload["id"]; runs before commandFromJson decodes.
@@ -172,6 +205,7 @@ std::optional<std::string> prepareEdit(const std::string& tool, Json::Value& pay
     if (std::optional<std::string> bad = optionalString(args["id"], "id", kMaxIdLength)) return bad;
     if (std::optional<std::string> bad = optionalString(args["icon"], "icon")) return bad;
     if (std::optional<std::string> bad = optionalOneOf(args["color"], "color", kHues)) return bad;
+    if (std::optional<std::string> bad = optionalKind(args["kind"], "kind")) return bad;
     if (std::optional<std::string> bad = optionalStrings(args["prerequisites"], "prerequisites", kMaxIdLength))
       return bad;
     if (std::optional<std::string> bad = optionalString(args["parentId"], "parentId", kMaxIdLength))
@@ -180,23 +214,34 @@ std::optional<std::string> prepareEdit(const std::string& tool, Json::Value& pay
     if (std::optional<std::string> bad = optionalNumber(args["y"], "y")) return bad;
     if (args["x"].isNull() != args["y"].isNull())
       return "arguments \"x\" and \"y\" go together — a position needs both.";
+    if (std::optional<std::string> bad = optionalString(args["opens"], "opens", kMaxIdLength)) return bad;
+    // A created node opens the tree this call names and no other: the pointer is always written, so
+    // an id a deleted node held brings none of that node's pointer back.
+    if (args["opens"].isNull()) payload["opens"] = "";
     return checkAnnotation(args, "");
   }
   if (tool == "annotate_node") {
     if (args["description"].isNull() && args["appendDescription"].isNull() && args["icon"].isNull() &&
-        args["links"].isNull())
+        args["links"].isNull() && args["opens"].isNull())
       return "nothing to set — pass at least one of \"description\", \"appendDescription\", \"icon\", "
-             "\"links\".";
+             "\"links\", \"opens\".";
     if (!args["description"].isNull() && !args["appendDescription"].isNull())
       return "\"description\" and \"appendDescription\" are both given — pass one: description "
              "replaces the body, appendDescription joins onto it.";
     if (std::optional<std::string> bad = optionalString(args["appendDescription"], "appendDescription"))
       return bad;
     if (std::optional<std::string> bad = optionalString(args["icon"], "icon")) return bad;
+    if (std::optional<std::string> bad = optionalString(args["opens"], "opens", kMaxIdLength)) return bad;
     return checkAnnotation(args, "");
   }
   if (tool == "rename_node") return requireString(args["label"], "label", Empty::allowed);
-  if (tool == "set_node_color") return requireOneOf(args["color"], "color", kHues);
+  if (tool == "set_node_color") {
+    if (args["color"].isNull() && args["kind"].isNull())
+      return "missing required argument \"color\" or \"kind\" — the hue the node takes, or the legend kind "
+             "whose hue it takes";
+    if (std::optional<std::string> bad = optionalOneOf(args["color"], "color", kHues)) return bad;
+    return optionalKind(args["kind"], "kind");
+  }
   if (tool == "move_node") {
     if (std::optional<std::string> bad = requireNumber(args["x"], "x")) return bad;
     return requireNumber(args["y"], "y");
@@ -255,16 +300,47 @@ ToolResult withRoom(RoomRegistry& registry, const TreeId& tree, Fn&& fn) {
   return fn(*room);
 }
 
-// States are derived over the whole tree: a prerequisite may sit off the page.
-NodeReadContext readContextFor(ProgressService& progress, const TreeId& tree, const std::optional<UserId>& caller,
-                               const TreeData& data, const NodeFields& fields, bool filtersOnState) {
+// The legend's hue -> kind id join: a node wears the kind its colour is the hue of, or none. The read
+// field `kind` answers from it, and so does a colour-setting write that named no kind.
+std::map<NodeColor, KindId> kindByHue(const std::vector<Kind>& kinds) {
+  std::map<NodeColor, KindId> join;
+  for (const Kind& kind : kinds) join[kind.hue] = kind.id;
+  return join;
+}
+
+// What a read takes from the room while it holds the tree's strand; every repository read comes after it lets go.
+struct RoomRead {
+  TreeData data;
+  Seq head = 0;
+  std::optional<UserId> owner;
+  bool guideInherited = false;
+};
+
+// Nothing for an absent tree and for one the caller may not read, which answer in the same words.
+std::optional<RoomRead> readRoom(RoomRegistry& registry, const TreeId& tree, const std::optional<UserId>& caller) {
+  std::lock_guard<std::mutex> lock(registry.strandFor(tree));
+  TreeRoom* room = registry.open(tree);
+  if (!room || !canRead(caller, room->owner(), room->visibility())) return std::nullopt;
+  return RoomRead{room->snapshot(), room->head(), room->owner(), room->guideInherited()};
+}
+
+// States are derived over the whole tree, as a prerequisite may sit off the page; only its writer has pointers followed.
+NodeReadContext readContextFor(TreeRegistry& trees, ProgressService& progress, const std::optional<UserId>& caller,
+                               const RoomRead& read, const NodeFields& fields, bool filtersOnState) {
+  const TreeData& data = read.data;
   const bool needsStates = fields.count(NodeField::state) || filtersOnState;
   const bool needsMarks = fields.count(NodeField::status) || needsStates;
   NodeReadContext context;
-  if (needsMarks && caller) context.marks = progress.progressOf(tree, *caller);
-  if (needsStates) context.states = UnlockRules::derive(data.nodes, context.marks);
-  if (fields.count(NodeField::kind))
-    for (const Kind& kind : data.kinds) context.kindByHue[kind.hue] = kind.id;
+  if (needsMarks && caller) context.marks = progress.progressOf(data.id, *caller);
+  if (fields.count(NodeField::kind)) context.kindByHue = kindByHue(data.kinds);
+  const bool follows = (needsStates || fields.count(NodeField::opens)) && canWrite(caller, read.owner);
+  if (!follows) {
+    if (needsStates) context.states = UnlockRules::derive(data.nodes, context.marks);
+    return context;
+  }
+  const OpenedTrees opened(trees.openedFrom(*caller, treesOpenedBy(data)));
+  if (needsStates) context.states = UnlockRules::derive(data.nodes, opened.followed(data, context.marks));
+  if (fields.count(NodeField::opens)) context.openings = opened.openings(data);
   return context;
 }
 
@@ -289,110 +365,106 @@ std::size_t liveEdgeCount(const TreeData& data) {
   return count;
 }
 
-ToolResult readTree(RoomRegistry& registry, ProgressService& progress, const TreeId& tree,
+ToolResult readTree(RoomRegistry& registry, TreeRegistry& trees, ProgressService& progress, const TreeId& tree,
                     const Json::Value& args, const std::optional<UserId>& caller) {
-  return withRoom(registry, tree, [&](TreeRoom& room) -> ToolResult {
-    // Byte-identical to the absent message, or the id is an existence oracle.
-    if (!canRead(caller, room.owner(), room.visibility())) return ToolResult::failure("no such tree \"" + tree.str() + "\"");
+  // Byte-identical to the absent message, or the id is an existence oracle.
+  const std::optional<RoomRead> read = readRoom(registry, tree, caller);
+  if (!read) return ToolResult::failure("no such tree \"" + tree.str() + "\"");
 
-    std::string error;
-    std::optional<NodeFields> nodeFields =
-        nodeVocabulary().parse(args["fields"], "fields", kGetTreeFields, error);
-    if (!nodeFields) return ToolResult::failure(error);
-    std::optional<KindFields> kindFields =
-        kindVocabulary().parse(args["kindFields"], "kindFields", kLegendFields, error);
-    if (!kindFields) return ToolResult::failure(error);
-    if (std::optional<std::string> bad = optionalBool(args["includeEdges"], "includeEdges"))
-      return ToolResult::failure(*bad);
+  std::string error;
+  std::optional<NodeFields> nodeFields =
+      nodeVocabulary().parse(args["fields"], "fields", kGetTreeFields, error);
+  if (!nodeFields) return ToolResult::failure(error);
+  std::optional<KindFields> kindFields =
+      kindVocabulary().parse(args["kindFields"], "kindFields", kLegendFields, error);
+  if (!kindFields) return ToolResult::failure(error);
+  if (std::optional<std::string> bad = optionalBool(args["includeEdges"], "includeEdges"))
+    return ToolResult::failure(*bad);
 
-    const TreeData data = room.snapshot();
-    std::optional<Page> page = pageOf(data.nodes, args, error);
-    if (!page) return ToolResult::failure(error);
+  const TreeData& data = read->data;
+  std::optional<Page> page = pageOf(data.nodes, args, error);
+  if (!page) return ToolResult::failure(error);
 
-    const NodeReadContext context = readContextFor(progress, tree, caller, data, *nodeFields, false);
-    ProjectedPage projected = projectPage(data.nodes, *page, *nodeFields, context);
-    Json::Value kinds(Json::arrayValue);
-    for (const Kind& kind : data.kinds) kinds.append(projectKind(kind, *kindFields));
+  const NodeReadContext context = readContextFor(trees, progress, caller, *read, *nodeFields, false);
+  ProjectedPage projected = projectPage(data.nodes, *page, *nodeFields, context);
+  Json::Value kinds(Json::arrayValue);
+  for (const Kind& kind : data.kinds) kinds.append(projectKind(kind, *kindFields));
 
-    // Whole on every page, and only here: `yours` says the caller owns the tree and wrote its current
-    // guide — a guide a fork copied from someone else's tree is its author's words until its owner
-    // writes their own.
-    Json::Value guide(Json::objectValue);
-    guide["text"] = data.guide;
-    guide["yours"] = canWrite(caller, room.owner()) && !room.guideInherited();
+  // Whole on every page, and only here: `yours` says the caller owns the tree and wrote its current
+  // guide — a guide a fork copied from someone else's tree is its author's words until its owner
+  // writes their own.
+  Json::Value guide(Json::objectValue);
+  guide["text"] = data.guide;
+  guide["yours"] = canWrite(caller, read->owner) && !read->guideInherited;
 
-    Json::Value document(Json::objectValue);
-    document["id"] = data.id.str();
-    document["title"] = data.title;
-    document["guide"] = guide;
-    document["nodes"] = std::move(projected.nodes);
-    document["kinds"] = kinds;
+  Json::Value document(Json::objectValue);
+  document["id"] = data.id.str();
+  document["title"] = data.title;
+  document["guide"] = guide;
+  document["nodes"] = std::move(projected.nodes);
+  document["kinds"] = kinds;
 
-    Json::Value out(Json::objectValue);
-    out["seq"] = static_cast<Json::Int64>(room.head());
-    out["count"] = static_cast<Json::UInt64>(data.nodes.size());  // the whole tree, not this page
-    if (!projected.nextCursor.empty()) out["nextCursor"] = projected.nextCursor;
-    if (projected.bytes) out["pageBytes"] = static_cast<Json::UInt64>(*projected.bytes);
-    out["tree"] = document;
-    // The edge list is whole or absent, never cut: past kMaxListedEdges the reply says so.
-    if (args["includeEdges"].asBool()) {
-      const std::size_t edgeCount = liveEdgeCount(data);
-      if (edgeCount <= kMaxListedEdges) {
-        out["edges"] = edgeList(data);
-      } else {
-        out["edgesOmitted"] = "this tree holds " + std::to_string(edgeCount) + " live edges, past the " +
-                              std::to_string(kMaxListedEdges) + " one reply lists — page get_tree with "
-                              "fields [\"id\", \"prerequisites\"] instead.";
-      }
+  Json::Value out(Json::objectValue);
+  out["seq"] = static_cast<Json::Int64>(read->head);
+  out["count"] = static_cast<Json::UInt64>(data.nodes.size());  // the whole tree, not this page
+  if (!projected.nextCursor.empty()) out["nextCursor"] = projected.nextCursor;
+  if (projected.bytes) out["pageBytes"] = static_cast<Json::UInt64>(*projected.bytes);
+  out["tree"] = document;
+  // The edge list is whole or absent, never cut: past kMaxListedEdges the reply says so.
+  if (args["includeEdges"].asBool()) {
+    const std::size_t edgeCount = liveEdgeCount(data);
+    if (edgeCount <= kMaxListedEdges) {
+      out["edges"] = edgeList(data);
+    } else {
+      out["edgesOmitted"] = "this tree holds " + std::to_string(edgeCount) + " live edges, past the " +
+                            std::to_string(kMaxListedEdges) + " one reply lists — page get_tree with "
+                            "fields [\"id\", \"prerequisites\"] instead.";
     }
-    return ToolResult::json(out);
-  });
+  }
+  return ToolResult::json(out);
 }
 
-ToolResult readNodes(RoomRegistry& registry, ProgressService& progress, const TreeId& tree,
+ToolResult readNodes(RoomRegistry& registry, TreeRegistry& trees, ProgressService& progress, const TreeId& tree,
                      const Json::Value& args, const std::optional<UserId>& caller) {
-  return withRoom(registry, tree, [&](TreeRoom& room) -> ToolResult {
-    if (!canRead(caller, room.owner(), room.visibility()))
-      return ToolResult::failure("no such tree \"" + tree.str() + "\"");
-    if (!args["nodeIds"].isArray() || args["nodeIds"].empty() || args["nodeIds"].size() > kMaxReadNodeIds)
-      return ToolResult::failure("nodeIds must contain 1 to " + std::to_string(kMaxReadNodeIds) + " unique node ids");
-    std::set<std::string> seen;
-    for (Json::ArrayIndex i = 0; i < args["nodeIds"].size(); ++i) {
-      const Json::Value& id = args["nodeIds"][i];
-      if (std::optional<std::string> bad = requireString(id, "nodeIds[" + std::to_string(i) + "]", Empty::rejected, kMaxIdLength))
-        return ToolResult::failure(*bad);
-      if (!seen.insert(id.asString()).second)
-        return ToolResult::failure("nodeIds repeats \"" + id.asString() + "\"");
-    }
-    std::string error;
-    const std::optional<NodeFields> fields = nodeVocabulary().parse(args["fields"], "fields", kGetTreeFields, error);
-    if (!fields) return ToolResult::failure(error);
-    const TreeData data = room.snapshot();
-    const NodeReadContext context = readContextFor(progress, tree, caller, data, *fields, false);
-    std::map<NodeId, const NodeSpec*> byId;
-    for (const NodeSpec& node : data.nodes) byId.emplace(node.id, &node);
+  const std::optional<RoomRead> read = readRoom(registry, tree, caller);
+  if (!read) return ToolResult::failure("no such tree \"" + tree.str() + "\"");
+  if (!args["nodeIds"].isArray() || args["nodeIds"].empty() || args["nodeIds"].size() > kMaxReadNodeIds)
+    return ToolResult::failure("nodeIds must contain 1 to " + std::to_string(kMaxReadNodeIds) + " unique node ids");
+  std::set<std::string> seen;
+  for (Json::ArrayIndex i = 0; i < args["nodeIds"].size(); ++i) {
+    const Json::Value& id = args["nodeIds"][i];
+    if (std::optional<std::string> bad = requireString(id, "nodeIds[" + std::to_string(i) + "]", Empty::rejected, kMaxIdLength))
+      return ToolResult::failure(*bad);
+    if (!seen.insert(id.asString()).second)
+      return ToolResult::failure("nodeIds repeats \"" + id.asString() + "\"");
+  }
+  std::string error;
+  const std::optional<NodeFields> fields = nodeVocabulary().parse(args["fields"], "fields", kGetTreeFields, error);
+  if (!fields) return ToolResult::failure(error);
+  const NodeReadContext context = readContextFor(trees, progress, caller, *read, *fields, false);
+  std::map<NodeId, const NodeSpec*> byId;
+  for (const NodeSpec& node : read->data.nodes) byId.emplace(node.id, &node);
 
-    Json::Value out(Json::objectValue);
-    out["treeId"] = tree.str();
-    out["seq"] = static_cast<Json::Int64>(room.head());
-    out["nodes"] = Json::Value(Json::arrayValue);
-    out["missingNodeIds"] = Json::Value(Json::arrayValue);
-    for (const Json::Value& id : args["nodeIds"]) {
-      const auto node = byId.find(NodeId{id.asString()});
-      if (node == byId.end()) out["missingNodeIds"].append(id);
-      else out["nodes"].append(projectNode(*node->second, *fields, context));
-    }
-    ToolResult result = ToolResult::json(out);
-    result.structured = out;
-    Json::Value wire(Json::objectValue);
-    wire["content"] = result.content;
-    wire["structuredContent"] = result.structured;
-    wire["isError"] = false;
-    if (dump(wire).size() > kNodeBatchByteBudget)
-      return ToolResult::failure("response exceeds the " + std::to_string(kNodeBatchByteBudget) +
-          "-byte limit; retry with fewer nodeIds or fewer fields (summary instead of description). No nodes were omitted silently.");
-    return result;
-  });
+  Json::Value out(Json::objectValue);
+  out["treeId"] = tree.str();
+  out["seq"] = static_cast<Json::Int64>(read->head);
+  out["nodes"] = Json::Value(Json::arrayValue);
+  out["missingNodeIds"] = Json::Value(Json::arrayValue);
+  for (const Json::Value& id : args["nodeIds"]) {
+    const auto node = byId.find(NodeId{id.asString()});
+    if (node == byId.end()) out["missingNodeIds"].append(id);
+    else out["nodes"].append(projectNode(*node->second, *fields, context));
+  }
+  ToolResult result = ToolResult::json(out);
+  result.structured = out;
+  Json::Value wire(Json::objectValue);
+  wire["content"] = result.content;
+  wire["structuredContent"] = result.structured;
+  wire["isError"] = false;
+  if (dump(wire).size() > kNodeBatchByteBudget)
+    return ToolResult::failure("response exceeds the " + std::to_string(kNodeBatchByteBudget) +
+        "-byte limit; retry with fewer nodeIds or fewer fields (summary instead of description). No nodes were omitted silently.");
+  return result;
 }
 
 ToolResult readDiagnostics(RoomRegistry& registry, const TreeId& tree, const std::optional<UserId>& caller) {
@@ -434,51 +506,49 @@ ToolResult readProgress(ProgressService& progress, const TreeId& tree, const Jso
   return ToolResult::json(projectProgress(progress.progressOf(tree, user), *fields));
 }
 
-ToolResult findNodes(RoomRegistry& registry, ProgressService& progress, const TreeId& tree,
+ToolResult findNodes(RoomRegistry& registry, TreeRegistry& trees, ProgressService& progress, const TreeId& tree,
                      const Json::Value& args, const std::optional<UserId>& caller) {
-  return withRoom(registry, tree, [&](TreeRoom& room) -> ToolResult {
-    if (!canRead(caller, room.owner(), room.visibility())) return ToolResult::failure("no such tree \"" + tree.str() + "\"");
-    if (std::optional<std::string> bad = optionalOneOf(args["color"], "color", kHues))
-      return ToolResult::failure(*bad);
-    if (std::optional<std::string> bad = optionalString(args["kind"], "kind", kMaxIdLength))
-      return ToolResult::failure(*bad);
-    if (std::optional<std::string> bad = optionalString(args["query"], "query"))
-      return ToolResult::failure(*bad);
-    if (std::optional<std::string> bad = optionalOneOf(args["state"], "state", kNodeStates))
-      return ToolResult::failure(*bad);
+  const std::optional<RoomRead> read = readRoom(registry, tree, caller);
+  if (!read) return ToolResult::failure("no such tree \"" + tree.str() + "\"");
+  if (std::optional<std::string> bad = optionalOneOf(args["color"], "color", kHues))
+    return ToolResult::failure(*bad);
+  if (std::optional<std::string> bad = optionalString(args["kind"], "kind", kMaxIdLength))
+    return ToolResult::failure(*bad);
+  if (std::optional<std::string> bad = optionalString(args["query"], "query"))
+    return ToolResult::failure(*bad);
+  if (std::optional<std::string> bad = optionalOneOf(args["state"], "state", kNodeStates))
+    return ToolResult::failure(*bad);
 
-    NodeFilter filter;
-    if (args["color"].isString()) filter.color = parseColor(args["color"].asString());
-    if (args["kind"].isString() && !args["kind"].asString().empty())
-      filter.kind = KindId{args["kind"].asString()};
-    filter.query = args.get("query", "").asString();
-    std::optional<NodeState> state;
-    if (args["state"].isString()) state = parseNodeState(args["state"].asString());
+  NodeFilter filter;
+  if (args["color"].isString()) filter.color = parseColor(args["color"].asString());
+  if (args["kind"].isString() && !args["kind"].asString().empty())
+    filter.kind = KindId{args["kind"].asString()};
+  filter.query = args.get("query", "").asString();
+  std::optional<NodeState> state;
+  if (args["state"].isString()) state = parseNodeState(args["state"].asString());
 
-    std::string error;
-    std::optional<NodeFields> fields = nodeVocabulary().parse(args["fields"], "fields", kFindNodesFields, error);
-    if (!fields) return ToolResult::failure(error);
+  std::string error;
+  std::optional<NodeFields> fields = nodeVocabulary().parse(args["fields"], "fields", kFindNodesFields, error);
+  if (!fields) return ToolResult::failure(error);
 
-    // selectNodes must stay pure in (tree, filter) or a cursor stops resuming: the state filter runs after it.
-    const TreeData data = room.snapshot();
-    const NodeReadContext context = readContextFor(progress, tree, caller, data, *fields, state.has_value());
-    std::vector<NodeSpec> matches = selectNodes(data, filter);
-    if (state)
-      std::erase_if(matches, [&](const NodeSpec& node) { return context.states.at(node.id) != *state; });
-    std::optional<Page> page = pageOf(matches, args, error);
-    if (!page) return ToolResult::failure(error);
+  // selectNodes must stay pure in (tree, filter) or a cursor stops resuming: the state filter runs after it.
+  const NodeReadContext context = readContextFor(trees, progress, caller, *read, *fields, state.has_value());
+  std::vector<NodeSpec> matches = selectNodes(read->data, filter);
+  if (state)
+    std::erase_if(matches, [&](const NodeSpec& node) { return context.states.at(node.id) != *state; });
+  std::optional<Page> page = pageOf(matches, args, error);
+  if (!page) return ToolResult::failure(error);
 
-    ProjectedPage projected = projectPage(matches, *page, *fields, context);
-    Json::Value out(Json::objectValue);
-    out["count"] = static_cast<Json::UInt64>(matches.size());  // everything that matched, not this page
-    out["nodes"] = std::move(projected.nodes);
-    if (!projected.nextCursor.empty()) out["nextCursor"] = projected.nextCursor;
-    if (projected.bytes) out["pageBytes"] = static_cast<Json::UInt64>(*projected.bytes);
-    return ToolResult::json(out);
-  });
+  ProjectedPage projected = projectPage(matches, *page, *fields, context);
+  Json::Value out(Json::objectValue);
+  out["count"] = static_cast<Json::UInt64>(matches.size());  // everything that matched, not this page
+  out["nodes"] = std::move(projected.nodes);
+  if (!projected.nextCursor.empty()) out["nextCursor"] = projected.nextCursor;
+  if (projected.bytes) out["pageBytes"] = static_cast<Json::UInt64>(*projected.bytes);
+  return ToolResult::json(out);
 }
 
-ToolResult applyEdit(RoomRegistry& registry, const TreeId& tree, const std::string& tool,
+ToolResult applyEdit(RoomRegistry& registry, TreeRegistry& trees, const TreeId& tree, const std::string& tool,
                      Json::Value payload, Clock& clock, const UserId& actor) {
   const std::string kind = *commandKindFor(tool);
   if (std::optional<std::string> bad = prepareEdit(tool, payload)) return ToolResult::failure(*bad);
@@ -504,12 +574,26 @@ ToolResult applyEdit(RoomRegistry& registry, const TreeId& tree, const std::stri
       return ToolResult::failure("no node in this tree is named \"" + payload["id"].asString() + "\"" +
                                  ". " + kNodeHandle.hint);
 
+    const bool setsHue = tool == "create_node" || tool == "set_node_color";
+    if (setsHue && payload.isMember("kind")) {
+      HueChoice choice{parseColor(payload.get("color", "").asString()), KindId{payload["kind"].asString()}};
+      const auto hue = room.resolveHue(choice, "");
+      if (const auto* refusal = std::get_if<std::string>(&hue)) return ToolResult::failure(*refusal);
+      payload["color"] = std::string(toString(*std::get<std::optional<NodeColor>>(hue)));
+    }
+
     // Unreachable by construction: prepareEdit has already refused everything the decode can.
     std::optional<Command> command = commandFromJson(kind, payload);
     if (!command)
       return ToolResult::failure("the arguments passed every published check but no " + kind +
                                  " could be built from them — that is a server bug, please report it.");
     if (std::optional<std::string> reason = room.validate(*command)) return ToolResult::failure(*reason);
+    std::vector<OpenedTree> opened;
+    if (const CreateNode* created = std::get_if<CreateNode>(&*command); created && created->opens)
+      opened.emplace_back("opens", *created->opens);
+    if (const AnnotateNode* annotated = std::get_if<AnnotateNode>(&*command); annotated && annotated->opens)
+      opened.emplace_back("opens", *annotated->opens);
+    if (std::optional<ToolResult> refusal = checkOpenedTrees(trees, actor, opened)) return *refusal;
 
     // Bracketed under the strand, so whatever the tree gains between these reads, this gained.
     const TreeDiagnostics before = room.diagnose();
@@ -521,17 +605,27 @@ ToolResult applyEdit(RoomRegistry& registry, const TreeId& tree, const std::stri
     out["seq"] = static_cast<Json::Int64>(seq);
     answerDiagnostics(before, room.diagnose(), out);
     if (payload.isMember("id")) out["id"] = payload["id"];
+    // A write that named its kind wears it, as resolveHue just said; one that named none is answered
+    // from the hue join, for the hue its command landed.
+    if (setsHue && payload.isMember("kind")) out["kind"] = payload["kind"];
+    if (setsHue && !payload.isMember("kind")) {
+      const NodeColor hue = std::holds_alternative<CreateNode>(*command) ? std::get<CreateNode>(*command).color
+                                                                          : std::get<SetNodeColor>(*command).color;
+      const std::map<NodeColor, KindId> worn = kindByHue(room.kinds());
+      if (worn.count(hue)) out["kind"] = worn.at(hue).str();
+    }
     return ToolResult::json(out);
   });
 }
 
-ToolResult applyBatchEdit(RoomRegistry& registry, const TreeId& tree, const std::string& name,
+ToolResult applyBatchEdit(RoomRegistry& registry, TreeRegistry& trees, const TreeId& tree, const std::string& name,
                           const Json::Value& args, Clock& clock, const UserId& actor) {
   if (std::optional<std::string> bad = optionalBool(args["dryRun"], "dryRun")) return ToolResult::failure(*bad);
   if (args.isMember("expectedSeq") && (!args["expectedSeq"].isInt64() || args["expectedSeq"].asInt64() < 0))
     return ToolResult::failure("expectedSeq must be a non-negative integer from get_tree or get_nodes");
 
   std::vector<NodePatch> patches;
+  std::vector<OpenedTree> opened;
   EdgeChanges edges;
   if (name == "patch_nodes") {
     if (std::optional<std::string> bad = requireObjects(args["updates"], "updates", kMaxPatchNodes))
@@ -549,6 +643,7 @@ ToolResult applyBatchEdit(RoomRegistry& registry, const TreeId& tree, const std:
       if (row.isMember("color"))
         if (std::optional<std::string> bad = requireOneOf(row["color"], path + ".color", kHues))
           return ToolResult::failure(*bad);
+      if (std::optional<std::string> bad = optionalKind(row["kind"], path + ".kind")) return ToolResult::failure(*bad);
       if (row.isMember("position")) {
         if (!row["position"].isObject()) return ToolResult::failure(path + ".position must be an object with x and y");
         for (const char* axis : {"x", "y"})
@@ -559,14 +654,22 @@ ToolResult applyBatchEdit(RoomRegistry& registry, const TreeId& tree, const std:
         if (!row["links"].isArray()) return ToolResult::failure(path + ".links must be an array");
         if (std::optional<std::string> bad = optionalLinks(row["links"], path + ".links")) return ToolResult::failure(*bad);
       }
+      if (row.isMember("opens"))
+        if (std::optional<std::string> bad = requireString(row["opens"], path + ".opens", Empty::allowed, kMaxIdLength))
+          return ToolResult::failure(*bad);
       NodePatch patch;
       patch.nodeId = NodeId{row["nodeId"].asString()};
       if (row.isMember("label")) patch.label = row["label"].asString();
       if (row.isMember("icon")) patch.icon = row["icon"].asString();
       if (row.isMember("description")) patch.description = row["description"].asString();
-      if (row.isMember("color")) patch.color = parseColor(row["color"].asString());
+      if (row.isMember("color")) patch.hue.color = parseColor(row["color"].asString());
+      if (row["kind"].isString()) patch.hue.kind = KindId{row["kind"].asString()};
       if (row.isMember("position")) patch.position = Vec2{row["position"]["x"].asDouble(), row["position"]["y"].asDouble()};
       if (row.isMember("links")) patch.links = linksFromJson(row["links"]);
+      if (row.isMember("opens")) {
+        patch.opens = TreeId{row["opens"].asString()};
+        opened.emplace_back(path + ".opens", *patch.opens);
+      }
       patches.push_back(std::move(patch));
     }
   } else {
@@ -602,6 +705,7 @@ ToolResult applyBatchEdit(RoomRegistry& registry, const TreeId& tree, const std:
     if (name == "patch_nodes") {
       const auto result = room.planNodePatches(patches);
       if (const auto* error = std::get_if<std::string>(&result)) return ToolResult::failure(*error);
+      if (std::optional<ToolResult> refusal = checkOpenedTrees(trees, actor, opened)) return *refusal;
       const NodePatchPlan& plan = std::get<NodePatchPlan>(result);
       batch = plan.batch;
       out["changedNodeIds"] = Json::Value(Json::arrayValue);
@@ -894,7 +998,7 @@ std::optional<std::string> checkMergedLegend(const std::vector<Kind>& current,
   return std::nullopt;
 }
 
-ToolResult importSubgraph(RoomRegistry& registry, ProgressService& progress, PresenceBus& bus,
+ToolResult importSubgraph(RoomRegistry& registry, TreeRegistry& trees, ProgressService& progress, PresenceBus& bus,
                           const TreeId& tree, const Json::Value& args, Clock& clock, const ToolCaller& caller) {
   if (std::optional<std::string> bad = checkImport(args)) return ToolResult::failure(*bad);
   // The tool is write-level, but a tombstone is what delete_node does, and `delete` is never implied
@@ -918,9 +1022,11 @@ ToolResult importSubgraph(RoomRegistry& registry, ProgressService& progress, Pre
   // A field the batch leaves off a node or a kind is not sent blank: the graft stamps that register
   // unset, so a node or kind the tree already holds keeps its value and a new one lands with the default.
   for (const Json::Value& node : args["nodes"]) {
-    std::set<NodeRegister>& omitted = graft.omittedNodeRegisters[NodeId{node["id"].asString()}];
+    const NodeId id{node["id"].asString()};
+    std::set<NodeRegister>& omitted = graft.omittedNodeRegisters[id];
     for (const auto& [field, held] : kImportedNodeRegisters)
       if (node[field].isNull()) omitted.insert(held);
+    if (node["kind"].isString()) graft.nodeKinds[id] = KindId{node["kind"].asString()};
   }
   for (const Json::Value& kind : args["kinds"]) {
     std::set<KindRegister>& omitted = graft.omittedKindRegisters[KindId{kind["id"].asString()}];
@@ -949,11 +1055,18 @@ ToolResult importSubgraph(RoomRegistry& registry, ProgressService& progress, Pre
     // A graft mints no Command, so the tree caps are checked here, before the dry-run branch.
     if (std::optional<Admission> refusal = room.admit(graft))
       return ToolResult::failure(refusal->reason);
+    std::vector<OpenedTree> opened;
+    for (std::size_t i = 0; i < graft.document.nodes.size(); ++i)
+      opened.emplace_back("nodes[" + std::to_string(i) + "].opens", graft.document.nodes[i].opens);
+    if (std::optional<ToolResult> refusal = checkOpenedTrees(trees, actor, opened)) return *refusal;
 
     const TreeData& incoming = graft.document;
     TreeData current = room.snapshot();  // collision = an incoming id already present (an upsert overwrites it)
     if (std::optional<std::string> bad = checkMergedLegend(current.kinds, incoming.kinds))
       return ToolResult::failure(*bad);
+    std::variant<Graft, std::string> filed = room.resolveKinds(graft);
+    if (const auto* refusal = std::get_if<std::string>(&filed)) return ToolResult::failure(*refusal);
+    graft = std::get<Graft>(std::move(filed));
     std::set<std::string> presentNodes, presentKinds;
     for (const NodeSpec& n : current.nodes) presentNodes.insert(n.id.str());
     for (const Kind& k : current.kinds) presentKinds.insert(k.id.str());
@@ -1374,18 +1487,18 @@ ToolResult RoadmapTools::dispatch(const std::string& name, const Json::Value& ar
 
   if (name == "delete_tree")     return removeTree(treeRegistry_, tree, caller);
   if (name == "describe_tree")   return describeTree(treeRegistry_, tree, arguments, caller);
-  if (name == "get_tree")        return readTree(registry_, progress_, tree, arguments, reader);
-  if (name == "get_nodes")       return readNodes(registry_, progress_, tree, arguments, reader);
+  if (name == "get_tree")        return readTree(registry_, treeRegistry_, progress_, tree, arguments, reader);
+  if (name == "get_nodes")       return readNodes(registry_, treeRegistry_, progress_, tree, arguments, reader);
   if (name == "get_diagnostics") return readDiagnostics(registry_, tree, reader);
   if (name == "get_health")      return readHealth(registry_, tree, reader);
   if (name == "get_progress")    return readProgress(progress_, tree, arguments, caller);
-  if (name == "find_nodes")      return findNodes(registry_, progress_, tree, arguments, reader);
+  if (name == "find_nodes")      return findNodes(registry_, treeRegistry_, progress_, tree, arguments, reader);
   if (name == "patch_nodes" || name == "change_edges")
-    return applyBatchEdit(registry_, tree, name, arguments, clock_, caller);
+    return applyBatchEdit(registry_, treeRegistry_, tree, name, arguments, clock_, caller);
   if (name == "set_progress")
     return writeProgress(registry_, progress_, bus_, tree, arguments, clock_, caller);
   if (name == "import_subgraph")
-    return importSubgraph(registry_, progress_, bus_, tree, arguments, clock_, actor);
+    return importSubgraph(registry_, treeRegistry_, progress_, bus_, tree, arguments, clock_, actor);
   if (name == "prune")
     return pruneTree(registry_, progress_, tree, clock_, caller);
   if (name == "delete_node")
@@ -1393,7 +1506,7 @@ ToolResult RoadmapTools::dispatch(const std::string& name, const Json::Value& ar
   if (name == "disconnect")
     return disconnectEdges(registry_, tree, arguments, clock_, caller);
 
-  if (commandKindFor(name)) return applyEdit(registry_, tree, name, arguments, clock_, caller);
+  if (commandKindFor(name)) return applyEdit(registry_, treeRegistry_, tree, name, arguments, clock_, caller);
 
   // The whole-server "no such tool" answer belongs to CompositeToolHost.
   return ToolResult::failure("no such roadmap tool — call tools/list for the surface this connection "

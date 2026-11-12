@@ -4,9 +4,7 @@
 #include "platform/adapters/postgres/PgPool.h"
 #include "products/roadmap/domain/GraphState.h"
 #include "products/roadmap/domain/LooseGraph.h"
-#include "products/roadmap/domain/SkillTree.h"
 #include "products/roadmap/domain/TreeSummary.h"
-#include "products/roadmap/domain/UnlockRules.h"
 
 #include <pqxx/pqxx>
 
@@ -56,7 +54,7 @@ constexpr std::string_view kAdvanceNextSlot =
     "FROM served s WHERE r.user_id = s.user_id";
 
 constexpr std::string_view kReadinessNodeColumns =
-    "node_id, label, label_hlc, color, color_hlc, created_hlc, deleted_hlc";
+    "node_id, label, label_hlc, color, color_hlc, opens, opens_hlc, created_hlc, deleted_hlc";
 
 template <typename Row>
 NodeStateEntry nodeFromRow(const Row& row) {
@@ -68,6 +66,8 @@ NodeStateEntry nodeFromRow(const Row& row) {
   node.labelAt = roadmapStamp(row["label_hlc"].template as<std::string>());
   node.color = parseColor(row["color"].template as<std::string>()).value_or(NodeColor::terracotta);
   node.colorAt = roadmapStamp(row["color_hlc"].template as<std::string>());
+  node.opens = TreeId{row["opens"].template as<std::string>()};
+  node.opensAt = roadmapStamp(row["opens_hlc"].template as<std::string>());
   return node;
 }
 
@@ -134,8 +134,8 @@ std::vector<TreeReadiness> PgReminderRepository::readinessFor(const UserId& user
     markedAt[tree] = std::max(markedAt[tree], marked);
   }
 
-  std::vector<TreeReadiness> readiness;
-  readiness.reserve(trees.size());
+  std::vector<LoadedTree> loaded;
+  loaded.reserve(trees.size());
   for (const auto& row : trees) {
     const TreeId id{row["id"].as<std::string>()};
 
@@ -154,31 +154,14 @@ std::vector<TreeReadiness> PgReminderRepository::readinessFor(const UserId& user
           roadmapStamp(edge["removed_hlc"].as<std::string>())});
     }
 
-    const TreeData data = LooseGraph(state).toTreeData(id, row["title"].as<std::string>());
-    const Progress& progress = overlays[id];
-    const TreeStats stats = treeStats(data, progress);
-
-    TreeReadiness tree;
-    tree.id = id;
-    tree.title = data.title;
-    tree.lastActivityAtMs =
-        std::max(static_cast<std::uint64_t>(row["updated_ms"].as<long long>()), markedAt[id]);
-    tree.total = stats.total;
-    tree.done = stats.done;
-    try {
-      // A tree that cannot be validated has nothing ready: one malformed tree must never abort a sweep.
-      const SkillTree skillTree(data);
-      for (const auto& [node, unlocked] : UnlockRules::derive(skillTree, progress)) {
-        if (unlocked != NodeState::available) continue;
-        const NodeSpec& spec = skillTree.nodeById(node);
-        tree.ready.push_back(ReadyStep{node, spec.label, spec.color});
-      }
-    } catch (const InvalidTree&) {
-      tree.ready.clear();
-    }
-    readiness.push_back(std::move(tree));
+    LoadedTree tree;
+    tree.data = LooseGraph(state).toTreeData(id, row["title"].as<std::string>());
+    tree.updatedAt = static_cast<std::uint64_t>(row["updated_ms"].as<long long>());
+    tree.progress = overlays[id];
+    tree.lastMarkedAt = markedAt[id];
+    loaded.push_back(std::move(tree));
   }
-  return readiness;
+  return readinessOf(loaded);
 }
 
 std::uint64_t PgReminderRepository::lastActiveAtMs(const UserId& user) {

@@ -332,7 +332,7 @@ TEST(a_fork_adds_every_present_node_afresh_in_creation_order_and_starts_unlit) {
   g.deleteNode(nid("gone"), at(20));
   g.addEdge(nid("a"), nid("late"), at(40));
 
-  GraphState forked = g.forkState(Hlc{100, 7, "srv"});
+  GraphState forked = g.forkState(Hlc{100, 7, "srv"}, ForkOpens::cleared);
 
   GraphState expected = g.exportState();
   for (NodeStateEntry& node : expected.nodes) {
@@ -347,4 +347,100 @@ TEST(a_fork_adds_every_present_node_afresh_in_creation_order_and_starts_unlit) {
   CHECK_EQ(forked.nodes[2].deletedAt, at(20));
   CHECK_FALSE(LooseGraph(forked).hasNode(nid("gone")));
   CHECK_EQ(forked.edges[0].addedAt, at(40));
+}
+
+TEST(two_replicas_setting_opens_concurrently_converge_on_the_later_stamp_in_either_join_order) {
+  LooseGraph base;
+  base.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
+  LooseGraph phone(base.exportState());
+  phone.setOpens(nid("a"), TreeId{"t_sailing"}, at(5, "r_phone"));
+  LooseGraph laptop(base.exportState());
+  laptop.setOpens(nid("a"), TreeId{"t_rowing"}, at(5, "r_laptop"));  // the same instant: the actor breaks the tie
+
+  LooseGraph phoneFirst(base.exportState());
+  phoneFirst.join(phone.exportState());
+  phoneFirst.join(laptop.exportState());
+  LooseGraph laptopFirst(base.exportState());
+  laptopFirst.join(laptop.exportState());
+  laptopFirst.join(phone.exportState());
+
+  NodeStateEntry expected = *base.exportNode(nid("a"));
+  expected.opens = TreeId{"t_sailing"};
+  expected.opensAt = at(5, "r_phone");
+  CHECK(phoneFirst.exportState() == (GraphState{{expected}, {}}));
+  CHECK(laptopFirst.exportState() == (GraphState{{expected}, {}}));
+}
+
+TEST(a_join_entry_without_opens_leaves_the_pointer_and_only_a_later_stamp_clears_it) {
+  LooseGraph g;
+  g.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
+  g.setOpens(nid("a"), TreeId{"t_sailing"}, at(5));
+  NodeStateEntry expected = *g.exportNode(nid("a"));
+
+  NodeStateEntry rename;  // a peer that never carried the register: no value, no stamp
+  rename.id = nid("a");
+  rename.label = "A, renamed";
+  rename.labelAt = at(9);
+  g.join(GraphState{{rename}, {}});
+  expected.label = "A, renamed";
+  expected.labelAt = at(9);
+  CHECK(*g.exportNode(nid("a")) == expected);
+
+  NodeStateEntry staleClear;
+  staleClear.id = nid("a");
+  staleClear.opensAt = at(4);
+  g.join(GraphState{{staleClear}, {}});
+  CHECK(*g.exportNode(nid("a")) == expected);
+
+  NodeStateEntry clear;
+  clear.id = nid("a");
+  clear.opensAt = at(10);
+  g.join(GraphState{{clear}, {}});
+  expected.opens = TreeId{};
+  expected.opensAt = at(10);
+  CHECK(*g.exportNode(nid("a")) == expected);
+}
+
+TEST(a_document_seed_plants_opens_and_every_projection_carries_it) {
+  TreeData data;
+  data.id = TreeId{"t"};
+  NodeSpec door; door.id = nid("door"); door.label = "Door"; door.opens = TreeId{"t_sailing"};
+  NodeSpec wall; wall.id = nid("wall"); wall.label = "Wall";
+  data.nodes = {door, wall};
+
+  LooseGraph g(data, at(1));
+
+  CHECK_EQ(g.exportNode(nid("door"))->opens, TreeId{"t_sailing"});
+  CHECK_EQ(g.exportNode(nid("door"))->opensAt, at(1));
+  CHECK_EQ(g.exportNode(nid("wall"))->opens, TreeId{});
+  CHECK_EQ(g.exportNode(nid("wall"))->opensAt, Hlc{});  // a node that opens nothing writes no register
+  LooseGraph reloaded(g.exportState());
+  CHECK(reloaded.exportState() == g.exportState());
+  CHECK_EQ(reloaded.nodeView(nid("door"))->opens, TreeId{"t_sailing"});
+  const TreeData projected = reloaded.toTreeData(TreeId{"t"}, "T");
+  REQUIRE_EQ(projected.nodes.size(), 2u);
+  CHECK_EQ(projected.nodes[0].opens, TreeId{"t_sailing"});
+  CHECK_EQ(projected.nodes[1].opens, TreeId{});
+}
+
+TEST(a_fork_keeps_every_opens_as_it_stands_or_clears_them_all) {
+  LooseGraph g;
+  for (const char* id : {"gone", "missing", "plain", "standing"})
+    g.createNode(nid(id), id, "x", NodeColor::sky, std::nullopt, at(1));
+  g.setOpens(nid("standing"), TreeId{"t_standing"}, at(2));
+  g.setOpens(nid("missing"), TreeId{"t_missing"}, at(3));
+  g.setOpens(nid("gone"), TreeId{"t_standing"}, at(4));
+  g.deleteNode(nid("gone"), at(5));  // a tombstone's record survives it, so its pointer is ruled on too
+
+  GraphState planted = g.exportState();
+  planted.nodes[1].createdAt = Hlc{100, 0, "srv"};  // missing
+  planted.nodes[2].createdAt = Hlc{100, 1, "srv"};  // plain
+  planted.nodes[3].createdAt = Hlc{100, 2, "srv"};  // standing
+  CHECK(g.forkState(Hlc{100, 0, "srv"}, ForkOpens::kept) == planted);
+
+  for (NodeStateEntry& node : planted.nodes) {
+    node.opens = TreeId{};
+    node.opensAt = Hlc{};
+  }
+  CHECK(g.forkState(Hlc{100, 0, "srv"}, ForkOpens::cleared) == planted);
 }

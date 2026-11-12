@@ -62,4 +62,9 @@ VersionVector frontier(const Subgraph& frame);
 // already-covered fields masked back to "no information". Its coverage is the sender's full frontier.
 Subgraph deltaBetween(const GraphState& graph, const LegendState& legend, const VersionVector& since);
 
+// What a caller who cannot write a tree receives of its nodes: none says which tree it opens, because
+// a tree id is the read capability of an unlisted tree. A lattice entry left without a stamp is dropped.
+GraphState readerView(GraphState graph);
+TreeData readerView(TreeData document);
+
 }

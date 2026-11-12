@@ -31,6 +31,8 @@ struct NodeStateEntry {
   Hlc descriptionAt;
   std::vector<Link> links;
   Hlc linksAt;
+  TreeId opens;  // the tree this node opens; an empty id opens none
+  Hlc opensAt;
   bool operator==(const NodeStateEntry&) const = default;
 };
 

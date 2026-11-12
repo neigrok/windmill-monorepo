@@ -1,5 +1,5 @@
 {
-  "schemaVersion" : 10,
+  "schemaVersion" : 13,
   "steps" : 
   [
     {
@@ -180,6 +180,7 @@
               "diagnosticsClean" : true,
               "id" : "sync",
               "introducedDiagnostics" : [],
+              "kind" : "infra",
               "seq" : 7
             },
             "type" : "text"
@@ -472,6 +473,29 @@
           {
             "text" : 
             {
+              "applied" : true,
+              "diagnosticsClean" : true,
+              "id" : "docs",
+              "introducedDiagnostics" : [],
+              "seq" : 14
+            },
+            "type" : "text"
+          }
+        ],
+        "isError" : false,
+        "structuredContent" : null
+      },
+      "step" : 17,
+      "tool" : "annotate_node"
+    },
+    {
+      "result" : 
+      {
+        "content" : 
+        [
+          {
+            "text" : 
+            {
               "count" : 2,
               "nodes" : 
               [
@@ -493,7 +517,7 @@
         "isError" : false,
         "structuredContent" : null
       },
-      "step" : 17,
+      "step" : 18,
       "tool" : "find_nodes"
     },
     {
@@ -525,7 +549,7 @@
         "isError" : false,
         "structuredContent" : null
       },
-      "step" : 18,
+      "step" : 19,
       "tool" : "find_nodes"
     },
     {
@@ -537,7 +561,7 @@
             "text" : 
             {
               "count" : 5,
-              "seq" : 13,
+              "seq" : 14,
               "tree" : 
               {
                 "guide" : 
@@ -561,6 +585,12 @@
                     "icon" : "",
                     "id" : "docs",
                     "label" : "Docs",
+                    "opens" : 
+                    {
+                      "state" : "open",
+                      "title" : "Test Roadmap",
+                      "treeId" : "t"
+                    },
                     "prerequisites" : 
                     [
                       "render"
@@ -638,7 +668,7 @@
         "isError" : false,
         "structuredContent" : null
       },
-      "step" : 19,
+      "step" : 20,
       "tool" : "get_tree"
     },
     {
@@ -679,7 +709,7 @@
         "isError" : false,
         "structuredContent" : null
       },
-      "step" : 20,
+      "step" : 21,
       "tool" : "get_diagnostics"
     },
     {
@@ -703,7 +733,7 @@
         "isError" : false,
         "structuredContent" : null
       },
-      "step" : 21,
+      "step" : 22,
       "tool" : "get_progress"
     },
     {
@@ -728,7 +758,7 @@
         "isError" : false,
         "structuredContent" : null
       },
-      "step" : 22,
+      "step" : 23,
       "tool" : "get_health"
     },
     {
@@ -744,7 +774,7 @@
         "isError" : true,
         "structuredContent" : null
       },
-      "step" : 23,
+      "step" : 24,
       "tool" : "set_progress"
     },
     {
@@ -753,15 +783,31 @@
         "content" : 
         [
           {
-            "text" : "annotate_node: nothing to set \u2014 pass at least one of \"description\", \"appendDescription\", \"icon\", \"links\".",
+            "text" : "annotate_node: nothing to set \u2014 pass at least one of \"description\", \"appendDescription\", \"icon\", \"links\", \"opens\".",
             "type" : "text"
           }
         ],
         "isError" : true,
         "structuredContent" : null
       },
-      "step" : 24,
+      "step" : 25,
       "tool" : "annotate_node"
+    },
+    {
+      "result" : 
+      {
+        "content" : 
+        [
+          {
+            "text" : "create_node: opens names \"t_0000000000000000\", which is not a tree of yours \u2014 a node opens only a tree you own: list_trees lists them, and someone else's tree is copied into one of yours first, with create_tree then import_subgraph",
+            "type" : "text"
+          }
+        ],
+        "isError" : true,
+        "structuredContent" : null
+      },
+      "step" : 26,
+      "tool" : "create_node"
     }
   ]
 }

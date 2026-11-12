@@ -36,13 +36,14 @@ ForkService::Result ForkService::fork(const TreeId& source, const std::string& r
     // fresh addition outranks any removal its record carries. The fork's title and guide are planted
     // at it too, so a fresh subscriber's delta carries them as it carries the steps.
     plantedAt = room->nextStamp(clock_.nowMs());
-    state = LooseGraph(room->exportState()).forkState(plantedAt);
+    const bool ownsSource = canWrite(owner, access->owner);
+    state = LooseGraph(room->exportState()).forkState(plantedAt, ownsSource ? ForkOpens::kept : ForkOpens::cleared);
     legend = room->exportLegend();
     title = room->title().value;
     guide = room->guide().value;
     // The copy is the forker's own words only when they wrote the source's: their own tree, whose
     // guide is not itself a copy. Anyone else's — an ownerless tree's included — is inherited.
-    guideInherited = !guide.empty() && (access->owner != std::optional<UserId>(owner) || room->guideInherited());
+    guideInherited = !guide.empty() && (!ownsSource || room->guideInherited());
   }
 
   const TreeId newId{requestedId.empty() ? "t_" + tokens_.mint().digest.substr(0, 16) : requestedId};

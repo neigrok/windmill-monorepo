@@ -235,11 +235,15 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
       row["icon"] = cappedStr("Replacement icon; empty string clears it.", kMaxIconLength);
       row["description"] = cappedStr("Replacement description; empty string clears it.", kMaxNodeDescriptionLength);
       row["color"] = enumStr("Replacement node hue.", kHues);
+      row["kind"] = cappedStr("Replacement hue, named by the legend kind that wears it. Sent with `color`, the "
+                              "two must agree.", kMaxIdLength);
       row["position"] = position("Replacement position; both coordinates are required.");
       row["position"]["required"] = Json::Value(Json::arrayValue);
       row["position"]["required"].append("x");
       row["position"]["required"].append("y");
       row["links"] = linkArray("Replacement links; an empty list clears them.");
+      row["opens"] = cappedStr("Id of a tree you own that this node opens; empty string clears it. One naming "
+                               "a tree that is not yours refuses the whole batch.", kMaxIdLength);
       p["updates"] = objArray("1..200 distinct existing nodes, each with at least one field to change.", row, {"nodeId"});
       p["updates"]["minItems"] = 1;
       p["updates"]["maxItems"] = static_cast<Json::UInt64>(kMaxPatchNodes);
@@ -298,8 +302,9 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
   }
   {
     tools.push_back(tool("list_trees", Access::read,
-        "List the roadmaps you own — one row each: id, title, total node count, how many you have "
-        "completed, when it was planted (createdAt, epoch ms), when it last moved (updatedAt, epoch "
+        "List the roadmaps you own — one row each: id, title, total node count, how many are complete "
+        "for you (a node that opens another tree of yours counts when that tree is complete, not by "
+        "its mark), when it was planted (createdAt, epoch ms), when it last moved (updatedAt, epoch "
         "ms), and its dominant hue (dominantKind), newest activity first. Takes no arguments. Use it "
         "to discover the treeId the other tools need.",
         Json::Value(Json::objectValue), {}));
@@ -322,9 +327,14 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "is your own mark on each node (complete/none, always answered), `seedStatus` the "
         "document's authored baseline. `state` is what the tree DERIVES for you from prerequisites "
         "and your marks — locked · available · complete — the answer to \"what can I work "
-        "on\"; `status` stays your raw mark. `summary` is the description's opening (200 characters "
+        "on\"; `status` stays your raw mark. On a tree you own, a node that opens another tree of yours "
+        "follows that tree, whatever mark it holds: complete when the tree has at least one node and "
+        "every node of it is complete, which a tree whose pointers lead back to it never is. `summary` "
+        "is the description's opening (200 characters "
         "counted as Unicode code points, cut at a word, ellipsized when cut) — ask for it to skim a "
-        "whole tree's notes, and for `description` when you need one node's whole text.",
+        "whole tree's notes, and for `description` when you need one node's whole text. `opens` is the "
+        "tree a node points at, as {treeId, title, state} with `state` complete or open: answered only "
+        "on a tree you own, while the tree it names stands and is yours, and omitted otherwise.",
         nodeVocabulary().names());
     p["kindFields"] = fieldArray(
         "Which fields each legend kind carries. Default {id, hue, label}; `crossBranchExempt` is "
@@ -412,7 +422,8 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
                      "description. Matches come back best first: an exact id, then an id prefix, then "
                      "a label hit, then an id substring, then a description-only hit.");
     p["state"] = enumStr("Optional derived state to match — locked, available or complete, as "
-                         "the tree derives it from prerequisites and your marks.", kNodeStates);
+                         "the tree derives it from prerequisites, your marks and, on a tree you own, the "
+                         "trees its nodes open.", kNodeStates);
     p["fields"] = fieldArray(
         "Which fields each match carries. Default {id, label, color} — an index you pick edit targets "
         "out of. Ask for description, links, prerequisites, position, order or icon when you need them; "
@@ -420,9 +431,14 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "`status` is your own mark on each node (complete/none, always answered), `seedStatus` "
         "the document's authored baseline. `state` is what the tree DERIVES for you from prerequisites "
         "and your marks — locked · available · complete — the answer to \"what can I work "
-        "on\"; `status` stays your raw mark. `summary` is the description's opening (200 characters "
+        "on\"; `status` stays your raw mark. On a tree you own, a node that opens another tree of yours "
+        "follows that tree, whatever mark it holds: complete when the tree has at least one node and "
+        "every node of it is complete, which a tree whose pointers lead back to it never is. `summary` "
+        "is the description's opening (200 characters "
         "counted as Unicode code points, cut at a word, ellipsized when cut) — ask for it to skim a "
-        "whole tree's notes, and for `description` when you need one node's whole text.",
+        "whole tree's notes, and for `description` when you need one node's whole text. `opens` is the "
+        "tree a node points at, as {treeId, title, state} with `state` complete or open: answered only "
+        "on a tree you own, while the tree it names stands and is yours, and omitted otherwise.",
         nodeVocabulary().names());
     p["limit"] = boundedInt("Most nodes to return in one page.", 1, kMaxLimit, kDefaultLimit);
     p["cursor"] = str("Resume token from a previous page's `nextCursor`. Omit for the first page.");
@@ -444,7 +460,9 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     p["treeId"] = treeHandle();
     p["label"] = cappedStr("The node's display label.", kMaxNodeLabelLength);
     p["icon"] = cappedStr("Optional icon name/emoji.", kMaxIconLength);
-    p["color"] = enumStr("Optional branch color (default terracotta).", kHues);
+    p["color"] = enumStr("Optional hue; a node with neither `color` nor `kind` is terracotta.", kHues);
+    p["kind"] = cappedStr("Optional legend kind id: the node takes the hue that kind wears. Sent with `color`, "
+                          "the two must agree.", kMaxIdLength);
     p["prerequisites"] = strArray("Optional ids of existing nodes that unlock this one — one edge per id.",
                                   kMaxIdLength);
     p["parentId"] = cappedStr("Optional single prerequisite (a convenience alias folded into prerequisites).",
@@ -454,13 +472,20 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     p["description"] = cappedStr("Optional annotation body — notes about the node.",
                                  kMaxNodeDescriptionLength);
     p["links"] = linkArray("Optional external references (docs, PRs, designs).");
+    p["opens"] = cappedStr("Optional id of a tree you own that this node opens: the node points at that tree, "
+                           "is complete for you when that tree is, and get_tree, get_nodes and find_nodes "
+                           "answer the tree's id, title and state under the `opens` field. A tree that is not "
+                           "yours is refused. Omit, or pass \"\", and the node opens none, whatever a deleted "
+                           "node under the same id opened.",
+                           kMaxIdLength);
     p["id"] = cappedStr("Optional id to PROPOSE for the new node; minted from the label if omitted. "
                         "(`nodeId` names a node that already exists and is not accepted here.)",
                         kMaxIdLength);
     tools.push_back(tool("create_node", Access::write,
-        "Add a node to the roadmap. Only `label` is required; icon, color, position (x,y), a set of "
-        "`prerequisites` (nodes that unlock this one), a `description`, and `links` are optional. "
-        "Returns the node id.",
+        "Add a node to the roadmap. Only `label` is required; icon, its hue as a `color` or a legend "
+        "`kind`, position (x,y), a set of `prerequisites` (nodes that unlock this one), a `description`, "
+        "and `links` are optional. Returns the node id and `kind`, the legend kind whose hue it wears "
+        "(omitted when no kind claims that hue).",
         p, {"treeId", "label"}));
   }
   {
@@ -476,9 +501,15 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         kMaxNodeDescriptionLength);
     p["icon"] = cappedStr("The node's icon name/emoji; \"\" clears it.", kMaxIconLength);
     p["links"] = linkArray("The node's external references — replaces the existing set (omit to leave unchanged).");
+    p["opens"] = cappedStr("The id of a tree you own that this node opens: the node points at that tree, is "
+                           "complete for you when that tree is, and get_tree, get_nodes and find_nodes answer "
+                           "the tree's id, title and state under the `opens` field. A tree that is not yours "
+                           "is refused. \"\" clears it; omit to leave it unchanged.",
+                           kMaxIdLength);
     tools.push_back(tool("annotate_node", Access::write,
         "Set a node's free annotation: its `description` (or `appendDescription`, which joins onto the "
-        "existing body instead of replacing it — send one of the two), its `icon`, and/or `links`. "
+        "existing body instead of replacing it — send one of the two), its `icon`, its `links`, and/or "
+        "the tree it `opens`. "
         "Each field is optional — an omitted field is left untouched; `links` replaces the whole set "
         "when given — but at least one must be given. This is the verb that sets or clears an icon "
         "after birth, so it is how an `empty-icon` smell from get_diagnostics is fixed. Every length "
@@ -498,9 +529,13 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     p["treeId"] = treeHandle();
     p["nodeId"] = nodeHandle();
     p["id"] = legacyNodeHandle();
-    p["color"] = enumStr("The new color.", kHues);
-    tools.push_back(tool("set_node_color", Access::write, "Set a node's color (its branch/category tint).", p,
-                      {"treeId", "nodeId", "color"}));
+    p["color"] = enumStr("The new hue.", kHues);
+    p["kind"] = cappedStr("The legend kind id whose hue the node takes.", kMaxIdLength);
+    tools.push_back(tool("set_node_color", Access::write,
+        "Set a node's color (its branch/category tint): a hue as `color`, or the legend `kind` whose hue "
+        "it takes — one of the two, or both when they agree. Returns `kind`, the legend kind whose hue "
+        "the node now wears (omitted when no kind claims that hue).",
+        p, {"treeId", "nodeId"}));
   }
   {
     Json::Value p(Json::objectValue);
@@ -688,7 +723,10 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "carries outOfOrder:true: the word is kept on the mark (get_progress lists it under "
         "outOfOrder, get_tree/find_nodes `status` shows outOfOrder:true beside it) and the receipt "
         "answers acknowledged:true, so prerequisitesMet:false alone always means an inversion nobody "
-        "acknowledged. The next mark on that node, from any surface, replaces the word with its own.",
+        "acknowledged. The next mark on that node, from any surface, replaces the word with its own. "
+        "A mark on a node that opens another tree of yours is recorded, but on a tree you own that "
+        "node's `state` follows the opened tree, not the mark; prerequisitesMet reads marks alone, so "
+        "a prerequisite that is complete only through the tree it opens still reads as unmet.",
         p, {"treeId"}));
   }
   {
@@ -700,7 +738,10 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
                                  "`prerequisiteMode`; a new one is added.", kMaxIdLength);
     nodeFields["label"] = cappedStr("The node's display label.", kMaxNodeLabelLength);
     nodeFields["icon"] = cappedStr("Optional icon name/emoji.", kMaxIconLength);
-    nodeFields["color"] = enumStr("Optional branch color (default terracotta).", kHues);
+    nodeFields["color"] = enumStr("Optional hue; a new node with neither `color` nor `kind` is terracotta.", kHues);
+    nodeFields["kind"] = cappedStr("Optional legend kind id: the node takes the hue that kind wears in the legend "
+                                   "this batch leaves, so one batch can add a kind and file nodes under it. Sent "
+                                   "with `color`, the two must agree.", kMaxIdLength);
     nodeFields["order"] = str("Optional sibling order key, as get_tree returns it.");
     nodeFields["prerequisites"] = strArray(
         "Ids of the nodes that unlock this one. For a node already in the tree, `prerequisiteMode` "
@@ -714,6 +755,10 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "marks. Your own progress is not this: pass it in `progress[]`.", kStatuses);
     nodeFields["description"] = cappedStr("Optional annotation body.", kMaxNodeDescriptionLength);
     nodeFields["links"] = linkArray("Optional external references.");
+    nodeFields["opens"] = cappedStr("Optional id of a tree you own that this node opens — the id as a string, "
+                                    "which is the `treeId` inside the `opens` get_tree answers. \"\" clears it, "
+                                    "and one naming a tree that is not yours refuses the whole import.",
+                                    kMaxIdLength);
 
     Json::Value kindFields(Json::objectValue);
     kindFields["id"] = cappedStr("The kind id.", kMaxIdLength);
@@ -772,7 +817,9 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "Bulk-apply a whole roadmap slice — the shape get_tree returns ({nodes[], kinds[]}, plus an "
         "optional progress[]); to copy a tree faithfully, read it with every field named in `fields` "
         "first, since get_tree answers with a projection — but a node carries `seedStatus`, never "
-        "`status`: that one is your own mark, and travels in progress[]. The graft is ONE op; a "
+        "`status`: that one is your own mark, and travels in progress[]; and a node read with "
+        "`fields: [\"opens\"]` is sent back with `opens` as the id — the read's `opens.treeId` — not "
+        "the {treeId, title, state} object. The graft is ONE op; a "
         "carried progress[] is applied after it as ordinary overlay writes. The batch is atomic "
         "against malformed input — a bad field, a repeated id, or a tombstone id that does not exist "
         "changes nothing and names the offending element — but never against a merely untidy result "

@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <optional>
 #include <set>
@@ -63,7 +64,72 @@ struct FakeBus : PresenceBus {
   }
 };
 
+struct FakeProgressRepository : ProgressRepository {
+  struct Entry { ProgressStatus status; Hlc at; bool outOfOrder = false; };
+  std::map<std::string, Entry> byKey;
+
+  static std::string key(const TreeId& t, const UserId& u, const NodeId& n) {
+    return t.str() + "\n" + u.str() + "\n" + n.str();
+  }
+
+  Progress load(const TreeId& tree, const UserId& user) override {
+    Progress progress;
+    std::string prefix = tree.str() + "\n" + user.str() + "\n";
+    for (const auto& [k, entry] : byKey) {
+      if (k.rfind(prefix, 0) != 0) continue;
+      // The fake dates a mark by the stamp it arrived with; a real store answers with its OWN receipt instant, so tests that care about the difference must use the real repository.
+      progress.record(NodeId{k.substr(prefix.size())},
+                      ProgressMark{entry.status, entry.at, entry.at.physicalMs, entry.outOfOrder});
+    }
+    return progress;
+  }
+
+  bool setStatus(const TreeId& tree, const UserId& user, const NodeId& node,
+                 ProgressStatus status, bool outOfOrder, const Hlc& at, std::uint64_t receivedAtMs) override {
+    (void)receivedAtMs;
+    std::string k = key(tree, user, node);
+    auto it = byKey.find(k);
+    if (it != byKey.end() && !(at > it->second.at)) return false;
+    byKey[k] = Entry{status, at, outOfOrder};
+    return true;
+  }
+
+  std::vector<bool> setStatuses(const TreeId& tree, const UserId& user,
+                                 const std::vector<ProgressUpdate>& updates,
+                                 std::uint64_t receivedAtMs) override {
+    auto next = byKey;
+    std::vector<bool> applied;
+    for (const ProgressUpdate& update : updates) {
+      const std::string nodeKey = key(tree, user, update.node);
+      const auto current = next.find(nodeKey);
+      const bool wins = current == next.end() || update.at > current->second.at;
+      applied.push_back(wins);
+      if (wins) next[nodeKey] = Entry{update.status, update.at, update.outOfOrder};
+    }
+    byKey = std::move(next);
+    return applied;
+  }
+
+  std::map<TreeId, ProgressDigest> overlaysFor(const UserId& user) override {
+    std::map<TreeId, ProgressDigest> overlays;
+    for (const auto& [k, entry] : byKey) {
+      std::size_t firstNl = k.find('\n');
+      std::size_t secondNl = k.find('\n', firstNl + 1);
+      if (k.substr(firstNl + 1, secondNl - firstNl - 1) != user.str()) continue;
+      ProgressDigest& digest = overlays[TreeId{k.substr(0, firstNl)}];
+      NodeId node{k.substr(secondNl + 1)};
+      if (entry.status == ProgressStatus::complete) digest.overlay.completed.insert(node);
+      if (entry.at.physicalMs > digest.lastMarkedAt) digest.lastMarkedAt = entry.at.physicalMs;
+    }
+    return overlays;
+  }
+};
+
 struct FakeTreeRepository : TreeRepository {
+  FakeTreeRepository() = default;
+  // The marks openedFrom counts, which the real repository reads in the same statement; none without one.
+  explicit FakeTreeRepository(FakeProgressRepository& marks) : marks_(&marks) {}
+
   std::map<std::string, StoredTree> byId;
   std::map<std::string, std::string> forkedFrom;
   std::map<std::string, std::uint64_t> updatedAt;  // epoch ms per tree, for registry ordering
@@ -72,7 +138,13 @@ struct FakeTreeRepository : TreeRepository {
   std::set<std::string> deletedIds;
   // One entry per save call: how many node rows the slice carried.
   std::vector<std::size_t> savedNodeCounts;
+  // One entry per titlesOwnedBy read: the ids it asked after.
+  std::vector<std::set<TreeId>> titleReads;
+  // One entry per openedFrom read: the trees it started from.
+  std::vector<std::set<TreeId>> openedReads;
   bool latticeLoadsFail = false;  // load throws, the way a dropped connection does; loadAccess still answers
+  bool openedReadsFail = false;  // openedFrom throws, the way a dropped connection does
+  std::function<void()> duringOpenedRead;  // runs inside openedFrom, the way a slow statement holds its caller
   bool savesFail = false;  // save throws, the way a write Postgres refuses does
   std::optional<StoredTree> load(const TreeId& tree) override {
     if (latticeLoadsFail) throw std::runtime_error("connection reset mid-read");
@@ -196,6 +268,38 @@ struct FakeTreeRepository : TreeRepository {
     }
     return sources;
   }
+  // The same three rules the real query filters on: the row stands, it has an owner, and the owner is this one.
+  // Asked for no tree it reads nothing, as the real repository sends no query.
+  std::map<TreeId, std::string> titlesOwnedBy(const UserId& owner, const std::set<TreeId>& trees) override {
+    if (trees.empty()) return {};
+    titleReads.push_back(trees);
+    std::map<TreeId, std::string> titles;
+    for (const TreeId& tree : trees) {
+      const std::optional<StoredTree> stored = row(tree);
+      if (stored && stored->owner == std::optional<UserId>(owner)) titles.emplace(tree, stored->title.value);
+    }
+    return titles;
+  }
+  // The real statement's rules: this owner's standing trees only, each once, wherever the pointers of `opened` lead.
+  std::map<TreeId, OpenedTree> openedFrom(const UserId& owner, const std::set<TreeId>& opened) override {
+    if (opened.empty()) return {};
+    openedReads.push_back(opened);
+    if (openedReadsFail) throw std::runtime_error("connection reset mid-read");
+    if (duringOpenedRead) duringOpenedRead();
+    std::map<TreeId, OpenedTree> trees;
+    std::vector<TreeId> reached(opened.begin(), opened.end());
+    while (!reached.empty()) {
+      const TreeId tree = reached.back();
+      reached.pop_back();
+      const std::optional<StoredTree> stored = row(tree);
+      if (trees.count(tree) || !stored || stored->owner != std::optional<UserId>(owner)) continue;
+      const TreeData data = LooseGraph(stored->state).toTreeData(tree, stored->title.value);
+      const OpenedTree& walked =
+          trees.emplace(tree, OpenedTree(data, marks_ ? marks_->load(tree, owner) : Progress{})).first->second;
+      for (const auto& [target, pointers] : walked.pointers) reached.push_back(target);
+    }
+    return trees;
+  }
   void softDelete(const TreeId& tree) override { deletedIds.insert(tree.str()); }
   void rename(const TreeId& tree, const Lww<std::string>& title) override {
     auto it = byId.find(tree.str());
@@ -215,6 +319,9 @@ struct FakeTreeRepository : TreeRepository {
     byId[newTree.str()] = StoredTree{state, legend, title, 0, owner, Visibility::private_, 0, guide, guideInherited};
     forkedFrom[newTree.str()] = source.str();
   }
+
+private:
+  FakeProgressRepository* marks_ = nullptr;
 };
 
 struct FakeOgVideoRepository : OgVideoRepository {
@@ -228,67 +335,6 @@ struct FakeOgVideoRepository : OgVideoRepository {
     return it->second;
   }
   bool has(const std::string& treeId) override { return byId.count(treeId) != 0; }
-};
-
-struct FakeProgressRepository : ProgressRepository {
-  struct Entry { ProgressStatus status; Hlc at; bool outOfOrder = false; };
-  std::map<std::string, Entry> byKey;
-
-  static std::string key(const TreeId& t, const UserId& u, const NodeId& n) {
-    return t.str() + "\n" + u.str() + "\n" + n.str();
-  }
-
-  Progress load(const TreeId& tree, const UserId& user) override {
-    Progress progress;
-    std::string prefix = tree.str() + "\n" + user.str() + "\n";
-    for (const auto& [k, entry] : byKey) {
-      if (k.rfind(prefix, 0) != 0) continue;
-      // The fake dates a mark by the stamp it arrived with; a real store answers with its OWN receipt instant, so tests that care about the difference must use the real repository.
-      progress.record(NodeId{k.substr(prefix.size())},
-                      ProgressMark{entry.status, entry.at, entry.at.physicalMs, entry.outOfOrder});
-    }
-    return progress;
-  }
-
-  bool setStatus(const TreeId& tree, const UserId& user, const NodeId& node,
-                 ProgressStatus status, bool outOfOrder, const Hlc& at, std::uint64_t receivedAtMs) override {
-    (void)receivedAtMs;
-    std::string k = key(tree, user, node);
-    auto it = byKey.find(k);
-    if (it != byKey.end() && !(at > it->second.at)) return false;
-    byKey[k] = Entry{status, at, outOfOrder};
-    return true;
-  }
-
-  std::vector<bool> setStatuses(const TreeId& tree, const UserId& user,
-                                 const std::vector<ProgressUpdate>& updates,
-                                 std::uint64_t receivedAtMs) override {
-    auto next = byKey;
-    std::vector<bool> applied;
-    for (const ProgressUpdate& update : updates) {
-      const std::string nodeKey = key(tree, user, update.node);
-      const auto current = next.find(nodeKey);
-      const bool wins = current == next.end() || update.at > current->second.at;
-      applied.push_back(wins);
-      if (wins) next[nodeKey] = Entry{update.status, update.at, update.outOfOrder};
-    }
-    byKey = std::move(next);
-    return applied;
-  }
-
-  std::map<TreeId, ProgressDigest> overlaysFor(const UserId& user) override {
-    std::map<TreeId, ProgressDigest> overlays;
-    for (const auto& [k, entry] : byKey) {
-      std::size_t firstNl = k.find('\n');
-      std::size_t secondNl = k.find('\n', firstNl + 1);
-      if (k.substr(firstNl + 1, secondNl - firstNl - 1) != user.str()) continue;
-      ProgressDigest& digest = overlays[TreeId{k.substr(0, firstNl)}];
-      NodeId node{k.substr(secondNl + 1)};
-      if (entry.status == ProgressStatus::complete) digest.overlay.completed.insert(node);
-      if (entry.at.physicalMs > digest.lastMarkedAt) digest.lastMarkedAt = entry.at.physicalMs;
-    }
-    return overlays;
-  }
 };
 
 inline NodeId nid(const char* s) { return NodeId{std::string(s)}; }
