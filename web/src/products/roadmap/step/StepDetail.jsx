@@ -572,8 +572,9 @@ function StepSections({ idPrefix, section, onSection }) {
 function StepActions({ facts, phone, onComplete, onReset, onOpenTree, editLabel, editRef, onEdit }) {
   const [previewing, setPreviewing] = useState(false);
   const preview = previewing && facts.takesMark && facts.column === 'done' ? resetPreview({ relocked: facts.relocks }) : null;
-  const editClass = phone && facts.column !== 'locked' ? ' st-board-step-action--text' : '';
-  if (!onEdit && facts.takesMark && facts.column === 'locked') return null;
+  const editOnly = facts.takesMark && facts.column === 'locked';
+  const editClass = phone && !editOnly ? ' st-board-step-action--text' : '';
+  if (!onEdit && editOnly) return null;
   return (
     <>
       {preview && <p className="st-board-step-preview">{preview}</p>}
