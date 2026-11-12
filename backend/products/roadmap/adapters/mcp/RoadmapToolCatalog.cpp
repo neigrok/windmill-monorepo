@@ -205,7 +205,7 @@ Json::Value legendKind() {
 const std::set<std::string> kBulkEdits = {"import_subgraph", "prune", "tidy", "patch_nodes", "update_nodes",
                                           "change_edges"};
 const std::set<std::string> kIdempotentWrites = {
-    "delete_tree",  "update_tree",   "describe_tree", "rename_node",   "set_node_color", "move_node",
+    "delete_tree",  "update_tree",   "rename_node",   "set_node_color", "move_node",
     "connect",      "disconnect",    "reconnect",     "delete_node",    "tidy",
     "add_kind",     "rename_kind",   "describe_kind", "remove_kind",    "reorder_kinds",
     "recolor_kind", "update_kind",   "set_progress",  "import_subgraph", "prune", "patch_nodes", "change_edges"};
@@ -482,7 +482,7 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
                            kMaxTitleChars);
     p["guide"] = cappedStr("The whole guide, replacing the one the tree has; \"\" clears it. Omit to keep it.",
                            kMaxGuideChars);
-    const std::string updateTree =
+    tools.push_back(tool("update_tree", Access::write,
         "Rename a roadmap with `title`, set its guide with `guide`, or both: send at least one; each is set "
         "only when sent, and the two together land in one step or not at all. The title is trimmed and "
         "cut to 200 characters; a blank one is refused, and one equal to the name the tree has is not "
@@ -491,11 +491,8 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "note on what the tree is and "
         "how to work it, at most 5000 characters counted as Unicode code points; it replaces the guide the "
         "tree has, and \"\" clears it. get_tree carries it on every page to everyone who reads the tree, "
-        "and to you among the `guides` of your trees below this one. Only the owner may set either.";
-    // One declaration under two names: describe_tree is update_tree's earlier name, and says so.
-    tools.push_back(tool("update_tree", Access::write, updateTree.c_str(), p, {"treeId"}));
-    tools.push_back(tool("describe_tree", Access::write,
-                         (updateTree + " describe_tree is update_tree's earlier name.").c_str(), p, {"treeId"}));
+        "and to you among the `guides` of your trees below this one. Only the owner may set either.",
+        p, {"treeId"}));
   }
   {
     Json::Value p(Json::objectValue);

@@ -424,8 +424,8 @@ owner's alone. A body naming more than one is refused `400`, and a body that is 
 `400` with the admission's sentence, and an empty one clears it, as one of only spaces, tabs and line
 breaks does (stored as `""`); a real guide keeps its leading and trailing spaces. A title carrying a
 NUL is refused `400` too. The guide's writes are this, the socket's `subgraph` frame and MCP
-`update_tree` (`describe_tree`, its earlier name, is the same tool); a posted document (`POST`, `PUT`)
-never sets it, and a tend is offered neither name. `GET /v1/trees/{id}` carries it as `data.guide` beside `data.title`, MCP `get_tree` as
+`update_tree`; a posted document (`POST`, `PUT`)
+never sets it, and a tend is not offered `update_tree`. `GET /v1/trees/{id}` carries it as `data.guide` beside `data.title`, MCP `get_tree` as
 `tree.guide: {text, yours}` on every page and no other MCP read at all, `yours` true when the caller
 owns the tree and wrote its current guide. A fork copies it, marked inherited when it is someone
 else's words (Runtime). The share page

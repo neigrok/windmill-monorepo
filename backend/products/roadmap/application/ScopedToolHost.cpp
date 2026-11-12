@@ -32,8 +32,7 @@ const Withheld& withheld() {
       {{"create_tree", "tending edits a single tree — create_tree is out of its reach"},
        {"list_trees", "tending edits a single tree — list_trees is out of its reach"},
        {"delete_tree", "tending edits a single tree — delete_tree is out of its reach"},
-       {"update_tree", "tending reads the tree's guide but cannot set it — update_tree is out of its reach"},
-       {"describe_tree", "tending reads the tree's guide but cannot set it — describe_tree is out of its reach"}},
+       {"update_tree", "tending reads the tree's guide but cannot set it — update_tree is out of its reach"}},
       {{"opens", {"tending edits a single tree — the tree a node opens is out of its reach"}},
        {"includeGuides", {"tending edits a single tree — the guides of the trees above it are out of its reach", false}},
        {"includePointers", {"tending edits a single tree — the trees its nodes open are out of its reach", false}}}};

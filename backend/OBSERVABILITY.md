@@ -57,7 +57,7 @@ each answers 410 `client-update-required` before authentication with nothing beh
 WARN completion with outcome `client-update-required`, without an Issue, and the rate limiter skips
 it (`retiredRoute`). MCP's `CompositeToolHost`, Coach's `AskTools` and roadmap's `ScopedToolHost`
 dispatch by their access declarations; `ScopedToolHost` refuses the tools it withholds from a run
-(`create_tree`, `list_trees`, `delete_tree`, `update_tree`, `describe_tree`) before it opens any observation, so a run
+(`create_tree`, `list_trees`, `delete_tree`, `update_tree`) before it opens any observation, so a run
 emits only the roadmap operations listed below; an argument it withholds (`opens`) completes the tool's own
 operation as `refused`. Sync admission instruments every intent and catalog command;
 it validates labels against its sealed registry, and a product refusal code (gym's `plan-logged` and `session-finished`
@@ -273,7 +273,6 @@ listed separately because their only server writes are authentication refresh or
 | `MCP roadmap_create_tree` (and unambiguous `create_tree` alias) | `mcp.roadmap_create_tree` | completion; bounded refusal or result | unexpected |
 | `MCP roadmap_delete_tree` (and unambiguous `delete_tree` alias) | `mcp.roadmap_delete_tree` | completion; bounded refusal or result | unexpected |
 | `MCP roadmap_update_tree` (and unambiguous `update_tree` alias) | `mcp.roadmap_update_tree` | completion; bounded refusal or result | unexpected |
-| `MCP roadmap_describe_tree` (and unambiguous `describe_tree` alias), `update_tree`'s earlier name | `mcp.roadmap_describe_tree` | completion; bounded refusal or result | unexpected |
 | `MCP roadmap_create_node` (and unambiguous `create_node` alias) | `mcp.roadmap_create_node` | completion; bounded refusal or result; `opens-not-yours` when an `opens` names a tree that does not stand or is not the caller's; `kind-unknown` when a `kind` names a kind the legend does not hold, `kind-hue-mismatch` when the `color` sent beside it is another hue than that kind wears | unexpected |
 | `MCP roadmap_annotate_node` (and unambiguous `annotate_node` alias) | `mcp.roadmap_annotate_node` | completion; bounded refusal or result; `opens-not-yours` when an `opens` names a tree that does not stand or is not the caller's | unexpected |
 | `MCP roadmap_rename_node` (and unambiguous `rename_node` alias) | `mcp.roadmap_rename_node` | completion; bounded refusal or result | unexpected |
