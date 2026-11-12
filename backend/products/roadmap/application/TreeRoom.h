@@ -50,10 +50,10 @@ public:
 
   // A node write's kind read off this room's own legend, under the strand the write then takes, so a
   // kind always lands as the hue it wears in the legend the write is applied to.
-  std::variant<std::optional<NodeColor>, std::string> resolveHue(const HueChoice& choice, const std::string& path) const {
+  std::variant<std::optional<NodeColor>, KindRefusal> resolveHue(const HueChoice& choice, const std::string& path) const {
     return wm::resolveHue(legend_.kinds(), choice, path);
   }
-  std::variant<Graft, std::string> resolveKinds(Graft incoming) const {
+  std::variant<Graft, KindRefusal> resolveKinds(Graft incoming) const {
     return wm::resolveKinds(legend_, std::move(incoming));
   }
   // Reads the held links under the strand the write then takes, so nothing lands between read and write.
@@ -88,7 +88,7 @@ public:
   // present node, or a legend rule. Server-driven undo/redo bypasses it.
   std::optional<std::string> validate(const Command& command) const;
 
-  std::variant<NodePatchPlan, std::string> planNodePatches(const std::vector<NodePatch>& updates) const {
+  std::variant<NodePatchPlan, std::string, KindRefusal> planNodePatches(const std::vector<NodePatch>& updates) const {
     return wm::planNodePatches(graph_, legend_, updates);
   }
   std::variant<EdgeChangePlan, std::string> planEdgeChanges(const EdgeChanges& changes) const {

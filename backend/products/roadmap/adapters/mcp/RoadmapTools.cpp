@@ -44,6 +44,16 @@ std::string writeRefusalSentence(WriteRefusal refusal) {
   return std::string(truthOf(refusal)) + ". Call list_trees to see the roadmaps you own.";
 }
 
+// A refused `kind` completes under the code of its reason, so a caller naming a kind the legend lacks
+// is told apart from a malformed call; the code never carries the kind it named.
+ToolResult kindRefused(const KindRefusal& refusal) {
+  switch (refusal.reason) {
+    case KindRefusal::Reason::unknownKind: return ToolResult::failure(refusal.sentence, "kind-unknown");
+    case KindRefusal::Reason::hueMismatch: return ToolResult::failure(refusal.sentence, "kind-hue-mismatch");
+  }
+  return ToolResult::failure(refusal.sentence);
+}
+
 // A minted id is the server's own choice, so it is held under kMaxIdLength with room for the
 // "-N" a collision appends — a long label never refuses its own node by way of the id.
 constexpr std::size_t kMaxSlugLength = kMaxIdLength - 8;
@@ -615,7 +625,7 @@ ToolResult applyEdit(RoomRegistry& registry, TreeRegistry& trees, const TreeId& 
     if (setsHue && payload.isMember("kind")) {
       HueChoice choice{parseColor(payload.get("color", "").asString()), KindId{payload["kind"].asString()}};
       const auto hue = room.resolveHue(choice, "");
-      if (const auto* refusal = std::get_if<std::string>(&hue)) return ToolResult::failure(*refusal);
+      if (const auto* refusal = std::get_if<KindRefusal>(&hue)) return kindRefused(*refusal);
       payload["color"] = std::string(toString(*std::get<std::optional<NodeColor>>(hue)));
     }
 
@@ -742,6 +752,7 @@ ToolResult applyBatchEdit(RoomRegistry& registry, TreeRegistry& trees, const Tre
     if (name == "patch_nodes") {
       const auto result = room.planNodePatches(patches);
       if (const auto* error = std::get_if<std::string>(&result)) return ToolResult::failure(*error);
+      if (const auto* refusal = std::get_if<KindRefusal>(&result)) return kindRefused(*refusal);
       if (std::optional<ToolResult> refusal = checkOpenedTrees(trees, actor, opened)) return *refusal;
       const NodePatchPlan& plan = std::get<NodePatchPlan>(result);
       batch = plan.batch;
@@ -1104,8 +1115,8 @@ ToolResult importSubgraph(RoomRegistry& registry, TreeRegistry& trees, ProgressS
     TreeData current = room.snapshot();  // collision = an incoming id already present (an upsert overwrites it)
     if (std::optional<std::string> bad = checkMergedLegend(current.kinds, incoming.kinds))
       return ToolResult::failure(*bad);
-    std::variant<Graft, std::string> filed = room.resolveKinds(graft);
-    if (const auto* refusal = std::get_if<std::string>(&filed)) return ToolResult::failure(*refusal);
+    std::variant<Graft, KindRefusal> filed = room.resolveKinds(graft);
+    if (const auto* refusal = std::get_if<KindRefusal>(&filed)) return kindRefused(*refusal);
     graft = std::get<Graft>(std::move(filed));
     std::set<std::string> presentNodes, presentKinds;
     for (const NodeSpec& n : current.nodes) presentNodes.insert(n.id.str());

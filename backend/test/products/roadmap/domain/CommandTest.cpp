@@ -1007,6 +1007,31 @@ TEST(node_patch_plan_rejects_invalid_last_row_duplicates_and_empty_patches) {
   CHECK(std::holds_alternative<std::string>(planNodePatches(graph, legend, {first, last})));
 }
 
+// The row whose kind refuses the batch hands back its KindRefusal, the reason beside the sentence.
+TEST(node_patch_plan_hands_back_the_kind_refusal_of_the_row_that_named_the_kind) {
+  const LooseGraph graph = seeded();
+  const Legend legend({{kid("owner"), NodeColor::gold, "Owner", ""}}, at(1));
+  NodePatch first;
+  first.nodeId = nid("a");
+  first.label = "New A";
+  NodePatch named;
+  named.nodeId = nid("b");
+  named.hue = HueChoice{std::nullopt, kid("ownr")};
+
+  const auto unknown = planNodePatches(graph, legend, {first, named});
+  REQUIRE(std::holds_alternative<KindRefusal>(unknown));
+  CHECK((std::get<KindRefusal>(unknown) ==
+         KindRefusal{KindRefusal::Reason::unknownKind,
+                     "updates[1].kind \"ownr\" is not a kind of this tree; its legend holds \"owner\""}));
+
+  named.hue = HueChoice{NodeColor::sky, kid("owner")};
+  const auto mismatch = planNodePatches(graph, legend, {first, named});
+  REQUIRE(std::holds_alternative<KindRefusal>(mismatch));
+  CHECK((std::get<KindRefusal>(mismatch) ==
+         KindRefusal{KindRefusal::Reason::hueMismatch, "updates[1].kind \"owner\" wears gold, but updates[1].color is "
+                                                       "\"sky\" — send one of the two, or both when they agree"}));
+}
+
 TEST(edge_change_plan_validates_net_capacity_and_all_endpoints_before_apply) {
   LooseGraph graph = seeded();
   Legend legend;

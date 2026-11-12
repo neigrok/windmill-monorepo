@@ -4242,7 +4242,6 @@ TEST(mcp_create_node_refuses_a_kind_the_legend_does_not_hold_or_a_colour_that_di
   const ToolResult behindTheGate =
       gate.callTool("create_node", parse(R"({"treeId":"t","label":"Ship","kind":"ownr"})"), h.actor);
   CHECK_EQ(message(behindTheGate), message(h.call("create_node", parse(R"({"label":"Ship","kind":"ownr"})"))));
-  CHECK_EQ(toolWriteOutcome(behindTheGate), std::string("refused"));
   CHECK_EQ(message(h.call("create_node", parse(R"({"label":"Ship","kind":"owner","color":"sky"})"))),
            std::string("create_node: kind \"owner\" wears gold, but color is \"sky\" — send one of the two, or both "
                        "when they agree"));
@@ -4365,6 +4364,59 @@ TEST(mcp_import_subgraph_refuses_a_kind_its_legend_does_not_hold_and_writes_noth
 
   CHECK_EQ(body(h.call("get_tree", kNoArgs))["count"].asUInt64(), 0u);
   CHECK_EQ(h.bus.subgraphBroadcasts.size(), 1u);
+}
+
+// The write line tells a kind the legend lacks, and a colour that disagrees with the kind sent beside
+// it, from every other refusal on the four tools that take a kind; no line carries the kind it named.
+TEST(mcp_a_refused_kind_completes_as_kind_unknown_or_kind_hue_mismatch) {
+  Harness h;
+  CompositeToolHost gate(std::vector<ToolModule>{{h.tools, ""}});
+  const auto call = [&](const char* tool, const char* arguments) {
+    Json::Value args = parse(arguments);
+    args["treeId"] = "t";
+    return gate.callTool(tool, args, h.actor);
+  };
+  std::vector<WriteCompletion> completions;
+  installWriteSink([&](const WriteCompletion& completion) { completions.push_back(completion); });
+
+  CHECK(call("roadmap_create_node", R"({"label":"Ship","kind":"pilot"})").isError);  // a legend that holds none
+  CHECK_FALSE(h.call("add_kind", parse(R"({"id":"pilot","hue":"gold"})")).isError);
+  CHECK_FALSE(h.call("create_node", node("a", "A")).isError);
+  CHECK_FALSE(h.call("create_node", node("b", "B")).isError);
+  for (const auto& [tool, arguments] : std::vector<std::pair<const char*, const char*>>{
+           {"roadmap_create_node", R"({"label":"Ship","kind":"pilt"})"},
+           {"roadmap_create_node", R"({"label":"Ship","kind":"pilot","color":"sky"})"},
+           {"roadmap_set_node_color", R"({"nodeId":"a","kind":"pilt"})"},
+           {"roadmap_set_node_color", R"({"nodeId":"a","kind":"pilot","color":"sky"})"},
+           {"roadmap_patch_nodes", R"({"updates":[{"nodeId":"a","label":"Renamed"},{"nodeId":"b","kind":"pilt"}]})"},
+           {"roadmap_patch_nodes", R"({"updates":[{"nodeId":"a","label":"Renamed"},
+              {"nodeId":"b","kind":"pilot","color":"sky"}],"dryRun":true})"},
+           {"roadmap_import_subgraph", R"({"nodes":[{"id":"n","label":"New"},{"id":"m","label":"More","kind":"pilt"}],
+              "dryRun":true})"},
+           {"roadmap_import_subgraph", R"({"nodes":[{"id":"n","label":"New","kind":"pilot","color":"sky"}]})"},
+           {"roadmap_create_node", R"({"label":"Ship","kind":7})"},
+           {"roadmap_patch_nodes", R"({"updates":[{"nodeId":"a"}]})"},
+           {"roadmap_create_node", R"({"label":"Ship","knd":"pilot"})"}})
+    CHECK(call(tool, arguments).isError);
+  CHECK_EQ(body(h.call("get_tree", parse(R"({"fields":["id","label","color"]})")))["tree"]["nodes"],
+           parse(R"([{"id":"a","label":"A","color":"terracotta"},{"id":"b","label":"B","color":"terracotta"}])"));
+  CHECK_FALSE(call("roadmap_create_node", R"({"label":"Ship","kind":"pilot"})").isError);
+  installWriteSink({});
+
+  std::vector<std::string> observed;
+  for (const WriteCompletion& completion : completions) {
+    observed.push_back(completion.operation + " " + completion.outcome);
+    for (const char* content : {"pilot", "pilt", "Ship", "Renamed", "More"})
+      CHECK_EQ(writeCompletionJson(completion).find(content), std::string::npos);
+  }
+  CHECK_EQ(observed, (std::vector<std::string>{
+                         "mcp.roadmap_create_node kind-unknown", "mcp.roadmap_create_node kind-unknown",
+                         "mcp.roadmap_create_node kind-hue-mismatch", "mcp.roadmap_set_node_color kind-unknown",
+                         "mcp.roadmap_set_node_color kind-hue-mismatch", "mcp.roadmap_patch_nodes kind-unknown",
+                         "mcp.roadmap_patch_nodes kind-hue-mismatch", "mcp.roadmap_import_subgraph kind-unknown",
+                         "mcp.roadmap_import_subgraph kind-hue-mismatch", "mcp.roadmap_create_node refused",
+                         "mcp.roadmap_patch_nodes refused", "mcp.roadmap_create_node invalid-arguments",
+                         "mcp.roadmap_create_node ok"}));
 }
 
 TEST(mcp_import_subgraph_re_files_a_node_by_kind_alone_and_keeps_its_other_fields) {
