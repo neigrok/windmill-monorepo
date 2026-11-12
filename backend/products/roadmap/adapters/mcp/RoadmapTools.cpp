@@ -10,6 +10,7 @@
 #include "products/roadmap/application/TreeRoom.h"
 #include "products/roadmap/domain/Access.h"
 #include "products/roadmap/domain/Command.h"
+#include "products/roadmap/domain/Guides.h"
 #include "products/roadmap/domain/LooseGraph.h"
 #include "products/roadmap/domain/NodeQuery.h"
 #include "products/roadmap/domain/SkillTree.h"
@@ -372,14 +373,19 @@ ToolResult readTree(RoomRegistry& registry, TreeRegistry& trees, ProgressService
   // Whole on every page, and only here: `yours` says the caller owns the tree and wrote its current
   // guide — a guide a fork copied from someone else's tree is its author's words until its owner
   // writes their own.
+  const bool mine = canWrite(caller, read->owner);
+  const Guide own{data.id, data.title, data.guide, mine && !read->guideInherited};
   Json::Value guide(Json::objectValue);
-  guide["text"] = data.guide;
-  guide["yours"] = canWrite(caller, read->owner) && !read->guideInherited;
+  guide["text"] = own.text;
+  guide["yours"] = own.yours;
 
   Json::Value document(Json::objectValue);
   document["id"] = data.id.str();
   document["title"] = data.title;
   document["guide"] = guide;
+  // The first page alone adds the guides of the caller's trees above this one; only its writer has them read.
+  if (page->begin == 0)
+    document["guides"] = toJson(guidesFor(mine ? trees.treesAbove(*caller, data.id) : std::map<TreeId, TreeAbove>{}, own));
   document["nodes"] = std::move(projected.nodes);
   document["kinds"] = kinds;
 

@@ -846,7 +846,7 @@ TEST(mcp_find_nodes_answers_an_index_and_get_tree_the_shape) {
 
   const Json::Value got = body(h.call("get_tree", kNoArgs));
   CHECK_EQ(keys(got), (std::vector<std::string>{"count", "seq", "tree"}));
-  CHECK_EQ(keys(got["tree"]), (std::vector<std::string>{"guide", "id", "kinds", "nodes", "title"}));
+  CHECK_EQ(keys(got["tree"]), (std::vector<std::string>{"guide", "guides", "id", "kinds", "nodes", "title"}));
   CHECK_EQ(keys(got["tree"]["nodes"][0]),
            (std::vector<std::string>{"color", "id", "label", "prerequisites"}));
   CHECK_EQ(keys(got["tree"]["kinds"][0]), (std::vector<std::string>{"hue", "id", "label"}));
@@ -2365,7 +2365,7 @@ TEST(mcp_import_subgraph_takes_no_title_and_never_touches_the_trees) {
 
   CHECK_FALSE(h.call("import_subgraph", titled).isError);
   CHECK_EQ(body(h.call("get_tree", kNoArgs)),
-           parse(R"({"count":1,"seq":1,"tree":{"guide":{"text":"","yours":true},"id":"t","kinds":[],
+           parse(R"({"count":1,"seq":1,"tree":{"guide":{"text":"","yours":true},"guides":[],"id":"t","kinds":[],
              "nodes":[{"id":"a","label":"A","color":"terracotta","prerequisites":[]}],"title":"Test Roadmap"}})"));
 }
 
@@ -4004,4 +4004,228 @@ TEST(mcp_a_read_follows_pointers_after_it_has_let_go_of_the_trees_strand) {
     CHECK_EQ(readMeanwhile, parse(R"([{"id":"a","state":"available"}])"));
   }
   CHECK_EQ(h.trees.openedReads.size(), 3u);
+}
+
+// Guides add: the method a tree above holds comes with the tree worked under it, farthest first and the tree's own last.
+TEST(mcp_get_tree_answers_the_guides_of_the_callers_trees_above_farthest_first_then_its_own_on_the_first_page_alone) {
+  Harness h;
+  h.plant("t_root", h.caller, "Write the outcome first.", {"t_middle"});
+  h.plant("t_middle", h.caller, "Ship weekly.", {"t"});
+  h.plant("t_beside", h.caller, "Keep it small.", {"t"});
+  h.plant("t_silent", h.caller, "", {"t"});
+  CHECK_FALSE(h.call("describe_tree", with("guide", "Tests before code.")).isError);
+  for (const char* id : {"a", "b", "c"}) CHECK_FALSE(h.call("create_node", node(id, id)).isError);
+
+  const Json::Value first = body(h.call("get_tree", parse(R"({"limit":2})")));
+  CHECK_EQ(keys(first["tree"]), (std::vector<std::string>{"guide", "guides", "id", "kinds", "nodes", "title"}));
+  CHECK_EQ(first["tree"]["guide"], parse(R"({"text":"Tests before code.","yours":true})"));
+  CHECK_EQ(first["tree"]["guides"],
+           parse(R"([{"treeId":"t_root","title":"Tree t_root","text":"Write the outcome first.","yours":true},
+                     {"treeId":"t_beside","title":"Tree t_beside","text":"Keep it small.","yours":true},
+                     {"treeId":"t_middle","title":"Tree t_middle","text":"Ship weekly.","yours":true},
+                     {"treeId":"t","title":"Test Roadmap","text":"Tests before code.","yours":true}])"));
+
+  Json::Value next(Json::objectValue);
+  next["limit"] = 2;
+  next["cursor"] = first["nextCursor"];
+  const Json::Value second = body(h.call("get_tree", next));
+  CHECK_EQ(ids(second["tree"]["nodes"]), (std::vector<std::string>{"c"}));
+  CHECK_EQ(keys(second["tree"]), (std::vector<std::string>{"guide", "id", "kinds", "nodes", "title"}));
+  CHECK_EQ(second["tree"]["guide"], parse(R"({"text":"Tests before code.","yours":true})"));
+
+  CHECK_FALSE(h.call("describe_tree", with("guide", "")).isError);
+  CHECK_EQ(body(h.call("get_tree", kNoArgs))["tree"]["guides"],
+           parse(R"([{"treeId":"t_root","title":"Tree t_root","text":"Write the outcome first.","yours":true},
+                     {"treeId":"t_beside","title":"Tree t_beside","text":"Keep it small.","yours":true},
+                     {"treeId":"t_middle","title":"Tree t_middle","text":"Ship weekly.","yours":true}])"));
+}
+
+TEST(mcp_guides_are_yours_where_the_caller_wrote_them_and_not_where_a_fork_copied_them) {
+  Harness h;
+  h.plant("t_written", h.caller, "My method.", {"t"});
+  h.plant("t_forked", h.caller, "Its author's method.", {"t"});
+  h.trees.byId["t_forked"].guideInherited = true;
+  h.trees.byId["t"].guide = Lww<std::string>{"Copied with the fork.", Hlc{2, 0, "seed"}};
+  h.trees.byId["t"].guideInherited = true;
+
+  CHECK_EQ(body(h.call("get_tree", kNoArgs))["tree"]["guides"],
+           parse(R"([{"treeId":"t_forked","title":"Tree t_forked","text":"Its author's method.","yours":false},
+                     {"treeId":"t_written","title":"Tree t_written","text":"My method.","yours":true},
+                     {"treeId":"t","title":"Test Roadmap","text":"Copied with the fork.","yours":false}])"));
+
+  CHECK_FALSE(h.call("describe_tree", with("guide", "Mine now.")).isError);
+  CHECK_EQ(body(h.call("get_tree", kNoArgs))["tree"]["guides"][2],
+           parse(R"({"treeId":"t","title":"Test Roadmap","text":"Mine now.","yours":true})"));
+}
+
+// Only the caller's own trees are above a tree, so a reader of someone else's is answered that tree's guide and no walk is made.
+TEST(mcp_a_caller_who_cannot_write_the_tree_receives_its_own_guide_alone_and_no_tree_above_is_read) {
+  Harness h;
+  h.trees.byId["t"].visibility = Visibility::public_;
+  h.plant("t_root", h.caller, "The owner's private method.", {"t"});
+  h.plant("t_theirs", uid("stranger"), "The stranger's own method.", {"t"});
+  CHECK_FALSE(h.call("describe_tree", with("guide", "Rig first, then sail.")).isError);
+
+  for (const UserId& reader : {uid("stranger"), UserId{}}) {
+    const ToolResult read = h.tools.callTool("get_tree", with("treeId", "t"), ToolCaller{reader, ToolScope::everything()});
+    CHECK_EQ(body(read)["tree"]["guides"],
+             parse(R"([{"treeId":"t","title":"Test Roadmap","text":"Rig first, then sail.","yours":false}])"));
+    CHECK_EQ(message(read).find("t_root"), std::string::npos);
+    CHECK_EQ(message(read).find("private method"), std::string::npos);
+    CHECK_EQ(message(read).find("stranger's own"), std::string::npos);
+  }
+  CHECK_FALSE(h.call("describe_tree", with("guide", "")).isError);
+  for (const UserId& reader : {uid("stranger"), UserId{}}) {
+    const ToolResult read = h.tools.callTool("get_tree", with("treeId", "t"), ToolCaller{reader, ToolScope::everything()});
+    CHECK_EQ(body(read)["tree"]["guides"], parse("[]"));
+  }
+  CHECK(h.trees.aboveReads.empty());
+
+  CHECK_EQ(body(h.call("get_tree", kNoArgs))["tree"]["guides"],
+           parse(R"([{"treeId":"t_root","title":"Tree t_root","text":"The owner's private method.","yours":true}])"));
+  CHECK_EQ(h.trees.aboveReads, (std::vector<TreeId>{TreeId{"t"}}));
+}
+
+// The room, the socket and PUT admit any pointer text, so a pointer at a tree proves nothing about who planted it.
+TEST(mcp_a_removed_tree_someone_elses_tree_and_a_tombstoned_pointer_are_not_above_a_tree) {
+  Harness h;
+  h.plant("t_removed", h.caller, "Removed.", {"t"});
+  h.trees.softDelete(TreeId{"t_removed"});
+  h.plant("t_beyond", h.caller, "Reached only through the removed tree.", {"t_removed"});
+  h.plant("t_theirs", uid("someone-else"), "Someone else's.", {"t"});
+  h.plant("t_tombstoned", h.caller, "Its pointer was deleted.", {"t"});
+  LooseGraph tombstoned(h.trees.byId["t_tombstoned"].state);
+  tombstoned.deleteNode(NodeId{"to-t"}, Hlc{3, 0, "seed"});
+  h.trees.byId["t_tombstoned"].state = tombstoned.exportState();
+  h.plant("t_standing", h.caller, "Standing.", {"t"});
+
+  CHECK_EQ(body(h.call("get_tree", kNoArgs))["tree"]["guides"],
+           parse(R"([{"treeId":"t_standing","title":"Tree t_standing","text":"Standing.","yours":true}])"));
+}
+
+TEST(mcp_a_tree_reached_a_short_and_a_long_way_sits_at_its_shortest_distance_and_a_loop_never_puts_the_tree_above_itself) {
+  Harness h;
+  h.plant("t_a_mid", h.caller, "Mid.", {"t"});
+  h.plant("t_z_both", h.caller, "Both ways.", {"t", "t_a_mid"});
+  h.plant("t_top", h.caller, "Top.", {"t_z_both"});
+  CHECK_FALSE(h.call("describe_tree", with("guide", "Own.")).isError);
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"back","label":"Back","opens":"t_top"})")).isError);
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"self","label":"Self","opens":"t"})")).isError);
+
+  CHECK_EQ(body(h.call("get_tree", kNoArgs))["tree"]["guides"],
+           parse(R"([{"treeId":"t_top","title":"Tree t_top","text":"Top.","yours":true},
+                     {"treeId":"t_a_mid","title":"Tree t_a_mid","text":"Mid.","yours":true},
+                     {"treeId":"t_z_both","title":"Tree t_z_both","text":"Both ways.","yours":true},
+                     {"treeId":"t","title":"Test Roadmap","text":"Own.","yours":true}])"));
+}
+
+TEST(mcp_a_tree_eight_pointers_up_is_above_and_one_nine_up_is_not) {
+  Harness h;
+  h.plant("t_up1", h.caller, "", {"t"});
+  for (int level = 2; level <= 9; ++level) {
+    const std::string below = "t_up" + std::to_string(level - 1);
+    const std::string guide = level == 8 ? "Eight up." : level == 9 ? "Nine up." : "";
+    h.plant(("t_up" + std::to_string(level)).c_str(), h.caller, guide.c_str(), {below.c_str()});
+  }
+
+  CHECK_EQ(body(h.call("get_tree", kNoArgs))["tree"]["guides"],
+           parse(R"([{"treeId":"t_up8","title":"Tree t_up8","text":"Eight up.","yours":true}])"));
+}
+
+TEST(mcp_more_guided_trees_above_than_the_cap_holds_keeps_the_nearest_and_the_trees_own_guide) {
+  Harness h;
+  h.plant("t_up1", h.caller, "Guide 1.", {"t"});
+  for (int level = 2; level <= 8; ++level)
+    h.plant(("t_up" + std::to_string(level)).c_str(), h.caller, ("Guide " + std::to_string(level) + ".").c_str(),
+            {("t_up" + std::to_string(level - 1)).c_str()});
+  CHECK_FALSE(h.call("describe_tree", with("guide", "Own.")).isError);
+
+  const Json::Value guides = body(h.call("get_tree", kNoArgs))["tree"]["guides"];
+
+  Json::Value nearest(Json::arrayValue);
+  for (int level = 7; level >= 1; --level) {
+    Json::Value guide(Json::objectValue);
+    guide["treeId"] = "t_up" + std::to_string(level);
+    guide["title"] = "Tree t_up" + std::to_string(level);
+    guide["text"] = "Guide " + std::to_string(level) + ".";
+    guide["yours"] = true;
+    nearest.append(guide);
+  }
+  nearest.append(parse(R"({"treeId":"t","title":"Test Roadmap","text":"Own.","yours":true})"));
+  CHECK_EQ(guides, nearest);
+}
+
+// One walk per first page of get_tree, for its writer; nothing else a caller sends reads the trees above.
+TEST(mcp_the_trees_above_are_read_once_per_first_page_of_get_tree_and_by_no_other_reply) {
+  Harness h;
+  h.trees.byId["t"].visibility = Visibility::public_;
+  h.plant("t_root", h.caller, "The method.", {"t"});
+  for (const char* id : {"a", "b", "c"}) CHECK_FALSE(h.call("create_node", node(id, id)).isError);
+  CHECK_FALSE(h.call("describe_tree", with("guide", "Own.")).isError);
+  CHECK(h.trees.aboveReads.empty());
+
+  CHECK_FALSE(h.call("get_tree", kNoArgs).isError);
+  CHECK_FALSE(h.call("get_tree", parse(R"({"fields":["id","state","opens"],"includeEdges":true,"limit":1})")).isError);
+  CHECK_EQ(h.trees.aboveReads, (std::vector<TreeId>{TreeId{"t"}, TreeId{"t"}}));
+
+  CHECK_FALSE(h.call("get_tree", parse(R"({"limit":1,"cursor":"a"})")).isError);
+  CHECK_FALSE(h.call("get_tree", parse(R"({"cursor":"c"})")).isError);
+  CHECK(h.call("get_tree", parse(R"({"limit":0})")).isError);
+  CHECK(h.call("get_tree", parse(R"({"fields":["nope"]})")).isError);
+  CHECK(h.call("get_tree", parse(R"({"cursor":"ghost"})")).isError);
+  CHECK_FALSE(h.call("get_nodes", parse(R"({"nodeIds":["a"],"fields":["id","state","opens"]})")).isError);
+  CHECK_FALSE(h.call("find_nodes", parse(R"({"state":"available"})")).isError);
+  CHECK_FALSE(h.call("get_progress", kNoArgs).isError);
+  CHECK_FALSE(h.call("get_diagnostics", kNoArgs).isError);
+  CHECK_FALSE(h.call("get_health", kNoArgs).isError);
+  CHECK_FALSE(h.tools.callTool("list_trees", kNoArgs, h.actor).isError);
+  for (const UserId& reader : {uid("stranger"), UserId{}})
+    CHECK_FALSE(h.tools.callTool("get_tree", with("treeId", "t"), ToolCaller{reader, ToolScope::everything()}).isError);
+  CHECK_EQ(h.trees.aboveReads.size(), 2u);
+}
+
+// The walk is part of the first page: its failure is the tool's server failure, naming nothing, and only where it is made.
+TEST(mcp_a_first_page_whose_trees_above_cannot_be_read_fails_as_the_call_and_other_reads_are_untouched) {
+  Harness h;
+  h.trees.byId["t"].visibility = Visibility::public_;
+  h.plant("t_root", h.caller, "The method.", {"t"});
+  for (const char* id : {"a", "b"}) CHECK_FALSE(h.call("create_node", node(id, id)).isError);
+  h.trees.aboveReadsFail = true;
+
+  const ToolResult failed = h.call("get_tree", kNoArgs);
+  CHECK(failed.isError);
+  CHECK_EQ(message(failed), std::string("get_tree: that call failed inside the server. The outcome may be uncertain; "
+                                        "read the affected records before retrying. The detail is in the server log."));
+
+  CHECK_EQ(ids(body(h.call("get_tree", parse(R"({"cursor":"a"})")))["tree"]["nodes"]), (std::vector<std::string>{"b"}));
+  CHECK_EQ(body(h.call("find_nodes", kNoArgs))["count"].asUInt64(), 2u);
+  CHECK_EQ(body(h.tools.callTool("get_tree", with("treeId", "t"), ToolCaller{uid("stranger"), ToolScope::everything()}))["tree"]["guides"],
+           parse("[]"));
+}
+
+// A stranger's read must not wait on the owner's statement: that wait would say a tree of the owner's opens this one.
+TEST(mcp_get_tree_reads_the_trees_above_after_it_has_let_go_of_the_trees_strand) {
+  Harness h;
+  h.trees.byId["t"].visibility = Visibility::public_;
+  h.plant("t_root", h.caller, "The method.", {"t"});
+  bool strandWasFree = false;
+  Json::Value readMeanwhile;
+  h.trees.duringAboveRead = [&] {
+    std::thread other([&] {
+      std::mutex& strand = h.registry.strandFor(TreeId{"t"});
+      if (!strand.try_lock()) return;
+      strand.unlock();
+      strandWasFree = true;
+      readMeanwhile = body(h.tools.callTool("get_tree", with("treeId", "t"),
+                                            ToolCaller{uid("stranger"), ToolScope::everything()}))["tree"]["guides"];
+    });
+    other.join();
+  };
+
+  CHECK_EQ(body(h.call("get_tree", kNoArgs))["tree"]["guides"],
+           parse(R"([{"treeId":"t_root","title":"Tree t_root","text":"The method.","yours":true}])"));
+
+  CHECK(strandWasFree);
+  CHECK_EQ(readMeanwhile, parse("[]"));
+  CHECK_EQ(h.trees.aboveReads, (std::vector<TreeId>{TreeId{"t"}}));
 }

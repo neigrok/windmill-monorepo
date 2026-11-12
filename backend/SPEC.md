@@ -81,6 +81,23 @@ rejected for structure. Validity is a read model, not a gate.
   work it, for agents and for people; an empty guide, or one of only whitespace, is no guide, and a
   guide a fork copied from someone else's tree stays its author's words until the owner writes one.
   Nodes carry no part of it.
+- `guides` (`domain/Guides.h`) — guides add: one tree holds the method, each tree worked under it
+  adds what is particular to it, and none overrides another. A tree P is directly above a tree T
+  when a present node of P holds a pointer at T and both stand and belong to one owner. Above is
+  that relation followed upward within 8 pointers, each tree at its shortest distance, and a tree is
+  never above itself, whatever loops exist. Only the reader's own trees count: for a caller who
+  cannot write the tree being read, nothing is above it. `guidesFor` answers what a reading of a
+  tree carries as `guides`, each entry `{treeId, title, text, yours}`: the guides of the trees
+  above, farthest first and by tree id within one distance, then the tree's own guide last. A tree
+  whose guide is empty is left out, the tree's own included; each tree appears once; and past 8
+  entries the farthest are dropped, so the nearest trees and the tree's own guide keep their
+  places. `yours` says the reader owns that tree and wrote its current guide. The trees above come
+  from `TreeRepository::treesAbove(owner, tree)`: one recursive statement that starts at the tree,
+  finds the trees that open each reached tree through `tree_nodes_opens_idx` and each of their rows
+  through `trees_pkey`, keeps a tree once per distance and ends at 8 levels, so its cost follows
+  the pointer nodes that name the trees reached and not the size of the tables. It is made once
+  per reply that answers `guides`, after the tree's strand is released, and not at all for a caller
+  who cannot write the tree, who is answered the tree's own guide alone.
 
 Derived read models:
 
@@ -326,15 +343,21 @@ creation, as `POST /v1/trees` does. A PUT into a standing tree replaces the stor
 and edge it carries with the genesis stamp: those steps take the document's fields over any live edit
 and read as unknown creation time. No client calls this door. Inbound models are suffixed `Request`, outbound `Response`.
 
-`GET /v1/trees/{id}` answers `{seq, data, state, createdAt, visibility, mine}`. When the caller can
-write the tree the body also carries `opens`, an object keyed by node id with one entry per node that
-holds a pointer: `{treeId, title, state, done, total, loop}` for a valid one, `state` being
-`"complete"` or `"open"` and `loop` true when the opened tree leads back to the tree being read, and
-`{treeId, missing: true}` for one that is not valid (`OpenedTrees`, Model). It is computed on the
-read, off the stored rows and after the tree's strand is released, and nothing pushes it; for any
-other caller the key is absent. When the pointers cannot be followed the owner is answered
+`GET /v1/trees/{id}` answers `{seq, data, state, createdAt, visibility, mine, guides}`. When the
+caller can write the tree the body also carries `opens`, an object keyed by node id with one entry
+per node that holds a pointer: `{treeId, title, state, done, total, loop}` for a valid one, `state`
+being `"complete"` or `"open"` and `loop` true when the opened tree leads back to the tree being
+read, and `{treeId, missing: true}` for one that is not valid (`OpenedTrees`, Model). It is computed
+on the read, off the stored rows and after the tree's strand is released, and nothing pushes it; for
+any other caller the key is absent. When the pointers cannot be followed the owner is answered
 `503 opens-unavailable`, not the `404` of an absent tree; every other reader, and a tree that holds
 no pointer, is answered as before.
+
+`guides` (Model) is an array of `{treeId, title, text, yours}`. A caller who can write the tree is
+answered the guides of their trees above it, farthest first, and the tree's own last, read off the
+stored rows after the tree's strand is released; when the trees above cannot be read they are
+answered `503 guides-unavailable`. Any other caller is answered the tree's own guide alone when it
+has one, `yours: false`, and nothing is read for them.
 
 `PATCH /v1/trees/{id}` sets one register per call — `{visibility}`, `{guide}` or `{title}` — each the
 owner's alone. A body naming more than one is refused `400`, and a body that is not one JSON object
@@ -347,7 +370,9 @@ NUL is refused `400` too. The guide's writes are this, the socket's `subgraph` f
 `tree.guide: {text, yours}` on every page and no other MCP read at all, `yours` true when the caller
 owns the tree and wrote its current guide. A fork copies it, marked inherited when it is someone
 else's words (Runtime). The share page
-and the gallery do not show it.
+and the gallery do not show it. `guides` (Model) rides `GET /v1/trees/{id}` at the top level of the
+body and MCP `get_tree` as `tree.guides` on the first page alone (a call without `cursor`); a tend's
+`get_tree` carries `tree.guide` and no `guides`.
 
 `POST /v1/trees/{id}/tend` runs only on a tree its caller can write, since the run writes as its
 caller. A tree it cannot is a persisted refused run, answered `200` like every tend refusal and started
@@ -417,7 +442,7 @@ PostgreSQL; `db/schema.sql` is the one file, applied in order and idempotent.
 | Table | Holds |
 | --- | --- |
 | `trees` | title and guide (each LWW: `<register>_hlc` plus the `<register>_ms`/`<register>_counter` numeric split), `guide_inherited`, `owner_id`, `visibility`, `head_seq`, `forked_from`, `deleted_at`, `document` jsonb |
-| `tree_nodes` | one row per node: `created_hlc`/`deleted_hlc` plus each register and its `_hlc`, and `present`; `tree_nodes_opens_idx` finds the present nodes that open a given tree |
+| `tree_nodes` | one row per node: `created_hlc`/`deleted_hlc` plus each register and its `_hlc`, and `present`; `tree_nodes_opens_idx` finds the present nodes that open a given tree, which is how the trees above a tree are walked |
 | `tree_edges` | one row per `(from_id, to_id)`: `added_hlc`, `removed_hlc` |
 | `tree_kinds` | one row per legend kind: hue, label, description, cross_branch_exempt, rank, each with its stamp |
 | `tree_ops` | append-only log — `(tree_id, seq)` pk, `unique (tree_id, op_id)` for idempotency |

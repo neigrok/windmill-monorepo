@@ -376,6 +376,33 @@ TEST(scoped_tool_host_refuses_the_tree_a_node_opens_wherever_a_tend_names_it_and
                          "roadmap.import_subgraph Coach refused", "roadmap.import_subgraph Coach refused"}));
 }
 
+// The guides above are other trees' words and ids, and a tend is pinned to one tree: its reply keeps the
+// tended tree's own guide and carries no `guides`, whatever page it asks for.
+TEST(scoped_tool_host_cuts_the_guides_of_the_trees_above_from_a_tends_get_tree_and_a_plain_caller_still_reads_them) {
+  test::Harness h;
+  h.plant("t_root", h.caller, "The method of every tree under this one.", {"t"});
+  CHECK_FALSE(h.call("describe_tree", test::with("guide", "Rig first, then sail.")).isError);
+  CHECK_FALSE(h.call("create_node", test::node("a", "A")).isError);
+  ScopedToolHost scoped(h.tools, TreeId{"t"});
+
+  const ToolResult tended = scoped.callTool("get_tree", Json::Value(Json::objectValue), h.actor);
+  CHECK_EQ(test::body(tended),
+           parse(R"({"count":1,"seq":2,"tree":{"guide":{"text":"Rig first, then sail.","yours":true},"id":"t","kinds":[],
+             "nodes":[{"id":"a","label":"A","color":"terracotta","prerequisites":[]}],"title":"Test Roadmap"}})"));
+  CHECK_EQ(dump(tended.payload), message(tended));
+  CHECK_EQ(message(tended).find("t_root"), std::string::npos);
+  CHECK_EQ(message(tended).find("The method"), std::string::npos);
+  CHECK(tended.structured.isNull());
+  const ToolResult refused = scoped.callTool("get_tree", parse(R"({"cursor":"ghost"})"), h.actor);
+  CHECK(refused.isError);
+  CHECK_EQ(message(refused), std::string("get_tree: cursor \"ghost\" names no node in this result set. Call again "
+                                         "without a cursor to walk it from the start."));
+
+  CHECK_EQ(test::body(h.call("get_tree", test::kNoArgs))["tree"]["guides"],
+           parse(R"([{"treeId":"t_root","title":"Tree t_root","text":"The method of every tree under this one.","yours":true},
+                     {"treeId":"t","title":"Test Roadmap","text":"Rig first, then sail.","yours":true}])"));
+}
+
 // A tend runs as the owner, so the state it reads is the node's true one, and still no pointer.
 TEST(scoped_tool_host_reads_the_state_of_a_node_that_follows_the_tree_it_opens) {
   test::Harness h;

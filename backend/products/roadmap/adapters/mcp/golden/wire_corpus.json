@@ -1,5 +1,5 @@
 {
-  "schemaVersion" : 12,
+  "schemaVersion" : 13,
   "steps" : 
   [
     {
@@ -19,6 +19,7 @@
                   "text" : "",
                   "yours" : true
                 },
+                "guides" : [],
                 "id" : "t",
                 "kinds" : [],
                 "nodes" : [],
@@ -568,6 +569,15 @@
                   "text" : "Ship the root first; render and sync follow it.",
                   "yours" : true
                 },
+                "guides" : 
+                [
+                  {
+                    "text" : "Ship the root first; render and sync follow it.",
+                    "title" : "Test Roadmap",
+                    "treeId" : "t",
+                    "yours" : true
+                  }
+                ],
                 "id" : "t",
                 "kinds" : 
                 [

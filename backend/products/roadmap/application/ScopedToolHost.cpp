@@ -5,7 +5,9 @@
 #include <memory>
 #include <optional>
 #include <set>
+#include <string>
 #include <utility>
+#include <vector>
 
 namespace wm {
 
@@ -14,10 +16,12 @@ namespace {
 // A tool goes by its name: the cross-tree reach a single-tree tend has no use for, and the guide,
 // which the owner writes for every run to read. A word goes wherever a tool's schema carries it, as
 // an argument's key or as a value an enum lists, so a field that reaches another tree is named here
-// once and is gone from every tool that takes it or answers it.
+// once and is gone from every tool that takes it or answers it. A reply key no argument asks for goes
+// by its tool and the keys that lead down to it, and is cut from the reply before the run reads it.
 struct Withheld {
   std::map<std::string, std::string> tools;
   std::map<std::string, std::string> words;
+  std::multimap<std::string, std::vector<std::string>> replyKeys;
 };
 
 const Withheld& withheld() {
@@ -26,7 +30,8 @@ const Withheld& withheld() {
        {"list_trees", "tending edits a single tree — list_trees is out of its reach"},
        {"delete_tree", "tending edits a single tree — delete_tree is out of its reach"},
        {"describe_tree", "tending reads the tree's guide but cannot set it — describe_tree is out of its reach"}},
-      {{"opens", "tending edits a single tree — the tree a node opens is out of its reach"}}};
+      {{"opens", "tending edits a single tree — the tree a node opens is out of its reach"}},
+      {{"get_tree", {"tree", "guides"}}}};
   return reach;
 }
 
@@ -124,6 +129,17 @@ ToolResult ScopedToolHost::callTool(const std::string& name, const Json::Value& 
       Json::Value scopedArgs = arguments;
       scopedArgs["treeId"] = scope_.str();
       ToolResult result = inner_.callTool(name, scopedArgs, caller);
+      // A withheld reply key is cut from both forms of a JSON answer, and the text the run reads is written again.
+      const auto [firstKey, lastKey] = withheld().replyKeys.equal_range(name);
+      for (auto withheldKey = firstKey; withheldKey != lastKey && result.payload.isObject(); ++withheldKey) {
+        const std::vector<std::string>& path = withheldKey->second;
+        for (Json::Value* holder : {&result.payload, &result.structured}) {
+          for (auto key = path.begin(); holder && key + 1 != path.end(); ++key)
+            holder = holder->isObject() && holder->isMember(*key) ? &(*holder)[*key] : nullptr;
+          if (holder && holder->isObject()) holder->removeMember(path.back());
+        }
+        result.content = ToolResult::json(result.payload).content;
+      }
 
       // Record what this call planted, from the tool's own result. create_node echoes the one id it
       // minted; import_subgraph plants every incoming node that wasn't already there. Only those two

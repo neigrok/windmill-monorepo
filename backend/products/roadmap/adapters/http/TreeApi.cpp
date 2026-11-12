@@ -8,11 +8,13 @@
 #include "products/roadmap/application/ActivityFeed.h"
 #include "products/roadmap/application/TreeRoom.h"
 #include "products/roadmap/domain/Access.h"
+#include "products/roadmap/domain/Guides.h"
 #include "products/roadmap/domain/Legend.h"
 #include "products/roadmap/domain/LooseGraph.h"
 #include "products/roadmap/domain/OpenedTrees.h"
 
 #include <algorithm>
+#include <functional>
 #include <mutex>
 
 namespace wm {
@@ -55,8 +57,10 @@ void TreeApi::getTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback
   Json::Value body(Json::objectValue);
   TreeData data;
   bool mine = false;
+  bool guideInherited = false;
   if (!readRoom(treeId, caller, [&](TreeRoom& room) {
         mine = canWrite(caller, room.owner());
+        guideInherited = room.guideInherited();
         data = room.snapshot();
         body["seq"] = static_cast<Json::Int64>(room.head());
         body["data"] = toJson(mine ? data : readerView(data));
@@ -76,21 +80,39 @@ void TreeApi::getTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback
     callback(error(drogon::k404NotFound, "no such tree"));
     return;
   }
+  // A guide is the caller's own only on a tree they can write, and not when a fork copied it from someone else's.
+  const Guide own{data.id, data.title, data.guide, mine && !guideInherited};
   if (!mine) {
+    body["guides"] = toJson(guidesFor({}, own));
     callback(jsonResponse(body));
     return;
   }
-  // What each pointer comes to, for the tree's writer alone and OUTSIDE the room strand, as getProgress loads.
-  WriteObservation observation{"roadmap.tree.follow", "roadmap", "rest"};
-  try {
-    const OpenedTrees opened(trees_->openedFrom(*caller, treesOpenedBy(data)));
-    body["opens"] = toJson(opened.openings(data), opened.leadingBackTo(data.id));
-    observation.skip();
-  } catch (const std::exception& failure) {
-    // Not an absent tree: a 5xx is what a client reports and retries.
-    observation.fail(failure);
+  // The trees around this one are read for its writer alone and OUTSIDE the room strand, as getProgress loads. A
+  // read that fails is not an absent tree: it answers false for a 5xx, which a client reports and retries.
+  const auto readsOutsideTheStrand = [](const char* operation, const std::function<void()>& read) {
+    WriteObservation observation{operation, "roadmap", "rest"};
+    try {
+      read();
+      observation.skip();
+      return true;
+    } catch (const std::exception& failure) {
+      observation.fail(failure);
+      return false;
+    }
+  };
+  if (!readsOutsideTheStrand("roadmap.tree.follow", [&] {
+        const OpenedTrees opened(trees_->openedFrom(*caller, treesOpenedBy(data)));
+        body["opens"] = toJson(opened.openings(data), opened.leadingBackTo(data.id));
+      })) {
     callback(error(drogon::k503ServiceUnavailable, "the trees this tree opens could not be read — try again",
                    "opens-unavailable"));
+    return;
+  }
+  if (!readsOutsideTheStrand("roadmap.tree.guides", [&] {
+        body["guides"] = toJson(guidesFor(trees_->treesAbove(*caller, data.id), own));
+      })) {
+    callback(error(drogon::k503ServiceUnavailable, "the guides of the trees above this one could not be read — try again",
+                   "guides-unavailable"));
     return;
   }
   callback(jsonResponse(body));

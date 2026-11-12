@@ -122,6 +122,19 @@ Json::Value toJson(const std::map<NodeId, Opening>& openings, const std::set<Tre
   return opens;
 }
 
+Json::Value toJson(const std::vector<Guide>& guides) {
+  Json::Value list(Json::arrayValue);
+  for (const Guide& guide : guides) {
+    Json::Value entry(Json::objectValue);
+    entry["treeId"] = guide.tree.str();
+    entry["title"] = guide.title;
+    entry["text"] = guide.text;
+    entry["yours"] = guide.yours;
+    list.append(entry);
+  }
+  return list;
+}
+
 Json::Value toJson(const GalleryEntry& entry) {
   Json::Value row(Json::objectValue);
   row["id"] = entry.id.str();
