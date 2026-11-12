@@ -45,7 +45,6 @@ window.openStep = ({ steps, completed, opens = {}, facts = {}, holder = true, ed
             window.listFails -= 1;
             return { rows: [], authoritative: false, status: window.listStatus ?? 503 };
           }
-          await new Promise((resolve) => setTimeout(resolve, window.listDelay ?? 0));
           return { rows: window.rows, authoritative: true };
         },
         read: async (id) => {
@@ -503,35 +502,50 @@ test('a 401 on an address’s read is the lapse: the room is told, the address s
 
 test('only this app’s address or a tree id is read: other text filters and asks nothing, an address typed asks once when the field is still, a paste asks at once, and an address seen before asks nothing', async () => {
   const errors = [];
-  const page = await openStep(DESKTOP, { cards: { t_7eef000000000004: { id: 't_7eef000000000004', title: 'Reefing course', author: null, steps: 4, mine: false } } }, errors);
+  const page = await openStep(DESKTOP, { cards: { t_7eef000000000004: { id: 't_7eef000000000004', title: 'Reefing course', author: null, steps: 4, mine: false }, t_9eef000000000009: null } }, errors);
   await attachATree(page);
   await listed(page);
+  await page.clock.install();
   const field = page.getByLabel('Find a tree');
+  const pause = () => new Promise((resolve) => setTimeout(resolve, 20));
+  const read = async (line) => {
+    for (let tries = 0; tries < 100 && !(await calls(page)).includes(line); tries += 1) await pause();
+    return (await calls(page)).includes(line);
+  };
+  // The page's time moves only here, in steps, until what is awaited stands: its effects may set their timers late.
+  const advanceUntil = async (stands) => {
+    for (let steps = 0; steps < 20 && !(await stands()); steps += 1) {
+      await pause();
+      await page.clock.runFor(100);
+    }
+    return stands();
+  };
+  const blocked = () => page.locator('.st-board-tree-picker .is-blocked').count().then((count) => count === 1);
 
   for (const text of ['https://example.com/t/my-secret-plan', 'notes/t/dentist', `${origin}/t/reefing-course`, 't_7eef']) {
     await field.fill(text);
-    await page.waitForTimeout(450);
+    await page.clock.runFor(450);
   }
   assert.deepEqual(await calls(page), ['list']);
 
   await field.fill('');
   await field.click();
-  await page.keyboard.type(`${origin}/t/t_7eef000000000004`, { delay: 15 });
-  await page.locator('.st-board-tree-picker .is-blocked').waitFor();
+  await page.keyboard.type(`${origin}/t/t_7eef000000000004`);
+  await pause();
+  await page.clock.runFor(250);
+  assert.deepEqual(await calls(page), ['list'], 'nothing is read before the field has been still for 300 ms');
+  assert.equal(await advanceUntil(blocked), true);
   assert.deepEqual(await calls(page), ['list', 'read t_7eef000000000004']);
 
   await field.fill('');
-  await field.evaluate((input) => input.dispatchEvent(new ClipboardEvent('paste', { bubbles: true })));
   await field.fill('t_7eef000000000004');
-  await page.locator('.st-board-tree-picker .is-blocked').waitFor({ timeout: 250 });
+  assert.equal(await advanceUntil(blocked), true);
   assert.deepEqual(await calls(page), ['list', 'read t_7eef000000000004'], 'an address seen before is not read again');
 
-  await page.evaluate(() => { window.cards.t_9eef000000000009 = null; });
   await field.fill('');
   await field.evaluate((input) => input.dispatchEvent(new ClipboardEvent('paste', { bubbles: true })));
   await field.fill(`  ${origin}/#/app/t_9eef000000000009?step=rig `);
-  await page.waitForTimeout(150);
-  assert.deepEqual(await calls(page), ['list', 'read t_7eef000000000004', 'read t_9eef000000000009'], 'a paste is read before the field has been still');
+  assert.equal(await read('read t_9eef000000000009'), true, 'a paste is read with no time passing on the page');
   await page.locator('.st-board-tree-picker-line').waitFor();
   assert.deepEqual((await events(page)).filter((line) => line.includes('paste')), [
     'roadmap_tree_attach {"step":"paste","outcome":"readable","band":"desktop","view":"board"}',

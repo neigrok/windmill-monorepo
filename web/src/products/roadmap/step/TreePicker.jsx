@@ -104,7 +104,7 @@ export function TreePicker({ step, treeId, standing, attachment, trees, layout, 
     if (settled === address) return undefined;
     const timer = setTimeout(() => setSettled(address), ADDRESS_STILL_MS);
     return () => clearTimeout(timer);
-  }, [address]);
+  }, [address, settled]);
 
   useEffect(() => {
     if (settled === null) return undefined;
