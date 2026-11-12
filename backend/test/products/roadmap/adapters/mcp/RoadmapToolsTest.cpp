@@ -2719,6 +2719,7 @@ TEST(mcp_get_tree_lists_edges_up_to_the_edge_count_alone_and_says_the_count_past
 
 TEST(mcp_annotate_node_sets_and_clears_the_icon_and_the_empty_icon_smell_follows) {
   Harness h;
+  CHECK_FALSE(h.call("add_kind", parse(R"({"id":"k","hue":"terracotta"})")).isError);  // a node's hue says what it is
   h.call("create_node", node("a", "A"));
 
   auto smells = [&] {
@@ -4260,7 +4261,7 @@ TEST(mcp_get_diagnostics_tells_the_owner_each_loop_of_trees_through_the_tree_and
 
   const ToolResult told = h.call("get_diagnostics", kNoArgs);
 
-  CHECK_EQ(body(told), parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[],"maskedWork":[],
+  CHECK_EQ(body(told), parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[{"kind":"empty-legend"}],"maskedWork":[],
       "treeLoops":[
         {"node":"again","path":[{"treeId":"t","title":"Test Roadmap"}]},
         {"node":"far","path":[{"treeId":"t_c","title":"Tree t_c"},{"treeId":"t_b","title":"Tree t_b"},
@@ -4273,11 +4274,11 @@ TEST(mcp_get_diagnostics_tells_the_owner_each_loop_of_trees_through_the_tree_and
                                                                  TreeId{"t_gone"}, TreeId{"t_theirs"}, TreeId{"t_x"}}}));
 
   CHECK_EQ(body(h.tools.callTool("get_diagnostics", with("treeId", "t_b"), h.actor)),
-           parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[{"node":"to-t","kind":"empty-icon"}],"maskedWork":[],
+           parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[{"kind":"empty-legend"},{"node":"to-t","kind":"empty-icon"}],"maskedWork":[],
                "treeLoops":[{"node":"to-t","path":[{"treeId":"t","title":"Test Roadmap"},{"treeId":"t_b","title":"Tree t_b"}]}],
                "danglingPointers":[]})"));
   CHECK_EQ(body(h.tools.callTool("get_diagnostics", with("treeId", "t_x"), h.actor)),
-           parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[{"node":"to-t_y","kind":"empty-icon"}],"maskedWork":[],
+           parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[{"kind":"empty-legend"},{"node":"to-t_y","kind":"empty-icon"}],"maskedWork":[],
                "treeLoops":[{"node":"to-t_y","path":[{"treeId":"t_y","title":"Tree t_y"},{"treeId":"t_x","title":"Tree t_x"}]}],
                "danglingPointers":[]})"));
   CHECK_EQ(h.trees.openedReads.size(), 3u);
@@ -4303,7 +4304,7 @@ TEST(mcp_get_diagnostics_answers_a_reader_who_cannot_write_the_tree_what_a_twin_
 
   const std::string graphAlone =
       R"({"cycles":[],"dangling":[{"from":"ghost","to":"plain"}],"maskedWork":[],"selfEdges":[],)"
-      R"("smells":[{"kind":"empty-icon","node":"gone"},{"kind":"empty-icon","node":"loop"},{"kind":"empty-icon","node":"plain"}]})";
+      R"("smells":[{"kind":"empty-legend"},{"kind":"empty-icon","node":"gone"},{"kind":"empty-icon","node":"loop"},{"kind":"empty-icon","node":"plain"}]})";
   for (const UserId& reader : {uid("stranger"), UserId{}}) {
     const ToolCaller caller{reader, ToolScope::everything()};
     for (const char* asked : {R"({})", R"({"includePointers":true})", R"({"includePointers":false})"}) {
@@ -4330,7 +4331,7 @@ TEST(mcp_get_diagnostics_reads_no_other_tree_for_a_tree_without_pointers_or_a_ca
   h.trees.openedReadsFail = true;
 
   CHECK_EQ(body(h.call("get_diagnostics", kNoArgs)),
-           parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[],"maskedWork":[],"treeLoops":[],"danglingPointers":[]})"));
+           parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[{"kind":"empty-legend"}],"maskedWork":[],"treeLoops":[],"danglingPointers":[]})"));
   CHECK(h.trees.openedReads.empty());
 
   h.trees.openedReadsFail = false;
@@ -4338,14 +4339,14 @@ TEST(mcp_get_diagnostics_reads_no_other_tree_for_a_tree_without_pointers_or_a_ca
   h.trees.openedReads.clear();
   h.trees.openedReadsFail = true;
   CHECK_EQ(body(h.call("get_diagnostics", parse(R"({"includePointers":false})"))),
-           parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[],"maskedWork":[]})"));
+           parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[{"kind":"empty-legend"}],"maskedWork":[]})"));
   CHECK(h.trees.openedReads.empty());
   CHECK_EQ(message(h.call("get_diagnostics", parse(R"({"includePointers":"no"})"))),
            std::string("get_diagnostics: argument \"includePointers\" must be a boolean, got string"));
 
   h.trees.openedReadsFail = false;
   CHECK_EQ(body(h.call("get_diagnostics", parse(R"({"includePointers":true})"))),
-           parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[],"maskedWork":[],
+           parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[{"kind":"empty-legend"}],"maskedWork":[],
                "treeLoops":[{"node":"a","path":[{"treeId":"t_b","title":"Tree t_b"},{"treeId":"t","title":"Test Roadmap"}]}],
                "danglingPointers":[]})"));
   CHECK_EQ(h.trees.openedReads, (std::vector<std::set<TreeId>>{{TreeId{"t_b"}}}));
@@ -4376,7 +4377,7 @@ TEST(mcp_get_diagnostics_follows_pointers_after_it_has_let_go_of_the_trees_stran
            parse(R"([{"node":"a","path":[{"treeId":"t_b","title":"Tree t_b"},{"treeId":"t","title":"Test Roadmap"}]}])"));
 
   CHECK(strandWasFree);
-  CHECK_EQ(readMeanwhile, parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[],"maskedWork":[]})"));
+  CHECK_EQ(readMeanwhile, parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[{"kind":"empty-legend"}],"maskedWork":[]})"));
   CHECK_EQ(h.trees.openedReads.size(), 1u);
 }
 
@@ -4406,12 +4407,12 @@ TEST(mcp_get_diagnostics_whose_pointers_cannot_be_followed_answers_the_graphs_di
 
   CHECK_FALSE(degraded.isError);
   CHECK_EQ(body(degraded), parse(R"({"cycles":[],"dangling":[{"from":"ghost","to":"a"}],"selfEdges":[],
-      "smells":[{"node":"a","kind":"empty-icon"}],"maskedWork":[],"pointerDiagnosticsUnavailable":true})"));
+      "smells":[{"kind":"empty-legend"},{"node":"a","kind":"empty-icon"}],"maskedWork":[],"pointerDiagnosticsUnavailable":true})"));
   CHECK_EQ(reporter.failures->reports,
            (std::vector<std::string>{std::string("roadmap.diagnostics.follow roadmap mcp failed ") + typeid(std::runtime_error).name()}));
 
   const Json::Value graphAlone = parse(R"({"cycles":[],"dangling":[{"from":"ghost","to":"a"}],"selfEdges":[],
-      "smells":[{"node":"a","kind":"empty-icon"}],"maskedWork":[]})");
+      "smells":[{"kind":"empty-legend"},{"node":"a","kind":"empty-icon"}],"maskedWork":[]})");
   CHECK_EQ(body(h.call("get_diagnostics", parse(R"({"includePointers":false})"))), graphAlone);
   CHECK_EQ(body(h.tools.callTool("get_diagnostics", with("treeId", "t"), ToolCaller{uid("stranger"), ToolScope::everything()})),
            graphAlone);
@@ -4659,7 +4660,7 @@ TEST(mcp_get_diagnostics_lists_fifty_nodes_and_eight_trees_of_a_way_and_counts_t
     h.registry.open(TreeId{"t"})->applyCommand(planted, h.clock.nowMs(), h.caller);
   }
 
-  Json::Value expected = parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[],"maskedWork":[],
+  Json::Value expected = parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[{"kind":"empty-legend"}],"maskedWork":[],
       "treeLoops":[],"treeLoopsOmitted":10,"danglingPointers":[],"danglingPointersOmitted":10})");
   for (int k = 1; k <= 50; ++k) {
     Json::Value loop(Json::objectValue);
@@ -4697,7 +4698,7 @@ TEST(mcp_import_subgraph_brings_a_deleted_node_back_opening_nothing_unless_the_b
   CHECK_EQ(body(h.call("get_tree", parse(R"({"fields":["id","label","description","opens"]})")))["tree"]["nodes"],
            parse(R"([{"id":"a","label":"A back","description":"Kept."}])"));
   CHECK_EQ(body(h.call("get_diagnostics", kNoArgs)),
-           parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[],"maskedWork":[],"treeLoops":[],"danglingPointers":[]})"));
+           parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[{"kind":"empty-legend"}],"maskedWork":[],"treeLoops":[],"danglingPointers":[]})"));
   REQUIRE_EQ(h.trees.byId["t"].state.nodes.size(), 1u);
   CHECK_EQ(h.trees.byId["t"].state.nodes[0].opens, TreeId{});
 
@@ -4750,7 +4751,7 @@ TEST(mcp_an_edit_whose_follow_runs_past_its_budget_answers_without_the_loops_at_
   CHECK_EQ(observed.completions, (std::vector<std::string>(2, "roadmap.receipt.follow roadmap mcp timeout WARN")));
   CHECK(observed.failures->reports.empty());
   CHECK_EQ(body(h.call("get_diagnostics", kNoArgs)),
-           parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[],"maskedWork":[],
+           parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[{"kind":"empty-legend"}],"maskedWork":[],
                "treeLoops":[{"node":"a","path":[{"treeId":"t","title":"Test Roadmap"}]}],"danglingPointers":[]})"));
   CHECK_EQ(h.trees.openedBudgets,
            (std::vector<std::optional<std::chrono::milliseconds>>{std::chrono::milliseconds{750}, std::chrono::milliseconds{750},
@@ -6220,4 +6221,82 @@ TEST(mcp_a_bulk_progress_row_is_judged_at_its_turn_in_the_batch) {
   CHECK_EQ(body(h.call("set_progress", parse(R"({"nodeId":"n","status":"complete"})")))["unchanged"], Json::Value(true));
   REQUIRE_EQ(h.bus.progressBroadcasts.size(), frames + 1);
   CHECK_EQ(h.bus.progressBroadcasts.back().marks.completed, (std::set<NodeId>{NodeId{"n"}}));
+}
+
+// A hue no kind wears is a smell, one line per hue naming how many present nodes wear it and the first of them, however
+// they got there: written with no colour where no kind wears terracotta, sent a kind's old hue by the import that
+// re-hues it, revived after its kind moved, or given a third hue. A node under a kind is not counted. A smell is no
+// structural error, so receipts stay clean.
+TEST(mcp_a_hue_no_kind_wears_is_a_smell) {
+  Harness h;
+  CHECK_FALSE(h.call("add_kind", parse(R"({"id":"k","hue":"sky"})")).isError);
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A","icon":"i"},
+    {"id":"c","label":"C","icon":"i","color":"sky"},{"id":"d","label":"D","icon":"i","kind":"k"},
+    {"id":"e","label":"E","icon":"i","kind":"k"}]})")).isError);
+  CHECK_FALSE(h.call("delete_node", parse(R"({"nodeId":"c"})")).isError);
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"kinds":[{"id":"k","hue":"plum"}],
+    "nodes":[{"id":"b","label":"B","icon":"i","color":"sky"}]})")).isError);
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"c","label":"C"}]})")).isError);
+  const Json::Value recolored = body(h.call("set_node_color", parse(R"({"nodeId":"e","color":"olive"})")));
+  CHECK_EQ(recolored["diagnosticsClean"], Json::Value(true));
+  CHECK_EQ(recolored["introducedDiagnostics"], parse("[]"));
+
+  CHECK_EQ(body(h.call("get_diagnostics", kNoArgs))["smells"],
+           parse(R"([{"kind":"unclaimed-hue","hue":"terracotta","count":1,"nodes":["a"]},
+             {"kind":"unclaimed-hue","hue":"olive","count":1,"nodes":["e"]},
+             {"kind":"unclaimed-hue","hue":"sky","count":2,"nodes":["b","c"]}])"));
+}
+
+// An unclaimed hue names at most the first ten nodes wearing it, in the order nodes are reported, and counts them all:
+// twelve on olive and two on plum are two lines, beside the per-node smells.
+TEST(mcp_an_unclaimed_hue_names_its_first_ten_nodes_and_counts_them_all) {
+  Harness h;
+  CHECK_FALSE(h.call("add_kind", parse(R"({"id":"k","hue":"sky"})")).isError);
+  Json::Value batch = parse(R"({"nodes":[{"id":"p01","label":"P1","icon":"i","color":"plum"},
+    {"id":"p02","label":"P2","color":"plum"}]})");
+  for (int i = 1; i <= 12; ++i) {
+    Json::Value node = parse(R"({"label":"O","icon":"i","color":"olive"})");
+    node["id"] = std::string(i < 10 ? "o0" : "o") + std::to_string(i);
+    batch["nodes"].append(node);
+  }
+  CHECK_FALSE(h.call("import_subgraph", batch).isError);
+  CHECK_EQ(body(h.call("get_diagnostics", kNoArgs))["smells"],
+           parse(R"([{"kind":"unclaimed-hue","hue":"olive","count":12,
+               "nodes":["o01","o02","o03","o04","o05","o06","o07","o08","o09","o10"]},
+             {"kind":"unclaimed-hue","hue":"plum","count":2,"nodes":["p01","p02"]},
+             {"node":"p02","kind":"empty-icon"}])"));
+}
+
+// The smell is per hue, so its size does not grow with the tree: ten thousand nodes on one unclaimed hue are one line.
+TEST(mcp_ten_thousand_nodes_on_one_unclaimed_hue_answer_one_short_line) {
+  Harness h;
+  TreeData data;
+  data.id = TreeId{"t"};
+  for (int i = 0; i < 10000; ++i) {
+    NodeSpec node;
+    const std::string digits = std::to_string(i);
+    node.id = NodeId{"n" + std::string(5 - digits.size(), '0') + digits};
+    node.label = "N";
+    node.icon = "i";
+    node.color = NodeColor::olive;
+    data.nodes.push_back(node);
+  }
+  h.trees.byId["t"] = StoredTree{LooseGraph(data, Hlc{1, 0, "seed"}).exportState(),
+                                 Legend({{KindId{"k"}, NodeColor::sky, "K"}}, Hlc{1, 0, "seed"}).exportState(),
+                                 {"Big", {}}, 0, h.caller};
+  const Json::Value smells = body(h.call("get_diagnostics", kNoArgs))["smells"];
+  CHECK_EQ(smells, parse(R"([{"kind":"unclaimed-hue","hue":"olive","count":10000,
+    "nodes":["n00000","n00001","n00002","n00003","n00004","n00005","n00006","n00007","n00008","n00009"]}])"));
+  CHECK(dump(smells).size() < 300);
+}
+
+// A tree whose legend holds no kind says so in one line for the whole tree, not once per node, beside the smells its
+// nodes carry; a tree with no node says nothing.
+TEST(mcp_a_tree_with_no_kinds_reports_one_empty_legend_smell) {
+  Harness h;
+  CHECK_EQ(body(h.call("get_diagnostics", kNoArgs))["smells"], parse("[]"));
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A","icon":"i"},
+    {"id":"b","label":"B","color":"sky"}]})")).isError);
+  CHECK_EQ(body(h.call("get_diagnostics", kNoArgs))["smells"],
+           parse(R"([{"kind":"empty-legend"},{"node":"b","kind":"empty-icon"}])"));
 }
