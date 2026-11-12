@@ -235,6 +235,8 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
       row["icon"] = cappedStr("Replacement icon; empty string clears it.", kMaxIconLength);
       row["description"] = cappedStr("Replacement description; empty string clears it.", kMaxNodeDescriptionLength);
       row["color"] = enumStr("Replacement node hue.", kHues);
+      row["kind"] = cappedStr("Replacement hue, named by the legend kind that wears it. Sent with `color`, the "
+                              "two must agree.", kMaxIdLength);
       row["position"] = position("Replacement position; both coordinates are required.");
       row["position"]["required"] = Json::Value(Json::arrayValue);
       row["position"]["required"].append("x");
@@ -458,7 +460,9 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     p["treeId"] = treeHandle();
     p["label"] = cappedStr("The node's display label.", kMaxNodeLabelLength);
     p["icon"] = cappedStr("Optional icon name/emoji.", kMaxIconLength);
-    p["color"] = enumStr("Optional branch color (default terracotta).", kHues);
+    p["color"] = enumStr("Optional hue; a node with neither `color` nor `kind` is terracotta.", kHues);
+    p["kind"] = cappedStr("Optional legend kind id: the node takes the hue that kind wears. Sent with `color`, "
+                          "the two must agree.", kMaxIdLength);
     p["prerequisites"] = strArray("Optional ids of existing nodes that unlock this one — one edge per id.",
                                   kMaxIdLength);
     p["parentId"] = cappedStr("Optional single prerequisite (a convenience alias folded into prerequisites).",
@@ -478,9 +482,10 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
                         "(`nodeId` names a node that already exists and is not accepted here.)",
                         kMaxIdLength);
     tools.push_back(tool("create_node", Access::write,
-        "Add a node to the roadmap. Only `label` is required; icon, color, position (x,y), a set of "
-        "`prerequisites` (nodes that unlock this one), a `description`, and `links` are optional. "
-        "Returns the node id.",
+        "Add a node to the roadmap. Only `label` is required; icon, its hue as a `color` or a legend "
+        "`kind`, position (x,y), a set of `prerequisites` (nodes that unlock this one), a `description`, "
+        "and `links` are optional. Returns the node id and `kind`, the legend kind whose hue it wears "
+        "(omitted when no kind claims that hue).",
         p, {"treeId", "label"}));
   }
   {
@@ -524,9 +529,13 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     p["treeId"] = treeHandle();
     p["nodeId"] = nodeHandle();
     p["id"] = legacyNodeHandle();
-    p["color"] = enumStr("The new color.", kHues);
-    tools.push_back(tool("set_node_color", Access::write, "Set a node's color (its branch/category tint).", p,
-                      {"treeId", "nodeId", "color"}));
+    p["color"] = enumStr("The new hue.", kHues);
+    p["kind"] = cappedStr("The legend kind id whose hue the node takes.", kMaxIdLength);
+    tools.push_back(tool("set_node_color", Access::write,
+        "Set a node's color (its branch/category tint): a hue as `color`, or the legend `kind` whose hue "
+        "it takes — one of the two, or both when they agree. Returns `kind`, the legend kind whose hue "
+        "the node now wears (omitted when no kind claims that hue).",
+        p, {"treeId", "nodeId"}));
   }
   {
     Json::Value p(Json::objectValue);
@@ -729,7 +738,10 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
                                  "`prerequisiteMode`; a new one is added.", kMaxIdLength);
     nodeFields["label"] = cappedStr("The node's display label.", kMaxNodeLabelLength);
     nodeFields["icon"] = cappedStr("Optional icon name/emoji.", kMaxIconLength);
-    nodeFields["color"] = enumStr("Optional branch color (default terracotta).", kHues);
+    nodeFields["color"] = enumStr("Optional hue; a new node with neither `color` nor `kind` is terracotta.", kHues);
+    nodeFields["kind"] = cappedStr("Optional legend kind id: the node takes the hue that kind wears in the legend "
+                                   "this batch leaves, so one batch can add a kind and file nodes under it. Sent "
+                                   "with `color`, the two must agree.", kMaxIdLength);
     nodeFields["order"] = str("Optional sibling order key, as get_tree returns it.");
     nodeFields["prerequisites"] = strArray(
         "Ids of the nodes that unlock this one. For a node already in the tree, `prerequisiteMode` "

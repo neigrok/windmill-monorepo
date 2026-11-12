@@ -368,13 +368,15 @@ std::variant<NodePatchPlan, std::string> planNodePatches(
   if (updates.empty() || updates.size() > kMaxPatchNodes)
     return "updates must contain 1 to " + std::to_string(kMaxPatchNodes) + " node patches";
 
+  const std::vector<Kind> kinds = legend.kinds();
   NodePatchPlan plan;
   std::set<NodeId> seen;
-  for (const NodePatch& patch : updates) {
+  for (std::size_t row = 0; row < updates.size(); ++row) {
+    const NodePatch& patch = updates[row];
     if (!seen.insert(patch.nodeId).second)
       return "updates repeats nodeId " + quoted(patch.nodeId.str());
-    if (!patch.label && !patch.icon && !patch.description && !patch.color && !patch.position && !patch.links &&
-        !patch.opens)
+    if (!patch.label && !patch.icon && !patch.description && !patch.hue.color && !patch.hue.kind && !patch.position &&
+        !patch.links && !patch.opens)
       return "node " + quoted(patch.nodeId.str()) + ": pass at least one field to patch";
     for (const auto& [field, value] : {std::pair{"label", &patch.label}, {"icon", &patch.icon}, {"description", &patch.description}})
       if (*value && (*value)->find('\0') != std::string::npos)
@@ -387,12 +389,14 @@ std::variant<NodePatchPlan, std::string> planNodePatches(
       return "node " + quoted(patch.nodeId.str()) + ": opens cannot contain a NUL character";
     const std::optional<NodeSpec> node = graph.nodeView(patch.nodeId);
     if (!node) return "no node in this tree is named " + quoted(patch.nodeId.str());
+    const auto hue = resolveHue(kinds, patch.hue, "updates[" + std::to_string(row) + "].");
+    if (const auto* refusal = std::get_if<std::string>(&hue)) return *refusal;
+    const std::optional<NodeColor> color = std::get<std::optional<NodeColor>>(hue);
 
     std::vector<std::pair<Command, bool>> candidates;
     if (patch.label)
       candidates.push_back({RenameNode{patch.nodeId, *patch.label}, node->label != *patch.label});
-    if (patch.color)
-      candidates.push_back({SetNodeColor{patch.nodeId, *patch.color}, node->color != *patch.color});
+    if (color) candidates.push_back({SetNodeColor{patch.nodeId, *color}, node->color != *color});
     if (patch.position)
       candidates.push_back({RepositionNode{patch.nodeId, *patch.position}, node->position != patch.position});
     if (patch.description || patch.icon || patch.links || patch.opens) {

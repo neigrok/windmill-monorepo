@@ -51,14 +51,11 @@ export const ROADMAP_SHEET = {
   findRoadmap: t('roadmap.sheet.findRoadmap'),
 };
 
-// The guide's words the row, the roadmap sheet, the modal and the phone editor all say.
+// The guide's words its control on the tree and its open note both say.
 export const GUIDE = {
   title: t('roadmap.guide.title'),
   add: t('roadmap.guide.add'),
   authorsNote: t('roadmap.guide.authorsNote'),
-  placeholder: t('roadmap.guide.placeholder'),
-  disclosure: t('roadmap.guide.disclosure'),
-  deviceDisclosure: t('roadmap.guide.deviceDisclosure'),
 };
 export const guideLabel = ({ owner, excerpt }) => (owner ? t('roadmap.guide.label', { excerpt }) : t('roadmap.guide.noteLabel', { excerpt }));
 export const guideCounter = (draft) => (draft.over > 0

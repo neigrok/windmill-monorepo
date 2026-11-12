@@ -48,6 +48,15 @@ public:
   // tombstones — read off this room's live state, changing nothing.
   GraftFootprint footprintOf(const Graft& incoming) const { return wm::footprintOf(graph_, incoming); }
 
+  // A node write's kind read off this room's own legend, under the strand the write then takes, so a
+  // kind always lands as the hue it wears in the legend the write is applied to.
+  std::variant<std::optional<NodeColor>, std::string> resolveHue(const HueChoice& choice, const std::string& path) const {
+    return wm::resolveHue(legend_.kinds(), choice, path);
+  }
+  std::variant<Graft, std::string> resolveKinds(Graft incoming) const {
+    return wm::resolveKinds(legend_, std::move(incoming));
+  }
+
   // Each is stamped from the room clock and joined as one frame setting that register alone, so it
   // broadcasts and LWW-merges like any other field write, and leaves no op row.
   Seq rename(const std::string& title, std::uint64_t nowMs);
@@ -97,6 +106,7 @@ public:
 
   TreeDiagnostics diagnose() const;
   TreeData snapshot() const;
+  std::vector<Kind> kinds() const { return legend_.kinds(); }  // the snapshot's legend, without its nodes
   GraphState exportState() const;
   LegendState exportLegend() const;
   // What a peer at `since` is missing — graph, legend, title and guide — covering the room's whole

@@ -8,6 +8,7 @@
 #include <map>
 #include <optional>
 #include <string>
+#include <variant>
 #include <vector>
 
 namespace wm {
@@ -87,5 +88,17 @@ private:
 
   std::map<KindId, KindRecord> kinds_;
 };
+
+// A node's hue as a write names it: by a colour, by a legend kind, or by both when they agree.
+struct HueChoice {
+  std::optional<NodeColor> color;
+  std::optional<KindId> kind;
+};
+
+// The hue a node write lands among `kinds`, the legend the write applies to: the hue its kind wears,
+// which a colour sent beside it must equal, else its colour, else nullopt when it names neither. A
+// refusal is the whole sentence, naming the arguments under `path` ("", "updates[0].").
+std::variant<std::optional<NodeColor>, std::string> resolveHue(const std::vector<Kind>& kinds, const HueChoice& choice,
+                                                               const std::string& path);
 
 }

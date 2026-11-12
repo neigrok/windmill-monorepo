@@ -593,6 +593,13 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   for offline and server failures and *Copy draft* for a refused save. [Three save failures](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=858-75016).
   The shipped phone editor can overwrite a guide changed elsewhere without warning. The approved phone editor keeps
   the draft and offers *Load latest*. [Changed elsewhere](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=856-69852).
+- **Guide · boards against tokens and undrawn desktop states (17).** The [desktop boards](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=856-69888)
+  type `#884321` on Save, the field edge, the Read guide link, focus rings and the caret, and no token holds it. Web
+  builds Save, the field edge, rings and the caret on `--color-brand` and the link on `--text-link`; Save's white label
+  is 3.92:1 where the board's is 7.31:1. Four desktop states are built and not drawn: the card's place on the Board
+  (first in its flow, above the filter strip), the reader's card with *Read note*, the compact *Add guide* card, and
+  the device tree's footer line. 17.36 draws Save solid on an empty draft while 17.22 *Before typing* draws it off; web
+  keeps it off. 17.38 and 17.39 omit the device line that 17.29 draws; web shows it above the row.
 - **Step relations · "Opens", "Unlocks" and "Tree" (18–22, 27, 28).** The approved step editor heads the steps a
   step unlocks with *Opens*; the Board card says *Unlocks*. The approved
   [28 · A node opens a tree](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=876-48881) calls the tree a
@@ -616,6 +623,14 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   tree loops back or has no steps keeps the loop's or the empty tree's line. The tablet band and C on a card whose tree
   loops back (*Won’t complete by itself*) or is not found (*Can’t complete yet*) follow the desktop boards. 28.38, a
   tree removed since the roadmap loaded, cannot be told from what the server answers and is not built.
+- **Section 28 · read-me and fixtures.** The read-me 28.00 still lists the tree switcher's delete confirmation
+  under "Not drawn"; it is drawn as 🚧 28.50–28.52. Coast trip reads "0 of 5" on 28.00 and 28.02 and "No steps" on
+  28.14 and 28.44. The picker on 28.14 leaves out My life, though its NOTE says the rows are the switcher's list
+  minus the current tree. 28.38 (the tree was removed between loads) has no phone twin.
+- **Tree switcher · delete row.** The shipped confirmation is one line with an ellipsis (`confirmCopy` in
+  `identity/TreeSwitcher.jsx`), while 🚀 03.03 draws it wrapping; 28.50 needs it to wrap. Rename and delete show
+  on hover only, so a touch tablet from 744 px has no clear way to them. The open trigger has no left padding.
+  Below 744 px no surface removes a tree.
 - **Flow index · step editor.** The [flow index](../index.md#roadmap--web) has no rows for the step editor sections
   (18–22, 27) on Board · Web.
 - **Web reconciliation evidence.** All 25 current Roadmap screen/state families are mapped in the

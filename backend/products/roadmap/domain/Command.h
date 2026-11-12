@@ -112,7 +112,7 @@ struct NodePatch {
   std::optional<std::string> label;
   std::optional<std::string> icon;
   std::optional<std::string> description;
-  std::optional<NodeColor> color;
+  HueChoice hue;
   std::optional<Vec2> position;
   std::optional<std::vector<Link>> links;
   std::optional<TreeId> opens;  // an empty id clears the tree the node opens

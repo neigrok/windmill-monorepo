@@ -61,3 +61,18 @@ test('a guide is admitted as the server admits one: well-formed, no NUL, words o
   assert.deepEqual(Object.fromEntries(Object.keys(cases).map((text) => [text, admitsGuide(text)])), cases);
   assert.equal(admitsGuide(7), false);
 });
+
+test('a draft reads its guide with one line feed per line ending, so a stored CRLF is neither a change nor a late caret', () => {
+  const stored = 'One step a week.\r\nKinds: Learn, Build.\rAgents: ask first.';
+  const draft = new GuideDraft(stored);
+  assert.deepEqual({ base: draft.base, changed: draft.changed, outdated: draft.outdatedBy(stored), retyped: draft.writing(`${draft.base}x`).writing(draft.base).changed },
+    { base: 'One step a week.\nKinds: Learn, Build.\nAgents: ask first.', changed: false, outdated: false, retyped: false });
+  assert.equal(draft.outdatedBy('Two steps a week.'), true);
+});
+
+test('blank against no guide is no change, while blank against a guide clears it', () => {
+  assert.equal(new GuideDraft('', '  \n ').changed, false);
+  assert.equal(new GuideDraft(' ', '').changed, false);
+  assert.equal(new GuideDraft('One step a week.', '  ').changed, true);
+  assert.equal(new GuideDraft('', 'One step a week.').changed, true);
+});

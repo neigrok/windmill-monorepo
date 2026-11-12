@@ -14,6 +14,11 @@ export class InadmissibleGuide extends Error {
   }
 }
 
+// A guide as a field holds it: one line feed for every line ending, so an offset in the text read is the field's caret.
+export function withLineFeeds(text) {
+  return text.replace(/\r\n?/g, '\n');
+}
+
 export function hasGuide(text) {
   return /\S/.test(text ?? '');
 }
@@ -25,7 +30,7 @@ export function admitsGuide(text) {
   return text === '' || hasGuide(text);
 }
 
-// The first line with words on it, as the row's chip and the reader's line show it.
+// The first line with words on it, as the guide's card on the tree shows it and its control's name says it.
 export function guideExcerpt(text) {
   return (text ?? '').split('\n').map((line) => line.trim()).find(Boolean) ?? '';
 }
@@ -41,8 +46,8 @@ export function guideLengthBucket(length) {
 
 export class GuideDraft {
   constructor(base, text = base) {
-    this.base = base;
-    this.text = text;
+    this.base = withLineFeeds(base);
+    this.text = withLineFeeds(text);
     this.held = heldText(text);
     this.length = [...this.held].length;  // a string's iterator walks code points, as the server counts: 🌊 is one, not two UTF-16 units
     Object.freeze(this);
@@ -52,7 +57,8 @@ export class GuideDraft {
     return new GuideDraft(this.base, text);
   }
 
-  get changed() { return this.text !== this.base; }
+  // Blank against no guide is no change: Save would write nothing, and there is nothing to discard.
+  get changed() { return this.text !== this.base && (hasGuide(this.text) || hasGuide(this.base)); }
   get fits() { return this.length <= GUIDE_BOUND; }
   get counted() { return this.length >= COUNTER_FROM; }
   get left() { return Math.max(0, GUIDE_BOUND - this.length); }
@@ -62,7 +68,7 @@ export class GuideDraft {
   get saved() { return hasGuide(this.held) ? this.held : ''; }
 
   // The guide moved away from the one this draft started from: someone else saved, and Save would replace that version.
-  outdatedBy(guide) { return guide !== this.base; }
+  outdatedBy(guide) { return withLineFeeds(guide) !== this.base; }
 }
 
 // The text as it shows, which is what a guide can hold: the replacement glyph a browser draws for a lone surrogate takes its
