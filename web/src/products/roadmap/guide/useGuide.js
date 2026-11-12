@@ -16,8 +16,8 @@ const NONE_ABOVE = Object.freeze([]);
 // opened to read, or to write from that offset, and whether a key opened it. `entry` holds the guide's control on the
 // tree, which the note opens from and hands focus back to. `above` holds the guides of the holder's trees above this
 // one, farthest first, each { treeId, title, text }: empty where there are none and for anyone but `holder`, the
-// account that holds the room as its owner. `aboveUnread` says a read of them was asked and has not answered, or
-// failed.
+// account that holds the room as its owner. `aboveUnread` says a read of them was asked and no answer of the
+// contract's shape has come: it has not answered, or it failed.
 export function useRoomGuide({ treeId, tree, who, holder, deviceLine, sessionRef }) {
   const text = tree?.guide ?? '';
   const { owner } = who;
@@ -77,10 +77,11 @@ export function useRoomGuide({ treeId, tree, who, holder, deviceLine, sessionRef
   }, [treeId, text, owner, sessionRef]);
 
   // The guides above are read once each time the room opens a tree for its holder, and kept in memory alone: `read` is
-  // null until one is asked, then { treeId, holder, above }, where `above` is null until the read answers. A tree that
-  // lives only on this device has none to ask for. Leaving the tree, or the holder going, aborts the read and drops
-  // what it brought, so a return reads again. A read that failed leaves the tree's own guide standing and says
-  // nothing; it reports once, as does an answer that is not the contract's shape, whose well-formed guides still show.
+  // null until one is asked, then { treeId, holder, above }, where `above` is null until the read answers, and once it
+  // has, `shaped` says the answer was the contract's. A tree that lives only on this device has none to ask for.
+  // Leaving the tree, or the holder going, aborts the read and drops what it brought, so a return reads again. A read
+  // that failed leaves the tree's own guide standing and says nothing; it reports once, as does an answer that is not
+  // the contract's shape, whose well-formed guides still show.
   useEffect(() => {
     if (!holder || new LocalTreeRegistry().get(treeId)?.claimed === false) return undefined;
     const request = new AbortController();
@@ -88,7 +89,7 @@ export function useRoomGuide({ treeId, tree, who, holder, deviceLine, sessionRef
     readGuides(treeId, request.signal).then((reply) => {
       if (request.signal.aborted) return;
       const { above, shaped } = guidesAbove(reply, { treeId, untitled: t('roadmap.common.untitled') });
-      setRead({ treeId, holder, above });
+      setRead({ treeId, holder, above, shaped });
       if (!shaped) reportRoadmapFailure('roadmap-guides-load', new Error('Guides reply not the contract shape'), { reason: 'shape' });
     }, (error) => {
       if (!request.signal.aborted) reportUnexpectedFailure('roadmap-guides-load', error, { reason: readFailureReason(error) });
@@ -100,7 +101,7 @@ export function useRoomGuide({ treeId, tree, who, holder, deviceLine, sessionRef
   }, [treeId, holder]);
   const asked = holder && read?.treeId === treeId && read.holder === holder ? read : null;
   const above = asked?.above ?? NONE_ABOVE;
-  const aboveUnread = asked !== null && asked.above === null;
+  const aboveUnread = asked !== null && !asked.shaped;
 
   const shown = Boolean(tree) && !who.shared && !who.demo && (who.owner || (who.reader && hasGuide(text)));
   const roadmapTitle = tree?.title?.trim() || t('roadmap.common.untitled');

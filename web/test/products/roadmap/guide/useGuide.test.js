@@ -136,7 +136,7 @@ test('the guides above are read once for the tree’s holder and held for that t
   assert.deepEqual(calls, [
     ['held', { treeId: 't_sail', holder: 'u_olya', above: null }],
     ['read', 't_sail', false],
-    ['held', { treeId: 't_sail', holder: 'u_olya', above: [
+    ['held', { treeId: 't_sail', holder: 'u_olya', shaped: true, above: [
       { treeId: 't_life', title: 'My life', text: 'Health first.' },
       { treeId: 't_year', title: 'Untitled roadmap', text: 'Three things this year.' },
     ] }],
@@ -176,7 +176,7 @@ test('an answer that is not the contract’s shape reports once as such, and its
     effect();
     await turn();
     assert.deepEqual(calls.slice(2), [
-      ['held', { treeId: 't_sail', holder: 'u_olya', above }],
+      ['held', { treeId: 't_sail', holder: 'u_olya', above, shaped: false }],
       ['report', 'roadmap-guides-load', 'Guides reply not the contract shape', { reason: 'shape' }],
     ], JSON.stringify(reply));
   }
@@ -240,7 +240,7 @@ test('the room’s guide carries the guides above beside the tree’s own text, 
   assert.equal(asked.length, 1);
 });
 
-test('a read that answers nothing above is read, and one that fails stays unread', async (t) => {
+test('a read that answers nothing above is read, and one that fails, by its status or its shape, stays unread with what it held', async (t) => {
   const none = roomGuide(t);
   none.asked[0].answer([{ treeId: 't_sail', title: 'Learn to sail', text: 'Sundays on the water.', yours: true }]);
   await turn();
@@ -250,6 +250,11 @@ test('a read that answers nothing above is read, and one that fails stays unread
   failed.asked[0].fail(503);
   await turn();
   assert.deepEqual(aboveOf(failed.hook.tree), { above: [], aboveUnread: true });
+
+  const unshaped = roomGuide(t);
+  unshaped.asked[0].answer([{ treeId: 't_life', title: 'My life', text: 'Health first.', yours: true }, { treeId: '', title: 'An empty id', text: 'Words.' }]);
+  await turn();
+  assert.deepEqual(aboveOf(unshaped.hook.tree), { above: [{ treeId: 't_life', title: 'My life', text: 'Health first.' }], aboveUnread: true });
 });
 
 test('a reply for a tree the room has left is never shown, and a lapsed session is shown nothing from above', async (t) => {

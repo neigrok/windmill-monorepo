@@ -1781,7 +1781,7 @@ test('Chromium: a read of the guides above that fails leaves the tree’s own gu
   }
 });
 
-test('Chromium: a 200 that is not the contract’s shape reports once as such and says nothing on screen; the well-formed guides in it are still shown', async () => {
+test('Chromium: a 200 that is not the contract’s shape reports once as such and says nothing on screen; the well-formed guides in it are still shown, and the press says the guides above went unread', async () => {
   const life = { treeId: 't_life', title: 'My life', text: 'Health first, then craft.', yours: true };
   for (const [body, line] of [
     ['<!doctype html><title>My life</title>Health first', null],
@@ -1813,7 +1813,7 @@ test('Chromium: a 200 that is not the contract’s shape reports once as such an
         said: 0,
         issues: [{ operation: 'roadmap-guides-load', stack: true, tags: { reason: 'shape' } }],
         asked: ['GET'],
-        events: [{ step: 'open', door: 'card', view: 'graph', role: 'owner', above: line ? 'some' : 'none' }],
+        events: [{ step: 'open', door: 'card', view: 'graph', role: 'owner', above: 'unread' }],
         words: [],
         complaints: [],
       }, body);

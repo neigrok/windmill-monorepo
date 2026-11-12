@@ -263,7 +263,7 @@ for a request lost while visible and online, and `shape` for a 200 that is not t
 among them (`readFailureReason`; `guidesAbove` says whether an answer is shaped). What is well formed in such an
 answer still shows. A tree answered twice stands once, where it stood farthest, a guide a fork brought with it stands
 among the others, and a tree with no title takes *Untitled roadmap*. The open event says what the entry knew at the
-press: `none`, `some`, or `unread` while the read has not answered or after it failed.
+press: `none`, `some`, or `unread` while the read has not answered or after it failed, by its status or its shape.
 
 The guide is a note on the tree. `GuideEntry` is the note at rest, which the room hands to the view that shows it: from
 744px a card, over the Graph's canvas under the row and first in the Board's flow, with the first line and Read guide; on
