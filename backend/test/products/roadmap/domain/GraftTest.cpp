@@ -196,7 +196,7 @@ TEST(graft_frame_leaves_a_node_filed_by_kind_to_the_batch_beside_a_swap) {
   graft.omittedNodeRegisters[nid("a")] = omittedAllBut({});
   graft.nodeKinds = {{nid("a"), KindId{"infra"}}};
 
-  const std::variant<Graft, KindRefusal> filed = resolveKinds(legend, graft);
+  const std::variant<Graft, KindRefusal> filed = resolveKinds(g, legend, graft);
   REQUIRE(std::holds_alternative<Graft>(filed));
   const Repaint repaint = repaintOf(g, legend, std::get<Graft>(filed));
   CHECK((repaint.rehued == std::vector<KindId>{KindId{"apps"}, KindId{"infra"}}));
@@ -630,7 +630,7 @@ TEST(resolve_kinds_files_nodes_under_the_legend_the_batch_leaves) {
   graft.document.nodes[1].color = NodeColor::sky;
   graft.nodeKinds = {{nid("a"), KindId{"owner"}}, {nid("b"), KindId{"build"}}};
 
-  const std::variant<Graft, KindRefusal> filed = resolveKinds(legend, graft);
+  const std::variant<Graft, KindRefusal> filed = resolveKinds(LooseGraph{}, legend, graft);
   REQUIRE(std::holds_alternative<Graft>(filed));
   const Graft& landed = std::get<Graft>(filed);
   CHECK_EQ(landed.document.nodes[0].color, NodeColor::gold);
@@ -640,7 +640,7 @@ TEST(resolve_kinds_files_nodes_under_the_legend_the_batch_leaves) {
   CHECK(landed.nodeKinds == graft.nodeKinds);
 
   graft.nodeKinds[nid("b")] = KindId{"ghost"};
-  const std::variant<Graft, KindRefusal> refused = resolveKinds(legend, graft);
+  const std::variant<Graft, KindRefusal> refused = resolveKinds(LooseGraph{}, legend, graft);
   REQUIRE(std::holds_alternative<KindRefusal>(refused));
   CHECK((std::get<KindRefusal>(refused) ==
          KindRefusal{KindRefusal::Reason::unknownKind,

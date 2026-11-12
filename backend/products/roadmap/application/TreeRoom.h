@@ -56,12 +56,15 @@ public:
   }
 
   // A node write's kind read off this room's own legend, under the strand the write then takes, so a
-  // kind always lands as the hue it wears in the legend the write is applied to.
-  std::variant<std::optional<NodeColor>, KindRefusal> resolveHue(const HueChoice& choice, const std::string& path) const {
-    return wm::resolveHue(legend_.kinds(), choice, path);
+  // kind always lands as the hue it wears in the legend the write is applied to. `node` names the node
+  // the write lands on, whose held colour beside the kind is an echo; a node being created names none.
+  std::variant<std::optional<NodeColor>, KindRefusal> resolveHue(const HueChoice& choice,
+                                                                 const std::optional<NodeId>& node,
+                                                                 const std::string& path) const {
+    return wm::resolveHue(legend_.kinds(), choice, node ? graph_.exportNode(*node) : std::nullopt, path);
   }
   std::variant<Graft, KindRefusal> resolveKinds(Graft incoming) const {
-    return wm::resolveKinds(legend_, std::move(incoming));
+    return wm::resolveKinds(graph_, legend_, std::move(incoming));
   }
   std::variant<Graft, std::string> resolveLinks(Graft incoming) const {
     return wm::resolveLinks(graph_, std::move(incoming));

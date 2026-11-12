@@ -266,7 +266,8 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
       row["description"] = cappedStr("Replacement description; empty string clears it.", kMaxNodeDescriptionLength);
       row["color"] = enumStr("Replacement node hue.", kHues);
       row["kind"] = cappedStr("Replacement hue, named by the legend kind that wears it. Sent with `color`, the "
-                              "two must agree.", kMaxIdLength);
+                              "two must agree, but for a `color` the node already holds: that is an echo, and the "
+                              "kind wins.", kMaxIdLength);
       row["position"] = position("Replacement position; both coordinates are required.");
       row["links"] = linkArray("Replacement links; an empty list clears them.");
       row["opens"] = cappedStr("Id of a tree you own that this node opens; empty string clears it. One naming "
@@ -636,7 +637,8 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     p["kind"] = cappedStr("The legend kind id whose hue the node takes.", kMaxIdLength);
     tools.push_back(tool("set_node_color", Access::write,
         "Set a node's color (its branch/category tint): a hue as `color`, or the legend `kind` whose hue "
-        "it takes — one of the two, or both when they agree. Returns `kind`, the legend kind whose hue "
+        "it takes — one of the two, or both when they agree, but for a `color` the node already holds, "
+        "which is an echo the `kind` wins over. Returns `kind`, the legend kind whose hue "
         "the node now wears (omitted when no kind claims that hue). A hue the node already wears writes "
         "nothing and answers `unchanged: true` with the tree's current `seq`.",
         p, {"treeId", "nodeId"}));
@@ -847,7 +849,9 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     nodeFields["color"] = enumStr("Optional hue; a new node with neither `color` nor `kind` is terracotta.", kHues);
     nodeFields["kind"] = cappedStr("Optional legend kind id: the node takes the hue that kind wears in the legend "
                                    "this batch leaves, so one batch can add a kind and file nodes under it. Sent "
-                                   "with `color`, the two must agree.", kMaxIdLength);
+                                   "with `color`, the two must agree, but for a `color` the node already holds — "
+                                   "what a read carrying both sends back after the kind's hue moved — which is an "
+                                   "echo the kind wins over.", kMaxIdLength);
     nodeFields["order"] = str("Optional sibling order key, as get_tree returns it.");
     nodeFields["prerequisites"] = strArray(
         "Ids of the nodes that unlock this one. For a node already in the tree, `prerequisiteMode` "

@@ -9,20 +9,7 @@
 
 namespace wm {
 
-namespace {
-
-// Whether a register the batch carries lands: it changes what the tree holds, an empty value included, or the tree
-// holds nothing there yet. A carried register equal to the held one is an echo, not the batch's word. graftState and
-// graftLegend land registers by this, and a re-hue leaves a node the batch sends a colour for to the batch only when
-// that colour lands by it.
-template <typename Entry, typename Value>
-bool landsOver(const std::optional<Entry>& held, Value Entry::*field, const Value& sent) {
-  return !held || (*held).*field != sent;
-}
-
-}  // namespace
-
-std::variant<Graft, KindRefusal> resolveKinds(const Legend& legend, Graft graft) {
+std::variant<Graft, KindRefusal> resolveKinds(const LooseGraph& graph, const Legend& legend, Graft graft) {
   if (graft.nodeKinds.empty()) return graft;
   std::vector<Kind> landed = legend.kinds();
   for (const Kind& kind : graft.document.kinds) {
@@ -37,7 +24,7 @@ std::variant<Graft, KindRefusal> resolveKinds(const Legend& legend, Graft graft)
     const auto omitted = graft.omittedNodeRegisters.find(node.id);
     const bool colorSent = omitted == graft.omittedNodeRegisters.end() || !omitted->second.count(NodeRegister::color);
     const auto hue = resolveHue(landed, HueChoice{colorSent ? std::optional(node.color) : std::nullopt, named->second},
-                                "nodes[" + std::to_string(i) + "].");
+                                graph.exportNode(node.id), "nodes[" + std::to_string(i) + "].");
     if (const auto* refusal = std::get_if<KindRefusal>(&hue)) return *refusal;
     node.color = *std::get<std::optional<NodeColor>>(hue);
     if (omitted != graft.omittedNodeRegisters.end()) omitted->second.erase(NodeRegister::color);

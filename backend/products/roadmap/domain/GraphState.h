@@ -49,4 +49,13 @@ struct GraphState {
   bool operator==(const GraphState&) const = default;
 };
 
+// Whether a register a write carries lands over the entry the tree holds: it changes what the tree holds, an empty
+// value included, or the tree holds nothing there yet. A carried register equal to the held one is an echo, not the
+// write's word. A graft lands every register by this, a re-hue leaves a node the batch sends a colour for to the batch
+// only when that colour lands by it, and a colour sent beside a kind that does not land by it yields to the kind.
+template <typename Entry, typename Value>
+bool landsOver(const std::optional<Entry>& held, Value Entry::*field, const Value& sent) {
+  return !held || (*held).*field != sent;
+}
+
 }

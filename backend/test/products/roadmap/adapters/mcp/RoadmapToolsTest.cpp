@@ -6084,3 +6084,81 @@ TEST(mcp_a_batch_edit_that_lands_nothing_takes_no_save) {
   CHECK_FALSE(h.call("change_edges", parse(R"({"remove":[{"from":"a","to":"b"}]})")).isError);
   CHECK_EQ(h.trees.savedNodeCounts.size(), saved + 2);
 }
+
+// A colour sent beside a kind that wears another hue is an echo when it is the colour the node holds, and the kind is
+// the write's word: a read carrying both, sent back after the kind's re-hue, lands every node of that kind on its new
+// hue, and so do a patch row and set_node_color. A third colour, or a disagreeing pair on a node the tree does not
+// hold, is refused as before, under kind-hue-mismatch.
+TEST(mcp_a_colour_sent_as_held_beside_a_kind_is_an_echo_and_the_kind_lands) {
+  const auto seeded = [] {
+    auto h = std::make_unique<Harness>();
+    CHECK_FALSE(h->call("add_kind", parse(R"({"id":"infra","hue":"olive"})")).isError);
+    CHECK_FALSE(h->call("add_kind", parse(R"({"id":"apps","hue":"sky"})")).isError);
+    CHECK_FALSE(h->call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A","color":"olive"},
+      {"id":"b","label":"B","color":"olive"},{"id":"c","label":"C","color":"sky"}]})")).isError);
+    return h;
+  };
+  const auto fallen = [&] {  // a and b hold olive, which infra no longer wears
+    auto h = seeded();
+    CHECK_FALSE(h->call("recolor_kind", parse(R"({"id":"infra","hue":"terracotta"})")).isError);
+    for (const char* id : {"a", "b"}) {
+      Json::Value olive = parse(R"({"color":"olive"})");
+      olive["nodeId"] = id;
+      CHECK_FALSE(h->call("set_node_color", olive).isError);
+    }
+    return h;
+  };
+  const auto filed = [](Harness& h) {
+    return body(h.call("get_nodes", parse(R"({"nodeIds":["a","b","c"],"fields":["id","color","kind"]})")))["nodes"];
+  };
+  const Json::Value landed = parse(R"([{"id":"a","color":"terracotta","kind":"infra"},
+    {"id":"b","color":"terracotta","kind":"infra"},{"id":"c","color":"sky","kind":"apps"}])");
+
+  auto round = seeded();
+  Json::Value document =
+      body(round->call("get_tree", parse(R"({"includeGuides":false,"fields":["id","label","color","kind"]})")))["tree"];
+  for (const char* field : {"guide", "id", "title", "url"}) document.removeMember(field);
+  for (Json::Value& kind : document["kinds"])
+    if (kind["id"] == "infra") kind["hue"] = "terracotta";
+  const ToolResult imported = round->call("import_subgraph", document);
+  REQUIRE(!imported.isError);
+  CHECK_EQ(body(imported)["repaintedNodes"].asUInt64(), 0u);
+  CHECK_EQ(filed(*round), landed);
+
+  auto patched = fallen();
+  CHECK_EQ(body(patched->call("patch_nodes", parse(R"({"updates":[{"nodeId":"a","color":"olive","kind":"infra"},
+    {"nodeId":"b","color":"olive","kind":"infra"}]})")))["changedNodeIds"], parse(R"(["a","b"])"));
+  CHECK_EQ(filed(*patched), landed);
+  auto set = fallen();
+  for (const char* id : {"a", "b"}) {
+    Json::Value refiled = parse(R"({"color":"olive","kind":"infra"})");
+    refiled["nodeId"] = id;
+    CHECK_EQ(body(set->call("set_node_color", refiled))["kind"], Json::Value("infra"));
+  }
+  CHECK_EQ(filed(*set), landed);
+
+  auto refusing = fallen();
+  CompositeToolHost gate(std::vector<ToolModule>{{refusing->tools, ""}});
+  std::vector<std::string> outcomes;
+  installWriteSink([&](const WriteCompletion& completion) { outcomes.push_back(completion.outcome); });
+  const std::string agree = " — send one of the two, or both when they agree";
+  for (const auto& [tool, arguments, sentence] : std::vector<std::tuple<const char*, const char*, std::string>>{
+           {"import_subgraph", R"({"nodes":[{"id":"a","color":"gold","kind":"infra"}]})",
+            "nodes[0].kind \"infra\" wears terracotta, but nodes[0].color is \"gold\"" + agree},
+           {"patch_nodes", R"({"updates":[{"nodeId":"a","color":"gold","kind":"infra"}]})",
+            "updates[0].kind \"infra\" wears terracotta, but updates[0].color is \"gold\"" + agree},
+           {"set_node_color", R"({"nodeId":"a","color":"gold","kind":"infra"})",
+            "kind \"infra\" wears terracotta, but color is \"gold\"" + agree},
+           {"import_subgraph", R"({"nodes":[{"id":"n","label":"N","color":"olive","kind":"infra"}]})",
+            "nodes[0].kind \"infra\" wears terracotta, but nodes[0].color is \"olive\"" + agree},
+           {"create_node", R"({"id":"n","label":"N","color":"olive","kind":"infra"})",
+            "kind \"infra\" wears terracotta, but color is \"olive\"" + agree}}) {
+    Json::Value args = parse(arguments);
+    args["treeId"] = "t";
+    CHECK_EQ(message(gate.callTool(tool, args, refusing->actor)), std::string(tool) + ": " + sentence);
+  }
+  installWriteSink({});
+  CHECK_EQ(outcomes, std::vector<std::string>(5, "kind-hue-mismatch"));
+  CHECK_EQ(filed(*refusing), parse(R"([{"id":"a","color":"olive"},{"id":"b","color":"olive"},
+    {"id":"c","color":"sky","kind":"apps"}])"));
+}
