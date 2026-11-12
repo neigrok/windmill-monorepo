@@ -330,8 +330,9 @@ A node may point at another tree: `opens` holds that tree's id.
   `progress[]` and lists the node ids in `progressRefused`, with `progressApplied: false`; a
   `dryRun` does not preview them. The sentence names the node and never the opened tree, since a
   tend reads it. A node id naming no node is refused first, as on any tree. The write line of a
-  `set_progress` that recorded no mark because every one was refused carries the outcome
-  `opens-a-tree`; one that recorded any mark is `ok`, and an import that grafted is `ok`.
+  `set_progress` that recorded no mark and was refused at least one carries the outcome
+  `opens-a-tree`, whatever else it carried — a mark that lost to a later stored stamp recorded
+  nothing either; one that recorded any mark is `ok`, and an import that grafted is `ok`.
 - **Every other reader sees an ordinary node.** A reader who cannot write the tree, signed in or
   not, is answered no `opens`, and the node's `state` follows their own mark and its prerequisites
   as any node's does. Their mark on it is recorded and answered byte for byte as on a node that
@@ -340,13 +341,16 @@ A node may point at another tree: `opens` holds that tree's id.
 - **Cost.** Following is one read of the stored rows per reply (`TreeRepository::openedFrom`: one
   statement over `trees`, `tree_nodes` and the caller's `node_progress`, answering one row per
   tree and tree it opens), made only for a caller who can write the tree, when `fields` names
-  `state` or `opens` or `find_nodes` filters on `state` or the call marks progress (`set_progress`,
-  an import's `progress[]`), and when the tree holds a pointer.
-  `get_tree`, `get_nodes`, `find_nodes` and the progress writes take what they need from the room
-  under the tree's strand and read and write the repositories after letting it go, so no other read
-  of the tree waits on those statements. `list_trees` makes no such read: it already holds every
-  tree of the caller's. Every write door saves before it answers, so the stored rows are the live
-  ones unless a save failed.
+  `state` or `opens` or `find_nodes` filters on `state` or the call has a mark to judge
+  (`set_progress`, an import's `progress[]`), and when the tree holds a pointer. `get_tree`,
+  `get_nodes` and `find_nodes` take the tree from the room under its strand; `set_progress` and an
+  import's `progress[]` take only the nodes that open a tree, which the room hands to a caller who
+  can write it and to nobody else (`TreeRoom::pointersFor`), so no mark copies the tree out. All
+  five read and write the repositories after letting the strand go, so no other read of the tree
+  waits on those statements. The import's clear of marks on removed nodes, `prune` and
+  `delete_node` with `prune` read and write the caller's marks while they hold it. `list_trees`
+  makes no such read: it already holds every tree of the caller's. Every write door saves before it
+  answers, so the stored rows are the live ones unless a save failed.
 - `import_subgraph` takes the id as a string, where `get_tree` answers the object: a copied slice
   sends `opens.treeId`.
 
@@ -381,9 +385,11 @@ A node may point at another tree: `opens` holds that tree's id.
   Progress (max 1000 supplied marks) commits in a separate atomic repository batch after the graft,
   once the room strand is released. Receipts distinguish `graphApplied` and `progressApplied`, with
   `progressError` and `progressSkipped` or `progressRefused` when requested progress cannot all be
-  applied; a committed graft is not undone by a later overlay failure, and one in the requested
-  `progress[]` is reported and completes the write line as `failed`. It is **upsert by id**: an
-  incoming id already present is reported in `nodeCollisions`/`kindCollisions`; a new id is added. A re-sent node or kind changes only in
+  applied; `progressError` says each way the progress fell short, one sentence after the other. A
+  committed graft is not undone by a later overlay failure: one in the requested `progress[]` or
+  in the clear of marks on removed nodes is reported and completes the write line as `failed`. It
+  is **upsert by id**: an incoming id already present is reported in
+  `nodeCollisions`/`kindCollisions`; a new id is added. A re-sent node or kind changes only in
   the registers the batch sends: a node's `label`, `icon`, `color`, `order`, `position`,
   `seedStatus`, `description`, `links` and `opens`, and a kind's `label`, `description` and
   `crossBranchExempt`, left out, keep the value the tree holds, because the graft stamps an
@@ -444,7 +450,8 @@ A node may point at another tree: `opens` holds that tree's id.
   `acknowledged: true` beside `prerequisitesMet`, `get_progress` lists those ids under
   `outOfOrder`, and the `status` field of `get_tree`/`find_nodes` shows `outOfOrder: true` on the
   node. `prerequisitesMet: false` without `acknowledged` is therefore always an inversion nobody
-  acknowledged.
+  acknowledged. A row reports the mark that was asked for: when two calls race on a node, the mark
+  with the later stamp is the one stored and echoed, whichever call's row was answered last.
 - **`prune`** drops dangling/self edges in one op and clears the caller's progress rows for nodes
   no longer in the tree.
 - **`find_nodes`** searches without pulling the whole tree. `color` and `kind` are one filter (a

@@ -1,34 +1,39 @@
 #include "products/roadmap/application/ProgressService.h"
 
-#include "products/roadmap/domain/Access.h"
 #include "products/roadmap/domain/OpenedTrees.h"
 
 #include <algorithm>
-#include <map>
 #include <set>
 
 namespace wm {
 
 ProgressService::ProgressService(ProgressRepository& repo, TreeRepository& trees) : repo_(repo), trees_(trees) {}
 
-ProgressReceipt ProgressService::mark(const TreeData& tree, const std::optional<UserId>& owner, const UserId& user,
+bool ProgressReceipt::cameToARefusal() const {
+  return recorded.marks.empty() &&
+         std::any_of(outcomes.begin(), outcomes.end(), [](const ProgressOutcome& outcome) { return outcome.refused; });
+}
+
+ProgressReceipt ProgressService::mark(const TreeId& tree, const NodePointers& pointers, const UserId& user,
                                       const std::vector<ProgressWrite>& writes, std::uint64_t receivedAtMs) {
-  const OpenedTrees opened(canWrite(user, owner) ? trees_.openedFrom(user, treesOpenedBy(tree))
-                                                 : std::map<TreeId, OpenedTree>{});
-  const std::set<NodeId> following = opened.following(tree);
+  ProgressReceipt receipt;
+  if (writes.empty()) return receipt;
+  std::set<TreeId> opened;
+  for (const auto& [node, target] : pointers) opened.insert(target);
+  const OpenedTrees standing(trees_.openedFrom(user, opened));
+  const std::set<NodeId> following = standing.following(pointers);
   std::vector<ProgressUpdate> updates;
   for (const ProgressWrite& write : writes)
     if (!following.count(write.node)) updates.push_back({write.node, write.status, write.outOfOrder, write.at});
 
   const ProgressOutcome refused{ProgressStatus::none, false, false, false, true};
-  ProgressReceipt receipt;
   if (updates.empty()) {
     receipt.outcomes.assign(writes.size(), refused);
     return receipt;
   }
-  const std::vector<bool> applied = repo_.setStatuses(tree.id, user, updates, receivedAtMs);
+  const std::vector<bool> applied = repo_.setStatuses(tree, user, updates, receivedAtMs);
   // One read after the commit, so completing a subtree out of dependency order misreports no advisory.
-  const std::set<NodeId> completed = opened.followed(tree, repo_.load(tree.id, user)).completed;
+  const std::set<NodeId> completed = standing.followed(pointers, repo_.load(tree, user)).completed;
   auto landed = applied.begin();
   for (const ProgressWrite& write : writes) {
     if (following.count(write.node)) {

@@ -486,3 +486,20 @@ TEST(room_applies_an_empty_batch_as_a_no_op_that_mints_no_seq) {
   CHECK_EQ(room.pendingOps().size(), 1u);
   CHECK_EQ(bus.subgraphBroadcasts.size(), 1u);
 }
+
+// The tree a node opens goes only to a caller who can write the tree, so a room hands its pointers to nobody else.
+TEST(room_hands_its_pointers_to_a_caller_who_can_write_the_tree_and_to_nobody_else) {
+  FakeBus bus;
+  LooseGraph graph;
+  graph.createNode(nid("idea"), "Idea", "", NodeColor::sky, std::nullopt, at(1));
+  graph.createNode(nid("plain"), "Plain", "", NodeColor::sky, std::nullopt, at(2));
+  graph.setOpens(nid("idea"), tid("t_sub"), at(3));
+  const TreeRoom owned(tid(), {"Title", {}}, {}, false, graph, Legend{}, 0, uid("owner"), Visibility::public_, 0, bus);
+  const TreeRoom nobodys(tid(), {"Title", {}}, {}, false, graph, Legend{}, 0, std::nullopt, Visibility::public_, 0, bus);
+
+  CHECK(owned.pointersFor(uid("owner")) == (NodePointers{{nid("idea"), tid("t_sub")}}));
+  CHECK(owned.pointersFor(uid("stranger")) == NodePointers{});
+  CHECK(owned.pointersFor(std::nullopt) == NodePointers{});
+  CHECK(nobodys.pointersFor(uid("owner")) == NodePointers{});
+  CHECK_EQ(owned.snapshots(), std::size_t{0});
+}

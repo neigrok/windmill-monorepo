@@ -139,6 +139,9 @@ struct NodeSpec {
   TreeId opens;  // the tree this node opens; an empty id opens none
 };
 
+// The nodes of one tree that hold a pointer, each by the tree it opens.
+using NodePointers = std::map<NodeId, TreeId>;
+
 // A node's `color` field *is* its kind, so there is no node→kind foreign key. The legend names and
 // orders the hues; order is generation priority. A kind marked `crossBranchExempt` keeps the edges
 // touching its nodes out of TreeHealth's cross-branch count.

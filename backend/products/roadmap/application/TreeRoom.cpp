@@ -173,6 +173,7 @@ TreeDiagnostics TreeRoom::diagnose() const {
 }
 
 TreeData TreeRoom::snapshot() const {
+  ++snapshots_;
   TreeData data = graph_.toTreeData(id_, title_.value);
   data.guide = guide_.value;
   data.kinds = legend_.kinds();
@@ -187,6 +188,11 @@ Subgraph TreeRoom::deltaSince(const VersionVector& since) const {
   delta.coverage->observe(title_.stamp);
   delta.coverage->observe(guide_.stamp);
   return delta;
+}
+
+NodePointers TreeRoom::pointersFor(const std::optional<UserId>& caller) const {
+  if (!canWrite(caller, owner_)) return {};
+  return graph_.pointers();
 }
 
 std::vector<NodeId> TreeRoom::prerequisitesOf(const NodeId& node) const {

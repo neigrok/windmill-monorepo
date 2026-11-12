@@ -52,9 +52,10 @@ public:
   // A pointer is valid when it names one of `standing`.
   explicit OpenedTrees(std::map<TreeId, OpenedTree> standing);
 
-  // The nodes of `tree` that hold a valid pointer: each follows its tree and takes no mark of its own.
-  std::set<NodeId> following(const TreeData& tree) const;
-  // `marks` on `tree`, with each node that holds a valid pointer following its tree; only `completed` is filled.
+  // The nodes among `pointers` whose pointer is valid: each follows its tree and takes no mark of its own.
+  std::set<NodeId> following(const NodePointers& pointers) const;
+  // `marks` on a tree, with each node that holds a valid pointer following its tree; only `completed` is filled.
+  Progress followed(const NodePointers& pointers, const Progress& marks) const;
   Progress followed(const TreeData& tree, const Progress& marks) const;
   // One entry per node of `tree` that holds a pointer.
   std::map<NodeId, Opening> openings(const TreeData& tree) const;

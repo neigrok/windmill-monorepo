@@ -56,22 +56,28 @@ OpenedTrees::OpenedTrees(std::map<TreeId, OpenedTree> standing) : standing_(std:
   }
 }
 
-std::set<NodeId> OpenedTrees::following(const TreeData& tree) const {
+std::set<NodeId> OpenedTrees::following(const NodePointers& pointers) const {
   std::set<NodeId> following;
-  for (const NodeSpec& node : tree.nodes)
-    if (!node.opens.empty() && standing_.count(node.opens)) following.insert(node.id);
+  for (const auto& [node, opened] : pointers)
+    if (standing_.count(opened)) following.insert(node);
   return following;
 }
 
-Progress OpenedTrees::followed(const TreeData& tree, const Progress& marks) const {
+Progress OpenedTrees::followed(const NodePointers& pointers, const Progress& marks) const {
   Progress followed;
   followed.completed = marks.completed;
-  for (const NodeSpec& node : tree.nodes) {
-    if (node.opens.empty() || !standing_.count(node.opens)) continue;
-    followed.completed.erase(node.id);
-    if (complete_.count(node.opens)) followed.completed.insert(node.id);
+  for (const NodeId& node : following(pointers)) {
+    followed.completed.erase(node);
+    if (complete_.count(pointers.at(node))) followed.completed.insert(node);
   }
   return followed;
+}
+
+Progress OpenedTrees::followed(const TreeData& tree, const Progress& marks) const {
+  NodePointers pointers;
+  for (const NodeSpec& node : tree.nodes)
+    if (!node.opens.empty()) pointers.emplace(node.id, node.opens);
+  return followed(pointers, marks);
 }
 
 std::map<NodeId, Opening> OpenedTrees::openings(const TreeData& tree) const {

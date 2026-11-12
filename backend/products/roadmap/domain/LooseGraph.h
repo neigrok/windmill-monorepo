@@ -77,6 +77,8 @@ public:
   bool hueInUse(NodeColor color) const;
 
   std::vector<NodeId> presentNodeIds() const;
+  // The present nodes that open a tree; a node whose pointer is empty is left out.
+  NodePointers pointers() const;
   std::vector<Edge> presentEdges() const;
   // The same two counts without materializing the lists; they run on every admitted write.
   std::size_t presentNodeCount() const;

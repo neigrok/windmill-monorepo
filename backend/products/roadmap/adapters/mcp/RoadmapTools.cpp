@@ -720,6 +720,7 @@ struct MarkedBatch {
   Json::Value results{Json::arrayValue};  // a row per mark that named a node, in the batch's order
   Json::Value skipped{Json::arrayValue};  // ids naming no node in the tree
   Json::Value refused{Json::arrayValue};  // ids of nodes that follow the tree they open and took no mark
+  bool cameToARefusal = false;            // no mark was recorded and at least one was refused
 };
 
 // The sentence is the refusal of a call that could not be applied at all.
@@ -728,8 +729,7 @@ std::variant<MarkedBatch, std::string> applyProgressBatch(
     Clock& clock, const UserId& user, const std::vector<RequestedMark>& requested, bool rejectUnknown) {
   MarkedBatch batch;
   std::vector<ProgressWrite> marks;
-  TreeData data;
-  std::optional<UserId> owner;
+  NodePointers pointers;
   {
     // The room is consulted under its strand and let go: no repository is read or written while it is held.
     std::lock_guard<std::mutex> lock(registry.strandFor(tree));
@@ -742,8 +742,7 @@ std::variant<MarkedBatch, std::string> applyProgressBatch(
       marks.push_back({mark.node, mark.status, room->prerequisitesOf(mark.node), room->nextStamp(clock.nowMs()),
                        mark.outOfOrder});
     }
-    data = room->snapshot();
-    owner = room->owner();
+    pointers = room->pointersFor(user);
   }
   // set_progress rejects an unknown id; an import skips it into `skipped`, its graft landed.
   if (rejectUnknown && !batch.skipped.empty()) {
@@ -753,9 +752,10 @@ std::variant<MarkedBatch, std::string> applyProgressBatch(
            ". Call get_tree with fields [\"id\",\"label\"] to list the ids this tree has.";
   }
 
-  const ProgressReceipt receipt = progress.mark(data, owner, user, marks, clock.nowMs());
+  const ProgressReceipt receipt = progress.mark(tree, pointers, user, marks, clock.nowMs());
   // One echo for the whole batch, not one frame per node.
   bus.broadcastProgress(tree, user, receipt.recorded);
+  batch.cameToARefusal = receipt.cameToARefusal();
   for (std::size_t i = 0; i < marks.size(); ++i) {
     const ProgressOutcome& outcome = receipt.outcomes[i];
     Json::Value row(Json::objectValue);
@@ -846,8 +846,7 @@ ToolResult writeProgress(RoomRegistry& registry, ProgressService& progress, Pres
   Json::Value out(Json::objectValue);
   out["results"] = batch.results;
   ToolResult answered = ToolResult::json(out);
-  // A batch that recorded no mark, every row refused, completes under the refusal's code.
-  if (batch.refused.size() == batch.results.size()) answered.outcomeCode = kOpensATree;
+  if (batch.cameToARefusal) answered.outcomeCode = kOpensATree;
   return answered;
 }
 
@@ -1110,7 +1109,8 @@ ToolResult importSubgraph(RoomRegistry& registry, TreeRegistry& trees, ProgressS
         clears.push_back({node, ProgressStatus::none, {}, room.nextStamp(clock.nowMs()), false});
       }
       if (!clears.empty()) progress.setStatuses(tree, actor, clears, clock.nowMs());
-    } catch (const std::exception&) {
+    } catch (const std::exception& error) {
+      reportCurrentWriteFailure(error);
       out["progressApplied"] = false;
       out["progressError"] = "The graph committed, but clearing progress on removed nodes failed. Read get_progress before retrying progress changes.";
     }
@@ -1129,35 +1129,34 @@ ToolResult importSubgraph(RoomRegistry& registry, TreeRegistry& trees, ProgressS
     requested.push_back({NodeId{handle.asString()}, *parseProgressStatus(u["status"].asString()), false});
   }
   if (requested.empty()) return grafted;
+  // Every way the progress fell short is said, one sentence after the other.
+  const auto fellShort = [&](const std::string& sentence) {
+    const std::string said = grafted.payload.get("progressError", "").asString();
+    grafted.payload["progressApplied"] = false;
+    grafted.payload["progressError"] = said.empty() ? sentence : said + " " + sentence;
+  };
   try {
     const std::variant<MarkedBatch, std::string> applied =
         applyProgressBatch(registry, progress, bus, tree, clock, actor, requested, false);
     if (const std::string* error = std::get_if<std::string>(&applied)) {
-      grafted.payload["progressApplied"] = false;
-      grafted.payload["progressError"] = "The graph committed, but the requested progress did not apply: " + *error;
+      fellShort("The graph committed, but the requested progress did not apply: " + *error);
       return ToolResult::json(grafted.payload);
     }
     const MarkedBatch& batch = std::get<MarkedBatch>(applied);
     grafted.payload["progress"] = batch.results;
-    std::string incomplete;
     if (!batch.skipped.empty()) {
       grafted.payload["progressSkipped"] = batch.skipped;
-      incomplete = "Some requested progress names nodes absent after the graft; those ids are listed in progressSkipped.";
+      fellShort("Some requested progress names nodes absent after the graft; those ids are listed in progressSkipped.");
     }
     if (!batch.refused.empty()) {
       grafted.payload["progressRefused"] = batch.refused;
-      if (!incomplete.empty()) incomplete += " ";
-      incomplete += "Some requested progress marks nodes that open a tree, which take no mark of their own — each "
-                    "is complete when the tree it opens is; those ids are listed in progressRefused.";
-    }
-    if (!incomplete.empty()) {
-      grafted.payload["progressApplied"] = false;
-      grafted.payload["progressError"] = incomplete;
+      fellShort("Some requested progress marks nodes that open a tree, which take no mark of their own — each is "
+                "complete when the tree it opens is; those ids are listed in progressRefused.");
     }
   } catch (const std::exception& error) {
     reportCurrentWriteFailure(error);
-    grafted.payload["progressApplied"] = false;
-    grafted.payload["progressError"] = "The graph committed, but the requested progress outcome is uncertain. Read get_progress before retrying progress changes.";
+    fellShort("The graph committed, but the requested progress outcome is uncertain. Read get_progress before retrying "
+              "progress changes.");
   }
   return ToolResult::json(grafted.payload);
 }

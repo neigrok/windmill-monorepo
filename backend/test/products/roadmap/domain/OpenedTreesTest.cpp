@@ -81,10 +81,25 @@ TEST(a_node_is_complete_when_the_tree_it_opens_is_complete_and_open_until_then) 
 TEST(the_nodes_that_follow_a_tree_are_those_whose_pointer_names_a_standing_tree) {
   const TreeData root = tree("root", {step("idea", "sub"), step("lost", "gone"), step("again", "root"), step("plain")});
   const TreeData sub = tree("sub", {step("s")});
+  const NodePointers pointers{{nid("idea"), tid("sub")}, {nid("lost"), tid("gone")}, {nid("again"), tid("root")}};
 
-  CHECK(opened({root, sub}).following(root) == (std::set<NodeId>{nid("again"), nid("idea")}));
-  CHECK(opened({sub}).following(root) == std::set<NodeId>{nid("idea")});
-  CHECK(opened({}).following(root) == std::set<NodeId>{});
+  CHECK(opened({root, sub}).following(pointers) == (std::set<NodeId>{nid("again"), nid("idea")}));
+  CHECK(opened({sub}).following(pointers) == std::set<NodeId>{nid("idea")});
+  CHECK(opened({}).following(pointers) == std::set<NodeId>{});
+}
+
+// A door's mark is judged off the pointers alone, and comes to what a read of the whole tree comes to.
+TEST(the_completed_set_followed_from_a_trees_pointers_is_the_one_followed_from_the_tree) {
+  const TreeData root = tree("root", {step("done", "sub"), step("open", "half"), step("lost", "gone"), step("plain")});
+  const TreeData sub = tree("sub", {step("s")});
+  const TreeData half = tree("half", {step("h")});
+  const NodePointers pointers{{nid("done"), tid("sub")}, {nid("open"), tid("half")}, {nid("lost"), tid("gone")}};
+  const Progress marked = marks({"open", "lost", "plain"});
+
+  const OpenedTrees standing = opened({root, sub, half}, {{"sub", marks({"s"})}});
+
+  CHECK(standing.followed(pointers, marked).completed == (std::set<NodeId>{nid("done"), nid("lost"), nid("plain")}));
+  CHECK(standing.followed(root, marked).completed == standing.followed(pointers, marked).completed);
 }
 
 TEST(two_trees_that_open_each_other_are_never_complete) {

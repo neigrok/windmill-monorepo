@@ -52,30 +52,32 @@ rejected for structure. Validity is a read model, not a gate.
   the tree: their state follows their own mark, and nothing they receive says a node opens a tree.
   The raw mark (`status`, `get_progress`, `GET …/progress`) stays the raw mark, and the gallery
   counts the owner's stored marks.
-- A node with a valid pointer takes no mark from a caller who can write the tree. `following` names
-  those nodes, and `ProgressService::mark`, which both doors that write progress call, leaves a
-  mark on one of them, `complete` or `none`, out of the write and answers it refused under the code
-  `opens-a-tree`: MCP `set_progress` and the `progress[]` of an `import_subgraph` say so
-  (`adapters/mcp/README.md`), and a socket `progress` frame's ack lists it (WebSocket surface). The
-  other marks of the call are recorded, and each `prerequisitesMet` is judged on the `followed`
-  set, so a step behind such a node is met when the opened tree is complete, whatever mark the node
-  holds. A mark such a node already held stays stored. From a caller who cannot write the tree the
-  same mark is an ordinary one: recorded, answered exactly as on a node that opens nothing, and
-  judged on their own marks.
+- A node with a valid pointer takes no mark from a caller who can write the tree. The room hands
+  that caller, and nobody else, the nodes that open a tree (`TreeRoom::pointersFor`); `following`
+  names the ones whose pointer is valid, and `ProgressService::mark`, which both doors that write
+  progress call, leaves a mark on one of them, `complete` or `none`, out of the write and answers it
+  refused under the code `opens-a-tree`: MCP `set_progress` and the `progress[]` of an
+  `import_subgraph` say so (`adapters/mcp/README.md`), and a socket `progress` frame's ack lists it
+  (WebSocket surface). The other marks of the call are recorded, and each `prerequisitesMet` is
+  judged on the `followed` set, so a step behind such a node is met when the opened tree is
+  complete, whatever mark the node holds. A mark such a node already held stays stored. From a
+  caller who cannot write the tree the same mark is an ordinary one: recorded, answered exactly as
+  on a node that opens nothing, and judged on their own marks.
 - The domain is fed two ways. A read of one tree (`get_tree`, `get_nodes`, `find_nodes`,
-  `GET /v1/trees/{id}`) and a progress write (`set_progress`, the `progress[]` of an
-  `import_subgraph`, a socket `progress` frame) take the tree from its live room and ask
-  `TreeRepository::openedFrom(owner, opened)` for each tree it opens that stands and is the owner's
-  and every such tree their pointers lead to: one statement over `trees`, `tree_nodes` and the
-  owner's `node_progress` that reaches each tree once and answers, per tree and tree it opens, how
-  many present nodes open it and how many of those the owner marked, beside the tree's title and
-  its nodes that open none. Each reached tree's nodes and marks are read through
-  `tree_nodes_pkey` and `node_progress_pkey`, so the cost follows the trees reached and not the
-  size of the tables. It is made once per reply, call or frame, after the tree's strand is
-  released, and not at all for a caller who cannot write the tree, for a read whose fields ask for
-  neither `state` nor `opens`, or for a tree that holds no pointer. Where every tree of an owner is
-  already loaded with its marks (`TreeRegistry::list`, `PgReminderRepository::readinessFor`),
-  `openedAmong` (`domain/TreeSummary.h`) judges the account once in memory with no further read.
+  `GET /v1/trees/{id}`) takes the tree from its live room, a progress write (`set_progress`, the
+  `progress[]` of an `import_subgraph`, a socket `progress` frame) only its nodes that open a tree,
+  and each asks `TreeRepository::openedFrom(owner, opened)` for each tree it opens that stands and
+  is the owner's and every such tree their pointers lead to: one statement over `trees`,
+  `tree_nodes` and the owner's `node_progress` that reaches each tree once and answers, per tree and
+  tree it opens, how many present nodes open it and how many of those the owner marked, beside the
+  tree's title and its nodes that open none. Each reached tree's nodes and marks are read through
+  `tree_nodes_pkey` and `node_progress_pkey`, so the cost follows the trees reached and not the size
+  of the tables. It is made once per reply, call or frame, after the tree's strand is released, and
+  not at all for a caller who cannot write the tree, for a read whose fields ask for neither `state`
+  nor `opens`, for a write with no mark to judge, or for a tree that holds no pointer. Where every
+  tree of an owner is already loaded with its marks (`TreeRegistry::list`,
+  `PgReminderRepository::readinessFor`), `openedAmong` (`domain/TreeSummary.h`) judges the account
+  once in memory with no further read.
 - `TreeDiagnostics::assess` — a pure report over a loose graph: `cycles`, `dangling`,
   `selfEdges`, `smells`, `maskedWork` (tombstoned parents with present children). `clean()` is
   true when cycles, dangling and self-edges are all empty. Smell kinds: `label-too-long`
@@ -397,11 +399,12 @@ peer's broadcast; either is the frame's `readerView` for a connection that canno
 `skew {treeId, frameId, serverNow}` · `reject {treeId, code, reason, frameId?}` · `presence` ·
 `peer`.
 
-`progressAck.refused` is present only when the frame carried a mark that was not recorded: an array
-of `{node, code}`, one per such mark in the frame's order. The one code is `opens-a-tree` — the node
+`progressAck.refused` is present only when the frame carried a mark that was refused: an array of
+`{node, code}`, one per refused mark in the frame's order. The one code is `opens-a-tree` — the node
 holds a valid pointer and the connection can write the tree, so the node is complete when the tree
 it opens is and takes no mark (`OpenedTrees`, Model). It names the node and nothing of the opened
-tree. The frame is not rejected: its other marks are recorded, echoed and acknowledged.
+tree. A mark that lost to a later stored stamp is not refused and is not listed. The frame is not
+rejected: its other marks are recorded, echoed and acknowledged.
 
 Reject codes are a stable wire contract — branch on `code`, never on `reason`:
 `no-such-tree` · `server-error` · `sign-in-required` · `tree-too-large` · `bad-frame` ·

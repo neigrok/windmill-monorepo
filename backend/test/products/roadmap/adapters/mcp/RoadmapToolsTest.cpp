@@ -4318,3 +4318,117 @@ TEST(mcp_a_mark_whose_pointers_cannot_be_followed_fails_as_the_call_and_records_
                                  ToolCaller{uid("stranger"), ToolScope::everything()})),
            parse(R"({"nodeId":"a","status":"complete","prerequisitesMet":true})"));
 }
+
+// A mark is judged against the nodes that open a tree and nothing else of the room, so no caller's mark copies the tree out.
+TEST(mcp_a_mark_copies_the_whole_tree_out_of_its_room_for_no_caller) {
+  Harness h;
+  h.trees.byId["t"].visibility = Visibility::public_;
+  h.trees.byId["t_plain"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"No pointers", {}}, 0, h.caller};
+  h.trees.byId["t_sub"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Deep dive", {}}, 0, h.caller};
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"idea","label":"Idea","opens":"t_sub"},{"id":"a","label":"A"},{"id":"b","label":"B"}]})")).isError);
+  CHECK_FALSE(h.tools.callTool("create_node", parse(R"({"treeId":"t_plain","id":"a","label":"A"})"), h.actor).isError);
+  const TreeRoom& room = *h.registry.open(TreeId{"t"});
+  const TreeRoom& plain = *h.registry.open(TreeId{"t_plain"});
+  const std::size_t copies = room.snapshots();
+  const std::size_t plainCopies = plain.snapshots();
+
+  CHECK_FALSE(h.call("set_progress", parse(R"({"nodeId":"a","status":"complete"})")).isError);
+  CHECK_FALSE(h.call("set_progress", parse(R"({"updates":[{"nodeId":"idea","status":"complete"},{"nodeId":"b","status":"complete"}]})")).isError);
+  for (const UserId& reader : {uid("stranger"), UserId{}}) {
+    const ToolCaller caller{reader, ToolScope::everything()};
+    CHECK_FALSE(h.tools.callTool("set_progress", parse(R"({"treeId":"t","nodeId":"idea","status":"complete"})"), caller).isError);
+    CHECK_FALSE(h.tools.callTool("set_progress", parse(R"({"treeId":"t","updates":[{"nodeId":"a","status":"complete"}]})"), caller).isError);
+  }
+  CHECK_FALSE(h.tools.callTool("set_progress", parse(R"({"treeId":"t_plain","nodeId":"a","status":"complete"})"), h.actor).isError);
+  CHECK_EQ(room.snapshots(), copies);
+  CHECK_EQ(plain.snapshots(), plainCopies);
+
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[]})")).isError);
+  const std::size_t aGraftsOwnCopies = room.snapshots() - copies;
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[],"progress":[{"nodeId":"a","status":"none"},{"nodeId":"idea","status":"none"}]})")).isError);
+  CHECK_EQ(room.snapshots() - copies, 2 * aGraftsOwnCopies);
+}
+
+// The write line says what the call came to: nothing recorded and a mark refused, whatever else it carried.
+TEST(mcp_a_call_that_recorded_no_mark_and_was_refused_one_completes_as_opens_a_tree) {
+  Harness h;
+  h.trees.byId["t_sub"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Deep dive", {}}, 0, h.caller};
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"idea","label":"Idea","opens":"t_sub"},{"id":"a","label":"A"},{"id":"b","label":"B"}]})")).isError);
+  h.progressRepo.setStatus(TreeId{"t"}, h.caller, nid("a"), ProgressStatus::complete, false, Hlc{9'000'000, 0, "r_phone"}, 9'000'000);
+  CompositeToolHost gate(std::vector<ToolModule>{{h.tools, ""}});
+  std::vector<WriteCompletion> completions;
+  installWriteSink([&](const WriteCompletion& completion) { completions.push_back(completion); });
+
+  const ToolResult refusedAndLost = gate.callTool("roadmap_set_progress", parse(R"({"treeId":"t","updates":[
+      {"nodeId":"idea","status":"complete"},{"nodeId":"a","status":"none"}]})"), h.actor);
+  const ToolResult lost = gate.callTool("roadmap_set_progress", parse(R"({"treeId":"t","nodeId":"a","status":"none"})"), h.actor);
+  const ToolResult refusedLostAndRecorded = gate.callTool("roadmap_set_progress", parse(R"({"treeId":"t","updates":[
+      {"nodeId":"idea","status":"complete"},{"nodeId":"a","status":"none"},{"nodeId":"b","status":"complete"}]})"), h.actor);
+  installWriteSink({});
+
+  CHECK_EQ(body(refusedAndLost), parse(R"({"results":[
+      {"nodeId":"idea","refused":"\"idea\" opens a tree: it is complete when that tree is and takes no mark of its own — mark the steps of the tree it opens"},
+      {"nodeId":"a","status":"none","prerequisitesMet":true}]})"));
+  CHECK_EQ(body(lost), parse(R"({"nodeId":"a","status":"none","prerequisitesMet":true})"));
+  CHECK_FALSE(refusedLostAndRecorded.isError);
+  CHECK_EQ(body(h.call("get_progress", kNoArgs)), parse(R"({"completed":["a","b"],"outOfOrder":[]})"));
+  std::vector<std::string> observed;
+  for (const WriteCompletion& completion : completions) observed.push_back(completion.operation + " " + completion.outcome);
+  CHECK_EQ(observed, (std::vector<std::string>{"mcp.roadmap_set_progress opens-a-tree", "mcp.roadmap_set_progress ok",
+                                               "mcp.roadmap_set_progress ok"}));
+}
+
+// With no mark to judge there is nothing the opened trees could decide, so they are not read.
+TEST(mcp_an_import_whose_progress_names_only_absent_nodes_follows_no_pointer) {
+  Harness h;
+  h.trees.byId["t_sub"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Deep dive", {}}, 0, h.caller};
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"idea","label":"Idea","opens":"t_sub"})")).isError);
+
+  const ToolResult imported = h.call("import_subgraph", parse(R"({"nodes":[],"progress":[{"nodeId":"ghost","status":"complete"}]})"));
+
+  CHECK_EQ(body(imported)["progressSkipped"], parse(R"(["ghost"])"));
+  CHECK_EQ(body(imported)["progress"], parse("[]"));
+  CHECK(h.trees.openedReads.empty());
+  CHECK(h.progressRepo.byKey.empty());
+}
+
+// Clearing the marks on removed nodes is a write of this call: its failure is reported, and said beside what else fell short.
+TEST(mcp_an_import_whose_clear_of_marks_on_removed_nodes_throws_completes_as_failed_and_keeps_every_sentence) {
+  FakeTreeRepository trees;
+  FakeOpLog ops;
+  FakeBus bus;
+  ThrowingProgressRepository progressRepo;
+  StepClock clock;
+  FakeTokens tokens;
+  RoomRegistry registry{trees, ops, bus};
+  ProgressService progress{progressRepo, trees};
+  TreeRegistry treeRegistry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}, registry, clock};
+  const ToolCaller caller{uid("agent"), ToolScope::everything()};
+  RoadmapTools tools{registry, progress, clock, treeRegistry, bus};
+  trees.byId["t"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Test Roadmap", {}}, 0, caller.user};
+  CHECK_FALSE(tools.callTool("import_subgraph", parse(R"({"treeId":"t","nodes":[{"id":"n","label":"N"},{"id":"m","label":"M"}],
+                                                          "progress":[{"nodeId":"n","status":"complete"},{"nodeId":"m","status":"complete"}]})"), caller).isError);
+  progressRepo.armed = true;
+  CompositeToolHost gate(std::vector<ToolModule>{{tools, ""}});
+  std::vector<WriteCompletion> completions;
+  installWriteSink([&](const WriteCompletion& completion) { completions.push_back(completion); });
+
+  const ToolResult skipping = gate.callTool("roadmap_import_subgraph", parse(R"({"treeId":"t","nodes":[],"tombstone":["n"],
+                                                                                 "progress":[{"nodeId":"ghost","status":"complete"}]})"), caller);
+  const ToolResult alone = gate.callTool("roadmap_import_subgraph", parse(R"({"treeId":"t","nodes":[],"tombstone":["m"]})"), caller);
+  installWriteSink({});
+
+  CHECK_FALSE(skipping.isError);
+  CHECK(body(skipping)["graphApplied"].asBool());
+  CHECK_FALSE(body(skipping)["progressApplied"].asBool());
+  CHECK_EQ(body(skipping)["progressError"].asString(),
+           std::string("The graph committed, but clearing progress on removed nodes failed. Read get_progress before retrying "
+                       "progress changes. Some requested progress names nodes absent after the graft; those ids are listed in "
+                       "progressSkipped."));
+  CHECK_EQ(body(alone)["progressError"].asString(),
+           std::string("The graph committed, but clearing progress on removed nodes failed. Read get_progress before retrying "
+                       "progress changes."));
+  std::vector<std::string> observed;
+  for (const WriteCompletion& completion : completions) observed.push_back(completion.operation + " " + completion.outcome);
+  CHECK_EQ(observed, (std::vector<std::string>{"mcp.roadmap_import_subgraph failed", "mcp.roadmap_import_subgraph failed"}));
+}

@@ -211,6 +211,13 @@ std::vector<NodeId> LooseGraph::presentNodeIds() const {
   return ids;
 }
 
+NodePointers LooseGraph::pointers() const {
+  NodePointers pointers;
+  for (const auto& [id, record] : nodes_)
+    if (record.life.present() && !record.opens.value.empty()) pointers.emplace(id, record.opens.value);
+  return pointers;
+}
+
 std::vector<Edge> LooseGraph::presentEdges() const {
   std::vector<Edge> live;
   for (const auto& [edge, element] : edges_) {

@@ -1942,3 +1942,55 @@ TEST(ws_progress_whose_pointers_cannot_be_followed_is_left_unanswered_records_no
   CHECK(conn->sent.empty());
   CHECK(h.progressRepo.load(TreeId{"t_main"}, owner).marks.empty());
 }
+
+// A frame's marks are judged against the nodes that open a tree and nothing else of the room, so no frame copies the tree out.
+TEST(ws_progress_copies_the_whole_tree_out_of_its_room_for_no_connection) {
+  Harness h;
+  UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.signIn("s-other", "other@example.com");
+  h.seedSteps("t_main", owner, Visibility::public_, "t_sub");
+  h.seedSteps("t_sub", owner, Visibility::private_, "");
+  h.seedSteps("t_plain", owner, Visibility::private_, "");
+  auto mine = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-owner"), mine);
+  auto theirs = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-other"), theirs);
+  const TreeRoom& room = *h.rooms.open(TreeId{"t_main"});
+  const TreeRoom& plain = *h.rooms.open(TreeId{"t_plain"});
+  const std::size_t copies = room.snapshots();
+  const std::size_t plainCopies = plain.snapshots();
+
+  h.collab.onMessage(mine, progressFrame("t_main", "f1", {{"plain", "complete", "900:0:r_a"}, {"idea", "complete", "901:0:r_a"}}));
+  h.collab.onMessage(theirs, progressFrame("t_main", "f2", {{"idea", "complete", "902:0:r_b"}}));
+  h.collab.onMessage(mine, progressFrame("t_plain", "f3", {{"idea", "complete", "903:0:r_a"}}));
+
+  CHECK_EQ(countOfType(*mine, "progressAck"), 2u);
+  CHECK_EQ(countOfType(*theirs, "progressAck"), 1u);
+  CHECK_EQ(room.snapshots(), copies);
+  CHECK_EQ(plain.snapshots(), plainCopies);
+}
+
+// The write line says what the frame came to: nothing recorded and a mark refused, though another mark only lost to a later stamp.
+TEST(ws_a_progress_frame_that_recorded_no_mark_and_was_refused_one_completes_as_opens_a_tree) {
+  Harness h;
+  UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.seedSteps("t_main", owner, Visibility::private_, "t_sub");
+  h.seedSteps("t_sub", owner, Visibility::private_, "");
+  h.progressRepo.setStatus(TreeId{"t_main"}, owner, NodeId{"plain"}, ProgressStatus::complete, false, Hlc{900, 0, "r_desk"}, 900);
+  auto conn = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-owner"), conn);
+
+  {
+    Observed observed;
+    h.collab.onMessage(conn, progressFrame("t_main", "f1", {{"idea", "complete", "901:0:r_a"}, {"plain", "none", "500:0:r_stale"}}));
+    h.collab.onMessage(conn, progressFrame("t_main", "f2", {{"plain", "none", "501:0:r_stale"}}));
+
+    REQUIRE_EQ(observed.completions.size(), 2u);
+    CHECK_EQ(observed.completions[0].operation + " " + observed.completions[0].outcome, std::string("roadmap.ws.progress opens-a-tree"));
+    CHECK_EQ(observed.completions[1].operation + " " + observed.completions[1].outcome, std::string("roadmap.ws.progress ok"));
+  }
+  REQUIRE_EQ(conn->sent.size(), 2u);
+  CHECK_EQ(parse(conn->sent[0]), parse(R"({"t":"progressAck","treeId":"t_main","frameId":"f1","refused":[{"node":"idea","code":"opens-a-tree"}]})"));
+  CHECK_EQ(parse(conn->sent[1]), parse(R"({"t":"progressAck","treeId":"t_main","frameId":"f2"})"));
+  CHECK(h.progressRepo.load(TreeId{"t_main"}, owner).completed == std::set<NodeId>{NodeId{"plain"}});
+}

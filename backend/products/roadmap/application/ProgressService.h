@@ -5,7 +5,6 @@
 #include "products/roadmap/ports/ProgressRepository.h"
 #include "products/roadmap/ports/TreeRepository.h"
 
-#include <optional>
 #include <vector>
 
 namespace wm {
@@ -27,6 +26,9 @@ struct ProgressOutcome {
 struct ProgressReceipt {
   std::vector<ProgressOutcome> outcomes;
   Progress recorded;
+
+  // No mark was recorded and at least one was refused: what the call's write line says in place of `ok`.
+  bool cameToARefusal() const;
 };
 
 // Carries the stamp the marking replica minted. Distinct from domain `ProgressMark`, which is the
@@ -46,10 +48,10 @@ class ProgressService {
 public:
   ProgressService(ProgressRepository& repo, TreeRepository& trees);
 
-  // A door's marks on `tree`, taken with `owner` from the room and handed over once its strand is released.
-  // The tree's writer has pointers followed (domain/OpenedTrees.h): a mark on a node that follows its tree is
-  // refused, and each advisory reads the followed completed set. Every node is ordinary for anyone else.
-  ProgressReceipt mark(const TreeData& tree, const std::optional<UserId>& owner, const UserId& user,
+  // A door's marks on `tree`, handed over once the strand is released, with the pointers the room handed
+  // `user` (TreeRoom::pointersFor). A mark on a node that follows its tree (domain/OpenedTrees.h) is refused
+  // and each advisory reads the followed completed set, off one read made only when there is a pointer.
+  ProgressReceipt mark(const TreeId& tree, const NodePointers& pointers, const UserId& user,
                        const std::vector<ProgressWrite>& writes, std::uint64_t receivedAtMs);
 
   ProgressOutcome setStatus(const std::vector<NodeId>& prerequisites, const TreeId& treeId,

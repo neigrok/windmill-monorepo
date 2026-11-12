@@ -423,6 +423,19 @@ TEST(a_document_seed_plants_opens_and_every_projection_carries_it) {
   CHECK_EQ(projected.nodes[1].opens, TreeId{});
 }
 
+TEST(a_graphs_pointers_are_its_present_nodes_that_open_a_tree_each_by_that_tree) {
+  LooseGraph graph;
+  for (const char* id : {"idea", "cleared", "deleted", "plain"})
+    graph.createNode(NodeId{id}, id, "", NodeColor::sky, std::nullopt, Hlc{1, 0, "a"});
+  graph.setOpens(NodeId{"idea"}, TreeId{"t_sub"}, Hlc{2, 0, "a"});
+  graph.setOpens(NodeId{"cleared"}, TreeId{"t_sub"}, Hlc{2, 0, "a"});
+  graph.setOpens(NodeId{"cleared"}, TreeId{}, Hlc{3, 0, "a"});
+  graph.setOpens(NodeId{"deleted"}, TreeId{"t_other"}, Hlc{2, 0, "a"});
+  graph.deleteNode(NodeId{"deleted"}, Hlc{3, 0, "a"});
+
+  CHECK(graph.pointers() == (NodePointers{{NodeId{"idea"}, TreeId{"t_sub"}}}));
+}
+
 TEST(a_fork_keeps_every_opens_as_it_stands_or_clears_them_all) {
   LooseGraph g;
   for (const char* id : {"gone", "missing", "plain", "standing"})
