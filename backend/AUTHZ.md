@@ -23,7 +23,9 @@ Visibility-gated read, owner-only write, per-user progress. The two predicates a
   a caller `canWrite` admits, a node that opens a tree of theirs is complete when that tree is, in
   MCP `state`, the registry counts and the `opens` object of `GET` tree; for every other reader the
   node is an ordinary one whose state follows their own mark, the `opens` key is absent, and the
-  opened trees are not read at all, so no state, count, key or timing says a node opens a tree. A
+  opened trees are not read at all; the writer's own read of them is made after the tree's strand is
+  released, so no other read of the tree waits on it. No state, count, key or timing says a node
+  opens a tree. A
   tend neither reads nor sets the pointer: it runs as the owner on labels that may be someone else's
   words, so `ScopedToolHost` offers it no `opens` argument and no `opens` field, and refuses a call
   that names either; the `state` it reads is the owner's.

@@ -313,21 +313,23 @@ A node may point at another tree: `opens` holds that tree's id.
   prerequisites, and `locked` or `available` by its prerequisites until then; a mark on it is kept,
   answered as `status` and by `get_progress`, and decides nothing. A tree is complete when it holds
   at least one node and every node of it is complete, a node with a valid pointer by its tree and
-  any other by the caller's mark. A tree on a loop of pointers is never complete, nor is one more
-  than 8 pointers from the tree being read by the shortest way (`kOpenedTreeReach`,
-  `domain/OpenedTrees.h`). `state`, the `state` filter of `find_nodes`, `opens.state` and the
-  `done` of `list_trees` all read that one completed set, so a step waiting on such a node unlocks
-  when its tree completes. `set_progress` records a mark on such a node as on any other, and its
+  any other by the caller's mark; that is judged once over all the caller's standing trees
+  (`domain/OpenedTrees.h`), so a tree on a loop of pointers is never complete, however long the
+  loop, and a chain of any length completes. `state`, the `state` filter of `find_nodes`,
+  `opens.state` and the `done` of `list_trees` all read that one completed set, so a step waiting
+  on such a node unlocks when its tree completes. `set_progress` records a mark on such a node as on any other, and its
   `prerequisitesMet` reads marks alone.
 - **Every other reader sees an ordinary node.** A reader who cannot write the tree, signed in or
   not, is answered no `opens`, and the node's `state` follows their own mark and its prerequisites
   as any node's does. A node whose pointer is not valid is ordinary for its owner too.
 - **Cost.** Following is one read of the stored rows per reply (`TreeRepository::openedFrom`: one
-  statement over `trees`, `tree_nodes` and the caller's `node_progress`), made only for a caller
-  who can write the tree, when `fields` names `state` or `opens` or `find_nodes` filters on
-  `state`, and when the tree holds a pointer. `list_trees` makes none: it already holds every tree
-  of the caller's. Every write door saves before it answers, so the stored rows are the live ones
-  unless a save failed.
+  statement over `trees`, `tree_nodes` and the caller's `node_progress`, answering one row per
+  tree and tree it opens), made only for a caller who can write the tree, when `fields` names
+  `state` or `opens` or `find_nodes` filters on `state`, and when the tree holds a pointer.
+  `get_tree`, `get_nodes` and `find_nodes` take what they answer from the room under the tree's
+  strand and read the repositories after letting it go, so no other read of the tree waits on that
+  statement. `list_trees` makes no such read: it already holds every tree of the caller's. Every
+  write door saves before it answers, so the stored rows are the live ones unless a save failed.
 - `import_subgraph` takes the id as a string, where `get_tree` answers the object: a copied slice
   sends `opens.treeId`.
 

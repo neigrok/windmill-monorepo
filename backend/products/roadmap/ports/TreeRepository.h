@@ -93,7 +93,7 @@ struct TreeRepository {
   // The title of each tree among `trees` that stands and is `owner`'s, by id. A soft-deleted tree,
   // someone else's, nobody's and an id no row holds are left out alike.
   virtual std::map<TreeId, std::string> titlesOwnedBy(const UserId& owner, const std::set<TreeId>& trees) = 0;
-  // `owner`'s standing trees within kOpenedTreeReach pointers of `opened`, those included, under their marks.
+  // Each of `opened` that stands and is `owner`'s, and every such tree their pointers lead to, under `owner`'s marks.
   virtual std::map<TreeId, OpenedTree> openedFrom(const UserId& owner, const std::set<TreeId>& opened) = 0;
   // Retire a tree by stamping deleted_at; every read filters it out afterwards.
   virtual void softDelete(const TreeId& tree) = 0;

@@ -15,6 +15,7 @@
 #include <mutex>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <typeinfo>
 #include <vector>
 
@@ -397,8 +398,8 @@ TEST(get_tree_answers_the_owner_what_each_pointer_comes_to_and_no_other_reader_t
   CHECK_EQ(h.trees->openedReads.size(), 1u);
 }
 
-// Following the pointers is part of the read, so its failure is the read's: the absent answer and one Issue.
-TEST(get_tree_whose_pointers_cannot_be_followed_answers_404_and_files_one_issue) {
+// A failed follow is not an absent tree: the owner is answered a 503 the client reports, under the follow's own name.
+TEST(get_tree_whose_pointers_cannot_be_followed_answers_503_and_files_one_issue_and_other_reads_still_answer) {
   struct Failures : FailureReporter {
     std::vector<std::string> reports;
     void report(const std::string&, const std::string&, const std::string&) override {}
@@ -415,18 +416,49 @@ TEST(get_tree_whose_pointers_cannot_be_followed_answers_404_and_files_one_issue)
   Harness h;
   const UserId me = h.signIn("s-me");
   h.seed("t_sub", "Deep dive", me, Visibility::private_);
-  h.seed("t_mine", "Learn to sail", me, Visibility::private_);
+  h.seed("t_mine", "Learn to sail", me, Visibility::public_);
   h.trees->byId["t_mine"].state.nodes[0].opens = TreeId{"t_sub"};
   h.trees->byId["t_mine"].state.nodes[0].opensAt = Hlc{2, 0, "seed"};
-  const drogon::HttpResponsePtr absent = sendGetTree(h.api, "s-me", "t_ghost");
 
   h.trees->openedReadsFail = true;
   const drogon::HttpResponsePtr failed = sendGetTree(h.api, "s-me", "t_mine");
 
-  REQUIRE_EQ(failed->getStatusCode(), drogon::k404NotFound);
-  CHECK_EQ(dump(bodyOf(failed)), dump(bodyOf(absent)));
+  REQUIRE_EQ(failed->getStatusCode(), drogon::k503ServiceUnavailable);
+  CHECK_EQ(bodyOf(failed),
+           parse(R"({"code":"opens-unavailable","error":"the trees this tree opens could not be read — try again"})"));
   CHECK_EQ(reporter.failures->reports,
-           (std::vector<std::string>{std::string("roadmap.tree.read roadmap rest failed ") + typeid(std::runtime_error).name()}));
+           (std::vector<std::string>{std::string("roadmap.tree.follow roadmap rest failed ") + typeid(std::runtime_error).name()}));
+  CHECK_EQ(sendGetTree(h.api, "", "t_mine")->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(sendGetTree(h.api, "s-me", "t_sub")->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(reporter.failures->reports.size(), 1u);
+}
+
+// A stranger's read must not wait on the owner's statement: that wait would say the tree holds a pointer.
+TEST(get_tree_follows_pointers_after_it_has_let_go_of_the_trees_strand) {
+  Harness h;
+  const UserId me = h.signIn("s-me");
+  h.seed("t_sub", "Deep dive", me, Visibility::private_);
+  h.seed("t_mine", "Learn to sail", me, Visibility::public_);
+  h.trees->byId["t_mine"].state.nodes[0].opens = TreeId{"t_sub"};
+  h.trees->byId["t_mine"].state.nodes[0].opensAt = Hlc{2, 0, "seed"};
+  bool strandWasFree = false;
+  drogon::HttpStatusCode readMeanwhile = drogon::kUnknown;
+  h.trees->duringOpenedRead = [&] {
+    std::thread other([&] {
+      std::mutex& strand = h.rooms->strandFor(TreeId{"t_mine"});
+      if (!strand.try_lock()) return;
+      strand.unlock();
+      strandWasFree = true;
+      readMeanwhile = sendGetTree(h.api, "", "t_mine")->getStatusCode();
+    });
+    other.join();
+  };
+
+  CHECK_EQ(sendGetTree(h.api, "s-me", "t_mine")->getStatusCode(), drogon::k200OK);
+
+  CHECK_EQ(h.trees->openedReads.size(), 1u);
+  CHECK(strandWasFree);
+  CHECK_EQ(readMeanwhile, drogon::k200OK);
 }
 
 TEST(get_tree_private_denial_is_404_byte_identical_to_absent) {

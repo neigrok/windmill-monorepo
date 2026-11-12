@@ -393,7 +393,7 @@ TEST(pg_create_node_on_a_deleted_id_opens_nothing_after_a_restart) {
 }
 
 // The statement behind OpenedTrees: a removed node's pointer leads nowhere, a loop ends, and only the owner's marks count.
-TEST(pg_opened_from_answers_the_owners_standing_trees_within_reach_counted_under_the_owners_marks) {
+TEST(pg_opened_from_answers_every_standing_tree_of_the_owners_the_pointers_lead_to_counted_under_the_owners_marks) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
   const auto id = [](const std::string& name) { return TreeId{"t_pgtest_opened_" + name}; };
@@ -427,33 +427,33 @@ TEST(pg_opened_from_answers_the_owners_standing_trees_within_reach_counted_under
     progress.setStatus(id(tree), user, NodeId{node}, ProgressStatus::complete, false, Hlc{1'700'000'000'002, 0, "r_a"},
                        1'700'000'000'002);
   };
-  plant("a", kSam, {{"plain-sam", ""}, {"plain-eve", ""}, {"plain", ""}, {"to-b", "b"}, {"to-retired", "retired"},
-                    {"to-theirs", "theirs"}, {"to-absent", "absent"}, {"removed", "hidden"}}, "removed");
+  plant("a", kSam, {{"plain-sam", ""}, {"plain-eve", ""}, {"plain", ""}, {"to-b", "b"}, {"to-b-again", "b"},
+                    {"to-b-eve", "b"}, {"to-retired", "retired"}, {"to-theirs", "theirs"}, {"to-absent", "absent"},
+                    {"removed", "hidden"}}, "removed");
   plant("b", kSam, {{"back", "a"}, {"plain", ""}});
   plant("empty", kSam, {});
   plant("hidden", kSam, {{"h", ""}});
   plant("retired", kSam, {{"r", ""}});
   trees.softDelete(id("retired"));
   plant("theirs", kEve, {{"x", ""}});
-  for (int k = 0; k <= 10; ++k)
-    plant("chain" + std::to_string(k), kSam, {{"n", k < 10 ? "chain" + std::to_string(k + 1) : ""}});
+  for (int k = 0; k < 12; ++k) plant("ring" + std::to_string(k), kSam, {{"n", "ring" + std::to_string((k + 1) % 12)}});
   mark("a", kSam, "plain-sam");
   mark("a", kEve, "plain-eve");
   mark("a", kSam, "to-b");
+  mark("a", kEve, "to-b-eve");
   mark("a", kSam, "to-absent");
   mark("a", kSam, "removed");
   mark("theirs", kSam, "x");
 
   OpenedTree a;
   a.title = "Tree a";
-  a.total = 7;
+  a.total = 9;
   a.marked = 1;
-  a.openers = {{NodeId{"to-absent"}, id("absent"), true}, {NodeId{"to-b"}, id("b"), true},
-               {NodeId{"to-retired"}, id("retired"), false}, {NodeId{"to-theirs"}, id("theirs"), false}};
+  a.pointers = {{id("absent"), {1, 1}}, {id("b"), {3, 1}}, {id("retired"), {1, 0}}, {id("theirs"), {1, 0}}};
   OpenedTree b;
   b.title = "Tree b";
   b.total = 2;
-  b.openers = {{NodeId{"back"}, id("a"), false}};
+  b.pointers = {{id("a"), {1, 0}}};
   OpenedTree empty;
   empty.title = "Tree empty";
   CHECK(trees.openedFrom(kSam, {id("a"), id("empty"), id("retired"), id("theirs"), id("absent")}) ==
@@ -465,11 +465,15 @@ TEST(pg_opened_from_answers_the_owners_standing_trees_within_reach_counted_under
   CHECK(trees.openedFrom(kEve, {id("a"), id("theirs")}) == (std::map<TreeId, OpenedTree>{{id("theirs"), theirs}}));
   CHECK(trees.openedFrom(kSam, {}) == (std::map<TreeId, OpenedTree>{}));
 
-  std::vector<std::string> reached;
-  for (const auto& [tree, opened] : trees.openedFrom(kSam, {id("chain0")})) reached.push_back(tree.str());
-  std::vector<std::string> withinReach;
-  for (int k = 0; k <= kOpenedTreeReach; ++k) withinReach.push_back(id("chain" + std::to_string(k)).str());
-  CHECK_EQ(reached, withinReach);
+  OpenedTree link;
+  link.total = 1;
+  std::map<TreeId, OpenedTree> ring;
+  for (int k = 0; k < 12; ++k) {
+    link.title = "Tree ring" + std::to_string(k);
+    link.pointers = {{id("ring" + std::to_string((k + 1) % 12)), {1, 0}}};
+    ring.emplace(id("ring" + std::to_string(k)), link);
+  }
+  CHECK(trees.openedFrom(kSam, {id("ring7")}) == ring);
   clear();
 }
 

@@ -430,42 +430,38 @@ std::map<TreeId, OpenedTree> PgTreeRepository::openedFrom(const UserId& owner, c
   pqxx::work txn{*conn};
   // One statement: the counts and the marks are one snapshot, and no node row leaves the database.
   pqxx::result rows = txn.exec_params(
-      "WITH RECURSIVE reached(id, depth) AS ("
-      "  SELECT t.id, 0 FROM trees t "
+      "WITH RECURSIVE reached(id) AS ("
+      "  SELECT t.id FROM trees t "
       "  WHERE t.deleted_at IS NULL AND t.owner_id = $1::uuid "
       "    AND t.id IN (SELECT jsonb_array_elements_text($2::jsonb)) "
-      // UNION keeps a tree once per depth, which is what ends the walk on a loop.
+      // UNION keeps each tree once, which is what ends the walk on a loop.
       "  UNION "
-      "  SELECT t.id, r.depth + 1 FROM reached r "
+      "  SELECT t.id FROM reached r "
       "  JOIN tree_nodes n ON n.tree_id = r.id AND n.present AND n.opens <> '' "
-      "  JOIN trees t ON t.id = n.opens AND t.deleted_at IS NULL AND t.owner_id = $1::uuid "
-      "  WHERE r.depth < $3"
-      "), counted AS ("
-      "  SELECT r.id, count(n.node_id) AS total, "
-      "         count(*) FILTER (WHERE n.opens = '' AND p.status = 'complete') AS marked "
-      "  FROM (SELECT DISTINCT id FROM reached) r "
-      "  LEFT JOIN tree_nodes n ON n.tree_id = r.id AND n.present "
-      "  LEFT JOIN node_progress p ON p.tree_id = n.tree_id AND p.node_id = n.node_id AND p.user_id = $1::text "
-      "  GROUP BY r.id"
+      "  JOIN trees t ON t.id = n.opens AND t.deleted_at IS NULL AND t.owner_id = $1::uuid"
       ") "
-      // A row is a tree and one of its nodes that hold a pointer, or the tree alone when none does.
-      "SELECT t.id, t.title, c.total, c.marked, o.node_id, o.opens, "
-      "       coalesce(p.status = 'complete', false) AS opener_marked "
-      "FROM counted c JOIN trees t ON t.id = c.id "
-      "LEFT JOIN tree_nodes o ON o.tree_id = c.id AND o.present AND o.opens <> '' "
-      "LEFT JOIN node_progress p ON p.tree_id = o.tree_id AND p.node_id = o.node_id AND p.user_id = $1::text "
-      "ORDER BY o.node_id COLLATE \"C\"",
-      owner.str(), dump(ids), kOpenedTreeReach);
+      // A row is a tree and one target: '' for its nodes that open none, NULL for a tree with no node.
+      "SELECT t.id, t.title, n.opens, count(n.node_id) AS nodes, "
+      "       count(*) FILTER (WHERE p.status = 'complete') AS marked "
+      "FROM reached r JOIN trees t ON t.id = r.id "
+      "LEFT JOIN tree_nodes n ON n.tree_id = r.id AND n.present "
+      "LEFT JOIN node_progress p ON p.tree_id = n.tree_id AND p.node_id = n.node_id AND p.user_id = $1::text "
+      "GROUP BY t.id, t.title, n.opens",
+      owner.str(), dump(ids));
 
   std::map<TreeId, OpenedTree> trees;
   for (const auto& row : rows) {
     OpenedTree& tree = trees[TreeId{row["id"].as<std::string>()}];
     tree.title = row["title"].as<std::string>();
-    tree.total = row["total"].as<int>();
-    tree.marked = row["marked"].as<int>();
-    if (row["node_id"].is_null()) continue;
-    tree.openers.push_back({NodeId{row["node_id"].as<std::string>()}, TreeId{row["opens"].as<std::string>()},
-                            row["opener_marked"].as<bool>()});
+    if (row["opens"].is_null()) continue;
+    const Pointers counted{row["nodes"].as<int>(), row["marked"].as<int>()};
+    tree.total += counted.nodes;
+    const TreeId target{row["opens"].as<std::string>()};
+    if (target.empty()) {
+      tree.marked = counted.marked;
+      continue;
+    }
+    tree.pointers.emplace(target, counted);
   }
   return trees;
 }

@@ -108,12 +108,59 @@ TEST(registry_counts_a_node_that_opens_a_tree_as_done_when_that_tree_is_complete
   loaded.push_back({tree("sub", {spec("s", NodeColor::sky, {})}), 0, 0, onSub, 0});
   loaded.push_back({tree("open", {spec("o", NodeColor::sky, {})}), 0, 0, Progress{}, 0});
 
+  const OpenedTrees opened = openedAmong(loaded);
   std::vector<std::set<NodeId>> completed;
-  for (const Progress& followed : followedProgress(loaded)) completed.push_back(followed.completed);
+  for (const LoadedTree& tree : loaded) completed.push_back(opened.followed(tree.data, tree.progress).completed);
   CHECK(completed == (std::vector<std::set<NodeId>>{{nid("idea"), nid("stray")}, {nid("s")}, {}}));
 
   std::vector<std::string> doneOfTotal;
   for (const TreeSummary& summary : registrySummaries(loaded))
     doneOfTotal.push_back(summary.id.str() + " " + std::to_string(summary.stats.done) + "/" + std::to_string(summary.stats.total));
   CHECK_EQ(doneOfTotal, (std::vector<std::string>{"main 2/4", "open 0/1", "sub 1/1"}));
+}
+
+TEST(registry_counts_a_chain_of_twenty_trees_as_done_from_the_mark_at_its_end) {
+  const auto name = [](int k) { return std::string(k < 10 ? "t0" : "t") + std::to_string(k); };
+  std::vector<LoadedTree> loaded;
+  for (int k = 0; k < 20; ++k) {
+    NodeSpec node = spec("n", NodeColor::sky, {});
+    if (k < 19) node.opens = TreeId{name(k + 1)};
+    loaded.push_back({tree(name(k).c_str(), {node}), 0, 0, Progress{}, 0});
+  }
+  const auto doneOfTotal = [&] {
+    std::vector<std::string> counts;
+    for (const TreeSummary& summary : registrySummaries(loaded))
+      counts.push_back(std::to_string(summary.stats.done) + "/" + std::to_string(summary.stats.total));
+    return counts;
+  };
+
+  CHECK_EQ(doneOfTotal(), std::vector<std::string>(20, "0/1"));
+  loaded.back().progress.completed = {nid("n")};
+  CHECK_EQ(doneOfTotal(), std::vector<std::string>(20, "1/1"));
+}
+
+TEST(registry_reads_an_account_of_three_hundred_trees_that_each_open_every_later_one) {
+  const auto name = [](int k) { return "t" + std::to_string(1000 + k); };
+  std::vector<LoadedTree> loaded;
+  for (int k = 0; k < 300; ++k) {
+    std::vector<NodeSpec> nodes{spec("plain", NodeColor::sky, {})};
+    for (int later = k + 1; later < 300; ++later) {
+      NodeSpec opener = spec(("to-" + name(later)).c_str(), NodeColor::sky, {});
+      opener.opens = TreeId{name(later)};
+      nodes.push_back(opener);
+    }
+    Progress marks;
+    marks.completed = {nid("plain")};
+    loaded.push_back({tree(name(k).c_str(), nodes), 0, 0, marks, 0});
+  }
+
+  int trees = 0;
+  int incomplete = 0;
+  for (const TreeSummary& summary : registrySummaries(loaded)) {
+    ++trees;
+    if (summary.stats.done != summary.stats.total) ++incomplete;
+  }
+  CHECK_EQ(trees, 300);
+  CHECK_EQ(incomplete, 0);
+  CHECK_EQ(openedAmong(loaded).walked(), 300u * 299u / 2u);
 }

@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <optional>
 #include <set>
@@ -143,6 +144,7 @@ struct FakeTreeRepository : TreeRepository {
   std::vector<std::set<TreeId>> openedReads;
   bool latticeLoadsFail = false;  // load throws, the way a dropped connection does; loadAccess still answers
   bool openedReadsFail = false;  // openedFrom throws, the way a dropped connection does
+  std::function<void()> duringOpenedRead;  // runs inside openedFrom, the way a slow statement holds its caller
   bool savesFail = false;  // save throws, the way a write Postgres refuses does
   std::optional<StoredTree> load(const TreeId& tree) override {
     if (latticeLoadsFail) throw std::runtime_error("connection reset mid-read");
@@ -278,24 +280,23 @@ struct FakeTreeRepository : TreeRepository {
     }
     return titles;
   }
-  // The real statement's rules: this owner's standing trees only, each once, within kOpenedTreeReach of `opened`.
+  // The real statement's rules: this owner's standing trees only, each once, wherever the pointers of `opened` lead.
   std::map<TreeId, OpenedTree> openedFrom(const UserId& owner, const std::set<TreeId>& opened) override {
     if (opened.empty()) return {};
     openedReads.push_back(opened);
     if (openedReadsFail) throw std::runtime_error("connection reset mid-read");
+    if (duringOpenedRead) duringOpenedRead();
     std::map<TreeId, OpenedTree> trees;
-    std::set<TreeId> frontier = opened;
-    for (int depth = 0; depth <= kOpenedTreeReach && !frontier.empty(); ++depth) {
-      std::set<TreeId> next;
-      for (const TreeId& tree : frontier) {
-        const std::optional<StoredTree> stored = row(tree);
-        if (trees.count(tree) || !stored || stored->owner != std::optional<UserId>(owner)) continue;
-        const TreeData data = LooseGraph(stored->state).toTreeData(tree, stored->title.value);
-        const OpenedTree& reached =
-            trees.emplace(tree, OpenedTree(data, marks_ ? marks_->load(tree, owner) : Progress{})).first->second;
-        for (const Opener& opener : reached.openers) next.insert(opener.opens);
-      }
-      frontier = std::move(next);
+    std::vector<TreeId> reached(opened.begin(), opened.end());
+    while (!reached.empty()) {
+      const TreeId tree = reached.back();
+      reached.pop_back();
+      const std::optional<StoredTree> stored = row(tree);
+      if (trees.count(tree) || !stored || stored->owner != std::optional<UserId>(owner)) continue;
+      const TreeData data = LooseGraph(stored->state).toTreeData(tree, stored->title.value);
+      const OpenedTree& walked =
+          trees.emplace(tree, OpenedTree(data, marks_ ? marks_->load(tree, owner) : Progress{})).first->second;
+      for (const auto& [target, pointers] : walked.pointers) reached.push_back(target);
     }
     return trees;
   }

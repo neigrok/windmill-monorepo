@@ -7,6 +7,9 @@
 #include "products/roadmap/application/ForkService.h"
 #include "test/testing.h"
 
+#include <mutex>
+#include <thread>
+
 using namespace wm;
 using namespace wm::fake;
 using namespace wm::test;
@@ -3823,4 +3826,38 @@ TEST(mcp_a_reply_whose_pointers_cannot_be_followed_fails_as_the_call_and_other_r
   CHECK_EQ(body(h.tools.callTool("get_tree", parse(R"({"treeId":"t","fields":["id","state","opens"]})"),
                                  ToolCaller{uid("stranger"), ToolScope::everything()}))["tree"]["nodes"],
            parse(R"([{"id":"a","state":"available"}])"));
+}
+
+// A stranger's read must not wait on the owner's statement: that wait would say the tree holds a pointer.
+TEST(mcp_a_read_follows_pointers_after_it_has_let_go_of_the_trees_strand) {
+  Harness h;
+  h.trees.byId["t"].visibility = Visibility::public_;
+  h.trees.byId["t_sub"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Deep dive", {}}, 0, h.caller};
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"a","label":"A","opens":"t_sub"})")).isError);
+  bool strandWasFree = false;
+  Json::Value readMeanwhile;
+  h.trees.duringOpenedRead = [&] {
+    std::thread other([&] {
+      std::mutex& strand = h.registry.strandFor(TreeId{"t"});
+      if (!strand.try_lock()) return;
+      strand.unlock();
+      strandWasFree = true;
+      readMeanwhile = body(h.tools.callTool("get_tree", parse(R"({"treeId":"t","fields":["id","state"]})"),
+                                            ToolCaller{uid("stranger"), ToolScope::everything()}))["tree"]["nodes"];
+    });
+    other.join();
+  };
+
+  const std::vector<std::pair<const char*, const char*>> following = {
+      {"get_tree", R"({"fields":["id","state"]})"},
+      {"get_nodes", R"({"nodeIds":["a"],"fields":["id","opens"]})"},
+      {"find_nodes", R"({"state":"available"})"}};
+  for (const auto& [tool, arguments] : following) {
+    strandWasFree = false;
+    readMeanwhile = Json::Value();
+    CHECK_FALSE(h.call(tool, parse(arguments)).isError);
+    CHECK(strandWasFree);
+    CHECK_EQ(readMeanwhile, parse(R"([{"id":"a","state":"available"}])"));
+  }
+  CHECK_EQ(h.trees.openedReads.size(), 3u);
 }

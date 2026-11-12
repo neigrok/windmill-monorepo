@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <map>
+#include <random>
 #include <string>
 #include <vector>
 
@@ -38,38 +39,29 @@ Progress marks(std::vector<std::string> completed) {
 }
 
 // One owner's trees, each with the marks given for it; an id with no marks is unmarked.
-std::map<TreeId, OpenedTree> standing(const std::vector<TreeData>& trees,
-                                      const std::map<std::string, Progress>& marked = {}) {
-  std::map<TreeId, OpenedTree> known;
+OpenedTrees opened(const std::vector<TreeData>& trees, const std::map<std::string, Progress>& marked = {}) {
+  std::map<TreeId, OpenedTree> standing;
   for (const TreeData& data : trees) {
     const auto own = marked.find(data.id.str());
-    known.emplace(data.id, OpenedTree(data, own == marked.end() ? Progress{} : own->second));
+    standing.emplace(data.id, OpenedTree(data, own == marked.end() ? Progress{} : own->second));
   }
-  return known;
-}
-
-// A root whose one node opens t1, each t(k) opening t(k+1), and the last tree one marked step.
-std::vector<TreeData> chain(int pointers) {
-  std::vector<TreeData> trees{tree("root", {step("r", "t1")})};
-  for (int k = 1; k < pointers; ++k)
-    trees.push_back(tree("t" + std::to_string(k), {step("n", "t" + std::to_string(k + 1))}));
-  trees.push_back(tree("t" + std::to_string(pointers), {step("n")}));
-  return trees;
+  return OpenedTrees(std::move(standing));
 }
 
 }
 
-TEST(an_opened_tree_counts_its_nodes_the_marks_on_plain_ones_and_the_nodes_that_hold_a_pointer) {
-  const TreeData data = tree("a", {step("plain-done"), step("plain"), step("opener-done", "b"), step("opener", "c")});
+TEST(an_opened_tree_counts_its_nodes_the_marks_on_plain_ones_and_its_pointers_by_the_tree_they_open) {
+  const TreeData data = tree("a", {step("plain-done"), step("plain"), step("first-done", "b"), step("second", "b"),
+                                   step("other", "c")});
 
-  const OpenedTree opened(data, marks({"plain-done", "opener-done", "ghost"}));
+  const OpenedTree counted(data, marks({"plain-done", "first-done", "ghost"}));
 
   OpenedTree expected;
   expected.title = "Tree a";
-  expected.total = 4;
+  expected.total = 5;
   expected.marked = 1;
-  expected.openers = {{nid("opener-done"), tid("b"), true}, {nid("opener"), tid("c"), false}};
-  CHECK(opened == expected);
+  expected.pointers = {{tid("b"), {2, 1}}, {tid("c"), {1, 0}}};
+  CHECK(counted == expected);
   CHECK(treesOpenedBy(data) == (std::set<TreeId>{tid("b"), tid("c")}));
 }
 
@@ -77,69 +69,74 @@ TEST(a_node_is_complete_when_the_tree_it_opens_is_complete_and_open_until_then) 
   const TreeData root = tree("root", {step("idea", "sub")});
   const TreeData sub = tree("sub", {step("s1"), step("s2")});
 
-  const OpenedTrees halfway(root, standing({root, sub}, {{"sub", marks({"s1"})}}));
-  CHECK(halfway.openings == (std::map<NodeId, Opening>{{nid("idea"), {tid("sub"), false, "Tree sub", false, 1, 2, false}}}));
-  CHECK(halfway.followed(Progress{}).completed == std::set<NodeId>{});
+  const OpenedTrees halfway = opened({root, sub}, {{"sub", marks({"s1"})}});
+  CHECK(halfway.openings(root) == (std::map<NodeId, Opening>{{nid("idea"), {tid("sub"), false, "Tree sub", false, 1, 2}}}));
+  CHECK(halfway.followed(root, Progress{}).completed == std::set<NodeId>{});
 
-  const OpenedTrees finished(root, standing({root, sub}, {{"sub", marks({"s1", "s2"})}}));
-  CHECK(finished.openings == (std::map<NodeId, Opening>{{nid("idea"), {tid("sub"), false, "Tree sub", true, 2, 2, false}}}));
-  CHECK(finished.followed(Progress{}).completed == std::set<NodeId>{nid("idea")});
+  const OpenedTrees finished = opened({root, sub}, {{"sub", marks({"s1", "s2"})}});
+  CHECK(finished.openings(root) == (std::map<NodeId, Opening>{{nid("idea"), {tid("sub"), false, "Tree sub", true, 2, 2}}}));
+  CHECK(finished.followed(root, Progress{}).completed == std::set<NodeId>{nid("idea")});
 }
 
 TEST(two_trees_that_open_each_other_are_never_complete) {
   const TreeData a = tree("a", {step("to-b", "b")});
   const TreeData b = tree("b", {step("to-a", "a"), step("done")});
-  const std::map<TreeId, OpenedTree> known =
-      standing({a, b}, {{"a", marks({"to-b"})}, {"b", marks({"to-a", "done"})}});
 
-  const OpenedTrees fromA(a, known);
-  CHECK(fromA.openings == (std::map<NodeId, Opening>{{nid("to-b"), {tid("b"), false, "Tree b", false, 1, 2, true}}}));
-  CHECK(fromA.followed(marks({"to-b"})).completed == std::set<NodeId>{});
+  const OpenedTrees both = opened({a, b}, {{"a", marks({"to-b"})}, {"b", marks({"to-a", "done"})}});
 
-  const OpenedTrees fromB(b, known);
-  CHECK(fromB.openings == (std::map<NodeId, Opening>{{nid("to-a"), {tid("a"), false, "Tree a", false, 0, 1, true}}}));
-  CHECK(fromB.followed(marks({"to-a", "done"})).completed == std::set<NodeId>{nid("done")});
+  CHECK(both.openings(a) == (std::map<NodeId, Opening>{{nid("to-b"), {tid("b"), false, "Tree b", false, 1, 2}}}));
+  CHECK(both.followed(a, marks({"to-b"})).completed == std::set<NodeId>{});
+  CHECK(both.openings(b) == (std::map<NodeId, Opening>{{nid("to-a"), {tid("a"), false, "Tree a", false, 0, 1}}}));
+  CHECK(both.followed(b, marks({"to-a", "done"})).completed == std::set<NodeId>{nid("done")});
+  CHECK(both.leadingBackTo(tid("a")) == (std::set<TreeId>{tid("a"), tid("b")}));
 }
 
 TEST(a_tree_that_opens_itself_is_never_complete) {
   const TreeData self = tree("self", {step("again", "self"), step("done")});
 
-  const OpenedTrees opened(self, standing({self}, {{"self", marks({"again", "done"})}}));
+  const OpenedTrees alone = opened({self}, {{"self", marks({"again", "done"})}});
 
-  CHECK(opened.openings == (std::map<NodeId, Opening>{{nid("again"), {tid("self"), false, "Tree self", false, 1, 2, true}}}));
-  CHECK(opened.followed(marks({"again", "done"})).completed == std::set<NodeId>{nid("done")});
+  CHECK(alone.openings(self) == (std::map<NodeId, Opening>{{nid("again"), {tid("self"), false, "Tree self", false, 1, 2}}}));
+  CHECK(alone.followed(self, marks({"again", "done"})).completed == std::set<NodeId>{nid("done")});
+  CHECK(alone.leadingBackTo(tid("self")) == std::set<TreeId>{tid("self")});
 }
 
 TEST(an_empty_tree_is_not_complete) {
   const TreeData root = tree("root", {step("idea", "empty")});
   const TreeData empty = tree("empty", {});
 
-  const OpenedTrees opened(root, standing({root, empty}));
+  const OpenedTrees both = opened({root, empty});
 
-  CHECK(opened.openings == (std::map<NodeId, Opening>{{nid("idea"), {tid("empty"), false, "Tree empty", false, 0, 0, false}}}));
-  CHECK(opened.followed(marks({"idea"})).completed == std::set<NodeId>{});
+  CHECK(both.openings(root) == (std::map<NodeId, Opening>{{nid("idea"), {tid("empty"), false, "Tree empty", false, 0, 0}}}));
+  CHECK(both.followed(root, marks({"idea"})).completed == std::set<NodeId>{});
 }
 
-TEST(a_chain_of_eight_pointers_completes_and_one_of_nine_does_not) {
-  const std::vector<TreeData> eight = chain(8);
-  const OpenedTrees withinReach(eight.front(), standing(eight, {{"t8", marks({"n"})}}));
-  CHECK(withinReach.openings == (std::map<NodeId, Opening>{{nid("r"), {tid("t1"), false, "Tree t1", true, 1, 1, false}}}));
+TEST(a_chain_of_any_length_completes_from_the_mark_at_its_end_and_a_loop_of_any_length_never_does) {
+  const auto link = [](int k) { return "t" + std::to_string(100 + k); };
+  std::vector<TreeData> chain;
+  for (int k = 0; k < 40; ++k) chain.push_back(tree(link(k), {step("n", k < 39 ? link(k + 1) : "")}));
 
-  const std::vector<TreeData> nine = chain(9);
+  const OpenedTrees unmarked = opened(chain);
+  CHECK(unmarked.openings(chain.front()) ==
+        (std::map<NodeId, Opening>{{nid("n"), {tid(link(1)), false, "Tree " + link(1), false, 0, 1}}}));
+  const OpenedTrees marked = opened(chain, {{link(39), marks({"n"})}});
+  CHECK(marked.openings(chain.front()) ==
+        (std::map<NodeId, Opening>{{nid("n"), {tid(link(1)), false, "Tree " + link(1), true, 1, 1}}}));
+  CHECK(marked.leadingBackTo(tid(link(0))) == std::set<TreeId>{tid(link(0))});
+
+  std::vector<TreeData> ring = chain;
+  ring.back().nodes = {step("n", link(0)), step("plain")};
   std::map<std::string, Progress> everyNodeMarked;
-  for (int k = 1; k <= 9; ++k) everyNodeMarked["t" + std::to_string(k)] = marks({"n"});
-  const OpenedTrees pastReach(nine.front(), standing(nine, everyNodeMarked));
-  CHECK(pastReach.openings == (std::map<NodeId, Opening>{{nid("r"), {tid("t1"), false, "Tree t1", false, 0, 1, false}}}));
-}
-
-TEST(a_tree_reached_by_a_shorter_way_is_within_reach_whatever_longer_way_also_leads_to_it) {
-  std::vector<TreeData> trees = chain(9);
-  trees.front().nodes.push_back(step("shortcut", "t2"));
-
-  const OpenedTrees opened(trees.front(), standing(trees, {{"t9", marks({"n"})}}));
-
-  CHECK(opened.openings == (std::map<NodeId, Opening>{{nid("r"), {tid("t1"), false, "Tree t1", true, 1, 1, false}},
-                                                      {nid("shortcut"), {tid("t2"), false, "Tree t2", true, 1, 1, false}}}));
+  std::set<TreeId> everyTree;
+  for (int k = 0; k < 40; ++k) {
+    everyNodeMarked[link(k)] = marks({"n", "plain"});
+    everyTree.insert(tid(link(k)));
+  }
+  const OpenedTrees looped = opened(ring, everyNodeMarked);
+  CHECK(looped.openings(ring.front()) ==
+        (std::map<NodeId, Opening>{{nid("n"), {tid(link(1)), false, "Tree " + link(1), false, 0, 1}}}));
+  CHECK(looped.followed(ring.back(), marks({"n", "plain"})).completed == std::set<NodeId>{nid("plain")});
+  CHECK(looped.leadingBackTo(tid(link(0))) == everyTree);
 }
 
 TEST(a_tree_opened_from_two_nodes_and_along_two_ways_is_judged_once_and_is_no_loop) {
@@ -148,26 +145,27 @@ TEST(a_tree_opened_from_two_nodes_and_along_two_ways_is_judged_once_and_is_no_lo
   const TreeData b = tree("b", {step("down", "shared"), step("own")});
   const TreeData shared = tree("shared", {step("s")});
 
-  const OpenedTrees opened(root, standing({root, a, b, shared}, {{"shared", marks({"s"})}, {"b", marks({"own"})}}));
+  const OpenedTrees all = opened({root, a, b, shared}, {{"shared", marks({"s"})}, {"b", marks({"own"})}});
 
-  CHECK(opened.openings == (std::map<NodeId, Opening>{{nid("left"), {tid("a"), false, "Tree a", true, 1, 1, false}},
-                                                      {nid("right"), {tid("b"), false, "Tree b", true, 2, 2, false}},
-                                                      {nid("direct"), {tid("shared"), false, "Tree shared", true, 1, 1, false}},
-                                                      {nid("twice"), {tid("shared"), false, "Tree shared", true, 1, 1, false}}}));
-  CHECK(opened.followed(Progress{}).completed ==
-        (std::set<NodeId>{nid("left"), nid("right"), nid("direct"), nid("twice")}));
+  CHECK(all.openings(root) == (std::map<NodeId, Opening>{{nid("left"), {tid("a"), false, "Tree a", true, 1, 1}},
+                                                         {nid("right"), {tid("b"), false, "Tree b", true, 2, 2}},
+                                                         {nid("direct"), {tid("shared"), false, "Tree shared", true, 1, 1}},
+                                                         {nid("twice"), {tid("shared"), false, "Tree shared", true, 1, 1}}}));
+  CHECK(all.followed(root, Progress{}).completed == (std::set<NodeId>{nid("left"), nid("right"), nid("direct"), nid("twice")}));
+  CHECK(all.leadingBackTo(tid("root")) == std::set<TreeId>{tid("root")});
+  CHECK_EQ(all.walked(), 5u);
 }
 
 TEST(a_mark_on_a_node_with_a_valid_pointer_is_ignored_and_one_on_a_node_with_an_invalid_pointer_counts) {
   const TreeData root = tree("root", {step("valid", "sub"), step("gone", "t_removed"), step("gone-unmarked", "t_removed"), step("plain")});
   const TreeData sub = tree("sub", {step("s")});
 
-  const OpenedTrees opened(root, standing({root, sub}));
+  const OpenedTrees both = opened({root, sub});
 
-  CHECK(opened.openings == (std::map<NodeId, Opening>{{nid("valid"), {tid("sub"), false, "Tree sub", false, 0, 1, false}},
-                                                      {nid("gone"), {tid("t_removed"), true}},
-                                                      {nid("gone-unmarked"), {tid("t_removed"), true}}}));
-  CHECK(opened.followed(marks({"valid", "gone", "plain", "ghost"})).completed ==
+  CHECK(both.openings(root) == (std::map<NodeId, Opening>{{nid("valid"), {tid("sub"), false, "Tree sub", false, 0, 1}},
+                                                          {nid("gone"), {tid("t_removed"), true}},
+                                                          {nid("gone-unmarked"), {tid("t_removed"), true}}}));
+  CHECK(both.followed(root, marks({"valid", "gone", "plain", "ghost"})).completed ==
         (std::set<NodeId>{nid("gone"), nid("plain"), nid("ghost")}));
 }
 
@@ -176,13 +174,10 @@ TEST(a_node_whose_tree_is_complete_is_complete_though_its_prerequisites_are_not_
                                       step("later", "", {nid("after")})});
   const TreeData sub = tree("sub", {step("s")});
 
-  const OpenedTrees open(root, standing({root, sub}));
-  CHECK(UnlockRules::derive(root.nodes, open.followed(marks({"idea"}))) ==
+  CHECK(UnlockRules::derive(root.nodes, opened({root, sub}).followed(root, marks({"idea"}))) ==
         (std::map<NodeId, NodeState>{{nid("first"), NodeState::available}, {nid("idea"), NodeState::locked},
                                      {nid("after"), NodeState::locked}, {nid("later"), NodeState::locked}}));
-
-  const OpenedTrees complete(root, standing({root, sub}, {{"sub", marks({"s"})}}));
-  CHECK(UnlockRules::derive(root.nodes, complete.followed(Progress{})) ==
+  CHECK(UnlockRules::derive(root.nodes, opened({root, sub}, {{"sub", marks({"s"})}}).followed(root, Progress{})) ==
         (std::map<NodeId, NodeState>{{nid("first"), NodeState::available}, {nid("idea"), NodeState::complete},
                                      {nid("after"), NodeState::available}, {nid("later"), NodeState::locked}}));
 }
@@ -190,34 +185,145 @@ TEST(a_node_whose_tree_is_complete_is_complete_though_its_prerequisites_are_not_
 TEST(done_counts_a_nested_node_by_the_tree_it_opens) {
   const TreeData root = tree("root", {step("idea", "mid")});
   const TreeData mid = tree("mid", {step("marked"), step("unmarked"), step("to-complete", "leaf-done"),
-                                    step("to-open", "leaf-open"), step("to-removed", "t_removed")});
+                                    step("to-open", "leaf-open"), step("to-removed", "t_removed"),
+                                    step("to-removed-unmarked", "t_removed")});
   const TreeData leafDone = tree("leaf-done", {step("l")});
   const TreeData leafOpen = tree("leaf-open", {step("l")});
 
-  const OpenedTrees opened(root, standing({root, mid, leafDone, leafOpen},
-                                          {{"mid", marks({"marked", "to-open", "to-removed"})}, {"leaf-done", marks({"l"})}}));
+  const OpenedTrees all = opened({root, mid, leafDone, leafOpen},
+                                 {{"mid", marks({"marked", "to-open", "to-removed"})}, {"leaf-done", marks({"l"})}});
 
-  CHECK(opened.openings == (std::map<NodeId, Opening>{{nid("idea"), {tid("mid"), false, "Tree mid", false, 3, 5, false}}}));
+  CHECK(all.openings(root) == (std::map<NodeId, Opening>{{nid("idea"), {tid("mid"), false, "Tree mid", false, 3, 6}}}));
 }
 
-TEST(a_pointer_at_a_tree_past_reach_is_still_a_valid_one_so_the_mark_on_its_node_is_ignored) {
-  const std::vector<TreeData> nine = chain(9);
+TEST(the_trees_that_lead_back_to_a_tree_are_found_at_any_distance_and_a_loop_elsewhere_is_not_among_them) {
+  std::vector<TreeData> trees{tree("root", {step("far", "back1"), step("near", "leaf"), step("elsewhere", "x")}),
+                              tree("leaf", {step("l")}), tree("x", {step("to-y", "y")}), tree("y", {step("to-x", "x")})};
+  std::set<TreeId> leading{tid("root")};
+  for (int k = 1; k <= 12; ++k) {
+    const std::string name = "back" + std::to_string(k);
+    trees.push_back(tree(name, {step("on", k < 12 ? "back" + std::to_string(k + 1) : "root")}));
+    leading.insert(tid(name));
+  }
 
-  const OpenedTrees opened(nine.front(), standing(nine, {{"t8", marks({"n"})}, {"t9", marks({"n"})}}));
+  const OpenedTrees all = opened(trees);
 
-  CHECK(opened.openings == (std::map<NodeId, Opening>{{nid("r"), {tid("t1"), false, "Tree t1", false, 0, 1, false}}}));
+  CHECK(all.leadingBackTo(tid("root")) == leading);
+  CHECK(all.leadingBackTo(tid("leaf")) == (std::set<TreeId>{tid("leaf"), tid("root"), tid("back1"), tid("back2"), tid("back3"),
+                                                            tid("back4"), tid("back5"), tid("back6"), tid("back7"), tid("back8"),
+                                                            tid("back9"), tid("back10"), tid("back11"), tid("back12")}));
+  CHECK(all.leadingBackTo(tid("t_removed")) == std::set<TreeId>{});
 }
 
-TEST(a_loop_farther_down_leaves_the_trees_on_it_open_and_is_not_a_loop_through_the_tree_being_read) {
-  const TreeData root = tree("root", {step("idea", "a"), step("other", "leaf")});
-  const TreeData a = tree("a", {step("to-b", "b")});
-  const TreeData b = tree("b", {step("to-a", "a")});
-  const TreeData leaf = tree("leaf", {step("l", "root")});
+TEST(the_completeness_pass_walks_each_pointer_once_on_an_account_whose_trees_each_open_every_later_one) {
+  const auto name = [](int k) { return "t" + std::to_string(1000 + k); };
+  std::vector<TreeData> trees;
+  std::map<std::string, Progress> plainMarked;
+  for (int k = 0; k < 300; ++k) {
+    std::vector<NodeSpec> nodes{step("plain")};
+    for (int later = k + 1; later < 300; ++later) nodes.push_back(step("to-" + name(later), name(later)));
+    trees.push_back(tree(name(k), nodes));
+    plainMarked[name(k)] = marks({"plain"});
+  }
 
-  const OpenedTrees opened(root, standing({root, a, b, leaf}));
+  const OpenedTrees complete = opened(trees, plainMarked);
+  CHECK_EQ(complete.walked(), 300u * 299u / 2u);
+  CHECK_EQ(complete.followed(trees.front(), marks({"plain"})).completed.size(), 300u);
 
-  CHECK(opened.openings == (std::map<NodeId, Opening>{{nid("idea"), {tid("a"), false, "Tree a", false, 0, 1, false}},
-                                                      {nid("other"), {tid("leaf"), false, "Tree leaf", false, 0, 1, true}}}));
+  plainMarked.erase(name(299));
+  const OpenedTrees stalled = opened(trees, plainMarked);
+  CHECK_EQ(stalled.walked(), 0u);
+  CHECK(stalled.followed(trees.front(), marks({"plain"})).completed == std::set<NodeId>{nid("plain")});
+}
+
+// The rule enumerated: the complete trees are those in every set closed under "has a node, and each is complete".
+TEST(random_accounts_agree_with_the_rule_enumerated_over_every_set_of_their_trees) {
+  std::mt19937 random(20261112);
+  const auto below = [&](unsigned bound) { return static_cast<unsigned>(random() % bound); };
+  int disagreements = 0;
+  for (int account = 0; account < 600; ++account) {
+    const unsigned count = 1 + below(9);
+    const unsigned pointerPercent = std::vector<unsigned>{20, 45, 75}[below(3)];
+    const unsigned markPercent = std::vector<unsigned>{100, 90, 60}[below(3)];
+    std::vector<std::string> ids;
+    std::map<TreeId, unsigned> index;
+    for (unsigned t = 0; t < count; ++t) {
+      ids.push_back(std::string(1, static_cast<char>('a' + below(26))) + std::to_string(t));
+      index[tid(ids.back())] = t;
+    }
+    std::vector<TreeData> trees;
+    std::map<std::string, Progress> marked;
+    for (unsigned t = 0; t < count; ++t) {
+      std::vector<NodeSpec> nodes;
+      std::vector<std::string> done;
+      const unsigned nodeCount = below(5);
+      for (unsigned n = 0; n < nodeCount; ++n) {
+        std::string opens;
+        if (below(100) < pointerPercent) opens = below(100) < 85 ? ids[below(count)] : "t_removed";
+        nodes.push_back(step("n" + std::to_string(n), opens));
+        if (below(100) < markPercent) done.push_back("n" + std::to_string(n));
+      }
+      trees.push_back(tree(ids[t], nodes));
+      marked[ids[t]] = marks(done);
+    }
+
+    const auto nodeComplete = [&](unsigned among, const TreeData& data, const NodeSpec& node) {
+      const auto target = index.find(node.opens);
+      if (target == index.end()) return marked.at(data.id.str()).completed.count(node.id) > 0;
+      return ((among >> target->second) & 1u) != 0;
+    };
+    unsigned least = (1u << count) - 1;
+    for (unsigned among = 0; among < (1u << count); ++among) {
+      bool closed = true;
+      for (unsigned t = 0; t < count && closed; ++t) {
+        const bool complete = !trees[t].nodes.empty() &&
+                              std::all_of(trees[t].nodes.begin(), trees[t].nodes.end(),
+                                          [&](const NodeSpec& node) { return nodeComplete(among, trees[t], node); });
+        closed = !complete || ((among >> t) & 1u);
+      }
+      if (closed) least &= among;
+    }
+    const auto leadsTo = [&](unsigned from, unsigned target) {
+      std::set<unsigned> seen;
+      std::vector<unsigned> reached{from};
+      while (!reached.empty()) {
+        const unsigned at = reached.back();
+        reached.pop_back();
+        if (at == target) return true;
+        if (!seen.insert(at).second) continue;
+        for (const NodeSpec& node : trees[at].nodes)
+          if (index.count(node.opens)) reached.push_back(index.at(node.opens));
+      }
+      return false;
+    };
+
+    const OpenedTrees judged = opened(trees, marked);
+    for (unsigned t = 0; t < count; ++t) {
+      std::set<NodeId> completed;
+      std::map<NodeId, Opening> openings;
+      std::set<TreeId> leading;
+      for (unsigned other = 0; other < count; ++other)
+        if (leadsTo(other, t)) leading.insert(trees[other].id);
+      for (const NodeSpec& node : trees[t].nodes) {
+        if (nodeComplete(least, trees[t], node)) completed.insert(node.id);
+        if (node.opens.empty()) continue;
+        if (!index.count(node.opens)) {
+          openings.emplace(node.id, Opening{node.opens, true});
+          continue;
+        }
+        const unsigned target = index.at(node.opens);
+        const int done = static_cast<int>(std::count_if(
+            trees[target].nodes.begin(), trees[target].nodes.end(),
+            [&](const NodeSpec& inner) { return nodeComplete(least, trees[target], inner); }));
+        openings.emplace(node.id, Opening{node.opens, false, trees[target].title, ((least >> target) & 1u) != 0, done,
+                                          static_cast<int>(trees[target].nodes.size())});
+      }
+      if (judged.followed(trees[t], marked.at(trees[t].id.str())).completed != completed) ++disagreements;
+      if (judged.openings(trees[t]) != openings) ++disagreements;
+      if (judged.leadingBackTo(trees[t].id) != leading) ++disagreements;
+    }
+  }
+  CHECK_EQ(disagreements, 0);
 }
 
 TEST(the_same_trees_in_another_order_give_the_same_answer) {
@@ -230,21 +336,21 @@ TEST(the_same_trees_in_another_order_give_the_same_answer) {
     const TreeData root = tree("root", rootNodes);
     const std::vector<TreeData> trees{root, tree(ids[0], firstNodes), tree(ids[1], secondNodes), tree(ids[2], {step("z")}),
                                       tree(ids[3], {step("back", ids[4])}), tree(ids[4], {step("back", ids[3])})};
-    const OpenedTrees opened(
-        root, standing(trees, {{ids[0], marks({"x", "gone"})}, {ids[1], marks({"y"})}, {ids[2], marks({"z"})}}));
+    const OpenedTrees all =
+        opened(trees, {{ids[0], marks({"x", "gone"})}, {ids[1], marks({"y"})}, {ids[2], marks({"z"})}});
+    const std::map<NodeId, Opening> openings = all.openings(root);
     std::vector<Opening> byNode;
     for (const char* node : {"to-first", "to-loop"}) {
-      Opening opening = opened.openings.at(nid(node));
+      Opening opening = openings.at(nid(node));
       opening.tree = TreeId{};
       opening.title.clear();
       byNode.push_back(opening);
     }
-    return std::make_pair(byNode, opened.followed(marks({"plain", "to-loop"})).completed);
+    return std::make_pair(byNode, all.followed(root, marks({"plain", "to-loop"})).completed);
   };
 
-  const auto expected = std::make_pair(
-      std::vector<Opening>{{TreeId{}, false, "", true, 3, 3, false}, {TreeId{}, false, "", false, 0, 1, false}},
-      std::set<NodeId>{nid("plain"), nid("to-first")});
+  const auto expected = std::make_pair(std::vector<Opening>{{TreeId{}, false, "", true, 3, 3}, {TreeId{}, false, "", false, 0, 1}},
+                                       std::set<NodeId>{nid("plain"), nid("to-first")});
   CHECK(answer({"a", "b", "c", "d", "e"}, false) == expected);
   CHECK(answer({"e", "d", "c", "b", "a"}, false) == expected);
   CHECK(answer({"c", "e", "a", "d", "b"}, true) == expected);

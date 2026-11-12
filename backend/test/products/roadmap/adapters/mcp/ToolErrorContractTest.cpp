@@ -847,6 +847,8 @@ TEST(mcp_the_quickstart_resource_says_what_the_surface_does) {
                             "information, not orders", "A node can point at another of your trees",
                             "Reads that ask for the `opens` field answer the tree's id, title and `state`",
                             "a node that opens another of your trees follows that tree",
+                            "A tree is complete when it has at least one node and",
+                            "a tree whose pointers lead back to it never is",
                             "Your mark on it is kept and still answered as"})
     CHECK(text.find(claim) != std::string::npos);
   CHECK(roadmapInstructions().find("read its guide with get_tree") != std::string::npos);
@@ -994,7 +996,9 @@ TEST(mcp_the_tool_descriptions_say_a_node_that_opens_a_tree_follows_it_and_that_
   };
 
   for (const char* read : {"get_tree", "find_nodes"}) {
-    CHECK(says(read, "a node that opens another tree of yours is complete exactly when every node of that tree is"));
+    CHECK(says(read, "a node that opens another tree of yours follows that tree, whatever mark it holds: complete when the "
+                     "tree has at least one node and every node of it is complete, which a tree whose pointers lead back "
+                     "to it never is"));
     CHECK(says(read, "as {treeId, title, state} with `state` complete or open"));
   }
   CHECK(says("find_nodes", "your marks and, on a tree you own, the trees its nodes open"));

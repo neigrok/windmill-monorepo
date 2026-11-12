@@ -36,10 +36,10 @@ with unmet prerequisites and returns `prerequisitesMet: false`. Use `outOfOrder:
 `roadmap_find_nodes {state: "available"}` finds the current frontier. Import personal marks through
 `progress[]`, separately from node `seedStatus`.
 
-On a tree you own, a node that opens another of your trees follows that tree: its `state` is
-`complete` exactly when every node of the opened tree is complete for you, whatever mark the node
-holds and whatever its prerequisites, and a step waiting on it unlocks then. A tree with no nodes is
-not complete, and neither is one whose pointers lead back to it or one more than 8 pointers away.
+On a tree you own, a node that opens another of your trees follows that tree, whatever mark the
+node holds and whatever its prerequisites: its `state` is `complete` when the opened tree is complete
+for you, and a step waiting on it unlocks then. A tree is complete when it has at least one node and
+every node of it is complete; a tree whose pointers lead back to it never is.
 `roadmap_list_trees` counts such a node the same way. Your mark on it is kept and still answered as
 `status`, and `prerequisitesMet` reads marks alone.
 

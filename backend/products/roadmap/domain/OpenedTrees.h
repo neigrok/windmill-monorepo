@@ -3,6 +3,7 @@
 #include "products/roadmap/domain/Ids.h"
 #include "products/roadmap/domain/Tree.h"
 
+#include <cstddef>
 #include <map>
 #include <set>
 #include <string>
@@ -10,15 +11,11 @@
 
 namespace wm {
 
-// The pointers a tree may sit from the tree being read, by the shortest way, and still be judged.
-inline constexpr int kOpenedTreeReach = 8;
-
-// A node that holds a pointer, with the reader's mark on it.
-struct Opener {
-  NodeId node;
-  TreeId opens;
-  bool marked = false;
-  bool operator==(const Opener&) const = default;
+// The nodes of one tree that open one target, and how many of them the reader marked.
+struct Pointers {
+  int nodes = 0;
+  int marked = 0;
+  bool operator==(const Pointers&) const = default;
 };
 
 // One tree as completeness reads it; `marked` counts the reader's marks on nodes that hold no pointer.
@@ -26,7 +23,7 @@ struct OpenedTree {
   std::string title;
   int total = 0;
   int marked = 0;
-  std::vector<Opener> openers;
+  std::map<TreeId, Pointers> pointers;
 
   OpenedTree() = default;
   OpenedTree(const TreeData& tree, const Progress& marks);
@@ -41,22 +38,32 @@ struct Opening {
   bool complete = false;
   int done = 0;
   int total = 0;
-  bool loop = false;
   bool operator==(const Opening&) const = default;
 };
 
 std::set<TreeId> treesOpenedBy(const TreeData& tree);
 
-// One tree's pointers followed for its owner, by the rule in SPEC.md (Model, `opens`).
-struct OpenedTrees {
-  // `standing` holds the owner's standing trees with the owner's marks: a pointer is valid when it names one.
-  OpenedTrees(const TreeData& tree, const std::map<TreeId, OpenedTree>& standing);
+// One owner's standing trees under the owner's marks, judged once by the rule in SPEC.md (Model, `OpenedTrees`).
+class OpenedTrees {
+public:
+  // A pointer is valid when it names one of `standing`.
+  explicit OpenedTrees(std::map<TreeId, OpenedTree> standing);
 
-  // One entry per node that holds a pointer.
-  std::map<NodeId, Opening> openings;
+  // `marks` on `tree`, with each node that holds a valid pointer following its tree; only `completed` is filled.
+  Progress followed(const TreeData& tree, const Progress& marks) const;
+  // One entry per node of `tree` that holds a pointer.
+  std::map<NodeId, Opening> openings(const TreeData& tree) const;
+  // The standing trees whose pointers lead to `tree`, itself among them when it stands.
+  std::set<TreeId> leadingBackTo(const TreeId& tree) const;
+  // The pointers the completeness pass walked: at most one per tree and target.
+  std::size_t walked() const { return walked_; }
 
-  // `marks` with each node that opens a tree following that tree; only `completed` is filled.
-  Progress followed(const Progress& marks) const;
+private:
+  std::map<TreeId, OpenedTree> standing_;
+  std::map<TreeId, std::vector<TreeId>> openers_;
+  std::map<TreeId, int> pending_;
+  std::set<TreeId> complete_;
+  std::size_t walked_ = 0;
 };
 
 }

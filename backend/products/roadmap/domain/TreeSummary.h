@@ -1,6 +1,7 @@
 #pragma once
 
 #include "products/roadmap/domain/Ids.h"
+#include "products/roadmap/domain/OpenedTrees.h"
 #include "products/roadmap/domain/Tree.h"
 
 #include <cstdint>
@@ -41,8 +42,8 @@ struct LoadedTree {
   std::uint64_t lastMarkedAt = 0;  // the caller's latest progress mark (epoch ms), 0 if none
 };
 
-// Each tree's completed set as its board reads it (OpenedTrees::followed), in the order given: one owner's trees.
-std::vector<Progress> followedProgress(const std::vector<LoadedTree>& loaded);
+// One owner's loaded trees under their marks, judged once for the whole account.
+OpenedTrees openedAmong(const std::vector<LoadedTree>& loaded);
 
 // Ordered newest-forward-change first, ties broken by id. Each row's updatedAt is the freshest of
 // its two timestamps.
