@@ -15,7 +15,7 @@ point for the component showcase.
 | `room/` | What the room holds: the load, the view, progress, the scene, the open step, the row's verbs, the band and who holds the roadmap |
 | `model/` | Graph validation, trunk selection, unlock rules, legend, workspace and spatial queries. Independent of React and WebGL |
 | `identity/` | The row above both views: title, roadmap sheet and switcher, view switch |
-| `guide/` | The tree's guide: its draft and bound, who sees it and where a save goes, its chip and modal from 744px, and its phone line, note, row, page and editor |
+| `guide/` | The tree's guide: its draft and bound, who sees it and where a save goes, its entry on the tree (a card from 744px, a row on phones) and the note it opens |
 | `board/` | Query and columns, regroup, held actions, the shared toast, card gestures and selection |
 | `step/` | The step page and modal, workspace, composer and picker, and the step's address |
 | `graph/`, `graph/tree/`, `graph/tablet/` | Canvas chrome, docks, writes, selection and what a changed lattice does to the picture; the desktop step panel; the tablet's panel |
@@ -166,17 +166,30 @@ receive through MCP; people see the same text. `GuideDraft` counts it in code po
 from 4,500, and past 5,000 nothing is cut and Save waits. Save writes the text as it shows: a NUL a paste carried goes and a
 lone surrogate becomes the replacement glyph drawn for it, so no door sends text the server refuses, and `admitsGuide`,
 the server's admission, guards the session's and the device's doors. `useRoomGuide` decides who sees it (the owner always, a reader on
-the app route when it holds words, nobody in the shared-reader mode or the demo), holds the one surface open on it and routes a
+the app route when it holds words, nobody in the shared-reader mode or the demo), holds whether its note stands open and routes a
 save: `SyncSession.setGuide` when the session can take the write, else the device store for a tree that lives only here
-(`setLocalGuide`, which refuses a tree whose record is gone), else `PATCH /v1/trees/{id}`. From 744px `GuideChip` follows the view switch: the first line up to 320px
-(200px below 1280px), the book alone with its tooltip below 1024px, a dashed Add guide for an owner with none. It opens
-`GuideModal`, the step modal's anatomy filling the window with the text at a 560px measure. The owner's text is one
-`<textarea>`, read-only while reading, so a click that is not a drag-selection writes from where it landed; where a browser
-leaves the caret where it was, `caretPositionFromPoint` says where. Enter writes from the end, ⌘↩ saves, an empty Save removes
-the guide and leaving a changed draft asks through `DiscardDraft`. A guide set elsewhere flashes the chip and swaps the text in
-place; mid-edit a strip offers Load latest. On phones the owner's roadmap sheet carries a Guide row and page beside Activity's,
-and a tap on the page's text opens `GuideEditor`, the note editor's full-screen shell, with the caret where the finger landed;
-a reader gets `GuideLine` in the device line's slot and the note in a sheet.
+(`setLocalGuide`, which refuses a tree whose record is gone), else `PATCH /v1/trees/{id}`.
+
+The guide is a note on the tree. `GuideEntry` is the note at rest, which the room hands to the view that shows it: from
+744px a card, over the Graph's canvas under the row and first in the Board's flow, with the first line and Read guide; on
+phones a row under the head of both views, beneath the device line when the tree carries one, with up to three lines.
+A reader's entry says Author's note, and an owner without a guide gets Add guide. `GuideNote` is the note open. From
+744px it stands in place over its entry and shares the room while it reads; on phones it is a bottom sheet as tall as its
+text. The owner presses the prose or the pencil, or Enter, and writes in the same frame from where the press landed
+(`caretPositionFromPoint`, or Safari's `caretRangeFromPoint`); writing holds the window, so everything beneath is inert
+and a press outside asks to leave. The field is as tall as its draft until the note's bound makes it scroll, and on
+phones the footer rides the keyboard. Save waits for a change and a draft that fits, ⌘↩ saves, and an empty Save removes
+the guide. While a save is in flight the frame holds: the field is read-only and nothing leaves until it settles. A
+save by someone who is no longer the owner writes through no door and keeps the draft on screen. While the note holds
+the window, Escape, ⌘↩ and Tab work wherever focus stands. The note keeps its draft across a change of band, and closes
+when the tree changes or the guide stops being shown. Leaving a draft returns to where writing began (the note read, or the tree for a guide begun from Add guide),
+at once when nothing changed and through Discard draft? when something did. Closing hands focus back to the entry. The
+footer keeps a status line with one act above who reads the guide: from 744px a guide changed elsewhere mid-edit says so
+there and offers Load latest. A guide set elsewhere replaces the entry's line and the read note's text with one
+crossfade (`useArrivalFade`), none under reduced motion; the note dissolves in and out over 160ms. On the Graph from
+744px the card and the note read in place publish their boxes to `useGraphGeometry`: `viewportInsets` frames the tree
+to their right while 320px of canvas stays, keeps captions out from under them, seats the card below a refusal banner
+and ends it clear of an open dock or panel.
 
 **The roadmap sheet.** `RoadmapSheet` owns title search above eight roadmaps and the keyboard-aware search and
 New roadmap footer; `roadmapSearch.js` owns the threshold, trimmed title match and highlight offsets in the
@@ -207,7 +220,7 @@ from the page top, or 12px below the measured row, Board filter strip or Graph r
 lower. The room mounts it in whichever layer the view shows, so it paints beneath the row's menus and the Board's
 sort menu. Phone owners open
 Activity as a page inside the roadmap sheet: with at most eight roadmaps the entry and the page share a 611px
-footprint capped by the viewport, grown by the guide's row when the sheet carries one; Back, an edge swipe or the first Escape
+footprint capped by the viewport; Back, an edge swipe or the first Escape
 returns to the roadmap page, and a row closes the
 sheet before opening its step. `activity/ActivityRows.jsx` owns the shared rows, removed-step treatment and
 empty state.
