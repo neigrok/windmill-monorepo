@@ -12,8 +12,9 @@ point for the component showcase.
 |---|---|
 | `SkillTreeView.jsx` | The room's composition: it wires the hooks in `room/` and mounts every surface below |
 | `i18n/`, `copy.js`, `resume.js`, `reportFailure.js` | The catalogs every visible string reads from; the words and count sentences several surfaces read; the newest roadmap as the home card and the landing offer it back; the static-name Sentry report |
-| `room/` | What the room holds: the load, the view, progress, the scene, the open step, the row's verbs, the band and who holds the roadmap |
-| `model/` | Graph validation, trunk selection, unlock rules, legend, workspace and spatial queries. Independent of React and WebGL |
+| `OpeningMarks.jsx` | The marks of a step that opens a tree: one glyph and one bar for the Board, the step, the Graph's chrome and a node's centre |
+| `room/` | What the room holds: the load, the view, progress, the scene, the open step, the tree a step opens and the way back, the row's verbs, the band and who holds the roadmap |
+| `model/` | Graph validation, trunk selection, unlock rules, what a step's tree has come to, legend, workspace and spatial queries. Independent of React and WebGL |
 | `identity/` | The row above both views: title, roadmap sheet and switcher, view switch |
 | `guide/` | The tree's guide: its draft and bound, who sees it and where a save goes, its entry on the tree (a card from 744px, a row on phones) and the note it opens |
 | `board/` | Query and columns, regroup, held actions, the shared toast, card gestures and selection |
@@ -59,9 +60,12 @@ event uses the same branch that chose it:
    the Graph, otherwise the door those rules choose. The saved view choice is preserved.
 1. An owner's empty roadmap opens on the Board.
 2. A non-empty just-planted roadmap opens on the Graph.
-3. A step link opens on the Board.
-4. Non-demo readers of a not-owned or ownership-demoted roadmap open on the Graph, whatever they last chose.
-5. Otherwise the saved choice stands, with owners defaulting to the Board and everyone else to the Graph. The
+3. A tree gone into through a step opens in the view the person was in, and the roadmap they come back to opens in
+   the view they left (doors `tree` and `back`). This holds once, for the account that holds the room as its owner: a
+   reload or a Forward of the same entry, and anyone else at it, falls to the rules below.
+4. A step link opens on the Board.
+5. Non-demo readers of a not-owned or ownership-demoted roadmap open on the Graph, whatever they last chose.
+6. Otherwise the saved choice stands, with owners defaulting to the Board and everyone else to the Graph. The
    demo and an owned roadmap opened through a shared address keep their saved choice. A saved `list` reads as
    `board`; `setLastView` never writes it.
 
@@ -99,7 +103,8 @@ fallback's measured bottom feeds the same insets. The step and the composer clos
 seeds activity and starts synchronization without any scene or camera calls. Layout is synchronous and cached
 by graph structure, effective engine and, for caption-aware engines, labels.
 
-The repository judges its own reads, and `BoundaryFailure` says so to any catch above it. A server tree whose marks can't be
+The repository judges its own reads, and `BoundaryFailure` says so to any catch above it. A tree whose pointers the server
+could not follow (`503 opens-unavailable`) reports `roadmap-opens-load` and falls to the device's copy like any failed read. A server tree whose marks can't be
 read reports `roadmap-progress-load` and stops the load, so the room shows the load error and Try again rather than a false
 count. A failed activity read reports `roadmap-activity-load` and costs only the feed. A device tree's reads report nothing and
 it keeps its seeds: the tree's own read has already told what the server is doing.
@@ -115,6 +120,70 @@ cascades and ends on its one line. A fork opens on its Board and says what happe
 scene stays silent unless it is told what to say. Without WebGL2, the planted summary and welcome-back recap
 have no Board presentation and are absent; their undrawn states are in the
 [consistency ledger](../../../../docs/design/consistency.md).
+
+## A step that opens a tree
+
+A step can point at another tree of its owner's. The pointer is the node register `opens`; what it comes to is an
+`Opening` (`model/Opening.js`): the opened tree's title, whether it is complete, done of total and whether it leads back,
+or that nothing of the owner's stands at the other end. `GET /v1/trees/{id}` answers the openings to the owner, the
+repository builds them, and `useRoomLoad` stands them on every projection it hands on (`Openings.onto`), so each such
+step carries its `opening` through every tree built from it. Only the owner's room does: a reader, a shared address and
+the demo see ordinary steps. Until the session has joined the server's state the load is the newer word: a step it
+named opens that tree and a step it did not opens none, whatever an older copy on the device holds. From then on the
+projection's pointer decides, and one the load read nothing of is `unread`. Nothing pushes an opening. A pointer that
+arrives or changes while the roadmap is open has the roadmap read once more, after 600 ms and within ten seconds; a
+read that fails, or still says nothing of that pointer, is not asked again. A load that read none at all (the device's
+own copy, a `503`) leaves every pointer `unread` and asks nothing more.
+
+The device's copy of a roadmap holds its pointers, the ids of the trees its steps open, in the stored lattice, and
+nothing else of those trees. It goes when the account that held the device signs out or another signs in
+(`forgetDeviceTrees`), and a lapsed session keeps it.
+
+`UnlockRules.completed` is the one rule: a step that opens a tree is complete exactly when that tree is, whatever its
+mark and its prerequisites, and one whose pointer leads nowhere follows its mark. No hand marks such a step
+(`takesMark`): no door offers Complete or Reset on it, `markDoneTargets` leaves it out, and `RoomProgress.mark` changes
+and sends nothing for one. A mark that such a step already holds, made before the pointer arrived, is set aside
+(`SyncSession.owedFrames`): it stays on the device as it is, and while the lattice record holds a pointer it is not sent
+and not counted as unsent, in the outbox, in the status the room shows or in what keeps a refusal standing. Nothing
+else changes for it: no reconnect, no rebaseline, and Discard and Undo are what they are without it. When the pointer
+goes the mark is an ordinary unsent one again and goes with the next flush. The return ledger and the milestones read
+the same completed set. A roadmap with an `unread` opening does not know that set, so it recomputes nothing: it adds
+the person's own marks to what the ledger holds, and a load in that state leaves the ledger as it was.
+
+| Surface | What it shows of the tree |
+|---|---|
+| Card | A pill between the reason and the excerpt: done of total with a bar, *No steps*, *Loops back* or *Not found*, led by the tree's title where it differs from the step's. A press on it goes in. On phones an Up next card's swipe reveals Open in place of Complete |
+| C on a card | Completes nothing: a toast says what completes the step, with Open tree where the tree can be gone into. A tree that is not found has the toast without the action, and an `unread` one has no toast |
+| Step page and modal | A Tree section after the relations: the row goes in, and one line says what completes the step. Where Complete sat: the same in a few words, beside Open tree, primary while going in is the next thing to do |
+| Graph node | The tree's mark at its centre (a loop's, or an alert where nothing is found) and done of total on the sub-task arc |
+| Dock, tablet panel, phone bar | Done of total, and Open tree in place of Complete |
+
+An `unread` opening shows the mark and Open tree and says nothing else: no pill, no row, no words. `Opening.leads`
+says whether a door can lead there. A dangling one (`Not found`) and a step that opens the tree it stands in have no
+door on any surface: the pill has no chevron and opens the step, the Tree row is not a button, and no Open tree, swipe
+or toast action is offered. Such a step keeps its tree's mark and its loop's words.
+
+`room/useTreeVisit.js` goes in and comes back. Going in pushes `#/app/<treeId>`; the entry of the tree gone into names the
+roadmap the person came from, and the entry they left keeps the step they went through. Both are history state, never
+tree data, so a direct link has no way back, a chain pops one tree per press and the browser's Back reads what the chip
+reads. A history entry outlives a sign-out, so it holds ids and a view and no title. The room acts on it only for its
+holder: the account that holds the room as its owner, once the server has answered for it in this document (`confirmed`
+in the shell's auth context; a page that starts with no connection stands on the cached account, which is not one).
+The way back shows where this device's index (`LocalTreeRegistry.owned`) keeps the roadmap it leads to as that
+account's, under the title the index keeps; `open` writes that row for the roadmap it leaves before it navigates, as its
+session may not have stored anything yet. Without a holder there is no way back, no carried view or step, no door into
+a tree and no event. So a lapsed session, a device's copy with nobody signed in, a start with no connection and a reader
+keep the tree's mark and go nowhere. An arrival is settled as the room
+opens: the step and the view leave the entry, which keeps the roadmap it was reached from, so a reload shows the way
+back and is otherwise an ordinary visit. The identity row shows the way back as a chip in its first slot from 744px, and
+as a chevron with the roadmap's title over the tree's on phones. Coming back mounts the roadmap again, so it loads
+again; the step gone through is selected and brought into view, and on the Board its card wakes. A step that was open
+on the entry come back to opens as one reached by going back. Surfaces that render a step reach `open` through the
+`TreeDoor` context (`useTreeDoor`); the toast a C raises takes it from the Board's acts. Each names its door from
+`TREE_DOORS`, and `open` refuses any other.
+
+Attaching and detaching a tree, the tree picker, the guides of the trees above and a signed-out device's own count are
+not built.
 
 ## The identity row
 
@@ -145,7 +214,7 @@ readers when the Graph is available. Without WebGL2, G does nothing and its Boar
 A non-empty Graph search hands off to the Board with its query and field focus kept. ⌘K is Ask AI. A opens
 Activity from 744px when its destination is available; on phones it does nothing. `boardKey` in `shortcuts/shortcutMap.js` owns the
 Board's keys and their shared typing and covered-layer refusal: a step open over either view, a dialog or the
-composer prevents them acting. C completes a focused Up next card; Backspace and Delete start a nine-second
+composer prevents them acting. C completes a focused Up next card, or says what completes one that opens a tree; Backspace and Delete start a nine-second
 held delete on a deletable owner card, with no confirm. Graph selection shortcuts do not act on the Board. The
 host (`useRoadmapKeys`) lets no key reach the room while a layer covers it, the composer's picker and the guide's
 note being written included: paste, Undo and Redo, shortcut help, and the Graph's select all, delete and camera keys
@@ -328,7 +397,8 @@ delays only a new toast's entry: a visible toast and its Undo stay available dur
 
 ### Phone gestures and selection
 
-`gestures.js` owns the phone card's reveal-only swipe. Only Up next cards offer it. The card preserves
+`gestures.js` owns the phone card's reveal-only swipe. Only Up next cards offer it, and a card that opens a tree
+reveals Open in the same slot. The card preserves
 vertical scrolling, leaves the OS edge alone, claims a horizontal drag after 10px within 30 degrees, tracks to
 96px and resists beyond it. Release settles open or closed and never completes. A real Complete button follows
 the card in DOM order; Tab reveals it, and Escape or leaving focus closes it. Crossing the threshold offers
@@ -543,14 +613,16 @@ best-effort projection when replicated state contains cycles. `TrunkTree` choose
 for layout: same-kind parents first, then depth and id; siblings keep their fractional order and
 creation-stamp order.
 
-`UnlockRules.derive` is the authority for locked, available and complete; the same file answers what a step
+`UnlockRules.derive` is the authority for locked, available and complete, off the completed set `UnlockRules.completed`
+gives; the same file answers what a step
 still owes (`owedStepsOf` for one step, `owedCounts` for every step in one pass) and what completing it opens
 (`unlocksOf`). An edge inherits its source node's state. Legend order lives in the lattice and is written by
 `ReorderKinds`; `Legend`'s array operations also serve import drafts. Genesis kinds and stamps come from
 `packages/api-contract/genesis.js`, checked by `vite.config.js`.
 
 `theme.js` supplies WebGL's resolved light and dark palettes, shared geometry and the DOM kind-hue fallback.
-Kind chooses hue; progress chooses tier; structural form distinguishes linked, unnamed and unlinked nodes.
+Kind chooses hue; progress chooses tier; structural form distinguishes linked, unnamed and unlinked nodes; a node that
+opens a tree draws that tree's mark as its glyph, by the names `TREE_GLYPHS` gives a render node's `icon`.
 Node bodies, root and selection scale, zoom floors and caption dimensions must agree across shaders, overlays
 and layout. `model/footprint.js` estimates disc-plus-caption bounds from label length, without DOM
 measurement.
@@ -623,6 +695,10 @@ needs a separate run.
 
 The [graph synchronization contract](../../../../docs/GRAPH_SYNC_DESIGN.md) defines the wire format, coverage,
 acknowledgements and durability limits.
+
+**Registers.** A node's last-writer-wins registers are one list (`NODE_REGISTERS` in `sync/lattice.js`) that the join's
+clock, the frontier, the frame and Undo all read. `opens`, the tree a step opens, is joined by its stamp and stored with
+the rest, and no door of the web writes it: `sync/pendingWrites.js` leaves it out of what a replica counts unsent.
 
 **Gestures.** Shared structure and private progress use one socket and HLC clock but separate frames. Pending
 writes are derived from lattice state. `materialize.js` turns each local gesture into stamped field writes;

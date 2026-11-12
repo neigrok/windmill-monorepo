@@ -87,8 +87,15 @@ function newNode() {
     status: { v: null, at: { ...UNSET } },
     description: { v: '', at: { ...UNSET } },
     links: { v: [], at: { ...UNSET } },
+    opens: { v: '', at: { ...UNSET } },  // the id of the tree the node opens; '' opens none
   };
 }
+
+// A node's last-writer-wins registers, each carried on the wire as `name` beside its stamp `nameAt`.
+export const NODE_REGISTERS = Object.keys(newNode()).filter((name) => name !== 'life');
+// What each of them reads before any write.
+export const UNWRITTEN_NODE = Object.freeze(Object.fromEntries(NODE_REGISTERS.map((name) => [name, newNode()[name].v])));
+const nodeStamps = (record) => [record.life.addedAt, record.life.removedAt, ...NODE_REGISTERS.map((name) => record[name].at)];
 
 function newKind() {
   return {
@@ -221,6 +228,7 @@ export class TreeLattice {
         return [];
       }) : [];
       mergeLww(record.links, links, fold(parseHlc(n.linksAt)));
+      mergeLww(record.opens, typeof n.opens === 'string' ? n.opens : '', fold(parseHlc(n.opensAt)));
     }
     for (const e of frame.edges ?? []) {
       const record = this.edgeRecord(e.from, e.to);
@@ -247,10 +255,7 @@ export class TreeLattice {
 
   // Folds every stamp the lattice carries into a clock, so a fresh mint dominates them all.
   seedClock(clock) {
-    for (const record of this.nodes.values()) {
-      for (const reg of [record.life.addedAt, record.life.removedAt, record.label.at, record.icon.at,
-        record.color.at, record.order.at, record.position.at, record.status.at, record.description.at, record.links.at]) clock.observe(reg);
-    }
+    for (const record of this.nodes.values()) for (const at of nodeStamps(record)) clock.observe(at);
     for (const record of this.edges.values()) { clock.observe(record.addedAt); clock.observe(record.removedAt); }
     for (const record of this.kinds.values()) {
       for (const reg of [record.life.addedAt, record.life.removedAt, record.hue.at, record.label.at,
@@ -334,10 +339,7 @@ export class TreeLattice {
   // The frontier of everything the lattice holds.
   frontier() {
     const vector = new VersionVector();
-    for (const record of this.nodes.values()) {
-      for (const at of [record.life.addedAt, record.life.removedAt, record.label.at, record.icon.at,
-        record.color.at, record.order.at, record.position.at, record.status.at, record.description.at, record.links.at]) vector.observe(at);
-    }
+    for (const record of this.nodes.values()) for (const at of nodeStamps(record)) vector.observe(at);
     for (const record of this.edges.values()) { vector.observe(record.addedAt); vector.observe(record.removedAt); }
     for (const record of this.kinds.values()) {
       for (const at of [record.life.addedAt, record.life.removedAt, record.hue.at, record.label.at,
@@ -354,14 +356,7 @@ export class TreeLattice {
       const entry = { id };
       emitStamp(entry, 'createdAt', record.life.addedAt);
       emitStamp(entry, 'deletedAt', record.life.removedAt);
-      emitField(entry, 'label', 'labelAt', record.label.v, record.label.at);
-      emitField(entry, 'icon', 'iconAt', record.icon.v, record.icon.at);
-      emitField(entry, 'color', 'colorAt', record.color.v, record.color.at);
-      emitField(entry, 'order', 'orderAt', record.order.v, record.order.at);
-      emitField(entry, 'position', 'positionAt', record.position.v, record.position.at);
-      emitField(entry, 'status', 'statusAt', record.status.v, record.status.at);
-      emitField(entry, 'description', 'descriptionAt', record.description.v, record.description.at);
-      emitField(entry, 'links', 'linksAt', record.links.v, record.links.at);
+      for (const name of NODE_REGISTERS) emitField(entry, name, `${name}At`, record[name].v, record[name].at);
       if (Object.keys(entry).length > 1) nodes.push(entry);
     }
     const edges = [];
@@ -414,6 +409,7 @@ export class TreeLattice {
         status: record.status.v ?? undefined,
         description: record.description.v || undefined,
         links: record.links.v.length ? record.links.v.map((l) => ({ ...l })) : undefined,
+        opens: record.opens.v || undefined,
       });
     }
     return { id: this.treeId, title: this.title, guide: this.guide, nodes, kinds: this.orderedKinds() };

@@ -1,12 +1,14 @@
 import { DEFAULT_NODE_COLOR } from '../theme.js';
 import { kindChoices } from './Legend.js';
+import { takesMark } from './UnlockRules.js';
 
 export function isGrouped(size) {
   return size >= 2;
 }
 
-export function markDoneTargets(selectedIds, completed) {
-  return [...selectedIds].filter((id) => !completed.has(id));
+// The selected steps a bulk Mark done marks: the unmarked ones that take a hand mark.
+export function markDoneTargets(tree, selectedIds, completed) {
+  return [...selectedIds].filter((id) => !completed.has(id) && takesMark(tree.nodesById.get(id)));
 }
 
 // The one kind a whole selection wears, or null when it is mixed, empty or holds a step the tree no longer has.

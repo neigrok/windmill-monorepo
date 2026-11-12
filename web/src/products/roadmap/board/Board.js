@@ -14,6 +14,7 @@ class BoardCard {
     const unmet = state === 'locked' ? unmetPrerequisitesOf(tree, states, step.id) : [];
 
     this.step = step;
+    this.opening = step.opening ?? null;
     this.column = COLUMN_OF_STATE[state];
     this.unlockCount = opens.length;
     this.needs = state === 'locked'

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { HttpTreeRepository } from '../../../../src/products/roadmap/persistence/HttpTreeRepository.js';
+import { Opening, Openings } from '../../../../src/products/roadmap/model/Opening.js';
 import { BoundaryFailure } from '../../../../src/products/roadmap/reportFailure.js';
 
 const BASE = 'http://backend.test';
@@ -21,7 +22,7 @@ async function withFetch(handler, run) {
 }
 
 const ok = (body) => ({ ok: true, status: 200, json: async () => body });
-const status = (code) => ({ ok: false, status: code, json: async () => ({}) });
+const status = (code, body = {}) => ({ ok: false, status: code, json: async () => body });
 
 const SEEDED = {
   id: 't_1',
@@ -42,14 +43,41 @@ test('loadTree returns the document plus what the server knows about it', async 
     const repo = new HttpTreeRepository({ baseUrl: BASE, treeId: 't_1' });
     const tree = await repo.loadTree();
     assert.deepEqual(calls, [{ url: 'http://backend.test/v1/trees/t_1', init: { credentials: 'include', signal: undefined } }]);
-    assert.deepEqual(tree, { ...SEEDED, visibility: 'unlisted', mine: true, createdAt: 1700000000000 });
+    assert.deepEqual(tree, { ...SEEDED, visibility: 'unlisted', mine: true, createdAt: 1700000000000, openings: Openings.fromWire() });
   });
 });
 
 test('loadTree fills the three server facts a bare answer omits', async () => {
   await withFetch(() => ok({ data: SEEDED }), async () => {
     const repo = new HttpTreeRepository({ baseUrl: BASE, treeId: 't_1' });
-    assert.deepEqual(await repo.loadTree(), { ...SEEDED, visibility: null, mine: false, createdAt: 0 });
+    assert.deepEqual(await repo.loadTree(), { ...SEEDED, visibility: null, mine: false, createdAt: 0, openings: Openings.fromWire() });
+  });
+});
+
+test('loadTree reads what each pointer of an owner’s tree comes to, keyed by its step', async () => {
+  const opens = {
+    b: { treeId: 't_2', title: 'Tacking drills', state: 'open', done: 1, total: 4, loop: false },
+    c: { treeId: 't_3', missing: true },
+  };
+  await withFetch(() => ok({ data: SEEDED, mine: true, opens }), async () => {
+    const repo = new HttpTreeRepository({ baseUrl: BASE, treeId: 't_1' });
+    const { openings } = await repo.loadTree();
+    assert.deepEqual(openings, new Openings(new Map([['b', Opening.fromWire(opens.b)], ['c', Opening.fromWire(opens.c)]]), true));
+  });
+});
+
+test('a tree whose pointers the server could not follow reports that, not an absent tree, and throws as any failed read', async () => {
+  await withFetch(() => status(503, { code: 'opens-unavailable' }), async () => {
+    const reported = [];
+    const repo = new HttpTreeRepository({ baseUrl: BASE, treeId: 't_1', reportFailure: (operation) => reported.push(operation) });
+    await assert.rejects(() => repo.loadTree(), /loadTree t_1: HTTP 503/);
+    assert.deepEqual(reported, ['roadmap-opens-load']);
+  });
+  await withFetch(() => status(503, { code: 'opens-unavailable' }), async () => {
+    const reported = [];
+    const repo = new HttpTreeRepository({ baseUrl: BASE, treeId: 't_1', operation: 'roadmap-export-load', reportFailure: (operation) => reported.push(operation) });
+    await assert.rejects(() => repo.loadTree(), /loadTree t_1: HTTP 503/);
+    assert.deepEqual(reported, ['roadmap-export-load']);
   });
 });
 

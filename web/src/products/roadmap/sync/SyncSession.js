@@ -4,7 +4,7 @@
 
 import { pageWatching, reportInvalidProgressMark, reportRoadmapFailure } from '../reportFailure.js';
 import { socketUrl } from '../../../shell/apiBase.js';
-import { HlcClock, TREE_REGISTERS, TreeLattice, VersionVector, hlcText, parseHlc } from './lattice.js';
+import { HlcClock, NODE_REGISTERS, TREE_REGISTERS, TreeLattice, UNWRITTEN_NODE, VersionVector, hlcText, parseHlc } from './lattice.js';
 import { ProgressLattice } from './progressLattice.js';
 import { materialize } from './materialize.js';
 import { UNSENDABLE, isOwnershipRefusal, isSessionRefusal, strandsTheBank } from './refusals.js';
@@ -77,6 +77,7 @@ export class SyncSession {
     this.unansweredSince = null;                    // when this socket began going unanswered; any inbound frame clears it
     this.phase = 'offline';                         // offline | syncing | live
     this.ready = false;
+    this.joinedServer = false;                      // the server's state has joined this lattice since the session began
     this.lastSeq = 0;
     this.fullGraftPending = false;
     this.sent = new Set();                          // frameIds we authored — echoes already applied
@@ -138,7 +139,8 @@ export class SyncSession {
     const confirmed = { structure: writeStamps(this.confirmedStructure.toFrame()), progress: writeStamps(this.confirmedProgress.toFrame()) };
     const pending = (lane, frame) => pendingRecordCount(outboxStamps(writeStamps(frame), confirmed[lane]));
     const structurePending = this.rebaselining?.has('structure') ? 0 : pending('structure', this.lattice.toFrame());
-    const progressPending = this.rebaselining?.has('progress') ? 0 : pending('progress', this.progress.toFrame());
+    const owedProgress = this.owedFrames('progress').frame;
+    const progressPending = this.rebaselining?.has('progress') ? 0 : pending('progress', owedProgress);
     const inFlightCount = (lane, frames) => [...frames.values()].filter((frame) => pending(lane, frame) > 0).length;
     const snapshot = {
       phase: this.phase,
@@ -148,7 +150,7 @@ export class SyncSession {
       structureInFlight: this.rebaselining?.has('structure') ? 0 : inFlightCount('structure', this.inFlight),
       progressInFlight: this.rebaselining?.has('progress') ? 0 : inFlightCount('progress', this.progressInFlight),
       structureGestures: this.rebaselining?.has('structure') ? 0 : Object.keys(this.gestures.structure).length,
-      progressGestures: this.rebaselining?.has('progress') ? 0 : Object.keys(this.gestures.progress).length,
+      progressGestures: this.rebaselining?.has('progress') ? 0 : Object.keys(retainedProgressGestures(owedProgress, this.gestures.progress)).length,
       rebaselining: this.rebaselining != null,
       refused: this.refusals.values().next().value ?? null,
       receiptVersion: this.receiptVersion,
@@ -229,8 +231,17 @@ export class SyncSession {
       : { frame: this.progress.toFrame(), confirmed: this.confirmedProgress.toFrame() };
   }
 
-  unconfirmedWrites(lane) {
+  // What a lane owes the server, beside its confirmed baseline: all of the structure, and every mark but those set
+  // aside. A mark on a step that opens a tree stays on the device as it is, and while the pointer stands it is neither
+  // sent nor counted as unsent; with the pointer gone it is an ordinary mark again.
+  owedFrames(lane) {
     const { frame, confirmed } = this.laneFrames(lane);
+    if (lane === 'structure') return { frame, confirmed };
+    return { frame: { marks: frame.marks.filter(({ node }) => !this.lattice.nodes.get(node)?.opens.v) }, confirmed };
+  }
+
+  unconfirmedWrites(lane) {
+    const { frame, confirmed } = this.owedFrames(lane);
     return outboxStamps(writeStamps(frame), writeStamps(confirmed));
   }
 
@@ -300,6 +311,7 @@ export class SyncSession {
       ...(n.status ? { status: n.status, statusAt: genesis } : {}),
       ...(n.description ? { description: n.description, descriptionAt: genesis } : {}),
       ...(n.links?.length ? { links: n.links, linksAt: genesis } : {}),
+      ...(n.opens ? { opens: n.opens, opensAt: genesis } : {}),
     }));
     const edges = [];
     for (const n of treeData.nodes) for (const p of n.prerequisites ?? []) edges.push({ from: p, to: n.id, addedAt: genesis });
@@ -541,6 +553,7 @@ export class SyncSession {
     this.ackedServerVector = coverage;
     this.fullGraftPending = false;
     this.confirmedKnown.structure = true;
+    this.joinedServer = true;
     this.persistNow();
     this.rebaselining?.delete('structure');
     if (this.rebaselining?.size === 0) this.rebaselining = null;
@@ -559,6 +572,7 @@ export class SyncSession {
     if (typeof frame.seq !== 'number') return;
     if (frame.seq <= this.lastSeq) return;                                 // duplicate / already seen
     if (frame.seq > this.lastSeq + 1) { this.forceReconnect(); return; }   // gap → heal via a fresh graft
+    const pointed = (frame.nodes ?? []).filter((node) => this.lattice.nodes.get(node.id)?.opens.v);
     let frontier;
     try {
       frontier = this.lattice.join(frame);
@@ -576,6 +590,8 @@ export class SyncSession {
     const mine = frame.frameId && this.sent.has(frame.frameId);
     this.scheduleSave();
     if (!mine) this.emitProjection('structure');
+    // A pointer this frame took away releases the mark set aside on its step, and it goes like any other.
+    if (pointed.some((node) => !this.lattice.nodes.get(node.id).opens.v) && this.canResend('progress')) this.flushProgress();
     this.emitStatus();
   }
 
@@ -700,7 +716,8 @@ export class SyncSession {
   flushProgress() {
     if (this.rebaselining?.has('progress') || this.discardPending) return;
     if (this.phase !== 'live' || this.ws?.readyState !== WebSocket.OPEN) return;
-    const queued = outboxWrites(this.progress.toFrame(), this.confirmedProgress.toFrame(), this.progressInFlight.values());
+    const { frame, confirmed } = this.owedFrames('progress');
+    const queued = outboxWrites(frame, confirmed, this.progressInFlight.values());
     if (!queued.marks.length) return;
     this.sendWithEpoch('progress', (socket) => {
       const pending = outboxWrites(queued, this.confirmedProgress.toFrame(), this.progressInFlight.values());
@@ -769,7 +786,7 @@ export class SyncSession {
     this.sent.delete(frame.frameId);
     this.emitStatus();
     this.durabilityAtRisk = true;
-    const { frame: current, confirmed } = this.laneFrames(lane);
+    const { frame: current, confirmed } = this.owedFrames(lane);
     const pending = outboxWrites(current, confirmed, inFlight.values());
     const frontier = lane === 'structure' ? frameFrontier(pending) : new ProgressLattice().join(pending);
     let maxMs = 0;
@@ -1122,14 +1139,7 @@ export class SyncSession {
       const inv = { id: n.id };
       if (n.createdAt) inv.deleteLife = true;   // undo a create → tombstone
       if (n.deletedAt) inv.addLife = true;      // undo a delete → re-add; fields survive in the lattice
-      if ('labelAt' in n) inv.label = record ? record.label.v : '';
-      if ('iconAt' in n) inv.icon = record ? record.icon.v : '';
-      if ('colorAt' in n) inv.color = record ? record.color.v : 'terracotta';
-      if ('orderAt' in n) inv.order = record ? record.order.v : '';
-      if ('positionAt' in n) inv.position = record ? record.position.v : null;
-      if ('statusAt' in n) inv.status = record ? record.status.v : null;
-      if ('descriptionAt' in n) inv.description = record ? record.description.v : '';
-      if ('linksAt' in n) inv.links = record ? record.links.v : [];
+      for (const name of NODE_REGISTERS) if (`${name}At` in n) inv[name] = record ? record[name].v : UNWRITTEN_NODE[name];
       return inv;
     });
     const edges = (writes.edges ?? []).map((e) => (
@@ -1154,14 +1164,7 @@ export class SyncSession {
       const e = { id: n.id };
       if (n.deleteLife) e.deletedAt = s;
       if (n.addLife) e.createdAt = s;
-      if ('label' in n) { e.label = n.label; e.labelAt = s; }
-      if ('icon' in n) { e.icon = n.icon; e.iconAt = s; }
-      if ('color' in n) { e.color = n.color; e.colorAt = s; }
-      if ('order' in n) { e.order = n.order; e.orderAt = s; }
-      if ('position' in n) { e.position = n.position; e.positionAt = s; }
-      if ('status' in n) { e.status = n.status; e.statusAt = s; }
-      if ('description' in n) { e.description = n.description; e.descriptionAt = s; }
-      if ('links' in n) { e.links = n.links; e.linksAt = s; }
+      for (const name of NODE_REGISTERS) if (name in n) { e[name] = n[name]; e[`${name}At`] = s; }
       return e;
     });
     const edges = (inverse.edges ?? []).map((x) => (

@@ -112,6 +112,23 @@
   width: 208px;
 }
 
+/* A step that opens a tree: what completes it takes the room, and Open tree sits under the right thumb. */
+.st-board-step-page .st-board-step-tree-band {
+  flex: 1;
+  font-size: 12px;
+  line-height: 16px;
+}
+.st-board-step-page .st-board-step-action.st-board-step-action--tree {
+  flex: none;
+  align-self: center;
+  min-height: 44px;
+  padding: 0 10px;
+  border-radius: 8px;
+  font-size: 15px;
+  line-height: 20px;
+  white-space: nowrap;
+}
+
 .st-board-step-page .st-board-step-action.st-board-step-action--text {
   flex: 0 0 76px;
   min-width: 76px;

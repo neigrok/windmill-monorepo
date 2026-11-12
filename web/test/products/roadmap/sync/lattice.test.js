@@ -191,3 +191,123 @@ test('a register whose text is not a string makes the whole frame malformed and 
   }
   assert.deepEqual({ title: lattice.title, guide: lattice.guide, nodes: lattice.nodes.size }, { title: 'Sail', guide: 'Kept', nodes: 0 });
 });
+
+test('a pointer the server sends is kept with its stamp, projected, and survives the stored frame', () => {
+  const lattice = new TreeLattice('t_1');
+  lattice.join({ nodes: [
+    { id: 'sail', createdAt: '100:0:srv', label: 'Learn to sail', labelAt: '100:0:srv', opens: 't_sail', opensAt: '200:0:srv' },
+    { id: 'run', createdAt: '100:0:srv', label: 'Run a 10K', labelAt: '100:0:srv' },
+  ] });
+  const copy = new TreeLattice('t_1');
+  copy.join(JSON.parse(JSON.stringify(lattice.toFrame())));
+
+  assert.deepEqual(lattice.toFrame().nodes.map(({ id, opens, opensAt }) => ({ id, opens, opensAt })), [
+    { id: 'sail', opens: 't_sail', opensAt: '200:0:srv' },
+    { id: 'run', opens: undefined, opensAt: undefined },
+  ]);
+  assert.deepEqual(copy.toTreeData().nodes.map(({ id, opens }) => ({ id, opens })), [
+    { id: 'sail', opens: 't_sail' },
+    { id: 'run', opens: undefined },
+  ]);
+  assert.deepEqual(copy.frontier().toJSON(), { srv: '200:0:srv' });
+});
+
+test('the later stamp of a pointer wins in either order, and an emptied pointer opens nothing', () => {
+  const set = { nodes: [{ id: 'sail', createdAt: '100:0:srv', opens: 't_sail', opensAt: '200:0:srv' }] };
+  const moved = { nodes: [{ id: 'sail', opens: 't_coast', opensAt: '300:0:srv' }] };
+  const cleared = { nodes: [{ id: 'sail', opens: '', opensAt: '400:0:srv' }] };
+  const forward = new TreeLattice('t_1');
+  const backward = new TreeLattice('t_1');
+  forward.join(set);
+  forward.join(moved);
+  backward.join(moved);
+  backward.join(set);
+
+  assert.equal(forward.toTreeData().nodes[0].opens, 't_coast');
+  assert.deepEqual(backward.toFrame(), forward.toFrame());
+
+  forward.join(cleared);
+  backward.join(set);
+  backward.join(cleared);
+  assert.equal(forward.toTreeData().nodes[0].opens, undefined);
+  assert.deepEqual(backward.toFrame(), forward.toFrame());
+});
+
+test('a frame or an entry without the pointer changes none: a reader’s empty, unstamped pair included', () => {
+  const lattice = new TreeLattice('t_1');
+  lattice.join({ nodes: [{ id: 'sail', createdAt: '100:0:srv', label: 'Learn to sail', labelAt: '100:0:srv', opens: 't_sail', opensAt: '200:0:srv' }] });
+  const held = lattice.toFrame();
+
+  lattice.join({ nodes: [], edges: [] });
+  lattice.join({ nodes: [{ id: 'sail', label: 'Learn to sail', labelAt: '100:0:srv' }] });
+  lattice.join({ nodes: [{ id: 'sail', opens: '', opensAt: '0:0:' }] });
+
+  assert.deepEqual(lattice.toFrame(), held);
+});
+
+test('a mint after a held pointer dominates its stamp', () => {
+  const lattice = new TreeLattice('t_1');
+  lattice.join({ nodes: [{ id: 'sail', createdAt: '100:0:srv', opens: 't_sail', opensAt: '900:4:srv' }] });
+  const clock = new HlcClock('r_tab');
+  lattice.seedClock(clock);
+
+  assert.deepEqual(clock.tick(500), { ms: 900, counter: 5, actor: 'r_tab' });
+});
+
+// A seeded PRNG (mulberry32), so the random frames below are the same run to run.
+function mulberry32(seed) {
+  let state = seed >>> 0;
+  return () => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let mixed = Math.imul(state ^ (state >>> 15), 1 | state);
+    mixed = (mixed + Math.imul(mixed ^ (mixed >>> 7), 61 | mixed)) ^ mixed;
+    return ((mixed ^ (mixed >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+test('with the pointer among its registers the join stays commutative, associative and idempotent over random frames', () => {
+  const random = mulberry32(7);
+  const pick = (list) => list[Math.floor(random() * list.length)];
+  const stamp = () => `${1 + Math.floor(random() * 6)}:${Math.floor(random() * 3)}:${pick(['srv', 'r_x', 'r_y'])}`;
+  const randomFrame = () => {
+    const nodes = Array.from({ length: 1 + Math.floor(random() * 3) }, () => {
+      const entry = { id: pick(['a', 'b', 'c']) };
+      if (random() < 0.4) entry.createdAt = stamp();
+      if (random() < 0.15) entry.deletedAt = stamp();
+      if (random() < 0.5) { entry.label = `L${Math.floor(random() * 5)}`; entry.labelAt = stamp(); }
+      if (random() < 0.6) { entry.opens = pick(['t_1111111111111111', 't_2222222222222222', '']); entry.opensAt = stamp(); }
+      if (random() < 0.15) { entry.opens = ''; entry.opensAt = '0:0:'; }
+      return entry;
+    });
+    return { nodes, edges: random() < 0.3 ? [{ from: pick(['a', 'b', 'c']), to: pick(['a', 'b', 'c']), addedAt: stamp() }] : [], kinds: [] };
+  };
+  // Two values never share one stamp on the wire, so the first value said under a stamp is the one every frame says.
+  const honest = (frames) => {
+    const said = new Map();
+    for (const node of frames.flatMap((frame) => frame.nodes)) {
+      for (const name of ['label', 'opens']) {
+        const at = node[`${name}At`];
+        if (!at || at === '0:0:') continue;
+        const key = `${node.id}|${name}|${at}`;
+        if (said.has(key)) node[name] = said.get(key);
+        else said.set(key, node[name]);
+      }
+    }
+    return frames;
+  };
+  const joined = (frames) => {
+    const lattice = new TreeLattice('t');
+    for (const frame of frames) lattice.join(frame);
+    const frame = lattice.toFrame();
+    return { ...frame, nodes: [...frame.nodes].sort((x, y) => (x.id < y.id ? -1 : 1)), edges: [...frame.edges].sort((x, y) => (`${x.from}${x.to}` < `${y.from}${y.to}` ? -1 : 1)) };
+  };
+
+  for (let round = 0; round < 2000; round += 1) {
+    const frames = honest(Array.from({ length: 2 + Math.floor(random() * 5) }, randomFrame));
+    const forward = joined(frames);
+    assert.deepEqual(joined([...frames].reverse()), forward);
+    assert.deepEqual(joined([...frames, ...frames]), forward);
+    assert.deepEqual(joined([joined(frames.slice(0, 2)), joined(frames.slice(2))]), forward);
+    assert.deepEqual(joined([JSON.parse(JSON.stringify(forward))]), forward);
+  }
+});

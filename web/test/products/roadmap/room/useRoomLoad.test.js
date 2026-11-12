@@ -210,7 +210,7 @@ for (const failure of ['unavailable', '5xx', 'offline', 'thrown']) for (const sh
       reads++;
       await reading;
       if (failure === 'offline') throw new TypeError('offline');
-      if (failure === 'unavailable' || failure === '5xx') return { ok: false, status: failure === '5xx' ? 503 : 404 };
+      if (failure === 'unavailable' || failure === '5xx') return { ok: false, status: failure === '5xx' ? 503 : 404, json: async () => ({}) };
       return { ok: true, status: 200, json: async () => ({ data: { id: 't_missing', title: 'Plan', nodes: [] }, mine: true }) };
     });
     if (failure === 'thrown') t.mock.method(captured.HttpTreeRepository.prototype, 'loadProgress', async () => { throw error; });
@@ -242,3 +242,128 @@ for (const failure of ['unavailable', '5xx', 'offline', 'thrown']) for (const sh
     assert.equal(reads, 1);
   });
 }
+
+// An owner's room over a server that answers each tree read in turn, with the session's socket never opened: the test
+// speaks for the session through `emit`. `shown` is every projection the room handed on, `recaps` every return recap.
+async function ownerRoom(t, { treeAnswers, stored = null, ledger = null }) {
+  globalThis.roomLoadIssues = [];
+  t.after(() => { delete globalThis.roomLoadIssues; });
+  const disk = new Map([['windmill:device-trees', JSON.stringify({ t_year: { title: 'My year', owner: 'A', claimed: true } })]]);
+  if (ledger) disk.set('windmill:return:t_year', JSON.stringify(ledger));
+  const storage = { getItem: (key) => disk.get(key) ?? null, setItem: (key, value) => disk.set(key, value) };
+  const globals = {
+    window: { location: { search: '', hash: '#/app/t_year' }, localStorage: storage },
+    document: { visibilityState: 'visible' },
+    navigator: { onLine: true },
+  };
+  for (const [key, value] of Object.entries(globals)) {
+    const previous = Object.getOwnPropertyDescriptor(globalThis, key);
+    Object.defineProperty(globalThis, key, { configurable: true, writable: true, value });
+    t.after(() => {
+      if (previous) Object.defineProperty(globalThis, key, previous);
+      else delete globalThis[key];
+    });
+  }
+  const answered = (body, status = 200) => ({ ok: status === 200, status, json: async () => body });
+  const reads = { tree: 0 };
+  t.mock.method(globalThis, 'fetch', async (url) => {
+    if (url.endsWith('/v1/me')) return answered({ user: { id: 'A' } });
+    if (url.includes('/progress')) return answered({ marks: [{ node: 'plan', status: 'complete', at: '5:0:srv' }] });
+    if (url.includes('/activity')) return answered({ events: [] });
+    reads.tree += 1;
+    return treeAnswers.shift();
+  });
+  t.mock.method(SyncStore.prototype, 'load', async () => stored);
+  const sessions = [];
+  t.mock.method(SyncSession.prototype, 'start', function () { sessions.push(this); return this; });
+  t.mock.method(SyncSession.prototype, 'close', () => {});
+  const shown = [];
+  const recaps = [];
+  const props = roomProps('t_year');
+  props.desktopEditorRef.current = true;
+  props.structure.onTreeChanged = (projection) => shown.push(projection);
+  props.structure.layoutPositions = (tree) => new Map(tree.nodes.map((step) => [step.id, { x: 0, y: 0 }]));
+  props.room.sceneRef.current = new Proxy({}, { get: (scene, key) => (key === 'armReturnRecap' ? (ids) => recaps.push(ids) : () => {}) });
+  const view = renderHook(t, () => captured.useRoomLoad({ ...props, accountId: 'A' }));
+  await until(() => !view.tree.loading);
+  return {
+    view, props, shown, recaps, reads, storage,
+    emit(projection, { joined }) {
+      sessions.at(-1).joinedServer = joined;
+      sessions.at(-1).treeHandler(projection);
+    },
+    faces: (projection) => Object.fromEntries(projection.nodes.map((step) => [step.id, step.opening?.face ?? null])),
+  };
+}
+
+const answeredTree = (body, status = 200) => ({ ok: status === 200, status, json: async () => body });
+const yearSteps = (pointers = {}) => [
+  { id: 'plan', label: 'Plan the year', prerequisites: [] },
+  { id: 'sail', label: 'Learn to sail', prerequisites: ['plan'], ...(pointers.sail ? { opens: pointers.sail } : {}) },
+  { id: 'book', label: 'Write the book', prerequisites: ['plan'], ...(pointers.book ? { opens: pointers.book } : {}) },
+];
+const yearAnswer = (opens) => answeredTree({ data: { id: 't_year', title: 'My year', nodes: yearSteps({ sail: 't_sail' }) }, mine: true, opens });
+const SAIL_DONE = { treeId: 't_sail', title: 'Learn to sail', state: 'complete', done: 8, total: 8, loop: false };
+const BOOK_OPEN = { treeId: 't_book', title: 'The book', state: 'open', done: 1, total: 4, loop: false };
+
+test('the load’s facts stand over the device’s older copy until the session joins the server, and a pointer set since has the roadmap read once more', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const room = await ownerRoom(t, { treeAnswers: [yearAnswer({ sail: SAIL_DONE }), yearAnswer({ sail: SAIL_DONE, book: BOOK_OPEN })] });
+  assert.deepEqual(room.faces(room.props.room.projectionRef.current), { plan: null, sail: 'complete', book: null });
+
+  room.emit({ id: 't_year', title: 'My year', nodes: yearSteps() }, { joined: false });
+  assert.deepEqual(room.faces(room.shown.at(-1)), { plan: null, sail: 'complete', book: null }, 'the device has not stored the pointer yet');
+
+  const joined = { id: 't_year', title: 'My year', nodes: yearSteps({ sail: 't_sail', book: 't_book' }) };
+  room.emit(joined, { joined: true });
+  assert.deepEqual(room.faces(room.shown.at(-1)), { plan: null, sail: 'complete', book: 'unread' });
+  assert.equal(room.reads.tree, 1);
+
+  t.mock.timers.tick(599);
+  assert.equal(room.reads.tree, 1);
+  t.mock.timers.tick(1);
+  await until(() => room.shown.length === 3);
+  assert.deepEqual(room.faces(room.shown.at(-1)), { plan: null, sail: 'complete', book: 'open' });
+
+  room.emit(joined, { joined: true });
+  t.mock.timers.tick(600);
+  await settle();
+  assert.equal(room.reads.tree, 2);
+  assert.deepEqual(globalThis.roomLoadIssues, []);
+});
+
+test('a read for a new pointer that fails is not asked again for the same pointers', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const room = await ownerRoom(t, { treeAnswers: [yearAnswer({ sail: SAIL_DONE }), answeredTree({ code: 'opens-unavailable' }, 503)] });
+  const joined = { id: 't_year', title: 'My year', nodes: yearSteps({ sail: 't_sail', book: 't_book' }) };
+
+  room.emit(joined, { joined: true });
+  t.mock.timers.tick(600);
+  await until(() => room.reads.tree === 2);
+  await settle();
+  room.emit(joined, { joined: true });
+  t.mock.timers.tick(600);
+  await settle();
+
+  assert.equal(room.reads.tree, 2);
+  assert.deepEqual(room.faces(room.shown.at(-1)), { plan: null, sail: 'complete', book: 'unread' });
+  assert.deepEqual(globalThis.roomLoadIssues.map(({ operation }) => operation), ['roadmap-opens-load']);
+});
+
+test('a load that read nothing of the trees its steps open leaves the return ledger as it was, so the next visit recaps nothing done long before', async (t) => {
+  const stored = { frame: { nodes: [
+    { id: 'plan', createdAt: '1:0:srv', label: 'Plan the year', labelAt: '1:0:srv' },
+    { id: 'sail', createdAt: '1:0:srv', label: 'Learn to sail', labelAt: '1:0:srv', opens: 't_sail', opensAt: '2:0:srv' },
+  ], edges: [{ from: 'plan', to: 'sail', addedAt: '1:0:srv' }], kinds: [] }, lastSeq: 3 };
+  const ledger = { completed: ['plan', 'sail'], at: 1 };
+  const room = await ownerRoom(t, { treeAnswers: [answeredTree({ code: 'opens-unavailable' }, 503), yearAnswer({ sail: SAIL_DONE })], stored, ledger });
+  assert.deepEqual(room.faces(room.props.room.projectionRef.current), { plan: null, sail: 'unread' });
+  assert.deepEqual(JSON.parse(room.storage.getItem('windmill:return:t_year')), ledger);
+
+  room.view.tree.retryLoad();
+  await until(() => room.view.tree.reloadKey === 1 && !room.view.tree.loading && room.reads.tree === 2);
+
+  assert.deepEqual(room.faces(room.props.room.projectionRef.current), { plan: null, sail: 'complete', book: null });
+  assert.deepEqual(room.recaps, []);
+  assert.deepEqual(JSON.parse(room.storage.getItem('windmill:return:t_year')).completed, ['plan', 'sail']);
+});

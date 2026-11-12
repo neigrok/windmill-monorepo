@@ -9,7 +9,7 @@ import { kindOptions } from '../model/Legend.js';
 import { bulkKindChoice } from '../model/bulkSelection.js';
 import { FilterStrip } from './BoardControls.jsx';
 import { BoardColumns, DEFAULT_RAIL, railToReveal, swapRail } from './BoardColumns.jsx';
-import { useRegroup } from './ColumnCards.jsx';
+import { WAKE_MS, useRegroup } from './ColumnCards.jsx';
 import { PhoneSegments } from './PhoneSegments.jsx';
 import { BoardSkeleton, EmptyRoadmap, LoadError, RoadmapComplete, UpNextRest, boardFrame } from './BoardStates.jsx';
 import { BoardToast } from './BoardToast.jsx';
@@ -51,6 +51,7 @@ function BoardView({
   onToastShown,
   onDisplayedOverall,
   reveal = null,
+  wake = null,
   quiet = 0,
   topInset = 0,
   query: asked = EVERY_STEP,
@@ -92,6 +93,19 @@ function BoardView({
     return new Set([...motion.pinned, selection.starterId, selection.restoreId].filter(Boolean));
   }, [motion.pinned, selection.starterId, selection.restoreId]);
   const revealing = active && board !== null;
+  // The step a return from its tree came back through wakes once where it stands, as an arrival does.
+  const [woken, setWoken] = useState(wake);
+  const waking = woken !== null && board !== null;
+  useEffect(() => {
+    if (!waking) return undefined;
+    const timer = setTimeout(() => setWoken(null), WAKE_MS);
+    return () => clearTimeout(timer);
+  }, [waking]);
+  const arrived = useMemo(() => (waking ? new Set([...motion.arrived, woken]) : motion.arrived), [waking, woken, motion.arrived]);
+  const settleWake = (id) => {
+    if (id === woken) setWoken(null);
+    motion.settle(id);
+  };
 
   useLayoutEffect(() => { if (motion.counts) onDisplayedOverall?.(motion.counts.overall); }, [motion.counts, onDisplayedOverall]);
 
@@ -189,12 +203,12 @@ function BoardView({
   const onExpandDone = () => setDoneExpanded(true);
   const complete = board !== null && board.overall.total > 0 && board.overall.done === board.overall.total;
   const settleFocus = (id) => {
-    if (revealFocus.current?.dataset.stepId !== id) motion.settle(id);
+    if (revealFocus.current?.dataset.stepId !== id) settleWake(id);
   };
 
   // What the phone's panes and the columns both show.
   const cards = {
-    board, focusBoard: nextBoard, counts: motion.counts, arrived: motion.arrived, leaving: motion.leaving,
+    board, focusBoard: nextBoard, counts: motion.counts, arrived, leaving: motion.leaving,
     dimmed: motion.phase === 'quiet' ? motion.dimmed : undefined, settle: settleFocus,
     selectedId, doneExpanded, onExpandDone, query, onQuery,
   };
@@ -233,7 +247,7 @@ function BoardView({
     <div
       ref={boardRef}
       onFocus={(event) => { lastFocus.current = event.target; }}
-      onPointerDown={(event) => motion.settle(event.target.closest('.st-board-card')?.dataset.stepId)}
+      onPointerDown={(event) => settleWake(event.target.closest('.st-board-card')?.dataset.stepId)}
       className={`st-board ${phone ? 'st-board--phone' : 'st-board--columns'}`}
       style={{ paddingTop: topInset > 0 ? `calc(${topInset}px + ${topGap})` : undefined }}
     >

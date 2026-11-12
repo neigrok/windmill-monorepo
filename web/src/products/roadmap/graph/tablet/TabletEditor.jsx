@@ -3,7 +3,9 @@ import { Icon, Card } from '../../../../design-system';
 import { NodeAnnotation, ReadOnlyStateChip, SheetStateFruit, SheetRelations } from '../StepPanel.jsx';
 import { KindChoice } from '../../board/BoardControls.jsx';
 import { KIND_CSS, DEFAULT_NODE_COLOR } from '../../theme.js';
-import { COMPOSER, STEP_DETAIL, deleteCostLine } from '../../copy.js';
+import { COMPOSER, STEP_DETAIL, TREE, deleteCostLine } from '../../copy.js';
+import { OpeningGlyph } from '../../OpeningMarks.jsx';
+import { useTreeDoor } from '../../room/useTreeVisit.js';
 import { t } from '../../i18n/index.js';
 import { kindChoices } from '../../model/Legend.js';
 
@@ -42,6 +44,7 @@ export function TabletEditor({ node, state, prerequisites = [], unlocks = [], co
   const [draft, setDraft] = useState(node?.label ?? '');
   const inputRef = useRef(null);
   const escapedRef = useRef(false); // Esc reverts — the blur that follows must not commit
+  const openTree = useTreeDoor(node, 'panel');
 
   useEffect(() => {
     if (!editingName) return;
@@ -53,7 +56,8 @@ export function TabletEditor({ node, state, prerequisites = [], unlocks = [], co
 
   const currentKind = node.color ?? DEFAULT_NODE_COLOR;
   const hue = KIND_CSS[currentKind] ?? KIND_CSS[DEFAULT_NODE_COLOR];
-  const progress = progressVerb(state);
+  // A step that opens a tree is never marked here: its verb goes into the tree.
+  const progress = node.opening ? null : progressVerb(state);
   const blocker = state === 'locked' ? prerequisites.find((prerequisite) => !prerequisite.complete)?.label : null;
   const showChip = state === 'complete' || state === 'locked';
   const hasDag = prerequisites.length > 0 || unlocks.length > 0;
@@ -126,6 +130,12 @@ export function TabletEditor({ node, state, prerequisites = [], unlocks = [], co
           >
             <Icon name={progress === 'complete' ? 'check' : 'rotate-ccw'} size={16} color={progress === 'complete' ? '#fff' : undefined} />
             {progress === 'complete' ? t('roadmap.tablet.markDone') : t('roadmap.tablet.markNotDone')}
+          </button>
+        )}
+        {openTree && (
+          <button type="button" style={barkVerb} onClick={openTree}>
+            <OpeningGlyph face={node.opening.face} size={16} />
+            {TREE.open}
           </button>
         )}
         <button type="button" style={barkVerb} onClick={() => onAddStep(node.id)}>

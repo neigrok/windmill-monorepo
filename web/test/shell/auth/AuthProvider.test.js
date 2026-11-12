@@ -99,6 +99,36 @@ for (const trigger of ['refresh', 'poll']) {
   });
 }
 
+test('an account the page starts on with no connection is the cached one until the server answers for it, and a later blip does not unsay the answer', async (t) => {
+  const state = await account(t);
+  assert.equal(state.auth().confirmed, true);
+  const answer = globalThis.fetch;
+  let connected = false;
+  t.mock.method(globalThis, 'fetch', async (...request) => {
+    if (!connected) throw new TypeError('offline');
+    return answer(...request);
+  });
+
+  await state.reload();
+  await until(() => state.auth().status === 'signed-in');
+  assert.deepEqual({ status: state.auth().status, account: state.auth().account, confirmed: state.auth().confirmed },
+    { status: 'signed-in', account: { id: 'A', name: 'Ada' }, confirmed: false });
+
+  connected = true;
+  await state.auth().refresh();
+  assert.deepEqual({ status: state.auth().status, confirmed: state.auth().confirmed }, { status: 'signed-in', confirmed: true });
+
+  connected = false;
+  await state.auth().refresh();
+  assert.deepEqual({ status: state.auth().status, confirmed: state.auth().confirmed }, { status: 'signed-in', confirmed: true });
+
+  connected = true;
+  state.setMe(null);
+  await state.auth().refresh();
+  assert.deepEqual({ status: state.auth().status, account: state.auth().account, confirmed: state.auth().confirmed },
+    { status: 'ghost', account: null, confirmed: false });
+});
+
 test('a different account after a lapse keeps its own replica and invokes roadmap account cleanup once', async (t) => {
   const state = await account(t);
   state.setMe(null);

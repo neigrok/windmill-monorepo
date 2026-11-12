@@ -41,15 +41,17 @@ export class ViewPrefs {
   }
 }
 
-// Without the Graph every visit opens the Board; otherwise birth, empty, linked, reader and saved choices decide.
-export function initialView({ saved, owner, reader = false, empty, born = false, linkedStep = null, canAddFirstStep = false, graphAvailable = true }) {
+// Without the Graph every visit opens the Board; otherwise birth, empty, the view a tree visit carried, linked, reader
+// and saved choices decide. `carried` is { view, door } from going into a tree through a step, or coming back from one.
+export function initialView({ saved, owner, reader = false, empty, born = false, carried = null, linkedStep = null, canAddFirstStep = false, graphAvailable = true }) {
   if (!graphAvailable) {
-    const decision = initialView({ saved, owner, reader, empty, born, linkedStep, canAddFirstStep });
+    const decision = initialView({ saved, owner, reader, empty, born, carried, linkedStep, canAddFirstStep });
     return decision.view === 'tree' ? { view: 'board', door: 'no_graph' } : decision;
   }
   if (owner && empty && canAddFirstStep) return { view: 'board', door: 'empty' };
   if (born) return { view: 'tree', door: 'born' };
   if (empty) return { view: 'tree', door: 'empty' };
+  if (carried?.view) return { view: carried.view, door: carried.door };
   if (linkedStep !== null) return { view: 'board', door: 'link' };
   if (reader) return { view: 'tree', door: 'default' };
   if (saved === 'tree') return { view: 'tree', door: 'saved' };

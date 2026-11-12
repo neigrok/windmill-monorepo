@@ -2,8 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { SkillTree } from '../../../../src/products/roadmap/model/SkillTree.js';
+import { Opening } from '../../../../src/products/roadmap/model/Opening.js';
 import {
   UnlockRules,
+  takesMark,
   unmetPrerequisitesOf,
   owedStepsOf,
   owedCounts,
@@ -75,3 +77,51 @@ test('unlocksOf — the children this completion alone opens, in authored order'
   assert.deepEqual(unlocksOf(t, states, 'solo'), []);
 });
 
+
+const opened = (state, done, total) => Opening.fromWire({ treeId: 't_opened', title: 'Opened', state, done, total, loop: false });
+
+test('a step whose tree is complete is complete though its prerequisites are not, and unlocks the step behind it', () => {
+  const t = tree([node('plan', []), node('sail', ['plan'], { opens: 't_opened', opening: opened('complete', 8, 8) }), node('coast', ['sail'])]);
+
+  assert.deepEqual(UnlockRules.derive(t, { completed: new Set(), completedAt: {} }), new Map([
+    ['plan', 'available'], ['sail', 'complete'], ['coast', 'available'],
+  ]));
+});
+
+test('a mark on a step that opens a tree is ignored: the step is locked or available by its prerequisites until its tree is done', () => {
+  const sail = { opens: 't_opened', opening: opened('open', 3, 8) };
+  const t = tree([node('plan', []), node('sail', ['plan'], sail), node('coast', ['sail']), node('free', [], sail)]);
+
+  assert.deepEqual(UnlockRules.derive(t, { completed: new Set(['sail', 'free']), completedAt: {} }), new Map([
+    ['plan', 'available'], ['sail', 'locked'], ['coast', 'locked'], ['free', 'available'],
+  ]));
+  assert.deepEqual(UnlockRules.completed(t, { completed: new Set(['plan', 'sail', 'free']) }), new Set(['plan']));
+});
+
+test('a step whose pointer dangles follows its mark, and one whose facts are unread is held to a tree not known done', () => {
+  const dangling = { opens: 't_gone', opening: Opening.fromWire({ treeId: 't_gone', missing: true }) };
+  const unread = { opens: 't_opened', opening: Opening.unread('t_opened') };
+  const t = tree([node('bike', [], dangling), node('after', ['bike']), node('late', [], unread), node('behind', ['late'])]);
+
+  assert.deepEqual(UnlockRules.derive(t, { completed: new Set(['bike', 'late']), completedAt: {} }), new Map([
+    ['bike', 'complete'], ['after', 'available'], ['late', 'available'], ['behind', 'locked'],
+  ]));
+  assert.deepEqual(UnlockRules.derive(t, { completed: new Set(), completedAt: {} }), new Map([
+    ['bike', 'available'], ['after', 'locked'], ['late', 'available'], ['behind', 'locked'],
+  ]));
+});
+
+test('a reader’s tree carries no openings and derives as it always did, pointer or no pointer', () => {
+  const t = tree([node('plan', []), node('sail', ['plan'], { opens: 't_opened' }), node('coast', ['sail'])]);
+
+  assert.deepEqual(UnlockRules.derive(t, { completed: new Set(['plan', 'sail']), completedAt: {} }), new Map([
+    ['plan', 'complete'], ['sail', 'complete'], ['coast', 'available'],
+  ]));
+});
+
+test('no step that opens a tree takes a hand mark, whatever its tree has come to', () => {
+  const openings = [opened('open', 3, 8), opened('complete', 8, 8), Opening.fromWire({ treeId: 't_gone', missing: true }), Opening.unread('t_opened')];
+
+  assert.deepEqual(openings.map((opening) => takesMark({ id: 'sail', opening })), [false, false, false, false]);
+  assert.equal(takesMark({ id: 'run' }), true);
+});
