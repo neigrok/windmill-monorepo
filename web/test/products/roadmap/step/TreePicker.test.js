@@ -92,7 +92,7 @@ function start() {
         resolveId(id) {
           if (id === '/tree-picker-entry.js') return '\0tree-picker-entry';
           if (id.endsWith('/telemetry/beacon.js')) return '\0tree-picker-beacon';
-          if (id.endsWith('/reportFailure.js')) return '\0tree-picker-report';
+          if (id.endsWith('/telemetry/sentry.js')) return '\0tree-picker-sentry';
         },
         load(id) {
           if (id === '\0tree-picker-entry') return entry;
@@ -100,10 +100,8 @@ function start() {
             return 'export function track(name, props) { (window.events ??= []).push(`${name} ${JSON.stringify(props)}`); }\n'
               + 'export function reportError() {}\nexport function routeFamily(route) { return route; }';
           }
-          if (id === '\0tree-picker-report') {
-            return 'export function reportRoadmapFailure(operation, error, tags) { (window.reports ??= []).push(`${operation}: ${error.message} ${JSON.stringify(tags)}`); }\n'
-              + 'export function reportUnexpectedFailure(operation) { (window.reports ??= []).push(operation); }\n'
-              + 'export function pageWatching() { return window.watching !== false; }';
+          if (id === '\0tree-picker-sentry') {
+            return 'export function captureError(kind, operation, stack, route, tags) { (window.reports ??= []).push(`${operation} ${JSON.stringify(tags)}`); }';
           }
         },
         configureServer(server) {
@@ -408,7 +406,7 @@ test('a list that could not be loaded says so with Try again, never the empty st
   await page.getByRole('button', { name: 'Try again' }).click();
   await listed(page);
   assert.deepEqual((await picker(page)).rows, SAIL_ROWS);
-  assert.deepEqual(await reports(page), ['roadmap-tree-picker-load: Roadmap tree picker read failed {"read":"list","reason":"server"}']);
+  assert.deepEqual(await reports(page), ['roadmap-tree-picker-load {"read":"list","reason":"server"}']);
   assert.deepEqual((await events(page)).slice(1), [
     'roadmap_tree_attach {"step":"retry","read":"list","band":"desktop","view":"board"}',
     'roadmap_tree_attach {"step":"retry","read":"list","band":"desktop","view":"board"}',
@@ -419,14 +417,17 @@ test('a list that could not be loaded says so with Try again, never the empty st
 
 test('the reason a list read failed: a 200 that is not a list is its shape, a request lost while someone waits is the network, and a refusal or a lost connection nobody waits on reports nothing', async () => {
   for (const [given, reported] of [
-    [{ listStatus: 200 }, ['roadmap-tree-picker-load: Roadmap tree picker read failed {"read":"list","reason":"shape"}']],
-    [{ listStatus: 0 }, ['roadmap-tree-picker-load: Roadmap tree picker read failed {"read":"list","reason":"network"}']],
-    [{ listStatus: 0, watching: false }, []],
+    [{ listStatus: 200 }, ['roadmap-tree-picker-load {"read":"list","reason":"shape"}']],
+    [{ listStatus: 0 }, ['roadmap-tree-picker-load {"read":"list","reason":"network"}']],
+    [{ listStatus: 0, offline: true }, []],
     [{ listStatus: 403 }, []],
   ]) {
     const errors = [];
     const page = await openStep(DESKTOP, {}, errors);
-    await page.evaluate((options) => Object.assign(window, { listFails: 1 }, options), given);
+    await page.evaluate(({ offline, ...options }) => {
+      if (offline) Object.defineProperty(Navigator.prototype, 'onLine', { configurable: true, get: () => false });
+      Object.assign(window, { listFails: 1 }, options);
+    }, given);
     await attachATree(page);
     await page.locator('.st-board-tree-picker-unread').waitFor();
 
@@ -481,7 +482,7 @@ test('a pasted address that names no roadmap the person can read says so, and At
     'roadmap_tree_attach {"step":"retry","read":"paste","band":"desktop","view":"board"}',
     'roadmap_tree_attach {"step":"paste","outcome":"unreadable","band":"desktop","view":"board"}',
   ]);
-  assert.deepEqual(await reports(page), ['roadmap-tree-picker-load: Roadmap tree picker read failed {"read":"paste","reason":"server"}']);
+  assert.deepEqual(await reports(page), ['roadmap-tree-picker-load {"read":"paste","reason":"server"}']);
   assert.deepEqual(errors, []);
   await page.context().close();
 });

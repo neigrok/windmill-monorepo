@@ -10,7 +10,7 @@ import { track } from '../../../telemetry/beacon.js';
 import { handleMenuKey } from '../board/BoardControls.jsx';
 import { boardKey } from '../shortcuts/shortcutMap.js';
 import { ForkDoor } from '../share/ForkDoor.jsx';
-import { pageWatching, reportRoadmapFailure } from '../reportFailure.js';
+import { reportRoadmapFailure, reportUnexpectedFailure } from '../reportFailure.js';
 import { PickerSearch } from './PrerequisitePicker.jsx';
 import { TreeChoices } from './TreeChoices.js';
 import { coverBeneath, useComposerFocus, useComposerViewport } from './composerFocus.js';
@@ -58,17 +58,17 @@ export function TreePicker({ step, treeId, standing, attachment, trees, layout, 
     if (!phone) search.current.focus({ preventScroll: true });
   }, [phone]);
 
-  // A read refused for want of a session is the room's lapse. Anything else reports once per read and reason while the
-  // fault is ours or the server's: a lost request only while someone waits on it, and a refusal never.
-  const readFailed = (read, reason) => {
-    if (reason === 'unauthenticated') {
-      onLapse?.();
-      return;
-    }
+  // A read refused for want of a session is the room's lapse. Anything else is handed on once per read and reason, under
+  // the tags `read` and `reason`, as the guides' read hands on its own: an answer that is not the contract's shape always
+  // reports, and any other failure reports where `reportUnexpectedFailure` finds it unexpected.
+  const readFailed = (read, error) => {
+    const reason = failureOf(error?.status ?? 0);
+    if (reason === 'unauthenticated') return onLapse?.();
     const key = `${read} ${reason}`;
-    if (reason === 'refused' || (reason === 'network' && !pageWatching()) || reported.current.has(key)) return;
+    if (reported.current.has(key)) return undefined;
     reported.current.add(key);
-    reportRoadmapFailure('roadmap-tree-picker-load', new Error('Roadmap tree picker read failed'), { read, reason });
+    if (reason === 'shape') return reportRoadmapFailure('roadmap-tree-picker-load', error, { read, reason });
+    return reportUnexpectedFailure('roadmap-tree-picker-load', error, { read, reason });
   };
   // One `paste` event for each roadmap an address resolved to.
   const countPaste = (id, outcome) => {
@@ -82,7 +82,7 @@ export function TreePicker({ step, treeId, standing, attachment, trees, layout, 
     trees.list().then(({ rows, authoritative, status }) => {
       if (!wanted) return;
       if (!authoritative) {
-        readFailed('list', failureOf(status));
+        readFailed('list', Object.assign(new Error('Roadmap list not read'), { status }));
         setListFailure(failureOf(status));
         return;
       }
@@ -119,11 +119,11 @@ export function TreePicker({ step, treeId, standing, attachment, trees, layout, 
       return undefined;
     }
     let wanted = true;
-    trees.read(settled).then((card) => ({ id: settled, card }), (error) => ({ id: settled, failed: true, reason: failureOf(error?.status ?? 0) }))
-      .then((pasted) => {
+    trees.read(settled).then((card) => ({ id: settled, card }), (error) => ({ id: settled, failed: true, error, reason: failureOf(error?.status ?? 0) }))
+      .then(({ error, ...pasted }) => {
         if (!pasted.failed) resolutions.current.set(settled, pasted);
         if (!wanted) return;
-        if (pasted.failed) readFailed('paste', pasted.reason);
+        if (pasted.failed) readFailed('paste', error);
         else countPaste(settled, pasted.card === null ? 'unreadable' : pasted.card.mine ? 'own' : 'readable');
         answered(pasted);
       });
