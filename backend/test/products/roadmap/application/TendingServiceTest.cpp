@@ -70,15 +70,20 @@ struct FakeTendRunRepository : TendRunRepository {
   }
 };
 
+// Thread-safe where it records: the worker pool reads the seq from several threads at once.
 struct FakeToolHost : ToolHost {
   std::uint64_t seq = 0;
   bool getTreeErrors = false;
+  std::mutex mutex;
   std::vector<Json::Value> getTreeArguments;
 
   std::vector<ToolDeclaration> declareTools() const override { return {}; }
   ToolResult callTool(const std::string& name, const Json::Value& arguments, const ToolCaller&) override {
     if (name != "get_tree") return ToolResult::failure("unexpected tool: " + name);
-    getTreeArguments.push_back(arguments);
+    {
+      std::lock_guard<std::mutex> lock(mutex);
+      getTreeArguments.push_back(arguments);
+    }
     if (getTreeErrors) return ToolResult::failure("no such tree");
     Json::Value out(Json::objectValue);
     out["seq"] = Json::Value::UInt64(seq);
