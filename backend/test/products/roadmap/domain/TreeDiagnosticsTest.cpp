@@ -107,11 +107,7 @@ TEST(high_in_degree_smell) {
   }
   auto report = TreeDiagnostics::assess(g, Legend{});
   CHECK(report.clean());
-  bool found = false;
-  for (const auto& smell : report.smells) {
-    if (smell.node == nid("child") && smell.kind == "high-in-degree") found = true;
-  }
-  CHECK(found);
+  CHECK((report.smells == std::vector<Smell>{{"high-in-degree", {1, {nid("child")}}}}));
 }
 
 // A hue present nodes wear that no kind of the legend wears is one smell for the hue, counting its nodes and naming the
@@ -133,9 +129,9 @@ TEST(a_hue_no_kind_wears_is_one_smell_per_hue_and_an_empty_legend_is_one_line) {
   CHECK(report.smells.empty());
   CHECK_FALSE(report.legendEmpty);
   CHECK((report.unclaimedHues ==
-         std::vector<UnclaimedHue>{{NodeColor::olive, 12, {nid("o00"), nid("o01"), nid("o02"), nid("o03"), nid("o04"),
-                                                           nid("o05"), nid("o06"), nid("o07"), nid("o08"), nid("o09")}},
-                                   {NodeColor::plum, 1, {nid("plum")}}}));
+         std::vector<UnclaimedHue>{{NodeColor::olive, {12, {nid("o00"), nid("o01"), nid("o02"), nid("o03"), nid("o04"),
+                                                            nid("o05"), nid("o06"), nid("o07"), nid("o08"), nid("o09")}}},
+                                   {NodeColor::plum, {1, {nid("plum")}}}}));
 
   const TreeDiagnostics bare = TreeDiagnostics::assess(g, Legend{});
   CHECK(bare.legendEmpty);

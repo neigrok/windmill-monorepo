@@ -2722,19 +2722,14 @@ TEST(mcp_annotate_node_sets_and_clears_the_icon_and_the_empty_icon_smell_follows
   CHECK_FALSE(h.call("add_kind", parse(R"({"id":"k","hue":"terracotta"})")).isError);  // a node's hue says what it is
   h.call("create_node", node("a", "A"));
 
-  auto smells = [&] {
-    std::vector<std::string> out;
-    const Json::Value report = body(h.call("get_diagnostics", kNoArgs));
-    for (const Json::Value& smell : report["smells"])
-      out.push_back(smell["node"].asString() + ":" + smell["kind"].asString());
-    return out;
-  };
+  auto smells = [&] { return body(h.call("get_diagnostics", kNoArgs))["smells"]; };
+  const Json::Value iconless = parse(R"([{"kind":"empty-icon","count":1,"nodes":["a"]}])");
   auto icon = [&] {
     Json::Value args(Json::objectValue);
     args["fields"] = list({"id", "icon"});
     return body(h.call("get_tree", args))["tree"]["nodes"][0]["icon"].asString();
   };
-  CHECK_EQ(smells(), (std::vector<std::string>{"a:empty-icon"}));
+  CHECK_EQ(smells(), iconless);
 
   Json::Value set(Json::objectValue);
   set["nodeId"] = "a";
@@ -2743,14 +2738,14 @@ TEST(mcp_annotate_node_sets_and_clears_the_icon_and_the_empty_icon_smell_follows
   CHECK_FALSE(setResult.isError);
   CHECK(body(setResult)["applied"].asBool());
   CHECK_EQ(icon(), std::string("star"));
-  CHECK_EQ(smells(), (std::vector<std::string>{}));
+  CHECK_EQ(smells(), parse("[]"));
 
   Json::Value clear(Json::objectValue);
   clear["nodeId"] = "a";
   clear["icon"] = "";
   CHECK_FALSE(h.call("annotate_node", clear).isError);
   CHECK_EQ(icon(), std::string(""));
-  CHECK_EQ(smells(), (std::vector<std::string>{"a:empty-icon"}));
+  CHECK_EQ(smells(), iconless);
 
   Json::Value over(Json::objectValue);
   over["nodeId"] = "a";
@@ -4274,11 +4269,11 @@ TEST(mcp_get_diagnostics_tells_the_owner_each_loop_of_trees_through_the_tree_and
                                                                  TreeId{"t_gone"}, TreeId{"t_theirs"}, TreeId{"t_x"}}}));
 
   CHECK_EQ(body(h.tools.callTool("get_diagnostics", with("treeId", "t_b"), h.actor)),
-           parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[{"kind":"empty-legend"},{"node":"to-t","kind":"empty-icon"}],"maskedWork":[],
+           parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[{"kind":"empty-legend"},{"kind":"empty-icon","count":1,"nodes":["to-t"]}],"maskedWork":[],
                "treeLoops":[{"node":"to-t","path":[{"treeId":"t","title":"Test Roadmap"},{"treeId":"t_b","title":"Tree t_b"}]}],
                "danglingPointers":[]})"));
   CHECK_EQ(body(h.tools.callTool("get_diagnostics", with("treeId", "t_x"), h.actor)),
-           parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[{"kind":"empty-legend"},{"node":"to-t_y","kind":"empty-icon"}],"maskedWork":[],
+           parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[{"kind":"empty-legend"},{"kind":"empty-icon","count":1,"nodes":["to-t_y"]}],"maskedWork":[],
                "treeLoops":[{"node":"to-t_y","path":[{"treeId":"t_y","title":"Tree t_y"},{"treeId":"t_x","title":"Tree t_x"}]}],
                "danglingPointers":[]})"));
   CHECK_EQ(h.trees.openedReads.size(), 3u);
@@ -4304,7 +4299,7 @@ TEST(mcp_get_diagnostics_answers_a_reader_who_cannot_write_the_tree_what_a_twin_
 
   const std::string graphAlone =
       R"({"cycles":[],"dangling":[{"from":"ghost","to":"plain"}],"maskedWork":[],"selfEdges":[],)"
-      R"("smells":[{"kind":"empty-legend"},{"kind":"empty-icon","node":"gone"},{"kind":"empty-icon","node":"loop"},{"kind":"empty-icon","node":"plain"}]})";
+      R"("smells":[{"kind":"empty-legend"},{"count":3,"kind":"empty-icon","nodes":["gone","loop","plain"]}]})";
   for (const UserId& reader : {uid("stranger"), UserId{}}) {
     const ToolCaller caller{reader, ToolScope::everything()};
     for (const char* asked : {R"({})", R"({"includePointers":true})", R"({"includePointers":false})"}) {
@@ -4407,12 +4402,12 @@ TEST(mcp_get_diagnostics_whose_pointers_cannot_be_followed_answers_the_graphs_di
 
   CHECK_FALSE(degraded.isError);
   CHECK_EQ(body(degraded), parse(R"({"cycles":[],"dangling":[{"from":"ghost","to":"a"}],"selfEdges":[],
-      "smells":[{"kind":"empty-legend"},{"node":"a","kind":"empty-icon"}],"maskedWork":[],"pointerDiagnosticsUnavailable":true})"));
+      "smells":[{"kind":"empty-legend"},{"kind":"empty-icon","count":1,"nodes":["a"]}],"maskedWork":[],"pointerDiagnosticsUnavailable":true})"));
   CHECK_EQ(reporter.failures->reports,
            (std::vector<std::string>{std::string("roadmap.diagnostics.follow roadmap mcp failed ") + typeid(std::runtime_error).name()}));
 
   const Json::Value graphAlone = parse(R"({"cycles":[],"dangling":[{"from":"ghost","to":"a"}],"selfEdges":[],
-      "smells":[{"kind":"empty-legend"},{"node":"a","kind":"empty-icon"}],"maskedWork":[]})");
+      "smells":[{"kind":"empty-legend"},{"kind":"empty-icon","count":1,"nodes":["a"]}],"maskedWork":[]})");
   CHECK_EQ(body(h.call("get_diagnostics", parse(R"({"includePointers":false})"))), graphAlone);
   CHECK_EQ(body(h.tools.callTool("get_diagnostics", with("treeId", "t"), ToolCaller{uid("stranger"), ToolScope::everything()})),
            graphAlone);
@@ -6264,7 +6259,7 @@ TEST(mcp_an_unclaimed_hue_names_its_first_ten_nodes_and_counts_them_all) {
            parse(R"([{"kind":"unclaimed-hue","hue":"olive","count":12,
                "nodes":["o01","o02","o03","o04","o05","o06","o07","o08","o09","o10"]},
              {"kind":"unclaimed-hue","hue":"plum","count":2,"nodes":["p01","p02"]},
-             {"node":"p02","kind":"empty-icon"}])"));
+             {"kind":"empty-icon","count":1,"nodes":["p02"]}])"));
 }
 
 // The smell is per hue, so its size does not grow with the tree: ten thousand nodes on one unclaimed hue are one line.
@@ -6298,5 +6293,66 @@ TEST(mcp_a_tree_with_no_kinds_reports_one_empty_legend_smell) {
   CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A","icon":"i"},
     {"id":"b","label":"B","color":"sky"}]})")).isError);
   CHECK_EQ(body(h.call("get_diagnostics", kNoArgs))["smells"],
-           parse(R"([{"kind":"empty-legend"},{"node":"b","kind":"empty-icon"}])"));
+           parse(R"([{"kind":"empty-legend"},{"kind":"empty-icon","count":1,"nodes":["b"]}])"));
+}
+
+// Each smell kind is one line naming how many nodes it covers and the first ten of them, in the order nodes are
+// reported, so get_diagnostics answers a bounded list whatever the tree's size; a kind no node has is left out, and a
+// tree with no smell answers [].
+TEST(mcp_get_diagnostics_answers_each_smell_kind_once_with_its_count_and_first_ten_nodes) {
+  Harness h;
+  CHECK_FALSE(h.call("add_kind", parse(R"({"id":"k","hue":"terracotta"})")).isError);
+  Json::Value bare = parse(R"({"nodes":[]})");
+  for (int i = 1; i <= 12; ++i) {
+    Json::Value node = parse(R"({"label":"B"})");
+    node["id"] = std::string(i < 10 ? "b0" : "b") + std::to_string(i);
+    bare["nodes"].append(node);
+  }
+  CHECK_FALSE(h.call("import_subgraph", bare).isError);
+  CHECK_EQ(body(h.call("get_diagnostics", kNoArgs))["smells"],
+           parse(R"([{"kind":"empty-icon","count":12,
+             "nodes":["b01","b02","b03","b04","b05","b06","b07","b08","b09","b10"]}])"));
+
+  Harness mixed;
+  CHECK_FALSE(mixed.call("add_kind", parse(R"({"id":"k","hue":"terracotta"})")).isError);
+  Json::Value batch = parse(R"({"nodes":[{"id":"p1","label":"P1","icon":"i"},{"id":"p2","label":"P2","icon":"i"},
+    {"id":"p3","label":"P3","icon":"i"},{"id":"p4","label":"P4","icon":"i"},{"id":"p5","label":"P5","icon":"i"},
+    {"id":"hub","label":"Hub","icon":"i","prerequisites":["p1","p2","p3","p4","p5"]},
+    {"id":"plain","label":"Plain"},{"id":"olive","label":"Olive","icon":"i","color":"olive"}]})");
+  Json::Value wordy = parse(R"({"id":"long","icon":"i"})");
+  std::string label;  // a hundred code points, within the label cap, three hundred bytes past the smell's 256
+  for (int i = 0; i < 100; ++i) label += "\xE6\x97\xA5";
+  wordy["label"] = label;
+  batch["nodes"].append(wordy);
+  CHECK_FALSE(mixed.call("import_subgraph", batch).isError);
+  CHECK_EQ(body(mixed.call("get_diagnostics", kNoArgs))["smells"],
+           parse(R"([{"kind":"unclaimed-hue","hue":"olive","count":1,"nodes":["olive"]},
+             {"kind":"label-too-long","count":1,"nodes":["long"]},{"kind":"empty-icon","count":1,"nodes":["plain"]},
+             {"kind":"high-in-degree","count":1,"nodes":["hub"]}])"));
+
+  Harness clean;
+  CHECK_FALSE(clean.call("add_kind", parse(R"({"id":"k","hue":"terracotta"})")).isError);
+  CHECK_FALSE(clean.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A","icon":"i"}]})")).isError);
+  CHECK_EQ(body(clean.call("get_diagnostics", kNoArgs))["smells"], parse("[]"));
+}
+
+// Ten thousand nodes without an icon are one short smell line, not one line each.
+TEST(mcp_ten_thousand_nodes_without_an_icon_answer_one_short_smell_line) {
+  Harness h;
+  TreeData data;
+  data.id = TreeId{"t"};
+  for (int i = 0; i < 10000; ++i) {
+    NodeSpec node;
+    const std::string digits = std::to_string(i);
+    node.id = NodeId{"n" + std::string(5 - digits.size(), '0') + digits};
+    node.label = "N";
+    data.nodes.push_back(node);
+  }
+  h.trees.byId["t"] = StoredTree{LooseGraph(data, Hlc{1, 0, "seed"}).exportState(),
+                                 Legend({{KindId{"k"}, NodeColor::terracotta, "K"}}, Hlc{1, 0, "seed"}).exportState(),
+                                 {"Big", {}}, 0, h.caller};
+  const Json::Value smells = body(h.call("get_diagnostics", kNoArgs))["smells"];
+  CHECK_EQ(smells, parse(R"([{"kind":"empty-icon","count":10000,
+    "nodes":["n00000","n00001","n00002","n00003","n00004","n00005","n00006","n00007","n00008","n00009"]}])"));
+  CHECK(dump(smells).size() < 300);
 }
