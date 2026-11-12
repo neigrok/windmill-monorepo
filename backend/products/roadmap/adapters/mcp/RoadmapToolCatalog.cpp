@@ -872,9 +872,9 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "the prerequisites it already has — an edge you leave out survives, and is listed in the "
         "receipt's keptEdges. `replace` makes your list the whole list: every prerequisite edge into "
         "that node you did not name, live or waiting to revive, is removed in the same batch, and "
-        "the receipt counts them as removedEdges. A node sent without `prerequisites` names none, so "
-        "under `replace` it loses every edge into it. New nodes and nodes not in the batch are "
-        "untouched either way.",
+        "the receipt counts them as removedEdges. A node sent without `prerequisites` keeps every "
+        "edge into it under either mode, listed in keptEdges; `[]` is a list, and under `replace` it "
+        "clears them. New nodes and nodes not in the batch are untouched either way.",
         kPrerequisiteModes);
     p["tombstone"] = strArray(
         "Ids to delete in this same batch: each node goes at the same seq as the upserts, every "
@@ -910,7 +910,8 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "the tree out from its structure — and, when sent, carries both `x` and `y`. The receipt counts what the batch carried — `nodes`, "
         "`edges` (the prerequisites across them), `kinds` — so check `edges` against what you meant "
         "to send; keptEdges/keptEdgeCount name the pre-existing edges into re-sent nodes that "
-        "survived a merge, removedEdges counts what a replace dropped, and tombstoned counts the "
+        "survived — a merge, or a replace on a node sent without `prerequisites` — removedEdges counts "
+        "what a replace dropped, and tombstoned counts the "
         "nodes and edges the tombstones took. A graft that changes nothing the tree holds — every "
         "register sent as held, no new edge, no removal — writes nothing and answers `unchanged: true` "
         "with the tree's current `seq`; `unchanged` speaks for the graft only, and a carried progress[] "

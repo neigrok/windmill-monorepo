@@ -106,6 +106,53 @@ TEST(graft_treats_a_tombstoned_id_as_re_sent_so_the_edges_a_delete_left_behind_a
   CHECK(g.edgePresent(nid("n"), nid("d")));  // an outgoing edge revives with the node either way
 }
 
+// Under replace, a node the document sends without prerequisites keeps every edge into it, and one re-sent as the
+// tree holds it lands nothing; an empty list is a list, and clears them.
+TEST(graft_replace_keeps_the_edges_of_a_node_sent_without_prerequisites) {
+  LooseGraph g = seeded();
+  Graft unsent;
+  unsent.document.nodes = {spec("n", {})};
+  unsent.omittedNodeRegisters[nid("n")] = omittedAllBut({NodeRegister::label});
+  unsent.omittedPrerequisites = {nid("n")};
+  unsent.prerequisites = PrerequisiteMode::replace;
+
+  const GraftFootprint kept = footprintOf(g, unsent);
+  CHECK_EQ(kept.keptEdges, (std::vector<Edge>{{nid("a"), nid("n")}, {nid("c"), nid("n")}}));
+  CHECK(kept.replacedEdges.empty());
+  CHECK(graftFrame(g, Legend{}, unsent, at(2)).landsNothing());
+
+  unsent.document.nodes[0].label = "renamed";
+  g.join(graftState(g, unsent, at(2)));
+  CHECK_EQ(g.nodeView(nid("n"))->label, std::string("renamed"));
+  CHECK_EQ(g.nodeView(nid("n"))->prerequisites, (std::vector<NodeId>{nid("a"), nid("c")}));
+
+  Graft cleared = unsent;
+  cleared.omittedPrerequisites.clear();
+  const GraftFootprint dropped = footprintOf(g, cleared);
+  CHECK(dropped.keptEdges.empty());
+  CHECK_EQ(dropped.replacedEdges, (std::vector<Edge>{{nid("a"), nid("n")}, {nid("c"), nid("n")}}));
+  g.join(graftState(g, cleared, at(3)));
+  CHECK(g.nodeView(nid("n"))->prerequisites.empty());
+}
+
+// A deleted node re-sent under replace without prerequisites comes back with the edges it had, as under merge.
+TEST(graft_replace_revives_a_node_sent_without_prerequisites_with_its_edges) {
+  LooseGraph g = seeded();
+  g.deleteNode(nid("n"), at(2));
+  Graft revive;
+  revive.document.nodes = {spec("n", {})};
+  revive.omittedNodeRegisters[nid("n")] = omittedAllBut({});
+  revive.omittedPrerequisites = {nid("n")};
+  revive.prerequisites = PrerequisiteMode::replace;
+
+  const GraftFootprint footprint = footprintOf(g, revive);
+  CHECK_EQ(footprint.keptEdges, (std::vector<Edge>{{nid("a"), nid("n")}, {nid("c"), nid("n")}}));
+  CHECK(footprint.replacedEdges.empty());
+  g.join(graftState(g, revive, at(3)));
+  CHECK(g.hasNode(nid("n")));
+  CHECK_EQ(g.nodeView(nid("n"))->prerequisites, (std::vector<NodeId>{nid("a"), nid("c")}));
+}
+
 TEST(graft_replace_leaves_new_nodes_and_nodes_not_in_the_batch_alone) {
   LooseGraph g = seeded();
   Graft graft;

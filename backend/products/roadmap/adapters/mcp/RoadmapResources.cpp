@@ -95,7 +95,8 @@ removing an absent edge is a no-op. Both batch edit tools support `expectedSeq` 
 `roadmap_import_subgraph` upserts a graph slice: fields you send replace, fields you leave out keep
 their values, so `""` or `[]` is how to clear one. A deleted node it brings back opens the tree the
 batch names for it, or none. Prerequisites merge by default;
-`prerequisiteMode: "replace"` removes omitted incoming edges. The graph commits in one structural
+`prerequisiteMode: "replace"` removes the incoming edges a node's sent list does not name; a node sent
+without `prerequisites` keeps them all. The graph commits in one structural
 operation; optional progress commits in a separate atomic phase. Inspect `graphApplied`,
 `progressApplied` and any `progressError`/`progressSkipped`: a graph can be applied even when progress
 is incomplete. A graft that changes nothing the tree holds writes nothing and answers `unchanged: true`

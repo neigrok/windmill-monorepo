@@ -555,7 +555,9 @@ and none overrides another.
   `{from, to}`, then one `"and N more"` string) with `keptEdgeCount`; `replace` removes every
   present prerequisite edge into that node the batch did not name — live, or left dangling by an
   earlier delete and about to revive with a re-sent id — in the same frame, and counts them as
-  `removedEdges`. `tombstone[]` (max 500) needs the `roadmap:delete` grant — the tool is
+  `removedEdges`. A node sent without `prerequisites` keeps every edge into it under either mode,
+  listed in `keptEdges` (`Graft::omittedPrerequisites`, decided in `footprintOf`); `[]` is a list
+  and, under `replace`, clears them. `tombstone[]` (max 500) needs the `roadmap:delete` grant — the tool is
   write-level, but a tombstone is what `delete_node` does, so a connection without that level is
   refused before the tree is read, in `CompositeToolHost`'s own sentence — and deletes nodes in
   that same frame and seq: the node and every present edge touching it in either direction,

@@ -5543,3 +5543,42 @@ TEST(mcp_import_subgraph_takes_a_position_whole_or_not_at_all) {
   CHECK_EQ((*declared)["inputSchema"]["properties"]["nodes"]["items"]["properties"]["position"]["required"],
            list({"x", "y"}));
 }
+
+// Under replace, a node sent without `prerequisites` keeps every edge into it, in the dry run and for real, and a
+// re-send that changes nothing else is unchanged; `[]` clears them, a list keeps exactly what it names, and a node
+// brought back from a delete without the key comes back with its edges.
+TEST(mcp_import_subgraph_under_replace_keeps_the_edges_of_a_node_sent_without_prerequisites) {
+  Harness h;
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"},{"id":"b","label":"B"},
+    {"id":"c","label":"C","prerequisites":["a","b"]}]})")).isError);
+  const auto prerequisitesOfC = [&] {
+    return body(h.call("get_nodes", parse(R"({"nodeIds":["c"],"fields":["label","prerequisites"]})")))["nodes"][0];
+  };
+
+  const std::string kept = R"("nodes":1,"edges":0,"kinds":0,"nodeCollisions":["c"],"kindCollisions":[],"newNodes":0,
+    "newKinds":0,"prerequisiteMode":"replace","keptEdges":[{"from":"a","to":"c"},{"from":"b","to":"c"}],
+    "keptEdgeCount":2,"removedEdges":0,"tombstoned":{"nodes":0,"edges":0})";
+  CHECK_EQ(body(h.call("import_subgraph", parse(R"({"dryRun":true,"prerequisiteMode":"replace",
+    "nodes":[{"id":"c","label":"C2"}]})"))),
+           parse("{" + kept + R"(,"dryRun":true,"tombstone":[]})"));
+  CHECK_EQ(body(h.call("import_subgraph", parse(R"({"prerequisiteMode":"replace","nodes":[{"id":"c","label":"C2"}]})"))),
+           parse("{" + kept + R"(,"graphApplied":true,"progressApplied":true,"imported":true,"seq":2,
+             "diagnosticsClean":true,"introducedDiagnostics":[]})"));
+  CHECK_EQ(prerequisitesOfC(), parse(R"({"label":"C2","prerequisites":["a","b"]})"));
+  CHECK_EQ(body(h.call("import_subgraph", parse(R"({"prerequisiteMode":"replace","nodes":[{"id":"c","label":"C2"}]})"))),
+           parse("{" + kept + R"(,"graphApplied":true,"progressApplied":true,"imported":true,"seq":2,"unchanged":true,
+             "diagnosticsClean":true,"introducedDiagnostics":[]})"));
+
+  const Json::Value cleared =
+      body(h.call("import_subgraph", parse(R"({"prerequisiteMode":"replace","nodes":[{"id":"c","prerequisites":[]}]})")));
+  CHECK_EQ(cleared["removedEdges"].asUInt64(), 2u);
+  CHECK_EQ(prerequisitesOfC(), parse(R"({"label":"C2","prerequisites":[]})"));
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"c","prerequisites":["a","b"]}]})")).isError);
+  CHECK_EQ(body(h.call("import_subgraph", parse(R"({"prerequisiteMode":"replace",
+    "nodes":[{"id":"c","prerequisites":["a"]}]})")))["removedEdges"].asUInt64(), 1u);
+  CHECK_EQ(prerequisitesOfC(), parse(R"({"label":"C2","prerequisites":["a"]})"));
+
+  CHECK_FALSE(h.call("delete_node", parse(R"({"nodeId":"c"})")).isError);
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"prerequisiteMode":"replace","nodes":[{"id":"c","label":"C3"}]})")).isError);
+  CHECK_EQ(prerequisitesOfC(), parse(R"({"label":"C3","prerequisites":["a"]})"));
+}
