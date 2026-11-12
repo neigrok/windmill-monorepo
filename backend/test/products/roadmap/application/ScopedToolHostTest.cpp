@@ -326,7 +326,7 @@ TEST(scoped_tool_host_offers_a_tend_no_argument_and_no_field_for_the_tree_a_node
     schema["properties"].removeMember("includeGuides");
     schema["properties"]["fields"]["items"]["enum"] =
         test::list({"id", "label", "icon", "color", "kind", "order", "prerequisites", "position", "status",
-                    "seedStatus", "state", "summary", "description", "links"});
+                    "seedStatus", "state", "summary", "description", "links", "url"});
     CHECK_EQ(tended.at(read), schema);
   }
   CHECK_EQ(tended.at("rename_node"), plain.at("rename_node"));
@@ -377,6 +377,30 @@ TEST(scoped_tool_host_refuses_the_tree_a_node_opens_wherever_a_tend_names_it_and
                          "roadmap.import_subgraph Coach refused", "roadmap.import_subgraph Coach refused"}));
 }
 
+// A tend's refused kind completes under its own code on the Coach line, and the run reads it as any other
+// refusal: an error result that created nothing.
+TEST(scoped_tool_host_logs_a_refused_kind_under_its_code_and_answers_it_as_any_refusal) {
+  test::Harness h;
+  CHECK_FALSE(h.call("add_kind", parse(R"({"id":"pilot","hue":"gold"})")).isError);
+  ScopedToolHost scoped(h.tools, TreeId{"t"});
+  std::vector<WriteCompletion> completions;
+  installWriteSink([&](const WriteCompletion& completion) { completions.push_back(completion); });
+
+  CHECK(scoped.callTool("create_node", parse(R"({"label":"B","kind":"pilt"})"), h.actor).isError);
+  CHECK(scoped.callTool("create_node", parse(R"({"label":"B","kind":"pilot","color":"sky"})"), h.actor).isError);
+  CHECK(scoped.createdNodeIds().empty());
+  CHECK_FALSE(scoped.callTool("create_node", parse(R"({"label":"B","kind":"pilot"})"), h.actor).isError);
+  installWriteSink({});
+
+  CHECK_EQ(scoped.createdNodeIds(), (std::vector<std::string>{"b"}));
+  std::vector<std::string> observed;
+  for (const WriteCompletion& completion : completions)
+    observed.push_back(completion.operation + " " + completion.door + " " + completion.outcome);
+  CHECK_EQ(observed, (std::vector<std::string>{"roadmap.create_node Coach kind-unknown",
+                                               "roadmap.create_node Coach kind-hue-mismatch",
+                                               "roadmap.create_node Coach ok"}));
+}
+
 // The guides above are other trees' words and ids, and a tend is pinned to one tree: it is not offered the
 // argument that asks for them, every read it makes is sent as asking for none, and no tree above is read.
 TEST(scoped_tool_host_sends_every_get_tree_of_a_tend_as_asking_for_no_guides_so_no_tree_above_is_read) {
@@ -394,7 +418,8 @@ TEST(scoped_tool_host_sends_every_get_tree_of_a_tend_as_asking_for_no_guides_so_
   const ToolResult tended = scoped.callTool("get_tree", Json::Value(Json::objectValue), h.actor);
   CHECK_EQ(test::body(tended),
            parse(R"({"count":1,"seq":2,"tree":{"guide":{"text":"Rig first, then sail.","yours":true},"id":"t","kinds":[],
-             "nodes":[{"id":"a","label":"A","color":"terracotta","prerequisites":[]}],"title":"Test Roadmap"}})"));
+             "nodes":[{"id":"a","label":"A","color":"terracotta","prerequisites":[]}],"title":"Test Roadmap",
+             "url":"https://app.example/#/app/t"}})"));
   for (const char* asked : {R"({"includeGuides":true})", R"({"includeGuides":false})"}) {
     const ToolResult refused = scoped.callTool("get_tree", parse(asked), h.actor);
     CHECK(refused.isError);

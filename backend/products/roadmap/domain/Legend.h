@@ -98,10 +98,20 @@ struct HueChoice {
   std::optional<KindId> kind;
 };
 
+// A node write's `kind` refused: the legend holds no kind of that id, or the colour sent beside it is
+// another hue than that kind wears. The sentence is what the caller reads.
+struct KindRefusal {
+  enum class Reason { unknownKind, hueMismatch };
+  Reason reason;
+  std::string sentence;
+
+  bool operator==(const KindRefusal&) const = default;
+};
+
 // The hue a node write lands among `kinds`, the legend the write applies to: the hue its kind wears,
 // which a colour sent beside it must equal, else its colour, else nullopt when it names neither. A
-// refusal is the whole sentence, naming the arguments under `path` ("", "updates[0].").
-std::variant<std::optional<NodeColor>, std::string> resolveHue(const std::vector<Kind>& kinds, const HueChoice& choice,
+// refusal's sentence names the arguments under `path` ("", "updates[0].").
+std::variant<std::optional<NodeColor>, KindRefusal> resolveHue(const std::vector<Kind>& kinds, const HueChoice& choice,
                                                                const std::string& path);
 
 }

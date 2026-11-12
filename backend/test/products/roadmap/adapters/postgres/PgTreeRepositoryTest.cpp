@@ -371,7 +371,7 @@ TEST(pg_create_node_on_a_deleted_id_opens_nothing_after_a_restart) {
   {
     RoomRegistry registry(trees, log, bus);
     TreeRegistry treeRegistry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}, registry, clock};
-    RoadmapTools tools{registry, progress, clock, treeRegistry, bus};
+    RoadmapTools tools{registry, progress, clock, treeRegistry, bus, "https://app.example"};
     Json::Value pointed = created;
     pointed["opens"] = kFork.str();
     CHECK_FALSE(tools.callTool("create_node", pointed, sam).isError);
@@ -384,7 +384,7 @@ TEST(pg_create_node_on_a_deleted_id_opens_nothing_after_a_restart) {
 
   RoomRegistry restarted(trees, log, bus);
   TreeRegistry treeRegistry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}, restarted, clock};
-  RoadmapTools tools{restarted, progress, clock, treeRegistry, bus};
+  RoadmapTools tools{restarted, progress, clock, treeRegistry, bus, "https://app.example"};
   CHECK_FALSE(tools.callTool("create_node", created, sam).isError);
   Json::Value read = parse(R"({"fields":["id","opens"]})");
   read["treeId"] = kTree.str();
@@ -491,7 +491,7 @@ TEST(pg_a_node_follows_the_tree_it_opens_and_the_registry_list_counts_it) {
   ProgressService progress{progressRepo};
   RoomRegistry registry(trees, log, bus);
   TreeRegistry treeRegistry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}, registry, clock};
-  RoadmapTools tools{registry, progress, clock, treeRegistry, bus};
+  RoadmapTools tools{registry, progress, clock, treeRegistry, bus, "https://app.example"};
   trees.create(kTree, LooseGraph().exportState(), LegendState{}, "Main", kSam);
   trees.create(kFork, LooseGraph().exportState(), LegendState{}, "Deep dive", kSam);
   const auto call = [&](const TreeId& tree, const UserId& user, const char* tool, const std::string& arguments) {
@@ -583,7 +583,7 @@ TEST(pg_get_diagnostics_tells_the_owner_a_loop_of_trees_and_a_dangling_pointer_a
   ProgressService progress{progressRepo};
   RoomRegistry registry(trees, log, bus);
   TreeRegistry treeRegistry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}, registry, clock};
-  RoadmapTools tools{registry, progress, clock, treeRegistry, bus};
+  RoadmapTools tools{registry, progress, clock, treeRegistry, bus, "https://app.example"};
   trees.create(kTree, LooseGraph().exportState(), LegendState{}, "Main", kSam);
   trees.create(kFork, LooseGraph().exportState(), LegendState{}, "Deep dive", kSam);
   const auto call = [&](const TreeId& tree, const UserId& user, const char* tool, const std::string& arguments) {

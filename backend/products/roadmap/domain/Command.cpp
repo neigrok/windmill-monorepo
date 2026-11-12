@@ -364,7 +364,7 @@ std::optional<std::string> validate(const LooseGraph& graph, const Legend& legen
   }, command);
 }
 
-std::variant<NodePatchPlan, std::string> planNodePatches(
+std::variant<NodePatchPlan, std::string, KindRefusal> planNodePatches(
     const LooseGraph& graph, const Legend& legend, const std::vector<NodePatch>& updates) {
   if (updates.empty() || updates.size() > kMaxPatchNodes)
     return "updates must contain 1 to " + std::to_string(kMaxPatchNodes) + " node patches";
@@ -391,7 +391,7 @@ std::variant<NodePatchPlan, std::string> planNodePatches(
     const std::optional<NodeSpec> node = graph.nodeView(patch.nodeId);
     if (!node) return "no node in this tree is named " + quoted(patch.nodeId.str());
     const auto hue = resolveHue(kinds, patch.hue, "updates[" + std::to_string(row) + "].");
-    if (const auto* refusal = std::get_if<std::string>(&hue)) return *refusal;
+    if (const auto* refusal = std::get_if<KindRefusal>(&hue)) return *refusal;
     const std::optional<NodeColor> color = std::get<std::optional<NodeColor>>(hue);
 
     std::vector<std::pair<Command, bool>> candidates;

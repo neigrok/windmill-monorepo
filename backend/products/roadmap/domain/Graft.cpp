@@ -7,7 +7,7 @@
 
 namespace wm {
 
-std::variant<Graft, std::string> resolveKinds(const Legend& legend, Graft graft) {
+std::variant<Graft, KindRefusal> resolveKinds(const Legend& legend, Graft graft) {
   if (graft.nodeKinds.empty()) return graft;
   std::vector<Kind> landed = legend.kinds();
   for (const Kind& kind : graft.document.kinds) {
@@ -23,7 +23,7 @@ std::variant<Graft, std::string> resolveKinds(const Legend& legend, Graft graft)
     const bool colorSent = omitted == graft.omittedNodeRegisters.end() || !omitted->second.count(NodeRegister::color);
     const auto hue = resolveHue(landed, HueChoice{colorSent ? std::optional(node.color) : std::nullopt, named->second},
                                 "nodes[" + std::to_string(i) + "].");
-    if (const auto* refusal = std::get_if<std::string>(&hue)) return *refusal;
+    if (const auto* refusal = std::get_if<KindRefusal>(&hue)) return *refusal;
     node.color = *std::get<std::optional<NodeColor>>(hue);
     if (omitted != graft.omittedNodeRegisters.end()) omitted->second.erase(NodeRegister::color);
   }

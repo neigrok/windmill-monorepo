@@ -33,7 +33,7 @@ struct Harness {
   TreeRegistry treeRegistry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}, registry, clock};
   UserId caller = fake::uid("agent");
   ToolCaller actor{caller, ToolScope::everything()};
-  RoadmapTools tools{registry, progress, clock, treeRegistry, bus};
+  RoadmapTools tools{registry, progress, clock, treeRegistry, bus, "https://app.example"};
 
   Harness() {
     trees.byId["t"] =

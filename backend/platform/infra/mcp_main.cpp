@@ -1,4 +1,5 @@
 #include "platform/adapters/clock/SystemClock.h"
+#include "platform/infra/AppOrigin.h"
 #include "platform/adapters/sentry/ObservedTool.h"
 #include "platform/adapters/crypto/OpenSslTokenGenerator.h"
 #include "products/roadmap/adapters/json/TreeJson.h"
@@ -59,7 +60,7 @@ static int runMcp() {
   SystemClock clock;
   TreeRegistry treeRegistry(trees, progressRepo, registryTokens, genesis, registry, clock);
 
-  RoadmapTools tools(registry, progress, clock, treeRegistry, bus);
+  RoadmapTools tools(registry, progress, clock, treeRegistry, bus, appOriginFromEnvironment());
   const std::vector<ToolModule> modules{{tools, roadmapInstructions()}};
   CompositeToolHost surface(modules);
   McpServer server(surface, windmillServerInfo(surface), roadmapResources());

@@ -31,7 +31,7 @@ function landingAfterSignIn(forkedTree) {
   return `#/app/${forkedTree}`;
 }
 
-function appTarget(hash) {
+export function appTarget(hash) {
   const path = hash.split('?')[0];
   if (path.startsWith('#/demo')) return { treeId: DEMO_TREE_ID, birth: false, start: false, demo: true };
   if (path.startsWith('#/t/')) return { treeId: path.slice('#/t/'.length) || null, birth: false, start: false, demo: false };
@@ -41,7 +41,7 @@ function appTarget(hash) {
   return { treeId: null, birth: false, start: false, demo: false };
 }
 
-function pathTarget(pathname = typeof window === 'undefined' ? '' : window.location.pathname) {
+export function pathTarget(pathname = typeof window === 'undefined' ? '' : window.location.pathname) {
   const match = /^\/t\/([^/]+)\/?$/.exec(pathname);
   if (!match) return null;
   let id;

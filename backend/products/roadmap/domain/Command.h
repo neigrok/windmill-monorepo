@@ -134,7 +134,8 @@ struct EdgeChangePlan {
   std::vector<Edge> removed;
 };
 
-std::variant<NodePatchPlan, std::string> planNodePatches(
+// A refusal is its sentence, or the KindRefusal of the row whose `kind` refused the batch.
+std::variant<NodePatchPlan, std::string, KindRefusal> planNodePatches(
     const LooseGraph& graph, const Legend& legend, const std::vector<NodePatch>& updates);
 std::variant<EdgeChangePlan, std::string> planEdgeChanges(
     const LooseGraph& graph, const EdgeChanges& changes);

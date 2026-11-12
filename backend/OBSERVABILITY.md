@@ -273,10 +273,10 @@ listed separately because their only server writes are authentication refresh or
 | `MCP roadmap_create_tree` (and unambiguous `create_tree` alias) | `mcp.roadmap_create_tree` | completion; bounded refusal or result | unexpected |
 | `MCP roadmap_delete_tree` (and unambiguous `delete_tree` alias) | `mcp.roadmap_delete_tree` | completion; bounded refusal or result | unexpected |
 | `MCP roadmap_describe_tree` (and unambiguous `describe_tree` alias) | `mcp.roadmap_describe_tree` | completion; bounded refusal or result | unexpected |
-| `MCP roadmap_create_node` (and unambiguous `create_node` alias) | `mcp.roadmap_create_node` | completion; bounded refusal or result; `opens-not-yours` when an `opens` names a tree that does not stand or is not the caller's | unexpected |
+| `MCP roadmap_create_node` (and unambiguous `create_node` alias) | `mcp.roadmap_create_node` | completion; bounded refusal or result; `opens-not-yours` when an `opens` names a tree that does not stand or is not the caller's; `kind-unknown` when a `kind` names a kind the legend does not hold, `kind-hue-mismatch` when the `color` sent beside it is another hue than that kind wears | unexpected |
 | `MCP roadmap_annotate_node` (and unambiguous `annotate_node` alias) | `mcp.roadmap_annotate_node` | completion; bounded refusal or result; `opens-not-yours` when an `opens` names a tree that does not stand or is not the caller's | unexpected |
 | `MCP roadmap_rename_node` (and unambiguous `rename_node` alias) | `mcp.roadmap_rename_node` | completion; bounded refusal or result | unexpected |
-| `MCP roadmap_set_node_color` (and unambiguous `set_node_color` alias) | `mcp.roadmap_set_node_color` | completion; bounded refusal or result | unexpected |
+| `MCP roadmap_set_node_color` (and unambiguous `set_node_color` alias) | `mcp.roadmap_set_node_color` | completion; bounded refusal or result; `kind-unknown` when a `kind` names a kind the legend does not hold, `kind-hue-mismatch` when the `color` sent beside it is another hue than that kind wears | unexpected |
 | `MCP roadmap_move_node` (and unambiguous `move_node` alias) | `mcp.roadmap_move_node` | completion; bounded refusal or result | unexpected |
 | `MCP roadmap_connect` (and unambiguous `connect` alias) | `mcp.roadmap_connect` | completion; bounded refusal or result | unexpected |
 | `MCP roadmap_disconnect` (and unambiguous `disconnect` alias) | `mcp.roadmap_disconnect` | completion; bounded refusal or result | unexpected |
@@ -290,9 +290,9 @@ listed separately because their only server writes are authentication refresh or
 | `MCP roadmap_reorder_kinds` (and unambiguous `reorder_kinds` alias) | `mcp.roadmap_reorder_kinds` | completion; bounded refusal or result | unexpected |
 | `MCP roadmap_recolor_kind` (and unambiguous `recolor_kind` alias) | `mcp.roadmap_recolor_kind` | completion; bounded refusal or result | unexpected |
 | `MCP roadmap_set_progress` (and unambiguous `set_progress` alias) | `mcp.roadmap_set_progress` | completion; bounded refusal or result | unexpected |
-| `MCP roadmap_import_subgraph` (and unambiguous `import_subgraph` alias) | `mcp.roadmap_import_subgraph` | completion; bounded refusal or result; `opens-not-yours` when an `opens` names a tree that does not stand or is not the caller's | unexpected |
+| `MCP roadmap_import_subgraph` (and unambiguous `import_subgraph` alias) | `mcp.roadmap_import_subgraph` | completion; bounded refusal or result; `opens-not-yours` when an `opens` names a tree that does not stand or is not the caller's; `kind-unknown` when a `kind` on any node names a kind the legend does not hold, `kind-hue-mismatch` when the `color` sent beside it is another hue than that kind wears | unexpected |
 | `MCP roadmap_prune` (and unambiguous `prune` alias) | `mcp.roadmap_prune` | completion; bounded refusal or result | unexpected |
-| `MCP roadmap_patch_nodes` (and unambiguous `patch_nodes` alias) | `mcp.roadmap_patch_nodes` | completion; bounded refusal or result; `opens-not-yours` when an `opens` names a tree that does not stand or is not the caller's | unexpected |
+| `MCP roadmap_patch_nodes` (and unambiguous `patch_nodes` alias) | `mcp.roadmap_patch_nodes` | completion; bounded refusal or result; `opens-not-yours` when an `opens` names a tree that does not stand or is not the caller's; `kind-unknown` when a `kind` in any row names a kind the legend does not hold, `kind-hue-mismatch` when the `color` sent beside it is another hue than that kind wears | unexpected |
 | `MCP roadmap_change_edges` (and unambiguous `change_edges` alias) | `mcp.roadmap_change_edges` | completion; bounded refusal or result | unexpected |
 | `MCP gym_save_note` (and unambiguous `save_note` alias) | `mcp.gym_save_note` | completion; bounded refusal or result | unexpected |
 | `MCP gym_start_session` (and unambiguous `start_session` alias) | `mcp.gym_start_session` | completion; bounded refusal or result | unexpected |

@@ -44,8 +44,8 @@ struct Graft {
 // The graft with every node's kind turned into the hue that kind wears in the legend the graft leaves:
 // `legend` with the document's own kinds upserted, so one batch can add a kind and file nodes under it.
 // Such a node carries its colour register. A kind that legend does not hold, or a colour sent beside it
-// that disagrees, refuses the whole graft with resolveHue's sentence, naming `nodes[i].kind`.
-std::variant<Graft, std::string> resolveKinds(const Legend& legend, Graft graft);
+// that disagrees, refuses the whole graft with resolveHue's refusal, naming `nodes[i].kind`.
+std::variant<Graft, KindRefusal> resolveKinds(const Legend& legend, Graft graft);
 
 // What joining a graft does beyond the upsert itself. `keptEdges` and `replacedEdges` are the same
 // set under the two modes — present edges into a node the document re-sends (present or tombstoned:

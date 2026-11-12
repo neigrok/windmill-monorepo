@@ -1,0 +1,29 @@
+{
+  "note": "Where a roadmap and its steps open on the web: each address is what follows the app's origin. The backend builds every case (backend/products/roadmap/domain/WebAddress), and the web proves its router opens each one (web/test/products/roadmap/addresses.test.js). A tree id is always t_ plus 16 lowercase hex, so it is written as it is; a step id is encoded as encodeURIComponent does. A case with no nodeId is the roadmap's own address.",
+  "cases": [
+    {"why": "your own roadmap opens in the app", "treeId": "t_9362d9bc883e0a1e", "yours": true, "address": "/#/app/t_9362d9bc883e0a1e"},
+    {"why": "a roadmap you can only read opens on its share page", "treeId": "t_9362d9bc883e0a1e", "yours": false, "address": "/t/t_9362d9bc883e0a1e"},
+    {"why": "a step of your own roadmap: a plain step id", "treeId": "t_9362d9bc883e0a1e", "nodeId": "learn-to-sail", "yours": true, "address": "/#/app/t_9362d9bc883e0a1e?step=learn-to-sail"},
+    {"why": "a step of your own roadmap: a space", "treeId": "t_9362d9bc883e0a1e", "nodeId": "two words", "yours": true, "address": "/#/app/t_9362d9bc883e0a1e?step=two%20words"},
+    {"why": "a step of your own roadmap: a slash", "treeId": "t_9362d9bc883e0a1e", "nodeId": "a/b", "yours": true, "address": "/#/app/t_9362d9bc883e0a1e?step=a%2Fb"},
+    {"why": "a step of your own roadmap: a question mark", "treeId": "t_9362d9bc883e0a1e", "nodeId": "why?", "yours": true, "address": "/#/app/t_9362d9bc883e0a1e?step=why%3F"},
+    {"why": "a step of your own roadmap: a hash", "treeId": "t_9362d9bc883e0a1e", "nodeId": "#1", "yours": true, "address": "/#/app/t_9362d9bc883e0a1e?step=%231"},
+    {"why": "a step of your own roadmap: an ampersand", "treeId": "t_9362d9bc883e0a1e", "nodeId": "this&that", "yours": true, "address": "/#/app/t_9362d9bc883e0a1e?step=this%26that"},
+    {"why": "a step of your own roadmap: a percent sign", "treeId": "t_9362d9bc883e0a1e", "nodeId": "100%", "yours": true, "address": "/#/app/t_9362d9bc883e0a1e?step=100%25"},
+    {"why": "a step of your own roadmap: a plus and an equals sign, which a query would otherwise read as a space and a value", "treeId": "t_9362d9bc883e0a1e", "nodeId": "1+1=2", "yours": true, "address": "/#/app/t_9362d9bc883e0a1e?step=1%2B1%3D2"},
+    {"why": "a step of your own roadmap: a non-ASCII letter", "treeId": "t_9362d9bc883e0a1e", "nodeId": "café", "yours": true, "address": "/#/app/t_9362d9bc883e0a1e?step=caf%C3%A9"},
+    {"why": "a step of your own roadmap: a character outside the Basic Multilingual Plane", "treeId": "t_9362d9bc883e0a1e", "nodeId": "🧭 north", "yours": true, "address": "/#/app/t_9362d9bc883e0a1e?step=%F0%9F%A7%AD%20north"},
+    {"why": "a step of your own roadmap: the characters encodeURIComponent leaves as they are", "treeId": "t_9362d9bc883e0a1e", "nodeId": "it's-(a)_b.c!~*", "yours": true, "address": "/#/app/t_9362d9bc883e0a1e?step=it's-(a)_b.c!~*"},
+    {"why": "a step of a roadmap you can only read: a plain step id", "treeId": "t_9362d9bc883e0a1e", "nodeId": "learn-to-sail", "yours": false, "address": "/t/t_9362d9bc883e0a1e#?step=learn-to-sail"},
+    {"why": "a step of a roadmap you can only read: a space", "treeId": "t_9362d9bc883e0a1e", "nodeId": "two words", "yours": false, "address": "/t/t_9362d9bc883e0a1e#?step=two%20words"},
+    {"why": "a step of a roadmap you can only read: a slash", "treeId": "t_9362d9bc883e0a1e", "nodeId": "a/b", "yours": false, "address": "/t/t_9362d9bc883e0a1e#?step=a%2Fb"},
+    {"why": "a step of a roadmap you can only read: a question mark", "treeId": "t_9362d9bc883e0a1e", "nodeId": "why?", "yours": false, "address": "/t/t_9362d9bc883e0a1e#?step=why%3F"},
+    {"why": "a step of a roadmap you can only read: a hash", "treeId": "t_9362d9bc883e0a1e", "nodeId": "#1", "yours": false, "address": "/t/t_9362d9bc883e0a1e#?step=%231"},
+    {"why": "a step of a roadmap you can only read: an ampersand", "treeId": "t_9362d9bc883e0a1e", "nodeId": "this&that", "yours": false, "address": "/t/t_9362d9bc883e0a1e#?step=this%26that"},
+    {"why": "a step of a roadmap you can only read: a percent sign", "treeId": "t_9362d9bc883e0a1e", "nodeId": "100%", "yours": false, "address": "/t/t_9362d9bc883e0a1e#?step=100%25"},
+    {"why": "a step of a roadmap you can only read: a plus and an equals sign, which a query would otherwise read as a space and a value", "treeId": "t_9362d9bc883e0a1e", "nodeId": "1+1=2", "yours": false, "address": "/t/t_9362d9bc883e0a1e#?step=1%2B1%3D2"},
+    {"why": "a step of a roadmap you can only read: a non-ASCII letter", "treeId": "t_9362d9bc883e0a1e", "nodeId": "café", "yours": false, "address": "/t/t_9362d9bc883e0a1e#?step=caf%C3%A9"},
+    {"why": "a step of a roadmap you can only read: a character outside the Basic Multilingual Plane", "treeId": "t_9362d9bc883e0a1e", "nodeId": "🧭 north", "yours": false, "address": "/t/t_9362d9bc883e0a1e#?step=%F0%9F%A7%AD%20north"},
+    {"why": "a step of a roadmap you can only read: the characters encodeURIComponent leaves as they are", "treeId": "t_9362d9bc883e0a1e", "nodeId": "it's-(a)_b.c!~*", "yours": false, "address": "/t/t_9362d9bc883e0a1e#?step=it's-(a)_b.c!~*"}
+  ]
+}

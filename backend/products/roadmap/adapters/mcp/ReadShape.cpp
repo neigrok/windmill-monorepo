@@ -77,7 +77,8 @@ const Vocabulary<NodeField>& nodeVocabulary() {
                                                  {"summary", NodeField::summary},
                                                  {"description", NodeField::description},
                                                  {"links", NodeField::links},
-                                                 {"opens", NodeField::opens}});
+                                                 {"opens", NodeField::opens},
+                                                 {"url", NodeField::url}});
   return vocabulary;
 }
 
@@ -139,6 +140,7 @@ Json::Value projectNode(const NodeSpec& node, const NodeFields& fields, const No
       n["opens"] = opens;
     }
   }
+  if (fields.count(NodeField::url)) n["url"] = stepAddress(context.web.value(), node.id);
   return n;
 }
 
