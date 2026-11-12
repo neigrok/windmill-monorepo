@@ -1,11 +1,13 @@
-// What the tree a step opens comes to for the owner of both, as the read that found it. Nothing pushes it: it stands
-// until the roadmap is read again, on a load or once a pointer changes.
+// What the tree a step opens comes to for the owner of both, as the read that found it, or as the tree picker knew it
+// when the person chose it here. Nothing pushes it: it stands until the roadmap is read again, on a load or once the
+// server has confirmed a pointer.
 
 export class Opening {
-  constructor({ treeId, read, valid = false, complete = false, title = '', done = 0, total = 0, loop = false, own = false }) {
+  constructor({ treeId, read, valid = false, complete = false, title = '', done = 0, total = 0, loop = false, own = false, provisional = false }) {
     this.treeId = treeId;
     this.read = read;
     this.own = own;
+    this.provisional = provisional;
     this.valid = valid;
     this.complete = complete;
     this.title = title;
@@ -27,6 +29,12 @@ export class Opening {
   // A pointer whose facts no read has found: the device's own copy, or a pointer set since the last read.
   static unread(treeId) {
     return new Opening({ treeId, read: false });
+  }
+
+  // A tree chosen in the picker, as its row said it: the row stands at once, and the server's read replaces it. Whether
+  // it leads back is the server's to say.
+  static chosen({ id, title, done, total }) {
+    return new Opening({ treeId: id, read: true, valid: true, complete: total > 0 && done === total, title, done, total, provisional: true });
   }
 
   // The server found no tree of the owner's at the other end: an ordinary step that follows its mark, with nowhere to
@@ -87,14 +95,16 @@ export class Openings {
 
   // The projection with every step that opens a tree carrying its opening. Until the projection holds what the server
   // holds, the load is the newer word: a step it named opens that tree and one it did not opens none, whatever an older
-  // copy on the device says. From then on the projection's pointer decides, and one the load read nothing of, or read
-  // for another tree, is unread.
-  onto(treeData, { joined }) {
+  // copy on the device says, but for the steps in `own`, whose pointer this device wrote and the server has not
+  // confirmed. From then on the projection's pointer decides. One the load read nothing of, or read for another tree,
+  // takes what `known` holds of it (`<step>><tree>`, as the picker knew it) or is unread.
+  onto(treeData, { joined, own = new Set(), known = new Map() }) {
     const standing = (step) => {
       const named = this.byStep.get(step.id);
-      if (this.read && !joined) return named ?? null;
+      if (this.read && !joined && !own.has(step.id)) return named ?? null;
       if (!step.opens) return null;
-      return named?.treeId === step.opens ? named : Opening.unread(step.opens);
+      if (named?.treeId === step.opens) return named;
+      return known.get(`${step.id}>${step.opens}`) ?? Opening.unread(step.opens);
     };
     return {
       ...treeData,

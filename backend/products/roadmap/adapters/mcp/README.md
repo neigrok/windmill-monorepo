@@ -225,7 +225,7 @@ The table uses product-local names; external MCP prefixes each with `roadmap_`.
 | edit | `rename_node` · `set_node_color` · `move_node` | content edits; `set_node_color` takes `color` or legend `kind` and answers the `kind` the node wears; sent what the node already holds, each writes nothing (see below) |
 | edit | `connect` · `reconnect` | prerequisite-edge edits |
 | edit | `disconnect` | remove edges: one `from`+`to` or `edges: [{from,to}]` (1..500), exactly one form; one op, one seq, all or nothing; `removed` counts the edges that were present |
-| edit | `delete_node` | tombstone nodes: one `nodeId` or `nodeIds` (1..200), exactly one form; a missing id refuses the whole call naming each; one op, one seq. `prune: true` also drops every edge touching a deleted node and clears the caller's marks on it, under the delete grant; receipt carries `ids` and `pruned: {edges, progress}` |
+| edit | `delete_node` | tombstone nodes: one `nodeId` or `nodeIds` (1..200), exactly one form; a missing id refuses the whole call naming each; one op, one seq. The caller's own marks on the deleted nodes are cleared in the same call, before the delete lands, by the path an import's `tombstone` and `prune` take (`clearMarksOn`, through `landMarks`, the core every server-stamped mark takes: stamped after the mark it replaces, one batch, one progress frame to the caller's open sessions), so a progress store that fails fails the call with nothing deleted, and a revive brings no cleared mark back; anyone else's marks stay. `prune: true` also drops every edge touching a deleted node, under the delete grant; receipt carries `ids` and `pruned: {edges, progress}`, `progress` the caller's marks cleared, with or without prune |
 | edit | `tidy` · `prune` | transitive reduction / GC dangling edges + orphan progress |
 | edit | `import_subgraph` | bulk upsert a whole `get_tree`-shaped slice as one graft frame — a field left off a re-sent node or kind keeps its value (`opens` included, but on a node the import brings back from a delete, which opens none), `prerequisiteMode` merge (union) or replace, `tombstone[]` deletes in the same frame and needs the `roadmap:delete` grant; optional `expectedSeq` and `dryRun`; a graft that changes nothing writes nothing and answers `unchanged: true` (see An edit that changes nothing) |
 | legend | `add_kind` (inline label+description+crossBranchExempt) · `rename_kind` · `describe_kind` (description and/or crossBranchExempt) · `remove_kind` · `reorder_kinds` · `recolor_kind` | the legend |
@@ -452,7 +452,8 @@ A node may point at another tree: `opens` holds that tree's id.
   can write it and to nobody else (`TreeRoom::pointersFor`), so no mark copies the tree out. All
   five read and write the repositories after letting the strand go, so no other read of the tree
   waits on those statements. The import's clear of marks on removed nodes, `prune` and
-  `delete_node` with `prune` read and write the caller's marks while they hold it. `list_trees`
+  `delete_node` read and write the caller's marks while they hold it, and judge no pointer: a step
+  that opens a tree goes with its mark as any other node does. `list_trees`
   makes no such read: it already holds every tree of the caller's. Every write door saves before it
   answers, so the stored rows are the live ones unless a save failed.
 - **What can be wrong with a pointer.** `get_diagnostics` answers two more lists to a caller who
@@ -586,9 +587,10 @@ and none overrides another.
   and change nothing. Receipts distinguish `graphApplied` and `progressApplied`, with
   `progressError` and `progressSkipped` or `progressRefused` when requested progress cannot all be
   applied; `progressError` says each way the progress fell short, one sentence after the other. A
-  committed graft is not undone by a later overlay failure: one in the requested `progress[]` or
-  in the clear of marks on removed nodes is reported and completes the write line as `failed`. It
-  is **upsert by id**: an incoming id already present is reported in
+  committed graft is not undone by a later overlay failure: one in the requested `progress[]` is
+  reported and completes the write line as `failed`, and one in the clear of marks on removed nodes
+  is reported once as `roadmap.import.clear_marks`, the import completing as `ok`. It is **upsert
+  by id**: an incoming id already present is reported in
   `nodeCollisions`/`kindCollisions`; a new id is added. A re-sent node or kind changes only in
   the registers the batch sends: a node's `label`, `icon`, `color`, `order`, `position`,
   `seedStatus`, `description`, `links` and `opens`, and a kind's `label`, `description` and

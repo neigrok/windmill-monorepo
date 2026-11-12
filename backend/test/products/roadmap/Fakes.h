@@ -75,12 +75,15 @@ struct FakeProgressRepository : ProgressRepository {
   };
   std::map<std::string, Entry> byKey;
   std::function<void()> duringBatchWrite;  // runs inside setStatuses, the way a slow statement holds its caller
+  bool loadsFail = false;   // load throws, the way a read Postgres refuses does
+  bool writesFail = false;  // setStatus and setStatuses throw before anything lands
 
   static std::string key(const TreeId& t, const UserId& u, const NodeId& n) {
     return t.str() + "\n" + u.str() + "\n" + n.str();
   }
 
   Progress load(const TreeId& tree, const UserId& user) override {
+    if (loadsFail) throw std::runtime_error("the progress store refused the read");
     Progress progress;
     std::string prefix = tree.str() + "\n" + user.str() + "\n";
     for (const auto& [k, entry] : byKey) {
@@ -95,6 +98,7 @@ struct FakeProgressRepository : ProgressRepository {
   bool setStatus(const TreeId& tree, const UserId& user, const NodeId& node,
                  ProgressStatus status, bool outOfOrder, const Hlc& at, std::uint64_t receivedAtMs) override {
     (void)receivedAtMs;
+    if (writesFail) throw std::runtime_error("the progress store refused the write");
     std::string k = key(tree, user, node);
     auto it = byKey.find(k);
     if (it != byKey.end() && !(at > it->second.at)) return false;
@@ -105,6 +109,7 @@ struct FakeProgressRepository : ProgressRepository {
   std::vector<bool> setStatuses(const TreeId& tree, const UserId& user,
                                  const std::vector<ProgressUpdate>& updates,
                                  std::uint64_t receivedAtMs) override {
+    if (writesFail) throw std::runtime_error("the progress store refused the write");
     if (duringBatchWrite) duringBatchWrite();
     auto next = byKey;
     std::vector<bool> applied;

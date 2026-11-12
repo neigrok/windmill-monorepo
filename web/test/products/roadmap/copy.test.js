@@ -7,6 +7,8 @@ import {
   treeLine,
   openTreeStated,
   treeState,
+  treeProgress,
+  TREE_TOAST,
   treeTitle,
   DEMO_COPY,
   GRAPH_UNAVAILABLE,
@@ -557,6 +559,18 @@ test('the step’s Tree row names the tree and how far it is, a loop by the road
   assert.deepEqual(eachTree((opening) => [treeTitle(opening), treeState(opening, 'My year')]), {
     open: ['Learn to sail', '3 of 8 done'], complete: ['Learn to sail', '12 of 12 done'], empty: ['Learn to sail', 'No steps'],
     loop: ['Learn to sail', '3 of 8 done · opens My year back'], missing: ['Tree not found', 'Nothing at the other end'], unread: ['', null],
+  });
+});
+
+test('a tree’s progress reads the same on the step’s row and in the tree picker, and a tree with no steps says so', () => {
+  assert.deepEqual([{ done: 3, total: 8 }, { done: 12, total: 12 }, { done: 0, total: 5 }, { done: 0, total: 0 }, { done: 1200, total: 3400 }].map(treeProgress),
+    ['3 of 8 done', '12 of 12 done', '0 of 5 done', 'No steps', '1,200 of 3,400 done']);
+});
+
+test('the toast of an attach, a detach and a write that could not be made', () => {
+  assert.deepEqual(TREE_TOAST, {
+    attached: 'Tree attached', detached: 'Tree detached', detachedMarkBack: 'Tree detached · your mark is back',
+    failed: 'Couldn’t change the tree. Try again.',
   });
 });
 

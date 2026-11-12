@@ -112,6 +112,11 @@
   width: 208px;
 }
 
+/* The Tree section brought into view clears the toast that stands over the foot of the page. */
+.st-board-step-page .st-board-step-relations--tree {
+  scroll-margin-bottom: 64px;
+}
+
 /* A step that opens a tree: what completes it takes the room, and Open tree sits under the right thumb. */
 .st-board-step-page .st-board-step-tree-band {
   flex: 1;

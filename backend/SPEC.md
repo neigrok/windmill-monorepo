@@ -108,8 +108,9 @@ rejected for structure. Validity is a read model, not a gate.
   `import_subgraph` say so (`adapters/mcp/README.md`), and a socket `progress` frame's ack lists it
   (WebSocket surface). The other marks of the call are recorded, and each `prerequisitesMet` is
   judged on the `followed` set, so a step behind such a node is met when the opened tree is
-  complete, whatever mark the node holds. A mark such a node already held stays stored. From a
-  caller who cannot write the tree the same mark is an ordinary one: recorded, answered exactly as
+  complete, whatever mark the node holds. A mark such a node already held stays stored until the
+  node is deleted, when it is cleared as every mark of the caller's on what a delete removes is. From
+  a caller who cannot write the tree the same mark is an ordinary one: recorded, answered exactly as
   on a node that opens nothing, and judged on their own marks.
 - The domain is fed two ways. A read of one tree (`get_tree`, `get_nodes`, `find_nodes`,
   `GET /v1/trees/{id}`) takes the tree from its live room, a progress write (`set_progress`, the

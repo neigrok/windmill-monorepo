@@ -931,6 +931,29 @@ struct RequestedMark {
   bool outOfOrder = false;
 };
 
+// The caller's marks a server write sets, landed by the one path every such write takes: set_progress, an import's
+// progress rows, and the clears a delete, an import's tombstones and prune make. Each write comes stamped by the room's
+// clock; where the caller's mark on that node holds a later stamp — a replica stamped it ahead of the server — it takes
+// the stamp just after that one instead, so a later write always lands over it, and the room's clock does not learn it,
+// so it carries no other write of the tree ahead. A node named twice is stamped after its own row. The marks go through
+// ProgressService::mark with `pointers`, the nodes that open a tree as the room handed them to the caller: a mark on one
+// that follows its tree is refused. The batch is written in one go, and the marks that landed go to the caller's open
+// sessions in one progress frame.
+ProgressReceipt landMarks(ProgressService& progress, PresenceBus& bus, const TreeId& tree, const UserId& user,
+                          const std::map<NodeId, TreeId>& pointers, std::vector<ProgressWrite> writes, Clock& clock) {
+  std::map<NodeId, Hlc> holds;
+  for (const auto& [node, kept] : progress.progressOf(tree, user).marks) holds.emplace(node, kept.at);
+  for (ProgressWrite& write : writes) {
+    const auto held = holds.find(write.node);
+    if (held != holds.end()) write.at = std::max(write.at, held->second.successor(write.at.actor));
+    holds[write.node] = write.at;
+  }
+  const ProgressReceipt receipt = progress.mark(tree, pointers, user, writes, clock.nowMs());
+  // One echo for the whole batch, not one frame per node.
+  bus.broadcastProgress(tree, user, receipt.recorded);
+  return receipt;
+}
+
 // What a batch of marks came to, as its tool answers it.
 struct MarkedBatch {
   Json::Value results{Json::arrayValue};  // a row per mark that named a node, in the batch's order
@@ -947,7 +970,8 @@ std::variant<MarkedBatch, std::string> applyProgressBatch(
   std::vector<ProgressWrite> marks;
   std::map<NodeId, TreeId> pointers;
   {
-    // The room is consulted under its strand and let go: no repository is read or written while it is held.
+    // The room is consulted under its strand and let go: the marks land, and the trees they may follow are read, once
+    // it is released.
     std::lock_guard<std::mutex> lock(registry.strandFor(tree));
     TreeRoom* room = registry.open(tree);
     // Not owner-gated (a per-user overlay), but private stays owner-only: a mark would confirm which ids exist.
@@ -968,9 +992,7 @@ std::variant<MarkedBatch, std::string> applyProgressBatch(
            ". Call get_tree with fields [\"id\",\"label\"] to list the ids this tree has.";
   }
 
-  const ProgressReceipt receipt = progress.mark(tree, pointers, user, marks, clock.nowMs());
-  // One echo for the whole batch, not one frame per node.
-  bus.broadcastProgress(tree, user, receipt.recorded);
+  const ProgressReceipt receipt = landMarks(progress, bus, tree, user, pointers, marks, clock);
   batch.cameToARefusal = receipt.cameToARefusal();
   for (std::size_t i = 0; i < marks.size(); ++i) {
     const ProgressOutcome& outcome = receipt.outcomes[i];
@@ -994,6 +1016,25 @@ std::variant<MarkedBatch, std::string> applyProgressBatch(
   }
   return batch;
 }
+
+// The caller's own completion marks on the nodes a write removes, cleared to none through landMarks — stamped after the
+// marks they clear, written in one batch, sent to the caller's open sessions — so a revive of the node brings none
+// back; anyone else's marks stay theirs. A node that opens a tree goes with its mark as any other does, so no pointer is
+// judged. Called under the tree's strand with its room open, as the write that removes the nodes is; answers how many
+// clears landed. A delete, an import's tombstones and prune clear by this.
+std::size_t clearMarksOn(ProgressService& progress, PresenceBus& bus, TreeRoom& room, const TreeId& tree,
+                         const UserId& actor, const std::vector<NodeId>& removed, Clock& clock) {
+  const Progress overlay = progress.progressOf(tree, actor);
+  std::vector<ProgressWrite> clears;
+  for (const NodeId& node : removed)
+    if (overlay.completed.count(node))
+      clears.push_back({node, ProgressStatus::none, room.prerequisitesOf(node), room.nextStamp(clock.nowMs()), false});
+  if (clears.empty()) return 0;
+  const ProgressReceipt receipt = landMarks(progress, bus, tree, actor, {}, clears, clock);
+  return static_cast<std::size_t>(std::count_if(receipt.outcomes.begin(), receipt.outcomes.end(),
+                                                [](const ProgressOutcome& outcome) { return outcome.applied; }));
+}
+
 
 // One progress row as a write sends it: `nodeId` (or the legacy `id`), `status`, and `outOfOrder`, a word about a
 // completion that rides only a `complete` status. set_progress, single or bulk, and an import's progress rows read a
@@ -1332,16 +1373,16 @@ ToolResult importSubgraph(RoomRegistry& registry, TreeRegistry& trees, ProgressS
     if (landed) registry.persist(tree);
     out["graphApplied"] = true;
     out["progressApplied"] = true;
+    // The caller's marks on what the tombstones took are cleared after the graft, which has landed whatever becomes of
+    // them: a clear that fails is told in the reply and reported under its own name, not as the call's failure.
+    WriteObservation clearing{"roadmap.import.clear_marks", "roadmap", "mcp"};
     try {
-      const Progress overlay = progress.progressOf(tree, actor);
-      std::vector<ProgressWrite> clears;
-      for (const NodeId& node : footprint.tombstonedNodes) {
-        if (!overlay.completed.count(node)) continue;
-        clears.push_back({node, ProgressStatus::none, {}, room.nextStamp(clock.nowMs()), false});
-      }
-      if (!clears.empty()) progress.setStatuses(tree, actor, clears, clock.nowMs());
+      clearMarksOn(progress, bus, room, tree, actor, footprint.tombstonedNodes, clock);
+      clearing.skip();
+    } catch (const std::bad_alloc&) {
+      throw;
     } catch (const std::exception& error) {
-      reportCurrentWriteFailure(error);
+      clearing.fail(error);
       out["progressApplied"] = false;
       out["progressError"] = "The graph committed, but clearing progress on removed nodes failed. Read get_progress before retrying progress changes.";
     }
@@ -1392,7 +1433,7 @@ ToolResult importSubgraph(RoomRegistry& registry, TreeRegistry& trees, ProgressS
   return answered;
 }
 
-ToolResult pruneTree(RoomRegistry& registry, ProgressService& progress, const TreeId& tree,
+ToolResult pruneTree(RoomRegistry& registry, ProgressService& progress, PresenceBus& bus, const TreeId& tree,
                      Clock& clock, const UserId& actor) {
   ToolResult cleaned = withRoom(registry, tree, [&](TreeRoom& room) -> ToolResult {
     if (!canRead(actor, room.owner(), room.visibility()))
@@ -1413,12 +1454,11 @@ ToolResult pruneTree(RoomRegistry& registry, ProgressService& progress, const Tr
       seq = room.applyCommand(PruneDangling{}, clock.nowMs(), actor);
       registry.persist(tree);
     }
-    for (const NodeId& node : orphans)
-      progress.setStatus({}, tree, actor, node, ProgressStatus::none, false, room.nextStamp(clock.nowMs()), clock.nowMs());
+    const std::size_t cleared = clearMarksOn(progress, bus, room, tree, actor, orphans, clock);
 
     Json::Value out(Json::objectValue);
     out["prunedEdges"] = prunedEdges;
-    out["prunedProgress"] = static_cast<int>(orphans.size());
+    out["prunedProgress"] = static_cast<int>(cleared);
     out["seq"] = static_cast<Json::Int64>(seq);
     answerDiagnostics(before, room.diagnose(), out);  // a GC only ever removes: always empty
     return ToolResult::json(out);
@@ -1461,7 +1501,7 @@ std::optional<std::string> deleteTargets(const Json::Value& args, std::vector<No
 
 // Every id is checked before any is applied, and the deletions — with the edges they dangle, when
 // asked — land as one frame under one seq: the tree is never seen between them.
-ToolResult deleteNodes(RoomRegistry& registry, ProgressService& progress, const TreeId& tree,
+ToolResult deleteNodes(RoomRegistry& registry, ProgressService& progress, PresenceBus& bus, const TreeId& tree,
                        const Json::Value& args, Clock& clock, const UserId& actor) {
   std::vector<NodeId> targets;
   if (std::optional<std::string> bad = deleteTargets(args, targets)) return ToolResult::failure(*bad);
@@ -1490,25 +1530,18 @@ ToolResult deleteNodes(RoomRegistry& registry, ProgressService& progress, const 
     for (const Command& command : commands)
       if (std::optional<std::string> reason = room.validate(command)) return ToolResult::failure(*reason);
 
-    // The caller's own marks on what is going: cleared to none, as prune clears an orphan's.
-    std::vector<NodeId> orphans;
-    if (prune) {
-      const Progress overlay = progress.progressOf(tree, actor);
-      for (const NodeId& node : targets)
-        if (overlay.completed.count(node)) orphans.push_back(node);
-    }
-
+    // The caller's own marks on what is going, cleared with or without prune and before the delete lands: a progress
+    // store that fails then fails the call with nothing deleted, and a retry does the whole of it.
+    const std::size_t cleared = clearMarksOn(progress, bus, room, tree, actor, targets, clock);
     const TreeDiagnostics before = room.diagnose();
     Seq seq = room.applyCommands(commands, clock.nowMs(), actor);
     registry.persist(tree);
-    for (const NodeId& node : orphans)
-      progress.setStatus({}, tree, actor, node, ProgressStatus::none, false, room.nextStamp(clock.nowMs()), clock.nowMs());
 
     Json::Value ids(Json::arrayValue);
     for (const NodeId& node : targets) ids.append(node.str());
     Json::Value pruned(Json::objectValue);
     pruned["edges"] = static_cast<int>(dangled.size());
-    pruned["progress"] = static_cast<int>(orphans.size());
+    pruned["progress"] = static_cast<int>(cleared);
 
     Json::Value out(Json::objectValue);
     out["applied"] = true;
@@ -1743,9 +1776,9 @@ ToolResult RoadmapTools::dispatch(const std::string& name, const Json::Value& ar
   if (name == "import_subgraph")
     return importSubgraph(registry_, treeRegistry_, progress_, bus_, tree, arguments, clock_, actor);
   if (name == "prune")
-    return pruneTree(registry_, progress_, tree, clock_, caller);
+    return pruneTree(registry_, progress_, bus_, tree, clock_, caller);
   if (name == "delete_node")
-    return deleteNodes(registry_, progress_, tree, arguments, clock_, caller);
+    return deleteNodes(registry_, progress_, bus_, tree, arguments, clock_, caller);
   if (name == "disconnect")
     return disconnectEdges(registry_, tree, arguments, clock_, caller);
 

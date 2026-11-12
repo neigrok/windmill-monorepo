@@ -15,7 +15,7 @@ import './fork-door.css';
 
 const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-export function ForkDoor({ open, presentation = 'sheet', treeId, signedIn = false, onClose, onSubmit, stepCount = null }) {
+export function ForkDoor({ open, presentation = 'sheet', treeId, signedIn = false, onClose, onSubmit, onForked, stepCount = null }) {
   const [email, setEmail] = useState('');
   const [phase, setPhase] = useState('idle'); // idle | sending | sent | rate_limited | unreachable
   const [typo, setTypo] = useState(false);
@@ -96,6 +96,12 @@ export function ForkDoor({ open, presentation = 'sheet', treeId, signedIn = fals
     forkTree(treeId)
       .then(({ treeId: forkedId }) => {
         track('fork_claim', { mode: 'instant' });
+        // A caller that takes the copy keeps the person where they are: the copy opens nowhere and no room says it was forked.
+        if (onForked) {
+          setBusy(false);
+          onForked(forkedId);
+          return;
+        }
         noteForked();
         // Rewrite the URL to the hash route, then reload: a /t/:id pathname would stay pinned read-only,
         // and the scene must be born in editor mode.

@@ -633,3 +633,40 @@ TEST(metered_denial_signal_names_each_invocation_and_clears_on_recovery) {
   CHECK_EQ(denials, 2);
   CHECK_EQ(reports, 1);
 }
+
+// A tend that deletes a marked node clears its owner's mark and nobody else's; with the progress store down the step
+// fails and deletes nothing, so the run counts no edit and the node is still there for the next run.
+TEST(drive_agent_deletes_a_marked_node_through_the_progress_store_or_not_at_all) {
+  for (const bool storeDown : {true, false}) {
+    test::Harness h;
+    h.trees.byId["t"].visibility = Visibility::public_;
+    CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"}]})")).isError);
+    CHECK_FALSE(h.call("set_progress", parse(R"({"nodeId":"a","status":"complete"})")).isError);
+    const ToolCaller stranger{fake::uid("stranger"), ToolScope::everything()};
+    CHECK_FALSE(h.tools.callTool("set_progress", parse(R"({"treeId":"t","nodeId":"a","status":"complete"})"), stranger)
+                    .isError);
+    ScopedToolHost scoped(h.tools, TreeId{"t"});
+    Json::Value call = toolUseReply("delete_node", "toolu_1");
+    call["content"][0]["input"] = parse(R"({"nodeId":"a"})");
+    FakeModel model;
+    model.replies.push_back(call);
+    model.replies.push_back(textReply("end_turn", "Removed 1 step"));
+    Recorder rec;
+
+    h.progressRepo.writesFail = storeDown;
+    const AgentOutcome outcome =
+        driveAgent("remove A", TreeId{"t"}, h.caller, scoped, model.asCall(), rec.onStep(), rec.report());
+    h.progressRepo.writesFail = false;
+    const auto progressOf = [&](const ToolCaller& who) {
+      return test::body(
+          h.tools.callTool("get_progress", parse(R"({"treeId":"t","fields":["completed","cleared"]})"), who));
+    };
+    REQUIRE_EQ(rec.steps.size(), 1u);
+    CHECK_EQ(outcome.edits, storeDown ? 0 : 1);
+    CHECK_EQ(rec.steps[0].failed, storeDown);
+    CHECK_EQ(h.registry.open(TreeId{"t"})->hasNode(NodeId{"a"}), storeDown);
+    CHECK_EQ(progressOf(h.actor), parse(storeDown ? R"({"completed":["a"],"cleared":[]})"
+                                                  : R"({"completed":[],"cleared":["a"]})"));
+    CHECK_EQ(progressOf(stranger), parse(R"({"completed":["a"],"cleared":[]})"));
+  }
+}

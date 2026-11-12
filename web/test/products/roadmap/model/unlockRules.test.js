@@ -6,6 +6,7 @@ import { Opening } from '../../../../src/products/roadmap/model/Opening.js';
 import {
   UnlockRules,
   takesMark,
+  treeAttachment,
   unmetPrerequisitesOf,
   owedStepsOf,
   owedCounts,
@@ -124,4 +125,47 @@ test('no step that opens a tree takes a hand mark, whatever its tree has come to
 
   assert.deepEqual(openings.map((opening) => takesMark({ id: 'sail', opening })), [false, false, false, false]);
   assert.equal(takesMark({ id: 'run' }), true);
+});
+
+test('treeAttachment — a mark on the step is set aside, and the steps it alone held up next lock again', () => {
+  const year = tree([node('plan', []), node('sail', ['plan']), node('run', ['plan']), node('coast', ['sail']), node('maya', ['sail']), node('race', ['sail', 'run'])]);
+  const progress = { completed: new Set(['plan', 'sail']), completedAt: {} };
+
+  assert.deepEqual(treeAttachment(year, progress, 'sail', { complete: false }), { marked: true, relocks: 2 });
+  assert.deepEqual(treeAttachment(year, { completed: new Set(['plan', 'sail', 'run', 'coast']), completedAt: {} }, 'sail', { complete: false }),
+    { marked: true, relocks: 2 }, 'a step already done stays done, and one up next behind two prerequisites locks');
+});
+
+test('treeAttachment — a tree that is complete keeps the step done, so its mark is set aside and nothing locks', () => {
+  const year = tree([node('plan', []), node('sail', ['plan']), node('coast', ['sail'])]);
+  const progress = { completed: new Set(['plan', 'sail']), completedAt: {} };
+
+  assert.deepEqual(treeAttachment(year, progress, 'sail', { complete: true }), { marked: true, relocks: 0 });
+});
+
+test('treeAttachment — a step with no mark has none to set aside and locks nothing, up next or locked', () => {
+  const year = tree([node('plan', []), node('sail', ['plan']), node('coast', ['sail'])]);
+
+  assert.deepEqual(treeAttachment(year, { completed: new Set(['plan']), completedAt: {} }, 'sail', { complete: false }), { marked: false, relocks: 0 });
+  assert.deepEqual(treeAttachment(year, { completed: new Set(), completedAt: {} }, 'coast', { complete: false }), { marked: false, relocks: 0 });
+  assert.deepEqual(treeAttachment(year, { completed: new Set(['plan']), completedAt: {} }, 'sail', { complete: true }), { marked: false, relocks: 0 });
+});
+
+test('treeAttachment — changing the tree of a step counts from where the step stands: its mark is already aside', () => {
+  const open = new Opening({ treeId: 't_sail', read: true, valid: true, title: 'Learn to sail', done: 3, total: 8 });
+  const done = new Opening({ treeId: 't_read', read: true, valid: true, complete: true, title: 'Reading list', done: 12, total: 12 });
+  const steps = (opening) => tree([node('plan', []), node('sail', ['plan'], { opening }), node('coast', ['sail']), node('maya', ['sail'])]);
+  const progress = { completed: new Set(['plan', 'sail']), completedAt: {} };
+
+  assert.deepEqual(treeAttachment(steps(open), progress, 'sail', { complete: false }), { marked: true, relocks: 0 });
+  assert.deepEqual(treeAttachment(steps(done), progress, 'sail', { complete: false }), { marked: true, relocks: 2 });
+  assert.deepEqual(treeAttachment(steps(done), progress, 'sail', { complete: true }), { marked: true, relocks: 0 });
+  assert.deepEqual(treeAttachment(steps(done), { completed: new Set(['plan']), completedAt: {} }, 'sail', { complete: false }), { marked: false, relocks: 2 });
+});
+
+test('UnlockRules.statesUnder — the states a completed set gives, whatever marks and openings would make of it', () => {
+  const year = tree([node('plan', []), node('sail', ['plan']), node('coast', ['sail'])]);
+
+  assert.deepEqual(UnlockRules.statesUnder(year, new Set(['plan'])), new Map([['plan', 'complete'], ['sail', 'available'], ['coast', 'locked']]));
+  assert.deepEqual(UnlockRules.statesUnder(year, new Set()), new Map([['plan', 'available'], ['sail', 'locked'], ['coast', 'locked']]));
 });

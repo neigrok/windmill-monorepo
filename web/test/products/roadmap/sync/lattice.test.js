@@ -245,6 +245,18 @@ test('a frame or an entry without the pointer changes none: a reader’s empty, 
   assert.deepEqual(lattice.toFrame(), held);
 });
 
+test('its pointers alone are a frame: each step that ever took one, with the stamp it stands on, and no step that never did', () => {
+  const lattice = new TreeLattice('t_1');
+  lattice.join({ nodes: [
+    { id: 'sail', createdAt: '100:0:srv', label: 'Learn to sail', labelAt: '100:0:srv', opens: 't_sail', opensAt: '200:0:srv' },
+    { id: 'read', createdAt: '100:0:srv', opens: '', opensAt: '300:0:srv' },
+    { id: 'run', createdAt: '100:0:srv', label: 'Run a 10K', labelAt: '100:0:srv' },
+  ] });
+
+  assert.deepEqual(lattice.pointers(), { nodes: [{ id: 'sail', opens: 't_sail', opensAt: '200:0:srv' }, { id: 'read', opens: '', opensAt: '300:0:srv' }] });
+  assert.deepEqual(new TreeLattice('t_1').pointers(), { nodes: [] });
+});
+
 test('a mint after a held pointer dominates its stamp', () => {
   const lattice = new TreeLattice('t_1');
   lattice.join({ nodes: [{ id: 'sail', createdAt: '100:0:srv', opens: 't_sail', opensAt: '900:4:srv' }] });

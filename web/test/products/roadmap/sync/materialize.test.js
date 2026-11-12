@@ -504,3 +504,34 @@ test('EditNode supports clearing fields, edge-only edits and a missing target wi
     nodes: [], edges: [], kinds: [],
   });
 });
+
+test('SetNodeTree writes the tree a step opens under the gesture’s one stamp, and an empty id opens none', () => {
+  const lattice = new TreeLattice('t_0000000000000000', 'My year');
+  const clock = new HlcClock('tester');
+  lattice.join(materialize({ kind: 'CreateNode', id: 'sail', label: 'Learn to sail' }, lattice, clock));
+
+  const attached = materialize({ kind: 'SetNodeTree', id: 'sail', opens: 't_1111111111111111' }, lattice, clock);
+  assert.deepStrictEqual(attached, { nodes: [{ id: 'sail', opens: 't_1111111111111111', opensAt: attached.nodes[0].opensAt }], edges: [], kinds: [] });
+  assert.match(attached.nodes[0].opensAt, /^\d+:\d+:tester$/);
+  lattice.join(attached);
+  assert.equal(lattice.toTreeData().nodes[0].opens, 't_1111111111111111');
+
+  const detached = materialize({ kind: 'SetNodeTree', id: 'sail', opens: '' }, lattice, clock);
+  assert.deepStrictEqual(detached, { nodes: [{ id: 'sail', opens: '', opensAt: detached.nodes[0].opensAt }], edges: [], kinds: [] });
+  lattice.join(detached);
+  assert.equal(lattice.toTreeData().nodes[0].opens, undefined);
+});
+
+test('SetNodeTree writes nothing for the tree a step opens already, for none where it opens none, or for a step the tree does not hold', () => {
+  const lattice = new TreeLattice('t_0000000000000000', 'My year');
+  const clock = new HlcClock('tester');
+  const nothing = { nodes: [], edges: [], kinds: [] };
+  lattice.join(materialize({ kind: 'CreateNode', id: 'sail', label: 'Learn to sail' }, lattice, clock));
+
+  assert.deepStrictEqual(materialize({ kind: 'SetNodeTree', id: 'sail', opens: '' }, lattice, clock), nothing);
+  assert.deepStrictEqual(materialize({ kind: 'SetNodeTree', id: 'gone', opens: 't_1111111111111111' }, lattice, clock), nothing);
+  lattice.join(materialize({ kind: 'SetNodeTree', id: 'sail', opens: 't_1111111111111111' }, lattice, clock));
+  assert.deepStrictEqual(materialize({ kind: 'SetNodeTree', id: 'sail', opens: 't_1111111111111111' }, lattice, clock), nothing);
+  lattice.join(materialize({ kind: 'DeleteNode', id: 'sail' }, lattice, clock));
+  assert.deepStrictEqual(materialize({ kind: 'SetNodeTree', id: 'sail', opens: 't_2222222222222222' }, lattice, clock), nothing);
+});

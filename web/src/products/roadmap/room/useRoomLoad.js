@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { plantedToast, welcomeBackToast } from '../copy.js';
 import { DEMO_STAGED_COMPLETED, DEMO_TREE_ID } from '../demo/demoStage.js';
 import { layoutNameFrom, loadLayoutEngine } from '../layout/index.js';
-import { Openings } from '../model/Opening.js';
+import { Opening, Openings } from '../model/Opening.js';
 import { SkillTree } from '../model/SkillTree.js';
 import { UnlockRules } from '../model/UnlockRules.js';
 import { HttpTreeRepository } from '../persistence/HttpTreeRepository.js';
@@ -18,7 +18,8 @@ import { frontierTarget, opensOnFrontier, viewportInsets } from '../graph/viewpo
 import { track } from '../../../telemetry/beacon.js';
 
 const deviceTrees = new LocalTreeRegistry();
-// A pointer the load read nothing of waits this long for the pointers to settle, and its read is given this long.
+// A read of what the trees steps open waits this long after the confirmation that asks for it, so a burst asks once,
+// and is given this long.
 const POINTER_READ_AFTER_MS = 600;
 const POINTER_READ_LIMIT_MS = 10000;
 
@@ -58,6 +59,7 @@ export function useRoomLoad({ treeId, accountId, demo, shared, demotion, breakpo
   const [syncSession, setSyncSession] = useState(null);
   const accountAtLoad = useRef(null);
   const plantNoteRef = useRef(null); // null until read; survives StrictMode’s double effect
+  const knownRef = useRef(new Map()); // `<step>><tree>` → what the picker knew of a tree chosen here, until the server's read
   const latest = useRef(null);
   latest.current = { structure, onRemoteProgress };
   const { layoutRef } = structure;
@@ -72,6 +74,7 @@ export function useRoomLoad({ treeId, accountId, demo, shared, demotion, breakpo
     setSelectedId(null);
     setTreeVisibility(null);
     setTreeMine(false);
+    knownRef.current = new Map();
     framing.firstFrameRef.current = null;
     if (plantNoteRef.current === null) plantNoteRef.current = takePlantNote();
 
@@ -95,7 +98,7 @@ export function useRoomLoad({ treeId, accountId, demo, shared, demotion, breakpo
       const owner = read.seed.mine === true && !shared && !demo;
       // Only its owner's room reads what a step opens: anyone else sees an ordinary step. A device's copy read none, so its pointers stand unread.
       let openings = owner ? read.seed.openings ?? new Openings() : null;
-      const standing = (projection, joined) => (openings ? openings.onto(projection, { joined }) : projection);
+      const standing = (projection, joined, own = new Set()) => (openings ? openings.onto(projection, { joined, own, known: knownRef.current }) : projection);
       const seed = standing(read.seed, false);
       const nextTree = new SkillTree(seed);
       const states = UnlockRules.derive(nextTree, overlay);
@@ -146,22 +149,27 @@ export function useRoomLoad({ treeId, accountId, demo, shared, demotion, breakpo
       sessionRef.current?.close();
       peersRef.current.clear();
       let projected = read.seed;
+      let shown = seed;
       const stand = () => {
-        const shown = standing(projected, session.joinedServer);
+        shown = standing(projected, session.joinedServer, session.ownPointers());
         latest.current.structure.onTreeChanged(shown);
         workspace.pushArcs();
         return shown;
       };
-      // The facts follow the pointers: a pointer the load read nothing of has the roadmap read once more, and a read
-      // that fails or still says nothing of it is not asked again.
+      // The facts follow the pointers the server holds. A pointer the room has no read facts of (unread, or as the picker
+      // knew it) is read once the server has confirmed it: this device's own on its ack, a peer's with its frame. A read
+      // that fails, or still says nothing of it, waits for the next confirmation or reconnect.
       let asked = '';
-      const followPointers = (shown) => {
+      const followPointers = () => {
         if (!openings?.read) return;
-        const unread = shown.nodes.flatMap((step) => (step.opening?.face === 'unread' ? `${step.id}>${step.opening.treeId}` : [])).join(' ');
-        if (unread === '' || unread === asked) return;
-        asked = unread;
+        const own = session.ownPointers();
+        const lacking = shown.nodes.flatMap((step) => (step.opening && (!step.opening.read || step.opening.provisional) && !own.has(step.id)
+          ? `${step.id}>${step.opening.treeId}` : [])).join(' ');
+        const ask = `${session.confirmations} ${lacking}`;
+        if (lacking === '' || ask === asked) return;
+        asked = ask;
         setTimeout(async () => {
-          if (cancelled || asked !== unread) return;
+          if (cancelled || asked !== ask) return;
           const fresh = await new HttpTreeRepository({ treeId }).loadTree({ signal: AbortSignal.timeout(POINTER_READ_LIMIT_MS) }).catch(() => null);
           if (cancelled || fresh?.mine !== true) return;
           openings = fresh.openings;
@@ -171,8 +179,10 @@ export function useRoomLoad({ treeId, accountId, demo, shared, demotion, breakpo
       const session = new SyncSession({ treeId: seed.id, title: seed.title, guide: seed.guide ?? '', registry: seed.mine && !shared && !demo && !demotion ? deviceTrees : null })
         .onTreeChanged((data) => {
           projected = data;
-          followPointers(stand());
+          stand();
+          followPointers();
         })
+        .onConfirmed(followPointers)
         .onPresence((frame) => peersRef.current.set(frame.actor, {
           name: frame.profile?.name, color: frame.profile?.color,
           cursor: frame.cursor ?? null, selection: frame.selection ?? null,
@@ -242,8 +252,11 @@ export function useRoomLoad({ treeId, accountId, demo, shared, demotion, breakpo
     return true;
   }, []);
 
+  // What the picker knew of a tree chosen here, so its row stands at once; the server's read replaces it.
+  const knowTree = useCallback((stepId, tree) => { knownRef.current.set(`${stepId}>${tree.id}`, Opening.chosen(tree)); }, []);
+
   return {
-    loading, loadError, reloadKey, syncSession, treeVisibility, setTreeVisibility, treeMine, takeForkNote,
+    loading, loadError, reloadKey, syncSession, treeVisibility, setTreeVisibility, treeMine, takeForkNote, knowTree,
     retryLoad: useCallback(() => setReloadKey((key) => key + 1), []),
   };
 }
