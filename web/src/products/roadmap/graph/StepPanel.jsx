@@ -1,12 +1,12 @@
-import React, { useContext, useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Card, Button, IconButton, Icon } from '../../../design-system';
 import { NodeWorkspace, LinkRow, SAFE_URL } from './tree/NodeWorkspace.jsx';
 import { EventRow } from '../activity/EventRow.jsx';
 import { KIND_CSS, DEFAULT_NODE_COLOR } from '../theme.js';
 import { KindChoice } from '../board/BoardControls.jsx';
 import { COLUMN_TITLES, COMPOSER, LABELS, STEP_DETAIL, TREE, treeState, unlocksWhen } from '../copy.js';
-import { OpeningGlyph } from '../OpeningGlyph.jsx';
-import { TreeDoor } from '../room/useTreeVisit.js';
+import { OpeningBar, OpeningGlyph } from '../OpeningMarks.jsx';
+import { useTreeDoor } from '../room/useTreeVisit.js';
 import { t } from '../i18n/index.js';
 import { kindChoices } from '../model/Legend.js';
 
@@ -98,7 +98,7 @@ function EditorStep({ node, roadmap, state, prerequisites, completedAt, history 
   const [draft, setDraft] = useState(node?.label ?? '');
   const inputRef = useRef(null);
   const escapedRef = useRef(false); // Esc reverts — the blur that follows must not commit
-  const treeDoor = useContext(TreeDoor);
+  const openTree = useTreeDoor(node, 'dock');
 
   useEffect(() => {
     if (!editingName) return;
@@ -110,7 +110,6 @@ function EditorStep({ node, roadmap, state, prerequisites, completedAt, history 
 
   const now = Date.now();
   const opening = node.opening ?? null;
-  const openTree = opening && !opening.dangling && treeDoor ? () => treeDoor(node.id, 'dock') : null;
   const currentKind = node.color ?? DEFAULT_NODE_COLOR;
   const hue = KIND_CSS[currentKind] ?? KIND_CSS[DEFAULT_NODE_COLOR];
   const lockedBy = prerequisites.find((prerequisite) => !prerequisite.complete)?.label;
@@ -168,7 +167,7 @@ function EditorStep({ node, roadmap, state, prerequisites, completedAt, history 
           <div className={`st-step-tree st-step-tree--${opening.face}`}>
             <OpeningGlyph face={opening.face} size={14} />
             <span>{treeState(opening, roadmap)}</span>
-            {opening.total > 0 && <span className="st-step-tree-bar" aria-hidden><span style={{ width: `${opening.gauge * 100}%` }} /></span>}
+            {opening.total > 0 && <OpeningBar opening={opening} />}
           </div>
         )}
         {state === 'locked' ? (

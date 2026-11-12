@@ -1,7 +1,7 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { Icon } from '../../../design-system/Icon.jsx';
-import { nodeGlyph } from '../OpeningGlyph.jsx';
+import { nodeGlyph } from '../OpeningMarks.jsx';
 
 // A node's glyph as SVG markup: the mark of the tree it opens, else the design system's icon of that name.
 export function glyphMarkup(name, props) {

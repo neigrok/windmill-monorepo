@@ -1133,15 +1133,19 @@
 .st-step-tree--missing > svg {
   color: var(--color-danger);
 }
-.st-step-tree-bar {
+.st-step-tree .st-tree-bar {
   flex: 1;
   min-width: 24px;
+}
+/* Done of total of the tree a step opens, wherever a surface draws it (OpeningMarks.jsx). */
+.st-tree-bar {
+  display: block;
   height: 4px;
   border-radius: 2px;
   background: var(--border-default);
   overflow: hidden;
 }
-.st-step-tree-bar > span {
+.st-tree-bar > span {
   display: block;
   height: 100%;
   border-radius: 2px;

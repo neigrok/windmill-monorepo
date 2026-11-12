@@ -1,4 +1,4 @@
-// The mark of a step that opens a tree, by what its tree has come to: one set of drawings for the card's pill, the
+// The marks of a step that opens a tree, by what its tree has come to: one glyph and one bar for the card's pill, the
 // step's row and band, the Graph's bar and dock, and the glyph at a node's centre.
 
 import React from 'react';
@@ -24,6 +24,11 @@ const DRAWINGS = { open: TreeMark, empty: TreeMark, unread: TreeMark, complete: 
 export function OpeningGlyph({ face, size, check = false }) {
   const Drawing = check && face === 'complete' ? Check : DRAWINGS[face];
   return <Drawing size={size} strokeWidth={1.66667} absoluteStrokeWidth aria-hidden />;
+}
+
+// Done of total on the Board's 4px track; each surface sizes it.
+export function OpeningBar({ opening }) {
+  return <span className="st-tree-bar" aria-hidden><span style={{ width: `${opening.gauge * 100}%` }} /></span>;
 }
 
 // The node's centre, by the names theme.js gives a render node's `icon`.

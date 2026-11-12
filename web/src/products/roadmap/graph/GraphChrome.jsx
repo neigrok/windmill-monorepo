@@ -1,6 +1,6 @@
 // Pointer input reaches the canvas outside the selected-step bar, Fork and the camera controls.
 
-import React, { useContext, useLayoutEffect, useRef, useState } from 'react';
+import React, { useLayoutEffect, useRef, useState } from 'react';
 import { Button, Icon } from '../../../design-system';
 import { KIND_CSS } from '../theme.js';
 import { DOCK_WIDTH, TABLET_PANEL_WIDTH } from './viewport.js';
@@ -8,8 +8,8 @@ import { useCoveredLayer } from '../step/composerFocus.js';
 import { DeviceLine } from '../sync/SyncNotices.jsx';
 import { GuideLine } from '../guide/GuidePhone.jsx';
 import { COLUMN_TITLES, FORK_OFFER, OPEN_STEP, RECOLOR, TREE, treeLine } from '../copy.js';
-import { OpeningGlyph } from '../OpeningGlyph.jsx';
-import { TreeDoor } from '../room/useTreeVisit.js';
+import { OpeningGlyph } from '../OpeningMarks.jsx';
+import { useTreeDoor } from '../room/useTreeVisit.js';
 import { t } from '../i18n/index.js';
 
 const SAFE_BOTTOM = 'env(safe-area-inset-bottom, 0px)';
@@ -49,9 +49,8 @@ export function GraphChrome({
   const nudge = phoneGraph && Boolean(deviceLine || guideLine);
   const phoneCameraTop = rowBottom + 8 + (nudge ? nudgeHeight : 0);
   const showStep = phoneGraph && Boolean(step);
-  const treeDoor = useContext(TreeDoor);
   const opening = step?.opening ?? null;
-  const openTree = opening && !opening.dangling && treeDoor ? () => treeDoor(step.id, 'bar') : null;
+  const openTree = useTreeDoor(step, 'bar');
 
   useLayoutEffect(() => {
     if (!onBarBottom) return undefined;

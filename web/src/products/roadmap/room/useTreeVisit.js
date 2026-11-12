@@ -2,12 +2,19 @@
 // tree gone into says where the person came from, and the entry they left says which step they went through. So a
 // direct link has no way back, a chain pops one tree per press, and the browser's Back reads what the chip reads.
 
-import { createContext, useCallback, useEffect, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { navigate } from '../../../shell/navigation.js';
 import { track as beacon } from '../../../telemetry/beacon.js';
 
 // The room's `open(stepId, door)` for every surface that shows a step's tree; null where no tree can be gone into.
 export const TreeDoor = createContext(null);
+
+// One door into a step's tree for a surface to offer: null where the step opens none, its pointer dangles or no tree
+// can be gone into here.
+export function useTreeDoor(step, door) {
+  const open = useContext(TreeDoor);
+  return step?.opening && !step.opening.dangling && open ? () => open(step.id, door) : null;
+}
 
 const CAME_FROM = 'roadmapCameFrom';
 const WENT_THROUGH = 'roadmapWentThrough';

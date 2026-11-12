@@ -290,18 +290,8 @@ button.st-board-step-tree {
   line-height: 16px;
   color: var(--text-secondary);
 }
-.st-board-step-tree-bar {
-  height: 4px;
+.st-board-step-tree-facts .st-tree-bar {
   margin-top: 5px;
-  border-radius: 2px;
-  background: var(--border-default);
-  overflow: hidden;
-}
-.st-board-step-tree-bar > span {
-  display: block;
-  height: 100%;
-  border-radius: 2px;
-  background: var(--text-secondary);
 }
 .st-board-step-tree-chevron {
   display: inline-flex;

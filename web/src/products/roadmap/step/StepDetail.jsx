@@ -1,6 +1,6 @@
 // Roadmap step detail: a pushed page below 744px and a modal otherwise.
 
-import React, { useCallback, useContext, useEffect, useId, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import './detail.css';
 import { track } from '../../../telemetry/beacon.js';
 import { reportRoadmapFailure } from '../reportFailure.js';
@@ -11,8 +11,8 @@ import { deletionCost } from '../board/acts.js';
 import { StepFacts, STEP_SECTIONS, offersCompletion, titleOf } from './StepFacts.js';
 import { handleMenuKey } from '../board/BoardControls.jsx';
 import { StepIcons } from './StepIcons.jsx';
-import { OpeningGlyph } from '../OpeningGlyph.jsx';
-import { TreeDoor } from '../room/useTreeVisit.js';
+import { OpeningBar, OpeningGlyph } from '../OpeningMarks.jsx';
+import { useTreeDoor } from '../room/useTreeVisit.js';
 import { coverBeneath, DetailFocusContext } from './composerFocus.js';
 import { wrapTab } from '../../../design-system/feedback/dialogFocus.js';
 import { boardFocusTarget } from '../board/traversal.js';
@@ -62,8 +62,7 @@ export function StepDetail({
   const { id, trail, door } = address;
   const surface = breakpoint === 'phone' ? 'page' : 'modal';
   const facts = useMemo(() => new StepFacts(tree, { completed, completedAt }, id), [tree, completed, completedAt, id]);
-  const treeDoor = useContext(TreeDoor);
-  const openTree = facts.opening && !facts.opening.dangling && treeDoor ? () => treeDoor(id, 'step') : null;
+  const openTree = useTreeDoor(facts.step, 'step');
   const layerRef = useRef(null);
   const originRef = useRef(null);
   const deletedRef = useRef(null);
@@ -509,7 +508,7 @@ function TreeSection({ facts, onOpen }) {
         <span className="st-board-step-tree-facts">
           <span className="st-board-step-tree-title">{treeTitle(opening)}</span>
           <span className="st-board-step-tree-state">{treeState(opening, facts.roadmap)}</span>
-          {opening.total > 0 && <span className="st-board-step-tree-bar" aria-hidden><span style={{ width: `${opening.gauge * 100}%` }} /></span>}
+          {opening.total > 0 && <OpeningBar opening={opening} />}
         </span>
         {onOpen && <span className="st-board-step-tree-chevron"><StepIcons.chevron /></span>}
       </Row>

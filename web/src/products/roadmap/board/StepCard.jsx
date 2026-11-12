@@ -6,7 +6,7 @@ import { ChevronRight } from 'lucide-react';
 import { SwipeGesture, SWIPE_REVEAL } from './gestures.js';
 import { HoldGesture, HOLD_MS } from '../input/HoldGesture.js';
 import { hueOf } from '../theme.js';
-import { OpeningGlyph } from '../OpeningGlyph.jsx';
+import { OpeningBar, OpeningGlyph } from '../OpeningMarks.jsx';
 import { completeStepAction, openTreeAction, STEP_DETAIL, TREE, reasonLine, treeLine } from '../copy.js';
 
 const SWIPE_ACTION_GAP = 8;
@@ -40,9 +40,7 @@ export const StepCard = React.memo(function StepCard({ card, selected = false, a
           <span className={`st-board-tree-pill st-board-tree-pill--${card.opening.face}${leads ? ' st-board-tree-pill--leads' : ''}`}>
             <span className="st-board-tree-pill-glyph"><OpeningGlyph face={card.opening.face} size={14} check /></span>
             <span className="st-board-tree-pill-label">{pill}</span>
-            {card.opening.face === 'open' && (
-              <span className="st-board-tree-pill-bar" aria-hidden><span style={{ width: `${card.opening.gauge * 100}%` }} /></span>
-            )}
+            {card.opening.face === 'open' && <OpeningBar opening={card.opening} />}
             {leads && <span className="st-board-tree-pill-chevron"><ChevronRight size={12} strokeWidth={1.66667} absoluteStrokeWidth aria-hidden /></span>}
           </span>
         )}

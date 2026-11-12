@@ -286,19 +286,9 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.st-board-tree-pill-bar {
+.st-board-tree-pill .st-tree-bar {
   flex-shrink: 0;
   width: 36px;
-  height: 4px;
-  border-radius: 2px;
-  background: var(--border-default);
-  overflow: hidden;
-}
-.st-board-tree-pill-bar > span {
-  display: block;
-  height: 100%;
-  border-radius: 2px;
-  background: var(--text-secondary);
 }
 .st-board--phone .st-board-tree-pill--leads::before {
   content: '';

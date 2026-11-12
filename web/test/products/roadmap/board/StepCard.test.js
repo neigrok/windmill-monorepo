@@ -158,11 +158,11 @@ test('StepCard — a step that opens a tree wears its pill: done of total, the t
 
 test('StepCard — the pill sits between the reason and the excerpt, with the bar only while its tree is under way', () => {
   const html = renderToStaticMarkup(React.createElement(StepCard, { card: myYearCards().get('sail'), onSelect: () => {}, onOpenTree: () => {} }));
-  const order = [...html.matchAll(/class="(st-board-card-title|st-board-card-reason|st-board-tree-pill-glyph|st-board-tree-pill-label|st-board-tree-pill-bar|st-board-tree-pill-chevron|st-board-card-excerpt)"/g)].map((match) => match[1]);
+  const order = [...html.matchAll(/class="(st-board-card-title|st-board-card-reason|st-board-tree-pill-glyph|st-board-tree-pill-label|st-tree-bar|st-board-tree-pill-chevron|st-board-card-excerpt)"/g)].map((match) => match[1]);
 
-  assert.deepEqual(order, ['st-board-card-title', 'st-board-card-reason', 'st-board-tree-pill-glyph', 'st-board-tree-pill-label', 'st-board-tree-pill-bar', 'st-board-tree-pill-chevron', 'st-board-card-excerpt']);
-  assert.match(html, /<span class="st-board-tree-pill-bar" aria-hidden="true"><span style="width:37.5%"><\/span><\/span>/);
-  assert.equal(renderToStaticMarkup(React.createElement(StepCard, { card: myYearCards().get('read'), onSelect: () => {} })).includes('st-board-tree-pill-bar'), false);
+  assert.deepEqual(order, ['st-board-card-title', 'st-board-card-reason', 'st-board-tree-pill-glyph', 'st-board-tree-pill-label', 'st-tree-bar', 'st-board-tree-pill-chevron', 'st-board-card-excerpt']);
+  assert.match(html, /<span class="st-tree-bar" aria-hidden="true"><span style="width:37.5%"><\/span><\/span>/);
+  assert.equal(renderToStaticMarkup(React.createElement(StepCard, { card: myYearCards().get('read'), onSelect: () => {} })).includes('st-tree-bar'), false);
 });
 
 test('StepCard — a press on the pill goes into the tree, a press anywhere else opens the step, and a pill with nowhere to go opens the step', () => {

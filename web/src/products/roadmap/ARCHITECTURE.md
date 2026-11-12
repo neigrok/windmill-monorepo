@@ -12,7 +12,7 @@ point for the component showcase.
 |---|---|
 | `SkillTreeView.jsx` | The room's composition: it wires the hooks in `room/` and mounts every surface below |
 | `i18n/`, `copy.js`, `resume.js`, `reportFailure.js` | The catalogs every visible string reads from; the words and count sentences several surfaces read; the newest roadmap as the home card and the landing offer it back; the static-name Sentry report |
-| `OpeningGlyph.jsx` | The marks of a step that opens a tree, one set of drawings for the Board, the step, the Graph's chrome and a node's centre |
+| `OpeningMarks.jsx` | The marks of a step that opens a tree: one glyph and one bar for the Board, the step, the Graph's chrome and a node's centre |
 | `room/` | What the room holds: the load, the view, progress, the scene, the open step, the tree a step opens and the way back, the row's verbs, the band and who holds the roadmap |
 | `model/` | Graph validation, trunk selection, unlock rules, what a step's tree has come to, legend, workspace and spatial queries. Independent of React and WebGL |
 | `identity/` | The row above both views: title, roadmap sheet and switcher, view switch |
