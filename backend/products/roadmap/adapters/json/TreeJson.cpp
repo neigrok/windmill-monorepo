@@ -189,7 +189,23 @@ Json::Value toJson(const TreeDiagnostics& diagnostics) {
   for (const Edge& edge : diagnostics.selfEdges) selfEdges.append(edgeJson(edge));
   root["selfEdges"] = selfEdges;
 
+  // The tree's own smells first, naming no node of their own: the empty legend, or each hue no kind wears.
   Json::Value smells(Json::arrayValue);
+  if (diagnostics.legendEmpty) {
+    Json::Value value(Json::objectValue);
+    value["kind"] = "empty-legend";
+    smells.append(value);
+  }
+  for (const UnclaimedHue& unclaimed : diagnostics.unclaimedHues) {
+    Json::Value value(Json::objectValue);
+    value["kind"] = "unclaimed-hue";
+    value["hue"] = std::string(toString(unclaimed.hue));
+    value["count"] = static_cast<Json::UInt64>(unclaimed.count);
+    Json::Value nodes(Json::arrayValue);
+    for (const NodeId& node : unclaimed.nodes) nodes.append(node.str());
+    value["nodes"] = nodes;
+    smells.append(value);
+  }
   for (const Smell& smell : diagnostics.smells) {
     Json::Value value(Json::objectValue);
     value["node"] = smell.node.str();

@@ -735,7 +735,7 @@ TEST(get_diagnostics_tells_the_owner_its_loops_of_trees_and_dangling_pointers_an
   h.trees->softDelete(TreeId{"t_gone"});
 
   CHECK_EQ(bodyOf(sendGetDiagnostics(h.api, "s-owner", "t_main")), parse(R"({
-      "cycles":[],"dangling":[],"selfEdges":[],"smells":[],"maskedWork":[],
+      "cycles":[],"dangling":[],"selfEdges":[],"smells":[{"kind":"empty-legend"}],"maskedWork":[],
       "treeLoops":[
         {"node":"near","path":[{"treeId":"t_near","title":"Near"},{"treeId":"t_main","title":"Main"}]},
         {"node":"round","path":[{"treeId":"t_far","title":"Far"},{"treeId":"t_near","title":"Near"},{"treeId":"t_main","title":"Main"}]},
@@ -746,13 +746,13 @@ TEST(get_diagnostics_tells_the_owner_its_loops_of_trees_and_dangling_pointers_an
            (std::vector<std::set<TreeId>>{{TreeId{"said \"so\""}, TreeId{"t_far"}, TreeId{"t_gone"}, TreeId{"t_main"},
                                            TreeId{"t_near"}, TreeId{"t_theirs"}, TreeId{"t_x"}}}));
   CHECK_EQ(bodyOf(sendGetDiagnostics(h.api, "s-owner", "t_plain")),
-           parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[],"maskedWork":[],"treeLoops":[],"danglingPointers":[]})"));
+           parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[{"kind":"empty-legend"}],"maskedWork":[],"treeLoops":[],"danglingPointers":[]})"));
   CHECK_EQ(h.trees->openedReads.size(), 1u);
 
   h.trees->openedReadsFail = true;
   for (const char* reader : {"s-stranger", ""}) {
     const std::string pointed = dump(bodyOf(sendGetDiagnostics(h.api, reader, "t_main")));
-    CHECK_EQ(pointed, std::string(R"({"cycles":[],"dangling":[],"maskedWork":[],"selfEdges":[],"smells":[]})"));
+    CHECK_EQ(pointed, std::string(R"({"cycles":[],"dangling":[],"maskedWork":[],"selfEdges":[],"smells":[{"kind":"empty-legend"}]})"));
     CHECK_EQ(pointed, dump(bodyOf(sendGetDiagnostics(h.api, reader, "t_twin"))));
   }
   CHECK_EQ(h.trees->openedReads.size(), 1u);
@@ -785,14 +785,14 @@ TEST(get_diagnostics_whose_pointers_cannot_be_followed_answers_the_graphs_diagno
   const drogon::HttpResponsePtr degraded = sendGetDiagnostics(h.api, "s-me", "t_mine");
 
   REQUIRE_EQ(degraded->getStatusCode(), drogon::k200OK);
-  CHECK_EQ(bodyOf(degraded), parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[{"node":"root","kind":"empty-icon"}],
+  CHECK_EQ(bodyOf(degraded), parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[{"kind":"empty-legend"},{"node":"root","kind":"empty-icon"}],
       "maskedWork":[],"pointerDiagnosticsUnavailable":true})"));
   CHECK_EQ(reporter.failures->reports,
            (std::vector<std::string>{std::string("roadmap.diagnostics.follow roadmap rest failed ") + typeid(std::runtime_error).name()}));
   CHECK_EQ(bodyOf(sendGetDiagnostics(h.api, "", "t_mine")),
-           parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[{"node":"root","kind":"empty-icon"}],"maskedWork":[]})"));
+           parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[{"kind":"empty-legend"},{"node":"root","kind":"empty-icon"}],"maskedWork":[]})"));
   CHECK_EQ(bodyOf(sendGetDiagnostics(h.api, "s-me", "t_sub")),
-           parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[{"node":"root","kind":"empty-icon"}],"maskedWork":[],
+           parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[{"kind":"empty-legend"},{"node":"root","kind":"empty-icon"}],"maskedWork":[],
                "treeLoops":[],"danglingPointers":[]})"));
   CHECK_EQ(reporter.failures->reports.size(), 1u);
 }
@@ -825,7 +825,7 @@ TEST(get_diagnostics_lists_fifty_nodes_and_eight_trees_of_a_way_and_counts_the_r
   plant("t_main", own);
   for (int k = 1; k <= 8; ++k) plant(numbered("t_w", k), {{"next", k < 8 ? numbered("t_w", k + 1) : std::string("t_main")}});
 
-  Json::Value expected = parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[],"maskedWork":[],
+  Json::Value expected = parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[{"kind":"empty-legend"}],"maskedWork":[],
       "treeLoops":[],"treeLoopsOmitted":1,"danglingPointers":[],"danglingPointersOmitted":1})");
   for (int k = 1; k <= 50; ++k) {
     Json::Value loop(Json::objectValue);

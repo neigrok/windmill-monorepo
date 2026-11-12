@@ -335,6 +335,48 @@ TEST(ws_anon_on_an_unlisted_tree_receives_the_delta_and_joins_the_bus) {
   CHECK_EQ(conn->sent.size(), 2u);
 }
 
+TEST(ws_the_subscribe_answer_says_writer_to_the_owner_and_reader_to_anyone_else_and_says_it_again_on_a_resubscribe) {
+  for (const Visibility visibility : {Visibility::public_, Visibility::unlisted}) {
+    Harness h;
+    UserId owner = h.signIn("s-owner", "owner@example.com");
+    h.signIn("s-stranger", "stranger@example.com");
+    h.seed("t_door", owner, visibility);
+    auto laptop = std::make_shared<FakeSocket>();
+    auto stranger = std::make_shared<FakeSocket>();
+    auto signedOut = std::make_shared<FakeSocket>();
+    h.collab.onOpen(h.upgrade("s-owner"), laptop);
+    h.collab.onOpen(h.upgrade("s-stranger"), stranger);
+    h.collab.onOpen(h.upgrade(""), signedOut);
+    h.collab.onMessage(laptop, registerFrame("t_door", "f-create",
+                                             R"({"id":"door","createdAt":"1000:0:r_a","opens":"t_00000000000000f2","opensAt":"1000:0:r_a"})"));
+    NodeStateEntry withheld;
+    withheld.id = NodeId{"door"};
+    withheld.createdAt = Hlc{1000, 0, "r_a"};
+    NodeStateEntry whole = withheld;
+    whole.opens = TreeId{"t_00000000000000f2"};
+    whole.opensAt = Hlc{1000, 0, "r_a"};
+    const auto answer = [](const NodeStateEntry& door, const char* reach) {
+      Json::Value frame = parse(R"({"t":"subgraph","v":1,"treeId":"t_door","frameId":"delta-1","actor":"srv","intent":"delta",
+                                    "edges":[],"kinds":[],"gestures":[],"title":null,"guide":null,
+                                    "coverage":{"r_a":"1000:0:r_a"},"seq":1})");
+      frame["nodes"] = toJson(GraphState{{door}, {}})["nodes"];
+      frame["reach"] = reach;
+      return frame;
+    };
+
+    for (const auto& conn : {laptop, stranger, signedOut}) h.collab.onMessage(conn, subscribeFrame("t_door"));
+    CHECK_EQ(lastFrameOfType(*laptop, "subgraph"), answer(whole, "writer"));
+    CHECK_EQ(lastFrameOfType(*stranger, "subgraph"), answer(withheld, "reader"));
+    CHECK_EQ(lastFrameOfType(*signedOut, "subgraph"), answer(withheld, "reader"));
+
+    for (const auto& conn : {laptop, stranger, signedOut}) h.collab.onMessage(conn, subscribeFrame("t_door"));
+    for (const auto& conn : {laptop, stranger, signedOut}) REQUIRE_EQ(countOfType(*conn, "subgraph"), 2u);
+    CHECK_EQ(lastFrameOfType(*laptop, "subgraph"), answer(whole, "writer"));
+    CHECK_EQ(lastFrameOfType(*stranger, "subgraph"), answer(withheld, "reader"));
+    CHECK_EQ(lastFrameOfType(*signedOut, "subgraph"), answer(withheld, "reader"));
+  }
+}
+
 TEST(ws_subscribe_to_an_absent_tree_is_rejected) {
   Harness h;
   auto conn = std::make_shared<FakeSocket>();
@@ -1761,14 +1803,22 @@ TEST(ws_an_owners_connection_whose_session_was_revoked_stops_receiving_the_tree_
   const Json::Value live = lastFrameOfType(*tablet, "subgraph");
   CHECK_EQ(live["seq"].asInt64(), 2);
   CHECK_EQ(live["nodes"], Json::Value(Json::arrayValue));
+  CHECK_EQ(countOfType(*tablet, "reject"), 0u);
 
+  // Neither the narrowed connection nor a fresh one on the revoked session is answered as a writer.
   auto again = std::make_shared<FakeSocket>();
   h.collab.onOpen(h.upgrade("s-tablet"), again);
-  h.collab.onMessage(again, subscribeFrame("t_pub"));
   NodeStateEntry withheld;
   withheld.id = NodeId{"door"};
   withheld.createdAt = Hlc{1000, 0, "r_a"};
-  CHECK_EQ(lastFrameOfType(*again, "subgraph")["nodes"], toJson(GraphState{{withheld}, {}})["nodes"]);
+  Json::Value answer = parse(R"({"t":"subgraph","v":1,"treeId":"t_pub","frameId":"delta-2","actor":"srv","intent":"delta",
+                                 "edges":[],"kinds":[],"gestures":[],"title":null,"guide":null,
+                                 "coverage":{"r_a":"2000:0:r_a"},"seq":2,"reach":"reader"})");
+  answer["nodes"] = toJson(GraphState{{withheld}, {}})["nodes"];
+  for (const auto& conn : {tablet, again}) {
+    h.collab.onMessage(conn, subscribeFrame("t_pub"));
+    CHECK_EQ(lastFrameOfType(*conn, "subgraph"), answer);
+  }
 }
 
 TEST(ws_a_frame_whose_opens_is_not_a_string_is_refused_and_leaves_the_tree_as_it_was) {
