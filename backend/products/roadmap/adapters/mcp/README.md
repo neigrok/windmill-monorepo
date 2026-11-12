@@ -227,7 +227,7 @@ The table uses product-local names; external MCP prefixes each with `roadmap_`.
 | edit | `disconnect` | remove edges: one `from`+`to` or `edges: [{from,to}]` (1..500), exactly one form; one op, one seq, all or nothing; `removed` counts the edges that were present |
 | edit | `delete_node` | tombstone nodes: one `nodeId` or `nodeIds` (1..200), exactly one form; a missing id refuses the whole call naming each; one op, one seq. `prune: true` also drops every edge touching a deleted node and clears the caller's marks on it, under the delete grant; receipt carries `ids` and `pruned: {edges, progress}` |
 | edit | `tidy` · `prune` | transitive reduction / GC dangling edges + orphan progress |
-| edit | `import_subgraph` | bulk upsert a whole `get_tree`-shaped slice as one graft frame — a field left off a re-sent node or kind keeps its value (`opens` included, but on a node the import brings back from a delete, which opens none), `prerequisiteMode` merge (union) or replace, `tombstone[]` deletes in the same frame and needs the `roadmap:delete` grant; a graft that changes nothing writes nothing and answers `unchanged: true` (see An edit that changes nothing) |
+| edit | `import_subgraph` | bulk upsert a whole `get_tree`-shaped slice as one graft frame — a field left off a re-sent node or kind keeps its value (`opens` included, but on a node the import brings back from a delete, which opens none), `prerequisiteMode` merge (union) or replace, `tombstone[]` deletes in the same frame and needs the `roadmap:delete` grant; optional `expectedSeq` and `dryRun`; a graft that changes nothing writes nothing and answers `unchanged: true` (see An edit that changes nothing) |
 | legend | `add_kind` (inline label+description+crossBranchExempt) · `rename_kind` · `describe_kind` (description and/or crossBranchExempt) · `remove_kind` · `reorder_kinds` · `recolor_kind` | the legend |
 | write | `set_progress` | per-user overlay: single `nodeId`+`status`, or a bulk `updates[]` (order-safe); `outOfOrder: true` on a completion is kept on the mark and answered as `acknowledged: true` |
 | resource | `windmill://quickstart` | the read-me-first document; no tool slot |
@@ -514,7 +514,10 @@ and none overrides another.
   anything changes. `dryRun` applies nothing; `expectedSeq` refuses a stale edit; an unchanged retry
   does not increment seq. Neither tool supplies append semantics.
 - **`import_subgraph`** takes the `nodes[]` and `kinds[]` `get_tree` returns, plus an optional
-  `progress[]`, and applies the graph in **one** op via the subgraph CRDT graft path. A `title` is
+  `progress[]`, and applies the graph in **one** op via the subgraph CRDT graft path. It takes
+  `expectedSeq` as the two above do (one schema, `expectedSeq()` in the catalog, and one pair of
+  checks, `checkExpectedSeq` and `staleExpectedSeq`): a stale one refuses the whole call — graft,
+  tombstones and carried `progress[]` — before anything lands, its dry run included. A `title` is
   not an argument: the gate refuses one by name, and the import never touches the tree's title.
   Progress (max 1000 supplied marks) commits in a separate atomic repository batch under the room
   strand. Receipts distinguish `graphApplied` and `progressApplied`, with `progressError` or

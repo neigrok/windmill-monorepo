@@ -100,7 +100,8 @@ without `prerequisites` keeps them all. The graph commits in one structural
 operation; optional progress commits in a separate atomic phase. Inspect `graphApplied`,
 `progressApplied` and any `progressError`/`progressSkipped`: a graph can be applied even when progress
 is incomplete. A graft that changes nothing the tree holds writes nothing and answers `unchanged: true`
-with the tree's current `seq`; the progress beside it is still applied. `dryRun` changes neither phase.
+with the tree's current `seq`; the progress beside it is still applied. `dryRun` changes neither phase,
+and `expectedSeq` refuses both when the tree has moved since you read it.
 )";
 
 }  // namespace
