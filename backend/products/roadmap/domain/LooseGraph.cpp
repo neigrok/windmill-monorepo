@@ -168,6 +168,12 @@ std::string LooseGraph::descriptionOf(const NodeId& id) const {
   return record->second.description.value;
 }
 
+std::vector<Link> LooseGraph::linksOf(const NodeId& id) const {
+  const auto record = nodes_.find(id);
+  if (record == nodes_.end()) return {};
+  return record->second.links.value;
+}
+
 std::map<NodeId, TreeId> LooseGraph::pointers() const {
   std::map<NodeId, TreeId> held;
   for (const auto& [id, record] : nodes_)

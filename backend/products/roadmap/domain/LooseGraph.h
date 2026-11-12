@@ -70,6 +70,8 @@ public:
   std::optional<NodeSpec> nodeView(const NodeId& id) const;
   // The one register an append reads, without the edge scan nodeView pays; "" for a never-seen id.
   std::string descriptionOf(const NodeId& id) const;
+  // The links a node's record holds, present or deleted, without the edge scan; none for a never-seen id.
+  std::vector<Link> linksOf(const NodeId& id) const;
 
   // The tree each present node opens, by node; a node that opens none is left out.
   std::map<NodeId, TreeId> pointers() const;

@@ -1103,15 +1103,69 @@ TEST(a_link_url_is_taken_exactly_when_the_web_shows_it) {
   CHECK_FALSE(shownLinkUrl("   ").has_value());
 
   const auto refused = shownLinks(
-      {Link{.label = "Ok", .url = "https://ok.example"}, Link{.label = "", .url = " javascript:alert(1)"}}, "nodes[2].links");
+      {}, {Link{.label = "Ok", .url = "https://ok.example"}, Link{.label = "", .url = " javascript:alert(1)"}},
+      "nodes[2].links");
   REQUIRE(std::holds_alternative<std::string>(refused));
   CHECK_EQ(std::get<std::string>(refused),
            std::string("nodes[2].links[1].url must start with http:, https: or mailto:, the links a person can open"));
   const auto trimmed = shownLinks(
-      {Link{.label = "Mail", .url = " mailto:a@b.example "}, Link{.label = "", .url = "\tHTTPS://A.example\n"}}, "links");
+      {}, {Link{.label = "Mail", .url = " mailto:a@b.example "}, Link{.label = "", .url = "\tHTTPS://A.example\n"}},
+      "links");
   REQUIRE(std::holds_alternative<std::vector<Link>>(trimmed));
   CHECK((std::get<std::vector<Link>>(trimmed) ==
          std::vector<Link>{{.label = "Mail", .url = "mailto:a@b.example"}, {.label = "", .url = "HTTPS://A.example"}}));
+}
+
+// The rule judges only the urls a write brings to a node: one the node holds byte for byte is kept as it is, unjudged
+// and untrimmed, and every other is trimmed and judged. A held url the rule refuses is that url byte for byte, never one
+// with whitespace around it.
+TEST(a_link_the_node_holds_is_kept_as_held_and_only_the_urls_a_write_brings_are_judged) {
+  const std::vector<Link> held{{.label = "J", .url = "javascript:alert(1)"}, {.label = "", .url = " https://a.example/"}};
+  const auto asHeld = shownLinks(held, held, "links");
+  REQUIRE(std::holds_alternative<std::vector<Link>>(asHeld));
+  CHECK((std::get<std::vector<Link>>(asHeld) == held));
+
+  std::vector<Link> more = held;
+  more.push_back({.label = "", .url = "data:text/html,x"});
+  const auto oneMore = shownLinks(held, more, "links");
+  REQUIRE(std::holds_alternative<std::string>(oneMore));
+  CHECK_EQ(std::get<std::string>(oneMore),
+           std::string("links[2].url must start with http:, https: or mailto:, the links a person can open"));
+  const auto spaced = shownLinks(held, {{.label = "J", .url = " javascript:alert(1)"}}, "links");
+  REQUIRE(std::holds_alternative<std::string>(spaced));
+  CHECK_EQ(std::get<std::string>(spaced),
+           std::string("links[0].url must start with http:, https: or mailto:, the links a person can open"));
+  const auto trimmed = shownLinks(held, {{.label = "", .url = "https://a.example/ "}}, "links");
+  REQUIRE(std::holds_alternative<std::vector<Link>>(trimmed));
+  CHECK((std::get<std::vector<Link>>(trimmed) == std::vector<Link>{{.label = "", .url = "https://a.example/"}}));
+}
+
+// A link's identity is its url trimmed of the whitespace around it: an added url names the held link that trims to it,
+// which keeps its place, takes a sent label and holds the trimmed url from then on. A held url the rule refuses is
+// named only byte for byte, and two added urls that trim to one repeat.
+TEST(an_added_link_is_the_held_link_its_trimmed_url_names) {
+  const std::vector<Link> held{{.label = "J", .url = "javascript:alert(1)"}, {.label = "", .url = " https://a.example/"}};
+  const auto named = withLinksAdded(held, {{.label = "A", .url = "https://a.example/"}}, "addLinks");
+  REQUIRE(std::holds_alternative<std::vector<Link>>(named));
+  CHECK((std::get<std::vector<Link>>(named) ==
+         std::vector<Link>{{.label = "J", .url = "javascript:alert(1)"}, {.label = "A", .url = "https://a.example/"}}));
+  const auto spaced = withLinksAdded({{.label = "", .url = "https://a.example/"}},
+                                     {{.label = "", .url = "\thttps://a.example/ "}}, "addLinks");
+  REQUIRE(std::holds_alternative<std::vector<Link>>(spaced));
+  CHECK((std::get<std::vector<Link>>(spaced) == std::vector<Link>{{.label = "", .url = "https://a.example/"}}));
+  const auto byteForByte = withLinksAdded(held, {{.label = "K", .url = "javascript:alert(1)"}}, "addLinks");
+  REQUIRE(std::holds_alternative<std::vector<Link>>(byteForByte));
+  CHECK((std::get<std::vector<Link>>(byteForByte) ==
+         std::vector<Link>{{.label = "K", .url = "javascript:alert(1)"}, {.label = "", .url = " https://a.example/"}}));
+
+  const auto refused = withLinksAdded(held, {{.label = "", .url = " javascript:alert(1)"}}, "addLinks");
+  REQUIRE(std::holds_alternative<std::string>(refused));
+  CHECK_EQ(std::get<std::string>(refused),
+           std::string("addLinks[0].url must start with http:, https: or mailto:, the links a person can open"));
+  const auto repeated = withLinksAdded(
+      {}, {{.label = "", .url = "https://b.example"}, {.label = "", .url = " https://b.example"}}, "addLinks");
+  REQUIRE(std::holds_alternative<std::string>(repeated));
+  CHECK_EQ(std::get<std::string>(repeated), std::string("addLinks[1].url repeats addLinks[0].url — send each link once"));
 }
 
 TEST(create_node_opens_the_tree_it_names_and_opens_none_without_one) {

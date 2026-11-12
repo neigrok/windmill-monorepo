@@ -5978,3 +5978,66 @@ TEST(mcp_every_door_that_writes_links_takes_only_urls_a_person_can_open) {
              {"id":"b","links":[{"url":"https://b.example/"},{"url":"HTTPS://A.example"},{"url":"mailto:a@b.example"}]},
              {"id":"c","links":[{"url":"https://c.example"}]}])"));
 }
+
+// A link a node already holds is not the write's word: a tree holding a url the rule refuses, written before the rule or
+// by a client frame, reads and sends back as held at every door that writes links, and only the urls a write brings
+// are judged. A new node, or a new tree, holds nothing, so the same links are refused there, and nothing is applied.
+TEST(mcp_a_link_a_node_already_holds_is_sent_back_as_held_at_every_door) {
+  Harness h;
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"a","label":"A"})")).isError);
+  AnnotateNode planted{NodeId{"a"}};
+  planted.links =
+      std::vector<Link>{{.label = "J", .url = "javascript:alert(1)"}, {.label = "", .url = "https://ok.example/"}};
+  h.registry.open(TreeId{"t"})->applyCommand(planted, h.clock.nowMs(), h.caller);
+  Json::Value document =
+      body(h.call("get_tree", parse(R"({"includeGuides":false,"fields":["id","label","links"]})")))["tree"];
+  for (const char* field : {"guide", "id", "title", "url"}) document.removeMember(field);
+  const Json::Value held = document["nodes"][0]["links"];
+  CHECK_EQ(held, parse(R"j([{"url":"javascript:alert(1)","label":"J"},{"url":"https://ok.example/"}])j"));
+
+  Json::Value annotate = parse(R"({"nodeId":"a"})");
+  annotate["links"] = held;
+  Json::Value patch = parse(R"({"updates":[{"nodeId":"a"}]})");
+  patch["updates"][0]["links"] = held;
+  const Json::Value added = parse(R"j({"nodeId":"a","addLinks":[{"url":"javascript:alert(1)"}]})j");
+  for (const auto& [tool, arguments] : std::vector<std::pair<const char*, Json::Value>>{
+           {"import_subgraph", document}, {"annotate_node", annotate}, {"patch_nodes", patch}, {"annotate_node", added}})
+    CHECK_EQ(body(h.call(tool, arguments))["unchanged"], Json::Value(true));
+
+  const std::string rule = " must start with http:, https: or mailto:, the links a person can open";
+  Json::Value more = held;
+  more.append(parse(R"({"url":"data:text/html,x"})"));
+  document["nodes"][0]["links"] = more;
+  annotate["links"] = more;
+  patch["updates"][0]["links"] = more;
+  CHECK_EQ(message(h.call("import_subgraph", document)), "import_subgraph: nodes[0].links[2].url" + rule);
+  CHECK_EQ(message(h.call("annotate_node", annotate)), "annotate_node: links[2].url" + rule);
+  CHECK_EQ(message(h.call("patch_nodes", patch)), "patch_nodes: updates[0].links[2].url" + rule);
+  CHECK_EQ(message(h.call("annotate_node", parse(R"j({"nodeId":"a","addLinks":[{"url":" javascript:alert(1)"}]})j"))),
+           "annotate_node: addLinks[0].url" + rule);
+
+  Json::Value created = parse(R"({"id":"b","label":"B"})");
+  created["links"] = held;
+  CHECK_EQ(message(h.call("create_node", created)), "create_node: links[0].url" + rule);
+  h.plant("t_copy", h.caller, "", {});
+  document["nodes"][0]["links"] = held;
+  document["treeId"] = "t_copy";
+  CHECK_EQ(message(h.tools.callTool("import_subgraph", document, ToolCaller{h.caller, ToolScope::everything()})),
+           "import_subgraph: nodes[0].links[0].url" + rule);
+  CHECK_EQ(body(h.call("get_nodes", parse(R"({"nodeIds":["a"],"fields":["id","links"]})")))["nodes"][0]["links"], held);
+}
+
+// A link's identity is its url trimmed: an addLinks url names the held link stored with whitespace around it, which
+// keeps its place and holds the trimmed url from then on, the link a person can see, with no second entry.
+TEST(mcp_add_links_names_a_held_link_by_its_trimmed_url) {
+  Harness h;
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"a","label":"A"})")).isError);
+  AnnotateNode planted{NodeId{"a"}};
+  planted.links =
+      std::vector<Link>{{.label = "", .url = " https://a.example/"}, {.label = "", .url = "https://b.example/"}};
+  h.registry.open(TreeId{"t"})->applyCommand(planted, h.clock.nowMs(), h.caller);
+  CHECK_FALSE(h.call("annotate_node", parse(R"({"nodeId":"a","addLinks":[{"url":"https://a.example/","label":"A"}]})"))
+                  .isError);
+  CHECK_EQ(body(h.call("get_nodes", parse(R"({"nodeIds":["a"],"fields":["id","links"]})")))["nodes"],
+           parse(R"([{"id":"a","links":[{"url":"https://a.example/","label":"A"},{"url":"https://b.example/"}]}])"));
+}

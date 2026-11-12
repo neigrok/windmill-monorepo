@@ -117,16 +117,6 @@ std::optional<std::string> checkAnnotation(const Json::Value& node, const std::s
   return optionalLinks(node["links"], prefix + "links");
 }
 
-// The links a write sends under `field`, each url trimmed in place, or the refusal of the first url nobody would be
-// shown (shownLinks).
-std::optional<std::string> shownLinksIn(Json::Value& payload, const char* field) {
-  if (!payload.isMember(field)) return std::nullopt;
-  const auto shown = shownLinks(linksFromJson(payload[field]), field);
-  if (const auto* refusal = std::get_if<std::string>(&shown)) return *refusal;
-  payload[field] = linksToJson(std::get<std::vector<Link>>(shown));
-  return std::nullopt;
-}
-
 // A legend kind id a node write files the node under; which kinds exist is the room's to say.
 std::optional<std::string> optionalKind(const Json::Value& value, const std::string& path) {
   if (value.isNull()) return std::nullopt;
@@ -301,8 +291,7 @@ std::optional<std::string> prepareEdit(const std::string& tool, Json::Value& pay
     // A created node opens the tree this call names and no other: the pointer is always written, so
     // an id a deleted node held brings none of that node's pointer back.
     if (args["opens"].isNull()) payload["opens"] = "";
-    if (std::optional<std::string> bad = checkAnnotation(args, "")) return bad;
-    return shownLinksIn(payload, "links");
+    return checkAnnotation(args, "");
   }
   if (tool == "annotate_node") {
     if (args["description"].isNull() && args["appendDescription"].isNull() && args["icon"].isNull() &&
@@ -322,9 +311,7 @@ std::optional<std::string> prepareEdit(const std::string& tool, Json::Value& pay
       return bad;
     if (std::optional<std::string> bad = optionalString(args["icon"], "icon")) return bad;
     if (std::optional<std::string> bad = optionalString(args["opens"], "opens", kMaxIdLength)) return bad;
-    if (std::optional<std::string> bad = checkAnnotation(args, "")) return bad;
-    if (std::optional<std::string> bad = shownLinksIn(payload, "links")) return bad;
-    return shownLinksIn(payload, "addLinks");
+    return checkAnnotation(args, "");
   }
   if (tool == "rename_node") return requireString(args["label"], "label", Empty::allowed);
   if (tool == "set_node_color") {
@@ -728,11 +715,14 @@ ToolResult applyEdit(RoomRegistry& registry, TreeRegistry& trees, const TreeId& 
       return ToolResult::failure("no node in this tree is named \"" + payload["id"].asString() + "\"" +
                                  ". " + kNodeHandle.hint);
 
-    if (payload.isMember("addLinks")) {
-      const auto joined =
-          room.linksWith(NodeId{payload["id"].asString()}, linksFromJson(payload["addLinks"]), "addLinks");
-      if (const auto* refusal = std::get_if<std::string>(&joined)) return ToolResult::failure(*refusal);
-      payload["links"] = linksToJson(std::get<std::vector<Link>>(joined));
+    // The links this write sends, judged against the ones the node holds: only the urls it brings are its word.
+    if (payload.isMember("links") || payload.isMember("addLinks")) {
+      const NodeId node{payload["id"].asString()};
+      const auto links = payload.isMember("addLinks")
+                             ? room.withLinksAdded(node, linksFromJson(payload["addLinks"]), "addLinks")
+                             : room.shownLinks(node, linksFromJson(payload["links"]), "links");
+      if (const auto* refusal = std::get_if<std::string>(&links)) return ToolResult::failure(*refusal);
+      payload["links"] = linksToJson(std::get<std::vector<Link>>(links));
     }
 
     const bool setsHue = tool == "create_node" || tool == "set_node_color";
@@ -835,11 +825,7 @@ ToolResult applyBatchEdit(RoomRegistry& registry, TreeRegistry& trees, const Tre
       if (row.isMember("color")) patch.hue.color = parseColor(row["color"].asString());
       if (row["kind"].isString()) patch.hue.kind = KindId{row["kind"].asString()};
       if (row.isMember("position")) patch.position = Vec2{row["position"]["x"].asDouble(), row["position"]["y"].asDouble()};
-      if (row.isMember("links")) {
-        const auto shown = shownLinks(linksFromJson(row["links"]), path + ".links");
-        if (const auto* refusal = std::get_if<std::string>(&shown)) return ToolResult::failure(*refusal);
-        patch.links = std::get<std::vector<Link>>(shown);
-      }
+      if (row.isMember("links")) patch.links = linksFromJson(row["links"]);
       if (row.isMember("opens")) {
         patch.opens = TreeId{row["opens"].asString()};
         opened.emplace_back(path + ".opens", *patch.opens);
@@ -1198,12 +1184,6 @@ ToolResult importSubgraph(RoomRegistry& registry, TreeRegistry& trees, ProgressS
   if (!parsed) return ToolResult::failure("this import's nodes or kinds carry a field of the wrong type");
   Graft graft;
   graft.document = *std::move(parsed);
-  for (std::size_t i = 0; i < graft.document.nodes.size(); ++i) {
-    NodeSpec& node = graft.document.nodes[i];
-    auto shown = shownLinks(std::move(node.links), "nodes[" + std::to_string(i) + "].links");
-    if (const auto* refusal = std::get_if<std::string>(&shown)) return ToolResult::failure(*refusal);
-    node.links = std::get<std::vector<Link>>(std::move(shown));
-  }
   // `seedStatus` is this surface's name for the codec's `status`, folded over it here by id.
   std::map<std::string, std::string> seeds;
   for (const Json::Value& node : args["nodes"])
@@ -1247,6 +1227,11 @@ ToolResult importSubgraph(RoomRegistry& registry, TreeRegistry& trees, ProgressS
     if (!missing.empty())
       return ToolResult::failure("tombstone names " + quotedList(missing) +
                                  ", which this tree does not hold. " + kNodeHandle.hint);
+
+    // The links each node sends, judged against the ones its record holds, before the caps weigh what would land.
+    std::variant<Graft, std::string> shown = room.resolveLinks(std::move(graft));
+    if (const auto* refusal = std::get_if<std::string>(&shown)) return ToolResult::failure(*refusal);
+    graft = std::get<Graft>(std::move(shown));
 
     // A graft mints no Command, so the tree caps are checked here, before the dry-run branch.
     if (std::optional<Admission> refusal = room.admit(graft))

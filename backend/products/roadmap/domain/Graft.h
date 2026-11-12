@@ -51,6 +51,11 @@ struct Graft {
 // that disagrees, refuses the whole graft with resolveHue's refusal, naming `nodes[i].kind`.
 std::variant<Graft, KindRefusal> resolveKinds(const Legend& legend, Graft graft);
 
+// The graft with each node's links as that node would hold them: shownLinks against the links its record holds,
+// present or deleted, so a link sent as held is kept and a new node holds none. The first url nobody would be shown
+// refuses the whole graft, named `nodes[i].links[j].url`.
+std::variant<Graft, std::string> resolveLinks(const LooseGraph& graph, Graft graft);
+
 // What joining a graft does beyond the upsert itself. `keptEdges` and `replacedEdges` are the same
 // set under the two modes — present edges into a node the document re-sends (present or tombstoned:
 // any id with a life record) that its prerequisites do not name — kept by merge, removed by
