@@ -99,7 +99,7 @@ rejected for structure. Validity is a read model, not a gate.
   complete, whatever mark the node holds. A mark such a node already held stays stored. From a
   caller who cannot write the tree the same mark is an ordinary one: recorded, answered exactly as
   on a node that opens nothing, and judged on their own marks.
-- The domain is fed two ways. A read of one tree (`get_tree`, `get_nodes`, `find_nodes`, 
+- The domain is fed two ways. A read of one tree (`get_tree`, `get_nodes`, `find_nodes`,
   `GET /v1/trees/{id}`) takes the tree from its live room, a progress write (`set_progress`, the
   `progress[]` of an `import_subgraph`, a socket `progress` frame) only its nodes that open a tree,
   and each asks `TreeRepository::openedFrom(owner, opened)` for each tree it opens that stands and
@@ -107,23 +107,25 @@ rejected for structure. Validity is a read model, not a gate.
   `tree_nodes` and the owner's `node_progress` that reaches each tree once and answers, per tree and
   tree it opens, how many present nodes open it, how many of those the owner marked and the latest
   of those marks, beside the tree's title and its nodes that open none. Each reached tree's nodes
-  and marks are read through `tree_nodes_pkey` and `node_progress_pkey`, so the cost follows the
-  trees reached and not the size of the tables. It is made once per reply, call or frame, after the
-  tree's strand is released, and not at all for a caller who cannot write the tree, for a read whose
-  fields ask for neither `state` nor `opens`, for a write with no mark to judge, or for a tree that
-  holds no pointer. The tree's diagnostics (`get_diagnostics`, `GET /v1/trees/{id}/diagnostics`)
-  make the same read for `OpenedTrees::diagnose`: once per reply, after the strand is released, for
-  a caller who can write the tree and a tree that holds a pointer, and not for an MCP call that
-  sends `includePointers: false`; under the strand they take the tree's pointers alone
-  (`LooseGraph::pointers`). An MCP edit that changes the tree a node opens to a tree (`create_node`,
-  `annotate_node`, `patch_nodes` or `import_subgraph`) makes it once more, after the edit is saved
-  and the strand is released, starting from the trees those nodes now open (`pointersSetSince`) and
-  under a budget of its own, 750 ms, in place of the pool's statement limit: its receipt names in
-  `introducedDiagnostics`, after the graph's errors and within that list's five lines, each of those
-  nodes whose tree leads back, and a read that runs past the budget leaves the receipt
-  `pointerDiagnosticsUnavailable: true`. No other edit makes that read: a dry run, an edit that only
-  clears a pointer and one that re-sends the tree a node already opens among them. Where every tree
-  of an owner is already loaded with its marks (`TreeRegistry::list`,
+  are read through `tree_nodes_pkey`, and the owner's marks on it through an index that leads with
+  both the tree and the reader (`node_progress_pkey`, or `node_progress_user_tree`, whichever the
+  planner takes), so the cost follows the trees reached and the owner's marks on them, and not the
+  size of the tables or other accounts' marks on the same trees. It is made once per reply, call or
+  frame, after the tree's strand is released, and not at all for a caller who cannot write the tree,
+  for a read whose fields ask for neither `state` nor `opens`, for a write with no mark to judge, or
+  for a tree that holds no pointer. The tree's diagnostics (`get_diagnostics`,
+  `GET /v1/trees/{id}/diagnostics`) make the same read for `OpenedTrees::diagnose`: once per reply,
+  after the strand is released, for a caller who can write the tree and a tree that holds a pointer,
+  and not for an MCP call that sends `includePointers: false`; under the strand they take the tree's
+  pointers alone (`LooseGraph::pointers`). An MCP edit that changes the tree a node opens to a tree
+  (`create_node`, `annotate_node`, `patch_nodes` or `import_subgraph`) makes it once more, after the
+  edit is saved and the strand is released, starting from the trees those nodes now open
+  (`pointersSetSince`) and under a budget of its own, 750 ms, in place of the pool's statement
+  limit: its receipt names in `introducedDiagnostics`, after the graph's errors and within that
+  list's five lines, each of those nodes whose tree leads back, and a read that runs past the budget
+  leaves the receipt `pointerDiagnosticsUnavailable: true`. No other edit makes that read: a dry
+  run, an edit that only clears a pointer and one that re-sends the tree a node already opens among
+  them. Where every tree of an owner is already loaded with its marks (`TreeRegistry::list`,
   `PgReminderRepository::readinessFor`), `openedAmong` (`domain/TreeSummary.h`) judges the account
   once in memory with no further read.
 - `TreeDiagnostics::assess` — a pure report over a loose graph: `cycles`, `dangling`,

@@ -567,6 +567,92 @@ TEST(pg_a_node_follows_the_tree_it_opens_takes_no_mark_from_its_owner_and_the_re
   registry.stop();
 }
 
+// Following a tree reads its owner's marks on it and no one else's, whichever index on node_progress the planner
+// takes: other accounts marking the same nodes, and the owner's marks on other trees, add nothing it reads.
+TEST(pg_opened_from_reads_the_owners_marks_on_a_reached_tree_alone_through_either_index) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  const auto clear = [] {
+    PgLease conn{*pgTestPool()};
+    pqxx::work txn{*conn};
+    txn.exec("DELETE FROM node_progress WHERE tree_id LIKE 't\\_pgtest\\_cost\\_%'");
+    txn.exec("DELETE FROM tree_nodes WHERE tree_id LIKE 't\\_pgtest\\_cost\\_%'");
+    txn.exec("DELETE FROM trees WHERE id LIKE 't\\_pgtest\\_cost\\_%'");
+    txn.commit();
+  };
+  clear();
+  {
+    PgLease conn{*pgTestPool()};
+    pqxx::work txn{*conn};
+    txn.exec_params("INSERT INTO trees (id, title, owner_id, head_seq) VALUES ('t_pgtest_cost_read', 'Read', $1::uuid, 0), "
+                    "('t_pgtest_cost_twin', 'Twin', $1::uuid, 0)",
+                    kSam.str());
+    txn.exec("INSERT INTO tree_nodes (tree_id, node_id, created_hlc, present) "
+             "SELECT t, 'n' || lpad(n::text, 4, '0'), '1:0:r_a', true "
+             "FROM unnest(ARRAY['t_pgtest_cost_read', 't_pgtest_cost_twin']) t, generate_series(1, 300) n");
+    txn.exec_params("INSERT INTO node_progress (tree_id, user_id, node_id, status, hlc, stamp_ms, stamp_counter) "
+                    "SELECT t, $1, 'n' || lpad(n::text, 4, '0'), 'complete', (1000 + n) || ':0:r_a', 1000 + n, 0 "
+                    "FROM unnest(ARRAY['t_pgtest_cost_read', 't_pgtest_cost_twin']) t, generate_series(1, 300) n",
+                    kSam.str());
+    // Twenty other accounts mark every node of the tree read, and the owner marks thousands of nodes elsewhere.
+    txn.exec("INSERT INTO node_progress (tree_id, user_id, node_id, status, hlc, stamp_ms, stamp_counter) "
+             "SELECT 't_pgtest_cost_read', 'cccc0000-0000-4000-8000-0000000000' || lpad(u::text, 2, '0'), "
+             "'n' || lpad(n::text, 4, '0'), 'complete', '9000:0:r_x', 9000, 0 FROM generate_series(1, 20) u, generate_series(1, 300) n");
+    txn.exec_params("INSERT INTO node_progress (tree_id, user_id, node_id, status, hlc, stamp_ms, stamp_counter) "
+                    "SELECT 't_pgtest_cost_elsewhere_' || t, $1, 'n' || lpad(n::text, 4, '0'), 'complete', '9000:0:r_a', 9000, 0 "
+                    "FROM generate_series(1, 20) t, generate_series(1, 300) n",
+                    kSam.str());
+    txn.exec("ANALYZE node_progress");
+    txn.commit();
+  }
+  // What the statement does to node_progress, following one tree, with sequential scans off and, with
+  // `withoutPrimaryKey`, with the primary key gone for the read, so the planner takes the other index: the blocks it
+  // reads, and whether every scan of the table fixes both the tree and the reader in its index condition.
+  struct Read {
+    double blocks = 0;
+    bool keyedByTreeAndReader = true;
+  };
+  const auto follow = [&](pqxx::work& txn, const char* tree) {
+    const pqxx::result explained = txn.exec_params(
+        std::string("EXPLAIN (ANALYZE, BUFFERS, TIMING OFF, FORMAT JSON) ") + PgTreeRepository::openedFromStatement(),
+        kSam.str(), std::string("[\"") + tree + "\"]");
+    Read read;
+    std::vector<Json::Value> nodes{parse(explained[0][0].as<std::string>())[0]["Plan"]};
+    while (!nodes.empty()) {
+      const Json::Value node = nodes.back();
+      nodes.pop_back();
+      for (const Json::Value& child : node["Plans"]) nodes.push_back(child);
+      const bool onTheMarks = node.get("Relation Name", "").asString() == "node_progress" ||
+                              node.get("Index Name", "").asString().rfind("node_progress", 0) == 0;
+      if (!onTheMarks) continue;
+      if (node.isMember("Relation Name"))
+        read.blocks += node["Shared Hit Blocks"].asDouble() + node["Shared Read Blocks"].asDouble();
+      if (node["Node Type"].asString() == "Bitmap Heap Scan") continue;  // its child index scan carries the condition
+      const std::string condition = node.get("Index Cond", "").asString();
+      read.keyedByTreeAndReader = read.keyedByTreeAndReader && condition.find("(tree_id = ") != std::string::npos &&
+                                  condition.find("(user_id = ") != std::string::npos;
+    }
+    return read;
+  };
+  for (const bool withoutPrimaryKey : {false, true}) {
+    PgLease conn{*pgTestPool()};
+    pqxx::work txn{*conn};
+    txn.exec("SET LOCAL enable_seqscan = off");
+    if (withoutPrimaryKey) txn.exec("ALTER TABLE node_progress DROP CONSTRAINT node_progress_pkey");
+    const Read marked = follow(txn, "t_pgtest_cost_read");
+    const Read unmarked = follow(txn, "t_pgtest_cost_twin");
+    txn.abort();
+    CHECK(marked.keyedByTreeAndReader);
+    CHECK(unmarked.keyedByTreeAndReader);
+    CHECK(marked.blocks > 0);
+    CHECK(marked.blocks <= unmarked.blocks + 2);
+  }
+  const std::map<TreeId, OpenedTree> followed = PgTreeRepository{pgTestPool()}.openedFrom(kSam, {TreeId{std::string("t_pgtest_cost_read")}});
+  REQUIRE_EQ(followed.size(), 1u);
+  CHECK_EQ(followed.begin()->second.marked, 300);
+  clear();
+}
+
 // The follow an edit makes for its receipt is given a budget of its own. A statement that runs past it is abandoned
 // at the budget, not at the pool's limit, and the connection it borrowed goes back under the pool's own limit.
 TEST(pg_opened_from_given_a_budget_gives_up_at_it_and_returns_the_connection_under_the_pools_limit) {

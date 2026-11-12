@@ -27,6 +27,8 @@ public:
   // What guidedTreesAbove runs, over (owner, tree, levels, guides kept): named so its Postgres test can ask the plan
   // what it reads.
   static const char* guidedTreesAboveStatement();
+  // The statement behind openedFrom, with the owner as $1 and the trees it starts from as $2, a JSON array of ids.
+  static const char* openedFromStatement();
 
   std::optional<StoredTree> load(const TreeId& tree) override;
   std::optional<TreeAccess> loadAccess(const TreeId& tree) override;

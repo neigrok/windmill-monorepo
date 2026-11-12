@@ -422,17 +422,9 @@ std::map<TreeId, std::string> PgTreeRepository::titlesOwnedBy(const UserId& owne
   return titles;
 }
 
-std::map<TreeId, OpenedTree> PgTreeRepository::openedFrom(const UserId& owner, const std::set<TreeId>& opened,
-                                                          std::optional<std::chrono::milliseconds> budget) {
-  if (opened.empty()) return {};
-  Json::Value ids(Json::arrayValue);
-  for (const TreeId& tree : opened) ids.append(tree.str());
-  PgLease conn{*pool_};
-  pqxx::work txn{*conn};
-  // The budget is this transaction's alone: the connection goes back to the pool under its own limit.
-  if (budget) txn.exec("SET LOCAL statement_timeout = '" + std::to_string(budget->count()) + "ms'");
+const char* PgTreeRepository::openedFromStatement() {
   // One statement: the counts and the marks are one snapshot, and no node row leaves the database.
-  const char* statement =
+  return
       "WITH RECURSIVE reached(id, title) AS ("
       "  SELECT t.id, t.title FROM trees t "
       "  WHERE t.deleted_at IS NULL AND t.owner_id = $1::uuid "
@@ -456,12 +448,24 @@ std::map<TreeId, OpenedTree> PgTreeRepository::openedFrom(const UserId& owner, c
       "  FROM tree_nodes n LEFT JOIN ("
       "    SELECT p.node_id, p.hlc, p.stamp_ms, p.stamp_counter, "
       "           (extract(epoch from p.updated_at) * 1000)::bigint AS updated_ms FROM node_progress p "
-      // Only node_progress_pkey can serve the row comparisons, which bound the scan to this tree and reader.
-      "    WHERE p.tree_id = r.id AND (p.tree_id, p.user_id) >= (r.id, $1::text) "
-      "      AND (p.tree_id, p.user_id) <= (r.id, $1::text) AND p.status = 'complete'"
+      // Both indexes on the reader's marks lead with the tree and the reader, in either order (node_progress_pkey and
+      // node_progress_user_tree), so whichever the planner takes, it reads this reader's marks on this tree alone.
+      "    WHERE p.tree_id = r.id AND p.user_id = $1::text AND p.status = 'complete'"
       "  ) m ON m.node_id = n.node_id "
       "  WHERE n.tree_id = r.id AND n.present GROUP BY n.opens"
       ") c ON true";
+}
+
+std::map<TreeId, OpenedTree> PgTreeRepository::openedFrom(const UserId& owner, const std::set<TreeId>& opened,
+                                                          std::optional<std::chrono::milliseconds> budget) {
+  if (opened.empty()) return {};
+  Json::Value ids(Json::arrayValue);
+  for (const TreeId& tree : opened) ids.append(tree.str());
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
+  // The budget is this transaction's alone: the connection goes back to the pool under its own limit.
+  if (budget) txn.exec("SET LOCAL statement_timeout = '" + std::to_string(budget->count()) + "ms'");
+  const char* statement = openedFromStatement();
   pqxx::result rows;
   try {
     rows = txn.exec_params(statement, owner.str(), dump(ids));
