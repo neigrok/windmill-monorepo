@@ -6,9 +6,11 @@ promise and cut the scope to one core flow. That gives participants something th
 reason to reopen the tree when the project moves.
 [Starter source](../../../web/src/products/roadmap/quests/roster/shipV1.js)
 
-**Prepare one address.** The founder reviews the starter, publishes a sample tree and tests the signed-out
-link and the participant's path to an owned copy. Use an ordinary browser. Link to that exact tree in
-invitations once verified. Keep account creation voluntary and count anyone who stops there.
+**Use the existing starter.** Send the picker link and ask the builder to choose **Ship v1**. The
+November 12 production build showed that option in a fresh signed-out Chromium session. Before invitations,
+walk through the live picker on the device the participant will use. Keep account creation voluntary and
+count anyone who stops there. For a later test of direct forks, explicitly publish a founder-owned sample,
+verify its signed-out link and measure that intake separately. [Open the starter picker](https://windmill.works/roadmap#/app/start) ·
 [Share path](07-sharing-surfaces.md)
 
 **Recruiting copy**
