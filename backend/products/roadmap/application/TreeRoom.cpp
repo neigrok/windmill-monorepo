@@ -28,6 +28,11 @@ Hlc TreeRoom::nextStamp(std::uint64_t nowMs) {
   return clock_.tick(nowMs);
 }
 
+Hlc TreeRoom::nextStampAfter(std::uint64_t nowMs, const Hlc& seen) {
+  clock_.observe(seen);
+  return clock_.tick(nowMs);
+}
+
 std::optional<Seq> TreeRoom::joinSubgraph(const Subgraph& incoming, const UserId& actor) {
   if (!appliedOpIds_.insert(incoming.frameId).second) return std::nullopt;
   Hlc stamp;

@@ -739,8 +739,8 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "(1 to 200). Every id must name a present node — one missing or already-deleted id refuses "
         "the whole call, naming each, and nothing is applied. The deletions land as ONE op under one "
         "seq. A deleted node's children detach into roots; nothing is re-tethered. Your own progress "
-        "marks on the deleted nodes are cleared in the same call, and a later revive brings none back; "
-        "anyone else's stay theirs. With `prune: true` the edges the delete dangles go with it too — "
+        "marks on the deleted nodes are cleared in the same call, before the delete lands — if they cannot "
+        "be, nothing is deleted — and a later revive brings none back; anyone else's stay theirs. With `prune: true` the edges the delete dangles go with it too — "
         "that cleanup is part of the delete and needs no write grant beyond the delete grant. The "
         "receipt carries `ids`, `pruned: {edges, progress}` — the edges prune removed (0 without "
         "prune) and the marks of yours the delete cleared — and `id` for the single form.",

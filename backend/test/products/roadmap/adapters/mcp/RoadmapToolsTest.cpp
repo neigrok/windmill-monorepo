@@ -6489,3 +6489,108 @@ TEST(mcp_delete_node_clears_the_callers_marks_on_the_nodes_it_deletes) {
     CHECK_EQ(progressOf(stranger), parse(R"({"completed":["a"],"cleared":[]})"));
   }
 }
+
+// A delete clears the caller's marks before it lands, so with the progress store down, reading or writing, the call fails
+// with nothing deleted and the tree not saved, and once the store is back a retry does the whole of it.
+TEST(mcp_delete_node_with_the_progress_store_down_deletes_nothing_and_a_retry_completes_it) {
+  for (const bool readsDown : {true, false}) {
+    Harness h;
+    CHECK_FALSE(h.call("create_node", parse(R"({"id":"a","label":"A"})")).isError);
+    CHECK_FALSE(h.call("set_progress", parse(R"({"nodeId":"a","status":"complete"})")).isError);
+    const std::size_t saves = h.trees.savedNodeCounts.size();
+    const std::size_t rows = h.ops.byTree["t"].size();
+    (readsDown ? h.progressRepo.loadsFail : h.progressRepo.writesFail) = true;
+    CHECK_EQ(message(h.call("delete_node", parse(R"({"nodeId":"a"})"))),
+             std::string("delete_node: that call failed inside the server. The outcome may be uncertain; read the "
+                         "affected records before retrying. The detail is in the server log."));
+    CHECK(h.registry.open(TreeId{"t"})->hasNode(NodeId{"a"}));
+    CHECK_EQ(h.trees.savedNodeCounts.size(), saves);
+    CHECK_EQ(h.ops.byTree["t"].size(), rows);
+
+    h.progressRepo.loadsFail = h.progressRepo.writesFail = false;
+    CHECK_EQ(body(h.call("delete_node", parse(R"({"nodeId":"a"})")))["pruned"], parse(R"({"edges":0,"progress":1})"));
+    CHECK_FALSE(h.registry.open(TreeId{"t"})->hasNode(NodeId{"a"}));
+    CHECK_EQ(body(h.call("get_progress", parse(R"({"fields":["completed","cleared"]})"))),
+             parse(R"({"completed":[],"cleared":["a"]})"));
+  }
+}
+
+// A server's progress write comes after the stamp the caller's mark holds, so it lands over a mark a replica stamped
+// ahead of the server: a delete clears one, counted from what landed, a revive brings none back, and a set_progress
+// none clears one too.
+TEST(mcp_a_server_progress_write_lands_over_a_mark_stamped_ahead_of_the_server) {
+  Harness h;
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"},{"id":"b","label":"B"}]})")).isError);
+  const std::uint64_t ahead = h.clock.ms + 120000;  // a phone two minutes ahead, inside the socket's five
+  for (const char* node : {"a", "b"})
+    REQUIRE(h.progressRepo.setStatuses(TreeId{"t"}, h.caller,
+                                       {{NodeId{node}, ProgressStatus::complete, false, Hlc{ahead, 0, "phone"}}},
+                                       h.clock.ms).front());
+
+  CHECK_EQ(body(h.call("delete_node", parse(R"({"nodeId":"a"})")))["pruned"], parse(R"({"edges":0,"progress":1})"));
+  CHECK_EQ(body(h.call("set_progress", parse(R"({"nodeId":"b","status":"none"})"))),
+           parse(R"({"nodeId":"b","status":"none","prerequisitesMet":true})"));
+  const Json::Value cleared = parse(R"({"completed":[],"cleared":["a","b"]})");
+  CHECK_EQ(body(h.call("get_progress", parse(R"({"fields":["completed","cleared"]})"))), cleared);
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"a","label":"A"})")).isError);
+  CHECK_EQ(body(h.call("get_progress", parse(R"({"fields":["completed","cleared"]})"))), cleared);
+}
+
+// A clear reaches the caller's open sessions as set_progress does: one progress frame for the marks it cleared, from a
+// delete and from an import's tombstone alike.
+TEST(mcp_a_clear_sends_the_progress_frame_set_progress_sends) {
+  Harness h;
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"},{"id":"b","label":"B"}]})")).isError);
+  CHECK_FALSE(h.call("set_progress", parse(R"({"updates":[{"nodeId":"a","status":"complete"},
+    {"nodeId":"b","status":"complete"}]})")).isError);
+  const std::size_t frames = h.bus.progressBroadcasts.size();
+
+  CHECK_FALSE(h.call("delete_node", parse(R"({"nodeId":"a"})")).isError);
+  REQUIRE_EQ(h.bus.progressBroadcasts.size(), frames + 1);
+  CHECK_EQ(h.bus.progressBroadcasts.back().user, h.caller.str());
+  CHECK_EQ(h.bus.progressBroadcasts.back().marks.cleared, (std::set<NodeId>{NodeId{"a"}}));
+  CHECK(h.bus.progressBroadcasts.back().marks.completed.empty());
+
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[],"tombstone":["b"]})")).isError);
+  REQUIRE_EQ(h.bus.progressBroadcasts.size(), frames + 2);
+  CHECK_EQ(h.bus.progressBroadcasts.back().marks.cleared, (std::set<NodeId>{NodeId{"b"}}));
+  CHECK(h.bus.progressBroadcasts.back().marks.completed.empty());
+}
+
+// An import's tombstones clear the caller's marks after the graft has landed, so a progress store that fails there does
+// not fail the call: the reply says progressApplied: false, and the failure is reported once, under its own name.
+TEST(mcp_an_imports_failed_clear_is_reported_once_under_its_own_name) {
+  struct Failures : FailureReporter {
+    std::vector<std::string> reports;
+    void report(const std::string&, const std::string&, const std::string&) override {}
+    void reportWrite(const std::string& operation, const std::string& product, const std::string& door,
+                     const std::string& outcome, const std::string&, const std::string& exceptionType) override {
+      reports.push_back(operation + " " + product + " " + door + " " + outcome + " " + exceptionType);
+    }
+  };
+  struct ReporterScope {
+    std::shared_ptr<Failures> failures = std::make_shared<Failures>();
+    ReporterScope() { installWriteReporter(failures); }
+    ~ReporterScope() { installWriteReporter(nullptr); }
+  } reporter;
+  Harness h;
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"}]})")).isError);
+  CHECK_FALSE(h.call("set_progress", parse(R"({"nodeId":"a","status":"complete"})")).isError);
+  CompositeToolHost gate(std::vector<ToolModule>{{h.tools, ""}});
+  std::vector<std::string> lines;
+  installWriteSink([&](const WriteCompletion& line) { lines.push_back(line.operation + " " + line.outcome); });
+
+  h.progressRepo.writesFail = true;
+  const Json::Value receipt =
+      body(gate.callTool("roadmap_import_subgraph", parse(R"({"treeId":"t","nodes":[],"tombstone":["a"]})"), h.actor));
+  installWriteSink({});
+  CHECK_EQ(receipt["graphApplied"], Json::Value(true));
+  CHECK_EQ(receipt["progressApplied"], Json::Value(false));
+  CHECK_EQ(receipt["progressError"], Json::Value("The graph committed, but clearing progress on removed nodes failed. "
+                                                 "Read get_progress before retrying progress changes."));
+  CHECK_EQ(reporter.failures->reports,
+           (std::vector<std::string>{std::string("roadmap.import.clear_marks roadmap mcp failed ") +
+                                     typeid(std::runtime_error).name()}));
+  CHECK_EQ(lines, (std::vector<std::string>{"roadmap.import.clear_marks failed", "mcp.roadmap_import_subgraph ok"}));
+  CHECK_FALSE(h.registry.open(TreeId{"t"})->hasNode(NodeId{"a"}));
+}

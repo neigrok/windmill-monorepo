@@ -103,6 +103,9 @@ public:
 
   // One clock per tree, so no two writes collide on a stamp. `nowMs` is wall time from the Clock port.
   Hlc nextStamp(std::uint64_t nowMs);
+  // A stamp after `seen` as well as after every stamp this room has minted: the clock folds `seen` in first, as it folds
+  // a joined frame's stamps, so a server write meant to replace a mark a replica stamped ahead of the server lands.
+  Hlc nextStampAfter(std::uint64_t nowMs, const Hlc& seen);
 
   // wm::validate over this room's live state: a malformed or over-cap field, a node edit naming no
   // present node, or a legend rule. Server-driven undo/redo bypasses it.
