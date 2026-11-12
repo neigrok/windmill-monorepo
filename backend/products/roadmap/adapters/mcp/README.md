@@ -312,9 +312,10 @@ A node may point at another tree: `opens` holds that tree's id.
   belongs to the owner of the tree the node is in. For a caller who can write the tree, a node with
   a valid pointer is `complete` exactly when the opened tree is complete for them, whatever its own
   prerequisites, and `locked` or `available` by its prerequisites until then; a mark it already
-  holds is kept, answered as `status` and by `get_progress`, and decides nothing. A tree is complete when it holds
-  at least one node and every node of it is complete, a node with a valid pointer by its tree and
-  any other by the caller's mark; that is judged once over all the caller's standing trees
+  holds is kept, answered as `status` and by `get_progress`, and decides nothing. A tree is
+  complete when it holds at least one node and every node of it is complete, a node with a valid
+  pointer by its tree and any other by the caller's mark; that is judged once over all the caller's
+  standing trees
   (`domain/OpenedTrees.h`), so a tree on a loop of pointers is never complete, however long the
   loop, and a chain of any length completes. `state`, the `state` filter of `find_nodes`,
   `opens.state` and the `done` of `list_trees` all read that one completed set, so a step waiting
@@ -343,8 +344,9 @@ A node may point at another tree: `opens` holds that tree's id.
   an import's `progress[]`), and when the tree holds a pointer.
   `get_tree`, `get_nodes`, `find_nodes` and the progress writes take what they need from the room
   under the tree's strand and read and write the repositories after letting it go, so no other read
-  of the tree waits on those statements. `list_trees` makes no such read: it already holds every tree of the caller's. Every
-  write door saves before it answers, so the stored rows are the live ones unless a save failed.
+  of the tree waits on those statements. `list_trees` makes no such read: it already holds every
+  tree of the caller's. Every write door saves before it answers, so the stored rows are the live
+  ones unless a save failed.
 - `import_subgraph` takes the id as a string, where `get_tree` answers the object: a copied slice
   sends `opens.treeId`.
 
@@ -379,9 +381,9 @@ A node may point at another tree: `opens` holds that tree's id.
   Progress (max 1000 supplied marks) commits in a separate atomic repository batch after the graft,
   once the room strand is released. Receipts distinguish `graphApplied` and `progressApplied`, with
   `progressError` and `progressSkipped` or `progressRefused` when requested progress cannot all be
-  applied; a committed graft is not undone by a later overlay failure, which is reported and
-  completes the write line as `failed`. It is **upsert by id**: an incoming id already present is reported
-  in `nodeCollisions`/`kindCollisions`; a new id is added. A re-sent node or kind changes only in
+  applied; a committed graft is not undone by a later overlay failure, and one in the requested
+  `progress[]` is reported and completes the write line as `failed`. It is **upsert by id**: an
+  incoming id already present is reported in `nodeCollisions`/`kindCollisions`; a new id is added. A re-sent node or kind changes only in
   the registers the batch sends: a node's `label`, `icon`, `color`, `order`, `position`,
   `seedStatus`, `description`, `links` and `opens`, and a kind's `label`, `description` and
   `crossBranchExempt`, left out, keep the value the tree holds, because the graft stamps an
@@ -419,9 +421,9 @@ A node may point at another tree: `opens` holds that tree's id.
 - **`set_progress`** accepts 1–1000 `updates[]` committed in one SQL transaction and evaluates the `prerequisitesMet` advisory
   against the committed batch, so a subtree completed out of dependency order still reports
   correctly. The room strand covers node validation, the prerequisites read and the stamps; the
-  commit and the broadcast follow once it is released, so nothing waits on the database under a
-  room's lock. A node deleted between the two keeps its mark as an orphan row, which `prune`
-  clears. Unknown node ids are rejected before any overlay mutation. A completion
+  commit and the broadcast follow once it is released, as on the socket's progress lane. A
+  completion on a node deleted between the two stays as an orphan row until `prune` clears it.
+  Unknown node ids are rejected before any overlay mutation. A completion
   meant to land before its prerequisites carries `outOfOrder: true` (single and bulk forms, with
   `status: complete` only): the word is stored on the row beside the status, under the same stamp,
   so the next mark on that node from any surface replaces it; the receipt answers

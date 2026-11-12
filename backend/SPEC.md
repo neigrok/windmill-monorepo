@@ -73,9 +73,9 @@ rejected for structure. Validity is a read model, not a gate.
   `tree_nodes_pkey` and `node_progress_pkey`, so the cost follows the trees reached and not the
   size of the tables. It is made once per reply, call or frame, after the tree's strand is
   released, and not at all for a caller who cannot write the tree, for a read whose fields ask for
-  neither `state` nor `opens`, or for a tree that holds no pointer. Where every tree of an owner is already loaded with
-  its marks (`TreeRegistry::list`, `PgReminderRepository::readinessFor`), `openedAmong`
-  (`domain/TreeSummary.h`) judges the account once in memory with no further read.
+  neither `state` nor `opens`, or for a tree that holds no pointer. Where every tree of an owner is
+  already loaded with its marks (`TreeRegistry::list`, `PgReminderRepository::readinessFor`),
+  `openedAmong` (`domain/TreeSummary.h`) judges the account once in memory with no further read.
 - `TreeDiagnostics::assess` — a pure report over a loose graph: `cycles`, `dangling`,
   `selfEdges`, `smells`, `maskedWork` (tombstoned parents with present children). `clean()` is
   true when cycles, dangling and self-edges are all empty. Smell kinds: `label-too-long`
@@ -126,10 +126,10 @@ Compatibility inputs `active` and `inProgress` normalize to `none` in progress a
 One status per node is structural. "Complete only when every prerequisite is complete" is
 advisory: the mark is recorded either way and the outcome reports `prerequisitesMet` so a surface
 can warn. It reads the completed set `UnlockRules::derive` is handed: the caller's marks, or for the
-tree's writer `OpenedTrees::followed`. `outOfOrder` is the marker's word that the inversion was meant; it is part of the status
-value under the same stamp, so a later mark on the node carries its own word or none. Only the MCP
-`set_progress` sets it today — a socket `progress` frame lands it false. Progress therefore never
-depends on the tree being a valid DAG.
+tree's writer `OpenedTrees::followed`. `outOfOrder` is the marker's word that the inversion was
+meant; it is part of the status value under the same stamp, so a later mark on the node carries its
+own word or none. Only the MCP `set_progress` sets it today — a socket `progress` frame lands it
+false. Progress therefore never depends on the tree being a valid DAG.
 
 ## Convergence
 
@@ -394,7 +394,8 @@ the title and guide registers when the vector does not cover their stamps; inten
 peer's broadcast; either is the frame's `readerView` for a connection that cannot write the tree) ·
 `progress` (intent `graft` on subscribe, echo otherwise) ·
 `subgraphAck {treeId, frameId, seq?}` · `progressAck {treeId, frameId, refused?}` ·
-`skew {treeId, frameId, serverNow}` · `reject {treeId, code, reason, frameId?}` · `presence` · `peer`.
+`skew {treeId, frameId, serverNow}` · `reject {treeId, code, reason, frameId?}` · `presence` ·
+`peer`.
 
 `progressAck.refused` is present only when the frame carried a mark that was not recorded: an array
 of `{node, code}`, one per such mark in the frame's order. The one code is `opens-a-tree` — the node

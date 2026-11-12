@@ -290,7 +290,7 @@ listed separately because their only server writes are authentication refresh or
 | `MCP roadmap_reorder_kinds` (and unambiguous `reorder_kinds` alias) | `mcp.roadmap_reorder_kinds` | completion; bounded refusal or result | unexpected |
 | `MCP roadmap_recolor_kind` (and unambiguous `recolor_kind` alias) | `mcp.roadmap_recolor_kind` | completion; bounded refusal or result | unexpected |
 | `MCP roadmap_set_progress` (and unambiguous `set_progress` alias) | `mcp.roadmap_set_progress` | completion; bounded refusal or result; `opens-a-tree` when the call recorded no mark because each one was the tree's writer's on a node that opens a tree | unexpected |
-| `MCP roadmap_import_subgraph` (and unambiguous `import_subgraph` alias) | `mcp.roadmap_import_subgraph` | completion; bounded refusal or result; `opens-not-yours` when an `opens` names a tree that does not stand or is not the caller's | unexpected |
+| `MCP roadmap_import_subgraph` (and unambiguous `import_subgraph` alias) | `mcp.roadmap_import_subgraph` | completion; bounded refusal or result; `opens-not-yours` when an `opens` names a tree that does not stand or is not the caller's; `failed`, the graft committed, when applying its `progress[]` throws | unexpected |
 | `MCP roadmap_prune` (and unambiguous `prune` alias) | `mcp.roadmap_prune` | completion; bounded refusal or result | unexpected |
 | `MCP roadmap_patch_nodes` (and unambiguous `patch_nodes` alias) | `mcp.roadmap_patch_nodes` | completion; bounded refusal or result; `opens-not-yours` when an `opens` names a tree that does not stand or is not the caller's | unexpected |
 | `MCP roadmap_change_edges` (and unambiguous `change_edges` alias) | `mcp.roadmap_change_edges` | completion; bounded refusal or result | unexpected |
