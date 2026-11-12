@@ -11,8 +11,9 @@ namespace wm {
 // A `complete` set whose prerequisites are not all complete is still recorded — P1 is advisory — but
 // the caller is told so it can warn. `outOfOrder` echoes the word the write carried, so a receipt
 // can tell a meant inversion from an unnoticed one. `unchanged` says the caller already held this
-// mark, the same status and the same word (Progress::holds): it is written all the same, so its
-// newer stamp lands, as a replica's must for every replica to converge.
+// mark at its turn, after the marks before it in the same batch: the same status and the same word
+// (Progress::holds). It is written all the same, so its newer stamp lands, as a replica's must for
+// every replica to converge.
 struct ProgressOutcome {
   ProgressStatus status;
   bool prerequisitesMet;

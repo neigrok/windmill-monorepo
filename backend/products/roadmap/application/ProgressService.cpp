@@ -25,7 +25,9 @@ ProgressOutcome ProgressService::setStatus(const std::vector<NodeId>& prerequisi
 std::vector<ProgressOutcome> ProgressService::setStatuses(const TreeId& treeId, const UserId& user,
                                                           const std::vector<ProgressWrite>& writes,
                                                           std::uint64_t receivedAtMs) {
-  const Progress held = repo_.load(treeId, user);  // a mark the caller already holds is written, and says so
+  // The overlay each mark meets at its turn: as the call found it, then as each landed mark before it in the batch left
+  // it. A mark the caller already holds there is written all the same, and says so.
+  Progress held = repo_.load(treeId, user);
   std::vector<ProgressUpdate> updates;
   updates.reserve(writes.size());
   for (const ProgressWrite& write : writes)
@@ -40,8 +42,10 @@ std::vector<ProgressOutcome> ProgressService::setStatuses(const TreeId& treeId, 
     if (write.status == ProgressStatus::complete)
       for (const NodeId& prereq : write.prerequisites)
         if (!final.completed.count(prereq)) { prerequisitesMet = false; break; }
-    outcomes.push_back({write.status, prerequisitesMet, applied[outcomes.size()], write.outOfOrder,
-                        held.holds(write.node, write.status, write.outOfOrder)});
+    const bool landed = applied[outcomes.size()];
+    outcomes.push_back(
+        {write.status, prerequisitesMet, landed, write.outOfOrder, held.holds(write.node, write.status, write.outOfOrder)});
+    if (landed) held.record(write.node, ProgressMark{write.status, write.at, receivedAtMs, write.outOfOrder});
   }
   return outcomes;
 }

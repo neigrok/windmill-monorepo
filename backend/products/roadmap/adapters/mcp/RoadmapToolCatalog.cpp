@@ -832,8 +832,9 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "outOfOrder, get_tree/find_nodes `status` shows outOfOrder:true beside it) and the receipt "
         "answers acknowledged:true, so prerequisitesMet:false alone always means an inversion nobody "
         "acknowledged. The next mark on that node, from any surface, replaces the word with its own. "
-        "A mark you already hold — the same status and the same outOfOrder word — answers "
-        "unchanged:true on its row, and a bulk call whose every row does answers unchanged:true. "
+        "A mark you already hold at its turn — the same status and the same outOfOrder word, after "
+        "the rows before it in the call — answers unchanged:true on its row, and a bulk call whose every "
+        "row does answers unchanged:true. "
         "A mark on a node that opens another tree of yours is recorded, but on a tree you own that "
         "node's `state` follows the opened tree, not the mark; prerequisitesMet reads marks alone, so "
         "a prerequisite that is complete only through the tree it opens still reads as unmet.",

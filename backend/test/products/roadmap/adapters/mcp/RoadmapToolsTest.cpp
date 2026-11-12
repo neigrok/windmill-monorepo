@@ -6192,3 +6192,32 @@ TEST(mcp_a_progress_mark_already_held_says_so_on_its_row) {
            parse(R"([{"nodeId":"a","status":"complete","prerequisitesMet":true,"unchanged":true},
              {"nodeId":"b","status":"complete","prerequisitesMet":true}])"));
 }
+
+// Each row of a batch is judged against the overlay as the rows before it in the same call leave it, so a row's word
+// is true at its turn: a node completed and then cleared in one call changes twice, and a repeat of the row before it
+// changes nothing. A call whose net effect is nothing — complete then clear on a node never marked — still wrote twice,
+// so neither row nor the call says unchanged. A row that changes nothing is still stamped, and open pages receive it.
+TEST(mcp_a_bulk_progress_row_is_judged_at_its_turn_in_the_batch) {
+  Harness h;
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"n0","label":"N0"},{"id":"n3","label":"N3"},
+    {"id":"n","label":"N"},{"id":"c","label":"C"}]})")).isError);
+
+  CHECK_EQ(body(h.call("set_progress", parse(R"({"updates":[{"nodeId":"n0","status":"complete","outOfOrder":true},
+    {"nodeId":"n3","status":"complete"},{"nodeId":"n0","status":"none"}]})"))),
+           parse(R"({"results":[{"nodeId":"n0","status":"complete","prerequisitesMet":true,"acknowledged":true},
+             {"nodeId":"n3","status":"complete","prerequisitesMet":true},
+             {"nodeId":"n0","status":"none","prerequisitesMet":true}]})"));
+  CHECK_EQ(body(h.call("set_progress", parse(R"({"updates":[{"nodeId":"n","status":"complete"},
+    {"nodeId":"n","status":"complete"}]})"))),
+           parse(R"({"results":[{"nodeId":"n","status":"complete","prerequisitesMet":true},
+             {"nodeId":"n","status":"complete","prerequisitesMet":true,"unchanged":true}]})"));
+  CHECK_EQ(body(h.call("set_progress", parse(R"({"updates":[{"nodeId":"c","status":"complete"},
+    {"nodeId":"c","status":"none"}]})"))),
+           parse(R"({"results":[{"nodeId":"c","status":"complete","prerequisitesMet":true},
+             {"nodeId":"c","status":"none","prerequisitesMet":true}]})"));
+
+  const std::size_t frames = h.bus.progressBroadcasts.size();
+  CHECK_EQ(body(h.call("set_progress", parse(R"({"nodeId":"n","status":"complete"})")))["unchanged"], Json::Value(true));
+  REQUIRE_EQ(h.bus.progressBroadcasts.size(), frames + 1);
+  CHECK_EQ(h.bus.progressBroadcasts.back().marks.completed, (std::set<NodeId>{NodeId{"n"}}));
+}

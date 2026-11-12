@@ -633,12 +633,15 @@ and none overrides another.
   `acknowledged: true` beside `prerequisitesMet`, `get_progress` lists those ids under
   `outOfOrder`, and the `status` field of `get_tree`/`find_nodes` shows `outOfOrder: true` on the
   node. `prerequisitesMet: false` without `acknowledged` is therefore always an inversion nobody
-  acknowledged. A mark the caller already holds — the same status and the same `outOfOrder` word,
-  a node never marked holding `none` (`Progress::holds`) — answers `unchanged: true` on its row, on
-  both forms and on an import's `progress` rows, and a bulk call whose every row does answers
-  `unchanged: true` as a whole. It is still written: the row takes the new stamp and the server's
-  receipt time, so the tree's last-marked time moves, because `ProgressService` lands a socket
-  replica's marks too, and a replica's newer stamp must land for every replica to converge.
+  acknowledged. A row whose mark equals the one the caller holds at that row's turn — as the call
+  found the overlay, after the rows before it in the same call — the same status and the same
+  `outOfOrder` word, a node never marked holding `none` (`Progress::holds`), answers `unchanged:
+  true`, on both forms and on an import's `progress` rows, and a bulk call whose every row does
+  answers `unchanged: true` as a whole; a call that completes a node and clears it again changed it
+  twice, and says neither. Such a row is still stamped: it takes the new stamp and the server's
+  receipt time, so the tree's last-marked time moves and open pages receive a progress frame,
+  because `ProgressService` lands a socket replica's marks too, and a replica's newer stamp must
+  land for every replica to converge.
 - **`prune`** drops dangling/self edges in one op and clears the caller's progress rows for nodes
   no longer in the tree.
 - **`find_nodes`** searches without pulling the whole tree. `color` and `kind` are one filter (a
