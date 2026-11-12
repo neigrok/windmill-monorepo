@@ -34,9 +34,11 @@ Visibility-gated read, owner-only write, per-user progress. The two predicates a
   while that tree is complete for the owner and has no row otherwise, whatever mark it holds, so a
   step that opens a tree that is not complete reads as a step nobody marked. That answer follows
   the owner's trees in one budgeted read made after the tree's strand is released, and when the
-  read fails it leaves out every step that holds a pointer. It names and counts no opened tree; a
-  row made complete by its tree is unstamped unless the step holds a stored mark that says
-  complete. No other state, count, key or refusal says a node opens a tree. A
+  read fails it leaves out every step that holds a pointer. It names and counts no opened tree,
+  and a row made complete by its tree is a mark like any other: the step's stored mark when that
+  says complete, else the latest mark in what completed the tree. A known limit: a reply for a
+  tree that holds a pointer waits on that read, which a reply for a tree without one does not
+  make. No other state, count, key or refusal says a node opens a tree. A
   tend neither reads nor sets the pointer: it runs as the owner on labels that may be someone else's
   words, so `ScopedToolHost` offers it no `opens` argument and no `opens` field, and refuses a call
   that names either; and no call it can make brings a pointer back, because a node an import

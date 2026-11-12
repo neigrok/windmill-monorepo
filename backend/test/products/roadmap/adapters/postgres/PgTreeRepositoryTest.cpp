@@ -447,11 +447,13 @@ TEST(pg_opened_from_answers_every_standing_tree_of_the_owners_the_pointers_lead_
   mark("a", kSam, "removed");
   mark("theirs", kSam, "x");
 
+  const LatestMark marked{Hlc{1'700'000'000'002, 0, "r_a"}, 1'700'000'000'002};
   OpenedTree a;
   a.title = "Tree a";
   a.total = 9;
   a.marked = 1;
-  a.pointers = {{id("absent"), {1, 1}}, {id("b"), {3, 1}}, {id("retired"), {1, 0}}, {id("theirs"), {1, 0}}};
+  a.latest = marked;
+  a.pointers = {{id("absent"), {1, 1, marked}}, {id("b"), {3, 1, marked}}, {id("retired"), {1, 0}}, {id("theirs"), {1, 0}}};
   OpenedTree b;
   b.title = "Tree b";
   b.total = 2;
@@ -476,6 +478,21 @@ TEST(pg_opened_from_answers_every_standing_tree_of_the_owners_the_pointers_lead_
     ring.emplace(id("ring" + std::to_string(k)), link);
   }
   CHECK(trees.openedFrom(kSam, {id("ring7")}) == ring);
+
+  // The latest mark is the greatest stamp among the marks that say complete, the actor breaking a tie, with that
+  // mark's own receipt instant: a later clear, another reader's mark and a later receipt of an older stamp are not it.
+  plant("stamps", kSam, {{"first", ""}, {"counter", ""}, {"actor", ""}, {"cleared", ""}, {"eve", ""}, {"unmarked", ""}});
+  progress.setStatus(id("stamps"), kSam, NodeId{"first"}, ProgressStatus::complete, false, Hlc{1'700'000'000'010, 0, "r_z"}, 1'700'000'000'090);
+  progress.setStatus(id("stamps"), kSam, NodeId{"counter"}, ProgressStatus::complete, false, Hlc{1'700'000'000'010, 2, "r_a"}, 1'700'000'000'020);
+  progress.setStatus(id("stamps"), kSam, NodeId{"actor"}, ProgressStatus::complete, false, Hlc{1'700'000'000'010, 2, "r_b"}, 1'700'000'000'015);
+  progress.setStatus(id("stamps"), kSam, NodeId{"cleared"}, ProgressStatus::none, false, Hlc{1'700'000'000'050, 0, "r_a"}, 1'700'000'000'050);
+  progress.setStatus(id("stamps"), kEve, NodeId{"eve"}, ProgressStatus::complete, false, Hlc{1'700'000'000'060, 0, "r_e"}, 1'700'000'000'060);
+  OpenedTree stamps;
+  stamps.title = "Tree stamps";
+  stamps.total = 6;
+  stamps.marked = 3;
+  stamps.latest = LatestMark{Hlc{1'700'000'000'010, 2, "r_b"}, 1'700'000'000'015};
+  CHECK(trees.openedFrom(kSam, {id("stamps")}) == (std::map<TreeId, OpenedTree>{{id("stamps"), stamps}}));
   clear();
 }
 

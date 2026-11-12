@@ -432,6 +432,5 @@ TEST(a_wall_whose_follow_fails_or_times_out_still_answers_follows_no_further_and
   CHECK(followed == (std::map<std::string, int>{{"t_ada", 3}, {"t_bo", 1}, {"t_cy", 1}}));
   CHECK(timedOut == (std::map<std::string, int>{{"t_ada", 1}, {"t_bo", 1}, {"t_cy", 0}}));
   CHECK(failed == (std::map<std::string, int>{{"t_ada", 1}, {"t_bo", 1}, {"t_cy", 0}}));
-  CHECK_EQ(lines, (std::vector<std::string>{"roadmap.progress.follow roadmap gallery ok", "roadmap.progress.follow roadmap gallery timeout",
-                                            "roadmap.progress.follow roadmap gallery failed"}));
+  CHECK_EQ(lines, (std::vector<std::string>{"roadmap.progress.follow roadmap gallery timeout", "roadmap.progress.follow roadmap gallery failed"}));
 }

@@ -684,11 +684,15 @@ TEST(random_accounts_are_told_the_way_back_that_an_enumeration_of_every_way_find
 }
 
 // What the owner's own reads derive for a step that opens a tree is what a reader is shown of it, and no more: a row
-// while the tree is complete, none while it is not, whatever mark the step holds.
+// while the tree is complete, none while it is not, whatever mark the step holds. The row is a mark like any other:
+// the step's stored mark when that says complete, else the latest mark in what completed the tree.
 TEST(a_reader_is_shown_a_node_that_opens_a_tree_complete_while_that_tree_is_and_with_no_row_while_it_is_not) {
-  const TreeData done = tree("done", {step("d")});
+  const TreeData done = tree("done", {step("d"), step("e")});
   const TreeData open = tree("open", {step("o")});
-  const OpenedTrees standing = opened({done, open}, {{"done", marks({"d"})}});
+  Progress doneMarks;
+  doneMarks.record(nid("d"), ProgressMark{ProgressStatus::complete, Hlc{700, 0, "phone"}, 710});
+  doneMarks.record(nid("e"), ProgressMark{ProgressStatus::complete, Hlc{700, 0, "tablet"}, 705});
+  const OpenedTrees standing = opened({done, open}, {{"done", doneMarks}});
   const std::map<NodeId, TreeId> pointers{
       {nid("done-unmarked"), tid("done")}, {nid("done-marked"), tid("done")}, {nid("done-cleared"), tid("done")},
       {nid("open-unmarked"), tid("open")}, {nid("open-marked"), tid("open")}, {nid("open-cleared"), tid("open")}};
@@ -699,10 +703,45 @@ TEST(a_reader_is_shown_a_node_that_opens_a_tree_complete_while_that_tree_is_and_
   stored.record(nid("open-cleared"), ProgressMark{ProgressStatus::none, Hlc{903, 0, "phone"}, 953});
 
   Progress shown;
-  shown.record(nid("done-unmarked"), ProgressMark{ProgressStatus::complete, Hlc{}, 0, false});
+  shown.record(nid("done-unmarked"), ProgressMark{ProgressStatus::complete, Hlc{700, 0, "tablet"}, 705, false});
   shown.record(nid("done-marked"), ProgressMark{ProgressStatus::complete, Hlc{900, 2, "phone"}, 950, false});
-  shown.record(nid("done-cleared"), ProgressMark{ProgressStatus::complete, Hlc{}, 0, false});
+  shown.record(nid("done-cleared"), ProgressMark{ProgressStatus::complete, Hlc{700, 0, "tablet"}, 705, false});
   CHECK(readerView(stored, pointers, standing) == shown);
+}
+
+// What completed a tree is the marks on its nodes that follow no tree and whatever completed each tree its nodes
+// follow, however deep: the latest of them all is when it completed. A mark its own step holds beside a valid pointer
+// completed nothing, and a tree that is not complete has no such instant.
+TEST(a_tree_completed_at_the_latest_mark_in_what_completed_it_however_deep_that_mark_lies) {
+  const TreeData root = tree("root", {step("to-mid", "mid"), step("r")});
+  const TreeData mid = tree("mid", {step("to-leaf", "leaf"), step("to-gone", "gone"), step("m")});
+  const TreeData leaf = tree("leaf", {step("l")});
+  const TreeData open = tree("open", {step("o"), step("p")});
+  const auto marked = [](std::vector<std::pair<const char*, std::uint64_t>> at) {
+    Progress progress;
+    for (const auto& [node, ms] : at) progress.record(nid(node), ProgressMark{ProgressStatus::complete, Hlc{ms, 0, "phone"}, ms + 5});
+    return progress;
+  };
+
+  const OpenedTrees deepest = opened({root, mid, leaf, open}, {{"root", marked({{"r", 100}})},
+                                                               {"mid", marked({{"m", 300}, {"to-gone", 400}, {"to-leaf", 999}})},
+                                                               {"leaf", marked({{"l", 800}})},
+                                                               {"open", marked({{"o", 950}})}});
+  CHECK(deepest.completedAt(tid("leaf")) == (LatestMark{Hlc{800, 0, "phone"}, 805}));
+  CHECK(deepest.completedAt(tid("mid")) == (LatestMark{Hlc{800, 0, "phone"}, 805}));
+  CHECK(deepest.completedAt(tid("root")) == (LatestMark{Hlc{800, 0, "phone"}, 805}));
+  CHECK(deepest.completedAt(tid("open")) == LatestMark{});
+  CHECK(deepest.completedAt(tid("gone")) == LatestMark{});
+
+  const OpenedTrees nearest = opened({root, mid, leaf}, {{"root", marked({{"r", 100}})},
+                                                         {"mid", marked({{"m", 300}, {"to-gone", 850}})},
+                                                         {"leaf", marked({{"l", 800}})}});
+  CHECK(nearest.completedAt(tid("mid")) == (LatestMark{Hlc{850, 0, "phone"}, 855}));
+  CHECK(nearest.completedAt(tid("root")) == (LatestMark{Hlc{850, 0, "phone"}, 855}));
+
+  Progress shown;
+  shown.record(nid("to-mid"), ProgressMark{ProgressStatus::complete, Hlc{800, 0, "phone"}, 805});
+  CHECK(readerView(Progress{}, {{nid("to-mid"), tid("mid")}}, deepest) == shown);
 }
 
 TEST(a_reader_is_shown_the_stored_row_of_every_node_that_follows_no_tree) {

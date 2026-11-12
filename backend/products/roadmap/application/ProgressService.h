@@ -75,9 +75,8 @@ public:
 
   // Each owner's stored marks on their trees — `treesByOwner` holds a tree's pointers by tree — as a caller who
   // cannot write them is shown them (domain readerView). An owner whose trees hold a pointer is followed in one read
-  // within kReaderFollowBudget, and the follows of one call complete as one `roadmap.progress.follow` line at
-  // `door`. After a follow that fails or runs out of time no other is tried, and no step that holds a pointer is
-  // shown for the owners left unread.
+  // within kReaderFollowBudget. A follow that fails or runs out of time completes as `roadmap.progress.follow` at
+  // `door`; after it no other is tried, and no step that holds a pointer is shown for the owners left unread.
   std::map<TreeId, Progress> shownToReaders(
       const std::map<UserId, std::map<TreeId, std::map<NodeId, TreeId>>>& treesByOwner, const std::string& door);
 

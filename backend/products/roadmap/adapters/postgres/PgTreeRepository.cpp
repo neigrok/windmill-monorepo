@@ -445,16 +445,22 @@ std::map<TreeId, OpenedTree> PgTreeRepository::openedFrom(const UserId& owner, c
       "  CROSS JOIN LATERAL (SELECT s.id, s.title, s.owner_id, s.deleted_at FROM trees s WHERE s.id = o.opens LIMIT 1) t "
       "  WHERE t.deleted_at IS NULL AND t.owner_id = $1::uuid"
       ") "
-      // A row is a tree and one target: '' for its nodes that open none, NULL for a tree with no node.
-      "SELECT r.id, r.title, c.opens, c.nodes, c.marked "
+      // A row is a tree and one target: '' for its nodes that open none, NULL for a tree with no node. `latest` is
+      // the stamp and receipt instant of the latest of the marks counted, in the order the domain compares stamps.
+      "SELECT r.id, r.title, c.opens, c.nodes, c.marked, c.latest[1][1] AS latest_hlc, c.latest[1][2] AS latest_ms "
       "FROM reached r LEFT JOIN LATERAL ("
-      "  SELECT n.opens, count(*) AS nodes, "
-      "         count(*) FILTER (WHERE n.node_id IN ("
-      "           SELECT p.node_id FROM node_progress p "
+      "  SELECT n.opens, count(*) AS nodes, count(m.node_id) AS marked, "
+      "         (array_agg(ARRAY[m.hlc, m.updated_ms::text] "
+      "                    ORDER BY m.stamp_ms DESC, m.stamp_counter DESC, m.hlc COLLATE \"C\" DESC) "
+      "            FILTER (WHERE m.node_id IS NOT NULL)) AS latest "
+      "  FROM tree_nodes n LEFT JOIN ("
+      "    SELECT p.node_id, p.hlc, p.stamp_ms, p.stamp_counter, "
+      "           (extract(epoch from p.updated_at) * 1000)::bigint AS updated_ms FROM node_progress p "
       // Only node_progress_pkey can serve the row comparisons, which bound the scan to this tree and reader.
-      "           WHERE p.tree_id = r.id AND (p.tree_id, p.user_id) >= (r.id, $1::text) "
-      "             AND (p.tree_id, p.user_id) <= (r.id, $1::text) AND p.status = 'complete')) AS marked "
-      "  FROM tree_nodes n WHERE n.tree_id = r.id AND n.present GROUP BY n.opens"
+      "    WHERE p.tree_id = r.id AND (p.tree_id, p.user_id) >= (r.id, $1::text) "
+      "      AND (p.tree_id, p.user_id) <= (r.id, $1::text) AND p.status = 'complete'"
+      "  ) m ON m.node_id = n.node_id "
+      "  WHERE n.tree_id = r.id AND n.present GROUP BY n.opens"
       ") c ON true";
   pqxx::result rows;
   try {
@@ -469,11 +475,15 @@ std::map<TreeId, OpenedTree> PgTreeRepository::openedFrom(const UserId& owner, c
     OpenedTree& tree = trees[TreeId{row["id"].as<std::string>()}];
     tree.title = row["title"].as<std::string>();
     if (row["opens"].is_null()) continue;
-    const Pointers counted{row["nodes"].as<int>(), row["marked"].as<int>()};
+    Pointers counted{row["nodes"].as<int>(), row["marked"].as<int>()};
+    if (!row["latest_hlc"].is_null())
+      counted.latest = LatestMark{roadmapStamp(row["latest_hlc"].as<std::string>()),
+                                  static_cast<std::uint64_t>(row["latest_ms"].as<long long>())};
     tree.total += counted.nodes;
     const TreeId target{row["opens"].as<std::string>()};
     if (target.empty()) {
       tree.marked = counted.marked;
+      tree.latest = counted.latest;
       continue;
     }
     tree.pointers.emplace(target, counted);

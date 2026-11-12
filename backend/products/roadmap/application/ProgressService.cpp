@@ -99,10 +99,9 @@ Progress ProgressService::progressOf(const TreeId& treeId, const UserId& user) {
 
 std::map<TreeId, Progress> ProgressService::shownToReaders(
     const std::map<UserId, std::map<TreeId, std::map<NodeId, TreeId>>>& treesByOwner, const std::string& door) {
-  // The follows come first, under one line: each owner's standing trees, or nothing for an owner left unread.
+  // The follows come first, under one observation: each owner's standing trees, or nothing for an owner left unread.
   std::map<UserId, std::optional<OpenedTrees>> followedByOwner;
   std::optional<WriteObservation> observation;
-  std::string outcome = "ok";
   bool unread = false;
   for (const auto& [owner, trees] : treesByOwner) {
     std::set<TreeId> opened;
@@ -120,14 +119,15 @@ std::map<TreeId, Progress> ProgressService::shownToReaders(
     } catch (const std::bad_alloc&) {
       throw;
     } catch (const FollowTimedOut&) {
-      outcome = "timeout";
+      observation->finish("timeout");
       unread = true;
     } catch (const std::exception& failure) {
-      observation->reportFailure(failure);
+      observation->fail(failure);
       unread = true;
     }
   }
-  if (observation) observation->finish(outcome);
+  // Follows that all answered leave no line, as the tree read's own follow leaves none.
+  if (observation) observation->skip();
 
   std::map<TreeId, Progress> shown;
   for (const auto& [owner, trees] : treesByOwner)

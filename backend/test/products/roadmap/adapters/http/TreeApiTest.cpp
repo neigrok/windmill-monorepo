@@ -973,9 +973,9 @@ TEST(get_progress_shows_a_reader_the_owners_derived_completion_of_a_step_that_op
   h.progress->setStatus(TreeId{"t_main"}, owner, NodeId{"plain"}, ProgressStatus::complete, false, Hlc{905, 0, "owner"}, 905);
 
   const Json::Value shown = parse(R"({"marks":[
-      {"node":"done-cleared","status":"complete","at":"0:0:","markedAt":0},
+      {"node":"done-cleared","status":"complete","at":"800:0:owner","markedAt":800},
       {"node":"done-marked","status":"complete","at":"900:0:owner","markedAt":900},
-      {"node":"done-unmarked","status":"complete","at":"0:0:","markedAt":0},
+      {"node":"done-unmarked","status":"complete","at":"800:0:owner","markedAt":800},
       {"node":"plain","status":"complete","at":"905:0:owner","markedAt":905},
       {"node":"removed","status":"complete","at":"903:0:owner","markedAt":903},
       {"node":"theirs","status":"none","at":"904:0:owner","markedAt":904}]})");
@@ -998,26 +998,41 @@ TEST(get_progress_shows_a_reader_the_owners_derived_completion_of_a_step_that_op
   CHECK_EQ(h.trees->openedReads.size(), 2u);
 }
 
-// What a reader is answered must not say a step opens a tree that is not complete: it is the answer for a twin where
-// that step opens nothing and holds no mark, and a pointer that is not valid leaves its step the stored row.
-TEST(get_progress_answers_a_reader_of_a_tree_with_pointers_what_a_twin_without_them_answers) {
+// What a reader is answered must not say a step opens a tree: it is, byte for byte, the answer for a twin where a step
+// that opens a tree that is not complete holds no mark and one that opens a complete tree was marked by hand at the
+// latest mark in what completed that tree. A pointer that is not valid leaves its step the stored row.
+TEST(get_progress_answers_a_reader_of_a_tree_with_pointers_what_a_twin_marked_by_hand_answers) {
   Harness h;
   const UserId owner = h.signIn("s-owner", "owner-acct@example.com");
   h.signIn("s-other", "other@example.com");
   h.seedSteps("t_open", owner, Visibility::private_, {{"o", ""}, {"p", ""}});
+  h.seedSteps("t_done", owner, Visibility::private_, {{"d", ""}, {"e", ""}});
+  h.seedSteps("t_mid", owner, Visibility::private_, {{"deeper", "t_leaf"}, {"m", ""}});
+  h.seedSteps("t_leaf", owner, Visibility::private_, {{"l", ""}});
   h.seedSteps("t_removed", owner, Visibility::private_, {{"r", ""}});
   h.seedSteps("t_theirs", UserId{"someone-else"}, Visibility::public_, {{"x", ""}});
   h.trees->softDelete(TreeId{"t_removed"});
   h.progress->setStatus(TreeId{"t_open"}, owner, NodeId{"o"}, ProgressStatus::complete, false, Hlc{800, 0, "owner"}, 800);
+  h.progress->setStatus(TreeId{"t_done"}, owner, NodeId{"d"}, ProgressStatus::complete, false, Hlc{700, 3, "phone"}, 700);
+  h.progress->setStatus(TreeId{"t_done"}, owner, NodeId{"e"}, ProgressStatus::complete, false, Hlc{700, 2, "tablet"}, 700);
+  h.progress->setStatus(TreeId{"t_mid"}, owner, NodeId{"m"}, ProgressStatus::complete, false, Hlc{600, 0, "phone"}, 600);
+  h.progress->setStatus(TreeId{"t_leaf"}, owner, NodeId{"l"}, ProgressStatus::complete, false, Hlc{850, 0, "phone"}, 850);
   h.seedSteps("t_main", owner, Visibility::public_,
-              {{"marked", "t_open"}, {"unmarked", "t_open"}, {"plain", ""}, {"removed", "t_removed"}, {"theirs", "t_theirs"}});
-  h.seedSteps("t_twin", owner, Visibility::public_, {{"marked", ""}, {"unmarked", ""}, {"plain", ""}, {"removed", ""}, {"theirs", ""}});
+              {{"chain", "t_mid"}, {"done", "t_done"}, {"done-marked", "t_done"}, {"marked", "t_open"}, {"unmarked", "t_open"},
+               {"plain", ""}, {"removed", "t_removed"}, {"theirs", "t_theirs"}});
+  h.seedSteps("t_twin", owner, Visibility::public_,
+              {{"chain", ""}, {"done", ""}, {"done-marked", ""}, {"marked", ""}, {"unmarked", ""}, {"plain", ""}, {"removed", ""},
+               {"theirs", ""}});
   for (const char* tree : {"t_main", "t_twin"}) {
     h.progress->setStatus(TreeId{tree}, owner, NodeId{"plain"}, ProgressStatus::complete, false, Hlc{900, 0, "owner"}, 900);
     h.progress->setStatus(TreeId{tree}, owner, NodeId{"removed"}, ProgressStatus::complete, true, Hlc{901, 0, "owner"}, 901);
     h.progress->setStatus(TreeId{tree}, owner, NodeId{"theirs"}, ProgressStatus::none, false, Hlc{902, 0, "owner"}, 902);
   }
   h.progress->setStatus(TreeId{"t_main"}, owner, NodeId{"marked"}, ProgressStatus::complete, false, Hlc{903, 0, "owner"}, 903);
+  h.progress->setStatus(TreeId{"t_main"}, owner, NodeId{"done-marked"}, ProgressStatus::complete, true, Hlc{904, 0, "owner"}, 904);
+  h.progress->setStatus(TreeId{"t_twin"}, owner, NodeId{"done-marked"}, ProgressStatus::complete, false, Hlc{904, 0, "owner"}, 904);
+  h.progress->setStatus(TreeId{"t_twin"}, owner, NodeId{"done"}, ProgressStatus::complete, false, Hlc{700, 3, "phone"}, 700);
+  h.progress->setStatus(TreeId{"t_twin"}, owner, NodeId{"chain"}, ProgressStatus::complete, false, Hlc{850, 0, "phone"}, 850);
 
   for (const char* session : {"", "s-other"}) {
     const drogon::HttpResponsePtr onTheTree = sendGetProgress(h.api, session, "t_main");
@@ -1025,6 +1040,9 @@ TEST(get_progress_answers_a_reader_of_a_tree_with_pointers_what_a_twin_without_t
     REQUIRE_EQ(onTheTree->getStatusCode(), drogon::k200OK);
     CHECK_EQ(std::string(onTheTree->getBody()), std::string(onTheTwin->getBody()));
     CHECK_EQ(parse(std::string(onTheTree->getBody())), parse(R"({"marks":[
+        {"node":"chain","status":"complete","at":"850:0:phone","markedAt":850},
+        {"node":"done","status":"complete","at":"700:3:phone","markedAt":700},
+        {"node":"done-marked","status":"complete","at":"904:0:owner","markedAt":904},
         {"node":"plain","status":"complete","at":"900:0:owner","markedAt":900},
         {"node":"removed","status":"complete","at":"901:0:owner","markedAt":901,"outOfOrder":true},
         {"node":"theirs","status":"none","at":"902:0:owner","markedAt":902}]})"));
@@ -1078,8 +1096,7 @@ TEST(get_progress_whose_pointers_cannot_be_followed_in_time_answers_a_reader_wit
     CHECK_EQ(parse(std::string(reply->getBody())), withoutPointerSteps);
   }
   CHECK_EQ(bodyOf(owners)["marks"].size(), 3u);
-  CHECK_EQ(lines, (std::vector<std::string>{"roadmap.progress.follow roadmap rest ok", "roadmap.progress.follow roadmap rest timeout",
-                                            "roadmap.progress.follow roadmap rest failed"}));
+  CHECK_EQ(lines, (std::vector<std::string>{"roadmap.progress.follow roadmap rest timeout", "roadmap.progress.follow roadmap rest failed"}));
   CHECK_EQ(reporter.failures->reports,
            (std::vector<std::string>{std::string("roadmap.progress.follow roadmap rest failed ") + typeid(std::runtime_error).name()}));
   CHECK_EQ(h.trees->openedBudgets, (std::vector<std::optional<std::chrono::milliseconds>>(3, std::chrono::milliseconds{750})));
