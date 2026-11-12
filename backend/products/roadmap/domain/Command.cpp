@@ -364,6 +364,21 @@ std::optional<std::string> validate(const LooseGraph& graph, const Legend& legen
   }, command);
 }
 
+bool changesNode(const NodeSpec& node, const Command& command) {
+  return std::visit(overloaded{
+    [&](const RenameNode& c) { return node.label != c.label; },
+    [&](const SetNodeColor& c) { return node.color != c.color; },
+    [&](const RepositionNode& c) { return node.position != std::optional<Vec2>(c.position); },
+    [&](const AnnotateNode& c) {
+      return (c.description && node.description != *c.description) ||
+             (c.appendDescription && appendedTo(node.description, *c.appendDescription) != node.description) ||
+             (c.icon && node.icon != *c.icon) || (c.links && node.links != *c.links) ||
+             (c.opens && node.opens != *c.opens);
+    },
+    [](const auto&) { return true; },
+  }, command);
+}
+
 std::variant<NodePatchPlan, std::string, KindRefusal> planNodePatches(
     const LooseGraph& graph, const Legend& legend, const std::vector<NodePatch>& updates) {
   if (updates.empty() || updates.size() > kMaxPatchNodes)
@@ -394,25 +409,18 @@ std::variant<NodePatchPlan, std::string, KindRefusal> planNodePatches(
     if (const auto* refusal = std::get_if<KindRefusal>(&hue)) return *refusal;
     const std::optional<NodeColor> color = std::get<std::optional<NodeColor>>(hue);
 
-    std::vector<std::pair<Command, bool>> candidates;
-    if (patch.label)
-      candidates.push_back({RenameNode{patch.nodeId, *patch.label}, node->label != *patch.label});
-    if (color) candidates.push_back({SetNodeColor{patch.nodeId, *color}, node->color != *color});
-    if (patch.position)
-      candidates.push_back({RepositionNode{patch.nodeId, *patch.position}, node->position != patch.position});
-    if (patch.description || patch.icon || patch.links || patch.opens) {
-      const bool changed = (patch.description && node->description != *patch.description) ||
-                           (patch.icon && node->icon != *patch.icon) ||
-                           (patch.links && node->links != *patch.links) ||
-                           (patch.opens && node->opens != *patch.opens);
+    std::vector<Command> candidates;
+    if (patch.label) candidates.push_back(RenameNode{patch.nodeId, *patch.label});
+    if (color) candidates.push_back(SetNodeColor{patch.nodeId, *color});
+    if (patch.position) candidates.push_back(RepositionNode{patch.nodeId, *patch.position});
+    if (patch.description || patch.icon || patch.links || patch.opens)
       candidates.push_back(
-          {AnnotateNode{patch.nodeId, patch.description, patch.links, patch.icon, std::nullopt, patch.opens}, changed});
-    }
+          AnnotateNode{patch.nodeId, patch.description, patch.links, patch.icon, std::nullopt, patch.opens});
 
     const std::size_t before = plan.batch.commands.size();
-    for (const auto& [command, changed] : candidates) {
+    for (const Command& command : candidates) {
       if (std::optional<std::string> reason = validate(graph, legend, command)) return *reason;
-      if (changed) plan.batch.commands.push_back(command);
+      if (changesNode(*node, command)) plan.batch.commands.push_back(command);
     }
     if (plan.batch.commands.size() != before) plan.changedNodeIds.push_back(patch.nodeId);
   }

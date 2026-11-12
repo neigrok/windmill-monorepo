@@ -734,18 +734,26 @@ ToolResult applyEdit(RoomRegistry& registry, TreeRegistry& trees, const TreeId& 
       opened.emplace_back("opens", *annotated->opens);
     if (std::optional<ToolResult> refusal = checkOpenedTrees(trees, actor, opened)) return *refusal;
 
+    // A single-node edit that changes nothing writes nothing: no seq, no op row, no frame, no save. It answers the
+    // head the tree stands at, and says so.
+    const bool changes = !namesAnExistingNode(tool) || room.changesNode(NodeId{payload["id"].asString()}, *command);
+
     // Bracketed under the strand, so whatever the tree gains between these reads, this gained.
     std::optional<std::map<NodeId, TreeId>> pointersBefore;
-    if (opensATree(opened)) pointersBefore = room.pointers();
+    if (changes && opensATree(opened)) pointersBefore = room.pointers();
     const TreeDiagnostics before = room.diagnose();
-    Seq seq = room.applyCommand(*command, clock.nowMs(), actor);
-    registry.persist(tree);  // flush the dirty rows so the web reader sees this edit
+    Seq seq = room.head();
+    if (changes) {
+      seq = room.applyCommand(*command, clock.nowMs(), actor);
+      registry.persist(tree);  // flush the dirty rows so the web reader sees this edit
+    }
     const TreeDiagnostics after = room.diagnose();
     if (pointersBefore) pointerEdit = pointerEditOf(room, *pointersBefore, before, after);
 
     Json::Value out(Json::objectValue);
     out["applied"] = true;
     out["seq"] = static_cast<Json::Int64>(seq);
+    if (!changes) out["unchanged"] = true;
     answerDiagnostics(before, after, out);
     if (payload.isMember("id")) out["id"] = payload["id"];
     // A write that named its kind wears it, as resolveHue just said; one that named none is answered

@@ -221,8 +221,8 @@ The table uses product-local names; external MCP prefixes each with `roadmap_`.
 | edit | `patch_nodes` | 1–200 existing nodes, replacement fields (`opens` among them, and a hue as `color` or legend `kind`) with omission preservation, full-batch validation, optional `expectedSeq` and `dryRun` |
 | edit | `change_edges` | 1–500 combined additions/removals, existing endpoints for additions, absent removals are no-ops, optional `expectedSeq` and `dryRun` |
 | edit | `create_node` | add a node — its hue as `color` or legend `kind`, `prerequisites[]`, `description`, `links`, `opens` all optional; answers `id` and the `kind` it wears |
-| edit | `annotate_node` | set a node's `description` — or `appendDescription`, which joins onto the existing body after a blank line, the cap held against the result; one of the two — its `icon` (`""` clears it, which is how an `empty-icon` smell is fixed), its `links` — or `addLinks`, which joins links after the ones held, in the order sent (a held url keeps its place and takes the label sent with it; a url sent twice is refused; the 32-link cap held against the result); one of the two — and/or the tree it `opens` (`""` clears it) |
-| edit | `rename_node` · `set_node_color` · `move_node` | content edits; `set_node_color` takes `color` or legend `kind` and answers the `kind` the node wears |
+| edit | `annotate_node` | set a node's `description` — or `appendDescription`, which joins onto the existing body after a blank line, the cap held against the result; one of the two — its `icon` (`""` clears it, which is how an `empty-icon` smell is fixed), its `links` — or `addLinks`, which joins links after the ones held, in the order sent (a held url keeps its place and takes the label sent with it; a url sent twice is refused; the 32-link cap held against the result); one of the two — and/or the tree it `opens` (`""` clears it); when no field it names would change it writes nothing (see below) |
+| edit | `rename_node` · `set_node_color` · `move_node` | content edits; `set_node_color` takes `color` or legend `kind` and answers the `kind` the node wears; sent what the node already holds, each writes nothing (see below) |
 | edit | `connect` · `reconnect` | prerequisite-edge edits |
 | edit | `disconnect` | remove edges: one `from`+`to` or `edges: [{from,to}]` (1..500), exactly one form; one op, one seq, all or nothing; `removed` counts the edges that were present |
 | edit | `delete_node` | tombstone nodes: one `nodeId` or `nodeIds` (1..200), exactly one form; a missing id refuses the whole call naming each; one op, one seq. `prune: true` also drops every edge touching a deleted node and clears the caller's marks on it, under the delete grant; receipt carries `ids` and `pruned: {edges, progress}` |
@@ -271,6 +271,16 @@ product can declare a tool without its annotations:
 
 Client approval prompts are separate from server permissions. Gym instructions preserve the user's
 Apply action for routine proposals; annotations describe each tool's effects.
+
+## An edit that changes nothing
+
+`rename_node`, `set_node_color`, `move_node` and `annotate_node` sent what the node already holds
+write nothing: no seq, no op row, no frame and no save. The reply is the usual one with
+`unchanged: true` added and `seq` the head the tree stands at, and the write line is `ok`. One rule
+decides it, `changesNode` in `domain/Command`: a field the edit names holds another value. A
+`patch_nodes` row that changes nothing is listed under `unchangedNodeIds` by the same rule. An
+`annotate_node` naming several fields lands whole when any of them would change, and an
+`appendDescription` with text always does. A tend does not count such a write as an edit.
 
 ## `status`, `seedStatus`, `state`, `summary`
 
@@ -419,7 +429,10 @@ A node may point at another tree: `opens` holds that tree's id.
   and an edit that clears or re-points a pointer says nothing of the loop it removed, as no
   receipt names a removed diagnostic. Every other edit — one that only clears a pointer, one that
   re-sends the tree a node already opens and a dry run among them — follows nothing, and its
-  receipt names the graph's errors alone.
+  receipt names the graph's errors alone. The two rules agree on the pointer: an `annotate_node`
+  that names only the tree the node already opens writes nothing and answers `unchanged: true`
+  (An edit that changes nothing), and one that changes the pointer is a change there and is
+  followed here (`changesNode`, `pointersSetSince`).
 - **The receipt's follow is short.** The edit is durable before it, and the reply waits on that
   read alone, so the read is given 750 ms of its own (`kReceiptFollowBudget`; a statement limit
   for that one transaction, `TreeRepository::openedFrom`), not the pool's 5 s. Past it the receipt
