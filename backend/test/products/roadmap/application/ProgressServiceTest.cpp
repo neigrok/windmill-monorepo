@@ -133,6 +133,29 @@ TEST(progress_keeps_the_out_of_order_word_on_the_mark_until_the_next_mark_replac
   CHECK_FALSE(service.progressOf(tid(), uid()).marks.at(nid("a")).outOfOrder);
 }
 
+// A mark the caller already holds — the same status and the same outOfOrder word — says it changed nothing, and is
+// still written, so its newer stamp lands; a node never marked holds `none`, and a changed word is a change.
+TEST(progress_a_mark_already_held_says_unchanged_and_still_lands_its_stamp) {
+  FakeProgressRepository repo;
+  FakeTreeRepository trees;
+  ProgressService service(repo, trees);
+  service.setStatuses(tid(), uid(), {ProgressWrite{nid("a"), ProgressStatus::complete, noPrereqs, at(1), false}}, 1);
+
+  const std::vector<ProgressOutcome> outcomes = service.setStatuses(
+      tid(), uid(),
+      {ProgressWrite{nid("a"), ProgressStatus::complete, noPrereqs, at(2), false},
+       ProgressWrite{nid("r"), ProgressStatus::none, noPrereqs, at(2), false},
+       ProgressWrite{nid("b"), ProgressStatus::complete, noPrereqs, at(2), false}},
+      2);
+  std::vector<bool> unchanged;
+  for (const ProgressOutcome& outcome : outcomes) unchanged.push_back(outcome.unchanged);
+  CHECK_EQ(unchanged, (std::vector<bool>{true, true, false}));
+  CHECK(service.progressOf(tid(), uid()).marks.at(nid("a")).at == at(2));
+
+  CHECK(service.setStatus(noPrereqs, tid(), uid(), nid("a"), ProgressStatus::complete, false, at(3), 3).unchanged);
+  CHECK_FALSE(service.setStatus(noPrereqs, tid(), uid(), nid("a"), ProgressStatus::complete, true, at(4), 4).unchanged);
+}
+
 TEST(progress_batch_carries_the_out_of_order_word_per_write) {
   FakeProgressRepository repo;
   FakeTreeRepository trees;
@@ -164,10 +187,11 @@ TEST(a_writers_mark_on_a_node_that_follows_its_tree_is_refused_and_the_other_mar
        m.write("idea", ProgressStatus::none, 12), m.write("ghost", ProgressStatus::none, 13)},
       20);
 
-  CHECK(receipt.outcomes == (std::vector<ProgressOutcome>{{ProgressStatus::none, false, false, false, true},
-                                                          {ProgressStatus::complete, true, true, false},
-                                                          {ProgressStatus::none, false, false, false, true},
-                                                          {ProgressStatus::none, true, true, false}}));
+  CHECK(receipt.outcomes ==
+        (std::vector<ProgressOutcome>{{.status = ProgressStatus::none, .prerequisitesMet = false, .applied = false, .refused = true},
+                                      {ProgressStatus::complete, true, true, false},
+                                      {.status = ProgressStatus::none, .prerequisitesMet = false, .applied = false, .refused = true},
+                                      {ProgressStatus::none, true, true, false, true}}));
   CHECK(m.stored(m.owner) == (std::map<NodeId, ProgressStatus>{{nid("ghost"), ProgressStatus::none},
                                                                {nid("plain"), ProgressStatus::complete}}));
   REQUIRE_EQ(receipt.recorded.marks.size(), 2u);
@@ -185,8 +209,8 @@ TEST(marks_that_are_all_refused_leave_the_stored_marks_as_they_were) {
   const ProgressReceipt receipt = m.service.mark(
       tid("main"), m.pointers, m.owner, {m.write("idea", ProgressStatus::none, 10), m.write("idea", ProgressStatus::complete, 11)}, 20);
 
-  CHECK(receipt.outcomes == (std::vector<ProgressOutcome>{{ProgressStatus::none, false, false, false, true},
-                                                          {ProgressStatus::none, false, false, false, true}}));
+  CHECK(receipt.outcomes == (std::vector<ProgressOutcome>{{.status = ProgressStatus::none, .prerequisitesMet = false, .applied = false, .refused = true},
+                                                          {.status = ProgressStatus::none, .prerequisitesMet = false, .applied = false, .refused = true}}));
   CHECK(receipt.recorded.marks.empty());
   CHECK(m.repo.byKey == before);
 }
@@ -202,7 +226,7 @@ TEST(an_advisory_for_the_trees_writer_reads_the_followed_completed_set) {
   const ProgressReceipt complete = m.service.mark(tid("main"), m.pointers, m.owner, {m.write("next", ProgressStatus::complete, 13)}, 20);
 
   CHECK(open.outcomes == (std::vector<ProgressOutcome>{{ProgressStatus::complete, false, true, false}}));
-  CHECK(complete.outcomes == (std::vector<ProgressOutcome>{{ProgressStatus::complete, true, true, false}}));
+  CHECK(complete.outcomes == (std::vector<ProgressOutcome>{{ProgressStatus::complete, true, true, false, true}}));
 }
 
 // A caller who cannot write the tree is handed no pointer, as is anyone marking a tree that holds none.
@@ -217,7 +241,7 @@ TEST(marks_handed_no_pointer_are_all_ordinary_judged_on_the_callers_own_marks_an
   const ProgressReceipt cleared = m.service.mark(tid("main"), {}, reader, {m.write("idea", ProgressStatus::none, 13)}, 20);
 
   CHECK(unmet.outcomes == (std::vector<ProgressOutcome>{{ProgressStatus::complete, false, true, false}}));
-  CHECK(met.outcomes == (std::vector<ProgressOutcome>{{ProgressStatus::complete, true, true, false},
+  CHECK(met.outcomes == (std::vector<ProgressOutcome>{{ProgressStatus::complete, true, true, false, true},
                                                       {ProgressStatus::complete, true, true, false}}));
   CHECK(cleared.outcomes == (std::vector<ProgressOutcome>{{ProgressStatus::none, true, true, false}}));
   CHECK(m.stored(reader) == (std::map<NodeId, ProgressStatus>{{nid("idea"), ProgressStatus::none},
@@ -248,8 +272,8 @@ TEST(a_receipt_comes_to_a_refusal_when_no_mark_was_recorded_and_one_was_refused)
   const ProgressReceipt refusedAndRecorded = m.service.mark(
       tid("main"), m.pointers, m.owner, {m.write("idea", ProgressStatus::complete, 13), m.write("next", ProgressStatus::none, 14)}, 20);
 
-  CHECK(refusedAndLost.outcomes == (std::vector<ProgressOutcome>{{ProgressStatus::none, false, false, false, true},
-                                                                 {ProgressStatus::none, true, false, false}}));
+  CHECK(refusedAndLost.outcomes ==
+        (std::vector<ProgressOutcome>{{.status = ProgressStatus::none, .prerequisitesMet = false, .applied = false, .refused = true}, {ProgressStatus::none, true, false, false}}));
   CHECK(refusedAndLost.cameToARefusal());
   CHECK_FALSE(lost.cameToARefusal());
   CHECK_FALSE(refusedAndRecorded.cameToARefusal());

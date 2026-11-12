@@ -185,6 +185,14 @@ struct Progress {
     if (mark.status == ProgressStatus::complete) completed.insert(node);
     else cleared.insert(node);
   }
+
+  // Whether a mark of `status` carrying the `outOfOrder` word is the one the node already holds, so writing it changes
+  // nothing the caller can see; a node never marked holds `none`.
+  bool holds(const NodeId& node, ProgressStatus status, bool outOfOrder) const {
+    const auto held = marks.find(node);
+    if (held == marks.end()) return status == ProgressStatus::none && !outOfOrder;
+    return held->second.status == status && held->second.outOfOrder == outOfOrder;
+  }
   bool operator==(const Progress&) const = default;
 };
 

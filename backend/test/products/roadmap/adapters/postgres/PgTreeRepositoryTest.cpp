@@ -554,7 +554,7 @@ TEST(pg_a_node_follows_the_tree_it_opens_takes_no_mark_from_its_owner_and_the_re
                                    {"id":"next","status":"complete","state":"complete"}])");
   complete[0]["opens"]["treeId"] = kFork.str();
   CHECK_EQ(test::body(call(kTree, kSam, "set_progress", R"({"nodeId":"next","status":"complete"})")),
-           parse(R"({"nodeId":"next","status":"complete","prerequisitesMet":true})"));
+           parse(R"({"nodeId":"next","status":"complete","prerequisitesMet":true,"unchanged":true})"));
   CHECK_EQ(test::body(call(kTree, kSam, "get_tree", R"({"fields":["id","status","state","opens"]})"))["tree"]["nodes"], complete);
   CHECK_EQ(test::body(call(kTree, kEve, "get_tree", R"({"fields":["id","status","state","opens"]})"))["tree"]["nodes"],
            parse(R"([{"id":"idea","status":"none","state":"available"},{"id":"next","status":"none","state":"locked"}])"));

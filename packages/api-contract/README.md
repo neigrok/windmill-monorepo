@@ -101,6 +101,14 @@ encoded as `encodeURIComponent` does. The backend builds every case (`domain/Web
 `WebAddressTest`, which reads the file at run time; the image copies it in `backend/Dockerfile`), and
 `web/test/products/roadmap/addresses.test.js` proves the router opens each one.
 
+## `roadmap-link-urls.json`
+
+Which link urls a person is shown on a node: a url as the server stores it, trimmed of the whitespace
+around it, and whether the web shows it — `http:`, `https:` or `mailto:`, in any case. The backend's
+`shownLinkUrl` (`backend/products/roadmap/domain/Command`, tested by `CommandTest`, which reads the file
+at run time; the image copies it in `backend/Dockerfile`) takes exactly the shown ones, and
+`web/test/products/roadmap/graph/tree/NodeWorkspace.test.js` proves `SAFE_URL` shows exactly those.
+
 ## `gym-ladder.json`
 
 - The step pair is chosen by the **magnitude** of the weight, never its sign: under 20 kg ±1 / ±2.5,

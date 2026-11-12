@@ -476,6 +476,41 @@ TEST(room_replays_a_batch_op_past_the_stored_head_whole) {
   CHECK_EQ(reopened.exportState(), live.exportState());
 }
 
+// A round trip that re-hues a kind — every wearer sent back with the colour it holds — repaints them live, so the
+// RecolorKind row it writes replays to the same room.
+TEST(room_replays_a_round_trip_rehue_to_the_room_it_left) {
+  FakeOpLog log;
+  FakeBus bus;
+  TreeRoom live = makeRoom(bus);
+  apply(live, AddKind{KindId{"k"}, NodeColor::sky, "K"}, 1);
+  apply(live, CreateNode{nid("a"), "A", "", NodeColor::sky, {}, std::nullopt}, 2);
+  const LooseGraph persisted{live.exportState()};
+  const Legend persistedLegend{live.exportLegend()};
+
+  Graft graft;
+  graft.document.kinds = {{KindId{"k"}, NodeColor::plum, "K"}};
+  graft.omittedKindRegisters[KindId{"k"}] = {KindRegister::description, KindRegister::crossBranchExempt};
+  NodeSpec a;
+  a.id = nid("a");
+  a.label = "A";
+  a.color = NodeColor::sky;
+  graft.document.nodes = {a};
+  graft.omittedNodeRegisters[nid("a")] = {NodeRegister::icon, NodeRegister::order, NodeRegister::position,
+                                          NodeRegister::status, NodeRegister::description, NodeRegister::links,
+                                          NodeRegister::opens};
+  REQUIRE(live.importTree(graft, 10, uid()).has_value());
+  live.landPendingOps(log);
+  CHECK(live.snapshot().nodes[0].color == NodeColor::plum);
+
+  FakeBus quiet;
+  TreeRoom reopened(tid(), {"Title", {}}, {}, false, persisted, persistedLegend, 2, std::nullopt,
+                    Visibility::private_, 0, quiet);
+  for (const AppliedOp& op : log.since(tid(), 2)) reopened.replay(op);
+  CHECK(reopened.snapshot().nodes[0].color == NodeColor::plum);
+  CHECK(reopened.exportLegend() == live.exportLegend());
+  CHECK_EQ(reopened.exportState(), live.exportState());
+}
+
 TEST(room_applies_an_empty_batch_as_a_no_op_that_mints_no_seq) {
   FakeBus bus;
   TreeRoom room = makeRoom(bus);

@@ -51,6 +51,7 @@ COPY --from=contract sync/*.registry.json sync/composition.json /contract/sync/
 COPY --from=contract sync/corpus /contract/sync/corpus
 COPY --from=contract gym /contract/gym
 COPY --from=contract roadmap-addresses.json /contract/roadmap-addresses.json
+COPY --from=contract roadmap-link-urls.json /contract/roadmap-link-urls.json
 
 # Configure once, then build the two service binaries, the probe server the sync conformance runs against, and every
 # test suite. Every suite ctest registers must be listed, or ctest fails on a missing executable, not a red test.

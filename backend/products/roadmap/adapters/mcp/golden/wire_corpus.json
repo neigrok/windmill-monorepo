@@ -1,5 +1,5 @@
 {
-  "schemaVersion" : 19,
+  "schemaVersion" : 20,
   "steps" : 
   [
     {
@@ -320,7 +320,8 @@
                 {
                   "nodeId" : "render",
                   "prerequisitesMet" : true,
-                  "status" : "none"
+                  "status" : "none",
+                  "unchanged" : true
                 },
                 {
                   "nodeId" : "sync",
@@ -442,7 +443,8 @@
                 {
                   "nodeId" : "root",
                   "prerequisitesMet" : true,
-                  "status" : "complete"
+                  "status" : "complete",
+                  "unchanged" : true
                 }
               ],
               "progressApplied" : false,
@@ -808,7 +810,8 @@
                 {
                   "nodeId" : "launch",
                   "prerequisitesMet" : true,
-                  "status" : "none"
+                  "status" : "none",
+                  "unchanged" : true
                 }
               ]
             },

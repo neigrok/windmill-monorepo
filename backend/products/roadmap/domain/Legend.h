@@ -1,6 +1,7 @@
 #pragma once
 
 #include "products/roadmap/domain/Crdt.h"
+#include "products/roadmap/domain/GraphState.h"
 #include "products/roadmap/domain/Ids.h"
 #include "products/roadmap/domain/Tree.h"
 
@@ -108,10 +109,13 @@ struct KindRefusal {
   bool operator==(const KindRefusal&) const = default;
 };
 
-// The hue a node write lands among `kinds`, the legend the write applies to: the hue its kind wears,
-// which a colour sent beside it must equal, else its colour, else nullopt when it names neither. A
-// refusal's sentence names the arguments under `path` ("", "updates[0].").
+// The hue a node write lands among `kinds`, the legend the write applies to: the hue its kind wears, else its colour,
+// else nullopt when it names neither. A colour sent beside a kind must equal the hue that kind wears, unless it is an
+// echo — a colour that does not land over `held`, the node as the tree holds it (landsOver) — when the kind is the
+// write's word. A node the tree does not hold has no echo. A refusal's sentence names the arguments under `path`
+// ("", "updates[0].").
 std::variant<std::optional<NodeColor>, KindRefusal> resolveHue(const std::vector<Kind>& kinds, const HueChoice& choice,
+                                                               const std::optional<NodeStateEntry>& held,
                                                                const std::string& path);
 
 }

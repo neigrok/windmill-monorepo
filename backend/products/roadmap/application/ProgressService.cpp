@@ -27,11 +27,14 @@ ProgressReceipt ProgressService::mark(const TreeId& tree, const std::map<NodeId,
   for (const ProgressWrite& write : writes)
     if (!following.count(write.node)) updates.push_back({write.node, write.status, write.outOfOrder, write.at});
 
-  const ProgressOutcome refused{ProgressStatus::none, false, false, false, true};
+  const ProgressOutcome refused{.status = ProgressStatus::none, .prerequisitesMet = false, .applied = false, .refused = true};
   if (updates.empty()) {
     receipt.outcomes.assign(writes.size(), refused);
     return receipt;
   }
+  // The overlay each mark meets at its turn: as the call found it, then as each landed mark before it left it. A mark the
+  // caller already holds there is written all the same, and says so.
+  Progress held = repo_.load(tree, user);
   const std::vector<bool> applied = repo_.setStatuses(tree, user, updates, receivedAtMs);
   // One read after the commit, so completing a subtree out of dependency order misreports no advisory.
   const std::set<NodeId> completed = standing.followed(pointers, repo_.load(tree, user)).completed;
@@ -45,9 +48,13 @@ ProgressReceipt ProgressService::mark(const TreeId& tree, const std::map<NodeId,
         write.status != ProgressStatus::complete ||
         std::all_of(write.prerequisites.begin(), write.prerequisites.end(),
                     [&](const NodeId& prerequisite) { return completed.count(prerequisite) > 0; });
-    receipt.outcomes.push_back({write.status, prerequisitesMet, *landed, write.outOfOrder});
-    if (*landed)
-      receipt.recorded.record(write.node, ProgressMark{write.status, write.at, receivedAtMs, write.outOfOrder});
+    receipt.outcomes.push_back(
+        {write.status, prerequisitesMet, *landed, write.outOfOrder, held.holds(write.node, write.status, write.outOfOrder)});
+    if (*landed) {
+      const ProgressMark mark{write.status, write.at, receivedAtMs, write.outOfOrder};
+      held.record(write.node, mark);
+      receipt.recorded.record(write.node, mark);
+    }
     ++landed;
   }
   return receipt;
@@ -56,11 +63,11 @@ ProgressReceipt ProgressService::mark(const TreeId& tree, const std::map<NodeId,
 ProgressOutcome ProgressService::setStatus(const std::vector<NodeId>& prerequisites, const TreeId& treeId,
                                            const UserId& user, const NodeId& node, ProgressStatus status,
                                            bool outOfOrder, const Hlc& at, std::uint64_t receivedAtMs) {
+  const Progress held = repo_.load(treeId, user);
   bool prerequisitesMet = true;
   if (status == ProgressStatus::complete) {
-    Progress current = repo_.load(treeId, user);
     for (const NodeId& prereq : prerequisites) {
-      if (!current.completed.count(prereq)) {
+      if (!held.completed.count(prereq)) {
         prerequisitesMet = false;
         break;
       }
@@ -68,12 +75,15 @@ ProgressOutcome ProgressService::setStatus(const std::vector<NodeId>& prerequisi
   }
 
   const bool applied = repo_.setStatus(treeId, user, node, status, outOfOrder, at, receivedAtMs);
-  return {status, prerequisitesMet, applied, outOfOrder};
+  return {status, prerequisitesMet, applied, outOfOrder, held.holds(node, status, outOfOrder)};
 }
 
 std::vector<ProgressOutcome> ProgressService::setStatuses(const TreeId& treeId, const UserId& user,
                                                           const std::vector<ProgressWrite>& writes,
                                                           std::uint64_t receivedAtMs) {
+  // The overlay each mark meets at its turn: as the call found it, then as each landed mark before it in the batch left
+  // it. A mark the caller already holds there is written all the same, and says so.
+  Progress held = repo_.load(treeId, user);
   std::vector<ProgressUpdate> updates;
   updates.reserve(writes.size());
   for (const ProgressWrite& write : writes)
@@ -88,7 +98,10 @@ std::vector<ProgressOutcome> ProgressService::setStatuses(const TreeId& treeId, 
     if (write.status == ProgressStatus::complete)
       for (const NodeId& prereq : write.prerequisites)
         if (!final.completed.count(prereq)) { prerequisitesMet = false; break; }
-    outcomes.push_back({write.status, prerequisitesMet, applied[outcomes.size()], write.outOfOrder});
+    const bool landed = applied[outcomes.size()];
+    outcomes.push_back(
+        {write.status, prerequisitesMet, landed, write.outOfOrder, held.holds(write.node, write.status, write.outOfOrder)});
+    if (landed) held.record(write.node, ProgressMark{write.status, write.at, receivedAtMs, write.outOfOrder});
   }
   return outcomes;
 }

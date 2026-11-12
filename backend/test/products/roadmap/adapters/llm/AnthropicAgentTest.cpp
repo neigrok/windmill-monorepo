@@ -272,13 +272,14 @@ TEST(drive_agent_counts_only_successful_mutations_as_edits) {
 
 // A write that answers `unchanged` changed nothing: a step of the run that neither failed nor counts as an edit.
 // Through a tend's scoped host over the real tools: an import that re-sends what the tree holds is no edit of the run,
-// and one carrying a mark beside it is, since `unchanged` speaks for the graft and not for the marks it carried.
-TEST(drive_agent_counts_an_echoed_import_as_no_edit_unless_it_carries_progress) {
+// unless it carries a mark the caller does not hold yet, since `unchanged` speaks for the graft and each progress row
+// for its own mark. A set_progress that repeats a mark held is no edit either, single or bulk.
+TEST(drive_agent_counts_an_echoed_import_as_no_edit_unless_it_sets_a_new_mark) {
   test::Harness h;
   CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"}]})")).isError);
   ScopedToolHost scoped(h.tools, TreeId{"t"});
-  const auto editsOf = [&](const char* input) {
-    Json::Value call = toolUseReply("import_subgraph", "toolu_1");
+  const auto editsOf = [&](const char* tool, const char* input) {
+    Json::Value call = toolUseReply(tool, "toolu_1");
     call["content"][0]["input"] = parse(input);
     FakeModel model;
     model.replies.push_back(call);
@@ -286,10 +287,16 @@ TEST(drive_agent_counts_an_echoed_import_as_no_edit_unless_it_carries_progress) 
     Recorder rec;
     return driveAgent("tend it", TreeId{"t"}, h.caller, scoped, model.asCall(), rec.onStep(), rec.report()).edits;
   };
+  const char* marked = R"({"nodes":[{"id":"a","label":"A"}],"progress":[{"nodeId":"a","status":"complete"}]})";
 
-  CHECK_EQ(editsOf(R"({"nodes":[{"id":"a","label":"A"}]})"), 0);
-  CHECK_EQ(editsOf(R"({"nodes":[{"id":"a","label":"A"}],"progress":[{"nodeId":"a","status":"complete"}]})"), 1);
-  CHECK_EQ(editsOf(R"({"nodes":[{"id":"a","label":"B"}]})"), 1);
+  CHECK_EQ(editsOf("import_subgraph", R"({"nodes":[{"id":"a","label":"A"}]})"), 0);
+  CHECK_EQ(editsOf("import_subgraph", marked), 1);
+  CHECK_EQ(editsOf("import_subgraph", marked), 0);
+  CHECK_EQ(editsOf("import_subgraph", R"({"nodes":[{"id":"a","label":"B"}]})"), 1);
+  CHECK_EQ(editsOf("set_progress", R"({"nodeId":"a","status":"complete"})"), 0);
+  CHECK_EQ(editsOf("set_progress", R"({"nodeId":"a","status":"none"})"), 1);
+  CHECK_EQ(editsOf("set_progress", R"({"updates":[{"nodeId":"a","status":"none"}]})"), 0);
+  CHECK_EQ(editsOf("set_progress", R"({"updates":[{"nodeId":"a","status":"complete"}]})"), 1);
 }
 
 // Through a tend's scoped host over the real tools, every write that changes nothing answers `unchanged` and is no edit
