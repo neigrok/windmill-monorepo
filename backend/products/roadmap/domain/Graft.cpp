@@ -1,5 +1,7 @@
 #include "products/roadmap/domain/Graft.h"
 
+#include "products/roadmap/domain/Command.h"
+
 #include <algorithm>
 #include <map>
 #include <optional>
@@ -7,7 +9,7 @@
 
 namespace wm {
 
-std::variant<Graft, KindRefusal> resolveKinds(const Legend& legend, Graft graft) {
+std::variant<Graft, KindRefusal> resolveKinds(const LooseGraph& graph, const Legend& legend, Graft graft) {
   if (graft.nodeKinds.empty()) return graft;
   std::vector<Kind> landed = legend.kinds();
   for (const Kind& kind : graft.document.kinds) {
@@ -22,12 +24,21 @@ std::variant<Graft, KindRefusal> resolveKinds(const Legend& legend, Graft graft)
     const auto omitted = graft.omittedNodeRegisters.find(node.id);
     const bool colorSent = omitted == graft.omittedNodeRegisters.end() || !omitted->second.count(NodeRegister::color);
     const auto hue = resolveHue(landed, HueChoice{colorSent ? std::optional(node.color) : std::nullopt, named->second},
-                                "nodes[" + std::to_string(i) + "].");
+                                graph.exportNode(node.id), "nodes[" + std::to_string(i) + "].");
     if (const auto* refusal = std::get_if<KindRefusal>(&hue)) return *refusal;
     node.color = *std::get<std::optional<NodeColor>>(hue);
     if (omitted != graft.omittedNodeRegisters.end()) omitted->second.erase(NodeRegister::color);
   }
-  graft.nodeKinds.clear();
+  return graft;
+}
+
+std::variant<Graft, std::string> resolveLinks(const LooseGraph& graph, Graft graft) {
+  for (std::size_t i = 0; i < graft.document.nodes.size(); ++i) {
+    NodeSpec& node = graft.document.nodes[i];
+    auto shown = shownLinks(graph.linksOf(node.id), std::move(node.links), "nodes[" + std::to_string(i) + "].links");
+    if (const auto* refusal = std::get_if<std::string>(&shown)) return *refusal;
+    node.links = std::get<std::vector<Link>>(std::move(shown));
+  }
   return graft;
 }
 
@@ -51,7 +62,7 @@ LegendState graftLegend(const Legend& current, const Graft& graft, const Hlc& at
     // A register lands at the graft's stamp when the batch carried it and it changes what the legend
     // holds, an empty value included; one left out, or sent as the legend already holds it, stays unset.
     const auto land = [&](bool inBatch, auto Entry::*field, Hlc Entry::*stamp, const auto& sent) {
-      if (!inBatch || (held && (*held).*field == sent)) return;
+      if (!inBatch || !landsOver(held, field, sent)) return;
       entry.*field = sent;
       entry.*stamp = at;
     };
@@ -68,8 +79,37 @@ LegendState graftLegend(const Legend& current, const Graft& graft, const Hlc& at
   return legend;
 }
 
+Repaint repaintOf(const LooseGraph& graph, const Legend& legend, const Graft& graft) {
+  std::set<NodeId> leftToTheBatch(graft.tombstones.begin(), graft.tombstones.end());
+  // A node the batch files by kind lands the hue that kind wears after the batch, whatever it wore.
+  for (const auto& [node, kind] : graft.nodeKinds) leftToTheBatch.insert(node);
+  for (const NodeSpec& node : graft.document.nodes) {
+    const auto omitted = graft.omittedNodeRegisters.find(node.id);
+    const bool carried = omitted == graft.omittedNodeRegisters.end() || !omitted->second.count(NodeRegister::color);
+    // A colour the batch sends wins when it lands: one sent as held is an echo.
+    if (carried && landsOver(graph.exportNode(node.id), &NodeStateEntry::color, node.color)) leftToTheBatch.insert(node.id);
+  }
+  Repaint repaint;
+  for (const Kind& kind : graft.document.kinds) {
+    const std::optional<NodeColor> held = legend.hueOf(kind.id);
+    if (!held || *held == kind.hue) continue;
+    repaint.rehued.push_back(kind.id);
+    for (const NodeId& node : wearersOf(graph, legend, kind.id))
+      if (!leftToTheBatch.count(node)) repaint.nodes[node] = kind.hue;
+  }
+  return repaint;
+}
+
 GraftFrame graftFrame(const LooseGraph& graph, const Legend& legend, const Graft& graft, const Hlc& at) {
-  return GraftFrame{graftState(graph, graft, at), graftLegend(legend, graft, at)};
+  GraftFrame frame{graftState(graph, graft, at), graftLegend(legend, graft, at)};
+  for (const auto& [id, hue] : repaintOf(graph, legend, graft).nodes) {
+    auto entry = std::find_if(frame.graph.nodes.begin(), frame.graph.nodes.end(),
+                              [&](const NodeStateEntry& held) { return held.id == id; });
+    if (entry == frame.graph.nodes.end()) entry = frame.graph.nodes.insert(entry, NodeStateEntry{.id = id});
+    entry->color = hue;
+    entry->colorAt = at;
+  }
+  return frame;
 }
 
 GraftFootprint footprintOf(const LooseGraph& graph, const Graft& graft) {
@@ -112,7 +152,7 @@ GraphState graftState(const LooseGraph& graph, const Graft& graft, const Hlc& at
     // A register lands at the graft's stamp when the batch carried it and it changes what the graph
     // holds, an empty value included; one left out, or sent as the graph already holds it, stays unset.
     const auto land = [&](bool inBatch, auto Entry::*field, Hlc Entry::*stamp, const auto& sent) {
-      if (!inBatch || (held && (*held).*field == sent)) return;
+      if (!inBatch || !landsOver(held, field, sent)) return;
       entry.*field = sent;
       entry.*stamp = at;
     };

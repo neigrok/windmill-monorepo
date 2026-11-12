@@ -94,10 +94,14 @@ rejected for structure. Validity is a read model, not a gate.
   node already opens among them. Where every tree of an owner is already loaded with
   its marks (`TreeRegistry::list`, `PgReminderRepository::readinessFor`), `openedAmong`
   (`domain/TreeSummary.h`) judges the account once in memory with no further read.
-- `TreeDiagnostics::assess` — a pure report over a loose graph: `cycles`, `dangling`,
+- `TreeDiagnostics::assess` — a pure report over a loose graph and its legend: `cycles`, `dangling`,
   `selfEdges`, `smells`, `maskedWork` (tombstoned parents with present children). `clean()` is
   true when cycles, dangling and self-edges are all empty. Smell kinds: `label-too-long`
-  (> 256 bytes), `empty-icon`, `high-in-degree` (> 4). It reads one graph and no pointer: a loop of
+  (> 256 bytes), `empty-icon` and `high-in-degree` (> 4), one per node; `unclaimed-hue`, one per hue
+  present nodes wear that no kind does, with that `hue`, the `count` of its nodes and the first ten of
+  them (`unclaimedNamed`), so it stays a short line whatever the tree's size; and `empty-legend`, one
+  line naming no node for a tree with nodes and no kind, in place of the hue lines. It reads one graph
+  and its legend, and no pointer: a loop of
   trees and a dangling pointer (`PointerDiagnostics`) are reported beside it, as smells are, and
   change neither `clean()` nor what it gates — the `SkillTree` projection, `get_health` and a
   receipt's `diagnosticsClean`.

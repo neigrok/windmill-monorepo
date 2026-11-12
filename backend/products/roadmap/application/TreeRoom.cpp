@@ -162,7 +162,7 @@ void TreeRoom::markClean() {
 }
 
 TreeDiagnostics TreeRoom::diagnose() const {
-  return TreeDiagnostics::assess(graph_);
+  return TreeDiagnostics::assess(graph_, legend_);
 }
 
 TreeData TreeRoom::snapshot() const {

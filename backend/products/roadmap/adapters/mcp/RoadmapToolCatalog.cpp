@@ -150,7 +150,10 @@ Json::Value linkArray(const char* description) {
   Json::Value link(Json::objectValue);
   link["type"] = "object";
   Json::Value fields(Json::objectValue);
-  fields["url"] = cappedStr("The link target (href).", kMaxLinkUrlLength);
+  fields["url"] = cappedStr("The link target (href), starting with http:, https: or mailto: — the links a person is "
+                            "shown; whitespace around it is trimmed, and any other url is refused by its path, but "
+                            "for one the node already holds, which is kept exactly as held.",
+                            kMaxLinkUrlLength);
   fields["label"] = cappedStr("Optional display text (defaults to the url).", kMaxLinkLabelLength);
   link["properties"] = fields;
   Json::Value required(Json::arrayValue);
@@ -263,7 +266,8 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
       row["description"] = cappedStr("Replacement description; empty string clears it.", kMaxNodeDescriptionLength);
       row["color"] = enumStr("Replacement node hue.", kHues);
       row["kind"] = cappedStr("Replacement hue, named by the legend kind that wears it. Sent with `color`, the "
-                              "two must agree.", kMaxIdLength);
+                              "two must agree, but for a `color` the node already holds: that is an echo, and the "
+                              "kind wins.", kMaxIdLength);
       row["position"] = position("Replacement position; both coordinates are required.");
       row["links"] = linkArray("Replacement links; an empty list clears them.");
       row["opens"] = cappedStr("Id of a tree you own that this node opens; empty string clears it. One naming "
@@ -461,8 +465,12 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     tools.push_back(tool("get_diagnostics", Access::read,
         "Report how the roadmap departs from a valid skill tree: cycles, dangling edges (an "
         "endpoint is missing), self-edges, and structural smells. Edits are never rejected, so an "
-        "edit that forms a cycle still succeeds — this is how you find and fix it. An `empty-icon` "
-        "smell clears with `annotate_node {nodeId, icon}`.",
+        "edit that forms a cycle still succeeds — this is how you find and fix it. Smells are "
+        "`label-too-long`, `empty-icon` and `high-in-degree`, one per node, and one `unclaimed-hue` line "
+        "per hue no legend kind wears, with that `hue`, the `count` of nodes wearing it and the first ten "
+        "of them as `nodes` — or, on a tree whose legend holds no kind, one `empty-legend` line instead. An "
+        "`empty-icon` smell clears with `annotate_node {nodeId, icon}`; an `unclaimed-hue` one when its "
+        "nodes take a kind's hue (`set_node_color`) or a kind comes to wear the hue.",
         p, {"treeId"}));
   }
   {
@@ -589,8 +597,8 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     p["icon"] = cappedStr("The node's icon name/emoji; \"\" clears it.", kMaxIconLength);
     p["links"] = linkArray("The node's external references — replaces the existing set (omit to leave unchanged).");
     p["addLinks"] = linkArray("References to add after the ones the node holds, in the order sent: a url the node "
-                              "already holds keeps its place and takes the label sent with it. The cap is on the "
-                              "set the node would then hold. Not with `links`.");
+                              "already holds, whitespace around it aside, keeps its place and takes the label sent "
+                              "with it. The cap is on the set the node would then hold. Not with `links`.");
     p["addLinks"]["minItems"] = 1;
     p["opens"] = cappedStr("The id of a tree you own that this node opens: the node points at that tree, is "
                            "complete for you when that tree is, and get_tree, get_nodes and find_nodes answer "
@@ -609,7 +617,8 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "after birth, so it is how an `empty-icon` smell from get_diagnostics is fixed. Every length "
         "cap counts Unicode code points, and a refusal names each field over its cap and by how much. "
         "When no field it names would change, it writes nothing and answers `unchanged: true` with the "
-        "tree's current `seq`; when any would, the whole edit lands.",
+        "tree's current `seq`; when any would, the fields that change land and a field sent as the node "
+        "already holds it is left as it is.",
         p, {"treeId", "nodeId"}));
   }
   {
@@ -632,7 +641,8 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     p["kind"] = cappedStr("The legend kind id whose hue the node takes.", kMaxIdLength);
     tools.push_back(tool("set_node_color", Access::write,
         "Set a node's color (its branch/category tint): a hue as `color`, or the legend `kind` whose hue "
-        "it takes — one of the two, or both when they agree. Returns `kind`, the legend kind whose hue "
+        "it takes — one of the two, or both when they agree, but for a `color` the node already holds, "
+        "which is an echo the `kind` wins over. Returns `kind`, the legend kind whose hue "
         "the node now wears (omitted when no kind claims that hue). A hue the node already wears writes "
         "nothing and answers `unchanged: true` with the tree's current `seq`.",
         p, {"treeId", "nodeId"}));
@@ -826,6 +836,9 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "outOfOrder, get_tree/find_nodes `status` shows outOfOrder:true beside it) and the receipt "
         "answers acknowledged:true, so prerequisitesMet:false alone always means an inversion nobody "
         "acknowledged. The next mark on that node, from any surface, replaces the word with its own. "
+        "A mark you already hold at its turn — the same status and the same outOfOrder word, after "
+        "the rows before it in the call — answers unchanged:true on its row, and a bulk call whose every "
+        "row does answers unchanged:true. "
         "A mark on a node that opens another tree of yours is recorded, but on a tree you own that "
         "node's `state` follows the opened tree, not the mark; prerequisitesMet reads marks alone, so "
         "a prerequisite that is complete only through the tree it opens still reads as unmet.",
@@ -843,7 +856,9 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     nodeFields["color"] = enumStr("Optional hue; a new node with neither `color` nor `kind` is terracotta.", kHues);
     nodeFields["kind"] = cappedStr("Optional legend kind id: the node takes the hue that kind wears in the legend "
                                    "this batch leaves, so one batch can add a kind and file nodes under it. Sent "
-                                   "with `color`, the two must agree.", kMaxIdLength);
+                                   "with `color`, the two must agree, but for a `color` the node already holds — "
+                                   "what a read carrying both sends back after the kind's hue moved — which is an "
+                                   "echo the kind wins over.", kMaxIdLength);
     nodeFields["order"] = str("Optional sibling order key, as get_tree returns it.");
     nodeFields["prerequisites"] = strArray(
         "Ids of the nodes that unlock this one. For a node already in the tree, `prerequisiteMode` "
@@ -924,7 +939,11 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "added; the tree's title is not touched. Every other field you leave off a node or kind keeps "
         "the value the tree holds (a new id gets the default), and every field you send replaces it — "
         "an explicit \"\" or [] clears it. A node deleted earlier and re-sent comes back with the fields "
-        "it had, but for the tree it opened: it opens the tree this batch names for it, or none. The "
+        "it had, but for the tree it opened: it opens the tree this batch names for it, or none. A kind "
+        "you re-send with a new hue repaints the nodes wearing its old hue, as recolor_kind does, judged "
+        "against the legend before the batch (so two kinds can swap hues); a node you file by `kind` takes "
+        "the hue that kind wears after the batch, a node you send a `color` that differs from the one it "
+        "holds keeps that colour, and the receipt's repaintedNodes counts the rest. The "
         "only removals are the ones you ask for: `tombstone` ids (which need the roadmap:delete grant), "
         "and under \"replace\" the edges into a node that the prerequisites list you send for it does not name. `position` is optional — the web canvas lays "
         "the tree out from its structure — and, when sent, carries both `x` and `y`. The receipt counts what the batch carried — `nodes`, "

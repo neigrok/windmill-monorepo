@@ -611,12 +611,12 @@ TEST(pg_get_diagnostics_tells_the_owner_a_loop_of_trees_and_a_dangling_pointer_a
   registry.open(kTree)->applyCommand(planted, clock.nowMs(), kSam);
   CHECK(registry.persist(kTree));
 
-  Json::Value main = parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[],"maskedWork":[],
+  Json::Value main = parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[{"kind":"empty-legend"}],"maskedWork":[],
       "treeLoops":[{"node":"down","path":[]}],"danglingPointers":[{"node":"gone","treeId":"t_pgtest_never_planted"}]})");
   main["treeLoops"][0]["path"].append(onTheWay(kFork, "Deep dive"));
   main["treeLoops"][0]["path"].append(onTheWay(kTree, "Main"));
   CHECK_EQ(test::body(call(kTree, kSam, "get_diagnostics", "{}")), main);
-  Json::Value sub = parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[],"maskedWork":[],
+  Json::Value sub = parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[{"kind":"empty-legend"}],"maskedWork":[],
       "treeLoops":[{"node":"back","path":[]}],"danglingPointers":[]})");
   sub["treeLoops"][0]["path"].append(onTheWay(kTree, "Main"));
   sub["treeLoops"][0]["path"].append(onTheWay(kFork, "Deep dive"));
@@ -624,10 +624,10 @@ TEST(pg_get_diagnostics_tells_the_owner_a_loop_of_trees_and_a_dangling_pointer_a
 
   registry.setVisibility(kTree, Visibility::public_);
   CHECK_EQ(test::message(call(kTree, kEve, "get_diagnostics", "{}")),
-           std::string(R"({"cycles":[],"dangling":[],"maskedWork":[],"selfEdges":[],"smells":[]})"));
+           std::string(R"({"cycles":[],"dangling":[],"maskedWork":[],"selfEdges":[],"smells":[{"kind":"empty-legend"}]})"));
 
   CHECK(treeRegistry.remove(kFork, kSam) == TreeRegistry::Removal::deleted);
-  Json::Value orphaned = parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[],"maskedWork":[],"treeLoops":[],
+  Json::Value orphaned = parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[{"kind":"empty-legend"}],"maskedWork":[],"treeLoops":[],
       "danglingPointers":[{"node":"down"},{"node":"gone","treeId":"t_pgtest_never_planted"}]})");
   orphaned["danglingPointers"][0]["treeId"] = kFork.str();
   CHECK_EQ(test::body(call(kTree, kSam, "get_diagnostics", "{}")), orphaned);

@@ -6,7 +6,7 @@
 
 namespace wm {
 
-TreeDiagnostics TreeDiagnostics::assess(const LooseGraph& graph) {
+TreeDiagnostics TreeDiagnostics::assess(const LooseGraph& graph, const Legend& legend) {
   TreeDiagnostics report;
 
   std::vector<NodeId> ids = graph.presentNodeIds();
@@ -79,11 +79,22 @@ TreeDiagnostics TreeDiagnostics::assess(const LooseGraph& graph) {
 
   // Smells read one linear projection; nodeView per node would rescan every live edge (O(V*E)).
   const TreeData projection = graph.toTreeData(TreeId{}, {});
+  // A hue no kind wears says nothing of what its nodes are, and is told once per hue. With no kind at all every hue is
+  // one, so the tree says that instead.
+  std::set<NodeColor> worn;
+  for (const Kind& kind : legend.kinds()) worn.insert(kind.hue);
+  report.legendEmpty = worn.empty() && !projection.nodes.empty();
+  std::map<NodeColor, UnclaimedHue> unclaimed;
   for (const auto& node : projection.nodes) {
     if (node.label.size() > maxLabel) report.smells.push_back(Smell{node.id, "label-too-long"});
     if (node.icon.empty()) report.smells.push_back(Smell{node.id, "empty-icon"});
     if (node.prerequisites.size() > inDegreeSmell) report.smells.push_back(Smell{node.id, "high-in-degree"});
+    if (worn.empty() || worn.count(node.color)) continue;
+    UnclaimedHue& hue = unclaimed.try_emplace(node.color, UnclaimedHue{node.color}).first->second;
+    if (hue.nodes.size() < unclaimedNamed) hue.nodes.push_back(node.id);
+    ++hue.count;
   }
+  for (auto& [color, hue] : unclaimed) report.unclaimedHues.push_back(std::move(hue));
 
   return report;
 }

@@ -458,7 +458,7 @@ TEST(scoped_tool_host_sends_every_get_diagnostics_of_a_tend_as_asking_for_no_poi
 
   h.trees.openedReadsFail = true;
   CHECK_EQ(test::body(scoped.callTool("get_diagnostics", Json::Value(Json::objectValue), h.actor)),
-           parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[],"maskedWork":[]})"));
+           parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[{"kind":"empty-legend"}],"maskedWork":[]})"));
   for (const char* asked : {R"({"includePointers":true})", R"({"includePointers":false})"}) {
     const ToolResult refused = scoped.callTool("get_diagnostics", parse(asked), h.actor);
     CHECK(refused.isError);
@@ -469,7 +469,7 @@ TEST(scoped_tool_host_sends_every_get_diagnostics_of_a_tend_as_asking_for_no_poi
 
   h.trees.openedReadsFail = false;
   CHECK_EQ(test::body(h.call("get_diagnostics", test::kNoArgs)),
-           parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[],"maskedWork":[],
+           parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[{"kind":"empty-legend"}],"maskedWork":[],
                "treeLoops":[{"node":"loop","path":[{"treeId":"t_b","title":"Tree t_b"},{"treeId":"t","title":"Test Roadmap"}]}],
                "danglingPointers":[{"node":"gone","treeId":"t_gone"}]})"));
   CHECK_EQ(h.trees.openedReads, (std::vector<std::set<TreeId>>{{TreeId{"t_b"}, TreeId{"t_gone"}}}));
@@ -491,7 +491,7 @@ TEST(scoped_tool_host_a_tends_import_brings_a_removed_node_back_opening_nothing)
   CHECK_EQ(test::body(h.call("get_tree", parse(R"({"fields":["id","label","icon","opens"]})")))["tree"]["nodes"],
            parse(R"([{"id":"a","label":"A back","icon":"i"}])"));
   CHECK_EQ(test::body(h.call("get_diagnostics", test::kNoArgs)),
-           parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[],"maskedWork":[],"treeLoops":[],"danglingPointers":[]})"));
+           parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[{"kind":"empty-legend"}],"maskedWork":[],"treeLoops":[],"danglingPointers":[]})"));
 }
 
 // A tend runs as the owner, so the state it reads is the node's true one, and still no pointer.

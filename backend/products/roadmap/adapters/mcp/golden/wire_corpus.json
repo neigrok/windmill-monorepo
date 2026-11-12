@@ -1,5 +1,5 @@
 {
-  "schemaVersion" : 18,
+  "schemaVersion" : 20,
   "steps" : 
   [
     {
@@ -320,7 +320,8 @@
                 {
                   "nodeId" : "render",
                   "prerequisitesMet" : true,
-                  "status" : "none"
+                  "status" : "none",
+                  "unchanged" : true
                 },
                 {
                   "nodeId" : "sync",
@@ -442,7 +443,8 @@
                 {
                   "nodeId" : "root",
                   "prerequisitesMet" : true,
-                  "status" : "complete"
+                  "status" : "complete",
+                  "unchanged" : true
                 }
               ],
               "progressApplied" : false,
@@ -702,6 +704,42 @@
               "selfEdges" : [],
               "smells" : 
               [
+                {
+                  "count" : 1,
+                  "hue" : "terracotta",
+                  "kind" : "unclaimed-hue",
+                  "nodes" : 
+                  [
+                    "launch"
+                  ]
+                },
+                {
+                  "count" : 1,
+                  "hue" : "olive",
+                  "kind" : "unclaimed-hue",
+                  "nodes" : 
+                  [
+                    "docs"
+                  ]
+                },
+                {
+                  "count" : 1,
+                  "hue" : "gold",
+                  "kind" : "unclaimed-hue",
+                  "nodes" : 
+                  [
+                    "root"
+                  ]
+                },
+                {
+                  "count" : 1,
+                  "hue" : "sky",
+                  "kind" : "unclaimed-hue",
+                  "nodes" : 
+                  [
+                    "render"
+                  ]
+                },
                 {
                   "kind" : "empty-icon",
                   "node" : "docs"
