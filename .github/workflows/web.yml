@@ -117,6 +117,21 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+      - name: Prepare IndexNow site verification
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        env:
+          INDEXNOW_KEY: ${{ secrets.INDEXNOW_KEY }}
+        run: |
+          if [[ -z "$INDEXNOW_KEY" ]]; then
+            exit 0
+          fi
+          if ! [[ "$INDEXNOW_KEY" =~ ^[0-9a-f]{32}$ ]]; then
+            echo 'INDEXNOW_KEY must contain 32 lowercase hexadecimal characters' >&2
+            exit 1
+          fi
+          mkdir "$RUNNER_TEMP/indexnow-proof"
+          printf '%s' "$INDEXNOW_KEY" > "$RUNNER_TEMP/indexnow-proof/$INDEXNOW_KEY.txt"
+
       - name: Rsync dist to the VPS
         if: github.event_name != 'pull_request'
         env:
@@ -132,4 +147,13 @@ jobs:
           client=$(python3 -c 'import json, sys; sys.path.insert(0, "../backend/deploy"); from sync_compatibility import compatibility; value = compatibility(json.load(open("web-sync-compatibility.json"))); print(value["schema"], value["minSchema"])')
           $SSH "$SSH_USER@$SSH_HOST" "cd ~/windmill && python3 - web-preflight $client" < ../backend/deploy/sync_compatibility.py
           $SSH "$SSH_USER@$SSH_HOST" 'mkdir -p ~/windmill/web'
-          rsync -az --delete -e "$SSH" dist/ "$SSH_USER@$SSH_HOST:windmill/web/"
+          release=(dist/)
+          if [[ -n "${RUNNER_TEMP:-}" && -d "$RUNNER_TEMP/indexnow-proof" ]]; then
+            release+=("$RUNNER_TEMP/indexnow-proof/")
+          elif [[ "${GITHUB_REF:-}" != refs/heads/main ]]; then
+            # A manual deploy from another ref has no key and must preserve the active proof.
+            proof_pattern=$(printf '[0-9a-f]%.0s' {1..32})
+            release=("--filter=P /$proof_pattern.txt" dist/)
+          fi
+          rsync -az --delete -e "$SSH" "${release[@]}" "$SSH_USER@$SSH_HOST:windmill/web/" \
+            2>&1 | sed -E 's/[0-9a-f]{32}\.txt/[IndexNow proof]/g' >&2
