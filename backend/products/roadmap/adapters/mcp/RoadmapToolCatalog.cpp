@@ -732,18 +732,18 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     nodeIds["maxItems"] = static_cast<Json::UInt64>(kMaxDeleteNodeIds);
     p["nodeIds"] = nodeIds;
     p["prune"] = boolean(
-        "If true, also remove every edge touching a deleted node (both directions) and clear your "
-        "own progress marks on them, in the same op. Default false: those edges stay and are "
-        "reported in introducedDiagnostics as dangling.");
+        "If true, also remove every edge touching a deleted node (both directions), in the same op. "
+        "Default false: those edges stay and are reported in introducedDiagnostics as dangling.");
     tools.push_back(tool("delete_node", Access::del,
         "Delete nodes (tombstone). Two forms, exactly one per call: a single `nodeId`, or `nodeIds` "
         "(1 to 200). Every id must name a present node — one missing or already-deleted id refuses "
         "the whole call, naming each, and nothing is applied. The deletions land as ONE op under one "
-        "seq. A deleted node's children detach into roots; nothing is re-tethered. With `prune: "
-        "true` the edges the delete dangles and your marks on the deleted nodes go with it — that "
-        "cleanup is part of the delete and needs no write grant beyond the delete grant. The receipt "
-        "carries `ids`, `pruned: {edges, progress}` (0s when prune is false or nothing dangled), and "
-        "`id` for the single form.",
+        "seq. A deleted node's children detach into roots; nothing is re-tethered. Your own progress "
+        "marks on the deleted nodes are cleared in the same call, before the delete lands — if they cannot "
+        "be, nothing is deleted — and a later revive brings none back; anyone else's stay theirs. With `prune: true` the edges the delete dangles go with it too — "
+        "that cleanup is part of the delete and needs no write grant beyond the delete grant. The "
+        "receipt carries `ids`, `pruned: {edges, progress}` — the edges prune removed (0 without "
+        "prune) and the marks of yours the delete cleared — and `id` for the single form.",
         p, {"treeId"}));
   }
   {

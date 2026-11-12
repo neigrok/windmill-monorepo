@@ -50,6 +50,12 @@ TEST(hlc_clock_carries_a_full_counter_into_the_next_millisecond_and_stays_monoto
   CHECK_EQ(clock.state(), (HlcClock::State{1001, 0}));
 }
 
+TEST(hlc_successor_is_one_count_on_or_the_next_millisecond_once_the_counter_is_spent) {
+  CHECK_EQ((Hlc{1000, 7, "phone"}.successor("srv")), (Hlc{1000, 8, "srv"}));
+  CHECK_EQ((Hlc{1000, std::numeric_limits<std::uint32_t>::max(), "phone"}.successor("srv")), (Hlc{1001, 0, "srv"}));
+  CHECK((Hlc{1000, 7, "zz"}.successor("aa") > Hlc{1000, 7, "zz"}));  // after it, whoever wrote it
+}
+
 TEST(hlc_clock_observe_makes_the_next_tick_dominate_the_observed_stamp) {
   HlcClock clock("a");
   Hlc remote{5000, 3, "b"};

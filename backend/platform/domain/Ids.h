@@ -44,6 +44,13 @@ struct Hlc {
   auto operator<=>(const Hlc&) const = default;
 
   bool isSet() const { return physicalMs != 0 || counter != 0 || !actor.empty(); }
+
+  // The first stamp `writer` mints after this one, whoever wrote this one: the same millisecond one count on, or the
+  // next millisecond once the counter is spent.
+  Hlc successor(std::string writer) const {
+    if (counter == std::numeric_limits<std::uint32_t>::max()) return Hlc{physicalMs + 1, 0, std::move(writer)};
+    return Hlc{physicalMs, counter + 1, std::move(writer)};
+  }
 };
 
 // "physicalMs:counter:actor". The actor keeps any ':' it contains, and the unset stamp is "0:0:".
@@ -93,17 +100,12 @@ public:
   explicit HlcClock(std::string actor) : actor_(std::move(actor)) {}
   HlcClock(std::string actor, State state) : actor_(std::move(actor)), state_(state) {}
 
-  // A physical time ahead of the clock resets the counter; otherwise the counter counts on, and a
-  // counter past 2^32 - 1 carries into the next millisecond.
+  // A physical time ahead of the clock resets the counter; otherwise the clock takes its last stamp's successor.
   Hlc tick(std::uint64_t physNowMs) {
-    if (physNowMs > state_.ms) {
-      state_ = State{physNowMs, 0};
-    } else if (state_.counter == std::numeric_limits<std::uint32_t>::max()) {
-      state_ = State{state_.ms + 1, 0};
-    } else {
-      ++state_.counter;
-    }
-    return Hlc{state_.ms, state_.counter, actor_};
+    const Hlc next = physNowMs > state_.ms ? Hlc{physNowMs, 0, actor_}
+                                           : Hlc{state_.ms, state_.counter, actor_}.successor(actor_);
+    state_ = State{next.physicalMs, next.counter};
+    return next;
   }
 
   void observe(const Hlc& stamp) {

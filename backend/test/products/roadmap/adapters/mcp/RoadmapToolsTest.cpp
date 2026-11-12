@@ -11,6 +11,7 @@
 #include "test/testing.h"
 
 #include <chrono>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <new>
@@ -922,7 +923,8 @@ TEST(mcp_prune_clears_dangling_edges_and_orphan_progress) {
 
   h.call("set_progress", mark("a", "complete"));
   h.call("set_progress", mark("b", "complete"));
-  h.call("delete_node", with("id", "b"));
+  // Deleted by a client's frame, which clears no mark, so the orphan mark is prune's to clear.
+  h.registry.open(TreeId{"t"})->applyCommand(DeleteNode{NodeId{"b"}}, h.clock.nowMs(), h.caller);
 
   ToolResult result = h.call("prune", kNoArgs);
   CHECK_FALSE(result.isError);
@@ -1637,8 +1639,8 @@ TEST(mcp_delete_node_without_prune_still_lists_the_edges_it_dangled) {
   CHECK_EQ(introduced(receipt),
            (std::vector<std::string>{"dangling edge \"a\" -> \"b\"", "dangling edge \"b\" -> \"c\""}));
   CHECK_EQ(receipt["pruned"]["edges"].asInt(), 0);
-  CHECK_EQ(receipt["pruned"]["progress"].asInt(), 0);
-  CHECK_EQ(body(h.call("get_progress", kNoArgs))["completed"].size(), 2u);  // the mark on b stays
+  CHECK_EQ(receipt["pruned"]["progress"].asInt(), 1);
+  CHECK_EQ(body(h.call("get_progress", kNoArgs))["completed"].size(), 1u);  // the caller's mark on b goes with it
 
   const Json::Value legacy = body(h.call("delete_node", with("id", "c")));
   CHECK(legacy["applied"].asBool());
@@ -6455,4 +6457,210 @@ TEST(mcp_import_progress_rows_carry_out_of_order_as_set_progress_rows_do) {
   REQUIRE_EQ(receipt["progress"].size(), 3u);
   for (const Json::Value& row : receipt["progress"]) CHECK_EQ(row["unchanged"], Json::Value(true));
   CHECK_EQ(body(h.call("get_progress", everyMark)), held);
+}
+
+// A delete clears the caller's own mark on each node it deletes, in the same call, by either form and with or without
+// prune, counted in pruned.progress; a mark someone else holds on the node stays theirs, and a revive of the node later
+// brings no cleared mark back.
+TEST(mcp_delete_node_clears_the_callers_marks_on_the_nodes_it_deletes) {
+  for (const auto& [arguments, cleared, left] : std::vector<std::tuple<const char*, int, const char*>>{
+           {R"({"nodeId":"a"})", 1, R"({"completed":["b"],"cleared":["a"]})"},
+           {R"({"nodeId":"a","prune":true})", 1, R"({"completed":["b"],"cleared":["a"]})"},
+           {R"({"nodeIds":["a","b","c"]})", 2, R"({"completed":[],"cleared":["a","b"]})"},
+           {R"({"nodeIds":["a","b","c"],"prune":true})", 2, R"({"completed":[],"cleared":["a","b"]})"}}) {
+    Harness h;
+    h.trees.byId["t"].visibility = Visibility::public_;
+    CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"},{"id":"b","label":"B"},
+      {"id":"c","label":"C"}]})")).isError);
+    CHECK_FALSE(h.call("set_progress", parse(R"({"updates":[{"nodeId":"a","status":"complete"},
+      {"nodeId":"b","status":"complete"}]})")).isError);
+    const ToolCaller stranger{uid("stranger"), ToolScope::everything()};
+    const auto progressOf = [&](const ToolCaller& who) {
+      return body(h.tools.callTool("get_progress", parse(R"({"treeId":"t","fields":["completed","cleared"]})"), who));
+    };
+    CHECK_FALSE(h.tools.callTool("set_progress", parse(R"({"treeId":"t","nodeId":"a","status":"complete"})"), stranger)
+                    .isError);
+
+    CHECK_EQ(body(h.call("delete_node", parse(arguments)))["pruned"]["progress"].asInt(), cleared);
+    CHECK_EQ(progressOf(h.actor), parse(left));
+    CHECK_EQ(progressOf(stranger), parse(R"({"completed":["a"],"cleared":[]})"));
+
+    CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"}]})")).isError);
+    CHECK_EQ(progressOf(h.actor), parse(left));
+    CHECK_EQ(progressOf(stranger), parse(R"({"completed":["a"],"cleared":[]})"));
+  }
+}
+
+// A delete clears the caller's marks before it lands, so with the progress store down, reading or writing, the call fails
+// with nothing deleted and the tree not saved, and once the store is back a retry does the whole of it.
+TEST(mcp_delete_node_with_the_progress_store_down_deletes_nothing_and_a_retry_completes_it) {
+  for (const bool readsDown : {true, false}) {
+    Harness h;
+    CHECK_FALSE(h.call("create_node", parse(R"({"id":"a","label":"A"})")).isError);
+    CHECK_FALSE(h.call("set_progress", parse(R"({"nodeId":"a","status":"complete"})")).isError);
+    const std::size_t saves = h.trees.savedNodeCounts.size();
+    const std::size_t rows = h.ops.byTree["t"].size();
+    (readsDown ? h.progressRepo.loadsFail : h.progressRepo.writesFail) = true;
+    CHECK_EQ(message(h.call("delete_node", parse(R"({"nodeId":"a"})"))),
+             std::string("delete_node: that call failed inside the server. The outcome may be uncertain; read the "
+                         "affected records before retrying. The detail is in the server log."));
+    CHECK(h.registry.open(TreeId{"t"})->hasNode(NodeId{"a"}));
+    CHECK_EQ(h.trees.savedNodeCounts.size(), saves);
+    CHECK_EQ(h.ops.byTree["t"].size(), rows);
+
+    h.progressRepo.loadsFail = h.progressRepo.writesFail = false;
+    CHECK_EQ(body(h.call("delete_node", parse(R"({"nodeId":"a"})")))["pruned"], parse(R"({"edges":0,"progress":1})"));
+    CHECK_FALSE(h.registry.open(TreeId{"t"})->hasNode(NodeId{"a"}));
+    CHECK_EQ(body(h.call("get_progress", parse(R"({"fields":["completed","cleared"]})"))),
+             parse(R"({"completed":[],"cleared":["a"]})"));
+  }
+}
+
+// A server's progress write comes after the stamp the caller's mark holds, so it lands over a mark a replica stamped
+// ahead of the server: a delete clears one, counted from what landed, a revive brings none back, and a set_progress
+// none clears one too.
+TEST(mcp_a_server_progress_write_lands_over_a_mark_stamped_ahead_of_the_server) {
+  Harness h;
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"},{"id":"b","label":"B"}]})")).isError);
+  const std::uint64_t ahead = h.clock.ms + 120000;  // a phone two minutes ahead, inside the socket's five
+  for (const char* node : {"a", "b"})
+    REQUIRE(h.progressRepo.setStatuses(TreeId{"t"}, h.caller,
+                                       {{NodeId{node}, ProgressStatus::complete, false, Hlc{ahead, 0, "phone"}}},
+                                       h.clock.ms).front());
+
+  CHECK_EQ(body(h.call("delete_node", parse(R"({"nodeId":"a"})")))["pruned"], parse(R"({"edges":0,"progress":1})"));
+  CHECK_EQ(body(h.call("set_progress", parse(R"({"nodeId":"b","status":"none"})"))),
+           parse(R"({"nodeId":"b","status":"none","prerequisitesMet":true})"));
+  const Json::Value cleared = parse(R"({"completed":[],"cleared":["a","b"]})");
+  CHECK_EQ(body(h.call("get_progress", parse(R"({"fields":["completed","cleared"]})"))), cleared);
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"a","label":"A"})")).isError);
+  CHECK_EQ(body(h.call("get_progress", parse(R"({"fields":["completed","cleared"]})"))), cleared);
+}
+
+// A clear reaches the caller's open sessions as set_progress does: one progress frame for the marks it cleared, from a
+// delete and from an import's tombstone alike.
+TEST(mcp_a_clear_sends_the_progress_frame_set_progress_sends) {
+  Harness h;
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"},{"id":"b","label":"B"}]})")).isError);
+  CHECK_FALSE(h.call("set_progress", parse(R"({"updates":[{"nodeId":"a","status":"complete"},
+    {"nodeId":"b","status":"complete"}]})")).isError);
+  const std::size_t frames = h.bus.progressBroadcasts.size();
+
+  CHECK_FALSE(h.call("delete_node", parse(R"({"nodeId":"a"})")).isError);
+  REQUIRE_EQ(h.bus.progressBroadcasts.size(), frames + 1);
+  CHECK_EQ(h.bus.progressBroadcasts.back().user, h.caller.str());
+  CHECK_EQ(h.bus.progressBroadcasts.back().marks.cleared, (std::set<NodeId>{NodeId{"a"}}));
+  CHECK(h.bus.progressBroadcasts.back().marks.completed.empty());
+
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[],"tombstone":["b"]})")).isError);
+  REQUIRE_EQ(h.bus.progressBroadcasts.size(), frames + 2);
+  CHECK_EQ(h.bus.progressBroadcasts.back().marks.cleared, (std::set<NodeId>{NodeId{"b"}}));
+  CHECK(h.bus.progressBroadcasts.back().marks.completed.empty());
+}
+
+// An import's tombstones clear the caller's marks after the graft has landed, so a progress store that fails there does
+// not fail the call: the reply says progressApplied: false, and the failure is reported once, under its own name.
+TEST(mcp_an_imports_failed_clear_is_reported_once_under_its_own_name) {
+  struct Failures : FailureReporter {
+    std::vector<std::string> reports;
+    void report(const std::string&, const std::string&, const std::string&) override {}
+    void reportWrite(const std::string& operation, const std::string& product, const std::string& door,
+                     const std::string& outcome, const std::string&, const std::string& exceptionType) override {
+      reports.push_back(operation + " " + product + " " + door + " " + outcome + " " + exceptionType);
+    }
+  };
+  struct ReporterScope {
+    std::shared_ptr<Failures> failures = std::make_shared<Failures>();
+    ReporterScope() { installWriteReporter(failures); }
+    ~ReporterScope() { installWriteReporter(nullptr); }
+  } reporter;
+  Harness h;
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"}]})")).isError);
+  CHECK_FALSE(h.call("set_progress", parse(R"({"nodeId":"a","status":"complete"})")).isError);
+  CompositeToolHost gate(std::vector<ToolModule>{{h.tools, ""}});
+  std::vector<std::string> lines;
+  installWriteSink([&](const WriteCompletion& line) { lines.push_back(line.operation + " " + line.outcome); });
+
+  h.progressRepo.writesFail = true;
+  const Json::Value receipt =
+      body(gate.callTool("roadmap_import_subgraph", parse(R"({"treeId":"t","nodes":[],"tombstone":["a"]})"), h.actor));
+  installWriteSink({});
+  CHECK_EQ(receipt["graphApplied"], Json::Value(true));
+  CHECK_EQ(receipt["progressApplied"], Json::Value(false));
+  CHECK_EQ(receipt["progressError"], Json::Value("The graph committed, but clearing progress on removed nodes failed. "
+                                                 "Read get_progress before retrying progress changes."));
+  CHECK_EQ(reporter.failures->reports,
+           (std::vector<std::string>{std::string("roadmap.import.clear_marks roadmap mcp failed ") +
+                                     typeid(std::runtime_error).name()}));
+  CHECK_EQ(lines, (std::vector<std::string>{"roadmap.import.clear_marks failed", "mcp.roadmap_import_subgraph ok"}));
+  CHECK_FALSE(h.registry.open(TreeId{"t"})->hasNode(NodeId{"a"}));
+}
+
+// A mark the caller's own replica stamped ahead of the server is overwritten and cleared just after its stamp — a node
+// named twice in one batch after its own row — and carries nothing else ahead: the room's clock does not learn it, so
+// the caller's next mark on another node, the tree's next graph write and, after a restart, the one after that carry
+// the stamps they carry on a twin tree whose mark was stamped a moment ago.
+TEST(mcp_a_mark_stamped_ahead_carries_no_other_write_ahead) {
+  const auto run = [](bool ahead) -> std::vector<std::string> {
+    Harness h;
+    CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"},{"id":"b","label":"B"},
+      {"id":"c","label":"C"}]})")).isError);
+    const Hlc held{ahead ? h.clock.ms + 120000 : h.clock.ms - 1, 0, "phone"};
+    CHECK(h.progressRepo.setStatuses(TreeId{"t"}, h.caller, {{NodeId{"a"}, ProgressStatus::complete, false, held}},
+                                       h.clock.ms).front());
+    const auto stampOf = [&](const char* node) {
+      return h.progressRepo.byKey.at(fake::FakeProgressRepository::key(TreeId{"t"}, h.caller, NodeId{node})).at;
+    };
+    const auto lastFrame = [&] { return h.bus.subgraphBroadcasts.back().subgraph.frameId; };
+    const std::string server{TreeRoom::kServerActor};
+
+    CHECK_FALSE(h.call("set_progress", parse(R"({"updates":[{"nodeId":"a","status":"none"},
+      {"nodeId":"a","status":"complete"}]})")).isError);
+    if (ahead) CHECK_EQ(stampOf("a"), (Hlc{held.physicalMs, 2, server}));
+    CHECK_EQ(body(h.call("delete_node", parse(R"({"nodeId":"a"})")))["pruned"], parse(R"({"edges":0,"progress":1})"));
+    if (ahead) CHECK_EQ(stampOf("a"), (Hlc{held.physicalMs, 3, server}));
+
+    CHECK_FALSE(h.call("set_progress", parse(R"({"nodeId":"b","status":"complete"})")).isError);
+    CHECK_FALSE(h.call("rename_node", parse(R"({"nodeId":"c","label":"C1"})")).isError);
+    std::vector<std::string> stamps{toString(stampOf("b")), lastFrame()};
+
+    RoomRegistry restarted{h.trees, h.ops, h.bus};
+    ProgressService restartedProgress{h.progressRepo};
+    TreeRegistry restartedTrees{h.trees, h.progressRepo, h.tokens, Hlc{1, 0, "genesis"}, restarted, h.clock};
+    RoadmapTools tools{restarted, restartedProgress, h.clock, restartedTrees, h.bus, "https://app.example"};
+    CHECK_FALSE(tools.callTool("rename_node", parse(R"({"treeId":"t","nodeId":"c","label":"C2"})"), h.actor).isError);
+    stamps.push_back(lastFrame());
+
+    CHECK(stampOf("b").physicalMs < h.clock.ms);
+    for (const std::string& frame : {stamps[1], stamps[2]})
+      CHECK(parseHlc(frame.substr(std::string("srv-").size())).value().physicalMs < h.clock.ms);
+    return stamps;
+  };
+  CHECK_EQ(run(true), run(false));
+}
+
+// A reader's mark stamped ahead moves nothing of the owner's: on a public tree, a stranger's own write lands just after
+// their ahead mark, its counter spent, and the owner's next graph frame carries the stamp it carries on a twin tree
+// whose stranger stamped a moment ago.
+TEST(mcp_a_readers_mark_stamped_ahead_moves_nothing_of_the_owners) {
+  const auto run = [](bool ahead) -> std::string {
+    Harness h;
+    h.trees.byId["t"].visibility = Visibility::public_;
+    CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"}]})")).isError);
+    const UserId stranger = fake::uid("stranger");
+    const Hlc held{ahead ? h.clock.ms + 300000 : h.clock.ms - 1, std::numeric_limits<std::uint32_t>::max(), "phone"};
+    CHECK(h.progressRepo.setStatuses(TreeId{"t"}, stranger, {{NodeId{"a"}, ProgressStatus::complete, false, held}},
+                                       h.clock.ms).front());
+
+    CHECK_FALSE(h.tools.callTool("set_progress", parse(R"({"treeId":"t","nodeId":"a","status":"none"})"),
+                                 ToolCaller{stranger, ToolScope::everything()}).isError);
+    const Hlc cleared = h.progressRepo.byKey.at(fake::FakeProgressRepository::key(TreeId{"t"}, stranger, NodeId{"a"})).at;
+    if (ahead) CHECK_EQ(cleared, (Hlc{held.physicalMs + 1, 0, std::string{TreeRoom::kServerActor}}));
+    CHECK_FALSE(h.call("rename_node", parse(R"({"nodeId":"a","label":"A1"})")).isError);
+
+    const std::string frame = h.bus.subgraphBroadcasts.back().subgraph.frameId;
+    CHECK(parseHlc(frame.substr(std::string("srv-").size())).value().physicalMs < h.clock.ms);
+    return frame;
+  };
+  CHECK_EQ(run(true), run(false));
 }
