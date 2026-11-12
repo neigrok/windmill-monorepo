@@ -62,6 +62,23 @@ TEST(pg_progress_keeps_the_out_of_order_word_under_the_status_stamp) {
   reset();
 }
 
+// A mark repeated under a newer stamp lands like any other: the row takes the stamp and the receipt time, so the
+// tree's last-marked time moves. A replica's newer stamp must land for every replica to converge.
+TEST(pg_progress_a_repeated_mark_lands_its_newer_stamp_and_moves_the_last_marked_time) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgProgressRepository repo{pgTestPool()};
+  const NodeId node{std::string("n")};
+
+  CHECK(repo.setStatus(kTree, kUser, node, ProgressStatus::complete, false, at(10), kNow));
+  CHECK(repo.setStatus(kTree, kUser, node, ProgressStatus::complete, false, at(11), kNow + 5000));
+  const Progress loaded = repo.load(kTree, kUser);
+  CHECK_EQ(loaded.marks.at(node).at, at(11));
+  CHECK_EQ(loaded.marks.at(node).markedAt, kNow + 5000);
+  CHECK_EQ(repo.overlaysFor(kUser).at(kTree).lastMarkedAt, kNow + 5000);
+  reset();
+}
+
 TEST(pg_progress_batch_rolls_back_a_late_storage_failure_and_preserves_outcome_order) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
