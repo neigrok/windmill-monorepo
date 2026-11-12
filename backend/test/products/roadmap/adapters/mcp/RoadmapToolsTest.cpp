@@ -5505,3 +5505,41 @@ TEST(mcp_an_import_whose_graft_changes_nothing_still_applies_its_progress) {
              "progress":[{"nodeId":"a","status":"complete","prerequisitesMet":true}]})"));
   CHECK_EQ(body(h.call("get_progress", Json::Value(Json::objectValue))), parse(R"({"completed":["a"],"outOfOrder":[]})"));
 }
+
+// An import node's position, once sent, is whole: both coordinates as finite numbers, refused in patch_nodes' words
+// with nothing applied. A node with no position keeps the one it has, and a whole one lands.
+TEST(mcp_import_subgraph_takes_a_position_whole_or_not_at_all) {
+  Harness h;
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A","position":{"x":1,"y":2}}]})")).isError);
+  const StoredTree stored = h.trees.byId["t"];
+  const std::size_t rows = h.ops.byTree["t"].size();
+
+  Json::Value infinite = parse(R"({"y":0})");
+  infinite["x"] = std::numeric_limits<double>::infinity();
+  for (const auto& [position, refusal] : std::vector<std::pair<Json::Value, std::string>>{
+           {parse("{}"), "import_subgraph: missing required argument \"nodes[1].position.x\""},
+           {parse(R"({"x":5})"), "import_subgraph: missing required argument \"nodes[1].position.y\""},
+           {parse(R"({"y":5})"), "import_subgraph: missing required argument \"nodes[1].position.x\""},
+           {Json::Value("here"), "import_subgraph: nodes[1].position must be an object with x and y"},
+           {infinite, "import_subgraph: argument \"nodes[1].position.x\" must be a finite number, got infinity"}}) {
+    Json::Value args = parse(R"({"nodes":[{"id":"a","label":"Renamed"},{"id":"b","label":"B"}]})");
+    args["nodes"][1]["position"] = position;
+    CHECK_EQ(message(h.call("import_subgraph", args)), refusal);
+  }
+  CHECK(h.trees.byId["t"] == stored);
+  CHECK_EQ(h.ops.byTree["t"].size(), rows);
+
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"Renamed"},
+    {"id":"b","label":"B","position":{"x":5,"y":6}}]})")).isError);
+  CHECK_EQ(body(h.call("get_nodes", parse(R"({"nodeIds":["a","b"],"fields":["id","label","position"]})")))["nodes"],
+           parse(R"([{"id":"a","label":"Renamed","position":{"x":1.0,"y":2.0}},
+             {"id":"b","label":"B","position":{"x":5.0,"y":6.0}}])"));
+
+  const Json::Value catalog = h.tools.listTools(h.actor);
+  const Json::Value* declared = nullptr;
+  for (const Json::Value& tool : catalog)
+    if (tool["name"].asString() == "import_subgraph") declared = &tool;
+  REQUIRE(declared != nullptr);
+  CHECK_EQ((*declared)["inputSchema"]["properties"]["nodes"]["items"]["properties"]["position"]["required"],
+           list({"x", "y"}));
+}

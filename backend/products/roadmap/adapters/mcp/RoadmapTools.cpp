@@ -157,13 +157,8 @@ std::optional<std::string> checkImportedNode(const Json::Value& node, const std:
   if (std::optional<std::string> bad = optionalString(node["order"], path + ".order")) return bad;
   if (std::optional<std::string> bad = optionalStrings(node["prerequisites"], path + ".prerequisites", kMaxIdLength))
     return bad;
-  if (std::optional<std::string> bad = optionalObject(node["position"], path + ".position")) return bad;
-  if (node["position"].isObject()) {
-    if (std::optional<std::string> bad = optionalNumber(node["position"]["x"], path + ".position.x"))
-      return bad;
-    if (std::optional<std::string> bad = optionalNumber(node["position"]["y"], path + ".position.y"))
-      return bad;
-  }
+  if (!node["position"].isNull())
+    if (std::optional<std::string> bad = requirePosition(node["position"], path)) return bad;
   if (std::optional<std::string> bad = optionalString(node["opens"], path + ".opens", kMaxIdLength)) return bad;
   return checkAnnotation(node, path + ".");
 }
@@ -796,12 +791,8 @@ ToolResult applyBatchEdit(RoomRegistry& registry, TreeRegistry& trees, const Tre
         if (std::optional<std::string> bad = requireOneOf(row["color"], path + ".color", kHues))
           return ToolResult::failure(*bad);
       if (std::optional<std::string> bad = optionalKind(row["kind"], path + ".kind")) return ToolResult::failure(*bad);
-      if (row.isMember("position")) {
-        if (!row["position"].isObject()) return ToolResult::failure(path + ".position must be an object with x and y");
-        for (const char* axis : {"x", "y"})
-          if (std::optional<std::string> bad = requireNumber(row["position"][axis], path + ".position." + axis))
-            return ToolResult::failure(*bad);
-      }
+      if (row.isMember("position"))
+        if (std::optional<std::string> bad = requirePosition(row["position"], path)) return ToolResult::failure(*bad);
       if (row.isMember("links")) {
         if (!row["links"].isArray()) return ToolResult::failure(path + ".links must be an array");
         if (std::optional<std::string> bad = optionalLinks(row["links"], path + ".links")) return ToolResult::failure(*bad);

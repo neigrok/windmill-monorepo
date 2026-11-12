@@ -129,6 +129,9 @@ Json::Value position(const char* description) {
   property["type"] = "object";
   property["properties"] = fields;
   property["additionalProperties"] = false;
+  property["required"] = Json::Value(Json::arrayValue);
+  property["required"].append("x");
+  property["required"].append("y");
   property["description"] = description;
   return property;
 }
@@ -254,9 +257,6 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
       row["kind"] = cappedStr("Replacement hue, named by the legend kind that wears it. Sent with `color`, the "
                               "two must agree.", kMaxIdLength);
       row["position"] = position("Replacement position; both coordinates are required.");
-      row["position"]["required"] = Json::Value(Json::arrayValue);
-      row["position"]["required"].append("x");
-      row["position"]["required"].append("y");
       row["links"] = linkArray("Replacement links; an empty list clears them.");
       row["opens"] = cappedStr("Id of a tree you own that this node opens; empty string clears it. One naming "
                                "a tree that is not yours refuses the whole batch. A tree that leads back to "
@@ -831,8 +831,8 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "says whether these are added to its existing prerequisites or become the whole list.",
         kMaxIdLength);
     nodeFields["position"] = position(
-        "Optional canvas position {x, y}. Optional because the web canvas lays the tree out from its "
-        "structure and never reads a stored position.");
+        "Optional canvas position {x, y}, both coordinates when sent. Optional because the web canvas lays "
+        "the tree out from its structure and never reads a stored position.");
     nodeFields["seedStatus"] = enumStr(
         "Optional authored baseline carried in the document — what every reader sees before their own "
         "marks. Your own progress is not this: pass it in `progress[]`.", kStatuses);
@@ -907,7 +907,7 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "it had, but for the tree it opened: it opens the tree this batch names for it, or none. The "
         "only removals are the ones you ask for: `tombstone` ids (which need the roadmap:delete grant), "
         "and under \"replace\" the prerequisite edges your batch does not name. `position` is optional — the web canvas lays "
-        "the tree out from its structure. The receipt counts what the batch carried — `nodes`, "
+        "the tree out from its structure — and, when sent, carries both `x` and `y`. The receipt counts what the batch carried — `nodes`, "
         "`edges` (the prerequisites across them), `kinds` — so check `edges` against what you meant "
         "to send; keptEdges/keptEdgeCount name the pre-existing edges into re-sent nodes that "
         "survived a merge, removedEdges counts what a replace dropped, and tombstoned counts the "
