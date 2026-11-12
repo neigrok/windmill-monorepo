@@ -2,8 +2,10 @@
 
 #include "platform/adapters/http/Caller.h"
 #include "platform/adapters/http/PageShell.h"
+#include "platform/domain/Origin.h"
 #include "products/roadmap/application/TreeRoom.h"
 #include "products/roadmap/domain/Tree.h"
+#include "products/roadmap/domain/WebAddress.h"
 
 #include <exception>
 #include <mutex>
@@ -13,16 +15,15 @@ namespace wm {
 
 SharePageApi::SharePageApi(std::shared_ptr<RoomRegistry> registry, std::shared_ptr<TreeRepository> trees,
                            std::shared_ptr<AuthService> auth, std::shared_ptr<OgVideoRepository> videos,
-                           std::string webRoot)
+                           std::string webRoot, std::string appOrigin)
     : registry_(std::move(registry)), trees_(std::move(trees)), auth_(std::move(auth)),
-      videos_(std::move(videos)), webRoot_(std::move(webRoot)) {}
+      videos_(std::move(videos)), webRoot_(std::move(webRoot)), appOrigin_(std::move(appOrigin)) {}
 
-std::string SharePageApi::renderShell(const std::string& shell, const std::string& title,
+std::string SharePageApi::renderShell(const std::string& shell, const std::string& origin, const std::string& title,
                                       std::size_t steps, Visibility visibility, const std::string& id,
                                       const ForkLineage& lineage, bool hasVideo) {
   const std::string safeTitle = htmlEscape(title.empty() ? "Untitled tree" : title);
-  const std::string host = "https://windmill.works";
-  const std::string url = host + "/t/" + htmlEscape(id);
+  const std::string url = htmlEscape(treeAddress(WebTree{origin, TreeId{id}, Opener::reader}));
   const std::string stepPhrase = std::to_string(steps) + (steps == 1 ? " step." : " steps.");
   std::string description;
   if (lineage.isFork && !lineage.sourceTitle.empty())
@@ -35,7 +36,7 @@ std::string SharePageApi::renderShell(const std::string& shell, const std::strin
     description += " Forked " + std::to_string(lineage.forkCount) + (lineage.forkCount == 1 ? " time." : " times.");
   const std::string robots =
       visibility == Visibility::public_ ? "index, follow, max-image-preview:large" : "noindex";
-  const std::string image = host + "/og/" + htmlEscape(id) + ".png";
+  const std::string image = htmlEscape(normalizedOrigin(origin) + "/og/" + id + ".png");
 
   std::string meta;
   meta += "\n\n    <!-- Rewritten for this shared tree by windmill_server (path-share). -->\n";
@@ -53,7 +54,7 @@ std::string SharePageApi::renderShell(const std::string& shell, const std::strin
   meta += "    <meta property=\"og:image:width\" content=\"1200\" />\n";
   meta += "    <meta property=\"og:image:height\" content=\"630\" />\n";
   if (hasVideo) {
-    const std::string video = host + "/v1/trees/" + htmlEscape(id) + "/og-video";
+    const std::string video = htmlEscape(normalizedOrigin(origin) + "/v1/trees/" + id + "/og-video");
     meta += "    <meta property=\"og:video\" content=\"" + video + "\" />\n";
     meta += "    <meta property=\"og:video:secure_url\" content=\"" + video + "\" />\n";
     meta += "    <meta property=\"og:video:type\" content=\"video/mp4\" />\n";
@@ -106,7 +107,7 @@ void SharePageApi::page(const drogon::HttpRequestPtr& req, HttpCallback&& callba
   // Taken OUTSIDE the room strand, and only for a readable tree.
   const ForkLineage lineage = readable ? trees_->loadForkLineage(TreeId{id}) : ForkLineage{};
   const bool hasVideo = readable && videos_->has(id);
-  callback(htmlPage(readable ? renderShell(shell, title, steps, visibility, id, lineage, hasVideo) : shell));
+  callback(htmlPage(readable ? renderShell(shell, appOrigin_, title, steps, visibility, id, lineage, hasVideo) : shell));
 }
 
 }

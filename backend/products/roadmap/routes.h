@@ -44,6 +44,7 @@ struct RoadmapDeps {
   std::shared_ptr<OgImageRepository> ogImages;
   std::shared_ptr<OgVideoRepository> ogVideos;
   std::string webRoot;
+  std::string appBaseUrl;  // the app's public origin, where the share page's own address points
   std::shared_ptr<TendingService> tendingService;
   std::shared_ptr<ReminderSweep> reminderSweep;
   std::shared_ptr<ReminderRepository> reminderRepo;

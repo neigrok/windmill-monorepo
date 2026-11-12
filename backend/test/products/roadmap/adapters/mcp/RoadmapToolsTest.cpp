@@ -259,7 +259,8 @@ TEST(mcp_create_tree_plants_the_legend_it_is_sent_and_answers_it) {
     {"id":"owner","hue":"gold","label":"Owner","crossBranchExempt":true}]})"), h.actor);
   CHECK_FALSE(created.isError);
   const std::string tree = body(created)["treeId"].asString();
-  CHECK_EQ(body(created), parse(R"({"treeId":")" + tree + R"(","kinds":[{"id":"developer","hue":"sky","label":"Developer"},
+  CHECK_EQ(body(created), parse(R"({"treeId":")" + tree + R"(","url":"https://app.example/#/app/)" + tree +
+                                R"(","kinds":[{"id":"developer","hue":"sky","label":"Developer"},
     {"id":"designer","hue":"plum","label":"Designer"},{"id":"owner","hue":"gold","label":"Owner"}]})"));
 
   Json::Value read = parse(R"({"kindFields":["id","hue","label","description","crossBranchExempt"]})");
@@ -288,7 +289,7 @@ TEST(mcp_create_tree_answers_the_legend_it_planted_without_reading_the_tree_back
   RoomRegistry registry{trees, ops, bus};
   ProgressService progress{progressRepo};
   TreeRegistry treeRegistry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}, registry, clock};
-  RoadmapTools tools{registry, progress, clock, treeRegistry, bus};
+  RoadmapTools tools{registry, progress, clock, treeRegistry, bus, "https://app.example"};
   CompositeToolHost gate(std::vector<ToolModule>{{tools, ""}});
 
   const ToolResult created =
@@ -296,14 +297,16 @@ TEST(mcp_create_tree_answers_the_legend_it_planted_without_reading_the_tree_back
                     ToolCaller{uid("agent"), ToolScope::everything()});
   CHECK_FALSE(created.isError);
   REQUIRE_EQ(trees.byId.size(), 1u);
-  CHECK_EQ(body(created), parse(R"({"treeId":")" + trees.byId.begin()->first +
+  const std::string tree = trees.byId.begin()->first;
+  CHECK_EQ(body(created), parse(R"({"treeId":")" + tree + R"(","url":"https://app.example/#/app/)" + tree +
                                 R"(","kinds":[{"id":"owner","hue":"gold","label":"Owner"}]})"));
 }
 
 TEST(mcp_create_tree_without_kinds_plants_the_default_legend_and_answers_it) {
   Harness h;
   const Json::Value created = body(h.tools.callTool("create_tree", with("title", "Sailing"), h.actor));
-  CHECK_EQ(created, parse(R"({"treeId":")" + created["treeId"].asString() + R"(","kinds":[
+  const std::string tree = created["treeId"].asString();
+  CHECK_EQ(created, parse(R"({"treeId":")" + tree + R"(","url":"https://app.example/#/app/)" + tree + R"(","kinds":[
     {"id":"build","hue":"terracotta","label":"Build"},{"id":"learn","hue":"olive","label":"Learn"},
     {"id":"milestone","hue":"gold","label":"Milestone"}]})"));
 }
@@ -786,7 +789,7 @@ TEST(mcp_an_infrastructure_failure_answers_generically_and_never_leaks_its_detai
   ProgressService progress{progressRepo};
   TreeRegistry treeRegistry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}, registry, clock};
   const UserId caller = uid("agent");
-  RoadmapTools tools{registry, progress, clock, treeRegistry, bus};
+  RoadmapTools tools{registry, progress, clock, treeRegistry, bus, "https://app.example"};
 
   Json::Value args(Json::objectValue);
   args["treeId"] = "t";
@@ -951,7 +954,7 @@ TEST(mcp_find_nodes_answers_an_index_and_get_tree_the_shape) {
 
   const Json::Value got = body(h.call("get_tree", kNoArgs));
   CHECK_EQ(keys(got), (std::vector<std::string>{"count", "seq", "tree"}));
-  CHECK_EQ(keys(got["tree"]), (std::vector<std::string>{"guide", "guides", "id", "kinds", "nodes", "title"}));
+  CHECK_EQ(keys(got["tree"]), (std::vector<std::string>{"guide", "guides", "id", "kinds", "nodes", "title", "url"}));
   CHECK_EQ(keys(got["tree"]["nodes"][0]),
            (std::vector<std::string>{"color", "id", "label", "prerequisites"}));
   CHECK_EQ(keys(got["tree"]["kinds"][0]), (std::vector<std::string>{"hue", "id", "label"}));
@@ -1132,7 +1135,7 @@ TEST(mcp_an_unknown_field_names_it_and_the_legal_set) {
   CHECK(misspelled.isError);
   CHECK_EQ(message(misspelled),
            std::string("find_nodes: fields[1] \"labl\" is not one of {id, label, icon, color, kind, order, "
-                       "prerequisites, position, status, seedStatus, state, summary, description, links, opens}"));
+                       "prerequisites, position, status, seedStatus, state, summary, description, links, opens, url}"));
 
   Json::Value kindArgs(Json::objectValue);
   kindArgs["kindFields"] = list({"color"});
@@ -2278,7 +2281,7 @@ TEST(mcp_import_subgraph_answers_the_landed_graft_when_clearing_the_tombstoned_m
   ProgressService progress{progressRepo};
   TreeRegistry treeRegistry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}, registry, clock};
   const UserId caller = uid("agent");
-  RoadmapTools tools{registry, progress, clock, treeRegistry, bus};
+  RoadmapTools tools{registry, progress, clock, treeRegistry, bus, "https://app.example"};
   trees.byId["t"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Test Roadmap", {}}, 0, caller};
   auto call = [&](const char* name, Json::Value args) {
     args["treeId"] = "t";
@@ -2471,7 +2474,8 @@ TEST(mcp_import_subgraph_takes_no_title_and_never_touches_the_trees) {
   CHECK_FALSE(h.call("import_subgraph", titled).isError);
   CHECK_EQ(body(h.call("get_tree", kNoArgs)),
            parse(R"({"count":1,"seq":1,"tree":{"guide":{"text":"","yours":true},"guides":[],"id":"t","kinds":[],
-             "nodes":[{"id":"a","label":"A","color":"terracotta","prerequisites":[]}],"title":"Test Roadmap"}})"));
+             "nodes":[{"id":"a","label":"A","color":"terracotta","prerequisites":[]}],"title":"Test Roadmap",
+             "url":"https://app.example/#/app/t"}})"));
 }
 
 namespace {
@@ -4463,7 +4467,7 @@ TEST(mcp_get_tree_answers_the_guides_of_the_callers_trees_above_farthest_first_t
   for (const char* id : {"a", "b", "c"}) CHECK_FALSE(h.call("create_node", node(id, id)).isError);
 
   const Json::Value first = body(h.call("get_tree", parse(R"({"limit":2})")));
-  CHECK_EQ(keys(first["tree"]), (std::vector<std::string>{"guide", "guides", "id", "kinds", "nodes", "title"}));
+  CHECK_EQ(keys(first["tree"]), (std::vector<std::string>{"guide", "guides", "id", "kinds", "nodes", "title", "url"}));
   CHECK_EQ(first["tree"]["guide"], parse(R"({"text":"Tests before code.","yours":true})"));
   CHECK_EQ(first["tree"]["guides"],
            parse(R"([{"treeId":"t_root","title":"Tree t_root","text":"Write the outcome first.","yours":true},
@@ -4476,7 +4480,7 @@ TEST(mcp_get_tree_answers_the_guides_of_the_callers_trees_above_farthest_first_t
   next["cursor"] = first["nextCursor"];
   const Json::Value second = body(h.call("get_tree", next));
   CHECK_EQ(ids(second["tree"]["nodes"]), (std::vector<std::string>{"c"}));
-  CHECK_EQ(keys(second["tree"]), (std::vector<std::string>{"guide", "id", "kinds", "nodes", "title"}));
+  CHECK_EQ(keys(second["tree"]), (std::vector<std::string>{"guide", "id", "kinds", "nodes", "title", "url"}));
   CHECK_EQ(second["tree"]["guide"], parse(R"({"text":"Tests before code.","yours":true})"));
 
   CHECK_FALSE(h.call("describe_tree", with("guide", "")).isError);
@@ -4685,7 +4689,7 @@ TEST(mcp_get_tree_asked_for_no_guides_carries_none_and_reads_no_tree_above) {
 
   CHECK_EQ(body(h.call("get_tree", parse(R"({"includeGuides":false})"))),
            parse(R"({"count":0,"seq":1,"tree":{"guide":{"text":"Own.","yours":true},"id":"t","kinds":[],"nodes":[],
-                     "title":"Test Roadmap"}})"));
+                     "title":"Test Roadmap","url":"https://app.example/#/app/t"}})"));
   CHECK(h.trees.aboveReads.empty());
   CHECK_EQ(message(h.call("get_tree", parse(R"({"includeGuides":"no"})"))),
            std::string("get_tree: argument \"includeGuides\" must be a boolean, got string"));
@@ -4722,4 +4726,58 @@ TEST(mcp_get_tree_reads_the_trees_above_after_it_has_let_go_of_the_trees_strand)
   CHECK(strandWasFree);
   CHECK_EQ(readMeanwhile, parse("[]"));
   CHECK_EQ(h.trees.aboveReads, (std::vector<TreeId>{TreeId{"t"}}));
+}
+
+// A tree answers where it opens on the web: in the app for its owner, on its share page for anyone else who may read
+// it, and a step the same way with its id percent-encoded. The node field is asked for, never a default, and no write
+// line carries an address.
+TEST(mcp_a_tree_and_its_steps_answer_where_they_open_on_the_web) {
+  Harness h;
+  LooseGraph theirs;
+  theirs.createNode(NodeId{"why?"}, "Why", "", NodeColor::sky, std::nullopt, Hlc{1, 0, "x"});
+  h.trees.byId["t_theirs"] = StoredTree{theirs.exportState(), LegendState{}, {"Their plans", {}}, 0,
+                                        uid("someone-else"), Visibility::public_};
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"two words","label":"Two words"})")).isError);
+  CompositeToolHost gate(std::vector<ToolModule>{{h.tools, ""}});
+  const auto call = [&](const char* tool, const char* arguments) {
+    return body(gate.callTool(tool, parse(arguments), h.actor));
+  };
+  std::vector<WriteCompletion> completions;
+  installWriteSink([&](const WriteCompletion& completion) { completions.push_back(completion); });
+
+  const std::string planted = call("roadmap_create_tree", R"({"title":"Sailing"})")["treeId"].asString();
+  const Json::Value rows = call("roadmap_list_trees", "{}")["trees"];
+  Json::Value listed(Json::arrayValue);
+  for (const Json::Value& row : rows) {
+    Json::Value entry(Json::objectValue);
+    entry["id"] = row["id"];
+    entry["url"] = row["url"];
+    listed.append(entry);
+  }
+  CHECK_EQ(listed, parse(R"([{"id":"t","url":"https://app.example/#/app/t"},
+    {"id":")" + planted + R"(","url":"https://app.example/#/app/)" + planted + R"("}])"));
+
+  const Json::Value mine = call("roadmap_get_tree", R"({"treeId":"t","fields":["id","url"],"includeGuides":false})");
+  CHECK_EQ(mine["tree"]["url"], Json::Value("https://app.example/#/app/t"));
+  CHECK_EQ(mine["tree"]["nodes"], parse(R"([{"id":"two words","url":"https://app.example/#/app/t?step=two%20words"}])"));
+  CHECK_EQ(call("roadmap_get_tree", R"({"treeId":"t_theirs"})")["tree"]["url"],
+           Json::Value("https://app.example/t/t_theirs"));
+  CHECK_EQ(call("roadmap_get_tree", R"({"treeId":"t_theirs"})")["tree"]["nodes"],
+           parse(R"([{"id":"why?","label":"Why","color":"sky","prerequisites":[]}])"));
+  const Json::Value theirStep = parse(R"([{"id":"why?","url":"https://app.example/t/t_theirs#?step=why%3F"}])");
+  CHECK_EQ(call("roadmap_get_nodes", R"({"treeId":"t_theirs","nodeIds":["why?"],"fields":["id","url"]})")["nodes"],
+           theirStep);
+  CHECK_EQ(call("roadmap_find_nodes", R"({"treeId":"t_theirs","query":"why","fields":["id","url"]})")["nodes"],
+           theirStep);
+  CHECK_EQ(kGetTreeFields.count(NodeField::url), 0u);
+  CHECK_EQ(kFindNodesFields.count(NodeField::url), 0u);
+  installWriteSink({});
+
+  std::vector<std::string> observed;
+  for (const WriteCompletion& completion : completions) {
+    observed.push_back(completion.operation + " " + completion.outcome);
+    for (const char* address : {"app.example", "/#/app/", "step="})
+      CHECK_EQ(writeCompletionJson(completion).find(address), std::string::npos);
+  }
+  CHECK_EQ(observed, (std::vector<std::string>{"mcp.roadmap_create_tree ok"}));
 }

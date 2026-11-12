@@ -326,7 +326,7 @@ TEST(scoped_tool_host_offers_a_tend_no_argument_and_no_field_for_the_tree_a_node
     schema["properties"].removeMember("includeGuides");
     schema["properties"]["fields"]["items"]["enum"] =
         test::list({"id", "label", "icon", "color", "kind", "order", "prerequisites", "position", "status",
-                    "seedStatus", "state", "summary", "description", "links"});
+                    "seedStatus", "state", "summary", "description", "links", "url"});
     CHECK_EQ(tended.at(read), schema);
   }
   CHECK_EQ(tended.at("rename_node"), plain.at("rename_node"));
@@ -418,7 +418,8 @@ TEST(scoped_tool_host_sends_every_get_tree_of_a_tend_as_asking_for_no_guides_so_
   const ToolResult tended = scoped.callTool("get_tree", Json::Value(Json::objectValue), h.actor);
   CHECK_EQ(test::body(tended),
            parse(R"({"count":1,"seq":2,"tree":{"guide":{"text":"Rig first, then sail.","yours":true},"id":"t","kinds":[],
-             "nodes":[{"id":"a","label":"A","color":"terracotta","prerequisites":[]}],"title":"Test Roadmap"}})"));
+             "nodes":[{"id":"a","label":"A","color":"terracotta","prerequisites":[]}],"title":"Test Roadmap",
+             "url":"https://app.example/#/app/t"}})"));
   for (const char* asked : {R"({"includeGuides":true})", R"({"includeGuides":false})"}) {
     const ToolResult refused = scoped.callTool("get_tree", parse(asked), h.actor);
     CHECK(refused.isError);

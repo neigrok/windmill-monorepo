@@ -206,9 +206,9 @@ The table uses product-local names; external MCP prefixes each with `roadmap_`.
 
 | | Tool | Effect |
 | --- | --- | --- |
-| registry | `create_tree` · `list_trees` · `delete_tree` | plant / discover / soft-delete a roadmap you own; `create_tree` plants the legend sent in `kinds` (1–6 of `import_subgraph`'s kind items, each id and hue once, replacing the default Build/Learn/Milestone whole and in order; `[]`, a repeated id or hue, or seven refuse the call and plant nothing) and answers `{treeId, kinds: [{id, hue, label}]}`, the legend planted; a node later written with neither `color` nor `kind` is terracotta, so a legend with no terracotta kind leaves such a node under no kind |
+| registry | `create_tree` · `list_trees` · `delete_tree` | plant / discover / soft-delete a roadmap you own; `create_tree` plants the legend sent in `kinds` (1–6 of `import_subgraph`'s kind items, each id and hue once, replacing the default Build/Learn/Milestone whole and in order; `[]`, a repeated id or hue, or seven refuse the call and plant nothing) and answers `{treeId, url, kinds: [{id, hue, label}]}`, the legend planted; each `list_trees` row carries the tree's `url` too (see `url`); a node later written with neither `color` nor `kind` is terracotta, so a legend with no terracotta kind leaves such a node under no kind |
 | registry | `describe_tree` | set the tree's guide — a plain-text note on what the tree is and how to work it, at most 5000 characters; `""` or only whitespace clears it; owner only, answers `{applied, seq}` and leaves no op row |
-| read | `get_tree` | title + `guide: {text, yours}` (the only read that carries it, on every page; `yours` is true when the caller owns the tree and wrote its current guide, false on a guide a fork copied from someone else's tree until its owner writes one) + `guides` on the first page (see `guides`) + nodes (label, icon, color, `kind`, position, description, links, `opens`) + per-node prerequisites + seq; `includeEdges: true` adds every live edge as a flat `edges: [{from, to}]` |
+| read | `get_tree` | title + `url` (see `url`) + `guide: {text, yours}` (the only read that carries it, on every page; `yours` is true when the caller owns the tree and wrote its current guide, false on a guide a fork copied from someone else's tree until its owner writes one) + `guides` on the first page (see `guides`) + nodes (label, icon, color, `kind`, position, description, links, `opens`, `url`) + per-node prerequisites + seq; `includeEdges: true` adds every live edge as a flat `edges: [{from, to}]` |
 | read | `get_nodes` | 1–200 exact unique ids in requested order, selected fields, explicit `missingNodeIds`, seq and complete-result byte limit |
 | read | `get_diagnostics` | cycles / dangling / self-edges / smells |
 | read | `get_health` | tidiness metrics + 0–100 score (needs a valid DAG); `crossBranch` skips edges touching a `crossBranchExempt` kind and reports them as `crossBranchExempt` |
@@ -290,6 +290,21 @@ Apply action for routine proposals; annotations describe each tool's effects.
   node no kind claims. A `fields` value on `get_tree` and `find_nodes`, never in a default.
   `create_node` and `set_node_color` answer `kind` too: the kind the write named, which wears the
   node's hue, or, for a write that named none, the same join over the hue it landed.
+
+## `url`: where a tree and a step open
+
+- **Forms.** Built by `domain/WebAddress` on the app's public origin (`WINDMILL_APP_URL`, read once
+  by each composition root through `platform/infra/AppOrigin.h`; a `/` it ends with is dropped). A
+  tree the caller owns opens in the app, `<origin>/#/app/<treeId>`, and its step at
+  `<origin>/#/app/<treeId>?step=<id>`. A tree the caller can only read opens on its share page,
+  `<origin>/t/<treeId>`, and its step at `<origin>/t/<treeId>#?step=<id>`. A tree id is always
+  well-formed and written as it is; a step id is percent-encoded as the web's `encodeURIComponent`
+  does. `packages/api-contract/roadmap-addresses.json` holds the forms: the backend builds every case,
+  and the web test proves its router opens each one.
+- **Where it is answered.** `create_tree` and every `list_trees` row (the caller's own trees),
+  `get_tree`'s `tree.url`, and the node field `url` on `get_tree`, `get_nodes` and `find_nodes`, a
+  `fields` value never in a default. A tend is offered it. The reminder mail's tree link and the
+  share page's canonical and `og:url` are built by the same functions.
 
 ## A node's hue: `color` or `kind`
 
