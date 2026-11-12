@@ -705,36 +705,52 @@
               "smells" : 
               [
                 {
-                  "kind" : "empty-icon",
-                  "node" : "docs"
-                },
-                {
-                  "hue" : "olive",
-                  "kind" : "unclaimed-hue",
-                  "node" : "docs"
-                },
-                {
-                  "kind" : "empty-icon",
-                  "node" : "launch"
-                },
-                {
+                  "count" : 1,
                   "hue" : "terracotta",
                   "kind" : "unclaimed-hue",
+                  "nodes" : 
+                  [
+                    "launch"
+                  ]
+                },
+                {
+                  "count" : 1,
+                  "hue" : "olive",
+                  "kind" : "unclaimed-hue",
+                  "nodes" : 
+                  [
+                    "docs"
+                  ]
+                },
+                {
+                  "count" : 1,
+                  "hue" : "gold",
+                  "kind" : "unclaimed-hue",
+                  "nodes" : 
+                  [
+                    "root"
+                  ]
+                },
+                {
+                  "count" : 1,
+                  "hue" : "sky",
+                  "kind" : "unclaimed-hue",
+                  "nodes" : 
+                  [
+                    "render"
+                  ]
+                },
+                {
+                  "kind" : "empty-icon",
+                  "node" : "docs"
+                },
+                {
+                  "kind" : "empty-icon",
                   "node" : "launch"
                 },
                 {
                   "kind" : "empty-icon",
                   "node" : "render"
-                },
-                {
-                  "hue" : "sky",
-                  "kind" : "unclaimed-hue",
-                  "node" : "render"
-                },
-                {
-                  "hue" : "gold",
-                  "kind" : "unclaimed-hue",
-                  "node" : "root"
                 },
                 {
                   "kind" : "empty-icon",

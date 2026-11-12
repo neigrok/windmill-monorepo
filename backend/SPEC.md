@@ -97,9 +97,11 @@ rejected for structure. Validity is a read model, not a gate.
 - `TreeDiagnostics::assess` — a pure report over a loose graph and its legend: `cycles`, `dangling`,
   `selfEdges`, `smells`, `maskedWork` (tombstoned parents with present children). `clean()` is
   true when cycles, dangling and self-edges are all empty. Smell kinds: `label-too-long`
-  (> 256 bytes), `empty-icon`, `high-in-degree` (> 4), `unclaimed-hue` (a present node on a hue no
-  kind wears, with that `hue`), and `empty-legend`, one line naming no node for a tree with nodes and
-  no kind, in place of an `unclaimed-hue` on every node. It reads one graph and its legend, and no pointer: a loop of
+  (> 256 bytes), `empty-icon` and `high-in-degree` (> 4), one per node; `unclaimed-hue`, one per hue
+  present nodes wear that no kind does, with that `hue`, the `count` of its nodes and the first ten of
+  them (`unclaimedNamed`), so it stays a short line whatever the tree's size; and `empty-legend`, one
+  line naming no node for a tree with nodes and no kind, in place of the hue lines. It reads one graph
+  and its legend, and no pointer: a loop of
   trees and a dangling pointer (`PointerDiagnostics`) are reported beside it, as smells are, and
   change neither `clean()` nor what it gates — the `SkillTree` projection, `get_health` and a
   receipt's `diagnosticsClean`.

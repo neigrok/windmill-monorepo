@@ -466,10 +466,11 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "Report how the roadmap departs from a valid skill tree: cycles, dangling edges (an "
         "endpoint is missing), self-edges, and structural smells. Edits are never rejected, so an "
         "edit that forms a cycle still succeeds — this is how you find and fix it. Smells are "
-        "`label-too-long`, `empty-icon`, `high-in-degree`, and `unclaimed-hue` with the `hue` of a node "
-        "no legend kind wears — or, on a tree whose legend holds no kind, one `empty-legend` line with no "
-        "node. An `empty-icon` smell clears with `annotate_node {nodeId, icon}`; an `unclaimed-hue` one "
-        "with `set_node_color` to a kind, or a kind that wears the hue.",
+        "`label-too-long`, `empty-icon` and `high-in-degree`, one per node, and one `unclaimed-hue` line "
+        "per hue no legend kind wears, with that `hue`, the `count` of nodes wearing it and the first ten "
+        "of them as `nodes` — or, on a tree whose legend holds no kind, one `empty-legend` line instead. An "
+        "`empty-icon` smell clears with `annotate_node {nodeId, icon}`; an `unclaimed-hue` one when its "
+        "nodes take a kind's hue (`set_node_color`) or a kind comes to wear the hue.",
         p, {"treeId"}));
   }
   {

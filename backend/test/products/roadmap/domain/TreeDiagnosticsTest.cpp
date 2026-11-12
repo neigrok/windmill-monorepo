@@ -114,18 +114,31 @@ TEST(high_in_degree_smell) {
   CHECK(found);
 }
 
-// A present node whose hue no kind of the legend wears is a smell naming that hue; a node a kind wears, or a deleted
-// one, is not. A legend with no kind is one line for the whole tree instead, and an empty tree says nothing.
-TEST(a_hue_no_kind_wears_is_a_smell_and_an_empty_legend_is_one_line) {
+// A hue present nodes wear that no kind of the legend wears is one smell for the hue, counting its nodes and naming the
+// first of them; a node a kind wears, or a deleted one, is not counted. A legend with no kind is told once for the whole
+// tree instead, and an empty tree says nothing.
+TEST(a_hue_no_kind_wears_is_one_smell_per_hue_and_an_empty_legend_is_one_line) {
   LooseGraph g;
   put(g, "worn");
-  g.createNode(nid("loose"), "loose", "icon", NodeColor::olive, std::nullopt, at(1));
-  g.createNode(nid("gone"), "gone", "icon", NodeColor::olive, std::nullopt, at(1));
+  for (int i = 0; i < 12; ++i) {
+    const std::string id = "o" + std::string(i < 10 ? "0" : "") + std::to_string(i);
+    g.createNode(NodeId{id}, id, "icon", NodeColor::olive, std::nullopt, at(1));
+  }
+  g.createNode(nid("plum"), "plum", "icon", NodeColor::plum, std::nullopt, at(1));
+  g.createNode(nid("gone"), "gone", "icon", NodeColor::plum, std::nullopt, at(1));
   g.deleteNode(nid("gone"), at(2));
   const Legend legend({{KindId{"k"}, NodeColor::sky, "K"}}, at(1));
 
-  CHECK((TreeDiagnostics::assess(g, legend).smells ==
-         std::vector<Smell>{{nid("loose"), "unclaimed-hue", NodeColor::olive}}));
-  CHECK((TreeDiagnostics::assess(g, Legend{}).smells == std::vector<Smell>{{std::nullopt, "empty-legend", std::nullopt}}));
-  CHECK(TreeDiagnostics::assess(LooseGraph{}, Legend{}).smells.empty());
+  const TreeDiagnostics report = TreeDiagnostics::assess(g, legend);
+  CHECK(report.smells.empty());
+  CHECK_FALSE(report.legendEmpty);
+  CHECK((report.unclaimedHues ==
+         std::vector<UnclaimedHue>{{NodeColor::olive, 12, {nid("o00"), nid("o01"), nid("o02"), nid("o03"), nid("o04"),
+                                                           nid("o05"), nid("o06"), nid("o07"), nid("o08"), nid("o09")}},
+                                   {NodeColor::plum, 1, {nid("plum")}}}));
+
+  const TreeDiagnostics bare = TreeDiagnostics::assess(g, Legend{});
+  CHECK(bare.legendEmpty);
+  CHECK(bare.unclaimedHues.empty());
+  CHECK_FALSE(TreeDiagnostics::assess(LooseGraph{}, Legend{}).legendEmpty);
 }

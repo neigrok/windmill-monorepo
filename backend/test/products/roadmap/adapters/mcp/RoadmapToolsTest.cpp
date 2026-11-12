@@ -6223,10 +6223,11 @@ TEST(mcp_a_bulk_progress_row_is_judged_at_its_turn_in_the_batch) {
   CHECK_EQ(h.bus.progressBroadcasts.back().marks.completed, (std::set<NodeId>{NodeId{"n"}}));
 }
 
-// A present node whose hue no kind wears is a smell, named with its id and the hue, however it got there: written with
-// no colour where no kind wears terracotta, sent a kind's old hue by the import that re-hues it, revived after its kind
-// moved, or given a third hue. A node under a kind is not one. A smell is no structural error, so receipts stay clean.
-TEST(mcp_a_node_on_a_hue_no_kind_wears_is_a_smell) {
+// A hue no kind wears is a smell, one line per hue naming how many present nodes wear it and the first of them, however
+// they got there: written with no colour where no kind wears terracotta, sent a kind's old hue by the import that
+// re-hues it, revived after its kind moved, or given a third hue. A node under a kind is not counted. A smell is no
+// structural error, so receipts stay clean.
+TEST(mcp_a_hue_no_kind_wears_is_a_smell) {
   Harness h;
   CHECK_FALSE(h.call("add_kind", parse(R"({"id":"k","hue":"sky"})")).isError);
   CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A","icon":"i"},
@@ -6241,9 +6242,52 @@ TEST(mcp_a_node_on_a_hue_no_kind_wears_is_a_smell) {
   CHECK_EQ(recolored["introducedDiagnostics"], parse("[]"));
 
   CHECK_EQ(body(h.call("get_diagnostics", kNoArgs))["smells"],
-           parse(R"([{"node":"a","kind":"unclaimed-hue","hue":"terracotta"},
-             {"node":"b","kind":"unclaimed-hue","hue":"sky"},{"node":"c","kind":"unclaimed-hue","hue":"sky"},
-             {"node":"e","kind":"unclaimed-hue","hue":"olive"}])"));
+           parse(R"([{"kind":"unclaimed-hue","hue":"terracotta","count":1,"nodes":["a"]},
+             {"kind":"unclaimed-hue","hue":"olive","count":1,"nodes":["e"]},
+             {"kind":"unclaimed-hue","hue":"sky","count":2,"nodes":["b","c"]}])"));
+}
+
+// An unclaimed hue names at most the first ten nodes wearing it, in the order nodes are reported, and counts them all:
+// twelve on olive and two on plum are two lines, beside the per-node smells.
+TEST(mcp_an_unclaimed_hue_names_its_first_ten_nodes_and_counts_them_all) {
+  Harness h;
+  CHECK_FALSE(h.call("add_kind", parse(R"({"id":"k","hue":"sky"})")).isError);
+  Json::Value batch = parse(R"({"nodes":[{"id":"p01","label":"P1","icon":"i","color":"plum"},
+    {"id":"p02","label":"P2","color":"plum"}]})");
+  for (int i = 1; i <= 12; ++i) {
+    Json::Value node = parse(R"({"label":"O","icon":"i","color":"olive"})");
+    node["id"] = std::string(i < 10 ? "o0" : "o") + std::to_string(i);
+    batch["nodes"].append(node);
+  }
+  CHECK_FALSE(h.call("import_subgraph", batch).isError);
+  CHECK_EQ(body(h.call("get_diagnostics", kNoArgs))["smells"],
+           parse(R"([{"kind":"unclaimed-hue","hue":"olive","count":12,
+               "nodes":["o01","o02","o03","o04","o05","o06","o07","o08","o09","o10"]},
+             {"kind":"unclaimed-hue","hue":"plum","count":2,"nodes":["p01","p02"]},
+             {"node":"p02","kind":"empty-icon"}])"));
+}
+
+// The smell is per hue, so its size does not grow with the tree: ten thousand nodes on one unclaimed hue are one line.
+TEST(mcp_ten_thousand_nodes_on_one_unclaimed_hue_answer_one_short_line) {
+  Harness h;
+  TreeData data;
+  data.id = TreeId{"t"};
+  for (int i = 0; i < 10000; ++i) {
+    NodeSpec node;
+    const std::string digits = std::to_string(i);
+    node.id = NodeId{"n" + std::string(5 - digits.size(), '0') + digits};
+    node.label = "N";
+    node.icon = "i";
+    node.color = NodeColor::olive;
+    data.nodes.push_back(node);
+  }
+  h.trees.byId["t"] = StoredTree{LooseGraph(data, Hlc{1, 0, "seed"}).exportState(),
+                                 Legend({{KindId{"k"}, NodeColor::sky, "K"}}, Hlc{1, 0, "seed"}).exportState(),
+                                 {"Big", {}}, 0, h.caller};
+  const Json::Value smells = body(h.call("get_diagnostics", kNoArgs))["smells"];
+  CHECK_EQ(smells, parse(R"([{"kind":"unclaimed-hue","hue":"olive","count":10000,
+    "nodes":["n00000","n00001","n00002","n00003","n00004","n00005","n00006","n00007","n00008","n00009"]}])"));
+  CHECK(dump(smells).size() < 300);
 }
 
 // A tree whose legend holds no kind says so in one line for the whole tree, not once per node, beside the smells its
