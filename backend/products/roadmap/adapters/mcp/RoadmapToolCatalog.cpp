@@ -560,7 +560,9 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "Each field is optional — an omitted field is left untouched; `links` replaces the whole set "
         "when given — but at least one must be given. This is the verb that sets or clears an icon "
         "after birth, so it is how an `empty-icon` smell from get_diagnostics is fixed. Every length "
-        "cap counts Unicode code points, and a refusal names each field over its cap and by how much.",
+        "cap counts Unicode code points, and a refusal names each field over its cap and by how much. "
+        "When no field it names would change, it writes nothing and answers `unchanged: true` with the "
+        "tree's current `seq`; when any would, the whole edit lands.",
         p, {"treeId", "nodeId"}));
   }
   {
@@ -569,7 +571,10 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     p["nodeId"] = nodeHandle();
     p["id"] = legacyNodeHandle();
     p["label"] = cappedStr("The new label.", kMaxNodeLabelLength);
-    tools.push_back(tool("rename_node", Access::write, "Change a node's label.", p, {"treeId", "nodeId", "label"}));
+    tools.push_back(tool("rename_node", Access::write,
+        "Change a node's label. The label it already has writes nothing and answers `unchanged: true` "
+        "with the tree's current `seq`.",
+        p, {"treeId", "nodeId", "label"}));
   }
   {
     Json::Value p(Json::objectValue);
@@ -581,7 +586,8 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     tools.push_back(tool("set_node_color", Access::write,
         "Set a node's color (its branch/category tint): a hue as `color`, or the legend `kind` whose hue "
         "it takes — one of the two, or both when they agree. Returns `kind`, the legend kind whose hue "
-        "the node now wears (omitted when no kind claims that hue).",
+        "the node now wears (omitted when no kind claims that hue). A hue the node already wears writes "
+        "nothing and answers `unchanged: true` with the tree's current `seq`.",
         p, {"treeId", "nodeId"}));
   }
   {
@@ -591,8 +597,10 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     p["id"] = legacyNodeHandle();
     p["x"] = num("Canvas x.");
     p["y"] = num("Canvas y.");
-    tools.push_back(tool("move_node", Access::write, "Set a node's canvas position (x, y).", p,
-                      {"treeId", "nodeId", "x", "y"}));
+    tools.push_back(tool("move_node", Access::write,
+        "Set a node's canvas position (x, y). The position it already has writes nothing and answers "
+        "`unchanged: true` with the tree's current `seq`.",
+        p, {"treeId", "nodeId", "x", "y"}));
   }
   {
     Json::Value p(Json::objectValue);

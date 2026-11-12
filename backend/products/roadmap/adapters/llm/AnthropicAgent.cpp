@@ -313,7 +313,8 @@ AgentOutcome driveAgent(const std::string& prompt, const TreeId& tree, const Use
       AgentStep step;
       step.tool = name;
       step.failed = result.isError;
-      step.changedTree = mutatesTree(name) && !result.isError;
+      // A write that answers `unchanged` changed nothing, so it is no edit of the run's.
+      step.changedTree = mutatesTree(name) && !result.isError && !result.payload.get("unchanged", false).asBool();
       step.note = stepNote(name, result);
       if (step.changedTree) ++edits;
       onStep(step);

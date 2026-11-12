@@ -268,6 +268,33 @@ TEST(drive_agent_counts_only_successful_mutations_as_edits) {
   CHECK_EQ(rec.steps[0].note, std::string("delete_node failed: node carries progress"));
 }
 
+// A write that answers `unchanged` changed nothing: a step of the run that neither failed nor counts as an edit.
+TEST(drive_agent_counts_no_edit_for_a_write_that_changed_nothing) {
+  FakeToolHost host;
+  host.responder = [](const std::string& name, const Json::Value&) -> ToolResult {
+    Json::Value reply(Json::objectValue);
+    reply["applied"] = true;
+    reply["seq"] = 3;
+    if (name == "set_node_color") reply["unchanged"] = true;
+    return ToolResult::json(reply);
+  };
+
+  FakeModel model;
+  model.replies.push_back(toolUseReply("set_node_color", "toolu_1"));
+  model.replies.push_back(toolUseReply("rename_node", "toolu_2"));
+  model.replies.push_back(textReply("end_turn", "Renamed 1 step"));
+
+  Recorder rec;
+  const AgentOutcome outcome =
+      driveAgent("tidy the names", kTree, kCaller, host, model.asCall(), rec.onStep(), rec.report());
+
+  CHECK(outcome.ok);
+  CHECK_EQ(outcome.edits, 1);
+  REQUIRE_EQ(rec.steps.size(), 2u);
+  CHECK_EQ(std::vector<bool>({rec.steps[0].failed, rec.steps[0].changedTree, rec.steps[1].failed, rec.steps[1].changedTree}),
+           std::vector<bool>({false, false, false, true}));
+}
+
 TEST(drive_agent_treats_the_iteration_cap_as_a_failure) {
   FakeToolHost host;
   FakeModel model;
