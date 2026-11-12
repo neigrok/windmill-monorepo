@@ -323,6 +323,7 @@ TEST(scoped_tool_host_offers_a_tend_no_argument_and_no_field_for_the_tree_a_node
   CHECK_EQ(tended.at("import_subgraph"), import);
   for (const char* read : {"get_tree", "get_nodes", "find_nodes"}) {
     Json::Value schema = plain.at(read);
+    schema["properties"].removeMember("includeGuides");
     schema["properties"]["fields"]["items"]["enum"] =
         test::list({"id", "label", "icon", "color", "kind", "order", "prerequisites", "position", "status",
                     "seedStatus", "state", "summary", "description", "links"});
@@ -374,6 +375,38 @@ TEST(scoped_tool_host_refuses_the_tree_a_node_opens_wherever_a_tend_names_it_and
                          "roadmap.create_node Coach refused", "roadmap.create_node Coach refused",
                          "roadmap.annotate_node Coach refused", "roadmap.patch_nodes Coach refused",
                          "roadmap.import_subgraph Coach refused", "roadmap.import_subgraph Coach refused"}));
+}
+
+// The guides above are other trees' words and ids, and a tend is pinned to one tree: it is not offered the
+// argument that asks for them, every read it makes is sent as asking for none, and no tree above is read.
+TEST(scoped_tool_host_sends_every_get_tree_of_a_tend_as_asking_for_no_guides_so_no_tree_above_is_read) {
+  test::Harness h;
+  h.plant("t_root", h.caller, "The method of every tree under this one.", {"t"});
+  CHECK_FALSE(h.call("describe_tree", test::with("guide", "Rig first, then sail.")).isError);
+  CHECK_FALSE(h.call("create_node", test::node("a", "A")).isError);
+  ScopedToolHost scoped(h.tools, TreeId{"t"});
+
+  for (const ToolDeclaration& tool : h.tools.declareTools())
+    if (tool.name() == "get_tree") CHECK(tool.descriptor["inputSchema"]["properties"].isMember("includeGuides"));
+  for (const ToolDeclaration& tool : scoped.declareTools())
+    CHECK_EQ(dump(tool.descriptor["inputSchema"]).find("\"includeGuides\""), std::string::npos);
+
+  const ToolResult tended = scoped.callTool("get_tree", Json::Value(Json::objectValue), h.actor);
+  CHECK_EQ(test::body(tended),
+           parse(R"({"count":1,"seq":2,"tree":{"guide":{"text":"Rig first, then sail.","yours":true},"id":"t","kinds":[],
+             "nodes":[{"id":"a","label":"A","color":"terracotta","prerequisites":[]}],"title":"Test Roadmap"}})"));
+  for (const char* asked : {R"({"includeGuides":true})", R"({"includeGuides":false})"}) {
+    const ToolResult refused = scoped.callTool("get_tree", parse(asked), h.actor);
+    CHECK(refused.isError);
+    CHECK_EQ(message(refused),
+             std::string("tending edits a single tree — the guides of the trees above it are out of its reach"));
+  }
+  CHECK(h.trees.aboveReads.empty());
+
+  CHECK_EQ(test::body(h.call("get_tree", test::kNoArgs))["tree"]["guides"],
+           parse(R"([{"treeId":"t_root","title":"Tree t_root","text":"The method of every tree under this one.","yours":true},
+                     {"treeId":"t","title":"Test Roadmap","text":"Rig first, then sail.","yours":true}])"));
+  CHECK_EQ(h.trees.aboveReads, (std::vector<TreeId>{TreeId{"t"}}));
 }
 
 // A tend runs as the owner, so the state it reads is the node's true one, and still no pointer.

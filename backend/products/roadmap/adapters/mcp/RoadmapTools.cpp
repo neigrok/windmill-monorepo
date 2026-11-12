@@ -10,6 +10,7 @@
 #include "products/roadmap/application/TreeRoom.h"
 #include "products/roadmap/domain/Access.h"
 #include "products/roadmap/domain/Command.h"
+#include "products/roadmap/domain/Guides.h"
 #include "products/roadmap/domain/LooseGraph.h"
 #include "products/roadmap/domain/NodeQuery.h"
 #include "products/roadmap/domain/SkillTree.h"
@@ -380,6 +381,8 @@ ToolResult readTree(RoomRegistry& registry, TreeRegistry& trees, ProgressService
   if (!kindFields) return ToolResult::failure(error);
   if (std::optional<std::string> bad = optionalBool(args["includeEdges"], "includeEdges"))
     return ToolResult::failure(*bad);
+  if (std::optional<std::string> bad = optionalBool(args["includeGuides"], "includeGuides"))
+    return ToolResult::failure(*bad);
 
   const TreeData& data = read->data;
   std::optional<Page> page = pageOf(data.nodes, args, error);
@@ -393,14 +396,35 @@ ToolResult readTree(RoomRegistry& registry, TreeRegistry& trees, ProgressService
   // Whole on every page, and only here: `yours` says the caller owns the tree and wrote its current
   // guide — a guide a fork copied from someone else's tree is its author's words until its owner
   // writes their own.
+  const bool mine = canWrite(caller, read->owner);
+  const Guide own{data.id, data.title, data.guide, mine && !read->guideInherited};
   Json::Value guide(Json::objectValue);
-  guide["text"] = data.guide;
-  guide["yours"] = canWrite(caller, read->owner) && !read->guideInherited;
+  guide["text"] = own.text;
+  guide["yours"] = own.yours;
 
   Json::Value document(Json::objectValue);
   document["id"] = data.id.str();
   document["title"] = data.title;
   document["guide"] = guide;
+  // The first page alone adds the guides of the caller's trees above this one, unless the call asks for none; only
+  // the tree's writer has them read. A walk that cannot be made is reported under its own name and leaves the
+  // tree's own guide and a flag: the tree is still read.
+  if (page->begin == 0 && (args["includeGuides"].isNull() || args["includeGuides"].asBool())) {
+    std::map<TreeId, TreeAbove> above;
+    if (mine) {
+      WriteObservation observation{"roadmap.tree.guides", "roadmap", "mcp"};
+      try {
+        above = trees.guidedTreesAbove(*caller, data.id);
+        observation.skip();
+      } catch (const std::bad_alloc&) {
+        throw;
+      } catch (const std::exception& failure) {
+        observation.fail(failure);
+        document["guidesAboveUnavailable"] = true;
+      }
+    }
+    document["guides"] = toJson(guidesFor(above, own));
+  }
   document["nodes"] = std::move(projected.nodes);
   document["kinds"] = kinds;
 

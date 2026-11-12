@@ -125,6 +125,12 @@ void registerRoutes(drogon::HttpAppFramework& app, const RoadmapDeps& deps) {
       },
       {drogon::Get});
   routes.registerHandler(
+      "/v1/trees/{id}/guides",
+      [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
+        api->getGuides(req, std::move(cb), id);
+      },
+      {drogon::Get});
+  routes.registerHandler(
       "/v1/trees/{id}/diagnostics",
       [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
         api->getDiagnostics(req, std::move(cb), id);
