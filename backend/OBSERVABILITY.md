@@ -290,6 +290,7 @@ listed separately because their only server writes are authentication refresh or
 | `MCP roadmap_remove_kind` (and unambiguous `remove_kind` alias) | `mcp.roadmap_remove_kind` | completion; bounded refusal or result | unexpected |
 | `MCP roadmap_reorder_kinds` (and unambiguous `reorder_kinds` alias) | `mcp.roadmap_reorder_kinds` | completion; bounded refusal or result | unexpected |
 | `MCP roadmap_recolor_kind` (and unambiguous `recolor_kind` alias) | `mcp.roadmap_recolor_kind` | completion; bounded refusal or result | unexpected |
+| `MCP roadmap_update_kind` (and unambiguous `update_kind` alias) | `mcp.roadmap_update_kind` | completion; bounded refusal or result | unexpected |
 | `MCP roadmap_set_progress` (and unambiguous `set_progress` alias) | `mcp.roadmap_set_progress` | completion; bounded refusal or result | unexpected |
 | `MCP roadmap_import_subgraph` (and unambiguous `import_subgraph` alias) | `mcp.roadmap_import_subgraph` | completion; bounded refusal or result; `opens-not-yours` when an `opens` names a tree that does not stand or is not the caller's; `kind-unknown` when a `kind` on any node names a kind the legend does not hold, `kind-hue-mismatch` when the `color` sent beside it is another hue than that kind wears | unexpected |
 | `MCP roadmap_prune` (and unambiguous `prune` alias) | `mcp.roadmap_prune` | completion; bounded refusal or result | unexpected |

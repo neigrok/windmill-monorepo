@@ -518,6 +518,28 @@ std::variant<std::vector<Link>, std::string> withLinksAdded(const std::vector<Li
   return joined;
 }
 
+std::variant<KindUpdatePlan, std::string> planKindUpdate(const LooseGraph& graph, const Legend& legend,
+                                                         const KindUpdate& update) {
+  std::vector<Command> sent;
+  if (update.label) sent.push_back(RenameKind{update.id, *update.label});
+  if (update.description) sent.push_back(DescribeKind{update.id, update.description, std::nullopt});
+  if (update.hue) sent.push_back(RecolorKind{update.id, *update.hue});
+  if (sent.empty()) return "nothing to set — pass at least one of \"label\", \"description\", \"hue\".";
+  for (const Command& command : sent)
+    if (std::optional<std::string> reason = validate(graph, legend, command)) return *reason;
+
+  const Kind held = *legend.view(update.id);
+  KindUpdatePlan plan;
+  if (update.label && *update.label != held.label) plan.commands.push_back(RenameKind{update.id, *update.label});
+  if (update.description && *update.description != held.description)
+    plan.commands.push_back(DescribeKind{update.id, update.description, std::nullopt});
+  if (update.hue && *update.hue != held.hue) {
+    plan.commands.push_back(RecolorKind{update.id, *update.hue});
+    plan.repaintedNodes = wearersOf(graph, legend, update.id).size();
+  }
+  return plan;
+}
+
 std::variant<EdgeChangePlan, std::string> planEdgeChanges(
     const LooseGraph& graph, const EdgeChanges& changes) {
   const std::size_t count = changes.add.size() + changes.remove.size();
