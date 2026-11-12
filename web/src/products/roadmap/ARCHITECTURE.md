@@ -16,7 +16,7 @@ point for the component showcase.
 | `room/` | What the room holds: the load, the view, progress, the scene, the open step, the tree a step opens and the way back, the row's verbs, the band and who holds the roadmap |
 | `model/` | Graph validation, trunk selection, unlock rules, what a step's tree has come to, legend, workspace and spatial queries. Independent of React and WebGL |
 | `identity/` | The row above both views: title, roadmap sheet and switcher, view switch |
-| `guide/` | The tree's guide: its draft and bound, who sees it and where a save goes, its entry on the tree (a card from 744px, a row on phones) and the note it opens |
+| `guide/` | The tree's guide: its draft and bound, who sees it and where a save goes, the guides of the holder's trees above it, its entry on the tree (a card from 744px, a row on phones) and the note it opens |
 | `board/` | Query and columns, regroup, held actions, the shared toast, card gestures and selection |
 | `step/` | The step page and modal, workspace, composer and picker, and the step's address |
 | `graph/`, `graph/tree/`, `graph/tablet/` | Canvas chrome, docks, writes, selection and what a changed lattice does to the picture; the desktop step panel; the tablet's panel |
@@ -182,8 +182,12 @@ on the entry come back to opens as one reached by going back. Surfaces that rend
 `TreeDoor` context (`useTreeDoor`); the toast a C raises takes it from the Board's acts. Each names its door from
 `TREE_DOORS`, and `open` refuses any other.
 
-Attaching and detaching a tree, the tree picker, the guides of the trees above and a signed-out device's own count are
-not built.
+One door leads up. The guide's note names the trees whose guides stand above this one, and a press on a name goes into
+that tree by the door `guide`. No step here opens it, so `open` is given the tree and the entry left names no step:
+the tree gone into shows the way back, and coming back restores the view, selects nothing and is said once, as any
+return is.
+
+Attaching and detaching a tree, the tree picker and a signed-out device's own count are not built.
 
 ## The identity row
 
@@ -245,17 +249,37 @@ took the guide and otherwise why none did, which `saveFailureReason` reads from 
 `refused` for a 4xx that trying again cannot change or text a door would not admit, `server` (a 408, a 429 and a
 request lost while online among them), or `device`.
 
+Guides add downward: an agent working a tree is given the guides of its owner's trees above it, farthest first, and
+then the tree's own, and the note shows its holder the same stack. `useRoomGuide` reads them once each time the room
+opens a tree for its holder, the account the tree visit acts for (`GET /v1/trees/{id}/guides`, `readGuides`), and
+hands them on as `above`, each `{ treeId, title, text }` (`guidesAbove` in `guide/GuidesAbove.js`): the reply without
+the tree's own entry, since the room holds that guide and a save shows at once. A reader, the shared-reader mode, the
+demo, a device with nobody signed in, a tree that lives only on this device and a lapsed session make no read and are
+shown nothing from above. The guides from above live in memory alone. Leaving the tree aborts the read, and a reply is
+held for the tree and the holder it was read for. A read that fails leaves the tree's own guide standing and says
+nothing; a server failure and a request lost while visible and online report as `roadmap-guides-load`. A guide a fork
+brought with it stands among the others, and a tree with no title takes *Untitled roadmap*.
+
 The guide is a note on the tree. `GuideEntry` is the note at rest, which the room hands to the view that shows it: from
 744px a card, over the Graph's canvas under the row and first in the Board's flow, with the first line and Read guide; on
 phones a row under the head of both views, beneath the device line when the tree carries one, with up to three lines.
-A reader's entry says Author's note, and an owner without a guide gets Add guide. `GuideNote` is the note open. From
-744px it stands in place over its entry and shares the room while it reads; on phones it is a bottom sheet as tall as its
-text. The owner presses the prose or the pencil, or Enter, and writes in the same frame from where the press landed
+A reader's entry says Author's note, and an owner without a guide gets Add guide. Under guides from above the card
+adds one line naming their trees, the two farthest and then how many more (`namedAbove`), and the row a count beside
+its title; a tree with no guide of its own then keeps the written entry without an excerpt. `GuideNote` is the note
+open. From 744px it stands in place over its entry and shares the room while it reads; on phones it is a bottom sheet
+as tall as its text. The guides from above stand first in it, farthest first, each under its tree's name and in the
+secondary ink, then this tree's own under its name, and the whole stack scrolls inside the note. They are plain text
+with no caret and no tint; a tree with no guide of its own has Add guide as its block and no pencil. While the guide is
+written from 744px they stay over the field, dimmed, scrolling by themselves and giving up their height before the
+field does, and their names do not act; on phones the editor holds this tree's guide alone. The draft, its count and
+its save never hold them. The owner presses the prose, the hint beside this tree's name or the pencil, or Enter, and
+writes in the same frame from where the press landed
 (`caretPositionFromPoint`, or Safari's `caretRangeFromPoint`); writing holds the window, so everything beneath is inert
 and a press outside asks to leave. The field is as tall as its draft until the note's bound makes it scroll, and on
 phones the footer rides the keyboard. Save waits for a change and a draft that fits, ⌘↩ saves, and an empty Save removes
-the guide. While a save is in flight the frame holds: the field is read-only and nothing leaves until it settles. A
-save by someone who is no longer the owner writes through no door and is refused. While the note holds
+the guide, which closes the note unless guides from above remain to read. While a save is in flight the frame holds:
+the field is read-only and nothing leaves until it settles. A save by someone who is no longer the owner writes through
+no door and is refused. While the note holds
 the window, Escape, ⌘↩ and Tab work wherever focus stands; ⌘↩ presses Save or Try again and no other act, and a held
 key is one press. The note keeps its draft, and the focus a stop held, across a change of band, and closes
 when the tree changes or the guide stops being shown. Leaving a draft returns to where writing began (the note read, or the tree for a guide begun from Add guide),

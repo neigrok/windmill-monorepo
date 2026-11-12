@@ -119,9 +119,9 @@ export function GuideNote({ guide, band, view, onSeat }) {
   // while reading is the prose, or the stack that holds it under the guides from above.
   const begin = (via, offset) => {
     track('roadmap_guide', { step: 'edit', via });
-    const read = stack.current ?? prose.current;
-    const hidden = read ? read.scrollHeight - read.clientHeight : 0;
-    const scroll = hidden > 0 ? read.scrollTop / hidden : 0;
+    const scroller = stack.current ?? prose.current;
+    const hidden = scroller ? scroller.scrollHeight - scroller.clientHeight : 0;
+    const scroll = hidden > 0 ? scroller.scrollTop / hidden : 0;
     flushSync(() => {
       setCaret({ offset, scroll });
       setDraft(new GuideDraft(guide.text));
@@ -363,6 +363,8 @@ export function GuideNote({ guide, band, view, onSeat }) {
       {text}
     </p>
   );
+  // A guide from above is plain text under its tree's name, with no caret and no tint. The name goes into that tree
+  // while the note reads; while it writes, leaving the draft is Cancel's to ask, so the name is drawn and does not act.
   const fromAbove = above.map((from) => {
     const name = <>
       <OpeningGlyph face="open" size={14} />
@@ -381,6 +383,7 @@ export function GuideNote({ guide, band, view, onSeat }) {
       </React.Fragment>
     );
   });
+  // This tree's own guide comes last under its name, where the hint says what a press on the prose does and does it.
   const ownName = (
     <p className="st-guide-own">
       <BookOpen size={14} strokeWidth={1.67} absoluteStrokeWidth aria-hidden />
@@ -429,8 +432,8 @@ export function GuideNote({ guide, band, view, onSeat }) {
           )}
         </header>
         {!phone && <span className="st-guide-rule" />}
-        {/* A guide from above is named by its tree, which its chevron goes into while the note reads, and is plain text:
-            no caret, no tint. This tree's own comes last under its name. */}
+        {/* Under guides from above the note reads one stack, which scrolls as the prose does alone; a tree with no guide
+            of its own has Add guide as its block. From 744px the guides from above stay over the field while it writes. */}
         {!writing && (above.length > 0 ? (
           <div ref={stack} className="st-guide-stack">
             {fromAbove}

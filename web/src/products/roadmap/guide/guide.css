@@ -403,10 +403,10 @@ button.st-guide-from-name {
   cursor: pointer;
 }
 /* While the guide is written the guides from above stay over the field, dimmed, and scroll by themselves; this tree's
-   name stays on the field. */
+   name stays on the field. Where the window is short they give up their height before the field gives up any. */
 .st-guide-context {
   display: flex;
-  flex: 0 1 auto;
+  flex: 0 100 auto;
   flex-direction: column;
   gap: 14px;
   min-height: 0;
@@ -618,8 +618,8 @@ button.st-guide-from-name {
 .st-guide-paper--phone > .st-guide-stack {
   gap: 12px;
   max-height: none;
-  margin: 6px 0 0;
-  padding: 0 22px;
+  margin: 2px 0 0;
+  padding: 4px 22px 0;
 }
 .st-guide-paper--phone .st-guide-stack > .st-guide-prose {
   margin: 0 -4px;

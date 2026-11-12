@@ -45,16 +45,16 @@ hostTest('Chromium: at 1440px the guide is a card on the Graph\'s canvas, writte
     const overBoard = await box(page, '.st-guide-paper');
     assert.deepEqual([overBoard.left - onBoard.left, overBoard.top - onBoard.top], [-4, -16]);
     assert.deepEqual(await guideEvents(page), [
-      { step: 'open', door: 'card', view: 'graph', role: 'owner' },
+      { step: 'open', door: 'card', view: 'graph', role: 'owner', above: 'none' },
       { step: 'edit', via: 'add' },
       { step: 'save', outcome: 'saved', length: '1-500' },
-      { step: 'open', door: 'card', view: 'graph', role: 'owner' },
+      { step: 'open', door: 'card', view: 'graph', role: 'owner', above: 'none' },
     ]);
     await page.getByRole('button', { name: 'Close', exact: true }).click();
     await note.waitFor({ state: 'detached' });
     await page.waitForFunction(() => document.activeElement.matches('.st-guide-card'));
     await card.click();
-    assert.deepEqual((await guideEvents(page)).at(-1), { step: 'open', door: 'card', view: 'board', role: 'owner' });
+    assert.deepEqual((await guideEvents(page)).at(-1), { step: 'open', door: 'card', view: 'board', role: 'owner', above: 'none' });
     assert.deepEqual(errors, []);
   } finally { await page.close(); }
 });
@@ -104,7 +104,7 @@ hostTest('Chromium: on a phone a guide the session receives mid-edit is said in 
     assert.deepEqual({ asked: await page.getByRole('alertdialog').count(), read: await page.locator('.st-guide-prose').textContent(), guide: await page.evaluate(() => window.session.lattice.guide) },
       { asked: 0, read: 'Two steps a week.', guide: 'Two steps a week.' });
     assert.deepEqual(await guideEvents(page), [
-      { step: 'open', door: 'row', view: 'graph', role: 'owner' },
+      { step: 'open', door: 'row', view: 'graph', role: 'owner', above: 'none' },
       { step: 'edit', via: 'pencil' },
       { step: 'loadLatest' },
     ]);
@@ -188,7 +188,7 @@ hostTest('Chromium: a reader on the app route sees the author\'s note on the tre
     await reader.page.getByRole('button', { name: 'Author’s note: One step a week.' }).click();
     await reader.page.getByRole('dialog', { name: 'Author’s note' }).waitFor();
     assert.equal(await reader.page.getByRole('button', { name: 'Edit guide' }).count(), 0);
-    assert.deepEqual(await guideEvents(reader.page), [{ step: 'open', door: 'row', view: 'graph', role: 'reader' }]);
+    assert.deepEqual(await guideEvents(reader.page), [{ step: 'open', door: 'row', view: 'graph', role: 'reader', above: 'none' }]);
     assert.deepEqual(reader.errors, []);
   } finally { await reader.page.close(); }
   for (const width of [390, 1440]) {
@@ -215,7 +215,7 @@ hostTest('Chromium: the note keeps its draft when the window crosses 744px in th
     await page.setViewportSize({ width: 1024, height: 800 });
     await page.locator('.st-guide-paper:not(.st-guide-paper--phone)').waitFor();
     assert.equal(await page.locator('.st-guide-field').inputValue(), 'One step a week. Written');
-    assert.deepEqual(await guideEvents(page), [{ step: 'open', door: 'card', view: 'board', role: 'owner' }, { step: 'edit', via: 'pencil' }]);
+    assert.deepEqual(await guideEvents(page), [{ step: 'open', door: 'card', view: 'board', role: 'owner', above: 'none' }, { step: 'edit', via: 'pencil' }]);
     assert.deepEqual(errors, []);
   } finally { await page.close(); }
 });
