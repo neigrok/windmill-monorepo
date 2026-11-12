@@ -45,7 +45,9 @@ rejected for structure. Validity is a read model, not a gate.
   latest mark, by stamp, in what completed a tree: of the owner's complete marks on its nodes that
   follow no tree and, for each tree its nodes follow, of what completed that one. It is found in
   that same pass and carries the instant that mark was recorded; a mark a node holds beside a
-  valid pointer completed nothing and is not among them. `followed` gives a
+  valid pointer completed nothing and is not among them, and a mark stored with no stamp (empty or
+  `0:0:`) counts toward completion and never toward `completedAt`, which a tree completed by such
+  marks alone does not have. `followed` gives a
   tree's completed set — marks on ordinary nodes, plus the nodes whose opened tree is complete —
   that `UnlockRules::derive` and `treeStats` are handed, so MCP `state`, the `state` filter, the
   registry counts (`GET /v1/trees`, `list_trees`) and reminder readiness agree. `openings` says
@@ -77,17 +79,27 @@ rejected for structure. Validity is a read model, not a gate.
   write it is shown them: the owner's derived completion, and nothing of the trees its nodes open. A
   node with a valid pointer has a row only while the tree it opens is complete for the owner, by the
   completeness `followed` reads, and none otherwise, whatever mark it holds. That row is `complete`
-  and never `outOfOrder`, a mark like any other: the node's stored mark when that says complete,
-  else the `at` and `markedAt` of the latest mark in what completed the tree (`completedAt`), so a
-  twin whose same steps were marked by hand at those stamps answers the same bytes. Every other
-  node's row is the stored one, so a step that opens a tree that is not complete reads as a step
-  nobody marked. `ProgressService::shownToReaders` feeds it for the two doors that serve an owner's
-  marks to such a caller, `GET /v1/trees/{id}/progress` and the gallery. The pointers come from the
-  tree's room, or for the gallery from the listed documents; an owner whose trees hold a pointer is
-  followed in one `openedFrom` read under a 750 ms budget (`kReaderFollowBudget`) after the strand
-  is released, and trees that hold no pointer make none. When that read fails or runs past its
-  budget the door still answers, leaving out the row of every node that holds a pointer, so no step
-  is shown done that may not be, and no other owner is followed in that request.
+  and never `outOfOrder`. It is the node's stored mark when that says complete under a stamp; else
+  its time is the later of the opened tree's `completedAt`, with the instant that mark was
+  recorded as `markedAt`, and the stamp the node's pointer was set under, with that stamp's own
+  milliseconds as `markedAt`. So the time never predates the pointer and never comes from a mark
+  with no stamp, and a twin whose same steps were marked by hand at those stamps answers the same
+  bytes. Every other node's row is the stored one, so a step that opens a tree that is not complete
+  reads as a step nobody marked. `OwnerProgress::shownToReaders` feeds it for the two doors that
+  serve an owner's marks to such a caller, `GET /v1/trees/{id}/progress` and the gallery. The
+  pointers, each with the stamp it was set under, come from the tree's room, or for the gallery
+  from the listed documents. Each owner whose trees hold a pointer is followed in one `openedFrom`
+  read under a 750 ms budget (`kReaderFollowBudget`) after the strand is released, and trees that
+  hold no pointer make none. The gallery follows its owners in the order the wall shows their cards
+  as far as it is known before their marks are — by forks, then the tree's own last edit, then
+  tree id — and spends at most 1,500 ms on follows in all (`GalleryApi::kFollowCap`): an owner the
+  cap cuts short or never reaches is shown unread for that view alone. When an owner's read fails or
+  runs its whole budget, the door still answers, leaving out the row of every node of that owner's
+  that holds a pointer, so no step is shown done that may not be, and every other owner is followed
+  as ever. That owner then cools off: for five minutes (`kFollowCoolOff`) every door shows them
+  unread at once without trying, and the first follow after it that answers ends it. The cool-offs
+  live in the process's memory, keyed by owner, at most 1,024 of them (`kMaxCoolingOff`), the one
+  begun first let go to make room.
 - A node with a valid pointer takes no mark from a caller who can write the tree. The room hands
   that caller, and nobody else, the nodes that open a tree (`TreeRoom::pointersFor`); `following`
   names the ones whose pointer is valid, and `ProgressService::mark`, which both doors that write
@@ -111,9 +123,10 @@ rejected for structure. Validity is a read model, not a gate.
   both the tree and the reader (`node_progress_pkey`, or `node_progress_user_tree`, whichever the
   planner takes), so the cost follows the trees reached and the owner's marks on them, and not the
   size of the tables or other accounts' marks on the same trees. It is made once per reply, call or
-  frame, after the tree's strand is released, and not at all for a caller who cannot write the tree,
-  for a read whose fields ask for neither `state` nor `opens`, for a write with no mark to judge, or
-  for a tree that holds no pointer. The tree's diagnostics (`get_diagnostics`,
+  frame, after the tree's strand is released, and not at all for a read whose fields ask for neither
+  `state` nor `opens`, for a write with no mark to judge, or for a tree that holds no pointer. On
+  these doors a caller who cannot write the tree causes no such read; the two doors that show such a
+  caller the owner's marks make it as `readerView` says. The tree's diagnostics (`get_diagnostics`,
   `GET /v1/trees/{id}/diagnostics`) make the same read for `OpenedTrees::diagnose`: once per reply,
   after the strand is released, for a caller who can write the tree and a tree that holds a pointer,
   and not for an MCP call that sends `includePointers: false`; under the strand they take the tree's
@@ -488,8 +501,11 @@ reader. It answers `200` whether or not the trees could be followed.
 
 `/v1/gallery` and `/gallery` are anonymous-allowed; a session only adds the two facts a row wears
 about its reader and never changes which trees are listed. A card's `done` counts the owner's marks
-as `readerView` shows them, in one follow per owner whose listed trees hold a pointer. `/v1/compose` is anonymous-allowed
-(the birth canvas has no account) behind a rate limit. The reminders pause POST carries no
+as `readerView` shows them, in at most one follow per owner whose listed trees hold a pointer
+(Model, `readerView`), and its time (`updatedAt`) is the later of the tree's own last edit and the
+latest `markedAt` among those rows, so a card's time and place on the wall come from what a reader is
+shown and from no mark they are not. `/v1/compose` is anonymous-allowed (the birth canvas has no
+account) behind a rate limit. The reminders pause POST carries no
 credential — only the secret from the recipient's own mail — and answers 204 either way. The admin
 sweep is closed unless `REMINDERS_ADMIN_TOKEN` is set.
 
