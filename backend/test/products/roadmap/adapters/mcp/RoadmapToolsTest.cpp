@@ -2333,8 +2333,8 @@ TEST(mcp_import_subgraph_caps_kept_edges_at_fifty_and_counts_the_rest) {
   REQUIRE_EQ(receipt["keptEdges"].size(), 51u);
   CHECK(receipt["keptEdges"][49].isObject());
   CHECK_EQ(receipt["keptEdges"][50].asString(),
-           std::string("and 10 more — re-send with prerequisiteMode \"replace\" to drop every edge the "
-                       "batch does not name"));
+           std::string("and 10 more — to drop the ones you do not want, re-send the node with prerequisiteMode "
+                       "\"replace\" and its whole prerequisites list"));
   CHECK_EQ(receipt["keptEdgeCount"].asUInt64(), 60u);
 }
 

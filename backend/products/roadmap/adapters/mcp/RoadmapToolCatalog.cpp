@@ -906,7 +906,7 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "an explicit \"\" or [] clears it. A node deleted earlier and re-sent comes back with the fields "
         "it had, but for the tree it opened: it opens the tree this batch names for it, or none. The "
         "only removals are the ones you ask for: `tombstone` ids (which need the roadmap:delete grant), "
-        "and under \"replace\" the prerequisite edges your batch does not name. `position` is optional — the web canvas lays "
+        "and under \"replace\" the edges into a node that the prerequisites list you send for it does not name. `position` is optional — the web canvas lays "
         "the tree out from its structure — and, when sent, carries both `x` and `y`. The receipt counts what the batch carried — `nodes`, "
         "`edges` (the prerequisites across them), `kinds` — so check `edges` against what you meant "
         "to send; keptEdges/keptEdgeCount name the pre-existing edges into re-sent nodes that "
