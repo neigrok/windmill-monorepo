@@ -1,5 +1,5 @@
 {
-  "schemaVersion" : 14,
+  "schemaVersion" : 15,
   "steps" : 
   [
     {
@@ -793,7 +793,7 @@
         "content" : 
         [
           {
-            "text" : "annotate_node: nothing to set \u2014 pass at least one of \"description\", \"appendDescription\", \"icon\", \"links\", \"opens\".",
+            "text" : "annotate_node: nothing to set \u2014 pass at least one of \"description\", \"appendDescription\", \"icon\", \"links\", \"addLinks\", \"opens\".",
             "type" : "text"
           }
         ],

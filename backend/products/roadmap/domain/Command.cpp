@@ -1,5 +1,6 @@
 #include "products/roadmap/domain/Command.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -416,6 +417,26 @@ std::variant<NodePatchPlan, std::string> planNodePatches(
     if (plan.batch.commands.size() != before) plan.changedNodeIds.push_back(patch.nodeId);
   }
   return plan;
+}
+
+std::variant<std::vector<Link>, std::string> withLinksAdded(const std::vector<Link>& held,
+                                                            const std::vector<Link>& added, const std::string& path) {
+  std::vector<Link> joined = held;
+  std::map<std::string, std::size_t> sentAt;
+  for (std::size_t i = 0; i < added.size(); ++i) {
+    const Link& link = added[i];
+    const auto [first, fresh] = sentAt.emplace(link.url, i);
+    if (!fresh)
+      return path + "[" + std::to_string(i) + "].url repeats " + path + "[" + std::to_string(first->second) +
+             "].url — send each link once";
+    auto same = std::find_if(joined.begin(), joined.end(), [&](const Link& kept) { return kept.url == link.url; });
+    if (same == joined.end()) joined.push_back(link);
+    else if (!link.label.empty()) same->label = link.label;
+  }
+  if (joined.size() > kMaxNodeLinks)
+    return "links would hold " + std::to_string(joined.size()) + " links, " +
+           std::to_string(joined.size() - kMaxNodeLinks) + " over the " + std::to_string(kMaxNodeLinks) + " cap";
+  return joined;
 }
 
 std::variant<EdgeChangePlan, std::string> planEdgeChanges(

@@ -70,9 +70,9 @@ the hue that kind wears. `roadmap_create_node` and `roadmap_set_node_color` answ
 wears.
 
 `roadmap_patch_nodes` preserves omitted fields and replaces supplied values, including descriptions
-and links. `roadmap_annotate_node`'s append form repeats text when retried. `roadmap_change_edges`
-requires existing endpoints for additions; removing an absent edge is a no-op. Both batch edit tools
-support `expectedSeq` and `dryRun`.
+and links. `roadmap_annotate_node`'s append form repeats text when retried; its `addLinks` adds no
+url the node already holds. `roadmap_change_edges` requires existing endpoints for additions;
+removing an absent edge is a no-op. Both batch edit tools support `expectedSeq` and `dryRun`.
 
 `roadmap_import_subgraph` upserts a graph slice: fields you send replace, fields you leave out keep
 their values, so `""` or `[]` is how to clear one. Prerequisites merge by default;
