@@ -602,6 +602,20 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   `🧩 28 · Parts` frame (Step card · tree, Tree pill, Step / Tree row, Back chip, loop and chevron-left icons). The
   Figma Skill Node has no form variant though `scene/NodeBatch.js` has, so the tree node is a composed frame. Move
   the parts into Components.
+- **Section 28 · drawn on surfaces the web does not have (28.05, 28.09, 28.10, 28.24–28.28, 28.36–28.42).** The boards
+  stand a step that opens a tree on the step editor of 19, the selected-step popover of 18.03 and the phone step card of
+  27.08. The web has the step modal and page, the Graph's dock and tablet panel and the phone Graph's bar, so the parts
+  sit in their equivalents there: the Tree section after Prerequisites and Unlocks, what completes the step and Open
+  tree beside Edit step where Complete sat, done of total and Open tree in the dock and the panel, and the tree's mark,
+  *Up next · 3 of 8* and Open tree in the bar. The swipe reveals Open and stops there, as it does for Complete; 28.10's
+  full swipe that opens the tree is not built.
+- **Section 28 · states with no board.** A tree whose facts the load did not read (the device's own copy, a `503` on the
+  pointers, a pointer set while the roadmap is open) shows the tree's mark on the node and Open tree, and no pill, row or
+  words; its step stands by its prerequisites and is never done. A step whose pointer leads nowhere and whose own mark
+  already completed it shows *Done* with the *Tree not found* row and no words where Complete sat. A locked step whose
+  tree loops back or has no steps keeps the loop's or the empty tree's line. The tablet band and C on a card whose tree
+  loops back (*Won’t complete by itself*) or is not found (*Can’t complete yet*) follow the desktop boards. 28.38, a
+  tree removed since the roadmap loaded, cannot be told from what the server answers and is not built.
 - **Flow index · step editor.** The [flow index](../index.md#roadmap--web) has no rows for the step editor sections
   (18–22, 27) on Board · Web.
 - **Web reconciliation evidence.** All 25 current Roadmap screen/state families are mapped in the

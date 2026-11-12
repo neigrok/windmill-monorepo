@@ -405,7 +405,8 @@
   animation: st-board-toast-enter var(--duration-base) var(--ease-soft) both;
 }
 .st-board-toast--delete,
-.st-board-toast--notice {
+.st-board-toast--notice,
+.st-board-toast--tree {
   border-left-color: var(--text-secondary);
 }
 .st-board-toast.is-leaving {
@@ -465,6 +466,12 @@ button.st-board-toast-message {
 .st-board--phone .st-board-toast-undo,
 .st-graph-toast--phone .st-board-toast-undo {
   width: var(--space-16);
+}
+/* A C on a card that opens a tree: the action is Open tree, on one line. */
+.st-board-toast--tree .st-board-toast-undo {
+  width: auto;
+  padding: 0 var(--space-3);
+  white-space: nowrap;
 }
 .st-board-card.is-restored {
   animation: st-board-restore var(--duration-base) var(--ease-standard) both;

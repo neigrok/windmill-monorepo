@@ -121,8 +121,9 @@ export class BoardActs {
     if (!c.active || !c.owner || !c.tree || !['swipe', 'key'].includes(door)) return false;
     const tree = this.held ? this.held.projected(c.tree) : c.tree;
     if (UnlockRules.derive(tree, c.progress).get(id) !== 'available') return false;
-    if (!takesMark(tree.nodesById.get(id))) {
-      this.sayTreeCompletes(tree.nodesById.get(id));
+    const step = tree.nodesById.get(id);
+    if (!takesMark(step)) {
+      this.sayTreeCompletes(step);
       return false;
     }
     const before = c.progress;
