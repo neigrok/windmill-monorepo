@@ -118,9 +118,12 @@ struct NodePatch {
   std::optional<TreeId> opens;  // an empty id clears the tree the node opens
 };
 
+// A plan lands nothing when no row changes what its node holds: the batch is empty, so it takes no seq.
 struct NodePatchPlan {
   Batch batch;
   std::vector<NodeId> changedNodeIds;
+
+  bool landsNothing() const { return batch.commands.empty(); }
 };
 
 struct EdgeChanges {
@@ -128,10 +131,13 @@ struct EdgeChanges {
   std::vector<Edge> remove;
 };
 
+// A plan lands nothing when every edge it adds is held and every edge it removes is absent.
 struct EdgeChangePlan {
   Batch batch;
   std::vector<Edge> added;
   std::vector<Edge> removed;
+
+  bool landsNothing() const { return batch.commands.empty(); }
 };
 
 // Whether a single-node edit would change the node it names: a field the command names holds another value there.
