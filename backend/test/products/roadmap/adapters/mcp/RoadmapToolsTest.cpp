@@ -3091,18 +3091,18 @@ TEST(mcp_import_subgraph_keeps_the_legend_order_on_a_colliding_kind_and_appends_
 }
 
 // The description and the field doc say the same thing about outOfOrder: it is the subset of
-// completed whose set_progress carried the flag, met prerequisites or not.
+// completed whose mark carried the flag, met prerequisites or not.
 TEST(mcp_get_progress_describes_out_of_order_as_the_marks_that_carried_the_flag) {
   Harness h;
   for (const ToolDeclaration& tool : h.tools.declareTools()) {
     if (tool.name() != "get_progress") continue;
     CHECK_EQ(tool.descriptor["description"].asString(),
              std::string("The caller's private progress overlay for a roadmap: the node ids that are "
-                         "completed, and outOfOrder — the subset of completed whose "
-                         "set_progress carried outOfOrder:true. Per-user, separate from the shared "
-                         "structure."));
+                         "completed, and outOfOrder — the subset of completed whose mark carried "
+                         "outOfOrder:true, from set_progress or an import's progress row. Per-user, "
+                         "separate from the shared structure."));
     const std::string fields = tool.descriptor["inputSchema"]["properties"]["fields"]["description"].asString();
-    CHECK(fields.find("the subset of `completed` whose set_progress carried outOfOrder:true") != std::string::npos);
+    CHECK(fields.find("the subset of `completed` whose mark carried outOfOrder:true") != std::string::npos);
     return;
   }
   CHECK(false);
@@ -6355,4 +6355,61 @@ TEST(mcp_ten_thousand_nodes_without_an_icon_answer_one_short_smell_line) {
   CHECK_EQ(smells, parse(R"([{"kind":"empty-icon","count":10000,
     "nodes":["n00000","n00001","n00002","n00003","n00004","n00005","n00006","n00007","n00008","n00009"]}])"));
   CHECK(dump(smells).size() < 300);
+}
+
+// An import's progress rows are set_progress's bulk rows: the same schema, the same checks and the same receipt, so a
+// completion made before its prerequisites keeps its outOfOrder word through an import, a repeat says unchanged, and
+// the marks get_progress answers go back through an import leaving the overlay as it was.
+TEST(mcp_import_progress_rows_carry_out_of_order_as_set_progress_rows_do) {
+  Harness h;
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"},{"id":"b","label":"B",
+    "prerequisites":["a"]},{"id":"c","label":"C"}]})")).isError);
+
+  const char* early = R"({"nodes":[],"progress":[{"nodeId":"b","status":"complete","outOfOrder":true}]})";
+  CHECK_EQ(body(h.call("import_subgraph", parse(early)))["progress"],
+           parse(R"([{"nodeId":"b","status":"complete","prerequisitesMet":false,"acknowledged":true}])"));
+  CHECK_EQ(body(h.call("get_progress", kNoArgs))["outOfOrder"], parse(R"(["b"])"));
+  CHECK_EQ(body(h.call("import_subgraph", parse(early)))["progress"],
+           parse(R"([{"nodeId":"b","status":"complete","prerequisitesMet":false,"acknowledged":true,"unchanged":true}])"));
+
+  const std::string refusal = R"(argument "%s.outOfOrder" acknowledges completing a node before its prerequisites, )"
+                              R"(so it rides status "complete" only, got "none")";
+  const auto refused = [&](const char* path) {
+    std::string sentence = refusal;
+    sentence.replace(sentence.find("%s"), 2, path);
+    return sentence;
+  };
+  CHECK_EQ(message(h.call("import_subgraph", parse(R"({"nodes":[],"progress":[{"nodeId":"c","status":"none",
+    "outOfOrder":true}]})"))), "import_subgraph: " + refused("progress[0]"));
+  CHECK_EQ(message(h.call("set_progress", parse(R"({"updates":[{"nodeId":"c","status":"none","outOfOrder":true}]})"))),
+           "set_progress: " + refused("updates[0]"));
+
+  Json::Value updates, rows;
+  for (const Json::Value& tool : h.tools.listTools(h.actor)) {
+    if (tool["name"].asString() == "set_progress") updates = tool["inputSchema"]["properties"]["updates"]["items"];
+    if (tool["name"].asString() == "import_subgraph") rows = tool["inputSchema"]["properties"]["progress"]["items"];
+  }
+  REQUIRE(updates.isObject());
+  CHECK_EQ(rows, updates);
+
+  CHECK_FALSE(h.call("set_progress", parse(R"({"updates":[{"nodeId":"a","status":"complete"},
+    {"nodeId":"c","status":"none"}]})")).isError);
+  const Json::Value everyMark = parse(R"({"fields":["completed","cleared","outOfOrder"]})");
+  const Json::Value held = body(h.call("get_progress", everyMark));
+  CHECK_EQ(held, parse(R"({"completed":["a","b"],"cleared":["c"],"outOfOrder":["b"]})"));
+  Json::Value sentBack = parse(R"({"nodes":[],"progress":[]})");
+  std::set<std::string> acknowledged;
+  for (const Json::Value& id : held["outOfOrder"]) acknowledged.insert(id.asString());
+  for (const char* list : {"completed", "cleared"})
+    for (const Json::Value& id : held[list]) {
+      Json::Value row(Json::objectValue);
+      row["nodeId"] = id;
+      row["status"] = std::string(list) == "completed" ? "complete" : "none";
+      if (acknowledged.count(id.asString())) row["outOfOrder"] = true;
+      sentBack["progress"].append(row);
+    }
+  const Json::Value receipt = body(h.call("import_subgraph", sentBack));
+  REQUIRE_EQ(receipt["progress"].size(), 3u);
+  for (const Json::Value& row : receipt["progress"]) CHECK_EQ(row["unchanged"], Json::Value(true));
+  CHECK_EQ(body(h.call("get_progress", everyMark)), held);
 }

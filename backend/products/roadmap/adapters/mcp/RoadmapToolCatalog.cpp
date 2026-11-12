@@ -169,6 +169,19 @@ Json::Value linkArray(const char* description) {
   return property;
 }
 
+// One progress mark as a call sends it: set_progress's flat form and its `updates` rows, and an import's `progress`
+// rows, which the same parse reads.
+Json::Value progressRow() {
+  Json::Value fields(Json::objectValue);
+  fields["nodeId"] = nodeHandle();
+  fields["id"] = legacyNodeHandle();
+  fields["status"] = enumStr("complete or none (clear).", kStatuses);
+  fields["outOfOrder"] = boolean(
+      "With status complete only: this node is being completed before its prerequisites on purpose. "
+      "Kept on the mark, echoed as acknowledged:true beside prerequisitesMet.");
+  return fields;
+}
+
 // One legend kind as a call sends it, the same item wherever a legend is written whole or joined.
 Json::Value legendKind() {
   Json::Value fields(Json::objectValue);
@@ -498,13 +511,13 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     p["treeId"] = treeHandle();
     p["fields"] = fieldArray(
         "Which id lists to return. Default {completed, outOfOrder} — `outOfOrder` is the "
-        "subset of `completed` whose set_progress carried outOfOrder:true; `cleared` (the tombstones a "
+        "subset of `completed` whose mark carried outOfOrder:true; `cleared` (the tombstones a "
         "browser reconciles against) is available but rarely useful.",
         progressVocabulary().names());
     tools.push_back(tool("get_progress", Access::read,
         "The caller's private progress overlay for a roadmap: the node ids that are completed, "
-        "and outOfOrder — the subset of completed whose set_progress carried "
-        "outOfOrder:true. Per-user, separate from the shared structure.",
+        "and outOfOrder — the subset of completed whose mark carried outOfOrder:true, from "
+        "set_progress or an import's progress row. Per-user, separate from the shared structure.",
         p, {"treeId"}));
   }
   {
@@ -809,27 +822,13 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         p, {"treeId", "id", "hue"}));
   }
   {
-    Json::Value updateFields(Json::objectValue);
-    updateFields["nodeId"] = nodeHandle();
-    updateFields["id"] = legacyNodeHandle();
-    updateFields["status"] = enumStr("complete or none (clear).", kStatuses);
-    updateFields["outOfOrder"] = boolean(
-        "With status complete only: this node is being completed before its prerequisites on purpose. "
-        "Kept on the mark, echoed as acknowledged:true beside prerequisitesMet.");
-
-    Json::Value p(Json::objectValue);
+    Json::Value p = progressRow();  // the single form is one row, flat
     p["treeId"] = treeHandle();
-    p["nodeId"] = nodeHandle();
-    p["id"] = legacyNodeHandle();
-    p["status"] = enumStr("complete or none (clear).", kStatuses);
-    p["outOfOrder"] = boolean(
-        "With status complete only: this node is being completed before its prerequisites on purpose. "
-        "Kept on the mark, echoed as acknowledged:true beside prerequisitesMet.");
     p["updates"] = objArray(
         "Bulk form: a list of {nodeId, status, outOfOrder?}. Resolves order internally, so completing "
         "a subtree out of dependency order no longer misreports prerequisitesMet. Pass this OR a "
         "single nodeId+status, never both.",
-        updateFields, {"nodeId", "status"});
+        progressRow(), {"nodeId", "status"});
     p["updates"]["maxItems"] = static_cast<Json::UInt64>(kMaxProgressUpdates);
     tools.push_back(tool("set_progress", Access::write,
         "Set the caller's progress. Pass a single `nodeId`+`status`, or a bulk `updates` list. Unknown "
@@ -885,10 +884,6 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
                                     "within its five lines: a tree on a loop never completes.",
                                     kMaxIdLength);
 
-    Json::Value progressFields(Json::objectValue);
-    progressFields["nodeId"] = nodeHandle();
-    progressFields["id"] = legacyNodeHandle();
-    progressFields["status"] = enumStr("complete or none (clear).", kStatuses);
 
     p["nodes"] = objArray("The nodes to import — the shape get_tree returns when you ask it for those "
                           "fields. Pass [] to import only kinds or progress.",
@@ -899,10 +894,13 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
                           "get_tree's default kindFields sent back erases nothing. Omit to leave the legend "
                           "untouched.",
                           legendKind(), {"id", "hue"});
-    p["progress"] = objArray("Optional carried progress, applied over the imported nodes. `nodeId` here "
+    p["progress"] = objArray("Optional carried progress, applied over the imported nodes, each row as "
+                             "set_progress's `updates` takes it: a completion made before its "
+                             "prerequisites carries outOfOrder:true and is answered acknowledged:true, and "
+                             "prerequisitesMet is judged against the tree the import leaves. `nodeId` here "
                              "names a node that exists once the import lands; a row naming none is "
                              "reported back in progressSkipped, not silently dropped.",
-                             progressFields, {"nodeId", "status"});
+                             progressRow(), {"nodeId", "status"});
     p["progress"]["maxItems"] = static_cast<Json::UInt64>(kMaxProgressUpdates);
     p["prerequisiteMode"] = enumStr(
         "How a node already in the tree — or deleted and re-sent, which revives it with its old "
