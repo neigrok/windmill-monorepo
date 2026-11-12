@@ -143,7 +143,10 @@ struct FakeTreeRepository : TreeRepository {
   // One entry per openedFrom read: the trees it started from.
   std::vector<std::set<TreeId>> openedReads;
   bool latticeLoadsFail = false;  // load throws, the way a dropped connection does; loadAccess still answers
+  // One entry per openedFrom read: the budget it was given.
+  std::vector<std::optional<std::chrono::milliseconds>> openedBudgets;
   bool openedReadsFail = false;  // openedFrom throws, the way a dropped connection does
+  bool budgetedReadsTimeOut = false;  // openedFrom given a budget throws FollowTimedOut, the way a slow statement does
   std::function<void()> duringOpenedRead;  // runs inside openedFrom, the way a slow statement holds its caller
   // One entry per guidedTreesAbove read: the tree it walked up from.
   std::vector<TreeId> aboveReads;
@@ -285,10 +288,13 @@ struct FakeTreeRepository : TreeRepository {
     return titles;
   }
   // The real statement's rules: this owner's standing trees only, each once, wherever the pointers of `opened` lead.
-  std::map<TreeId, OpenedTree> openedFrom(const UserId& owner, const std::set<TreeId>& opened) override {
+  std::map<TreeId, OpenedTree> openedFrom(const UserId& owner, const std::set<TreeId>& opened,
+                                          std::optional<std::chrono::milliseconds> budget = std::nullopt) override {
     if (opened.empty()) return {};
     openedReads.push_back(opened);
+    openedBudgets.push_back(budget);
     if (openedReadsFail) throw std::runtime_error("connection reset mid-read");
+    if (budget && budgetedReadsTimeOut) throw FollowTimedOut{};
     if (duringOpenedRead) duringOpenedRead();
     std::map<TreeId, OpenedTree> trees;
     std::vector<TreeId> reached(opened.begin(), opened.end());

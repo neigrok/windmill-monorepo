@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <memory>
 #include <mutex>
+#include <new>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -779,6 +780,76 @@ TEST(get_diagnostics_whose_pointers_cannot_be_followed_answers_the_graphs_diagno
            parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[{"node":"root","kind":"empty-icon"}],"maskedWork":[],
                "treeLoops":[],"danglingPointers":[]})"));
   CHECK_EQ(reporter.failures->reports.size(), 1u);
+}
+
+// The reply follows the domain's caps, as the MCP door's does: fifty nodes of each list, eight trees of a way, and
+// a count of what is left off.
+TEST(get_diagnostics_lists_fifty_nodes_and_eight_trees_of_a_way_and_counts_the_rest) {
+  Harness h;
+  const UserId owner = h.signIn("s-owner", "owner@example.com");
+  const auto numbered = [](const char* prefix, int k) { return std::string(prefix) + (k < 10 ? "0" : "") + std::to_string(k); };
+  const auto plant = [&](const std::string& id, std::vector<std::pair<std::string, std::string>> nodes) {
+    TreeData data;
+    data.id = TreeId{id};
+    for (const auto& [node, opens] : nodes) {
+      NodeSpec spec;
+      spec.id = NodeId{node};
+      spec.label = node;
+      spec.icon = "i";
+      spec.opens = TreeId{opens};
+      data.nodes.push_back(spec);
+    }
+    h.trees->byId[id] =
+        StoredTree{LooseGraph(data, Hlc{1, 0, "seed"}).exportState(), LegendState{}, {"Tree " + id, {}}, 0, owner, Visibility::private_};
+  };
+  std::vector<std::pair<std::string, std::string>> own;
+  for (int k = 1; k <= 51; ++k) {
+    own.emplace_back(numbered("l", k), "t_w01");
+    own.emplace_back(numbered("g", k), numbered("t_gone", k));
+  }
+  plant("t_main", own);
+  for (int k = 1; k <= 8; ++k) plant(numbered("t_w", k), {{"next", k < 8 ? numbered("t_w", k + 1) : std::string("t_main")}});
+
+  Json::Value expected = parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[],"maskedWork":[],
+      "treeLoops":[],"treeLoopsOmitted":1,"danglingPointers":[],"danglingPointersOmitted":1})");
+  for (int k = 1; k <= 50; ++k) {
+    Json::Value loop(Json::objectValue);
+    loop["node"] = numbered("l", k);
+    for (int on = 1; on <= 8; ++on) {
+      Json::Value tree(Json::objectValue);
+      tree["treeId"] = numbered("t_w", on);
+      tree["title"] = "Tree " + numbered("t_w", on);
+      loop["path"].append(tree);
+    }
+    loop["pathOmitted"] = 1;
+    expected["treeLoops"].append(loop);
+    Json::Value dangling(Json::objectValue);
+    dangling["node"] = numbered("g", k);
+    dangling["treeId"] = numbered("t_gone", k);
+    expected["danglingPointers"].append(dangling);
+  }
+  CHECK_EQ(parse(dump(bodyOf(sendGetDiagnostics(h.api, "s-owner", "t_main")))), expected);
+}
+
+// An exhausted process must die rather than answer that the pointers could not be followed.
+TEST(get_diagnostics_lets_an_exhausted_process_die_rather_than_answer) {
+  Harness h;
+  const UserId me = h.signIn("s-me");
+  h.seed("t_sub", "Deep dive", me, Visibility::private_);
+  h.seed("t_mine", "Learn to sail", me, Visibility::public_);
+  h.trees->byId["t_mine"].state.nodes[0].opens = TreeId{"t_sub"};
+  h.trees->byId["t_mine"].state.nodes[0].opensAt = Hlc{2, 0, "seed"};
+  h.trees->duringOpenedRead = [] { throw std::bad_alloc{}; };
+
+  bool propagated = false;
+  try {
+    sendGetDiagnostics(h.api, "s-me", "t_mine");
+  } catch (const std::bad_alloc&) {
+    propagated = true;
+  }
+
+  CHECK(propagated);
+  CHECK_EQ(sendGetDiagnostics(h.api, "", "t_mine")->getStatusCode(), drogon::k200OK);
 }
 
 // A stranger's read must not wait on the owner's statement: that wait would say the tree holds a pointer.

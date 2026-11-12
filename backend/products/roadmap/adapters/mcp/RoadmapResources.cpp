@@ -38,11 +38,14 @@ On a tree you own, `roadmap_get_diagnostics` also reports what is wrong with the
 open. `treeLoops` lists each node whose pointer leads back to the tree, with a shortest `path` of
 `{treeId, title}` from the tree it opens back to this one: a tree on such a loop never completes.
 `danglingPointers` lists each node whose pointer names no tree of yours that stands, as
-`{node, treeId}`: such a node is an ordinary node. Neither changes `diagnosticsClean`, which is
-about the graph alone. An edit that sets `opens` and closes a loop of trees names it in
-`introducedDiagnostics`. Repair either by re-pointing the node's `opens` or clearing it with `""`.
-`pointerDiagnosticsUnavailable: true` says the opened trees could not be read just now;
-`includePointers: false` leaves both lists out.
+`{node, treeId}`: such a node is an ordinary node. Each list holds its first 50 nodes and a `path`
+its first 8 trees; `treeLoopsOmitted`, `danglingPointersOmitted` and a loop's `pathOmitted` count
+what is left off, and a `path` that is cut does not end with this tree. Neither list changes
+`diagnosticsClean`, which is about the graph alone. An edit that sets `opens` and closes a loop of
+trees names it in `introducedDiagnostics` after the graph's errors, within that list's five lines.
+Repair either by re-pointing the node's `opens` or clearing it with `""`.
+`pointerDiagnosticsUnavailable: true` says the opened trees could not be read in time: read
+`roadmap_get_diagnostics`. `includePointers: false` leaves both lists out.
 
 ## Progress
 
@@ -85,7 +88,8 @@ url the node already holds. `roadmap_change_edges` requires existing endpoints f
 removing an absent edge is a no-op. Both batch edit tools support `expectedSeq` and `dryRun`.
 
 `roadmap_import_subgraph` upserts a graph slice: fields you send replace, fields you leave out keep
-their values, so `""` or `[]` is how to clear one. Prerequisites merge by default;
+their values, so `""` or `[]` is how to clear one. A deleted node it brings back opens the tree the
+batch names for it, or none. Prerequisites merge by default;
 `prerequisiteMode: "replace"` removes omitted incoming edges. The graph commits in one structural
 operation; optional progress commits in a separate atomic phase. Inspect `graphApplied`,
 `progressApplied` and any `progressError`/`progressSkipped`: a graph can be applied even when progress

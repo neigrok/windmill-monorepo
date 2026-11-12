@@ -57,7 +57,15 @@ rejected for structure. Validity is a read model, not a gate.
   tree id wherever two ways are as short, so the way does not depend on the order the trees are
   visited in. `danglingPointers` holds one entry per node whose pointer is not empty and not valid,
   with the pointer as it is stored. A loop among other trees that does not lead back to the tree
-  is not that tree's: it is reported when one of those trees is read.
+  is not that tree's: it is reported when one of those trees is read. The answer is bounded where
+  it is made: each list holds its first 50 nodes (`kMaxTreeLoops`, `kMaxDanglingPointers`) and
+  counts the rest in `treeLoopsOmitted` and `danglingPointersOmitted`, and a way of more than 8
+  trees (`kMaxLoopPath`) is cut to its first 8, so it does not end with the node's own tree, with
+  `pathOmitted` counting the trees left off, that tree the last of them. What is past a cap is
+  counted and never built. `waysBackTo` is the walk under it and under `leadingBackTo`: from the
+  tree up its openers a level at a time, it reads each pointer between two standing trees at most
+  once and leaves every tree that leads back its fewest pointers and the tree it steps to first,
+  so `diagnose` costs the account's pointers plus the capped lists, whatever the tree holds.
   The raw mark (`status`, `get_progress`, `GET …/progress`) stays the raw mark, `set_progress`
   records a mark on such a node and judges `prerequisitesMet` on marks alone, and the gallery counts
   the owner's stored marks.
@@ -74,13 +82,16 @@ rejected for structure. Validity is a read model, not a gate.
   `opens`, or for a tree that holds no pointer. The tree's diagnostics (`get_diagnostics`,
   `GET /v1/trees/{id}/diagnostics`) make the same read for `OpenedTrees::diagnose`: once per reply,
   after the strand is released, for a caller who can write the tree and a tree that holds a
-  pointer, and not for an MCP call that sends `includePointers: false`. An MCP edit that makes a
-  node open a tree (`create_node`, `annotate_node`, `patch_nodes` or `import_subgraph` carrying a
-  non-empty `opens`) makes it once more, after the edit is saved and the strand is released, from
-  the trees the tree opened before the edit and opens after it: its receipt names in
-  `introducedDiagnostics` each loop of trees the tree holds now and did not hold before, after the
-  graph's errors. No other edit makes that read, a dry run and an edit that only clears a pointer
-  among them. Where every tree of an owner is already loaded with
+  pointer, and not for an MCP call that sends `includePointers: false`; under the strand they take
+  the tree's pointers alone (`LooseGraph::pointers`). An MCP edit that changes the tree a node
+  opens to a tree (`create_node`, `annotate_node`, `patch_nodes` or `import_subgraph`) makes it
+  once more, after the edit is saved and the strand is released, starting from the trees those
+  nodes now open (`pointersSetSince`) and under a budget of its own, 750 ms, in place of the
+  pool's statement limit: its receipt names in `introducedDiagnostics`, after the graph's errors
+  and within that list's five lines, each of those nodes whose tree leads back, and a read that
+  runs past the budget leaves the receipt `pointerDiagnosticsUnavailable: true`. No other edit
+  makes that read: a dry run, an edit that only clears a pointer and one that re-sends the tree a
+  node already opens among them. Where every tree of an owner is already loaded with
   its marks (`TreeRegistry::list`, `PgReminderRepository::readinessFor`), `openedAmong`
   (`domain/TreeSummary.h`) judges the account once in memory with no further read.
 - `TreeDiagnostics::assess` — a pure report over a loose graph: `cycles`, `dangling`,
@@ -211,7 +222,10 @@ log, undo and broadcast machinery, and `TreeRoom::applyCommand` emits its writes
 `CreateNode` and `AnnotateNode` carry the tree a node `opens` as an optional: unset leaves the
 pointer, set writes it, and `""` clears it. MCP `create_node` always sets it, `""` when the call
 names no tree, so a created node opens the tree its call names and no other, on an id a deleted node
-held too; a stored `CreateNode` row without the field replays as unset. The activity feed projects
+held too; a stored `CreateNode` row without the field replays as unset. An `import_subgraph` graft
+(`graftState`) holds a node it brings back from a delete to the same rule: `opens` left out of the
+batch is cleared there, where every other register left out keeps what the node held, and on a node
+the tree holds a left-out `opens` stays as it stands. The activity feed projects
 neither the pointer nor `AnnotateNode`.
 `TreeRoom::applyCommands` lands several as one frame under one seq and queues them as one `Batch`
 op, so replaying the log tail reproduces the whole edit; an empty list mints nothing.
@@ -394,8 +408,11 @@ can write it is also answered `treeLoops`, an array of `{node, path: [{treeId, t
 rows after the tree's strand is released; both are `[]`, with nothing read, for a tree that holds no
 pointer. When the pointers cannot be followed the owner is still answered `200` with the graph's
 diagnostics, without those two keys and with `pointerDiagnosticsUnavailable: true`, a key that is
-otherwise absent. Any other caller is answered the graph's diagnostics alone, the same bytes a tree
-without pointers answers, and nothing is read for them.
+otherwise absent. Each list holds its first 50 nodes and a `path` its first 8 trees;
+`treeLoopsOmitted`, `danglingPointersOmitted` and a loop's `pathOmitted` count what is left off and
+are absent when that is nothing, and a path that is cut does not end with the tree being read
+(`PointerDiagnostics`, Model). Any other caller is answered the graph's diagnostics alone, the same
+bytes a tree without pointers answers, and nothing is read for them.
 
 `PATCH /v1/trees/{id}` sets one register per call — `{visibility}`, `{guide}` or `{title}` — each the
 owner's alone. A body naming more than one is refused `400`, and a body that is not one JSON object

@@ -1,6 +1,5 @@
 #include "products/roadmap/adapters/mcp/EditReceipt.h"
 
-#include <algorithm>
 #include <cstddef>
 #include <set>
 #include <string>
@@ -30,13 +29,14 @@ std::string named(const TreeLoop& loop) {
     if (!way.empty()) way += " -> ";
     way += quoted(on.tree);
   }
+  if (loop.pathOmitted > 0) way += " and " + std::to_string(loop.pathOmitted) + " more";
   return "loop of trees from " + quoted(loop.node) + " through " + way;
 }
 
 }  // namespace
 
 void answerDiagnostics(const TreeDiagnostics& before, const TreeDiagnostics& after, Json::Value& receipt,
-                       const PointerDiagnostics& pointersBefore, const PointerDiagnostics& pointersAfter) {
+                       const PointerDiagnostics& closed) {
   std::set<std::vector<NodeId>> knownCycles;
   for (const Cycle& cycle : before.cycles) knownCycles.insert(cycle.members);
   const std::set<Edge> knownDangling(before.dangling.begin(), before.dangling.end());
@@ -50,14 +50,13 @@ void answerDiagnostics(const TreeDiagnostics& before, const TreeDiagnostics& aft
       introduced.push_back("dangling edge " + quoted(edge.from) + " -> " + quoted(edge.to));
   for (const Edge& edge : after.selfEdges)
     if (!knownSelfEdges.count(edge)) introduced.push_back("self-edge on " + quoted(edge.from));
-  const std::vector<TreeLoop>& knownLoops = pointersBefore.treeLoops;
-  for (const TreeLoop& loop : pointersAfter.treeLoops)
-    if (std::find(knownLoops.begin(), knownLoops.end(), loop) == knownLoops.end()) introduced.push_back(named(loop));
+  for (const TreeLoop& loop : closed.treeLoops) introduced.push_back(named(loop));
+  const std::size_t all = introduced.size() + closed.treeLoopsOmitted;
 
   Json::Value list(Json::arrayValue);
   for (std::size_t i = 0; i < introduced.size() && i < kMostNamed; ++i) list.append(introduced[i]);
-  if (introduced.size() > kMostNamed)
-    list.append("and " + std::to_string(introduced.size() - kMostNamed) +
+  if (all > kMostNamed)
+    list.append("and " + std::to_string(all - kMostNamed) +
                 " more — call get_diagnostics for the whole list");
 
   receipt["diagnosticsClean"] = after.clean();

@@ -532,6 +532,42 @@ TEST(pg_a_node_follows_the_tree_it_opens_and_the_registry_list_counts_it) {
   registry.stop();
 }
 
+// The follow an edit makes for its receipt is given a budget of its own. A statement that runs past it is abandoned
+// at the budget, not at the pool's limit, and the connection it borrowed goes back under the pool's own limit.
+TEST(pg_opened_from_given_a_budget_gives_up_at_it_and_returns_the_connection_under_the_pools_limit) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTreeRepository trees{pgTestPool()};
+  trees.create(kTree, LooseGraph().exportState(), LegendState{}, "Main", kSam);
+  OpenedTree main;
+  main.title = "Main";
+  const std::map<TreeId, OpenedTree> read{{kTree, main}};
+  CHECK(trees.openedFrom(kSam, {kTree}, std::chrono::milliseconds{750}) == read);
+
+  bool timedOut = false;
+  const auto asked = std::chrono::steady_clock::now();
+  {
+    PgLease blocker{*pgTestPool()};
+    pqxx::work held{*blocker};
+    held.exec("LOCK TABLE tree_nodes IN ACCESS EXCLUSIVE MODE");
+    try {
+      trees.openedFrom(kSam, {kTree}, std::chrono::milliseconds{100});
+    } catch (const FollowTimedOut&) {
+      timedOut = true;
+    }
+  }
+  CHECK(timedOut);
+  CHECK(std::chrono::steady_clock::now() - asked < std::chrono::seconds{3});
+
+  CHECK(trees.openedFrom(kSam, {kTree}) == read);
+  PgLease first{*pgTestPool()};
+  PgLease second{*pgTestPool()};
+  for (PgLease* lease : {&first, &second}) {
+    pqxx::work txn{**lease};
+    CHECK_EQ(txn.exec("SHOW statement_timeout")[0][0].as<std::string>(), std::string("5s"));
+  }
+}
+
 // The whole path over the real repositories: the edit that closes a loop of trees says so, each tree on the loop is
 // told its own way back, a pointer no tree answers dangles, a removed tree turns the loop into a dangling pointer,
 // and a reader of the public tree is answered the graph alone.

@@ -220,9 +220,11 @@ Json::Value toJson(const TreeDiagnostics& diagnostics, const PointerDiagnostics&
     Json::Value entry(Json::objectValue);
     entry["node"] = loop.node.str();
     entry["path"] = path;
+    if (loop.pathOmitted > 0) entry["pathOmitted"] = static_cast<Json::UInt64>(loop.pathOmitted);
     treeLoops.append(entry);
   }
   root["treeLoops"] = treeLoops;
+  if (pointers.treeLoopsOmitted > 0) root["treeLoopsOmitted"] = static_cast<Json::UInt64>(pointers.treeLoopsOmitted);
 
   Json::Value danglingPointers(Json::arrayValue);
   for (const DanglingPointer& pointer : pointers.danglingPointers) {
@@ -232,6 +234,8 @@ Json::Value toJson(const TreeDiagnostics& diagnostics, const PointerDiagnostics&
     danglingPointers.append(entry);
   }
   root["danglingPointers"] = danglingPointers;
+  if (pointers.danglingPointersOmitted > 0)
+    root["danglingPointersOmitted"] = static_cast<Json::UInt64>(pointers.danglingPointersOmitted);
 
   return root;
 }

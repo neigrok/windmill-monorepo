@@ -20,6 +20,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <iostream>
 #include <map>
 #include <mutex>
@@ -184,32 +185,44 @@ bool opensATree(const std::vector<OpenedTree>& opened) {
   return std::any_of(opened.begin(), opened.end(), [](const OpenedTree& named) { return !named.second.empty(); });
 }
 
-// What an edit that makes a node open a tree takes from the room while it holds the strand: the tree and its
-// diagnostics before the edit and after it.
+// How long the follow an edit makes for its receipt may take. The edit is saved by then and its reply waits on
+// nothing else, so past this the receipt goes out without the loops rather than hold a caller who would retry.
+constexpr std::chrono::milliseconds kReceiptFollowBudget{750};
+
+// What an edit that changed the tree a node opens takes from the room while it holds the strand: the graph's
+// diagnostics before the edit and after it, and each node it made open a tree, or another tree.
 struct PointerEdit {
-  TreeData treeBefore;
   TreeDiagnostics before;
-  TreeData treeAfter;
   TreeDiagnostics after;
+  std::map<NodeId, TreeId> repointed;
 };
 
+// Nothing when the edit left every node opening the tree it opened: there is then no pointer to follow.
+std::optional<PointerEdit> pointerEditOf(const TreeRoom& room, const std::map<NodeId, TreeId>& pointersBefore,
+                                         const TreeDiagnostics& before, const TreeDiagnostics& after) {
+  std::map<NodeId, TreeId> repointed = pointersSetSince(pointersBefore, room.pointers());
+  if (repointed.empty()) return std::nullopt;
+  return PointerEdit{before, after, std::move(repointed)};
+}
+
 // The receipt of such an edit, naming the loops of trees it closed. The edit has landed and the strand is released:
-// one read follows the pointers the tree held and holds, off the stored rows. A read that fails is reported under
-// its own name and leaves the receipt the graph's diagnostics and a flag.
-ToolResult withClosedLoops(TreeRegistry& trees, const UserId& actor, const std::optional<PointerEdit>& edit,
-                           const ToolResult& edited) {
+// one read follows the pointers it set, off the stored rows and within the receipt's budget. A read that runs past
+// the budget is an expected refusal under load and one that fails is reported; either leaves the receipt the graph's
+// diagnostics and a flag.
+ToolResult withClosedLoops(TreeRegistry& trees, const UserId& actor, const TreeId& tree,
+                           const std::optional<PointerEdit>& edit, const ToolResult& edited) {
   if (!edit) return edited;
   Json::Value receipt = edited.payload;
-  std::set<TreeId> opened = treesOpenedBy(edit->treeBefore);
-  opened.merge(treesOpenedBy(edit->treeAfter));
-  WriteObservation observation{"roadmap.diagnostics.follow", "roadmap", "mcp"};
+  WriteObservation observation{"roadmap.receipt.follow", "roadmap", "mcp"};
   try {
-    const OpenedTrees followed(trees.openedFrom(actor, opened));
+    const OpenedTrees followed(trees.openedFrom(actor, treesOpenedBy(edit->repointed), kReceiptFollowBudget));
+    answerDiagnostics(edit->before, edit->after, receipt, followed.diagnose(tree, edit->repointed));
     observation.skip();
-    answerDiagnostics(edit->before, edit->after, receipt, followed.diagnose(edit->treeBefore),
-                      followed.diagnose(edit->treeAfter));
   } catch (const std::bad_alloc&) {
     throw;
+  } catch (const FollowTimedOut&) {
+    observation.finish("timeout");
+    receipt["pointerDiagnosticsUnavailable"] = true;
   } catch (const std::exception& failure) {
     observation.fail(failure);
     receipt["pointerDiagnosticsUnavailable"] = true;
@@ -546,22 +559,23 @@ ToolResult readDiagnostics(RoomRegistry& registry, TreeRegistry& trees, const Tr
     return ToolResult::failure(*bad);
   const bool asked = args["includePointers"].isNull() || args["includePointers"].asBool();
   TreeDiagnostics graph;
-  std::optional<TreeData> toFollow;
+  std::optional<std::map<NodeId, TreeId>> pointers;
   {
     std::lock_guard<std::mutex> lock(registry.strandFor(tree));
     TreeRoom* room = registry.open(tree);
     if (!room || !canRead(caller, room->owner(), room->visibility()))
       return ToolResult::failure("no such tree \"" + tree.str() + "\"");
     graph = room->diagnose();
-    if (asked && canWrite(caller, room->owner())) toFollow = room->snapshot();
+    if (asked && canWrite(caller, room->owner())) pointers = room->pointers();
   }
-  if (!toFollow) return ToolResult::json(toJson(graph));
+  if (!pointers) return ToolResult::json(toJson(graph));
 
   WriteObservation observation{"roadmap.diagnostics.follow", "roadmap", "mcp"};
   try {
-    const OpenedTrees opened(trees.openedFrom(*caller, treesOpenedBy(*toFollow)));
+    const OpenedTrees opened(trees.openedFrom(*caller, treesOpenedBy(*pointers)));
+    const ToolResult told = ToolResult::json(toJson(graph, opened.diagnose(tree, *pointers)));
     observation.skip();
-    return ToolResult::json(toJson(graph, opened.diagnose(*toFollow)));
+    return told;
   } catch (const std::bad_alloc&) {
     throw;
   } catch (const std::exception& failure) {
@@ -702,13 +716,13 @@ ToolResult applyEdit(RoomRegistry& registry, TreeRegistry& trees, const TreeId& 
     if (std::optional<ToolResult> refusal = checkOpenedTrees(trees, actor, opened)) return *refusal;
 
     // Bracketed under the strand, so whatever the tree gains between these reads, this gained.
-    std::optional<TreeData> treeBefore;
-    if (opensATree(opened)) treeBefore = room.snapshot();
+    std::optional<std::map<NodeId, TreeId>> pointersBefore;
+    if (opensATree(opened)) pointersBefore = room.pointers();
     const TreeDiagnostics before = room.diagnose();
     Seq seq = room.applyCommand(*command, clock.nowMs(), actor);
     registry.persist(tree);  // flush the dirty rows so the web reader sees this edit
     const TreeDiagnostics after = room.diagnose();
-    if (treeBefore) pointerEdit = PointerEdit{*treeBefore, before, room.snapshot(), after};
+    if (pointersBefore) pointerEdit = pointerEditOf(room, *pointersBefore, before, after);
 
     Json::Value out(Json::objectValue);
     out["applied"] = true;
@@ -726,7 +740,7 @@ ToolResult applyEdit(RoomRegistry& registry, TreeRegistry& trees, const TreeId& 
     }
     return ToolResult::json(out);
   });
-  return withClosedLoops(trees, actor, pointerEdit, edited);
+  return withClosedLoops(trees, actor, tree, pointerEdit, edited);
 }
 
 ToolResult applyBatchEdit(RoomRegistry& registry, TreeRegistry& trees, const TreeId& tree, const std::string& name,
@@ -847,18 +861,18 @@ ToolResult applyBatchEdit(RoomRegistry& registry, TreeRegistry& trees, const Tre
     out["applied"] = !dryRun;
     out["seq"] = static_cast<Json::Int64>(room.head());
     if (!dryRun) {
-      std::optional<TreeData> treeBefore;
-      if (opensATree(opened)) treeBefore = room.snapshot();
+      std::optional<std::map<NodeId, TreeId>> pointersBefore;
+      if (opensATree(opened)) pointersBefore = room.pointers();
       const TreeDiagnostics before = room.diagnose();
       out["seq"] = static_cast<Json::Int64>(room.applyCommands(batch.commands, clock.nowMs(), actor));
       registry.persist(tree);
       const TreeDiagnostics after = room.diagnose();
-      if (treeBefore) pointerEdit = PointerEdit{*treeBefore, before, room.snapshot(), after};
+      if (pointersBefore) pointerEdit = pointerEditOf(room, *pointersBefore, before, after);
       answerDiagnostics(before, after, out);
     }
     return ToolResult::json(out);
   });
-  edited = withClosedLoops(trees, actor, pointerEdit, edited);
+  edited = withClosedLoops(trees, actor, tree, pointerEdit, edited);
   edited.structured = edited.payload;
   return edited;
 }
@@ -1243,6 +1257,8 @@ ToolResult importSubgraph(RoomRegistry& registry, TreeRegistry& trees, ProgressS
     }
 
     // A graft can dangle an edge per node it carries; the receipt says which of them are new.
+    std::optional<std::map<NodeId, TreeId>> pointersBefore;
+    if (opensATree(opened)) pointersBefore = room.pointers();
     const TreeDiagnostics before = room.diagnose();
     Seq seq = room.importTree(graft, clock.nowMs(), actor);
     registry.persist(tree);
@@ -1263,11 +1279,11 @@ ToolResult importSubgraph(RoomRegistry& registry, TreeRegistry& trees, ProgressS
     out["imported"] = true;
     out["seq"] = static_cast<Json::Int64>(seq);
     const TreeDiagnostics after = room.diagnose();
-    if (opensATree(opened)) pointerEdit = PointerEdit{current, before, room.snapshot(), after};
+    if (pointersBefore) pointerEdit = pointerEditOf(room, *pointersBefore, before, after);
     answerDiagnostics(before, after, out);
     return ToolResult::json(out);
   });
-  grafted = withClosedLoops(trees, actor, pointerEdit, grafted);
+  grafted = withClosedLoops(trees, actor, tree, pointerEdit, grafted);
   if (grafted.isError || dryRun || !(args.isMember("progress") && args["progress"].isArray()))
     return grafted;
 

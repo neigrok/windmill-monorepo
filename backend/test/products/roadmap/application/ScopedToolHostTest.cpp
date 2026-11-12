@@ -450,6 +450,25 @@ TEST(scoped_tool_host_sends_every_get_diagnostics_of_a_tend_as_asking_for_no_poi
   CHECK_EQ(h.trees.openedReads, (std::vector<std::set<TreeId>>{{TreeId{"t_b"}, TreeId{"t_gone"}}}));
 }
 
+// A tend has no `opens` to send, so nothing it imports may bring a pointer back: a node it revives opens nothing, the
+// tree stays off the loop its removed node was on, and no other tree is read.
+TEST(scoped_tool_host_a_tends_import_brings_a_removed_node_back_opening_nothing) {
+  test::Harness h;
+  h.plant("t_b", h.caller, "", {"t"});
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"a","label":"A","icon":"i","opens":"t_b"})")).isError);
+  CHECK_FALSE(h.call("delete_node", parse(R"({"nodeId":"a"})")).isError);
+  h.trees.openedReads.clear();
+  ScopedToolHost scoped(h.tools, TreeId{"t"});
+
+  CHECK_FALSE(scoped.callTool("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A back"}]})"), h.actor).isError);
+
+  CHECK(h.trees.openedReads.empty());
+  CHECK_EQ(test::body(h.call("get_tree", parse(R"({"fields":["id","label","icon","opens"]})")))["tree"]["nodes"],
+           parse(R"([{"id":"a","label":"A back","icon":"i"}])"));
+  CHECK_EQ(test::body(h.call("get_diagnostics", test::kNoArgs)),
+           parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[],"maskedWork":[],"treeLoops":[],"danglingPointers":[]})"));
+}
+
 // A tend runs as the owner, so the state it reads is the node's true one, and still no pointer.
 TEST(scoped_tool_host_reads_the_state_of_a_node_that_follows_the_tree_it_opens) {
   test::Harness h;

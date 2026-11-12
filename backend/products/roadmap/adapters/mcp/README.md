@@ -185,7 +185,8 @@ composite pins a credential to its grant. A run is not offered `describe_tree` e
 tree's guide through `get_tree` and never sets it. Nor is it offered the tree a node opens: the
 schemas it is handed carry no `opens` argument and no `opens` field, so a run neither reads nor sets
 a pointer, an import through it leaves the pointers the tree holds as they are, and a node it
-creates opens none. The `state` it reads is the owner's: a node that opens a tree is complete when
+creates, or brings back from a delete, opens none. The `state` it reads is the owner's: a node
+that opens a tree is complete when
 that tree is. Its `get_tree` reply carries `tree.guide`, the tended tree's own, and no `guides`: the
 guides of the trees above are other trees' ids, titles and words, so a run is not offered
 `includeGuides`, every `get_tree` it makes is sent with it `false`, and no tree above the tended
@@ -226,7 +227,7 @@ The table uses product-local names; external MCP prefixes each with `roadmap_`.
 | edit | `disconnect` | remove edges: one `from`+`to` or `edges: [{from,to}]` (1..500), exactly one form; one op, one seq, all or nothing; `removed` counts the edges that were present |
 | edit | `delete_node` | tombstone nodes: one `nodeId` or `nodeIds` (1..200), exactly one form; a missing id refuses the whole call naming each; one op, one seq. `prune: true` also drops every edge touching a deleted node and clears the caller's marks on it, under the delete grant; receipt carries `ids` and `pruned: {edges, progress}` |
 | edit | `tidy` · `prune` | transitive reduction / GC dangling edges + orphan progress |
-| edit | `import_subgraph` | bulk upsert a whole `get_tree`-shaped slice as one graft frame — a field left off a re-sent node or kind keeps its value (`opens` included), `prerequisiteMode` merge (union) or replace, `tombstone[]` deletes in the same frame and needs the `roadmap:delete` grant |
+| edit | `import_subgraph` | bulk upsert a whole `get_tree`-shaped slice as one graft frame — a field left off a re-sent node or kind keeps its value (`opens` included, but on a node the import brings back from a delete, which opens none), `prerequisiteMode` merge (union) or replace, `tombstone[]` deletes in the same frame and needs the `roadmap:delete` grant |
 | legend | `add_kind` (inline label+description+crossBranchExempt) · `rename_kind` · `describe_kind` (description and/or crossBranchExempt) · `remove_kind` · `reorder_kinds` · `recolor_kind` | the legend |
 | write | `set_progress` | per-user overlay: single `nodeId`+`status`, or a bulk `updates[]` (order-safe); `outOfOrder: true` on a completion is kept on the mark and answered as `acknowledged: true` |
 | resource | `windmill://quickstart` | the read-me-first document; no tool slot |
@@ -237,10 +238,11 @@ arguments, permissions, revision preconditions, limits and required node existen
 Dry runs and unchanged patch/edge retries do not produce a new structural op. The diagnostics keys
 answer different questions: `diagnosticsClean` is the whole graph's state, and
 `introducedDiagnostics` names the cycles, dangling and self-edges present after this edit that the
-tree did not hold before it. An innocent edit on a dirty tree answers `[]`. An edit that makes a
-node open a tree also names there, after those, each loop of trees it closed, as
-`loop of trees from "<nodeId>" through "<treeId>" -> … -> "<this tree>"` (see `opens`); a loop of
-trees does not change `diagnosticsClean`.
+tree did not hold before it. An innocent edit on a dirty tree answers `[]`. An edit that changes
+the tree a node opens also names there, after those, each loop of trees it closed, as
+`loop of trees from "<nodeId>" through "<treeId>" -> … -> "<this tree>"` (see `opens`). The list
+names five lines in all and counts the rest, so a loop is named only while the graph's errors
+leave it a line; a loop of trees does not change `diagnosticsClean`.
 
 ### The descriptor
 
@@ -358,7 +360,7 @@ A node may point at another tree: `opens` holds that tree's id.
   strand and read the repositories after letting it go, so no other read of the tree waits on that
   statement. `list_trees` makes no such read: it already holds every tree of the caller's. Every
   write door saves before it answers, so the stored rows are the live ones unless a save failed.
-- **What can be wrong with a pointer.** `get_diagnostics` answers two more keys to a caller who
+- **What can be wrong with a pointer.** `get_diagnostics` answers two more lists to a caller who
   can write the tree (`OpenedTrees::diagnose`), each in node id order. `treeLoops` holds one
   `{node, path}` per node whose pointer leads back to the tree being read — a tree on such a loop
   is never complete. `path` is a shortest way back, `[{treeId, title}]`: the tree the node opens
@@ -372,23 +374,43 @@ A node may point at another tree: `opens` holds that tree's id.
   a statement about the graph. Both are repaired by re-pointing or clearing the node's `opens`.
   A reader who cannot write the tree is answered the graph's diagnostics alone, in the bytes a
   tree without pointers answers, and nothing is read for them.
+- **The reply is bounded.** `treeLoops` lists its first 50 nodes and `danglingPointers` its first
+  50 (`kMaxTreeLoops`, `kMaxDanglingPointers`, `domain/OpenedTrees.h`); `treeLoopsOmitted` and
+  `danglingPointersOmitted` count the rest. A `path` lists at most 8 trees (`kMaxLoopPath`): a
+  longer way is cut to its first 8, starting with the tree the node opens, so a cut path does not
+  end with this tree, and `pathOmitted` counts the trees left off, this tree the last of them.
+  The three counts are absent when nothing is left off. The caps are applied in the domain, which
+  never builds what is past them, so both doors answer alike and the reply follows the caps and
+  not the tree.
 - **`includePointers`.** A boolean argument of `get_diagnostics`, default `true`. `false` leaves
-  both keys out and reads no other tree. The read is the one following makes
+  both lists out and reads no other tree. The read is the one following makes
   (`TreeRegistry::openedFrom`), once per reply, after the tree's strand is released, and only when
-  the tree holds a pointer: a tree that holds none answers both keys as `[]`.
+  the tree holds a pointer: a tree that holds none answers both lists as `[]`. Under the strand
+  the read takes the tree's pointers alone (`TreeRoom::pointers`), not a copy of its nodes, and
+  the walk back reads each pointer between the caller's standing trees once
+  (`OpenedTrees::waysBackTo`).
 - **A follow that fails does not fail the call.** The reply then carries the graph's diagnostics
-  without the two keys and `pointerDiagnosticsUnavailable: true`, a key that is otherwise absent.
+  without the two lists and `pointerDiagnosticsUnavailable: true`, a key that is otherwise absent.
   The failure is reported once as `roadmap.diagnostics.follow`, door `mcp`.
 - **An edit that closes a loop says so.** `create_node`, `annotate_node`, `patch_nodes` and
-  `import_subgraph` follow the tree's pointers once when the call makes a node open a tree, after
-  the edit is saved and the strand is released, from the trees the tree opened before the edit
-  and opens after it. Each loop of trees the tree holds now and did not hold before is named in
-  the receipt's `introducedDiagnostics`. A pointer left as it was is not named again, and an edit
-  that clears or re-points a pointer says nothing of the loop it removed, as no receipt names a
-  removed diagnostic. Every other edit — one that only clears a pointer and a dry run among them —
-  follows nothing, and its receipt names the graph's errors alone. When that follow fails the edit has
-  landed: its receipt carries the graph's diagnostics and `pointerDiagnosticsUnavailable: true`,
-  and the failure is reported as `roadmap.diagnostics.follow`, door `mcp`.
+  `import_subgraph` follow pointers once when the call changes the tree a node opens to a tree:
+  after the edit is saved and the strand is released, one read starts from the trees those nodes
+  now open, and only those nodes are judged. Each of them whose tree leads back to this one is a
+  loop the edit closed, named in the receipt's `introducedDiagnostics` after the graph's errors
+  and within that list's five lines; a node re-pointed from one tree that leads back to another
+  that does is named, as the loop runs through another tree. A sentence names the first 8 trees of
+  the way and then `and N more`. A pointer the edit left as it was is neither followed nor named,
+  and an edit that clears or re-points a pointer says nothing of the loop it removed, as no
+  receipt names a removed diagnostic. Every other edit — one that only clears a pointer, one that
+  re-sends the tree a node already opens and a dry run among them — follows nothing, and its
+  receipt names the graph's errors alone.
+- **The receipt's follow is short.** The edit is durable before it, and the reply waits on that
+  read alone, so the read is given 750 ms of its own (`kReceiptFollowBudget`; a statement limit
+  for that one transaction, `TreeRepository::openedFrom`), not the pool's 5 s. Past it the receipt
+  carries the graph's diagnostics and `pointerDiagnosticsUnavailable: true`, and the follow
+  completes as `roadmap.receipt.follow`, door `mcp`, outcome `timeout`, at WARN: an expected
+  refusal under load, not an Issue. A read that fails answers the same receipt and is reported
+  once under that name. `get_diagnostics` then tells the loop under the ordinary limit.
 - **A tend** is answered neither key and follows no pointer (`ScopedToolHost.cpp`).
 - `import_subgraph` takes the id as a string, where `get_tree` answers the object: a copied slice
   sends `opens.treeId`.
@@ -466,7 +488,10 @@ and none overrides another.
   `Graft::omittedKindRegisters` and `graftLegend`) and no stored stamp loses to that. A node the
   tree holds keeps its creation stamp, so it keeps its place among its siblings, and a delete
   stamped before the import that arrives after it still removes it; a node deleted earlier and
-  re-sent is revived at the graft's stamp with the registers it had. A sent node register lands at
+  re-sent is revived at the graft's stamp with the registers it had, `opens` excepted: a node the
+  import brings back opens the tree the batch names for it, and none when the batch leaves `opens`
+  out, as a node `create_node` makes on a deleted id does, so no batch restores a pointer it does
+  not name. A sent node register lands at
   the graft's stamp when it changes what the node holds, `""` and `[]` included, which is how a
   text or list field is cleared (`position` and `seedStatus` have no empty value: `null` counts as
   left out); one sent as the node already holds it, like a prerequisite edge the tree already

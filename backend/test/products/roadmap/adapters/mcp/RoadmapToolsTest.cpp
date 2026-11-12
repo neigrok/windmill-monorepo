@@ -10,8 +10,11 @@
 #include "platform/ports/FailureReporter.h"
 #include "test/testing.h"
 
+#include <chrono>
 #include <memory>
 #include <mutex>
+#include <new>
+#include <optional>
 #include <thread>
 #include <tuple>
 #include <typeinfo>
@@ -4407,9 +4410,9 @@ TEST(mcp_get_diagnostics_whose_pointers_cannot_be_followed_answers_the_graphs_di
   CHECK_EQ(reporter.failures->reports.size(), 1u);
 }
 
-// An edit that makes a node open a tree follows the pointers once, after it has landed, and names each loop of
-// trees it closed beside the graph's errors. A pointer it left as it was, or took off a loop, is not named, and
-// `diagnosticsClean` stays the graph's.
+// An edit that changes the tree a node opens follows the pointers it set once, after it has landed and within the
+// receipt's budget, and names each loop of trees it closed after the graph's errors. A pointer it left as it was is
+// not followed at all, one it took off a loop is not named, and `diagnosticsClean` stays the graph's.
 TEST(mcp_an_edit_that_closes_a_loop_of_trees_says_so_in_its_receipt_through_each_write_tool) {
   Harness h;
   h.plant("t_b", h.caller, "", {"t"});
@@ -4440,12 +4443,9 @@ TEST(mcp_an_edit_that_closes_a_loop_of_trees_says_so_in_its_receipt_through_each
                "introducedDiagnostics":["dangling edge \"ghost\" -> \"b\"","loop of trees from \"b\" through \"t_b\" -> \"t\""]})"));
 
   CHECK_EQ(h.trees.openedReads,
-           (std::vector<std::set<TreeId>>{{TreeId{"t_b"}},
-                                          {TreeId{"t_b"}},
-                                          {TreeId{"t_b"}, TreeId{"t_c"}},
-                                          {TreeId{"t_c"}, TreeId{"t_sub"}},
-                                          {TreeId{"t"}, TreeId{"t_sub"}},
-                                          {TreeId{"t"}, TreeId{"t_b"}}}));
+           (std::vector<std::set<TreeId>>{{TreeId{"t_b"}}, {TreeId{"t_c"}}, {TreeId{"t_sub"}}, {TreeId{"t"}}, {TreeId{"t_b"}}}));
+  CHECK_EQ(h.trees.openedBudgets,
+           (std::vector<std::optional<std::chrono::milliseconds>>(5, std::chrono::milliseconds{750})));
 }
 
 TEST(mcp_a_receipt_names_five_of_the_loops_an_edit_closed_and_counts_the_rest) {
@@ -4566,7 +4566,7 @@ TEST(mcp_an_edit_whose_pointers_cannot_be_followed_still_lands_and_says_so_and_e
            parse(R"({"applied":true,"seq":1,"id":"a","diagnosticsClean":false,
                "introducedDiagnostics":["dangling edge \"ghost\" -> \"a\""],"pointerDiagnosticsUnavailable":true})"));
   CHECK_EQ(reporter.failures->reports,
-           (std::vector<std::string>{std::string("roadmap.diagnostics.follow roadmap mcp failed ") + typeid(std::runtime_error).name()}));
+           (std::vector<std::string>{std::string("roadmap.receipt.follow roadmap mcp failed ") + typeid(std::runtime_error).name()}));
   const ToolResult patched = h.call("patch_nodes", parse(R"({"updates":[{"nodeId":"a","opens":"t"}]})"));
   CHECK_EQ(body(patched), parse(R"({"treeId":"t","applied":true,"dryRun":false,"seq":2,"changedNodeIds":["a"],"unchangedNodeIds":[],
       "diagnosticsClean":false,"introducedDiagnostics":[],"pointerDiagnosticsUnavailable":true})"));
@@ -4576,6 +4576,155 @@ TEST(mcp_an_edit_whose_pointers_cannot_be_followed_still_lands_and_says_so_and_e
   CHECK_EQ(body(h.call("get_tree", parse(R"({"fields":["id","opens"]})")))["tree"]["nodes"],
            parse(R"([{"id":"a","opens":{"treeId":"t","title":"Test Roadmap","state":"open"}}])"));
   CHECK_EQ(reporter.failures->reports.size(), 2u);
+}
+
+// What one reply builds follows the caps and not the tree: fifty nodes of each list in node id order, eight trees
+// of a way, and a count of whatever is left off. A cut way does not end with this tree. The receipt of the edit that
+// closed those loops names the same eight trees and counts the rest of the way and of the list.
+TEST(mcp_get_diagnostics_lists_fifty_nodes_and_eight_trees_of_a_way_and_counts_the_rest_and_a_receipt_names_as_many) {
+  Harness h;
+  const auto numbered = [](const char* prefix, int k) { return std::string(prefix) + (k < 10 ? "0" : "") + std::to_string(k); };
+  h.plant("t_w12", h.caller, "", {"t"});
+  for (int k = 11; k >= 1; --k) h.plant(numbered("t_w", k).c_str(), h.caller, "", {numbered("t_w", k + 1).c_str()});
+  Json::Value batch(Json::objectValue);
+  for (int k = 1; k <= 60; ++k) {
+    Json::Value looping = node(numbered("l", k).c_str(), "L");
+    looping["icon"] = "l";
+    looping["opens"] = "t_w01";
+    batch["nodes"].append(looping);
+    Json::Value plain = node(numbered("g", k).c_str(), "G");
+    plain["icon"] = "g";
+    batch["nodes"].append(plain);
+  }
+
+  const std::string way = R"("t_w01" -> "t_w02" -> "t_w03" -> "t_w04" -> "t_w05" -> "t_w06" -> "t_w07" -> "t_w08" and 5 more)";
+  CHECK_EQ(introduced(body(h.call("import_subgraph", batch))),
+           (std::vector<std::string>{"loop of trees from \"l01\" through " + way, "loop of trees from \"l02\" through " + way,
+                                     "loop of trees from \"l03\" through " + way, "loop of trees from \"l04\" through " + way,
+                                     "loop of trees from \"l05\" through " + way,
+                                     "and 55 more — call get_diagnostics for the whole list"}));
+  for (int k = 1; k <= 60; ++k) {
+    AnnotateNode planted{NodeId{numbered("g", k)}};
+    planted.opens = TreeId{numbered("t_gone", k)};
+    h.registry.open(TreeId{"t"})->applyCommand(planted, h.clock.nowMs(), h.caller);
+  }
+
+  Json::Value expected = parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[],"maskedWork":[],
+      "treeLoops":[],"treeLoopsOmitted":10,"danglingPointers":[],"danglingPointersOmitted":10})");
+  for (int k = 1; k <= 50; ++k) {
+    Json::Value loop(Json::objectValue);
+    loop["node"] = numbered("l", k);
+    for (int on = 1; on <= 8; ++on) {
+      Json::Value tree(Json::objectValue);
+      tree["treeId"] = numbered("t_w", on);
+      tree["title"] = "Tree " + numbered("t_w", on);
+      loop["path"].append(tree);
+    }
+    loop["pathOmitted"] = 5;
+    expected["treeLoops"].append(loop);
+    Json::Value dangling(Json::objectValue);
+    dangling["node"] = numbered("g", k);
+    dangling["treeId"] = numbered("t_gone", k);
+    expected["danglingPointers"].append(dangling);
+  }
+  CHECK_EQ(body(h.call("get_diagnostics", kNoArgs)), expected);
+}
+
+// A node an import brings back from a delete opens the tree the batch names and no other, as a node created on a
+// deleted id does: no batch restores a pointer it does not name, so none closes a loop unsaid.
+TEST(mcp_import_subgraph_brings_a_deleted_node_back_opening_nothing_unless_the_batch_names_a_tree) {
+  Harness h;
+  h.plant("t_b", h.caller, "", {"t"});
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"a","label":"A","icon":"a","description":"Kept.","opens":"t_b"})")).isError);
+  CHECK_FALSE(h.call("delete_node", parse(R"({"nodeId":"a"})")).isError);
+  h.trees.openedReads.clear();
+
+  CHECK_EQ(body(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A back"}]})"))),
+           parse(R"({"nodes":1,"edges":0,"kinds":0,"nodeCollisions":[],"kindCollisions":[],"newNodes":1,"newKinds":0,
+               "prerequisiteMode":"merge","keptEdges":[],"keptEdgeCount":0,"tombstoned":{"nodes":0,"edges":0},
+               "graphApplied":true,"progressApplied":true,"imported":true,"seq":3,"diagnosticsClean":true,"introducedDiagnostics":[]})"));
+  CHECK(h.trees.openedReads.empty());
+  CHECK_EQ(body(h.call("get_tree", parse(R"({"fields":["id","label","description","opens"]})")))["tree"]["nodes"],
+           parse(R"([{"id":"a","label":"A back","description":"Kept."}])"));
+  CHECK_EQ(body(h.call("get_diagnostics", kNoArgs)),
+           parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[],"maskedWork":[],"treeLoops":[],"danglingPointers":[]})"));
+  REQUIRE_EQ(h.trees.byId["t"].state.nodes.size(), 1u);
+  CHECK_EQ(h.trees.byId["t"].state.nodes[0].opens, TreeId{});
+
+  CHECK_FALSE(h.call("delete_node", parse(R"({"nodeId":"a"})")).isError);
+  CHECK_EQ(introduced(body(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","opens":"t_b"}]})")))),
+           (std::vector<std::string>{"loop of trees from \"a\" through \"t_b\" -> \"t\""}));
+  CHECK_EQ(h.trees.openedReads, (std::vector<std::set<TreeId>>{{TreeId{"t_b"}}}));
+}
+
+// The edit is saved before its pointers are followed and its reply waits on that read alone, so the read is given
+// a short budget of its own: past it the receipt goes out without the loops and says so. That is an expected refusal
+// under load — one WARN line under the follow's own name, no Issue — and the tree's diagnostics, read under the
+// ordinary limit, still tell the loop.
+TEST(mcp_an_edit_whose_follow_runs_past_its_budget_answers_without_the_loops_at_warn_and_files_no_issue) {
+  struct Failures : FailureReporter {
+    std::vector<std::string> reports;
+    void report(const std::string&, const std::string&, const std::string&) override {}
+    void reportWrite(const std::string& operation, const std::string& product, const std::string& door,
+                     const std::string& outcome, const std::string&, const std::string& exceptionType) override {
+      reports.push_back(operation + " " + product + " " + door + " " + outcome + " " + exceptionType);
+    }
+  };
+  struct Observed {
+    std::shared_ptr<Failures> failures = std::make_shared<Failures>();
+    std::vector<std::string> completions;
+    Observed() {
+      installWriteReporter(failures);
+      installWriteSink([this](const WriteCompletion& done) {
+        completions.push_back(done.operation + " " + done.product + " " + done.door + " " + done.outcome +
+                              (done.severity == WriteSeverity::warn ? " WARN" : " other"));
+      });
+    }
+    ~Observed() {
+      installWriteReporter(nullptr);
+      installWriteSink(nullptr);
+    }
+  } observed;
+  Harness h;
+  h.plant("t_b", h.caller, "", {"t"});
+  h.trees.budgetedReadsTimeOut = true;
+
+  CHECK_EQ(body(h.call("create_node", parse(R"({"id":"a","label":"A","icon":"a","opens":"t_b"})"))),
+           parse(R"({"applied":true,"seq":1,"id":"a","diagnosticsClean":true,"introducedDiagnostics":[],
+               "pointerDiagnosticsUnavailable":true})"));
+  const ToolResult patched = h.call("patch_nodes", parse(R"({"updates":[{"nodeId":"a","opens":"t"}]})"));
+  CHECK_EQ(body(patched), parse(R"({"treeId":"t","applied":true,"dryRun":false,"seq":2,"changedNodeIds":["a"],"unchangedNodeIds":[],
+      "diagnosticsClean":true,"introducedDiagnostics":[],"pointerDiagnosticsUnavailable":true})"));
+  CHECK_EQ(patched.structured, body(patched));
+
+  CHECK_EQ(observed.completions, (std::vector<std::string>(2, "roadmap.receipt.follow roadmap mcp timeout WARN")));
+  CHECK(observed.failures->reports.empty());
+  CHECK_EQ(body(h.call("get_diagnostics", kNoArgs)),
+           parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[],"maskedWork":[],
+               "treeLoops":[{"node":"a","path":[{"treeId":"t","title":"Test Roadmap"}]}],"danglingPointers":[]})"));
+  CHECK_EQ(h.trees.openedBudgets,
+           (std::vector<std::optional<std::chrono::milliseconds>>{std::chrono::milliseconds{750}, std::chrono::milliseconds{750},
+                                                                   std::nullopt}));
+  CHECK_EQ(observed.completions.size(), 2u);
+}
+
+// An exhausted process must die rather than answer: neither the read nor an edit's follow reports it as pointers
+// that could not be followed.
+TEST(mcp_an_exhausted_process_is_not_answered_as_pointers_that_could_not_be_followed) {
+  Harness h;
+  h.plant("t_b", h.caller, "", {"t"});
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"a","label":"A","opens":"t_b"})")).isError);
+  h.trees.duringOpenedRead = [] { throw std::bad_alloc{}; };
+
+  for (const auto& [tool, arguments] : {std::pair{"get_diagnostics", "{}"}, std::pair{"annotate_node", R"({"nodeId":"a","opens":"t"})"}}) {
+    bool propagated = false;
+    try {
+      h.call(tool, parse(arguments));
+    } catch (const std::bad_alloc&) {
+      propagated = true;
+    }
+    CHECK(propagated);
+  }
 }
 
 TEST(mcp_create_node_files_the_node_under_the_kind_it_names_and_says_so) {

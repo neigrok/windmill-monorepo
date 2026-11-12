@@ -41,6 +41,12 @@ struct Opening {
   bool operator==(const Opening&) const = default;
 };
 
+// The most one answer of pointer diagnostics lists: the nodes on a loop of trees, the trees along one way back and
+// the pointers that dangle. What is past a cap is counted, never built.
+constexpr std::size_t kMaxTreeLoops = 50;
+constexpr std::size_t kMaxLoopPath = 8;
+constexpr std::size_t kMaxDanglingPointers = 50;
+
 // One tree on the way from the tree a node opens back to the node's own tree.
 struct TreeOnLoop {
   TreeId tree;
@@ -49,10 +55,13 @@ struct TreeOnLoop {
 };
 
 // A node whose pointer leads back to its own tree, which is why that tree never completes. `path` is a shortest way
-// back: the tree the node opens first, the node's own tree last, the smaller tree id taken wherever two are as short.
+// back: the tree the node opens first, the smaller tree id taken wherever two are as short, and the node's own tree
+// last. A way of more than kMaxLoopPath trees is cut to its first kMaxLoopPath, and `pathOmitted` counts the trees
+// left off, the node's own tree the last of them.
 struct TreeLoop {
   NodeId node;
   std::vector<TreeOnLoop> path;
+  std::size_t pathOmitted = 0;
   bool operator==(const TreeLoop&) const = default;
 };
 
@@ -63,14 +72,33 @@ struct DanglingPointer {
   bool operator==(const DanglingPointer&) const = default;
 };
 
-// How one tree's pointers depart from the rule in SPEC.md (Model, `OpenedTrees`), each list in node id order.
+// How one tree's pointers depart from the rule in SPEC.md (Model, `OpenedTrees`), each list in node id order and cut
+// at its cap, with the entries past the cap counted beside it.
 struct PointerDiagnostics {
   std::vector<TreeLoop> treeLoops;
+  std::size_t treeLoopsOmitted = 0;
   std::vector<DanglingPointer> danglingPointers;
+  std::size_t danglingPointersOmitted = 0;
   bool operator==(const PointerDiagnostics&) const = default;
 };
 
+// How the standing trees that lead to one tree get back to it. `pointers` is the fewest a tree takes, the tree itself
+// at none, and `next` the tree it steps to first, the smaller id where two are as near. `walked` counts the pointers
+// read to find them: each pointer between two standing trees at most once.
+struct WaysBack {
+  struct Way {
+    int pointers = 0;
+    TreeId next;
+  };
+  std::map<TreeId, Way> ways;
+  std::size_t walked = 0;
+};
+
 std::set<TreeId> treesOpenedBy(const TreeData& tree);
+// The same of a tree's pointers, held by node.
+std::set<TreeId> treesOpenedBy(const std::map<NodeId, TreeId>& pointers);
+// The pointers of `after` that `before` does not hold: the nodes an edit made open a tree, or another tree.
+std::map<NodeId, TreeId> pointersSetSince(const std::map<NodeId, TreeId>& before, const std::map<NodeId, TreeId>& after);
 
 // One owner's standing trees under the owner's marks, judged once by the rule in SPEC.md (Model, `OpenedTrees`).
 class OpenedTrees {
@@ -84,17 +112,16 @@ public:
   std::map<NodeId, Opening> openings(const TreeData& tree) const;
   // The standing trees whose pointers lead to `tree`, itself among them when it stands.
   std::set<TreeId> leadingBackTo(const TreeId& tree) const;
-  // The loops of trees through `tree` and the pointers of `tree` that are not valid. A loop among other trees that
-  // does not lead back to `tree` is theirs.
-  PointerDiagnostics diagnose(const TreeData& tree) const;
+  // The way back to `tree` from every standing tree that leads to it; none when `tree` does not stand.
+  WaysBack waysBackTo(const TreeId& tree) const;
+  // What is wrong with `pointers`, the tree each node of `tree` opens: the loops of trees through `tree` and the
+  // pointers that are not valid. A loop among other trees that does not lead back to `tree` is theirs. It reads the
+  // ways back once and steps along each listed path, so its work follows the account and the caps, not their product.
+  PointerDiagnostics diagnose(const TreeId& tree, const std::map<NodeId, TreeId>& pointers) const;
   // The pointers the completeness pass walked: at most one per tree and target.
   std::size_t walked() const { return walked_; }
 
 private:
-  // Each standing tree whose pointers lead to `tree`, by the fewest pointers that take it there; `tree` itself at
-  // none when it stands.
-  std::map<TreeId, int> pointersBackTo(const TreeId& tree) const;
-
   std::map<TreeId, OpenedTree> standing_;
   std::map<TreeId, std::vector<TreeId>> openers_;
   std::map<TreeId, int> pending_;
