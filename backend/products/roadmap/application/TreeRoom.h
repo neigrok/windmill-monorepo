@@ -47,6 +47,8 @@ public:
   // What importTree(incoming) would do beyond the upsert — the edges it keeps, replaces or
   // tombstones — read off this room's live state, changing nothing.
   GraftFootprint footprintOf(const Graft& incoming) const { return wm::footprintOf(graph_, incoming); }
+  // The nodes importTree(incoming) would repaint for the kinds it re-hues, read off this room's live state.
+  Repaint repaintOf(const Graft& incoming) const { return wm::repaintOf(graph_, legend_, incoming); }
   // Whether importTree(incoming) at `nowMs` would land nothing, read off a copy of the room clock so
   // nothing moves: the preview a dry run answers.
   bool graftLandsNothing(const Graft& incoming, std::uint64_t nowMs) const {

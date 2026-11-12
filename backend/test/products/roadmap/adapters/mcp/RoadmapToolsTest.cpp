@@ -5795,3 +5795,138 @@ TEST(mcp_an_annotation_lands_only_the_fields_that_differ_through_every_door) {
              parse(R"([{"icon":"anchor","description":"new"}])"));
   }
 }
+
+// An import that changes a held kind's hue repaints every node wearing the old hue, as recolor_kind does, in the
+// graft's frame: the receipt counts them and the dry run previews the count.
+TEST(mcp_an_import_that_rehues_a_kind_repaints_the_nodes_that_wore_its_hue) {
+  Harness h;
+  CHECK_FALSE(h.call("add_kind", parse(R"({"id":"backend","hue":"sky"})")).isError);
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"a","label":"A","color":"sky"})")).isError);
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"old","label":"Old","kind":"backend"})")).isError);
+  const auto nodesOf = [&](const char* ids) {
+    return body(h.call("get_nodes", parse(std::string(R"({"fields":["id","color","kind"],"nodeIds":)") + ids + "}")))["nodes"];
+  };
+
+  const Json::Value preview =
+      body(h.call("import_subgraph", parse(R"({"dryRun":true,"kinds":[{"id":"backend","hue":"plum"}],"nodes":[]})")));
+  CHECK_EQ(preview["repaintedNodes"].asUInt64(), 2u);
+  CHECK_EQ(nodesOf(R"(["a","old"])"), parse(R"([{"id":"a","color":"sky","kind":"backend"},
+    {"id":"old","color":"sky","kind":"backend"}])"));
+
+  const Json::Value landed = body(h.call("import_subgraph", parse(R"({"kinds":[{"id":"backend","hue":"plum"}],
+    "nodes":[{"id":"fresh","label":"Fresh","kind":"backend"}]})")));
+  CHECK_EQ(landed["repaintedNodes"].asUInt64(), 2u);
+  CHECK_EQ(nodesOf(R"(["a","old","fresh"])"), parse(R"([{"id":"a","color":"plum","kind":"backend"},
+    {"id":"old","color":"plum","kind":"backend"},{"id":"fresh","color":"plum","kind":"backend"}])"));
+
+  CHECK_FALSE(body(h.call("import_subgraph", parse(R"({"kinds":[{"id":"backend","hue":"plum"}],"nodes":[]})")))
+                  .isMember("repaintedNodes"));
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"kinds":[{"id":"backend","hue":"olive"}],"nodes":[]})")).isError);
+  CHECK_EQ(commandKind(h.ops.byTree["t"].back().command), std::string("RecolorKind"));
+  CHECK_EQ(commandPayload(h.ops.byTree["t"].back().command), parse(R"({"id":"backend","hue":"olive"})"));
+  CHECK_EQ(nodesOf(R"(["a","old","fresh"])"), parse(R"([{"id":"a","color":"olive","kind":"backend"},
+    {"id":"old","color":"olive","kind":"backend"},{"id":"fresh","color":"olive","kind":"backend"}])"));
+}
+
+// The repaint reads the legend and the nodes as they stood before the batch, so a swap swaps; a node the batch gives
+// its own colour or kind lands what the batch says, and a deleted node or one the batch tombstones is left alone.
+TEST(mcp_an_import_repaints_against_the_legend_before_the_batch_and_yields_to_its_word) {
+  Harness h;
+  for (const char* kind : {R"({"id":"apps","hue":"sky"})", R"({"id":"infra","hue":"plum"})", R"({"id":"ops","hue":"gold"})"})
+    CHECK_FALSE(h.call("add_kind", parse(kind)).isError);
+  for (const char* node : {R"({"id":"s1","label":"S1","color":"sky"})", R"({"id":"s2","label":"S2","color":"sky"})",
+                           R"({"id":"s3","label":"S3","color":"sky"})", R"({"id":"p1","label":"P1","color":"plum"})",
+                           R"({"id":"gone","label":"Gone","color":"sky"})", R"({"id":"cut","label":"Cut","color":"sky"})"})
+    CHECK_FALSE(h.call("create_node", parse(node)).isError);
+  CHECK_FALSE(h.call("delete_node", parse(R"({"nodeId":"gone"})")).isError);
+
+  const Json::Value receipt = body(h.call("import_subgraph", parse(R"({"kinds":[{"id":"apps","hue":"plum"},
+    {"id":"infra","hue":"sky"}],"nodes":[{"id":"s2","color":"gold"},{"id":"s3","kind":"ops"}],"tombstone":["cut"]})")));
+  CHECK_EQ(receipt["repaintedNodes"].asUInt64(), 2u);
+  CHECK_EQ(body(h.call("get_nodes", parse(R"({"nodeIds":["s1","s2","s3","p1"],"fields":["id","color","kind"]})")))["nodes"],
+           parse(R"([{"id":"s1","color":"plum","kind":"apps"},{"id":"s2","color":"gold","kind":"ops"},
+             {"id":"s3","color":"gold","kind":"ops"},{"id":"p1","color":"sky","kind":"infra"}])"));
+  for (const NodeStateEntry& node : h.registry.open(TreeId{"t"})->exportState().nodes)
+    if (node.id == NodeId{"gone"} || node.id == NodeId{"cut"}) CHECK(node.color == NodeColor::sky);
+}
+
+// A node is the batch's word only when the colour the batch lands for it differs from the one it holds: a get_tree
+// round trip that re-hues a kind repaints every wearer, a colour sent as held is repainted, a third hue stays the
+// batch's, and the new hue sent as a colour or by the re-hued kind ends on the new hue either way.
+TEST(mcp_an_import_round_trip_that_rehues_a_kind_repaints_every_wearer) {
+  const auto seeded = [] {
+    auto h = std::make_unique<Harness>();
+    CHECK_FALSE(h->call("add_kind", parse(R"({"id":"k","hue":"sky"})")).isError);
+    CHECK_FALSE(h->call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A","color":"sky"},
+      {"id":"b","label":"B","color":"sky"},{"id":"c","label":"C","color":"sky"},{"id":"d","label":"D","color":"sky"},
+      {"id":"e","label":"E","color":"gold"}]})")).isError);
+    return h;
+  };
+  const auto colours = [](Harness& h) {
+    return body(h.call("get_nodes", parse(R"({"nodeIds":["a","b","c","d","e"],"fields":["id","color"]})")))["nodes"];
+  };
+
+  auto round = seeded();
+  Json::Value batch = body(round->call("get_tree", parse(R"({"includeGuides":false})")))["tree"];
+  batch.removeMember("guide");
+  batch.removeMember("id");
+  batch.removeMember("title");
+  batch.removeMember("url");
+  for (Json::Value& kind : batch["kinds"]) kind["hue"] = "plum";
+  Json::Value preview = batch;
+  preview["dryRun"] = true;
+  CHECK_EQ(body(round->call("import_subgraph", preview))["repaintedNodes"].asUInt64(), 4u);
+  CHECK_EQ(body(round->call("import_subgraph", batch))["repaintedNodes"].asUInt64(), 4u);
+  CHECK_EQ(colours(*round), parse(R"([{"id":"a","color":"plum"},{"id":"b","color":"plum"},{"id":"c","color":"plum"},
+    {"id":"d","color":"plum"},{"id":"e","color":"gold"}])"));
+
+  auto sent = seeded();
+  const Json::Value receipt = body(sent->call("import_subgraph", parse(R"({"kinds":[{"id":"k","hue":"plum"}],
+    "nodes":[{"id":"a","color":"sky"},{"id":"b","color":"olive"},{"id":"c","color":"plum"},{"id":"d","kind":"k"}]})")));
+  CHECK_EQ(receipt["repaintedNodes"].asUInt64(), 1u);
+  CHECK_EQ(colours(*sent), parse(R"([{"id":"a","color":"plum"},{"id":"b","color":"olive"},{"id":"c","color":"plum"},
+    {"id":"d","color":"plum"},{"id":"e","color":"gold"}])"));
+}
+
+// A node the batch files by `kind` is the batch's word whatever it wore: it lands the hue that kind wears after the
+// batch and is never repainted, even when that hue is the one it holds — a swap, or a new kind on the hue a re-hue
+// frees. repaintedNodes counts only the nodes the repaint moved, and a round trip read with `kind` lands every wearer
+// on the new hue by the batch's own word.
+TEST(mcp_an_import_that_files_a_node_by_kind_beside_a_rehue_lands_the_kind_it_names) {
+  const auto seeded = [] {
+    auto h = std::make_unique<Harness>();
+    CHECK_FALSE(h->call("add_kind", parse(R"({"id":"k","hue":"sky"})")).isError);
+    CHECK_FALSE(h->call("add_kind", parse(R"({"id":"j","hue":"plum"})")).isError);
+    CHECK_FALSE(h->call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A","color":"sky"},
+      {"id":"b","label":"B","color":"sky"},{"id":"c","label":"C","color":"plum"}]})")).isError);
+    return h;
+  };
+  const auto filed = [](Harness& h) {
+    return body(h.call("get_nodes", parse(R"({"nodeIds":["a","b","c"],"fields":["id","color","kind"]})")))["nodes"];
+  };
+
+  auto swap = seeded();
+  CHECK_EQ(body(swap->call("import_subgraph", parse(R"({"kinds":[{"id":"k","hue":"plum"},{"id":"j","hue":"sky"}],
+    "nodes":[{"id":"a","kind":"j"}]})")))["repaintedNodes"].asUInt64(), 2u);
+  CHECK_EQ(filed(*swap), parse(R"([{"id":"a","color":"sky","kind":"j"},{"id":"b","color":"plum","kind":"k"},
+    {"id":"c","color":"sky","kind":"j"}])"));
+
+  auto freed = seeded();
+  CHECK_EQ(body(freed->call("import_subgraph", parse(R"({"kinds":[{"id":"k","hue":"olive"},{"id":"m","hue":"sky"}],
+    "nodes":[{"id":"a","kind":"m"}]})")))["repaintedNodes"].asUInt64(), 1u);
+  CHECK_EQ(filed(*freed), parse(R"([{"id":"a","color":"sky","kind":"m"},{"id":"b","color":"olive","kind":"k"},
+    {"id":"c","color":"plum","kind":"j"}])"));
+
+  auto round = seeded();
+  Json::Value batch =
+      body(round->call("get_tree", parse(R"({"includeGuides":false,"fields":["id","label","kind"]})")))["tree"];
+  batch.removeMember("guide");
+  batch.removeMember("id");
+  batch.removeMember("title");
+  batch.removeMember("url");
+  for (Json::Value& kind : batch["kinds"])
+    if (kind["id"] == "k") kind["hue"] = "olive";
+  CHECK_EQ(body(round->call("import_subgraph", batch))["repaintedNodes"].asUInt64(), 0u);
+  CHECK_EQ(filed(*round), parse(R"([{"id":"a","color":"olive","kind":"k"},{"id":"b","color":"olive","kind":"k"},
+    {"id":"c","color":"plum","kind":"j"}])"));
+}
