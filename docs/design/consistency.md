@@ -653,7 +653,7 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   (*Loops back*, *Won’t complete by itself*) and has no door: no chevron on the pill, no Tree row to press, no Open
   tree.
 - **Section 28 · read-me and fixtures.** The read-me 28.00 still lists the tree switcher's delete confirmation
-  under "Not drawn"; it is drawn as 🚧 28.50–28.52. Coast trip reads "0 of 5" on 28.00 and 28.02 and "No steps" on
+  under "Not drawn"; it is drawn as 28.50–28.52. Coast trip reads "0 of 5" on 28.00 and 28.02 and "No steps" on
   28.14 and 28.44. The picker on 28.14 leaves out My life, though its NOTE says the rows are the switcher's list
   minus the current tree. 28.38 (the tree was removed between loads) has no phone twin.
 - **Section 28 · making it is drawn twice (28.13–28.23, 28.44, 28.46 and 28.54–28.67).** Journey 3 stands attach, fork
