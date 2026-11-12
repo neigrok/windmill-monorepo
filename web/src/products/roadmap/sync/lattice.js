@@ -174,6 +174,17 @@ export class TreeLattice {
   // A fresh lattice of the same tree holding only this one's title and guide, unstamped.
   baseline() { return new TreeLattice(this.treeId, this.title, this.guide); }
 
+  // The trees its steps open and nothing else of them, as a frame.
+  pointers() {
+    const nodes = [];
+    for (const [id, record] of this.nodes) {
+      const entry = { id };
+      emitField(entry, 'opens', 'opensAt', record.opens.v, record.opens.at);
+      if ('opensAt' in entry) nodes.push(entry);
+    }
+    return { nodes };
+  }
+
   nodeRecord(id) {
     let record = this.nodes.get(id);
     if (!record) { record = newNode(); this.nodes.set(id, record); }

@@ -18,6 +18,7 @@ function node(id, at, fields) {
   if ('status' in fields) { entry.status = fields.status; entry.statusAt = s; }
   if ('description' in fields) { entry.description = fields.description; entry.descriptionAt = s; }
   if ('links' in fields) { entry.links = fields.links; entry.linksAt = s; }
+  if ('opens' in fields) { entry.opens = fields.opens; entry.opensAt = s; }
   return entry;
 }
 
@@ -103,6 +104,12 @@ export function materialize(gesture, lattice, clock) {
     case 'RenameNode': nodes.push(node(g.id, at, { label: g.label })); break;
     case 'DescribeNode': nodes.push(node(g.id, at, { description: g.description })); break;
     case 'SetNodeColor': nodes.push(node(g.id, at, { color: g.color })); break;
+    // The tree a step opens, '' for none. A step the tree does not hold, or one that opens that tree already, writes nothing.
+    case 'SetNodeTree': {
+      const step = data.nodes.find((entry) => entry.id === g.id);
+      if (step && (step.opens ?? '') !== g.opens) nodes.push(node(g.id, at, { opens: g.opens }));
+      break;
+    }
     case 'EditNode': {
       if (!data.nodes.some((entry) => entry.id === g.id)) break;
       const fields = {};

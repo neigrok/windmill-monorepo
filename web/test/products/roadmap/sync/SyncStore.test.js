@@ -4,7 +4,7 @@ import { IDBFactory } from 'fake-indexeddb';
 import { SyncStore } from '../../../../src/products/roadmap/sync/SyncStore.js';
 import { SyncSession } from '../../../../src/products/roadmap/sync/SyncSession.js';
 import { outboxWrites } from '../../../../src/products/roadmap/sync/pendingWrites.js';
-import { TreeLattice, VersionVector } from '../../../../src/products/roadmap/sync/lattice.js';
+import { TreeLattice, VersionVector, hlcText, parseHlc } from '../../../../src/products/roadmap/sync/lattice.js';
 
 const baseline = { nodes: [{ id: 'root', createdAt: '1:0:server', label: 'Root', labelAt: '1:0:server' }], edges: [], kinds: [] };
 const progress = { marks: [{ node: 'root', status: 'none', at: '2:0:server', markedAt: 2 }] };
@@ -948,6 +948,131 @@ for (const cleared of ['a live frame', 'the next subscribe']) {
     assert.deepEqual({ ...owed(session), sent: marksIn(sockets) }, { pending: 0, progressPending: 0, progressGestures: 0, refused: null, phase: 'live', ready: true, sent: ['k:complete'] });
   });
 }
+
+const pointerFrames = (sockets) => sockets.flatMap((socket) => socket.frames).filter((frame) => frame.t === 'subgraph')
+  .map((frame) => ({ intent: frame.intent, nodes: frame.nodes.map(({ id, opens, opensAt }) => ({ id, opens, stamped: opensAt === hlcText(parseHlc(opensAt)) })) }));
+const opened = (session) => Object.fromEntries(session.lattice.toTreeData().nodes.map(({ id, opens }) => [id, opens ?? '']));
+
+test('a tree attached here goes like any register: its frame carries opens and opensAt, it is owed until the ack, and a second device joins it', async (t) => {
+  const env = environment(t);
+  const store = env.store();
+  const { session, sockets, subscribed } = await sessionWithQueuedMarks(env, store, []);
+  await subscribed({}, 1);
+
+  const receipt = session.dispatch({ kind: 'SetNodeTree', id: 'k', opens: 't_other' });
+  await settle([store]);
+
+  assert.notEqual(receipt, null);
+  const [sent] = session.ws.frames.filter((frame) => frame.t === 'subgraph');
+  assert.deepEqual(sent.nodes, [{ id: 'k', opens: 't_other', opensAt: hlcText(session.lattice.nodes.get('k').opens.at) }]);
+  assert.equal(parseHlc(sent.nodes[0].opensAt).actor, session.actor);
+  assert.deepEqual(pointerFrames(sockets), [{ intent: 'live', nodes: [{ id: 'k', opens: 't_other', stamped: true }] }]);
+  assert.deepEqual({ pending: session.pendingStructureCount(), gestures: session.pendingEditCount() }, { pending: 1, gestures: 1 });
+
+  session.receive({ t: 'subgraphAck', treeId: 'tree', frameId: sent.frameId });
+  await settle([store]);
+  assert.deepEqual({ pending: session.pendingStructureCount(), gestures: session.pendingEditCount() }, { pending: 0, gestures: 0 });
+  assert.deepEqual((await store.load('tree')).confirmed.structure.nodes.find((node) => node.id === 'k').opens, 't_other');
+
+  const second = new TreeLattice('tree');
+  second.join({ nodes: ['a', 'b', 'k', 'z'].map((id) => ({ id, createdAt: '100:0:srv', label: id, labelAt: '100:0:srv' })) });
+  second.join(sent);
+  assert.deepEqual(second.toTreeData().nodes.map(({ id, opens }) => `${id}:${opens ?? ''}`), ['a:', 'b:', 'k:t_other', 'z:']);
+});
+
+test('Undo of an attach, of a change and of a detach each restore the tree the step opened before, in a frame of its own', async (t) => {
+  const env = environment(t);
+  const store = env.store();
+  const { session, sockets, subscribed } = await sessionWithQueuedMarks(env, store, []);
+  await subscribed({}, 1);
+
+  const attached = session.dispatch({ kind: 'SetNodeTree', id: 'k', opens: 't_one' });
+  assert.equal(opened(session).k, 't_one');
+  assert.equal(session.revert(attached), true);
+  assert.equal(opened(session).k, '');
+  assert.equal(session.revert(attached), false, 'a spent receipt reverts nothing');
+
+  session.dispatch({ kind: 'SetNodeTree', id: 'k', opens: 't_one' });
+  const changed = session.dispatch({ kind: 'SetNodeTree', id: 'k', opens: 't_two' });
+  assert.equal(opened(session).k, 't_two');
+  assert.equal(session.revert(changed), true);
+  assert.equal(opened(session).k, 't_one');
+
+  const detached = session.dispatch({ kind: 'SetNodeTree', id: 'k', opens: '' });
+  assert.equal(opened(session).k, '');
+  assert.equal(session.revert(detached), true);
+  assert.equal(opened(session).k, 't_one');
+  await settle([store]);
+
+  assert.deepEqual(pointerFrames(sockets).map(({ nodes }) => nodes[0].opens), ['t_one', '', 't_one', 't_two', 't_one', '', 't_one']);
+  assert.equal(pointerFrames(sockets).every(({ nodes }) => nodes.length === 1 && nodes[0].id === 'k' && nodes[0].stamped), true);
+  assert.equal(session.dispatch({ kind: 'SetNodeTree', id: 'k', opens: 't_one' }), null, 'the tree it opens already writes nothing');
+});
+
+test('Undo leaves a pointer alone once a peer has set it since, and ⌘Z walks an attach back and forward', async (t) => {
+  const env = environment(t);
+  const store = env.store();
+  const { session, subscribed } = await sessionWithQueuedMarks(env, store, []);
+  await subscribed({}, 1);
+
+  const attached = session.dispatch({ kind: 'SetNodeTree', id: 'k', opens: 't_one' });
+  session.receive(live([{ id: 'k', opens: 't_peer', opensAt: `${Date.now() + 60000}:0:r_peer` }], 2));
+  assert.equal(session.revert(attached), true);
+  assert.equal(opened(session).k, 't_peer');
+
+  session.dispatch({ kind: 'SetNodeTree', id: 'a', opens: 't_one' });
+  session.undo();
+  assert.equal(opened(session).a, '');
+  session.redo();
+  assert.equal(opened(session).a, 't_one');
+  await settle([store]);
+});
+
+test('a tree attached with no connection is owed through a reload and goes with the first flush, whatever the graft says of pointers', async (t) => {
+  const env = environment(t);
+  const store = env.store();
+  const { session } = await sessionWithQueuedMarks(env, store, []);
+
+  session.dispatch({ kind: 'SetNodeTree', id: 'k', opens: 't_other' });
+  await settle([store]);
+  assert.deepEqual({ pending: session.pendingStructureCount(), gestures: session.pendingEditCount(), sent: pointerFrames([session.ws]) }, { pending: 1, gestures: 1, sent: [] });
+  session.close();
+
+  const reopened = await env.session(env.store());
+  assert.deepEqual({ opens: opened(reopened).k, pending: reopened.pendingStructureCount(), gestures: reopened.pendingEditCount() }, { opens: 't_other', pending: 1, gestures: 1 });
+  reopened.ws.open();
+  const steps = ['a', 'b', 'k', 'z'].map((id) => ({ id, createdAt: '100:0:srv', label: id, labelAt: '100:0:srv', opens: '', opensAt: '0:0:' }));
+  reopened.receive({ t: 'subgraph', intent: 'delta', nodes: steps, edges: [], kinds: [], seq: 1 });
+  reopened.receive({ t: 'progress', intent: 'graft', marks: [] });
+  await settle([store]);
+
+  assert.deepEqual(pointerFrames([reopened.ws]), [{ intent: 'flush', nodes: [{ id: 'k', opens: 't_other', stamped: true }] }]);
+});
+
+test('a mark waits while a tree attached here stands and goes once it is detached here: attach sets it aside, detach releases it, Undo of the detach sets nothing aside twice', async (t) => {
+  const env = environment(t);
+  const store = env.store();
+  const { session, sockets, subscribed } = await sessionWithQueuedMarks(env, store, [['k', 'complete'], ['a', 'complete']]);
+  assert.equal(session.pendingProgressCount(), 2);
+
+  session.dispatch({ kind: 'SetNodeTree', id: 'k', opens: 't_other' });
+  assert.equal(session.pendingProgressCount(), 1, 'the mark on the step that now opens a tree is not owed');
+  await subscribed({}, 1);
+  assert.deepEqual(marksIn(sockets), ['a:complete']);
+  assert.deepEqual([...session.progress.overlay().completed].sort(), ['a', 'k']);
+  assert.deepEqual(await storedMarks(store), ['a:complete', 'k:complete']);
+
+  session.receive({ t: 'progressAck', treeId: 'tree', frameId: session.ws.frames.find((frame) => frame.t === 'progress').frameId });
+  const detached = session.dispatch({ kind: 'SetNodeTree', id: 'k', opens: '' });
+  await settle([store]);
+  assert.deepEqual(marksIn(sockets), ['a:complete', 'k:complete']);
+  assert.equal(owed(session).pending, 1);
+
+  session.revert(detached);
+  await settle([store]);
+  assert.deepEqual(marksIn(sockets), ['a:complete', 'k:complete']);
+  assert.deepEqual({ opens: opened(session).k, owed: owed(session).pending }, { opens: 't_other', owed: 0 });
+});
 
 test('two tabs hold a mark set aside: neither sends it, neither counts it, and the mark beside it goes once from the tab that made it', async (t) => {
   const env = environment(t);

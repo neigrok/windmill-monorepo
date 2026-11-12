@@ -539,7 +539,12 @@ export class SyncSession {
     try {
       frontier = this.lattice.join(frame);
       coverage = frame.coverage ? VersionVector.fromJSON(frame.coverage) : frontier;
-      if (this.fullGraftPending) this.confirmedStructure = this.confirmedStructure.baseline();
+      if (this.fullGraftPending) {
+        // A full graft is everything the server holds but the pointers it hides from a reader, so one it is silent on stays confirmed.
+        const confirmedPointers = this.confirmedStructure.pointers();
+        this.confirmedStructure = this.confirmedStructure.baseline();
+        this.confirmedStructure.join(confirmedPointers);
+      }
       this.confirmedStructure.join(frame);
       if (this.fullGraftPending) this.gestures.structure = pendingGestures(this.lattice.toFrame(), this.confirmedStructure.toFrame(), this.gestures.structure);
       else this.confirm('structure');
@@ -572,7 +577,7 @@ export class SyncSession {
     if (typeof frame.seq !== 'number') return;
     if (frame.seq <= this.lastSeq) return;                                 // duplicate / already seen
     if (frame.seq > this.lastSeq + 1) { this.forceReconnect(); return; }   // gap → heal via a fresh graft
-    const pointed = (frame.nodes ?? []).filter((node) => this.lattice.nodes.get(node.id)?.opens.v);
+    const pointed = this.pointedIn(frame);
     let frontier;
     try {
       frontier = this.lattice.join(frame);
@@ -590,9 +595,18 @@ export class SyncSession {
     const mine = frame.frameId && this.sent.has(frame.frameId);
     this.scheduleSave();
     if (!mine) this.emitProjection('structure');
-    // A pointer this frame took away releases the mark set aside on its step, and it goes like any other.
-    if (pointed.some((node) => !this.lattice.nodes.get(node.id).opens.v) && this.canResend('progress')) this.flushProgress();
+    this.releaseMarks(pointed);
     this.emitStatus();
+  }
+
+  // The steps a frame names that open a tree before it joins.
+  pointedIn(frame) {
+    return (frame.nodes ?? []).filter((node) => this.lattice.nodes.get(node.id)?.opens.v);
+  }
+
+  // A pointer a join took away releases the mark set aside on its step, and it goes like any other.
+  releaseMarks(pointed) {
+    if (pointed.some((node) => !this.lattice.nodes.get(node.id).opens.v) && this.canResend('progress')) this.flushProgress();
   }
 
   receiveAck(frame) {
@@ -998,6 +1012,7 @@ export class SyncSession {
   }
 
   apply(writes) {
+    const pointed = this.pointedIn(writes);
     this.lattice.join(writes);
     this.gestures.structure = pendingGestures(writes, this.confirmedStructure.toFrame(), this.gestures.structure);
     try {
@@ -1019,6 +1034,7 @@ export class SyncSession {
       this.reportFailure('roadmap-sync-send', error);
       this.forceReconnect();
     }
+    this.releaseMarks(pointed);
   }
 
   // A local write's save: a failure leaves the write standing and durability at risk.

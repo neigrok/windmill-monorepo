@@ -53,12 +53,14 @@ Node and kind registers use flat value/stamp pairs such as `label`/`labelAt`; li
 Edges use `from`, `to`, `addedAt` and `removedAt`. Title and guide are
 `{v, at}`; coverage maps each actor to its greatest stamp. Omitted sections and fields never delete
 data. The browser lattice joins, stores and writes the guide as it does the title: one stamped register
-in the structure lane, outside the undo journal. It joins `opens` by its stamp and stores it with the
-node's other registers, and never sends it: no door of the web writes the pointer, so
-`sync/pendingWrites.js` leaves the pair out of what a replica counts unsent, and a frame that says
-nothing of it changes nothing. The server sends the pointer only to a caller who can write the tree;
-every other reader's frames and `GET` state carry `opens` empty and `opensAt` unset
-([the model](../backend/SPEC.md#model)).
+in the structure lane, outside the undo journal. It joins `opens` by its stamp, stores it with the
+node's other registers and writes it as it writes them: the gesture `SetNodeTree` stamps the pair, the
+outbox owes it until the server confirms it, and Undo restores the tree the step opened before. A frame
+that says nothing of the pointer changes nothing. The server sends the pointer only to a caller who can
+write the tree; every other reader's frames and `GET` state carry `opens` empty and `opensAt` unset
+([the model](../backend/SPEC.md#model)). A subscribe graft is therefore silent on a pointer it hides,
+so the browser keeps in its confirmed baseline every pointer the server confirmed before, and a pointer
+the server lost after confirming it is not sent again.
 
 | Intent | Meaning |
 |---|---|

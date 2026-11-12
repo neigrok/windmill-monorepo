@@ -697,13 +697,17 @@ The [graph synchronization contract](../../../../docs/GRAPH_SYNC_DESIGN.md) defi
 acknowledgements and durability limits.
 
 **Registers.** A node's last-writer-wins registers are one list (`NODE_REGISTERS` in `sync/lattice.js`) that the join's
-clock, the frontier, the frame and Undo all read. `opens`, the tree a step opens, is joined by its stamp and stored with
-the rest, and no door of the web writes it: `sync/pendingWrites.js` leaves it out of what a replica counts unsent.
+clock, the frontier, the frame and Undo all read. `opens`, the tree a step opens, is one of them: joined by its stamp,
+stored, owed to the server until confirmed and restored by Undo like the rest. The server hides the pointer from a
+caller who cannot write the tree, so a subscribe graft that is silent on one leaves it confirmed (`TreeLattice.pointers`
+carries the confirmed ones across the rebuilt baseline): a lapsed session on a shared roadmap owes and sends nothing.
 
 **Gestures.** Shared structure and private progress use one socket and HLC clock but separate frames. Pending
 writes are derived from lattice state. `materialize.js` turns each local gesture into stamped field writes;
 refusal handling uses machine codes rather than error sentences. `EditNode` stamps the changed name,
-description, kind and prerequisite edge additions and removals together. `DeleteNode` and `BulkDelete` retire
+description, kind and prerequisite edge additions and removals together. `SetNodeTree` stamps the tree a step opens,
+`''` for none, and writes nothing for the tree it opens already. A local write that takes a pointer away releases
+the mark set aside on its step, as a peer's frame does. `DeleteNode` and `BulkDelete` retire
 all present incident edges of their deleted steps in the same stamped gesture as their tombstones and
 respliced edges, so those edges cannot raise the masked-work Restore offer after a reload. Undo restores the
 captured node lives and edges; concurrent peer edges stamped after that gesture stay recoverable through
