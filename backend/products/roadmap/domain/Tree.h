@@ -139,9 +139,6 @@ struct NodeSpec {
   TreeId opens;  // the tree this node opens; an empty id opens none
 };
 
-// The nodes of one tree that hold a pointer, each by the tree it opens.
-using NodePointers = std::map<NodeId, TreeId>;
-
 // A node's `color` field *is* its kind, so there is no node→kind foreign key. The legend names and
 // orders the hues; order is generation priority. A kind marked `crossBranchExempt` keeps the edges
 // touching its nodes out of TreeHealth's cross-branch count.
@@ -171,6 +168,7 @@ struct ProgressMark {
   Hlc at;
   std::uint64_t markedAt = 0;  // epoch ms, server clock; 0 where the overlay keeps no times
   bool outOfOrder = false;
+  bool operator==(const ProgressMark&) const = default;
 };
 
 // `record` is the only way in, so the id sets can never drift from the registers they project.
@@ -187,6 +185,7 @@ struct Progress {
     if (mark.status == ProgressStatus::complete) completed.insert(node);
     else cleared.insert(node);
   }
+  bool operator==(const Progress&) const = default;
 };
 
 }

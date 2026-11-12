@@ -5,9 +5,16 @@
 #include "products/roadmap/ports/ProgressRepository.h"
 #include "products/roadmap/ports/TreeRepository.h"
 
+#include <chrono>
+#include <map>
+#include <string>
 #include <vector>
 
 namespace wm {
+
+// How long the follow a reader's answer waits on may take. Past it the answer goes out without the steps that open a
+// tree rather than hold a page that shows someone else's roadmap.
+inline constexpr std::chrono::milliseconds kReaderFollowBudget{750};
 
 // A `complete` set whose prerequisites are not all complete is still recorded — P1 is advisory — but
 // the caller is told so it can warn. `outOfOrder` echoes the word the write carried, so a receipt
@@ -51,7 +58,7 @@ public:
   // A door's marks on `tree`, handed over once the strand is released, with the pointers the room handed
   // `user` (TreeRoom::pointersFor). A mark on a node that follows its tree (domain/OpenedTrees.h) is refused
   // and each advisory reads the followed completed set, off one read made only when there is a pointer.
-  ProgressReceipt mark(const TreeId& tree, const NodePointers& pointers, const UserId& user,
+  ProgressReceipt mark(const TreeId& tree, const std::map<NodeId, TreeId>& pointers, const UserId& user,
                        const std::vector<ProgressWrite>& writes, std::uint64_t receivedAtMs);
 
   ProgressOutcome setStatus(const std::vector<NodeId>& prerequisites, const TreeId& treeId,
@@ -65,6 +72,14 @@ public:
                                            std::uint64_t receivedAtMs);
 
   Progress progressOf(const TreeId& treeId, const UserId& user);
+
+  // `owner`'s stored marks on each of their `trees`, a tree's pointers by tree, as a caller who cannot write them is
+  // shown them (domain readerView). One read follows every pointer among them, within kReaderFollowBudget and only
+  // when there is one, and completes as `roadmap.progress.follow` at `door`. When it fails or runs out of time no
+  // step that holds a pointer is shown.
+  std::map<TreeId, Progress> shownToReaders(const UserId& owner,
+                                            const std::map<TreeId, std::map<NodeId, TreeId>>& trees,
+                                            const std::string& door);
 
 private:
   ProgressRepository& repo_;

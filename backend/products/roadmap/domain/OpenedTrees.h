@@ -5,6 +5,7 @@
 
 #include <cstddef>
 #include <map>
+#include <optional>
 #include <set>
 #include <string>
 #include <vector>
@@ -94,6 +95,8 @@ struct WaysBack {
   std::size_t walked = 0;
 };
 
+// The tree each node of `tree` opens, by node; a node that opens none is left out.
+std::map<NodeId, TreeId> pointersOf(const TreeData& tree);
 std::set<TreeId> treesOpenedBy(const TreeData& tree);
 // The same of a tree's pointers, held by node.
 std::set<TreeId> treesOpenedBy(const std::map<NodeId, TreeId>& pointers);
@@ -110,9 +113,9 @@ public:
   explicit OpenedTrees(std::map<TreeId, OpenedTree> standing);
 
   // The nodes among `pointers` whose pointer is valid: each follows its tree and takes no mark of its own.
-  std::set<NodeId> following(const NodePointers& pointers) const;
+  std::set<NodeId> following(const std::map<NodeId, TreeId>& pointers) const;
   // `marks` on a tree, with each node that holds a valid pointer following its tree; only `completed` is filled.
-  Progress followed(const NodePointers& pointers, const Progress& marks) const;
+  Progress followed(const std::map<NodeId, TreeId>& pointers, const Progress& marks) const;
   Progress followed(const TreeData& tree, const Progress& marks) const;
   // One entry per node of `tree` that holds a pointer.
   std::map<NodeId, Opening> openings(const TreeData& tree) const;
@@ -134,5 +137,11 @@ private:
   std::set<TreeId> complete_;
   std::size_t walked_ = 0;
 };
+
+// An owner's stored `marks` on a tree as a caller who cannot write it is shown them: the owner's derived completion,
+// and nothing of the trees its nodes open. A node whose pointer is valid has a row only while its tree is complete
+// for the owner: complete, under the stamp of a stored mark that says so, else unstamped and undated. Every other
+// row is the stored one. Without `opened` — the trees were not read — no node that holds a pointer has a row.
+Progress readerView(const Progress& marks, const std::map<NodeId, TreeId>& pointers, const std::optional<OpenedTrees>& opened);
 
 }

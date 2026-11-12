@@ -19,7 +19,7 @@
 namespace wm {
 
 TreeApi::TreeApi(std::shared_ptr<RoomRegistry> registry, std::shared_ptr<TreeRepository> trees,
-                 std::shared_ptr<ProgressRepository> progress, std::shared_ptr<OpLog> ops, Hlc genesis,
+                 std::shared_ptr<ProgressService> progress, std::shared_ptr<OpLog> ops, Hlc genesis,
                  std::shared_ptr<AuthService> auth, std::shared_ptr<ForkService> fork, std::shared_ptr<Clock> clock)
     : registry_(std::move(registry)), trees_(std::move(trees)), progress_(std::move(progress)),
       ops_(std::move(ops)), genesis_(std::move(genesis)), auth_(std::move(auth)), fork_(std::move(fork)),
@@ -291,13 +291,30 @@ void TreeApi::getProgress(const drogon::HttpRequestPtr& req, HttpCallback&& call
   std::optional<UserId> caller = callerOf(req);
   // Progress follows OWNERSHIP, not the caller, and is gated by canRead.
   std::optional<UserId> owner;
-  if (!readRoom(treeId, caller, [&](TreeRoom& room) { owner = room.owner(); })) {
+  bool mine = false;
+  std::map<NodeId, TreeId> pointers;
+  if (!readRoom(treeId, caller, [&](TreeRoom& room) {
+        owner = room.owner();
+        mine = canWrite(caller, owner);
+        // A writer reads the marks as stored, so only a reader's answer is judged against the tree's pointers.
+        if (!mine) pointers = room.pointers();
+      })) {
     callback(error(drogon::k404NotFound, "no such tree"));
     return;
   }
-  // The DB load runs OUTSIDE the room strand: never hold a room's lock across a Postgres call.
-  Progress progress = owner ? progress_->load(TreeId{treeId}, *owner) : Progress{};
-  callback(jsonResponse(toJson(progress)));
+  if (!owner) {
+    callback(jsonResponse(toJson(Progress{})));
+    return;
+  }
+  // The marks are loaded and the pointers followed OUTSIDE the room strand: never hold a room's lock across a
+  // Postgres call. A reader is shown the owner's derived completion (domain readerView); the tree's writer, whose
+  // view derives it again from the tree's `opens`, the marks as stored.
+  const TreeId tree{treeId};
+  if (mine) {
+    callback(jsonResponse(toJson(progress_->progressOf(tree, *owner))));
+    return;
+  }
+  callback(jsonResponse(toJson(progress_->shownToReaders(*owner, {{tree, pointers}}, "rest").at(tree))));
 }
 
 void TreeApi::getActivity(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId) {

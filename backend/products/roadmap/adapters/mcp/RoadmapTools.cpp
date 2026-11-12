@@ -934,7 +934,7 @@ std::variant<MarkedBatch, std::string> applyProgressBatch(
     Clock& clock, const UserId& user, const std::vector<RequestedMark>& requested, bool rejectUnknown) {
   MarkedBatch batch;
   std::vector<ProgressWrite> marks;
-  NodePointers pointers;
+  std::map<NodeId, TreeId> pointers;
   {
     // The room is consulted under its strand and let go: no repository is read or written while it is held.
     std::lock_guard<std::mutex> lock(registry.strandFor(tree));

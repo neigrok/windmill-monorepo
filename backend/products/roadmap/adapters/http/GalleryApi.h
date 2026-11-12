@@ -1,8 +1,8 @@
 #pragma once
 
 #include "platform/application/AuthService.h"
+#include "products/roadmap/application/ProgressService.h"
 #include "products/roadmap/domain/Gallery.h"
-#include "products/roadmap/ports/ProgressRepository.h"
 #include "products/roadmap/ports/TreeRepository.h"
 
 #include <drogon/HttpRequest.h>
@@ -23,7 +23,7 @@ using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 // listPublic filters on visibility in SQL.
 class GalleryApi {
 public:
-  GalleryApi(std::shared_ptr<TreeRepository> trees, std::shared_ptr<ProgressRepository> progress,
+  GalleryApi(std::shared_ptr<TreeRepository> trees, std::shared_ptr<ProgressService> progress,
              std::shared_ptr<AuthService> auth, std::string webRoot);
 
   void page(const drogon::HttpRequestPtr& req, HttpCallback&& callback);
@@ -39,7 +39,7 @@ private:
   std::vector<WallCandidate> candidates();
 
   std::shared_ptr<TreeRepository> trees_;
-  std::shared_ptr<ProgressRepository> progress_;
+  std::shared_ptr<ProgressService> progress_;
   std::shared_ptr<AuthService> auth_;
   std::string webRoot_;
 };

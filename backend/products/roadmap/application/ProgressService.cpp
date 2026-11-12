@@ -1,8 +1,11 @@
 #include "products/roadmap/application/ProgressService.h"
 
+#include "platform/application/WriteObservation.h"
 #include "products/roadmap/domain/OpenedTrees.h"
 
 #include <algorithm>
+#include <new>
+#include <optional>
 #include <set>
 
 namespace wm {
@@ -14,7 +17,7 @@ bool ProgressReceipt::cameToARefusal() const {
          std::any_of(outcomes.begin(), outcomes.end(), [](const ProgressOutcome& outcome) { return outcome.refused; });
 }
 
-ProgressReceipt ProgressService::mark(const TreeId& tree, const NodePointers& pointers, const UserId& user,
+ProgressReceipt ProgressService::mark(const TreeId& tree, const std::map<NodeId, TreeId>& pointers, const UserId& user,
                                       const std::vector<ProgressWrite>& writes, std::uint64_t receivedAtMs) {
   ProgressReceipt receipt;
   if (writes.empty()) return receipt;
@@ -94,6 +97,34 @@ std::vector<ProgressOutcome> ProgressService::setStatuses(const TreeId& treeId, 
 
 Progress ProgressService::progressOf(const TreeId& treeId, const UserId& user) {
   return repo_.load(treeId, user);
+}
+
+std::map<TreeId, Progress> ProgressService::shownToReaders(const UserId& owner,
+                                                           const std::map<TreeId, std::map<NodeId, TreeId>>& trees,
+                                                           const std::string& door) {
+  std::set<TreeId> opened;
+  for (const auto& [tree, pointers] : trees)
+    for (const auto& [node, target] : pointers) opened.insert(target);
+  // With no pointer among them nothing is followed, and every row is the stored one.
+  std::optional<OpenedTrees> followed{OpenedTrees({})};
+  if (!opened.empty()) {
+    WriteObservation observation{"roadmap.progress.follow", "roadmap", door};
+    try {
+      followed = OpenedTrees(trees_.openedFrom(owner, opened, kReaderFollowBudget));
+      observation.finish();
+    } catch (const std::bad_alloc&) {
+      throw;
+    } catch (const FollowTimedOut&) {
+      followed.reset();
+      observation.finish("timeout");
+    } catch (const std::exception& failure) {
+      followed.reset();
+      observation.fail(failure);
+    }
+  }
+  std::map<TreeId, Progress> shown;
+  for (const auto& [tree, pointers] : trees) shown.emplace(tree, readerView(repo_.load(tree, owner), pointers, followed));
+  return shown;
 }
 
 }

@@ -4,8 +4,10 @@
 #include "platform/adapters/http/JsonReply.h"
 #include "platform/adapters/http/PageShell.h"
 #include "products/roadmap/adapters/json/TreeJson.h"
+#include "products/roadmap/domain/OpenedTrees.h"
 
 #include <charconv>
+#include <map>
 #include <optional>
 #include <string>
 #include <system_error>
@@ -13,7 +15,7 @@
 
 namespace wm {
 
-GalleryApi::GalleryApi(std::shared_ptr<TreeRepository> trees, std::shared_ptr<ProgressRepository> progress,
+GalleryApi::GalleryApi(std::shared_ptr<TreeRepository> trees, std::shared_ptr<ProgressService> progress,
                        std::shared_ptr<AuthService> auth, std::string webRoot)
     : trees_(std::move(trees)), progress_(std::move(progress)), auth_(std::move(auth)),
       webRoot_(std::move(webRoot)) {}
@@ -21,12 +23,18 @@ GalleryApi::GalleryApi(std::shared_ptr<TreeRepository> trees, std::shared_ptr<Pr
 std::vector<WallCandidate> GalleryApi::candidates() {
   std::vector<ListedTree> listed = trees_->listPublic();
 
-  // A shared tree shows the OWNER's journey, so each card carries the owner's overlay.
+  // A shared tree shows the OWNER's journey, so each card carries the owner's overlay as a reader is shown it: a step
+  // that opens a tree counts by the owner's derived completion, read in one follow per owner for all their listed trees.
+  std::map<UserId, std::map<TreeId, std::map<NodeId, TreeId>>> listedByOwner;
+  for (const ListedTree& tree : listed) listedByOwner[tree.owner].emplace(tree.data.id, pointersOf(tree.data));
+  std::map<TreeId, Progress> shown;
+  for (const auto& [owner, trees] : listedByOwner) shown.merge(progress_->shownToReaders(owner, trees, "gallery"));
+
   std::vector<WallCandidate> candidates;
   candidates.reserve(listed.size());
   for (ListedTree& tree : listed) {
     WallCandidate candidate;
-    candidate.ownerProgress = progress_->load(tree.data.id, tree.owner);
+    candidate.ownerProgress = std::move(shown.at(tree.data.id));
     candidate.owner = std::move(tree.owner);
     candidate.data = std::move(tree.data);
     candidate.updatedAt = tree.updatedAt;

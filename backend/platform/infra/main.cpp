@@ -1070,7 +1070,7 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   routes.registerHandler("/.well-known/oauth-protected-resource/mcp", protectedResourceMetadata, {drogon::Get});
 
   RoadmapDeps roadmapDeps{
-      .registry = registry, .trees = trees, .progress = progress, .progressService = progressService,
+      .registry = registry, .trees = trees, .progressService = progressService,
       .oplog = oplog, .bus = bus, .presence = presence, .genesis = genesis,
       .authService = authService, .forkService = forkService, .treeRegistry = treeRegistry,
       .ogImages = ogImages, .ogVideos = ogVideos, .webRoot = webRootEnv ? webRootEnv : "", .appBaseUrl = appBaseUrl,

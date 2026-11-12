@@ -145,7 +145,7 @@ public:
 
   // The tree's pointers as `caller` may be told of them: all of them for a caller who can write the
   // tree, none for anyone else, who is never told a node opens a tree.
-  NodePointers pointersFor(const std::optional<UserId>& caller) const;
+  std::map<NodeId, TreeId> pointersFor(const std::optional<UserId>& caller) const;
   // The node's live prerequisites (incoming DAG edges); empty if the node is absent.
   std::vector<NodeId> prerequisitesOf(const NodeId& node) const;
   bool hasNode(const NodeId& node) const;  // present: created, not tombstoned

@@ -94,7 +94,7 @@ TEST(a_node_is_complete_when_the_tree_it_opens_is_complete_and_open_until_then) 
 TEST(the_nodes_that_follow_a_tree_are_those_whose_pointer_names_a_standing_tree) {
   const TreeData root = tree("root", {step("idea", "sub"), step("lost", "gone"), step("again", "root"), step("plain")});
   const TreeData sub = tree("sub", {step("s")});
-  const NodePointers pointers{{nid("idea"), tid("sub")}, {nid("lost"), tid("gone")}, {nid("again"), tid("root")}};
+  const std::map<NodeId, TreeId> pointers{{nid("idea"), tid("sub")}, {nid("lost"), tid("gone")}, {nid("again"), tid("root")}};
 
   CHECK(opened({root, sub}).following(pointers) == (std::set<NodeId>{nid("again"), nid("idea")}));
   CHECK(opened({sub}).following(pointers) == std::set<NodeId>{nid("idea")});
@@ -106,7 +106,7 @@ TEST(the_completed_set_followed_from_a_trees_pointers_is_the_one_followed_from_t
   const TreeData root = tree("root", {step("done", "sub"), step("open", "half"), step("lost", "gone"), step("plain")});
   const TreeData sub = tree("sub", {step("s")});
   const TreeData half = tree("half", {step("h")});
-  const NodePointers pointers{{nid("done"), tid("sub")}, {nid("open"), tid("half")}, {nid("lost"), tid("gone")}};
+  const std::map<NodeId, TreeId> pointers{{nid("done"), tid("sub")}, {nid("open"), tid("half")}, {nid("lost"), tid("gone")}};
   const Progress marked = marks({"open", "lost", "plain"});
 
   const OpenedTrees standing = opened({root, sub, half}, {{"sub", marks({"s"})}});
@@ -681,4 +681,75 @@ TEST(random_accounts_are_told_the_way_back_that_an_enumeration_of_every_way_find
   CHECK_EQ(disagreements, 0);
   CHECK(loops > 300);
   CHECK(cut > 0);
+}
+
+// What the owner's own reads derive for a step that opens a tree is what a reader is shown of it, and no more: a row
+// while the tree is complete, none while it is not, whatever mark the step holds.
+TEST(a_reader_is_shown_a_node_that_opens_a_tree_complete_while_that_tree_is_and_with_no_row_while_it_is_not) {
+  const TreeData done = tree("done", {step("d")});
+  const TreeData open = tree("open", {step("o")});
+  const OpenedTrees standing = opened({done, open}, {{"done", marks({"d"})}});
+  const std::map<NodeId, TreeId> pointers{
+      {nid("done-unmarked"), tid("done")}, {nid("done-marked"), tid("done")}, {nid("done-cleared"), tid("done")},
+      {nid("open-unmarked"), tid("open")}, {nid("open-marked"), tid("open")}, {nid("open-cleared"), tid("open")}};
+  Progress stored;
+  stored.record(nid("done-marked"), ProgressMark{ProgressStatus::complete, Hlc{900, 2, "phone"}, 950, true});
+  stored.record(nid("done-cleared"), ProgressMark{ProgressStatus::none, Hlc{901, 0, "phone"}, 951});
+  stored.record(nid("open-marked"), ProgressMark{ProgressStatus::complete, Hlc{902, 0, "phone"}, 952, true});
+  stored.record(nid("open-cleared"), ProgressMark{ProgressStatus::none, Hlc{903, 0, "phone"}, 953});
+
+  Progress shown;
+  shown.record(nid("done-unmarked"), ProgressMark{ProgressStatus::complete, Hlc{}, 0, false});
+  shown.record(nid("done-marked"), ProgressMark{ProgressStatus::complete, Hlc{900, 2, "phone"}, 950, false});
+  shown.record(nid("done-cleared"), ProgressMark{ProgressStatus::complete, Hlc{}, 0, false});
+  CHECK(readerView(stored, pointers, standing) == shown);
+}
+
+TEST(a_reader_is_shown_the_stored_row_of_every_node_that_follows_no_tree) {
+  const OpenedTrees standing = opened({tree("sub", {step("s")})}, {{"sub", marks({"s"})}});
+  const std::map<NodeId, TreeId> pointers{{nid("gone"), tid("gone")}, {nid("cleared-gone"), tid("gone")}};
+  Progress stored;
+  stored.record(nid("gone"), ProgressMark{ProgressStatus::complete, Hlc{900, 0, "phone"}, 950, true});
+  stored.record(nid("cleared-gone"), ProgressMark{ProgressStatus::none, Hlc{901, 0, "phone"}, 951});
+  stored.record(nid("plain"), ProgressMark{ProgressStatus::complete, Hlc{902, 0, "phone"}, 952, true});
+  stored.record(nid("cleared"), ProgressMark{ProgressStatus::none, Hlc{903, 0, "phone"}, 953});
+  stored.record(nid("left-the-tree"), ProgressMark{ProgressStatus::complete, Hlc{904, 0, "phone"}, 954});
+
+  CHECK(readerView(stored, pointers, standing) == stored);
+  CHECK(readerView(stored, {}, OpenedTrees({})) == stored);
+}
+
+// One rule decides completeness for the owner and for the owner's readers: a chain completes, a loop never does.
+TEST(a_reader_is_shown_as_complete_exactly_the_nodes_the_owners_followed_set_holds) {
+  const TreeData root = tree("root", {step("chain", "mid"), step("loop", "ring"), step("half", "open"), step("lost", "gone"),
+                                      step("plain"), step("unmarked")});
+  const TreeData mid = tree("mid", {step("deeper", "leaf")});
+  const TreeData leaf = tree("leaf", {step("l")});
+  const TreeData ring = tree("ring", {step("back", "root"), step("r")});
+  const TreeData open = tree("open", {step("a"), step("b")});
+  const OpenedTrees standing =
+      opened({root, mid, leaf, ring, open}, {{"leaf", marks({"l"})}, {"ring", marks({"back", "r"})}, {"open", marks({"a"})}});
+  const std::map<NodeId, TreeId> pointers = pointersOf(root);
+  Progress stored;
+  for (const char* marked : {"loop", "half", "lost", "plain"})
+    stored.record(nid(marked), ProgressMark{ProgressStatus::complete, Hlc{900, 0, "phone"}, 950});
+
+  const Progress shown = readerView(stored, pointers, standing);
+
+  CHECK(shown.completed == (std::set<NodeId>{nid("chain"), nid("lost"), nid("plain")}));
+  CHECK(shown.completed == standing.followed(pointers, stored).completed);
+  CHECK(shown.cleared == std::set<NodeId>{});
+}
+
+// The owner's trees could not be read, so which pointers are valid is not known: no step that holds one is shown.
+TEST(a_reader_is_shown_no_row_for_a_node_that_holds_a_pointer_when_the_owners_trees_were_not_read) {
+  const std::map<NodeId, TreeId> pointers{{nid("idea"), tid("sub")}, {nid("lost"), tid("gone")}, {nid("unmarked"), tid("sub")}};
+  Progress stored;
+  stored.record(nid("idea"), ProgressMark{ProgressStatus::complete, Hlc{900, 0, "phone"}, 950});
+  stored.record(nid("lost"), ProgressMark{ProgressStatus::none, Hlc{901, 0, "phone"}, 951});
+  stored.record(nid("plain"), ProgressMark{ProgressStatus::complete, Hlc{902, 0, "phone"}, 952, true});
+
+  Progress shown;
+  shown.record(nid("plain"), ProgressMark{ProgressStatus::complete, Hlc{902, 0, "phone"}, 952, true});
+  CHECK(readerView(stored, pointers, std::nullopt) == shown);
 }

@@ -6,6 +6,12 @@
 #include "test/products/roadmap/Fakes.h"
 #include "test/testing.h"
 
+#include "platform/application/WriteObservation.h"
+
+#include <chrono>
+#include <map>
+#include <optional>
+#include <set>
 #include <memory>
 #include <string>
 #include <vector>
@@ -43,8 +49,8 @@ bool contains(const std::string& haystack, const std::string& needle) {
 }
 
 struct Harness {
-  std::shared_ptr<FakeTreeRepository> trees = std::make_shared<FakeTreeRepository>();
   std::shared_ptr<FakeProgressRepository> progress = std::make_shared<FakeProgressRepository>();
+  std::shared_ptr<FakeTreeRepository> trees = std::make_shared<FakeTreeRepository>(*progress);
   FakeTokens tokens;
   FakeClock clock;
   FakeAuthRepository authRepo;
@@ -55,7 +61,8 @@ struct Harness {
   FakeSessionRevocations revocations;
   std::shared_ptr<AuthService> auth =
       std::make_shared<AuthService>(authRepo, email, tokens, clock, oauth, footprint, revocations, "https://windmill.works");
-  GalleryApi api{trees, progress, auth, ""};
+  std::shared_ptr<ProgressService> progressService = std::make_shared<ProgressService>(*progress, *trees);
+  GalleryApi api{trees, progressService, auth, ""};
 
   UserId signIn(const std::string& sessionSecret, const std::string& address) {
     User user = authRepo.createUser(Email{address}, "sam");
@@ -77,6 +84,17 @@ struct Harness {
     GraphState state = LooseGraph(data, Hlc{1, 0, "seed"}).exportState();
     trees->byId[id] = StoredTree{state, LegendState{}, {title, {}}, 0, owner, visibility};
     trees->updatedAt[id] = updatedAt;
+  }
+
+  // A tree of the steps named, each opening the tree given beside it, or none for "".
+  void seedSteps(const char* id, const UserId& owner, Visibility visibility,
+                 const std::vector<std::pair<const char*, const char*>>& steps) {
+    LooseGraph graph;
+    for (const auto& [step, opens] : steps) {
+      graph.createNode(NodeId{step}, step, "", NodeColor::sky, std::nullopt, Hlc{1, 0, "seed"});
+      if (std::string(opens) != "") graph.setOpens(NodeId{step}, TreeId{opens}, Hlc{2, 0, "seed"});
+    }
+    trees->byId[id] = StoredTree{graph.exportState(), LegendState{}, {id, {}}, 0, owner, visibility};
   }
 
   void seedFork(const char* forkId, const char* sourceId) { trees->forkedFrom[forkId] = sourceId; }
@@ -334,4 +352,78 @@ TEST(an_empty_gallery_is_an_empty_list_never_an_error) {
   CHECK_EQ(response->statusCode(), drogon::k200OK);
   CHECK_EQ(bodyOf(response)["count"].asUInt(), 0u);
   CHECK_EQ(bodyOf(response)["entries"].size(), 0u);
+}
+
+// A card counts what the owner's own reads count: a step that opens a tree is done when that tree is, whatever mark it
+// holds, read in one follow per owner and none for an owner whose listed trees open nothing.
+TEST(the_wall_counts_a_step_that_opens_a_tree_by_the_owners_derived_completion_in_one_follow_per_owner) {
+  Harness h;
+  const UserId ada{"ada"};
+  const UserId bo{"bo"};
+  const UserId cy{"cy"};
+  h.seedSteps("t_ada_done", ada, Visibility::private_, {{"d", ""}});
+  h.seedSteps("t_ada_open", ada, Visibility::private_, {{"o", ""}});
+  h.seedSteps("t_ada_one", ada, Visibility::public_, {{"done", "t_ada_done"}, {"open", "t_ada_open"}, {"plain", ""}});
+  h.seedSteps("t_ada_two", ada, Visibility::public_, {{"done", "t_ada_done"}, {"gone", "t_ada_gone"}, {"plain", ""}});
+  h.seedSteps("t_bo", bo, Visibility::public_, {{"a", ""}, {"b", ""}, {"c", ""}});
+  h.seedSteps("t_cy_sub", cy, Visibility::public_, {{"x", ""}, {"y", ""}, {"z", ""}});
+  h.seedSteps("t_cy", cy, Visibility::public_, {{"idea", "t_cy_sub"}, {"b", ""}, {"c", ""}});
+  h.progress->setStatus(TreeId{"t_ada_done"}, ada, NodeId{"d"}, ProgressStatus::complete, false, Hlc{800, 0, "ada"}, 800);
+  h.progress->setStatus(TreeId{"t_ada_one"}, ada, NodeId{"open"}, ProgressStatus::complete, false, Hlc{900, 0, "ada"}, 900);
+  h.progress->setStatus(TreeId{"t_ada_one"}, ada, NodeId{"plain"}, ProgressStatus::complete, false, Hlc{901, 0, "ada"}, 901);
+  h.progress->setStatus(TreeId{"t_ada_two"}, ada, NodeId{"gone"}, ProgressStatus::complete, false, Hlc{902, 0, "ada"}, 902);
+  h.progress->setStatus(TreeId{"t_bo"}, bo, NodeId{"a"}, ProgressStatus::complete, false, Hlc{903, 0, "bo"}, 903);
+  h.progress->setStatus(TreeId{"t_cy"}, cy, NodeId{"idea"}, ProgressStatus::complete, false, Hlc{904, 0, "cy"}, 904);
+
+  const Json::Value index = bodyOf(sendIndex(h.api, galleryReq()));
+
+  std::map<std::string, std::string> doneOfTotal;
+  for (const Json::Value& row : index["entries"])
+    doneOfTotal[row["id"].asString()] = std::to_string(row["done"].asInt()) + "/" + std::to_string(row["total"].asInt());
+  CHECK(doneOfTotal == (std::map<std::string, std::string>{
+                           {"t_ada_one", "2/3"}, {"t_ada_two", "2/3"}, {"t_bo", "1/3"}, {"t_cy", "0/3"}, {"t_cy_sub", "0/3"}}));
+  CHECK_EQ(h.trees->openedReads,
+           (std::vector<std::set<TreeId>>{{TreeId{"t_ada_done"}, TreeId{"t_ada_gone"}, TreeId{"t_ada_open"}}, {TreeId{"t_cy_sub"}}}));
+  CHECK_EQ(h.trees->openedBudgets, (std::vector<std::optional<std::chrono::milliseconds>>(2, std::chrono::milliseconds{750})));
+}
+
+// The wall is not the follow's to fail: an owner whose trees could not be read in time is counted without the steps that
+// open a tree, so none is counted done that may not be, and every other owner's card is as it would be.
+TEST(a_wall_whose_follow_fails_or_times_out_still_answers_and_counts_no_step_that_opens_a_tree) {
+  Harness h;
+  const UserId ada{"ada"};
+  const UserId bo{"bo"};
+  h.seedSteps("t_ada_done", ada, Visibility::private_, {{"d", ""}});
+  h.seedSteps("t_ada", ada, Visibility::public_, {{"done", "t_ada_done"}, {"marked", "t_ada_done"}, {"plain", ""}});
+  h.seedSteps("t_bo", bo, Visibility::public_, {{"a", ""}, {"b", ""}, {"c", ""}});
+  h.progress->setStatus(TreeId{"t_ada_done"}, ada, NodeId{"d"}, ProgressStatus::complete, false, Hlc{800, 0, "ada"}, 800);
+  h.progress->setStatus(TreeId{"t_ada"}, ada, NodeId{"marked"}, ProgressStatus::complete, false, Hlc{900, 0, "ada"}, 900);
+  h.progress->setStatus(TreeId{"t_ada"}, ada, NodeId{"plain"}, ProgressStatus::complete, false, Hlc{901, 0, "ada"}, 901);
+  h.progress->setStatus(TreeId{"t_bo"}, bo, NodeId{"a"}, ProgressStatus::complete, false, Hlc{902, 0, "bo"}, 902);
+  const auto doneOnTheWall = [&] {
+    const drogon::HttpResponsePtr reply = sendIndex(h.api, galleryReq());
+    CHECK_EQ(reply->getStatusCode(), drogon::k200OK);
+    const Json::Value index = bodyOf(reply);
+    std::map<std::string, int> done;
+    for (const Json::Value& row : index["entries"]) done[row["id"].asString()] = row["done"].asInt();
+    return done;
+  };
+  std::vector<std::string> lines;
+  installWriteSink([&](const WriteCompletion& line) {
+    lines.push_back(line.operation + " " + line.product + " " + line.door + " " + line.outcome);
+  });
+
+  const std::map<std::string, int> followed = doneOnTheWall();
+  h.trees->budgetedReadsTimeOut = true;
+  const std::map<std::string, int> timedOut = doneOnTheWall();
+  h.trees->budgetedReadsTimeOut = false;
+  h.trees->openedReadsFail = true;
+  const std::map<std::string, int> failed = doneOnTheWall();
+  installWriteSink({});
+
+  CHECK(followed == (std::map<std::string, int>{{"t_ada", 3}, {"t_bo", 1}}));
+  CHECK(timedOut == (std::map<std::string, int>{{"t_ada", 1}, {"t_bo", 1}}));
+  CHECK(failed == (std::map<std::string, int>{{"t_ada", 1}, {"t_bo", 1}}));
+  CHECK_EQ(lines, (std::vector<std::string>{"roadmap.progress.follow roadmap gallery ok", "roadmap.progress.follow roadmap gallery timeout",
+                                            "roadmap.progress.follow roadmap gallery failed"}));
 }

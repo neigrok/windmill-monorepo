@@ -32,14 +32,14 @@ void registerRoutes(drogon::HttpAppFramework& app, const RoadmapDeps& deps) {
                                      deps.allowedOrigins));
   linkTreeSocket();
 
-  auto api = std::make_shared<TreeApi>(deps.registry, deps.trees, deps.progress, deps.oplog,
+  auto api = std::make_shared<TreeApi>(deps.registry, deps.trees, deps.progressService, deps.oplog,
                                        deps.genesis, deps.authService, deps.forkService, deps.clock);
   auto ogImageApi = std::make_shared<OgImageApi>(deps.ogImages, deps.trees, deps.authService);
   auto ogVideoApi = std::make_shared<OgVideoApi>(deps.ogVideos, deps.trees, deps.authService);
   auto sharePageApi =
       std::make_shared<SharePageApi>(deps.registry, deps.trees, deps.authService, deps.ogVideos, deps.webRoot,
                                      deps.appBaseUrl);
-  auto galleryApi = std::make_shared<GalleryApi>(deps.trees, deps.progress, deps.authService, deps.webRoot);
+  auto galleryApi = std::make_shared<GalleryApi>(deps.trees, deps.progressService, deps.authService, deps.webRoot);
   auto registryApi = std::make_shared<TreeRegistryApi>(deps.treeRegistry, deps.authService);
   auto tendingApi = std::make_shared<TendingApi>(deps.tendingService, deps.authService);
   auto remindersApi = std::make_shared<RemindersApi>(deps.reminderSweep, deps.reminderRepo, deps.authService,

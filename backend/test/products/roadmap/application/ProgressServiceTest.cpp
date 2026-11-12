@@ -17,7 +17,7 @@ struct Marking {
   FakeTreeRepository trees{repo};
   ProgressService service{repo, trees};
   UserId owner = uid("owner");
-  NodePointers pointers{{nid("idea"), tid("sub")}, {nid("lost"), tid("gone")}};
+  std::map<NodeId, TreeId> pointers{{nid("idea"), tid("sub")}, {nid("lost"), tid("gone")}};
 
   Marking() {
     LooseGraph sub;

@@ -398,7 +398,7 @@ void Collab::progress(const drogon::WebSocketConnectionPtr& conn, const std::str
     writes.push_back(ProgressWrite{node, *status, {}, *at});
   }
 
-  NodePointers pointers;
+  std::map<NodeId, TreeId> pointers;
   {
     std::lock_guard<std::mutex> lock(registry_.strandFor(TreeId{treeId}));
     try {

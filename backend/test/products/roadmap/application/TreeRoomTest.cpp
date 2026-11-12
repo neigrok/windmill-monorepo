@@ -497,9 +497,9 @@ TEST(room_hands_its_pointers_to_a_caller_who_can_write_the_tree_and_to_nobody_el
   const TreeRoom owned(tid(), {"Title", {}}, {}, false, graph, Legend{}, 0, uid("owner"), Visibility::public_, 0, bus);
   const TreeRoom nobodys(tid(), {"Title", {}}, {}, false, graph, Legend{}, 0, std::nullopt, Visibility::public_, 0, bus);
 
-  CHECK(owned.pointersFor(uid("owner")) == (NodePointers{{nid("idea"), tid("t_sub")}}));
-  CHECK(owned.pointersFor(uid("stranger")) == NodePointers{});
-  CHECK(owned.pointersFor(std::nullopt) == NodePointers{});
-  CHECK(nobodys.pointersFor(uid("owner")) == NodePointers{});
+  CHECK(owned.pointersFor(uid("owner")) == (std::map<NodeId, TreeId>{{nid("idea"), tid("t_sub")}}));
+  CHECK(owned.pointersFor(uid("stranger")) == (std::map<NodeId, TreeId>{}));
+  CHECK(owned.pointersFor(std::nullopt) == (std::map<NodeId, TreeId>{}));
+  CHECK(nobodys.pointersFor(uid("owner")) == (std::map<NodeId, TreeId>{}));
   CHECK_EQ(owned.snapshots(), std::size_t{0});
 }

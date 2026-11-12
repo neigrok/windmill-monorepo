@@ -19,6 +19,13 @@ OpenedTree::OpenedTree(const TreeData& tree, const Progress& marks)
   }
 }
 
+std::map<NodeId, TreeId> pointersOf(const TreeData& tree) {
+  std::map<NodeId, TreeId> pointers;
+  for (const NodeSpec& node : tree.nodes)
+    if (!node.opens.empty()) pointers.emplace(node.id, node.opens);
+  return pointers;
+}
+
 std::set<TreeId> treesOpenedBy(const TreeData& tree) {
   std::set<TreeId> opened;
   for (const NodeSpec& node : tree.nodes)
@@ -72,14 +79,14 @@ OpenedTrees::OpenedTrees(std::map<TreeId, OpenedTree> standing) : standing_(std:
   }
 }
 
-std::set<NodeId> OpenedTrees::following(const NodePointers& pointers) const {
+std::set<NodeId> OpenedTrees::following(const std::map<NodeId, TreeId>& pointers) const {
   std::set<NodeId> following;
   for (const auto& [node, opened] : pointers)
     if (standing_.count(opened)) following.insert(node);
   return following;
 }
 
-Progress OpenedTrees::followed(const NodePointers& pointers, const Progress& marks) const {
+Progress OpenedTrees::followed(const std::map<NodeId, TreeId>& pointers, const Progress& marks) const {
   Progress followed;
   followed.completed = marks.completed;
   for (const NodeId& node : following(pointers)) {
@@ -90,10 +97,7 @@ Progress OpenedTrees::followed(const NodePointers& pointers, const Progress& mar
 }
 
 Progress OpenedTrees::followed(const TreeData& tree, const Progress& marks) const {
-  NodePointers pointers;
-  for (const NodeSpec& node : tree.nodes)
-    if (!node.opens.empty()) pointers.emplace(node.id, node.opens);
-  return followed(pointers, marks);
+  return followed(pointersOf(tree), marks);
 }
 
 std::map<NodeId, Opening> OpenedTrees::openings(const TreeData& tree) const {
@@ -166,6 +170,23 @@ PointerDiagnostics OpenedTrees::diagnose(const TreeId& tree, const std::map<Node
     diagnostics.treeLoops.push_back(std::move(loop));
   }
   return diagnostics;
+}
+
+Progress readerView(const Progress& marks, const std::map<NodeId, TreeId>& pointers, const std::optional<OpenedTrees>& opened) {
+  std::set<NodeId> following;
+  if (opened) following = opened->following(pointers);
+  else for (const auto& [node, tree] : pointers) following.insert(node);
+  Progress shown;
+  for (const auto& [node, mark] : marks.marks)
+    if (!following.count(node)) shown.record(node, mark);
+  if (!opened) return shown;
+  for (const NodeId& node : opened->followed(pointers, Progress{}).completed) {
+    const auto stored = marks.marks.find(node);
+    const bool markedComplete = stored != marks.marks.end() && stored->second.status == ProgressStatus::complete;
+    shown.record(node, markedComplete ? ProgressMark{ProgressStatus::complete, stored->second.at, stored->second.markedAt}
+                                      : ProgressMark{ProgressStatus::complete});
+  }
+  return shown;
 }
 
 }
