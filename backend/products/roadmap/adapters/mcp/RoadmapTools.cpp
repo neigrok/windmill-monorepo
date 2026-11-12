@@ -1265,6 +1265,7 @@ ToolResult importSubgraph(RoomRegistry& registry, TreeRegistry& trees, ProgressS
     out["tombstoned"] = tombstoned;
     if (dryRun) {
       out["dryRun"] = true;
+      if (room.graftLandsNothing(graft, clock.nowMs())) out["unchanged"] = true;
       Json::Value tombstone(Json::arrayValue);
       for (const NodeId& id : footprint.tombstonedNodes) tombstone.append(id.str());
       out["tombstone"] = tombstone;
@@ -1285,11 +1286,12 @@ ToolResult importSubgraph(RoomRegistry& registry, TreeRegistry& trees, ProgressS
     }
 
     // A graft can dangle an edge per node it carries; the receipt says which of them are new.
+    // A graft that lands nothing is not joined, so there is nothing to save and the head stays where it is.
     std::optional<std::map<NodeId, TreeId>> pointersBefore;
     if (opensATree(opened)) pointersBefore = room.pointers();
     const TreeDiagnostics before = room.diagnose();
-    Seq seq = room.importTree(graft, clock.nowMs(), actor);
-    registry.persist(tree);
+    const std::optional<Seq> landed = room.importTree(graft, clock.nowMs(), actor);
+    if (landed) registry.persist(tree);
     out["graphApplied"] = true;
     out["progressApplied"] = true;
     try {
@@ -1305,7 +1307,8 @@ ToolResult importSubgraph(RoomRegistry& registry, TreeRegistry& trees, ProgressS
       out["progressError"] = "The graph committed, but clearing progress on removed nodes failed. Read get_progress before retrying progress changes.";
     }
     out["imported"] = true;
-    out["seq"] = static_cast<Json::Int64>(seq);
+    out["seq"] = static_cast<Json::Int64>(landed.value_or(room.head()));
+    if (!landed) out["unchanged"] = true;
     const TreeDiagnostics after = room.diagnose();
     if (pointersBefore) pointerEdit = pointerEditOf(room, *pointersBefore, before, after);
     answerDiagnostics(before, after, out);

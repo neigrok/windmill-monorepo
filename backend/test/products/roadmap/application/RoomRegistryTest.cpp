@@ -432,7 +432,7 @@ TEST(registry_a_crash_after_the_save_and_before_the_row_reopens_the_whole_import
   {
     RoomRegistry registry(repo, log, bus);
     TreeRoom& room = *registry.open(tid());
-    const Seq seq = room.importTree(manyNodeGraft(200), 10, uid());
+    const Seq seq = room.importTree(manyNodeGraft(200), 10, uid()).value();
     CHECK_EQ(seq, static_cast<Seq>(8));
     log.failAppend = true;
     registry.persist(tid());  // the row's failure is logged, never thrown: the lattice is durable

@@ -388,7 +388,7 @@ TEST(room_import_tree_lands_the_upsert_the_replacements_and_the_tombstones_at_on
   graft.prerequisites = PrerequisiteMode::replace;
   graft.tombstones = {nid("b")};
 
-  const Seq seq = room.importTree(graft, 100, uid());
+  const Seq seq = room.importTree(graft, 100, uid()).value();
   CHECK_EQ(seq, before + 1);
   CHECK_EQ(room.head(), seq);
   CHECK_EQ(room.prerequisitesOf(nid("n")), (std::vector<NodeId>{nid("a")}));
