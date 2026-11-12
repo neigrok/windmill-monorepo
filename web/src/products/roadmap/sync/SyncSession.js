@@ -77,6 +77,8 @@ export class SyncSession {
     this.unansweredSince = null;                    // when this socket began going unanswered; any inbound frame clears it
     this.phase = 'offline';                         // offline | syncing | live
     this.ready = false;
+    this.joinedServer = false;                      // the server's state has joined this lattice since the session began
+    this.marksStayBarred = false;                   // the stored record would not let go of a mark that is never to be sent
     this.lastSeq = 0;
     this.fullGraftPending = false;
     this.sent = new Set();                          // frameIds we authored — echoes already applied
@@ -172,12 +174,17 @@ export class SyncSession {
     this.forceReconnect();
   }
 
-  async discard() {
+  discard() {
     const refused = this.refusals.values().next().value;
-    if (!refused || this.rebaselining || this.discardPending) return false;
+    if (!refused || this.rebaselining || this.discardPending) return Promise.resolve(false);
     const lane = refused.lane;
-    if (!this.confirmedKnown[lane]) return false;
-    const shown = this.unconfirmedWrites(lane);
+    if (!this.confirmedKnown[lane]) return Promise.resolve(false);
+    return this.withdraw(lane, this.unconfirmedWrites(lane), refused);
+  }
+
+  // Takes unsent writes out of this replica and its stored record, back to the lane's confirmed baseline: the answer to
+  // `refused`, or with none, writes that are never to be sent.
+  async withdraw(lane, shown, refused = null) {
     const previousReady = this.ready;
     this.ready = false;
     this.rebaselining = new Set([lane]);
@@ -188,7 +195,7 @@ export class SyncSession {
     this.timers.clearTimeout(this.reconnectTimer);
     this.reconnectTimer = null;
     this.phase = this.online ? 'syncing' : 'offline';
-    this.refusals.delete(lane);
+    if (refused) this.refusals.delete(lane);
     this.emitProjection(lane);
     this.emitStatus();
     let result;
@@ -198,7 +205,7 @@ export class SyncSession {
       this.ready = previousReady;
       this.rebaselining = null;
       this.discardPending = false;
-      this.refusals.set(lane, refused);
+      if (refused) this.refusals.set(lane, refused);
       this.emitProjection(lane);
       this.emitStatus();
       this.reportFailure('roadmap-sync-discard', error);
@@ -210,7 +217,7 @@ export class SyncSession {
     this.rebaselining = null;
     if (result.status === 'unavailable') {
       this.ready = previousReady;
-      this.refusals.set(lane, refused);
+      if (refused) this.refusals.set(lane, refused);
       this.emitProjection(lane);
       this.emitStatus();
       await this.persistDeferred();
@@ -542,6 +549,7 @@ export class SyncSession {
     this.ackedServerVector = coverage;
     this.fullGraftPending = false;
     this.confirmedKnown.structure = true;
+    this.joinedServer = true;
     this.persistNow();
     this.rebaselining?.delete('structure');
     if (this.rebaselining?.size === 0) this.rebaselining = null;
@@ -701,7 +709,17 @@ export class SyncSession {
   flushProgress() {
     if (this.rebaselining?.has('progress') || this.discardPending) return;
     if (this.phase !== 'live' || this.ws?.readyState !== WebSocket.OPEN) return;
-    const queued = outboxWrites(this.progress.toFrame(), this.confirmedProgress.toFrame(), this.progressInFlight.values());
+    const unsent = outboxWrites(this.progress.toFrame(), this.confirmedProgress.toFrame(), this.progressInFlight.values());
+    // A mark for a step that opens a tree is never sent, as its tree decides that step. One queued before the pointer
+    // arrived leaves this replica and its stored record as a discarded write does; a record that will not let it go is
+    // asked once, and the mark then only stays unsent.
+    const opensTree = ({ node }) => Boolean(this.lattice.nodes.get(node)?.opens.v);
+    const barred = unsent.marks.filter(opensTree);
+    if (barred.length && !this.marksStayBarred && !this.rebaselining && !this.refusals.has('progress') && this.confirmedKnown.progress) {
+      this.withdraw('progress', writeStamps({ marks: barred })).then((withdrawn) => { this.marksStayBarred = !withdrawn; });
+      return;
+    }
+    const queued = { marks: unsent.marks.filter((mark) => !opensTree(mark)) };
     if (!queued.marks.length) return;
     this.sendWithEpoch('progress', (socket) => {
       const pending = outboxWrites(queued, this.confirmedProgress.toFrame(), this.progressInFlight.values());

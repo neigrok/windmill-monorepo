@@ -781,3 +781,47 @@ test('a pointer the owner’s graft carried stays on this device: a graft that s
   const reloaded = await env.session(env.store());
   assert.deepEqual(reloaded.lattice.toTreeData().nodes.map(({ id, opens }) => ({ id, opens })), [{ id: 'root', opens: 't_sail' }]);
 });
+
+test('a mark queued before its step’s pointer arrived is never sent: it leaves the replica and the device, and the mark beside it still goes', async (t) => {
+  const env = environment(t);
+  const store = env.store();
+  const steps = { nodes: [
+    { id: 'plan', createdAt: '100:0:srv', label: 'Plan', labelAt: '100:0:srv' },
+    { id: 'sail', createdAt: '100:0:srv', label: 'Sail', labelAt: '100:0:srv' },
+  ], edges: [], kinds: [] };
+  const session = await env.session(store);
+  const sockets = [session.ws];
+  const subscribed = (structure) => {
+    session.ws.open();
+    session.receive({ t: 'subgraph', intent: 'delta', nodes: [], edges: [], kinds: [], ...structure, seq: 2 });
+    session.receive({ t: 'progress', intent: 'graft', marks: [] });
+    return settle([store]);
+  };
+  const reconnected = (structure) => {
+    session.connect();
+    sockets.push(session.ws);
+    return subscribed(structure);
+  };
+  const marksSent = () => sockets.flatMap((socket) => socket.frames).filter((frame) => frame.t === 'progress')
+    .flatMap((frame) => frame.marks.map(({ node, status }) => `${node}:${status}`));
+  await subscribed(steps);
+
+  session.ws.close();
+  session.markProgress(['sail'], 'complete');
+  session.markProgress(['plan'], 'complete');
+  await settle([store]);
+  assert.equal(session.pendingProgressCount(), 2);
+
+  await reconnected({ nodes: [{ id: 'sail', opens: 't_sail', opensAt: '200:0:srv' }] });
+  assert.deepEqual(marksSent(), []);
+  assert.deepEqual({ completed: [...session.progress.overlay().completed], pending: session.pendingProgressCount() }, { completed: ['plan'], pending: 1 });
+  assert.deepEqual((await store.load('tree')).progress.marks.map(({ node, status }) => `${node}:${status}`), ['plan:complete']);
+
+  await reconnected({});
+  assert.deepEqual(marksSent(), ['plan:complete']);
+  assert.deepEqual([...session.progress.overlay().completed], ['plan']);
+
+  const reopened = await env.session(env.store());
+  assert.deepEqual({ completed: [...reopened.progress.overlay().completed], pointer: reopened.lattice.toTreeData().nodes.map(({ id, opens }) => `${id}>${opens ?? ''}`) },
+    { completed: ['plan'], pointer: ['plan>', 'sail>t_sail'] });
+});

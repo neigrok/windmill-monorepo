@@ -253,3 +253,61 @@ test('a mint after a held pointer dominates its stamp', () => {
 
   assert.deepEqual(clock.tick(500), { ms: 900, counter: 5, actor: 'r_tab' });
 });
+
+// A seeded PRNG (mulberry32), so the random frames below are the same run to run.
+function mulberry32(seed) {
+  let state = seed >>> 0;
+  return () => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let mixed = Math.imul(state ^ (state >>> 15), 1 | state);
+    mixed = (mixed + Math.imul(mixed ^ (mixed >>> 7), 61 | mixed)) ^ mixed;
+    return ((mixed ^ (mixed >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+test('with the pointer among its registers the join stays commutative, associative and idempotent over random frames', () => {
+  const random = mulberry32(7);
+  const pick = (list) => list[Math.floor(random() * list.length)];
+  const stamp = () => `${1 + Math.floor(random() * 6)}:${Math.floor(random() * 3)}:${pick(['srv', 'r_x', 'r_y'])}`;
+  const randomFrame = () => {
+    const nodes = Array.from({ length: 1 + Math.floor(random() * 3) }, () => {
+      const entry = { id: pick(['a', 'b', 'c']) };
+      if (random() < 0.4) entry.createdAt = stamp();
+      if (random() < 0.15) entry.deletedAt = stamp();
+      if (random() < 0.5) { entry.label = `L${Math.floor(random() * 5)}`; entry.labelAt = stamp(); }
+      if (random() < 0.6) { entry.opens = pick(['t_1111111111111111', 't_2222222222222222', '']); entry.opensAt = stamp(); }
+      if (random() < 0.15) { entry.opens = ''; entry.opensAt = '0:0:'; }
+      return entry;
+    });
+    return { nodes, edges: random() < 0.3 ? [{ from: pick(['a', 'b', 'c']), to: pick(['a', 'b', 'c']), addedAt: stamp() }] : [], kinds: [] };
+  };
+  // Two values never share one stamp on the wire, so the first value said under a stamp is the one every frame says.
+  const honest = (frames) => {
+    const said = new Map();
+    for (const node of frames.flatMap((frame) => frame.nodes)) {
+      for (const name of ['label', 'opens']) {
+        const at = node[`${name}At`];
+        if (!at || at === '0:0:') continue;
+        const key = `${node.id}|${name}|${at}`;
+        if (said.has(key)) node[name] = said.get(key);
+        else said.set(key, node[name]);
+      }
+    }
+    return frames;
+  };
+  const joined = (frames) => {
+    const lattice = new TreeLattice('t');
+    for (const frame of frames) lattice.join(frame);
+    const frame = lattice.toFrame();
+    return { ...frame, nodes: [...frame.nodes].sort((x, y) => (x.id < y.id ? -1 : 1)), edges: [...frame.edges].sort((x, y) => (`${x.from}${x.to}` < `${y.from}${y.to}` ? -1 : 1)) };
+  };
+
+  for (let round = 0; round < 2000; round += 1) {
+    const frames = honest(Array.from({ length: 2 + Math.floor(random() * 5) }, randomFrame));
+    const forward = joined(frames);
+    assert.deepEqual(joined([...frames].reverse()), forward);
+    assert.deepEqual(joined([...frames, ...frames]), forward);
+    assert.deepEqual(joined([joined(frames.slice(0, 2)), joined(frames.slice(2))]), forward);
+    assert.deepEqual(joined([JSON.parse(JSON.stringify(forward))]), forward);
+  }
+});
