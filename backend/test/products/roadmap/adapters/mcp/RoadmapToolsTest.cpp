@@ -41,6 +41,20 @@ struct FailingTreeRepository : FakeTreeRepository {
   }
 };
 
+// A store whose reads fail from the moment a tree has been inserted.
+struct LoadsFailAfterCreate : FakeTreeRepository {
+  bool inserted = false;
+  void create(const TreeId& tree, const GraphState& state, const LegendState& legend, const std::string& title,
+              const UserId& owner) override {
+    FakeTreeRepository::create(tree, state, legend, title, owner);
+    inserted = true;
+  }
+  std::optional<StoredTree> load(const TreeId& tree) override {
+    if (inserted) throw std::runtime_error("connection reset mid-read");
+    return FakeTreeRepository::load(tree);
+  }
+};
+
 }
 
 TEST(mcp_create_node_mints_a_slug_id_and_get_tree_shows_it) {
@@ -257,6 +271,30 @@ TEST(mcp_create_tree_plants_the_legend_it_is_sent_and_answers_it) {
   CHECK_EQ(body(h.tools.callTool("create_node", filed, h.actor)),
            parse(R"({"applied":true,"seq":1,"id":"fix-the-crash","kind":"developer","diagnosticsClean":true,
     "introducedDiagnostics":[]})"));
+}
+
+// The reply answers the legend from what the call planted, with no read after the insert: a read that
+// fails once the tree exists cannot turn a planted tree into a refusal that invites a second one.
+TEST(mcp_create_tree_answers_the_legend_it_planted_without_reading_the_tree_back) {
+  FakeProgressRepository progressRepo;
+  LoadsFailAfterCreate trees;
+  FakeOpLog ops;
+  FakeBus bus;
+  StepClock clock;
+  FakeTokens tokens;
+  RoomRegistry registry{trees, ops, bus};
+  ProgressService progress{progressRepo};
+  TreeRegistry treeRegistry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}, registry, clock};
+  RoadmapTools tools{registry, progress, clock, treeRegistry, bus};
+  CompositeToolHost gate(std::vector<ToolModule>{{tools, ""}});
+
+  const ToolResult created =
+      gate.callTool("create_tree", parse(R"({"title":"Crew board","kinds":[{"id":"owner","hue":"gold","label":"Owner"}]})"),
+                    ToolCaller{uid("agent"), ToolScope::everything()});
+  CHECK_FALSE(created.isError);
+  REQUIRE_EQ(trees.byId.size(), 1u);
+  CHECK_EQ(body(created), parse(R"({"treeId":")" + trees.byId.begin()->first +
+                                R"(","kinds":[{"id":"owner","hue":"gold","label":"Owner"}]})"));
 }
 
 TEST(mcp_create_tree_without_kinds_plants_the_default_legend_and_answers_it) {

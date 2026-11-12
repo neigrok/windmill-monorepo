@@ -1384,8 +1384,9 @@ ToolResult disconnectEdges(RoomRegistry& registry, const TreeId& tree, const Jso
 }
 
 // A tree is born with the legend the call sends, whole and in its order, or with the default one when
-// it sends none; the reply answers the legend planted, in the shape get_tree answers kinds by default.
-ToolResult createTree(TreeRegistry& trees, RoomRegistry& rooms, const UserId& caller, const Json::Value& args) {
+// it sends none. The reply answers that legend from Legend::bornWith, the rule the registry plants by,
+// in the shape get_tree answers kinds by default, and reads nothing back once the tree is inserted.
+ToolResult createTree(TreeRegistry& trees, const UserId& caller, const Json::Value& args) {
   if (std::optional<std::string> bad = optionalString(args["title"], "title")) return ToolResult::failure(*bad);
   if (args["kinds"].isArray() && args["kinds"].empty())
     return ToolResult::failure("kinds, when sent, names at least one kind — leave it out for the default legend");
@@ -1397,14 +1398,11 @@ ToolResult createTree(TreeRegistry& trees, RoomRegistry& rooms, const UserId& ca
   TreeData initial;
   initial.title = sent->title;
   initial.kinds = sent->kinds;
-  const TreeId tree = trees.create(caller, initial);
-  return withRoom(rooms, tree, [&](TreeRoom& room) -> ToolResult {
-    Json::Value out(Json::objectValue);
-    out["treeId"] = tree.str();
-    out["kinds"] = Json::Value(Json::arrayValue);
-    for (const Kind& kind : room.kinds()) out["kinds"].append(projectKind(kind, kLegendFields));
-    return ToolResult::json(out);
-  });
+  Json::Value out(Json::objectValue);
+  out["treeId"] = trees.create(caller, initial).str();
+  out["kinds"] = Json::Value(Json::arrayValue);
+  for (const Kind& kind : Legend::bornWith(initial.kinds)) out["kinds"].append(projectKind(kind, kLegendFields));
+  return ToolResult::json(out);
 }
 
 ToolResult listRegistry(TreeRegistry& registry, const UserId& caller) {
@@ -1485,7 +1483,7 @@ ToolResult RoadmapTools::dispatch(const std::string& name, const Json::Value& ar
                                typeName(arguments));
   const UserId& caller = actor.user;
 
-  if (name == "create_tree") return createTree(treeRegistry_, registry_, caller, arguments);
+  if (name == "create_tree") return createTree(treeRegistry_, caller, arguments);
   if (name == "list_trees") return listRegistry(treeRegistry_, caller);
 
   if (arguments["treeId"].isNull() ||

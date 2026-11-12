@@ -320,7 +320,8 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "Create a new empty roadmap that you own, with the legend you send in `kinds` or, without it, "
         "the default legend (Build/Learn/Milestone). Optionally name it with `title`. Returns the new "
         "treeId — pass it to the other tools to start authoring — and `kinds`, the legend it was born "
-        "with, in order, each as {id, hue, label}.",
+        "with, in order, each as {id, hue, label}. A node later written with neither `color` nor `kind` "
+        "is terracotta, so a legend with no terracotta kind leaves such a node under no kind.",
         p, {}));
   }
   {

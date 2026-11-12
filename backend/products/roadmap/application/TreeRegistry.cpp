@@ -37,9 +37,8 @@ TreeRegistry::Creation TreeRegistry::create(const UserId& owner, const TreeId& i
   // one a device-born tree seeds, so a claim converges.
   const Hlc plantedAt{clock_.nowMs(), 0, std::string{TreeRoom::kServerActor}};
   GraphState state = LooseGraph(initial, plantedAt).exportState();
-  // Honour a posted legend; otherwise a blank tree is born with the three defaults.
-  LegendState legend = initial.kinds.empty() ? Legend::seededDefaults(genesis_).exportState()
-                                             : Legend(initial.kinds, genesis_).exportState();
+  // A posted legend, or the three defaults when none is posted.
+  LegendState legend = Legend(Legend::bornWith(initial.kinds), genesis_).exportState();
   try {
     trees_.create(id, state, legend, initial.title, owner);
   } catch (const DuplicateTree&) {
