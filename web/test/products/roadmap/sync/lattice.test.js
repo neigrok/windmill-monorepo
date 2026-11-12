@@ -191,3 +191,65 @@ test('a register whose text is not a string makes the whole frame malformed and 
   }
   assert.deepEqual({ title: lattice.title, guide: lattice.guide, nodes: lattice.nodes.size }, { title: 'Sail', guide: 'Kept', nodes: 0 });
 });
+
+test('a pointer the server sends is kept with its stamp, projected, and survives the stored frame', () => {
+  const lattice = new TreeLattice('t_1');
+  lattice.join({ nodes: [
+    { id: 'sail', createdAt: '100:0:srv', label: 'Learn to sail', labelAt: '100:0:srv', opens: 't_sail', opensAt: '200:0:srv' },
+    { id: 'run', createdAt: '100:0:srv', label: 'Run a 10K', labelAt: '100:0:srv' },
+  ] });
+  const copy = new TreeLattice('t_1');
+  copy.join(JSON.parse(JSON.stringify(lattice.toFrame())));
+
+  assert.deepEqual(lattice.toFrame().nodes.map(({ id, opens, opensAt }) => ({ id, opens, opensAt })), [
+    { id: 'sail', opens: 't_sail', opensAt: '200:0:srv' },
+    { id: 'run', opens: undefined, opensAt: undefined },
+  ]);
+  assert.deepEqual(copy.toTreeData().nodes.map(({ id, opens }) => ({ id, opens })), [
+    { id: 'sail', opens: 't_sail' },
+    { id: 'run', opens: undefined },
+  ]);
+  assert.deepEqual(copy.frontier().toJSON(), { srv: '200:0:srv' });
+});
+
+test('the later stamp of a pointer wins in either order, and an emptied pointer opens nothing', () => {
+  const set = { nodes: [{ id: 'sail', createdAt: '100:0:srv', opens: 't_sail', opensAt: '200:0:srv' }] };
+  const moved = { nodes: [{ id: 'sail', opens: 't_coast', opensAt: '300:0:srv' }] };
+  const cleared = { nodes: [{ id: 'sail', opens: '', opensAt: '400:0:srv' }] };
+  const forward = new TreeLattice('t_1');
+  const backward = new TreeLattice('t_1');
+  forward.join(set);
+  forward.join(moved);
+  backward.join(moved);
+  backward.join(set);
+
+  assert.equal(forward.toTreeData().nodes[0].opens, 't_coast');
+  assert.deepEqual(backward.toFrame(), forward.toFrame());
+
+  forward.join(cleared);
+  backward.join(set);
+  backward.join(cleared);
+  assert.equal(forward.toTreeData().nodes[0].opens, undefined);
+  assert.deepEqual(backward.toFrame(), forward.toFrame());
+});
+
+test('a frame or an entry without the pointer changes none: a reader’s empty, unstamped pair included', () => {
+  const lattice = new TreeLattice('t_1');
+  lattice.join({ nodes: [{ id: 'sail', createdAt: '100:0:srv', label: 'Learn to sail', labelAt: '100:0:srv', opens: 't_sail', opensAt: '200:0:srv' }] });
+  const held = lattice.toFrame();
+
+  lattice.join({ nodes: [], edges: [] });
+  lattice.join({ nodes: [{ id: 'sail', label: 'Learn to sail', labelAt: '100:0:srv' }] });
+  lattice.join({ nodes: [{ id: 'sail', opens: '', opensAt: '0:0:' }] });
+
+  assert.deepEqual(lattice.toFrame(), held);
+});
+
+test('a mint after a held pointer dominates its stamp', () => {
+  const lattice = new TreeLattice('t_1');
+  lattice.join({ nodes: [{ id: 'sail', createdAt: '100:0:srv', opens: 't_sail', opensAt: '900:4:srv' }] });
+  const clock = new HlcClock('r_tab');
+  lattice.seedClock(clock);
+
+  assert.deepEqual(clock.tick(500), { ms: 900, counter: 5, actor: 'r_tab' });
+});

@@ -4,7 +4,7 @@ import { IDBFactory } from 'fake-indexeddb';
 import { SyncStore } from '../../../../src/products/roadmap/sync/SyncStore.js';
 import { SyncSession } from '../../../../src/products/roadmap/sync/SyncSession.js';
 import { outboxWrites } from '../../../../src/products/roadmap/sync/pendingWrites.js';
-import { TreeLattice } from '../../../../src/products/roadmap/sync/lattice.js';
+import { TreeLattice, VersionVector } from '../../../../src/products/roadmap/sync/lattice.js';
 
 const baseline = { nodes: [{ id: 'root', createdAt: '1:0:server', label: 'Root', labelAt: '1:0:server' }], edges: [], kinds: [] };
 const progress = { marks: [{ node: 'root', status: 'none', at: '2:0:server', markedAt: 2 }] };
@@ -756,4 +756,28 @@ test('an IndexedDB merge keeps valid progress from both records when each has an
   assert.deepEqual((await store.load('tree')).progress, { marks: [oldMark, newMark] });
   assert.deepEqual(reports.map(({ operation, error, tags }) => ({ operation, message: error.message, stack: !!error.stack, tags })),
     Array.from({ length: 2 }, () => ({ operation: 'roadmap-sync-progress-mark', message: 'Roadmap progress mark invalid', stack: true, tags: { lane: 'progress' } })));
+});
+
+test('a pointer the owner’s graft carried stays on this device: a graft that says nothing of it clears nothing, pends nothing and sends nothing', async (t) => {
+  const env = environment(t);
+  const store = env.store();
+  const pointing = { nodes: [{ ...baseline.nodes[0], opens: 't_sail', opensAt: '5:0:srv' }], edges: [], kinds: [] };
+  const hidden = { nodes: [{ ...baseline.nodes[0], opens: '', opensAt: '0:0:' }], edges: [], kinds: [] };
+  const session = await env.session(store);
+  session.ws.open();
+  session.receiveState({ ...pointing, seq: 1 });
+  await settle([store]);
+  assert.deepEqual((await store.load('tree')).frame, pointing);
+
+  session.ackedServerVector = new VersionVector();
+  session.connect();
+  session.ws.open();
+  session.receiveState({ ...hidden, seq: 1 });
+  await settle([store]);
+
+  assert.deepEqual(session.ws.frames.filter((frame) => frame.t === 'subgraph'), []);
+  assert.deepEqual({ pending: session.pendingStructureCount(), gestures: session.pendingEditCount() }, { pending: 0, gestures: 0 });
+  assert.deepEqual((await store.load('tree')).frame, pointing);
+  const reloaded = await env.session(env.store());
+  assert.deepEqual(reloaded.lattice.toTreeData().nodes.map(({ id, opens }) => ({ id, opens })), [{ id: 'root', opens: 't_sail' }]);
 });

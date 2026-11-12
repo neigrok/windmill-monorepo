@@ -7,7 +7,8 @@ const SECTIONS = ['nodes', 'edges', 'kinds', 'marks'];
 const rowId = (section, row) => (section === 'edges' ? [row.from, row.to] : row.id ?? row.node);
 const stampKey = (section, id, field) => JSON.stringify([section, id, field]);
 const registerKey = (name) => stampKey(name, '', 'at');
-const isStamp = (field, value) => (field.endsWith('At') || field === 'at') && typeof value === 'string';
+// The tree a node opens is written by the server's doors alone: a replica joins and stores the pointer and never holds it unsent.
+const isStamp = (field, value) => field !== 'opensAt' && (field.endsWith('At') || field === 'at') && typeof value === 'string';
 
 export function writeStamps(frame = {}) {
   const stamps = {};

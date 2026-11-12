@@ -4,7 +4,7 @@
 
 import { pageWatching, reportInvalidProgressMark, reportRoadmapFailure } from '../reportFailure.js';
 import { socketUrl } from '../../../shell/apiBase.js';
-import { HlcClock, TREE_REGISTERS, TreeLattice, VersionVector, hlcText, parseHlc } from './lattice.js';
+import { HlcClock, NODE_REGISTERS, TREE_REGISTERS, TreeLattice, UNWRITTEN_NODE, VersionVector, hlcText, parseHlc } from './lattice.js';
 import { ProgressLattice } from './progressLattice.js';
 import { materialize } from './materialize.js';
 import { UNSENDABLE, isOwnershipRefusal, isSessionRefusal, strandsTheBank } from './refusals.js';
@@ -300,6 +300,7 @@ export class SyncSession {
       ...(n.status ? { status: n.status, statusAt: genesis } : {}),
       ...(n.description ? { description: n.description, descriptionAt: genesis } : {}),
       ...(n.links?.length ? { links: n.links, linksAt: genesis } : {}),
+      ...(n.opens ? { opens: n.opens, opensAt: genesis } : {}),
     }));
     const edges = [];
     for (const n of treeData.nodes) for (const p of n.prerequisites ?? []) edges.push({ from: p, to: n.id, addedAt: genesis });
@@ -1122,14 +1123,7 @@ export class SyncSession {
       const inv = { id: n.id };
       if (n.createdAt) inv.deleteLife = true;   // undo a create → tombstone
       if (n.deletedAt) inv.addLife = true;      // undo a delete → re-add; fields survive in the lattice
-      if ('labelAt' in n) inv.label = record ? record.label.v : '';
-      if ('iconAt' in n) inv.icon = record ? record.icon.v : '';
-      if ('colorAt' in n) inv.color = record ? record.color.v : 'terracotta';
-      if ('orderAt' in n) inv.order = record ? record.order.v : '';
-      if ('positionAt' in n) inv.position = record ? record.position.v : null;
-      if ('statusAt' in n) inv.status = record ? record.status.v : null;
-      if ('descriptionAt' in n) inv.description = record ? record.description.v : '';
-      if ('linksAt' in n) inv.links = record ? record.links.v : [];
+      for (const name of NODE_REGISTERS) if (`${name}At` in n) inv[name] = record ? record[name].v : UNWRITTEN_NODE[name];
       return inv;
     });
     const edges = (writes.edges ?? []).map((e) => (
@@ -1154,14 +1148,7 @@ export class SyncSession {
       const e = { id: n.id };
       if (n.deleteLife) e.deletedAt = s;
       if (n.addLife) e.createdAt = s;
-      if ('label' in n) { e.label = n.label; e.labelAt = s; }
-      if ('icon' in n) { e.icon = n.icon; e.iconAt = s; }
-      if ('color' in n) { e.color = n.color; e.colorAt = s; }
-      if ('order' in n) { e.order = n.order; e.orderAt = s; }
-      if ('position' in n) { e.position = n.position; e.positionAt = s; }
-      if ('status' in n) { e.status = n.status; e.statusAt = s; }
-      if ('description' in n) { e.description = n.description; e.descriptionAt = s; }
-      if ('links' in n) { e.links = n.links; e.linksAt = s; }
+      for (const name of NODE_REGISTERS) if (name in n) { e[name] = n[name]; e[`${name}At`] = s; }
       return e;
     });
     const edges = (inverse.edges ?? []).map((x) => (

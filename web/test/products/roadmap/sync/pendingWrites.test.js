@@ -93,3 +93,13 @@ test('the guide is its own register: it pends, confirms and discards apart from 
   assert.deepEqual(outboxWrites(frame, {}, [{ guide: frame.guide }]), { title: frame.title, nodes: [] });
   assert.deepEqual(pendingGestures(frame, { guide: frame.guide }), { '7:0:r': { [key('title', '', 'at')]: '7:0:r' } });
 });
+
+test('the tree a node opens is the server’s register: a replica that holds it has nothing unsent, and no outbox carries it', () => {
+  const held = { nodes: [{ id: 'sail', label: 'Learn to sail', labelAt: '5:0:tab', opens: 't_sail', opensAt: '9:0:srv' }] };
+  const confirmedWithoutThePointer = { nodes: [{ id: 'sail', label: 'Learn to sail', labelAt: '5:0:tab' }] };
+
+  assert.deepEqual(writeStamps(held), { [key('nodes', 'sail', 'labelAt')]: '5:0:tab' });
+  assert.deepEqual(pendingGestures(held, confirmedWithoutThePointer), {});
+  assert.deepEqual(outboxWrites(held, confirmedWithoutThePointer), { nodes: [] });
+  assert.deepEqual(outboxWrites(held, {}), { nodes: [{ id: 'sail', labelAt: '5:0:tab', label: 'Learn to sail' }] });
+});
