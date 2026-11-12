@@ -186,3 +186,12 @@ test('the ledger and the crown read what stands complete: a step whose tree is d
   assert.deepEqual(calls.filter(([kind]) => kind === 'ledger'), [['ledger', 'sail', ['plan', 'sail', 'maya']]]);
   assert.equal(calls.find(([kind]) => kind === 'ceremony')[1], 'Tree complete — 3/3 steps.');
 });
+
+test('a roadmap that read nothing of a tree one of its steps opens witnesses nothing: the ledger keeps what the last full load saw', (t) => {
+  const { acts, calls } = yearFixture(t, Opening.unread('t_sail'));
+  acts.adoptLoaded({ completed: ['plan'], completedAt: { plan: 1 } });
+  acts.complete('maya', { quiet: true });
+  acts.adoptRemote({ completed: new Set(['plan', 'maya']), completedAt: {} });
+
+  assert.deepEqual(calls.filter(([kind]) => kind === 'ledger'), []);
+});

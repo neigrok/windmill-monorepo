@@ -617,12 +617,24 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   *Up next · 3 of 8* and Open tree in the bar. The swipe reveals Open and stops there, as it does for Complete; 28.10's
   full swipe that opens the tree is not built.
 - **Section 28 · states with no board.** A tree whose facts the load did not read (the device's own copy, a `503` on the
-  pointers, a pointer set while the roadmap is open) shows the tree's mark on the node and Open tree, and no pill, row or
-  words; its step stands by its prerequisites and is never done. A step whose pointer leads nowhere and whose own mark
+  pointers, a pointer set while the roadmap is open until it is read again) shows the tree's mark on the node and Open
+  tree, and no pill, row or words; its step stands by its prerequisites and is never done. A step whose pointer leads nowhere and whose own mark
   already completed it shows *Done* with the *Tree not found* row and no words where Complete sat. A locked step whose
   tree loops back or has no steps keeps the loop's or the empty tree's line. The tablet band and C on a card whose tree
   loops back (*Won’t complete by itself*) or is not found (*Can’t complete yet*) follow the desktop boards. 28.38, a
   tree removed since the roadmap loaded, cannot be told from what the server answers and is not built.
+- **Section 28 · two sentences wait for their actions.** 28.36 and 28.41 end the loop's line with *Detach one side.*
+  and 28.39 and 28.42 end the missing tree's with *Choose another, or detach it.* The web has neither detach nor the
+  picker, so the lines stop at the fact (*A loop with … : this never completes.*, *This tree can’t be found.*). Both
+  sentences return with the landing that builds detach and the picker; until then a step whose tree loops back or is
+  not found cannot be completed on the web.
+- **Section 28 · gaps ruled to stand.** The card's pill is not a control of its own: a pointer press goes in, and the
+  keyboard's way is the step and its Open tree. Focus after going into a tree lands on the body. An opened tree
+  deleted since the load shows the generic load error, with no way back but the browser's. During an outage
+  `roadmap-opens-load` reports once per page load. The row's Export writes the raw marks, so a step done by its tree
+  exports unchecked (filed with the export).
+- **Section 28 · no door without an account.** A lapsed session and a device's copy with nobody signed in show the
+  tree's mark on such a step and no Open tree, pill press, swipe Open or way back; no board draws this state.
 - **Section 28 · read-me and fixtures.** The read-me 28.00 still lists the tree switcher's delete confirmation
   under "Not drawn"; it is drawn as 🚧 28.50–28.52. Coast trip reads "0 of 5" on 28.00 and 28.02 and "No steps" on
   28.14 and 28.44. The picker on 28.14 leaves out My life, though its NOTE says the rows are the switcher's list

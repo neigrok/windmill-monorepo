@@ -21,7 +21,7 @@ import './page.css';
 import {
   COLUMN_TITLES, LABELS, deleteCostLine, LINK_COPIED, STATE_WORDS, STEP_DETAIL, TREE, WORKSPACE_EMPTY, checkedToast,
   DELETE_CONFIRM, deleteConfirm, backTo, completedOutcome, formatCount, lockedStatus, prerequisitesTally, resetOutcome, resetPreview,
-  treeBand, treeState, treeTitle,
+  openTreeStated, treeBand, treeState, treeTitle,
 } from '../copy.js';
 import { t } from '../i18n/index.js';
 
@@ -503,7 +503,7 @@ function TreeSection({ facts, onOpen }) {
   return (
     <section className="st-board-step-relations">
       <h3 className="st-board-step-heading"><span>{TREE.heading}</span></h3>
-      <Row className={`st-board-step-tree st-board-step-tree--${opening.face}`} {...(onOpen ? { type: 'button', onClick: onOpen } : {})}>
+      <Row className={`st-board-step-tree st-board-step-tree--${opening.face}`} {...(onOpen ? { type: 'button', onClick: onOpen, 'aria-label': openTreeStated(opening, facts.roadmap) } : {})}>
         <span className="st-board-step-tree-glyph"><OpeningGlyph face={opening.face} size={16} check /></span>
         <span className="st-board-step-tree-facts">
           <span className="st-board-step-tree-title">{treeTitle(opening)}</span>

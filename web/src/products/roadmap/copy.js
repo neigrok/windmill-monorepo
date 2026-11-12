@@ -470,6 +470,11 @@ export function treeState(opening, roadmap) {
   return states[opening.face]();
 }
 
+// The Tree row's name where it is the way in: what the press does, then what the row shows.
+export function openTreeStated(opening, roadmap) {
+  return t('roadmap.tree.openStated', { tree: opening.title, state: treeState(opening, roadmap) });
+}
+
 export function treeTitle(opening) {
   return opening.dangling ? t('roadmap.tree.state.missingTitle') : opening.title;
 }

@@ -61,7 +61,8 @@ event uses the same branch that chose it:
 1. An owner's empty roadmap opens on the Board.
 2. A non-empty just-planted roadmap opens on the Graph.
 3. A tree gone into through a step opens in the view the person was in, and the roadmap they come back to opens in
-   the view they left (doors `tree` and `back`).
+   the view they left (doors `tree` and `back`). This holds once, for the account that holds the room as its owner: a
+   reload or a Forward of the same entry, and anyone else at it, falls to the rules below.
 4. A step link opens on the Board.
 5. Non-demo readers of a not-owned or ownership-demoted roadmap open on the Graph, whatever they last chose.
 6. Otherwise the saved choice stands, with owners defaulting to the Board and everyone else to the Graph. The
@@ -127,32 +128,52 @@ A step can point at another tree of its owner's. The pointer is the node registe
 or that nothing of the owner's stands at the other end. `GET /v1/trees/{id}` answers the openings to the owner, the
 repository builds them, and `useRoomLoad` stands them on every projection it hands on (`Openings.onto`), so each such
 step carries its `opening` through every tree built from it. Only the owner's room does: a reader, a shared address and
-the demo see ordinary steps. Nothing pushes an opening: it is as old as the load, and a pointer whose facts the load did
-not read, on the device's own copy or set since, is `unread`.
+the demo see ordinary steps. Until the session has joined the server's state the load is the newer word: a step it
+named opens that tree and a step it did not opens none, whatever an older copy on the device holds. From then on the
+projection's pointer decides, and one the load read nothing of is `unread`. Nothing pushes an opening. A pointer that
+arrives or changes while the roadmap is open has the roadmap read once more, after 600 ms and within ten seconds; a
+read that fails, or still says nothing of that pointer, is not asked again. A load that read none at all (the device's
+own copy, a `503`) leaves every pointer `unread` and asks nothing more.
+
+The device's copy of a roadmap holds its pointers, the ids of the trees its steps open, in the stored lattice, and
+nothing else of those trees. It goes when the account that held the device signs out or another signs in
+(`forgetDeviceTrees`), and a lapsed session keeps it.
 
 `UnlockRules.completed` is the one rule: a step that opens a tree is complete exactly when that tree is, whatever its
 mark and its prerequisites, and one whose pointer leads nowhere follows its mark. No hand marks such a step
 (`takesMark`): no door offers Complete or Reset on it, `markDoneTargets` leaves it out, and `RoomProgress.mark` changes
-and sends nothing for one. The return ledger and the milestones read the same completed set.
+and sends nothing for one. A mark queued before the pointer arrived is never sent either: `SyncSession.flushProgress`
+withdraws it from the replica and its stored record as a Discard withdraws a refused write, which also clears Undo;
+where the record will not let it go, it is asked once and the mark stays unsent. The return ledger and the milestones
+read the same completed set, and a roadmap with an `unread` opening saves nothing to the return ledger, as it does not
+know what stands complete.
 
 | Surface | What it shows of the tree |
 |---|---|
 | Card | A pill between the reason and the excerpt: done of total with a bar, *No steps*, *Loops back* or *Not found*, led by the tree's title where it differs from the step's. A press on it goes in. On phones an Up next card's swipe reveals Open in place of Complete |
-| C on a card | Completes nothing: a toast says what completes the step, with Open tree |
+| C on a card | Completes nothing: a toast says what completes the step, with Open tree where the tree can be gone into. A tree that is not found has the toast without the action, and an `unread` one has no toast |
 | Step page and modal | A Tree section after the relations: the row goes in, and one line says what completes the step. Where Complete sat: the same in a few words, beside Open tree, primary while going in is the next thing to do |
 | Graph node | The tree's mark at its centre (a loop's, or an alert where nothing is found) and done of total on the sub-task arc |
 | Dock, tablet panel, phone bar | Done of total, and Open tree in place of Complete |
 
 An `unread` opening shows the mark and Open tree and says nothing else: no pill, no row, no words. A dangling one
-(`Not found`) goes nowhere.
+(`Not found`) goes nowhere, and a step that opens the tree it stands in goes nowhere and says nothing.
 
 `room/useTreeVisit.js` goes in and comes back. Going in pushes `#/app/<treeId>`; the entry of the tree gone into names the
 roadmap the person came from, and the entry they left keeps the step they went through. Both are history state, never
 tree data, so a direct link has no way back, a chain pops one tree per press and the browser's Back reads what the chip
-reads. The identity row shows the way back as a chip in its first slot from 744px, and as a chevron with the roadmap's
-title over the tree's on phones. Coming back mounts the roadmap again, so it loads again; the step gone through is
-selected and brought into view, and on the Board its card wakes. Every surface reaches `open` through the `TreeDoor`
-context.
+reads. A history entry outlives a sign-out, so it holds ids and a view and no title. The room acts on it only for its
+holder, the signed-in account that holds the room as its owner: the way back shows where this device's index
+(`LocalTreeRegistry.owned`) keeps the roadmap it leads to as that account's, under the title the index keeps, and without
+a holder there is no way back, no carried view or step, no door into a tree and no event. So a lapsed session, a
+device's copy with nobody signed in and a reader keep the tree's mark and go nowhere. An arrival is settled as the room
+opens: the step and the view leave the entry, which keeps the roadmap it was reached from, so a reload shows the way
+back and is otherwise an ordinary visit. The identity row shows the way back as a chip in its first slot from 744px, and
+as a chevron with the roadmap's title over the tree's on phones. Coming back mounts the roadmap again, so it loads
+again; the step gone through is selected and brought into view, and on the Board its card wakes. A step that was open
+on the entry come back to opens as one reached by going back. Surfaces that render a step reach `open` through the
+`TreeDoor` context (`useTreeDoor`); the toast a C raises takes it from the Board's acts. Each names its door from
+`TREE_DOORS`, and `open` refuses any other.
 
 Attaching and detaching a tree, the tree picker, the guides of the trees above and a signed-out device's own count are
 not built.

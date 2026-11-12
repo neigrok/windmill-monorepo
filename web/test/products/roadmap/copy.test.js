@@ -5,6 +5,7 @@ import { Opening } from '../../../src/products/roadmap/model/Opening.js';
 import {
   treeBand,
   treeLine,
+  openTreeStated,
   treeState,
   treeTitle,
   DEMO_COPY,
@@ -556,6 +557,14 @@ test('the step’s Tree row names the tree and how far it is, a loop by the road
     open: ['Learn to sail', '3 of 8 done'], complete: ['Learn to sail', '12 of 12 done'], empty: ['Learn to sail', 'No steps'],
     loop: ['Learn to sail', '3 of 8 done · opens My year back'], missing: ['Tree not found', 'Nothing at the other end'], unread: ['', null],
   });
+});
+
+test('the Tree row that goes in is named by what its press does, then what it shows', () => {
+  const { open, complete, empty, loop } = openedTrees();
+  assert.deepEqual([open, complete, empty, loop].map((opening) => openTreeStated(opening, 'My year')), [
+    'Open Learn to sail · 3 of 8 done', 'Open Learn to sail · 12 of 12 done', 'Open Learn to sail · No steps',
+    'Open Learn to sail · 3 of 8 done · opens My year back',
+  ]);
 });
 
 test('where Complete sat: what completes the step, by its column and what its tree has come to', () => {

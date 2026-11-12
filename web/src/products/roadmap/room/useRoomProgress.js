@@ -8,6 +8,7 @@ import { MilestoneLedger } from '../persistence/MilestoneLedger.js';
 import { ReturnLedger } from '../persistence/ReturnLedger.js';
 import { detectMilestones } from '../model/milestones.js';
 import { advanceProgress, milestoneAnnouncement, progressChanges } from '../model/progress.js';
+import { Openings } from '../model/Opening.js';
 import { UnlockRules, takesMark } from '../model/UnlockRules.js';
 import { reportRoadmapFailure } from '../reportFailure.js';
 import { markDoneTargets } from '../model/bulkSelection.js';
@@ -40,9 +41,11 @@ export class RoomProgress {
     return tree ? UnlockRules.completed(tree, progress) : progress.completed;
   }
 
+  // A roadmap that could not read a tree one of its steps opens does not know what stands complete, and witnesses nothing.
   witness(next) {
     if (!this.ownMarks) return;
-    const { seedRef, returnLedger } = this.collaborators;
+    const { seedRef, treeRef, returnLedger } = this.collaborators;
+    if (treeRef.current && Openings.known(treeRef.current.nodes) === 'unread') return;
     returnLedger.save(seedRef.current.id, { completed: [...this.completedUnder(next)], at: Date.now() });
   }
 

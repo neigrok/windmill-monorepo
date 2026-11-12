@@ -1,5 +1,5 @@
-// What the tree a step opens comes to for the owner of both, as the load that read it found it. Nothing pushes it:
-// it stands until the roadmap loads again.
+// What the tree a step opens comes to for the owner of both, as the read that found it. Nothing pushes it: it stands
+// until the roadmap is read again, on a load or once a pointer changes.
 
 export class Opening {
   constructor({ treeId, read, valid = false, complete = false, title = '', done = 0, total = 0, loop = false }) {
@@ -23,7 +23,7 @@ export class Opening {
     });
   }
 
-  // A pointer whose facts this load did not read: the device's own copy, or a pointer set since.
+  // A pointer whose facts no read has found: the device's own copy, or a pointer set since the last read.
   static unread(treeId) {
     return new Opening({ treeId, read: false });
   }
@@ -56,29 +56,41 @@ export class Opening {
   }
 }
 
-// The openings one load read, by step.
+// What one load read of the trees a roadmap's steps open, by step. `read` is false where the load read none: the
+// device's own copy, or a server that could not follow the pointers.
 export class Openings {
-  constructor(byStep = new Map()) {
+  constructor(byStep = new Map(), read = false) {
     this.byStep = byStep;
+    this.read = read;
   }
 
   static fromWire(opens = {}) {
-    return new Openings(new Map(Object.entries(opens).map(([stepId, entry]) => [stepId, Opening.fromWire(entry)])));
+    return new Openings(new Map(Object.entries(opens).map(([stepId, entry]) => [stepId, Opening.fromWire(entry)])), true);
   }
 
-  // None for a step with no pointer; unread when what was read is about another tree, or nothing was.
-  of(step) {
-    if (!step.opens) return null;
-    const read = this.byStep.get(step.id);
-    return read?.treeId === step.opens ? read : Opening.unread(step.opens);
+  // What a roadmap's steps know of the trees they open, as one word for a signal: none opens one, every one was read,
+  // or one was not.
+  static known(steps) {
+    const openings = steps.flatMap((step) => step.opening ?? []);
+    if (openings.length === 0) return 'none';
+    return openings.every((opening) => opening.read) ? 'read' : 'unread';
   }
 
-  // The projection with every step that opens a tree carrying its opening.
-  onto(treeData) {
+  // The projection with every step that opens a tree carrying its opening. Until the projection holds what the server
+  // holds, the load is the newer word: a step it named opens that tree and one it did not opens none, whatever an older
+  // copy on the device says. From then on the projection's pointer decides, and one the load read nothing of, or read
+  // for another tree, is unread.
+  onto(treeData, { joined }) {
+    const standing = (step) => {
+      const named = this.byStep.get(step.id);
+      if (this.read && !joined) return named ?? null;
+      if (!step.opens) return null;
+      return named?.treeId === step.opens ? named : Opening.unread(step.opens);
+    };
     return {
       ...treeData,
       nodes: treeData.nodes.map((step) => {
-        const opening = this.of(step);
+        const opening = standing(step);
         return opening ? { ...step, opening } : step;
       }),
     };

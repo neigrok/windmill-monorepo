@@ -43,14 +43,14 @@ test('loadTree returns the document plus what the server knows about it', async 
     const repo = new HttpTreeRepository({ baseUrl: BASE, treeId: 't_1' });
     const tree = await repo.loadTree();
     assert.deepEqual(calls, [{ url: 'http://backend.test/v1/trees/t_1', init: { credentials: 'include', signal: undefined } }]);
-    assert.deepEqual(tree, { ...SEEDED, visibility: 'unlisted', mine: true, createdAt: 1700000000000, openings: new Openings() });
+    assert.deepEqual(tree, { ...SEEDED, visibility: 'unlisted', mine: true, createdAt: 1700000000000, openings: Openings.fromWire() });
   });
 });
 
 test('loadTree fills the three server facts a bare answer omits', async () => {
   await withFetch(() => ok({ data: SEEDED }), async () => {
     const repo = new HttpTreeRepository({ baseUrl: BASE, treeId: 't_1' });
-    assert.deepEqual(await repo.loadTree(), { ...SEEDED, visibility: null, mine: false, createdAt: 0, openings: new Openings() });
+    assert.deepEqual(await repo.loadTree(), { ...SEEDED, visibility: null, mine: false, createdAt: 0, openings: Openings.fromWire() });
   });
 });
 
@@ -62,7 +62,7 @@ test('loadTree reads what each pointer of an owner’s tree comes to, keyed by i
   await withFetch(() => ok({ data: SEEDED, mine: true, opens }), async () => {
     const repo = new HttpTreeRepository({ baseUrl: BASE, treeId: 't_1' });
     const { openings } = await repo.loadTree();
-    assert.deepEqual(openings, new Openings(new Map([['b', Opening.fromWire(opens.b)], ['c', Opening.fromWire(opens.c)]])));
+    assert.deepEqual(openings, new Openings(new Map([['b', Opening.fromWire(opens.b)], ['c', Opening.fromWire(opens.c)]]), true));
   });
 });
 

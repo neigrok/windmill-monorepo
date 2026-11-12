@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { track } from '../../../telemetry/beacon.js';
 import { coverBeneath, useCoveredLayer } from '../step/composerFocus.js';
 import { ViewPrefs, boardCanShow, clearBorn, initialView, peekBorn, viewToShow } from '../persistence/ViewPrefs.js';
+import { Openings } from '../model/Opening.js';
 import { reportRoadmapFailure } from '../reportFailure.js';
 
 // Availability and the loaded tree decide the view; explicit switches are remembered per tree.
@@ -23,7 +24,8 @@ export function useRoomView({ treeId, tree, loading, loadError, who, linkedStep,
   if (view === null && tree && graphSettled) {
     const decision = initialView({ saved: viewPrefs.lastView(treeId), owner, reader, empty: tree.nodes.length === 0, born: peekBorn(treeId), carried, linkedStep, canAddFirstStep: owner, graphAvailable });
     setView(decision.view);
-    initialDecisionRef.current = decision;
+    // An owner's room also says what it knows of the trees its steps open, so a release that reads none shows.
+    initialDecisionRef.current = owner ? { ...decision, trees: Openings.known(tree.nodes) } : decision;
   }
   useEffect(() => {
     if (view !== null) clearBorn(treeId);
@@ -32,7 +34,8 @@ export function useRoomView({ treeId, tree, loading, loadError, who, linkedStep,
     const decision = initialDecisionRef.current;
     if (!decision || viewOpenedRef.current === treeId) return;
     viewOpenedRef.current = treeId;
-    track('roadmap_view_open', { view: decision.view === 'board' ? 'board' : 'graph', band: breakpoint, role, door: decision.door });
+    if (decision.trees) track('roadmap_view_open', { view: decision.view === 'board' ? 'board' : 'graph', band: breakpoint, role, door: decision.door, trees: decision.trees });
+    else track('roadmap_view_open', { view: decision.view === 'board' ? 'board' : 'graph', band: breakpoint, role, door: decision.door });
   }, [treeId, view, breakpoint, role]);
 
   // Until the tree arrives, the skeleton or load error stands where the Board would open: the saved choice, or the owner's default.

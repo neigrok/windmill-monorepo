@@ -37,7 +37,7 @@ test('the tree is named beside the step only where its title says more', () => {
   assert.equal(Opening.unread('t_coast').titleBeside({ label: 'Sail the coast' }), null);
 });
 
-test('a projection takes its openings by the pointer each step holds now', () => {
+test('once the projection holds what the server holds, it takes its openings by the pointer each step holds now', () => {
   const openings = Openings.fromWire({
     sail: { treeId: 't_sail', title: 'Learn to sail', state: 'open', done: 3, total: 8, loop: false },
     read: { treeId: 't_old', title: 'Old list', state: 'complete', done: 2, total: 2, loop: false },
@@ -51,7 +51,7 @@ test('a projection takes its openings by the pointer each step holds now', () =>
     { id: 'late', label: 'Write the book', prerequisites: ['plan'], opens: 't_book' },
   ] };
 
-  assert.deepEqual(openings.onto(projection), { id: 't_year', title: 'My year', nodes: [
+  assert.deepEqual(openings.onto(projection, { joined: true }), { id: 't_year', title: 'My year', nodes: [
     { id: 'plan', label: 'Plan the year', prerequisites: [] },
     { id: 'sail', label: 'Learn to sail', prerequisites: ['plan'], opens: 't_sail', opening: openings.byStep.get('sail') },
     { id: 'read', label: 'Read more', prerequisites: ['plan'], opens: 't_new', opening: Opening.unread('t_new') },
@@ -63,5 +63,52 @@ test('a projection takes its openings by the pointer each step holds now', () =>
 test('an answer with no openings leaves a reader’s projection as it came', () => {
   const projection = { id: 't_year', title: 'My year', nodes: [{ id: 'sail', label: 'Learn to sail', prerequisites: [] }] };
 
-  assert.deepEqual(Openings.fromWire(undefined).onto(projection), projection);
+  assert.deepEqual(Openings.fromWire(undefined).onto(projection, { joined: true }), projection);
+  assert.deepEqual(Openings.fromWire(undefined).onto(projection, { joined: false }), projection);
+});
+
+test('until the session joins the server, the load’s word stands over the device’s older copy: a step it named opens that tree, one it did not opens none', () => {
+  const openings = Openings.fromWire({
+    sail: { treeId: 't_sail', title: 'Learn to sail', state: 'open', done: 3, total: 8, loop: false },
+    read: { treeId: 't_new', title: 'Reading list', state: 'complete', done: 2, total: 2, loop: false },
+  });
+  const stored = { id: 't_year', title: 'My year', nodes: [
+    { id: 'sail', label: 'Learn to sail', prerequisites: [] },
+    { id: 'read', label: 'Read more', prerequisites: [], opens: 't_old' },
+    { id: 'bike', label: 'Fix the bike', prerequisites: [], opens: 't_detached' },
+  ] };
+
+  assert.deepEqual(openings.onto(stored, { joined: false }).nodes, [
+    { id: 'sail', label: 'Learn to sail', prerequisites: [], opening: openings.byStep.get('sail') },
+    { id: 'read', label: 'Read more', prerequisites: [], opens: 't_old', opening: openings.byStep.get('read') },
+    { id: 'bike', label: 'Fix the bike', prerequisites: [], opens: 't_detached' },
+  ]);
+  assert.deepEqual(openings.onto(stored, { joined: true }).nodes, [
+    { id: 'sail', label: 'Learn to sail', prerequisites: [] },
+    { id: 'read', label: 'Read more', prerequisites: [], opens: 't_old', opening: Opening.unread('t_old') },
+    { id: 'bike', label: 'Fix the bike', prerequisites: [], opens: 't_detached', opening: Opening.unread('t_detached') },
+  ]);
+});
+
+test('a load that read nothing of the trees leaves every pointer the device holds unread, joined or not', () => {
+  const stored = { id: 't_year', title: 'My year', nodes: [
+    { id: 'plan', label: 'Plan the year', prerequisites: [] },
+    { id: 'sail', label: 'Learn to sail', prerequisites: ['plan'], opens: 't_sail' },
+  ] };
+  const stood = [
+    { id: 'plan', label: 'Plan the year', prerequisites: [] },
+    { id: 'sail', label: 'Learn to sail', prerequisites: ['plan'], opens: 't_sail', opening: Opening.unread('t_sail') },
+  ];
+
+  assert.deepEqual(new Openings().onto(stored, { joined: false }).nodes, stood);
+  assert.deepEqual(new Openings().onto(stored, { joined: true }).nodes, stood);
+});
+
+test('a roadmap says what it knows of the trees its steps open in one word', () => {
+  const read = Opening.fromWire({ treeId: 't_sail', title: 'Learn to sail', state: 'open', done: 3, total: 8, loop: false });
+  const missing = Opening.fromWire({ treeId: 't_gone', missing: true });
+
+  assert.equal(Openings.known([{ id: 'plan' }]), 'none');
+  assert.equal(Openings.known([{ id: 'plan' }, { id: 'sail', opening: read }, { id: 'bike', opening: missing }]), 'read');
+  assert.equal(Openings.known([{ id: 'sail', opening: read }, { id: 'late', opening: Opening.unread('t_book') }]), 'unread');
 });

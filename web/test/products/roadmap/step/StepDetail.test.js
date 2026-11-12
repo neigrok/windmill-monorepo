@@ -50,7 +50,7 @@ window.openRoom = ({ nodes, completed, editable = true, workspaces = {}, kinds =
   function Room({ treeId }) {
     const [steps, setSteps] = useState(null);
     useEffect(() => { Promise.resolve().then(() => setSteps(trees[treeId])); }, []);
-    const tree = useMemo(() => (steps === null ? null : new SkillTree(Openings.fromWire(opens).onto({ id: treeId, title: 'Learn to sail', nodes: steps }))), [steps]);
+    const tree = useMemo(() => (steps === null ? null : new SkillTree(Openings.fromWire(opens).onto({ id: treeId, title: 'Learn to sail', nodes: steps }, { joined: true }))), [steps]);
     const [progress, setProgress] = useState({ completed: new Set(completed), completedAt: Object.fromEntries(completed.map((id, index) => [id, index + 1])) });
     const [selectedId, setSelectedId] = useState(null);
     const [editing, setEditing] = useState(null);
@@ -239,7 +239,7 @@ for (const viewport of [{ width: 1440, height: 960 }, { width: 390, height: 844 
       await page.getByRole('tab', { name: STEP_DETAIL.sections.workspace, exact: true }).click();
       assert.deepEqual((await treeParts(page)).actions, viewport.width < 744 ? ['Add note', 'Open tree'] : ['Open tree']);
       await page.getByRole('tab', { name: STEP_DETAIL.sections.overview, exact: true }).click();
-      await page.locator('.st-board-step-tree').click();
+      await page.locator('.st-board-step-layer').getByRole('button', { name: 'Open Wind drills · 3 of 8 done', exact: true }).click();
       await page.locator('.st-board-step-buttons').getByRole('button', { name: 'Open tree', exact: true }).click();
       await page.keyboard.press('Escape');
 
@@ -254,7 +254,7 @@ for (const viewport of [{ width: 1440, height: 960 }, { width: 390, height: 844 
       if (viewport.width < 744) await page.getByRole('tab', { name: /^Up next/ }).click();
       await card(page, 'Tie a bowline').locator('.st-board-card-title').click();
       assert.deepEqual(await treeParts(page), {
-        status: 'Up next', row: ['Tree not found', 'Nothing at the other end'], rule: 'This tree can’t be found. Choose another, or detach it.',
+        status: 'Up next', row: ['Tree not found', 'Nothing at the other end'], rule: 'This tree can’t be found.',
         band: 'Can’t complete yet', actions: [],
       });
       assert.equal(await page.locator('button.st-board-step-tree').count(), 0);
