@@ -189,7 +189,17 @@ Json::Value toJson(const TreeDiagnostics& diagnostics) {
   for (const Edge& edge : diagnostics.selfEdges) selfEdges.append(edgeJson(edge));
   root["selfEdges"] = selfEdges;
 
-  // The tree's own smells first, naming no node of their own: the empty legend, or each hue no kind wears.
+  // One line per smell: the empty legend, each hue no kind wears, then each kind of per-node smell, every line but the
+  // first counting the nodes it covers and naming the first of them.
+  const auto counted = [](const std::string& kind, const CountedNodes& nodes) {
+    Json::Value value(Json::objectValue);
+    value["kind"] = kind;
+    value["count"] = static_cast<Json::UInt64>(nodes.count);
+    Json::Value named(Json::arrayValue);
+    for (const NodeId& node : nodes.named) named.append(node.str());
+    value["nodes"] = named;
+    return value;
+  };
   Json::Value smells(Json::arrayValue);
   if (diagnostics.legendEmpty) {
     Json::Value value(Json::objectValue);
@@ -197,21 +207,11 @@ Json::Value toJson(const TreeDiagnostics& diagnostics) {
     smells.append(value);
   }
   for (const UnclaimedHue& unclaimed : diagnostics.unclaimedHues) {
-    Json::Value value(Json::objectValue);
-    value["kind"] = "unclaimed-hue";
+    Json::Value value = counted("unclaimed-hue", unclaimed.nodes);
     value["hue"] = std::string(toString(unclaimed.hue));
-    value["count"] = static_cast<Json::UInt64>(unclaimed.count);
-    Json::Value nodes(Json::arrayValue);
-    for (const NodeId& node : unclaimed.nodes) nodes.append(node.str());
-    value["nodes"] = nodes;
     smells.append(value);
   }
-  for (const Smell& smell : diagnostics.smells) {
-    Json::Value value(Json::objectValue);
-    value["node"] = smell.node.str();
-    value["kind"] = smell.kind;
-    smells.append(value);
-  }
+  for (const Smell& smell : diagnostics.smells) smells.append(counted(smell.kind, smell.nodes));
   root["smells"] = smells;
 
   Json::Value maskedWork(Json::arrayValue);

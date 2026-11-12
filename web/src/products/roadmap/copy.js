@@ -61,6 +61,12 @@ export const guideLabel = ({ owner, excerpt }) => (owner ? t('roadmap.guide.labe
 export const guideCounter = (draft) => (draft.over > 0
   ? t('roadmap.guide.over', { count: formatCount(draft.over) })
   : t('roadmap.guide.left', { count: formatCount(draft.left) }));
+// Whose guides apply from above, as the card's line says it: the two farthest trees by name, then how many more.
+export function guidesFromAbove({ first, second, more }) {
+  if (more > 0) return t('roadmap.guide.fromMore', { first, second, more });
+  if (second !== null) return t('roadmap.guide.fromTwo', { first, second });
+  return t('roadmap.guide.fromOne', { tree: first });
+}
 
 export const LINK_COPIED = t('roadmap.share.linkCopied');
 export const EMPTY_ROADMAP = { title: t('roadmap.emptyRoadmap.title'), body: t('roadmap.emptyRoadmap.body'), action: t('roadmap.emptyRoadmap.action') };

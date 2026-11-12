@@ -2722,19 +2722,14 @@ TEST(mcp_annotate_node_sets_and_clears_the_icon_and_the_empty_icon_smell_follows
   CHECK_FALSE(h.call("add_kind", parse(R"({"id":"k","hue":"terracotta"})")).isError);  // a node's hue says what it is
   h.call("create_node", node("a", "A"));
 
-  auto smells = [&] {
-    std::vector<std::string> out;
-    const Json::Value report = body(h.call("get_diagnostics", kNoArgs));
-    for (const Json::Value& smell : report["smells"])
-      out.push_back(smell["node"].asString() + ":" + smell["kind"].asString());
-    return out;
-  };
+  auto smells = [&] { return body(h.call("get_diagnostics", kNoArgs))["smells"]; };
+  const Json::Value iconless = parse(R"([{"kind":"empty-icon","count":1,"nodes":["a"]}])");
   auto icon = [&] {
     Json::Value args(Json::objectValue);
     args["fields"] = list({"id", "icon"});
     return body(h.call("get_tree", args))["tree"]["nodes"][0]["icon"].asString();
   };
-  CHECK_EQ(smells(), (std::vector<std::string>{"a:empty-icon"}));
+  CHECK_EQ(smells(), iconless);
 
   Json::Value set(Json::objectValue);
   set["nodeId"] = "a";
@@ -2743,14 +2738,14 @@ TEST(mcp_annotate_node_sets_and_clears_the_icon_and_the_empty_icon_smell_follows
   CHECK_FALSE(setResult.isError);
   CHECK(body(setResult)["applied"].asBool());
   CHECK_EQ(icon(), std::string("star"));
-  CHECK_EQ(smells(), (std::vector<std::string>{}));
+  CHECK_EQ(smells(), parse("[]"));
 
   Json::Value clear(Json::objectValue);
   clear["nodeId"] = "a";
   clear["icon"] = "";
   CHECK_FALSE(h.call("annotate_node", clear).isError);
   CHECK_EQ(icon(), std::string(""));
-  CHECK_EQ(smells(), (std::vector<std::string>{"a:empty-icon"}));
+  CHECK_EQ(smells(), iconless);
 
   Json::Value over(Json::objectValue);
   over["nodeId"] = "a";
@@ -3096,18 +3091,18 @@ TEST(mcp_import_subgraph_keeps_the_legend_order_on_a_colliding_kind_and_appends_
 }
 
 // The description and the field doc say the same thing about outOfOrder: it is the subset of
-// completed whose set_progress carried the flag, met prerequisites or not.
+// completed whose mark carried the flag, met prerequisites or not.
 TEST(mcp_get_progress_describes_out_of_order_as_the_marks_that_carried_the_flag) {
   Harness h;
   for (const ToolDeclaration& tool : h.tools.declareTools()) {
     if (tool.name() != "get_progress") continue;
     CHECK_EQ(tool.descriptor["description"].asString(),
              std::string("The caller's private progress overlay for a roadmap: the node ids that are "
-                         "completed, and outOfOrder — the subset of completed whose "
-                         "set_progress carried outOfOrder:true. Per-user, separate from the shared "
-                         "structure."));
+                         "completed, and outOfOrder — the subset of completed whose mark carried "
+                         "outOfOrder:true, from set_progress or an import's progress row. Per-user, "
+                         "separate from the shared structure."));
     const std::string fields = tool.descriptor["inputSchema"]["properties"]["fields"]["description"].asString();
-    CHECK(fields.find("the subset of `completed` whose set_progress carried outOfOrder:true") != std::string::npos);
+    CHECK(fields.find("the subset of `completed` whose mark carried outOfOrder:true") != std::string::npos);
     return;
   }
   CHECK(false);
@@ -3462,62 +3457,89 @@ TEST(mcp_no_read_but_get_tree_carries_the_guide) {
            (std::vector<std::string>{"missingNodeIds", "nodes", "seq", "treeId"}));
 }
 
-TEST(mcp_a_second_account_reads_an_unlisted_trees_guide_as_not_theirs_and_cannot_set_it) {
+// update_tree, and describe_tree, its earlier name: one declaration and one handler, so each case of the tool runs
+// under both names on a fresh harness, its refusals prefixed and its write line named for the name called.
+const std::vector<std::string> kTreeUpdates{"update_tree", "describe_tree"};
+
+// describe_tree is update_tree's earlier name: the same declaration under the other name, its title derived from that
+// name, saying so in one sentence.
+TEST(mcp_describe_tree_is_update_trees_earlier_name) {
   Harness h;
-  h.trees.byId["t"].visibility = Visibility::unlisted;
-  h.call("create_node", node("a", "A"));
-  CHECK_FALSE(h.call("describe_tree", with("guide", "Rig first, then sail.")).isError);
-  const StoredTree before = h.trees.byId["t"];
-  const std::size_t broadcasts = h.bus.subgraphBroadcasts.size();
-
-  h.caller = uid("stranger");
-  CHECK_EQ(body(h.call("get_tree", kNoArgs))["tree"]["guide"],
-           parse(R"({"text":"Rig first, then sail.","yours":false})"));
-
-  const ToolResult refused = h.call("describe_tree", with("guide", "Mine now"));
-  CHECK(refused.isError);
-  CHECK_EQ(message(refused), std::string("describe_tree: this tree belongs to another account. Call "
-                                         "list_trees to see the roadmaps you own."));
-  CHECK_EQ(message(h.call("create_node", node("b", "B"))),
-           std::string("create_node: this tree belongs to another account. Call list_trees to see the "
-                       "roadmaps you own."));
-  CHECK(h.trees.byId["t"] == before);
-  CHECK_EQ(h.bus.subgraphBroadcasts.size(), broadcasts);
+  Json::Value current, earlier;
+  for (const Json::Value& tool : h.tools.listTools(h.actor)) {
+    if (tool["name"].asString() == "update_tree") current = tool;
+    if (tool["name"].asString() == "describe_tree") earlier = tool;
+  }
+  REQUIRE(current.isObject());
+  CHECK_EQ(current["title"], Json::Value("Roadmap · Update tree"));
+  Json::Value renamed = current;
+  renamed["name"] = "describe_tree";
+  renamed["title"] = "Roadmap · Describe tree";
+  renamed["annotations"]["title"] = "Roadmap · Describe tree";
+  renamed["description"] = current["description"].asString() + " describe_tree is update_tree's earlier name.";
+  CHECK_EQ(earlier, renamed);
 }
 
-TEST(mcp_describe_tree_holds_5000_code_points_of_any_width_and_names_the_bound_when_it_refuses) {
-  Harness h;
-  std::string wide;  // 5000 three-byte characters: 15000 bytes
-  for (std::size_t i = 0; i < kMaxGuideChars; ++i) wide += "\xE5\xAD\x97";
+TEST(mcp_a_second_account_reads_an_unlisted_trees_guide_as_not_theirs_and_cannot_set_it) {
+  for (const std::string& name : kTreeUpdates) {
+    Harness h;
+    h.trees.byId["t"].visibility = Visibility::unlisted;
+    h.call("create_node", node("a", "A"));
+    CHECK_FALSE(h.call(name.c_str(), with("guide", "Rig first, then sail.")).isError);
+    const StoredTree before = h.trees.byId["t"];
+    const std::size_t broadcasts = h.bus.subgraphBroadcasts.size();
 
-  CHECK_FALSE(h.call("describe_tree", with("guide", wide.c_str())).isError);
-  CHECK_EQ(body(h.call("get_tree", kNoArgs))["tree"]["guide"]["text"].asString(), wide);
+    h.caller = uid("stranger");
+    CHECK_EQ(body(h.call("get_tree", kNoArgs))["tree"]["guide"],
+             parse(R"({"text":"Rig first, then sail.","yours":false})"));
 
-  const ToolResult over = h.call("describe_tree", with("guide", (wide + "\xE5\xAD\x97").c_str()));
-  CHECK(over.isError);
-  CHECK_EQ(message(over), std::string("describe_tree: guide is 5001 characters, 1 over the 5000 cap"));
-  Json::Value number(Json::objectValue);
-  number["guide"] = 42;
-  CHECK_EQ(message(h.call("describe_tree", number)),
-           std::string("describe_tree: argument \"guide\" must be a string, got number. A guide is plain "
-                       "text of at most 5000 characters; \"\" clears it."));
-  CHECK_EQ(message(h.call("describe_tree", kNoArgs)),
-           std::string("describe_tree: nothing to set — pass at least one of \"title\", \"guide\"."));
-  CHECK_EQ(message(h.call("describe_tree", with("guide", "\xE5\xAD"))),
-           std::string("describe_tree: guide is not valid UTF-8"));
-  CHECK_EQ(h.trees.byId["t"].guide.value, wide);
+    const ToolResult refused = h.call(name.c_str(), with("guide", "Mine now"));
+    CHECK(refused.isError);
+    CHECK_EQ(message(refused), (name + ": this tree belongs to another account. Call "
+                                           "list_trees to see the roadmaps you own."));
+    CHECK_EQ(message(h.call("create_node", node("b", "B"))),
+             std::string("create_node: this tree belongs to another account. Call list_trees to see the "
+                         "roadmaps you own."));
+    CHECK(h.trees.byId["t"] == before);
+    CHECK_EQ(h.bus.subgraphBroadcasts.size(), broadcasts);
+  }
+}
 
-  const Json::Value catalog = h.tools.listTools(h.actor);
-  const Json::Value* declared = nullptr;
-  for (const Json::Value& tool : catalog)
-    if (tool["name"].asString() == "describe_tree") declared = &tool;
-  REQUIRE(declared != nullptr);
-  const Json::Value& schema = (*declared)["inputSchema"];
-  CHECK_EQ(schema["properties"]["guide"]["type"].asString(), std::string("string"));
-  CHECK_EQ(schema["properties"]["guide"]["maxLength"].asUInt64(), static_cast<Json::UInt64>(5000));
-  CHECK_EQ(schema["properties"]["title"]["type"].asString(), std::string("string"));
-  CHECK_EQ(schema["properties"]["title"]["maxLength"].asUInt64(), static_cast<Json::UInt64>(200));
-  CHECK_EQ(schema["required"], list({"treeId"}));
+TEST(mcp_update_tree_holds_5000_code_points_of_any_width_and_names_the_bound_when_it_refuses) {
+  for (const std::string& name : kTreeUpdates) {
+    Harness h;
+    std::string wide;  // 5000 three-byte characters: 15000 bytes
+    for (std::size_t i = 0; i < kMaxGuideChars; ++i) wide += "\xE5\xAD\x97";
+
+    CHECK_FALSE(h.call(name.c_str(), with("guide", wide.c_str())).isError);
+    CHECK_EQ(body(h.call("get_tree", kNoArgs))["tree"]["guide"]["text"].asString(), wide);
+
+    const ToolResult over = h.call(name.c_str(), with("guide", (wide + "\xE5\xAD\x97").c_str()));
+    CHECK(over.isError);
+    CHECK_EQ(message(over), (name + ": guide is 5001 characters, 1 over the 5000 cap"));
+    Json::Value number(Json::objectValue);
+    number["guide"] = 42;
+    CHECK_EQ(message(h.call(name.c_str(), number)),
+             (name + ": argument \"guide\" must be a string, got number. A guide is plain "
+                         "text of at most 5000 characters; \"\" clears it."));
+    CHECK_EQ(message(h.call(name.c_str(), kNoArgs)),
+             (name + ": nothing to set — pass at least one of \"title\", \"guide\"."));
+    CHECK_EQ(message(h.call(name.c_str(), with("guide", "\xE5\xAD"))),
+             (name + ": guide is not valid UTF-8"));
+    CHECK_EQ(h.trees.byId["t"].guide.value, wide);
+
+    const Json::Value catalog = h.tools.listTools(h.actor);
+    const Json::Value* declared = nullptr;
+    for (const Json::Value& tool : catalog)
+      if (tool["name"].asString() == name) declared = &tool;
+    REQUIRE(declared != nullptr);
+    const Json::Value& schema = (*declared)["inputSchema"];
+    CHECK_EQ(schema["properties"]["guide"]["type"].asString(), std::string("string"));
+    CHECK_EQ(schema["properties"]["guide"]["maxLength"].asUInt64(), static_cast<Json::UInt64>(5000));
+    CHECK_EQ(schema["properties"]["title"]["type"].asString(), std::string("string"));
+    CHECK_EQ(schema["properties"]["title"]["maxLength"].asUInt64(), static_cast<Json::UInt64>(200));
+    CHECK_EQ(schema["required"], list({"treeId"}));
+  }
 }
 
 TEST(mcp_a_tree_with_no_guide_answers_an_empty_text_and_says_whose_it_is) {
@@ -3529,66 +3551,72 @@ TEST(mcp_a_tree_with_no_guide_answers_an_empty_text_and_says_whose_it_is) {
   CHECK_EQ(body(h.call("get_tree", kNoArgs))["tree"]["guide"], parse(R"({"text":"","yours":false})"));
 }
 
-TEST(mcp_describe_tree_logs_one_line_per_call_and_no_line_or_refusal_carries_the_guide) {
-  Harness h;
-  CompositeToolHost gate(std::vector<ToolModule>{{h.tools, ""}});
-  std::vector<WriteCompletion> lines;
-  installWriteSink([&](const WriteCompletion& line) { lines.push_back(line); });
+TEST(mcp_update_tree_logs_one_line_per_call_and_no_line_or_refusal_carries_the_guide) {
+  for (const std::string& name : kTreeUpdates) {
+    Harness h;
+    CompositeToolHost gate(std::vector<ToolModule>{{h.tools, ""}});
+    std::vector<WriteCompletion> lines;
+    installWriteSink([&](const WriteCompletion& line) { lines.push_back(line); });
 
-  Json::Value args(Json::objectValue);
-  args["treeId"] = "t";
-  args["guide"] = "Private compass: sail at dawn.";
-  const ToolResult landed = gate.callTool("roadmap_describe_tree", args, h.actor);
-  args["guide"] = "Private compass: " + std::string(kMaxGuideChars, 'x');
-  const ToolResult over = gate.callTool("roadmap_describe_tree", args, h.actor);
-  args["treeId"] = "nope";
-  args["guide"] = "Private compass: sail at dawn.";
-  const ToolResult absent = gate.callTool("describe_tree", args, h.actor);
-  installWriteSink({});
+    Json::Value args(Json::objectValue);
+    args["treeId"] = "t";
+    args["guide"] = "Private compass: sail at dawn.";
+    const ToolResult landed = gate.callTool("roadmap_" + name, args, h.actor);
+    args["guide"] = "Private compass: " + std::string(kMaxGuideChars, 'x');
+    const ToolResult over = gate.callTool("roadmap_" + name, args, h.actor);
+    args["treeId"] = "nope";
+    args["guide"] = "Private compass: sail at dawn.";
+    const ToolResult absent = gate.callTool(name, args, h.actor);
+    installWriteSink({});
 
-  CHECK_FALSE(landed.isError);
-  CHECK_EQ(message(over), std::string("describe_tree: guide is 5017 characters, 17 over the 5000 cap"));
-  CHECK_EQ(message(absent), std::string("describe_tree: no such tree \"nope\""));
-  REQUIRE_EQ(lines.size(), 3u);
-  const std::vector<std::string> outcomes = {"ok", "refused", "refused"};
-  for (std::size_t i = 0; i < lines.size(); ++i) {
-    CHECK_EQ(lines[i].operation, std::string("mcp.roadmap_describe_tree"));
-    CHECK_EQ(lines[i].product, std::string("roadmap"));
-    CHECK_EQ(lines[i].door, std::string("mcp"));
-    CHECK_EQ(lines[i].outcome, outcomes[i]);
-    CHECK_EQ(writeCompletionJson(lines[i]).find("compass"), std::string::npos);
+    CHECK_FALSE(landed.isError);
+    CHECK_EQ(message(over), (name + ": guide is 5017 characters, 17 over the 5000 cap"));
+    CHECK_EQ(message(absent), (name + ": no such tree \"nope\""));
+    REQUIRE_EQ(lines.size(), 3u);
+    const std::vector<std::string> outcomes = {"ok", "refused", "refused"};
+    for (std::size_t i = 0; i < lines.size(); ++i) {
+      CHECK_EQ(lines[i].operation, ("mcp.roadmap_" + name));
+      CHECK_EQ(lines[i].product, std::string("roadmap"));
+      CHECK_EQ(lines[i].door, std::string("mcp"));
+      CHECK_EQ(lines[i].outcome, outcomes[i]);
+      CHECK_EQ(writeCompletionJson(lines[i]).find("compass"), std::string::npos);
+    }
   }
 }
 
-TEST(mcp_describe_tree_on_a_tree_whose_row_went_away_answers_as_every_write_does_for_an_absent_tree) {
-  Harness h;
-  CHECK_FALSE(h.call("describe_tree", with("guide", "Rig first, then sail.")).isError);
-  REQUIRE(h.registry.isOpen(TreeId{"t"}));
-  h.trees.deletedIds.insert("t");  // soft-deleted outside this registry, its row kept
+TEST(mcp_update_tree_on_a_tree_whose_row_went_away_answers_as_every_write_does_for_an_absent_tree) {
+  for (const std::string& name : kTreeUpdates) {
+    Harness h;
+    CHECK_FALSE(h.call(name.c_str(), with("guide", "Rig first, then sail.")).isError);
+    REQUIRE(h.registry.isOpen(TreeId{"t"}));
+    h.trees.deletedIds.insert("t");  // soft-deleted outside this registry, its row kept
 
-  const ToolResult refused = h.call("describe_tree", with("guide", "A ghost's guide"));
-  CHECK(refused.isError);
-  CHECK_EQ(message(refused), std::string("describe_tree: no such tree \"t\""));
-  CHECK_FALSE(h.registry.isOpen(TreeId{"t"}));
-  CHECK_EQ(h.trees.byId["t"].guide.value, std::string("Rig first, then sail."));
-  CHECK_EQ(message(h.call("create_node", node("a", "A"))), std::string("create_node: no such tree \"t\""));
-  CHECK_EQ(message(h.call("get_tree", kNoArgs)), std::string("get_tree: no such tree \"t\""));
+    const ToolResult refused = h.call(name.c_str(), with("guide", "A ghost's guide"));
+    CHECK(refused.isError);
+    CHECK_EQ(message(refused), (name + ": no such tree \"t\""));
+    CHECK_FALSE(h.registry.isOpen(TreeId{"t"}));
+    CHECK_EQ(h.trees.byId["t"].guide.value, std::string("Rig first, then sail."));
+    CHECK_EQ(message(h.call("create_node", node("a", "A"))), std::string("create_node: no such tree \"t\""));
+    CHECK_EQ(message(h.call("get_tree", kNoArgs)), std::string("get_tree: no such tree \"t\""));
+  }
 }
 
-TEST(mcp_describe_tree_refuses_a_guide_carrying_a_nul_with_the_admissions_sentence) {
-  Harness h;
-  CHECK_FALSE(h.call("describe_tree", with("guide", "Rig first, then sail.")).isError);
-  const std::size_t broadcasts = h.bus.subgraphBroadcasts.size();
+TEST(mcp_update_tree_refuses_a_guide_carrying_a_nul_with_the_admissions_sentence) {
+  for (const std::string& name : kTreeUpdates) {
+    Harness h;
+    CHECK_FALSE(h.call(name.c_str(), with("guide", "Rig first, then sail.")).isError);
+    const std::size_t broadcasts = h.bus.subgraphBroadcasts.size();
 
-  Json::Value args(Json::objectValue);
-  args["guide"] = std::string("Rig first\0then sail.", 20);
-  const ToolResult refused = h.call("describe_tree", args);
-  CHECK(refused.isError);
-  CHECK_EQ(message(refused), std::string("describe_tree: the guide contains a NUL character"));
-  CHECK_EQ(h.trees.byId["t"].guide.value, std::string("Rig first, then sail."));
-  CHECK_EQ(h.bus.subgraphBroadcasts.size(), broadcasts);
-  CHECK_EQ(body(h.call("get_tree", kNoArgs))["tree"]["guide"],
-           parse(R"({"text":"Rig first, then sail.","yours":true})"));
+    Json::Value args(Json::objectValue);
+    args["guide"] = std::string("Rig first\0then sail.", 20);
+    const ToolResult refused = h.call(name.c_str(), args);
+    CHECK(refused.isError);
+    CHECK_EQ(message(refused), (name + ": the guide contains a NUL character"));
+    CHECK_EQ(h.trees.byId["t"].guide.value, std::string("Rig first, then sail."));
+    CHECK_EQ(h.bus.subgraphBroadcasts.size(), broadcasts);
+    CHECK_EQ(body(h.call("get_tree", kNoArgs))["tree"]["guide"],
+             parse(R"({"text":"Rig first, then sail.","yours":true})"));
+  }
 }
 
 // A fork of someone else's tree copies its guide as its author's words: the new owner reads them as
@@ -3639,22 +3667,26 @@ TEST(mcp_a_forks_copied_guide_is_not_yours_until_its_owner_writes_one_through_an
            parse(R"({"text":"Delete what you do not need.","yours":true})"));
 }
 
-TEST(mcp_describe_tree_stores_a_guide_of_only_whitespace_as_no_guide_and_keeps_a_real_guides_spaces) {
-  Harness h;
-  CHECK_EQ(body(h.call("describe_tree", with("guide", " \n\t\r "))), parse(R"({"applied":true,"seq":1})"));
-  CHECK_EQ(h.trees.byId["t"].guide.value, std::string(""));
-  CHECK_EQ(body(h.call("get_tree", kNoArgs))["tree"]["guide"], parse(R"({"text":"","yours":true})"));
+TEST(mcp_update_tree_stores_a_guide_of_only_whitespace_as_no_guide_and_keeps_a_real_guides_spaces) {
+  for (const std::string& name : kTreeUpdates) {
+    Harness h;
+    CHECK_EQ(body(h.call(name.c_str(), with("guide", " \n\t\r "))), parse(R"({"applied":true,"seq":1})"));
+    CHECK_EQ(h.trees.byId["t"].guide.value, std::string(""));
+    CHECK_EQ(body(h.call("get_tree", kNoArgs))["tree"]["guide"], parse(R"({"text":"","yours":true})"));
 
-  CHECK_FALSE(h.call("describe_tree", with("guide", "  Rig first, then sail.\n")).isError);
-  CHECK_EQ(h.trees.byId["t"].guide.value, std::string("  Rig first, then sail.\n"));
+    CHECK_FALSE(h.call(name.c_str(), with("guide", "  Rig first, then sail.\n")).isError);
+    CHECK_EQ(h.trees.byId["t"].guide.value, std::string("  Rig first, then sail.\n"));
+  }
 }
 
-TEST(mcp_describe_tree_names_the_guide_a_plain_text_note) {
-  Harness h;
-  for (const Json::Value& tool : h.tools.listTools(h.actor))
-    if (tool["name"].asString() == "describe_tree")
-      CHECK(tool["description"].asString().find("The guide is one plain-text note on what the tree is") !=
-            std::string::npos);
+TEST(mcp_update_tree_names_the_guide_a_plain_text_note) {
+  for (const std::string& name : kTreeUpdates) {
+    Harness h;
+    for (const Json::Value& tool : h.tools.listTools(h.actor))
+      if (tool["name"].asString() == name)
+        CHECK(tool["description"].asString().find("The guide is one plain-text note on what the tree is") !=
+              std::string::npos);
+  }
 }
 
 // Forking your own tree copies your own words, so the copy stays yours; forking someone else's tree, or
@@ -4274,11 +4306,11 @@ TEST(mcp_get_diagnostics_tells_the_owner_each_loop_of_trees_through_the_tree_and
                                                                  TreeId{"t_gone"}, TreeId{"t_theirs"}, TreeId{"t_x"}}}));
 
   CHECK_EQ(body(h.tools.callTool("get_diagnostics", with("treeId", "t_b"), h.actor)),
-           parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[{"kind":"empty-legend"},{"node":"to-t","kind":"empty-icon"}],"maskedWork":[],
+           parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[{"kind":"empty-legend"},{"kind":"empty-icon","count":1,"nodes":["to-t"]}],"maskedWork":[],
                "treeLoops":[{"node":"to-t","path":[{"treeId":"t","title":"Test Roadmap"},{"treeId":"t_b","title":"Tree t_b"}]}],
                "danglingPointers":[]})"));
   CHECK_EQ(body(h.tools.callTool("get_diagnostics", with("treeId", "t_x"), h.actor)),
-           parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[{"kind":"empty-legend"},{"node":"to-t_y","kind":"empty-icon"}],"maskedWork":[],
+           parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[{"kind":"empty-legend"},{"kind":"empty-icon","count":1,"nodes":["to-t_y"]}],"maskedWork":[],
                "treeLoops":[{"node":"to-t_y","path":[{"treeId":"t_y","title":"Tree t_y"},{"treeId":"t_x","title":"Tree t_x"}]}],
                "danglingPointers":[]})"));
   CHECK_EQ(h.trees.openedReads.size(), 3u);
@@ -4304,7 +4336,7 @@ TEST(mcp_get_diagnostics_answers_a_reader_who_cannot_write_the_tree_what_a_twin_
 
   const std::string graphAlone =
       R"({"cycles":[],"dangling":[{"from":"ghost","to":"plain"}],"maskedWork":[],"selfEdges":[],)"
-      R"("smells":[{"kind":"empty-legend"},{"kind":"empty-icon","node":"gone"},{"kind":"empty-icon","node":"loop"},{"kind":"empty-icon","node":"plain"}]})";
+      R"("smells":[{"kind":"empty-legend"},{"count":3,"kind":"empty-icon","nodes":["gone","loop","plain"]}]})";
   for (const UserId& reader : {uid("stranger"), UserId{}}) {
     const ToolCaller caller{reader, ToolScope::everything()};
     for (const char* asked : {R"({})", R"({"includePointers":true})", R"({"includePointers":false})"}) {
@@ -4407,12 +4439,12 @@ TEST(mcp_get_diagnostics_whose_pointers_cannot_be_followed_answers_the_graphs_di
 
   CHECK_FALSE(degraded.isError);
   CHECK_EQ(body(degraded), parse(R"({"cycles":[],"dangling":[{"from":"ghost","to":"a"}],"selfEdges":[],
-      "smells":[{"kind":"empty-legend"},{"node":"a","kind":"empty-icon"}],"maskedWork":[],"pointerDiagnosticsUnavailable":true})"));
+      "smells":[{"kind":"empty-legend"},{"kind":"empty-icon","count":1,"nodes":["a"]}],"maskedWork":[],"pointerDiagnosticsUnavailable":true})"));
   CHECK_EQ(reporter.failures->reports,
            (std::vector<std::string>{std::string("roadmap.diagnostics.follow roadmap mcp failed ") + typeid(std::runtime_error).name()}));
 
   const Json::Value graphAlone = parse(R"({"cycles":[],"dangling":[{"from":"ghost","to":"a"}],"selfEdges":[],
-      "smells":[{"kind":"empty-legend"},{"node":"a","kind":"empty-icon"}],"maskedWork":[]})");
+      "smells":[{"kind":"empty-legend"},{"kind":"empty-icon","count":1,"nodes":["a"]}],"maskedWork":[]})");
   CHECK_EQ(body(h.call("get_diagnostics", parse(R"({"includePointers":false})"))), graphAlone);
   CHECK_EQ(body(h.tools.callTool("get_diagnostics", with("treeId", "t"), ToolCaller{uid("stranger"), ToolScope::everything()})),
            graphAlone);
@@ -5663,104 +5695,110 @@ TEST(mcp_a_batch_that_changes_nothing_says_unchanged) {
       CHECK_EQ(tool["outputSchema"]["properties"]["unchanged"]["type"].asString(), std::string("boolean"));
 }
 
-// describe_tree takes a `title` beside its `guide`: each lands only when sent, both together land as one frame or not at
-// all, by rename's own title rule, and an open page sees the new title in the frame the tree broadcasts.
-TEST(mcp_describe_tree_renames_the_tree_and_sets_its_guide_in_one_step) {
-  Harness h;
-  CHECK_FALSE(h.call("create_node", node("a", "A")).isError);
-  const std::size_t rows = h.ops.byTree["t"].size();
-  const auto title = [&] { return body(h.call("get_tree", parse(R"({"includeGuides":false})")))["tree"]["title"]; };
+// update_tree, under either name, takes a `title` beside its `guide`: each lands only when sent, both together land as one
+// frame or not at all, by rename's own title rule, and an open page sees the new title in the frame the tree broadcasts.
+TEST(mcp_update_tree_renames_the_tree_and_sets_its_guide_in_one_step) {
+  for (const std::string& name : kTreeUpdates) {
+    Harness h;
+    CHECK_FALSE(h.call("create_node", node("a", "A")).isError);
+    const std::size_t rows = h.ops.byTree["t"].size();
+    const auto title = [&] { return body(h.call("get_tree", parse(R"({"includeGuides":false})")))["tree"]["title"]; };
 
-  CHECK_EQ(body(h.call("describe_tree", with("title", "  Autumn plans  "))), parse(R"({"applied":true,"seq":2})"));
-  CHECK_EQ(title(), Json::Value("Autumn plans"));
-  CHECK_EQ(body(h.call("list_trees", Json::Value(Json::objectValue)))["trees"][0]["title"], Json::Value("Autumn plans"));
-  REQUIRE(h.bus.subgraphBroadcasts.back().subgraph.title.has_value());
-  CHECK_EQ(h.bus.subgraphBroadcasts.back().subgraph.title->value, std::string("Autumn plans"));
-  CHECK_FALSE(h.bus.subgraphBroadcasts.back().subgraph.guide.has_value());
+    CHECK_EQ(body(h.call(name.c_str(), with("title", "  Autumn plans  "))), parse(R"({"applied":true,"seq":2})"));
+    CHECK_EQ(title(), Json::Value("Autumn plans"));
+    CHECK_EQ(body(h.call("list_trees", Json::Value(Json::objectValue)))["trees"][0]["title"], Json::Value("Autumn plans"));
+    REQUIRE(h.bus.subgraphBroadcasts.back().subgraph.title.has_value());
+    CHECK_EQ(h.bus.subgraphBroadcasts.back().subgraph.title->value, std::string("Autumn plans"));
+    CHECK_FALSE(h.bus.subgraphBroadcasts.back().subgraph.guide.has_value());
 
-  const std::size_t frames = h.bus.subgraphBroadcasts.size();
-  CHECK_EQ(body(h.call("describe_tree", with("title", "Autumn plans"))), parse(R"({"applied":true,"seq":2,"unchanged":true})"));
-  CHECK_EQ(h.bus.subgraphBroadcasts.size(), frames);
+    const std::size_t frames = h.bus.subgraphBroadcasts.size();
+    CHECK_EQ(body(h.call(name.c_str(), with("title", "Autumn plans"))), parse(R"({"applied":true,"seq":2,"unchanged":true})"));
+    CHECK_EQ(h.bus.subgraphBroadcasts.size(), frames);
 
-  CHECK_EQ(body(h.call("describe_tree", parse(R"({"title":"Winter plans","guide":"Rig first."})"))),
-           parse(R"({"applied":true,"seq":3})"));
-  CHECK_EQ(h.bus.subgraphBroadcasts.size(), frames + 1);
-  CHECK_EQ(h.bus.subgraphBroadcasts.back().subgraph.title->value, std::string("Winter plans"));
-  CHECK_EQ(h.bus.subgraphBroadcasts.back().subgraph.guide->value, std::string("Rig first."));
-  CHECK_EQ(body(h.call("describe_tree", with("guide", "Rig first."))), parse(R"({"applied":true,"seq":4})"));
-  CHECK_EQ(body(h.call("describe_tree", with("title", std::string(201, 'x').c_str()))), parse(R"({"applied":true,"seq":5})"));
-  CHECK_EQ(title(), Json::Value(std::string(200, 'x')));
-  CHECK_EQ(body(h.call("describe_tree", with("title", "Winter plans"))), parse(R"({"applied":true,"seq":6})"));
-  CHECK_EQ(h.ops.byTree["t"].size(), rows);
+    CHECK_EQ(body(h.call(name.c_str(), parse(R"({"title":"Winter plans","guide":"Rig first."})"))),
+             parse(R"({"applied":true,"seq":3})"));
+    CHECK_EQ(h.bus.subgraphBroadcasts.size(), frames + 1);
+    CHECK_EQ(h.bus.subgraphBroadcasts.back().subgraph.title->value, std::string("Winter plans"));
+    CHECK_EQ(h.bus.subgraphBroadcasts.back().subgraph.guide->value, std::string("Rig first."));
+    CHECK_EQ(body(h.call(name.c_str(), with("guide", "Rig first."))), parse(R"({"applied":true,"seq":4})"));
+    CHECK_EQ(body(h.call(name.c_str(), with("title", std::string(201, 'x').c_str()))), parse(R"({"applied":true,"seq":5})"));
+    CHECK_EQ(title(), Json::Value(std::string(200, 'x')));
+    CHECK_EQ(body(h.call(name.c_str(), with("title", "Winter plans"))), parse(R"({"applied":true,"seq":6})"));
+    CHECK_EQ(h.ops.byTree["t"].size(), rows);
 
-  const StoredTree stored = h.trees.byId["t"];
-  Json::Value number(Json::objectValue);
-  number["title"] = 7;
-  Json::Value overGuide = parse(R"({"title":"Spring plans"})");
-  overGuide["guide"] = std::string(5001, 'g');
-  for (const auto& [arguments, refusal] : std::vector<std::pair<Json::Value, std::string>>{
-           {with("title", ""), "describe_tree: a tree always has a name"},
-           {with("title", "  \t\n "), "describe_tree: a tree always has a name"},
-           {number, "describe_tree: argument \"title\" must be a string, got number"},
-           {Json::Value(Json::objectValue), "describe_tree: nothing to set — pass at least one of \"title\", \"guide\"."},
-           {overGuide, "describe_tree: guide is 5001 characters, 1 over the 5000 cap"}})
-    CHECK_EQ(message(h.call("describe_tree", arguments)), refusal);
-  CHECK(h.trees.byId["t"] == stored);
+    const StoredTree stored = h.trees.byId["t"];
+    Json::Value number(Json::objectValue);
+    number["title"] = 7;
+    Json::Value overGuide = parse(R"({"title":"Spring plans"})");
+    overGuide["guide"] = std::string(5001, 'g');
+    for (const auto& [arguments, refusal] : std::vector<std::pair<Json::Value, std::string>>{
+             {with("title", ""), name + ": a tree always has a name"},
+             {with("title", "  \t\n "), name + ": a tree always has a name"},
+             {number, name + ": argument \"title\" must be a string, got number"},
+             {Json::Value(Json::objectValue), name + ": nothing to set — pass at least one of \"title\", \"guide\"."},
+             {overGuide, name + ": guide is 5001 characters, 1 over the 5000 cap"}})
+      CHECK_EQ(message(h.call(name.c_str(), arguments)), refusal);
+    CHECK(h.trees.byId["t"] == stored);
 
-  h.trees.byId["t_theirs"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Their plans", {}}, 0,
-                                        uid("someone-else"), Visibility::public_};
-  Json::Value theirs = with("title", "Mine now");
-  theirs["treeId"] = "t_theirs";
-  CHECK_EQ(message(h.tools.callTool("describe_tree", theirs, h.actor)),
-           std::string("describe_tree: this tree belongs to another account. Call list_trees to see the roadmaps you "
-                       "own."));
-  CHECK_EQ(h.trees.byId["t_theirs"].title.value, std::string("Their plans"));
+    h.trees.byId["t_theirs"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Their plans", {}}, 0,
+                                          uid("someone-else"), Visibility::public_};
+    Json::Value theirs = with("title", "Mine now");
+    theirs["treeId"] = "t_theirs";
+    CHECK_EQ(message(h.tools.callTool(name, theirs, h.actor)),
+             (name + ": this tree belongs to another account. Call list_trees to see the roadmaps you "
+                         "own."));
+    CHECK_EQ(h.trees.byId["t_theirs"].title.value, std::string("Their plans"));
 
-  CompositeToolHost gate(std::vector<ToolModule>{{h.tools, ""}});
-  std::vector<WriteCompletion> lines;
-  installWriteSink([&](const WriteCompletion& line) { lines.push_back(line); });
-  Json::Value secret = with("title", "Private compass title");
-  secret["treeId"] = "t";
-  CHECK_FALSE(gate.callTool("roadmap_describe_tree", secret, h.actor).isError);
-  installWriteSink({});
-  REQUIRE_EQ(lines.size(), 1u);
-  CHECK_EQ(lines[0].outcome, std::string("ok"));
-  CHECK_EQ(writeCompletionJson(lines[0]).find("compass"), std::string::npos);
+    CompositeToolHost gate(std::vector<ToolModule>{{h.tools, ""}});
+    std::vector<WriteCompletion> lines;
+    installWriteSink([&](const WriteCompletion& line) { lines.push_back(line); });
+    Json::Value secret = with("title", "Private compass title");
+    secret["treeId"] = "t";
+    CHECK_FALSE(gate.callTool("roadmap_" + name, secret, h.actor).isError);
+    installWriteSink({});
+    REQUIRE_EQ(lines.size(), 1u);
+    CHECK_EQ(lines[0].outcome, std::string("ok"));
+    CHECK_EQ(writeCompletionJson(lines[0]).find("compass"), std::string::npos);
+  }
 }
 
 // Every title refusal is worded once, in TreeRegistry::sentenceOf, on both doors.
-TEST(mcp_describe_tree_refuses_a_title_in_the_words_rest_uses) {
-  Harness h;
-  CHECK_EQ(message(h.call("describe_tree", with("title", "cut \xE2\x82"))),
-           "describe_tree: " + std::string(TreeRegistry::sentenceOf(TreeRegistry::Renaming::malformedTitle)));
-  CHECK_EQ(message(h.call("describe_tree", with("title", " "))),
-           "describe_tree: " + std::string(TreeRegistry::sentenceOf(TreeRegistry::Renaming::blankTitle)));
+TEST(mcp_update_tree_refuses_a_title_in_the_words_rest_uses) {
+  for (const std::string& name : kTreeUpdates) {
+    Harness h;
+    CHECK_EQ(message(h.call(name.c_str(), with("title", "cut \xE2\x82"))),
+             name + ": " + std::string(TreeRegistry::sentenceOf(TreeRegistry::Renaming::malformedTitle)));
+    CHECK_EQ(message(h.call(name.c_str(), with("title", " "))),
+             name + ": " + std::string(TreeRegistry::sentenceOf(TreeRegistry::Renaming::blankTitle)));
+  }
 }
 
 // A guide is written whenever it is sent, even as the tree holds it: that is how a fork's owner makes an inherited
 // guide theirs. A title equal to the one the tree has is not written.
-TEST(mcp_describe_tree_writes_a_guide_sent_as_held_so_a_forks_owner_makes_it_theirs) {
-  Harness h;
-  ForkService forks{h.registry, h.trees, h.tokens, h.clock};
-  h.trees.byId["t"].visibility = Visibility::public_;
-  CHECK_FALSE(h.call("describe_tree", with("guide", "Rig first, then sail.")).isError);
-  const UserId stranger = uid("stranger");
-  REQUIRE(forks.fork(TreeId{"t"}, "t_theirs", "", stranger).outcome == ForkService::Outcome::forked);
-  const auto call = [&](const char* tool, Json::Value args) {
-    args["treeId"] = "t_theirs";
-    return body(h.tools.callTool(tool, args, ToolCaller{stranger, ToolScope::everything()}));
-  };
-  const Json::Value before = call("get_tree", parse(R"({"includeGuides":false})"));
-  CHECK_EQ(before["tree"]["guide"], parse(R"({"text":"Rig first, then sail.","yours":false})"));
-  const int seq = before["seq"].asInt();
+TEST(mcp_update_tree_writes_a_guide_sent_as_held_so_a_forks_owner_makes_it_theirs) {
+  for (const std::string& name : kTreeUpdates) {
+    Harness h;
+    ForkService forks{h.registry, h.trees, h.tokens, h.clock};
+    h.trees.byId["t"].visibility = Visibility::public_;
+    CHECK_FALSE(h.call(name.c_str(), with("guide", "Rig first, then sail.")).isError);
+    const UserId stranger = uid("stranger");
+    REQUIRE(forks.fork(TreeId{"t"}, "t_theirs", "", stranger).outcome == ForkService::Outcome::forked);
+    const auto call = [&](const char* tool, Json::Value args) {
+      args["treeId"] = "t_theirs";
+      return body(h.tools.callTool(tool, args, ToolCaller{stranger, ToolScope::everything()}));
+    };
+    const Json::Value before = call("get_tree", parse(R"({"includeGuides":false})"));
+    CHECK_EQ(before["tree"]["guide"], parse(R"({"text":"Rig first, then sail.","yours":false})"));
+    const int seq = before["seq"].asInt();
 
-  CHECK_EQ(call("describe_tree", with("guide", "Rig first, then sail.")),
-           parse("{\"applied\":true,\"seq\":" + std::to_string(seq + 1) + "}"));
-  CHECK_EQ(call("get_tree", parse(R"({"includeGuides":false})"))["tree"]["guide"],
-           parse(R"({"text":"Rig first, then sail.","yours":true})"));
-  const std::string title = before["tree"]["title"].asString();
-  CHECK_EQ(call("describe_tree", with("title", title.c_str())),
-           parse("{\"applied\":true,\"seq\":" + std::to_string(seq + 1) + ",\"unchanged\":true}"));
+    CHECK_EQ(call(name.c_str(), with("guide", "Rig first, then sail.")),
+             parse("{\"applied\":true,\"seq\":" + std::to_string(seq + 1) + "}"));
+    CHECK_EQ(call("get_tree", parse(R"({"includeGuides":false})"))["tree"]["guide"],
+             parse(R"({"text":"Rig first, then sail.","yours":true})"));
+    const std::string title = before["tree"]["title"].asString();
+    CHECK_EQ(call(name.c_str(), with("title", title.c_str())),
+             parse("{\"applied\":true,\"seq\":" + std::to_string(seq + 1) + ",\"unchanged\":true}"));
+  }
 }
 
 // An annotation write lands only the fields that differ from what the node holds, through every door: the frame and
@@ -6694,7 +6732,7 @@ TEST(mcp_an_unclaimed_hue_names_its_first_ten_nodes_and_counts_them_all) {
            parse(R"([{"kind":"unclaimed-hue","hue":"olive","count":12,
                "nodes":["o01","o02","o03","o04","o05","o06","o07","o08","o09","o10"]},
              {"kind":"unclaimed-hue","hue":"plum","count":2,"nodes":["p01","p02"]},
-             {"node":"p02","kind":"empty-icon"}])"));
+             {"kind":"empty-icon","count":1,"nodes":["p02"]}])"));
 }
 
 // The smell is per hue, so its size does not grow with the tree: ten thousand nodes on one unclaimed hue are one line.
@@ -6728,5 +6766,123 @@ TEST(mcp_a_tree_with_no_kinds_reports_one_empty_legend_smell) {
   CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A","icon":"i"},
     {"id":"b","label":"B","color":"sky"}]})")).isError);
   CHECK_EQ(body(h.call("get_diagnostics", kNoArgs))["smells"],
-           parse(R"([{"kind":"empty-legend"},{"node":"b","kind":"empty-icon"}])"));
+           parse(R"([{"kind":"empty-legend"},{"kind":"empty-icon","count":1,"nodes":["b"]}])"));
+}
+
+// Each smell kind is one line naming how many nodes it covers and the first ten of them, in the order nodes are
+// reported, so get_diagnostics answers a bounded list whatever the tree's size; a kind no node has is left out, and a
+// tree with no smell answers [].
+TEST(mcp_get_diagnostics_answers_each_smell_kind_once_with_its_count_and_first_ten_nodes) {
+  Harness h;
+  CHECK_FALSE(h.call("add_kind", parse(R"({"id":"k","hue":"terracotta"})")).isError);
+  Json::Value bare = parse(R"({"nodes":[]})");
+  for (int i = 1; i <= 12; ++i) {
+    Json::Value node = parse(R"({"label":"B"})");
+    node["id"] = std::string(i < 10 ? "b0" : "b") + std::to_string(i);
+    bare["nodes"].append(node);
+  }
+  CHECK_FALSE(h.call("import_subgraph", bare).isError);
+  CHECK_EQ(body(h.call("get_diagnostics", kNoArgs))["smells"],
+           parse(R"([{"kind":"empty-icon","count":12,
+             "nodes":["b01","b02","b03","b04","b05","b06","b07","b08","b09","b10"]}])"));
+
+  Harness mixed;
+  CHECK_FALSE(mixed.call("add_kind", parse(R"({"id":"k","hue":"terracotta"})")).isError);
+  Json::Value batch = parse(R"({"nodes":[{"id":"p1","label":"P1","icon":"i"},{"id":"p2","label":"P2","icon":"i"},
+    {"id":"p3","label":"P3","icon":"i"},{"id":"p4","label":"P4","icon":"i"},{"id":"p5","label":"P5","icon":"i"},
+    {"id":"hub","label":"Hub","icon":"i","prerequisites":["p1","p2","p3","p4","p5"]},
+    {"id":"plain","label":"Plain"},{"id":"olive","label":"Olive","icon":"i","color":"olive"}]})");
+  Json::Value wordy = parse(R"({"id":"long","icon":"i"})");
+  std::string label;  // a hundred code points, within the label cap, three hundred bytes past the smell's 256
+  for (int i = 0; i < 100; ++i) label += "\xE6\x97\xA5";
+  wordy["label"] = label;
+  batch["nodes"].append(wordy);
+  CHECK_FALSE(mixed.call("import_subgraph", batch).isError);
+  CHECK_EQ(body(mixed.call("get_diagnostics", kNoArgs))["smells"],
+           parse(R"([{"kind":"unclaimed-hue","hue":"olive","count":1,"nodes":["olive"]},
+             {"kind":"label-too-long","count":1,"nodes":["long"]},{"kind":"empty-icon","count":1,"nodes":["plain"]},
+             {"kind":"high-in-degree","count":1,"nodes":["hub"]}])"));
+
+  Harness clean;
+  CHECK_FALSE(clean.call("add_kind", parse(R"({"id":"k","hue":"terracotta"})")).isError);
+  CHECK_FALSE(clean.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A","icon":"i"}]})")).isError);
+  CHECK_EQ(body(clean.call("get_diagnostics", kNoArgs))["smells"], parse("[]"));
+}
+
+// Ten thousand nodes without an icon are one short smell line, not one line each.
+TEST(mcp_ten_thousand_nodes_without_an_icon_answer_one_short_smell_line) {
+  Harness h;
+  TreeData data;
+  data.id = TreeId{"t"};
+  for (int i = 0; i < 10000; ++i) {
+    NodeSpec node;
+    const std::string digits = std::to_string(i);
+    node.id = NodeId{"n" + std::string(5 - digits.size(), '0') + digits};
+    node.label = "N";
+    data.nodes.push_back(node);
+  }
+  h.trees.byId["t"] = StoredTree{LooseGraph(data, Hlc{1, 0, "seed"}).exportState(),
+                                 Legend({{KindId{"k"}, NodeColor::terracotta, "K"}}, Hlc{1, 0, "seed"}).exportState(),
+                                 {"Big", {}}, 0, h.caller};
+  const Json::Value smells = body(h.call("get_diagnostics", kNoArgs))["smells"];
+  CHECK_EQ(smells, parse(R"([{"kind":"empty-icon","count":10000,
+    "nodes":["n00000","n00001","n00002","n00003","n00004","n00005","n00006","n00007","n00008","n00009"]}])"));
+  CHECK(dump(smells).size() < 300);
+}
+
+// An import's progress rows are set_progress's bulk rows: the same schema, the same checks and the same receipt, so a
+// completion made before its prerequisites keeps its outOfOrder word through an import, a repeat says unchanged, and
+// the marks get_progress answers go back through an import leaving the overlay as it was.
+TEST(mcp_import_progress_rows_carry_out_of_order_as_set_progress_rows_do) {
+  Harness h;
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"},{"id":"b","label":"B",
+    "prerequisites":["a"]},{"id":"c","label":"C"}]})")).isError);
+
+  const char* early = R"({"nodes":[],"progress":[{"nodeId":"b","status":"complete","outOfOrder":true}]})";
+  CHECK_EQ(body(h.call("import_subgraph", parse(early)))["progress"],
+           parse(R"([{"nodeId":"b","status":"complete","prerequisitesMet":false,"acknowledged":true}])"));
+  CHECK_EQ(body(h.call("get_progress", kNoArgs))["outOfOrder"], parse(R"(["b"])"));
+  CHECK_EQ(body(h.call("import_subgraph", parse(early)))["progress"],
+           parse(R"([{"nodeId":"b","status":"complete","prerequisitesMet":false,"acknowledged":true,"unchanged":true}])"));
+
+  const std::string refusal = R"(argument "%s.outOfOrder" acknowledges completing a node before its prerequisites, )"
+                              R"(so it rides status "complete" only, got "none")";
+  const auto refused = [&](const char* path) {
+    std::string sentence = refusal;
+    sentence.replace(sentence.find("%s"), 2, path);
+    return sentence;
+  };
+  CHECK_EQ(message(h.call("import_subgraph", parse(R"({"nodes":[],"progress":[{"nodeId":"c","status":"none",
+    "outOfOrder":true}]})"))), "import_subgraph: " + refused("progress[0]"));
+  CHECK_EQ(message(h.call("set_progress", parse(R"({"updates":[{"nodeId":"c","status":"none","outOfOrder":true}]})"))),
+           "set_progress: " + refused("updates[0]"));
+
+  Json::Value updates, rows;
+  for (const Json::Value& tool : h.tools.listTools(h.actor)) {
+    if (tool["name"].asString() == "set_progress") updates = tool["inputSchema"]["properties"]["updates"]["items"];
+    if (tool["name"].asString() == "import_subgraph") rows = tool["inputSchema"]["properties"]["progress"]["items"];
+  }
+  REQUIRE(updates.isObject());
+  CHECK_EQ(rows, updates);
+
+  CHECK_FALSE(h.call("set_progress", parse(R"({"updates":[{"nodeId":"a","status":"complete"},
+    {"nodeId":"c","status":"none"}]})")).isError);
+  const Json::Value everyMark = parse(R"({"fields":["completed","cleared","outOfOrder"]})");
+  const Json::Value held = body(h.call("get_progress", everyMark));
+  CHECK_EQ(held, parse(R"({"completed":["a","b"],"cleared":["c"],"outOfOrder":["b"]})"));
+  Json::Value sentBack = parse(R"({"nodes":[],"progress":[]})");
+  std::set<std::string> acknowledged;
+  for (const Json::Value& id : held["outOfOrder"]) acknowledged.insert(id.asString());
+  for (const char* list : {"completed", "cleared"})
+    for (const Json::Value& id : held[list]) {
+      Json::Value row(Json::objectValue);
+      row["nodeId"] = id;
+      row["status"] = std::string(list) == "completed" ? "complete" : "none";
+      if (acknowledged.count(id.asString())) row["outOfOrder"] = true;
+      sentBack["progress"].append(row);
+    }
+  const Json::Value receipt = body(h.call("import_subgraph", sentBack));
+  REQUIRE_EQ(receipt["progress"].size(), 3u);
+  for (const Json::Value& row : receipt["progress"]) CHECK_EQ(row["unchanged"], Json::Value(true));
+  CHECK_EQ(body(h.call("get_progress", everyMark)), held);
 }

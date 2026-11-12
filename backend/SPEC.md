@@ -144,11 +144,11 @@ rejected for structure. Validity is a read model, not a gate.
 - `TreeDiagnostics::assess` — a pure report over a loose graph and its legend: `cycles`, `dangling`,
   `selfEdges`, `smells`, `maskedWork` (tombstoned parents with present children). `clean()` is
   true when cycles, dangling and self-edges are all empty. Smell kinds: `label-too-long`
-  (> 256 bytes), `empty-icon` and `high-in-degree` (> 4), one per node; `unclaimed-hue`, one per hue
-  present nodes wear that no kind does, with that `hue`, the `count` of its nodes and the first ten of
-  them (`unclaimedNamed`), so it stays a short line whatever the tree's size; and `empty-legend`, one
-  line naming no node for a tree with nodes and no kind, in place of the hue lines. It reads one graph
-  and its legend, and no pointer: a loop of
+  (> 256 bytes), `empty-icon` and `high-in-degree` (> 4), one line each for every node they cover;
+  `unclaimed-hue`, one line per hue present nodes wear that no kind does, with that `hue`; each line
+  the `count` of its nodes and the first ten of them (`CountedNodes`), so the smells stay a few short
+  lines whatever the tree's size; and `empty-legend`, one line naming no node for a tree with nodes
+  and no kind, in place of the hue lines. It reads one graph and its legend, and no pointer: a loop of
   trees and a dangling pointer (`PointerDiagnostics`) are reported beside it, as smells are, and
   change neither `clean()` nor what it gates — the `SkillTree` projection, `get_health` and a
   receipt's `diagnosticsClean`.
@@ -472,8 +472,8 @@ owner's alone. A body naming more than one is refused `400`, and a body that is 
 `400` with the admission's sentence, and an empty one clears it, as one of only spaces, tabs and line
 breaks does (stored as `""`); a real guide keeps its leading and trailing spaces. A title carrying a
 NUL is refused `400` too. The guide's writes are this, the socket's `subgraph` frame and MCP
-`describe_tree`; a posted document (`POST`, `PUT`) never sets it, and a tend is not offered
-`describe_tree`. `GET /v1/trees/{id}` carries it as `data.guide` beside `data.title`, MCP `get_tree` as
+`update_tree` (`describe_tree`, its earlier name, is the same tool); a posted document (`POST`, `PUT`)
+never sets it, and a tend is offered neither name. `GET /v1/trees/{id}` carries it as `data.guide` beside `data.title`, MCP `get_tree` as
 `tree.guide: {text, yours}` on every page and no other MCP read at all, `yours` true when the caller
 owns the tree and wrote its current guide. A fork copies it, marked inherited when it is someone
 else's words (Runtime). The share page

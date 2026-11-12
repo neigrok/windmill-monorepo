@@ -1,5 +1,5 @@
 {
-  "schemaVersion" : 20,
+  "schemaVersion" : 22,
   "steps" : 
   [
     {
@@ -741,20 +741,15 @@
                   ]
                 },
                 {
+                  "count" : 4,
                   "kind" : "empty-icon",
-                  "node" : "docs"
-                },
-                {
-                  "kind" : "empty-icon",
-                  "node" : "launch"
-                },
-                {
-                  "kind" : "empty-icon",
-                  "node" : "render"
-                },
-                {
-                  "kind" : "empty-icon",
-                  "node" : "sync"
+                  "nodes" : 
+                  [
+                    "docs",
+                    "launch",
+                    "render",
+                    "sync"
+                  ]
                 }
               ],
               "treeLoops" : 
@@ -844,10 +839,15 @@
                   "refused" : "\"docs\" opens a tree: it is complete when that tree is and takes no mark of its own \u2014 mark the steps of the tree it opens"
                 },
                 {
+                  "acknowledged" : true,
                   "nodeId" : "launch",
+                  "prerequisitesMet" : false,
+                  "status" : "complete"
+                },
+                {
+                  "nodeId" : "render",
                   "prerequisitesMet" : true,
-                  "status" : "none",
-                  "unchanged" : true
+                  "status" : "complete"
                 }
               ]
             },
@@ -887,6 +887,18 @@
                 {
                   "nodeId" : "docs",
                   "refused" : "\"docs\" opens a tree: it is complete when that tree is and takes no mark of its own \u2014 mark the steps of the tree it opens"
+                },
+                {
+                  "acknowledged" : true,
+                  "nodeId" : "launch",
+                  "prerequisitesMet" : false,
+                  "status" : "complete",
+                  "unchanged" : true
+                },
+                {
+                  "nodeId" : "sync",
+                  "prerequisitesMet" : true,
+                  "status" : "none"
                 }
               ],
               "progressApplied" : false,

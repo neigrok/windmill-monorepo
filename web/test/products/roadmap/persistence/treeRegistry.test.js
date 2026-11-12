@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { setGuide, setVisibility } from '../../../../src/products/roadmap/persistence/TreeRegistry.js';
+import { readGuides, setGuide, setVisibility } from '../../../../src/products/roadmap/persistence/TreeRegistry.js';
 import { AuthError } from '../../../../src/shell/auth/AuthClient.js';
 
 const BASE = 'http://localhost:8088';
@@ -108,4 +108,44 @@ test('setGuide — PATCHes {guide} credentialed, resolves on 204, and keeps a re
       return true;
     });
   }
+});
+
+test('readGuides — GETs the tree’s guides credentialed under the caller’s signal and answers the reply', async () => {
+  const reply = { guides: [{ treeId: 't_year', title: 'My year', text: 'Three things this year.', yours: true }] };
+  const calls = stubFetch(() => ({ ok: true, status: 200, json: async () => reply }));
+  const { signal } = new AbortController();
+
+  assert.deepEqual(await readGuides('t_abc', signal), reply);
+  assert.deepEqual(calls, [{ url: `${BASE}/v1/trees/t_abc/guides`, init: { credentials: 'include', signal } }]);
+});
+
+test('readGuides — a 200 that is not JSON answers null, never a failure of the read', async () => {
+  stubFetch(() => ({ ok: true, status: 200, json: async () => { throw new SyntaxError('Unexpected token < in JSON'); } }));
+
+  assert.equal(await readGuides('t_abc'), null);
+});
+
+test('readGuides — a refusal keeps its status and code and nothing the server said, and a lost request is unreachable', async () => {
+  for (const [status, body] of [[503, { code: 'guides-unavailable', error: 'the trees above My life could not be read' }], [404, { error: 'no such tree' }], [500, {}]]) {
+    stubFetch(() => ({ ok: false, status, json: async () => body }));
+    await assert.rejects(readGuides('t_abc'), (err) => {
+      assert.ok(err instanceof AuthError);
+      assert.deepEqual({ status: err.status, code: err.code, said: err.said, message: err.message },
+        { status, code: body.code, said: undefined, message: 'Could not read the guides' });
+      return true;
+    });
+  }
+  stubFetch(() => { throw new TypeError('Failed to fetch'); });
+  await assert.rejects(readGuides('t_abc'), (err) => {
+    assert.deepEqual({ status: err.status, code: err.code, message: err.message }, { status: 0, code: 'unreachable', message: 'Network request failed' });
+    return true;
+  });
+});
+
+test('readGuides — a read its caller aborted rejects as the browser’s abort, not as a lost request', async () => {
+  const request = new AbortController();
+  const aborted = new DOMException('The operation was aborted.', 'AbortError');
+  stubFetch(() => { request.abort(); throw aborted; });
+
+  await assert.rejects(readGuides('t_abc', request.signal), (err) => err === aborted);
 });

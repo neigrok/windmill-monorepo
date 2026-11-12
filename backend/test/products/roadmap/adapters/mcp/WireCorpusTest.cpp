@@ -15,7 +15,7 @@ using namespace wm::test;
 namespace {
 
 // The corpus schema version, written into the golden. Bump it by convention when the wire changes on purpose; nothing enforces it.
-constexpr int kWireCorpusVersion = 20;
+constexpr int kWireCorpusVersion = 22;
 
 struct Step {
   const char* tool;
@@ -101,17 +101,22 @@ std::vector<Step> plan() {
       {"get_diagnostics", kNoArgs},
       {"get_progress", kNoArgs},
       {"get_health", kNoArgs},
-      // `docs` opens a tree, so it takes no mark: a batch answers its row refused beside the mark it records, and an import lists it in progressRefused.
+      // `docs` opens a tree, so it takes no mark: a batch answers its row refused beside the marks it records, an
+      // out-of-order completion of `launch` (behind `docs`, which never completes) acknowledged among them, and an import
+      // lists it in progressRefused beside its rows, `launch` sent back as get_progress answers it.
       {"set_progress", obj({{"updates", [] {
                                Json::Value array(Json::arrayValue);
                                array.append(mark("docs", "complete"));
-                               array.append(mark("launch", "active"));
+                               array.append(obj({{"nodeId", "launch"}, {"status", "complete"}, {"outOfOrder", true}}));
+                               array.append(mark("render", "complete"));
                                return array;
                              }()}})},
       {"import_subgraph", obj({{"nodes", Json::Value(Json::arrayValue)},
                                {"progress", [] {
                                   Json::Value array(Json::arrayValue);
                                   array.append(mark("docs", "complete"));
+                                  array.append(obj({{"nodeId", "launch"}, {"status", "complete"}, {"outOfOrder", true}}));
+                                  array.append(mark("sync", "none"));
                                   return array;
                                 }()}})},
       // Four deterministic FAILURES, so the error wire is pinned too. Errors mutate nothing, so they ride at the end.

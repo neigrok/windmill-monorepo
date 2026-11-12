@@ -785,14 +785,14 @@ TEST(get_diagnostics_whose_pointers_cannot_be_followed_answers_the_graphs_diagno
   const drogon::HttpResponsePtr degraded = sendGetDiagnostics(h.api, "s-me", "t_mine");
 
   REQUIRE_EQ(degraded->getStatusCode(), drogon::k200OK);
-  CHECK_EQ(bodyOf(degraded), parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[{"kind":"empty-legend"},{"node":"root","kind":"empty-icon"}],
+  CHECK_EQ(parse(dump(bodyOf(degraded))), parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[{"kind":"empty-legend"},{"kind":"empty-icon","count":1,"nodes":["root"]}],
       "maskedWork":[],"pointerDiagnosticsUnavailable":true})"));
   CHECK_EQ(reporter.failures->reports,
            (std::vector<std::string>{std::string("roadmap.diagnostics.follow roadmap rest failed ") + typeid(std::runtime_error).name()}));
-  CHECK_EQ(bodyOf(sendGetDiagnostics(h.api, "", "t_mine")),
-           parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[{"kind":"empty-legend"},{"node":"root","kind":"empty-icon"}],"maskedWork":[]})"));
-  CHECK_EQ(bodyOf(sendGetDiagnostics(h.api, "s-me", "t_sub")),
-           parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[{"kind":"empty-legend"},{"node":"root","kind":"empty-icon"}],"maskedWork":[],
+  CHECK_EQ(parse(dump(bodyOf(sendGetDiagnostics(h.api, "", "t_mine")))),
+           parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[{"kind":"empty-legend"},{"kind":"empty-icon","count":1,"nodes":["root"]}],"maskedWork":[]})"));
+  CHECK_EQ(parse(dump(bodyOf(sendGetDiagnostics(h.api, "s-me", "t_sub")))),
+           parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[{"kind":"empty-legend"},{"kind":"empty-icon","count":1,"nodes":["root"]}],"maskedWork":[],
                "treeLoops":[],"danglingPointers":[]})"));
   CHECK_EQ(reporter.failures->reports.size(), 1u);
 }

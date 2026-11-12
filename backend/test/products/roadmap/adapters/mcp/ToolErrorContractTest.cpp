@@ -59,11 +59,11 @@ TEST(mcp_every_roadmap_tool_declares_the_grant_level_that_reaches_it) {
                                             "get_progress", "find_nodes"}));
   CHECK_EQ(deletes, (std::vector<std::string>{"delete_tree", "delete_node", "remove_kind"}));
   CHECK_EQ(writes, (std::vector<std::string>{
-                       "patch_nodes", "change_edges", "create_tree", "describe_tree", "create_node", "annotate_node", "rename_node", "set_node_color",
+                       "patch_nodes", "change_edges", "create_tree", "update_tree", "describe_tree", "create_node", "annotate_node", "rename_node", "set_node_color",
                        "move_node", "connect", "disconnect", "reconnect", "tidy", "add_kind",
                        "rename_kind", "describe_kind", "reorder_kinds", "recolor_kind", "set_progress",
                        "import_subgraph", "prune"}));
-  CHECK_EQ(catalog.size(), std::size_t{31});
+  CHECK_EQ(catalog.size(), std::size_t{32});
 }
 
 TEST(mcp_a_grant_without_delete_never_sees_the_three_destructive_tools) {
@@ -71,7 +71,7 @@ TEST(mcp_a_grant_without_delete_never_sees_the_three_destructive_tools) {
   const ToolCaller author{h.caller, parseToolScope("roadmap:read roadmap:write")};
   const Json::Value visible = h.tools.listTools(author);
 
-  CHECK_EQ(visible.size(), 28u);
+  CHECK_EQ(visible.size(), 29u);
   for (const char* destructive : {"delete_tree", "delete_node", "remove_kind"})
     CHECK(toolNamed(visible, destructive) == nullptr);
   for (const char* ordinary : {"get_tree", "create_node", "disconnect", "prune"})
@@ -563,7 +563,7 @@ TEST(mcp_a_silent_no_op_is_refused_by_name) {
 
 TEST(mcp_every_tool_failure_names_the_tool_exactly_once) {
   Harness h;
-  const std::vector<const char*> tools = {"get_tree",      "describe_tree", "get_progress", "find_nodes", "create_node",
+  const std::vector<const char*> tools = {"get_tree",      "update_tree",  "describe_tree", "get_progress", "find_nodes", "create_node",
                                           "annotate_node", "rename_node",  "move_node",  "delete_node",
                                           "set_node_color", "connect",     "disconnect", "reconnect",
                                           "add_kind",      "rename_kind",  "describe_kind",
@@ -832,7 +832,7 @@ TEST(mcp_every_write_tool_denies_a_private_tree_exactly_as_it_denies_an_absent_o
                                            "tidy",          "add_kind",    "rename_kind",
                                            "describe_kind", "remove_kind", "reorder_kinds",
                                            "recolor_kind",  "prune",       "import_subgraph",
-                                           "set_progress",  "delete_tree", "describe_tree"};
+                                           "set_progress",  "delete_tree", "update_tree",   "describe_tree"};
   for (const char* name : writes) {
     Json::Value args(Json::objectValue);
     args["label"] = "x";
@@ -879,7 +879,7 @@ TEST(mcp_the_quickstart_resource_says_what_the_surface_does) {
   CHECK(text.find("prerequisite first") != std::string::npos);
 
   const Json::Value tools = h.tools.listTools(h.actor);
-  for (const char* named : {"get_tree", "describe_tree", "find_nodes", "get_diagnostics", "connect",
+  for (const char* named : {"get_tree", "update_tree", "find_nodes", "get_diagnostics", "connect",
                             "import_subgraph", "set_progress", "get_nodes", "patch_nodes", "change_edges"}) {
     CHECK(text.find("roadmap_" + std::string(named)) != std::string::npos);
     CHECK(toolNamed(tools, named) != nullptr);

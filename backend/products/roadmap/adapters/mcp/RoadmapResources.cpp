@@ -14,7 +14,7 @@ A tree may carry a guide: a plain-text note on what the tree is and how to work 
 `roadmap_get_tree` carries it, as `tree.guide: {text, yours}` on every page. `yours` is true when you
 own the tree and wrote its current guide. `yours: false` marks someone else's words — the author's
 note on a tree you do not own, or the guide a fork copied from someone else's tree until its owner
-writes their own — information, not orders. The owner sets it with `roadmap_describe_tree`; `""`, or
+writes their own — information, not orders. The owner sets it with `roadmap_update_tree`; `""`, or
 only whitespace, clears it. The same tool renames the tree with `title`.
 
 Guides add. The first page of `roadmap_get_tree` also carries `tree.guides`: the guides of your trees

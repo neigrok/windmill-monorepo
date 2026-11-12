@@ -30,6 +30,7 @@ const std::vector<Row> kRoadmap = {
     {"list_trees", "Roadmap · List trees", true, false, true},
     {"delete_tree", "Roadmap · Delete tree", false, true, true},
     {"get_tree", "Roadmap · Get tree", true, false, true},
+    {"update_tree", "Roadmap · Update tree", false, false, true},
     {"describe_tree", "Roadmap · Describe tree", false, false, true},
     {"get_diagnostics", "Roadmap · Get diagnostics", true, false, true},
     {"get_health", "Roadmap · Get health", true, false, true},

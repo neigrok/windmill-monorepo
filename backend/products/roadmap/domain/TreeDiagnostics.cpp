@@ -84,16 +84,17 @@ TreeDiagnostics TreeDiagnostics::assess(const LooseGraph& graph, const Legend& l
   std::set<NodeColor> worn;
   for (const Kind& kind : legend.kinds()) worn.insert(kind.hue);
   report.legendEmpty = worn.empty() && !projection.nodes.empty();
+  Smell longLabel{"label-too-long"}, noIcon{"empty-icon"}, crowded{"high-in-degree"};
   std::map<NodeColor, UnclaimedHue> unclaimed;
   for (const auto& node : projection.nodes) {
-    if (node.label.size() > maxLabel) report.smells.push_back(Smell{node.id, "label-too-long"});
-    if (node.icon.empty()) report.smells.push_back(Smell{node.id, "empty-icon"});
-    if (node.prerequisites.size() > inDegreeSmell) report.smells.push_back(Smell{node.id, "high-in-degree"});
+    if (node.label.size() > maxLabel) longLabel.nodes.add(node.id);
+    if (node.icon.empty()) noIcon.nodes.add(node.id);
+    if (node.prerequisites.size() > inDegreeSmell) crowded.nodes.add(node.id);
     if (worn.empty() || worn.count(node.color)) continue;
-    UnclaimedHue& hue = unclaimed.try_emplace(node.color, UnclaimedHue{node.color}).first->second;
-    if (hue.nodes.size() < unclaimedNamed) hue.nodes.push_back(node.id);
-    ++hue.count;
+    unclaimed.try_emplace(node.color, UnclaimedHue{node.color}).first->second.nodes.add(node.id);
   }
+  for (Smell* smell : {&longLabel, &noIcon, &crowded})
+    if (smell->nodes.count > 0) report.smells.push_back(std::move(*smell));
   for (auto& [color, hue] : unclaimed) report.unclaimedHues.push_back(std::move(hue));
 
   return report;
