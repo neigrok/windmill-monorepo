@@ -2,6 +2,7 @@
 
 #include "platform/adapters/http/Caller.h"
 #include "platform/adapters/http/PageShell.h"
+#include "platform/domain/Origin.h"
 #include "products/roadmap/application/TreeRoom.h"
 #include "products/roadmap/domain/Tree.h"
 #include "products/roadmap/domain/WebAddress.h"
@@ -35,7 +36,7 @@ std::string SharePageApi::renderShell(const std::string& shell, const std::strin
     description += " Forked " + std::to_string(lineage.forkCount) + (lineage.forkCount == 1 ? " time." : " times.");
   const std::string robots =
       visibility == Visibility::public_ ? "index, follow, max-image-preview:large" : "noindex";
-  const std::string image = origin + "/og/" + htmlEscape(id) + ".png";
+  const std::string image = htmlEscape(normalizedOrigin(origin) + "/og/" + id + ".png");
 
   std::string meta;
   meta += "\n\n    <!-- Rewritten for this shared tree by windmill_server (path-share). -->\n";
@@ -53,7 +54,7 @@ std::string SharePageApi::renderShell(const std::string& shell, const std::strin
   meta += "    <meta property=\"og:image:width\" content=\"1200\" />\n";
   meta += "    <meta property=\"og:image:height\" content=\"630\" />\n";
   if (hasVideo) {
-    const std::string video = origin + "/v1/trees/" + htmlEscape(id) + "/og-video";
+    const std::string video = htmlEscape(normalizedOrigin(origin) + "/v1/trees/" + id + "/og-video");
     meta += "    <meta property=\"og:video\" content=\"" + video + "\" />\n";
     meta += "    <meta property=\"og:video:secure_url\" content=\"" + video + "\" />\n";
     meta += "    <meta property=\"og:video:type\" content=\"video/mp4\" />\n";

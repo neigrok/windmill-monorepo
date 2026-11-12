@@ -1,16 +1,13 @@
 #include "products/roadmap/domain/WebAddress.h"
 
+#include "platform/domain/Origin.h"
+
 #include <cstdio>
 #include <string_view>
 
 namespace wm {
 
 namespace {
-
-std::string withoutTrailingSlash(std::string origin) {
-  while (!origin.empty() && origin.back() == '/') origin.pop_back();
-  return origin;
-}
 
 // encodeURIComponent's bytes: every UTF-8 byte outside its unreserved set as %XX, upper-case hex.
 std::string uriComponent(std::string_view text) {
@@ -33,7 +30,7 @@ std::string uriComponent(std::string_view text) {
 }  // namespace
 
 std::string treeAddress(const WebTree& web) {
-  const std::string origin = withoutTrailingSlash(web.origin);
+  const std::string origin = normalizedOrigin(web.origin);
   if (web.opener == Opener::owner) return origin + "/#/app/" + web.tree.str();
   return origin + "/t/" + web.tree.str();
 }

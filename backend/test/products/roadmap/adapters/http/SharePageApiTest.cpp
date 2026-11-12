@@ -130,6 +130,39 @@ TEST(render_shell_emits_the_video_tags_alongside_the_poster_when_a_loop_exists) 
   CHECK(has(html, "<meta property=\"og:video:height\" content=\"1080\" />"));
 }
 
+// The page's own address and its pictures are all built on the origin: one ending in '/' does not double it, and an
+// origin holding markup characters lands escaped in every tag that carries it.
+TEST(render_shell_builds_every_address_on_the_origin_without_doubling_or_unescaping_it) {
+  const auto tagsOf = [](const std::string& origin) {
+    const std::string html = SharePageApi::renderShell(SHELL, origin, "T", 1, Visibility::public_, "t_9362d9bc883e0a1e",
+                                                       ForkLineage{}, true);
+    std::vector<std::string> tags;
+    for (const char* key : {"rel=\"canonical\"", "\"og:url\"", "\"og:image\"", "\"og:video\"",
+                            "\"og:video:secure_url\"", "\"twitter:image\""}) {
+      const std::size_t start = html.rfind('<', html.find(key));
+      tags.push_back(html.substr(start, html.find('\n', start) - start));
+    }
+    return tags;
+  };
+
+  CHECK_EQ(tagsOf("https://share.example/"),
+           (std::vector<std::string>{
+               "<link rel=\"canonical\" href=\"https://share.example/t/t_9362d9bc883e0a1e\" />",
+               "<meta property=\"og:url\" content=\"https://share.example/t/t_9362d9bc883e0a1e\" />",
+               "<meta property=\"og:image\" content=\"https://share.example/og/t_9362d9bc883e0a1e.png\" />",
+               "<meta property=\"og:video\" content=\"https://share.example/v1/trees/t_9362d9bc883e0a1e/og-video\" />",
+               "<meta property=\"og:video:secure_url\" content=\"https://share.example/v1/trees/t_9362d9bc883e0a1e/og-video\" />",
+               "<meta name=\"twitter:image\" content=\"https://share.example/og/t_9362d9bc883e0a1e.png\" />"}));
+  CHECK_EQ(tagsOf("https://x.example/a\"b<c>"),
+           (std::vector<std::string>{
+               "<link rel=\"canonical\" href=\"https://x.example/a&quot;b&lt;c&gt;/t/t_9362d9bc883e0a1e\" />",
+               "<meta property=\"og:url\" content=\"https://x.example/a&quot;b&lt;c&gt;/t/t_9362d9bc883e0a1e\" />",
+               "<meta property=\"og:image\" content=\"https://x.example/a&quot;b&lt;c&gt;/og/t_9362d9bc883e0a1e.png\" />",
+               "<meta property=\"og:video\" content=\"https://x.example/a&quot;b&lt;c&gt;/v1/trees/t_9362d9bc883e0a1e/og-video\" />",
+               "<meta property=\"og:video:secure_url\" content=\"https://x.example/a&quot;b&lt;c&gt;/v1/trees/t_9362d9bc883e0a1e/og-video\" />",
+               "<meta name=\"twitter:image\" content=\"https://x.example/a&quot;b&lt;c&gt;/og/t_9362d9bc883e0a1e.png\" />"}));
+}
+
 TEST(render_shell_uses_singular_step_and_makes_a_public_tree_indexable) {
   std::string html = SharePageApi::renderShell(SHELL, "https://share.example", "Solo", 1, Visibility::public_, "t_x", ForkLineage{}, false);
   CHECK(has(html, "A Windmill skill tree \xE2\x80\x94 1 step."));

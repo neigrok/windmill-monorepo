@@ -359,9 +359,7 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   // The origins allowed to send credentialed (cookie-bearing) requests. The app is always trusted;
   // WINDMILL_ALLOWED_ORIGINS adds more, comma-separated. Anything else gets no CORS grant.
   std::set<std::string> allowedOrigins;
-  std::string appOrigin = appBaseUrl;
-  while (!appOrigin.empty() && appOrigin.back() == '/') appOrigin.pop_back();
-  allowedOrigins.insert(appOrigin);
+  allowedOrigins.insert(appBaseUrl);
   if (const char* extra = std::getenv("WINDMILL_ALLOWED_ORIGINS")) {
     std::string list = extra;
     std::size_t start = 0;
