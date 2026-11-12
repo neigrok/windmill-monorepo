@@ -202,7 +202,8 @@ Json::Value legendKind() {
 // the rest). A bulk edit overwrites or removes many entries in one call and is declared destructive
 // under a write grant. An idempotent write is one a resend with the same arguments leaves unchanged;
 // create_tree and create_node mint an id, so a resend plants a second one.
-const std::set<std::string> kBulkEdits = {"import_subgraph", "prune", "tidy", "patch_nodes", "change_edges"};
+const std::set<std::string> kBulkEdits = {"import_subgraph", "prune", "tidy", "patch_nodes", "update_nodes",
+                                          "change_edges"};
 const std::set<std::string> kIdempotentWrites = {
     "delete_tree",  "update_tree",   "describe_tree", "rename_node",   "set_node_color", "move_node",
     "connect",      "disconnect",    "reconnect",     "delete_node",    "tidy",
@@ -262,8 +263,11 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     declaration.descriptor["outputSchema"] = output;
     tools.push_back(std::move(declaration));
   }
-  for (const char* name : {"patch_nodes", "change_edges"}) {
-    const bool patches = std::string_view(name) == "patch_nodes";
+  // update_nodes is patch_nodes grown: its rows also append to a description or to the links, and carry the caller's
+  // own mark; it moves no node.
+  for (const char* name : {"patch_nodes", "update_nodes", "change_edges"}) {
+    const bool patches = std::string_view(name) != "change_edges";
+    const bool grown = std::string_view(name) == "update_nodes";
     Json::Value p(Json::objectValue);
     p["treeId"] = treeHandle();
     p["expectedSeq"] = expectedSeq();
@@ -281,13 +285,25 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
       row["kind"] = cappedStr("Replacement hue, named by the legend kind that wears it. Sent with `color`, the "
                               "two must agree, but for a `color` the node already holds: that is an echo, and the "
                               "kind wins.", kMaxIdLength);
-      row["position"] = position("Replacement position; both coordinates are required.");
+      if (!grown) row["position"] = position("Replacement position; both coordinates are required.");
       row["links"] = linkArray("Replacement links; an empty list clears them.");
+      if (grown) {
+        row["appendDescription"] = cappedStr("Text joined onto the end of the description, after a blank line. Not "
+                                             "with `description`.", kMaxNodeDescriptionLength);
+        row["addLinks"] = linkArray("Links joined after the ones the node holds; a url it holds keeps its place "
+                                    "and takes the label sent with it. Not with `links`.");
+        row["addLinks"]["minItems"] = 1;
+        const Json::Value mark = progressRow();
+        row["status"] = mark["status"];
+        row["outOfOrder"] = mark["outOfOrder"];
+      }
       row["opens"] = cappedStr("Id of a tree you own that this node opens; empty string clears it. One naming "
                                "a tree that is not yours refuses the whole batch. A tree that leads back to "
                                "this one lands, and `introducedDiagnostics` names the loop after the graph's "
                                "errors, within its five lines: a tree on a loop never completes.", kMaxIdLength);
-      p["updates"] = objArray("1..200 distinct existing nodes, each with at least one field to change.", row, {"nodeId"});
+      p["updates"] = objArray(grown ? "1..200 distinct existing nodes, each with at least one field or a mark."
+                                    : "1..200 distinct existing nodes, each with at least one field to change.",
+                              row, {"nodeId"});
       p["updates"]["minItems"] = 1;
       p["updates"]["maxItems"] = static_cast<Json::UInt64>(kMaxPatchNodes);
     } else {
@@ -298,7 +314,14 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
       }
     }
     ToolDeclaration declaration = tool(name, Access::write,
-        patches ? "Patch fields on 1..200 existing nodes atomically. Omitted fields survive; empty strings and links clear their field. "
+        grown ? "Edit 1..200 existing nodes in one call. A row names `nodeId` and any of: `label`; `color` and/or "
+                "`kind`; `description` or `appendDescription`; `icon`; `links` or `addLinks`; `opens`; and `status` "
+                "(with `outOfOrder` on a completion) — your own progress mark, which works on any tree you can read. "
+                "Every other field is the tree owner's alone, and a call carrying one on a tree that is not yours is "
+                "refused whole. The tree fields land as ONE op, a field the node already holds left out, and marks "
+                "land after them, answered per row in `progress`. `unchanged: true` speaks for the tree fields: they "
+                "landed nothing. expectedSeq refuses a stale call whole; dryRun applies nothing."
+        : patches ? "Patch fields on 1..200 existing nodes atomically. Omitted fields survive; empty strings and links clear their field. "
                   "All items are validated before one operation, seq and broadcast. Exact retries skip unchanged nodes, and "
                   "a batch whose every row is unchanged writes nothing and answers `unchanged: true`. "
                   "expectedSeq prevents overwriting intervening edits; dryRun previews changedNodeIds and unchangedNodeIds."
@@ -331,6 +354,18 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
       for (const char* field : {"changedNodeIds", "unchangedNodeIds"}) {
         properties[field] = strArray("Node ids in input order, partitioned by whether the patch changes them.", kMaxIdLength);
         output["required"].append(field);
+      }
+      if (grown) {
+        Json::Value mark(Json::objectValue);
+        mark["nodeId"] = nodeHandle();
+        mark["status"] = enumStr("The mark the row set.", kStatuses);
+        mark["prerequisitesMet"] = boolean("Whether its prerequisites are complete as the whole call leaves them.");
+        mark["acknowledged"] = boolean("True when the row carried outOfOrder:true.");
+        mark["unchanged"] = boolean("True when you already held this mark at the row's turn.");
+        properties["progress"] = objArray("One row per mark, in input order, after the tree fields landed.", mark,
+                                          {"nodeId", "status", "prerequisitesMet"});
+        properties["progressApplied"] = boolean("False when the marks did not land; the tree fields, if any, did.");
+        properties["progressError"] = str("Why the marks did not land, when progressApplied is false.");
       }
     } else {
       for (const char* field : {"addedEdges", "removedEdges"}) {

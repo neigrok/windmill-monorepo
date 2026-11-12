@@ -25,6 +25,7 @@ struct Row {
 const std::vector<Row> kRoadmap = {
     {"get_nodes", "Roadmap · Get nodes", true, false, true},
     {"patch_nodes", "Roadmap · Patch nodes", false, true, true},
+    {"update_nodes", "Roadmap · Update nodes", false, true, false},
     {"change_edges", "Roadmap · Change edges", false, true, true},
     {"create_tree", "Roadmap · Create tree", false, false, false},
     {"list_trees", "Roadmap · List trees", true, false, true},
@@ -148,6 +149,7 @@ TEST(only_the_allowlisted_roadmap_writes_are_bulk_edits) {
   std::vector<std::string> bulk;
   for (const ToolDeclaration& tool : roadmapToolCatalog())
     if (tool.bulkEdit) bulk.push_back(tool.name());
-  CHECK_EQ(bulk, (std::vector<std::string>{"patch_nodes", "change_edges", "tidy", "import_subgraph", "prune"}));
+  CHECK_EQ(bulk, (std::vector<std::string>{"patch_nodes", "update_nodes", "change_edges", "tidy", "import_subgraph",
+                                            "prune"}));
   for (const ToolDeclaration& tool : gym::gymToolCatalog()) CHECK_FALSE(tool.bulkEdit);
 }

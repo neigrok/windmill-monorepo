@@ -20,7 +20,7 @@ rejected for structure. Validity is a read model, not a gate.
   carries it as `opens` and omits it when empty; a lattice entry carries `opens` and `opensAt`. The
   room, the socket and `PUT` hold a write to the id length and to nothing about its target, so a
   pointer may name a tree that is absent, deleted or someone else's. The MCP door is stricter: every
-  non-empty `opens` a `create_node`, `annotate_node`, `patch_nodes` or `import_subgraph` call carries
+  non-empty `opens` a `create_node`, `annotate_node`, `patch_nodes`, `update_nodes` or `import_subgraph` call carries
   must name a tree that stands and is the caller's (`TreeRepository::titlesOwnedBy`, one read for
   the whole call), or the call is refused with nothing written, in one sentence for a tree that is
   not there and for someone else's. A node may open the tree it is in. A tree id is the read
@@ -84,7 +84,7 @@ rejected for structure. Validity is a read model, not a gate.
   after the strand is released, for a caller who can write the tree and a tree that holds a
   pointer, and not for an MCP call that sends `includePointers: false`; under the strand they take
   the tree's pointers alone (`LooseGraph::pointers`). An MCP edit that changes the tree a node
-  opens to a tree (`create_node`, `annotate_node`, `patch_nodes` or `import_subgraph`) makes it
+  opens to a tree (`create_node`, `annotate_node`, `patch_nodes`, `update_nodes` or `import_subgraph`) makes it
   once more, after the edit is saved and the strand is released, starting from the trees those
   nodes now open (`pointersSetSince`) and under a budget of its own, 750 ms, in place of the
   pool's statement limit: its receipt names in `introducedDiagnostics`, after the graph's errors

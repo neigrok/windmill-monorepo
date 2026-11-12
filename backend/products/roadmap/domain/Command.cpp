@@ -415,16 +415,19 @@ std::variant<NodePatchPlan, std::string, KindRefusal> planNodePatches(
     const NodePatch& patch = updates[row];
     if (!seen.insert(patch.nodeId).second)
       return "updates repeats nodeId " + quoted(patch.nodeId.str());
-    if (!patch.label && !patch.icon && !patch.description && !patch.hue.color && !patch.hue.kind && !patch.position &&
-        !patch.links && !patch.opens)
+    if (!patch.label && !patch.icon && !patch.description && !patch.appendDescription && !patch.hue.color &&
+        !patch.hue.kind && !patch.position && !patch.links && !patch.addLinks && !patch.opens)
       return "node " + quoted(patch.nodeId.str()) + ": pass at least one field to patch";
-    for (const auto& [field, value] : {std::pair{"label", &patch.label}, {"icon", &patch.icon}, {"description", &patch.description}})
+    for (const auto& [field, value] : {std::pair{"label", &patch.label}, {"icon", &patch.icon},
+                                       {"description", &patch.description},
+                                       {"appendDescription", &patch.appendDescription}})
       if (*value && (*value)->find('\0') != std::string::npos)
         return "node " + quoted(patch.nodeId.str()) + ": " + field + " cannot contain a NUL character";
-    if (patch.links)
-      for (const Link& link : *patch.links)
-        if (link.label.find('\0') != std::string::npos || link.url.find('\0') != std::string::npos)
-          return "node " + quoted(patch.nodeId.str()) + ": links cannot contain a NUL character";
+    for (const auto* sent : {&patch.links, &patch.addLinks})
+      if (*sent)
+        for (const Link& link : **sent)
+          if (link.label.find('\0') != std::string::npos || link.url.find('\0') != std::string::npos)
+            return "node " + quoted(patch.nodeId.str()) + ": links cannot contain a NUL character";
     if (patch.opens && patch.opens->str().find('\0') != std::string::npos)
       return "node " + quoted(patch.nodeId.str()) + ": opens cannot contain a NUL character";
     const std::optional<NodeSpec> node = graph.nodeView(patch.nodeId);
@@ -434,8 +437,10 @@ std::variant<NodePatchPlan, std::string, KindRefusal> planNodePatches(
     if (const auto* refusal = std::get_if<KindRefusal>(&hue)) return *refusal;
     const std::optional<NodeColor> color = std::get<std::optional<NodeColor>>(hue);
     std::optional<std::vector<Link>> links;
-    if (patch.links) {
-      auto shown = shownLinks(node->links, *patch.links, "updates[" + std::to_string(row) + "].links");
+    if (patch.links || patch.addLinks) {
+      const std::string path = "updates[" + std::to_string(row) + "]." + (patch.links ? "links" : "addLinks");
+      auto shown = patch.links ? shownLinks(node->links, *patch.links, path)
+                               : withLinksAdded(node->links, *patch.addLinks, path);
       if (const auto* refusal = std::get_if<std::string>(&shown)) return *refusal;
       links = std::get<std::vector<Link>>(std::move(shown));
     }
@@ -444,8 +449,9 @@ std::variant<NodePatchPlan, std::string, KindRefusal> planNodePatches(
     if (patch.label) candidates.push_back(RenameNode{patch.nodeId, *patch.label});
     if (color) candidates.push_back(SetNodeColor{patch.nodeId, *color});
     if (patch.position) candidates.push_back(RepositionNode{patch.nodeId, *patch.position});
-    if (patch.description || patch.icon || links || patch.opens)
-      candidates.push_back(AnnotateNode{patch.nodeId, patch.description, links, patch.icon, std::nullopt, patch.opens});
+    if (patch.description || patch.appendDescription || patch.icon || links || patch.opens)
+      candidates.push_back(
+          AnnotateNode{patch.nodeId, patch.description, links, patch.icon, patch.appendDescription, patch.opens});
 
     const std::size_t before = plan.batch.commands.size();
     for (const Command& command : candidates) {

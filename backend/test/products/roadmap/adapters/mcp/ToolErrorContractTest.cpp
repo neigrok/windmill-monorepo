@@ -59,11 +59,11 @@ TEST(mcp_every_roadmap_tool_declares_the_grant_level_that_reaches_it) {
                                             "get_progress", "find_nodes"}));
   CHECK_EQ(deletes, (std::vector<std::string>{"delete_tree", "delete_node", "remove_kind"}));
   CHECK_EQ(writes, (std::vector<std::string>{
-                       "patch_nodes", "change_edges", "create_tree", "update_tree", "describe_tree", "create_node", "annotate_node", "rename_node", "set_node_color",
+                       "patch_nodes", "update_nodes", "change_edges", "create_tree", "update_tree", "describe_tree", "create_node", "annotate_node", "rename_node", "set_node_color",
                        "move_node", "connect", "disconnect", "reconnect", "tidy", "add_kind",
                        "rename_kind", "describe_kind", "reorder_kinds", "recolor_kind", "update_kind", "set_progress",
                        "import_subgraph", "prune"}));
-  CHECK_EQ(catalog.size(), std::size_t{33});
+  CHECK_EQ(catalog.size(), std::size_t{34});
 }
 
 TEST(mcp_a_grant_without_delete_never_sees_the_three_destructive_tools) {
@@ -71,7 +71,7 @@ TEST(mcp_a_grant_without_delete_never_sees_the_three_destructive_tools) {
   const ToolCaller author{h.caller, parseToolScope("roadmap:read roadmap:write")};
   const Json::Value visible = h.tools.listTools(author);
 
-  CHECK_EQ(visible.size(), 30u);
+  CHECK_EQ(visible.size(), 31u);
   for (const char* destructive : {"delete_tree", "delete_node", "remove_kind"})
     CHECK(toolNamed(visible, destructive) == nullptr);
   for (const char* ordinary : {"get_tree", "create_node", "disconnect", "prune"})

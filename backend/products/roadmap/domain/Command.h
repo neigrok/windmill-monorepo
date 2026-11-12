@@ -112,14 +112,18 @@ struct Batch { std::vector<Command> commands; };
 constexpr std::size_t kMaxPatchNodes = 200;
 constexpr std::size_t kMaxChangeEdges = 500;
 
+// One row of a node batch. `appendDescription` joins onto the description the node holds and `addLinks` onto its links,
+// each judged against the node as the batch finds it; a row sends neither beside the field it extends.
 struct NodePatch {
   NodeId nodeId;
   std::optional<std::string> label;
   std::optional<std::string> icon;
   std::optional<std::string> description;
+  std::optional<std::string> appendDescription;
   HueChoice hue;
   std::optional<Vec2> position;
   std::optional<std::vector<Link>> links;
+  std::optional<std::vector<Link>> addLinks;
   std::optional<TreeId> opens;  // an empty id clears the tree the node opens
 };
 

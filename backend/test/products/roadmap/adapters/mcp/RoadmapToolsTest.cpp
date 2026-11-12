@@ -5661,8 +5661,9 @@ TEST(mcp_import_subgraph_takes_expected_seq_like_the_other_batch_tools) {
   for (const Json::Value& tool : catalog)
     if (tool["inputSchema"]["properties"].isMember("expectedSeq"))
       expectedSeqOf[tool["name"].asString()] = tool["inputSchema"]["properties"]["expectedSeq"];
-  REQUIRE_EQ(expectedSeqOf.size(), 3u);
+  REQUIRE_EQ(expectedSeqOf.size(), 4u);
   CHECK_EQ(expectedSeqOf.at("import_subgraph"), expectedSeqOf.at("patch_nodes"));
+  CHECK_EQ(expectedSeqOf.at("import_subgraph"), expectedSeqOf.at("update_nodes"));
   CHECK_EQ(expectedSeqOf.at("import_subgraph"), expectedSeqOf.at("change_edges"));
 }
 
@@ -6777,4 +6778,221 @@ TEST(mcp_update_kind_refuses_in_the_words_of_the_earlier_tools) {
            std::string("update_kind: unknown argument \"kindId\". This tool takes: description, hue, id, label, "
                        "treeId."));
   CHECK(h->trees.byId["t"] == stored);
+}
+
+namespace {
+
+// A tree whose kind owner wears gold, holding a — with a description and a link — and b after it, beside a tree t_sub
+// of the caller's that a node may open.
+std::unique_ptr<Harness> nodeTree() {
+  auto h = std::make_unique<Harness>();
+  h->plant("t_sub", h->caller, "", {});
+  CHECK_FALSE(h->call("add_kind", parse(R"({"id":"owner","hue":"gold"})")).isError);
+  CHECK_FALSE(h->call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A","description":"Old.",
+    "links":[{"url":"https://a.example/"}]},{"id":"b","label":"B","prerequisites":["a"]}]})")).isError);
+  return h;
+}
+
+// The progress overlay as the repository holds it, stamps included.
+Json::Value overlayRows(Harness& h) {
+  Json::Value rows(Json::objectValue);
+  for (const auto& [key, entry] : h.progressRepo.byKey)
+    rows[key] = std::string(progressStatusName(entry.status)) + " " + toString(entry.at) +
+                (entry.outOfOrder ? " outOfOrder" : "");
+  return rows;
+}
+
+}
+
+// One update_nodes call renames a node, files it under a kind, appends to its description, adds a link and marks it
+// complete: the tree fields land as ONE op, and the mark lands after them, answered per row in `progress`.
+TEST(mcp_update_nodes_edits_a_node_and_marks_it_in_one_call) {
+  auto h = nodeTree();
+  const std::size_t rows = h->ops.byTree["t"].size();
+  const Json::Int64 seq = body(h->call("get_tree", parse(R"({"includeGuides":false})")))["seq"].asInt64();
+
+  Json::Value expected = parse(R"({"treeId":"t","changedNodeIds":["a"],"unchangedNodeIds":[],"dryRun":false,
+    "applied":true,"diagnosticsClean":true,"introducedDiagnostics":[],
+    "progress":[{"nodeId":"a","status":"complete","prerequisitesMet":true}]})");
+  expected["seq"] = seq + 1;
+  CHECK_EQ(body(h->call("update_nodes", parse(R"({"updates":[{"nodeId":"a","label":"Alpha","kind":"owner",
+    "appendDescription":"More.","addLinks":[{"url":"https://b.example/","label":"B"}],"status":"complete"}]})"))),
+           expected);
+  CHECK_EQ(h->ops.byTree["t"].size(), rows + 1);
+  CHECK_EQ(body(h->call("get_nodes", parse(R"({"nodeIds":["a"],"fields":["id","label","color","kind","description",
+    "links"]})")))["nodes"],
+           parse(R"([{"id":"a","label":"Alpha","color":"gold","kind":"owner","description":"Old.\n\nMore.",
+             "links":[{"url":"https://a.example/"},{"url":"https://b.example/","label":"B"}]}])"));
+  CHECK_EQ(body(h->call("get_progress", kNoArgs))["completed"], parse(R"(["a"])"));
+}
+
+// A mark is the caller's own overlay: a call whose rows carry only marks works on a tree the caller can read and does
+// not own, writing no op, as set_progress does; a call carrying any tree field there is refused whole, and no mark lands.
+TEST(mcp_update_nodes_marks_a_tree_the_caller_reads_and_refuses_a_tree_field_there_whole) {
+  auto h = nodeTree();
+  h->registry.setVisibility(TreeId{"t"}, Visibility::public_);
+  const ToolCaller stranger{uid("stranger"), ToolScope::everything()};
+  const std::size_t rows = h->ops.byTree["t"].size();
+  const StoredTree stored = h->trees.byId["t"];
+  const Json::Int64 seq = body(h->call("get_tree", parse(R"({"includeGuides":false})")))["seq"].asInt64();
+  const auto progressOf = [&] {
+    return body(h->tools.callTool("get_progress", parse(R"({"treeId":"t"})"), stranger))["completed"];
+  };
+
+  Json::Value expected = parse(R"({"treeId":"t","changedNodeIds":[],"unchangedNodeIds":["a"],"dryRun":false,
+    "applied":true,"unchanged":true,"diagnosticsClean":true,"introducedDiagnostics":[],
+    "progress":[{"nodeId":"a","status":"complete","prerequisitesMet":true}]})");
+  expected["seq"] = seq;
+  CHECK_EQ(body(h->tools.callTool("update_nodes", parse(R"({"treeId":"t","updates":[{"nodeId":"a","status":"complete"}]})"),
+                                  stranger)),
+           expected);
+  CHECK_EQ(h->ops.byTree["t"].size(), rows);
+  CHECK_EQ(progressOf(), parse(R"(["a"])"));
+
+  CHECK_EQ(message(h->tools.callTool("update_nodes", parse(R"({"treeId":"t","updates":[{"nodeId":"b","status":"complete"},
+    {"nodeId":"a","label":"Mine"}]})"), stranger)),
+           std::string("update_nodes: this tree belongs to another account. Call list_trees to see the roadmaps you "
+                       "own."));
+  CHECK_EQ(progressOf(), parse(R"(["a"])"));
+  CHECK(h->trees.byId["t"] == stored);
+}
+
+// Each field alone, through update_nodes, lands what its earlier tool lands: on twin trees the stored tree, the op rows
+// and the progress overlay come out equal.
+TEST(mcp_update_nodes_with_one_field_equals_its_earlier_tool) {
+  for (const auto& [earlier, arguments, updates] : std::vector<std::tuple<const char*, const char*, const char*>>{
+           {"rename_node", R"({"nodeId":"a","label":"Alpha"})", R"([{"nodeId":"a","label":"Alpha"}])"},
+           {"set_node_color", R"({"nodeId":"a","color":"sky"})", R"([{"nodeId":"a","color":"sky"}])"},
+           {"set_node_color", R"({"nodeId":"a","kind":"owner"})", R"([{"nodeId":"a","kind":"owner"}])"},
+           {"annotate_node", R"({"nodeId":"a","description":"New."})", R"([{"nodeId":"a","description":"New."}])"},
+           {"annotate_node", R"({"nodeId":"a","appendDescription":"More."})",
+            R"([{"nodeId":"a","appendDescription":"More."}])"},
+           {"annotate_node", R"({"nodeId":"a","icon":"star"})", R"([{"nodeId":"a","icon":"star"}])"},
+           {"annotate_node", R"({"nodeId":"a","links":[{"url":"https://c.example/"}]})",
+            R"([{"nodeId":"a","links":[{"url":"https://c.example/"}]}])"},
+           {"annotate_node", R"({"nodeId":"a","addLinks":[{"url":"https://c.example/","label":"C"}]})",
+            R"([{"nodeId":"a","addLinks":[{"url":"https://c.example/","label":"C"}]}])"},
+           {"annotate_node", R"({"nodeId":"a","opens":"t_sub"})", R"([{"nodeId":"a","opens":"t_sub"}])"},
+           {"set_progress", R"({"nodeId":"a","status":"complete"})", R"([{"nodeId":"a","status":"complete"}])"},
+           {"set_progress", R"({"updates":[{"nodeId":"b","status":"complete","outOfOrder":true},
+              {"nodeId":"a","status":"none"}]})",
+            R"([{"nodeId":"b","status":"complete","outOfOrder":true},{"nodeId":"a","status":"none"}])"}}) {
+    auto before = nodeTree();
+    auto after = nodeTree();
+    CHECK_FALSE(before->call(earlier, parse(arguments)).isError);
+    Json::Value call(Json::objectValue);
+    call["updates"] = parse(updates);
+    CHECK_FALSE(after->call("update_nodes", call).isError);
+    CHECK(before->trees.byId["t"] == after->trees.byId["t"]);
+    CHECK_EQ(opRows(*before), opRows(*after));
+    CHECK_EQ(overlayRows(*before), overlayRows(*after));
+  }
+}
+
+// A field sent as the node holds it is left out, an addLinks url the node holds included, so a row that changes nothing
+// is listed unchanged and a call that lands nothing on the tree says so and writes no op.
+TEST(mcp_update_nodes_leaves_out_what_the_node_holds) {
+  auto h = nodeTree();
+  const std::size_t rows = h->ops.byTree["t"].size();
+  const Json::Int64 seq = body(h->call("get_tree", parse(R"({"includeGuides":false})")))["seq"].asInt64();
+  Json::Value expected = parse(R"({"treeId":"t","changedNodeIds":[],"unchangedNodeIds":["a","b"],"dryRun":false,
+    "applied":true,"unchanged":true,"diagnosticsClean":true,"introducedDiagnostics":[]})");
+  expected["seq"] = seq;
+  CHECK_EQ(body(h->call("update_nodes", parse(R"({"updates":[{"nodeId":"a","label":"A","description":"Old.",
+    "addLinks":[{"url":"https://a.example/"}]},{"nodeId":"b","label":"B","color":"terracotta"}]})"))),
+           expected);
+  CHECK_EQ(h->ops.byTree["t"].size(), rows);
+}
+
+// A stale expectedSeq refuses the whole call, marks included; a dry run applies nothing, previews the tree batch as
+// patch_nodes does and answers no mark rows; a row's either/or pairs and an empty row are refused naming the row.
+TEST(mcp_update_nodes_refuses_stale_calls_whole_and_previews_without_marking) {
+  auto h = nodeTree();
+  const std::size_t rows = h->ops.byTree["t"].size();
+  const StoredTree stored = h->trees.byId["t"];
+  const Json::Int64 seq = body(h->call("get_tree", parse(R"({"includeGuides":false})")))["seq"].asInt64();
+
+  for (const char* updates : {R"([{"nodeId":"a","label":"Alpha","status":"complete"}])",
+                              R"([{"nodeId":"a","status":"complete"}])"}) {
+    Json::Value stale(Json::objectValue);
+    stale["expectedSeq"] = seq - 1;
+    stale["updates"] = parse(updates);
+    CHECK_EQ(message(h->call("update_nodes", stale)),
+             "update_nodes: expectedSeq conflict: requested " + std::to_string(seq - 1) + ", current seq is " +
+                 std::to_string(seq) + ". Nothing changed; read get_nodes or get_tree and retry with the current seq.");
+  }
+
+  Json::Value preview = parse(R"({"treeId":"t","changedNodeIds":["a"],"unchangedNodeIds":["b"],"dryRun":true,
+    "applied":false})");
+  preview["seq"] = seq;
+  CHECK_EQ(body(h->call("update_nodes", parse(R"({"dryRun":true,"updates":[{"nodeId":"a","label":"Alpha",
+    "status":"complete"},{"nodeId":"b","status":"complete"}]})"))),
+           preview);
+
+  for (const auto& [updates, refusal] : std::vector<std::pair<const char*, std::string>>{
+           {R"([{"nodeId":"a","description":"New.","appendDescription":"More."}])",
+            "updates[0]: \"description\" and \"appendDescription\" are both given — pass one: description replaces the "
+            "body, appendDescription joins onto it."},
+           {R"([{"nodeId":"a","links":[],"addLinks":[{"url":"https://c.example/"}]}])",
+            "updates[0]: \"links\" and \"addLinks\" are both given — pass one: links replaces the set, addLinks joins "
+            "onto it."},
+           {R"([])", "updates must contain 1 to 200 node patches"},
+           {R"([{"nodeId":"a"}])",
+            "updates[0] sets nothing — pass at least one of label, color, kind, description, appendDescription, icon, "
+            "links, addLinks, opens, status."}}) {
+    Json::Value call(Json::objectValue);
+    call["updates"] = parse(updates);
+    CHECK_EQ(message(h->call("update_nodes", call)), "update_nodes: " + refusal);
+  }
+  const Json::Value nullOpens = parse(R"({"updates":[{"nodeId":"a","opens":null}]})");
+  const std::string patched = message(h->call("patch_nodes", nullOpens));
+  CHECK(h->call("update_nodes", nullOpens).isError);
+  CHECK_EQ(message(h->call("update_nodes", nullOpens)), "update_nodes" + patched.substr(patched.find(": ")));
+  CHECK_EQ(h->ops.byTree["t"].size(), rows);
+  CHECK(h->trees.byId["t"] == stored);
+  CHECK_EQ(body(h->call("get_progress", kNoArgs))["completed"], parse("[]"));
+}
+
+// The marks land after the tree fields, which have landed whatever becomes of the marks: a progress store that fails
+// there does not fail the call. The reply says so in a fixed sentence, the call's own line is `ok`, and the failure is
+// reported once, under its own name.
+TEST(mcp_update_nodes_whose_marks_fail_after_the_tree_fields_landed_says_so_and_reports_once) {
+  struct Failures : FailureReporter {
+    std::vector<std::string> reports;
+    void report(const std::string&, const std::string&, const std::string&) override {}
+    void reportWrite(const std::string& operation, const std::string& product, const std::string& door,
+                     const std::string& outcome, const std::string&, const std::string& exceptionType) override {
+      reports.push_back(operation + " " + product + " " + door + " " + outcome + " " + exceptionType);
+    }
+  };
+  struct ReporterScope {
+    std::shared_ptr<Failures> failures = std::make_shared<Failures>();
+    ReporterScope() { installWriteReporter(failures); }
+    ~ReporterScope() { installWriteReporter(nullptr); }
+  } reporter;
+  auto h = nodeTree();
+  const Json::Int64 seq = body(h->call("get_tree", parse(R"({"includeGuides":false})")))["seq"].asInt64();
+  CompositeToolHost gate(std::vector<ToolModule>{{h->tools, ""}});
+  std::vector<std::string> lines;
+  installWriteSink([&](const WriteCompletion& line) { lines.push_back(line.operation + " " + line.outcome); });
+
+  h->progressRepo.writesFail = true;
+  const Json::Value receipt = body(gate.callTool(
+      "roadmap_update_nodes", parse(R"({"treeId":"t","updates":[{"nodeId":"a","label":"Alpha","status":"complete"}]})"),
+      h->actor));
+  installWriteSink({});
+  h->progressRepo.writesFail = false;
+
+  Json::Value expected = parse(R"({"treeId":"t","changedNodeIds":["a"],"unchangedNodeIds":[],"dryRun":false,
+    "applied":true,"diagnosticsClean":true,"introducedDiagnostics":[],"progressApplied":false,
+    "progressError":"The marks' outcome is uncertain. Read get_progress before retrying progress changes."})");
+  expected["seq"] = seq + 1;
+  CHECK_EQ(receipt, expected);
+  CHECK_EQ(reporter.failures->reports,
+           (std::vector<std::string>{std::string("roadmap.update_nodes.marks roadmap mcp failed ") +
+                                     typeid(std::runtime_error).name()}));
+  CHECK_EQ(lines, (std::vector<std::string>{"roadmap.update_nodes.marks failed", "mcp.roadmap_update_nodes ok"}));
+  CHECK_EQ(body(h->call("get_nodes", parse(R"({"nodeIds":["a"],"fields":["id","label"]})")))["nodes"],
+           parse(R"([{"id":"a","label":"Alpha"}])"));
+  CHECK_EQ(body(h->call("get_progress", kNoArgs))["completed"], parse("[]"));
 }
