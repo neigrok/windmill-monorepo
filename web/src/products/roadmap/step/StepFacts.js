@@ -25,6 +25,7 @@ export class StepFacts {
 
     this.step = tree.nodesById.get(id);
     this.opening = this.step.opening ?? null;
+    this.marked = progress.completed.has(id);
     this.roadmap = tree.title;
     this.column = COLUMN_OF_STATE[states.get(id)];
     this.toGo = this.column === 'locked' ? owedStepsOf(tree, states, id).length : 0;

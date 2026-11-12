@@ -162,6 +162,10 @@ goes through `countBucket`: `0/1/2-5/6-20/21+`.
 | A state's action | `roadmap_board_state_action` | `state: complete`, `action: share/newStep` |
 | Go into the tree a step opens: the card's pill, the swipe's Open, the toast a C raises, the step page or modal, the Graph's dock, the tablet panel or the phone Graph's bar | `roadmap_tree_open` | `door: pill/swipe/toast/step/dock/panel/bar`, `view: board/graph`, `band: phone/tablet/desktop` |
 | Come back to the roadmap a tree was gone into from, by the Back chip or the browser's Back, once per going in. A return after going Forward into the tree again is an ordinary visit: no `roadmap_tree_back`, the view opens by its usual door, and a step open on that entry is counted as reached by a link | `roadmap_tree_back` | `band: phone/tablet/desktop` |
+| Open the tree picker from a step's Tree section: the + on a step that opens no tree, or Change tree under the section's ⋯. Fork tree pressed on a roadmap the person can only read | `roadmap_tree_attach` | `step: open/fork`, `band: phone/tablet/desktop`, `view: board/graph` |
+| A roadmap address in Find a tree came to one of the person's own roadmaps, one they can only read, or none they can read | `roadmap_tree_attach` | `step: paste`, `outcome: own/readable/unreadable`, `band: phone/tablet/desktop`, `view: board/graph` |
+| A tree attached to a step that opened none, changed for another, or detached, and whether a hand's mark on the step was set aside or returned | `roadmap_tree_attach` | `step: attach/change/detach`, `mark: kept/none`, `band: phone/tablet/desktop`, `view: board/graph` |
+| Undo on the toast of an attach, a change or a detach | `roadmap_tree_attach` | `step: undo`, `band: phone/tablet/desktop`, `view: board/graph` |
 | Open a step | `roadmap_board_step_open` | `surface: modal/page`, `column: locked/upNext/done`, `door: card/graph/activity/step/link` |
 | Step page or modal action | `roadmap_board_step_action` | `surface: modal/page`, `action: complete/completeFromSubtasks/reset/undo/openInGraph/viewBranch/delete/edit/editNote/select` |
 | Step section | `roadmap_board_step_action` | `surface: modal/page`, `action: section`, `section: overview/workspace/history` |
@@ -270,6 +274,9 @@ A step is a thing a reader did or was told. These emit nothing:
 - A step that was open on the roadmap come back to from a tree: it opens as one reached by going back, with no
   `roadmap_board_step_open`.
 - A mark set aside because its step opens a tree: nothing is sent, counted or refused while the pointer stands.
+- The tree picker's Cancel, its search, a row chosen, a list read that failed, and the Tree section's ⋯ opened or
+  closed. A fork made from the picker is `fork_attempt` and `fork_claim`, as from any Fork. Nobody but the tree's
+  holder has the +, the ⋯ or the picker, so a reader, a signed-out device and a lapsed session emit none of these.
 - The read that follows a pointer set or changed while the roadmap is open, when it succeeds or is cut off at its
   ten-second limit: a read cut off reports nothing and leaves the step with nothing said of its tree until a reload.
 - Dismissing a menu, a sheet, Fork or Ask AI; re-picking the order or the shared kind in force; a recolor the session refused;
@@ -311,6 +318,8 @@ function. A report's `route` is a family (`#/app`, `#/settings`), never an addre
 | `roadmap-progress-load` | A server tree's marks, by the rules of `roadmap-tree-load`, or a 200 that is not JSON | The load error and Try again, never a false count |
 | `roadmap-activity-load` | A server tree's activity, by the rules of `roadmap-tree-load`, or a 200 that is not JSON | The room opens with an empty feed |
 | `roadmap-load` | Anything else stopping a load, except a tree neither the server nor this device has | The load error |
+| `roadmap-tree-picker-load` | The tree picker's reads, the person's roadmaps (`GET /v1/trees`) or the roadmap a pasted address names (`GET /v1/trees/{id}`): the server answering 5xx, or a request lost while visible and online. Once per opening of the picker | *Couldn’t load your trees* with Try again, never the empty list |
+| `roadmap-tree-attach` | Attaching, changing or detaching a step's tree, or its Undo, throwing before the write applied | *Couldn’t change the tree. Try again.*; the step is as it was |
 | `roadmap-fork` | Fork, from a roadmap or the gallery: a server failure, or a request lost while visible and online | Fork's own error |
 | `roadmap-share` | Publishing or making private: a server failure, or a request lost while visible and online | The dialog's own error |
 | `roadmap-switcher-rename` | The switcher's rename: a server failure, a request lost while visible and online, or an exception | The old name returns |

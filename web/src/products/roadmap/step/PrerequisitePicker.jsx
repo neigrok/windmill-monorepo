@@ -10,6 +10,32 @@ import {
 } from '../copy.js';
 import './composer.css';
 
+// A picker's search field: the query with its clear button, or the / that reaches it from 744px.
+export function PickerSearch({ inputRef, label, value, phone, onChange, onClear, onKeyDown }) {
+  return (
+    <div className="st-board-picker-search">
+      <Search size={18} strokeWidth={1.8} aria-hidden />
+      <input
+        ref={inputRef}
+        type="search"
+        value={value}
+        placeholder={label}
+        aria-label={label}
+        aria-keyshortcuts="/"
+        autoComplete="off"
+        spellCheck={false}
+        onChange={(event) => onChange(event.target.value)}
+        onKeyDown={onKeyDown}
+      />
+      {value ? (
+        <button type="button" aria-label={PICKER.clearSearch} onClick={onClear}>
+          <X size={18} aria-hidden />
+        </button>
+      ) : !phone && <kbd aria-hidden>/</kbd>}
+    </div>
+  );
+}
+
 export function PrerequisitePicker({ choices, onChoices, draft, layout, headingId, onApply, onCancel, mode = 'create' }) {
   const phone = layout === 'phone';
   const page = layout === 'page';
@@ -66,30 +92,13 @@ export function PrerequisitePicker({ choices, onChoices, draft, layout, headingI
     search.current.focus();
   };
   const searchField = (
-    <div className="st-board-picker-search">
-      <Search size={18} strokeWidth={1.8} aria-hidden />
-      <input
-        ref={search}
-        type="search"
-        value={choices.query}
-        placeholder={LABELS.findStep}
-        aria-label={LABELS.findStep}
-        aria-keyshortcuts="/"
-        autoComplete="off"
-        spellCheck={false}
-        onChange={(event) => onChoices(choices.search(event.target.value))}
-        onKeyDown={(event) => {
-          if (event.key !== 'Backspace' || choices.query || choices.selectedIds.length === 0) return;
-          event.preventDefault();
-          toggle(choices.selectedIds.at(-1));
-        }}
-      />
-      {choices.query ? (
-        <button type="button" aria-label={PICKER.clearSearch} onClick={clear}>
-          <X size={18} aria-hidden />
-        </button>
-      ) : !phone && <kbd aria-hidden>/</kbd>}
-    </div>
+    <PickerSearch inputRef={search} label={LABELS.findStep} value={choices.query} phone={phone}
+      onChange={(query) => onChoices(choices.search(query))} onClear={clear}
+      onKeyDown={(event) => {
+        if (event.key !== 'Backspace' || choices.query || choices.selectedIds.length === 0) return;
+        event.preventDefault();
+        toggle(choices.selectedIds.at(-1));
+      }} />
   );
   const chips = selected && (
     <div className="st-board-picker-chips" tabIndex={-1}>

@@ -14,11 +14,11 @@ point for the component showcase.
 | `i18n/`, `copy.js`, `resume.js`, `reportFailure.js` | The catalogs every visible string reads from; the words and count sentences several surfaces read; the newest roadmap as the home card and the landing offer it back; the static-name Sentry report |
 | `OpeningMarks.jsx` | The marks of a step that opens a tree: one glyph and one bar for the Board, the step, the Graph's chrome and a node's centre |
 | `room/` | What the room holds: the load, the view, progress, the scene, the open step, the tree a step opens and the way back, the row's verbs, the band and who holds the roadmap |
-| `model/` | Graph validation, trunk selection, unlock rules, what a step's tree has come to, legend, workspace and spatial queries. Independent of React and WebGL |
+| `model/` | Graph validation, trunk selection, unlock rules, what a step's tree has come to and what attaching one sets aside, legend, workspace and spatial queries. Independent of React and WebGL |
 | `identity/` | The row above both views: title, roadmap sheet and switcher, view switch |
 | `guide/` | The tree's guide: its draft and bound, who sees it and where a save goes, its entry on the tree (a card from 744px, a row on phones) and the note it opens |
 | `board/` | Query and columns, regroup, held actions, the shared toast, card gestures and selection |
-| `step/` | The step page and modal, workspace, composer and picker, and the step's address |
+| `step/` | The step page and modal, workspace, composer and its picker, the tree picker and its choices, and the step's address |
 | `graph/`, `graph/tree/`, `graph/tablet/` | Canvas chrome, docks, writes, selection and what a changed lattice does to the picture; the desktop step panel; the tablet's panel |
 | `layout/` | Deterministic layout engines behind `index.js` |
 | `scene/` | WebGL batches, camera, DOM overlays, picking and pointer tools |
@@ -182,8 +182,39 @@ on the entry come back to opens as one reached by going back. Surfaces that rend
 `TreeDoor` context (`useTreeDoor`); the toast a C raises takes it from the Board's acts. Each names its door from
 `TREE_DOORS`, and `open` refuses any other.
 
-Attaching and detaching a tree, the tree picker, the guides of the trees above and a signed-out device's own count are
-not built.
+The guides of the trees above and a signed-out device's own count are not built.
+
+### Attaching, changing and detaching
+
+The person who holds the tree makes the pointer on the step itself, never in Edit step: the same holder a tree visit
+acts for, where the roadmap's session can take a write (loaded, and not rebaselining). The room hands the step
+`treeActs` (`{ view, trees, set }`) for that person and null for anyone else, so a reader, a device's copy with nobody
+signed in and a lapsed session see no control. With it the Tree section stands on every step: *None* and a + on one
+that opens no tree, and a ⋯ on its heading on one that does, the heading and the ⋯ alone while the tree is `unread`.
+
+The + and Change tree open `TreePicker`: a page in the step modal from 744px and a full-screen page over the Shell
+on phones, with the field and the commit in the reach band. `TreeChoices` is its model: the person's roadmaps on the
+server but the one they are in (`listServerTrees`, the switcher's order), one choice, the tree the step opens
+arriving chosen, and Find a tree narrowing by title as the prerequisites picker does. Text that is a roadmap address
+(`pastedTreeId`: `…/#/app/<id>` or `…/t/<id>`) selects that row where it is one of theirs. Any other address is read
+once (`readTreeCard`): a roadmap they can only read is the one blocked row and Fork tree is the only commit, and one
+they cannot read says so. Fork runs `ForkDoor`, which hands the copy back instead of opening it; the list is read
+again and the copy is a row to choose, so attaching stays its own act. A list or an address that cannot be read says
+*Couldn’t load your trees* with Try again and reports `roadmap-tree-picker-load` once per opening.
+
+One line under the rows says what happens to a hand's mark. `treeAttachment` in `model/UnlockRules.js` answers it
+from the tree and the marks the Board derives from: whether the step holds a mark, and how many steps up next lock
+again once the step is done no longer, none where the tree chosen is complete. The ⋯ is a menu under the heading from
+744px, standing in the step's layer so the scrolling step does not clip it, and a sheet on phones; its footnote names
+the mark only where one was set aside.
+
+Attach and Detach act at once. `BoardActs.setTree` dispatches `SetNodeTree` over either view and raises one toast in
+the room's seat (*Tree attached*, *Tree detached · your mark is back*, or *Tree detached* where the step held no
+mark) whose Undo reverts the gesture's receipt; the status row adds nothing. The mark is not written: it stays on the
+device, set aside while the pointer stands and owed again once it goes. The opened tree's facts follow the pointer as
+any pointer's do, so the row arrives with the room's next read. Escape leaves the picker, the menu or the sheet
+before the step, and focus returns to the + or the ⋯, whichever then stands. A loop's and a missing tree's lines end
+with the way out (*Detach one side.*, *Choose another, or detach it.*) for the person who has the ⋯.
 
 ## The identity row
 
@@ -582,7 +613,7 @@ so that press cannot replace its Undo or release the delete early; other Undo to
 where it waits out the regroup; a Graph toast over the canvas, leaving with it; anything else over whatever is
 showing. `BoardToast` renders them all but Ask AI's answers, which keep `tending/TendToast.jsx` and its Why?. A plan pasted with
 ⌘V announces on whichever view took it, so its toast and Undo stand there, and the composer's count is what the graft adds.
-Complete, Create and Recolor hold six seconds and Delete nine. Remote completions keep their announcements.
+Complete, Create, Recolor and a tree attached or detached hold six seconds and Delete nine. Remote completions keep their announcements.
 
 Complete toast text reveals the single newly Up next step, or the completed step when zero or several unlock;
 Create reveals the new step. Reveal clears only query dimensions that hide its target and preserves sort.

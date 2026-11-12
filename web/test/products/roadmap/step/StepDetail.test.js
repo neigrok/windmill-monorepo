@@ -139,7 +139,8 @@ function start() {
         }
         if (id === '\0step-detail-report') {
           return 'export function reportRoadmapFailure(operation) { (window.reports ??= []).push(operation); }\n'
-            + 'export function reportUnexpectedFailure(operation) { (window.reports ??= []).push(operation); }';
+            + 'export function reportUnexpectedFailure(operation) { (window.reports ??= []).push(operation); }\n'
+            + 'export function pageWatching() { return true; }';
         }
       },
       configureServer(server) {

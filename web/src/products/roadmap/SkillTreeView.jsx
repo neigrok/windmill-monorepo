@@ -34,6 +34,7 @@ import { emptyWorkspace } from './model/NodeWorkspace.js';
 import { UnlockRules } from './model/UnlockRules.js';
 import { PasteComposer } from './paste/PasteComposer.jsx';
 import { PresenceLayer } from './presence/PresenceLayer.jsx';
+import { listServerTrees, readTreeCard } from './persistence/TreeRegistry.js';
 import { reportRoadmapFailure } from './reportFailure.js';
 import { toastSeat, useRoadmapToast } from './room/useRoadmapToast.js';
 import { useRoomAuthority } from './room/useRoomAuthority.js';
@@ -231,8 +232,15 @@ export function SkillTreeView({ treeId, demo = false }) {
     onReveal: (id) => setBoardReveal((current) => ({ id, key: (current?.key ?? 0) + 1 })),
     onQuiet: () => setBoardQuiet((current) => current + 1),
     openTree: treeVisit.open,
+    band: breakpoint,
     track, emit, report: reportRoadmapFailure,
   });
+  // Attaching, changing and detaching the tree a step opens: the holder's, while the session can take a write.
+  const treeActs = holder !== null && syncSession?.ready && !syncSnapshot?.rebaselining ? {
+    view: boardActive ? 'board' : 'graph',
+    trees: { list: listServerTrees, read: readTreeCard },
+    set: (id, opens) => boardActs.setTree(id, opens),
+  } : null;
   // Coming back from a step's tree lands on that step once the roadmap and its view stand: selected and in view on either one.
   const landedRef = useRef(false);
   useEffect(() => {
@@ -479,6 +487,7 @@ export function SkillTreeView({ treeId, demo = false }) {
             editable={owner}
             deletable={deletable(boardTree, [detailId])}
             onEdit={owner ? (id) => composerDoor.openEdit(id) : undefined}
+            treeActs={treeActs}
             stepLink={stepShareUrl && `${stepShareUrl}${hashWithStep('', detailId)}`}
             workspace={workspaceByNode[detailId] ?? emptyWorkspace()}
             workspaceActions={workspaceActions}

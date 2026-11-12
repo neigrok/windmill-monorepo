@@ -636,11 +636,6 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   tree loops back or has no steps keeps the loop's or the empty tree's line. The tablet band and C on a card whose tree
   loops back (*Won’t complete by itself*) or is not found (*Can’t complete yet*) follow the desktop boards. 28.38, a
   tree removed since the roadmap loaded, cannot be told from what the server answers and is not built.
-- **Section 28 · two sentences wait for their actions.** 28.36 and 28.41 end the loop's line with *Detach one side.*
-  and 28.39 and 28.42 end the missing tree's with *Choose another, or detach it.* The web has neither detach nor the
-  picker, so the lines stop at the fact (*A loop with … : this never completes.*, *This tree can’t be found.*). Both
-  sentences return with the landing that builds detach and the picker; until then a step whose tree loops back or is
-  not found cannot be completed on the web.
 - **Section 28 · gaps ruled to stand.** The card's pill is not a control of its own: a pointer press goes in, and the
   keyboard's way is the step and its Open tree. Focus after going into a tree lands on the body. An opened tree
   deleted since the load shows the generic load error, with no way back but the browser's. During an outage
@@ -663,6 +658,28 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   (*For Learn to sail · 5 trees*) where 28.14 has a caption, lists My life and reads Coast trip as *0 of 5 done*.
   Journey 10 adds one toast Journey 3 does not draw, *Tree detached*, for a step that held no mark. Its four parts
   (Tree picker row, Tree heading, Tree menu, Tree sheet) sit in the journey's parts frame, not in Components.
+- **Section 28 · making it on today's step page, states with no board (28.54–28.59, 28.61–28.66).** The person owns
+  no other tree: the picker says *You have no other trees yet.*, Attach is disabled and the fork line stays. Find a
+  tree matches nothing: *No trees match “…”* with Clear search, and *Your selection is kept.* where a row is chosen,
+  as the prerequisites picker does. The list could not be loaded, or the roadmap a pasted address names could not be
+  read: *Couldn’t load your trees* with Try again, never the empty state. A pasted address that names no roadmap the
+  person can read: *No roadmap you can read is at that address.*, and the list and the choice are as they were. A
+  pasted address of the roadmap the person is in matches nothing. The hand-mark line has three forms: the drawn one
+  with its count, *Your Done mark is set aside while it opens a tree.* where no step locks again (the tree chosen is
+  complete, or the step's tree is being changed), and no line where the step holds no mark; before a row is chosen it
+  counts as for a tree that is not complete. The ⋯ footnote drops the tree's name where none is known (*This step
+  becomes ordinary.*). A write the session would not take says *Couldn’t change the tree. Try again.* in the toast and
+  leaves the picker open. A step held in a pending delete has no page, and a roadmap whose session cannot take a
+  write shows no + and no ⋯, as its Edit step cannot save. For about a second after Attach, until the room has read
+  the tree, the section shows its heading and ⋯ with no row, and it stays so until a reload if that read fails.
+- **Section 28 · making it on today's step page, against the boards.** The blocked row on 28.56 and 28.63 reads *By
+  Maya · you can read it*; no server answer names a roadmap's author, so the row reads *Someone else’s · you can read
+  it* and keeps the drawn sentence for an answer that names one. The phone sheet on 28.65 keeps the sheet shell's
+  close button beside the tree's name. 28.39 and 28.42 draw Choose tree where Complete sat; the web offers Change tree
+  under the section's ⋯ and no button in the band. The loop's and the missing tree's ways out (*Detach one side.*,
+  *Choose another, or detach it.*) show only to the person who has the ⋯; a lapsed session and a device's copy with
+  nobody signed in keep the fact alone. Crossing 744px with the tree picker open starts it again: the list is read again and the choice is gone. 28.60 and 28.67, the
+  picker on a device with nobody signed in, are not built.
 - **Phone step page · 20.01 against the build.** 🚀 20.01 (397:28208) draws the counts and chevrons short of the right
   edge, a two-colour identity rail and no Shell row; the build runs them to the edge under the Shell row.
 - **Tree switcher · delete row.** The shipped confirmation is one line with an ellipsis (`confirmCopy` in

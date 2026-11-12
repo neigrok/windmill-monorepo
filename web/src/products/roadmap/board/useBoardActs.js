@@ -3,7 +3,7 @@ import { HeldDelete, StepSelection, completionOutcome, creationOutcome, countBuc
 import { sharedKind } from '../model/bulkSelection.js';
 import { SkillTree } from '../model/SkillTree.js';
 import { UnlockRules, takesMark } from '../model/UnlockRules.js';
-import { LABELS, SAVE_FAILURE, TREE, deleteFailedToast, treeBand } from '../copy.js';
+import { LABELS, SAVE_FAILURE, TREE, TREE_TOAST, deleteFailedToast, treeBand } from '../copy.js';
 import { BoardQuery } from './Board.js';
 
 export class BoardComposer {
@@ -156,6 +156,41 @@ export class BoardActs {
       surface: 'board', act: 'tree', reveal: null, holdMs: 6000,
       ...(step.opening.leads && c.openTree ? { action: { label: TREE.open, run: () => c.openTree(step.id, 'toast') } } : {}),
     });
+  }
+
+  // Sets the tree a step opens from its page over either view, `''` for none, and says so with its Undo. A mark the
+  // step holds is set aside while the pointer stands and is back once it goes.
+  setTree(id, opens) {
+    const c = this.collaborators;
+    if ((!c.active && !c.graphActive) || !c.owner || !c.tree) return { ok: false };
+    const tree = this.held ? this.held.projected(c.tree) : c.tree;
+    const step = tree.nodesById.get(id);
+    if (!step) return { ok: false };
+    const view = c.active ? 'board' : 'graph';
+    const mark = c.progress.completed.has(id) ? 'kept' : 'none';
+    let receipt = null;
+    try {
+      c.onQuiet();
+      receipt = c.session?.dispatch({ kind: 'SetNodeTree', id, opens }) ?? null;
+    } catch (error) {
+      c.report('roadmap-tree-attach', error);
+    }
+    if (!receipt) {
+      c.showToast(TREE_TOAST.failed, { act: 'notice' });
+      return { ok: false };
+    }
+    const detached = mark === 'kept' ? TREE_TOAST.detachedMarkBack : TREE_TOAST.detached;
+    c.showToast(opens ? TREE_TOAST.attached : detached, {
+      act: opens ? 'attach' : 'detach', reveal: null, holdMs: 6000,
+      action: receiptUndo({
+        session: c.session, receipt,
+        before: () => this.collaborators.onQuiet(),
+        onReverted: () => this.collaborators.track('roadmap_tree_attach', { step: 'undo', band: this.collaborators.band, view }),
+        onFailure: (error) => this.collaborators.report('roadmap-tree-attach', error),
+      }),
+    });
+    c.track('roadmap_tree_attach', { step: !opens ? 'detach' : step.opens ? 'change' : 'attach', band: c.band, view, mark });
+    return { ok: true };
   }
 
   create(request) {

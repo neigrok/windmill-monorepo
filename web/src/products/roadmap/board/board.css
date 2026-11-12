@@ -406,7 +406,9 @@
 }
 .st-board-toast--delete,
 .st-board-toast--notice,
-.st-board-toast--tree {
+.st-board-toast--tree,
+.st-board-toast--attach,
+.st-board-toast--detach {
   border-left-color: var(--text-secondary);
 }
 .st-board-toast.is-leaving {

@@ -157,3 +157,17 @@ test('the subtask offer never offers Complete on a step that opens a tree, whate
   }), openings.map(() => ({ column: 'upNext', offers: false })));
   assert.equal(offersCompletion(all, new StepFacts(myYear(openings[0]), { completed: new Set(), completedAt: {} }, 'plan')), true);
 });
+
+test('a step says whether it holds a hand’s mark, set aside or not: with a tree, without one, and with none made', () => {
+  const opening = Opening.fromWire({ treeId: 't_sail', title: 'Learn to sail', state: 'open', done: 3, total: 8, loop: false });
+  const year = (sail) => new SkillTree({ id: 't_year', title: 'My year', nodes: [
+    { id: 'plan', label: 'Plan the year', prerequisites: [] },
+    { id: 'sail', label: 'Learn to sail', prerequisites: ['plan'], ...sail },
+  ] });
+  const progress = { completed: new Set(['plan', 'sail']), completedAt: {} };
+
+  assert.deepEqual(['plan', 'sail'].map((id) => new StepFacts(year({}), progress, id).marked), [true, true]);
+  const aside = new StepFacts(year({ opens: 't_sail', opening }), progress, 'sail');
+  assert.deepEqual({ marked: aside.marked, column: aside.column, takesMark: aside.takesMark }, { marked: true, column: 'upNext', takesMark: false });
+  assert.equal(new StepFacts(year({ opens: 't_sail', opening }), { completed: new Set(['plan']), completedAt: {} }, 'sail').marked, false);
+});
