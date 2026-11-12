@@ -210,11 +210,11 @@ The table uses product-local names; external MCP prefixes each with `roadmap_`.
 | read | `get_health` | tidiness metrics + 0–100 score (needs a valid DAG); `crossBranch` skips edges touching a `crossBranchExempt` kind and reports them as `crossBranchExempt` |
 | read | `get_progress` | the caller's completed node ids, and `outOfOrder` — the subset of completed whose set_progress carried `outOfOrder: true` |
 | read | `find_nodes` | search by `color`/`kind`, the derived `state`, and/or a `query` substring (id + label + description), best match first — `{state: "available"}` is the frontier |
-| edit | `patch_nodes` | 1–200 existing nodes, replacement fields (`opens` among them) with omission preservation, full-batch validation, optional `expectedSeq` and `dryRun` |
+| edit | `patch_nodes` | 1–200 existing nodes, replacement fields (`opens` among them, and a hue as `color` or legend `kind`) with omission preservation, full-batch validation, optional `expectedSeq` and `dryRun` |
 | edit | `change_edges` | 1–500 combined additions/removals, existing endpoints for additions, absent removals are no-ops, optional `expectedSeq` and `dryRun` |
-| edit | `create_node` | add a node — `prerequisites[]`, `description`, `links`, `opens` all optional |
+| edit | `create_node` | add a node — its hue as `color` or legend `kind`, `prerequisites[]`, `description`, `links`, `opens` all optional; answers `id` and the `kind` it wears |
 | edit | `annotate_node` | set a node's `description` — or `appendDescription`, which joins onto the existing body after a blank line, the cap held against the result; one of the two — its `icon` (`""` clears it, which is how an `empty-icon` smell is fixed), its `links` and/or the tree it `opens` (`""` clears it) |
-| edit | `rename_node` · `set_node_color` · `move_node` | content edits |
+| edit | `rename_node` · `set_node_color` · `move_node` | content edits; `set_node_color` takes `color` or legend `kind` and answers the `kind` the node wears |
 | edit | `connect` · `reconnect` | prerequisite-edge edits |
 | edit | `disconnect` | remove edges: one `from`+`to` or `edges: [{from,to}]` (1..500), exactly one form; one op, one seq, all or nothing; `removed` counts the edges that were present |
 | edit | `delete_node` | tombstone nodes: one `nodeId` or `nodeIds` (1..200), exactly one form; a missing id refuses the whole call naming each; one op, one seq. `prune: true` also drops every edge touching a deleted node and clears the caller's marks on it, under the delete grant; receipt carries `ids` and `pruned: {edges, progress}` |
@@ -284,6 +284,24 @@ Apply action for routine proposals; annotations describe each tool's effects.
   cut at a word and ellipsized when anything was cut.
 - **`kind` is the legend join** — the kind id whose hue equals the node's `color`, omitted from a
   node no kind claims. A `fields` value on `get_tree` and `find_nodes`, never in a default.
+  `create_node` and `set_node_color` answer `kind` too: the kind the write named, which wears the
+  node's hue, or, for a write that named none, the same join over the hue it landed.
+
+## A node's hue: `color` or `kind`
+
+`create_node`, `set_node_color`, each `patch_nodes` row and each `import_subgraph` node name the
+node's hue as a `color`, as a legend `kind` id, or as both when they agree. A `kind` lands as the
+hue that kind wears in the node's `color` register: the node stores no kind of its own, so a
+`recolor_kind` repaints it with the rest of the kind. The kind is read off the room's own legend
+under the strand the write then takes — `TreeRoom::resolveHue` for `create_node` and
+`set_node_color`, `planNodePatches` for a patch, `TreeRoom::resolveKinds` for an import, all over
+`resolveHue` in `domain/Legend` — so it is never read off a legend a concurrent `recolor_kind`
+could change before the write lands. An import reads the legend its batch leaves (the tree's,
+with the batch's own `kinds[]` upserted), so one batch can add a kind and file nodes under it,
+and a node that names a kind carries its colour register. A kind the legend does not hold refuses
+the whole call, naming the argument path, the id and every kind id the legend holds (or that it
+holds none, and `roadmap_add_kind`); a `color` beside a `kind` that wears another hue refuses it
+naming both. A node that names neither keeps its colour, and a new one is terracotta.
 
 ## `opens`
 

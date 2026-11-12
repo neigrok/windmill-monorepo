@@ -54,6 +54,11 @@ a `roadmap_patch_nodes` row or a `roadmap_import_subgraph` node takes that tree'
 it. Reads that ask for the `opens` field answer the tree's id, title and `state` (`complete` or
 `open`), on a tree you own.
 
+A node's hue is a `color` or a legend `kind`: `roadmap_create_node`, `roadmap_set_node_color`,
+`roadmap_patch_nodes` and the nodes of `roadmap_import_subgraph` take either, and a `kind` lands as
+the hue that kind wears. `roadmap_create_node` and `roadmap_set_node_color` answer the `kind` the node
+wears.
+
 `roadmap_patch_nodes` preserves omitted fields and replaces supplied values, including descriptions
 and links. `roadmap_annotate_node`'s append form repeats text when retried. `roadmap_change_edges`
 requires existing endpoints for additions; removing an absent edge is a no-op. Both batch edit tools
