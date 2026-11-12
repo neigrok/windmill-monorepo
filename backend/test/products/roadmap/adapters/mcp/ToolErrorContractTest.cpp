@@ -523,7 +523,7 @@ TEST(mcp_a_silent_no_op_is_refused_by_name) {
   CHECK(nothing.isError);
   CHECK_EQ(message(nothing),
            std::string("annotate_node: nothing to set — pass at least one of \"description\", "
-                       "\"appendDescription\", \"icon\", \"links\", \"opens\"."));
+                       "\"appendDescription\", \"icon\", \"links\", \"addLinks\", \"opens\"."));
 
   Json::Value halfPosition(Json::objectValue);
   halfPosition["label"] = "Half";
@@ -1072,7 +1072,7 @@ TEST(mcp_an_opens_that_is_no_tree_id_is_refused_by_its_path_and_a_null_is_absent
 
   CHECK_EQ(message(h.call("annotate_node", parse(R"({"nodeId":"a","opens":null})"))),
            std::string("annotate_node: nothing to set — pass at least one of \"description\", "
-                       "\"appendDescription\", \"icon\", \"links\", \"opens\"."));
+                       "\"appendDescription\", \"icon\", \"links\", \"addLinks\", \"opens\"."));
   CHECK_FALSE(h.call("create_node", parse(R"({"id":"b","label":"B","opens":null})")).isError);
   CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"c","opens":null}]})")).isError);
   CHECK_EQ(body(h.call("get_tree", parse(R"({"fields":["id","opens"]})")))["tree"]["nodes"],

@@ -139,6 +139,10 @@ std::variant<NodePatchPlan, std::string> planNodePatches(
 std::variant<EdgeChangePlan, std::string> planEdgeChanges(
     const LooseGraph& graph, const EdgeChanges& changes);
 
+// `held` with `added` joined on in the order sent; a held url keeps its place and takes a sent label.
+std::variant<std::vector<Link>, std::string> withLinksAdded(const std::vector<Link>& held,
+                                                            const std::vector<Link>& added, const std::string& path);
+
 void merge(LooseGraph& graph, Legend& legend, const Command& command, const Hlc& at);
 
 // Server-authoritative validation before a command is admitted to the log. A graph command is
