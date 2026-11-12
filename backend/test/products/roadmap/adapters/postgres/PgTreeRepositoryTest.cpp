@@ -18,6 +18,7 @@
 #include <chrono>
 #include <cstdlib>
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -478,7 +479,8 @@ TEST(pg_opened_from_answers_every_standing_tree_of_the_owners_the_pointers_lead_
   clear();
 }
 
-// The whole path over the real repositories: the owner's mark refused and judged, a second reader's recorded.
+// The whole path over the real repositories: the owner's mark refused and judged, a second reader's recorded, and
+// the owner's marks as a reader is shown them, off the budgeted statement.
 TEST(pg_a_node_follows_the_tree_it_opens_takes_no_mark_from_its_owner_and_the_registry_list_counts_it) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -526,6 +528,8 @@ TEST(pg_a_node_follows_the_tree_it_opens_takes_no_mark_from_its_owner_and_the_re
   CHECK_EQ(test::body(call(kTree, kSam, "set_progress", R"({"nodeId":"next","status":"complete"})")),
            parse(R"({"nodeId":"next","status":"complete","prerequisitesMet":false})"));
   CHECK_EQ(test::body(call(kTree, kSam, "get_tree", R"({"fields":["id","status","state","opens"]})"))["tree"]["nodes"][0], open[0]);
+  const std::map<UserId, std::map<TreeId, std::map<NodeId, TreeId>>> shared{{kSam, {{kTree, registry.open(kTree)->pointers()}}}};
+  CHECK(progress.shownToReaders(shared, "rest").at(kTree).completed == std::set<NodeId>{NodeId{"next"}});
 
   CHECK_FALSE(call(kFork, kSam, "set_progress", R"({"nodeId":"s","status":"complete"})").isError);
 
@@ -538,6 +542,7 @@ TEST(pg_a_node_follows_the_tree_it_opens_takes_no_mark_from_its_owner_and_the_re
   CHECK_EQ(test::body(call(kTree, kEve, "get_tree", R"({"fields":["id","status","state","opens"]})"))["tree"]["nodes"],
            parse(R"([{"id":"idea","status":"none","state":"available"},{"id":"next","status":"none","state":"locked"}])"));
   CHECK(counts() == (std::map<std::string, std::string>{{kTree.str(), "2/2"}, {kFork.str(), "1/1"}}));
+  CHECK(progress.shownToReaders(shared, "rest").at(kTree).completed == (std::set<NodeId>{NodeId{"idea"}, NodeId{"next"}}));
   CHECK_EQ(test::body(call(kTree, kEve, "set_progress", R"({"nodeId":"idea","status":"complete"})")),
            parse(R"({"nodeId":"idea","status":"complete","prerequisitesMet":true})"));
   CHECK_EQ(test::body(call(kTree, kEve, "get_tree", R"({"fields":["id","status","state","opens"]})"))["tree"]["nodes"],

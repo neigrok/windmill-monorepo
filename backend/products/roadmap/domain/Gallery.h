@@ -13,9 +13,9 @@
 
 namespace wm {
 
-// A candidate for the public wall. The overlay is the OWNER's, not the reader's; `sourceTitle`
-// arrives already resolved, because whether a source may be named at all is a privacy rule the
-// repository owns.
+// A candidate for the public wall. The overlay is the OWNER's, not the reader's, as a reader is shown
+// it (`readerView`, domain/OpenedTrees.h); `sourceTitle` arrives already resolved, because whether a
+// source may be named at all is a privacy rule the repository owns.
 struct WallCandidate {
   TreeData data;
   UserId owner;

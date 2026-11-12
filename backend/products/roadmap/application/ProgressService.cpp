@@ -21,9 +21,7 @@ ProgressReceipt ProgressService::mark(const TreeId& tree, const std::map<NodeId,
                                       const std::vector<ProgressWrite>& writes, std::uint64_t receivedAtMs) {
   ProgressReceipt receipt;
   if (writes.empty()) return receipt;
-  std::set<TreeId> opened;
-  for (const auto& [node, target] : pointers) opened.insert(target);
-  const OpenedTrees standing(trees_.openedFrom(user, opened));
+  const OpenedTrees standing(trees_.openedFrom(user, treesOpenedBy(pointers)));
   const std::set<NodeId> following = standing.following(pointers);
   std::vector<ProgressUpdate> updates;
   for (const ProgressWrite& write : writes)
@@ -99,31 +97,36 @@ Progress ProgressService::progressOf(const TreeId& treeId, const UserId& user) {
   return repo_.load(treeId, user);
 }
 
-std::map<TreeId, Progress> ProgressService::shownToReaders(const UserId& owner,
-                                                           const std::map<TreeId, std::map<NodeId, TreeId>>& trees,
-                                                           const std::string& door) {
-  std::set<TreeId> opened;
-  for (const auto& [tree, pointers] : trees)
-    for (const auto& [node, target] : pointers) opened.insert(target);
-  // With no pointer among them nothing is followed, and every row is the stored one.
-  std::optional<OpenedTrees> followed{OpenedTrees({})};
-  if (!opened.empty()) {
-    WriteObservation observation{"roadmap.progress.follow", "roadmap", door};
-    try {
-      followed = OpenedTrees(trees_.openedFrom(owner, opened, kReaderFollowBudget));
-      observation.finish();
-    } catch (const std::bad_alloc&) {
-      throw;
-    } catch (const FollowTimedOut&) {
-      followed.reset();
-      observation.finish("timeout");
-    } catch (const std::exception& failure) {
-      followed.reset();
-      observation.fail(failure);
-    }
-  }
+std::map<TreeId, Progress> ProgressService::shownToReaders(
+    const std::map<UserId, std::map<TreeId, std::map<NodeId, TreeId>>>& treesByOwner, const std::string& door) {
   std::map<TreeId, Progress> shown;
-  for (const auto& [tree, pointers] : trees) shown.emplace(tree, readerView(repo_.load(tree, owner), pointers, followed));
+  std::optional<WriteObservation> observation;
+  std::string outcome = "ok";
+  bool unread = false;
+  for (const auto& [owner, trees] : treesByOwner) {
+    std::set<TreeId> opened;
+    for (const auto& [tree, pointers] : trees) opened.merge(treesOpenedBy(pointers));
+    std::optional<OpenedTrees> followed;
+    if (opened.empty()) {
+      // No pointer among this owner's trees: nothing is followed, and every row is the stored one.
+      followed.emplace(std::map<TreeId, OpenedTree>{});
+    } else if (!unread) {
+      if (!observation) observation.emplace("roadmap.progress.follow", "roadmap", door);
+      try {
+        followed.emplace(trees_.openedFrom(owner, opened, kReaderFollowBudget));
+      } catch (const std::bad_alloc&) {
+        throw;
+      } catch (const FollowTimedOut&) {
+        outcome = "timeout";
+        unread = true;
+      } catch (const std::exception& failure) {
+        observation->reportFailure(failure);
+        unread = true;
+      }
+    }
+    for (const auto& [tree, pointers] : trees) shown.emplace(tree, readerView(repo_.load(tree, owner), pointers, followed));
+  }
+  if (observation) observation->finish(outcome);
   return shown;
 }
 

@@ -314,7 +314,7 @@ void TreeApi::getProgress(const drogon::HttpRequestPtr& req, HttpCallback&& call
     callback(jsonResponse(toJson(progress_->progressOf(tree, *owner))));
     return;
   }
-  callback(jsonResponse(toJson(progress_->shownToReaders(*owner, {{tree, pointers}}, "rest").at(tree))));
+  callback(jsonResponse(toJson(progress_->shownToReaders({{*owner, {{tree, pointers}}}}, "rest").at(tree))));
 }
 
 void TreeApi::getActivity(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId) {

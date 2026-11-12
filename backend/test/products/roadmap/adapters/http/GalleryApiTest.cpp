@@ -387,15 +387,20 @@ TEST(the_wall_counts_a_step_that_opens_a_tree_by_the_owners_derived_completion_i
   CHECK_EQ(h.trees->openedBudgets, (std::vector<std::optional<std::chrono::milliseconds>>(2, std::chrono::milliseconds{750})));
 }
 
-// The wall is not the follow's to fail: an owner whose trees could not be read in time is counted without the steps that
-// open a tree, so none is counted done that may not be, and every other owner's card is as it would be.
-TEST(a_wall_whose_follow_fails_or_times_out_still_answers_and_counts_no_step_that_opens_a_tree) {
+// The wall is not the follow's to fail or to wait on: after one that fails or runs out of time no other owner is
+// followed, and an owner left unread is counted without the steps that open a tree, so none is counted done that may
+// not be. An owner whose trees open nothing is counted as ever.
+TEST(a_wall_whose_follow_fails_or_times_out_still_answers_follows_no_further_and_counts_no_step_that_opens_a_tree) {
   Harness h;
   const UserId ada{"ada"};
   const UserId bo{"bo"};
+  const UserId cy{"cy"};
   h.seedSteps("t_ada_done", ada, Visibility::private_, {{"d", ""}});
   h.seedSteps("t_ada", ada, Visibility::public_, {{"done", "t_ada_done"}, {"marked", "t_ada_done"}, {"plain", ""}});
   h.seedSteps("t_bo", bo, Visibility::public_, {{"a", ""}, {"b", ""}, {"c", ""}});
+  h.seedSteps("t_cy_done", cy, Visibility::private_, {{"d", ""}});
+  h.seedSteps("t_cy", cy, Visibility::public_, {{"done", "t_cy_done"}, {"b", ""}, {"c", ""}});
+  h.progress->setStatus(TreeId{"t_cy_done"}, cy, NodeId{"d"}, ProgressStatus::complete, false, Hlc{800, 0, "cy"}, 800);
   h.progress->setStatus(TreeId{"t_ada_done"}, ada, NodeId{"d"}, ProgressStatus::complete, false, Hlc{800, 0, "ada"}, 800);
   h.progress->setStatus(TreeId{"t_ada"}, ada, NodeId{"marked"}, ProgressStatus::complete, false, Hlc{900, 0, "ada"}, 900);
   h.progress->setStatus(TreeId{"t_ada"}, ada, NodeId{"plain"}, ProgressStatus::complete, false, Hlc{901, 0, "ada"}, 901);
@@ -414,16 +419,19 @@ TEST(a_wall_whose_follow_fails_or_times_out_still_answers_and_counts_no_step_tha
   });
 
   const std::map<std::string, int> followed = doneOnTheWall();
+  CHECK_EQ(h.trees->openedReads.size(), 2u);
   h.trees->budgetedReadsTimeOut = true;
   const std::map<std::string, int> timedOut = doneOnTheWall();
+  CHECK_EQ(h.trees->openedReads.size(), 3u);
   h.trees->budgetedReadsTimeOut = false;
   h.trees->openedReadsFail = true;
   const std::map<std::string, int> failed = doneOnTheWall();
+  CHECK_EQ(h.trees->openedReads.size(), 4u);
   installWriteSink({});
 
-  CHECK(followed == (std::map<std::string, int>{{"t_ada", 3}, {"t_bo", 1}}));
-  CHECK(timedOut == (std::map<std::string, int>{{"t_ada", 1}, {"t_bo", 1}}));
-  CHECK(failed == (std::map<std::string, int>{{"t_ada", 1}, {"t_bo", 1}}));
+  CHECK(followed == (std::map<std::string, int>{{"t_ada", 3}, {"t_bo", 1}, {"t_cy", 1}}));
+  CHECK(timedOut == (std::map<std::string, int>{{"t_ada", 1}, {"t_bo", 1}, {"t_cy", 0}}));
+  CHECK(failed == (std::map<std::string, int>{{"t_ada", 1}, {"t_bo", 1}, {"t_cy", 0}}));
   CHECK_EQ(lines, (std::vector<std::string>{"roadmap.progress.follow roadmap gallery ok", "roadmap.progress.follow roadmap gallery timeout",
                                             "roadmap.progress.follow roadmap gallery failed"}));
 }

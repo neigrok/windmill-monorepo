@@ -185,7 +185,7 @@ Subgraph TreeRoom::deltaSince(const VersionVector& since) const {
 
 std::map<NodeId, TreeId> TreeRoom::pointersFor(const std::optional<UserId>& caller) const {
   if (!canWrite(caller, owner_)) return {};
-  return graph_.pointers();
+  return pointers();
 }
 
 std::vector<NodeId> TreeRoom::prerequisitesOf(const NodeId& node) const {

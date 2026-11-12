@@ -66,8 +66,23 @@ rejected for structure. Validity is a read model, not a gate.
   tree up its openers a level at a time, it reads each pointer between two standing trees at most
   once and leaves every tree that leads back its fewest pointers and the tree it steps to first,
   so `diagnose` costs the account's pointers plus the capped lists, whatever the tree holds.
-  The raw mark (`status`, `get_progress`, `GET …/progress`) stays the raw mark, and the gallery
-  counts the owner's stored marks.
+  The raw mark (`status`, `get_progress`, and `GET …/progress` for a caller who can write the tree)
+  stays the raw mark; every other reader of `GET …/progress`, and the gallery, are shown the
+  owner's marks through `readerView`.
+- `readerView` (`domain/OpenedTrees.h`) — an owner's stored marks on a tree as a caller who cannot
+  write it is shown them: the owner's derived completion, and nothing of the trees its nodes open. A
+  node with a valid pointer has a row only while the tree it opens is complete for the owner, by the
+  completeness `followed` reads, and none otherwise, whatever mark it holds. That row is `complete`,
+  under the stamp and `markedAt` of a stored mark that says complete, else under the unset stamp
+  `0:0:` with `markedAt: 0`, and never `outOfOrder`. Every other node's row is the stored one, so a
+  step that opens a tree that is not complete reads as a step nobody marked.
+  `ProgressService::shownToReaders` feeds it for the two doors that serve an owner's marks to such a
+  caller, `GET /v1/trees/{id}/progress` and the gallery. The pointers come from the tree's room, or
+  for the gallery from the listed documents; an owner whose trees hold a pointer is followed in one
+  `openedFrom` read under a 750 ms budget (`kReaderFollowBudget`) after the strand is released, and
+  trees that hold no pointer make none. When that read fails or runs past its budget the door still
+  answers, leaving out the row of every node that holds a pointer, so no step is shown done that may
+  not be, and no other owner is followed in that request.
 - A node with a valid pointer takes no mark from a caller who can write the tree. The room hands
   that caller, and nobody else, the nodes that open a tree (`TreeRoom::pointersFor`); `following`
   names the ones whose pointer is valid, and `ProgressService::mark`, which both doors that write
@@ -458,8 +473,14 @@ the genesis stamp, byte-equal to a device-born tree's. Retrying an owned existin
 returns `409 id-taken`; the caller's deleted ID returns `409 id-retired`. A client must not retry
 that deleted tree under a fresh ID.
 
+`GET /v1/trees/{id}/progress` answers the owner's overlay, `{marks: [{node, status, at, markedAt,
+outOfOrder?}]}`, to anyone who can read the tree: the stored marks to a caller who can write it, whose
+view derives completion again from the tree's `opens`, and `readerView` of them (Model) to every other
+reader. It answers `200` whether or not the trees could be followed.
+
 `/v1/gallery` and `/gallery` are anonymous-allowed; a session only adds the two facts a row wears
-about its reader and never changes which trees are listed. `/v1/compose` is anonymous-allowed
+about its reader and never changes which trees are listed. A card's `done` counts the owner's marks
+as `readerView` shows them, in one follow per owner whose listed trees hold a pointer. `/v1/compose` is anonymous-allowed
 (the birth canvas has no account) behind a rate limit. The reminders pause POST carries no
 credential — only the secret from the recipient's own mail — and answers 204 either way. The admin
 sweep is closed unless `REMINDERS_ADMIN_TOKEN` is set.

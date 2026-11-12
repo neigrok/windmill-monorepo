@@ -27,8 +27,7 @@ std::vector<WallCandidate> GalleryApi::candidates() {
   // that opens a tree counts by the owner's derived completion, read in one follow per owner for all their listed trees.
   std::map<UserId, std::map<TreeId, std::map<NodeId, TreeId>>> listedByOwner;
   for (const ListedTree& tree : listed) listedByOwner[tree.owner].emplace(tree.data.id, pointersOf(tree.data));
-  std::map<TreeId, Progress> shown;
-  for (const auto& [owner, trees] : listedByOwner) shown.merge(progress_->shownToReaders(owner, trees, "gallery"));
+  std::map<TreeId, Progress> shown = progress_->shownToReaders(listedByOwner, "gallery");
 
   std::vector<WallCandidate> candidates;
   candidates.reserve(listed.size());
