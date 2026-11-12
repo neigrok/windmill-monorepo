@@ -70,6 +70,7 @@
 #include "products/roadmap/application/ForkService.h"
 #include "platform/application/McpKeyService.h"
 #include "platform/application/OAuthService.h"
+#include "products/roadmap/application/OwnerProgress.h"
 #include "products/roadmap/application/ProgressService.h"
 #include "products/roadmap/application/RoomRegistry.h"
 #include "products/roadmap/application/TendingService.h"
@@ -252,6 +253,7 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   auto emailSender = std::make_shared<ResendEmailSender>(*resendClient);
   auto tokens = std::make_shared<OpenSslTokenGenerator>();
   auto systemClock = std::make_shared<SystemClock>();
+  auto ownerProgress = std::make_shared<OwnerProgress>(*progress, *trees, *systemClock);
 
   // Built before AuthService, which holds a reference to it for account close.
   const char* apiUrlEnv = std::getenv("WINDMILL_API_URL");
@@ -1070,7 +1072,7 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   routes.registerHandler("/.well-known/oauth-protected-resource/mcp", protectedResourceMetadata, {drogon::Get});
 
   RoadmapDeps roadmapDeps{
-      .registry = registry, .trees = trees, .progressService = progressService,
+      .registry = registry, .trees = trees, .progressService = progressService, .ownerProgress = ownerProgress,
       .oplog = oplog, .bus = bus, .presence = presence, .genesis = genesis,
       .authService = authService, .forkService = forkService, .treeRegistry = treeRegistry,
       .ogImages = ogImages, .ogVideos = ogVideos, .webRoot = webRootEnv ? webRootEnv : "", .appBaseUrl = appBaseUrl,
@@ -1078,7 +1080,7 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
       .tokens = tokens, .clock = systemClock,
       .remindersAdminToken = remindersAdminEnv ? remindersAdminEnv : "", .composer = composer,
       .allowedOrigins = allowedOrigins};
-  lifetime.onStop([] { stopCollab(); }, registry, oplog, bus, progressService, progress, authService,
+  lifetime.onStop([] { stopCollab(); }, registry, oplog, bus, progressService, ownerProgress, progress, authService,
                   presence, systemClock, authRepo, emailSender, resendClient, tokens, oauthService, oauthRepo,
                   accountFootprint, liveSessions);
   registerRoutes(app, roadmapDeps);

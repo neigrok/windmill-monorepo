@@ -45,8 +45,8 @@ struct Harness {
   std::shared_ptr<AuthService> auth =
       std::make_shared<AuthService>(authRepo, email, tokens, *clock, oauth, footprint, revocations, "https://windmill.works");
   std::shared_ptr<ForkService> fork = std::make_shared<ForkService>(*rooms, *trees, tokens, *clock);
-  std::shared_ptr<ProgressService> progressService = std::make_shared<ProgressService>(*progress, *trees);
-  TreeApi api{rooms, trees, progressService, ops, Hlc{1, 0, "genesis"}, auth, fork, clock};
+  std::shared_ptr<OwnerProgress> ownerProgress = std::make_shared<OwnerProgress>(*progress, *trees, *clock);
+  TreeApi api{rooms, trees, ownerProgress, ops, Hlc{1, 0, "genesis"}, auth, fork, clock};
 
   UserId signIn(const std::string& sessionSecret, const std::string& email = "sam@example.com") {
     User user = authRepo.createUser(Email{email}, "sam");
@@ -1050,7 +1050,8 @@ TEST(get_progress_answers_a_reader_of_a_tree_with_pointers_what_a_twin_marked_by
 }
 
 // A follow that fails or runs past its budget is not the reader's to wait on or be refused for: the route answers, and
-// leaves out the row of every step that holds a pointer, so none is shown done that may not be.
+// leaves out the row of every step that holds a pointer, so none is shown done that may not be. For five minutes after,
+// the owner is left unread without a try; the next try that fails says so again.
 TEST(get_progress_whose_pointers_cannot_be_followed_in_time_answers_a_reader_without_the_steps_that_open_a_tree) {
   struct Failures : FailureReporter {
     std::vector<std::string> reports;
@@ -1081,6 +1082,8 @@ TEST(get_progress_whose_pointers_cannot_be_followed_in_time_answers_a_reader_wit
   h.trees->budgetedReadsTimeOut = true;
   const drogon::HttpResponsePtr timedOut = sendGetProgress(h.api, "", "t_main");
   h.trees->budgetedReadsTimeOut = false;
+  const drogon::HttpResponsePtr coolingOff = sendGetProgress(h.api, "", "t_main");
+  h.clock->now += 5 * 60 * 1000;
   h.trees->openedReadsFail = true;
   const drogon::HttpResponsePtr failed = sendGetProgress(h.api, "", "t_main");
   const drogon::HttpResponsePtr owners = sendGetProgress(h.api, "s-owner", "t_main");
@@ -1091,7 +1094,7 @@ TEST(get_progress_whose_pointers_cannot_be_followed_in_time_answers_a_reader_wit
       {"node":"done","status":"complete","at":"900:0:owner","markedAt":900},
       {"node":"gone","status":"complete","at":"900:0:owner","markedAt":900},
       {"node":"plain","status":"complete","at":"900:0:owner","markedAt":900}]})"));
-  for (const drogon::HttpResponsePtr& reply : {timedOut, failed}) {
+  for (const drogon::HttpResponsePtr& reply : {timedOut, coolingOff, failed}) {
     CHECK_EQ(reply->getStatusCode(), drogon::k200OK);
     CHECK_EQ(parse(std::string(reply->getBody())), withoutPointerSteps);
   }

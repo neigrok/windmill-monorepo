@@ -53,10 +53,14 @@ public:
             bool guideInherited, const UserId& owner) override;
 
 private:
-  // The projection both list queries need: each present node's id, colour and pointer, with the
-  // document blob as the fallback for a tree whose rows were never backfilled.
-  TreeData projectDocument(pqxx::work& txn, const TreeId& tree, const std::string& title,
-                           const std::string& documentBlob);
+  // The projection both list queries need: each present node's id, colour and pointer, each pointer with the stamp it
+  // was set under, and the document blob as the fallback for a tree whose rows were never backfilled.
+  struct ProjectedDocument {
+    TreeData data;
+    std::map<NodeId, StampedPointer> pointers;
+  };
+  ProjectedDocument projectDocument(pqxx::work& txn, const TreeId& tree, const std::string& title,
+                                    const std::string& documentBlob);
 
   std::shared_ptr<PgPool> pool_;
 };

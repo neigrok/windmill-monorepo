@@ -122,6 +122,13 @@ struct Link {
   bool operator==(const Link&) const = default;
 };
 
+// The tree a node opens, with the stamp its pointer was set under.
+struct StampedPointer {
+  TreeId tree;
+  Hlc setAt;
+  bool operator==(const StampedPointer&) const = default;
+};
+
 // The wire/persist shape of a node: `from -> id` edges live as `prerequisites`. `status` is an
 // opaque authoring-time seed the server round-trips but never acts on — runtime status is the
 // per-user Progress overlay.

@@ -181,6 +181,13 @@ std::map<NodeId, TreeId> LooseGraph::pointers() const {
   return held;
 }
 
+std::map<NodeId, StampedPointer> LooseGraph::stampedPointers() const {
+  std::map<NodeId, StampedPointer> held;
+  for (const auto& [id, record] : nodes_)
+    if (record.life.present() && !record.opens.value.empty()) held.emplace(id, StampedPointer{record.opens.value, record.opens.stamp});
+  return held;
+}
+
 std::optional<NodeSpec> LooseGraph::nodeView(const NodeId& id) const {
   if (!hasNode(id)) return std::nullopt;
   const NodeRecord& record = nodes_.at(id);

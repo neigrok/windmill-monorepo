@@ -84,7 +84,7 @@ std::string privacySafeLogBody(const std::string& body, const std::string& sourc
       "FeedbackApi.cpp", "OAuthApi.cpp", "BillingApi.cpp", "ForkSignup.cpp", "EchoSweep.cpp", "NudgeSweep.cpp",
       "EchoDerivations.cpp", "AppleOAuthClient.cpp", "AnthropicStream.cpp", "AnthropicClient.cpp",
       "AnthropicAsk.cpp", "AnthropicAgent.cpp", "AiCallBudget.cpp", "PgAiUsageRepository.cpp",
-      "TurnService.cpp", "PhoneToolHost.cpp"};
+      "TurnService.cpp", "PhoneToolHost.cpp", "OwnerProgress.cpp", "GalleryApi.cpp"};
   const std::string safeSource = privacySafeLogSource(source);
   const auto colon = safeSource.rfind(':');
   const std::string filename = safeSource.substr(0, colon);

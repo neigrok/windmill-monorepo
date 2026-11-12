@@ -140,6 +140,7 @@ public:
   TreeDiagnostics diagnose() const;
   // The tree each present node opens (LooseGraph::pointers), without the copy of every node snapshot() makes.
   std::map<NodeId, TreeId> pointers() const { return graph_.pointers(); }
+  std::map<NodeId, StampedPointer> stampedPointers() const { return graph_.stampedPointers(); }
   TreeData snapshot() const;
   // How many times snapshot() copied the whole tree out of this room: what a cost test reads.
   std::size_t snapshots() const { return snapshots_; }

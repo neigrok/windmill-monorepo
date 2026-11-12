@@ -4,6 +4,7 @@
 #include "products/roadmap/adapters/postgres/PgOpLog.h"
 #include "products/roadmap/adapters/postgres/PgProgressRepository.h"
 #include "products/roadmap/application/ForkService.h"
+#include "products/roadmap/application/OwnerProgress.h"
 #include "products/roadmap/application/RoomRegistry.h"
 #include "products/roadmap/domain/Command.h"
 #include "products/roadmap/domain/LooseGraph.h"
@@ -481,18 +482,35 @@ TEST(pg_opened_from_answers_every_standing_tree_of_the_owners_the_pointers_lead_
 
   // The latest mark is the greatest stamp among the marks that say complete, the actor breaking a tie, with that
   // mark's own receipt instant: a later clear, another reader's mark and a later receipt of an older stamp are not it.
-  plant("stamps", kSam, {{"first", ""}, {"counter", ""}, {"actor", ""}, {"cleared", ""}, {"eve", ""}, {"unmarked", ""}});
+  // A mark stored with no stamp, as an empty one or as the unset "0:0:", counts toward completion and never toward when.
+  plant("stamps", kSam, {{"first", ""}, {"counter", ""}, {"actor", ""}, {"cleared", ""}, {"eve", ""}, {"unmarked", ""},
+                         {"no-stamp", ""}, {"unset-stamp", ""}});
+  plant("unstamped", kSam, {{"only", ""}});
   progress.setStatus(id("stamps"), kSam, NodeId{"first"}, ProgressStatus::complete, false, Hlc{1'700'000'000'010, 0, "r_z"}, 1'700'000'000'090);
   progress.setStatus(id("stamps"), kSam, NodeId{"counter"}, ProgressStatus::complete, false, Hlc{1'700'000'000'010, 2, "r_a"}, 1'700'000'000'020);
   progress.setStatus(id("stamps"), kSam, NodeId{"actor"}, ProgressStatus::complete, false, Hlc{1'700'000'000'010, 2, "r_b"}, 1'700'000'000'015);
   progress.setStatus(id("stamps"), kSam, NodeId{"cleared"}, ProgressStatus::none, false, Hlc{1'700'000'000'050, 0, "r_a"}, 1'700'000'000'050);
   progress.setStatus(id("stamps"), kEve, NodeId{"eve"}, ProgressStatus::complete, false, Hlc{1'700'000'000'060, 0, "r_e"}, 1'700'000'000'060);
+  for (const char* node : {"no-stamp", "unset-stamp"})
+    progress.setStatus(id("stamps"), kSam, NodeId{node}, ProgressStatus::complete, false, Hlc{}, 1'700'000'000'999);
+  progress.setStatus(id("unstamped"), kSam, NodeId{"only"}, ProgressStatus::complete, false, Hlc{}, 1'700'000'000'999);
+  {
+    PgLease conn{*pgTestPool()};
+    pqxx::work txn{*conn};
+    txn.exec("UPDATE node_progress SET hlc = '' WHERE node_id IN ('no-stamp', 'only') AND tree_id LIKE 't\\_pgtest\\_opened\\_%'");
+    txn.commit();
+  }
   OpenedTree stamps;
   stamps.title = "Tree stamps";
-  stamps.total = 6;
-  stamps.marked = 3;
+  stamps.total = 8;
+  stamps.marked = 5;
   stamps.latest = LatestMark{Hlc{1'700'000'000'010, 2, "r_b"}, 1'700'000'000'015};
-  CHECK(trees.openedFrom(kSam, {id("stamps")}) == (std::map<TreeId, OpenedTree>{{id("stamps"), stamps}}));
+  OpenedTree unstamped;
+  unstamped.title = "Tree unstamped";
+  unstamped.total = 1;
+  unstamped.marked = 1;
+  CHECK(trees.openedFrom(kSam, {id("stamps"), id("unstamped")}) ==
+        (std::map<TreeId, OpenedTree>{{id("stamps"), stamps}, {id("unstamped"), unstamped}}));
   clear();
 }
 
@@ -508,11 +526,16 @@ TEST(pg_a_node_follows_the_tree_it_opens_takes_no_mark_from_its_owner_and_the_re
   FakeTokens tokens;
   test::StepClock clock;
   ProgressService progress{progressRepo, trees};
+  OwnerProgress ownerProgress{progressRepo, trees, clock};
   RoomRegistry registry(trees, log, bus);
   TreeRegistry treeRegistry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}, registry, clock};
   RoadmapTools tools{registry, progress, clock, treeRegistry, bus, "https://app.example"};
   trees.create(kTree, LooseGraph().exportState(), LegendState{}, "Main", kSam);
   trees.create(kFork, LooseGraph().exportState(), LegendState{}, "Deep dive", kSam);
+  const auto shown = [&] {
+    const std::vector<OwnersTrees> owners{{kSam, {{kTree, registry.open(kTree)->stampedPointers()}}}};
+    return ownerProgress.shownToReaders(owners, kReaderFollowBudget, "rest").progress.at(kTree).completed;
+  };
   const auto call = [&](const TreeId& tree, const UserId& user, const char* tool, const std::string& arguments) {
     Json::Value args = parse(arguments);
     args["treeId"] = tree.str();
@@ -545,8 +568,7 @@ TEST(pg_a_node_follows_the_tree_it_opens_takes_no_mark_from_its_owner_and_the_re
   CHECK_EQ(test::body(call(kTree, kSam, "set_progress", R"({"nodeId":"next","status":"complete"})")),
            parse(R"({"nodeId":"next","status":"complete","prerequisitesMet":false})"));
   CHECK_EQ(test::body(call(kTree, kSam, "get_tree", R"({"fields":["id","status","state","opens"]})"))["tree"]["nodes"][0], open[0]);
-  const std::map<UserId, std::map<TreeId, std::map<NodeId, TreeId>>> shared{{kSam, {{kTree, registry.open(kTree)->pointers()}}}};
-  CHECK(progress.shownToReaders(shared, "rest").at(kTree).completed == std::set<NodeId>{NodeId{"next"}});
+  CHECK(shown() == std::set<NodeId>{NodeId{"next"}});
 
   CHECK_FALSE(call(kFork, kSam, "set_progress", R"({"nodeId":"s","status":"complete"})").isError);
 
@@ -559,7 +581,7 @@ TEST(pg_a_node_follows_the_tree_it_opens_takes_no_mark_from_its_owner_and_the_re
   CHECK_EQ(test::body(call(kTree, kEve, "get_tree", R"({"fields":["id","status","state","opens"]})"))["tree"]["nodes"],
            parse(R"([{"id":"idea","status":"none","state":"available"},{"id":"next","status":"none","state":"locked"}])"));
   CHECK(counts() == (std::map<std::string, std::string>{{kTree.str(), "2/2"}, {kFork.str(), "1/1"}}));
-  CHECK(progress.shownToReaders(shared, "rest").at(kTree).completed == (std::set<NodeId>{NodeId{"idea"}, NodeId{"next"}}));
+  CHECK(shown() == (std::set<NodeId>{NodeId{"idea"}, NodeId{"next"}}));
   CHECK_EQ(test::body(call(kTree, kEve, "set_progress", R"({"nodeId":"idea","status":"complete"})")),
            parse(R"({"nodeId":"idea","status":"complete","prerequisitesMet":true})"));
   CHECK_EQ(test::body(call(kTree, kEve, "get_tree", R"({"fields":["id","status","state","opens"]})"))["tree"]["nodes"],

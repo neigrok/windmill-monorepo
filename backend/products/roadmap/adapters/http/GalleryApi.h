@@ -1,13 +1,14 @@
 #pragma once
 
 #include "platform/application/AuthService.h"
-#include "products/roadmap/application/ProgressService.h"
+#include "products/roadmap/application/OwnerProgress.h"
 #include "products/roadmap/domain/Gallery.h"
 #include "products/roadmap/ports/TreeRepository.h"
 
 #include <drogon/HttpRequest.h>
 #include <drogon/HttpResponse.h>
 
+#include <chrono>
 #include <cstddef>
 #include <functional>
 #include <memory>
@@ -23,7 +24,7 @@ using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 // listPublic filters on visibility in SQL.
 class GalleryApi {
 public:
-  GalleryApi(std::shared_ptr<TreeRepository> trees, std::shared_ptr<ProgressService> progress,
+  GalleryApi(std::shared_ptr<TreeRepository> trees, std::shared_ptr<OwnerProgress> progress,
              std::shared_ptr<AuthService> auth, std::string webRoot);
 
   void page(const drogon::HttpRequestPtr& req, HttpCallback&& callback);
@@ -34,12 +35,14 @@ public:
 
   // The wall's page size, and the JSON index's cap and default alike.
   static constexpr std::size_t kWallLimit = 60;
+  // The most one view of the wall spends following its owners' trees, in all.
+  static constexpr std::chrono::milliseconds kFollowCap{1500};
 
 private:
   std::vector<WallCandidate> candidates();
 
   std::shared_ptr<TreeRepository> trees_;
-  std::shared_ptr<ProgressService> progress_;
+  std::shared_ptr<OwnerProgress> progress_;
   std::shared_ptr<AuthService> auth_;
   std::string webRoot_;
 };

@@ -24,6 +24,11 @@ static WallCandidate candidate(const char* id, const char* title, int steps, int
   return listed;
 }
 
+// The owner marked one step of the tree at `markedAt`, as a reader is shown it.
+static void markedAt(WallCandidate& listed, std::uint64_t markedAt) {
+  listed.ownerProgress.record(listed.data.nodes.front().id, ProgressMark{ProgressStatus::complete, Hlc{markedAt, 0, "owner"}, markedAt});
+}
+
 static const Viewer ANONYMOUS{};
 
 TEST(wall_ranks_by_forks_then_freshness_then_id) {
@@ -46,7 +51,7 @@ TEST(wall_ranks_by_forks_then_freshness_then_id) {
 TEST(a_tended_tree_outranks_a_structurally_newer_one_nobody_has_opened) {
   // A progress mark writes only the owner's overlay and never moves the tree's own stamp.
   WallCandidate tended = candidate("t_tended", "Tended", 5, 1, 100);
-  tended.lastMarkedAt = 900;
+  markedAt(tended, 900);
   WallCandidate abandoned = candidate("t_abandoned", "Abandoned", 5, 1, 500);
 
   std::vector<GalleryEntry> wall = publicWall({abandoned, tended}, ANONYMOUS);
@@ -60,9 +65,9 @@ TEST(a_tended_tree_outranks_a_structurally_newer_one_nobody_has_opened) {
 
 TEST(last_active_is_the_freshest_of_the_two_stamps_in_either_direction) {
   WallCandidate edited = candidate("t_edited", "Edited", 5, 1, 900);
-  edited.lastMarkedAt = 100;
+  markedAt(edited, 100);
   WallCandidate marked = candidate("t_marked", "Marked", 5, 1, 100);
-  marked.lastMarkedAt = 500;
+  markedAt(marked, 500);
 
   std::vector<GalleryEntry> wall = publicWall({marked, edited}, ANONYMOUS);
 
@@ -76,7 +81,7 @@ TEST(last_active_is_the_freshest_of_the_two_stamps_in_either_direction) {
 TEST(forks_still_outrank_freshness) {
   WallCandidate popular = candidate("t_popular", "Popular", 5, 7, 100);
   WallCandidate busy = candidate("t_busy", "Busy", 5, 1, 100);
-  busy.lastMarkedAt = 9000;
+  markedAt(busy, 9000);
 
   std::vector<GalleryEntry> wall = publicWall({busy, popular}, ANONYMOUS);
 

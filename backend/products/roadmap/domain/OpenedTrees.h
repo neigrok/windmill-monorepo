@@ -14,7 +14,7 @@
 namespace wm {
 
 // The latest of the reader's marks that say complete among some nodes, by stamp, with the instant it was recorded;
-// unset where none of them is marked.
+// unset where none of them is. A mark stored without a stamp (a row written before marks were stamped) is never it.
 struct LatestMark {
   Hlc at;
   std::uint64_t markedAt = 0;
@@ -160,9 +160,10 @@ private:
 
 // An owner's stored `marks` on a tree as a caller who cannot write it is shown them: the owner's derived completion,
 // and nothing of the trees its nodes open. A node whose pointer is valid has a row only while its tree is complete
-// for the owner: complete, as its stored mark when that says so, else under the latest mark in what completed the
-// tree (`completedAt`), so it reads as a mark like any other. Every other row is the stored one. Without `opened` —
-// the trees were not read — no node that holds a pointer has a row.
-Progress readerView(const Progress& marks, const std::map<NodeId, TreeId>& pointers, const std::optional<OpenedTrees>& opened);
+// for the owner: complete, as its stored mark when that says so under a stamp, else at the later of the tree's
+// `completedAt` and the stamp its pointer was set under, so its time never predates the pointer. Every other row is
+// the stored one. Without `opened` — the trees were not read — no node that holds a pointer has a row.
+Progress readerView(const Progress& marks, const std::map<NodeId, StampedPointer>& pointers,
+                    const std::optional<OpenedTrees>& opened);
 
 }

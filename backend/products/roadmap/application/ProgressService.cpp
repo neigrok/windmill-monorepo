@@ -1,11 +1,8 @@
 #include "products/roadmap/application/ProgressService.h"
 
-#include "platform/application/WriteObservation.h"
 #include "products/roadmap/domain/OpenedTrees.h"
 
 #include <algorithm>
-#include <new>
-#include <optional>
 #include <set>
 
 namespace wm {
@@ -108,45 +105,6 @@ std::vector<ProgressOutcome> ProgressService::setStatuses(const TreeId& treeId, 
 
 Progress ProgressService::progressOf(const TreeId& treeId, const UserId& user) {
   return repo_.load(treeId, user);
-}
-
-std::map<TreeId, Progress> ProgressService::shownToReaders(
-    const std::map<UserId, std::map<TreeId, std::map<NodeId, TreeId>>>& treesByOwner, const std::string& door) {
-  // The follows come first, under one observation: each owner's standing trees, or nothing for an owner left unread.
-  std::map<UserId, std::optional<OpenedTrees>> followedByOwner;
-  std::optional<WriteObservation> observation;
-  bool unread = false;
-  for (const auto& [owner, trees] : treesByOwner) {
-    std::set<TreeId> opened;
-    for (const auto& [tree, pointers] : trees) opened.merge(treesOpenedBy(pointers));
-    std::optional<OpenedTrees>& followed = followedByOwner[owner];
-    if (opened.empty()) {
-      // No pointer among this owner's trees: nothing is followed, and every row is the stored one.
-      followed.emplace(std::map<TreeId, OpenedTree>{});
-      continue;
-    }
-    if (unread) continue;
-    if (!observation) observation.emplace("roadmap.progress.follow", "roadmap", door);
-    try {
-      followed.emplace(trees_.openedFrom(owner, opened, kReaderFollowBudget));
-    } catch (const std::bad_alloc&) {
-      throw;
-    } catch (const FollowTimedOut&) {
-      observation->finish("timeout");
-      unread = true;
-    } catch (const std::exception& failure) {
-      observation->fail(failure);
-      unread = true;
-    }
-  }
-  // Follows that all answered leave no line, as the tree read's own follow leaves none.
-  if (observation) observation->skip();
-
-  std::map<TreeId, Progress> shown;
-  for (const auto& [owner, trees] : treesByOwner)
-    for (const auto& [tree, pointers] : trees)
-      shown.emplace(tree, readerView(repo_.load(tree, owner), pointers, followedByOwner.at(owner)));
-  return shown;
 }
 
 }

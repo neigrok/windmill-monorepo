@@ -5,16 +5,10 @@
 #include "products/roadmap/ports/ProgressRepository.h"
 #include "products/roadmap/ports/TreeRepository.h"
 
-#include <chrono>
 #include <map>
-#include <string>
 #include <vector>
 
 namespace wm {
-
-// How long the follow a reader's answer waits on may take. Past it the answer goes out without the steps that open a
-// tree rather than hold a page that shows someone else's roadmap.
-inline constexpr std::chrono::milliseconds kReaderFollowBudget{750};
 
 // A `complete` set whose prerequisites are not all complete is still recorded — P1 is advisory — but
 // the caller is told so it can warn. `outOfOrder` echoes the word the write carried, so a receipt
@@ -76,13 +70,6 @@ public:
                                            std::uint64_t receivedAtMs);
 
   Progress progressOf(const TreeId& treeId, const UserId& user);
-
-  // Each owner's stored marks on their trees — `treesByOwner` holds a tree's pointers by tree — as a caller who
-  // cannot write them is shown them (domain readerView). An owner whose trees hold a pointer is followed in one read
-  // within kReaderFollowBudget. A follow that fails or runs out of time completes as `roadmap.progress.follow` at
-  // `door`; after it no other is tried, and no step that holds a pointer is shown for the owners left unread.
-  std::map<TreeId, Progress> shownToReaders(
-      const std::map<UserId, std::map<TreeId, std::map<NodeId, TreeId>>>& treesByOwner, const std::string& door);
 
 private:
   ProgressRepository& repo_;

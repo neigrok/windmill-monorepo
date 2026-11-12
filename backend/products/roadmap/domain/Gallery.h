@@ -20,10 +20,10 @@ struct WallCandidate {
   TreeData data;
   UserId owner;
   Progress ownerProgress;
-  // A structural edit stamps the tree's own row; a progress mark stamps only the owner's overlay.
-  // The ranking folds them (lastActiveAt).
+  // A structural edit stamps the tree's own row; a progress mark stamps only the owner's overlay. The
+  // ranking folds this with the latest `markedAt` of `ownerProgress` (lastActiveAt), so the marks a
+  // card's time comes from are the ones a reader is shown and no others.
   std::uint64_t updatedAt = 0;
-  std::uint64_t lastMarkedAt = 0;
   int forks = 0;
   std::string sourceTitle;
 };
