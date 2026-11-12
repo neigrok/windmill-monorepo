@@ -295,6 +295,28 @@ TEST(drive_agent_counts_no_edit_for_a_write_that_changed_nothing) {
            std::vector<bool>({false, false, false, true}));
 }
 
+TEST(drive_agent_counts_an_edit_for_a_write_whose_answer_is_no_object) {
+  FakeToolHost host;
+  host.responder = [](const std::string&, const Json::Value&) -> ToolResult {
+    Json::Value reply(Json::arrayValue);
+    reply.append(1);
+    return ToolResult::json(reply);
+  };
+
+  FakeModel model;
+  model.replies.push_back(toolUseReply("rename_node", "toolu_1"));
+  model.replies.push_back(textReply("end_turn", "Renamed 1 step"));
+
+  Recorder rec;
+  const AgentOutcome outcome =
+      driveAgent("tidy the names", kTree, kCaller, host, model.asCall(), rec.onStep(), rec.report());
+
+  CHECK(outcome.ok);
+  CHECK_EQ(outcome.edits, 1);
+  REQUIRE_EQ(rec.steps.size(), 1u);
+  CHECK_EQ(std::vector<bool>({rec.steps[0].failed, rec.steps[0].changedTree}), std::vector<bool>({false, true}));
+}
+
 TEST(drive_agent_treats_the_iteration_cap_as_a_failure) {
   FakeToolHost host;
   FakeModel model;
