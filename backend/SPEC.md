@@ -50,20 +50,30 @@ rejected for structure. Validity is a read model, not a gate.
   reader); `leadingBackTo` names the trees whose pointers lead to a tree, at any distance. A node
   whose pointer is not valid is an ordinary node, and so is every node for a reader who cannot write
   the tree: their state follows their own mark, and nothing they receive says a node opens a tree.
-  The raw mark (`status`, `get_progress`, `GET …/progress`) stays the raw mark, `set_progress`
-  records a mark on such a node and judges `prerequisitesMet` on marks alone, and the gallery counts
-  the owner's stored marks.
+  The raw mark (`status`, `get_progress`, `GET …/progress`) stays the raw mark, and the gallery
+  counts the owner's stored marks.
+- A node with a valid pointer takes no mark from a caller who can write the tree. `following` names
+  those nodes, and `ProgressService::mark`, which both doors that write progress call, leaves a
+  mark on one of them, `complete` or `none`, out of the write and answers it refused under the code
+  `opens-a-tree`: MCP `set_progress` and the `progress[]` of an `import_subgraph` say so
+  (`adapters/mcp/README.md`), and a socket `progress` frame's ack lists it (WebSocket surface). The
+  other marks of the call are recorded, and each `prerequisitesMet` is judged on the `followed`
+  set, so a step behind such a node is met when the opened tree is complete, whatever mark the node
+  holds. A mark such a node already held stays stored. From a caller who cannot write the tree the
+  same mark is an ordinary one: recorded, answered exactly as on a node that opens nothing, and
+  judged on their own marks.
 - The domain is fed two ways. A read of one tree (`get_tree`, `get_nodes`, `find_nodes`,
-  `GET /v1/trees/{id}`) takes the tree from its live room and asks
+  `GET /v1/trees/{id}`) and a progress write (`set_progress`, the `progress[]` of an
+  `import_subgraph`, a socket `progress` frame) take the tree from its live room and ask
   `TreeRepository::openedFrom(owner, opened)` for each tree it opens that stands and is the owner's
   and every such tree their pointers lead to: one statement over `trees`, `tree_nodes` and the
   owner's `node_progress` that reaches each tree once and answers, per tree and tree it opens, how
   many present nodes open it and how many of those the owner marked, beside the tree's title and
   its nodes that open none. Each reached tree's nodes and marks are read through
   `tree_nodes_pkey` and `node_progress_pkey`, so the cost follows the trees reached and not the
-  size of the tables. It is made once per reply, after the tree's strand is released, and not
-  at all for a caller who cannot write the tree, for fields that ask for neither `state` nor
-  `opens`, or for a tree that holds no pointer. Where every tree of an owner is already loaded with
+  size of the tables. It is made once per reply, call or frame, after the tree's strand is
+  released, and not at all for a caller who cannot write the tree, for a read whose fields ask for
+  neither `state` nor `opens`, or for a tree that holds no pointer. Where every tree of an owner is already loaded with
   its marks (`TreeRegistry::list`, `PgReminderRepository::readinessFor`), `openedAmong`
   (`domain/TreeSummary.h`) judges the account once in memory with no further read.
 - `TreeDiagnostics::assess` — a pure report over a loose graph: `cycles`, `dangling`,
@@ -115,7 +125,8 @@ Compatibility inputs `active` and `inProgress` normalize to `none` in progress a
 
 One status per node is structural. "Complete only when every prerequisite is complete" is
 advisory: the mark is recorded either way and the outcome reports `prerequisitesMet` so a surface
-can warn. `outOfOrder` is the marker's word that the inversion was meant; it is part of the status
+can warn. It reads the completed set `UnlockRules::derive` is handed: the caller's marks, or for the
+tree's writer `OpenedTrees::followed`. `outOfOrder` is the marker's word that the inversion was meant; it is part of the status
 value under the same stamp, so a later mark on the node carries its own word or none. Only the MCP
 `set_progress` sets it today — a socket `progress` frame lands it false. Progress therefore never
 depends on the tree being a valid DAG.
@@ -382,8 +393,14 @@ Server → client: `pong` · `subgraph` (intent `delta` carrying `seq` as the su
 the title and guide registers when the vector does not cover their stamps; intent `live` for a
 peer's broadcast; either is the frame's `readerView` for a connection that cannot write the tree) ·
 `progress` (intent `graft` on subscribe, echo otherwise) ·
-`subgraphAck {treeId, frameId, seq?}` · `progressAck` · `skew {treeId, frameId, serverNow}` ·
-`reject {treeId, code, reason, frameId?}` · `presence` · `peer`.
+`subgraphAck {treeId, frameId, seq?}` · `progressAck {treeId, frameId, refused?}` ·
+`skew {treeId, frameId, serverNow}` · `reject {treeId, code, reason, frameId?}` · `presence` · `peer`.
+
+`progressAck.refused` is present only when the frame carried a mark that was not recorded: an array
+of `{node, code}`, one per such mark in the frame's order. The one code is `opens-a-tree` — the node
+holds a valid pointer and the connection can write the tree, so the node is complete when the tree
+it opens is and takes no mark (`OpenedTrees`, Model). It names the node and nothing of the opened
+tree. The frame is not rejected: its other marks are recorded, echoed and acknowledged.
 
 Reject codes are a stable wire contract — branch on `code`, never on `reason`:
 `no-such-tree` · `server-error` · `sign-in-required` · `tree-too-large` · `bad-frame` ·
@@ -397,8 +414,11 @@ Limits and rules:
   registers included — a runaway stamp must not own a name or a guide for years. Both lanes apply it.
 - A progress frame carries at most 2000 marks; a mark missing node, status or stamp refuses the
   whole frame.
-- Progress is refused whole or applied whole, joins no op log, and echoes only to the same
-  account's other sessions — never to collaborators.
+- A progress frame is refused whole — a bad mark, a skewed stamp, a failed read gate — or applied
+  per mark: each mark is its own last-writer-wins register, so the marks that landed are echoed and
+  the ack names the ones `refused`. It joins no op log and echoes only to the same account's
+  sessions — never to collaborators. The room is consulted under the tree's strand and the
+  repositories are read and written after it is released.
 - Presence is ephemeral, never persisted, flushed on a 50 ms timer (latest-wins per actor).
 - Drogon does not wrap WS callbacks: an exception escaping the frame handler aborts the process.
   Decode failures are refused by code, never by throw.

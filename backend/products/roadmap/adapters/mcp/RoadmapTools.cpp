@@ -12,6 +12,7 @@
 #include "products/roadmap/domain/Command.h"
 #include "products/roadmap/domain/LooseGraph.h"
 #include "products/roadmap/domain/NodeQuery.h"
+#include "products/roadmap/domain/OpenedTrees.h"
 #include "products/roadmap/domain/SkillTree.h"
 #include "products/roadmap/domain/TreeHealth.h"
 #include "products/roadmap/domain/UnlockRules.h"
@@ -714,51 +715,67 @@ struct RequestedMark {
   bool outOfOrder = false;
 };
 
-std::optional<std::string> applyProgressBatch(
+// What a batch of marks came to, as its tool answers it.
+struct MarkedBatch {
+  Json::Value results{Json::arrayValue};  // a row per mark that named a node, in the batch's order
+  Json::Value skipped{Json::arrayValue};  // ids naming no node in the tree
+  Json::Value refused{Json::arrayValue};  // ids of nodes that follow the tree they open and took no mark
+};
+
+// The sentence is the refusal of a call that could not be applied at all.
+std::variant<MarkedBatch, std::string> applyProgressBatch(
     RoomRegistry& registry, ProgressService& progress, PresenceBus& bus, const TreeId& tree,
-    Clock& clock, const UserId& user, const std::vector<RequestedMark>& requested,
-    bool rejectUnknown, Json::Value& results, Json::Value& skipped) {
-  // Both out-params are set at entry, so an early return still leaves them as empty arrays.
-  results = Json::Value(Json::arrayValue);
-  skipped = Json::Value(Json::arrayValue);  // ids naming no node in the tree
+    Clock& clock, const UserId& user, const std::vector<RequestedMark>& requested, bool rejectUnknown) {
+  MarkedBatch batch;
   std::vector<ProgressWrite> marks;
-  std::lock_guard<std::mutex> lock(registry.strandFor(tree));
-  TreeRoom* room = registry.open(tree);
-  // Not owner-gated (a per-user overlay), but private stays owner-only: a mark would confirm which ids exist.
-  if (!room || !canRead(user, room->owner(), room->visibility()))
-    return "no such tree \"" + tree.str() + "\"";  // byte-identical to every other absent message
-  for (const RequestedMark& mark : requested) {
-    if (!room->hasNode(mark.node)) { skipped.append(mark.node.str()); continue; }
-    marks.push_back({mark.node, mark.status, room->prerequisitesOf(mark.node), room->nextStamp(clock.nowMs()),
-                     mark.outOfOrder});
+  TreeData data;
+  std::optional<UserId> owner;
+  {
+    // The room is consulted under its strand and let go: no repository is read or written while it is held.
+    std::lock_guard<std::mutex> lock(registry.strandFor(tree));
+    TreeRoom* room = registry.open(tree);
+    // Not owner-gated (a per-user overlay), but private stays owner-only: a mark would confirm which ids exist.
+    if (!room || !canRead(user, room->owner(), room->visibility()))
+      return "no such tree \"" + tree.str() + "\"";  // byte-identical to every other absent message
+    for (const RequestedMark& mark : requested) {
+      if (!room->hasNode(mark.node)) { batch.skipped.append(mark.node.str()); continue; }
+      marks.push_back({mark.node, mark.status, room->prerequisitesOf(mark.node), room->nextStamp(clock.nowMs()),
+                       mark.outOfOrder});
+    }
+    data = room->snapshot();
+    owner = room->owner();
   }
   // set_progress rejects an unknown id; an import skips it into `skipped`, its graft landed.
-  if (rejectUnknown && !skipped.empty()) {
+  if (rejectUnknown && !batch.skipped.empty()) {
     std::string names;
-    for (const Json::Value& id : skipped) { if (!names.empty()) names += ", "; names += id.asString(); }
+    for (const Json::Value& id : batch.skipped) { if (!names.empty()) names += ", "; names += id.asString(); }
     return "no node in this tree is named " + names +
            ". Call get_tree with fields [\"id\",\"label\"] to list the ids this tree has.";
   }
 
-  const std::uint64_t receivedAtMs = clock.nowMs();
-  std::vector<ProgressOutcome> outcomes = progress.setStatuses(tree, user, marks, receivedAtMs);
+  const ProgressReceipt receipt = progress.mark(data, owner, user, marks, clock.nowMs());
   // One echo for the whole batch, not one frame per node.
-  Progress recorded;
-  for (std::size_t i = 0; i < marks.size(); ++i)
-    if (outcomes[i].applied)
-      recorded.record(marks[i].node, ProgressMark{marks[i].status, marks[i].at, receivedAtMs, marks[i].outOfOrder});
-  bus.broadcastProgress(tree, user, recorded);
+  bus.broadcastProgress(tree, user, receipt.recorded);
   for (std::size_t i = 0; i < marks.size(); ++i) {
+    const ProgressOutcome& outcome = receipt.outcomes[i];
     Json::Value row(Json::objectValue);
     row["nodeId"] = marks[i].node.str();
-    row["status"] = progressStatusName(outcomes[i].status);
-    row["prerequisitesMet"] = outcomes[i].prerequisitesMet;
+    if (outcome.refused) {
+      // Names the node and never the tree it opens: a tend, which is told of no pointer, reads this too.
+      row["refused"] = "\"" + marks[i].node.str() + "\" opens a tree: it is complete when that tree is and takes "
+                       "no mark of its own — mark the steps of the tree it opens";
+      batch.refused.append(marks[i].node.str());
+      batch.results.append(row);
+      continue;
+    }
+    row["status"] = progressStatusName(outcome.status);
+    row["prerequisitesMet"] = outcome.prerequisitesMet;
     // Only a mark that carried the word answers it: prerequisitesMet:false alone is an inversion
     // nobody acknowledged.
-    if (outcomes[i].outOfOrder) row["acknowledged"] = true;
-    results.append(row);
+    if (outcome.outOfOrder) row["acknowledged"] = true;
+    batch.results.append(row);
   }
-  return std::nullopt;
+  return batch;
 }
 
 // `outOfOrder` is a word about a completion, so it rides only a `complete` status.
@@ -819,16 +836,19 @@ ToolResult writeProgress(RoomRegistry& registry, ProgressService& progress, Pres
     requested.push_back({NodeId{node}, status, outOfOrder});
   }
 
-  Json::Value results, skipped;
-  if (std::optional<std::string> error =
-          applyProgressBatch(registry, progress, bus, tree, clock, user, requested, true, results, skipped))
-    return ToolResult::failure(*error);
-  if (bulk) {
-    Json::Value out(Json::objectValue);
-    out["results"] = results;
-    return ToolResult::json(out);
-  }
-  return ToolResult::json(results[0]);  // a singular call keeps its flat {nodeId, status, prerequisitesMet, acknowledged?}
+  const std::variant<MarkedBatch, std::string> applied =
+      applyProgressBatch(registry, progress, bus, tree, clock, user, requested, true);
+  if (const std::string* error = std::get_if<std::string>(&applied)) return ToolResult::failure(*error);
+  const MarkedBatch& batch = std::get<MarkedBatch>(applied);
+  // A singular call answers its one mark flat, {nodeId, status, prerequisitesMet, acknowledged?}, or fails on its refusal.
+  if (!bulk && !batch.refused.empty()) return ToolResult::failure(batch.results[0]["refused"].asString(), kOpensATree);
+  if (!bulk) return ToolResult::json(batch.results[0]);
+  Json::Value out(Json::objectValue);
+  out["results"] = batch.results;
+  ToolResult answered = ToolResult::json(out);
+  // A batch that recorded no mark, every row refused, completes under the refusal's code.
+  if (batch.refused.size() == batch.results.size()) answered.outcomeCode = kOpensATree;
+  return answered;
 }
 
 // `"a", "b", "c"` — every offender in one sentence, so one round-trip fixes the batch.
@@ -1108,29 +1128,38 @@ ToolResult importSubgraph(RoomRegistry& registry, TreeRegistry& trees, ProgressS
         u[kNodeHandle.published].isNull() ? u[kNodeHandle.alias] : u[kNodeHandle.published];
     requested.push_back({NodeId{handle.asString()}, *parseProgressStatus(u["status"].asString()), false});
   }
-  if (!requested.empty()) {
-    try {
-      Json::Value results, skipped;
-      const std::optional<std::string> error =
-          applyProgressBatch(registry, progress, bus, tree, clock, actor, requested, false, results, skipped);
-      if (error) {
-        grafted.payload["progressApplied"] = false;
-        grafted.payload["progressError"] = "The graph committed, but the requested progress did not apply: " + *error;
-      } else {
-        grafted.payload["progress"] = results;
-        if (!skipped.empty()) {
-          grafted.payload["progressSkipped"] = skipped;
-          grafted.payload["progressApplied"] = false;
-          grafted.payload["progressError"] = "Some requested progress names nodes absent after the graft; those ids are listed in progressSkipped.";
-        }
-      }
-    } catch (const std::exception&) {
+  if (requested.empty()) return grafted;
+  try {
+    const std::variant<MarkedBatch, std::string> applied =
+        applyProgressBatch(registry, progress, bus, tree, clock, actor, requested, false);
+    if (const std::string* error = std::get_if<std::string>(&applied)) {
       grafted.payload["progressApplied"] = false;
-      grafted.payload["progressError"] = "The graph committed, but the requested progress outcome is uncertain. Read get_progress before retrying progress changes.";
+      grafted.payload["progressError"] = "The graph committed, but the requested progress did not apply: " + *error;
+      return ToolResult::json(grafted.payload);
     }
-    return ToolResult::json(grafted.payload);
+    const MarkedBatch& batch = std::get<MarkedBatch>(applied);
+    grafted.payload["progress"] = batch.results;
+    std::string incomplete;
+    if (!batch.skipped.empty()) {
+      grafted.payload["progressSkipped"] = batch.skipped;
+      incomplete = "Some requested progress names nodes absent after the graft; those ids are listed in progressSkipped.";
+    }
+    if (!batch.refused.empty()) {
+      grafted.payload["progressRefused"] = batch.refused;
+      if (!incomplete.empty()) incomplete += " ";
+      incomplete += "Some requested progress marks nodes that open a tree, which take no mark of their own — each "
+                    "is complete when the tree it opens is; those ids are listed in progressRefused.";
+    }
+    if (!incomplete.empty()) {
+      grafted.payload["progressApplied"] = false;
+      grafted.payload["progressError"] = incomplete;
+    }
+  } catch (const std::exception& error) {
+    reportCurrentWriteFailure(error);
+    grafted.payload["progressApplied"] = false;
+    grafted.payload["progressError"] = "The graph committed, but the requested progress outcome is uncertain. Read get_progress before retrying progress changes.";
   }
-  return grafted;
+  return ToolResult::json(grafted.payload);
 }
 
 ToolResult pruneTree(RoomRegistry& registry, ProgressService& progress, const TreeId& tree,

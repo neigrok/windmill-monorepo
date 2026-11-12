@@ -40,8 +40,11 @@ On a tree you own, a node that opens another of your trees follows that tree, wh
 node holds and whatever its prerequisites: its `state` is `complete` when the opened tree is complete
 for you, and a step waiting on it unlocks then. A tree is complete when it has at least one node and
 every node of it is complete; a tree whose pointers lead back to it never is.
-`roadmap_list_trees` counts such a node the same way. Your mark on it is kept and still answered as
-`status`, and `prerequisitesMet` reads marks alone.
+`roadmap_list_trees` counts such a node the same way. Such a node takes no mark of its own:
+`roadmap_set_progress` refuses one, in an `updates` batch as a `refused` row beside the rows it
+records, and an import's `progress[]` lists it under `progressRefused`. Mark the steps of the tree it
+opens instead. A mark the node already held is kept, still answered as `status`, and decides nothing.
+`prerequisitesMet` reads the same completed set as `state`.
 
 ## Reads and edits
 
@@ -63,8 +66,8 @@ support `expectedSeq` and `dryRun`.
 their values, so `""` or `[]` is how to clear one. Prerequisites merge by default;
 `prerequisiteMode: "replace"` removes omitted incoming edges. The graph commits in one structural
 operation; optional progress commits in a separate atomic phase. Inspect `graphApplied`,
-`progressApplied` and any `progressError`/`progressSkipped`: a graph can be applied even when progress
-is incomplete. `dryRun` changes neither phase.
+`progressApplied` and any `progressError`/`progressSkipped`/`progressRefused`: a graph can be applied
+even when progress is incomplete. `dryRun` changes neither phase.
 )";
 
 }  // namespace

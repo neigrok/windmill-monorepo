@@ -715,9 +715,11 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "outOfOrder, get_tree/find_nodes `status` shows outOfOrder:true beside it) and the receipt "
         "answers acknowledged:true, so prerequisitesMet:false alone always means an inversion nobody "
         "acknowledged. The next mark on that node, from any surface, replaces the word with its own. "
-        "A mark on a node that opens another tree of yours is recorded, but on a tree you own that "
-        "node's `state` follows the opened tree, not the mark; prerequisitesMet reads marks alone, so "
-        "a prerequisite that is complete only through the tree it opens still reads as unmet.",
+        "On a tree you own, a node that opens another tree of yours takes no mark: it is complete when "
+        "that tree is, so mark the steps of the tree it opens. A single mark on such a node is refused "
+        "and nothing is written; in `updates` its row answers {nodeId, refused} with the reason and "
+        "every other row is recorded. prerequisitesMet reads the same completed set `state` does, so a "
+        "prerequisite that opens a tree is met when that tree is complete, whatever mark it holds.",
         p, {"treeId"}));
   }
   {
@@ -776,7 +778,9 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
                           kindFields, {"id", "hue"});
     p["progress"] = objArray("Optional carried progress, applied over the imported nodes. `nodeId` here "
                              "names a node that exists once the import lands; a row naming none is "
-                             "reported back in progressSkipped, not silently dropped.",
+                             "reported back in progressSkipped, not silently dropped. On a tree you own, a "
+                             "row marking a node that opens another tree of yours is not recorded — that "
+                             "node is complete when its tree is — and is reported back in progressRefused.",
                              progressFields, {"nodeId", "status"});
     p["progress"]["maxItems"] = static_cast<Json::UInt64>(kMaxProgressUpdates);
     p["prerequisiteMode"] = enumStr(

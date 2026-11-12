@@ -214,7 +214,7 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
 
   auto trees = std::make_shared<PgTreeRepository>(pool);
   auto progress = std::make_shared<PgProgressRepository>(pool);
-  auto progressService = std::make_shared<ProgressService>(*progress);
+  auto progressService = std::make_shared<ProgressService>(*progress, *trees);
 
   auto oplog = std::make_shared<PgOpLog>(pool);
   auto bus = std::make_shared<WsPresenceBus>();

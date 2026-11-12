@@ -59,14 +59,22 @@ struct FakeBus : PresenceBus {
   void broadcastSubgraph(const TreeId& tree, Seq seq, const Subgraph& subgraph) override {
     subgraphBroadcasts.push_back({tree.str(), seq, subgraph});
   }
+  // The real bus's rule: where no register was recorded there is nothing to fan out.
   void broadcastProgress(const TreeId& tree, const UserId& user, const Progress& marks) override {
+    if (marks.marks.empty()) return;
     progressBroadcasts.push_back({tree.str(), user.str(), marks});
   }
 };
 
 struct FakeProgressRepository : ProgressRepository {
-  struct Entry { ProgressStatus status; Hlc at; bool outOfOrder = false; };
+  struct Entry {
+    ProgressStatus status;
+    Hlc at;
+    bool outOfOrder = false;
+    bool operator==(const Entry&) const = default;
+  };
   std::map<std::string, Entry> byKey;
+  std::function<void()> duringBatchWrite;  // runs inside setStatuses, the way a slow statement holds its caller
 
   static std::string key(const TreeId& t, const UserId& u, const NodeId& n) {
     return t.str() + "\n" + u.str() + "\n" + n.str();
@@ -97,6 +105,7 @@ struct FakeProgressRepository : ProgressRepository {
   std::vector<bool> setStatuses(const TreeId& tree, const UserId& user,
                                  const std::vector<ProgressUpdate>& updates,
                                  std::uint64_t receivedAtMs) override {
+    if (duringBatchWrite) duringBatchWrite();
     auto next = byKey;
     std::vector<bool> applied;
     for (const ProgressUpdate& update : updates) {

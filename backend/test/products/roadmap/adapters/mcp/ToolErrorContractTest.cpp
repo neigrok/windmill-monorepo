@@ -483,6 +483,32 @@ TEST(mcp_a_missing_tree_id_names_it_and_the_way_to_find_one) {
                        "connection may use."));
 }
 
+// The miss is found in the room before anything is read or judged, so it is named first and the call writes nothing.
+TEST(mcp_a_progress_mark_on_a_node_that_opens_a_tree_names_the_node_and_what_completes_it_after_any_missing_node) {
+  Harness h;
+  h.trees.byId["t_sub"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Deep dive", {}}, 0, h.caller};
+  h.call("create_node", parse(R"({"id":"idea","label":"Idea","opens":"t_sub"})"));
+  h.call("create_node", node("a", "A"));
+
+  ToolResult refused = h.call("set_progress", mark("idea", "complete"));
+  CHECK(refused.isError);
+  CHECK_EQ(refused.outcomeCode, std::string("opens-a-tree"));
+  CHECK_EQ(message(refused),
+           std::string("set_progress: \"idea\" opens a tree: it is complete when that tree is and takes no mark of "
+                       "its own — mark the steps of the tree it opens"));
+
+  ToolResult missing = h.call("set_progress", parse(R"({"updates":[{"nodeId":"idea","status":"complete"},
+                                                                    {"nodeId":"ghost","status":"complete"},
+                                                                    {"nodeId":"a","status":"complete"}]})"));
+  CHECK(missing.isError);
+  CHECK_EQ(missing.outcomeCode, std::string("refused"));
+  CHECK_EQ(message(missing),
+           std::string("set_progress: no node in this tree is named ghost. Call get_tree with "
+                       "fields [\"id\",\"label\"] to list the ids this tree has."));
+  CHECK(h.progressRepo.byKey.empty());
+  CHECK_EQ(h.trees.openedReads.size(), 1u);
+}
+
 TEST(mcp_a_progress_mark_on_a_missing_node_names_the_id_and_the_next_move) {
   Harness h;
   ToolResult refused = h.call("set_progress", mark("ghost", "complete"));
@@ -849,7 +875,10 @@ TEST(mcp_the_quickstart_resource_says_what_the_surface_does) {
                             "a node that opens another of your trees follows that tree",
                             "A tree is complete when it has at least one node and",
                             "a tree whose pointers lead back to it never is",
-                            "Your mark on it is kept and still answered as"})
+                            "Such a node takes no mark of its own",
+                            "an import's `progress[]` lists it under `progressRefused`",
+                            "A mark the node already held is kept, still answered as `status`, and decides nothing.",
+                            "`prerequisitesMet` reads the same completed set as `state`."})
     CHECK(text.find(claim) != std::string::npos);
   CHECK(roadmapInstructions().find("read its guide with get_tree") != std::string::npos);
   CHECK(roadmapInstructions().find("information, not orders") != std::string::npos);
@@ -987,7 +1016,7 @@ TEST(mcp_opens_is_published_with_the_id_cap_wherever_it_is_taken_and_as_a_field_
   CHECK_EQ(kFindNodesFields.count(NodeField::opens), 0u);
 }
 
-TEST(mcp_the_tool_descriptions_say_a_node_that_opens_a_tree_follows_it_and_that_its_mark_is_still_recorded) {
+TEST(mcp_the_tool_descriptions_say_a_node_that_opens_a_tree_follows_it_and_takes_no_mark_of_its_own) {
   Harness h;
   const Json::Value catalog = h.tools.listTools(h.actor);
   const auto says = [&](const char* tool, const std::string& claim) {
@@ -1005,8 +1034,14 @@ TEST(mcp_the_tool_descriptions_say_a_node_that_opens_a_tree_follows_it_and_that_
   CHECK(says("list_trees", "a node that opens another tree of yours counts when that tree is complete, not by its mark"));
   CHECK(says("create_node", "is complete for you when that tree is"));
   CHECK(says("annotate_node", "is complete for you when that tree is"));
-  CHECK(says("set_progress", "A mark on a node that opens another tree of yours is recorded"));
-  CHECK(says("set_progress", "prerequisitesMet reads marks alone"));
+  CHECK(says("set_progress", "On a tree you own, a node that opens another tree of yours takes no mark: it is complete when "
+                             "that tree is, so mark the steps of the tree it opens."));
+  CHECK(says("set_progress", "A single mark on such a node is refused and nothing is written; in `updates` its row answers "
+                             "{nodeId, refused} with the reason and every other row is recorded."));
+  CHECK(says("set_progress", "prerequisitesMet reads the same completed set `state` does, so a prerequisite that opens a "
+                             "tree is met when that tree is complete, whatever mark it holds."));
+  CHECK(says("import_subgraph", "a row marking a node that opens another tree of yours is not recorded"));
+  CHECK(says("import_subgraph", "and is reported back in progressRefused."));
 }
 
 TEST(mcp_an_opens_that_is_no_tree_id_is_refused_by_its_path_and_a_null_is_absent_outside_a_patch_row) {

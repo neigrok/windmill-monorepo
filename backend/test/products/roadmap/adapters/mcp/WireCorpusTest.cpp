@@ -15,7 +15,7 @@ using namespace wm::test;
 namespace {
 
 // The corpus schema version, written into the golden. Bump it by convention when the wire changes on purpose; nothing enforces it.
-constexpr int kWireCorpusVersion = 12;
+constexpr int kWireCorpusVersion = 13;
 
 struct Step {
   const char* tool;
@@ -101,7 +101,21 @@ std::vector<Step> plan() {
       {"get_diagnostics", kNoArgs},
       {"get_progress", kNoArgs},
       {"get_health", kNoArgs},
-      // Three deterministic FAILURES, so the error wire is pinned too. Errors mutate nothing, so they ride at the end.
+      // `docs` opens a tree, so it takes no mark: a batch answers its row refused beside the mark it records, and an import lists it in progressRefused.
+      {"set_progress", obj({{"updates", [] {
+                               Json::Value array(Json::arrayValue);
+                               array.append(mark("docs", "complete"));
+                               array.append(mark("launch", "active"));
+                               return array;
+                             }()}})},
+      {"import_subgraph", obj({{"nodes", Json::Value(Json::arrayValue)},
+                               {"progress", [] {
+                                  Json::Value array(Json::arrayValue);
+                                  array.append(mark("docs", "complete"));
+                                  return array;
+                                }()}})},
+      // Four deterministic FAILURES, so the error wire is pinned too. Errors mutate nothing, so they ride at the end.
+      {"set_progress", obj({{"nodeId", "docs"}, {"status", "complete"}})},
       {"set_progress", obj({{"nodeId", "no-such-node"}, {"status", "active"}})},
       {"annotate_node", with("nodeId", "root")},
       {"create_node", obj({{"label", "Elsewhere"}, {"opens", "t_0000000000000000"}})},

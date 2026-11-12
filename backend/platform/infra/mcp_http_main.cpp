@@ -63,7 +63,7 @@ static int runMcpHttp(wm::ObservabilityLifetime& lifetime) {
   auto bus = std::make_shared<NullPresenceBus>();
   auto registry = std::make_shared<RoomRegistry>(*trees, *oplog, *bus);
   lifetime.watch(registry, trees, oplog, bus);
-  auto progress = std::make_shared<ProgressService>(*progressRepo);
+  auto progress = std::make_shared<ProgressService>(*progressRepo, *trees);
   auto registryTokens = std::make_shared<OpenSslTokenGenerator>();
   const Hlc genesis{1, 0, "genesis"};
   auto clock = std::make_shared<SystemClock>();

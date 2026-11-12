@@ -676,7 +676,7 @@ TEST(mcp_an_infrastructure_failure_answers_generically_and_never_leaks_its_detai
   StepClock clock;
   FakeTokens tokens;
   RoomRegistry registry{trees, ops, bus};
-  ProgressService progress{progressRepo};
+  ProgressService progress{progressRepo, trees};
   TreeRegistry treeRegistry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}, registry, clock};
   const UserId caller = uid("agent");
   RoadmapTools tools{registry, progress, clock, treeRegistry, bus};
@@ -2028,7 +2028,7 @@ TEST(mcp_import_subgraph_answers_the_landed_graft_when_clearing_the_tombstoned_m
   StepClock clock;
   FakeTokens tokens;
   RoomRegistry registry{trees, ops, bus};
-  ProgressService progress{progressRepo};
+  ProgressService progress{progressRepo, trees};
   TreeRegistry treeRegistry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}, registry, clock};
   const UserId caller = uid("agent");
   RoadmapTools tools{registry, progress, clock, treeRegistry, bus};
@@ -3624,7 +3624,7 @@ TEST(mcp_a_pointer_at_a_tree_that_is_not_the_callers_completes_as_opens_not_your
   CHECK_EQ(observed, expected);
 }
 
-// Every state, filter and count reads one completed set, in which the node follows its tree and not its mark.
+// Every state, filter and count reads one completed set, in which the node follows its tree and not the mark it held before it opened one.
 TEST(mcp_a_node_that_opens_a_tree_is_complete_when_the_tree_is_and_the_last_mark_unlocks_its_dependant) {
   Harness h;
   h.trees.byId["t_sub"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Deep dive", {}}, 0, h.caller};
@@ -3641,10 +3641,11 @@ TEST(mcp_a_node_that_opens_a_tree_is_complete_when_the_tree_is_and_the_last_mark
     return doneOfTotal;
   };
   CHECK_FALSE(sub("import_subgraph", R"({"nodes":[{"id":"s1","label":"S1"},{"id":"s2","label":"S2"}]})").isError);
-  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"idea","label":"Idea","opens":"t_sub"},
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"idea","label":"Idea"},
                                                             {"id":"next","label":"Next","prerequisites":["idea"]}]})")).isError);
   CHECK_FALSE(sub("set_progress", R"({"nodeId":"s1","status":"complete"})").isError);
   CHECK_FALSE(h.call("set_progress", parse(R"({"nodeId":"idea","status":"complete"})")).isError);
+  CHECK_FALSE(h.call("annotate_node", parse(R"({"nodeId":"idea","opens":"t_sub"})")).isError);
 
   const Json::Value open = parse(
       R"([{"id":"idea","status":"complete","state":"available","opens":{"treeId":"t_sub","title":"Deep dive","state":"open"}},
@@ -3658,10 +3659,9 @@ TEST(mcp_a_node_that_opens_a_tree_is_complete_when_the_tree_is_and_the_last_mark
   CHECK(counts() == (std::map<std::string, std::string>{{"t", "0/2"}, {"t_sub", "1/2"}}));
 
   CHECK_FALSE(sub("set_progress", R"({"nodeId":"s2","status":"complete"})").isError);
-  CHECK_FALSE(h.call("set_progress", parse(R"({"nodeId":"idea","status":"none"})")).isError);
 
   const Json::Value complete = parse(
-      R"([{"id":"idea","status":"none","state":"complete","opens":{"treeId":"t_sub","title":"Deep dive","state":"complete"}},
+      R"([{"id":"idea","status":"complete","state":"complete","opens":{"treeId":"t_sub","title":"Deep dive","state":"complete"}},
           {"id":"next","status":"none","state":"available"}])");
   CHECK_EQ(body(h.call("get_tree", parse(R"({"fields":["id","status","state","opens"]})")))["tree"]["nodes"], complete);
   CHECK_EQ(body(h.call("get_nodes", parse(R"({"nodeIds":["idea","next"],"fields":["id","status","state","opens"]})")))["nodes"], complete);
@@ -3669,7 +3669,7 @@ TEST(mcp_a_node_that_opens_a_tree_is_complete_when_the_tree_is_and_the_last_mark
            parse(R"({"count":1,"nodes":[{"id":"next","state":"available"}]})"));
   CHECK_EQ(body(h.call("find_nodes", parse(R"({"state":"complete","fields":["id","opens"]})"))),
            parse(R"({"count":1,"nodes":[{"id":"idea","opens":{"treeId":"t_sub","title":"Deep dive","state":"complete"}}]})"));
-  CHECK_EQ(body(h.call("get_progress", kNoArgs)), parse(R"({"completed":[],"outOfOrder":[]})"));
+  CHECK_EQ(body(h.call("get_progress", kNoArgs)), parse(R"({"completed":["idea"],"outOfOrder":[]})"));
   CHECK(counts() == (std::map<std::string, std::string>{{"t", "1/2"}, {"t_sub", "2/2"}}));
 }
 
@@ -3860,4 +3860,317 @@ TEST(mcp_a_read_follows_pointers_after_it_has_let_go_of_the_trees_strand) {
     CHECK_EQ(readMeanwhile, parse(R"([{"id":"a","state":"available"}])"));
   }
   CHECK_EQ(h.trees.openedReads.size(), 3u);
+}
+
+// A mark on such a node told its maker it did something; the door says what completes the node, and names no tree.
+TEST(mcp_set_progress_on_a_node_that_opens_a_tree_is_refused_in_one_sentence_and_writes_nothing) {
+  Harness h;
+  h.trees.byId["t_sub"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Deep dive", {}}, 0, h.caller};
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"idea","label":"Idea"})")).isError);
+  CHECK_FALSE(h.call("set_progress", parse(R"({"nodeId":"idea","status":"complete"})")).isError);
+  CHECK_FALSE(h.call("annotate_node", parse(R"({"nodeId":"idea","opens":"t_sub"})")).isError);
+  const std::map<std::string, FakeProgressRepository::Entry> stored = h.progressRepo.byKey;
+  const std::size_t broadcasts = h.bus.progressBroadcasts.size();
+  CompositeToolHost gate(std::vector<ToolModule>{{h.tools, ""}});
+  std::vector<WriteCompletion> completions;
+  installWriteSink([&](const WriteCompletion& completion) { completions.push_back(completion); });
+
+  for (const std::string status : {"complete", "none"}) {
+    const ToolResult refused =
+        gate.callTool("roadmap_set_progress", parse(R"({"treeId":"t","nodeId":"idea","status":")" + status + R"("})"), h.actor);
+    CHECK(refused.isError);
+    CHECK_EQ(message(refused), std::string("set_progress: \"idea\" opens a tree: it is complete when that tree is and takes "
+                                           "no mark of its own — mark the steps of the tree it opens"));
+  }
+  installWriteSink({});
+
+  CHECK(h.progressRepo.byKey == stored);
+  CHECK_EQ(stored.size(), 1u);
+  CHECK_EQ(h.bus.progressBroadcasts.size(), broadcasts);
+  std::vector<std::string> observed;
+  for (const WriteCompletion& completion : completions) observed.push_back(completion.operation + " " + completion.outcome);
+  CHECK_EQ(observed, (std::vector<std::string>{"mcp.roadmap_set_progress opens-a-tree", "mcp.roadmap_set_progress opens-a-tree"}));
+}
+
+// Each row answers for its own node in the batch's order; the call's outcome says whether any mark was recorded.
+TEST(mcp_a_batch_records_its_ordinary_marks_and_answers_a_refused_row_for_each_node_that_opens_a_tree) {
+  Harness h;
+  h.trees.byId["t_sub"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Deep dive", {}}, 0, h.caller};
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"},{"id":"idea","label":"Idea","opens":"t_sub"},
+                                                            {"id":"b","label":"B","prerequisites":["a"]},
+                                                            {"id":"deeper","label":"Deeper","opens":"t_sub"}]})")).isError);
+  CompositeToolHost gate(std::vector<ToolModule>{{h.tools, ""}});
+  std::vector<WriteCompletion> completions;
+  installWriteSink([&](const WriteCompletion& completion) { completions.push_back(completion); });
+
+  const ToolResult mixed = gate.callTool("roadmap_set_progress", parse(R"({"treeId":"t","updates":[
+      {"nodeId":"idea","status":"complete"},{"nodeId":"a","status":"complete"},
+      {"nodeId":"deeper","status":"none"},{"nodeId":"b","status":"complete"}]})"), h.actor);
+  const ToolResult everyRowRefused = gate.callTool("roadmap_set_progress", parse(R"({"treeId":"t","updates":[
+      {"nodeId":"deeper","status":"complete"},{"nodeId":"idea","status":"complete"}]})"), h.actor);
+  installWriteSink({});
+
+  CHECK_FALSE(mixed.isError);
+  CHECK_EQ(body(mixed), parse(R"({"results":[
+      {"nodeId":"idea","refused":"\"idea\" opens a tree: it is complete when that tree is and takes no mark of its own — mark the steps of the tree it opens"},
+      {"nodeId":"a","status":"complete","prerequisitesMet":true},
+      {"nodeId":"deeper","refused":"\"deeper\" opens a tree: it is complete when that tree is and takes no mark of its own — mark the steps of the tree it opens"},
+      {"nodeId":"b","status":"complete","prerequisitesMet":true}]})"));
+  CHECK_FALSE(everyRowRefused.isError);
+  CHECK_EQ(body(everyRowRefused), parse(R"({"results":[
+      {"nodeId":"deeper","refused":"\"deeper\" opens a tree: it is complete when that tree is and takes no mark of its own — mark the steps of the tree it opens"},
+      {"nodeId":"idea","refused":"\"idea\" opens a tree: it is complete when that tree is and takes no mark of its own — mark the steps of the tree it opens"}]})"));
+  CHECK_EQ(body(h.call("get_progress", kNoArgs)), parse(R"({"completed":["a","b"],"outOfOrder":[]})"));
+  CHECK_EQ(h.progressRepo.byKey.size(), 2u);
+  REQUIRE_EQ(h.bus.progressBroadcasts.size(), 1u);
+  CHECK(h.bus.progressBroadcasts[0].marks.completed == (std::set<NodeId>{nid("a"), nid("b")}));
+  CHECK_EQ(h.bus.progressBroadcasts[0].marks.marks.size(), 2u);
+  std::vector<std::string> observed;
+  for (const WriteCompletion& completion : completions) observed.push_back(completion.operation + " " + completion.outcome);
+  CHECK_EQ(observed, (std::vector<std::string>{"mcp.roadmap_set_progress ok", "mcp.roadmap_set_progress opens-a-tree"}));
+}
+
+// The marks ride after the graft, so a pointer the same import sets already refuses the mark sent with it.
+TEST(mcp_an_imports_progress_reports_the_nodes_that_open_a_tree_and_still_grafts_and_marks_the_rest) {
+  Harness h;
+  h.trees.byId["t_sub"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Deep dive", {}}, 0, h.caller};
+  CompositeToolHost gate(std::vector<ToolModule>{{h.tools, ""}});
+  std::vector<WriteCompletion> completions;
+  installWriteSink([&](const WriteCompletion& completion) { completions.push_back(completion); });
+
+  const ToolResult imported = gate.callTool("roadmap_import_subgraph", parse(R"({"treeId":"t",
+      "nodes":[{"id":"idea","label":"Idea","opens":"t_sub"},{"id":"a","label":"A"}],
+      "progress":[{"nodeId":"idea","status":"complete"},{"nodeId":"a","status":"complete"},{"nodeId":"ghost","status":"complete"}]})"), h.actor);
+  const ToolResult onlyRefused = gate.callTool("roadmap_import_subgraph", parse(R"({"treeId":"t","nodes":[],
+      "progress":[{"nodeId":"idea","status":"none"}]})"), h.actor);
+  installWriteSink({});
+
+  CHECK_FALSE(imported.isError);
+  CHECK_EQ(body(imported), parse(R"({"nodes":2,"edges":0,"kinds":0,"nodeCollisions":[],"kindCollisions":[],
+      "newNodes":2,"newKinds":0,"prerequisiteMode":"merge","keptEdges":[],"keptEdgeCount":0,
+      "tombstoned":{"nodes":0,"edges":0},"graphApplied":true,"progressApplied":false,"imported":true,"seq":1,
+      "diagnosticsClean":true,"introducedDiagnostics":[],
+      "progress":[
+        {"nodeId":"idea","refused":"\"idea\" opens a tree: it is complete when that tree is and takes no mark of its own — mark the steps of the tree it opens"},
+        {"nodeId":"a","status":"complete","prerequisitesMet":true}],
+      "progressSkipped":["ghost"],"progressRefused":["idea"],
+      "progressError":"Some requested progress names nodes absent after the graft; those ids are listed in progressSkipped. Some requested progress marks nodes that open a tree, which take no mark of their own — each is complete when the tree it opens is; those ids are listed in progressRefused."})"));
+  CHECK_FALSE(onlyRefused.isError);
+  CHECK_EQ(body(onlyRefused), parse(R"({"nodes":0,"edges":0,"kinds":0,"nodeCollisions":[],"kindCollisions":[],
+      "newNodes":0,"newKinds":0,"prerequisiteMode":"merge","keptEdges":[],"keptEdgeCount":0,
+      "tombstoned":{"nodes":0,"edges":0},"graphApplied":true,"progressApplied":false,"imported":true,"seq":2,
+      "diagnosticsClean":true,"introducedDiagnostics":[],
+      "progress":[
+        {"nodeId":"idea","refused":"\"idea\" opens a tree: it is complete when that tree is and takes no mark of its own — mark the steps of the tree it opens"}],
+      "progressRefused":["idea"],
+      "progressError":"Some requested progress marks nodes that open a tree, which take no mark of their own — each is complete when the tree it opens is; those ids are listed in progressRefused."})"));
+  CHECK_EQ(body(h.call("get_tree", parse(R"({"fields":["id","status"]})")))["tree"]["nodes"],
+           parse(R"([{"id":"a","status":"complete"},{"id":"idea","status":"none"}])"));
+  CHECK_EQ(h.progressRepo.byKey.size(), 1u);
+  std::vector<std::string> observed;
+  for (const WriteCompletion& completion : completions) observed.push_back(completion.operation + " " + completion.outcome);
+  CHECK_EQ(observed, (std::vector<std::string>{"mcp.roadmap_import_subgraph ok", "mcp.roadmap_import_subgraph ok"}));
+}
+
+// A pointer at a tree that is absent, deleted or someone else's follows nothing, so its node keeps its own mark.
+TEST(mcp_a_node_whose_pointer_is_not_valid_is_marked_as_any_node) {
+  Harness h;
+  h.trees.byId["t_gone"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Retired", {}}, 0, h.caller};
+  h.trees.byId["t_theirs"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Their plans", {}}, 0,
+                                        uid("someone-else"), Visibility::public_};
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"gone","label":"Gone","opens":"t_gone"},{"id":"theirs","label":"Theirs"},
+                                                            {"id":"absent","label":"Absent"},{"id":"plain","label":"Plain"}]})")).isError);
+  h.trees.softDelete(TreeId{"t_gone"});
+  for (const auto& [node, target] : std::vector<std::pair<const char*, const char*>>{{"theirs", "t_theirs"}, {"absent", "t_absent"}}) {
+    AnnotateNode planted{NodeId{node}};
+    planted.opens = TreeId{target};
+    h.registry.open(TreeId{"t"})->applyCommand(planted, h.clock.nowMs(), h.caller);
+  }
+
+  CHECK_EQ(body(h.call("set_progress", parse(R"({"updates":[{"nodeId":"gone","status":"complete"},{"nodeId":"theirs","status":"complete"},
+                                                             {"nodeId":"absent","status":"complete"},{"nodeId":"plain","status":"complete"}]})"))),
+           parse(R"({"results":[{"nodeId":"gone","status":"complete","prerequisitesMet":true},
+                                {"nodeId":"theirs","status":"complete","prerequisitesMet":true},
+                                {"nodeId":"absent","status":"complete","prerequisitesMet":true},
+                                {"nodeId":"plain","status":"complete","prerequisitesMet":true}]})"));
+  CHECK_EQ(body(h.call("set_progress", parse(R"({"nodeId":"gone","status":"none"})"))),
+           parse(R"({"nodeId":"gone","status":"none","prerequisitesMet":true})"));
+  CHECK_EQ(body(h.call("get_tree", parse(R"({"fields":["id","status","state"]})")))["tree"]["nodes"],
+           parse(R"([{"id":"absent","status":"complete","state":"complete"},{"id":"gone","status":"none","state":"available"},
+                     {"id":"plain","status":"complete","state":"complete"},{"id":"theirs","status":"complete","state":"complete"}])"));
+}
+
+// A refusal would tell such a caller the node opens a tree, and so would a read made only for that node.
+TEST(mcp_a_caller_who_cannot_write_the_tree_marks_a_node_that_opens_a_tree_exactly_as_on_a_twin_and_nothing_is_read) {
+  Harness h;
+  h.trees.byId["t"].visibility = Visibility::public_;
+  h.trees.byId["t_twin"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Test Roadmap", {}}, 0, h.caller, Visibility::public_};
+  h.trees.byId["t_sub"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Deep dive", {}}, 0, h.caller};
+  CHECK_FALSE(h.tools.callTool("import_subgraph", parse(R"({"treeId":"t","nodes":[{"id":"idea","label":"Idea","opens":"t_sub"},
+                                                            {"id":"next","label":"Next","prerequisites":["idea"]}]})"), h.actor).isError);
+  CHECK_FALSE(h.tools.callTool("import_subgraph", parse(R"({"treeId":"t_twin","nodes":[{"id":"idea","label":"Idea"},
+                                                            {"id":"next","label":"Next","prerequisites":["idea"]}]})"), h.actor).isError);
+  const std::size_t readsForTheOwner = h.trees.openedReads.size();
+
+  const std::vector<std::pair<const char*, const char*>> marks = {
+      {R"({"nodeId":"next","status":"complete"})", R"({"nodeId":"next","status":"complete","prerequisitesMet":false})"},
+      {R"({"nodeId":"idea","status":"complete"})", R"({"nodeId":"idea","status":"complete","prerequisitesMet":true})"},
+      {R"({"nodeId":"idea","status":"none"})", R"({"nodeId":"idea","status":"none","prerequisitesMet":true})"},
+      {R"({"updates":[{"nodeId":"idea","status":"complete"},{"nodeId":"next","status":"complete"}]})",
+       R"({"results":[{"nodeId":"idea","status":"complete","prerequisitesMet":true},{"nodeId":"next","status":"complete","prerequisitesMet":true}]})"}};
+  for (const UserId& reader : {uid("stranger"), UserId{}}) {
+    const ToolCaller caller{reader, ToolScope::everything()};
+    for (const auto& [arguments, expected] : marks) {
+      Json::Value onTheTree = parse(arguments);
+      onTheTree["treeId"] = "t";
+      Json::Value onTheTwin = parse(arguments);
+      onTheTwin["treeId"] = "t_twin";
+      const ToolResult marked = h.tools.callTool("set_progress", onTheTree, caller);
+      const ToolResult twin = h.tools.callTool("set_progress", onTheTwin, caller);
+      CHECK_FALSE(marked.isError);
+      CHECK_EQ(message(marked), message(twin));
+      CHECK_EQ(body(marked), parse(expected));
+    }
+    CHECK(h.progressRepo.load(TreeId{"t"}, reader).completed == (std::set<NodeId>{nid("idea"), nid("next")}));
+  }
+  CHECK_EQ(h.trees.openedReads.size(), readsForTheOwner);
+}
+
+// The advisory reads the completed set the tree derives: a step behind such a node waits on the opened tree, not on a stored mark.
+TEST(mcp_prerequisites_met_follows_the_tree_a_prerequisite_opens_whatever_mark_that_node_holds) {
+  Harness h;
+  h.trees.byId["t"].visibility = Visibility::public_;
+  h.trees.byId["t_open"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Still open", {}}, 0, h.caller};
+  h.trees.byId["t_done"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Done", {}}, 0, h.caller};
+  CHECK_FALSE(h.tools.callTool("create_node", parse(R"({"treeId":"t_open","id":"s","label":"S"})"), h.actor).isError);
+  CHECK_FALSE(h.tools.callTool("create_node", parse(R"({"treeId":"t_done","id":"d","label":"D"})"), h.actor).isError);
+  CHECK_FALSE(h.tools.callTool("set_progress", parse(R"({"treeId":"t_done","nodeId":"d","status":"complete"})"), h.actor).isError);
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"marked","label":"Marked"},{"id":"unmarked","label":"Unmarked","opens":"t_done"},
+                                                            {"id":"behind-marked","label":"Behind marked","prerequisites":["marked"]},
+                                                            {"id":"behind-unmarked","label":"Behind unmarked","prerequisites":["unmarked"]}],
+                                                   "progress":[{"nodeId":"marked","status":"complete"}]})")).isError);
+  CHECK_FALSE(h.call("annotate_node", parse(R"({"nodeId":"marked","opens":"t_open"})")).isError);
+
+  CHECK_EQ(body(h.call("set_progress", parse(R"({"updates":[{"nodeId":"behind-marked","status":"complete","outOfOrder":true},
+                                                             {"nodeId":"behind-unmarked","status":"complete"}]})"))),
+           parse(R"({"results":[{"nodeId":"behind-marked","status":"complete","prerequisitesMet":false,"acknowledged":true},
+                                {"nodeId":"behind-unmarked","status":"complete","prerequisitesMet":true}]})"));
+  CHECK_EQ(body(h.call("set_progress", parse(R"({"nodeId":"behind-marked","status":"complete"})"))),
+           parse(R"({"nodeId":"behind-marked","status":"complete","prerequisitesMet":false})"));
+
+  CHECK_FALSE(h.tools.callTool("set_progress", parse(R"({"treeId":"t_open","nodeId":"s","status":"complete"})"), h.actor).isError);
+  CHECK_EQ(body(h.call("set_progress", parse(R"({"nodeId":"behind-marked","status":"complete"})"))),
+           parse(R"({"nodeId":"behind-marked","status":"complete","prerequisitesMet":true})"));
+
+  const ToolCaller stranger{uid("stranger"), ToolScope::everything()};
+  CHECK_EQ(body(h.tools.callTool("set_progress", parse(R"({"treeId":"t","nodeId":"behind-unmarked","status":"complete"})"), stranger)),
+           parse(R"({"nodeId":"behind-unmarked","status":"complete","prerequisitesMet":false})"));
+  CHECK_EQ(body(h.tools.callTool("set_progress", parse(R"({"treeId":"t","updates":[{"nodeId":"unmarked","status":"complete"},
+                                                                                    {"nodeId":"behind-unmarked","status":"complete"}]})"), stranger)),
+           parse(R"({"results":[{"nodeId":"unmarked","status":"complete","prerequisitesMet":true},
+                                {"nodeId":"behind-unmarked","status":"complete","prerequisitesMet":true}]})"));
+}
+
+// Nothing is read for a tree with no pointer, for a caller who cannot write it, or for a call refused before it is judged.
+TEST(mcp_a_mark_follows_pointers_in_one_read_for_the_trees_writer_and_reads_nothing_where_no_pointer_is_followed) {
+  Harness h;
+  h.trees.byId["t"].visibility = Visibility::public_;
+  h.trees.byId["t_sub"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Deep dive", {}}, 0, h.caller};
+  h.trees.byId["t_other"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Side quest", {}}, 0, h.caller};
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"},{"id":"b","label":"B"},{"id":"c","label":"C"}],
+                                                   "progress":[{"nodeId":"c","status":"complete"}]})")).isError);
+  CHECK_FALSE(h.call("set_progress", parse(R"({"nodeId":"a","status":"complete"})")).isError);
+  CHECK_FALSE(h.call("set_progress", parse(R"({"updates":[{"nodeId":"a","status":"none"},{"nodeId":"b","status":"complete"}]})")).isError);
+  CHECK(h.trees.openedReads.empty());
+
+  CHECK_FALSE(h.call("patch_nodes", parse(R"({"updates":[{"nodeId":"a","opens":"t_sub"},{"nodeId":"b","opens":"t_other"}]})")).isError);
+  CHECK(h.call("set_progress", parse(R"({"updates":[{"nodeId":"ghost","status":"complete"},{"nodeId":"c","status":"none"}]})")).isError);
+  for (const UserId& reader : {uid("stranger"), UserId{}}) {
+    const ToolCaller caller{reader, ToolScope::everything()};
+    CHECK_FALSE(h.tools.callTool("set_progress", parse(R"({"treeId":"t","nodeId":"a","status":"complete"})"), caller).isError);
+    CHECK_FALSE(h.tools.callTool("set_progress", parse(R"({"treeId":"t","updates":[{"nodeId":"b","status":"complete"},{"nodeId":"c","status":"complete"}]})"), caller).isError);
+  }
+  CHECK(h.trees.openedReads.empty());
+
+  const std::set<TreeId> opened{TreeId{"t_other"}, TreeId{"t_sub"}};
+  CHECK_FALSE(h.call("set_progress", parse(R"({"nodeId":"c","status":"none"})")).isError);
+  CHECK_EQ(h.trees.openedReads, (std::vector<std::set<TreeId>>{opened}));
+  CHECK_FALSE(h.call("set_progress", parse(R"({"updates":[{"nodeId":"a","status":"complete"},{"nodeId":"b","status":"complete"},{"nodeId":"c","status":"complete"}]})")).isError);
+  CHECK_EQ(h.trees.openedReads, (std::vector<std::set<TreeId>>{opened, opened}));
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[],"progress":[{"nodeId":"a","status":"complete"},{"nodeId":"c","status":"none"}]})")).isError);
+  CHECK_EQ(h.trees.openedReads, (std::vector<std::set<TreeId>>{opened, opened, opened}));
+}
+
+// A stranger's read or mark must not wait on the owner's statements: that wait would say the tree holds a pointer.
+TEST(mcp_a_mark_reads_and_writes_the_repositories_after_it_has_let_go_of_the_trees_strand) {
+  Harness h;
+  h.trees.byId["t"].visibility = Visibility::public_;
+  h.trees.byId["t_sub"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Deep dive", {}}, 0, h.caller};
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"idea","label":"Idea","opens":"t_sub"},{"id":"a","label":"A"}]})")).isError);
+  std::vector<std::string> statementsUnderAFreeStrand;
+  Json::Value readMeanwhile;
+  const auto during = [&](const char* statement) {
+    return [&, statement] {
+      std::thread other([&] {
+        std::mutex& strand = h.registry.strandFor(TreeId{"t"});
+        if (!strand.try_lock()) return;
+        strand.unlock();
+        statementsUnderAFreeStrand.push_back(statement);
+        readMeanwhile = body(h.tools.callTool("get_tree", parse(R"({"treeId":"t","fields":["id"]})"),
+                                              ToolCaller{uid("stranger"), ToolScope::everything()}))["tree"]["nodes"];
+      });
+      other.join();
+    };
+  };
+  h.trees.duringOpenedRead = during("read");
+  h.progressRepo.duringBatchWrite = during("write");
+
+  const std::vector<std::pair<const char*, const char*>> marking = {
+      {"set_progress", R"({"nodeId":"a","status":"complete"})"},
+      {"set_progress", R"({"updates":[{"nodeId":"idea","status":"complete"},{"nodeId":"a","status":"none"}]})"},
+      {"import_subgraph", R"({"nodes":[],"progress":[{"nodeId":"a","status":"complete"}]})"}};
+  for (const auto& [tool, arguments] : marking) {
+    statementsUnderAFreeStrand.clear();
+    readMeanwhile = Json::Value();
+    CHECK_FALSE(h.call(tool, parse(arguments)).isError);
+    CHECK_EQ(statementsUnderAFreeStrand, (std::vector<std::string>{"read", "write"}));
+    CHECK_EQ(readMeanwhile, parse(R"([{"id":"a"},{"id":"idea"}])"));
+  }
+}
+
+// Following is part of the call: its failure is the tool's server failure, before any mark is written, and only where it is made.
+TEST(mcp_a_mark_whose_pointers_cannot_be_followed_fails_as_the_call_and_records_nothing) {
+  Harness h;
+  h.trees.byId["t"].visibility = Visibility::public_;
+  h.trees.byId["t_sub"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Deep dive", {}}, 0, h.caller};
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"idea","label":"Idea","opens":"t_sub"},{"id":"a","label":"A"}]})")).isError);
+  h.trees.openedReadsFail = true;
+  CompositeToolHost gate(std::vector<ToolModule>{{h.tools, ""}});
+  std::vector<WriteCompletion> completions;
+  installWriteSink([&](const WriteCompletion& completion) { completions.push_back(completion); });
+
+  for (const char* arguments : {R"({"treeId":"t","nodeId":"a","status":"complete"})",
+                                R"({"treeId":"t","updates":[{"nodeId":"a","status":"complete"}]})"}) {
+    const ToolResult failed = gate.callTool("roadmap_set_progress", parse(arguments), h.actor);
+    CHECK(failed.isError);
+    CHECK_EQ(message(failed), std::string("set_progress: that call failed inside the server. The outcome may be uncertain; "
+                                          "read the affected records before retrying. The detail is in the server log."));
+  }
+  const ToolResult imported = gate.callTool("roadmap_import_subgraph", parse(R"({"treeId":"t","nodes":[],"progress":[{"nodeId":"a","status":"complete"}]})"), h.actor);
+  installWriteSink({});
+
+  CHECK_FALSE(imported.isError);
+  CHECK(body(imported)["graphApplied"].asBool());
+  CHECK_FALSE(body(imported)["progressApplied"].asBool());
+  CHECK_EQ(body(imported)["progressError"].asString(),
+           std::string("The graph committed, but the requested progress outcome is uncertain. Read get_progress before retrying progress changes."));
+  CHECK(h.progressRepo.byKey.empty());
+  CHECK(h.bus.progressBroadcasts.empty());
+  std::vector<std::string> observed;
+  for (const WriteCompletion& completion : completions) observed.push_back(completion.operation + " " + completion.outcome);
+  CHECK_EQ(observed, (std::vector<std::string>{"mcp.roadmap_set_progress failed", "mcp.roadmap_set_progress failed",
+                                               "mcp.roadmap_import_subgraph failed"}));
+  CHECK_EQ(body(h.tools.callTool("set_progress", parse(R"({"treeId":"t","nodeId":"a","status":"complete"})"),
+                                 ToolCaller{uid("stranger"), ToolScope::everything()})),
+           parse(R"({"nodeId":"a","status":"complete","prerequisitesMet":true})"));
 }

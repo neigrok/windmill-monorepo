@@ -352,7 +352,7 @@ TEST(pg_create_node_on_a_deleted_id_opens_nothing_after_a_restart) {
   FakeProgressRepository progressRepo;
   FakeTokens tokens;
   test::StepClock clock;
-  ProgressService progress{progressRepo};
+  ProgressService progress{progressRepo, trees};
   trees.create(kTree, LooseGraph().exportState(), LegendState{}, "Main", kSam);
   trees.create(kFork, LooseGraph().exportState(), LegendState{}, "Deep dive", kSam);
   const auto storedPointer = [] {
@@ -477,8 +477,8 @@ TEST(pg_opened_from_answers_every_standing_tree_of_the_owners_the_pointers_lead_
   clear();
 }
 
-// The whole path over the real repositories, a second reader's marks included.
-TEST(pg_a_node_follows_the_tree_it_opens_and_the_registry_list_counts_it) {
+// The whole path over the real repositories: the owner's mark refused and judged, a second reader's recorded.
+TEST(pg_a_node_follows_the_tree_it_opens_takes_no_mark_from_its_owner_and_the_registry_list_counts_it) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
   PgTreeRepository trees{pgTestPool()};
@@ -487,7 +487,7 @@ TEST(pg_a_node_follows_the_tree_it_opens_and_the_registry_list_counts_it) {
   FakeBus bus;
   FakeTokens tokens;
   test::StepClock clock;
-  ProgressService progress{progressRepo};
+  ProgressService progress{progressRepo, trees};
   RoomRegistry registry(trees, log, bus);
   TreeRegistry treeRegistry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}, registry, clock};
   RoadmapTools tools{registry, progress, clock, treeRegistry, bus};
@@ -506,27 +506,40 @@ TEST(pg_a_node_follows_the_tree_it_opens_and_the_registry_list_counts_it) {
   };
   CHECK_FALSE(call(kFork, kSam, "create_node", R"({"id":"s","label":"S"})").isError);
   CHECK_FALSE(call(kTree, kSam, "import_subgraph",
-                   R"({"nodes":[{"id":"idea","label":"Idea","opens":")" + kFork.str() +
-                       R"("},{"id":"next","label":"Next","prerequisites":["idea"]}]})").isError);
+                   R"({"nodes":[{"id":"idea","label":"Idea"},{"id":"next","label":"Next","prerequisites":["idea"]}]})").isError);
+  CHECK_FALSE(call(kTree, kSam, "set_progress", R"({"nodeId":"idea","status":"complete"})").isError);
+  CHECK_FALSE(call(kTree, kSam, "annotate_node", R"({"nodeId":"idea","opens":")" + kFork.str() + R"("})").isError);
   registry.setVisibility(kTree, Visibility::public_);
   registry.setVisibility(kFork, Visibility::public_);
   CHECK_FALSE(call(kFork, kEve, "set_progress", R"({"nodeId":"s","status":"complete"})").isError);
-  CHECK_FALSE(call(kTree, kSam, "set_progress", R"({"nodeId":"idea","status":"complete"})").isError);
 
   Json::Value open = parse(R"([{"id":"idea","status":"complete","state":"available","opens":{"title":"Deep dive","state":"open"}},
                                {"id":"next","status":"none","state":"locked"}])");
   open[0]["opens"]["treeId"] = kFork.str();
   CHECK_EQ(test::body(call(kTree, kSam, "get_tree", R"({"fields":["id","status","state","opens"]})"))["tree"]["nodes"], open);
   CHECK(counts() == (std::map<std::string, std::string>{{kTree.str(), "0/2"}, {kFork.str(), "0/1"}}));
+  const ToolResult refused = call(kTree, kSam, "set_progress", R"({"nodeId":"idea","status":"none"})");
+  CHECK(refused.isError);
+  CHECK_EQ(test::message(refused), std::string("set_progress: \"idea\" opens a tree: it is complete when that tree is and takes "
+                                                "no mark of its own — mark the steps of the tree it opens"));
+  CHECK_EQ(test::body(call(kTree, kSam, "set_progress", R"({"nodeId":"next","status":"complete"})")),
+           parse(R"({"nodeId":"next","status":"complete","prerequisitesMet":false})"));
+  CHECK_EQ(test::body(call(kTree, kSam, "get_tree", R"({"fields":["id","status","state","opens"]})"))["tree"]["nodes"][0], open[0]);
 
   CHECK_FALSE(call(kFork, kSam, "set_progress", R"({"nodeId":"s","status":"complete"})").isError);
 
   Json::Value complete = parse(R"([{"id":"idea","status":"complete","state":"complete","opens":{"title":"Deep dive","state":"complete"}},
-                                   {"id":"next","status":"none","state":"available"}])");
+                                   {"id":"next","status":"complete","state":"complete"}])");
   complete[0]["opens"]["treeId"] = kFork.str();
+  CHECK_EQ(test::body(call(kTree, kSam, "set_progress", R"({"nodeId":"next","status":"complete"})")),
+           parse(R"({"nodeId":"next","status":"complete","prerequisitesMet":true})"));
   CHECK_EQ(test::body(call(kTree, kSam, "get_tree", R"({"fields":["id","status","state","opens"]})"))["tree"]["nodes"], complete);
   CHECK_EQ(test::body(call(kTree, kEve, "get_tree", R"({"fields":["id","status","state","opens"]})"))["tree"]["nodes"],
            parse(R"([{"id":"idea","status":"none","state":"available"},{"id":"next","status":"none","state":"locked"}])"));
-  CHECK(counts() == (std::map<std::string, std::string>{{kTree.str(), "1/2"}, {kFork.str(), "1/1"}}));
+  CHECK(counts() == (std::map<std::string, std::string>{{kTree.str(), "2/2"}, {kFork.str(), "1/1"}}));
+  CHECK_EQ(test::body(call(kTree, kEve, "set_progress", R"({"nodeId":"idea","status":"complete"})")),
+           parse(R"({"nodeId":"idea","status":"complete","prerequisitesMet":true})"));
+  CHECK_EQ(test::body(call(kTree, kEve, "get_tree", R"({"fields":["id","status","state","opens"]})"))["tree"]["nodes"],
+           parse(R"([{"id":"idea","status":"complete","state":"complete"},{"id":"next","status":"none","state":"available"}])"));
   registry.stop();
 }

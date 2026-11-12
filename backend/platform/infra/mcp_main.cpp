@@ -53,7 +53,7 @@ static int runMcp() {
   PgOpLog oplog(pool);
   NullPresenceBus bus;
   RoomRegistry registry(trees, oplog, bus);
-  ProgressService progress(progressRepo);
+  ProgressService progress(progressRepo, trees);
   OpenSslTokenGenerator registryTokens;
   const Hlc genesis{1, 0, "genesis"};
   SystemClock clock;

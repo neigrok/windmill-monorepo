@@ -78,6 +78,15 @@ TEST(a_node_is_complete_when_the_tree_it_opens_is_complete_and_open_until_then) 
   CHECK(finished.followed(root, Progress{}).completed == std::set<NodeId>{nid("idea")});
 }
 
+TEST(the_nodes_that_follow_a_tree_are_those_whose_pointer_names_a_standing_tree) {
+  const TreeData root = tree("root", {step("idea", "sub"), step("lost", "gone"), step("again", "root"), step("plain")});
+  const TreeData sub = tree("sub", {step("s")});
+
+  CHECK(opened({root, sub}).following(root) == (std::set<NodeId>{nid("again"), nid("idea")}));
+  CHECK(opened({sub}).following(root) == std::set<NodeId>{nid("idea")});
+  CHECK(opened({}).following(root) == std::set<NodeId>{});
+}
+
 TEST(two_trees_that_open_each_other_are_never_complete) {
   const TreeData a = tree("a", {step("to-b", "b")});
   const TreeData b = tree("b", {step("to-a", "a"), step("done")});

@@ -56,6 +56,13 @@ OpenedTrees::OpenedTrees(std::map<TreeId, OpenedTree> standing) : standing_(std:
   }
 }
 
+std::set<NodeId> OpenedTrees::following(const TreeData& tree) const {
+  std::set<NodeId> following;
+  for (const NodeSpec& node : tree.nodes)
+    if (!node.opens.empty() && standing_.count(node.opens)) following.insert(node.id);
+  return following;
+}
+
 Progress OpenedTrees::followed(const TreeData& tree, const Progress& marks) const {
   Progress followed;
   followed.completed = marks.completed;

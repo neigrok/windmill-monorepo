@@ -43,12 +43,17 @@ struct Opening {
 
 std::set<TreeId> treesOpenedBy(const TreeData& tree);
 
+// The code a mark on a node that holds a valid pointer is refused under; a client branches on it and it never changes.
+inline constexpr char kOpensATree[] = "opens-a-tree";
+
 // One owner's standing trees under the owner's marks, judged once by the rule in SPEC.md (Model, `OpenedTrees`).
 class OpenedTrees {
 public:
   // A pointer is valid when it names one of `standing`.
   explicit OpenedTrees(std::map<TreeId, OpenedTree> standing);
 
+  // The nodes of `tree` that hold a valid pointer: each follows its tree and takes no mark of its own.
+  std::set<NodeId> following(const TreeData& tree) const;
   // `marks` on `tree`, with each node that holds a valid pointer following its tree; only `completed` is filled.
   Progress followed(const TreeData& tree, const Progress& marks) const;
   // One entry per node of `tree` that holds a pointer.

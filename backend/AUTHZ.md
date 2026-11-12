@@ -24,8 +24,11 @@ Visibility-gated read, owner-only write, per-user progress. The two predicates a
   MCP `state`, the registry counts and the `opens` object of `GET` tree; for every other reader the
   node is an ordinary one whose state follows their own mark, the `opens` key is absent, and the
   opened trees are not read at all; the writer's own read of them is made after the tree's strand is
-  released, so no other read of the tree waits on it. No state, count, key or timing says a node
-  opens a tree. A
+  released, so no other read of the tree waits on it. A progress mark follows the same line: only
+  a caller `canWrite` admits is refused a mark on a node that opens a tree of theirs, and the
+  opened trees are read only for that caller; every other reader's mark on that node is recorded
+  and answered byte for byte as on a node that opens nothing. No state, count, key, refusal or
+  timing says a node opens a tree. A
   tend neither reads nor sets the pointer: it runs as the owner on labels that may be someone else's
   words, so `ScopedToolHost` offers it no `opens` argument and no `opens` field, and refuses a call
   that names either; the `state` it reads is the owner's.
@@ -42,7 +45,10 @@ Visibility-gated read, owner-only write, per-user progress. The two predicates a
   owner-gated. They gate on `canRead` alone, and each caller writes only their own per-user overlay
   (`node_progress` is keyed by `user_id`). Any signed-in reader may mark any tree they can read — the
   demo included — and nobody's marks are visible in anyone else's overlay. The `canRead` gate is
-  there so a mark cannot confirm which node ids a private tree holds.
+  there so a mark cannot confirm which node ids a private tree holds. One mark is not recorded: the
+  tree's writer's on a node that opens a tree of theirs, which is complete when that tree is
+  (`SPEC.md`, Model). A tend marks as the owner and is refused the same way, in a sentence that
+  names the node and no tree.
 
 `owner_id` is written by exactly two statements, the `INSERT` in `create` and the `INSERT` in `fork`
 (`products/roadmap/adapters/postgres/PgTreeRepository.cpp`). There is no `UPDATE` of that column
