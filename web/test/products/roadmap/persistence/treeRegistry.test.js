@@ -40,6 +40,10 @@ test('listServerTrees — the account’s server rows newest first, and a list t
   assert.deepEqual(await listServerTrees(), { authoritative: false, status: 401, rows: [] });
   global.fetch = async () => { throw new TypeError('failed to fetch'); };
   assert.deepEqual(await listServerTrees(), { authoritative: false, status: 0, rows: [] });
+  stubFetch(() => ({ ok: true, status: 200, json: async () => { throw new SyntaxError('<html>'); } }));
+  assert.deepEqual(await listServerTrees(), { authoritative: false, status: 200, rows: [] }, 'a 200 that is not a list');
+  stubFetch(() => ({ ok: true, status: 200, json: async () => ({ trees: 'nope' }) }));
+  assert.deepEqual(await listServerTrees(), { authoritative: false, status: 200, rows: [] });
 });
 
 test('readTreeCard — a roadmap someone else shares, one of the person’s own, and none they can read', async () => {
@@ -66,6 +70,13 @@ test('readTreeCard — a server failure and a dead network throw their status, w
     assert.deepEqual({ kind: err instanceof AuthError, status: err.status, code: err.code }, { kind: true, status: 0, code: 'unreachable' });
     return true;
   });
+  for (const json of [async () => { throw new SyntaxError('<html>'); }, async () => ({ mine: false })]) {
+    stubFetch(() => ({ ok: true, status: 200, json }));
+    await assert.rejects(readTreeCard('t_reef'), (err) => {
+      assert.deepEqual({ kind: err instanceof AuthError, status: err.status, code: err.code }, { kind: true, status: 200, code: 'shape' });
+      return true;
+    });
+  }
 });
 
 test('setVisibility — PATCHes {visibility} credentialed and resolves on 204', async () => {

@@ -18,18 +18,36 @@ import { LOAD_ERROR, PICKER, backTo, formatCount, pickerFor, treeProgress } from
 import { t } from '../i18n/index.js';
 import './composer.css';
 
+// An address in the field is read once it has been still this long, or at once when it was pasted.
+const ADDRESS_STILL_MS = 300;
+
+// Why a read failed, by what the server answered: 0 for no answer, and 200 for an answer that is not what was asked for.
+function failureOf(status) {
+  if (status === 0) return 'network';
+  if (status === 401) return 'unauthenticated';
+  if (status === 200) return 'shape';
+  return status >= 500 ? 'server' : 'refused';
+}
+
 // `trees` reads the person's roadmaps (`list`) and the roadmap an address names (`read`). `attachment(complete)` says
-// what attaching a tree, complete or not, does to a hand's mark on the step. `onAttach(treeId)` answers `{ ok }`.
-export function TreePicker({ step, treeId, standing, attachment, trees, layout, headingId, band, view, onAttach, onCancel }) {
+// what attaching a tree, complete or not, does to a hand's mark on the step. `onAttach(row)` sets the tree and answers
+// whether the picker is done; `onLapse` tells the room a read was refused for want of a session.
+export function TreePicker({ step, treeId, standing, attachment, trees, layout, headingId, band, view, onAttach, onLapse, onCancel }) {
   const phone = layout === 'phone';
   const layer = useRef(null);
   const region = useRef(null);
   const search = useRef(null);
   const rowList = useRef(null);
-  const reported = useRef(false);
+  const reported = useRef(new Set());
+  const resolutions = useRef(new Map());
+  const counted = useRef(new Set());
+  const pasting = useRef(false);
+  const committed = useRef(false);
   const [choices, setChoices] = useState(null);
-  const [unread, setUnread] = useState(false);
-  const [attempt, setAttempt] = useState(0);
+  const [listFailure, setListFailure] = useState(null);
+  const [listAttempt, setListAttempt] = useState(0);
+  const [settled, setSettled] = useState(null);
+  const [addressAttempt, setAddressAttempt] = useState(0);
   const [forking, setForking] = useState(false);
   const viewport = useComposerViewport(phone);
   const trapTab = useComposerFocus(region, phone, { restore: false });
@@ -40,70 +58,117 @@ export function TreePicker({ step, treeId, standing, attachment, trees, layout, 
     if (!phone) search.current.focus({ preventScroll: true });
   }, [phone]);
 
-  // A read that failed with someone waiting on it reports once for the picker; a refusal and a lost connection do not.
-  const readFailed = (status) => {
-    if (reported.current || (status === 0 ? !pageWatching() : status < 500)) return;
-    reported.current = true;
-    reportRoadmapFailure('roadmap-tree-picker-load', new Error('Roadmap tree picker read failed'));
+  // A read refused for want of a session is the room's lapse. Anything else reports once per read and reason while the
+  // fault is ours or the server's: a lost request only while someone waits on it, and a refusal never.
+  const readFailed = (read, reason) => {
+    if (reason === 'unauthenticated') {
+      onLapse?.();
+      return;
+    }
+    const key = `${read} ${reason}`;
+    if (reason === 'refused' || (reason === 'network' && !pageWatching()) || reported.current.has(key)) return;
+    reported.current.add(key);
+    reportRoadmapFailure('roadmap-tree-picker-load', new Error('Roadmap tree picker read failed'), { read, reason });
+  };
+  // One `paste` event for each roadmap an address resolved to.
+  const countPaste = (id, outcome) => {
+    if (counted.current.has(id)) return;
+    counted.current.add(id);
+    track('roadmap_tree_attach', { step: 'paste', outcome, band, view });
   };
 
   useEffect(() => {
     let wanted = true;
     trees.list().then(({ rows, authoritative, status }) => {
       if (!wanted) return;
-      setUnread(!authoritative);
       if (!authoritative) {
-        readFailed(status);
+        readFailed('list', failureOf(status));
+        setListFailure(failureOf(status));
         return;
       }
+      setListFailure(null);
       const others = rows.filter((row) => row.id !== treeId)
         .map((row) => ({ id: row.id, title: row.title?.trim() || t('roadmap.common.untitled'), done: row.done ?? 0, total: row.total ?? 0 }));
       setChoices((current) => (current ? current.listed(others) : new TreeChoices({ rows: others, standing })));
     });
     return () => { wanted = false; };
-  }, [attempt]);
+  }, [listAttempt]);
 
-  const address = choices?.unresolved ? choices.address : null;
+  // An address is read once the field has been still, at once when it was pasted, and once for each roadmap it names.
+  const address = choices?.address ?? null;
   useEffect(() => {
-    if (address === null) return undefined;
-    let wanted = true;
-    trees.read(address).then((card) => ({ id: address, card }), (error) => {
-      readFailed(error?.status ?? 0);
-      return { id: address, failed: true };
-    }).then((pasted) => {
-      if (wanted) setChoices((current) => current.resolved(pasted));
-    });
-    return () => { wanted = false; };
+    if (address === null) {
+      setSettled(null);
+      return undefined;
+    }
+    if (settled === address) return undefined;
+    const timer = setTimeout(() => setSettled(address), ADDRESS_STILL_MS);
+    return () => clearTimeout(timer);
   }, [address]);
 
-  const outcome = choices?.outcome ?? null;
   useEffect(() => {
-    if (outcome) track('roadmap_tree_attach', { step: 'paste', outcome, band, view });
-  }, [choices?.address, outcome]);
+    if (settled === null) return undefined;
+    if (choices?.rows.some((row) => row.id === settled)) {
+      countPaste(settled, 'own');
+      return undefined;
+    }
+    const answered = (pasted) => setChoices((current) => (current?.address === settled ? current.resolved(pasted) : current));
+    const known = resolutions.current.get(settled);
+    if (known) {
+      answered(known);
+      return undefined;
+    }
+    let wanted = true;
+    trees.read(settled).then((card) => ({ id: settled, card }), (error) => ({ id: settled, failed: true, reason: failureOf(error?.status ?? 0) }))
+      .then((pasted) => {
+        if (!pasted.failed) resolutions.current.set(settled, pasted);
+        if (!wanted) return;
+        if (pasted.failed) readFailed('paste', pasted.reason);
+        else countPaste(settled, pasted.card === null ? 'unreadable' : pasted.card.mine ? 'own' : 'readable');
+        answered(pasted);
+      });
+    return () => { wanted = false; };
+  }, [settled, addressAttempt]);
 
   const blocked = choices?.blocked ?? null;
-  const failed = unread || Boolean(choices?.failed);
-  const listed = choices !== null && !failed;
-  const mark = listed && !blocked && choices.rows.length > 0
+  const listed = choices !== null && listFailure === null;
+  const addressFailed = listed && choices.failed;
+  const mark = listed && !blocked && !addressFailed && choices.rows.length > 0
     ? attachment(Boolean(choices.chosenRow) && choices.chosenRow.total > 0 && choices.chosenRow.done === choices.chosenRow.total)
     : null;
-  const counted = listed && !choices.unresolved;
-  const context = counted && choices.searched
+  const known = listed && !choices.unresolved && !addressFailed;
+  const context = known && choices.searched
     ? t('roadmap.treePicker.forMatches', { step, count: choices.count, shown: formatCount(choices.count) })
-    : counted && choices.rows.length > 0
+    : known && choices.rows.length > 0
       ? t('roadmap.treePicker.forTrees', { step, count: choices.rows.length, shown: formatCount(choices.rows.length) })
       : pickerFor({ step, total: null });
-  const unmatched = counted && choices.searched && choices.count === 0 && choices.outcome !== 'unreadable';
+  const unmatched = known && choices.searched && choices.count === 0 && choices.outcome !== 'unreadable';
   const tabStop = choices?.shown.find((row) => row.id === choices.chosen)?.id ?? choices?.shown[0]?.id ?? null;
 
+  const narrow = (query) => {
+    if (!choices) return;
+    const next = choices.search(query);
+    if (pasting.current && next.address) setSettled(next.address);
+    pasting.current = false;
+    setChoices(next);
+  };
   const clear = () => {
     setChoices(choices.search(''));
     search.current.focus();
   };
-  const retry = () => {
-    if (choices?.failed) setChoices(choices.resolved(null));
-    else setAttempt((count) => count + 1);
+  const retry = (read) => {
+    track('roadmap_tree_attach', { step: 'retry', read, band, view });
+    if (read === 'paste') {
+      setChoices(choices.resolved(null));
+      setAddressAttempt((count) => count + 1);
+    } else {
+      setListAttempt((count) => count + 1);
+    }
     (phone ? region : search).current.focus({ preventScroll: true });
+  };
+  const attach = () => {
+    if (committed.current) return;
+    committed.current = onAttach(choices.chosenRow);
   };
   const fork = () => {
     track('roadmap_tree_attach', { step: 'fork', band, view });
@@ -128,11 +193,11 @@ export function TreePicker({ step, treeId, standing, attachment, trees, layout, 
 
   const searchField = (
     <PickerSearch inputRef={search} label={t('roadmap.treePicker.findTree')} value={choices?.query ?? ''} phone={phone}
-      onChange={(query) => { if (choices) setChoices(choices.search(query)); }} onClear={clear} />
+      onChange={narrow} onClear={clear} onPaste={() => { pasting.current = true; }} />
   );
   const commit = blocked
     ? <button type="button" className="st-board-step-action st-board-step-action--primary" onClick={fork}>{t('roadmap.treePicker.forkTree')}</button>
-    : <button type="button" className="st-board-step-action st-board-step-action--primary" disabled={!listed || !choices.attachable} onClick={() => onAttach(choices.chosen)}>{t('roadmap.treePicker.attach')}</button>;
+    : <button type="button" className="st-board-step-action st-board-step-action--primary" disabled={!listed || !choices.attachable} onClick={attach}>{t('roadmap.treePicker.attach')}</button>;
   const forkLine = !blocked && <p className="st-board-tree-picker-fork">{t('roadmap.treePicker.forkFirst')}</p>;
 
   const page = (
@@ -150,10 +215,16 @@ export function TreePicker({ step, treeId, standing, attachment, trees, layout, 
       </header>
       {phone ? <p className="st-board-picker-context">{context}</p> : searchField}
       <div className="st-board-picker-results" tabIndex={-1}>
-        {failed && (
+        {listFailure !== null && (
           <div className="st-board-tree-picker-unread" role="alert">
             <p>{t('roadmap.treePicker.loadFailed')}</p>
-            <Button variant="secondary" onClick={retry}>{LOAD_ERROR.action}</Button>
+            {listFailure !== 'unauthenticated' && <Button variant="secondary" onClick={() => retry('list')}>{LOAD_ERROR.action}</Button>}
+          </div>
+        )}
+        {addressFailed && (
+          <div className="st-board-tree-picker-unread" role="alert">
+            <p>{LOAD_ERROR.title}</p>
+            {choices.pasted.reason !== 'unauthenticated' && <Button variant="secondary" onClick={() => retry('paste')}>{LOAD_ERROR.action}</Button>}
           </div>
         )}
         {listed && choices.shown.length > 0 && (
@@ -200,7 +271,7 @@ export function TreePicker({ step, treeId, standing, attachment, trees, layout, 
             <Button variant="secondary" onClick={clear}>{PICKER.clearSearch}</Button>
           </div>
         )}
-        {mark?.marked && !unmatched && choices.outcome !== 'unreadable' && (
+        {mark?.marked && !unmatched && choices.outcome !== 'unreadable' && !choices.unresolved && (
           <p className="st-board-tree-picker-line">{t('roadmap.treePicker.markAside', { count: mark.relocks, shown: formatCount(mark.relocks) })}</p>
         )}
       </div>
@@ -216,7 +287,7 @@ export function TreePicker({ step, treeId, standing, attachment, trees, layout, 
           onClose={() => setForking(false)}
           onForked={() => {
             setForking(false);
-            setAttempt((count) => count + 1);
+            setListAttempt((count) => count + 1);
             (phone ? region : search).current.focus({ preventScroll: true });
           }} />
       )}

@@ -661,17 +661,21 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
 - **Section 28 · making it on today's step page, states with no board (28.54–28.59, 28.61–28.66).** The person owns
   no other tree: the picker says *You have no other trees yet.*, Attach is disabled and the fork line stays. Find a
   tree matches nothing: *No trees match “…”* with Clear search, and *Your selection is kept.* where a row is chosen,
-  as the prerequisites picker does. The list could not be loaded, or the roadmap a pasted address names could not be
-  read: *Couldn’t load your trees* with Try again, never the empty state. A pasted address that names no roadmap the
-  person can read: *No roadmap you can read is at that address.*, and the list and the choice are as they were. A
-  pasted address of the roadmap the person is in matches nothing. The hand-mark line has three forms: the drawn one
-  with its count, *Your Done mark is set aside while it opens a tree.* where no step locks again (the tree chosen is
-  complete, or the step's tree is being changed), and no line where the step holds no mark; before a row is chosen it
-  counts as for a tree that is not complete. The ⋯ footnote drops the tree's name where none is known (*This step
-  becomes ordinary.*). A write the session would not take says *Couldn’t change the tree. Try again.* in the toast and
-  leaves the picker open. A step held in a pending delete has no page, and a roadmap whose session cannot take a
-  write shows no + and no ⋯, as its Edit step cannot save. For about a second after Attach, until the room has read
-  the tree, the section shows its heading and ⋯ with no row, and it stays so until a reload if that read fails.
+  as the prerequisites picker does. Attach waits whenever the chosen row is not on screen. Only this app's address or a
+  bare tree id is taken for a roadmap; any other text only filters. The list could not be loaded: *Couldn’t load your
+  trees* with Try again, never the empty state. The roadmap a pasted address names could not be read: *Couldn’t load
+  this roadmap* with Try again in the address's place, the rest of the picker standing. A read refused for want of a
+  session is the room's lapse, with no Try again. A pasted address that names no roadmap the person can read: *No
+  roadmap you can read is at that address.*, and the list and the choice are as they were. A pasted address of the
+  roadmap the person is in matches nothing. The hand-mark line has three forms: the drawn one with its count, *Your
+  Done mark is set aside while it opens a tree.* where no step locks again (the tree chosen is complete, or the step's
+  tree is being changed), and no line where the step holds no mark; before a row is chosen it counts as for a tree that
+  is not complete. The ⋯ footnote drops the tree's name where none is known (*This step becomes ordinary.*). A write
+  the session would not take says *Couldn’t change the tree. Try again.* in the toast and leaves the picker open; a step
+  that already opens the tree chosen, as when another device set it meanwhile, closes the picker with nothing said. A
+  step held in a pending delete has no page, and a roadmap whose session cannot take a write shows no + and no ⋯, as
+  its Edit step cannot save. After Attach the row stands at once as the picker knew the tree, and the server's facts
+  replace it once the server has confirmed the pointer.
 - **Section 28 · making it on today's step page, against the boards.** The blocked row on 28.56 and 28.63 reads *By
   Maya · you can read it*; no server answer names a roadmap's author, so the row reads *Someone else’s · you can read
   it* and keeps the drawn sentence for an answer that names one. The phone sheet on 28.65 keeps the sheet shell's

@@ -1,27 +1,37 @@
 // The tree picker's choices for one step: the person's own roadmaps but the one they are in, the tree the step opens
 // now, what Find a tree narrows the list to, and what a pasted roadmap address came to.
 
-const RESERVED = new Set(['new', 'start']);
+// A tree id as the server mints it: `t_` and sixteen lowercase hex characters.
+const TREE_ID = /^t_[0-9a-f]{16}$/;
 
-// The roadmap an address names, `…/#/app/<id>` or the share address `…/t/<id>`; null for anything else typed.
-export function pastedTreeId(text) {
-  const match = /^\S*(?:#\/app\/|\/t\/)([^/?#\s]+)(?:[?#]\S*)?$/.exec(text.trim());
-  if (!match || RESERVED.has(match[1])) return null;
+// The roadmap a text names: this app's share address `<origin>/t/<id>` or app address `<origin>/#/app/<id>`, with or
+// without the scheme and with a step after it, or a bare tree id. Null for anything else, which only filters the list.
+export function pastedTreeId(text, origin = globalThis.location?.origin ?? '') {
+  const typed = text.trim();
+  if (TREE_ID.test(typed)) return typed;
+  let base;
   try {
-    return decodeURIComponent(match[1]);
+    base = new URL(origin);
   } catch {
     return null;
   }
+  const { protocol, host } = base;
+  const address = typed.startsWith(`${protocol}//`) ? typed.slice(protocol.length + 2) : typed;
+  if (!address.startsWith(`${host}/`)) return null;
+  const match = /^(?:t\/|#\/app\/)(t_[0-9a-f]{16})(?:#?\?step=[^\s]*)?$/.exec(address.slice(host.length + 1));
+  return match ? match[1] : null;
 }
 
 export class TreeChoices {
   // `rows` are `{ id, title, done, total }` in the switcher's order. `pasted` is what the read of an address answered:
-  // `{ id, card }` with the roadmap's card or null where none can be read, or `{ id, failed: true }`.
-  constructor({ rows, standing = '', chosen = standing, query = '', pasted = null }) {
+  // `{ id, card }` with the roadmap's card or null where none can be read, or `{ id, failed: true, reason }`. `origin` is
+  // this app's, whose addresses name roadmaps.
+  constructor({ rows, standing = '', chosen = standing, query = '', pasted = null, origin = globalThis.location?.origin ?? '' }) {
     this.rows = rows;
     this.standing = standing;
     this.query = query;
-    this.address = pastedTreeId(query);
+    this.origin = origin;
+    this.address = pastedTreeId(query, origin);
     this.pasted = pasted?.id === this.address ? pasted : null;
     this.own = this.address === null ? null : rows.find((row) => row.id === this.address) ?? null;
     this.chosen = this.own?.id ?? (rows.some((row) => row.id === chosen) ? chosen : '');
@@ -44,23 +54,19 @@ export class TreeChoices {
 
   get searched() { return this.query.trim() !== ''; }
   get count() { return this.shown.length + (this.blocked ? 1 : 0); }
-  get attachable() { return this.chosen !== '' && this.chosen !== this.standing; }
+  // Attach acts on a choice the person can see: the chosen row is on screen and is not the tree the step opens.
+  get attachable() { return this.chosen !== '' && this.chosen !== this.standing && this.shown.some((row) => row.id === this.chosen); }
   get chosenRow() { return this.rows.find((row) => row.id === this.chosen) ?? null; }
 
-  search(query) {
-    return new TreeChoices({ rows: this.rows, standing: this.standing, chosen: this.chosen, query, pasted: this.pasted });
+  with(changes) {
+    const { rows, standing, chosen, query, pasted, origin } = this;
+    return new TreeChoices({ rows, standing, chosen, query, pasted, origin, ...changes });
   }
 
-  choose(id) {
-    return new TreeChoices({ rows: this.rows, standing: this.standing, chosen: id, query: this.query, pasted: this.pasted });
-  }
-
-  resolved(pasted) {
-    return new TreeChoices({ rows: this.rows, standing: this.standing, chosen: this.chosen, query: this.query, pasted });
-  }
+  search(query) { return this.with({ query }); }
+  choose(id) { return this.with({ chosen: id }); }
+  resolved(pasted) { return this.with({ pasted }); }
 
   // The list read again, as after a fork: the search is over and the choice stands where its row still does.
-  listed(rows) {
-    return new TreeChoices({ rows, standing: this.standing, chosen: this.chosen });
-  }
+  listed(rows) { return this.with({ rows, query: '', pasted: null }); }
 }

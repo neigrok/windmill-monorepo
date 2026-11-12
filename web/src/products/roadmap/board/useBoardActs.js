@@ -159,24 +159,29 @@ export class BoardActs {
   }
 
   // Sets the tree a step opens from its page over either view, `''` for none, and says so with its Undo. A mark the
-  // step holds is set aside while the pointer stands and is back once it goes.
+  // step holds is set aside while the pointer stands and is back once it goes. A step that opens that tree already, as
+  // when a peer set it meanwhile, takes nothing and is told nothing.
   setTree(id, opens) {
     const c = this.collaborators;
     if ((!c.active && !c.graphActive) || !c.owner || !c.tree) return { ok: false };
     const tree = this.held ? this.held.projected(c.tree) : c.tree;
     const step = tree.nodesById.get(id);
     if (!step) return { ok: false };
+    if ((step.opens ?? '') === opens) return { ok: true };
     const view = c.active ? 'board' : 'graph';
     const mark = c.progress.completed.has(id) ? 'kept' : 'none';
     let receipt = null;
+    let failed = false;
     try {
       c.onQuiet();
       receipt = c.session?.dispatch({ kind: 'SetNodeTree', id, opens }) ?? null;
     } catch (error) {
+      failed = true;
       c.report('roadmap-tree-attach', error);
     }
     if (!receipt) {
       c.showToast(TREE_TOAST.failed, { act: 'notice' });
+      c.track('roadmap_tree_attach', { step: !opens ? 'detach' : step.opens ? 'change' : 'attach', band: c.band, view, mark, outcome: failed ? 'failed' : 'refused' });
       return { ok: false };
     }
     const detached = mark === 'kept' ? TREE_TOAST.detachedMarkBack : TREE_TOAST.detached;

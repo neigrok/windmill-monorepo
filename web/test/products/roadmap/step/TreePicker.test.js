@@ -13,6 +13,7 @@ import '/src/styles/global.css';
 import { StepDetail } from '/src/products/roadmap/step/StepDetail.jsx';
 import { SkillTree } from '/src/products/roadmap/model/SkillTree.js';
 import { Openings } from '/src/products/roadmap/model/Opening.js';
+import { TreeDoor } from '/src/products/roadmap/room/useTreeVisit.js';
 
 const noop = () => {};
 const call = (line) => (window.calls ??= []).push(line);
@@ -44,15 +45,19 @@ window.openStep = ({ steps, completed, opens = {}, facts = {}, holder = true, ed
             window.listFails -= 1;
             return { rows: [], authoritative: false, status: window.listStatus ?? 503 };
           }
+          await new Promise((resolve) => setTimeout(resolve, window.listDelay ?? 0));
           return { rows: window.rows, authoritative: true };
         },
         read: async (id) => {
           call('read ' + id);
-          if (window.cards[id] === 'fail') throw Object.assign(new Error('unread'), { status: 503 });
-          return window.cards[id] ?? null;
+          const card = window.cards[id];
+          if (typeof card === 'number') throw Object.assign(new Error('unread'), { status: card });
+          return card ?? null;
         },
       },
-      set: (id, treeId) => {
+      lapsed: () => call('lapsed'),
+      set: (id, chosen) => {
+        const treeId = chosen?.id ?? '';
         call('set ' + id + ' ' + (treeId || 'none'));
         if (window.setRefused) return { ok: false };
         setNodes((current) => current.map((node) => (node.id === id ? { ...node, opens: treeId || undefined } : node)));
@@ -65,14 +70,14 @@ window.openStep = ({ steps, completed, opens = {}, facts = {}, holder = true, ed
     } : null;
     return React.createElement('div', { style: { position: 'fixed', inset: 0 } },
       React.createElement('button', { id: 'beneath' }, 'Beneath'),
-      open && React.createElement(StepDetail, {
+      open && React.createElement(TreeDoor.Provider, { value: (id, door) => call('tree ' + id + ' ' + door) }, React.createElement(StepDetail, {
         tree, completed: marks, completedAt: {}, address: { id: step, trail: [step], door: 'card' }, breakpoint, roadmapTitle: 'My year',
         editable, deletable: true, stepLink: null, workspace: { subtasks: [], note: '', links: [] },
         workspaceActions: { onToggleSubtask: noop, onAddSubtask: noop, onEditSubtask: noop, onDeleteSubtask: noop, onSetNote: noop, onAddLink: noop, onDeleteLink: noop },
         history: [], onEdit: editable ? noop : undefined, onOpenStep: noop, onBack: () => { call('back'); setOpen(false); },
         onClose: () => { call('close'); setOpen(false); }, onComplete: noop, onReset: noop, onRestore: noop, onOpenInGraph: null, onViewBranch: noop,
         onDelete: noop, onNotify: noop, treeActs,
-      }));
+      })));
   }
   createRoot(document.getElementById('root')).render(React.createElement(App));
 };
@@ -97,7 +102,7 @@ function start() {
               + 'export function reportError() {}\nexport function routeFamily(route) { return route; }';
           }
           if (id === '\0tree-picker-report') {
-            return 'export function reportRoadmapFailure(operation, error) { (window.reports ??= []).push(`${operation}: ${error.message}`); }\n'
+            return 'export function reportRoadmapFailure(operation, error, tags) { (window.reports ??= []).push(`${operation}: ${error.message} ${JSON.stringify(tags)}`); }\n'
               + 'export function reportUnexpectedFailure(operation) { (window.reports ??= []).push(operation); }\n'
               + 'export function pageWatching() { return window.watching !== false; }';
           }
@@ -130,13 +135,13 @@ const myYear = (sail = {}) => [
 ];
 const ownTrees = () => [
   { id: 't_sail', title: 'Learn to sail', done: 3, total: 8, updatedAt: 5 },
-  { id: 't_read', title: 'Reading list', done: 12, total: 12, updatedAt: 4 },
+  { id: 't_7ead000000000002', title: 'Reading list', done: 12, total: 12, updatedAt: 4 },
   { id: 't_year', title: 'My year', done: 3, total: 6, updatedAt: 3 },
   { id: 't_empty', title: '  ', done: 0, total: 0, updatedAt: 2 },
 ];
 const FACTS = {
   t_sail: { title: 'Learn to sail', state: 'open', done: 3, total: 8, loop: false },
-  t_read: { title: 'Reading list', state: 'complete', done: 12, total: 12, loop: false },
+  t_7ead000000000002: { title: 'Reading list', state: 'complete', done: 12, total: 12, loop: false },
 };
 const opened = (treeId) => ({ sail: { treeId, ...FACTS[treeId] } });
 
@@ -296,7 +301,7 @@ for (const viewport of [DESKTOP, PHONE]) {
     await rows.filter({ hasText: 'Detach tree' }).click();
     await page.waitForFunction(() => document.activeElement.getAttribute('aria-label') === 'Attach a tree');
     assert.deepEqual(await treeSection(page), { heading: ['Tree', 'None'], controls: ['Attach a tree'], row: null, rule: null });
-    assert.deepEqual(await calls(page), ['list', 'set sail t_read', 'set sail none']);
+    assert.deepEqual(await calls(page), ['list', 'set sail t_7ead000000000002', 'set sail none']);
     assert.deepEqual(await events(page), [`roadmap_tree_attach {"step":"open","band":"${band}","view":"board"}`]);
     assert.deepEqual(errors, []);
     await page.context().close();
@@ -304,20 +309,21 @@ for (const viewport of [DESKTOP, PHONE]) {
 
   test(`${band}: a pasted address of the person’s own tree selects its row; one they can only read is the blocked row, forked first, and the copy is then theirs to choose`, async () => {
     const errors = [];
-    const card = { id: 't_reef', title: 'Reefing course', author: null, steps: 4, mine: false };
-    const page = await openStep(viewport, { cards: { t_reef: card } }, errors);
-    await page.route('**/v1/trees/t_reef/fork', async (route) => {
-      await page.evaluate(() => { window.rows = [{ id: 't_copy', title: 'Reefing course', done: 0, total: 4, updatedAt: 9 }, ...window.rows]; });
-      await route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': origin, 'access-control-allow-credentials': 'true' }, body: JSON.stringify({ data: { id: 't_copy' } }) });
+    const card = { id: 't_7eef000000000004', title: 'Reefing course', author: null, steps: 4, mine: false };
+    const page = await openStep(viewport, { cards: { t_7eef000000000004: card } }, errors);
+    await page.route('**/v1/trees/t_7eef000000000004/fork', async (route) => {
+      await page.evaluate(() => { window.rows = [{ id: 't_c09e000000000006', title: 'Reefing course', done: 0, total: 4, updatedAt: 9 }, ...window.rows]; });
+      await route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': origin, 'access-control-allow-credentials': 'true' }, body: JSON.stringify({ data: { id: 't_c09e000000000006' } }) });
     });
     await attachATree(page);
     await listed(page);
 
-    await page.getByLabel('Find a tree').fill('https://windmill.works/#/app/t_read');
+    await page.getByLabel('Find a tree').fill(`${origin}/#/app/t_7ead000000000002`);
     assert.deepEqual({ context: (await picker(page)).context, rows: (await picker(page)).rows, commit: (await picker(page)).commit },
       { context: 'For Learn to sail · 1 match', rows: ['● Reading list · 12 of 12 done'], commit: ['Attach'] });
+    await page.waitForTimeout(400);
 
-    await page.getByLabel('Find a tree').fill('windmill.works/t/t_reef');
+    await page.getByLabel('Find a tree').fill(`${origin}/t/t_7eef000000000004`);
     await page.locator('.st-board-tree-picker .is-blocked').waitFor();
     assert.deepEqual(await picker(page), {
       title: 'Attach a tree', context: 'For Learn to sail · 1 match', rows: ['○ Reefing course · Someone else’s · you can read it · blocked'],
@@ -365,7 +371,7 @@ test('Find a tree narrows by title, / reaches it, the arrows walk the rows, and 
   await page.getByLabel('Find a tree').fill('bike');
   assert.deepEqual(await picker(page), {
     title: 'Attach a tree', context: 'For Learn to sail · 0 matches', rows: [], lines: [],
-    said: ['No trees match “bike”', 'Your selection is kept.'], fork: FORK_LINE, commit: ['Attach'],
+    said: ['No trees match “bike”', 'Your selection is kept.'], fork: FORK_LINE, commit: ['Attach (disabled)'],
   });
   await page.locator('.st-board-picker-empty').getByRole('button', { name: 'Clear search' }).click();
   assert.equal(await focused(page), 'Find a tree');
@@ -387,7 +393,7 @@ test('the person owns no other tree: the picker says so, Attach stays disabled a
   await page.context().close();
 });
 
-test('a list that could not be loaded says so with Try again, never the empty state, and reports once while someone is waiting', async () => {
+test('a list that could not be loaded says so with Try again, never the empty state, and reports which read failed and why, once', async () => {
   const errors = [];
   const page = await openStep(DESKTOP, {}, errors);
   await page.evaluate(() => { window.listFails = 2; });
@@ -403,57 +409,158 @@ test('a list that could not be loaded says so with Try again, never the empty st
   await page.getByRole('button', { name: 'Try again' }).click();
   await listed(page);
   assert.deepEqual((await picker(page)).rows, SAIL_ROWS);
-  assert.deepEqual(await reports(page), ['roadmap-tree-picker-load: Roadmap tree picker read failed']);
+  assert.deepEqual(await reports(page), ['roadmap-tree-picker-load: Roadmap tree picker read failed {"read":"list","reason":"server"}']);
+  assert.deepEqual((await events(page)).slice(1), [
+    'roadmap_tree_attach {"step":"retry","read":"list","band":"desktop","view":"board"}',
+    'roadmap_tree_attach {"step":"retry","read":"list","band":"desktop","view":"board"}',
+  ]);
   assert.deepEqual(errors, []);
   await page.context().close();
 });
 
-test('a refused list and a list lost with no connection say the same and report nothing', async () => {
-  for (const lost of [{ listStatus: 401 }, { listStatus: 0, watching: false }]) {
+test('the reason a list read failed: a 200 that is not a list is its shape, a request lost while someone waits is the network, and a refusal or a lost connection nobody waits on reports nothing', async () => {
+  for (const [given, reported] of [
+    [{ listStatus: 200 }, ['roadmap-tree-picker-load: Roadmap tree picker read failed {"read":"list","reason":"shape"}']],
+    [{ listStatus: 0 }, ['roadmap-tree-picker-load: Roadmap tree picker read failed {"read":"list","reason":"network"}']],
+    [{ listStatus: 0, watching: false }, []],
+    [{ listStatus: 403 }, []],
+  ]) {
     const errors = [];
     const page = await openStep(DESKTOP, {}, errors);
-    await page.evaluate((given) => Object.assign(window, { listFails: 1 }, given), lost);
+    await page.evaluate((options) => Object.assign(window, { listFails: 1 }, options), given);
     await attachATree(page);
     await page.locator('.st-board-tree-picker-unread').waitFor();
 
-    assert.deepEqual((await picker(page)).said, ['Couldn’t load your trees']);
-    assert.deepEqual(await reports(page), []);
+    assert.deepEqual({ said: (await picker(page)).said, retry: await page.getByRole('button', { name: 'Try again' }).count(), reports: await reports(page) },
+      { said: ['Couldn’t load your trees'], retry: 1, reports: reported });
     assert.deepEqual(errors, []);
     await page.context().close();
   }
 });
 
-test('a pasted address that names no roadmap the person can read says so and changes nothing; one whose read failed offers Try again', async () => {
+test('a 401 on the list is the lapse: the room is told, and nothing offers to try again', async () => {
   const errors = [];
-  const page = await openStep(DESKTOP, { cards: { t_down: 'fail' } }, errors);
+  const page = await openStep(DESKTOP, {}, errors);
+  await page.evaluate(() => Object.assign(window, { listFails: 1, listStatus: 401 }));
+  await attachATree(page);
+  await page.locator('.st-board-tree-picker-unread').waitFor();
+
+  assert.deepEqual({ said: (await picker(page)).said, retry: await page.getByRole('button', { name: 'Try again' }).count() }, { said: ['Couldn’t load your trees'], retry: 0 });
+  assert.deepEqual({ calls: await calls(page), reports: await reports(page) }, { calls: ['list', 'lapsed'], reports: [] });
+  assert.deepEqual(errors, []);
+  await page.context().close();
+});
+
+test('a pasted address that names no roadmap the person can read says so, and Attach waits; one whose read failed says so in its place, keeps the picker and tries that address again', async () => {
+  const errors = [];
+  const page = await openStep(DESKTOP, { cards: { t_d000000000000008: 503 } }, errors);
   await attachATree(page);
   await listed(page);
   await page.getByRole('radio', { name: /Learn to sail/ }).click();
 
-  await page.getByLabel('Find a tree').fill('windmill.works/t/t_private');
+  await page.getByLabel('Find a tree').fill(`${origin}/t/t_0000000000000007`);
   await page.locator('.st-board-tree-picker-line').waitFor();
   assert.deepEqual(await picker(page), {
-    title: 'Attach a tree', context: 'For Learn to sail · 0 matches', rows: [], lines: ['No roadmap you can read is at that address.'], said: [], fork: FORK_LINE, commit: ['Attach'],
+    title: 'Attach a tree', context: 'For Learn to sail · 0 matches', rows: [], lines: ['No roadmap you can read is at that address.'], said: [], fork: FORK_LINE, commit: ['Attach (disabled)'],
   });
+  await page.getByRole('button', { name: 'Attach', exact: true }).click({ force: true });
   await page.getByLabel('Find a tree').fill('');
-  assert.equal((await picker(page)).rows[0], '● Learn to sail · 3 of 8 done');
+  assert.deepEqual({ first: (await picker(page)).rows[0], commit: (await picker(page)).commit }, { first: '● Learn to sail · 3 of 8 done', commit: ['Attach'] });
 
-  await page.getByLabel('Find a tree').fill('windmill.works/t/t_down');
+  await page.getByLabel('Find a tree').fill(`${origin}/t/t_d000000000000008`);
   await page.locator('.st-board-tree-picker-unread').waitFor();
-  assert.deepEqual((await picker(page)).said, ['Couldn’t load your trees']);
-  await page.evaluate(() => { window.cards.t_down = null; });
+  assert.deepEqual(await picker(page), {
+    title: 'Attach a tree', context: 'For Learn to sail', rows: [], lines: [], said: ['Couldn’t load this roadmap'], fork: FORK_LINE, commit: ['Attach (disabled)'],
+  });
+  await page.evaluate(() => { window.cards.t_d000000000000008 = null; });
   await page.getByRole('button', { name: 'Try again' }).click();
   await page.locator('.st-board-tree-picker-line').waitFor();
   assert.deepEqual((await picker(page)).lines, ['No roadmap you can read is at that address.']);
-  assert.deepEqual(await calls(page), ['list', 'read t_private', 'read t_down', 'read t_down']);
-  assert.deepEqual((await events(page)).filter((line) => line.includes('paste')), [
+  assert.deepEqual(await calls(page), ['list', 'read t_0000000000000007', 'read t_d000000000000008', 'read t_d000000000000008']);
+  assert.deepEqual((await events(page)).slice(1), [
     'roadmap_tree_attach {"step":"paste","outcome":"unreadable","band":"desktop","view":"board"}',
+    'roadmap_tree_attach {"step":"retry","read":"paste","band":"desktop","view":"board"}',
     'roadmap_tree_attach {"step":"paste","outcome":"unreadable","band":"desktop","view":"board"}',
   ]);
-  assert.deepEqual(await reports(page), ['roadmap-tree-picker-load: Roadmap tree picker read failed']);
+  assert.deepEqual(await reports(page), ['roadmap-tree-picker-load: Roadmap tree picker read failed {"read":"paste","reason":"server"}']);
   assert.deepEqual(errors, []);
   await page.context().close();
 });
+
+test('a 401 on an address’s read is the lapse: the room is told, the address says it could not be read, and nothing offers to try again', async () => {
+  const errors = [];
+  const page = await openStep(DESKTOP, { cards: { t_d000000000000008: 401 } }, errors);
+  await attachATree(page);
+  await listed(page);
+  await page.getByLabel('Find a tree').fill(`${origin}/t/t_d000000000000008`);
+  await page.locator('.st-board-tree-picker-unread').waitFor();
+
+  assert.deepEqual({ said: (await picker(page)).said, retry: await page.getByRole('button', { name: 'Try again' }).count() }, { said: ['Couldn’t load this roadmap'], retry: 0 });
+  assert.deepEqual({ calls: await calls(page), reports: await reports(page) }, { calls: ['list', 'read t_d000000000000008', 'lapsed'], reports: [] });
+  assert.deepEqual(errors, []);
+  await page.context().close();
+});
+
+test('only this app’s address or a tree id is read: other text filters and asks nothing, an address typed asks once when the field is still, a paste asks at once, and an address seen before asks nothing', async () => {
+  const errors = [];
+  const page = await openStep(DESKTOP, { cards: { t_7eef000000000004: { id: 't_7eef000000000004', title: 'Reefing course', author: null, steps: 4, mine: false } } }, errors);
+  await attachATree(page);
+  await listed(page);
+  const field = page.getByLabel('Find a tree');
+
+  for (const text of ['https://example.com/t/my-secret-plan', 'notes/t/dentist', `${origin}/t/reefing-course`, 't_7eef']) {
+    await field.fill(text);
+    await page.waitForTimeout(450);
+  }
+  assert.deepEqual(await calls(page), ['list']);
+
+  await field.fill('');
+  await field.click();
+  await page.keyboard.type(`${origin}/t/t_7eef000000000004`, { delay: 15 });
+  await page.locator('.st-board-tree-picker .is-blocked').waitFor();
+  assert.deepEqual(await calls(page), ['list', 'read t_7eef000000000004']);
+
+  await field.fill('');
+  await field.evaluate((input) => input.dispatchEvent(new ClipboardEvent('paste', { bubbles: true })));
+  await field.fill('t_7eef000000000004');
+  await page.locator('.st-board-tree-picker .is-blocked').waitFor({ timeout: 250 });
+  assert.deepEqual(await calls(page), ['list', 'read t_7eef000000000004'], 'an address seen before is not read again');
+
+  await page.evaluate(() => { window.cards.t_9eef000000000009 = null; });
+  await field.fill('');
+  await field.evaluate((input) => input.dispatchEvent(new ClipboardEvent('paste', { bubbles: true })));
+  await field.fill(`  ${origin}/#/app/t_9eef000000000009?step=rig `);
+  await page.waitForTimeout(150);
+  assert.deepEqual(await calls(page), ['list', 'read t_7eef000000000004', 'read t_9eef000000000009'], 'a paste is read before the field has been still');
+  await page.locator('.st-board-tree-picker-line').waitFor();
+  assert.deepEqual((await events(page)).filter((line) => line.includes('paste')), [
+    'roadmap_tree_attach {"step":"paste","outcome":"readable","band":"desktop","view":"board"}',
+    'roadmap_tree_attach {"step":"paste","outcome":"unreadable","band":"desktop","view":"board"}',
+  ]);
+  assert.deepEqual(errors, []);
+  await page.context().close();
+});
+
+for (const viewport of [DESKTOP, PHONE]) {
+  const band = viewport === PHONE ? 'phone' : 'desktop';
+
+  test(`${band}: a double press on Attach writes once and opens nothing`, async () => {
+    const errors = [];
+    const page = await openStep(viewport, {}, errors);
+    await attachATree(page);
+    await listed(page);
+    await page.getByRole('radio', { name: /Learn to sail/ }).click();
+    await page.getByRole('button', { name: 'Attach', exact: true }).dblclick();
+    await page.waitForTimeout(600);
+
+    assert.deepEqual({ calls: await calls(page), step: await page.locator('.st-board-step-layer').count(), row: (await treeSection(page)).row },
+      { calls: ['list', 'set sail t_sail'], step: 1, row: 'Learn to sail' });
+    await page.getByRole('button', { name: 'Open tree', exact: true }).click();
+    assert.deepEqual((await calls(page)).at(-1), 'tree sail step', 'a single press after the double one acts as ever');
+    assert.deepEqual(errors, []);
+    await page.context().close();
+  });
+}
 
 test('a step with no mark has no hand-mark line, and its ⋯ footnote says only that the step becomes ordinary', async () => {
   const errors = [];

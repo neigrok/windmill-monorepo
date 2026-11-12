@@ -11,7 +11,7 @@ import {
 import './composer.css';
 
 // A picker's search field: the query with its clear button, or the / that reaches it from 744px.
-export function PickerSearch({ inputRef, label, value, phone, onChange, onClear, onKeyDown }) {
+export function PickerSearch({ inputRef, label, value, phone, onChange, onClear, onKeyDown, onPaste }) {
   return (
     <div className="st-board-picker-search">
       <Search size={18} strokeWidth={1.8} aria-hidden />
@@ -26,6 +26,7 @@ export function PickerSearch({ inputRef, label, value, phone, onChange, onClear,
         spellCheck={false}
         onChange={(event) => onChange(event.target.value)}
         onKeyDown={onKeyDown}
+        onPaste={onPaste}
       />
       {value ? (
         <button type="button" aria-label={PICKER.clearSearch} onClick={onClear}>

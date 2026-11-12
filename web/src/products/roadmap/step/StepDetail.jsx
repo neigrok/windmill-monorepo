@@ -29,13 +29,15 @@ import {
 import { t } from '../i18n/index.js';
 
 const UNDO_HOLD_MS = 6000;
+// The second press of a double press on Attach comes within this; it lands where Attach was, on the step beneath.
+const DOUBLE_PRESS_MS = 500;
 const ROW_GLYPHS = { done: StepIcons.rowDone, upNext: StepIcons.rowUpNext, locked: StepIcons.rowLocked };
 const STATUS_GLYPHS = { done: StepIcons.statusDone, upNext: StepIcons.statusUpNext, locked: StepIcons.statusLocked };
 const TAB_STOP = '[data-column] [tabindex="0"], [data-column][tabindex="0"]';
 
 // `address` is the open step and how it was reached (stepAddress.js). Without `editable` the reader gets the overview and
 // the menu alone: no sections, no Complete, no Delete. `treeActs` is the holder's way to attach, change and detach the
-// tree the step opens: `{ view, trees, set }`, or null where nobody may.
+// tree the step opens: `{ view, trees, set, lapsed }`, or null where nobody may.
 export function StepDetail({
   tree,
   completed,
@@ -79,6 +81,7 @@ export function StepDetail({
   const treeControl = useRef(null);
   const closeTreePicker = useRef(null);
   const treeChanged = useRef(false);
+  const attachedAt = useRef(-Infinity);
   const titleId = useId();
   const pickerTitleId = useId();
   const sectionsId = useId();
@@ -265,10 +268,16 @@ export function StepDetail({
     setTreePicker(false);
     returnToTree();
   };
-  const setTree = (opens) => {
-    const set = treeActs.set(id, opens);
+  // `chosen` is the picker's row of the tree to open, or null to open none.
+  const setTree = (chosen) => {
+    const set = treeActs.set(id, chosen);
     treeChanged.current = set.ok;
     return set;
+  };
+  const swallowSecondPress = (event) => {
+    if (event.detail < 2 || performance.now() - attachedAt.current > DOUBLE_PRESS_MS) return;
+    event.preventDefault();
+    event.stopPropagation();
   };
   const treeLink = editable && treeActs ? {
     control: treeControl,
@@ -279,7 +288,7 @@ export function StepDetail({
       setTreePicker(true);
     },
     detach: () => {
-      setTree('');
+      setTree(null);
       returnToTree();
     },
   } : null;
@@ -295,7 +304,13 @@ export function StepDetail({
       headingId={pickerTitleId}
       band={breakpoint}
       view={treeActs.view}
-      onAttach={(opens) => { if (setTree(opens).ok) closePicker(); }}
+      onAttach={(chosen) => {
+        if (!setTree(chosen).ok) return false;
+        attachedAt.current = performance.now();
+        closePicker();
+        return true;
+      }}
+      onLapse={treeActs.lapsed}
       onCancel={closePicker}
     />
   ) : null;
@@ -412,7 +427,7 @@ export function StepDetail({
     const previous = trail.length > 1 ? tree.nodesById.get(trail[trail.length - 2]) : null;
     const backLabel = previous ? titleOf(previous) : roadmapTitle;
     return (
-      <div ref={layerRef} className="st-board-step-layer" onKeyDown={onKeyDown}>
+      <div ref={layerRef} className="st-board-step-layer" onKeyDown={onKeyDown} onClickCapture={swallowSecondPress}>
         <div className="st-board-step-page" role="dialog" aria-modal="true" aria-labelledby={noteEditing ? undefined : titleId} aria-label={noteEditing ? STEP_DETAIL.editNote : undefined} tabIndex={-1}>
           <div className="st-board-step-page-nav" inert={noteEditing ? '' : undefined}>
             <button type="button" className="st-board-step-page-back" aria-label={backTo({ screen: backLabel })} onClick={onBack}>
@@ -443,7 +458,7 @@ export function StepDetail({
     );
   }
   return (
-    <div ref={layerRef} className="st-board-step-layer" onKeyDown={onKeyDown}>
+    <div ref={layerRef} className="st-board-step-layer" onKeyDown={onKeyDown} onClickCapture={swallowSecondPress}>
       <div className="st-board-step-scrim" onPointerDown={(event) => { if (event.target === event.currentTarget) requestClose(); }}>
         <div className="st-board-step-modal" role="dialog" aria-modal="true" aria-labelledby={picker ? pickerTitleId : titleId} tabIndex={-1}>
           {picker ?? (

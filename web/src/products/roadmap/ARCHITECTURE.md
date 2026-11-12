@@ -130,10 +130,14 @@ repository builds them, and `useRoomLoad` stands them on every projection it han
 step carries its `opening` through every tree built from it. Only the owner's room does: a reader, a shared address and
 the demo see ordinary steps. Until the session has joined the server's state the load is the newer word: a step it
 named opens that tree and a step it did not opens none, whatever an older copy on the device holds. From then on the
-projection's pointer decides, and one the load read nothing of is `unread`. Nothing pushes an opening. A pointer that
-arrives or changes while the roadmap is open has the roadmap read once more, after 600 ms and within ten seconds; a
-read that fails, or still says nothing of that pointer, is not asked again. A load that read none at all (the device's
-own copy, a `503`) leaves every pointer `unread` and asks nothing more.
+projection's pointer decides, and one the load read nothing of is `unread`. A pointer this device wrote and the server
+has not confirmed (`SyncSession.ownPointers`) stands over the load before the join too, as any own write does. A tree
+chosen in the picker stands at once as the picker knew it (`Opening.chosen`, `provisional`, held by the room per step
+and tree) until the server's read replaces it. Nothing pushes an opening. A pointer the room has no read facts of is
+read once the server has confirmed it, on the session's confirmation (`onConfirmed`: this device's ack, a peer's frame,
+a graft), after 600 ms and within ten seconds; a read that fails, or still says nothing of it, waits for the next
+confirmation or reconnect, and the same round asks nothing twice. A load that read none at all (the device's own copy,
+a `503`) leaves every pointer `unread` and asks nothing more.
 
 The device's copy of a roadmap holds its pointers, the ids of the trees its steps open, in the stored lattice, and
 nothing else of those trees. It goes when the account that held the device signs out or another signs in
@@ -188,19 +192,24 @@ The guides of the trees above and a signed-out device's own count are not built.
 
 The person who holds the tree makes the pointer on the step itself, never in Edit step: the same holder a tree visit
 acts for, where the roadmap's session can take a write (loaded, and not rebaselining). The room hands the step
-`treeActs` (`{ view, trees, set }`) for that person and null for anyone else, so a reader, a device's copy with nobody
-signed in and a lapsed session see no control. With it the Tree section stands on every step: *None* and a + on one
+`treeActs` (`{ view, trees, set, lapsed }`) for that person and null for anyone else, so a reader, a device's copy with
+nobody signed in and a lapsed session see no control. With it the Tree section stands on every step: *None* and a + on one
 that opens no tree, and a ⋯ on its heading on one that does, the heading and the ⋯ alone while the tree is `unread`.
 
 The + and Change tree open `TreePicker`: a page in the step modal from 744px and a full-screen page over the Shell
 on phones, with the field and the commit in the reach band. `TreeChoices` is its model: the person's roadmaps on the
 server but the one they are in (`listServerTrees`, the switcher's order), one choice, the tree the step opens
-arriving chosen, and Find a tree narrowing by title as the prerequisites picker does. Text that is a roadmap address
-(`pastedTreeId`: `…/#/app/<id>` or `…/t/<id>`) selects that row where it is one of theirs. Any other address is read
-once (`readTreeCard`): a roadmap they can only read is the one blocked row and Fork tree is the only commit, and one
-they cannot read says so. Fork runs `ForkDoor`, which hands the copy back instead of opening it; the list is read
-again and the copy is a row to choose, so attaching stays its own act. A list or an address that cannot be read says
-*Couldn’t load your trees* with Try again and reports `roadmap-tree-picker-load` once per opening.
+arriving chosen, and Find a tree narrowing by title as the prerequisites picker does. Attach acts only on a chosen row
+on screen. Only this app's address (`pastedTreeId`: `<origin>/t/<id>` or `<origin>/#/app/<id>`, the scheme and a step
+optional) or a bare tree id (`t_` and sixteen lowercase hex characters, the id the server mints) names a roadmap; any
+other text only filters and sends nothing. One of theirs selects its row. Any other is read once it was pasted or the
+field has been still for 300 ms, and once per id (`readTreeCard`): a roadmap they can only read is the one blocked row
+and Fork tree is the only commit, and one they cannot read says so. Fork runs `ForkDoor`, which hands the copy back
+instead of opening it; the list is read again and the copy is a row to choose, so attaching stays its own act. A list
+that cannot be read says *Couldn’t load your trees* with Try again; an address whose read failed says *Couldn’t load
+this roadmap* with Try again in its place, the rest of the picker standing. Each reports `roadmap-tree-picker-load`
+with its read and reason. A 401 on either read is the room's lapse (`treeActs.lapsed`, the path a refused write takes),
+with no Try again.
 
 One line under the rows says what happens to a hand's mark. `treeAttachment` in `model/UnlockRules.js` answers it
 from the tree and the marks the Board derives from: whether the step holds a mark, and how many steps up next lock
@@ -210,9 +219,13 @@ the mark only where one was set aside.
 
 Attach and Detach act at once. `BoardActs.setTree` dispatches `SetNodeTree` over either view and raises one toast in
 the room's seat (*Tree attached*, *Tree detached · your mark is back*, or *Tree detached* where the step held no
-mark) whose Undo reverts the gesture's receipt; the status row adds nothing. The mark is not written: it stays on the
-device, set aside while the pointer stands and owed again once it goes. The opened tree's facts follow the pointer as
-any pointer's do, so the row arrives with the room's next read. Escape leaves the picker, the menu or the sheet
+mark) whose Undo reverts the gesture's receipt; the status row adds nothing. A step that already opens the tree chosen,
+as when a peer set it while the picker stood open, closes the picker with nothing written or said; a write the session
+refuses keeps the picker and says *Couldn’t change the tree. Try again.* The mark is not written: it stays on the
+device, set aside while the pointer stands and owed again once it goes. The row stands at once from what the picker
+knew, and the server's facts replace it once the room has read the confirmed pointer. The second press of a double
+press on Attach lands where Attach was, on the step beneath, and the step takes no click with a count above one for
+half a second after Attach. Escape leaves the picker, the menu or the sheet
 before the step, and focus returns to the + or the ⋯, whichever then stands. A loop's and a missing tree's lines end
 with the way out (*Detach one side.*, *Choose another, or detach it.*) for the person who has the ⋯.
 
@@ -730,8 +743,12 @@ acknowledgements and durability limits.
 **Registers.** A node's last-writer-wins registers are one list (`NODE_REGISTERS` in `sync/lattice.js`) that the join's
 clock, the frontier, the frame and Undo all read. `opens`, the tree a step opens, is one of them: joined by its stamp,
 stored, owed to the server until confirmed and restored by Undo like the rest. The server hides the pointer from a
-caller who cannot write the tree, so a subscribe graft that is silent on one leaves it confirmed (`TreeLattice.pointers`
-carries the confirmed ones across the rebuilt baseline): a lapsed session on a shared roadmap owes and sends nothing.
+caller who cannot write the tree, so only a writer's answer speaks for pointers: `SyncSession.reach` is the subscribe
+answer's `reach`, and a `sign-in-required` or `no-such-tree` refusal turns it to `reader`. A writer's full graft is the
+server's word on pointers, an older or empty one included. A reader's, or an answer with no `reach`, leaves confirmed the
+pointers the server confirmed before (`TreeLattice.pointers` carries them across the rebuilt baseline); while the session
+reads as a reader no pointer write leaves the device, and one it wrote stays owed until a writer answers. An answer that
+turns from reader to writer subscribes again from an empty vector, so a pointer changed meanwhile arrives.
 
 **Gestures.** Shared structure and private progress use one socket and HLC clock but separate frames. Pending
 writes are derived from lattice state. `materialize.js` turns each local gesture into stamped field writes;
