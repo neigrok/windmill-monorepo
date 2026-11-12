@@ -84,7 +84,8 @@ GraftFootprint footprintOf(const LooseGraph& graph, const Graft& graft) {
     if (tombstoned.count(edge.from) || tombstoned.count(edge.to)) continue;  // counted below, once
     auto resent = named.find(edge.to);
     if (resent == named.end() || resent->second.count(edge.from)) continue;
-    if (graft.prerequisites == PrerequisiteMode::merge) footprint.keptEdges.push_back(edge);
+    if (graft.prerequisites == PrerequisiteMode::merge || graft.omittedPrerequisites.count(edge.to))
+      footprint.keptEdges.push_back(edge);
     else footprint.replacedEdges.push_back(edge);
   }
   for (const NodeId& id : tombstoned)

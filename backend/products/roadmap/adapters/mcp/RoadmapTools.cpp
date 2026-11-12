@@ -1179,6 +1179,7 @@ ToolResult importSubgraph(RoomRegistry& registry, TreeRegistry& trees, ProgressS
     std::set<NodeRegister>& omitted = graft.omittedNodeRegisters[id];
     for (const auto& [field, held] : kImportedNodeRegisters)
       if (node[field].isNull()) omitted.insert(held);
+    if (node["prerequisites"].isNull()) graft.omittedPrerequisites.insert(id);
     if (node["kind"].isString()) graft.nodeKinds[id] = KindId{node["kind"].asString()};
   }
   for (const Json::Value& kind : args["kinds"]) {

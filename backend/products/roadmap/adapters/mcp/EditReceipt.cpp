@@ -74,7 +74,8 @@ void answerKeptEdges(const std::vector<Edge>& kept, Json::Value& receipt) {
   }
   if (kept.size() > kMostListed)
     list.append("and " + std::to_string(kept.size() - kMostListed) +
-                " more — re-send with prerequisiteMode \"replace\" to drop every edge the batch does not name");
+                " more — to drop the ones you do not want, re-send the node with prerequisiteMode \"replace\" "
+                "and its whole prerequisites list");
   receipt["keptEdges"] = list;
   receipt["keptEdgeCount"] = static_cast<Json::UInt64>(kept.size());
 }
