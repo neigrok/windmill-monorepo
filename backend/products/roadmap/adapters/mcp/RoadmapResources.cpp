@@ -98,7 +98,8 @@ batch names for it, or none. Prerequisites merge by default;
 `prerequisiteMode: "replace"` removes omitted incoming edges. The graph commits in one structural
 operation; optional progress commits in a separate atomic phase. Inspect `graphApplied`,
 `progressApplied` and any `progressError`/`progressSkipped`: a graph can be applied even when progress
-is incomplete. `dryRun` changes neither phase.
+is incomplete. A graft that changes nothing the tree holds writes nothing and answers `unchanged: true`
+with the tree's current `seq`; the progress beside it is still applied. `dryRun` changes neither phase.
 )";
 
 }  // namespace

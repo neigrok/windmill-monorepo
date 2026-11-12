@@ -227,7 +227,7 @@ The table uses product-local names; external MCP prefixes each with `roadmap_`.
 | edit | `disconnect` | remove edges: one `from`+`to` or `edges: [{from,to}]` (1..500), exactly one form; one op, one seq, all or nothing; `removed` counts the edges that were present |
 | edit | `delete_node` | tombstone nodes: one `nodeId` or `nodeIds` (1..200), exactly one form; a missing id refuses the whole call naming each; one op, one seq. `prune: true` also drops every edge touching a deleted node and clears the caller's marks on it, under the delete grant; receipt carries `ids` and `pruned: {edges, progress}` |
 | edit | `tidy` · `prune` | transitive reduction / GC dangling edges + orphan progress |
-| edit | `import_subgraph` | bulk upsert a whole `get_tree`-shaped slice as one graft frame — a field left off a re-sent node or kind keeps its value (`opens` included, but on a node the import brings back from a delete, which opens none), `prerequisiteMode` merge (union) or replace, `tombstone[]` deletes in the same frame and needs the `roadmap:delete` grant |
+| edit | `import_subgraph` | bulk upsert a whole `get_tree`-shaped slice as one graft frame — a field left off a re-sent node or kind keeps its value (`opens` included, but on a node the import brings back from a delete, which opens none), `prerequisiteMode` merge (union) or replace, `tombstone[]` deletes in the same frame and needs the `roadmap:delete` grant; a graft that changes nothing writes nothing and answers `unchanged: true` (see An edit that changes nothing) |
 | legend | `add_kind` (inline label+description+crossBranchExempt) · `rename_kind` · `describe_kind` (description and/or crossBranchExempt) · `remove_kind` · `reorder_kinds` · `recolor_kind` | the legend |
 | write | `set_progress` | per-user overlay: single `nodeId`+`status`, or a bulk `updates[]` (order-safe); `outOfOrder: true` on a completion is kept on the mark and answered as `acknowledged: true` |
 | resource | `windmill://quickstart` | the read-me-first document; no tool slot |
@@ -235,7 +235,8 @@ The table uses product-local names; external MCP prefixes each with `roadmap_`.
 Every tree-scoped tool takes `treeId`. Applied structural edits return
 `{applied, seq, diagnosticsClean, introducedDiagnostics}`. Cycles and detached nodes are accepted;
 arguments, permissions, revision preconditions, limits and required node existence are validated.
-Dry runs and unchanged patch/edge retries do not produce a new structural op. The diagnostics keys
+Dry runs, unchanged patch/edge retries, and a single-node edit or an import that changes nothing (see
+An edit that changes nothing) do not produce a new structural op. The diagnostics keys
 answer different questions: `diagnosticsClean` is the whole graph's state, and
 `introducedDiagnostics` names the cycles, dangling and self-edges present after this edit that the
 tree did not hold before it. An innocent edit on a dirty tree answers `[]`. An edit that changes
@@ -280,7 +281,17 @@ write nothing: no seq, no op row, no frame and no save. The reply is the usual o
 decides it, `changesNode` in `domain/Command`: a field the edit names holds another value. A
 `patch_nodes` row that changes nothing is listed under `unchangedNodeIds` by the same rule. An
 `annotate_node` naming several fields lands whole when any of them would change, and an
-`appendDescription` with text always does. A tend does not count such a write as an edit.
+`appendDescription` with text always does.
+
+`import_subgraph` follows the same word. A graft whose frame lands nothing — every register sent as
+the tree holds it, no new edge, no tombstone, no edge a replace drops, no new or revived node or kind
+— is not joined: no seq, no op row, no frame and no save, and the receipt adds `unchanged: true` with
+`seq` the tree's head. `graftFrame` in `domain/Graft` builds the frame and says whether it
+`landsNothing`; the dry run builds the same frame on a copy of the room clock and previews
+`unchanged` with it. `unchanged` speaks for the graft only: a carried `progress[]` is applied and
+reported by its own keys either way.
+
+A tend does not count such a write as an edit, unless the reply carries `progress` marks it set.
 
 ## `status`, `seedStatus`, `state`, `summary`
 

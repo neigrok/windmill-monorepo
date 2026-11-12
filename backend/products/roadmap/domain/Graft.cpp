@@ -68,6 +68,10 @@ LegendState graftLegend(const Legend& current, const Graft& graft, const Hlc& at
   return legend;
 }
 
+GraftFrame graftFrame(const LooseGraph& graph, const Legend& legend, const Graft& graft, const Hlc& at) {
+  return GraftFrame{graftState(graph, graft, at), graftLegend(legend, graft, at)};
+}
+
 GraftFootprint footprintOf(const LooseGraph& graph, const Graft& graft) {
   const std::set<NodeId> tombstoned(graft.tombstones.begin(), graft.tombstones.end());
   std::map<NodeId, std::set<NodeId>> named;  // each re-sent node -> the prerequisites the document names

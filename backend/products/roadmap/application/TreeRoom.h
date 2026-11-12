@@ -47,6 +47,11 @@ public:
   // What importTree(incoming) would do beyond the upsert — the edges it keeps, replaces or
   // tombstones — read off this room's live state, changing nothing.
   GraftFootprint footprintOf(const Graft& incoming) const { return wm::footprintOf(graph_, incoming); }
+  // Whether importTree(incoming) at `nowMs` would land nothing, read off a copy of the room clock so
+  // nothing moves: the preview a dry run answers.
+  bool graftLandsNothing(const Graft& incoming, std::uint64_t nowMs) const {
+    return graftFrame(graph_, legend_, incoming, HlcClock(clock_).tick(nowMs)).landsNothing();
+  }
 
   // A node write's kind read off this room's own legend, under the strand the write then takes, so a
   // kind always lands as the hue it wears in the legend the write is applied to.
@@ -78,8 +83,9 @@ public:
 
   // Stamped from the room clock, so a by-id collision is an upsert; the graft's tombstones and
   // replaced edges are removed at that same stamp, in the same frame. An empty `kinds` leaves the
-  // legend untouched.
-  Seq importTree(const Graft& incoming, std::uint64_t nowMs, const UserId& actor);
+  // legend untouched. A graft that lands nothing is not joined: no seq, no op, no frame, nothing to
+  // save, and the answer is nullopt.
+  std::optional<Seq> importTree(const Graft& incoming, std::uint64_t nowMs, const UserId& actor);
 
   // One clock per tree, so no two writes collide on a stamp. `nowMs` is wall time from the Clock port.
   Hlc nextStamp(std::uint64_t nowMs);

@@ -1,56 +1,45 @@
-# 06 · Searchable brand identity
+# 06 · Make Windmill findable in search and AI answers
 
-Kind: build · Stage: 0 · Window: Nov 2026 to Mar 15, 2027 · Cash: $0 to $100 · CEO hours / agent days: 2h / 3d
+Someone hears “Windmill” and wants the skill tree. Someone else asks an assistant which tools work with a personal training log. Both need a page that identifies the product, shows the job, and leads somewhere useful. Start with six canonical URLs on `windmill.works` — `/`, `/roadmap`, `/gym`, `/journal`, `/gallery` and `/connect.html`. Engineering owns public HTML and crawl checks. The founder owns the webmaster accounts and the weekly decision. Use existing tools at $0 incremental spend.
 
-## Idea
-Make Windmill findable by the people who hear its name and by the systems that answer questions
-about it. Deliverables: Search Console with a sitemap and canonical pages for windmill.works, store
-badges and social profiles that all use the same three names ("Windmill Gym", "Windmill Journal",
-"Windmill Roadmap"), and six original intent or comparison pages that describe competitors
-accurately and Windmill's shipped behaviour only.
+## What the public site serves
 
-## Pros
-- Captures the branded demand that creators, featuring and word of mouth create.
-- Clears the name collisions with windmill.dev (Windmill Labs) and gowindmill.com.
-- Honest comparison pages are the content most likely to be cited by answer engines.
-- Agents produce pages cheaply; the CEO reviews only the facts.
+On November 12, 2026, all 11 URLs in the production sitemap returned HTTP 200 with their own canonical in the initial HTML. The other five URLs are the changelog, pricing, privacy, refunds and terms. Keep the pricing page out of campaign destinations until its claims about Echoes and Talk match the [enabled AI policy](../../AI_USAGE_REVIEW.md). A nonexistent page returned 404. The gallery linked one listed tree, “Learn to sail.” Its title identified the tree, but its initial heading and structured data described the Windmill homepage. A reader that never executes JavaScript gets little evidence of what the tree teaches. Before expanding a public template library, make the heading, summary and first useful steps identify that particular **owner-listed** tree, then check its HTML and rendered page. [Live sitemap](https://windmill.works/sitemap.xml) · [Public example](https://windmill.works/t/t_9e407a96b5330ebe) · [Share-page renderer](../../../backend/products/roadmap/adapters/http/SharePageApi.cpp)
 
-## Cons
-- Indexing and ranking take weeks, and the pass line sits in March.
-- Aggregate search declines do not forecast Windmill's traffic either way.
-- Comparison pages need editorial upkeep whenever a competitor changes price.
-- A `site:` search is not proof of indexing; Search Console and URL inspection are the evidence.
+The edge's robots response allows ordinary search and names training crawlers it blocks. OAI-SearchBot and Claude-SearchBot had no named block in that response. Keep the training choice intact. Check the served robots file and provider crawl diagnostics after CDN changes. A successful request from a laptop tests reachability only. Keep account pages, unlisted share URLs, workouts, journal pages, OAuth endpoints and private identifiers out of all submission lists. [Live robots file](https://windmill.works/robots.txt) · [OpenAI crawlers](https://developers.openai.com/api/docs/bots) · [Anthropic crawlers](https://support.claude.com/en/articles/8896518-does-anthropic-crawl-data-from-the-web-and-how-can-site-owners-block-the-crawler)
 
-## Estimates
-| Item | Estimate |
-|---|---|
-| Cash | $0 to $100 for domain or profile fees (assumption) |
-| Effort | 2 CEO hours approving names and page facts; 3 agent days for configuration and the six pages |
-| Traffic | assumption: 200 to 800 qualified organic visits by mid-March; benchmark context: organic click-through falls 41% to 61% on queries with an AI Overview (Ahrefs and Seer, 2025 to 2026) |
+## Submission and coverage on November 12, 2026
 
-## Success metric
-Core pages indexed and verified in Search Console by Dec 20, 2026; at least 200 qualified organic
-visits and at least 3 buyers attributed to search by Mar 15, 2027.
+Google verified the HTTPS URL-prefix property, processed `/sitemap.xml` successfully and reported **11 discovered pages**. Inspection of the six priority URLs confirmed the homepage was indexed. Roadmap initially showed as unknown. Gym, Journal, the gallery and Connect showed as discovered and awaiting indexing. Google accepted individual requests for all five into its priority crawl queue. [Search Console sitemaps](https://search.google.com/search-console/sitemaps?resource_id=https%3A%2F%2Fwindmill.works%2F)
 
-## Failure metric
-Indexability unresolved on Dec 20, 2026, or fewer than 100 qualified visits by Mar 15, 2027. The page
-set stops expanding; the identity work stays because every other channel needs it.
+Bing verified the property independently. Its Sitemaps report showed **Success** and **11 URLs discovered**. Its six URL inspections showed zero indexed. The homepage had a prior DNS fetch failure in the index report. Bing's live test fetched the homepage and reported that it could be indexed. The other five priority pages initially showed as unknown. Bing recorded direct indexing requests for the homepage, Roadmap, Gym, Journal and Gallery. [Bing sitemaps](https://www.bing.com/webmasters/sitemaps?siteUrl=https%3A%2F%2Fwindmill.works%2F) · [URL Inspection](https://www.bing.com/webmasters/help/url-inspection-55a30305)
 
-## Justification
-Searching the brand today returns developer platforms and game skills, not Windmill, and the site
-carries no store or social links. Every channel in this strategy ends with someone typing the name,
-so the name has to resolve. Being the cited source matters more than ranking now that AI Overviews
-take most clicks; honest, specific comparison pages with structured data are how an app earns that
-citation. Reddit appears in 28.7% of AI Overviews (Sistrix, 2025), which is why report 15 keeps a
-genuine, disclosed presence there and never a manufactured one. The alternative, a content treadmill
-chasing informational keywords, was rejected because the click-through it competes for is shrinking.
+IndexNow received the changed `/connect.html` URL with HTTP **202** after the deployed proof returned HTTP 200 with its expected content. The protocol treats 202 as acceptance pending key validation. [IndexNow responses](https://www.indexnow.org/documentation)
 
-## Dependencies
-- Report 01's store listings for the badges.
-- Any new landing or page layout approved in Figma before an agent implements it; the landings' Figma file is the Marketing file.
-- Report 02's attribution join to credit search buyers.
+Reinspect these six URLs on **November 19** and **December 10**. Record changes in index coverage and the stated reason for any continuing exclusion before expanding the page set.
 
-## Decision log
+## Submit and verify
 
-| Date | Decision | Numbers |
+1. **Google.** In the site's authorized Search Console property, submit `https://windmill.works/sitemap.xml` in Sitemaps. If ownership is missing, the founder verifies the URL-prefix property or the domain in the intended business account. Inspect the six priority URLs. Save the indexed verdict, Google-selected canonical and last crawl where available. Use the live test to diagnose a failed fetch. Request indexing for a few new or corrected pages. Google reserves its Indexing API for eligible job and livestream pages. [Request a crawl](https://developers.google.com/search/docs/crawling-indexing/ask-google-to-recrawl) · [Indexing API scope](https://developers.google.com/search/apis/indexing-api/v3/using-api)
+2. **Bing.** Import a verified Search Console site into Bing Webmaster Tools, or verify the site there using its offered file, tag or DNS record. Check Sitemaps for the same URL and submit it if absent. Use URL Inspection on the same six pages and save each returned index status. [Bing verification](https://www.bing.com/webmasters/help/add-and-verify-site-12184f8b) · [Bing sitemap guide](https://www.bing.com/webmasters/help/sitemaps-3b5cf6ed)
+3. **IndexNow.** For an added, materially changed or removed public page, verify the same-host proof and send the changed canonical to a participating endpoint. Keep the date, URL and response code. A 200 acknowledges receipt. A 202 leaves key validation pending. Use webmaster inspection for a subsequent index verdict. The XML sitemap covers unchanged inventory. An older web workflow or a restore from a bare release artifact can remove the deployed proof. Recheck the proof over HTTPS and run the current main Web Deploy to restore it before sending another change. The operator can obtain the current key from the deployed web root over the private operations channel. Keep the key and its path out of tickets, docs and logs. [IndexNow protocol](https://www.indexnow.org/documentation) · [Submission FAQ](https://www.indexnow.org/faq)
+4. **Each Monday.** For each engine record the date, sitemap processing result, priority URLs indexed out of six, URLs still unknown and the stated reason for each exclusion. Recheck seven and 28 days after submission. If a priority URL is still excluded, open its reported reason before commissioning another article. Resolve fetch failures, unexpected canonicals or missing page text first. Record the evidence in the marketing tree. A `site:` query and a sitemap receipt do not establish index coverage. [Google URL Inspection](https://support.google.com/webmasters/answer/9012289)
+
+## First two editorial assignments
+
+| Reader's question | Evidence to publish | Destination and decision |
 |---|---|---|
+| “How do I turn a project checklist into a skill tree?” | Show three connected steps from Windmill's own “Ship v1” starter. Explain why writing the one-sentence promise unlocks cutting scope. Include readable step text beside the example. | Send readers to open the starter via Roadmap. Start with one example. Expand after builders activate and return in the pilot. [Starter source](../../../web/src/products/roadmap/quests/roster/shipV1.js) · [Roadmap](https://windmill.works/roadmap) |
+| “Can my assistant read my roadmap or training log?” | Make the discovery page say **Windmill Roadmap & Gym**. Show one synthetic read, the requested product permission, the result a person can check, and how to disconnect. | Send readers to the existing Connect instructions. Count successful first reads among people who try the setup. [Connect](https://windmill.works/connect.html) · [Agent distribution plan](12-directories-and-show-hn.md) |
+
+The founder can use AI to draft a transcript from an original demo. Verify every step on the named surface and publish the specific example users struggled to find. New page layouts follow the project's design approval process. [Google guidance for AI-assisted content](https://developers.google.com/search/docs/fundamentals/using-gen-ai-content)
+
+## Check AI discovery in 20 minutes a week
+
+Run three fixed questions in fresh sessions on two available search-enabled surfaces, using the same language and market. Log date, surface, whether it cited `windmill.works`, destination, and whether the product description was accurate. Use synthetic questions only.
+
+- Branded — “Where can I try Windmill Roadmap and see a skill tree?”
+- Unbranded — “What tool lets me turn a project checklist into a skill tree with prerequisites?”
+- Negative control — “Which Windmill runs developer workflows?” A citation to the self-growth app here is a wrong match.
+
+One wrong-domain answer gives the founder a specific page to clarify. Compare the same questions after the corrected page is indexed. These samples diagnose confusion. For actual exposure use Google's generative AI impressions when its report is available and Bing's citations for supported AI experiences. Report organic clicks, attributable product actions and unknown-source actions in separate columns. Low volume can leave a report unavailable. Google AI features use normal indexing and snippet eligibility and require no special AI file or markup. [Google AI eligibility](https://developers.google.com/search/docs/appearance/ai-features) · [Google generative AI report](https://support.google.com/webmasters/answer/16984139?hl=en) · [Bing AI Performance](https://blogs.bing.com/webmaster/2026/2/Introducing-AI-Performance-in-Bing-Webmaster-Tools-Public-Preview/)
