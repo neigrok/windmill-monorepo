@@ -197,6 +197,10 @@ TEST(mcp_the_catalog_publishes_nodeId_and_keeps_id_as_a_deprecated_alias) {
   const Json::Value* planting = toolNamed(catalog, "create_tree");
   REQUIRE(planting != nullptr);
   CHECK_EQ((*planting)["inputSchema"]["properties"]["title"]["maxLength"].asUInt64(), 200u);
+  const Json::Value& legend = (*planting)["inputSchema"]["properties"]["kinds"];
+  CHECK_EQ(legend["items"], arrays["kinds"]["items"]);
+  CHECK_EQ(legend["minItems"].asUInt64(), 1u);
+  CHECK_EQ(legend["maxItems"].asUInt64(), 6u);
 
   const Json::Value* create = toolNamed(catalog, "create_node");
   REQUIRE(create != nullptr);

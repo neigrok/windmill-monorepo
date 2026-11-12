@@ -234,6 +234,70 @@ TEST(mcp_create_tree_plants_an_owned_roadmap_and_lists_it) {
   CHECK(found);
 }
 
+TEST(mcp_create_tree_plants_the_legend_it_is_sent_and_answers_it) {
+  Harness h;
+  const ToolResult created = h.tools.callTool("create_tree", parse(R"({"title":"Crew board","kinds":[
+    {"id":"developer","hue":"sky","label":"Developer"},
+    {"id":"designer","hue":"plum","label":"Designer","description":"Draws the flows"},
+    {"id":"owner","hue":"gold","label":"Owner","crossBranchExempt":true}]})"), h.actor);
+  CHECK_FALSE(created.isError);
+  const std::string tree = body(created)["treeId"].asString();
+  CHECK_EQ(body(created), parse(R"({"treeId":")" + tree + R"(","kinds":[{"id":"developer","hue":"sky","label":"Developer"},
+    {"id":"designer","hue":"plum","label":"Designer"},{"id":"owner","hue":"gold","label":"Owner"}]})"));
+
+  Json::Value read = parse(R"({"kindFields":["id","hue","label","description","crossBranchExempt"]})");
+  read["treeId"] = tree;
+  CHECK_EQ(body(h.tools.callTool("get_tree", read, h.actor))["tree"]["kinds"],
+           parse(R"([{"id":"developer","hue":"sky","label":"Developer","description":"","crossBranchExempt":false},
+    {"id":"designer","hue":"plum","label":"Designer","description":"Draws the flows","crossBranchExempt":false},
+    {"id":"owner","hue":"gold","label":"Owner","description":"","crossBranchExempt":true}])"));
+
+  Json::Value filed = parse(R"({"label":"Fix the crash","kind":"developer"})");
+  filed["treeId"] = tree;
+  CHECK_EQ(body(h.tools.callTool("create_node", filed, h.actor)),
+           parse(R"({"applied":true,"seq":1,"id":"fix-the-crash","kind":"developer","diagnosticsClean":true,
+    "introducedDiagnostics":[]})"));
+}
+
+TEST(mcp_create_tree_without_kinds_plants_the_default_legend_and_answers_it) {
+  Harness h;
+  const Json::Value created = body(h.tools.callTool("create_tree", with("title", "Sailing"), h.actor));
+  CHECK_EQ(created, parse(R"({"treeId":")" + created["treeId"].asString() + R"(","kinds":[
+    {"id":"build","hue":"terracotta","label":"Build"},{"id":"learn","hue":"olive","label":"Learn"},
+    {"id":"milestone","hue":"gold","label":"Milestone"}]})"));
+}
+
+TEST(mcp_create_tree_refuses_a_legend_it_cannot_plant_and_plants_no_tree) {
+  Harness h;
+  const auto trees = [&] { return body(h.tools.callTool("list_trees", Json::Value(Json::objectValue), h.actor)); };
+  const Json::Value before = trees();
+  const std::size_t rows = h.trees.byId.size();
+  std::string seven = R"({"kinds":[)";
+  for (const char* hue : {"terracotta", "olive", "gold", "brick", "sky", "plum", "sky"})
+    seven += std::string(seven.back() == '[' ? "" : ",") + R"({"id":"k)" + std::to_string(seven.size()) +
+             R"(","hue":")" + hue + R"("})";
+  seven += "]}";
+
+  for (const auto& [arguments, refusal] : std::vector<std::pair<std::string, std::string>>{
+           {R"({"kinds":[]})",
+            "create_tree: kinds, when sent, names at least one kind — leave it out for the default legend"},
+           {R"({"kinds":[{"id":"dev","hue":"sky"},{"id":"dev","hue":"plum"}]})",
+            "create_tree: kinds[1].id \"dev\" is already used by kinds[0] — an id names one kind per batch"},
+           {R"({"kinds":[{"id":"dev","hue":"sky"},{"id":"ops","hue":"sky"}]})",
+            "create_tree: kinds[1].hue \"sky\" already belongs to kind \"dev\" — a hue names one kind, so pick a "
+            "free one"},
+           {seven, "create_tree: kinds has 7 items, max 6"},
+           {R"({"kinds":"owner"})", "create_tree: argument \"kinds\" must be an array of objects, got string"},
+           {R"({"kinds":[{"id":"dev","hue":"chartreuse"}]})",
+            "create_tree: kinds[0].hue \"chartreuse\" is not one of {terracotta, olive, gold, brick, sky, plum}"}}) {
+    const ToolResult refused = h.tools.callTool("create_tree", parse(arguments), h.actor);
+    CHECK(refused.isError);
+    CHECK_EQ(message(refused), refusal);
+  }
+  CHECK_EQ(trees(), before);
+  CHECK_EQ(h.trees.byId.size(), rows);
+}
+
 TEST(mcp_list_trees_returns_the_callers_owned_rows) {
   Harness h;
   h.trees.byId["t"].createdAt = 1'753'400'000'000;  // epoch ms
