@@ -93,6 +93,10 @@ struct RemoveKind { KindId id; };
 struct ReorderKinds { std::vector<KindId> order; };
 struct RecolorKind { KindId id; NodeColor hue; };
 
+// The nodes a recolor of `kind` repaints: every present node wearing the hue the legend holds for it. RecolorKind and
+// an import that re-hues a held kind repaint by this one rule.
+std::vector<NodeId> wearersOf(const LooseGraph& graph, const Legend& legend, const KindId& kind);
+
 // Several commands that landed as ONE frame under one seq, logged whole so a replay of the op row
 // reproduces the frame and not just its first deed. Every member folds at the batch's own stamp.
 struct Batch;

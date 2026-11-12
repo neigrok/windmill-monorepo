@@ -1273,6 +1273,9 @@ ToolResult importSubgraph(RoomRegistry& registry, TreeRegistry& trees, ProgressS
     tombstoned["nodes"] = static_cast<Json::UInt64>(footprint.tombstonedNodes.size());
     tombstoned["edges"] = static_cast<Json::UInt64>(footprint.tombstonedEdges.size());
     out["tombstoned"] = tombstoned;
+    // A held kind the batch re-hues carries its nodes, as recolor_kind does; the receipt counts them.
+    if (const Repaint repaint = room.repaintOf(graft); !repaint.rehued.empty())
+      out["repaintedNodes"] = static_cast<Json::UInt64>(repaint.nodes.size());
     if (dryRun) {
       out["dryRun"] = true;
       if (room.graftLandsNothing(graft, clock.nowMs())) out["unchanged"] = true;

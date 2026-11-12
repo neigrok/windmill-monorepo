@@ -219,10 +219,10 @@ void merge(LooseGraph& graph, Legend& legend, const Command& command, const Hlc&
     [&](const RemoveKind& c) { legend.removeKind(c.id, at); },
     [&](const ReorderKinds& c) { legend.reorder(c.order, at); },
     [&](const RecolorKind& c) {
-      std::optional<NodeColor> old = legend.hueOf(c.id);
-      if (!old) return;
+      if (!legend.hueOf(c.id)) return;
+      const std::vector<NodeId> wearers = wearersOf(graph, legend, c.id);
       legend.setHue(c.id, c.hue, at);
-      for (const NodeId& node : graph.nodesWithColor(*old)) graph.setColor(node, c.hue, at);
+      for (const NodeId& node : wearers) graph.setColor(node, c.hue, at);
     },
     [&](const Batch& c) {
       for (const Command& member : c.commands) merge(graph, legend, member, at);
@@ -362,6 +362,12 @@ std::optional<std::string> validate(const LooseGraph& graph, const Legend& legen
     },
     [&](const auto&) -> std::optional<std::string> { return std::nullopt; },
   }, command);
+}
+
+std::vector<NodeId> wearersOf(const LooseGraph& graph, const Legend& legend, const KindId& kind) {
+  const std::optional<NodeColor> hue = legend.hueOf(kind);
+  if (!hue) return {};
+  return graph.nodesWithColor(*hue);
 }
 
 std::optional<Command> changedPart(const NodeSpec& node, const Command& command) {

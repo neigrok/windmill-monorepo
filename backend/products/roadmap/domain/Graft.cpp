@@ -1,5 +1,7 @@
 #include "products/roadmap/domain/Graft.h"
 
+#include "products/roadmap/domain/Command.h"
+
 #include <algorithm>
 #include <map>
 #include <optional>
@@ -68,8 +70,34 @@ LegendState graftLegend(const Legend& current, const Graft& graft, const Hlc& at
   return legend;
 }
 
+Repaint repaintOf(const LooseGraph& graph, const Legend& legend, const Graft& graft) {
+  std::set<NodeId> leftToTheBatch(graft.tombstones.begin(), graft.tombstones.end());
+  for (const NodeSpec& node : graft.document.nodes) {
+    const auto omitted = graft.omittedNodeRegisters.find(node.id);
+    if (omitted == graft.omittedNodeRegisters.end() || !omitted->second.count(NodeRegister::color))
+      leftToTheBatch.insert(node.id);  // the batch's own colour for it, sent or filed by kind, wins
+  }
+  Repaint repaint;
+  for (const Kind& kind : graft.document.kinds) {
+    const std::optional<NodeColor> held = legend.hueOf(kind.id);
+    if (!held || *held == kind.hue) continue;
+    repaint.rehued.push_back(kind.id);
+    for (const NodeId& node : wearersOf(graph, legend, kind.id))
+      if (!leftToTheBatch.count(node)) repaint.nodes[node] = kind.hue;
+  }
+  return repaint;
+}
+
 GraftFrame graftFrame(const LooseGraph& graph, const Legend& legend, const Graft& graft, const Hlc& at) {
-  return GraftFrame{graftState(graph, graft, at), graftLegend(legend, graft, at)};
+  GraftFrame frame{graftState(graph, graft, at), graftLegend(legend, graft, at)};
+  for (const auto& [id, hue] : repaintOf(graph, legend, graft).nodes) {
+    auto entry = std::find_if(frame.graph.nodes.begin(), frame.graph.nodes.end(),
+                              [&](const NodeStateEntry& held) { return held.id == id; });
+    if (entry == frame.graph.nodes.end()) entry = frame.graph.nodes.insert(entry, NodeStateEntry{.id = id});
+    entry->color = hue;
+    entry->colorAt = at;
+  }
+  return frame;
 }
 
 GraftFootprint footprintOf(const LooseGraph& graph, const Graft& graft) {

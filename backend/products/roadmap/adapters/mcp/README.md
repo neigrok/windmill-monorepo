@@ -551,8 +551,13 @@ and none overrides another.
   `crossBranchExempt` sent as the legend holds it is not stamped again, so a `get_tree` round trip
   that carries the legend back changes nothing in it. Rank is never on the wire, so a colliding
   kind keeps its place and a new kind lands after the last one, in batch order. A re-sent kind
-  with a new hue changes the kind alone: the nodes wearing the old hue keep it, where
-  `recolor_kind` repaints them. The import is at most one op row — a batch that changes nothing
+  with a new hue repaints every present node wearing its old hue, in the same frame and at the
+  graft's stamp, by `recolor_kind`'s rule (`wearersOf`, used by `repaintOf`), judged against the
+  legend and nodes as they stood before the batch, so two kinds can swap hues; a node the batch
+  sends its own `color` or `kind` for, or tombstones, lands what the batch says. The receipt counts
+  the repainted nodes as `repaintedNodes`, present when a kind's hue changed and previewed by the
+  dry run, and a batch whose only change is a re-hue writes the row `recolor_kind` writes,
+  `RecolorKind`. The import is at most one op row — a batch that changes nothing
   writes none — and that row names only the batch's most salient change, in `headline()`'s order
   (a created node, a removed node, a legend change, a node's label, colour or annotation, an
   edge): an added edge beside a rename reads `renamed to N2`, two new edges read as the first of
