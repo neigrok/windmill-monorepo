@@ -602,6 +602,14 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   `🧩 28 · Parts` frame (Step card · tree, Tree pill, Step / Tree row, Back chip, loop and chevron-left icons). The
   Figma Skill Node has no form variant though `scene/NodeBatch.js` has, so the tree node is a composed frame. Move
   the parts into Components.
+- **Section 28 · read-me and fixtures.** The read-me 28.00 still lists the tree switcher's delete confirmation
+  under "Not drawn"; it is drawn as 🚧 28.50–28.52. Coast trip reads "0 of 5" on 28.00 and 28.02 and "No steps" on
+  28.14 and 28.44. The picker on 28.14 leaves out My life, though its NOTE says the rows are the switcher's list
+  minus the current tree. 28.38 (the tree was removed between loads) has no phone twin.
+- **Tree switcher · delete row.** The shipped confirmation is one line with an ellipsis (`confirmCopy` in
+  `identity/TreeSwitcher.jsx`), while 🚀 03.03 draws it wrapping; 28.50 needs it to wrap. Rename and delete show
+  on hover only, so a touch tablet from 744 px has no clear way to them. The open trigger has no left padding.
+  Below 744 px no surface removes a tree.
 - **Flow index · step editor.** The [flow index](../index.md#roadmap--web) has no rows for the step editor sections
   (18–22, 27) on Board · Web.
 - **Web reconciliation evidence.** All 25 current Roadmap screen/state families are mapped in the
