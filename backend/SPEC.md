@@ -461,9 +461,11 @@ a minute, and a revoked session narrows to a guest in place. Visibility is re-as
 Client → server: `ping` · `subscribe {treeId, vector}` · `subgraph` (a serialized `Subgraph`) ·
 `progress {treeId, frameId, marks[{node, status, at}]}` · `presence {treeId, …}`.
 
-Server → client: `pong` · `subgraph` (intent `delta` carrying `seq` as the subscribe answer, with
-the title and guide registers when the vector does not cover their stamps; intent `live` for a
-peer's broadcast; either is the frame's `readerView` for a connection that cannot write the tree) ·
+Server → client: `pong` · `subgraph` (intent `delta` carrying `seq` and `reach` as the subscribe
+answer, with the title and guide registers when the vector does not cover their stamps; intent
+`live` for a peer's broadcast, with no `reach`; either is the frame's `readerView` for a connection
+that cannot write the tree, and the delta's `reach` is that same verdict: `writer` for a connection
+that can, `reader` for any other) ·
 `progress` (intent `graft` on subscribe, echo otherwise) ·
 `subgraphAck {treeId, frameId, seq?}` · `progressAck` · `skew {treeId, frameId, serverNow}` ·
 `reject {treeId, code, reason, frameId?}` · `presence` · `peer`.

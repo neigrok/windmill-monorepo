@@ -212,6 +212,8 @@ void Collab::subscribe(const drogon::WebSocketConnectionPtr& conn, const std::st
       delta.actor = "srv";
       frame = toJson(delta);
       frame["seq"] = static_cast<Json::Int64>(room->head());
+      // The verdict that chose this delta's view, so an empty pointer reads as none or as withheld.
+      frame["reach"] = reach == Reach::writer ? "writer" : "reader";
     } catch (const std::exception& error) {
       // An infrastructure failure is never the socket's to relay.
       reportCurrentWriteFailure(error);
