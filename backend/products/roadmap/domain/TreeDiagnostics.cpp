@@ -6,7 +6,7 @@
 
 namespace wm {
 
-TreeDiagnostics TreeDiagnostics::assess(const LooseGraph& graph) {
+TreeDiagnostics TreeDiagnostics::assess(const LooseGraph& graph, const Legend& legend) {
   TreeDiagnostics report;
 
   std::vector<NodeId> ids = graph.presentNodeIds();
@@ -79,10 +79,16 @@ TreeDiagnostics TreeDiagnostics::assess(const LooseGraph& graph) {
 
   // Smells read one linear projection; nodeView per node would rescan every live edge (O(V*E)).
   const TreeData projection = graph.toTreeData(TreeId{}, {});
+  // A hue no kind wears says nothing of what the node is. With no kind at all every hue is one, so the whole tree says
+  // so in one line rather than once per node.
+  std::set<NodeColor> worn;
+  for (const Kind& kind : legend.kinds()) worn.insert(kind.hue);
+  if (worn.empty() && !projection.nodes.empty()) report.smells.push_back(Smell{std::nullopt, "empty-legend"});
   for (const auto& node : projection.nodes) {
     if (node.label.size() > maxLabel) report.smells.push_back(Smell{node.id, "label-too-long"});
     if (node.icon.empty()) report.smells.push_back(Smell{node.id, "empty-icon"});
     if (node.prerequisites.size() > inDegreeSmell) report.smells.push_back(Smell{node.id, "high-in-degree"});
+    if (!worn.empty() && !worn.count(node.color)) report.smells.push_back(Smell{node.id, "unclaimed-hue", node.color});
   }
 
   return report;

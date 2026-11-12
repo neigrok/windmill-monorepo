@@ -16,7 +16,7 @@ TEST(clean_graph_reports_clean) {
   put(g, "a");
   put(g, "b");
   g.addEdge(nid("a"), nid("b"), at(2));
-  auto report = TreeDiagnostics::assess(g);
+  auto report = TreeDiagnostics::assess(g, Legend{});
   CHECK(report.clean());
   CHECK_EQ(report.cycles.size(), 0u);
   CHECK_EQ(report.dangling.size(), 0u);
@@ -27,7 +27,7 @@ TEST(self_edge_detected) {
   LooseGraph g;
   put(g, "a");
   g.addEdge(nid("a"), nid("a"), at(2));
-  auto report = TreeDiagnostics::assess(g);
+  auto report = TreeDiagnostics::assess(g, Legend{});
   CHECK_FALSE(report.clean());
   CHECK_EQ(report.selfEdges.size(), 1u);
   CHECK_EQ(report.cycles.size(), 0u);
@@ -39,7 +39,7 @@ TEST(dangling_edge_detected) {
   put(g, "b");
   g.addEdge(nid("a"), nid("b"), at(2));
   g.deleteNode(nid("b"), at(3));
-  auto report = TreeDiagnostics::assess(g);
+  auto report = TreeDiagnostics::assess(g, Legend{});
   REQUIRE_EQ(report.dangling.size(), 1u);
   CHECK_EQ(report.dangling[0], (Edge{nid("a"), nid("b")}));
   CHECK_FALSE(report.clean());
@@ -52,12 +52,12 @@ TEST(masked_work_flags_a_tombstoned_parent_with_a_live_child) {
   g.createNode(nid("child"), "Child", "x", NodeColor::gold, std::nullopt, at(20));
   g.addEdge(nid("parent"), nid("child"), at(21)); // a live child hangs off the tombstone
 
-  auto report = TreeDiagnostics::assess(g);
+  auto report = TreeDiagnostics::assess(g, Legend{});
   REQUIRE_EQ(report.maskedWork.size(), 1u);
   CHECK_EQ(report.maskedWork[0], nid("parent"));
 
   g.createNode(nid("parent"), "Parent", "x", NodeColor::sky, std::nullopt, at(30));
-  CHECK_EQ(TreeDiagnostics::assess(g).maskedWork.size(), 0u);
+  CHECK_EQ(TreeDiagnostics::assess(g, Legend{}).maskedWork.size(), 0u);
 }
 
 TEST(a_plain_deleted_leaf_is_not_masked_work) {
@@ -66,7 +66,7 @@ TEST(a_plain_deleted_leaf_is_not_masked_work) {
   put(g, "b");
   g.addEdge(nid("a"), nid("b"), at(2));
   g.deleteNode(nid("b"), at(3));  // a deleted CHILD (no live children of its own) is not masked work
-  CHECK_EQ(TreeDiagnostics::assess(g).maskedWork.size(), 0u);
+  CHECK_EQ(TreeDiagnostics::assess(g, Legend{}).maskedWork.size(), 0u);
 }
 
 TEST(cycle_detected_with_members) {
@@ -77,7 +77,7 @@ TEST(cycle_detected_with_members) {
   g.addEdge(nid("a"), nid("b"), at(2));
   g.addEdge(nid("b"), nid("c"), at(2));
   g.addEdge(nid("c"), nid("a"), at(2));
-  auto report = TreeDiagnostics::assess(g);
+  auto report = TreeDiagnostics::assess(g, Legend{});
   REQUIRE_EQ(report.cycles.size(), 1u);
   REQUIRE_EQ(report.cycles[0].members.size(), 3u);
   CHECK_EQ(report.cycles[0].members[0], nid("a"));
@@ -92,7 +92,7 @@ TEST(two_node_cycle_detected) {
   put(g, "b");
   g.addEdge(nid("a"), nid("b"), at(2));
   g.addEdge(nid("b"), nid("a"), at(2));
-  auto report = TreeDiagnostics::assess(g);
+  auto report = TreeDiagnostics::assess(g, Legend{});
   REQUIRE_EQ(report.cycles.size(), 1u);
   CHECK_EQ(report.cycles[0].members.size(), 2u);
 }
@@ -105,11 +105,27 @@ TEST(high_in_degree_smell) {
     g.createNode(NodeId{parent}, parent, "icon", NodeColor::sky, std::nullopt, at(1));
     g.addEdge(NodeId{parent}, nid("child"), at(2));
   }
-  auto report = TreeDiagnostics::assess(g);
+  auto report = TreeDiagnostics::assess(g, Legend{});
   CHECK(report.clean());
   bool found = false;
   for (const auto& smell : report.smells) {
     if (smell.node == nid("child") && smell.kind == "high-in-degree") found = true;
   }
   CHECK(found);
+}
+
+// A present node whose hue no kind of the legend wears is a smell naming that hue; a node a kind wears, or a deleted
+// one, is not. A legend with no kind is one line for the whole tree instead, and an empty tree says nothing.
+TEST(a_hue_no_kind_wears_is_a_smell_and_an_empty_legend_is_one_line) {
+  LooseGraph g;
+  put(g, "worn");
+  g.createNode(nid("loose"), "loose", "icon", NodeColor::olive, std::nullopt, at(1));
+  g.createNode(nid("gone"), "gone", "icon", NodeColor::olive, std::nullopt, at(1));
+  g.deleteNode(nid("gone"), at(2));
+  const Legend legend({{KindId{"k"}, NodeColor::sky, "K"}}, at(1));
+
+  CHECK((TreeDiagnostics::assess(g, legend).smells ==
+         std::vector<Smell>{{nid("loose"), "unclaimed-hue", NodeColor::olive}}));
+  CHECK((TreeDiagnostics::assess(g, Legend{}).smells == std::vector<Smell>{{std::nullopt, "empty-legend", std::nullopt}}));
+  CHECK(TreeDiagnostics::assess(LooseGraph{}, Legend{}).smells.empty());
 }

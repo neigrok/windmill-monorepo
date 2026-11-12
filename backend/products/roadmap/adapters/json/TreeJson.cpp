@@ -192,8 +192,9 @@ Json::Value toJson(const TreeDiagnostics& diagnostics) {
   Json::Value smells(Json::arrayValue);
   for (const Smell& smell : diagnostics.smells) {
     Json::Value value(Json::objectValue);
-    value["node"] = smell.node.str();
+    if (smell.node) value["node"] = smell.node->str();
     value["kind"] = smell.kind;
+    if (smell.hue) value["hue"] = std::string(toString(*smell.hue));
     smells.append(value);
   }
   root["smells"] = smells;

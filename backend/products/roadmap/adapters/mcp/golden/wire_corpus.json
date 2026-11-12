@@ -1,5 +1,5 @@
 {
-  "schemaVersion" : 19,
+  "schemaVersion" : 20,
   "steps" : 
   [
     {
@@ -709,12 +709,32 @@
                   "node" : "docs"
                 },
                 {
+                  "hue" : "olive",
+                  "kind" : "unclaimed-hue",
+                  "node" : "docs"
+                },
+                {
                   "kind" : "empty-icon",
+                  "node" : "launch"
+                },
+                {
+                  "hue" : "terracotta",
+                  "kind" : "unclaimed-hue",
                   "node" : "launch"
                 },
                 {
                   "kind" : "empty-icon",
                   "node" : "render"
+                },
+                {
+                  "hue" : "sky",
+                  "kind" : "unclaimed-hue",
+                  "node" : "render"
+                },
+                {
+                  "hue" : "gold",
+                  "kind" : "unclaimed-hue",
+                  "node" : "root"
                 },
                 {
                   "kind" : "empty-icon",
