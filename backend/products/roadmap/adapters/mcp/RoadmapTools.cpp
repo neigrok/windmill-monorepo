@@ -1613,26 +1613,36 @@ ToolResult removeTree(TreeRegistry& registry, const TreeId& tree, const UserId& 
 
 // The guide is user content: a refusal names its bound and its type, never its text.
 ToolResult describeTree(TreeRegistry& registry, const TreeId& tree, const Json::Value& args, const UserId& caller) {
+  const Json::Value& title = args["title"];
   const Json::Value& guide = args["guide"];
-  if (!guide.isString())
+  if (title.isNull() && guide.isNull())
+    return ToolResult::failure("nothing to set — pass at least one of \"title\", \"guide\".");
+  if (std::optional<std::string> bad = optionalString(title, "title")) return ToolResult::failure(*bad);
+  if (!guide.isNull() && !guide.isString())
     return ToolResult::failure(*requireString(guide, "guide") + ". A guide is plain text of at most " +
                                std::to_string(kMaxGuideChars) + " characters; \"\" clears it.");
   if (std::optional<std::string> bad = optionalString(guide, "guide", kMaxGuideChars))
     return ToolResult::failure(*bad);
 
-  const std::variant<Seq, TreeRegistry::GuideRefusal, Admission> outcome =
-      registry.setGuide(tree, caller, guide.asString());
+  TreeRegistry::Description sent;
+  if (title.isString()) sent.title = title.asString();
+  if (guide.isString()) sent.guide = guide.asString();
+  const std::variant<TreeRegistry::Described, TreeRegistry::Renaming, Admission> outcome =
+      registry.describe(tree, caller, sent);
   if (const Admission* refusal = std::get_if<Admission>(&outcome)) return ToolResult::failure(refusal->reason);
-  if (const TreeRegistry::GuideRefusal* refusal = std::get_if<TreeRegistry::GuideRefusal>(&outcome)) {
-    if (*refusal == TreeRegistry::GuideRefusal::notYours)
+  if (const TreeRegistry::Renaming* refusal = std::get_if<TreeRegistry::Renaming>(&outcome)) {
+    if (*refusal == TreeRegistry::Renaming::notYours)
       return ToolResult::failure(writeRefusalSentence(WriteRefusal::notYours));
-    if (*refusal == TreeRegistry::GuideRefusal::nobodysTree)
+    if (*refusal == TreeRegistry::Renaming::nobodysTree)
       return ToolResult::failure(writeRefusalSentence(WriteRefusal::nobodysTree));
-    return ToolResult::failure("no such tree \"" + tree.str() + "\"");
+    if (*refusal == TreeRegistry::Renaming::notFound) return ToolResult::failure("no such tree \"" + tree.str() + "\"");
+    return ToolResult::failure(TreeRegistry::sentenceOf(*refusal));
   }
+  const TreeRegistry::Described& described = std::get<TreeRegistry::Described>(outcome);
   Json::Value out(Json::objectValue);
   out["applied"] = true;
-  out["seq"] = static_cast<Json::Int64>(std::get<Seq>(outcome));
+  out["seq"] = static_cast<Json::Int64>(described.seq);
+  if (described.unchanged) out["unchanged"] = true;
   return ToolResult::json(out);
 }
 

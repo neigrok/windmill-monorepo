@@ -423,13 +423,19 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
   {
     Json::Value p(Json::objectValue);
     p["treeId"] = treeHandle();
-    p["guide"] = cappedStr("The whole guide, replacing the one the tree has; \"\" clears it.", kMaxGuideChars);
+    p["title"] = cappedStr("The roadmap's new name: trimmed, cut to 200 characters, never blank. Omit to keep it.",
+                           kMaxTitleChars);
+    p["guide"] = cappedStr("The whole guide, replacing the one the tree has; \"\" clears it. Omit to keep it.",
+                           kMaxGuideChars);
     tools.push_back(tool("describe_tree", Access::write,
-        "Set a roadmap's guide: one plain-text note on what the tree is and how to work it, at most 5000 "
-        "characters counted as Unicode code points. It replaces the guide the tree has, and \"\" "
-        "clears it. get_tree carries it on every page to everyone who reads the tree, and to you "
-        "among the `guides` of your trees below this one. Only the owner may set it.",
-        p, {"treeId", "guide"}));
+        "Rename a roadmap with `title`, set its guide with `guide`, or both: send at least one; each is set "
+        "only when sent, and the two together land in one step or not at all. The title is trimmed and "
+        "cut to 200 characters; a blank one is refused, and one equal to the name the tree has writes "
+        "nothing and answers `unchanged: true`. The guide is one plain-text note on what the tree is and "
+        "how to work it, at most 5000 characters counted as Unicode code points; it replaces the guide the "
+        "tree has, and \"\" clears it. get_tree carries it on every page to everyone who reads the tree, "
+        "and to you among the `guides` of your trees below this one. Only the owner may set either.",
+        p, {"treeId"}));
   }
   {
     Json::Value p(Json::objectValue);

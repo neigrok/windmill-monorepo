@@ -3501,8 +3501,7 @@ TEST(mcp_describe_tree_holds_5000_code_points_of_any_width_and_names_the_bound_w
            std::string("describe_tree: argument \"guide\" must be a string, got number. A guide is plain "
                        "text of at most 5000 characters; \"\" clears it."));
   CHECK_EQ(message(h.call("describe_tree", kNoArgs)),
-           std::string("describe_tree: missing required argument \"guide\". A guide is plain text of at "
-                       "most 5000 characters; \"\" clears it."));
+           std::string("describe_tree: nothing to set — pass at least one of \"title\", \"guide\"."));
   CHECK_EQ(message(h.call("describe_tree", with("guide", "\xE5\xAD"))),
            std::string("describe_tree: guide is not valid UTF-8"));
   CHECK_EQ(h.trees.byId["t"].guide.value, wide);
@@ -3515,7 +3514,9 @@ TEST(mcp_describe_tree_holds_5000_code_points_of_any_width_and_names_the_bound_w
   const Json::Value& schema = (*declared)["inputSchema"];
   CHECK_EQ(schema["properties"]["guide"]["type"].asString(), std::string("string"));
   CHECK_EQ(schema["properties"]["guide"]["maxLength"].asUInt64(), static_cast<Json::UInt64>(5000));
-  CHECK_EQ(schema["required"], list({"treeId", "guide"}));
+  CHECK_EQ(schema["properties"]["title"]["type"].asString(), std::string("string"));
+  CHECK_EQ(schema["properties"]["title"]["maxLength"].asUInt64(), static_cast<Json::UInt64>(200));
+  CHECK_EQ(schema["required"], list({"treeId"}));
 }
 
 TEST(mcp_a_tree_with_no_guide_answers_an_empty_text_and_says_whose_it_is) {
@@ -3651,7 +3652,8 @@ TEST(mcp_describe_tree_names_the_guide_a_plain_text_note) {
   Harness h;
   for (const Json::Value& tool : h.tools.listTools(h.actor))
     if (tool["name"].asString() == "describe_tree")
-      CHECK(tool["description"].asString().rfind("Set a roadmap's guide: one plain-text note on what the tree is", 0) == 0);
+      CHECK(tool["description"].asString().find("The guide is one plain-text note on what the tree is") !=
+            std::string::npos);
 }
 
 // Forking your own tree copies your own words, so the copy stays yours; forking someone else's tree, or
@@ -5658,4 +5660,69 @@ TEST(mcp_a_batch_that_changes_nothing_says_unchanged) {
   for (const Json::Value& tool : catalog)
     if (tool["name"].asString() == "patch_nodes" || tool["name"].asString() == "change_edges")
       CHECK_EQ(tool["outputSchema"]["properties"]["unchanged"]["type"].asString(), std::string("boolean"));
+}
+
+// describe_tree takes a `title` beside its `guide`: each lands only when sent, both together land as one frame or not at
+// all, by rename's own title rule, and an open page sees the new title in the frame the tree broadcasts.
+TEST(mcp_describe_tree_renames_the_tree_and_sets_its_guide_in_one_step) {
+  Harness h;
+  CHECK_FALSE(h.call("create_node", node("a", "A")).isError);
+  const std::size_t rows = h.ops.byTree["t"].size();
+  const auto title = [&] { return body(h.call("get_tree", parse(R"({"includeGuides":false})")))["tree"]["title"]; };
+
+  CHECK_EQ(body(h.call("describe_tree", with("title", "  Autumn plans  "))), parse(R"({"applied":true,"seq":2})"));
+  CHECK_EQ(title(), Json::Value("Autumn plans"));
+  CHECK_EQ(body(h.call("list_trees", Json::Value(Json::objectValue)))["trees"][0]["title"], Json::Value("Autumn plans"));
+  REQUIRE(h.bus.subgraphBroadcasts.back().subgraph.title.has_value());
+  CHECK_EQ(h.bus.subgraphBroadcasts.back().subgraph.title->value, std::string("Autumn plans"));
+  CHECK_FALSE(h.bus.subgraphBroadcasts.back().subgraph.guide.has_value());
+
+  const std::size_t frames = h.bus.subgraphBroadcasts.size();
+  CHECK_EQ(body(h.call("describe_tree", with("title", "Autumn plans"))), parse(R"({"applied":true,"seq":2,"unchanged":true})"));
+  CHECK_EQ(h.bus.subgraphBroadcasts.size(), frames);
+
+  CHECK_EQ(body(h.call("describe_tree", parse(R"({"title":"Winter plans","guide":"Rig first."})"))),
+           parse(R"({"applied":true,"seq":3})"));
+  CHECK_EQ(h.bus.subgraphBroadcasts.size(), frames + 1);
+  CHECK_EQ(h.bus.subgraphBroadcasts.back().subgraph.title->value, std::string("Winter plans"));
+  CHECK_EQ(h.bus.subgraphBroadcasts.back().subgraph.guide->value, std::string("Rig first."));
+  CHECK_EQ(body(h.call("describe_tree", with("guide", "Rig first."))), parse(R"({"applied":true,"seq":4})"));
+  CHECK_EQ(body(h.call("describe_tree", with("title", std::string(201, 'x').c_str()))), parse(R"({"applied":true,"seq":5})"));
+  CHECK_EQ(title(), Json::Value(std::string(200, 'x')));
+  CHECK_EQ(body(h.call("describe_tree", with("title", "Winter plans"))), parse(R"({"applied":true,"seq":6})"));
+  CHECK_EQ(h.ops.byTree["t"].size(), rows);
+
+  const StoredTree stored = h.trees.byId["t"];
+  Json::Value number(Json::objectValue);
+  number["title"] = 7;
+  Json::Value overGuide = parse(R"({"title":"Spring plans"})");
+  overGuide["guide"] = std::string(5001, 'g');
+  for (const auto& [arguments, refusal] : std::vector<std::pair<Json::Value, std::string>>{
+           {with("title", ""), "describe_tree: a tree always has a name"},
+           {with("title", "  \t\n "), "describe_tree: a tree always has a name"},
+           {number, "describe_tree: argument \"title\" must be a string, got number"},
+           {Json::Value(Json::objectValue), "describe_tree: nothing to set — pass at least one of \"title\", \"guide\"."},
+           {overGuide, "describe_tree: guide is 5001 characters, 1 over the 5000 cap"}})
+    CHECK_EQ(message(h.call("describe_tree", arguments)), refusal);
+  CHECK(h.trees.byId["t"] == stored);
+
+  h.trees.byId["t_theirs"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Their plans", {}}, 0,
+                                        uid("someone-else"), Visibility::public_};
+  Json::Value theirs = with("title", "Mine now");
+  theirs["treeId"] = "t_theirs";
+  CHECK_EQ(message(h.tools.callTool("describe_tree", theirs, h.actor)),
+           std::string("describe_tree: this tree belongs to another account. Call list_trees to see the roadmaps you "
+                       "own."));
+  CHECK_EQ(h.trees.byId["t_theirs"].title.value, std::string("Their plans"));
+
+  CompositeToolHost gate(std::vector<ToolModule>{{h.tools, ""}});
+  std::vector<WriteCompletion> lines;
+  installWriteSink([&](const WriteCompletion& line) { lines.push_back(line); });
+  Json::Value secret = with("title", "Private compass title");
+  secret["treeId"] = "t";
+  CHECK_FALSE(gate.callTool("roadmap_describe_tree", secret, h.actor).isError);
+  installWriteSink({});
+  REQUIRE_EQ(lines.size(), 1u);
+  CHECK_EQ(lines[0].outcome, std::string("ok"));
+  CHECK_EQ(writeCompletionJson(lines[0]).find("compass"), std::string::npos);
 }

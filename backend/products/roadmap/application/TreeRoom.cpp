@@ -52,25 +52,16 @@ std::optional<Seq> TreeRoom::joinSubgraph(const Subgraph& incoming, const UserId
   return head_;
 }
 
-Seq TreeRoom::rename(const std::string& title, std::uint64_t nowMs) {
+Seq TreeRoom::describe(const std::optional<std::string>& title, const std::optional<std::string>& guide,
+                       std::uint64_t nowMs) {
   Hlc stamp = clock_.tick(nowMs);
   Subgraph frame;
   frame.treeId = id_;
-  frame.frameId = "srv-rename-" + toString(stamp);
+  frame.frameId = "srv-describe-" + toString(stamp);
   frame.actor = stamp.actor;
   frame.intent = SubgraphIntent::live;
-  frame.title = Lww<std::string>{title, stamp};
-  return joinSubgraph(frame, UserId{stamp.actor}).value_or(head_);
-}
-
-Seq TreeRoom::setGuide(const std::string& guide, std::uint64_t nowMs) {
-  Hlc stamp = clock_.tick(nowMs);
-  Subgraph frame;
-  frame.treeId = id_;
-  frame.frameId = "srv-guide-" + toString(stamp);
-  frame.actor = stamp.actor;
-  frame.intent = SubgraphIntent::live;
-  frame.guide = Lww<std::string>{guide, stamp};
+  if (title) frame.title = Lww<std::string>{*title, stamp};
+  if (guide) frame.guide = Lww<std::string>{*guide, stamp};
   return joinSubgraph(frame, UserId{stamp.actor}).value_or(head_);
 }
 
