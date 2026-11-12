@@ -1,6 +1,6 @@
 // Roadmap step detail: a pushed page below 744px and a modal otherwise.
 
-import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useId, useMemo, useRef, useState } from 'react';
 import './detail.css';
 import { track } from '../../../telemetry/beacon.js';
 import { reportRoadmapFailure } from '../reportFailure.js';
@@ -11,14 +11,17 @@ import { deletionCost } from '../board/acts.js';
 import { StepFacts, STEP_SECTIONS, offersCompletion, titleOf } from './StepFacts.js';
 import { handleMenuKey } from '../board/BoardControls.jsx';
 import { StepIcons } from './StepIcons.jsx';
+import { OpeningGlyph } from '../OpeningGlyph.jsx';
+import { TreeDoor } from '../room/useTreeVisit.js';
 import { coverBeneath, DetailFocusContext } from './composerFocus.js';
 import { wrapTab } from '../../../design-system/feedback/dialogFocus.js';
 import { boardFocusTarget } from '../board/traversal.js';
 import './modal.css';
 import './page.css';
 import {
-  COLUMN_TITLES, LABELS, deleteCostLine, LINK_COPIED, STATE_WORDS, STEP_DETAIL, WORKSPACE_EMPTY, checkedToast,
-  DELETE_CONFIRM, deleteConfirm, backTo, completedOutcome, lockedStatus, prerequisitesTally, resetOutcome, resetPreview,
+  COLUMN_TITLES, LABELS, deleteCostLine, LINK_COPIED, STATE_WORDS, STEP_DETAIL, TREE, WORKSPACE_EMPTY, checkedToast,
+  DELETE_CONFIRM, deleteConfirm, backTo, completedOutcome, formatCount, lockedStatus, prerequisitesTally, resetOutcome, resetPreview,
+  treeBand, treeState, treeTitle,
 } from '../copy.js';
 import { t } from '../i18n/index.js';
 
@@ -59,6 +62,8 @@ export function StepDetail({
   const { id, trail, door } = address;
   const surface = breakpoint === 'phone' ? 'page' : 'modal';
   const facts = useMemo(() => new StepFacts(tree, { completed, completedAt }, id), [tree, completed, completedAt, id]);
+  const treeDoor = useContext(TreeDoor);
+  const openTree = facts.opening && !facts.opening.dangling && treeDoor ? () => treeDoor(id, 'step') : null;
   const layerRef = useRef(null);
   const originRef = useRef(null);
   const deletedRef = useRef(null);
@@ -252,7 +257,7 @@ export function StepDetail({
 
   const onKeyDown = (event) => wrapTab(event, layerRef.current);
 
-  const offer = editable && section === 'workspace' && offersCompletion(workspace, facts.column)
+  const offer = editable && section === 'workspace' && offersCompletion(workspace, facts)
     ? <SubtaskOffer onComplete={() => complete('completeFromSubtasks')} />
     : null;
   const shownSection = editable ? section : 'overview';
@@ -285,8 +290,8 @@ export function StepDetail({
   const noteAction = surface === 'page' && section === 'workspace';
   const noteLabel = workspace?.note ? STEP_DETAIL.editNote : WORKSPACE_EMPTY.addNote;
   const editLabel = noteAction ? noteLabel : STEP_DETAIL.editStep;
-  const actions = editable && !noteEditing && (facts.column !== 'locked' || noteAction || edit)
-    ? <StepActions facts={facts} phone={surface === 'page'} onComplete={() => complete('complete')} onReset={reset}
+  const actions = editable && !noteEditing && (facts.column !== 'locked' || noteAction || edit || facts.opening)
+    ? <StepActions facts={facts} phone={surface === 'page'} onComplete={() => complete('complete')} onReset={reset} onOpenTree={openTree}
         editLabel={editLabel} editRef={pinnedNoteRef} onEdit={noteAction ? () => workspaceRef.current?.openNote(pinnedNoteRef) : edit} />
     : null;
   const liveChecked = checked && surface === 'page' && workspace?.subtasks?.some((item) => item.id === checked.id && item.done);
@@ -315,6 +320,7 @@ export function StepDetail({
             outcome={outcome}
             onUndo={undo}
             onOpenStep={onOpenStep}
+            onOpenTree={openTree}
             onViewBranch={editable && facts.column !== 'locked' ? () => { act('viewBranch'); onViewBranch(id); } : null}
           />
         )}
@@ -402,7 +408,7 @@ function StepIdentity({ step, titleId, compact = false }) {
 
 // A locked step marks each unmet need on a sunken row with its column, on the page and in the modal (01.07, 03.07).
 // View branch closes the step and scopes the Board to it (11.01); the owner's up next and done steps offer it.
-function Overview({ facts, outcome, onUndo, onOpenStep, onViewBranch }) {
+function Overview({ facts, outcome, onUndo, onOpenStep, onOpenTree, onViewBranch }) {
   const description = facts.step.description?.trim() ?? '';
   const links = (facts.step.links ?? []).filter((link) => SAFE_URL.test(link.url));
   const needing = facts.column === 'locked';
@@ -441,6 +447,7 @@ function Overview({ facts, outcome, onUndo, onOpenStep, onViewBranch }) {
           {facts.unlocks.map((related) => <RelationRow key={related.id} related={related} onOpen={onOpenStep} />)}
         </section>
       )}
+      {facts.opening?.read && <TreeSection facts={facts} onOpen={onOpenTree} />}
       {onViewBranch && (
         <div className="st-board-step-explore">
           <button type="button" className="st-board-step-view-branch" onClick={onViewBranch}>{STEP_DETAIL.viewBranch}</button>
@@ -489,6 +496,40 @@ function RelationRow({ related, need = false, onOpen }) {
   );
 }
 
+// The tree a step opens, after what it needs and unlocks: the row goes into the tree, and one line says what completes
+// the step. A tree nothing was read of shows no row, as every line of it would be a guess.
+function TreeSection({ facts, onOpen }) {
+  const { opening } = facts;
+  const Row = onOpen ? 'button' : 'div';
+  return (
+    <section className="st-board-step-relations">
+      <h3 className="st-board-step-heading"><span>{TREE.heading}</span></h3>
+      <Row className={`st-board-step-tree st-board-step-tree--${opening.face}`} {...(onOpen ? { type: 'button', onClick: onOpen } : {})}>
+        <span className="st-board-step-tree-glyph"><OpeningGlyph face={opening.face} size={16} check /></span>
+        <span className="st-board-step-tree-facts">
+          <span className="st-board-step-tree-title">{treeTitle(opening)}</span>
+          <span className="st-board-step-tree-state">{treeState(opening, facts.roadmap)}</span>
+          {opening.total > 0 && <span className="st-board-step-tree-bar" aria-hidden><span style={{ width: `${opening.gauge * 100}%` }} /></span>}
+        </span>
+        {onOpen && <span className="st-board-step-tree-chevron"><StepIcons.chevron /></span>}
+      </Row>
+      <p className="st-board-step-tree-rule">{treeRule(facts)}</p>
+    </section>
+  );
+}
+
+// What completes a step that opens a tree: the one thing in the way first, then what it still needs, then its tree.
+function treeRule({ opening, column, needs, roadmap }) {
+  const tree = opening.title;
+  if (opening.face === 'missing') return t('roadmap.tree.rule.missing');
+  if (opening.face === 'complete') return t('roadmap.tree.rule.complete', { tree });
+  if (opening.face === 'loop') return t('roadmap.tree.rule.loop', { roadmap });
+  if (opening.face === 'empty') return t('roadmap.tree.rule.empty');
+  if (column !== 'locked') return t('roadmap.tree.rule.open', { tree });
+  if (needs.length === 1) return t('roadmap.tree.rule.locked', { step: titleOf(needs[0]), tree });
+  return t('roadmap.tree.rule.lockedMore', { step: titleOf(needs[0]), extra: formatCount(needs.length - 1), tree });
+}
+
 function StepSections({ idPrefix, section, onSection }) {
   const tabs = useRef({});
   const onKeyDown = (event) => {
@@ -527,11 +568,13 @@ function StepSections({ idPrefix, section, onSection }) {
   );
 }
 
-// Up next offers Complete; Done offers Reset, secondary, previewing what it returns to Locked.
-function StepActions({ facts, phone, onComplete, onReset, editLabel, editRef, onEdit }) {
+// Up next offers Complete; Done offers Reset, secondary, previewing what it returns to Locked. A step that opens a tree
+// offers neither: where Complete sat it says what completes it, beside the way into the tree.
+function StepActions({ facts, phone, onComplete, onReset, onOpenTree, editLabel, editRef, onEdit }) {
   const [previewing, setPreviewing] = useState(false);
   const preview = previewing && facts.column === 'done' ? resetPreview({ relocked: facts.relocks }) : null;
   const editClass = phone && facts.column !== 'locked' ? ' st-board-step-action--text' : '';
+  if (!facts.takesMark) return <TreeBand facts={facts} onOpenTree={onOpenTree} editClass={editClass} editLabel={editLabel} editRef={editRef} onEdit={onEdit} />;
   if (!onEdit && facts.column === 'locked') return null;
   return (
     <>
@@ -567,6 +610,35 @@ function StepActions({ facts, phone, onComplete, onReset, editLabel, editRef, on
         )}
       </div>
     </>
+  );
+}
+
+// Opening the tree is the next thing to do only while the step is up next and nothing stands in its tree's way.
+function TreeBand({ facts, onOpenTree, editClass, editLabel, editRef, onEdit }) {
+  const { opening, column, toGo } = facts;
+  const words = treeBand(opening, { column, toGo });
+  const next = column === 'upNext' && opening.workable;
+  const Glyph = column === 'locked' && opening.workable ? StepIcons.statusLocked : null;
+  if (!onEdit && !words && !onOpenTree) return null;
+  return (
+    <div className="st-board-step-buttons">
+      {onEdit && (
+        <button ref={editRef} type="button" className={`st-board-step-action st-board-step-action--secondary${editClass}`} onClick={onEdit}>
+          {editLabel}
+        </button>
+      )}
+      {words && (
+        <span className={`st-board-step-tree-band st-board-step-tree-band--${opening.face}`}>
+          {Glyph ? <Glyph /> : <OpeningGlyph face={opening.face} size={14} />}
+          {words}
+        </span>
+      )}
+      {onOpenTree && (
+        <button type="button" className={`st-board-step-action st-board-step-action--tree st-board-step-action--${next ? 'primary' : 'secondary'}`} onClick={onOpenTree}>
+          {TREE.open}
+        </button>
+      )}
+    </div>
   );
 }
 

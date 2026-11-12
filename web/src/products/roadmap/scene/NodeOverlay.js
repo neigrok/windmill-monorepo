@@ -1,8 +1,6 @@
 // Pooled DOM overlays above the GPU canvas: the captions scene/captionLayout.js decides, and the live `<Icon>` SVGs
 // that cross-fade in over the baked atlas glyph. Elements move by CSS transform, so a frame costs no layout.
-import { createElement } from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
-import { Icon } from '../../../design-system/Icon.jsx';
+import { glyphMarkup } from './IconAtlas.js';
 import { CAPTION, DEFAULT_NODE_COLOR, nodeTier, NODE_SIZE } from '../theme.js';
 import { CAPTION_POOL, CaptionPlacer, wrapCaption } from './captionLayout.js';
 
@@ -224,7 +222,7 @@ export class IconOverlay extends NodeOverlay {
       this.stateById.set(node.id, node.state);
       this.colorById.set(node.id, node.color);
       if (!this.markupByName.has(node.icon)) {
-        this.markupByName.set(node.icon, renderToStaticMarkup(createElement(Icon, { name: node.icon, strokeWidth: 2.25 })));
+        this.markupByName.set(node.icon, glyphMarkup(node.icon, { strokeWidth: 2.25 }));
       }
     }
     this.assignedId.fill(null);

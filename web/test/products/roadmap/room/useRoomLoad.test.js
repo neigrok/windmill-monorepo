@@ -210,7 +210,7 @@ for (const failure of ['unavailable', '5xx', 'offline', 'thrown']) for (const sh
       reads++;
       await reading;
       if (failure === 'offline') throw new TypeError('offline');
-      if (failure === 'unavailable' || failure === '5xx') return { ok: false, status: failure === '5xx' ? 503 : 404 };
+      if (failure === 'unavailable' || failure === '5xx') return { ok: false, status: failure === '5xx' ? 503 : 404, json: async () => ({}) };
       return { ok: true, status: 200, json: async () => ({ data: { id: 't_missing', title: 'Plan', nodes: [] }, mine: true }) };
     });
     if (failure === 'thrown') t.mock.method(captured.HttpTreeRepository.prototype, 'loadProgress', async () => { throw error; });

@@ -1,6 +1,7 @@
 // Tree reads over HTTP, per treeId. A bootstrap read only: a live SyncSession's private
 // lane owns the overlay.
 
+import { Openings } from '../model/Opening.js';
 import { ProgressLattice } from '../sync/progressLattice.js';
 import { API_BASE } from '../../../shell/apiBase.js';
 import { BoundaryFailure, reportInvalidProgressMark, pageWatching, reportRoadmapFailure } from '../reportFailure.js';
@@ -27,7 +28,11 @@ export class HttpTreeRepository {
       if (wanted && pageWatching()) report();
       throw error;
     }
-    if (response.status >= 500) report();
+    // A tree whose pointers the server could not follow says so, and reports as that unless this repository's owner names its own operation.
+    if (response.status >= 500 && operation) {
+      const code = (await response.json().catch(() => null))?.code;
+      this.reportFailure(this.operation ?? (code === 'opens-unavailable' ? 'roadmap-opens-load' : operation));
+    }
     if (!response.ok) throw new Error(`${reading} ${this.treeId}: HTTP ${response.status}`);
     return response.json().catch(() => null);
   }
@@ -40,7 +45,10 @@ export class HttpTreeRepository {
       throw new Error(`loadTree ${this.treeId}: the answer is not a tree`);
     }
     this.treeRead = true;
-    return { ...body.data, visibility: body.visibility ?? null, mine: body.mine ?? false, createdAt: body.createdAt ?? 0 };
+    return {
+      ...body.data, visibility: body.visibility ?? null, mine: body.mine ?? false, createdAt: body.createdAt ?? 0,
+      openings: Openings.fromWire(body.opens),
+    };
   }
 
   // The owner's marks on a share, else the document's seeds. A server tree whose marks can't be read throws rather than open on a false count.

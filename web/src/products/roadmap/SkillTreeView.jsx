@@ -43,6 +43,7 @@ import { useRoomScene } from './room/useRoomScene.js';
 import { useRoomView } from './room/useRoomView.js';
 import { useRowVerbs } from './room/useRowVerbs.js';
 import { useStepPage } from './room/useStepPage.js';
+import { TreeDoor, useTreeVisit } from './room/useTreeVisit.js';
 import { bulkKindChoice } from './model/bulkSelection.js';
 import { useGraphSelection } from './graph/useGraphSelection.js';
 import { ForkDoor } from './share/ForkDoor.jsx';
@@ -70,7 +71,7 @@ import { frontierTarget } from './graph/viewport.js';
 
 const handle = () => ({ current: null });
 // What the seams reach for after render: the live objects, the chrome's DOM, and what the camera has been asked to frame.
-const roomHandles = () => ({ sceneRef: handle(), sessionRef: handle(), projectionRef: handle(), treeRef: handle(), standingTreeRef: handle(), seedRef: handle(), peersRef: { current: new Map() } });
+const roomHandles = () => ({ sceneRef: handle(), sessionRef: handle(), projectionRef: handle(), treeRef: handle(), standingTreeRef: handle(), viewRef: handle(), seedRef: handle(), peersRef: { current: new Map() } });
 const chromeAnchors = () => ({ canvasRef: handle(), rootRef: handle(), identityRef: handle(), boardLayerRef: handle(), legendDockRef: handle() });
 const cameraFraming = () => ({ insetsRef: handle(), firstFrameRef: handle(), graphRevealRef: handle() });
 
@@ -104,6 +105,7 @@ export function SkillTreeView({ treeId, demo = false }) {
   const { emit, ticker, feedVisible, feedSummonedRef, closeActivity } = activity;
   const { coachAllowed, demoCompletions, ctaEcho, noteCompletion } = useDemoCoach({ demo, status });
   const stepAddress = useStepAddress();
+  const treeVisit = useTreeVisit({ room, band: breakpoint });
   const [shareOpen, setShareOpen] = useState(false);
   const [forkOpen, setForkOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -165,8 +167,9 @@ export function SkillTreeView({ treeId, demo = false }) {
     stopEditing();
     collapse();
   }, [closeComposer, stopEditing, collapse]);
-  const view = useRoomView({ treeId, tree, loading, loadError, who, linkedStep: stepAddress.id, scene, graphAvailability, anchors, onLeave: onLeaveView, onSwitched: onViewSwitched });
+  const view = useRoomView({ treeId, tree, loading, loadError, who, linkedStep: stepAddress.id, carried: treeVisit, scene, graphAvailability, anchors, onLeave: onLeaveView, onSwitched: onViewSwitched });
   const { decidedView, boardActive, canvasView, shownView, boardFacts, boardAwaitsRoadmap, switchView, onSwitchView } = view;
+  room.viewRef.current = shownView;
 
   const graphMulti = canvasView && (selection.multiMode || selectedIds.size + selectedEdges.size > 1);
   const graphMultiRef = useRef(false);
@@ -217,8 +220,18 @@ export function SkillTreeView({ treeId, demo = false }) {
     onGraphReveal: revealOnGraph, graphFocusTarget: boardComposer?.opener,
     onReveal: (id) => setBoardReveal((current) => ({ id, key: (current?.key ?? 0) + 1 })),
     onQuiet: () => setBoardQuiet((current) => current + 1),
+    openTree: treeVisit.open,
     track, emit, report: reportRoadmapFailure,
   });
+  // Coming back from a step's tree lands on that step once the roadmap and its view stand: selected and in view on either one.
+  const landedRef = useRef(false);
+  useEffect(() => {
+    if (landedRef.current || decidedView === null || !tree) return;
+    landedRef.current = true;
+    if (!tree.nodesById.has(treeVisit.through)) return;
+    if (decidedView === 'board') setBoardReveal((current) => ({ id: treeVisit.through, key: (current?.key ?? 0) + 1 }));
+    else revealOnGraph(treeVisit.through);
+  }, [decidedView, tree]);
   const explainGraphUnavailable = useCallback(() => {
     track('roadmap_graph_unavailable', { band: breakpoint });
     if (phone && !boardHeld) showToast(GRAPH_UNAVAILABLE);
@@ -351,6 +364,7 @@ export function SkillTreeView({ treeId, demo = false }) {
     <ActivityPanel top={geometry.activityPanelTop} groups={activity.activityGroups} nodesById={nodesById} onClose={verbs.closeRowActivity} onOpenStep={verbs.openActivityStep} />
   ) : null;
   return (
+    <TreeDoor.Provider value={owner ? treeVisit.open : null}>
     <div className={`st-root ${panning ? 'panning' : ''}`} ref={rootRef} onFocusCapture={rememberGraphFocus}>
       <canvas
         ref={canvasRef}
@@ -374,6 +388,7 @@ export function SkillTreeView({ treeId, demo = false }) {
             view={boardActive ? 'board' : 'tree'}
             role={who.role}
             title={boardAwaitsRoadmap ? undefined : tree?.title}
+            back={treeVisit.from === null ? null : { title: treeVisit.from, onBack: treeVisit.back }}
             switcher={owner && !phone && !boardAwaitsRoadmap ? <TreeSwitcher {...verbs.switcher} /> : null}
             progress={boardAwaitsRoadmap || !shownStats ? null : { done: shownStats.done, total: shownStats.total }}
             onSwitchView={onSwitchView}
@@ -426,6 +441,7 @@ export function SkillTreeView({ treeId, demo = false }) {
               quiet={boardQuiet}
               onDisplayedOverall={setBoardOverall}
               reveal={boardReveal}
+              wake={treeVisit.view === 'board' ? treeVisit.through : null}
               selectionOpen={boardSelectionOpen}
               selectRequest={stepAddress.id === null ? boardSelect : null}
               onSelectRequestTaken={selectRequestTaken}
@@ -709,5 +725,6 @@ export function SkillTreeView({ treeId, demo = false }) {
         </div>
       )}
     </div>
+    </TreeDoor.Provider>
   );
 }

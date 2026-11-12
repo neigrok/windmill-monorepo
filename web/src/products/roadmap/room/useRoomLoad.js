@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { plantedToast, welcomeBackToast } from '../copy.js';
 import { DEMO_STAGED_COMPLETED, DEMO_TREE_ID } from '../demo/demoStage.js';
 import { layoutNameFrom, loadLayoutEngine } from '../layout/index.js';
+import { Openings } from '../model/Opening.js';
 import { SkillTree } from '../model/SkillTree.js';
 import { UnlockRules } from '../model/UnlockRules.js';
 import { HttpTreeRepository } from '../persistence/HttpTreeRepository.js';
@@ -87,17 +88,22 @@ export function useRoomLoad({ treeId, accountId, demo, shared, demotion, breakpo
         setLoading(false);
         return;
       }
-      const { seed, overlay, serverActivity } = read;
+      const { overlay, serverActivity } = read;
+      const owner = read.seed.mine === true && !shared && !demo;
+      // Only its owner's room reads what a step opens: anyone else sees an ordinary step. A device's copy read none, so its pointers stand unread.
+      const openings = owner ? read.seed.openings ?? new Openings() : null;
+      const standing = (projection) => (openings ? openings.onto(projection) : projection);
+      const seed = standing(read.seed);
       const nextTree = new SkillTree(seed);
       const states = UnlockRules.derive(nextTree, overlay);
       const model = nextTree.toRenderModel(structure.layoutPositions(nextTree), states);
 
       const mountedScene = sceneRef.current;
       const remembers = !demo && desktopEditorRef.current;
-      const sinceIds = ReturnLedger.since(overlay.completed, remembers ? returnLedger.load(seed.id) : null, states);
+      const completed = UnlockRules.completed(nextTree, overlay);
+      const sinceIds = ReturnLedger.since(completed, remembers ? returnLedger.load(seed.id) : null, states);
       if (sinceIds.length) mountedScene?.armReturnRecap(sinceIds, welcomeBackToast({ count: sinceIds.length }));
 
-      const owner = seed.mine === true && !shared && !demo;
       const born = owner && peekBorn(seed.id);
       const place = savedPlace(placeKept ? placeStore.load(layoutRef.current.name) : null, seed);
       const onFrontier = opensOnFrontier({ savedCamera: place.camera, owner, born, stepCount: seed.nodes.length });
@@ -128,7 +134,7 @@ export function useRoomLoad({ treeId, accountId, demo, shared, demotion, breakpo
       workspace.pushArcs();
       if (place.selection) setSelectedId(place.selection);
       if (placeKept && mountedScene) placeStore.save({ treeId: seed.id, layout: layoutRef.current.name, camera: mountedScene.getViewpoint(), selectedId: place.selection });
-      if (remembers) returnLedger.save(seed.id, { completed: [...overlay.completed], at: Date.now() });
+      if (remembers) returnLedger.save(seed.id, { completed: [...completed], at: Date.now() });
       setLoading(false);
       if (shared && seed.id === DEMO_TREE_ID) track('demo_open', { treeId: seed.id });
 
@@ -136,7 +142,10 @@ export function useRoomLoad({ treeId, accountId, demo, shared, demotion, breakpo
       sessionRef.current?.close();
       peersRef.current.clear();
       const session = new SyncSession({ treeId: seed.id, title: seed.title, guide: seed.guide ?? '', registry: seed.mine && !shared && !demo && !demotion ? deviceTrees : null })
-        .onTreeChanged((data) => latest.current.structure.onTreeChanged(data))
+        .onTreeChanged((data) => {
+          latest.current.structure.onTreeChanged(standing(data));
+          workspace.pushArcs();
+        })
         .onPresence((frame) => peersRef.current.set(frame.actor, {
           name: frame.profile?.name, color: frame.profile?.color,
           cursor: frame.cursor ?? null, selection: frame.selection ?? null,

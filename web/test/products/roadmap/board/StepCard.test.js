@@ -8,6 +8,7 @@ const { renderToStaticMarkup } = await import('react-dom/server');
 const { StepCard } = await import('../../../../src/products/roadmap/board/StepCard.jsx');
 const { SkillTree } = await import('../../../../src/products/roadmap/model/SkillTree.js');
 const { Board } = await import('../../../../src/products/roadmap/board/Board.js');
+const { Opening } = await import('../../../../src/products/roadmap/model/Opening.js');
 
 function learnToSailBoard() {
   const tree = new SkillTree({ id: 'sail', title: 'Learn to sail', nodes: [
@@ -115,4 +116,87 @@ test('StepCard — phone completion follows the card in DOM order with a named r
     + '<span>Complete</span></button></div>');
   assert.equal(cardMarkup('rig', { swipe: true }), cardMarkup('rig'));
   assert.equal(cardMarkup('dock', { swipe: true }), cardMarkup('dock'));
+});
+
+// My year, with one step for each thing a tree can have come to; `plan` is done by its mark.
+function myYearCards() {
+  const opened = (treeId, title, state, done, total, loop = false) => Opening.fromWire({ treeId, title, state, done, total, loop });
+  const tree = new SkillTree({ id: 'year', title: 'My year', nodes: [
+    { id: 'plan', label: 'Plan the year', prerequisites: [], color: 'gold' },
+    { id: 'sail', label: 'Learn to sail', prerequisites: ['plan'], color: 'sky', description: 'Feel confident sailing on my own.', opens: 't_sail', opening: opened('t_sail', 'Learn to sail', 'open', 3, 8) },
+    { id: 'read', label: 'Read more', prerequisites: ['plan'], color: 'olive', opens: 't_read', opening: opened('t_read', 'Reading list', 'complete', 12, 12) },
+    { id: 'coast', label: 'Sail the coast', prerequisites: ['sail'], color: 'sky', opens: 't_coast', opening: opened('t_coast', 'Coast trip', 'open', 0, 5) },
+    { id: 'loop', label: 'Learn to sail', prerequisites: ['plan'], color: 'sky', opens: 't_loop', opening: opened('t_loop', 'Learn to sail', 'open', 3, 8, true) },
+    { id: 'book', label: 'Write the book', prerequisites: ['plan'], color: 'olive', opens: 't_book', opening: opened('t_book', 'Book draft', 'open', 0, 0) },
+    { id: 'bike', label: 'Fix the bike', prerequisites: ['plan'], color: 'terracotta', opens: 't_gone', opening: Opening.fromWire({ treeId: 't_gone', missing: true }) },
+    { id: 'late', label: 'Run a 10K', prerequisites: ['plan'], color: 'terracotta', opens: 't_late', opening: Opening.unread('t_late') },
+  ] });
+  const board = new Board(tree, { completed: new Set(['plan']), completedAt: { plan: 1 } });
+  return new Map(board.columns.flatMap((column) => column.cards).map((card) => [card.id, card]));
+}
+
+const pillOf = (id, props = {}) => {
+  const html = renderToStaticMarkup(React.createElement(StepCard, { card: myYearCards().get(id), onSelect: () => {}, ...props }));
+  const pill = /<span class="st-board-tree-pill[^"]*">.*?<\/span><\/span>(?=<span class="st-board-card-excerpt"|<\/span><\/button>)/.exec(html)?.[0] ?? null;
+  return pill && { classes: /class="([^"]*)"/.exec(pill)[1], words: pill.replace(/<svg.*?<\/svg>/g, '').replace(/<[^>]+>/g, ''), column: /st-board-card--(\w+)/.exec(html)[1] };
+};
+
+test('StepCard — a step that opens a tree wears its pill: done of total, the tree named only where its title says more, or the one thing in the way', () => {
+  const door = { onOpenTree: () => {} };
+  assert.deepEqual(['sail', 'read', 'coast', 'loop', 'book', 'bike', 'late', 'plan'].map((id) => pillOf(id, door)), [
+    { classes: 'st-board-tree-pill st-board-tree-pill--open st-board-tree-pill--leads', words: '3 of 8', column: 'upNext' },
+    { classes: 'st-board-tree-pill st-board-tree-pill--complete st-board-tree-pill--leads', words: 'Reading list · 12 of 12', column: 'done' },
+    { classes: 'st-board-tree-pill st-board-tree-pill--open st-board-tree-pill--leads', words: 'Coast trip · 0 of 5', column: 'locked' },
+    { classes: 'st-board-tree-pill st-board-tree-pill--loop st-board-tree-pill--leads', words: 'Loops back', column: 'upNext' },
+    { classes: 'st-board-tree-pill st-board-tree-pill--empty st-board-tree-pill--leads', words: 'Book draft · No steps', column: 'upNext' },
+    { classes: 'st-board-tree-pill st-board-tree-pill--missing', words: 'Not found', column: 'upNext' },
+    null,
+    null,
+  ]);
+  assert.equal(pillOf('sail').classes, 'st-board-tree-pill st-board-tree-pill--open');
+});
+
+test('StepCard — the pill sits between the reason and the excerpt, with the bar only while its tree is under way', () => {
+  const html = renderToStaticMarkup(React.createElement(StepCard, { card: myYearCards().get('sail'), onSelect: () => {}, onOpenTree: () => {} }));
+  const order = [...html.matchAll(/class="(st-board-card-title|st-board-card-reason|st-board-tree-pill-glyph|st-board-tree-pill-label|st-board-tree-pill-bar|st-board-tree-pill-chevron|st-board-card-excerpt)"/g)].map((match) => match[1]);
+
+  assert.deepEqual(order, ['st-board-card-title', 'st-board-card-reason', 'st-board-tree-pill-glyph', 'st-board-tree-pill-label', 'st-board-tree-pill-bar', 'st-board-tree-pill-chevron', 'st-board-card-excerpt']);
+  assert.match(html, /<span class="st-board-tree-pill-bar" aria-hidden="true"><span style="width:37.5%"><\/span><\/span>/);
+  assert.equal(renderToStaticMarkup(React.createElement(StepCard, { card: myYearCards().get('read'), onSelect: () => {} })).includes('st-board-tree-pill-bar'), false);
+});
+
+test('StepCard — a press on the pill goes into the tree, a press anywhere else opens the step, and a pill with nowhere to go opens the step', () => {
+  const presses = (id, onPill, props = {}) => {
+    const calls = [];
+    const element = StepCard.type({ card: myYearCards().get(id), onSelect: (step) => calls.push(['step', step]), onOpenTree: (step, door) => calls.push(['tree', step, door]), ...props });
+    element.props.children.props.onClick({ target: { closest: (selector) => (onPill && selector === '.st-board-tree-pill' ? {} : null) } });
+    return calls;
+  };
+
+  assert.deepEqual(presses('sail', true), [['tree', 'sail', 'pill']]);
+  assert.deepEqual(presses('sail', false), [['step', 'sail']]);
+  assert.deepEqual(presses('bike', true), [['step', 'bike']]);
+  assert.deepEqual(presses('sail', true, { selecting: true }), [['step', 'sail']]);
+  assert.deepEqual(presses('sail', true, { onOpenTree: null }), [['step', 'sail']]);
+});
+
+test('StepCard — the swipe of a card that opens a tree reveals Open, never Complete, and none where there is nowhere to go', () => {
+  const opened = [];
+  const swiped = (id) => renderToStaticMarkup(React.createElement(StepCard, {
+    card: myYearCards().get(id), onSelect: () => {}, swipe: true, open: true, onSwipe: () => {}, onComplete: () => {}, onOpenTree: (step, door) => opened.push([step, door]),
+  }));
+  const action = (html) => /<button type="button" class="st-board-swipe-complete"[^>]*aria-label="([^"]*)">.*<span>([^<]*)<\/span><\/button>/.exec(html)?.slice(1) ?? null;
+
+  assert.deepEqual(['sail', 'loop', 'book', 'late', 'bike', 'coast', 'read'].map((id) => action(swiped(id))), [
+    ['Open the tree of Learn to sail', 'Open'],
+    ['Open the tree of Learn to sail', 'Open'],
+    ['Open the tree of Write the book', 'Open'],
+    ['Open the tree of Run a 10K', 'Open'],
+    null,
+    null,
+    null,
+  ]);
+  const element = StepCard.type({ card: myYearCards().get('sail'), onSelect: () => {}, swipe: true, onSwipe: () => {}, onComplete: () => opened.push(['complete']), onOpenTree: (step, door) => opened.push([step, door]) });
+  element.props.reveal.run();
+  assert.deepEqual(opened, [['sail', 'swipe']]);
 });

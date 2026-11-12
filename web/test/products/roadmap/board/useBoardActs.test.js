@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { SyncSession } from '../../../../src/products/roadmap/sync/SyncSession.js';
 import { BoardActs, BoardComposer, useBoardActs } from '../../../../src/products/roadmap/board/useBoardActs.js';
 import { BoardQuery } from '../../../../src/products/roadmap/board/Board.js';
+import { Opening } from '../../../../src/products/roadmap/model/Opening.js';
 import { SkillTree } from '../../../../src/products/roadmap/model/SkillTree.js';
 import { advanceProgress } from '../../../../src/products/roadmap/model/progress.js';
 import { renderHook } from '../../gym/harness.mjs';
@@ -852,4 +853,35 @@ test('create composers remain visible without a detail but cannot write through 
   assert.equal(composer.shown, draft);
   composer.openEdit(null);
   assert.deepEqual(composer.saveEdit({ id: 'wind' }), { ok: false });
+});
+
+test('C or a swipe on a card that opens a tree completes nothing: the toast says what completes it and offers the way in', () => {
+  const cases = [
+    [Opening.fromWire({ treeId: 't_wind', title: 'Wind drills', state: 'open', done: 3, total: 8, loop: false }), 'Completes with its tree', true],
+    [Opening.fromWire({ treeId: 't_wind', title: 'Wind drills', state: 'open', done: 0, total: 0, loop: false }), 'Completes with its tree', true],
+    [Opening.fromWire({ treeId: 't_wind', title: 'Wind drills', state: 'open', done: 3, total: 8, loop: true }), 'Won’t complete by itself', true],
+    [Opening.fromWire({ treeId: 't_gone', missing: true }), 'Can’t complete yet', false],
+    [Opening.unread('t_wind'), null, false],
+  ];
+  for (const [opening, said, leads] of cases) {
+    const opened = [];
+    const tree = new SkillTree({ id: 'sail', title: 'Sail', nodes: [
+      { id: 'wind', label: 'Read the wind', prerequisites: [], color: 'blue', opens: opening.treeId, opening },
+      { id: 'dock', label: 'Leave the dock', prerequisites: ['wind'], color: 'blue' },
+    ] });
+    const { acts, c, calls } = fixture({ tree, openTree: (id, door) => opened.push([id, door]) });
+
+    assert.equal(acts.complete('wind', 'key'), false);
+    assert.equal(acts.complete('wind', 'swipe'), false);
+    assert.deepEqual(calls, []);
+    if (said === null) {
+      assert.equal(c.toast, undefined);
+      continue;
+    }
+    const { action, ...toast } = c.toast;
+    assert.deepEqual(toast, { message: said, surface: 'board', act: 'tree', reveal: null, holdMs: 6000 });
+    assert.equal(action?.label, leads ? 'Open tree' : undefined);
+    action?.run();
+    assert.deepEqual(opened, leads ? [['wind', 'toast']] : []);
+  }
 });

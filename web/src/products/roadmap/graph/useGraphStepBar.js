@@ -16,7 +16,7 @@ export function useGraphStepBar({ phoneGraph, selection, selectedNode, selectedS
   }, []);
 
   const graphStep = phoneGraph && selectedNode && selectedIds.size === 1 && selectedEdges.size === 0 && !covered
-    ? { id: selectedNode.id, title: titleOf(selectedNode), state: COLUMN_OF_STATE[selectedState] ?? 'locked' }
+    ? { id: selectedNode.id, title: titleOf(selectedNode), state: COLUMN_OF_STATE[selectedState] ?? 'locked', opening: selectedNode.opening ?? null }
     : null;
 
   const openGraphFork = useCallback(() => {

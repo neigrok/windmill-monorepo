@@ -5,7 +5,7 @@ import { ViewPrefs, boardCanShow, clearBorn, initialView, peekBorn, viewToShow }
 import { reportRoadmapFailure } from '../reportFailure.js';
 
 // Availability and the loaded tree decide the view; explicit switches are remembered per tree.
-export function useRoomView({ treeId, tree, loading, loadError, who, linkedStep, scene, graphAvailability = 'available', anchors, onLeave, onSwitched }) {
+export function useRoomView({ treeId, tree, loading, loadError, who, linkedStep, carried = null, scene, graphAvailability = 'available', anchors, onLeave, onSwitched }) {
   const { identityRef, boardLayerRef } = anchors;
   const { owner, reader, role, demo, shared, breakpoint } = who;
   const [viewPrefs] = useState(() => new ViewPrefs());
@@ -21,7 +21,7 @@ export function useRoomView({ treeId, tree, loading, loadError, who, linkedStep,
   const graphSettled = graphAvailability !== 'pending';
 
   if (view === null && tree && graphSettled) {
-    const decision = initialView({ saved: viewPrefs.lastView(treeId), owner, reader, empty: tree.nodes.length === 0, born: peekBorn(treeId), linkedStep, canAddFirstStep: owner, graphAvailable });
+    const decision = initialView({ saved: viewPrefs.lastView(treeId), owner, reader, empty: tree.nodes.length === 0, born: peekBorn(treeId), carried, linkedStep, canAddFirstStep: owner, graphAvailable });
     setView(decision.view);
     initialDecisionRef.current = decision;
   }
@@ -36,7 +36,7 @@ export function useRoomView({ treeId, tree, loading, loadError, who, linkedStep,
   }, [treeId, view, breakpoint, role]);
 
   // Until the tree arrives, the skeleton or load error stands where the Board would open: the saved choice, or the owner's default.
-  const openingView = view ?? initialView({ saved: viewPrefs.lastView(treeId), owner: !shared && !demo, reader, empty: false, born: peekBorn(treeId), linkedStep, graphAvailable }).view;
+  const openingView = view ?? initialView({ saved: viewPrefs.lastView(treeId), owner: !shared && !demo, reader, empty: false, born: peekBorn(treeId), carried, linkedStep, graphAvailable }).view;
   const boardFacts = {
     crashed: boardCrashed,
     loaded: !loading && !loadError && !!tree,

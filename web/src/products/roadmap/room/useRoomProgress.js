@@ -8,6 +8,7 @@ import { MilestoneLedger } from '../persistence/MilestoneLedger.js';
 import { ReturnLedger } from '../persistence/ReturnLedger.js';
 import { detectMilestones } from '../model/milestones.js';
 import { advanceProgress, milestoneAnnouncement, progressChanges } from '../model/progress.js';
+import { UnlockRules, takesMark } from '../model/UnlockRules.js';
 import { reportRoadmapFailure } from '../reportFailure.js';
 import { markDoneTargets } from '../model/bulkSelection.js';
 
@@ -33,10 +34,16 @@ export class RoomProgress {
     return !demo && !shared && !demotion && Boolean(seedRef.current?.mine);
   }
 
+  // What stands complete under these marks: the marks themselves until the roadmap has loaded.
+  completedUnder(progress) {
+    const tree = this.collaborators.treeRef.current;
+    return tree ? UnlockRules.completed(tree, progress) : progress.completed;
+  }
+
   witness(next) {
     if (!this.ownMarks) return;
     const { seedRef, returnLedger } = this.collaborators;
-    returnLedger.save(seedRef.current.id, { completed: [...next.completed], at: Date.now() });
+    returnLedger.save(seedRef.current.id, { completed: [...this.completedUnder(next)], at: Date.now() });
   }
 
   push(nodeIds, wireStatus) {
@@ -44,7 +51,10 @@ export class RoomProgress {
     if (!demo) sessionRef.current?.markProgress(nodeIds, wireStatus);
   }
 
+  // A step that opens a tree takes no mark: no door offers one, and a call that reaches here for one changes and sends nothing.
   mark(ids, target, wire = ids, at = Date.now()) {
+    const steps = this.collaborators.treeRef.current?.nodesById;
+    if (ids.some((id) => !takesMark(steps?.get(id)))) return this.snapshot;
     const next = advanceProgress(this.snapshot, ids, target, at);
     this.commit(next);
     this.witness(next);
@@ -66,7 +76,8 @@ export class RoomProgress {
   milestoneOffer(before, after) {
     const { treeId, treeRef, milestoneLedger, openShare, track: trackEvent, band } = this.collaborators;
     if (!this.ownMarks || !treeRef.current) return null;
-    const fresh = detectMilestones(treeRef.current, before, after).filter((milestone) => !milestoneLedger.has(treeId, milestone.id));
+    const fresh = detectMilestones(treeRef.current, this.completedUnder(before), this.completedUnder(after))
+      .filter((milestone) => !milestoneLedger.has(treeId, milestone.id));
     const announcement = milestoneAnnouncement(fresh);
     if (!announcement) return null;
     for (const milestone of fresh) milestoneLedger.markOffered(treeId, milestone.id);
@@ -82,11 +93,12 @@ export class RoomProgress {
     const before = this.snapshot;
     const shown = tree ?? c.treeRef.current;
     const next = this.mark([id], 'complete', id, at);
+    if (next === before) return next;
     const changes = progressChanges(shown, before, next);
     this.announceChanges({ completed: [id], unlocked: changes.unlocked });
     if (quiet || door === 'board') return next;
     c.noteCompletion(id);
-    const offer = this.milestoneOffer(before.completed, next.completed);
+    const offer = this.milestoneOffer(before, next);
     if (offer) {
       c.sceneRef.current?.announceCeremony(offer.summary, { action: offer.action });
       return next;
@@ -112,13 +124,13 @@ export class RoomProgress {
   }
 
   markDone(selectedIds) {
-    const targets = markDoneTargets(selectedIds, this.snapshot.completed);
+    const targets = markDoneTargets(this.collaborators.treeRef.current, selectedIds, this.snapshot.completed);
     if (!targets.length) return;
     const before = this.snapshot;
     const next = this.mark(targets, 'complete');
     this.collaborators.track('roadmap_board_complete', { door: 'bulk', count: countBucket(targets.length) });
     this.announceChanges({ completed: targets, unlocked: progressChanges(this.collaborators.treeRef.current, before, next).unlocked });
-    const offer = this.milestoneOffer(before.completed, next.completed);
+    const offer = this.milestoneOffer(before, next);
     if (offer) this.collaborators.sceneRef.current?.announceCeremony(offer.summary, { action: offer.action });
   }
 

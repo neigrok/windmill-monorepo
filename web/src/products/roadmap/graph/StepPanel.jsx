@@ -1,10 +1,12 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useContext, useEffect, useRef, useState } from 'react';
 import { Card, Button, IconButton, Icon } from '../../../design-system';
 import { NodeWorkspace, LinkRow, SAFE_URL } from './tree/NodeWorkspace.jsx';
 import { EventRow } from '../activity/EventRow.jsx';
 import { KIND_CSS, DEFAULT_NODE_COLOR } from '../theme.js';
 import { KindChoice } from '../board/BoardControls.jsx';
-import { COLUMN_TITLES, COMPOSER, LABELS, STEP_DETAIL, unlocksWhen } from '../copy.js';
+import { COLUMN_TITLES, COMPOSER, LABELS, STEP_DETAIL, TREE, treeState, unlocksWhen } from '../copy.js';
+import { OpeningGlyph } from '../OpeningGlyph.jsx';
+import { TreeDoor } from '../room/useTreeVisit.js';
 import { t } from '../i18n/index.js';
 import { kindChoices } from '../model/Legend.js';
 
@@ -91,11 +93,12 @@ export function StepPanel(props) {
   return <EditorStep {...props} />;
 }
 
-function EditorStep({ node, state, prerequisites, completedAt, history = [], workspace = EMPTY_WORKSPACE, legend = [], onOpenLegend = noop, autoFocusName, onRename, onPreviewKind, onRestoreKind, onSetKind, onMarkComplete, onReset, onReveal, deletable = true, onDelete, onPreviewDeleteCost, onClearDeleteCost, onClose, onAddSubtask = noop, onToggleSubtask = noop, onEditSubtask = noop, onDeleteSubtask = noop, onSetNote = noop, onAddLink = noop, onDeleteLink = noop }) {
+function EditorStep({ node, roadmap, state, prerequisites, completedAt, history = [], workspace = EMPTY_WORKSPACE, legend = [], onOpenLegend = noop, autoFocusName, onRename, onPreviewKind, onRestoreKind, onSetKind, onMarkComplete, onReset, onReveal, deletable = true, onDelete, onPreviewDeleteCost, onClearDeleteCost, onClose, onAddSubtask = noop, onToggleSubtask = noop, onEditSubtask = noop, onDeleteSubtask = noop, onSetNote = noop, onAddLink = noop, onDeleteLink = noop }) {
   const [editingName, setEditingName] = useState(!!autoFocusName);
   const [draft, setDraft] = useState(node?.label ?? '');
   const inputRef = useRef(null);
   const escapedRef = useRef(false); // Esc reverts — the blur that follows must not commit
+  const treeDoor = useContext(TreeDoor);
 
   useEffect(() => {
     if (!editingName) return;
@@ -106,6 +109,8 @@ function EditorStep({ node, state, prerequisites, completedAt, history = [], wor
   if (!node) return null;
 
   const now = Date.now();
+  const opening = node.opening ?? null;
+  const openTree = opening && !opening.dangling && treeDoor ? () => treeDoor(node.id, 'dock') : null;
   const currentKind = node.color ?? DEFAULT_NODE_COLOR;
   const hue = KIND_CSS[currentKind] ?? KIND_CSS[DEFAULT_NODE_COLOR];
   const lockedBy = prerequisites.find((prerequisite) => !prerequisite.complete)?.label;
@@ -159,6 +164,13 @@ function EditorStep({ node, state, prerequisites, completedAt, history = [], wor
       </div>
 
       <div className="st-step-state">
+        {opening?.read && (
+          <div className={`st-step-tree st-step-tree--${opening.face}`}>
+            <OpeningGlyph face={opening.face} size={14} />
+            <span>{treeState(opening, roadmap)}</span>
+            {opening.total > 0 && <span className="st-step-tree-bar" aria-hidden><span style={{ width: `${opening.gauge * 100}%` }} /></span>}
+          </div>
+        )}
         {state === 'locked' ? (
           <>
             <span className="st-state-chip">
@@ -175,19 +187,26 @@ function EditorStep({ node, state, prerequisites, completedAt, history = [], wor
               <span className={`st-state-dot st-state-dot--${state}`} />
               {state === 'complete' ? COLUMN_TITLES.done : COLUMN_TITLES.upNext}
             </span>
-            <Button
-              variant={state === 'complete' ? 'ghost' : 'primary'}
-              onClick={state === 'complete' ? () => onReset(node.id) : onMarkComplete}
-              icon={<Icon name={state === 'complete' ? 'rotate-ccw' : 'check'} />}
-            >
-              {state === 'complete' ? STEP_DETAIL.reset : STEP_DETAIL.complete}
-            </Button>
-            {state === 'complete' && completedAt && (
+            {!opening && (
+              <Button
+                variant={state === 'complete' ? 'ghost' : 'primary'}
+                onClick={state === 'complete' ? () => onReset(node.id) : onMarkComplete}
+                icon={<Icon name={state === 'complete' ? 'rotate-ccw' : 'check'} />}
+              >
+                {state === 'complete' ? STEP_DETAIL.reset : STEP_DETAIL.complete}
+              </Button>
+            )}
+            {!opening && state === 'complete' && completedAt && (
               <div className="st-state-time" title={t('roadmap.step.completedWhen', { when: absoluteTime(completedAt) })}>
                 {t('roadmap.step.completedWhen', { when: relativeTime(completedAt, now) })}
               </div>
             )}
           </>
+        )}
+        {openTree && (
+          <Button variant={state === 'available' && opening.workable ? 'primary' : 'secondary'} onClick={openTree}>
+            {TREE.open}
+          </Button>
         )}
       </div>
       </div>

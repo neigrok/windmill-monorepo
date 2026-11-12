@@ -145,7 +145,7 @@ goes through `countBucket`: `0/1/2-5/6-20/21+`.
 
 | Step | Event | Allowlisted props |
 |---|---|---|
-| Open a roadmap, first resolved view of the visit | `roadmap_view_open` | `view: board/graph`, `band: phone/tablet/desktop`, `role: owner/reader/demo`, `door: saved/default/link/empty/born/no_graph` |
+| Open a roadmap, first resolved view of the visit | `roadmap_view_open` | `view: board/graph`, `band: phone/tablet/desktop`, `role: owner/reader/demo`, `door: saved/default/link/empty/born/no_graph/tree/back` |
 | Switch Board and Graph | `roadmap_view_switch` | `view: board/graph` |
 | Phone column tab | `roadmap_board_column` | `column: locked/upNext/done` |
 | Tablet rail's Show | `roadmap_board_rail` | `column: locked/done` |
@@ -160,6 +160,8 @@ goes through `countBucket`: `0/1/2-5/6-20/21+`.
 | A state's action | `roadmap_board_state_action` | `state: error`, `action: retry` |
 | A state's action | `roadmap_board_state_action` | `state: empty`, `action: newStep` |
 | A state's action | `roadmap_board_state_action` | `state: complete`, `action: share/newStep` |
+| Go into the tree a step opens: the card's pill, the swipe's Open, the toast a C raises, the step page or modal, the Graph's dock, the tablet panel or the phone Graph's bar | `roadmap_tree_open` | `door: pill/swipe/toast/step/dock/panel/bar`, `view: board/graph`, `band: phone/tablet/desktop` |
+| Come back to the roadmap a tree was gone into from, by the Back chip or the browser's Back | `roadmap_tree_back` | `band: phone/tablet/desktop` |
 | Open a step | `roadmap_board_step_open` | `surface: modal/page`, `column: locked/upNext/done`, `door: card/graph/activity/step/link` |
 | Step page or modal action | `roadmap_board_step_action` | `surface: modal/page`, `action: complete/completeFromSubtasks/reset/undo/openInGraph/viewBranch/delete/edit/editNote/select` |
 | Step section | `roadmap_board_step_action` | `surface: modal/page`, `action: section`, `section: overview/workspace/history` |
@@ -259,6 +261,7 @@ A step is a thing a reader did or was told. These emit nothing:
 
 - The column a Board opens on, or moves to because a step was selected elsewhere; a rail swapped or Done unfolded to reveal a
   selected step; a state showing.
+- A C on a card that opens a tree and the toast it raises: nothing was completed. The toast's Open tree is `roadmap_tree_open`.
 - Dismissing a menu, a sheet, Fork or Ask AI; re-picking the order or the shared kind in force; a recolor the session refused;
   a clean Save, which writes nothing and emits `unchanged` from the edit composer alone.
 - Moving back to a step already open in the visit, closing a step, and system Back or a remote change dropping a note draft.
@@ -294,6 +297,7 @@ function. A report's `route` is a family (`#/app`, `#/settings`), never an addre
 | `roadmap-export` | Building or downloading an export | `roadmap_export` `failed`, no file |
 | `roadmap-export-load` | Settings' Export all reading a roadmap or its marks, by the rules of `roadmap-tree-load` | *Exported 1 of 2 roadmaps.*, or the export's error when none could be read |
 | `roadmap-tree-load` | The server answering 5xx or 200 with no tree, or a request lost while visible, online and still wanted | The load error |
+| `roadmap-opens-load` | The server could not follow the trees an owner's steps open (`503 opens-unavailable`) | This device's copy of the roadmap, each such step shown as opening a tree with nothing said of it, or the load error where the device holds none |
 | `roadmap-progress-load` | A server tree's marks, by the rules of `roadmap-tree-load`, or a 200 that is not JSON | The load error and Try again, never a false count |
 | `roadmap-activity-load` | A server tree's activity, by the rules of `roadmap-tree-load`, or a 200 that is not JSON | The room opens with an empty feed |
 | `roadmap-load` | Anything else stopping a load, except a tree neither the server nor this device has | The load error |

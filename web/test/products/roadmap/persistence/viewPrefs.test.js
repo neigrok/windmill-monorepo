@@ -230,6 +230,21 @@ test('initialView returns the deciding door with the view in branch order', () =
   for (const [overrides, expected] of cases) assert.deepEqual(initialView({ ...base, ...overrides }), expected);
 });
 
+test('initialView — the view a tree visit carried stands over a saved choice and a step link, under birth, an empty roadmap and a missing Graph', () => {
+  const base = { saved: 'board', owner: true, reader: false, empty: false };
+  const into = { view: 'tree', door: 'tree' };
+  const back = { view: 'board', door: 'back' };
+  const cases = [
+    [{ carried: into }, { view: 'tree', door: 'tree' }],
+    [{ carried: back, saved: 'tree', linkedStep: 'sail' }, { view: 'board', door: 'back' }],
+    [{ carried: into, graphAvailable: false }, { view: 'board', door: 'no_graph' }],
+    [{ carried: into, empty: true, canAddFirstStep: true }, { view: 'board', door: 'empty' }],
+    [{ carried: back, born: true }, { view: 'tree', door: 'born' }],
+    [{ carried: { view: null, door: 'tree' } }, { view: 'board', door: 'saved' }],
+  ];
+  for (const [overrides, expected] of cases) assert.deepEqual(initialView({ ...base, ...overrides }), expected);
+});
+
 test('plant notes — each is read once, and a throwing storage reads as none', () => {
   const storage = memoryStorage();
   assert.deepEqual(takePlantNote(storage), { quest: false, forked: false });

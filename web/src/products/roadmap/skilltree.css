@@ -1116,6 +1116,37 @@
 }
 
 /* Locked: no buttons, just the reason it's waiting */
+/* The tree a step opens, in the dock: its mark, done of total and the bar. */
+.st-step-tree {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  align-self: stretch;
+  font-size: var(--text-xs);
+  line-height: 16px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+.st-step-tree > svg {
+  flex-shrink: 0;
+}
+.st-step-tree--missing > svg {
+  color: var(--color-danger);
+}
+.st-step-tree-bar {
+  flex: 1;
+  min-width: 24px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border-default);
+  overflow: hidden;
+}
+.st-step-tree-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--text-secondary);
+}
 .st-state-lockedline {
   font-size: var(--text-sm);
   color: var(--text-tertiary);
@@ -2378,6 +2409,20 @@ button.st-graph-step-title {
   color: var(--text-secondary);
   font-size: 12px;
   line-height: 18px;
+}
+
+/* A step that opens a tree: its mark before the title, and its column with done of total kept on one line. */
+.st-graph-step-glyph {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--text-secondary);
+}
+.st-graph-step-glyph--missing {
+  color: var(--color-danger);
+}
+.st-graph-step-heading--tree .st-graph-step-state {
+  flex: none;
+  white-space: nowrap;
 }
 
 .st-graph-step-primary {

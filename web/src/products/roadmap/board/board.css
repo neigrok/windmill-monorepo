@@ -242,6 +242,70 @@
   line-height: 20px;
 }
 
+/* The pill of the tree a step opens, between the reason and the excerpt: done of total with its bar, or the one thing
+   in the way. Where it leads somewhere it takes the pointer for itself, 44px high on a phone around the 26px drawing. */
+.st-board-tree-pill {
+  position: relative;
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  height: 26px;
+  box-sizing: border-box;
+  padding: 0 6px 0 7px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-full);
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--text-secondary);
+}
+.st-board-tree-pill--missing {
+  padding-right: 10px;
+}
+.st-board-tree-pill-glyph,
+.st-board-tree-pill-chevron {
+  flex-shrink: 0;
+  display: inline-flex;
+}
+.st-board-tree-pill-chevron,
+.st-board-tree-pill--empty .st-board-tree-pill-glyph {
+  color: var(--text-tertiary);
+}
+.st-board-tree-pill--complete .st-board-tree-pill-glyph {
+  color: var(--color-success);
+}
+.st-board-tree-pill--missing .st-board-tree-pill-glyph {
+  color: var(--color-danger);
+}
+.st-board-tree-pill-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.st-board-tree-pill-bar {
+  flex-shrink: 0;
+  width: 36px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border-default);
+  overflow: hidden;
+}
+.st-board-tree-pill-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--text-secondary);
+}
+.st-board--phone .st-board-tree-pill--leads::before {
+  content: '';
+  position: absolute;
+  inset: -9px 0;
+}
+
 /* Arrived cards wake once; reader focus or pointer settles the wake, while automatic reveal focus preserves it. */
 .st-board-card.is-arrived {
   --st-board-arrived-edge: var(--color-brand-soft);

@@ -1,13 +1,15 @@
 // Pointer input reaches the canvas outside the selected-step bar, Fork and the camera controls.
 
-import React, { useLayoutEffect, useRef, useState } from 'react';
+import React, { useContext, useLayoutEffect, useRef, useState } from 'react';
 import { Button, Icon } from '../../../design-system';
 import { KIND_CSS } from '../theme.js';
 import { DOCK_WIDTH, TABLET_PANEL_WIDTH } from './viewport.js';
 import { useCoveredLayer } from '../step/composerFocus.js';
 import { DeviceLine } from '../sync/SyncNotices.jsx';
 import { GuideLine } from '../guide/GuidePhone.jsx';
-import { COLUMN_TITLES, FORK_OFFER, OPEN_STEP, RECOLOR } from '../copy.js';
+import { COLUMN_TITLES, FORK_OFFER, OPEN_STEP, RECOLOR, TREE, treeLine } from '../copy.js';
+import { OpeningGlyph } from '../OpeningGlyph.jsx';
+import { TreeDoor } from '../room/useTreeVisit.js';
 import { t } from '../i18n/index.js';
 
 const SAFE_BOTTOM = 'env(safe-area-inset-bottom, 0px)';
@@ -47,6 +49,9 @@ export function GraphChrome({
   const nudge = phoneGraph && Boolean(deviceLine || guideLine);
   const phoneCameraTop = rowBottom + 8 + (nudge ? nudgeHeight : 0);
   const showStep = phoneGraph && Boolean(step);
+  const treeDoor = useContext(TreeDoor);
+  const opening = step?.opening ?? null;
+  const openTree = opening && !opening.dangling && treeDoor ? () => treeDoor(step.id, 'bar') : null;
 
   useLayoutEffect(() => {
     if (!onBarBottom) return undefined;
@@ -132,17 +137,18 @@ export function GraphChrome({
 
       {showStep && (
         <div ref={barRef} className="st-graph-step-bar" data-graph-step-bar="">
-          <div className="st-graph-step-heading">
-            {onFork && onOpenStep ? (
+          <div className={`st-graph-step-heading${opening ? ' st-graph-step-heading--tree' : ''}`}>
+            {opening && <span className={`st-graph-step-glyph st-graph-step-glyph--${opening.face}`}><OpeningGlyph face={opening.face} size={20} /></span>}
+            {(onFork || openTree) && onOpenStep ? (
               <button type="button" className="st-graph-step-title" onClick={() => onOpenStep(step.id)}>
                 {step.title}
               </button>
             ) : <span className="st-graph-step-title">{step.title}</span>}
-            <span className="st-graph-step-state">{COLUMN_TITLES[step.state]}</span>
+            <span className="st-graph-step-state">{(opening && treeLine(opening, COLUMN_TITLES[step.state])) ?? COLUMN_TITLES[step.state]}</span>
           </div>
           <button type="button" className="st-graph-step-primary" data-graph-step-primary=""
-            onClick={onFork ?? (() => onOpenStep?.(step.id))}>
-            {onFork ? FORK_OFFER : OPEN_STEP}
+            onClick={onFork ?? openTree ?? (() => onOpenStep?.(step.id))}>
+            {onFork ? FORK_OFFER : openTree ? TREE.open : OPEN_STEP}
           </button>
         </div>
       )}

@@ -33,6 +33,7 @@ export function GraphDocks({
   const stepDeletable = selectedNode !== null && deletable(standingTree, [selectedNode.id]);
   const stepFacts = {
     node: selectedNode,
+    roadmap: tree?.title,
     state: selectedState,
     prerequisites,
     completedAt: progress.completedAt[selectedId],

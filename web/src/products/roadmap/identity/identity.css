@@ -40,6 +40,50 @@
   flex-shrink: 1;
 }
 
+/* The way back to the tree this one was gone into from: a chip in the first slot, or the phone's chevron and eyebrow. */
+.st-roadmap-back {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.st-roadmap-back--wide {
+  gap: 2px;
+  max-width: 200px;
+  height: 32px;
+  padding: 0 12px 0 6px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-full);
+  background: var(--surface-card);
+  font: 700 13px/18px var(--font-body);
+}
+.st-roadmap-back--wide > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.st-roadmap-back--phone {
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  margin-left: -12px;
+  padding: 0;
+  color: var(--text-primary);
+}
+.st-roadmap-eyebrow {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 700 11px/14px var(--font-body);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
 .st-roadmap-title {
   margin: 0;
   overflow: hidden;

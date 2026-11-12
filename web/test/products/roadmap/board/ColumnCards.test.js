@@ -9,6 +9,7 @@ const { ColumnCards, CardStack, estimatedHeight } = await import('../../../../sr
 const { SHOW_ALL } = await import('../../../../src/products/roadmap/board/traversal.js');
 const { SkillTree } = await import('../../../../src/products/roadmap/model/SkillTree.js');
 const { Board } = await import('../../../../src/products/roadmap/board/Board.js');
+const { Opening } = await import('../../../../src/products/roadmap/model/Opening.js');
 
 function learnToSailBoard() {
   const tree = new SkillTree({ id: 'sail', title: 'Learn to sail', nodes: [
@@ -36,6 +37,13 @@ test('estimatedHeight — an unmeasured card counts its frame and, for each of i
   const byId = new Map(board.columns.flatMap((column) => column.cards).map((card) => [card.id, card]));
   const estimate = (width) => ['dock', 'solo', 'bowline', 'rig'].map((id) => estimatedHeight(byId.get(id), width));
   assert.deepEqual([estimate(420), estimate(200)], [[96, 72, 74, 74], [134, 90, 94, 94]]);
+});
+
+test('estimatedHeight — a card that opens a tree counts its pill’s row, and none where nothing was read of the tree', () => {
+  const card = (opening) => ({ step: { label: 'Learn to sail', description: 'Feel confident sailing on my own.' }, needs: null, unlocks: null, opening });
+  const read = Opening.fromWire({ treeId: 't_sail', title: 'Learn to sail', state: 'open', done: 3, total: 8, loop: false });
+
+  assert.deepEqual([card(null), card(read), card(Opening.unread('t_sail'))].map((each) => estimatedHeight(each, 420)), [74, 104, 74]);
 });
 
 test('CardStack — the range holds every card any part of which lies in view, the gap counted between cards', () => {

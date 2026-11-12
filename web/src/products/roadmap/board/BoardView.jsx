@@ -52,6 +52,7 @@ function BoardView({
   onToastShown,
   onDisplayedOverall,
   reveal = null,
+  wake = null,
   quiet = 0,
   topInset = 0,
   query: asked = EVERY_STEP,
@@ -79,7 +80,7 @@ function BoardView({
   const revealFocus = useRef(null);
   const phone = breakpoint === 'phone';
   const topGap = phone && (deviceLine || guideLine) ? '0px' : 'var(--space-3)';
-  const motion = useRegroup(nextBoard, { quiet, phone, root: boardRef });
+  const motion = useRegroup(nextBoard, { quiet, phone, root: boardRef, wake });
   const board = motion.board;
   const canSelect = selectionOpen && nextBoard !== null;
   const selection = useStepSelection({
