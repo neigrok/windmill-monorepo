@@ -184,21 +184,24 @@ std::optional<KindStateEntry> Legend::exportKind(const KindId& id) const {
   return entry;
 }
 
-std::variant<std::optional<NodeColor>, std::string> resolveHue(const std::vector<Kind>& kinds, const HueChoice& choice,
+std::variant<std::optional<NodeColor>, KindRefusal> resolveHue(const std::vector<Kind>& kinds, const HueChoice& choice,
                                                                const std::string& path) {
+  using Reason = KindRefusal::Reason;
   if (!choice.kind) return choice.color;
   const std::string named = path + "kind \"" + choice.kind->str() + "\"";
   const auto worn = std::find_if(kinds.begin(), kinds.end(), [&](const Kind& kind) { return kind.id == *choice.kind; });
   if (worn == kinds.end()) {
     if (kinds.empty())
-      return named + " is not a kind of this tree, whose legend holds none — add one with roadmap_add_kind first";
+      return KindRefusal{Reason::unknownKind, named + " is not a kind of this tree, whose legend holds none — add one "
+                                                      "with roadmap_add_kind first"};
     std::string held;
     for (const Kind& kind : kinds) held += (held.empty() ? "\"" : ", \"") + kind.id.str() + "\"";
-    return named + " is not a kind of this tree; its legend holds " + held;
+    return KindRefusal{Reason::unknownKind, named + " is not a kind of this tree; its legend holds " + held};
   }
   if (choice.color && *choice.color != worn->hue)
-    return named + " wears " + std::string(toString(worn->hue)) + ", but " + path + "color is \"" +
-           std::string(toString(*choice.color)) + "\" — send one of the two, or both when they agree";
+    return KindRefusal{Reason::hueMismatch, named + " wears " + std::string(toString(worn->hue)) + ", but " + path +
+                                                "color is \"" + std::string(toString(*choice.color)) +
+                                                "\" — send one of the two, or both when they agree"};
   return worn->hue;
 }
 
