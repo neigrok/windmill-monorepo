@@ -8,6 +8,16 @@ On November 12, 2026, all 11 URLs in the production sitemap returned HTTP 200 wi
 
 The edge's robots response allows ordinary search and names training crawlers it blocks. OAI-SearchBot and Claude-SearchBot had no named block in that response. Keep the training choice intact. Check the served robots file and provider crawl diagnostics after CDN changes. A successful request from a laptop tests reachability only. Keep account pages, unlisted share URLs, workouts, journal pages, OAuth endpoints and private identifiers out of all submission lists. [Live robots file](https://windmill.works/robots.txt) · [OpenAI crawlers](https://developers.openai.com/api/docs/bots) · [Anthropic crawlers](https://support.claude.com/en/articles/8896518-does-anthropic-crawl-data-from-the-web-and-how-can-site-owners-block-the-crawler)
 
+## Submission and coverage on November 12, 2026
+
+Google verified the HTTPS URL-prefix property, processed `/sitemap.xml` successfully and reported **11 discovered pages**. Inspection of the six priority URLs confirmed the homepage was indexed. Roadmap initially showed as unknown. Gym, Journal, the gallery and Connect showed as discovered and awaiting indexing. Google accepted individual requests for all five into its priority crawl queue. [Search Console sitemaps](https://search.google.com/search-console/sitemaps?resource_id=https%3A%2F%2Fwindmill.works%2F)
+
+Bing verified the property independently. Its Sitemaps report showed **Success** and **11 URLs discovered**. Its six URL inspections showed zero indexed. The homepage had a prior DNS fetch failure in the index report. Bing's live test fetched the homepage and reported that it could be indexed. The other five priority pages initially showed as unknown. Bing recorded direct indexing requests for the homepage, Roadmap, Gym, Journal and Gallery. [Bing sitemaps](https://www.bing.com/webmasters/sitemaps?siteUrl=https%3A%2F%2Fwindmill.works%2F) · [URL Inspection](https://www.bing.com/webmasters/help/url-inspection-55a30305)
+
+IndexNow received the changed `/connect.html` URL with HTTP **202** after the deployed proof returned HTTP 200 with its expected content. The protocol treats 202 as acceptance pending key validation. [IndexNow responses](https://www.indexnow.org/documentation)
+
+Reinspect these six URLs on **November 19** and **December 10**. Record changes in index coverage and the stated reason for any continuing exclusion before expanding the page set.
+
 ## Submit and verify
 
 1. **Google.** In the site's authorized Search Console property, submit `https://windmill.works/sitemap.xml` in Sitemaps. If ownership is missing, the founder verifies the URL-prefix property or the domain in the intended business account. Inspect the six priority URLs. Save the indexed verdict, Google-selected canonical and last crawl where available. Use the live test to diagnose a failed fetch. Request indexing for a few new or corrected pages. Google reserves its Indexing API for eligible job and livestream pages. [Request a crawl](https://developers.google.com/search/docs/crawling-indexing/ask-google-to-recrawl) · [Indexing API scope](https://developers.google.com/search/apis/indexing-api/v3/using-api)
