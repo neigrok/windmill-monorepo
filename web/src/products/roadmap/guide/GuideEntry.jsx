@@ -5,7 +5,7 @@ import React, { useId, useRef } from 'react';
 import { flushSync } from 'react-dom';
 import { BookOpen, ChevronRight, Plus } from 'lucide-react';
 import { track } from '../../../telemetry/beacon.js';
-import { GUIDE, guideLabel, guidesAboveCount, guidesFromAbove } from '../copy.js';
+import { GUIDE, guideLabel, guidesFromAbove } from '../copy.js';
 import { t } from '../i18n/index.js';
 import { OpeningGlyph } from '../OpeningMarks.jsx';
 import { guideExcerpt, hasGuide } from './GuideDraft.js';
@@ -46,7 +46,7 @@ export function GuideEntry({ guide, band, view }) {
         <span className="st-guide-row-text">
           <span className="st-guide-row-heading">
             <span className="st-guide-row-title">{title}</span>
-            {above > 0 && <span id={aboveId} className="st-guide-row-above">{guidesAboveCount({ count: above })}</span>}
+            {above > 0 && <span id={aboveId} className="st-guide-row-above">{t('roadmap.guide.aboveCount', { count: above })}</span>}
           </span>
           {written && <span ref={excerpt} className="st-guide-row-excerpt">{guide.text}</span>}
         </span>

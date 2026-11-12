@@ -1847,3 +1847,29 @@ test('Chromium: a long stack scrolls inside the note, which stays in the window,
     });
   } finally { await page.close(); }
 });
+
+test('Chromium: guides from above that answer while the note already reads stand over the prose, which keeps its focus, and Escape still closes', async () => {
+  await start();
+  const page = await open({ mount: false });
+  try {
+    await withBrowserErrors(page, async () => {
+      const answered = {};
+      await page.route('**/v1/trees/sail/guides', async (route) => {
+        await new Promise((resolve) => { answered.now = resolve; });
+        await route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': origin, 'access-control-allow-credentials': 'true' }, body: JSON.stringify({ guides: repliedGuides(GUIDE) }) });
+      });
+      await page.evaluate((mounted) => window.mount(mounted), { guide: GUIDE, holder: 'u_olya' });
+      await page.getByRole('button', { name: 'Guide: One step a week.' }).press('Enter');
+      const note = page.getByRole('dialog', { name: 'Guide', exact: true });
+      await note.waitFor();
+      assert.deepEqual({ stack: await page.locator('.st-guide-stack').count(), focus: await focusedName(page) }, { stack: 0, focus: 'st-guide-prose st-guide-prose--owner is-ringed' });
+
+      answered.now();
+      await page.locator('.st-guide-stack').waitFor();
+      assert.deepEqual({ above: await page.locator('.st-guide-from').count(), focus: await focusedName(page) }, { above: 2, focus: 'st-guide-prose st-guide-prose--owner is-ringed' });
+      await page.keyboard.press('Escape');
+      await note.waitFor({ state: 'detached' });
+      assert.equal(await page.locator('.st-guide-card-above').textContent(), 'With guides from My life and My year');
+    });
+  } finally { await page.close(); }
+});

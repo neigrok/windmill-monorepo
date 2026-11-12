@@ -67,8 +67,6 @@ export function guidesFromAbove({ first, second, more }) {
   if (second !== null) return t('roadmap.guide.fromTwo', { first, second });
   return t('roadmap.guide.fromOne', { tree: first });
 }
-export const guidesAboveCount = ({ count }) => t('roadmap.guide.aboveCount', { count: formatCount(count) });
-export const guideOfThisTree = ({ tree }) => t('roadmap.guide.thisTree', { tree });
 
 export const LINK_COPIED = t('roadmap.share.linkCopied');
 export const EMPTY_ROADMAP = { title: t('roadmap.emptyRoadmap.title'), body: t('roadmap.emptyRoadmap.body'), action: t('roadmap.emptyRoadmap.action') };

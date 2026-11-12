@@ -8,7 +8,7 @@ import { AlertCircle, BookOpen, Check, ChevronRight, Pencil, Plus, X } from 'luc
 import { Button } from '../../../design-system';
 import { focusableElements } from '../../../design-system/feedback/dialogFocus.js';
 import { track } from '../../../telemetry/beacon.js';
-import { DISCARD_DRAFT, GUIDE, LABELS, guideCounter, guideOfThisTree } from '../copy.js';
+import { DISCARD_DRAFT, GUIDE, LABELS, guideCounter } from '../copy.js';
 import { t } from '../i18n/index.js';
 import { OpeningGlyph } from '../OpeningMarks.jsx';
 import { TreeDoor } from '../room/useTreeVisit.js';
@@ -271,6 +271,12 @@ export function GuideNote({ guide, band, view, onSeat }) {
     if (!writing) (prose.current ?? add.current)?.focus({ preventScroll: true });
   }, [writing, modal]);
 
+  // Guides from above that arrive or leave while the note reads re-seat this tree's block, which drops the focus it
+  // held to the page: the block takes it back.
+  useLayoutEffect(() => {
+    if (!writing && document.activeElement === document.body) (prose.current ?? add.current)?.focus({ preventScroll: true });
+  }, [above]);
+
   useLayoutEffect(() => {
     if (discarding) confirmation.current.focus({ preventScroll: true });
     else field.current?.focus({ preventScroll: true });
@@ -387,7 +393,7 @@ export function GuideNote({ guide, band, view, onSeat }) {
   const ownName = (
     <p className="st-guide-own">
       <BookOpen size={14} strokeWidth={1.67} absoluteStrokeWidth aria-hidden />
-      <span>{guideOfThisTree({ tree: guide.roadmapTitle })}</span>
+      <span>{t('roadmap.guide.thisTree', { tree: guide.roadmapTitle })}</span>
       {!writing && written && (
         <span className="st-guide-hint" onClick={() => begin(phone ? 'tap' : 'click', text.length)}>
           <Pencil size={14} strokeWidth={1.67} absoluteStrokeWidth aria-hidden />

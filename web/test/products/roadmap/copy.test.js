@@ -81,8 +81,6 @@ import {
   showMore,
   draftLine,
   guidesFromAbove,
-  guidesAboveCount,
-  guideOfThisTree,
 } from '../../../src/products/roadmap/copy.js';
 
 test('copy — the canon strings the demo speaks verbatim', () => {
@@ -586,9 +584,4 @@ test('the guide’s card says whose guides apply from above: one tree, two, or t
   assert.equal(guidesFromAbove({ first: 'My life', second: 'My year', more: 0 }), 'With guides from My life and My year');
   assert.equal(guidesFromAbove({ first: 'My life', second: 'My year', more: 1 }), 'With guides from My life, My year and 1 more tree');
   assert.equal(guidesFromAbove({ first: 'My life', second: 'My year', more: 2 }), 'With guides from My life, My year and 2 more trees');
-});
-
-test('the guide’s row counts the guides from above, and the note names this tree’s own', () => {
-  assert.equal(guidesAboveCount({ count: 2 }), '+2 from above');
-  assert.equal(guideOfThisTree({ tree: 'Learn to sail' }), 'Learn to sail · this tree');
 });
