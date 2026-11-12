@@ -78,7 +78,6 @@ export class SyncSession {
     this.phase = 'offline';                         // offline | syncing | live
     this.ready = false;
     this.joinedServer = false;                      // the server's state has joined this lattice since the session began
-    this.marksStayBarred = false;                   // the stored record would not let go of a mark that is never to be sent
     this.lastSeq = 0;
     this.fullGraftPending = false;
     this.sent = new Set();                          // frameIds we authored — echoes already applied
@@ -140,7 +139,8 @@ export class SyncSession {
     const confirmed = { structure: writeStamps(this.confirmedStructure.toFrame()), progress: writeStamps(this.confirmedProgress.toFrame()) };
     const pending = (lane, frame) => pendingRecordCount(outboxStamps(writeStamps(frame), confirmed[lane]));
     const structurePending = this.rebaselining?.has('structure') ? 0 : pending('structure', this.lattice.toFrame());
-    const progressPending = this.rebaselining?.has('progress') ? 0 : pending('progress', this.progress.toFrame());
+    const owedProgress = this.owedFrames('progress').frame;
+    const progressPending = this.rebaselining?.has('progress') ? 0 : pending('progress', owedProgress);
     const inFlightCount = (lane, frames) => [...frames.values()].filter((frame) => pending(lane, frame) > 0).length;
     const snapshot = {
       phase: this.phase,
@@ -150,7 +150,7 @@ export class SyncSession {
       structureInFlight: this.rebaselining?.has('structure') ? 0 : inFlightCount('structure', this.inFlight),
       progressInFlight: this.rebaselining?.has('progress') ? 0 : inFlightCount('progress', this.progressInFlight),
       structureGestures: this.rebaselining?.has('structure') ? 0 : Object.keys(this.gestures.structure).length,
-      progressGestures: this.rebaselining?.has('progress') ? 0 : Object.keys(this.gestures.progress).length,
+      progressGestures: this.rebaselining?.has('progress') ? 0 : Object.keys(retainedProgressGestures(owedProgress, this.gestures.progress)).length,
       rebaselining: this.rebaselining != null,
       refused: this.refusals.values().next().value ?? null,
       receiptVersion: this.receiptVersion,
@@ -174,17 +174,12 @@ export class SyncSession {
     this.forceReconnect();
   }
 
-  discard() {
+  async discard() {
     const refused = this.refusals.values().next().value;
-    if (!refused || this.rebaselining || this.discardPending) return Promise.resolve(false);
+    if (!refused || this.rebaselining || this.discardPending) return false;
     const lane = refused.lane;
-    if (!this.confirmedKnown[lane]) return Promise.resolve(false);
-    return this.withdraw(lane, this.unconfirmedWrites(lane), refused);
-  }
-
-  // Takes unsent writes out of this replica and its stored record, back to the lane's confirmed baseline: the answer to
-  // `refused`, or with none, writes that are never to be sent.
-  async withdraw(lane, shown, refused = null) {
+    if (!this.confirmedKnown[lane]) return false;
+    const shown = this.unconfirmedWrites(lane);
     const previousReady = this.ready;
     this.ready = false;
     this.rebaselining = new Set([lane]);
@@ -195,7 +190,7 @@ export class SyncSession {
     this.timers.clearTimeout(this.reconnectTimer);
     this.reconnectTimer = null;
     this.phase = this.online ? 'syncing' : 'offline';
-    if (refused) this.refusals.delete(lane);
+    this.refusals.delete(lane);
     this.emitProjection(lane);
     this.emitStatus();
     let result;
@@ -205,7 +200,7 @@ export class SyncSession {
       this.ready = previousReady;
       this.rebaselining = null;
       this.discardPending = false;
-      if (refused) this.refusals.set(lane, refused);
+      this.refusals.set(lane, refused);
       this.emitProjection(lane);
       this.emitStatus();
       this.reportFailure('roadmap-sync-discard', error);
@@ -217,7 +212,7 @@ export class SyncSession {
     this.rebaselining = null;
     if (result.status === 'unavailable') {
       this.ready = previousReady;
-      if (refused) this.refusals.set(lane, refused);
+      this.refusals.set(lane, refused);
       this.emitProjection(lane);
       this.emitStatus();
       await this.persistDeferred();
@@ -236,8 +231,17 @@ export class SyncSession {
       : { frame: this.progress.toFrame(), confirmed: this.confirmedProgress.toFrame() };
   }
 
-  unconfirmedWrites(lane) {
+  // What a lane owes the server, beside its confirmed baseline: all of the structure, and every mark but those set
+  // aside. A mark on a step that opens a tree stays on the device as it is, and while the pointer stands it is neither
+  // sent nor counted as unsent; with the pointer gone it is an ordinary mark again.
+  owedFrames(lane) {
     const { frame, confirmed } = this.laneFrames(lane);
+    if (lane === 'structure') return { frame, confirmed };
+    return { frame: { marks: frame.marks.filter(({ node }) => !this.lattice.nodes.get(node)?.opens.v) }, confirmed };
+  }
+
+  unconfirmedWrites(lane) {
+    const { frame, confirmed } = this.owedFrames(lane);
     return outboxStamps(writeStamps(frame), writeStamps(confirmed));
   }
 
@@ -568,6 +572,7 @@ export class SyncSession {
     if (typeof frame.seq !== 'number') return;
     if (frame.seq <= this.lastSeq) return;                                 // duplicate / already seen
     if (frame.seq > this.lastSeq + 1) { this.forceReconnect(); return; }   // gap → heal via a fresh graft
+    const pointed = (frame.nodes ?? []).filter((node) => this.lattice.nodes.get(node.id)?.opens.v);
     let frontier;
     try {
       frontier = this.lattice.join(frame);
@@ -585,6 +590,8 @@ export class SyncSession {
     const mine = frame.frameId && this.sent.has(frame.frameId);
     this.scheduleSave();
     if (!mine) this.emitProjection('structure');
+    // A pointer this frame took away releases the mark set aside on its step, and it goes like any other.
+    if (pointed.some((node) => !this.lattice.nodes.get(node.id).opens.v) && this.canResend('progress')) this.flushProgress();
     this.emitStatus();
   }
 
@@ -709,17 +716,8 @@ export class SyncSession {
   flushProgress() {
     if (this.rebaselining?.has('progress') || this.discardPending) return;
     if (this.phase !== 'live' || this.ws?.readyState !== WebSocket.OPEN) return;
-    const unsent = outboxWrites(this.progress.toFrame(), this.confirmedProgress.toFrame(), this.progressInFlight.values());
-    // A mark for a step that opens a tree is never sent, as its tree decides that step. One queued before the pointer
-    // arrived leaves this replica and its stored record as a discarded write does; a record that will not let it go is
-    // asked once, and the mark then only stays unsent.
-    const opensTree = ({ node }) => Boolean(this.lattice.nodes.get(node)?.opens.v);
-    const barred = unsent.marks.filter(opensTree);
-    if (barred.length && !this.marksStayBarred && !this.rebaselining && !this.refusals.has('progress') && this.confirmedKnown.progress) {
-      this.withdraw('progress', writeStamps({ marks: barred })).then((withdrawn) => { this.marksStayBarred = !withdrawn; });
-      return;
-    }
-    const queued = { marks: unsent.marks.filter((mark) => !opensTree(mark)) };
+    const { frame, confirmed } = this.owedFrames('progress');
+    const queued = outboxWrites(frame, confirmed, this.progressInFlight.values());
     if (!queued.marks.length) return;
     this.sendWithEpoch('progress', (socket) => {
       const pending = outboxWrites(queued, this.confirmedProgress.toFrame(), this.progressInFlight.values());
@@ -788,7 +786,7 @@ export class SyncSession {
     this.sent.delete(frame.frameId);
     this.emitStatus();
     this.durabilityAtRisk = true;
-    const { frame: current, confirmed } = this.laneFrames(lane);
+    const { frame: current, confirmed } = this.owedFrames(lane);
     const pending = outboxWrites(current, confirmed, inFlight.values());
     const frontier = lane === 'structure' ? frameFrontier(pending) : new ProgressLattice().join(pending);
     let maxMs = 0;
