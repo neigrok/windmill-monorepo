@@ -26,13 +26,14 @@ class SharePageApi {
 public:
   SharePageApi(std::shared_ptr<RoomRegistry> registry, std::shared_ptr<TreeRepository> trees,
                std::shared_ptr<AuthService> auth, std::shared_ptr<OgVideoRepository> videos,
-               std::string webRoot);
+               std::string webRoot, std::string appOrigin);
 
   void page(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& id);
 
   // Splice this tree's unfurl meta between the index.html sentinels, keeping the sentinels;
-  // returns the shell unchanged if the fence is absent. `title` is escaped here.
-  static std::string renderShell(const std::string& shell, const std::string& title,
+  // returns the shell unchanged if the fence is absent. `title` is escaped here. The page's own
+  // address is the tree's share address on `origin`, and its pictures are served from there too.
+  static std::string renderShell(const std::string& shell, const std::string& origin, const std::string& title,
                                  std::size_t steps, Visibility visibility, const std::string& id,
                                  const ForkLineage& lineage, bool hasVideo);
 
@@ -42,6 +43,7 @@ private:
   std::shared_ptr<AuthService> auth_;
   std::shared_ptr<OgVideoRepository> videos_;
   std::string webRoot_;
+  std::string appOrigin_;
 };
 
 }

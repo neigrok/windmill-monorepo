@@ -1,5 +1,5 @@
 {
-  "schemaVersion" : 15,
+  "schemaVersion" : 16,
   "steps" : 
   [
     {
@@ -23,7 +23,8 @@
                 "id" : "t",
                 "kinds" : [],
                 "nodes" : [],
-                "title" : "Test Roadmap"
+                "title" : "Test Roadmap",
+                "url" : "https://app.example/#/app/t"
               }
             },
             "type" : "text"
@@ -669,7 +670,8 @@
                     "status" : "complete"
                   }
                 ],
-                "title" : "Test Roadmap"
+                "title" : "Test Roadmap",
+                "url" : "https://app.example/#/app/t"
               }
             },
             "type" : "text"

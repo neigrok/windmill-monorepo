@@ -59,6 +59,11 @@ Reads use lean projections: an omitted description is not an empty description. 
 for needed detail or `summary` for a short preview. `roadmap_get_nodes` returns exact ids in requested
 order with explicit `missingNodeIds`; use `roadmap_get_tree` for broader context.
 
+To link a tree or a step from a node's `links`, use the address the server answers rather than
+building one: `url` on `roadmap_create_tree`, every `roadmap_list_trees` row and `roadmap_get_tree`'s
+`tree`, and the node field `url` that `roadmap_get_tree`, `roadmap_get_nodes` and `roadmap_find_nodes`
+answer when `fields` asks for it.
+
 A node can point at another of your trees: `opens` on `roadmap_create_node`, `roadmap_annotate_node`,
 a `roadmap_patch_nodes` row or a `roadmap_import_subgraph` node takes that tree's id, and `""` clears
 it. Reads that ask for the `opens` field answer the tree's id, title and `state` (`complete` or

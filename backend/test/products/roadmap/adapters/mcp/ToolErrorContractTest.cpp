@@ -1011,7 +1011,8 @@ TEST(mcp_opens_is_published_with_the_id_cap_wherever_it_is_taken_and_as_a_field_
   }
 
   const Json::Value fields = list({"id", "label", "icon", "color", "kind", "order", "prerequisites", "position",
-                                   "status", "seedStatus", "state", "summary", "description", "links", "opens"});
+                                   "status", "seedStatus", "state", "summary", "description", "links", "opens",
+                                   "url"});
   for (const char* name : {"get_tree", "get_nodes", "find_nodes"}) {
     const Json::Value* tool = toolNamed(catalog, name);
     REQUIRE(tool != nullptr);

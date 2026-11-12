@@ -106,6 +106,7 @@
 #include "products/gym/application/ThreadService.h"
 #include "products/gym/application/TrainingService.h"
 #include "products/gym/sync/GymDoor.h"
+#include "platform/infra/AppOrigin.h"
 #include "platform/infra/SyncProducts.h"
 #include "products/gym/routes.h"
 
@@ -229,8 +230,7 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
 
   // The session rides in an HttpOnly cookie whose Secure flag and scopes follow the deployment: the live Domain, and
   // every Domain it was set in before (engine.md §9.1 Session cookie scopes).
-  const char* appUrlEnv = std::getenv("WINDMILL_APP_URL");
-  std::string appBaseUrl = appUrlEnv ? appUrlEnv : "http://localhost:5183";
+  std::string appBaseUrl = appOriginFromEnvironment();
   const char* resendKey = std::getenv("RESEND_API_KEY");
   const char* resendFrom = std::getenv("RESEND_FROM");
   const char* resendBaseUrl = std::getenv("RESEND_BASE_URL");
@@ -600,7 +600,8 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   const char* mcpOriginsEnv = std::getenv("WINDMILL_MCP_ALLOWED_ORIGINS");
   const std::set<std::string> mcpOrigins = parseOriginList(mcpOriginsEnv ? mcpOriginsEnv : "");
 
-  auto mcpTools = std::make_shared<RoadmapTools>(*registry, *progressService, *systemClock, *treeRegistry, *bus);
+  auto mcpTools = std::make_shared<RoadmapTools>(*registry, *progressService, *systemClock, *treeRegistry, *bus,
+                                                 appBaseUrl);
 
   // Tending runs a server-side agent over the same tools MCP drives, on the same ANTHROPIC_API_KEY
   // the composer uses. TENDING_ENABLED must be "true"/"1" AND the agent configured to arm it.
@@ -1074,7 +1075,7 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
       .registry = registry, .trees = trees, .progress = progress, .progressService = progressService,
       .oplog = oplog, .bus = bus, .presence = presence, .genesis = genesis,
       .authService = authService, .forkService = forkService, .treeRegistry = treeRegistry,
-      .ogImages = ogImages, .ogVideos = ogVideos, .webRoot = webRootEnv ? webRootEnv : "",
+      .ogImages = ogImages, .ogVideos = ogVideos, .webRoot = webRootEnv ? webRootEnv : "", .appBaseUrl = appBaseUrl,
       .tendingService = tendingService, .reminderSweep = reminderSweep, .reminderRepo = reminderRepo,
       .tokens = tokens, .clock = systemClock,
       .remindersAdminToken = remindersAdminEnv ? remindersAdminEnv : "", .composer = composer,

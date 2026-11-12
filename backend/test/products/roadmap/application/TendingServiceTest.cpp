@@ -341,7 +341,7 @@ TEST(a_run_reads_no_tree_above_the_tended_one) {
   CHECK_EQ(done.seqFrom, static_cast<std::uint64_t>(1));
   CHECK_EQ(done.seqTo, static_cast<std::uint64_t>(1));
   CHECK_EQ(agent.read["tree"], parse(R"({"guide":{"text":"Rig first, then sail.","yours":true},"id":"t","kinds":[],
-                                         "nodes":[],"title":"Test Roadmap"})"));
+                                         "nodes":[],"title":"Test Roadmap","url":"https://app.example/#/app/t"})"));
   CHECK(tended.trees.aboveReads.empty());
 }
 

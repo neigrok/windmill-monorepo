@@ -16,7 +16,7 @@ export function hashWithStep(hash, id) {
 }
 
 // The roadmap a view stands on: the path and the hash's route; a hash holding only a query names none.
-function routeOf() {
+export function routeOf() {
   const hashRoute = window.location.hash.split('?')[0];
   return `${window.location.pathname}${hashRoute === '#' ? '' : hashRoute}`;
 }

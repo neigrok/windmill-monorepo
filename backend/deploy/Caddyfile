@@ -172,8 +172,9 @@
 		X-Content-Type-Options "nosniff"
 		Referrer-Policy "no-referrer"
 		# This host answers /gallery and /t/:id with real, indexable HTML — the same pages the app
-		# host serves. Their canonicals name windmill.works (SharePageApi.cpp hardcodes the host),
-		# so a crawler that found them here would fold them back anyway, but only after crawling a
+		# host serves. Their canonicals name the app host (gallery.html says windmill.works, and
+		# SharePageApi builds a tree's from WINDMILL_APP_URL), so a crawler that found them here
+		# would fold them back anyway, but only after crawling a
 		# whole second copy of the site. Say it at the door instead. Never index anything on the
 		# transitional hostname; the app host is the site.
 		X-Robots-Tag "noindex"
