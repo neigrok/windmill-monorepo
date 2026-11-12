@@ -229,7 +229,7 @@ The table uses product-local names; external MCP prefixes each with `roadmap_`.
 | edit | `tidy` · `prune` | transitive reduction / GC dangling edges + orphan progress |
 | edit | `import_subgraph` | bulk upsert a whole `get_tree`-shaped slice as one graft frame — a field left off a re-sent node or kind keeps its value (`opens` included, but on a node the import brings back from a delete, which opens none), `prerequisiteMode` merge (union) or replace, `tombstone[]` deletes in the same frame and needs the `roadmap:delete` grant; optional `expectedSeq` and `dryRun`; a graft that changes nothing writes nothing and answers `unchanged: true` (see An edit that changes nothing) |
 | legend | `add_kind` (inline label+description+crossBranchExempt) · `rename_kind` · `describe_kind` (description and/or crossBranchExempt) · `remove_kind` · `reorder_kinds` · `recolor_kind` | the legend |
-| write | `set_progress` | per-user overlay: single `nodeId`+`status`, or a bulk `updates[]` (order-safe); `outOfOrder: true` on a completion is kept on the mark and answered as `acknowledged: true` |
+| write | `set_progress` | per-user overlay: single `nodeId`+`status`, or a bulk `updates[]` (order-safe); `outOfOrder: true` on a completion is kept on the mark and answered as `acknowledged: true`; a mark the caller already holds answers `unchanged: true` on its row |
 | resource | `windmill://quickstart` | the read-me-first document; no tool slot |
 
 Every tree-scoped tool takes `treeId`. Applied structural edits return
@@ -296,9 +296,11 @@ the tree holds it, no new edge, no tombstone, no edge a replace drops, no new or
 `seq` the tree's head. `graftFrame` in `domain/Graft` builds the frame and says whether it
 `landsNothing`; the dry run builds the same frame on a copy of the room clock and previews
 `unchanged` with it. `unchanged` speaks for the graft only: a carried `progress[]` is applied and
-reported by its own keys either way.
+reported by its own rows either way, each answering `unchanged: true` when its mark is one the caller
+already holds (see `set_progress`).
 
-A tend does not count such a write as an edit, unless the reply carries `progress` marks it set.
+A tend counts a write as an edit unless its reply answers `unchanged` and so does every progress row
+it lists.
 
 ## `status`, `seedStatus`, `state`, `summary`
 
@@ -631,7 +633,12 @@ and none overrides another.
   `acknowledged: true` beside `prerequisitesMet`, `get_progress` lists those ids under
   `outOfOrder`, and the `status` field of `get_tree`/`find_nodes` shows `outOfOrder: true` on the
   node. `prerequisitesMet: false` without `acknowledged` is therefore always an inversion nobody
-  acknowledged.
+  acknowledged. A mark the caller already holds — the same status and the same `outOfOrder` word,
+  a node never marked holding `none` (`Progress::holds`) — answers `unchanged: true` on its row, on
+  both forms and on an import's `progress` rows, and a bulk call whose every row does answers
+  `unchanged: true` as a whole. It is still written: the row takes the new stamp and the server's
+  receipt time, so the tree's last-marked time moves, because `ProgressService` lands a socket
+  replica's marks too, and a replica's newer stamp must land for every replica to converge.
 - **`prune`** drops dangling/self edges in one op and clears the caller's progress rows for nodes
   no longer in the tree.
 - **`find_nodes`** searches without pulling the whole tree. `color` and `kind` are one filter (a

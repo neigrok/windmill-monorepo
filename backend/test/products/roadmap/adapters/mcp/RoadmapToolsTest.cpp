@@ -6162,3 +6162,33 @@ TEST(mcp_a_colour_sent_as_held_beside_a_kind_is_an_echo_and_the_kind_lands) {
   CHECK_EQ(filed(*refusing), parse(R"([{"id":"a","color":"olive"},{"id":"b","color":"olive"},
     {"id":"c","color":"sky","kind":"apps"}])"));
 }
+
+// A progress row says when its mark changed nothing — the status sent is the one held and the outOfOrder word is the
+// same — with `unchanged: true`, on set_progress single and bulk and on an import's progress rows; a bulk set_progress
+// whose every row is unchanged says so as a whole, as a patch batch does. A changed word is a change.
+TEST(mcp_a_progress_mark_already_held_says_so_on_its_row) {
+  Harness h;
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"},{"id":"b","label":"B",
+    "prerequisites":["a"]}]})")).isError);
+  CHECK_EQ(body(h.call("set_progress", parse(R"({"nodeId":"a","status":"complete"})"))),
+           parse(R"({"nodeId":"a","status":"complete","prerequisitesMet":true})"));
+  CHECK_EQ(body(h.call("set_progress", parse(R"({"nodeId":"a","status":"complete"})"))),
+           parse(R"({"nodeId":"a","status":"complete","prerequisitesMet":true,"unchanged":true})"));
+  CHECK_EQ(body(h.call("set_progress", parse(R"({"nodeId":"b","status":"complete","outOfOrder":true})"))),
+           parse(R"({"nodeId":"b","status":"complete","prerequisitesMet":true,"acknowledged":true})"));
+  CHECK_EQ(body(h.call("set_progress", parse(R"({"nodeId":"b","status":"complete"})"))),
+           parse(R"({"nodeId":"b","status":"complete","prerequisitesMet":true})"));
+
+  CHECK_EQ(body(h.call("set_progress", parse(R"({"updates":[{"nodeId":"a","status":"complete"},
+    {"nodeId":"b","status":"none"}]})"))),
+           parse(R"({"results":[{"nodeId":"a","status":"complete","prerequisitesMet":true,"unchanged":true},
+             {"nodeId":"b","status":"none","prerequisitesMet":true}]})"));
+  CHECK_EQ(body(h.call("set_progress", parse(R"({"updates":[{"nodeId":"a","status":"complete"},
+    {"nodeId":"b","status":"none"}]})"))),
+           parse(R"({"results":[{"nodeId":"a","status":"complete","prerequisitesMet":true,"unchanged":true},
+             {"nodeId":"b","status":"none","prerequisitesMet":true,"unchanged":true}],"unchanged":true})"));
+  CHECK_EQ(body(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"}],"progress":[
+    {"nodeId":"a","status":"complete"},{"nodeId":"b","status":"complete"}]})")))["progress"],
+           parse(R"([{"nodeId":"a","status":"complete","prerequisitesMet":true,"unchanged":true},
+             {"nodeId":"b","status":"complete","prerequisitesMet":true}])"));
+}

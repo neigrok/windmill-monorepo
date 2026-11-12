@@ -973,6 +973,7 @@ std::optional<std::string> applyProgressBatch(
     // Only a mark that carried the word answers it: prerequisitesMet:false alone is an inversion
     // nobody acknowledged.
     if (outcomes[i].outOfOrder) row["acknowledged"] = true;
+    if (outcomes[i].unchanged) row["unchanged"] = true;
     results.append(row);
   }
   return std::nullopt;
@@ -1043,6 +1044,10 @@ ToolResult writeProgress(RoomRegistry& registry, ProgressService& progress, Pres
   if (bulk) {
     Json::Value out(Json::objectValue);
     out["results"] = results;
+    // A batch whose every mark the caller already held changed nothing, and says so as a patch batch does.
+    bool unchanged = true;
+    for (const Json::Value& row : results) unchanged = unchanged && row.get("unchanged", false).asBool();
+    if (unchanged) out["unchanged"] = true;
     return ToolResult::json(out);
   }
   return ToolResult::json(results[0]);  // a singular call keeps its flat {nodeId, status, prerequisitesMet, acknowledged?}

@@ -100,6 +100,28 @@ TEST(progress_keeps_the_out_of_order_word_on_the_mark_until_the_next_mark_replac
   CHECK_FALSE(service.progressOf(tid(), uid()).marks.at(nid("a")).outOfOrder);
 }
 
+// A mark the caller already holds — the same status and the same outOfOrder word — says it changed nothing, and is
+// still written, so its newer stamp lands; a node never marked holds `none`, and a changed word is a change.
+TEST(progress_a_mark_already_held_says_unchanged_and_still_lands_its_stamp) {
+  FakeProgressRepository repo;
+  ProgressService service(repo);
+  service.setStatuses(tid(), uid(), {ProgressWrite{nid("a"), ProgressStatus::complete, noPrereqs, at(1), false}}, 1);
+
+  const std::vector<ProgressOutcome> outcomes = service.setStatuses(
+      tid(), uid(),
+      {ProgressWrite{nid("a"), ProgressStatus::complete, noPrereqs, at(2), false},
+       ProgressWrite{nid("r"), ProgressStatus::none, noPrereqs, at(2), false},
+       ProgressWrite{nid("b"), ProgressStatus::complete, noPrereqs, at(2), false}},
+      2);
+  std::vector<bool> unchanged;
+  for (const ProgressOutcome& outcome : outcomes) unchanged.push_back(outcome.unchanged);
+  CHECK_EQ(unchanged, (std::vector<bool>{true, true, false}));
+  CHECK(service.progressOf(tid(), uid()).marks.at(nid("a")).at == at(2));
+
+  CHECK(service.setStatus(noPrereqs, tid(), uid(), nid("a"), ProgressStatus::complete, false, at(3), 3).unchanged);
+  CHECK_FALSE(service.setStatus(noPrereqs, tid(), uid(), nid("a"), ProgressStatus::complete, true, at(4), 4).unchanged);
+}
+
 TEST(progress_batch_carries_the_out_of_order_word_per_write) {
   FakeProgressRepository repo;
   ProgressService service(repo);

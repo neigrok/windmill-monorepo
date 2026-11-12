@@ -10,12 +10,15 @@ namespace wm {
 
 // A `complete` set whose prerequisites are not all complete is still recorded — P1 is advisory — but
 // the caller is told so it can warn. `outOfOrder` echoes the word the write carried, so a receipt
-// can tell a meant inversion from an unnoticed one.
+// can tell a meant inversion from an unnoticed one. `unchanged` says the caller already held this
+// mark, the same status and the same word (Progress::holds): it is written all the same, so its
+// newer stamp lands, as a replica's must for every replica to converge.
 struct ProgressOutcome {
   ProgressStatus status;
   bool prerequisitesMet;
   bool applied = true;  // false when a strictly-later stamp already stood and this write lost
   bool outOfOrder = false;
+  bool unchanged = false;
 };
 
 // Carries the stamp the marking replica minted. Distinct from domain `ProgressMark`, which is the
