@@ -5887,3 +5887,46 @@ TEST(mcp_an_import_round_trip_that_rehues_a_kind_repaints_every_wearer) {
   CHECK_EQ(colours(*sent), parse(R"([{"id":"a","color":"plum"},{"id":"b","color":"olive"},{"id":"c","color":"plum"},
     {"id":"d","color":"plum"},{"id":"e","color":"gold"}])"));
 }
+
+// A node the batch files by `kind` is the batch's word whatever it wore: it lands the hue that kind wears after the
+// batch and is never repainted, even when that hue is the one it holds — a swap, or a new kind on the hue a re-hue
+// frees. repaintedNodes counts only the nodes the repaint moved, and a round trip read with `kind` lands every wearer
+// on the new hue by the batch's own word.
+TEST(mcp_an_import_that_files_a_node_by_kind_beside_a_rehue_lands_the_kind_it_names) {
+  const auto seeded = [] {
+    auto h = std::make_unique<Harness>();
+    CHECK_FALSE(h->call("add_kind", parse(R"({"id":"k","hue":"sky"})")).isError);
+    CHECK_FALSE(h->call("add_kind", parse(R"({"id":"j","hue":"plum"})")).isError);
+    CHECK_FALSE(h->call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A","color":"sky"},
+      {"id":"b","label":"B","color":"sky"},{"id":"c","label":"C","color":"plum"}]})")).isError);
+    return h;
+  };
+  const auto filed = [](Harness& h) {
+    return body(h.call("get_nodes", parse(R"({"nodeIds":["a","b","c"],"fields":["id","color","kind"]})")))["nodes"];
+  };
+
+  auto swap = seeded();
+  CHECK_EQ(body(swap->call("import_subgraph", parse(R"({"kinds":[{"id":"k","hue":"plum"},{"id":"j","hue":"sky"}],
+    "nodes":[{"id":"a","kind":"j"}]})")))["repaintedNodes"].asUInt64(), 2u);
+  CHECK_EQ(filed(*swap), parse(R"([{"id":"a","color":"sky","kind":"j"},{"id":"b","color":"plum","kind":"k"},
+    {"id":"c","color":"sky","kind":"j"}])"));
+
+  auto freed = seeded();
+  CHECK_EQ(body(freed->call("import_subgraph", parse(R"({"kinds":[{"id":"k","hue":"olive"},{"id":"m","hue":"sky"}],
+    "nodes":[{"id":"a","kind":"m"}]})")))["repaintedNodes"].asUInt64(), 1u);
+  CHECK_EQ(filed(*freed), parse(R"([{"id":"a","color":"sky","kind":"m"},{"id":"b","color":"olive","kind":"k"},
+    {"id":"c","color":"plum","kind":"j"}])"));
+
+  auto round = seeded();
+  Json::Value batch =
+      body(round->call("get_tree", parse(R"({"includeGuides":false,"fields":["id","label","kind"]})")))["tree"];
+  batch.removeMember("guide");
+  batch.removeMember("id");
+  batch.removeMember("title");
+  batch.removeMember("url");
+  for (Json::Value& kind : batch["kinds"])
+    if (kind["id"] == "k") kind["hue"] = "olive";
+  CHECK_EQ(body(round->call("import_subgraph", batch))["repaintedNodes"].asUInt64(), 0u);
+  CHECK_EQ(filed(*round), parse(R"([{"id":"a","color":"olive","kind":"k"},{"id":"b","color":"olive","kind":"k"},
+    {"id":"c","color":"plum","kind":"j"}])"));
+}

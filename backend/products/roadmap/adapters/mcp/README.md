@@ -553,13 +553,15 @@ and none overrides another.
   kind keeps its place and a new kind lands after the last one, in batch order. A re-sent kind
   with a new hue repaints every present node wearing its old hue, in the same frame and at the
   graft's stamp, by `recolor_kind`'s rule (`wearersOf`, used by `repaintOf`), judged against the
-  legend and nodes as they stood before the batch, so two kinds can swap hues; a node the batch
-  tombstones, or sends a `color` or `kind` for that lands a colour that differs from the one the node
-  holds, lands what the batch says, while one sent with the colour it holds — a `get_tree` round trip
-  — is repainted like any wearer (`landsOver`, the comparison the graft lands every register by). The receipt counts
-  the repainted nodes as `repaintedNodes`, present when a kind's hue changed and previewed by the
-  dry run, and a batch whose only change is a re-hue writes the row `recolor_kind` writes,
-  `RecolorKind`. The import is at most one op row — a batch that changes nothing
+  legend and nodes as they stood before the batch, so two kinds can swap hues. A node the batch
+  tombstones lands what the batch says, and so does one it files by `kind`: it takes the hue that kind
+  wears after the batch, whatever it wore before. A node sent a `color` that differs from the one it
+  holds keeps that colour, while one sent the colour it holds — a `get_tree` round trip — is repainted
+  like any wearer (`landsOver`, the comparison the graft lands every register by). The receipt counts
+  the nodes the repaint moved as `repaintedNodes`, present when a kind's hue changed and previewed by
+  the dry run. A batch whose only change is re-hueing one kind writes the row `recolor_kind` writes,
+  `RecolorKind`; a batch that re-hues several kinds writes one `RecolorKind` row too, for the first of
+  them in id order, so its row does not say what the batch did. The import is at most one op row — a batch that changes nothing
   writes none — and that row names only the batch's most salient change, in `headline()`'s order
   (a created node, a removed node, a legend change, a node's label, colour or annotation, an
   edge): an added edge beside a rename reads `renamed to N2`, two new edges read as the first of

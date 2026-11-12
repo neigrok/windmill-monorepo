@@ -13,7 +13,8 @@ namespace {
 
 // Whether a register the batch carries lands: it changes what the tree holds, an empty value included, or the tree
 // holds nothing there yet. A carried register equal to the held one is an echo, not the batch's word. graftState and
-// graftLegend land registers by this, and a re-hue leaves a node to the batch only when its colour lands by it.
+// graftLegend land registers by this, and a re-hue leaves a node the batch sends a colour for to the batch only when
+// that colour lands by it.
 template <typename Entry, typename Value>
 bool landsOver(const std::optional<Entry>& held, Value Entry::*field, const Value& sent) {
   return !held || (*held).*field != sent;
@@ -41,7 +42,6 @@ std::variant<Graft, KindRefusal> resolveKinds(const Legend& legend, Graft graft)
     node.color = *std::get<std::optional<NodeColor>>(hue);
     if (omitted != graft.omittedNodeRegisters.end()) omitted->second.erase(NodeRegister::color);
   }
-  graft.nodeKinds.clear();
   return graft;
 }
 
@@ -84,10 +84,12 @@ LegendState graftLegend(const Legend& current, const Graft& graft, const Hlc& at
 
 Repaint repaintOf(const LooseGraph& graph, const Legend& legend, const Graft& graft) {
   std::set<NodeId> leftToTheBatch(graft.tombstones.begin(), graft.tombstones.end());
+  // A node the batch files by kind lands the hue that kind wears after the batch, whatever it wore.
+  for (const auto& [node, kind] : graft.nodeKinds) leftToTheBatch.insert(node);
   for (const NodeSpec& node : graft.document.nodes) {
     const auto omitted = graft.omittedNodeRegisters.find(node.id);
     const bool carried = omitted == graft.omittedNodeRegisters.end() || !omitted->second.count(NodeRegister::color);
-    // The batch's own colour for it, sent or filed by kind, wins when it lands: one sent as held is an echo.
+    // A colour the batch sends wins when it lands: one sent as held is an echo.
     if (carried && landsOver(graph.exportNode(node.id), &NodeStateEntry::color, node.color)) leftToTheBatch.insert(node.id);
   }
   Repaint repaint;

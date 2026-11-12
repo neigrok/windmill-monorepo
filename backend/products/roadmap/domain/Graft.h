@@ -32,7 +32,8 @@ enum class KindRegister { label, description, crossBranchExempt };
 // node the graft brings back from a delete: left out, it is cleared, so a revived node opens only the
 // tree the document names. An id absent from its map
 // carried every register, and an empty value is carried like any other. `nodeKinds` names the legend
-// kind the document files a node under, until resolveKinds turns it into the node's colour.
+// kind the document files a node under; resolveKinds turns it into the node's colour and keeps it, so a
+// re-hue never repaints a node the batch filed (repaintOf).
 // `omittedPrerequisites` names the nodes the document sent without a prerequisites list.
 struct Graft {
   TreeData document;
@@ -79,8 +80,8 @@ LegendState graftLegend(const Legend& legend, const Graft& graft, const Hlc& at)
 
 // What a graft's re-hued kinds repaint, judged against the legend and graph as they stood before the batch by
 // recolor_kind's rule (wearersOf), so a swap swaps: each node wearing a re-hued kind's old hue takes its new hue, but
-// for a node the batch tombstones or lands its own colour for — a colour, sent or filed by kind, that differs from the
-// one the node holds. `rehued` lists the held kinds whose hue the document changes.
+// for a node the batch tombstones, files by kind (`nodeKinds`), or sends a colour that differs from the one it holds.
+// `rehued` lists the held kinds whose hue the document changes.
 struct Repaint {
   std::vector<KindId> rehued;
   std::map<NodeId, NodeColor> nodes;
