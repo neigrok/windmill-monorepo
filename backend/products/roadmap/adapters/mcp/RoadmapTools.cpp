@@ -1617,7 +1617,8 @@ ToolResult describeTree(TreeRegistry& registry, const TreeId& tree, const Json::
   const Json::Value& guide = args["guide"];
   if (title.isNull() && guide.isNull())
     return ToolResult::failure("nothing to set — pass at least one of \"title\", \"guide\".");
-  if (std::optional<std::string> bad = optionalString(title, "title")) return ToolResult::failure(*bad);
+  // A title is judged by rename's own rule (TreeRegistry::titleFrom), so the tool checks only that one is a string.
+  if (!title.isNull() && !title.isString()) return ToolResult::failure(*requireString(title, "title"));
   if (!guide.isNull() && !guide.isString())
     return ToolResult::failure(*requireString(guide, "guide") + ". A guide is plain text of at most " +
                                std::to_string(kMaxGuideChars) + " characters; \"\" clears it.");

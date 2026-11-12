@@ -430,8 +430,10 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     tools.push_back(tool("describe_tree", Access::write,
         "Rename a roadmap with `title`, set its guide with `guide`, or both: send at least one; each is set "
         "only when sent, and the two together land in one step or not at all. The title is trimmed and "
-        "cut to 200 characters; a blank one is refused, and one equal to the name the tree has writes "
-        "nothing and answers `unchanged: true`. The guide is one plain-text note on what the tree is and "
+        "cut to 200 characters; a blank one is refused, and one equal to the name the tree has is not "
+        "written and answers `unchanged: true`. A guide is written whenever it is sent, even as the tree "
+        "holds it, which is how a fork's owner makes an inherited guide theirs. The guide is one plain-text "
+        "note on what the tree is and "
         "how to work it, at most 5000 characters counted as Unicode code points; it replaces the guide the "
         "tree has, and \"\" clears it. get_tree carries it on every page to everyone who reads the tree, "
         "and to you among the `guides` of your trees below this one. Only the owner may set either.",

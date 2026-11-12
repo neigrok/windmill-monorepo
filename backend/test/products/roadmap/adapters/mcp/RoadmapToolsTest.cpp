@@ -5726,3 +5726,38 @@ TEST(mcp_describe_tree_renames_the_tree_and_sets_its_guide_in_one_step) {
   CHECK_EQ(lines[0].outcome, std::string("ok"));
   CHECK_EQ(writeCompletionJson(lines[0]).find("compass"), std::string::npos);
 }
+
+// Every title refusal is worded once, in TreeRegistry::sentenceOf, on both doors.
+TEST(mcp_describe_tree_refuses_a_title_in_the_words_rest_uses) {
+  Harness h;
+  CHECK_EQ(message(h.call("describe_tree", with("title", "cut \xE2\x82"))),
+           "describe_tree: " + std::string(TreeRegistry::sentenceOf(TreeRegistry::Renaming::malformedTitle)));
+  CHECK_EQ(message(h.call("describe_tree", with("title", " "))),
+           "describe_tree: " + std::string(TreeRegistry::sentenceOf(TreeRegistry::Renaming::blankTitle)));
+}
+
+// A guide is written whenever it is sent, even as the tree holds it: that is how a fork's owner makes an inherited
+// guide theirs. A title equal to the one the tree has is not written.
+TEST(mcp_describe_tree_writes_a_guide_sent_as_held_so_a_forks_owner_makes_it_theirs) {
+  Harness h;
+  ForkService forks{h.registry, h.trees, h.tokens, h.clock};
+  h.trees.byId["t"].visibility = Visibility::public_;
+  CHECK_FALSE(h.call("describe_tree", with("guide", "Rig first, then sail.")).isError);
+  const UserId stranger = uid("stranger");
+  REQUIRE(forks.fork(TreeId{"t"}, "t_theirs", "", stranger).outcome == ForkService::Outcome::forked);
+  const auto call = [&](const char* tool, Json::Value args) {
+    args["treeId"] = "t_theirs";
+    return body(h.tools.callTool(tool, args, ToolCaller{stranger, ToolScope::everything()}));
+  };
+  const Json::Value before = call("get_tree", parse(R"({"includeGuides":false})"));
+  CHECK_EQ(before["tree"]["guide"], parse(R"({"text":"Rig first, then sail.","yours":false})"));
+  const int seq = before["seq"].asInt();
+
+  CHECK_EQ(call("describe_tree", with("guide", "Rig first, then sail.")),
+           parse("{\"applied\":true,\"seq\":" + std::to_string(seq + 1) + "}"));
+  CHECK_EQ(call("get_tree", parse(R"({"includeGuides":false})"))["tree"]["guide"],
+           parse(R"({"text":"Rig first, then sail.","yours":true})"));
+  const std::string title = before["tree"]["title"].asString();
+  CHECK_EQ(call("describe_tree", with("title", title.c_str())),
+           parse("{\"applied\":true,\"seq\":" + std::to_string(seq + 1) + ",\"unchanged\":true}"));
+}
