@@ -9,14 +9,26 @@ OpenedTree::OpenedTree(const TreeData& tree, const Progress& marks)
     : title(tree.title), total(static_cast<int>(tree.nodes.size())) {
   for (const NodeSpec& node : tree.nodes) {
     const bool nodeMarked = marks.completed.count(node.id) > 0;
+    const auto mark = marks.marks.find(node.id);
+    const bool stamped = nodeMarked && mark != marks.marks.end() && mark->second.at.isSet();
+    const LatestMark latestOfNode = stamped ? LatestMark{mark->second.at, mark->second.markedAt} : LatestMark{};
     if (node.opens.empty()) {
       if (nodeMarked) ++marked;
+      latest.join(latestOfNode);
       continue;
     }
     Pointers& opening = pointers[node.opens];
     ++opening.nodes;
     if (nodeMarked) ++opening.marked;
+    opening.latest.join(latestOfNode);
   }
+}
+
+std::map<NodeId, TreeId> pointersOf(const TreeData& tree) {
+  std::map<NodeId, TreeId> pointers;
+  for (const NodeSpec& node : tree.nodes)
+    if (!node.opens.empty()) pointers.emplace(node.id, node.opens);
+  return pointers;
 }
 
 std::set<TreeId> treesOpenedBy(const TreeData& tree) {
@@ -42,16 +54,20 @@ std::map<NodeId, TreeId> pointersSetSince(const std::map<NodeId, TreeId>& before
 }
 
 OpenedTrees::OpenedTrees(std::map<TreeId, OpenedTree> standing) : standing_(std::move(standing)) {
-  // `pending_` counts a tree's nodes that are not complete; a tree is complete when it reaches zero.
+  // `pending_` counts a tree's nodes that are not complete; a tree is complete when it reaches zero. `latest` is the
+  // latest mark among what has completed of a tree so far: its marks that count, then each tree it follows.
   std::vector<TreeId> ready;
+  std::map<TreeId, LatestMark> latest;
   for (const auto& [id, tree] : standing_) {
     int pending = tree.total - tree.marked;
+    LatestMark& latestOfTree = latest.emplace(id, tree.latest).first->second;
     for (const auto& [target, opening] : tree.pointers) {
       if (standing_.count(target)) {
         openers_[target].push_back(id);
         continue;
       }
       pending -= opening.marked;
+      latestOfTree.join(opening.latest);
     }
     pending_[id] = pending;
     if (tree.total > 0 && pending == 0) ready.push_back(id);
@@ -60,11 +76,12 @@ OpenedTrees::OpenedTrees(std::map<TreeId, OpenedTree> standing) : standing_(std:
   while (!ready.empty()) {
     const TreeId finished = ready.back();
     ready.pop_back();
-    complete_.insert(finished);
+    const LatestMark completedAt = complete_.emplace(finished, latest.at(finished)).first->second;
     const auto openers = openers_.find(finished);
     if (openers == openers_.end()) continue;
     for (const TreeId& opener : openers->second) {
       ++walked_;
+      latest.at(opener).join(completedAt);
       int& pending = pending_.at(opener);
       pending -= standing_.at(opener).pointers.at(finished).nodes;
       if (pending == 0) ready.push_back(opener);
@@ -72,15 +89,25 @@ OpenedTrees::OpenedTrees(std::map<TreeId, OpenedTree> standing) : standing_(std:
   }
 }
 
-Progress OpenedTrees::followed(const TreeData& tree, const Progress& marks) const {
+std::set<NodeId> OpenedTrees::following(const std::map<NodeId, TreeId>& pointers) const {
+  std::set<NodeId> following;
+  for (const auto& [node, opened] : pointers)
+    if (standing_.count(opened)) following.insert(node);
+  return following;
+}
+
+Progress OpenedTrees::followed(const std::map<NodeId, TreeId>& pointers, const Progress& marks) const {
   Progress followed;
   followed.completed = marks.completed;
-  for (const NodeSpec& node : tree.nodes) {
-    if (node.opens.empty() || !standing_.count(node.opens)) continue;
-    followed.completed.erase(node.id);
-    if (complete_.count(node.opens)) followed.completed.insert(node.id);
+  for (const NodeId& node : following(pointers)) {
+    followed.completed.erase(node);
+    if (complete_.count(pointers.at(node))) followed.completed.insert(node);
   }
   return followed;
+}
+
+Progress OpenedTrees::followed(const TreeData& tree, const Progress& marks) const {
+  return followed(pointersOf(tree), marks);
 }
 
 std::map<NodeId, Opening> OpenedTrees::openings(const TreeData& tree) const {
@@ -125,6 +152,12 @@ WaysBack OpenedTrees::waysBackTo(const TreeId& tree) const {
   return back;
 }
 
+LatestMark OpenedTrees::completedAt(const TreeId& tree) const {
+  const auto complete = complete_.find(tree);
+  if (complete == complete_.end()) return {};
+  return complete->second;
+}
+
 std::set<TreeId> OpenedTrees::leadingBackTo(const TreeId& tree) const {
   std::set<TreeId> leading;
   for (const auto& [led, way] : waysBackTo(tree).ways) leading.insert(led);
@@ -153,6 +186,31 @@ PointerDiagnostics OpenedTrees::diagnose(const TreeId& tree, const std::map<Node
     diagnostics.treeLoops.push_back(std::move(loop));
   }
   return diagnostics;
+}
+
+Progress readerView(const Progress& marks, const std::map<NodeId, StampedPointer>& pointers,
+                    const std::optional<OpenedTrees>& opened) {
+  std::map<NodeId, TreeId> targets;
+  for (const auto& [node, pointer] : pointers) targets.emplace(node, pointer.tree);
+  std::set<NodeId> following;
+  if (opened) following = opened->following(targets);
+  else for (const auto& [node, tree] : targets) following.insert(node);
+  Progress shown;
+  for (const auto& [node, mark] : marks.marks)
+    if (!following.count(node)) shown.record(node, mark);
+  if (!opened) return shown;
+  for (const NodeId& node : opened->followed(targets, Progress{}).completed) {
+    const auto stored = marks.marks.find(node);
+    if (stored != marks.marks.end() && stored->second.status == ProgressStatus::complete && stored->second.at.isSet()) {
+      shown.record(node, ProgressMark{ProgressStatus::complete, stored->second.at, stored->second.markedAt});
+      continue;
+    }
+    const StampedPointer& pointer = pointers.at(node);
+    LatestMark at = opened->completedAt(pointer.tree);
+    at.join(LatestMark{pointer.setAt, pointer.setAt.physicalMs});
+    shown.record(node, ProgressMark{ProgressStatus::complete, at.at, at.markedAt});
+  }
+  return shown;
 }
 
 }

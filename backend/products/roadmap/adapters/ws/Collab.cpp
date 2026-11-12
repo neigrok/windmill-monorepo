@@ -8,6 +8,7 @@
 #include "products/roadmap/application/TreeRoom.h"
 #include "products/roadmap/domain/Command.h"
 #include "products/roadmap/domain/Access.h"
+#include "products/roadmap/domain/OpenedTrees.h"
 #include "platform/domain/Auth.h"
 
 #include <optional>
@@ -355,7 +356,8 @@ void Collab::subgraphFrame(const drogon::WebSocketConnectionPtr& conn, const std
 // sessions. A frame is REFUSED whole — one bad mark, one skewed stamp or a failed read gate turns
 // the whole frame back before anything is written — but it APPLIES per mark: each is an independent
 // LWW register write, so a frame can land in part, and only the marks that landed are echoed.
-// The client mints the stamp; the server records the receipt instant.
+// The client mints the stamp; the server records the receipt instant. The tree's writer's mark on a
+// node that follows the tree it opens is not recorded: the ack names it under `refused`.
 void Collab::progress(const drogon::WebSocketConnectionPtr& conn, const std::string& treeId,
                       const Json::Value& frame) {
   const Principal& principal = principalOf(conn);
@@ -398,6 +400,7 @@ void Collab::progress(const drogon::WebSocketConnectionPtr& conn, const std::str
     writes.push_back(ProgressWrite{node, *status, {}, *at});
   }
 
+  std::map<NodeId, TreeId> pointers;
   {
     std::lock_guard<std::mutex> lock(registry_.strandFor(TreeId{treeId}));
     try {
@@ -407,25 +410,32 @@ void Collab::progress(const drogon::WebSocketConnectionPtr& conn, const std::str
       TreeRoom* room = registry_.open(TreeId{treeId});
       if (!room) return refuse(kNoSuchTree, "no such tree \"" + treeId + "\"");
       for (ProgressWrite& write : writes) write.prerequisites = room->prerequisitesOf(write.node);
+      pointers = room->pointersFor(principal.user);
     } catch (const std::exception& error) {
       reportCurrentWriteFailure(error);
       return;  // an infrastructure failure — its detail is not the socket's to carry
     }
   }
 
-  const std::vector<ProgressOutcome> outcomes =
-      progress_.setStatuses(TreeId{treeId}, principal.user, writes, nowMs);
-
+  // Read and written OUTSIDE the strand — a room's lock is never held across a database call.
+  const ProgressReceipt receipt = progress_.mark(TreeId{treeId}, pointers, principal.user, writes, nowMs);
   // Only what landed is echoed; a frame where nothing landed is still acked.
-  Progress recorded;
-  for (std::size_t i = 0; i < writes.size(); ++i)
-    if (outcomes[i].applied) recorded.record(writes[i].node, ProgressMark{writes[i].status, writes[i].at, nowMs});
-  bus_.broadcastProgress(TreeId{treeId}, principal.user, recorded);
+  bus_.broadcastProgress(TreeId{treeId}, principal.user, receipt.recorded);
 
+  Json::Value refused(Json::arrayValue);
+  for (std::size_t i = 0; i < writes.size(); ++i) {
+    if (!receipt.outcomes[i].refused) continue;
+    Json::Value mark(Json::objectValue);
+    mark["node"] = writes[i].node.str();
+    mark["code"] = kOpensATree;
+    refused.append(mark);
+  }
   Json::Value ack(Json::objectValue);
   ack["t"] = "progressAck";
   ack["treeId"] = treeId;
   ack["frameId"] = frameId;
+  if (!refused.empty()) ack["refused"] = refused;
+  if (receipt.cameToARefusal()) finishCurrentWriteRefusal(kOpensATree);
   send(conn, ack);
 }
 

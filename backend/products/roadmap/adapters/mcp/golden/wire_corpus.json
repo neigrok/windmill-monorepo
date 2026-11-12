@@ -1,5 +1,5 @@
 {
-  "schemaVersion" : 22,
+  "schemaVersion" : 23,
   "steps" : 
   [
     {
@@ -830,6 +830,208 @@
         "content" : 
         [
           {
+            "text" : 
+            {
+              "results" : 
+              [
+                {
+                  "nodeId" : "docs",
+                  "refused" : "\"docs\" opens a tree: it is complete when that tree is and takes no mark of its own \u2014 mark the steps of the tree it opens"
+                },
+                {
+                  "acknowledged" : true,
+                  "nodeId" : "launch",
+                  "prerequisitesMet" : false,
+                  "status" : "complete"
+                },
+                {
+                  "nodeId" : "render",
+                  "prerequisitesMet" : true,
+                  "status" : "complete"
+                }
+              ]
+            },
+            "type" : "text"
+          }
+        ],
+        "isError" : false,
+        "structuredContent" : null
+      },
+      "step" : 24,
+      "tool" : "set_progress"
+    },
+    {
+      "result" : 
+      {
+        "content" : 
+        [
+          {
+            "text" : 
+            {
+              "diagnosticsClean" : true,
+              "edges" : 0,
+              "graphApplied" : true,
+              "imported" : true,
+              "introducedDiagnostics" : [],
+              "keptEdgeCount" : 0,
+              "keptEdges" : [],
+              "kindCollisions" : [],
+              "kinds" : 0,
+              "newKinds" : 0,
+              "newNodes" : 0,
+              "nodeCollisions" : [],
+              "nodes" : 0,
+              "prerequisiteMode" : "merge",
+              "progress" : 
+              [
+                {
+                  "nodeId" : "docs",
+                  "refused" : "\"docs\" opens a tree: it is complete when that tree is and takes no mark of its own \u2014 mark the steps of the tree it opens"
+                },
+                {
+                  "acknowledged" : true,
+                  "nodeId" : "launch",
+                  "prerequisitesMet" : false,
+                  "status" : "complete",
+                  "unchanged" : true
+                },
+                {
+                  "nodeId" : "sync",
+                  "prerequisitesMet" : true,
+                  "status" : "none"
+                }
+              ],
+              "progressApplied" : false,
+              "progressError" : "Some requested progress marks nodes that open a tree, which take no mark of their own \u2014 each is complete when the tree it opens is; those ids are listed in progressRefused.",
+              "progressRefused" : 
+              [
+                "docs"
+              ],
+              "seq" : 13,
+              "tombstoned" : 
+              {
+                "edges" : 0,
+                "nodes" : 0
+              },
+              "unchanged" : true
+            },
+            "type" : "text"
+          }
+        ],
+        "isError" : false,
+        "structuredContent" : null
+      },
+      "step" : 25,
+      "tool" : "import_subgraph"
+    },
+    {
+      "result" : 
+      {
+        "content" : 
+        [
+          {
+            "text" : 
+            {
+              "applied" : true,
+              "changedNodeIds" : 
+              [
+                "render"
+              ],
+              "diagnosticsClean" : true,
+              "dryRun" : false,
+              "introducedDiagnostics" : [],
+              "progress" : 
+              [
+                {
+                  "nodeId" : "docs",
+                  "refused" : "\"docs\" opens a tree: it is complete when that tree is and takes no mark of its own \u2014 mark the steps of the tree it opens"
+                },
+                {
+                  "nodeId" : "sync",
+                  "prerequisitesMet" : true,
+                  "status" : "complete"
+                }
+              ],
+              "progressApplied" : false,
+              "progressError" : "Some requested progress marks nodes that open a tree, which take no mark of their own \u2014 each is complete when the tree it opens is; those ids are listed in progressRefused.",
+              "progressRefused" : 
+              [
+                "docs"
+              ],
+              "seq" : 14,
+              "treeId" : "t",
+              "unchangedNodeIds" : 
+              [
+                "docs",
+                "sync"
+              ]
+            },
+            "type" : "text"
+          }
+        ],
+        "isError" : false,
+        "structuredContent" : 
+        {
+          "applied" : true,
+          "changedNodeIds" : 
+          [
+            "render"
+          ],
+          "diagnosticsClean" : true,
+          "dryRun" : false,
+          "introducedDiagnostics" : [],
+          "progress" : 
+          [
+            {
+              "nodeId" : "docs",
+              "refused" : "\"docs\" opens a tree: it is complete when that tree is and takes no mark of its own \u2014 mark the steps of the tree it opens"
+            },
+            {
+              "nodeId" : "sync",
+              "prerequisitesMet" : true,
+              "status" : "complete"
+            }
+          ],
+          "progressApplied" : false,
+          "progressError" : "Some requested progress marks nodes that open a tree, which take no mark of their own \u2014 each is complete when the tree it opens is; those ids are listed in progressRefused.",
+          "progressRefused" : 
+          [
+            "docs"
+          ],
+          "seq" : 14,
+          "treeId" : "t",
+          "unchangedNodeIds" : 
+          [
+            "docs",
+            "sync"
+          ]
+        }
+      },
+      "step" : 26,
+      "tool" : "update_nodes"
+    },
+    {
+      "result" : 
+      {
+        "content" : 
+        [
+          {
+            "text" : "set_progress: \"docs\" opens a tree: it is complete when that tree is and takes no mark of its own \u2014 mark the steps of the tree it opens",
+            "type" : "text"
+          }
+        ],
+        "isError" : true,
+        "structuredContent" : null
+      },
+      "step" : 27,
+      "tool" : "set_progress"
+    },
+    {
+      "result" : 
+      {
+        "content" : 
+        [
+          {
             "text" : "set_progress: no node in this tree is named no-such-node. Call get_tree with fields [\"id\",\"label\"] to list the ids this tree has.",
             "type" : "text"
           }
@@ -837,7 +1039,7 @@
         "isError" : true,
         "structuredContent" : null
       },
-      "step" : 24,
+      "step" : 28,
       "tool" : "set_progress"
     },
     {
@@ -853,7 +1055,7 @@
         "isError" : true,
         "structuredContent" : null
       },
-      "step" : 25,
+      "step" : 29,
       "tool" : "annotate_node"
     },
     {
@@ -869,7 +1071,7 @@
         "isError" : true,
         "structuredContent" : null
       },
-      "step" : 26,
+      "step" : 30,
       "tool" : "create_node"
     }
   ]

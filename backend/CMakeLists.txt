@@ -117,6 +117,7 @@ add_library(windmill_roadmap
   products/roadmap/domain/Reminders.cpp
   products/roadmap/application/TreeRoom.cpp
   products/roadmap/application/RoomRegistry.cpp
+  products/roadmap/application/OwnerProgress.cpp
   products/roadmap/application/ProgressService.cpp
   products/roadmap/application/ActivityFeed.cpp
   products/roadmap/application/ForkService.cpp
@@ -291,6 +292,7 @@ add_executable(windmill_domain_tests
   test/products/roadmap/application/TreeRoomTest.cpp
   test/products/roadmap/application/RoomRegistryTest.cpp
   test/products/roadmap/application/ProgressServiceTest.cpp
+  test/products/roadmap/application/OwnerProgressTest.cpp
   test/products/roadmap/application/ActivityFeedTest.cpp
   test/products/roadmap/application/ScopedToolHostTest.cpp
   test/products/roadmap/application/TendingServiceTest.cpp

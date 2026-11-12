@@ -9,11 +9,39 @@ using namespace wm::fake;
 namespace {
 const std::vector<NodeId> noPrereqs{};
 const std::vector<NodeId> aPrereqs{nid("r")};
+
+// Main is `owner`'s: `idea` opens Sub and `lost` a tree that is not there; `next` waits on `idea`. Sub is one step, `s`.
+// `pointers` is what Main's room hands its writer; a caller who cannot write Main is handed none.
+struct Marking {
+  FakeProgressRepository repo;
+  FakeTreeRepository trees{repo};
+  ProgressService service{repo, trees};
+  UserId owner = uid("owner");
+  std::map<NodeId, TreeId> pointers{{nid("idea"), tid("sub")}, {nid("lost"), tid("gone")}};
+
+  Marking() {
+    LooseGraph sub;
+    sub.createNode(nid("s"), "S", "", NodeColor::sky, std::nullopt, at(1));
+    trees.byId["sub"] = StoredTree{sub.exportState(), LegendState{}, {"Sub", {}}, 0, owner};
+  }
+
+  ProgressWrite write(const char* node, ProgressStatus status, std::uint64_t ms) const {
+    const std::vector<NodeId> prerequisites = std::string(node) == "next" ? std::vector<NodeId>{nid("idea")} : std::vector<NodeId>{};
+    return ProgressWrite{nid(node), status, prerequisites, at(ms), false};
+  }
+
+  std::map<NodeId, ProgressStatus> stored(const UserId& user) {
+    std::map<NodeId, ProgressStatus> statuses;
+    for (const auto& [node, mark] : repo.load(tid("main"), user).marks) statuses.emplace(node, mark.status);
+    return statuses;
+  }
+};
 }
 
 TEST(progress_records_complete_but_flags_unmet_prerequisites) {
   FakeProgressRepository repo;
-  ProgressService service(repo);
+  FakeTreeRepository trees;
+  ProgressService service(repo, trees);
 
   ProgressOutcome outcome = service.setStatus(aPrereqs, tid(), uid(), nid("a"), ProgressStatus::complete, false, at(1), 1);
   CHECK_EQ(outcome.status, ProgressStatus::complete);
@@ -25,7 +53,8 @@ TEST(progress_records_complete_but_flags_unmet_prerequisites) {
 
 TEST(progress_complete_with_met_prerequisites) {
   FakeProgressRepository repo;
-  ProgressService service(repo);
+  FakeTreeRepository trees;
+  ProgressService service(repo, trees);
 
   service.setStatus(noPrereqs, tid(), uid(), nid("r"), ProgressStatus::complete, false, at(1), 1);
   ProgressOutcome outcome = service.setStatus(aPrereqs, tid(), uid(), nid("a"), ProgressStatus::complete, false, at(2), 2);
@@ -34,7 +63,8 @@ TEST(progress_complete_with_met_prerequisites) {
 
 TEST(progress_none_clears_the_entry) {
   FakeProgressRepository repo;
-  ProgressService service(repo);
+  FakeTreeRepository trees;
+  ProgressService service(repo, trees);
 
   service.setStatus(aPrereqs, tid(), uid(), nid("a"), ProgressStatus::complete, false, at(1), 1);
   CHECK_EQ(service.progressOf(tid(), uid()).completed.count(nid("a")), 1u);
@@ -47,7 +77,8 @@ TEST(progress_none_clears_the_entry) {
 
 TEST(progress_clear_persists_as_a_tombstone_row) {
   FakeProgressRepository repo;
-  ProgressService service(repo);
+  FakeTreeRepository trees;
+  ProgressService service(repo, trees);
 
   service.setStatus(aPrereqs, tid(), uid(), nid("a"), ProgressStatus::complete, false, at(1), 1);
   service.setStatus(aPrereqs, tid(), uid(), nid("a"), ProgressStatus::none, false, at(2), 2);
@@ -66,7 +97,8 @@ TEST(progress_clear_persists_as_a_tombstone_row) {
 
 TEST(progress_stale_mark_cannot_resurrect_a_cleared_node) {
   FakeProgressRepository repo;
-  ProgressService service(repo);
+  FakeTreeRepository trees;
+  ProgressService service(repo, trees);
 
   service.setStatus(aPrereqs, tid(), uid(), nid("a"), ProgressStatus::complete, false, at(1), 1);
   service.setStatus(aPrereqs, tid(), uid(), nid("a"), ProgressStatus::none, false, at(3), 3);
@@ -81,7 +113,8 @@ TEST(progress_stale_mark_cannot_resurrect_a_cleared_node) {
 // the node carries its own word or none, and a stale write cannot smuggle one in.
 TEST(progress_keeps_the_out_of_order_word_on_the_mark_until_the_next_mark_replaces_it) {
   FakeProgressRepository repo;
-  ProgressService service(repo);
+  FakeTreeRepository trees;
+  ProgressService service(repo, trees);
 
   ProgressOutcome outcome = service.setStatus(aPrereqs, tid(), uid(), nid("a"), ProgressStatus::complete, true, at(1), 1);
   CHECK_EQ(outcome.status, ProgressStatus::complete);
@@ -104,7 +137,8 @@ TEST(progress_keeps_the_out_of_order_word_on_the_mark_until_the_next_mark_replac
 // still written, so its newer stamp lands; a node never marked holds `none`, and a changed word is a change.
 TEST(progress_a_mark_already_held_says_unchanged_and_still_lands_its_stamp) {
   FakeProgressRepository repo;
-  ProgressService service(repo);
+  FakeTreeRepository trees;
+  ProgressService service(repo, trees);
   service.setStatuses(tid(), uid(), {ProgressWrite{nid("a"), ProgressStatus::complete, noPrereqs, at(1), false}}, 1);
 
   const std::vector<ProgressOutcome> outcomes = service.setStatuses(
@@ -124,7 +158,8 @@ TEST(progress_a_mark_already_held_says_unchanged_and_still_lands_its_stamp) {
 
 TEST(progress_batch_carries_the_out_of_order_word_per_write) {
   FakeProgressRepository repo;
-  ProgressService service(repo);
+  FakeTreeRepository trees;
+  ProgressService service(repo, trees);
 
   std::vector<ProgressOutcome> outcomes = service.setStatuses(
       tid(), uid(),
@@ -140,4 +175,122 @@ TEST(progress_batch_carries_the_out_of_order_word_per_write) {
   Progress progress = service.progressOf(tid(), uid());
   CHECK(progress.marks.at(nid("a")).outOfOrder);
   CHECK_FALSE(progress.marks.at(nid("r")).outOfOrder);
+}
+
+// The writer's node that opens a standing tree follows it: neither a completion nor a clear of it is written.
+TEST(a_writers_mark_on_a_node_that_follows_its_tree_is_refused_and_the_other_marks_are_recorded) {
+  Marking m;
+
+  const ProgressReceipt receipt = m.service.mark(
+      tid("main"), m.pointers, m.owner,
+      {m.write("idea", ProgressStatus::complete, 10), m.write("plain", ProgressStatus::complete, 11),
+       m.write("idea", ProgressStatus::none, 12), m.write("ghost", ProgressStatus::none, 13)},
+      20);
+
+  CHECK(receipt.outcomes ==
+        (std::vector<ProgressOutcome>{{.status = ProgressStatus::none, .prerequisitesMet = false, .applied = false, .refused = true},
+                                      {ProgressStatus::complete, true, true, false},
+                                      {.status = ProgressStatus::none, .prerequisitesMet = false, .applied = false, .refused = true},
+                                      {ProgressStatus::none, true, true, false, true}}));
+  CHECK(m.stored(m.owner) == (std::map<NodeId, ProgressStatus>{{nid("ghost"), ProgressStatus::none},
+                                                               {nid("plain"), ProgressStatus::complete}}));
+  REQUIRE_EQ(receipt.recorded.marks.size(), 2u);
+  CHECK_EQ(receipt.recorded.marks.at(nid("plain")).at, at(11));
+  CHECK_EQ(receipt.recorded.marks.at(nid("plain")).markedAt, std::uint64_t{20});
+  CHECK(receipt.recorded.completed == std::set<NodeId>{nid("plain")});
+  CHECK_EQ(m.trees.openedReads, (std::vector<std::set<TreeId>>{{tid("gone"), tid("sub")}}));
+}
+
+TEST(marks_that_are_all_refused_leave_the_stored_marks_as_they_were) {
+  Marking m;
+  m.repo.setStatus(tid("main"), m.owner, nid("idea"), ProgressStatus::complete, false, at(1), 1);
+  const std::map<std::string, FakeProgressRepository::Entry> before = m.repo.byKey;
+
+  const ProgressReceipt receipt = m.service.mark(
+      tid("main"), m.pointers, m.owner, {m.write("idea", ProgressStatus::none, 10), m.write("idea", ProgressStatus::complete, 11)}, 20);
+
+  CHECK(receipt.outcomes == (std::vector<ProgressOutcome>{{.status = ProgressStatus::none, .prerequisitesMet = false, .applied = false, .refused = true},
+                                                          {.status = ProgressStatus::none, .prerequisitesMet = false, .applied = false, .refused = true}}));
+  CHECK(receipt.recorded.marks.empty());
+  CHECK(m.repo.byKey == before);
+}
+
+// A step behind such a node waits on the opened tree: a mark the node holds does not meet it, and the tree's completion does.
+TEST(an_advisory_for_the_trees_writer_reads_the_followed_completed_set) {
+  Marking m;
+  m.repo.setStatus(tid("main"), m.owner, nid("idea"), ProgressStatus::complete, false, at(1), 1);
+
+  const ProgressReceipt open = m.service.mark(tid("main"), m.pointers, m.owner, {m.write("next", ProgressStatus::complete, 10)}, 20);
+  m.repo.setStatus(tid("main"), m.owner, nid("idea"), ProgressStatus::none, false, at(11), 11);
+  m.repo.setStatus(tid("sub"), m.owner, nid("s"), ProgressStatus::complete, false, at(12), 12);
+  const ProgressReceipt complete = m.service.mark(tid("main"), m.pointers, m.owner, {m.write("next", ProgressStatus::complete, 13)}, 20);
+
+  CHECK(open.outcomes == (std::vector<ProgressOutcome>{{ProgressStatus::complete, false, true, false}}));
+  CHECK(complete.outcomes == (std::vector<ProgressOutcome>{{ProgressStatus::complete, true, true, false, true}}));
+}
+
+// A caller who cannot write the tree is handed no pointer, as is anyone marking a tree that holds none.
+TEST(marks_handed_no_pointer_are_all_ordinary_judged_on_the_callers_own_marks_and_nothing_is_read) {
+  Marking m;
+  m.repo.setStatus(tid("sub"), m.owner, nid("s"), ProgressStatus::complete, false, at(1), 1);
+  const UserId reader = uid("reader");
+
+  const ProgressReceipt unmet = m.service.mark(tid("main"), {}, reader, {m.write("next", ProgressStatus::complete, 10)}, 20);
+  const ProgressReceipt met = m.service.mark(
+      tid("main"), {}, reader, {m.write("next", ProgressStatus::complete, 11), m.write("idea", ProgressStatus::complete, 12)}, 20);
+  const ProgressReceipt cleared = m.service.mark(tid("main"), {}, reader, {m.write("idea", ProgressStatus::none, 13)}, 20);
+
+  CHECK(unmet.outcomes == (std::vector<ProgressOutcome>{{ProgressStatus::complete, false, true, false}}));
+  CHECK(met.outcomes == (std::vector<ProgressOutcome>{{ProgressStatus::complete, true, true, false, true},
+                                                      {ProgressStatus::complete, true, true, false}}));
+  CHECK(cleared.outcomes == (std::vector<ProgressOutcome>{{ProgressStatus::none, true, true, false}}));
+  CHECK(m.stored(reader) == (std::map<NodeId, ProgressStatus>{{nid("idea"), ProgressStatus::none},
+                                                              {nid("next"), ProgressStatus::complete}}));
+  CHECK(m.trees.openedReads.empty());
+}
+
+TEST(a_call_with_no_mark_to_judge_reads_and_writes_nothing) {
+  Marking m;
+
+  const ProgressReceipt receipt = m.service.mark(tid("main"), m.pointers, m.owner, {}, 20);
+
+  CHECK(receipt.outcomes.empty());
+  CHECK(receipt.recorded.marks.empty());
+  CHECK_FALSE(receipt.cameToARefusal());
+  CHECK(m.trees.openedReads.empty());
+  CHECK(m.repo.byKey.empty());
+}
+
+// What the write line says is read off what was recorded: a mark that lost to a later stamp recorded nothing either.
+TEST(a_receipt_comes_to_a_refusal_when_no_mark_was_recorded_and_one_was_refused) {
+  Marking m;
+  m.repo.setStatus(tid("main"), m.owner, nid("plain"), ProgressStatus::complete, false, at(100), 100);
+
+  const ProgressReceipt refusedAndLost = m.service.mark(
+      tid("main"), m.pointers, m.owner, {m.write("idea", ProgressStatus::complete, 10), m.write("plain", ProgressStatus::none, 11)}, 20);
+  const ProgressReceipt lost = m.service.mark(tid("main"), m.pointers, m.owner, {m.write("plain", ProgressStatus::none, 12)}, 20);
+  const ProgressReceipt refusedAndRecorded = m.service.mark(
+      tid("main"), m.pointers, m.owner, {m.write("idea", ProgressStatus::complete, 13), m.write("next", ProgressStatus::none, 14)}, 20);
+
+  CHECK(refusedAndLost.outcomes ==
+        (std::vector<ProgressOutcome>{{.status = ProgressStatus::none, .prerequisitesMet = false, .applied = false, .refused = true}, {ProgressStatus::none, true, false, false}}));
+  CHECK(refusedAndLost.cameToARefusal());
+  CHECK_FALSE(lost.cameToARefusal());
+  CHECK_FALSE(refusedAndRecorded.cameToARefusal());
+  CHECK(m.stored(m.owner) == (std::map<NodeId, ProgressStatus>{{nid("next"), ProgressStatus::none},
+                                                               {nid("plain"), ProgressStatus::complete}}));
+}
+
+TEST(a_mark_on_a_node_whose_pointer_is_not_valid_is_recorded_for_the_trees_writer) {
+  Marking m;
+  m.trees.byId["gone"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Theirs", {}}, 0, uid("someone-else")};
+
+  const ProgressReceipt theirs = m.service.mark(tid("main"), m.pointers, m.owner, {m.write("lost", ProgressStatus::complete, 10)}, 20);
+  m.trees.softDelete(tid("sub"));
+  const ProgressReceipt deleted = m.service.mark(tid("main"), m.pointers, m.owner, {m.write("idea", ProgressStatus::complete, 11)}, 20);
+
+  CHECK(theirs.outcomes == (std::vector<ProgressOutcome>{{ProgressStatus::complete, true, true, false}}));
+  CHECK(deleted.outcomes == (std::vector<ProgressOutcome>{{ProgressStatus::complete, true, true, false}}));
+  CHECK(m.stored(m.owner) == (std::map<NodeId, ProgressStatus>{{nid("idea"), ProgressStatus::complete},
+                                                               {nid("lost"), ProgressStatus::complete}}));
 }

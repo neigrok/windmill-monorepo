@@ -5,7 +5,10 @@
 #include "platform/adapters/http/PageShell.h"
 #include "products/roadmap/adapters/json/TreeJson.h"
 
+#include <trantor/utils/Logger.h>
+
 #include <charconv>
+#include <map>
 #include <optional>
 #include <string>
 #include <system_error>
@@ -13,27 +16,47 @@
 
 namespace wm {
 
-GalleryApi::GalleryApi(std::shared_ptr<TreeRepository> trees, std::shared_ptr<ProgressRepository> progress,
+GalleryApi::GalleryApi(std::shared_ptr<TreeRepository> trees, std::shared_ptr<OwnerProgress> progress,
                        std::shared_ptr<AuthService> auth, std::string webRoot)
     : trees_(std::move(trees)), progress_(std::move(progress)), auth_(std::move(auth)),
       webRoot_(std::move(webRoot)) {}
 
 std::vector<WallCandidate> GalleryApi::candidates() {
   std::vector<ListedTree> listed = trees_->listPublic();
-
-  // A shared tree shows the OWNER's journey, so each card carries the owner's overlay.
   std::vector<WallCandidate> candidates;
   candidates.reserve(listed.size());
   for (ListedTree& tree : listed) {
     WallCandidate candidate;
-    candidate.ownerProgress = progress_->load(tree.data.id, tree.owner);
-    candidate.owner = std::move(tree.owner);
+    candidate.owner = tree.owner;
     candidate.data = std::move(tree.data);
     candidate.updatedAt = tree.updatedAt;
-    candidate.lastMarkedAt = tree.lastMarkedAt;
     candidate.forks = tree.forks;
     candidate.sourceTitle = std::move(tree.sourceTitle);
     candidates.push_back(std::move(candidate));
+  }
+
+  // A shared tree shows the OWNER's journey, so each card carries the owner's marks as a reader is shown them. Owners
+  // are followed in the order the wall shows their cards as far as it is known before their marks are: by forks, then
+  // by the tree's own last edit, so no account comes first by the id it holds. A tree off the wall is followed for no one.
+  std::map<TreeId, std::size_t> at;
+  for (std::size_t i = 0; i < candidates.size(); ++i) at.emplace(candidates[i].data.id, i);
+  std::vector<OwnersTrees> owners;
+  std::map<UserId, std::size_t> ownerAt;
+  for (const GalleryEntry& entry : publicWall(candidates, Viewer{})) {
+    const std::size_t i = at.at(entry.id);
+    const auto [slot, fresh] = ownerAt.emplace(candidates[i].owner, owners.size());
+    if (fresh) owners.push_back(OwnersTrees{candidates[i].owner, {}});
+    owners[slot->second].trees.emplace(entry.id, std::move(listed[i].pointers));
+  }
+  ShownToReaders shown = progress_->shownToReaders(owners, kFollowCap, "gallery");
+  if (shown.tally.degraded())
+    LOG_INFO << "roadmap_gallery_follows followed=" << shown.tally.followed << " timed_out=" << shown.tally.timedOut
+             << " failed=" << shown.tally.failed << " cooling_off=" << shown.tally.coolingOff
+             << " past_cap=" << shown.tally.pastCap;
+
+  for (WallCandidate& candidate : candidates) {
+    const auto marks = shown.progress.find(candidate.data.id);
+    if (marks != shown.progress.end()) candidate.ownerProgress = std::move(marks->second);
   }
   return candidates;
 }

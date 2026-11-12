@@ -59,14 +59,22 @@ struct FakeBus : PresenceBus {
   void broadcastSubgraph(const TreeId& tree, Seq seq, const Subgraph& subgraph) override {
     subgraphBroadcasts.push_back({tree.str(), seq, subgraph});
   }
+  // The real bus's rule: where no register was recorded there is nothing to fan out.
   void broadcastProgress(const TreeId& tree, const UserId& user, const Progress& marks) override {
+    if (marks.marks.empty()) return;
     progressBroadcasts.push_back({tree.str(), user.str(), marks});
   }
 };
 
 struct FakeProgressRepository : ProgressRepository {
-  struct Entry { ProgressStatus status; Hlc at; bool outOfOrder = false; };
+  struct Entry {
+    ProgressStatus status;
+    Hlc at;
+    bool outOfOrder = false;
+    bool operator==(const Entry&) const = default;
+  };
   std::map<std::string, Entry> byKey;
+  std::function<void()> duringBatchWrite;  // runs inside setStatuses, the way a slow statement holds its caller
   bool loadsFail = false;   // load throws, the way a read Postgres refuses does
   bool writesFail = false;  // setStatus and setStatuses throw before anything lands
 
@@ -102,6 +110,7 @@ struct FakeProgressRepository : ProgressRepository {
                                  const std::vector<ProgressUpdate>& updates,
                                  std::uint64_t receivedAtMs) override {
     if (writesFail) throw std::runtime_error("the progress store refused the write");
+    if (duringBatchWrite) duringBatchWrite();
     auto next = byKey;
     std::vector<bool> applied;
     for (const ProgressUpdate& update : updates) {
@@ -138,8 +147,6 @@ struct FakeTreeRepository : TreeRepository {
   std::map<std::string, StoredTree> byId;
   std::map<std::string, std::string> forkedFrom;
   std::map<std::string, std::uint64_t> updatedAt;  // epoch ms per tree, for registry ordering
-  // The owner's latest progress mark per tree — a fact of the wall ROW, carried on the same row as the fork count.
-  std::map<std::string, std::uint64_t> lastMarkedAt;
   std::set<std::string> deletedIds;
   // One entry per save call: how many node rows the slice carried.
   std::vector<std::size_t> savedNodeCounts;
@@ -152,7 +159,11 @@ struct FakeTreeRepository : TreeRepository {
   std::vector<std::optional<std::chrono::milliseconds>> openedBudgets;
   bool openedReadsFail = false;  // openedFrom throws, the way a dropped connection does
   bool budgetedReadsTimeOut = false;  // openedFrom given a budget throws FollowTimedOut, the way a slow statement does
-  std::function<void()> duringOpenedRead;  // runs inside openedFrom, the way a slow statement holds its caller
+  // Runs inside openedFrom once the read is counted, the way a slow statement holds its caller; a case that makes one
+  // owner slow or failing reads whose and with what budget off the back of openedOwners and openedBudgets.
+  std::function<void()> duringOpenedRead;
+  // One entry per openedFrom read: whose trees it followed.
+  std::vector<UserId> openedOwners;
   // One entry per guidedTreesAbove read: the tree it walked up from.
   std::vector<TreeId> aboveReads;
   bool aboveReadsFail = false;  // guidedTreesAbove throws, the way a dropped connection does
@@ -252,9 +263,10 @@ struct FakeTreeRepository : TreeRepository {
       if (!stored.owner) continue;
       if (stored.visibility != Visibility::public_) continue;  // the query's own visibility filter
       ListedTree entry;
-      entry.data = LooseGraph(stored.state).toTreeData(TreeId{id}, stored.title.value);
+      const LooseGraph graph(stored.state);
+      entry.data = graph.toTreeData(TreeId{id}, stored.title.value);
+      entry.pointers = graph.stampedPointers();
       entry.updatedAt = updatedAt.count(id) ? updatedAt.at(id) : 0;
-      entry.lastMarkedAt = lastMarkedAt.count(id) ? lastMarkedAt.at(id) : 0;
       entry.owner = *stored.owner;
       for (const auto& [forkId, from] : forkedFrom)
         if (from == id && !deletedIds.count(forkId)) entry.forks++;
@@ -298,6 +310,7 @@ struct FakeTreeRepository : TreeRepository {
     if (opened.empty()) return {};
     openedReads.push_back(opened);
     openedBudgets.push_back(budget);
+    openedOwners.push_back(owner);
     if (openedReadsFail) throw std::runtime_error("connection reset mid-read");
     if (budget && budgetedReadsTimeOut) throw FollowTimedOut{};
     if (duringOpenedRead) duringOpenedRead();

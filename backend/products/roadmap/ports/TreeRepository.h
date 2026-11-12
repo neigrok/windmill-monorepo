@@ -56,8 +56,8 @@ struct OwnedTree {
 // `data` carries the OWNER's progress, not the reader's.
 struct ListedTree {
   TreeData data;
+  std::map<NodeId, StampedPointer> pointers;  // the tree each step opens, as `data` holds it, with when it was set
   std::uint64_t updatedAt = 0;
-  std::uint64_t lastMarkedAt = 0;  // epoch ms of the owner's latest mark on this tree, 0 if none
   int forks = 0;
   UserId owner;
   std::string sourceTitle;

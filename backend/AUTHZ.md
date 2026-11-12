@@ -11,7 +11,9 @@ Visibility-gated read, owner-only write, per-user progress. The two predicates a
 - **Reads** (`GET` tree/progress/diagnostics/activity, WS `subscribe`/presence, MCP `get_tree`) gate
   on `canRead`: a `private` tree is its owner's alone, an `unlisted` or `public` one is readable by
   anyone holding the id. A denial is byte-identical to an absent tree, so no id can be probed for
-  existence. `GET …/progress` serves the **owner's** overlay to every reader, under the same gate.
+  existence. `GET …/progress` serves the **owner's** overlay to every reader, under the same gate:
+  the stored marks to a caller `canWrite` admits, and to every other reader the owner's derived
+  completion (`readerView`, `products/roadmap/domain/OpenedTrees.h`), as the gallery counts it.
   A read is not the whole tree for everyone: the tree a node `opens` goes only to a caller
   `canWrite` admits, because a tree id is the read capability of an unlisted tree. Every other
   reader — a stranger, a signed-out caller, a revoked session — receives `readerView`
@@ -23,11 +25,30 @@ Visibility-gated read, owner-only write, per-user progress. The two predicates a
   a caller `canWrite` admits, a node that opens a tree of theirs is complete when that tree is, in
   MCP `state`, the registry counts and the `opens` object of `GET` tree; for every other reader the
   node is an ordinary one whose state follows their own mark, the `opens` key is absent, and the
-  opened trees are not read at all; the writer's own read of them is made after the tree's strand is
-  released, so no other read of the tree waits on it. No state, count, key or timing says a node
-  opens a tree. A
-  tend neither reads nor sets the pointer: it runs as the owner on labels that may be someone else's
-  words, so `ScopedToolHost` offers it no `opens` argument and no `opens` field, and refuses a call
+  opened trees are not read for that state; the writer's own read of them is made after the tree's
+  strand is released, so no other read of the tree waits on it. A progress mark follows the same
+  line: only a caller `canWrite` admits is refused a mark on a node that opens a tree of theirs,
+  and the opened trees are read only for that caller; every other reader's mark on that node is
+  recorded and answered byte for byte as on a node that opens nothing. The owner's overlay is the
+  one thing such a reader is shown of a pointer: a step that opens a tree of the owner's reads
+  `complete` while that tree is complete for the owner and has no row otherwise, whatever mark it
+  holds, so a step that opens a tree that is not complete reads as a step nobody marked. That answer
+  follows the owner's trees in one budgeted read made after the tree's strand is released, and names
+  and counts no opened tree. A row made complete by its tree is the step's stored mark when that
+  says complete under a stamp; else its time is the later of the latest stamped mark in what
+  completed the tree and the stamp the pointer was set under, so it never predates the pointer and
+  never takes the time of a mark stored without a stamp. What the gallery's counts and a card's time
+  and place take from the owner's marks, they take from these rows alone. What the overlay does say,
+  as known limits: a reader who can also read the opened tree can match a row's time to that tree's
+  latest mark, and so tell which step opens it; a row's time changes when the opened tree changes,
+  with no edit to this tree, and several steps can share one time; while an owner's follow is
+  degraded — the read failed or ran past its budget, the five minutes after either, or the gallery's
+  cap cut it short — every step of theirs that holds a pointer reads unmarked, valid pointer or not,
+  where a marked step with no pointer keeps its row; and a reply for a tree that holds a pointer
+  waits on that read, which a reply for a tree without one does not make. Beyond these, no state,
+  count, key or refusal says a node opens a tree. A tend neither reads nor sets the pointer: it runs
+  as the owner on labels that may be someone else's words, so `ScopedToolHost` offers it no `opens`
+  argument and no `opens` field, and refuses a call
   that names either; and no call it can make brings a pointer back, because a node an import
   revives from a delete opens only the tree that batch names (`graftState`), and a run's batch
   names none. The `state` it reads is the owner's.
@@ -63,7 +84,10 @@ Visibility-gated read, owner-only write, per-user progress. The two predicates a
   owner-gated. They gate on `canRead` alone, and each caller writes only their own per-user overlay
   (`node_progress` is keyed by `user_id`). Any signed-in reader may mark any tree they can read — the
   demo included — and nobody's marks are visible in anyone else's overlay. The `canRead` gate is
-  there so a mark cannot confirm which node ids a private tree holds.
+  there so a mark cannot confirm which node ids a private tree holds. One mark is not recorded: the
+  tree's writer's on a node that opens a tree of theirs, which is complete when that tree is
+  (`SPEC.md`, Model). A tend marks as the owner and is refused the same way, in a sentence that
+  names the node and no tree.
 
 `owner_id` is written by exactly two statements, the `INSERT` in `create` and the `INSERT` in `fork`
 (`products/roadmap/adapters/postgres/PgTreeRepository.cpp`). There is no `UPDATE` of that column

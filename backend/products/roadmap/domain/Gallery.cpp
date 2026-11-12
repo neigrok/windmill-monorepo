@@ -18,7 +18,9 @@ std::vector<GalleryEntry> publicWall(const std::vector<WallCandidate>& candidate
     entry.title = candidate.data.title;
     entry.stats = stats;
     entry.forks = candidate.forks;
-    entry.updatedAt = lastActiveAt(candidate.updatedAt, candidate.lastMarkedAt);
+    std::uint64_t lastMarkedAt = 0;
+    for (const auto& [node, mark] : candidate.ownerProgress.marks) lastMarkedAt = std::max(lastMarkedAt, mark.markedAt);
+    entry.updatedAt = lastActiveAt(candidate.updatedAt, lastMarkedAt);
     entry.sourceTitle = candidate.sourceTitle;
     // The two facts the row wears about its reader. An anonymous Viewer owns nothing and has forked
     // nothing, so both fall out false without a special case.

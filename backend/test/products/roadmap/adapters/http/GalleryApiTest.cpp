@@ -6,8 +6,20 @@
 #include "test/products/roadmap/Fakes.h"
 #include "test/testing.h"
 
+#include "platform/application/WriteObservation.h"
+
+#include <trantor/utils/Logger.h>
+
+#include <chrono>
+#include <cstdio>
+#include <map>
 #include <memory>
+#include <mutex>
+#include <optional>
+#include <set>
+#include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 using namespace wm;
@@ -43,8 +55,8 @@ bool contains(const std::string& haystack, const std::string& needle) {
 }
 
 struct Harness {
-  std::shared_ptr<FakeTreeRepository> trees = std::make_shared<FakeTreeRepository>();
   std::shared_ptr<FakeProgressRepository> progress = std::make_shared<FakeProgressRepository>();
+  std::shared_ptr<FakeTreeRepository> trees = std::make_shared<FakeTreeRepository>(*progress);
   FakeTokens tokens;
   FakeClock clock;
   FakeAuthRepository authRepo;
@@ -55,7 +67,8 @@ struct Harness {
   FakeSessionRevocations revocations;
   std::shared_ptr<AuthService> auth =
       std::make_shared<AuthService>(authRepo, email, tokens, clock, oauth, footprint, revocations, "https://windmill.works");
-  GalleryApi api{trees, progress, auth, ""};
+  std::shared_ptr<OwnerProgress> ownerProgress = std::make_shared<OwnerProgress>(*progress, *trees, clock);
+  GalleryApi api{trees, ownerProgress, auth, ""};
 
   UserId signIn(const std::string& sessionSecret, const std::string& address) {
     User user = authRepo.createUser(Email{address}, "sam");
@@ -79,9 +92,18 @@ struct Harness {
     trees->updatedAt[id] = updatedAt;
   }
 
-  void seedFork(const char* forkId, const char* sourceId) { trees->forkedFrom[forkId] = sourceId; }
+  // A tree of the steps named, each opening the tree given beside it, or none for "".
+  void seedSteps(const char* id, const UserId& owner, Visibility visibility,
+                 const std::vector<std::pair<const char*, const char*>>& steps) {
+    LooseGraph graph;
+    for (const auto& [step, opens] : steps) {
+      graph.createNode(NodeId{step}, step, "", NodeColor::sky, std::nullopt, Hlc{1, 0, "seed"});
+      if (std::string(opens) != "") graph.setOpens(NodeId{step}, TreeId{opens}, Hlc{2, 0, "seed"});
+    }
+    trees->byId[id] = StoredTree{graph.exportState(), LegendState{}, {id, {}}, 0, owner, visibility};
+  }
 
-  void seedMark(const char* id, std::uint64_t markedAt) { trees->lastMarkedAt[id] = markedAt; }
+  void seedFork(const char* forkId, const char* sourceId) { trees->forkedFrom[forkId] = sourceId; }
 };
 
 drogon::HttpRequestPtr galleryReq(const std::string& session = "", const std::string& limit = "",
@@ -271,7 +293,7 @@ TEST(the_json_index_ranks_a_tended_tree_above_a_newer_one_nobody_has_opened) {
   const UserId owner = h.signIn("s1", "owner@example.com");
   h.seed("t_abandoned", "Abandoned", owner, Visibility::public_, 5, 500);
   h.seed("t_tended", "Tended", owner, Visibility::public_, 5, 100);
-  h.seedMark("t_tended", 900);
+  h.progress->setStatus(TreeId{"t_tended"}, owner, NodeId{"n0"}, ProgressStatus::complete, false, Hlc{900, 0, "sam"}, 900);
 
   const Json::Value body = bodyOf(sendIndex(h.api, galleryReq()));
 
@@ -334,4 +356,193 @@ TEST(an_empty_gallery_is_an_empty_list_never_an_error) {
   CHECK_EQ(response->statusCode(), drogon::k200OK);
   CHECK_EQ(bodyOf(response)["count"].asUInt(), 0u);
   CHECK_EQ(bodyOf(response)["entries"].size(), 0u);
+}
+
+// A card counts what the owner's own reads count: a step that opens a tree is done when that tree is, whatever mark it
+// holds, read in one follow per owner and none for an owner whose listed trees open nothing.
+TEST(the_wall_counts_a_step_that_opens_a_tree_by_the_owners_derived_completion_in_one_follow_per_owner) {
+  Harness h;
+  const UserId ada{"ada"};
+  const UserId bo{"bo"};
+  const UserId cy{"cy"};
+  h.seedSteps("t_ada_done", ada, Visibility::private_, {{"d", ""}});
+  h.seedSteps("t_ada_open", ada, Visibility::private_, {{"o", ""}});
+  h.seedSteps("t_ada_one", ada, Visibility::public_, {{"done", "t_ada_done"}, {"open", "t_ada_open"}, {"plain", ""}});
+  h.seedSteps("t_ada_two", ada, Visibility::public_, {{"done", "t_ada_done"}, {"gone", "t_ada_gone"}, {"plain", ""}});
+  h.seedSteps("t_bo", bo, Visibility::public_, {{"a", ""}, {"b", ""}, {"c", ""}});
+  h.seedSteps("t_cy_sub", cy, Visibility::public_, {{"x", ""}, {"y", ""}, {"z", ""}});
+  h.seedSteps("t_cy", cy, Visibility::public_, {{"idea", "t_cy_sub"}, {"b", ""}, {"c", ""}});
+  h.progress->setStatus(TreeId{"t_ada_done"}, ada, NodeId{"d"}, ProgressStatus::complete, false, Hlc{800, 0, "ada"}, 800);
+  h.progress->setStatus(TreeId{"t_ada_one"}, ada, NodeId{"open"}, ProgressStatus::complete, false, Hlc{900, 0, "ada"}, 900);
+  h.progress->setStatus(TreeId{"t_ada_one"}, ada, NodeId{"plain"}, ProgressStatus::complete, false, Hlc{901, 0, "ada"}, 901);
+  h.progress->setStatus(TreeId{"t_ada_two"}, ada, NodeId{"gone"}, ProgressStatus::complete, false, Hlc{902, 0, "ada"}, 902);
+  h.progress->setStatus(TreeId{"t_bo"}, bo, NodeId{"a"}, ProgressStatus::complete, false, Hlc{903, 0, "bo"}, 903);
+  h.progress->setStatus(TreeId{"t_cy"}, cy, NodeId{"idea"}, ProgressStatus::complete, false, Hlc{904, 0, "cy"}, 904);
+
+  const Json::Value index = bodyOf(sendIndex(h.api, galleryReq()));
+
+  std::map<std::string, std::string> doneOfTotal;
+  for (const Json::Value& row : index["entries"])
+    doneOfTotal[row["id"].asString()] = std::to_string(row["done"].asInt()) + "/" + std::to_string(row["total"].asInt());
+  CHECK(doneOfTotal == (std::map<std::string, std::string>{
+                           {"t_ada_one", "2/3"}, {"t_ada_two", "2/3"}, {"t_bo", "1/3"}, {"t_cy", "0/3"}, {"t_cy_sub", "0/3"}}));
+  CHECK_EQ(h.trees->openedReads,
+           (std::vector<std::set<TreeId>>{{TreeId{"t_ada_done"}, TreeId{"t_ada_gone"}, TreeId{"t_ada_open"}}, {TreeId{"t_cy_sub"}}}));
+  CHECK_EQ(h.trees->openedBudgets, (std::vector<std::optional<std::chrono::milliseconds>>(2, std::chrono::milliseconds{750})));
+}
+
+// One owner whose follow fails or runs out degrades that owner alone: their cards count no step that opens a tree,
+// every other owner is followed as ever, and the views of the next five minutes leave them unread without trying
+// again. A view that degraded anyone says so in one line of counts; one that degraded no one writes none.
+TEST(a_wall_whose_follow_of_one_owner_fails_or_times_out_counts_that_owner_alone_without_the_steps_that_open_a_tree) {
+  struct Logged {
+    std::mutex mutex;
+    std::vector<std::string> lines;
+    trantor::Logger::LogLevel level = trantor::Logger::logLevel();
+    Logged() {
+      trantor::Logger::setLogLevel(trantor::Logger::kInfo);
+      trantor::Logger::setOutputFunction(
+          [this](const char* message, std::uint64_t length) {
+            const std::string line(message, length);
+            const std::size_t start = line.find("roadmap_");
+            if (start == std::string::npos) return;
+            std::lock_guard lock(mutex);
+            lines.push_back(line.substr(start, line.rfind(" - ") - start));
+          },
+          [] {});
+    }
+    ~Logged() {
+      trantor::Logger::setOutputFunction([](const char* message, std::uint64_t length) { fwrite(message, 1, length, stdout); },
+                                         [] { fflush(stdout); });
+      trantor::Logger::setLogLevel(level);
+    }
+  } logged;
+  Harness h;
+  const UserId ada{"ada"};
+  const UserId bo{"bo"};
+  const UserId cy{"cy"};
+  const UserId dee{"dee"};
+  h.seedSteps("t_ada_done", ada, Visibility::private_, {{"d", ""}});
+  h.seedSteps("t_ada", ada, Visibility::public_, {{"done", "t_ada_done"}, {"marked", "t_ada_done"}, {"plain", ""}});
+  h.seedSteps("t_bo", bo, Visibility::public_, {{"a", ""}, {"b", ""}, {"c", ""}});
+  h.seedSteps("t_cy_done", cy, Visibility::private_, {{"d", ""}});
+  h.seedSteps("t_cy", cy, Visibility::public_, {{"done", "t_cy_done"}, {"b", ""}, {"c", ""}});
+  h.seedSteps("t_dee_done", dee, Visibility::private_, {{"d", ""}});
+  h.seedSteps("t_dee", dee, Visibility::public_, {{"done", "t_dee_done"}, {"b", ""}, {"c", ""}});
+  for (const auto& [owner, tree] : {std::pair{ada, "t_ada_done"}, std::pair{cy, "t_cy_done"}, std::pair{dee, "t_dee_done"}})
+    h.progress->setStatus(TreeId{tree}, owner, NodeId{"d"}, ProgressStatus::complete, false, Hlc{800, 0, "seed"}, 800);
+  h.progress->setStatus(TreeId{"t_ada"}, ada, NodeId{"marked"}, ProgressStatus::complete, false, Hlc{900, 0, "ada"}, 900);
+  h.progress->setStatus(TreeId{"t_ada"}, ada, NodeId{"plain"}, ProgressStatus::complete, false, Hlc{901, 0, "ada"}, 901);
+  h.progress->setStatus(TreeId{"t_bo"}, bo, NodeId{"a"}, ProgressStatus::complete, false, Hlc{902, 0, "bo"}, 902);
+  h.trees->duringOpenedRead = [&] {
+    if (h.trees->openedOwners.back() == ada) throw std::runtime_error("connection reset mid-read");
+    if (h.trees->openedOwners.back() == cy) throw FollowTimedOut{};
+  };
+  const auto doneOnTheWall = [&] {
+    const drogon::HttpResponsePtr reply = sendIndex(h.api, galleryReq());
+    CHECK_EQ(reply->getStatusCode(), drogon::k200OK);
+    const Json::Value index = bodyOf(reply);
+    std::map<std::string, int> done;
+    for (const Json::Value& row : index["entries"]) done[row["id"].asString()] = row["done"].asInt();
+    return done;
+  };
+  std::vector<std::string> lines;
+  installWriteSink([&](const WriteCompletion& line) {
+    lines.push_back(line.operation + " " + line.product + " " + line.door + " " + line.outcome);
+  });
+
+  const std::map<std::string, int> degraded = doneOnTheWall();
+  const std::vector<UserId> firstFollows = h.trees->openedOwners;
+  h.trees->duringOpenedRead = {};
+  const std::map<std::string, int> coolingOff = doneOnTheWall();
+  const std::vector<UserId> secondFollows(h.trees->openedOwners.begin() + firstFollows.size(), h.trees->openedOwners.end());
+  h.clock.now += 5 * 60 * 1000;
+  const std::map<std::string, int> whole = doneOnTheWall();
+  const std::vector<UserId> thirdFollows(h.trees->openedOwners.begin() + firstFollows.size() + secondFollows.size(),
+                                         h.trees->openedOwners.end());
+  installWriteSink({});
+
+  CHECK(degraded == (std::map<std::string, int>{{"t_ada", 1}, {"t_bo", 1}, {"t_cy", 0}, {"t_dee", 1}}));
+  CHECK(coolingOff == degraded);
+  CHECK(whole == (std::map<std::string, int>{{"t_ada", 3}, {"t_bo", 1}, {"t_cy", 1}, {"t_dee", 1}}));
+  CHECK_EQ(firstFollows, (std::vector<UserId>{ada, cy, dee}));
+  CHECK_EQ(secondFollows, (std::vector<UserId>{dee}));
+  CHECK_EQ(thirdFollows, (std::vector<UserId>{ada, cy, dee}));
+  CHECK_EQ(lines, (std::vector<std::string>{"roadmap.progress.follow roadmap gallery failed",
+                                            "roadmap.progress.follow roadmap gallery timeout"}));
+  CHECK_EQ(logged.lines, (std::vector<std::string>{
+                             "roadmap_gallery_follows followed=1 timed_out=1 failed=1 cooling_off=0 past_cap=0",
+                             "roadmap_gallery_follows followed=1 timed_out=0 failed=0 cooling_off=2 past_cap=0",
+                             "roadmap_progress_follow_recovered door=gallery degraded_replies=2",
+                             "roadmap_progress_follow_recovered door=gallery degraded_replies=2"}));
+}
+
+// Owners are followed in the order the wall shows their cards as far as it is known before their marks are: the most
+// forked first, then the most recently edited, so an account comes no earlier for the id it holds.
+TEST(the_wall_follows_its_owners_in_the_order_it_shows_their_cards_and_never_by_their_ids) {
+  Harness h;
+  const UserId aaron{"aaron"};
+  const UserId mia{"mia"};
+  const UserId zoe{"zoe"};
+  for (const UserId& owner : {aaron, mia, zoe}) {
+    const std::string sub = "t_sub_" + owner.str();
+    const std::string main = "t_main_" + owner.str();
+    h.seedSteps(sub.c_str(), owner, Visibility::private_, {{"d", ""}});
+    h.seedSteps(main.c_str(), owner, Visibility::public_, {{"done", sub.c_str()}, {"b", ""}, {"c", ""}});
+  }
+  h.trees->updatedAt["t_main_aaron"] = 100;
+  h.trees->updatedAt["t_main_mia"] = 300;
+  h.trees->updatedAt["t_main_zoe"] = 200;
+  h.seedSteps("t_fork_of_zoe", UserId{"bystander"}, Visibility::private_, {{"x", ""}});
+  h.seedFork("t_fork_of_zoe", "t_main_zoe");
+
+  const Json::Value index = bodyOf(sendIndex(h.api, galleryReq()));
+
+  CHECK_EQ(index["entries"][0]["id"].asString(), std::string("t_main_zoe"));
+  CHECK_EQ(index["entries"][1]["id"].asString(), std::string("t_main_mia"));
+  CHECK_EQ(index["entries"][2]["id"].asString(), std::string("t_main_aaron"));
+  CHECK_EQ(h.trees->openedOwners, (std::vector<UserId>{zoe, mia, aaron}));
+}
+
+// A card's time and place on the wall come from what a reader is shown of the owner's marks and nothing else: two
+// trees whose readers are shown the same rows have the same time on the JSON index and stand by id alone on both
+// walls, though one of them holds a later mark no reader is shown.
+TEST(two_trees_shown_alike_to_readers_wear_the_same_time_and_place_on_both_walls_whatever_marks_lie_behind_them) {
+  Harness h;
+  const UserId ada{"ada"};
+  h.seedSteps("t_done", ada, Visibility::private_, {{"d", ""}});
+  h.seedSteps("t_open", ada, Visibility::private_, {{"o", ""}});
+  h.seedSteps("t_b_pointers", ada, Visibility::public_, {{"via", "t_done"}, {"wait", "t_open"}, {"plain", ""}});
+  h.seedSteps("t_a_twin", ada, Visibility::public_, {{"via", ""}, {"wait", ""}, {"plain", ""}});
+  h.trees->byId["t_b_pointers"].title.value = "Same";
+  h.trees->byId["t_a_twin"].title.value = "Same";
+  h.progress->setStatus(TreeId{"t_done"}, ada, NodeId{"d"}, ProgressStatus::complete, false, Hlc{800, 0, "ada"}, 800);
+  h.progress->setStatus(TreeId{"t_b_pointers"}, ada, NodeId{"plain"}, ProgressStatus::complete, false, Hlc{700, 0, "ada"}, 700);
+  h.progress->setStatus(TreeId{"t_b_pointers"}, ada, NodeId{"wait"}, ProgressStatus::complete, false, Hlc{990, 0, "ada"}, 990);
+  h.progress->setStatus(TreeId{"t_a_twin"}, ada, NodeId{"plain"}, ProgressStatus::complete, false, Hlc{700, 0, "ada"}, 700);
+  h.progress->setStatus(TreeId{"t_a_twin"}, ada, NodeId{"via"}, ProgressStatus::complete, false, Hlc{800, 0, "ada"}, 800);
+
+  Json::Value index = bodyOf(sendIndex(h.api, galleryReq()));
+  drogon::HttpResponsePtr page;
+  h.api.page(galleryReq(), [&](const drogon::HttpResponsePtr& response) { page = response; });
+
+  REQUIRE_EQ(index["entries"].size(), 2u);
+  CHECK_EQ(index["entries"][0]["id"].asString(), std::string("t_a_twin"));
+  CHECK_EQ(index["entries"][1]["id"].asString(), std::string("t_b_pointers"));
+  for (Json::Value& row : index["entries"]) row.removeMember("id");
+  CHECK_EQ(index["entries"][0], index["entries"][1]);
+  CHECK_EQ(index["entries"][0]["updatedAt"].asInt64(), Json::Int64{800});
+  const std::string html(page->getBody());
+  const auto card = [&](const std::string& id) -> std::pair<std::size_t, std::string> {
+    const std::size_t from = html.find("<a class=\"card\" href=\"/t/" + id + "\">");
+    if (from == std::string::npos) return {from, "no card"};
+    std::string text = html.substr(from, html.find("</a>", from) - from);
+    for (std::size_t at = text.find(id); at != std::string::npos; at = text.find(id)) text.replace(at, id.size(), "ID");
+    return std::pair{from, text};
+  };
+  const auto [twinAt, twin] = card("t_a_twin");
+  const auto [pointersAt, pointers] = card("t_b_pointers");
+  CHECK(pointersAt != std::string::npos);
+  CHECK(twinAt < pointersAt);
+  CHECK_EQ(twin, pointers);
 }

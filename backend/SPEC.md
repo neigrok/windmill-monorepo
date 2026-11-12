@@ -41,7 +41,13 @@ rejected for structure. Validity is a read model, not a gate.
   Completeness is the least answer that satisfies this over all the owner's standing trees, one
   answer per owner whichever tree is being read: a tree on a loop is never complete, however long
   the loop, a chain of any length completes, and a tree reached along two ways is judged once. It is
-  computed by one pass that walks each tree-to-tree pointer at most once. `followed` gives a
+  computed by one pass that walks each tree-to-tree pointer at most once. `completedAt` is the
+  latest mark, by stamp, in what completed a tree: of the owner's complete marks on its nodes that
+  follow no tree and, for each tree its nodes follow, of what completed that one. It is found in
+  that same pass and carries the instant that mark was recorded; a mark a node holds beside a
+  valid pointer completed nothing and is not among them, and a mark stored with no stamp (empty or
+  `0:0:`) counts toward completion and never toward `completedAt`, which a tree completed by such
+  marks alone does not have. `followed` gives a
   tree's completed set — marks on ordinary nodes, plus the nodes whose opened tree is complete —
   that `UnlockRules::derive` and `treeStats` are handed, so MCP `state`, the `state` filter, the
   registry counts (`GET /v1/trees`, `list_trees`) and reminder readiness agree. `openings` says
@@ -66,34 +72,76 @@ rejected for structure. Validity is a read model, not a gate.
   tree up its openers a level at a time, it reads each pointer between two standing trees at most
   once and leaves every tree that leads back its fewest pointers and the tree it steps to first,
   so `diagnose` costs the account's pointers plus the capped lists, whatever the tree holds.
-  The raw mark (`status`, `get_progress`, `GET …/progress`) stays the raw mark, `set_progress`
-  records a mark on such a node and judges `prerequisitesMet` on marks alone, and the gallery counts
-  the owner's stored marks.
+  The raw mark (`status`, `get_progress`, and `GET …/progress` for a caller who can write the tree)
+  stays the raw mark; every other reader of `GET …/progress`, and the gallery, are shown the
+  owner's marks through `readerView`.
+- `readerView` (`domain/OpenedTrees.h`) — an owner's stored marks on a tree as a caller who cannot
+  write it is shown them: the owner's derived completion, and nothing of the trees its nodes open. A
+  node with a valid pointer has a row only while the tree it opens is complete for the owner, by the
+  completeness `followed` reads, and none otherwise, whatever mark it holds. That row is `complete`
+  and never `outOfOrder`. It is the node's stored mark when that says complete under a stamp; else
+  its time is the later of the opened tree's `completedAt`, with the instant that mark was
+  recorded as `markedAt`, and the stamp the node's pointer was set under, with that stamp's own
+  milliseconds as `markedAt`. So the time never predates the pointer and never comes from a mark
+  with no stamp, and a twin whose same steps were marked by hand at those stamps answers the same
+  bytes. Every other node's row is the stored one, so a step that opens a tree that is not complete
+  reads as a step nobody marked. `OwnerProgress::shownToReaders` feeds it for the two doors that
+  serve an owner's marks to such a caller, `GET /v1/trees/{id}/progress` and the gallery. The
+  pointers, each with the stamp it was set under, come from the tree's room, or for the gallery
+  from the listed documents. Each owner whose trees hold a pointer is followed in one `openedFrom`
+  read under a 750 ms budget (`kReaderFollowBudget`) after the strand is released, and trees that
+  hold no pointer make none. The gallery follows its owners in the order the wall shows their cards
+  as far as it is known before their marks are — by forks, then the tree's own last edit, then
+  tree id — and spends at most 1,500 ms on follows in all (`GalleryApi::kFollowCap`): an owner the
+  cap cuts short or never reaches is shown unread for that view alone. When an owner's read fails or
+  runs its whole budget, the door still answers, leaving out the row of every node of that owner's
+  that holds a pointer, so no step is shown done that may not be, and every other owner is followed
+  as ever. That owner then cools off: for five minutes (`kFollowCoolOff`) every door shows them
+  unread at once without trying, and the first follow after it that answers ends it. The cool-offs
+  live in the process's memory, keyed by owner, at most 1,024 of them (`kMaxCoolingOff`), the one
+  begun first let go to make room.
+- A node with a valid pointer takes no mark from a caller who can write the tree. The room hands
+  that caller, and nobody else, the nodes that open a tree (`TreeRoom::pointersFor`); `following`
+  names the ones whose pointer is valid, and `ProgressService::mark`, which both doors that write
+  progress call, leaves a mark on one of them, `complete` or `none`, out of the write and answers it
+  refused under the code `opens-a-tree`: MCP `set_progress` and the `progress[]` of an
+  `import_subgraph` say so (`adapters/mcp/README.md`), and a socket `progress` frame's ack lists it
+  (WebSocket surface). The other marks of the call are recorded, and each `prerequisitesMet` is
+  judged on the `followed` set, so a step behind such a node is met when the opened tree is
+  complete, whatever mark the node holds. A mark such a node already held stays stored until the
+  node is deleted, when it is cleared as every mark of the caller's on what a delete removes is. From
+  a caller who cannot write the tree the same mark is an ordinary one: recorded, answered exactly as
+  on a node that opens nothing, and judged on their own marks.
 - The domain is fed two ways. A read of one tree (`get_tree`, `get_nodes`, `find_nodes`,
-  `GET /v1/trees/{id}`) takes the tree from its live room and asks
-  `TreeRepository::openedFrom(owner, opened)` for each tree it opens that stands and is the owner's
-  and every such tree their pointers lead to: one statement over `trees`, `tree_nodes` and the
-  owner's `node_progress` that reaches each tree once and answers, per tree and tree it opens, how
-  many present nodes open it and how many of those the owner marked, beside the tree's title and
-  its nodes that open none. Each reached tree's nodes and marks are read through
-  `tree_nodes_pkey` and `node_progress_pkey`, so the cost follows the trees reached and not the
-  size of the tables. It is made once per reply, after the tree's strand is released, and not
-  at all for a caller who cannot write the tree, for fields that ask for neither `state` nor
-  `opens`, or for a tree that holds no pointer. The tree's diagnostics (`get_diagnostics`,
+  `GET /v1/trees/{id}`) takes the tree from its live room, a progress write (`set_progress`, the
+  `progress[]` of an `import_subgraph`, a socket `progress` frame) only its nodes that open a tree,
+  and each asks `TreeRepository::openedFrom(owner, opened)` for each tree it opens that stands and
+  is the owner's and every such tree their pointers lead to: one statement over `trees`,
+  `tree_nodes` and the owner's `node_progress` that reaches each tree once and answers, per tree and
+  tree it opens, how many present nodes open it, how many of those the owner marked and the latest
+  of those marks, beside the tree's title and its nodes that open none. Each reached tree's nodes
+  are read through `tree_nodes_pkey`, and the owner's marks on it through an index that leads with
+  both the tree and the reader (`node_progress_pkey`, or `node_progress_user_tree`, whichever the
+  planner takes), so the cost follows the trees reached and the owner's marks on them, and not the
+  size of the tables or other accounts' marks on the same trees. It is made once per reply, call or
+  frame, after the tree's strand is released, and not at all for a read whose fields ask for neither
+  `state` nor `opens`, for a write with no mark to judge, or for a tree that holds no pointer. On
+  these doors a caller who cannot write the tree causes no such read; the two doors that show such a
+  caller the owner's marks make it as `readerView` says. The tree's diagnostics (`get_diagnostics`,
   `GET /v1/trees/{id}/diagnostics`) make the same read for `OpenedTrees::diagnose`: once per reply,
-  after the strand is released, for a caller who can write the tree and a tree that holds a
-  pointer, and not for an MCP call that sends `includePointers: false`; under the strand they take
-  the tree's pointers alone (`LooseGraph::pointers`). An MCP edit that changes the tree a node
-  opens to a tree (`create_node`, `annotate_node`, `patch_nodes`, `update_nodes` or `import_subgraph`) makes it
-  once more, after the edit is saved and the strand is released, starting from the trees those
-  nodes now open (`pointersSetSince`) and under a budget of its own, 750 ms, in place of the
-  pool's statement limit: its receipt names in `introducedDiagnostics`, after the graph's errors
-  and within that list's five lines, each of those nodes whose tree leads back, and a read that
-  runs past the budget leaves the receipt `pointerDiagnosticsUnavailable: true`. No other edit
-  makes that read: a dry run, an edit that only clears a pointer and one that re-sends the tree a
-  node already opens among them. Where every tree of an owner is already loaded with
-  its marks (`TreeRegistry::list`, `PgReminderRepository::readinessFor`), `openedAmong`
-  (`domain/TreeSummary.h`) judges the account once in memory with no further read.
+  after the strand is released, for a caller who can write the tree and a tree that holds a pointer,
+  and not for an MCP call that sends `includePointers: false`; under the strand they take the tree's
+  pointers alone (`LooseGraph::pointers`). An MCP edit that changes the tree a node opens to a tree
+  (`create_node`, `annotate_node`, `patch_nodes`, `update_nodes` or `import_subgraph`) makes it once
+  more, after the edit is saved and the strand is released, starting from the trees those nodes now
+  open (`pointersSetSince`) and under a budget of its own, 750 ms, in place of the pool's statement
+  limit: its receipt names in `introducedDiagnostics`, after the graph's errors and within that
+  list's five lines, each of those nodes whose tree leads back, and a read that runs past the budget
+  leaves the receipt `pointerDiagnosticsUnavailable: true`. No other edit makes that read: a dry
+  run, an edit that only clears a pointer and one that re-sends the tree a node already opens among
+  them. Where every tree of an owner is already loaded with its marks (`TreeRegistry::list`,
+  `PgReminderRepository::readinessFor`), `openedAmong` (`domain/TreeSummary.h`) judges the account
+  once in memory with no further read.
 - `TreeDiagnostics::assess` — a pure report over a loose graph and its legend: `cycles`, `dangling`,
   `selfEdges`, `smells`, `maskedWork` (tombstoned parents with present children). `clean()` is
   true when cycles, dangling and self-edges are all empty. Smell kinds: `label-too-long`
@@ -172,10 +220,11 @@ Compatibility inputs `active` and `inProgress` normalize to `none` in progress a
 
 One status per node is structural. "Complete only when every prerequisite is complete" is
 advisory: the mark is recorded either way and the outcome reports `prerequisitesMet` so a surface
-can warn. `outOfOrder` is the marker's word that the inversion was meant; it is part of the status
-value under the same stamp, so a later mark on the node carries its own word or none. Only the MCP
-`set_progress` sets it today — a socket `progress` frame lands it false. Progress therefore never
-depends on the tree being a valid DAG.
+can warn. It reads the completed set `UnlockRules::derive` is handed: the caller's marks, or for the
+tree's writer `OpenedTrees::followed`. `outOfOrder` is the marker's word that the inversion was
+meant; it is part of the status value under the same stamp, so a later mark on the node carries its
+own word or none. Only the MCP `set_progress` sets it today — a socket `progress` frame lands it
+false. Progress therefore never depends on the tree being a valid DAG.
 
 ## Convergence
 
@@ -450,9 +499,18 @@ the genesis stamp, byte-equal to a device-born tree's. Retrying an owned existin
 returns `409 id-taken`; the caller's deleted ID returns `409 id-retired`. A client must not retry
 that deleted tree under a fresh ID.
 
+`GET /v1/trees/{id}/progress` answers the owner's overlay, `{marks: [{node, status, at, markedAt,
+outOfOrder?}]}`, to anyone who can read the tree: the stored marks to a caller who can write it, whose
+view derives completion again from the tree's `opens`, and `readerView` of them (Model) to every other
+reader. It answers `200` whether or not the trees could be followed.
+
 `/v1/gallery` and `/gallery` are anonymous-allowed; a session only adds the two facts a row wears
-about its reader and never changes which trees are listed. `/v1/compose` is anonymous-allowed
-(the birth canvas has no account) behind a rate limit. The reminders pause POST carries no
+about its reader and never changes which trees are listed. A card's `done` counts the owner's marks
+as `readerView` shows them, in at most one follow per owner whose listed trees hold a pointer
+(Model, `readerView`), and its time (`updatedAt`) is the later of the tree's own last edit and the
+latest `markedAt` among those rows, so a card's time and place on the wall come from what a reader is
+shown and from no mark they are not. `/v1/compose` is anonymous-allowed (the birth canvas has no
+account) behind a rate limit. The reminders pause POST carries no
 credential — only the secret from the recipient's own mail — and answers 204 either way. The admin
 sweep is closed unless `REMINDERS_ADMIN_TOKEN` is set.
 
@@ -471,8 +529,16 @@ answer, with the title and guide registers when the vector does not cover their 
 that cannot write the tree, and the delta's `reach` is that same verdict: `writer` for a connection
 that can, `reader` for any other) ·
 `progress` (intent `graft` on subscribe, echo otherwise) ·
-`subgraphAck {treeId, frameId, seq?}` · `progressAck` · `skew {treeId, frameId, serverNow}` ·
-`reject {treeId, code, reason, frameId?}` · `presence` · `peer`.
+`subgraphAck {treeId, frameId, seq?}` · `progressAck {treeId, frameId, refused?}` ·
+`skew {treeId, frameId, serverNow}` · `reject {treeId, code, reason, frameId?}` · `presence` ·
+`peer`.
+
+`progressAck.refused` is present only when the frame carried a mark that was refused: an array of
+`{node, code}`, one per refused mark in the frame's order. The one code is `opens-a-tree` — the node
+holds a valid pointer and the connection can write the tree, so the node is complete when the tree
+it opens is and takes no mark (`OpenedTrees`, Model). It names the node and nothing of the opened
+tree. A mark that lost to a later stored stamp is not refused and is not listed. The frame is not
+rejected: its other marks are recorded, echoed and acknowledged.
 
 Reject codes are a stable wire contract — branch on `code`, never on `reason`:
 `no-such-tree` · `server-error` · `sign-in-required` · `tree-too-large` · `bad-frame` ·
@@ -486,8 +552,11 @@ Limits and rules:
   registers included — a runaway stamp must not own a name or a guide for years. Both lanes apply it.
 - A progress frame carries at most 2000 marks; a mark missing node, status or stamp refuses the
   whole frame.
-- Progress is refused whole or applied whole, joins no op log, and echoes only to the same
-  account's other sessions — never to collaborators.
+- A progress frame is refused whole — a bad mark, a skewed stamp, a failed read gate — or applied
+  per mark: each mark is its own last-writer-wins register, so the marks that landed are echoed and
+  the ack names the ones `refused`. It joins no op log and echoes only to the same account's
+  sessions — never to collaborators. The room is consulted under the tree's strand and the
+  repositories are read and written after it is released.
 - Presence is ephemeral, never persisted, flushed on a 50 ms timer (latest-wins per actor).
 - Drogon does not wrap WS callbacks: an exception escaping the frame handler aborts the process.
   Decode failures are refused by code, never by throw.

@@ -6,6 +6,7 @@
 #include "products/roadmap/adapters/ws/PresenceHub.h"
 #include "products/roadmap/adapters/ws/WsPresenceBus.h"
 #include "products/roadmap/application/ForkService.h"
+#include "products/roadmap/application/OwnerProgress.h"
 #include "products/roadmap/application/ProgressService.h"
 #include "products/roadmap/application/ReminderSweep.h"
 #include "products/roadmap/application/RoomRegistry.h"
@@ -16,7 +17,6 @@
 #include "products/roadmap/ports/OgVideoRepository.h"
 #include "products/roadmap/ports/OpLog.h"
 #include "products/roadmap/ports/PlanComposer.h"
-#include "products/roadmap/ports/ProgressRepository.h"
 #include "products/roadmap/ports/ReminderRepository.h"
 #include "products/roadmap/ports/TreeRepository.h"
 
@@ -32,8 +32,8 @@ namespace wm {
 struct RoadmapDeps {
   std::shared_ptr<RoomRegistry> registry;
   std::shared_ptr<TreeRepository> trees;
-  std::shared_ptr<ProgressRepository> progress;
   std::shared_ptr<ProgressService> progressService;
+  std::shared_ptr<OwnerProgress> ownerProgress;
   std::shared_ptr<OpLog> oplog;
   std::shared_ptr<WsPresenceBus> bus;
   std::shared_ptr<PresenceHub> presence;

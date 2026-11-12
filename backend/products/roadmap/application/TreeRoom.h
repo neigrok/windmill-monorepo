@@ -12,6 +12,7 @@
 #include "products/roadmap/ports/OpLog.h"
 #include "products/roadmap/ports/PresenceBus.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <set>
@@ -142,7 +143,10 @@ public:
   TreeDiagnostics diagnose() const;
   // The tree each present node opens (LooseGraph::pointers), without the copy of every node snapshot() makes.
   std::map<NodeId, TreeId> pointers() const { return graph_.pointers(); }
+  std::map<NodeId, StampedPointer> stampedPointers() const { return graph_.stampedPointers(); }
   TreeData snapshot() const;
+  // How many times snapshot() copied the whole tree out of this room: what a cost test reads.
+  std::size_t snapshots() const { return snapshots_; }
   std::vector<Kind> kinds() const { return legend_.kinds(); }  // the snapshot's legend, without its nodes
   GraphState exportState() const;
   LegendState exportLegend() const;
@@ -155,6 +159,9 @@ public:
   std::pair<GraphState, LegendState> dirtyState() const;
   void markClean();
 
+  // The tree's pointers as `caller` may be told of them: all of them for a caller who can write the
+  // tree, none for anyone else, who is never told a node opens a tree.
+  std::map<NodeId, TreeId> pointersFor(const std::optional<UserId>& caller) const;
   // The node's live prerequisites (incoming DAG edges); empty if the node is absent.
   std::vector<NodeId> prerequisitesOf(const NodeId& node) const;
   bool hasNode(const NodeId& node) const;  // present: created, not tombstoned
@@ -197,6 +204,7 @@ private:
   std::set<Edge> dirtyEdges_;
   std::set<KindId> dirtyKinds_;
   bool allDirty_ = false;  // replayed op tail: footprint unknown, save everything once
+  mutable std::size_t snapshots_ = 0;
 };
 
 }

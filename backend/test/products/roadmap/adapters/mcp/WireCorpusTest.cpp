@@ -15,7 +15,7 @@ using namespace wm::test;
 namespace {
 
 // The corpus schema version, written into the golden. Bump it by convention when the wire changes on purpose; nothing enforces it.
-constexpr int kWireCorpusVersion = 22;
+constexpr int kWireCorpusVersion = 23;
 
 struct Step {
   const char* tool;
@@ -101,7 +101,35 @@ std::vector<Step> plan() {
       {"get_diagnostics", kNoArgs},
       {"get_progress", kNoArgs},
       {"get_health", kNoArgs},
-      // Three deterministic FAILURES, so the error wire is pinned too. Errors mutate nothing, so they ride at the end.
+      // `docs` opens a tree, so it takes no mark: a batch answers its row refused beside the marks it records, an
+      // out-of-order completion of `launch` (behind `docs`, which never completes) acknowledged among them, and an import
+      // lists it in progressRefused beside its rows, `launch` sent back as get_progress answers it.
+      {"set_progress", obj({{"updates", [] {
+                               Json::Value array(Json::arrayValue);
+                               array.append(mark("docs", "complete"));
+                               array.append(obj({{"nodeId", "launch"}, {"status", "complete"}, {"outOfOrder", true}}));
+                               array.append(mark("render", "complete"));
+                               return array;
+                             }()}})},
+      {"import_subgraph", obj({{"nodes", Json::Value(Json::arrayValue)},
+                               {"progress", [] {
+                                  Json::Value array(Json::arrayValue);
+                                  array.append(mark("docs", "complete"));
+                                  array.append(obj({{"nodeId", "launch"}, {"status", "complete"}, {"outOfOrder", true}}));
+                                  array.append(mark("sync", "none"));
+                                  return array;
+                                }()}})},
+      // update_nodes edits a node and marks two beside it: the mark on `docs` is refused there as set_progress refuses it,
+      // and the receipt lists it in progressRefused as an import does.
+      {"update_nodes", obj({{"updates", [] {
+                              Json::Value array(Json::arrayValue);
+                              array.append(obj({{"nodeId", "render"}, {"label", "Renderer v2"}}));
+                              array.append(mark("docs", "complete"));
+                              array.append(mark("sync", "complete"));
+                              return array;
+                            }()}})},
+      // Four deterministic FAILURES, so the error wire is pinned too. Errors mutate nothing, so they ride at the end.
+      {"set_progress", obj({{"nodeId", "docs"}, {"status", "complete"}})},
       {"set_progress", obj({{"nodeId", "no-such-node"}, {"status", "active"}})},
       {"annotate_node", with("nodeId", "root")},
       {"create_node", obj({{"label", "Elsewhere"}, {"opens", "t_0000000000000000"}})},

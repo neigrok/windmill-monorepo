@@ -27,6 +27,8 @@ public:
   // What guidedTreesAbove runs, over (owner, tree, levels, guides kept): named so its Postgres test can ask the plan
   // what it reads.
   static const char* guidedTreesAboveStatement();
+  // The statement behind openedFrom, with the owner as $1 and the trees it starts from as $2, a JSON array of ids.
+  static const char* openedFromStatement();
 
   std::optional<StoredTree> load(const TreeId& tree) override;
   std::optional<TreeAccess> loadAccess(const TreeId& tree) override;
@@ -51,10 +53,14 @@ public:
             bool guideInherited, const UserId& owner) override;
 
 private:
-  // The projection both list queries need: each present node's id, colour and pointer, with the
-  // document blob as the fallback for a tree whose rows were never backfilled.
-  TreeData projectDocument(pqxx::work& txn, const TreeId& tree, const std::string& title,
-                           const std::string& documentBlob);
+  // The projection both list queries need: each present node's id, colour and pointer, each pointer with the stamp it
+  // was set under, and the document blob as the fallback for a tree whose rows were never backfilled.
+  struct ProjectedDocument {
+    TreeData data;
+    std::map<NodeId, StampedPointer> pointers;
+  };
+  ProjectedDocument projectDocument(pqxx::work& txn, const TreeId& tree, const std::string& title,
+                                    const std::string& documentBlob);
 
   std::shared_ptr<PgPool> pool_;
 };

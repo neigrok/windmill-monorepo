@@ -4,25 +4,43 @@
 #include "products/roadmap/domain/Tree.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <map>
+#include <optional>
 #include <set>
 #include <string>
 #include <vector>
 
 namespace wm {
 
-// The nodes of one tree that open one target, and how many of them the reader marked.
+// The latest of the reader's marks that say complete among some nodes, by stamp, with the instant it was recorded;
+// unset where none of them is. A mark stored without a stamp (a row written before marks were stamped) is never it.
+struct LatestMark {
+  Hlc at;
+  std::uint64_t markedAt = 0;
+
+  // Keeps the later of this and `other`.
+  void join(const LatestMark& other) {
+    if (other.at > at) *this = other;
+  }
+  bool operator==(const LatestMark&) const = default;
+};
+
+// The nodes of one tree that open one target, how many of them the reader marked and the latest of those marks.
 struct Pointers {
   int nodes = 0;
   int marked = 0;
+  LatestMark latest;
   bool operator==(const Pointers&) const = default;
 };
 
-// One tree as completeness reads it; `marked` counts the reader's marks on nodes that hold no pointer.
+// One tree as completeness reads it; `marked` counts the reader's marks on nodes that hold no pointer, and `latest`
+// is the latest of them.
 struct OpenedTree {
   std::string title;
   int total = 0;
   int marked = 0;
+  LatestMark latest;
   std::map<TreeId, Pointers> pointers;
 
   OpenedTree() = default;
@@ -94,11 +112,16 @@ struct WaysBack {
   std::size_t walked = 0;
 };
 
+// The tree each node of `tree` opens, by node; a node that opens none is left out.
+std::map<NodeId, TreeId> pointersOf(const TreeData& tree);
 std::set<TreeId> treesOpenedBy(const TreeData& tree);
 // The same of a tree's pointers, held by node.
 std::set<TreeId> treesOpenedBy(const std::map<NodeId, TreeId>& pointers);
 // The pointers of `after` that `before` does not hold: the nodes an edit made open a tree, or another tree.
 std::map<NodeId, TreeId> pointersSetSince(const std::map<NodeId, TreeId>& before, const std::map<NodeId, TreeId>& after);
+
+// The code a mark on a node that holds a valid pointer is refused under; a client branches on it and it never changes.
+inline constexpr char kOpensATree[] = "opens-a-tree";
 
 // One owner's standing trees under the owner's marks, judged once by the rule in SPEC.md (Model, `OpenedTrees`).
 class OpenedTrees {
@@ -106,10 +129,16 @@ public:
   // A pointer is valid when it names one of `standing`.
   explicit OpenedTrees(std::map<TreeId, OpenedTree> standing);
 
-  // `marks` on `tree`, with each node that holds a valid pointer following its tree; only `completed` is filled.
+  // The nodes among `pointers` whose pointer is valid: each follows its tree and takes no mark of its own.
+  std::set<NodeId> following(const std::map<NodeId, TreeId>& pointers) const;
+  // `marks` on a tree, with each node that holds a valid pointer following its tree; only `completed` is filled.
+  Progress followed(const std::map<NodeId, TreeId>& pointers, const Progress& marks) const;
   Progress followed(const TreeData& tree, const Progress& marks) const;
   // One entry per node of `tree` that holds a pointer.
   std::map<NodeId, Opening> openings(const TreeData& tree) const;
+  // The latest mark in what completed `tree`: of the reader's marks on its nodes that follow no tree and, for each
+  // tree its nodes follow, of what completed that one. Unset for a tree that is not complete.
+  LatestMark completedAt(const TreeId& tree) const;
   // The standing trees whose pointers lead to `tree`, itself among them when it stands.
   std::set<TreeId> leadingBackTo(const TreeId& tree) const;
   // The way back to `tree` from every standing tree that leads to it; none when `tree` does not stand.
@@ -125,8 +154,16 @@ private:
   std::map<TreeId, OpenedTree> standing_;
   std::map<TreeId, std::vector<TreeId>> openers_;
   std::map<TreeId, int> pending_;
-  std::set<TreeId> complete_;
+  std::map<TreeId, LatestMark> complete_;
   std::size_t walked_ = 0;
 };
+
+// An owner's stored `marks` on a tree as a caller who cannot write it is shown them: the owner's derived completion,
+// and nothing of the trees its nodes open. A node whose pointer is valid has a row only while its tree is complete
+// for the owner: complete, as its stored mark when that says so under a stamp, else at the later of the tree's
+// `completedAt` and the stamp its pointer was set under, so its time never predates the pointer. Every other row is
+// the stored one. Without `opened` — the trees were not read — no node that holds a pointer has a row.
+Progress readerView(const Progress& marks, const std::map<NodeId, StampedPointer>& pointers,
+                    const std::optional<OpenedTrees>& opened);
 
 }

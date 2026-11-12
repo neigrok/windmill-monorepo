@@ -319,7 +319,9 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
                 "(with `outOfOrder` on a completion) — your own progress mark, which works on any tree you can read. "
                 "Every other field is the tree owner's alone, and a call carrying one on a tree that is not yours is "
                 "refused whole. The tree fields land as ONE op, a field the node already holds left out, and marks "
-                "land after them, answered per row in `progress`. `unchanged: true` speaks for the tree fields: they "
+                "land after them, answered per row in `progress`. On a tree you own, a mark on a node that opens "
+                "another tree of yours is not recorded — that node is complete when its tree is — and is answered "
+                "`refused` and listed in progressRefused. `unchanged: true` speaks for the tree fields: they "
                 "landed nothing — and then the marks are the call, so a failure of theirs fails it, as set_progress's "
                 "does. expectedSeq refuses a stale call whole; dryRun applies nothing."
         : patches ? "Patch fields on 1..200 existing nodes atomically. Omitted fields survive; empty strings and links clear their field. "
@@ -894,9 +896,11 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "A mark you already hold at its turn — the same status and the same outOfOrder word, after "
         "the rows before it in the call — answers unchanged:true on its row, and a bulk call whose every "
         "row does answers unchanged:true. "
-        "A mark on a node that opens another tree of yours is recorded, but on a tree you own that "
-        "node's `state` follows the opened tree, not the mark; prerequisitesMet reads marks alone, so "
-        "a prerequisite that is complete only through the tree it opens still reads as unmet.",
+        "On a tree you own, a node that opens another tree of yours takes no mark: it is complete when "
+        "that tree is, so mark the steps of the tree it opens. A single mark on such a node is refused "
+        "and nothing is written; in `updates` its row answers {nodeId, refused} with the reason and "
+        "every other row is recorded. prerequisitesMet reads the same completed set `state` does, so a "
+        "prerequisite that opens a tree is met when that tree is complete, whatever mark it holds.",
         p, {"treeId"}));
   }
   {
@@ -951,7 +955,9 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
                              "prerequisites carries outOfOrder:true and is answered acknowledged:true, and "
                              "prerequisitesMet is judged against the tree the import leaves. `nodeId` here "
                              "names a node that exists once the import lands; a row naming none is "
-                             "reported back in progressSkipped, not silently dropped.",
+                             "reported back in progressSkipped, not silently dropped. On a tree you own, a "
+                             "row marking a node that opens another tree of yours is not recorded — that "
+                             "node is complete when its tree is — and is reported back in progressRefused.",
                              progressRow(), {"nodeId", "status"});
     p["progress"]["maxItems"] = static_cast<Json::UInt64>(kMaxProgressUpdates);
     p["prerequisiteMode"] = enumStr(

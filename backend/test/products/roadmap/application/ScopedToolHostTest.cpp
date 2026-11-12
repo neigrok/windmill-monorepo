@@ -513,6 +513,50 @@ TEST(scoped_tool_host_reads_the_state_of_a_node_that_follows_the_tree_it_opens) 
            parse(R"({"count":1,"nodes":[{"id":"next"}]})"));
 }
 
+// A tend marks as the owner, so its mark on such a node is refused as the owner's is, through set_progress or update_nodes,
+// in a sentence that names no tree.
+TEST(scoped_tool_host_refuses_a_tends_mark_on_a_node_that_opens_a_tree_in_a_sentence_that_names_no_tree) {
+  test::Harness h;
+  h.trees.byId["t_sub"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Deep dive", {}}, 0, h.caller};
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"idea","label":"Idea","opens":"t_sub"},{"id":"a","label":"A"}]})")).isError);
+  ScopedToolHost scoped(h.tools, TreeId{"t"});
+  std::vector<WriteCompletion> completions;
+  installWriteSink([&](const WriteCompletion& completion) { completions.push_back(completion); });
+
+  const ToolResult single = scoped.callTool("set_progress", parse(R"({"nodeId":"idea","status":"complete"})"), h.actor);
+  const ToolResult batch = scoped.callTool("set_progress", parse(R"({"updates":[{"nodeId":"idea","status":"complete"},{"nodeId":"a","status":"complete"}]})"), h.actor);
+  const ToolResult marksAlone = scoped.callTool("update_nodes", parse(R"({"updates":[{"nodeId":"idea","status":"complete"}]})"), h.actor);
+  const ToolResult besideAnEdit = scoped.callTool("update_nodes", parse(R"({"updates":[{"nodeId":"a","label":"A2"},
+      {"nodeId":"idea","status":"none"}]})"), h.actor);
+  installWriteSink({});
+
+  CHECK(single.isError);
+  CHECK_EQ(test::message(single), std::string("set_progress: \"idea\" opens a tree: it is complete when that tree is and takes "
+                                               "no mark of its own — mark the steps of the tree it opens"));
+  CHECK_FALSE(batch.isError);
+  CHECK_EQ(test::body(batch), parse(R"({"results":[
+      {"nodeId":"idea","refused":"\"idea\" opens a tree: it is complete when that tree is and takes no mark of its own — mark the steps of the tree it opens"},
+      {"nodeId":"a","status":"complete","prerequisitesMet":true}]})"));
+  for (const ToolResult* marked : {&marksAlone, &besideAnEdit}) {
+    CHECK_FALSE(marked->isError);
+    const Json::Value receipt = test::body(*marked);
+    CHECK_EQ(receipt["progress"], parse(R"([
+        {"nodeId":"idea","refused":"\"idea\" opens a tree: it is complete when that tree is and takes no mark of its own — mark the steps of the tree it opens"}])"));
+    CHECK_EQ(receipt["progressRefused"], parse(R"(["idea"])"));
+    CHECK_EQ(receipt["progressApplied"], Json::Value(false));
+    const std::string text = receipt.toStyledString();
+    CHECK(text.find("t_sub") == std::string::npos);
+    CHECK(text.find("Deep dive") == std::string::npos);
+  }
+  CHECK_EQ(test::body(besideAnEdit)["changedNodeIds"], parse(R"(["a"])"));
+  CHECK_EQ(test::body(h.call("get_progress", test::kNoArgs)), parse(R"({"completed":["a"],"outOfOrder":[]})"));
+  std::vector<std::string> observed;
+  for (const WriteCompletion& completion : completions)
+    observed.push_back(completion.operation + " " + completion.door + " " + completion.outcome);
+  CHECK_EQ(observed, (std::vector<std::string>{"roadmap.set_progress Coach opens-a-tree", "roadmap.set_progress Coach ok",
+                                               "roadmap.update_nodes Coach opens-a-tree", "roadmap.update_nodes Coach ok"}));
+}
+
 // Only the argument and the field are withheld: the word as a node's id or label is a tend's to use,
 // an import through a tend leaves the pointer a node holds, and a plain caller reads and sets it as before.
 TEST(scoped_tool_host_leaves_a_nodes_pointer_alone_and_a_plain_caller_still_reads_and_sets_it) {

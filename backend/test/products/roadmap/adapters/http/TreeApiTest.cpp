@@ -11,6 +11,9 @@
 #include "platform/ports/FailureReporter.h"
 
 #include <algorithm>
+#include <chrono>
+#include <optional>
+#include <set>
 #include <memory>
 #include <mutex>
 #include <new>
@@ -42,12 +45,24 @@ struct Harness {
   std::shared_ptr<AuthService> auth =
       std::make_shared<AuthService>(authRepo, email, tokens, *clock, oauth, footprint, revocations, "https://windmill.works");
   std::shared_ptr<ForkService> fork = std::make_shared<ForkService>(*rooms, *trees, tokens, *clock);
-  TreeApi api{rooms, trees, progress, ops, Hlc{1, 0, "genesis"}, auth, fork, clock};
+  std::shared_ptr<OwnerProgress> ownerProgress = std::make_shared<OwnerProgress>(*progress, *trees, *clock);
+  TreeApi api{rooms, trees, ownerProgress, ops, Hlc{1, 0, "genesis"}, auth, fork, clock};
 
   UserId signIn(const std::string& sessionSecret, const std::string& email = "sam@example.com") {
     User user = authRepo.createUser(Email{email}, "sam");
     authRepo.insertSession(tokens.digestOf(sessionSecret), user.id, clock->now + 1'000'000, "", "", clock->now);
     return user.id;
+  }
+
+  // A tree of the steps named, each opening the tree given beside it, or none for "".
+  void seedSteps(const char* id, const UserId& owner, Visibility visibility,
+                 const std::vector<std::pair<const char*, const char*>>& steps) {
+    LooseGraph graph;
+    for (const auto& [step, opens] : steps) {
+      graph.createNode(NodeId{step}, step, "", NodeColor::sky, std::nullopt, Hlc{1, 0, "seed"});
+      if (std::string(opens) != "") graph.setOpens(NodeId{step}, TreeId{opens}, Hlc{2, 0, "seed"});
+    }
+    trees->byId[id] = StoredTree{graph.exportState(), LegendState{}, {id, {}}, 0, owner, visibility};
   }
 
   void seedSource(const char* id, const char* title) {
@@ -933,6 +948,208 @@ TEST(get_progress_of_a_private_tree_is_404_for_a_non_owner_and_200_for_its_owner
   CHECK_EQ(sendGetProgress(h.api, "s-other", "t_priv")->getStatusCode(), drogon::k404NotFound);
   CHECK_EQ(sendGetProgress(h.api, "", "t_priv")->getStatusCode(), drogon::k404NotFound);
   CHECK_EQ(soleCompleted(sendGetProgress(h.api, "s-owner", "t_priv")), std::string("root"));
+}
+
+// The owner's own reads show such a step done through its tree, so a reader served the stored marks saw a hole. A
+// reader is shown what the owner's reads derive, and the owner, whose view derives it again, the marks as stored.
+TEST(get_progress_shows_a_reader_the_owners_derived_completion_of_a_step_that_opens_a_tree_and_its_writer_the_stored_marks) {
+  Harness h;
+  const UserId owner = h.signIn("s-owner", "owner-acct@example.com");
+  h.signIn("s-other", "other@example.com");
+  h.seedSteps("t_done", owner, Visibility::private_, {{"d", ""}});
+  h.seedSteps("t_open", owner, Visibility::private_, {{"o", ""}});
+  h.seedSteps("t_removed", owner, Visibility::private_, {{"r", ""}});
+  h.seedSteps("t_theirs", UserId{"someone-else"}, Visibility::public_, {{"x", ""}});
+  h.trees->softDelete(TreeId{"t_removed"});
+  h.seedSteps("t_main", owner, Visibility::public_,
+              {{"done-cleared", "t_done"}, {"done-marked", "t_done"}, {"done-unmarked", "t_done"}, {"open", "t_open"},
+               {"plain", ""}, {"removed", "t_removed"}, {"theirs", "t_theirs"}});
+  h.progress->setStatus(TreeId{"t_done"}, owner, NodeId{"d"}, ProgressStatus::complete, false, Hlc{800, 0, "owner"}, 800);
+  h.progress->setStatus(TreeId{"t_main"}, owner, NodeId{"done-marked"}, ProgressStatus::complete, true, Hlc{900, 0, "owner"}, 900);
+  h.progress->setStatus(TreeId{"t_main"}, owner, NodeId{"done-cleared"}, ProgressStatus::none, false, Hlc{901, 0, "owner"}, 901);
+  h.progress->setStatus(TreeId{"t_main"}, owner, NodeId{"open"}, ProgressStatus::complete, false, Hlc{902, 0, "owner"}, 902);
+  h.progress->setStatus(TreeId{"t_main"}, owner, NodeId{"removed"}, ProgressStatus::complete, false, Hlc{903, 0, "owner"}, 903);
+  h.progress->setStatus(TreeId{"t_main"}, owner, NodeId{"theirs"}, ProgressStatus::none, false, Hlc{904, 0, "owner"}, 904);
+  h.progress->setStatus(TreeId{"t_main"}, owner, NodeId{"plain"}, ProgressStatus::complete, false, Hlc{905, 0, "owner"}, 905);
+
+  const Json::Value shown = parse(R"({"marks":[
+      {"node":"done-cleared","status":"complete","at":"800:0:owner","markedAt":800},
+      {"node":"done-marked","status":"complete","at":"900:0:owner","markedAt":900},
+      {"node":"done-unmarked","status":"complete","at":"800:0:owner","markedAt":800},
+      {"node":"plain","status":"complete","at":"905:0:owner","markedAt":905},
+      {"node":"removed","status":"complete","at":"903:0:owner","markedAt":903},
+      {"node":"theirs","status":"none","at":"904:0:owner","markedAt":904}]})");
+  for (const char* session : {"", "s-other"}) {
+    const drogon::HttpResponsePtr reply = sendGetProgress(h.api, session, "t_main");
+    REQUIRE_EQ(reply->getStatusCode(), drogon::k200OK);
+    CHECK_EQ(parse(std::string(reply->getBody())), shown);
+    CHECK_EQ(std::string(reply->getBody()).find("t_"), std::string::npos);
+  }
+  const std::set<TreeId> opened{TreeId{"t_done"}, TreeId{"t_open"}, TreeId{"t_removed"}, TreeId{"t_theirs"}};
+  CHECK_EQ(h.trees->openedReads, (std::vector<std::set<TreeId>>{opened, opened}));
+
+  CHECK_EQ(parse(std::string(sendGetProgress(h.api, "s-owner", "t_main")->getBody())), parse(R"({"marks":[
+      {"node":"done-cleared","status":"none","at":"901:0:owner","markedAt":901},
+      {"node":"done-marked","status":"complete","at":"900:0:owner","markedAt":900,"outOfOrder":true},
+      {"node":"open","status":"complete","at":"902:0:owner","markedAt":902},
+      {"node":"plain","status":"complete","at":"905:0:owner","markedAt":905},
+      {"node":"removed","status":"complete","at":"903:0:owner","markedAt":903},
+      {"node":"theirs","status":"none","at":"904:0:owner","markedAt":904}]})"));
+  CHECK_EQ(h.trees->openedReads.size(), 2u);
+}
+
+// What a reader is answered must not say a step opens a tree: it is, byte for byte, the answer for a twin where a step
+// that opens a tree that is not complete holds no mark and one that opens a complete tree was marked by hand at the
+// latest mark in what completed that tree. A pointer that is not valid leaves its step the stored row.
+TEST(get_progress_answers_a_reader_of_a_tree_with_pointers_what_a_twin_marked_by_hand_answers) {
+  Harness h;
+  const UserId owner = h.signIn("s-owner", "owner-acct@example.com");
+  h.signIn("s-other", "other@example.com");
+  h.seedSteps("t_open", owner, Visibility::private_, {{"o", ""}, {"p", ""}});
+  h.seedSteps("t_done", owner, Visibility::private_, {{"d", ""}, {"e", ""}});
+  h.seedSteps("t_mid", owner, Visibility::private_, {{"deeper", "t_leaf"}, {"m", ""}});
+  h.seedSteps("t_leaf", owner, Visibility::private_, {{"l", ""}});
+  h.seedSteps("t_removed", owner, Visibility::private_, {{"r", ""}});
+  h.seedSteps("t_theirs", UserId{"someone-else"}, Visibility::public_, {{"x", ""}});
+  h.trees->softDelete(TreeId{"t_removed"});
+  h.progress->setStatus(TreeId{"t_open"}, owner, NodeId{"o"}, ProgressStatus::complete, false, Hlc{800, 0, "owner"}, 800);
+  h.progress->setStatus(TreeId{"t_done"}, owner, NodeId{"d"}, ProgressStatus::complete, false, Hlc{700, 3, "phone"}, 700);
+  h.progress->setStatus(TreeId{"t_done"}, owner, NodeId{"e"}, ProgressStatus::complete, false, Hlc{700, 2, "tablet"}, 700);
+  h.progress->setStatus(TreeId{"t_mid"}, owner, NodeId{"m"}, ProgressStatus::complete, false, Hlc{600, 0, "phone"}, 600);
+  h.progress->setStatus(TreeId{"t_leaf"}, owner, NodeId{"l"}, ProgressStatus::complete, false, Hlc{850, 0, "phone"}, 850);
+  h.seedSteps("t_main", owner, Visibility::public_,
+              {{"chain", "t_mid"}, {"done", "t_done"}, {"done-marked", "t_done"}, {"marked", "t_open"}, {"unmarked", "t_open"},
+               {"plain", ""}, {"removed", "t_removed"}, {"theirs", "t_theirs"}});
+  h.seedSteps("t_twin", owner, Visibility::public_,
+              {{"chain", ""}, {"done", ""}, {"done-marked", ""}, {"marked", ""}, {"unmarked", ""}, {"plain", ""}, {"removed", ""},
+               {"theirs", ""}});
+  for (const char* tree : {"t_main", "t_twin"}) {
+    h.progress->setStatus(TreeId{tree}, owner, NodeId{"plain"}, ProgressStatus::complete, false, Hlc{900, 0, "owner"}, 900);
+    h.progress->setStatus(TreeId{tree}, owner, NodeId{"removed"}, ProgressStatus::complete, true, Hlc{901, 0, "owner"}, 901);
+    h.progress->setStatus(TreeId{tree}, owner, NodeId{"theirs"}, ProgressStatus::none, false, Hlc{902, 0, "owner"}, 902);
+  }
+  h.progress->setStatus(TreeId{"t_main"}, owner, NodeId{"marked"}, ProgressStatus::complete, false, Hlc{903, 0, "owner"}, 903);
+  h.progress->setStatus(TreeId{"t_main"}, owner, NodeId{"done-marked"}, ProgressStatus::complete, true, Hlc{904, 0, "owner"}, 904);
+  h.progress->setStatus(TreeId{"t_twin"}, owner, NodeId{"done-marked"}, ProgressStatus::complete, false, Hlc{904, 0, "owner"}, 904);
+  h.progress->setStatus(TreeId{"t_twin"}, owner, NodeId{"done"}, ProgressStatus::complete, false, Hlc{700, 3, "phone"}, 700);
+  h.progress->setStatus(TreeId{"t_twin"}, owner, NodeId{"chain"}, ProgressStatus::complete, false, Hlc{850, 0, "phone"}, 850);
+
+  for (const char* session : {"", "s-other"}) {
+    const drogon::HttpResponsePtr onTheTree = sendGetProgress(h.api, session, "t_main");
+    const drogon::HttpResponsePtr onTheTwin = sendGetProgress(h.api, session, "t_twin");
+    REQUIRE_EQ(onTheTree->getStatusCode(), drogon::k200OK);
+    CHECK_EQ(std::string(onTheTree->getBody()), std::string(onTheTwin->getBody()));
+    CHECK_EQ(parse(std::string(onTheTree->getBody())), parse(R"({"marks":[
+        {"node":"chain","status":"complete","at":"850:0:phone","markedAt":850},
+        {"node":"done","status":"complete","at":"700:3:phone","markedAt":700},
+        {"node":"done-marked","status":"complete","at":"904:0:owner","markedAt":904},
+        {"node":"plain","status":"complete","at":"900:0:owner","markedAt":900},
+        {"node":"removed","status":"complete","at":"901:0:owner","markedAt":901,"outOfOrder":true},
+        {"node":"theirs","status":"none","at":"902:0:owner","markedAt":902}]})"));
+  }
+}
+
+// A follow that fails or runs past its budget is not the reader's to wait on or be refused for: the route answers, and
+// leaves out the row of every step that holds a pointer, so none is shown done that may not be. For five minutes after,
+// the owner is left unread without a try; the next try that fails says so again.
+TEST(get_progress_whose_pointers_cannot_be_followed_in_time_answers_a_reader_without_the_steps_that_open_a_tree) {
+  struct Failures : FailureReporter {
+    std::vector<std::string> reports;
+    void report(const std::string&, const std::string&, const std::string&) override {}
+    void reportWrite(const std::string& operation, const std::string& product, const std::string& door,
+                     const std::string& outcome, const std::string&, const std::string& exceptionType) override {
+      reports.push_back(operation + " " + product + " " + door + " " + outcome + " " + exceptionType);
+    }
+  };
+  struct ReporterScope {
+    std::shared_ptr<Failures> failures = std::make_shared<Failures>();
+    ReporterScope() { installWriteReporter(failures); }
+    ~ReporterScope() { installWriteReporter(nullptr); }
+  } reporter;
+  Harness h;
+  const UserId owner = h.signIn("s-owner", "owner-acct@example.com");
+  h.seedSteps("t_done", owner, Visibility::private_, {{"d", ""}});
+  h.seedSteps("t_main", owner, Visibility::public_, {{"done", "t_done"}, {"gone", "t_gone"}, {"plain", ""}});
+  h.progress->setStatus(TreeId{"t_done"}, owner, NodeId{"d"}, ProgressStatus::complete, false, Hlc{800, 0, "owner"}, 800);
+  for (const char* step : {"done", "gone", "plain"})
+    h.progress->setStatus(TreeId{"t_main"}, owner, NodeId{step}, ProgressStatus::complete, false, Hlc{900, 0, "owner"}, 900);
+  std::vector<std::string> lines;
+  installWriteSink([&](const WriteCompletion& line) {
+    if (line.product == "roadmap") lines.push_back(line.operation + " " + line.product + " " + line.door + " " + line.outcome);
+  });
+
+  const drogon::HttpResponsePtr followed = sendGetProgress(h.api, "", "t_main");
+  h.trees->budgetedReadsTimeOut = true;
+  const drogon::HttpResponsePtr timedOut = sendGetProgress(h.api, "", "t_main");
+  h.trees->budgetedReadsTimeOut = false;
+  const drogon::HttpResponsePtr coolingOff = sendGetProgress(h.api, "", "t_main");
+  h.clock->now += 5 * 60 * 1000;
+  h.trees->openedReadsFail = true;
+  const drogon::HttpResponsePtr failed = sendGetProgress(h.api, "", "t_main");
+  const drogon::HttpResponsePtr owners = sendGetProgress(h.api, "s-owner", "t_main");
+  installWriteSink({});
+
+  const Json::Value withoutPointerSteps = parse(R"({"marks":[{"node":"plain","status":"complete","at":"900:0:owner","markedAt":900}]})");
+  CHECK_EQ(parse(std::string(followed->getBody())), parse(R"({"marks":[
+      {"node":"done","status":"complete","at":"900:0:owner","markedAt":900},
+      {"node":"gone","status":"complete","at":"900:0:owner","markedAt":900},
+      {"node":"plain","status":"complete","at":"900:0:owner","markedAt":900}]})"));
+  for (const drogon::HttpResponsePtr& reply : {timedOut, coolingOff, failed}) {
+    CHECK_EQ(reply->getStatusCode(), drogon::k200OK);
+    CHECK_EQ(parse(std::string(reply->getBody())), withoutPointerSteps);
+  }
+  CHECK_EQ(bodyOf(owners)["marks"].size(), 3u);
+  CHECK_EQ(lines, (std::vector<std::string>{"roadmap.progress.follow roadmap rest timeout", "roadmap.progress.follow roadmap rest failed"}));
+  CHECK_EQ(reporter.failures->reports,
+           (std::vector<std::string>{std::string("roadmap.progress.follow roadmap rest failed ") + typeid(std::runtime_error).name()}));
+  CHECK_EQ(h.trees->openedBudgets, (std::vector<std::optional<std::chrono::milliseconds>>(3, std::chrono::milliseconds{750})));
+}
+
+// Nothing is followed where following decides nothing: for the tree's writer, and for a tree no step of which opens one.
+TEST(get_progress_follows_no_pointer_for_the_trees_writer_or_for_a_tree_that_holds_none_and_leaves_no_line) {
+  Harness h;
+  const UserId owner = h.signIn("s-owner", "owner-acct@example.com");
+  h.seedSteps("t_sub", owner, Visibility::private_, {{"s", ""}});
+  h.seedSteps("t_main", owner, Visibility::public_, {{"idea", "t_sub"}, {"plain", ""}});
+  h.seedSteps("t_plain", owner, Visibility::public_, {{"idea", ""}, {"plain", ""}});
+  std::vector<std::string> lines;
+  installWriteSink([&](const WriteCompletion& line) {
+    if (line.product == "roadmap") lines.push_back(line.operation + " " + line.outcome);
+  });
+
+  CHECK_EQ(sendGetProgress(h.api, "s-owner", "t_main")->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(sendGetProgress(h.api, "", "t_plain")->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(sendGetProgress(h.api, "s-owner", "t_plain")->getStatusCode(), drogon::k200OK);
+  installWriteSink({});
+
+  CHECK(h.trees->openedReads.empty());
+  CHECK(lines.empty());
+}
+
+// Another reader of the tree must not wait on the follow one reader's answer makes.
+TEST(get_progress_follows_pointers_for_a_reader_after_it_has_let_go_of_the_trees_strand) {
+  Harness h;
+  const UserId owner = h.signIn("s-owner", "owner-acct@example.com");
+  h.seedSteps("t_sub", owner, Visibility::private_, {{"s", ""}});
+  h.seedSteps("t_main", owner, Visibility::public_, {{"idea", "t_sub"}, {"plain", ""}});
+  bool strandWasFree = false;
+  drogon::HttpStatusCode readMeanwhile = drogon::kUnknown;
+  h.trees->duringOpenedRead = [&] {
+    std::thread other([&] {
+      std::mutex& strand = h.rooms->strandFor(TreeId{"t_main"});
+      if (!strand.try_lock()) return;
+      strand.unlock();
+      strandWasFree = true;
+      readMeanwhile = sendGetTree(h.api, "", "t_main")->getStatusCode();
+    });
+    other.join();
+  };
+
+  CHECK_EQ(sendGetProgress(h.api, "", "t_main")->getStatusCode(), drogon::k200OK);
+
+  CHECK_EQ(h.trees->openedReads.size(), 1u);
+  CHECK(strandWasFree);
+  CHECK_EQ(readMeanwhile, drogon::k200OK);
 }
 
 TEST(fork_of_a_private_source_you_dont_own_is_404_like_absent) {

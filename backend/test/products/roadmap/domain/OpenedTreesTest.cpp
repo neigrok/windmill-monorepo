@@ -91,6 +91,30 @@ TEST(a_node_is_complete_when_the_tree_it_opens_is_complete_and_open_until_then) 
   CHECK(finished.followed(root, Progress{}).completed == std::set<NodeId>{nid("idea")});
 }
 
+TEST(the_nodes_that_follow_a_tree_are_those_whose_pointer_names_a_standing_tree) {
+  const TreeData root = tree("root", {step("idea", "sub"), step("lost", "gone"), step("again", "root"), step("plain")});
+  const TreeData sub = tree("sub", {step("s")});
+  const std::map<NodeId, TreeId> pointers{{nid("idea"), tid("sub")}, {nid("lost"), tid("gone")}, {nid("again"), tid("root")}};
+
+  CHECK(opened({root, sub}).following(pointers) == (std::set<NodeId>{nid("again"), nid("idea")}));
+  CHECK(opened({sub}).following(pointers) == std::set<NodeId>{nid("idea")});
+  CHECK(opened({}).following(pointers) == std::set<NodeId>{});
+}
+
+// A door's mark is judged off the pointers alone, and comes to what a read of the whole tree comes to.
+TEST(the_completed_set_followed_from_a_trees_pointers_is_the_one_followed_from_the_tree) {
+  const TreeData root = tree("root", {step("done", "sub"), step("open", "half"), step("lost", "gone"), step("plain")});
+  const TreeData sub = tree("sub", {step("s")});
+  const TreeData half = tree("half", {step("h")});
+  const std::map<NodeId, TreeId> pointers{{nid("done"), tid("sub")}, {nid("open"), tid("half")}, {nid("lost"), tid("gone")}};
+  const Progress marked = marks({"open", "lost", "plain"});
+
+  const OpenedTrees standing = opened({root, sub, half}, {{"sub", marks({"s"})}});
+
+  CHECK(standing.followed(pointers, marked).completed == (std::set<NodeId>{nid("done"), nid("lost"), nid("plain")}));
+  CHECK(standing.followed(root, marked).completed == standing.followed(pointers, marked).completed);
+}
+
 TEST(two_trees_that_open_each_other_are_never_complete) {
   const TreeData a = tree("a", {step("to-b", "b")});
   const TreeData b = tree("b", {step("to-a", "a"), step("done")});
@@ -657,4 +681,148 @@ TEST(random_accounts_are_told_the_way_back_that_an_enumeration_of_every_way_find
   CHECK_EQ(disagreements, 0);
   CHECK(loops > 300);
   CHECK(cut > 0);
+}
+
+// What the owner's own reads derive for a step that opens a tree is what a reader is shown of it, and no more: a row
+// while the tree is complete, none while it is not, whatever mark the step holds. The row's time is the step's stored
+// complete mark when that has a stamp, else the later of when the tree completed and when the pointer was set.
+TEST(a_reader_is_shown_a_node_that_opens_a_tree_complete_while_that_tree_is_and_with_no_row_while_it_is_not) {
+  const TreeData done = tree("done", {step("d"), step("e")});
+  const TreeData open = tree("open", {step("o")});
+  Progress doneMarks;
+  doneMarks.record(nid("d"), ProgressMark{ProgressStatus::complete, Hlc{700, 0, "phone"}, 710});
+  doneMarks.record(nid("e"), ProgressMark{ProgressStatus::complete, Hlc{700, 0, "tablet"}, 705});
+  const OpenedTrees standing = opened({done, open}, {{"done", doneMarks}});
+  const Hlc earlier{600, 0, "laptop"};
+  const std::map<NodeId, StampedPointer> pointers{
+      {nid("done-unmarked"), {tid("done"), earlier}},   {nid("done-marked"), {tid("done"), earlier}},
+      {nid("done-cleared"), {tid("done"), earlier}},    {nid("done-unstamped"), {tid("done"), earlier}},
+      {nid("done-set-later"), {tid("done"), Hlc{800, 1, "laptop"}}},
+      {nid("open-unmarked"), {tid("open"), earlier}},   {nid("open-marked"), {tid("open"), earlier}},
+      {nid("open-cleared"), {tid("open"), earlier}}};
+  Progress stored;
+  stored.record(nid("done-marked"), ProgressMark{ProgressStatus::complete, Hlc{900, 2, "phone"}, 950, true});
+  stored.record(nid("done-cleared"), ProgressMark{ProgressStatus::none, Hlc{901, 0, "phone"}, 951});
+  stored.record(nid("done-unstamped"), ProgressMark{ProgressStatus::complete, Hlc{}, 990});
+  stored.record(nid("open-marked"), ProgressMark{ProgressStatus::complete, Hlc{902, 0, "phone"}, 952, true});
+  stored.record(nid("open-cleared"), ProgressMark{ProgressStatus::none, Hlc{903, 0, "phone"}, 953});
+
+  Progress shown;
+  shown.record(nid("done-unmarked"), ProgressMark{ProgressStatus::complete, Hlc{700, 0, "tablet"}, 705, false});
+  shown.record(nid("done-marked"), ProgressMark{ProgressStatus::complete, Hlc{900, 2, "phone"}, 950, false});
+  shown.record(nid("done-cleared"), ProgressMark{ProgressStatus::complete, Hlc{700, 0, "tablet"}, 705, false});
+  shown.record(nid("done-unstamped"), ProgressMark{ProgressStatus::complete, Hlc{700, 0, "tablet"}, 705, false});
+  shown.record(nid("done-set-later"), ProgressMark{ProgressStatus::complete, Hlc{800, 1, "laptop"}, 800, false});
+  CHECK(readerView(stored, pointers, standing) == shown);
+}
+
+// A mark with no stamp was written before stamps existed and says nothing about when: it counts toward a tree's
+// completion, never toward its time, so a reader of a step that opens such a tree is shown when the pointer was set.
+TEST(a_mark_with_no_stamp_completes_a_tree_but_never_says_when) {
+  const TreeData mixed = tree("mixed", {step("stamped"), step("unstamped")});
+  const TreeData bare = tree("bare", {step("only")});
+  const TreeData above = tree("above", {step("to-bare", "bare")});
+  Progress mixedMarks;
+  mixedMarks.record(nid("stamped"), ProgressMark{ProgressStatus::complete, Hlc{500, 0, "phone"}, 505});
+  mixedMarks.record(nid("unstamped"), ProgressMark{ProgressStatus::complete, Hlc{}, 9000});
+  Progress bareMarks;
+  bareMarks.record(nid("only"), ProgressMark{ProgressStatus::complete, Hlc{}, 9000});
+  const OpenedTrees standing = opened({mixed, bare, above}, {{"mixed", mixedMarks}, {"bare", bareMarks}});
+
+  CHECK(standing.completedAt(tid("mixed")) == (LatestMark{Hlc{500, 0, "phone"}, 505}));
+  CHECK(standing.completedAt(tid("bare")) == LatestMark{});
+  CHECK(standing.completedAt(tid("above")) == LatestMark{});
+
+  Progress shown;
+  shown.record(nid("to-bare"), ProgressMark{ProgressStatus::complete, Hlc{300, 4, "laptop"}, 300});
+  CHECK(readerView(Progress{}, {{nid("to-bare"), {tid("bare"), Hlc{300, 4, "laptop"}}}}, standing) == shown);
+}
+
+// What completed a tree is the marks on its nodes that follow no tree and whatever completed each tree its nodes
+// follow, however deep: the latest of them all is when it completed. A mark its own step holds beside a valid pointer
+// completed nothing, and a tree that is not complete has no such instant.
+TEST(a_tree_completed_at_the_latest_mark_in_what_completed_it_however_deep_that_mark_lies) {
+  const TreeData root = tree("root", {step("to-mid", "mid"), step("r")});
+  const TreeData mid = tree("mid", {step("to-leaf", "leaf"), step("to-gone", "gone"), step("m")});
+  const TreeData leaf = tree("leaf", {step("l")});
+  const TreeData open = tree("open", {step("o"), step("p")});
+  const auto marked = [](std::vector<std::pair<const char*, std::uint64_t>> at) {
+    Progress progress;
+    for (const auto& [node, ms] : at) progress.record(nid(node), ProgressMark{ProgressStatus::complete, Hlc{ms, 0, "phone"}, ms + 5});
+    return progress;
+  };
+
+  const OpenedTrees deepest = opened({root, mid, leaf, open}, {{"root", marked({{"r", 100}})},
+                                                               {"mid", marked({{"m", 300}, {"to-gone", 400}, {"to-leaf", 999}})},
+                                                               {"leaf", marked({{"l", 800}})},
+                                                               {"open", marked({{"o", 950}})}});
+  CHECK(deepest.completedAt(tid("leaf")) == (LatestMark{Hlc{800, 0, "phone"}, 805}));
+  CHECK(deepest.completedAt(tid("mid")) == (LatestMark{Hlc{800, 0, "phone"}, 805}));
+  CHECK(deepest.completedAt(tid("root")) == (LatestMark{Hlc{800, 0, "phone"}, 805}));
+  CHECK(deepest.completedAt(tid("open")) == LatestMark{});
+  CHECK(deepest.completedAt(tid("gone")) == LatestMark{});
+
+  const OpenedTrees nearest = opened({root, mid, leaf}, {{"root", marked({{"r", 100}})},
+                                                         {"mid", marked({{"m", 300}, {"to-gone", 850}})},
+                                                         {"leaf", marked({{"l", 800}})}});
+  CHECK(nearest.completedAt(tid("mid")) == (LatestMark{Hlc{850, 0, "phone"}, 855}));
+  CHECK(nearest.completedAt(tid("root")) == (LatestMark{Hlc{850, 0, "phone"}, 855}));
+
+  Progress shown;
+  shown.record(nid("to-mid"), ProgressMark{ProgressStatus::complete, Hlc{800, 0, "phone"}, 805});
+  CHECK(readerView(Progress{}, {{nid("to-mid"), {tid("mid"), Hlc{50, 0, "laptop"}}}}, deepest) == shown);
+}
+
+TEST(a_reader_is_shown_the_stored_row_of_every_node_that_follows_no_tree) {
+  const OpenedTrees standing = opened({tree("sub", {step("s")})}, {{"sub", marks({"s"})}});
+  const std::map<NodeId, StampedPointer> pointers{{nid("gone"), {tid("gone"), Hlc{800, 0, "phone"}}},
+                                                  {nid("cleared-gone"), {tid("gone"), Hlc{800, 0, "phone"}}}};
+  Progress stored;
+  stored.record(nid("gone"), ProgressMark{ProgressStatus::complete, Hlc{900, 0, "phone"}, 950, true});
+  stored.record(nid("cleared-gone"), ProgressMark{ProgressStatus::none, Hlc{901, 0, "phone"}, 951});
+  stored.record(nid("plain"), ProgressMark{ProgressStatus::complete, Hlc{902, 0, "phone"}, 952, true});
+  stored.record(nid("cleared"), ProgressMark{ProgressStatus::none, Hlc{903, 0, "phone"}, 953});
+  stored.record(nid("left-the-tree"), ProgressMark{ProgressStatus::complete, Hlc{904, 0, "phone"}, 954});
+
+  CHECK(readerView(stored, pointers, standing) == stored);
+  CHECK(readerView(stored, {}, OpenedTrees({})) == stored);
+}
+
+// One rule decides completeness for the owner and for the owner's readers: a chain completes, a loop never does.
+TEST(a_reader_is_shown_as_complete_exactly_the_nodes_the_owners_followed_set_holds) {
+  const TreeData root = tree("root", {step("chain", "mid"), step("loop", "ring"), step("half", "open"), step("lost", "gone"),
+                                      step("plain"), step("unmarked")});
+  const TreeData mid = tree("mid", {step("deeper", "leaf")});
+  const TreeData leaf = tree("leaf", {step("l")});
+  const TreeData ring = tree("ring", {step("back", "root"), step("r")});
+  const TreeData open = tree("open", {step("a"), step("b")});
+  const OpenedTrees standing =
+      opened({root, mid, leaf, ring, open}, {{"leaf", marks({"l"})}, {"ring", marks({"back", "r"})}, {"open", marks({"a"})}});
+  const std::map<NodeId, TreeId> pointers = pointersOf(root);
+  std::map<NodeId, StampedPointer> stamped;
+  for (const auto& [node, opens] : pointers) stamped.emplace(node, StampedPointer{opens, Hlc{800, 0, "phone"}});
+  Progress stored;
+  for (const char* marked : {"loop", "half", "lost", "plain"})
+    stored.record(nid(marked), ProgressMark{ProgressStatus::complete, Hlc{900, 0, "phone"}, 950});
+
+  const Progress shown = readerView(stored, stamped, standing);
+
+  CHECK(shown.completed == (std::set<NodeId>{nid("chain"), nid("lost"), nid("plain")}));
+  CHECK(shown.completed == standing.followed(pointers, stored).completed);
+  CHECK(shown.cleared == std::set<NodeId>{});
+}
+
+// The owner's trees could not be read, so which pointers are valid is not known: no step that holds one is shown.
+TEST(a_reader_is_shown_no_row_for_a_node_that_holds_a_pointer_when_the_owners_trees_were_not_read) {
+  const std::map<NodeId, StampedPointer> pointers{{nid("idea"), {tid("sub"), Hlc{800, 0, "phone"}}},
+                                                  {nid("lost"), {tid("gone"), Hlc{800, 0, "phone"}}},
+                                                  {nid("unmarked"), {tid("sub"), Hlc{800, 0, "phone"}}}};
+  Progress stored;
+  stored.record(nid("idea"), ProgressMark{ProgressStatus::complete, Hlc{900, 0, "phone"}, 950});
+  stored.record(nid("lost"), ProgressMark{ProgressStatus::none, Hlc{901, 0, "phone"}, 951});
+  stored.record(nid("plain"), ProgressMark{ProgressStatus::complete, Hlc{902, 0, "phone"}, 952, true});
+
+  Progress shown;
+  shown.record(nid("plain"), ProgressMark{ProgressStatus::complete, Hlc{902, 0, "phone"}, 952, true});
+  CHECK(readerView(stored, pointers, std::nullopt) == shown);
 }

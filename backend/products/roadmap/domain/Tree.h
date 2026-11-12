@@ -122,6 +122,13 @@ struct Link {
   bool operator==(const Link&) const = default;
 };
 
+// The tree a node opens, with the stamp its pointer was set under.
+struct StampedPointer {
+  TreeId tree;
+  Hlc setAt;
+  bool operator==(const StampedPointer&) const = default;
+};
+
 // The wire/persist shape of a node: `from -> id` edges live as `prerequisites`. `status` is an
 // opaque authoring-time seed the server round-trips but never acts on — runtime status is the
 // per-user Progress overlay.
@@ -168,6 +175,7 @@ struct ProgressMark {
   Hlc at;
   std::uint64_t markedAt = 0;  // epoch ms, server clock; 0 where the overlay keeps no times
   bool outOfOrder = false;
+  bool operator==(const ProgressMark&) const = default;
 };
 
 // `record` is the only way in, so the id sets can never drift from the registers they project.
@@ -192,6 +200,7 @@ struct Progress {
     if (held == marks.end()) return status == ProgressStatus::none && !outOfOrder;
     return held->second.status == status && held->second.outOfOrder == outOfOrder;
   }
+  bool operator==(const Progress&) const = default;
 };
 
 }

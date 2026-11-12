@@ -186,8 +186,8 @@ tree's guide through `get_tree` and never sets it. Nor is it offered the tree a 
 schemas it is handed carry no `opens` argument and no `opens` field, so a run neither reads nor sets
 a pointer, an import through it leaves the pointers the tree holds as they are, and a node it
 creates, or brings back from a delete, opens none. The `state` it reads is the owner's: a node
-that opens a tree is complete when
-that tree is. Its `get_tree` reply carries `tree.guide`, the tended tree's own, and no `guides`: the
+that opens a tree is complete when that tree is, and a run's mark on such a node is refused as the
+owner's is, in a sentence that names the node and no tree. Its `get_tree` reply carries `tree.guide`, the tended tree's own, and no `guides`: the
 guides of the trees above are other trees' ids, titles and words, so a run is not offered
 `includeGuides`, every `get_tree` it makes is sent with it `false`, and no tree above the tended
 one is read; the two reads `TendingService` makes of the tree's `seq` send it `false` too. Its
@@ -219,7 +219,7 @@ The table uses product-local names; external MCP prefixes each with `roadmap_`.
 | read | `get_progress` | the caller's completed node ids, and `outOfOrder` — the subset of completed whose mark carried `outOfOrder: true`, from `set_progress` or an import's `progress` row |
 | read | `find_nodes` | search by `color`/`kind`, the derived `state`, and/or a `query` substring (id + label + description), best match first — `{state: "available"}` is the frontier |
 | edit | `patch_nodes` | 1–200 existing nodes, replacement fields (`opens` among them, and a hue as `color` or legend `kind`) with omission preservation, full-batch validation, optional `expectedSeq` and `dryRun` |
-| edit | `update_nodes` | `patch_nodes`' handler grown (`applyBatchEdit`): 1–200 rows, each `nodeId` and any of `label`, `color`/`kind`, `description` or `appendDescription`, `icon`, `links` or `addLinks`, `opens`, and the caller's mark (`status` with `outOfOrder`, read by `readMark`); no `position`. The tree fields land as `patch_nodes`' batch does — one op, `changedPart` per row, `changedNodeIds`/`unchangedNodeIds`, `unchanged: true` when it lands nothing — each row judged against the node as the batch finds it. Marks land after it, as an import's `progress[]` does, answered in `progress` rows with `prerequisitesMet` judged against the overlay the whole call leaves; `unchanged` speaks for the tree batch only. When a tree op lands in the call, marks that then fail answer `progressApplied: false` and are reported as `roadmap.update_nodes.marks`; when none does — no tree field sent, or only fields the nodes hold — the marks are the call, and their refusal or failure is the call's, as `set_progress`'s is. A field is sent when it holds a value: a `null` `kind` or `outOfOrder` is left out, and a `null` in a field that takes none is refused. A mark is the caller's own overlay and needs what `set_progress` needs — the write grant on the connection and read access to the tree — so a call carrying only marks works on any tree the caller reads; a call carrying any tree field passes the owner's write gate whole, and on another account's tree is refused with no mark landed. A stale `expectedSeq` refuses the whole call, marks included; `dryRun` previews the tree batch as `patch_nodes` does and lands no mark, answering none, as an import's dry run answers none (it reports only `progressSkipped`, which update_nodes refuses instead) |
+| edit | `update_nodes` | `patch_nodes`' handler grown (`applyBatchEdit`): 1–200 rows, each `nodeId` and any of `label`, `color`/`kind`, `description` or `appendDescription`, `icon`, `links` or `addLinks`, `opens`, and the caller's mark (`status` with `outOfOrder`, read by `readMark`); no `position`. The tree fields land as `patch_nodes`' batch does — one op, `changedPart` per row, `changedNodeIds`/`unchangedNodeIds`, `unchanged: true` when it lands nothing — each row judged against the node as the batch finds it. Marks land after it, as an import's `progress[]` does, answered in `progress` rows with `prerequisitesMet` judged against the overlay the whole call leaves; `unchanged` speaks for the tree batch only. When a tree op lands in the call, marks that then fail answer `progressApplied: false` and are reported as `roadmap.update_nodes.marks`; when none does — no tree field sent, or only fields the nodes hold — the marks are the call, and their refusal or failure is the call's, as `set_progress`'s is. On a tree the caller owns, a mark on a node that opens another tree of theirs is refused as `set_progress` refuses it: its row answers `refused`, naming the node and no tree, and the receipt lists it in `progressRefused` with `progressError` and `progressApplied: false`; when the marks are the call and each was refused, nothing is written, the reply is no error, and the call completes as `opens-a-tree`, as `set_progress`'s batch does. A field is sent when it holds a value: a `null` `kind` or `outOfOrder` is left out, and a `null` in a field that takes none is refused. A mark is the caller's own overlay and needs what `set_progress` needs — the write grant on the connection and read access to the tree — so a call carrying only marks works on any tree the caller reads; a call carrying any tree field passes the owner's write gate whole, and on another account's tree is refused with no mark landed. A stale `expectedSeq` refuses the whole call, marks included; `dryRun` previews the tree batch as `patch_nodes` does and lands no mark, answering none, as an import's dry run answers none (it reports only `progressSkipped`, which update_nodes refuses instead) |
 | edit | `change_edges` | 1–500 combined additions/removals, existing endpoints for additions, absent removals are no-ops, optional `expectedSeq` and `dryRun` |
 | edit | `create_node` | add a node — its hue as `color` or legend `kind`, `prerequisites[]`, `description`, `links`, `opens` all optional; answers `id` and the `kind` it wears |
 | edit | `annotate_node` | set a node's `description` — or `appendDescription`, which joins onto the existing body after a blank line, the cap held against the result; one of the two — its `icon` (`""` clears it, which is how an `empty-icon` smell is fixed), its `links` — or `addLinks`, which joins links after the ones held, in the order sent (a held url, whitespace around it aside, keeps its place and takes the label sent with it; a url sent twice is refused; the 32-link cap held against the result); one of the two — and/or the tree it `opens` (`""` clears it); when no field it names would change it writes nothing (see below) |
@@ -231,7 +231,7 @@ The table uses product-local names; external MCP prefixes each with `roadmap_`.
 | edit | `import_subgraph` | bulk upsert a whole `get_tree`-shaped slice as one graft frame — a field left off a re-sent node or kind keeps its value (`opens` included, but on a node the import brings back from a delete, which opens none), `prerequisiteMode` merge (union) or replace, `tombstone[]` deletes in the same frame and needs the `roadmap:delete` grant; optional `expectedSeq` and `dryRun`; a graft that changes nothing writes nothing and answers `unchanged: true` (see An edit that changes nothing) |
 | legend | `add_kind` (inline label+description+crossBranchExempt) · `rename_kind` · `describe_kind` (description and/or crossBranchExempt) · `remove_kind` · `reorder_kinds` · `recolor_kind` | the legend |
 | legend | `update_kind` | a kind's `label`, `description` and/or `hue` as one op under one seq (`planKindUpdate`): one command, or a `Batch` of them, so a replay lands what the call landed; each field is validated and refused as `rename_kind`, `describe_kind` and `recolor_kind` refuse it, a field sent as the kind holds it is left out, and a call that changes nothing writes nothing and answers `unchanged: true` with the head; a new hue repaints the kind's nodes as `recolor_kind` does and the receipt counts them in `repaintedNodes`; no `crossBranchExempt` and no `kindId` alias |
-| write | `set_progress` | per-user overlay: single `nodeId`+`status`, or a bulk `updates[]` (order-safe); `outOfOrder: true` on a completion is kept on the mark and answered as `acknowledged: true`; a mark the caller already holds answers `unchanged: true` on its row |
+| write | `set_progress` | per-user overlay: single `nodeId`+`status`, or a bulk `updates[]` (order-safe); `outOfOrder: true` on a completion is kept on the mark and answered as `acknowledged: true`; a mark the caller already holds answers `unchanged: true` on its row; the owner's mark on a node that opens a tree is refused (see `opens`) |
 | resource | `windmill://quickstart` | the read-me-first document; no tool slot |
 
 Every tree-scoped tool takes `treeId`. Applied structural edits return
@@ -416,26 +416,49 @@ A node may point at another tree: `opens` holds that tree's id.
 - **The node follows the tree, for its owner.** A pointer is valid when its target stands and
   belongs to the owner of the tree the node is in. For a caller who can write the tree, a node with
   a valid pointer is `complete` exactly when the opened tree is complete for them, whatever its own
-  prerequisites, and `locked` or `available` by its prerequisites until then; a mark on it is kept,
-  answered as `status` and by `get_progress`, and decides nothing. A tree is complete when it holds
-  at least one node and every node of it is complete, a node with a valid pointer by its tree and
-  any other by the caller's mark; that is judged once over all the caller's standing trees
+  prerequisites, and `locked` or `available` by its prerequisites until then; a mark it already
+  holds is kept, answered as `status` and by `get_progress`, and decides nothing. A tree is
+  complete when it holds at least one node and every node of it is complete, a node with a valid
+  pointer by its tree and any other by the caller's mark; that is judged once over all the caller's
+  standing trees
   (`domain/OpenedTrees.h`), so a tree on a loop of pointers is never complete, however long the
   loop, and a chain of any length completes. `state`, the `state` filter of `find_nodes`,
   `opens.state` and the `done` of `list_trees` all read that one completed set, so a step waiting
-  on such a node unlocks when its tree completes. `set_progress` records a mark on such a node as on any other, and its
-  `prerequisitesMet` reads marks alone.
+  on such a node unlocks when its tree completes, and the `prerequisitesMet` of `set_progress`
+  reads it too.
+- **The node takes no mark, from its owner.** A caller who can write the tree cannot mark a node
+  with a valid pointer, `complete` or `none`, and nothing is written for it (`ProgressService::mark`).
+  The single form of `set_progress` fails with `"<nodeId>" opens a tree: it is complete when that
+  tree is and takes no mark of its own — mark the steps of the tree it opens`. In `updates` that
+  node's row is `{nodeId, refused}` carrying the sentence, in the batch's order, and every other
+  row is recorded; the call succeeds. An `import_subgraph` grafts, applies the other rows of
+  `progress[]` and lists the node ids in `progressRefused`, with `progressApplied: false`; a
+  `dryRun` does not preview them. The sentence names the node and never the opened tree, since a
+  tend reads it. A node id naming no node is refused first, as on any tree. The write line of a
+  `set_progress` that recorded no mark and was refused at least one carries the outcome
+  `opens-a-tree`, whatever else it carried — a mark that lost to a later stored stamp recorded
+  nothing either; one that recorded any mark is `ok`. An import is `ok` when its graft landed, and
+  `opens-a-tree` when the graft changed nothing (`unchanged: true`) and its `progress[]` recorded
+  no mark and was refused at least one.
 - **Every other reader sees an ordinary node.** A reader who cannot write the tree, signed in or
   not, is answered no `opens`, and the node's `state` follows their own mark and its prerequisites
-  as any node's does. A node whose pointer is not valid is ordinary for its owner too.
+  as any node's does. Their mark on it is recorded and answered byte for byte as on a node that
+  opens nothing, with `prerequisitesMet` judged on their own marks. A node whose pointer is not
+  valid is ordinary for its owner too.
 - **Cost.** Following is one read of the stored rows per reply (`TreeRepository::openedFrom`: one
   statement over `trees`, `tree_nodes` and the caller's `node_progress`, answering one row per
   tree and tree it opens), made only for a caller who can write the tree, when `fields` names
-  `state` or `opens` or `find_nodes` filters on `state`, and when the tree holds a pointer.
-  `get_tree`, `get_nodes` and `find_nodes` take what they answer from the room under the tree's
-  strand and read the repositories after letting it go, so no other read of the tree waits on that
-  statement. `list_trees` makes no such read: it already holds every tree of the caller's. Every
-  write door saves before it answers, so the stored rows are the live ones unless a save failed.
+  `state` or `opens` or `find_nodes` filters on `state` or the call has a mark to judge
+  (`set_progress`, an import's `progress[]`), and when the tree holds a pointer. `get_tree`,
+  `get_nodes` and `find_nodes` take the tree from the room under its strand; `set_progress` and an
+  import's `progress[]` take only the nodes that open a tree, which the room hands to a caller who
+  can write it and to nobody else (`TreeRoom::pointersFor`), so no mark copies the tree out. All
+  five read and write the repositories after letting the strand go, so no other read of the tree
+  waits on those statements. The import's clear of marks on removed nodes, `prune` and
+  `delete_node` read and write the caller's marks while they hold it, and judge no pointer: a step
+  that opens a tree goes with its mark as any other node does. `list_trees`
+  makes no such read: it already holds every tree of the caller's. Every write door saves before it
+  answers, so the stored rows are the live ones unless a save failed.
 - **What can be wrong with a pointer.** `get_diagnostics` answers two more lists to a caller who
   can write the tree (`OpenedTrees::diagnose`), each in node id order. `treeLoops` holds one
   `{node, path}` per node whose pointer leads back to the tree being read — a tree on such a loop
@@ -558,15 +581,20 @@ and none overrides another.
   checks, `checkExpectedSeq` and `staleExpectedSeq`): a stale one refuses the whole call — graft,
   tombstones and carried `progress[]` — before anything lands, its dry run included. A `title` is
   not an argument: the gate refuses one by name, and the import never touches the tree's title.
-  Progress (max 1000 supplied marks) commits in a separate atomic repository batch under the room
-  strand. Its rows are `set_progress`'s bulk rows: one schema (`progressRow()` in the catalog) and one
-  parse (`readMark`), so `outOfOrder: true` on a completion is kept on the mark and answered
-  `acknowledged: true`, and `prerequisitesMet` is judged against the tree the graft leaves, with the
-  overlay as the whole batch commits it. The marks `get_progress` answers (`completed`, `cleared`,
-  `outOfOrder`) go back through an import as rows and change nothing. Receipts distinguish `graphApplied` and `progressApplied`, with `progressError` or
-  `progressSkipped` when requested progress cannot all be applied; a committed graft is not undone
-  by a later overlay failure. It is **upsert by id**: an incoming id already present is reported
-  in `nodeCollisions`/`kindCollisions`; a new id is added. A re-sent node or kind changes only in
+  Progress (max 1000 supplied marks) commits in a separate atomic repository batch after the graft,
+  once the room strand is released. Its rows are `set_progress`'s bulk rows: one schema
+  (`progressRow()` in the catalog) and one parse (`readMark`), so `outOfOrder: true` on a completion
+  is kept on the mark and answered `acknowledged: true`, and `prerequisitesMet` is judged against
+  the tree the graft leaves, with the overlay as the whole batch commits it. The marks
+  `get_progress` answers (`completed`, `cleared`, `outOfOrder`) go back through an import as rows
+  and change nothing. Receipts distinguish `graphApplied` and `progressApplied`, with
+  `progressError` and `progressSkipped` or `progressRefused` when requested progress cannot all be
+  applied; `progressError` says each way the progress fell short, one sentence after the other. A
+  committed graft is not undone by a later overlay failure: one in the requested `progress[]` is
+  reported and completes the write line as `failed`, and one in the clear of marks on removed nodes
+  is reported once as `roadmap.import.clear_marks`, the import completing as `ok`. It is **upsert
+  by id**: an incoming id already present is reported in
+  `nodeCollisions`/`kindCollisions`; a new id is added. A re-sent node or kind changes only in
   the registers the batch sends: a node's `label`, `icon`, `color`, `order`, `position`,
   `seedStatus`, `description`, `links` and `opens`, and a kind's `label`, `description` and
   `crossBranchExempt`, left out, keep the value the tree holds, because the graft stamps an
@@ -632,8 +660,10 @@ and none overrides another.
   and the registers each item left out, and reads the footprint back for the receipt.
 - **`set_progress`** accepts 1–1000 `updates[]` committed in one SQL transaction and evaluates the `prerequisitesMet` advisory
   against the committed batch, so a subtree completed out of dependency order still reports
-  correctly. The room strand covers node validation, commit and broadcast; delete/prune cannot
-  interleave an orphan mark. Unknown node ids are rejected before any overlay mutation. A completion
+  correctly. The room strand covers node validation, the prerequisites read and the stamps; the
+  commit and the broadcast follow once it is released, as on the socket's progress lane. A
+  completion on a node deleted between the two stays as an orphan row until `prune` clears it.
+  Unknown node ids are rejected before any overlay mutation. A completion
   meant to land before its prerequisites carries `outOfOrder: true` (single and bulk forms, and an
   import's `progress` rows, with
   `status: complete` only): the word is stored on the row beside the status, under the same stamp,
@@ -649,7 +679,9 @@ and none overrides another.
   twice, and says neither. Such a row is still stamped: it takes the new stamp and the server's
   receipt time, so the tree's last-marked time moves and open pages receive a progress frame,
   because `ProgressService` lands a socket replica's marks too, and a replica's newer stamp must
-  land for every replica to converge.
+  land for every replica to converge. A row reports the mark that was asked for: when two
+  calls race on a node, the mark with the later stamp is the one stored and echoed, whichever
+  call's row was answered last.
 - **`prune`** drops dangling/self edges in one op and clears the caller's progress rows for nodes
   no longer in the tree.
 - **`find_nodes`** searches without pulling the whole tree. `color` and `kind` are one filter (a

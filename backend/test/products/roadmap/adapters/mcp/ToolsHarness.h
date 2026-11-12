@@ -29,7 +29,7 @@ struct Harness {
   StepClock clock;
   fake::FakeTokens tokens;
   RoomRegistry registry{trees, ops, bus};
-  ProgressService progress{progressRepo};
+  ProgressService progress{progressRepo, trees};
   TreeRegistry treeRegistry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}, registry, clock};
   UserId caller = fake::uid("agent");
   ToolCaller actor{caller, ToolScope::everything()};

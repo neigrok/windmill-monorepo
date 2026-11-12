@@ -201,7 +201,10 @@ create table if not exists node_progress (
 alter table node_progress add column if not exists stamp_ms bigint not null default 0;
 alter table node_progress add column if not exists stamp_counter bigint not null default 0;
 alter table node_progress add column if not exists out_of_order boolean not null default false;
-create index if not exists node_progress_user on node_progress (user_id);
+-- A reader's marks, by reader then tree: every read by reader alone, and one tree's marks of one reader as narrowly as
+-- the primary key reads them, so a plan that takes this index for that read cannot wander into the reader's other trees.
+create index if not exists node_progress_user_tree on node_progress (user_id, tree_id);
+drop index if exists node_progress_user;
 
 -- Roadmap completion has two values. Keep register stamps and receipt times so a migration
 -- cannot outrank later user work or make an old node appear newly touched.

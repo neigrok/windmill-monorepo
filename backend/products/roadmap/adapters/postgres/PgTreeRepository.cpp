@@ -329,7 +329,7 @@ std::vector<OwnedTree> PgTreeRepository::listOwnedBy(const UserId& owner) {
   owned.reserve(rows.size());
   for (const auto& row : rows) {
     TreeData data = projectDocument(txn, TreeId{row["id"].as<std::string>()}, row["title"].as<std::string>(),
-                                    row["document"].as<std::string>());
+                                    row["document"].as<std::string>()).data;
     owned.push_back(OwnedTree{std::move(data),
                               static_cast<std::uint64_t>(row["created_ms"].as<long long>()),
                               static_cast<std::uint64_t>(row["updated_ms"].as<long long>())});
@@ -337,24 +337,26 @@ std::vector<OwnedTree> PgTreeRepository::listOwnedBy(const UserId& owner) {
   return owned;
 }
 
-TreeData PgTreeRepository::projectDocument(pqxx::work& txn, const TreeId& tree, const std::string& title,
-                                           const std::string& documentBlob) {
+PgTreeRepository::ProjectedDocument PgTreeRepository::projectDocument(pqxx::work& txn, const TreeId& tree,
+                                                                     const std::string& title,
+                                                                     const std::string& documentBlob) {
   pqxx::result nodes = txn.exec_params(
-      "SELECT node_id, color, opens FROM tree_nodes WHERE tree_id = $1 AND present", tree.str());
-  TreeData data;
-  data.id = tree;
-  data.title = title;
+      "SELECT node_id, color, opens, opens_hlc FROM tree_nodes WHERE tree_id = $1 AND present", tree.str());
+  ProjectedDocument projected;
+  projected.data.id = tree;
+  projected.data.title = title;
   for (const auto& n : nodes) {
     NodeSpec spec;
     spec.id = NodeId{n["node_id"].as<std::string>()};
     spec.color = parseColor(n["color"].as<std::string>()).value_or(NodeColor::terracotta);
     spec.opens = TreeId{n["opens"].as<std::string>()};
-    data.nodes.push_back(std::move(spec));
+    if (!spec.opens.empty()) projected.pointers.emplace(spec.id, StampedPointer{spec.opens, stamp(n, "opens_hlc")});
+    projected.data.nodes.push_back(std::move(spec));
   }
-  if (!data.nodes.empty()) return data;
+  if (!projected.data.nodes.empty()) return projected;
   // A tree with no rows yet: fall back to the document blob.
-  GraphState state = graphStateFromJson(parse(documentBlob));
-  return LooseGraph(state).toTreeData(tree, title);
+  const LooseGraph graph(graphStateFromJson(parse(documentBlob)));
+  return {graph.toTreeData(tree, title), graph.stampedPointers()};
 }
 
 std::vector<ListedTree> PgTreeRepository::listPublic() {
@@ -362,28 +364,26 @@ std::vector<ListedTree> PgTreeRepository::listPublic() {
   pqxx::work txn{*conn};
   // Every listed tree, unbounded: ordering and the wall's cap belong to the domain, and a LIMIT
   // here would quietly change the ranking rule. The LEFT JOIN carries loadForkLineage's privacy
-  // rule in its ON clause, so an unlisted, private or deleted source coalesces to ''. The lateral
-  // adds the owner's latest mark, which updated_at alone cannot see.
+  // rule in its ON clause, so an unlisted, private or deleted source coalesces to ''. The owner's
+  // marks are read after, as a reader is shown them.
   pqxx::result rows = txn.exec_params(
       "SELECT t.id, t.title, t.owner_id::text AS owner_id, t.document::text, "
       "(extract(epoch from t.updated_at) * 1000)::bigint AS updated_ms, "
-      "coalesce((extract(epoch from m.marked_at) * 1000)::bigint, 0) AS marked_ms, "
       "(SELECT count(*) FROM trees f WHERE f.forked_from = t.id AND f.deleted_at IS NULL) AS forks, "
       "coalesce(s.title, '') AS source_title "
       "FROM trees t "
       "LEFT JOIN trees s ON s.id = t.forked_from AND s.deleted_at IS NULL AND s.visibility = 'public' "
-      "LEFT JOIN LATERAL (SELECT max(p.updated_at) AS marked_at FROM node_progress p "
-      "                   WHERE p.tree_id = t.id AND p.user_id = t.owner_id::text) m ON true "
       "WHERE t.visibility = 'public' AND t.deleted_at IS NULL AND t.owner_id IS NOT NULL");
 
   std::vector<ListedTree> listed;
   listed.reserve(rows.size());
   for (const auto& row : rows) {
     ListedTree entry;
-    entry.data = projectDocument(txn, TreeId{row["id"].as<std::string>()}, row["title"].as<std::string>(),
-                                 row["document"].as<std::string>());
+    ProjectedDocument projected = projectDocument(txn, TreeId{row["id"].as<std::string>()},
+                                                  row["title"].as<std::string>(), row["document"].as<std::string>());
+    entry.data = std::move(projected.data);
+    entry.pointers = std::move(projected.pointers);
     entry.updatedAt = static_cast<std::uint64_t>(row["updated_ms"].as<long long>());
-    entry.lastMarkedAt = static_cast<std::uint64_t>(row["marked_ms"].as<long long>());
     entry.forks = row["forks"].as<int>();
     entry.owner = UserId{row["owner_id"].as<std::string>()};
     entry.sourceTitle = row["source_title"].as<std::string>();
@@ -422,17 +422,9 @@ std::map<TreeId, std::string> PgTreeRepository::titlesOwnedBy(const UserId& owne
   return titles;
 }
 
-std::map<TreeId, OpenedTree> PgTreeRepository::openedFrom(const UserId& owner, const std::set<TreeId>& opened,
-                                                          std::optional<std::chrono::milliseconds> budget) {
-  if (opened.empty()) return {};
-  Json::Value ids(Json::arrayValue);
-  for (const TreeId& tree : opened) ids.append(tree.str());
-  PgLease conn{*pool_};
-  pqxx::work txn{*conn};
-  // The budget is this transaction's alone: the connection goes back to the pool under its own limit.
-  if (budget) txn.exec("SET LOCAL statement_timeout = '" + std::to_string(budget->count()) + "ms'");
+const char* PgTreeRepository::openedFromStatement() {
   // One statement: the counts and the marks are one snapshot, and no node row leaves the database.
-  const char* statement =
+  return
       "WITH RECURSIVE reached(id, title) AS ("
       "  SELECT t.id, t.title FROM trees t "
       "  WHERE t.deleted_at IS NULL AND t.owner_id = $1::uuid "
@@ -445,17 +437,36 @@ std::map<TreeId, OpenedTree> PgTreeRepository::openedFrom(const UserId& owner, c
       "  CROSS JOIN LATERAL (SELECT s.id, s.title, s.owner_id, s.deleted_at FROM trees s WHERE s.id = o.opens LIMIT 1) t "
       "  WHERE t.deleted_at IS NULL AND t.owner_id = $1::uuid"
       ") "
-      // A row is a tree and one target: '' for its nodes that open none, NULL for a tree with no node.
-      "SELECT r.id, r.title, c.opens, c.nodes, c.marked "
+      // A row is a tree and one target: '' for its nodes that open none, NULL for a tree with no node. `latest` is
+      // the stamp and receipt instant of the latest of the marks counted that carry a stamp, in the order the domain
+      // compares stamps: a row written before marks were stamped counts, and is never the latest.
+      "SELECT r.id, r.title, c.opens, c.nodes, c.marked, c.latest[1][1] AS latest_hlc, c.latest[1][2] AS latest_ms "
       "FROM reached r LEFT JOIN LATERAL ("
-      "  SELECT n.opens, count(*) AS nodes, "
-      "         count(*) FILTER (WHERE n.node_id IN ("
-      "           SELECT p.node_id FROM node_progress p "
-      // Only node_progress_pkey can serve the row comparisons, which bound the scan to this tree and reader.
-      "           WHERE p.tree_id = r.id AND (p.tree_id, p.user_id) >= (r.id, $1::text) "
-      "             AND (p.tree_id, p.user_id) <= (r.id, $1::text) AND p.status = 'complete')) AS marked "
-      "  FROM tree_nodes n WHERE n.tree_id = r.id AND n.present GROUP BY n.opens"
+      "  SELECT n.opens, count(*) AS nodes, count(m.node_id) AS marked, "
+      "         (array_agg(ARRAY[m.hlc, m.updated_ms::text] "
+      "                    ORDER BY m.stamp_ms DESC, m.stamp_counter DESC, m.hlc COLLATE \"C\" DESC) "
+      "            FILTER (WHERE m.node_id IS NOT NULL AND m.hlc NOT IN ('', '0:0:'))) AS latest "
+      "  FROM tree_nodes n LEFT JOIN ("
+      "    SELECT p.node_id, p.hlc, p.stamp_ms, p.stamp_counter, "
+      "           (extract(epoch from p.updated_at) * 1000)::bigint AS updated_ms FROM node_progress p "
+      // Both indexes on the reader's marks lead with the tree and the reader, in either order (node_progress_pkey and
+      // node_progress_user_tree), so whichever the planner takes, it reads this reader's marks on this tree alone.
+      "    WHERE p.tree_id = r.id AND p.user_id = $1::text AND p.status = 'complete'"
+      "  ) m ON m.node_id = n.node_id "
+      "  WHERE n.tree_id = r.id AND n.present GROUP BY n.opens"
       ") c ON true";
+}
+
+std::map<TreeId, OpenedTree> PgTreeRepository::openedFrom(const UserId& owner, const std::set<TreeId>& opened,
+                                                          std::optional<std::chrono::milliseconds> budget) {
+  if (opened.empty()) return {};
+  Json::Value ids(Json::arrayValue);
+  for (const TreeId& tree : opened) ids.append(tree.str());
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
+  // The budget is this transaction's alone: the connection goes back to the pool under its own limit.
+  if (budget) txn.exec("SET LOCAL statement_timeout = '" + std::to_string(budget->count()) + "ms'");
+  const char* statement = openedFromStatement();
   pqxx::result rows;
   try {
     rows = txn.exec_params(statement, owner.str(), dump(ids));
@@ -469,11 +480,15 @@ std::map<TreeId, OpenedTree> PgTreeRepository::openedFrom(const UserId& owner, c
     OpenedTree& tree = trees[TreeId{row["id"].as<std::string>()}];
     tree.title = row["title"].as<std::string>();
     if (row["opens"].is_null()) continue;
-    const Pointers counted{row["nodes"].as<int>(), row["marked"].as<int>()};
+    Pointers counted{row["nodes"].as<int>(), row["marked"].as<int>()};
+    if (!row["latest_hlc"].is_null())
+      counted.latest = LatestMark{roadmapStamp(row["latest_hlc"].as<std::string>()),
+                                  static_cast<std::uint64_t>(row["latest_ms"].as<long long>())};
     tree.total += counted.nodes;
     const TreeId target{row["opens"].as<std::string>()};
     if (target.empty()) {
       tree.marked = counted.marked;
+      tree.latest = counted.latest;
       continue;
     }
     tree.pointers.emplace(target, counted);

@@ -3,10 +3,10 @@
 #include "platform/application/AuthService.h"
 #include "platform/ports/Clock.h"
 #include "products/roadmap/application/ForkService.h"
+#include "products/roadmap/application/OwnerProgress.h"
 #include "products/roadmap/application/RoomRegistry.h"
 #include "products/roadmap/domain/Ids.h"
 #include "products/roadmap/ports/OpLog.h"
-#include "products/roadmap/ports/ProgressRepository.h"
 #include "products/roadmap/ports/TreeRepository.h"
 
 #include <drogon/HttpRequest.h>
@@ -24,7 +24,7 @@ using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 class TreeApi {
 public:
   TreeApi(std::shared_ptr<RoomRegistry> registry, std::shared_ptr<TreeRepository> trees,
-          std::shared_ptr<ProgressRepository> progress, std::shared_ptr<OpLog> ops, Hlc genesis,
+          std::shared_ptr<OwnerProgress> progress, std::shared_ptr<OpLog> ops, Hlc genesis,
           std::shared_ptr<AuthService> auth, std::shared_ptr<ForkService> fork, std::shared_ptr<Clock> clock);
 
   void getTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId);
@@ -45,7 +45,7 @@ private:
 
   std::shared_ptr<RoomRegistry> registry_;
   std::shared_ptr<TreeRepository> trees_;
-  std::shared_ptr<ProgressRepository> progress_;
+  std::shared_ptr<OwnerProgress> progress_;
   std::shared_ptr<OpLog> ops_;
   Hlc genesis_;
   std::shared_ptr<AuthService> auth_;

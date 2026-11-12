@@ -807,74 +807,113 @@ struct RequestedMark {
 };
 
 // The caller's marks a server write sets, landed by the one path every such write takes: set_progress, an import's
-// progress rows, and the clears a delete, an import's tombstones and prune make. Called under the tree's strand with
-// its room open. Each mark takes the room's next stamp or, when the caller's mark on that node holds a later one — a
-// replica stamped it ahead of the server — the stamp just after that one, so a later write always lands over it. The
-// room's clock does not learn that stamp, so it carries no other write of the tree ahead. The batch is written in one
-// go, and the marks that landed go to the caller's open sessions in one progress frame. Answers each mark's outcome, in
-// order.
-std::vector<ProgressOutcome> landMarks(ProgressService& progress, PresenceBus& bus, TreeRoom& room, const TreeId& tree,
-                                       const UserId& user, const std::vector<RequestedMark>& marks, Clock& clock) {
-  // The stamp each node's mark holds as the batch leaves it so far, so a node named twice is stamped after its own row.
+// progress rows, and the clears a delete, an import's tombstones and prune make. Each write comes stamped by the room's
+// clock; where the caller's mark on that node holds a later stamp — a replica stamped it ahead of the server — it takes
+// the stamp just after that one instead, so a later write always lands over it, and the room's clock does not learn it,
+// so it carries no other write of the tree ahead. A node named twice is stamped after its own row. The marks go through
+// ProgressService::mark with `pointers`, the nodes that open a tree as the room handed them to the caller: a mark on one
+// that follows its tree is refused. The batch is written in one go, and the marks that landed go to the caller's open
+// sessions in one progress frame.
+ProgressReceipt landMarks(ProgressService& progress, PresenceBus& bus, const TreeId& tree, const UserId& user,
+                          const std::map<NodeId, TreeId>& pointers, std::vector<ProgressWrite> writes, Clock& clock) {
   std::map<NodeId, Hlc> holds;
   for (const auto& [node, kept] : progress.progressOf(tree, user).marks) holds.emplace(node, kept.at);
-  std::vector<ProgressWrite> writes;
-  for (const RequestedMark& mark : marks) {
-    const Hlc next = room.nextStamp(clock.nowMs());
-    const auto held = holds.find(mark.node);
-    const Hlc at = held == holds.end() ? next : std::max(next, held->second.successor(next.actor));
-    holds[mark.node] = at;
-    writes.push_back({mark.node, mark.status, room.prerequisitesOf(mark.node), at, mark.outOfOrder});
+  for (ProgressWrite& write : writes) {
+    const auto held = holds.find(write.node);
+    if (held != holds.end()) write.at = std::max(write.at, held->second.successor(write.at.actor));
+    holds[write.node] = write.at;
   }
-  const std::uint64_t receivedAtMs = clock.nowMs();
-  const std::vector<ProgressOutcome> outcomes = progress.setStatuses(tree, user, writes, receivedAtMs);
+  const ProgressReceipt receipt = progress.mark(tree, pointers, user, writes, clock.nowMs());
   // One echo for the whole batch, not one frame per node.
-  Progress recorded;
-  for (std::size_t i = 0; i < writes.size(); ++i)
-    if (outcomes[i].applied)
-      recorded.record(writes[i].node, ProgressMark{writes[i].status, writes[i].at, receivedAtMs, writes[i].outOfOrder});
-  bus.broadcastProgress(tree, user, recorded);
-  return outcomes;
+  bus.broadcastProgress(tree, user, receipt.recorded);
+  return receipt;
 }
 
-std::optional<std::string> applyProgressBatch(
+// A way the marks a write carries beside its tree edit fell short, said in the receipt's `progressError` after any
+// said before it, the receipt answering progressApplied: false.
+void fellShort(Json::Value& receipt, const std::string& sentence) {
+  const std::string said = receipt.get("progressError", "").asString();
+  receipt["progressApplied"] = false;
+  receipt["progressError"] = said.empty() ? sentence : said + " " + sentence;
+}
+
+// What a batch of marks came to, as its tool answers it.
+struct MarkedBatch {
+  Json::Value results{Json::arrayValue};  // a row per mark that named a node, in the batch's order
+  Json::Value skipped{Json::arrayValue};  // ids naming no node in the tree
+  Json::Value refused{Json::arrayValue};  // ids of nodes that follow the tree they open and took no mark
+  bool cameToARefusal = false;            // no mark was recorded and at least one was refused
+
+  // The marks as a write that carries them beside its tree edit answers them — an import's `progress[]`, update_nodes'
+  // marks: a row each in `progress`, and the ids skipped or refused listed, each said in `progressError`.
+  void answerOnto(Json::Value& receipt) const {
+    receipt["progress"] = results;
+    if (!skipped.empty()) {
+      receipt["progressSkipped"] = skipped;
+      fellShort(receipt, "Some requested progress names nodes absent after the graft; those ids are listed in "
+                         "progressSkipped.");
+    }
+    if (!refused.empty()) {
+      receipt["progressRefused"] = refused;
+      fellShort(receipt, "Some requested progress marks nodes that open a tree, which take no mark of their own — each "
+                         "is complete when the tree it opens is; those ids are listed in progressRefused.");
+    }
+  }
+};
+
+// The sentence is the refusal of a call that could not be applied at all.
+std::variant<MarkedBatch, std::string> applyProgressBatch(
     RoomRegistry& registry, ProgressService& progress, PresenceBus& bus, const TreeId& tree,
-    Clock& clock, const UserId& user, const std::vector<RequestedMark>& requested,
-    bool rejectUnknown, Json::Value& results, Json::Value& skipped) {
-  // Both out-params are set at entry, so an early return still leaves them as empty arrays.
-  results = Json::Value(Json::arrayValue);
-  skipped = Json::Value(Json::arrayValue);  // ids naming no node in the tree
-  std::vector<RequestedMark> landing;
-  std::lock_guard<std::mutex> lock(registry.strandFor(tree));
-  TreeRoom* room = registry.open(tree);
-  // Not owner-gated (a per-user overlay), but private stays owner-only: a mark would confirm which ids exist.
-  if (!room || !canRead(user, room->owner(), room->visibility()))
-    return "no such tree \"" + tree.str() + "\"";  // byte-identical to every other absent message
-  for (const RequestedMark& mark : requested) {
-    if (!room->hasNode(mark.node)) { skipped.append(mark.node.str()); continue; }
-    landing.push_back(mark);
+    Clock& clock, const UserId& user, const std::vector<RequestedMark>& requested, bool rejectUnknown) {
+  MarkedBatch batch;
+  std::vector<ProgressWrite> marks;
+  std::map<NodeId, TreeId> pointers;
+  {
+    // The room is consulted under its strand and let go: the marks land, and the trees they may follow are read, once
+    // it is released.
+    std::lock_guard<std::mutex> lock(registry.strandFor(tree));
+    TreeRoom* room = registry.open(tree);
+    // Not owner-gated (a per-user overlay), but private stays owner-only: a mark would confirm which ids exist.
+    if (!room || !canRead(user, room->owner(), room->visibility()))
+      return "no such tree \"" + tree.str() + "\"";  // byte-identical to every other absent message
+    for (const RequestedMark& mark : requested) {
+      if (!room->hasNode(mark.node)) { batch.skipped.append(mark.node.str()); continue; }
+      marks.push_back({mark.node, mark.status, room->prerequisitesOf(mark.node), room->nextStamp(clock.nowMs()),
+                       mark.outOfOrder});
+    }
+    pointers = room->pointersFor(user);
   }
   // set_progress rejects an unknown id; an import skips it into `skipped`, its graft landed.
-  if (rejectUnknown && !skipped.empty()) {
+  if (rejectUnknown && !batch.skipped.empty()) {
     std::string names;
-    for (const Json::Value& id : skipped) { if (!names.empty()) names += ", "; names += id.asString(); }
+    for (const Json::Value& id : batch.skipped) { if (!names.empty()) names += ", "; names += id.asString(); }
     return "no node in this tree is named " + names +
            ". Call get_tree with fields [\"id\",\"label\"] to list the ids this tree has.";
   }
 
-  const std::vector<ProgressOutcome> outcomes = landMarks(progress, bus, *room, tree, user, landing, clock);
-  for (std::size_t i = 0; i < landing.size(); ++i) {
+  const ProgressReceipt receipt = landMarks(progress, bus, tree, user, pointers, marks, clock);
+  batch.cameToARefusal = receipt.cameToARefusal();
+  for (std::size_t i = 0; i < marks.size(); ++i) {
+    const ProgressOutcome& outcome = receipt.outcomes[i];
     Json::Value row(Json::objectValue);
-    row["nodeId"] = landing[i].node.str();
-    row["status"] = progressStatusName(outcomes[i].status);
-    row["prerequisitesMet"] = outcomes[i].prerequisitesMet;
+    row["nodeId"] = marks[i].node.str();
+    if (outcome.refused) {
+      // Names the node and never the tree it opens: a tend, which is told of no pointer, reads this too.
+      row["refused"] = "\"" + marks[i].node.str() + "\" opens a tree: it is complete when that tree is and takes "
+                       "no mark of its own — mark the steps of the tree it opens";
+      batch.refused.append(marks[i].node.str());
+      batch.results.append(row);
+      continue;
+    }
+    row["status"] = progressStatusName(outcome.status);
+    row["prerequisitesMet"] = outcome.prerequisitesMet;
     // Only a mark that carried the word answers it: prerequisitesMet:false alone is an inversion
     // nobody acknowledged.
-    if (outcomes[i].outOfOrder) row["acknowledged"] = true;
-    if (outcomes[i].unchanged) row["unchanged"] = true;
-    results.append(row);
+    if (outcome.outOfOrder) row["acknowledged"] = true;
+    if (outcome.unchanged) row["unchanged"] = true;
+    batch.results.append(row);
   }
-  return std::nullopt;
+  return batch;
 }
 
 // A kind's label, description and hue, any of them, as ONE op under one seq: a single command, or a Batch of them, so a
@@ -922,19 +961,22 @@ ToolResult updateKind(RoomRegistry& registry, const TreeId& tree, const Json::Va
 
 // The caller's own completion marks on the nodes a write removes, cleared to none through landMarks — stamped after the
 // marks they clear, written in one batch, sent to the caller's open sessions — so a revive of the node brings none
-// back; anyone else's marks stay theirs. Answers how many clears landed. A delete, an import's tombstones and prune
-// clear by this.
+// back; anyone else's marks stay theirs. A node that opens a tree goes with its mark as any other does, so no pointer is
+// judged. Called under the tree's strand with its room open, as the write that removes the nodes is; answers how many
+// clears landed. A delete, an import's tombstones and prune clear by this.
 std::size_t clearMarksOn(ProgressService& progress, PresenceBus& bus, TreeRoom& room, const TreeId& tree,
                          const UserId& actor, const std::vector<NodeId>& removed, Clock& clock) {
   const Progress overlay = progress.progressOf(tree, actor);
-  std::vector<RequestedMark> clears;
+  std::vector<ProgressWrite> clears;
   for (const NodeId& node : removed)
-    if (overlay.completed.count(node)) clears.push_back({node, ProgressStatus::none, false});
+    if (overlay.completed.count(node))
+      clears.push_back({node, ProgressStatus::none, room.prerequisitesOf(node), room.nextStamp(clock.nowMs()), false});
   if (clears.empty()) return 0;
-  const std::vector<ProgressOutcome> outcomes = landMarks(progress, bus, room, tree, actor, clears, clock);
-  return static_cast<std::size_t>(
-      std::count_if(outcomes.begin(), outcomes.end(), [](const ProgressOutcome& outcome) { return outcome.applied; }));
+  const ProgressReceipt receipt = landMarks(progress, bus, tree, actor, {}, clears, clock);
+  return static_cast<std::size_t>(std::count_if(receipt.outcomes.begin(), receipt.outcomes.end(),
+                                                [](const ProgressOutcome& outcome) { return outcome.applied; }));
 }
+
 
 // One progress row as a write sends it: `nodeId` (or the legacy `id`), `status`, and `outOfOrder`, a word about a
 // completion that rides only a `complete` status. set_progress, single or bulk, and an import's progress rows read a
@@ -1144,39 +1186,41 @@ ToolResult applyBatchEdit(RoomRegistry& registry, TreeRegistry& trees, ProgressS
     return ToolResult::json(out);
   });
   edited = withClosedLoops(trees, actor, tree, pointerEdit, edited);
-  // update_nodes' marks land after its tree fields, judged against the overlay as the whole call leaves it.
+  // update_nodes' marks land after its tree fields, judged against the overlay as the whole call leaves it. A mark on a
+  // node that follows the tree it opens is refused there, as set_progress refuses it.
   if (!edited.isError && !dryRun && !marks.empty()) {
     Json::Value receipt = edited.payload;
-    Json::Value results, skipped;
-    const auto applyMarks = [&] {
-      return applyProgressBatch(registry, progress, bus, tree, clock, actor, marks, true, results, skipped);
-    };
+    bool cameToARefusal = false;
+    const auto applyMarks = [&] { return applyProgressBatch(registry, progress, bus, tree, clock, actor, marks, true); };
     if (!treeLanded) {
       // No tree op landed, so the marks are the call: a refusal or a failure of theirs is the call's, as set_progress's
-      // is.
-      if (std::optional<std::string> error = applyMarks()) return ToolResult::failure(*error);
-      receipt["progress"] = results;
+      // is, and a call that recorded no mark because each was refused on a node that opens a tree completes as
+      // set_progress's batch does then.
+      const std::variant<MarkedBatch, std::string> applied = applyMarks();
+      if (const std::string* error = std::get_if<std::string>(&applied)) return ToolResult::failure(*error);
+      const MarkedBatch& batch = std::get<MarkedBatch>(applied);
+      batch.answerOnto(receipt);
+      cameToARefusal = batch.cameToARefusal;
     } else {
       // A tree op has landed whatever becomes of the marks: a failure of theirs is told in the reply and reported under
       // its own name, at the call's door, not as the call's failure.
       WriteObservation marking{"roadmap.update_nodes.marks", "roadmap", currentWriteDoor()};
       try {
-        if (std::optional<std::string> error = applyMarks()) {
-          receipt["progressApplied"] = false;
-          receipt["progressError"] = "The marks did not apply: " + *error;
-        } else {
-          receipt["progress"] = results;
-        }
+        const std::variant<MarkedBatch, std::string> applied = applyMarks();
+        if (const std::string* error = std::get_if<std::string>(&applied))
+          fellShort(receipt, "The marks did not apply: " + *error);
+        else
+          std::get<MarkedBatch>(applied).answerOnto(receipt);
         marking.skip();
       } catch (const std::bad_alloc&) {
         throw;
       } catch (const std::exception& error) {
         marking.fail(error);
-        receipt["progressApplied"] = false;
-        receipt["progressError"] = "The marks' outcome is uncertain. Read get_progress before retrying progress changes.";
+        fellShort(receipt, "The marks' outcome is uncertain. Read get_progress before retrying progress changes.");
       }
     }
     edited = ToolResult::json(receipt);
+    if (cameToARefusal) edited.outcomeCode = kOpensATree;
   }
   edited.structured = edited.payload;
   return edited;
@@ -1212,20 +1256,23 @@ ToolResult writeProgress(RoomRegistry& registry, ProgressService& progress, Pres
     requested.push_back(std::get<RequestedMark>(std::move(mark)));
   }
 
-  Json::Value results, skipped;
-  if (std::optional<std::string> error =
-          applyProgressBatch(registry, progress, bus, tree, clock, user, requested, true, results, skipped))
-    return ToolResult::failure(*error);
-  if (bulk) {
-    Json::Value out(Json::objectValue);
-    out["results"] = results;
-    // A batch whose every mark the caller already held changed nothing, and says so as a patch batch does.
-    bool unchanged = true;
-    for (const Json::Value& row : results) unchanged = unchanged && row.get("unchanged", false).asBool();
-    if (unchanged) out["unchanged"] = true;
-    return ToolResult::json(out);
-  }
-  return ToolResult::json(results[0]);  // a singular call keeps its flat {nodeId, status, prerequisitesMet, acknowledged?}
+  const std::variant<MarkedBatch, std::string> applied =
+      applyProgressBatch(registry, progress, bus, tree, clock, user, requested, true);
+  if (const std::string* error = std::get_if<std::string>(&applied)) return ToolResult::failure(*error);
+  const MarkedBatch& batch = std::get<MarkedBatch>(applied);
+  // A singular call answers its one mark flat, {nodeId, status, prerequisitesMet, acknowledged?, unchanged?}, or fails on
+  // its refusal.
+  if (!bulk && !batch.refused.empty()) return ToolResult::failure(batch.results[0]["refused"].asString(), kOpensATree);
+  if (!bulk) return ToolResult::json(batch.results[0]);
+  Json::Value out(Json::objectValue);
+  out["results"] = batch.results;
+  // A batch whose every mark the caller already held changed nothing, and says so as a patch batch does.
+  bool unchanged = true;
+  for (const Json::Value& row : batch.results) unchanged = unchanged && row.get("unchanged", false).asBool();
+  if (unchanged) out["unchanged"] = true;
+  ToolResult answered = ToolResult::json(out);
+  if (batch.cameToARefusal) answered.outcomeCode = kOpensATree;
+  return answered;
 }
 
 // A legend's kinds as a call sends them, checked item by item before treeFromJson reads them, an id once
@@ -1511,26 +1558,26 @@ ToolResult importSubgraph(RoomRegistry& registry, TreeRegistry& trees, ProgressS
   });
   grafted = withClosedLoops(trees, actor, tree, pointerEdit, grafted);
   if (grafted.isError || dryRun || carried.empty()) return grafted;
+  // A graft that landed nothing beside marks that came to a refusal wrote nothing, and the write line says why.
+  bool wroteNothingForARefusal = false;
   try {
-    Json::Value results, skipped;
-    const std::optional<std::string> error =
-        applyProgressBatch(registry, progress, bus, tree, clock, actor, carried, false, results, skipped);
-    if (error) {
-      grafted.payload["progressApplied"] = false;
-      grafted.payload["progressError"] = "The graph committed, but the requested progress did not apply: " + *error;
-    } else {
-      grafted.payload["progress"] = results;
-      if (!skipped.empty()) {
-        grafted.payload["progressSkipped"] = skipped;
-        grafted.payload["progressApplied"] = false;
-        grafted.payload["progressError"] = "Some requested progress names nodes absent after the graft; those ids are listed in progressSkipped.";
-      }
+    const std::variant<MarkedBatch, std::string> applied =
+        applyProgressBatch(registry, progress, bus, tree, clock, actor, carried, false);
+    if (const std::string* error = std::get_if<std::string>(&applied)) {
+      fellShort(grafted.payload, "The graph committed, but the requested progress did not apply: " + *error);
+      return ToolResult::json(grafted.payload);
     }
-  } catch (const std::exception&) {
-    grafted.payload["progressApplied"] = false;
-    grafted.payload["progressError"] = "The graph committed, but the requested progress outcome is uncertain. Read get_progress before retrying progress changes.";
+    const MarkedBatch& batch = std::get<MarkedBatch>(applied);
+    wroteNothingForARefusal = batch.cameToARefusal && grafted.payload["unchanged"].asBool();
+    batch.answerOnto(grafted.payload);
+  } catch (const std::exception& error) {
+    reportCurrentWriteFailure(error);
+    fellShort(grafted.payload, "The graph committed, but the requested progress outcome is uncertain. Read get_progress "
+                               "before retrying progress changes.");
   }
-  return ToolResult::json(grafted.payload);
+  ToolResult answered = ToolResult::json(grafted.payload);
+  if (wroteNothingForARefusal) answered.outcomeCode = kOpensATree;
+  return answered;
 }
 
 ToolResult pruneTree(RoomRegistry& registry, ProgressService& progress, PresenceBus& bus, const TreeId& tree,
