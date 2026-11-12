@@ -635,7 +635,20 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   already completed it shows *Done* with the *Tree not found* row and no words where Complete sat. A locked step whose
   tree loops back or has no steps keeps the loop's or the empty tree's line. The tablet band and C on a card whose tree
   loops back (*Won’t complete by itself*) or is not found (*Can’t complete yet*) follow the desktop boards. 28.38, a
-  tree removed since the roadmap loaded, cannot be told from what the server answers and is not built.
+  tree removed since the roadmap loaded, cannot be told from what the server answers and is not built. Under guides
+  from above (28.29–28.33), an owner's tree with no guide of its own takes the written entry (*Guide*, no excerpt, the
+  *With guides from…* line or the phone's count, *Read guide*), and its note lists the guides from above and then,
+  under this tree's name, *Add guide*, which starts writing; that note has no pencil. One tree above reads *With a
+  guide from My life*, and more than two name the two farthest and count the rest (*With guides from My life, My year
+  and 2 more trees*). A read of the guides above that fails shows the tree's own guide alone and says nothing, and the
+  entry stands without its line until the read answers. A guide a fork brought with it is shown like the others. While
+  the guide is written from 744px the chevrons over the guides from above are drawn as on 28.31 and do not act:
+  leaving a draft is Cancel's to ask. The hint beside this tree's name (*Click to edit*, *Tap to edit*) writes from
+  the end of the guide, as the pencil does. Where the window leaves the guides from above less than one name and one
+  line of text over the field, they are not drawn while the guide is written. The card's line stays one line, as
+  28.29 draws it: a title too long for it gives way with an ellipsis whatever the font measures, so the line keeps
+  its count, and words too wide for the line together wrap rather than go. Where this tree's text starts below the
+  fold of the note, the note's focus rests on the stack, which wears the ring a key earns.
 - **Section 28 · two sentences wait for their actions.** 28.36 and 28.41 end the loop's line with *Detach one side.*
   and 28.39 and 28.42 end the missing tree's with *Choose another, or detach it.* The web has neither detach nor the
   picker, so the lines stop at the fact (*A loop with … : this never completes.*, *This tree can’t be found.*). Both
@@ -655,7 +668,9 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
 - **Section 28 · read-me and fixtures.** The read-me 28.00 still lists the tree switcher's delete confirmation
   under "Not drawn"; it is drawn as 28.50–28.52. Coast trip reads "0 of 5" on 28.00 and 28.02 and "No steps" on
   28.14 and 28.44. The picker on 28.14 leaves out My life, though its NOTE says the rows are the switcher's list
-  minus the current tree. 28.38 (the tree was removed between loads) has no phone twin.
+  minus the current tree. 28.38 (the tree was removed between loads) has no phone twin. The card on 28.29 shows the
+  guide's first sentence, while the card shows its first line, clamped to two (17.18a). The row behind the sheet on
+  28.33 has no *+2 from above*, which 28.32 draws on it.
 - **Section 28 · making it is drawn twice (28.13–28.23, 28.44, 28.46 and 28.54–28.67).** Journey 3 stands attach, fork
   first, change and detach on the step editor of 19, which the web does not have. Journey 10 restates it on the step modal
   and page: a Tree section with *None* and a +, the picker as a page in the modal, Change tree and Detach tree under the
