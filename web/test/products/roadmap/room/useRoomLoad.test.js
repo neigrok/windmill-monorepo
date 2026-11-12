@@ -288,6 +288,7 @@ async function ownerRoom(t, { treeAnswers, stored = null, ledger = null }) {
   await until(() => !view.tree.loading);
   return {
     view, props, shown, recaps, reads, storage,
+    session: () => sessions.at(-1),
     emit(projection, { joined }) {
       sessions.at(-1).joinedServer = joined;
       sessions.at(-1).treeHandler(projection);
@@ -348,6 +349,55 @@ test('a read for a new pointer that fails is not asked again for the same pointe
   assert.equal(room.reads.tree, 2);
   assert.deepEqual(room.faces(room.shown.at(-1)), { plan: null, sail: 'complete', book: 'unread' });
   assert.deepEqual(globalThis.roomLoadIssues.map(({ operation }) => operation), ['roadmap-opens-load']);
+});
+
+test('a tree chosen here stands at once over the load, as the picker knew it; it is read once the server confirms it, and again on the next confirmation after a read that failed', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const room = await ownerRoom(t, { treeAnswers: [yearAnswer({ sail: SAIL_DONE }), answeredTree({ code: 'opens-unavailable' }, 503), yearAnswer({ sail: SAIL_DONE, book: BOOK_OPEN })] });
+  const own = new Set(['book']);
+  t.mock.method(SyncSession.prototype, 'ownPointers', () => own);
+  const session = room.session();
+  const book = (projection) => {
+    const opening = projection.nodes.find((step) => step.id === 'book').opening;
+    return opening ? { face: opening.face, provisional: opening.provisional, done: opening.done, total: opening.total } : null;
+  };
+  const attached = { id: 't_year', title: 'My year', nodes: yearSteps({ sail: 't_sail', book: 't_book' }) };
+
+  room.view.tree.knowTree('book', { id: 't_book', title: 'The book', done: 0, total: 4 });
+  room.emit(attached, { joined: false });
+  assert.deepEqual(book(room.shown.at(-1)), { face: 'open', provisional: true, done: 0, total: 4 }, 'written here before the join: over the load');
+  room.emit(attached, { joined: true });
+  t.mock.timers.tick(600);
+  await settle();
+  assert.equal(room.reads.tree, 1, 'not read while the server has not confirmed it');
+
+  own.clear();
+  session.confirmations = 1;
+  session.confirmedHandler();
+  t.mock.timers.tick(600);
+  await until(() => room.reads.tree === 2);
+  await settle();
+  assert.deepEqual(book(room.shown.at(-1)), { face: 'open', provisional: true, done: 0, total: 4 }, 'a read that failed leaves the row as the picker knew it');
+
+  room.emit(attached, { joined: true });
+  t.mock.timers.tick(600);
+  await settle();
+  assert.equal(room.reads.tree, 2, 'never in a loop: the same round asks nothing');
+
+  session.confirmations = 2;
+  session.confirmedHandler();
+  t.mock.timers.tick(600);
+  await until(() => room.reads.tree === 3);
+  await until(() => book(room.shown.at(-1)).provisional === false);
+  assert.deepEqual(book(room.shown.at(-1)), { face: 'open', provisional: false, done: 1, total: 4 });
+  assert.deepEqual(globalThis.roomLoadIssues.map(({ operation }) => operation), ['roadmap-opens-load']);
+});
+
+test('without a pointer of its own unconfirmed, the room shows the load’s word before the join, as before', async (t) => {
+  const room = await ownerRoom(t, { treeAnswers: [yearAnswer({ sail: SAIL_DONE })] });
+  room.view.tree.knowTree('book', { id: 't_book', title: 'The book', done: 0, total: 4 });
+  room.emit({ id: 't_year', title: 'My year', nodes: yearSteps({ sail: 't_sail', book: 't_book' }) }, { joined: false });
+  assert.deepEqual(room.faces(room.shown.at(-1)), { plan: null, sail: 'complete', book: null });
 });
 
 test('a load that read nothing of the trees its steps open leaves the return ledger as it was, so the next visit recaps nothing done long before', async (t) => {

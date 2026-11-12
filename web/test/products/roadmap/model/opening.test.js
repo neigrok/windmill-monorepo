@@ -15,17 +15,17 @@ test('an opening is built from each shape the server answers', () => {
   };
 
   assert.deepEqual(Object.fromEntries(Object.entries(read).map(([name, opening]) => [name, facts(opening)])), {
-    open: { treeId: 't_sail', read: true, valid: true, complete: false, title: 'Learn to sail', done: 3, total: 8, loop: false, own: false, dangling: false, leads: true, face: 'open', gauge: 3 / 8 },
-    complete: { treeId: 't_read', read: true, valid: true, complete: true, title: 'Reading list', done: 12, total: 12, loop: false, own: false, dangling: false, leads: true, face: 'complete', gauge: 1 },
-    loop: { treeId: 't_loop', read: true, valid: true, complete: false, title: 'Learn to sail', done: 3, total: 8, loop: true, own: false, dangling: false, leads: true, face: 'loop', gauge: 3 / 8 },
-    empty: { treeId: 't_book', read: true, valid: true, complete: false, title: 'Book draft', done: 0, total: 0, loop: false, own: false, dangling: false, leads: true, face: 'empty', gauge: 0 },
-    missing: { treeId: 't_bike', read: true, valid: false, complete: false, title: '', done: 0, total: 0, loop: false, own: false, dangling: true, leads: false, face: 'missing', gauge: null },
+    open: { treeId: 't_sail', read: true, valid: true, complete: false, title: 'Learn to sail', done: 3, total: 8, loop: false, own: false, provisional: false, dangling: false, leads: true, face: 'open', gauge: 3 / 8 },
+    complete: { treeId: 't_read', read: true, valid: true, complete: true, title: 'Reading list', done: 12, total: 12, loop: false, own: false, provisional: false, dangling: false, leads: true, face: 'complete', gauge: 1 },
+    loop: { treeId: 't_loop', read: true, valid: true, complete: false, title: 'Learn to sail', done: 3, total: 8, loop: true, own: false, provisional: false, dangling: false, leads: true, face: 'loop', gauge: 3 / 8 },
+    empty: { treeId: 't_book', read: true, valid: true, complete: false, title: 'Book draft', done: 0, total: 0, loop: false, own: false, provisional: false, dangling: false, leads: true, face: 'empty', gauge: 0 },
+    missing: { treeId: 't_bike', read: true, valid: false, complete: false, title: '', done: 0, total: 0, loop: false, own: false, provisional: false, dangling: true, leads: false, face: 'missing', gauge: null },
   });
 });
 
 test('a pointer with no facts read is unread: it names its tree and claims nothing else', () => {
   assert.deepEqual(facts(Opening.unread('t_sail')), {
-    treeId: 't_sail', read: false, valid: false, complete: false, title: '', done: 0, total: 0, loop: false, own: false, dangling: false, leads: true, face: 'unread', gauge: null,
+    treeId: 't_sail', read: false, valid: false, complete: false, title: '', done: 0, total: 0, loop: false, own: false, provisional: false, dangling: false, leads: true, face: 'unread', gauge: null,
   });
 });
 
@@ -134,4 +134,56 @@ test('a step that opens the tree it stands in keeps its opening and has no door:
   assert.deepEqual(stood(false), expected);
   assert.deepEqual(stood(true), expected);
   assert.deepEqual(new Openings().onto(projection, { joined: true }).nodes.map(({ opening }) => [opening.face, opening.leads]), [['unread', false], ['unread', true], ['unread', true]]);
+});
+
+test('before the session joins, a pointer this device wrote and the server has not confirmed stands over the load, attached or detached', () => {
+  const load = Openings.fromWire({ read: { treeId: 't_reading', title: 'Reading list', state: 'complete', done: 12, total: 12 } });
+  const lattice = { id: 't_year', title: 'My year', nodes: [
+    { id: 'run', label: 'Run a 10K', prerequisites: [], opens: 't_coast' },
+    { id: 'read', label: 'Read more', prerequisites: [] },
+    { id: 'bike', label: 'Fix the bike', prerequisites: [], opens: 't_older' },
+  ] };
+  const shown = (own) => load.onto(lattice, { joined: false, own: new Set(own) }).nodes
+    .map((step) => ({ id: step.id, opens: step.opens ?? '', opening: step.opening?.treeId ?? null }));
+
+  assert.deepEqual(shown(['run', 'read']), [
+    { id: 'run', opens: 't_coast', opening: 't_coast' },
+    { id: 'read', opens: '', opening: null },
+    { id: 'bike', opens: 't_older', opening: null },
+  ]);
+  assert.deepEqual(shown([]), [
+    { id: 'run', opens: 't_coast', opening: null },
+    { id: 'read', opens: '', opening: 't_reading' },
+    { id: 'bike', opens: 't_older', opening: null },
+  ], 'with nothing of its own unconfirmed, the load’s word stands as before');
+});
+
+test('a tree chosen here stands at once with what the picker knew of it, until the server’s facts for that pointer are read', () => {
+  const lattice = { id: 't_year', title: 'My year', nodes: [
+    { id: 'run', label: 'Run a 10K', prerequisites: [], opens: 't_coast' },
+    { id: 'read', label: 'Read more', prerequisites: [], opens: 't_reading' },
+  ] };
+  const known = new Map([
+    ['run>t_coast', Opening.chosen({ id: 't_coast', title: 'Coast trip', done: 0, total: 5 })],
+    ['read>t_reading', Opening.chosen({ id: 't_reading', title: 'Reading list', done: 12, total: 12 })],
+  ]);
+  const read = Openings.fromWire({ read: { treeId: 't_reading', title: 'Reading list', state: 'complete', done: 12, total: 13, loop: false } });
+
+  const stood = read.onto(lattice, { joined: true, known }).nodes.map(({ id, opening }) => ({ id, face: opening.face, provisional: opening.provisional, done: opening.done, total: opening.total }));
+  assert.deepEqual(stood, [
+    { id: 'run', face: 'open', provisional: true, done: 0, total: 5 },
+    { id: 'read', face: 'complete', provisional: false, done: 12, total: 13 },
+  ]);
+  assert.deepEqual(new Openings().onto(lattice, { joined: true, known: new Map() }).nodes.map(({ opening }) => opening.face), ['unread', 'unread']);
+});
+
+test('what the picker knew of a tree: complete once every one of its steps is, and a tree with no steps is not', () => {
+  assert.deepEqual([{ done: 12, total: 12 }, { done: 3, total: 8 }, { done: 0, total: 0 }]
+    .map(({ done, total }) => Opening.chosen({ id: 't_x', title: 'X', done, total }))
+    .map((opening) => ({ face: opening.face, read: opening.read, valid: opening.valid, provisional: opening.provisional, leads: opening.leads })), [
+    { face: 'complete', read: true, valid: true, provisional: true, leads: true },
+    { face: 'open', read: true, valid: true, provisional: true, leads: true },
+    { face: 'empty', read: true, valid: true, provisional: true, leads: true },
+  ]);
+  assert.equal(Opening.fromWire({ treeId: 't_x', title: 'X', state: 'open', done: 1, total: 2 }).provisional, false);
 });
