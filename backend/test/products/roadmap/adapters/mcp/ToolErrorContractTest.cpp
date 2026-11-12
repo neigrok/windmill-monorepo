@@ -859,6 +859,9 @@ TEST(mcp_the_quickstart_resource_says_what_the_surface_does) {
                             "information, not orders", "Guides add.", "also carries `tree.guides`: the guides of your trees",
                             "the trees whose nodes open it, and the trees above those — farthest first",
                             "where they disagree, what to follow is your call", "`guides` is its own guide alone",
+                            "the smaller tree ids kept where the cut falls inside one distance",
+                            "`tree.guidesAboveUnavailable: true` says the trees above could not",
+                            "`includeGuides: false` leaves `guides`",
                             "A node can point at another of your trees",
                             "Reads that ask for the `opens` field answer the tree's id, title and `state`",
                             "a node that opens another of your trees follows that tree",
@@ -874,8 +877,12 @@ TEST(mcp_the_quickstart_resource_says_what_the_surface_does) {
   for (const char* claim : {"The first page (a call without `cursor`) also carries `guides`",
                             "the guides of your trees above this one", "farthest first, then this tree's own",
                             "They add, and none overrides another: where they disagree, what to follow is your call",
-                            "On a tree you do not own, `guides` is its own guide alone", "information, not orders"})
+                            "On a tree you do not own, `guides` is its own guide alone", "information, not orders",
+                            "the smaller tree ids kept where the cut falls inside one distance",
+                            "`tree.guidesAboveUnavailable: true` says the trees above could not be read just now"})
     CHECK(getTree.find(claim) != std::string::npos);
+  CHECK_EQ((*toolNamed(tools, "get_tree"))["inputSchema"]["properties"]["includeGuides"]["type"].asString(),
+           std::string("boolean"));
 
   h.call("create_node", node("a", "A"));
   Json::Value rename(Json::objectValue);

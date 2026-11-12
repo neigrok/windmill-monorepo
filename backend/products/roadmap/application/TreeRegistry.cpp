@@ -83,8 +83,8 @@ std::map<TreeId, OpenedTree> TreeRegistry::openedFrom(const UserId& owner, const
   return trees_.openedFrom(owner, opened);
 }
 
-std::map<TreeId, TreeAbove> TreeRegistry::treesAbove(const UserId& owner, const TreeId& tree) {
-  return trees_.treesAbove(owner, tree);
+std::map<TreeId, TreeAbove> TreeRegistry::guidedTreesAbove(const UserId& owner, const TreeId& tree) {
+  return trees_.guidedTreesAbove(owner, tree);
 }
 
 TreeRegistry::Removal TreeRegistry::remove(const TreeId& tree, const UserId& caller) {

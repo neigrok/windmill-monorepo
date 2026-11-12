@@ -78,6 +78,12 @@ drogon::HttpResponsePtr sendGetTree(TreeApi& api, const std::string& session, co
   return captured;
 }
 
+drogon::HttpResponsePtr sendGetGuides(TreeApi& api, const std::string& session, const std::string& id) {
+  drogon::HttpResponsePtr captured;
+  api.getGuides(getRequest(session), [&](const drogon::HttpResponsePtr& r) { captured = r; }, id);
+  return captured;
+}
+
 drogon::HttpResponsePtr sendGetDiagnostics(TreeApi& api, const std::string& session, const std::string& id) {
   drogon::HttpResponsePtr captured;
   api.getDiagnostics(getRequest(session), [&](const drogon::HttpResponsePtr& r) { captured = r; }, id);
@@ -391,8 +397,7 @@ TEST(get_tree_answers_the_owner_what_each_pointer_comes_to_and_no_other_reader_t
   h.trees->openedReadsFail = true;
   for (const char* reader : {"s-stranger", ""}) {
     const Json::Value read = bodyOf(sendGetTree(h.api, reader, "t_main"));
-    CHECK_EQ(read.getMemberNames(),
-             (std::vector<std::string>{"createdAt", "data", "guides", "mine", "seq", "state", "visibility"}));
+    CHECK_EQ(read.getMemberNames(), (std::vector<std::string>{"createdAt", "data", "mine", "seq", "state", "visibility"}));
     CHECK_EQ(dump(read).find("t_done"), std::string::npos);
     CHECK_EQ(dump(read).find("opens\":\"t_"), std::string::npos);
   }
@@ -464,7 +469,7 @@ TEST(get_tree_follows_pointers_after_it_has_let_go_of_the_trees_strand) {
 
 // Guides add: the owner is answered the guides of their own trees above, farthest first, and the tree's own last; every
 // other reader the tree's own alone, with nothing read for them.
-TEST(get_tree_answers_the_guides_above_to_the_owner_and_the_trees_own_guide_alone_to_every_other_reader) {
+TEST(get_guides_answers_the_guides_above_to_the_owner_and_the_trees_own_guide_alone_to_every_other_reader) {
   Harness h;
   const UserId owner = h.signIn("s-owner", "owner@example.com");
   h.signIn("s-stranger", "stranger@example.com");
@@ -494,26 +499,56 @@ TEST(get_tree_answers_the_guides_above_to_the_owner_and_the_trees_own_guide_alon
   CHECK_EQ(h.trees->byId["t_00000000000000a1"].state.nodes[0].opens, TreeId{"t_leaf"});
   h.trees->byId["t_00000000000000a1"].guide = Lww<std::string>{"The stranger's own method.", Hlc{2, 0, "seed"}};
 
-  for (const char* reader : {"s-stranger", ""}) {
-    const Json::Value read = bodyOf(sendGetTree(h.api, reader, "t_leaf"));
-    CHECK_EQ(read["guides"], parse(R"([{"treeId":"t_leaf","title":"Leaf","text":"Tests before code.","yours":false}])"));
-    CHECK_EQ(dump(read).find("t_middle"), std::string::npos);
-    CHECK_EQ(dump(read).find("Ship weekly"), std::string::npos);
-    CHECK_EQ(dump(read).find("stranger's own"), std::string::npos);
-  }
+  for (const char* reader : {"s-stranger", ""})
+    CHECK_EQ(bodyOf(sendGetGuides(h.api, reader, "t_leaf")),
+             parse(R"({"guides":[{"treeId":"t_leaf","title":"Leaf","text":"Tests before code.","yours":false}]})"));
   CHECK(h.trees->aboveReads.empty());
 
-  CHECK_EQ(bodyOf(sendGetTree(h.api, "s-owner", "t_leaf"))["guides"],
-           parse(R"([{"treeId":"t_root","title":"Root","text":"Write the outcome first.","yours":true},
-                     {"treeId":"t_middle","title":"Middle","text":"Ship weekly.","yours":true},
-                     {"treeId":"t_leaf","title":"Leaf","text":"Tests before code.","yours":true}])"));
-  CHECK_EQ(bodyOf(sendGetTree(h.api, "s-owner", "t_root"))["guides"],
-           parse(R"([{"treeId":"t_root","title":"Root","text":"Write the outcome first.","yours":true}])"));
-  CHECK_EQ(bodyOf(sendGetTree(h.api, "s-owner", "t_silent"))["guides"], parse("[]"));
+  CHECK_EQ(bodyOf(sendGetGuides(h.api, "s-owner", "t_leaf")),
+           parse(R"({"guides":[{"treeId":"t_root","title":"Root","text":"Write the outcome first.","yours":true},
+                               {"treeId":"t_middle","title":"Middle","text":"Ship weekly.","yours":true},
+                               {"treeId":"t_leaf","title":"Leaf","text":"Tests before code.","yours":true}]})"));
+  CHECK_EQ(bodyOf(sendGetGuides(h.api, "s-owner", "t_root")),
+           parse(R"({"guides":[{"treeId":"t_root","title":"Root","text":"Write the outcome first.","yours":true}]})"));
+  CHECK_EQ(bodyOf(sendGetGuides(h.api, "s-owner", "t_silent")), parse(R"({"guides":[]})"));
   CHECK_EQ(h.trees->aboveReads, (std::vector<TreeId>{TreeId{"t_leaf"}, TreeId{"t_root"}, TreeId{"t_silent"}}));
 }
 
-TEST(get_tree_says_a_guide_a_fork_copied_is_not_the_owners_own_and_one_they_wrote_is) {
+// The route answers an absent tree and one the caller may not read as the tree route does, in the same bytes, and reads nothing.
+TEST(get_guides_of_an_absent_tree_and_of_a_private_tree_the_caller_cannot_read_is_the_tree_routes_404) {
+  Harness h;
+  h.signIn("s-other", "other@example.com");
+  h.seed("t_priv", "Secret", UserId{"owner"}, Visibility::private_);
+  h.trees->byId["t_priv"].guide = Lww<std::string>{"A private method.", Hlc{2, 0, "seed"}};
+
+  for (const auto& [reader, tree] : std::vector<std::pair<const char*, const char*>>{{"", "t_priv"}, {"s-other", "t_priv"},
+                                                                                 {"s-other", "t_ghost"}}) {
+    const drogon::HttpResponsePtr refused = sendGetGuides(h.api, reader, tree);
+    CHECK_EQ(refused->getStatusCode(), drogon::k404NotFound);
+    CHECK_EQ(dump(bodyOf(refused)), dump(bodyOf(sendGetTree(h.api, reader, tree))));
+    CHECK_EQ(dump(bodyOf(refused)), std::string(R"({"error":"no such tree"})"));
+  }
+  CHECK(h.trees->aboveReads.empty());
+}
+
+// The tree load carries no guides and makes no walk, so a walk that cannot be made never fails it.
+TEST(get_tree_carries_no_guides_and_never_reads_the_trees_above) {
+  Harness h;
+  const UserId me = h.signIn("s-me");
+  h.seed("t_mine", "Learn to sail", me, Visibility::public_);
+  h.trees->byId["t_mine"].guide = Lww<std::string>{"Rig first, then sail.", Hlc{2, 0, "seed"}};
+  h.trees->aboveReadsFail = true;
+
+  const drogon::HttpResponsePtr mine = sendGetTree(h.api, "s-me", "t_mine");
+  CHECK_EQ(mine->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(bodyOf(mine).getMemberNames(),
+           (std::vector<std::string>{"createdAt", "data", "mine", "opens", "seq", "state", "visibility"}));
+  CHECK_EQ(bodyOf(sendGetTree(h.api, "", "t_mine")).getMemberNames(),
+           (std::vector<std::string>{"createdAt", "data", "mine", "seq", "state", "visibility"}));
+  CHECK(h.trees->aboveReads.empty());
+}
+
+TEST(get_guides_says_a_guide_a_fork_copied_is_not_the_owners_own_and_one_they_wrote_is) {
   Harness h;
   const UserId me = h.signIn("s-me");
   h.seed("t_copy", "Forked plan", me, Visibility::private_);
@@ -522,14 +557,15 @@ TEST(get_tree_says_a_guide_a_fork_copied_is_not_the_owners_own_and_one_they_wrot
   h.seed("t_mine", "My plan", me, Visibility::private_);
   h.trees->byId["t_mine"].guide = Lww<std::string>{"My method.", Hlc{2, 0, "seed"}};
 
-  CHECK_EQ(bodyOf(sendGetTree(h.api, "s-me", "t_copy"))["guides"],
-           parse(R"([{"treeId":"t_copy","title":"Forked plan","text":"Its author's method.","yours":false}])"));
-  CHECK_EQ(bodyOf(sendGetTree(h.api, "s-me", "t_mine"))["guides"],
-           parse(R"([{"treeId":"t_mine","title":"My plan","text":"My method.","yours":true}])"));
+  CHECK_EQ(bodyOf(sendGetGuides(h.api, "s-me", "t_copy")),
+           parse(R"({"guides":[{"treeId":"t_copy","title":"Forked plan","text":"Its author's method.","yours":false}]})"));
+  CHECK_EQ(bodyOf(sendGetGuides(h.api, "s-me", "t_mine")),
+           parse(R"({"guides":[{"treeId":"t_mine","title":"My plan","text":"My method.","yours":true}]})"));
 }
 
-// A failed walk is not an absent tree: the owner is answered a 503 the client reports, under the walk's own name.
-TEST(get_tree_whose_trees_above_cannot_be_read_answers_503_and_files_one_issue_and_other_readers_still_answer) {
+// A failed walk is not an absent tree: the owner is answered a 503 the client reports, under the walk's own name,
+// and the tree itself still loads.
+TEST(get_guides_whose_trees_above_cannot_be_read_answers_503_and_files_one_issue_and_the_tree_and_other_readers_still_answer) {
   struct Failures : FailureReporter {
     std::vector<std::string> reports;
     void report(const std::string&, const std::string&, const std::string&) override {}
@@ -549,22 +585,23 @@ TEST(get_tree_whose_trees_above_cannot_be_read_answers_503_and_files_one_issue_a
   h.trees->byId["t_mine"].guide = Lww<std::string>{"Rig first, then sail.", Hlc{2, 0, "seed"}};
 
   h.trees->aboveReadsFail = true;
-  const drogon::HttpResponsePtr failed = sendGetTree(h.api, "s-me", "t_mine");
+  const drogon::HttpResponsePtr failed = sendGetGuides(h.api, "s-me", "t_mine");
 
   REQUIRE_EQ(failed->getStatusCode(), drogon::k503ServiceUnavailable);
   CHECK_EQ(bodyOf(failed),
            parse(R"({"code":"guides-unavailable","error":"the guides of the trees above this one could not be read — try again"})"));
   CHECK_EQ(reporter.failures->reports,
            (std::vector<std::string>{std::string("roadmap.tree.guides roadmap rest failed ") + typeid(std::runtime_error).name()}));
-  const drogon::HttpResponsePtr signedOut = sendGetTree(h.api, "", "t_mine");
+  const drogon::HttpResponsePtr signedOut = sendGetGuides(h.api, "", "t_mine");
   CHECK_EQ(signedOut->getStatusCode(), drogon::k200OK);
-  CHECK_EQ(bodyOf(signedOut)["guides"],
-           parse(R"([{"treeId":"t_mine","title":"Learn to sail","text":"Rig first, then sail.","yours":false}])"));
+  CHECK_EQ(bodyOf(signedOut),
+           parse(R"({"guides":[{"treeId":"t_mine","title":"Learn to sail","text":"Rig first, then sail.","yours":false}]})"));
+  CHECK_EQ(sendGetTree(h.api, "s-me", "t_mine")->getStatusCode(), drogon::k200OK);
   CHECK_EQ(reporter.failures->reports.size(), 1u);
 }
 
 // A stranger's read must not wait on the owner's statement: that wait would say a tree of the owner's opens this one.
-TEST(get_tree_reads_the_trees_above_after_it_has_let_go_of_the_trees_strand) {
+TEST(get_guides_reads_the_trees_above_after_it_has_let_go_of_the_trees_strand) {
   Harness h;
   const UserId me = h.signIn("s-me");
   h.seed("t_mine", "Learn to sail", me, Visibility::public_);
@@ -576,12 +613,12 @@ TEST(get_tree_reads_the_trees_above_after_it_has_let_go_of_the_trees_strand) {
       if (!strand.try_lock()) return;
       strand.unlock();
       strandWasFree = true;
-      readMeanwhile = sendGetTree(h.api, "", "t_mine")->getStatusCode();
+      readMeanwhile = sendGetGuides(h.api, "", "t_mine")->getStatusCode();
     });
     other.join();
   };
 
-  CHECK_EQ(sendGetTree(h.api, "s-me", "t_mine")->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(sendGetGuides(h.api, "s-me", "t_mine")->getStatusCode(), drogon::k200OK);
 
   CHECK_EQ(h.trees->aboveReads, (std::vector<TreeId>{TreeId{"t_mine"}}));
   CHECK(strandWasFree);

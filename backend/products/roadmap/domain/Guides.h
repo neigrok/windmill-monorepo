@@ -32,6 +32,10 @@ struct Guide {
   bool operator==(const Guide&) const = default;
 };
 
+// The trees of `above` that carry a guide, cut to the `room` nearest. Where the cut falls inside one distance the
+// smaller tree ids are kept, in byte order.
+std::map<TreeId, TreeAbove> nearestGuided(const std::map<TreeId, TreeAbove>& above, std::size_t room);
+
 // The guides a reading of `own`'s tree answers, by the rule in SPEC.md (Model, `guides`): they add, farthest first.
 std::vector<Guide> guidesFor(const std::map<TreeId, TreeAbove>& above, const Guide& own);
 

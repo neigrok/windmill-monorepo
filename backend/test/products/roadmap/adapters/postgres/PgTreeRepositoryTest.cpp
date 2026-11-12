@@ -532,9 +532,9 @@ TEST(pg_a_node_follows_the_tree_it_opens_and_the_registry_list_counts_it) {
   registry.stop();
 }
 
-// The statement behind `guides`: the owner's standing trees whose present pointers lead down to a tree, each once at
-// its shortest distance, within eight pointers, and never the tree itself, whatever loops exist.
-TEST(pg_trees_above_answers_the_owners_standing_trees_whose_present_pointers_lead_down_to_a_tree_within_eight) {
+// The statement behind `guides`: of the owner's standing trees whose present pointers lead down to a tree, each at
+// its shortest distance, within eight pointers and never the tree itself, the nearest eight that carry a guide.
+TEST(pg_guided_trees_above_answers_the_nearest_eight_guided_trees_of_the_owners_that_lead_down_to_a_tree_within_eight_pointers) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
   const auto id = [](const std::string& name) { return TreeId{"t_pgtest_above_" + name}; };
@@ -584,40 +584,45 @@ TEST(pg_trees_above_answers_the_owners_standing_trees_whose_present_pointers_lea
     graph.deleteNode(NodeId{"to-leaf"}, Hlc{1'700'000'000'001, 0, "r_a"});
     REQUIRE(trees.save(id("tombstoned"), graph.exportState(), LegendState{}, stored->title, stored->guide, stored->head));
   }
-  plant("up1", kSam, "Up 1.", {"leaf"});
+  plant("up1", kSam, "", {"leaf"});
   for (int level = 2; level <= 9; ++level)
-    plant("up" + std::to_string(level), kSam, "Up " + std::to_string(level) + ".", {"up" + std::to_string(level - 1)});
+    plant("up" + std::to_string(level), kSam, level >= 8 ? "Up " + std::to_string(level) + "." : "",
+          {"up" + std::to_string(level - 1)});
 
-  std::map<TreeId, TreeAbove> aboveLeaf{{id("mid"), {1, "Tree mid", "Mid.", false}},
-                                        {id("both"), {1, "Tree both", "Both ways.", false}},
-                                        {id("top"), {2, "Tree top", "Top.", false}},
-                                        {id("inherited"), {1, "Tree inherited", "Its author's.", true}},
-                                        {id("silent"), {1, "Tree silent", "", false}}};
-  for (int level = 1; level <= 8; ++level)
-    aboveLeaf.emplace(id("up" + std::to_string(level)),
-                      TreeAbove{level, "Tree up" + std::to_string(level), "Up " + std::to_string(level) + ".", false});
-  CHECK(trees.treesAbove(kSam, id("leaf")) == aboveLeaf);
+  CHECK(trees.guidedTreesAbove(kSam, id("leaf")) ==
+        (std::map<TreeId, TreeAbove>{{id("mid"), {1, "Tree mid", "Mid.", false}},
+                                     {id("both"), {1, "Tree both", "Both ways.", false}},
+                                     {id("top"), {2, "Tree top", "Top.", false}},
+                                     {id("inherited"), {1, "Tree inherited", "Its author's.", true}},
+                                     {id("up8"), {8, "Tree up8", "Up 8.", false}}}));
+  CHECK(trees.guidedTreesAbove(kSam, id("top")) ==
+        (std::map<TreeId, TreeAbove>{{id("leaf"), {1, "Tree leaf", "Leaf.", false}},
+                                     {id("mid"), {2, "Tree mid", "Mid.", false}},
+                                     {id("both"), {2, "Tree both", "Both ways.", false}},
+                                     {id("inherited"), {2, "Tree inherited", "Its author's.", true}}}));
 
-  std::map<TreeId, TreeAbove> aboveTop{{id("leaf"), {1, "Tree leaf", "Leaf.", false}},
-                                       {id("mid"), {2, "Tree mid", "Mid.", false}},
-                                       {id("both"), {2, "Tree both", "Both ways.", false}},
-                                       {id("inherited"), {2, "Tree inherited", "Its author's.", true}},
-                                       {id("silent"), {2, "Tree silent", "", false}}};
-  for (int level = 1; level <= 7; ++level)
-    aboveTop.emplace(id("up" + std::to_string(level)),
-                     TreeAbove{level + 1, "Tree up" + std::to_string(level), "Up " + std::to_string(level) + ".", false});
-  CHECK(trees.treesAbove(kSam, id("top")) == aboveTop);
+  // Ten trees open the hub: one carries no guide, and of the nine that do the cap keeps the eight smaller ids as
+  // bytes order them, an upper-case letter before every lower-case one whatever the database's collation.
+  plant("hub", kSam, "", {});
+  plant("cap_0silent", kSam, "", {"hub"});
+  for (const char* name : {"cap_Z", "cap_a", "cap_b", "cap_c", "cap_d", "cap_e", "cap_f", "cap_g", "cap_h"})
+    plant(name, kSam, "Guide.", {"hub"});
+  plant("cap_far", kSam, "Guide.", {"cap_Z"});
+  std::map<TreeId, TreeAbove> aboveHub;
+  for (const char* name : {"cap_Z", "cap_a", "cap_b", "cap_c", "cap_d", "cap_e", "cap_f", "cap_g"})
+    aboveHub.emplace(id(name), TreeAbove{1, std::string("Tree ") + name, "Guide.", false});
+  CHECK(trees.guidedTreesAbove(kSam, id("hub")) == aboveHub);
 
-  CHECK(trees.treesAbove(kEve, id("leaf")) == (std::map<TreeId, TreeAbove>{}));
-  CHECK(trees.treesAbove(kEve, id("theirs")) == (std::map<TreeId, TreeAbove>{}));
-  CHECK(trees.treesAbove(kSam, id("removed")) == (std::map<TreeId, TreeAbove>{}));
-  CHECK(trees.treesAbove(kSam, id("absent")) == (std::map<TreeId, TreeAbove>{}));
+  CHECK(trees.guidedTreesAbove(kEve, id("leaf")) == (std::map<TreeId, TreeAbove>{}));
+  CHECK(trees.guidedTreesAbove(kEve, id("theirs")) == (std::map<TreeId, TreeAbove>{}));
+  CHECK(trees.guidedTreesAbove(kSam, id("removed")) == (std::map<TreeId, TreeAbove>{}));
+  CHECK(trees.guidedTreesAbove(kSam, id("absent")) == (std::map<TreeId, TreeAbove>{}));
   clear();
 }
 
-// The socket and PUT admit any pointer text, so anyone who knows a tree's id can point at it: the walk starts from
-// the owner's own trees, and what another account plants is neither answered nor read.
-TEST(pg_a_strangers_flood_of_pointers_at_a_tree_changes_neither_the_trees_above_it_nor_the_rows_the_walk_reads) {
+// The socket and PUT admit any pointer text, so anyone who knows a tree's id can point at it: the walk is keyed on
+// the owner's own trees, so what another account plants is neither answered nor makes the statement read more.
+TEST(pg_a_strangers_flood_of_pointers_at_a_tree_changes_no_answer_and_the_walk_still_reads_no_more_than_the_owners_rows) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
   const auto clear = [] {
@@ -650,8 +655,8 @@ TEST(pg_a_strangers_flood_of_pointers_at_a_tree_changes_neither_the_trees_above_
     pqxx::work txn{*conn};
     txn.exec("SET LOCAL enable_seqscan = off");
     const pqxx::result explained =
-        txn.exec_params(std::string("EXPLAIN (ANALYZE, TIMING OFF, FORMAT JSON) ") + PgTreeRepository::treesAboveStatement(),
-                        kSam.str(), leaf.str(), kMaxLevelsAbove);
+        txn.exec_params(std::string("EXPLAIN (ANALYZE, TIMING OFF, FORMAT JSON) ") + PgTreeRepository::guidedTreesAboveStatement(),
+                        kSam.str(), leaf.str(), kMaxLevelsAbove, static_cast<int>(kMaxGuides));
     std::map<std::string, double> read;
     std::vector<Json::Value> nodes{parse(explained[0][0].as<std::string>())[0]["Plan"]};
     while (!nodes.empty()) {
@@ -667,11 +672,15 @@ TEST(pg_a_strangers_flood_of_pointers_at_a_tree_changes_neither_the_trees_above_
   };
   const std::map<TreeId, TreeAbove> above{{TreeId{std::string("t_pgtest_flood_mid")}, {1, "Mid", "Mid.", false}},
                                           {TreeId{std::string("t_pgtest_flood_top")}, {2, "Top", "Top.", false}}};
-  CHECK(trees.treesAbove(kSam, leaf) == above);
-  const std::map<std::string, double> readBefore = rowsRead();
-  std::vector<std::string> tablesRead;
-  for (const auto& [table, rows] : readBefore) tablesRead.push_back(table);
-  CHECK_EQ(tablesRead, (std::vector<std::string>{"tree_nodes", "trees"}));
+  // Whichever index the planner takes, the statement reads no more than Sam's own rows: his three trees and the two
+  // above again for their guides, and at most the sixty nodes they hold.
+  const auto withinTheOwnersRows = [&] {
+    const std::map<std::string, double> read = rowsRead();
+    return read.size() == 2 && read.count("trees") && read.count("tree_nodes") && read.at("trees") <= 5 &&
+           read.at("tree_nodes") <= 60;
+  };
+  CHECK(trees.guidedTreesAbove(kSam, leaf) == above);
+  CHECK(withinTheOwnersRows());
 
   {
     PgLease conn{*pgTestPool()};
@@ -685,7 +694,7 @@ TEST(pg_a_strangers_flood_of_pointers_at_a_tree_changes_neither_the_trees_above_
     txn.commit();
   }
 
-  CHECK(trees.treesAbove(kSam, leaf) == above);
-  CHECK(rowsRead() == readBefore);
+  CHECK(trees.guidedTreesAbove(kSam, leaf) == above);
+  CHECK(withinTheOwnersRows());
   clear();
 }

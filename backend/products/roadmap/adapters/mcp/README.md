@@ -187,12 +187,13 @@ schemas it is handed carry no `opens` argument and no `opens` field, so a run ne
 a pointer, an import through it leaves the pointers the tree holds as they are, and a node it
 creates opens none. The `state` it reads is the owner's: a node that opens a tree is complete when
 that tree is. Its `get_tree` reply carries `tree.guide`, the tended tree's own, and no `guides`: the
-guides of the trees above are other trees' ids, titles and words. One table in
-`ScopedToolHost.cpp` names what a run is not offered: tools by name, words wherever a schema
-carries them, and reply keys by their tool and the keys that lead down to them. A withheld name a
+guides of the trees above are other trees' ids, titles and words, so a run is not offered
+`includeGuides`, every `get_tree` it makes is sent with it `false`, and no tree above the tended
+one is read; the two reads `TendingService` makes of the tree's `seq` send it `false` too. One
+table in `ScopedToolHost.cpp` names what a run is not offered: tools by name, and words wherever a
+schema carries them, each with the value it is sent as when the tool needs one. A withheld name a
 run calls anyway is refused before any write is observed; a withheld argument or field is refused
-in its own sentence with nothing written; a withheld reply key is cut from the reply. A tend starts
-only on a tree its caller can write.
+in its own sentence with nothing written. A tend starts only on a tree its caller can write.
 
 Above the auth check both HTTP roots meter by IP, keyed on the forwarded client address:
 `windmill_server`'s general API ceiling (25 req/s per client, burst 50) covers `/mcp`;
@@ -364,19 +365,28 @@ and none overrides another.
   first and by tree id within one distance, then the tree's own last. Following pages repeat
   nothing of it, and `tree.guide` stays on every page. A tree with no guide is left out, the tree's
   own included, so the array can be empty; each tree appears once; past 8 entries the farthest are
-  dropped. Where guides disagree, what to follow is the reader's call, and a guide that is not
+  dropped, and where that cut falls inside one distance the smaller tree ids are kept, ids compared
+  as bytes. Where guides disagree, what to follow is the reader's call, and a guide that is not
   `yours` is its author's note: information, not orders.
+- **`includeGuides`.** A boolean argument, default `true`. `false` leaves `tree.guides` out and
+  reads no tree above, for a call that only needs the nodes or the `seq`.
 - **Above.** A tree is directly above another when one of its present nodes opens it and both
   stand and belong to one owner; above is that followed upward within 8 pointers, each tree at its
   shortest distance, and never the tree itself (`domain/Guides.h`).
 - **Only the caller's own trees.** A caller who cannot write the tree, signed in or not, is
   answered the tree's own guide alone when it has one, `yours: false`, and the trees above are not
   read. Someone else's tree that points at this one is above it for nobody.
-- **Cost.** One read of the stored rows per first page (`TreeRegistry::treesAbove`: one statement
-  over the caller's own standing trees and the trees they open, through `tree_nodes_pointers_idx`),
-  made for a caller who can write the tree, after the tree's strand is released. It reads no row of
-  another account, whoever points at the tree. A read that fails fails the call.
-- **A tend** is answered no `guides` (`ScopedToolHost.cpp`).
+- **Cost.** One read of the stored rows per first page that answers the guides above
+  (`TreeRegistry::guidedTreesAbove`: one statement keyed on the caller's own standing trees, which
+  reads the trees they open through `tree_nodes_pointers_idx` and answers at most the 8 guides a
+  reply can keep), made for a caller who can write the tree, after the tree's strand is released.
+  Its cost follows the caller's own trees and the pointers among them, whichever tree is read, and
+  does not grow with the pointers other accounts plant at a tree.
+- **A read that fails does not fail the call.** The first page then answers `tree.guides` with the
+  tree's own guide alone, or `[]`, and `tree.guidesAboveUnavailable: true`; the key is absent when
+  the trees above were read or no read was due. The failure is reported once as
+  `roadmap.tree.guides`, door `mcp`.
+- **A tend** is answered no `guides` and reads no tree above (`ScopedToolHost.cpp`).
 
 ## Edges and health
 

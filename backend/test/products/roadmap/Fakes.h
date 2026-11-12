@@ -145,10 +145,10 @@ struct FakeTreeRepository : TreeRepository {
   bool latticeLoadsFail = false;  // load throws, the way a dropped connection does; loadAccess still answers
   bool openedReadsFail = false;  // openedFrom throws, the way a dropped connection does
   std::function<void()> duringOpenedRead;  // runs inside openedFrom, the way a slow statement holds its caller
-  // One entry per treesAbove read: the tree it walked up from.
+  // One entry per guidedTreesAbove read: the tree it walked up from.
   std::vector<TreeId> aboveReads;
-  bool aboveReadsFail = false;  // treesAbove throws, the way a dropped connection does
-  std::function<void()> duringAboveRead;  // runs inside treesAbove, the way a slow statement holds its caller
+  bool aboveReadsFail = false;  // guidedTreesAbove throws, the way a dropped connection does
+  std::function<void()> duringAboveRead;  // runs inside guidedTreesAbove, the way a slow statement holds its caller
   bool savesFail = false;  // save throws, the way a write Postgres refuses does
   std::optional<StoredTree> load(const TreeId& tree) override {
     if (latticeLoadsFail) throw std::runtime_error("connection reset mid-read");
@@ -305,8 +305,9 @@ struct FakeTreeRepository : TreeRepository {
     return trees;
   }
   // The real statement's rules: this owner's standing trees only, level by level up the present pointers, so each
-  // sits at its shortest distance, the walk ends at kMaxLevelsAbove and `tree` is never above itself.
-  std::map<TreeId, TreeAbove> treesAbove(const UserId& owner, const TreeId& tree) override {
+  // sits at its shortest distance, the walk ends at kMaxLevelsAbove and `tree` is never above itself; then the
+  // nearest kMaxGuides that carry a guide.
+  std::map<TreeId, TreeAbove> guidedTreesAbove(const UserId& owner, const TreeId& tree) override {
     aboveReads.push_back(tree);
     if (aboveReadsFail) throw std::runtime_error("connection reset mid-read");
     if (duringAboveRead) duringAboveRead();
@@ -328,7 +329,7 @@ struct FakeTreeRepository : TreeRepository {
       }
       level = std::move(next);
     }
-    return above;
+    return nearestGuided(above, kMaxGuides);
   }
   void softDelete(const TreeId& tree) override { deletedIds.insert(tree.str()); }
   void rename(const TreeId& tree, const Lww<std::string>& title) override {

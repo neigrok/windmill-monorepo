@@ -96,9 +96,10 @@ struct TreeRepository {
   virtual std::map<TreeId, std::string> titlesOwnedBy(const UserId& owner, const std::set<TreeId>& trees) = 0;
   // Each of `opened` that stands and is `owner`'s, and every such tree their pointers lead to, under `owner`'s marks.
   virtual std::map<TreeId, OpenedTree> openedFrom(const UserId& owner, const std::set<TreeId>& opened) = 0;
-  // Every tree above `tree` (SPEC.md, Model, `guides`): `owner`'s standing trees whose present pointers lead down to
-  // it within kMaxLevelsAbove, never `tree` itself. Nothing when `tree` does not stand or is not `owner`'s.
-  virtual std::map<TreeId, TreeAbove> treesAbove(const UserId& owner, const TreeId& tree) = 0;
+  // The kMaxGuides nearest trees above `tree` that carry a guide (SPEC.md, Model, `guides`; nearestGuided cuts them):
+  // above are `owner`'s standing trees whose present pointers lead down to it within kMaxLevelsAbove, never `tree`
+  // itself. Nothing when `tree` does not stand or is not `owner`'s.
+  virtual std::map<TreeId, TreeAbove> guidedTreesAbove(const UserId& owner, const TreeId& tree) = 0;
   // Retire a tree by stamping deleted_at; every read filters it out afterwards.
   virtual void softDelete(const TreeId& tree) = 0;
   // The closed-room seam only — a live room's title reaches the column through save(). Lands only

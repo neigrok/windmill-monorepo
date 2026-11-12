@@ -381,6 +381,8 @@ ToolResult readTree(RoomRegistry& registry, TreeRegistry& trees, ProgressService
   if (!kindFields) return ToolResult::failure(error);
   if (std::optional<std::string> bad = optionalBool(args["includeEdges"], "includeEdges"))
     return ToolResult::failure(*bad);
+  if (std::optional<std::string> bad = optionalBool(args["includeGuides"], "includeGuides"))
+    return ToolResult::failure(*bad);
 
   const TreeData& data = read->data;
   std::optional<Page> page = pageOf(data.nodes, args, error);
@@ -404,9 +406,25 @@ ToolResult readTree(RoomRegistry& registry, TreeRegistry& trees, ProgressService
   document["id"] = data.id.str();
   document["title"] = data.title;
   document["guide"] = guide;
-  // The first page alone adds the guides of the caller's trees above this one; only its writer has them read.
-  if (page->begin == 0)
-    document["guides"] = toJson(guidesFor(mine ? trees.treesAbove(*caller, data.id) : std::map<TreeId, TreeAbove>{}, own));
+  // The first page alone adds the guides of the caller's trees above this one, unless the call asks for none; only
+  // the tree's writer has them read. A walk that cannot be made is reported under its own name and leaves the
+  // tree's own guide and a flag: the tree is still read.
+  if (page->begin == 0 && (args["includeGuides"].isNull() || args["includeGuides"].asBool())) {
+    std::map<TreeId, TreeAbove> above;
+    if (mine) {
+      WriteObservation observation{"roadmap.tree.guides", "roadmap", "mcp"};
+      try {
+        above = trees.guidedTreesAbove(*caller, data.id);
+        observation.skip();
+      } catch (const std::bad_alloc&) {
+        throw;
+      } catch (const std::exception& failure) {
+        observation.fail(failure);
+        document["guidesAboveUnavailable"] = true;
+      }
+    }
+    document["guides"] = toJson(guidesFor(above, own));
+  }
   document["nodes"] = std::move(projected.nodes);
   document["kinds"] = kinds;
 

@@ -7,10 +7,13 @@
 #include "products/roadmap/adapters/mcp/RoadmapToolCatalog.h"
 #include "products/roadmap/application/ActivityFeed.h"
 #include "products/roadmap/application/ForkService.h"
+#include "platform/ports/FailureReporter.h"
 #include "test/testing.h"
 
+#include <memory>
 #include <mutex>
 #include <thread>
+#include <typeinfo>
 
 using namespace wm;
 using namespace wm::fake;
@@ -4355,6 +4358,7 @@ TEST(mcp_the_trees_above_are_read_once_per_first_page_of_get_tree_and_by_no_othe
 
   CHECK_FALSE(h.call("get_tree", parse(R"({"limit":1,"cursor":"a"})")).isError);
   CHECK_FALSE(h.call("get_tree", parse(R"({"cursor":"c"})")).isError);
+  CHECK_FALSE(h.call("get_tree", parse(R"({"includeGuides":false})")).isError);
   CHECK(h.call("get_tree", parse(R"({"limit":0})")).isError);
   CHECK(h.call("get_tree", parse(R"({"fields":["nope"]})")).isError);
   CHECK(h.call("get_tree", parse(R"({"cursor":"ghost"})")).isError);
@@ -4369,23 +4373,70 @@ TEST(mcp_the_trees_above_are_read_once_per_first_page_of_get_tree_and_by_no_othe
   CHECK_EQ(h.trees.aboveReads.size(), 2u);
 }
 
-// The walk is part of the first page: its failure is the tool's server failure, naming nothing, and only where it is made.
-TEST(mcp_a_first_page_whose_trees_above_cannot_be_read_fails_as_the_call_and_other_reads_are_untouched) {
+// A walk that cannot be made does not fail the read: the first page answers the tree's own guide alone and says the
+// trees above could not be read, nothing else of the reply changes, and one issue is filed under the walk's own name.
+TEST(mcp_a_first_page_whose_trees_above_cannot_be_read_answers_the_trees_own_guide_and_says_so_and_files_one_issue) {
+  struct Failures : FailureReporter {
+    std::vector<std::string> reports;
+    void report(const std::string&, const std::string&, const std::string&) override {}
+    void reportWrite(const std::string& operation, const std::string& product, const std::string& door,
+                     const std::string& outcome, const std::string&, const std::string& exceptionType) override {
+      reports.push_back(operation + " " + product + " " + door + " " + outcome + " " + exceptionType);
+    }
+  };
+  struct ReporterScope {
+    std::shared_ptr<Failures> failures = std::make_shared<Failures>();
+    ReporterScope() { installWriteReporter(failures); }
+    ~ReporterScope() { installWriteReporter(nullptr); }
+  } reporter;
   Harness h;
   h.trees.byId["t"].visibility = Visibility::public_;
   h.plant("t_root", h.caller, "The method.", {"t"});
   for (const char* id : {"a", "b"}) CHECK_FALSE(h.call("create_node", node(id, id)).isError);
+  CHECK_FALSE(h.call("describe_tree", with("guide", "Own.")).isError);
+  const Json::Value everything = parse(R"({"fields":["id","label","state"],"includeEdges":true,"limit":1})");
+  Json::Value read = body(h.call("get_tree", everything));
+  CHECK_EQ(read["tree"]["guides"],
+           parse(R"([{"treeId":"t_root","title":"Tree t_root","text":"The method.","yours":true},
+                     {"treeId":"t","title":"Test Roadmap","text":"Own.","yours":true}])"));
+  CHECK_FALSE(read["tree"].isMember("guidesAboveUnavailable"));
+
+  h.trees.aboveReadsFail = true;
+  const ToolResult degraded = h.call("get_tree", everything);
+
+  CHECK_FALSE(degraded.isError);
+  read["tree"]["guides"] = parse(R"([{"treeId":"t","title":"Test Roadmap","text":"Own.","yours":true}])");
+  read["tree"]["guidesAboveUnavailable"] = true;
+  CHECK_EQ(body(degraded), read);
+  CHECK_EQ(reporter.failures->reports,
+           (std::vector<std::string>{std::string("roadmap.tree.guides roadmap mcp failed ") + typeid(std::runtime_error).name()}));
+
+  for (const char* unwalked : {R"({"cursor":"a"})", R"({"includeGuides":false})"})
+    CHECK_FALSE(body(h.call("get_tree", parse(unwalked)))["tree"].isMember("guidesAboveUnavailable"));
+  CHECK_EQ(body(h.tools.callTool("get_tree", with("treeId", "t"), ToolCaller{uid("stranger"), ToolScope::everything()}))["tree"]["guides"],
+           parse(R"([{"treeId":"t","title":"Test Roadmap","text":"Own.","yours":false}])"));
+  CHECK_EQ(reporter.failures->reports.size(), 1u);
+}
+
+// A call that only needs the nodes or the seq says so: no `guides` key, and no tree above is read.
+TEST(mcp_get_tree_asked_for_no_guides_carries_none_and_reads_no_tree_above) {
+  Harness h;
+  h.plant("t_root", h.caller, "The method.", {"t"});
+  CHECK_FALSE(h.call("describe_tree", with("guide", "Own.")).isError);
   h.trees.aboveReadsFail = true;
 
-  const ToolResult failed = h.call("get_tree", kNoArgs);
-  CHECK(failed.isError);
-  CHECK_EQ(message(failed), std::string("get_tree: that call failed inside the server. The outcome may be uncertain; "
-                                        "read the affected records before retrying. The detail is in the server log."));
+  CHECK_EQ(body(h.call("get_tree", parse(R"({"includeGuides":false})"))),
+           parse(R"({"count":0,"seq":1,"tree":{"guide":{"text":"Own.","yours":true},"id":"t","kinds":[],"nodes":[],
+                     "title":"Test Roadmap"}})"));
+  CHECK(h.trees.aboveReads.empty());
+  CHECK_EQ(message(h.call("get_tree", parse(R"({"includeGuides":"no"})"))),
+           std::string("get_tree: argument \"includeGuides\" must be a boolean, got string"));
 
-  CHECK_EQ(ids(body(h.call("get_tree", parse(R"({"cursor":"a"})")))["tree"]["nodes"]), (std::vector<std::string>{"b"}));
-  CHECK_EQ(body(h.call("find_nodes", kNoArgs))["count"].asUInt64(), 2u);
-  CHECK_EQ(body(h.tools.callTool("get_tree", with("treeId", "t"), ToolCaller{uid("stranger"), ToolScope::everything()}))["tree"]["guides"],
-           parse("[]"));
+  h.trees.aboveReadsFail = false;
+  CHECK_EQ(body(h.call("get_tree", parse(R"({"includeGuides":true})")))["tree"]["guides"],
+           parse(R"([{"treeId":"t_root","title":"Tree t_root","text":"The method.","yours":true},
+                     {"treeId":"t","title":"Test Roadmap","text":"Own.","yours":true}])"));
+  CHECK_EQ(h.trees.aboveReads, (std::vector<TreeId>{TreeId{"t"}}));
 }
 
 // A stranger's read must not wait on the owner's statement: that wait would say a tree of the owner's opens this one.

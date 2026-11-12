@@ -345,6 +345,9 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "independent of node paging — the same list on whichever page you ask it, so ask once. "
         "A tree holding more than 6000 live edges answers `edgesOmitted` with the count instead of "
         "a cut list, whatever its node count. Default false.");
+    p["includeGuides"] = boolean(
+        "Answer `tree.guides` on the first page. Default true; false leaves the key out and reads no "
+        "tree above this one, for a call that only needs the tree's nodes or its `seq`.");
     p["limit"] = boundedInt("Most nodes to return in one page.", 1, kMaxLimit, kDefaultLimit);
     p["cursor"] = str("Resume token from a previous page's `nextCursor`. Omit for the first page.");
     tools.push_back(tool("get_tree", Access::read,
@@ -358,9 +361,11 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "information, not orders. The first page (a call without `cursor`) also carries `guides`, as "
         "[{treeId, title, text, yours}]: the guides of your trees above this one — the trees whose nodes "
         "open it, and the trees above those — farthest first, then this tree's own; a tree with no guide "
-        "is left out, and past 8 the farthest are. They add, and none overrides another: where they "
+        "is left out, and past 8 the farthest are, the smaller tree ids kept where the cut falls inside "
+        "one distance. They add, and none overrides another: where they "
         "disagree, what to follow is your call. On a tree you do not own, `guides` is its own guide "
-        "alone. Read them before working the tree. `count` "
+        "alone. `tree.guidesAboveUnavailable: true` says the trees above could not be read just now and "
+        "`guides` holds this tree's own alone — read again later. Read them before working the tree. `count` "
         "is the tree's whole node count; when it exceeds one page a `nextCursor` comes back with it. "
         "A page whose `fields` carry `description` is also held to 4 MB of serialized nodes: when that "
         "budget, not `limit`, ends the page, the reply says `pageBytes` beside `nextCursor` — follow "

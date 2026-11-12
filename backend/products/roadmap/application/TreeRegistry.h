@@ -43,8 +43,9 @@ public:
   // What following `opened` finds among `owner`'s standing trees (TreeRepository::openedFrom), off the stored rows.
   std::map<TreeId, OpenedTree> openedFrom(const UserId& owner, const std::set<TreeId>& opened);
 
-  // `owner`'s standing trees above `tree` (TreeRepository::treesAbove), off the stored rows.
-  std::map<TreeId, TreeAbove> treesAbove(const UserId& owner, const TreeId& tree);
+  // The nearest of `owner`'s standing trees above `tree` that carry a guide (TreeRepository::guidedTreesAbove), off
+  // the stored rows.
+  std::map<TreeId, TreeAbove> guidedTreesAbove(const UserId& owner, const TreeId& tree);
 
   // Each outcome names both write refusals of Access.h (an enum cannot hold another), because an
   // unowned tree is nobody's, not somebody else's.

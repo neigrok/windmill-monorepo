@@ -20,9 +20,12 @@ only whitespace, clears it.
 Guides add. The first page of `roadmap_get_tree` also carries `tree.guides`: the guides of your trees
 above this one — the trees whose nodes open it, and the trees above those — farthest first, then this
 tree's own, each as `{treeId, title, text, yours}`. One tree can hold the method and each tree worked
-under it what is particular to it. A tree with no guide is left out, and past 8 the farthest are.
-None overrides another: where they disagree, what to follow is your call. On a tree you do not own,
-`guides` is its own guide alone. Read them before working a tree.
+under it what is particular to it. A tree with no guide is left out, and past 8 the farthest are,
+the smaller tree ids kept where the cut falls inside one distance. None overrides another:
+where they disagree, what to follow is your call. On a tree you do not own,
+`guides` is its own guide alone. `tree.guidesAboveUnavailable: true` says the trees above could not
+be read just now and `guides` holds this tree's own alone. `includeGuides: false` leaves `guides`
+out. Read them before working a tree.
 
 ## Edges and diagnostics
 

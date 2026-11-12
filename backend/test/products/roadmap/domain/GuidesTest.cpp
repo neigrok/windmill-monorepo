@@ -63,16 +63,35 @@ TEST(more_than_seven_guided_trees_above_keeps_the_nearest_seven_and_the_trees_ow
                                       {TreeId{"leaf"}, "Leaf", "leaf", true}}));
 }
 
-TEST(among_trees_at_the_distance_the_cap_cuts_the_later_ids_are_kept) {
+TEST(among_trees_at_the_distance_the_cap_cuts_the_smaller_ids_are_kept_in_byte_order) {
   std::map<TreeId, TreeAbove> above;
   for (int k = 0; k < 9; ++k) above.emplace(TreeId{"up" + std::to_string(k)}, TreeAbove{2, "Up", "guide"});
+  above.emplace(TreeId{"Zed"}, TreeAbove{2, "Zed", "guide"});
+  above.emplace(TreeId{"near"}, TreeAbove{1, "Near", "guide"});
 
   const std::vector<Guide> guides = guidesFor(above, Guide{TreeId{"leaf"}, "Leaf", "leaf", true});
 
-  std::vector<Guide> expected;
-  for (int k = 2; k < 9; ++k) expected.push_back(Guide{TreeId{"up" + std::to_string(k)}, "Up", "guide", true});
+  std::vector<Guide> expected{{TreeId{"Zed"}, "Zed", "guide", true}};
+  for (int k = 0; k < 5; ++k) expected.push_back(Guide{TreeId{"up" + std::to_string(k)}, "Up", "guide", true});
+  expected.push_back(Guide{TreeId{"near"}, "Near", "guide", true});
   expected.push_back(Guide{TreeId{"leaf"}, "Leaf", "leaf", true});
   CHECK(guides == expected);
+}
+
+TEST(the_nearest_guided_trees_are_cut_to_the_room_given_and_a_tree_without_a_guide_takes_none_of_it) {
+  const std::map<TreeId, TreeAbove> above{{TreeId{"a"}, {3, "A", "a"}},
+                                          {TreeId{"b"}, {1, "B", ""}},
+                                          {TreeId{"c"}, {2, "C", "c"}},
+                                          {TreeId{"d"}, {2, "D", "d"}},
+                                          {TreeId{"e"}, {1, "E", "e"}}};
+
+  CHECK(nearestGuided(above, 3) ==
+        (std::map<TreeId, TreeAbove>{{TreeId{"c"}, {2, "C", "c"}}, {TreeId{"d"}, {2, "D", "d"}}, {TreeId{"e"}, {1, "E", "e"}}}));
+  CHECK(nearestGuided(above, 2) == (std::map<TreeId, TreeAbove>{{TreeId{"c"}, {2, "C", "c"}}, {TreeId{"e"}, {1, "E", "e"}}}));
+  CHECK(nearestGuided(above, 8) ==
+        (std::map<TreeId, TreeAbove>{{TreeId{"a"}, {3, "A", "a"}}, {TreeId{"c"}, {2, "C", "c"}}, {TreeId{"d"}, {2, "D", "d"}},
+                                     {TreeId{"e"}, {1, "E", "e"}}}));
+  CHECK(nearestGuided(above, 0) == (std::map<TreeId, TreeAbove>{}));
 }
 
 TEST(an_empty_own_guide_leaves_the_guides_above_and_the_cap_then_keeps_eight_of_them) {
